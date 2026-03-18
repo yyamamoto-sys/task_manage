@@ -8,6 +8,7 @@ import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
+import { AppDataProvider } from "./context/AppDataContext";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
@@ -74,24 +75,51 @@ export default function App() {
     );
   }
 
-  // 未ログイン → ログイン画面
+  // 未ログイン → ログイン画面（AppDataProvider不要）
   if (!authenticated) {
     return <LoginScreen onLogin={() => setAuthenticated(true)} />;
   }
 
+  // 認証済み → AppDataProviderでSupabaseデータをロード
+  return (
+    <AppDataProvider>
+      <AuthenticatedApp
+        wizardCompleted={wizardCompleted}
+        currentUser={currentUser}
+        onWizardComplete={handleWizardComplete}
+        onLogin={handleLogin}
+        onLogout={handleLogout}
+      />
+    </AppDataProvider>
+  );
+}
+
+// ===== 認証済み後のルーティング =====
+
+interface AuthenticatedAppProps {
+  wizardCompleted: boolean;
+  currentUser: Member | null;
+  onWizardComplete: () => void;
+  onLogin: (member: Member) => void;
+  onLogout: () => void;
+}
+
+function AuthenticatedApp({
+  wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
+}: AuthenticatedAppProps) {
   // 初回起動時はセットアップウィザードを表示
   if (!wizardCompleted) {
-    return <SetupWizard onComplete={handleWizardComplete} />;
+    return <SetupWizard onComplete={onWizardComplete} />;
   }
 
   // メンバー未選択 → メンバー選択画面
   if (!currentUser) {
-    return <UserSelectScreen onLogin={handleLogin} />;
+    return <UserSelectScreen onLogin={onLogin} />;
   }
 
   return (
     <>
-      <MainLayout currentUser={currentUser} onLogout={handleLogout} />
+      <MainLayout currentUser={currentUser} onLogout={onLogout} />
       <ConfirmModal />
     </>
   );
