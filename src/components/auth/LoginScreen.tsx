@@ -19,8 +19,8 @@ export function LoginScreen({ onLogin }: Props) {
     try {
       await signIn(email, password);
       onLogin();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "ログインに失敗しました");
+    } catch {
+      setError("メールアドレスまたはパスワードが正しくありません。");
     } finally {
       setLoading(false);
     }

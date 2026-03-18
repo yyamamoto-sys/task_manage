@@ -3,7 +3,7 @@
 // 【設計意図】
 // 管理画面。OKR/KR・Task Force・PJ・メンバーの4セクションを管理する。
 // 全員が編集可（管理者権限なし）。
-// 変更はlocalStoreに即時反映。
+// 変更はSupabaseに即時反映（AppDataContext経由）。
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";

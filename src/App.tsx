@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
-import { getCurrentUser, setCurrentUser, KEYS } from "./lib/localData/localStore";
+import { setCurrentUser, KEYS } from "./lib/localData/localStore";
 import { getSession, onAuthStateChange } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -36,10 +36,7 @@ export default function App() {
   useEffect(() => {
     getSession().then(session => {
       setAuthenticated(!!session);
-      if (session) {
-        const saved = getCurrentUser();
-        setCurrentUserState(saved);
-      }
+      // currentUser は UserSelectScreen で復元するため、ここでは設定しない
       setLoading(false);
     });
 
