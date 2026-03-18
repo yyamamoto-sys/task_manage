@@ -1,0 +1,102 @@
+/* src/styles/globals.css */
+
+/* ===== デザイントークン ===== */
+:root {
+  /* 背景 */
+  --color-bg-primary: #ffffff;
+  --color-bg-secondary: #f8f9fb;
+  --color-bg-tertiary: #f1f3f7;
+  --color-bg-info: #eff6ff;
+  --color-bg-success: #f0fdf4;
+  --color-bg-warning: #fefce8;
+  --color-bg-danger: #fef2f2;
+  --color-bg-purple: #f5f3ff;
+
+  /* テキスト */
+  --color-text-primary: #111827;
+  --color-text-secondary: #4b5563;
+  --color-text-tertiary: #9ca3af;
+  --color-text-info: #1d4ed8;
+  --color-text-success: #15803d;
+  --color-text-warning: #92400e;
+  --color-text-danger: #b91c1c;
+  --color-text-purple: #534AB7;
+
+  /* ボーダー */
+  --color-border-primary: #e5e7eb;
+  --color-border-secondary: #d1d5db;
+  --color-border-info: #93c5fd;
+  --color-border-success: #86efac;
+  --color-border-warning: #fcd34d;
+  --color-border-danger: #fca5a5;
+  --color-border-purple: #AFA9EC;
+
+  /* ブランドカラー */
+  --color-brand: #7F77DD;
+  --color-brand-light: #eeedfe;
+  --color-brand-border: #AFA9EC;
+
+  /* 角丸 */
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-full: 9999px;
+
+  /* シャドウ */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.10);
+
+  /* フォント
+     優先順：Windows（Meiryo UI / Yu Gothic UI） → macOS（Hiragino） → 汎用 */
+  --font-sans:
+    "Meiryo UI", "Meiryo",
+    "Yu Gothic UI", "Yu Gothic",
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    sans-serif;
+}
+
+/* ===== リセット ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body, #root { height: 100%; }
+body {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  background: var(--color-bg-secondary);
+  -webkit-font-smoothing: antialiased;  /* macOS Chrome/Safari */
+  -moz-osx-font-smoothing: grayscale;   /* macOS Firefox */
+}
+
+/* Yu Gothic（非UI版）を使う場合のみフォントウェイトを補正
+   "Yu Gothic UI" が使われる場合はこの指定は影響しない */
+@supports (font-family: "Yu Gothic") {
+  body:lang(ja) { font-weight: 500; }
+  b, strong, button, [style*="fontWeight"] { font-weight: 700; }
+}
+button { font-family: inherit; cursor: pointer; }
+input, textarea, select { font-family: inherit; }
+a { color: inherit; text-decoration: none; }
+
+/* ===== ユーティリティ ===== */
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.flex { display: flex; }
+.items-center { align-items: center; }
+.gap-1 { gap: 4px; }
+.gap-2 { gap: 8px; }
+
+/* ===== スクロールバー（細め） ===== */
+/* W3C 標準（Firefox / Edge 標準モード対応） */
+* { scrollbar-width: thin; scrollbar-color: var(--color-border-primary) transparent; }
+/* Chrome / Edge / Safari（Webkit 拡張） */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-border-primary); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-border-secondary); }
+
+/* ===== アニメーション ===== */
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.animate-spin { animation: spin 0.8s linear infinite; }
+.animate-fadeIn { animation: fadeIn 0.15s ease-out; }

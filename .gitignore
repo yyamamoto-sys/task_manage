@@ -1,0 +1,8 @@
+node_modules/
+dist/
+.env
+.env.local
+.env.*.local
+
+# シードデータに個人情報が含まれているため除外
+src/lib/localData/seed.ts

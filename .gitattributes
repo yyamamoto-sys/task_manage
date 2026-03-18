@@ -1,0 +1,12 @@
+# 改行コードを LF に統一（Mac/Windows 共通）
+# Windows 開発者が参加した場合も自動変換される
+
+* text=auto eol=lf
+
+# バイナリファイルは変換しない
+*.png binary
+*.jpg binary
+*.svg binary
+*.ico binary
+*.woff binary
+*.woff2 binary

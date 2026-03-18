@@ -1,0 +1,513 @@
+// src/components/dashboard/DashboardView.tsx
+//
+// 【設計意図】
+// ダッシュボード。4つのセクションで構成。
+// 1. OKRサマリー：KRごとのタスク完了率バー（KR進捗率の暫定実装）
+// 2. 今週のタスク：今日〜7日以内に期限のタスク一覧
+// 3. 期限アラート：期限超過・本日期限のタスク（赤バッジ）
+// 4. PJ進捗一覧：全PJのタスク完了率
+//
+// フィルター：「自分のみ/全員」トグル＋PJチップ（複数選択）
+//
+// KR進捗率の計算方針（未決定論点Aの暫定解）：
+// 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
+// 手動入力方式はPhase 5以降で検討。
+
+import { useState, useMemo } from "react";
+import { localStore, KEYS } from "../../lib/localData/localStore";
+import type {
+  Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce,
+} from "../../lib/localData/types";
+import { Avatar } from "../auth/UserSelectScreen";
+
+interface Props {
+  currentUser: Member;
+  projects: Project[];
+}
+
+// ===== 日付ユーティリティ =====
+
+function today(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+function addDays(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  return d.toISOString().split("T")[0];
+}
+
+function formatDateShort(s: string): string {
+  const d = new Date(s);
+  return `${d.getMonth() + 1}/${d.getDate()}`;
+}
+
+function diffDaysFromToday(s: string): number {
+  const t = new Date(today());
+  const d = new Date(s);
+  return Math.round((d.getTime() - t.getTime()) / 86400000);
+}
+
+// ===== メインコンポーネント =====
+
+export function DashboardView({ currentUser, projects }: Props) {
+  const [myOnly, setMyOnly] = useState(false);
+  const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
+  const [activeKrId, setActiveKrId] = useState<string | null>(null);
+
+  const allTasks = useMemo(
+    () => localStore.get<Task>(KEYS.TASKS).filter(t => !t.is_deleted),
+    []
+  );
+  const members = useMemo(
+    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted),
+    []
+  );
+  const krs = useMemo(
+    () => localStore.get<KeyResult>(KEYS.KEY_RESULTS).filter(k => !k.is_deleted),
+    []
+  );
+  const tfs = useMemo(
+    () => localStore.get<TaskForce>(KEYS.TASK_FORCES).filter(t => !t.is_deleted),
+    []
+  );
+  const projectTaskForces = useMemo(
+    () => localStore.get<ProjectTaskForce>(KEYS.PROJECT_TASK_FORCES),
+    []
+  );
+
+  // フィルター適用後のタスク
+  const filteredTasks = useMemo(() => {
+    let tasks = allTasks;
+    if (myOnly) tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
+    if (selectedPjIds.length > 0) tasks = tasks.filter(t => selectedPjIds.includes(t.project_id));
+    return tasks;
+  }, [allTasks, myOnly, selectedPjIds, currentUser.id]);
+
+  const todayStr = today();
+  const weekLater = addDays(7);
+
+  // 今週のタスク
+  const thisWeekTasks = useMemo(
+    () => filteredTasks.filter(t =>
+      t.due_date &&
+      t.due_date >= todayStr &&
+      t.due_date <= weekLater &&
+      t.status !== "done"
+    ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
+    [filteredTasks, todayStr, weekLater]
+  );
+
+  // 期限超過・本日期限
+  const alertTasks = useMemo(
+    () => filteredTasks.filter(t =>
+      t.due_date &&
+      t.due_date <= todayStr &&
+      t.status !== "done"
+    ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
+    [filteredTasks, todayStr]
+  );
+
+  // PJ進捗
+  const pjProgress = useMemo(() =>
+    projects.map(pj => {
+      const pjTasks = allTasks.filter(t => t.project_id === pj.id);
+      const done = pjTasks.filter(t => t.status === "done").length;
+      const total = pjTasks.length;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      return { pj, done, total, pct };
+    }),
+    [projects, allTasks]
+  );
+
+  // KR進捗（タスク完了率ベース）
+  const krProgress = useMemo(() =>
+    krs.map(kr => {
+      // このKRに紐づくTFを取得
+      const krTfs = tfs.filter(tf => tf.kr_id === kr.id);
+      // TFと直接・間接に紐づくPJのタスクを集める
+      // （今回はPJとTFの多対多は未実装のため、全タスクをKR数で等分する簡易実装）
+      const allActiveTasks = allTasks;
+      const done = allActiveTasks.filter(t => t.status === "done").length;
+      const total = allActiveTasks.length;
+      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      return { kr, pct, tfCount: krTfs.length };
+    }),
+    [krs, tfs, allTasks]
+  );
+
+  const togglePj = (id: string) => {
+    setActiveKrId(null);
+    setSelectedPjIds(prev =>
+      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
+    );
+  };
+
+  // KRバークリック：そのKRに紐づくPJでフィルター
+  const handleKrClick = (krId: string) => {
+    if (activeKrId === krId) {
+      // 同じKRを再クリック → 解除
+      setActiveKrId(null);
+      setSelectedPjIds([]);
+      return;
+    }
+    const krTfIds = tfs.filter(tf => tf.kr_id === krId).map(tf => tf.id);
+    const pjIds = projectTaskForces
+      .filter(ptf => krTfIds.includes(ptf.tf_id))
+      .map(ptf => ptf.project_id);
+    setActiveKrId(krId);
+    setSelectedPjIds(pjIds.length > 0 ? [...new Set(pjIds)] : []);
+  };
+
+  return (
+    <div style={{ height: "100%", overflow: "auto" }}>
+      <div style={{ padding: "16px 20px", maxWidth: "1000px" }}>
+
+        {/* ヘッダー */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px",
+          marginBottom: "16px", flexWrap: "wrap",
+        }}>
+          <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
+            ダッシュボード
+          </div>
+
+          {/* 自分のみ/全員トグル */}
+          <div style={{
+            display: "flex", background: "var(--color-bg-tertiary)",
+            borderRadius: "var(--radius-md)", padding: "2px", gap: "2px",
+          }}>
+            {[
+              { val: false, label: "全員" },
+              { val: true,  label: "自分のみ" },
+            ].map(({ val, label }) => (
+              <button
+                key={label}
+                onClick={() => setMyOnly(val)}
+                style={{
+                  padding: "4px 12px", fontSize: "11px",
+                  borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                  fontWeight: myOnly === val ? "500" : "400",
+                  background: myOnly === val ? "var(--color-bg-primary)" : "transparent",
+                  color: myOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  boxShadow: myOnly === val ? "var(--shadow-sm)" : "none",
+                  transition: "all 0.1s",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* PJフィルターチップ */}
+          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+            {projects.map(pj => (
+              <button
+                key={pj.id}
+                onClick={() => togglePj(pj.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "4px",
+                  padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
+                  border: selectedPjIds.includes(pj.id)
+                    ? `1px solid ${pj.color_tag}`
+                    : "1px solid var(--color-border-primary)",
+                  background: selectedPjIds.includes(pj.id)
+                    ? `${pj.color_tag}22`
+                    : "var(--color-bg-primary)",
+                  color: selectedPjIds.includes(pj.id)
+                    ? pj.color_tag
+                    : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
+                  transition: "all 0.1s",
+                }}
+              >
+                <span style={{
+                  width: 5, height: 5, borderRadius: "50%",
+                  background: pj.color_tag, display: "inline-block",
+                }} />
+                {pj.name.slice(0, 10)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* グリッド */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gridTemplateRows: "auto auto",
+          gap: "14px",
+        }}>
+
+          {/* ① OKRサマリー */}
+          <Card title="KR 進捗サマリー" badge={`${krs.length}件`}>
+            {krs.length === 0 && (
+              <EmptyState>管理画面でKRを登録してください</EmptyState>
+            )}
+            {krProgress.map(({ kr, pct }, i) => {
+              const isActive = activeKrId === kr.id;
+              return (
+                <div
+                  key={kr.id}
+                  onClick={() => handleKrClick(kr.id)}
+                  style={{
+                    marginBottom: i < krs.length - 1 ? "12px" : 0,
+                    padding: "6px 8px", borderRadius: "var(--radius-md)",
+                    cursor: "pointer",
+                    background: isActive ? "var(--color-bg-info)" : "transparent",
+                    border: isActive ? "1px solid var(--color-border-info)" : "1px solid transparent",
+                    transition: "all 0.1s",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                    <span style={{
+                      fontSize: "11px", color: "var(--color-text-secondary)",
+                      flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      paddingRight: "8px",
+                    }}>
+                      <span style={{
+                        display: "inline-block", fontSize: "9px", fontWeight: "600",
+                        padding: "1px 5px", borderRadius: "3px", marginRight: "5px",
+                        background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                      }}>KR{i + 1}</span>
+                      {kr.title}
+                    </span>
+                    <span style={{
+                      fontSize: "11px", fontWeight: "500",
+                      color: pct >= 80 ? "var(--color-text-success)"
+                        : pct >= 40 ? "var(--color-text-warning)"
+                        : "var(--color-text-tertiary)",
+                      flexShrink: 0,
+                    }}>
+                      {pct}%
+                    </span>
+                  </div>
+                  <ProgressBar pct={pct} color={
+                    pct >= 80 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#94a3b8"
+                  } />
+                </div>
+              );
+            })}
+          </Card>
+
+          {/* ② 期限アラート */}
+          <Card
+            title="期限アラート"
+            badge={alertTasks.length > 0 ? `${alertTasks.length}件` : undefined}
+            badgeColor="danger"
+          >
+            {alertTasks.length === 0 && (
+              <EmptyState>期限超過・本日期限のタスクはありません ✓</EmptyState>
+            )}
+            {alertTasks.map(task => {
+              const m = members.find(mb => mb.id === task.assignee_member_id);
+              const pj = projects.find(p => p.id === task.project_id);
+              const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
+              const isToday = diff === 0;
+              return (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  member={m}
+                  project={pj}
+                  badge={
+                    <span style={{
+                      fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                      background: isToday ? "var(--color-bg-warning)" : "var(--color-bg-danger)",
+                      color: isToday ? "var(--color-text-warning)" : "var(--color-text-danger)",
+                      fontWeight: "500",
+                    }}>
+                      {isToday ? "今日" : `${Math.abs(diff)}日超過`}
+                    </span>
+                  }
+                />
+              );
+            })}
+          </Card>
+
+          {/* ③ 今週のタスク */}
+          <Card title="今週のタスク" badge={`${thisWeekTasks.length}件`}>
+            {thisWeekTasks.length === 0 && (
+              <EmptyState>今週期限のタスクはありません</EmptyState>
+            )}
+            {thisWeekTasks.map(task => {
+              const m = members.find(mb => mb.id === task.assignee_member_id);
+              const pj = projects.find(p => p.id === task.project_id);
+              const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
+              return (
+                <TaskRow
+                  key={task.id}
+                  task={task}
+                  member={m}
+                  project={pj}
+                  badge={
+                    <span style={{
+                      fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                      background: diff === 0
+                        ? "var(--color-bg-warning)"
+                        : "var(--color-bg-secondary)",
+                      color: diff === 0
+                        ? "var(--color-text-warning)"
+                        : "var(--color-text-tertiary)",
+                    }}>
+                      {diff === 0 ? "今日" : diff === 1 ? "明日" : `${diff}日後`}
+                    </span>
+                  }
+                />
+              );
+            })}
+          </Card>
+
+          {/* ④ PJ進捗一覧 */}
+          <Card title="PJ 進捗一覧">
+            {pjProgress.length === 0 && (
+              <EmptyState>プロジェクトを作成してください</EmptyState>
+            )}
+            {pjProgress.map(({ pj, done, total, pct }) => (
+              <div key={pj.id} style={{ marginBottom: "10px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+                  <span style={{
+                    width: 7, height: 7, borderRadius: "50%",
+                    background: pj.color_tag, display: "inline-block", flexShrink: 0,
+                  }} />
+                  <span style={{
+                    fontSize: "11px", color: "var(--color-text-secondary)",
+                    flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {pj.name}
+                  </span>
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                    {done}/{total}件
+                  </span>
+                  <span style={{
+                    fontSize: "11px", fontWeight: "500", flexShrink: 0,
+                    color: pct >= 80 ? "var(--color-text-success)"
+                      : pct >= 40 ? "var(--color-text-warning)"
+                      : "var(--color-text-tertiary)",
+                  }}>
+                    {pct}%
+                  </span>
+                </div>
+                <ProgressBar pct={pct} color={pj.color_tag} />
+              </div>
+            ))}
+          </Card>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ===== 小コンポーネント =====
+
+function Card({
+  title, badge, badgeColor = "info", children,
+}: {
+  title: string;
+  badge?: string;
+  badgeColor?: "info" | "danger";
+  children: React.ReactNode;
+}) {
+  const badgeStyles = {
+    info: { bg: "var(--color-bg-info)", color: "var(--color-text-info)", border: "var(--color-border-info)" },
+    danger: { bg: "var(--color-bg-danger)", color: "var(--color-text-danger)", border: "var(--color-border-danger)" },
+  };
+  const bs = badgeStyles[badgeColor];
+
+  return (
+    <div style={{
+      background: "var(--color-bg-primary)",
+      border: "1px solid var(--color-border-primary)",
+      borderRadius: "var(--radius-lg)",
+      overflow: "hidden",
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: "6px",
+        padding: "10px 14px 8px",
+        borderBottom: "1px solid var(--color-border-primary)",
+      }}>
+        <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
+          {title}
+        </span>
+        {badge && (
+          <span style={{
+            fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+            background: bs.bg, color: bs.color, border: `1px solid ${bs.border}`,
+            fontWeight: "500",
+          }}>
+            {badge}
+          </span>
+        )}
+      </div>
+      <div style={{ padding: "10px 14px", minHeight: "80px" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ProgressBar({ pct, color }: { pct: number; color: string }) {
+  return (
+    <div style={{
+      height: 5, background: "var(--color-bg-tertiary)",
+      borderRadius: "var(--radius-full)", overflow: "hidden",
+    }}>
+      <div style={{
+        height: "100%", width: `${pct}%`,
+        background: color, borderRadius: "var(--radius-full)",
+        transition: "width 0.4s ease",
+      }} />
+    </div>
+  );
+}
+
+function TaskRow({
+  task, member, project, badge,
+}: {
+  task: Task;
+  member?: Member;
+  project?: Project;
+  badge: React.ReactNode;
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "7px",
+      padding: "5px 0",
+      borderBottom: "1px solid var(--color-bg-tertiary)",
+    }}>
+      {member && <Avatar member={member} size={18} />}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: "11px", color: "var(--color-text-primary)",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {task.name}
+        </div>
+        {project && (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+            <span style={{
+              width: 4, height: 4, borderRadius: "50%",
+              background: project.color_tag, display: "inline-block",
+            }} />
+            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>
+              {project.name.slice(0, 16)}
+            </span>
+          </div>
+        )}
+      </div>
+      {badge}
+    </div>
+  );
+}
+
+function EmptyState({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      textAlign: "center", padding: "16px 0",
+      fontSize: "11px", color: "var(--color-text-tertiary)",
+    }}>
+      {children}
+    </div>
+  );
+}
