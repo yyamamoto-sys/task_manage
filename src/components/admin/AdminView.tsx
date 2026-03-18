@@ -106,11 +106,15 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
 
   const saveObj = () => {
+    const now = new Date().toISOString();
     const updated: Objective = {
       id: ctxObj?.id ?? uuidv4(),
       title: objTitle,
       period: ctxObj?.period ?? "2026年度",
       is_current: true,
+      created_at: ctxObj?.created_at ?? now,
+      updated_at: now,
+      updated_by: currentUser.id,
     };
     saveObjective(updated);
     flashSaved();
@@ -118,11 +122,15 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
   const addKr = () => {
     if (!newKrTitle.trim()) return;
+    const now = new Date().toISOString();
     const kr: KeyResult = {
       id: uuidv4(),
       objective_id: ctxObj?.id ?? "",
       title: newKrTitle.trim(),
       is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
     };
     saveKeyResult(kr);
     setNewKrTitle("");
@@ -130,7 +138,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
   const updateKr = (id: string, title: string) => {
     const existing = krs.find(k => k.id === id);
-    if (existing) saveKeyResult({ ...existing, title });
+    if (existing) saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
     setEditingKrId(null);
   };
 
@@ -251,11 +259,12 @@ function TFSection({ currentUser }: { currentUser: Member }) {
 
   const save = () => {
     if (!form.name.trim()) return;
+    const now = new Date().toISOString();
     if (editId === "new") {
-      saveTaskForce({ id: uuidv4(), ...form, is_deleted: false });
+      saveTaskForce({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
     } else {
       const existing = tfs.find(t => t.id === editId);
-      if (existing) saveTaskForce({ ...existing, ...form });
+      if (existing) saveTaskForce({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
     }
     setEditId(null);
   };
@@ -423,11 +432,12 @@ function PJSection({ currentUser }: { currentUser: Member }) {
       await alertDialog("開始日は終了日より前に設定してください。");
       return;
     }
+    const now = new Date().toISOString();
     if (editId === "new") {
-      saveProject({ id: uuidv4(), ...form, is_deleted: false });
+      saveProject({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
     } else {
       const existing = projects.find(p => p.id === editId);
-      if (existing) saveProject({ ...existing, ...form });
+      if (existing) saveProject({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
     }
     setEditId(null);
   };
@@ -602,6 +612,7 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
     const initials = form.display_name.replace(/[\s　]+/g, "").slice(0, 2).toUpperCase();
     const shortName = form.short_name.trim() || form.display_name.split(/[\s　]/)[0];
 
+    const now = new Date().toISOString();
     if (editId === "new") {
       saveMember({
         id: uuidv4(), initials,
@@ -610,10 +621,11 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
         teams_account: form.teams_account,
         color_bg: form.color_bg, color_text: form.color_text,
         is_deleted: false,
+        created_at: now, updated_at: now, updated_by: currentUser.id,
       });
     } else {
       const existing = members.find(m => m.id === editId);
-      if (existing) saveMember({ ...existing, ...form, short_name: shortName, initials });
+      if (existing) saveMember({ ...existing, ...form, short_name: shortName, initials, updated_at: now, updated_by: currentUser.id });
     }
     setEditId(null);
   };

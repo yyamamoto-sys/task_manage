@@ -53,14 +53,15 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    saveTask({ ...task, status: newStatus });
-  }, [tasks, saveTask]);
+    saveTask({ ...task, status: newStatus, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+  }, [tasks, saveTask, currentUser.id]);
 
   // タスク追加
   const handleAddTask = useCallback((
     name: string, assigneeId: string, projectId: string, dueDate: string,
     priority: Task["priority"], estimatedHours: number | null,
   ) => {
+    const now = new Date().toISOString();
     const newTask: Task = {
       id: uuidv4(),
       name,
@@ -72,6 +73,9 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       estimated_hours: estimatedHours,
       comment: "",
       is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
     };
     saveTask(newTask);
     setShowAddModal(false);
@@ -397,6 +401,7 @@ function AddTaskModal({
               value={name}
               onChange={e => setName(e.target.value)}
               placeholder="例：メンバーへのヒアリング"
+              maxLength={200}
               style={inputStyle}
               onKeyDown={e => {
                 if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null);

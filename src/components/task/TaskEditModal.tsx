@@ -100,6 +100,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       due_date:           form.due_date || null,
       estimated_hours:    isNaN(hours) ? null : hours,
       comment:            form.comment,
+      updated_at:         new Date().toISOString(),
+      updated_by:         currentUser.id,
     };
     saveTask(updated);
     setSaved(true);
