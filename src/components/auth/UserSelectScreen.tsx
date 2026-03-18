@@ -1,6 +1,6 @@
 // src/components/auth/UserSelectScreen.tsx
 import { useState } from "react";
-import { getCurrentUser } from "../../lib/localData/localStore";
+import { getCurrentUser, KEYS } from "../../lib/localData/localStore";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 
@@ -9,7 +9,7 @@ interface Props {
 }
 
 export function UserSelectScreen({ onLogin }: Props) {
-  const { members: allMembers } = useAppData();
+  const { members: allMembers, loading } = useAppData();
   const members = allMembers.filter(m => !m.is_deleted);
   const lastUser = getCurrentUser();
   const lastUserFromContext = lastUser ? members.find(m => m.id === lastUser.id) ?? null : null;
@@ -93,26 +93,67 @@ export function UserSelectScreen({ onLogin }: Props) {
           </div>
         )}
 
-        {/* メンバー一覧 */}
-        {!lastUserFromContext && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px" }}>
-            あなたはどなたですか？
+        {/* ローディング中 */}
+        {loading && (
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", gap: "8px" }}>
+            <div style={{ width: "16px", height: "16px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
+            <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中...</span>
           </div>
         )}
-        <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-          {others.map(member => (
-            <MemberButton key={member.id} member={member} onClick={() => onLogin(member)} />
-          ))}
-        </div>
+
+        {/* メンバー一覧 */}
+        {!loading && (
+          <>
+            {!lastUserFromContext && members.length > 0 && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px" }}>
+                あなたはどなたですか？
+              </div>
+            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {others.map(member => (
+                <MemberButton key={member.id} member={member} onClick={() => onLogin(member)} />
+              ))}
+            </div>
+
+            {/* メンバーが空の場合の回復オプション */}
+            {members.length === 0 && (
+              <div style={{
+                padding: "16px 12px", background: "var(--color-bg-warning)",
+                border: "1px solid var(--color-border-warning)",
+                borderRadius: "var(--radius-md)", textAlign: "center",
+              }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-warning)", marginBottom: "10px", lineHeight: 1.6 }}>
+                  メンバーが見つかりません。<br />
+                  セットアップをやり直してメンバーを登録してください。
+                </div>
+                <button
+                  onClick={() => {
+                    localStorage.removeItem(KEYS.WIZARD_COMPLETED);
+                    location.reload();
+                  }}
+                  style={{
+                    padding: "6px 16px", fontSize: "11px", fontWeight: "500",
+                    background: "var(--color-text-warning)", color: "#fff",
+                    border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+                  }}
+                >
+                  セットアップをやり直す
+                </button>
+              </div>
+            )}
+          </>
+        )}
 
         {/* 注記 */}
-        <div style={{
-          marginTop: "16px", padding: "8px 10px",
-          background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
-          fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6,
-        }}>
-          選択したユーザーは次回も自動で維持されます。
-        </div>
+        {!loading && members.length > 0 && (
+          <div style={{
+            marginTop: "16px", padding: "8px 10px",
+            background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
+            fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6,
+          }}>
+            選択したユーザーは次回も自動で維持されます。
+          </div>
+        )}
       </div>
     </div>
   );

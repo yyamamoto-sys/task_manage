@@ -87,11 +87,14 @@ export function SetupWizard({ onComplete }: Props) {
     }));
   };
 
-  const handleComplete = () => {
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const handleComplete = async () => {
     // 有効なメンバーのみ保存
     const validMembers: Member[] = members
       .filter(m => m.display_name.trim())
-      .map((m, i) => ({
+      .map(m => ({
         id: m.id,
         display_name: m.display_name.trim(),
         short_name: m.short_name.trim() || m.display_name.trim().slice(0, 4),
@@ -103,15 +106,20 @@ export function SetupWizard({ onComplete }: Props) {
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
         updated_by: "setup",
-        order: i,
       }));
 
-    for (const member of validMembers) {
-      saveMember(member);
+    setSaving(true);
+    setSaveError(null);
+    try {
+      for (const member of validMembers) {
+        await saveMember(member);
+      }
+      localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
+      onComplete();
+    } catch (e) {
+      setSaveError("保存に失敗しました。Supabaseの設定を確認してください。");
+      setSaving(false);
     }
-
-    localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
-    onComplete();
   };
 
   return (
@@ -356,16 +364,29 @@ export function SetupWizard({ onComplete }: Props) {
             }}>
               管理画面からOKR・タスクフォース・プロジェクトを設定してください。
             </div>
+            {saveError && (
+              <div style={{
+                marginBottom: "12px", padding: "10px 12px",
+                background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
+                border: "1px solid var(--color-border-danger)",
+                borderRadius: "var(--radius-md)", fontSize: "11px",
+              }}>
+                {saveError}
+              </div>
+            )}
             <button
               onClick={handleComplete}
+              disabled={saving}
               style={{
                 width: "100%", padding: "11px",
-                background: "var(--color-brand)", color: "#fff",
+                background: saving ? "var(--color-text-tertiary)" : "var(--color-brand)",
+                color: "#fff",
                 border: "none", borderRadius: "var(--radius-md)",
-                fontSize: "13px", fontWeight: "500", cursor: "pointer",
+                fontSize: "13px", fontWeight: "500",
+                cursor: saving ? "not-allowed" : "pointer",
               }}
             >
-              アプリを開始する
+              {saving ? "保存中..." : "アプリを開始する"}
             </button>
           </div>
         )}
