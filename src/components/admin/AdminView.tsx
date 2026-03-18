@@ -5,8 +5,8 @@
 // 全員が編集可（管理者権限なし）。
 // 変更はlocalStoreに即時反映。
 
-import { useState, useMemo, useCallback } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useState, useMemo, useCallback, useEffect } from "react";
+import { useAppData } from "../../context/AppDataContext";
 import type {
   Member, Objective, KeyResult, TaskForce, Project,
 } from "../../lib/localData/types";
@@ -89,56 +89,58 @@ export function AdminView({ currentUser }: Props) {
 // ===================================================
 
 function OKRSection({ currentUser }: { currentUser: Member }) {
-  const [obj, setObj] = useState<Objective>(() => {
-    const list = localStore.get<Objective>(KEYS.OBJECTIVE);
-    return list[0] ?? { id: uuidv4(), title: "", period: "2026年度", is_current: true };
-  });
-  const [krs, setKrs] = useState<KeyResult[]>(() =>
-    localStore.get<KeyResult>(KEYS.KEY_RESULTS).filter(k => !k.is_deleted)
-  );
+  const { objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult } = useAppData();
+  const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
+
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [newKrTitle, setNewKrTitle] = useState("");
-  const [objTitle, setObjTitle] = useState(obj.title);
+  const [objTitle, setObjTitle] = useState(ctxObj?.title ?? "");
   const [saved, setSaved] = useState(false);
 
-  const saveObj = () => {
-    const updated = { ...obj, title: objTitle };
-    localStore.set(KEYS.OBJECTIVE, [updated]);
-    setObj(updated);
-    flashSaved();
-  };
+  // ctxObj がロード後に反映
+  useEffect(() => {
+    if (ctxObj?.title) setObjTitle(t => t || ctxObj.title);
+  }, [ctxObj]);
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
+
+  const saveObj = () => {
+    const updated: Objective = {
+      id: ctxObj?.id ?? uuidv4(),
+      title: objTitle,
+      period: ctxObj?.period ?? "2026年度",
+      is_current: true,
+    };
+    saveObjective(updated);
+    flashSaved();
+  };
 
   const addKr = () => {
     if (!newKrTitle.trim()) return;
     const kr: KeyResult = {
-      id: uuidv4(), objective_id: obj.id,
-      title: newKrTitle.trim(), is_deleted: false,
+      id: uuidv4(),
+      objective_id: ctxObj?.id ?? "",
+      title: newKrTitle.trim(),
+      is_deleted: false,
     };
-    const updated = [...krs, kr];
-    setKrs(updated);
-    localStore.set(KEYS.KEY_RESULTS, updated);
+    saveKeyResult(kr);
     setNewKrTitle("");
   };
 
   const updateKr = (id: string, title: string) => {
-    const updated = krs.map(k => k.id === id ? { ...k, title } : k);
-    setKrs(updated);
-    localStore.set(KEYS.KEY_RESULTS, updated);
+    const existing = krs.find(k => k.id === id);
+    if (existing) saveKeyResult({ ...existing, title });
     setEditingKrId(null);
   };
 
   const deleteKr = async (id: string) => {
     if (!await confirmDialog("このKRを削除しますか？")) return;
-    const updated = krs.map(k => k.id === id ? { ...k, is_deleted: true } : k);
-    localStore.set(KEYS.KEY_RESULTS, updated);
-    setKrs(updated.filter(k => !k.is_deleted));
+    deleteKeyResult(id, currentUser.id);
   };
 
   return (
     <div style={{ maxWidth: "680px" }}>
-      <SectionHeader title="Objective" badge={obj.period} />
+      <SectionHeader title="Objective" badge={ctxObj?.period ?? "2026年度"} />
 
       {/* Objective編集 */}
       <div style={{ marginBottom: "20px" }}>
@@ -227,17 +229,11 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 // ===================================================
 
 function TFSection({ currentUser }: { currentUser: Member }) {
-  const [tfs, setTfs] = useState<TaskForce[]>(() =>
-    localStore.get<TaskForce>(KEYS.TASK_FORCES).filter(t => !t.is_deleted)
-  );
-  const krs = useMemo(
-    () => localStore.get<KeyResult>(KEYS.KEY_RESULTS).filter(k => !k.is_deleted),
-    []
-  );
-  const members = useMemo(
-    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted),
-    []
-  );
+  const { taskForces: rawTfs, keyResults: rawKrs, members: rawMembers, saveTaskForce, deleteTaskForce } = useAppData();
+  const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+  const krs     = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
+  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", leader_member_id: "" });
 
@@ -254,23 +250,17 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   const save = () => {
     if (!form.name.trim()) return;
     if (editId === "new") {
-      const newTF: TaskForce = { id: uuidv4(), ...form, is_deleted: false };
-      const updated = [...tfs, newTF];
-      setTfs(updated);
-      localStore.set(KEYS.TASK_FORCES, updated);
+      saveTaskForce({ id: uuidv4(), ...form, is_deleted: false });
     } else {
-      const updated = tfs.map(t => t.id === editId ? { ...t, ...form } : t);
-      setTfs(updated);
-      localStore.set(KEYS.TASK_FORCES, updated);
+      const existing = tfs.find(t => t.id === editId);
+      if (existing) saveTaskForce({ ...existing, ...form });
     }
     setEditId(null);
   };
 
   const deleteTF = async (id: string) => {
     if (!await confirmDialog("このTask Forceを削除しますか？紐づくPJの関連は解除されます。")) return;
-    const updated = tfs.map(t => t.id === id ? { ...t, is_deleted: true } : t);
-    localStore.set(KEYS.TASK_FORCES, updated);
-    setTfs(updated.filter(t => !t.is_deleted));
+    deleteTaskForce(id, currentUser.id);
   };
 
   // KRごとにグループ表示
@@ -392,12 +382,10 @@ function TFRow({ tf, members, onEdit, onDelete }: {
 // ===================================================
 
 function PJSection({ currentUser }: { currentUser: Member }) {
-  const [projects, setProjects] = useState<Project[]>(() =>
-    localStore.get<Project>(KEYS.PROJECTS).filter(p => !p.is_deleted)
-  );
-  const members = useMemo(
-    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted), []
-  );
+  const { projects: rawProjects, members: rawMembers, saveProject, deleteProject } = useAppData();
+  const projects = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
+  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "", purpose: "", contribution_memo: "",
@@ -429,23 +417,17 @@ function PJSection({ currentUser }: { currentUser: Member }) {
   const save = () => {
     if (!form.name.trim() || !form.purpose.trim()) return;
     if (editId === "new") {
-      const newPJ: Project = { id: uuidv4(), ...form, is_deleted: false };
-      const updated = [...projects, newPJ];
-      setProjects(updated);
-      localStore.set(KEYS.PROJECTS, updated);
+      saveProject({ id: uuidv4(), ...form, is_deleted: false });
     } else {
-      const updated = projects.map(p => p.id === editId ? { ...p, ...form } : p);
-      setProjects(updated);
-      localStore.set(KEYS.PROJECTS, updated);
+      const existing = projects.find(p => p.id === editId);
+      if (existing) saveProject({ ...existing, ...form });
     }
     setEditId(null);
   };
 
   const deletePJ = async (id: string) => {
     if (!await confirmDialog("このプロジェクトを削除しますか？紐づくタスクも一緒に削除されます。")) return;
-    const updated = projects.map(p => p.id === id ? { ...p, is_deleted: true } : p);
-    localStore.set(KEYS.PROJECTS, updated);
-    setProjects(updated.filter(p => !p.is_deleted));
+    deleteProject(id, currentUser.id);
   };
 
   const STATUS_LABELS: Record<Project["status"], string> = {
@@ -577,9 +559,9 @@ function PJSection({ currentUser }: { currentUser: Member }) {
 // ===================================================
 
 function MembersSection({ currentUser }: { currentUser: Member }) {
-  const [members, setMembers] = useState<Member[]>(() =>
-    localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted)
-  );
+  const { members: rawMembers, saveMember, deleteMember } = useAppData();
+  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     display_name: "", short_name: "", teams_account: "",
@@ -612,34 +594,25 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
     const shortName = form.short_name.trim() || form.display_name.split(/[\s　]/)[0];
 
     if (editId === "new") {
-      const newM: Member = {
+      saveMember({
         id: uuidv4(), initials,
         display_name: form.display_name.trim(),
         short_name: shortName,
         teams_account: form.teams_account,
         color_bg: form.color_bg, color_text: form.color_text,
         is_deleted: false,
-      };
-      const updated = [...members, newM];
-      setMembers(updated);
-      localStore.set(KEYS.MEMBERS, updated);
+      });
     } else {
-      const updated = members.map(m => m.id === editId
-        ? { ...m, ...form, short_name: shortName, initials }
-        : m
-      );
-      setMembers(updated);
-      localStore.set(KEYS.MEMBERS, updated);
+      const existing = members.find(m => m.id === editId);
+      if (existing) saveMember({ ...existing, ...form, short_name: shortName, initials });
     }
     setEditId(null);
   };
 
-  const deleteMember = async (id: string) => {
+  const handleDeleteMember = async (id: string) => {
     if (id === currentUser.id) { await alertDialog("自分自身は削除できません。"); return; }
     if (!await confirmDialog("このメンバーを削除しますか？担当タスクは「未担当」になります。")) return;
-    const updated = members.map(m => m.id === id ? { ...m, is_deleted: true } : m);
-    localStore.set(KEYS.MEMBERS, updated);
-    setMembers(updated.filter(m => !m.is_deleted));
+    deleteMember(id, currentUser.id);
   };
 
   return (
@@ -672,7 +645,7 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
               )}
             </div>
             <IconBtn onClick={() => openEdit(m)}>✏</IconBtn>
-            <IconBtn danger onClick={() => deleteMember(m.id)}>✕</IconBtn>
+            <IconBtn danger onClick={() => handleDeleteMember(m.id)}>✕</IconBtn>
           </div>
         ))}
       </div>

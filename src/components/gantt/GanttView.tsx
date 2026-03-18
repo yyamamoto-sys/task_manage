@@ -9,7 +9,7 @@
 // - ドラッグによる日程変更は将来実装（現時点はクリックで編集ダイアログ）
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { TaskEditModal } from "../task/TaskEditModal";
 
@@ -64,14 +64,9 @@ function getDaysInRange(start: Date, end: Date): Date[] {
 // ===== メインコンポーネント =====
 
 export function GanttView({ currentUser, selectedProject, projects }: Props) {
-  const allTasks = useMemo(
-    () => localStore.get<Task>(KEYS.TASKS).filter(t => !t.is_deleted),
-    []
-  );
-  const members = useMemo(
-    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted),
-    []
-  );
+  const { tasks: rawTasks, members: rawMembers } = useAppData();
+  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
+  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
   // 表示するPJを絞り込む
   const visibleProjects = selectedProject ? [selectedProject] : projects;

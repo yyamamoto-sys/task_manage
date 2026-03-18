@@ -1,6 +1,8 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
 import { getCurrentUser, setCurrentUser, KEYS } from "./lib/localData/localStore";
+import { getSession, onAuthStateChange } from "./lib/supabase/auth";
+import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { MainLayout } from "./components/layout/MainLayout";
@@ -8,16 +10,34 @@ import { ConfirmModal } from "./components/common/ConfirmModal";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUserState] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
-  const [wizardCompleted, setWizardCompleted] = useState(true);
+  // ウィザード完了フラグはlocalStorageで管理（デバイスごとの設定）
+  const [wizardCompleted, setWizardCompleted] = useState(
+    () => !!localStorage.getItem(KEYS.WIZARD_COMPLETED)
+  );
 
+  // Supabaseセッション確認
   useEffect(() => {
-    const saved = getCurrentUser();
-    setCurrentUserState(saved);
-    const completed = !!localStorage.getItem(KEYS.WIZARD_COMPLETED);
-    setWizardCompleted(completed);
-    setLoading(false);
+    getSession().then(session => {
+      setAuthenticated(!!session);
+      if (session) {
+        const saved = getCurrentUser();
+        setCurrentUserState(saved);
+      }
+      setLoading(false);
+    });
+
+    // セッション変化を監視
+    const subscription = onAuthStateChange(session => {
+      setAuthenticated(!!session);
+      if (!session) {
+        setCurrentUserState(null);
+      }
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const handleLogin = (memberId: string) => {
@@ -42,11 +62,17 @@ export default function App() {
     );
   }
 
+  // 未ログイン → ログイン画面
+  if (!authenticated) {
+    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+  }
+
   // 初回起動時はセットアップウィザードを表示
   if (!wizardCompleted) {
     return <SetupWizard onComplete={handleWizardComplete} />;
   }
 
+  // メンバー未選択 → メンバー選択画面
   if (!currentUser) {
     return <UserSelectScreen onLogin={handleLogin} />;
   }

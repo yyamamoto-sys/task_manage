@@ -1,6 +1,6 @@
 // src/components/layout/MainLayout.tsx
 import { useState, useMemo } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member, Project, ViewMode } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
@@ -18,9 +18,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
+  const { projects: allProjects } = useAppData();
   const projects = useMemo(
-    () => localStore.get<Project>(KEYS.PROJECTS).filter(p => !p.is_deleted && p.status === "active"),
-    []
+    () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
+    [allProjects]
   );
 
   const selectedProject = selectedProjectId

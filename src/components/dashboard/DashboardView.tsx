@@ -14,7 +14,7 @@
 // 手動入力方式はPhase 5以降で検討。
 
 import { useState, useMemo } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type {
   Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce,
 } from "../../lib/localData/types";
@@ -51,30 +51,20 @@ function diffDaysFromToday(s: string): number {
 // ===== メインコンポーネント =====
 
 export function DashboardView({ currentUser, projects }: Props) {
+  const {
+    tasks: rawTasks, members: rawMembers, keyResults: rawKrs,
+    taskForces: rawTfs, projectTaskForces: rawPtfs,
+  } = useAppData();
+
   const [myOnly, setMyOnly] = useState(false);
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
 
-  const allTasks = useMemo(
-    () => localStore.get<Task>(KEYS.TASKS).filter(t => !t.is_deleted),
-    []
-  );
-  const members = useMemo(
-    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted),
-    []
-  );
-  const krs = useMemo(
-    () => localStore.get<KeyResult>(KEYS.KEY_RESULTS).filter(k => !k.is_deleted),
-    []
-  );
-  const tfs = useMemo(
-    () => localStore.get<TaskForce>(KEYS.TASK_FORCES).filter(t => !t.is_deleted),
-    []
-  );
-  const projectTaskForces = useMemo(
-    () => localStore.get<ProjectTaskForce>(KEYS.PROJECT_TASK_FORCES),
-    []
-  );
+  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
+  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const krs      = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
+  const tfs      = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+  const projectTaskForces = rawPtfs;
 
   // フィルター適用後のタスク
   const filteredTasks = useMemo(() => {

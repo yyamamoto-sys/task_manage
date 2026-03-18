@@ -1,6 +1,6 @@
 // src/components/kanban/KanbanView.tsx
 import { useState, useMemo, useCallback } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
@@ -25,18 +25,21 @@ const PRIORITY_CONFIG = {
 } as const;
 
 export function KanbanView({ currentUser, selectedProject, projects }: Props) {
-  const [tasks, setTasks] = useState<Task[]>(() =>
-    localStore.get<Task>(KEYS.TASKS).filter(t => !t.is_deleted)
+  const { tasks: allTasks, members: allMembers, saveTask, deleteTask } = useAppData();
+
+  const tasks = useMemo(
+    () => allTasks.filter(t => !t.is_deleted),
+    [allTasks]
   );
+  const members = useMemo(
+    () => allMembers.filter(m => !m.is_deleted),
+    [allMembers]
+  );
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-
-  const members = useMemo(
-    () => localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted),
-    []
-  );
 
   // 表示するタスクを絞り込む
   const visibleTasks = useMemo(() => {
@@ -46,14 +49,10 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
 
   // ステータス変更
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
-    setTasks(prev => {
-      const updated = prev.map(t =>
-        t.id === taskId ? { ...t, status: newStatus } : t
-      );
-      localStore.set(KEYS.TASKS, updated);
-      return updated;
-    });
-  }, []);
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+    saveTask({ ...task, status: newStatus });
+  }, [tasks, saveTask]);
 
   // タスク追加
   const handleAddTask = useCallback((
@@ -72,13 +71,9 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       comment: "",
       is_deleted: false,
     };
-    setTasks(prev => {
-      const updated = [...prev, newTask];
-      localStore.set(KEYS.TASKS, updated);
-      return updated;
-    });
+    saveTask(newTask);
     setShowAddModal(false);
-  }, [addToStatus]);
+  }, [addToStatus, saveTask]);
 
   const headerTitle = selectedProject
     ? selectedProject.name
@@ -218,14 +213,8 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
           taskId={editingTaskId}
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
-          onUpdated={updated => {
-            setTasks(prev => prev.map(t => t.id === updated.id ? updated : t));
-            setEditingTaskId(null);
-          }}
-          onDeleted={id => {
-            setTasks(prev => prev.filter(t => t.id !== id));
-            setEditingTaskId(null);
-          }}
+          onUpdated={() => setEditingTaskId(null)}
+          onDeleted={() => setEditingTaskId(null)}
         />
       )}
     </div>

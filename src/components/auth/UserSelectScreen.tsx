@@ -1,6 +1,7 @@
 // src/components/auth/UserSelectScreen.tsx
-import { useState, useEffect } from "react";
-import { getCurrentUser, localStore, KEYS } from "../../lib/localData/localStore";
+import { useState } from "react";
+import { getCurrentUser } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -8,15 +9,9 @@ interface Props {
 }
 
 export function UserSelectScreen({ onLogin }: Props) {
-  const [members, setMembers] = useState<Member[]>([]);
-  const [lastUser, setLastUser] = useState<Member | null>(null);
-
-  useEffect(() => {
-    const all = localStore.get<Member>(KEYS.MEMBERS);
-    setMembers(all.filter(m => !m.is_deleted));
-    setLastUser(getCurrentUser());
-  }, []);
-
+  const { members: allMembers } = useAppData();
+  const members = allMembers.filter(m => !m.is_deleted);
+  const lastUser = getCurrentUser();
   const others = members.filter(m => m.id !== lastUser?.id);
 
   return (
@@ -115,7 +110,7 @@ export function UserSelectScreen({ onLogin }: Props) {
           background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
           fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6,
         }}>
-          ⚠ 現在はローカルモードで動作しています。選択したユーザーは次回も自動で維持されます。
+          選択したユーザーは次回も自動で維持されます。
         </div>
       </div>
     </div>

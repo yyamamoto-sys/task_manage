@@ -1,0 +1,260 @@
+// src/context/AppDataContext.tsx
+//
+// 【設計意図】
+// 全アプリデータをSupabaseから読み込み、コンポーネントに提供するReact Context。
+// - mount時にSupabaseから全データを一括取得してstateに保持
+// - 書き込み関数はstateを楽観的更新 → Supabaseに非同期書き込み
+// - コンポーネントはこのContextのみを経由してデータを読み書きする
+// - localStoreは使用しない
+
+import {
+  createContext, useContext, useState, useEffect,
+  useCallback, type ReactNode,
+} from "react";
+import type {
+  Member, Objective, KeyResult, TaskForce,
+  Project, Task, ProjectTaskForce,
+} from "../lib/localData/types";
+import {
+  fetchAllData,
+  upsertMember, softDeleteMember,
+  upsertObjective,
+  upsertKeyResult, softDeleteKeyResult,
+  upsertTaskForce, softDeleteTaskForce,
+  upsertProject, softDeleteProject,
+  upsertTask, softDeleteTask,
+  insertProjectTaskForce, deleteProjectTaskForce,
+} from "../lib/supabase/store";
+
+// ===== Context型定義 =====
+
+interface AppDataContextValue {
+  // データ
+  members:           Member[];
+  objective:         Objective | null;
+  keyResults:        KeyResult[];
+  taskForces:        TaskForce[];
+  projects:          Project[];
+  tasks:             Task[];
+  projectTaskForces: ProjectTaskForce[];
+  loading:           boolean;
+  error:             string | null;
+
+  // Member
+  saveMember:   (member: Member) => Promise<void>;
+  deleteMember: (id: string, deletedBy: string) => Promise<void>;
+
+  // Objective
+  saveObjective: (obj: Objective) => Promise<void>;
+
+  // KeyResult
+  saveKeyResult:   (kr: KeyResult) => Promise<void>;
+  deleteKeyResult: (id: string, deletedBy: string) => Promise<void>;
+
+  // TaskForce
+  saveTaskForce:   (tf: TaskForce) => Promise<void>;
+  deleteTaskForce: (id: string, deletedBy: string) => Promise<void>;
+
+  // Project
+  saveProject:   (project: Project) => Promise<void>;
+  deleteProject: (id: string, deletedBy: string) => Promise<void>;
+
+  // Task
+  saveTask:   (task: Task) => Promise<void>;
+  deleteTask: (id: string, deletedBy: string) => Promise<void>;
+
+  // ProjectTaskForce
+  addProjectTaskForce:    (ptf: ProjectTaskForce) => Promise<void>;
+  removeProjectTaskForce: (projectId: string, tfId: string) => Promise<void>;
+
+  // ユーティリティ
+  reload: () => Promise<void>;
+}
+
+// ===== Context作成 =====
+
+const AppDataContext = createContext<AppDataContextValue | null>(null);
+
+// ===== Provider =====
+
+export function AppDataProvider({ children }: { children: ReactNode }) {
+  const [members,           setMembers]           = useState<Member[]>([]);
+  const [objective,         setObjective]         = useState<Objective | null>(null);
+  const [keyResults,        setKeyResults]        = useState<KeyResult[]>([]);
+  const [taskForces,        setTaskForces]        = useState<TaskForce[]>([]);
+  const [projects,          setProjects]          = useState<Project[]>([]);
+  const [tasks,             setTasks]             = useState<Task[]>([]);
+  const [projectTaskForces, setProjectTaskForces] = useState<ProjectTaskForce[]>([]);
+  const [loading,           setLoading]           = useState(true);
+  const [error,             setError]             = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await fetchAllData();
+      setMembers(data.members);
+      setObjective(data.objectives.find(o => o.is_current) ?? data.objectives[0] ?? null);
+      setKeyResults(data.keyResults);
+      setTaskForces(data.taskForces);
+      setProjects(data.projects);
+      setTasks(data.tasks);
+      setProjectTaskForces(data.projectTaskForces);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "データの読み込みに失敗しました");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ===== Member =====
+
+  const saveMember = useCallback(async (member: Member) => {
+    setMembers(prev => {
+      const idx = prev.findIndex(m => m.id === member.id);
+      return idx >= 0
+        ? prev.map(m => m.id === member.id ? member : m)
+        : [...prev, member];
+    });
+    await upsertMember(member);
+  }, []);
+
+  const deleteMember = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setMembers(prev => prev.map(m =>
+      m.id === id ? { ...m, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : m
+    ));
+    await softDeleteMember(id, deletedBy);
+  }, []);
+
+  // ===== Objective =====
+
+  const saveObjective = useCallback(async (obj: Objective) => {
+    setObjective(obj);
+    await upsertObjective(obj);
+  }, []);
+
+  // ===== KeyResult =====
+
+  const saveKeyResult = useCallback(async (kr: KeyResult) => {
+    setKeyResults(prev => {
+      const idx = prev.findIndex(k => k.id === kr.id);
+      return idx >= 0
+        ? prev.map(k => k.id === kr.id ? kr : k)
+        : [...prev, kr];
+    });
+    await upsertKeyResult(kr);
+  }, []);
+
+  const deleteKeyResult = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setKeyResults(prev => prev.map(k =>
+      k.id === id ? { ...k, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : k
+    ));
+    await softDeleteKeyResult(id, deletedBy);
+  }, []);
+
+  // ===== TaskForce =====
+
+  const saveTaskForce = useCallback(async (tf: TaskForce) => {
+    setTaskForces(prev => {
+      const idx = prev.findIndex(t => t.id === tf.id);
+      return idx >= 0
+        ? prev.map(t => t.id === tf.id ? tf : t)
+        : [...prev, tf];
+    });
+    await upsertTaskForce(tf);
+  }, []);
+
+  const deleteTaskForce = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setTaskForces(prev => prev.map(t =>
+      t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
+    ));
+    await softDeleteTaskForce(id, deletedBy);
+  }, []);
+
+  // ===== Project =====
+
+  const saveProject = useCallback(async (project: Project) => {
+    setProjects(prev => {
+      const idx = prev.findIndex(p => p.id === project.id);
+      return idx >= 0
+        ? prev.map(p => p.id === project.id ? project : p)
+        : [...prev, project];
+    });
+    await upsertProject(project);
+  }, []);
+
+  const deleteProject = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setProjects(prev => prev.map(p =>
+      p.id === id ? { ...p, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : p
+    ));
+    await softDeleteProject(id, deletedBy);
+  }, []);
+
+  // ===== Task =====
+
+  const saveTask = useCallback(async (task: Task) => {
+    setTasks(prev => {
+      const idx = prev.findIndex(t => t.id === task.id);
+      return idx >= 0
+        ? prev.map(t => t.id === task.id ? task : t)
+        : [...prev, task];
+    });
+    await upsertTask(task);
+  }, []);
+
+  const deleteTask = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setTasks(prev => prev.map(t =>
+      t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
+    ));
+    await softDeleteTask(id, deletedBy);
+  }, []);
+
+  // ===== ProjectTaskForce =====
+
+  const addProjectTaskForce = useCallback(async (ptf: ProjectTaskForce) => {
+    setProjectTaskForces(prev => [...prev, ptf]);
+    await insertProjectTaskForce(ptf);
+  }, []);
+
+  const removeProjectTaskForce = useCallback(async (projectId: string, tfId: string) => {
+    setProjectTaskForces(prev =>
+      prev.filter(p => !(p.project_id === projectId && p.tf_id === tfId))
+    );
+    await deleteProjectTaskForce(projectId, tfId);
+  }, []);
+
+  const value: AppDataContextValue = {
+    members, objective, keyResults, taskForces,
+    projects, tasks, projectTaskForces,
+    loading, error,
+    saveMember, deleteMember,
+    saveObjective,
+    saveKeyResult, deleteKeyResult,
+    saveTaskForce, deleteTaskForce,
+    saveProject, deleteProject,
+    saveTask, deleteTask,
+    addProjectTaskForce, removeProjectTaskForce,
+    reload: load,
+  };
+
+  return (
+    <AppDataContext.Provider value={value}>
+      {children}
+    </AppDataContext.Provider>
+  );
+}
+
+// ===== カスタムフック =====
+
+export function useAppData(): AppDataContextValue {
+  const ctx = useContext(AppDataContext);
+  if (!ctx) throw new Error("useAppData must be used within AppDataProvider");
+  return ctx;
+}

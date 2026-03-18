@@ -8,7 +8,7 @@
 // 削除は確認ダイアログ付き論理削除。
 
 import { useState, useCallback, useMemo } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
@@ -59,25 +59,26 @@ function renderComment(text: string): React.ReactNode {
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
-  const allTasks = localStore.get<Task>(KEYS.TASKS);
-  const members  = localStore.get<Member>(KEYS.MEMBERS).filter(m => !m.is_deleted);
-  const projects = localStore.get<Project>(KEYS.PROJECTS).filter(p => !p.is_deleted);
+  const { tasks: allTasks, members: allMembers, projects: allProjects, saveTask, deleteTask } = useAppData();
 
+  const members  = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
+  const projects = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
   const originalTask = allTasks.find(t => t.id === taskId);
-  if (!originalTask) return null;
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    name:                originalTask.name,
-    status:              originalTask.status,
-    priority:            originalTask.priority ?? "",
-    assignee_member_id:  originalTask.assignee_member_id,
-    project_id:          originalTask.project_id,
-    due_date:            originalTask.due_date ?? "",
-    estimated_hours:     originalTask.estimated_hours?.toString() ?? "",
-    comment:             originalTask.comment,
+    name:                originalTask?.name ?? "",
+    status:              originalTask?.status ?? "todo" as Task["status"],
+    priority:            originalTask?.priority ?? "",
+    assignee_member_id:  originalTask?.assignee_member_id ?? "",
+    project_id:          originalTask?.project_id ?? "",
+    due_date:            originalTask?.due_date ?? "",
+    estimated_hours:     originalTask?.estimated_hours?.toString() ?? "",
+    comment:             originalTask?.comment ?? "",
   });
   const [saved, setSaved] = useState(false);
+
+  if (!originalTask) return null;
 
   const member  = members.find(m => m.id === originalTask.assignee_member_id);
   const project = projects.find(p => p.id === originalTask.project_id);
@@ -98,24 +99,18 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       estimated_hours:    isNaN(hours) ? null : hours,
       comment:            form.comment,
     };
-    const allUpdated = allTasks.map(t => t.id === taskId ? updated : t);
-    localStore.set(KEYS.TASKS, allUpdated);
+    saveTask(updated);
     setSaved(true);
     setTimeout(() => { setSaved(false); setEditing(false); }, 800);
     onUpdated?.(updated);
-  }, [form, originalTask, taskId, allTasks, onUpdated]);
+  }, [form, originalTask, saveTask, onUpdated]);
 
   const handleDelete = useCallback(async () => {
     if (!await confirmDialog(`「${originalTask.name}」を削除しますか？`)) return;
-    const allUpdated = allTasks.map(t =>
-      t.id === taskId
-        ? { ...t, is_deleted: true, deleted_at: new Date().toISOString(), deleted_by: currentUser.id }
-        : t
-    );
-    localStore.set(KEYS.TASKS, allUpdated);
+    deleteTask(taskId, currentUser.id);
     onDeleted?.(taskId);
     onClose();
-  }, [originalTask.name, taskId, allTasks, currentUser.id, onDeleted, onClose]);
+  }, [originalTask.name, taskId, currentUser.id, deleteTask, onDeleted, onClose]);
 
   const statusArr: Task["status"][] = ["todo", "in_progress", "done"];
 

@@ -11,7 +11,8 @@
 
 import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -47,6 +48,7 @@ function getInitials(name: string): string {
 }
 
 export function SetupWizard({ onComplete }: Props) {
+  const { saveMember } = useAppData();
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [members, setMembers] = useState<MemberDraft[]>([
     {
@@ -104,8 +106,8 @@ export function SetupWizard({ onComplete }: Props) {
         order: i,
       }));
 
-    if (validMembers.length > 0) {
-      localStore.set(KEYS.MEMBERS, validMembers);
+    for (const member of validMembers) {
+      saveMember(member);
     }
 
     localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");

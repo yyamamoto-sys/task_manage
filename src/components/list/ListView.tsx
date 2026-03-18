@@ -1,6 +1,6 @@
 // src/components/list/ListView.tsx
 import { useState, useMemo, useCallback } from "react";
-import { localStore, KEYS } from "../../lib/localData/localStore";
+import { useAppData } from "../../context/AppDataContext";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -72,8 +72,9 @@ function renderComment(text: string): React.ReactNode {
 }
 
 export function ListView({ currentUser, selectedProject, projects }: Props) {
-  const allTasks = useMemo(() => localStore.get<Task>(KEYS.TASKS).filter(t=>!t.is_deleted), []);
-  const members  = useMemo(() => localStore.get<Member>(KEYS.MEMBERS).filter(m=>!m.is_deleted), []);
+  const { tasks: rawTasks, members: rawMembers } = useAppData();
+  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
+  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
   const [groupBy, setGroupBy]           = useState<GroupBy>("project");
   const [filterStatus, setFilterStatus] = useState<Task["status"]|"all">("all");
