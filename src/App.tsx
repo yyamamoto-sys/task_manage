@@ -53,10 +53,9 @@ export default function App() {
     return () => subscription.unsubscribe();
   }, []);
 
-  const handleLogin = (memberId: string) => {
-    setCurrentUser(memberId);
-    const user = getCurrentUser();
-    setCurrentUserState(user);
+  const handleLogin = (member: Member) => {
+    setCurrentUser(member.id);
+    setCurrentUserState(member);
   };
 
   const handleLogout = () => {

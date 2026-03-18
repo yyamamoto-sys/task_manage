@@ -5,14 +5,15 @@ import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
-  onLogin: (memberId: string) => void;
+  onLogin: (member: Member) => void;
 }
 
 export function UserSelectScreen({ onLogin }: Props) {
   const { members: allMembers } = useAppData();
   const members = allMembers.filter(m => !m.is_deleted);
   const lastUser = getCurrentUser();
-  const others = members.filter(m => m.id !== lastUser?.id);
+  const lastUserFromContext = lastUser ? members.find(m => m.id === lastUser.id) ?? null : null;
+  const others = members.filter(m => m.id !== lastUserFromContext?.id);
 
   return (
     <div style={{
@@ -51,13 +52,13 @@ export function UserSelectScreen({ onLogin }: Props) {
         </div>
 
         {/* 前回ユーザー */}
-        {lastUser && (
+        {lastUserFromContext && (
           <div style={{ marginBottom: "14px" }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
               前回のユーザーで続ける
             </div>
             <button
-              onClick={() => onLogin(lastUser.id)}
+              onClick={() => onLogin(lastUserFromContext)}
               style={{
                 width: "100%", display: "flex", alignItems: "center", gap: "10px",
                 padding: "10px 14px",
@@ -67,10 +68,10 @@ export function UserSelectScreen({ onLogin }: Props) {
                 transition: "background 0.1s",
               }}
             >
-              <Avatar member={lastUser} size={32} />
+              <Avatar member={lastUserFromContext} size={32} />
               <div style={{ flex: 1, textAlign: "left" }}>
                 <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-purple)" }}>
-                  {lastUser.display_name}
+                  {lastUserFromContext.display_name}
                 </div>
                 <div style={{ fontSize: "10px", color: "var(--color-text-purple)", opacity: 0.7 }}>
                   クリックしてログイン
@@ -93,14 +94,14 @@ export function UserSelectScreen({ onLogin }: Props) {
         )}
 
         {/* メンバー一覧 */}
-        {!lastUser && (
+        {!lastUserFromContext && (
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px" }}>
             あなたはどなたですか？
           </div>
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
           {others.map(member => (
-            <MemberButton key={member.id} member={member} onClick={() => onLogin(member.id)} />
+            <MemberButton key={member.id} member={member} onClick={() => onLogin(member)} />
           ))}
         </div>
 
