@@ -1,6 +1,7 @@
 // src/components/layout/MainLayout.tsx
 import { useState, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
@@ -14,7 +15,16 @@ interface Props {
   onLogout: () => void;
 }
 
+const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode }[] = [
+  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB",    icon: <DashIcon /> },
+  { view: "kanban",    label: "カンバン",       shortLabel: "KB",    icon: <KanbanIcon /> },
+  { view: "gantt",     label: "ガント",         shortLabel: "GT",    icon: <GanttIcon /> },
+  { view: "list",      label: "リスト",         shortLabel: "LT",    icon: <ListIcon /> },
+  { view: "admin",     label: "管理",           shortLabel: "管理",  icon: <AdminIcon /> },
+];
+
 export function MainLayout({ currentUser, onLogout }: Props) {
+  const isMobile = useIsMobile();
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
 
@@ -28,9 +38,134 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     ? projects.find(p => p.id === selectedProjectId) ?? null
     : null;
 
+  const mainContent = (
+    <div style={{
+      flex: 1,
+      display: "flex",
+      flexDirection: "column",
+      overflow: "hidden",
+      paddingBottom: isMobile ? "56px" : 0,
+    }}>
+      {viewMode === "dashboard" && (
+        <DashboardView currentUser={currentUser} projects={projects} />
+      )}
+      {viewMode === "kanban" && (
+        <KanbanView
+          currentUser={currentUser}
+          selectedProject={selectedProject}
+          projects={projects}
+        />
+      )}
+      {viewMode === "gantt" && (
+        <GanttView
+          currentUser={currentUser}
+          selectedProject={selectedProject}
+          projects={projects}
+        />
+      )}
+      {viewMode === "admin" && (
+        <AdminView currentUser={currentUser} />
+      )}
+      {viewMode === "list" && (
+        <ListView
+          currentUser={currentUser}
+          selectedProject={selectedProject}
+          projects={projects}
+        />
+      )}
+      {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+        <ComingSoon view={viewMode} />
+      )}
+    </div>
+  );
+
+  if (isMobile) {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+        {/* モバイル：ヘッダー */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px",
+          padding: "10px 14px",
+          background: "var(--color-bg-primary)",
+          borderBottom: "1px solid var(--color-border-primary)",
+          flexShrink: 0,
+        }}>
+          <div style={{ flex: 1, fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+            グループ計画管理
+          </div>
+          {/* プロジェクト選択（ドロップダウン） */}
+          <select
+            value={selectedProjectId ?? ""}
+            onChange={e => setSelectedProjectId(e.target.value || null)}
+            style={{
+              fontSize: "11px", padding: "4px 8px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              color: "var(--color-text-secondary)",
+              maxWidth: "120px",
+            }}
+          >
+            <option value="">全PJ</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+          <Avatar member={currentUser} size={28} />
+          <button
+            onClick={onLogout}
+            style={{
+              fontSize: "16px", background: "transparent", border: "none",
+              cursor: "pointer", color: "var(--color-text-tertiary)", padding: "2px",
+            }}
+            title="ログアウト"
+          >
+            ⏏
+          </button>
+        </div>
+
+        {mainContent}
+
+        {/* モバイル：ボトムナビ */}
+        <div
+          className="bottom-nav-safe"
+          style={{
+            position: "fixed", bottom: 0, left: 0, right: 0,
+            height: "56px",
+            background: "var(--color-bg-primary)",
+            borderTop: "1px solid var(--color-border-primary)",
+            display: "flex",
+            zIndex: 50,
+          }}
+        >
+          {NAV_ITEMS.map(({ view, shortLabel, icon }) => {
+            const active = viewMode === view;
+            return (
+              <button
+                key={view}
+                onClick={() => setViewMode(view)}
+                style={{
+                  flex: 1, display: "flex", flexDirection: "column",
+                  alignItems: "center", justifyContent: "center", gap: "3px",
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: active ? "var(--color-brand)" : "var(--color-text-tertiary)",
+                  fontSize: "9px", fontWeight: active ? "600" : "400",
+                  transition: "color 0.1s",
+                }}
+              >
+                <span style={{ opacity: active ? 1 : 0.6 }}>{icon}</span>
+                <span>{shortLabel}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  // PC レイアウト
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-      {/* サイドバー */}
       <Sidebar
         viewMode={viewMode}
         setViewMode={setViewMode}
@@ -40,45 +175,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         currentUser={currentUser}
         onLogout={onLogout}
       />
-
-      {/* メインエリア */}
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {viewMode === "dashboard" && (
-          <DashboardView currentUser={currentUser} projects={projects} />
-        )}
-        {viewMode === "kanban" && (
-          <KanbanView
-            currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
-          />
-        )}
-        {viewMode === "gantt" && (
-          <GanttView
-            currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
-          />
-        )}
-        {viewMode === "admin" && (
-          <AdminView currentUser={currentUser} />
-        )}
-        {viewMode === "list" && (
-          <ListView
-            currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
-          />
-        )}
-        {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-          <ComingSoon view={viewMode} />
-        )}
-      </div>
+      {mainContent}
     </div>
   );
 }
 
-// ===== サイドバー =====
+// ===== サイドバー（PC のみ）=====
 
 interface SidebarProps {
   viewMode: ViewMode;
@@ -95,14 +197,6 @@ function Sidebar({
   selectedProjectId, setSelectedProjectId,
   currentUser, onLogout,
 }: SidebarProps) {
-  const navItems: { view: ViewMode; label: string; icon: React.ReactNode }[] = [
-    { view: "dashboard", label: "ダッシュボード", icon: <DashIcon /> },
-    { view: "kanban",    label: "カンバン",       icon: <KanbanIcon /> },
-    { view: "gantt",     label: "ガント",         icon: <GanttIcon /> },
-    { view: "list",      label: "リスト",         icon: <ListIcon /> },
-    { view: "admin",     label: "管理",           icon: <AdminIcon /> },
-  ];
-
   return (
     <div style={{
       width: "196px", flexShrink: 0,
@@ -110,7 +204,6 @@ function Sidebar({
       borderRight: "1px solid var(--color-border-primary)",
       display: "flex", flexDirection: "column",
     }}>
-      {/* ロゴ */}
       <div style={{
         padding: "12px 14px 10px",
         borderBottom: "1px solid var(--color-border-primary)",
@@ -123,10 +216,9 @@ function Sidebar({
         </div>
       </div>
 
-      {/* ナビゲーション */}
       <div style={{ padding: "8px 0 4px" }}>
         <SectionLabel>メニュー</SectionLabel>
-        {navItems.map(({ view, label, icon }) => (
+        {NAV_ITEMS.map(({ view, label, icon }) => (
           <NavItem
             key={view}
             active={viewMode === view}
@@ -137,7 +229,6 @@ function Sidebar({
         ))}
       </div>
 
-      {/* プロジェクト一覧 */}
       <div style={{ flex: 1, overflow: "auto", padding: "4px 0" }}>
         <SectionLabel>プロジェクト</SectionLabel>
         <NavItem
@@ -157,13 +248,12 @@ function Sidebar({
         ))}
       </div>
 
-      {/* フッター：AI相談 + ユーザー */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "8px 6px" }}>
         <NavItem
           active={false}
           icon={<AIIcon />}
           label="AIに変更を相談"
-          onClick={() => {}} // TODO: AI相談パネルを開く
+          onClick={() => {}}
           color="var(--color-text-purple)"
         />
         <div style={{
@@ -261,52 +351,64 @@ function ComingSoon({ view }: { view: ViewMode }) {
 }
 
 // ===== SVGアイコン =====
-const DashIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-  </svg>
-);
-const KanbanIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <rect x="1" y="2" width="3" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="5.5" y="2" width="3" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="10" y="2" width="3" height="4" rx="1" stroke="currentColor" strokeWidth="1.2"/>
-  </svg>
-);
-const GanttIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <line x1="1" y1="4" x2="13" y2="4" stroke="currentColor" strokeWidth="1.2"/>
-    <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2"/>
-    <line x1="1" y1="10" x2="13" y2="10" stroke="currentColor" strokeWidth="1.2"/>
-    <rect x="2" y="2.5" width="4" height="3" rx="0.5" fill="currentColor" opacity="0.4"/>
-    <rect x="5" y="5.5" width="5" height="3" rx="0.5" fill="currentColor" opacity="0.4"/>
-  </svg>
-);
-const ListIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <line x1="4" y1="3.5" x2="13" y2="3.5" stroke="currentColor" strokeWidth="1.2"/>
-    <line x1="4" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2"/>
-    <line x1="4" y1="10.5" x2="13" y2="10.5" stroke="currentColor" strokeWidth="1.2"/>
-    <circle cx="2" cy="3.5" r="1" fill="currentColor"/>
-    <circle cx="2" cy="7" r="1" fill="currentColor"/>
-    <circle cx="2" cy="10.5" r="1" fill="currentColor"/>
-  </svg>
-);
-const AdminIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <circle cx="7" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
-    <path d="M2 12c0-2.8 2.2-4 5-4s5 1.2 5 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-    <circle cx="11" cy="10" r="2" fill="none" stroke="currentColor" strokeWidth="1"/>
-    <path d="M11 9v1l.6.6" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round"/>
-  </svg>
-);
-const AIIcon = () => (
-  <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
-    <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2"/>
-    <path d="M5 6c0-1.1.9-2 2-2s2 .9 2 2c0 .8-.5 1.5-1.2 1.8L7 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-    <circle cx="7" cy="10.5" r="0.6" fill="currentColor"/>
-  </svg>
-);
+function DashIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="8" y="1" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="1" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="8" y="8" width="5" height="5" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
+function KanbanIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <rect x="1" y="2" width="3" height="10" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="5.5" y="2" width="3" height="7" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="10" y="2" width="3" height="4" rx="1" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
+function GanttIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <line x1="1" y1="4" x2="13" y2="4" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="1" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="1" y1="10" x2="13" y2="10" stroke="currentColor" strokeWidth="1.2"/>
+      <rect x="2" y="2.5" width="4" height="3" rx="0.5" fill="currentColor" opacity="0.4"/>
+      <rect x="5" y="5.5" width="5" height="3" rx="0.5" fill="currentColor" opacity="0.4"/>
+    </svg>
+  );
+}
+function ListIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <line x1="4" y1="3.5" x2="13" y2="3.5" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="4" y1="7" x2="13" y2="7" stroke="currentColor" strokeWidth="1.2"/>
+      <line x1="4" y1="10.5" x2="13" y2="10.5" stroke="currentColor" strokeWidth="1.2"/>
+      <circle cx="2" cy="3.5" r="1" fill="currentColor"/>
+      <circle cx="2" cy="7" r="1" fill="currentColor"/>
+      <circle cx="2" cy="10.5" r="1" fill="currentColor"/>
+    </svg>
+  );
+}
+function AdminIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="4" r="2.2" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M2 12c0-2.8 2.2-4 5-4s5 1.2 5 4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <circle cx="11" cy="10" r="2" fill="none" stroke="currentColor" strokeWidth="1"/>
+      <path d="M11 9v1l.6.6" stroke="currentColor" strokeWidth="0.9" strokeLinecap="round"/>
+    </svg>
+  );
+}
+function AIIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M5 6c0-1.1.9-2 2-2s2 .9 2 2c0 .8-.5 1.5-1.2 1.8L7 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <circle cx="7" cy="10.5" r="0.6" fill="currentColor"/>
+    </svg>
+  );
+}

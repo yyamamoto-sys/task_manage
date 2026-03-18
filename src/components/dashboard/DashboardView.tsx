@@ -15,6 +15,7 @@
 
 import { useState, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce,
 } from "../../lib/localData/types";
@@ -55,6 +56,7 @@ export function DashboardView({ currentUser, projects }: Props) {
     tasks: rawTasks, members: rawMembers, keyResults: rawKrs,
     taskForces: rawTfs, projectTaskForces: rawPtfs,
   } = useAppData();
+  const isMobile = useIsMobile();
 
   const [myOnly, setMyOnly] = useState(false);
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
@@ -224,8 +226,8 @@ export function DashboardView({ currentUser, projects }: Props) {
         {/* グリッド */}
         <div style={{
           display: "grid",
-          gridTemplateColumns: "1fr 1fr",
-          gridTemplateRows: "auto auto",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+          gridTemplateRows: "auto",
           gap: "14px",
         }}>
 

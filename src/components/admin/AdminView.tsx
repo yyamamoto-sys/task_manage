@@ -7,6 +7,7 @@
 
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, Project,
 } from "../../lib/localData/types";
@@ -230,6 +231,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
 function TFSection({ currentUser }: { currentUser: Member }) {
   const { taskForces: rawTfs, keyResults: rawKrs, members: rawMembers, saveTaskForce, deleteTaskForce } = useAppData();
+  const isMobile = useIsMobile();
   const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
   const krs     = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
@@ -317,7 +319,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
             {editId === "new" ? "Task Forceを追加" : "Task Forceを編集"}
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
             <div>
               <FieldLabel>紐づくKR</FieldLabel>
               <select value={form.kr_id} onChange={e => setForm(f => ({...f, kr_id: e.target.value}))} style={inputStyle}>
@@ -383,6 +385,7 @@ function TFRow({ tf, members, onEdit, onDelete }: {
 
 function PJSection({ currentUser }: { currentUser: Member }) {
   const { projects: rawProjects, members: rawMembers, saveProject, deleteProject } = useAppData();
+  const isMobile = useIsMobile();
   const projects = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
@@ -508,7 +511,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
                 placeholder="例：KR②のインバウンドマーケティング目標達成に貢献" rows={2}
                 style={{ ...inputStyle, resize: "vertical" }} />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "8px" }}>
               <div>
                 <FieldLabel>オーナー</FieldLabel>
                 <select value={form.owner_member_id} onChange={e => setForm(f => ({...f, owner_member_id: e.target.value}))} style={inputStyle}>
@@ -530,7 +533,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
                   style={{ ...inputStyle, padding: "2px", height: "32px", cursor: "pointer" }} />
               </div>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
               <div>
                 <FieldLabel>開始日</FieldLabel>
                 <input type="date" value={form.start_date} onChange={e => setForm(f => ({...f, start_date: e.target.value}))} style={inputStyle} />
@@ -560,6 +563,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
 
 function MembersSection({ currentUser }: { currentUser: Member }) {
   const { members: rawMembers, saveMember, deleteMember } = useAppData();
+  const isMobile = useIsMobile();
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
   const [editId, setEditId] = useState<string | null>(null);
@@ -660,7 +664,7 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
             {editId === "new" ? "メンバーを追加" : "メンバーを編集"}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
               <div>
                 <FieldLabel>氏名 * （イニシャルは自動生成）</FieldLabel>
                 <input value={form.display_name} onChange={e => setForm(f => ({...f, display_name: e.target.value}))}

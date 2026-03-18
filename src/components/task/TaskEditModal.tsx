@@ -9,6 +9,7 @@
 
 import { useState, useCallback, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
@@ -60,6 +61,7 @@ function renderComment(text: string): React.ReactNode {
 
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
   const { tasks: allTasks, members: allMembers, projects: allProjects, saveTask, deleteTask } = useAppData();
+  const isMobile = useIsMobile();
 
   const members  = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
   const projects = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
@@ -119,8 +121,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.35)",
-        display: "flex", alignItems: "flex-start",
-        justifyContent: "center", paddingTop: "60px",
+        display: "flex",
+        alignItems: isMobile ? "flex-end" : "flex-start",
+        justifyContent: "center",
+        paddingTop: isMobile ? 0 : "60px",
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -129,8 +133,11 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
         style={{
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-secondary)",
-          borderRadius: "var(--radius-lg)",
-          width: "520px", maxHeight: "80vh",
+          borderRadius: isMobile
+            ? "var(--radius-lg) var(--radius-lg) 0 0"
+            : "var(--radius-lg)",
+          width: isMobile ? "100%" : "520px",
+          maxHeight: isMobile ? "92vh" : "80vh",
           display: "flex", flexDirection: "column",
           overflow: "hidden",
           boxShadow: "var(--shadow-lg)",

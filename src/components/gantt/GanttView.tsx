@@ -10,6 +10,7 @@
 
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { TaskEditModal } from "../task/TaskEditModal";
 
@@ -65,6 +66,7 @@ function getDaysInRange(start: Date, end: Date): Date[] {
 
 export function GanttView({ currentUser, selectedProject, projects }: Props) {
   const { tasks: rawTasks, members: rawMembers } = useAppData();
+  const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
@@ -157,7 +159,7 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
     return groups;
   }, [days]);
 
-  const LABEL_WIDTH = 200; // 左の行ラベル幅
+  const LABEL_WIDTH = isMobile ? 110 : 200; // 左の行ラベル幅
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -271,7 +273,7 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
         {/* 右スクロールエリア */}
         <div
           ref={scrollRef}
-          style={{ flex: 1, overflow: "auto", position: "relative" }}
+          style={{ flex: 1, overflow: "auto", position: "relative", WebkitOverflowScrolling: "touch" }}
         >
           <div style={{ width: totalWidth, minHeight: "100%" }}>
 

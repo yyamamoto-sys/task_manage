@@ -1,6 +1,7 @@
 // src/components/kanban/KanbanView.tsx
 import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
@@ -26,6 +27,7 @@ const PRIORITY_CONFIG = {
 
 export function KanbanView({ currentUser, selectedProject, projects }: Props) {
   const { tasks: allTasks, members: allMembers, saveTask, deleteTask } = useAppData();
+  const isMobile = useIsMobile();
 
   const tasks = useMemo(
     () => allTasks.filter(t => !t.is_deleted),
@@ -129,8 +131,11 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
 
       {/* カンバン本体 */}
       <div style={{
-        display: "flex", gap: "12px", padding: "14px 16px",
+        display: "flex", gap: isMobile ? "8px" : "12px",
+        padding: isMobile ? "10px 12px" : "14px 16px",
         flex: 1, overflow: "auto",
+        scrollSnapType: isMobile ? "x mandatory" : undefined,
+        WebkitOverflowScrolling: "touch",
       }}>
         {(["todo", "in_progress", "done"] as const).map(status => {
           const colTasks = visibleTasks.filter(t => t.status === status);
@@ -138,7 +143,11 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
           return (
             <div
               key={status}
-              style={{ width: "240px", flexShrink: 0 }}
+              style={{
+                width: isMobile ? "calc(100vw - 40px)" : "240px",
+                flexShrink: 0,
+                scrollSnapAlign: isMobile ? "start" : undefined,
+              }}
               onDragOver={e => e.preventDefault()}
               onDrop={() => handleDrop(status)}
             >

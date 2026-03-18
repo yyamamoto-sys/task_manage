@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT相談書：社内Webアプリ開発・運用 標準基盤の整備について</title>
+<style>
+  @page { size: A4; margin: 0; }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    scrollbar-width: thin;
+    scrollbar-color: #ccc #f5f5f5;
+  }
+
+  body {
+    font-family: "Meiryo UI", "Meiryo", "Yu Gothic UI", "Yu Gothic", "Hiragino Sans", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.75;
+    color: #1a1a2e;
+    background: #f0f0f0;
+  }
+
+  section.article {
+    width: 210mm;
+    min-height: 297mm;
+    margin: 0 auto 8mm;
+    padding: 18mm 20mm;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+    break-inside: avoid;
+  }
+
+  @media print {
+    body { background: #fff; }
+    section.article { margin: 0; box-shadow: none; page-break-after: always; }
+    .no-print { display: none !important; }
+  }
+
+  /* ヘッダー */
+  .doc-header {
+    border-bottom: 2px solid #1a1a2e;
+    padding-bottom: 8mm;
+    margin-bottom: 8mm;
+  }
+  .doc-label {
+    font-size: 9pt;
+    color: #555;
+    margin-bottom: 3mm;
+  }
+  .doc-title {
+    font-size: 16pt;
+    font-weight: 700;
+    color: #1a1a2e;
+    line-height: 1.3;
+    margin-bottom: 2mm;
+  }
+  .doc-meta {
+    font-size: 9pt;
+    color: #777;
+    margin-top: 3mm;
+  }
+
+  /* 見出し */
+  h2 {
+    font-size: 12.5pt;
+    font-weight: 700;
+    color: #1a1a2e;
+    border-left: 4px solid #1a1a2e;
+    padding-left: 8px;
+    margin: 8mm 0 4mm;
+  }
+  h3 {
+    font-size: 11pt;
+    font-weight: 700;
+    color: #1a1a2e;
+    margin: 6mm 0 3mm;
+    padding-bottom: 1mm;
+    border-bottom: 1px solid #ddd;
+  }
+  h4 {
+    font-size: 10pt;
+    font-weight: 700;
+    margin: 4mm 0 2mm;
+  }
+
+  p { margin-bottom: 3mm; }
+  ul, ol { margin: 2mm 0 3mm 6mm; }
+  li { margin-bottom: 1.5mm; }
+
+  /* テーブル */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 3mm 0 5mm;
+    font-size: 9.5pt;
+  }
+  th {
+    background: #1a1a2e;
+    color: #fff;
+    padding: 5px 9px;
+    text-align: left;
+    font-size: 9pt;
+    font-weight: 600;
+  }
+  td {
+    padding: 5px 9px;
+    border: 1px solid #d1d5db;
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: #f9fafb; }
+  .good { color: #15803d; font-weight: 700; }
+  .warn { color: #b45309; font-weight: 700; }
+  .bad  { color: #dc2626; font-weight: 700; }
+  .center { text-align: center; }
+
+  /* ボックス */
+  .box {
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 4mm 6mm;
+    margin: 4mm 0;
+    font-size: 9.5pt;
+  }
+  .box-title {
+    font-weight: 700;
+    margin-bottom: 2mm;
+  }
+  .box.gray { background: #f9fafb; }
+  .box.alert {
+    border-color: #fbbf24;
+    background: #fffbeb;
+  }
+  .box.important {
+    border-color: #1a1a2e;
+    background: #f9fafb;
+  }
+
+  /* スタック図 */
+  .stack { margin: 4mm 0; }
+  .stack-row {
+    display: flex;
+    align-items: center;
+    gap: 3mm;
+    margin-bottom: 2mm;
+  }
+  .stack-num {
+    width: 6mm;
+    height: 6mm;
+    background: #1a1a2e;
+    color: #fff;
+    border-radius: 50%;
+    font-size: 8pt;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .stack-content {
+    flex: 1;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 2mm 4mm;
+    font-size: 9.5pt;
+  }
+  .stack-arrow {
+    text-align: center;
+    color: #9ca3af;
+    font-size: 9pt;
+    margin: 0 0 2mm 9mm;
+  }
+
+  /* コスト強調 */
+  .cost-highlight {
+    background: #f9fafb;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 4mm 6mm;
+    margin: 3mm 0;
+    text-align: center;
+  }
+  .cost-num {
+    font-size: 22pt;
+    font-weight: 700;
+    color: #1a1a2e;
+  }
+
+  /* フロー */
+  .flow {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 2mm;
+    margin: 3mm 0;
+    font-size: 9pt;
+  }
+  .flow-step {
+    background: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-weight: 600;
+  }
+  .flow-arrow { color: #9ca3af; }
+
+  small { font-size: 8.5pt; color: #6b7280; }
+  strong { font-weight: 700; }
+  code {
+    font-family: monospace;
+    font-size: 9pt;
+    background: #f3f4f6;
+    padding: 1px 4px;
+    border-radius: 3px;
+  }
+
+  .print-btn {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: #1a1a2e;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 10px 20px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  }
+</style>
+</head>
+<body>
+
+<button class="print-btn no-print" onclick="window.print()">印刷 / PDF保存</button>
+
+<!-- ===== 1枚目 ===== -->
+<section class="article">
+
+  <div class="doc-header">
+    <div class="doc-label">IT部門　ご確認・ご承認のお願い</div>
+    <div class="doc-title">社内Webアプリ開発・運用<br>標準基盤の整備について</div>
+    <div class="doc-meta">
+      提出日：2026年3月　／　提出者：○○グループ<br>
+      <small>※本書は今後の類似相談にも活用いただけるよう、個別ツールの申請に加え、社内標準基盤の観点も含めてまとめています。</small>
+    </div>
+  </div>
+
+  <h2>1. ご相談の背景</h2>
+  <p>
+    AIを活用したWebアプリ開発（バイブコーディング）の普及により、社内各所での内製Webアプリ開発が今後増加することが見込まれます。現在、本グループでは業務内製ツール（グループ計画管理アプリ）の開発を進めており、本番運用に向けてIT部門への確認・承認が必要な事項が生じました。
+  </p>
+  <p>
+    あわせて、今後同様の相談が他部署からも発生することを想定し、<strong>IT部門が一度ご確認いただければ社内全体で安全・低コストに展開できる標準的な構成</strong>についても、今回ご意見をいただきたく存じます。
+  </p>
+
+  <h2>2. 申請内容の概要</h2>
+  <p>本書では、以下4点についてIT部門のご確認・ご承認をお願いいたします。</p>
+
+  <table>
+    <tr><th>No.</th><th>申請内容</th><th>サービス名</th><th>月額費用</th></tr>
+    <tr>
+      <td class="center">①</td>
+      <td>クラウドデータベースの業務利用</td>
+      <td>Supabase（PostgreSQL）</td>
+      <td>¥3,750（Proプラン）</td>
+    </tr>
+    <tr>
+      <td class="center">②</td>
+      <td>社内アカウントによる認証連携</td>
+      <td>Microsoft Azure AD（Entra ID）</td>
+      <td>¥0（M365契約内）</td>
+    </tr>
+    <tr>
+      <td class="center">③</td>
+      <td>Webアプリの公開・ホスティング</td>
+      <td>Azure Static Web Apps</td>
+      <td>¥0（無料枠）</td>
+    </tr>
+    <tr>
+      <td class="center">④</td>
+      <td>社内アクセス導線の整備</td>
+      <td>Microsoft Teams タブ</td>
+      <td>¥0（M365契約内）</td>
+    </tr>
+  </table>
+
+  <div class="cost-highlight">
+    <div style="font-size:9pt;color:#555;margin-bottom:1mm;">組織全体・アプリ数・人数に関わらず</div>
+    <span class="cost-num">月額 ¥3,750</span>
+    <div style="font-size:9pt;color:#555;margin-top:1mm;">（Supabase Proプランのみ実費。他はすべて既存契約内または無料枠）</div>
+  </div>
+
+  <h2>3. 背景と課題</h2>
+
+  <h3>3-1. 標準基盤を設けることの必要性</h3>
+  <p>
+    バイブコーディングの普及に伴い、各部署が独自にVercel・Netlify・GitHub Pages等を利用し始めるケースが想定されます。標準的な指針がない場合、以下のリスクが生じる可能性があります。
+  </p>
+  <ul>
+    <li>セキュリティ水準がチームごとに異なり、情報漏洩リスクが高まる</li>
+    <li>商用利用禁止サービスの業務利用による規約違反（例：Vercel無料プランは商用利用不可）</li>
+    <li>費用が統制できず青天井になる可能性（Vercel Proは10名規模で月¥30,000〜）</li>
+    <li>申請・審査がアプリごとに発生し、IT部門・現場双方の負担が増大する</li>
+  </ul>
+
+  <h3>3-2. 他サービスとの比較</h3>
+  <table>
+    <tr>
+      <th>構成案</th><th>セキュリティ</th><th>月額費用（組織全体）</th><th>Microsoft整合</th><th>標準化適性</th>
+    </tr>
+    <tr>
+      <td><strong>本申請構成<br>（Azure + Supabase）</strong></td>
+      <td class="good">◎</td>
+      <td class="good">¥3,750</td>
+      <td class="good">◎</td>
+      <td class="good">◎</td>
+    </tr>
+    <tr>
+      <td>Vercel Pro + 独自DB</td>
+      <td class="warn">△（米国サーバー）</td>
+      <td class="bad">¥30,000〜（10名）</td>
+      <td class="bad">✕</td>
+      <td class="warn">△</td>
+    </tr>
+    <tr>
+      <td>社内サーバー運用</td>
+      <td class="good">◎</td>
+      <td class="warn">サーバー費＋管理工数</td>
+      <td class="good">◎</td>
+      <td class="bad">✕（IT依存）</td>
+    </tr>
+    <tr>
+      <td>SharePoint埋め込み</td>
+      <td class="good">◎</td>
+      <td class="good">¥0追加</td>
+      <td class="good">◎</td>
+      <td class="bad">✕（自走不可）</td>
+    </tr>
+    <tr>
+      <td>GitHub Pages</td>
+      <td class="bad">✕（認証なし）</td>
+      <td class="good">¥0</td>
+      <td class="bad">✕</td>
+      <td class="bad">✕（業務利用不適）</td>
+    </tr>
+  </table>
+
+</section>
+
+<!-- ===== 2枚目 ===== -->
+<section class="article">
+
+  <h2>4. 申請する標準構成の詳細</h2>
+
+  <h3>4-1. 全体構成</h3>
+
+  <div class="stack">
+    <div class="stack-row">
+      <div class="stack-num">1</div>
+      <div class="stack-content">
+        <strong>GitHub</strong>　— コード管理・バージョン管理
+        <small>（既存利用ケースが多く、追加コストなし）</small>
+      </div>
+    </div>
+    <div class="stack-arrow">↓　pushするだけで自動デプロイ</div>
+    <div class="stack-row">
+      <div class="stack-num">2</div>
+      <div class="stack-content">
+        <strong>Azure Static Web Apps</strong>　— Webアプリの公開基盤
+        <small>（Microsoftサービス・東日本リージョン・無料枠）</small>
+      </div>
+    </div>
+    <div class="stack-arrow">↓　アクセス時に社内認証</div>
+    <div class="stack-row">
+      <div class="stack-num">3</div>
+      <div class="stack-content">
+        <strong>Azure AD（Entra ID）</strong>　— 認証・アクセス制御
+        <small>（社内アカウントのみアクセス可・M365契約内）</small>
+      </div>
+    </div>
+    <div class="stack-arrow">↓　認証済みユーザーのみデータアクセス</div>
+    <div class="stack-row">
+      <div class="stack-num">4</div>
+      <div class="stack-content">
+        <strong>Supabase（PostgreSQL）</strong>　— データベース
+        <small>（東京リージョン・行レベルアクセス制御・SOC2 Type2認証済）</small>
+      </div>
+    </div>
+    <div class="stack-arrow">↓　Teamsタブとして配置</div>
+    <div class="stack-row">
+      <div class="stack-num">5</div>
+      <div class="stack-content">
+        <strong>Microsoft Teams タブ</strong>　— 社員のアクセス導線
+        <small>（URLの共有不要・M365契約内）</small>
+      </div>
+    </div>
+  </div>
+
+  <h3>4-2. 申請①　Supabase（クラウドデータベース）</h3>
+  <table>
+    <tr><th width="35%">項目</th><th>内容</th></tr>
+    <tr><td>サービス概要</td><td>PostgreSQLをベースとしたクラウドデータベースサービス。AIによるコード生成との相性が良く、内製ツール開発の標準DBとして普及している</td></tr>
+    <tr><td>運営元</td><td>Supabase Inc.（米国）。OSSプロジェクトとして公開されており、透明性が高い</td></tr>
+    <tr><td>データ保存場所</td><td>東京リージョン（ap-northeast-1）を選択。データは国内に保管される</td></tr>
+    <tr><td>セキュリティ認証</td><td>SOC2 Type2取得済・転送中TLS暗号化・保存時AES-256暗号化</td></tr>
+    <tr><td>アクセス制御</td><td>RLS（行レベルセキュリティ）により、Azure AD認証済みユーザーのみデータアクセス可</td></tr>
+    <tr><td>保存するデータ</td><td>プロジェクト名・タスク名・担当者氏名・進捗状況。個人番号・給与・医療情報等は一切保存しない</td></tr>
+    <tr><td>費用</td><td>Proプラン $25/月（約¥3,750）。組織全体で1契約。人数・アプリ数が増えても費用は変わらない</td></tr>
+  </table>
+
+  <h3>4-3. 申請②　Azure AD（社内アカウント認証連携）</h3>
+  <table>
+    <tr><th width="35%">項目</th><th>内容</th></tr>
+    <tr><td>目的</td><td>社員以外がアクセスできないことを技術的に保証する</td></tr>
+    <tr><td>費用</td><td>¥0（Microsoft 365契約に含まれる）</td></tr>
+    <tr><td>ユーザー体験</td><td>社員は普段使っているMicrosoftアカウントでそのままログイン可能</td></tr>
+    <tr><td>標準化への効果</td><td>一度設定すれば今後作られる全アプリに使い回せる。アプリごとの認証申請が不要になる</td></tr>
+    <tr><td>IT部門の管理</td><td>Azure Portalでアカウント発行・無効化を一元管理。退職者対応も即時対応可能</td></tr>
+    <tr><td>設定依頼内容</td><td>Azure ADへのアプリ登録（リダイレクトURI等の設定）をお願いしたい</td></tr>
+  </table>
+
+  <h3>4-4. 申請③　Azure Static Web Apps（ホスティング）</h3>
+  <table>
+    <tr><th width="35%">項目</th><th>内容</th></tr>
+    <tr><td>サービス概要</td><td>MicrosoftのWebアプリ公開サービス。GitHubと連携し、コードをpushするだけで自動デプロイされる</td></tr>
+    <tr><td>費用</td><td>¥0（無料枠で10〜50名規模のアプリは十分対応可能）</td></tr>
+    <tr><td>データセンター</td><td>東日本リージョン選択可</td></tr>
+    <tr><td>セキュリティ認証</td><td>SOC2・ISO27001取得済。Azure ADとネイティブ連携</td></tr>
+    <tr><td>IT部門の管理</td><td>Azure Portalで全アプリの稼働状況・アクセスログを一元管理・監視可能</td></tr>
+  </table>
+
+</section>
+
+<!-- ===== 3枚目 ===== -->
+<section class="article">
+
+  <h2>5. セキュリティポリシーとの整合性</h2>
+
+  <h3>5-1. アクセス制御の仕組み</h3>
+
+  <div class="flow">
+    <div class="flow-step">ユーザーがアクセス</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">Azure AD 認証</div>
+    <div class="flow-arrow">→ 社外・未認証は遮断</div>
+    <div class="flow-step">アプリ表示</div>
+    <div class="flow-arrow">→</div>
+    <div class="flow-step">Supabase RLS チェック</div>
+    <div class="flow-arrow">→ トークンなしは遮断</div>
+    <div class="flow-step">データ取得</div>
+  </div>
+
+  <h3>5-2. セキュリティ確認事項</h3>
+  <table>
+    <tr><th>確認項目</th><th>対応状況</th></tr>
+    <tr><td>外部からのアクセス遮断</td><td class="good">◎ Azure AD認証により社内アカウントのみアクセス可能</td></tr>
+    <tr><td>データの国内保管</td><td class="good">◎ Supabase東京リージョン・Azure東日本リージョンを使用</td></tr>
+    <tr><td>通信の暗号化</td><td class="good">◎ 全通信HTTPS（TLS1.2以上）</td></tr>
+    <tr><td>保存データの暗号化</td><td class="good">◎ AES-256暗号化</td></tr>
+    <tr><td>個人情報の取り扱い</td><td>氏名のみ。住所・給与・マイナンバー等は一切保存しない</td></tr>
+    <tr><td>アクセスログ</td><td class="good">◎ Azure AD・Supabase双方でログ取得可能</td></tr>
+    <tr><td>第三者セキュリティ認証</td><td class="good">◎ 全サービスがSOC2 Type2取得済</td></tr>
+    <tr><td>退職者対応</td><td class="good">◎ Azure AD上のアカウント無効化で全アプリのアクセスを即時遮断</td></tr>
+    <tr><td>AIへのデータ送信</td><td>プロジェクト名・タスク名のみ。機密情報は設計上送信しない</td></tr>
+    <tr><td>外部クラウドサービスの利用</td><td>本申請の目的。ポリシー確認をお願いします</td></tr>
+  </table>
+
+  <h2>6. 運用フロー（標準化後の想定）</h2>
+
+  <h3>6-1. 新規アプリ開発〜公開フロー</h3>
+  <table>
+    <tr><th>フェーズ</th><th>担当</th><th>作業内容</th><th>IT部門の関与</th></tr>
+    <tr>
+      <td>① 開発</td>
+      <td>各現場チーム</td>
+      <td>バイブコーディングでアプリ開発・GitHubで管理</td>
+      <td>不要</td>
+    </tr>
+    <tr>
+      <td>② デプロイ</td>
+      <td>各現場チーム</td>
+      <td>GitHubにpush → Azure Static Web Appsへ自動デプロイ</td>
+      <td>不要</td>
+    </tr>
+    <tr>
+      <td>③ 認証設定</td>
+      <td>各現場＋IT</td>
+      <td>Azure ADアプリ登録（リダイレクトURI設定）</td>
+      <td><strong>初回のみ</strong></td>
+    </tr>
+    <tr>
+      <td>④ ユーザー管理</td>
+      <td>各現場チーム</td>
+      <td>Supabaseダッシュボードでメンバー招待・管理</td>
+      <td>不要</td>
+    </tr>
+    <tr>
+      <td>⑤ Teams配置</td>
+      <td>各現場チーム</td>
+      <td>TeamsのタブにURLを追加</td>
+      <td>不要</td>
+    </tr>
+    <tr>
+      <td>⑥ 退職者対応</td>
+      <td>IT部門</td>
+      <td>Azure ADのアカウント無効化（全アプリ一括）</td>
+      <td><strong>Azure Portal一箇所のみ</strong></td>
+    </tr>
+  </table>
+
+  <h3>6-2. 社内ガイドライン（素案）</h3>
+  <p>今後の類似申請を効率化するため、以下のガイドラインの策定をご検討いただけますと幸いです。</p>
+  <table>
+    <tr><th>項目</th><th>内容（素案）</th></tr>
+    <tr><td>推奨スタック</td><td>GitHub / Azure Static Web Apps / Azure AD / Supabase</td></tr>
+    <tr><td>認証の義務化</td><td>社内向けWebアプリにはAzure AD認証を実装すること</td></tr>
+    <tr><td>データ保管場所</td><td>業務データは東京リージョンに保管すること</td></tr>
+    <tr><td>機密情報の禁止</td><td>個人番号・給与・医療情報等は格納しないこと</td></tr>
+    <tr><td>AIへのデータ送信</td><td>送信前に匿名化・サニタイズ処理を行うこと</td></tr>
+    <tr><td>申請フロー</td><td>上記を満たす場合、Azure ADアプリ登録のみIT部門に依頼する形としたい</td></tr>
+  </table>
+
+</section>
+
+<!-- ===== 4枚目 ===== -->
+<section class="article">
+
+  <h2>7. IT部門への依頼事項</h2>
+
+  <h3>依頼①：Supabase 利用の承認</h3>
+  <ul>
+    <li>Proプラン（$25/月・東京リージョン）での業務利用について、セキュリティポリシー上の可否をご確認ください</li>
+    <li>保存データは業務上のプロジェクト・タスク情報のみ（個人番号・給与・医療情報等は含まない）です</li>
+  </ul>
+
+  <h3>依頼②：Azure AD アプリ登録</h3>
+  <p>以下の内容でAzure ADにアプリケーションを登録いただけますでしょうか。</p>
+  <table>
+    <tr><th width="40%">設定項目</th><th>値</th></tr>
+    <tr><td>アプリケーション名</td><td>グループ計画管理アプリ（仮）</td></tr>
+    <tr><td>テナント種別</td><td>シングルテナント（社内のみ）</td></tr>
+    <tr><td>リダイレクトURI</td><td><code>https://fyturlzvbtlnxpjhxyjz.supabase.co/auth/v1/callback</code></td></tr>
+    <tr><td>付与するスコープ</td><td>openid・email・profile</td></tr>
+  </table>
+  <p>設定完了後、<strong>クライアントID</strong>と<strong>クライアントシークレット</strong>をご共有いただけますと幸いです。</p>
+
+  <h3>依頼③：Azure Static Web Apps 利用の承認</h3>
+  <ul>
+    <li>無料枠でのWebアプリ公開について、利用可否をご確認ください</li>
+    <li>Azure Portal上での管理方法・命名規則等、ご指定があればお知らせください</li>
+  </ul>
+
+  <h3>依頼④：社内標準ガイドラインの策定（ご検討をお願いしたい事項）</h3>
+  <ul>
+    <li>今後同様の相談が増えることを想定し、6-2の素案を参考に社内ガイドラインの策定をご検討いただけますと幸いです</li>
+    <li>今回の承認をもって類似構成の申請を簡略化できる仕組みになれば、IT部門・現場双方の負担軽減につながると考えています</li>
+  </ul>
+
+  <h2>8. 申請まとめ</h2>
+
+  <table>
+    <tr>
+      <th>申請No.</th>
+      <th>内容</th>
+      <th>月額費用</th>
+      <th>依頼事項</th>
+    </tr>
+    <tr>
+      <td class="center">①</td>
+      <td>Supabase（クラウドDB）業務利用</td>
+      <td>¥3,750</td>
+      <td>利用可否のご承認</td>
+    </tr>
+    <tr>
+      <td class="center">②</td>
+      <td>Azure AD 認証連携</td>
+      <td>¥0</td>
+      <td>Azure ADアプリ登録・クライアントID共有</td>
+    </tr>
+    <tr>
+      <td class="center">③</td>
+      <td>Azure Static Web Apps 利用</td>
+      <td>¥0</td>
+      <td>利用可否のご承認・管理方法のご指定</td>
+    </tr>
+    <tr>
+      <td class="center">④</td>
+      <td>社内標準ガイドラインの策定</td>
+      <td>—</td>
+      <td>ご検討・ご判断をお願いしたい</td>
+    </tr>
+    <tr>
+      <td colspan="2"><strong>合計（月額）</strong></td>
+      <td><strong>¥3,750</strong></td>
+      <td>組織全体・全アプリ共通</td>
+    </tr>
+  </table>
+
+  <div class="box important" style="margin-top:8mm;">
+    <div class="box-title">ご多用のところ恐れ入りますが、以下についてご回答いただけますと幸いです。</div>
+    <ol>
+      <li>Supabase（東京リージョン・Proプラン）の業務利用　可否</li>
+      <li>Azure ADアプリ登録への対応　可否・スケジュール</li>
+      <li>Azure Static Web Apps の利用　可否</li>
+      <li>社内標準ガイドライン策定について　ご意見・ご方針</li>
+    </ol>
+    <p style="margin-top:3mm;">
+      ご不明な点やご確認が必要な事項がございましたら、お気軽にご連絡ください。
+      どうぞよろしくお願いいたします。
+    </p>
+  </div>
+
+</section>
+
+</body>
+</html>
