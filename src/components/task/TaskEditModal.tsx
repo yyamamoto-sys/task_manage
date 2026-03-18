@@ -163,6 +163,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
               autoFocus
+              maxLength={200}
               style={{
                 flex: 1, fontSize: "14px", fontWeight: "500",
                 border: "none", outline: "none", padding: "2px 4px",
@@ -201,7 +202,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
               </button>
             </>
           )}
-          <button onClick={onClose} style={{
+          <button onClick={onClose} aria-label="閉じる" title="閉じる" style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: "16px", color: "var(--color-text-tertiary)", flexShrink: 0,
           }}>✕</button>
@@ -393,7 +394,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             lineHeight: 1.8,
           }}>
             <div>タスクID：{originalTask.id.slice(0, 8)}…</div>
-            <div>作成日：{originalTask.id ? "—" : "—"}</div>
+            <div>作成日：{originalTask.created_at ? new Date(originalTask.created_at).toLocaleDateString("ja-JP") : "—"}</div>
           </div>
         </div>
 

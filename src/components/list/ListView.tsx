@@ -1,5 +1,5 @@
 // src/components/list/ListView.tsx
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task } from "../../lib/localData/types";
@@ -13,6 +13,9 @@ interface Props {
 }
 
 type GroupBy = "project" | "assignee" | "status";
+
+// ソート優先度（レンダリングごとに再生成しないよう定数化）
+const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 type SortKey = "name" | "due_date" | "priority" | "estimated_hours";
 type SortDir = "asc" | "desc";
 
@@ -94,11 +97,11 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
     else { setSortKey(key); setSortDir("asc"); }
   }, [sortKey]);
 
-  const t0 = todayStr();
-  const t7 = addDays(7);
+  // 「今日」と「7日後」は初回マウント時に固定（日をまたぐ場合はページリロードで更新）
+  const t0 = useRef(todayStr()).current;
+  const t7 = useRef(addDays(7)).current;
 
   const filteredTasks = useMemo(() => {
-    const PRIO: Record<string,number> = {high:0,mid:1,low:2,"":3};
     let tasks = allTasks;
     if (selectedProject) tasks = tasks.filter(t=>t.project_id===selectedProject.id);
     if (filterStatus!=="all") tasks = tasks.filter(t=>t.status===filterStatus);
@@ -127,7 +130,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
       projects.forEach(p=>map.set(p.id,[]));
       filteredTasks.forEach(t=>{const a=map.get(t.project_id);if(a)a.push(t);});
       return projects.filter(p=>(map.get(p.id)?.length??0)>0)
-        .map(p=>({label:p.name,color:p.color_tag,tasks:map.get(p.id)!}));
+        .map(p=>({label:p.name,color:p.color_tag,tasks:map.get(p.id)??[]}));
     }
     if (groupBy==="assignee") {
       const map = new Map<string,Task[]>();

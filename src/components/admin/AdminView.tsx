@@ -417,8 +417,12 @@ function PJSection({ currentUser }: { currentUser: Member }) {
     });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim() || !form.purpose.trim()) return;
+    if (form.start_date && form.end_date && form.start_date > form.end_date) {
+      await alertDialog("開始日は終了日より前に設定してください。");
+      return;
+    }
     if (editId === "new") {
       saveProject({ id: uuidv4(), ...form, is_deleted: false });
     } else {
@@ -509,6 +513,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
               <FieldLabel>貢献メモ（KRとの関連）</FieldLabel>
               <textarea value={form.contribution_memo} onChange={e => setForm(f => ({...f, contribution_memo: e.target.value}))}
                 placeholder="例：KR②のインバウンドマーケティング目標達成に貢献" rows={2}
+                maxLength={500}
                 style={{ ...inputStyle, resize: "vertical" }} />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "8px" }}>
