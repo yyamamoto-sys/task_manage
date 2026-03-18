@@ -8,7 +8,7 @@ import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
-import { AppDataProvider } from "./context/AppDataContext";
+import { AppDataProvider, useAppData } from "./context/AppDataContext";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
@@ -107,6 +107,8 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
+  const { error, reload } = useAppData();
+
   // 初回起動時はセットアップウィザードを表示
   if (!wizardCompleted) {
     return <SetupWizard onComplete={onWizardComplete} />;
@@ -119,6 +121,27 @@ function AuthenticatedApp({
 
   return (
     <>
+      {error && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,
+          background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
+          border: "1px solid var(--color-border-danger)",
+          padding: "10px 16px", fontSize: "12px",
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <span style={{ flex: 1 }}>⚠ データの取得に失敗しました: {error}</span>
+          <button
+            onClick={reload}
+            style={{
+              padding: "4px 12px", fontSize: "11px", fontWeight: "500",
+              background: "var(--color-text-danger)", color: "#fff",
+              border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer",
+            }}
+          >
+            再試行
+          </button>
+        </div>
+      )}
       <MainLayout currentUser={currentUser} onLogout={onLogout} />
       <ConfirmModal />
     </>

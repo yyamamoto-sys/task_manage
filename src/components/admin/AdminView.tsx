@@ -136,7 +136,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
   const deleteKr = async (id: string) => {
     if (!await confirmDialog("このKRを削除しますか？")) return;
-    deleteKeyResult(id, currentUser.id);
+    await deleteKeyResult(id, currentUser.id);
   };
 
   return (
@@ -262,7 +262,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
 
   const deleteTF = async (id: string) => {
     if (!await confirmDialog("このTask Forceを削除しますか？紐づくPJの関連は解除されます。")) return;
-    deleteTaskForce(id, currentUser.id);
+    await deleteTaskForce(id, currentUser.id);
   };
 
   // KRごとにグループ表示
@@ -430,7 +430,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
 
   const deletePJ = async (id: string) => {
     if (!await confirmDialog("このプロジェクトを削除しますか？紐づくタスクも一緒に削除されます。")) return;
-    deleteProject(id, currentUser.id);
+    await deleteProject(id, currentUser.id);
   };
 
   const STATUS_LABELS: Record<Project["status"], string> = {
@@ -616,7 +616,7 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
   const handleDeleteMember = async (id: string) => {
     if (id === currentUser.id) { await alertDialog("自分自身は削除できません。"); return; }
     if (!await confirmDialog("このメンバーを削除しますか？担当タスクは「未担当」になります。")) return;
-    deleteMember(id, currentUser.id);
+    await deleteMember(id, currentUser.id);
   };
 
   return (

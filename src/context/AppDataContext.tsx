@@ -118,23 +118,38 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ? prev.map(m => m.id === member.id ? member : m)
         : [...prev, member];
     });
-    await upsertMember(member);
-  }, []);
+    try {
+      await upsertMember(member);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const deleteMember = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
     setMembers(prev => prev.map(m =>
       m.id === id ? { ...m, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : m
     ));
-    await softDeleteMember(id, deletedBy);
-  }, []);
+    try {
+      await softDeleteMember(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== Objective =====
 
   const saveObjective = useCallback(async (obj: Objective) => {
     setObjective(obj);
-    await upsertObjective(obj);
-  }, []);
+    try {
+      await upsertObjective(obj);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== KeyResult =====
 
@@ -145,16 +160,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ? prev.map(k => k.id === kr.id ? kr : k)
         : [...prev, kr];
     });
-    await upsertKeyResult(kr);
-  }, []);
+    try {
+      await upsertKeyResult(kr);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const deleteKeyResult = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
     setKeyResults(prev => prev.map(k =>
       k.id === id ? { ...k, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : k
     ));
-    await softDeleteKeyResult(id, deletedBy);
-  }, []);
+    try {
+      await softDeleteKeyResult(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== TaskForce =====
 
@@ -165,16 +190,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ? prev.map(t => t.id === tf.id ? tf : t)
         : [...prev, tf];
     });
-    await upsertTaskForce(tf);
-  }, []);
+    try {
+      await upsertTaskForce(tf);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const deleteTaskForce = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
     setTaskForces(prev => prev.map(t =>
       t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
     ));
-    await softDeleteTaskForce(id, deletedBy);
-  }, []);
+    try {
+      await softDeleteTaskForce(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== Project =====
 
@@ -185,16 +220,26 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ? prev.map(p => p.id === project.id ? project : p)
         : [...prev, project];
     });
-    await upsertProject(project);
-  }, []);
+    try {
+      await upsertProject(project);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const deleteProject = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
     setProjects(prev => prev.map(p =>
       p.id === id ? { ...p, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : p
     ));
-    await softDeleteProject(id, deletedBy);
-  }, []);
+    try {
+      await softDeleteProject(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== Task =====
 
@@ -205,30 +250,50 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
         ? prev.map(t => t.id === task.id ? task : t)
         : [...prev, task];
     });
-    await upsertTask(task);
-  }, []);
+    try {
+      await upsertTask(task);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const deleteTask = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
     setTasks(prev => prev.map(t =>
       t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
     ));
-    await softDeleteTask(id, deletedBy);
-  }, []);
+    try {
+      await softDeleteTask(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   // ===== ProjectTaskForce =====
 
   const addProjectTaskForce = useCallback(async (ptf: ProjectTaskForce) => {
     setProjectTaskForces(prev => [...prev, ptf]);
-    await insertProjectTaskForce(ptf);
-  }, []);
+    try {
+      await insertProjectTaskForce(ptf);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const removeProjectTaskForce = useCallback(async (projectId: string, tfId: string) => {
     setProjectTaskForces(prev =>
       prev.filter(p => !(p.project_id === projectId && p.tf_id === tfId))
     );
-    await deleteProjectTaskForce(projectId, tfId);
-  }, []);
+    try {
+      await deleteProjectTaskForce(projectId, tfId);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
 
   const value: AppDataContextValue = {
     members, objective, keyResults, taskForces,

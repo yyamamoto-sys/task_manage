@@ -24,6 +24,13 @@ export async function fetchAllData() {
       supabase.from("project_task_forces").select("*"),
     ]);
 
+  // いずれかのテーブルでエラーが発生した場合は例外を投げる
+  const firstError = [members, objectives, keyResults, taskForces, projects, tasks, ptf]
+    .find(r => r.error)?.error;
+  if (firstError) {
+    throw new Error(`データの取得に失敗しました: ${firstError.message} (${firstError.code})`);
+  }
+
   return {
     members:           (members.data      ?? []) as Member[],
     objectives:        (objectives.data   ?? []) as Objective[],
