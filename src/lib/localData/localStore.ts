@@ -17,16 +17,6 @@
 //   const members = localStore.get("members");
 //   localStore.set("members", updatedMembers);
 
-import {
-  SEED_MEMBERS,
-  SEED_OBJECTIVE,
-  SEED_KEY_RESULTS,
-  SEED_TASK_FORCES,
-  SEED_PROJECTS,
-  SEED_TASKS,
-  SEED_PROJECT_TASK_FORCES,
-} from "./seed";
-
 // ===== キー定義 =====
 
 const KEYS = {
@@ -41,21 +31,6 @@ const KEYS = {
   TASKS: "tasks",
   CURRENT_USER: "current_user", // ログイン中のmember_id
 } as const;
-
-// ===== 初期化（初回のみシードデータを投入）=====
-
-export function initializeLocalStore(): void {
-  if (localStorage.getItem(KEYS.INITIALIZED)) return;
-
-  localStorage.setItem(KEYS.MEMBERS, JSON.stringify(SEED_MEMBERS));
-  localStorage.setItem(KEYS.OBJECTIVE, JSON.stringify(SEED_OBJECTIVE));
-  localStorage.setItem(KEYS.KEY_RESULTS, JSON.stringify(SEED_KEY_RESULTS));
-  localStorage.setItem(KEYS.TASK_FORCES, JSON.stringify(SEED_TASK_FORCES));
-  localStorage.setItem(KEYS.PROJECT_TASK_FORCES, JSON.stringify(SEED_PROJECT_TASK_FORCES));
-  localStorage.setItem(KEYS.PROJECTS, JSON.stringify(SEED_PROJECTS));
-  localStorage.setItem(KEYS.TASKS, JSON.stringify(SEED_TASKS));
-  localStorage.setItem(KEYS.INITIALIZED, "true");
-}
 
 // ===== 汎用CRUD =====
 
