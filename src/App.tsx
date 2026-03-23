@@ -104,10 +104,13 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
-  const { error, reload } = useAppData();
+  const { members, loading, error, reload } = useAppData();
+
+  // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
+  const isWizardDone = wizardCompleted || (!loading && members.filter(m => !m.is_deleted).length > 0);
 
   // 初回起動時はセットアップウィザードを表示
-  if (!wizardCompleted) {
+  if (!loading && !isWizardDone) {
     return <SetupWizard onComplete={onWizardComplete} />;
   }
 

@@ -331,13 +331,10 @@ export function SetupWizard({ onComplete }: Props) {
               </button>
               <button
                 onClick={() => setStep(3)}
-                disabled={!members.some(m => m.display_name.trim())}
                 style={{
                   flex: 2, padding: "9px", fontSize: "12px", fontWeight: "500",
-                  background: members.some(m => m.display_name.trim()) ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-                  color: members.some(m => m.display_name.trim()) ? "#fff" : "var(--color-text-tertiary)",
-                  border: "none", borderRadius: "var(--radius-md)",
-                  cursor: members.some(m => m.display_name.trim()) ? "pointer" : "not-allowed",
+                  background: "var(--color-brand)", color: "#fff",
+                  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
                 }}
               >
                 次へ →

@@ -9,6 +9,7 @@ import { AdminView } from "../admin/AdminView";
 import { GanttView } from "../gantt/GanttView";
 import { DashboardView } from "../dashboard/DashboardView";
 import { ListView } from "../list/ListView";
+import { ConsultationPanel } from "../consultation/ConsultationPanel";
 
 interface Props {
   currentUser: Member;
@@ -27,6 +28,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [isConsultOpen, setIsConsultOpen] = useState(false);
 
   const { projects: allProjects } = useAppData();
   const projects = useMemo(
@@ -174,8 +176,14 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         setSelectedProjectId={setSelectedProjectId}
         currentUser={currentUser}
         onLogout={onLogout}
+        onOpenConsult={() => setIsConsultOpen(true)}
       />
       {mainContent}
+      <ConsultationPanel
+        isOpen={isConsultOpen}
+        onClose={() => setIsConsultOpen(false)}
+        currentUser={currentUser}
+      />
     </div>
   );
 }
@@ -190,12 +198,13 @@ interface SidebarProps {
   setSelectedProjectId: (id: string | null) => void;
   currentUser: Member;
   onLogout: () => void;
+  onOpenConsult: () => void;
 }
 
 function Sidebar({
   viewMode, setViewMode, projects,
   selectedProjectId, setSelectedProjectId,
-  currentUser, onLogout,
+  currentUser, onLogout, onOpenConsult,
 }: SidebarProps) {
   return (
     <div style={{
@@ -253,7 +262,7 @@ function Sidebar({
           active={false}
           icon={<AIIcon />}
           label="AIに変更を相談"
-          onClick={() => {}}
+          onClick={() => onOpenConsult()}
           color="var(--color-text-purple)"
         />
         <div style={{
