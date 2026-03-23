@@ -7,11 +7,14 @@
 // - is_simulation=true → シミュレーションバナー + 「反映する」非活性
 // - canApply=true → 「反映する」ボタン活性
 // - onClick で applyProposal を呼ぶ → needs_confirmation の場合は ConfirmationDialogModal を開く
+// - 反映成功時は onApplied(snapshot) でUndoSnapshotを親に渡す
+// - action_typeがdate_change/assigneeの場合のみ「ガントで比較」ボタンを表示
 
 import { useState } from "react";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { applyProposal } from "../../lib/ai/applyProposal";
 import type { ConfirmationDialog } from "../../lib/ai/applyProposal";
+import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { SimulationBanner } from "./SimulationBanner";
 import { ConfirmationDialogModal } from "./ConfirmationDialogModal";
 
@@ -19,7 +22,9 @@ interface Props {
   proposal: UIProposal;
   shortIdMap: Map<string, string>;
   currentUserId: string;
-  onApplied?: () => void;
+  onApplied?: (snapshot: UndoSnapshot) => void;
+  /** ガントで比較ボタンクリック時のコールバック */
+  onGanttPreview?: (proposal: UIProposal) => void;
 }
 
 export function ProposalCard({
@@ -27,6 +32,7 @@ export function ProposalCard({
   shortIdMap,
   currentUserId,
   onApplied,
+  onGanttPreview,
 }: Props) {
   const [applying, setApplying] = useState(false);
   const [resultMessage, setResultMessage] = useState<{
@@ -46,7 +52,7 @@ export function ProposalCard({
 
     if (result.type === "success") {
       setResultMessage({ type: "success", text: "反映しました" });
-      onApplied?.();
+      onApplied?.(result.snapshot);
     } else if (result.type === "needs_confirmation") {
       setConfirmDialog(result.dialog);
     } else {
@@ -190,8 +196,27 @@ export function ProposalCard({
           </div>
         )}
 
-        {/* 反映ボタン */}
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        {/* ボタン行 */}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px" }}>
+          {/* ガントで比較ボタン（date_change / assignee のみ表示） */}
+          {(proposal.action_type === "date_change" || proposal.action_type === "assignee") &&
+            onGanttPreview && (
+              <button
+                onClick={() => onGanttPreview(proposal)}
+                style={{
+                  fontSize: "11px",
+                  padding: "5px 10px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-secondary)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                  transition: "opacity 0.15s",
+                }}
+              >
+                ガントで比較
+              </button>
+            )}
           <button
             onClick={handleApply}
             disabled={!proposal.canApply || applying || resultMessage?.type === "success"}
@@ -237,7 +262,7 @@ export function ProposalCard({
             setConfirmDialog(null);
             if (result.type === "success") {
               setResultMessage({ type: "success", text: "反映しました" });
-              onApplied?.();
+              onApplied?.(result.snapshot);
             } else if (result.type === "error") {
               setResultMessage({ type: "error", text: result.message });
             }

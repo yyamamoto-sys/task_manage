@@ -4,9 +4,16 @@
 // AI相談パネルのメインコンポーネント。右側からスライドして開く。
 // 内部でuseAIConsultationを使う（唯一の呼び出し口）。
 // CLAUDE.md Section 6-12参照。
+//
+// 追加機能：
+// - Ctrl+Z / Cmd+Z によるUndo（パネルが開いている間のみ有効）
+// - 「↩ 元に戻す」ボタン（canUndo時のみ活性）
+// - 「変更履歴」ボタン → ChangeHistoryModalを開く
+// - ガントで比較 → GanttPreviewPanelをbody直下に表示
 
-import { useState, useRef } from "react";
-import type { Member } from "../../lib/localData/types";
+import { useState, useRef, useEffect } from "react";
+import { createPortal } from "react-dom";
+import type { Member, Project } from "../../lib/localData/types";
 import type { ConsultationType } from "../../lib/localData/types";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
 import { ChatHistory } from "./ChatHistory";
@@ -14,11 +21,18 @@ import { FollowUpButtons } from "./FollowUpButtons";
 import { LoadingView } from "./LoadingView";
 import { ErrorView } from "./ErrorView";
 import { ProposalCard } from "./ProposalCard";
+import { ChangeHistoryModal } from "./ChangeHistoryModal";
+import { GanttPreviewPanel } from "./GanttPreviewPanel";
+import type { UIProposal } from "../../lib/ai/proposalMapper";
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
   currentUser: Member;
+  /** ガントプレビュー用：現在選択中のプロジェクト */
+  selectedProject?: Project | null;
+  /** ガントプレビュー用：全プロジェクト一覧 */
+  projects?: Project[];
 }
 
 const CONSULTATION_TYPE_OPTIONS: { value: ConsultationType; label: string }[] = [
@@ -29,12 +43,23 @@ const CONSULTATION_TYPE_OPTIONS: { value: ConsultationType; label: string }[] = 
   { value: "scope_change",   label: "スコープ縮小・停止" },
 ];
 
-export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
+export function ConsultationPanel({
+  isOpen,
+  onClose,
+  currentUser,
+  selectedProject = null,
+  projects = [],
+}: Props) {
   const [consultationType, setConsultationType] =
     useState<ConsultationType>("change");
   const [inputText, setInputText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // 変更履歴モーダルの表示状態
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  // ガントプレビューの表示状態
+  const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
 
   const {
     callState,
@@ -47,6 +72,11 @@ export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
     errorMessage,
     submit,
     reset,
+    undoStack,
+    canUndo,
+    pushUndoSnapshot,
+    undo,
+    undoUntil,
   } = useAIConsultation([]);
 
   const handleSubmit = async () => {
@@ -73,8 +103,49 @@ export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
     }
   };
 
+  // ===== Cmd+Z / Ctrl+Z キーボードショートカット =====
+  // パネルが開いている間のみ有効。グローバルのkeydownで検知する。
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+        e.preventDefault();
+        if (canUndo) {
+          undo(currentUser.id);
+        }
+      }
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    return () => window.removeEventListener("keydown", handleGlobalKeyDown);
+  }, [isOpen, canUndo, undo, currentUser.id]);
+
   return (
     <>
+      {/* 変更履歴モーダル */}
+      {isHistoryOpen && (
+        <ChangeHistoryModal
+          stack={undoStack}
+          onClose={() => setIsHistoryOpen(false)}
+          onUndoUntil={(snapshotId) => undoUntil(snapshotId, currentUser.id)}
+        />
+      )}
+
+      {/* ガントプレビューパネル（body直下にPortalでレンダリング） */}
+      {ganttPreviewProposal &&
+        createPortal(
+          <GanttPreviewPanel
+            proposal={ganttPreviewProposal}
+            shortIdMap={shortIdMap}
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            onClose={() => setGanttPreviewProposal(null)}
+          />,
+          document.body,
+        )}
+
       {/* オーバーレイ（モバイル時） */}
       {isOpen && (
         <div
@@ -133,7 +204,42 @@ export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
               AIに変更を相談
             </span>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {/* 変更履歴ボタン */}
+            {undoStack.length > 0 && (
+              <button
+                onClick={() => setIsHistoryOpen(true)}
+                style={{
+                  fontSize: "11px",
+                  padding: "3px 8px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-sm)",
+                  color: "var(--color-text-tertiary)",
+                  cursor: "pointer",
+                }}
+              >
+                変更履歴
+              </button>
+            )}
+            {/* 元に戻すボタン */}
+            <button
+              onClick={() => undo(currentUser.id)}
+              disabled={!canUndo}
+              title={canUndo ? "最後の変更を元に戻す (Cmd+Z)" : "元に戻せる変更がありません"}
+              style={{
+                fontSize: "11px",
+                padding: "3px 8px",
+                background: canUndo ? "transparent" : "transparent",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-sm)",
+                color: canUndo ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                cursor: canUndo ? "pointer" : "not-allowed",
+                opacity: canUndo ? 1 : 0.4,
+              }}
+            >
+              ↩ 元に戻す
+            </button>
             {session.turns.length > 0 && (
               <button
                 onClick={reset}
@@ -214,9 +320,14 @@ export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
             </label>
             <select
               value={consultationType}
-              onChange={(e) =>
-                setConsultationType(e.target.value as ConsultationType)
-              }
+              onChange={(e) => {
+                const next = e.target.value as ConsultationType;
+                setConsultationType(next);
+                // deadline_check以外に切り替えた場合はtargetDeadlineをクリアする
+                if (next !== "deadline_check") {
+                  setTargetDeadline("");
+                }
+              }}
               style={{
                 fontSize: "12px",
                 padding: "6px 10px",
@@ -373,6 +484,8 @@ export function ConsultationPanel({ isOpen, onClose, currentUser }: Props) {
                   proposal={proposal}
                   shortIdMap={shortIdMap}
                   currentUserId={currentUser.id}
+                  onApplied={(snapshot) => pushUndoSnapshot(snapshot)}
+                  onGanttPreview={(p) => setGanttPreviewProposal(p)}
                 />
               ))}
             </div>

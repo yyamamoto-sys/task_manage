@@ -12,18 +12,57 @@
 
 import { supabase } from "../supabase/client";
 import type { UIProposal } from "./proposalMapper";
+import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
 
 // ===== 型定義 =====
 
 export type ApplyResult =
-  | { type: "success" }
+  | { type: "success"; snapshot: UndoSnapshot }
   | { type: "needs_confirmation"; dialog: ConfirmationDialog }
   | { type: "error"; message: string };
 
+// ===== UndoSnapshot生成ヘルパー =====
+
+/**
+ * ランダムなUUIDを生成する（crypto.randomUUID が使えない環境向けのフォールバック付き）
+ */
+function generateId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * action_typeとタスク数からsnapshotのlabelを生成する
+ */
+function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: number, pjCount: number): string {
+  const suffix = taskCount > 0 && pjCount > 0
+    ? `(${taskCount}タスク, ${pjCount}PJ)`
+    : taskCount > 0
+      ? `(${taskCount}タスク)`
+      : `(${pjCount}PJ)`;
+
+  switch (actionType) {
+    case "date_change":     return `日程変更 ${suffix}`;
+    case "assignee":        return `担当者変更 ${suffix}`;
+    case "risk":            return `リスク追記 ${suffix}`;
+    case "no_tasks":        return `タスクなし追記 ${suffix}`;
+    case "deadline_risk":   return `期限リスク追記 ${suffix}`;
+    case "scope_reduce":    return `スコープ縮小 ${suffix}`;
+    case "pause":           return `一時停止 ${suffix}`;
+    default:                return `変更 ${suffix}`;
+  }
+}
+
 export interface ConfirmationDialog {
   proposal_id: string;
-  action_type: "date_change" | "assignee";
+  action_type: "date_change" | "assignee" | "scope_reduce" | "pause";
   items: ConfirmationItem[];
+  /** scope_reduce / pause 用：削除対象のPJ UUID一覧 */
+  target_pj_uuids?: string[];
+  /** scope_reduce / pause 用：削除対象のタスク UUID一覧 */
+  target_task_uuids?: string[];
 }
 
 export interface ConfirmationItem {
@@ -38,12 +77,13 @@ export interface ConfirmationItem {
 /**
  * タスクのcommentに追記する（2ステップSELECT+UPDATE）。
  * rpcは使わない（CLAUDE.md Section 6-10参照）。
+ * 戻り値：更新前のcomment文字列（Undo用）
  */
 async function appendTaskComment(
   taskId: string,
   appendText: string,
   currentUserId: string,
-): Promise<void> {
+): Promise<string> {
   // Step 1: 現在のcommentを取得
   const { data: taskData, error: fetchError } = await supabase
     .from("tasks")
@@ -56,24 +96,37 @@ async function appendTaskComment(
   }
 
   const currentComment = (taskData?.comment as string) ?? "";
+  const originalUpdatedAt = taskData?.updated_at as string;
   const timestamp = new Date().toLocaleDateString("ja-JP");
   const newComment = currentComment
     ? `${currentComment}\n\n[AIアドバイス ${timestamp}]\n${appendText}`
     : `[AIアドバイス ${timestamp}]\n${appendText}`;
 
-  // Step 2: コメントを更新
-  const { error: updateError } = await supabase
+  // Step 2: 競合制御付きでコメントを更新（CLAUDE.md Section 5）
+  // Step 1 取得時の updated_at と一致する場合のみ更新する
+  const now = new Date().toISOString();
+  const { data: updated, error: updateError } = await supabase
     .from("tasks")
     .update({
       comment: newComment,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
       updated_by: currentUserId,
     })
-    .eq("id", taskId);
+    .eq("id", taskId)
+    .eq("updated_at", originalUpdatedAt)
+    .select("id");
 
   if (updateError) {
     throw new Error(`タスク更新エラー: ${updateError.message}`);
   }
+
+  // 0件更新 = 他のユーザーが先に更新した（競合）
+  if (!updated || updated.length === 0) {
+    throw new Error(`タスクが他のユーザーによって更新されています。最新の内容を確認してから再度お試しください。`);
+  }
+
+  // Undo用に更新前のcommentを返す
+  return currentComment;
 }
 
 /**
@@ -205,12 +258,20 @@ export async function applyProposal(
     action_type === "deadline_risk"
   ) {
     try {
+      const operations: UndoOperation[] = [];
       for (const shortId of proposal.target_task_ids) {
         const uuid = resolveUUID(shortId, shortIdMap);
         if (!uuid) continue;
-        await appendTaskComment(uuid, proposal.description, currentUserId);
+        const oldComment = await appendTaskComment(uuid, proposal.description, currentUserId);
+        operations.push({ type: "task_field", taskId: uuid, field: "comment", oldValue: oldComment || null });
       }
-      return { type: "success" };
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: buildSnapshotLabel(action_type, operations.length, 0),
+        appliedAt: new Date().toISOString(),
+        operations,
+      };
+      return { type: "success", snapshot };
     } catch (e) {
       return {
         type: "error",
@@ -219,71 +280,68 @@ export async function applyProposal(
     }
   }
 
-  // ===== scope_reduce / pause: 論理削除 =====
+  // ===== scope_reduce / pause: 確認ダイアログを返す（CLAUDE.md Section 6-9参照）=====
+  // 論理削除は不可逆な大規模操作のため、必ず確認ダイアログを経由する。
+  // 実際の論理削除は applyProposalWithConfirmation で実行する。
   if (action_type === "scope_reduce" || action_type === "pause") {
-    try {
-      const now = new Date().toISOString();
+    const taskUuids: string[] = [];
+    const pjUuids: string[] = [];
+    const items: ConfirmationItem[] = [];
 
-      // タスクの論理削除
-      for (const shortId of proposal.target_task_ids) {
-        const uuid = resolveUUID(shortId, shortIdMap);
-        if (!uuid) continue;
+    for (const shortId of proposal.target_task_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
 
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", uuid);
+      const { data: task } = await supabase
+        .from("tasks")
+        .select("id, name")
+        .eq("id", uuid)
+        .single();
 
-        if (error) throw new Error(`タスク削除エラー: ${error.message}`);
-      }
-
-      // プロジェクトの論理削除
-      for (const shortId of proposal.target_pj_ids) {
-        const uuid = resolveUUID(shortId, shortIdMap);
-        if (!uuid) continue;
-
-        // PJに紐づく全タスクも論理削除
-        const { error: tasksError } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("project_id", uuid)
-          .eq("is_deleted", false);
-
-        if (tasksError) throw new Error(`タスク一括削除エラー: ${tasksError.message}`);
-
-        const { error: pjError } = await supabase
-          .from("projects")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", uuid);
-
-        if (pjError) throw new Error(`PJ削除エラー: ${pjError.message}`);
-      }
-
-      return { type: "success" };
-    } catch (e) {
-      return {
-        type: "error",
-        message: e instanceof Error ? e.message : "削除処理に失敗しました",
-      };
+      if (!task) continue;
+      taskUuids.push(uuid);
+      items.push({
+        task_id: uuid,
+        task_name: (task.name as string) ?? shortId,
+        current_value: "有効",
+        suggested_value: action_type === "pause" ? "一時停止" : "スコープ縮小（論理削除）",
+      });
     }
+
+    for (const shortId of proposal.target_pj_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
+
+      const { data: pj } = await supabase
+        .from("projects")
+        .select("id, name")
+        .eq("id", uuid)
+        .single();
+
+      if (!pj) continue;
+      pjUuids.push(uuid);
+      items.push({
+        task_id: uuid, // PJ UUIDをここに入れる（ConfirmationItemはtask_idフィールドを流用）
+        task_name: `[PJ] ${(pj.name as string) ?? shortId}`,
+        current_value: "有効",
+        suggested_value: action_type === "pause" ? "一時停止（配下タスクも含む）" : "スコープ縮小（配下タスクも含む）",
+      });
+    }
+
+    if (items.length === 0) {
+      return { type: "error", message: "対象タスク・プロジェクトが見つかりませんでした" };
+    }
+
+    return {
+      type: "needs_confirmation",
+      dialog: {
+        proposal_id: proposal.proposal_id,
+        action_type,
+        items,
+        target_pj_uuids: pjUuids,
+        target_task_uuids: taskUuids,
+      },
+    };
   }
 
   return { type: "error", message: "未対応のアクションタイプです" };
@@ -306,9 +364,18 @@ export async function applyProposalWithConfirmation(
     const now = new Date().toISOString();
 
     if (dialog.action_type === "date_change") {
+      const operations: UndoOperation[] = [];
       for (const item of dialog.items) {
         const newDate = confirmedValues[item.task_id];
         if (!newDate) continue;
+
+        // Undo用に現在のdue_dateを取得
+        const { data: taskData } = await supabase
+          .from("tasks")
+          .select("due_date")
+          .eq("id", item.task_id)
+          .single();
+        const oldDueDate = (taskData?.due_date as string) ?? null;
 
         const { error } = await supabase
           .from("tasks")
@@ -320,14 +387,30 @@ export async function applyProposalWithConfirmation(
           .eq("id", item.task_id);
 
         if (error) throw new Error(`日程更新エラー (${item.task_name}): ${error.message}`);
+        operations.push({ type: "task_field", taskId: item.task_id, field: "due_date", oldValue: oldDueDate });
       }
-      return { type: "success" };
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: buildSnapshotLabel("date_change", operations.length, 0),
+        appliedAt: now,
+        operations,
+      };
+      return { type: "success", snapshot };
     }
 
     if (dialog.action_type === "assignee") {
+      const operations: UndoOperation[] = [];
       for (const item of dialog.items) {
         const newAssigneeId = confirmedValues[item.task_id];
         if (!newAssigneeId) continue;
+
+        // Undo用に現在のassignee_member_idを取得
+        const { data: taskData } = await supabase
+          .from("tasks")
+          .select("assignee_member_id")
+          .eq("id", item.task_id)
+          .single();
+        const oldAssigneeId = (taskData?.assignee_member_id as string) ?? null;
 
         const { error } = await supabase
           .from("tasks")
@@ -339,8 +422,83 @@ export async function applyProposalWithConfirmation(
           .eq("id", item.task_id);
 
         if (error) throw new Error(`担当者更新エラー (${item.task_name}): ${error.message}`);
+        operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_id", oldValue: oldAssigneeId });
       }
-      return { type: "success" };
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: buildSnapshotLabel("assignee", operations.length, 0),
+        appliedAt: now,
+        operations,
+      };
+      return { type: "success", snapshot };
+    }
+
+    // ===== scope_reduce / pause: 論理削除 =====
+    if (
+      dialog.action_type === "scope_reduce" ||
+      dialog.action_type === "pause"
+    ) {
+      const operations: UndoOperation[] = [];
+
+      // 個別タスクの論理削除
+      for (const taskUuid of dialog.target_task_uuids ?? []) {
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("id", taskUuid);
+
+        if (error) throw new Error(`タスク削除エラー: ${error.message}`);
+        operations.push({ type: "task_restore", taskId: taskUuid });
+      }
+
+      // PJおよび配下タスクの論理削除
+      for (const pjUuid of dialog.target_pj_uuids ?? []) {
+        const { error: tasksError } = await supabase
+          .from("tasks")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("project_id", pjUuid)
+          .eq("is_deleted", false);
+
+        if (tasksError) throw new Error(`タスク一括削除エラー: ${tasksError.message}`);
+
+        const { error: pjError } = await supabase
+          .from("projects")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("id", pjUuid);
+
+        if (pjError) throw new Error(`PJ削除エラー: ${pjError.message}`);
+        operations.push({ type: "pj_restore", pjId: pjUuid });
+      }
+
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: buildSnapshotLabel(
+          dialog.action_type,
+          (dialog.target_task_uuids ?? []).length,
+          (dialog.target_pj_uuids ?? []).length,
+        ),
+        appliedAt: now,
+        operations,
+      };
+      return { type: "success", snapshot };
     }
 
     return { type: "error", message: "未対応のアクションタイプです" };

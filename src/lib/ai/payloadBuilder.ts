@@ -151,13 +151,18 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   const activePJs = opts.projects.filter(p => !p.is_deleted && p.status !== "archived");
   const activeTasks = opts.tasks.filter(t => !t.is_deleted);
 
+  // タスクのショートIDはPJをまたいでグローバルに連番にする
+  // （shortIdMap.sizeを使うとPJ分のエントリが混入してキーが衝突するため専用カウンターを使う）
+  let taskCounter = 0;
+
   const aiProjects: AIProject[] = activePJs.map((pj, pjIdx) => {
     const pjShortId = makeShortId("pj", pjIdx);
     shortIdMap.set(pjShortId, pj.id);
 
     const pjTasks = activeTasks.filter(t => t.project_id === pj.id);
-    const aiTasks: AITask[] = pjTasks.map((task, taskIdx) => {
-      const taskShortId = makeShortId(`task`, shortIdMap.size);
+    const aiTasks: AITask[] = pjTasks.map((task) => {
+      const taskShortId = makeShortId("task", taskCounter);
+      taskCounter++;
       shortIdMap.set(taskShortId, task.id);
 
       const assignee = opts.members.find(m => m.id === task.assignee_member_id);
@@ -170,7 +175,8 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         due_date: task.due_date,
         estimated_hours: task.estimated_hours,
         // ❌ contribution_memoは含めない。sanitizeComment()を必ず適用する
-        comment: sanitizeComment(task.comment),
+        // task.comment は Supabase から null が返ることがあるため空文字にフォールバック
+        comment: sanitizeComment(task.comment ?? ""),
       };
     });
 

@@ -18,6 +18,12 @@ interface Props {
   currentUser: Member;
   selectedProject: Project | null;
   projects: Project[];
+  /** プレビューモード：指定された場合はAppDataContextのtasksの代わりにこれを使う */
+  previewTasks?: Task[];
+  /** プレビューモード：trueの場合はヘッダーにラベルを表示し、タスク編集モーダルを無効化する */
+  isPreview?: boolean;
+  /** プレビューモード：変更されたタスクIDのセット（ハイライト表示） */
+  previewChangedTaskIds?: Set<string>;
 }
 
 // ===== 日付ユーティリティ =====
@@ -64,10 +70,23 @@ function getDaysInRange(start: Date, end: Date): Date[] {
 
 // ===== メインコンポーネント =====
 
-export function GanttView({ currentUser, selectedProject, projects }: Props) {
+export function GanttView({
+  currentUser,
+  selectedProject,
+  projects,
+  previewTasks,
+  isPreview = false,
+  previewChangedTaskIds,
+}: Props) {
   const { tasks: rawTasks, members: rawMembers } = useAppData();
   const isMobile = useIsMobile();
-  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
+  // previewTasksが指定されている場合はそちらを優先する
+  const allTasks = useMemo(
+    () => previewTasks
+      ? previewTasks.filter(t => !t.is_deleted)
+      : rawTasks.filter(t => !t.is_deleted),
+    [previewTasks, rawTasks],
+  );
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
   // 表示するPJを絞り込む
@@ -169,13 +188,26 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
         display: "flex", alignItems: "center", gap: "8px",
         padding: "10px 16px",
         borderBottom: "1px solid var(--color-border-primary)",
-        background: "var(--color-bg-primary)", flexShrink: 0,
+        background: isPreview ? "var(--color-bg-info)" : "var(--color-bg-primary)", flexShrink: 0,
       }}>
+        {isPreview && (
+          <span style={{
+            fontSize: "10px",
+            padding: "2px 8px",
+            background: "var(--color-text-info)",
+            color: "#fff",
+            borderRadius: "var(--radius-full)",
+            fontWeight: "500",
+            flexShrink: 0,
+          }}>
+            変更後（仮）
+          </span>
+        )}
         <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
           {selectedProject ? selectedProject.name : "全プロジェクト"}
         </div>
-        <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>
-        <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>
+        {!isPreview && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
+        {!isPreview && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
       </div>
 
       {/* ガント本体 */}
@@ -408,34 +440,41 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
                       const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
-                      const isMilestone = !task.due_date; // 期日なしはマイルストーン扱いにしない
+                      const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
 
                       return (
                         <div key={task.id} style={{
                           height: 30, position: "relative",
                           borderBottom: "1px solid var(--color-border-primary)",
-                          background: "var(--color-bg-primary)",
+                          background: isChanged ? "rgba(127,119,221,0.06)" : "var(--color-bg-primary)",
                         }}>
                           {barX !== null && due && (
                             <>
                               {/* タスクバー（期日が1点なので幅固定） */}
                               <div
                                 title={`${task.name}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
-                                onClick={() => setEditingTaskId(task.id)}
+                                onClick={() => {
+                                  if (!isPreview) setEditingTaskId(task.id);
+                                }}
                                 style={{
                                   position: "absolute",
                                   left: barX,
                                   top: "50%", transform: "translateY(-50%)",
                                   width: DAY_WIDTH - 4, height: 10,
                                   borderRadius: 5,
-                                  background: isDone
+                                  background: isChanged
+                                    ? "var(--color-brand)"
+                                    : isDone
                                     ? "#86efac"
                                     : isOverdue
                                     ? "#fca5a5"
                                     : pj.color_tag,
                                   opacity: isDone ? 0.6 : 1,
-                                  cursor: "pointer",
+                                  cursor: isPreview ? "default" : "pointer",
                                   zIndex: 2,
+                                  // 変更されたタスクはリング表示で強調
+                                  outline: isChanged ? "2px solid var(--color-brand)" : "none",
+                                  outlineOffset: "1px",
                                 }}
                               />
                               {/* 期日ラベル（due_dateの上） */}
@@ -444,10 +483,15 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
                                 left: barX + DAY_WIDTH / 2,
                                 top: 2,
                                 fontSize: "8px",
-                                color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+                                color: isChanged
+                                  ? "var(--color-brand)"
+                                  : isOverdue
+                                  ? "var(--color-text-danger)"
+                                  : "var(--color-text-tertiary)",
                                 transform: "translateX(-50%)",
                                 whiteSpace: "nowrap",
                                 pointerEvents: "none",
+                                fontWeight: isChanged ? "700" : "400",
                               }}>
                                 {due.getMonth() + 1}/{due.getDate()}
                               </div>
@@ -464,8 +508,8 @@ export function GanttView({ currentUser, selectedProject, projects }: Props) {
         </div>
       </div>
 
-      {/* タスク編集モーダル */}
-      {editingTaskId && (
+      {/* タスク編集モーダル（プレビューモードでは表示しない） */}
+      {!isPreview && editingTaskId && (
         <TaskEditModal
           taskId={editingTaskId}
           currentUser={currentUser}

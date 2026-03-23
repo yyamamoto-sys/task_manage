@@ -7,8 +7,12 @@
 // CLAUDE.md Section 6-12のexportルール：
 // return { callState, session, tokenStatus, loadingMessage, shortIdMap, submit, reset };
 // useFollowUpはexportしない（誤用防止）。
+//
+// Undo機能（追加）：
+// return { ..., undo, canUndo, undoStack }
+// useUndoStack内部で使用し、undo/canUndo/undoStackをexportする。
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { useAppData } from "../context/AppDataContext";
 import type { ConsultationType } from "../lib/localData/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
@@ -24,6 +28,8 @@ import {
   MAX_TURNS_WARNING,
 } from "../lib/ai/sessionManager";
 import type { ConsultationSession } from "../lib/ai/sessionManager";
+import { useUndoStack } from "./useUndoStack";
+import { applyUndo } from "../lib/ai/undoApply";
 
 // ===== 型定義 =====
 
@@ -59,15 +65,23 @@ function getRandomLoadingMessage(): string {
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
 export function useAIConsultation(projectIds: string[]) {
-  const { projects, tasks, members } = useAppData();
+  const { projects, tasks, members, reload } = useAppData();
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [session, setSession] = useState<ConsultationSession>(createSession());
+  // sessionRef: useCallback内でstale closureを避けるための参照
+  // （sessionをuseCallbackの依存配列に含めると毎回新しい関数参照が生成されるため）
+  const sessionRef = useRef<ConsultationSession>(session);
   const [loadingMessage, setLoadingMessage] = useState<string>(LOADING_MESSAGES[0]);
   const [shortIdMap, setShortIdMap] = useState<Map<string, string>>(new Map());
   const [proposals, setProposals] = useState<UIProposal[]>([]);
   const [errorMessage, setErrorMessage] = useState<string>("");
   const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>([]);
+
+  // Undo
+  const { stack: undoStack, push: pushUndo, pop: popUndo, popUntil: popUndoUntil, canUndo } = useUndoStack();
+  // currentUserIdをundo時に使えるように保持
+  const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const tokenStatus: TokenStatus =
     session.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";
@@ -103,17 +117,22 @@ export function useAIConsultation(projectIds: string[]) {
 
       setShortIdMap(newShortIdMap);
 
+      // sessionRef.currentを使って最新のセッションを取得（stale closureを回避）
+      const latestSession = sessionRef.current;
+      const tokenStatusNow =
+        latestSession.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";
+
       // ユーザーターンをセッションに追加
       const userTurn = {
         role: "user" as const,
         content: consultation,
         timestamp: new Date().toISOString(),
       };
-      let currentSession = addTurn(session, userTurn);
+      let currentSession = addTurn(latestSession, userTurn);
 
       // トークン上限を超えていた場合は古いターンを削除してから送信
       const historyForApi =
-        tokenStatus === "warning"
+        tokenStatusNow === "warning"
           ? truncateOldTurns(currentSession).turns.slice(0, -1) // 今回追加したユーザーターンは除く（payloadに含まれる）
           : currentSession.turns.slice(0, -1); // 最後のユーザーターンはpayloadに含めるので除外
 
@@ -139,6 +158,7 @@ export function useAIConsultation(projectIds: string[]) {
           timestamp: new Date().toISOString(),
         };
         currentSession = addTurn(currentSession, assistantTurn);
+        sessionRef.current = currentSession;
         setSession(currentSession);
         setCallState("success");
       } catch (e) {
@@ -148,23 +168,53 @@ export function useAIConsultation(projectIds: string[]) {
             : e instanceof Error
               ? e.message
               : "予期しないエラーが発生しました";
+        // エラー時もuserTurnをセッションに保存する（次回送信時に履歴が欠落しないよう）
+        sessionRef.current = currentSession;
+        setSession(currentSession);
         setErrorMessage(message);
         setCallState("error");
       }
     },
-    [session, projects, tasks, members, projectIds, tokenStatus],
+    [projects, tasks, members, projectIds],
   );
 
   // ===== reset: セッションをリセット =====
 
   const reset = useCallback(() => {
-    setSession(createSession());
+    const emptySession = createSession();
+    sessionRef.current = emptySession;
+    setSession(emptySession);
     setShortIdMap(new Map());
     setProposals([]);
     setFollowUpSuggestions([]);
     setCallState("idle");
     setErrorMessage("");
+    // undoStackはリセットしない（パネルを閉じても履歴は維持する）
   }, []);
+
+  // ===== pushUndoSnapshot: ProposalCardから呼ばれる =====
+  // applyProposal / applyProposalWithConfirmation の成功時にsnapshotをスタックに積む
+
+  // ===== undo: 最新のsnapshotを1件取り消す =====
+
+  const undo = useCallback(async (userId: string) => {
+    const snapshot = popUndo();
+    if (!snapshot) return;
+    await applyUndo(snapshot, userId);
+    // DB復元後にAppDataContextのstateを最新に同期する（画面が古いデータのままにならないよう）
+    await reload();
+  }, [popUndo, reload]);
+
+  // ===== undoUntil: 指定snapshotまでまとめて取り消す（変更履歴モーダルから呼ばれる） =====
+
+  const undoUntil = useCallback(async (snapshotId: string, userId: string) => {
+    const snapshots = popUndoUntil(snapshotId);
+    for (const snapshot of snapshots) {
+      await applyUndo(snapshot, userId);
+    }
+    // DB復元後にAppDataContextのstateを最新に同期する（複数undo後も画面に反映されるよう）
+    await reload();
+  }, [popUndoUntil, reload]);
 
   return {
     callState,
@@ -177,5 +227,11 @@ export function useAIConsultation(projectIds: string[]) {
     errorMessage,
     submit,
     reset,
+    // Undo関連
+    undoStack,
+    canUndo,
+    pushUndoSnapshot: pushUndo,
+    undo,
+    undoUntil,
   };
 }

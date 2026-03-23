@@ -34,11 +34,11 @@ export function ChatHistory({
         padding: "8px 0",
       }}
     >
-      {session.turns.map((turn, index) => {
+      {session.turns.map((turn) => {
         if (turn.role === "user") {
           return (
             <div
-              key={index}
+              key={`user-${turn.timestamp}`}
               style={{
                 display: "flex",
                 justifyContent: "flex-end",
@@ -77,7 +77,7 @@ export function ChatHistory({
         if (!proposals) {
           return (
             <div
-              key={index}
+              key={`assistant-text-${turn.timestamp}`}
               style={{
                 fontSize: "12px",
                 color: "var(--color-text-secondary)",
@@ -95,7 +95,7 @@ export function ChatHistory({
         }
 
         return (
-          <div key={index} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div key={`assistant-proposals-${turn.timestamp}`} style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             <div
               style={{
                 fontSize: "10px",

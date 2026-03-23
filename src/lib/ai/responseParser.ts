@@ -140,10 +140,10 @@ function validateProposal(p: unknown, index: number): Proposal {
  */
 export function parseAIResponse(rawText: string): AIResponseData {
   // AIがコードブロックで囲んで返す場合があるため除去する
+  // マルチライン（s フラグ）で先頭の ```json または ``` と末尾の ``` をまとめて除去する
   const cleaned = rawText
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/\s*```$/i, "")
+    .replace(/^```(?:json)?\s*/is, "")
+    .replace(/\s*```\s*$/is, "")
     .trim();
 
   let parsed: unknown;

@@ -26,13 +26,36 @@ export function ConfirmationDialogModal({
 }: Props) {
   const { members } = useAppData();
   const isDateChange = dialog.action_type === "date_change";
+  const isDeleteAction =
+    dialog.action_type === "scope_reduce" || dialog.action_type === "pause";
 
-  // 確認値の初期値は suggested_value
+  // 確認値の初期値の設定：
+  // - date_change: suggested_value はそのまま日付文字列として使う
+  // - assignee: suggested_value は short_name のため、メンバーリストからUUIDを逆引きする
+  //   一致するメンバーが見つからない場合は先頭の有効メンバーのUUIDを使う
+  // - scope_reduce / pause: 確認のみでユーザー入力は不要
+  const activeMembers = members.filter((m) => !m.is_deleted);
   const [confirmedValues, setConfirmedValues] = useState<Record<string, string>>(
-    () =>
-      Object.fromEntries(
-        dialog.items.map((item) => [item.task_id, item.suggested_value]),
-      ),
+    () => {
+      if (isDateChange) {
+        return Object.fromEntries(
+          dialog.items.map((item) => [item.task_id, item.suggested_value]),
+        );
+      }
+      if (isDeleteAction) {
+        return {};
+      }
+      // assignee: short_nameからUUIDを逆引き
+      return Object.fromEntries(
+        dialog.items.map((item) => {
+          const matched = activeMembers.find(
+            (m) => m.short_name === item.suggested_value,
+          );
+          const uuid = matched?.id ?? activeMembers[0]?.id ?? "";
+          return [item.task_id, uuid];
+        }),
+      );
+    },
   );
   const [applying, setApplying] = useState(false);
 
@@ -87,7 +110,13 @@ export function ConfirmationDialogModal({
           }}
         >
           <div style={{ fontWeight: "600", fontSize: "13px" }}>
-            {isDateChange ? "日程変更の確認" : "担当者変更の確認"}
+            {isDateChange
+              ? "日程変更の確認"
+              : isDeleteAction
+                ? dialog.action_type === "pause"
+                  ? "一時停止の確認"
+                  : "スコープ縮小の確認"
+                : "担当者変更の確認"}
           </div>
           <button
             onClick={onClose}
@@ -114,7 +143,9 @@ export function ConfirmationDialogModal({
               marginBottom: "12px",
             }}
           >
-            以下の内容で反映します。値を確認・修正してから「確定して反映」を押してください。
+            {isDeleteAction
+              ? "以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「確定して反映」を押してください。"
+              : "以下の内容で反映します。値を確認・修正してから「確定して反映」を押してください。"}
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -125,7 +156,7 @@ export function ConfirmationDialogModal({
                   padding: "10px 12px",
                   background: "var(--color-bg-secondary)",
                   borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border-primary)",
+                  border: `1px solid ${isDeleteAction ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
                 }}
               >
                 <div
@@ -151,8 +182,13 @@ export function ConfirmationDialogModal({
                   </span>
                   <span style={{ color: "var(--color-text-tertiary)" }}>→</span>
 
-                  {/* 日程変更: date input */}
-                  {isDateChange ? (
+                  {/* scope_reduce / pause: 変更なし（確認のみ） */}
+                  {isDeleteAction ? (
+                    <span style={{ color: "var(--color-text-warning)", fontWeight: "500" }}>
+                      {item.suggested_value}
+                    </span>
+                  ) : isDateChange ? (
+                    /* 日程変更: date input */
                     <input
                       type="date"
                       value={confirmedValues[item.task_id] ?? ""}
@@ -172,7 +208,7 @@ export function ConfirmationDialogModal({
                       }}
                     />
                   ) : (
-                    /* 担当変更: select */
+                    /* 担当変更: select（値はUUID） */
                     <select
                       value={confirmedValues[item.task_id] ?? ""}
                       onChange={(e) =>
@@ -190,9 +226,7 @@ export function ConfirmationDialogModal({
                         color: "var(--color-text-primary)",
                       }}
                     >
-                      {members
-                        .filter((m) => !m.is_deleted)
-                        .map((m) => (
+                      {activeMembers.map((m) => (
                           <option key={m.id} value={m.id}>
                             {m.short_name}
                           </option>
