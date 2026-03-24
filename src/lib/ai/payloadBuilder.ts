@@ -24,6 +24,9 @@ interface FiscalCalendar {
   this_week_end: string;   // 今週末（日曜）
   next_week_start: string; // 来週月曜
   next_week_end: string;   // 来週末（日曜）
+  this_month_end: string;  // 今月末
+  /** 今日から今月末までの平日（月〜金）の日数 */
+  remaining_weekdays_this_month: number;
   fiscal_year: { start: string; end: string; first_half_end: string; second_half_start: string };
   quarters: {
     definition: string;
@@ -95,12 +98,22 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
   const nextWeekStart = new Date(thisWeekEnd); nextWeekStart.setDate(thisWeekEnd.getDate() + 1);
   const nextWeekEnd = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
 
+  // 今月末と残り平日数（今日〜月末、月〜金）
+  const thisMonthEnd = new Date(year, today.getMonth() + 1, 0);
+  let remainingWeekdays = 0;
+  for (let d = new Date(today); d <= thisMonthEnd; d.setDate(d.getDate() + 1)) {
+    const dow = d.getDay();
+    if (dow !== 0 && dow !== 6) remainingWeekdays++;
+  }
+
   return {
     today: todayStr,
     today_formatted: formatted,
     this_week_end: fmt(thisWeekEnd),
     next_week_start: fmt(nextWeekStart),
     next_week_end: fmt(nextWeekEnd),
+    this_month_end: fmt(thisMonthEnd),
+    remaining_weekdays_this_month: remainingWeekdays,
     fiscal_year: {
       start: `${year}-01-01`,
       end: `${year}-12-31`,
@@ -126,8 +139,11 @@ function buildMemberWorkload(members: Member[], tasks: Task[]): MemberWorkload[]
     .map(m => {
       const myTasks = tasks.filter(t => !t.is_deleted && t.assignee_member_id === m.id);
       const active = myTasks.filter(t => t.status !== "done");
-      const totalHours = active.some(t => t.estimated_hours != null)
-        ? active.reduce((sum, t) => sum + (t.estimated_hours ?? 0), 0)
+      const withEstimate = active.filter(t => t.estimated_hours != null);
+      const withoutEstimate = active.filter(t => t.estimated_hours == null);
+      // 工数入力済みタスクのみ合計する（未入力を0とみなさない）
+      const totalHours = withEstimate.length > 0
+        ? withEstimate.reduce((sum, t) => sum + (t.estimated_hours ?? 0), 0)
         : null;
       return {
         member_id: m.id,
@@ -135,6 +151,8 @@ function buildMemberWorkload(members: Member[], tasks: Task[]): MemberWorkload[]
         todo_count: active.filter(t => t.status === "todo").length,
         in_progress_count: active.filter(t => t.status === "in_progress").length,
         total_estimated_hours: totalHours,
+        tasks_with_estimate: withEstimate.length,
+        tasks_without_estimate: withoutEstimate.length,
       };
     });
 }

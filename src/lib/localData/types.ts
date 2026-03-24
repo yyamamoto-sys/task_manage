@@ -208,5 +208,10 @@ export interface MemberWorkload {
   short_name: string;
   todo_count: number;
   in_progress_count: number;
+  /** 工数入力済みタスクの合計時間（入力済みタスクのみ。未入力は0扱いしない） */
   total_estimated_hours: number | null;
+  /** 工数が入力されている未完了タスク数 */
+  tasks_with_estimate: number;
+  /** 工数が入力されていない未完了タスク数 */
+  tasks_without_estimate: number;
 }

@@ -62,6 +62,28 @@ const RESPONSE_FORMAT = `
 - target_task_ids / target_pj_ids は空配列でよい
 - needs_confirmation=false、is_simulation=false にすること
 
+## 工数・残業チェックの計算ルール（重要）
+ユーザーが「今月の工数は？」「残業しそう？」などを聞いてきた場合：
+
+1. **残り稼働時間の計算**
+   - context.remaining_weekdays_this_month × 8h = 今月の残り定時稼働時間（上限）
+   - 週40時間（月〜金 1日8h）を超えると残業扱い
+
+2. **メンバーの工数集計（必ず注意書きを添えること）**
+   - context.member_workload の total_estimated_hours は「工数入力済みタスクのみの合計」
+   - tasks_without_estimate の件数が 1件以上の場合は必ず以下を明示すること：
+     「⚠ 工数未入力のタスクが X 件あります。実際の工数はさらに多い可能性があります。」
+   - total_estimated_hours が null（全タスク未入力）の場合は「工数が入力されていないため試算不可」と表示
+
+3. **残業リスクの判定**
+   - 入力済み工数合計 > 残り定時稼働時間 → 「現時点でも残業リスクあり」
+   - 入力済み工数合計 ≤ 残り定時稼働時間 かつ tasks_without_estimate > 0 → 「入力済み分は定時内だが、未入力タスク次第で残業の可能性あり」
+   - 入力済み工数合計 ≤ 残り定時稼働時間 かつ tasks_without_estimate = 0 → 「定時内で完了できる見込み」
+
+4. **短縮すべき工数の算出**
+   - 残業になる場合：（入力済み工数合計） - （残り定時稼働時間） = 削減が必要な時間数
+   - descriptionに「定時内に収めるには約Xh短縮が必要です」と明示する
+
 ## フィールドの使い分け
 
 - suggested_date: 単一タスクへの日付変更時に使用（YYYY-MM-DD形式）
