@@ -25,6 +25,8 @@ const RESPONSE_FORMAT = `
       "target_task_ids": ["task_001", "task_002"],
       "target_pj_ids": ["pj_001"],
       "suggested_date": "YYYY-MM-DD",
+      "suggested_end_date": "YYYY-MM-DD",
+      "shift_days": 14,
       "suggested_assignee": "メンバーのshort_name",
       "date_certainty": "exact" | "approximate" | "unknown",
       "is_simulation": false,
@@ -49,10 +51,15 @@ const RESPONSE_FORMAT = `
 - pause: プロジェクト一時停止提案（論理削除が発生する）
 - milestone: マイルストーン関連（現在未対応）
 
+## フィールドの使い分け
+
+- suggested_date: 単一タスクへの日付変更時に使用（YYYY-MM-DD形式）
+- suggested_end_date: プロジェクトの終了日変更時に使用（YYYY-MM-DD形式）。target_pj_idsに含まれるPJの新しい終了日
+- shift_days: プロジェクト遅延など全体を一括シフトする場合の日数（整数。2週間=14）。shift_daysが設定されていると確認画面で「全て+N日シフト」ボタンが表示される
+
 ## 重要なルール
 
 - target_task_ids と target_pj_ids には必ずshortId形式（"task_001"や"pj_001"）を使うこと
-- suggested_date は YYYY-MM-DD 形式
 - date_certainty の選択：
   - exact: 具体的な日付が確定している場合
   - approximate: 日数の見積もりはあるが不確かな場合
@@ -84,6 +91,16 @@ export const SYSTEM_PROMPTS: Record<ConsultationType, string> = {
 - 変更の影響が小さい場合も「問題なし」と明示すること
 - 担当者の工数状況（member_workload）を考慮して担当変更を提案すること
 - 日程変更提案には必ず根拠（依存タスクの完了日など）を添えること
+
+## プロジェクト遅延の特別処理
+「AプロジェクトがN日/N週間遅延する」という相談の場合：
+1. date_changeアクションで以下を設定すること：
+   - target_pj_ids に遅延するプロジェクトのshortIdを含める
+   - suggested_end_date にプロジェクトの新しい終了日（現在のend_dateにshift_daysを加算）を設定
+   - shift_days に遅延日数（整数）を設定（例：2週間=14）
+   - target_task_ids にそのプロジェクトのtodo・in_progressの全タスクshortIdを含める
+2. 他のプロジェクト・タスクへの波及影響は別の提案（risk / deadline_risk）で列挙すること
+3. 他TFやプロジェクトへの影響も考察してfollow_up_suggestionsに含めること
 
 ${RESPONSE_FORMAT}`,
 

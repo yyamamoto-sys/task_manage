@@ -24,6 +24,8 @@ export interface Proposal {
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
+  suggested_end_date?: string;
+  shift_days?: number;
   suggested_assignee?: string;
   date_certainty: "exact" | "approximate" | "unknown";
   is_simulation: boolean;
@@ -124,6 +126,10 @@ function validateProposal(p: unknown, index: number): Proposal {
     target_pj_ids: (obj.target_pj_ids as unknown[]).map(String),
     suggested_date:
       typeof obj.suggested_date === "string" ? obj.suggested_date : undefined,
+    suggested_end_date:
+      typeof obj.suggested_end_date === "string" ? obj.suggested_end_date : undefined,
+    shift_days:
+      typeof obj.shift_days === "number" ? obj.shift_days : undefined,
     suggested_assignee:
       typeof obj.suggested_assignee === "string"
         ? obj.suggested_assignee

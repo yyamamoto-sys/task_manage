@@ -18,8 +18,9 @@ export interface UndoSnapshot {
 
 export type UndoOperation =
   | { type: "task_field"; taskId: string; field: string; oldValue: unknown }
-  | { type: "task_restore"; taskId: string }   // 論理削除の取り消し
-  | { type: "pj_restore"; pjId: string };       // PJ論理削除の取り消し
+  | { type: "task_restore"; taskId: string }
+  | { type: "pj_restore"; pjId: string }
+  | { type: "pj_field"; pjId: string; field: string; oldValue: unknown };
 
 const MAX_STACK = 5;
 

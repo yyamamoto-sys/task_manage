@@ -59,6 +59,10 @@ export interface ConfirmationDialog {
   proposal_id: string;
   action_type: "date_change" | "assignee" | "scope_reduce" | "pause";
   items: ConfirmationItem[];
+  /** date_change 用：プロジェクト終了日の変更 */
+  pj_end_date_items?: PjEndDateItem[];
+  /** date_change 用：一括シフト日数（「全て+N日」ボタン用） */
+  shift_days?: number;
   /** scope_reduce / pause 用：削除対象のPJ UUID一覧 */
   target_pj_uuids?: string[];
   /** scope_reduce / pause 用：削除対象のタスク UUID一覧 */
@@ -70,6 +74,13 @@ export interface ConfirmationItem {
   task_name: string;
   current_value: string;
   suggested_value: string;
+}
+
+export interface PjEndDateItem {
+  pj_id: string;       // UUID
+  pj_name: string;
+  current_end_date: string | null;
+  suggested_end_date: string;
 }
 
 // ===== 内部ヘルパー =====
@@ -161,7 +172,9 @@ export async function applyProposal(
   // ===== date_change: 確認ダイアログを返す =====
   if (action_type === "date_change") {
     const items: ConfirmationItem[] = [];
+    const pjEndDateItems: PjEndDateItem[] = [];
 
+    // タスクの期日変更
     for (const shortId of proposal.target_task_ids) {
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
@@ -174,16 +187,52 @@ export async function applyProposal(
 
       if (!task) continue;
 
+      // shift_days が指定されている場合は現在の期日に日数を加算、なければ suggested_date を使う
+      let suggestedValue = proposal.suggested_date ?? "未定";
+      if (proposal.shift_days && task.due_date) {
+        const d = new Date(task.due_date as string);
+        d.setDate(d.getDate() + proposal.shift_days);
+        suggestedValue = d.toISOString().split("T")[0];
+      }
+
       items.push({
         task_id: uuid,
         task_name: (task.name as string) ?? shortId,
         current_value: (task.due_date as string) ?? "未設定",
-        suggested_value: proposal.suggested_date ?? "未定",
+        suggested_value: suggestedValue,
       });
     }
 
-    if (items.length === 0) {
-      return { type: "error", message: "対象タスクが見つかりませんでした" };
+    // プロジェクトの終了日変更
+    for (const shortId of proposal.target_pj_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
+
+      const { data: pj } = await supabase
+        .from("projects")
+        .select("id, name, end_date")
+        .eq("id", uuid)
+        .single();
+
+      if (!pj) continue;
+
+      let suggestedEndDate = proposal.suggested_end_date ?? "";
+      if (proposal.shift_days && pj.end_date) {
+        const d = new Date(pj.end_date as string);
+        d.setDate(d.getDate() + proposal.shift_days);
+        suggestedEndDate = d.toISOString().split("T")[0];
+      }
+
+      pjEndDateItems.push({
+        pj_id: uuid,
+        pj_name: (pj.name as string) ?? shortId,
+        current_end_date: (pj.end_date as string) ?? null,
+        suggested_end_date: suggestedEndDate,
+      });
+    }
+
+    if (items.length === 0 && pjEndDateItems.length === 0) {
+      return { type: "error", message: "対象タスク・プロジェクトが見つかりませんでした" };
     }
 
     return {
@@ -192,6 +241,8 @@ export async function applyProposal(
         proposal_id: proposal.proposal_id,
         action_type: "date_change",
         items,
+        pj_end_date_items: pjEndDateItems.length > 0 ? pjEndDateItems : undefined,
+        shift_days: proposal.shift_days,
       },
     };
   }
@@ -365,11 +416,12 @@ export async function applyProposalWithConfirmation(
 
     if (dialog.action_type === "date_change") {
       const operations: UndoOperation[] = [];
+
+      // タスクの期日更新
       for (const item of dialog.items) {
         const newDate = confirmedValues[item.task_id];
         if (!newDate) continue;
 
-        // Undo用に現在のdue_dateを取得
         const { data: taskData } = await supabase
           .from("tasks")
           .select("due_date")
@@ -379,19 +431,39 @@ export async function applyProposalWithConfirmation(
 
         const { error } = await supabase
           .from("tasks")
-          .update({
-            due_date: newDate,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
+          .update({ due_date: newDate, updated_at: now, updated_by: currentUserId })
           .eq("id", item.task_id);
 
         if (error) throw new Error(`日程更新エラー (${item.task_name}): ${error.message}`);
         operations.push({ type: "task_field", taskId: item.task_id, field: "due_date", oldValue: oldDueDate });
       }
+
+      // プロジェクト終了日の更新
+      for (const pjItem of dialog.pj_end_date_items ?? []) {
+        const newEndDate = confirmedValues[pjItem.pj_id];
+        if (!newEndDate) continue;
+
+        const { data: pjData } = await supabase
+          .from("projects")
+          .select("end_date")
+          .eq("id", pjItem.pj_id)
+          .single();
+        const oldEndDate = (pjData?.end_date as string) ?? null;
+
+        const { error } = await supabase
+          .from("projects")
+          .update({ end_date: newEndDate, updated_at: now, updated_by: currentUserId })
+          .eq("id", pjItem.pj_id);
+
+        if (error) throw new Error(`PJ終了日更新エラー (${pjItem.pj_name}): ${error.message}`);
+        operations.push({ type: "pj_field", pjId: pjItem.pj_id, field: "end_date", oldValue: oldEndDate });
+      }
+
+      const taskCount = operations.filter(o => o.type === "task_field").length;
+      const pjCount = operations.filter(o => o.type === "pj_field").length;
       const snapshot: UndoSnapshot = {
         id: generateId(),
-        label: buildSnapshotLabel("date_change", operations.length, 0),
+        label: buildSnapshotLabel("date_change", taskCount, pjCount),
         appliedAt: now,
         operations,
       };

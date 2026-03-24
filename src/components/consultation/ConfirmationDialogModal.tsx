@@ -6,7 +6,7 @@
 // CLAUDE.md Section 6-10参照。
 
 import { useState } from "react";
-import type { ConfirmationDialog } from "../../lib/ai/applyProposal";
+import type { ConfirmationDialog, PjEndDateItem } from "../../lib/ai/applyProposal";
 import { applyProposalWithConfirmation } from "../../lib/ai/applyProposal";
 import type { ApplyResult } from "../../lib/ai/applyProposal";
 import { useAppData } from "../../context/AppDataContext";
@@ -38,14 +38,13 @@ export function ConfirmationDialogModal({
   const [confirmedValues, setConfirmedValues] = useState<Record<string, string>>(
     () => {
       if (isDateChange) {
-        return Object.fromEntries(
-          dialog.items.map((item) => [item.task_id, item.suggested_value]),
-        );
+        const taskEntries = dialog.items.map((item) => [item.task_id, item.suggested_value]);
+        const pjEntries = (dialog.pj_end_date_items ?? []).map((item) => [item.pj_id, item.suggested_end_date]);
+        return Object.fromEntries([...taskEntries, ...pjEntries]);
       }
       if (isDeleteAction) {
         return {};
       }
-      // assignee: short_nameからUUIDを逆引き
       return Object.fromEntries(
         dialog.items.map((item) => {
           const matched = activeMembers.find(
@@ -58,6 +57,27 @@ export function ConfirmationDialogModal({
     },
   );
   const [applying, setApplying] = useState(false);
+
+  // 一括シフト：全タスク・PJの期日を現在値+shift_days で再計算
+  const handleBulkShift = () => {
+    if (!dialog.shift_days) return;
+    const next: Record<string, string> = {};
+    dialog.items.forEach((item) => {
+      if (item.current_value && item.current_value !== "未設定") {
+        const d = new Date(item.current_value);
+        d.setDate(d.getDate() + dialog.shift_days!);
+        next[item.task_id] = d.toISOString().split("T")[0];
+      }
+    });
+    (dialog.pj_end_date_items ?? []).forEach((item) => {
+      if (item.current_end_date) {
+        const d = new Date(item.current_end_date);
+        d.setDate(d.getDate() + dialog.shift_days!);
+        next[item.pj_id] = d.toISOString().split("T")[0];
+      }
+    });
+    setConfirmedValues((prev) => ({ ...prev, ...next }));
+  };
 
   const handleApply = async () => {
     setApplying(true);
@@ -148,7 +168,64 @@ export function ConfirmationDialogModal({
               : "以下の内容で反映します。値を確認・修正してから「確定して反映」を押してください。"}
           </div>
 
+          {/* 一括シフトボタン */}
+          {isDateChange && dialog.shift_days && (
+            <button
+              onClick={handleBulkShift}
+              style={{
+                width: "100%", marginBottom: "12px",
+                padding: "7px 12px", fontSize: "12px", fontWeight: "500",
+                background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                border: "1px solid var(--color-border-info)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+              }}
+            >
+              全て +{dialog.shift_days}日シフト（AIの提案に揃える）
+            </button>
+          )}
+
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {/* プロジェクト終了日 */}
+            {isDateChange && (dialog.pj_end_date_items ?? []).map((pjItem: PjEndDateItem) => (
+              <div
+                key={pjItem.pj_id}
+                style={{
+                  padding: "10px 12px",
+                  background: "var(--color-bg-secondary)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border-info)",
+                }}
+              >
+                <div style={{ fontSize: "11px", color: "var(--color-text-info)", fontWeight: "600", marginBottom: "2px" }}>
+                  📁 プロジェクト終了日
+                </div>
+                <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+                  {pjItem.pj_name}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
+                  <span style={{ color: "var(--color-text-tertiary)" }}>
+                    現在：{pjItem.current_end_date ?? "未設定"}
+                  </span>
+                  <span style={{ color: "var(--color-text-tertiary)" }}>→</span>
+                  <input
+                    type="date"
+                    value={confirmedValues[pjItem.pj_id] ?? ""}
+                    onChange={(e) =>
+                      setConfirmedValues((prev) => ({ ...prev, [pjItem.pj_id]: e.target.value }))
+                    }
+                    style={{
+                      fontSize: "11px", padding: "3px 6px",
+                      border: "1px solid var(--color-border-secondary)",
+                      borderRadius: "var(--radius-sm)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+
+            {/* タスク期日 */}
             {dialog.items.map((item) => (
               <div
                 key={item.task_id}

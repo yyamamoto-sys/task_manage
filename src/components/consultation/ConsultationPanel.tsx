@@ -15,6 +15,7 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Member, Project } from "../../lib/localData/types";
 import type { ConsultationType } from "../../lib/localData/types";
+import { useAppData } from "../../context/AppDataContext";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
 import { ChatHistory } from "./ChatHistory";
 import { FollowUpButtons } from "./FollowUpButtons";
@@ -92,6 +93,8 @@ export function ConsultationPanel({
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   // ガントプレビューの表示状態
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
+
+  const { reload } = useAppData();
 
   const {
     callState,
@@ -541,7 +544,7 @@ export function ConsultationPanel({
                   proposal={proposal}
                   shortIdMap={shortIdMap}
                   currentUserId={currentUser.id}
-                  onApplied={(snapshot) => pushUndoSnapshot(snapshot)}
+                  onApplied={(snapshot) => { pushUndoSnapshot(snapshot); reload(); }}
                   onGanttPreview={(p) => setGanttPreviewProposal(p)}
                 />
               ))}
