@@ -458,13 +458,11 @@ function QuarterlyOKRPanel({
       </div>
 
       {/* KR一覧 */}
-      {qObj && (
-        <>
-          <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
-            {quarter} KEY RESULTS
-          </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-            {qKrs.map((kr, i) => {
+      <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
+        {quarter} KEY RESULTS
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
+        {qKrs.map((kr, i) => {
               const linkedTfIds = quarterlyKrTaskForces
                 .filter(q => q.quarterly_kr_id === kr.id)
                 .map(q => q.tf_id);
@@ -556,32 +554,35 @@ function QuarterlyOKRPanel({
                 </div>
               );
             })}
-            {qKrs.length === 0 && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
-                KRがまだありません
-              </div>
-            )}
-          </div>
+          {qKrs.length === 0 && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
+              KRがまだありません
+            </div>
+          )}
+        </div>
 
-          {/* KR追加 */}
-          <div style={{ display: "flex", gap: "8px" }}>
-            <input
-              value={newQKrTitle}
-              onChange={e => setNewQKrTitle(e.target.value)}
-              placeholder={`${quarter}の新しいKRを入力して追加`}
-              maxLength={200}
-              style={{ ...inputStyle, flex: 1 }}
-              onKeyDown={e => { if (e.key === "Enter") addQKr(); }}
-            />
-            <button onClick={addQKr} style={primaryBtnStyle}>＋ 追加</button>
-          </div>
-        </>
-      )}
-
-      {/* QObjが未設定でもKRを追加しようとした場合のガイド */}
-      {!qObj && qTitle.trim() && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "8px" }}>
-          Objectiveを保存するとKRを追加できます
+      {/* KR追加 */}
+      {qObj ? (
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            value={newQKrTitle}
+            onChange={e => setNewQKrTitle(e.target.value)}
+            placeholder={`${quarter}の新しいKRを入力して追加`}
+            maxLength={200}
+            style={{ ...inputStyle, flex: 1 }}
+            onKeyDown={e => { if (e.key === "Enter") addQKr(); }}
+          />
+          <button onClick={addQKr} style={primaryBtnStyle}>＋ 追加</button>
+        </div>
+      ) : (
+        <div style={{
+          fontSize: "11px", color: "var(--color-text-tertiary)",
+          padding: "8px 12px",
+          background: "var(--color-bg-secondary)",
+          border: "1px dashed var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+        }}>
+          ↑ まず{quarter}のObjectiveを入力して「保存」するとKRを追加できます
         </div>
       )}
     </div>
