@@ -364,17 +364,28 @@ export function GanttView({
 
             {/* ボディ */}
             <div style={{ position: "relative" }}>
-              {/* 土日グリッドの背景色 */}
+              {/* 縦罫線 + 土日背景色 */}
               {days.map((d, i) => {
                 const isSun = d.getDay() === 0;
                 const isSat = d.getDay() === 6;
-                if (!isSat && !isSun) return null;
+                const isMon = d.getDay() === 1;
+                const isMonthStart = d.getDate() === 1;
                 return (
                   <div key={i} style={{
                     position: "absolute", left: i * DAY_WIDTH, width: DAY_WIDTH,
                     top: 0, bottom: 0,
-                    background: isSun ? "rgba(239,68,68,0.04)" : "rgba(59,130,246,0.04)",
+                    background: isSun
+                      ? "rgba(239,68,68,0.05)"
+                      : isSat
+                      ? "rgba(59,130,246,0.05)"
+                      : "transparent",
+                    borderLeft: isMonthStart
+                      ? "1px solid var(--color-border-primary)"
+                      : isMon
+                      ? "1px solid rgba(0,0,0,0.08)"
+                      : "1px solid rgba(0,0,0,0.04)",
                     pointerEvents: "none",
+                    boxSizing: "border-box",
                   }} />
                 );
               })}
