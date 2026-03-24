@@ -981,21 +981,21 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     display_name: "", short_name: "", teams_account: "",
-    color_bg: "#dbeafe", color_text: "#1d4ed8",
+    color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
   });
 
   const COLORS = [
-    { bg: "#dbeafe", text: "#1d4ed8" },
-    { bg: "#dcfce7", text: "#15803d" },
-    { bg: "#fef3c7", text: "#92400e" },
-    { bg: "#eeedfe", text: "#534AB7" },
-    { bg: "#fee2e2", text: "#b91c1c" },
-    { bg: "#E1F5EE", text: "#0F6E56" },
+    { bg: "var(--avatar-1-bg)", text: "var(--avatar-1-text)" },
+    { bg: "var(--avatar-2-bg)", text: "var(--avatar-2-text)" },
+    { bg: "var(--avatar-3-bg)", text: "var(--avatar-3-text)" },
+    { bg: "var(--avatar-0-bg)", text: "var(--avatar-0-text)" },
+    { bg: "var(--avatar-5-bg)", text: "var(--avatar-5-text)" },
+    { bg: "var(--avatar-7-bg)", text: "var(--avatar-7-text)" },
   ];
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", color_bg: "#dbeafe", color_text: "#1d4ed8" });
+    setForm({ display_name: "", short_name: "", teams_account: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)" });
   };
 
   const openEdit = (m: Member) => {

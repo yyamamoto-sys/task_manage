@@ -32,9 +32,9 @@ const STATUS_COLORS: Record<Task["status"], { bg: string; color: string; border:
 };
 const PRIORITY_LABELS: Record<string, string> = { high: "高", mid: "中", low: "低" };
 const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
-  high: { bg: "#fee2e2", color: "#b91c1c" },
-  mid:  { bg: "#fef3c7", color: "#92400e" },
-  low:  { bg: "#dcfce7", color: "#15803d" },
+  high: { bg: "var(--color-bg-danger)",  color: "var(--color-text-danger)"  },
+  mid:  { bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
+  low:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
 };
 
 function todayStr() { return new Date().toISOString().split("T")[0]; }

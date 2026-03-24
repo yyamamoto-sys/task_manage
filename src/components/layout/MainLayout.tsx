@@ -1,5 +1,6 @@
 // src/components/layout/MainLayout.tsx
 import { useState, useMemo } from "react";
+import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode } from "../../lib/localData/types";
@@ -26,6 +27,7 @@ const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: Reac
 
 export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
+  const { theme, toggle: toggleTheme } = useTheme();
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
@@ -178,6 +180,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onLogout={onLogout}
         isConsultOpen={isConsultOpen}
         onOpenConsult={() => setIsConsultOpen(prev => !prev)}
+      theme={theme}
+      onToggleTheme={toggleTheme}
       />
       {mainContent}
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
@@ -210,12 +214,15 @@ interface SidebarProps {
   onLogout: () => void;
   isConsultOpen: boolean;
   onOpenConsult: () => void;
+  theme: "light" | "dark";
+  onToggleTheme: () => void;
 }
 
 function Sidebar({
   viewMode, setViewMode, projects,
   selectedProjectId, setSelectedProjectId,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
+  theme, onToggleTheme,
 }: SidebarProps) {
   return (
     <div style={{
@@ -284,6 +291,16 @@ function Sidebar({
           <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flex: 1 }}>
             {currentUser.short_name}
           </span>
+          <button
+            onClick={onToggleTheme}
+            style={{
+              fontSize: "13px", color: "var(--color-text-tertiary)",
+              background: "transparent", border: "none", cursor: "pointer", padding: "2px",
+            }}
+            title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <button
             onClick={onLogout}
             style={{

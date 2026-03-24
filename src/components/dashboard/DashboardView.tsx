@@ -418,7 +418,7 @@ export function DashboardView({ currentUser, projects }: Props) {
                     </span>
                   </div>
                   <ProgressBar pct={pct} color={
-                    pct >= 80 ? "#22c55e" : pct >= 40 ? "#f59e0b" : "#94a3b8"
+                    pct >= 80 ? "var(--color-text-success)" : pct >= 40 ? "var(--color-text-warning)" : "var(--color-text-tertiary)"
                   } />
                 </div>
               );

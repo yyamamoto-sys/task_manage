@@ -32,25 +32,26 @@ export function LoginScreen({ onLogin }: Props) {
       display: "flex",
       alignItems: "center",
       justifyContent: "center",
-      background: "#f5f5f7",
+      background: "var(--color-bg-secondary)",
     }}>
       <div style={{
-        background: "#fff",
-        borderRadius: "12px",
+        background: "var(--color-bg-primary)",
+        borderRadius: "var(--radius-lg)",
         padding: "40px",
         width: "360px",
-        boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+        boxShadow: "var(--shadow-md)",
+        border: "1px solid var(--color-border-primary)",
       }}>
-        <h1 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "#1a1a2e" }}>
+        <h1 style={{ fontSize: "20px", fontWeight: 700, marginBottom: "8px", color: "var(--color-text-primary)" }}>
           チーム計画管理ツール
         </h1>
-        <p style={{ fontSize: "13px", color: "#666", marginBottom: "28px" }}>
+        <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", marginBottom: "28px" }}>
           Supabaseアカウントでログインしてください
         </p>
 
         <form onSubmit={handleSubmit}>
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#444", marginBottom: "6px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: "6px" }}>
               メールアドレス
             </label>
             <input
@@ -62,17 +63,19 @@ export function LoginScreen({ onLogin }: Props) {
               style={{
                 width: "100%",
                 padding: "10px 12px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
                 fontSize: "14px",
                 boxSizing: "border-box",
                 outline: "none",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
               }}
             />
           </div>
 
           <div style={{ marginBottom: "24px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "#444", marginBottom: "6px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)", marginBottom: "6px" }}>
               パスワード
             </label>
             <input
@@ -83,17 +86,19 @@ export function LoginScreen({ onLogin }: Props) {
               style={{
                 width: "100%",
                 padding: "10px 12px",
-                border: "1px solid #ddd",
-                borderRadius: "8px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
                 fontSize: "14px",
                 boxSizing: "border-box",
                 outline: "none",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
               }}
             />
           </div>
 
           {error && (
-            <p style={{ fontSize: "13px", color: "#e53e3e", marginBottom: "16px" }}>
+            <p style={{ fontSize: "13px", color: "var(--color-text-danger)", marginBottom: "16px" }}>
               {error}
             </p>
           )}
@@ -104,10 +109,10 @@ export function LoginScreen({ onLogin }: Props) {
             style={{
               width: "100%",
               padding: "11px",
-              background: loading ? "#a8a4e8" : "#7F77DD",
+              background: loading ? "var(--color-text-tertiary)" : "var(--color-brand)",
               color: "#fff",
               border: "none",
-              borderRadius: "8px",
+              borderRadius: "var(--radius-md)",
               fontSize: "14px",
               fontWeight: 600,
               cursor: loading ? "not-allowed" : "pointer",

@@ -56,6 +56,70 @@
     sans-serif;
 }
 
+/* ===== アバターカラー（CSS変数化でダークモード対応） ===== */
+:root {
+  --avatar-0-bg: #EDE9FE; --avatar-0-text: #7C3AED;
+  --avatar-1-bg: #DBEAFE; --avatar-1-text: #1D4ED8;
+  --avatar-2-bg: #D1FAE5; --avatar-2-text: #065F46;
+  --avatar-3-bg: #FEF3C7; --avatar-3-text: #92400E;
+  --avatar-4-bg: #FCE7F3; --avatar-4-text: #9D174D;
+  --avatar-5-bg: #FEE2E2; --avatar-5-text: #991B1B;
+  --avatar-6-bg: #E0F2FE; --avatar-6-text: #0369A1;
+  --avatar-7-bg: #F0FDF4; --avatar-7-text: #166534;
+}
+
+/* ===== ダークモード ===== */
+[data-theme="dark"] {
+  /* 背景 */
+  --color-bg-primary: #1a1b1e;
+  --color-bg-secondary: #212226;
+  --color-bg-tertiary: #2a2b30;
+  --color-bg-info: #1e2d47;
+  --color-bg-success: #162a1f;
+  --color-bg-warning: #2a1f0a;
+  --color-bg-danger: #2a1212;
+  --color-bg-purple: #1f1d38;
+
+  /* テキスト */
+  --color-text-primary: #e4e5e7;
+  --color-text-secondary: #9da3ae;
+  --color-text-tertiary: #6b7280;
+  --color-text-info: #60a5fa;
+  --color-text-success: #4ade80;
+  --color-text-warning: #fbbf24;
+  --color-text-danger: #f87171;
+  --color-text-purple: #a5a0f0;
+
+  /* ボーダー */
+  --color-border-primary: #2e3035;
+  --color-border-secondary: #3a3d43;
+  --color-border-info: #1d4ed8;
+  --color-border-success: #166534;
+  --color-border-warning: #92400e;
+  --color-border-danger: #7f1d1d;
+  --color-border-purple: #4c4590;
+
+  /* ブランドカラー（暗背景で少し明るく） */
+  --color-brand: #8b84e3;
+  --color-brand-light: #2a2550;
+  --color-brand-border: #6b64cc;
+
+  /* シャドウ（暗背景では強めに） */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+
+  /* アバターカラー */
+  --avatar-0-bg: #2d2452; --avatar-0-text: #c4b5fd;
+  --avatar-1-bg: #1e2d47; --avatar-1-text: #93c5fd;
+  --avatar-2-bg: #162a1f; --avatar-2-text: #86efac;
+  --avatar-3-bg: #2a1f0a; --avatar-3-text: #fcd34d;
+  --avatar-4-bg: #2d1225; --avatar-4-text: #f9a8d4;
+  --avatar-5-bg: #2a1212; --avatar-5-text: #fca5a5;
+  --avatar-6-bg: #0c2340; --avatar-6-text: #7dd3fc;
+  --avatar-7-bg: #162a1f; --avatar-7-text: #bbf7d0;
+}
+
 /* ===== リセット ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }

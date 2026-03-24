@@ -20,9 +20,9 @@ const STATUS_CONFIG = {
 } as const;
 
 const PRIORITY_CONFIG = {
-  high: { label: "高", bg: "#fee2e2", color: "#b91c1c" },
-  mid:  { label: "中", bg: "#fef3c7", color: "#92400e" },
-  low:  { label: "低", bg: "#f0fdf4", color: "#15803d" },
+  high: { label: "高", bg: "var(--color-bg-danger)",  color: "var(--color-text-danger)"  },
+  mid:  { label: "中", bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
+  low:  { label: "低", bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
 } as const;
 
 export function KanbanView({ currentUser, selectedProject, projects }: Props) {

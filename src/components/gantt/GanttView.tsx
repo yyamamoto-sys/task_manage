@@ -346,8 +346,8 @@ export function GanttView({
                       fontWeight: isToday ? "700" : "400",
                       color: isToday
                         ? "#fff"
-                        : isSun ? "#e53e3e"
-                        : isSat ? "#3b82f6"
+                        : isSun ? "var(--color-text-danger)"
+                        : isSat ? "var(--color-text-info)"
                         : "var(--color-text-tertiary)",
                       background: isToday ? "var(--color-brand)" : "transparent",
                       borderRadius: isToday ? "3px" : "0",
@@ -382,8 +382,8 @@ export function GanttView({
                     borderLeft: isMonthStart
                       ? "1px solid var(--color-border-primary)"
                       : isMon
-                      ? "1px solid rgba(0,0,0,0.08)"
-                      : "1px solid rgba(0,0,0,0.04)",
+                      ? "1px solid var(--color-border-secondary)"
+                      : "1px solid var(--color-border-primary)",
                     pointerEvents: "none",
                     boxSizing: "border-box",
                   }} />
@@ -395,7 +395,7 @@ export function GanttView({
                 position: "absolute",
                 left: todayX + DAY_WIDTH / 2,
                 top: 0, bottom: 0, width: 2,
-                background: "#e53e3e",
+                background: "var(--color-text-danger)",
                 opacity: 0.7,
                 pointerEvents: "none",
                 zIndex: 5,
@@ -476,9 +476,9 @@ export function GanttView({
                                   background: isChanged
                                     ? "var(--color-brand)"
                                     : isDone
-                                    ? "#86efac"
+                                    ? "var(--color-border-success)"
                                     : isOverdue
-                                    ? "#fca5a5"
+                                    ? "var(--color-border-danger)"
                                     : pj.color_tag,
                                   opacity: isDone ? 0.6 : 1,
                                   cursor: isPreview ? "default" : "pointer",
@@ -538,10 +538,10 @@ export function GanttView({
         display: "flex", gap: "16px", flexShrink: 0,
       }}>
         {[
-          { color: "#86efac", label: "完了" },
-          { color: "#fca5a5", label: "期限超過" },
+          { color: "var(--color-border-success)", label: "完了" },
+          { color: "var(--color-border-danger)", label: "期限超過" },
           { color: "var(--color-border-secondary)", label: "進行中/未着手" },
-          { color: "#e53e3e", label: "今日" },
+          { color: "var(--color-text-danger)", label: "今日" },
         ].map(({ color, label }) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
             <div style={{

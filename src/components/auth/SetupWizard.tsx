@@ -20,14 +20,14 @@ interface Props {
 }
 
 const AVATAR_COLORS = [
-  { bg: "#EDE9FE", text: "#7C3AED" },
-  { bg: "#DBEAFE", text: "#1D4ED8" },
-  { bg: "#D1FAE5", text: "#065F46" },
-  { bg: "#FEF3C7", text: "#92400E" },
-  { bg: "#FCE7F3", text: "#9D174D" },
-  { bg: "#FEE2E2", text: "#991B1B" },
-  { bg: "#E0F2FE", text: "#0369A1" },
-  { bg: "#F0FDF4", text: "#166534" },
+  { bg: "var(--avatar-0-bg)", text: "var(--avatar-0-text)" },
+  { bg: "var(--avatar-1-bg)", text: "var(--avatar-1-text)" },
+  { bg: "var(--avatar-2-bg)", text: "var(--avatar-2-text)" },
+  { bg: "var(--avatar-3-bg)", text: "var(--avatar-3-text)" },
+  { bg: "var(--avatar-4-bg)", text: "var(--avatar-4-text)" },
+  { bg: "var(--avatar-5-bg)", text: "var(--avatar-5-text)" },
+  { bg: "var(--avatar-6-bg)", text: "var(--avatar-6-text)" },
+  { bg: "var(--avatar-7-bg)", text: "var(--avatar-7-text)" },
 ];
 
 interface MemberDraft {
