@@ -8,13 +8,13 @@ import { supabase } from "./client";
 import type {
   Member, Objective, KeyResult, TaskForce,
   Project, Task, ProjectTaskForce,
-  QuarterlyObjective, QuarterlyKeyResult,
+  QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
 } from "../localData/types";
 
 // ===== 全データ一括取得 =====
 
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs] =
+  const [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs, qKrTfs] =
     await Promise.all([
       supabase.from("members").select("*"),
       supabase.from("objectives").select("*"),
@@ -25,6 +25,7 @@ export async function fetchAllData() {
       supabase.from("project_task_forces").select("*"),
       supabase.from("quarterly_objectives").select("*"),
       supabase.from("quarterly_key_results").select("*"),
+      supabase.from("quarterly_kr_task_forces").select("*"),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
@@ -42,8 +43,9 @@ export async function fetchAllData() {
     projects:             (projects.data   ?? []) as Project[],
     tasks:                (tasks.data      ?? []) as Task[],
     projectTaskForces:    (ptf.data        ?? []) as ProjectTaskForce[],
-    quarterlyObjectives:  (qObjs.data      ?? []) as QuarterlyObjective[],
-    quarterlyKeyResults:  (qKrs.data       ?? []) as QuarterlyKeyResult[],
+    quarterlyObjectives:    (qObjs.data  ?? []) as QuarterlyObjective[],
+    quarterlyKeyResults:    (qKrs.data   ?? []) as QuarterlyKeyResult[],
+    quarterlyKrTaskForces:  (qKrTfs.data ?? []) as QuarterlyKrTaskForce[],
   };
 }
 
@@ -156,6 +158,21 @@ export async function softDeleteQuarterlyKeyResult(id: string, deletedBy: string
   const { error } = await supabase.from("quarterly_key_results")
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
+  if (error) throw error;
+}
+
+// ===== QuarterlyKrTaskForce =====
+
+export async function insertQuarterlyKrTaskForce(qKrTf: QuarterlyKrTaskForce) {
+  const { error } = await supabase.from("quarterly_kr_task_forces").insert(qKrTf);
+  if (error) throw error;
+}
+
+export async function deleteQuarterlyKrTaskForce(quarterlyKrId: string, tfId: string) {
+  const { error } = await supabase.from("quarterly_kr_task_forces")
+    .delete()
+    .eq("quarterly_kr_id", quarterlyKrId)
+    .eq("tf_id", tfId);
   if (error) throw error;
 }
 

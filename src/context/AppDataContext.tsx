@@ -14,7 +14,7 @@ import {
 import type {
   Member, Objective, KeyResult, TaskForce,
   Project, Task, ProjectTaskForce,
-  QuarterlyObjective, QuarterlyKeyResult,
+  QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
 } from "../lib/localData/types";
 import {
   fetchAllData,
@@ -27,6 +27,7 @@ import {
   insertProjectTaskForce, deleteProjectTaskForce,
   upsertQuarterlyObjective, softDeleteQuarterlyObjective,
   upsertQuarterlyKeyResult, softDeleteQuarterlyKeyResult,
+  insertQuarterlyKrTaskForce, deleteQuarterlyKrTaskForce,
 } from "../lib/supabase/store";
 
 // ===== Context型定義 =====
@@ -40,8 +41,9 @@ interface AppDataContextValue {
   projects:             Project[];
   tasks:                Task[];
   projectTaskForces:    ProjectTaskForce[];
-  quarterlyObjectives:  QuarterlyObjective[];
-  quarterlyKeyResults:  QuarterlyKeyResult[];
+  quarterlyObjectives:    QuarterlyObjective[];
+  quarterlyKeyResults:    QuarterlyKeyResult[];
+  quarterlyKrTaskForces:  QuarterlyKrTaskForce[];
   loading:              boolean;
   error:                string | null;
 
@@ -80,6 +82,10 @@ interface AppDataContextValue {
   saveQuarterlyKeyResult:   (qKr: QuarterlyKeyResult) => Promise<void>;
   deleteQuarterlyKeyResult: (id: string, deletedBy: string) => Promise<void>;
 
+  // QuarterlyKrTaskForce
+  addQuarterlyKrTaskForce:    (qKrTf: QuarterlyKrTaskForce) => Promise<void>;
+  removeQuarterlyKrTaskForce: (quarterlyKrId: string, tfId: string) => Promise<void>;
+
   // ユーティリティ
   reload: () => Promise<void>;
 }
@@ -98,8 +104,9 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [projects,             setProjects]             = useState<Project[]>([]);
   const [tasks,                setTasks]                = useState<Task[]>([]);
   const [projectTaskForces,    setProjectTaskForces]    = useState<ProjectTaskForce[]>([]);
-  const [quarterlyObjectives,  setQuarterlyObjectives]  = useState<QuarterlyObjective[]>([]);
-  const [quarterlyKeyResults,  setQuarterlyKeyResults]  = useState<QuarterlyKeyResult[]>([]);
+  const [quarterlyObjectives,   setQuarterlyObjectives]   = useState<QuarterlyObjective[]>([]);
+  const [quarterlyKeyResults,   setQuarterlyKeyResults]   = useState<QuarterlyKeyResult[]>([]);
+  const [quarterlyKrTaskForces, setQuarterlyKrTaskForces] = useState<QuarterlyKrTaskForce[]>([]);
   const [loading,              setLoading]              = useState(true);
   const [error,                setError]                = useState<string | null>(null);
 
@@ -117,6 +124,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setProjectTaskForces(data.projectTaskForces);
       setQuarterlyObjectives(data.quarterlyObjectives);
       setQuarterlyKeyResults(data.quarterlyKeyResults);
+      setQuarterlyKrTaskForces(data.quarterlyKrTaskForces);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの読み込みに失敗しました");
     } finally {
@@ -372,10 +380,34 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [load]);
 
+  // ===== QuarterlyKrTaskForce =====
+
+  const addQuarterlyKrTaskForce = useCallback(async (qKrTf: QuarterlyKrTaskForce) => {
+    setQuarterlyKrTaskForces(prev => [...prev, qKrTf]);
+    try {
+      await insertQuarterlyKrTaskForce(qKrTf);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const removeQuarterlyKrTaskForce = useCallback(async (quarterlyKrId: string, tfId: string) => {
+    setQuarterlyKrTaskForces(prev =>
+      prev.filter(q => !(q.quarterly_kr_id === quarterlyKrId && q.tf_id === tfId))
+    );
+    try {
+      await deleteQuarterlyKrTaskForce(quarterlyKrId, tfId);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
   const value: AppDataContextValue = {
     members, objective, keyResults, taskForces,
     projects, tasks, projectTaskForces,
-    quarterlyObjectives, quarterlyKeyResults,
+    quarterlyObjectives, quarterlyKeyResults, quarterlyKrTaskForces,
     loading, error,
     saveMember, deleteMember,
     saveObjective,
@@ -386,6 +418,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     addProjectTaskForce, removeProjectTaskForce,
     saveQuarterlyObjective, deleteQuarterlyObjective,
     saveQuarterlyKeyResult, deleteQuarterlyKeyResult,
+    addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce,
     reload: load,
   };
 

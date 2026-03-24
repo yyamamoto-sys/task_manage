@@ -130,6 +130,11 @@ export interface ProjectTaskForce {
   tf_id: string;
 }
 
+export interface QuarterlyKrTaskForce {
+  quarterly_kr_id: string;
+  tf_id: string;
+}
+
 export type ViewMode = "kanban" | "gantt" | "list" | "dashboard" | "admin";
 
 // ===== 変更履歴（CLAUDE.md Section 7）=====

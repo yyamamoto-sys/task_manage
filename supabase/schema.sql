@@ -72,6 +72,14 @@ create table if not exists quarterly_key_results (
   updated_by             text not null default ''
 );
 
+-- ===== Quarterly KR ↔ Task Force（多対多）=====
+create table if not exists quarterly_kr_task_forces (
+  quarterly_kr_id text not null references quarterly_key_results(id),
+  tf_id           text not null references task_forces(id),
+  created_at      timestamptz not null default now(),
+  primary key (quarterly_kr_id, tf_id)
+);
+
 -- ===== Task Forces =====
 create table if not exists task_forces (
   id               text primary key,
@@ -157,8 +165,9 @@ create table if not exists admin_change_logs (
 alter table members                enable row level security;
 alter table objectives             enable row level security;
 alter table key_results            enable row level security;
-alter table quarterly_objectives   enable row level security;
-alter table quarterly_key_results  enable row level security;
+alter table quarterly_objectives      enable row level security;
+alter table quarterly_key_results     enable row level security;
+alter table quarterly_kr_task_forces  enable row level security;
 alter table task_forces            enable row level security;
 alter table projects               enable row level security;
 alter table project_task_forces    enable row level security;
@@ -169,8 +178,9 @@ alter table admin_change_logs      enable row level security;
 create policy "authenticated full access" on members               for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on objectives            for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on key_results           for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on quarterly_objectives  for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on quarterly_key_results for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on quarterly_objectives     for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on quarterly_key_results    for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on quarterly_kr_task_forces for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on task_forces           for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on projects              for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on project_task_forces   for all to authenticated using (true) with check (true);
