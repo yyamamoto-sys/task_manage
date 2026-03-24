@@ -93,6 +93,8 @@ export interface Project {
   purpose: string;
   contribution_memo: string;
   owner_member_id: string;
+  /** 複数オーナー対応（DBのowner_member_ids[]と同期） */
+  owner_member_ids: string[];
   status: "active" | "completed" | "archived";
   color_tag: string;
   start_date: string;
@@ -191,6 +193,8 @@ export interface AIProject {
   pj_status: Project["status"];
   pj_end_date: string | null;
   pj_progress: { total: number; done: number; in_progress: number; todo: number };
+  /** オーナーのshort_name一覧（複数可） */
+  pj_owners: string[];
   tasks: AITask[];
 }
 

@@ -757,7 +757,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "", purpose: "", contribution_memo: "",
-    owner_member_id: "", status: "active" as Project["status"],
+    owner_member_ids: [] as string[], status: "active" as Project["status"],
     color_tag: "#7F77DD", start_date: "", end_date: "",
   });
 
@@ -765,7 +765,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
     setEditId("new");
     setForm({
       name: "", purpose: "", contribution_memo: "",
-      owner_member_id: members[0]?.id ?? "",
+      owner_member_ids: members[0] ? [members[0].id] : [],
       status: "active", color_tag: "#7F77DD",
       start_date: new Date().toISOString().split("T")[0],
       end_date: `${new Date().getFullYear()}-12-31`,
@@ -777,7 +777,8 @@ function PJSection({ currentUser }: { currentUser: Member }) {
     setForm({
       name: pj.name, purpose: pj.purpose,
       contribution_memo: pj.contribution_memo,
-      owner_member_id: pj.owner_member_id, status: pj.status,
+      owner_member_ids: pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []),
+      status: pj.status,
       color_tag: pj.color_tag, start_date: pj.start_date, end_date: pj.end_date,
     });
   };
@@ -789,11 +790,13 @@ function PJSection({ currentUser }: { currentUser: Member }) {
       return;
     }
     const now = new Date().toISOString();
+    // owner_member_id は先頭のオーナーで後方互換を保つ
+    const owner_member_id = form.owner_member_ids[0] ?? "";
     if (editId === "new") {
-      saveProject({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+      saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
     } else {
       const existing = projects.find(p => p.id === editId);
-      if (existing) saveProject({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
+      if (existing) saveProject({ ...existing, ...form, owner_member_id, updated_at: now, updated_by: currentUser.id });
     }
     setEditId(null);
   };
@@ -814,7 +817,9 @@ function PJSection({ currentUser }: { currentUser: Member }) {
       } />
 
       {projects.map(pj => {
-        const owner = members.find(m => m.id === pj.owner_member_id);
+        const owners = (pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []))
+          .map(id => members.find(m => m.id === id))
+          .filter((m): m is Member => !!m);
         return (
           <div key={pj.id} style={{
             display: "flex", alignItems: "flex-start", gap: "10px",
@@ -844,7 +849,9 @@ function PJSection({ currentUser }: { currentUser: Member }) {
                 {pj.purpose.slice(0, 60)}{pj.purpose.length > 60 ? "…" : ""}
               </div>
             </div>
-            {owner && <Avatar member={owner} size={20} />}
+            <div style={{ display: "flex", gap: "2px", flexShrink: 0 }}>
+              {owners.map(m => <Avatar key={m.id} member={m} size={20} />)}
+            </div>
             <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
               <IconBtn onClick={() => openEdit(pj)}>✏</IconBtn>
               <IconBtn danger onClick={() => deletePJ(pj.id)}>✕</IconBtn>
@@ -885,8 +892,38 @@ function PJSection({ currentUser }: { currentUser: Member }) {
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "8px" }}>
               <div>
                 <FieldLabel>オーナー</FieldLabel>
-                <select value={form.owner_member_id} onChange={e => setForm(f => ({...f, owner_member_id: e.target.value}))} style={inputStyle}>
-                  {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
+                  {form.owner_member_ids.map(id => {
+                    const m = members.find(m => m.id === id);
+                    if (!m) return null;
+                    return (
+                      <span key={id} style={{
+                        display: "inline-flex", alignItems: "center", gap: "4px",
+                        fontSize: "11px", padding: "2px 8px",
+                        background: "var(--color-bg-tertiary)",
+                        border: "1px solid var(--color-border-primary)",
+                        borderRadius: "var(--radius-full)",
+                      }}>
+                        {m.short_name}
+                        <button onClick={() => setForm(f => ({ ...f, owner_member_ids: f.owner_member_ids.filter(i => i !== id) }))}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+                <select
+                  value=""
+                  onChange={e => {
+                    const id = e.target.value;
+                    if (id && !form.owner_member_ids.includes(id))
+                      setForm(f => ({ ...f, owner_member_ids: [...f.owner_member_ids, id] }));
+                  }}
+                  style={inputStyle}
+                >
+                  <option value="">＋ オーナーを追加</option>
+                  {members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => (
+                    <option key={m.id} value={m.id}>{m.display_name}</option>
+                  ))}
                 </select>
               </div>
               <div>

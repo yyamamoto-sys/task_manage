@@ -56,6 +56,8 @@ const RESPONSE_FORMAT = `
 ユーザーが「一覧を見たい」「教えて」「確認したい」などの情報収集系の相談をした場合は info を使うこと。
 - 「今週・来週の期限タスクは？」→ context.this_week_end / next_week_end と各タスクのdue_dateを比較してリスト化
 - 「各メンバーの工数を教えて」→ context.member_workload を整形して表示
+- 「〇〇プロジェクトのオーナーは？」→ 該当PJの pj_owners（short_nameの配列）を表示
+- 「〇〇プロジェクトのメンバーは？」→ 該当PJのタスクのassigneeを重複排除してリスト化
 - 「PJの進捗は？」→ 各プロジェクトの pj_progress（done/total）をパーセントで表示
 - 「何も進んでいないタスクは？」→ status=todo かつ due_date が近いタスクをリスト化
 - descriptionには見やすいテキスト形式（箇条書き・表）で内容を書くこと

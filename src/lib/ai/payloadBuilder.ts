@@ -213,12 +213,17 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       };
     });
 
+    const pjOwners = (pj.owner_member_ids ?? [])
+      .map(id => opts.members.find(m => m.id === id)?.short_name)
+      .filter((n): n is string => !!n);
+
     return {
       pj_id: pjShortId,
       pj_name: pj.name,
       pj_purpose: pj.purpose,
       pj_status: pj.status,
       pj_end_date: pj.end_date ?? null,
+      pj_owners: pjOwners,
       pj_progress: {
         total: pjTasks.length,
         done: pjTasks.filter(t => t.status === "done").length,
