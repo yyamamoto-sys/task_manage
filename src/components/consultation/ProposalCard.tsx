@@ -25,6 +25,8 @@ interface Props {
   onApplied?: (snapshot: UndoSnapshot) => void;
   /** ガントで比較ボタンクリック時のコールバック */
   onGanttPreview?: (proposal: UIProposal) => void;
+  /** 「いいえ」ボタン押下時に次の相談文を送信するコールバック */
+  onDecline?: (followUpText: string) => void;
 }
 
 export function ProposalCard({
@@ -33,6 +35,7 @@ export function ProposalCard({
   currentUserId,
   onApplied,
   onGanttPreview,
+  onDecline,
 }: Props) {
   const [applying, setApplying] = useState(false);
   const [resultMessage, setResultMessage] = useState<{
@@ -197,7 +200,7 @@ export function ProposalCard({
         )}
 
         {/* ボタン行 */}
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px" }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px", flexWrap: "wrap" }}>
           {/* ガントで比較ボタン（date_change / assignee のみ表示） */}
           {(proposal.action_type === "date_change" || proposal.action_type === "assignee") &&
             onGanttPreview && (
@@ -211,44 +214,85 @@ export function ProposalCard({
                   borderRadius: "var(--radius-md)",
                   color: "var(--color-text-secondary)",
                   cursor: "pointer",
-                  transition: "opacity 0.15s",
                 }}
               >
                 ガントで比較
               </button>
             )}
-          <button
-            onClick={handleApply}
-            disabled={!proposal.canApply || applying || resultMessage?.type === "success"}
-            title={
-              proposal.is_simulation
-                ? "シミュレーション中は反映できません"
-                : proposal.date_certainty === "unknown"
-                  ? "日数未定のため反映できません"
-                  : undefined
-            }
-            style={{
-              fontSize: "11px",
-              padding: "5px 12px",
-              background:
-                proposal.canApply && !applying && resultMessage?.type !== "success"
-                  ? "var(--color-brand)"
-                  : "var(--color-bg-tertiary)",
-              border: "none",
-              borderRadius: "var(--radius-md)",
-              color:
-                proposal.canApply && !applying && resultMessage?.type !== "success"
-                  ? "#fff"
-                  : "var(--color-text-tertiary)",
-              cursor:
-                proposal.canApply && !applying && resultMessage?.type !== "success"
-                  ? "pointer"
-                  : "not-allowed",
-              transition: "opacity 0.15s",
-            }}
-          >
-            {applying ? "反映中..." : resultMessage?.type === "success" ? "反映済み" : "反映する"}
-          </button>
+
+          {/* プロジェクト期日変更かつ「いいえ」コールバックあり → はい/いいえ ボタン */}
+          {proposal.action_type === "date_change" &&
+           proposal.target_pj_ids.length > 0 &&
+           onDecline &&
+           resultMessage?.type !== "success" ? (
+            <>
+              <button
+                onClick={() =>
+                  onDecline(`いいえ、${proposal.title}は見送ります。別の対応策を検討したいです。`)
+                }
+                disabled={applying}
+                style={{
+                  fontSize: "11px",
+                  padding: "5px 12px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text-secondary)",
+                  cursor: "pointer",
+                }}
+              >
+                いいえ
+              </button>
+              <button
+                onClick={handleApply}
+                disabled={!proposal.canApply || applying}
+                style={{
+                  fontSize: "11px",
+                  padding: "5px 14px",
+                  background: proposal.canApply && !applying ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  color: proposal.canApply && !applying ? "#fff" : "var(--color-text-tertiary)",
+                  cursor: proposal.canApply && !applying ? "pointer" : "not-allowed",
+                  fontWeight: "500",
+                }}
+              >
+                {applying ? "処理中..." : "はい"}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={handleApply}
+              disabled={!proposal.canApply || applying || resultMessage?.type === "success"}
+              title={
+                proposal.is_simulation
+                  ? "シミュレーション中は反映できません"
+                  : proposal.date_certainty === "unknown"
+                    ? "日数未定のため反映できません"
+                    : undefined
+              }
+              style={{
+                fontSize: "11px",
+                padding: "5px 12px",
+                background:
+                  proposal.canApply && !applying && resultMessage?.type !== "success"
+                    ? "var(--color-brand)"
+                    : "var(--color-bg-tertiary)",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                color:
+                  proposal.canApply && !applying && resultMessage?.type !== "success"
+                    ? "#fff"
+                    : "var(--color-text-tertiary)",
+                cursor:
+                  proposal.canApply && !applying && resultMessage?.type !== "success"
+                    ? "pointer"
+                    : "not-allowed",
+              }}
+            >
+              {applying ? "反映中..." : resultMessage?.type === "success" ? "反映済み" : "反映する"}
+            </button>
+          )}
         </div>
       </div>
 

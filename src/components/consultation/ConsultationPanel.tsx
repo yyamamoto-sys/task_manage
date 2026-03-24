@@ -546,6 +546,13 @@ export function ConsultationPanel({
                   currentUserId={currentUser.id}
                   onApplied={(snapshot) => { pushUndoSnapshot(snapshot); reload(); }}
                   onGanttPreview={(p) => setGanttPreviewProposal(p)}
+                  onDecline={(followUpText) => {
+                    submit({
+                      consultation: followUpText,
+                      consultationType,
+                      targetDeadline: targetDeadline || null,
+                    });
+                  }}
                 />
               ))}
             </div>

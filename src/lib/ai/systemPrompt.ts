@@ -102,6 +102,15 @@ export const SYSTEM_PROMPTS: Record<ConsultationType, string> = {
 2. 他のプロジェクト・タスクへの波及影響は別の提案（risk / deadline_risk）で列挙すること
 3. 他TFやプロジェクトへの影響も考察してfollow_up_suggestionsに含めること
 
+## 期日が曖昧な相談への対応（「来季」「来月」「そのうち」など）
+ユーザーが明確な日付ではなく「来季」「来四半期」などの曖昧な表現を使った場合：
+1. context.quarters の情報を使って次のクォーター末を特定すること
+   （1Q末=3/31 / 2Q末=6/30 / 3Q末=9/30 / 4Q末=12/31）
+2. date_change提案のdescriptionは必ず「〇〇の期日を△△（YYYY年M月D日）に延ばすことを提案します。よろしいですか？」という質問形式にすること
+3. suggested_end_date に具体的な日付を設定し、date_certainty は "approximate" にすること
+4. target_pj_ids にプロジェクトのshortIdを含めること（target_task_ids は空配列でよい）
+5. follow_up_suggestions には「はい、期日を延ばして影響を整理してほしい」「いいえ、別の対応策を考えたい」を必ず含めること
+
 ${RESPONSE_FORMAT}`,
 
   // ===== simulate: What-If シミュレーション =====
