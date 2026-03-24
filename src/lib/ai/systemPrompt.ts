@@ -62,6 +62,21 @@ const RESPONSE_FORMAT = `
 - target_task_ids / target_pj_ids は空配列でよい
 - needs_confirmation=false、is_simulation=false にすること
 
+## 振り返り・完了履歴クエリの使い方
+「先週完了したタスクは？」「今月どれだけ進んだ？」などの振り返り系の質問には completed_at を使うこと。
+
+- 各タスクの completed_at（YYYY-MM-DD形式、未完了はnull）を context.today / this_week_end / next_week_start と比較して期間フィルタリングする
+- 「先週」= context.next_week_start の7日前（月曜）〜 context.this_week_end の7日前（日曜）
+- 「今週」= context.this_week_end の6日前（月曜）〜 context.this_week_end（日曜）
+- 「今月」= context.today の月初（YYYY-MM-01）〜 context.today
+- completed_at が null のタスクは完了していないため振り返りクエリには含めない
+- descriptionに以下の形式で整理すること：
+  （例）
+  【今月の完了タスク（X件）】
+  ・「タスク名A」担当：〇〇 完了日：MM/DD（〇〇プロジェクト）
+  ・「タスク名B」担当：〇〇 完了日：MM/DD（タスクフォース直轄）
+- 件数が0件の場合は「該当期間に完了したタスクはありません」と明示すること
+
 ## 工数・残業チェックの計算ルール（重要）
 ユーザーが「今月の工数は？」「残業しそう？」などを聞いてきた場合：
 

@@ -123,6 +123,8 @@ export interface Task {
   updated_by?: string;
   deleted_at?: string;
   deleted_by?: string;
+  /** ステータスがdoneになった日時（doneから外れたらnullに戻す） */
+  completed_at?: string | null;
 }
 
 export interface ProjectTaskForce {
@@ -201,6 +203,8 @@ export interface AITask {
   due_date: string | null;
   estimated_hours: number | null;
   comment: string;     // sanitizeComment() 適用済みであること
+  /** ステータスがdoneになった日時（YYYY-MM-DD形式）。未完了タスクはnull */
+  completed_at: string | null;
 }
 
 export interface MemberWorkload {

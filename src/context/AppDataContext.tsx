@@ -286,19 +286,28 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   // ===== Task =====
 
   const saveTask = useCallback(async (task: Task) => {
+    // ステータスがdoneに変わった瞬間にcompleted_atをセット、外れたらクリア
+    const existing = tasks.find(t => t.id === task.id);
+    const taskToSave: Task = {
+      ...task,
+      completed_at:
+        task.status === "done"
+          ? (existing?.status === "done" ? (task.completed_at ?? existing?.completed_at ?? new Date().toISOString()) : new Date().toISOString())
+          : null,
+    };
     setTasks(prev => {
-      const idx = prev.findIndex(t => t.id === task.id);
+      const idx = prev.findIndex(t => t.id === taskToSave.id);
       return idx >= 0
-        ? prev.map(t => t.id === task.id ? task : t)
-        : [...prev, task];
+        ? prev.map(t => t.id === taskToSave.id ? taskToSave : t)
+        : [...prev, taskToSave];
     });
     try {
-      await upsertTask(task);
+      await upsertTask(taskToSave);
     } catch (e) {
       await load();
       throw e;
     }
-  }, [load]);
+  }, [load, tasks]);
 
   const deleteTask = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();

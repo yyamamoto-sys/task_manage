@@ -208,6 +208,8 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         // ❌ contribution_memoは含めない。sanitizeComment()を必ず適用する
         // task.comment は Supabase から null が返ることがあるため空文字にフォールバック
         comment: sanitizeComment(task.comment ?? ""),
+        // completed_atはYYYY-MM-DD形式の日付部分のみ渡す（時刻は不要）
+        completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
       };
     });
 
