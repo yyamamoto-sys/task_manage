@@ -9,12 +9,13 @@ import type {
   Member, Objective, KeyResult, TaskForce,
   Project, Task, ProjectTaskForce,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
+  TaskTaskForce, TaskProject,
 } from "../localData/types";
 
 // ===== 全データ一括取得 =====
 
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs, qKrTfs] =
+  const [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs] =
     await Promise.all([
       supabase.from("members").select("*"),
       supabase.from("objectives").select("*"),
@@ -26,6 +27,8 @@ export async function fetchAllData() {
       supabase.from("quarterly_objectives").select("*"),
       supabase.from("quarterly_key_results").select("*"),
       supabase.from("quarterly_kr_task_forces").select("*"),
+      supabase.from("task_task_forces").select("*"),
+      supabase.from("task_projects").select("*"),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
@@ -46,6 +49,8 @@ export async function fetchAllData() {
     quarterlyObjectives:    (qObjs.data  ?? []) as QuarterlyObjective[],
     quarterlyKeyResults:    (qKrs.data   ?? []) as QuarterlyKeyResult[],
     quarterlyKrTaskForces:  (qKrTfs.data ?? []) as QuarterlyKrTaskForce[],
+    taskTaskForces:         (ttfs.data   ?? []) as TaskTaskForce[],
+    taskProjects:           (tpjs.data   ?? []) as TaskProject[],
   };
 }
 
@@ -173,6 +178,32 @@ export async function deleteQuarterlyKrTaskForce(quarterlyKrId: string, tfId: st
     .delete()
     .eq("quarterly_kr_id", quarterlyKrId)
     .eq("tf_id", tfId);
+  if (error) throw error;
+}
+
+// ===== TaskTaskForce =====
+
+export async function insertTaskTaskForce(ttf: TaskTaskForce) {
+  const { error } = await supabase.from("task_task_forces").insert(ttf);
+  if (error) throw error;
+}
+
+export async function deleteTaskTaskForce(taskId: string, tfId: string) {
+  const { error } = await supabase.from("task_task_forces")
+    .delete().eq("task_id", taskId).eq("tf_id", tfId);
+  if (error) throw error;
+}
+
+// ===== TaskProject =====
+
+export async function insertTaskProject(tp: TaskProject) {
+  const { error } = await supabase.from("task_projects").insert(tp);
+  if (error) throw error;
+}
+
+export async function deleteTaskProject(taskId: string, projectId: string) {
+  const { error } = await supabase.from("task_projects")
+    .delete().eq("task_id", taskId).eq("project_id", projectId);
   if (error) throw error;
 }
 

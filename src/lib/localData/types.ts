@@ -135,6 +135,18 @@ export interface QuarterlyKrTaskForce {
   tf_id: string;
 }
 
+/** タスク ↔ タスクフォース（多対多） */
+export interface TaskTaskForce {
+  task_id: string;
+  tf_id: string;
+}
+
+/** タスク ↔ 追加プロジェクト（多対多。project_idの主プロジェクト以外の紐づけ） */
+export interface TaskProject {
+  task_id: string;
+  project_id: string;
+}
+
 export type ViewMode = "kanban" | "gantt" | "list" | "dashboard" | "admin";
 
 // ===== 変更履歴（CLAUDE.md Section 7）=====

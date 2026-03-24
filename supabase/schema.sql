@@ -141,6 +141,22 @@ create table if not exists tasks (
   updated_by          text not null default ''
 );
 
+-- ===== Task ↔ TaskForce（多対多）=====
+create table if not exists task_task_forces (
+  task_id    text not null references tasks(id),
+  tf_id      text not null references task_forces(id),
+  created_at timestamptz not null default now(),
+  primary key (task_id, tf_id)
+);
+
+-- ===== Task ↔ 追加Project（多対多）=====
+create table if not exists task_projects (
+  task_id    text not null references tasks(id),
+  project_id text not null references projects(id),
+  created_at timestamptz not null default now(),
+  primary key (task_id, project_id)
+);
+
 -- ===== 変更履歴 =====
 create table if not exists admin_change_logs (
   id                  uuid primary key default gen_random_uuid(),
@@ -168,6 +184,8 @@ alter table key_results            enable row level security;
 alter table quarterly_objectives      enable row level security;
 alter table quarterly_key_results     enable row level security;
 alter table quarterly_kr_task_forces  enable row level security;
+alter table task_task_forces          enable row level security;
+alter table task_projects             enable row level security;
 alter table task_forces            enable row level security;
 alter table projects               enable row level security;
 alter table project_task_forces    enable row level security;
@@ -181,6 +199,8 @@ create policy "authenticated full access" on key_results           for all to au
 create policy "authenticated full access" on quarterly_objectives     for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on quarterly_key_results    for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on quarterly_kr_task_forces for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on task_task_forces         for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on task_projects            for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on task_forces           for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on projects              for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on project_task_forces   for all to authenticated using (true) with check (true);

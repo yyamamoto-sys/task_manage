@@ -15,6 +15,7 @@ import type {
   Member, Objective, KeyResult, TaskForce,
   Project, Task, ProjectTaskForce,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
+  TaskTaskForce, TaskProject,
 } from "../lib/localData/types";
 import {
   fetchAllData,
@@ -28,6 +29,8 @@ import {
   upsertQuarterlyObjective, softDeleteQuarterlyObjective,
   upsertQuarterlyKeyResult, softDeleteQuarterlyKeyResult,
   insertQuarterlyKrTaskForce, deleteQuarterlyKrTaskForce,
+  insertTaskTaskForce, deleteTaskTaskForce,
+  insertTaskProject, deleteTaskProject,
 } from "../lib/supabase/store";
 
 // ===== Context型定義 =====
@@ -44,6 +47,8 @@ interface AppDataContextValue {
   quarterlyObjectives:    QuarterlyObjective[];
   quarterlyKeyResults:    QuarterlyKeyResult[];
   quarterlyKrTaskForces:  QuarterlyKrTaskForce[];
+  taskTaskForces:         TaskTaskForce[];
+  taskProjects:           TaskProject[];
   loading:              boolean;
   error:                string | null;
 
@@ -86,6 +91,14 @@ interface AppDataContextValue {
   addQuarterlyKrTaskForce:    (qKrTf: QuarterlyKrTaskForce) => Promise<void>;
   removeQuarterlyKrTaskForce: (quarterlyKrId: string, tfId: string) => Promise<void>;
 
+  // TaskTaskForce
+  addTaskTaskForce:    (ttf: TaskTaskForce) => Promise<void>;
+  removeTaskTaskForce: (taskId: string, tfId: string) => Promise<void>;
+
+  // TaskProject
+  addTaskProject:    (tp: TaskProject) => Promise<void>;
+  removeTaskProject: (taskId: string, projectId: string) => Promise<void>;
+
   // ユーティリティ
   reload: () => Promise<void>;
 }
@@ -107,6 +120,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [quarterlyObjectives,   setQuarterlyObjectives]   = useState<QuarterlyObjective[]>([]);
   const [quarterlyKeyResults,   setQuarterlyKeyResults]   = useState<QuarterlyKeyResult[]>([]);
   const [quarterlyKrTaskForces, setQuarterlyKrTaskForces] = useState<QuarterlyKrTaskForce[]>([]);
+  const [taskTaskForces,        setTaskTaskForces]        = useState<TaskTaskForce[]>([]);
+  const [taskProjects,          setTaskProjects]          = useState<TaskProject[]>([]);
   const [loading,              setLoading]              = useState(true);
   const [error,                setError]                = useState<string | null>(null);
 
@@ -125,6 +140,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setQuarterlyObjectives(data.quarterlyObjectives);
       setQuarterlyKeyResults(data.quarterlyKeyResults);
       setQuarterlyKrTaskForces(data.quarterlyKrTaskForces);
+      setTaskTaskForces(data.taskTaskForces);
+      setTaskProjects(data.taskProjects);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの読み込みに失敗しました");
     } finally {
@@ -404,10 +421,55 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [load]);
 
+  // ===== TaskTaskForce =====
+
+  const addTaskTaskForce = useCallback(async (ttf: TaskTaskForce) => {
+    setTaskTaskForces(prev => [...prev, ttf]);
+    try {
+      await insertTaskTaskForce(ttf);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const removeTaskTaskForce = useCallback(async (taskId: string, tfId: string) => {
+    setTaskTaskForces(prev => prev.filter(t => !(t.task_id === taskId && t.tf_id === tfId)));
+    try {
+      await deleteTaskTaskForce(taskId, tfId);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  // ===== TaskProject =====
+
+  const addTaskProject = useCallback(async (tp: TaskProject) => {
+    setTaskProjects(prev => [...prev, tp]);
+    try {
+      await insertTaskProject(tp);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const removeTaskProject = useCallback(async (taskId: string, projectId: string) => {
+    setTaskProjects(prev => prev.filter(t => !(t.task_id === taskId && t.project_id === projectId)));
+    try {
+      await deleteTaskProject(taskId, projectId);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
   const value: AppDataContextValue = {
     members, objective, keyResults, taskForces,
     projects, tasks, projectTaskForces,
     quarterlyObjectives, quarterlyKeyResults, quarterlyKrTaskForces,
+    taskTaskForces, taskProjects,
     loading, error,
     saveMember, deleteMember,
     saveObjective,
@@ -419,6 +481,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     saveQuarterlyObjective, deleteQuarterlyObjective,
     saveQuarterlyKeyResult, deleteQuarterlyKeyResult,
     addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce,
+    addTaskTaskForce, removeTaskTaskForce,
+    addTaskProject, removeTaskProject,
     reload: load,
   };
 

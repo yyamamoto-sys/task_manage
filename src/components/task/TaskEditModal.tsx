@@ -10,7 +10,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project, Task, TaskTaskForce, TaskProject } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 
@@ -60,11 +60,28 @@ function renderComment(text: string): React.ReactNode {
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
-  const { tasks: allTasks, members: allMembers, projects: allProjects, saveTask, deleteTask } = useAppData();
+  const {
+    tasks: allTasks, members: allMembers, projects: allProjects,
+    taskForces: allTaskForces, taskTaskForces: allTaskTaskForces, taskProjects: allTaskProjects,
+    saveTask, deleteTask, addTaskTaskForce, removeTaskTaskForce, addTaskProject, removeTaskProject,
+  } = useAppData();
   const isMobile = useIsMobile();
 
-  const members  = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
-  const projects = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
+  const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
+  const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
+  const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
+
+  // このタスクに紐づくTF
+  const linkedTfs = useMemo(() => {
+    const tfIds = allTaskTaskForces.filter(t => t.task_id === taskId).map(t => t.tf_id);
+    return taskForces.filter(tf => tfIds.includes(tf.id));
+  }, [allTaskTaskForces, taskForces, taskId]);
+
+  // このタスクに紐づく追加プロジェクト
+  const linkedExtraProjects = useMemo(() => {
+    const pjIds = allTaskProjects.filter(t => t.task_id === taskId).map(t => t.project_id);
+    return projects.filter(p => pjIds.includes(p.id));
+  }, [allTaskProjects, projects, taskId]);
   const originalTask = allTasks.find(t => t.id === taskId);
 
   const [editing, setEditing] = useState(false);
@@ -309,6 +326,85 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             ) : null}
           </FieldSection>
 
+          {/* 追加プロジェクト */}
+          <FieldSection label="追加プロジェクト">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: linkedExtraProjects.length > 0 || editing ? "6px" : 0 }}>
+              {linkedExtraProjects.map(p => (
+                <span key={p.id} style={chipStyle}>
+                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color_tag, flexShrink: 0 }} />
+                  {p.name}
+                  {editing && (
+                    <button onClick={() => removeTaskProject(taskId, p.id)} style={chipRemoveBtn}>×</button>
+                  )}
+                </span>
+              ))}
+              {linkedExtraProjects.length === 0 && !editing && (
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
+              )}
+            </div>
+            {editing && (
+              <select
+                defaultValue=""
+                onChange={e => {
+                  if (!e.target.value) return;
+                  addTaskProject({ task_id: taskId, project_id: e.target.value });
+                  e.target.value = "";
+                }}
+                style={inputSm}
+              >
+                <option value="">＋ プロジェクトを追加...</option>
+                {projects
+                  .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
+                  .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+                }
+              </select>
+            )}
+          </FieldSection>
+
+          {/* タスクフォース */}
+          <FieldSection label="タスクフォース">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: linkedTfs.length > 0 || editing ? "6px" : 0 }}>
+              {linkedTfs.map(tf => (
+                <span key={tf.id} style={chipStyle}>
+                  {tf.tf_number ? <span style={{ fontWeight: "600", marginRight: 2 }}>{tf.tf_number}</span> : null}
+                  {tf.name}
+                  {editing && (
+                    <button onClick={() => removeTaskTaskForce(taskId, tf.id)} style={chipRemoveBtn}>×</button>
+                  )}
+                </span>
+              ))}
+              {linkedTfs.length === 0 && !editing && (
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未設定</span>
+              )}
+            </div>
+            {editing && taskForces.length > 0 && (
+              <select
+                defaultValue=""
+                onChange={e => {
+                  if (!e.target.value) return;
+                  addTaskTaskForce({ task_id: taskId, tf_id: e.target.value });
+                  e.target.value = "";
+                }}
+                style={inputSm}
+              >
+                <option value="">＋ タスクフォースを追加...</option>
+                {taskForces
+                  .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+                  .map(tf => (
+                    <option key={tf.id} value={tf.id}>
+                      {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                    </option>
+                  ))
+                }
+              </select>
+            )}
+            {editing && taskForces.length === 0 && (
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                管理画面でTask Forceを先に登録してください
+              </span>
+            )}
+          </FieldSection>
+
           {/* 期日 + 工数（横並び） */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
             <FieldSection label="終了日">
@@ -455,6 +551,20 @@ const inputSm: React.CSSProperties = {
   background: "var(--color-bg-primary)",
   color: "var(--color-text-primary)",
   outline: "none",
+};
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: "4px",
+  fontSize: "11px", padding: "2px 8px",
+  background: "var(--color-bg-secondary)",
+  border: "1px solid var(--color-border-primary)",
+  borderRadius: "99px", color: "var(--color-text-secondary)",
+};
+
+const chipRemoveBtn: React.CSSProperties = {
+  background: "none", border: "none", cursor: "pointer",
+  padding: "0", color: "var(--color-text-tertiary)",
+  fontSize: "11px", lineHeight: 1, marginLeft: "2px",
 };
 
 const ghostBtnSm: React.CSSProperties = {
