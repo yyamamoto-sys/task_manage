@@ -63,6 +63,34 @@ export function ProposalCard({
     }
   };
 
+  // info カードは別レンダリング（ボタンなし・一覧表示専用）
+  if (proposal.action_type === "info") {
+    return (
+      <div
+        style={{
+          background: "var(--color-bg-secondary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+          padding: "12px 14px",
+          boxShadow: "var(--shadow-sm)",
+        }}
+      >
+        <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
+          📋 {proposal.title}
+        </div>
+        <div style={{
+          fontSize: "11px",
+          color: "var(--color-text-primary)",
+          lineHeight: 1.8,
+          whiteSpace: "pre-wrap",
+          fontFamily: "monospace",
+        }}>
+          {proposal.description}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       <div

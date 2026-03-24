@@ -164,6 +164,11 @@ export async function applyProposal(
 ): Promise<ApplyResult> {
   const { action_type } = proposal;
 
+  // ===== info: 情報表示のみ（DBへの反映なし）=====
+  if (action_type === "info") {
+    return { type: "error", message: "情報カードには反映操作はありません" };
+  }
+
   // ===== milestone: 未対応 =====
   if (action_type === "milestone") {
     return { type: "error", message: "マイルストーンは未対応です" };

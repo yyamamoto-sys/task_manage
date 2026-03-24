@@ -21,6 +21,9 @@ import { sanitizeComment } from "./sanitize";
 interface FiscalCalendar {
   today: string;
   today_formatted: string;
+  this_week_end: string;   // 今週末（日曜）
+  next_week_start: string; // 来週月曜
+  next_week_end: string;   // 来週末（日曜）
   fiscal_year: { start: string; end: string; first_half_end: string; second_half_start: string };
   quarters: {
     definition: string;
@@ -85,9 +88,19 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
   const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
   const formatted = `${year}年${month}月${today.getDate()}日（${weekdays[today.getDay()]}）`;
 
+  // 今週末（日曜）と来週の範囲
+  const dayOfWeek = today.getDay(); // 0=日, 1=月
+  const daysToSunday = dayOfWeek === 0 ? 0 : 7 - dayOfWeek;
+  const thisWeekEnd = new Date(today); thisWeekEnd.setDate(today.getDate() + daysToSunday);
+  const nextWeekStart = new Date(thisWeekEnd); nextWeekStart.setDate(thisWeekEnd.getDate() + 1);
+  const nextWeekEnd = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
+
   return {
     today: todayStr,
     today_formatted: formatted,
+    this_week_end: fmt(thisWeekEnd),
+    next_week_start: fmt(nextWeekStart),
+    next_week_end: fmt(nextWeekEnd),
     fiscal_year: {
       start: `${year}-01-01`,
       end: `${year}-12-31`,
@@ -183,9 +196,15 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     return {
       pj_id: pjShortId,
       pj_name: pj.name,
-      // ❌ contribution_memoは含めない（KR情報の漏洩防止）
       pj_purpose: pj.purpose,
       pj_status: pj.status,
+      pj_end_date: pj.end_date ?? null,
+      pj_progress: {
+        total: pjTasks.length,
+        done: pjTasks.filter(t => t.status === "done").length,
+        in_progress: pjTasks.filter(t => t.status === "in_progress").length,
+        todo: pjTasks.filter(t => t.status === "todo").length,
+      },
       tasks: aiTasks,
     };
   });

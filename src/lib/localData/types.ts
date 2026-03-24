@@ -187,6 +187,8 @@ export interface AIProject {
   pj_name: string;
   pj_purpose: string;  // contribution_memoは含めない（CLAUDE.md Section 2参照）
   pj_status: Project["status"];
+  pj_end_date: string | null;
+  pj_progress: { total: number; done: number; in_progress: number; todo: number };
   tasks: AITask[];
 }
 

@@ -50,6 +50,17 @@ const RESPONSE_FORMAT = `
 - scope_reduce: スコープ縮小提案（論理削除が発生する）
 - pause: プロジェクト一時停止提案（論理削除が発生する）
 - milestone: マイルストーン関連（現在未対応）
+- info: 情報一覧表示（DBへの変更なし。タスク一覧・工数サマリー・進捗率など）
+
+## info アクションの使い方
+ユーザーが「一覧を見たい」「教えて」「確認したい」などの情報収集系の相談をした場合は info を使うこと。
+- 「今週・来週の期限タスクは？」→ context.this_week_end / next_week_end と各タスクのdue_dateを比較してリスト化
+- 「各メンバーの工数を教えて」→ context.member_workload を整形して表示
+- 「PJの進捗は？」→ 各プロジェクトの pj_progress（done/total）をパーセントで表示
+- 「何も進んでいないタスクは？」→ status=todo かつ due_date が近いタスクをリスト化
+- descriptionには見やすいテキスト形式（箇条書き・表）で内容を書くこと
+- target_task_ids / target_pj_ids は空配列でよい
+- needs_confirmation=false、is_simulation=false にすること
 
 ## フィールドの使い分け
 

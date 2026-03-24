@@ -67,6 +67,10 @@ const ACTION_TYPE_CONFIG: Record<
     label: "マイルストーン",
     color: "var(--color-text-info)",
   },
+  info: {
+    label: "情報",
+    color: "var(--color-text-secondary)",
+  },
 };
 
 /**
