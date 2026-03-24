@@ -43,6 +43,38 @@ const CONSULTATION_TYPE_OPTIONS: { value: ConsultationType; label: string }[] = 
   { value: "scope_change",   label: "スコープ縮小・停止" },
 ];
 
+const CONSULTATION_TYPE_INFO: Record<ConsultationType, {
+  placeholder: string;
+  description: string;
+  example: string;
+}> = {
+  change: {
+    placeholder: "例：○○さんが来週から長期休みに入ります。担当しているタスクへの影響を確認してください。",
+    description: "メンバーの不在・異動・スケジュール変更など、何かが変わったときに影響範囲を整理します。",
+    example: "「○○さんが来週から不在になる」「このタスクが2週間遅れそう」など、起きた変化を伝えてください。",
+  },
+  simulate: {
+    placeholder: "例：もし○○プロジェクトの締め切りを1ヶ月延ばしたら、他のプロジェクトにどんな影響がありますか？",
+    description: "「もし〜したら？」という仮定の話をAIと一緒に考えます。まだ決定していないことを試したいときに使います。",
+    example: "実際の変更は行わず画面上でのシミュレーションのみです。気軽に試してみてください。",
+  },
+  diagnose: {
+    placeholder: "例：今のプロジェクト全体を見て、遅延リスクや問題になりそうな箇所を教えてください。",
+    description: "今のプロジェクト・タスクの状況を分析して、リスクや課題を洗い出します。",
+    example: "特定の変更がなくても「今どういう状態か確認したい」というときに使います。",
+  },
+  deadline_check: {
+    placeholder: "例：○○プロジェクトを上の締め切り日までに完了させるには、今のペースで間に合いますか？",
+    description: "特定の締め切りに間に合わせるには何をどうすればよいかを逆算します。",
+    example: "まず上の「締め切り日」に目標日を入力してから相談してください。",
+  },
+  scope_change: {
+    placeholder: "例：○○プロジェクトの優先度が下がりました。止めるとしたらどのタスクから整理すればいいですか？",
+    description: "プロジェクトやタスクを停止・縮小するときに、影響を確認しながら整理します。",
+    example: "「リソースが足りなくなった」「優先度が下がった」ものがあるときに使います。",
+  },
+};
+
 export function ConsultationPanel({
   isOpen,
   onClose,
@@ -391,7 +423,7 @@ export function ConsultationPanel({
               value={inputText}
               onChange={(e) => setInputText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="例：田中さんが来週から産休に入ります。影響を確認して..."
+              placeholder={CONSULTATION_TYPE_INFO[consultationType].placeholder}
               rows={4}
               disabled={callState === "loading"}
               style={{
@@ -447,6 +479,31 @@ export function ConsultationPanel({
           >
             {callState === "loading" ? "AIが考えています..." : "AIに相談する"}
           </button>
+
+          {/* 相談種類の説明 */}
+          <div style={{
+            background: "var(--color-bg-secondary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            padding: "10px 12px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "4px",
+          }}>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+              {CONSULTATION_TYPE_INFO[consultationType].description}
+            </div>
+            <div style={{
+              fontSize: "10px",
+              color: "var(--color-text-tertiary)",
+              lineHeight: 1.6,
+              paddingTop: "2px",
+              borderTop: "1px solid var(--color-border-primary)",
+              marginTop: "4px",
+            }}>
+              💡 {CONSULTATION_TYPE_INFO[consultationType].example}
+            </div>
+          </div>
 
           {/* ローディング */}
           {callState === "loading" && (

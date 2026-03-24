@@ -10,6 +10,7 @@ import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, Project,
+  QuarterlyObjective, QuarterlyKeyResult, Quarter,
 } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
@@ -90,13 +91,19 @@ export function AdminView({ currentUser }: Props) {
 // ===================================================
 
 function OKRSection({ currentUser }: { currentUser: Member }) {
-  const { objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult } = useAppData();
+  const {
+    objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult,
+    quarterlyObjectives: rawQObjs, quarterlyKeyResults: rawQKrs,
+    saveQuarterlyObjective, deleteQuarterlyObjective,
+    saveQuarterlyKeyResult, deleteQuarterlyKeyResult,
+  } = useAppData();
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [newKrTitle, setNewKrTitle] = useState("");
   const [objTitle, setObjTitle] = useState(ctxObj?.title ?? "");
   const [saved, setSaved] = useState(false);
+  const [selectedQuarter, setSelectedQuarter] = useState<Quarter>("1Q");
 
   // ctxObj がロード後に反映
   useEffect(() => {
@@ -229,6 +236,293 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
         />
         <button onClick={addKr} style={primaryBtnStyle}>＋ 追加</button>
       </div>
+
+      {/* 四半期OKR */}
+      <div style={{ marginTop: "32px", borderTop: "1px solid var(--color-border-primary)", paddingTop: "20px" }}>
+        <SectionHeader title="四半期 OKR" />
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
+          通期Objectiveを達成するための各クォーターの目標と成果指標を設定します。
+        </div>
+
+        {/* クォーター選択タブ */}
+        <div style={{ display: "flex", gap: "4px", marginBottom: "16px" }}>
+          {(["1Q", "2Q", "3Q", "4Q"] as Quarter[]).map(q => (
+            <button
+              key={q}
+              onClick={() => setSelectedQuarter(q)}
+              style={{
+                padding: "5px 14px", fontSize: "11px", fontWeight: selectedQuarter === q ? "600" : "400",
+                border: "1px solid",
+                borderColor: selectedQuarter === q ? "var(--color-brand)" : "var(--color-border-primary)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                background: selectedQuarter === q ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
+                color: selectedQuarter === q ? "var(--color-text-info)" : "var(--color-text-secondary)",
+                transition: "all 0.1s",
+              }}
+            >
+              {q}
+            </button>
+          ))}
+        </div>
+
+        <QuarterlyOKRPanel
+          quarter={selectedQuarter}
+          objectiveId={ctxObj?.id ?? ""}
+          allQObjs={rawQObjs}
+          allQKrs={rawQKrs}
+          currentUser={currentUser}
+          onSaveQObj={saveQuarterlyObjective}
+          onDeleteQObj={deleteQuarterlyObjective}
+          onSaveQKr={saveQuarterlyKeyResult}
+          onDeleteQKr={deleteQuarterlyKeyResult}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ===================================================
+// 四半期OKRパネル（OKRSectionの子）
+// ===================================================
+
+interface QuarterlyOKRPanelProps {
+  quarter: Quarter;
+  objectiveId: string;
+  allQObjs: QuarterlyObjective[];
+  allQKrs: QuarterlyKeyResult[];
+  currentUser: Member;
+  onSaveQObj:   (q: QuarterlyObjective) => Promise<void>;
+  onDeleteQObj: (id: string, deletedBy: string) => Promise<void>;
+  onSaveQKr:    (k: QuarterlyKeyResult) => Promise<void>;
+  onDeleteQKr:  (id: string, deletedBy: string) => Promise<void>;
+}
+
+function QuarterlyOKRPanel({
+  quarter, objectiveId, allQObjs, allQKrs, currentUser,
+  onSaveQObj, onDeleteQObj, onSaveQKr, onDeleteQKr,
+}: QuarterlyOKRPanelProps) {
+  // 該当クォーターの QuarterlyObjective（削除済み除く）
+  const qObj = useMemo(
+    () => allQObjs.find(q => q.quarter === quarter && q.objective_id === objectiveId && !q.is_deleted) ?? null,
+    [allQObjs, quarter, objectiveId]
+  );
+
+  const qKrs = useMemo(
+    () => qObj ? allQKrs.filter(k => k.quarterly_objective_id === qObj.id && !k.is_deleted) : [],
+    [allQKrs, qObj]
+  );
+
+  const [qTitle, setQTitle] = useState(qObj?.title ?? "");
+  const [savedQ, setSavedQ] = useState(false);
+  const [newQKrTitle, setNewQKrTitle] = useState("");
+  const [editingQKrId, setEditingQKrId] = useState<string | null>(null);
+
+  // クォーター切替時にタイトルを更新
+  useEffect(() => {
+    setQTitle(qObj?.title ?? "");
+    setEditingQKrId(null);
+    setNewQKrTitle("");
+  }, [qObj]);
+
+  const flashSaved = () => { setSavedQ(true); setTimeout(() => setSavedQ(false), 1500); };
+
+  const saveQObj = () => {
+    if (!objectiveId) return;
+    const now = new Date().toISOString();
+    const updated: QuarterlyObjective = {
+      id: qObj?.id ?? uuidv4(),
+      objective_id: objectiveId,
+      quarter,
+      title: qTitle,
+      is_deleted: false,
+      created_at: qObj?.created_at ?? now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    onSaveQObj(updated);
+    flashSaved();
+  };
+
+  const addQKr = () => {
+    if (!newQKrTitle.trim() || !qObj) return;
+    const now = new Date().toISOString();
+    const kr: QuarterlyKeyResult = {
+      id: uuidv4(),
+      quarterly_objective_id: qObj.id,
+      title: newQKrTitle.trim(),
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    onSaveQKr(kr);
+    setNewQKrTitle("");
+  };
+
+  // KRを追加するにはまずQObjを保存する必要があることを考慮
+  const ensureQObjThenAddKr = async () => {
+    if (!qObj && qTitle.trim()) {
+      // まずQObjを作成
+      const now = new Date().toISOString();
+      const newQObj: QuarterlyObjective = {
+        id: uuidv4(),
+        objective_id: objectiveId,
+        quarter,
+        title: qTitle,
+        is_deleted: false,
+        created_at: now,
+        updated_at: now,
+        updated_by: currentUser.id,
+      };
+      await onSaveQObj(newQObj);
+      flashSaved();
+      // stateが更新されるまで少し待つ（次のrender後に追加される）
+    } else {
+      addQKr();
+    }
+  };
+
+  const updateQKr = (id: string, title: string) => {
+    const existing = qKrs.find(k => k.id === id);
+    if (existing) onSaveQKr({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+    setEditingQKrId(null);
+  };
+
+  const deleteQKr = async (id: string) => {
+    if (!await confirmDialog("このKRを削除しますか？")) return;
+    await onDeleteQKr(id, currentUser.id);
+  };
+
+  const deleteQObj = async () => {
+    if (!qObj) return;
+    if (!await confirmDialog(`${quarter}のObjectiveとKRをすべて削除しますか？`)) return;
+    // KRを先に論理削除
+    for (const k of qKrs) {
+      await onDeleteQKr(k.id, currentUser.id);
+    }
+    await onDeleteQObj(qObj.id, currentUser.id);
+    setQTitle("");
+  };
+
+  return (
+    <div>
+      {/* クォーターObjective */}
+      <div style={{ marginBottom: "16px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+          <FieldLabel>{quarter} Objective</FieldLabel>
+          {qObj && (
+            <button
+              onClick={deleteQObj}
+              style={{
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: "10px", color: "var(--color-text-tertiary)",
+                padding: "0 4px",
+              }}
+              title="このクォーターのObjectiveとKRを削除"
+            >
+              ✕ 削除
+            </button>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <textarea
+            value={qTitle}
+            onChange={e => setQTitle(e.target.value)}
+            rows={2}
+            maxLength={200}
+            placeholder={`${quarter}の目標を入力`}
+            style={{ ...inputStyle, flex: 1, resize: "vertical" }}
+          />
+          <button
+            onClick={saveQObj}
+            disabled={!objectiveId}
+            style={{
+              ...primaryBtnStyle,
+              alignSelf: "flex-end",
+              background: savedQ ? "var(--color-bg-success)" : undefined,
+              color: savedQ ? "var(--color-text-success)" : undefined,
+              border: savedQ ? "1px solid var(--color-border-success)" : undefined,
+              minWidth: "64px",
+            }}
+          >
+            {savedQ ? "✓ 保存" : "保存"}
+          </button>
+        </div>
+        {!objectiveId && (
+          <div style={{ fontSize: "10px", color: "var(--color-text-warning)", marginTop: "4px" }}>
+            先に通期Objectiveを保存してください
+          </div>
+        )}
+      </div>
+
+      {/* KR一覧 */}
+      {qObj && (
+        <>
+          <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
+            {quarter} KEY RESULTS
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
+            {qKrs.map((kr, i) => (
+              <div key={kr.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
+                <div style={{
+                  width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
+                }}>
+                  {i + 1}
+                </div>
+                {editingQKrId === kr.id ? (
+                  <EditInline
+                    value={kr.title}
+                    onSave={v => updateQKr(kr.id, v)}
+                    onCancel={() => setEditingQKrId(null)}
+                  />
+                ) : (
+                  <div style={{
+                    flex: 1, padding: "6px 10px",
+                    background: "var(--color-bg-primary)",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)", fontSize: "12px",
+                    color: "var(--color-text-primary)", lineHeight: 1.5,
+                  }}>
+                    {kr.title}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginTop: "4px" }}>
+                  <IconBtn title="編集" onClick={() => setEditingQKrId(kr.id)}>✏</IconBtn>
+                  <IconBtn title="削除" danger onClick={() => deleteQKr(kr.id)}>✕</IconBtn>
+                </div>
+              </div>
+            ))}
+            {qKrs.length === 0 && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
+                KRがまだありません
+              </div>
+            )}
+          </div>
+
+          {/* KR追加 */}
+          <div style={{ display: "flex", gap: "8px" }}>
+            <input
+              value={newQKrTitle}
+              onChange={e => setNewQKrTitle(e.target.value)}
+              placeholder={`${quarter}の新しいKRを入力して追加`}
+              maxLength={200}
+              style={{ ...inputStyle, flex: 1 }}
+              onKeyDown={e => { if (e.key === "Enter") addQKr(); }}
+            />
+            <button onClick={addQKr} style={primaryBtnStyle}>＋ 追加</button>
+          </div>
+        </>
+      )}
+
+      {/* QObjが未設定でもKRを追加しようとした場合のガイド */}
+      {!qObj && qTitle.trim() && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "8px" }}>
+          Objectiveを保存するとKRを追加できます
+        </div>
+      )}
     </div>
   );
 }

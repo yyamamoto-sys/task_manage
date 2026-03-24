@@ -14,6 +14,7 @@ import {
 import type {
   Member, Objective, KeyResult, TaskForce,
   Project, Task, ProjectTaskForce,
+  QuarterlyObjective, QuarterlyKeyResult,
 } from "../lib/localData/types";
 import {
   fetchAllData,
@@ -24,21 +25,25 @@ import {
   upsertProject, softDeleteProject,
   upsertTask, softDeleteTask,
   insertProjectTaskForce, deleteProjectTaskForce,
+  upsertQuarterlyObjective, softDeleteQuarterlyObjective,
+  upsertQuarterlyKeyResult, softDeleteQuarterlyKeyResult,
 } from "../lib/supabase/store";
 
 // ===== Context型定義 =====
 
 interface AppDataContextValue {
   // データ
-  members:           Member[];
-  objective:         Objective | null;
-  keyResults:        KeyResult[];
-  taskForces:        TaskForce[];
-  projects:          Project[];
-  tasks:             Task[];
-  projectTaskForces: ProjectTaskForce[];
-  loading:           boolean;
-  error:             string | null;
+  members:              Member[];
+  objective:            Objective | null;
+  keyResults:           KeyResult[];
+  taskForces:           TaskForce[];
+  projects:             Project[];
+  tasks:                Task[];
+  projectTaskForces:    ProjectTaskForce[];
+  quarterlyObjectives:  QuarterlyObjective[];
+  quarterlyKeyResults:  QuarterlyKeyResult[];
+  loading:              boolean;
+  error:                string | null;
 
   // Member
   saveMember:   (member: Member) => Promise<void>;
@@ -67,6 +72,14 @@ interface AppDataContextValue {
   addProjectTaskForce:    (ptf: ProjectTaskForce) => Promise<void>;
   removeProjectTaskForce: (projectId: string, tfId: string) => Promise<void>;
 
+  // QuarterlyObjective
+  saveQuarterlyObjective:   (qObj: QuarterlyObjective) => Promise<void>;
+  deleteQuarterlyObjective: (id: string, deletedBy: string) => Promise<void>;
+
+  // QuarterlyKeyResult
+  saveQuarterlyKeyResult:   (qKr: QuarterlyKeyResult) => Promise<void>;
+  deleteQuarterlyKeyResult: (id: string, deletedBy: string) => Promise<void>;
+
   // ユーティリティ
   reload: () => Promise<void>;
 }
@@ -78,15 +91,17 @@ const AppDataContext = createContext<AppDataContextValue | null>(null);
 // ===== Provider =====
 
 export function AppDataProvider({ children }: { children: ReactNode }) {
-  const [members,           setMembers]           = useState<Member[]>([]);
-  const [objective,         setObjective]         = useState<Objective | null>(null);
-  const [keyResults,        setKeyResults]        = useState<KeyResult[]>([]);
-  const [taskForces,        setTaskForces]        = useState<TaskForce[]>([]);
-  const [projects,          setProjects]          = useState<Project[]>([]);
-  const [tasks,             setTasks]             = useState<Task[]>([]);
-  const [projectTaskForces, setProjectTaskForces] = useState<ProjectTaskForce[]>([]);
-  const [loading,           setLoading]           = useState(true);
-  const [error,             setError]             = useState<string | null>(null);
+  const [members,              setMembers]              = useState<Member[]>([]);
+  const [objective,            setObjective]            = useState<Objective | null>(null);
+  const [keyResults,           setKeyResults]           = useState<KeyResult[]>([]);
+  const [taskForces,           setTaskForces]           = useState<TaskForce[]>([]);
+  const [projects,             setProjects]             = useState<Project[]>([]);
+  const [tasks,                setTasks]                = useState<Task[]>([]);
+  const [projectTaskForces,    setProjectTaskForces]    = useState<ProjectTaskForce[]>([]);
+  const [quarterlyObjectives,  setQuarterlyObjectives]  = useState<QuarterlyObjective[]>([]);
+  const [quarterlyKeyResults,  setQuarterlyKeyResults]  = useState<QuarterlyKeyResult[]>([]);
+  const [loading,              setLoading]              = useState(true);
+  const [error,                setError]                = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -100,6 +115,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setProjects(data.projects);
       setTasks(data.tasks);
       setProjectTaskForces(data.projectTaskForces);
+      setQuarterlyObjectives(data.quarterlyObjectives);
+      setQuarterlyKeyResults(data.quarterlyKeyResults);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの読み込みに失敗しました");
     } finally {
@@ -295,9 +312,70 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [load]);
 
+  // ===== QuarterlyObjective =====
+
+  const saveQuarterlyObjective = useCallback(async (qObj: QuarterlyObjective) => {
+    setQuarterlyObjectives(prev => {
+      const idx = prev.findIndex(q => q.id === qObj.id);
+      return idx >= 0
+        ? prev.map(q => q.id === qObj.id ? qObj : q)
+        : [...prev, qObj];
+    });
+    try {
+      await upsertQuarterlyObjective(qObj);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const deleteQuarterlyObjective = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setQuarterlyObjectives(prev => prev.map(q =>
+      q.id === id ? { ...q, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : q
+    ));
+    try {
+      await softDeleteQuarterlyObjective(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  // ===== QuarterlyKeyResult =====
+
+  const saveQuarterlyKeyResult = useCallback(async (qKr: QuarterlyKeyResult) => {
+    setQuarterlyKeyResults(prev => {
+      const idx = prev.findIndex(k => k.id === qKr.id);
+      return idx >= 0
+        ? prev.map(k => k.id === qKr.id ? qKr : k)
+        : [...prev, qKr];
+    });
+    try {
+      await upsertQuarterlyKeyResult(qKr);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const deleteQuarterlyKeyResult = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setQuarterlyKeyResults(prev => prev.map(k =>
+      k.id === id ? { ...k, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : k
+    ));
+    try {
+      await softDeleteQuarterlyKeyResult(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
   const value: AppDataContextValue = {
     members, objective, keyResults, taskForces,
     projects, tasks, projectTaskForces,
+    quarterlyObjectives, quarterlyKeyResults,
     loading, error,
     saveMember, deleteMember,
     saveObjective,
@@ -306,6 +384,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     saveProject, deleteProject,
     saveTask, deleteTask,
     addProjectTaskForce, removeProjectTaskForce,
+    saveQuarterlyObjective, deleteQuarterlyObjective,
+    saveQuarterlyKeyResult, deleteQuarterlyKeyResult,
     reload: load,
   };
 

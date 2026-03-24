@@ -45,6 +45,33 @@ create table if not exists key_results (
   updated_by   text not null default ''
 );
 
+-- ===== Quarterly Objectives =====
+create table if not exists quarterly_objectives (
+  id           text primary key,
+  objective_id text not null references objectives(id),
+  quarter      text not null check (quarter in ('1Q','2Q','3Q','4Q')),
+  title        text not null,
+  is_deleted   boolean not null default false,
+  deleted_at   timestamptz,
+  deleted_by   text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now(),
+  updated_by   text not null default ''
+);
+
+-- ===== Quarterly Key Results =====
+create table if not exists quarterly_key_results (
+  id                     text primary key,
+  quarterly_objective_id text not null references quarterly_objectives(id),
+  title                  text not null,
+  is_deleted             boolean not null default false,
+  deleted_at             timestamptz,
+  deleted_by             text,
+  created_at             timestamptz not null default now(),
+  updated_at             timestamptz not null default now(),
+  updated_by             text not null default ''
+);
+
 -- ===== Task Forces =====
 create table if not exists task_forces (
   id               text primary key,
@@ -127,24 +154,28 @@ create table if not exists admin_change_logs (
 -- 全テーブルで有効化し、認証済みユーザーのみアクセス可能にする
 -- ============================================================
 
-alter table members             enable row level security;
-alter table objectives          enable row level security;
-alter table key_results         enable row level security;
-alter table task_forces         enable row level security;
-alter table projects            enable row level security;
-alter table project_task_forces enable row level security;
-alter table tasks               enable row level security;
-alter table admin_change_logs   enable row level security;
+alter table members                enable row level security;
+alter table objectives             enable row level security;
+alter table key_results            enable row level security;
+alter table quarterly_objectives   enable row level security;
+alter table quarterly_key_results  enable row level security;
+alter table task_forces            enable row level security;
+alter table projects               enable row level security;
+alter table project_task_forces    enable row level security;
+alter table tasks                  enable row level security;
+alter table admin_change_logs      enable row level security;
 
 -- 認証済みユーザーに全操作を許可
-create policy "authenticated full access" on members             for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on objectives          for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on key_results         for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on task_forces         for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on projects            for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on project_task_forces for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on tasks               for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on admin_change_logs   for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on members               for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on objectives            for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on key_results           for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on quarterly_objectives  for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on quarterly_key_results for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on task_forces           for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on projects              for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on project_task_forces   for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on tasks                 for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on admin_change_logs     for all to authenticated using (true) with check (true);
 
 -- ============================================================
 -- updated_at 自動更新トリガー
@@ -170,3 +201,7 @@ create trigger trg_projects_updated_at
   before update on projects for each row execute function update_updated_at();
 create trigger trg_tasks_updated_at
   before update on tasks for each row execute function update_updated_at();
+create trigger trg_quarterly_objectives_updated_at
+  before update on quarterly_objectives for each row execute function update_updated_at();
+create trigger trg_quarterly_key_results_updated_at
+  before update on quarterly_key_results for each row execute function update_updated_at();
