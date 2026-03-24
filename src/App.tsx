@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
-import { setCurrentUser, getCurrentUser, KEYS } from "./lib/localData/localStore";
+import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS } from "./lib/localData/localStore";
 import { getSession, onAuthStateChange } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -57,6 +57,7 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    clearCurrentUser();
     setCurrentUserState(null);
   };
 

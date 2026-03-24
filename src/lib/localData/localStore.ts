@@ -28,3 +28,7 @@ export function getCurrentUser(): { id: string } | null {
 export function setCurrentUser(memberId: string): void {
   localStorage.setItem(KEYS.CURRENT_USER, memberId);
 }
+
+export function clearCurrentUser(): void {
+  localStorage.removeItem(KEYS.CURRENT_USER);
+}

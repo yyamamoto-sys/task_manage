@@ -467,7 +467,7 @@ function AddTaskModal({
           </div>
 
           {/* タスクフォース */}
-          {taskForces.length > 0 && (
+          {(
             <div style={{ marginTop: "10px" }}>
               <Field label="タスクフォース（任意）">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: selectedTfIds.length > 0 ? "6px" : 0 }}>
@@ -496,7 +496,7 @@ function AddTaskModal({
           )}
 
           {/* 追加プロジェクト */}
-          {projects.length > 1 && (
+          {(
             <div style={{ marginTop: "10px" }}>
               <Field label="追加プロジェクト（任意）">
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: extraProjectIds.length > 0 ? "6px" : 0 }}>
