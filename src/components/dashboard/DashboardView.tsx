@@ -13,7 +13,7 @@
 // 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
 // 手動入力方式はPhase 5以降で検討。
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
@@ -62,6 +62,23 @@ export function DashboardView({ currentUser, projects }: Props) {
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
 
+  // リマインダー設定（localStorage で永続化）
+  const REMINDER_KEY = "reminder_days";
+  const [reminderDays, setReminderDaysState] = useState<number>(() => {
+    const saved = localStorage.getItem(REMINDER_KEY);
+    return saved ? Math.max(1, parseInt(saved, 10) || 7) : 7;
+  });
+  const [editingReminder, setEditingReminder] = useState(false);
+  const [reminderInput, setReminderInput] = useState(String(reminderDays));
+
+  const applyReminderDays = useCallback(() => {
+    const n = Math.max(1, parseInt(reminderInput, 10) || 7);
+    setReminderDaysState(n);
+    setReminderInput(String(n));
+    localStorage.setItem(REMINDER_KEY, String(n));
+    setEditingReminder(false);
+  }, [reminderInput]);
+
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const krs      = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
@@ -78,6 +95,18 @@ export function DashboardView({ currentUser, projects }: Props) {
 
   const todayStr = today();
   const weekLater = addDays(7);
+  const reminderDeadline = addDays(reminderDays);
+
+  // 自分のリマインダータスク（期限切れ + N日以内）
+  const reminderTasks = useMemo(
+    () => allTasks.filter(t =>
+      t.assignee_member_id === currentUser.id &&
+      t.status !== "done" &&
+      t.due_date != null &&
+      t.due_date <= reminderDeadline
+    ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
+    [allTasks, currentUser.id, reminderDeadline]
+  );
 
   // 今週のタスク
   const thisWeekTasks = useMemo(
@@ -220,6 +249,120 @@ export function DashboardView({ currentUser, projects }: Props) {
                 {pj.name.slice(0, 10)}
               </button>
             ))}
+          </div>
+        </div>
+
+        {/* リマインダー */}
+        <div style={{
+          background: "var(--color-bg-primary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-lg)",
+          overflow: "hidden",
+          marginBottom: "14px",
+        }}>
+          {/* カードヘッダー */}
+          <div style={{
+            display: "flex", alignItems: "center", gap: "6px",
+            padding: "10px 14px 8px",
+            borderBottom: "1px solid var(--color-border-primary)",
+          }}>
+            <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
+              🔔 自分のリマインダー
+            </span>
+            {reminderTasks.length > 0 && (
+              <span style={{
+                fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+                background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+                border: "1px solid var(--color-border-warning)", fontWeight: "500",
+              }}>
+                {reminderTasks.length}件
+              </span>
+            )}
+            {/* 設定 */}
+            {editingReminder ? (
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={reminderInput}
+                  onChange={e => setReminderInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter") applyReminderDays(); if (e.key === "Escape") setEditingReminder(false); }}
+                  autoFocus
+                  style={{
+                    width: "48px", padding: "2px 6px", fontSize: "11px",
+                    border: "1px solid var(--color-border-secondary)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                  }}
+                />
+                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>日前</span>
+                <button onClick={applyReminderDays} style={{
+                  fontSize: "10px", padding: "2px 8px",
+                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                  border: "1px solid var(--color-border-info)",
+                  borderRadius: "var(--radius-sm)", cursor: "pointer",
+                }}>適用</button>
+                <button onClick={() => setEditingReminder(false)} style={{
+                  fontSize: "10px", padding: "2px 6px", background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-sm)", cursor: "pointer",
+                  color: "var(--color-text-tertiary)",
+                }}>✕</button>
+              </div>
+            ) : (
+              <button onClick={() => { setEditingReminder(true); setReminderInput(String(reminderDays)); }} style={{
+                fontSize: "10px", padding: "2px 8px", background: "transparent",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-sm)", cursor: "pointer",
+                color: "var(--color-text-tertiary)",
+              }}>
+                {reminderDays}日前〜 ⚙
+              </button>
+            )}
+          </div>
+          {/* タスク一覧 */}
+          <div style={{ padding: "10px 14px" }}>
+            {reminderTasks.length === 0 ? (
+              <div style={{ textAlign: "center", padding: "12px 0", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                {reminderDays}日以内に期限のタスクはありません ✓
+              </div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: "4px" }}>
+                {reminderTasks.map(task => {
+                  const pj = projects.find(p => p.id === task.project_id);
+                  const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
+                  const isOverdue = diff < 0;
+                  const isToday = diff === 0;
+                  return (
+                    <div key={task.id} style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      padding: "5px 10px",
+                      background: isOverdue ? "var(--color-bg-danger)" : isToday ? "var(--color-bg-warning)" : "var(--color-bg-secondary)",
+                      borderRadius: "var(--radius-md)",
+                      border: `1px solid ${isOverdue ? "var(--color-border-danger)" : isToday ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
+                      flex: isMobile ? "1" : "0 0 auto",
+                      minWidth: 0,
+                    }}>
+                      {pj && <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />}
+                      <span style={{
+                        fontSize: "11px", color: "var(--color-text-primary)",
+                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        maxWidth: isMobile ? "none" : "160px",
+                      }}>
+                        {task.name}
+                      </span>
+                      <span style={{
+                        fontSize: "10px", flexShrink: 0, fontWeight: "500",
+                        color: isOverdue ? "var(--color-text-danger)" : isToday ? "var(--color-text-warning)" : "var(--color-text-secondary)",
+                      }}>
+                        {isOverdue ? `${Math.abs(diff)}日超過` : isToday ? "今日" : diff === 1 ? "明日" : `${diff}日後`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
