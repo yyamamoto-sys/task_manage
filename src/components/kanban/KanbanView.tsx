@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project, Task, TaskTaskForce, TaskProject } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -26,7 +26,7 @@ const PRIORITY_CONFIG = {
 } as const;
 
 export function KanbanView({ currentUser, selectedProject, projects }: Props) {
-  const { tasks: allTasks, members: allMembers, saveTask, deleteTask } = useAppData();
+  const { tasks: allTasks, members: allMembers, taskForces: allTaskForces, saveTask, deleteTask, addTaskTaskForce, addTaskProject } = useAppData();
   const isMobile = useIsMobile();
 
   const tasks = useMemo(
@@ -56,14 +56,18 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
     saveTask({ ...task, status: newStatus, updated_at: new Date().toISOString(), updated_by: currentUser.id });
   }, [tasks, saveTask, currentUser.id]);
 
+  const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
+
   // タスク追加
   const handleAddTask = useCallback((
     name: string, assigneeId: string, projectId: string, dueDate: string,
     priority: Task["priority"], estimatedHours: number | null,
+    tfIds: string[], extraProjectIds: string[],
   ) => {
     const now = new Date().toISOString();
+    const taskId = uuidv4();
     const newTask: Task = {
-      id: uuidv4(),
+      id: taskId,
       name,
       project_id: projectId,
       assignee_member_id: assigneeId,
@@ -78,8 +82,10 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       updated_by: currentUser.id,
     };
     saveTask(newTask);
+    tfIds.forEach(tfId => addTaskTaskForce({ task_id: taskId, tf_id: tfId }));
+    extraProjectIds.forEach(pjId => addTaskProject({ task_id: taskId, project_id: pjId }));
     setShowAddModal(false);
-  }, [addToStatus, saveTask]);
+  }, [addToStatus, saveTask, addTaskTaskForce, addTaskProject]);
 
   const headerTitle = selectedProject
     ? selectedProject.name
@@ -214,6 +220,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
           defaultStatus={addToStatus}
           projects={projects}
           members={members}
+          taskForces={taskForces}
           defaultProjectId={selectedProject?.id ?? projects[0]?.id ?? ""}
           onAdd={handleAddTask}
           onClose={() => setShowAddModal(false)}
@@ -339,13 +346,14 @@ function TaskCard({
 // ===== タスク追加モーダル =====
 
 function AddTaskModal({
-  defaultStatus, projects, members, defaultProjectId, onAdd, onClose,
+  defaultStatus, projects, members, taskForces, defaultProjectId, onAdd, onClose,
 }: {
   defaultStatus: Task["status"];
   projects: Project[];
   members: Member[];
+  taskForces: import("../../lib/localData/types").TaskForce[];
   defaultProjectId: string;
-  onAdd: (name: string, assigneeId: string, projectId: string, dueDate: string, priority: Task["priority"], estimatedHours: number | null) => void;
+  onAdd: (name: string, assigneeId: string, projectId: string, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[]) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -354,6 +362,8 @@ function AddTaskModal({
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>(null);
   const [estimatedHours, setEstimatedHours] = useState("");
+  const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);
+  const [extraProjectIds, setExtraProjectIds] = useState<string[]>([]);
 
   return (
     <div
@@ -404,7 +414,7 @@ function AddTaskModal({
               maxLength={200}
               style={inputStyle}
               onKeyDown={e => {
-                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null);
+                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds);
               }}
             />
           </Field>
@@ -455,6 +465,65 @@ function AddTaskModal({
               />
             </Field>
           </div>
+
+          {/* タスクフォース */}
+          {taskForces.length > 0 && (
+            <div style={{ marginTop: "10px" }}>
+              <Field label="タスクフォース（任意）">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: selectedTfIds.length > 0 ? "6px" : 0 }}>
+                  {selectedTfIds.map(tfId => {
+                    const tf = taskForces.find(t => t.id === tfId);
+                    return tf ? (
+                      <span key={tfId} style={chipStyle}>
+                        {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                        <button onClick={() => setSelectedTfIds(prev => prev.filter(id => id !== tfId))} style={chipRemoveStyle}>×</button>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+                <select defaultValue="" onChange={e => {
+                  if (!e.target.value) return;
+                  setSelectedTfIds(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
+                  e.target.value = "";
+                }} style={inputStyle}>
+                  <option value="">＋ 追加...</option>
+                  {taskForces.filter(tf => !selectedTfIds.includes(tf.id)).map(tf => (
+                    <option key={tf.id} value={tf.id}>{tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
+
+          {/* 追加プロジェクト */}
+          {projects.length > 1 && (
+            <div style={{ marginTop: "10px" }}>
+              <Field label="追加プロジェクト（任意）">
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: extraProjectIds.length > 0 ? "6px" : 0 }}>
+                  {extraProjectIds.map(pjId => {
+                    const pj = projects.find(p => p.id === pjId);
+                    return pj ? (
+                      <span key={pjId} style={chipStyle}>
+                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />
+                        {pj.name}
+                        <button onClick={() => setExtraProjectIds(prev => prev.filter(id => id !== pjId))} style={chipRemoveStyle}>×</button>
+                      </span>
+                    ) : null;
+                  })}
+                </div>
+                <select defaultValue="" onChange={e => {
+                  if (!e.target.value) return;
+                  setExtraProjectIds(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
+                  e.target.value = "";
+                }} style={inputStyle}>
+                  <option value="">＋ 追加...</option>
+                  {projects.filter(p => p.id !== projectId && !extraProjectIds.includes(p.id)).map(p => (
+                    <option key={p.id} value={p.id}>{p.name.slice(0, 20)}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
         </div>
 
         {/* フッター */}
@@ -469,7 +538,7 @@ function AddTaskModal({
             <button onClick={onClose} style={ghostBtnStyle}>キャンセル</button>
             <button
               disabled={!name.trim()}
-              onClick={() => name.trim() && onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null)}
+              onClick={() => name.trim() && onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds)}
               style={{
                 ...primaryBtnStyle,
                 opacity: name.trim() ? 1 : 0.45,
@@ -518,4 +587,17 @@ const primaryBtnStyle: React.CSSProperties = {
   background: "var(--color-bg-info)", color: "var(--color-text-info)",
   border: "1px solid var(--color-border-info)",
   borderRadius: "var(--radius-md)",
+};
+
+const chipStyle: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: "4px",
+  padding: "2px 7px", borderRadius: "var(--radius-full)",
+  fontSize: "11px", background: "var(--color-bg-secondary)",
+  color: "var(--color-text-primary)", border: "1px solid var(--color-border-primary)",
+};
+
+const chipRemoveStyle: React.CSSProperties = {
+  background: "none", border: "none", cursor: "pointer",
+  padding: "0", lineHeight: 1, fontSize: "12px",
+  color: "var(--color-text-tertiary)",
 };
