@@ -128,7 +128,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
     if (groupBy==="project") {
       const map = new Map<string,Task[]>();
       projects.forEach(p=>map.set(p.id,[]));
-      filteredTasks.forEach(t=>{const a=map.get(t.project_id);if(a)a.push(t);});
+      filteredTasks.forEach(t=>{const a=t.project_id ? map.get(t.project_id) : undefined;if(a)a.push(t);});
       return projects.filter(p=>(map.get(p.id)?.length??0)>0)
         .map(p=>({label:p.name,color:p.color_tag,tasks:map.get(p.id)??[]}));
     }

@@ -60,7 +60,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
 
   // タスク追加
   const handleAddTask = useCallback((
-    name: string, assigneeId: string, projectId: string, dueDate: string,
+    name: string, assigneeId: string, projectId: string | null, dueDate: string,
     priority: Task["priority"], estimatedHours: number | null,
     tfIds: string[], extraProjectIds: string[],
   ) => {
@@ -353,12 +353,12 @@ function AddTaskModal({
   members: Member[];
   taskForces: import("../../lib/localData/types").TaskForce[];
   defaultProjectId: string;
-  onAdd: (name: string, assigneeId: string, projectId: string, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[]) => void;
+  onAdd: (name: string, assigneeId: string, projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[]) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(members[0]?.id ?? "");
-  const [projectId, setProjectId] = useState(defaultProjectId);
+  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>(null);
   const [estimatedHours, setEstimatedHours] = useState("");
@@ -414,7 +414,7 @@ function AddTaskModal({
               maxLength={200}
               style={inputStyle}
               onKeyDown={e => {
-                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds);
+                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds);
               }}
             />
           </Field>
@@ -426,8 +426,9 @@ function AddTaskModal({
                 ))}
               </select>
             </Field>
-            <Field label="プロジェクト" required>
+            <Field label="プロジェクト（任意）">
               <select value={projectId} onChange={e => setProjectId(e.target.value)} style={inputStyle}>
+                <option value="">なし</option>
                 {projects.map(p => (
                   <option key={p.id} value={p.id}>{p.name.slice(0, 20)}</option>
                 ))}
@@ -538,7 +539,7 @@ function AddTaskModal({
             <button onClick={onClose} style={ghostBtnStyle}>キャンセル</button>
             <button
               disabled={!name.trim()}
-              onClick={() => name.trim() && onAdd(name, assigneeId, projectId, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds)}
+              onClick={() => name.trim() && onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds)}
               style={{
                 ...primaryBtnStyle,
                 opacity: name.trim() ? 1 : 0.45,

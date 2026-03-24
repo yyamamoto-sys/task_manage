@@ -90,7 +90,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     status:              originalTask?.status ?? "todo" as Task["status"],
     priority:            originalTask?.priority ?? "",
     assignee_member_id:  originalTask?.assignee_member_id ?? "",
-    project_id:          originalTask?.project_id ?? "",
+    project_id:          originalTask?.project_id ?? null as string | null,
     due_date:            originalTask?.due_date ?? "",
     estimated_hours:     originalTask?.estimated_hours?.toString() ?? "",
     comment:             originalTask?.comment ?? "",
@@ -113,7 +113,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       status:             form.status,
       priority:           (form.priority as Task["priority"]) || null,
       assignee_member_id: form.assignee_member_id,
-      project_id:         form.project_id,
+      project_id:         form.project_id || null,
       due_date:           form.due_date || null,
       estimated_hours:    isNaN(hours) ? null : hours,
       comment:            form.comment,
@@ -306,9 +306,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
           {/* プロジェクト */}
           <FieldSection label="プロジェクト">
             {editing ? (
-              <select value={form.project_id}
-                onChange={e => setForm(f => ({ ...f, project_id: e.target.value }))}
+              <select value={form.project_id ?? ""}
+                onChange={e => setForm(f => ({ ...f, project_id: e.target.value || null }))}
                 style={inputSm}>
+                <option value="">なし</option>
                 {projects.map(p => (
                   <option key={p.id} value={p.id}>{p.name}</option>
                 ))}
@@ -323,7 +324,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
                   {project.name}
                 </span>
               </div>
-            ) : null}
+            ) : (
+              <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>なし</span>
+            )}
           </FieldSection>
 
           {/* 追加プロジェクト */}

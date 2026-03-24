@@ -72,7 +72,7 @@ export function DashboardView({ currentUser, projects }: Props) {
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
     if (myOnly) tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
-    if (selectedPjIds.length > 0) tasks = tasks.filter(t => selectedPjIds.includes(t.project_id));
+    if (selectedPjIds.length > 0) tasks = tasks.filter(t => t.project_id && selectedPjIds.includes(t.project_id));
     return tasks;
   }, [allTasks, myOnly, selectedPjIds, currentUser.id]);
 

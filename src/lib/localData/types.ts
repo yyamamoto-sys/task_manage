@@ -109,7 +109,7 @@ export interface Project {
 export interface Task {
   id: string;
   name: string;
-  project_id: string;
+  project_id: string | null;
   assignee_member_id: string;
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;
