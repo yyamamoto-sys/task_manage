@@ -9,7 +9,7 @@
 
 import {
   createContext, useContext, useState, useEffect,
-  useCallback, type ReactNode,
+  useCallback, useRef, type ReactNode,
 } from "react";
 import type {
   Member, Objective, KeyResult, TaskForce,
@@ -116,6 +116,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [taskForces,           setTaskForces]           = useState<TaskForce[]>([]);
   const [projects,             setProjects]             = useState<Project[]>([]);
   const [tasks,                setTasks]                = useState<Task[]>([]);
+  const tasksRef = useRef<Task[]>([]); // saveTask内でtasksを参照するためのref（依存配列に入れない）
+  useEffect(() => { tasksRef.current = tasks; }, [tasks]);
   const [projectTaskForces,    setProjectTaskForces]    = useState<ProjectTaskForce[]>([]);
   const [quarterlyObjectives,   setQuarterlyObjectives]   = useState<QuarterlyObjective[]>([]);
   const [quarterlyKeyResults,   setQuarterlyKeyResults]   = useState<QuarterlyKeyResult[]>([]);
@@ -287,7 +289,8 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
 
   const saveTask = useCallback(async (task: Task) => {
     // ステータスがdoneに変わった瞬間にcompleted_atをセット、外れたらクリア
-    const existing = tasks.find(t => t.id === task.id);
+    // tasksRefを使うことでtasksを依存配列に入れず、不要な再生成を防ぐ
+    const existing = tasksRef.current.find(t => t.id === task.id);
     const taskToSave: Task = {
       ...task,
       completed_at:
@@ -307,7 +310,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       await load();
       throw e;
     }
-  }, [load, tasks]);
+  }, [load]);
 
   const deleteTask = useCallback(async (id: string, deletedBy: string) => {
     const now = new Date().toISOString();
