@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
-import { setCurrentUser, KEYS } from "./lib/localData/localStore";
+import { setCurrentUser, getCurrentUser, KEYS } from "./lib/localData/localStore";
 import { getSession, onAuthStateChange } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -109,15 +109,27 @@ function AuthenticatedApp({
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && members.filter(m => !m.is_deleted).length > 0);
 
+  // メンバー読み込み完了後、前回ユーザーを自動復元
+  useEffect(() => {
+    if (loading || currentUser) return;
+    const saved = getCurrentUser();
+    if (!saved) return;
+    const member = members.find(m => m.id === saved.id && !m.is_deleted);
+    if (member) onLogin(member);
+  }, [loading, members, currentUser, onLogin]);
+
   // 初回起動時はセットアップウィザードを表示
   if (!loading && !isWizardDone) {
     return <SetupWizard onComplete={onWizardComplete} />;
   }
 
-  // メンバー未選択 → メンバー選択画面
-  if (!currentUser) {
+  // メンバー未選択かつ自動復元待ち → 選択画面（復元できなかった場合のフォールバック）
+  if (!currentUser && !loading) {
     return <UserSelectScreen onLogin={onLogin} />;
   }
+
+  // ロード中はスピナー
+  if (!currentUser) return null;
 
   return (
     <>
