@@ -58,11 +58,16 @@ interface AnthropicResponse {
  * @returns AIの生レスポンステキスト（JSON文字列）
  * @throws AIError
  */
+export interface AICallResult {
+  text: string;
+  usage: { input_tokens: number; output_tokens: number };
+}
+
 export async function callAIConsultation(
   payload: AIConsultationPayload,
   consultationType: ConsultationType,
   history: ChatTurn[],
-): Promise<string> {
+): Promise<AICallResult> {
   const systemPrompt = SYSTEM_PROMPTS[consultationType];
 
   // 会話履歴をAnthropic形式に変換
@@ -119,5 +124,8 @@ export async function callAIConsultation(
     throw new AIError("INVALID_RESPONSE", "AIからの応答が不正な形式です。");
   }
 
-  return data.content[0].text;
+  return {
+    text: data.content[0].text,
+    usage: data.usage ?? { input_tokens: 0, output_tokens: 0 },
+  };
 }

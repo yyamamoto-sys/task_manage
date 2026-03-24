@@ -112,7 +112,7 @@ export function ConsultationPanel({
     pushUndoSnapshot,
     undo,
     undoUntil,
-  } = useAIConsultation([]);
+  } = useAIConsultation([], currentUser.id);
 
   const handleSubmit = async () => {
     if (!inputText.trim() || callState === "loading") return;

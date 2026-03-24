@@ -30,6 +30,7 @@ import {
 import type { ConsultationSession } from "../lib/ai/sessionManager";
 import { useUndoStack } from "./useUndoStack";
 import { applyUndo } from "../lib/ai/undoApply";
+import { insertAiUsageLog } from "../lib/supabase/store";
 
 // ===== 型定義 =====
 
@@ -64,7 +65,7 @@ function getRandomLoadingMessage(): string {
  *
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
-export function useAIConsultation(projectIds: string[]) {
+export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
   const { projects, tasks, members, reload } = useAppData();
 
   const [callState, setCallState] = useState<CallState>("idle");
@@ -138,11 +139,19 @@ export function useAIConsultation(projectIds: string[]) {
 
       try {
         // APIコール
-        const rawResponse = await callAIConsultation(
+        const { text: rawResponse, usage } = await callAIConsultation(
           payload,
           consultationType,
           historyForApi,
         );
+
+        // トークン使用量をDBに記録（失敗しても相談の処理は止めない）
+        insertAiUsageLog({
+          member_id: currentMemberId,
+          consultation_type: consultationType,
+          input_tokens: usage.input_tokens,
+          output_tokens: usage.output_tokens,
+        }).catch(() => {});
 
         // レスポンスをパース
         const parsed = parseAIResponse(rawResponse);

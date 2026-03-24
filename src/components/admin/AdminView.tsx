@@ -5,7 +5,9 @@
 // 全員が編集可（管理者権限なし）。
 // 変更はSupabaseに即時反映（AppDataContext経由）。
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { fetchAiUsageLogs } from "../../lib/supabase/store";
+import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
@@ -16,7 +18,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 
-type AdminTab = "okr" | "tf" | "pj" | "members";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "ai_usage";
 
 interface Props { currentUser: Member; }
 
@@ -26,10 +28,11 @@ export function AdminView({ currentUser }: Props) {
   const [tab, setTab] = useState<AdminTab>("okr");
 
   const tabs: { key: AdminTab; label: string }[] = [
-    { key: "okr",     label: "Objective / KR" },
-    { key: "tf",      label: "Task Force" },
-    { key: "pj",      label: "プロジェクト" },
-    { key: "members", label: "メンバー" },
+    { key: "okr",      label: "Objective / KR" },
+    { key: "tf",       label: "Task Force" },
+    { key: "pj",       label: "プロジェクト" },
+    { key: "members",  label: "メンバー" },
+    { key: "ai_usage", label: "AI使用量" },
   ];
 
   return (
@@ -77,10 +80,11 @@ export function AdminView({ currentUser }: Props) {
 
       {/* コンテンツ */}
       <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
-        {tab === "okr"     && <OKRSection currentUser={currentUser} />}
-        {tab === "tf"      && <TFSection currentUser={currentUser} />}
-        {tab === "pj"      && <PJSection currentUser={currentUser} />}
-        {tab === "members" && <MembersSection currentUser={currentUser} />}
+        {tab === "okr"      && <OKRSection currentUser={currentUser} />}
+        {tab === "tf"       && <TFSection currentUser={currentUser} />}
+        {tab === "pj"       && <PJSection currentUser={currentUser} />}
+        {tab === "members"  && <MembersSection currentUser={currentUser} />}
+        {tab === "ai_usage" && <AIUsageSection />}
       </div>
     </div>
   );
@@ -1232,3 +1236,152 @@ const ghostBtnStyle: React.CSSProperties = {
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
 };
+
+// ===== AI使用量セクション =====
+
+const INPUT_COST_PER_TOKEN  = 3 / 1_000_000;   // $3/1Mトークン
+const OUTPUT_COST_PER_TOKEN = 15 / 1_000_000;  // $15/1Mトークン
+const JPY_PER_USD = 150;
+
+function calcCostJpy(input: number, output: number): number {
+  return (input * INPUT_COST_PER_TOKEN + output * OUTPUT_COST_PER_TOKEN) * JPY_PER_USD;
+}
+
+function getWeekOfMonth(dateStr: string): number {
+  const d = new Date(dateStr);
+  return Math.ceil(d.getDate() / 7);
+}
+
+function AIUsageSection() {
+  const [logs, setLogs] = useState<AiUsageLog[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
+  const hasFetched = useRef(false);
+
+  useEffect(() => {
+    if (hasFetched.current) return;
+    hasFetched.current = true;
+    fetchAiUsageLogs()
+      .then(setLogs)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  // 月ごとに集計
+  const monthlyData = useMemo(() => {
+    const map = new Map<string, AiUsageLog[]>();
+    for (const log of logs) {
+      const month = (log.called_at ?? "").slice(0, 7); // YYYY-MM
+      if (!map.has(month)) map.set(month, []);
+      map.get(month)!.push(log);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([month, entries]) => {
+        const totalInput  = entries.reduce((s, l) => s + l.input_tokens,  0);
+        const totalOutput = entries.reduce((s, l) => s + l.output_tokens, 0);
+        // 週ごとに集計
+        const weekMap = new Map<number, AiUsageLog[]>();
+        for (const log of entries) {
+          const w = getWeekOfMonth(log.called_at ?? "");
+          if (!weekMap.has(w)) weekMap.set(w, []);
+          weekMap.get(w)!.push(log);
+        }
+        const weeks = Array.from(weekMap.entries())
+          .sort(([a], [b]) => a - b)
+          .map(([week, wLogs]) => ({
+            week,
+            count: wLogs.length,
+            input:  wLogs.reduce((s, l) => s + l.input_tokens,  0),
+            output: wLogs.reduce((s, l) => s + l.output_tokens, 0),
+          }));
+        return { month, count: entries.length, input: totalInput, output: totalOutput, weeks };
+      });
+  }, [logs]);
+
+  const toggleMonth = (month: string) => {
+    setExpandedMonths(prev => {
+      const next = new Set(prev);
+      next.has(month) ? next.delete(month) : next.add(month);
+      return next;
+    });
+  };
+
+  const rowStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "1fr 60px 90px 90px 80px",
+    gap: "8px",
+    alignItems: "center",
+    fontSize: "11px",
+    padding: "7px 10px",
+  };
+
+  const headerStyle: React.CSSProperties = {
+    ...rowStyle,
+    fontSize: "10px",
+    color: "var(--color-text-tertiary)",
+    borderBottom: "1px solid var(--color-border-primary)",
+    padding: "4px 10px 6px",
+  };
+
+  if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
+
+  return (
+    <div style={{ maxWidth: "620px" }}>
+      <SectionHeader title="AI使用量" />
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
+        料金目安：入力 $3/100万トークン・出力 $15/100万トークン（1ドル=150円換算）
+      </div>
+
+      {monthlyData.length === 0 && (
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>まだデータがありません。</div>
+      )}
+
+      {monthlyData.map(({ month, count, input, output, weeks }) => {
+        const isOpen = expandedMonths.has(month);
+        const [y, m] = month.split("-");
+        const label = `${y}年${parseInt(m)}月`;
+        const cost = calcCostJpy(input, output);
+        return (
+          <div key={month} style={{ marginBottom: "6px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            {/* 月ヘッダー行 */}
+            <button
+              onClick={() => toggleMonth(month)}
+              style={{ width: "100%", background: "var(--color-bg-secondary)", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}
+            >
+              <div style={{ ...rowStyle, fontWeight: "500", color: "var(--color-text-primary)" }}>
+                <span>{isOpen ? "▼" : "▶"} {label}</span>
+                <span style={{ textAlign: "right", color: "var(--color-text-secondary)" }}>{count}回</span>
+                <span style={{ textAlign: "right", color: "var(--color-text-secondary)" }}>{input.toLocaleString()}</span>
+                <span style={{ textAlign: "right", color: "var(--color-text-secondary)" }}>{output.toLocaleString()}</span>
+                <span style={{ textAlign: "right", color: "var(--color-text-info)", fontWeight: "600" }}>¥{Math.round(cost)}</span>
+              </div>
+            </button>
+
+            {/* 週別展開 */}
+            {isOpen && (
+              <div style={{ background: "var(--color-bg-primary)" }}>
+                <div style={headerStyle}>
+                  <span>週</span>
+                  <span style={{ textAlign: "right" }}>回数</span>
+                  <span style={{ textAlign: "right" }}>入力tok</span>
+                  <span style={{ textAlign: "right" }}>出力tok</span>
+                  <span style={{ textAlign: "right" }}>費用目安</span>
+                </div>
+                {weeks.map(({ week, count: wc, input: wi, output: wo }) => (
+                  <div key={week} style={{ ...rowStyle, color: "var(--color-text-secondary)", borderTop: "1px solid var(--color-border-primary)" }}>
+                    <span style={{ paddingLeft: "12px" }}>第{week}週</span>
+                    <span style={{ textAlign: "right" }}>{wc}回</span>
+                    <span style={{ textAlign: "right" }}>{wi.toLocaleString()}</span>
+                    <span style={{ textAlign: "right" }}>{wo.toLocaleString()}</span>
+                    <span style={{ textAlign: "right" }}>¥{Math.round(calcCostJpy(wi, wo))}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

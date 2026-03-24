@@ -221,3 +221,28 @@ export async function deleteProjectTaskForce(projectId: string, tfId: string) {
     .eq("tf_id", tfId);
   if (error) throw error;
 }
+
+// ===== AI使用量ログ =====
+
+export interface AiUsageLog {
+  id?: string;
+  called_at?: string;
+  member_id: string;
+  consultation_type: string;
+  input_tokens: number;
+  output_tokens: number;
+}
+
+export async function insertAiUsageLog(log: Omit<AiUsageLog, "id" | "called_at">) {
+  const { error } = await supabase.from("ai_usage_logs").insert(log);
+  if (error) throw error;
+}
+
+export async function fetchAiUsageLogs(): Promise<AiUsageLog[]> {
+  const { data, error } = await supabase
+    .from("ai_usage_logs")
+    .select("*")
+    .order("called_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as AiUsageLog[];
+}
