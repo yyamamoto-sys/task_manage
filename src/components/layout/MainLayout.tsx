@@ -176,14 +176,24 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         setSelectedProjectId={setSelectedProjectId}
         currentUser={currentUser}
         onLogout={onLogout}
-        onOpenConsult={() => setIsConsultOpen(true)}
+        isConsultOpen={isConsultOpen}
+        onOpenConsult={() => setIsConsultOpen(prev => !prev)}
       />
       {mainContent}
-      <ConsultationPanel
-        isOpen={isConsultOpen}
-        onClose={() => setIsConsultOpen(false)}
-        currentUser={currentUser}
-      />
+      {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
+      <div style={{
+        width: isConsultOpen ? "400px" : "0",
+        flexShrink: 0,
+        overflow: "hidden",
+        transition: "width 0.3s ease",
+      }}>
+        <ConsultationPanel
+          isOpen={isConsultOpen}
+          onClose={() => setIsConsultOpen(false)}
+          currentUser={currentUser}
+          inline
+        />
+      </div>
     </div>
   );
 }
@@ -198,13 +208,14 @@ interface SidebarProps {
   setSelectedProjectId: (id: string | null) => void;
   currentUser: Member;
   onLogout: () => void;
+  isConsultOpen: boolean;
   onOpenConsult: () => void;
 }
 
 function Sidebar({
   viewMode, setViewMode, projects,
   selectedProjectId, setSelectedProjectId,
-  currentUser, onLogout, onOpenConsult,
+  currentUser, onLogout, isConsultOpen, onOpenConsult,
 }: SidebarProps) {
   return (
     <div style={{
@@ -259,10 +270,10 @@ function Sidebar({
 
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "8px 6px" }}>
         <NavItem
-          active={false}
+          active={isConsultOpen}
           icon={<AIIcon />}
-          label="AIに変更を相談"
-          onClick={() => onOpenConsult()}
+          label={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
+          onClick={onOpenConsult}
           color="var(--color-text-purple)"
         />
         <div style={{

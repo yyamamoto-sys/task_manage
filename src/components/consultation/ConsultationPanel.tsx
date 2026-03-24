@@ -34,6 +34,12 @@ interface Props {
   selectedProject?: Project | null;
   /** ガントプレビュー用：全プロジェクト一覧 */
   projects?: Project[];
+  /**
+   * trueのとき、position:fixedのオーバーレイではなく
+   * 親レイアウトのインライン要素として描画する（PCサイドバー用）。
+   * 外側のコンテナがwidth遷移でshow/hideする。
+   */
+  inline?: boolean;
 }
 
 const CONSULTATION_TYPE_OPTIONS: { value: ConsultationType; label: string }[] = [
@@ -82,6 +88,7 @@ export function ConsultationPanel({
   currentUser,
   selectedProject = null,
   projects = [],
+  inline = false,
 }: Props) {
   const [consultationType, setConsultationType] =
     useState<ConsultationType>("change");
@@ -181,8 +188,8 @@ export function ConsultationPanel({
           document.body,
         )}
 
-      {/* オーバーレイ（モバイル時） */}
-      {isOpen && (
+      {/* バックドロップ（モバイル固定オーバーレイ時のみ） */}
+      {!inline && isOpen && (
         <div
           onClick={onClose}
           style={{
@@ -190,14 +197,24 @@ export function ConsultationPanel({
             inset: 0,
             background: "rgba(0,0,0,0.2)",
             zIndex: 90,
-            // PC幅では非表示（パネル幅が400pxのためオーバーレイは見えにくいが保険として配置）
           }}
         />
       )}
 
       {/* パネル本体 */}
       <div
-        style={{
+        style={inline ? {
+          // インラインモード（PC）: 親のwidth遷移でshow/hide。自身はflex columnで高さ100%埋める
+          width: "400px",
+          height: "100%",
+          background: "var(--color-bg-primary)",
+          borderLeft: "1px solid var(--color-border-primary)",
+          display: "flex",
+          flexDirection: "column",
+          overflow: "hidden",
+          flexShrink: 0,
+        } : {
+          // オーバーレイモード（モバイル）: 従来通りfixed + transform
           position: "fixed",
           top: 0,
           right: 0,
