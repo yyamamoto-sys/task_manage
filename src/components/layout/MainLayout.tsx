@@ -26,7 +26,7 @@ const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: Reac
 
 export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
-  const [viewMode, setViewMode] = useState<ViewMode>("kanban");
+  const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
 
