@@ -11,6 +11,7 @@ import { GanttView } from "../gantt/GanttView";
 import { DashboardView } from "../dashboard/DashboardView";
 import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
+import { GraphView } from "../graph/GraphView";
 
 interface Props {
   currentUser: Member;
@@ -31,6 +32,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
+  const [isGraphOpen,   setIsGraphOpen]   = useState(false);
 
   const { projects: allProjects } = useAppData();
   const projects = useMemo(
@@ -180,10 +182,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onLogout={onLogout}
         isConsultOpen={isConsultOpen}
         onOpenConsult={() => setIsConsultOpen(prev => !prev)}
-      theme={theme}
-      onToggleTheme={toggleTheme}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onOpenGraph={() => setIsGraphOpen(true)}
       />
       {mainContent}
+      {isGraphOpen && <GraphView onClose={() => setIsGraphOpen(false)} />}
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div style={{
         width: isConsultOpen ? "400px" : "0",
@@ -216,14 +220,16 @@ interface SidebarProps {
   onOpenConsult: () => void;
   theme: "light" | "dark";
   onToggleTheme: () => void;
+  onOpenGraph: () => void;
 }
 
 function Sidebar({
   viewMode, setViewMode, projects,
   selectedProjectId, setSelectedProjectId,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme,
+  theme, onToggleTheme, onOpenGraph,
 }: SidebarProps) {
+  const [labOpen, setLabOpen] = useState(false);
   return (
     <div style={{
       width: "196px", flexShrink: 0,
@@ -273,6 +279,31 @@ function Sidebar({
             onClick={() => setSelectedProjectId(pj.id)}
           />
         ))}
+      </div>
+
+      {/* ラボセクション */}
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "4px 6px" }}>
+        <button
+          onClick={() => setLabOpen(o => !o)}
+          style={{
+            width: "100%", display: "flex", alignItems: "center", gap: "7px",
+            padding: "6px 10px", background: "transparent", border: "none",
+            cursor: "pointer", borderRadius: "6px",
+            color: "var(--color-text-tertiary)", fontSize: "11px",
+          }}
+        >
+          <span style={{ fontSize: "13px" }}>🧪</span>
+          <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
+          <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
+        </button>
+        {labOpen && (
+          <NavItem
+            active={false}
+            icon={<GraphIcon />}
+            label="関係グラフ"
+            onClick={onOpenGraph}
+          />
+        )}
       </div>
 
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "8px 6px" }}>
@@ -440,6 +471,22 @@ function AdminIcon() {
     </svg>
   );
 }
+function GraphIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7"  cy="2"  r="1.5" fill="currentColor"/>
+      <circle cx="2"  cy="10" r="1.5" fill="currentColor"/>
+      <circle cx="12" cy="10" r="1.5" fill="currentColor"/>
+      <circle cx="7"  cy="7"  r="1.2" fill="currentColor" opacity="0.7"/>
+      <line x1="7" y1="3.5" x2="7"  y2="5.8"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+      <line x1="7" y1="3.5" x2="2"  y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+      <line x1="7" y1="3.5" x2="12" y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+      <line x1="7" y1="7"   x2="2"  y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+      <line x1="7" y1="7"   x2="12" y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+    </svg>
+  );
+}
+
 function AIIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
