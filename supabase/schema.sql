@@ -95,6 +95,21 @@ create table if not exists task_forces (
   updated_by       text not null default ''
 );
 
+-- ===== ToDos（TF達成のための大タスク）=====
+create table if not exists todos (
+  id         text primary key,
+  tf_id      text not null references task_forces(id),
+  title      text not null,
+  due_date   date,
+  memo       text not null default '',
+  is_deleted boolean not null default false,
+  deleted_at timestamptz,
+  deleted_by text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by text not null default ''
+);
+
 -- ===== Projects =====
 create table if not exists projects (
   id                text primary key,
@@ -126,7 +141,8 @@ create table if not exists project_task_forces (
 create table if not exists tasks (
   id                  text primary key,
   name                text not null,
-  project_id          text not null references projects(id),
+  project_id          text references projects(id),   -- Projectへの紐づき（任意）
+  todo_id             text references todos(id),      -- ToDoへの紐づき（任意）
   assignee_member_id  text references members(id),
   status              text not null default 'todo' check (status in ('todo','in_progress','done')),
   priority            text check (priority in ('high','mid','low')),
@@ -187,6 +203,7 @@ alter table quarterly_kr_task_forces  enable row level security;
 alter table task_task_forces          enable row level security;
 alter table task_projects             enable row level security;
 alter table task_forces            enable row level security;
+alter table todos                  enable row level security;
 alter table projects               enable row level security;
 alter table project_task_forces    enable row level security;
 alter table tasks                  enable row level security;
@@ -202,6 +219,7 @@ create policy "authenticated full access" on quarterly_kr_task_forces for all to
 create policy "authenticated full access" on task_task_forces         for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on task_projects            for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on task_forces           for all to authenticated using (true) with check (true);
+create policy "authenticated full access" on todos                 for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on projects              for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on project_task_forces   for all to authenticated using (true) with check (true);
 create policy "authenticated full access" on tasks                 for all to authenticated using (true) with check (true);
@@ -227,6 +245,8 @@ create trigger trg_key_results_updated_at
   before update on key_results for each row execute function update_updated_at();
 create trigger trg_task_forces_updated_at
   before update on task_forces for each row execute function update_updated_at();
+create trigger trg_todos_updated_at
+  before update on todos for each row execute function update_updated_at();
 create trigger trg_projects_updated_at
   before update on projects for each row execute function update_updated_at();
 create trigger trg_tasks_updated_at

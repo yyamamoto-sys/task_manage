@@ -91,6 +91,22 @@ export interface TaskForce {
   deleted_by?: string;
 }
 
+/** TF達成のための大タスク単位。ToDoの下に実作業Taskが紐づく */
+export interface ToDo {
+  id: string;
+  tf_id: string;           // 紐づくTaskForce
+  title: string;           // 複数行テキスト（長文対応）
+  due_date: string | null; // 任意
+  memo: string;            // 備考（任意）
+  is_deleted: boolean;
+  // audit fields
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -115,7 +131,8 @@ export interface Project {
 export interface Task {
   id: string;
   name: string;
-  project_id: string | null;
+  project_id: string | null; // Projectへの紐づき（任意）
+  todo_id: string | null;    // ToDoへの紐づき（任意）。project_idと併用可
   assignee_member_id: string;
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;

@@ -6,7 +6,7 @@
 
 import { supabase } from "./client";
 import type {
-  Member, Objective, KeyResult, TaskForce,
+  Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
@@ -15,12 +15,13 @@ import type {
 // ===== 全データ一括取得 =====
 
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs] =
+  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs] =
     await Promise.all([
       supabase.from("members").select("*"),
       supabase.from("objectives").select("*"),
       supabase.from("key_results").select("*"),
       supabase.from("task_forces").select("*"),
+      supabase.from("todos").select("*"),
       supabase.from("projects").select("*"),
       supabase.from("tasks").select("*"),
       supabase.from("project_task_forces").select("*"),
@@ -32,7 +33,7 @@ export async function fetchAllData() {
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
-  const firstError = [members, objectives, keyResults, taskForces, projects, tasks, ptf, qObjs, qKrs]
+  const firstError = [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs]
     .find(r => r.error)?.error;
   if (firstError) {
     throw new Error(`データの取得に失敗しました: ${firstError.message} (${firstError.code})`);
@@ -43,6 +44,7 @@ export async function fetchAllData() {
     objectives:           (objectives.data ?? []) as Objective[],
     keyResults:           (keyResults.data ?? []) as KeyResult[],
     taskForces:           (taskForces.data ?? []) as TaskForce[],
+    todos:                (todos.data      ?? []) as ToDo[],
     projects:             (projects.data   ?? []) as Project[],
     tasks:                (tasks.data      ?? []) as Task[],
     projectTaskForces:    (ptf.data        ?? []) as ProjectTaskForce[],
@@ -101,6 +103,21 @@ export async function upsertTaskForce(tf: TaskForce) {
 export async function softDeleteTaskForce(id: string, deletedBy: string) {
   const now = new Date().toISOString();
   const { error } = await supabase.from("task_forces")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// ===== ToDo =====
+
+export async function upsertToDo(todo: ToDo) {
+  const { error } = await supabase.from("todos").upsert(todo);
+  if (error) throw error;
+}
+
+export async function softDeleteToDo(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("todos")
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
   if (error) throw error;

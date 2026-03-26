@@ -12,7 +12,7 @@ import {
   useCallback, useRef, type ReactNode,
 } from "react";
 import type {
-  Member, Objective, KeyResult, TaskForce,
+  Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
@@ -23,6 +23,7 @@ import {
   upsertObjective,
   upsertKeyResult, softDeleteKeyResult,
   upsertTaskForce, softDeleteTaskForce,
+  upsertToDo, softDeleteToDo,
   upsertProject, softDeleteProject,
   upsertTask, softDeleteTask,
   insertProjectTaskForce, deleteProjectTaskForce,
@@ -41,6 +42,7 @@ interface AppDataContextValue {
   objective:            Objective | null;
   keyResults:           KeyResult[];
   taskForces:           TaskForce[];
+  todos:                ToDo[];
   projects:             Project[];
   tasks:                Task[];
   projectTaskForces:    ProjectTaskForce[];
@@ -66,6 +68,10 @@ interface AppDataContextValue {
   // TaskForce
   saveTaskForce:   (tf: TaskForce) => Promise<void>;
   deleteTaskForce: (id: string, deletedBy: string) => Promise<void>;
+
+  // ToDo
+  saveToDo:   (todo: ToDo) => Promise<void>;
+  deleteToDo: (id: string, deletedBy: string) => Promise<void>;
 
   // Project
   saveProject:   (project: Project) => Promise<void>;
@@ -114,6 +120,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [objective,            setObjective]            = useState<Objective | null>(null);
   const [keyResults,           setKeyResults]           = useState<KeyResult[]>([]);
   const [taskForces,           setTaskForces]           = useState<TaskForce[]>([]);
+  const [todos,                setTodos]                = useState<ToDo[]>([]);
   const [projects,             setProjects]             = useState<Project[]>([]);
   const [tasks,                setTasks]                = useState<Task[]>([]);
   const tasksRef = useRef<Task[]>([]); // saveTask内でtasksを参照するためのref（依存配列に入れない）
@@ -136,6 +143,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setObjective(data.objectives.find(o => o.is_current) ?? data.objectives[0] ?? null);
       setKeyResults(data.keyResults);
       setTaskForces(data.taskForces);
+      setTodos(data.todos);
       setProjects(data.projects);
       setTasks(data.tasks);
       setProjectTaskForces(data.projectTaskForces);
@@ -249,6 +257,36 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     ));
     try {
       await softDeleteTaskForce(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  // ===== ToDo =====
+
+  const saveToDo = useCallback(async (todo: ToDo) => {
+    setTodos(prev => {
+      const idx = prev.findIndex(t => t.id === todo.id);
+      return idx >= 0
+        ? prev.map(t => t.id === todo.id ? todo : t)
+        : [...prev, todo];
+    });
+    try {
+      await upsertToDo(todo);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const deleteToDo = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setTodos(prev => prev.map(t =>
+      t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
+    ));
+    try {
+      await softDeleteToDo(id, deletedBy);
     } catch (e) {
       await load();
       throw e;
@@ -478,7 +516,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   const value: AppDataContextValue = {
-    members, objective, keyResults, taskForces,
+    members, objective, keyResults, taskForces, todos,
     projects, tasks, projectTaskForces,
     quarterlyObjectives, quarterlyKeyResults, quarterlyKrTaskForces,
     taskTaskForces, taskProjects,
@@ -487,6 +525,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     saveObjective,
     saveKeyResult, deleteKeyResult,
     saveTaskForce, deleteTaskForce,
+    saveToDo, deleteToDo,
     saveProject, deleteProject,
     saveTask, deleteTask,
     addProjectTaskForce, removeProjectTaskForce,

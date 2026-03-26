@@ -70,6 +70,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       id: taskId,
       name,
       project_id: projectId,
+      todo_id: null,
       assignee_member_id: assigneeId,
       status: addToStatus,
       priority,
