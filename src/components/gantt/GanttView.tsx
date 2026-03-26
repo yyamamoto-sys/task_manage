@@ -11,7 +11,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TaskEditModal } from "../task/TaskEditModal";
 
 interface Props {
@@ -78,7 +78,7 @@ export function GanttView({
   isPreview = false,
   previewChangedTaskIds,
 }: Props) {
-  const { tasks: rawTasks, members: rawMembers } = useAppData();
+  const { tasks: rawTasks, members: rawMembers, todos: rawTodos } = useAppData();
   const isMobile = useIsMobile();
   // previewTasksが指定されている場合はそちらを優先する
   const allTasks = useMemo(
@@ -88,9 +88,26 @@ export function GanttView({
     [previewTasks, rawTasks],
   );
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
   // 表示するPJを絞り込む
   const visibleProjects = selectedProject ? [selectedProject] : projects;
+
+  // project_id=null のToDo系タスクをToDo単位でグループ化（selectedProject未選択時のみ表示）
+  const todoGroups = useMemo(() => {
+    if (selectedProject) return [];
+    const noPjTasks = allTasks.filter(t => t.project_id == null && t.todo_id != null);
+    const map = new Map<string, Task[]>();
+    noPjTasks.forEach(t => {
+      if (!map.has(t.todo_id!)) map.set(t.todo_id!, []);
+      map.get(t.todo_id!)!.push(t);
+    });
+    return [...map.entries()].map(([todoId, tasks]) => ({
+      todo: todos.find(td => td.id === todoId),
+      todoId,
+      tasks,
+    })).filter(g => g.todo != null);
+  }, [selectedProject, allTasks, todos]);
 
   // 全体の日付範囲を計算（PJとタスクの最も早い開始〜最も遅い終了）
   const { rangeStart, rangeEnd } = useMemo(() => {
@@ -290,6 +307,50 @@ export function GanttView({
                             display: "flex", alignItems: "center", justifyContent: "center",
                             fontSize: "8px", fontWeight: "600", flexShrink: 0,
                           }}>
+                            {m.initials.slice(0, 1)}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+
+            {/* ToDo系タスクグループ（ラベル） */}
+            {todoGroups.map(({ todo, todoId, tasks }) => {
+              const isCollapsed = collapsed[`todo_${todoId}`];
+              return (
+                <div key={todoId}>
+                  <div style={{
+                    height: 36, display: "flex", alignItems: "center",
+                    gap: "6px", padding: "0 8px 0 10px",
+                    background: "var(--color-bg-secondary)",
+                    borderBottom: "1px solid var(--color-border-primary)",
+                    cursor: "pointer",
+                  }} onClick={() => togglePJ(`todo_${todoId}`)}>
+                    <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6ee7b7", flexShrink: 0 }} />
+                    <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                      {`[ToDo] ${(todo!.title.split("\n")[0]).slice(0, 14)}${todo!.title.length > 14 ? "…" : ""}`}
+                    </span>
+                  </div>
+                  {!isCollapsed && tasks.map(task => {
+                    const m = members.find(mb => mb.id === task.assignee_member_id);
+                    return (
+                      <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                        height: 30, display: "flex", alignItems: "center",
+                        gap: "6px", padding: "0 8px 0 26px",
+                        borderBottom: "1px solid var(--color-border-primary)",
+                        background: "var(--color-bg-primary)",
+                        cursor: "pointer",
+                      }}>
+                        <StatusDot status={task.status} />
+                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                          {task.name}
+                        </span>
+                        {m && (
+                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", fontWeight: "600", flexShrink: 0 }}>
                             {m.initials.slice(0, 1)}
                           </div>
                         )}
@@ -503,6 +564,69 @@ export function GanttView({
                                 whiteSpace: "nowrap",
                                 pointerEvents: "none",
                                 fontWeight: isChanged ? "700" : "400",
+                              }}>
+                                {due.getMonth() + 1}/{due.getDate()}
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+
+              {/* ToDo系タスクグループ（バー） */}
+              {todoGroups.map(({ todoId, tasks }) => {
+                const isCollapsed = collapsed[`todo_${todoId}`];
+                const done = tasks.filter(t => t.status === "done").length;
+                const pct  = tasks.length > 0 ? done / tasks.length : 0;
+                return (
+                  <div key={todoId}>
+                    {/* ToDo行（進捗バーなし） */}
+                    <div style={{
+                      height: 36, position: "relative",
+                      borderBottom: "1px solid var(--color-border-primary)",
+                      background: "var(--color-bg-secondary)",
+                      display: "flex", alignItems: "center", padding: "0 8px",
+                    }}>
+                      <div style={{
+                        height: 8, borderRadius: 4,
+                        background: `rgba(110,231,183,${0.2 + pct * 0.5})`,
+                        border: "1.5px solid #6ee7b7",
+                        width: `${Math.max(pct * 100, 4)}%`,
+                        minWidth: 4,
+                      }} />
+                    </div>
+                    {!isCollapsed && tasks.map(task => {
+                      const due = toDate(task.due_date);
+                      const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
+                      const isDone = task.status === "done";
+                      const isOverdue = due && due < today && !isDone;
+                      return (
+                        <div key={task.id} style={{
+                          height: 30, position: "relative",
+                          borderBottom: "1px solid var(--color-border-primary)",
+                          background: "var(--color-bg-primary)",
+                        }}>
+                          {barX !== null && due && (
+                            <>
+                              <div
+                                title={`${task.name}\n期日：${task.due_date}`}
+                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                style={{
+                                  position: "absolute", left: barX, top: "50%", transform: "translateY(-50%)",
+                                  width: DAY_WIDTH - 4, height: 10, borderRadius: 5,
+                                  background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
+                                  opacity: isDone ? 0.6 : 1,
+                                  cursor: isPreview ? "default" : "pointer",
+                                  zIndex: 2,
+                                }}
+                              />
+                              <div style={{
+                                position: "absolute", left: barX + DAY_WIDTH / 2, top: 2,
+                                fontSize: "8px", color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+                                transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
                               }}>
                                 {due.getMonth() + 1}/{due.getDate()}
                               </div>

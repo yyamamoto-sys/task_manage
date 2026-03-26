@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 
@@ -76,7 +76,8 @@ function renderComment(text: string): React.ReactNode {
 }
 
 export function ListView({ currentUser, selectedProject, projects }: Props) {
-  const { tasks: rawTasks, members: rawMembers } = useAppData();
+  const { tasks: rawTasks, members: rawMembers, todos: rawTodos } = useAppData();
+  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
@@ -126,11 +127,34 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
 
   const groups = useMemo(() => {
     if (groupBy==="project") {
+      // プロジェクト紐づきタスク
       const map = new Map<string,Task[]>();
       projects.forEach(p=>map.set(p.id,[]));
       filteredTasks.forEach(t=>{const a=t.project_id ? map.get(t.project_id) : undefined;if(a)a.push(t);});
-      return projects.filter(p=>(map.get(p.id)?.length??0)>0)
+      const pjGroups = projects.filter(p=>(map.get(p.id)?.length??0)>0)
         .map(p=>({label:p.name,color:p.color_tag,tasks:map.get(p.id)??[]}));
+
+      // project_id=null のタスクをToDo単位でグループ化
+      const noPjTasks = filteredTasks.filter(t=>t.project_id==null);
+      const todoMap = new Map<string,Task[]>();
+      const noTodoTasks: Task[] = [];
+      noPjTasks.forEach(t=>{
+        if (t.todo_id) {
+          if (!todoMap.has(t.todo_id)) todoMap.set(t.todo_id,[]);
+          todoMap.get(t.todo_id)!.push(t);
+        } else {
+          noTodoTasks.push(t);
+        }
+      });
+      const todoGroups = [...todoMap.entries()].map(([todoId, tasks]) => {
+        const td = todos.find(t=>t.id===todoId);
+        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0,30)}` : "[ToDo]", color: "#6ee7b7", tasks };
+      });
+      const unassigned = noTodoTasks.length > 0
+        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks }]
+        : [];
+
+      return [...pjGroups, ...todoGroups, ...unassigned];
     }
     if (groupBy==="assignee") {
       const map = new Map<string,Task[]>();
@@ -142,7 +166,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
     return (["in_progress","todo","done"] as const)
       .map(s=>({label:STATUS_LABELS[s],color:STATUS_COLORS[s].color,tasks:filteredTasks.filter(t=>t.status===s)}))
       .filter(g=>g.tasks.length>0);
-  }, [filteredTasks,groupBy,projects,members]);
+  }, [filteredTasks,groupBy,projects,members,todos]);
 
   const selectedTask = selectedTaskId ? allTasks.find(t=>t.id===selectedTaskId)??null : null;
 
@@ -236,6 +260,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                   {group.tasks.map(task=>{
                     const m   = members.find(mb=>mb.id===task.assignee_member_id);
                     const pj  = projects.find(p=>p.id===task.project_id);
+                    const td  = task.todo_id ? todos.find(t=>t.id===task.todo_id) : undefined;
                     const isDone    = task.status==="done";
                     const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
                     return (
@@ -274,6 +299,10 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                           {groupBy!=="project"&&pj&&<div style={{display:"flex",alignItems:"center",gap:"3px"}}>
                             <span style={{width:4,height:4,borderRadius:"50%",background:pj.color_tag,display:"inline-block"}}/>
                             <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{pj.name.slice(0,12)}</span>
+                          </div>}
+                          {!pj&&td&&<div style={{display:"flex",alignItems:"center",gap:"3px"}}>
+                            <span style={{fontSize:"9px",color:"#059669",fontWeight:"500"}}>ToDo</span>
+                            <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{td.title.split("\n")[0].slice(0,16)}</span>
                           </div>}
                         </div>
                       </div>
@@ -325,6 +354,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                     {group.tasks.map(task=>{
                       const m   = members.find(mb=>mb.id===task.assignee_member_id);
                       const pj  = projects.find(p=>p.id===task.project_id);
+                      const td  = task.todo_id ? todos.find(t=>t.id===task.todo_id) : undefined;
                       const isDone    = task.status==="done";
                       const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
                       const isSel     = selectedTaskId===task.id;
@@ -344,6 +374,14 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                               <div style={{display:"flex",alignItems:"center",gap:"3px",marginTop:"1px"}}>
                                 <span style={{width:4,height:4,borderRadius:"50%",background:pj.color_tag,display:"inline-block"}}/>
                                 <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{pj.name.slice(0,14)}</span>
+                              </div>
+                            )}
+                            {!pj&&td&&(
+                              <div style={{display:"flex",alignItems:"center",gap:"3px",marginTop:"1px"}}>
+                                <span style={{fontSize:"9px",color:"#059669",fontWeight:"500"}}>ToDo</span>
+                                <span style={{fontSize:"9px",color:"var(--color-text-tertiary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"120px"}}>
+                                  {td.title.split("\n")[0].slice(0,20)}
+                                </span>
                               </div>
                             )}
                           </td>
@@ -395,6 +433,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
       {selectedTask&&!isMobile&&(()=>{
         const m  = members.find(mb=>mb.id===selectedTask.assignee_member_id);
         const pj = projects.find(p=>p.id===selectedTask.project_id);
+        const sideTd = selectedTask.todo_id ? todos.find(t=>t.id===selectedTask.todo_id) : undefined;
         const isOverdue = selectedTask.due_date&&selectedTask.due_date<t0&&selectedTask.status!=="done";
         return (
           <div style={{
@@ -428,6 +467,9 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                   <span style={{width:6,height:6,borderRadius:"50%",background:pj.color_tag,display:"inline-block"}}/>
                   <span style={{fontSize:"11px",color:"var(--color-text-secondary)"}}>{pj.name}</span>
                 </div>
+              </DR>}
+              {sideTd&&<DR label="ToDo">
+                <span style={{fontSize:"11px",color:"#059669",lineHeight:1.4}}>{sideTd.title}</span>
               </DR>}
               <DR label="状態">
                 <span style={{fontSize:"9px",padding:"2px 6px",borderRadius:"3px",

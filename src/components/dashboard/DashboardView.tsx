@@ -90,7 +90,10 @@ export function DashboardView({ currentUser, projects }: Props) {
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
     if (myOnly) tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
-    if (selectedPjIds.length > 0) tasks = tasks.filter(t => t.project_id && selectedPjIds.includes(t.project_id));
+    // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
+    if (selectedPjIds.length > 0) tasks = tasks.filter(t =>
+      (t.project_id && selectedPjIds.includes(t.project_id)) || t.project_id == null
+    );
     return tasks;
   }, [allTasks, myOnly, selectedPjIds, currentUser.id]);
 
