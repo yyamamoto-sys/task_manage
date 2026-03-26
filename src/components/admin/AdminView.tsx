@@ -11,7 +11,7 @@ import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Objective, KeyResult, TaskForce, Project,
+  Member, Objective, KeyResult, TaskForce, ToDo, Project,
   QuarterlyObjective, QuarterlyKeyResult, Quarter,
 } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -552,11 +552,17 @@ function QuarterlyOKRPanel({
 // ===================================================
 
 function TFSection({ currentUser }: { currentUser: Member }) {
-  const { taskForces: rawTfs, keyResults: rawKrs, members: rawMembers, saveTaskForce, deleteTaskForce } = useAppData();
+  const {
+    taskForces: rawTfs, keyResults: rawKrs, members: rawMembers,
+    todos: rawTodos,
+    saveTaskForce, deleteTaskForce,
+    saveToDo, deleteToDo,
+  } = useAppData();
   const isMobile = useIsMobile();
   const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
   const krs     = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const todos   = useMemo(() => rawTodos.filter(t => !t.is_deleted), [rawTodos]);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", leader_member_id: "" });
@@ -622,13 +628,21 @@ function TFSection({ currentUser }: { currentUser: Member }) {
           )}
           {items.map(tf => (
             <TFRow key={tf.id} tf={tf} members={members}
-              onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)} />
+              todos={todos.filter(t => t.tf_id === tf.id)}
+              currentUser={currentUser}
+              onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)}
+              onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
+            />
           ))}
         </div>
       ))}
       {orphans.map(tf => (
         <TFRow key={tf.id} tf={tf} members={members}
-          onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)} />
+          todos={todos.filter(t => t.tf_id === tf.id)}
+          currentUser={currentUser}
+          onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)}
+          onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
+        />
       ))}
 
       {/* 追加・編集フォーム */}
@@ -676,28 +690,223 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   );
 }
 
-function TFRow({ tf, members, onEdit, onDelete }: {
+function TFRow({ tf, members, todos, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo }: {
   tf: TaskForce; members: Member[];
+  todos: ToDo[]; currentUser: Member;
   onEdit: () => void; onDelete: () => void;
+  onSaveToDo: (todo: ToDo) => Promise<void>;
+  onDeleteToDo: (id: string, deletedBy: string) => Promise<void>;
 }) {
+  const [expanded, setExpanded] = useState(false);
   const leader = members.find(m => m.id === tf.leader_member_id);
   return (
     <div style={{
-      display: "flex", alignItems: "center", gap: "8px",
-      padding: "7px 10px", marginBottom: "4px",
-      background: "var(--color-bg-primary)",
+      marginBottom: "4px",
       border: "1px solid var(--color-border-primary)",
       borderRadius: "var(--radius-md)",
+      overflow: "hidden",
     }}>
-      <span style={{
-        fontSize: "10px", padding: "1px 7px", borderRadius: "3px",
-        background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-        border: "1px solid var(--color-brand-border)", flexShrink: 0,
-      }}>{tf.tf_number}</span>
-      <span style={{ fontSize: "12px", flex: 1, color: "var(--color-text-primary)" }}>{tf.name}</span>
-      {leader && <Avatar member={leader} size={18} />}
-      <IconBtn onClick={onEdit}>✏</IconBtn>
-      <IconBtn danger onClick={onDelete}>✕</IconBtn>
+      {/* ヘッダー行 */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "8px",
+        padding: "7px 10px",
+        background: "var(--color-bg-primary)",
+      }}>
+        <span style={{
+          fontSize: "10px", padding: "1px 7px", borderRadius: "3px",
+          background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+          border: "1px solid var(--color-brand-border)", flexShrink: 0,
+        }}>{tf.tf_number}</span>
+        <span style={{ fontSize: "12px", flex: 1, color: "var(--color-text-primary)" }}>{tf.name}</span>
+        {leader && <Avatar member={leader} size={18} />}
+        <button
+          onClick={() => setExpanded(e => !e)}
+          style={{
+            fontSize: "10px", padding: "2px 8px",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)", cursor: "pointer",
+            background: expanded ? "var(--color-bg-info)" : "transparent",
+            color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+            flexShrink: 0,
+          }}
+        >
+          ToDo {todos.length}件 {expanded ? "▴" : "▾"}
+        </button>
+        <IconBtn onClick={onEdit}>✏</IconBtn>
+        <IconBtn danger onClick={onDelete}>✕</IconBtn>
+      </div>
+
+      {/* ToDoパネル（展開時） */}
+      {expanded && (
+        <ToDoPanel
+          tfId={tf.id}
+          todos={todos}
+          currentUser={currentUser}
+          onSave={onSaveToDo}
+          onDelete={onDeleteToDo}
+        />
+      )}
+    </div>
+  );
+}
+
+// ===== ToDoパネル =====
+
+function ToDoPanel({ tfId, todos, currentUser, onSave, onDelete }: {
+  tfId: string; todos: ToDo[]; currentUser: Member;
+  onSave: (todo: ToDo) => Promise<void>;
+  onDelete: (id: string, deletedBy: string) => Promise<void>;
+}) {
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ title: "", due_date: "", memo: "" });
+
+  const openAdd = () => {
+    setEditId("new");
+    setForm({ title: "", due_date: "", memo: "" });
+  };
+
+  const openEdit = (todo: ToDo) => {
+    setEditId(todo.id);
+    setForm({ title: todo.title, due_date: todo.due_date ?? "", memo: todo.memo });
+  };
+
+  const save = async () => {
+    if (!form.title.trim()) return;
+    const now = new Date().toISOString();
+    const isNew = editId === "new";
+    const existing = !isNew ? todos.find(t => t.id === editId) : undefined;
+    const todo: ToDo = {
+      id: isNew ? uuidv4() : editId!,
+      tf_id: tfId,
+      title: form.title.trim(),
+      due_date: form.due_date || null,
+      memo: form.memo,
+      is_deleted: false,
+      created_at: existing?.created_at ?? now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    await onSave(todo);
+    setEditId(null);
+  };
+
+  const deleteTodo = async (id: string) => {
+    if (!await confirmDialog("このToDoを削除しますか？")) return;
+    await onDelete(id, currentUser.id);
+  };
+
+  return (
+    <div style={{
+      padding: "10px 12px 10px 14px",
+      background: "var(--color-bg-secondary)",
+      borderTop: "1px solid var(--color-border-primary)",
+    }}>
+      <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
+        ToDo
+      </div>
+
+      {/* ToDo一覧 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
+        {todos.map((todo, i) => (
+          editId === todo.id ? (
+            <ToDoForm key={todo.id} form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} />
+          ) : (
+            <div key={todo.id} style={{
+              display: "flex", alignItems: "flex-start", gap: "6px",
+              padding: "8px 10px",
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+            }}>
+              <span style={{
+                fontSize: "10px", color: "var(--color-text-tertiary)",
+                marginTop: "2px", flexShrink: 0, minWidth: "14px",
+              }}>{i + 1}.</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                  {todo.title}
+                </div>
+                {(todo.due_date || todo.memo) && (
+                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
+                    {todo.due_date && <span>期日: {todo.due_date}</span>}
+                    {todo.memo && <span style={{ flex: 1 }}>{todo.memo}</span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+                <IconBtn onClick={() => openEdit(todo)}>✏</IconBtn>
+                <IconBtn danger onClick={() => deleteTodo(todo.id)}>✕</IconBtn>
+              </div>
+            </div>
+          )
+        ))}
+        {todos.length === 0 && editId !== "new" && (
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+            まだToDoがありません
+          </div>
+        )}
+      </div>
+
+      {/* 追加フォーム or 追加ボタン */}
+      {editId === "new" ? (
+        <ToDoForm form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} />
+      ) : (
+        <button onClick={openAdd} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ ToDoを追加</button>
+      )}
+    </div>
+  );
+}
+
+// ===== ToDoフォーム =====
+
+function ToDoForm({
+  form, setForm, onSave, onCancel,
+}: {
+  form: { title: string; due_date: string; memo: string };
+  setForm: React.Dispatch<React.SetStateAction<{ title: string; due_date: string; memo: string }>>;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div style={{
+      padding: "10px 12px",
+      background: "var(--color-bg-primary)",
+      border: "1px solid var(--color-border-info)",
+      borderRadius: "var(--radius-md)",
+    }}>
+      <FieldLabel>ToDo内容 *</FieldLabel>
+      <AutoTextarea
+        value={form.title}
+        onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
+        placeholder="例：TF2の定量目標達成の基準となる評価指標の策定"
+        minRows={2}
+        style={{ ...inputStyle, width: "100%", marginBottom: "8px" }}
+      />
+      <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+        <div style={{ flex: 1 }}>
+          <FieldLabel>期日（任意）</FieldLabel>
+          <input
+            type="date"
+            value={form.due_date}
+            onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+            style={inputStyle}
+          />
+        </div>
+        <div style={{ flex: 2 }}>
+          <FieldLabel>備考（任意）</FieldLabel>
+          <input
+            value={form.memo}
+            onChange={e => setForm(f => ({ ...f, memo: e.target.value }))}
+            placeholder="補足メモ"
+            maxLength={200}
+            style={inputStyle}
+          />
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: "8px" }}>
+        <button onClick={onSave} style={primaryBtnStyle}>保存</button>
+        <button onClick={onCancel} style={ghostBtnStyle}>キャンセル</button>
+      </div>
     </div>
   );
 }
