@@ -554,10 +554,11 @@ function QuarterlyOKRPanel({
 function TFSection({ currentUser }: { currentUser: Member }) {
   const {
     taskForces: rawTfs, keyResults: rawKrs, members: rawMembers,
-    todos: rawTodos,
+    todos: rawTodos, tasks: rawTasks,
     saveTaskForce, deleteTaskForce,
-    saveToDo, deleteToDo,
+    saveToDo, deleteToDo, saveTask,
   } = useAppData();
+  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const isMobile = useIsMobile();
   const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
   const krs     = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
@@ -629,6 +630,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
           {items.map(tf => (
             <TFRow key={tf.id} tf={tf} members={members}
               todos={todos.filter(t => t.tf_id === tf.id)}
+              tasks={allTasks} saveTask={saveTask}
               currentUser={currentUser}
               onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)}
               onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
@@ -639,6 +641,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
       {orphans.map(tf => (
         <TFRow key={tf.id} tf={tf} members={members}
           todos={todos.filter(t => t.tf_id === tf.id)}
+          tasks={allTasks} saveTask={saveTask}
           currentUser={currentUser}
           onEdit={() => openEdit(tf)} onDelete={() => deleteTF(tf.id)}
           onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
@@ -690,9 +693,11 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   );
 }
 
-function TFRow({ tf, members, todos, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo }: {
+function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo }: {
   tf: TaskForce; members: Member[];
-  todos: ToDo[]; currentUser: Member;
+  todos: ToDo[]; tasks: import("../../lib/localData/types").Task[];
+  saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
+  currentUser: Member;
   onEdit: () => void; onDelete: () => void;
   onSaveToDo: (todo: ToDo) => Promise<void>;
   onDeleteToDo: (id: string, deletedBy: string) => Promise<void>;
@@ -741,6 +746,9 @@ function TFRow({ tf, members, todos, currentUser, onEdit, onDelete, onSaveToDo, 
         <ToDoPanel
           tfId={tf.id}
           todos={todos}
+          tasks={tasks}
+          members={members}
+          saveTask={saveTask}
           currentUser={currentUser}
           onSave={onSaveToDo}
           onDelete={onDeleteToDo}
@@ -752,13 +760,20 @@ function TFRow({ tf, members, todos, currentUser, onEdit, onDelete, onSaveToDo, 
 
 // ===== ToDoパネル =====
 
-function ToDoPanel({ tfId, todos, currentUser, onSave, onDelete }: {
-  tfId: string; todos: ToDo[]; currentUser: Member;
+function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave, onDelete }: {
+  tfId: string; todos: ToDo[];
+  tasks: import("../../lib/localData/types").Task[];
+  members: Member[];
+  saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
+  currentUser: Member;
   onSave: (todo: ToDo) => Promise<void>;
   onDelete: (id: string, deletedBy: string) => Promise<void>;
 }) {
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ title: "", due_date: "", memo: "" });
+  const [addingTaskForTodoId, setAddingTaskForTodoId] = useState<string | null>(null);
+  const [taskForm, setTaskForm] = useState({ name: "", assignee_member_id: "", due_date: "" });
+  const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
 
   const openAdd = () => {
     setEditId("new");
@@ -795,6 +810,38 @@ function ToDoPanel({ tfId, todos, currentUser, onSave, onDelete }: {
     await onDelete(id, currentUser.id);
   };
 
+  const openAddTask = (todoId: string) => {
+    setAddingTaskForTodoId(todoId);
+    setTaskForm({ name: "", assignee_member_id: members[0]?.id ?? "", due_date: "" });
+  };
+
+  const saveNewTask = async () => {
+    if (!taskForm.name.trim() || !addingTaskForTodoId) return;
+    const now = new Date().toISOString();
+    const newTask: import("../../lib/localData/types").Task = {
+      id: uuidv4(),
+      name: taskForm.name.trim(),
+      project_id: null,
+      todo_id: addingTaskForTodoId,
+      assignee_member_id: taskForm.assignee_member_id,
+      status: "todo",
+      priority: null,
+      due_date: taskForm.due_date || null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    await saveTask(newTask);
+    setAddingTaskForTodoId(null);
+  };
+
+  const toggleTodoTasks = (todoId: string) => {
+    setExpandedTodoId(prev => prev === todoId ? null : todoId);
+  };
+
   return (
     <div style={{
       padding: "10px 12px 10px 14px",
@@ -812,31 +859,96 @@ function ToDoPanel({ tfId, todos, currentUser, onSave, onDelete }: {
             <ToDoForm key={todo.id} form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} />
           ) : (
             <div key={todo.id} style={{
-              display: "flex", alignItems: "flex-start", gap: "6px",
-              padding: "8px 10px",
               background: "var(--color-bg-primary)",
               border: "1px solid var(--color-border-primary)",
               borderRadius: "var(--radius-md)",
+              overflow: "hidden",
             }}>
-              <span style={{
-                fontSize: "10px", color: "var(--color-text-tertiary)",
-                marginTop: "2px", flexShrink: 0, minWidth: "14px",
-              }}>{i + 1}.</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                  {todo.title}
-                </div>
-                {(todo.due_date || todo.memo) && (
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
-                    {todo.due_date && <span>期日: {todo.due_date}</span>}
-                    {todo.memo && <span style={{ flex: 1 }}>{todo.memo}</span>}
+              {/* ToDoヘッダー */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "8px 10px" }}>
+                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", flexShrink: 0, minWidth: "14px" }}>{i + 1}.</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                    {todo.title}
                   </div>
-                )}
+                  {(todo.due_date || todo.memo) && (
+                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
+                      {todo.due_date && <span>期日: {todo.due_date}</span>}
+                      {todo.memo && <span style={{ flex: 1 }}>{todo.memo}</span>}
+                    </div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: "4px", flexShrink: 0, alignItems: "center" }}>
+                  {/* タスク数バッジ（クリックでタスク一覧toggle） */}
+                  {(() => {
+                    const todoTasks = tasks.filter(t => t.todo_id === todo.id);
+                    const done = todoTasks.filter(t => t.status === "done").length;
+                    return (
+                      <button onClick={() => toggleTodoTasks(todo.id)} style={{
+                        fontSize: "9px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+                        background: expandedTodoId === todo.id ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
+                        color: expandedTodoId === todo.id ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+                        border: `1px solid ${expandedTodoId === todo.id ? "var(--color-border-info)" : "var(--color-border-primary)"}`,
+                        cursor: "pointer",
+                      }}>
+                        タスク {done}/{todoTasks.length}
+                      </button>
+                    );
+                  })()}
+                  <IconBtn onClick={() => openEdit(todo)}>✏</IconBtn>
+                  <IconBtn danger onClick={() => deleteTodo(todo.id)}>✕</IconBtn>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-                <IconBtn onClick={() => openEdit(todo)}>✏</IconBtn>
-                <IconBtn danger onClick={() => deleteTodo(todo.id)}>✕</IconBtn>
-              </div>
+
+              {/* タスク一覧（展開時） */}
+              {expandedTodoId === todo.id && (() => {
+                const todoTasks = tasks.filter(t => t.todo_id === todo.id);
+                return (
+                  <div style={{ borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)", padding: "8px 10px" }}>
+                    {todoTasks.length > 0 ? (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" }}>
+                        {todoTasks.map(task => {
+                          const m = members.find(mb => mb.id === task.assignee_member_id);
+                          const statusColors = { todo: "var(--color-text-tertiary)", in_progress: "var(--color-text-info)", done: "var(--color-text-success)" };
+                          const statusLabels = { todo: "未着手", in_progress: "進行中", done: "完了" };
+                          return (
+                            <div key={task.id} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "var(--color-bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)" }}>
+                              <span style={{ fontSize: "9px", color: statusColors[task.status], fontWeight: "500", flexShrink: 0 }}>{statusLabels[task.status]}</span>
+                              <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</span>
+                              {m && <Avatar member={m} size={14} />}
+                              {task.due_date && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{task.due_date.slice(5).replace("-", "/")}</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>タスクなし</div>
+                    )}
+
+                    {/* タスク追加フォーム */}
+                    {addingTaskForTodoId === todo.id ? (
+                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+                        <input
+                          autoFocus
+                          value={taskForm.name}
+                          onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
+                          placeholder="タスク名"
+                          onKeyDown={e => { if (e.key === "Enter") saveNewTask(); if (e.key === "Escape") setAddingTaskForTodoId(null); }}
+                          style={{ ...inputStyle, flex: "1 1 180px", fontSize: "11px", padding: "4px 8px" }}
+                        />
+                        <select value={taskForm.assignee_member_id} onChange={e => setTaskForm(f => ({ ...f, assignee_member_id: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }}>
+                          {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
+                        </select>
+                        <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }} />
+                        <button onClick={saveNewTask} style={{ ...primaryBtnStyle, fontSize: "11px", padding: "4px 10px" }}>追加</button>
+                        <button onClick={() => setAddingTaskForTodoId(null)} style={{ ...ghostBtnStyle, fontSize: "11px", padding: "4px 10px" }}>×</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => openAddTask(todo.id)} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ タスクを追加</button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )
         ))}

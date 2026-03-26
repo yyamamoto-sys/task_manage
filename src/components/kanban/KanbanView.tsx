@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, TaskTaskForce, TaskProject } from "../../lib/localData/types";
+import type { Member, Project, Task, TaskForce, TaskTaskForce, TaskProject, ToDo } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -26,7 +26,7 @@ const PRIORITY_CONFIG = {
 } as const;
 
 export function KanbanView({ currentUser, selectedProject, projects }: Props) {
-  const { tasks: allTasks, members: allMembers, taskForces: allTaskForces, saveTask, deleteTask, addTaskTaskForce, addTaskProject } = useAppData();
+  const { tasks: allTasks, members: allMembers, taskForces: allTaskForces, todos: rawTodos, saveTask, deleteTask, addTaskTaskForce, addTaskProject } = useAppData();
   const isMobile = useIsMobile();
 
   const tasks = useMemo(
@@ -57,12 +57,13 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
   }, [tasks, saveTask, currentUser.id]);
 
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
+  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
   // タスク追加
   const handleAddTask = useCallback((
     name: string, assigneeId: string, projectId: string | null, dueDate: string,
     priority: Task["priority"], estimatedHours: number | null,
-    tfIds: string[], extraProjectIds: string[],
+    tfIds: string[], extraProjectIds: string[], todoId: string | null,
   ) => {
     const now = new Date().toISOString();
     const taskId = uuidv4();
@@ -70,7 +71,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       id: taskId,
       name,
       project_id: projectId,
-      todo_id: null,
+      todo_id: todoId,
       assignee_member_id: assigneeId,
       status: addToStatus,
       priority,
@@ -187,6 +188,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
                     key={task.id}
                     task={task}
                     project={projectForTask(task)}
+                    todo={task.todo_id ? todos.find(td => td.id === task.todo_id) : undefined}
                     member={memberForTask(task)}
                     onDragStart={() => handleDragStart(task.id)}
                     onStatusChange={handleStatusChange}
@@ -222,6 +224,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
           projects={projects}
           members={members}
           taskForces={taskForces}
+          todos={todos}
           defaultProjectId={selectedProject?.id ?? projects[0]?.id ?? ""}
           onAdd={handleAddTask}
           onClose={() => setShowAddModal(false)}
@@ -245,10 +248,11 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
 // ===== タスクカード =====
 
 function TaskCard({
-  task, project, member, onDragStart, onStatusChange, isDragging, onClick,
+  task, project, todo, member, onDragStart, onStatusChange, isDragging, onClick,
 }: {
   task: Task;
   project?: Project;
+  todo?: ToDo;
   member?: Member;
   onDragStart: () => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
@@ -274,18 +278,20 @@ function TaskCard({
         transition: "opacity 0.15s, box-shadow 0.15s",
       }}
     >
-      {/* PJバッジ */}
-      {project && (
+      {/* PJバッジ or ToDoバッジ */}
+      {project ? (
         <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "5px" }}>
-          <span style={{
-            width: "5px", height: "5px", borderRadius: "50%",
-            background: project.color_tag, display: "inline-block",
-          }} />
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            {project.name.slice(0, 14)}
+          <span style={{ width: "5px", height: "5px", borderRadius: "50%", background: project.color_tag, display: "inline-block" }} />
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{project.name.slice(0, 14)}</span>
+        </div>
+      ) : todo ? (
+        <div style={{ display: "flex", alignItems: "center", gap: "4px", marginBottom: "5px" }}>
+          <span style={{ fontSize: "9px", fontWeight: "600", color: "#059669", background: "rgba(16,185,129,0.1)", padding: "1px 5px", borderRadius: "3px" }}>ToDo</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "150px" }}>
+            {todo.title.split("\n")[0].slice(0, 18)}
           </span>
         </div>
-      )}
+      ) : null}
 
       {/* タスク名 */}
       <div style={{
@@ -347,14 +353,15 @@ function TaskCard({
 // ===== タスク追加モーダル =====
 
 function AddTaskModal({
-  defaultStatus, projects, members, taskForces, defaultProjectId, onAdd, onClose,
+  defaultStatus, projects, members, taskForces, todos, defaultProjectId, onAdd, onClose,
 }: {
   defaultStatus: Task["status"];
   projects: Project[];
   members: Member[];
-  taskForces: import("../../lib/localData/types").TaskForce[];
+  taskForces: TaskForce[];
+  todos: ToDo[];
   defaultProjectId: string;
-  onAdd: (name: string, assigneeId: string, projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[]) => void;
+  onAdd: (name: string, assigneeId: string, projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[], todoId: string | null) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -365,6 +372,7 @@ function AddTaskModal({
   const [estimatedHours, setEstimatedHours] = useState("");
   const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);
   const [extraProjectIds, setExtraProjectIds] = useState<string[]>([]);
+  const [todoId, setTodoId] = useState<string>("");
 
   return (
     <div
@@ -415,7 +423,7 @@ function AddTaskModal({
               maxLength={200}
               style={inputStyle}
               onKeyDown={e => {
-                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds);
+                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoId || null);
               }}
             />
           </Field>
@@ -526,6 +534,20 @@ function AddTaskModal({
               </Field>
             </div>
           )}
+
+          {/* ToDo紐づけ */}
+          {todos.length > 0 && (
+            <div style={{ marginTop: "10px" }}>
+              <Field label="ToDo（任意）">
+                <select value={todoId} onChange={e => setTodoId(e.target.value)} style={inputStyle}>
+                  <option value="">なし</option>
+                  {todos.map(td => (
+                    <option key={td.id} value={td.id}>{td.title.split("\n")[0].slice(0, 40)}</option>
+                  ))}
+                </select>
+              </Field>
+            </div>
+          )}
         </div>
 
         {/* フッター */}
@@ -540,7 +562,7 @@ function AddTaskModal({
             <button onClick={onClose} style={ghostBtnStyle}>キャンセル</button>
             <button
               disabled={!name.trim()}
-              onClick={() => name.trim() && onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds)}
+              onClick={() => name.trim() && onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoId || null)}
               style={{
                 ...primaryBtnStyle,
                 opacity: name.trim() ? 1 : 0.45,
