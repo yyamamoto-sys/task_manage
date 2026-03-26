@@ -230,6 +230,66 @@ interface Task {
 }
 ```
 
+### 3-5. マイルストーン（未実装・設計済み）
+
+PJに紐づく期日マーカー。GanttViewで◆表示する。
+
+```typescript
+interface Milestone {
+  id: string;
+  project_id: string;   // 必須。所属するPJのID
+  name: string;         // マイルストーン名（例："設計完了"）
+  date: string;         // YYYY-MM-DD形式
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+```
+
+#### Supabase テーブル定義
+
+```sql
+CREATE TABLE milestones (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  UUID NOT NULL REFERENCES projects(id),
+  name        TEXT NOT NULL,
+  date        DATE NOT NULL,
+  is_deleted  BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_by  TEXT,
+  deleted_at  TIMESTAMPTZ,
+  deleted_by  TEXT
+);
+-- RLS: authenticated ユーザーのみ read/write
+ALTER TABLE milestones ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "authenticated_all" ON milestones
+  FOR ALL USING (auth.role() = 'authenticated');
+```
+
+#### 実装手順（帰宅後に実施）
+
+1. **Supabase** でテーブル作成（上記SQL）
+2. **types.ts** に `Milestone` 型を追加
+3. **AppDataContext.tsx** に `milestones` データ・`saveMilestone`・`deleteMilestone` を追加
+4. **store.ts** に `fetchMilestones`・`upsertMilestone`・`softDeleteMilestone` を追加
+5. **GanttView.tsx** でマイルストーンを◆として描画（PJバー行の上に重ねる）
+6. **AdminView.tsx** にマイルストーン管理UI（PJごとにリスト＋追加フォーム）
+7. **applyProposal.ts** の milestone ケースを `needs_confirmation` に変更
+
+#### applyProposal の milestone 実装方針
+
+```typescript
+// milestone → needs_confirmation を返す（date_changeと同じ確認フロー）
+// ConfirmationDialog.action_type に "milestone" を追加する
+// confirmedValues: key = milestone.id（新規の場合は仮UUID）, value = 確定した日付
+```
+
+---
+
 ### 3-4. メンバーマスタ
 
 ```typescript
@@ -557,9 +617,8 @@ interface TaskChangeLog {
 |---|---|---|---|
 | A | KRの進捗率の計算ロジック（手動 vs 自動） | 高 | ダッシュボードのバーに影響 |
 | B | ツアー吹き出しの位置指定をpx固定→要素基準に変更 | 中 | Teams埋め込みでズレる |
-| C | セットアップウィザード完了フラグをDBに保存し2回目以降非表示 | 中 | — |
 | D | Teamsへの埋め込みに伴うウィンドウサイズ対応 | 中 | — |
-| E | マイルストーンテーブルの設計（applyProposalのmilestoneケース未実装） | 中 | 完成後にapplyProposal.tsを更新 |
+| E | マイルストーン実装（設計完了・帰宅後に実施） | 中 | 下記Section 3-5参照。4ファイル変更が必要 |
 | F | PDF出力の実装方法（サーバーサイド vs Print API） | 低 | 将来検討 |
 
 ---

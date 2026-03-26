@@ -146,19 +146,34 @@ export function DashboardView({ currentUser, projects }: Props) {
   );
 
   // KR進捗（タスク完了率ベース）
+  // 経路A: KR → TF → ToDo → Task (Task.todo_id)
+  // 経路B: KR → TF → ProjectTaskForce → PJ → Task (Task.project_id)
+  // 両経路のタスクをSetで重複排除して完了率を計算する
   const krProgress = useMemo(() =>
     krs.map(kr => {
-      // このKRに紐づくTFを取得
-      const krTfs = tfs.filter(tf => tf.kr_id === kr.id);
-      // TFと直接・間接に紐づくPJのタスクを集める
-      // （今回はPJとTFの多対多は未実装のため、全タスクをKR数で等分する簡易実装）
-      const allActiveTasks = allTasks;
-      const done = allActiveTasks.filter(t => t.status === "done").length;
-      const total = allActiveTasks.length;
+      const krTfIds = new Set(tfs.filter(tf => tf.kr_id === kr.id).map(tf => tf.id));
+
+      const relatedTaskIds = new Set<string>();
+
+      // 経路A: TF → ToDo → Task
+      const krTodoIds = new Set(todos.filter(td => krTfIds.has(td.tf_id)).map(td => td.id));
+      allTasks.filter(t => t.todo_id !== null && krTodoIds.has(t.todo_id!))
+        .forEach(t => relatedTaskIds.add(t.id));
+
+      // 経路B: TF → ProjectTaskForce → Task
+      const krPjIds = new Set(
+        projectTaskForces.filter(ptf => krTfIds.has(ptf.tf_id)).map(ptf => ptf.project_id)
+      );
+      allTasks.filter(t => t.project_id !== null && krPjIds.has(t.project_id!))
+        .forEach(t => relatedTaskIds.add(t.id));
+
+      const relatedTasks = allTasks.filter(t => relatedTaskIds.has(t.id));
+      const done = relatedTasks.filter(t => t.status === "done").length;
+      const total = relatedTasks.length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      return { kr, pct, tfCount: krTfs.length };
+      return { kr, pct, tfCount: krTfIds.size };
     }),
-    [krs, tfs, allTasks]
+    [krs, tfs, todos, allTasks, projectTaskForces]
   );
 
   // ToDo進捗（TF > ToDo > Task の完了状況）

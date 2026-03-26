@@ -11,7 +11,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { TaskEditModal } from "../task/TaskEditModal";
 
 interface Props {
@@ -78,7 +78,11 @@ export function GanttView({
   isPreview = false,
   previewChangedTaskIds,
 }: Props) {
-  const { tasks: rawTasks, members: rawMembers, todos: rawTodos } = useAppData();
+  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, milestones: rawMilestones } = useAppData();
+  const milestones = useMemo(
+    () => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted),
+    [rawMilestones],
+  );
   const isMobile = useIsMobile();
   // previewTasksが指定されている場合はそちらを優先する
   const allTasks = useMemo(
@@ -127,9 +131,14 @@ export function GanttView({
       if (s && s < minD) minD = new Date(s);
       if (s && s > maxD) maxD = new Date(s);
     }
+    for (const ms of milestones) {
+      const s = toDate(ms.date);
+      if (s && s < minD) minD = new Date(s);
+      if (s && s > maxD) maxD = new Date(s);
+    }
     // 前後に余白
     return { rangeStart: addDays(minD, -7), rangeEnd: addDays(maxD, 14) };
-  }, [visibleProjects, allTasks]);
+  }, [visibleProjects, allTasks, milestones]);
 
   const days = useMemo(
     () => getDaysInRange(rangeStart, rangeEnd),
@@ -145,6 +154,9 @@ export function GanttView({
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  // マイルストーンホバーツールチップ
+  const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; x: number; y: number } | null>(null);
 
   // PJの開閉状態
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -478,6 +490,9 @@ export function GanttView({
                 const done = pjTasks.filter(t => t.status === "done").length;
                 const pct  = pjTasks.length > 0 ? done / pjTasks.length : 0;
 
+                // このPJのマイルストーン
+                const pjMilestones = milestones.filter(ms => ms.project_id === pj.id);
+
                 return (
                   <div key={pj.id}>
                     {/* PJ行 */}
@@ -504,6 +519,32 @@ export function GanttView({
                           }} />
                         </div>
                       )}
+                      {/* マイルストーン ◆ */}
+                      {pjMilestones.map(ms => {
+                        const msDate = toDate(ms.date);
+                        if (!msDate) return null;
+                        const msX = diffDays(rangeStart, msDate) * DAY_WIDTH + DAY_WIDTH / 2;
+                        return (
+                          <div
+                            key={ms.id}
+                            onMouseEnter={e => setHoveredMs({ ms, x: e.clientX, y: e.clientY })}
+                            onMouseMove={e => setHoveredMs(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
+                            onMouseLeave={() => setHoveredMs(null)}
+                            style={{
+                              position: "absolute",
+                              left: msX - 7,
+                              top: "50%", transform: "translateY(-50%) rotate(45deg)",
+                              width: 12, height: 12,
+                              background: "#f59e0b",
+                              border: "2px solid #d97706",
+                              zIndex: 4,
+                              pointerEvents: "auto",
+                              cursor: "default",
+                              flexShrink: 0,
+                            }}
+                          />
+                        );
+                      })}
                     </div>
 
                     {/* タスク行 */}
@@ -654,6 +695,54 @@ export function GanttView({
         />
       )}
 
+      {/* マイルストーンツールチップ */}
+      {hoveredMs && (() => {
+        const { ms, x, y } = hoveredMs;
+        // 画面右端・下端からはみ出さないように位置を調整
+        const tipW = 200;
+        const left = x + 14 + tipW > window.innerWidth ? x - tipW - 6 : x + 14;
+        const top  = y + 10;
+        return (
+          <div
+            style={{
+              position: "fixed",
+              left,
+              top,
+              zIndex: 9999,
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+              padding: "8px 10px",
+              width: tipW,
+              pointerEvents: "none",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: ms.description ? "4px" : 0 }}>
+              <div style={{
+                width: 8, height: 8, background: "#f59e0b", border: "1.5px solid #d97706",
+                transform: "rotate(45deg)", flexShrink: 0,
+              }} />
+              <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.3 }}>
+                {ms.name}
+              </span>
+            </div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", paddingLeft: "14px" }}>
+              {ms.date}
+            </div>
+            {ms.description && (
+              <div style={{
+                fontSize: "11px", color: "var(--color-text-secondary)",
+                marginTop: "4px", paddingLeft: "14px",
+                whiteSpace: "pre-wrap", lineHeight: 1.4,
+              }}>
+                {ms.description}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* 凡例 */}
       <div style={{
         padding: "6px 16px",
@@ -675,6 +764,14 @@ export function GanttView({
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{label}</span>
           </div>
         ))}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <div style={{
+            width: 10, height: 10,
+            background: "#f59e0b", border: "2px solid #d97706",
+            transform: "rotate(45deg)", flexShrink: 0,
+          }} />
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>マイルストーン</span>
+        </div>
       </div>
     </div>
   );

@@ -11,7 +11,7 @@ import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Objective, KeyResult, TaskForce, ToDo, Project,
+  Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone,
   QuarterlyObjective, QuarterlyKeyResult, Quarter,
 } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -25,13 +25,21 @@ interface Props { currentUser: Member; }
 // ===== ルートコンポーネント =====
 
 export function AdminView({ currentUser }: Props) {
-  const [tab, setTab] = useState<AdminTab>("okr");
+  const ADMIN_TAB_KEY = "admin_last_tab";
+  const [tab, setTab] = useState<AdminTab>(
+    () => (localStorage.getItem(ADMIN_TAB_KEY) as AdminTab | null) ?? "pj"
+  );
+
+  const changeTab = (t: AdminTab) => {
+    setTab(t);
+    localStorage.setItem(ADMIN_TAB_KEY, t);
+  };
 
   const tabs: { key: AdminTab; label: string }[] = [
-    { key: "okr",      label: "Objective / KR" },
-    { key: "tf",       label: "Task Force" },
     { key: "pj",       label: "プロジェクト" },
     { key: "members",  label: "メンバー" },
+    { key: "tf",       label: "Task Force" },
+    { key: "okr",      label: "Objective / KR" },
     { key: "ai_usage", label: "AI使用量" },
   ];
 
@@ -60,7 +68,7 @@ export function AdminView({ currentUser }: Props) {
           {tabs.map(t => (
             <button
               key={t.key}
-              onClick={() => setTab(t.key)}
+              onClick={() => changeTab(t.key)}
               style={{
                 padding: "6px 14px", fontSize: "12px",
                 fontWeight: tab === t.key ? "500" : "400",
@@ -1028,10 +1036,19 @@ function ToDoForm({
 // ===================================================
 
 function PJSection({ currentUser }: { currentUser: Member }) {
-  const { projects: rawProjects, members: rawMembers, saveProject, deleteProject } = useAppData();
+  const { projects: rawProjects, members: rawMembers, saveProject, deleteProject, milestones: rawMilestones, saveMilestone, deleteMilestone } = useAppData();
   const isMobile = useIsMobile();
-  const projects = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
-  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const projects   = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
+  const members    = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
+
+  // マイルストーン管理：開閉のみ（フォーム状態は子コンポーネントが管理）
+  const [msOpenPjId, setMsOpenPjId] = useState<string | null>(null);
+
+  const removeMilestone = async (id: string) => {
+    if (!await confirmDialog("このマイルストーンを削除しますか？")) return;
+    await deleteMilestone(id, currentUser.id);
+  };
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -1100,9 +1117,10 @@ function PJSection({ currentUser }: { currentUser: Member }) {
           .map(id => members.find(m => m.id === id))
           .filter((m): m is Member => !!m);
         return (
-          <div key={pj.id} style={{
+          <div key={pj.id} style={{ marginBottom: "6px" }}>
+          <div style={{
             display: "flex", alignItems: "flex-start", gap: "10px",
-            padding: "10px 12px", marginBottom: "6px",
+            padding: "10px 12px",
             background: "var(--color-bg-primary)",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
@@ -1132,9 +1150,54 @@ function PJSection({ currentUser }: { currentUser: Member }) {
               {owners.map(m => <Avatar key={m.id} member={m} size={20} />)}
             </div>
             <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+              <IconBtn onClick={() => setMsOpenPjId(msOpenPjId === pj.id ? null : pj.id)}>◆</IconBtn>
               <IconBtn onClick={() => openEdit(pj)}>✏</IconBtn>
               <IconBtn danger onClick={() => deletePJ(pj.id)}>✕</IconBtn>
             </div>
+          </div>
+
+          {/* マイルストーンパネル */}
+          {msOpenPjId === pj.id && (
+            <div style={{
+              marginTop: "6px", padding: "10px 12px",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+            }}>
+              <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "8px" }}>
+                ◆ マイルストーン
+              </div>
+              {/* 既存一覧 */}
+              {milestones.filter(ms => ms.project_id === pj.id).length === 0 ? (
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+                  まだありません
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
+                  {milestones.filter(ms => ms.project_id === pj.id).sort((a, b) => a.date.localeCompare(b.date)).map(ms => (
+                    <div key={ms.id} style={{
+                      display: "flex", alignItems: "center", gap: "8px",
+                      padding: "4px 8px",
+                      background: "var(--color-bg-primary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-sm)",
+                    }}>
+                      <span style={{ fontSize: "11px", color: "#f59e0b", flexShrink: 0 }}>◆</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flexShrink: 0 }}>{ms.date}</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}</span>
+                      <IconBtn danger onClick={() => removeMilestone(ms.id)}>✕</IconBtn>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {/* 追加フォーム（PJごとに独立した状態） */}
+              <MilestoneAddForm
+                pjId={pj.id}
+                currentUserId={currentUser.id}
+                onAdd={saveMilestone}
+              />
+            </div>
+          )}
           </div>
         );
       })}
@@ -1539,6 +1602,124 @@ const ghostBtnStyle: React.CSSProperties = {
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
 };
+
+// ===== MilestoneAddForm =====
+// PJごとに独立したフォーム状態を持つことでPJ間の入力混在を防ぐ
+
+// 週文字列（"2026-W13"）をその週の月曜日の日付に変換する
+function weekToDate(weekStr: string): string {
+  const [yearStr, weekPart] = weekStr.split("-W");
+  const year = parseInt(yearStr, 10);
+  const week = parseInt(weekPart, 10);
+  // 1月4日は常にW1に含まれる
+  const jan4 = new Date(year, 0, 4);
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
+  return monday.toISOString().split("T")[0];
+}
+
+// 日付文字列から週の月曜〜日曜の範囲ラベルを生成する（例: "3/23〜3/29"）
+function weekRangeLabel(dateStr: string): string {
+  const mon = new Date(dateStr);
+  const sun = new Date(mon);
+  sun.setDate(mon.getDate() + 6);
+  return `${mon.getMonth() + 1}/${mon.getDate()}〜${sun.getMonth() + 1}/${sun.getDate()}`;
+}
+
+interface MilestoneAddFormProps {
+  pjId: string;
+  currentUserId: string;
+  onAdd: (ms: import("../../lib/localData/types").Milestone) => Promise<void>;
+}
+
+function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFormProps) {
+  const [dateMode, setDateMode] = useState<"date" | "week">("date");
+  const [dateVal, setDateVal]     = useState("");
+  const [weekVal, setWeekVal]     = useState("");
+  const [name, setName]           = useState("");
+  const [description, setDescription] = useState("");
+
+  const resolvedDate = dateMode === "date" ? dateVal : (weekVal ? weekToDate(weekVal) : "");
+  const canSubmit = name.trim() !== "" && resolvedDate !== "";
+
+  const handleAdd = async () => {
+    if (!canSubmit) return;
+    const now = new Date().toISOString();
+    await onAdd({
+      id: crypto.randomUUID(),
+      project_id: pjId,
+      name: name.trim(),
+      date: resolvedDate,
+      description: description.trim() || undefined,
+      is_deleted: false,
+      created_at: now, updated_at: now, updated_by: currentUserId,
+    });
+    setDateVal(""); setWeekVal(""); setName(""); setDescription("");
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+      {/* 日付モード切り替え */}
+      <div style={{ display: "flex", gap: "4px" }}>
+        {(["date", "week"] as const).map(mode => (
+          <button key={mode} onClick={() => setDateMode(mode)} style={{
+            padding: "2px 10px", fontSize: "10px",
+            borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)",
+            cursor: "pointer",
+            background: dateMode === mode ? "var(--color-bg-info)" : "transparent",
+            color: dateMode === mode ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+            fontWeight: dateMode === mode ? "500" : "400",
+          }}>
+            {mode === "date" ? "日付" : "週"}
+          </button>
+        ))}
+      </div>
+
+      {/* 日付 or 週 入力 */}
+      <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+        {dateMode === "date" ? (
+          <input type="date" value={dateVal}
+            onChange={e => setDateVal(e.target.value)}
+            style={{ ...inputStyle, width: "140px", flexShrink: 0 }}
+          />
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+            <input type="week" value={weekVal}
+              onChange={e => setWeekVal(e.target.value)}
+              style={{ ...inputStyle, width: "160px", flexShrink: 0 }}
+            />
+            {weekVal && (
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                月曜起点：{weekRangeLabel(weekToDate(weekVal))}
+              </span>
+            )}
+          </div>
+        )}
+        <input
+          value={name} placeholder="マイルストーン名 *"
+          maxLength={60}
+          onChange={e => setName(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
+          style={{ ...inputStyle, flex: 1, minWidth: "120px" }}
+        />
+      </div>
+
+      {/* 説明（任意） */}
+      <textarea
+        value={description} placeholder="説明（任意）"
+        maxLength={200} rows={2}
+        onChange={e => setDescription(e.target.value)}
+        style={{ ...inputStyle, resize: "vertical" }}
+      />
+
+      <div>
+        <button onClick={handleAdd} disabled={!canSubmit} style={primaryBtnStyle}>
+          追加
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // ===== AI使用量セクション =====
 

@@ -13,7 +13,7 @@ import {
 } from "react";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo,
-  Project, Task, ProjectTaskForce,
+  Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
 } from "../lib/localData/types";
@@ -26,6 +26,7 @@ import {
   upsertToDo, softDeleteToDo,
   upsertProject, softDeleteProject,
   upsertTask, softDeleteTask,
+  upsertMilestone, softDeleteMilestone,
   insertProjectTaskForce, deleteProjectTaskForce,
   upsertQuarterlyObjective, softDeleteQuarterlyObjective,
   upsertQuarterlyKeyResult, softDeleteQuarterlyKeyResult,
@@ -105,6 +106,11 @@ interface AppDataContextValue {
   addTaskProject:    (tp: TaskProject) => Promise<void>;
   removeTaskProject: (taskId: string, projectId: string) => Promise<void>;
 
+  // Milestone
+  milestones:        Milestone[];
+  saveMilestone:     (milestone: Milestone) => Promise<void>;
+  deleteMilestone:   (id: string, deletedBy: string) => Promise<void>;
+
   // ユーティリティ
   reload: () => Promise<void>;
 }
@@ -131,6 +137,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   const [quarterlyKrTaskForces, setQuarterlyKrTaskForces] = useState<QuarterlyKrTaskForce[]>([]);
   const [taskTaskForces,        setTaskTaskForces]        = useState<TaskTaskForce[]>([]);
   const [taskProjects,          setTaskProjects]          = useState<TaskProject[]>([]);
+  const [milestones,            setMilestones]            = useState<Milestone[]>([]);
   const [loading,              setLoading]              = useState(true);
   const [error,                setError]                = useState<string | null>(null);
 
@@ -152,6 +159,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
       setQuarterlyKrTaskForces(data.quarterlyKrTaskForces);
       setTaskTaskForces(data.taskTaskForces);
       setTaskProjects(data.taskProjects);
+      setMilestones(data.milestones);
     } catch (e) {
       setError(e instanceof Error ? e.message : "データの読み込みに失敗しました");
     } finally {
@@ -493,6 +501,36 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [load]);
 
+  // ===== Milestone =====
+
+  const saveMilestone = useCallback(async (milestone: Milestone) => {
+    setMilestones(prev => {
+      const idx = prev.findIndex(m => m.id === milestone.id);
+      return idx >= 0
+        ? prev.map(m => m.id === milestone.id ? milestone : m)
+        : [...prev, milestone];
+    });
+    try {
+      await upsertMilestone(milestone);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
+  const deleteMilestone = useCallback(async (id: string, deletedBy: string) => {
+    const now = new Date().toISOString();
+    setMilestones(prev => prev.map(m =>
+      m.id === id ? { ...m, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : m
+    ));
+    try {
+      await softDeleteMilestone(id, deletedBy);
+    } catch (e) {
+      await load();
+      throw e;
+    }
+  }, [load]);
+
   // ===== TaskProject =====
 
   const addTaskProject = useCallback(async (tp: TaskProject) => {
@@ -534,6 +572,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce,
     addTaskTaskForce, removeTaskTaskForce,
     addTaskProject, removeTaskProject,
+    milestones, saveMilestone, deleteMilestone,
     reload: load,
   };
 

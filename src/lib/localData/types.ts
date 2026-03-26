@@ -150,6 +150,20 @@ export interface Task {
   completed_at?: string | null;
 }
 
+export interface Milestone {
+  id: string;
+  project_id: string;    // 所属PJのID
+  name: string;          // マイルストーン名
+  date: string;          // YYYY-MM-DD形式
+  description?: string;  // 任意の説明
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 export interface ProjectTaskForce {
   project_id: string;
   tf_id: string;

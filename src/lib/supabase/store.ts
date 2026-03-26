@@ -7,7 +7,7 @@
 import { supabase } from "./client";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo,
-  Project, Task, ProjectTaskForce,
+  Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
 } from "../localData/types";
@@ -15,7 +15,7 @@ import type {
 // ===== 全データ一括取得 =====
 
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs] =
+  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs, milestones] =
     await Promise.all([
       supabase.from("members").select("*"),
       supabase.from("objectives").select("*"),
@@ -30,6 +30,7 @@ export async function fetchAllData() {
       supabase.from("quarterly_kr_task_forces").select("*"),
       supabase.from("task_task_forces").select("*"),
       supabase.from("task_projects").select("*"),
+      supabase.from("milestones").select("*"),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
@@ -53,6 +54,7 @@ export async function fetchAllData() {
     quarterlyKrTaskForces:  (qKrTfs.data ?? []) as QuarterlyKrTaskForce[],
     taskTaskForces:         (ttfs.data   ?? []) as TaskTaskForce[],
     taskProjects:           (tpjs.data   ?? []) as TaskProject[],
+    milestones:             (milestones.data ?? []) as Milestone[],
   };
 }
 
@@ -221,6 +223,21 @@ export async function insertTaskProject(tp: TaskProject) {
 export async function deleteTaskProject(taskId: string, projectId: string) {
   const { error } = await supabase.from("task_projects")
     .delete().eq("task_id", taskId).eq("project_id", projectId);
+  if (error) throw error;
+}
+
+// ===== Milestone =====
+
+export async function upsertMilestone(milestone: Milestone) {
+  const { error } = await supabase.from("milestones").upsert(milestone);
+  if (error) throw error;
+}
+
+export async function softDeleteMilestone(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("milestones")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
   if (error) throw error;
 }
 
