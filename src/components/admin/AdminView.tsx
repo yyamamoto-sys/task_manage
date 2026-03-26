@@ -171,30 +171,30 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
       {/* Objective編集 */}
       <div style={{ marginBottom: "20px" }}>
         <FieldLabel>Objective（O）タイトル</FieldLabel>
-        <textarea
+        <AutoTextarea
           value={objTitle}
           onChange={e => setObjTitle(e.target.value)}
-          rows={3}
+          minRows={3}
           maxLength={500}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
           placeholder="Objectiveのタイトルを入力"
         />
         <FieldLabel>Purpose（何を達成するか）</FieldLabel>
-        <textarea
+        <AutoTextarea
           value={objPurpose}
           onChange={e => setObjPurpose(e.target.value)}
-          rows={2}
+          minRows={2}
           maxLength={1000}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
           placeholder="このObjectiveで達成したいことを入力（例：〇〇により△△の状態にする）"
         />
         <FieldLabel>設計の意図や背景</FieldLabel>
-        <textarea
+        <AutoTextarea
           value={objBackground}
           onChange={e => setObjBackground(e.target.value)}
-          rows={3}
+          minRows={3}
           maxLength={2000}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
           placeholder="なぜこのObjectiveを設定したか、背景・経緯・意図を入力"
         />
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
@@ -341,49 +341,38 @@ function QuarterlyOKRPanel({
     [allQKrs, qObj]
   );
 
-  const [qTitle, setQTitle] = useState(qObj?.title ?? "");
-  const [qPurpose, setQPurpose] = useState(qObj?.purpose ?? "");
-  const [qBackground, setQBackground] = useState(qObj?.background ?? "");
-  const [savedQ, setSavedQ] = useState(false);
   const [newQKrTitle, setNewQKrTitle] = useState("");
   const [editingQKrId, setEditingQKrId] = useState<string | null>(null);
 
-  // クォーター切替時にタイトル・purpose・backgroundを更新
+  // クォーター切替時にリセット
   useEffect(() => {
-    setQTitle(qObj?.title ?? "");
-    setQPurpose(qObj?.purpose ?? "");
-    setQBackground(qObj?.background ?? "");
     setEditingQKrId(null);
     setNewQKrTitle("");
   }, [qObj]);
 
-  const flashSaved = () => { setSavedQ(true); setTimeout(() => setSavedQ(false), 1500); };
-
-  const saveQObj = () => {
-    if (!objectiveId) return;
-    const now = new Date().toISOString();
-    const updated: QuarterlyObjective = {
-      id: qObj?.id ?? uuidv4(),
-      objective_id: objectiveId,
-      quarter,
-      title: qTitle,
-      purpose: qPurpose,
-      background: qBackground,
-      is_deleted: false,
-      created_at: qObj?.created_at ?? now,
-      updated_at: now,
-      updated_by: currentUser.id,
-    };
-    onSaveQObj(updated);
-    flashSaved();
-  };
-
-  const addQKr = () => {
-    if (!newQKrTitle.trim() || !qObj) return;
+  // KR追加。qObjが未作成の場合は自動生成してからKRを追加する
+  const handleAddKr = async () => {
+    if (!newQKrTitle.trim() || !objectiveId) return;
+    let targetQObj = qObj;
+    if (!targetQObj) {
+      const now = new Date().toISOString();
+      const newQObj: QuarterlyObjective = {
+        id: uuidv4(),
+        objective_id: objectiveId,
+        quarter,
+        title: "",
+        is_deleted: false,
+        created_at: now,
+        updated_at: now,
+        updated_by: currentUser.id,
+      };
+      await onSaveQObj(newQObj);
+      targetQObj = newQObj;
+    }
     const now = new Date().toISOString();
     const kr: QuarterlyKeyResult = {
       id: uuidv4(),
-      quarterly_objective_id: qObj.id,
+      quarterly_objective_id: targetQObj.id,
       title: newQKrTitle.trim(),
       is_deleted: false,
       created_at: now,
@@ -392,31 +381,6 @@ function QuarterlyOKRPanel({
     };
     onSaveQKr(kr);
     setNewQKrTitle("");
-  };
-
-  // KRを追加するにはまずQObjを保存する必要があることを考慮
-  const ensureQObjThenAddKr = async () => {
-    if (!qObj && qTitle.trim()) {
-      // まずQObjを作成
-      const now = new Date().toISOString();
-      const newQObj: QuarterlyObjective = {
-        id: uuidv4(),
-        objective_id: objectiveId,
-        quarter,
-        title: qTitle,
-        purpose: qPurpose,
-        background: qBackground,
-        is_deleted: false,
-        created_at: now,
-        updated_at: now,
-        updated_by: currentUser.id,
-      };
-      await onSaveQObj(newQObj);
-      flashSaved();
-      // stateが更新されるまで少し待つ（次のrender後に追加される）
-    } else {
-      addQKr();
-    }
   };
 
   const updateQKr = (id: string, title: string) => {
@@ -438,80 +402,28 @@ function QuarterlyOKRPanel({
       await onDeleteQKr(k.id, currentUser.id);
     }
     await onDeleteQObj(qObj.id, currentUser.id);
-    setQTitle("");
   };
 
   return (
     <div>
-      {/* クォーターObjective */}
-      <div style={{ marginBottom: "16px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-          <FieldLabel>{quarter} Objective</FieldLabel>
-          {qObj && (
-            <button
-              onClick={deleteQObj}
-              style={{
-                background: "none", border: "none", cursor: "pointer",
-                fontSize: "10px", color: "var(--color-text-tertiary)",
-                padding: "0 4px",
-              }}
-              title="このクォーターのObjectiveとKRを削除"
-            >
-              ✕ 削除
-            </button>
-          )}
+      {/* KR一覧ヘッダー */}
+      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
+        <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em" }}>
+          {quarter} KEY RESULTS
         </div>
-        <textarea
-          value={qTitle}
-          onChange={e => setQTitle(e.target.value)}
-          rows={3}
-          maxLength={500}
-          placeholder={`${quarter}の目標を入力`}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
-        />
-        <FieldLabel>Purpose（何を達成するか）</FieldLabel>
-        <textarea
-          value={qPurpose}
-          onChange={e => setQPurpose(e.target.value)}
-          rows={2}
-          maxLength={1000}
-          placeholder={`${quarter}で達成したいことを入力（例：〇〇により△△の状態にする）`}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
-        />
-        <FieldLabel>設計の意図や背景</FieldLabel>
-        <textarea
-          value={qBackground}
-          onChange={e => setQBackground(e.target.value)}
-          rows={3}
-          maxLength={2000}
-          placeholder={`なぜ${quarter}にこのObjectiveを設定したか、背景・経緯・意図を入力`}
-          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
-        />
-        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        {qObj && (
           <button
-            onClick={saveQObj}
-            disabled={!objectiveId}
+            onClick={deleteQObj}
             style={{
-              ...primaryBtnStyle,
-              background: savedQ ? "var(--color-bg-success)" : undefined,
-              color: savedQ ? "var(--color-text-success)" : undefined,
-              border: savedQ ? "1px solid var(--color-border-success)" : undefined,
-              minWidth: "64px",
+              background: "none", border: "none", cursor: "pointer",
+              fontSize: "10px", color: "var(--color-text-tertiary)",
+              padding: "0 4px",
             }}
+            title="このクォーターのObjectiveとKRをすべて削除"
           >
-            {savedQ ? "✓ 保存" : "保存"}
+            ✕ 削除
           </button>
-        </div>
-        {!objectiveId && (
-          <div style={{ fontSize: "10px", color: "var(--color-text-warning)", marginTop: "4px" }}>
-            先に通期Objectiveを保存してください
-          </div>
         )}
-      </div>
-
-      {/* KR一覧 */}
-      <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
-        {quarter} KEY RESULTS
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
         {qKrs.map((kr, i) => {
@@ -614,27 +526,21 @@ function QuarterlyOKRPanel({
         </div>
 
       {/* KR追加 */}
-      {qObj ? (
-        <div style={{ display: "flex", gap: "8px" }}>
-          <input
-            value={newQKrTitle}
-            onChange={e => setNewQKrTitle(e.target.value)}
-            placeholder={`${quarter}の新しいKRを入力して追加`}
-            maxLength={200}
-            style={{ ...inputStyle, flex: 1 }}
-            onKeyDown={e => { if (e.key === "Enter") addQKr(); }}
-          />
-          <button onClick={addQKr} style={primaryBtnStyle}>＋ 追加</button>
-        </div>
-      ) : (
-        <div style={{
-          fontSize: "11px", color: "var(--color-text-tertiary)",
-          padding: "8px 12px",
-          background: "var(--color-bg-secondary)",
-          border: "1px dashed var(--color-border-primary)",
-          borderRadius: "var(--radius-md)",
-        }}>
-          ↑ まず{quarter}のObjectiveを入力して「保存」するとKRを追加できます
+      <div style={{ display: "flex", gap: "8px" }}>
+        <input
+          value={newQKrTitle}
+          onChange={e => setNewQKrTitle(e.target.value)}
+          placeholder={`${quarter}の新しいKRを入力して追加`}
+          maxLength={200}
+          style={{ ...inputStyle, flex: 1 }}
+          disabled={!objectiveId}
+          onKeyDown={e => { if (e.key === "Enter") { void handleAddKr(); } }}
+        />
+        <button onClick={() => { void handleAddKr(); }} disabled={!objectiveId} style={primaryBtnStyle}>＋ 追加</button>
+      </div>
+      {!objectiveId && (
+        <div style={{ fontSize: "10px", color: "var(--color-text-warning)", marginTop: "4px" }}>
+          先に通期Objectiveを保存してください
         </div>
       )}
     </div>
@@ -1217,6 +1123,34 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "3px" }}>
       {children}
     </div>
+  );
+}
+
+/** テキスト量に応じて高さが自動伸縮するtextarea */
+function AutoTextarea({ value, onChange, placeholder, maxLength, minRows = 2, style }: {
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  maxLength?: number;
+  minRows?: number;
+  style?: React.CSSProperties;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.style.height = "auto";
+    ref.current.style.height = ref.current.scrollHeight + "px";
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      rows={minRows}
+      style={{ ...style, resize: "none", overflow: "hidden" }}
+    />
   );
 }
 
