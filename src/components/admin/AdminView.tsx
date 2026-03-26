@@ -106,12 +106,16 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [newKrTitle, setNewKrTitle] = useState("");
   const [objTitle, setObjTitle] = useState(ctxObj?.title ?? "");
+  const [objPurpose, setObjPurpose] = useState(ctxObj?.purpose ?? "");
+  const [objBackground, setObjBackground] = useState(ctxObj?.background ?? "");
   const [saved, setSaved] = useState(false);
   const [selectedQuarter, setSelectedQuarter] = useState<Quarter>("1Q");
 
   // ctxObj がロード後に反映
   useEffect(() => {
-    if (ctxObj?.title) setObjTitle(t => t || ctxObj.title);
+    if (ctxObj?.title)      setObjTitle(t => t || ctxObj.title);
+    if (ctxObj?.purpose)    setObjPurpose(p => p || (ctxObj.purpose ?? ""));
+    if (ctxObj?.background) setObjBackground(b => b || (ctxObj.background ?? ""));
   }, [ctxObj]);
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
@@ -121,6 +125,8 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     const updated: Objective = {
       id: ctxObj?.id ?? uuidv4(),
       title: objTitle,
+      purpose: objPurpose,
+      background: objBackground,
       period: ctxObj?.period ?? "2026年度",
       is_current: true,
       created_at: ctxObj?.created_at ?? now,
@@ -164,21 +170,38 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
       {/* Objective編集 */}
       <div style={{ marginBottom: "20px" }}>
-        <FieldLabel>Objective（O）</FieldLabel>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <textarea
-            value={objTitle}
-            onChange={e => setObjTitle(e.target.value)}
-            rows={2}
-            maxLength={200}
-            style={{ ...inputStyle, flex: 1, resize: "vertical" }}
-            placeholder="Objectiveのタイトルを入力"
-          />
+        <FieldLabel>Objective（O）タイトル</FieldLabel>
+        <textarea
+          value={objTitle}
+          onChange={e => setObjTitle(e.target.value)}
+          rows={3}
+          maxLength={500}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          placeholder="Objectiveのタイトルを入力"
+        />
+        <FieldLabel>Purpose（何を達成するか）</FieldLabel>
+        <textarea
+          value={objPurpose}
+          onChange={e => setObjPurpose(e.target.value)}
+          rows={2}
+          maxLength={1000}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          placeholder="このObjectiveで達成したいことを入力（例：〇〇により△△の状態にする）"
+        />
+        <FieldLabel>設計の意図や背景</FieldLabel>
+        <textarea
+          value={objBackground}
+          onChange={e => setObjBackground(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+          placeholder="なぜこのObjectiveを設定したか、背景・経緯・意図を入力"
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             onClick={saveObj}
             style={{
               ...primaryBtnStyle,
-              alignSelf: "flex-end",
               background: saved ? "var(--color-bg-success)" : undefined,
               color: saved ? "var(--color-text-success)" : undefined,
               border: saved ? "1px solid var(--color-border-success)" : undefined,
@@ -319,13 +342,17 @@ function QuarterlyOKRPanel({
   );
 
   const [qTitle, setQTitle] = useState(qObj?.title ?? "");
+  const [qPurpose, setQPurpose] = useState(qObj?.purpose ?? "");
+  const [qBackground, setQBackground] = useState(qObj?.background ?? "");
   const [savedQ, setSavedQ] = useState(false);
   const [newQKrTitle, setNewQKrTitle] = useState("");
   const [editingQKrId, setEditingQKrId] = useState<string | null>(null);
 
-  // クォーター切替時にタイトルを更新
+  // クォーター切替時にタイトル・purpose・backgroundを更新
   useEffect(() => {
     setQTitle(qObj?.title ?? "");
+    setQPurpose(qObj?.purpose ?? "");
+    setQBackground(qObj?.background ?? "");
     setEditingQKrId(null);
     setNewQKrTitle("");
   }, [qObj]);
@@ -340,6 +367,8 @@ function QuarterlyOKRPanel({
       objective_id: objectiveId,
       quarter,
       title: qTitle,
+      purpose: qPurpose,
+      background: qBackground,
       is_deleted: false,
       created_at: qObj?.created_at ?? now,
       updated_at: now,
@@ -375,6 +404,8 @@ function QuarterlyOKRPanel({
         objective_id: objectiveId,
         quarter,
         title: qTitle,
+        purpose: qPurpose,
+        background: qBackground,
         is_deleted: false,
         created_at: now,
         updated_at: now,
@@ -430,21 +461,38 @@ function QuarterlyOKRPanel({
             </button>
           )}
         </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <textarea
-            value={qTitle}
-            onChange={e => setQTitle(e.target.value)}
-            rows={2}
-            maxLength={200}
-            placeholder={`${quarter}の目標を入力`}
-            style={{ ...inputStyle, flex: 1, resize: "vertical" }}
-          />
+        <textarea
+          value={qTitle}
+          onChange={e => setQTitle(e.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder={`${quarter}の目標を入力`}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+        />
+        <FieldLabel>Purpose（何を達成するか）</FieldLabel>
+        <textarea
+          value={qPurpose}
+          onChange={e => setQPurpose(e.target.value)}
+          rows={2}
+          maxLength={1000}
+          placeholder={`${quarter}で達成したいことを入力（例：〇〇により△△の状態にする）`}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+        />
+        <FieldLabel>設計の意図や背景</FieldLabel>
+        <textarea
+          value={qBackground}
+          onChange={e => setQBackground(e.target.value)}
+          rows={3}
+          maxLength={2000}
+          placeholder={`なぜ${quarter}にこのObjectiveを設定したか、背景・経緯・意図を入力`}
+          style={{ ...inputStyle, width: "100%", resize: "vertical", marginBottom: "10px" }}
+        />
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             onClick={saveQObj}
             disabled={!objectiveId}
             style={{
               ...primaryBtnStyle,
-              alignSelf: "flex-end",
               background: savedQ ? "var(--color-bg-success)" : undefined,
               color: savedQ ? "var(--color-text-success)" : undefined,
               border: savedQ ? "1px solid var(--color-border-success)" : undefined,

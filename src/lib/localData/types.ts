@@ -21,6 +21,8 @@ export interface Member {
 export interface Objective {
   id: string;
   title: string;
+  purpose?: string;     // 何を達成するか（Purpose）
+  background?: string;  // 設計の意図や背景
   period: string;
   is_current: boolean;
   // audit fields
@@ -50,6 +52,8 @@ export interface QuarterlyObjective {
   objective_id: string;  // 通期Objectiveへの紐づき
   quarter: Quarter;
   title: string;
+  purpose?: string;     // 何を達成するか（Purpose）
+  background?: string;  // 設計の意図や背景
   is_deleted: boolean;
   // audit fields
   created_at?: string;
