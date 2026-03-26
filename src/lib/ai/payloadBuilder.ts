@@ -10,7 +10,7 @@
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
 import type {
-  Project, Task, Member,
+  Project, Task, Member, ToDo,
   AIProject, AITask, MemberWorkload,
   ConsultationType,
 } from "../localData/types";
@@ -163,6 +163,8 @@ interface BuildOptions {
   projects: Project[];
   tasks: Task[];
   members: Member[];
+  /** ToDoリスト（project_id=nullのタスクをToDo単位でグループ化するために使用） */
+  todos?: ToDo[];
   consultationType: ConsultationType;
   consultation: string;
   scope: AIConsultationPayload["scope"];
@@ -233,6 +235,62 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       tasks: aiTasks,
     };
   });
+
+  // ===== ToDo系タスク（project_id=null）をToDo単位で仮想プロジェクトとして追加 =====
+  // OKR境界ルール（CLAUDE.md Section 2）：TF情報は渡さない。ToDoのtitleのみpurposeとして使う。
+  const activeTodos = (opts.todos ?? []).filter(td => !td.is_deleted);
+  const todoOnlyTasks = activeTasks.filter(t => t.project_id == null && t.todo_id != null);
+
+  // todo_id ごとにタスクをグループ化
+  const tasksByTodo = new Map<string, Task[]>();
+  for (const task of todoOnlyTasks) {
+    const tid = task.todo_id!;
+    if (!tasksByTodo.has(tid)) tasksByTodo.set(tid, []);
+    tasksByTodo.get(tid)!.push(task);
+  }
+
+  for (const [todoId, tasks] of tasksByTodo) {
+    const todo = activeTodos.find(td => td.id === todoId);
+    if (!todo) continue;
+
+    // ToDo をプロジェクトIDとしてマップに登録
+    const virtualPjShortId = makeShortId("pj", aiProjects.length);
+    shortIdMap.set(virtualPjShortId, todoId); // applyProposalではpj_idは使わないが整合性のため登録
+
+    const aiTasks: AITask[] = tasks.map((task) => {
+      const taskShortId = makeShortId("task", taskCounter);
+      taskCounter++;
+      shortIdMap.set(taskShortId, task.id);
+      const assignee = opts.members.find(m => m.id === task.assignee_member_id);
+      return {
+        task_id: taskShortId,
+        task_name: task.name,
+        assignee: assignee?.short_name ?? "未担当",
+        status: task.status,
+        priority: task.priority,
+        due_date: task.due_date,
+        estimated_hours: task.estimated_hours,
+        comment: sanitizeComment(task.comment ?? ""),
+        completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
+      };
+    });
+
+    aiProjects.push({
+      pj_id: virtualPjShortId,
+      pj_name: `[ToDo] ${todo.title}`,
+      pj_purpose: todo.title,
+      pj_status: "active",
+      pj_end_date: todo.due_date ?? null,
+      pj_owners: [],
+      pj_progress: {
+        total: tasks.length,
+        done: tasks.filter(t => t.status === "done").length,
+        in_progress: tasks.filter(t => t.status === "in_progress").length,
+        todo: tasks.filter(t => t.status === "todo").length,
+      },
+      tasks: aiTasks,
+    });
+  }
 
   const payload: AIConsultationPayload = {
     context: {

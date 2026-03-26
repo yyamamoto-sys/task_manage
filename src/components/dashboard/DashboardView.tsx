@@ -17,7 +17,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce,
+  Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce, ToDo,
 } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 
@@ -54,7 +54,7 @@ function diffDaysFromToday(s: string): number {
 export function DashboardView({ currentUser, projects }: Props) {
   const {
     tasks: rawTasks, members: rawMembers, keyResults: rawKrs,
-    taskForces: rawTfs, projectTaskForces: rawPtfs,
+    taskForces: rawTfs, projectTaskForces: rawPtfs, todos: rawTodos,
   } = useAppData();
   const isMobile = useIsMobile();
 
@@ -83,6 +83,7 @@ export function DashboardView({ currentUser, projects }: Props) {
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const krs      = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
   const tfs      = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+  const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const projectTaskForces = rawPtfs;
 
   // フィルター適用後のタスク
@@ -155,6 +156,22 @@ export function DashboardView({ currentUser, projects }: Props) {
       return { kr, pct, tfCount: krTfs.length };
     }),
     [krs, tfs, allTasks]
+  );
+
+  // ToDo進捗（TF > ToDo > Task の完了状況）
+  const todoProgress = useMemo(() =>
+    tfs.map(tf => {
+      const tfTodos = todos.filter(td => td.tf_id === tf.id);
+      const todoItems = tfTodos.map(td => {
+        const tdTasks = allTasks.filter(t => t.todo_id === td.id);
+        const done = tdTasks.filter(t => t.status === "done").length;
+        const total = tdTasks.length;
+        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        return { todo: td, done, total, pct };
+      });
+      return { tf, todoItems };
+    }).filter(item => item.todoItems.length > 0),
+    [tfs, todos, allTasks]
   );
 
   const togglePj = (id: string) => {
@@ -529,6 +546,76 @@ export function DashboardView({ currentUser, projects }: Props) {
           </Card>
 
         </div>
+
+        {/* ⑤ ToDo進捗一覧（フルwidth） */}
+        {todoProgress.length > 0 && (
+          <div style={{ marginTop: "14px" }}>
+            <Card title="ToDo 進捗一覧">
+              {todoProgress.map(({ tf, todoItems }) => (
+                <div key={tf.id} style={{ marginBottom: "14px" }}>
+                  {/* TFラベル */}
+                  <div style={{
+                    fontSize: "10px", fontWeight: "600",
+                    color: "var(--color-text-tertiary)",
+                    marginBottom: "6px", textTransform: "uppercase", letterSpacing: "0.05em",
+                  }}>
+                    {tf.tf_number} {tf.name}
+                  </div>
+                  {/* ToDoアイテム */}
+                  <div style={{
+                    display: "grid",
+                    gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fill, minmax(220px, 1fr))",
+                    gap: "8px",
+                  }}>
+                    {todoItems.map(({ todo, done, total, pct }) => (
+                      <div key={todo.id} style={{
+                        padding: "8px 10px",
+                        background: "var(--color-bg-secondary)",
+                        borderRadius: "var(--radius-md)",
+                        border: "1px solid var(--color-border-primary)",
+                      }}>
+                        <div style={{
+                          fontSize: "11px", color: "var(--color-text-primary)",
+                          marginBottom: "4px",
+                          overflow: "hidden", textOverflow: "ellipsis",
+                          display: "-webkit-box", WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          lineHeight: "1.4",
+                        }}>
+                          {todo.title}
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <div style={{ flex: 1 }}>
+                            <ProgressBar pct={pct} color={
+                              pct >= 80 ? "var(--color-text-success)"
+                                : pct >= 40 ? "var(--color-text-warning)"
+                                : "var(--color-text-tertiary)"
+                            } />
+                          </div>
+                          <span style={{
+                            fontSize: "10px", flexShrink: 0, fontWeight: "500",
+                            color: pct >= 80 ? "var(--color-text-success)"
+                              : pct >= 40 ? "var(--color-text-warning)"
+                              : "var(--color-text-tertiary)",
+                          }}>
+                            {done}/{total}
+                          </span>
+                          {todo.due_date && (
+                            <span style={{
+                              fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0,
+                            }}>
+                              {formatDateShort(todo.due_date)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );

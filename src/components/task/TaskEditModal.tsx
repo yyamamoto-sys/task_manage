@@ -10,7 +10,7 @@
 import { useState, useCallback, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, TaskTaskForce, TaskProject } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo, TaskForce, TaskTaskForce, TaskProject } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 
@@ -62,7 +62,8 @@ function renderComment(text: string): React.ReactNode {
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
   const {
     tasks: allTasks, members: allMembers, projects: allProjects,
-    taskForces: allTaskForces, taskTaskForces: allTaskTaskForces, taskProjects: allTaskProjects,
+    taskForces: allTaskForces, todos: allTodos,
+    taskTaskForces: allTaskTaskForces, taskProjects: allTaskProjects,
     saveTask, deleteTask, addTaskTaskForce, removeTaskTaskForce, addTaskProject, removeTaskProject,
   } = useAppData();
   const isMobile = useIsMobile();
@@ -70,6 +71,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
   const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
   const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
+  const todos      = useMemo(() => allTodos.filter(t => !t.is_deleted), [allTodos]);
 
   // このタスクに紐づくTF
   const linkedTfs = useMemo(() => {
@@ -91,6 +93,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     priority:            originalTask?.priority ?? "",
     assignee_member_id:  originalTask?.assignee_member_id ?? "",
     project_id:          originalTask?.project_id ?? null as string | null,
+    todo_id:             originalTask?.todo_id ?? null as string | null,
     due_date:            originalTask?.due_date ?? "",
     estimated_hours:     originalTask?.estimated_hours?.toString() ?? "",
     comment:             originalTask?.comment ?? "",
@@ -99,8 +102,17 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 
   if (!originalTask) return null;
 
-  const member  = members.find(m => m.id === originalTask.assignee_member_id);
-  const project = projects.find(p => p.id === originalTask.project_id);
+  const member     = members.find(m => m.id === originalTask.assignee_member_id);
+  const project    = projects.find(p => p.id === originalTask.project_id);
+  const linkedTodo = todos.find(t => t.id === originalTask.todo_id);
+  const linkedTodoTf = linkedTodo ? taskForces.find(tf => tf.id === linkedTodo.tf_id) : null;
+
+  // ToDo選択肢をTFごとにグループ化
+  const todosByTf = useMemo(() => {
+    return taskForces
+      .filter(tf => todos.some(t => t.tf_id === tf.id))
+      .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
+  }, [taskForces, todos]);
   const isOverdue = originalTask.due_date
     && originalTask.due_date < todayStr()
     && originalTask.status !== "done";
@@ -114,6 +126,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       priority:           (form.priority as Task["priority"]) || null,
       assignee_member_id: form.assignee_member_id,
       project_id:         form.project_id || null,
+      todo_id:            form.todo_id || null,
       due_date:           form.due_date || null,
       estimated_hours:    isNaN(hours) ? null : hours,
       comment:            form.comment,
@@ -326,6 +339,43 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
               </div>
             ) : (
               <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>なし</span>
+            )}
+          </FieldSection>
+
+          {/* ToDo */}
+          <FieldSection label="ToDo（OKR系）">
+            {editing ? (
+              <select
+                value={form.todo_id ?? ""}
+                onChange={e => setForm(f => ({ ...f, todo_id: e.target.value || null }))}
+                style={inputSm}
+              >
+                <option value="">なし</option>
+                {todosByTf.map(({ tf, items }) => (
+                  <optgroup key={tf.id} label={`${tf.tf_number ? tf.tf_number + " " : ""}${tf.name}`}>
+                    {items.map(todo => (
+                      <option key={todo.id} value={todo.id}>
+                        {todo.title.slice(0, 40)}{todo.title.length > 40 ? "…" : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+            ) : linkedTodo ? (
+              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                {linkedTodoTf && (
+                  <span style={{
+                    fontSize: "10px", padding: "1px 6px", borderRadius: "3px", marginRight: "6px",
+                    background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+                    border: "1px solid var(--color-brand-border)",
+                  }}>
+                    {linkedTodoTf.tf_number ? `${linkedTodoTf.tf_number} ` : ""}{linkedTodoTf.name}
+                  </span>
+                )}
+                {linkedTodo.title.slice(0, 50)}{linkedTodo.title.length > 50 ? "…" : ""}
+              </div>
+            ) : (
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
             )}
           </FieldSection>
 

@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.0
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.1
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -6,8 +6,12 @@
 #      追加：Section 6-6〜6-22（AI連携設計の全仕様）
 #      追加：Section 13（ファイル構成）
 #      更新：Section 10（未解決論点からPhase 4解決済み分を削除）
+# v2.1 ToDo層追加・Task設計変更・GraphView追加（2026年3月）
+#      追加：3-2b（ToDoデータモデル）
+#      更新：2（6層構造に変更）・3-3（Task.project_id NULL許可・todo_id追加）
+#      更新：13（ファイル構成にGraphView追加）
 #
-# 最終更新：2026年3月
+# 最終更新：2026年3月（v2.1）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -45,18 +49,41 @@
 
 ---
 
-## 2. 情報の5層構造（最重要）
+## 2. 情報の6層構造（最重要）
 
 このアプリの設計原則の核心。コードのどこを触るときも必ずこの構造を意識すること。
+
+### OKR系統（Object > KR > TF > ToDo > Task）
 
 ```
 Layer 1: Objective（O）          ← ラベル管理・AIに渡さない・削除不可
 Layer 2: Key Result（KR）        ← ラベル管理・AIに渡さない
 Layer 3: Task Force（TF）        ← ラベル管理・AIに渡さない
+Layer 4: ToDo                    ← ラベル管理・AIに渡さない（タイトルのみAIに渡す）
 ─────────────────────────────── ← AIの境界線（絶対に越えない）
-Layer 4: Project（PJ）           ← AI管理・AIに渡す
 Layer 5: Task                    ← AI管理・AIに渡す
 ```
+
+### プロジェクト系統（独立・OKRと無関係に存在可）
+
+```
+Project（PJ）                    ← AI管理・AIに渡す
+  └── Task                       ← AI管理・AIに渡す
+```
+
+### Taskの紐づきパターン（いずれか、または両方）
+
+```
+① Project only:  Task.project_id = "uuid", Task.todo_id = null
+② ToDo only:     Task.project_id = null,   Task.todo_id = "uuid"
+③ 両方:          Task.project_id = "uuid", Task.todo_id = "uuid"
+```
+
+### AI境界ルール
+
+- O / KR / TF は一切AIに渡さない
+- ToDo は「タイトルのみ」をAIに渡す（TF/KR/O情報は含めない）
+- AIペイロード内では ToDo 単位のタスクグループを仮想プロジェクトとして表現する（payloadBuilder.ts参照）
 
 ### 絶対に破ってはいけないルール
 
@@ -122,6 +149,27 @@ interface TaskForce {
 }
 ```
 
+### 3-2b. ToDo層（OKR管理）
+
+ToDoは TF の下に存在する「中タスク」。複数の Task（小タスク）で構成される。
+**AIには渡さない。タイトルのみ仮想プロジェクト名としてAIペイロードに含める。**
+
+```typescript
+interface ToDo {
+  id: string;
+  tf_id: string;           // 所属するTaskForceのID
+  title: string;           // 複数行入力可（説明的なテキストになることが多い）
+  due_date: string | null; // 任意。YYYY-MM-DD形式
+  memo: string;            // 任意の備考（デフォルト: ""）
+  is_deleted: boolean;
+  deleted_at?: string;
+  deleted_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+}
+```
+
 ### 3-2. PJ層（AI管理）
 
 ```typescript
@@ -164,7 +212,8 @@ interface ProjectMember {
 interface Task {
   id: string;
   name: string;
-  project_id: string;
+  project_id: string | null; // ← NULL許可（ToDo単独紐づけの場合はnull）
+  todo_id: string | null;    // ← ToDoへの紐づき（任意）。project_idと併用可
   assignee_member_id: string;
   status: 'todo' | 'in_progress' | 'done';
   priority?: 'high' | 'mid' | 'low';
@@ -488,16 +537,17 @@ interface TaskChangeLog {
 | 画面 | 状態 | 備考 |
 |---|---|---|
 | セットアップウィザード | ✅ 設計済み | 初回起動時のみ表示。デモバナーあり |
-| 管理画面（OKR/TF/PJ/Member/変更履歴） | ✅ 設計済み | 全員が編集可 |
+| 管理画面（OKR/TF/ToDo/PJ/Member/変更履歴） | ✅ 設計済み | 全員が編集可。TFRowを展開可能カードにしToDoパネル内包 |
 | ダッシュボード | ✅ 設計済み | OKR進捗・今週タスク・アラート・フィルター付き |
 | カンバンビュー | ✅ 設計済み | ドラッグ&ドロップ対応 |
 | ガントビュー | ✅ 設計済み | PJバー＋マイルストーン・トグル開閉・今日線 |
 | リストビュー | ✅ 設計済み | 列カスタマイズ・サイドパネル・エクスポート |
-| タスク追加モーダル | ✅ 設計済み | 必須3項目＋任意項目・カレンダー・ネットワークパス対応 |
+| タスク追加モーダル | ✅ 設計済み | 必須3項目＋任意項目・ToDo紐づけフィールド追加 |
 | PJ作成モーダル | ✅ 設計済み | 3ステップウィザード |
 | AIに変更を相談パネル | ✅ 設計済み | マルチターン・5モード・確認ダイアログ |
 | ConfirmationDialogModal | ✅ 設計済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 設計済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
+| グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
 
 ---
 
@@ -561,7 +611,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026年3月（v2.0）
+- 最終更新：2026年3月（v2.1）
 
 ---
 
@@ -597,15 +647,21 @@ src/
 ├── hooks/
 │   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
 └── components/
-    └── consultation/
-        ├── ConsultationPanel.tsx          # 相談パネル本体
-        ├── ProposalCard.tsx               # 提案カード
-        ├── ConfirmationDialogModal.tsx    # 日程・担当者変更の確認ダイアログ
-        ├── ChatHistory.tsx                # 会話履歴表示
-        ├── FollowUpButtons.tsx            # 次の相談候補ボタン
-        ├── SimulationBanner.tsx           # シミュレーションモードの警告バナー
-        ├── LoadingView.tsx                # ローディング表示
-        └── ErrorView.tsx                  # エラー表示
+    ├── consultation/
+    │   ├── ConsultationPanel.tsx          # 相談パネル本体
+    │   ├── ProposalCard.tsx               # 提案カード
+    │   ├── ConfirmationDialogModal.tsx    # 日程・担当者変更の確認ダイアログ
+    │   ├── ChatHistory.tsx                # 会話履歴表示
+    │   ├── FollowUpButtons.tsx            # 次の相談候補ボタン
+    │   ├── SimulationBanner.tsx           # シミュレーションモードの警告バナー
+    │   ├── LoadingView.tsx                # ローディング表示
+    │   └── ErrorView.tsx                  # エラー表示
+    ├── graph/
+    │   └── GraphView.tsx                  # ラボ機能：関係性グラフビュー（Canvas+物理シミュレーション）
+    ├── task/
+    │   └── TaskEditModal.tsx              # タスク編集モーダル（ToDo紐づけフィールド含む）
+    └── admin/
+        └── AdminView.tsx                  # 管理画面（TFRow内ToDoパネル含む）
 
 supabase/
 └── functions/

@@ -66,7 +66,7 @@ function getRandomLoadingMessage(): string {
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
 export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
-  const { projects, tasks, members, reload } = useAppData();
+  const { projects, tasks, members, todos, reload } = useAppData();
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [session, setSession] = useState<ConsultationSession>(createSession());
@@ -110,6 +110,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         projects: targetProjects,
         tasks,
         members,
+        todos,
         consultationType,
         consultation,
         scope: projectIds.length > 0 ? "related_pj" : "all_pj",
@@ -184,7 +185,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         setCallState("error");
       }
     },
-    [projects, tasks, members, projectIds],
+    [projects, tasks, members, todos, projectIds],
   );
 
   // ===== reset: セッションをリセット =====
