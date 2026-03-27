@@ -1,5 +1,5 @@
 // src/components/layout/MainLayout.tsx
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -18,12 +18,12 @@ interface Props {
   onLogout: () => void;
 }
 
-const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode }[] = [
-  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB",    icon: <DashIcon /> },
-  { view: "kanban",    label: "カンバン",       shortLabel: "KB",    icon: <KanbanIcon /> },
-  { view: "gantt",     label: "ガント",         shortLabel: "GT",    icon: <GanttIcon /> },
-  { view: "list",      label: "リスト",         shortLabel: "LT",    icon: <ListIcon /> },
-  { view: "admin",     label: "管理",           shortLabel: "管理",  icon: <AdminIcon /> },
+const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode; tooltip: string }[] = [
+  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB",   icon: <DashIcon />,   tooltip: "OKRの進捗・今週のタスク・期限アラートをまとめて確認できます" },
+  { view: "kanban",    label: "カンバン",       shortLabel: "KB",   icon: <KanbanIcon />, tooltip: "タスクを「未着手／進行中／完了」の列でドラッグ&ドロップ管理できます" },
+  { view: "gantt",     label: "ガント",         shortLabel: "GT",   icon: <GanttIcon />,  tooltip: "プロジェクトの期間とタスクの期日をカレンダー形式で一覧できます" },
+  { view: "list",      label: "リスト",         shortLabel: "LT",   icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
+  { view: "admin",     label: "管理",           shortLabel: "管理", icon: <AdminIcon />,  tooltip: "OKR・プロジェクト・メンバーの作成・編集・削除を行う設定画面です" },
 ];
 
 export function MainLayout({ currentUser, onLogout }: Props) {
@@ -251,12 +251,13 @@ function Sidebar({
 
       <div style={{ padding: "8px 0 4px" }}>
         <SectionLabel>メニュー</SectionLabel>
-        {NAV_ITEMS.map(({ view, label, icon }) => (
+        {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
           <NavItem
             key={view}
             active={viewMode === view}
             icon={icon}
             label={label}
+            tooltip={tooltip}
             onClick={() => setViewMode(view)}
           />
         ))}
@@ -363,36 +364,80 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function NavItem({
-  active, icon, label, onClick, color,
+  active, icon, label, onClick, color, tooltip,
 }: {
   active: boolean;
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   color?: string;
+  tooltip?: string;
 }) {
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [tipPos, setTipPos] = useState<{ x: number; y: number } | null>(null);
+
+  const handleMouseEnter = (e: React.MouseEvent) => {
+    if (!tooltip) return;
+    const { clientX, clientY } = e;
+    timerRef.current = setTimeout(() => {
+      setTipPos({ x: clientX, y: clientY });
+    }, 2000);
+  };
+
+  const handleMouseLeave = () => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    setTipPos(null);
+  };
+
   return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "flex", alignItems: "center", gap: "8px",
-        padding: "6px 10px",
-        background: active ? "var(--color-bg-primary)" : "transparent",
-        border: "none",
-        borderRadius: "var(--radius-md)",
-        margin: "1px 4px", width: "calc(100% - 8px)",
-        fontSize: "11px",
-        fontWeight: active ? "500" : "400",
-        color: color ?? (active ? "var(--color-text-primary)" : "var(--color-text-secondary)"),
-        cursor: "pointer", textAlign: "left",
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}
-    >
-      <span style={{ flexShrink: 0, opacity: active ? 1 : 0.6 }}>{icon}</span>
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {label}
-      </span>
-    </button>
+    <>
+      <button
+        onClick={onClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          display: "flex", alignItems: "center", gap: "8px",
+          padding: "6px 10px",
+          background: active ? "var(--color-bg-primary)" : "transparent",
+          border: "none",
+          borderRadius: "var(--radius-md)",
+          margin: "1px 4px", width: "calc(100% - 8px)",
+          fontSize: "11px",
+          fontWeight: active ? "500" : "400",
+          color: color ?? (active ? "var(--color-text-primary)" : "var(--color-text-secondary)"),
+          cursor: "pointer", textAlign: "left",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}
+      >
+        <span style={{ flexShrink: 0, opacity: active ? 1 : 0.6 }}>{icon}</span>
+        <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {label}
+        </span>
+      </button>
+      {tipPos && tooltip && (
+        <div style={{
+          position: "fixed",
+          left: tipPos.x + 12,
+          top: tipPos.y - 10,
+          zIndex: 9999,
+          background: "var(--color-bg-primary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+          boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+          padding: "8px 12px",
+          maxWidth: "220px",
+          fontSize: "11px",
+          color: "var(--color-text-secondary)",
+          lineHeight: 1.5,
+          pointerEvents: "none",
+        }}>
+          <div style={{ fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "3px" }}>
+            {label}
+          </div>
+          {tooltip}
+        </div>
+      )}
+    </>
   );
 }
 
