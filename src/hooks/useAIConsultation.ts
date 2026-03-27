@@ -41,6 +41,8 @@ export interface SubmitOptions {
   consultation: string;
   consultationType: ConsultationType;
   targetDeadline?: string | null;
+  /** trueの場合、OKR（Objective/KR/TF）情報もペイロードに含める */
+  includeOKR?: boolean;
 }
 
 // ===== ローディングメッセージ =====
@@ -66,7 +68,7 @@ function getRandomLoadingMessage(): string {
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
 export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
-  const { projects, tasks, members, todos, reload } = useAppData();
+  const { projects, tasks, members, todos, objective, keyResults, taskForces, reload } = useAppData();
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [session, setSession] = useState<ConsultationSession>(createSession());
@@ -91,7 +93,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   const submit = useCallback(
     async (opts: SubmitOptions) => {
-      const { consultation, consultationType, targetDeadline } = opts;
+      const { consultation, consultationType, targetDeadline, includeOKR } = opts;
 
       if (!consultation.trim()) return;
 
@@ -115,6 +117,10 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         consultation,
         scope: projectIds.length > 0 ? "related_pj" : "all_pj",
         targetDeadline,
+        includeOKR,
+        currentObjective: objective,
+        keyResults,
+        taskForces,
       });
 
       setShortIdMap(newShortIdMap);

@@ -11,7 +11,8 @@
 
 import type {
   Project, Task, Member, ToDo,
-  AIProject, AITask, MemberWorkload,
+  KeyResult, TaskForce,
+  AIProject, AITask, MemberWorkload, AIOKR,
   ConsultationType,
 } from "../localData/types";
 import { sanitizeComment } from "./sanitize";
@@ -47,6 +48,8 @@ export interface AIConsultationPayload {
   consultation: string;
   scope: "related_pj" | "all_pj" | "member_tasks";
   projects: AIProject[];
+  /** OKRモード有効時のみ存在する。現在期のObjective/KR/TF構造 */
+  okr_context?: AIOKR;
   retry_hint?: string;
 }
 
@@ -170,6 +173,12 @@ interface BuildOptions {
   scope: AIConsultationPayload["scope"];
   targetDeadline?: string | null;
   retryHint?: string;
+  /** OKRモード：trueの場合はOKR構造をペイロードに含める */
+  includeOKR?: boolean;
+  /** 現在期のObjective（AppDataContextのobjective） */
+  currentObjective?: { id: string; title: string; period: string } | null;
+  keyResults?: KeyResult[];
+  taskForces?: TaskForce[];
 }
 
 /**
@@ -292,6 +301,34 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     });
   }
 
+  // ===== OKRコンテキスト（includeOKR=trueかつデータがある場合のみ） =====
+  let okrContext: AIOKR | undefined;
+  if (opts.includeOKR && opts.currentObjective && opts.keyResults && opts.taskForces) {
+    const currentObj = opts.currentObjective;
+    const activeKRs = opts.keyResults.filter(kr => !kr.is_deleted && kr.objective_id === currentObj.id);
+    okrContext = {
+      objective_id: makeShortId("o", 0),
+      title: currentObj.title,
+      period: currentObj.period,
+      key_results: activeKRs.map((kr, krIdx) => {
+        const activeTFs = opts.taskForces!.filter(tf => !tf.is_deleted && tf.kr_id === kr.id);
+        return {
+          kr_id: makeShortId("kr", krIdx),
+          title: kr.title,
+          task_forces: activeTFs.map((tf, tfIdx) => {
+            const leader = opts.members.find(m => m.id === tf.leader_member_id);
+            return {
+              tf_id: makeShortId("tf", tfIdx),
+              tf_number: tf.tf_number,
+              name: tf.name,
+              leader: leader?.short_name ?? "未設定",
+            };
+          }),
+        };
+      }),
+    };
+  }
+
   const payload: AIConsultationPayload = {
     context: {
       ...buildFiscalCalendar(today),
@@ -302,6 +339,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     consultation: opts.consultation,
     scope: opts.scope,
     projects: aiProjects,
+    ...(okrContext ? { okr_context: okrContext } : {}),
     ...(opts.retryHint ? { retry_hint: opts.retryHint } : {}),
   };
 

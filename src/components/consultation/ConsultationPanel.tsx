@@ -94,6 +94,7 @@ export function ConsultationPanel({
     useState<ConsultationType>("change");
   const [inputText, setInputText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
+  const [includeOKR, setIncludeOKR] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // 変更履歴モーダルの表示状態
@@ -129,6 +130,7 @@ export function ConsultationPanel({
       consultation: text,
       consultationType,
       targetDeadline: targetDeadline || null,
+      includeOKR,
     });
   };
 
@@ -396,6 +398,37 @@ export function ConsultationPanel({
               ))}
             </select>
           </div>
+
+          {/* OKR+TFモード トグル */}
+          <button
+            onClick={() => setIncludeOKR(v => !v)}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "6px 10px",
+              background: includeOKR ? "var(--color-accent-bg, #eff6ff)" : "var(--color-bg-secondary)",
+              border: `1px solid ${includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-border-primary)"}`,
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer",
+              fontSize: "11px",
+              color: includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-text-secondary)",
+              fontWeight: includeOKR ? "600" : "400",
+              textAlign: "left",
+            }}
+          >
+            <span style={{
+              width: 14, height: 14, borderRadius: "3px", flexShrink: 0,
+              background: includeOKR ? "var(--color-accent, #3b82f6)" : "transparent",
+              border: `1.5px solid ${includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-border-primary)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {includeOKR && (
+                <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                  <path d="M1 3l2.5 2.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </span>
+            OKR + タスクフォース情報も含めて相談する
+          </button>
 
           {/* deadline_checkモード時のみ日付入力を表示 */}
           {consultationType === "deadline_check" && (

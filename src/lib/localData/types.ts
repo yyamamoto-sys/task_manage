@@ -246,6 +246,27 @@ export interface AITask {
   completed_at: string | null;
 }
 
+/** AIに渡すOKR構造（OKRモード有効時のみpayloadに含まれる） */
+export interface AITaskForce {
+  tf_id: string;     // shortId
+  tf_number: string;
+  name: string;
+  leader: string;    // short_name
+}
+
+export interface AIKeyResult {
+  kr_id: string;     // shortId
+  title: string;
+  task_forces: AITaskForce[];
+}
+
+export interface AIOKR {
+  objective_id: string; // shortId
+  title: string;
+  period: string;
+  key_results: AIKeyResult[];
+}
+
 export interface MemberWorkload {
   member_id: string;
   short_name: string;
