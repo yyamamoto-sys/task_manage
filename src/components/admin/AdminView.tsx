@@ -26,13 +26,22 @@ interface Props { currentUser: Member; }
 
 export function AdminView({ currentUser }: Props) {
   const ADMIN_TAB_KEY = "admin_last_tab";
+  const FONT_SIZE_KEY = "admin_font_size";
   const [tab, setTab] = useState<AdminTab>(
     () => (localStorage.getItem(ADMIN_TAB_KEY) as AdminTab | null) ?? "pj"
   );
+  const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
+    () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(FONT_SIZE_KEY) ?? "1", 10))) as 0 | 1 | 2
+  );
+  const zoomLevels = [0.85, 1, 1.15] as const;
 
   const changeTab = (t: AdminTab) => {
     setTab(t);
     localStorage.setItem(ADMIN_TAB_KEY, t);
+  };
+  const changeFontSize = (level: 0 | 1 | 2) => {
+    setFontSizeLevel(level);
+    localStorage.setItem(FONT_SIZE_KEY, String(level));
   };
 
   const tabs: { key: AdminTab; label: string }[] = [
@@ -51,7 +60,7 @@ export function AdminView({ currentUser }: Props) {
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-primary)", flexShrink: 0,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
           <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
             管理
           </div>
@@ -62,6 +71,27 @@ export function AdminView({ currentUser }: Props) {
           }}>
             全員が編集できます
           </span>
+          {/* フォントサイズ切り替え */}
+          <div style={{
+            display: "flex", border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)", overflow: "hidden",
+          }}>
+            {([0, 1, 2] as const).map((level) => (
+              <button
+                key={level}
+                onClick={() => changeFontSize(level)}
+                title={["小さく", "標準", "大きく"][level]}
+                style={{
+                  padding: "2px 7px", fontSize: "10px", border: "none", cursor: "pointer",
+                  background: fontSizeLevel === level ? "var(--color-bg-info)" : "transparent",
+                  color: fontSizeLevel === level ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+                  borderRight: level < 2 ? "1px solid var(--color-border-primary)" : "none",
+                }}
+              >
+                {["小", "中", "大"][level]}
+              </button>
+            ))}
+          </div>
         </div>
         {/* タブ */}
         <div style={{ display: "flex", gap: "0" }}>
@@ -87,7 +117,7 @@ export function AdminView({ currentUser }: Props) {
       </div>
 
       {/* コンテンツ */}
-      <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "18px 20px", zoom: zoomLevels[fontSizeLevel] }}>
         {tab === "okr"      && <OKRSection currentUser={currentUser} />}
         {tab === "tf"       && <TFSection currentUser={currentUser} />}
         {tab === "pj"       && <PJSection currentUser={currentUser} />}
@@ -454,7 +484,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   };
 
   return (
-    <div style={{ maxWidth: "720px" }}>
+    <div>
       {/* クォーター選択タブ */}
       <div style={{ display: "flex", gap: "4px", marginBottom: "20px" }}>
         {(["1Q", "2Q", "3Q", "4Q"] as Quarter[]).map(q => (
@@ -522,164 +552,129 @@ function TFSection({ currentUser }: { currentUser: Member }) {
         </div>
       )}
 
-      {/* KR × TF × ToDo */}
-      {krs.map((kr, i) => {
-        const linkedTfIds = qObj
-          ? quarterlyKrTaskForces.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === kr.id).map(q => q.tf_id)
-          : [];
-        const linkedTfs = tfs.filter(t => linkedTfIds.includes(t.id));
-        const unlinkableTfs = tfs.filter(t => !linkedTfIds.includes(t.id));
-        return (
-          <div key={kr.id} style={{ marginBottom: "24px" }}>
-            {/* KRヘッダー */}
-            <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-info)", marginBottom: "8px", display: "flex", alignItems: "center", gap: "5px" }}>
-              <span style={{ background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px", border: "1px solid var(--color-border-info)" }}>KR{i + 1}</span>
-              <span style={{ color: "var(--color-text-secondary)", fontWeight: "400" }}>{kr.title}</span>
-            </div>
-
-            {linkedTfs.length === 0 && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", paddingLeft: "12px", marginBottom: "6px" }}>
-                TFがまだ割り当てられていません
+      {/* KR × TF × ToDo — 2カラムグリッド */}
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "16px 24px" }}>
+        {krs.map((kr, i) => {
+          const linkedTfIds = qObj
+            ? quarterlyKrTaskForces.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === kr.id).map(q => q.tf_id)
+            : [];
+          const linkedTfs = tfs.filter(t => linkedTfIds.includes(t.id));
+          const unlinkableTfs = tfs.filter(t => !linkedTfIds.includes(t.id));
+          return (
+            <div key={kr.id}>
+              {/* KRヘッダー */}
+              <div style={{
+                fontSize: "11px", fontWeight: "500", color: "var(--color-text-info)",
+                marginBottom: "8px", display: "flex", alignItems: "center", gap: "5px",
+                padding: "6px 10px", background: "var(--color-bg-info-soft, var(--color-bg-secondary))",
+                borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-info)",
+              }}>
+                <span style={{
+                  background: "var(--color-bg-info)", padding: "1px 7px", borderRadius: "3px",
+                  border: "1px solid var(--color-border-info)", flexShrink: 0,
+                }}>KR{i + 1}</span>
+                <span style={{ color: "var(--color-text-secondary)", fontWeight: "400", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{kr.title}</span>
               </div>
-            )}
 
-            {/* 割り当て済みTF（ToDoパネル付き） */}
-            {linkedTfs.map(tf => (
-              <TFRow key={tf.id} tf={tf} members={members}
-                todos={todos.filter(t => t.tf_id === tf.id)}
-                tasks={allTasks} saveTask={saveTask}
-                currentUser={currentUser}
-                onEdit={() => openEdit(tf)}
-                onDelete={() => { void handleUnlinkTf(kr.id, tf.id); }}
-                onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
-              />
-            ))}
+              {linkedTfs.length === 0 && (
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", paddingLeft: "4px", marginBottom: "6px" }}>
+                  TFがまだ割り当てられていません
+                </div>
+              )}
 
-            {/* TF追加コントロール */}
-            {ctxObj?.id && (
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "6px", paddingLeft: "4px" }}>
-                {unlinkableTfs.length > 0 && (
-                  <select
-                    defaultValue=""
-                    onChange={e => { if (!e.target.value) return; void handleAddTf(kr.id, e.target.value); e.target.value = ""; }}
-                    style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
-                  >
-                    <option value="">既存TFを追加...</option>
-                    {unlinkableTfs.map(tf => (
-                      <option key={tf.id} value={tf.id}>{tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}</option>
-                    ))}
-                  </select>
-                )}
-                {newTfFormKrId !== kr.id && (
-                  <button
-                    onClick={() => openNewTfForm(kr.id)}
-                    style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
-                  >＋ 新規TFを作成</button>
-                )}
-              </div>
-            )}
+              {/* 割り当て済みTF（ToDoパネル付き） */}
+              {linkedTfs.map(tf => (
+                <TFRow key={tf.id} tf={tf} members={members}
+                  todos={todos.filter(t => t.tf_id === tf.id)}
+                  tasks={allTasks} saveTask={saveTask}
+                  currentUser={currentUser}
+                  onEdit={() => openEdit(tf)}
+                  onDelete={() => { void handleUnlinkTf(kr.id, tf.id); }}
+                  onSaveToDo={saveToDo} onDeleteToDo={deleteToDo}
+                  isEditing={editId === tf.id}
+                  editForm={form}
+                  setEditForm={setForm}
+                  onSaveEdit={() => { void saveTfEdit(); }}
+                  onCancelEdit={() => setEditId(null)}
+                  onDeleteTF={() => { void deleteTF(editId!); }}
+                />
+              ))}
 
-            {/* 新規TF作成インラインフォーム */}
-            {newTfFormKrId === kr.id && (
-              <div style={{ marginTop: "8px", padding: "12px 14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
-                <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "10px" }}>新しいTask Forceを作成してリンク</div>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 2fr", gap: "8px", marginBottom: "8px" }}>
-                  <div>
-                    <FieldLabel>TF番号</FieldLabel>
-                    <input value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
-                      placeholder="例：TF①-KR1" maxLength={20} style={{ ...inputStyle, fontSize: "11px" }} />
+              {/* TF追加コントロール */}
+              {ctxObj?.id && (
+                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "6px" }}>
+                  {unlinkableTfs.length > 0 && (
+                    <select
+                      defaultValue=""
+                      onChange={e => { if (!e.target.value) return; void handleAddTf(kr.id, e.target.value); e.target.value = ""; }}
+                      style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
+                    >
+                      <option value="">既存TFを追加...</option>
+                      {unlinkableTfs.map(tf => (
+                        <option key={tf.id} value={tf.id}>{tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  {newTfFormKrId !== kr.id && (
+                    <button
+                      onClick={() => openNewTfForm(kr.id)}
+                      style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
+                    >＋ 新規TFを作成</button>
+                  )}
+                </div>
+              )}
+
+              {/* 新規TF作成インラインフォーム */}
+              {newTfFormKrId === kr.id && (
+                <div style={{ marginTop: "8px", padding: "12px 14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
+                  <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "10px" }}>新しいTask Forceを作成してリンク</div>
+                  <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+                    <div style={{ flex: "0 0 90px" }}>
+                      <FieldLabel>TF番号</FieldLabel>
+                      <input value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
+                        placeholder="TF①-KR1" maxLength={20} style={{ ...inputStyle, fontSize: "11px" }} />
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <FieldLabel>TF名 *</FieldLabel>
+                      <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
+                        placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }} />
+                    </div>
                   </div>
-                  <div>
-                    <FieldLabel>TF名 *</FieldLabel>
-                    <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
-                      placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }} />
+                  <div style={{ marginBottom: "8px" }}>
+                    <FieldLabel>リーダー</FieldLabel>
+                    <select value={newTfForm.leader_member_id} onChange={e => setNewTfForm(f => ({...f, leader_member_id: e.target.value}))} style={{ ...inputStyle, fontSize: "11px" }}>
+                      <option value="">（なし）</option>
+                      {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ marginBottom: "8px" }}>
+                    <FieldLabel>詳細・目的（任意）</FieldLabel>
+                    <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
+                      placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
+                      style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+                  </div>
+                  <div style={{ marginBottom: "10px" }}>
+                    <FieldLabel>設定した意図・背景（任意）</FieldLabel>
+                    <textarea value={newTfForm.background} onChange={e => setNewTfForm(f => ({...f, background: e.target.value}))}
+                      placeholder="なぜこのTFを設定するか、背景・経緯（任意）" maxLength={1000} rows={2}
+                      style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+                  </div>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button onClick={() => { void handleCreateAndLinkTf(kr.id); }} style={primaryBtnStyle}>作成してリンク</button>
+                    <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
                   </div>
                 </div>
-                <div style={{ marginBottom: "8px" }}>
-                  <FieldLabel>リーダー</FieldLabel>
-                  <select value={newTfForm.leader_member_id} onChange={e => setNewTfForm(f => ({...f, leader_member_id: e.target.value}))} style={{ ...inputStyle, fontSize: "11px" }}>
-                    <option value="">（なし）</option>
-                    {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-                  </select>
-                </div>
-                <div style={{ marginBottom: "8px" }}>
-                  <FieldLabel>詳細・目的（任意）</FieldLabel>
-                  <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
-                    placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
-                    style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
-                </div>
-                <div style={{ marginBottom: "10px" }}>
-                  <FieldLabel>設定した意図・背景（任意）</FieldLabel>
-                  <textarea value={newTfForm.background} onChange={e => setNewTfForm(f => ({...f, background: e.target.value}))}
-                    placeholder="なぜこのTFを設定するか、背景・経緯（任意）" maxLength={1000} rows={2}
-                    style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
-                </div>
-                <div style={{ display: "flex", gap: "6px" }}>
-                  <button onClick={() => { void handleCreateAndLinkTf(kr.id); }} style={primaryBtnStyle}>作成してリンク</button>
-                  <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* TF編集フォーム */}
-      {editId && (
-        <div style={{ marginTop: "16px", padding: "14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-brand)", borderRadius: "var(--radius-md)" }}>
-          <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>Task Forceを編集</div>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px", marginBottom: "8px" }}>
-            <div>
-              <FieldLabel>TF番号</FieldLabel>
-              <input value={form.tf_number} onChange={e => setForm(f => ({...f, tf_number: e.target.value}))}
-                placeholder="例：TF①-KR1" maxLength={20} style={inputStyle} />
+              )}
             </div>
-            <div>
-              <FieldLabel>TF名 *</FieldLabel>
-              <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                placeholder="例：市場調査TF" maxLength={100} style={inputStyle} />
-            </div>
-            <div>
-              <FieldLabel>紐づくKR</FieldLabel>
-              <select value={form.kr_id} onChange={e => setForm(f => ({...f, kr_id: e.target.value}))} style={inputStyle}>
-                {krs.map((k, i) => <option key={k.id} value={k.id}>KR{i+1}: {k.title.slice(0,24)}</option>)}
-              </select>
-            </div>
-            <div>
-              <FieldLabel>リーダー</FieldLabel>
-              <select value={form.leader_member_id} onChange={e => setForm(f => ({...f, leader_member_id: e.target.value}))} style={inputStyle}>
-                <option value="">（なし）</option>
-                {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-              </select>
-            </div>
-          </div>
-          <div style={{ marginBottom: "8px" }}>
-            <FieldLabel>詳細・目的（任意）</FieldLabel>
-            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}
-              placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
-              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
-          </div>
-          <div style={{ marginBottom: "12px" }}>
-            <FieldLabel>設定した意図・背景（任意）</FieldLabel>
-            <textarea value={form.background} onChange={e => setForm(f => ({...f, background: e.target.value}))}
-              placeholder="なぜこのTFを設定したか、背景・経緯・意図（任意）" maxLength={1000} rows={3}
-              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
-          </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button onClick={saveTfEdit} style={primaryBtnStyle}>保存</button>
-            <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
-            <button
-              onClick={() => { void deleteTF(editId); }}
-              style={{ ...ghostBtnStyle, marginLeft: "auto", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}
-            >TFを削除</button>
-          </div>
-        </div>
-      )}
+          );
+        })}
+      </div>
     </div>
   );
 }
 
-function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo }: {
+function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo,
+  isEditing, editForm, setEditForm, onSaveEdit, onCancelEdit, onDeleteTF }: {
   tf: TaskForce; members: Member[];
   todos: ToDo[]; tasks: import("../../lib/localData/types").Task[];
   saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
@@ -687,29 +682,40 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
   onEdit: () => void; onDelete: () => void;
   onSaveToDo: (todo: ToDo) => Promise<void>;
   onDeleteToDo: (id: string, deletedBy: string) => Promise<void>;
+  isEditing: boolean;
+  editForm: { kr_id: string; tf_number: string; name: string; description: string; background: string; leader_member_id: string };
+  setEditForm: React.Dispatch<React.SetStateAction<{ kr_id: string; tf_number: string; name: string; description: string; background: string; leader_member_id: string }>>;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDeleteTF: () => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isMobile = useIsMobile();
   const leader = members.find(m => m.id === tf.leader_member_id);
+
   return (
     <div style={{
-      marginBottom: "4px",
-      border: "1px solid var(--color-border-primary)",
+      marginBottom: "6px",
+      border: isEditing ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
       borderRadius: "var(--radius-md)",
       overflow: "hidden",
+      transition: "border-color 0.15s",
     }}>
       {/* ヘッダー行 */}
       <div style={{
-        display: "flex", alignItems: "center", gap: "8px",
-        padding: "7px 10px",
-        background: "var(--color-bg-primary)",
+        display: "flex", alignItems: "center", gap: "6px",
+        padding: "8px 10px",
+        background: isEditing ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
       }}>
-        <span style={{
-          fontSize: "10px", padding: "1px 7px", borderRadius: "3px",
-          background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-          border: "1px solid var(--color-brand-border)", flexShrink: 0,
-        }}>{tf.tf_number}</span>
+        {tf.tf_number && (
+          <span style={{
+            fontSize: "10px", padding: "1px 7px", borderRadius: "3px",
+            background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+            border: "1px solid var(--color-brand-border)", flexShrink: 0,
+          }}>{tf.tf_number}</span>
+        )}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>{tf.name}</div>
+          <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>{tf.name}</div>
           {tf.description && (
             <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
               {tf.description}
@@ -722,25 +728,92 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           )}
         </div>
         {leader && <Avatar member={leader} size={18} />}
-        <button
-          onClick={() => setExpanded(e => !e)}
-          style={{
-            fontSize: "10px", padding: "2px 8px",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)", cursor: "pointer",
-            background: expanded ? "var(--color-bg-info)" : "transparent",
-            color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-            flexShrink: 0,
-          }}
-        >
-          ToDo {todos.length}件 {expanded ? "▴" : "▾"}
-        </button>
-        <IconBtn onClick={onEdit}>✏</IconBtn>
-        <IconBtn danger onClick={onDelete}>✕</IconBtn>
+        {!isEditing ? (
+          <>
+            <button
+              onClick={() => setExpanded(e => !e)}
+              style={{
+                fontSize: "10px", padding: "2px 8px", whiteSpace: "nowrap",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                background: expanded ? "var(--color-bg-info)" : "transparent",
+                color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+                flexShrink: 0,
+              }}
+            >
+              ToDo {todos.length} {expanded ? "▴" : "▾"}
+            </button>
+            <button
+              onClick={onEdit}
+              style={{
+                fontSize: "10px", padding: "2px 8px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                background: "transparent", color: "var(--color-text-secondary)", flexShrink: 0,
+              }}
+            >編集</button>
+            <button
+              onClick={onDelete}
+              style={{
+                fontSize: "10px", padding: "2px 8px",
+                border: "1px solid var(--color-border-danger)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                background: "transparent", color: "var(--color-text-danger)", flexShrink: 0,
+              }}
+            >解除</button>
+          </>
+        ) : (
+          <span style={{ fontSize: "10px", color: "var(--color-text-purple)", fontWeight: "500", flexShrink: 0 }}>編集中</span>
+        )}
       </div>
 
-      {/* ToDoパネル（展開時） */}
-      {expanded && (
+      {/* インライン編集フォーム */}
+      {isEditing && (
+        <div style={{ padding: "12px 14px", borderTop: "1px solid var(--color-brand)", background: "var(--color-bg-secondary)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "90px 1fr", gap: "8px", marginBottom: "8px" }}>
+            <div>
+              <FieldLabel>TF番号</FieldLabel>
+              <input value={editForm.tf_number} onChange={e => setEditForm(f => ({...f, tf_number: e.target.value}))}
+                placeholder="TF①-KR1" maxLength={20} style={inputStyle} />
+            </div>
+            <div>
+              <FieldLabel>TF名 *</FieldLabel>
+              <input value={editForm.name} onChange={e => setEditForm(f => ({...f, name: e.target.value}))}
+                placeholder="例：市場調査TF" maxLength={100} style={inputStyle} />
+            </div>
+          </div>
+          <div style={{ marginBottom: "8px" }}>
+            <FieldLabel>リーダー</FieldLabel>
+            <select value={editForm.leader_member_id} onChange={e => setEditForm(f => ({...f, leader_member_id: e.target.value}))} style={inputStyle}>
+              <option value="">（なし）</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+            </select>
+          </div>
+          <div style={{ marginBottom: "8px" }}>
+            <FieldLabel>詳細・目的（任意）</FieldLabel>
+            <textarea value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))}
+              placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+          </div>
+          <div style={{ marginBottom: "10px" }}>
+            <FieldLabel>設定した意図・背景（任意）</FieldLabel>
+            <textarea value={editForm.background} onChange={e => setEditForm(f => ({...f, background: e.target.value}))}
+              placeholder="なぜこのTFを設定したか、背景・経緯・意図（任意）" maxLength={1000} rows={2}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+          </div>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <button onClick={onSaveEdit} style={primaryBtnStyle}>保存</button>
+            <button onClick={onCancelEdit} style={ghostBtnStyle}>キャンセル</button>
+            <button
+              onClick={onDeleteTF}
+              style={{ ...ghostBtnStyle, marginLeft: "auto", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}
+            >TFを削除</button>
+          </div>
+        </div>
+      )}
+
+      {/* ToDoパネル（展開時・編集中は非表示） */}
+      {expanded && !isEditing && (
         <ToDoPanel
           tfId={tf.id}
           todos={todos}
