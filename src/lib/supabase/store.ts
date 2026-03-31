@@ -8,14 +8,14 @@ import { supabase } from "./client";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
-  QuarterlyObjective, QuarterlyKeyResult, QuarterlyKrTaskForce,
+  QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
 } from "../localData/types";
 
 // ===== 全データ一括取得 =====
 
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs, qKrTfs, ttfs, tpjs, milestones] =
+  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones] =
     await Promise.all([
       supabase.from("members").select("*"),
       supabase.from("objectives").select("*"),
@@ -26,7 +26,6 @@ export async function fetchAllData() {
       supabase.from("tasks").select("*"),
       supabase.from("project_task_forces").select("*"),
       supabase.from("quarterly_objectives").select("*"),
-      supabase.from("quarterly_key_results").select("*"),
       supabase.from("quarterly_kr_task_forces").select("*"),
       supabase.from("task_task_forces").select("*"),
       supabase.from("task_projects").select("*"),
@@ -34,7 +33,7 @@ export async function fetchAllData() {
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
-  const firstError = [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrs]
+  const firstError = [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs]
     .find(r => r.error)?.error;
   if (firstError) {
     throw new Error(`データの取得に失敗しました: ${firstError.message} (${firstError.code})`);
@@ -50,7 +49,6 @@ export async function fetchAllData() {
     tasks:                (tasks.data      ?? []) as Task[],
     projectTaskForces:    (ptf.data        ?? []) as ProjectTaskForce[],
     quarterlyObjectives:    (qObjs.data  ?? []) as QuarterlyObjective[],
-    quarterlyKeyResults:    (qKrs.data   ?? []) as QuarterlyKeyResult[],
     quarterlyKrTaskForces:  (qKrTfs.data ?? []) as QuarterlyKrTaskForce[],
     taskTaskForces:         (ttfs.data   ?? []) as TaskTaskForce[],
     taskProjects:           (tpjs.data   ?? []) as TaskProject[],
@@ -170,21 +168,6 @@ export async function softDeleteQuarterlyObjective(id: string, deletedBy: string
   if (error) throw error;
 }
 
-// ===== QuarterlyKeyResult =====
-
-export async function upsertQuarterlyKeyResult(qKr: QuarterlyKeyResult) {
-  const { error } = await supabase.from("quarterly_key_results").upsert(qKr);
-  if (error) throw error;
-}
-
-export async function softDeleteQuarterlyKeyResult(id: string, deletedBy: string) {
-  const now = new Date().toISOString();
-  const { error } = await supabase.from("quarterly_key_results")
-    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
-    .eq("id", id);
-  if (error) throw error;
-}
-
 // ===== QuarterlyKrTaskForce =====
 
 export async function insertQuarterlyKrTaskForce(qKrTf: QuarterlyKrTaskForce) {
@@ -192,10 +175,11 @@ export async function insertQuarterlyKrTaskForce(qKrTf: QuarterlyKrTaskForce) {
   if (error) throw error;
 }
 
-export async function deleteQuarterlyKrTaskForce(quarterlyKrId: string, tfId: string) {
+export async function deleteQuarterlyKrTaskForce(quarterlyObjId: string, krId: string, tfId: string) {
   const { error } = await supabase.from("quarterly_kr_task_forces")
     .delete()
-    .eq("quarterly_kr_id", quarterlyKrId)
+    .eq("quarterly_objective_id", quarterlyObjId)
+    .eq("kr_id", krId)
     .eq("tf_id", tfId);
   if (error) throw error;
 }

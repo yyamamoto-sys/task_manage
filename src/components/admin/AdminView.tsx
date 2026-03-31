@@ -12,7 +12,7 @@ import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone,
-  QuarterlyObjective, QuarterlyKeyResult, Quarter,
+  QuarterlyObjective, Quarter,
 } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
@@ -105,9 +105,8 @@ export function AdminView({ currentUser }: Props) {
 function OKRSection({ currentUser }: { currentUser: Member }) {
   const {
     objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult,
-    quarterlyObjectives: rawQObjs, quarterlyKeyResults: rawQKrs,
+    quarterlyObjectives: rawQObjs,
     saveQuarterlyObjective, deleteQuarterlyObjective,
-    saveQuarterlyKeyResult, deleteQuarterlyKeyResult,
   } = useAppData();
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
@@ -326,12 +325,10 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
           quarter={selectedQuarter}
           objectiveId={ctxObj?.id ?? ""}
           allQObjs={rawQObjs}
-          allQKrs={rawQKrs}
+          allKrs={krs}
           currentUser={currentUser}
           onSaveQObj={saveQuarterlyObjective}
           onDeleteQObj={deleteQuarterlyObjective}
-          onSaveQKr={saveQuarterlyKeyResult}
-          onDeleteQKr={deleteQuarterlyKeyResult}
         />
       </div>
     </div>
@@ -342,237 +339,215 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 // 四半期OKRパネル（OKRSectionの子）
 // ===================================================
 
+// 四半期ごとに「通期KRに対してどのTFを割り当てるか」を管理するパネル。
+// KR自体は通期（年間）固定で編集不可。変わるのはTF割り当てのみ。
 interface QuarterlyOKRPanelProps {
   quarter: Quarter;
   objectiveId: string;
   allQObjs: QuarterlyObjective[];
-  allQKrs: QuarterlyKeyResult[];
+  allKrs: KeyResult[];
   currentUser: Member;
   onSaveQObj:   (q: QuarterlyObjective) => Promise<void>;
   onDeleteQObj: (id: string, deletedBy: string) => Promise<void>;
-  onSaveQKr:    (k: QuarterlyKeyResult) => Promise<void>;
-  onDeleteQKr:  (id: string, deletedBy: string) => Promise<void>;
 }
 
 function QuarterlyOKRPanel({
-  quarter, objectiveId, allQObjs, allQKrs, currentUser,
-  onSaveQObj, onDeleteQObj, onSaveQKr, onDeleteQKr,
+  quarter, objectiveId, allQObjs, allKrs, currentUser,
+  onSaveQObj, onDeleteQObj,
 }: QuarterlyOKRPanelProps) {
   const { taskForces: rawTfs, quarterlyKrTaskForces, addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce } = useAppData();
   const allTfs = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+
   // 該当クォーターの QuarterlyObjective（削除済み除く）
   const qObj = useMemo(
     () => allQObjs.find(q => q.quarter === quarter && q.objective_id === objectiveId && !q.is_deleted) ?? null,
     [allQObjs, quarter, objectiveId]
   );
 
-  const qKrs = useMemo(
-    () => qObj ? allQKrs.filter(k => k.quarterly_objective_id === qObj.id && !k.is_deleted) : [],
-    [allQKrs, qObj]
-  );
+  // QuarterlyObjectiveのタイトル編集
+  const [qObjTitle, setQObjTitle] = useState(qObj?.title ?? "");
+  const [qObjSaved, setQObjSaved] = useState(false);
 
-  const [newQKrTitle, setNewQKrTitle] = useState("");
-  const [editingQKrId, setEditingQKrId] = useState<string | null>(null);
-
-  // クォーター切替時にリセット
   useEffect(() => {
-    setEditingQKrId(null);
-    setNewQKrTitle("");
+    setQObjTitle(qObj?.title ?? "");
   }, [qObj]);
 
-  // KR追加。qObjが未作成の場合は自動生成してからKRを追加する
-  const handleAddKr = async () => {
-    if (!newQKrTitle.trim() || !objectiveId) return;
-    let targetQObj = qObj;
-    if (!targetQObj) {
-      const now = new Date().toISOString();
-      const newQObj: QuarterlyObjective = {
-        id: uuidv4(),
-        objective_id: objectiveId,
-        quarter,
-        title: "",
-        is_deleted: false,
-        created_at: now,
-        updated_at: now,
-        updated_by: currentUser.id,
-      };
-      await onSaveQObj(newQObj);
-      targetQObj = newQObj;
-    }
+  const flashQObjSaved = () => { setQObjSaved(true); setTimeout(() => setQObjSaved(false), 1500); };
+
+  // qObjが未作成の場合は自動生成して保存する
+  const ensureQObj = async (): Promise<QuarterlyObjective> => {
+    if (qObj) return qObj;
     const now = new Date().toISOString();
-    const kr: QuarterlyKeyResult = {
+    const newQObj: QuarterlyObjective = {
       id: uuidv4(),
-      quarterly_objective_id: targetQObj.id,
-      title: newQKrTitle.trim(),
+      objective_id: objectiveId,
+      quarter,
+      title: "",
       is_deleted: false,
       created_at: now,
       updated_at: now,
       updated_by: currentUser.id,
     };
-    onSaveQKr(kr);
-    setNewQKrTitle("");
+    await onSaveQObj(newQObj);
+    return newQObj;
   };
 
-  const updateQKr = (id: string, title: string) => {
-    const existing = qKrs.find(k => k.id === id);
-    if (existing) onSaveQKr({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
-    setEditingQKrId(null);
-  };
-
-  const deleteQKr = async (id: string) => {
-    if (!await confirmDialog("このKRを削除しますか？")) return;
-    await onDeleteQKr(id, currentUser.id);
+  const saveQObjTitle = async () => {
+    const now = new Date().toISOString();
+    let target = qObj;
+    if (!target) {
+      target = await ensureQObj();
+    }
+    await onSaveQObj({ ...target, title: qObjTitle, updated_at: now, updated_by: currentUser.id });
+    flashQObjSaved();
   };
 
   const deleteQObj = async () => {
     if (!qObj) return;
-    if (!await confirmDialog(`${quarter}のObjectiveとKRをすべて削除しますか？`)) return;
-    // KRを先に論理削除
-    for (const k of qKrs) {
-      await onDeleteQKr(k.id, currentUser.id);
-    }
+    if (!await confirmDialog(`${quarter}のQuarterlyObjectiveを削除しますか？TF割り当ても解除されます。`)) return;
     await onDeleteQObj(qObj.id, currentUser.id);
+  };
+
+  // TF割り当て操作
+  const handleAddTf = async (krId: string, tfId: string) => {
+    const target = await ensureQObj();
+    await addQuarterlyKrTaskForce({ quarterly_objective_id: target.id, kr_id: krId, tf_id: tfId });
+  };
+
+  const handleRemoveTf = async (krId: string, tfId: string) => {
+    if (!qObj) return;
+    await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
   };
 
   return (
     <div>
-      {/* KR一覧ヘッダー */}
-      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-        <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em" }}>
-          {quarter} KEY RESULTS
-        </div>
-        {qObj && (
-          <button
-            onClick={deleteQObj}
-            style={{
-              background: "none", border: "none", cursor: "pointer",
-              fontSize: "10px", color: "var(--color-text-tertiary)",
-              padding: "0 4px",
-            }}
-            title="このクォーターのObjectiveとKRをすべて削除"
-          >
-            ✕ 削除
-          </button>
-        )}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-        {qKrs.map((kr, i) => {
-              const linkedTfIds = quarterlyKrTaskForces
-                .filter(q => q.quarterly_kr_id === kr.id)
-                .map(q => q.tf_id);
-              const linkedTfs = allTfs.filter(t => linkedTfIds.includes(t.id));
-              const unlinkableTfs = allTfs.filter(t => !linkedTfIds.includes(t.id));
-
-              return (
-                <div key={kr.id} style={{
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  marginBottom: "8px",
-                  overflow: "hidden",
-                }}>
-                  {/* KRヘッダー行 */}
-                  <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 10px", background: "var(--color-bg-primary)" }}>
-                    <div style={{
-                      width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-info)", color: "var(--color-text-info)",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "2px",
-                    }}>
-                      {i + 1}
-                    </div>
-                    {editingQKrId === kr.id ? (
-                      <EditInline
-                        value={kr.title}
-                        onSave={v => updateQKr(kr.id, v)}
-                        onCancel={() => setEditingQKrId(null)}
-                      />
-                    ) : (
-                      <div style={{ flex: 1, fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.5, paddingTop: "2px" }}>
-                        {kr.title}
-                      </div>
-                    )}
-                    <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-                      <IconBtn title="編集" onClick={() => setEditingQKrId(kr.id)}>✏</IconBtn>
-                      <IconBtn title="削除" danger onClick={() => deleteQKr(kr.id)}>✕</IconBtn>
-                    </div>
-                  </div>
-
-                  {/* TF紐づけエリア */}
-                  <div style={{
-                    padding: "8px 10px 8px 40px",
-                    background: "var(--color-bg-secondary)",
-                    borderTop: "1px solid var(--color-border-primary)",
-                  }}>
-                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "6px", fontWeight: "500" }}>
-                      紐づくTask Force
-                    </div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
-                      {linkedTfs.map(tf => (
-                        <span key={tf.id} style={{
-                          display: "inline-flex", alignItems: "center", gap: "4px",
-                          fontSize: "10px", padding: "2px 8px",
-                          background: "var(--color-bg-primary)",
-                          border: "1px solid var(--color-border-primary)",
-                          borderRadius: "99px", color: "var(--color-text-secondary)",
-                        }}>
-                          {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
-                          <button
-                            onClick={() => removeQuarterlyKrTaskForce(kr.id, tf.id)}
-                            style={{ background: "none", border: "none", cursor: "pointer", padding: "0", color: "var(--color-text-tertiary)", fontSize: "10px", lineHeight: 1 }}
-                          >×</button>
-                        </span>
-                      ))}
-                      {linkedTfs.length === 0 && (
-                        <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>なし</span>
-                      )}
-                    </div>
-                    {unlinkableTfs.length > 0 && (
-                      <select
-                        defaultValue=""
-                        onChange={e => {
-                          if (!e.target.value) return;
-                          addQuarterlyKrTaskForce({ quarterly_kr_id: kr.id, tf_id: e.target.value });
-                          e.target.value = "";
-                        }}
-                        style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
-                      >
-                        <option value="">＋ TFを追加...</option>
-                        {unlinkableTfs.map(tf => (
-                          <option key={tf.id} value={tf.id}>
-                            {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          {qKrs.length === 0 && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
-              KRがまだありません
-            </div>
+      {/* クォーター目標タイトル */}
+      <div style={{ marginBottom: "14px" }}>
+        <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", marginBottom: "6px", display: "flex", alignItems: "center", gap: "8px" }}>
+          {quarter} QUARTERLY OBJECTIVE
+          {qObj && (
+            <button
+              onClick={deleteQObj}
+              style={{ background: "none", border: "none", cursor: "pointer", fontSize: "10px", color: "var(--color-text-tertiary)", padding: "0 4px" }}
+              title="このクォーターのObjectiveを削除"
+            >
+              ✕ 削除
+            </button>
           )}
         </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            value={qObjTitle}
+            onChange={e => setQObjTitle(e.target.value)}
+            placeholder={`${quarter}の目標タイトル（任意）`}
+            maxLength={200}
+            style={{ ...inputStyle, flex: 1 }}
+            disabled={!objectiveId}
+            onKeyDown={e => { if (e.key === "Enter") { void saveQObjTitle(); } }}
+          />
+          <button onClick={() => { void saveQObjTitle(); }} disabled={!objectiveId} style={primaryBtnStyle}>
+            {qObjSaved ? "✓ 保存" : "保存"}
+          </button>
+        </div>
+      </div>
 
-      {/* KR追加 */}
-      <div style={{ display: "flex", gap: "8px" }}>
-        <input
-          value={newQKrTitle}
-          onChange={e => setNewQKrTitle(e.target.value)}
-          placeholder={`${quarter}の新しいKRを入力して追加`}
-          maxLength={200}
-          style={{ ...inputStyle, flex: 1 }}
-          disabled={!objectiveId}
-          onKeyDown={e => { if (e.key === "Enter") { void handleAddKr(); } }}
-        />
-        <button onClick={() => { void handleAddKr(); }} disabled={!objectiveId} style={primaryBtnStyle}>＋ 追加</button>
+      {/* 通期KR × TF割り当て */}
+      <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", marginBottom: "8px" }}>
+        KR ごとの Task Force 割り当て（{quarter}）
       </div>
       {!objectiveId && (
-        <div style={{ fontSize: "10px", color: "var(--color-text-warning)", marginTop: "4px" }}>
+        <div style={{ fontSize: "10px", color: "var(--color-text-warning)", marginBottom: "8px" }}>
           先に通期Objectiveを保存してください
         </div>
       )}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+        {allKrs.length === 0 && (
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
+            通期KRがまだありません。先にKRを追加してください。
+          </div>
+        )}
+        {allKrs.map((kr, i) => {
+          const linkedTfIds = qObj
+            ? quarterlyKrTaskForces
+                .filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === kr.id)
+                .map(q => q.tf_id)
+            : [];
+          const linkedTfs = allTfs.filter(t => linkedTfIds.includes(t.id));
+          const unlinkableTfs = allTfs.filter(t => !linkedTfIds.includes(t.id));
+
+          return (
+            <div key={kr.id} style={{
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              overflow: "hidden",
+            }}>
+              {/* KRヘッダー（読み取り専用） */}
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", padding: "8px 10px", background: "var(--color-bg-primary)" }}>
+                <div style={{
+                  width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "2px",
+                }}>
+                  {i + 1}
+                </div>
+                <div style={{ flex: 1, fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.5, paddingTop: "2px" }}>
+                  {kr.title}
+                </div>
+              </div>
+
+              {/* TF割り当てエリア */}
+              <div style={{
+                padding: "8px 10px 8px 40px",
+                background: "var(--color-bg-secondary)",
+                borderTop: "1px solid var(--color-border-primary)",
+              }}>
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "6px", fontWeight: "500" }}>
+                  {quarter} 担当 Task Force
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+                  {linkedTfs.map(tf => (
+                    <span key={tf.id} style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      fontSize: "10px", padding: "2px 8px",
+                      background: "var(--color-bg-primary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "99px", color: "var(--color-text-secondary)",
+                    }}>
+                      {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                      <button
+                        onClick={() => { void handleRemoveTf(kr.id, tf.id); }}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: "0", color: "var(--color-text-tertiary)", fontSize: "10px", lineHeight: 1 }}
+                      >×</button>
+                    </span>
+                  ))}
+                  {linkedTfs.length === 0 && (
+                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>なし</span>
+                  )}
+                </div>
+                {unlinkableTfs.length > 0 && objectiveId && (
+                  <select
+                    defaultValue=""
+                    onChange={e => {
+                      if (!e.target.value) return;
+                      void handleAddTf(kr.id, e.target.value);
+                      e.target.value = "";
+                    }}
+                    style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
+                  >
+                    <option value="">＋ TFを追加...</option>
+                    {unlinkableTfs.map(tf => (
+                      <option key={tf.id} value={tf.id}>
+                        {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
