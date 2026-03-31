@@ -128,7 +128,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 
   const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
 
-  const saveObj = () => {
+  const saveObj = async () => {
     const now = new Date().toISOString();
     const updated: Objective = {
       id: ctxObj?.id ?? uuidv4(),
@@ -141,11 +141,15 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
       updated_at: now,
       updated_by: currentUser.id,
     };
-    saveObjective(updated);
-    flashSaved();
+    try {
+      await saveObjective(updated);
+      flashSaved();
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
+    }
   };
 
-  const addKr = () => {
+  const addKr = async () => {
     if (!newKrTitle.trim()) return;
     const now = new Date().toISOString();
     const kr: KeyResult = {
@@ -157,13 +161,22 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
       updated_at: now,
       updated_by: currentUser.id,
     };
-    saveKeyResult(kr);
-    setNewKrTitle("");
+    try {
+      await saveKeyResult(kr);
+      setNewKrTitle("");
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
+    }
   };
 
-  const updateKr = (id: string, title: string) => {
+  const updateKr = async (id: string, title: string) => {
     const existing = krs.find(k => k.id === id);
-    if (existing) saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+    if (!existing) return;
+    try {
+      await saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
+    }
     setEditingKrId(null);
   };
 
@@ -586,16 +599,20 @@ function TFSection({ currentUser }: { currentUser: Member }) {
     setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, leader_member_id: tf.leader_member_id });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.name.trim()) return;
     const now = new Date().toISOString();
-    if (editId === "new") {
-      saveTaskForce({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
-    } else {
-      const existing = tfs.find(t => t.id === editId);
-      if (existing) saveTaskForce({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
+    try {
+      if (editId === "new") {
+        await saveTaskForce({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+      } else {
+        const existing = tfs.find(t => t.id === editId);
+        if (existing) await saveTaskForce({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
+      }
+      setEditId(null);
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
     }
-    setEditId(null);
   };
 
   const deleteTF = async (id: string) => {
@@ -1088,13 +1105,17 @@ function PJSection({ currentUser }: { currentUser: Member }) {
     const now = new Date().toISOString();
     // owner_member_id は先頭のオーナーで後方互換を保つ
     const owner_member_id = form.owner_member_ids[0] ?? "";
-    if (editId === "new") {
-      saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
-    } else {
-      const existing = projects.find(p => p.id === editId);
-      if (existing) saveProject({ ...existing, ...form, owner_member_id, updated_at: now, updated_by: currentUser.id });
+    try {
+      if (editId === "new") {
+        await saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+      } else {
+        const existing = projects.find(p => p.id === editId);
+        if (existing) await saveProject({ ...existing, ...form, owner_member_id, updated_at: now, updated_by: currentUser.id });
+      }
+      setEditId(null);
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
     }
-    setEditId(null);
   };
 
   const deletePJ = async (id: string) => {
@@ -1341,28 +1362,32 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
     setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, color_bg: m.color_bg, color_text: m.color_text });
   };
 
-  const save = () => {
+  const save = async () => {
     if (!form.display_name.trim()) return;
     // イニシャル自動生成
     const initials = form.display_name.replace(/[\s　]+/g, "").slice(0, 2).toUpperCase();
     const shortName = form.short_name.trim() || form.display_name.split(/[\s　]/)[0];
 
     const now = new Date().toISOString();
-    if (editId === "new") {
-      saveMember({
-        id: uuidv4(), initials,
-        display_name: form.display_name.trim(),
-        short_name: shortName,
-        teams_account: form.teams_account,
-        color_bg: form.color_bg, color_text: form.color_text,
-        is_deleted: false,
-        created_at: now, updated_at: now, updated_by: currentUser.id,
-      });
-    } else {
-      const existing = members.find(m => m.id === editId);
-      if (existing) saveMember({ ...existing, ...form, short_name: shortName, initials, updated_at: now, updated_by: currentUser.id });
+    try {
+      if (editId === "new") {
+        await saveMember({
+          id: uuidv4(), initials,
+          display_name: form.display_name.trim(),
+          short_name: shortName,
+          teams_account: form.teams_account,
+          color_bg: form.color_bg, color_text: form.color_text,
+          is_deleted: false,
+          created_at: now, updated_at: now, updated_by: currentUser.id,
+        });
+      } else {
+        const existing = members.find(m => m.id === editId);
+        if (existing) await saveMember({ ...existing, ...form, short_name: shortName, initials, updated_at: now, updated_by: currentUser.id });
+      }
+      setEditId(null);
+    } catch {
+      await alertDialog("保存に失敗しました。再度お試しください。");
     }
-    setEditId(null);
   };
 
   const handleDeleteMember = async (id: string) => {
