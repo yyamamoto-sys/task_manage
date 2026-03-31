@@ -20,8 +20,8 @@ alter table quarterly_kr_task_forces
   drop column if exists quarterly_kr_id;
 
 alter table quarterly_kr_task_forces
-  add column if not exists quarterly_objective_id uuid not null references quarterly_objectives(id),
-  add column if not exists kr_id uuid not null references key_results(id);
+  add column if not exists quarterly_objective_id text not null references quarterly_objectives(id),
+  add column if not exists kr_id text not null references key_results(id);
 
 -- ② 旧 quarterly_key_results テーブルを削除（存在する場合）
 drop table if exists quarterly_key_results;
