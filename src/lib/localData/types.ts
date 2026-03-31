@@ -70,6 +70,7 @@ export interface TaskForce {
   tf_number: string;
   name: string;
   description?: string;      // TFの目的・詳細（任意）
+  background?: string;       // 設定した意図・背景（任意）
   leader_member_id: string;
   is_deleted: boolean;
   // audit fields
