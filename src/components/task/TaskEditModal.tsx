@@ -300,6 +300,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
               <select value={form.assignee_member_id}
                 onChange={e => setForm(f => ({ ...f, assignee_member_id: e.target.value }))}
                 style={inputSm}>
+                <option value="">（なし）</option>
                 {members.map(m => (
                   <option key={m.id} value={m.id}>{m.display_name}</option>
                 ))}

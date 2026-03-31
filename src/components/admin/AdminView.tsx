@@ -401,7 +401,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   // 新規TF作成してリンク
   const openNewTfForm = (krId: string) => {
     setNewTfFormKrId(krId);
-    setNewTfForm({ tf_number: "", name: "", description: "", background: "", leader_member_id: members[0]?.id ?? "" });
+    setNewTfForm({ tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
   };
 
   const handleCreateAndLinkTf = async (krId: string) => {
@@ -598,6 +598,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
                 <div style={{ marginBottom: "8px" }}>
                   <FieldLabel>リーダー</FieldLabel>
                   <select value={newTfForm.leader_member_id} onChange={e => setNewTfForm(f => ({...f, leader_member_id: e.target.value}))} style={{ ...inputStyle, fontSize: "11px" }}>
+                    <option value="">（なし）</option>
                     {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
                   </select>
                 </div>
@@ -647,6 +648,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
             <div>
               <FieldLabel>リーダー</FieldLabel>
               <select value={form.leader_member_id} onChange={e => setForm(f => ({...f, leader_member_id: e.target.value}))} style={inputStyle}>
+                <option value="">（なし）</option>
                 {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
               </select>
             </div>
@@ -808,7 +810,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
 
   const openAddTask = (todoId: string) => {
     setAddingTaskForTodoId(todoId);
-    setTaskForm({ name: "", assignee_member_id: members[0]?.id ?? "", due_date: "" });
+    setTaskForm({ name: "", assignee_member_id: "", due_date: "" });
   };
 
   const saveNewTask = async () => {
@@ -933,6 +935,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
                           style={{ ...inputStyle, flex: "1 1 180px", fontSize: "11px", padding: "4px 8px" }}
                         />
                         <select value={taskForm.assignee_member_id} onChange={e => setTaskForm(f => ({ ...f, assignee_member_id: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }}>
+                          <option value="">（なし）</option>
                           {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
                         </select>
                         <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }} />
