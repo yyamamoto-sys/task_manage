@@ -69,6 +69,7 @@ export interface TaskForce {
   kr_id: string;
   tf_number: string;
   name: string;
+  description?: string;      // TFの目的・詳細（任意）
   leader_member_id: string;
   is_deleted: boolean;
   // audit fields

@@ -355,8 +355,9 @@ function QuarterlyOKRPanel({
   quarter, objectiveId, allQObjs, allKrs, currentUser,
   onSaveQObj, onDeleteQObj,
 }: QuarterlyOKRPanelProps) {
-  const { taskForces: rawTfs, quarterlyKrTaskForces, addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce } = useAppData();
+  const { taskForces: rawTfs, members: rawMembers, quarterlyKrTaskForces, addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce, saveTaskForce } = useAppData();
   const allTfs = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+  const allMembers = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
   // 該当クォーターの QuarterlyObjective（削除済み除く）
   const qObj = useMemo(
@@ -367,6 +368,10 @@ function QuarterlyOKRPanel({
   // QuarterlyObjectiveのタイトル編集
   const [qObjTitle, setQObjTitle] = useState(qObj?.title ?? "");
   const [qObjSaved, setQObjSaved] = useState(false);
+
+  // KRごとのTF新規作成フォーム表示状態: key = kr.id
+  const [newTfFormKrId, setNewTfFormKrId] = useState<string | null>(null);
+  const [newTfForm, setNewTfForm] = useState({ tf_number: "", name: "", description: "", leader_member_id: "" });
 
   useEffect(() => {
     setQObjTitle(qObj?.title ?? "");
@@ -417,6 +422,39 @@ function QuarterlyOKRPanel({
   const handleRemoveTf = async (krId: string, tfId: string) => {
     if (!qObj) return;
     await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
+  };
+
+  // KRに直接TFを新規作成して即リンク
+  const openNewTfForm = (krId: string) => {
+    setNewTfFormKrId(krId);
+    setNewTfForm({ tf_number: "", name: "", description: "", leader_member_id: allMembers[0]?.id ?? "" });
+  };
+
+  const handleCreateAndLinkTf = async (krId: string) => {
+    if (!newTfForm.name.trim()) return;
+    const now = new Date().toISOString();
+    const newTf = {
+      id: uuidv4(),
+      kr_id: krId,
+      tf_number: newTfForm.tf_number.trim(),
+      name: newTfForm.name.trim(),
+      description: newTfForm.description.trim() || undefined,
+      leader_member_id: newTfForm.leader_member_id,
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    try {
+      await saveTaskForce(newTf);
+      await handleAddTf(krId, newTf.id);
+      setNewTfFormKrId(null);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
+      await alertDialog(`TFの作成に失敗しました。\n${msg}`);
+    }
   };
 
   return (
@@ -525,23 +563,69 @@ function QuarterlyOKRPanel({
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>なし</span>
                   )}
                 </div>
-                {unlinkableTfs.length > 0 && objectiveId && (
-                  <select
-                    defaultValue=""
-                    onChange={e => {
-                      if (!e.target.value) return;
-                      void handleAddTf(kr.id, e.target.value);
-                      e.target.value = "";
-                    }}
-                    style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
-                  >
-                    <option value="">＋ TFを追加...</option>
-                    {unlinkableTfs.map(tf => (
-                      <option key={tf.id} value={tf.id}>
-                        {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
-                      </option>
-                    ))}
-                  </select>
+                {objectiveId && (
+                  <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+                    {unlinkableTfs.length > 0 && (
+                      <select
+                        defaultValue=""
+                        onChange={e => {
+                          if (!e.target.value) return;
+                          void handleAddTf(kr.id, e.target.value);
+                          e.target.value = "";
+                        }}
+                        style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
+                      >
+                        <option value="">既存TFを追加...</option>
+                        {unlinkableTfs.map(tf => (
+                          <option key={tf.id} value={tf.id}>
+                            {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {newTfFormKrId !== kr.id && (
+                      <button
+                        onClick={() => openNewTfForm(kr.id)}
+                        style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
+                      >＋ 新規TFを作成</button>
+                    )}
+                  </div>
+                )}
+
+                {/* 新規TF作成インラインフォーム */}
+                {newTfFormKrId === kr.id && (
+                  <div style={{ marginTop: "8px", padding: "10px", background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
+                    <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "8px" }}>新しいTask Forceを作成してリンク</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr", gap: "6px", marginBottom: "6px" }}>
+                      <div>
+                        <FieldLabel>TF番号</FieldLabel>
+                        <input value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
+                          placeholder="例：TF①-KR1" maxLength={20} style={{ ...inputStyle, fontSize: "11px" }} />
+                      </div>
+                      <div>
+                        <FieldLabel>TF名 *</FieldLabel>
+                        <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
+                          placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }}
+                          onKeyDown={e => { if (e.key === "Enter") { void handleCreateAndLinkTf(kr.id); } }} />
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: "6px" }}>
+                      <FieldLabel>詳細・目的（任意）</FieldLabel>
+                      <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
+                        placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
+                        style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+                    </div>
+                    <div style={{ marginBottom: "8px" }}>
+                      <FieldLabel>リーダー</FieldLabel>
+                      <select value={newTfForm.leader_member_id} onChange={e => setNewTfForm(f => ({...f, leader_member_id: e.target.value}))} style={{ ...inputStyle, fontSize: "11px" }}>
+                        {allMembers.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button onClick={() => { void handleCreateAndLinkTf(kr.id); }} style={primaryBtnStyle}>作成してリンク</button>
+                      <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
+                    </div>
+                  </div>
                 )}
               </div>
             </div>
@@ -571,16 +655,16 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   const todos   = useMemo(() => rawTodos.filter(t => !t.is_deleted), [rawTodos]);
 
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", leader_member_id: "" });
+  const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", description: "", leader_member_id: "" });
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ kr_id: krs[0]?.id ?? "", tf_number: "", name: "", leader_member_id: members[0]?.id ?? "" });
+    setForm({ kr_id: krs[0]?.id ?? "", tf_number: "", name: "", description: "", leader_member_id: members[0]?.id ?? "" });
   };
 
   const openEdit = (tf: TaskForce) => {
     setEditId(tf.id);
-    setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, leader_member_id: tf.leader_member_id });
+    setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, description: tf.description ?? "", leader_member_id: tf.leader_member_id });
   };
 
   const save = async () => {
@@ -588,10 +672,10 @@ function TFSection({ currentUser }: { currentUser: Member }) {
     const now = new Date().toISOString();
     try {
       if (editId === "new") {
-        await saveTaskForce({ id: uuidv4(), ...form, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+        await saveTaskForce({ id: uuidv4(), ...form, description: form.description || undefined, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
       } else {
         const existing = tfs.find(t => t.id === editId);
-        if (existing) await saveTaskForce({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
+        if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, updated_at: now, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -695,6 +779,12 @@ function TFSection({ currentUser }: { currentUser: Member }) {
               </select>
             </div>
           </div>
+          <div style={{ marginBottom: "8px" }}>
+            <FieldLabel>詳細・目的（任意）</FieldLabel>
+            <textarea value={form.description} onChange={e => setForm(f => ({...f, description: e.target.value}))}
+              placeholder="このTask Forceの目的・活動内容を記入（任意）" maxLength={500} rows={3}
+              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+          </div>
           <div style={{ display: "flex", gap: "8px" }}>
             <button onClick={save} style={primaryBtnStyle}>保存</button>
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
@@ -734,7 +824,14 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           background: "var(--color-brand-light)", color: "var(--color-text-purple)",
           border: "1px solid var(--color-brand-border)", flexShrink: 0,
         }}>{tf.tf_number}</span>
-        <span style={{ fontSize: "12px", flex: 1, color: "var(--color-text-primary)" }}>{tf.name}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>{tf.name}</div>
+          {tf.description && (
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
+              {tf.description}
+            </div>
+          )}
+        </div>
         {leader && <Avatar member={leader} size={18} />}
         <button
           onClick={() => setExpanded(e => !e)}
