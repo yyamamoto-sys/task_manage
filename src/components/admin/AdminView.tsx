@@ -371,15 +371,16 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   const [newTfFormKrId, setNewTfFormKrId] = useState<string | null>(null);
   const [newTfForm, setNewTfForm] = useState({ tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
 
-  // QuarterlyObjective を必要に応じて自動生成
-  const ensureQObj = async (): Promise<QuarterlyObjective> => {
-    if (qObj) return qObj;
+  // QuarterlyObjective を必要に応じて自動生成（quarterを指定可能）
+  const ensureQObjForQuarter = async (quarter: Quarter): Promise<QuarterlyObjective> => {
+    const existing = rawQObjs.find(q => q.quarter === quarter && q.objective_id === (ctxObj?.id ?? "") && !q.is_deleted);
+    if (existing) return existing;
     if (!ctxObj?.id) throw new Error("先に「Objective / KR」タブで通期Objectiveを保存してください");
     const now = new Date().toISOString();
     const newQObj: QuarterlyObjective = {
       id: uuidv4(),
       objective_id: ctxObj.id,
-      quarter: selectedQuarter,
+      quarter,
       title: "",
       is_deleted: false,
       created_at: now, updated_at: now, updated_by: currentUser.id,
@@ -387,6 +388,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
     await saveQuarterlyObjective(newQObj);
     return newQObj;
   };
+  const ensureQObj = () => ensureQObjForQuarter(selectedQuarter);
 
   const saveQObjTitle = async () => {
     try {
@@ -426,6 +428,19 @@ function TFSection({ currentUser }: { currentUser: Member }) {
     if (!qObj) return;
     if (!await confirmDialog("このクォーターからTFの紐づけを解除しますか？（TF自体は削除されません）")) return;
     await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
+  };
+
+  const handleMoveTf = async (krId: string, tfId: string, targetQuarter: Quarter) => {
+    if (!qObj) return;
+    if (!await confirmDialog(`このTFを ${targetQuarter} に移動しますか？\n現在の ${selectedQuarter} からは解除されます。`)) return;
+    try {
+      const targetQObj = await ensureQObjForQuarter(targetQuarter);
+      await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
+      await addQuarterlyKrTaskForce({ quarterly_objective_id: targetQObj.id, kr_id: krId, tf_id: tfId });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      await alertDialog(`移動に失敗しました。\n${msg}`);
+    }
   };
 
   // 新規TF作成してリンク
@@ -597,6 +612,8 @@ function TFSection({ currentUser }: { currentUser: Member }) {
                   onSaveEdit={() => { void saveTfEdit(); }}
                   onCancelEdit={() => setEditId(null)}
                   onDeleteTF={() => { void deleteTF(editId!); }}
+                  currentQuarter={selectedQuarter}
+                  onMoveTo={(targetQ) => { void handleMoveTf(kr.id, tf.id, targetQ); }}
                 />
               ))}
 
@@ -674,7 +691,7 @@ function TFSection({ currentUser }: { currentUser: Member }) {
 }
 
 function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo,
-  isEditing, editForm, setEditForm, onSaveEdit, onCancelEdit, onDeleteTF }: {
+  isEditing, editForm, setEditForm, onSaveEdit, onCancelEdit, onDeleteTF, currentQuarter, onMoveTo }: {
   tf: TaskForce; members: Member[];
   todos: ToDo[]; tasks: import("../../lib/localData/types").Task[];
   saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
@@ -688,8 +705,11 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
   onSaveEdit: () => void;
   onCancelEdit: () => void;
   onDeleteTF: () => void;
+  currentQuarter: Quarter;
+  onMoveTo: (targetQuarter: Quarter) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [showMoveMenu, setShowMoveMenu] = useState(false);
   const isMobile = useIsMobile();
   const leader = members.find(m => m.id === tf.leader_member_id);
 
@@ -743,6 +763,51 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
             >
               ToDo {todos.length} {expanded ? "▴" : "▾"}
             </button>
+            {/* Q移動メニュー */}
+            <div style={{ position: "relative", flexShrink: 0 }}>
+              <button
+                onClick={() => setShowMoveMenu(v => !v)}
+                style={{
+                  fontSize: "10px", padding: "2px 8px",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)", cursor: "pointer",
+                  background: showMoveMenu ? "var(--color-bg-secondary)" : "transparent",
+                  color: "var(--color-text-tertiary)",
+                }}
+              >移動</button>
+              {showMoveMenu && (
+                <div style={{
+                  position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 20,
+                  background: "var(--color-bg-primary)",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  boxShadow: "var(--shadow-md)",
+                  overflow: "hidden",
+                  minWidth: "90px",
+                }}>
+                  {(["1Q","2Q","3Q","4Q"] as Quarter[])
+                    .filter(q => q !== currentQuarter)
+                    .map(q => (
+                      <button
+                        key={q}
+                        onClick={() => { setShowMoveMenu(false); onMoveTo(q); }}
+                        style={{
+                          display: "block", width: "100%",
+                          padding: "6px 12px", fontSize: "11px", textAlign: "left",
+                          background: "transparent", border: "none", cursor: "pointer",
+                          color: "var(--color-text-primary)",
+                          borderBottom: q !== "4Q" ? "1px solid var(--color-border-primary)" : "none",
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
+                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                      >
+                        {q} へ移動
+                      </button>
+                    ))
+                  }
+                </div>
+              )}
+            </div>
             <button
               onClick={onEdit}
               style={{

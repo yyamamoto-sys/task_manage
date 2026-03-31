@@ -3,7 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
 import { AdminView } from "../admin/AdminView";
@@ -12,6 +12,7 @@ import { DashboardView } from "../dashboard/DashboardView";
 import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
+import { v4 as uuidv4 } from "uuid";
 
 interface Props {
   currentUser: Member;
@@ -33,6 +34,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
+  const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
   const { projects: allProjects } = useAppData();
   const projects = useMemo(
@@ -88,6 +90,9 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+        {isQuickAddOpen && (
+          <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
+        )}
         {/* モバイル：ヘッダー */}
         <div style={{
           display: "flex", alignItems: "center", gap: "8px",
@@ -132,6 +137,20 @@ export function MainLayout({ currentUser, onLogout }: Props) {
 
         {mainContent}
 
+        {/* モバイル：タスク追加FAB */}
+        <button
+          onClick={() => setIsQuickAddOpen(true)}
+          style={{
+            position: "fixed", bottom: "68px", right: "16px", zIndex: 60,
+            width: "44px", height: "44px", borderRadius: "50%",
+            background: "var(--color-brand)", color: "#fff",
+            border: "none", fontSize: "22px", lineHeight: 1,
+            boxShadow: "var(--shadow-lg)", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+          title="タスクを追加"
+        >＋</button>
+
         {/* モバイル：ボトムナビ */}
         <div
           className="bottom-nav-safe"
@@ -172,6 +191,26 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   // PC レイアウト
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {isQuickAddOpen && (
+        <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
+      )}
+      {/* PCタスク追加FAB */}
+      <button
+        onClick={() => setIsQuickAddOpen(true)}
+        style={{
+          position: "fixed", bottom: "24px", right: "24px", zIndex: 60,
+          height: "40px", borderRadius: "var(--radius-full)",
+          padding: "0 18px",
+          background: "var(--color-brand)", color: "#fff",
+          border: "none", fontSize: "13px", fontWeight: "600",
+          boxShadow: "var(--shadow-lg)", cursor: "pointer",
+          display: "flex", alignItems: "center", gap: "6px",
+          letterSpacing: "0.02em",
+        }}
+        title="タスクを追加"
+      >
+        <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> タスク追加
+      </button>
       <Sidebar
         viewMode={viewMode}
         setViewMode={setViewMode}
@@ -541,3 +580,180 @@ function AIIcon() {
     </svg>
   );
 }
+
+// ===== グローバルタスク追加モーダル =====
+
+function QuickAddTaskModal({ currentUser, projects, onClose }: {
+  currentUser: Member;
+  projects: Project[];
+  onClose: () => void;
+}) {
+  const { saveTask, members: rawMembers } = useAppData();
+  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const [name, setName] = useState("");
+  const [assigneeId, setAssigneeId] = useState(currentUser.id);
+  const [projectId, setProjectId] = useState("");
+  const [dueDate, setDueDate] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    const now = new Date().toISOString();
+    const task: Task = {
+      id: uuidv4(),
+      name: name.trim(),
+      project_id: projectId || null,
+      todo_id: null,
+      assignee_member_id: assigneeId,
+      status: "todo",
+      priority: null,
+      due_date: dueDate || null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    try {
+      await saveTask(task);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      {/* オーバーレイ */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)",
+        }}
+      />
+      {/* モーダル本体 */}
+      <div style={{
+        position: "fixed", top: "50%", left: "50%", zIndex: 201,
+        transform: "translate(-50%, -50%)",
+        width: "min(480px, calc(100vw - 32px))",
+        background: "var(--color-bg-primary)",
+        borderRadius: "var(--radius-lg)",
+        boxShadow: "var(--shadow-lg)",
+        padding: "20px",
+      }}>
+        <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "16px" }}>
+          タスクを追加
+        </div>
+
+        {/* タスク名 */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスク名 *</div>
+          <input
+            autoFocus
+            value={name}
+            onChange={e => setName(e.target.value)}
+            placeholder="タスク名を入力..."
+            maxLength={200}
+            onKeyDown={e => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") onClose(); }}
+            style={{
+              width: "100%", padding: "8px 12px", fontSize: "13px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+              outline: "none",
+            }}
+          />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
+          {/* 担当者 */}
+          <div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
+            <select
+              value={assigneeId}
+              onChange={e => setAssigneeId(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              <option value="">（なし）</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+            </select>
+          </div>
+
+          {/* 期日 */}
+          <div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>期日（任意）</div>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={e => setDueDate(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
+            />
+          </div>
+        </div>
+
+        {/* プロジェクト */}
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>プロジェクト（任意）</div>
+          <select
+            value={projectId}
+            onChange={e => setProjectId(e.target.value)}
+            style={{
+              width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+            }}
+          >
+            <option value="">プロジェクトを選択...</option>
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button
+            onClick={onClose}
+            style={{
+              padding: "7px 16px", fontSize: "12px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "transparent",
+              color: "var(--color-text-secondary)", cursor: "pointer",
+            }}
+          >キャンセル</button>
+          <button
+            onClick={handleSave}
+            disabled={!name.trim() || saving}
+            style={{
+              padding: "7px 20px", fontSize: "12px", fontWeight: "600",
+              border: "none",
+              borderRadius: "var(--radius-md)",
+              background: name.trim() ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+              color: name.trim() ? "#fff" : "var(--color-text-tertiary)",
+              cursor: name.trim() ? "pointer" : "not-allowed",
+            }}
+          >
+            {saving ? "追加中..." : "追加"}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
