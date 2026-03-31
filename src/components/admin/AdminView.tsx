@@ -144,8 +144,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     try {
       await saveObjective(updated);
       flashSaved();
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
 
@@ -164,8 +165,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     try {
       await saveKeyResult(kr);
       setNewKrTitle("");
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
 
@@ -174,8 +176,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     if (!existing) return;
     try {
       await saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
     setEditingKrId(null);
   };
@@ -610,8 +613,9 @@ function TFSection({ currentUser }: { currentUser: Member }) {
         if (existing) await saveTaskForce({ ...existing, ...form, updated_at: now, updated_by: currentUser.id });
       }
       setEditId(null);
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
 
@@ -1113,8 +1117,9 @@ function PJSection({ currentUser }: { currentUser: Member }) {
         if (existing) await saveProject({ ...existing, ...form, owner_member_id, updated_at: now, updated_by: currentUser.id });
       }
       setEditId(null);
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
 
@@ -1385,8 +1390,9 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
         if (existing) await saveMember({ ...existing, ...form, short_name: shortName, initials, updated_at: now, updated_by: currentUser.id });
       }
       setEditId(null);
-    } catch {
-      await alertDialog("保存に失敗しました。再度お試しください。");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
 
