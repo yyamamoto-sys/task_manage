@@ -145,7 +145,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
       await saveObjective(updated);
       flashSaved();
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -166,7 +168,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
       await saveKeyResult(kr);
       setNewKrTitle("");
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -177,7 +181,9 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     try {
       await saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
     setEditingKrId(null);
@@ -614,7 +620,9 @@ function TFSection({ currentUser }: { currentUser: Member }) {
       }
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -1118,7 +1126,9 @@ function PJSection({ currentUser }: { currentUser: Member }) {
       }
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -1391,7 +1401,9 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
       }
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg = e instanceof Error ? e.message
+        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
+        : String(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
