@@ -573,8 +573,16 @@ function TFSection({ currentUser }: { currentUser: Member }) {
           const linkedTfIds = qObj
             ? quarterlyKrTaskForces.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === kr.id).map(q => q.tf_id)
             : [];
-          const linkedTfs = tfs.filter(t => linkedTfIds.includes(t.id));
-          const unlinkableTfs = tfs.filter(t => !linkedTfIds.includes(t.id));
+          const sortByTfNumber = (a: typeof tfs[0], b: typeof tfs[0]) => {
+            const na = parseInt(a.tf_number, 10);
+            const nb = parseInt(b.tf_number, 10);
+            if (!isNaN(na) && !isNaN(nb)) return na - nb;
+            if (!isNaN(na)) return -1;
+            if (!isNaN(nb)) return 1;
+            return a.tf_number.localeCompare(b.tf_number);
+          };
+          const linkedTfs = tfs.filter(t => linkedTfIds.includes(t.id)).sort(sortByTfNumber);
+          const unlinkableTfs = tfs.filter(t => !linkedTfIds.includes(t.id)).sort(sortByTfNumber);
           return (
             <div key={kr.id}>
               {/* KRヘッダー */}
@@ -646,10 +654,13 @@ function TFSection({ currentUser }: { currentUser: Member }) {
                 <div style={{ marginTop: "8px", padding: "12px 14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
                   <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "10px" }}>新しいTask Forceを作成してリンク</div>
                   <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                    <div style={{ flex: "0 0 90px" }}>
-                      <FieldLabel>TF番号</FieldLabel>
-                      <input value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
-                        placeholder="TF①-KR1" maxLength={20} style={{ ...inputStyle, fontSize: "11px" }} />
+                    <div style={{ flex: "0 0 76px" }}>
+                      <FieldLabel>番号</FieldLabel>
+                      <select value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
+                        style={{ ...inputStyle, fontSize: "11px" }}>
+                        <option value="">－</option>
+                        {[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>TF {n}</option>)}
+                      </select>
                     </div>
                     <div style={{ flex: 1 }}>
                       <FieldLabel>TF名 *</FieldLabel>
@@ -713,133 +724,159 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
   const isMobile = useIsMobile();
   const leader = members.find(m => m.id === tf.leader_member_id);
 
+  // TF番号バッジ表示（数字のみなら "TF n" 形式、旧フォーマットはそのまま）
+  const tfNumLabel = tf.tf_number
+    ? (/^\d+$/.test(tf.tf_number) ? `TF ${tf.tf_number}` : tf.tf_number)
+    : null;
+
+  // アクションボタン群（デスクトップ・モバイル共通）
+  const actionButtons = (
+    <>
+      <button
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-full)", cursor: "pointer",
+          background: expanded ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
+          color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+        }}
+      >
+        ToDo {todos.length > 0 ? `(${todos.length})` : ""} {expanded ? "▴" : "▾"}
+      </button>
+
+      {/* Q移動メニュー */}
+      <div style={{ position: "relative" }}>
+        <button
+          onClick={() => setShowMoveMenu(v => !v)}
+          style={{
+            fontSize: "11px", padding: "4px 10px",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-full)", cursor: "pointer",
+            background: showMoveMenu ? "var(--color-bg-secondary)" : "transparent",
+            color: "var(--color-text-tertiary)",
+          }}
+        >Q移動</button>
+        {showMoveMenu && (
+          <div style={{
+            position: "absolute", left: 0, top: "calc(100% + 4px)", zIndex: 20,
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-md)",
+            overflow: "hidden",
+            minWidth: "96px",
+          }}>
+            {(["1Q","2Q","3Q","4Q"] as Quarter[])
+              .filter(q => q !== currentQuarter)
+              .map(q => (
+                <button
+                  key={q}
+                  onClick={() => { setShowMoveMenu(false); onMoveTo(q); }}
+                  style={{
+                    display: "block", width: "100%",
+                    padding: "8px 14px", fontSize: "12px", textAlign: "left",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    color: "var(--color-text-primary)",
+                    borderBottom: q !== "4Q" ? "1px solid var(--color-border-primary)" : "none",
+                  }}
+                  onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
+                  onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+                >
+                  {q} へ
+                </button>
+              ))
+            }
+          </div>
+        )}
+      </div>
+
+      <button
+        onClick={onEdit}
+        style={{
+          fontSize: "11px", padding: "4px 10px",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-full)", cursor: "pointer",
+          background: "transparent", color: "var(--color-text-secondary)",
+        }}
+      >編集</button>
+      <button
+        onClick={onDelete}
+        style={{
+          fontSize: "11px", padding: "4px 10px",
+          border: "1px solid var(--color-border-danger)",
+          borderRadius: "var(--radius-full)", cursor: "pointer",
+          background: "transparent", color: "var(--color-text-danger)",
+        }}
+      >解除</button>
+    </>
+  );
+
   return (
     <div style={{
       marginBottom: "6px",
-      border: isEditing ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+      border: isEditing ? "2px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
       borderRadius: "var(--radius-md)",
       overflow: "hidden",
       transition: "border-color 0.15s",
     }}>
-      {/* ヘッダー行 */}
+      {/* カード本体 */}
       <div style={{
-        display: "flex", alignItems: "center", gap: "6px",
         padding: "8px 10px",
         background: isEditing ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
       }}>
-        {tf.tf_number && (
-          <span style={{
-            fontSize: "10px", padding: "1px 7px", borderRadius: "3px",
-            background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-            border: "1px solid var(--color-brand-border)", flexShrink: 0,
-          }}>{tf.tf_number}</span>
-        )}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>{tf.name}</div>
-          {tf.description && (
-            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "pre-wrap", lineHeight: 1.4 }}>
-              {tf.description}
+        {/* 情報行（常時表示） */}
+        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+          {tfNumLabel && (
+            <span style={{
+              fontSize: "10px", padding: "2px 8px", borderRadius: "var(--radius-full)",
+              background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+              border: "1px solid var(--color-brand-border)", flexShrink: 0, fontWeight: "600",
+            }}>{tfNumLabel}</span>
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", lineHeight: 1.4 }}>{tf.name}</div>
+            {tf.description && (
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4 }}>
+                {tf.description}
+              </div>
+            )}
+            {tf.background && (
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4, fontStyle: "italic" }}>
+                📌 {tf.background}
+              </div>
+            )}
+          </div>
+          {leader && <Avatar member={leader} size={20} />}
+          {/* デスクトップ：アクションボタンをインライン表示 */}
+          {!isMobile && !isEditing && (
+            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+              {actionButtons}
             </div>
           )}
-          {tf.background && (
-            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "pre-wrap", lineHeight: 1.4, fontStyle: "italic" }}>
-              📌 {tf.background}
-            </div>
+          {isEditing && (
+            <span style={{ fontSize: "10px", color: "var(--color-text-purple)", fontWeight: "600", flexShrink: 0, background: "var(--color-brand-light)", padding: "2px 8px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)" }}>編集中</span>
           )}
         </div>
-        {leader && <Avatar member={leader} size={18} />}
-        {!isEditing ? (
-          <>
-            <button
-              onClick={() => setExpanded(e => !e)}
-              style={{
-                fontSize: "10px", padding: "2px 8px", whiteSpace: "nowrap",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-                background: expanded ? "var(--color-bg-info)" : "transparent",
-                color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-                flexShrink: 0,
-              }}
-            >
-              ToDo {todos.length} {expanded ? "▴" : "▾"}
-            </button>
-            {/* Q移動メニュー */}
-            <div style={{ position: "relative", flexShrink: 0 }}>
-              <button
-                onClick={() => setShowMoveMenu(v => !v)}
-                style={{
-                  fontSize: "10px", padding: "2px 8px",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)", cursor: "pointer",
-                  background: showMoveMenu ? "var(--color-bg-secondary)" : "transparent",
-                  color: "var(--color-text-tertiary)",
-                }}
-              >移動</button>
-              {showMoveMenu && (
-                <div style={{
-                  position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 20,
-                  background: "var(--color-bg-primary)",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  boxShadow: "var(--shadow-md)",
-                  overflow: "hidden",
-                  minWidth: "90px",
-                }}>
-                  {(["1Q","2Q","3Q","4Q"] as Quarter[])
-                    .filter(q => q !== currentQuarter)
-                    .map(q => (
-                      <button
-                        key={q}
-                        onClick={() => { setShowMoveMenu(false); onMoveTo(q); }}
-                        style={{
-                          display: "block", width: "100%",
-                          padding: "6px 12px", fontSize: "11px", textAlign: "left",
-                          background: "transparent", border: "none", cursor: "pointer",
-                          color: "var(--color-text-primary)",
-                          borderBottom: q !== "4Q" ? "1px solid var(--color-border-primary)" : "none",
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      >
-                        {q} へ移動
-                      </button>
-                    ))
-                  }
-                </div>
-              )}
-            </div>
-            <button
-              onClick={onEdit}
-              style={{
-                fontSize: "10px", padding: "2px 8px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-                background: "transparent", color: "var(--color-text-secondary)", flexShrink: 0,
-              }}
-            >編集</button>
-            <button
-              onClick={onDelete}
-              style={{
-                fontSize: "10px", padding: "2px 8px",
-                border: "1px solid var(--color-border-danger)",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-                background: "transparent", color: "var(--color-text-danger)", flexShrink: 0,
-              }}
-            >解除</button>
-          </>
-        ) : (
-          <span style={{ fontSize: "10px", color: "var(--color-text-purple)", fontWeight: "500", flexShrink: 0 }}>編集中</span>
+
+        {/* モバイル：アクションボタンを2段目に配置 */}
+        {isMobile && !isEditing && (
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
+            {actionButtons}
+          </div>
         )}
       </div>
 
       {/* インライン編集フォーム */}
       {isEditing && (
-        <div style={{ padding: "12px 14px", borderTop: "1px solid var(--color-brand)", background: "var(--color-bg-secondary)" }}>
-          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "90px 1fr", gap: "8px", marginBottom: "8px" }}>
+        <div style={{ padding: "12px 14px", borderTop: "2px solid var(--color-brand)", background: "var(--color-bg-secondary)" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "80px 1fr", gap: "8px", marginBottom: "8px" }}>
             <div>
-              <FieldLabel>TF番号</FieldLabel>
-              <input value={editForm.tf_number} onChange={e => setEditForm(f => ({...f, tf_number: e.target.value}))}
-                placeholder="TF①-KR1" maxLength={20} style={inputStyle} />
+              <FieldLabel>番号</FieldLabel>
+              <select value={editForm.tf_number} onChange={e => setEditForm(f => ({...f, tf_number: e.target.value}))} style={inputStyle}>
+                <option value="">－</option>
+                {[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>TF {n}</option>)}
+              </select>
             </div>
             <div>
               <FieldLabel>TF名 *</FieldLabel>
@@ -858,15 +895,15 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
             <FieldLabel>詳細・目的（任意）</FieldLabel>
             <textarea value={editForm.description} onChange={e => setEditForm(f => ({...f, description: e.target.value}))}
               placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
-              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+              style={{ ...inputStyle, lineHeight: 1.5 }} />
           </div>
           <div style={{ marginBottom: "10px" }}>
             <FieldLabel>設定した意図・背景（任意）</FieldLabel>
             <textarea value={editForm.background} onChange={e => setEditForm(f => ({...f, background: e.target.value}))}
               placeholder="なぜこのTFを設定したか、背景・経緯・意図（任意）" maxLength={1000} rows={2}
-              style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }} />
+              style={{ ...inputStyle, lineHeight: 1.5 }} />
           </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={onSaveEdit} style={primaryBtnStyle}>保存</button>
             <button onClick={onCancelEdit} style={ghostBtnStyle}>キャンセル</button>
             <button
