@@ -128,17 +128,6 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
             {selectedProject.purpose.slice(0, 24)}…
           </div>
         )}
-        <button
-          onClick={() => { setAddToStatus("todo"); setShowAddModal(true); }}
-          style={{
-            padding: "5px 14px", fontSize: "11px", fontWeight: "500",
-            background: "var(--color-bg-info)", color: "var(--color-text-info)",
-            border: "1px solid var(--color-border-info)",
-            borderRadius: "var(--radius-md)", cursor: "pointer",
-          }}
-        >
-          ＋ タスク追加
-        </button>
       </div>
 
       {/* カンバン本体 */}

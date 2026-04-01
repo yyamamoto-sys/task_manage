@@ -163,6 +163,28 @@ export function GanttView({
   const togglePJ = (id: string) =>
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
 
+  // ビューモード（PJ別 / 人別）
+  const [viewMode, setViewMode] = useState<"pj" | "person">("pj");
+
+  // 人別ビュー用データ：担当者ごとにタスクをグループ化
+  const personGroups = useMemo(() => {
+    return members
+      .map(m => {
+        const tasks = allTasks
+          .filter(t => t.assignee_member_id === m.id)
+          .sort((a, b) => {
+            const da = toDate(a.due_date);
+            const db = toDate(b.due_date);
+            if (!da && !db) return 0;
+            if (!da) return 1;
+            if (!db) return -1;
+            return da.getTime() - db.getTime();
+          });
+        return { member: m, tasks };
+      })
+      .filter(g => g.tasks.length > 0);
+  }, [members, allTasks]);
+
   // 全開・全閉
   const expandAll  = () => setCollapsed({});
   const collapseAll = () => {
@@ -235,8 +257,29 @@ export function GanttView({
         <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
           {selectedProject ? selectedProject.name : "全プロジェクト"}
         </div>
-        {!isPreview && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
-        {!isPreview && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
+        {!isPreview && (
+          <div style={{ display: "flex", gap: "3px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>
+            {(["pj", "person"] as const).map(mode => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={{
+                  ...headerBtnStyle,
+                  padding: "3px 10px",
+                  background: viewMode === mode ? "var(--color-bg-primary)" : "transparent",
+                  color: viewMode === mode ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  border: viewMode === mode ? "1px solid var(--color-brand-border)" : "1px solid transparent",
+                  fontWeight: viewMode === mode ? "600" : "400",
+                  boxShadow: viewMode === mode ? "var(--shadow-sm)" : "none",
+                }}
+              >
+                {mode === "pj" ? "PJ別" : "人別"}
+              </button>
+            ))}
+          </div>
+        )}
+        {!isPreview && viewMode === "pj" && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
+        {!isPreview && viewMode === "pj" && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
       </div>
 
       {/* ガント本体 */}
@@ -260,118 +303,214 @@ export function GanttView({
 
           {/* ラベル行 */}
           <div style={{ overflow: "hidden" }}>
-            {visibleProjects.map(pj => {
-              const pjTasks = allTasks.filter(t => t.project_id === pj.id);
-              const isCollapsed = collapsed[pj.id];
-              return (
-                <div key={pj.id}>
-                  {/* PJ行ラベル */}
-                  <div style={{
-                    height: 36, display: "flex", alignItems: "center",
-                    gap: "6px", padding: "0 8px 0 10px",
-                    background: "var(--color-bg-secondary)",
-                    borderBottom: "1px solid var(--color-border-primary)",
-                    cursor: "pointer",
-                  }} onClick={() => togglePJ(pj.id)}>
-                    <span style={{
-                      fontSize: "11px", color: "var(--color-text-secondary)",
-                      transition: "transform 0.15s",
-                      display: "inline-block",
-                      transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
-                    }}>▾</span>
-                    <div style={{
-                      width: 8, height: 8, borderRadius: "50%",
-                      background: pj.color_tag, flexShrink: 0,
-                    }} />
-                    <span style={{
-                      fontSize: "11px", fontWeight: "500",
-                      color: "var(--color-text-primary)",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      flex: 1,
-                    }}>
-                      {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
-                    </span>
-                  </div>
-
-                  {/* タスク行ラベル */}
-                  {!isCollapsed && pjTasks.map(task => {
-                    const m = members.find(mb => mb.id === task.assignee_member_id);
-                    return (
-                      <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
-                        height: 30, display: "flex", alignItems: "center",
-                        gap: "6px", padding: "0 8px 0 26px",
+            {viewMode === "pj" ? (
+              <>
+                {visibleProjects.map(pj => {
+                  const pjTasks = allTasks.filter(t => t.project_id === pj.id);
+                  const isCollapsed = collapsed[pj.id];
+                  return (
+                    <div key={pj.id}>
+                      {/* PJ行ラベル */}
+                      <div style={{
+                        height: 36, display: "flex", alignItems: "center",
+                        gap: "6px", padding: "0 8px 0 10px",
+                        background: "var(--color-bg-secondary)",
                         borderBottom: "1px solid var(--color-border-primary)",
-                        background: "var(--color-bg-primary)",
                         cursor: "pointer",
-                      }}>
-                        <StatusDot status={task.status} />
+                      }} onClick={() => togglePJ(pj.id)}>
                         <span style={{
                           fontSize: "11px", color: "var(--color-text-secondary)",
+                          transition: "transform 0.15s",
+                          display: "inline-block",
+                          transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                        }}>▾</span>
+                        <div style={{
+                          width: 8, height: 8, borderRadius: "50%",
+                          background: pj.color_tag, flexShrink: 0,
+                        }} />
+                        <span style={{
+                          fontSize: "11px", fontWeight: "500",
+                          color: "var(--color-text-primary)",
                           overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                           flex: 1,
                         }}>
-                          {task.name}
+                          {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
                         </span>
-                        {m && (
-                          <div style={{
-                            width: 16, height: 16, borderRadius: "50%",
-                            background: m.color_bg, color: m.color_text,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "8px", fontWeight: "600", flexShrink: 0,
-                          }}>
-                            {m.initials.slice(0, 1)}
-                          </div>
-                        )}
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
 
-            {/* ToDo系タスクグループ（ラベル） */}
-            {todoGroups.map(({ todo, todoId, tasks }) => {
-              const isCollapsed = collapsed[`todo_${todoId}`];
-              return (
-                <div key={todoId}>
-                  <div style={{
-                    height: 36, display: "flex", alignItems: "center",
-                    gap: "6px", padding: "0 8px 0 10px",
-                    background: "var(--color-bg-secondary)",
-                    borderBottom: "1px solid var(--color-border-primary)",
-                    cursor: "pointer",
-                  }} onClick={() => togglePJ(`todo_${todoId}`)}>
-                    <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
-                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6ee7b7", flexShrink: 0 }} />
-                    <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                      {`[ToDo] ${(todo!.title.split("\n")[0]).slice(0, 14)}${todo!.title.length > 14 ? "…" : ""}`}
-                    </span>
-                  </div>
-                  {!isCollapsed && tasks.map(task => {
-                    const m = members.find(mb => mb.id === task.assignee_member_id);
-                    return (
-                      <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
-                        height: 30, display: "flex", alignItems: "center",
-                        gap: "6px", padding: "0 8px 0 26px",
-                        borderBottom: "1px solid var(--color-border-primary)",
-                        background: "var(--color-bg-primary)",
-                        cursor: "pointer",
-                      }}>
-                        <StatusDot status={task.status} />
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                          {task.name}
-                        </span>
-                        {m && (
-                          <div style={{ width: 16, height: 16, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", fontWeight: "600", flexShrink: 0 }}>
-                            {m.initials.slice(0, 1)}
+                      {/* タスク行ラベル */}
+                      {!isCollapsed && pjTasks.map(task => {
+                        const m = members.find(mb => mb.id === task.assignee_member_id);
+                        return (
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                            height: 30, display: "flex", alignItems: "center",
+                            gap: "6px", padding: "0 8px 0 26px",
+                            borderBottom: "1px solid var(--color-border-primary)",
+                            background: "var(--color-bg-primary)",
+                            cursor: "pointer",
+                          }}>
+                            <StatusDot status={task.status} />
+                            <span style={{
+                              fontSize: "11px", color: "var(--color-text-secondary)",
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              flex: 1,
+                            }}>
+                              {task.name}
+                            </span>
+                            {m && (
+                              <div style={{
+                                width: 16, height: 16, borderRadius: "50%",
+                                background: m.color_bg, color: m.color_text,
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                fontSize: "8px", fontWeight: "600", flexShrink: 0,
+                              }}>
+                                {m.initials.slice(0, 1)}
+                              </div>
+                            )}
                           </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+
+                {/* ToDo系タスクグループ（ラベル） */}
+                {todoGroups.map(({ todo, todoId, tasks }) => {
+                  const isCollapsed = collapsed[`todo_${todoId}`];
+                  return (
+                    <div key={todoId}>
+                      <div style={{
+                        height: 36, display: "flex", alignItems: "center",
+                        gap: "6px", padding: "0 8px 0 10px",
+                        background: "var(--color-bg-secondary)",
+                        borderBottom: "1px solid var(--color-border-primary)",
+                        cursor: "pointer",
+                      }} onClick={() => togglePJ(`todo_${todoId}`)}>
+                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6ee7b7", flexShrink: 0 }} />
+                        <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                          {`[ToDo] ${(todo!.title.split("\n")[0]).slice(0, 14)}${todo!.title.length > 14 ? "…" : ""}`}
+                        </span>
+                      </div>
+                      {!isCollapsed && tasks.map(task => {
+                        const m = members.find(mb => mb.id === task.assignee_member_id);
+                        return (
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                            height: 30, display: "flex", alignItems: "center",
+                            gap: "6px", padding: "0 8px 0 26px",
+                            borderBottom: "1px solid var(--color-border-primary)",
+                            background: "var(--color-bg-primary)",
+                            cursor: "pointer",
+                          }}>
+                            <StatusDot status={task.status} />
+                            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                              {task.name}
+                            </span>
+                            {m && (
+                              <div style={{ width: 16, height: 16, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", fontWeight: "600", flexShrink: 0 }}>
+                                {m.initials.slice(0, 1)}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </>
+            ) : (
+              /* ===== 人別ビュー ラベル ===== */
+              <>
+                {personGroups.map(({ member: m, tasks }) => {
+                  const isCollapsed = collapsed[`person_${m.id}`];
+                  const doneCount = tasks.filter(t => t.status === "done").length;
+                  const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
+                  return (
+                    <div key={m.id}>
+                      {/* メンバーヘッダー行 */}
+                      <div style={{
+                        height: 36, display: "flex", alignItems: "center",
+                        gap: "6px", padding: "0 8px 0 10px",
+                        background: "var(--color-bg-secondary)",
+                        borderBottom: "1px solid var(--color-border-primary)",
+                        cursor: "pointer",
+                      }} onClick={() => togglePJ(`person_${m.id}`)}>
+                        <span style={{
+                          fontSize: "11px", color: "var(--color-text-secondary)",
+                          transition: "transform 0.15s", display: "inline-block",
+                          transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+                        }}>▾</span>
+                        {/* アバター */}
+                        <div style={{
+                          width: 20, height: 20, borderRadius: "50%",
+                          background: m.color_bg, color: m.color_text,
+                          display: "flex", alignItems: "center", justifyContent: "center",
+                          fontSize: "9px", fontWeight: "700", flexShrink: 0,
+                        }}>
+                          {m.initials.slice(0, 2)}
+                        </div>
+                        <span style={{
+                          fontSize: "11px", fontWeight: "600",
+                          color: "var(--color-text-primary)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          flex: 1,
+                        }}>
+                          {m.short_name}
+                        </span>
+                        {/* タスク数バッジ */}
+                        <span style={{
+                          fontSize: "9px", color: "var(--color-text-tertiary)",
+                          flexShrink: 0,
+                        }}>
+                          {doneCount}/{tasks.length}
+                        </span>
+                        {inProgressCount > 0 && (
+                          <div style={{
+                            width: 6, height: 6, borderRadius: "50%",
+                            background: "var(--color-text-info)", flexShrink: 0,
+                          }} />
                         )}
                       </div>
-                    );
-                  })}
-                </div>
-              );
-            })}
+
+                      {/* タスク行 */}
+                      {!isCollapsed && tasks.map(task => {
+                        const pj = projects.find(p => p.id === task.project_id);
+                        const isOverdue = (() => {
+                          const due = toDate(task.due_date);
+                          return due && due < today && task.status !== "done";
+                        })();
+                        return (
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                            height: 30, display: "flex", alignItems: "center",
+                            gap: "5px", padding: "0 8px 0 26px",
+                            borderBottom: "1px solid var(--color-border-primary)",
+                            background: "var(--color-bg-primary)",
+                            cursor: "pointer",
+                          }}>
+                            <StatusDot status={task.status} />
+                            {/* PJカラードット */}
+                            {pj && (
+                              <div style={{
+                                width: 6, height: 6, borderRadius: "50%",
+                                background: pj.color_tag, flexShrink: 0,
+                              }} />
+                            )}
+                            <span style={{
+                              fontSize: "11px",
+                              color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              flex: 1,
+                            }}>
+                              {task.name}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         </div>
 
@@ -474,8 +613,93 @@ export function GanttView({
                 zIndex: 5,
               }} />
 
-              {/* PJ・タスクバー */}
-              {visibleProjects.map(pj => {
+              {/* PJ・タスクバー / 人別バー */}
+              {viewMode === "person" ? (
+                /* ===== 人別ビュー バー ===== */
+                <>
+                  {personGroups.map(({ member: m, tasks }) => {
+                    const isCollapsed = collapsed[`person_${m.id}`];
+                    // メンバーの稼働中タスクの最早期日〜最遅期日をバー表示
+                    const dueDates = tasks.map(t => toDate(t.due_date)).filter(Boolean) as Date[];
+                    const earliest = dueDates.length > 0 ? dueDates.reduce((a, b) => a < b ? a : b) : null;
+                    const latest   = dueDates.length > 0 ? dueDates.reduce((a, b) => a > b ? a : b) : null;
+                    const spanX = earliest ? diffDays(rangeStart, earliest) * DAY_WIDTH : null;
+                    const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * DAY_WIDTH : null;
+                    return (
+                      <div key={m.id}>
+                        {/* メンバーヘッダー行バー */}
+                        <div style={{
+                          height: 36, position: "relative",
+                          borderBottom: "1px solid var(--color-border-primary)",
+                          background: "var(--color-bg-secondary)",
+                        }}>
+                          {spanX !== null && spanW !== null && (
+                            <div style={{
+                              position: "absolute",
+                              left: spanX + 2, width: Math.max(spanW - 4, 8),
+                              top: "50%", transform: "translateY(-50%)",
+                              height: 6, borderRadius: 3,
+                              background: `${m.color_bg}`,
+                              border: `1.5px solid ${m.color_text}`,
+                              opacity: 0.6,
+                            }} />
+                          )}
+                        </div>
+
+                        {/* タスク行バー */}
+                        {!isCollapsed && tasks.map(task => {
+                          const due = toDate(task.due_date);
+                          const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
+                          const isDone = task.status === "done";
+                          const isOverdue = due && due < today && !isDone;
+                          const pj = projects.find(p => p.id === task.project_id);
+                          const barColor = isDone
+                            ? "var(--color-border-success)"
+                            : isOverdue
+                            ? "var(--color-border-danger)"
+                            : pj?.color_tag ?? m.color_text;
+                          return (
+                            <div key={task.id} style={{
+                              height: 30, position: "relative",
+                              borderBottom: "1px solid var(--color-border-primary)",
+                              background: "var(--color-bg-primary)",
+                            }}>
+                              {barX !== null && due && (
+                                <>
+                                  <div
+                                    title={`${task.name}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
+                                    onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                    style={{
+                                      position: "absolute",
+                                      left: barX, top: "50%", transform: "translateY(-50%)",
+                                      width: DAY_WIDTH - 4, height: 10, borderRadius: 5,
+                                      background: barColor,
+                                      opacity: isDone ? 0.6 : 1,
+                                      cursor: isPreview ? "default" : "pointer",
+                                      zIndex: 2,
+                                    }}
+                                  />
+                                  <div style={{
+                                    position: "absolute",
+                                    left: barX + DAY_WIDTH / 2, top: 2,
+                                    fontSize: "8px",
+                                    color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+                                    transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
+                                  }}>
+                                    {due.getMonth() + 1}/{due.getDate()}
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                </>
+              ) : null}
+
+              {viewMode === "pj" && visibleProjects.map(pj => {
                 const pjTasks = allTasks.filter(t => t.project_id === pj.id);
                 const isCollapsed = collapsed[pj.id];
 
@@ -617,8 +841,8 @@ export function GanttView({
                 );
               })}
 
-              {/* ToDo系タスクグループ（バー） */}
-              {todoGroups.map(({ todoId, tasks }) => {
+              {/* ToDo系タスクグループ（バー）— PJ別ビューのみ */}
+              {viewMode === "pj" && todoGroups.map(({ todoId, tasks }) => {
                 const isCollapsed = collapsed[`todo_${todoId}`];
                 const done = tasks.filter(t => t.status === "done").length;
                 const pct  = tasks.length > 0 ? done / tasks.length : 0;

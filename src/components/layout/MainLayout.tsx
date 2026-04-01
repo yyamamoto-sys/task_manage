@@ -3,7 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode, Task } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, Task, TaskForce, ToDo } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
 import { AdminView } from "../admin/AdminView";
@@ -588,13 +588,30 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   projects: Project[];
   onClose: () => void;
 }) {
-  const { saveTask, members: rawMembers } = useAppData();
-  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const { saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos } = useAppData();
+  const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
+  const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
+  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
   const [projectId, setProjectId] = useState("");
+  const [tfId, setTfId] = useState("");
+  const [todoId, setTodoId] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // TFが変わったらToDo選択をリセット
+  const handleTfChange = (val: string) => {
+    setTfId(val);
+    setTodoId("");
+  };
+
+  // 選択中TFに属するToDo一覧
+  const filteredTodos = useMemo(
+    () => tfId ? todos.filter(td => td.tf_id === tfId) : [],
+    [tfId, todos],
+  );
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -604,7 +621,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
       id: uuidv4(),
       name: name.trim(),
       project_id: projectId || null,
-      todo_id: null,
+      todo_id: todoId || null,
       assignee_member_id: assigneeId,
       status: "todo",
       priority: null,
@@ -706,6 +723,54 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
             />
           </div>
         </div>
+
+        {/* タスクフォース */}
+        <div style={{ marginBottom: "10px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
+          <select
+            value={tfId}
+            onChange={e => handleTfChange(e.target.value)}
+            style={{
+              width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+            }}
+          >
+            <option value="">タスクフォースを選択...</option>
+            {tfs.map(tf => (
+              <option key={tf.id} value={tf.id}>
+                {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* ToDo（TF選択時のみ） */}
+        {tfId && filteredTodos.length > 0 && (
+          <div style={{ marginBottom: "10px" }}>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>ToDo（任意）</div>
+            <select
+              value={todoId}
+              onChange={e => setTodoId(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              <option value="">ToDoを選択...</option>
+              {filteredTodos.map(td => (
+                <option key={td.id} value={td.id}>
+                  {td.title.split("\n")[0].slice(0, 40)}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* プロジェクト */}
         <div style={{ marginBottom: "16px" }}>
