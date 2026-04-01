@@ -348,8 +348,17 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   const todos   = useMemo(() => rawTodos.filter(t => !t.is_deleted), [rawTodos]);
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
 
-  // クォーター選択
-  const [selectedQuarter, setSelectedQuarter] = useState<Quarter>("1Q");
+  // 現在の日付から今のQを求める（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
+  const currentQ = useMemo<Quarter>(() => {
+    const m = new Date().getMonth() + 1;
+    if (m <= 3) return "1Q";
+    if (m <= 6) return "2Q";
+    if (m <= 9) return "3Q";
+    return "4Q";
+  }, []);
+
+  // クォーター選択（初期値を現在のQに設定）
+  const [selectedQuarter, setSelectedQuarter] = useState<Quarter>(currentQ);
 
   // 選択クォーターの QuarterlyObjective
   const qObj = useMemo(
@@ -626,26 +635,12 @@ function TFSection({ currentUser }: { currentUser: Member }) {
               ))}
 
               {/* TF追加コントロール */}
-              {ctxObj?.id && (
-                <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center", marginTop: "6px" }}>
-                  {unlinkableTfs.length > 0 && (
-                    <select
-                      defaultValue=""
-                      onChange={e => { if (!e.target.value) return; void handleAddTf(kr.id, e.target.value); e.target.value = ""; }}
-                      style={{ ...inputStyle, fontSize: "11px", padding: "3px 6px" }}
-                    >
-                      <option value="">既存TFを追加...</option>
-                      {unlinkableTfs.map(tf => (
-                        <option key={tf.id} value={tf.id}>{tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}</option>
-                      ))}
-                    </select>
-                  )}
-                  {newTfFormKrId !== kr.id && (
-                    <button
-                      onClick={() => openNewTfForm(kr.id)}
-                      style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
-                    >＋ 新規TFを作成</button>
-                  )}
+              {ctxObj?.id && newTfFormKrId !== kr.id && (
+                <div style={{ marginTop: "6px" }}>
+                  <button
+                    onClick={() => openNewTfForm(kr.id)}
+                    style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
+                  >＋ 新規TFを作成</button>
                 </div>
               )}
 
