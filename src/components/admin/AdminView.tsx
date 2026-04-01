@@ -730,42 +730,45 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
     : null;
 
   // アクションボタン群（デスクトップ・モバイル共通）
+  // アクションボタン 2×2グリッド（上段: ToDo / Q移動、下段: 編集 / 解除）
   const actionButtons = (
-    <>
+    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px", flexShrink: 0 }}>
+      {/* 上段左: ToDo */}
       <button
         onClick={() => setExpanded(e => !e)}
         style={{
-          fontSize: "11px", padding: "4px 10px", whiteSpace: "nowrap",
+          fontSize: "10px", padding: "3px 6px", whiteSpace: "nowrap",
           border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-full)", cursor: "pointer",
+          borderRadius: "var(--radius-md)", cursor: "pointer",
           background: expanded ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
           color: expanded ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+          textAlign: "center",
         }}
       >
-        ToDo {todos.length > 0 ? `(${todos.length})` : ""} {expanded ? "▴" : "▾"}
+        ToDo{todos.length > 0 ? ` (${todos.length})` : ""} {expanded ? "▴" : "▾"}
       </button>
 
-      {/* Q移動メニュー */}
+      {/* 上段右: Q移動 */}
       <div style={{ position: "relative" }}>
         <button
           onClick={() => setShowMoveMenu(v => !v)}
           style={{
-            fontSize: "11px", padding: "4px 10px",
+            width: "100%", fontSize: "10px", padding: "3px 6px",
             border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-full)", cursor: "pointer",
+            borderRadius: "var(--radius-md)", cursor: "pointer",
             background: showMoveMenu ? "var(--color-bg-secondary)" : "transparent",
-            color: "var(--color-text-tertiary)",
+            color: "var(--color-text-tertiary)", textAlign: "center",
           }}
         >Q移動</button>
         {showMoveMenu && (
           <div style={{
-            position: "absolute", left: 0, top: "calc(100% + 4px)", zIndex: 20,
+            position: "absolute", right: 0, top: "calc(100% + 4px)", zIndex: 20,
             background: "var(--color-bg-primary)",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)",
             overflow: "hidden",
-            minWidth: "96px",
+            minWidth: "90px",
           }}>
             {(["1Q","2Q","3Q","4Q"] as Quarter[])
               .filter(q => q !== currentQuarter)
@@ -775,7 +778,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
                   onClick={() => { setShowMoveMenu(false); onMoveTo(q); }}
                   style={{
                     display: "block", width: "100%",
-                    padding: "8px 14px", fontSize: "12px", textAlign: "left",
+                    padding: "7px 12px", fontSize: "11px", textAlign: "left",
                     background: "transparent", border: "none", cursor: "pointer",
                     color: "var(--color-text-primary)",
                     borderBottom: q !== "4Q" ? "1px solid var(--color-border-primary)" : "none",
@@ -791,25 +794,30 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
         )}
       </div>
 
+      {/* 下段左: 編集 */}
       <button
         onClick={onEdit}
         style={{
-          fontSize: "11px", padding: "4px 10px",
+          fontSize: "10px", padding: "3px 6px",
           border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-full)", cursor: "pointer",
+          borderRadius: "var(--radius-md)", cursor: "pointer",
           background: "transparent", color: "var(--color-text-secondary)",
+          textAlign: "center",
         }}
       >編集</button>
+
+      {/* 下段右: 解除 */}
       <button
         onClick={onDelete}
         style={{
-          fontSize: "11px", padding: "4px 10px",
+          fontSize: "10px", padding: "3px 6px",
           border: "1px solid var(--color-border-danger)",
-          borderRadius: "var(--radius-full)", cursor: "pointer",
+          borderRadius: "var(--radius-md)", cursor: "pointer",
           background: "transparent", color: "var(--color-text-danger)",
+          textAlign: "center",
         }}
       >解除</button>
-    </>
+    </div>
   );
 
   return (
@@ -849,11 +857,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           </div>
           {leader && <Avatar member={leader} size={20} />}
           {/* デスクトップ：アクションボタンをインライン表示 */}
-          {!isMobile && !isEditing && (
-            <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
-              {actionButtons}
-            </div>
-          )}
+          {!isMobile && !isEditing && actionButtons}
           {isEditing && (
             <span style={{ fontSize: "10px", color: "var(--color-text-purple)", fontWeight: "600", flexShrink: 0, background: "var(--color-brand-light)", padding: "2px 8px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)" }}>編集中</span>
           )}
@@ -861,7 +865,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
 
         {/* モバイル：アクションボタンを2段目に配置 */}
         {isMobile && !isEditing && (
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
+          <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
             {actionButtons}
           </div>
         )}
