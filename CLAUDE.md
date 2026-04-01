@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.1
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.2
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -10,8 +10,13 @@
 #      追加：3-2b（ToDoデータモデル）
 #      更新：2（6層構造に変更）・3-3（Task.project_id NULL許可・todo_id追加）
 #      更新：13（ファイル構成にGraphView追加）
+# v2.2 UI/UX大幅改善・機能追加・ホスティング確定（2026年4月）
+#      更新：1（ホスティングをVercelに確定）
+#      更新：3-1（TaskForce.tf_numberをドロップダウン選択に変更）
+#      更新：8（画面一覧を現状に合わせて更新）
+#      更新：13（ファイル構成にMainLayout.tsx追加）
 #
-# 最終更新：2026年3月（v2.1）
+# 最終更新：2026年4月（v2.2）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -39,13 +44,12 @@
 | AI連携 | Anthropic Claude API（claude-sonnet-4-6） | プロジェクト・タスク層のみに使用 |
 | AI中継 | Supabase Edge Function（ai-consult） | APIキーをサーバーサイドにのみ保持するため |
 | 通知連携 | Microsoft Teams Webhook | タスク完了・期限通知 |
-| ホスティング | 未定（社内IT部門確認待ち） | セキュリティポリシー確認が前提条件 |
+| ホスティング | Vercel | GitHubへのpushで自動デプロイ（main branch） |
 
-**⚠ 前提条件（未解決）**
+**⚠ 確認が必要な事項（未解決）**
 - Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要
 - Claude APIへのデータ送信について社内ポリシーとの整合性確認が必要
 - Teams埋め込みアプリとしての申請手続き確認が必要
-- 上記確認が完了するまでは**ローカルストレージ（JSON）でプロトタイプ開発**を進める
 
 ---
 
@@ -136,7 +140,7 @@ interface KeyResult {
 interface TaskForce {
   id: string;
   kr_id: string;
-  tf_number: string;       // 例："TF①-KR1"（手動入力）
+  tf_number: string;       // "1"〜"9" の数値文字列。UI上は1〜9のドロップダウン選択（手動入力廃止）
   name: string;
   description?: string;
   leader_member_id?: string;
@@ -596,18 +600,29 @@ interface TaskChangeLog {
 
 | 画面 | 状態 | 備考 |
 |---|---|---|
-| セットアップウィザード | ✅ 設計済み | 初回起動時のみ表示。デモバナーあり |
-| 管理画面（OKR/TF/ToDo/PJ/Member/変更履歴） | ✅ 設計済み | 全員が編集可。TFRowを展開可能カードにしToDoパネル内包 |
-| ダッシュボード | ✅ 設計済み | OKR進捗・今週タスク・アラート・フィルター付き |
-| カンバンビュー | ✅ 設計済み | ドラッグ&ドロップ対応 |
-| ガントビュー | ✅ 設計済み | PJバー＋マイルストーン・トグル開閉・今日線 |
-| リストビュー | ✅ 設計済み | 列カスタマイズ・サイドパネル・エクスポート |
-| タスク追加モーダル | ✅ 設計済み | 必須3項目＋任意項目・ToDo紐づけフィールド追加 |
-| PJ作成モーダル | ✅ 設計済み | 3ステップウィザード |
-| AIに変更を相談パネル | ✅ 設計済み | マルチターン・5モード・確認ダイアログ |
-| ConfirmationDialogModal | ✅ 設計済み | date_change/assignee確認用 |
-| ツアー機能 | ✅ 設計済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
+| セットアップウィザード | ✅ 実装済み | 初回起動時のみ表示 |
+| 管理画面 | ✅ 実装済み | タブ構成：タスク / PJ / メンバー / TF / OKR・KR / AI使用量。全員が編集可 |
+| ダッシュボード | ✅ 実装済み | OKR進捗・今週タスク・アラート・フィルター付き |
+| カンバンビュー | ✅ 実装済み | ドラッグ&ドロップ対応。タスク追加はFABに一本化（右上ボタンは廃止） |
+| ガントビュー | ✅ 実装済み | PJ別・人別の2ビューモード。PJバー・マイルストーン・今日線・トグル開閉 |
+| リストビュー | ✅ 実装済み | 列カスタマイズ・サイドパネル・エクスポート |
+| タスク追加FAB | ✅ 実装済み | 全画面共通・右下固定。TF・ToDo・PJ・担当者・期日を設定可 |
+| PJ作成モーダル | ✅ 実装済み | 3ステップウィザード |
+| タスク編集モーダル | ✅ 実装済み | ToDo紐づけフィールド含む |
+| AIに変更を相談パネル | ✅ 実装済み | マルチターン・5モード・確認ダイアログ |
+| ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
+| ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
+
+### UI/UX仕様（2026年4月確定）
+
+- **フォント**: M PLUS Rounded 1c（Google Fonts）+ 日本語フォールバックスタック
+- **カラー**: すべて `var(--color-*)` CSS変数で管理。ハードコード禁止
+- **角丸**: `--radius-sm: 6px` / `--radius-md: 10px` / `--radius-lg: 16px`
+- **テキストエリア**: `field-sizing: content` で自動伸縮（Chrome 123+ / Firefox 128+ / Safari 17.4+）
+- **フォントサイズ切り替え**: 管理画面に小/中/大（zoom: 0.85/1/1.15）を実装
+- **TFアクションボタン**: ToDo・Q移動・編集・解除を2×2グリッドに配置
+- **四半期自動判定**: 現在日付から自動的に現在のQを選択（1〜3月=1Q、4〜6月=2Q等）
 
 ---
 
@@ -670,7 +685,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026年3月（v2.1）
+- 最終更新：2026年4月（v2.2）
 
 ---
 
@@ -706,6 +721,8 @@ src/
 ├── hooks/
 │   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
 └── components/
+    ├── layout/
+    │   └── MainLayout.tsx                 # メインレイアウト・ナビゲーション・QuickAddTaskModal（FAB）
     ├── consultation/
     │   ├── ConsultationPanel.tsx          # 相談パネル本体
     │   ├── ProposalCard.tsx               # 提案カード
@@ -715,12 +732,16 @@ src/
     │   ├── SimulationBanner.tsx           # シミュレーションモードの警告バナー
     │   ├── LoadingView.tsx                # ローディング表示
     │   └── ErrorView.tsx                  # エラー表示
+    ├── gantt/
+    │   └── GanttView.tsx                  # ガントビュー（PJ別・人別の2モード）
+    ├── kanban/
+    │   └── KanbanView.tsx                 # カンバンビュー（ドラッグ&ドロップ）
     ├── graph/
     │   └── GraphView.tsx                  # ラボ機能：関係性グラフビュー（Canvas+物理シミュレーション）
     ├── task/
     │   └── TaskEditModal.tsx              # タスク編集モーダル（ToDo紐づけフィールド含む）
     └── admin/
-        └── AdminView.tsx                  # 管理画面（TFRow内ToDoパネル含む）
+        └── AdminView.tsx                  # 管理画面（タスク/PJ/メンバー/TF/OKR・KR/AI使用量の6タブ）
 
 supabase/
 └── functions/
