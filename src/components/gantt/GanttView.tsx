@@ -100,11 +100,12 @@ export function GanttView({
   // project_id=null のToDo系タスクをToDo単位でグループ化（selectedProject未選択時のみ表示）
   const todoGroups = useMemo(() => {
     if (selectedProject) return [];
-    const noPjTasks = allTasks.filter(t => t.project_id == null && t.todo_id != null);
+    const noPjTasks = allTasks.filter(t => t.project_id == null && (t.todo_ids ?? []).length > 0);
     const map = new Map<string, Task[]>();
     noPjTasks.forEach(t => {
-      if (!map.has(t.todo_id!)) map.set(t.todo_id!, []);
-      map.get(t.todo_id!)!.push(t);
+      const primaryId = t.todo_ids[0];
+      if (!map.has(primaryId)) map.set(primaryId, []);
+      map.get(primaryId)!.push(t);
     });
     return [...map.entries()].map(([todoId, tasks]) => ({
       todo: todos.find(td => td.id === todoId),

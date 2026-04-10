@@ -3,7 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode, Task, TaskForce, ToDo } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, Task, TaskForce, ToDo, KeyResult } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
 import { AdminView } from "../admin/AdminView";
@@ -588,23 +588,24 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   projects: Project[];
   onClose: () => void;
 }) {
-  const { saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos } = useAppData();
+  const { saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos, keyResults: rawKrs } = useAppData();
   const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
   const [projectId, setProjectId] = useState("");
   const [tfId, setTfId] = useState("");
-  const [todoId, setTodoId] = useState("");
+  const [todoIds, setTodoIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
 
   // TFが変わったらToDo選択をリセット
   const handleTfChange = (val: string) => {
     setTfId(val);
-    setTodoId("");
+    setTodoIds([]);
   };
 
   // 選択中TFに属するToDo一覧
@@ -612,6 +613,16 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
     () => tfId ? todos.filter(td => td.tf_id === tfId) : [],
     [tfId, todos],
   );
+
+  // TFをKR順・TF番号順にソートしてoptgroup用データを生成
+  const tfsByKr = useMemo(() => {
+    return krs.map(kr => ({
+      kr,
+      tfs: tfs
+        .filter(tf => tf.kr_id === kr.id)
+        .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0)),
+    })).filter(g => g.tfs.length > 0);
+  }, [krs, tfs]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -621,7 +632,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
       id: uuidv4(),
       name: name.trim(),
       project_id: projectId || null,
-      todo_id: todoId || null,
+      todo_ids: todoIds,
       assignee_member_id: assigneeId,
       status: "todo",
       priority: null,
@@ -739,36 +750,56 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
             }}
           >
             <option value="">タスクフォースを選択...</option>
-            {tfs.map(tf => (
-              <option key={tf.id} value={tf.id}>
-                {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
-              </option>
+            {tfsByKr.map(({ kr, tfs: krTfs }) => (
+              <optgroup key={kr.id} label={kr.title}>
+                {krTfs.map(tf => (
+                  <option key={tf.id} value={tf.id}>
+                    {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
         </div>
 
-        {/* ToDo（TF選択時のみ） */}
+        {/* ToDo（TF選択時のみ・複数選択可） */}
         {tfId && filteredTodos.length > 0 && (
           <div style={{ marginBottom: "10px" }}>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>ToDo（任意）</div>
-            <select
-              value={todoId}
-              onChange={e => setTodoId(e.target.value)}
-              style={{
-                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-              }}
-            >
-              <option value="">ToDoを選択...</option>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
+              ToDo（複数選択可）
+            </div>
+            <div style={{
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              padding: "6px 10px",
+              maxHeight: "120px",
+              overflowY: "auto",
+              background: "var(--color-bg-primary)",
+            }}>
               {filteredTodos.map(td => (
-                <option key={td.id} value={td.id}>
-                  {td.title.split("\n")[0].slice(0, 40)}
-                </option>
+                <label
+                  key={td.id}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: "7px",
+                    padding: "4px 0", cursor: "pointer",
+                    fontSize: "12px", color: "var(--color-text-primary)",
+                    borderBottom: "1px solid var(--color-border-primary)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={todoIds.includes(td.id)}
+                    onChange={e => setTodoIds(prev =>
+                      e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
+                    )}
+                    style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                  />
+                  <span style={{ lineHeight: 1.4 }}>
+                    {td.title.split("\n")[0].slice(0, 60)}{td.title.split("\n")[0].length > 60 ? "…" : ""}
+                  </span>
+                </label>
               ))}
-            </select>
+            </div>
           </div>
         )}
 

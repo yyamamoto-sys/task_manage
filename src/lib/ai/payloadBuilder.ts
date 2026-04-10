@@ -248,12 +248,12 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   // ===== ToDo系タスク（project_id=null）をToDo単位で仮想プロジェクトとして追加 =====
   // OKR境界ルール（CLAUDE.md Section 2）：TF情報は渡さない。ToDoのtitleのみpurposeとして使う。
   const activeTodos = (opts.todos ?? []).filter(td => !td.is_deleted);
-  const todoOnlyTasks = activeTasks.filter(t => t.project_id == null && t.todo_id != null);
+  const todoOnlyTasks = activeTasks.filter(t => t.project_id == null && (t.todo_ids ?? []).length > 0);
 
-  // todo_id ごとにタスクをグループ化
+  // 先頭のtodo_idでタスクをグループ化（仮想プロジェクト生成用）
   const tasksByTodo = new Map<string, Task[]>();
   for (const task of todoOnlyTasks) {
-    const tid = task.todo_id!;
+    const tid = task.todo_ids[0];
     if (!tasksByTodo.has(tid)) tasksByTodo.set(tid, []);
     tasksByTodo.get(tid)!.push(task);
   }

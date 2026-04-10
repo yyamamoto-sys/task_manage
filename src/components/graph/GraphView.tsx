@@ -126,7 +126,7 @@ export function GraphView({ onClose }: Props) {
     tasks.forEach(task => {
       nodes.push({ id: task.id, label: task.name, type: "task",
         x: cx + rand(300), y: cy + rand(300), vx: 0, vy: 0, pinned: false });
-      if (task.todo_id)    edges.push({ source: task.todo_id,    target: task.id });
+      (task.todo_ids ?? []).forEach(id => edges.push({ source: id, target: task.id }));
       if (task.project_id) edges.push({ source: task.project_id, target: task.id });
     });
 

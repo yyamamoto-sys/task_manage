@@ -157,7 +157,7 @@ export function DashboardView({ currentUser, projects }: Props) {
 
       // 経路A: TF → ToDo → Task
       const krTodoIds = new Set(todos.filter(td => krTfIds.has(td.tf_id)).map(td => td.id));
-      allTasks.filter(t => t.todo_id !== null && krTodoIds.has(t.todo_id!))
+      allTasks.filter(t => (t.todo_ids ?? []).some(id => krTodoIds.has(id)))
         .forEach(t => relatedTaskIds.add(t.id));
 
       // 経路B: TF → ProjectTaskForce → Task
@@ -181,7 +181,7 @@ export function DashboardView({ currentUser, projects }: Props) {
     tfs.map(tf => {
       const tfTodos = todos.filter(td => td.tf_id === tf.id);
       const todoItems = tfTodos.map(td => {
-        const tdTasks = allTasks.filter(t => t.todo_id === td.id);
+        const tdTasks = allTasks.filter(t => (t.todo_ids ?? []).includes(td.id));
         const done = tdTasks.filter(t => t.status === "done").length;
         const total = tdTasks.length;
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;

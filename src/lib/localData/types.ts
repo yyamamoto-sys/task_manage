@@ -122,7 +122,7 @@ export interface Task {
   id: string;
   name: string;
   project_id: string | null; // Projectへの紐づき（任意）
-  todo_id: string | null;    // ToDoへの紐づき（任意）。project_idと併用可
+  todo_ids: string[];        // ToDoへの紐づき（複数可）。project_idと併用可
   assignee_member_id: string;
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;

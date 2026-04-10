@@ -139,9 +139,10 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
       const todoMap = new Map<string,Task[]>();
       const noTodoTasks: Task[] = [];
       noPjTasks.forEach(t=>{
-        if (t.todo_id) {
-          if (!todoMap.has(t.todo_id)) todoMap.set(t.todo_id,[]);
-          todoMap.get(t.todo_id)!.push(t);
+        const primaryTodoId = (t.todo_ids ?? [])[0];
+        if (primaryTodoId) {
+          if (!todoMap.has(primaryTodoId)) todoMap.set(primaryTodoId,[]);
+          todoMap.get(primaryTodoId)!.push(t);
         } else {
           noTodoTasks.push(t);
         }
@@ -260,7 +261,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                   {group.tasks.map(task=>{
                     const m   = members.find(mb=>mb.id===task.assignee_member_id);
                     const pj  = projects.find(p=>p.id===task.project_id);
-                    const td  = task.todo_id ? todos.find(t=>t.id===task.todo_id) : undefined;
+                    const td  = (task.todo_ids ?? [])[0] ? todos.find(t=>t.id===task.todo_ids[0]) : undefined;
                     const isDone    = task.status==="done";
                     const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
                     return (
@@ -354,7 +355,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                     {group.tasks.map(task=>{
                       const m   = members.find(mb=>mb.id===task.assignee_member_id);
                       const pj  = projects.find(p=>p.id===task.project_id);
-                      const td  = task.todo_id ? todos.find(t=>t.id===task.todo_id) : undefined;
+                      const td  = (task.todo_ids ?? [])[0] ? todos.find(t=>t.id===task.todo_ids[0]) : undefined;
                       const isDone    = task.status==="done";
                       const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
                       const isSel     = selectedTaskId===task.id;
@@ -433,7 +434,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
       {selectedTask&&!isMobile&&(()=>{
         const m  = members.find(mb=>mb.id===selectedTask.assignee_member_id);
         const pj = projects.find(p=>p.id===selectedTask.project_id);
-        const sideTd = selectedTask.todo_id ? todos.find(t=>t.id===selectedTask.todo_id) : undefined;
+        const sideTd = (selectedTask.todo_ids ?? [])[0] ? todos.find(t=>t.id===selectedTask.todo_ids[0]) : undefined;
         const isOverdue = selectedTask.due_date&&selectedTask.due_date<t0&&selectedTask.status!=="done";
         return (
           <div style={{

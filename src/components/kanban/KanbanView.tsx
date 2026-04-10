@@ -63,7 +63,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
   const handleAddTask = useCallback((
     name: string, assigneeId: string, projectId: string | null, dueDate: string,
     priority: Task["priority"], estimatedHours: number | null,
-    tfIds: string[], extraProjectIds: string[], todoId: string | null,
+    tfIds: string[], extraProjectIds: string[], todoIds: string[],
   ) => {
     const now = new Date().toISOString();
     const taskId = uuidv4();
@@ -71,7 +71,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
       id: taskId,
       name,
       project_id: projectId,
-      todo_id: todoId,
+      todo_ids: todoIds,
       assignee_member_id: assigneeId,
       status: addToStatus,
       priority,
@@ -177,7 +177,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
                     key={task.id}
                     task={task}
                     project={projectForTask(task)}
-                    todo={task.todo_id ? todos.find(td => td.id === task.todo_id) : undefined}
+                    todo={task.todo_ids?.length ? todos.find(td => td.id === task.todo_ids[0]) : undefined}
                     member={memberForTask(task)}
                     onDragStart={() => handleDragStart(task.id)}
                     onStatusChange={handleStatusChange}
@@ -350,7 +350,7 @@ function AddTaskModal({
   taskForces: TaskForce[];
   todos: ToDo[];
   defaultProjectId: string;
-  onAdd: (name: string, assigneeId: string, projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[], todoId: string | null) => void;
+  onAdd: (name: string, assigneeId: string, projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[], todoIds: string[]) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
@@ -361,7 +361,7 @@ function AddTaskModal({
   const [estimatedHours, setEstimatedHours] = useState("");
   const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);
   const [extraProjectIds, setExtraProjectIds] = useState<string[]>([]);
-  const [todoId, setTodoId] = useState<string>("");
+  const [todoIds, setTodoIds] = useState<string[]>([]);
 
   return (
     <div
@@ -412,7 +412,7 @@ function AddTaskModal({
               maxLength={200}
               style={inputStyle}
               onKeyDown={e => {
-                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoId || null);
+                if (e.key === "Enter" && name.trim()) onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoIds);
               }}
             />
           </Field>
@@ -524,16 +524,32 @@ function AddTaskModal({
             </div>
           )}
 
-          {/* ToDo紐づけ */}
+          {/* ToDo紐づけ（複数選択可） */}
           {todos.length > 0 && (
             <div style={{ marginTop: "10px" }}>
-              <Field label="ToDo（任意）">
-                <select value={todoId} onChange={e => setTodoId(e.target.value)} style={inputStyle}>
-                  <option value="">なし</option>
+              <Field label="ToDo（複数選択可）">
+                <div style={{
+                  border: `1px solid ${inputStyle.border}`,
+                  borderRadius: inputStyle.borderRadius,
+                  padding: "6px 8px",
+                  maxHeight: "100px",
+                  overflowY: "auto",
+                  background: inputStyle.background,
+                }}>
                   {todos.map(td => (
-                    <option key={td.id} value={td.id}>{td.title.split("\n")[0].slice(0, 40)}</option>
+                    <label key={td.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                      <input
+                        type="checkbox"
+                        checked={todoIds.includes(td.id)}
+                        onChange={e => setTodoIds(prev =>
+                          e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
+                        )}
+                        style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                      />
+                      <span>{td.title.split("\n")[0].slice(0, 40)}</span>
+                    </label>
                   ))}
-                </select>
+                </div>
               </Field>
             </div>
           )}
@@ -551,7 +567,7 @@ function AddTaskModal({
             <button onClick={onClose} style={ghostBtnStyle}>キャンセル</button>
             <button
               disabled={!name.trim()}
-              onClick={() => name.trim() && onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoId || null)}
+              onClick={() => name.trim() && onAdd(name, assigneeId, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoIds)}
               style={{
                 ...primaryBtnStyle,
                 opacity: name.trim() ? 1 : 0.45,

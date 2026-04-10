@@ -93,7 +93,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     priority:            originalTask?.priority ?? "",
     assignee_member_id:  originalTask?.assignee_member_id ?? "",
     project_id:          originalTask?.project_id ?? null as string | null,
-    todo_id:             originalTask?.todo_id ?? null as string | null,
+    todo_ids:            originalTask?.todo_ids ?? [] as string[],
     due_date:            originalTask?.due_date ?? "",
     estimated_hours:     originalTask?.estimated_hours?.toString() ?? "",
     comment:             originalTask?.comment ?? "",
@@ -104,7 +104,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 
   const member     = members.find(m => m.id === originalTask.assignee_member_id);
   const project    = projects.find(p => p.id === originalTask.project_id);
-  const linkedTodo = todos.find(t => t.id === originalTask.todo_id);
+  const linkedTodos = todos.filter(t => (originalTask.todo_ids ?? []).includes(t.id));
+  const linkedTodo = linkedTodos[0] ?? null;
   const linkedTodoTf = linkedTodo ? taskForces.find(tf => tf.id === linkedTodo.tf_id) : null;
 
   // ToDo選択肢をTFごとにグループ化
@@ -126,7 +127,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       priority:           (form.priority as Task["priority"]) || null,
       assignee_member_id: form.assignee_member_id,
       project_id:         form.project_id || null,
-      todo_id:            form.todo_id || null,
+      todo_ids:           form.todo_ids,
       due_date:           form.due_date || null,
       estimated_hours:    isNaN(hours) ? null : hours,
       comment:            form.comment,
@@ -346,34 +347,62 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
           {/* ToDo */}
           <FieldSection label="ToDo（OKR系）">
             {editing ? (
-              <select
-                value={form.todo_id ?? ""}
-                onChange={e => setForm(f => ({ ...f, todo_id: e.target.value || null }))}
-                style={inputSm}
-              >
-                <option value="">なし</option>
-                {todosByTf.map(({ tf, items }) => (
-                  <optgroup key={tf.id} label={`${tf.tf_number ? tf.tf_number + " " : ""}${tf.name}`}>
-                    {items.map(todo => (
-                      <option key={todo.id} value={todo.id}>
-                        {todo.title.slice(0, 40)}{todo.title.length > 40 ? "…" : ""}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
-            ) : linkedTodo ? (
-              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                {linkedTodoTf && (
-                  <span style={{
-                    fontSize: "10px", padding: "1px 6px", borderRadius: "3px", marginRight: "6px",
-                    background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-                    border: "1px solid var(--color-brand-border)",
-                  }}>
-                    {linkedTodoTf.tf_number ? `${linkedTodoTf.tf_number} ` : ""}{linkedTodoTf.name}
-                  </span>
+              <div style={{
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                padding: "6px 10px",
+                maxHeight: "150px",
+                overflowY: "auto",
+                background: "var(--color-bg-primary)",
+              }}>
+                {todosByTf.length === 0 && (
+                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
                 )}
-                {linkedTodo.title.slice(0, 50)}{linkedTodo.title.length > 50 ? "…" : ""}
+                {todosByTf.map(({ tf, items }) => (
+                  <div key={tf.id}>
+                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", padding: "4px 0 2px", fontWeight: 600 }}>
+                      {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
+                    </div>
+                    {items.map(todo => (
+                      <label key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer" }}>
+                        <input
+                          type="checkbox"
+                          checked={form.todo_ids.includes(todo.id)}
+                          onChange={e => setForm(f => ({
+                            ...f,
+                            todo_ids: e.target.checked
+                              ? [...f.todo_ids, todo.id]
+                              : f.todo_ids.filter(id => id !== todo.id),
+                          }))}
+                          style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                        />
+                        <span style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+                          {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : linkedTodos.length > 0 ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                {linkedTodos.map(td => {
+                  const tf = taskForces.find(t => t.id === td.tf_id);
+                  return (
+                    <div key={td.id} style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                      {tf && (
+                        <span style={{
+                          fontSize: "10px", padding: "1px 6px", borderRadius: "3px", marginRight: "6px",
+                          background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+                          border: "1px solid var(--color-brand-border)",
+                        }}>
+                          {tf.tf_number ? `TF ${tf.tf_number} ` : ""}{tf.name}
+                        </span>
+                      )}
+                      {td.title.slice(0, 50)}{td.title.length > 50 ? "…" : ""}
+                    </div>
+                  );
+                })}
               </div>
             ) : (
               <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>

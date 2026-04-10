@@ -997,7 +997,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
       id: uuidv4(),
       name: taskForm.name.trim(),
       project_id: null,
-      todo_id: addingTaskForTodoId,
+      todo_ids: addingTaskForTodoId ? [addingTaskForTodoId] : [],
       assignee_member_id: taskForm.assignee_member_id,
       status: "todo",
       priority: null,
@@ -1056,7 +1056,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
                 <div style={{ display: "flex", gap: "4px", flexShrink: 0, alignItems: "center" }}>
                   {/* タスク数バッジ（クリックでタスク一覧toggle） */}
                   {(() => {
-                    const todoTasks = tasks.filter(t => t.todo_id === todo.id);
+                    const todoTasks = tasks.filter(t => (t.todo_ids ?? []).includes(todo.id));
                     const done = todoTasks.filter(t => t.status === "done").length;
                     return (
                       <button onClick={() => toggleTodoTasks(todo.id)} style={{
@@ -1077,7 +1077,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
 
               {/* タスク一覧（展開時） */}
               {expandedTodoId === todo.id && (() => {
-                const todoTasks = tasks.filter(t => t.todo_id === todo.id);
+                const todoTasks = tasks.filter(t => (t.todo_ids ?? []).includes(todo.id));
                 return (
                   <div style={{ borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)", padding: "8px 10px" }}>
                     {todoTasks.length > 0 ? (
