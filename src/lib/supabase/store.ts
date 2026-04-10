@@ -126,7 +126,13 @@ export async function softDeleteToDo(id: string, deletedBy: string) {
 // ===== Project =====
 
 export async function upsertProject(project: Project) {
-  const { error } = await supabase.from("projects").upsert(project);
+  // 空文字の日付は PostgreSQL date 型が拒否するため null に変換する
+  const row = {
+    ...project,
+    start_date: project.start_date || null,
+    end_date:   project.end_date   || null,
+  };
+  const { error } = await supabase.from("projects").upsert(row);
   if (error) throw error;
 }
 

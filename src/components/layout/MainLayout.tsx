@@ -14,6 +14,7 @@ import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
 import { v4 as uuidv4 } from "uuid";
 import { CustomSelect } from "../common/CustomSelect";
+import { ErrorBar } from "../common/ErrorBar";
 
 interface Props {
   currentUser: Member;
@@ -188,6 +189,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             );
           })}
         </div>
+        <ErrorBar />
       </div>
     );
   }
@@ -231,6 +233,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       />
       {mainContent}
       {isGraphOpen && <GraphView onClose={() => setIsGraphOpen(false)} />}
+      <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div style={{
         width: isConsultOpen ? "400px" : "0",

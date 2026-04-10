@@ -11,6 +11,7 @@ import {
   createContext, useContext, useState, useEffect,
   useCallback, useRef, type ReactNode,
 } from "react";
+import { reportError } from "../lib/errorReporter";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -173,6 +174,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertMember(member);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -186,6 +188,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteMember(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -198,6 +201,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertObjective(obj);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -215,6 +219,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertKeyResult(kr);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -228,6 +233,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteKeyResult(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -245,6 +251,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertTaskForce(tf);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -258,6 +265,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteTaskForce(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -275,6 +283,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertToDo(todo);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -288,6 +297,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteToDo(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -305,6 +315,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertProject(project);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -318,6 +329,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteProject(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -345,6 +357,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertTask(taskToSave);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -358,6 +371,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteTask(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -370,6 +384,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await insertProjectTaskForce(ptf);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -382,6 +397,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await deleteProjectTaskForce(projectId, tfId);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -399,6 +415,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertQuarterlyObjective(qObj);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -412,6 +429,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteQuarterlyObjective(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -424,6 +442,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await insertQuarterlyKrTaskForce(qKrTf);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -436,6 +455,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await deleteQuarterlyKrTaskForce(quarterlyObjId, krId, tfId);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -448,6 +468,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await insertTaskTaskForce(ttf);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -458,6 +479,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await deleteTaskTaskForce(taskId, tfId);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -475,6 +497,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await upsertMilestone(milestone);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -488,6 +511,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await softDeleteMilestone(id, deletedBy);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -500,6 +524,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await insertTaskProject(tp);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
@@ -510,6 +535,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     try {
       await deleteTaskProject(taskId, projectId);
     } catch (e) {
+      reportError(e);
       await load();
       throw e;
     }
