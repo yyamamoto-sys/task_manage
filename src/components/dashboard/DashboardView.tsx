@@ -247,7 +247,7 @@ export function DashboardView({ currentUser, projects }: Props) {
                   background: myOnly === val ? "var(--color-bg-primary)" : "transparent",
                   color: myOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
                   boxShadow: myOnly === val ? "var(--shadow-sm)" : "none",
-                  transition: "all 0.1s",
+                  transition: "background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)",
                 }}
               >
                 {label}
@@ -274,7 +274,7 @@ export function DashboardView({ currentUser, projects }: Props) {
                     ? pj.color_tag
                     : "var(--color-text-secondary)",
                   cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
-                  transition: "all 0.1s",
+                  transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
                 }}
               >
                 <span style={{
@@ -401,13 +401,16 @@ export function DashboardView({ currentUser, projects }: Props) {
           </div>
         </div>
 
-        {/* グリッド */}
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
-          gridTemplateRows: "auto",
-          gap: "14px",
-        }}>
+        {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
+        <div
+          key={`${myOnly ? "1" : "0"}-${selectedPjIds.join(",")}-${activeKrId ?? ""}`}
+          className="animate-fadeIn"
+          style={{
+            display: "grid",
+            gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+            gridTemplateRows: "auto",
+            gap: "14px",
+          }}>
 
           {/* ① OKRサマリー */}
           <Card title="KR 進捗サマリー" badge={`${krs.length}件`}>

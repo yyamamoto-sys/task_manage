@@ -55,36 +55,39 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       paddingBottom: isMobile ? "56px" : 0,
     }}>
-      {viewMode === "dashboard" && (
-        <DashboardView currentUser={currentUser} projects={projects} />
-      )}
-      {viewMode === "kanban" && (
-        <KanbanView
-          currentUser={currentUser}
-          selectedProject={selectedProject}
-          projects={projects}
-        />
-      )}
-      {viewMode === "gantt" && (
-        <GanttView
-          currentUser={currentUser}
-          selectedProject={selectedProject}
-          projects={projects}
-        />
-      )}
-      {viewMode === "admin" && (
-        <AdminView currentUser={currentUser} />
-      )}
-      {viewMode === "list" && (
-        <ListView
-          currentUser={currentUser}
-          selectedProject={selectedProject}
-          projects={projects}
-        />
-      )}
-      {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-        <ComingSoon view={viewMode} />
-      )}
+      {/* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */}
+      <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+        {viewMode === "dashboard" && (
+          <DashboardView currentUser={currentUser} projects={projects} />
+        )}
+        {viewMode === "kanban" && (
+          <KanbanView
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            projects={projects}
+          />
+        )}
+        {viewMode === "gantt" && (
+          <GanttView
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            projects={projects}
+          />
+        )}
+        {viewMode === "admin" && (
+          <AdminView currentUser={currentUser} />
+        )}
+        {viewMode === "list" && (
+          <ListView
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            projects={projects}
+          />
+        )}
+        {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+          <ComingSoon view={viewMode} />
+        )}
+      </div>
     </div>
   );
 
@@ -746,6 +749,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
       )}
       {/* オーバーレイ */}
       <div
+        className="animate-overlay"
         onClick={onClose}
         style={{
           position: "fixed", inset: 0, zIndex: 200,
@@ -753,15 +757,17 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
         }}
       />
       {/* モーダル本体 */}
-      <div style={{
-        position: "fixed", top: "50%", left: "50%", zIndex: 201,
-        transform: "translate(-50%, -50%)",
-        width: "min(480px, calc(100vw - 32px))",
-        background: "var(--color-bg-primary)",
-        borderRadius: "var(--radius-lg)",
-        boxShadow: "var(--shadow-lg)",
-        padding: "20px",
-      }}>
+      <div
+        className="animate-modalEnter"
+        style={{
+          position: "fixed", top: "50%", left: "50%", zIndex: 201,
+          transform: "translate(-50%, -50%)",
+          width: "min(480px, calc(100vw - 32px))",
+          background: "var(--color-bg-primary)",
+          borderRadius: "var(--radius-lg)",
+          boxShadow: "var(--shadow-lg)",
+          padding: "20px",
+        }}>
         <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "16px" }}>
           タスクを追加
         </div>
@@ -836,7 +842,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
 
         {/* タスクフォース（KR選択後に表示） */}
         {krId && (
-          <div style={{ marginBottom: "10px" }}>
+          <div className="animate-slideDown" style={{ marginBottom: "10px" }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
             <CustomSelect
               value={tfId}
@@ -855,7 +861,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
 
         {/* ToDo（TF選択時のみ・複数選択可） */}
         {tfId && (
-          <div style={{ marginBottom: "10px" }}>
+          <div className="animate-slideDown" style={{ marginBottom: "10px" }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
               ToDo（複数選択可）
             </div>
