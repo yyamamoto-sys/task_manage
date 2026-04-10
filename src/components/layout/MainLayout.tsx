@@ -622,10 +622,18 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
   const [projectId, setProjectId] = useState("");
+  const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");
   const [todoIds, setTodoIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // KRが変わったらTF・ToDo選択をリセット
+  const handleKrChange = (val: string) => {
+    setKrId(val);
+    setTfId("");
+    setTodoIds([]);
+  };
 
   // TFが変わったらToDo選択をリセット
   const handleTfChange = (val: string) => {
@@ -633,21 +641,27 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
     setTodoIds([]);
   };
 
+  // 現在QのKR一覧（TFが存在するKRのみ）
+  const filteredKrs = useMemo(() => {
+    return krs.filter(kr => {
+      const krTfs = tfs.filter(tf => tf.kr_id === kr.id && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)));
+      return krTfs.length > 0;
+    });
+  }, [krs, tfs, currentQTfIds]);
+
+  // 選択中KRのTF一覧（TF番号順）
+  const filteredTfs = useMemo(() => {
+    if (!krId) return [];
+    return tfs
+      .filter(tf => tf.kr_id === krId && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)))
+      .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0));
+  }, [krId, tfs, currentQTfIds]);
+
   // 選択中TFに属するToDo一覧
   const filteredTodos = useMemo(
     () => tfId ? todos.filter(td => td.tf_id === tfId) : [],
     [tfId, todos],
   );
-
-  // 現在QのTFのみに絞り込み、KR順・TF番号順でoptgroup用データを生成
-  const tfsByKr = useMemo(() => {
-    return krs.map(kr => ({
-      kr,
-      tfs: tfs
-        .filter(tf => tf.kr_id === kr.id && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)))
-        .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0)),
-    })).filter(g => g.tfs.length > 0);
-  }, [krs, tfs, currentQTfIds]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
@@ -760,12 +774,12 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
           </div>
         </div>
 
-        {/* タスクフォース */}
+        {/* KR選択 */}
         <div style={{ marginBottom: "10px" }}>
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>KR（任意）</div>
           <select
-            value={tfId}
-            onChange={e => handleTfChange(e.target.value)}
+            value={krId}
+            onChange={e => handleKrChange(e.target.value)}
             style={{
               width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
               border: "1px solid var(--color-border-primary)",
@@ -774,18 +788,37 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
               color: "var(--color-text-primary)",
             }}
           >
-            <option value="">タスクフォースを選択...</option>
-            {tfsByKr.map(({ kr, tfs: krTfs }) => (
-              <optgroup key={kr.id} label={kr.title}>
-                {krTfs.map(tf => (
-                  <option key={tf.id} value={tf.id}>
-                    {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
-                  </option>
-                ))}
-              </optgroup>
+            <option value="">KRを選択...</option>
+            {filteredKrs.map(kr => (
+              <option key={kr.id} value={kr.id}>{kr.title}</option>
             ))}
           </select>
         </div>
+
+        {/* タスクフォース（KR選択後に表示） */}
+        {krId && (
+          <div style={{ marginBottom: "10px" }}>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
+            <select
+              value={tfId}
+              onChange={e => handleTfChange(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
+            >
+              <option value="">タスクフォースを選択...</option>
+              {filteredTfs.map(tf => (
+                <option key={tf.id} value={tf.id}>
+                  {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* ToDo（TF選択時のみ・複数選択可） */}
         {tfId && (
@@ -832,7 +865,10 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
                       style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
                     />
                     <span style={{ lineHeight: 1.4 }}>
-                      {td.title.split("\n")[0].slice(0, 60)}{td.title.split("\n")[0].length > 60 ? "…" : ""}
+                      {(() => {
+                        const label = td.name || td.title.split("\n")[0];
+                        return label.length > 60 ? label.slice(0, 60) + "…" : label;
+                      })()}
                     </span>
                   </label>
                 ))}
