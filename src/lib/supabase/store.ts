@@ -111,7 +111,10 @@ export async function softDeleteTaskForce(id: string, deletedBy: string) {
 // ===== ToDo =====
 
 export async function upsertToDo(todo: ToDo) {
-  const { error } = await supabase.from("todos").upsert(todo);
+  // TODO: todos テーブルに name 列を追加するマイグレーション後にこの除外を削除する
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { name: _name, ...row } = todo;
+  const { error } = await supabase.from("todos").upsert(row);
   if (error) throw error;
 }
 
