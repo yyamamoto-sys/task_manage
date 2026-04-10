@@ -581,6 +581,9 @@ function AIIcon() {
   );
 }
 
+/** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
+const TODO_OTHER_ID = "__other__";
+
 // ===== グローバルタスク追加モーダル =====
 
 function QuickAddTaskModal({ currentUser, projects, onClose }: {
@@ -673,7 +676,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
       id: uuidv4(),
       name: name.trim(),
       project_id: projectId || null,
-      todo_ids: todoIds,
+      todo_ids: todoIds.filter(id => id !== TODO_OTHER_ID),
       assignee_member_id: assigneeId,
       status: "todo",
       priority: null,
@@ -873,57 +876,60 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
               ToDo（複数選択可）
             </div>
-            {filteredTodos.length === 0 ? (
-              <div style={{
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                padding: "8px 12px",
-                fontSize: "12px",
-                color: "var(--color-text-tertiary)",
-                background: "var(--color-bg-secondary)",
+            <div style={{
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              padding: "6px 10px",
+              maxHeight: "140px",
+              overflowY: "auto",
+              background: "var(--color-bg-primary)",
+            }}>
+              {filteredTodos.map((td, i) => (
+                <label
+                  key={td.id}
+                  onMouseEnter={e => { setTooltipTodo(td); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+                  onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                  onMouseLeave={() => setTooltipTodo(null)}
+                  style={{
+                    display: "flex", alignItems: "flex-start", gap: "7px",
+                    padding: "4px 0", cursor: "pointer",
+                    fontSize: "12px", color: "var(--color-text-primary)",
+                    borderBottom: "1px solid var(--color-border-primary)",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={todoIds.includes(td.id)}
+                    onChange={e => setTodoIds(prev =>
+                      e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
+                    )}
+                    style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                  />
+                  <span style={{ lineHeight: 1.4 }}>
+                    {(() => {
+                      const label = td.name || td.title.split("\n")[0];
+                      return label.length > 60 ? label.slice(0, 60) + "…" : label;
+                    })()}
+                  </span>
+                </label>
+              ))}
+              {/* その他（常に末尾に表示） */}
+              <label style={{
+                display: "flex", alignItems: "center", gap: "7px",
+                padding: "4px 0", cursor: "pointer",
+                fontSize: "12px", color: "var(--color-text-secondary)",
               }}>
-                このTFにはToDoがありません
-              </div>
-            ) : (
-              <div style={{
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                padding: "6px 10px",
-                maxHeight: "120px",
-                overflowY: "auto",
-                background: "var(--color-bg-primary)",
-              }}>
-                {filteredTodos.map((td, i) => (
-                  <label
-                    key={td.id}
-                    onMouseEnter={e => { setTooltipTodo(td); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
-                    onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
-                    onMouseLeave={() => setTooltipTodo(null)}
-                    style={{
-                      display: "flex", alignItems: "flex-start", gap: "7px",
-                      padding: "4px 0", cursor: "pointer",
-                      fontSize: "12px", color: "var(--color-text-primary)",
-                      borderBottom: i < filteredTodos.length - 1 ? "1px solid var(--color-border-primary)" : "none",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={todoIds.includes(td.id)}
-                      onChange={e => setTodoIds(prev =>
-                        e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
-                      )}
-                      style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                    />
-                    <span style={{ lineHeight: 1.4 }}>
-                      {(() => {
-                        const label = td.name || td.title.split("\n")[0];
-                        return label.length > 60 ? label.slice(0, 60) + "…" : label;
-                      })()}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            )}
+                <input
+                  type="checkbox"
+                  checked={todoIds.includes(TODO_OTHER_ID)}
+                  onChange={e => setTodoIds(prev =>
+                    e.target.checked ? [...prev, TODO_OTHER_ID] : prev.filter(id => id !== TODO_OTHER_ID)
+                  )}
+                  style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                />
+                <span>その他</span>
+              </label>
+            </div>
           </div>
         )}
 
