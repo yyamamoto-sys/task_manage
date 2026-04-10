@@ -5,8 +5,15 @@
 // - 開閉アニメーション（.animate-dropdown）
 // - chevron アイコンが回転
 // - 選択中項目はブランドカラーでハイライト
+//
+// 【設計メモ】
+// ドロップダウンパネルは ReactDOM.createPortal で document.body 直下に描画する。
+// モーダルの transform がスタッキングコンテキストを作るため、absolute 配置だと
+// 後続要素に隠れてしまう問題を根本解決するため。
+// パネル位置はトリガーの getBoundingClientRect() を使って fixed で算出する。
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { createPortal } from "react-dom";
 
 export interface SelectOption {
   value: string;
@@ -26,13 +33,39 @@ export function CustomSelect({
   value, onChange, options, placeholder = "選択...", disabled, style,
 }: Props) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
-  // クリック外で閉じる
+  // トリガー位置からパネルの fixed 座標を計算
+  const calcPanelStyle = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }, []);
+
+  const handleOpen = () => {
+    if (disabled) return;
+    if (!open) calcPanelStyle();
+    setOpen(v => !v);
+  };
+
+  // クリック外で閉じる（トリガーとパネル両方を除外）
   useEffect(() => {
     if (!open) return;
     const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target as Node;
+      if (
+        triggerRef.current?.contains(target) ||
+        panelRef.current?.contains(target)
+      ) return;
+      setOpen(false);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -46,15 +79,28 @@ export function CustomSelect({
     return () => document.removeEventListener("keydown", handler);
   }, [open]);
 
+  // スクロール・リサイズ時に閉じる（位置ズレ防止）
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
   const selected = options.find(o => o.value === value);
 
   return (
-    <div ref={ref} style={{ position: "relative", ...style }}>
+    <div style={{ position: "relative", ...style }}>
       {/* トリガーボタン */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setOpen(v => !v)}
+        onClick={handleOpen}
         style={{
           width: "100%",
           display: "flex",
@@ -71,7 +117,6 @@ export function CustomSelect({
           cursor: disabled ? "not-allowed" : "pointer",
           boxShadow: open ? "0 0 0 2px var(--color-brand-light)" : "none",
           transition: "border-color var(--transition-fast), box-shadow var(--transition-fast)",
-          // グローバルの button::after ホバーオーバーレイを無効化（独自スタイル管理）
         }}
       >
         <span style={{
@@ -83,16 +128,13 @@ export function CustomSelect({
         <ChevronIcon open={open} />
       </button>
 
-      {/* ドロップダウンパネル */}
-      {open && (
+      {/* ドロップダウンパネル — Portal で body 直下に描画してスタッキングコンテキスト問題を回避 */}
+      {open && createPortal(
         <div
+          ref={panelRef}
           className="animate-dropdown"
           style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            right: 0,
-            zIndex: 600,
+            ...panelStyle,
             background: "var(--color-bg-primary)",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
@@ -128,7 +170,8 @@ export function CustomSelect({
               </button>
             );
           })}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
