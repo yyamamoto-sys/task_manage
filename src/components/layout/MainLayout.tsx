@@ -13,6 +13,7 @@ import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
 import { v4 as uuidv4 } from "uuid";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   currentUser: Member;
@@ -790,20 +791,15 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
           {/* 担当者 */}
           <div>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
-            <select
+            <CustomSelect
               value={assigneeId}
-              onChange={e => setAssigneeId(e.target.value)}
-              style={{
-                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-              }}
-            >
-              <option value="">（なし）</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-            </select>
+              onChange={setAssigneeId}
+              options={[
+                { value: "", label: "（なし）" },
+                ...members.map(m => ({ value: m.id, label: m.display_name })),
+              ]}
+              placeholder="担当者を選択..."
+            />
           </div>
 
           {/* 期日 */}
@@ -827,46 +823,33 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
         {/* KR選択 */}
         <div style={{ marginBottom: "10px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>KR（任意）</div>
-          <select
+          <CustomSelect
             value={krId}
-            onChange={e => handleKrChange(e.target.value)}
-            style={{
-              width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-primary)",
-              color: "var(--color-text-primary)",
-            }}
-          >
-            <option value="">KRを選択...</option>
-            {filteredKrs.map(kr => (
-              <option key={kr.id} value={kr.id}>{kr.title}</option>
-            ))}
-          </select>
+            onChange={handleKrChange}
+            options={[
+              { value: "", label: "KRを選択..." },
+              ...filteredKrs.map(kr => ({ value: kr.id, label: kr.title })),
+            ]}
+            placeholder="KRを選択..."
+          />
         </div>
 
         {/* タスクフォース（KR選択後に表示） */}
         {krId && (
           <div style={{ marginBottom: "10px" }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
-            <select
+            <CustomSelect
               value={tfId}
-              onChange={e => handleTfChange(e.target.value)}
-              style={{
-                width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-              }}
-            >
-              <option value="">タスクフォースを選択...</option>
-              {filteredTfs.map(tf => (
-                <option key={tf.id} value={tf.id}>
-                  {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
-                </option>
-              ))}
-            </select>
+              onChange={handleTfChange}
+              options={[
+                { value: "", label: "タスクフォースを選択..." },
+                ...filteredTfs.map(tf => ({
+                  value: tf.id,
+                  label: `${tf.tf_number ? `TF ${tf.tf_number}` : ""}${tf.tf_number && tf.name ? " — " : ""}${tf.name}`,
+                })),
+              ]}
+              placeholder="タスクフォースを選択..."
+            />
           </div>
         )}
 
@@ -884,7 +867,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
               overflowY: "auto",
               background: "var(--color-bg-primary)",
             }}>
-              {filteredTodos.map((td, i) => (
+              {filteredTodos.map((td) => (
                 <label
                   key={td.id}
                   onMouseEnter={e => { setTooltipTodo(td); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
@@ -936,20 +919,15 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
         {/* プロジェクト */}
         <div style={{ marginBottom: "16px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>プロジェクト（任意）</div>
-          <select
+          <CustomSelect
             value={projectId}
-            onChange={e => setProjectId(e.target.value)}
-            style={{
-              width: "100%", padding: "7px 28px 7px 10px", fontSize: "12px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-primary)",
-              color: "var(--color-text-primary)",
-            }}
-          >
-            <option value="">プロジェクトを選択...</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+            onChange={setProjectId}
+            options={[
+              { value: "", label: "プロジェクトを選択..." },
+              ...projects.map(p => ({ value: p.id, label: p.name })),
+            ]}
+            placeholder="プロジェクトを選択..."
+          />
         </div>
 
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
