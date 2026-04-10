@@ -120,6 +120,55 @@
   --avatar-7-bg: #162a1f; --avatar-7-text: #bbf7d0;
 }
 
+/* ===== インタラクション トークン ===== */
+:root {
+  /* ホバー・アクティブ時の背景オーバーレイ */
+  --color-hover-bg:        rgba(0,0,0,0.04);
+  --color-active-bg:       rgba(0,0,0,0.08);
+  --color-hover-brand-bg:  rgba(127,119,221,0.08);
+  --color-active-brand-bg: rgba(127,119,221,0.15);
+
+  /* ボタン：プライマリ */
+  --btn-primary-bg:        #7F77DD;
+  --btn-primary-bg-hover:  #6d65cc;
+  --btn-primary-bg-active: #5e58b8;
+  --btn-primary-text:      #ffffff;
+
+  /* ボタン：ゴースト（枠線あり） */
+  --btn-ghost-bg:          transparent;
+  --btn-ghost-bg-hover:    var(--color-hover-bg);
+  --btn-ghost-bg-active:   var(--color-active-bg);
+  --btn-ghost-border:      var(--color-border-secondary);
+
+  /* ボタン：デンジャー */
+  --btn-danger-bg:         transparent;
+  --btn-danger-bg-hover:   #fef2f2;
+  --btn-danger-bg-active:  #fee2e2;
+  --btn-danger-text:       #b91c1c;
+  --btn-danger-border:     #fca5a5;
+
+  /* トランジション（統一） */
+  --transition-fast: 0.12s ease;
+  --transition-base: 0.18s ease;
+}
+
+[data-theme="dark"] {
+  --color-hover-bg:        rgba(255,255,255,0.06);
+  --color-active-bg:       rgba(255,255,255,0.10);
+  --color-hover-brand-bg:  rgba(139,132,227,0.12);
+  --color-active-brand-bg: rgba(139,132,227,0.22);
+
+  --btn-primary-bg:        #8b84e3;
+  --btn-primary-bg-hover:  #9d97ea;
+  --btn-primary-bg-active: #7068cc;
+
+  --btn-ghost-bg-hover:    rgba(255,255,255,0.07);
+  --btn-ghost-bg-active:   rgba(255,255,255,0.12);
+
+  --btn-danger-bg-hover:   rgba(185,28,28,0.15);
+  --btn-danger-bg-active:  rgba(185,28,28,0.25);
+}
+
 /* ===== リセット ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html, body, #root { height: 100%; }
@@ -139,7 +188,14 @@ body {
   body:lang(ja) { font-weight: 500; }
   b, strong, button, [style*="fontWeight"] { font-weight: 700; }
 }
-button { font-family: inherit; cursor: pointer; border-radius: var(--radius-md); }
+button {
+  font-family: inherit; cursor: pointer;
+  border-radius: var(--radius-md);
+  transition: background var(--transition-fast), color var(--transition-fast),
+              border-color var(--transition-fast), box-shadow var(--transition-fast),
+              opacity var(--transition-fast);
+}
+button:disabled { cursor: not-allowed; opacity: 0.45; }
 input, textarea, select { font-family: inherit; font-size: max(16px, 1em); }
 a { color: inherit; text-decoration: none; }
 
@@ -166,10 +222,20 @@ textarea {
   outline: none;
   transition: border-color 0.15s;
 }
+input[type="text"]:hover:not(:focus),
+input[type="email"]:hover:not(:focus),
+input[type="date"]:hover:not(:focus),
+input[type="number"]:hover:not(:focus),
+input[type="search"]:hover:not(:focus),
+select:hover:not(:focus),
+textarea:hover:not(:focus) {
+  border-color: var(--color-border-secondary);
+}
 input[type="text"]:focus,
 input[type="email"]:focus,
 input[type="date"]:focus,
 input[type="number"]:focus,
+input[type="search"]:focus,
 select:focus,
 textarea:focus {
   border-color: var(--color-brand);
@@ -193,6 +259,135 @@ select {
 .items-center { align-items: center; }
 .gap-1 { gap: 4px; }
 .gap-2 { gap: 8px; }
+
+/* ===== グローバル ボタン ホバー（inline-style ボタンへのフォールバック） =====
+   ::after オーバーレイ方式 → background の inline style を上書きせずに効果を追加できる
+   .btn-* クラスを使うとこのオーバーレイはOFFになり、明示的な color 変更に切り替わる */
+button:not(:disabled) { position: relative; overflow: hidden; }
+button:not(:disabled)::after {
+  content: ""; position: absolute; inset: 0;
+  background: transparent;
+  transition: background var(--transition-fast);
+  border-radius: inherit;
+  pointer-events: none;
+}
+button:not(:disabled):hover::after  { background: rgba(0,0,0,0.06); }
+button:not(:disabled):active::after { background: rgba(0,0,0,0.12); }
+[data-theme="dark"] button:not(:disabled):hover::after  { background: rgba(255,255,255,0.08); }
+[data-theme="dark"] button:not(:disabled):active::after { background: rgba(255,255,255,0.14); }
+/* .btn-* は background を直接変えるのでオーバーレイ不要 */
+.btn::after { display: none; }
+
+/* ===== ボタン ユーティリティ ===== */
+/* 使い方: <button className="btn btn-primary">保存</button> */
+
+/* 共通ベース */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 16px; font-size: 12px; font-weight: 600;
+  border-radius: var(--radius-md); border: 1px solid transparent;
+  cursor: pointer; white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast),
+              border-color var(--transition-fast), box-shadow var(--transition-fast),
+              transform var(--transition-fast);
+  user-select: none;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+/* プライマリ（ブランド塗り） */
+.btn-primary {
+  background: var(--btn-primary-bg);
+  color: var(--btn-primary-text);
+  border-color: transparent;
+}
+.btn-primary:hover:not(:disabled) { background: var(--btn-primary-bg-hover); }
+.btn-primary:active:not(:disabled) { background: var(--btn-primary-bg-active); }
+
+/* ゴースト（枠線あり・背景なし） */
+.btn-ghost {
+  background: var(--btn-ghost-bg);
+  color: var(--color-text-secondary);
+  border-color: var(--btn-ghost-border);
+}
+.btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-bg-hover); color: var(--color-text-primary); border-color: var(--color-border-primary); }
+.btn-ghost:active:not(:disabled) { background: var(--btn-ghost-bg-active); }
+
+/* デンジャー */
+.btn-danger {
+  background: var(--btn-danger-bg);
+  color: var(--btn-danger-text);
+  border-color: var(--btn-danger-border);
+}
+.btn-danger:hover:not(:disabled) { background: var(--btn-danger-bg-hover); }
+.btn-danger:active:not(:disabled) { background: var(--btn-danger-bg-active); }
+
+/* テキスト（枠線なし・背景なし） */
+.btn-text {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border-color: transparent;
+  padding: 5px 10px;
+}
+.btn-text:hover:not(:disabled) { background: var(--color-hover-bg); color: var(--color-text-primary); }
+.btn-text:active:not(:disabled) { background: var(--color-active-bg); }
+
+/* アイコンボタン（正方形） */
+.btn-icon {
+  padding: 6px; width: 32px; height: 32px;
+  background: transparent; border-color: transparent;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-md);
+}
+.btn-icon:hover:not(:disabled) { background: var(--color-hover-bg); color: var(--color-text-primary); }
+.btn-icon:active:not(:disabled) { background: var(--color-active-bg); }
+
+/* ===== インタラクティブ リスト行 / カード ===== */
+/* クリッカブルな行・カードに付けるクラス */
+.hoverable {
+  transition: background var(--transition-fast);
+  cursor: pointer;
+}
+.hoverable:hover { background: var(--color-hover-bg); }
+.hoverable:active { background: var(--color-active-bg); }
+
+/* カードタイプ（影が浮く） */
+.card-hoverable {
+  transition: box-shadow var(--transition-base), transform var(--transition-base),
+              background var(--transition-fast);
+  cursor: pointer;
+}
+.card-hoverable:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+.card-hoverable:active {
+  box-shadow: var(--shadow-sm);
+  transform: translateY(0);
+}
+
+/* ===== ナビゲーション タブ・メニュー項目 ===== */
+.nav-item {
+  transition: background var(--transition-fast), color var(--transition-fast);
+  cursor: pointer; border-radius: var(--radius-md);
+}
+.nav-item:hover { background: var(--color-hover-bg); }
+.nav-item:active { background: var(--color-active-bg); }
+.nav-item.active {
+  background: var(--color-hover-brand-bg);
+  color: var(--color-brand);
+}
+
+/* ===== チェックボックス付きラベル ===== */
+label.check-row {
+  transition: background var(--transition-fast);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+label.check-row:hover { background: var(--color-hover-bg); }
+
+/* ===== select のホバーカーソル補強 ===== */
+select { transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
 
 /* ===== スクロールバー（細め） ===== */
 /* W3C 標準（Firefox / Edge 標準モード対応） */

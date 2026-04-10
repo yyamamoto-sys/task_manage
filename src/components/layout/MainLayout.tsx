@@ -947,27 +947,11 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
         </div>
 
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button className="btn btn-ghost" onClick={onClose}>キャンセル</button>
           <button
-            onClick={onClose}
-            style={{
-              padding: "7px 16px", fontSize: "12px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              background: "transparent",
-              color: "var(--color-text-secondary)", cursor: "pointer",
-            }}
-          >キャンセル</button>
-          <button
+            className="btn btn-primary"
             onClick={handleSave}
             disabled={!name.trim() || saving}
-            style={{
-              padding: "7px 20px", fontSize: "12px", fontWeight: "600",
-              border: "none",
-              borderRadius: "var(--radius-md)",
-              background: name.trim() ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-              color: name.trim() ? "#fff" : "var(--color-text-tertiary)",
-              cursor: name.trim() ? "pointer" : "not-allowed",
-            }}
           >
             {saving ? "追加中..." : "追加"}
           </button>
