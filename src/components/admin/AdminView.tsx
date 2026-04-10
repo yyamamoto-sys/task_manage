@@ -375,12 +375,6 @@ function TFSection({ currentUser }: { currentUser: Member }) {
     [rawQObjs, selectedQuarter, ctxObj]
   );
 
-  // クォーター目標タイトル
-  const [qObjTitle, setQObjTitle] = useState(qObj?.title ?? "");
-  const [qObjSaved, setQObjSaved] = useState(false);
-  useEffect(() => { setQObjTitle(qObj?.title ?? ""); }, [qObj]);
-  const flashQObjSaved = () => { setQObjSaved(true); setTimeout(() => setQObjSaved(false), 1500); };
-
   // TF編集フォーム（既存TF）
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
@@ -408,21 +402,9 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   };
   const ensureQObj = () => ensureQObjForQuarter(selectedQuarter);
 
-  const saveQObjTitle = async () => {
-    try {
-      const now = new Date().toISOString();
-      const target = qObj ?? await ensureQObj();
-      await saveQuarterlyObjective({ ...target, title: qObjTitle, updated_at: now, updated_by: currentUser.id });
-      flashQObjSaved();
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
-  };
-
   const deleteQObj = async () => {
     if (!qObj) return;
-    if (!await confirmDialog(`${selectedQuarter}のクォーター目標を削除しますか？TF割り当ても解除されます。`)) return;
+    if (!await confirmDialog(`${selectedQuarter}のTF割り当てを解除しますか？`)) return;
     try {
       await deleteQuarterlyObjective(qObj.id, currentUser.id);
     } catch (e) {
@@ -545,38 +527,6 @@ function TFSection({ currentUser }: { currentUser: Member }) {
           先に「Objective / KR」タブで通期Objectiveを保存してください
         </div>
       )}
-
-      {/* クォーター目標タイトル */}
-      <div style={{ marginBottom: "20px", padding: "12px 14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: "8px" }}>
-          <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-tertiary)", flex: 1 }}>
-            {selectedQuarter} クォーター目標（任意）
-          </div>
-          {qObj && (
-            <button onClick={deleteQObj} style={{ background: "none", border: "none", cursor: "pointer", fontSize: "10px", color: "var(--color-text-tertiary)", padding: "0 4px" }}>
-              ✕ 削除
-            </button>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "8px" }}>
-          <input
-            value={qObjTitle}
-            onChange={e => setQObjTitle(e.target.value)}
-            placeholder={`${selectedQuarter}の目標タイトルを入力（任意）`}
-            maxLength={200}
-            style={{ ...inputStyle, flex: 1 }}
-            disabled={!ctxObj?.id}
-            onKeyDown={e => { if (e.key === "Enter") { void saveQObjTitle(); } }}
-          />
-          <button
-            onClick={() => { void saveQObjTitle(); }}
-            disabled={!ctxObj?.id}
-            style={{ ...primaryBtnStyle, background: qObjSaved ? "var(--color-bg-success)" : undefined, color: qObjSaved ? "var(--color-text-success)" : undefined, minWidth: "52px" }}
-          >
-            {qObjSaved ? "✓" : "保存"}
-          </button>
-        </div>
-      </div>
 
       {/* KR なし */}
       {krs.length === 0 && ctxObj?.id && (

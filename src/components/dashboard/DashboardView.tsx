@@ -187,7 +187,7 @@ export function DashboardView({ currentUser, projects }: Props) {
         const pct = total > 0 ? Math.round((done / total) * 100) : 0;
         return { todo: td, done, total, pct };
       });
-      return { tf, todoItems };
+      return { tf, todoItems: todoItems.filter(t => t.total > 0) };
     }).filter(item => item.todoItems.length > 0),
     [tfs, todos, allTasks]
   );
