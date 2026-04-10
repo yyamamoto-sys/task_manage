@@ -635,7 +635,7 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [tooltipTodo, setTooltipTodo] = useState<ToDo | null>(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, left: 0, y: 0 });
 
   // KRが変わったらTF・ToDo選択をリセット
   const handleKrChange = (val: string) => {
@@ -700,13 +700,14 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
     }
   };
 
-  // ToDoホバー時のツールチップ表示位置を計算（画面端で折り返す）
+  // ToDoホバー時のツールチップ表示位置を計算
+  // tooltipPos は hovered ラベル要素の getBoundingClientRect() から取得した { right, left, top }
   const TOOLTIP_W = 280;
-  const TOOLTIP_OFFSET = 16;
-  const tooltipLeft = tooltipPos.x + TOOLTIP_OFFSET + TOOLTIP_W > window.innerWidth
-    ? tooltipPos.x - TOOLTIP_W - TOOLTIP_OFFSET
-    : tooltipPos.x + TOOLTIP_OFFSET;
-  const tooltipTop = Math.min(tooltipPos.y - 8, window.innerHeight - 200);
+  const TOOLTIP_GAP = 10;
+  const tooltipLeft = tooltipPos.x + TOOLTIP_GAP + TOOLTIP_W <= window.innerWidth
+    ? tooltipPos.x + TOOLTIP_GAP          // ラベル右側に余裕あり → 右に出す
+    : tooltipPos.left - TOOLTIP_W - TOOLTIP_GAP; // なければ左に出す
+  const tooltipTop = Math.min(tooltipPos.y, window.innerHeight - 180);
 
   return (
     <>
@@ -727,11 +728,6 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
             pointerEvents: "none",
           }}
         >
-          {tooltipTodo.name && (
-            <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "6px" }}>
-              {tooltipTodo.name}
-            </div>
-          )}
           <div style={{ fontSize: "12px", color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5, marginBottom: tooltipTodo.memo ? "6px" : 0 }}>
             {tooltipTodo.title}
           </div>
@@ -876,8 +872,12 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
               {filteredTodos.map((td) => (
                 <label
                   key={td.id}
-                  onMouseEnter={e => { setTooltipTodo(td); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
-                  onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                  onMouseEnter={e => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    setTooltipTodo(td);
+                    // x: ラベルの右端、left: ラベルの左端（左表示フォールバック用）、y: ラベルの上端
+                    setTooltipPos({ x: rect.right, left: rect.left, y: rect.top });
+                  }}
                   onMouseLeave={() => setTooltipTodo(null)}
                   style={{
                     display: "flex", alignItems: "flex-start", gap: "7px",
