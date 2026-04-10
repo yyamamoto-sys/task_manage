@@ -788,43 +788,56 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
         </div>
 
         {/* ToDo（TF選択時のみ・複数選択可） */}
-        {tfId && filteredTodos.length > 0 && (
+        {tfId && (
           <div style={{ marginBottom: "10px" }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
               ToDo（複数選択可）
             </div>
-            <div style={{
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              padding: "6px 10px",
-              maxHeight: "120px",
-              overflowY: "auto",
-              background: "var(--color-bg-primary)",
-            }}>
-              {filteredTodos.map(td => (
-                <label
-                  key={td.id}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: "7px",
-                    padding: "4px 0", cursor: "pointer",
-                    fontSize: "12px", color: "var(--color-text-primary)",
-                    borderBottom: "1px solid var(--color-border-primary)",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={todoIds.includes(td.id)}
-                    onChange={e => setTodoIds(prev =>
-                      e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
-                    )}
-                    style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                  />
-                  <span style={{ lineHeight: 1.4 }}>
-                    {td.title.split("\n")[0].slice(0, 60)}{td.title.split("\n")[0].length > 60 ? "…" : ""}
-                  </span>
-                </label>
-              ))}
-            </div>
+            {filteredTodos.length === 0 ? (
+              <div style={{
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                padding: "8px 12px",
+                fontSize: "12px",
+                color: "var(--color-text-tertiary)",
+                background: "var(--color-bg-secondary)",
+              }}>
+                このTFにはToDoがありません
+              </div>
+            ) : (
+              <div style={{
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                padding: "6px 10px",
+                maxHeight: "120px",
+                overflowY: "auto",
+                background: "var(--color-bg-primary)",
+              }}>
+                {filteredTodos.map((td, i) => (
+                  <label
+                    key={td.id}
+                    style={{
+                      display: "flex", alignItems: "flex-start", gap: "7px",
+                      padding: "4px 0", cursor: "pointer",
+                      fontSize: "12px", color: "var(--color-text-primary)",
+                      borderBottom: i < filteredTodos.length - 1 ? "1px solid var(--color-border-primary)" : "none",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={todoIds.includes(td.id)}
+                      onChange={e => setTodoIds(prev =>
+                        e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
+                      )}
+                      style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                    />
+                    <span style={{ lineHeight: 1.4 }}>
+                      {td.title.split("\n")[0].slice(0, 60)}{td.title.split("\n")[0].length > 60 ? "…" : ""}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
