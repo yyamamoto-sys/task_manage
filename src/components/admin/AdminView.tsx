@@ -36,7 +36,16 @@ export function AdminView({ currentUser }: Props) {
   );
   const zoomLevels = [0.85, 1, 1.15] as const;
 
-  const changeTab = (t: AdminTab) => {
+  const [isDirty, setIsDirty] = useState(false);
+
+  const changeTab = async (t: AdminTab) => {
+    if (isDirty && t !== tab) {
+      const ok = await confirmDialog(
+        "保存されていない変更があります。\nタブを切り替えると変更は失われます。このまま移動しますか？"
+      );
+      if (!ok) return;
+    }
+    setIsDirty(false);
     setTab(t);
     localStorage.setItem(ADMIN_TAB_KEY, t);
   };
@@ -100,7 +109,7 @@ export function AdminView({ currentUser }: Props) {
           {tabs.map(t => (
             <button
               key={t.key}
-              onClick={() => changeTab(t.key)}
+              onClick={() => { void changeTab(t.key); }}
               style={{
                 padding: "6px 14px", fontSize: "12px",
                 fontWeight: tab === t.key ? "500" : "400",
@@ -126,11 +135,11 @@ export function AdminView({ currentUser }: Props) {
         zoom: zoomLevels[fontSizeLevel],
         display: "flex", flexDirection: "column", minHeight: 0,
       }}>
-        {tab === "tasks"    && <TasksSection currentUser={currentUser} />}
-        {tab === "okr"      && <OKRSection currentUser={currentUser} />}
-        {tab === "tf"       && <TFSection currentUser={currentUser} />}
-        {tab === "pj"       && <PJSection currentUser={currentUser} />}
-        {tab === "members"  && <MembersSection currentUser={currentUser} />}
+        {tab === "tasks"    && <TasksSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "ai_usage" && <AIUsageSection />}
       </div>
     </div>
@@ -141,7 +150,7 @@ export function AdminView({ currentUser }: Props) {
 // セクション①：Objective / KR
 // ===================================================
 
-function OKRSection({ currentUser }: { currentUser: Member }) {
+function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const {
     objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult,
   } = useAppData();
@@ -153,6 +162,12 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
   const [objPurpose, setObjPurpose] = useState(ctxObj?.purpose ?? "");
   const [objBackground, setObjBackground] = useState(ctxObj?.background ?? "");
   const [saved, setSaved] = useState(false);
+  const [objEdited, setObjEdited] = useState(false);
+
+  // OKRフォームの変更を親に通知
+  useEffect(() => {
+    onDirtyChange(objEdited || editingKrId !== null || newKrTitle.trim() !== "");
+  }, [objEdited, editingKrId, newKrTitle, onDirtyChange]);
 
   // ctxObj がロード後に反映
   useEffect(() => {
@@ -179,6 +194,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
     try {
       await saveObjective(updated);
       flashSaved();
+      setObjEdited(false);
     } catch (e) {
       const msg = e instanceof Error ? e.message
         : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
@@ -238,7 +254,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
         <FieldLabel>Objective（O）タイトル</FieldLabel>
         <AutoTextarea
           value={objTitle}
-          onChange={e => setObjTitle(e.target.value)}
+          onChange={e => { setObjTitle(e.target.value); setObjEdited(true); }}
           minRows={3}
           maxLength={500}
           style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
@@ -247,7 +263,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
         <FieldLabel>Purpose（何を達成するか）</FieldLabel>
         <AutoTextarea
           value={objPurpose}
-          onChange={e => setObjPurpose(e.target.value)}
+          onChange={e => { setObjPurpose(e.target.value); setObjEdited(true); }}
           minRows={2}
           maxLength={1000}
           style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
@@ -256,7 +272,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
         <FieldLabel>設計の意図や背景</FieldLabel>
         <AutoTextarea
           value={objBackground}
-          onChange={e => setObjBackground(e.target.value)}
+          onChange={e => { setObjBackground(e.target.value); setObjEdited(true); }}
           minRows={3}
           maxLength={2000}
           style={{ ...inputStyle, width: "100%", marginBottom: "10px" }}
@@ -338,7 +354,7 @@ function OKRSection({ currentUser }: { currentUser: Member }) {
 // クォーターを選択し、通期KRごとにTFを割り当てる。
 // 割り当て済みTFにはToDoパネルが展開でき、大タスクを直接追加できる。
 
-function TFSection({ currentUser }: { currentUser: Member }) {
+function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const {
     objective: ctxObj,
     taskForces: rawTfs, keyResults: rawKrs, members: rawMembers,
@@ -382,6 +398,11 @@ function TFSection({ currentUser }: { currentUser: Member }) {
   // KRごとのTF新規作成インラインフォーム
   const [newTfFormKrId, setNewTfFormKrId] = useState<string | null>(null);
   const [newTfForm, setNewTfForm] = useState({ tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
+
+  // 未保存変更を親に通知
+  useEffect(() => {
+    onDirtyChange(editId !== null || newTfFormKrId !== null);
+  }, [editId, newTfFormKrId, onDirtyChange]);
 
   // QuarterlyObjective を必要に応じて自動生成（quarterを指定可能）
   const ensureQObjForQuarter = async (quarter: Quarter): Promise<QuarterlyObjective> => {
@@ -1189,7 +1210,7 @@ function ToDoForm({
 // セクション③：プロジェクト
 // ===================================================
 
-function PJSection({ currentUser }: { currentUser: Member }) {
+function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const { projects: rawProjects, members: rawMembers, saveProject, deleteProject, milestones: rawMilestones, saveMilestone, deleteMilestone } = useAppData();
   const isMobile = useIsMobile();
   const projects   = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
@@ -1210,6 +1231,11 @@ function PJSection({ currentUser }: { currentUser: Member }) {
     owner_member_ids: [] as string[], status: "active" as Project["status"],
     color_tag: "#7F77DD", start_date: "", end_date: "",
   });
+
+  // 未保存変更を親に通知
+  useEffect(() => {
+    onDirtyChange(editId !== null);
+  }, [editId, onDirtyChange]);
 
   const openAdd = () => {
     setEditId("new");
@@ -1472,7 +1498,7 @@ function PJSection({ currentUser }: { currentUser: Member }) {
 // セクション④：メンバー
 // ===================================================
 
-function MembersSection({ currentUser }: { currentUser: Member }) {
+function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const { members: rawMembers, saveMember, deleteMember } = useAppData();
   const isMobile = useIsMobile();
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
@@ -1482,6 +1508,11 @@ function MembersSection({ currentUser }: { currentUser: Member }) {
     display_name: "", short_name: "", teams_account: "",
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
   });
+
+  // 未保存変更を親に通知
+  useEffect(() => {
+    onDirtyChange(editId !== null);
+  }, [editId, onDirtyChange]);
 
   const COLORS = [
     { bg: "var(--avatar-1-bg)", text: "var(--avatar-1-text)" },
@@ -2059,7 +2090,7 @@ const PRIORITY_COLORS: Record<string, string> = {
   low:  "var(--color-text-tertiary)",
 };
 
-function TasksSection({ currentUser }: { currentUser: Member }) {
+function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const {
     tasks: rawTasks, members: rawMembers, projects: rawProjects, saveTask,
   } = useAppData();
@@ -2076,6 +2107,11 @@ function TasksSection({ currentUser }: { currentUser: Member }) {
 
   // 編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  // 未保存変更を親に通知
+  useEffect(() => {
+    onDirtyChange(editingTaskId !== null);
+  }, [editingTaskId, onDirtyChange]);
 
   // フィルタリング
   const filtered = useMemo(() => {
