@@ -3,7 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode, Task, TaskForce, ToDo, KeyResult } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
 import { AdminView } from "../admin/AdminView";
@@ -588,11 +588,36 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   projects: Project[];
   onClose: () => void;
 }) {
-  const { saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos, keyResults: rawKrs } = useAppData();
+  const {
+    saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos,
+    keyResults: rawKrs, objective, quarterlyObjectives, quarterlyKrTaskForces,
+  } = useAppData();
   const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
+
+  // 今日の日付から現在のQを計算（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
+  const currentQ = useMemo<Quarter>(() => {
+    const m = new Date().getMonth() + 1;
+    if (m <= 3) return "1Q";
+    if (m <= 6) return "2Q";
+    if (m <= 9) return "3Q";
+    return "4Q";
+  }, []);
+
+  // 現在Qに属するTF IDのSet
+  const currentQTfIds = useMemo(() => {
+    const qObj = (quarterlyObjectives ?? []).find(
+      q => q.quarter === currentQ && q.objective_id === (objective?.id ?? "") && !q.is_deleted
+    );
+    if (!qObj) return new Set<string>();
+    return new Set(
+      (quarterlyKrTaskForces ?? [])
+        .filter(q => q.quarterly_objective_id === qObj.id)
+        .map(q => q.tf_id)
+    );
+  }, [quarterlyObjectives, quarterlyKrTaskForces, objective, currentQ]);
 
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
@@ -614,15 +639,15 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
     [tfId, todos],
   );
 
-  // TFをKR順・TF番号順にソートしてoptgroup用データを生成
+  // 現在QのTFのみに絞り込み、KR順・TF番号順でoptgroup用データを生成
   const tfsByKr = useMemo(() => {
     return krs.map(kr => ({
       kr,
       tfs: tfs
-        .filter(tf => tf.kr_id === kr.id)
+        .filter(tf => tf.kr_id === kr.id && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)))
         .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0)),
     })).filter(g => g.tfs.length > 0);
-  }, [krs, tfs]);
+  }, [krs, tfs, currentQTfIds]);
 
   const handleSave = async () => {
     if (!name.trim()) return;
