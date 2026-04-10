@@ -85,7 +85,8 @@ export interface TaskForce {
 export interface ToDo {
   id: string;
   tf_id: string;           // 紐づくTaskForce
-  title: string;           // 複数行テキスト（長文対応）
+  name?: string;           // 短いタイトル（任意・単一行）
+  title: string;           // ToDo内容（複数行テキスト・長文対応）
   due_date: string | null; // 任意
   memo: string;            // 備考（任意）
   is_deleted: boolean;

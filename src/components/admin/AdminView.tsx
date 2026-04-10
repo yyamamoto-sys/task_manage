@@ -48,10 +48,10 @@ export function AdminView({ currentUser }: Props) {
   const tabs: { key: AdminTab; label: string }[] = [
     { key: "tasks",    label: "タスク" },
     { key: "pj",       label: "プロジェクト" },
-    { key: "members",  label: "メンバー" },
     { key: "tf",       label: "Task Force" },
     { key: "okr",      label: "Objective / KR" },
     { key: "ai_usage", label: "AI使用量" },
+    { key: "members",  label: "メンバー" },
   ];
 
   return (
@@ -945,29 +945,30 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
   onDelete: (id: string, deletedBy: string) => Promise<void>;
 }) {
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ title: "", due_date: "", memo: "" });
+  const [form, setForm] = useState({ name: "", title: "", due_date: "", memo: "" });
   const [addingTaskForTodoId, setAddingTaskForTodoId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState({ name: "", assignee_member_id: "", due_date: "" });
   const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ title: "", due_date: "", memo: "" });
+    setForm({ name: "", title: "", due_date: "", memo: "" });
   };
 
   const openEdit = (todo: ToDo) => {
     setEditId(todo.id);
-    setForm({ title: todo.title, due_date: todo.due_date ?? "", memo: todo.memo });
+    setForm({ name: todo.name ?? "", title: todo.title, due_date: todo.due_date ?? "", memo: todo.memo });
   };
 
   const save = async () => {
-    if (!form.title.trim()) return;
+    if (!form.title.trim() && !form.name.trim()) return;
     const now = new Date().toISOString();
     const isNew = editId === "new";
     const existing = !isNew ? todos.find(t => t.id === editId) : undefined;
     const todo: ToDo = {
       id: isNew ? uuidv4() : editId!,
       tf_id: tfId,
+      name: form.name.trim() || undefined,
       title: form.title.trim(),
       due_date: form.due_date || null,
       memo: form.memo,
@@ -1043,9 +1044,16 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
               <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "8px 10px" }}>
                 <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", flexShrink: 0, minWidth: "14px" }}>{i + 1}.</span>
                 <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
-                    {todo.title}
-                  </div>
+                  {todo.name && (
+                    <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "2px" }}>
+                      {todo.name}
+                    </div>
+                  )}
+                  {todo.title && (
+                    <div style={{ fontSize: "12px", color: todo.name ? "var(--color-text-secondary)" : "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                      {todo.title}
+                    </div>
+                  )}
                   {(todo.due_date || todo.memo) && (
                     <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
                       {todo.due_date && <span>期日: {todo.due_date}</span>}
@@ -1150,8 +1158,8 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
 function ToDoForm({
   form, setForm, onSave, onCancel,
 }: {
-  form: { title: string; due_date: string; memo: string };
-  setForm: React.Dispatch<React.SetStateAction<{ title: string; due_date: string; memo: string }>>;
+  form: { name: string; title: string; due_date: string; memo: string };
+  setForm: React.Dispatch<React.SetStateAction<{ name: string; title: string; due_date: string; memo: string }>>;
   onSave: () => void;
   onCancel: () => void;
 }) {
@@ -1162,11 +1170,19 @@ function ToDoForm({
       border: "1px solid var(--color-border-info)",
       borderRadius: "var(--radius-md)",
     }}>
-      <FieldLabel>ToDo内容 *</FieldLabel>
+      <FieldLabel>タイトル（任意）</FieldLabel>
+      <input
+        value={form.name}
+        onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+        placeholder="例：評価指標の策定"
+        maxLength={100}
+        style={{ ...inputStyle, width: "100%", marginBottom: "8px" }}
+      />
+      <FieldLabel>ToDo内容</FieldLabel>
       <AutoTextarea
         value={form.title}
         onChange={e => setForm(f => ({ ...f, title: e.target.value }))}
-        placeholder="例：TF2の定量目標達成の基準となる評価指標の策定"
+        placeholder="例：TF2の定量目標達成の基準となる評価指標を策定し、チームで合意する"
         minRows={2}
         style={{ ...inputStyle, width: "100%", marginBottom: "8px" }}
       />
