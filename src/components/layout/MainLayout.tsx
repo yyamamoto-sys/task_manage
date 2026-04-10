@@ -627,6 +627,8 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   const [todoIds, setTodoIds] = useState<string[]>([]);
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
+  const [tooltipTodo, setTooltipTodo] = useState<ToDo | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   // KRが変わったらTF・ToDo選択をリセット
   const handleKrChange = (val: string) => {
@@ -691,8 +693,53 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
     }
   };
 
+  // ToDoホバー時のツールチップ表示位置を計算（画面端で折り返す）
+  const TOOLTIP_W = 280;
+  const TOOLTIP_OFFSET = 16;
+  const tooltipLeft = tooltipPos.x + TOOLTIP_OFFSET + TOOLTIP_W > window.innerWidth
+    ? tooltipPos.x - TOOLTIP_W - TOOLTIP_OFFSET
+    : tooltipPos.x + TOOLTIP_OFFSET;
+  const tooltipTop = Math.min(tooltipPos.y - 8, window.innerHeight - 200);
+
   return (
     <>
+      {/* ToDoホバーツールチップ（モーダル外・最前面） */}
+      {tooltipTodo && (
+        <div
+          style={{
+            position: "fixed",
+            left: tooltipLeft,
+            top: tooltipTop,
+            zIndex: 500,
+            width: TOOLTIP_W,
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "var(--shadow-lg)",
+            padding: "10px 12px",
+            pointerEvents: "none",
+          }}
+        >
+          {tooltipTodo.name && (
+            <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+              {tooltipTodo.name}
+            </div>
+          )}
+          <div style={{ fontSize: "12px", color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5, marginBottom: tooltipTodo.memo ? "6px" : 0 }}>
+            {tooltipTodo.title}
+          </div>
+          {tooltipTodo.memo && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.4, borderTop: "1px solid var(--color-border-primary)", paddingTop: "6px", marginTop: "2px" }}>
+              {tooltipTodo.memo}
+            </div>
+          )}
+          {tooltipTodo.due_date && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
+              期日: {tooltipTodo.due_date}
+            </div>
+          )}
+        </div>
+      )}
       {/* オーバーレイ */}
       <div
         onClick={onClose}
@@ -849,6 +896,9 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
                 {filteredTodos.map((td, i) => (
                   <label
                     key={td.id}
+                    onMouseEnter={e => { setTooltipTodo(td); setTooltipPos({ x: e.clientX, y: e.clientY }); }}
+                    onMouseMove={e => setTooltipPos({ x: e.clientX, y: e.clientY })}
+                    onMouseLeave={() => setTooltipTodo(null)}
                     style={{
                       display: "flex", alignItems: "flex-start", gap: "7px",
                       padding: "4px 0", cursor: "pointer",
