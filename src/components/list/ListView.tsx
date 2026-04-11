@@ -75,6 +75,19 @@ function renderComment(text: string): React.ReactNode {
   return <>{parts}</>;
 }
 
+// ===== ビュー設定の永続化ヘルパー =====
+const LIST_LS_KEY = "list_view_settings";
+function lsGet<T>(field: string, fallback: T): T {
+  try { return ((JSON.parse(localStorage.getItem(LIST_LS_KEY) ?? "{}") as Record<string, T>)[field] ?? fallback); }
+  catch { return fallback; }
+}
+function lsSet(field: string, value: unknown) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LIST_LS_KEY) ?? "{}") as Record<string, unknown>;
+    localStorage.setItem(LIST_LS_KEY, JSON.stringify({ ...all, [field]: value }));
+  } catch { /* ignore */ }
+}
+
 export function ListView({ currentUser, selectedProject, projects }: Props) {
   const { tasks: rawTasks, members: rawMembers, todos: rawTodos } = useAppData();
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
@@ -82,21 +95,33 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
-  const [groupBy, setGroupBy]           = useState<GroupBy>("project");
-  const [filterStatus, setFilterStatus] = useState<Task["status"]|"all">("all");
+  // 永続化対象の設定（groupBy / filterStatus / filterPriority / sort）
+  const [groupBy, setGroupByState]           = useState<GroupBy>(() => lsGet("groupBy", "project"));
+  const [filterStatus, setFilterStatusState] = useState<Task["status"]|"all">(() => lsGet("filterStatus", "all"));
+  const [filterPriority, setFilterPriorityState] = useState<"all"|"high"|"mid"|"low">(() => lsGet("filterPriority", "all"));
+  const [sortKey, setSortKeyState]           = useState<SortKey>(() => lsGet("sortKey", "due_date"));
+  const [sortDir, setSortDirState]           = useState<SortDir>(() => lsGet("sortDir", "asc"));
+
+  const setGroupBy = (v: GroupBy) => { setGroupByState(v); lsSet("groupBy", v); };
+  const setFilterStatus = (v: Task["status"]|"all") => { setFilterStatusState(v); lsSet("filterStatus", v); };
+  const setFilterPriority = (v: "all"|"high"|"mid"|"low") => { setFilterPriorityState(v); lsSet("filterPriority", v); };
+
+  // 永続化しない一時フィルター
   const [filterMyOnly, setFilterMyOnly] = useState(false);
   const [filterThisWeek, setFilterThisWeek] = useState(false);
-  const [filterPriority, setFilterPriority] = useState<"all"|"high"|"mid"|"low">("all");
   const [searchText, setSearchText]     = useState("");
-  const [sortKey, setSortKey]           = useState<SortKey>("due_date");
-  const [sortDir, setSortDir]           = useState<SortDir>("asc");
   const [selectedTaskId, setSelectedTaskId] = useState<string|null>(null);
   const [editingTaskId,  setEditingTaskId]  = useState<string|null>(null);
 
   const handleSort = useCallback((key: SortKey) => {
-    if (sortKey === key) setSortDir(d => d==="asc"?"desc":"asc");
-    else { setSortKey(key); setSortDir("asc"); }
-  }, [sortKey]);
+    if (sortKey === key) {
+      const newDir: SortDir = sortDir === "asc" ? "desc" : "asc";
+      setSortDirState(newDir); lsSet("sortDir", newDir);
+    } else {
+      setSortKeyState(key); lsSet("sortKey", key);
+      setSortDirState("asc"); lsSet("sortDir", "asc");
+    }
+  }, [sortKey, sortDir]);
 
   // 「今日」と「7日後」は初回マウント時に固定（日をまたぐ場合はページリロードで更新）
   const t0 = useRef(todayStr()).current;

@@ -8,7 +8,7 @@
 // - マイルストーン：◆で表示
 // - ドラッグによる日程変更は将来実装（現時点はクリックで編集ダイアログ）
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
@@ -194,14 +194,35 @@ export function GanttView({
     setCollapsed(m);
   };
 
-  // 今日にスクロール
+  // スクロール位置の永続化（中心日付をlocalStorageに保存）
+  const GANTT_SCROLL_KEY = "gantt_center_date";
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollInitialized = useRef(false);
+  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  // 初回マウント時のみ実行：保存済み日付があればそこへ、なければ今日へ
   useEffect(() => {
-    if (scrollRef.current) {
-      const target = todayX - scrollRef.current.clientWidth / 2;
-      scrollRef.current.scrollLeft = Math.max(0, target);
-    }
-  }, [todayX]);
+    if (!scrollRef.current || scrollInitialized.current || days.length === 0) return;
+    scrollInitialized.current = true;
+    const saved = localStorage.getItem(GANTT_SCROLL_KEY);
+    const targetDate = saved ? toDate(saved) : null;
+    const targetX = targetDate
+      ? diffDays(rangeStart, targetDate) * DAY_WIDTH
+      : todayX;
+    scrollRef.current.scrollLeft = Math.max(0, targetX - scrollRef.current.clientWidth / 2);
+  }, [days, rangeStart, todayX]);
+
+  // スクロール時に中心日付をlocalStorageへ保存（300ms debounce）
+  const handleGanttScroll = useCallback(() => {
+    clearTimeout(scrollSaveTimer.current);
+    scrollSaveTimer.current = setTimeout(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const centerX = el.scrollLeft + el.clientWidth / 2;
+      const idx = Math.floor(centerX / DAY_WIDTH);
+      if (days[idx]) localStorage.setItem(GANTT_SCROLL_KEY, dateStr(days[idx]));
+    }, 300);
+  }, [days]);
 
   // 月ラベルの生成（日付配列から月の境界を取得）
   const monthGroups = useMemo(() => {
@@ -518,6 +539,7 @@ export function GanttView({
         {/* 右スクロールエリア */}
         <div
           ref={scrollRef}
+          onScroll={handleGanttScroll}
           style={{ flex: 1, overflow: "auto", position: "relative", WebkitOverflowScrolling: "touch" }}
         >
           <div style={{ width: totalWidth, minHeight: "100%" }}>
