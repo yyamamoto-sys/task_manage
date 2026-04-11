@@ -78,8 +78,9 @@ export function GraphView({ onClose }: Props) {
 
     const nodes: GNode[] = [];
     const edges: GEdge[] = [];
-    const cx = window.innerWidth / 2;
-    const cy = window.innerHeight / 2;
+    // ワールド原点(0,0)がCanvas中央にマッピングされるため、ノードは原点周辺に配置する
+    const cx = 0;
+    const cy = 0;
     const rand = (r: number) => (Math.random() - 0.5) * r;
 
     // Objective
@@ -271,8 +272,9 @@ export function GraphView({ onClose }: Props) {
     if (!s || s.alpha < 0.001) return;
 
     const nodeMap = new Map(s.nodes.map(n => [n.id, n]));
-    const cx = canvasRef.current ? canvasRef.current.width / 2 : 500;
-    const cy = canvasRef.current ? canvasRef.current.height / 2 : 400;
+    // ワールド原点(0,0)が画面中央なので、中心引力のターゲットも(0,0)
+    const cx = 0;
+    const cy = 0;
 
     // 反発力（全ペア）
     for (let i = 0; i < s.nodes.length; i++) {
