@@ -281,7 +281,49 @@ export function GanttView({
     return groups;
   }, [days]);
 
-  const LABEL_WIDTH = isMobile ? 110 : 200;
+  const GANTT_LABEL_KEY = "gantt_label_width";
+  const [labelWidth, setLabelWidth] = useState(() => {
+    if (isMobile) return 110;
+    try { return parseInt(localStorage.getItem(GANTT_LABEL_KEY) ?? "200", 10) || 200; } catch { return 200; }
+  });
+  const labelWidthRef     = useRef(labelWidth);
+  const isDraggingW       = useRef(false);
+  const dragStartX        = useRef(0);
+  const dragStartW        = useRef(0);
+  const [isResizing,        setIsResizing       ] = useState(false);
+  const [isDividerHovered,  setIsDividerHovered ] = useState(false);
+
+  const handleDividerMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingW.current = true;
+    dragStartX.current  = e.clientX;
+    dragStartW.current  = labelWidthRef.current;
+    setIsResizing(true);
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDraggingW.current) return;
+      const w = Math.max(100, Math.min(500, dragStartW.current + e.clientX - dragStartX.current));
+      labelWidthRef.current = w;
+      setLabelWidth(w);
+    };
+    const onUp = () => {
+      if (!isDraggingW.current) return;
+      isDraggingW.current = false;
+      setIsResizing(false);
+      try { localStorage.setItem(GANTT_LABEL_KEY, String(labelWidthRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup",   onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  useEffect(() => {
+    document.body.style.cursor     = isResizing ? "col-resize" : "";
+    document.body.style.userSelect = isResizing ? "none" : "";
+    return () => { document.body.style.cursor = ""; document.body.style.userSelect = ""; };
+  }, [isResizing]);
 
   const scrollToToday = useCallback(() => {
     if (!scrollRef.current) return;
@@ -354,8 +396,7 @@ export function GanttView({
 
         {/* 左ラベル列（固定） */}
         <div style={{
-          width: LABEL_WIDTH, flexShrink: 0,
-          borderRight: "1px solid var(--color-border-primary)",
+          width: labelWidth, flexShrink: 0,
           overflow: "hidden",
         }}>
           {/* ラベルヘッダー */}
@@ -593,6 +634,22 @@ export function GanttView({
             )}
           </div>
         </div>
+
+        {/* リサイズハンドル */}
+        <div
+          onMouseDown={!isMobile ? handleDividerMouseDown : undefined}
+          onMouseEnter={() => setIsDividerHovered(true)}
+          onMouseLeave={() => setIsDividerHovered(false)}
+          style={{
+            width: isMobile ? 1 : 5, flexShrink: 0,
+            cursor: isMobile ? "default" : "col-resize",
+            background: !isMobile && (isDividerHovered || isResizing)
+              ? "var(--color-brand)"
+              : "var(--color-border-primary)",
+            transition: "background 0.15s",
+            zIndex: 10,
+          }}
+        />
 
         {/* 右スクロールエリア */}
         <div
