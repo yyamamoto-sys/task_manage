@@ -18,6 +18,8 @@ interface Props {
   currentUser: Member;
   selectedProject: Project | null;
   projects: Project[];
+  selectedKrId?: string | null;
+  krTaskIds?: Set<string> | null;
   /** プレビューモード：指定された場合はAppDataContextのtasksの代わりにこれを使う */
   previewTasks?: Task[];
   /** プレビューモード：trueの場合はヘッダーにラベルを表示し、タスク編集モーダルを無効化する */
@@ -87,6 +89,8 @@ export function GanttView({
   currentUser,
   selectedProject,
   projects,
+  selectedKrId: _selectedKrId,
+  krTaskIds,
   previewTasks,
   isPreview = false,
   previewChangedTaskIds,
@@ -97,13 +101,13 @@ export function GanttView({
     [rawMilestones],
   );
   const isMobile = useIsMobile();
-  // previewTasksが指定されている場合はそちらを優先する
-  const allTasks = useMemo(
-    () => previewTasks
+  // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
+  const allTasks = useMemo(() => {
+    const base = previewTasks
       ? previewTasks.filter(t => !t.is_deleted)
-      : rawTasks.filter(t => !t.is_deleted),
-    [previewTasks, rawTasks],
-  );
+      : rawTasks.filter(t => !t.is_deleted);
+    return krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
+  }, [previewTasks, rawTasks, krTaskIds]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
@@ -356,7 +360,7 @@ export function GanttView({
           </span>
         )}
         <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-          {selectedProject ? selectedProject.name : "全プロジェクト"}
+          {selectedProject ? selectedProject.name : krTaskIds ? "OKRタスク" : "全プロジェクト"}
         </div>
         {!isPreview && (
           <div style={{ display: "flex", gap: "3px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>

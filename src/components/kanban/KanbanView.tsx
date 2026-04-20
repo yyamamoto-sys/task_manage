@@ -11,6 +11,8 @@ interface Props {
   currentUser: Member;
   selectedProject: Project | null;
   projects: Project[];
+  selectedKrId?: string | null;
+  krTaskIds?: Set<string> | null;
 }
 
 const STATUS_CONFIG = {
@@ -27,7 +29,7 @@ const PRIORITY_CONFIG = {
 
 function todayStr() { return new Date().toISOString().split("T")[0]; }
 
-export function KanbanView({ currentUser, selectedProject, projects }: Props) {
+export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds }: Props) {
   const { tasks: allTasks, members: allMembers, taskForces: allTaskForces, todos: rawTodos, saveTask, deleteTask, addTaskTaskForce, addTaskProject } = useAppData();
   const isMobile = useIsMobile();
 
@@ -43,8 +45,9 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
 
   const visibleTasks = useMemo(() => {
     if (selectedProject) return tasks.filter(t => t.project_id === selectedProject.id);
+    if (krTaskIds) return tasks.filter(t => krTaskIds.has(t.id));
     return tasks;
-  }, [tasks, selectedProject]);
+  }, [tasks, selectedProject, krTaskIds]);
 
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
@@ -111,7 +114,7 @@ export function KanbanView({ currentUser, selectedProject, projects }: Props) {
         background: "var(--color-bg-primary)", flexShrink: 0,
       }}>
         <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-          {selectedProject ? selectedProject.name : "全プロジェクト"}
+          {selectedProject ? selectedProject.name : krTaskIds ? "OKRタスク" : "全プロジェクト"}
         </div>
         {selectedProject?.purpose && (
           <div style={{

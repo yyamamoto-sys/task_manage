@@ -3,7 +3,7 @@ import { useState, useMemo, useRef } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, Task, TaskForce, ToDo, KeyResult, Quarter, TaskTaskForce } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { KanbanView } from "../kanban/KanbanView";
 import { AdminView } from "../admin/AdminView";
@@ -44,15 +44,35 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
 
-  const { projects: allProjects } = useAppData();
+  const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs } = useAppData();
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]
   );
+  const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
+
+  const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
+
+  const handleSelectProject = (id: string | null) => {
+    setSelectedProjectId(id);
+    setSelectedKrId(null);
+  };
+  const handleSelectKr = (id: string | null) => {
+    setSelectedKrId(id);
+    setSelectedProjectId(null);
+  };
 
   const selectedProject = selectedProjectId
     ? projects.find(p => p.id === selectedProjectId) ?? null
     : null;
+
+  const krTaskIds = useMemo<Set<string> | null>(() => {
+    if (!selectedKrId) return null;
+    const tfIds = new Set((rawTfs ?? []).filter((tf: TaskForce) => tf.kr_id === selectedKrId && !tf.is_deleted).map((tf: TaskForce) => tf.id));
+    const ids = new Set<string>();
+    (rawTtfs ?? []).forEach((ttf: TaskTaskForce) => { if (tfIds.has(ttf.tf_id)) ids.add(ttf.task_id); });
+    return ids;
+  }, [selectedKrId, rawTfs, rawTtfs]);
 
   const mainContent = (
     <div style={{
@@ -72,6 +92,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             currentUser={currentUser}
             selectedProject={selectedProject}
             projects={projects}
+            selectedKrId={selectedKrId}
+            krTaskIds={krTaskIds}
           />
         )}
         {viewMode === "gantt" && (
@@ -79,6 +101,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             currentUser={currentUser}
             selectedProject={selectedProject}
             projects={projects}
+            selectedKrId={selectedKrId}
+            krTaskIds={krTaskIds}
           />
         )}
         {viewMode === "admin" && (
@@ -89,6 +113,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             currentUser={currentUser}
             selectedProject={selectedProject}
             projects={projects}
+            selectedKrId={selectedKrId}
+            krTaskIds={krTaskIds}
           />
         )}
         {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
@@ -228,7 +254,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         setViewMode={setViewMode}
         projects={projects}
         selectedProjectId={selectedProjectId}
-        setSelectedProjectId={setSelectedProjectId}
+        onSelectProject={handleSelectProject}
+        keyResults={keyResults}
+        selectedKrId={selectedKrId}
+        onSelectKr={handleSelectKr}
         currentUser={currentUser}
         onLogout={onLogout}
         isConsultOpen={isConsultOpen}
@@ -265,7 +294,10 @@ interface SidebarProps {
   setViewMode: (v: ViewMode) => void;
   projects: Project[];
   selectedProjectId: string | null;
-  setSelectedProjectId: (id: string | null) => void;
+  onSelectProject: (id: string | null) => void;
+  keyResults: KeyResult[];
+  selectedKrId: string | null;
+  onSelectKr: (id: string | null) => void;
   currentUser: Member;
   onLogout: () => void;
   isConsultOpen: boolean;
@@ -277,7 +309,8 @@ interface SidebarProps {
 
 function Sidebar({
   viewMode, setViewMode, projects,
-  selectedProjectId, setSelectedProjectId,
+  selectedProjectId, onSelectProject,
+  keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph,
 }: SidebarProps) {
@@ -318,10 +351,10 @@ function Sidebar({
       <div style={{ flex: 1, overflow: "auto", padding: "4px 0" }}>
         <SectionLabel>プロジェクト</SectionLabel>
         <NavItem
-          active={selectedProjectId === null}
+          active={selectedProjectId === null && selectedKrId === null}
           icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
           label="全PJ表示"
-          onClick={() => setSelectedProjectId(null)}
+          onClick={() => onSelectProject(null)}
         />
         {projects.map(pj => (
           <NavItem
@@ -329,9 +362,24 @@ function Sidebar({
             active={selectedProjectId === pj.id}
             icon={<span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />}
             label={pj.name}
-            onClick={() => setSelectedProjectId(pj.id)}
+            onClick={() => onSelectProject(pj.id)}
           />
         ))}
+
+        {keyResults.length > 0 && (
+          <>
+            <SectionLabel>OKRタスク</SectionLabel>
+            {keyResults.map(kr => (
+              <NavItem
+                key={kr.id}
+                active={selectedKrId === kr.id}
+                icon={<KrIcon />}
+                label={kr.title}
+                onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)}
+              />
+            ))}
+          </>
+        )}
       </div>
 
       {/* ラボセクション */}
@@ -580,6 +628,15 @@ function GraphIcon() {
       <line x1="7" y1="3.5" x2="12" y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
       <line x1="7" y1="7"   x2="2"  y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
       <line x1="7" y1="7"   x2="12" y2="8.5"  stroke="currentColor" strokeWidth="1" opacity="0.6"/>
+    </svg>
+  );
+}
+
+function KrIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.2"/>
+      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/>
     </svg>
   );
 }

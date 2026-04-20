@@ -10,6 +10,8 @@ interface Props {
   currentUser: Member;
   selectedProject: Project | null;
   projects: Project[];
+  selectedKrId?: string | null;
+  krTaskIds?: Set<string> | null;
 }
 
 type GroupBy = "project" | "assignee" | "status";
@@ -89,7 +91,7 @@ function lsSet(field: string, value: unknown) {
   } catch { /* ignore */ }
 }
 
-export function ListView({ currentUser, selectedProject, projects }: Props) {
+export function ListView({ currentUser, selectedProject, projects, krTaskIds }: Props) {
   const { tasks: rawTasks, members: rawMembers, todos: rawTodos, saveTask } = useAppData();
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
@@ -148,6 +150,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
     if (selectedProject)         tasks = tasks.filter(t => t.project_id === selectedProject.id);
+    else if (krTaskIds)          tasks = tasks.filter(t => krTaskIds.has(t.id));
     if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
     if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
     if (filterMyOnly)            tasks = tasks.filter(t =>
