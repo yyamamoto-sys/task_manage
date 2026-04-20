@@ -89,7 +89,9 @@ export function DashboardView({ currentUser, projects }: Props) {
   // フィルター適用後のタスク
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (myOnly) tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
+    if (myOnly) tasks = tasks.filter(t =>
+      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
+    );
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
     if (selectedPjIds.length > 0) tasks = tasks.filter(t =>
       (t.project_id && selectedPjIds.includes(t.project_id)) || t.project_id == null
@@ -104,7 +106,7 @@ export function DashboardView({ currentUser, projects }: Props) {
   // 自分のリマインダータスク（期限切れ + N日以内）
   const reminderTasks = useMemo(
     () => allTasks.filter(t =>
-      t.assignee_member_id === currentUser.id &&
+      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id) &&
       t.status !== "done" &&
       t.due_date != null &&
       t.due_date <= reminderDeadline

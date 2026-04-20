@@ -161,14 +161,19 @@ export async function softDeleteProject(id: string, deletedBy: string) {
 // ===== Task =====
 
 export async function upsertTask(task: Task) {
-  // todo_ids / assignee_member_ids は UI専用フィールド（DB カラム不存在）のため除外
-  // todo_id（単数FK）と assignee_member_id（先頭1人）に変換してから保存する
+  // todo_ids は UI専用（DB は todo_id 単数FK）のため変換する
+  // assignee_member_ids は DB の配列カラムにそのまま保存し、
+  // 後方互換のため先頭要素を assignee_member_id（単数FK）にも反映する
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { todo_ids, assignee_member_ids, ...rest } = task;
+  const { todo_ids, ...rest } = task;
+  const ids = task.assignee_member_ids?.length
+    ? task.assignee_member_ids
+    : task.assignee_member_id ? [task.assignee_member_id] : [];
   const row = {
     ...rest,
     todo_id: todo_ids[0] ?? null,
-    assignee_member_id: assignee_member_ids[0] ?? task.assignee_member_id ?? null,
+    assignee_member_id:  ids[0] ?? null,
+    assignee_member_ids: ids,
   };
   const { error } = await supabase.from("tasks").upsert(row);
   if (error) throw error;

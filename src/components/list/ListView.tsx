@@ -150,7 +150,9 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
     if (selectedProject)         tasks = tasks.filter(t => t.project_id === selectedProject.id);
     if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
     if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
-    if (filterMyOnly)            tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
+    if (filterMyOnly)            tasks = tasks.filter(t =>
+      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
+    );
     if (filterMember !== "all")  tasks = tasks.filter(t =>
       t.assignee_member_ids?.includes(filterMember) || t.assignee_member_id === filterMember
     );
@@ -352,7 +354,8 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
                   {group.tasks.map(task => {
-                    const m  = members.find(mb => mb.id === task.assignee_member_id);
+                    const taskAssigneeIds = task.assignee_member_ids?.length ? task.assignee_member_ids : task.assignee_member_id ? [task.assignee_member_id] : [];
+                    const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = projects.find(p => p.id === task.project_id);
                     const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
                     const isDone    = task.status === "done";
@@ -383,9 +386,10 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                            <Avatar member={m} size={14} />
-                            <span style={{ fontSize: "10px", color: "var(--color-text-secondary)" }}>{m.short_name}</span>
+                          {taskAssignees.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                            {taskAssignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={14} />)}
+                            {taskAssignees.length === 1 && <span style={{ fontSize: "10px", color: "var(--color-text-secondary)" }}>{taskAssignees[0].short_name}</span>}
+                            {taskAssignees.length > 3 && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 3}</span>}
                           </div>}
                           {task.due_date && <span style={{
                             fontSize: "10px",
@@ -484,7 +488,8 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                       {group.tasks.map(task => {
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
-                        const m  = members.find(mb => mb.id === task.assignee_member_id);
+                        const taskAssigneeIds = task.assignee_member_ids?.length ? task.assignee_member_ids : task.assignee_member_id ? [task.assignee_member_id] : [];
+                        const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                         const pj = projects.find(p => p.id === task.project_id);
                         const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
                         const isDone    = task.status === "done";
@@ -500,10 +505,13 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                           }}>
                             {/* 担当者 */}
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                              {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                <Avatar member={m} size={16} />
-                                <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{m.short_name}</span>
-                              </div>}
+                              {taskAssignees.length > 0 && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                                  {taskAssignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={16} />)}
+                                  {taskAssignees.length === 1 && <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{taskAssignees[0].short_name}</span>}
+                                  {taskAssignees.length > 3 && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 3}</span>}
+                                </div>
+                              )}
                             </td>
                             {/* 優先度 */}
                             <td style={{ padding: "6px 10px" }}>
