@@ -123,10 +123,12 @@ export interface Task {
   id: string;
   name: string;
   project_id: string | null; // Projectへの紐づき（任意）
-  todo_ids: string[];        // ToDoへの紐づき（複数可）。project_idと併用可
-  assignee_member_id: string;
+  todo_ids: string[];        // UI専用。DB は todo_id（単数）。fetchAllData で正規化。
+  assignee_member_id: string;          // DBの主FK（先頭1人）
+  assignee_member_ids: string[];       // UI専用。複数担当者。fetchAllData で正規化。
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;
+  start_date: string | null; // 開始日（任意）
   due_date: string | null;
   estimated_hours: number | null;
   comment: string;

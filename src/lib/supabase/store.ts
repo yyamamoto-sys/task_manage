@@ -45,8 +45,19 @@ export async function fetchAllData() {
     keyResults:           (keyResults.data ?? []) as KeyResult[],
     taskForces:           (taskForces.data ?? []) as TaskForce[],
     todos:                (todos.data      ?? []) as ToDo[],
-    projects:             (projects.data   ?? []) as Project[],
-    tasks:                (tasks.data      ?? []) as Task[],
+    projects: (projects.data ?? []).map((p: Record<string, unknown>) => ({
+      ...p,
+      owner_member_ids: (p.owner_member_ids as string[] | undefined)?.length
+        ? p.owner_member_ids as string[]
+        : p.owner_member_id ? [p.owner_member_id as string] : [],
+    })) as Project[],
+    tasks: (tasks.data ?? []).map((t: Record<string, unknown>) => ({
+      ...t,
+      todo_ids: Array.isArray(t.todo_ids) ? t.todo_ids as string[]
+        : t.todo_id ? [t.todo_id as string] : [],
+      assignee_member_ids: Array.isArray(t.assignee_member_ids) ? t.assignee_member_ids as string[]
+        : t.assignee_member_id ? [t.assignee_member_id as string] : [],
+    })) as Task[],
     projectTaskForces:    (ptf.data        ?? []) as ProjectTaskForce[],
     quarterlyObjectives:    (qObjs.data  ?? []) as QuarterlyObjective[],
     quarterlyKrTaskForces:  (qKrTfs.data ?? []) as QuarterlyKrTaskForce[],
@@ -126,9 +137,12 @@ export async function softDeleteToDo(id: string, deletedBy: string) {
 // ===== Project =====
 
 export async function upsertProject(project: Project) {
+  // owner_member_ids は UI 専用フィールド（DB カラム不存在）のため除外する
   // 空文字の日付は PostgreSQL date 型が拒否するため null に変換する
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { owner_member_ids: _omit, ...rest } = project;
   const row = {
-    ...project,
+    ...rest,
     start_date: project.start_date || null,
     end_date:   project.end_date   || null,
   };
@@ -147,7 +161,16 @@ export async function softDeleteProject(id: string, deletedBy: string) {
 // ===== Task =====
 
 export async function upsertTask(task: Task) {
-  const { error } = await supabase.from("tasks").upsert(task);
+  // todo_ids / assignee_member_ids は UI専用フィールド（DB カラム不存在）のため除外
+  // todo_id（単数FK）と assignee_member_id（先頭1人）に変換してから保存する
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { todo_ids, assignee_member_ids, ...rest } = task;
+  const row = {
+    ...rest,
+    todo_id: todo_ids[0] ?? null,
+    assignee_member_id: assignee_member_ids[0] ?? task.assignee_member_id ?? null,
+  };
+  const { error } = await supabase.from("tasks").upsert(row);
   if (error) throw error;
 }
 

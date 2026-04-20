@@ -990,9 +990,11 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
       name: taskForm.name.trim(),
       project_id: null,
       todo_ids: addingTaskForTodoId ? [addingTaskForTodoId] : [],
+      assignee_member_ids: taskForm.assignee_member_id ? [taskForm.assignee_member_id] : [],
       assignee_member_id: taskForm.assignee_member_id,
       status: "todo",
       priority: null,
+      start_date: null,
       due_date: taskForm.due_date || null,
       estimated_hours: null,
       comment: "",
@@ -1265,9 +1267,12 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       await alertDialog("開始日は終了日より前に設定してください。");
       return;
     }
-    const now = new Date().toISOString();
-    // owner_member_id は先頭のオーナーで後方互換を保つ
     const owner_member_id = form.owner_member_ids[0] ?? "";
+    if (!owner_member_id) {
+      await alertDialog("担当者を1名以上選択してください。");
+      return;
+    }
+    const now = new Date().toISOString();
     try {
       if (editId === "new") {
         await saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });

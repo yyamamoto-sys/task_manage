@@ -88,26 +88,31 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
-    name:                originalTask?.name ?? "",
-    status:              originalTask?.status ?? "todo" as Task["status"],
-    priority:            originalTask?.priority ?? "",
-    assignee_member_id:  originalTask?.assignee_member_id ?? "",
-    project_id:          originalTask?.project_id ?? null as string | null,
-    todo_ids:            originalTask?.todo_ids ?? [] as string[],
-    due_date:            originalTask?.due_date ?? "",
-    estimated_hours:     originalTask?.estimated_hours?.toString() ?? "",
-    comment:             originalTask?.comment ?? "",
+    name:                 originalTask?.name ?? "",
+    status:               originalTask?.status ?? "todo" as Task["status"],
+    priority:             originalTask?.priority ?? "",
+    assignee_member_ids:  originalTask?.assignee_member_ids?.length
+                            ? originalTask.assignee_member_ids
+                            : originalTask?.assignee_member_id ? [originalTask.assignee_member_id] : [] as string[],
+    project_id:           originalTask?.project_id ?? null as string | null,
+    todo_ids:             originalTask?.todo_ids ?? [] as string[],
+    start_date:           originalTask?.start_date ?? "",
+    due_date:             originalTask?.due_date ?? "",
+    estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
+    comment:              originalTask?.comment ?? "",
   });
   const [saved, setSaved] = useState(false);
 
   if (!originalTask) return null;
 
-  const member     = members.find(m => m.id === originalTask.assignee_member_id);
+  const assigneeMembers = members.filter(m =>
+    (originalTask.assignee_member_ids?.length
+      ? originalTask.assignee_member_ids
+      : originalTask.assignee_member_id ? [originalTask.assignee_member_id] : []
+    ).includes(m.id)
+  );
   const project    = projects.find(p => p.id === originalTask.project_id);
   const linkedTodos = todos.filter(t => (originalTask.todo_ids ?? []).includes(t.id));
-  const linkedTodo = linkedTodos[0] ?? null;
-  const linkedTodoTf = linkedTodo ? taskForces.find(tf => tf.id === linkedTodo.tf_id) : null;
-
   // ToDo選択肢をTFごとにグループ化
   const todosByTf = useMemo(() => {
     return taskForces
@@ -122,17 +127,19 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     const hours = parseFloat(form.estimated_hours);
     const updated: Task = {
       ...originalTask,
-      name:               form.name.trim() || originalTask.name,
-      status:             form.status,
-      priority:           (form.priority as Task["priority"]) || null,
-      assignee_member_id: form.assignee_member_id,
-      project_id:         form.project_id || null,
-      todo_ids:           form.todo_ids,
-      due_date:           form.due_date || null,
-      estimated_hours:    isNaN(hours) ? null : hours,
-      comment:            form.comment,
-      updated_at:         new Date().toISOString(),
-      updated_by:         currentUser.id,
+      name:                form.name.trim() || originalTask.name,
+      status:              form.status,
+      priority:            (form.priority as Task["priority"]) || null,
+      assignee_member_ids: form.assignee_member_ids,
+      assignee_member_id:  form.assignee_member_ids[0] ?? "",
+      project_id:          form.project_id || null,
+      todo_ids:            form.todo_ids,
+      start_date:          form.start_date || null,
+      due_date:            form.due_date || null,
+      estimated_hours:     isNaN(hours) ? null : hours,
+      comment:             form.comment,
+      updated_at:          new Date().toISOString(),
+      updated_by:          currentUser.id,
     };
     saveTask(updated);
     setSaved(true);
@@ -295,23 +302,50 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             </div>
           </FieldSection>
 
-          {/* 担当者 */}
+          {/* 担当者（複数可） */}
           <FieldSection label="担当者">
             {editing ? (
-              <select value={form.assignee_member_id}
-                onChange={e => setForm(f => ({ ...f, assignee_member_id: e.target.value }))}
-                style={inputSm}>
-                <option value="">（なし）</option>
-                {members.map(m => (
-                  <option key={m.id} value={m.id}>{m.display_name}</option>
+              <>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: form.assignee_member_ids.length > 0 ? "6px" : 0 }}>
+                  {form.assignee_member_ids.map(id => {
+                    const m = members.find(x => x.id === id);
+                    if (!m) return null;
+                    return (
+                      <span key={id} style={chipStyle}>
+                        <Avatar member={m} size={14} />
+                        {m.display_name}
+                        <button
+                          onClick={() => setForm(f => ({ ...f, assignee_member_ids: f.assignee_member_ids.filter(i => i !== id) }))}
+                          style={chipRemoveBtn}>×</button>
+                      </span>
+                    );
+                  })}
+                </div>
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    const id = e.target.value;
+                    if (id && !form.assignee_member_ids.includes(id))
+                      setForm(f => ({ ...f, assignee_member_ids: [...f.assignee_member_ids, id] }));
+                    e.target.value = "";
+                  }}
+                  style={inputSm}>
+                  <option value="">＋ 担当者を追加...</option>
+                  {members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => (
+                    <option key={m.id} value={m.id}>{m.display_name}</option>
+                  ))}
+                </select>
+              </>
+            ) : assigneeMembers.length > 0 ? (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {assigneeMembers.map(m => (
+                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <Avatar member={m} size={20} />
+                    <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                      {m.display_name}
+                    </span>
+                  </div>
                 ))}
-              </select>
-            ) : member ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                <Avatar member={member} size={20} />
-                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                  {member.display_name}
-                </span>
               </div>
             ) : (
               <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>未担当</span>
@@ -488,8 +522,20 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             )}
           </FieldSection>
 
-          {/* 期日 + 工数（横並び） */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
+          {/* 開始日 + 終了日 + 工数（3列） */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
+            <FieldSection label="開始日">
+              {editing ? (
+                <input type="date" value={form.start_date}
+                  onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
+                  style={inputSm} />
+              ) : (
+                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                  {originalTask.start_date ?? "未設定"}
+                </span>
+              )}
+            </FieldSection>
+
             <FieldSection label="終了日">
               {editing ? (
                 <input type="date" value={form.due_date}

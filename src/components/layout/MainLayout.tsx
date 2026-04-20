@@ -630,11 +630,12 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
   }, [quarterlyObjectives, quarterlyKrTaskForces, objective, currentQ]);
 
   const [name, setName] = useState("");
-  const [assigneeId, setAssigneeId] = useState(currentUser.id);
+  const [assigneeIds, setAssigneeIds] = useState<string[]>([currentUser.id]);
   const [projectId, setProjectId] = useState("");
   const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");
   const [todoIds, setTodoIds] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [saving, setSaving] = useState(false);
   const [tooltipTodo, setTooltipTodo] = useState<ToDo | null>(null);
@@ -684,9 +685,11 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
       name: name.trim(),
       project_id: projectId || null,
       todo_ids: todoIds.filter(id => id !== TODO_OTHER_ID),
-      assignee_member_id: assigneeId,
+      assignee_member_ids: assigneeIds,
+      assignee_member_id: assigneeIds[0] ?? "",
       status: "todo",
       priority: null,
+      start_date: startDate || null,
       due_date: dueDate || null,
       estimated_hours: null,
       comment: "",
@@ -792,24 +795,63 @@ function QuickAddTaskModal({ currentUser, projects, onClose }: {
           />
         </div>
 
+        {/* 担当者（複数可） */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
+          {assigneeIds.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+              {assigneeIds.map(id => {
+                const m = members.find(x => x.id === id);
+                if (!m) return null;
+                return (
+                  <span key={id} style={{
+                    display: "inline-flex", alignItems: "center", gap: "4px",
+                    fontSize: "11px", padding: "2px 8px",
+                    background: "var(--color-bg-secondary)",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "99px", color: "var(--color-text-secondary)",
+                  }}>
+                    {m.display_name}
+                    <button
+                      onClick={() => setAssigneeIds(prev => prev.filter(i => i !== id))}
+                      style={{ background: "none", border: "none", cursor: "pointer", padding: 0, fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1 }}>
+                      ×
+                    </button>
+                  </span>
+                );
+              })}
+            </div>
+          )}
+          <CustomSelect
+            value=""
+            onChange={id => { if (id && !assigneeIds.includes(id)) setAssigneeIds(prev => [...prev, id]); }}
+            options={[
+              { value: "", label: "＋ 担当者を追加..." },
+              ...members.filter(m => !assigneeIds.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+            ]}
+            placeholder="＋ 担当者を追加..."
+          />
+        </div>
+
+        {/* 開始日 + 終了日 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
-          {/* 担当者 */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
-            <CustomSelect
-              value={assigneeId}
-              onChange={setAssigneeId}
-              options={[
-                { value: "", label: "（なし）" },
-                ...members.map(m => ({ value: m.id, label: m.display_name })),
-              ]}
-              placeholder="担当者を選択..."
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>開始日（任意）</div>
+            <input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
             />
           </div>
-
-          {/* 期日 */}
           <div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>期日（任意）</div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>終了日（任意）</div>
             <input
               type="date"
               value={dueDate}
