@@ -220,12 +220,12 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
   const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
+    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
+    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
     { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
-    { key: "status",          label: "状態",     w: "80px",  sortKey: "status" },
-    { key: "priority",        label: "優先度",   w: "60px",  sortKey: "priority" },
+    { key: "status",          label: "状態",     w: "75px",  sortKey: "status" },
     { key: "due_date",        label: "期日",     w: "80px",  sortKey: "due_date" },
     { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
-    { key: "assignee",        label: "担当者",   w: "100px", sortKey: "assignee" },
   ];
 
   // アクティブフィルター数（バッジ用）
@@ -446,7 +446,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
             </div>
           ) : (
             /* PC：テーブル */
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+            <table style={{ width: "auto", borderCollapse: "collapse", fontSize: "11px" }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 5 }}>
                 <tr style={{ background: "var(--color-bg-secondary)" }}>
                   {cols.map(col => (
@@ -464,104 +464,114 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                 </tr>
               </thead>
               <tbody>
-                {groups.map(group => (
-                  <React.Fragment key={group.label}>
-                    <tr>
-                      <td colSpan={6} style={{
-                        padding: "7px 10px 4px",
-                        background: "var(--color-bg-secondary)",
-                        borderBottom: "1px solid var(--color-border-primary)",
-                      }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
-                          <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
-                          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
-                        </div>
-                      </td>
-                    </tr>
-                    {group.tasks.map(task => {
-                      const m  = members.find(mb => mb.id === task.assignee_member_id);
-                      const pj = projects.find(p => p.id === task.project_id);
-                      const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
-                      const isDone    = task.status === "done";
-                      const isOverdue = task.due_date && task.due_date < t0 && !isDone;
-                      const isSel     = selectedTaskId === task.id;
-                      return (
-                        <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
-                          borderBottom: "1px solid var(--color-bg-tertiary)",
-                          background: isSel ? "var(--color-brand-light)" : isDone ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
-                          cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
-                          // 選択時：左ボーダーで「開いている」ことを明示
-                          boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
+                {(() => {
+                  let rowIdx = 0;
+                  return groups.map(group => (
+                    <React.Fragment key={group.label}>
+                      <tr>
+                        <td colSpan={6} style={{
+                          padding: "7px 10px 4px",
+                          background: "var(--color-bg-secondary)",
+                          borderBottom: "1px solid var(--color-border-primary)",
                         }}>
-                          <td style={{ padding: "6px 10px", maxWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                              <div style={{
-                                flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
-                                textDecoration: isDone ? "line-through" : "none",
-                                fontWeight: isSel ? "500" : "400",
-                              }}>{task.name}</div>
-                              {/* コメントインジケーター */}
-                              {task.comment && (
-                                <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
-                              )}
-                              {/* 選択中：矢印で「右にパネルあり」を示す */}
-                              {isSel && (
-                                <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
-                              )}
-                            </div>
-                            {groupBy !== "project" && pj && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
-                                <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
-                                <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 14)}</span>
-                              </div>
-                            )}
-                            {!pj && td && (
-                              <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
-                                <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
-                                <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>
-                                  {td.title.split("\n")[0].slice(0, 20)}
-                                </span>
-                              </div>
-                            )}
-                          </td>
-                          <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                            <span style={{
-                              fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                              background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
-                            }}>{STATUS_LABELS[task.status]}</span>
-                          </td>
-                          <td style={{ padding: "6px 10px" }}>
-                            {task.priority && (
-                              <span style={{
-                                fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
-                                background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
-                              }}>{PRIORITY_LABELS[task.priority]}</span>
-                            )}
-                          </td>
-                          <td style={{
-                            padding: "6px 10px", whiteSpace: "nowrap",
-                            color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-                            fontWeight: isOverdue ? "500" : "400",
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
+                            <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
+                            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {group.tasks.map(task => {
+                        const isEven = rowIdx % 2 === 0;
+                        rowIdx++;
+                        const m  = members.find(mb => mb.id === task.assignee_member_id);
+                        const pj = projects.find(p => p.id === task.project_id);
+                        const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
+                        const isDone    = task.status === "done";
+                        const isOverdue = task.due_date && task.due_date < t0 && !isDone;
+                        const isSel     = selectedTaskId === task.id;
+                        const zebraBg   = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
+                        return (
+                          <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
+                            borderBottom: "1px solid var(--color-bg-tertiary)",
+                            background: isSel ? "var(--color-brand-light)" : isDone ? "var(--color-bg-secondary)" : zebraBg,
+                            cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
+                            boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
                           }}>
-                            {task.start_date ? `${task.start_date.slice(5).replace("-", "/")}〜` : ""}
-                            {task.due_date ? task.due_date.slice(5).replace("-", "/") : "—"}
-                          </td>
-                          <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
-                            {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
-                          </td>
-                          <td style={{ padding: "6px 10px" }}>
-                            {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                              <Avatar member={m} size={16} />
-                              <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{m.short_name}</span>
-                            </div>}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </React.Fragment>
-                ))}
+                            {/* 担当者 */}
+                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+                              {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                <Avatar member={m} size={16} />
+                                <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{m.short_name}</span>
+                              </div>}
+                            </td>
+                            {/* 優先度 */}
+                            <td style={{ padding: "6px 10px" }}>
+                              {task.priority && (
+                                <span style={{
+                                  fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
+                                  background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
+                                }}>{PRIORITY_LABELS[task.priority]}</span>
+                              )}
+                            </td>
+                            {/* タスク名 */}
+                            <td style={{ padding: "6px 10px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                <div style={{
+                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                  maxWidth: "360px",
+                                  color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
+                                  textDecoration: isDone ? "line-through" : "none",
+                                  fontWeight: isSel ? "500" : "400",
+                                }}>{task.name}</div>
+                                {task.comment && (
+                                  <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
+                                )}
+                                {isSel && (
+                                  <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
+                                )}
+                              </div>
+                              {groupBy !== "project" && pj && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+                                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
+                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 14)}</span>
+                                </div>
+                              )}
+                              {!pj && td && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+                                  <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
+                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>
+                                    {td.title.split("\n")[0].slice(0, 20)}
+                                  </span>
+                                </div>
+                              )}
+                            </td>
+                            {/* 状態 */}
+                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+                              <span style={{
+                                fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
+                                background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
+                              }}>{STATUS_LABELS[task.status]}</span>
+                            </td>
+                            {/* 期日 */}
+                            <td style={{
+                              padding: "6px 10px", whiteSpace: "nowrap",
+                              color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
+                              fontWeight: isOverdue ? "500" : "400",
+                            }}>
+                              {task.start_date ? `${task.start_date.slice(5).replace("-", "/")}〜` : ""}
+                              {task.due_date ? task.due_date.slice(5).replace("-", "/") : "—"}
+                            </td>
+                            {/* 工数 */}
+                            <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
+                              {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </React.Fragment>
+                  ));
+                })()}
                 {filteredTasks.length === 0 && (
                   <tr><td colSpan={6} style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
                     条件に一致するタスクがありません
