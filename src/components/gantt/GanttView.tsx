@@ -55,6 +55,19 @@ function formatMonth(d: Date): string {
   return `${d.getFullYear()}年${d.getMonth() + 1}月`;
 }
 
+/** start_date〜due_date のバー位置・幅を計算する。start_date がない場合は due_date の1点表示 */
+function calcTaskBar(task: Task, rangeStart: Date): { barX: number; barWidth: number } | null {
+  const due = toDate(task.due_date);
+  if (!due) return null;
+  const start = toDate(task.start_date ?? null);
+  if (start && start <= due) {
+    const barX = diffDays(rangeStart, start) * DAY_WIDTH;
+    const barWidth = Math.max((diffDays(start, due) + 1) * DAY_WIDTH - 4, DAY_WIDTH - 4);
+    return { barX, barWidth };
+  }
+  return { barX: diffDays(rangeStart, due) * DAY_WIDTH, barWidth: DAY_WIDTH - 4 };
+}
+
 function getDaysInRange(start: Date, end: Date): Date[] {
   const days: Date[] = [];
   let cur = new Date(start);
@@ -128,9 +141,11 @@ export function GanttView({
       if (e && e > maxD) maxD = new Date(e);
     }
     for (const task of allTasks) {
-      const s = toDate(task.due_date);
+      const s = toDate(task.start_date ?? null);
+      const e = toDate(task.due_date);
       if (s && s < minD) minD = new Date(s);
-      if (s && s > maxD) maxD = new Date(s);
+      if (e && e < minD) minD = new Date(e);
+      if (e && e > maxD) maxD = new Date(e);
     }
     for (const ms of milestones) {
       const s = toDate(ms.date);
@@ -672,30 +687,28 @@ export function GanttView({
                         {/* タスク行バー */}
                         {!isCollapsed && tasks.map(task => {
                           const due = toDate(task.due_date);
-                          const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
+                          const bar = calcTaskBar(task, rangeStart);
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
                           const pj = projects.find(p => p.id === task.project_id);
-                          const barColor = isDone
-                            ? "var(--color-border-success)"
-                            : isOverdue
-                            ? "var(--color-border-danger)"
-                            : pj?.color_tag ?? m.color_text;
+                          const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
+                          const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
                           return (
                             <div key={task.id} style={{
                               height: 30, position: "relative",
                               borderBottom: "1px solid var(--color-border-primary)",
                               background: "var(--color-bg-primary)",
                             }}>
-                              {barX !== null && due && (
+                              {bar && due && (
                                 <>
                                   <div
-                                    title={`${task.name}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
+                                    title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
                                     onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                     style={{
                                       position: "absolute",
-                                      left: barX, top: "50%", transform: "translateY(-50%)",
-                                      width: DAY_WIDTH - 4, height: 10, borderRadius: 5,
+                                      left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                      width: bar.barWidth, height: 10,
+                                      borderRadius: hasRange ? "3px" : 5,
                                       background: barColor,
                                       opacity: isDone ? 0.6 : 1,
                                       cursor: isPreview ? "default" : "pointer",
@@ -704,12 +717,14 @@ export function GanttView({
                                   />
                                   <div style={{
                                     position: "absolute",
-                                    left: barX + DAY_WIDTH / 2, top: 2,
+                                    left: bar.barX + bar.barWidth / 2, top: 2,
                                     fontSize: "8px",
                                     color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
                                     transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
                                   }}>
-                                    {due.getMonth() + 1}/{due.getDate()}
+                                    {hasRange
+                                      ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                                      : `${due.getMonth()+1}/${due.getDate()}`}
                                   </div>
                                 </>
                               )}
@@ -797,10 +812,11 @@ export function GanttView({
                     {/* タスク行 */}
                     {!isCollapsed && pjTasks.map(task => {
                       const due = toDate(task.due_date);
-                      const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
+                      const bar = calcTaskBar(task, rangeStart);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
+                      const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
 
                       return (
                         <div key={task.id} style={{
@@ -808,20 +824,17 @@ export function GanttView({
                           borderBottom: "1px solid var(--color-border-primary)",
                           background: isChanged ? "rgba(127,119,221,0.06)" : "var(--color-bg-primary)",
                         }}>
-                          {barX !== null && due && (
+                          {bar && due && (
                             <>
-                              {/* タスクバー（期日が1点なので幅固定） */}
                               <div
-                                title={`${task.name}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
-                                onClick={() => {
-                                  if (!isPreview) setEditingTaskId(task.id);
-                                }}
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
+                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
                                   position: "absolute",
-                                  left: barX,
+                                  left: bar.barX,
                                   top: "50%", transform: "translateY(-50%)",
-                                  width: DAY_WIDTH - 4, height: 10,
-                                  borderRadius: 5,
+                                  width: bar.barWidth, height: 10,
+                                  borderRadius: hasRange ? "3px" : 5,
                                   background: isChanged
                                     ? "var(--color-brand)"
                                     : isDone
@@ -832,28 +845,24 @@ export function GanttView({
                                   opacity: isDone ? 0.6 : 1,
                                   cursor: isPreview ? "default" : "pointer",
                                   zIndex: 2,
-                                  // 変更されたタスクはリング表示で強調
                                   outline: isChanged ? "2px solid var(--color-brand)" : "none",
                                   outlineOffset: "1px",
                                 }}
                               />
-                              {/* 期日ラベル（due_dateの上） */}
                               <div style={{
                                 position: "absolute",
-                                left: barX + DAY_WIDTH / 2,
+                                left: bar.barX + bar.barWidth / 2,
                                 top: 2,
                                 fontSize: "8px",
-                                color: isChanged
-                                  ? "var(--color-brand)"
-                                  : isOverdue
-                                  ? "var(--color-text-danger)"
-                                  : "var(--color-text-tertiary)",
+                                color: isChanged ? "var(--color-brand)" : isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
                                 transform: "translateX(-50%)",
                                 whiteSpace: "nowrap",
                                 pointerEvents: "none",
                                 fontWeight: isChanged ? "700" : "400",
                               }}>
-                                {due.getMonth() + 1}/{due.getDate()}
+                                {hasRange
+                                  ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                                  : `${due.getMonth()+1}/${due.getDate()}`}
                               </div>
                             </>
                           )}
@@ -888,23 +897,25 @@ export function GanttView({
                     </div>
                     {!isCollapsed && tasks.map(task => {
                       const due = toDate(task.due_date);
-                      const barX = due ? diffDays(rangeStart, due) * DAY_WIDTH : null;
+                      const bar = calcTaskBar(task, rangeStart);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
+                      const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
                       return (
                         <div key={task.id} style={{
                           height: 30, position: "relative",
                           borderBottom: "1px solid var(--color-border-primary)",
                           background: "var(--color-bg-primary)",
                         }}>
-                          {barX !== null && due && (
+                          {bar && due && (
                             <>
                               <div
-                                title={`${task.name}\n期日：${task.due_date}`}
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
                                 onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
-                                  position: "absolute", left: barX, top: "50%", transform: "translateY(-50%)",
-                                  width: DAY_WIDTH - 4, height: 10, borderRadius: 5,
+                                  position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                  width: bar.barWidth, height: 10,
+                                  borderRadius: hasRange ? "3px" : 5,
                                   background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
                                   opacity: isDone ? 0.6 : 1,
                                   cursor: isPreview ? "default" : "pointer",
@@ -912,11 +923,13 @@ export function GanttView({
                                 }}
                               />
                               <div style={{
-                                position: "absolute", left: barX + DAY_WIDTH / 2, top: 2,
+                                position: "absolute", left: bar.barX + bar.barWidth / 2, top: 2,
                                 fontSize: "8px", color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
                                 transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
                               }}>
-                                {due.getMonth() + 1}/{due.getDate()}
+                                {hasRange
+                                  ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                                  : `${due.getMonth()+1}/${due.getDate()}`}
                               </div>
                             </>
                           )}

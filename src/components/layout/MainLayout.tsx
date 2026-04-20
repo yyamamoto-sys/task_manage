@@ -32,7 +32,13 @@ const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: Reac
 export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
-  const [viewMode, setViewMode] = useState<ViewMode>("dashboard");
+  const [viewMode, setViewModeState] = useState<ViewMode>(
+    () => (localStorage.getItem("plan_app_view") as ViewMode | null) ?? "dashboard"
+  );
+  const setViewMode = (v: ViewMode) => {
+    localStorage.setItem("plan_app_view", v);
+    setViewModeState(v);
+  };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
