@@ -214,6 +214,8 @@ export function GanttView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollInitialized = useRef(false);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
+  const labelBodyRef    = useRef<HTMLDivElement>(null);
+  const syncingRef      = useRef(false);
 
   // 初回マウント時のみ実行：保存済み日付があればそこへ、なければ今日へ
   useEffect(() => {
@@ -227,7 +229,6 @@ export function GanttView({
     scrollRef.current.scrollLeft = Math.max(0, targetX - scrollRef.current.clientWidth / 2);
   }, [days, rangeStart, todayX]);
 
-  // スクロール時に中心日付をlocalStorageへ保存（300ms debounce）
   const handleGanttScroll = useCallback(() => {
     clearTimeout(scrollSaveTimer.current);
     scrollSaveTimer.current = setTimeout(() => {
@@ -237,7 +238,21 @@ export function GanttView({
       const idx = Math.floor(centerX / DAY_WIDTH);
       if (days[idx]) localStorage.setItem(GANTT_SCROLL_KEY, dateStr(days[idx]));
     }, 300);
+    // 縦スクロールをラベル列と同期
+    if (!syncingRef.current && labelBodyRef.current && scrollRef.current) {
+      syncingRef.current = true;
+      labelBodyRef.current.scrollTop = scrollRef.current.scrollTop;
+      syncingRef.current = false;
+    }
   }, [days]);
+
+  const handleLabelScroll = useCallback(() => {
+    if (!syncingRef.current && scrollRef.current && labelBodyRef.current) {
+      syncingRef.current = true;
+      scrollRef.current.scrollTop = labelBodyRef.current.scrollTop;
+      syncingRef.current = false;
+    }
+  }, []);
 
   // 月ラベルの生成（日付配列から月の境界を取得）
   const monthGroups = useMemo(() => {
@@ -266,7 +281,14 @@ export function GanttView({
     return groups;
   }, [days]);
 
-  const LABEL_WIDTH = isMobile ? 110 : 200; // 左の行ラベル幅
+  const LABEL_WIDTH = isMobile ? 110 : 200;
+
+  const scrollToToday = useCallback(() => {
+    if (!scrollRef.current) return;
+    scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
+  }, [todayX]);
+
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -317,6 +339,14 @@ export function GanttView({
         )}
         {!isPreview && viewMode === "pj" && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
         {!isPreview && viewMode === "pj" && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
+        {!isPreview && (
+          <button onClick={scrollToToday} style={{
+            ...headerBtnStyle,
+            color: "var(--color-text-danger)",
+            borderColor: "var(--color-border-danger)",
+            fontWeight: "600",
+          }}>今日</button>
+        )}
       </div>
 
       {/* ガント本体 */}
@@ -339,7 +369,11 @@ export function GanttView({
           </div>
 
           {/* ラベル行 */}
-          <div style={{ overflow: "hidden" }}>
+          <div
+            ref={labelBodyRef}
+            onScroll={handleLabelScroll}
+            style={{ overflowY: "auto", overflowX: "hidden", scrollbarWidth: "none" }}
+          >
             {viewMode === "pj" ? (
               <>
                 {visibleProjects.map(pj => {
@@ -379,12 +413,15 @@ export function GanttView({
                       {!isCollapsed && pjTasks.map(task => {
                         const m = members.find(mb => mb.id === task.assignee_member_id);
                         return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
+                            onMouseEnter={() => setHoveredTaskId(task.id)}
+                            onMouseLeave={() => setHoveredTaskId(null)}
+                            style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "6px", padding: "0 8px 0 26px",
                             borderBottom: "1px solid var(--color-border-primary)",
-                            background: "var(--color-bg-primary)",
-                            cursor: "pointer",
+                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            cursor: "pointer", transition: "background 0.1s",
                           }}>
                             <StatusDot status={task.status} />
                             <span style={{
@@ -432,12 +469,15 @@ export function GanttView({
                       {!isCollapsed && tasks.map(task => {
                         const m = members.find(mb => mb.id === task.assignee_member_id);
                         return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
+                            onMouseEnter={() => setHoveredTaskId(task.id)}
+                            onMouseLeave={() => setHoveredTaskId(null)}
+                            style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "6px", padding: "0 8px 0 26px",
                             borderBottom: "1px solid var(--color-border-primary)",
-                            background: "var(--color-bg-primary)",
-                            cursor: "pointer",
+                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            cursor: "pointer", transition: "background 0.1s",
                           }}>
                             <StatusDot status={task.status} />
                             <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
@@ -517,12 +557,15 @@ export function GanttView({
                           return due && due < today && task.status !== "done";
                         })();
                         return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)} style={{
+                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
+                            onMouseEnter={() => setHoveredTaskId(task.id)}
+                            onMouseLeave={() => setHoveredTaskId(null)}
+                            style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "5px", padding: "0 8px 0 26px",
                             borderBottom: "1px solid var(--color-border-primary)",
-                            background: "var(--color-bg-primary)",
-                            cursor: "pointer",
+                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            cursor: "pointer", transition: "background 0.1s",
                           }}>
                             <StatusDot status={task.status} />
                             {/* PJカラードット */}
@@ -630,10 +673,10 @@ export function GanttView({
                       ? "rgba(59,130,246,0.05)"
                       : "transparent",
                     borderLeft: isMonthStart
-                      ? "1px solid var(--color-border-primary)"
+                      ? "2px solid var(--color-border-primary)"
                       : isMon
                       ? "1px solid var(--color-border-secondary)"
-                      : "1px solid var(--color-border-primary)",
+                      : "none",
                     pointerEvents: "none",
                     boxSizing: "border-box",
                   }} />
@@ -693,40 +736,47 @@ export function GanttView({
                           const pj = projects.find(p => p.id === task.project_id);
                           const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
                           const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                          const isHovered = hoveredTaskId === task.id;
+                          const dateLabel = due ? (hasRange
+                            ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                            : `${due.getMonth()+1}/${due.getDate()}`) : "";
                           return (
-                            <div key={task.id} style={{
-                              height: 30, position: "relative",
-                              borderBottom: "1px solid var(--color-border-primary)",
-                              background: "var(--color-bg-primary)",
-                            }}>
+                            <div key={task.id}
+                              onMouseEnter={() => setHoveredTaskId(task.id)}
+                              onMouseLeave={() => setHoveredTaskId(null)}
+                              style={{
+                                height: 30, position: "relative",
+                                borderBottom: "1px solid var(--color-border-primary)",
+                                background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                                transition: "background 0.1s",
+                              }}>
                               {bar && due && (
-                                <>
-                                  <div
-                                    title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
-                                    onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                                    style={{
-                                      position: "absolute",
-                                      left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                      width: bar.barWidth, height: 10,
-                                      borderRadius: hasRange ? "3px" : 5,
-                                      background: barColor,
-                                      opacity: isDone ? 0.6 : 1,
-                                      cursor: isPreview ? "default" : "pointer",
-                                      zIndex: 2,
-                                    }}
-                                  />
-                                  <div style={{
+                                <div
+                                  title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
+                                  onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                  style={{
                                     position: "absolute",
-                                    left: bar.barX + bar.barWidth / 2, top: 2,
-                                    fontSize: "8px",
-                                    color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-                                    transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
-                                  }}>
-                                    {hasRange
-                                      ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                                      : `${due.getMonth()+1}/${due.getDate()}`}
-                                  </div>
-                                </>
+                                    left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                    width: bar.barWidth, height: 18,
+                                    borderRadius: hasRange ? "4px" : "9px",
+                                    background: barColor,
+                                    opacity: isDone ? 0.5 : 1,
+                                    cursor: isPreview ? "default" : "pointer",
+                                    zIndex: 2,
+                                    overflow: "hidden",
+                                    display: "flex", alignItems: "center", justifyContent: "center",
+                                    filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                    transition: "filter 0.1s",
+                                  }}
+                                >
+                                  {bar.barWidth > 52 && (
+                                    <span style={{
+                                      fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                      padding: "0 4px", pointerEvents: "none",
+                                    }}>{dateLabel}</span>
+                                  )}
+                                </div>
                               )}
                             </div>
                           );
@@ -817,54 +867,51 @@ export function GanttView({
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                      const isHovered = hoveredTaskId === task.id;
+                      const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
+                      const dateLabel = due ? (hasRange
+                        ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                        : `${due.getMonth()+1}/${due.getDate()}`) : "";
 
                       return (
-                        <div key={task.id} style={{
-                          height: 30, position: "relative",
-                          borderBottom: "1px solid var(--color-border-primary)",
-                          background: isChanged ? "rgba(127,119,221,0.06)" : "var(--color-bg-primary)",
-                        }}>
+                        <div key={task.id}
+                          onMouseEnter={() => setHoveredTaskId(task.id)}
+                          onMouseLeave={() => setHoveredTaskId(null)}
+                          style={{
+                            height: 30, position: "relative",
+                            borderBottom: "1px solid var(--color-border-primary)",
+                            background: isChanged ? "rgba(127,119,221,0.06)" : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            transition: "background 0.1s",
+                          }}>
                           {bar && due && (
-                            <>
-                              <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
-                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                                style={{
-                                  position: "absolute",
-                                  left: bar.barX,
-                                  top: "50%", transform: "translateY(-50%)",
-                                  width: bar.barWidth, height: 10,
-                                  borderRadius: hasRange ? "3px" : 5,
-                                  background: isChanged
-                                    ? "var(--color-brand)"
-                                    : isDone
-                                    ? "var(--color-border-success)"
-                                    : isOverdue
-                                    ? "var(--color-border-danger)"
-                                    : pj.color_tag,
-                                  opacity: isDone ? 0.6 : 1,
-                                  cursor: isPreview ? "default" : "pointer",
-                                  zIndex: 2,
-                                  outline: isChanged ? "2px solid var(--color-brand)" : "none",
-                                  outlineOffset: "1px",
-                                }}
-                              />
-                              <div style={{
+                            <div
+                              title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
+                              onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                              style={{
                                 position: "absolute",
-                                left: bar.barX + bar.barWidth / 2,
-                                top: 2,
-                                fontSize: "8px",
-                                color: isChanged ? "var(--color-brand)" : isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-                                transform: "translateX(-50%)",
-                                whiteSpace: "nowrap",
-                                pointerEvents: "none",
-                                fontWeight: isChanged ? "700" : "400",
-                              }}>
-                                {hasRange
-                                  ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                                  : `${due.getMonth()+1}/${due.getDate()}`}
-                              </div>
-                            </>
+                                left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                width: bar.barWidth, height: 18,
+                                borderRadius: hasRange ? "4px" : "9px",
+                                background: barColor,
+                                opacity: isDone ? 0.5 : 1,
+                                cursor: isPreview ? "default" : "pointer",
+                                zIndex: 2,
+                                outline: isChanged ? "2px solid var(--color-brand)" : "none",
+                                outlineOffset: "1px",
+                                overflow: "hidden",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                transition: "filter 0.1s",
+                              }}
+                            >
+                              {bar.barWidth > 52 && (
+                                <span style={{
+                                  fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                  padding: "0 4px", pointerEvents: "none",
+                                }}>{dateLabel}</span>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
@@ -901,37 +948,46 @@ export function GanttView({
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                      const isHovered = hoveredTaskId === task.id;
+                      const dateLabel = due ? (hasRange
+                        ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                        : `${due.getMonth()+1}/${due.getDate()}`) : "";
                       return (
-                        <div key={task.id} style={{
-                          height: 30, position: "relative",
-                          borderBottom: "1px solid var(--color-border-primary)",
-                          background: "var(--color-bg-primary)",
-                        }}>
+                        <div key={task.id}
+                          onMouseEnter={() => setHoveredTaskId(task.id)}
+                          onMouseLeave={() => setHoveredTaskId(null)}
+                          style={{
+                            height: 30, position: "relative",
+                            borderBottom: "1px solid var(--color-border-primary)",
+                            background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            transition: "background 0.1s",
+                          }}>
                           {bar && due && (
-                            <>
-                              <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
-                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                                style={{
-                                  position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                  width: bar.barWidth, height: 10,
-                                  borderRadius: hasRange ? "3px" : 5,
-                                  background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
-                                  opacity: isDone ? 0.6 : 1,
-                                  cursor: isPreview ? "default" : "pointer",
-                                  zIndex: 2,
-                                }}
-                              />
-                              <div style={{
-                                position: "absolute", left: bar.barX + bar.barWidth / 2, top: 2,
-                                fontSize: "8px", color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-                                transform: "translateX(-50%)", whiteSpace: "nowrap", pointerEvents: "none",
-                              }}>
-                                {hasRange
-                                  ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                                  : `${due.getMonth()+1}/${due.getDate()}`}
-                              </div>
-                            </>
+                            <div
+                              title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
+                              onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                              style={{
+                                position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                width: bar.barWidth, height: 18,
+                                borderRadius: hasRange ? "4px" : "9px",
+                                background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
+                                opacity: isDone ? 0.5 : 1,
+                                cursor: isPreview ? "default" : "pointer",
+                                zIndex: 2,
+                                overflow: "hidden",
+                                display: "flex", alignItems: "center", justifyContent: "center",
+                                filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                transition: "filter 0.1s",
+                              }}
+                            >
+                              {bar.barWidth > 52 && (
+                                <span style={{
+                                  fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                  padding: "0 4px", pointerEvents: "none",
+                                }}>{dateLabel}</span>
+                              )}
+                            </div>
                           )}
                         </div>
                       );
@@ -1012,18 +1068,24 @@ export function GanttView({
       }}>
         {[
           { color: "var(--color-border-success)", label: "完了" },
-          { color: "var(--color-border-danger)", label: "期限超過" },
-          { color: "var(--color-border-secondary)", label: "進行中/未着手" },
-          { color: "var(--color-text-danger)", label: "今日" },
-        ].map(({ color, label }) => (
+          { color: "var(--color-border-danger)",  label: "期限超過" },
+          { color: "var(--color-text-danger)",    label: "今日", isLine: true },
+        ].map(({ color, label, isLine }) => (
           <div key={label} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
             <div style={{
-              width: label === "今日" ? 2 : 12, height: label === "今日" ? 12 : 8,
-              background: color, borderRadius: label === "今日" ? 1 : 4,
+              width: isLine ? 2 : 12, height: isLine ? 12 : 8,
+              background: color, borderRadius: isLine ? 1 : 4,
             }} />
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{label}</span>
           </div>
         ))}
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          <div style={{
+            width: 12, height: 8, borderRadius: 4,
+            background: "linear-gradient(90deg, #818cf8 0%, #34d399 50%, #f59e0b 100%)",
+          }} />
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>通常（PJカラー）</span>
+        </div>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <div style={{
             width: 10, height: 10,
