@@ -1,5 +1,5 @@
 // src/components/list/ListView.tsx
-import { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
@@ -13,11 +13,11 @@ interface Props {
 }
 
 type GroupBy = "project" | "assignee" | "status";
-
-// ソート優先度（レンダリングごとに再生成しないよう定数化）
-const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
-type SortKey = "name" | "due_date" | "priority" | "estimated_hours";
+type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee";
 type SortDir = "asc" | "desc";
+
+const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
+const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, done: 2 };
 
 const STATUS_LABELS: Record<Task["status"], string> = {
   todo: "ToDo", in_progress: "進行中", done: "完了",
@@ -41,14 +41,15 @@ function addDays(n: number): string {
 }
 
 function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
-  const header = ["タスク名","ステータス","担当者","プロジェクト","優先度","期日","工数(h)","コメント"];
+  const header = ["タスク名","ステータス","担当者","プロジェクト","優先度","開始日","期日","工数(h)","コメント"];
   const rows = tasks.map(t => {
     const pj = projects.find(p => p.id === t.project_id);
     const m  = members.find(mb => mb.id === t.assignee_member_id);
     return [
       t.name, STATUS_LABELS[t.status], m?.display_name ?? "",
       pj?.name ?? "", t.priority ? PRIORITY_LABELS[t.priority] : "",
-      t.due_date ?? "", t.estimated_hours?.toString() ?? "",
+      t.start_date ?? "", t.due_date ?? "",
+      t.estimated_hours?.toString() ?? "",
       t.comment.replace(/,/g,"，").replace(/\n/g," "),
     ];
   });
@@ -75,7 +76,7 @@ function renderComment(text: string): React.ReactNode {
   return <>{parts}</>;
 }
 
-// ===== ビュー設定の永続化ヘルパー =====
+// ===== ビュー設定の永続化 =====
 const LIST_LS_KEY = "list_view_settings";
 function lsGet<T>(field: string, fallback: T): T {
   try { return ((JSON.parse(localStorage.getItem(LIST_LS_KEY) ?? "{}") as Record<string, T>)[field] ?? fallback); }
@@ -90,35 +91,34 @@ function lsSet(field: string, value: unknown) {
 
 export function ListView({ currentUser, selectedProject, projects }: Props) {
   const { tasks: rawTasks, members: rawMembers, todos: rawTodos, saveTask } = useAppData();
-  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
-  // 永続化対象の設定（groupBy / filterStatus / filterPriority / sort）
-  const [groupBy, setGroupByState]           = useState<GroupBy>(() => lsGet("groupBy", "project"));
-  const [filterStatus, setFilterStatusState] = useState<Task["status"]|"all">(() => lsGet("filterStatus", "all"));
+  // 永続化フィルター
+  const [groupBy,        setGroupByState       ] = useState<GroupBy>(() => lsGet("groupBy", "project"));
+  const [filterStatus,   setFilterStatusState  ] = useState<Task["status"]|"all">(() => lsGet("filterStatus", "all"));
   const [filterPriority, setFilterPriorityState] = useState<"all"|"high"|"mid"|"low">(() => lsGet("filterPriority", "all"));
-  const [sortKey, setSortKeyState]           = useState<SortKey>(() => lsGet("sortKey", "due_date"));
-  const [sortDir, setSortDirState]           = useState<SortDir>(() => lsGet("sortDir", "asc"));
+  const [sortKey,        setSortKeyState       ] = useState<SortKey>(() => lsGet("sortKey", "due_date"));
+  const [sortDir,        setSortDirState       ] = useState<SortDir>(() => lsGet("sortDir", "asc"));
 
-  const setGroupBy = (v: GroupBy) => { setGroupByState(v); lsSet("groupBy", v); };
-  const setFilterStatus = (v: Task["status"]|"all") => { setFilterStatusState(v); lsSet("filterStatus", v); };
-  const setFilterPriority = (v: "all"|"high"|"mid"|"low") => { setFilterPriorityState(v); lsSet("filterPriority", v); };
+  const setGroupBy       = (v: GroupBy)                   => { setGroupByState(v);        lsSet("groupBy", v); };
+  const setFilterStatus  = (v: Task["status"]|"all")      => { setFilterStatusState(v);   lsSet("filterStatus", v); };
+  const setFilterPriority= (v: "all"|"high"|"mid"|"low")  => { setFilterPriorityState(v); lsSet("filterPriority", v); };
 
-  // 永続化しない一時フィルター
-  const [filterMyOnly, setFilterMyOnly] = useState(false);
+  // セッション限りのフィルター
+  const [filterMyOnly,   setFilterMyOnly  ] = useState(false);
   const [filterThisWeek, setFilterThisWeek] = useState(false);
-  const [filterMember, setFilterMember] = useState<string>("all");
-  const [searchText, setSearchText]     = useState("");
+  const [filterHideDone, setFilterHideDone] = useState(false);
+  const [filterMember,   setFilterMember  ] = useState<string>("all");
+  const [searchText,     setSearchText    ] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<string|null>(null);
-  const [editingTaskId,  setEditingTaskId]  = useState<string|null>(null);
+  const [editingTaskId,  setEditingTaskId ] = useState<string|null>(null);
 
   // サイドバー編集フォーム
   const [sidebarForm, setSidebarForm] = useState<{
-    status: Task["status"];
-    due_date: string;
-    comment: string;
+    status: Task["status"]; due_date: string; comment: string;
   } | null>(null);
   const [sidebarDirty, setSidebarDirty] = useState(false);
 
@@ -134,337 +134,427 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
 
   const handleSort = useCallback((key: SortKey) => {
     if (sortKey === key) {
-      const newDir: SortDir = sortDir === "asc" ? "desc" : "asc";
-      setSortDirState(newDir); lsSet("sortDir", newDir);
+      const d: SortDir = sortDir === "asc" ? "desc" : "asc";
+      setSortDirState(d); lsSet("sortDir", d);
     } else {
       setSortKeyState(key); lsSet("sortKey", key);
       setSortDirState("asc"); lsSet("sortDir", "asc");
     }
   }, [sortKey, sortDir]);
 
-  // 「今日」と「7日後」は初回マウント時に固定（日をまたぐ場合はページリロードで更新）
   const t0 = useRef(todayStr()).current;
   const t7 = useRef(addDays(7)).current;
 
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (selectedProject) tasks = tasks.filter(t=>t.project_id===selectedProject.id);
-    if (filterStatus!=="all") tasks = tasks.filter(t=>t.status===filterStatus);
-    if (filterMyOnly) tasks = tasks.filter(t=>t.assignee_member_id===currentUser.id);
-    if (filterMember!=="all") tasks = tasks.filter(t=>
-      t.assignee_member_ids?.includes(filterMember) || t.assignee_member_id===filterMember
+    if (selectedProject)         tasks = tasks.filter(t => t.project_id === selectedProject.id);
+    if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
+    if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
+    if (filterMyOnly)            tasks = tasks.filter(t => t.assignee_member_id === currentUser.id);
+    if (filterMember !== "all")  tasks = tasks.filter(t =>
+      t.assignee_member_ids?.includes(filterMember) || t.assignee_member_id === filterMember
     );
-    if (filterThisWeek) tasks = tasks.filter(t=>t.due_date&&t.due_date>=t0&&t.due_date<=t7);
-    if (filterPriority!=="all") tasks = tasks.filter(t=>t.priority===filterPriority);
+    if (filterThisWeek)          tasks = tasks.filter(t => t.due_date && t.due_date >= t0 && t.due_date <= t7);
+    if (filterPriority !== "all")tasks = tasks.filter(t => t.priority === filterPriority);
     if (searchText.trim()) {
-      const q=searchText.toLowerCase();
-      tasks = tasks.filter(t=>t.name.toLowerCase().includes(q)||t.comment.toLowerCase().includes(q));
+      const q = searchText.toLowerCase();
+      tasks = tasks.filter(t => t.name.toLowerCase().includes(q) || t.comment.toLowerCase().includes(q));
     }
-    return [...tasks].sort((a,b)=>{
-      let va:string|number="", vb:string|number="";
-      if (sortKey==="name"){va=a.name;vb=b.name;}
-      else if (sortKey==="due_date"){va=a.due_date??"9999";vb=b.due_date??"9999";}
-      else if (sortKey==="priority"){va=PRIO[a.priority??""];vb=PRIO[b.priority??""];}
-      else if (sortKey==="estimated_hours"){va=a.estimated_hours??999;vb=b.estimated_hours??999;}
-      if(va<vb) return sortDir==="asc"?-1:1;
-      if(va>vb) return sortDir==="asc"?1:-1;
+    return [...tasks].sort((a, b) => {
+      let va: string|number = "", vb: string|number = "";
+      if      (sortKey === "name")            { va = a.name;                               vb = b.name; }
+      else if (sortKey === "due_date")        { va = a.due_date ?? "9999";                 vb = b.due_date ?? "9999"; }
+      else if (sortKey === "priority")        { va = PRIO[a.priority ?? ""];               vb = PRIO[b.priority ?? ""]; }
+      else if (sortKey === "estimated_hours") { va = a.estimated_hours ?? 999;             vb = b.estimated_hours ?? 999; }
+      else if (sortKey === "status")          { va = STATUS_ORDER[a.status];               vb = STATUS_ORDER[b.status]; }
+      else if (sortKey === "assignee")        {
+        va = members.find(m => m.id === a.assignee_member_id)?.display_name ?? "zzz";
+        vb = members.find(m => m.id === b.assignee_member_id)?.display_name ?? "zzz";
+      }
+      if (va < vb) return sortDir === "asc" ? -1 : 1;
+      if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
     });
-  }, [allTasks,selectedProject,filterStatus,filterMyOnly,filterMember,filterThisWeek,filterPriority,searchText,sortKey,sortDir,currentUser.id,t0,t7]);
+  }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, filterMember,
+      filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
   const groups = useMemo(() => {
-    if (groupBy==="project") {
-      // プロジェクト紐づきタスク
-      const map = new Map<string,Task[]>();
-      projects.forEach(p=>map.set(p.id,[]));
-      filteredTasks.forEach(t=>{const a=t.project_id ? map.get(t.project_id) : undefined;if(a)a.push(t);});
-      const pjGroups = projects.filter(p=>(map.get(p.id)?.length??0)>0)
-        .map(p=>({label:p.name,color:p.color_tag,tasks:map.get(p.id)??[]}));
-
-      // project_id=null のタスクをToDo単位でグループ化
-      const noPjTasks = filteredTasks.filter(t=>t.project_id==null);
-      const todoMap = new Map<string,Task[]>();
+    if (groupBy === "project") {
+      const map = new Map<string, Task[]>();
+      projects.forEach(p => map.set(p.id, []));
+      filteredTasks.forEach(t => { const a = t.project_id ? map.get(t.project_id) : undefined; if (a) a.push(t); });
+      const pjGroups = projects.filter(p => (map.get(p.id)?.length ?? 0) > 0)
+        .map(p => ({ label: p.name, color: p.color_tag, tasks: map.get(p.id) ?? [] }));
+      const noPjTasks = filteredTasks.filter(t => t.project_id == null);
+      const todoMap = new Map<string, Task[]>();
       const noTodoTasks: Task[] = [];
-      noPjTasks.forEach(t=>{
-        const primaryTodoId = (t.todo_ids ?? [])[0];
-        if (primaryTodoId) {
-          if (!todoMap.has(primaryTodoId)) todoMap.set(primaryTodoId,[]);
-          todoMap.get(primaryTodoId)!.push(t);
-        } else {
-          noTodoTasks.push(t);
-        }
+      noPjTasks.forEach(t => {
+        const id = (t.todo_ids ?? [])[0];
+        if (id) { if (!todoMap.has(id)) todoMap.set(id, []); todoMap.get(id)!.push(t); }
+        else noTodoTasks.push(t);
       });
       const todoGroups = [...todoMap.entries()].map(([todoId, tasks]) => {
-        const td = todos.find(t=>t.id===todoId);
-        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0,30)}` : "[ToDo]", color: "#6ee7b7", tasks };
+        const td = todos.find(t => t.id === todoId);
+        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0, 30)}` : "[ToDo]", color: "#6ee7b7", tasks };
       });
       const unassigned = noTodoTasks.length > 0
-        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks }]
-        : [];
-
+        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks }] : [];
       return [...pjGroups, ...todoGroups, ...unassigned];
     }
-    if (groupBy==="assignee") {
-      const map = new Map<string,Task[]>();
-      members.forEach(m=>map.set(m.id,[]));
-      filteredTasks.forEach(t=>{const a=map.get(t.assignee_member_id);if(a)a.push(t);});
-      return members.filter(m=>(map.get(m.id)?.length??0)>0)
-        .map(m=>({label:m.display_name,color:m.color_bg,tasks:map.get(m.id)!}));
+    if (groupBy === "assignee") {
+      const map = new Map<string, Task[]>();
+      members.forEach(m => map.set(m.id, []));
+      filteredTasks.forEach(t => { const a = map.get(t.assignee_member_id); if (a) a.push(t); });
+      return members.filter(m => (map.get(m.id)?.length ?? 0) > 0)
+        .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)! }));
     }
-    return (["in_progress","todo","done"] as const)
-      .map(s=>({label:STATUS_LABELS[s],color:STATUS_COLORS[s].color,tasks:filteredTasks.filter(t=>t.status===s)}))
-      .filter(g=>g.tasks.length>0);
-  }, [filteredTasks,groupBy,projects,members,todos]);
+    return (["in_progress", "todo", "done"] as const)
+      .map(s => ({ label: STATUS_LABELS[s], color: STATUS_COLORS[s].color, tasks: filteredTasks.filter(t => t.status === s) }))
+      .filter(g => g.tasks.length > 0);
+  }, [filteredTasks, groupBy, projects, members, todos]);
 
-  const selectedTask = selectedTaskId ? allTasks.find(t=>t.id===selectedTaskId)??null : null;
+  const selectedTask = selectedTaskId ? allTasks.find(t => t.id === selectedTaskId) ?? null : null;
 
-  const SortIcon = ({k}:{k:SortKey}) => sortKey===k
-    ? <span style={{marginLeft:3,opacity:.7}}>{sortDir==="asc"?"↑":"↓"}</span>
-    : <span style={{marginLeft:3,opacity:.2}}>↕</span>;
+  const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
+    ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
+    : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
-  const cols = [
-    {key:"name",label:"タスク名",w:"auto"},
-    {key:"status",label:"ステータス",w:"80px"},
-    {key:"priority",label:"優先度",w:"60px"},
-    {key:"due_date",label:"期日",w:"72px"},
-    {key:"estimated_hours",label:"工数",w:"52px"},
-    {key:"assignee",label:"担当者",w:"90px"},
+  const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
+    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
+    { key: "status",          label: "状態",     w: "80px",  sortKey: "status" },
+    { key: "priority",        label: "優先度",   w: "60px",  sortKey: "priority" },
+    { key: "due_date",        label: "期日",     w: "80px",  sortKey: "due_date" },
+    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
+    { key: "assignee",        label: "担当者",   w: "100px", sortKey: "assignee" },
   ];
 
-  return (
-    <div style={{display:"flex",height:"100%",overflow:"hidden"}}>
-      <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+  // アクティブフィルター数（バッジ用）
+  const activeFilterCount = [
+    filterStatus !== "all", filterPriority !== "all",
+    filterMember !== "all", filterMyOnly, filterThisWeek, filterHideDone,
+  ].filter(Boolean).length;
 
-        {/* ヘッダーバー */}
+  return (
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
+        {/* ===== ツールバー 1段目：グループ + 検索 + 件数 + CSV ===== */}
         <div style={{
-          padding:"7px 12px",borderBottom:"1px solid var(--color-border-primary)",
-          background:"var(--color-bg-primary)",flexShrink:0,
-          display:"flex",alignItems:"center",gap:"7px",flexWrap:"wrap",
+          padding: "7px 12px 6px",
+          borderBottom: "1px solid var(--color-border-primary)",
+          background: "var(--color-bg-primary)", flexShrink: 0,
+          display: "flex", alignItems: "center", gap: "8px",
         }}>
-          {/* グループ */}
-          <div style={{display:"flex",background:"var(--color-bg-tertiary)",borderRadius:"var(--radius-md)",padding:"2px"}}>
-            {(["project","assignee","status"] as const).map(g=>(
-              <button key={g} onClick={()=>setGroupBy(g)} style={{
-                padding:"3px 9px",fontSize:"10px",borderRadius:"var(--radius-sm)",border:"none",cursor:"pointer",
-                fontWeight:groupBy===g?"500":"400",
-                background:groupBy===g?"var(--color-bg-primary)":"transparent",
-                color:groupBy===g?"var(--color-text-primary)":"var(--color-text-tertiary)",
-                boxShadow:groupBy===g?"var(--shadow-sm)":"none",
+          {/* グループ切替 */}
+          <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
+            {(["project", "assignee", "status"] as const).map(g => (
+              <button key={g} onClick={() => setGroupBy(g)} style={{
+                padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                fontWeight: groupBy === g ? "500" : "400",
+                background: groupBy === g ? "var(--color-bg-primary)" : "transparent",
+                color: groupBy === g ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                boxShadow: groupBy === g ? "var(--shadow-sm)" : "none",
               }}>
-                {g==="project"?"PJ別":g==="assignee"?"担当者別":"ステータス別"}
+                {g === "project" ? "PJ別" : g === "assignee" ? "担当者別" : "ステータス別"}
               </button>
             ))}
           </div>
 
-          <select value={filterStatus} onChange={e=>setFilterStatus(e.target.value as Task["status"]|"all")}
-            style={selStyle}>
-            <option value="all">すべて</option>
+          {/* 検索 */}
+          <input value={searchText} onChange={e => setSearchText(e.target.value)}
+            placeholder="🔍 タスク名・メモで検索" style={{
+              flex: 1, minWidth: "120px", padding: "4px 10px", fontSize: "11px",
+              border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
+            }} />
+
+          {/* 件数 */}
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+            {filteredTasks.length}件
+            {activeFilterCount > 0 && (
+              <span style={{
+                marginLeft: 5, fontSize: "9px", padding: "1px 5px", borderRadius: "99px",
+                background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+                border: "1px solid var(--color-brand-border)",
+              }}>
+                フィルター {activeFilterCount}
+              </span>
+            )}
+          </span>
+
+          {/* CSV */}
+          <button onClick={() => exportCSV(filteredTasks, projects, members)} style={{
+            padding: "4px 10px", fontSize: "10px", color: "var(--color-text-secondary)",
+            border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+            cursor: "pointer", background: "transparent", whiteSpace: "nowrap",
+          }}>↓ CSV</button>
+        </div>
+
+        {/* ===== ツールバー 2段目：フィルター群 ===== */}
+        <div style={{
+          padding: "5px 12px",
+          borderBottom: "1px solid var(--color-border-primary)",
+          background: "var(--color-bg-secondary)", flexShrink: 0,
+          display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap",
+        }}>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as Task["status"] | "all")} style={selStyle}>
+            <option value="all">状態：すべて</option>
             <option value="todo">ToDo</option>
             <option value="in_progress">進行中</option>
             <option value="done">完了</option>
           </select>
 
-          <select value={filterPriority} onChange={e=>setFilterPriority(e.target.value as "all"|"high"|"mid"|"low")}
-            style={selStyle}>
+          <select value={filterPriority} onChange={e => setFilterPriority(e.target.value as "all"|"high"|"mid"|"low")} style={selStyle}>
             <option value="all">優先度：すべて</option>
             <option value="high">高</option>
             <option value="mid">中</option>
             <option value="low">低</option>
           </select>
 
-          <select value={filterMember} onChange={e=>{setFilterMember(e.target.value); setFilterMyOnly(false);}}
-            style={selStyle}>
-            <option value="all">担当者：全員</option>
-            {members.map(m=><option key={m.id} value={m.id}>{m.display_name}</option>)}
-          </select>
+          {/* 担当者別グループ中は担当者フィルターを非表示（冗長のため） */}
+          {groupBy !== "assignee" && (
+            <select value={filterMember} onChange={e => { setFilterMember(e.target.value); setFilterMyOnly(false); }} style={selStyle}>
+              <option value="all">担当者：全員</option>
+              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
+            </select>
+          )}
 
-          <Chip active={filterMyOnly} onClick={()=>{setFilterMyOnly(v=>!v); setFilterMember("all");}} label="自分担当"/>
-          <Chip active={filterThisWeek} onClick={()=>setFilterThisWeek(v=>!v)} label="今週期限"/>
+          <div style={{ width: 1, height: 14, background: "var(--color-border-primary)", margin: "0 2px" }} />
 
-          <input value={searchText} onChange={e=>setSearchText(e.target.value)}
-            placeholder="🔍 検索" style={{
-              flex:1,minWidth:"100px",padding:"4px 8px",fontSize:"11px",
-              border:"1px solid var(--color-border-primary)",borderRadius:"var(--radius-md)",
-              background:"var(--color-bg-primary)",color:"var(--color-text-primary)",outline:"none",
-            }}/>
+          <Chip active={filterMyOnly}   onClick={() => { setFilterMyOnly(v => !v); setFilterMember("all"); }} label="自分担当" />
+          <Chip active={filterThisWeek} onClick={() => setFilterThisWeek(v => !v)} label="今週期限" />
+          <Chip active={filterHideDone} onClick={() => setFilterHideDone(v => !v)} label="完了を隠す" />
 
-          <span style={{fontSize:"11px",color:"var(--color-text-tertiary)",whiteSpace:"nowrap"}}>
-            {filteredTasks.length}件
-          </span>
-
-          <button onClick={()=>exportCSV(filteredTasks,projects,members)} style={{
-            padding:"4px 10px",fontSize:"10px",color:"var(--color-text-secondary)",
-            border:"1px solid var(--color-border-primary)",borderRadius:"var(--radius-md)",
-            cursor:"pointer",background:"transparent",whiteSpace:"nowrap",
-          }}>↓ CSV</button>
+          {/* フィルタークリア */}
+          {activeFilterCount > 0 && (
+            <button onClick={() => {
+              setFilterStatus("all"); setFilterPriority("all");
+              setFilterMember("all"); setFilterMyOnly(false);
+              setFilterThisWeek(false); setFilterHideDone(false);
+            }} style={{
+              marginLeft: "auto", padding: "2px 8px", fontSize: "10px",
+              color: "var(--color-text-tertiary)", border: "none",
+              background: "transparent", cursor: "pointer",
+            }}>✕ クリア</button>
+          )}
         </div>
 
-        {/* テーブル（PC）/ カード（モバイル） */}
-        <div style={{flex:1,overflow:"auto"}}>
+        {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
+        <div style={{ flex: 1, overflow: "auto" }}>
           {isMobile ? (
             /* モバイル：カードリスト */
-            <div style={{padding:"8px 10px",display:"flex",flexDirection:"column",gap:"6px"}}>
-              {groups.map(group=>(
+            <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+              {groups.map(group => (
                 <div key={group.label}>
-                  <div style={{display:"flex",alignItems:"center",gap:"6px",padding:"6px 4px 4px"}}>
-                    <span style={{width:7,height:7,borderRadius:"50%",background:group.color,display:"inline-block"}}/>
-                    <span style={{fontSize:"11px",fontWeight:"500",color:"var(--color-text-secondary)"}}>{group.label}</span>
-                    <span style={{fontSize:"10px",color:"var(--color-text-tertiary)"}}>{group.tasks.length}件</span>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 4px 4px" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
+                    <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
+                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
-                  {group.tasks.map(task=>{
-                    const m   = members.find(mb=>mb.id===task.assignee_member_id);
-                    const pj  = projects.find(p=>p.id===task.project_id);
-                    const td  = (task.todo_ids ?? [])[0] ? todos.find(t=>t.id===task.todo_ids[0]) : undefined;
-                    const isDone    = task.status==="done";
-                    const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
+                  {group.tasks.map(task => {
+                    const m  = members.find(mb => mb.id === task.assignee_member_id);
+                    const pj = projects.find(p => p.id === task.project_id);
+                    const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
+                    const isDone    = task.status === "done";
+                    const isOverdue = task.due_date && task.due_date < t0 && !isDone;
+                    const isSel     = selectedTaskId === task.id;
                     return (
-                      <div key={task.id} onClick={()=>setEditingTaskId(task.id)} style={{
-                        background:"var(--color-bg-primary)",
-                        border:"1px solid var(--color-border-primary)",
-                        borderRadius:"var(--radius-lg)",
-                        padding:"10px 12px",marginBottom:"4px",
-                        cursor:"pointer",opacity:isDone?0.6:1,
-                      }}>
-                        <div style={{display:"flex",alignItems:"flex-start",gap:"8px",marginBottom:"6px"}}>
-                          <div style={{flex:1,fontSize:"12px",fontWeight:"500",
-                            color:"var(--color-text-primary)",lineHeight:1.4,
-                            textDecoration:isDone?"line-through":"none"}}>
-                            {task.name}
+                      <div key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)}
+                        style={{
+                          background: isSel ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                          border: isSel ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
+                          borderRadius: "var(--radius-lg)",
+                          padding: "10px 12px", marginBottom: "4px",
+                          cursor: "pointer", opacity: isDone ? 0.6 : 1,
+                          transition: "background 0.1s, border-color 0.1s",
+                        }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "5px" }}>
+                          <div style={{
+                            flex: 1, fontSize: "12px", fontWeight: "500",
+                            color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
+                            lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
+                          }}>{task.name}</div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
+                            {task.comment && <span title="メモあり" style={{ fontSize: "11px", opacity: 0.5 }}>💬</span>}
+                            <span style={{
+                              fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
+                              background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
+                            }}>{STATUS_LABELS[task.status]}</span>
                           </div>
-                          <span style={{fontSize:"9px",padding:"2px 6px",borderRadius:"3px",flexShrink:0,
-                            background:STATUS_COLORS[task.status].bg,color:STATUS_COLORS[task.status].color}}>
-                            {STATUS_LABELS[task.status]}
-                          </span>
                         </div>
-                        <div style={{display:"flex",alignItems:"center",gap:"8px",flexWrap:"wrap"}}>
-                          {m&&<div style={{display:"flex",alignItems:"center",gap:"4px"}}>
-                            <Avatar member={m} size={14}/>
-                            <span style={{fontSize:"10px",color:"var(--color-text-secondary)"}}>{m.short_name}</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                            <Avatar member={m} size={14} />
+                            <span style={{ fontSize: "10px", color: "var(--color-text-secondary)" }}>{m.short_name}</span>
                           </div>}
-                          {task.due_date&&<span style={{fontSize:"10px",
-                            color:isOverdue?"var(--color-text-danger)":"var(--color-text-tertiary)",
-                            fontWeight:isOverdue?"500":"400"}}>
-                            {task.due_date.slice(5).replace("-","/")}
-                          </span>}
-                          {task.priority&&<span style={{fontSize:"9px",padding:"1px 5px",borderRadius:"3px",
-                            background:PRIORITY_COLORS[task.priority].bg,color:PRIORITY_COLORS[task.priority].color}}>
-                            {PRIORITY_LABELS[task.priority]}
-                          </span>}
-                          {groupBy!=="project"&&pj&&<div style={{display:"flex",alignItems:"center",gap:"3px"}}>
-                            <span style={{width:4,height:4,borderRadius:"50%",background:pj.color_tag,display:"inline-block"}}/>
-                            <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{pj.name.slice(0,12)}</span>
+                          {task.due_date && <span style={{
+                            fontSize: "10px",
+                            color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+                            fontWeight: isOverdue ? "500" : "400",
+                          }}>{task.due_date.slice(5).replace("-", "/")}</span>}
+                          {task.priority && <span style={{
+                            fontSize: "9px", padding: "1px 5px", borderRadius: "3px",
+                            background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
+                          }}>{PRIORITY_LABELS[task.priority]}</span>}
+                          {groupBy !== "project" && pj && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                            <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
+                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 12)}</span>
                           </div>}
-                          {!pj&&td&&<div style={{display:"flex",alignItems:"center",gap:"3px"}}>
-                            <span style={{fontSize:"9px",color:"#059669",fontWeight:"500"}}>ToDo</span>
-                            <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{td.title.split("\n")[0].slice(0,16)}</span>
+                          {!pj && td && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
+                            <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
+                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{td.title.split("\n")[0].slice(0, 16)}</span>
                           </div>}
                         </div>
+                        {/* モバイル: 選択時にクイック操作を表示 */}
+                        {isSel && sidebarForm && (
+                          <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
+                            <div style={{ display: "flex", gap: "4px", marginBottom: "6px" }}>
+                              {(["todo", "in_progress", "done"] as const).map(s => (
+                                <button key={s} onClick={e => {
+                                  e.stopPropagation();
+                                  const now = new Date().toISOString();
+                                  setSidebarForm(f => f ? { ...f, status: s } : f);
+                                  saveTask({ ...task, status: s, updated_at: now, updated_by: currentUser.id });
+                                }} style={{
+                                  flex: 1, padding: "4px 2px", fontSize: "9px", borderRadius: "var(--radius-sm)",
+                                  fontWeight: sidebarForm.status === s ? "600" : "400",
+                                  background: sidebarForm.status === s ? STATUS_COLORS[s].bg : "transparent",
+                                  color: sidebarForm.status === s ? STATUS_COLORS[s].color : "var(--color-text-tertiary)",
+                                  border: sidebarForm.status === s ? `1px solid ${STATUS_COLORS[s].color}` : "1px solid var(--color-border-primary)",
+                                  cursor: "pointer",
+                                }}>{STATUS_LABELS[s]}</button>
+                              ))}
+                            </div>
+                            <button onClick={e => { e.stopPropagation(); setEditingTaskId(task.id); }} style={{
+                              width: "100%", padding: "5px", fontSize: "11px",
+                              background: "transparent", color: "var(--color-text-secondary)",
+                              border: "1px solid var(--color-border-primary)",
+                              borderRadius: "var(--radius-md)", cursor: "pointer",
+                            }}>詳細を開く</button>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               ))}
-              {filteredTasks.length===0&&(
-                <div style={{padding:"36px",textAlign:"center",color:"var(--color-text-tertiary)",fontSize:"12px"}}>
+              {filteredTasks.length === 0 && (
+                <div style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
                   条件に一致するタスクがありません
                 </div>
               )}
             </div>
           ) : (
             /* PC：テーブル */
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:"11px"}}>
-              <thead style={{position:"sticky",top:0,zIndex:5}}>
-                <tr style={{background:"var(--color-bg-secondary)"}}>
-                  {cols.map(col=>(
-                    <th key={col.key} style={{
-                      padding:"6px 10px",textAlign:"left",
-                      borderBottom:"1px solid var(--color-border-primary)",
-                      fontWeight:"500",color:"var(--color-text-secondary)",
-                      width:col.w,cursor:["status","assignee"].includes(col.key)?"default":"pointer",
-                      userSelect:"none",whiteSpace:"nowrap",
-                    }} onClick={()=>{if(!["status","assignee"].includes(col.key))handleSort(col.key as SortKey);}}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
+              <thead style={{ position: "sticky", top: 0, zIndex: 5 }}>
+                <tr style={{ background: "var(--color-bg-secondary)" }}>
+                  {cols.map(col => (
+                    <th key={col.key} onClick={() => col.sortKey && handleSort(col.sortKey)} style={{
+                      padding: "6px 10px", textAlign: "left",
+                      borderBottom: "1px solid var(--color-border-primary)",
+                      fontWeight: "500", color: "var(--color-text-secondary)",
+                      width: col.w, cursor: col.sortKey ? "pointer" : "default",
+                      userSelect: "none", whiteSpace: "nowrap",
+                    }}>
                       {col.label}
-                      {!["status","assignee"].includes(col.key)&&<SortIcon k={col.key as SortKey}/>}
+                      {col.sortKey && <SortIcon k={col.sortKey} />}
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {groups.map(group=>(
+                {groups.map(group => (
                   <React.Fragment key={group.label}>
                     <tr>
                       <td colSpan={6} style={{
-                        padding:"7px 10px 4px",
-                        background:"var(--color-bg-secondary)",
-                        borderBottom:"1px solid var(--color-border-primary)",
+                        padding: "7px 10px 4px",
+                        background: "var(--color-bg-secondary)",
+                        borderBottom: "1px solid var(--color-border-primary)",
                       }}>
-                        <div style={{display:"flex",alignItems:"center",gap:"6px"}}>
-                          <span style={{width:7,height:7,borderRadius:"50%",background:group.color,display:"inline-block"}}/>
-                          <span style={{fontSize:"11px",fontWeight:"500",color:"var(--color-text-secondary)"}}>{group.label}</span>
-                          <span style={{fontSize:"10px",color:"var(--color-text-tertiary)"}}>{group.tasks.length}件</span>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
+                          <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
+                          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                         </div>
                       </td>
                     </tr>
-                    {group.tasks.map(task=>{
-                      const m   = members.find(mb=>mb.id===task.assignee_member_id);
-                      const pj  = projects.find(p=>p.id===task.project_id);
-                      const td  = (task.todo_ids ?? [])[0] ? todos.find(t=>t.id===task.todo_ids[0]) : undefined;
-                      const isDone    = task.status==="done";
-                      const isOverdue = task.due_date&&task.due_date<t0&&!isDone;
-                      const isSel     = selectedTaskId===task.id;
+                    {group.tasks.map(task => {
+                      const m  = members.find(mb => mb.id === task.assignee_member_id);
+                      const pj = projects.find(p => p.id === task.project_id);
+                      const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
+                      const isDone    = task.status === "done";
+                      const isOverdue = task.due_date && task.due_date < t0 && !isDone;
+                      const isSel     = selectedTaskId === task.id;
                       return (
-                        <tr key={task.id} onClick={()=>setSelectedTaskId(isSel?null:task.id)} style={{
-                          borderBottom:"1px solid var(--color-bg-tertiary)",
-                          background:isSel?"var(--color-brand-light)":isDone?"var(--color-bg-secondary)":"var(--color-bg-primary)",
-                          cursor:"pointer",opacity:isDone ? 0.6 : 1,transition:"background 0.1s",
+                        <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
+                          borderBottom: "1px solid var(--color-bg-tertiary)",
+                          background: isSel ? "var(--color-brand-light)" : isDone ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                          cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
+                          // 選択時：左ボーダーで「開いている」ことを明示
+                          boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
                         }}>
-                          <td style={{padding:"6px 10px",maxWidth:0}}>
-                            <div style={{
-                              overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
-                              color:isSel?"var(--color-text-purple)":"var(--color-text-primary)",
-                              textDecoration:isDone?"line-through":"none",
-                            }}>{task.name}</div>
-                            {groupBy!=="project"&&pj&&(
-                              <div style={{display:"flex",alignItems:"center",gap:"3px",marginTop:"1px"}}>
-                                <span style={{width:4,height:4,borderRadius:"50%",background:pj.color_tag,display:"inline-block"}}/>
-                                <span style={{fontSize:"9px",color:"var(--color-text-tertiary)"}}>{pj.name.slice(0,14)}</span>
+                          <td style={{ padding: "6px 10px", maxWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                              <div style={{
+                                flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                                color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
+                                textDecoration: isDone ? "line-through" : "none",
+                                fontWeight: isSel ? "500" : "400",
+                              }}>{task.name}</div>
+                              {/* コメントインジケーター */}
+                              {task.comment && (
+                                <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
+                              )}
+                              {/* 選択中：矢印で「右にパネルあり」を示す */}
+                              {isSel && (
+                                <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
+                              )}
+                            </div>
+                            {groupBy !== "project" && pj && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+                                <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
+                                <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 14)}</span>
                               </div>
                             )}
-                            {!pj&&td&&(
-                              <div style={{display:"flex",alignItems:"center",gap:"3px",marginTop:"1px"}}>
-                                <span style={{fontSize:"9px",color:"#059669",fontWeight:"500"}}>ToDo</span>
-                                <span style={{fontSize:"9px",color:"var(--color-text-tertiary)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:"120px"}}>
-                                  {td.title.split("\n")[0].slice(0,20)}
+                            {!pj && td && (
+                              <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+                                <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
+                                <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>
+                                  {td.title.split("\n")[0].slice(0, 20)}
                                 </span>
                               </div>
                             )}
                           </td>
-                          <td style={{padding:"6px 10px",whiteSpace:"nowrap"}}>
-                            <span style={{fontSize:"9px",padding:"2px 6px",borderRadius:"3px",
-                              background:STATUS_COLORS[task.status].bg,color:STATUS_COLORS[task.status].color}}>
-                              {STATUS_LABELS[task.status]}
-                            </span>
+                          <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+                            <span style={{
+                              fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
+                              background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
+                            }}>{STATUS_LABELS[task.status]}</span>
                           </td>
-                          <td style={{padding:"6px 10px"}}>
-                            {task.priority&&(
-                              <span style={{fontSize:"9px",padding:"2px 5px",borderRadius:"3px",
-                                background:PRIORITY_COLORS[task.priority].bg,color:PRIORITY_COLORS[task.priority].color}}>
-                                {PRIORITY_LABELS[task.priority]}
-                              </span>
+                          <td style={{ padding: "6px 10px" }}>
+                            {task.priority && (
+                              <span style={{
+                                fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
+                                background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
+                              }}>{PRIORITY_LABELS[task.priority]}</span>
                             )}
                           </td>
-                          <td style={{padding:"6px 10px",whiteSpace:"nowrap",
-                            color:isOverdue?"var(--color-text-danger)":"var(--color-text-secondary)",
-                            fontWeight:isOverdue?"500":"400"}}>
-                            {task.due_date?task.due_date.slice(5).replace("-","/"):"—"}
+                          <td style={{
+                            padding: "6px 10px", whiteSpace: "nowrap",
+                            color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
+                            fontWeight: isOverdue ? "500" : "400",
+                          }}>
+                            {task.start_date ? `${task.start_date.slice(5).replace("-", "/")}〜` : ""}
+                            {task.due_date ? task.due_date.slice(5).replace("-", "/") : "—"}
                           </td>
-                          <td style={{padding:"6px 10px",color:"var(--color-text-tertiary)",textAlign:"right"}}>
-                            {task.estimated_hours!=null?`${task.estimated_hours}h`:"—"}
+                          <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
+                            {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
                           </td>
-                          <td style={{padding:"6px 10px"}}>
-                            {m&&<div style={{display:"flex",alignItems:"center",gap:"4px"}}>
-                              <Avatar member={m} size={16}/>
-                              <span style={{color:"var(--color-text-secondary)",fontSize:"10px"}}>{m.short_name}</span>
+                          <td style={{ padding: "6px 10px" }}>
+                            {m && <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                              <Avatar member={m} size={16} />
+                              <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{m.short_name}</span>
                             </div>}
                           </td>
                         </tr>
@@ -472,8 +562,8 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                     })}
                   </React.Fragment>
                 ))}
-                {filteredTasks.length===0&&(
-                  <tr><td colSpan={6} style={{padding:"36px",textAlign:"center",color:"var(--color-text-tertiary)",fontSize:"12px"}}>
+                {filteredTasks.length === 0 && (
+                  <tr><td colSpan={6} style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
                     条件に一致するタスクがありません
                   </td></tr>
                 )}
@@ -483,7 +573,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
         </div>
       </div>
 
-      {/* サイドパネル（PCのみ） */}
+      {/* ===== サイドパネル（PC・タブレット） ===== */}
       {selectedTask && sidebarForm && !isMobile && (() => {
         const pj = projects.find(p => p.id === selectedTask.project_id);
         const sideTd = (selectedTask.todo_ids ?? [])[0] ? todos.find(t => t.id === selectedTask.todo_ids[0]) : undefined;
@@ -499,12 +589,10 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
           setSidebarForm(f => f ? { ...f, status } : f);
           saveTask({ ...selectedTask, status, updated_at: now, updated_by: currentUser.id });
         };
-
         const savePriority = (priority: Task["priority"]) => {
           const now = new Date().toISOString();
           saveTask({ ...selectedTask, priority, updated_at: now, updated_by: currentUser.id });
         };
-
         const saveTextFields = () => {
           if (!sidebarDirty) return;
           const now = new Date().toISOString();
@@ -530,43 +618,45 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
               display: "flex", alignItems: "flex-start", gap: "6px", flexShrink: 0,
             }}>
               <span style={{
-                flex: 1, fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)",
-                lineHeight: 1.4,
-              }}>
-                {selectedTask.name}
-              </span>
+                flex: 1, fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4,
+              }}>{selectedTask.name}</span>
               <button onClick={() => setSelectedTaskId(null)} style={{
                 background: "none", border: "none", cursor: "pointer", fontSize: "14px",
                 color: "var(--color-text-tertiary)", flexShrink: 0, paddingTop: "1px",
               }}>✕</button>
             </div>
 
-            <div style={{ flex: 1, overflow: "auto", padding: "10px 12px" }}>
-
-              {/* PJ / ToDo */}
-              {pj && (
-                <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "10px" }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />
-                  <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{pj.name}</span>
-                </div>
-              )}
-              {sideTd && (
-                <div style={{ fontSize: "10px", color: "#059669", marginBottom: "10px", lineHeight: 1.4 }}>
-                  ToDo: {sideTd.title.split("\n")[0].slice(0, 40)}
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 12px 0" }}>
+              {/* PJ / ToDo コンテキスト */}
+              {(pj || sideTd) && (
+                <div style={{
+                  marginBottom: "12px", padding: "7px 9px",
+                  background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--color-border-primary)", fontSize: "11px",
+                }}>
+                  {pj && <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />
+                    <span style={{ color: "var(--color-text-secondary)" }}>{pj.name}</span>
+                  </div>}
+                  {sideTd && <div style={{ color: "#059669", marginTop: pj ? "4px" : 0, lineHeight: 1.4, fontSize: "10px" }}>
+                    ToDo: {sideTd.title.split("\n")[0].slice(0, 40)}
+                  </div>}
                 </div>
               )}
 
               {/* ステータス（即時保存） */}
               <SideLabel>ステータス</SideLabel>
               <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
-                {(["todo","in_progress","done"] as const).map(s => (
+                {(["todo", "in_progress", "done"] as const).map(s => (
                   <button key={s} onClick={() => saveStatus(s)} style={{
-                    flex: 1, padding: "4px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
+                    flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
                     fontWeight: sidebarForm.status === s ? "600" : "400",
                     background: sidebarForm.status === s ? STATUS_COLORS[s].bg : "transparent",
                     color: sidebarForm.status === s ? STATUS_COLORS[s].color : "var(--color-text-tertiary)",
-                    border: sidebarForm.status === s ? `1px solid ${STATUS_COLORS[s].color}` : "1px solid var(--color-border-primary)",
-                    cursor: "pointer",
+                    border: sidebarForm.status === s
+                      ? `1.5px solid ${STATUS_COLORS[s].color}`
+                      : "1px solid var(--color-border-primary)",
+                    cursor: "pointer", transition: "all 0.1s",
                   }}>{STATUS_LABELS[s]}</button>
                 ))}
               </div>
@@ -574,23 +664,23 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
               {/* 優先度（即時保存） */}
               <SideLabel>優先度</SideLabel>
               <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
-                {([null,"high","mid","low"] as const).map(p => {
+                {([null, "high", "mid", "low"] as const).map(p => {
                   const isActive = (selectedTask.priority ?? null) === p;
                   const cfg = p ? PRIORITY_COLORS[p] : null;
                   return (
                     <button key={String(p)} onClick={() => savePriority(p)} style={{
-                      flex: 1, padding: "4px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
+                      flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
                       fontWeight: isActive ? "600" : "400",
                       background: isActive && cfg ? cfg.bg : isActive ? "var(--color-bg-secondary)" : "transparent",
                       color: isActive && cfg ? cfg.color : "var(--color-text-tertiary)",
-                      border: "1px solid var(--color-border-primary)",
-                      cursor: "pointer",
+                      border: isActive ? "1.5px solid currentColor" : "1px solid var(--color-border-primary)",
+                      cursor: "pointer", transition: "all 0.1s",
                     }}>{p ? PRIORITY_LABELS[p] : "なし"}</button>
                   );
                 })}
               </div>
 
-              {/* 担当者（表示のみ） */}
+              {/* 担当者 */}
               {assigneeList.length > 0 && (
                 <>
                   <SideLabel>担当者</SideLabel>
@@ -607,9 +697,7 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
 
               {/* 期日（blur保存） */}
               <SideLabel>期日</SideLabel>
-              <input
-                type="date"
-                value={sidebarForm.due_date}
+              <input type="date" value={sidebarForm.due_date}
                 onChange={e => { setSidebarForm(f => f ? { ...f, due_date: e.target.value } : f); setSidebarDirty(true); }}
                 onBlur={saveTextFields}
                 style={{
@@ -622,12 +710,11 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
 
               {/* メモ（blur保存） */}
               <SideLabel>メモ・コメント</SideLabel>
-              <textarea
-                value={sidebarForm.comment}
+              <textarea value={sidebarForm.comment}
                 onChange={e => { setSidebarForm(f => f ? { ...f, comment: e.target.value } : f); setSidebarDirty(true); }}
                 onBlur={saveTextFields}
                 placeholder="メモを入力..."
-                rows={5}
+                rows={6}
                 style={{
                   width: "100%", padding: "6px 8px", fontSize: "11px", lineHeight: 1.6,
                   border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
@@ -643,12 +730,11 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
                   borderRadius: "var(--radius-md)", cursor: "pointer", fontWeight: "500",
                 }}>保存</button>
               )}
+              <div style={{ height: "12px" }} />
             </div>
 
             {/* フッター */}
-            <div style={{
-              padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)", flexShrink: 0,
-            }}>
+            <div style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
               <button onClick={() => setEditingTaskId(selectedTask.id)} style={{
                 width: "100%", padding: "5px", fontSize: "11px",
                 background: "transparent", color: "var(--color-text-secondary)",
@@ -660,62 +746,48 @@ export function ListView({ currentUser, selectedProject, projects }: Props) {
         );
       })()}
 
-      {/* タスク詳細・編集モーダル */}
+      {/* タスク編集モーダル */}
       {editingTaskId && (
         <TaskEditModal
           taskId={editingTaskId}
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
           onUpdated={() => setEditingTaskId(null)}
-          onDeleted={id => {
-            setEditingTaskId(null);
-            setSelectedTaskId(null);
-          }}
+          onDeleted={() => { setEditingTaskId(null); setSelectedTaskId(null); }}
         />
       )}
     </div>
   );
 }
 
-import React from "react";
-
-function Chip({active,onClick,label}:{active:boolean;onClick:()=>void;label:string}) {
+function Chip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
   return (
     <button onClick={onClick} style={{
-      padding:"3px 10px",fontSize:"10px",borderRadius:"var(--radius-full)",cursor:"pointer",
-      fontWeight:active?"500":"400",
-      background:active?"var(--color-brand-light)":"transparent",
-      color:active?"var(--color-text-purple)":"var(--color-text-tertiary)",
-      border:active?"1px solid var(--color-brand-border)":"1px solid var(--color-border-primary)",
-      transition:"all 0.1s",
+      padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)", cursor: "pointer",
+      fontWeight: active ? "500" : "400",
+      background: active ? "var(--color-brand-light)" : "transparent",
+      color: active ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
+      border: active ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
+      transition: "all 0.1s",
     }}>{label}</button>
   );
 }
 
-function SideLabel({children}: {children: React.ReactNode}) {
+function SideLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{fontSize:"10px",fontWeight:"500",color:"var(--color-text-tertiary)",
-      textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:"5px"}}>
-      {children}
-    </div>
+    <div style={{
+      fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)",
+      textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "5px",
+    }}>{children}</div>
   );
 }
 
-function DR({label,children}:{label:string;children:React.ReactNode}) {
-  return (
-    <div style={{display:"flex",alignItems:"flex-start",gap:"8px",
-      padding:"5px 0",borderBottom:"1px solid var(--color-bg-tertiary)"}}>
-      <span style={{fontSize:"10px",color:"var(--color-text-tertiary)",width:"44px",flexShrink:0,paddingTop:"2px"}}>
-        {label}
-      </span>
-      <div style={{flex:1}}>{children}</div>
-    </div>
-  );
-}
+// DR は現在未使用だが将来のために残す
+// function DR(...)
 
 const selStyle: React.CSSProperties = {
-  padding:"3px 7px",fontSize:"10px",
-  border:"1px solid var(--color-border-primary)",borderRadius:"var(--radius-md)",
-  background:"var(--color-bg-primary)",color:"var(--color-text-secondary)",
-  cursor:"pointer",outline:"none",
+  padding: "3px 7px", fontSize: "10px",
+  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+  background: "var(--color-bg-primary)", color: "var(--color-text-secondary)",
+  cursor: "pointer", outline: "none",
 };
