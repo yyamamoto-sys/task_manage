@@ -7,12 +7,14 @@
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
+import type { Member } from "../../lib/localData/types";
 
 interface Props {
   onClose: () => void;
+  currentUser: Member;
+  onOpenTask: (taskId: string) => void;
 }
 
-// ノードタイプ定義
 type NodeType = "objective" | "kr" | "tf" | "todo" | "project" | "task";
 
 interface GNode {
@@ -24,6 +26,10 @@ interface GNode {
   vx: number;
   vy: number;
   pinned: boolean;
+  // task固有フィールド（typeが"task"の時のみ使用）
+  taskStatus?: "todo" | "in_progress" | "done";
+  taskDueDate?: string | null;
+  taskAssigneeIds?: string[];
 }
 
 interface GEdge {
@@ -31,13 +37,13 @@ interface GEdge {
   target: string;
 }
 
-const NODE_CONFIG: Record<NodeType, { color: string; radius: number; shortLabel: string }> = {
-  objective: { color: "#F59E0B", radius: 20, shortLabel: "O"    },
-  kr:        { color: "#3B82F6", radius: 14, shortLabel: "KR"   },
-  tf:        { color: "#8B5CF6", radius: 11, shortLabel: "TF"   },
-  todo:      { color: "#10B981", radius: 9,  shortLabel: "ToDo" },
-  project:   { color: "#EF4444", radius: 11, shortLabel: "PJ"   },
-  task:      { color: "#6B7280", radius: 6,  shortLabel: ""     },
+const NODE_CONFIG: Record<NodeType, { radius: number; shortLabel: string; baseColor: string }> = {
+  objective: { radius: 20, shortLabel: "O",    baseColor: "#F59E0B" },
+  kr:        { radius: 14, shortLabel: "KR",   baseColor: "#3B82F6" },
+  tf:        { radius: 11, shortLabel: "TF",   baseColor: "#8B5CF6" },
+  todo:      { radius: 9,  shortLabel: "ToDo", baseColor: "#10B981" },
+  project:   { radius: 11, shortLabel: "PJ",   baseColor: "#EF4444" },
+  task:      { radius: 7,  shortLabel: "",     baseColor: "#6B7280" },
 };
 
 const EDGE_COLOR: Record<string, string> = {
@@ -49,24 +55,48 @@ const EDGE_COLOR: Record<string, string> = {
   "tf-project":    "#F97316",
 };
 
-export function GraphView({ onClose }: Props) {
-  const canvasRef  = useRef<HTMLCanvasElement>(null);
-  const stateRef   = useRef<{
+const STATUS_LABEL: Record<string, string> = {
+  todo: "未着手", in_progress: "進行中", done: "完了",
+};
+
+function getNodeColor(node: GNode, todayStr: string): string {
+  if (node.type !== "task") return NODE_CONFIG[node.type].baseColor;
+  if (node.taskStatus === "done") return "#9CA3AF";
+  if (node.taskDueDate && node.taskDueDate < todayStr) return "#EF4444"; // 期限超過
+  if (node.taskStatus === "in_progress") return "#3B82F6";
+  return "#6B7280"; // todo
+}
+
+function todayStr(): string {
+  return new Date().toISOString().split("T")[0];
+}
+
+export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const stateRef  = useRef<{
     nodes: GNode[];
     edges: GEdge[];
     transform: { x: number; y: number; scale: number };
-    drag: { nodeId: string | null; startX: number; startY: number; nodeOrigX: number; nodeOrigY: number } | null;
+    drag: { nodeId: string | null; startX: number; startY: number; nodeOrigX: number; nodeOrigY: number; moved: boolean } | null;
     pan: { startX: number; startY: number; origX: number; origY: number } | null;
     hovered: string | null;
     alpha: number;
     animId: number;
+    hiddenTypes: Set<NodeType>;
+    clickStart: { x: number; y: number } | null;
   }>();
 
   const {
     objective, keyResults: rawKrs, taskForces: rawTfs,
     todos: rawTodos, tasks: rawTasks, projects: rawProjects,
-    projectTaskForces,
+    projectTaskForces, members,
   } = useAppData();
+
+  // メンバーマップ（id→表示名）
+  const memberMap = useMemo(
+    () => new Map(members.map(m => [m.id, m])),
+    [members]
+  );
 
   // グラフデータ構築
   const { nodes, edges } = useMemo(() => {
@@ -78,55 +108,50 @@ export function GraphView({ onClose }: Props) {
 
     const nodes: GNode[] = [];
     const edges: GEdge[] = [];
-    // ワールド原点(0,0)がCanvas中央にマッピングされるため、ノードは原点周辺に配置する
-    const cx = 0;
-    const cy = 0;
     const rand = (r: number) => (Math.random() - 0.5) * r;
 
-    // Objective
     if (objective) {
       nodes.push({ id: objective.id, label: objective.title, type: "objective",
-        x: cx + rand(30), y: cy + rand(30), vx: 0, vy: 0, pinned: false });
+        x: rand(30), y: rand(30), vx: 0, vy: 0, pinned: false });
     }
 
-    // KR
     krs.forEach(kr => {
       nodes.push({ id: kr.id, label: kr.title, type: "kr",
-        x: cx + rand(120), y: cy + rand(120), vx: 0, vy: 0, pinned: false });
+        x: rand(120), y: rand(120), vx: 0, vy: 0, pinned: false });
       if (objective) edges.push({ source: objective.id, target: kr.id });
     });
 
-    // TF
     tfs.forEach(tf => {
       nodes.push({ id: tf.id, label: `${tf.tf_number} ${tf.name}`, type: "tf",
-        x: cx + rand(180), y: cy + rand(180), vx: 0, vy: 0, pinned: false });
+        x: rand(180), y: rand(180), vx: 0, vy: 0, pinned: false });
       edges.push({ source: tf.kr_id, target: tf.id });
     });
 
-    // ToDo
     todos.forEach(todo => {
-      nodes.push({ id: todo.id, label: todo.title.slice(0, 40), type: "todo",
-        x: cx + rand(240), y: cy + rand(240), vx: 0, vy: 0, pinned: false });
+      nodes.push({ id: todo.id, label: (todo.name ?? todo.title).slice(0, 40), type: "todo",
+        x: rand(240), y: rand(240), vx: 0, vy: 0, pinned: false });
       edges.push({ source: todo.tf_id, target: todo.id });
     });
 
-    // Project
     projects.forEach(pj => {
       nodes.push({ id: pj.id, label: pj.name, type: "project",
-        x: cx + rand(200), y: cy + rand(200), vx: 0, vy: 0, pinned: false });
+        x: rand(200), y: rand(200), vx: 0, vy: 0, pinned: false });
     });
 
-    // TF ↔ Project
     projectTaskForces.forEach(ptf => {
       const hasTF = tfs.find(t => t.id === ptf.tf_id);
       const hasPJ = projects.find(p => p.id === ptf.project_id);
       if (hasTF && hasPJ) edges.push({ source: ptf.tf_id, target: ptf.project_id });
     });
 
-    // Task
     tasks.forEach(task => {
-      nodes.push({ id: task.id, label: task.name, type: "task",
-        x: cx + rand(300), y: cy + rand(300), vx: 0, vy: 0, pinned: false });
+      nodes.push({
+        id: task.id, label: task.name, type: "task",
+        x: rand(300), y: rand(300), vx: 0, vy: 0, pinned: false,
+        taskStatus: task.status,
+        taskDueDate: task.due_date,
+        taskAssigneeIds: task.assignee_member_ids ?? (task.assignee_member_id ? [task.assignee_member_id] : []),
+      });
       (task.todo_ids ?? []).forEach(id => edges.push({ source: id, target: task.id }));
       if (task.project_id) edges.push({ source: task.project_id, target: task.id });
     });
@@ -146,11 +171,12 @@ export function GraphView({ onClose }: Props) {
     if (!ctx) return;
 
     const dark = isDark();
-    const bg   = dark ? "#111827" : "#F9FAFB";
-    const edgeBase = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
-    const labelColor = dark ? "#E5E7EB" : "#111827";
-    const tooltipBg = dark ? "#1F2937" : "#FFFFFF";
+    const bg           = dark ? "#111827" : "#F9FAFB";
+    const edgeBase     = dark ? "rgba(255,255,255,0.12)" : "rgba(0,0,0,0.12)";
+    const labelColor   = dark ? "#E5E7EB" : "#111827";
+    const tooltipBg    = dark ? "#1F2937" : "#FFFFFF";
     const tooltipBorder = dark ? "#374151" : "#E5E7EB";
+    const today        = todayStr();
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = bg;
@@ -162,11 +188,12 @@ export function GraphView({ onClose }: Props) {
 
     const nodeMap = new Map(s.nodes.map(n => [n.id, n]));
 
-    // エッジ描画
+    // エッジ描画（非表示タイプは除外）
     s.edges.forEach(e => {
       const src = nodeMap.get(e.source);
       const tgt = nodeMap.get(e.target);
       if (!src || !tgt) return;
+      if (s.hiddenTypes.has(src.type) || s.hiddenTypes.has(tgt.type)) return;
       const key = `${src.type}-${tgt.type}`;
       ctx.beginPath();
       ctx.moveTo(src.x, src.y);
@@ -178,44 +205,47 @@ export function GraphView({ onClose }: Props) {
       ctx.globalAlpha = 1;
     });
 
-    // ノード描画
+    // ノード描画（非表示タイプは除外）
     s.nodes.forEach(n => {
+      if (s.hiddenTypes.has(n.type)) return;
       const cfg = NODE_CONFIG[n.type];
       const isHovered = s.hovered === n.id;
+      const color = getNodeColor(n, today);
+      const isClickable = n.type === "task";
 
       // 外縁グロー（ホバー時）
       if (isHovered) {
         ctx.beginPath();
-        ctx.arc(n.x, n.y, cfg.radius + 5, 0, Math.PI * 2);
-        ctx.fillStyle = cfg.color + "33";
+        ctx.arc(n.x, n.y, cfg.radius + (isClickable ? 7 : 5), 0, Math.PI * 2);
+        ctx.fillStyle = color + "33";
         ctx.fill();
       }
 
       // 本体
       ctx.beginPath();
       ctx.arc(n.x, n.y, cfg.radius, 0, Math.PI * 2);
-      ctx.fillStyle = cfg.color;
-      ctx.globalAlpha = isHovered ? 1 : 0.85;
+      ctx.fillStyle = color;
+      ctx.globalAlpha = isHovered ? 1 : (n.taskStatus === "done" ? 0.55 : 0.85);
       ctx.fill();
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = dark ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.6)";
-      ctx.lineWidth = 1.5 / s.transform.scale;
+      ctx.strokeStyle = isHovered && isClickable
+        ? "rgba(255,255,255,0.9)"
+        : dark ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.6)";
+      ctx.lineWidth = (isHovered && isClickable ? 2.5 : 1.5) / s.transform.scale;
       ctx.stroke();
 
-      // ラベル（Taskは小さくて省略、ホバー時はtooltipで表示）
-      if (n.type !== "task" || isHovered) {
+      // ショートラベル（タスク以外）
+      if (cfg.shortLabel && n.type !== "task") {
         const fontSize = Math.max(9, cfg.radius * 0.9);
         ctx.font = `${fontSize}px sans-serif`;
         ctx.fillStyle = "#FFFFFF";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        if (cfg.shortLabel && n.type !== "task") {
-          ctx.fillText(cfg.shortLabel, n.x, n.y);
-        }
+        ctx.fillText(cfg.shortLabel, n.x, n.y);
       }
 
-      // ノード名ラベル（大きいノードのみ常時表示）
-      if (n.type === "objective" || n.type === "project" || isHovered) {
+      // ノード名ラベル（Objective・Project は常時表示、その他はhover時でtask以外）
+      if (n.type === "objective" || n.type === "project" || (isHovered && n.type !== "task")) {
         const fontSize = Math.max(8, Math.min(11, cfg.radius * 0.75));
         ctx.font = `${fontSize}px sans-serif`;
         ctx.fillStyle = labelColor;
@@ -227,44 +257,100 @@ export function GraphView({ onClose }: Props) {
       }
     });
 
-    // ホバーツールチップ（全テキスト表示）
-    if (s.hovered) {
-      const n = nodeMap.get(s.hovered);
-      if (n && (n.type === "task" || n.type === "todo" || n.type === "kr" || n.type === "tf")) {
-        // ワールド座標でテキストボックスを描画
-      }
-    }
-
     ctx.restore();
 
-    // ツールチップはスクリーン座標で
+    // ツールチップ（スクリーン座標）
     if (s.hovered) {
       const n = nodeMap.get(s.hovered);
-      if (n) {
+      if (n && !s.hiddenTypes.has(n.type)) {
         const sx = n.x * s.transform.scale + s.transform.x;
         const sy = n.y * s.transform.scale + s.transform.y;
         const cfg = NODE_CONFIG[n.type];
-        const padding = 6;
-        const maxChars = 40;
-        const text = n.label.length > maxChars ? n.label.slice(0, maxChars) + "…" : n.label;
-        ctx.font = "11px sans-serif";
-        const tw = ctx.measureText(text).width;
-        const bx = Math.min(sx + cfg.radius * s.transform.scale + 6, canvas.width - tw - padding * 2 - 4);
-        const by = sy - 12;
-        ctx.fillStyle = tooltipBg;
-        ctx.strokeStyle = tooltipBorder;
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(bx, by, tw + padding * 2, 22, 4);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = labelColor;
-        ctx.textAlign = "left";
-        ctx.textBaseline = "middle";
-        ctx.fillText(text, bx + padding, by + 11);
+
+        if (n.type === "task") {
+          // タスク：リッチツールチップ（名前・担当者・ステータス・期日）
+          const lines: { text: string; bold?: boolean; color?: string }[] = [];
+          const maxNameLen = 36;
+          lines.push({
+            text: n.label.length > maxNameLen ? n.label.slice(0, maxNameLen) + "…" : n.label,
+            bold: true,
+          });
+
+          const assigneeNames = (n.taskAssigneeIds ?? [])
+            .map(id => memberMap.get(id)?.short_name ?? "—")
+            .join(", ");
+          if (assigneeNames) lines.push({ text: `担当: ${assigneeNames}` });
+
+          const statusText = STATUS_LABEL[n.taskStatus ?? "todo"];
+          const isOverdue = n.taskDueDate && n.taskDueDate < today && n.taskStatus !== "done";
+          lines.push({
+            text: `状態: ${statusText}`,
+            color: n.taskStatus === "done" ? "#9CA3AF"
+              : n.taskStatus === "in_progress" ? "#3B82F6" : undefined,
+          });
+
+          if (n.taskDueDate) {
+            lines.push({
+              text: `期日: ${n.taskDueDate}${isOverdue ? " ⚠ 超過" : ""}`,
+              color: isOverdue ? "#EF4444" : undefined,
+            });
+          }
+
+          lines.push({ text: "クリックで編集", color: dark ? "#6B7280" : "#9CA3AF" });
+
+          const padding = 8;
+          const lineH = 17;
+          const boxH = lines.length * lineH + padding * 2;
+
+          ctx.font = "11px sans-serif";
+          const maxW = Math.max(...lines.map(l => ctx.measureText(l.text).width));
+          const boxW = maxW + padding * 2;
+
+          let bx = sx + cfg.radius * s.transform.scale + 8;
+          let by = sy - boxH / 2;
+          if (bx + boxW > canvas.clientWidth - 4) bx = sx - cfg.radius * s.transform.scale - boxW - 8;
+          if (by < 4) by = 4;
+          if (by + boxH > canvas.clientHeight - 4) by = canvas.clientHeight - boxH - 4;
+
+          ctx.fillStyle = tooltipBg;
+          ctx.strokeStyle = tooltipBorder;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(bx, by, boxW, boxH, 6);
+          ctx.fill();
+          ctx.stroke();
+
+          lines.forEach((line, i) => {
+            ctx.font = line.bold ? "bold 11px sans-serif" : "11px sans-serif";
+            ctx.fillStyle = line.color ?? labelColor;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "top";
+            ctx.fillText(line.text, bx + padding, by + padding + i * lineH);
+          });
+        } else {
+          // 非タスク：シンプルツールチップ（名前のみ）
+          const maxChars = 40;
+          const text = n.label.length > maxChars ? n.label.slice(0, maxChars) + "…" : n.label;
+          ctx.font = "11px sans-serif";
+          const tw = ctx.measureText(text).width;
+          const padding = 6;
+          const bx = Math.min(sx + cfg.radius * s.transform.scale + 6, canvas.clientWidth - tw - padding * 2 - 4);
+          const by = sy - 12;
+          ctx.fillStyle = tooltipBg;
+          ctx.strokeStyle = tooltipBorder;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.roundRect(bx, by, tw + padding * 2, 22, 4);
+          ctx.fill();
+          ctx.stroke();
+          ctx.fillStyle = labelColor;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(text, bx + padding, by + 11);
+        }
       }
     }
-  }, []);
+  }, [memberMap]);
 
   // 物理シミュレーション 1ステップ
   const tick = useCallback(() => {
@@ -272,9 +358,6 @@ export function GraphView({ onClose }: Props) {
     if (!s || s.alpha < 0.001) return;
 
     const nodeMap = new Map(s.nodes.map(n => [n.id, n]));
-    // ワールド原点(0,0)が画面中央なので、中心引力のターゲットも(0,0)
-    const cx = 0;
-    const cy = 0;
 
     // 反発力（全ペア）
     for (let i = 0; i < s.nodes.length; i++) {
@@ -318,30 +401,43 @@ export function GraphView({ onClose }: Props) {
     // 中心引力
     s.nodes.forEach(n => {
       if (n.pinned) return;
-      n.vx += (cx - n.x) * 0.005 * s.alpha;
-      n.vy += (cy - n.y) * 0.005 * s.alpha;
+      n.vx += (0 - n.x) * 0.005 * s.alpha;
+      n.vy += (0 - n.y) * 0.005 * s.alpha;
     });
 
     // 位置更新
     s.nodes.forEach(n => {
       if (n.pinned) return;
-      n.vx *= 0.82;
-      n.vy *= 0.82;
-      n.x  += n.vx;
-      n.y  += n.vy;
+      n.vx *= 0.82; n.vy *= 0.82;
+      n.x  += n.vx; n.y  += n.vy;
     });
 
     s.alpha *= 0.992;
   }, []);
 
-  // アニメーションループ
+  // アニメーションループ（収束後は停止してCPU節約）
+  const loopRef = useRef<() => void>(() => {});
   const loop = useCallback(() => {
     const s = stateRef.current;
     if (!s) return;
     tick();
     draw();
-    s.animId = requestAnimationFrame(loop);
+    // 物理が収束 かつ インタラクションなし → 停止
+    if (s.alpha > 0.001 || s.hovered !== null || s.drag !== null) {
+      s.animId = requestAnimationFrame(loopRef.current);
+    } else {
+      s.animId = 0;
+    }
   }, [tick, draw]);
+  loopRef.current = loop;
+
+  // 停止中にインタラクションが発生したらループ再開
+  const resumeLoop = useCallback(() => {
+    const s = stateRef.current;
+    if (s && s.animId === 0) {
+      s.animId = requestAnimationFrame(loopRef.current);
+    }
+  }, []);
 
   // Canvas サイズ調整
   const resize = useCallback(() => {
@@ -351,7 +447,6 @@ export function GraphView({ onClose }: Props) {
     canvas.height = canvas.clientHeight * window.devicePixelRatio;
     const ctx = canvas.getContext("2d");
     if (ctx) ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    // transformを1:1に補正（DPR分）
     if (stateRef.current) {
       stateRef.current.transform.x = canvas.clientWidth  / 2;
       stateRef.current.transform.y = canvas.clientHeight / 2;
@@ -373,12 +468,24 @@ export function GraphView({ onClose }: Props) {
     let best: GNode | null = null;
     let bestD = Infinity;
     for (const n of s.nodes) {
+      if (s.hiddenTypes.has(n.type)) continue;
       const cfg = NODE_CONFIG[n.type];
       const d = Math.hypot(n.x - wx, n.y - wy);
       if (d <= cfg.radius + 4 && d < bestD) { best = n; bestD = d; }
     }
     return best;
   };
+
+  // fitToView（中央・等倍にリセット）
+  const fitToView = useCallback(() => {
+    const s = stateRef.current;
+    const canvas = canvasRef.current;
+    if (!s || !canvas) return;
+    s.transform.x = canvas.clientWidth  / 2;
+    s.transform.y = canvas.clientHeight / 2;
+    s.transform.scale = 1;
+    resumeLoop();
+  }, [resumeLoop]);
 
   // イベントハンドラ
   const onMouseDown = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
@@ -388,13 +495,15 @@ export function GraphView({ onClose }: Props) {
     const sy = e.clientY - rect.top;
     const w  = toWorld(sx, sy);
     const hit = hitTest(w.x, w.y);
+    s.clickStart = { x: sx, y: sy };
     if (hit) {
-      s.drag = { nodeId: hit.id, startX: sx, startY: sy, nodeOrigX: hit.x, nodeOrigY: hit.y };
+      s.drag = { nodeId: hit.id, startX: sx, startY: sy, nodeOrigX: hit.x, nodeOrigY: hit.y, moved: false };
       hit.pinned = true;
     } else {
       s.pan = { startX: sx, startY: sy, origX: s.transform.x, origY: s.transform.y };
     }
-  }, []);
+    resumeLoop();
+  }, [resumeLoop]);
 
   const onMouseMove = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const s = stateRef.current!;
@@ -403,12 +512,13 @@ export function GraphView({ onClose }: Props) {
     const sy = e.clientY - rect.top;
 
     if (s.drag) {
+      const dx = sx - s.drag.startX;
+      const dy = sy - s.drag.startY;
+      if (Math.hypot(dx, dy) > 4) s.drag.moved = true;
       const n = s.nodes.find(n => n.id === s.drag!.nodeId);
       if (n) {
-        const dx = (sx - s.drag.startX) / s.transform.scale;
-        const dy = (sy - s.drag.startY) / s.transform.scale;
-        n.x = s.drag.nodeOrigX + dx;
-        n.y = s.drag.nodeOrigY + dy;
+        n.x = s.drag.nodeOrigX + dx / s.transform.scale;
+        n.y = s.drag.nodeOrigY + dy / s.transform.scale;
         n.vx = 0; n.vy = 0;
         s.alpha = Math.max(s.alpha, 0.3);
       }
@@ -418,19 +528,35 @@ export function GraphView({ onClose }: Props) {
     } else {
       const w = toWorld(sx, sy);
       const hit = hitTest(w.x, w.y);
+      const prevHovered = s.hovered;
       s.hovered = hit?.id ?? null;
+      if (s.hovered !== prevHovered) resumeLoop();
     }
-  }, []);
+  }, [resumeLoop]);
 
-  const onMouseUp = useCallback(() => {
+  const onMouseUp = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const s = stateRef.current!;
+
+    // クリック判定（ドラッグなし かつ mousedown位置からほぼ動いていない）
+    if (s.clickStart && s.drag && !s.drag.moved) {
+      const dx = e.clientX - canvasRef.current!.getBoundingClientRect().left - s.clickStart.x;
+      const dy = e.clientY - canvasRef.current!.getBoundingClientRect().top  - s.clickStart.y;
+      if (Math.hypot(dx, dy) < 5) {
+        const n = s.nodes.find(n => n.id === s.drag!.nodeId);
+        if (n?.type === "task") {
+          onOpenTask(n.id);
+        }
+      }
+    }
+
     if (s.drag) {
       const n = s.nodes.find(n => n.id === s.drag!.nodeId);
       if (n) n.pinned = false;
       s.drag = null;
     }
     s.pan = null;
-  }, []);
+    s.clickStart = null;
+  }, [onOpenTask]);
 
   const onWheel = useCallback((e: React.WheelEvent<HTMLCanvasElement>) => {
     e.preventDefault();
@@ -443,11 +569,12 @@ export function GraphView({ onClose }: Props) {
     s.transform.x = sx - (sx - s.transform.x) * (newScale / s.transform.scale);
     s.transform.y = sy - (sy - s.transform.y) * (newScale / s.transform.scale);
     s.transform.scale = newScale;
-  }, []);
+    resumeLoop();
+  }, [resumeLoop]);
 
   const onMouseLeave = useCallback(() => {
     const s = stateRef.current;
-    if (s) { s.hovered = null; s.drag = null; s.pan = null; }
+    if (s) { s.hovered = null; s.drag = null; s.pan = null; s.clickStart = null; }
   }, []);
 
   // 初期化
@@ -458,17 +585,18 @@ export function GraphView({ onClose }: Props) {
       nodes: nodes.map(n => ({ ...n })),
       edges,
       transform: { x: w / 2, y: h / 2, scale: 1 },
-      drag: null, pan: null, hovered: null,
+      drag: null, pan: null, hovered: null, clickStart: null,
       alpha: 1, animId: 0,
+      hiddenTypes: new Set<NodeType>(),
     };
     resize();
-    stateRef.current.animId = requestAnimationFrame(loop);
+    stateRef.current.animId = requestAnimationFrame(loopRef.current);
     window.addEventListener("resize", resize);
     return () => {
       if (stateRef.current) cancelAnimationFrame(stateRef.current.animId);
       window.removeEventListener("resize", resize);
     };
-  }, [nodes, edges, loop, resize]);
+  }, [nodes, edges, resize]);
 
   // ESCキーで閉じる
   useEffect(() => {
@@ -478,9 +606,26 @@ export function GraphView({ onClose }: Props) {
   }, [onClose]);
 
   const dark = isDark();
-  const textColor = dark ? "#E5E7EB" : "#374151";
-  const panelBg   = dark ? "rgba(17,24,39,0.95)" : "rgba(255,255,255,0.95)";
-  const border    = dark ? "#374151" : "#E5E7EB";
+  const textColor  = dark ? "#E5E7EB" : "#374151";
+  const panelBg    = dark ? "rgba(17,24,39,0.95)" : "rgba(255,255,255,0.95)";
+  const border     = dark ? "#374151" : "#E5E7EB";
+  const mutedColor = dark ? "#6B7280" : "#9CA3AF";
+
+  // 凡例クリック：タイプ表示切替
+  const toggleType = (type: NodeType) => {
+    const s = stateRef.current;
+    if (!s) return;
+    if (s.hiddenTypes.has(type)) {
+      s.hiddenTypes.delete(type);
+    } else {
+      s.hiddenTypes.add(type);
+    }
+    resumeLoop();
+    // React stateを使わずCanvasで再描画するため forceUpdate 相当として draw を呼ぶ
+    draw();
+  };
+
+  const today = todayStr();
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
@@ -494,64 +639,147 @@ export function GraphView({ onClose }: Props) {
         onWheel={onWheel}
       />
 
-      {/* 凡例 */}
+      {/* 凡例（クリックで表示切替） */}
       <div style={{
         position: "absolute", bottom: 20, left: 20,
         padding: "10px 14px",
         background: panelBg,
         border: `1px solid ${border}`,
         borderRadius: "8px",
-        display: "flex", flexDirection: "column", gap: "5px",
+        display: "flex", flexDirection: "column", gap: "4px",
         backdropFilter: "blur(8px)",
+        userSelect: "none",
       }}>
-        {(Object.entries(NODE_CONFIG) as [NodeType, typeof NODE_CONFIG[NodeType]][]).map(([type, cfg]) => (
-          <div key={type} style={{ display: "flex", alignItems: "center", gap: "7px" }}>
-            <div style={{
-              width: cfg.radius * 1.4, height: cfg.radius * 1.4,
-              borderRadius: "50%", background: cfg.color, flexShrink: 0,
-            }} />
-            <span style={{ fontSize: "11px", color: textColor, textTransform: "capitalize" }}>
-              {type === "objective" ? "Objective" : type === "kr" ? "Key Result"
-                : type === "tf" ? "Task Force" : type === "todo" ? "ToDo"
-                : type === "project" ? "Project" : "Task"}
-            </span>
-          </div>
-        ))}
-        <div style={{ fontSize: "10px", color: dark ? "#6B7280" : "#9CA3AF", marginTop: "4px", borderTop: `1px solid ${border}`, paddingTop: "5px" }}>
-          スクロール: ズーム　ドラッグ: 移動
+        <div style={{ fontSize: "10px", color: mutedColor, marginBottom: "2px", fontWeight: 600 }}>
+          凡例（クリックで絞込）
+        </div>
+        {(Object.entries(NODE_CONFIG) as [NodeType, typeof NODE_CONFIG[NodeType]][]).map(([type, cfg]) => {
+          const label = type === "objective" ? "Objective" : type === "kr" ? "Key Result"
+            : type === "tf" ? "Task Force" : type === "todo" ? "ToDo"
+            : type === "project" ? "Project" : "Task";
+          return (
+            <button
+              key={type}
+              onClick={() => toggleType(type)}
+              style={{
+                display: "flex", alignItems: "center", gap: "7px",
+                background: "transparent", border: "none", cursor: "pointer",
+                padding: "2px 0", borderRadius: "4px",
+                opacity: stateRef.current?.hiddenTypes.has(type) ? 0.35 : 1,
+                transition: "opacity 0.15s",
+              }}
+            >
+              <div style={{
+                width: cfg.radius * 1.4, height: cfg.radius * 1.4,
+                borderRadius: "50%", background: cfg.baseColor, flexShrink: 0,
+              }} />
+              <span style={{ fontSize: "11px", color: textColor }}>{label}</span>
+            </button>
+          );
+        })}
+
+        {/* タスクステータス凡例 */}
+        <div style={{ borderTop: `1px solid ${border}`, marginTop: "4px", paddingTop: "6px", display: "flex", flexDirection: "column", gap: "3px" }}>
+          <div style={{ fontSize: "10px", color: mutedColor, marginBottom: "1px", fontWeight: 600 }}>タスク状態</div>
+          {[
+            { color: "#6B7280", label: "未着手" },
+            { color: "#3B82F6", label: "進行中" },
+            { color: "#EF4444", label: "期限超過" },
+            { color: "#9CA3AF", label: "完了（薄表示）" },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: "7px" }}>
+              <div style={{ width: 10, height: 10, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              <span style={{ fontSize: "10px", color: mutedColor }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ fontSize: "10px", color: mutedColor, marginTop: "4px", borderTop: `1px solid ${border}`, paddingTop: "5px" }}>
+          スクロール: ズーム　ドラッグ: 移動<br />
+          タスク粒クリック: 編集
         </div>
       </div>
 
-      {/* 閉じるボタン */}
-      <button
-        onClick={onClose}
-        style={{
-          position: "absolute", top: 16, right: 16,
-          padding: "6px 16px", fontSize: "12px",
-          background: panelBg,
-          border: `1px solid ${border}`,
-          borderRadius: "6px", cursor: "pointer",
-          color: textColor,
-          backdropFilter: "blur(8px)",
-        }}
-      >
-        ✕ 閉じる
-      </button>
+      {/* 右上コントロール */}
+      <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: "8px" }}>
+        {/* 今日の日付インジケーター */}
+        <div style={{
+          padding: "5px 12px", fontSize: "11px",
+          background: panelBg, border: `1px solid ${border}`,
+          borderRadius: "6px", color: mutedColor,
+          backdropFilter: "blur(8px)", display: "flex", alignItems: "center",
+        }}>
+          {today}
+        </div>
+
+        {/* fitToView */}
+        <button
+          onClick={fitToView}
+          title="表示をリセット"
+          style={{
+            padding: "5px 12px", fontSize: "12px",
+            background: panelBg, border: `1px solid ${border}`,
+            borderRadius: "6px", cursor: "pointer", color: textColor,
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          ⊙ リセット
+        </button>
+
+        {/* 閉じる */}
+        <button
+          onClick={onClose}
+          style={{
+            padding: "5px 16px", fontSize: "12px",
+            background: panelBg, border: `1px solid ${border}`,
+            borderRadius: "6px", cursor: "pointer", color: textColor,
+            backdropFilter: "blur(8px)",
+          }}
+        >
+          ✕ 閉じる
+        </button>
+      </div>
 
       {/* タイトル */}
       <div style={{
         position: "absolute", top: 16, left: "50%",
         transform: "translateX(-50%)",
         padding: "5px 16px",
-        background: panelBg,
-        border: `1px solid ${border}`,
-        borderRadius: "6px",
-        fontSize: "12px", fontWeight: "600",
-        color: textColor,
-        backdropFilter: "blur(8px)",
+        background: panelBg, border: `1px solid ${border}`,
+        borderRadius: "6px", fontSize: "12px", fontWeight: "600",
+        color: textColor, backdropFilter: "blur(8px)",
         pointerEvents: "none",
       }}>
         関係グラフ
+      </div>
+
+      {/* ノード数サマリー */}
+      <div style={{
+        position: "absolute", bottom: 20, right: 20,
+        padding: "8px 12px",
+        background: panelBg, border: `1px solid ${border}`,
+        borderRadius: "8px", backdropFilter: "blur(8px)",
+        fontSize: "10px", color: mutedColor, lineHeight: "1.6",
+      }}>
+        {[
+          { type: "objective" as NodeType, label: "O" },
+          { type: "kr"        as NodeType, label: "KR" },
+          { type: "tf"        as NodeType, label: "TF" },
+          { type: "todo"      as NodeType, label: "ToDo" },
+          { type: "project"   as NodeType, label: "PJ" },
+          { type: "task"      as NodeType, label: "Task" },
+        ].map(({ type, label }) => {
+          const count = nodes.filter(n => n.type === type).length;
+          if (count === 0) return null;
+          const overdue = type === "task"
+            ? nodes.filter(n => n.type === "task" && n.taskDueDate && n.taskDueDate < today && n.taskStatus !== "done").length
+            : 0;
+          return (
+            <div key={type}>
+              {label}: {count}{overdue > 0 ? ` (⚠ ${overdue}超過)` : ""}
+            </div>
+          );
+        })}
       </div>
     </div>
   );

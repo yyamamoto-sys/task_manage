@@ -12,6 +12,7 @@ import { DashboardView } from "../dashboard/DashboardView";
 import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
+import { TaskEditModal } from "../task/TaskEditModal";
 import { v4 as uuidv4 } from "uuid";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
@@ -43,6 +44,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
 
   const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs } = useAppData();
   const projects = useMemo(
@@ -267,7 +269,20 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenGraph={() => setIsGraphOpen(true)}
       />
       {mainContent}
-      {isGraphOpen && <GraphView onClose={() => setIsGraphOpen(false)} />}
+      {isGraphOpen && (
+        <GraphView
+          onClose={() => setIsGraphOpen(false)}
+          currentUser={currentUser}
+          onOpenTask={taskId => setGraphEditTaskId(taskId)}
+        />
+      )}
+      {graphEditTaskId && (
+        <TaskEditModal
+          taskId={graphEditTaskId}
+          currentUser={currentUser}
+          onClose={() => setGraphEditTaskId(null)}
+        />
+      )}
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div style={{
