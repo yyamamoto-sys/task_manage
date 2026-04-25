@@ -19,34 +19,13 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce, ToDo,
 } from "../../lib/localData/types";
+import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
+import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 
 interface Props {
   currentUser: Member;
   projects: Project[];
-}
-
-// ===== 日付ユーティリティ =====
-
-function today(): string {
-  return new Date().toISOString().split("T")[0];
-}
-
-function addDays(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
-}
-
-function formatDateShort(s: string): string {
-  const d = new Date(s);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function diffDaysFromToday(s: string): number {
-  const t = new Date(today());
-  const d = new Date(s);
-  return Math.round((d.getTime() - t.getTime()) / 86400000);
 }
 
 // ===== メインコンポーネント =====
@@ -63,9 +42,8 @@ export function DashboardView({ currentUser, projects }: Props) {
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
 
   // リマインダー設定（localStorage で永続化）
-  const REMINDER_KEY = "reminder_days";
   const [reminderDays, setReminderDaysState] = useState<number>(() => {
-    const saved = localStorage.getItem(REMINDER_KEY);
+    const saved = localStorage.getItem(KEYS.REMINDER_DAYS);
     return saved ? Math.max(1, parseInt(saved, 10) || 7) : 7;
   });
   const [editingReminder, setEditingReminder] = useState(false);
@@ -75,7 +53,7 @@ export function DashboardView({ currentUser, projects }: Props) {
     const n = Math.max(1, parseInt(reminderInput, 10) || 7);
     setReminderDaysState(n);
     setReminderInput(String(n));
-    localStorage.setItem(REMINDER_KEY, String(n));
+    localStorage.setItem(KEYS.REMINDER_DAYS, String(n));
     setEditingReminder(false);
   }, [reminderInput]);
 
@@ -99,9 +77,9 @@ export function DashboardView({ currentUser, projects }: Props) {
     return tasks;
   }, [allTasks, myOnly, selectedPjIds, currentUser.id]);
 
-  const todayStr = today();
-  const weekLater = addDays(7);
-  const reminderDeadline = addDays(reminderDays);
+  const todayS = todayStr();
+  const weekLater = addDaysFromToday(7);
+  const reminderDeadline = addDaysFromToday(reminderDays);
 
   // 自分のリマインダータスク（期限切れ + N日以内）
   const reminderTasks = useMemo(
@@ -118,21 +96,21 @@ export function DashboardView({ currentUser, projects }: Props) {
   const thisWeekTasks = useMemo(
     () => filteredTasks.filter(t =>
       t.due_date &&
-      t.due_date >= todayStr &&
+      t.due_date >= todayS &&
       t.due_date <= weekLater &&
       t.status !== "done"
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
-    [filteredTasks, todayStr, weekLater]
+    [filteredTasks, todayS, weekLater]
   );
 
   // 期限超過・本日期限
   const alertTasks = useMemo(
     () => filteredTasks.filter(t =>
       t.due_date &&
-      t.due_date <= todayStr &&
+      t.due_date <= todayS &&
       t.status !== "done"
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
-    [filteredTasks, todayStr]
+    [filteredTasks, todayS]
   );
 
   // PJ進捗
@@ -627,7 +605,7 @@ export function DashboardView({ currentUser, projects }: Props) {
                             <span style={{
                               fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0,
                             }}>
-                              {formatDateShort(todo.due_date)}
+                              {formatMD(todo.due_date)}
                             </span>
                           )}
                         </div>

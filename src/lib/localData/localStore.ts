@@ -12,8 +12,22 @@
 // ===== キー定義 =====
 
 const KEYS = {
+  // 認証・セットアップ
   WIZARD_COMPLETED: "wizard_completed",
-  CURRENT_USER: "current_user", // 前回ログインしたmember_id
+  CURRENT_USER:     "current_user",
+  // テーマ
+  THEME:            "theme",
+  // 管理画面
+  ADMIN_LAST_TAB:   "admin_last_tab",
+  ADMIN_FONT_SIZE:  "admin_font_size",
+  // ガント
+  GANTT_CENTER_DATE: "gantt_center_date",
+  // リスト
+  LIST_VIEW_SETTINGS: "list_view_settings",
+  // ダッシュボード
+  REMINDER_DAYS:    "reminder_days",
+  // エラー履歴
+  ERROR_HISTORY:    "app:error_history",
 } as const;
 
 export { KEYS };

@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, TaskForce, TaskTaskForce, TaskProject, ToDo } from "../../lib/localData/types";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -14,20 +15,6 @@ interface Props {
   selectedKrId?: string | null;
   krTaskIds?: Set<string> | null;
 }
-
-const STATUS_CONFIG = {
-  todo:        { label: "ToDo",   color: "var(--color-text-secondary)", bg: "var(--color-bg-tertiary)", border: "var(--color-border-primary)" },
-  in_progress: { label: "進行中", color: "var(--color-text-info)",     bg: "var(--color-bg-info)",     border: "var(--color-border-info)" },
-  done:        { label: "完了",   color: "var(--color-text-success)",  bg: "var(--color-bg-success)",  border: "var(--color-border-success)" },
-} as const;
-
-const PRIORITY_CONFIG = {
-  high: { label: "高", bg: "var(--color-bg-danger)",  color: "var(--color-text-danger)"  },
-  mid:  { label: "中", bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
-  low:  { label: "低", bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
-} as const;
-
-function todayStr() { return new Date().toISOString().split("T")[0]; }
 
 export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds }: Props) {
   const { tasks: allTasks, members: allMembers, taskForces: allTaskForces, todos: rawTodos, saveTask, deleteTask, addTaskTaskForce, addTaskProject } = useAppData();
@@ -148,7 +135,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
       }}>
         {(["todo", "in_progress", "done"] as const).map(status => {
           const colTasks = visibleTasks.filter(t => t.status === status);
-          const cfg = STATUS_CONFIG[status];
+          const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
           const isDoneCol = status === "done";
           const isDropTarget = dragOverStatus === status;
           return (
@@ -277,7 +264,7 @@ function TaskCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const isDone = task.status === "done";
-  const isOverdue = task.due_date && !isDone && task.due_date < todayStr();
+  const isOverdue = task.due_date && !isDone && task.due_date < new Date().toISOString().split("T")[0];
 
   return (
     <div
@@ -354,14 +341,14 @@ function TaskCard({
           <span title="メモあり" style={{ fontSize: "10px", opacity: 0.45, flexShrink: 0 }}>💬</span>
         )}
         {/* 優先度バッジ */}
-        {task.priority && PRIORITY_CONFIG[task.priority] && (
+        {task.priority && TASK_PRIORITY_STYLE[task.priority] && (
           <span style={{
             fontSize: "9px", padding: "1px 5px", borderRadius: "3px",
-            background: PRIORITY_CONFIG[task.priority].bg,
-            color: PRIORITY_CONFIG[task.priority].color,
+            background: TASK_PRIORITY_STYLE[task.priority].bg,
+            color: TASK_PRIORITY_STYLE[task.priority].color,
             flexShrink: 0,
           }}>
-            {PRIORITY_CONFIG[task.priority].label}
+            {TASK_PRIORITY_LABEL[task.priority]}
           </span>
         )}
         {/* ステータス前進ボタン（todo→進行中→完了）*/}
@@ -468,11 +455,11 @@ function AddTaskModal({
           </span>
           <span style={{
             fontSize: "10px", padding: "2px 7px", borderRadius: "var(--radius-full)",
-            background: STATUS_CONFIG[defaultStatus].bg,
-            color: STATUS_CONFIG[defaultStatus].color,
-            border: `1px solid ${STATUS_CONFIG[defaultStatus].border}`,
+            background: TASK_STATUS_STYLE[defaultStatus].bg,
+            color: TASK_STATUS_STYLE[defaultStatus].color,
+            border: `1px solid ${TASK_STATUS_STYLE[defaultStatus].border}`,
           }}>
-            {STATUS_CONFIG[defaultStatus].label}
+            {TASK_STATUS_LABEL[defaultStatus]}
           </span>
           <button onClick={onClose} style={{ marginLeft: "10px", background: "none", border: "none", fontSize: "16px", color: "var(--color-text-tertiary)", cursor: "pointer" }}>×</button>
         </div>

@@ -11,13 +11,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { AppError } from "../../lib/errorReporter";
+import { KEYS } from "../../lib/localData/localStore";
 
-const HISTORY_KEY = "app:error_history";
 const MAX_HISTORY = 20;
 
 function loadHistory(): AppError[] {
   try {
-    const raw = localStorage.getItem(HISTORY_KEY);
+    const raw = localStorage.getItem(KEYS.ERROR_HISTORY);
     return raw ? (JSON.parse(raw) as AppError[]) : [];
   } catch {
     return [];
@@ -28,7 +28,7 @@ function saveToHistory(err: AppError) {
   const prev = loadHistory();
   const next = [...prev, err].slice(-MAX_HISTORY);
   try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    localStorage.setItem(KEYS.ERROR_HISTORY, JSON.stringify(next));
   } catch {
     // ストレージ容量超過などは無視
   }
@@ -88,7 +88,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
   }, []);
 
   const clearAll = useCallback(() => {
-    localStorage.removeItem(HISTORY_KEY);
+    localStorage.removeItem(KEYS.ERROR_HISTORY);
     setHistory([]);
   }, []);
 

@@ -205,71 +205,10 @@ export interface TaskChangeLog {
   updated_by: string;     // member_id
 }
 
-// ===== AI連携（CLAUDE.md Section 6）=====
-
-export type ConsultationType =
-  | "change"         // 変更の影響整理（デフォルト）
-  | "simulate"       // What-If シミュレーション
-  | "diagnose"       // 現状診断
-  | "deadline_check" // 締め切り逆算（target_deadline必須）
-  | "scope_change";  // PJ停止・スコープ縮小
-
-/** AIに渡すプロジェクト情報（contribution_memoは含めない） */
-export interface AIProject {
-  pj_id: string;       // shortId（UUID非公開）
-  pj_name: string;
-  pj_purpose: string;  // contribution_memoは含めない（CLAUDE.md Section 2参照）
-  pj_status: Project["status"];
-  pj_end_date: string | null;
-  pj_progress: { total: number; done: number; in_progress: number; todo: number };
-  /** オーナーのshort_name一覧（複数可） */
-  pj_owners: string[];
-  tasks: AITask[];
-}
-
-export interface AITask {
-  task_id: string;     // shortId（UUID非公開）
-  task_name: string;
-  assignee: string;    // short_name
-  status: Task["status"];
-  priority: Task["priority"];
-  due_date: string | null;
-  estimated_hours: number | null;
-  comment: string;     // sanitizeComment() 適用済みであること
-  /** ステータスがdoneになった日時（YYYY-MM-DD形式）。未完了タスクはnull */
-  completed_at: string | null;
-}
-
-/** AIに渡すOKR構造（OKRモード有効時のみpayloadに含まれる） */
-export interface AITaskForce {
-  tf_id: string;     // shortId
-  tf_number: string;
-  name: string;
-  leader: string;    // short_name
-}
-
-export interface AIKeyResult {
-  kr_id: string;     // shortId
-  title: string;
-  task_forces: AITaskForce[];
-}
-
-export interface AIOKR {
-  objective_id: string; // shortId
-  title: string;
-  period: string;
-  key_results: AIKeyResult[];
-}
-
-export interface MemberWorkload {
-  member_id: string;
-  short_name: string;
-  todo_count: number;
-  in_progress_count: number;
-  /** 工数入力済みタスクの合計時間（入力済みタスクのみ。未入力は0扱いしない） */
-  total_estimated_hours: number | null;
-  /** 工数が入力されている未完了タスク数 */
-  tasks_with_estimate: number;
-  /** 工数が入力されていない未完了タスク数 */
-  tasks_without_estimate: number;
-}
+// AI連携専用の型は src/lib/ai/types.ts に移動しました。
+// 後方互換のため re-export します。
+export type {
+  ConsultationType,
+  AIProject, AITask, AITaskForce, AIKeyResult, AIOKR,
+  MemberWorkload,
+} from "../ai/types";

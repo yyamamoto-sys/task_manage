@@ -9,12 +9,8 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type {
-  Project, Task, Member, ToDo,
-  KeyResult, TaskForce,
-  AIProject, AITask, MemberWorkload, AIOKR,
-  ConsultationType,
-} from "../localData/types";
+import type { Project, Task, Member, ToDo, KeyResult, TaskForce } from "../localData/types";
+import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
 
 // ===== 型定義 =====

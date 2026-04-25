@@ -11,6 +11,9 @@ import { useState, useCallback, useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, TaskForce, TaskTaskForce, TaskProject } from "../../lib/localData/types";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { todayStr } from "../../lib/date";
+import { renderLinks } from "../../lib/renderLinks";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 
@@ -20,43 +23,6 @@ interface Props {
   onClose: () => void;
   onUpdated?: (task: Task) => void;
   onDeleted?: (taskId: string) => void;
-}
-
-const STATUS_LABELS: Record<Task["status"], string> = {
-  todo: "ToDo", in_progress: "進行中", done: "完了",
-};
-const STATUS_COLORS: Record<Task["status"], { bg: string; color: string; border: string }> = {
-  todo:        { bg: "var(--color-bg-tertiary)",  color: "var(--color-text-secondary)", border: "var(--color-border-secondary)" },
-  in_progress: { bg: "var(--color-bg-info)",      color: "var(--color-text-info)",      border: "var(--color-border-info)" },
-  done:        { bg: "var(--color-bg-success)",   color: "var(--color-text-success)",   border: "var(--color-border-success)" },
-};
-const PRIORITY_LABELS: Record<string, string> = { high: "高", mid: "中", low: "低" };
-const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
-  high: { bg: "var(--color-bg-danger)",  color: "var(--color-text-danger)"  },
-  mid:  { bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
-  low:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
-};
-
-function todayStr() { return new Date().toISOString().split("T")[0]; }
-
-// URLとネットワークパスを検出してリンク表示
-function renderComment(text: string): React.ReactNode {
-  const urlPat = /https?:\/\/[^\s]+/g;
-  const parts: React.ReactNode[] = [];
-  let last = 0;
-  let m;
-  while ((m = urlPat.exec(text)) !== null) {
-    if (m.index > last) parts.push(text.slice(last, m.index));
-    parts.push(
-      <a key={m.index} href={m[0]} target="_blank" rel="noreferrer"
-        style={{ color: "var(--color-text-info)", textDecoration: "underline", wordBreak: "break-all" }}>
-        {m[0]}
-      </a>
-    );
-    last = m.index + m[0].length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return <>{parts}</>;
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
@@ -255,7 +221,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
           <FieldSection label="ステータス">
             <div style={{ display: "flex", gap: "4px" }}>
               {statusArr.map(s => {
-                const cfg = STATUS_COLORS[s];
+                const cfg = TASK_STATUS_STYLE[s];
                 const isActive = editing ? form.status === s : originalTask.status === s;
                 return (
                   <button key={s}
@@ -269,7 +235,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
                       cursor: editing ? "pointer" : "default",
                       transition: "all 0.1s",
                     }}>
-                    {STATUS_LABELS[s]}
+                    {TASK_STATUS_LABEL[s]}
                   </button>
                 );
               })}
@@ -281,7 +247,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             <div style={{ display: "flex", gap: "4px" }}>
               {["", "high", "mid", "low"].map(p => {
                 const isActive = editing ? form.priority === p : (originalTask.priority ?? "") === p;
-                const cfg = p ? PRIORITY_COLORS[p] : null;
+                const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
                 return (
                   <button key={p}
                     onClick={() => editing && setForm(f => ({ ...f, priority: p }))}
@@ -295,7 +261,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
                       transition: "all 0.1s",
                       opacity: isActive ? 1 : 0.5,
                     }}>
-                    {p ? PRIORITY_LABELS[p] : "なし"}
+                    {p ? TASK_PRIORITY_LABEL[p] : "なし"}
                   </button>
                 );
               })}
@@ -603,7 +569,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
                 padding: "8px 10px", borderRadius: "var(--radius-md)",
                 border: "1px solid var(--color-border-primary)",
               }}>
-                {renderComment(originalTask.comment)}
+                {renderLinks(originalTask.comment)}
               </div>
             ) : (
               <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>

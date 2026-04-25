@@ -6,7 +6,7 @@
 // このモジュールはuseAIConsultationからのみ呼び出すこと（CLAUDE.md Section 6-12参照）。
 
 import { supabase } from "../supabase/client";
-import type { ConsultationType } from "../localData/types";
+import type { ConsultationType } from "./types";
 import type { AIConsultationPayload } from "./payloadBuilder";
 import { SYSTEM_PROMPTS } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";

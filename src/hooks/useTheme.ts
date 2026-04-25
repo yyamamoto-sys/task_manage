@@ -7,13 +7,12 @@
 // - OSのカラースキーム設定を初期値として使用する
 
 import { useState, useEffect, useCallback } from "react";
+import { KEYS } from "../lib/localData/localStore";
 
 export type Theme = "light" | "dark";
 
-const STORAGE_KEY = "theme";
-
 function getInitialTheme(): Theme {
-  const stored = localStorage.getItem(STORAGE_KEY) as Theme | null;
+  const stored = localStorage.getItem(KEYS.THEME) as Theme | null;
   if (stored === "light" || stored === "dark") return stored;
   // OS設定に従う（未設定時）
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
@@ -32,7 +31,7 @@ export function useTheme() {
 
   useEffect(() => {
     applyTheme(theme);
-    localStorage.setItem(STORAGE_KEY, theme);
+    localStorage.setItem(KEYS.THEME, theme);
   }, [theme]);
 
   const toggle = useCallback(() => {

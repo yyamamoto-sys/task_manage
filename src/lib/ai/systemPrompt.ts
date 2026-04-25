@@ -5,7 +5,7 @@
 // コード内にインラインで書かない（CLAUDE.md Section 6-13参照）。
 // consultation_typeを追加する場合はCLAUDE.md Section 6-6も同時に更新すること。
 
-import type { ConsultationType } from "../localData/types";
+import type { ConsultationType } from "./types";
 
 // ===== レスポンス構造のJSON定義（全モード共通） =====
 

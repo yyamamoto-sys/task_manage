@@ -3,6 +3,10 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { todayStr, addDaysFromToday } from "../../lib/date";
+import { renderLinks } from "../../lib/renderLinks";
+import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 
@@ -21,35 +25,14 @@ type SortDir = "asc" | "desc";
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, done: 2 };
 
-const STATUS_LABELS: Record<Task["status"], string> = {
-  todo: "ToDo", in_progress: "進行中", done: "完了",
-};
-const STATUS_COLORS: Record<Task["status"], { bg: string; color: string }> = {
-  todo:        { bg: "var(--color-bg-tertiary)",  color: "var(--color-text-secondary)" },
-  in_progress: { bg: "var(--color-bg-info)",      color: "var(--color-text-info)" },
-  done:        { bg: "var(--color-bg-success)",   color: "var(--color-text-success)" },
-};
-const PRIORITY_LABELS: Record<string, string> = { high: "高", mid: "中", low: "低" };
-const PRIORITY_COLORS: Record<string, { bg: string; color: string }> = {
-  high: { bg: "var(--color-bg-danger)",  color: "var(--color-text-danger)"  },
-  mid:  { bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
-  low:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
-};
-
-function todayStr(): string { return new Date().toISOString().split("T")[0]; }
-function addDays(n: number): string {
-  const d = new Date(); d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
-}
-
 function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
   const header = ["タスク名","ステータス","担当者","プロジェクト","優先度","開始日","期日","工数(h)","コメント"];
   const rows = tasks.map(t => {
     const pj = projects.find(p => p.id === t.project_id);
     const m  = members.find(mb => mb.id === t.assignee_member_id);
     return [
-      t.name, STATUS_LABELS[t.status], m?.display_name ?? "",
-      pj?.name ?? "", t.priority ? PRIORITY_LABELS[t.priority] : "",
+      t.name, TASK_STATUS_LABEL[t.status], m?.display_name ?? "",
+      pj?.name ?? "", t.priority ? TASK_PRIORITY_LABEL[t.priority] : "",
       t.start_date ?? "", t.due_date ?? "",
       t.estimated_hours?.toString() ?? "",
       t.comment.replace(/,/g,"，").replace(/\n/g," "),
@@ -63,23 +46,8 @@ function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
   URL.revokeObjectURL(url);
 }
 
-function renderComment(text: string): React.ReactNode {
-  const pat = /https?:\/\/[^\s]+/g;
-  const parts: React.ReactNode[] = [];
-  let last = 0, match;
-  while ((match = pat.exec(text)) !== null) {
-    if (match.index > last) parts.push(text.slice(last, match.index));
-    const url = match[0];
-    parts.push(<a key={match.index} href={url} target="_blank" rel="noreferrer"
-      style={{color:"var(--color-text-info)",textDecoration:"underline",wordBreak:"break-all"}}>{url}</a>);
-    last = match.index + url.length;
-  }
-  if (last < text.length) parts.push(text.slice(last));
-  return <>{parts}</>;
-}
-
-// ===== ビュー設定の永続化 =====
-const LIST_LS_KEY = "list_view_settings";
+// ===== ビュー設定の永続化ヘルパー =====
+const LIST_LS_KEY = KEYS.LIST_VIEW_SETTINGS;
 function lsGet<T>(field: string, fallback: T): T {
   try { return ((JSON.parse(localStorage.getItem(LIST_LS_KEY) ?? "{}") as Record<string, T>)[field] ?? fallback); }
   catch { return fallback; }
@@ -145,7 +113,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   }, [sortKey, sortDir]);
 
   const t0 = useRef(todayStr()).current;
-  const t7 = useRef(addDays(7)).current;
+  const t7 = useRef(addDaysFromToday(7)).current;
 
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
@@ -214,7 +182,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
         .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)! }));
     }
     return (["in_progress", "todo", "done"] as const)
-      .map(s => ({ label: STATUS_LABELS[s], color: STATUS_COLORS[s].color, tasks: filteredTasks.filter(t => t.status === s) }))
+      .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s) }))
       .filter(g => g.tasks.length > 0);
   }, [filteredTasks, groupBy, projects, members, todos]);
 
@@ -384,8 +352,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                             {task.comment && <span title="メモあり" style={{ fontSize: "11px", opacity: 0.5 }}>💬</span>}
                             <span style={{
                               fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                              background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
-                            }}>{STATUS_LABELS[task.status]}</span>
+                              background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
+                            }}>{TASK_STATUS_LABEL[task.status]}</span>
                           </div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -401,8 +369,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                           }}>{task.due_date.slice(5).replace("-", "/")}</span>}
                           {task.priority && <span style={{
                             fontSize: "9px", padding: "1px 5px", borderRadius: "3px",
-                            background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
-                          }}>{PRIORITY_LABELS[task.priority]}</span>}
+                            background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
+                          }}>{TASK_PRIORITY_LABEL[task.priority]}</span>}
                           {groupBy !== "project" && pj && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
                             <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
                             <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 12)}</span>
@@ -425,11 +393,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                                 }} style={{
                                   flex: 1, padding: "4px 2px", fontSize: "9px", borderRadius: "var(--radius-sm)",
                                   fontWeight: sidebarForm.status === s ? "600" : "400",
-                                  background: sidebarForm.status === s ? STATUS_COLORS[s].bg : "transparent",
-                                  color: sidebarForm.status === s ? STATUS_COLORS[s].color : "var(--color-text-tertiary)",
-                                  border: sidebarForm.status === s ? `1px solid ${STATUS_COLORS[s].color}` : "1px solid var(--color-border-primary)",
+                                  background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
+                                  color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
+                                  border: sidebarForm.status === s ? `1px solid ${TASK_STATUS_STYLE[s].color}` : "1px solid var(--color-border-primary)",
                                   cursor: "pointer",
-                                }}>{STATUS_LABELS[s]}</button>
+                                }}>{TASK_STATUS_LABEL[s]}</button>
                               ))}
                             </div>
                             <button onClick={e => { e.stopPropagation(); setEditingTaskId(task.id); }} style={{
@@ -521,8 +489,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                               {task.priority && (
                                 <span style={{
                                   fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
-                                  background: PRIORITY_COLORS[task.priority].bg, color: PRIORITY_COLORS[task.priority].color,
-                                }}>{PRIORITY_LABELS[task.priority]}</span>
+                                  background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
+                                }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
                               )}
                             </td>
                             {/* タスク名 */}
@@ -561,8 +529,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                               <span style={{
                                 fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                                background: STATUS_COLORS[task.status].bg, color: STATUS_COLORS[task.status].color,
-                              }}>{STATUS_LABELS[task.status]}</span>
+                                background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
+                              }}>{TASK_STATUS_LABEL[task.status]}</span>
                             </td>
                             {/* 期日 */}
                             <td style={{
@@ -646,7 +614,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                 color: "var(--color-text-tertiary)", flexShrink: 0, paddingTop: "1px",
               }}>✕</button>
             </div>
-
             <div style={{ flex: 1, overflow: "auto", padding: "12px 12px 0" }}>
               {/* PJ / ToDo コンテキスト */}
               {(pj || sideTd) && (
@@ -672,13 +639,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                   <button key={s} onClick={() => saveStatus(s)} style={{
                     flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
                     fontWeight: sidebarForm.status === s ? "600" : "400",
-                    background: sidebarForm.status === s ? STATUS_COLORS[s].bg : "transparent",
-                    color: sidebarForm.status === s ? STATUS_COLORS[s].color : "var(--color-text-tertiary)",
+                    background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
+                    color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
                     border: sidebarForm.status === s
-                      ? `1.5px solid ${STATUS_COLORS[s].color}`
+                      ? `1.5px solid ${TASK_STATUS_STYLE[s].color}`
                       : "1px solid var(--color-border-primary)",
                     cursor: "pointer", transition: "all 0.1s",
-                  }}>{STATUS_LABELS[s]}</button>
+                  }}>{TASK_STATUS_LABEL[s]}</button>
                 ))}
               </div>
 
@@ -687,7 +654,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
               <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
                 {([null, "high", "mid", "low"] as const).map(p => {
                   const isActive = (selectedTask.priority ?? null) === p;
-                  const cfg = p ? PRIORITY_COLORS[p] : null;
+                  const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
                   return (
                     <button key={String(p)} onClick={() => savePriority(p)} style={{
                       flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
@@ -696,7 +663,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                       color: isActive && cfg ? cfg.color : "var(--color-text-tertiary)",
                       border: isActive ? "1.5px solid currentColor" : "1px solid var(--color-border-primary)",
                       cursor: "pointer", transition: "all 0.1s",
-                    }}>{p ? PRIORITY_LABELS[p] : "なし"}</button>
+                    }}>{p ? TASK_PRIORITY_LABEL[p] : "なし"}</button>
                   );
                 })}
               </div>

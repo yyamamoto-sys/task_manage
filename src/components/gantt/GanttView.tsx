@@ -12,6 +12,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
+import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
+import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 
 interface Props {
@@ -28,36 +30,10 @@ interface Props {
   previewChangedTaskIds?: Set<string>;
 }
 
-// ===== 日付ユーティリティ =====
+// ===== 定数 =====
 
 const DAY_WIDTH = 28; // 1日あたりのpx幅
 
-function toDate(s: string | null): Date | null {
-  if (!s) return null;
-  const d = new Date(s);
-  d.setHours(0, 0, 0, 0);
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function dateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
-}
-
-function addDays(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setDate(r.getDate() + n);
-  return r;
-}
-
-function diffDays(a: Date, b: Date): number {
-  return Math.round((b.getTime() - a.getTime()) / 86400000);
-}
-
-function formatMonth(d: Date): string {
-  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
-}
-
-/** start_date〜due_date のバー位置・幅を計算する。start_date がない場合は due_date の1点表示 */
 function calcTaskBar(task: Task, rangeStart: Date): { barX: number; barWidth: number } | null {
   const due = toDate(task.due_date);
   if (!due) return null;
@@ -68,19 +44,6 @@ function calcTaskBar(task: Task, rangeStart: Date): { barX: number; barWidth: nu
     return { barX, barWidth };
   }
   return { barX: diffDays(rangeStart, due) * DAY_WIDTH, barWidth: DAY_WIDTH - 4 };
-}
-
-function getDaysInRange(start: Date, end: Date): Date[] {
-  const days: Date[] = [];
-  let cur = new Date(start);
-  cur.setHours(0, 0, 0, 0);
-  const endN = new Date(end);
-  endN.setHours(0, 0, 0, 0);
-  while (cur <= endN) {
-    days.push(new Date(cur));
-    cur = addDays(cur, 1);
-  }
-  return days;
 }
 
 // ===== メインコンポーネント =====
@@ -214,7 +177,6 @@ export function GanttView({
   };
 
   // スクロール位置の永続化（中心日付をlocalStorageに保存）
-  const GANTT_SCROLL_KEY = "gantt_center_date";
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollInitialized = useRef(false);
   const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -225,7 +187,7 @@ export function GanttView({
   useEffect(() => {
     if (!scrollRef.current || scrollInitialized.current || days.length === 0) return;
     scrollInitialized.current = true;
-    const saved = localStorage.getItem(GANTT_SCROLL_KEY);
+    const saved = localStorage.getItem(KEYS.GANTT_CENTER_DATE);
     const targetDate = saved ? toDate(saved) : null;
     const targetX = targetDate
       ? diffDays(rangeStart, targetDate) * DAY_WIDTH
@@ -240,7 +202,7 @@ export function GanttView({
       if (!el) return;
       const centerX = el.scrollLeft + el.clientWidth / 2;
       const idx = Math.floor(centerX / DAY_WIDTH);
-      if (days[idx]) localStorage.setItem(GANTT_SCROLL_KEY, dateStr(days[idx]));
+      if (days[idx]) localStorage.setItem(KEYS.GANTT_CENTER_DATE, toDateStr(days[idx]));
     }, 300);
     // 縦スクロールをラベル列と同期
     if (!syncingRef.current && labelBodyRef.current && scrollRef.current) {
@@ -268,7 +230,7 @@ export function GanttView({
       if (m !== curMonth) {
         if (curMonth !== "") {
           groups.push({
-            label: formatMonth(days[startIdx]),
+            label: formatYM(days[startIdx]),
             startX: startIdx * DAY_WIDTH,
             width: (i - startIdx) * DAY_WIDTH,
           });
@@ -278,7 +240,7 @@ export function GanttView({
       }
     });
     groups.push({
-      label: formatMonth(days[startIdx]),
+      label: formatYM(days[startIdx]),
       startX: startIdx * DAY_WIDTH,
       width: (days.length - startIdx) * DAY_WIDTH,
     });
@@ -688,7 +650,7 @@ export function GanttView({
                 {days.map((d, i) => {
                   const isSun = d.getDay() === 0;
                   const isSat = d.getDay() === 6;
-                  const isToday = dateStr(d) === dateStr(today);
+                  const isToday = toDateStr(d) === toDateStr(today);
                   const isFirst = d.getDate() === 1 || i === 0;
                   return (
                     <div key={i} style={{

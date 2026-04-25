@@ -9,7 +9,7 @@
 
 import {
   createContext, useContext, useState, useEffect,
-  useCallback, useRef, type ReactNode,
+  useCallback, useRef, useMemo, type ReactNode,
 } from "react";
 import { reportError } from "../lib/errorReporter";
 import type {
@@ -541,7 +541,7 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     }
   }, [load]);
 
-  const value: AppDataContextValue = {
+  const value: AppDataContextValue = useMemo(() => ({
     members, objective, keyResults, taskForces, todos,
     projects, tasks, projectTaskForces,
     quarterlyObjectives, quarterlyKrTaskForces,
@@ -561,7 +561,14 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
     addTaskProject, removeTaskProject,
     milestones, saveMilestone, deleteMilestone,
     reload: load,
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [
+    members, objective, keyResults, taskForces, todos,
+    projects, tasks, projectTaskForces,
+    quarterlyObjectives, quarterlyKrTaskForces,
+    taskTaskForces, taskProjects,
+    loading, error,
+  ]);
 
   return (
     <AppDataContext.Provider value={value}>

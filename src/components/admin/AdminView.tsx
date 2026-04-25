@@ -14,6 +14,9 @@ import type {
   Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
   QuarterlyObjective, Quarter,
 } from "../../lib/localData/types";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { getErrorMessage } from "../../lib/errorMessage";
+import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
@@ -26,13 +29,11 @@ interface Props { currentUser: Member; }
 // ===== ルートコンポーネント =====
 
 export function AdminView({ currentUser }: Props) {
-  const ADMIN_TAB_KEY = "admin_last_tab";
-  const FONT_SIZE_KEY = "admin_font_size";
   const [tab, setTab] = useState<AdminTab>(
-    () => (localStorage.getItem(ADMIN_TAB_KEY) as AdminTab | null) ?? "pj"
+    () => (localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null) ?? "pj"
   );
   const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
-    () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(FONT_SIZE_KEY) ?? "1", 10))) as 0 | 1 | 2
+    () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(KEYS.ADMIN_FONT_SIZE) ?? "1", 10))) as 0 | 1 | 2
   );
   const zoomLevels = [0.85, 1, 1.15] as const;
 
@@ -47,11 +48,11 @@ export function AdminView({ currentUser }: Props) {
     }
     setIsDirty(false);
     setTab(t);
-    localStorage.setItem(ADMIN_TAB_KEY, t);
+    localStorage.setItem(KEYS.ADMIN_LAST_TAB, t);
   };
   const changeFontSize = (level: 0 | 1 | 2) => {
     setFontSizeLevel(level);
-    localStorage.setItem(FONT_SIZE_KEY, String(level));
+    localStorage.setItem(KEYS.ADMIN_FONT_SIZE, String(level));
   };
 
   const tabs: { key: AdminTab; label: string }[] = [
@@ -196,9 +197,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
       flashSaved();
       setObjEdited(false);
     } catch (e) {
-      const msg = e instanceof Error ? e.message
-        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
-        : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -219,9 +218,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
       await saveKeyResult(kr);
       setNewKrTitle("");
     } catch (e) {
-      const msg = e instanceof Error ? e.message
-        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
-        : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -232,9 +229,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
     try {
       await saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
     } catch (e) {
-      const msg = e instanceof Error ? e.message
-        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
-        : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
     setEditingKrId(null);
@@ -429,7 +424,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     try {
       await deleteQuarterlyObjective(qObj.id, currentUser.id);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`削除に失敗しました。\n${msg}`);
     }
   };
@@ -440,7 +435,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       const target = await ensureQObj();
       await addQuarterlyKrTaskForce({ quarterly_objective_id: target.id, kr_id: krId, tf_id: tfId });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`追加に失敗しました。\n${msg}`);
     }
   };
@@ -459,7 +454,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
       await addQuarterlyKrTaskForce({ quarterly_objective_id: targetQObj.id, kr_id: krId, tf_id: tfId });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`移動に失敗しました。\n${msg}`);
     }
   };
@@ -489,7 +484,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       await handleAddTf(krId, newTf.id);
       setNewTfFormKrId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`TFの作成に失敗しました。\n${msg}`);
     }
   };
@@ -508,7 +503,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, updated_at: now, updated_by: currentUser.id });
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message) : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -1282,9 +1277,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       }
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message
-        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
-        : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -1562,9 +1555,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
       }
       setEditId(null);
     } catch (e) {
-      const msg = e instanceof Error ? e.message
-        : (e != null && typeof e === "object" && "message" in e) ? String((e as { message: unknown }).message)
-        : String(e);
+      const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -2078,23 +2069,6 @@ function AIUsageSection() {
 // セクション⑥：タスク管理
 // ===================================================
 
-const STATUS_LABELS: Record<Task["status"], string> = {
-  todo: "未着手",
-  in_progress: "進行中",
-  done: "完了",
-};
-const STATUS_COLORS: Record<Task["status"], { bg: string; text: string; border: string }> = {
-  todo:        { bg: "var(--color-bg-tertiary)",  text: "var(--color-text-secondary)", border: "var(--color-border-secondary)" },
-  in_progress: { bg: "var(--color-bg-info)",      text: "var(--color-text-info)",      border: "var(--color-border-info)" },
-  done:        { bg: "var(--color-bg-success)",   text: "var(--color-text-success)",   border: "var(--color-border-success)" },
-};
-const PRIORITY_LABELS: Record<string, string> = { high: "高", mid: "中", low: "低" };
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "var(--color-text-danger)",
-  mid:  "var(--color-text-warning)",
-  low:  "var(--color-text-tertiary)",
-};
-
 function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const {
     tasks: rawTasks, members: rawMembers, projects: rawProjects, saveTask,
@@ -2242,7 +2216,7 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
           {filtered.map((task, i) => {
             const assignee = members.find(m => m.id === task.assignee_member_id);
             const pj = projects.find(p => p.id === task.project_id);
-            const statusColor = STATUS_COLORS[task.status];
+            const statusColor = TASK_STATUS_STYLE[task.status];
             const isOverdue = task.due_date && task.due_date < new Date().toISOString().split("T")[0] && task.status !== "done";
 
             return (
@@ -2271,10 +2245,10 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
                   {task.priority && (
                     <span style={{
                       fontSize: "9px", marginRight: "5px",
-                      color: PRIORITY_COLORS[task.priority],
+                      color: TASK_PRIORITY_STYLE[task.priority]?.color,
                       fontWeight: "700",
                     }}>
-                      [{PRIORITY_LABELS[task.priority]}]
+                      [{TASK_PRIORITY_LABEL[task.priority]}]
                     </span>
                   )}
                   {task.name}
@@ -2305,10 +2279,10 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
                     <span style={{
                       fontSize: "10px", padding: "1px 7px",
                       borderRadius: "var(--radius-full)",
-                      background: statusColor.bg, color: statusColor.text,
+                      background: statusColor.bg, color: statusColor.color,
                       border: `1px solid ${statusColor.border}`,
                     }}>
-                      {STATUS_LABELS[task.status]}
+                      {TASK_STATUS_LABEL[task.status]}
                     </span>
                     {task.due_date && (
                       <span style={{ fontSize: "11px", color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)" }}>
@@ -2378,11 +2352,11 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
                       <span style={{
                         fontSize: "10px", padding: "2px 8px",
                         borderRadius: "var(--radius-full)",
-                        background: statusColor.bg, color: statusColor.text,
+                        background: statusColor.bg, color: statusColor.color,
                         border: `1px solid ${statusColor.border}`,
                         whiteSpace: "nowrap",
                       }}>
-                        {STATUS_LABELS[task.status]}
+                        {TASK_STATUS_LABEL[task.status]}
                       </span>
                     </div>
 

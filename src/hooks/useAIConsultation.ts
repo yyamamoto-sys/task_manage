@@ -14,7 +14,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import { useAppData } from "../context/AppDataContext";
-import type { ConsultationType } from "../lib/localData/types";
+import type { ConsultationType } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
 import { callAIConsultation } from "../lib/ai/apiClient";
 import { AIError } from "../lib/ai/apiClient";
