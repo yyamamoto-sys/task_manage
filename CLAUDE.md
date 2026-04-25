@@ -753,6 +753,19 @@ supabase/
 
 *このドキュメントはClaudeとの設計セッションによって作成されました。*
 
+---
+
+## 14. リファクタリング管理
+
+定期的なコードリファクタリングの記録・ガイドは以下で管理しています。
+**リファクタリング作業を始める前に必ずこのファイルを読んでください。**
+
+```
+docs/REFACTORING.md  ← 完了済み・未完了・進め方・コスト記録
+```
+
+**セッション開始の合言葉**：「リファクタリングをしたい」と言われたら `docs/REFACTORING.md` を読んでから提案すること。
+
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel
 
