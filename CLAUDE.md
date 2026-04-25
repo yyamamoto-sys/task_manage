@@ -8,7 +8,7 @@
 #      更新：Section 10（未解決論点からPhase 4解決済み分を削除）
 # v2.1 ToDo層追加・Task設計変更・GraphView追加（2026年3月）
 #      追加：3-2b（ToDoデータモデル）
-#      更新：2（6層構造に変更）・3-3（Task.project_id NULL許可・todo_id追加）
+#      更新：2（6層構造に変更）・3-3（Task.project_id NULL許可・todo_ids配列化）
 #      更新：13（ファイル構成にGraphView追加）
 # v2.2 UI/UX大幅改善・機能追加・ホスティング確定（2026年4月）
 #      更新：1（ホスティングをVercelに確定）
@@ -78,9 +78,9 @@ Project（PJ）                    ← AI管理・AIに渡す
 ### Taskの紐づきパターン（いずれか、または両方）
 
 ```
-① Project only:  Task.project_id = "uuid", Task.todo_id = null
-② ToDo only:     Task.project_id = null,   Task.todo_id = "uuid"
-③ 両方:          Task.project_id = "uuid", Task.todo_id = "uuid"
+① Project only:  Task.project_id = "uuid", Task.todo_ids = []
+② ToDo only:     Task.project_id = null,   Task.todo_ids = ["uuid"]
+③ 両方:          Task.project_id = "uuid", Task.todo_ids = ["uuid"]
 ```
 
 ### AI境界ルール
@@ -217,7 +217,7 @@ interface Task {
   id: string;
   name: string;
   project_id: string | null; // ← NULL許可（ToDo単独紐づけの場合はnull）
-  todo_id: string | null;    // ← ToDoへの紐づき（任意）。project_idと併用可
+  todo_ids: string[];        // ← ToDoへの紐づき（複数可・任意）。project_idと併用可
   assignee_member_id: string;
   status: 'todo' | 'in_progress' | 'done';
   priority?: 'high' | 'mid' | 'low';
@@ -752,3 +752,28 @@ supabase/
 ---
 
 *このドキュメントはClaudeとの設計セッションによって作成されました。*
+
+<!-- VERCEL BEST PRACTICES START -->
+## Best practices for developing on Vercel
+
+These defaults are optimized for AI coding agents (and humans) working on apps that deploy to Vercel.
+
+- Treat Vercel Functions as stateless + ephemeral (no durable RAM/FS, no background daemons), use Blob or marketplace integrations for preserving state
+- Edge Functions (standalone) are deprecated; prefer Vercel Functions
+- Don't start new projects on Vercel KV/Postgres (both discontinued); use Marketplace Redis/Postgres instead
+- Store secrets in Vercel Env Variables; not in git or `NEXT_PUBLIC_*`
+- Provision Marketplace native integrations with `vercel integration add` (CI/agent-friendly)
+- Sync env + project settings with `vercel env pull` / `vercel pull` when you need local/offline parity
+- Use `waitUntil` for post-response work; avoid the deprecated Function `context` parameter
+- Set Function regions near your primary data source; avoid cross-region DB/service roundtrips
+- Tune Fluid Compute knobs (e.g., `maxDuration`, memory/CPU) for long I/O-heavy calls (LLMs, APIs)
+- Use Runtime Cache for fast **regional** caching + tag invalidation (don't treat it as global KV)
+- Use Cron Jobs for schedules; cron runs in UTC and triggers your production URL via HTTP GET
+- Use Vercel Blob for uploads/media; Use Edge Config for small, globally-read config
+- If Enable Deployment Protection is enabled, use a bypass secret to directly access them
+- Add OpenTelemetry via `@vercel/otel` on Node; don't expect OTEL support on the Edge runtime
+- Enable Web Analytics + Speed Insights early
+- Use AI Gateway for model routing, set AI_GATEWAY_API_KEY, using a model string (e.g. 'anthropic/claude-sonnet-4.6'), Gateway is already default in AI SDK
+  needed. Always curl https://ai-gateway.vercel.sh/v1/models first; never trust model IDs from memory
+- For durable agent loops or untrusted code: use Workflow (pause/resume/state) + Sandbox; use Vercel MCP for secure infra access
+<!-- VERCEL BEST PRACTICES END -->

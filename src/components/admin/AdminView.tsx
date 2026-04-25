@@ -1714,21 +1714,14 @@ function AutoTextarea({ value, onChange, placeholder, maxLength, minRows = 2, st
   minRows?: number;
   style?: React.CSSProperties;
 }) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    if (!ref.current) return;
-    ref.current.style.height = "auto";
-    ref.current.style.height = ref.current.scrollHeight + "px";
-  }, [value]);
   return (
     <textarea
-      ref={ref}
       value={value}
       onChange={onChange}
       placeholder={placeholder}
       maxLength={maxLength}
       rows={minRows}
-      style={{ ...style, resize: "none", overflow: "hidden" }}
+      style={style}
     />
   );
 }
