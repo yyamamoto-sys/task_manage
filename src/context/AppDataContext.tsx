@@ -18,6 +18,7 @@ import type {
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
 } from "../lib/localData/types";
+import { supabase } from "../lib/supabase/client";
 import {
   fetchAllData,
   upsertMember, softDeleteMember,
@@ -161,6 +162,16 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Supabase realtime: tasks / projects テーブルへの外部書き込みを検知して再取得
+  useEffect(() => {
+    const channel = supabase
+      .channel("app-data-changes")
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => load())
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [load]);
 
   // ===== Member =====
 

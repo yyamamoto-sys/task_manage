@@ -43,6 +43,9 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
+  const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
+    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem("consultation_panel_width") ?? "400", 10) || 400)); } catch { return 400; }
+  });
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
@@ -239,7 +242,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       <button
         onClick={() => setIsQuickAddOpen(true)}
         style={{
-          position: "fixed", bottom: "24px", right: "24px", zIndex: 60,
+          position: "fixed", bottom: "24px",
+          right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
+          transition: "right 0.3s ease",
+          zIndex: 60,
           height: "40px", borderRadius: "var(--radius-full)",
           padding: "0 18px",
           background: "var(--color-brand)", color: "#fff",
@@ -287,7 +293,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div style={{
-        width: isConsultOpen ? "400px" : "0",
+        width: isConsultOpen ? `${consultPanelWidth}px` : "0",
         flexShrink: 0,
         overflow: "hidden",
         transition: "width 0.3s ease",
@@ -297,6 +303,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           onClose={() => setIsConsultOpen(false)}
           currentUser={currentUser}
           inline
+          onWidthChange={setConsultPanelWidth}
         />
       </div>
     </div>

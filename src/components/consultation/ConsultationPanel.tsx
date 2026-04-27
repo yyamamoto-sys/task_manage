@@ -23,6 +23,7 @@ interface Props {
   selectedProject?: Project | null;
   projects?: Project[];
   inline?: boolean;
+  onWidthChange?: (width: number) => void;
 }
 
 const TYPE_CONFIG: {
@@ -82,6 +83,7 @@ export function ConsultationPanel({
   selectedProject = null,
   projects = [],
   inline = false,
+  onWidthChange,
 }: Props) {
   const [manualType, setManualType] = useState<ConsultationType | null>(null);
   const [inputText, setInputText] = useState("");
@@ -100,6 +102,8 @@ export function ConsultationPanel({
   const isDraggingPanel = useRef(false);
   const dragStartX = useRef(0);
   const dragStartW = useRef(0);
+
+  useEffect(() => { onWidthChange?.(panelWidth); }, [panelWidth, onWidthChange]);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);

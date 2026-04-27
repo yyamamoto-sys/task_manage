@@ -60,7 +60,7 @@ export function GanttView({
   isPreview = false,
   previewChangedTaskIds,
 }: Props) {
-  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, milestones: rawMilestones } = useAppData();
+  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, milestones: rawMilestones, saveTask } = useAppData();
   const milestones = useMemo(
     () => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted),
     [rawMilestones],
@@ -327,18 +327,64 @@ export function GanttView({
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
 
+  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+
+  // 右端ドラッグによる期日変更
+  const [draggingResizeTask, setDraggingResizeTask] = useState<{
+    taskId: string; startX: number; originalDueDate: string;
+  } | null>(null);
+  const [resizePreviewDates, setResizePreviewDates] = useState<Record<string, string>>({});
+
   useEffect(() => {
-    document.body.style.cursor     = isResizing ? "col-resize" : "";
-    document.body.style.userSelect = isResizing ? "none" : "";
+    const active = isResizing || !!draggingResizeTask;
+    document.body.style.cursor     = active ? "col-resize" : "";
+    document.body.style.userSelect = active ? "none" : "";
     return () => { document.body.style.cursor = ""; document.body.style.userSelect = ""; };
-  }, [isResizing]);
+  }, [isResizing, draggingResizeTask]);
 
   const scrollToToday = useCallback(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
   }, [todayX]);
 
-  const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  const handleResizeDragStart = useCallback((e: React.MouseEvent, task: Task) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!task.due_date || isPreview) return;
+    setDraggingResizeTask({ taskId: task.id, startX: e.clientX, originalDueDate: task.due_date });
+  }, [isPreview]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingResizeTask) return;
+      const deltaDays = Math.round((e.clientX - draggingResizeTask.startX) / dayWidth);
+      if (deltaDays === 0) {
+        setResizePreviewDates(prev => { const n = { ...prev }; delete n[draggingResizeTask.taskId]; return n; });
+        return;
+      }
+      const orig = toDate(draggingResizeTask.originalDueDate);
+      if (!orig) return;
+      const newDate = toDateStr(addDays(orig, deltaDays));
+      setResizePreviewDates(prev => ({ ...prev, [draggingResizeTask.taskId]: newDate }));
+    };
+    const onUp = async (e: MouseEvent) => {
+      if (!draggingResizeTask) return;
+      const deltaDays = Math.round((e.clientX - draggingResizeTask.startX) / dayWidth);
+      const { taskId, originalDueDate } = draggingResizeTask;
+      setDraggingResizeTask(null);
+      setResizePreviewDates(prev => { const n = { ...prev }; delete n[taskId]; return n; });
+      if (deltaDays !== 0) {
+        const task = allTasks.find(t => t.id === taskId);
+        if (task) {
+          const orig = toDate(originalDueDate);
+          if (orig) await saveTask({ ...task, due_date: toDateStr(addDays(orig, deltaDays)) });
+        }
+      }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [draggingResizeTask, dayWidth, allTasks, saveTask]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
@@ -826,8 +872,9 @@ export function GanttView({
 
                         {/* タスク行バー */}
                         {!isCollapsed && tasks.map(task => {
-                          const due = toDate(task.due_date);
-                          const bar = calcTaskBar(task, rangeStart, dayWidth);
+                          const previewDue = resizePreviewDates[task.id];
+                          const due = toDate(previewDue ?? task.due_date);
+                          const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
                           const pj = projects.find(p => p.id === task.project_id);
@@ -848,32 +895,45 @@ export function GanttView({
                                 transition: "background 0.1s",
                               }}>
                               {bar && due && (
-                                <div
-                                  title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
-                                  onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                                  style={{
-                                    position: "absolute",
-                                    left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                    width: bar.barWidth, height: 18,
-                                    borderRadius: hasRange ? "4px" : "9px",
-                                    background: barColor,
-                                    opacity: isDone ? 0.5 : 1,
-                                    cursor: isPreview ? "default" : "pointer",
-                                    zIndex: 2,
-                                    overflow: "hidden",
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
-                                    transition: "filter 0.1s",
-                                  }}
-                                >
-                                  {bar.barWidth > 52 && (
-                                    <span style={{
-                                      fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
-                                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                      padding: "0 4px", pointerEvents: "none",
-                                    }}>{dateLabel}</span>
+                                <>
+                                  <div
+                                    title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
+                                    onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                    style={{
+                                      position: "absolute",
+                                      left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                      width: bar.barWidth, height: 18,
+                                      borderRadius: hasRange ? "4px" : "9px",
+                                      background: barColor,
+                                      opacity: isDone ? 0.5 : 1,
+                                      cursor: isPreview ? "default" : "pointer",
+                                      zIndex: 2,
+                                      overflow: "hidden",
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                      filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                      transition: "filter 0.1s",
+                                    }}
+                                  >
+                                    {bar.barWidth > 52 && (
+                                      <span style={{
+                                        fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                        padding: "0 4px", pointerEvents: "none",
+                                      }}>{dateLabel}</span>
+                                    )}
+                                  </div>
+                                  {!isPreview && !isDone && (
+                                    <div
+                                      onMouseDown={e => handleResizeDragStart(e, task)}
+                                      style={{
+                                        position: "absolute",
+                                        left: bar.barX + bar.barWidth - 4,
+                                        top: "50%", transform: "translateY(-50%)",
+                                        width: 8, height: 22, cursor: "col-resize", zIndex: 3,
+                                      }}
+                                    />
                                   )}
-                                </div>
+                                </>
                               )}
                             </div>
                           );
@@ -958,8 +1018,9 @@ export function GanttView({
 
                     {/* タスク行 */}
                     {!isCollapsed && pjTasks.map(task => {
-                      const due = toDate(task.due_date);
-                      const bar = calcTaskBar(task, rangeStart, dayWidth);
+                      const previewDue = resizePreviewDates[task.id];
+                      const due = toDate(previewDue ?? task.due_date);
+                      const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
@@ -981,34 +1042,47 @@ export function GanttView({
                             transition: "background 0.1s",
                           }}>
                           {bar && due && (
-                            <div
-                              title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
-                              onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                              style={{
-                                position: "absolute",
-                                left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                width: bar.barWidth, height: 18,
-                                borderRadius: hasRange ? "4px" : "9px",
-                                background: barColor,
-                                opacity: isDone ? 0.5 : 1,
-                                cursor: isPreview ? "default" : "pointer",
-                                zIndex: 2,
-                                outline: isChanged ? "2px solid var(--color-brand)" : "none",
-                                outlineOffset: "1px",
-                                overflow: "hidden",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
-                                transition: "filter 0.1s",
-                              }}
-                            >
-                              {bar.barWidth > 52 && (
-                                <span style={{
-                                  fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
-                                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                  padding: "0 4px", pointerEvents: "none",
-                                }}>{dateLabel}</span>
+                            <>
+                              <div
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
+                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                style={{
+                                  position: "absolute",
+                                  left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                  width: bar.barWidth, height: 18,
+                                  borderRadius: hasRange ? "4px" : "9px",
+                                  background: barColor,
+                                  opacity: isDone ? 0.5 : 1,
+                                  cursor: isPreview ? "default" : "pointer",
+                                  zIndex: 2,
+                                  outline: isChanged ? "2px solid var(--color-brand)" : "none",
+                                  outlineOffset: "1px",
+                                  overflow: "hidden",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                  transition: "filter 0.1s",
+                                }}
+                              >
+                                {bar.barWidth > 52 && (
+                                  <span style={{
+                                    fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                    padding: "0 4px", pointerEvents: "none",
+                                  }}>{dateLabel}</span>
+                                )}
+                              </div>
+                              {!isPreview && !isDone && (
+                                <div
+                                  onMouseDown={e => handleResizeDragStart(e, task)}
+                                  style={{
+                                    position: "absolute",
+                                    left: bar.barX + bar.barWidth - 4,
+                                    top: "50%", transform: "translateY(-50%)",
+                                    width: 8, height: 22, cursor: "col-resize", zIndex: 3,
+                                  }}
+                                />
                               )}
-                            </div>
+                            </>
                           )}
                         </div>
                       );
@@ -1040,8 +1114,9 @@ export function GanttView({
                       }} />
                     </div>
                     {!isCollapsed && tasks.map(task => {
-                      const due = toDate(task.due_date);
-                      const bar = calcTaskBar(task, rangeStart, dayWidth);
+                      const previewDue = resizePreviewDates[task.id];
+                      const due = toDate(previewDue ?? task.due_date);
+                      const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
@@ -1060,31 +1135,44 @@ export function GanttView({
                             transition: "background 0.1s",
                           }}>
                           {bar && due && (
-                            <div
-                              title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
-                              onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-                              style={{
-                                position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                width: bar.barWidth, height: 18,
-                                borderRadius: hasRange ? "4px" : "9px",
-                                background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
-                                opacity: isDone ? 0.5 : 1,
-                                cursor: isPreview ? "default" : "pointer",
-                                zIndex: 2,
-                                overflow: "hidden",
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
-                                transition: "filter 0.1s",
-                              }}
-                            >
-                              {bar.barWidth > 52 && (
-                                <span style={{
-                                  fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
-                                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                                  padding: "0 4px", pointerEvents: "none",
-                                }}>{dateLabel}</span>
+                            <>
+                              <div
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
+                                onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
+                                style={{
+                                  position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
+                                  width: bar.barWidth, height: 18,
+                                  borderRadius: hasRange ? "4px" : "9px",
+                                  background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
+                                  opacity: isDone ? 0.5 : 1,
+                                  cursor: isPreview ? "default" : "pointer",
+                                  zIndex: 2,
+                                  overflow: "hidden",
+                                  display: "flex", alignItems: "center", justifyContent: "center",
+                                  filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
+                                  transition: "filter 0.1s",
+                                }}
+                              >
+                                {bar.barWidth > 52 && (
+                                  <span style={{
+                                    fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
+                                    whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                                    padding: "0 4px", pointerEvents: "none",
+                                  }}>{dateLabel}</span>
+                                )}
+                              </div>
+                              {!isPreview && !isDone && (
+                                <div
+                                  onMouseDown={e => handleResizeDragStart(e, task)}
+                                  style={{
+                                    position: "absolute",
+                                    left: bar.barX + bar.barWidth - 4,
+                                    top: "50%", transform: "translateY(-50%)",
+                                    width: 8, height: 22, cursor: "col-resize", zIndex: 3,
+                                  }}
+                                />
                               )}
-                            </div>
+                            </>
                           )}
                         </div>
                       );
