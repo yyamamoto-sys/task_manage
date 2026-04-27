@@ -71,25 +71,44 @@ Deno.serve(async (req: Request) => {
   }
 
   // Anthropic API へ転送
-  const anthropicRes = await fetch(ANTHROPIC_API_URL, {
-    method: "POST",
-    headers: {
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: body.max_tokens ?? 4096,
-      system: body.system,
-      messages: body.messages,
-    }),
-  });
+  let anthropicRes: Response;
+  try {
+    anthropicRes = await fetch(ANTHROPIC_API_URL, {
+      method: "POST",
+      headers: {
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: body.max_tokens ?? 4096,
+        system: body.system,
+        messages: body.messages,
+      }),
+    });
+  } catch (fetchErr) {
+    console.error("[ai-consult] Anthropic fetch failed:", fetchErr);
+    return new Response(JSON.stringify({ error: "ANTHROPIC_FETCH_FAILED", detail: String(fetchErr) }), {
+      status: 502,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
 
-  const responseData = await anthropicRes.json();
+  const responseText = await anthropicRes.text();
+  console.log(`[ai-consult] Anthropic status: ${anthropicRes.status}`);
 
-  return new Response(JSON.stringify(responseData), {
-    status: anthropicRes.status,
+  // Anthropic がエラーを返した場合、詳細をそのまま502で返す
+  if (!anthropicRes.ok) {
+    console.error(`[ai-consult] Anthropic error (${anthropicRes.status}):`, responseText);
+    return new Response(
+      JSON.stringify({ error: "ANTHROPIC_ERROR", status: anthropicRes.status, detail: responseText }),
+      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+
+  return new Response(responseText, {
+    status: 200,
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
 });

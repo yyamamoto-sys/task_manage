@@ -108,14 +108,24 @@ export async function callAIConsultation(
 
   if (error) {
     const msg = error.message ?? "";
+
+    // Edge Function が ANTHROPIC_ERROR を返した場合、detail を取り出す
+    const errData = (data as Record<string, unknown> | null);
+    if (errData && errData.error === "ANTHROPIC_ERROR") {
+      const status = errData.status as number | undefined;
+      let detail = "";
+      try { detail = JSON.parse(errData.detail as string)?.error?.message ?? String(errData.detail); }
+      catch { detail = String(errData.detail ?? ""); }
+      if (status === 401) throw new AIError("AUTH_REQUIRED", `Anthropic認証エラー: APIキーを確認してください。`);
+      if (status === 429) throw new AIError("RATE_LIMIT", "Anthropic レート制限: しばらく待ってから再試行してください。");
+      throw new AIError("NETWORK_ERROR", `Anthropic APIエラー (${status}): ${detail}`);
+    }
+
     if (msg.includes("401") || msg.includes("Unauthorized")) {
       throw new AIError("AUTH_REQUIRED", "ログインが必要です。");
     }
     if (msg.includes("429") || msg.includes("rate")) {
-      throw new AIError(
-        "RATE_LIMIT",
-        "リクエストが多すぎます。しばらく待ってから再試行してください。",
-      );
+      throw new AIError("RATE_LIMIT", "リクエストが多すぎます。しばらく待ってから再試行してください。");
     }
     throw new AIError("NETWORK_ERROR", `通信エラー: ${msg}`);
   }
