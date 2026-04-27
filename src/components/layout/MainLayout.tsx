@@ -43,6 +43,14 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
+    () => localStorage.getItem("sidebar_collapsed") === "1"
+  );
+  const toggleSidebar = () => setIsSidebarCollapsed(prev => {
+    const next = !prev;
+    localStorage.setItem("sidebar_collapsed", next ? "1" : "0");
+    return next;
+  });
   const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
     try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem("consultation_panel_width") ?? "400", 10) || 400)); } catch { return 400; }
   });
@@ -274,6 +282,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenGraph={() => setIsGraphOpen(true)}
+        collapsed={isSidebarCollapsed}
+        onToggleCollapsed={toggleSidebar}
       />
       {mainContent}
       {isGraphOpen && (
@@ -328,6 +338,8 @@ interface SidebarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onOpenGraph: () => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 function Sidebar({
@@ -336,48 +348,81 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph,
+  collapsed, onToggleCollapsed,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
+  const c = collapsed; // 省略形
+
   return (
     <div style={{
-      width: "196px", flexShrink: 0,
+      width: c ? "48px" : "196px",
+      flexShrink: 0,
       background: "var(--color-bg-secondary)",
       borderRight: "1px solid var(--color-border-primary)",
       display: "flex", flexDirection: "column",
+      overflow: "hidden",
+      transition: "width 0.2s ease",
     }}>
+
+      {/* ロゴ・折りたたみボタン行 */}
       <div style={{
-        padding: "12px 14px 10px",
+        padding: c ? "10px 0" : "10px 14px 10px",
         borderBottom: "1px solid var(--color-border-primary)",
+        display: "flex", alignItems: "center",
+        gap: "6px", flexShrink: 0,
       }}>
-        <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-          グループ計画管理
-        </div>
-        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px" }}>
-          チーム計画管理ツール
-        </div>
+        {!c && (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              グループ計画管理
+            </div>
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px" }}>
+              チーム計画管理ツール
+            </div>
+          </div>
+        )}
+        <button
+          onClick={onToggleCollapsed}
+          title={c ? "メニューを開く" : "メニューを閉じる"}
+          style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            color: "var(--color-text-tertiary)", padding: "4px",
+            borderRadius: "var(--radius-sm)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+            ...(c ? { width: "100%", justifyContent: "center" } : {}),
+          }}
+        >
+          <CollapseIcon collapsed={c} />
+        </button>
       </div>
 
-      <div style={{ padding: "8px 0 4px" }}>
-        <SectionLabel>メニュー</SectionLabel>
+      {/* メニュー */}
+      <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+        {!c && <SectionLabel>メニュー</SectionLabel>}
         {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
           <NavItem
             key={view}
             active={viewMode === view}
             icon={icon}
             label={label}
-            tooltip={tooltip}
+            tooltip={tooltip ?? label}
             onClick={() => setViewMode(view)}
+            collapsed={c}
           />
         ))}
       </div>
 
-      <div style={{ flex: 1, overflow: "auto", padding: "4px 0" }}>
-        <SectionLabel>プロジェクト</SectionLabel>
+      {/* プロジェクト一覧 */}
+      <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
+        {!c && <SectionLabel>プロジェクト</SectionLabel>}
         <NavItem
           active={selectedProjectId === null && selectedKrId === null}
           icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
           label="全PJ表示"
+          tooltip="全PJ表示"
           onClick={() => onSelectProject(null)}
+          collapsed={c}
         />
         {projects.map(pj => (
           <NavItem
@@ -385,20 +430,24 @@ function Sidebar({
             active={selectedProjectId === pj.id}
             icon={<span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />}
             label={pj.name}
+            tooltip={pj.name}
             onClick={() => onSelectProject(pj.id)}
+            collapsed={c}
           />
         ))}
 
         {keyResults.length > 0 && (
           <>
-            <SectionLabel>OKRタスク</SectionLabel>
+            {!c && <SectionLabel>OKRタスク</SectionLabel>}
             {keyResults.map(kr => (
               <NavItem
                 key={kr.id}
                 active={selectedKrId === kr.id}
                 icon={<KrIcon />}
                 label={kr.title}
+                tooltip={kr.title}
                 onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)}
+                collapsed={c}
               />
             ))}
           </>
@@ -406,66 +455,92 @@ function Sidebar({
       </div>
 
       {/* ラボセクション */}
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "4px 6px" }}>
-        <button
-          onClick={() => setLabOpen(o => !o)}
-          style={{
-            width: "100%", display: "flex", alignItems: "center", gap: "7px",
-            padding: "6px 10px", background: "transparent", border: "none",
-            cursor: "pointer", borderRadius: "6px",
-            color: "var(--color-text-tertiary)", fontSize: "11px",
-          }}
-        >
-          <span style={{ fontSize: "13px" }}>🧪</span>
-          <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
-          <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
-        </button>
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
+        {c ? (
+          <button
+            onClick={() => { setLabOpen(o => !o); }}
+            title="ラボ"
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "7px 0", background: "transparent", border: "none",
+              cursor: "pointer", borderRadius: "6px",
+              color: "var(--color-text-tertiary)", fontSize: "15px",
+            }}
+          >
+            🧪
+          </button>
+        ) : (
+          <button
+            onClick={() => setLabOpen(o => !o)}
+            style={{
+              width: "100%", display: "flex", alignItems: "center", gap: "7px",
+              padding: "6px 10px", background: "transparent", border: "none",
+              cursor: "pointer", borderRadius: "6px",
+              color: "var(--color-text-tertiary)", fontSize: "11px",
+            }}
+          >
+            <span style={{ fontSize: "13px" }}>🧪</span>
+            <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
+            <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
+          </button>
+        )}
         {labOpen && (
           <NavItem
             active={false}
             icon={<GraphIcon />}
             label="関係グラフ"
+            tooltip="関係グラフ"
             onClick={onOpenGraph}
+            collapsed={c}
           />
         )}
       </div>
 
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: "8px 6px" }}>
+      {/* AI相談・ユーザー情報 */}
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 0" : "8px 6px" }}>
         <NavItem
           active={isConsultOpen}
           icon={<AIIcon />}
           label={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
+          tooltip="AIに変更を相談"
           onClick={onOpenConsult}
           color="var(--color-text-purple)"
+          collapsed={c}
         />
         <div style={{
-          display: "flex", alignItems: "center", gap: "7px",
-          padding: "7px 10px", marginTop: "2px",
+          display: "flex", alignItems: "center",
+          justifyContent: c ? "center" : "flex-start",
+          gap: c ? "0" : "7px",
+          padding: c ? "6px 0" : "7px 10px",
+          marginTop: "2px",
+          flexWrap: c ? "wrap" : "nowrap",
         }}>
-          <Avatar member={currentUser} size={22} />
-          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flex: 1 }}>
-            {currentUser.short_name}
-          </span>
-          <button
-            onClick={onToggleTheme}
-            style={{
-              fontSize: "13px", color: "var(--color-text-tertiary)",
-              background: "transparent", border: "none", cursor: "pointer", padding: "2px",
-            }}
-            title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-          <button
-            onClick={onLogout}
-            style={{
-              fontSize: "10px", color: "var(--color-text-tertiary)",
-              background: "transparent", border: "none", cursor: "pointer", padding: "2px",
-            }}
-            title="ログアウト"
-          >
-            ⏏
-          </button>
+          <div title={currentUser.short_name} style={{ flexShrink: 0 }}>
+            <Avatar member={currentUser} size={22} />
+          </div>
+          {!c && (
+            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {currentUser.short_name}
+            </span>
+          )}
+          {!c && (
+            <button
+              onClick={onToggleTheme}
+              style={{ fontSize: "13px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+              title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+            >
+              {theme === "dark" ? "☀" : "☾"}
+            </button>
+          )}
+          {!c && (
+            <button
+              onClick={onLogout}
+              style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+              title="ログアウト"
+            >
+              ⏏
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -487,7 +562,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 function NavItem({
-  active, icon, label, onClick, color, tooltip,
+  active, icon, label, onClick, color, tooltip, collapsed = false,
 }: {
   active: boolean;
   icon: React.ReactNode;
@@ -495,22 +570,67 @@ function NavItem({
   onClick: () => void;
   color?: string;
   tooltip?: string;
+  collapsed?: boolean;
 }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [tipPos, setTipPos] = useState<{ x: number; y: number } | null>(null);
 
   const handleMouseEnter = (e: React.MouseEvent) => {
-    if (!tooltip) return;
+    // 折りたたみ時は即座に表示、展開時は2秒後
+    const delay = collapsed ? 400 : 2000;
+    const effectiveTooltip = collapsed ? label : tooltip;
+    if (!effectiveTooltip) return;
     const { clientX, clientY } = e;
-    timerRef.current = setTimeout(() => {
-      setTipPos({ x: clientX, y: clientY });
-    }, 2000);
+    timerRef.current = setTimeout(() => setTipPos({ x: clientX, y: clientY }), delay);
   };
 
   const handleMouseLeave = () => {
     if (timerRef.current) clearTimeout(timerRef.current);
     setTipPos(null);
   };
+
+  const effectiveTooltip = collapsed ? label : tooltip;
+
+  if (collapsed) {
+    return (
+      <>
+        <button
+          onClick={onClick}
+          onMouseEnter={handleMouseEnter}
+          onMouseLeave={handleMouseLeave}
+          style={{
+            display: "flex", alignItems: "center", justifyContent: "center",
+            padding: "7px 0",
+            background: active ? "var(--color-bg-primary)" : "transparent",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            margin: "1px 4px", width: "calc(100% - 8px)",
+            cursor: "pointer",
+            color: color ?? (active ? "var(--color-text-primary)" : "var(--color-text-secondary)"),
+          }}
+        >
+          <span style={{ opacity: active ? 1 : 0.6 }}>{icon}</span>
+        </button>
+        {tipPos && effectiveTooltip && (
+          <div style={{
+            position: "fixed",
+            left: tipPos.x + 12, top: tipPos.y - 10,
+            zIndex: 9999,
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            padding: "5px 10px",
+            fontSize: "11px", fontWeight: "500",
+            color: "var(--color-text-primary)",
+            pointerEvents: "none", whiteSpace: "nowrap",
+          }}>
+            {effectiveTooltip}
+          </div>
+        )}
+      </>
+    );
+  }
 
   return (
     <>
@@ -540,23 +660,17 @@ function NavItem({
       {tipPos && tooltip && (
         <div style={{
           position: "fixed",
-          left: tipPos.x + 12,
-          top: tipPos.y - 10,
+          left: tipPos.x + 12, top: tipPos.y - 10,
           zIndex: 9999,
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
           boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
-          padding: "8px 12px",
-          maxWidth: "220px",
-          fontSize: "11px",
-          color: "var(--color-text-secondary)",
-          lineHeight: 1.5,
-          pointerEvents: "none",
+          padding: "8px 12px", maxWidth: "220px",
+          fontSize: "11px", color: "var(--color-text-secondary)",
+          lineHeight: 1.5, pointerEvents: "none",
         }}>
-          <div style={{ fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "3px" }}>
-            {label}
-          </div>
+          <div style={{ fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "3px" }}>{label}</div>
           {tooltip}
         </div>
       )}
@@ -591,6 +705,26 @@ function KrIcon() {
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
       <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.2"/>
       <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
+
+function CollapseIcon({ collapsed }: { collapsed: boolean }) {
+  return (
+    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+      {collapsed ? (
+        // ›› 展開アイコン
+        <>
+          <path d="M5 3.5L9 7.5L5 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M9 3.5L13 7.5L9 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.4"/>
+        </>
+      ) : (
+        // ‹‹ 折りたたみアイコン
+        <>
+          <path d="M10 3.5L6 7.5L10 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M6 3.5L2 7.5L6 11.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" opacity="0.4"/>
+        </>
+      )}
     </svg>
   );
 }
