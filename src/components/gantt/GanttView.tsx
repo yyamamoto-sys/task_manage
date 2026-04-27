@@ -32,18 +32,20 @@ interface Props {
 
 // ===== 定数 =====
 
-const DAY_WIDTH = 28; // 1日あたりのpx幅
+const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
+const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
+const GANTT_ZOOM_KEY = "gantt_zoom";
 
-function calcTaskBar(task: Task, rangeStart: Date): { barX: number; barWidth: number } | null {
+function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { barX: number; barWidth: number } | null {
   const due = toDate(task.due_date);
   if (!due) return null;
   const start = toDate(task.start_date ?? null);
   if (start && start <= due) {
-    const barX = diffDays(rangeStart, start) * DAY_WIDTH;
-    const barWidth = Math.max((diffDays(start, due) + 1) * DAY_WIDTH - 4, DAY_WIDTH - 4);
+    const barX = diffDays(rangeStart, start) * dayWidth;
+    const barWidth = Math.max((diffDays(start, due) + 1) * dayWidth - 4, dayWidth - 4);
     return { barX, barWidth };
   }
-  return { barX: diffDays(rangeStart, due) * DAY_WIDTH, barWidth: DAY_WIDTH - 4 };
+  return { barX: diffDays(rangeStart, due) * dayWidth, barWidth: dayWidth - 4 };
 }
 
 // ===== メインコンポーネント =====
@@ -128,12 +130,20 @@ export function GanttView({
     [rangeStart, rangeEnd]
   );
 
-  const totalWidth = days.length * DAY_WIDTH;
+  // ズームレベル（dayWidth）— totalWidth/todayX より前に宣言が必要
+  const [dayWidth, setDayWidth] = useState<number>(() => {
+    try {
+      const saved = parseInt(localStorage.getItem(GANTT_ZOOM_KEY) ?? "", 10);
+      return (ZOOM_LEVELS as readonly number[]).includes(saved) ? saved : DAY_WIDTH_DEFAULT;
+    } catch { return DAY_WIDTH_DEFAULT; }
+  });
+
+  const totalWidth = days.length * dayWidth;
 
   // 今日のx座標
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayX = diffDays(rangeStart, today) * DAY_WIDTH;
+  const todayX = diffDays(rangeStart, today) * dayWidth;
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -190,10 +200,10 @@ export function GanttView({
     const saved = localStorage.getItem(KEYS.GANTT_CENTER_DATE);
     const targetDate = saved ? toDate(saved) : null;
     const targetX = targetDate
-      ? diffDays(rangeStart, targetDate) * DAY_WIDTH
+      ? diffDays(rangeStart, targetDate) * dayWidth
       : todayX;
     scrollRef.current.scrollLeft = Math.max(0, targetX - scrollRef.current.clientWidth / 2);
-  }, [days, rangeStart, todayX]);
+  }, [days, rangeStart, todayX, dayWidth]);
 
   const handleGanttScroll = useCallback(() => {
     clearTimeout(scrollSaveTimer.current);
@@ -201,7 +211,7 @@ export function GanttView({
       const el = scrollRef.current;
       if (!el) return;
       const centerX = el.scrollLeft + el.clientWidth / 2;
-      const idx = Math.floor(centerX / DAY_WIDTH);
+      const idx = Math.floor(centerX / dayWidth);
       if (days[idx]) localStorage.setItem(KEYS.GANTT_CENTER_DATE, toDateStr(days[idx]));
     }, 300);
     // 縦スクロールをラベル列と同期
@@ -231,8 +241,8 @@ export function GanttView({
         if (curMonth !== "") {
           groups.push({
             label: formatYM(days[startIdx]),
-            startX: startIdx * DAY_WIDTH,
-            width: (i - startIdx) * DAY_WIDTH,
+            startX: startIdx * dayWidth,
+            width: (i - startIdx) * dayWidth,
           });
         }
         curMonth = m;
@@ -241,11 +251,43 @@ export function GanttView({
     });
     groups.push({
       label: formatYM(days[startIdx]),
-      startX: startIdx * DAY_WIDTH,
-      width: (days.length - startIdx) * DAY_WIDTH,
+      startX: startIdx * dayWidth,
+      width: (days.length - startIdx) * dayWidth,
     });
     return groups;
-  }, [days]);
+  }, [days, dayWidth]);
+
+  const prevDayWidthRef = useRef(dayWidth);
+
+  const zoomIn = useCallback(() => {
+    setDayWidth(cur => {
+      const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
+      if (idx < 0 || idx >= ZOOM_LEVELS.length - 1) return cur;
+      const next = ZOOM_LEVELS[idx + 1];
+      localStorage.setItem(GANTT_ZOOM_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setDayWidth(cur => {
+      const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
+      if (idx <= 0) return cur;
+      const next = ZOOM_LEVELS[idx - 1];
+      localStorage.setItem(GANTT_ZOOM_KEY, String(next));
+      return next;
+    });
+  }, []);
+
+  // ズーム変更時：画面中央の日付を維持してスクロール位置を補正
+  useEffect(() => {
+    if (!scrollRef.current || !scrollInitialized.current) return;
+    if (prevDayWidthRef.current === dayWidth) return;
+    const el = scrollRef.current;
+    const centerIdx = Math.floor((el.scrollLeft + el.clientWidth / 2) / prevDayWidthRef.current);
+    el.scrollLeft = Math.max(0, centerIdx * dayWidth - el.clientWidth / 2);
+    prevDayWidthRef.current = dayWidth;
+  }, [dayWidth]);
 
   const GANTT_LABEL_KEY = "gantt_label_width";
   const [labelWidth, setLabelWidth] = useState(() => {
@@ -354,6 +396,38 @@ export function GanttView({
             borderColor: "var(--color-border-danger)",
             fontWeight: "600",
           }}>今日</button>
+        )}
+        {/* ズームボタン */}
+        {!isPreview && (
+          <div style={{ display: "flex", alignItems: "center", gap: "2px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+            <button
+              onClick={zoomOut}
+              disabled={(ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) <= 0}
+              title="縮小"
+              style={{
+                ...headerBtnStyle,
+                border: "none", borderRadius: 0,
+                padding: "4px 8px",
+                opacity: (ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) <= 0 ? 0.3 : 1,
+              }}
+            >
+              <ZoomIcon minus />
+            </button>
+            <div style={{ width: 1, height: 16, background: "var(--color-border-primary)" }} />
+            <button
+              onClick={zoomIn}
+              disabled={(ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) >= ZOOM_LEVELS.length - 1}
+              title="拡大"
+              style={{
+                ...headerBtnStyle,
+                border: "none", borderRadius: 0,
+                padding: "4px 8px",
+                opacity: (ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) >= ZOOM_LEVELS.length - 1 ? 0.3 : 1,
+              }}
+            >
+              <ZoomIcon />
+            </button>
+          </div>
         )}
       </div>
 
@@ -655,7 +729,7 @@ export function GanttView({
                   return (
                     <div key={i} style={{
                       position: "absolute",
-                      left: i * DAY_WIDTH, width: DAY_WIDTH,
+                      left: i * dayWidth, width: dayWidth,
                       height: "100%",
                       display: "flex", alignItems: "center", justifyContent: "center",
                       fontSize: "9px",
@@ -688,7 +762,7 @@ export function GanttView({
                 const isMonthStart = d.getDate() === 1;
                 return (
                   <div key={i} style={{
-                    position: "absolute", left: i * DAY_WIDTH, width: DAY_WIDTH,
+                    position: "absolute", left: i * dayWidth, width: dayWidth,
                     top: 0, bottom: 0,
                     background: isSun
                       ? "rgba(239,68,68,0.05)"
@@ -709,7 +783,7 @@ export function GanttView({
               {/* 今日線 */}
               <div style={{
                 position: "absolute",
-                left: todayX + DAY_WIDTH / 2,
+                left: todayX + dayWidth / 2,
                 top: 0, bottom: 0, width: 2,
                 background: "var(--color-text-danger)",
                 opacity: 0.7,
@@ -727,8 +801,8 @@ export function GanttView({
                     const dueDates = tasks.map(t => toDate(t.due_date)).filter(Boolean) as Date[];
                     const earliest = dueDates.length > 0 ? dueDates.reduce((a, b) => a < b ? a : b) : null;
                     const latest   = dueDates.length > 0 ? dueDates.reduce((a, b) => a > b ? a : b) : null;
-                    const spanX = earliest ? diffDays(rangeStart, earliest) * DAY_WIDTH : null;
-                    const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * DAY_WIDTH : null;
+                    const spanX = earliest ? diffDays(rangeStart, earliest) * dayWidth : null;
+                    const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * dayWidth : null;
                     return (
                       <div key={m.id}>
                         {/* メンバーヘッダー行バー */}
@@ -753,7 +827,7 @@ export function GanttView({
                         {/* タスク行バー */}
                         {!isCollapsed && tasks.map(task => {
                           const due = toDate(task.due_date);
-                          const bar = calcTaskBar(task, rangeStart);
+                          const bar = calcTaskBar(task, rangeStart, dayWidth);
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
                           const pj = projects.find(p => p.id === task.project_id);
@@ -817,9 +891,9 @@ export function GanttView({
                 // PJバーの範囲
                 const pjStart = toDate(pj.start_date);
                 const pjEnd   = toDate(pj.end_date);
-                const pjBarX  = pjStart ? diffDays(rangeStart, pjStart) * DAY_WIDTH : null;
+                const pjBarX  = pjStart ? diffDays(rangeStart, pjStart) * dayWidth : null;
                 const pjBarW  = (pjStart && pjEnd)
-                  ? (diffDays(pjStart, pjEnd) + 1) * DAY_WIDTH : null;
+                  ? (diffDays(pjStart, pjEnd) + 1) * dayWidth : null;
 
                 // PJの完了率（タスクから計算）
                 const done = pjTasks.filter(t => t.status === "done").length;
@@ -858,7 +932,7 @@ export function GanttView({
                       {pjMilestones.map(ms => {
                         const msDate = toDate(ms.date);
                         if (!msDate) return null;
-                        const msX = diffDays(rangeStart, msDate) * DAY_WIDTH + DAY_WIDTH / 2;
+                        const msX = diffDays(rangeStart, msDate) * dayWidth + dayWidth / 2;
                         return (
                           <div
                             key={ms.id}
@@ -885,7 +959,7 @@ export function GanttView({
                     {/* タスク行 */}
                     {!isCollapsed && pjTasks.map(task => {
                       const due = toDate(task.due_date);
-                      const bar = calcTaskBar(task, rangeStart);
+                      const bar = calcTaskBar(task, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
@@ -967,7 +1041,7 @@ export function GanttView({
                     </div>
                     {!isCollapsed && tasks.map(task => {
                       const due = toDate(task.due_date);
-                      const bar = calcTaskBar(task, rangeStart);
+                      const bar = calcTaskBar(task, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
@@ -1145,3 +1219,18 @@ const headerBtnStyle: React.CSSProperties = {
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
 };
+
+function ZoomIcon({ minus = false }: { minus?: boolean }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ display: "block" }}>
+      {/* 虫眼鏡の円 */}
+      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
+      {/* ハンドル */}
+      <line x1="9.5" y1="9.5" x2="12.5" y2="12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+      {/* 横棒（共通） */}
+      <line x1="3.8" y1="6" x2="8.2" y2="6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      {/* 縦棒（＋のみ） */}
+      {!minus && <line x1="6" y1="3.8" x2="6" y2="8.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
+    </svg>
+  );
+}
