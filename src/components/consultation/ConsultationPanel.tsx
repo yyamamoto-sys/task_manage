@@ -84,7 +84,6 @@ export function ConsultationPanel({
   inline = false,
 }: Props) {
   const [manualType, setManualType] = useState<ConsultationType | null>(null);
-  const [isTypeOverrideOpen, setIsTypeOverrideOpen] = useState(false);
   const [inputText, setInputText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
   const [includeOKR, setIncludeOKR] = useState(false);
@@ -139,15 +138,13 @@ export function ConsultationPanel({
     }
   };
 
-  const handleTypeChange = (v: ConsultationType) => {
+  const handleTypeChange = (v: ConsultationType | null) => {
     setManualType(v);
-    setIsTypeOverrideOpen(false);
     if (v !== "deadline_check") setTargetDeadline("");
   };
 
   const handleReset = () => {
     setManualType(null);
-    setIsTypeOverrideOpen(false);
     reset();
   };
 
@@ -269,82 +266,49 @@ export function ConsultationPanel({
         {/* ===== スクロール可能エリア ===== */}
         <div ref={scrollAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
 
-          {/* 相談の種類 — 自動検出バッジ */}
+          {/* 相談の種類タブ（自動 + 5種） */}
           <div>
             <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.04em" }}>
               相談の種類
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-              <span style={{
-                fontSize: "11px", padding: "4px 10px",
-                borderRadius: "var(--radius-full)",
-                border: "1.5px solid var(--color-brand)",
-                background: "var(--color-brand)",
-                color: "#fff",
-                fontWeight: "600",
-                whiteSpace: "nowrap",
-              }}>
-                {currentType.shortLabel}
-              </span>
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                {isAutoDetected ? "（自動判定）" : "（手動）"}
-              </span>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+              {/* 自動ボタン */}
               <button
-                onClick={() => setIsTypeOverrideOpen(v => !v)}
+                onClick={() => handleTypeChange(null)}
                 style={{
-                  fontSize: "10px", padding: "2px 8px",
-                  border: "1px solid var(--color-border-primary)",
+                  fontSize: "11px", padding: "4px 10px",
                   borderRadius: "var(--radius-full)",
-                  background: "transparent",
-                  color: "var(--color-text-tertiary)",
-                  cursor: "pointer",
+                  border: isAutoDetected ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                  background: isAutoDetected ? "var(--color-brand)" : "var(--color-bg-secondary)",
+                  color: isAutoDetected ? "#fff" : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: isAutoDetected ? "600" : "400",
+                  transition: "all 0.1s", whiteSpace: "nowrap",
                 }}
               >
-                {isTypeOverrideOpen ? "閉じる" : "変更"}
+                自動
               </button>
-              {!isAutoDetected && (
-                <button
-                  onClick={() => { setManualType(null); setIsTypeOverrideOpen(false); }}
-                  style={{
-                    fontSize: "10px", padding: "2px 8px",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-full)",
-                    background: "transparent",
-                    color: "var(--color-text-tertiary)",
-                    cursor: "pointer",
-                  }}
-                >
-                  自動に戻す
-                </button>
-              )}
+              {/* 5種類ボタン */}
+              {TYPE_CONFIG.map(t => {
+                const active = !isAutoDetected && consultationType === t.value;
+                return (
+                  <button
+                    key={t.value}
+                    onClick={() => handleTypeChange(t.value)}
+                    style={{
+                      fontSize: "11px", padding: "4px 10px",
+                      borderRadius: "var(--radius-full)",
+                      border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                      background: active ? "var(--color-brand)" : "var(--color-bg-secondary)",
+                      color: active ? "#fff" : "var(--color-text-secondary)",
+                      cursor: "pointer", fontWeight: active ? "600" : "400",
+                      transition: "all 0.1s", whiteSpace: "nowrap",
+                    }}
+                  >
+                    {t.shortLabel}
+                  </button>
+                );
+              })}
             </div>
-
-            {/* 手動変更パネル */}
-            {isTypeOverrideOpen && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "8px" }}>
-                {TYPE_CONFIG.map(t => {
-                  const active = consultationType === t.value;
-                  return (
-                    <button
-                      key={t.value}
-                      onClick={() => handleTypeChange(t.value)}
-                      style={{
-                        fontSize: "11px", padding: "4px 10px",
-                        borderRadius: "var(--radius-full)",
-                        border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                        background: active ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                        color: active ? "#fff" : "var(--color-text-secondary)",
-                        cursor: "pointer", fontWeight: active ? "600" : "400",
-                        transition: "all 0.1s",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {t.shortLabel}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
           </div>
 
           {/* 選択中の相談種類の説明 */}
@@ -354,8 +318,20 @@ export function ConsultationPanel({
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
           }}>
-            <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "4px" }}>
-              {currentType.label}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
+              <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                {isAutoDetected ? `${currentType.label}` : currentType.label}
+              </span>
+              {isAutoDetected && (
+                <span style={{
+                  fontSize: "10px", padding: "1px 6px",
+                  borderRadius: "var(--radius-full)",
+                  background: "var(--color-brand)",
+                  color: "#fff", fontWeight: "500",
+                }}>
+                  自動判定
+                </span>
+              )}
             </div>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
               {currentType.description}
