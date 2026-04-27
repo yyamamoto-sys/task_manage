@@ -27,6 +27,10 @@ interface Props {
   onGanttPreview?: (proposal: UIProposal) => void;
   /** 「いいえ」ボタン押下時に次の相談文を送信するコールバック */
   onDecline?: (followUpText: string) => void;
+  /** 選択状態（返信対象として選択中かどうか） */
+  isSelected?: boolean;
+  /** 選択トグルコールバック */
+  onToggleSelect?: () => void;
 }
 
 export function ProposalCard({
@@ -36,6 +40,8 @@ export function ProposalCard({
   onApplied,
   onGanttPreview,
   onDecline,
+  isSelected = false,
+  onToggleSelect,
 }: Props) {
   const [applying, setApplying] = useState(false);
   const [resultMessage, setResultMessage] = useState<{
@@ -95,14 +101,15 @@ export function ProposalCard({
     <>
       <div
         style={{
-          background: "var(--color-bg-primary)",
-          border: "1px solid var(--color-border-primary)",
+          background: isSelected ? "var(--color-accent-bg, #eff6ff)" : "var(--color-bg-primary)",
+          border: isSelected ? "1.5px solid var(--color-accent, #3b82f6)" : "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
           padding: "12px 14px",
           display: "flex",
           flexDirection: "column",
           gap: "8px",
           boxShadow: "var(--shadow-sm)",
+          transition: "border-color 0.1s, background 0.1s",
         }}
       >
         {/* シミュレーションバナー */}
@@ -112,6 +119,26 @@ export function ProposalCard({
         <div
           style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}
         >
+          {/* 選択チェックボックス */}
+          {onToggleSelect && (
+            <button
+              onClick={onToggleSelect}
+              title={isSelected ? "選択を解除" : "返信対象として選択"}
+              style={{
+                width: 16, height: 16, borderRadius: "3px", flexShrink: 0, marginTop: "1px",
+                background: isSelected ? "var(--color-accent, #3b82f6)" : "transparent",
+                border: `1.5px solid ${isSelected ? "var(--color-accent, #3b82f6)" : "var(--color-border-primary)"}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                cursor: "pointer", padding: 0,
+              }}
+            >
+              {isSelected && (
+                <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                  <path d="M1 3l2.5 2.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
+          )}
           {/* action_typeバッジ */}
           <span
             style={{

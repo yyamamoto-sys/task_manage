@@ -1,6 +1,6 @@
 // src/components/consultation/ConsultationPanel.tsx
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { Member, Project } from "../../lib/localData/types";
 import type { ConsultationType } from "../../lib/ai/types";
@@ -89,6 +89,18 @@ export function ConsultationPanel({
   const [includeOKR, setIncludeOKR] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
+  const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+
+  // パネル幅（フローティング時のみ使用）
+  const PANEL_WIDTH_KEY = "consultation_panel_width";
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(PANEL_WIDTH_KEY) ?? "400", 10) || 400)); } catch { return 400; }
+  });
+  const panelWidthRef = useRef(panelWidth);
+  const isDraggingPanel = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartW = useRef(0);
+
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
@@ -119,11 +131,48 @@ export function ConsultationPanel({
     }
   }, [callState, proposals.length]);
 
+  // パネルリサイズ（フローティング時のみ）
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingPanel.current = true;
+    dragStartX.current = e.clientX;
+    dragStartW.current = panelWidthRef.current;
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDraggingPanel.current) return;
+      // 左端ドラッグ：左に動かすと幅が増える
+      const delta = dragStartX.current - e.clientX;
+      const w = Math.min(800, Math.max(300, dragStartW.current + delta));
+      panelWidthRef.current = w;
+      setPanelWidth(w);
+    };
+    const onUp = () => {
+      if (!isDraggingPanel.current) return;
+      isDraggingPanel.current = false;
+      try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidthRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   const handleSubmit = async () => {
     if (!inputText.trim() || callState === "loading") return;
     const text = inputText;
     setInputText("");
-    await submit({ consultation: text, consultationType, targetDeadline: targetDeadline || null, includeOKR });
+
+    // 選択提案がある場合、コンテキストを先頭に付与
+    let consultation = text;
+    if (selectedProposalIds.size > 0) {
+      const selectedProposals = proposals.filter(p => selectedProposalIds.has(p.proposal_id));
+      const refs = selectedProposals.map(p => `・「${p.title}」`).join("\n");
+      consultation = `以下の提案についてのフィードバックです:\n${refs}\n\n${text}`;
+    }
+    setSelectedProposalIds(new Set());
+
+    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, includeOKR });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -145,6 +194,7 @@ export function ConsultationPanel({
 
   const handleReset = () => {
     setManualType(null);
+    setSelectedProposalIds(new Set());
     reset();
   };
 
@@ -167,12 +217,12 @@ export function ConsultationPanel({
     display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
   } : {
     position: "fixed", top: 0, right: 0, bottom: 0,
-    width: "min(400px, 100vw)",
+    width: `min(${panelWidth}px, 100vw)`,
     background: "var(--color-bg-primary)",
     borderLeft: "1px solid var(--color-border-primary)",
     boxShadow: "var(--shadow-lg)", zIndex: 100,
     transform: isOpen ? "translateX(0)" : "translateX(100%)",
-    transition: "transform 0.3s ease",
+    transition: isDraggingPanel.current ? "none" : "transform 0.3s ease",
     display: "flex", flexDirection: "column", overflow: "hidden",
   };
 
@@ -200,6 +250,20 @@ export function ConsultationPanel({
       )}
 
       <div style={panelStyle}>
+
+        {/* リサイズハンドル（フローティング時のみ） */}
+        {!inline && (
+          <div
+            onMouseDown={handleResizeMouseDown}
+            style={{
+              position: "absolute", left: 0, top: 0, bottom: 0, width: 5,
+              cursor: "col-resize", zIndex: 10,
+              background: "transparent",
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+          />
+        )}
 
         {/* ===== ヘッダー ===== */}
         <div style={{
@@ -403,8 +467,21 @@ export function ConsultationPanel({
           {/* 最新の提案 */}
           {callState === "success" && proposals.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em" }}>
-                最新の提案（{proposals.length}件）
+              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>最新の提案（{proposals.length}件）</span>
+                {selectedProposalIds.size > 0 && (
+                  <>
+                    <span style={{ fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)", background: "var(--color-accent, #3b82f6)", color: "#fff", fontWeight: "600" }}>
+                      {selectedProposalIds.size}件選択中
+                    </span>
+                    <button
+                      onClick={() => setSelectedProposalIds(new Set())}
+                      style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+                    >
+                      解除
+                    </button>
+                  </>
+                )}
               </div>
               {proposals.map(proposal => (
                 <ProposalCard
@@ -417,6 +494,13 @@ export function ConsultationPanel({
                   onDecline={followUpText => {
                     submit({ consultation: followUpText, consultationType, targetDeadline: targetDeadline || null });
                   }}
+                  isSelected={selectedProposalIds.has(proposal.proposal_id)}
+                  onToggleSelect={() => setSelectedProposalIds(prev => {
+                    const next = new Set(prev);
+                    if (next.has(proposal.proposal_id)) next.delete(proposal.proposal_id);
+                    else next.add(proposal.proposal_id);
+                    return next;
+                  })}
                 />
               ))}
             </div>
@@ -467,6 +551,12 @@ export function ConsultationPanel({
               outline: "none",
             }}
           />
+          {/* 選択中提案バッジ */}
+          {selectedProposalIds.size > 0 && (
+            <div style={{ fontSize: "10px", color: "var(--color-accent, #3b82f6)", background: "var(--color-accent-bg, #eff6ff)", border: "1px solid var(--color-accent, #3b82f6)", borderRadius: "var(--radius-sm)", padding: "4px 8px" }}>
+              提案 {selectedProposalIds.size}件を選択中 — 送信すると選択した提案へのフィードバックとして送られます
+            </div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
               Ctrl+Enter で送信
@@ -483,7 +573,7 @@ export function ConsultationPanel({
                 fontWeight: "500", transition: "all 0.15s", whiteSpace: "nowrap",
               }}
             >
-              {callState === "loading" ? "生成中..." : "AIに相談する"}
+              {callState === "loading" ? "生成中..." : selectedProposalIds.size > 0 ? `${selectedProposalIds.size}件の提案に返信` : "AIに相談する"}
             </button>
           </div>
         </div>
