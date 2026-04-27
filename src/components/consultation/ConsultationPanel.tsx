@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
+import { SessionHistoryPanel } from "./SessionHistoryPanel";
 import type { Member, Project } from "../../lib/localData/types";
 import type { ConsultationType } from "../../lib/ai/types";
 import { useAppData } from "../../context/AppDataContext";
@@ -90,8 +92,12 @@ export function ConsultationPanel({
   const [targetDeadline, setTargetDeadline] = useState("");
   const [includeOKR, setIncludeOKR] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+
+  // 各セッションに固有IDを割り振る（localStorage保存用）
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
 
   // パネル幅（フローティング時のみ使用）
   const PANEL_WIDTH_KEY = "consultation_panel_width";
@@ -196,10 +202,25 @@ export function ConsultationPanel({
     if (v !== "deadline_check") setTargetDeadline("");
   };
 
+  // AIからの返信が来るたびにlocalStorageへ自動保存（ユーザー端末のみ・DBには送らない）
+  useEffect(() => {
+    if (session.turns.length < 2) return;
+    const firstUserTurn = session.turns.find(t => t.role === "user");
+    if (!firstUserTurn) return;
+    saveChatSession(currentUser.id, {
+      id: sessionIdRef.current,
+      savedAt: new Date().toISOString(),
+      title: firstUserTurn.content.replace(/^以下の提案についてのフィードバックです:[\s\S]*?\n\n/, "").slice(0, 60),
+      consultationType,
+      turns: session.turns,
+    });
+  }, [session.turns, currentUser.id, consultationType]);
+
   const handleReset = () => {
     setManualType(null);
     setSelectedProposalIds(new Set());
     reset();
+    sessionIdRef.current = crypto.randomUUID();
   };
 
   useEffect(() => {
@@ -219,6 +240,7 @@ export function ConsultationPanel({
     background: "var(--color-bg-primary)",
     borderLeft: "1px solid var(--color-border-primary)",
     display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
+    position: "relative",
   } : {
     position: "fixed", top: 0, right: 0, bottom: 0,
     width: `min(${panelWidth}px, 100vw)`,
@@ -254,6 +276,21 @@ export function ConsultationPanel({
       )}
 
       <div style={panelStyle}>
+
+        {/* 相談履歴オーバーレイ */}
+        {isSessionHistoryOpen && (
+          <div style={{
+            position: "absolute", inset: 0, zIndex: 20,
+            background: "var(--color-bg-primary)",
+            display: "flex", flexDirection: "column",
+            overflow: "hidden",
+          }}>
+            <SessionHistoryPanel
+              userId={currentUser.id}
+              onClose={() => setIsSessionHistoryOpen(false)}
+            />
+          </div>
+        )}
 
         {/* リサイズハンドル（フローティング時のみ） */}
         {!inline && (
@@ -302,6 +339,13 @@ export function ConsultationPanel({
                 リセット
               </button>
             )}
+            <button
+              onClick={() => setIsSessionHistoryOpen(true)}
+              title="相談履歴"
+              style={{ background: "transparent", border: "none", cursor: "pointer", padding: "3px 4px", color: "var(--color-text-tertiary)", lineHeight: 1, display: "flex", alignItems: "center" }}
+            >
+              <ClockIcon />
+            </button>
             <button
               onClick={onClose}
               aria-label="閉じる"
@@ -597,4 +641,13 @@ function headerBtnStyle(primary: boolean): React.CSSProperties {
     cursor: "pointer",
     whiteSpace: "nowrap",
   };
+}
+
+function ClockIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 16 16" fill="none">
+      <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
+      <path d="M8 4.5V8l2.5 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
 }
