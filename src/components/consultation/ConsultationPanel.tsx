@@ -1,6 +1,6 @@
 // src/components/consultation/ConsultationPanel.tsx
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { createPortal } from "react-dom";
 import type { Member, Project } from "../../lib/localData/types";
 import type { ConsultationType } from "../../lib/ai/types";
@@ -14,6 +14,7 @@ import { ProposalCard } from "./ProposalCard";
 import { ChangeHistoryModal } from "./ChangeHistoryModal";
 import { GanttPreviewPanel } from "./GanttPreviewPanel";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
+import { inferConsultationType } from "../../lib/ai/inferConsultationType";
 
 interface Props {
   isOpen: boolean;
@@ -82,7 +83,8 @@ export function ConsultationPanel({
   projects = [],
   inline = false,
 }: Props) {
-  const [consultationType, setConsultationType] = useState<ConsultationType>("change");
+  const [manualType, setManualType] = useState<ConsultationType | null>(null);
+  const [isTypeOverrideOpen, setIsTypeOverrideOpen] = useState(false);
   const [inputText, setInputText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
   const [includeOKR, setIncludeOKR] = useState(false);
@@ -90,6 +92,11 @@ export function ConsultationPanel({
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+
+  // 自動判定 or 手動上書き
+  const autoType = useMemo(() => inferConsultationType(inputText), [inputText]);
+  const consultationType: ConsultationType = manualType ?? autoType;
+  const isAutoDetected = manualType === null;
 
   const { reload } = useAppData();
   const {
@@ -100,6 +107,11 @@ export function ConsultationPanel({
 
   const currentType = TYPE_CONFIG.find(t => t.value === consultationType)!;
   const hasHistory = session.turns.length > 0;
+
+  // deadline_check 以外に切り替わったら日付をクリア
+  useEffect(() => {
+    if (consultationType !== "deadline_check") setTargetDeadline("");
+  }, [consultationType]);
 
   // 提案が来たらスクロールエリアを一番下へ
   useEffect(() => {
@@ -128,8 +140,15 @@ export function ConsultationPanel({
   };
 
   const handleTypeChange = (v: ConsultationType) => {
-    setConsultationType(v);
+    setManualType(v);
+    setIsTypeOverrideOpen(false);
     if (v !== "deadline_check") setTargetDeadline("");
+  };
+
+  const handleReset = () => {
+    setManualType(null);
+    setIsTypeOverrideOpen(false);
+    reset();
   };
 
   useEffect(() => {
@@ -214,7 +233,7 @@ export function ConsultationPanel({
               </button>
             )}
             {hasHistory && (
-              <button onClick={reset} style={headerBtnStyle(false)} title="会話をリセットして新しい相談を始める">
+              <button onClick={handleReset} style={headerBtnStyle(false)} title="会話をリセットして新しい相談を始める">
                 リセット
               </button>
             )}
@@ -239,7 +258,7 @@ export function ConsultationPanel({
             <span>⚠</span>
             <span style={{ flex: 1 }}>会話が長くなっています。</span>
             <button
-              onClick={reset}
+              onClick={handleReset}
               style={{ fontSize: "10px", padding: "2px 8px", background: "var(--color-text-warning)", color: "#fff", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", flexShrink: 0 }}
             >
               リセット
@@ -250,37 +269,85 @@ export function ConsultationPanel({
         {/* ===== スクロール可能エリア ===== */}
         <div ref={scrollAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
 
-          {/* 相談の種類タブ */}
+          {/* 相談の種類 — 自動検出バッジ */}
           <div>
             <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.04em" }}>
               相談の種類
             </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-              {TYPE_CONFIG.map(t => {
-                const active = consultationType === t.value;
-                return (
-                  <button
-                    key={t.value}
-                    onClick={() => handleTypeChange(t.value)}
-                    style={{
-                      fontSize: "11px", padding: "4px 10px",
-                      borderRadius: "var(--radius-full)",
-                      border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                      background: active ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                      color: active ? "#fff" : "var(--color-text-secondary)",
-                      cursor: "pointer", fontWeight: active ? "600" : "400",
-                      transition: "all 0.1s",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {t.shortLabel}
-                  </button>
-                );
-              })}
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+              <span style={{
+                fontSize: "11px", padding: "4px 10px",
+                borderRadius: "var(--radius-full)",
+                border: "1.5px solid var(--color-brand)",
+                background: "var(--color-brand)",
+                color: "#fff",
+                fontWeight: "600",
+                whiteSpace: "nowrap",
+              }}>
+                {currentType.shortLabel}
+              </span>
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                {isAutoDetected ? "（自動判定）" : "（手動）"}
+              </span>
+              <button
+                onClick={() => setIsTypeOverrideOpen(v => !v)}
+                style={{
+                  fontSize: "10px", padding: "2px 8px",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-full)",
+                  background: "transparent",
+                  color: "var(--color-text-tertiary)",
+                  cursor: "pointer",
+                }}
+              >
+                {isTypeOverrideOpen ? "閉じる" : "変更"}
+              </button>
+              {!isAutoDetected && (
+                <button
+                  onClick={() => { setManualType(null); setIsTypeOverrideOpen(false); }}
+                  style={{
+                    fontSize: "10px", padding: "2px 8px",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-full)",
+                    background: "transparent",
+                    color: "var(--color-text-tertiary)",
+                    cursor: "pointer",
+                  }}
+                >
+                  自動に戻す
+                </button>
+              )}
             </div>
+
+            {/* 手動変更パネル */}
+            {isTypeOverrideOpen && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "8px" }}>
+                {TYPE_CONFIG.map(t => {
+                  const active = consultationType === t.value;
+                  return (
+                    <button
+                      key={t.value}
+                      onClick={() => handleTypeChange(t.value)}
+                      style={{
+                        fontSize: "11px", padding: "4px 10px",
+                        borderRadius: "var(--radius-full)",
+                        border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                        background: active ? "var(--color-brand)" : "var(--color-bg-secondary)",
+                        color: active ? "#fff" : "var(--color-text-secondary)",
+                        cursor: "pointer", fontWeight: active ? "600" : "400",
+                        transition: "all 0.1s",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {t.shortLabel}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* 選択中の相談種類の説明（タブ直下） */}
+          {/* 選択中の相談種類の説明 */}
           <div style={{
             padding: "10px 12px",
             background: "var(--color-bg-secondary)",
