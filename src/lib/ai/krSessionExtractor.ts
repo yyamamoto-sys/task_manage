@@ -114,9 +114,51 @@ async function callExtractAI(system: string, userMessage: string): Promise<strin
 }
 
 function parseJsonSafe<T>(text: string): T {
-  // コードブロックが混入した場合も除去して試みる
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
   return JSON.parse(cleaned) as T;
+}
+
+function validateCheckin(data: unknown): ExtractedCheckin {
+  if (!data || typeof data !== "object") throw new Error("AIレスポンスがオブジェクトではありません。");
+  const d = data as Record<string, unknown>;
+  const validSignals = ["green", "yellow", "red", null];
+  if (!validSignals.includes(d.signal as string | null)) {
+    throw new Error(`不正なsignal値: ${d.signal}`);
+  }
+  if (!Array.isArray(d.declarations)) {
+    throw new Error("declarationsが配列ではありません。");
+  }
+  for (const decl of d.declarations as unknown[]) {
+    if (!decl || typeof decl !== "object") throw new Error("declaration要素がオブジェクトではありません。");
+    const dec = decl as Record<string, unknown>;
+    if (typeof dec.member_short_name !== "string") throw new Error("member_short_nameがstringではありません。");
+    if (typeof dec.content !== "string") throw new Error("contentがstringではありません。");
+    if (dec.due_date !== null && typeof dec.due_date !== "string") throw new Error("due_dateの型が不正です。");
+  }
+  return d as unknown as ExtractedCheckin;
+}
+
+function validateWinSession(data: unknown): ExtractedWinSession {
+  if (!data || typeof data !== "object") throw new Error("AIレスポンスがオブジェクトではありません。");
+  const d = data as Record<string, unknown>;
+  const validSignals = ["green", "yellow", "red", null];
+  if (!validSignals.includes(d.signal as string | null)) {
+    throw new Error(`不正なsignal値: ${d.signal}`);
+  }
+  if (!Array.isArray(d.declaration_results)) {
+    throw new Error("declaration_resultsが配列ではありません。");
+  }
+  const validStatuses = ["achieved", "partial", "not_achieved", null];
+  for (const res of d.declaration_results as unknown[]) {
+    if (!res || typeof res !== "object") throw new Error("declaration_results要素がオブジェクトではありません。");
+    const r = res as Record<string, unknown>;
+    if (typeof r.declaration_index !== "number") throw new Error("declaration_indexがnumberではありません。");
+    if (!validStatuses.includes(r.result_status as string | null)) throw new Error(`不正なresult_status: ${r.result_status}`);
+    if (typeof r.result_note !== "string") throw new Error("result_noteがstringではありません。");
+  }
+  if (typeof d.learnings !== "string") throw new Error("learningsがstringではありません。");
+  if (typeof d.external_changes !== "string") throw new Error("external_changesがstringではありません。");
+  return d as unknown as ExtractedWinSession;
 }
 
 // ===== チェックイン抽出 =====
@@ -133,7 +175,8 @@ export async function extractCheckinData(params: {
   });
 
   const text = await callExtractAI(CHECKIN_EXTRACT_PROMPT, userMessage);
-  return parseJsonSafe<ExtractedCheckin>(text);
+  const parsed = parseJsonSafe<unknown>(text);
+  return validateCheckin(parsed);
 }
 
 // ===== ウィンセッション抽出 =====
@@ -152,5 +195,6 @@ export async function extractWinSessionData(params: {
   });
 
   const text = await callExtractAI(WIN_SESSION_EXTRACT_PROMPT, userMessage);
-  return parseJsonSafe<ExtractedWinSession>(text);
+  const parsed = parseJsonSafe<unknown>(text);
+  return validateWinSession(parsed);
 }

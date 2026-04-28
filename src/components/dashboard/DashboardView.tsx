@@ -13,7 +13,7 @@
 // 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
 // 手動入力方式はPhase 5以降で検討。
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
@@ -22,6 +22,7 @@ import type {
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
+import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 
 interface Props {
   currentUser: Member;
@@ -40,6 +41,7 @@ export function DashboardView({ currentUser, projects }: Props) {
   const [myOnly, setMyOnly] = useState(false);
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
+  const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
 
   // リマインダー設定（localStorage で永続化）
   const [reminderDays, setReminderDaysState] = useState<number>(() => {
@@ -63,6 +65,20 @@ export function DashboardView({ currentUser, projects }: Props) {
   const tfs      = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const projectTaskForces = rawPtfs;
+
+  // KRごとのシグナル履歴をフェッチ（最大4週分）
+  useEffect(() => {
+    if (krs.length === 0) return;
+    Promise.all(
+      krs.map(kr => fetchKrSessions(kr.id).then(sessions => ({ krId: kr.id, sessions })))
+    ).then(results => {
+      const map: Record<string, KrSession[]> = {};
+      for (const { krId, sessions } of results) {
+        map[krId] = sessions.slice(0, 8); // 最新8セッション（チェックイン+ウィン計4週分）
+      }
+      setKrSessionsMap(map);
+    }).catch(() => {});
+  }, [krs]);
 
   // フィルター適用後のタスク
   const filteredTasks = useMemo(() => {
@@ -425,15 +441,37 @@ export function DashboardView({ currentUser, projects }: Props) {
                       }}>KR{i + 1}</span>
                       {kr.title}
                     </span>
-                    <span style={{
-                      fontSize: "11px", fontWeight: "500",
-                      color: pct >= 80 ? "var(--color-text-success)"
-                        : pct >= 40 ? "var(--color-text-warning)"
-                        : "var(--color-text-tertiary)",
-                      flexShrink: 0,
-                    }}>
-                      {pct}%
-                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                      {/* シグナル履歴ドット（最新4週、古い順） */}
+                      {(krSessionsMap[kr.id] ?? []).slice(0, 4).reverse().map((s, si) => {
+                        const dot = s.signal === "green" ? { bg: "#22c55e", title: "🟢" }
+                          : s.signal === "yellow" ? { bg: "#eab308", title: "🟡" }
+                          : s.signal === "red" ? { bg: "#ef4444", title: "🔴" }
+                          : { bg: "#d1d5db", title: "−" };
+                        const typeLabel = s.session_type === "checkin" ? "C" : "W";
+                        return (
+                          <span
+                            key={si}
+                            title={`${s.week_start} ${typeLabel}: ${dot.title}`}
+                            style={{
+                              display: "inline-block",
+                              width: "8px", height: "8px", borderRadius: "50%",
+                              background: dot.bg,
+                              opacity: 0.85,
+                              cursor: "default",
+                            }}
+                          />
+                        );
+                      })}
+                      <span style={{
+                        fontSize: "11px", fontWeight: "500",
+                        color: pct >= 80 ? "var(--color-text-success)"
+                          : pct >= 40 ? "var(--color-text-warning)"
+                          : "var(--color-text-tertiary)",
+                      }}>
+                        {pct}%
+                      </span>
+                    </div>
                   </div>
                   <ProgressBar pct={pct} color={
                     pct >= 80 ? "var(--color-text-success)" : pct >= 40 ? "var(--color-text-warning)" : "var(--color-text-tertiary)"

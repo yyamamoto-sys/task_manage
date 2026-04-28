@@ -5,11 +5,12 @@
 // OKR/KR/TFデータをAIに渡すことはユーザー確認済みのポリシー変更による許可。
 // GraphViewと同じフルスクリーンオーバーレイ形式で表示する。
 
-import { useState, useRef, useMemo } from "react";
+import { useState, useRef, useMemo, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
+import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 
 interface Props {
   onClose: () => void;
@@ -29,6 +30,14 @@ const MODE_OPTIONS: { value: KrReportMode; label: string; description: string }[
   },
 ];
 
+function getThisMonday(): string {
+  const d = new Date();
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
 export function KrReportPanel({ onClose }: Props) {
   const { keyResults, taskForces, todos, tasks, members } = useAppData();
 
@@ -43,11 +52,33 @@ export function KrReportPanel({ onClose }: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<KrSession[]>([]);
   const reportRef = useRef<HTMLIFrameElement>(null);
 
   const today = new Date().toISOString().slice(0, 10);
+  const thisMonday = getThisMonday();
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
+
+  // KR選択時にセッション履歴を取得
+  useEffect(() => {
+    if (!selectedKrId) { setSessions([]); return; }
+    fetchKrSessions(selectedKrId)
+      .then(setSessions)
+      .catch(() => setSessions([]));
+  }, [selectedKrId]);
+
+  // 今週のセッションを抽出
+  const thisWeekSessions = sessions.filter(s => s.week_start === thisMonday);
+  const thisWeekCheckin = thisWeekSessions.find(s => s.session_type === "checkin");
+  const thisWeekWin = thisWeekSessions.find(s => s.session_type === "win_session");
+
+  const sessionForMode = mode === "checkin" ? thisWeekCheckin : thisWeekWin;
+
+  const handleLoadFromSession = () => {
+    if (!sessionForMode) return;
+    setMeetingNotes(sessionForMode.transcript);
+  };
 
   const handleGenerate = async () => {
     if (!selectedKr) return;
@@ -85,6 +116,8 @@ export function KrReportPanel({ onClose }: Props) {
     }
   };
 
+  const teamsWebhookUrl = import.meta.env.VITE_TEAMS_WEBHOOK_URL as string | undefined;
+
   const handleCopyHtml = () => {
     if (!reportHtml) return;
     navigator.clipboard.writeText(reportHtml).then(() => {
@@ -98,6 +131,41 @@ export function KrReportPanel({ onClose }: Props) {
     navigator.clipboard.writeText(text).then(() => {
       alert("テキストをクリップボードにコピーしました。");
     });
+  };
+
+  const [teamsSending, setTeamsSending] = useState(false);
+
+  const handleSendToTeams = async () => {
+    if (!reportRef.current || !teamsWebhookUrl) return;
+    const text = reportRef.current.contentDocument?.body?.innerText ?? "";
+    if (!text.trim()) return;
+
+    setTeamsSending(true);
+    try {
+      const modeLabel = mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";
+      const body = {
+        "@type": "MessageCard",
+        "@context": "http://schema.org/extensions",
+        themeColor: "7c3aed",
+        summary: `KRレポート：${selectedKr?.title ?? ""}`,
+        sections: [{
+          activityTitle: `📊 KRレポート｜${modeLabel}`,
+          activitySubtitle: `${selectedKr?.title ?? ""}｜${today}`,
+          text: text.slice(0, 1000) + (text.length > 1000 ? "…（全文はアプリで確認）" : ""),
+        }],
+      };
+      const res = await fetch(teamsWebhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      alert("Teamsに送信しました。");
+    } catch (e) {
+      alert(`Teams送信エラー: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setTeamsSending(false);
+    }
   };
 
   return (
@@ -172,7 +240,7 @@ export function KrReportPanel({ onClose }: Props) {
               ) : (
                 <select
                   value={selectedKrId}
-                  onChange={e => setSelectedKrId(e.target.value)}
+                  onChange={e => { setSelectedKrId(e.target.value); setMeetingNotes(""); setReportHtml(null); }}
                   style={{
                     width: "100%",
                     padding: "8px 10px",
@@ -199,7 +267,7 @@ export function KrReportPanel({ onClose }: Props) {
                 {MODE_OPTIONS.map(opt => (
                   <button
                     key={opt.value}
-                    onClick={() => setMode(opt.value)}
+                    onClick={() => { setMode(opt.value); setMeetingNotes(""); }}
                     style={{
                       flex: 1,
                       padding: "10px 12px",
@@ -225,6 +293,41 @@ export function KrReportPanel({ onClose }: Props) {
                 ))}
               </div>
             </div>
+
+            {/* 今週のセッションバナー */}
+            {sessionForMode && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                background: "var(--color-bg-success, #f0fdf4)",
+                border: "1px solid var(--color-border-success, #86efac)",
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+                marginBottom: "14px",
+                fontSize: "12px",
+              }}>
+                <span style={{ fontSize: "16px" }}>✅</span>
+                <div style={{ flex: 1, color: "var(--color-text-primary)" }}>
+                  <span style={{ fontWeight: "600" }}>今週の{mode === "checkin" ? "チェックイン" : "ウィンセッション"}が記録済みです</span>
+                  <span style={{ color: "var(--color-text-tertiary)", marginLeft: "6px" }}>({sessionForMode.week_start})</span>
+                </div>
+                <button
+                  onClick={handleLoadFromSession}
+                  style={{
+                    padding: "5px 12px",
+                    background: "var(--color-brand)",
+                    color: "#fff",
+                    border: "none",
+                    borderRadius: "var(--radius-md)",
+                    fontSize: "11px",
+                    fontWeight: "600",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  議事録を読み込む
+                </button>
+              </div>
+            )}
 
             {/* 議事メモ入力 */}
             <div style={{ marginBottom: "16px" }}>
@@ -328,6 +431,23 @@ export function KrReportPanel({ onClose }: Props) {
                 >
                   HTMLをコピー
                 </button>
+                {teamsWebhookUrl && (
+                  <button
+                    onClick={handleSendToTeams}
+                    disabled={teamsSending}
+                    style={{
+                      fontSize: "11px", padding: "5px 10px",
+                      background: teamsSending ? "var(--color-bg-tertiary)" : "#6264a7",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      color: teamsSending ? "var(--color-text-tertiary)" : "#fff",
+                      cursor: teamsSending ? "not-allowed" : "pointer",
+                      fontWeight: "600",
+                    }}
+                  >
+                    {teamsSending ? "送信中..." : "Teams送信"}
+                  </button>
+                )}
               </div>
               <iframe
                 ref={reportRef}

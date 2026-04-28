@@ -85,14 +85,19 @@ Project（PJ）                    ← AI管理・AIに渡す
 
 ### AI境界ルール
 
-- O / KR / TF は一切AIに渡さない
+- O / KR / TF は一切AIに渡さない（※例外あり、下記参照）
 - ToDo は「タイトルのみ」をAIに渡す（TF/KR/O情報は含めない）
 - AIペイロード内では ToDo 単位のタスクグループを仮想プロジェクトとして表現する（payloadBuilder.ts参照）
 
-### 絶対に破ってはいけないルール
+**※例外：ラボ機能のKRレポート生成・KRセッション記録**
+- `src/lib/ai/krReportPrompt.ts` および `src/lib/ai/krSessionExtractor.ts` はユーザー承認のもと KR / TF / ToDo / メンバー情報をAIに渡す
+- 対象機能：KRチェックイン分析・ウィンセッション分析・セッション議事録からのデータ抽出
+- 通常のタスク管理AI機能（payloadBuilder.ts経由）には引き続き上記ルールを適用する
+
+### 絶対に破ってはいけないルール（通常のタスク管理AI機能）
 
 ```typescript
-// ❌ 絶対禁止：O・KR・TFをAIに渡す
+// ❌ 絶対禁止：O・KR・TFをAIに渡す（タスク管理AI機能）
 const payload = { okr: objective, krs: keyResults, tfs: taskForces };
 
 // ✅ 正しい：PJ・Task層のみ渡す

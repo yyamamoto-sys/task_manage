@@ -81,19 +81,24 @@ export function buildKrReportContext(params: {
   return { today, kr_title: kr.title, task_forces, mode, meeting_notes: meetingNotes };
 }
 
-// ===== HTMLテンプレート CSS =====
-// このCSSを含めることで毎回同じデザインのレポートが生成される
+// ===== クライアント側でHTMLラップするためのCSS =====
+// AIにはbody内コンテンツのみ出力させ、クライアント側でこのCSSと合成する。
+// → システムプロンプトにCSS (~3500トークン) を含めるコストを削減。
 
-const REPORT_CSS = `<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+export const REPORT_HTML_WRAPPER = (bodyContent: string, title: string): string => `<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${title}</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&family=Noto+Serif+JP:wght@400;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #fff; color: #1a1a1a; font-family: 'Noto Sans JP', sans-serif; font-weight: 300; font-size: 14px; line-height: 1.8; }
-
 .doc-header { background: #fff; border-bottom: 2px solid #1a1a1a; padding: 40px 64px 32px; }
 .doc-header .meta { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.15em; color: #888; margin-bottom: 10px; }
 .doc-header h1 { font-family: 'Noto Serif JP', serif; font-size: 24px; font-weight: 600; letter-spacing: 0.04em; color: #1a1a1a; margin-bottom: 6px; }
 .doc-header .subtitle { font-size: 13px; color: #666; }
-
 .tab-bar { display: flex; border-bottom: 1px solid #e0e0e0; padding: 0 64px; background: #fff; position: sticky; top: 0; z-index: 10; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
 .tab-btn { padding: 16px 32px; cursor: pointer; font-family: 'Noto Sans JP', sans-serif; font-size: 13px; font-weight: 500; letter-spacing: 0.06em; border: none; background: transparent; color: #aaa; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
 .tab-btn.kr1.active { color: #b07d2e; border-bottom-color: #b07d2e; }
@@ -102,10 +107,7 @@ body { background: #fff; color: #1a1a1a; font-family: 'Noto Sans JP', sans-serif
 .tab-btn:hover { color: #1a1a1a; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
-
 .page { padding: 48px 64px 80px; max-width: 960px; }
-
-/* KR banner */
 .kr-banner { display: flex; align-items: flex-start; gap: 16px; padding: 20px 24px; border-radius: 8px; margin-bottom: 32px; border-left: 4px solid; }
 .kr-banner.kr1 { background: #fdf6ea; border-color: #b07d2e; }
 .kr-banner.kr2 { background: #eaf4f1; border-color: #2e7d6e; }
@@ -116,49 +118,35 @@ body { background: #fff; color: #1a1a1a; font-family: 'Noto Sans JP', sans-serif
 .kr2 .kr-badge { background: #2e7d6e; color: #fff; }
 .kr3 .kr-badge { background: #2e4d8e; color: #fff; }
 .kr-banner .kr-text { font-size: 13px; color: #555; line-height: 1.7; flex: 1; padding-top: 4px; }
-
-/* Signal pill */
 .signal-pill { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 600; white-space: nowrap; letter-spacing: 0.05em; }
 .signal-pill.green  { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
 .signal-pill.yellow { background: #fef9c3; color: #a16207; border: 1px solid #fde047; }
 .signal-pill.red    { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
-
-/* Summary box */
 .summary-box { background: #f8f4ff; border: 1px solid #e9d8fd; border-left: 4px solid #7c3aed; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
 .summary-box .summary-title { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 600; color: #7c3aed; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 10px; }
 .summary-box ul { margin: 0; padding-left: 18px; }
 .summary-box li { font-size: 13px; color: #374151; line-height: 1.75; margin-bottom: 3px; }
-
-/* Must-do box */
 .mustdo-box { background: #fff7ed; border: 1px solid #fed7aa; border-left: 4px solid #f97316; border-radius: 6px; padding: 16px 20px; margin-bottom: 24px; }
 .mustdo-box .mustdo-title { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 700; color: #ea580c; letter-spacing: 0.15em; text-transform: uppercase; margin-bottom: 12px; }
 .mustdo-item { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 8px; font-size: 13px; color: #1a1a1a; line-height: 1.6; }
 .mustdo-item::before { content: "→"; color: #f97316; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
 .mustdo-item:last-child { margin-bottom: 0; }
-
-/* Part heading */
 .part-heading { display: flex; align-items: center; gap: 14px; margin: 40px 0 20px; }
 .part-num { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.15em; color: #fff; background: #1a1a1a; padding: 4px 10px; border-radius: 3px; }
 .part-heading h2 { font-family: 'Noto Serif JP', serif; font-size: 17px; font-weight: 600; color: #1a1a1a; }
 .part-rule { flex: 1; height: 1px; background: #e8e8e8; }
-
-/* Analysis */
 .analysis-block { margin-bottom: 28px; }
 .analysis-label { display: inline-flex; align-items: center; gap: 8px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 12px; }
 .analysis-label .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .label-hypo .dot { background: #d4614a; } .label-hypo { color: #d4614a; }
 .label-exec .dot { background: #3a7bd5; } .label-exec { color: #3a7bd5; }
 .label-ext  .dot { background: #7d5eab; } .label-ext  { color: #7d5eab; }
-
 .analysis-card { background: #fafafa; border: 1px solid #ebebeb; border-radius: 6px; padding: 18px 22px; margin-bottom: 10px; }
 .analysis-card.priority { background: #fff9f8; border-color: #f5c6be; border-left: 3px solid #d4614a; }
 .analysis-card .card-tf { font-family: 'DM Mono', monospace; font-size: 10px; color: #aaa; letter-spacing: 0.1em; margin-bottom: 6px; }
 .analysis-card .card-title { font-size: 13.5px; font-weight: 500; color: #1a1a1a; margin-bottom: 8px; line-height: 1.6; }
 .analysis-card .card-body { font-size: 13px; color: #555; line-height: 1.85; }
-
 .section-divider { border: none; border-top: 1px solid #e0e0e0; margin: 0; }
-
-/* Next actions */
 .next-block { margin-bottom: 28px; }
 .next-label { display: inline-flex; align-items: center; gap: 8px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; margin-bottom: 12px; }
 .next-label .bar { width: 14px; height: 3px; border-radius: 2px; flex-shrink: 0; }
@@ -166,12 +154,10 @@ body { background: #fff; color: #1a1a1a; font-family: 'Noto Sans JP', sans-serif
 .label-n-exec .bar { background: #3a7bd5; } .label-n-exec { color: #3a7bd5; }
 .label-n-str  .bar { background: #e8a020; } .label-n-str  { color: #e8a020; }
 .label-n-obj  .bar { background: #7d5eab; } .label-n-obj  { color: #7d5eab; }
-
 .time-tag { display: inline-block; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; padding: 2px 8px; border-radius: 3px; margin-bottom: 8px; letter-spacing: 0.06em; }
 .time-tag.urgent { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
 .time-tag.soon   { background: #fef9c3; color: #a16207; border: 1px solid #fde047; }
 .time-tag.later  { background: #f3f4f6; color: #6b7280; border: 1px solid #d1d5db; }
-
 .next-card { border: 1px solid #e8e8e8; border-radius: 6px; padding: 20px 24px; margin-bottom: 10px; background: #fff; }
 .next-card.priority { border-color: #bcd4f7; border-left: 3px solid #3a7bd5; background: #f8faff; }
 .next-card .card-tf { font-family: 'DM Mono', monospace; font-size: 10px; color: #aaa; letter-spacing: 0.1em; margin-bottom: 6px; }
@@ -181,33 +167,42 @@ body { background: #fff; color: #1a1a1a; font-family: 'Noto Sans JP', sans-serif
 .change-arrow-icon { font-size: 14px; color: #ccc; }
 .change-to { font-size: 12px; color: #2e7a55; background: #edf7f2; border: 1px solid #b8dfc9; border-radius: 3px; padding: 4px 10px; font-weight: 500; }
 .next-card .card-body { font-size: 13px; color: #555; line-height: 1.85; }
-
 .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
 .doc-footer { border-top: 1px solid #e0e0e0; padding: 20px 64px; display: flex; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 10px; color: #bbb; letter-spacing: 0.1em; }
-
-@media print {
-  .tab-bar { display: none; }
-  .tab-content { display: block !important; }
-  .page { padding: 32px 40px 60px; }
-}
-@media (max-width: 720px) {
-  .doc-header { padding: 28px 24px 20px; }
-  .tab-bar { padding: 0 24px; }
-  .tab-btn { padding: 14px 16px; font-size: 12px; }
-  .page { padding: 32px 24px 60px; }
-  .two-col { grid-template-columns: 1fr; }
-}
-</style>`;
+@media print { .tab-bar { display: none; } .tab-content { display: block !important; } .page { padding: 32px 40px 60px; } }
+@media (max-width: 720px) { .doc-header { padding: 28px 24px 20px; } .tab-bar { padding: 0 24px; } .tab-btn { padding: 14px 16px; font-size: 12px; } .page { padding: 32px 24px 60px; } .two-col { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+${bodyContent}
+</body>
+</html>`;
 
 // ===== HTMLドキュメント構造の説明（AIへの指示） =====
+// AIには<body>内コンテンツのみを出力させる。CSSはクライアント側でラップする。
 
 const HTML_STRUCTURE_GUIDE = `
-【出力するHTML文書の構造】
+【出力形式】
+<body>タグ内に入れるHTMLコンテンツのみを出力してください。
+<!DOCTYPE html>、<html>、<head>、<body>タグは不要です。
+CSSも不要です（クライアント側で適用します）。
 
-完全な自己完結HTMLファイルを出力してください（<!DOCTYPE html>から始める）。
-以下のCSSを<head>内に必ず含めること：
-${REPORT_CSS}
+【使用可能なCSSクラス一覧】
+- .doc-header / .meta / .subtitle
+- .tab-bar / .tab-btn.kr1|kr2|kr3 / .tab-content（複数KR時のみ）
+- .page
+- .kr-banner.kr1|kr2|kr3 / .kr-banner-left / .kr-badge / .kr-text
+- .signal-pill.green|yellow|red
+- .summary-box / .summary-title
+- .mustdo-box / .mustdo-title / .mustdo-item
+- .part-heading / .part-num / .part-rule
+- .analysis-block / .analysis-label.label-hypo|label-exec|label-ext / .dot
+- .analysis-card（.priority追加で強調） / .card-tf / .card-title / .card-body
+- .section-divider
+- .next-block / .next-label.label-n-hypo|label-n-exec|label-n-str|label-n-obj / .bar
+- .time-tag.urgent|soon|later
+- .next-card（.priority追加で強調） / .change-row / .change-from / .change-arrow-icon / .change-to
+- .two-col / .doc-footer
 
 【必須のHTML構造パターン】
 
@@ -226,63 +221,19 @@ ${REPORT_CSS}
 <div class="kr-banner kr1">
   <div class="kr-banner-left">
     <span class="kr-badge">KR1</span>
-    <span class="signal-pill red">🔴 要対応</span>  ← green/yellow/red で切り替え
+    <span class="signal-pill red">🔴 要対応</span>
   </div>
   <div class="kr-text">KRのタイトルと概要。全体進捗XX%</div>
 </div>
 
-3-2. ① 分析セクション
-まず「今週の主要課題」サマリーボックスを置く：
-<div class="summary-box">
-  <div class="summary-title">今週の主要課題</div>
-  <ul>
-    <li>最重要課題を2〜3行の箇条書きで</li>
-  </ul>
-</div>
+3-2. ① 分析セクション（summary-box → analysis-block×3）
 
-次に3カテゴリの分析カード（最も重要なカードには class="priority" を追加）：
-<div class="analysis-block">
-  <div class="analysis-label label-hypo"><span class="dot"></span>仮説の問題</div>
-  <div class="analysis-card priority">  ← 最重要カードはpriority追加
-    <div class="card-tf">TF番号｜TF名</div>
-    <div class="card-title">一行で課題の核心を表すタイトル</div>
-    <div class="card-body">詳細な分析文</div>
-  </div>
-  ...
-</div>
-（同様に label-exec / label-ext も）
-
-3-3. ② 次の一手セクション
-まず「今週必達アクション」ボックスを置く（最優先2〜3件）：
-<div class="mustdo-box">
-  <div class="mustdo-title">今週必達アクション</div>
-  <div class="mustdo-item">具体的なアクション（誰が・何を・いつまでに）</div>
-  <div class="mustdo-item">...</div>
-</div>
-
-次に4カテゴリの提案カード（time-tagとchange-rowを必ず含める）：
-<div class="next-block">
-  <div class="next-label label-n-hypo"><span class="bar"></span>仮説変更</div>
-  <div class="two-col">
-    <div class="next-card priority">  ← 優先度が高いカードはpriority
-      <span class="time-tag urgent">今週中</span>  ← urgent/soon/later
-      <div class="card-tf">TF番号｜テーマ</div>
-      <div class="card-title">変更のタイトル</div>
-      <div class="change-row">
-        <span class="change-from">変更前の仮説・手段</span>
-        <span class="change-arrow-icon">→</span>
-        <span class="change-to">変更後の仮説・手段</span>
-      </div>
-      <div class="card-body">詳細説明</div>
-    </div>
-  </div>
-</div>
-（同様に label-n-exec / label-n-str / label-n-obj も）
+3-3. ② 次の一手セクション（mustdo-box → next-block×4）
 
 4. フッター
 <div class="doc-footer">
   <span>KR Check-in Report｜YYYY.MM.DD</span>
-  <span>Generated by Claude + アプリ名</span>
+  <span>Generated by Claude</span>
 </div>
 
 5. タブ切り替えスクリプト（複数KRの場合のみ）

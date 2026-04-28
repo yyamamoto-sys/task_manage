@@ -7,7 +7,7 @@
 
 import { supabase } from "../supabase/client";
 import type { KrReportContext, KrReportMode } from "./krReportPrompt";
-import { KR_REPORT_SYSTEM_PROMPTS } from "./krReportPrompt";
+import { KR_REPORT_SYSTEM_PROMPTS, REPORT_HTML_WRAPPER } from "./krReportPrompt";
 
 export interface KrReportResult {
   html: string;
@@ -39,8 +39,12 @@ export async function callKrReportAI(
     throw new Error("AIからの応答が空でした。");
   }
 
+  const modeLabel = context.mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";
+  const title = `KRレポート｜${context.kr_title}｜${context.today}｜${modeLabel}`;
+  const html = REPORT_HTML_WRAPPER(text, title);
+
   return {
-    html: text,
+    html,
     usage: data?.usage ?? { input_tokens: 0, output_tokens: 0 },
   };
 }
