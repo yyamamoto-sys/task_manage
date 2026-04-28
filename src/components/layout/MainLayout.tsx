@@ -14,6 +14,7 @@ import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
 import { KrReportPanel } from "../lab/KrReportPanel";
+import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
@@ -57,6 +58,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   });
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
+  const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
@@ -286,6 +288,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onToggleTheme={toggleTheme}
         onOpenGraph={() => setIsGraphOpen(true)}
         onOpenKrReport={() => setIsKrReportOpen(true)}
+        onOpenKrSession={() => setIsKrSessionOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
       />
@@ -300,6 +303,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {isKrReportOpen && (
         <KrReportPanel
           onClose={() => setIsKrReportOpen(false)}
+          currentUser={currentUser}
+        />
+      )}
+      {isKrSessionOpen && (
+        <KrSessionPanel
+          onClose={() => setIsKrSessionOpen(false)}
           currentUser={currentUser}
         />
       )}
@@ -357,6 +366,7 @@ interface SidebarProps {
   onToggleTheme: () => void;
   onOpenGraph: () => void;
   onOpenKrReport: () => void;
+  onOpenKrSession: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -366,7 +376,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenKrReport,
+  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession,
   collapsed, onToggleCollapsed,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -511,6 +521,14 @@ function Sidebar({
               label="関係グラフ"
               tooltip="関係グラフ"
               onClick={onOpenGraph}
+              collapsed={c}
+            />
+            <NavItem
+              active={false}
+              icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
+              label="KRセッション記録"
+              tooltip="文字起こしを貼り付けてチェックイン・ウィンセッションを記録"
+              onClick={onOpenKrSession}
               collapsed={c}
             />
             <NavItem
