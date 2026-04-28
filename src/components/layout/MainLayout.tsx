@@ -57,6 +57,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
+  const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
 
   const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs } = useAppData();
   const projects = useMemo(
@@ -300,6 +301,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           onClose={() => setGraphEditTaskId(null)}
         />
       )}
+      {aiEditTaskId && (
+        <TaskEditModal
+          taskId={aiEditTaskId}
+          currentUser={currentUser}
+          onClose={() => setAiEditTaskId(null)}
+        />
+      )}
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div style={{
@@ -314,6 +322,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           currentUser={currentUser}
           inline
           onWidthChange={setConsultPanelWidth}
+          onOpenTask={setAiEditTaskId}
         />
       </div>
     </div>
@@ -497,16 +506,33 @@ function Sidebar({
       </div>
 
       {/* AI相談・ユーザー情報 */}
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 0" : "8px 6px" }}>
-        <NavItem
-          active={isConsultOpen}
-          icon={<AIIcon />}
-          label={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
-          tooltip="AIに変更を相談"
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
+        <button
           onClick={onOpenConsult}
-          color="var(--color-text-purple)"
-          collapsed={c}
-        />
+          title={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
+          style={{
+            width: "100%",
+            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
+            gap: "8px",
+            padding: c ? "9px 0" : "9px 12px",
+            background: isConsultOpen
+              ? "linear-gradient(135deg, #7c3aed, #5b21b6)"
+              : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            color: "#fff",
+            fontSize: "11px", fontWeight: "600",
+            boxShadow: "0 2px 8px rgba(124,58,237,0.35)",
+            marginBottom: "2px",
+            transition: "opacity 0.15s",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.88"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
+        >
+          <AIIcon />
+          {!c && <span>{isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}</span>}
+        </button>
         <div style={{
           display: "flex", alignItems: "center",
           justifyContent: c ? "center" : "flex-start",

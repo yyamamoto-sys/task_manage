@@ -51,13 +51,14 @@ function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: nu
     case "deadline_risk":   return `期限リスク追記 ${suffix}`;
     case "scope_reduce":    return `スコープ縮小 ${suffix}`;
     case "pause":           return `一時停止 ${suffix}`;
+    case "add_task":        return `タスク追加 ${suffix}`;
     default:                return `変更 ${suffix}`;
   }
 }
 
 export interface ConfirmationDialog {
   proposal_id: string;
-  action_type: "date_change" | "assignee" | "scope_reduce" | "pause";
+  action_type: "date_change" | "assignee" | "scope_reduce" | "pause" | "add_task";
   items: ConfirmationItem[];
   /** date_change 用：プロジェクト終了日の変更 */
   pj_end_date_items?: PjEndDateItem[];
@@ -67,6 +68,18 @@ export interface ConfirmationDialog {
   target_pj_uuids?: string[];
   /** scope_reduce / pause 用：削除対象のタスク UUID一覧 */
   target_task_uuids?: string[];
+  /** add_task 用：新規タスク情報 */
+  new_task_items?: NewTaskItem[];
+}
+
+export interface NewTaskItem {
+  temp_id: string;
+  task_name: string;
+  project_id?: string;
+  project_name?: string;
+  suggested_assignee_id?: string;
+  suggested_assignee_name?: string;
+  suggested_due_date?: string;
 }
 
 export interface ConfirmationItem {
@@ -400,6 +413,53 @@ export async function applyProposal(
     };
   }
 
+  // ===== add_task: 確認ダイアログを返す =====
+  if (action_type === "add_task") {
+    let projectId: string | undefined;
+    let projectName: string | undefined;
+    if (proposal.target_pj_ids.length > 0) {
+      const pjUuid = resolveUUID(proposal.target_pj_ids[0], shortIdMap);
+      if (pjUuid) {
+        const { data: pj } = await supabase
+          .from("projects")
+          .select("id, name")
+          .eq("id", pjUuid)
+          .single();
+        if (pj) { projectId = pjUuid; projectName = pj.name as string; }
+      }
+    }
+
+    let assigneeId: string | undefined;
+    let assigneeName: string | undefined;
+    if (proposal.suggested_assignee) {
+      const { data: member } = await supabase
+        .from("members")
+        .select("id, short_name")
+        .eq("short_name", proposal.suggested_assignee)
+        .single();
+      if (member) { assigneeId = member.id as string; assigneeName = member.short_name as string; }
+    }
+
+    const tempId = generateId();
+    return {
+      type: "needs_confirmation",
+      dialog: {
+        proposal_id: proposal.proposal_id,
+        action_type: "add_task",
+        items: [],
+        new_task_items: [{
+          temp_id: tempId,
+          task_name: proposal.title,
+          project_id: projectId,
+          project_name: projectName,
+          suggested_assignee_id: assigneeId,
+          suggested_assignee_name: assigneeName ?? proposal.suggested_assignee,
+          suggested_due_date: proposal.suggested_date,
+        }],
+      },
+    };
+  }
+
   return { type: "error", message: "未対応のアクションタイプです" };
 }
 
@@ -574,6 +634,41 @@ export async function applyProposalWithConfirmation(
         ),
         appliedAt: now,
         operations,
+      };
+      return { type: "success", snapshot };
+    }
+
+    // ===== add_task: タスク新規作成 =====
+    if (dialog.action_type === "add_task") {
+      let addedCount = 0;
+      for (const item of dialog.new_task_items ?? []) {
+        const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
+        if (!name) continue;
+        const assigneeId = confirmedValues[`${item.temp_id}_assignee_id`] || null;
+        const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
+
+        const newId = generateId();
+        const { error } = await supabase.from("tasks").insert({
+          id: newId,
+          name,
+          project_id: item.project_id ?? null,
+          todo_ids: [],
+          assignee_member_id: assigneeId,
+          status: "todo",
+          is_deleted: false,
+          due_date: dueDate,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUserId,
+        });
+        if (error) throw new Error(`タスク作成エラー: ${error.message}`);
+        addedCount++;
+      }
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: `タスク追加 (${addedCount}件)`,
+        appliedAt: now,
+        operations: [],
       };
       return { type: "success", snapshot };
     }

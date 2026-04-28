@@ -26,6 +26,7 @@ interface Props {
   projects?: Project[];
   inline?: boolean;
   onWidthChange?: (width: number) => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 const TYPE_CONFIG: {
@@ -86,6 +87,7 @@ export function ConsultationPanel({
   projects = [],
   inline = false,
   onWidthChange,
+  onOpenTask,
 }: Props) {
   const [manualType, setManualType] = useState<ConsultationType | null>(null);
   const [inputText, setInputText] = useState("");
@@ -549,6 +551,7 @@ export function ConsultationPanel({
                     else next.add(proposal.proposal_id);
                     return next;
                   })}
+                  onOpenTask={onOpenTask}
                 />
               ))}
             </div>
@@ -565,7 +568,7 @@ export function ConsultationPanel({
               <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
                 会話履歴
               </div>
-              <ChatHistory session={session} shortIdMap={shortIdMap} currentUserId={currentUser.id} />
+              <ChatHistory session={session} shortIdMap={shortIdMap} currentUserId={currentUser.id} onOpenTask={onOpenTask} />
             </div>
           )}
 

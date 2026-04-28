@@ -21,7 +21,7 @@ const RESPONSE_FORMAT = `
       "proposal_id": "prop_001",
       "title": "提案のタイトル",
       "description": "提案の詳細説明",
-      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone",
+      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone" | "add_task",
       "target_task_ids": ["task_001", "task_002"],
       "target_pj_ids": ["pj_001"],
       "suggested_date": "YYYY-MM-DD",
@@ -51,6 +51,11 @@ const RESPONSE_FORMAT = `
 - pause: プロジェクト一時停止提案（論理削除が発生する）
 - milestone: マイルストーン関連（現在未対応）
 - info: 情報一覧表示（DBへの変更なし。タスク一覧・工数サマリー・進捗率など）
+- add_task: 新規タスクの追加提案（needs_confirmation=trueにすること）
+  titleにタスク名、descriptionに追加する理由を記載する。
+  target_pj_idsに追加先プロジェクトのshortIdを含める（プロジェクト不明なら空配列）。
+  suggested_assigneeに担当者のshort_nameを記入（任意）、suggested_dateに期日を記入（任意）。
+  date_certaintyは"exact"（期日確定）または"unknown"（期日未定）を使う。
 
 ## info アクションの使い方
 ユーザーが「一覧を見たい」「教えて」「確認したい」などの情報収集系の相談をした場合は info を使うこと。

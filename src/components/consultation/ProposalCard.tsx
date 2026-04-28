@@ -31,6 +31,8 @@ interface Props {
   isSelected?: boolean;
   /** 選択トグルコールバック */
   onToggleSelect?: () => void;
+  /** タスク参照クリック時にそのタスクの編集モーダルを開く */
+  onOpenTask?: (taskId: string) => void;
 }
 
 export function ProposalCard({
@@ -42,6 +44,7 @@ export function ProposalCard({
   onDecline,
   isSelected = false,
   onToggleSelect,
+  onOpenTask,
 }: Props) {
   const [applying, setApplying] = useState(false);
   const [resultMessage, setResultMessage] = useState<{
@@ -91,7 +94,7 @@ export function ProposalCard({
           whiteSpace: "pre-wrap",
           fontFamily: "monospace",
         }}>
-          {proposal.description}
+          {renderDescriptionWithLinks(proposal.description, shortIdMap, onOpenTask)}
         </div>
       </div>
     );
@@ -210,7 +213,7 @@ export function ProposalCard({
             whiteSpace: "pre-wrap",
           }}
         >
-          {proposal.description}
+          {renderDescriptionWithLinks(proposal.description, shortIdMap, onOpenTask)}
         </div>
 
         {/* 提案値（suggested_date / suggested_assignee） */}
@@ -370,4 +373,51 @@ export function ProposalCard({
       )}
     </>
   );
+}
+
+/**
+ * description テキスト内の (task_001) 形式のタスク参照を
+ * クリッカブルなボタンとして描画する。shortIdMap で UUID に解決できた場合のみリンク化。
+ */
+function renderDescriptionWithLinks(
+  text: string,
+  shortIdMap: Map<string, string>,
+  onOpenTask: ((taskId: string) => void) | undefined,
+): React.ReactNode {
+  if (!onOpenTask) return text;
+
+  // (task_001), (task001), (task9) などにマッチ
+  const parts = text.split(/(\(task_?\d+\))/gi);
+  return parts.map((part, i) => {
+    const m = part.match(/^\((task_?\d+)\)$/i);
+    if (m) {
+      const shortId = m[1];
+      const uuid = shortIdMap.get(shortId);
+      if (uuid) {
+        return (
+          <button
+            key={i}
+            onClick={() => onOpenTask(uuid)}
+            title="クリックしてタスクを開く"
+            style={{
+              background: "var(--color-brand-light, rgba(124,58,237,0.08))",
+              border: "1px solid var(--color-brand-border, rgba(124,58,237,0.25))",
+              borderRadius: "4px",
+              padding: "0 4px",
+              color: "var(--color-text-purple)",
+              fontSize: "inherit",
+              fontFamily: "monospace",
+              cursor: "pointer",
+              lineHeight: "inherit",
+              textDecoration: "none",
+              verticalAlign: "baseline",
+            }}
+          >
+            {part}
+          </button>
+        );
+      }
+    }
+    return <span key={i}>{part}</span>;
+  });
 }

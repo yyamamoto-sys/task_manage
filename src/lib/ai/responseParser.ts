@@ -21,7 +21,8 @@ export interface Proposal {
     | "scope_reduce"
     | "pause"
     | "milestone"
-    | "info";
+    | "info"
+    | "add_task";
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
@@ -50,6 +51,7 @@ const VALID_ACTION_TYPES = [
   "pause",
   "milestone",
   "info",
+  "add_task",
 ] as const;
 
 const VALID_DATE_CERTAINTY = ["exact", "approximate", "unknown"] as const;

@@ -15,6 +15,7 @@ interface Props {
   shortIdMap: Map<string, string>;
   currentUserId: string;
   onProposalApplied?: () => void;
+  onOpenTask?: (taskId: string) => void;
 }
 
 export function ChatHistory({
@@ -22,6 +23,7 @@ export function ChatHistory({
   shortIdMap,
   currentUserId,
   onProposalApplied,
+  onOpenTask,
 }: Props) {
   if (session.turns.length === 0) return null;
 
@@ -112,6 +114,7 @@ export function ChatHistory({
                 shortIdMap={shortIdMap}
                 currentUserId={currentUserId}
                 onApplied={onProposalApplied}
+                onOpenTask={onOpenTask}
               />
             ))}
           </div>

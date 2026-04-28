@@ -71,6 +71,10 @@ const ACTION_TYPE_CONFIG: Record<
     label: "情報",
     color: "var(--color-text-secondary)",
   },
+  add_task: {
+    label: "タスク追加",
+    color: "var(--color-brand)",
+  },
 };
 
 /**
@@ -99,7 +103,7 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       date_certainty: p.date_certainty,
       is_simulation: p.is_simulation,
       needs_confirmation: p.needs_confirmation,
-      canApply: p.date_certainty !== "unknown" && !p.is_simulation,
+      canApply: !p.is_simulation && (p.date_certainty !== "unknown" || p.action_type === "add_task"),
     };
   });
 }
