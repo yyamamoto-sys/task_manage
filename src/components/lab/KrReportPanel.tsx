@@ -43,7 +43,7 @@ export function KrReportPanel({ onClose }: Props) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
-  const reportRef = useRef<HTMLDivElement>(null);
+  const reportRef = useRef<HTMLIFrameElement>(null);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -94,7 +94,7 @@ export function KrReportPanel({ onClose }: Props) {
 
   const handleCopyRendered = () => {
     if (!reportRef.current) return;
-    const text = reportRef.current.innerText;
+    const text = reportRef.current.contentDocument?.body?.innerText ?? "";
     navigator.clipboard.writeText(text).then(() => {
       alert("テキストをクリップボードにコピーしました。");
     });
@@ -329,19 +329,24 @@ export function KrReportPanel({ onClose }: Props) {
                   HTMLをコピー
                 </button>
               </div>
-              <div
+              <iframe
                 ref={reportRef}
+                srcDoc={reportHtml}
                 style={{
+                  width: "100%",
+                  minHeight: "600px",
                   border: "1px solid var(--color-border-primary)",
                   borderRadius: "var(--radius-lg)",
-                  padding: "24px",
                   background: "#fff",
-                  color: "#1a1a1a",
-                  fontSize: "13px",
-                  lineHeight: 1.7,
                 }}
-                // eslint-disable-next-line react/no-danger
-                dangerouslySetInnerHTML={{ __html: reportHtml }}
+                onLoad={e => {
+                  const iframe = e.currentTarget;
+                  const body = iframe.contentDocument?.body;
+                  if (body) {
+                    iframe.style.height = `${body.scrollHeight + 32}px`;
+                  }
+                }}
+                title="KRレポートプレビュー"
               />
             </div>
           )}
