@@ -35,6 +35,13 @@ interface Props {
 const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
 const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
 const GANTT_ZOOM_KEY = "gantt_zoom";
+const STAGNANT_THRESHOLD_DAYS = 5;
+
+function isTaskStagnant(task: Task): boolean {
+  if (task.status !== "in_progress" || !task.updated_at) return false;
+  const diffMs = Date.now() - new Date(task.updated_at).getTime();
+  return diffMs / (1000 * 60 * 60 * 24) >= STAGNANT_THRESHOLD_DAYS;
+}
 
 function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { barX: number; barWidth: number } | null {
   const due = toDate(task.due_date);
@@ -877,6 +884,7 @@ export function GanttView({
                           const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
+                          const isStagnant = isTaskStagnant(task);
                           const pj = projects.find(p => p.id === task.project_id);
                           const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
                           const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
@@ -897,7 +905,7 @@ export function GanttView({
                               {bar && due && (
                                 <>
                                   <div
-                                    title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}`}
+                                    title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
                                     onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                     style={{
                                       position: "absolute",
@@ -912,6 +920,8 @@ export function GanttView({
                                       display: "flex", alignItems: "center", justifyContent: "center",
                                       filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
                                       transition: "filter 0.1s",
+                                      outline: isStagnant && !isDone ? "1.5px solid #f97316" : "none",
+                                      outlineOffset: "1px",
                                     }}
                                   >
                                     {bar.barWidth > 52 && (
@@ -922,6 +932,12 @@ export function GanttView({
                                       }}>{dateLabel}</span>
                                     )}
                                   </div>
+                                  {isStagnant && !isDone && !isPreview && (
+                                    <div style={{
+                                      position: "absolute", left: bar.barX + 2, top: "50%", transform: "translateY(-50%)",
+                                      fontSize: "9px", zIndex: 5, pointerEvents: "none", lineHeight: 1,
+                                    }}>⚠</div>
+                                  )}
                                   {!isPreview && !isDone && (
                                     <div
                                       onMouseDown={e => handleResizeDragStart(e, task)}
@@ -1024,6 +1040,7 @@ export function GanttView({
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
+                      const isStagnant = isTaskStagnant(task);
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
                       const isHovered = hoveredTaskId === task.id;
                       const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
@@ -1044,7 +1061,7 @@ export function GanttView({
                           {bar && due && (
                             <>
                               <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}`}
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
                                 onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
                                   position: "absolute",
@@ -1055,7 +1072,7 @@ export function GanttView({
                                   opacity: isDone ? 0.5 : 1,
                                   cursor: isPreview ? "default" : "pointer",
                                   zIndex: 2,
-                                  outline: isChanged ? "2px solid var(--color-brand)" : "none",
+                                  outline: isChanged ? "2px solid var(--color-brand)" : isStagnant && !isDone ? "1.5px solid #f97316" : "none",
                                   outlineOffset: "1px",
                                   overflow: "hidden",
                                   display: "flex", alignItems: "center", justifyContent: "center",
@@ -1071,6 +1088,12 @@ export function GanttView({
                                   }}>{dateLabel}</span>
                                 )}
                               </div>
+                              {isStagnant && !isDone && !isPreview && (
+                                <div style={{
+                                  position: "absolute", left: bar.barX + 2, top: "50%", transform: "translateY(-50%)",
+                                  fontSize: "9px", zIndex: 5, pointerEvents: "none", lineHeight: 1,
+                                }}>⚠</div>
+                              )}
                               {!isPreview && !isDone && (
                                 <div
                                   onMouseDown={e => handleResizeDragStart(e, task)}
@@ -1119,6 +1142,7 @@ export function GanttView({
                       const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
+                      const isStagnant = isTaskStagnant(task);
                       const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
                       const isHovered = hoveredTaskId === task.id;
                       const dateLabel = due ? (hasRange
@@ -1137,7 +1161,7 @@ export function GanttView({
                           {bar && due && (
                             <>
                               <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}`}
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
                                 onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
                                   position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
@@ -1151,6 +1175,8 @@ export function GanttView({
                                   display: "flex", alignItems: "center", justifyContent: "center",
                                   filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
                                   transition: "filter 0.1s",
+                                  outline: isStagnant && !isDone ? "1.5px solid #f97316" : "none",
+                                  outlineOffset: "1px",
                                 }}
                               >
                                 {bar.barWidth > 52 && (
@@ -1161,6 +1187,12 @@ export function GanttView({
                                   }}>{dateLabel}</span>
                                 )}
                               </div>
+                              {isStagnant && !isDone && !isPreview && (
+                                <div style={{
+                                  position: "absolute", left: bar.barX + 2, top: "50%", transform: "translateY(-50%)",
+                                  fontSize: "9px", zIndex: 5, pointerEvents: "none", lineHeight: 1,
+                                }}>⚠</div>
+                              )}
                               {!isPreview && !isDone && (
                                 <div
                                   onMouseDown={e => handleResizeDragStart(e, task)}

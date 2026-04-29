@@ -43,6 +43,12 @@ export function DashboardView({ currentUser, projects }: Props) {
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
 
+  const STAGNANT_DAYS_KEY = "stagnant_days_threshold";
+  const [stagnantDays] = useState<number>(() => {
+    const saved = localStorage.getItem(STAGNANT_DAYS_KEY);
+    return saved ? Math.max(1, parseInt(saved, 10) || 5) : 5;
+  });
+
   // リマインダー設定（localStorage で永続化）
   const [reminderDays, setReminderDaysState] = useState<number>(() => {
     const saved = localStorage.getItem(KEYS.REMINDER_DAYS);
@@ -127,6 +133,16 @@ export function DashboardView({ currentUser, projects }: Props) {
       t.status !== "done"
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [filteredTasks, todayS]
+  );
+
+  // 滞留タスク（進行中のまま N 日以上 updated_at が動いていない）
+  const stagnantTasks = useMemo(
+    () => allTasks.filter(t => {
+      if (t.status !== "in_progress" || t.is_deleted || !t.updated_at) return false;
+      const diffMs = Date.now() - new Date(t.updated_at).getTime();
+      return diffMs / (1000 * 60 * 60 * 24) >= stagnantDays;
+    }).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? "")),
+    [allTasks, stagnantDays]
   );
 
   // PJ進捗
@@ -481,14 +497,14 @@ export function DashboardView({ currentUser, projects }: Props) {
             })}
           </Card>
 
-          {/* ② 期限アラート */}
+          {/* ② 期限アラート + 滞留タスク */}
           <Card
             title="期限アラート"
-            badge={alertTasks.length > 0 ? `${alertTasks.length}件` : undefined}
+            badge={(alertTasks.length + stagnantTasks.length) > 0 ? `${alertTasks.length + stagnantTasks.length}件` : undefined}
             badgeColor="danger"
           >
-            {alertTasks.length === 0 && (
-              <EmptyState>期限超過・本日期限のタスクはありません ✓</EmptyState>
+            {alertTasks.length === 0 && stagnantTasks.length === 0 && (
+              <EmptyState>期限超過・滞留タスクはありません ✓</EmptyState>
             )}
             {alertTasks.map(task => {
               const m = members.find(mb => mb.id === task.assignee_member_id);
@@ -514,6 +530,41 @@ export function DashboardView({ currentUser, projects }: Props) {
                 />
               );
             })}
+            {stagnantTasks.length > 0 && (
+              <>
+                {alertTasks.length > 0 && (
+                  <div style={{ height: "1px", background: "var(--color-border-primary)", margin: "8px 0" }} />
+                )}
+                <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.04em" }}>
+                  滞留タスク（{stagnantDays}日以上進捗なし）
+                </div>
+                {stagnantTasks.map(task => {
+                  const m = members.find(mb => mb.id === task.assignee_member_id);
+                  const pj = projects.find(p => p.id === task.project_id);
+                  const diffMs = Date.now() - new Date(task.updated_at ?? Date.now()).getTime();
+                  const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+                  return (
+                    <TaskRow
+                      key={task.id}
+                      task={task}
+                      member={m}
+                      project={pj}
+                      badge={
+                        <span style={{
+                          fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                          background: "#fff7ed",
+                          color: "#c2410c",
+                          border: "1px solid #fed7aa",
+                          fontWeight: "500",
+                        }}>
+                          ⚠ {days}日滞留
+                        </span>
+                      }
+                    />
+                  );
+                })}
+              </>
+            )}
           </Card>
 
           {/* ③ 今週のタスク */}

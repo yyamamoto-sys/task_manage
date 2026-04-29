@@ -21,6 +21,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
+import { TodoDecomposeModal } from "./TodoDecomposeModal";
 
 type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "ai_usage";
 
@@ -935,6 +936,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
   const [addingTaskForTodoId, setAddingTaskForTodoId] = useState<string | null>(null);
   const [taskForm, setTaskForm] = useState({ name: "", assignee_member_id: "", due_date: "" });
   const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
+  const [decomposeTodoId, setDecomposeTodoId] = useState<string | null>(null);
 
   const openAdd = () => {
     setEditId("new");
@@ -1066,6 +1068,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
                       </button>
                     );
                   })()}
+                  <IconBtn onClick={() => setDecomposeTodoId(todo.id)} title="AIでタスクを自動分解">🤖</IconBtn>
                   <IconBtn onClick={() => openEdit(todo)}>✏</IconBtn>
                   <IconBtn danger onClick={() => deleteTodo(todo.id)}>✕</IconBtn>
                 </div>
@@ -1137,6 +1140,21 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
       ) : (
         <button onClick={openAdd} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ ToDoを追加</button>
       )}
+
+      {/* AIタスク自動分解モーダル */}
+      {decomposeTodoId && (() => {
+        const todo = todos.find(t => t.id === decomposeTodoId);
+        if (!todo) return null;
+        return (
+          <TodoDecomposeModal
+            todo={todo}
+            tfId={tfId}
+            currentUser={currentUser}
+            saveTask={saveTask}
+            onClose={() => setDecomposeTodoId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

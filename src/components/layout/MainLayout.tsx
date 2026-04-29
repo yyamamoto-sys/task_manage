@@ -15,6 +15,7 @@ import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import { GraphView } from "../graph/GraphView";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
+import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
@@ -59,6 +60,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
+  const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
@@ -289,6 +291,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenGraph={() => setIsGraphOpen(true)}
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
+        onOpenKrWhy={() => setIsKrWhyOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
       />
@@ -309,6 +312,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {isKrSessionOpen && (
         <KrSessionPanel
           onClose={() => setIsKrSessionOpen(false)}
+          currentUser={currentUser}
+        />
+      )}
+      {isKrWhyOpen && (
+        <KrWhyPanel
+          onClose={() => setIsKrWhyOpen(false)}
           currentUser={currentUser}
         />
       )}
@@ -367,6 +376,7 @@ interface SidebarProps {
   onOpenGraph: () => void;
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
+  onOpenKrWhy: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -376,7 +386,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession,
+  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
   collapsed, onToggleCollapsed,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -537,6 +547,14 @@ function Sidebar({
               label="KRレポート生成"
               tooltip="チェックイン・ウィンセッションの議事メモからKRレポートをAI生成"
               onClick={onOpenKrReport}
+              collapsed={c}
+            />
+            <NavItem
+              active={false}
+              icon={<span style={{ fontSize: "13px" }}>🔍</span>}
+              label="KRなぜなぜ分析"
+              tooltip="AIとの対話で課題の根本原因を5Whys形式で掘り下げる"
+              onClick={onOpenKrWhy}
               collapsed={c}
             />
           </>
