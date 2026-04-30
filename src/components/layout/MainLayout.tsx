@@ -16,11 +16,14 @@ import { GraphView } from "../graph/GraphView";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
+import { OkrDashboardView } from "../okr/OkrDashboardView";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { AiProjectCreateModal } from "../project/AiProjectCreateModal";
+
+type AppMode = "plan" | "okr";
 
 interface Props {
   currentUser: Member;
@@ -70,6 +73,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
+  const [appMode, setAppModeState] = useState<AppMode>(() =>
+    (localStorage.getItem("plan_app_mode") as AppMode | null) ?? "plan"
+  );
+  const setAppMode = (m: AppMode) => {
+    localStorage.setItem("plan_app_mode", m);
+    setAppModeState(m);
+  };
 
   const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs } = useAppData();
   const projects = useMemo(
@@ -146,45 +156,58 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       paddingBottom: isMobile ? "56px" : 0,
     }}>
-      {/* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */}
-      <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-        {viewMode === "dashboard" && (
-          <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => setIsAiProjectOpen(true)} />
-        )}
-        {viewMode === "kanban" && (
-          <KanbanView
+      {appMode === "okr" ? (
+        <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          <OkrDashboardView
             currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
             selectedKrId={selectedKrId}
-            krTaskIds={krTaskIds}
+            onSelectKr={handleSelectKr}
+            onOpenKrSession={() => setIsKrSessionOpen(true)}
+            onOpenKrReport={() => setIsKrReportOpen(true)}
+            onOpenKrWhy={() => setIsKrWhyOpen(true)}
           />
-        )}
-        {viewMode === "gantt" && (
-          <GanttView
-            currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
-            selectedKrId={selectedKrId}
-            krTaskIds={krTaskIds}
-          />
-        )}
-        {viewMode === "admin" && (
-          <AdminView currentUser={currentUser} />
-        )}
-        {viewMode === "list" && (
-          <ListView
-            currentUser={currentUser}
-            selectedProject={selectedProject}
-            projects={projects}
-            selectedKrId={selectedKrId}
-            krTaskIds={krTaskIds}
-          />
-        )}
-        {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-          <ComingSoon view={viewMode} />
-        )}
-      </div>
+        </div>
+      ) : (
+        /* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */
+        <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+          {viewMode === "dashboard" && (
+            <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => setIsAiProjectOpen(true)} />
+          )}
+          {viewMode === "kanban" && (
+            <KanbanView
+              currentUser={currentUser}
+              selectedProject={selectedProject}
+              projects={projects}
+              selectedKrId={selectedKrId}
+              krTaskIds={krTaskIds}
+            />
+          )}
+          {viewMode === "gantt" && (
+            <GanttView
+              currentUser={currentUser}
+              selectedProject={selectedProject}
+              projects={projects}
+              selectedKrId={selectedKrId}
+              krTaskIds={krTaskIds}
+            />
+          )}
+          {viewMode === "admin" && (
+            <AdminView currentUser={currentUser} />
+          )}
+          {viewMode === "list" && (
+            <ListView
+              currentUser={currentUser}
+              selectedProject={selectedProject}
+              projects={projects}
+              selectedKrId={selectedKrId}
+              krTaskIds={krTaskIds}
+            />
+          )}
+          {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+            <ComingSoon view={viewMode} />
+          )}
+        </div>
+      )}
     </div>
   );
 
@@ -267,25 +290,26 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           borderBottom: "1px solid var(--color-border-primary)",
           flexShrink: 0,
         }}>
-          <div style={{ flex: 1, fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>
-            グループ計画
-          </div>
-          {/* プロジェクト選択 */}
-          <select
-            value={selectedProjectId ?? ""}
-            onChange={e => handleSelectProject(e.target.value || null)}
-            style={{
-              fontSize: "11px", padding: "4px 6px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-secondary)",
-              color: "var(--color-text-secondary)",
-              maxWidth: "90px",
-            }}
-          >
-            <option value="">全PJ</option>
-            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
+          {/* モードトグル */}
+          <AppModeToggle mode={appMode} onToggle={() => setAppMode(appMode === "plan" ? "okr" : "plan")} compact />
+          {/* プロジェクト選択（計画モードのみ） */}
+          {appMode === "plan" && (
+            <select
+              value={selectedProjectId ?? ""}
+              onChange={e => handleSelectProject(e.target.value || null)}
+              style={{
+                fontSize: "11px", padding: "4px 6px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-secondary)",
+                color: "var(--color-text-secondary)",
+                maxWidth: "80px",
+              }}
+            >
+              <option value="">全PJ</option>
+              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          )}
           {/* AI相談ボタン */}
           <button
             onClick={() => setIsConsultOpen(prev => !prev)}
@@ -364,64 +388,62 @@ export function MainLayout({ currentUser, onLogout }: Props) {
 
         {mainContent}
 
-        {/* モバイル：FABサブメニュー */}
-        {isFabMenuOpen && (
-          <div
-            style={{ position: "fixed", inset: 0, zIndex: 58 }}
-            onClick={() => setIsFabMenuOpen(false)}
-          />
-        )}
-        {isFabMenuOpen && (
-          <div style={{
-            position: "fixed", bottom: "122px", right: "16px", zIndex: 59,
-            display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end",
-          }}>
-            <button
-              className="fab-item-in"
-              onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
-              style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                padding: "10px 16px",
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                border: "none", borderRadius: "var(--radius-full)",
-                color: "#fff", fontSize: "13px", fontWeight: "600",
-                boxShadow: "var(--shadow-lg)", cursor: "pointer",
-                whiteSpace: "nowrap",
-                animationDelay: "0.06s",
-              }}
-            >✨ AIでPJを作る</button>
-            <button
-              className="fab-item-in"
-              onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
-              style={{
-                display: "flex", alignItems: "center", gap: "6px",
-                padding: "10px 16px",
-                background: "var(--color-brand)",
-                border: "none", borderRadius: "var(--radius-full)",
-                color: "#fff", fontSize: "13px", fontWeight: "600",
-                boxShadow: "var(--shadow-lg)", cursor: "pointer",
-                whiteSpace: "nowrap",
-                animationDelay: "0s",
-              }}
-            >＋ タスクを追加</button>
-          </div>
-        )}
-        {/* モバイル：FABボタン本体 */}
-        <button
-          onClick={() => setIsFabMenuOpen(prev => !prev)}
-          style={{
-            position: "fixed", bottom: "68px", right: "16px", zIndex: 60,
-            width: "48px", height: "48px", borderRadius: "50%",
-            background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
-            color: "#fff",
-            border: "none", fontSize: "22px", lineHeight: 1,
-            boxShadow: "var(--shadow-lg)", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transition: "background 0.2s, transform 0.2s",
-            transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
-          }}
-          title="メニューを開く"
-        >＋</button>
+        {/* モバイル：FAB（計画モードのみ） */}
+        {appMode === "plan" && (<>
+          {isFabMenuOpen && (
+            <div
+              style={{ position: "fixed", inset: 0, zIndex: 58 }}
+              onClick={() => setIsFabMenuOpen(false)}
+            />
+          )}
+          {isFabMenuOpen && (
+            <div style={{
+              position: "fixed", bottom: "122px", right: "16px", zIndex: 59,
+              display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end",
+            }}>
+              <button
+                className="fab-item-in"
+                onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "10px 16px",
+                  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  border: "none", borderRadius: "var(--radius-full)",
+                  color: "#fff", fontSize: "13px", fontWeight: "600",
+                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
+                  whiteSpace: "nowrap", animationDelay: "0.06s",
+                }}
+              >✨ AIでPJを作る</button>
+              <button
+                className="fab-item-in"
+                onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  padding: "10px 16px",
+                  background: "var(--color-brand)",
+                  border: "none", borderRadius: "var(--radius-full)",
+                  color: "#fff", fontSize: "13px", fontWeight: "600",
+                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
+                  whiteSpace: "nowrap", animationDelay: "0s",
+                }}
+              >＋ タスクを追加</button>
+            </div>
+          )}
+          <button
+            onClick={() => setIsFabMenuOpen(prev => !prev)}
+            style={{
+              position: "fixed", bottom: "68px", right: "16px", zIndex: 60,
+              width: "48px", height: "48px", borderRadius: "50%",
+              background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
+              color: "#fff", border: "none", fontSize: "22px", lineHeight: 1,
+              boxShadow: "var(--shadow-lg)", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "background 0.2s, transform 0.2s",
+              transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
+            }}
+            title="メニューを開く"
+          >＋</button>
+        </>)}
 
         {/* モバイル：ボトムナビ */}
         <div
@@ -435,7 +457,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             zIndex: 50,
           }}
         >
-          {NAV_ITEMS.map(({ view, shortLabel, icon }) => {
+          {appMode === "plan" ? NAV_ITEMS.map(({ view, shortLabel, icon }) => {
             const active = viewMode === view;
             return (
               <button
@@ -454,7 +476,26 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 <span>{shortLabel}</span>
               </button>
             );
-          })}
+          }) : ([
+            { label: "概要", icon: "🎯", onClick: () => {} },
+            { label: "セッション", icon: "🗓️", onClick: () => setIsKrSessionOpen(true) },
+            { label: "レポート", icon: "📊", onClick: () => setIsKrReportOpen(true) },
+            { label: "なぜなぜ", icon: "🔍", onClick: () => setIsKrWhyOpen(true) },
+          ] as const).map(item => (
+            <button
+              key={item.label}
+              onClick={item.onClick}
+              style={{
+                flex: 1, display: "flex", flexDirection: "column",
+                alignItems: "center", justifyContent: "center", gap: "3px",
+                background: "transparent", border: "none", cursor: "pointer",
+                color: "var(--color-text-tertiary)", fontSize: "9px",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>{item.icon}</span>
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
         <ErrorBar />
       </div>
@@ -469,14 +510,14 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}
-      {/* PC FABサブメニュー */}
-      {isFabMenuOpen && (
+      {/* PC FAB（計画モードのみ） */}
+      {appMode === "plan" && isFabMenuOpen && (
         <div
           style={{ position: "fixed", inset: 0, zIndex: 58 }}
           onClick={() => setIsFabMenuOpen(false)}
         />
       )}
-      {isFabMenuOpen && (
+      {appMode === "plan" && isFabMenuOpen && (
         <div style={{
           position: "fixed",
           bottom: "74px",
@@ -519,24 +560,26 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           </button>
         </div>
       )}
-      {/* PC FABボタン本体 */}
-      <button
-        onClick={() => setIsFabMenuOpen(prev => !prev)}
-        style={{
-          position: "fixed", bottom: "24px",
-          right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-          transition: "right 0.3s ease, background 0.2s, transform 0.2s",
-          zIndex: 60,
-          width: "48px", height: "48px", borderRadius: "50%",
-          background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
-          color: "#fff",
-          border: "none", fontSize: "22px",
-          boxShadow: "var(--shadow-lg)", cursor: "pointer",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
-        }}
-        title="メニューを開く"
-      >＋</button>
+      {/* PC FABボタン本体（計画モードのみ） */}
+      {appMode === "plan" && (
+        <button
+          onClick={() => setIsFabMenuOpen(prev => !prev)}
+          style={{
+            position: "fixed", bottom: "24px",
+            right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
+            transition: "right 0.3s ease, background 0.2s, transform 0.2s",
+            zIndex: 60,
+            width: "48px", height: "48px", borderRadius: "50%",
+            background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
+            color: "#fff",
+            border: "none", fontSize: "22px",
+            boxShadow: "var(--shadow-lg)", cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
+          }}
+          title="メニューを開く"
+        >＋</button>
+      )}
       <Sidebar
         viewMode={viewMode}
         setViewMode={setViewMode}
@@ -560,6 +603,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenAiProject={() => setIsAiProjectOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
+        appMode={appMode}
+        onToggleMode={() => setAppMode(appMode === "plan" ? "okr" : "plan")}
       />
       {mainContent}
       {isGraphOpen && (
@@ -647,6 +692,8 @@ interface SidebarProps {
   onOpenAiProject: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  appMode: AppMode;
+  onToggleMode: () => void;
 }
 
 function Sidebar({
@@ -656,6 +703,7 @@ function Sidebar({
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
   onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
+  appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const c = collapsed; // 省略形
@@ -704,119 +752,89 @@ function Sidebar({
         </button>
       </div>
 
-      {/* メニュー */}
-      <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
-        {!c && <SectionLabel>メニュー</SectionLabel>}
-        {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
-          <NavItem
-            key={view}
-            active={viewMode === view}
-            icon={icon}
-            label={label}
-            tooltip={tooltip ?? label}
-            onClick={() => setViewMode(view)}
-            collapsed={c}
-          />
-        ))}
+      {/* モードトグル */}
+      <div style={{ padding: c ? "6px 4px" : "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+        <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
       </div>
 
-      {/* プロジェクト一覧 */}
-      <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
-        {!c && (
-          <div style={{ display: "flex", alignItems: "center", padding: "6px 12px 3px", gap: "4px" }}>
-            <span style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", flex: 1 }}>プロジェクト</span>
-            <button
-              onClick={onOpenAiProject}
-              title="AIでプロジェクトを作る"
-              style={{
-                display: "flex", alignItems: "center", gap: "3px",
-                padding: "2px 7px", fontSize: "10px", fontWeight: "600",
-                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                border: "none", borderRadius: "var(--radius-sm)",
-                color: "#fff", cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >✨ AI作成</button>
-          </div>
-        )}
-        {c && (
-          <button
-            onClick={onOpenAiProject}
-            title="AIでプロジェクトを作る"
-            style={{
-              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-              padding: "5px 0", background: "transparent", border: "none",
-              cursor: "pointer", fontSize: "14px",
-            }}
-          >✨</button>
-        )}
-        <NavItem
-          active={selectedProjectId === null && selectedKrId === null}
-          icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
-          label="全PJ表示"
-          tooltip="全PJ表示"
-          onClick={() => onSelectProject(null)}
-          collapsed={c}
-        />
-        {projects.map(pj => (
-          <NavItem
-            key={pj.id}
-            active={selectedProjectId === pj.id}
-            icon={<span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />}
-            label={pj.name}
-            tooltip={pj.name}
-            onClick={() => onSelectProject(pj.id)}
-            collapsed={c}
-          />
-        ))}
+      {appMode === "plan" ? (<>
+        {/* 計画管理：メニュー */}
+        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+          {!c && <SectionLabel>メニュー</SectionLabel>}
+          {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
+            <NavItem
+              key={view}
+              active={viewMode === view}
+              icon={icon}
+              label={label}
+              tooltip={tooltip ?? label}
+              onClick={() => setViewMode(view)}
+              collapsed={c}
+            />
+          ))}
+        </div>
 
-        {keyResults.length > 0 && (
-          <>
+        {/* 計画管理：プロジェクト一覧 */}
+        <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
+          {!c && (
+            <div style={{ display: "flex", alignItems: "center", padding: "6px 12px 3px", gap: "4px" }}>
+              <span style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", flex: 1 }}>プロジェクト</span>
+              <button
+                onClick={onOpenAiProject}
+                title="AIでプロジェクトを作る"
+                style={{
+                  display: "flex", alignItems: "center", gap: "3px",
+                  padding: "2px 7px", fontSize: "10px", fontWeight: "600",
+                  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  border: "none", borderRadius: "var(--radius-sm)",
+                  color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >✨ AI作成</button>
+            </div>
+          )}
+          {c && (
+            <button onClick={onOpenAiProject} title="AIでプロジェクトを作る"
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "5px 0", background: "transparent", border: "none", cursor: "pointer", fontSize: "14px" }}
+            >✨</button>
+          )}
+          <NavItem
+            active={selectedProjectId === null && selectedKrId === null}
+            icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
+            label="全PJ表示" tooltip="全PJ表示"
+            onClick={() => onSelectProject(null)} collapsed={c}
+          />
+          {projects.map(pj => (
+            <NavItem key={pj.id} active={selectedProjectId === pj.id}
+              icon={<span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />}
+              label={pj.name} tooltip={pj.name}
+              onClick={() => onSelectProject(pj.id)} collapsed={c}
+            />
+          ))}
+          {keyResults.length > 0 && (<>
             {!c && <SectionLabel>OKRタスク</SectionLabel>}
             {keyResults.map(kr => (
-              <NavItem
-                key={kr.id}
-                active={selectedKrId === kr.id}
-                icon={<KrIcon />}
-                label={kr.title}
-                tooltip={kr.title}
-                onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)}
-                collapsed={c}
+              <NavItem key={kr.id} active={selectedKrId === kr.id}
+                icon={<KrIcon />} label={kr.title} tooltip={kr.title}
+                onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)} collapsed={c}
               />
             ))}
-          </>
-        )}
-      </div>
+          </>)}
+        </div>
 
-      {/* ラボセクション */}
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
-        {c ? (
-          <button
-            onClick={() => { setLabOpen(o => !o); }}
-            title="ラボ"
-            style={{
-              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
-              padding: "7px 0", background: "transparent", border: "none",
-              cursor: "pointer", borderRadius: "6px",
-              color: "var(--color-text-tertiary)", fontSize: "15px",
-            }}
-          >
-            🧪
-          </button>
-        ) : (
-          <button
-            onClick={() => setLabOpen(o => !o)}
-            style={{
-              width: "100%", display: "flex", alignItems: "center", gap: "7px",
-              padding: "6px 10px", background: "transparent", border: "none",
-              cursor: "pointer", borderRadius: "6px",
-              color: "var(--color-text-tertiary)", fontSize: "11px",
-            }}
-          >
-            <span style={{ fontSize: "13px" }}>🧪</span>
-            <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
-            <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
-          </button>
+        {/* 計画管理：ラボセクション */}
+        <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
+          {c ? (
+            <button onClick={() => setLabOpen(o => !o)} title="ラボ"
+              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px 0", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "15px" }}
+            >🧪</button>
+          ) : (
+            <button onClick={() => setLabOpen(o => !o)}
+              style={{ width: "100%", display: "flex", alignItems: "center", gap: "7px", padding: "6px 10px", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "11px" }}
+            >
+              <span style={{ fontSize: "13px" }}>🧪</span>
+              <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
+              <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
+            </button>
         )}
         {labOpen && (
           <>
@@ -855,6 +873,32 @@ function Sidebar({
           </>
         )}
       </div>
+      </>) : (<>
+        {/* OKR管理：ナビ */}
+        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+          {!c && <SectionLabel>OKR管理</SectionLabel>}
+          <NavItem active icon={<span style={{ fontSize: "13px" }}>🎯</span>} label="OKR概要" tooltip="Objective・KR・TFの概要" onClick={() => {}} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="KRセッション記録" tooltip="チェックイン・ウィンセッションを記録" onClick={onOpenKrSession} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>📊</span>} label="KRレポート生成" tooltip="議事メモからKRレポートをAI生成" onClick={onOpenKrReport} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🔍</span>} label="KRなぜなぜ分析" tooltip="AIとの対話で根本原因を5Whys形式で掘り下げる" onClick={onOpenKrWhy} collapsed={c} />
+        </div>
+
+        {/* OKR管理：KR一覧 */}
+        <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
+          {!c && <SectionLabel>Key Results</SectionLabel>}
+          {keyResults.map(kr => (
+            <NavItem key={kr.id} active={selectedKrId === kr.id}
+              icon={<KrIcon />} label={kr.title} tooltip={kr.title}
+              onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)} collapsed={c}
+            />
+          ))}
+          {keyResults.length === 0 && !c && (
+            <div style={{ padding: "8px 12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              KRが登録されていません
+            </div>
+          )}
+        </div>
+      </>)}
 
       {/* AI相談・設定・ユーザー情報 */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
@@ -1074,6 +1118,47 @@ function NavItem({
         </div>
       )}
     </>
+  );
+}
+
+function AppModeToggle({ mode, onToggle, compact = false }: { mode: AppMode; onToggle: () => void; compact?: boolean }) {
+  if (compact) {
+    return (
+      <button
+        onClick={onToggle}
+        title={mode === "plan" ? "OKR管理モードに切り替え" : "計画管理モードに切り替え"}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+          padding: "4px 0", background: "transparent", border: "none", cursor: "pointer",
+          fontSize: "14px",
+        }}
+      >
+        {mode === "plan" ? "🎯" : "📋"}
+      </button>
+    );
+  }
+  return (
+    <div style={{
+      display: "flex", borderRadius: "var(--radius-md)",
+      border: "1px solid var(--color-border-primary)",
+      overflow: "hidden", fontSize: "10px", fontWeight: "600",
+    }}>
+      {(["plan", "okr"] as const).map(m => (
+        <button
+          key={m}
+          onClick={() => { if (mode !== m) onToggle(); }}
+          style={{
+            flex: 1, padding: "5px 4px", border: "none", cursor: "pointer",
+            background: mode === m ? "var(--color-brand)" : "transparent",
+            color: mode === m ? "#fff" : "var(--color-text-tertiary)",
+            transition: "background 0.15s, color 0.15s",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {m === "plan" ? "📋 計画" : "🎯 OKR"}
+        </button>
+      ))}
+    </div>
   );
 }
 
