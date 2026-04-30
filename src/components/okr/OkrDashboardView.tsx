@@ -143,6 +143,25 @@ export function OkrDashboardView({
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
+      {/* モードヘッダー */}
+      <div style={{
+        padding: "10px 20px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        background: "linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.04))",
+        display: "flex", alignItems: "center", gap: "10px",
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: "16px" }}>🎯</span>
+        <div>
+          <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", lineHeight: 1.3 }}>
+            OKR管理モード
+          </div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "1px" }}>
+            Objective・KR の進捗を週次で記録・振り返るモードです
+          </div>
+        </div>
+      </div>
+
       {/* タブバー */}
       <div style={{
         display: "flex",
