@@ -4,7 +4,7 @@
 // ToDoタイトルをAIに渡し、具体的なタスク候補案をJSON配列で返す。
 // OKR/KR/TF/メンバー情報をAIに渡す（ラボ機能例外ルール適用）。
 
-import { supabase } from "../supabase/client";
+import { invokeAI } from "./invokeAI";
 
 export interface DecomposedTask {
   name: string;
@@ -68,11 +68,6 @@ export async function callTodoDecomposeAI(params: {
     today: params.today,
   });
 
-  const { data, error } = await supabase.functions.invoke("ai-consult", {
-    body: { system: SYSTEM_PROMPT, messages: [{ role: "user", content: userMessage }], max_tokens: 1200 },
-  });
-  if (error) throw new Error(`AIタスク分解エラー: ${error.message}`);
-  const text: string = data?.content?.[0]?.text ?? "";
-  if (!text) throw new Error("AIからの応答が空でした。");
-  return validateDecomposed(parseJsonSafe(text));
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 1200);
+  return validateDecomposed(parseJsonSafe(res.content[0].text));
 }

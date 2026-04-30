@@ -4,7 +4,7 @@
 // AIとの対話でプロジェクト計画を立案し、PJ+タスク一覧をJSON出力する。
 // ラボ機能例外ルール：メンバー情報をAIに渡すことを許可。
 
-import { supabase } from "../supabase/client";
+import { invokeAI } from "./invokeAI";
 
 export type PlanMessage = { role: "user" | "assistant"; content: string };
 
@@ -58,13 +58,8 @@ const FINALIZE_SYSTEM = `あなたはプロジェクト計画AIです。
 - 担当者が不明なものはnullにする（無理に割り当てない）`;
 
 async function callAI(system: string, messages: PlanMessage[], maxTokens: number): Promise<string> {
-  const { data, error } = await supabase.functions.invoke("ai-consult", {
-    body: { system, messages, max_tokens: maxTokens },
-  });
-  if (error) throw new Error(`AI呼び出しエラー: ${error.message}`);
-  const text: string = data?.content?.[0]?.text ?? "";
-  if (!text) throw new Error("AIからの応答が空でした。");
-  return text;
+  const res = await invokeAI(system, messages, maxTokens);
+  return res.content[0].text;
 }
 
 export async function callProjectPlanDialogue(messages: PlanMessage[]): Promise<string> {
