@@ -35,7 +35,10 @@ interface Props {
 const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
 const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
 const GANTT_ZOOM_KEY = "gantt_zoom";
+const GANTT_SORT_KEY = "gantt_sort";
 const STAGNANT_THRESHOLD_DAYS = 5;
+
+type GanttSortOrder = "date" | "name";
 
 function isTaskStagnant(task: Task): boolean {
   if (task.status !== "in_progress" || !task.updated_at) return false;
@@ -157,6 +160,29 @@ export function GanttView({
 
   // マイルストーンホバーツールチップ
   const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; x: number; y: number } | null>(null);
+
+  // タスクの並び順
+  const [sortOrder, setSortOrder] = useState<GanttSortOrder>(
+    () => (localStorage.getItem(GANTT_SORT_KEY) as GanttSortOrder | null) ?? "date"
+  );
+  const changeSortOrder = (s: GanttSortOrder) => {
+    localStorage.setItem(GANTT_SORT_KEY, s);
+    setSortOrder(s);
+  };
+  const sortTasks = useCallback((tasks: Task[]): Task[] => {
+    if (sortOrder === "name") {
+      return [...tasks].sort((a, b) => a.name.localeCompare(b.name, "ja"));
+    }
+    // 期日順：start_date → due_date の早い方を基準。日付なしは末尾
+    return [...tasks].sort((a, b) => {
+      const da = toDate(a.start_date ?? null) ?? toDate(a.due_date);
+      const db = toDate(b.start_date ?? null) ?? toDate(b.due_date);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da.getTime() - db.getTime();
+    });
+  }, [sortOrder]);
 
   // PJの開閉状態
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
@@ -442,6 +468,28 @@ export function GanttView({
         )}
         {!isPreview && viewMode === "pj" && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
         {!isPreview && viewMode === "pj" && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
+        {/* タスク並び順トグル */}
+        {!isPreview && (
+          <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>
+            {(["date", "name"] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => changeSortOrder(s)}
+                style={{
+                  ...headerBtnStyle,
+                  padding: "3px 8px",
+                  background: sortOrder === s ? "var(--color-bg-primary)" : "transparent",
+                  color: sortOrder === s ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  border: sortOrder === s ? "1px solid var(--color-brand-border)" : "1px solid transparent",
+                  fontWeight: sortOrder === s ? "600" : "400",
+                  boxShadow: sortOrder === s ? "var(--shadow-sm)" : "none",
+                }}
+              >
+                {s === "date" ? "期日順" : "名前順"}
+              </button>
+            ))}
+          </div>
+        )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
             ...headerBtnStyle,
@@ -511,7 +559,7 @@ export function GanttView({
             {viewMode === "pj" ? (
               <>
                 {visibleProjects.map(pj => {
-                  const pjTasks = allTasks.filter(t => t.project_id === pj.id);
+                  const pjTasks = sortTasks(allTasks.filter(t => t.project_id === pj.id));
                   const isCollapsed = collapsed[pj.id];
                   return (
                     <div key={pj.id}>
@@ -585,6 +633,7 @@ export function GanttView({
                 {/* ToDo系タスクグループ（ラベル） */}
                 {todoGroups.map(({ todo, todoId, tasks }) => {
                   const isCollapsed = collapsed[`todo_${todoId}`];
+                  const sortedTasks = sortTasks(tasks);
                   return (
                     <div key={todoId}>
                       <div style={{
@@ -600,7 +649,7 @@ export function GanttView({
                           {`[ToDo] ${(todo!.title.split("\n")[0]).slice(0, 14)}${todo!.title.length > 14 ? "…" : ""}`}
                         </span>
                       </div>
-                      {!isCollapsed && tasks.map(task => {
+                      {!isCollapsed && sortedTasks.map(task => {
                         const m = members.find(mb => mb.id === task.assignee_member_id);
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
@@ -961,7 +1010,7 @@ export function GanttView({
               ) : null}
 
               {viewMode === "pj" && visibleProjects.map(pj => {
-                const pjTasks = allTasks.filter(t => t.project_id === pj.id);
+                const pjTasks = sortTasks(allTasks.filter(t => t.project_id === pj.id));
                 const isCollapsed = collapsed[pj.id];
 
                 // PJバーの範囲
@@ -1117,6 +1166,7 @@ export function GanttView({
               {/* ToDo系タスクグループ（バー）— PJ別ビューのみ */}
               {viewMode === "pj" && todoGroups.map(({ todoId, tasks }) => {
                 const isCollapsed = collapsed[`todo_${todoId}`];
+                const sortedTasks = sortTasks(tasks);
                 const done = tasks.filter(t => t.status === "done").length;
                 const pct  = tasks.length > 0 ? done / tasks.length : 0;
                 return (
@@ -1136,7 +1186,7 @@ export function GanttView({
                         minWidth: 4,
                       }} />
                     </div>
-                    {!isCollapsed && tasks.map(task => {
+                    {!isCollapsed && sortedTasks.map(task => {
                       const previewDue = resizePreviewDates[task.id];
                       const due = toDate(previewDue ?? task.due_date);
                       const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
