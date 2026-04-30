@@ -17,6 +17,7 @@ import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { OkrDashboardView, type OkrActiveTool } from "../okr/OkrDashboardView";
+import { MeetingImportPanel } from "../meeting/MeetingImportPanel";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
@@ -66,6 +67,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
+  const [isMeetingImportOpen, setIsMeetingImportOpen] = useState(false);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(null);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
@@ -599,6 +601,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
+        onOpenMeeting={() => setIsMeetingImportOpen(true)}
         onSetOkrActiveTool={setOkrActiveTool}
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
@@ -631,6 +634,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {isKrWhyOpen && (
         <KrWhyPanel
           onClose={() => setIsKrWhyOpen(false)}
+          currentUser={currentUser}
+        />
+      )}
+      {isMeetingImportOpen && (
+        <MeetingImportPanel
+          onClose={() => setIsMeetingImportOpen(false)}
           currentUser={currentUser}
         />
       )}
@@ -690,6 +699,7 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
+  onOpenMeeting: () => void;
   okrActiveTool: OkrActiveTool;
   onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
@@ -705,7 +715,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
+  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy, onOpenMeeting,
   onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
@@ -872,6 +882,14 @@ function Sidebar({
               label="KRなぜなぜ分析"
               tooltip="AIとの対話で課題の根本原因を5Whys形式で掘り下げる"
               onClick={onOpenKrWhy}
+              collapsed={c}
+            />
+            <NavItem
+              active={false}
+              icon={<span style={{ fontSize: "13px" }}>🎙️</span>}
+              label="会議から読み込む"
+              tooltip="会議の文字起こしを読み込み、タスク登録・ステータス更新をAIが提案します"
+              onClick={onOpenMeeting}
               collapsed={c}
             />
           </>
