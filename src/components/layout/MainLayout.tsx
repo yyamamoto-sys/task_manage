@@ -771,6 +771,38 @@ function Sidebar({
         <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
       </div>
 
+      {/* AI ツール（モード共通） */}
+      <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px", flexShrink: 0 }}>
+        {!c && <SectionLabel>AIツール</SectionLabel>}
+        <NavItem
+          active={false}
+          icon={<span style={{ fontSize: "13px" }}>🎙️</span>}
+          label="会議から読み込む"
+          tooltip="会議の文字起こし（VTT/テキスト）を解析してタスク登録・ステータス更新を提案"
+          onClick={onOpenMeeting}
+          collapsed={c}
+        />
+        {appMode === "plan" && (
+          <NavItem
+            active={false}
+            icon={<span style={{ fontSize: "13px" }}>✨</span>}
+            label="AIでPJを作る"
+            tooltip="AIがプロジェクトの目的・タスクを自動生成します"
+            onClick={onOpenAiProject}
+            collapsed={c}
+          />
+        )}
+        <NavItem
+          active={isConsultOpen}
+          icon={<AIIcon />}
+          label={isConsultOpen ? "AIパネルを閉じる" : "AIに相談"}
+          tooltip="タスクの変更・リスク分析・日程調整などをAIに相談できます"
+          onClick={onOpenConsult}
+          color="var(--color-brand)"
+          collapsed={c}
+        />
+      </div>
+
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
         <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
@@ -790,27 +822,7 @@ function Sidebar({
 
         {/* 計画管理：プロジェクト一覧 */}
         <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
-          {!c && (
-            <div style={{ display: "flex", alignItems: "center", padding: "6px 12px 3px", gap: "4px" }}>
-              <span style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", flex: 1 }}>プロジェクト</span>
-              <button
-                onClick={onOpenAiProject}
-                title="AIでプロジェクトを作る"
-                style={{
-                  display: "flex", alignItems: "center", gap: "3px",
-                  padding: "2px 7px", fontSize: "10px", fontWeight: "600",
-                  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  border: "none", borderRadius: "var(--radius-sm)",
-                  color: "#fff", cursor: "pointer", whiteSpace: "nowrap",
-                }}
-              >✨ AI作成</button>
-            </div>
-          )}
-          {c && (
-            <button onClick={onOpenAiProject} title="AIでプロジェクトを作る"
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "5px 0", background: "transparent", border: "none", cursor: "pointer", fontSize: "14px" }}
-            >✨</button>
-          )}
+          {!c && <SectionLabel>プロジェクト</SectionLabel>}
           <NavItem
             active={selectedProjectId === null && selectedKrId === null}
             icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
@@ -851,48 +863,14 @@ function Sidebar({
             </button>
         )}
         {labOpen && (
-          <>
-            <NavItem
-              active={false}
-              icon={<GraphIcon />}
-              label="関係グラフ"
-              tooltip="関係グラフ"
-              onClick={onOpenGraph}
-              collapsed={c}
-            />
-            <NavItem
-              active={false}
-              icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
-              label="KRセッション記録"
-              tooltip="文字起こしを貼り付けてチェックイン・ウィンセッションを記録"
-              onClick={onOpenKrSession}
-              collapsed={c}
-            />
-            <NavItem
-              active={false}
-              icon={<span style={{ fontSize: "13px" }}>📊</span>}
-              label="KRレポート生成"
-              tooltip="チェックイン・ウィンセッションの議事メモからKRレポートをAI生成"
-              onClick={onOpenKrReport}
-              collapsed={c}
-            />
-            <NavItem
-              active={false}
-              icon={<span style={{ fontSize: "13px" }}>🔍</span>}
-              label="KRなぜなぜ分析"
-              tooltip="AIとの対話で課題の根本原因を5Whys形式で掘り下げる"
-              onClick={onOpenKrWhy}
-              collapsed={c}
-            />
-            <NavItem
-              active={false}
-              icon={<span style={{ fontSize: "13px" }}>🎙️</span>}
-              label="会議から読み込む"
-              tooltip="会議の文字起こしを読み込み、タスク登録・ステータス更新をAIが提案します"
-              onClick={onOpenMeeting}
-              collapsed={c}
-            />
-          </>
+          <NavItem
+            active={false}
+            icon={<GraphIcon />}
+            label="関係グラフ"
+            tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
+            onClick={onOpenGraph}
+            collapsed={c}
+          />
         )}
       </div>
       </>) : (<>
@@ -953,33 +931,6 @@ function Sidebar({
         >
           <GearIcon />
           {!c && <span>設定</span>}
-        </button>
-        <button
-          className="ai-shimmer ai-glow"
-          onClick={onOpenConsult}
-          title={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
-          style={{
-            width: "100%",
-            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
-            gap: "8px",
-            padding: c ? "9px 0" : "9px 12px",
-            background: isConsultOpen
-              ? "linear-gradient(135deg, #7c3aed, #5b21b6)"
-              : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-            border: "none",
-            borderRadius: "var(--radius-md)",
-            cursor: "pointer",
-            color: "#fff",
-            fontSize: "11px", fontWeight: "600",
-            boxShadow: "0 2px 8px rgba(124,58,237,0.35)",
-            marginBottom: "2px",
-            transition: "opacity 0.15s",
-          }}
-          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "0.88"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.opacity = "1"; }}
-        >
-          <AIIcon />
-          {!c && <span>{isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}</span>}
         </button>
         <div style={{
           display: "flex", alignItems: "center",
