@@ -9,7 +9,7 @@ import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "session" | "report" | "why" | "history" | null;
+export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | null;
 
 interface Props {
   currentUser: Member;
@@ -46,6 +46,7 @@ const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
   { tool: "report",  icon: "📊", label: "レポート" },
   { tool: "why",     icon: "🔍", label: "なぜなぜ" },
   { tool: "history", icon: "📋", label: "履歴" },
+  { tool: "guide",   icon: "📖", label: "使い方" },
 ];
 
 export function OkrDashboardView({
@@ -451,6 +452,11 @@ export function OkrDashboardView({
             onOpenSession={() => onSetActiveTool("session")}
           />
         )}
+
+        {/* ─── 使い方タブ ─── */}
+        {activeTool === "guide" && (
+          <OkrGuide onSetActiveTool={onSetActiveTool} />
+        )}
       </div>
     </div>
   );
@@ -620,3 +626,215 @@ function KrSessionHistory({
     </div>
   );
 }
+
+// ===== 使い方ガイドコンポーネント =====
+
+const WEEKLY_FLOW = [
+  {
+    day: "月曜 PM",
+    icon: "🗓️",
+    title: "チェックイン",
+    desc: "今週の宣言（誰が何をいつまでに）と進捗シグナルを記録します。会議の文字起こしをAIに渡すと自動で抽出します。",
+    tool: "session" as const,
+    color: "#3b82f6",
+  },
+  {
+    day: "金曜",
+    icon: "🏆",
+    title: "ウィンセッション",
+    desc: "先週の宣言の達成状況・学び・外部環境の変化を記録します。チェックインと同じ画面で種類を切り替えて使います。",
+    tool: "session" as const,
+    color: "#f59e0b",
+  },
+  {
+    day: "随時",
+    icon: "📊",
+    title: "レポート生成",
+    desc: "議事メモを貼り付けるとAIが整形されたOKR進捗レポートを生成します。Teamsへの投稿にも対応しています。",
+    tool: "report" as const,
+    color: "#8b5cf6",
+  },
+  {
+    day: "課題が出たとき",
+    icon: "🔍",
+    title: "なぜなぜ分析",
+    desc: "「なぜ進まないのか」をAIとの対話で5段階まで掘り下げます。タスク進捗・担当者・期日などの実態も踏まえて問いかけてくれます。",
+    tool: "why" as const,
+    color: "#10b981",
+  },
+];
+
+const TOOL_DETAILS = [
+  {
+    icon: "🎯",
+    title: "概要タブ",
+    items: [
+      "Objective と全 KR の一覧を表示します",
+      "KRカードに最新シグナル（🟢🟡🔴）と今週の記録状況を表示します",
+      "KRをクリックして選択すると、ツール起動時にそのKRが初期選択されます",
+      "月曜・金曜は週次アクションのガイダンスバナーが表示されます",
+    ],
+  },
+  {
+    icon: "📋",
+    title: "履歴タブ",
+    items: [
+      "過去のチェックイン・ウィンセッションを週ごとに一覧表示します",
+      "KRでフィルターして特定のKRの履歴だけ見ることができます",
+      "シグナルの色で推移が一目でわかります",
+    ],
+  },
+  {
+    icon: "⬅️",
+    title: "左メニューのKR一覧",
+    items: [
+      "KRをクリックするとメインエリアのKRがハイライトされます",
+      "ツールを開いたとき選択中のKRが自動でセットされます",
+      "「全KR」を選ぶとフィルターを解除します",
+    ],
+  },
+];
+
+function OkrGuide({ onSetActiveTool }: { onSetActiveTool: (tool: OkrActiveTool) => void }) {
+  return (
+    <div style={{ flex: 1, overflow: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: "28px" }}>
+
+      {/* タイトル */}
+      <div>
+        <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+          📖 OKR管理モード 使い方ガイド
+        </div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+          このモードは、チームの OKR（Objective & Key Results）を<strong>週次のリズムで記録・振り返る</strong>ための場所です。
+          チェックインとウィンセッションを積み重ねることで、宣言の達成状況・学び・根本課題をチームで共有できます。
+        </div>
+      </div>
+
+      {/* 週次フロー */}
+      <div>
+        <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-tertiary)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+          週次の使い方フロー
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {WEEKLY_FLOW.map((step, i) => (
+            <div
+              key={step.title}
+              style={{
+                display: "flex", gap: "14px", alignItems: "flex-start",
+                background: "var(--color-bg-secondary)",
+                border: "1px solid var(--color-border-primary)",
+                borderLeft: `3px solid ${step.color}`,
+                borderRadius: "var(--radius-md)",
+                padding: "14px 16px",
+              }}
+            >
+              {/* ステップ番号 */}
+              <div style={{
+                width: "22px", height: "22px", borderRadius: "50%", flexShrink: 0,
+                background: step.color, color: "#fff",
+                fontSize: "11px", fontWeight: "700",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                marginTop: "1px",
+              }}>
+                {i + 1}
+              </div>
+
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "14px" }}>{step.icon}</span>
+                  <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>{step.title}</span>
+                  <span style={{
+                    fontSize: "10px", padding: "2px 8px",
+                    background: `${step.color}18`, color: step.color,
+                    border: `1px solid ${step.color}40`,
+                    borderRadius: "var(--radius-full)", fontWeight: "600",
+                  }}>{step.day}</span>
+                </div>
+                <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                  {step.desc}
+                </div>
+              </div>
+
+              <button
+                onClick={() => onSetActiveTool(step.tool)}
+                style={{
+                  flexShrink: 0, padding: "5px 12px",
+                  fontSize: "11px", fontWeight: "600",
+                  background: step.color, color: "#fff",
+                  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+                  whiteSpace: "nowrap", alignSelf: "center",
+                }}
+              >開く →</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 各タブの説明 */}
+      <div>
+        <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-tertiary)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+          画面の見方
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "10px" }}>
+          {TOOL_DETAILS.map(section => (
+            <div
+              key={section.title}
+              style={{
+                background: "var(--color-bg-secondary)",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-lg)",
+                padding: "14px 16px",
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "7px", marginBottom: "10px" }}>
+                <span style={{ fontSize: "16px" }}>{section.icon}</span>
+                <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>{section.title}</span>
+              </div>
+              <ul style={{ margin: 0, paddingLeft: "14px", display: "flex", flexDirection: "column", gap: "5px" }}>
+                {section.items.map((item, i) => (
+                  <li key={i} style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* シグナルの凡例 */}
+      <div>
+        <div style={{ fontSize: "12px", fontWeight: "700", color: "var(--color-text-tertiary)", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: "12px" }}>
+          シグナルの凡例
+        </div>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          {[
+            { dot: "🟢", label: "順調", desc: "目標達成率 60% 以上、計画通り進んでいる", color: "#16a34a" },
+            { dot: "🟡", label: "注意", desc: "達成率 50〜59%、軌道修正が必要な状態", color: "#ca8a04" },
+            { dot: "🔴", label: "要対応", desc: "達成率 49% 以下、早急な対策が必要", color: "#dc2626" },
+          ].map(sig => (
+            <div
+              key={sig.label}
+              style={{
+                flex: "1 1 180px",
+                display: "flex", gap: "10px", alignItems: "flex-start",
+                background: `${sig.color}0e`,
+                border: `1px solid ${sig.color}30`,
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+              }}
+            >
+              <span style={{ fontSize: "20px", flexShrink: 0 }}>{sig.dot}</span>
+              <div>
+                <div style={{ fontSize: "12px", fontWeight: "600", color: sig.color, marginBottom: "2px" }}>{sig.label}</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{sig.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+    </div>
+  );
+}
+

@@ -600,6 +600,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
         onSetOkrActiveTool={setOkrActiveTool}
+        okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenAiProject={() => setIsAiProjectOpen(true)}
         collapsed={isSidebarCollapsed}
@@ -689,6 +690,7 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
+  okrActiveTool: OkrActiveTool;
   onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
   onOpenAiProject: () => void;
@@ -704,7 +706,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onSetOkrActiveTool, onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
+  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -896,6 +898,18 @@ function Sidebar({
               KRが登録されていません
             </div>
           )}
+        </div>
+
+        {/* OKR管理：使い方ページ */}
+        <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
+          <NavItem
+            active={okrActiveTool === "guide"}
+            icon={<span style={{ fontSize: "13px" }}>📖</span>}
+            label="使い方・案内"
+            tooltip="このモードでできることの説明と週次の使い方ガイド"
+            onClick={() => onSetOkrActiveTool("guide")}
+            collapsed={c}
+          />
         </div>
       </>)}
 
