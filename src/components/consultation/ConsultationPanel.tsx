@@ -585,6 +585,7 @@ export function ConsultationPanel({
               {/* 自動ボタン */}
               <button
                 onClick={() => handleTypeChange(null)}
+                title="入力内容からAIが相談の種類を自動判定します"
                 style={{
                   fontSize: "11px", padding: "4px 10px",
                   borderRadius: "var(--radius-full)",
@@ -604,6 +605,7 @@ export function ConsultationPanel({
                   <button
                     key={t.value}
                     onClick={() => handleTypeChange(t.value)}
+                    title={`${t.label}\n${t.description}`}
                     style={{
                       fontSize: "11px", padding: "4px 10px",
                       borderRadius: "var(--radius-full)",

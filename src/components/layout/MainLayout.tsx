@@ -593,11 +593,9 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
-        onOpenMeeting={() => { setConsultDefaultMode("meeting"); setIsConsultOpen(true); }}
         onSetOkrActiveTool={setOkrActiveTool}
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
@@ -686,11 +684,9 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
-  onOpenMeeting: () => void;
   okrActiveTool: OkrActiveTool;
   onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
-  onOpenAiProject: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   appMode: AppMode;
@@ -702,8 +698,8 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy, onOpenMeeting,
-  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
+  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
+  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -759,35 +755,41 @@ function Sidebar({
       </div>
 
       {/* AI ツール（モード共通） */}
-      <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px", flexShrink: 0 }}>
-        {!c && <SectionLabel>AIツール</SectionLabel>}
-        <NavItem
-          active={false}
-          icon={<span style={{ fontSize: "13px" }}>🎙️</span>}
-          label="会議から読み込む"
-          tooltip="会議の文字起こし（VTT/テキスト）を解析してタスク登録・ステータス更新を提案"
-          onClick={onOpenMeeting}
-          collapsed={c}
-        />
-        {appMode === "plan" && (
-          <NavItem
-            active={false}
-            icon={<span style={{ fontSize: "13px" }}>✨</span>}
-            label="AIでPJを作る"
-            tooltip="AIがプロジェクトの目的・タスクを自動生成します"
-            onClick={onOpenAiProject}
-            collapsed={c}
-          />
-        )}
-        <NavItem
-          active={isConsultOpen}
-          icon={<AIIcon />}
-          label={isConsultOpen ? "AIパネルを閉じる" : "AIに相談"}
-          tooltip="タスクの変更・リスク分析・日程調整などをAIに相談できます"
+      <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
+        <button
           onClick={onOpenConsult}
-          color="var(--color-brand)"
-          collapsed={c}
-        />
+          title="AI相談・PJ/タスク登録・会議読み込みをまとめて使えます"
+          style={{
+            display: "flex", alignItems: "center", gap: c ? 0 : "10px",
+            padding: c ? "10px 0" : "10px 12px",
+            width: "100%", boxSizing: "border-box",
+            justifyContent: c ? "center" : "flex-start",
+            background: isConsultOpen
+              ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+              : "linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%)",
+            border: `1.5px solid ${isConsultOpen ? "transparent" : "rgba(99,102,241,0.3)"}`,
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            transition: "all 0.2s",
+          }}
+        >
+          <span style={{ fontSize: c ? "18px" : "15px", flexShrink: 0, lineHeight: 1 }}>✨</span>
+          {!c && (
+            <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "#6366f1", lineHeight: 1.3 }}>
+                AIツールを開く
+              </div>
+              <div style={{ fontSize: "10px", color: isConsultOpen ? "rgba(255,255,255,0.8)" : "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                相談 · PJ/タスク登録 · 会議読み込み
+              </div>
+            </div>
+          )}
+          {!c && (
+            <span style={{ fontSize: "13px", color: isConsultOpen ? "rgba(255,255,255,0.7)" : "rgba(99,102,241,0.5)", flexShrink: 0, lineHeight: 1 }}>
+              {isConsultOpen ? "×" : "›"}
+            </span>
+          )}
+        </button>
       </div>
 
       {appMode === "plan" ? (<>
