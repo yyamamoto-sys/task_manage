@@ -25,8 +25,9 @@ import {
   type PlannedTask,
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { MeetingImportPanel } from "../meeting/MeetingImportPanel";
 
-type PanelMode = "consult" | "create";
+type PanelMode = "consult" | "create" | "meeting";
 
 const PROJECT_COLORS = [
   "#6366f1", "#3b82f6", "#14b8a6", "#10b981",
@@ -497,25 +498,34 @@ export function ConsultationPanel({
           </div>
           {/* モードタブ */}
           <div style={{ display: "flex", gap: "4px" }}>
-            {(["consult", "create"] as const).map(mode => (
+            {(["consult", "create", "meeting"] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => setPanelMode(mode)}
                 style={{
-                  padding: "5px 14px", fontSize: "11px", fontWeight: "600",
+                  padding: "5px 12px", fontSize: "11px", fontWeight: "600",
                   borderRadius: "var(--radius-full)", border: "none", cursor: "pointer",
                   background: panelMode === mode ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)",
                   color: panelMode === mode ? "#6366f1" : "rgba(255,255,255,0.85)",
-                  transition: "all 0.15s",
+                  transition: "all 0.15s", whiteSpace: "nowrap",
                 }}
               >
-                {mode === "consult" ? "💬 相談" : "✨ PJを作る"}
+                {mode === "consult" ? "💬 相談" : mode === "create" ? "📋 PJ/タスク登録" : "🎙️ 会議"}
               </button>
             ))}
           </div>
         </div>
 
-        {/* ===== PJ作成モード ===== */}
+        {/* ===== 会議読み込みモード ===== */}
+        {panelMode === "meeting" && (
+          <MeetingImportPanel
+            inline
+            onClose={() => setPanelMode("consult")}
+            currentUser={currentUser}
+          />
+        )}
+
+        {/* ===== PJ/タスク登録モード ===== */}
         {panelMode === "create" && (
           <ProjectCreatePane
             phase={createPhase}

@@ -51,7 +51,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
-  const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "create">("consult");
+  const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "create" | "meeting">("consult");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => localStorage.getItem("sidebar_collapsed") === "1"
   );
@@ -593,7 +593,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
-        onOpenMeeting={() => setIsMeetingImportOpen(true)}
+        onOpenMeeting={() => { setConsultDefaultMode("meeting"); setIsConsultOpen(true); }}
         onSetOkrActiveTool={setOkrActiveTool}
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
@@ -626,12 +626,6 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {isKrWhyOpen && (
         <KrWhyPanel
           onClose={() => setIsKrWhyOpen(false)}
-          currentUser={currentUser}
-        />
-      )}
-      {isMeetingImportOpen && (
-        <MeetingImportPanel
-          onClose={() => setIsMeetingImportOpen(false)}
           currentUser={currentUser}
         />
       )}

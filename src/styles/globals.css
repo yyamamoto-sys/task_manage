@@ -494,8 +494,8 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 
 /* AIボタンのシマー（光が左→右へ流れる） */
 @keyframes shimmerSlide {
-  0%       { transform: translateX(-150%); }
-  60%, 100%{ transform: translateX(150%); }
+  0%        { transform: translateX(-150%); }
+  10%, 100% { transform: translateX(150%); }
 }
 .ai-shimmer {
   position: relative;
@@ -511,7 +511,7 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     rgba(255,255,255,0.22) 50%,
     transparent 65%
   );
-  animation: shimmerSlide 3.5s ease-in-out infinite;
+  animation: shimmerSlide 15s ease-in-out infinite;
   pointer-events: none;
 }
 

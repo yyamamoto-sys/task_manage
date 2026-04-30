@@ -55,13 +55,14 @@ interface StatusDraft {
 interface Props {
   onClose: () => void;
   currentUser: Member;
+  inline?: boolean;
 }
 
 type Step = "input" | "analyzing" | "review" | "applying" | "done";
 
 // ===== メインコンポーネント =====
 
-export function MeetingImportPanel({ onClose, currentUser }: Props) {
+export function MeetingImportPanel({ onClose, currentUser, inline = false }: Props) {
   const {
     projects: allProjects,
     tasks: allTasks,
@@ -250,7 +251,86 @@ export function MeetingImportPanel({ onClose, currentUser }: Props) {
   const checkedTaskCount = taskDrafts.filter(d => d.checked && d.name.trim()).length;
   const checkedStatusCount = statusDrafts.filter(d => d.checked && d.task_id).length;
 
-  // ===== レンダリング =====
+  // ===== コンテンツ =====
+
+  const contentArea = (
+    <>
+      {/* インライン時: ステップ状態バー */}
+      {inline && step === "review" && (
+        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--color-border-primary)", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
+            {step === "review" ? "内容を確認して登録してください" : ""}
+          </span>
+          <button onClick={handleReset} style={{ fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+            やり直す
+          </button>
+        </div>
+      )}
+
+      <div style={{ flex: 1, overflow: "auto", padding: inline ? "14px" : "20px" }}>
+        {step === "input" && (
+          <InputStep
+            rawText={rawText}
+            setRawText={setRawText}
+            isDragging={isDragging}
+            setIsDragging={setIsDragging}
+            dropAreaRef={dropAreaRef}
+            fileInputRef={fileInputRef}
+            onDrop={handleDrop}
+            onFileChange={e => {
+              const f = e.target.files?.[0];
+              if (f) handleFile(f);
+              e.target.value = "";
+            }}
+            error={error}
+            onAnalyze={handleAnalyze}
+          />
+        )}
+        {step === "analyzing" && (
+          <CenterMessage icon="⏳" text="AIが会議内容を解析しています..." />
+        )}
+        {step === "review" && analysis && (
+          <ReviewStep
+            analysis={analysis}
+            taskDrafts={taskDrafts}
+            setTaskDrafts={setTaskDrafts}
+            statusDrafts={statusDrafts}
+            setStatusDrafts={setStatusDrafts}
+            members={members}
+            projects={projects}
+            tasks={tasks}
+            error={error}
+            checkedTaskCount={checkedTaskCount}
+            checkedStatusCount={checkedStatusCount}
+            onApply={handleApply}
+          />
+        )}
+        {step === "applying" && (
+          <CenterMessage icon="💾" text="タスクを登録しています..." />
+        )}
+        {step === "done" && applyResults && (
+          <DoneStep
+            created={applyResults.created}
+            updated={applyResults.updated}
+            onReset={handleReset}
+            onClose={onClose}
+          />
+        )}
+      </div>
+    </>
+  );
+
+  // ===== インラインモード =====
+
+  if (inline) {
+    return (
+      <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+        {contentArea}
+      </div>
+    );
+  }
+
+  // ===== フローティングモード =====
 
   return (
     <div
@@ -272,7 +352,6 @@ export function MeetingImportPanel({ onClose, currentUser }: Props) {
         }}
         onClick={e => e.stopPropagation()}
       >
-        {/* ヘッダー */}
         <div className="ai-shimmer" style={{
           background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
           padding: "14px 20px",
@@ -281,85 +360,17 @@ export function MeetingImportPanel({ onClose, currentUser }: Props) {
         }}>
           <span style={{ fontSize: "20px" }}>🎙️</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>
-              会議から読み込む
-            </div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>会議から読み込む</div>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
               {step === "analyzing" ? "AI解析中..." : "文字起こし（VTT/テキスト）→ AI解析 → タスク登録"}
             </div>
           </div>
           {step === "review" && (
-            <button
-              onClick={handleReset}
-              style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}
-            >やり直す</button>
+            <button onClick={handleReset} style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
           )}
-          <button
-            onClick={onClose}
-            style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}
-          >✕</button>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}>✕</button>
         </div>
-
-        <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
-
-          {/* ステップ1: 入力 */}
-          {step === "input" && (
-            <InputStep
-              rawText={rawText}
-              setRawText={setRawText}
-              isDragging={isDragging}
-              setIsDragging={setIsDragging}
-              dropAreaRef={dropAreaRef}
-              fileInputRef={fileInputRef}
-              onDrop={handleDrop}
-              onFileChange={e => {
-                const f = e.target.files?.[0];
-                if (f) handleFile(f);
-                e.target.value = "";
-              }}
-              error={error}
-              onAnalyze={handleAnalyze}
-            />
-          )}
-
-          {/* ステップ2: 解析中 */}
-          {step === "analyzing" && (
-            <CenterMessage icon="⏳" text="AIが会議内容を解析しています..." />
-          )}
-
-          {/* ステップ3: レビュー */}
-          {step === "review" && analysis && (
-            <ReviewStep
-              analysis={analysis}
-              taskDrafts={taskDrafts}
-              setTaskDrafts={setTaskDrafts}
-              statusDrafts={statusDrafts}
-              setStatusDrafts={setStatusDrafts}
-              members={members}
-              projects={projects}
-              tasks={tasks}
-              error={error}
-              checkedTaskCount={checkedTaskCount}
-              checkedStatusCount={checkedStatusCount}
-              onApply={handleApply}
-            />
-          )}
-
-          {/* ステップ4: 適用中 */}
-          {step === "applying" && (
-            <CenterMessage icon="💾" text="タスクを登録しています..." />
-          )}
-
-          {/* ステップ5: 完了 */}
-          {step === "done" && applyResults && (
-            <DoneStep
-              created={applyResults.created}
-              updated={applyResults.updated}
-              onReset={handleReset}
-              onClose={onClose}
-            />
-          )}
-        </div>
+        {contentArea}
       </div>
     </div>
   );
