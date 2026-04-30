@@ -37,6 +37,12 @@ export async function invokeAI(
   messages: { role: "user" | "assistant"; content: string }[],
   maxTokens: number,
 ): Promise<AIRawResponse> {
+  if (!messages || messages.length === 0) {
+    throw new Error("送信するメッセージが空です。操作をやり直してください。");
+  }
+  if (messages[0].role !== "user") {
+    throw new Error("メッセージはuserロールから始まる必要があります。");
+  }
   const { data, error } = await supabase.functions.invoke("ai-consult", {
     body: { system, messages, max_tokens: maxTokens },
   });
