@@ -19,7 +19,7 @@ import {
 
 // ===== 定数 =====
 
-const MAX_TRANSCRIPT_CHARS = 20000;
+const MAX_TRANSCRIPT_CHARS = 30000;
 
 const PRIORITY_OPTIONS: { value: "high" | "mid" | "low"; label: string; color: string }[] = [
   { value: "high", label: "高", color: "#dc2626" },
