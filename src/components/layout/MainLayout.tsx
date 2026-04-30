@@ -20,6 +20,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+import { AiProjectCreateModal } from "../project/AiProjectCreateModal";
 
 interface Props {
   currentUser: Member;
@@ -63,6 +64,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
+  const [isAiProjectOpen, setIsAiProjectOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
@@ -97,6 +100,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     (rawTtfs ?? []).forEach((ttf: TaskTaskForce) => { if (tfIds.has(ttf.tf_id)) ids.add(ttf.task_id); });
     return ids;
   }, [selectedKrId, rawTfs, rawTtfs]);
+
+  const aiProjectModal = isAiProjectOpen ? (
+    <AiProjectCreateModal
+      currentUser={currentUser}
+      onClose={() => setIsAiProjectOpen(false)}
+    />
+  ) : null;
 
   const adminOverlay = isAdminOpen ? (
     <div style={{
@@ -139,7 +149,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {/* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */}
       <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
         {viewMode === "dashboard" && (
-          <DashboardView currentUser={currentUser} projects={projects} />
+          <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => setIsAiProjectOpen(true)} />
         )}
         {viewMode === "kanban" && (
           <KanbanView
@@ -182,6 +192,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         {adminOverlay}
+        {aiProjectModal}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -353,18 +364,59 @@ export function MainLayout({ currentUser, onLogout }: Props) {
 
         {mainContent}
 
-        {/* モバイル：タスク追加FAB */}
+        {/* モバイル：FABサブメニュー */}
+        {isFabMenuOpen && (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 58 }}
+            onClick={() => setIsFabMenuOpen(false)}
+          />
+        )}
+        {isFabMenuOpen && (
+          <div style={{
+            position: "fixed", bottom: "122px", right: "16px", zIndex: 59,
+            display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end",
+          }}>
+            <button
+              onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                padding: "10px 16px",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                border: "none", borderRadius: "var(--radius-full)",
+                color: "#fff", fontSize: "13px", fontWeight: "600",
+                boxShadow: "var(--shadow-lg)", cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >✨ AIでPJを作る</button>
+            <button
+              onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "10px 16px",
+                background: "var(--color-brand)",
+                border: "none", borderRadius: "var(--radius-full)",
+                color: "#fff", fontSize: "13px", fontWeight: "600",
+                boxShadow: "var(--shadow-lg)", cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >＋ タスクを追加</button>
+          </div>
+        )}
+        {/* モバイル：FABボタン本体 */}
         <button
-          onClick={() => setIsQuickAddOpen(true)}
+          onClick={() => setIsFabMenuOpen(prev => !prev)}
           style={{
             position: "fixed", bottom: "68px", right: "16px", zIndex: 60,
-            width: "44px", height: "44px", borderRadius: "50%",
-            background: "var(--color-brand)", color: "#fff",
+            width: "48px", height: "48px", borderRadius: "50%",
+            background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
+            color: "#fff",
             border: "none", fontSize: "22px", lineHeight: 1,
             boxShadow: "var(--shadow-lg)", cursor: "pointer",
             display: "flex", alignItems: "center", justifyContent: "center",
+            transition: "background 0.2s, transform 0.2s",
+            transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
           }}
-          title="タスクを追加"
+          title="メニューを開く"
         >＋</button>
 
         {/* モバイル：ボトムナビ */}
@@ -409,29 +461,74 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {adminOverlay}
+      {aiProjectModal}
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}
-      {/* PCタスク追加FAB */}
+      {/* PC FABサブメニュー */}
+      {isFabMenuOpen && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 58 }}
+          onClick={() => setIsFabMenuOpen(false)}
+        />
+      )}
+      {isFabMenuOpen && (
+        <div style={{
+          position: "fixed",
+          bottom: "74px",
+          right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
+          transition: "right 0.3s ease",
+          zIndex: 59,
+          display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end",
+        }}>
+          <button
+            onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "9px 16px", height: "38px",
+              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              border: "none", borderRadius: "var(--radius-full)",
+              color: "#fff", fontSize: "13px", fontWeight: "600",
+              boxShadow: "var(--shadow-lg)", cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span>✨</span> AIでPJを作る
+          </button>
+          <button
+            onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "9px 16px", height: "38px",
+              background: "var(--color-brand)",
+              border: "none", borderRadius: "var(--radius-full)",
+              color: "#fff", fontSize: "13px", fontWeight: "600",
+              boxShadow: "var(--shadow-lg)", cursor: "pointer",
+              whiteSpace: "nowrap",
+            }}
+          >
+            <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> タスクを追加
+          </button>
+        </div>
+      )}
+      {/* PC FABボタン本体 */}
       <button
-        onClick={() => setIsQuickAddOpen(true)}
+        onClick={() => setIsFabMenuOpen(prev => !prev)}
         style={{
           position: "fixed", bottom: "24px",
           right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-          transition: "right 0.3s ease",
+          transition: "right 0.3s ease, background 0.2s, transform 0.2s",
           zIndex: 60,
-          height: "40px", borderRadius: "var(--radius-full)",
-          padding: "0 18px",
-          background: "var(--color-brand)", color: "#fff",
-          border: "none", fontSize: "13px", fontWeight: "600",
+          width: "48px", height: "48px", borderRadius: "50%",
+          background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
+          color: "#fff",
+          border: "none", fontSize: "22px",
           boxShadow: "var(--shadow-lg)", cursor: "pointer",
-          display: "flex", alignItems: "center", gap: "6px",
-          letterSpacing: "0.02em",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
         }}
-        title="タスクを追加"
-      >
-        <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> タスク追加
-      </button>
+        title="メニューを開く"
+      >＋</button>
       <Sidebar
         viewMode={viewMode}
         setViewMode={setViewMode}
@@ -452,6 +549,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
+        onOpenAiProject={() => setIsAiProjectOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
       />
@@ -538,6 +636,7 @@ interface SidebarProps {
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
   onOpenAdmin: () => void;
+  onOpenAiProject: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -548,7 +647,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onOpenAdmin, collapsed, onToggleCollapsed,
+  onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const c = collapsed; // 省略形
@@ -615,7 +714,34 @@ function Sidebar({
 
       {/* プロジェクト一覧 */}
       <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
-        {!c && <SectionLabel>プロジェクト</SectionLabel>}
+        {!c && (
+          <div style={{ display: "flex", alignItems: "center", padding: "6px 12px 3px", gap: "4px" }}>
+            <span style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.05em", flex: 1 }}>プロジェクト</span>
+            <button
+              onClick={onOpenAiProject}
+              title="AIでプロジェクトを作る"
+              style={{
+                display: "flex", alignItems: "center", gap: "3px",
+                padding: "2px 7px", fontSize: "10px", fontWeight: "600",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                border: "none", borderRadius: "var(--radius-sm)",
+                color: "#fff", cursor: "pointer",
+                whiteSpace: "nowrap",
+              }}
+            >✨ AI作成</button>
+          </div>
+        )}
+        {c && (
+          <button
+            onClick={onOpenAiProject}
+            title="AIでプロジェクトを作る"
+            style={{
+              width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
+              padding: "5px 0", background: "transparent", border: "none",
+              cursor: "pointer", fontSize: "14px",
+            }}
+          >✨</button>
+        )}
         <NavItem
           active={selectedProjectId === null && selectedKrId === null}
           icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}

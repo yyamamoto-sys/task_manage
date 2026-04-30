@@ -27,11 +27,12 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 interface Props {
   currentUser: Member;
   projects: Project[];
+  onOpenAiProject?: () => void;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects }: Props) {
+export function DashboardView({ currentUser, projects, onOpenAiProject }: Props) {
   const {
     tasks: rawTasks, members: rawMembers, keyResults: rawKrs,
     taskForces: rawTfs, projectTaskForces: rawPtfs, todos: rawTodos,
@@ -226,6 +227,39 @@ export function DashboardView({ currentUser, projects }: Props) {
     setActiveKrId(krId);
     setSelectedPjIds(pjIds.length > 0 ? [...new Set(pjIds)] : []);
   };
+
+  if (projects.length === 0) {
+    return (
+      <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
+        <div style={{ textAlign: "center", maxWidth: "400px" }}>
+          <div style={{ fontSize: "48px", marginBottom: "16px" }}>📋</div>
+          <div style={{ fontSize: "16px", fontWeight: "700", color: "var(--color-text-primary)", marginBottom: "8px" }}>
+            まだプロジェクトがありません
+          </div>
+          <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", lineHeight: "1.7", marginBottom: "24px" }}>
+            AIに目的や背景を伝えるだけで、<br />プロジェクトとタスクの計画を自動作成します。
+          </div>
+          <button
+            onClick={onOpenAiProject}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "8px",
+              padding: "12px 24px",
+              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              border: "none", borderRadius: "var(--radius-full)",
+              color: "#fff", fontSize: "14px", fontWeight: "700",
+              boxShadow: "0 4px 16px rgba(99,102,241,0.4)",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ fontSize: "16px" }}>✨</span> AIでプロジェクトを作る
+          </button>
+          <div style={{ marginTop: "16px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+            右下の ＋ ボタンから手動で追加することもできます
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ height: "100%", overflow: "auto" }}>
