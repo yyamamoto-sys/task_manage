@@ -250,6 +250,9 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
 
   const checkedTaskCount = taskDrafts.filter(d => d.checked && d.name.trim()).length;
   const checkedStatusCount = statusDrafts.filter(d => d.checked && d.task_id).length;
+  const charCount = rawText.trim().length;
+  const overLimit = charCount > MAX_TRANSCRIPT_CHARS;
+  const canAnalyze = charCount >= 20 && !overLimit;
 
   // ===== コンテンツ =====
 
@@ -286,6 +289,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
             onAnalyze={handleAnalyze}
           />
         )}
+        {/* スクロール余白 */}
+        {step === "input" && <div style={{ height: "8px" }} />}
         {step === "analyzing" && (
           <CenterMessage icon="⏳" text="AIが会議内容を解析しています..." />
         )}
@@ -317,6 +322,28 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           />
         )}
       </div>
+
+      {/* 解析ボタン（常に下部に固定） */}
+      {step === "input" && (
+        <div style={{
+          flexShrink: 0,
+          borderTop: "1px solid var(--color-border-primary)",
+          padding: "10px 14px",
+          background: "var(--color-bg-primary)",
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
+            Ctrl+Enter でも送信できます
+          </span>
+          <button
+            onClick={handleAnalyze}
+            disabled={!canAnalyze}
+            style={primaryButtonStyle(!canAnalyze)}
+          >
+            🤖 AIで会議内容を解析する
+          </button>
+        </div>
+      )}
     </>
   );
 
@@ -397,7 +424,6 @@ function InputStep({
   const trimmed = rawText.trim();
   const charCount = trimmed.length;
   const overLimit = charCount > MAX_TRANSCRIPT_CHARS;
-  const canAnalyze = charCount >= 20 && !overLimit;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -454,8 +480,9 @@ function InputStep({
         <textarea
           value={rawText}
           onChange={e => setRawText(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); onAnalyze(); } }}
           placeholder={"WEBVTT\n\n00:01:23.000 --> 00:01:28.000\n<v 田中>今週のAPIの実装が完了しました。\n\n...\n\nまたは普通のテキストをそのまま貼り付けてください。"}
-          rows={14}
+          rows={10}
           style={{
             width: "100%", padding: "10px 12px", fontSize: "12px",
             fontFamily: "monospace",
@@ -474,14 +501,6 @@ function InputStep({
       </div>
 
       {error && <ErrorBox message={error} />}
-
-      <button
-        onClick={onAnalyze}
-        disabled={!canAnalyze}
-        style={primaryButtonStyle(!canAnalyze)}
-      >
-        🤖 AIで会議内容を解析する
-      </button>
     </div>
   );
 }
