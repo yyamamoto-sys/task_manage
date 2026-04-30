@@ -8,6 +8,21 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
+import { useTypingEffect } from "../../hooks/useTypingEffect";
+
+function ThinkingDots() {
+  return (
+    <span className="ai-thinking-dots" style={{ fontSize: "13px" }}>
+      <span>.</span><span>.</span><span>.</span>
+    </span>
+  );
+}
+
+function TypingMessage({ text, isLatest }: { text: string; isLatest: boolean }) {
+  const { displayed } = useTypingEffect(isLatest ? text : "", 12);
+  const shown = isLatest ? displayed : text;
+  return <span className={isLatest ? "typing-cursor" : ""}>{shown}</span>;
+}
 
 interface Props {
   onClose: () => void;
@@ -34,6 +49,7 @@ export function KrWhyPanel({ onClose }: Props) {
   const [summary, setSummary] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
+  const [typingIndex, setTypingIndex] = useState(-1);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -69,7 +85,9 @@ export function KrWhyPanel({ onClose }: Props) {
 
     try {
       const aiReply = await callWhyDialogue([firstUserMsg]);
-      setMessages([firstUserMsg, { role: "assistant", content: aiReply }]);
+      const initMsgs = [firstUserMsg, { role: "assistant" as const, content: aiReply }];
+      setMessages(initMsgs);
+      setTypingIndex(initMsgs.length - 1);
       setTurnCount(1);
       setPhase("dialogue");
     } catch (e) {
@@ -92,6 +110,7 @@ export function KrWhyPanel({ onClose }: Props) {
       const aiReply = await callWhyDialogue(newMessages);
       const updated: WhyMessage[] = [...newMessages, { role: "assistant" as const, content: aiReply }];
       setMessages(updated);
+      setTypingIndex(updated.length - 1);
       const newTurn = turnCount + 1;
       setTurnCount(newTurn);
       setPhase(newTurn >= MAX_TURNS ? "dialogue" : "dialogue");
@@ -141,6 +160,7 @@ export function KrWhyPanel({ onClose }: Props) {
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        className="panel-slide-up"
         style={{
           width: "min(720px, 100vw)",
           height: "100%",
@@ -152,7 +172,7 @@ export function KrWhyPanel({ onClose }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
-        <div style={{
+        <div className="ai-shimmer" style={{
           padding: "14px 20px",
           borderBottom: "1px solid var(--color-border-primary)",
           display: "flex", alignItems: "center", gap: "10px",
@@ -274,30 +294,35 @@ export function KrWhyPanel({ onClose }: Props) {
 
               {/* 会話履歴（setup以外） */}
               <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {messages.filter(m => !(m.role === "user" && m.content.includes("この課題について、なぜなぜ分析を進めてください"))).map((msg, i) => (
-                  <div key={i} style={{
-                    display: "flex",
-                    justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                  }}>
-                    <div style={{
-                      maxWidth: "85%",
-                      padding: "10px 14px",
-                      borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                      background: msg.role === "user" ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                      color: msg.role === "user" ? "#fff" : "var(--color-text-primary)",
-                      border: msg.role === "assistant" ? "1px solid var(--color-border-primary)" : "none",
-                      fontSize: "13px", lineHeight: 1.7,
+                {messages.map((msg, originalIdx) => {
+                  if (msg.role === "user" && msg.content.includes("この課題について、なぜなぜ分析を進めてください")) return null;
+                  return (
+                    <div key={originalIdx} className="chat-bubble-in" style={{
+                      display: "flex",
+                      justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
                     }}>
-                      {msg.role === "assistant" && (
-                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
-                      )}
-                      {msg.content}
+                      <div style={{
+                        maxWidth: "85%",
+                        padding: "10px 14px",
+                        borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                        background: msg.role === "user" ? "var(--color-brand)" : "var(--color-bg-secondary)",
+                        color: msg.role === "user" ? "#fff" : "var(--color-text-primary)",
+                        border: msg.role === "assistant" ? "1px solid var(--color-border-primary)" : "none",
+                        fontSize: "13px", lineHeight: 1.7,
+                      }}>
+                        {msg.role === "assistant" && (
+                          <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
+                        )}
+                        {msg.role === "assistant"
+                          ? <TypingMessage text={msg.content} isLatest={originalIdx === typingIndex} />
+                          : msg.content}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
 
                 {(phase === "thinking" || phase === "summarizing") && (
-                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div className="chat-bubble-in" style={{ display: "flex", justifyContent: "flex-start" }}>
                     <div style={{
                       padding: "10px 14px",
                       borderRadius: "12px 12px 12px 4px",
@@ -305,7 +330,7 @@ export function KrWhyPanel({ onClose }: Props) {
                       border: "1px solid var(--color-border-primary)",
                       fontSize: "12px", color: "var(--color-text-tertiary)",
                     }}>
-                      {phase === "summarizing" ? "サマリーを生成中…" : "考え中…"}
+                      <ThinkingDots />
                     </div>
                   </div>
                 )}

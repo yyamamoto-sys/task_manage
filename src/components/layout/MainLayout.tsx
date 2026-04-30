@@ -377,6 +377,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end",
           }}>
             <button
+              className="fab-item-in"
               onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
               style={{
                 display: "flex", alignItems: "center", gap: "8px",
@@ -386,9 +387,11 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 color: "#fff", fontSize: "13px", fontWeight: "600",
                 boxShadow: "var(--shadow-lg)", cursor: "pointer",
                 whiteSpace: "nowrap",
+                animationDelay: "0.06s",
               }}
             >✨ AIでPJを作る</button>
             <button
+              className="fab-item-in"
               onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
               style={{
                 display: "flex", alignItems: "center", gap: "6px",
@@ -398,6 +401,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 color: "#fff", fontSize: "13px", fontWeight: "600",
                 boxShadow: "var(--shadow-lg)", cursor: "pointer",
                 whiteSpace: "nowrap",
+                animationDelay: "0s",
               }}
             >＋ タスクを追加</button>
           </div>
@@ -482,6 +486,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end",
         }}>
           <button
+            className="fab-item-in"
             onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
@@ -491,11 +496,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
               color: "#fff", fontSize: "13px", fontWeight: "600",
               boxShadow: "var(--shadow-lg)", cursor: "pointer",
               whiteSpace: "nowrap",
+              animationDelay: "0.06s",
             }}
           >
             <span>✨</span> AIでPJを作る
           </button>
           <button
+            className="fab-item-in"
             onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
             style={{
               display: "flex", alignItems: "center", gap: "6px",
@@ -505,6 +512,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
               color: "#fff", fontSize: "13px", fontWeight: "600",
               boxShadow: "var(--shadow-lg)", cursor: "pointer",
               whiteSpace: "nowrap",
+              animationDelay: "0s",
             }}
           >
             <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> タスクを追加
@@ -872,6 +880,7 @@ function Sidebar({
           {!c && <span>設定</span>}
         </button>
         <button
+          className="ai-shimmer ai-glow"
           onClick={onOpenConsult}
           title={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
           style={{
