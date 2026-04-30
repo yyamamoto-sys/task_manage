@@ -27,19 +27,20 @@ interface Props {
 }
 
 const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode; tooltip: string }[] = [
-  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB",   icon: <DashIcon />,   tooltip: "OKRの進捗・今週のタスク・期限アラートをまとめて確認できます" },
-  { view: "kanban",    label: "カンバン",       shortLabel: "KB",   icon: <KanbanIcon />, tooltip: "タスクを「未着手／進行中／完了」の列でドラッグ&ドロップ管理できます" },
-  { view: "gantt",     label: "ガント",         shortLabel: "GT",   icon: <GanttIcon />,  tooltip: "プロジェクトの期間とタスクの期日をカレンダー形式で一覧できます" },
-  { view: "list",      label: "リスト",         shortLabel: "LT",   icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
-  { view: "admin",     label: "管理",           shortLabel: "管理", icon: <AdminIcon />,  tooltip: "OKR・プロジェクト・メンバーの作成・編集・削除を行う設定画面です" },
+  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB", icon: <DashIcon />,   tooltip: "OKRの進捗・今週のタスク・期限アラートをまとめて確認できます" },
+  { view: "kanban",    label: "カンバン",       shortLabel: "KB", icon: <KanbanIcon />, tooltip: "タスクを「未着手／進行中／完了」の列でドラッグ&ドロップ管理できます" },
+  { view: "gantt",     label: "ガント",         shortLabel: "GT", icon: <GanttIcon />,  tooltip: "プロジェクトの期間とタスクの期日をカレンダー形式で一覧できます" },
+  { view: "list",      label: "リスト",         shortLabel: "LT", icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
 ];
 
 export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
-  const [viewMode, setViewModeState] = useState<ViewMode>(
-    () => (localStorage.getItem("plan_app_view") as ViewMode | null) ?? "dashboard"
-  );
+  const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem("plan_app_view") as ViewMode | null;
+    // "admin" は設定パネルに移行したため、ダッシュボードにフォールバック
+    return (saved && saved !== "admin") ? saved : "dashboard";
+  });
   const setViewMode = (v: ViewMode) => {
     localStorage.setItem("plan_app_view", v);
     setViewModeState(v);
@@ -63,6 +64,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
+  const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
 
@@ -95,6 +97,36 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     (rawTtfs ?? []).forEach((ttf: TaskTaskForce) => { if (tfIds.has(ttf.tf_id)) ids.add(ttf.task_id); });
     return ids;
   }, [selectedKrId, rawTfs, rawTtfs]);
+
+  const adminOverlay = isAdminOpen ? (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 250,
+      display: "flex", flexDirection: "column",
+      background: "var(--color-bg-primary)",
+    }}>
+      <div style={{
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        display: "flex", alignItems: "center", gap: "10px",
+        flexShrink: 0,
+        background: "var(--color-bg-secondary)",
+      }}>
+        <span style={{ fontSize: "15px" }}>⚙️</span>
+        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>設定</span>
+        <button
+          onClick={() => setIsAdminOpen(false)}
+          style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            fontSize: "18px", color: "var(--color-text-tertiary)", padding: "4px",
+            lineHeight: 1,
+          }}
+        >✕</button>
+      </div>
+      <div style={{ flex: 1, overflow: "auto" }}>
+        <AdminView currentUser={currentUser} />
+      </div>
+    </div>
+  ) : null;
 
   const mainContent = (
     <div style={{
@@ -149,6 +181,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
+        {adminOverlay}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -271,6 +304,21 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           >
             🧪
           </button>
+          {/* 設定ボタン */}
+          <button
+            onClick={() => setIsAdminOpen(true)}
+            title="設定"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "15px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0, color: "var(--color-text-secondary)",
+            }}
+          >
+            <GearIcon />
+          </button>
           {/* テーマ切り替え */}
           <button
             onClick={toggleTheme}
@@ -360,6 +408,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   // PC レイアウト
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+      {adminOverlay}
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}
@@ -402,6 +451,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
+        onOpenAdmin={() => setIsAdminOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
       />
@@ -487,6 +537,7 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
+  onOpenAdmin: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
 }
@@ -497,7 +548,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  collapsed, onToggleCollapsed,
+  onOpenAdmin, collapsed, onToggleCollapsed,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const c = collapsed; // 省略形
@@ -671,8 +722,29 @@ function Sidebar({
         )}
       </div>
 
-      {/* AI相談・ユーザー情報 */}
+      {/* AI相談・設定・ユーザー情報 */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
+        {/* 設定（歯車）ボタン */}
+        <button
+          onClick={onOpenAdmin}
+          title="設定"
+          style={{
+            width: "100%",
+            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
+            gap: "8px",
+            padding: c ? "6px 0" : "6px 12px",
+            background: "transparent",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            color: "var(--color-text-secondary)",
+            fontSize: "11px",
+            marginBottom: "4px",
+          }}
+        >
+          <GearIcon />
+          {!c && <span>設定</span>}
+        </button>
         <button
           onClick={onOpenConsult}
           title={isConsultOpen ? "AIパネルを閉じる" : "AIに変更を相談"}
@@ -897,6 +969,15 @@ function KrIcon() {
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
       <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="1.2"/>
       <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/>
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="7" cy="7" r="2" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M7 1.5v1M7 11.5v1M1.5 7h1M11.5 7h1M3.2 3.2l.7.7M10.1 10.1l.7.7M10.8 3.2l-.7.7M3.9 10.1l-.7.7" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
     </svg>
   );
 }
