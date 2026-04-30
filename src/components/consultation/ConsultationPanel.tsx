@@ -26,6 +26,13 @@ import {
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { MeetingImportPanel } from "../meeting/MeetingImportPanel";
+import { AIProgressLoader } from "../common/AIProgressLoader";
+
+const PJ_GEN_PHASES = [
+  "プロジェクト構造を設計しています",
+  "タスクリストを生成しています",
+  "担当者・期日を割り当てています",
+];
 
 type PanelMode = "consult" | "create" | "meeting";
 
@@ -914,11 +921,7 @@ function ProjectCreatePane({
 
       {/* 生成中 */}
       {phase === "generating" && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "14px", padding: "40px" }}>
-          <div style={{ fontSize: "32px", animation: "spin 3s linear infinite", display: "inline-block" }}>✨</div>
-          <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: "600" }}>プロジェクト計画を生成中</div>
-          <div className="ai-thinking-dots" style={{ color: "var(--color-brand)" }}><span /><span /><span /></div>
-        </div>
+        <AIProgressLoader phases={PJ_GEN_PHASES} intervalMs={4500} />
       )}
 
       {/* 完了 */}

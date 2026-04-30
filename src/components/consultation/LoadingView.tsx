@@ -1,37 +1,15 @@
 // src/components/consultation/LoadingView.tsx
-//
-// 【設計意図】
-// AI応答待ち中に表示するローディングコンポーネント。
-// loadingMessageはuseAIConsultationからランダムに渡される。
+// AI相談の応答待ち中に表示するローディングコンポーネント。
 
-interface Props {
-  message: string;
-}
+import { AIProgressLoader } from "../common/AIProgressLoader";
 
-export function LoadingView({ message }: Props) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: "12px",
-        padding: "32px 16px",
-        color: "var(--color-text-secondary)",
-      }}
-    >
-      <div
-        style={{
-          width: "24px",
-          height: "24px",
-          border: "2px solid var(--color-brand-border)",
-          borderTopColor: "var(--color-brand)",
-          borderRadius: "50%",
-          animation: "spin 0.8s linear infinite",
-        }}
-      />
-      <span style={{ fontSize: "12px" }}>{message}</span>
-    </div>
-  );
+const CONSULT_PHASES = [
+  "データを読み込んでいます",
+  "状況を分析しています",
+  "提案を生成しています",
+  "内容を最終確認しています",
+];
+
+export function LoadingView({ message: _ }: { message: string }) {
+  return <AIProgressLoader phases={CONSULT_PHASES} intervalMs={3800} />;
 }

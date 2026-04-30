@@ -16,6 +16,15 @@ import {
   type MeetingTask,
   type MeetingStatusUpdate,
 } from "../../lib/ai/meetingExtractor";
+import { AIProgressLoader } from "../common/AIProgressLoader";
+
+const MEETING_PHASES = [
+  "テキストを読み込んでいます",
+  "タスク候補を抽出しています",
+  "ステータス変更を確認しています",
+  "決定事項・リスクを整理しています",
+  "結果をまとめています",
+];
 
 // ===== 定数 =====
 
@@ -292,7 +301,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         {/* スクロール余白 */}
         {step === "input" && <div style={{ height: "8px" }} />}
         {step === "analyzing" && (
-          <CenterMessage icon="⏳" text="AIが会議内容を解析しています..." />
+          <AIProgressLoader phases={MEETING_PHASES} intervalMs={4200} />
         )}
         {step === "review" && analysis && (
           <ReviewStep
