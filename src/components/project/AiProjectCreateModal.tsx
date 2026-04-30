@@ -14,6 +14,20 @@ import {
   type PlanMessage,
   type PlannedTask,
 } from "../../lib/ai/projectPlanClient";
+import { useTypingEffect } from "../../hooks/useTypingEffect";
+
+function ThinkingDots() {
+  return (
+    <div className="ai-thinking-dots" style={{ color: "var(--color-text-tertiary)" }}>
+      <span /><span /><span />
+    </div>
+  );
+}
+
+function TypingMessage({ text }: { text: string }) {
+  const { displayed, done } = useTypingEffect(text);
+  return <span className={done ? "" : "typing-cursor"}>{displayed}</span>;
+}
 
 interface Props {
   currentUser: Member;
@@ -37,6 +51,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
 
   const [phase, setPhase] = useState<Phase>("chat");
   const [messages, setMessages] = useState<PlanMessage[]>([]);
+  const [typingIndex, setTypingIndex] = useState(-1);
   const [inputText, setInputText] = useState("");
   const [isThinking, setIsThinking] = useState(false);
   const [turnCount, setTurnCount] = useState(0);
@@ -57,20 +72,11 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // 初回マウント：AIから最初の問いを取得
+  // 初回マウント：最初の問いをハードコード表示（空messagesをAPIに送るとエラーになるため）
   useEffect(() => {
-    (async () => {
-      setIsThinking(true);
-      try {
-        const reply = await callProjectPlanDialogue([]);
-        setMessages([{ role: "assistant", content: reply }]);
-      } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : "AI呼び出しに失敗しました。");
-        setPhase("error");
-      } finally {
-        setIsThinking(false);
-      }
-    })();
+    const firstMsg = "どんなプロジェクトを立ち上げたいですか？目的や背景を教えてください。";
+    setMessages([{ role: "assistant", content: firstMsg }]);
+    setTypingIndex(0);
   }, []);
 
   useEffect(() => {
@@ -91,7 +97,11 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
     setIsThinking(true);
     try {
       const reply = await callProjectPlanDialogue(newMessages);
-      setMessages(prev => [...prev, { role: "assistant" as const, content: reply }]);
+      setMessages(prev => {
+        const next = [...prev, { role: "assistant" as const, content: reply }];
+        setTypingIndex(next.length - 1);
+        return next;
+      });
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "AI呼び出しに失敗しました。");
       setPhase("error");
@@ -197,7 +207,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{
+      <div className="panel-slide-up" style={{
         width: "min(640px, 100%)",
         maxHeight: "90vh",
         background: "var(--color-bg-primary)",
@@ -207,7 +217,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
         overflow: "hidden",
       }}>
         {/* ヘッダー */}
-        <div style={{
+        <div className="ai-shimmer" style={{
           padding: "14px 18px",
           borderBottom: "1px solid var(--color-border-primary)",
           display: "flex", alignItems: "center", gap: "10px",
@@ -250,9 +260,12 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
 
           {/* 生成中 */}
           {phase === "generating" && (
-            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "12px", padding: "40px" }}>
-              <div style={{ fontSize: "32px" }}>🧠</div>
-              <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>プロジェクト計画を生成中...</div>
+            <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "16px", padding: "40px" }}>
+              <div style={{ fontSize: "36px", animation: "spin 3s linear infinite", display: "inline-block" }}>✨</div>
+              <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", fontWeight: "600" }}>プロジェクト計画を生成中</div>
+              <div className="ai-thinking-dots" style={{ color: "var(--color-brand)" }}>
+                <span /><span /><span />
+              </div>
             </div>
           )}
 
@@ -272,7 +285,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
             <>
               <div style={{ flex: 1, overflow: "auto", padding: "16px 18px", display: "flex", flexDirection: "column", gap: "10px" }}>
                 {messages.map((m, i) => (
-                  <div key={i} style={{
+                  <div key={i} className="chat-bubble-in" style={{
                     display: "flex",
                     justifyContent: m.role === "user" ? "flex-end" : "flex-start",
                   }}>
@@ -286,14 +299,16 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                       color: m.role === "user" ? "#fff" : "var(--color-text-primary)",
                       fontSize: "12px", lineHeight: "1.6",
                     }}>
-                      {m.content}
+                      {m.role === "assistant" && i === typingIndex
+                        ? <TypingMessage text={m.content} />
+                        : m.content}
                     </div>
                   </div>
                 ))}
                 {isThinking && (
-                  <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                    <div style={{ padding: "9px 13px", borderRadius: "14px 14px 14px 4px", background: "var(--color-bg-secondary)", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-                      <span style={{ animation: "none" }}>考え中...</span>
+                  <div className="chat-bubble-in" style={{ display: "flex", justifyContent: "flex-start" }}>
+                    <div style={{ borderRadius: "14px 14px 14px 4px", background: "var(--color-bg-secondary)" }}>
+                      <ThinkingDots />
                     </div>
                   </div>
                 )}
