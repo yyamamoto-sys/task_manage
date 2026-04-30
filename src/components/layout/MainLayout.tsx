@@ -62,6 +62,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
 
@@ -151,47 +152,156 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
+        {isGraphOpen && (
+          <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+        )}
+        {isKrReportOpen && (
+          <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+        )}
+        {isKrSessionOpen && (
+          <KrSessionPanel onClose={() => setIsKrSessionOpen(false)} currentUser={currentUser} />
+        )}
+        {isKrWhyOpen && (
+          <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+        )}
+        {graphEditTaskId && (
+          <TaskEditModal taskId={graphEditTaskId} currentUser={currentUser} onClose={() => setGraphEditTaskId(null)} />
+        )}
+        {aiEditTaskId && (
+          <TaskEditModal taskId={aiEditTaskId} currentUser={currentUser} onClose={() => setAiEditTaskId(null)} />
+        )}
+        {/* ラボ機能ボトムシート */}
+        {isMobileLabOpen && (
+          <div
+            style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
+            onClick={() => setIsMobileLabOpen(false)}
+          >
+            <div
+              style={{
+                position: "absolute", bottom: 0, left: 0, right: 0,
+                background: "var(--color-bg-primary)",
+                borderRadius: "16px 16px 0 0",
+                padding: "12px 0 32px",
+              }}
+              onClick={e => e.stopPropagation()}
+            >
+              <div style={{ width: "40px", height: "4px", background: "var(--color-border-primary)", borderRadius: "2px", margin: "0 auto 16px" }} />
+              <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", padding: "0 20px 10px", letterSpacing: "0.05em" }}>
+                🧪 ラボ機能
+              </div>
+              {[
+                { icon: "🕸️", label: "関係グラフ", desc: "PJ・タスクの関係を可視化", onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: "KRセッション記録", desc: "文字起こしからチェックイン・ウィン記録", onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "📊", label: "KRレポート生成", desc: "議事メモからKRレポートをAI生成", onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🔍", label: "KRなぜなぜ分析", desc: "AIとの対話で根本原因を5Whys形式で掘り下げ", onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
+              ].map(item => (
+                <button
+                  key={item.label}
+                  onClick={item.onClick}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: "14px",
+                    padding: "12px 20px", background: "transparent", border: "none",
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  <span style={{ fontSize: "22px", flexShrink: 0 }}>{item.icon}</span>
+                  <div>
+                    <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>{item.label}</div>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>{item.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* モバイル：ヘッダー */}
         <div style={{
-          display: "flex", alignItems: "center", gap: "8px",
-          padding: "10px 14px",
+          display: "flex", alignItems: "center", gap: "6px",
+          padding: "8px 12px",
           background: "var(--color-bg-primary)",
           borderBottom: "1px solid var(--color-border-primary)",
           flexShrink: 0,
         }}>
-          <div style={{ flex: 1, fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-            グループ計画管理
+          <div style={{ flex: 1, fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap" }}>
+            グループ計画
           </div>
-          {/* プロジェクト選択（ドロップダウン） */}
+          {/* プロジェクト選択 */}
           <select
             value={selectedProjectId ?? ""}
-            onChange={e => setSelectedProjectId(e.target.value || null)}
+            onChange={e => handleSelectProject(e.target.value || null)}
             style={{
-              fontSize: "11px", padding: "4px 8px",
+              fontSize: "11px", padding: "4px 6px",
               border: "1px solid var(--color-border-primary)",
               borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
               color: "var(--color-text-secondary)",
-              maxWidth: "120px",
+              maxWidth: "90px",
             }}
           >
             <option value="">全PJ</option>
-            {projects.map(p => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
+            {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <Avatar member={currentUser} size={28} />
+          {/* AI相談ボタン */}
+          <button
+            onClick={() => setIsConsultOpen(prev => !prev)}
+            title="AIに変更を相談"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: isConsultOpen ? "linear-gradient(135deg,#7c3aed,#5b21b6)" : "linear-gradient(135deg,#8b5cf6,#7c3aed)",
+              border: "none", cursor: "pointer", color: "#fff",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <AIIcon />
+          </button>
+          {/* ラボボタン */}
+          <button
+            onClick={() => setIsMobileLabOpen(true)}
+            title="ラボ機能"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "16px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            🧪
+          </button>
+          {/* テーマ切り替え */}
+          <button
+            onClick={toggleTheme}
+            title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "14px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            {theme === "dark" ? "☀" : "☾"}
+          </button>
           <button
             onClick={onLogout}
-            style={{
-              fontSize: "16px", background: "transparent", border: "none",
-              cursor: "pointer", color: "var(--color-text-tertiary)", padding: "2px",
-            }}
+            style={{ background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
             title="ログアウト"
           >
-            ⏏
+            <Avatar member={currentUser} size={28} />
           </button>
         </div>
+
+        {/* AI相談パネル（モバイル：右側から全幅でスライドイン） */}
+        <ConsultationPanel
+          isOpen={isConsultOpen}
+          onClose={() => setIsConsultOpen(false)}
+          currentUser={currentUser}
+          onOpenTask={setAiEditTaskId}
+        />
 
         {mainContent}
 
