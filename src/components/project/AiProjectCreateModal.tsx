@@ -96,7 +96,10 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
 
     setIsThinking(true);
     try {
-      const reply = await callProjectPlanDialogue(newMessages);
+      // Anthropic APIはmessages[0]がuser必須。先頭のsyntheticなassistantメッセージを除外する
+      const firstUserIdx = newMessages.findIndex(m => m.role === "user");
+      const apiMessages = firstUserIdx >= 0 ? newMessages.slice(firstUserIdx) : newMessages;
+      const reply = await callProjectPlanDialogue(apiMessages);
       setMessages(prev => {
         const next = [...prev, { role: "assistant" as const, content: reply }];
         setTypingIndex(next.length - 1);
@@ -113,8 +116,10 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
   const generatePlan = async () => {
     setPhase("generating");
     try {
+      const firstUserIdx = messages.findIndex(m => m.role === "user");
+      const apiMessages = firstUserIdx >= 0 ? messages.slice(firstUserIdx) : messages;
       const plan = await callProjectPlanFinalize({
-        messages,
+        messages: apiMessages,
         memberShortNames: members.map(m => m.short_name),
         today,
       });
