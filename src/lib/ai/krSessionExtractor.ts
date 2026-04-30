@@ -4,7 +4,7 @@
 // 会議の文字起こしテキストからチェックイン・ウィンセッションの構造化データをAIで抽出する。
 // 出力はJSONのみ。確認UIでユーザーが修正できるため、完璧な精度は求めない。
 
-import { supabase } from "../supabase/client";
+import { invokeAI } from "./invokeAI";
 
 // ===== 抽出結果の型 =====
 
@@ -100,17 +100,8 @@ declaration_resultのresult_status:
 // ===== 呼び出し共通処理 =====
 
 async function callExtractAI(system: string, userMessage: string): Promise<string> {
-  const { data, error } = await supabase.functions.invoke("ai-consult", {
-    body: {
-      system,
-      messages: [{ role: "user", content: userMessage }],
-      max_tokens: 4096,
-    },
-  });
-  if (error) throw new Error(`AI抽出エラー: ${error.message}`);
-  const text: string = data?.content?.[0]?.text ?? "";
-  if (!text) throw new Error("AIからの応答が空でした。");
-  return text;
+  const res = await invokeAI(system, [{ role: "user", content: userMessage }], 4096);
+  return res.content[0].text;
 }
 
 function parseJsonSafe<T>(text: string): T {
