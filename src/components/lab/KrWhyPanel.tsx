@@ -27,13 +27,15 @@ function TypingMessage({ text, isLatest }: { text: string; isLatest: boolean }) 
 interface Props {
   onClose: () => void;
   currentUser: Member;
+  inline?: boolean;
+  initialKrId?: string;
 }
 
 type Phase = "setup" | "thinking" | "dialogue" | "summarizing" | "summary";
 
 const MAX_TURNS = 5;
 
-export function KrWhyPanel({ onClose }: Props) {
+export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const { keyResults, taskForces } = useAppData();
 
   const activeKrs = useMemo(
@@ -41,7 +43,7 @@ export function KrWhyPanel({ onClose }: Props) {
     [keyResults],
   );
 
-  const [selectedKrId, setSelectedKrId] = useState(activeKrs[0]?.id ?? "");
+  const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
   const [issueText, setIssueText] = useState("");
   const [phase, setPhase] = useState<Phase>("setup");
   const [messages, setMessages] = useState<WhyMessage[]>([]);
@@ -150,27 +152,19 @@ export function KrWhyPanel({ onClose }: Props) {
 
   const progressPct = Math.min((turnCount / MAX_TURNS) * 100, 100);
 
-  return (
+  const panelContent = (
     <div
+      className={inline ? "" : "panel-slide-up"}
       style={{
-        position: "fixed", inset: 0, zIndex: 200,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+        width: inline ? "100%" : "min(720px, 100vw)",
+        height: "100%",
+        background: "var(--color-bg-primary)",
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+        ...(inline ? {} : { boxShadow: "-4px 0 24px rgba(0,0,0,0.18)" }),
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={inline ? undefined : e => e.stopPropagation()}
     >
-      <div
-        className="panel-slide-up"
-        style={{
-          width: "min(720px, 100vw)",
-          height: "100%",
-          background: "var(--color-bg-primary)",
-          display: "flex", flexDirection: "column",
-          overflow: "hidden",
-          boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
-        }}
-        onClick={e => e.stopPropagation()}
-      >
         {/* ヘッダー */}
         <div className="ai-shimmer" style={{
           padding: "14px 20px",
@@ -454,7 +448,21 @@ export function KrWhyPanel({ onClose }: Props) {
             </div>
           )}
         </div>
-      </div>
+    </div>
+  );
+
+  if (inline) return panelContent;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 200,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {panelContent}
     </div>
   );
 }

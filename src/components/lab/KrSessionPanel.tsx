@@ -72,15 +72,17 @@ const RESULT_OPTIONS: { value: "achieved" | "partial" | "not_achieved"; label: s
 interface Props {
   onClose: () => void;
   currentUser: Member;
+  inline?: boolean;
+  initialKrId?: string;
 }
 
-export function KrSessionPanel({ onClose, currentUser }: Props) {
+export function KrSessionPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
   const { keyResults, members } = useAppData();
   const activeKrs = useMemo(() => (keyResults ?? []).filter(kr => !kr.is_deleted), [keyResults]);
   const activeMembers = useMemo(() => (members ?? []).filter(m => !m.is_deleted), [members]);
 
   // --- 入力ステート ---
-  const [selectedKrId, setSelectedKrId] = useState<string>(activeKrs[0]?.id ?? "");
+  const [selectedKrId, setSelectedKrId] = useState<string>(initialKrId ?? activeKrs[0]?.id ?? "");
   const [sessionType, setSessionType] = useState<SessionType>("checkin");
   const [weekStart, setWeekStart] = useState<string>(getThisMonday());
   const [transcript, setTranscript] = useState("");
@@ -280,26 +282,18 @@ export function KrSessionPanel({ onClose, currentUser }: Props) {
 
   // ===== レンダリング =====
 
-  return (
+  const panelContent = (
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 200,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+        width: inline ? "100%" : "min(960px, 100vw)",
+        height: "100%",
+        background: "var(--color-bg-primary)",
+        display: "flex", flexDirection: "column",
+        overflow: "hidden",
+        ...(inline ? {} : { boxShadow: "-4px 0 24px rgba(0,0,0,0.18)" }),
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={inline ? undefined : e => e.stopPropagation()}
     >
-      <div
-        style={{
-          width: "min(960px, 100vw)",
-          height: "100%",
-          background: "var(--color-bg-primary)",
-          display: "flex", flexDirection: "column",
-          overflow: "hidden",
-          boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
-        }}
-        onClick={e => e.stopPropagation()}
-      >
         {/* ヘッダー */}
         <div style={{
           padding: "14px 20px",
@@ -453,7 +447,21 @@ export function KrSessionPanel({ onClose, currentUser }: Props) {
             </div>
           )}
         </div>
-      </div>
+    </div>
+  );
+
+  if (inline) return panelContent;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 200,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {panelContent}
     </div>
   );
 }

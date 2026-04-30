@@ -66,6 +66,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
+  const [okrActiveTool, setOkrActiveTool] = useState<"session" | "report" | "why" | null>(null);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isAiProjectOpen, setIsAiProjectOpen] = useState(false);
@@ -162,9 +163,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             currentUser={currentUser}
             selectedKrId={selectedKrId}
             onSelectKr={handleSelectKr}
-            onOpenKrSession={() => setIsKrSessionOpen(true)}
-            onOpenKrReport={() => setIsKrReportOpen(true)}
-            onOpenKrWhy={() => setIsKrWhyOpen(true)}
+            activeTool={okrActiveTool}
+            onSetActiveTool={setOkrActiveTool}
           />
         </div>
       ) : (
@@ -477,10 +477,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
               </button>
             );
           }) : ([
-            { label: "概要", icon: "🎯", onClick: () => {} },
-            { label: "セッション", icon: "🗓️", onClick: () => setIsKrSessionOpen(true) },
-            { label: "レポート", icon: "📊", onClick: () => setIsKrReportOpen(true) },
-            { label: "なぜなぜ", icon: "🔍", onClick: () => setIsKrWhyOpen(true) },
+            { label: "概要", icon: "🎯", onClick: () => setOkrActiveTool(null) },
+            { label: "セッション", icon: "🗓️", onClick: () => setOkrActiveTool("session") },
+            { label: "レポート", icon: "📊", onClick: () => setOkrActiveTool("report") },
+            { label: "なぜなぜ", icon: "🔍", onClick: () => setOkrActiveTool("why") },
           ] as const).map(item => (
             <button
               key={item.label}
@@ -599,6 +599,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
+        onSetOkrActiveTool={setOkrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenAiProject={() => setIsAiProjectOpen(true)}
         collapsed={isSidebarCollapsed}
@@ -688,6 +689,7 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
+  onSetOkrActiveTool: (tool: "session" | "report" | "why" | null) => void;
   onOpenAdmin: () => void;
   onOpenAiProject: () => void;
   collapsed: boolean;
@@ -702,6 +704,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
+  onSetOkrActiveTool,
   onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
@@ -877,10 +880,10 @@ function Sidebar({
         {/* OKR管理：ナビ */}
         <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
           {!c && <SectionLabel>OKR管理</SectionLabel>}
-          <NavItem active icon={<span style={{ fontSize: "13px" }}>🎯</span>} label="OKR概要" tooltip="Objective・KR・TFの概要" onClick={() => {}} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="KRセッション記録" tooltip="チェックイン・ウィンセッションを記録" onClick={onOpenKrSession} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>📊</span>} label="KRレポート生成" tooltip="議事メモからKRレポートをAI生成" onClick={onOpenKrReport} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🔍</span>} label="KRなぜなぜ分析" tooltip="AIとの対話で根本原因を5Whys形式で掘り下げる" onClick={onOpenKrWhy} collapsed={c} />
+          <NavItem active icon={<span style={{ fontSize: "13px" }}>🎯</span>} label="OKR概要" tooltip="Objective・KR・TFの概要" onClick={() => onSetOkrActiveTool(null)} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="KRセッション記録" tooltip="チェックイン・ウィンセッションを記録" onClick={() => onSetOkrActiveTool("session")} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>📊</span>} label="KRレポート生成" tooltip="議事メモからKRレポートをAI生成" onClick={() => onSetOkrActiveTool("report")} collapsed={c} />
+          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🔍</span>} label="KRなぜなぜ分析" tooltip="AIとの対話で根本原因を5Whys形式で掘り下げる" onClick={() => onSetOkrActiveTool("why")} collapsed={c} />
         </div>
 
         {/* OKR管理：KR一覧 */}

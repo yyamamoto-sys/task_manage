@@ -15,6 +15,8 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 interface Props {
   onClose: () => void;
   currentUser: Member;
+  inline?: boolean;
+  initialKrId?: string;
 }
 
 const MODE_OPTIONS: { value: KrReportMode; label: string; description: string }[] = [
@@ -38,7 +40,7 @@ function getThisMonday(): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function KrReportPanel({ onClose }: Props) {
+export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
   const { keyResults, taskForces, todos, tasks, members } = useAppData();
 
   const activeKrs = useMemo(
@@ -46,7 +48,7 @@ export function KrReportPanel({ onClose }: Props) {
     [keyResults],
   );
 
-  const [selectedKrId, setSelectedKrId] = useState<string>(activeKrs[0]?.id ?? "");
+  const [selectedKrId, setSelectedKrId] = useState<string>(initialKrId ?? activeKrs[0]?.id ?? "");
   const [mode, setMode] = useState<KrReportMode>("checkin");
   const [meetingNotes, setMeetingNotes] = useState("");
   const [generating, setGenerating] = useState(false);
@@ -168,27 +170,19 @@ export function KrReportPanel({ onClose }: Props) {
     }
   };
 
-  return (
+  const panelContent = (
     <div
       style={{
-        position: "fixed", inset: 0, zIndex: 200,
-        background: "rgba(0,0,0,0.55)",
-        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+        width: inline ? "100%" : "min(960px, 100vw)",
+        height: "100%",
+        background: "var(--color-bg-primary)",
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        ...(inline ? {} : { boxShadow: "-4px 0 24px rgba(0,0,0,0.18)" }),
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={inline ? undefined : e => e.stopPropagation()}
     >
-      <div
-        style={{
-          width: "min(960px, 100vw)",
-          height: "100%",
-          background: "var(--color-bg-primary)",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
-          boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
-        }}
-        onClick={e => e.stopPropagation()}
-      >
         {/* ヘッダー */}
         <div style={{
           padding: "14px 20px",
@@ -471,7 +465,21 @@ export function KrReportPanel({ onClose }: Props) {
             </div>
           )}
         </div>
-      </div>
+    </div>
+  );
+
+  if (inline) return panelContent;
+
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 200,
+        background: "rgba(0,0,0,0.55)",
+        display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
+      {panelContent}
     </div>
   );
 }

@@ -1,25 +1,30 @@
 // src/components/okr/OkrDashboardView.tsx
 // OKR管理モードのメインビュー。Objective・KR・TFの概要と3つのAIツールへのショートカットを表示。
+// activeTool が設定されている場合は対応するパネルをインライン表示する。
 
 import { useMemo } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
+import { KrSessionPanel } from "../lab/KrSessionPanel";
+import { KrReportPanel } from "../lab/KrReportPanel";
+import { KrWhyPanel } from "../lab/KrWhyPanel";
+
+type ActiveTool = "session" | "report" | "why" | null;
 
 interface Props {
   currentUser: Member;
   selectedKrId: string | null;
   onSelectKr: (id: string | null) => void;
-  onOpenKrSession: () => void;
-  onOpenKrReport: () => void;
-  onOpenKrWhy: () => void;
+  activeTool: ActiveTool;
+  onSetActiveTool: (tool: ActiveTool) => void;
 }
 
 export function OkrDashboardView({
+  currentUser,
   selectedKrId,
   onSelectKr,
-  onOpenKrSession,
-  onOpenKrReport,
-  onOpenKrWhy,
+  activeTool,
+  onSetActiveTool,
 }: Props) {
   const { objective, keyResults, taskForces, tasks, todos } = useAppData();
 
@@ -56,23 +61,55 @@ export function OkrDashboardView({
       label: "KRセッション記録",
       desc: "チェックイン・ウィンセッションの文字起こしを貼り付けて宣言と達成状況を記録",
       color: "#3b82f6",
-      onClick: onOpenKrSession,
+      onClick: () => onSetActiveTool("session"),
     },
     {
       icon: "📊",
       label: "KRレポート生成",
       desc: "議事メモからOKR進捗レポートをAIで自動生成",
       color: "#8b5cf6",
-      onClick: onOpenKrReport,
+      onClick: () => onSetActiveTool("report"),
     },
     {
       icon: "🔍",
       label: "KRなぜなぜ分析",
       desc: "AIとの対話で課題の根本原因を5Whys形式で掘り下げる",
       color: "#10b981",
-      onClick: onOpenKrWhy,
+      onClick: () => onSetActiveTool("why"),
     },
   ];
+
+  // インラインパネル表示
+  if (activeTool === "session") {
+    return (
+      <KrSessionPanel
+        onClose={() => onSetActiveTool(null)}
+        currentUser={currentUser}
+        inline
+        initialKrId={selectedKrId ?? undefined}
+      />
+    );
+  }
+  if (activeTool === "report") {
+    return (
+      <KrReportPanel
+        onClose={() => onSetActiveTool(null)}
+        currentUser={currentUser}
+        inline
+        initialKrId={selectedKrId ?? undefined}
+      />
+    );
+  }
+  if (activeTool === "why") {
+    return (
+      <KrWhyPanel
+        onClose={() => onSetActiveTool(null)}
+        currentUser={currentUser}
+        inline
+        initialKrId={selectedKrId ?? undefined}
+      />
+    );
+  }
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: "24px" }}>
@@ -189,7 +226,7 @@ export function OkrDashboardView({
 
                     {/* AI分析ボタン */}
                     <button
-                      onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onOpenKrWhy(); }}
+                      onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onSetActiveTool("why"); }}
                       title="このKRをなぜなぜ分析"
                       style={{
                         flexShrink: 0, padding: "4px 8px", fontSize: "10px",
