@@ -127,6 +127,7 @@ export function ConsultationPanel({
   const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
   const [selectedProposalIds, setSelectedProposalIds] = useState<Set<string>>(new Set());
+  const [latestAiTimestamp, setLatestAiTimestamp] = useState<string | undefined>(undefined);
 
   // 各セッションに固有IDを割り振る（localStorage保存用）
   const sessionIdRef = useRef<string>(crypto.randomUUID());
@@ -290,12 +291,13 @@ export function ConsultationPanel({
     if (consultationType !== "deadline_check") setTargetDeadline("");
   }, [consultationType]);
 
-  // 提案が来たらスクロールエリアを一番下へ
+  // 提案が来たらスクロールエリアを一番下へ＆最新AIターンを記録
   useEffect(() => {
-    if (callState === "success" && scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
-    }
-  }, [callState, proposals.length]);
+    if (callState !== "success") return;
+    if (scrollAreaRef.current) scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    const last = [...session.turns].reverse().find(t => t.role === "assistant");
+    if (last) setLatestAiTimestamp(last.timestamp);
+  }, [callState, proposals.length, session.turns]);
 
   // パネルリサイズ（フローティング時のみ）
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
@@ -516,6 +518,22 @@ export function ConsultationPanel({
           </div>
         </div>
 
+        {/* ===== タブ説明バー ===== */}
+        <div style={{
+          padding: "6px 14px",
+          background: "rgba(99,102,241,0.06)",
+          borderBottom: "1px solid rgba(99,102,241,0.12)",
+          fontSize: "11px",
+          color: "#6366f1",
+          fontWeight: "500",
+          flexShrink: 0,
+          lineHeight: 1.4,
+        }}>
+          {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます"}
+          {panelMode === "create" && "AIとの会話でPJを設計し、プロジェクトとタスクをまとめて登録できます"}
+          {panelMode === "meeting" && "会議の文字起こしから新規タスクとステータス変更を自動で提案・登録します"}
+        </div>
+
         {/* ===== 会議読み込みモード ===== */}
         {panelMode === "meeting" && (
           <MeetingImportPanel
@@ -732,7 +750,7 @@ export function ConsultationPanel({
               <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
                 会話履歴
               </div>
-              <ChatHistory session={session} shortIdMap={shortIdMap} currentUserId={currentUser.id} onOpenTask={onOpenTask} />
+              <ChatHistory session={session} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
             </div>
           )}
 

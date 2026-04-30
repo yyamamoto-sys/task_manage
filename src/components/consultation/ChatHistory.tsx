@@ -9,19 +9,27 @@ import { parseAIResponse } from "../../lib/ai/responseParser";
 import { mapProposalsToUI } from "../../lib/ai/proposalMapper";
 import type { ConsultationSession } from "../../lib/ai/sessionManager";
 import { ProposalCard } from "./ProposalCard";
+import { useTypingEffect } from "../../hooks/useTypingEffect";
 
 interface Props {
   session: ConsultationSession;
   shortIdMap: Map<string, string>;
   currentUserId: string;
+  latestAssistantTimestamp?: string;
   onProposalApplied?: () => void;
   onOpenTask?: (taskId: string) => void;
+}
+
+function AnimatedText({ text }: { text: string }) {
+  const { displayed, done } = useTypingEffect(text, 12);
+  return <span className={done ? "" : "typing-cursor"}>{displayed}</span>;
 }
 
 export function ChatHistory({
   session,
   shortIdMap,
   currentUserId,
+  latestAssistantTimestamp,
   onProposalApplied,
   onOpenTask,
 }: Props) {
@@ -77,6 +85,7 @@ export function ChatHistory({
         }
 
         if (!proposals) {
+          const isLatest = turn.timestamp === latestAssistantTimestamp;
           return (
             <div
               key={`assistant-text-${turn.timestamp}`}
@@ -91,7 +100,7 @@ export function ChatHistory({
                 wordBreak: "break-word",
               }}
             >
-              {turn.content}
+              {isLatest ? <AnimatedText text={turn.content} /> : turn.content}
             </div>
           );
         }
