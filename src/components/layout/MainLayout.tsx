@@ -16,7 +16,7 @@ import { GraphView } from "../graph/GraphView";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
-import { OkrDashboardView } from "../okr/OkrDashboardView";
+import { OkrDashboardView, type OkrActiveTool } from "../okr/OkrDashboardView";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
@@ -66,7 +66,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
-  const [okrActiveTool, setOkrActiveTool] = useState<"session" | "report" | "why" | null>(null);
+  const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(null);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isAiProjectOpen, setIsAiProjectOpen] = useState(false);
@@ -689,7 +689,7 @@ interface SidebarProps {
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
-  onSetOkrActiveTool: (tool: "session" | "report" | "why" | null) => void;
+  onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
   onOpenAiProject: () => void;
   collapsed: boolean;
@@ -704,8 +704,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onSetOkrActiveTool,
-  onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
+  onSetOkrActiveTool, onOpenAdmin, onOpenAiProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -877,18 +876,15 @@ function Sidebar({
         )}
       </div>
       </>) : (<>
-        {/* OKR管理：ナビ */}
-        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
-          {!c && <SectionLabel>OKR管理</SectionLabel>}
-          <NavItem active icon={<span style={{ fontSize: "13px" }}>🎯</span>} label="OKR概要" tooltip="Objective・KR・TFの概要" onClick={() => onSetOkrActiveTool(null)} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="KRセッション記録" tooltip="チェックイン・ウィンセッションを記録" onClick={() => onSetOkrActiveTool("session")} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>📊</span>} label="KRレポート生成" tooltip="議事メモからKRレポートをAI生成" onClick={() => onSetOkrActiveTool("report")} collapsed={c} />
-          <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🔍</span>} label="KRなぜなぜ分析" tooltip="AIとの対話で根本原因を5Whys形式で掘り下げる" onClick={() => onSetOkrActiveTool("why")} collapsed={c} />
-        </div>
-
-        {/* OKR管理：KR一覧 */}
+        {/* OKR管理：KR一覧（フィルター用） */}
         <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
           {!c && <SectionLabel>Key Results</SectionLabel>}
+          <NavItem
+            active={selectedKrId === null}
+            icon={<span style={{ fontSize: "13px" }}>🎯</span>}
+            label="全KR" tooltip="全KRを表示"
+            onClick={() => onSelectKr(null)} collapsed={c}
+          />
           {keyResults.map(kr => (
             <NavItem key={kr.id} active={selectedKrId === kr.id}
               icon={<KrIcon />} label={kr.title} tooltip={kr.title}

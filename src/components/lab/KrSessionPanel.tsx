@@ -74,9 +74,10 @@ interface Props {
   currentUser: Member;
   inline?: boolean;
   initialKrId?: string;
+  onSaved?: () => void;
 }
 
-export function KrSessionPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
+export function KrSessionPanel({ onClose, currentUser, inline = false, initialKrId, onSaved }: Props) {
   const { keyResults, members } = useAppData();
   const activeKrs = useMemo(() => (keyResults ?? []).filter(kr => !kr.is_deleted), [keyResults]);
   const activeMembers = useMemo(() => (members ?? []).filter(m => !m.is_deleted), [members]);
@@ -265,6 +266,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
       }
 
       setStep("done");
+      onSaved?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : "保存中にエラーが発生しました。");
       setStep("confirm");
@@ -326,14 +328,16 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
               最初からやり直す
             </button>
           )}
-          <button
-            onClick={onClose}
-            style={{
-              background: "transparent", border: "none", cursor: "pointer",
-              fontSize: "20px", color: "var(--color-text-tertiary)",
-              padding: "4px", lineHeight: 1,
-            }}
-          >✕</button>
+          {!inline && (
+            <button
+              onClick={onClose}
+              style={{
+                background: "transparent", border: "none", cursor: "pointer",
+                fontSize: "20px", color: "var(--color-text-tertiary)",
+                padding: "4px", lineHeight: 1,
+              }}
+            >✕</button>
+          )}
         </div>
 
         <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>

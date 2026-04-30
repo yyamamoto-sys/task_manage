@@ -181,10 +181,12 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
               AIとの対話で課題の根本原因を掘り下げます（最大{MAX_TURNS}回）
             </div>
           </div>
-          <button
-            onClick={onClose}
-            style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}
-          >✕</button>
+          {!inline && (
+            <button
+              onClick={onClose}
+              style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}
+            >✕</button>
+          )}
         </div>
 
         {/* コンテンツ */}
