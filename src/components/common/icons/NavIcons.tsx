@@ -78,8 +78,7 @@ export function AIIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
       <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.2"/>
-      <path d="M5 6c0-1.1.9-2 2-2s2 .9 2 2c0 .8-.5 1.5-1.2 1.8L7 8.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-      <circle cx="7" cy="10.5" r="0.6" fill="currentColor"/>
+      <text x="7" y="9.5" textAnchor="middle" fontSize="5.2" fontWeight="700" fontFamily="system-ui,sans-serif" fill="currentColor" letterSpacing="0.3">AI</text>
     </svg>
   );
 }
