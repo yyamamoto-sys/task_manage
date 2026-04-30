@@ -22,7 +22,6 @@ import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
-import { AiProjectCreateModal } from "../project/AiProjectCreateModal";
 
 type AppMode = "plan" | "okr";
 
@@ -52,6 +51,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
+  const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "create">("consult");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => localStorage.getItem("sidebar_collapsed") === "1"
   );
@@ -71,7 +71,6 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(null);
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
-  const [isAiProjectOpen, setIsAiProjectOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
@@ -114,12 +113,6 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     return ids;
   }, [selectedKrId, rawTfs, rawTtfs]);
 
-  const aiProjectModal = isAiProjectOpen ? (
-    <AiProjectCreateModal
-      currentUser={currentUser}
-      onClose={() => setIsAiProjectOpen(false)}
-    />
-  ) : null;
 
   const adminOverlay = isAdminOpen ? (
     <div style={{
@@ -173,7 +166,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         /* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */
         <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           {viewMode === "dashboard" && (
-            <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => setIsAiProjectOpen(true)} />
+            <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
           )}
           {viewMode === "kanban" && (
             <KanbanView
@@ -217,7 +210,6 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         {adminOverlay}
-        {aiProjectModal}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -405,7 +397,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             }}>
               <button
                 className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
+                onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   padding: "10px 16px",
@@ -508,7 +500,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {adminOverlay}
-      {aiProjectModal}
+
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}
@@ -530,7 +522,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         }}>
           <button
             className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); setIsAiProjectOpen(true); }}
+            onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: "9px 16px", height: "38px",
@@ -594,7 +586,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         currentUser={currentUser}
         onLogout={onLogout}
         isConsultOpen={isConsultOpen}
-        onOpenConsult={() => setIsConsultOpen(prev => !prev)}
+        onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(prev => !prev); }}
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenGraph={() => setIsGraphOpen(true)}
@@ -605,7 +597,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onSetOkrActiveTool={setOkrActiveTool}
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenAiProject={() => setIsAiProjectOpen(true)}
+        onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
@@ -670,6 +662,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           onClose={() => setIsConsultOpen(false)}
           currentUser={currentUser}
           inline
+          defaultMode={consultDefaultMode}
           onWidthChange={setConsultPanelWidth}
           onOpenTask={setAiEditTaskId}
         />

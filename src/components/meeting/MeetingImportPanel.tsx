@@ -273,37 +273,30 @@ export function MeetingImportPanel({ onClose, currentUser }: Props) {
         onClick={e => e.stopPropagation()}
       >
         {/* ヘッダー */}
-        <div style={{
+        <div className="ai-shimmer" style={{
+          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
           padding: "14px 20px",
-          borderBottom: "1px solid var(--color-border-primary)",
           display: "flex", alignItems: "center", gap: "10px",
           flexShrink: 0,
-          background: "var(--color-bg-secondary)",
         }}>
           <span style={{ fontSize: "20px" }}>🎙️</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>
               会議から読み込む
             </div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-              文字起こし（VTT/テキスト）→ AI解析 → タスク登録
+            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
+              {step === "analyzing" ? "AI解析中..." : "文字起こし（VTT/テキスト）→ AI解析 → タスク登録"}
             </div>
           </div>
-          {(step === "review") && (
+          {step === "review" && (
             <button
               onClick={handleReset}
-              style={ghostButtonStyle}
-            >
-              やり直す
-            </button>
+              style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}
+            >やり直す</button>
           )}
           <button
             onClick={onClose}
-            style={{
-              background: "transparent", border: "none", cursor: "pointer",
-              fontSize: "20px", color: "var(--color-text-tertiary)",
-              padding: "4px", lineHeight: 1,
-            }}
+            style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}
           >✕</button>
         </div>
 
