@@ -35,8 +35,16 @@ type Phase = "setup" | "thinking" | "dialogue" | "summarizing" | "summary";
 
 const MAX_TURNS = 5;
 
+function getCurrentQuarter(date: Date): string {
+  const m = date.getMonth() + 1;
+  if (m <= 3) return "1Q（1〜3月）";
+  if (m <= 6) return "2Q（4〜6月）";
+  if (m <= 9) return "3Q（7〜9月）";
+  return "4Q（10〜12月）";
+}
+
 export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
-  const { keyResults, taskForces } = useAppData();
+  const { keyResults, taskForces, objective, todos, tasks, members, projects } = useAppData();
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),
@@ -68,8 +76,75 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   }, [phase, messages.length]);
 
   const buildContext = () => {
-    const tfLines = relatedTfs.map(tf => `  - ${tf.tf_number ? `TF${tf.tf_number}` : ""} ${tf.name}${tf.description ? `：${tf.description}` : ""}`).join("\n");
-    return `KR：${selectedKr?.title ?? ""}\n関連TF：\n${tfLines || "  （なし）"}\n\n掘り下げたい課題：${issueText.trim()}`;
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10);
+    const quarter = getCurrentQuarter(today);
+
+    const memberMap = Object.fromEntries(
+      (members ?? []).map(m => [m.id, m.short_name]),
+    );
+    const projectMap = Object.fromEntries(
+      (projects ?? []).filter(p => !p.is_deleted).map(p => [p.id, p.name]),
+    );
+    const STATUS_LABEL: Record<string, string> = {
+      todo: "未着手", in_progress: "進行中", done: "完了",
+    };
+
+    // Objective
+    const objLine = objective
+      ? `${objective.title}（${objective.period}）`
+      : "（未設定）";
+
+    // 全KR一覧（対象KRに▶マーク）
+    const krListLines = activeKrs
+      .map(kr => `  ${kr.id === selectedKrId ? "▶ " : "  "}${kr.title}`)
+      .join("\n");
+
+    // 対象KRのTF → ToDo → タスク 詳細
+    const tfDetailLines = relatedTfs.map(tf => {
+      const relatedTodos = (todos ?? []).filter(
+        t => !t.is_deleted && t.tf_id === tf.id,
+      );
+      const todoLines = relatedTodos.map(todo => {
+        const todoTasks = (tasks ?? []).filter(
+          t => !t.is_deleted && (t.todo_ids ?? []).includes(todo.id),
+        );
+        const doneCnt = todoTasks.filter(t => t.status === "done").length;
+        const progressStr = todoTasks.length > 0
+          ? ` (${doneCnt}/${todoTasks.length}完了)`
+          : "";
+        const taskLines = todoTasks.map(task => {
+          const assignee = task.assignee_member_id
+            ? (memberMap[task.assignee_member_id] ?? "未定")
+            : "未定";
+          const due = task.due_date
+            ? ` 期日：${String(task.due_date).slice(0, 10)}`
+            : "";
+          const pj = task.project_id
+            ? ` [PJ：${projectMap[task.project_id] ?? "?"}]`
+            : "";
+          return `          - ${task.name} [${STATUS_LABEL[task.status] ?? task.status}] 担当：${assignee}${due}${pj}`;
+        }).join("\n");
+        return `      ToDo：${todo.title}${progressStr}${taskLines ? `\n${taskLines}` : ""}`;
+      }).join("\n");
+      return `  TF${tf.tf_number ?? ""} ${tf.name}${tf.description ? `（${tf.description}）` : ""}${todoLines ? `\n${todoLines}` : "\n      （タスクなし）"}`;
+    }).join("\n");
+
+    return `【現在日時】
+今日：${todayStr}　現在クォーター：${quarter}
+
+【Objective】
+${objLine}
+
+【全KR一覧】
+${krListLines || "  （KRなし）"}
+
+【対象KR・タスク詳細】
+KR：${selectedKr?.title ?? ""}
+${tfDetailLines || "  （TF・タスクなし）"}
+
+【掘り下げたい課題】
+${issueText.trim()}`;
   };
 
   const handleStart = async () => {
