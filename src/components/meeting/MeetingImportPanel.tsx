@@ -8,7 +8,7 @@
 
 import { useState, useRef, useMemo, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
-import type { Member, Task } from "../../lib/localData/types";
+import type { Member, Project, Task } from "../../lib/localData/types";
 import {
   parseTranscript,
   extractMeetingData,
@@ -77,6 +77,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     tasks: allTasks,
     members: allMembers,
     saveTask,
+    saveProject,
   } = useAppData();
 
   const projects = useMemo(
@@ -94,6 +95,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
 
   const [step, setStep] = useState<Step>("input");
   const [rawText, setRawText] = useState("");
+  const [pendingNewProjName, setPendingNewProjName] = useState("");
+  const [pendingNewProjColor, setPendingNewProjColor] = useState("#6366f1");
   const [error, setError] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<MeetingAnalysis | null>(null);
   const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([]);
@@ -201,13 +204,40 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     let updated = 0;
 
     try {
+      // 新規PJが必要な場合は先に作成する
+      let resolvedNewProjId: string | null = null;
+      if (taskDrafts.some(d => d.checked && d.project_id === "__new__")) {
+        const now = new Date().toISOString();
+        resolvedNewProjId = crypto.randomUUID();
+        const newProj: Project = {
+          id: resolvedNewProjId,
+          name: pendingNewProjName.trim() || "新規プロジェクト",
+          purpose: "",
+          contribution_memo: "",
+          owner_member_id: currentUser.id,
+          owner_member_ids: [currentUser.id],
+          status: "active",
+          color_tag: pendingNewProjColor,
+          start_date: "",
+          end_date: "",
+          is_deleted: false,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUser.id,
+        };
+        await saveProject(newProj);
+      }
+
       // 新規タスク作成
       for (const draft of taskDrafts.filter(d => d.checked && d.name.trim())) {
         const now = new Date().toISOString();
+        const resolvedProjId = draft.project_id === "__new__"
+          ? resolvedNewProjId
+          : (draft.project_id || null);
         const newTask: Task = {
           id: crypto.randomUUID(),
           name: draft.name.trim(),
-          project_id: draft.project_id || null,
+          project_id: resolvedProjId,
           todo_ids: [],
           assignee_member_id: draft.assignee_member_id || currentUser.id,
           assignee_member_ids: [draft.assignee_member_id || currentUser.id],
@@ -317,6 +347,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
             checkedTaskCount={checkedTaskCount}
             checkedStatusCount={checkedStatusCount}
             onApply={handleApply}
+            onNewProjNameChange={setPendingNewProjName}
+            onNewProjColorChange={setPendingNewProjColor}
           />
         )}
         {step === "applying" && (
@@ -520,6 +552,7 @@ function ReviewStep({
   analysis, taskDrafts, setTaskDrafts, statusDrafts, setStatusDrafts,
   members, projects, tasks,
   error, checkedTaskCount, checkedStatusCount, onApply,
+  onNewProjNameChange, onNewProjColorChange,
 }: {
   analysis: MeetingAnalysis;
   taskDrafts: TaskDraft[]; setTaskDrafts: (d: TaskDraft[]) => void;
@@ -531,6 +564,8 @@ function ReviewStep({
   checkedTaskCount: number;
   checkedStatusCount: number;
   onApply: () => void;
+  onNewProjNameChange: (name: string) => void;
+  onNewProjColorChange: (color: string) => void;
 }) {
   const updateTask = (tempId: string, patch: Partial<TaskDraft>) =>
     setTaskDrafts(taskDrafts.map(d => d.tempId === tempId ? { ...d, ...patch } : d));
@@ -538,6 +573,11 @@ function ReviewStep({
     setStatusDrafts(statusDrafts.map(d => d.tempId === tempId ? { ...d, ...patch } : d));
 
   const hasAnything = checkedTaskCount > 0 || checkedStatusCount > 0;
+
+  const applyBulkProject = (projectId: string) => {
+    if (!projectId) return;
+    setTaskDrafts(taskDrafts.map(d => d.checked ? { ...d, project_id: projectId } : d));
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -557,7 +597,13 @@ function ReviewStep({
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", margin: "4px 0 10px" }}>
             チェックした項目が登録されます。内容は編集できます。
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <BulkProjectBar
+            projects={projects}
+            onApplyBulk={applyBulkProject}
+            onNewProjNameChange={onNewProjNameChange}
+            onNewProjColorChange={onNewProjColorChange}
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginTop: "10px" }}>
             {taskDrafts.map(draft => (
               <TaskDraftCard
                 key={draft.tempId}
@@ -632,6 +678,112 @@ function ReviewStep({
           ? `登録する（タスク ${checkedTaskCount}件・更新 ${checkedStatusCount}件）`
           : "登録する項目がありません"}
       </button>
+    </div>
+  );
+}
+
+// ===== BulkProjectBar =====
+
+const PROJ_COLORS = [
+  { hex: "#6366f1", label: "紫" },
+  { hex: "#2563eb", label: "青" },
+  { hex: "#16a34a", label: "緑" },
+  { hex: "#ca8a04", label: "黄" },
+  { hex: "#dc2626", label: "赤" },
+  { hex: "#0891b2", label: "水" },
+  { hex: "#9333ea", label: "紫2" },
+  { hex: "#64748b", label: "グレー" },
+];
+
+function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjColorChange }: {
+  projects: { id: string; name: string }[];
+  onApplyBulk: (projectId: string) => void;
+  onNewProjNameChange: (name: string) => void;
+  onNewProjColorChange: (color: string) => void;
+}) {
+  const [bulkProjId, setBulkProjId] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("#6366f1");
+
+  const isNew = bulkProjId === "__new__";
+  const canApply = !!bulkProjId && (!isNew || newName.trim().length > 0);
+
+  return (
+    <div style={{
+      background: "var(--color-bg-secondary)",
+      border: "1px solid var(--color-border-primary)",
+      borderRadius: "var(--radius-md)",
+      padding: "12px 14px",
+      display: "flex",
+      flexDirection: "column",
+      gap: "10px",
+    }}>
+      <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
+        PJを一括設定（チェック済みのタスクに適用）
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <select
+          value={bulkProjId}
+          onChange={e => setBulkProjId(e.target.value)}
+          style={{ ...inputStyle, flex: 1 }}
+        >
+          <option value="">（プロジェクトを選択）</option>
+          {projects.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+          <option value="__new__">＋ 新規プロジェクトを作成</option>
+        </select>
+        <button
+          onClick={() => { if (canApply) onApplyBulk(bulkProjId); }}
+          disabled={!canApply}
+          style={{
+            padding: "7px 14px",
+            background: canApply
+              ? "linear-gradient(135deg, #8b5cf6, #7c3aed)"
+              : "var(--color-bg-tertiary)",
+            border: "none",
+            borderRadius: "var(--radius-md)",
+            color: canApply ? "#fff" : "var(--color-text-tertiary)",
+            fontSize: "12px",
+            fontWeight: "600",
+            cursor: canApply ? "pointer" : "not-allowed",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+          }}
+        >
+          一括適用
+        </button>
+      </div>
+      {isNew && (
+        <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+          <input
+            type="text"
+            placeholder="新規プロジェクト名（必須）"
+            value={newName}
+            onChange={e => { setNewName(e.target.value); onNewProjNameChange(e.target.value); }}
+            style={{ ...inputStyle, flex: 1 }}
+          />
+          <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
+            {PROJ_COLORS.map(c => (
+              <div
+                key={c.hex}
+                onClick={() => { setNewColor(c.hex); onNewProjColorChange(c.hex); }}
+                title={c.label}
+                style={{
+                  width: "20px",
+                  height: "20px",
+                  borderRadius: "50%",
+                  background: c.hex,
+                  cursor: "pointer",
+                  border: newColor === c.hex ? "2.5px solid var(--color-text-primary)" : "2px solid transparent",
+                  boxSizing: "border-box",
+                  transition: "border-color 0.15s",
+                }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -735,6 +887,7 @@ function TaskDraftCard({
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
+              <option value="__new__">＋ 新規プロジェクト（一括設定で作成）</option>
             </select>
           </div>
 
