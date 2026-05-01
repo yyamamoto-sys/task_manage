@@ -337,7 +337,8 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
   const memberNames = useMemo(() => activeMembers.map(m => m.short_name), [activeMembers]);
   const yearOptions = useMemo(() => {
     const y = new Date().getFullYear();
-    return Array.from({ length: 7 }, (_, i) => y - 1 + i);
+    const count = 2050 - (y - 1) + 1;
+    return Array.from({ length: count }, (_, i) => y - 1 + i);
   }, []);
 
   // KR・クォーター変更時に保存済み計画を確認
