@@ -1,6 +1,6 @@
 // src/components/consultation/ConsultationPanel.tsx
 
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { v4 as uuidv4 } from "uuid";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
@@ -15,7 +15,6 @@ import { LoadingView } from "./LoadingView";
 import { ErrorView } from "./ErrorView";
 import { ProposalCard } from "./ProposalCard";
 import { ChangeHistoryModal } from "./ChangeHistoryModal";
-import { GanttPreviewPanel } from "./GanttPreviewPanel";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { inferConsultationType } from "../../lib/ai/inferConsultationType";
 import {
@@ -25,8 +24,16 @@ import {
   type PlannedTask,
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
-import { MeetingImportPanel } from "../meeting/MeetingImportPanel";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+
+/**
+ * 【設計意図】
+ * GanttPreviewPanel は GanttView 全体を内包するため重い。AI提案プレビュー時のみ必要なので分離。
+ * MeetingImportPanel は会議読み込みモード時のみ必要なので分離。
+ * 両者を切り出すことで GanttView を初回バンドルから外せる。
+ */
+const GanttPreviewPanel  = lazy(() => import("./GanttPreviewPanel").then(m => ({ default: m.GanttPreviewPanel })));
+const MeetingImportPanel = lazy(() => import("../meeting/MeetingImportPanel").then(m => ({ default: m.MeetingImportPanel })));
 
 const PJ_GEN_PHASES = [
   "プロジェクト構造を設計しています",
@@ -427,13 +434,15 @@ export function ConsultationPanel({
         />
       )}
       {ganttPreviewProposal && createPortal(
-        <GanttPreviewPanel
-          proposal={ganttPreviewProposal}
-          shortIdMap={shortIdMap}
-          currentUser={currentUser}
-          selectedProject={selectedProject}
-          onClose={() => setGanttPreviewProposal(null)}
-        />,
+        <Suspense fallback={null}>
+          <GanttPreviewPanel
+            proposal={ganttPreviewProposal}
+            shortIdMap={shortIdMap}
+            currentUser={currentUser}
+            selectedProject={selectedProject}
+            onClose={() => setGanttPreviewProposal(null)}
+          />
+        </Suspense>,
         document.body,
       )}
       {!inline && isOpen && (
@@ -543,11 +552,13 @@ export function ConsultationPanel({
 
         {/* ===== 会議読み込みモード ===== */}
         {panelMode === "meeting" && (
-          <MeetingImportPanel
-            inline
-            onClose={() => setPanelMode("consult")}
-            currentUser={currentUser}
-          />
+          <Suspense fallback={null}>
+            <MeetingImportPanel
+              inline
+              onClose={() => setPanelMode("consult")}
+              currentUser={currentUser}
+            />
+          </Suspense>
         )}
 
         {/* ===== PJ/タスク登録モード ===== */}

@@ -1,27 +1,50 @@
 // src/components/layout/MainLayout.tsx
-import { useState, useMemo, useRef } from "react";
+import { useState, useMemo, useRef, lazy, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce } from "../../lib/localData/types";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { Avatar } from "../auth/UserSelectScreen";
-import { KanbanView } from "../kanban/KanbanView";
-import { AdminView } from "../admin/AdminView";
-import { GanttView } from "../gantt/GanttView";
-import { DashboardView } from "../dashboard/DashboardView";
-import { ListView } from "../list/ListView";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
-import { GraphView } from "../graph/GraphView";
-import { KrReportPanel } from "../lab/KrReportPanel";
-import { KrSessionPanel } from "../lab/KrSessionPanel";
-import { KrWhyPanel } from "../lab/KrWhyPanel";
-import { OkrDashboardView, type OkrActiveTool } from "../okr/OkrDashboardView";
-import { MeetingImportPanel } from "../meeting/MeetingImportPanel";
+import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+
+/**
+ * 【設計意図】
+ * 重量級ビューとラボ機能を React.lazy で分割し初回バンドルを縮小する。
+ * 名前付き export を default export 形に変換するブリッジを噛ませている。
+ * 切替頻度の低い管理画面・ラボ機能は別チャンクに分離されることで初回 LCP に寄与する。
+ */
+const KanbanView         = lazy(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })));
+const AdminView          = lazy(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })));
+const GanttView          = lazy(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })));
+const DashboardView      = lazy(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })));
+const ListView           = lazy(() => import("../list/ListView").then(m => ({ default: m.ListView })));
+const GraphView          = lazy(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })));
+const KrReportPanel      = lazy(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })));
+const KrSessionPanel     = lazy(() => import("../lab/KrSessionPanel").then(m => ({ default: m.KrSessionPanel })));
+const KrWhyPanel         = lazy(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })));
+const OkrDashboardView   = lazy(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })));
+
+function ViewLoading() {
+  return (
+    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div
+        className="animate-spin"
+        style={{
+          width: "24px", height: "24px",
+          border: "2px solid var(--color-border-primary)",
+          borderTopColor: "var(--color-brand)",
+          borderRadius: "50%",
+        }}
+      />
+    </div>
+  );
+}
 
 type AppMode = "plan" | "okr";
 
@@ -67,7 +90,6 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
-  const [isMeetingImportOpen, setIsMeetingImportOpen] = useState(false);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
     const saved = localStorage.getItem("okr_active_tool") as OkrActiveTool | null;
     const validTools: OkrActiveTool[] = ["session", "why", "plan", "overview", "guide", null];
@@ -147,7 +169,9 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         >✕</button>
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>
-        <AdminView currentUser={currentUser} />
+        <Suspense fallback={<ViewLoading />}>
+          <AdminView currentUser={currentUser} />
+        </Suspense>
       </div>
     </div>
   ) : null;
@@ -162,53 +186,57 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     }}>
       {appMode === "okr" ? (
         <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-          <OkrDashboardView
-            currentUser={currentUser}
-            selectedKrId={selectedKrId}
-            onSelectKr={handleSelectKr}
-            activeTool={okrActiveTool}
-            onSetActiveTool={setOkrActiveToolPersisted}
-          />
+          <Suspense fallback={<ViewLoading />}>
+            <OkrDashboardView
+              currentUser={currentUser}
+              selectedKrId={selectedKrId}
+              onSelectKr={handleSelectKr}
+              activeTool={okrActiveTool}
+              onSetActiveTool={setOkrActiveToolPersisted}
+            />
+          </Suspense>
         </div>
       ) : (
         /* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */
         <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-          {viewMode === "dashboard" && (
-            <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
-          )}
-          {viewMode === "kanban" && (
-            <KanbanView
-              currentUser={currentUser}
-              selectedProject={selectedProject}
-              projects={projects}
-              selectedKrId={selectedKrId}
-              krTaskIds={krTaskIds}
-            />
-          )}
-          {viewMode === "gantt" && (
-            <GanttView
-              currentUser={currentUser}
-              selectedProject={selectedProject}
-              projects={projects}
-              selectedKrId={selectedKrId}
-              krTaskIds={krTaskIds}
-            />
-          )}
-          {viewMode === "admin" && (
-            <AdminView currentUser={currentUser} />
-          )}
-          {viewMode === "list" && (
-            <ListView
-              currentUser={currentUser}
-              selectedProject={selectedProject}
-              projects={projects}
-              selectedKrId={selectedKrId}
-              krTaskIds={krTaskIds}
-            />
-          )}
-          {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-            <ComingSoon view={viewMode} />
-          )}
+          <Suspense fallback={<ViewLoading />}>
+            {viewMode === "dashboard" && (
+              <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
+            )}
+            {viewMode === "kanban" && (
+              <KanbanView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode === "gantt" && (
+              <GanttView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode === "admin" && (
+              <AdminView currentUser={currentUser} />
+            )}
+            {viewMode === "list" && (
+              <ListView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+              <ComingSoon view={viewMode} />
+            )}
+          </Suspense>
         </div>
       )}
     </div>
@@ -222,16 +250,24 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
         {isGraphOpen && (
-          <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+          <Suspense fallback={<ViewLoading />}>
+            <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+          </Suspense>
         )}
         {isKrReportOpen && (
-          <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+          <Suspense fallback={<ViewLoading />}>
+            <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+          </Suspense>
         )}
         {isKrSessionOpen && (
-          <KrSessionPanel onClose={() => setIsKrSessionOpen(false)} currentUser={currentUser} />
+          <Suspense fallback={<ViewLoading />}>
+            <KrSessionPanel onClose={() => setIsKrSessionOpen(false)} currentUser={currentUser} />
+          </Suspense>
         )}
         {isKrWhyOpen && (
-          <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+          <Suspense fallback={<ViewLoading />}>
+            <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+          </Suspense>
         )}
         {graphEditTaskId && (
           <TaskEditModal taskId={graphEditTaskId} currentUser={currentUser} onClose={() => setGraphEditTaskId(null)} />
@@ -611,29 +647,37 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       />
       {mainContent}
       {isGraphOpen && (
-        <GraphView
-          onClose={() => setIsGraphOpen(false)}
-          currentUser={currentUser}
-          onOpenTask={taskId => setGraphEditTaskId(taskId)}
-        />
+        <Suspense fallback={<ViewLoading />}>
+          <GraphView
+            onClose={() => setIsGraphOpen(false)}
+            currentUser={currentUser}
+            onOpenTask={taskId => setGraphEditTaskId(taskId)}
+          />
+        </Suspense>
       )}
       {isKrReportOpen && (
-        <KrReportPanel
-          onClose={() => setIsKrReportOpen(false)}
-          currentUser={currentUser}
-        />
+        <Suspense fallback={<ViewLoading />}>
+          <KrReportPanel
+            onClose={() => setIsKrReportOpen(false)}
+            currentUser={currentUser}
+          />
+        </Suspense>
       )}
       {isKrSessionOpen && (
-        <KrSessionPanel
-          onClose={() => setIsKrSessionOpen(false)}
-          currentUser={currentUser}
-        />
+        <Suspense fallback={<ViewLoading />}>
+          <KrSessionPanel
+            onClose={() => setIsKrSessionOpen(false)}
+            currentUser={currentUser}
+          />
+        </Suspense>
       )}
       {isKrWhyOpen && (
-        <KrWhyPanel
-          onClose={() => setIsKrWhyOpen(false)}
-          currentUser={currentUser}
-        />
+        <Suspense fallback={<ViewLoading />}>
+          <KrWhyPanel
+            onClose={() => setIsKrWhyOpen(false)}
+            currentUser={currentUser}
+          />
+        </Suspense>
       )}
       {graphEditTaskId && (
         <TaskEditModal
