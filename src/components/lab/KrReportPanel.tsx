@@ -8,6 +8,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
+import { LS_KEY } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
@@ -51,7 +52,7 @@ function getThisMonday(): string {
 }
 
 type SavedReport = { html: string; generatedAt: string };
-const reportKey = (krId: string, m: KrReportMode) => `okr_report_${krId}_${m}`;
+const reportKey = (krId: string, m: KrReportMode) => LS_KEY.krReport(krId, m);
 
 function loadSavedReport(krId: string, m: KrReportMode): SavedReport | null {
   try {

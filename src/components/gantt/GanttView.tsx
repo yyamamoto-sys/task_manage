@@ -34,8 +34,6 @@ interface Props {
 
 const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
 const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
-const GANTT_ZOOM_KEY = "gantt_zoom";
-const GANTT_SORT_KEY = "gantt_sort";
 const STAGNANT_THRESHOLD_DAYS = 5;
 
 type GanttSortOrder = "date" | "name";
@@ -143,7 +141,7 @@ export function GanttView({
   // ズームレベル（dayWidth）— totalWidth/todayX より前に宣言が必要
   const [dayWidth, setDayWidth] = useState<number>(() => {
     try {
-      const saved = parseInt(localStorage.getItem(GANTT_ZOOM_KEY) ?? "", 10);
+      const saved = parseInt(localStorage.getItem(KEYS.GANTT_ZOOM) ?? "", 10);
       return (ZOOM_LEVELS as readonly number[]).includes(saved) ? saved : DAY_WIDTH_DEFAULT;
     } catch { return DAY_WIDTH_DEFAULT; }
   });
@@ -163,10 +161,10 @@ export function GanttView({
 
   // タスクの並び順
   const [sortOrder, setSortOrder] = useState<GanttSortOrder>(
-    () => (localStorage.getItem(GANTT_SORT_KEY) as GanttSortOrder | null) ?? "date"
+    () => (localStorage.getItem(KEYS.GANTT_SORT) as GanttSortOrder | null) ?? "date"
   );
   const changeSortOrder = (s: GanttSortOrder) => {
-    localStorage.setItem(GANTT_SORT_KEY, s);
+    localStorage.setItem(KEYS.GANTT_SORT, s);
     setSortOrder(s);
   };
   const sortTasks = useCallback((tasks: Task[]): Task[] => {
@@ -297,7 +295,7 @@ export function GanttView({
       const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
       if (idx < 0 || idx >= ZOOM_LEVELS.length - 1) return cur;
       const next = ZOOM_LEVELS[idx + 1];
-      localStorage.setItem(GANTT_ZOOM_KEY, String(next));
+      localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
       return next;
     });
   }, []);
@@ -307,7 +305,7 @@ export function GanttView({
       const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
       if (idx <= 0) return cur;
       const next = ZOOM_LEVELS[idx - 1];
-      localStorage.setItem(GANTT_ZOOM_KEY, String(next));
+      localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
       return next;
     });
   }, []);
@@ -322,10 +320,9 @@ export function GanttView({
     prevDayWidthRef.current = dayWidth;
   }, [dayWidth]);
 
-  const GANTT_LABEL_KEY = "gantt_label_width";
   const [labelWidth, setLabelWidth] = useState(() => {
     if (isMobile) return 110;
-    try { return parseInt(localStorage.getItem(GANTT_LABEL_KEY) ?? "200", 10) || 200; } catch { return 200; }
+    try { return parseInt(localStorage.getItem(KEYS.GANTT_LABEL_WIDTH) ?? "200", 10) || 200; } catch { return 200; }
   });
   const labelWidthRef     = useRef(labelWidth);
   const isDraggingW       = useRef(false);
@@ -353,7 +350,7 @@ export function GanttView({
       if (!isDraggingW.current) return;
       isDraggingW.current = false;
       setIsResizing(false);
-      try { localStorage.setItem(GANTT_LABEL_KEY, String(labelWidthRef.current)); } catch { /* ignore */ }
+      try { localStorage.setItem(KEYS.GANTT_LABEL_WIDTH, String(labelWidthRef.current)); } catch { /* ignore */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup",   onUp);

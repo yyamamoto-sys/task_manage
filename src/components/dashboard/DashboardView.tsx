@@ -44,9 +44,8 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
 
-  const STAGNANT_DAYS_KEY = "stagnant_days_threshold";
   const [stagnantDays] = useState<number>(() => {
-    const saved = localStorage.getItem(STAGNANT_DAYS_KEY);
+    const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
     return saved ? Math.max(1, parseInt(saved, 10) || 5) : 5;
   });
 

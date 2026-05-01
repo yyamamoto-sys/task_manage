@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
 import { SessionHistoryPanel } from "./SessionHistoryPanel";
 import type { Member, Project, Task } from "../../lib/localData/types";
+import { KEYS } from "../../lib/localData/localStore";
 import type { ConsultationType } from "../../lib/ai/types";
 import { useAppData } from "../../context/AppDataContext";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
@@ -162,9 +163,8 @@ export function ConsultationPanel({
   const createChatEndRef = useRef<HTMLDivElement>(null);
 
   // パネル幅（フローティング時のみ使用）
-  const PANEL_WIDTH_KEY = "consultation_panel_width";
   const [panelWidth, setPanelWidth] = useState<number>(() => {
-    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(PANEL_WIDTH_KEY) ?? "400", 10) || 400)); } catch { return 400; }
+    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
   });
   const panelWidthRef = useRef(panelWidth);
   const isDraggingPanel = useRef(false);
@@ -333,7 +333,7 @@ export function ConsultationPanel({
     const onUp = () => {
       if (!isDraggingPanel.current) return;
       isDraggingPanel.current = false;
-      try { localStorage.setItem(PANEL_WIDTH_KEY, String(panelWidthRef.current)); } catch { /* ignore */ }
+      try { localStorage.setItem(KEYS.CONSULT_PANEL_WIDTH, String(panelWidthRef.current)); } catch { /* ignore */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

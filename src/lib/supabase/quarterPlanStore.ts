@@ -8,6 +8,8 @@
 // Supabase移行時のテーブル定義は:
 //   docs/migrations/20260601_quarter_plans.sql を参照。
 
+import { LS_KEY } from "../localData/localStore";
+
 // ===== 型定義 =====
 
 export interface ProposedTF {
@@ -36,8 +38,7 @@ export interface QuarterPlan {
 
 // ===== localStorage キー =====
 
-const planKey = (krId: string, quarter: string) =>
-  `okr_qplan_${krId}_${quarter}`;
+const planKey = LS_KEY.quarterPlan;
 
 // ===== 操作関数 =====
 

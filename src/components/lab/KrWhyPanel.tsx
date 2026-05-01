@@ -7,6 +7,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
+import { LS_KEY } from "../../lib/localData/localStore";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { buildMessageContent, getContentText } from "../../lib/ai/invokeAI";
@@ -48,7 +49,7 @@ function getCurrentQuarter(date: Date): string {
 }
 
 type SavedSummary = { summary: string; savedAt: string; issueText: string; krTitle: string };
-const summaryKey = (krId: string) => `okr_why_${krId}`;
+const summaryKey = LS_KEY.krWhySummary;
 
 function loadSavedSummary(krId: string): SavedSummary | null {
   try {

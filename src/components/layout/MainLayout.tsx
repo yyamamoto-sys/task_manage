@@ -4,6 +4,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce } from "../../lib/localData/types";
+import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
@@ -64,39 +65,39 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
-    const saved = localStorage.getItem("plan_app_view") as ViewMode | null;
+    const saved = localStorage.getItem(KEYS.VIEW_MODE) as ViewMode | null;
     // "admin" は設定パネルに移行したため、ダッシュボードにフォールバック
     return (saved && saved !== "admin") ? saved : "dashboard";
   });
   const setViewMode = (v: ViewMode) => {
-    localStorage.setItem("plan_app_view", v);
+    localStorage.setItem(KEYS.VIEW_MODE, v);
     setViewModeState(v);
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "create" | "meeting">("consult");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
-    () => localStorage.getItem("sidebar_collapsed") === "1"
+    () => localStorage.getItem(KEYS.SIDEBAR_COLLAPSED) === "1"
   );
   const toggleSidebar = () => setIsSidebarCollapsed(prev => {
     const next = !prev;
-    localStorage.setItem("sidebar_collapsed", next ? "1" : "0");
+    localStorage.setItem(KEYS.SIDEBAR_COLLAPSED, next ? "1" : "0");
     return next;
   });
   const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
-    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem("consultation_panel_width") ?? "400", 10) || 400)); } catch { return 400; }
+    try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
   });
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
-    const saved = localStorage.getItem("okr_active_tool") as OkrActiveTool | null;
+    const saved = localStorage.getItem(KEYS.OKR_ACTIVE_TOOL) as OkrActiveTool | null;
     const validTools: OkrActiveTool[] = ["session", "why", "plan", "overview", "guide", null];
     return (saved !== undefined && validTools.includes(saved)) ? saved : "session";
   });
   const setOkrActiveToolPersisted = (tool: OkrActiveTool) => {
-    if (tool) localStorage.setItem("okr_active_tool", tool);
+    if (tool) localStorage.setItem(KEYS.OKR_ACTIVE_TOOL, tool);
     setOkrActiveTool(tool);
   };
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -106,10 +107,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
-    (localStorage.getItem("plan_app_mode") as AppMode | null) ?? "plan"
+    (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
   );
   const setAppMode = (m: AppMode) => {
-    localStorage.setItem("plan_app_mode", m);
+    localStorage.setItem(KEYS.APP_MODE, m);
     setAppModeState(m);
   };
 

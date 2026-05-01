@@ -6,6 +6,8 @@
 // ブラウザのlocalStorageにのみ保存する（サーバーへは送信しない）。
 // キーをユーザーID別にすることで、他ユーザーの履歴は参照できない設計。
 
+import { LS_KEY } from "../localData/localStore";
+
 export interface SavedChatSession {
   id: string;
   savedAt: string;           // ISO8601
@@ -19,11 +21,10 @@ export interface SavedChatSession {
 }
 
 const MAX_HISTORY = 10;
-const KEY_PREFIX = "consultation_history_v1_";
 
 export function loadChatHistory(userId: string): SavedChatSession[] {
   try {
-    const raw = localStorage.getItem(KEY_PREFIX + userId);
+    const raw = localStorage.getItem(LS_KEY.consultationHistory(userId));
     if (!raw) return [];
     return JSON.parse(raw) as SavedChatSession[];
   } catch { return []; }
@@ -39,13 +40,13 @@ export function saveChatSession(userId: string, session: SavedChatSession): void
       history.unshift(session);
       if (history.length > MAX_HISTORY) history.length = MAX_HISTORY;
     }
-    localStorage.setItem(KEY_PREFIX + userId, JSON.stringify(history));
+    localStorage.setItem(LS_KEY.consultationHistory(userId), JSON.stringify(history));
   } catch { /* quota超過などは無視 */ }
 }
 
 export function deleteChatSession(userId: string, sessionId: string): void {
   try {
     const history = loadChatHistory(userId).filter(s => s.id !== sessionId);
-    localStorage.setItem(KEY_PREFIX + userId, JSON.stringify(history));
+    localStorage.setItem(LS_KEY.consultationHistory(userId), JSON.stringify(history));
   } catch { /* ignore */ }
 }
