@@ -1,40 +1,46 @@
 /* src/styles/globals.css */
 
-/* ===== デザイントークン ===== */
+/* ===== デザイントークン =====
+ * Refined Stationery Aesthetic（文房具的な静謐）
+ * - 紙質感のある暖色寄りオフホワイト背景
+ * - ブランドはインクブルー（手帳の万年筆インク）
+ * - 影は暖色寄りの多層構造
+ * - 数値・見出し用に Noto Serif JP を補助フェイスとして用意
+ */
 :root {
-  /* 背景 */
-  --color-bg-primary: #ffffff;
-  --color-bg-secondary: #f8f9fb;
-  --color-bg-tertiary: #f1f3f7;
-  --color-bg-info: #eff6ff;
-  --color-bg-success: #f0fdf4;
-  --color-bg-warning: #fefce8;
-  --color-bg-danger: #fef2f2;
-  --color-bg-purple: #f5f3ff;
+  /* 背景：純白を捨てて紙質感のある暖色寄り */
+  --color-bg-primary: #fbfaf7;
+  --color-bg-secondary: #f4f2ec;
+  --color-bg-tertiary: #ebe8e0;
+  --color-bg-info: #ecf0f9;
+  --color-bg-success: #eef5ec;
+  --color-bg-warning: #faf5e2;
+  --color-bg-danger: #f7eae7;
+  --color-bg-purple: #f0eef8;
 
-  /* テキスト */
-  --color-text-primary: #111827;
-  --color-text-secondary: #4b5563;
-  --color-text-tertiary: #9ca3af;
-  --color-text-info: #1d4ed8;
-  --color-text-success: #15803d;
-  --color-text-warning: #92400e;
-  --color-text-danger: #b91c1c;
-  --color-text-purple: #534AB7;
+  /* テキスト：暖色寄りの濃灰（純黒を避ける） */
+  --color-text-primary: #221f1a;
+  --color-text-secondary: #56524a;
+  --color-text-tertiary: #9d978b;
+  --color-text-info: #2c4f8f;
+  --color-text-success: #2f6b3c;
+  --color-text-warning: #8a5d10;
+  --color-text-danger: #a54338;
+  --color-text-purple: #4d4690;
 
-  /* ボーダー */
-  --color-border-primary: #e5e7eb;
-  --color-border-secondary: #d1d5db;
-  --color-border-info: #93c5fd;
-  --color-border-success: #86efac;
-  --color-border-warning: #fcd34d;
-  --color-border-danger: #fca5a5;
-  --color-border-purple: #AFA9EC;
+  /* ボーダー：紙の罫線色 */
+  --color-border-primary: #e3ddcf;
+  --color-border-secondary: #c7c0ad;
+  --color-border-info: #a9b9d8;
+  --color-border-success: #aac4a4;
+  --color-border-warning: #e2cc88;
+  --color-border-danger: #d8aaa3;
+  --color-border-purple: #b4adcc;
 
-  /* ブランドカラー */
-  --color-brand: #7F77DD;
-  --color-brand-light: #eeedfe;
-  --color-brand-border: #AFA9EC;
+  /* ブランドカラー：インクブルー（万年筆インク） */
+  --color-brand: #3d4f8a;
+  --color-brand-light: #e7eaf3;
+  --color-brand-border: #8993b8;
 
   /* 角丸 */
   --radius-sm: 6px;
@@ -42,18 +48,30 @@
   --radius-lg: 16px;
   --radius-full: 9999px;
 
-  /* シャドウ */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.10);
+  /* シャドウ：暖色寄り多層（umber ink の影） */
+  --shadow-sm:
+    0 1px 1px rgba(58, 48, 30, 0.04),
+    0 1px 2px rgba(58, 48, 30, 0.06);
+  --shadow-md:
+    0 1px 2px rgba(58, 48, 30, 0.05),
+    0 6px 16px rgba(58, 48, 30, 0.08);
+  --shadow-lg:
+    0 2px 4px rgba(58, 48, 30, 0.06),
+    0 16px 40px rgba(58, 48, 30, 0.12);
 
-  /* フォント: M PLUS Rounded 1c（Googleフォント・丸みのあるデザイン）→ システムフォント */
+  /* フォント */
   --font-sans:
     "M PLUS Rounded 1c",
     "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     "Meiryo UI", "Meiryo",
     "Yu Gothic UI", "Yu Gothic",
     sans-serif;
+  /* 数値・主要見出しに使用する Display フェイス（手帳の年月数字、KPI） */
+  --font-display:
+    "Noto Serif JP",
+    "Yu Mincho", "YuMincho",
+    "Hiragino Mincho ProN", "Hiragino Mincho Pro",
+    serif;
 }
 
 /* ===== アバターカラー（CSS変数化でダークモード対応） ===== */
@@ -68,46 +86,46 @@
   --avatar-7-bg: #F0FDF4; --avatar-7-text: #166534;
 }
 
-/* ===== ダークモード ===== */
+/* ===== ダークモード（紙の裏側のような暖色寄りの夜） ===== */
 [data-theme="dark"] {
-  /* 背景 */
-  --color-bg-primary: #1a1b1e;
-  --color-bg-secondary: #212226;
-  --color-bg-tertiary: #2a2b30;
-  --color-bg-info: #1e2d47;
-  --color-bg-success: #162a1f;
-  --color-bg-warning: #2a1f0a;
-  --color-bg-danger: #2a1212;
-  --color-bg-purple: #1f1d38;
+  /* 背景：純黒を避けてインクっぽい暗茶 */
+  --color-bg-primary: #1c1a16;
+  --color-bg-secondary: #221f1a;
+  --color-bg-tertiary: #2c2922;
+  --color-bg-info: #1a2540;
+  --color-bg-success: #1a2820;
+  --color-bg-warning: #2a2010;
+  --color-bg-danger: #2a1814;
+  --color-bg-purple: #211f38;
 
-  /* テキスト */
-  --color-text-primary: #e4e5e7;
-  --color-text-secondary: #9da3ae;
-  --color-text-tertiary: #6b7280;
-  --color-text-info: #60a5fa;
-  --color-text-success: #4ade80;
-  --color-text-warning: #fbbf24;
-  --color-text-danger: #f87171;
-  --color-text-purple: #a5a0f0;
+  /* テキスト：純白を避けて暖色寄りオフホワイト */
+  --color-text-primary: #ebe6dc;
+  --color-text-secondary: #a5a094;
+  --color-text-tertiary: #6f6a5e;
+  --color-text-info: #7a9ad8;
+  --color-text-success: #84c08a;
+  --color-text-warning: #d4ad60;
+  --color-text-danger: #d88c80;
+  --color-text-purple: #aaa3da;
 
   /* ボーダー */
-  --color-border-primary: #2e3035;
-  --color-border-secondary: #3a3d43;
-  --color-border-info: #1d4ed8;
-  --color-border-success: #166534;
-  --color-border-warning: #92400e;
-  --color-border-danger: #7f1d1d;
-  --color-border-purple: #4c4590;
+  --color-border-primary: #332f27;
+  --color-border-secondary: #423d33;
+  --color-border-info: #2c4a8c;
+  --color-border-success: #2a5a3a;
+  --color-border-warning: #745b1c;
+  --color-border-danger: #6f3b35;
+  --color-border-purple: #4a4378;
 
-  /* ブランドカラー（暗背景で少し明るく） */
-  --color-brand: #8b84e3;
-  --color-brand-light: #2a2550;
-  --color-brand-border: #6b64cc;
+  /* ブランド：インクブルーの夜版 */
+  --color-brand: #8895c4;
+  --color-brand-light: #232844;
+  --color-brand-border: #5e6790;
 
-  /* シャドウ（暗背景では強めに） */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.6);
+  /* シャドウ（暗背景・純黒寄り） */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.45);
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.55);
+  --shadow-lg: 0 12px 36px rgba(0,0,0,0.65);
 
   /* アバターカラー */
   --avatar-0-bg: #2d2452; --avatar-0-text: #c4b5fd;
@@ -122,17 +140,17 @@
 
 /* ===== インタラクション トークン ===== */
 :root {
-  /* ホバー・アクティブ時の背景オーバーレイ */
-  --color-hover-bg:        rgba(0,0,0,0.04);
-  --color-active-bg:       rgba(0,0,0,0.08);
-  --color-hover-brand-bg:  rgba(127,119,221,0.08);
-  --color-active-brand-bg: rgba(127,119,221,0.15);
+  /* ホバー・アクティブ時の背景オーバーレイ（暖色寄り） */
+  --color-hover-bg:        rgba(58, 48, 30, 0.05);
+  --color-active-bg:       rgba(58, 48, 30, 0.10);
+  --color-hover-brand-bg:  rgba(61, 79, 138, 0.08);
+  --color-active-brand-bg: rgba(61, 79, 138, 0.15);
 
-  /* ボタン：プライマリ */
-  --btn-primary-bg:        #7F77DD;
-  --btn-primary-bg-hover:  #6d65cc;
-  --btn-primary-bg-active: #5e58b8;
-  --btn-primary-text:      #ffffff;
+  /* ボタン：プライマリ（インクブルー） */
+  --btn-primary-bg:        #3d4f8a;
+  --btn-primary-bg-hover:  #4d5fa0;
+  --btn-primary-bg-active: #2f3f74;
+  --btn-primary-text:      #fbfaf7;
 
   /* ボタン：ゴースト（枠線あり） */
   --btn-ghost-bg:          transparent;
@@ -142,10 +160,10 @@
 
   /* ボタン：デンジャー */
   --btn-danger-bg:         transparent;
-  --btn-danger-bg-hover:   #fef2f2;
-  --btn-danger-bg-active:  #fee2e2;
-  --btn-danger-text:       #b91c1c;
-  --btn-danger-border:     #fca5a5;
+  --btn-danger-bg-hover:   #f7eae7;
+  --btn-danger-bg-active:  #efd8d3;
+  --btn-danger-text:       #a54338;
+  --btn-danger-border:     #d8aaa3;
 
   /* トランジション（統一） */
   --transition-fast: 0.12s ease;
@@ -153,20 +171,21 @@
 }
 
 [data-theme="dark"] {
-  --color-hover-bg:        rgba(255,255,255,0.06);
-  --color-active-bg:       rgba(255,255,255,0.10);
-  --color-hover-brand-bg:  rgba(139,132,227,0.12);
-  --color-active-brand-bg: rgba(139,132,227,0.22);
+  --color-hover-bg:        rgba(235, 230, 220, 0.06);
+  --color-active-bg:       rgba(235, 230, 220, 0.10);
+  --color-hover-brand-bg:  rgba(136, 149, 196, 0.12);
+  --color-active-brand-bg: rgba(136, 149, 196, 0.22);
 
-  --btn-primary-bg:        #8b84e3;
-  --btn-primary-bg-hover:  #9d97ea;
-  --btn-primary-bg-active: #7068cc;
+  --btn-primary-bg:        #5e6da0;
+  --btn-primary-bg-hover:  #7080b3;
+  --btn-primary-bg-active: #4d5b8e;
+  --btn-primary-text:      #fbfaf7;
 
-  --btn-ghost-bg-hover:    rgba(255,255,255,0.07);
-  --btn-ghost-bg-active:   rgba(255,255,255,0.12);
+  --btn-ghost-bg-hover:    rgba(235, 230, 220, 0.07);
+  --btn-ghost-bg-active:   rgba(235, 230, 220, 0.12);
 
-  --btn-danger-bg-hover:   rgba(185,28,28,0.15);
-  --btn-danger-bg-active:  rgba(185,28,28,0.25);
+  --btn-danger-bg-hover:   rgba(165, 67, 56, 0.18);
+  --btn-danger-bg-active:  rgba(165, 67, 56, 0.30);
 }
 
 /* ===== リセット ===== */
@@ -180,6 +199,9 @@ body {
   background: var(--color-bg-secondary);
   -webkit-font-smoothing: antialiased;  /* macOS Chrome/Safari */
   -moz-osx-font-smoothing: grayscale;   /* macOS Firefox */
+  /* 約物の詰め・カーニング・等幅数字。Refined Stationery 風の組版精度 */
+  font-feature-settings: "palt" 1, "kern" 1;
+  text-rendering: optimizeLegibility;
 }
 
 /* Yu Gothic（非UI版）を使う場合のみフォントウェイトを補正
@@ -239,7 +261,10 @@ input[type="search"]:focus,
 select:focus,
 textarea:focus {
   border-color: var(--color-brand);
-  box-shadow: 0 0 0 2px var(--color-brand-light);
+  /* 二重リング：内側に薄ハロー、外側に細いインクライン */
+  box-shadow:
+    0 0 0 3px var(--color-brand-light),
+    0 0 0 4px rgba(61, 79, 138, 0.18);
 }
 
 /* ===== セレクト ネイティブ矢印を非表示にしてカスタム矢印を使用 ===== */
@@ -260,6 +285,36 @@ select {
 .gap-1 { gap: 4px; }
 .gap-2 { gap: 8px; }
 
+/* Display フェイス：年月数字・KPI・主要見出しに使用
+   tabular-nums で数字幅を揃え、行内の数字並びを綺麗に保つ */
+.font-display {
+  font-family: var(--font-display);
+  font-feature-settings: "palt" 1, "tnum" 1;
+  letter-spacing: -0.005em;
+}
+
+/* 小ラベル：セクション見出し・カテゴリラベル用（手帳のインデックス感） */
+.label-small {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+/* グラデーションフェード水平線：硬い border-bottom より上品 */
+.divider-fade {
+  height: 1px;
+  background: linear-gradient(
+    to right,
+    transparent 0%,
+    var(--color-border-primary) 18%,
+    var(--color-border-primary) 82%,
+    transparent 100%
+  );
+  border: none;
+}
+
 /* ===== グローバル ボタン ホバー（inline-style ボタンへのフォールバック） =====
    ::after オーバーレイ方式 → background の inline style を上書きせずに効果を追加できる
    .btn-* クラスを使うとこのオーバーレイはOFFになり、明示的な color 変更に切り替わる */
@@ -271,10 +326,10 @@ button:not(:disabled)::after {
   border-radius: inherit;
   pointer-events: none;
 }
-button:not(:disabled):hover::after  { background: rgba(0,0,0,0.06); }
-button:not(:disabled):active::after { background: rgba(0,0,0,0.12); }
-[data-theme="dark"] button:not(:disabled):hover::after  { background: rgba(255,255,255,0.08); }
-[data-theme="dark"] button:not(:disabled):active::after { background: rgba(255,255,255,0.14); }
+button:not(:disabled):hover::after  { background: rgba(58, 48, 30, 0.06); }
+button:not(:disabled):active::after { background: rgba(58, 48, 30, 0.12); }
+[data-theme="dark"] button:not(:disabled):hover::after  { background: rgba(235, 230, 220, 0.08); }
+[data-theme="dark"] button:not(:disabled):active::after { background: rgba(235, 230, 220, 0.14); }
 /* .btn-* は background を直接変えるのでオーバーレイ不要 */
 .btn::after { display: none; }
 
@@ -389,14 +444,21 @@ label.check-row:hover { background: var(--color-hover-bg); }
 /* ===== select のホバーカーソル補強 ===== */
 select { transition: border-color var(--transition-fast), box-shadow var(--transition-fast); }
 
-/* ===== スクロールバー（細め） ===== */
+/* ===== スクロールバー（極細・透明トラック・暖色寄りつまみ） ===== */
 /* W3C 標準（Firefox / Edge 標準モード対応） */
-* { scrollbar-width: thin; scrollbar-color: var(--color-border-primary) transparent; }
+* { scrollbar-width: thin; scrollbar-color: var(--color-border-secondary) transparent; }
 /* Chrome / Edge / Safari（Webkit 拡張） */
-::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-border-primary); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-border-secondary); }
+::-webkit-scrollbar-thumb {
+  background: var(--color-border-secondary);
+  border-radius: 999px;
+  border: 1.5px solid transparent;
+  background-clip: padding-box;
+  transition: background var(--transition-fast);
+}
+::-webkit-scrollbar-thumb:hover { background: var(--color-text-tertiary); background-clip: padding-box; }
+::-webkit-scrollbar-corner { background: transparent; }
 
 /* ===== アニメーション ===== */
 @keyframes spin { to { transform: rotate(360deg); } }
