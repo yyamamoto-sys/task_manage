@@ -146,7 +146,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
 
 
   const adminOverlay = isAdminOpen ? (
-    <div style={{
+    <div className="animate-overlay-rich" style={{
       position: "fixed", inset: 0, zIndex: 250,
       display: "flex", flexDirection: "column",
       background: "var(--color-bg-primary)",
@@ -279,10 +279,12 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         {/* ラボ機能ボトムシート */}
         {isMobileLabOpen && (
           <div
+            className="animate-overlay"
             style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
             onClick={() => setIsMobileLabOpen(false)}
           >
             <div
+              className="panel-slide-up"
               style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "var(--color-bg-primary)",
@@ -847,7 +849,7 @@ function Sidebar({
 
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
-        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+        <div className="stagger-children" style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
           {!c && <SectionLabel>メニュー</SectionLabel>}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem

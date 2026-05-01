@@ -43,6 +43,7 @@ export function ConfirmModal() {
       role="dialog"
       aria-modal="true"
       onClick={() => handleClose(false)}
+      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 9999,
         background: "rgba(0,0,0,0.35)",
@@ -52,6 +53,7 @@ export function ConfirmModal() {
     >
       <div
         onClick={e => e.stopPropagation()}
+        className="panel-slide-up"
         style={{
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
@@ -59,7 +61,6 @@ export function ConfirmModal() {
           boxShadow: "var(--shadow-lg)",
           width: "100%", maxWidth: "340px",
           padding: "24px 20px 18px",
-          animation: "fadeIn 0.12s ease-out",
         }}
       >
         {/* アイコン */}

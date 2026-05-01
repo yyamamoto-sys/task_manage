@@ -463,10 +463,19 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 /* ===== アニメーション ===== */
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 汎用フェード（ビュー切り替え・コンテンツ更新） */
+/* 汎用フェード（ビュー切り替え・コンテンツ更新）
+ * Refined Stationery: 少しのスケールと微ブラーで「紙が手前に置かれる」感 */
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(6px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
 }
 
 /* モーダル出現（スケール + フェード） */
@@ -494,11 +503,86 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 }
 
 .animate-spin       { animation: spin 0.8s linear infinite; }
-.animate-fadeIn     { animation: fadeIn 0.25s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-modalEnter { animation: modalEnter 0.22s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-overlay    { animation: overlayEnter 0.18s ease both; }
-.animate-slideDown  { animation: slideDown 0.18s cubic-bezier(0.16,1,0.3,1) both; }
-.animate-dropdown   { animation: dropdownOpen 0.14s cubic-bezier(0.16,1,0.3,1); transform-origin: top; }
+.animate-fadeIn     { animation: fadeIn 0.32s cubic-bezier(0.22,1,0.36,1) both; }
+.animate-modalEnter { animation: modalEnter 0.28s cubic-bezier(0.22,1,0.36,1) both; }
+.animate-overlay    { animation: overlayEnter 0.22s ease both; }
+.animate-slideDown  { animation: slideDown 0.22s cubic-bezier(0.22,1,0.36,1) both; }
+.animate-dropdown   { animation: dropdownOpen 0.16s cubic-bezier(0.22,1,0.36,1); transform-origin: top; }
+
+/* ===== 追加アニメーション（Refined Stationery 拡張） ===== */
+
+/* フルスクリーンオーバーレイ用：紙が手前にスライドして来る感
+ * Admin パネル / ラボ機能パネル / グラフビュー等の覆い被せ式ビューに使用 */
+@keyframes overlaySlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.985);
+    filter: blur(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+.animate-overlay-rich {
+  animation: overlaySlideIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
+  /* 一旦動き始めるとブラウザを最適化させる */
+  will-change: transform, opacity, filter;
+}
+
+/* タブ切替・コンテンツ差し替え用：横にすっと差す感（ノートのページめくり感） */
+@keyframes pageSwap {
+  from { opacity: 0; transform: translateX(8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-pageSwap { animation: pageSwap 0.28s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* リスト・カード子要素のステージャー登場
+ * 親要素に .stagger-children を付け、子（直接子）に順番に遅延を入れて入場させる
+ * 6個まで見える分のずれを設定。それ以降は揃えて入る（過剰演出を避ける） */
+@keyframes staggerIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.stagger-children > * {
+  animation: staggerIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
+.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
+.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
+.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
+.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
+.stagger-children > *:nth-child(7)  { animation-delay: 230ms; }
+.stagger-children > *:nth-child(8)  { animation-delay: 250ms; }
+.stagger-children > *:nth-child(n+9) { animation-delay: 270ms; }
+
+/* 初回マウント時の柔らかな入場（hero / ヘッダー要素用） */
+@keyframes softBloom {
+  from { opacity: 0; transform: translateY(-4px); letter-spacing: 0.02em; }
+  to   { opacity: 1; transform: translateY(0);    letter-spacing: normal; }
+}
+.animate-softBloom { animation: softBloom 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* 数値カウンターを切り替える時のクロスフェード（Display フェイス用） */
+@keyframes numFlip {
+  0%   { opacity: 1; transform: translateY(0); }
+  40%  { opacity: 0; transform: translateY(-6px); }
+  60%  { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.animate-numFlip { animation: numFlip 0.36s cubic-bezier(0.22, 1, 0.36, 1) both; }
+
+/* prefers-reduced-motion: ユーザー設定で動きを最小化する人向けに全停止 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 
 /* トースト通知（下から浮き上がる） */
 @keyframes toastIn {
