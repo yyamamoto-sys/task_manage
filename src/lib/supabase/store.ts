@@ -14,22 +14,29 @@ import type {
 
 // ===== 全データ一括取得 =====
 
+/**
+ * 【設計意図】
+ * 論理削除済み行はサーバー側で除外する。クライアント側にダウンロードしてから
+ * `filter(x => !x.is_deleted)` していたが、データ量が増えると無駄な転送・JS フィルタになる。
+ * 「削除済みを参照する UI」は現状ないため、サーバーで弾いて問題ない。
+ * junction テーブル（*_task_forces / task_projects）には is_deleted カラムが無いため除外フィルタは入れない。
+ */
 export async function fetchAllData() {
   const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones] =
     await Promise.all([
-      supabase.from("members").select("*"),
+      supabase.from("members").select("*").eq("is_deleted", false),
       supabase.from("objectives").select("*"),
-      supabase.from("key_results").select("*"),
-      supabase.from("task_forces").select("*"),
-      supabase.from("todos").select("*"),
-      supabase.from("projects").select("*"),
-      supabase.from("tasks").select("*"),
+      supabase.from("key_results").select("*").eq("is_deleted", false),
+      supabase.from("task_forces").select("*").eq("is_deleted", false),
+      supabase.from("todos").select("*").eq("is_deleted", false),
+      supabase.from("projects").select("*").eq("is_deleted", false),
+      supabase.from("tasks").select("*").eq("is_deleted", false),
       supabase.from("project_task_forces").select("*"),
-      supabase.from("quarterly_objectives").select("*"),
+      supabase.from("quarterly_objectives").select("*").eq("is_deleted", false),
       supabase.from("quarterly_kr_task_forces").select("*"),
       supabase.from("task_task_forces").select("*"),
       supabase.from("task_projects").select("*"),
-      supabase.from("milestones").select("*"),
+      supabase.from("milestones").select("*").eq("is_deleted", false),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる

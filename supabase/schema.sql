@@ -1,257 +1,371 @@
 -- ============================================================
--- グループ計画管理アプリ スキーマ定義
--- Supabase SQL エディタで実行してください
+-- グループ計画管理アプリ スキーマ定義（統合版）
+-- 最終更新: 2026-05-01
+-- Supabase SQL エディタで上から順に実行してください
+-- ============================================================
+--
+-- 【統合内容】
+-- 旧スキーマ + supabase/migrations/* の全マイグレーション + CLAUDE.md
+-- 記載のテーブル定義（milestones）+ 実コードから推定したテーブル
+-- (ai_usage_logs / kr_sessions / kr_declarations）を統合した完全版。
+--
+-- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
+-- 新規環境ではこのファイル一発で初期化できる。
 -- ============================================================
 
+-- ===== updated_at 自動更新トリガー（先に定義） =====
+
+CREATE OR REPLACE FUNCTION update_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+  NEW.updated_at = NOW();
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- ===== メンバーマスタ =====
-create table if not exists members (
-  id            text primary key,
-  display_name  text not null,
-  short_name    text not null,
-  initials      text not null,
-  teams_account text not null default '',
-  color_bg      text not null,
-  color_text    text not null,
-  is_deleted    boolean not null default false,
+CREATE TABLE IF NOT EXISTS members (
+  id            text PRIMARY KEY,
+  display_name  text NOT NULL,
+  short_name    text NOT NULL,
+  initials      text NOT NULL,
+  teams_account text NOT NULL DEFAULT '',
+  color_bg      text NOT NULL,
+  color_text    text NOT NULL,
+  is_deleted    boolean NOT NULL DEFAULT false,
   deleted_at    timestamptz,
   deleted_by    text,
-  created_at    timestamptz not null default now(),
-  updated_at    timestamptz not null default now(),
-  updated_by    text not null default ''
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    text NOT NULL DEFAULT ''
 );
 
--- ===== Objective =====
-create table if not exists objectives (
-  id          text primary key,
-  title       text not null,
-  period      text not null,
-  is_current  boolean not null default true,
+-- ===== Objective（年間） =====
+CREATE TABLE IF NOT EXISTS objectives (
+  id          text PRIMARY KEY,
+  title       text NOT NULL,
+  period      text NOT NULL,
+  purpose     text,
+  background  text,
+  is_current  boolean NOT NULL DEFAULT true,
   archived_at timestamptz,
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  updated_by  text not null default ''
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text NOT NULL DEFAULT ''
 );
 
--- ===== Key Results =====
-create table if not exists key_results (
-  id           text primary key,
-  objective_id text not null references objectives(id),
-  title        text not null,
-  is_deleted   boolean not null default false,
+-- ===== Key Results（年間・通年固定） =====
+CREATE TABLE IF NOT EXISTS key_results (
+  id           text PRIMARY KEY,
+  objective_id text NOT NULL REFERENCES objectives(id),
+  title        text NOT NULL,
+  is_deleted   boolean NOT NULL DEFAULT false,
   deleted_at   timestamptz,
   deleted_by   text,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now(),
-  updated_by   text not null default ''
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  updated_by   text NOT NULL DEFAULT ''
 );
 
 -- ===== Quarterly Objectives =====
-create table if not exists quarterly_objectives (
-  id           text primary key,
-  objective_id text not null references objectives(id),
-  quarter      text not null check (quarter in ('1Q','2Q','3Q','4Q')),
-  title        text not null,
-  is_deleted   boolean not null default false,
+CREATE TABLE IF NOT EXISTS quarterly_objectives (
+  id           text PRIMARY KEY,
+  objective_id text NOT NULL REFERENCES objectives(id),
+  quarter      text NOT NULL CHECK (quarter IN ('1Q','2Q','3Q','4Q')),
+  title        text NOT NULL,
+  purpose      text,
+  background   text,
+  is_deleted   boolean NOT NULL DEFAULT false,
   deleted_at   timestamptz,
   deleted_by   text,
-  created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now(),
-  updated_by   text not null default ''
-);
-
--- ===== Quarterly Key Results =====
-create table if not exists quarterly_key_results (
-  id                     text primary key,
-  quarterly_objective_id text not null references quarterly_objectives(id),
-  title                  text not null,
-  is_deleted             boolean not null default false,
-  deleted_at             timestamptz,
-  deleted_by             text,
-  created_at             timestamptz not null default now(),
-  updated_at             timestamptz not null default now(),
-  updated_by             text not null default ''
-);
-
--- ===== Quarterly KR ↔ Task Force（多対多）=====
-create table if not exists quarterly_kr_task_forces (
-  quarterly_kr_id text not null references quarterly_key_results(id),
-  tf_id           text not null references task_forces(id),
-  created_at      timestamptz not null default now(),
-  primary key (quarterly_kr_id, tf_id)
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  updated_by   text NOT NULL DEFAULT ''
 );
 
 -- ===== Task Forces =====
-create table if not exists task_forces (
-  id               text primary key,
-  kr_id            text not null references key_results(id),
-  tf_number        text not null default '',
-  name             text not null,
-  leader_member_id text references members(id),
-  is_deleted       boolean not null default false,
+CREATE TABLE IF NOT EXISTS task_forces (
+  id               text PRIMARY KEY,
+  kr_id            text NOT NULL REFERENCES key_results(id),
+  tf_number        text NOT NULL DEFAULT '',
+  name             text NOT NULL,
+  description      text,
+  background       text,
+  leader_member_id text REFERENCES members(id),
+  is_deleted       boolean NOT NULL DEFAULT false,
   deleted_at       timestamptz,
   deleted_by       text,
-  created_at       timestamptz not null default now(),
-  updated_at       timestamptz not null default now(),
-  updated_by       text not null default ''
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  updated_by       text NOT NULL DEFAULT ''
 );
 
--- ===== ToDos（TF達成のための大タスク）=====
-create table if not exists todos (
-  id         text primary key,
-  tf_id      text not null references task_forces(id),
-  title      text not null,
+-- ===== Quarterly KR ↔ Task Force（多対多） =====
+-- 通期 KR と TF を四半期ごとに紐づける
+CREATE TABLE IF NOT EXISTS quarterly_kr_task_forces (
+  quarterly_objective_id text NOT NULL REFERENCES quarterly_objectives(id),
+  kr_id                  text NOT NULL REFERENCES key_results(id),
+  tf_id                  text NOT NULL REFERENCES task_forces(id),
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (quarterly_objective_id, kr_id, tf_id)
+);
+
+-- ===== ToDos（TF達成のための大タスク） =====
+CREATE TABLE IF NOT EXISTS todos (
+  id         text PRIMARY KEY,
+  tf_id      text NOT NULL REFERENCES task_forces(id),
+  title      text NOT NULL,
   due_date   date,
-  memo       text not null default '',
-  is_deleted boolean not null default false,
+  memo       text NOT NULL DEFAULT '',
+  is_deleted boolean NOT NULL DEFAULT false,
   deleted_at timestamptz,
   deleted_by text,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now(),
-  updated_by text not null default ''
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text NOT NULL DEFAULT ''
 );
 
 -- ===== Projects =====
-create table if not exists projects (
-  id                text primary key,
-  name              text not null,
-  purpose           text not null default '',
-  contribution_memo text not null default '',
-  owner_member_id   text references members(id),
-  status            text not null default 'active' check (status in ('active','completed','archived')),
-  color_tag         text not null default '#7F77DD',
+CREATE TABLE IF NOT EXISTS projects (
+  id                text PRIMARY KEY,
+  name              text NOT NULL,
+  purpose           text NOT NULL DEFAULT '',
+  contribution_memo text NOT NULL DEFAULT '',
+  owner_member_id   text REFERENCES members(id),       -- 互換目的の単数 FK
+  owner_member_ids  text[] NOT NULL DEFAULT '{}',      -- 複数オーナー対応
+  status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','archived')),
+  color_tag         text NOT NULL DEFAULT '#7F77DD',
   start_date        date,
   end_date          date,
-  is_deleted        boolean not null default false,
+  is_deleted        boolean NOT NULL DEFAULT false,
   deleted_at        timestamptz,
   deleted_by        text,
-  created_at        timestamptz not null default now(),
-  updated_at        timestamptz not null default now(),
-  updated_by        text not null default ''
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  updated_by        text NOT NULL DEFAULT ''
 );
 
--- ===== Project ↔ TaskForce（多対多）=====
-create table if not exists project_task_forces (
-  project_id text not null references projects(id),
-  tf_id      text not null references task_forces(id),
-  created_at timestamptz not null default now(),
-  primary key (project_id, tf_id)
+-- ===== Project ↔ TaskForce（多対多） =====
+CREATE TABLE IF NOT EXISTS project_task_forces (
+  project_id text NOT NULL REFERENCES projects(id),
+  tf_id      text NOT NULL REFERENCES task_forces(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (project_id, tf_id)
 );
 
 -- ===== Tasks =====
-create table if not exists tasks (
-  id                  text primary key,
-  name                text not null,
-  project_id          text references projects(id),   -- Projectへの紐づき（任意）
-  todo_id             text references todos(id),      -- ToDoへの紐づき（任意）
-  assignee_member_id  text references members(id),
-  status              text not null default 'todo' check (status in ('todo','in_progress','done')),
-  priority            text check (priority in ('high','mid','low')),
+CREATE TABLE IF NOT EXISTS tasks (
+  id                  text PRIMARY KEY,
+  name                text NOT NULL,
+  project_id          text REFERENCES projects(id),    -- Project への紐づき（任意）
+  todo_id             text REFERENCES todos(id),       -- ToDo への紐づき（任意・単数互換）
+  assignee_member_id  text REFERENCES members(id),     -- 互換目的の単数 FK
+  assignee_member_ids text[] NOT NULL DEFAULT '{}',    -- 複数担当者対応
+  status              text NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','in_progress','done')),
+  priority            text CHECK (priority IN ('high','mid','low')),
+  start_date          date,
   due_date            date,
   estimated_hours     numeric,
-  comment             text not null default '',
-  is_deleted          boolean not null default false,
+  comment             text NOT NULL DEFAULT '',
+  is_deleted          boolean NOT NULL DEFAULT false,
   deleted_at          timestamptz,
   deleted_by          text,
-  created_at          timestamptz not null default now(),
-  updated_at          timestamptz not null default now(),
-  updated_by          text not null default ''
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  updated_by          text NOT NULL DEFAULT ''
 );
 
--- ===== Task ↔ TaskForce（多対多）=====
-create table if not exists task_task_forces (
-  task_id    text not null references tasks(id),
-  tf_id      text not null references task_forces(id),
-  created_at timestamptz not null default now(),
-  primary key (task_id, tf_id)
+-- ===== Task ↔ TaskForce（多対多） =====
+CREATE TABLE IF NOT EXISTS task_task_forces (
+  task_id    text NOT NULL REFERENCES tasks(id),
+  tf_id      text NOT NULL REFERENCES task_forces(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (task_id, tf_id)
 );
 
--- ===== Task ↔ 追加Project（多対多）=====
-create table if not exists task_projects (
-  task_id    text not null references tasks(id),
-  project_id text not null references projects(id),
-  created_at timestamptz not null default now(),
-  primary key (task_id, project_id)
+-- ===== Task ↔ 追加 Project（多対多） =====
+CREATE TABLE IF NOT EXISTS task_projects (
+  task_id    text NOT NULL REFERENCES tasks(id),
+  project_id text NOT NULL REFERENCES projects(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (task_id, project_id)
+);
+
+-- ===== Milestones（PJ に紐づく期日マーカー） =====
+-- 注: project_id は projects.id と型を合わせるため text にする
+-- （CLAUDE.md の旧 DDL は uuid だったが projects.id が text のため整合性なし）
+CREATE TABLE IF NOT EXISTS milestones (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  text NOT NULL REFERENCES projects(id),
+  name        text NOT NULL,
+  date        date NOT NULL,
+  is_deleted  boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text,
+  deleted_at  timestamptz,
+  deleted_by  text
 );
 
 -- ===== 変更履歴 =====
-create table if not exists admin_change_logs (
-  id                  uuid primary key default gen_random_uuid(),
-  layer               text not null check (layer in ('objective','kr','tf','project','member')),
-  action              text not null check (action in ('create','update','delete','restore','period_switch')),
-  target_id           text not null,
-  target_name         text not null,
-  diff                jsonb not null default '{}',
-  performed_by        text not null,
-  performed_at        timestamptz not null default now(),
-  is_conflict_override boolean not null default false
+CREATE TABLE IF NOT EXISTS admin_change_logs (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  layer                text NOT NULL CHECK (layer IN ('objective','kr','tf','project','member')),
+  action               text NOT NULL CHECK (action IN ('create','update','delete','restore','period_switch')),
+  target_id            text NOT NULL,
+  target_name          text NOT NULL,
+  diff                 jsonb NOT NULL DEFAULT '{}',
+  performed_by         text NOT NULL,
+  performed_at         timestamptz NOT NULL DEFAULT now(),
+  is_conflict_override boolean NOT NULL DEFAULT false
+);
+-- 14日経過削除は migrations/20260501_admin_logs_cleanup.sql で pg_cron 自動化
+
+-- ===== AI 使用量ログ =====
+CREATE TABLE IF NOT EXISTS ai_usage_logs (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  called_at         timestamptz NOT NULL DEFAULT now(),
+  member_id         text NOT NULL,
+  consultation_type text NOT NULL,
+  input_tokens      integer NOT NULL DEFAULT 0,
+  output_tokens     integer NOT NULL DEFAULT 0
 );
 
--- 2週間より古い履歴は自動削除（定期実行 or pg_cron）
--- delete from admin_change_logs where performed_at < now() - interval '14 days';
+-- ===== KR セッション記録（ラボ機能） =====
+CREATE TABLE IF NOT EXISTS kr_sessions (
+  id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kr_id             text NOT NULL REFERENCES key_results(id),
+  week_start        date NOT NULL,                    -- 月曜日
+  session_type      text NOT NULL CHECK (session_type IN ('checkin','win_session')),
+  signal            text CHECK (signal IN ('green','yellow','red')),
+  signal_comment    text NOT NULL DEFAULT '',
+  learnings         text NOT NULL DEFAULT '',
+  external_changes  text NOT NULL DEFAULT '',
+  transcript        text NOT NULL DEFAULT '',
+  created_by        text NOT NULL,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  updated_by        text NOT NULL DEFAULT '',
+  is_deleted        boolean NOT NULL DEFAULT false
+);
+
+-- ===== KR セッション宣言 =====
+CREATE TABLE IF NOT EXISTS kr_declarations (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id    uuid NOT NULL REFERENCES kr_sessions(id),
+  member_id     text NOT NULL,
+  content       text NOT NULL DEFAULT '',
+  due_date      date,
+  result_status text CHECK (result_status IN ('achieved','partial','not_achieved')),
+  result_note   text NOT NULL DEFAULT '',
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    text NOT NULL DEFAULT '',
+  is_deleted    boolean NOT NULL DEFAULT false
+);
+
+-- ============================================================
+-- updated_at トリガー（テーブル定義後に作成）
+-- ============================================================
+
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOR t IN VALUES
+    ('members'), ('objectives'), ('key_results'), ('task_forces'),
+    ('todos'), ('projects'), ('tasks'),
+    ('quarterly_objectives'),
+    ('milestones'), ('kr_sessions'), ('kr_declarations')
+  LOOP
+    EXECUTE format(
+      'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
+       CREATE TRIGGER trg_%1$s_updated_at
+         BEFORE UPDATE ON %1$s
+         FOR EACH ROW EXECUTE FUNCTION update_updated_at();', t);
+  END LOOP;
+END $$;
 
 -- ============================================================
 -- RLS（行レベルセキュリティ）
--- 全テーブルで有効化し、認証済みユーザーのみアクセス可能にする
+-- 全テーブルで有効化し、authenticated ロールのみフルアクセス可能
+-- 10名規模・全員フラットな権限設計（CLAUDE.md 設計原則）
 -- ============================================================
 
-alter table members                enable row level security;
-alter table objectives             enable row level security;
-alter table key_results            enable row level security;
-alter table quarterly_objectives      enable row level security;
-alter table quarterly_key_results     enable row level security;
-alter table quarterly_kr_task_forces  enable row level security;
-alter table task_task_forces          enable row level security;
-alter table task_projects             enable row level security;
-alter table task_forces            enable row level security;
-alter table todos                  enable row level security;
-alter table projects               enable row level security;
-alter table project_task_forces    enable row level security;
-alter table tasks                  enable row level security;
-alter table admin_change_logs      enable row level security;
+ALTER TABLE members                    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE objectives                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE key_results                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quarterly_objectives       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE quarterly_kr_task_forces   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_task_forces           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_projects              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_forces                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE todos                      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE projects                   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_task_forces        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tasks                      ENABLE ROW LEVEL SECURITY;
+ALTER TABLE milestones                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE admin_change_logs          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE ai_usage_logs              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kr_sessions                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kr_declarations            ENABLE ROW LEVEL SECURITY;
 
--- 認証済みユーザーに全操作を許可
-create policy "authenticated full access" on members               for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on objectives            for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on key_results           for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on quarterly_objectives     for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on quarterly_key_results    for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on quarterly_kr_task_forces for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on task_task_forces         for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on task_projects            for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on task_forces           for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on todos                 for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on projects              for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on project_task_forces   for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on tasks                 for all to authenticated using (true) with check (true);
-create policy "authenticated full access" on admin_change_logs     for all to authenticated using (true) with check (true);
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOR t IN VALUES
+    ('members'), ('objectives'), ('key_results'),
+    ('quarterly_objectives'), ('quarterly_kr_task_forces'),
+    ('task_task_forces'), ('task_projects'),
+    ('task_forces'), ('todos'), ('projects'), ('project_task_forces'),
+    ('tasks'), ('milestones'), ('admin_change_logs'),
+    ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations')
+  LOOP
+    EXECUTE format(
+      'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
+       CREATE POLICY "authenticated full access" ON %1$s
+         FOR ALL TO authenticated USING (true) WITH CHECK (true);', t);
+  END LOOP;
+END $$;
 
 -- ============================================================
--- updated_at 自動更新トリガー
+-- インデックス
+-- 詳細は migrations/20260501_add_indexes.sql 参照
+-- ここでは新環境構築時に最低限必要なものを再掲する
 -- ============================================================
 
-create or replace function update_updated_at()
-returns trigger as $$
-begin
-  new.updated_at = now();
-  return new;
-end;
-$$ language plpgsql;
+-- tasks
+CREATE INDEX IF NOT EXISTS idx_tasks_project_id          ON tasks(project_id)         WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tasks_todo_id             ON tasks(todo_id)            WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tasks_assignee_member_id  ON tasks(assignee_member_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tasks_due_date            ON tasks(due_date)           WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tasks_start_date          ON tasks(start_date)         WHERE is_deleted = false;
 
-create trigger trg_members_updated_at
-  before update on members for each row execute function update_updated_at();
-create trigger trg_objectives_updated_at
-  before update on objectives for each row execute function update_updated_at();
-create trigger trg_key_results_updated_at
-  before update on key_results for each row execute function update_updated_at();
-create trigger trg_task_forces_updated_at
-  before update on task_forces for each row execute function update_updated_at();
-create trigger trg_todos_updated_at
-  before update on todos for each row execute function update_updated_at();
-create trigger trg_projects_updated_at
-  before update on projects for each row execute function update_updated_at();
-create trigger trg_tasks_updated_at
-  before update on tasks for each row execute function update_updated_at();
-create trigger trg_quarterly_objectives_updated_at
-  before update on quarterly_objectives for each row execute function update_updated_at();
-create trigger trg_quarterly_key_results_updated_at
-  before update on quarterly_key_results for each row execute function update_updated_at();
+-- task_forces / key_results / todos / projects
+CREATE INDEX IF NOT EXISTS idx_task_forces_kr_id              ON task_forces(kr_id)              WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_task_forces_leader_member_id   ON task_forces(leader_member_id)   WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_key_results_objective_id       ON key_results(objective_id)       WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_todos_tf_id                    ON todos(tf_id)                    WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_projects_owner_member_id       ON projects(owner_member_id)       WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_projects_status                ON projects(status)                WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_quarterly_objectives_objective_id ON quarterly_objectives(objective_id) WHERE is_deleted = false;
+
+-- junction reverse-direction
+CREATE INDEX IF NOT EXISTS idx_task_task_forces_tf_id           ON task_task_forces(tf_id);
+CREATE INDEX IF NOT EXISTS idx_task_projects_project_id         ON task_projects(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_task_forces_tf_id        ON project_task_forces(tf_id);
+CREATE INDEX IF NOT EXISTS idx_quarterly_kr_task_forces_kr_id   ON quarterly_kr_task_forces(kr_id);
+CREATE INDEX IF NOT EXISTS idx_quarterly_kr_task_forces_tf_id   ON quarterly_kr_task_forces(tf_id);
+CREATE INDEX IF NOT EXISTS idx_quarterly_kr_task_forces_qobj_id ON quarterly_kr_task_forces(quarterly_objective_id);
+
+-- admin_change_logs / ai_usage_logs
+CREATE INDEX IF NOT EXISTS idx_admin_change_logs_performed_at  ON admin_change_logs(performed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_admin_change_logs_target_id     ON admin_change_logs(target_id);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_called_at         ON ai_usage_logs(called_at DESC);
+CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_member_id         ON ai_usage_logs(member_id);
+
+-- kr_sessions / kr_declarations / milestones
+CREATE INDEX IF NOT EXISTS idx_kr_sessions_kr_id_week_start    ON kr_sessions(kr_id, week_start DESC) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_kr_declarations_session_id      ON kr_declarations(session_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_milestones_project_id           ON milestones(project_id) WHERE is_deleted = false;
