@@ -227,7 +227,6 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
 
   const panelContent = (
     <div
-      className={inline ? "" : "panel-slide-up"}
       style={{
         width: inline ? "100%" : "min(960px, 100vw)",
         height: "100%",
@@ -592,7 +591,6 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
 
   return (
     <div
-      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.55)",

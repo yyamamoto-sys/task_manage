@@ -124,7 +124,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 
   return (
     <div
-      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.35)",
@@ -136,7 +135,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
-        className="panel-slide-up"
+        className="animate-fadeIn"
         style={{
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-secondary)",

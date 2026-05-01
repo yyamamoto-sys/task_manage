@@ -214,12 +214,6 @@ export function OkrDashboardView({
 
       {/* コンテンツエリア */}
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-       {/* タブ切替時に animate-fadeIn が再発火するよう activeTool で keying する */}
-       <div
-         key={activeTool ?? "none"}
-         className="animate-fadeIn"
-         style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}
-       >
 
         {/* ─── null（未選択）状態 ─── */}
         {activeTool === null && (
@@ -525,13 +519,11 @@ export function OkrDashboardView({
         {activeTool === "guide" && (
           <OkrGuide onSetActiveTool={onSetActiveTool} />
         )}
-       </div>
       </div>
 
       {/* ─── 履歴オーバーレイ ─── */}
       {historyOpen && (
         <div
-          className="animate-overlay"
           style={{
             position: "fixed", inset: 0, zIndex: 300,
             background: "rgba(0,0,0,0.45)",

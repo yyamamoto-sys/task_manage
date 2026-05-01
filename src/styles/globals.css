@@ -463,21 +463,10 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 /* ===== アニメーション ===== */
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 汎用フェード（ビュー切り替え・コンテンツ更新）
- * 「描画バグ感」を避けるため、ブラーは外しシンプルなフェード+垂直シフトに。
- * 60% で透明度はほぼ完成し、残りの時間で位置を整える(視認しやすい) */
+/* 汎用フェード（ビュー切り替え・コンテンツ更新） */
 @keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  60% {
-    opacity: 1;
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 /* モーダル出現（スケール + フェード） */
@@ -505,86 +494,11 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 }
 
 .animate-spin       { animation: spin 0.8s linear infinite; }
-.animate-fadeIn     { animation: fadeIn 0.55s cubic-bezier(0.22,1,0.36,1) both; }
-.animate-modalEnter { animation: modalEnter 0.40s cubic-bezier(0.22,1,0.36,1) both; }
-.animate-overlay    { animation: overlayEnter 0.40s ease both; }
-.animate-slideDown  { animation: slideDown 0.32s cubic-bezier(0.22,1,0.36,1) both; }
-.animate-dropdown   { animation: dropdownOpen 0.22s cubic-bezier(0.22,1,0.36,1); transform-origin: top; }
-
-/* ===== 追加アニメーション（Refined Stationery 拡張） ===== */
-
-/* フルスクリーンオーバーレイ用：紙が手前にスライドして来る感
- * Admin パネル / ラボ機能パネル / グラフビュー等の覆い被せ式ビューに使用
- * ブラーは控えめにしてバグ感を回避 */
-@keyframes overlaySlideIn {
-  from {
-    opacity: 0;
-    transform: translateY(24px) scale(0.99);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-.animate-overlay-rich {
-  animation: overlaySlideIn 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
-  will-change: transform, opacity;
-}
-
-/* タブ切替・コンテンツ差し替え用：横にすっと差す感（ノートのページめくり）
- * 視認できる距離（16px）に増量し、duration もはっきり感じる時間に */
-@keyframes pageSwap {
-  from { opacity: 0; transform: translateX(16px); }
-  60%  { opacity: 1; }
-  to   { opacity: 1; transform: translateX(0); }
-}
-.animate-pageSwap { animation: pageSwap 0.50s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-/* リスト・カード子要素のステージャー登場
- * 親要素に .stagger-children を付け、子（直接子）に順番に遅延を入れて入場させる
- * 6個まで見える分のずれを設定。それ以降は揃えて入る（過剰演出を避ける） */
-@keyframes staggerIn {
-  from { opacity: 0; transform: translateY(10px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-.stagger-children > * {
-  animation: staggerIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-.stagger-children > *:nth-child(1)  { animation-delay: 0ms; }
-.stagger-children > *:nth-child(2)  { animation-delay: 40ms; }
-.stagger-children > *:nth-child(3)  { animation-delay: 80ms; }
-.stagger-children > *:nth-child(4)  { animation-delay: 120ms; }
-.stagger-children > *:nth-child(5)  { animation-delay: 160ms; }
-.stagger-children > *:nth-child(6)  { animation-delay: 200ms; }
-.stagger-children > *:nth-child(7)  { animation-delay: 230ms; }
-.stagger-children > *:nth-child(8)  { animation-delay: 250ms; }
-.stagger-children > *:nth-child(n+9) { animation-delay: 270ms; }
-
-/* 初回マウント時の柔らかな入場（hero / ヘッダー要素用） */
-@keyframes softBloom {
-  from { opacity: 0; transform: translateY(-4px); letter-spacing: 0.02em; }
-  to   { opacity: 1; transform: translateY(0);    letter-spacing: normal; }
-}
-.animate-softBloom { animation: softBloom 0.5s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-/* 数値カウンターを切り替える時のクロスフェード（Display フェイス用） */
-@keyframes numFlip {
-  0%   { opacity: 1; transform: translateY(0); }
-  40%  { opacity: 0; transform: translateY(-6px); }
-  60%  { opacity: 0; transform: translateY(6px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-.animate-numFlip { animation: numFlip 0.36s cubic-bezier(0.22, 1, 0.36, 1) both; }
-
-/* prefers-reduced-motion: ユーザー設定で動きを最小化する人向けに全停止 */
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-    scroll-behavior: auto !important;
-  }
-}
+.animate-fadeIn     { animation: fadeIn 0.25s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-modalEnter { animation: modalEnter 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-overlay    { animation: overlayEnter 0.18s ease both; }
+.animate-slideDown  { animation: slideDown 0.18s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-dropdown   { animation: dropdownOpen 0.14s cubic-bezier(0.16,1,0.3,1); transform-origin: top; }
 
 /* トースト通知（下から浮き上がる） */
 @keyframes toastIn {
@@ -597,11 +511,10 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 
 /* AIパネル・モーダルの入場（下から浮き上がる） */
 @keyframes panelSlideUp {
-  from { opacity: 0; transform: translateY(20px) scale(0.98); }
-  60%  { opacity: 1; }
-  to   { opacity: 1; transform: translateY(0)   scale(1); }
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0)    scale(1); }
 }
-.panel-slide-up { animation: panelSlideUp 0.45s cubic-bezier(0.22,1,0.36,1) both; }
+.panel-slide-up { animation: panelSlideUp 0.3s cubic-bezier(0.16,1,0.3,1) both; }
 
 /* チャットバブルの出現 */
 @keyframes chatBubbleIn {

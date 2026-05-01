@@ -752,7 +752,6 @@ ${issueText.trim()}`;
 
   return (
     <div
-      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.55)",

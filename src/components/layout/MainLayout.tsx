@@ -146,7 +146,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
 
 
   const adminOverlay = isAdminOpen ? (
-    <div className="animate-overlay-rich" style={{
+    <div style={{
       position: "fixed", inset: 0, zIndex: 250,
       display: "flex", flexDirection: "column",
       background: "var(--color-bg-primary)",
@@ -198,53 +198,45 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           </Suspense>
         </div>
       ) : (
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+        /* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */
+        <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
-            {/* keyed wrapper を Suspense の内側に置くことで、初回 lazy load 解決後も
-                animate-pageSwap が確実に発火する。Plan モードのビュー切替で
-                毎回ページめくり感のある横スライドが見える */}
-            <div
-              key={viewMode}
-              className="animate-pageSwap"
-              style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}
-            >
-              {viewMode === "dashboard" && (
-                <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
-              )}
-              {viewMode === "kanban" && (
-                <KanbanView
-                  currentUser={currentUser}
-                  selectedProject={selectedProject}
-                  projects={projects}
-                  selectedKrId={selectedKrId}
-                  krTaskIds={krTaskIds}
-                />
-              )}
-              {viewMode === "gantt" && (
-                <GanttView
-                  currentUser={currentUser}
-                  selectedProject={selectedProject}
-                  projects={projects}
-                  selectedKrId={selectedKrId}
-                  krTaskIds={krTaskIds}
-                />
-              )}
-              {viewMode === "admin" && (
-                <AdminView currentUser={currentUser} />
-              )}
-              {viewMode === "list" && (
-                <ListView
-                  currentUser={currentUser}
-                  selectedProject={selectedProject}
-                  projects={projects}
-                  selectedKrId={selectedKrId}
-                  krTaskIds={krTaskIds}
-                />
-              )}
-              {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-                <ComingSoon view={viewMode} />
-              )}
-            </div>
+            {viewMode === "dashboard" && (
+              <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
+            )}
+            {viewMode === "kanban" && (
+              <KanbanView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode === "gantt" && (
+              <GanttView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode === "admin" && (
+              <AdminView currentUser={currentUser} />
+            )}
+            {viewMode === "list" && (
+              <ListView
+                currentUser={currentUser}
+                selectedProject={selectedProject}
+                projects={projects}
+                selectedKrId={selectedKrId}
+                krTaskIds={krTaskIds}
+              />
+            )}
+            {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+              <ComingSoon view={viewMode} />
+            )}
           </Suspense>
         </div>
       )}
@@ -287,12 +279,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         {/* ラボ機能ボトムシート */}
         {isMobileLabOpen && (
           <div
-            className="animate-overlay"
             style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
             onClick={() => setIsMobileLabOpen(false)}
           >
             <div
-              className="panel-slide-up"
               style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "var(--color-bg-primary)",
@@ -857,7 +847,7 @@ function Sidebar({
 
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
-        <div className="stagger-children" style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
           {!c && <SectionLabel>メニュー</SectionLabel>}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem

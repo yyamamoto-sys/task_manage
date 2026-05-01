@@ -628,7 +628,7 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   const today = todayStr();
 
   return (
-    <div className="animate-overlay-rich" style={{ position: "fixed", inset: 0, zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
       <canvas
         ref={canvasRef}
         style={{ width: "100%", height: "100%", display: "block", cursor: "crosshair" }}
