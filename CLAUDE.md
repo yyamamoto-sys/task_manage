@@ -89,9 +89,10 @@ Project（PJ）                    ← AI管理・AIに渡す
 - ToDo は「タイトルのみ」をAIに渡す（TF/KR/O情報は含めない）
 - AIペイロード内では ToDo 単位のタスクグループを仮想プロジェクトとして表現する（payloadBuilder.ts参照）
 
-**※例外：ラボ機能のKRレポート生成・KRセッション記録**
+**※例外：ラボ機能のKRレポート生成・KRセッション記録・クォーター計画**
 - `src/lib/ai/krReportPrompt.ts` および `src/lib/ai/krSessionExtractor.ts` はユーザー承認のもと KR / TF / ToDo / メンバー情報をAIに渡す
-- 対象機能：KRチェックイン分析・ウィンセッション分析・セッション議事録からのデータ抽出
+- `src/lib/ai/krQuarterPlanPrompt.ts` および `src/lib/ai/krQuarterPlanClient.ts` はユーザー承認のもと KR / TF / セッション履歴 / メンバー情報をAIに渡す
+- 対象機能：KRチェックイン分析・ウィンセッション分析・セッション議事録からのデータ抽出・クォーター計画立案
 - 通常のタスク管理AI機能（payloadBuilder.ts経由）には引き続き上記ルールを適用する
 
 ### 絶対に破ってはいけないルール（通常のタスク管理AI機能）
@@ -618,6 +619,7 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
+| OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -719,10 +721,13 @@ src/
 │   │   ├── responseParser.ts     # AIレスポンスのパース・バリデーション
 │   │   ├── proposalMapper.ts     # AIResponse→UI表示用型への変換
 │   │   ├── applyProposal.ts      # 提案のDB反映処理
-│   │   └── sessionManager.ts     # 会話セッション管理（DBに保存しない）
+│   │   ├── sessionManager.ts     # 会話セッション管理（DBに保存しない）
+│   │   ├── krQuarterPlanPrompt.ts  # クォーター計画AI：クォーター計算・コンテキスト生成・システムプロンプト
+│   │   └── krQuarterPlanClient.ts  # クォーター計画AI：対話・計画書生成・JSONパーサー
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
-│       └── auth.ts               # セッション取得（getSupabaseSession）
+│       ├── auth.ts               # セッション取得（getSupabaseSession）
+│       └── quarterPlanStore.ts   # クォーター計画保存（Phase 1: localStorage、Supabase移行準備済み）
 ├── hooks/
 │   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
 └── components/
@@ -743,6 +748,11 @@ src/
     │   └── KanbanView.tsx                 # カンバンビュー（ドラッグ&ドロップ）
     ├── graph/
     │   └── GraphView.tsx                  # ラボ機能：関係性グラフビュー（Canvas+物理シミュレーション）
+    ├── lab/
+    │   ├── KrSessionPanel.tsx             # OKRセッション記録・文字起こし抽出
+    │   ├── KrReportPanel.tsx              # OKRレポート生成
+    │   ├── KrWhyPanel.tsx                 # なぜなぜ分析AI対話
+    │   └── KrQuarterPlanPanel.tsx         # クォーター計画AI対話・計画書生成・編集・保存
     ├── task/
     │   └── TaskEditModal.tsx              # タスク編集モーダル（ToDo紐づけフィールド含む）
     └── admin/
