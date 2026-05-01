@@ -388,18 +388,28 @@ export function OkrDashboardView({
                             )}
                           </div>
 
-                          {/* なぜなぜ分析ボタン */}
-                          <button
-                            onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onSetActiveTool("why"); }}
-                            title="このKRをなぜなぜ分析"
-                            style={{
-                              flexShrink: 0, padding: "4px 8px", fontSize: "10px",
-                              background: "transparent",
-                              border: "1px solid var(--color-border-primary)",
-                              borderRadius: "var(--radius-sm)",
-                              color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
-                            }}
-                          >🔍 分析</button>
+                          <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end", flexShrink: 0 }}>
+                            {/* なぜなぜ分析ボタン */}
+                            <button
+                              onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onSetActiveTool("why"); }}
+                              title="このKRをなぜなぜ分析"
+                              style={{
+                                padding: "4px 8px", fontSize: "10px",
+                                background: "transparent",
+                                border: "1px solid var(--color-border-primary)",
+                                borderRadius: "var(--radius-sm)",
+                                color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
+                              }}
+                            >🔍 分析</button>
+                            {/* 最終記録日時（B2） */}
+                            {latestSession && (
+                              <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", textAlign: "right", lineHeight: 1.4 }}>
+                                <div>最終記録</div>
+                                <div>{latestSession.week_start}</div>
+                                <div>{SESSION_TYPE_LABEL[latestSession.session_type]}</div>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -475,6 +485,7 @@ function KrSessionHistory({
   onOpenSession: () => void;
 }) {
   const [filterKrId, setFilterKrId] = useState(selectedKrId ?? "");
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   useEffect(() => {
     setFilterKrId(selectedKrId ?? "");
@@ -614,8 +625,27 @@ function KrSessionHistory({
                   </div>
                 )}
                 {session.learnings && session.session_type === "win_session" && (
-                  <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px", paddingLeft: "22px", lineHeight: 1.5 }}>
-                    学び：{session.learnings.length > 100 ? session.learnings.slice(0, 100) + "…" : session.learnings}
+                  <div style={{ marginTop: "4px", paddingLeft: "22px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                      学び：{expandedId === session.id
+                        ? session.learnings
+                        : session.learnings.length > 100
+                          ? session.learnings.slice(0, 100) + "…"
+                          : session.learnings}
+                    </div>
+                    {session.learnings.length > 100 && (
+                      <button
+                        onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
+                        style={{
+                          marginTop: "2px", fontSize: "10px",
+                          background: "transparent", border: "none",
+                          color: "var(--color-brand)", cursor: "pointer",
+                          padding: 0, textDecoration: "underline",
+                        }}
+                      >
+                        {expandedId === session.id ? "折りたたむ" : "全文を見る"}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

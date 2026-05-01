@@ -9,6 +9,7 @@ import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { showToast } from "../common/Toast";
 
 function ThinkingDots() {
   return (
@@ -43,6 +44,18 @@ function getCurrentQuarter(date: Date): string {
   return "4Q（10〜12月）";
 }
 
+type SavedSummary = { summary: string; savedAt: string; issueText: string; krTitle: string };
+const summaryKey = (krId: string) => `okr_why_${krId}`;
+
+function loadSavedSummary(krId: string): SavedSummary | null {
+  try {
+    const raw = localStorage.getItem(summaryKey(krId));
+    return raw ? (JSON.parse(raw) as SavedSummary) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const { keyResults, taskForces, objective, todos, tasks, members, projects } = useAppData();
 
@@ -60,12 +73,18 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [turnCount, setTurnCount] = useState(0);
   const [typingIndex, setTypingIndex] = useState(-1);
+  const [savedSummary, setSavedSummary] = useState<SavedSummary | null>(null);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
   const relatedTfs = (taskForces ?? []).filter(tf => tf.kr_id === selectedKrId && !tf.is_deleted);
+
+  // KR変更時に保存済みサマリーを読み込む
+  useEffect(() => {
+    setSavedSummary(loadSavedSummary(selectedKrId));
+  }, [selectedKrId]);
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -90,17 +109,14 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       todo: "未着手", in_progress: "進行中", done: "完了",
     };
 
-    // Objective
     const objLine = objective
       ? `${objective.title}（${objective.period}）`
       : "（未設定）";
 
-    // 全KR一覧（対象KRに▶マーク）
     const krListLines = activeKrs
       .map(kr => `  ${kr.id === selectedKrId ? "▶ " : "  "}${kr.title}`)
       .join("\n");
 
-    // 対象KRのTF → ToDo → タスク 詳細
     const tfDetailLines = relatedTfs.map(tf => {
       const relatedTodos = (todos ?? []).filter(
         t => !t.is_deleted && t.tf_id === tf.id,
@@ -188,9 +204,8 @@ ${issueText.trim()}`;
       const updated: WhyMessage[] = [...newMessages, { role: "assistant" as const, content: aiReply }];
       setMessages(updated);
       setTypingIndex(updated.length - 1);
-      const newTurn = turnCount + 1;
-      setTurnCount(newTurn);
-      setPhase(newTurn >= MAX_TURNS ? "dialogue" : "dialogue");
+      setTurnCount(turnCount + 1);
+      setPhase("dialogue");
     } catch (e) {
       setError(e instanceof Error ? e.message : "エラーが発生しました。");
       setPhase("dialogue");
@@ -205,6 +220,16 @@ ${issueText.trim()}`;
       const result = await callWhySummary(context, messages);
       setSummary(result);
       setPhase("summary");
+
+      // localStorage に保存
+      const saved: SavedSummary = {
+        summary: result,
+        savedAt: new Date().toISOString(),
+        issueText,
+        krTitle: selectedKr?.title ?? "",
+      };
+      localStorage.setItem(summaryKey(selectedKrId), JSON.stringify(saved));
+      setSavedSummary(saved);
     } catch (e) {
       setError(e instanceof Error ? e.message : "サマリー生成中にエラーが発生しました。");
       setPhase("dialogue");
@@ -212,7 +237,34 @@ ${issueText.trim()}`;
   };
 
   const handleCopySummary = () => {
-    navigator.clipboard.writeText(summary).then(() => alert("コピーしました。"));
+    navigator.clipboard.writeText(summary).then(() => showToast("サマリーをコピーしました"));
+  };
+
+  const handleDownloadSummary = () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const blob = new Blob([summary], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `なぜなぜ分析_${selectedKr?.title ?? "report"}_${today}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("ダウンロードしました");
+  };
+
+  const handleRestoreSaved = () => {
+    if (!savedSummary) return;
+    setSummary(savedSummary.summary);
+    setIssueText(savedSummary.issueText);
+    setPhase("summary");
+  };
+
+  const handleDeleteSaved = () => {
+    localStorage.removeItem(summaryKey(selectedKrId));
+    setSavedSummary(null);
+    showToast("保存済みサマリーを削除しました", "info");
   };
 
   const handleReset = () => {
@@ -227,6 +279,12 @@ ${issueText.trim()}`;
 
   const progressPct = Math.min((turnCount / MAX_TURNS) * 100, 100);
 
+  // 対話エリアを表示するフェーズ
+  const showDialogue = phase === "dialogue"
+    || (phase === "thinking" && messages.length > 0)
+    || phase === "summarizing"
+    || phase === "summary";
+
   const panelContent = (
     <div
       className={inline ? "" : "panel-slide-up"}
@@ -240,113 +298,184 @@ ${issueText.trim()}`;
       }}
       onClick={inline ? undefined : e => e.stopPropagation()}
     >
-        {/* ヘッダー */}
-        <div className="ai-shimmer" style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          display: "flex", alignItems: "center", gap: "10px",
-          flexShrink: 0,
-        }}>
-          <span style={{ fontSize: "18px" }}>🧪</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
-              KRなぜなぜ分析
-            </div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-              AIとの対話で課題の根本原因を掘り下げます（最大{MAX_TURNS}回）
-            </div>
+      {/* ヘッダー */}
+      <div className="ai-shimmer" style={{
+        padding: "14px 20px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        display: "flex", alignItems: "center", gap: "10px",
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: "18px" }}>🔍</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+            KRなぜなぜ分析
           </div>
-          {!inline && (
-            <button
-              onClick={onClose}
-              style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}
-            >✕</button>
-          )}
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+            AIとの対話で課題の根本原因を掘り下げます（最大{MAX_TURNS}回）
+          </div>
         </div>
-
-        {/* コンテンツ */}
-        <div style={{ flex: 1, overflow: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
-
-          {/* セットアップ */}
-          {(phase === "setup" || phase === "thinking" && messages.length === 0) && (
-            <div style={{
-              background: "var(--color-bg-secondary)",
+        {(phase === "dialogue" || phase === "summary") && (
+          <button
+            onClick={handleReset}
+            style={{
+              fontSize: "11px", padding: "5px 10px",
+              background: "transparent",
               border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-lg)",
-              padding: "18px 20px",
-            }}>
-              {/* KR選択 */}
-              <div style={{ marginBottom: "14px" }}>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                  対象KR
-                </label>
-                {activeKrs.length === 0 ? (
-                  <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません。</div>
-                ) : (
-                  <select
-                    value={selectedKrId}
-                    onChange={e => setSelectedKrId(e.target.value)}
-                    style={{
-                      width: "100%", padding: "8px 10px", fontSize: "13px",
-                      border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                    }}
-                  >
-                    {activeKrs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
-                  </select>
-                )}
-              </div>
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)",
+              cursor: "pointer",
+            }}
+          >最初からやり直す</button>
+        )}
+        {!inline && (
+          <button
+            onClick={onClose}
+            style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}
+          >✕</button>
+        )}
+      </div>
 
-              {/* 課題入力 */}
-              <div style={{ marginBottom: "14px" }}>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                  掘り下げたい課題
-                </label>
-                <textarea
-                  value={issueText}
-                  onChange={e => setIssueText(e.target.value)}
-                  placeholder={"例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない"}
-                  rows={4}
+      {/* コンテンツ */}
+      <div style={{ flex: 1, overflow: "auto", padding: "20px", display: "flex", flexDirection: "column", gap: "16px" }}>
+
+        {/* セットアップ */}
+        {phase === "setup" && (
+          <div style={{
+            background: "var(--color-bg-secondary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-lg)",
+            padding: "18px 20px",
+          }}>
+            {/* KR選択 */}
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
+                対象KR
+              </label>
+              {activeKrs.length === 0 ? (
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません。</div>
+              ) : (
+                <select
+                  value={selectedKrId}
+                  onChange={e => setSelectedKrId(e.target.value)}
                   style={{
-                    width: "100%", padding: "10px 12px", fontSize: "12px",
+                    width: "100%", padding: "8px 10px", fontSize: "13px",
                     border: "1px solid var(--color-border-primary)",
                     borderRadius: "var(--radius-md)",
                     background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                    resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
                   }}
-                />
-              </div>
-
-              {error && (
-                <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
-                  {error}
-                </div>
+                >
+                  {activeKrs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
+                </select>
               )}
-
-              <button
-                onClick={handleStart}
-                disabled={!selectedKr || !issueText.trim() || phase === "thinking"}
-                style={{
-                  width: "100%", padding: "11px", fontSize: "13px", fontWeight: "600",
-                  background: !selectedKr || !issueText.trim() || phase === "thinking"
-                    ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                  border: "none", borderRadius: "var(--radius-md)",
-                  color: !selectedKr || !issueText.trim() || phase === "thinking" ? "var(--color-text-tertiary)" : "#fff",
-                  cursor: !selectedKr || !issueText.trim() || phase === "thinking" ? "not-allowed" : "pointer",
-                  boxShadow: selectedKr && issueText.trim() && phase !== "thinking" ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
-                }}
-              >
-                {phase === "thinking" ? "⏳ AIが準備中..." : "🔍 なぜなぜ分析を始める"}
-              </button>
             </div>
-          )}
 
-          {/* 対話エリア */}
-          {(phase === "dialogue" || phase === "thinking" && messages.length > 0 || phase === "summarizing") && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+            {/* 保存済みサマリーバナー */}
+            {savedSummary && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                background: "var(--color-bg-purple)",
+                border: "1px solid var(--color-border-purple)",
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+                marginBottom: "14px",
+                fontSize: "12px",
+              }}>
+                <span style={{ fontSize: "16px" }}>💾</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: "600", color: "var(--color-text-primary)" }}>保存済みサマリーがあります</span>
+                  <span style={{ color: "var(--color-text-tertiary)", marginLeft: "8px" }}>
+                    {new Date(savedSummary.savedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  {savedSummary.issueText && (
+                    <div style={{ color: "var(--color-text-secondary)", marginTop: "2px", fontSize: "11px" }}>
+                      課題：{savedSummary.issueText.slice(0, 60)}{savedSummary.issueText.length > 60 ? "…" : ""}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={handleRestoreSaved}
+                  style={{
+                    padding: "5px 12px", fontSize: "11px", fontWeight: "600",
+                    background: "var(--color-brand)", color: "#fff",
+                    border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+                  }}
+                >復元する</button>
+                <button
+                  onClick={handleDeleteSaved}
+                  style={{
+                    padding: "5px 10px", fontSize: "11px",
+                    background: "transparent",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--color-text-tertiary)", cursor: "pointer",
+                  }}
+                >削除</button>
+              </div>
+            )}
 
-              {/* プログレス */}
+            {/* 課題入力 */}
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
+                掘り下げたい課題
+              </label>
+              <textarea
+                value={issueText}
+                onChange={e => setIssueText(e.target.value)}
+                placeholder={"例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない"}
+                rows={4}
+                style={{
+                  width: "100%", padding: "10px 12px", fontSize: "12px",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                  resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            {error && (
+              <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
+                {error}
+              </div>
+            )}
+
+            <button
+              onClick={handleStart}
+              disabled={!selectedKr || !issueText.trim()}
+              style={{
+                width: "100%", padding: "11px", fontSize: "13px", fontWeight: "600",
+                background: !selectedKr || !issueText.trim()
+                  ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                border: "none", borderRadius: "var(--radius-md)",
+                color: !selectedKr || !issueText.trim() ? "var(--color-text-tertiary)" : "#fff",
+                cursor: !selectedKr || !issueText.trim() ? "not-allowed" : "pointer",
+                boxShadow: selectedKr && issueText.trim() ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
+              }}
+            >
+              🔍 なぜなぜ分析を始める
+            </button>
+          </div>
+        )}
+
+        {/* thinking（初回 = 対話前）*/}
+        {phase === "thinking" && messages.length === 0 && (
+          <div style={{
+            display: "flex", flexDirection: "column", alignItems: "center",
+            justifyContent: "center", gap: "16px", minHeight: "200px",
+          }}>
+            <div style={{ fontSize: "32px" }}>🔍</div>
+            <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>
+              AIが課題を分析しています...
+            </div>
+          </div>
+        )}
+
+        {/* 対話エリア（A3: summaryフェーズでも表示し続ける） */}
+        {showDialogue && messages.length > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+
+            {/* プログレス（対話中のみ） */}
+            {phase !== "summary" && (
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                   <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
@@ -362,169 +491,156 @@ ${issueText.trim()}`;
                   <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, #8b5cf6, #7c3aed)", borderRadius: 2, transition: "width 0.3s" }} />
                 </div>
               </div>
+            )}
 
-              {/* 会話履歴（setup以外） */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                {messages.map((msg, originalIdx) => {
-                  if (msg.role === "user" && msg.content.includes("この課題について、なぜなぜ分析を進めてください")) return null;
-                  return (
-                    <div key={originalIdx} className="chat-bubble-in" style={{
-                      display: "flex",
-                      justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                    }}>
-                      <div style={{
-                        maxWidth: "85%",
-                        padding: "10px 14px",
-                        borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
-                        background: msg.role === "user" ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                        color: msg.role === "user" ? "#fff" : "var(--color-text-primary)",
-                        border: msg.role === "assistant" ? "1px solid var(--color-border-primary)" : "none",
-                        fontSize: "13px", lineHeight: 1.7,
-                      }}>
-                        {msg.role === "assistant" && (
-                          <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
-                        )}
-                        {msg.role === "assistant"
-                          ? <TypingMessage text={msg.content} isLatest={originalIdx === typingIndex} />
-                          : msg.content}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {(phase === "thinking" || phase === "summarizing") && (
-                  <div className="chat-bubble-in" style={{ display: "flex", justifyContent: "flex-start" }}>
+            {/* 会話履歴 */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {messages.map((msg, originalIdx) => {
+                if (msg.role === "user" && msg.content.includes("この課題について、なぜなぜ分析を進めてください")) return null;
+                return (
+                  <div key={originalIdx} className="chat-bubble-in" style={{
+                    display: "flex",
+                    justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+                  }}>
                     <div style={{
+                      maxWidth: "85%",
                       padding: "10px 14px",
-                      borderRadius: "12px 12px 12px 4px",
-                      background: "var(--color-bg-secondary)",
-                      border: "1px solid var(--color-border-primary)",
-                      fontSize: "12px", color: "var(--color-text-tertiary)",
+                      borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
+                      background: msg.role === "user" ? "var(--color-brand)" : "var(--color-bg-secondary)",
+                      color: msg.role === "user" ? "#fff" : "var(--color-text-primary)",
+                      border: msg.role === "assistant" ? "1px solid var(--color-border-primary)" : "none",
+                      fontSize: "13px", lineHeight: 1.7,
                     }}>
-                      <ThinkingDots />
+                      {msg.role === "assistant" && (
+                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
+                      )}
+                      {msg.role === "assistant"
+                        ? <TypingMessage text={msg.content} isLatest={originalIdx === typingIndex} />
+                        : msg.content}
                     </div>
                   </div>
-                )}
-                <div ref={chatBottomRef} />
-              </div>
+                );
+              })}
 
-              {/* 回答入力 */}
-              {phase === "dialogue" && (
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  <textarea
-                    ref={inputRef}
-                    value={userInput}
-                    onChange={e => setUserInput(e.target.value)}
-                    onKeyDown={e => {
-                      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendAnswer(); }
-                    }}
-                    placeholder="回答を入力してください（Enterで送信、Shift+Enterで改行）"
-                    rows={3}
-                    style={{
-                      width: "100%", padding: "10px 12px", fontSize: "12px",
-                      border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-md)",
-                      background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                      resize: "none", lineHeight: 1.6, boxSizing: "border-box",
-                    }}
-                  />
-                  {error && (
-                    <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "6px 10px", borderRadius: "var(--radius-md)" }}>
-                      {error}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <button
-                      onClick={handleSendAnswer}
-                      disabled={!userInput.trim()}
-                      style={{
-                        flex: 1, padding: "9px", fontSize: "12px", fontWeight: "600",
-                        background: userInput.trim() ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-                        border: "none", borderRadius: "var(--radius-md)",
-                        color: userInput.trim() ? "#fff" : "var(--color-text-tertiary)",
-                        cursor: userInput.trim() ? "pointer" : "not-allowed",
-                      }}
-                    >
-                      答える →
-                    </button>
-                    <button
-                      onClick={handleGenerateSummary}
-                      style={{
-                        padding: "9px 14px", fontSize: "12px", fontWeight: "600",
-                        background: "transparent",
-                        border: "1px solid var(--color-brand)",
-                        borderRadius: "var(--radius-md)",
-                        color: "var(--color-brand)",
-                        cursor: "pointer",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      サマリー生成
-                    </button>
+              {(phase === "thinking" || phase === "summarizing") && (
+                <div className="chat-bubble-in" style={{ display: "flex", justifyContent: "flex-start" }}>
+                  <div style={{
+                    padding: "10px 14px",
+                    borderRadius: "12px 12px 12px 4px",
+                    background: "var(--color-bg-secondary)",
+                    border: "1px solid var(--color-border-primary)",
+                    fontSize: "12px", color: "var(--color-text-tertiary)",
+                  }}>
+                    <ThinkingDots />
                   </div>
-                  <button
-                    onClick={handleReset}
-                    style={{
-                      padding: "5px", fontSize: "11px",
-                      background: "transparent", border: "none",
-                      color: "var(--color-text-tertiary)", cursor: "pointer",
-                    }}
-                  >
-                    最初からやり直す
-                  </button>
                 </div>
               )}
+              <div ref={chatBottomRef} />
             </div>
-          )}
 
-          {/* サマリー */}
-          {phase === "summary" && (
-            <div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-                <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
-                  根本原因分析サマリー
+            {/* 回答入力（dialogue フェーズのみ） */}
+            {phase === "dialogue" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <textarea
+                  ref={inputRef}
+                  value={userInput}
+                  onChange={e => setUserInput(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSendAnswer(); }
+                  }}
+                  placeholder="回答を入力してください（Enterで送信、Shift+Enterで改行）"
+                  rows={3}
+                  style={{
+                    width: "100%", padding: "10px 12px", fontSize: "12px",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                    resize: "none", lineHeight: 1.6, boxSizing: "border-box",
+                  }}
+                />
+                {error && (
+                  <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "6px 10px", borderRadius: "var(--radius-md)" }}>
+                    {error}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <button
+                    onClick={handleSendAnswer}
+                    disabled={!userInput.trim()}
+                    style={{
+                      flex: 1, padding: "9px", fontSize: "12px", fontWeight: "600",
+                      background: userInput.trim() ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                      border: "none", borderRadius: "var(--radius-md)",
+                      color: userInput.trim() ? "#fff" : "var(--color-text-tertiary)",
+                      cursor: userInput.trim() ? "pointer" : "not-allowed",
+                    }}
+                  >
+                    答える →
+                  </button>
+                  <button
+                    onClick={handleGenerateSummary}
+                    style={{
+                      padding: "9px 14px", fontSize: "12px", fontWeight: "600",
+                      background: "transparent",
+                      border: "1px solid var(--color-brand)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--color-brand)",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    サマリー生成
+                  </button>
                 </div>
-                <button
-                  onClick={handleCopySummary}
-                  style={{
-                    fontSize: "11px", padding: "5px 10px",
-                    background: "transparent", border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer",
-                  }}
-                >
-                  コピー
-                </button>
-                <button
-                  onClick={handleReset}
-                  style={{
-                    fontSize: "11px", padding: "5px 10px",
-                    background: "transparent", border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer",
-                  }}
-                >
-                  やり直す
-                </button>
               </div>
-              <div style={{
-                background: "var(--color-bg-secondary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-lg)",
-                padding: "18px 20px",
-              }}>
-                {summary.split("\n").map((line, i) => {
-                  if (line.startsWith("## ")) {
-                    return <div key={i} style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", marginTop: i > 0 ? "16px" : 0, marginBottom: "6px" }}>{line.replace("## ", "")}</div>;
-                  }
-                  if (line.startsWith("- ")) {
-                    return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-secondary)", paddingLeft: "12px", lineHeight: 1.7, display: "flex", gap: "6px" }}><span style={{ color: "var(--color-brand)", flexShrink: 0 }}>•</span>{line.replace("- ", "")}</div>;
-                  }
-                  if (!line.trim()) return <div key={i} style={{ height: "6px" }} />;
-                  return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.8 }}>{line}</div>;
-                })}
+            )}
+          </div>
+        )}
+
+        {/* サマリー（A3: 対話履歴の下に追加、上に移動させない） */}
+        {phase === "summary" && (
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
+              <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", flex: 1 }}>
+                根本原因分析サマリー
               </div>
+              <button
+                onClick={handleCopySummary}
+                style={{
+                  fontSize: "11px", padding: "5px 10px",
+                  background: "transparent", border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer",
+                }}
+              >コピー</button>
+              <button
+                onClick={handleDownloadSummary}
+                style={{
+                  fontSize: "11px", padding: "5px 10px",
+                  background: "transparent", border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer",
+                }}
+              >⬇ MD保存</button>
             </div>
-          )}
-        </div>
+            <div style={{
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-lg)",
+              padding: "18px 20px",
+            }}>
+              {summary.split("\n").map((line, i) => {
+                if (line.startsWith("## ")) {
+                  return <div key={i} style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", marginTop: i > 0 ? "16px" : 0, marginBottom: "6px" }}>{line.replace("## ", "")}</div>;
+                }
+                if (line.startsWith("- ")) {
+                  return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-secondary)", paddingLeft: "12px", lineHeight: 1.7, display: "flex", gap: "6px" }}><span style={{ color: "var(--color-brand)", flexShrink: 0 }}>•</span>{line.replace("- ", "")}</div>;
+                }
+                if (!line.trim()) return <div key={i} style={{ height: "6px" }} />;
+                return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.8 }}>{line}</div>;
+              })}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 

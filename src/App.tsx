@@ -8,6 +8,7 @@ import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
+import { ToastContainer } from "./components/common/Toast";
 import { AppDataProvider, useAppData } from "./context/AppDataContext";
 import type { Member } from "./lib/localData/types";
 
@@ -157,6 +158,7 @@ function AuthenticatedApp({
       )}
       <MainLayout currentUser={currentUser} onLogout={onLogout} />
       <ConfirmModal />
+      <ToastContainer />
     </>
   );
 }

@@ -11,6 +11,8 @@ import type { Member } from "../../lib/localData/types";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { AIProgressLoader } from "../common/AIProgressLoader";
+import { showToast } from "../common/Toast";
 
 interface Props {
   onClose: () => void;
@@ -32,12 +34,31 @@ const MODE_OPTIONS: { value: KrReportMode; label: string; description: string }[
   },
 ];
 
+const REPORT_PHASES = [
+  "議事メモを解析しています...",
+  "OKRコンテキストを整理しています...",
+  "レポートを構成しています...",
+  "文章を生成・整形しています...",
+];
+
 function getThisMonday(): string {
   const d = new Date();
   const day = d.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
+}
+
+type SavedReport = { html: string; generatedAt: string };
+const reportKey = (krId: string, m: KrReportMode) => `okr_report_${krId}_${m}`;
+
+function loadSavedReport(krId: string, m: KrReportMode): SavedReport | null {
+  try {
+    const raw = localStorage.getItem(reportKey(krId, m));
+    return raw ? (JSON.parse(raw) as SavedReport) : null;
+  } catch {
+    return null;
+  }
 }
 
 export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
@@ -55,12 +76,19 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [sessions, setSessions] = useState<KrSession[]>([]);
+  const [savedReport, setSavedReport] = useState<SavedReport | null>(null);
   const reportRef = useRef<HTMLIFrameElement>(null);
 
   const today = new Date().toISOString().slice(0, 10);
   const thisMonday = getThisMonday();
-
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
+
+  // KR/モード変更時に保存済みレポートを読み込む
+  useEffect(() => {
+    setSavedReport(loadSavedReport(selectedKrId, mode));
+    setReportHtml(null);
+    setError(null);
+  }, [selectedKrId, mode]);
 
   // KR選択時にセッション履歴を取得
   useEffect(() => {
@@ -70,11 +98,9 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
       .catch(() => setSessions([]));
   }, [selectedKrId]);
 
-  // 今週のセッションを抽出
   const thisWeekSessions = sessions.filter(s => s.week_start === thisMonday);
   const thisWeekCheckin = thisWeekSessions.find(s => s.session_type === "checkin");
   const thisWeekWin = thisWeekSessions.find(s => s.session_type === "win_session");
-
   const sessionForMode = mode === "checkin" ? thisWeekCheckin : thisWeekWin;
 
   const handleLoadFromSession = () => {
@@ -83,12 +109,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
   };
 
   const handleGenerate = async () => {
-    if (!selectedKr) return;
-    if (!meetingNotes.trim()) {
-      setError("議事メモを入力してください。");
-      return;
-    }
-
+    if (!selectedKr || !meetingNotes.trim()) return;
     setGenerating(true);
     setError(null);
     setReportHtml(null);
@@ -108,6 +129,11 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
       const result = await callKrReportAI(context, mode);
       setReportHtml(result.html);
 
+      // localStorage に保存
+      const saved: SavedReport = { html: result.html, generatedAt: new Date().toISOString() };
+      localStorage.setItem(reportKey(selectedKrId, mode), JSON.stringify(saved));
+      setSavedReport(saved);
+
       setTimeout(() => {
         reportRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
@@ -120,19 +146,31 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
 
   const teamsWebhookUrl = import.meta.env.VITE_TEAMS_WEBHOOK_URL as string | undefined;
 
-  const handleCopyHtml = () => {
-    if (!reportHtml) return;
-    navigator.clipboard.writeText(reportHtml).then(() => {
-      alert("HTMLをクリップボードにコピーしました。");
-    });
+  const handleCopyText = () => {
+    const text = reportRef.current?.contentDocument?.body?.innerText ?? "";
+    if (!text) return;
+    navigator.clipboard.writeText(text).then(() => showToast("テキストをコピーしました"));
   };
 
-  const handleCopyRendered = () => {
-    if (!reportRef.current) return;
-    const text = reportRef.current.contentDocument?.body?.innerText ?? "";
-    navigator.clipboard.writeText(text).then(() => {
-      alert("テキストをクリップボードにコピーしました。");
-    });
+  const handleCopyHtml = () => {
+    if (!reportHtml) return;
+    navigator.clipboard.writeText(reportHtml).then(() => showToast("HTMLをコピーしました"));
+  };
+
+  const handleDownloadText = () => {
+    const text = reportRef.current?.contentDocument?.body?.innerText ?? "";
+    if (!text) return;
+    const modeLabel = mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `KRレポート_${modeLabel}_${selectedKr?.title ?? ""}_${today}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("ダウンロードしました");
   };
 
   const [teamsSending, setTeamsSending] = useState(false);
@@ -162,12 +200,26 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      alert("Teamsに送信しました。");
+      showToast("Teamsに送信しました");
     } catch (e) {
-      alert(`Teams送信エラー: ${e instanceof Error ? e.message : String(e)}`);
+      showToast(`Teams送信エラー: ${e instanceof Error ? e.message : String(e)}`, "error");
     } finally {
       setTeamsSending(false);
     }
+  };
+
+  const handleRestoreSaved = () => {
+    if (!savedReport) return;
+    setReportHtml(savedReport.html);
+    setTimeout(() => {
+      reportRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
+  };
+
+  const handleDeleteSaved = () => {
+    localStorage.removeItem(reportKey(selectedKrId, mode));
+    setSavedReport(null);
+    showToast("保存済みレポートを削除しました", "info");
   };
 
   const panelContent = (
@@ -183,288 +235,341 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
       }}
       onClick={inline ? undefined : e => e.stopPropagation()}
     >
-        {/* ヘッダー */}
-        <div style={{
-          padding: "14px 20px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          display: "flex", alignItems: "center", gap: "10px",
-          flexShrink: 0,
-        }}>
-          <span style={{ fontSize: "18px" }}>🧪</span>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
-              KRレポート生成
-            </div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-              チェックイン・ウィンセッションの議事メモからAIがレポートを生成します
-            </div>
+      {/* ヘッダー */}
+      <div style={{
+        padding: "14px 20px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        display: "flex", alignItems: "center", gap: "10px",
+        flexShrink: 0,
+      }}>
+        <span style={{ fontSize: "18px" }}>📊</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+            KRレポート生成
           </div>
-          {!inline && (
-            <button
-              onClick={onClose}
-              style={{
-                background: "transparent", border: "none", cursor: "pointer",
-                fontSize: "20px", color: "var(--color-text-tertiary)",
-                padding: "4px", lineHeight: 1,
-              }}
-            >✕</button>
-          )}
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+            チェックイン・ウィンセッションの議事メモからAIがレポートを生成します
+          </div>
         </div>
+        {!inline && (
+          <button
+            onClick={onClose}
+            style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              fontSize: "20px", color: "var(--color-text-tertiary)",
+              padding: "4px", lineHeight: 1,
+            }}
+          >✕</button>
+        )}
+      </div>
 
-        {/* コンテンツ */}
-        <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
-          {/* 設定エリア */}
-          <div style={{
-            background: "var(--color-bg-secondary)",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-lg)",
-            padding: "18px 20px",
-            marginBottom: "20px",
-          }}>
+      {/* コンテンツ */}
+      <div style={{ flex: 1, overflow: "auto", padding: "20px", display: "flex", flexDirection: "column" }}>
 
-            {/* KR選択 */}
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                対象KR
-              </label>
-              {activeKrs.length === 0 ? (
-                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-                  KRが登録されていません。管理画面でKRを作成してください。
+        {/* AI生成中：フルローダー */}
+        {generating ? (
+          <AIProgressLoader phases={REPORT_PHASES} intervalMs={5000} />
+        ) : (
+          <>
+            {/* 設定エリア */}
+            <div style={{
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-lg)",
+              padding: "18px 20px",
+              marginBottom: "20px",
+            }}>
+              {/* KR選択 */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
+                  対象KR
+                </label>
+                {activeKrs.length === 0 ? (
+                  <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
+                    KRが登録されていません。管理画面でKRを作成してください。
+                  </div>
+                ) : (
+                  <select
+                    value={selectedKrId}
+                    onChange={e => setSelectedKrId(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "8px 10px",
+                      fontSize: "13px",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  >
+                    {activeKrs.map(kr => (
+                      <option key={kr.id} value={kr.id}>{kr.title}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              {/* モード選択（S4: setMeetingNotes リセット削除） */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "8px" }}>
+                  会議の種類
+                </label>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  {MODE_OPTIONS.map(opt => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setMode(opt.value)}
+                      style={{
+                        flex: 1,
+                        padding: "10px 12px",
+                        border: `1.5px solid ${mode === opt.value ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                        borderRadius: "var(--radius-md)",
+                        background: mode === opt.value ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                        cursor: "pointer",
+                        textAlign: "left",
+                      }}
+                    >
+                      <div style={{
+                        fontSize: "12px",
+                        fontWeight: "600",
+                        color: mode === opt.value ? "var(--color-brand)" : "var(--color-text-primary)",
+                        marginBottom: "3px",
+                      }}>
+                        {opt.label}
+                      </div>
+                      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.4 }}>
+                        {opt.description}
+                      </div>
+                    </button>
+                  ))}
                 </div>
-              ) : (
-                <select
-                  value={selectedKrId}
-                  onChange={e => { setSelectedKrId(e.target.value); setMeetingNotes(""); setReportHtml(null); }}
+              </div>
+
+              {/* 今週のセッションバナー */}
+              {sessionForMode && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "10px",
+                  background: "var(--color-bg-success, #f0fdf4)",
+                  border: "1px solid var(--color-border-success, #86efac)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "10px 14px",
+                  marginBottom: "14px",
+                  fontSize: "12px",
+                }}>
+                  <span style={{ fontSize: "16px" }}>✅</span>
+                  <div style={{ flex: 1, color: "var(--color-text-primary)" }}>
+                    <span style={{ fontWeight: "600" }}>今週の{mode === "checkin" ? "チェックイン" : "ウィンセッション"}が記録済みです</span>
+                    <span style={{ color: "var(--color-text-tertiary)", marginLeft: "6px" }}>({sessionForMode.week_start})</span>
+                  </div>
+                  <button
+                    onClick={handleLoadFromSession}
+                    style={{
+                      padding: "5px 12px",
+                      background: "var(--color-brand)",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "var(--radius-md)",
+                      fontSize: "11px",
+                      fontWeight: "600",
+                      cursor: "pointer",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    議事録を読み込む
+                  </button>
+                </div>
+              )}
+
+              {/* 議事メモ入力 */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
+                  議事メモ / 文字起こし
+                </label>
+                <textarea
+                  value={meetingNotes}
+                  onChange={e => setMeetingNotes(e.target.value)}
+                  placeholder="チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。"
+                  rows={10}
                   style={{
                     width: "100%",
-                    padding: "8px 10px",
-                    fontSize: "13px",
+                    padding: "10px 12px",
+                    fontSize: "12px",
                     border: "1px solid var(--color-border-primary)",
                     borderRadius: "var(--radius-md)",
                     background: "var(--color-bg-primary)",
                     color: "var(--color-text-primary)",
+                    resize: "vertical",
+                    lineHeight: 1.6,
+                    boxSizing: "border-box",
                   }}
-                >
-                  {activeKrs.map(kr => (
-                    <option key={kr.id} value={kr.id}>{kr.title}</option>
-                  ))}
-                </select>
-              )}
-            </div>
-
-            {/* モード選択 */}
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "8px" }}>
-                会議の種類
-              </label>
-              <div style={{ display: "flex", gap: "10px" }}>
-                {MODE_OPTIONS.map(opt => (
-                  <button
-                    key={opt.value}
-                    onClick={() => { setMode(opt.value); setMeetingNotes(""); }}
-                    style={{
-                      flex: 1,
-                      padding: "10px 12px",
-                      border: `1.5px solid ${mode === opt.value ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                      borderRadius: "var(--radius-md)",
-                      background: mode === opt.value ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                      cursor: "pointer",
-                      textAlign: "left",
-                    }}
-                  >
-                    <div style={{
-                      fontSize: "12px",
-                      fontWeight: "600",
-                      color: mode === opt.value ? "var(--color-brand)" : "var(--color-text-primary)",
-                      marginBottom: "3px",
-                    }}>
-                      {opt.label}
-                    </div>
-                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.4 }}>
-                      {opt.description}
-                    </div>
-                  </button>
-                ))}
+                />
               </div>
+
+              {/* エラー */}
+              {error && (
+                <div style={{
+                  fontSize: "12px",
+                  color: "var(--color-text-danger)",
+                  background: "var(--color-bg-danger)",
+                  padding: "8px 12px",
+                  borderRadius: "var(--radius-md)",
+                  marginBottom: "12px",
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {/* 生成ボタン */}
+              <button
+                onClick={handleGenerate}
+                disabled={!selectedKr || !meetingNotes.trim()}
+                style={{
+                  width: "100%",
+                  padding: "11px",
+                  background: !selectedKr || !meetingNotes.trim()
+                    ? "var(--color-bg-tertiary)"
+                    : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                  border: "none",
+                  borderRadius: "var(--radius-md)",
+                  color: !selectedKr || !meetingNotes.trim()
+                    ? "var(--color-text-tertiary)"
+                    : "#fff",
+                  fontSize: "13px",
+                  fontWeight: "600",
+                  cursor: !selectedKr || !meetingNotes.trim() ? "not-allowed" : "pointer",
+                  boxShadow: !selectedKr || !meetingNotes.trim()
+                    ? "none"
+                    : "0 2px 8px rgba(124,58,237,0.35)",
+                }}
+              >
+                ✨ AIでレポートを生成する
+              </button>
             </div>
 
-            {/* 今週のセッションバナー */}
-            {sessionForMode && (
+            {/* 保存済みレポートバナー（現在のビューに未表示かつ保存データあり） */}
+            {savedReport && !reportHtml && (
               <div style={{
                 display: "flex", alignItems: "center", gap: "10px",
-                background: "var(--color-bg-success, #f0fdf4)",
-                border: "1px solid var(--color-border-success, #86efac)",
+                background: "var(--color-bg-purple)",
+                border: "1px solid var(--color-border-purple)",
                 borderRadius: "var(--radius-md)",
                 padding: "10px 14px",
-                marginBottom: "14px",
+                marginBottom: "20px",
                 fontSize: "12px",
               }}>
-                <span style={{ fontSize: "16px" }}>✅</span>
-                <div style={{ flex: 1, color: "var(--color-text-primary)" }}>
-                  <span style={{ fontWeight: "600" }}>今週の{mode === "checkin" ? "チェックイン" : "ウィンセッション"}が記録済みです</span>
-                  <span style={{ color: "var(--color-text-tertiary)", marginLeft: "6px" }}>({sessionForMode.week_start})</span>
+                <span style={{ fontSize: "16px" }}>💾</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: "600", color: "var(--color-text-primary)" }}>保存済みレポートがあります</span>
+                  <span style={{ color: "var(--color-text-tertiary)", marginLeft: "8px" }}>
+                    {new Date(savedReport.generatedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </span>
                 </div>
                 <button
-                  onClick={handleLoadFromSession}
+                  onClick={handleRestoreSaved}
                   style={{
-                    padding: "5px 12px",
-                    background: "var(--color-brand)",
-                    color: "#fff",
-                    border: "none",
-                    borderRadius: "var(--radius-md)",
-                    fontSize: "11px",
-                    fontWeight: "600",
-                    cursor: "pointer",
-                    whiteSpace: "nowrap",
+                    padding: "5px 12px", fontSize: "11px", fontWeight: "600",
+                    background: "var(--color-brand)", color: "#fff",
+                    border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
                   }}
-                >
-                  議事録を読み込む
-                </button>
-              </div>
-            )}
-
-            {/* 議事メモ入力 */}
-            <div style={{ marginBottom: "16px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                議事メモ / 文字起こし
-              </label>
-              <textarea
-                value={meetingNotes}
-                onChange={e => setMeetingNotes(e.target.value)}
-                placeholder="チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。"
-                rows={10}
-                style={{
-                  width: "100%",
-                  padding: "10px 12px",
-                  fontSize: "12px",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  background: "var(--color-bg-primary)",
-                  color: "var(--color-text-primary)",
-                  resize: "vertical",
-                  lineHeight: 1.6,
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            {/* エラー */}
-            {error && (
-              <div style={{
-                fontSize: "12px",
-                color: "var(--color-text-danger)",
-                background: "var(--color-bg-danger)",
-                padding: "8px 12px",
-                borderRadius: "var(--radius-md)",
-                marginBottom: "12px",
-              }}>
-                {error}
-              </div>
-            )}
-
-            {/* 生成ボタン */}
-            <button
-              onClick={handleGenerate}
-              disabled={generating || !selectedKr || !meetingNotes.trim()}
-              style={{
-                width: "100%",
-                padding: "11px",
-                background: generating || !selectedKr || !meetingNotes.trim()
-                  ? "var(--color-bg-tertiary)"
-                  : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                border: "none",
-                borderRadius: "var(--radius-md)",
-                color: generating || !selectedKr || !meetingNotes.trim()
-                  ? "var(--color-text-tertiary)"
-                  : "#fff",
-                fontSize: "13px",
-                fontWeight: "600",
-                cursor: generating || !selectedKr || !meetingNotes.trim() ? "not-allowed" : "pointer",
-                boxShadow: generating || !selectedKr || !meetingNotes.trim()
-                  ? "none"
-                  : "0 2px 8px rgba(124,58,237,0.35)",
-              }}
-            >
-              {generating ? "⏳ レポートを生成中..." : "✨ AIでレポートを生成する"}
-            </button>
-          </div>
-
-          {/* レポート出力エリア */}
-          {reportHtml && (
-            <div>
-              <div style={{
-                display: "flex", alignItems: "center", gap: "8px",
-                marginBottom: "12px",
-              }}>
-                <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
-                  生成されたレポート
-                </div>
+                >復元する</button>
                 <button
-                  onClick={handleCopyRendered}
+                  onClick={handleDeleteSaved}
                   style={{
-                    fontSize: "11px", padding: "5px 10px",
+                    padding: "5px 10px", fontSize: "11px",
                     background: "transparent",
                     border: "1px solid var(--color-border-primary)",
                     borderRadius: "var(--radius-md)",
-                    color: "var(--color-text-secondary)",
-                    cursor: "pointer",
+                    color: "var(--color-text-tertiary)", cursor: "pointer",
                   }}
-                >
-                  テキストをコピー
-                </button>
-                <button
-                  onClick={handleCopyHtml}
-                  style={{
-                    fontSize: "11px", padding: "5px 10px",
-                    background: "transparent",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    color: "var(--color-text-secondary)",
-                    cursor: "pointer",
-                  }}
-                >
-                  HTMLをコピー
-                </button>
-                {teamsWebhookUrl && (
+                >削除</button>
+              </div>
+            )}
+
+            {/* レポート出力エリア */}
+            {reportHtml && (
+              <div>
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  marginBottom: "12px",
+                }}>
+                  <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
+                    生成されたレポート
+                  </div>
                   <button
-                    onClick={handleSendToTeams}
-                    disabled={teamsSending}
+                    onClick={handleCopyText}
                     style={{
                       fontSize: "11px", padding: "5px 10px",
-                      background: teamsSending ? "var(--color-bg-tertiary)" : "#6264a7",
-                      border: "none",
+                      background: "transparent",
+                      border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-md)",
-                      color: teamsSending ? "var(--color-text-tertiary)" : "#fff",
-                      cursor: teamsSending ? "not-allowed" : "pointer",
-                      fontWeight: "600",
+                      color: "var(--color-text-secondary)",
+                      cursor: "pointer",
                     }}
-                  >
-                    {teamsSending ? "送信中..." : "Teams送信"}
-                  </button>
-                )}
+                  >テキストコピー</button>
+                  <button
+                    onClick={handleCopyHtml}
+                    style={{
+                      fontSize: "11px", padding: "5px 10px",
+                      background: "transparent",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--color-text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >HTMLコピー</button>
+                  <button
+                    onClick={handleDownloadText}
+                    style={{
+                      fontSize: "11px", padding: "5px 10px",
+                      background: "transparent",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-md)",
+                      color: "var(--color-text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >⬇ ダウンロード</button>
+                  {teamsWebhookUrl && (
+                    <button
+                      onClick={handleSendToTeams}
+                      disabled={teamsSending}
+                      style={{
+                        fontSize: "11px", padding: "5px 10px",
+                        background: teamsSending ? "var(--color-bg-tertiary)" : "#6264a7",
+                        border: "none",
+                        borderRadius: "var(--radius-md)",
+                        color: teamsSending ? "var(--color-text-tertiary)" : "#fff",
+                        cursor: teamsSending ? "not-allowed" : "pointer",
+                        fontWeight: "600",
+                      }}
+                    >
+                      {teamsSending ? "送信中..." : "Teams送信"}
+                    </button>
+                  )}
+                </div>
+                <iframe
+                  ref={reportRef}
+                  srcDoc={reportHtml}
+                  style={{
+                    width: "100%",
+                    minHeight: "600px",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-lg)",
+                    background: "#fff",
+                  }}
+                  onLoad={e => {
+                    const iframe = e.currentTarget;
+                    const body = iframe.contentDocument?.body;
+                    if (body) {
+                      iframe.style.height = `${body.scrollHeight + 32}px`;
+                    }
+                  }}
+                  title="KRレポートプレビュー"
+                />
               </div>
-              <iframe
-                ref={reportRef}
-                srcDoc={reportHtml}
-                style={{
-                  width: "100%",
-                  minHeight: "600px",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-lg)",
-                  background: "#fff",
-                }}
-                onLoad={e => {
-                  const iframe = e.currentTarget;
-                  const body = iframe.contentDocument?.body;
-                  if (body) {
-                    iframe.style.height = `${body.scrollHeight + 32}px`;
-                  }
-                }}
-                title="KRレポートプレビュー"
-              />
-            </div>
-          )}
-        </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 

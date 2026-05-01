@@ -22,6 +22,7 @@ import {
   fetchKrDeclarations,
   type KrDeclaration,
 } from "../../lib/supabase/krSessionStore";
+import { AIProgressLoader } from "../common/AIProgressLoader";
 
 // ===== 型 =====
 
@@ -361,15 +362,15 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
 
           {/* ステップ2: 解析中 */}
           {step === "extracting" && (
-            <div style={{
-              display: "flex", flexDirection: "column", alignItems: "center",
-              justifyContent: "center", gap: "16px", minHeight: "200px",
-            }}>
-              <div style={{ fontSize: "32px" }}>⏳</div>
-              <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>
-                AIが文字起こしを解析しています...
-              </div>
-            </div>
+            <AIProgressLoader
+              phases={[
+                "文字起こしを読み込んでいます...",
+                "宣言・シグナルを抽出しています...",
+                "担当者・期日を照合しています...",
+                "内容を整形しています...",
+              ]}
+              intervalMs={4500}
+            />
           )}
 
           {/* ステップ3: 確認（チェックイン） */}

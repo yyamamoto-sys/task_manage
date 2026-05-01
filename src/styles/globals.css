@@ -438,6 +438,13 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 .animate-slideDown  { animation: slideDown 0.18s cubic-bezier(0.16,1,0.3,1) both; }
 .animate-dropdown   { animation: dropdownOpen 0.14s cubic-bezier(0.16,1,0.3,1); transform-origin: top; }
 
+/* トースト通知（下から浮き上がる） */
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-toast-in { animation: toastIn 0.2s cubic-bezier(0.16,1,0.3,1) both; }
+
 /* ===== AI エフェクト ===== */
 
 /* AIパネル・モーダルの入場（下から浮き上がる） */
