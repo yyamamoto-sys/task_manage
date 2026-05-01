@@ -8,9 +8,9 @@ import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
-import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrSessions, updateKrSession, softDeleteKrSession, type KrSession } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | "plan" | null;
+export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | "plan" | "overview" | null;
 
 interface Props {
   currentUser: Member;
@@ -18,6 +18,7 @@ interface Props {
   onSelectKr: (id: string | null) => void;
   activeTool: OkrActiveTool;
   onSetActiveTool: (tool: OkrActiveTool) => void;
+  onOpenConsult?: () => void;
 }
 
 const SIGNAL_COLOR: Record<string, string> = {
@@ -42,17 +43,17 @@ function getThisMonday(): string {
 }
 
 const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
-  { tool: null,      icon: "🎯", label: "概要" },
-  { tool: "session", icon: "🗓️", label: "セッション記録" },
-  { tool: "report",  icon: "📊", label: "レポート" },
-  { tool: "why",     icon: "🔍", label: "なぜなぜ" },
-  { tool: "history", icon: "📋", label: "履歴" },
-  { tool: "plan",    icon: "📅", label: "計画" },
-  { tool: "guide",   icon: "📖", label: "使い方" },
+  { tool: "session",  icon: "🗓️", label: "セッション記録" },
+  { tool: "report",   icon: "📊", label: "レポート" },
+  { tool: "why",      icon: "🔍", label: "なぜなぜ" },
+  { tool: "history",  icon: "📋", label: "履歴" },
+  { tool: "plan",     icon: "📅", label: "計画" },
+  { tool: "overview", icon: "🎯", label: "概要" },
+  { tool: "guide",    icon: "📖", label: "使い方" },
 ];
 
 export function OkrDashboardView({
-  currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool,
+  currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool, onOpenConsult,
 }: Props) {
   const { objective, keyResults, taskForces, tasks, todos } = useAppData();
 
@@ -103,7 +104,6 @@ export function OkrDashboardView({
   }, [activeKrs, refreshKey]);
 
   const thisMonday = getThisMonday();
-  const todayDow = new Date().getDay(); // 0=日 1=月 … 5=金
 
   // 今週のセッション集計
   const thisWeekStats = useMemo(() => {
@@ -119,29 +119,23 @@ export function OkrDashboardView({
     return { checkins, winSessions };
   }, [krSessionsMap, thisMonday]);
 
-  // 週次ガイダンスバナー
+  // 週次ガイダンスバナー（曜日依存なし）
   const guidanceBanner = useMemo((): {
     icon: string; text: string; action: "session" | null; color: string; urgent: boolean;
   } | null => {
     if (activeKrs.length === 0 || sessionsLoading) return null;
-    if (todayDow === 1) {
-      if (thisWeekStats.checkins === 0)
-        return { icon: "🗓️", text: "今週のチェックインをまだ記録していません", action: "session", color: "#3b82f6", urgent: true };
-      return { icon: "✅", text: `チェックイン記録済み（${thisWeekStats.checkins} / ${activeKrs.length} KR）`, action: null, color: "#16a34a", urgent: false };
-    }
-    if (todayDow === 5) {
-      if (thisWeekStats.winSessions === 0)
-        return { icon: "🏆", text: "今週のウィンセッションをまだ記録していません", action: "session", color: "#f59e0b", urgent: true };
-      return { icon: "✅", text: `ウィンセッション記録済み（${thisWeekStats.winSessions} / ${activeKrs.length} KR）`, action: null, color: "#16a34a", urgent: false };
-    }
     const total = thisWeekStats.checkins + thisWeekStats.winSessions;
-    if (total === 0) return null;
-    return {
+    if (total === 0) return {
       icon: "📋",
-      text: `今週の記録　チェックイン ${thisWeekStats.checkins} 件・ウィン ${thisWeekStats.winSessions} 件`,
-      action: null, color: "#6366f1", urgent: false,
+      text: "今週はまだ記録がありません",
+      action: "session", color: "#6366f1", urgent: false,
     };
-  }, [todayDow, thisWeekStats, activeKrs.length, sessionsLoading]);
+    return {
+      icon: "✅",
+      text: `今週の記録　チェックイン ${thisWeekStats.checkins} 件・ウィン ${thisWeekStats.winSessions} 件`,
+      action: null, color: "#10b981", urgent: false,
+    };
+  }, [thisWeekStats, activeKrs.length, sessionsLoading]);
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -167,7 +161,7 @@ export function OkrDashboardView({
 
       {/* タブバー */}
       <div style={{
-        display: "flex",
+        display: "flex", alignItems: "stretch",
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-secondary)",
         overflowX: "auto", flexShrink: 0,
@@ -197,13 +191,44 @@ export function OkrDashboardView({
             </button>
           );
         })}
+        {/* AI相談ボタン（タブとは別扱い） */}
+        {onOpenConsult && (
+          <button
+            onClick={onOpenConsult}
+            title="AIアシスタントに相談する"
+            style={{
+              marginLeft: "auto",
+              display: "flex", alignItems: "center", gap: "5px",
+              padding: "10px 16px",
+              background: "transparent", border: "none",
+              borderBottom: "2px solid transparent",
+              marginBottom: "-1px",
+              fontSize: "12px", fontWeight: "600",
+              color: "#6366f1",
+              cursor: "pointer", whiteSpace: "nowrap",
+              flexShrink: 0,
+            }}
+          >
+            🤖 AI相談
+          </button>
+        )}
       </div>
 
       {/* コンテンツエリア */}
       <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
 
-        {/* ─── 概要タブ ─── */}
+        {/* ─── null（未選択）状態 ─── */}
         {activeTool === null && (
+          <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: "40px 24px" }}>
+            <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px" }}>
+              <div style={{ fontSize: "28px", marginBottom: "10px" }}>🎯</div>
+              <div>上のタブを選択してください</div>
+            </div>
+          </div>
+        )}
+
+        {/* ─── 概要タブ ─── */}
+        {activeTool === "overview" && (
           <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "20px" }}>
 
             {/* 週次ガイダンスバナー */}
@@ -462,6 +487,8 @@ export function OkrDashboardView({
             loading={sessionsLoading}
             onSelectKr={onSelectKr}
             onOpenSession={() => onSetActiveTool("session")}
+            onRefresh={refreshSessions}
+            currentUserId={currentUser.id}
           />
         )}
 
@@ -486,8 +513,15 @@ export function OkrDashboardView({
 
 // ===== セッション履歴コンポーネント =====
 
+type EditDraft = {
+  session_type: "checkin" | "win_session";
+  signal: "green" | "yellow" | "red" | null;
+  signal_comment: string;
+  learnings: string;
+};
+
 function KrSessionHistory({
-  selectedKrId, activeKrs, krSessionsMap, loading, onSelectKr, onOpenSession,
+  selectedKrId, activeKrs, krSessionsMap, loading, onSelectKr, onOpenSession, onRefresh, currentUserId,
 }: {
   selectedKrId: string | null;
   activeKrs: { id: string; title: string }[];
@@ -495,9 +529,16 @@ function KrSessionHistory({
   loading: boolean;
   onSelectKr: (id: string | null) => void;
   onOpenSession: () => void;
+  onRefresh: () => void;
+  currentUserId: string;
 }) {
   const [filterKrId, setFilterKrId] = useState(selectedKrId ?? "");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState<EditDraft | null>(null);
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     setFilterKrId(selectedKrId ?? "");
@@ -505,7 +546,6 @@ function KrSessionHistory({
 
   const displayKrs = filterKrId ? activeKrs.filter(kr => kr.id === filterKrId) : activeKrs;
 
-  // 全セッションを week_start 降順で並べてグループ化
   const weekGroups = useMemo(() => {
     const all: (KrSession & { krTitle: string })[] = [];
     for (const kr of displayKrs) {
@@ -514,7 +554,6 @@ function KrSessionHistory({
       }
     }
     all.sort((a, b) => b.week_start.localeCompare(a.week_start) || b.session_type.localeCompare(a.session_type));
-
     const groups: { weekStart: string; sessions: (KrSession & { krTitle: string })[] }[] = [];
     for (const s of all) {
       const last = groups[groups.length - 1];
@@ -527,6 +566,67 @@ function KrSessionHistory({
     return groups;
   }, [displayKrs, krSessionsMap]);
 
+  const startEdit = (session: KrSession) => {
+    setEditingId(session.id);
+    setDeleteConfirmId(null);
+    setEditDraft({
+      session_type: session.session_type,
+      signal: session.signal,
+      signal_comment: session.signal_comment,
+      learnings: session.learnings,
+    });
+  };
+
+  const cancelEdit = () => { setEditingId(null); setEditDraft(null); };
+
+  const handleSave = async (sessionId: string) => {
+    if (!editDraft) return;
+    setSavingId(sessionId);
+    try {
+      await updateKrSession(sessionId, {
+        session_type: editDraft.session_type,
+        signal: editDraft.signal,
+        signal_comment: editDraft.signal_comment,
+        learnings: editDraft.learnings,
+      }, currentUserId);
+      setEditingId(null);
+      setEditDraft(null);
+      onRefresh();
+    } catch {
+      // error silently — user can retry
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const handleDelete = async (sessionId: string) => {
+    setDeletingId(sessionId);
+    try {
+      await softDeleteKrSession(sessionId, currentUserId);
+      setDeleteConfirmId(null);
+      onRefresh();
+    } catch {
+      // error silently
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const SIGNAL_OPTIONS: { value: "green" | "yellow" | "red"; label: string }[] = [
+    { value: "green", label: "🟢 順調" },
+    { value: "yellow", label: "🟡 注意" },
+    { value: "red", label: "🔴 要対応" },
+  ];
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%", padding: "7px 10px", fontSize: "12px",
+    border: "1px solid var(--color-border-primary)",
+    borderRadius: "var(--radius-md)",
+    background: "var(--color-bg-primary)",
+    color: "var(--color-text-primary)",
+    boxSizing: "border-box",
+  };
+
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "20px" }}>
 
@@ -535,133 +635,189 @@ function KrSessionHistory({
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>セッション履歴</div>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-            チェックイン・ウィンセッションの過去記録
+            チェックイン・ウィンセッションの過去記録（編集・削除可）
           </div>
         </div>
         <select
           value={filterKrId}
           onChange={e => { setFilterKrId(e.target.value); onSelectKr(e.target.value || null); }}
-          style={{
-            fontSize: "12px", padding: "6px 10px",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-secondary)",
-            color: "var(--color-text-primary)",
-          }}
+          style={{ fontSize: "12px", padding: "6px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", color: "var(--color-text-primary)" }}
         >
           <option value="">全KR</option>
-          {activeKrs.map(kr => (
-            <option key={kr.id} value={kr.id}>{kr.title}</option>
-          ))}
+          {activeKrs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
         </select>
       </div>
 
-      {loading && (
-        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>
-          読み込み中...
-        </div>
-      )}
+      {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>読み込み中...</div>}
 
       {!loading && weekGroups.length === 0 && (
-        <div style={{
-          textAlign: "center", padding: "48px 24px",
-          background: "var(--color-bg-secondary)",
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-lg)",
-        }}>
+        <div style={{ textAlign: "center", padding: "48px 24px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-lg)" }}>
           <div style={{ fontSize: "32px", marginBottom: "12px" }}>📋</div>
-          <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "6px" }}>
-            記録がまだありません
-          </div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "16px" }}>
-            チェックインまたはウィンセッションを記録してみましょう
-          </div>
-          <button
-            onClick={onOpenSession}
-            style={{
-              padding: "8px 20px", fontSize: "12px", fontWeight: "600",
-              background: "var(--color-brand)", color: "#fff",
-              border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-            }}
-          >🗓️ セッションを記録する</button>
+          <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "6px" }}>記録がまだありません</div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "16px" }}>チェックインまたはウィンセッションを記録してみましょう</div>
+          <button onClick={onOpenSession} style={{ padding: "8px 20px", fontSize: "12px", fontWeight: "600", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
+            🗓️ セッションを記録する
+          </button>
         </div>
       )}
 
       {weekGroups.map(group => (
         <div key={group.weekStart}>
-          <div style={{
-            fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)",
-            letterSpacing: "0.04em", marginBottom: "8px",
-            paddingBottom: "6px",
-            borderBottom: "1px solid var(--color-border-primary)",
-          }}>
+          <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingBottom: "6px", borderBottom: "1px solid var(--color-border-primary)" }}>
             週：{group.weekStart}（月曜）
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-            {group.sessions.map(session => (
-              <div
-                key={session.id}
-                style={{
-                  background: "var(--color-bg-secondary)",
-                  border: "1px solid var(--color-border-primary)",
-                  borderLeft: `3px solid ${session.signal ? SIGNAL_COLOR[session.signal] : "var(--color-border-primary)"}`,
-                  borderRadius: "var(--radius-md)",
-                  padding: "12px 14px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: session.signal_comment ? "6px" : "0" }}>
-                  <span style={{ fontSize: "14px" }}>{SESSION_TYPE_ICON[session.session_type]}</span>
-                  <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-                    {SESSION_TYPE_LABEL[session.session_type]}
-                  </span>
-                  {session.signal && (
-                    <span style={{
-                      fontSize: "11px", padding: "1px 8px",
-                      background: `${SIGNAL_COLOR[session.signal]}14`,
-                      color: SIGNAL_COLOR[session.signal],
-                      border: `1px solid ${SIGNAL_COLOR[session.signal]}40`,
-                      borderRadius: "var(--radius-full)", fontWeight: "600",
-                    }}>
-                      {SIGNAL_DOT[session.signal]}
-                    </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {group.sessions.map(session => {
+              const isEditing = editingId === session.id;
+              const isDeleteConfirm = deleteConfirmId === session.id;
+
+              return (
+                <div
+                  key={session.id}
+                  style={{
+                    background: "var(--color-bg-secondary)",
+                    border: `1px solid ${isEditing ? "rgba(99,102,241,0.4)" : "var(--color-border-primary)"}`,
+                    borderLeft: `3px solid ${session.signal ? SIGNAL_COLOR[session.signal] : "var(--color-border-primary)"}`,
+                    borderRadius: "var(--radius-md)",
+                    padding: "12px 14px",
+                  }}
+                >
+                  {/* 表示モード */}
+                  {!isEditing && (
+                    <>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: session.signal_comment ? "6px" : "0" }}>
+                        <span style={{ fontSize: "14px" }}>{SESSION_TYPE_ICON[session.session_type]}</span>
+                        <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+                          {SESSION_TYPE_LABEL[session.session_type]}
+                        </span>
+                        {session.signal && (
+                          <span style={{ fontSize: "11px", padding: "1px 8px", background: `${SIGNAL_COLOR[session.signal]}14`, color: SIGNAL_COLOR[session.signal], border: `1px solid ${SIGNAL_COLOR[session.signal]}40`, borderRadius: "var(--radius-full)", fontWeight: "600" }}>
+                            {SIGNAL_DOT[session.signal]}
+                          </span>
+                        )}
+                        {displayKrs.length > 1 && (
+                          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                            {session.krTitle.length > 20 ? session.krTitle.slice(0, 20) + "…" : session.krTitle}
+                          </span>
+                        )}
+                        <div style={{ marginLeft: "auto", display: "flex", gap: "6px", flexShrink: 0 }}>
+                          <button
+                            onClick={() => startEdit(session)}
+                            style={{ fontSize: "10px", padding: "3px 8px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                          >編集</button>
+                          {isDeleteConfirm ? (
+                            <>
+                              <button
+                                onClick={() => handleDelete(session.id)}
+                                disabled={deletingId === session.id}
+                                style={{ fontSize: "10px", padding: "3px 8px", background: "#dc2626", border: "none", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer", fontWeight: "600" }}
+                              >{deletingId === session.id ? "削除中…" : "本当に削除"}</button>
+                              <button
+                                onClick={() => setDeleteConfirmId(null)}
+                                style={{ fontSize: "10px", padding: "3px 8px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-tertiary)", cursor: "pointer" }}
+                              >キャンセル</button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => setDeleteConfirmId(session.id)}
+                              style={{ fontSize: "10px", padding: "3px 8px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-tertiary)", cursor: "pointer" }}
+                            >削除</button>
+                          )}
+                        </div>
+                      </div>
+                      {session.signal_comment && (
+                        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5, paddingLeft: "22px" }}>{session.signal_comment}</div>
+                      )}
+                      {session.learnings && session.session_type === "win_session" && (
+                        <div style={{ marginTop: "4px", paddingLeft: "22px" }}>
+                          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
+                            学び：{expandedId === session.id ? session.learnings : session.learnings.length > 100 ? session.learnings.slice(0, 100) + "…" : session.learnings}
+                          </div>
+                          {session.learnings.length > 100 && (
+                            <button
+                              onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
+                              style={{ marginTop: "2px", fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", padding: 0, textDecoration: "underline" }}
+                            >
+                              {expandedId === session.id ? "折りたたむ" : "全文を見る"}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </>
                   )}
-                  {displayKrs.length > 1 && (
-                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginLeft: "auto", flexShrink: 0 }}>
-                      {session.krTitle.length > 24 ? session.krTitle.slice(0, 24) + "…" : session.krTitle}
-                    </span>
+
+                  {/* 編集モード */}
+                  {isEditing && editDraft && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: "600", color: "#6366f1", marginBottom: "2px" }}>編集中</div>
+
+                      {/* 種類 */}
+                      <div>
+                        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>種類</div>
+                        <div style={{ display: "flex", gap: "8px" }}>
+                          {(["checkin", "win_session"] as const).map(t => (
+                            <label key={t} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", cursor: "pointer" }}>
+                              <input type="radio" name={`type-${session.id}`} checked={editDraft.session_type === t} onChange={() => setEditDraft({ ...editDraft, session_type: t })} />
+                              {SESSION_TYPE_ICON[t]} {SESSION_TYPE_LABEL[t]}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* シグナル */}
+                      <div>
+                        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>シグナル</div>
+                        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                          {SIGNAL_OPTIONS.map(opt => (
+                            <label key={opt.value} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", cursor: "pointer" }}>
+                              <input type="radio" name={`signal-${session.id}`} checked={editDraft.signal === opt.value} onChange={() => setEditDraft({ ...editDraft, signal: opt.value })} />
+                              {opt.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* シグナルコメント */}
+                      <div>
+                        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>シグナルコメント</div>
+                        <textarea
+                          value={editDraft.signal_comment}
+                          onChange={e => setEditDraft({ ...editDraft, signal_comment: e.target.value })}
+                          rows={2}
+                          style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+                        />
+                      </div>
+
+                      {/* 学び（ウィン時のみ） */}
+                      {editDraft.session_type === "win_session" && (
+                        <div>
+                          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>学び・外部環境変化</div>
+                          <textarea
+                            value={editDraft.learnings}
+                            onChange={e => setEditDraft({ ...editDraft, learnings: e.target.value })}
+                            rows={3}
+                            style={{ ...inputStyle, resize: "vertical", lineHeight: 1.5 }}
+                          />
+                        </div>
+                      )}
+
+                      {/* ボタン */}
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button
+                          onClick={() => handleSave(session.id)}
+                          disabled={savingId === session.id}
+                          style={{ flex: 1, padding: "7px", fontSize: "12px", fontWeight: "600", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}
+                        >{savingId === session.id ? "保存中…" : "保存"}</button>
+                        <button
+                          onClick={cancelEdit}
+                          style={{ padding: "7px 14px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                        >キャンセル</button>
+                      </div>
+                    </div>
                   )}
                 </div>
-                {session.signal_comment && (
-                  <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5, paddingLeft: "22px" }}>
-                    {session.signal_comment}
-                  </div>
-                )}
-                {session.learnings && session.session_type === "win_session" && (
-                  <div style={{ marginTop: "4px", paddingLeft: "22px" }}>
-                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
-                      学び：{expandedId === session.id
-                        ? session.learnings
-                        : session.learnings.length > 100
-                          ? session.learnings.slice(0, 100) + "…"
-                          : session.learnings}
-                    </div>
-                    {session.learnings.length > 100 && (
-                      <button
-                        onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
-                        style={{
-                          marginTop: "2px", fontSize: "10px",
-                          background: "transparent", border: "none",
-                          color: "var(--color-brand)", cursor: "pointer",
-                          padding: 0, textDecoration: "underline",
-                        }}
-                      >
-                        {expandedId === session.id ? "折りたたむ" : "全文を見る"}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       ))}
@@ -673,7 +829,7 @@ function KrSessionHistory({
 
 const WEEKLY_FLOW = [
   {
-    day: "月曜 PM",
+    day: "週1回",
     icon: "🗓️",
     title: "チェックイン",
     desc: "今週の宣言（誰が何をいつまでに）と進捗シグナルを記録します。会議の文字起こしをAIに渡すと自動で抽出します。",
@@ -681,7 +837,7 @@ const WEEKLY_FLOW = [
     color: "#3b82f6",
   },
   {
-    day: "金曜",
+    day: "週1回",
     icon: "🏆",
     title: "ウィンセッション",
     desc: "先週の宣言の達成状況・学び・外部環境の変化を記録します。チェックインと同じ画面で種類を切り替えて使います。",

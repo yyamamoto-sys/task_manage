@@ -8,6 +8,7 @@ import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
+import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { showToast } from "../common/Toast";
 
@@ -34,7 +35,7 @@ interface Props {
 
 type Phase = "setup" | "thinking" | "dialogue" | "summarizing" | "summary";
 
-const MAX_TURNS = 5;
+const MAX_TURNS = 7;
 
 function getCurrentQuarter(date: Date): string {
   const m = date.getMonth() + 1;
@@ -74,6 +75,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const [turnCount, setTurnCount] = useState(0);
   const [typingIndex, setTypingIndex] = useState(-1);
   const [savedSummary, setSavedSummary] = useState<SavedSummary | null>(null);
+  const [krSessions, setKrSessions] = useState<KrSession[]>([]);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -81,9 +83,13 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
   const relatedTfs = (taskForces ?? []).filter(tf => tf.kr_id === selectedKrId && !tf.is_deleted);
 
-  // KR変更時に保存済みサマリーを読み込む
+  // KR変更時に保存済みサマリー＆セッション履歴を読み込む
   useEffect(() => {
     setSavedSummary(loadSavedSummary(selectedKrId));
+    if (!selectedKrId) return;
+    fetchKrSessions(selectedKrId)
+      .then(ss => setKrSessions(ss))
+      .catch(() => setKrSessions([]));
   }, [selectedKrId]);
 
   useEffect(() => {
@@ -146,6 +152,23 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       return `  TF${tf.tf_number ?? ""} ${tf.name}${tf.description ? `（${tf.description}）` : ""}${todoLines ? `\n${todoLines}` : "\n      （タスクなし）"}`;
     }).join("\n");
 
+    // セッション履歴ブロック
+    const SIGNAL_LABEL: Record<string, string> = { green: "🟢", yellow: "🟡", red: "🔴" };
+    const recentSessions = krSessions.slice(0, 12);
+    const signalBlock = recentSessions.length > 0
+      ? recentSessions.map(s => {
+          const dot = s.signal ? SIGNAL_LABEL[s.signal] : "—";
+          const type = s.session_type === "checkin" ? "チェックイン" : "ウィン";
+          const comment = s.signal_comment ? `「${s.signal_comment.slice(0, 60)}」` : "";
+          return `  ${s.week_start} ${type} ${dot} ${comment}`;
+        }).join("\n")
+      : "  （記録なし）";
+
+    const winLearnings = recentSessions
+      .filter(s => s.session_type === "win_session" && s.learnings)
+      .map(s => `  ${s.week_start}：${s.learnings.slice(0, 120)}`)
+      .join("\n") || "  （記録なし）";
+
     return `【現在日時】
 今日：${todayStr}　現在クォーター：${quarter}
 
@@ -158,6 +181,12 @@ ${krListLines || "  （KRなし）"}
 【対象KR・タスク詳細】
 KR：${selectedKr?.title ?? ""}
 ${tfDetailLines || "  （TF・タスクなし）"}
+
+【週次シグナル推移（直近最大12週）】
+${signalBlock}
+
+【ウィンセッションの学び・外部環境変化】
+${winLearnings}
 
 【掘り下げたい課題】
 ${issueText.trim()}`;
@@ -629,10 +658,12 @@ ${issueText.trim()}`;
             }}>
               {summary.split("\n").map((line, i) => {
                 if (line.startsWith("## ")) {
-                  return <div key={i} style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", marginTop: i > 0 ? "16px" : 0, marginBottom: "6px" }}>{line.replace("## ", "")}</div>;
+                  return <div key={i} style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", marginTop: i > 0 ? "16px" : 0, marginBottom: "6px", borderBottom: "1px solid var(--color-border-primary)", paddingBottom: "4px" }}>{line.replace("## ", "")}</div>;
                 }
                 if (line.startsWith("- ")) {
-                  return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-secondary)", paddingLeft: "12px", lineHeight: 1.7, display: "flex", gap: "6px" }}><span style={{ color: "var(--color-brand)", flexShrink: 0 }}>•</span>{line.replace("- ", "")}</div>;
+                  const text = line.replace("- ", "");
+                  const isAction = text.startsWith("アクション") || text.startsWith("【担当】");
+                  return <div key={i} style={{ fontSize: "12px", color: "var(--color-text-secondary)", paddingLeft: "12px", lineHeight: 1.7, display: "flex", gap: "6px", marginBottom: "2px" }}><span style={{ color: isAction ? "#16a34a" : "var(--color-brand)", flexShrink: 0, fontWeight: isAction ? "700" : "400" }}>•</span>{text}</div>;
                 }
                 if (!line.trim()) return <div key={i} style={{ height: "6px" }} />;
                 return <div key={i} style={{ fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.8 }}>{line}</div>;

@@ -102,6 +102,28 @@ export async function insertKrDeclaration(
   return data as KrDeclaration;
 }
 
+// ===== 更新（セッション本体） =====
+
+export async function updateKrSession(
+  id: string,
+  fields: Partial<Pick<KrSession, "session_type" | "signal" | "signal_comment" | "learnings" | "external_changes">>,
+  updatedBy: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("kr_sessions")
+    .update({ ...fields, updated_at: new Date().toISOString(), updated_by: updatedBy })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function softDeleteKrSession(id: string, deletedBy: string): Promise<void> {
+  const { error } = await supabase
+    .from("kr_sessions")
+    .update({ is_deleted: true, updated_at: new Date().toISOString(), updated_by: deletedBy })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ===== 更新（ウィンセッションで宣言結果を書き込む） =====
 
 export async function updateKrDeclarationResult(

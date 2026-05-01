@@ -68,7 +68,14 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [isMeetingImportOpen, setIsMeetingImportOpen] = useState(false);
-  const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(null);
+  const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
+    const saved = localStorage.getItem("okr_active_tool") as OkrActiveTool | null;
+    return saved ?? "session";
+  });
+  const setOkrActiveToolPersisted = (tool: OkrActiveTool) => {
+    if (tool) localStorage.setItem("okr_active_tool", tool);
+    setOkrActiveTool(tool);
+  };
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
@@ -159,7 +166,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             selectedKrId={selectedKrId}
             onSelectKr={handleSelectKr}
             activeTool={okrActiveTool}
-            onSetActiveTool={setOkrActiveTool}
+            onSetActiveTool={setOkrActiveToolPersisted}
+            onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
           />
         </div>
       ) : (
