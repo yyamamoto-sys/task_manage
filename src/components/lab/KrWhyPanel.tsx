@@ -68,7 +68,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   );
 
   const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
-  const [selectedTfId, setSelectedTfId] = useState<string | null>(null);
+  const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);
   const [issueText, setIssueText] = useState("");
   const [attachment, setAttachment] = useState<FileAttachment | null>(null);
   const [phase, setPhase] = useState<Phase>("setup");
@@ -85,11 +85,16 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
-  const relatedTfs = (taskForces ?? []).filter(tf => tf.kr_id === selectedKrId && !tf.is_deleted);
+  const relatedTfs = useMemo(
+    () => (taskForces ?? [])
+      .filter(tf => tf.kr_id === selectedKrId && !tf.is_deleted)
+      .sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999)),
+    [taskForces, selectedKrId],
+  );
 
   // KR変更時に保存済みサマリー＆セッション履歴を読み込む・TF選択をリセット
   useEffect(() => {
-    setSelectedTfId(null);
+    setSelectedTfIds([]);
     setSavedSummary(loadSavedSummary(selectedKrId));
     if (!selectedKrId) return;
     fetchKrSessions(selectedKrId)
@@ -128,7 +133,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       .map(kr => `  ${kr.id === selectedKrId ? "▶ " : "  "}${kr.title}`)
       .join("\n");
 
-    const focusedTfs = selectedTfId ? relatedTfs.filter(tf => tf.id === selectedTfId) : relatedTfs;
+    const focusedTfs = selectedTfIds.length > 0 ? relatedTfs.filter(tf => selectedTfIds.includes(tf.id)) : relatedTfs;
     const tfDetailLines = focusedTfs.map(tf => {
       const relatedTodos = (todos ?? []).filter(
         t => !t.is_deleted && t.tf_id === tf.id,
@@ -416,30 +421,35 @@ ${issueText.trim()}`;
                 </label>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                   <button
-                    onClick={() => setSelectedTfId(null)}
+                    onClick={() => setSelectedTfIds([])}
                     style={{
-                      padding: "4px 10px", fontSize: "11px", fontWeight: selectedTfId === null ? "600" : "400",
-                      background: selectedTfId === null ? "var(--color-brand)" : "var(--color-bg-primary)",
-                      border: `1px solid ${selectedTfId === null ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                      padding: "4px 10px", fontSize: "11px", fontWeight: selectedTfIds.length === 0 ? "600" : "400",
+                      background: selectedTfIds.length === 0 ? "var(--color-brand)" : "var(--color-bg-primary)",
+                      border: `1px solid ${selectedTfIds.length === 0 ? "var(--color-brand)" : "var(--color-border-primary)"}`,
                       borderRadius: "var(--radius-full)",
-                      color: selectedTfId === null ? "#fff" : "var(--color-text-secondary)",
+                      color: selectedTfIds.length === 0 ? "#fff" : "var(--color-text-secondary)",
                       cursor: "pointer",
                     }}
                   >全TF</button>
-                  {relatedTfs.map(tf => (
-                    <button
-                      key={tf.id}
-                      onClick={() => setSelectedTfId(tf.id === selectedTfId ? null : tf.id)}
-                      style={{
-                        padding: "4px 10px", fontSize: "11px", fontWeight: selectedTfId === tf.id ? "600" : "400",
-                        background: selectedTfId === tf.id ? "var(--color-brand)" : "var(--color-bg-primary)",
-                        border: `1px solid ${selectedTfId === tf.id ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                        borderRadius: "var(--radius-full)",
-                        color: selectedTfId === tf.id ? "#fff" : "var(--color-text-secondary)",
-                        cursor: "pointer",
-                      }}
-                    >TF{tf.tf_number} {tf.name}</button>
-                  ))}
+                  {relatedTfs.map(tf => {
+                    const isSelected = selectedTfIds.includes(tf.id);
+                    return (
+                      <button
+                        key={tf.id}
+                        onClick={() => setSelectedTfIds(prev =>
+                          isSelected ? prev.filter(id => id !== tf.id) : [...prev, tf.id]
+                        )}
+                        style={{
+                          padding: "4px 10px", fontSize: "11px", fontWeight: isSelected ? "600" : "400",
+                          background: isSelected ? "var(--color-brand)" : "var(--color-bg-primary)",
+                          border: `1px solid ${isSelected ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                          borderRadius: "var(--radius-full)",
+                          color: isSelected ? "#fff" : "var(--color-text-secondary)",
+                          cursor: "pointer",
+                        }}
+                      >TF{tf.tf_number} {tf.name}</button>
+                    );
+                  })}
                 </div>
               </div>
             )}
