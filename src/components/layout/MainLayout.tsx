@@ -198,45 +198,53 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           </Suspense>
         </div>
       ) : (
-        /* key={viewMode} でビュー切り替え時に animate-fadeIn が毎回発火する */
-        <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
-            {viewMode === "dashboard" && (
-              <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
-            )}
-            {viewMode === "kanban" && (
-              <KanbanView
-                currentUser={currentUser}
-                selectedProject={selectedProject}
-                projects={projects}
-                selectedKrId={selectedKrId}
-                krTaskIds={krTaskIds}
-              />
-            )}
-            {viewMode === "gantt" && (
-              <GanttView
-                currentUser={currentUser}
-                selectedProject={selectedProject}
-                projects={projects}
-                selectedKrId={selectedKrId}
-                krTaskIds={krTaskIds}
-              />
-            )}
-            {viewMode === "admin" && (
-              <AdminView currentUser={currentUser} />
-            )}
-            {viewMode === "list" && (
-              <ListView
-                currentUser={currentUser}
-                selectedProject={selectedProject}
-                projects={projects}
-                selectedKrId={selectedKrId}
-                krTaskIds={krTaskIds}
-              />
-            )}
-            {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
-              <ComingSoon view={viewMode} />
-            )}
+            {/* keyed wrapper を Suspense の内側に置くことで、初回 lazy load 解決後も
+                animate-pageSwap が確実に発火する。Plan モードのビュー切替で
+                毎回ページめくり感のある横スライドが見える */}
+            <div
+              key={viewMode}
+              className="animate-pageSwap"
+              style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}
+            >
+              {viewMode === "dashboard" && (
+                <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
+              )}
+              {viewMode === "kanban" && (
+                <KanbanView
+                  currentUser={currentUser}
+                  selectedProject={selectedProject}
+                  projects={projects}
+                  selectedKrId={selectedKrId}
+                  krTaskIds={krTaskIds}
+                />
+              )}
+              {viewMode === "gantt" && (
+                <GanttView
+                  currentUser={currentUser}
+                  selectedProject={selectedProject}
+                  projects={projects}
+                  selectedKrId={selectedKrId}
+                  krTaskIds={krTaskIds}
+                />
+              )}
+              {viewMode === "admin" && (
+                <AdminView currentUser={currentUser} />
+              )}
+              {viewMode === "list" && (
+                <ListView
+                  currentUser={currentUser}
+                  selectedProject={selectedProject}
+                  projects={projects}
+                  selectedKrId={selectedKrId}
+                  krTaskIds={krTaskIds}
+                />
+              )}
+              {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+                <ComingSoon view={viewMode} />
+              )}
+            </div>
           </Suspense>
         </div>
       )}
