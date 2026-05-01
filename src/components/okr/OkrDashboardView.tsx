@@ -7,9 +7,10 @@ import type { Member } from "../../lib/localData/types";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
+import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | null;
+export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | "plan" | null;
 
 interface Props {
   currentUser: Member;
@@ -46,6 +47,7 @@ const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
   { tool: "report",  icon: "📊", label: "レポート" },
   { tool: "why",     icon: "🔍", label: "なぜなぜ" },
   { tool: "history", icon: "📋", label: "履歴" },
+  { tool: "plan",    icon: "📅", label: "計画" },
   { tool: "guide",   icon: "📖", label: "使い方" },
 ];
 
@@ -460,6 +462,16 @@ export function OkrDashboardView({
             loading={sessionsLoading}
             onSelectKr={onSelectKr}
             onOpenSession={() => onSetActiveTool("session")}
+          />
+        )}
+
+        {/* ─── クォーター計画タブ ─── */}
+        {activeTool === "plan" && (
+          <KrQuarterPlanPanel
+            inline
+            onClose={() => onSetActiveTool(null)}
+            currentUser={currentUser}
+            initialKrId={selectedKrId ?? undefined}
           />
         )}
 
