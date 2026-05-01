@@ -7,6 +7,8 @@ import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORIT
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { renderLinks } from "../../lib/renderLinks";
 import { KEYS } from "../../lib/localData/localStore";
+import { confirmDialog } from "../../lib/dialog";
+import { showToast } from "../common/Toast";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 
@@ -60,7 +62,7 @@ function lsSet(field: string, value: unknown) {
 }
 
 export function ListView({ currentUser, selectedProject, projects, krTaskIds }: Props) {
-  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, saveTask } = useAppData();
+  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, saveTask, deleteTask } = useAppData();
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
@@ -85,6 +87,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   const [searchText,     setSearchText    ] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<string|null>(null);
   const [editingTaskId,  setEditingTaskId ] = useState<string|null>(null);
+
+  // 一括操作用：複数選択
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
   // サイドバー編集フォーム
   const [sidebarForm, setSidebarForm] = useState<{
@@ -151,6 +165,76 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
+  // フィルタ変更で見えなくなったタスクは選択から外す
+  useEffect(() => {
+    const visible = new Set(filteredTasks.map(t => t.id));
+    setSelectedIds(prev => {
+      const next = new Set<string>();
+      prev.forEach(id => { if (visible.has(id)) next.add(id); });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [filteredTasks]);
+
+  // 表示中タスクの全選択トグル
+  const allFilteredSelected = filteredTasks.length > 0
+    && filteredTasks.every(t => selectedIds.has(t.id));
+  const toggleSelectAll = useCallback(() => {
+    if (allFilteredSelected) setSelectedIds(new Set());
+    else setSelectedIds(new Set(filteredTasks.map(t => t.id)));
+  }, [allFilteredSelected, filteredTasks]);
+
+  // 一括ステータス変更
+  const bulkUpdateStatus = useCallback(async (status: Task["status"]) => {
+    const targets = allTasks.filter(t => selectedIds.has(t.id));
+    if (targets.length === 0) return;
+    const now = new Date().toISOString();
+    try {
+      await Promise.all(targets.map(t =>
+        saveTask({ ...t, status, updated_at: now, updated_by: currentUser.id }),
+      ));
+      showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`);
+      clearSelection();
+    } catch (err) {
+      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, selectedIds, saveTask, currentUser.id, clearSelection]);
+
+  // 一括担当者変更
+  const bulkUpdateAssignee = useCallback(async (memberId: string) => {
+    const targets = allTasks.filter(t => selectedIds.has(t.id));
+    if (targets.length === 0) return;
+    const now = new Date().toISOString();
+    try {
+      await Promise.all(targets.map(t => saveTask({
+        ...t,
+        assignee_member_id: memberId,
+        assignee_member_ids: [memberId],
+        updated_at: now, updated_by: currentUser.id,
+      })));
+      const m = members.find(mm => mm.id === memberId);
+      showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`);
+      clearSelection();
+    } catch (err) {
+      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, selectedIds, saveTask, currentUser.id, members, clearSelection]);
+
+  // 一括削除
+  const bulkDelete = useCallback(async () => {
+    const count = selectedIds.size;
+    if (count === 0) return;
+    const ok = await confirmDialog(`選択中の ${count} 件のタスクを削除します。\n（変更履歴から復元できます）`);
+    if (!ok) return;
+    try {
+      const ids = Array.from(selectedIds);
+      await Promise.all(ids.map(id => deleteTask(id, currentUser.id)));
+      showToast(`${count}件のタスクを削除しました`);
+      clearSelection();
+    } catch (err) {
+      showToast(`一括削除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
+
   const groups = useMemo(() => {
     if (groupBy === "project") {
       const map = new Map<string, Task[]>();
@@ -193,6 +277,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
   const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
+    { key: "select",          label: "",         w: "32px"   },
     { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
     { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
     { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
@@ -312,6 +397,100 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
           )}
         </div>
 
+        {/* ===== 一括操作バー（選択時のみ表示） ===== */}
+        {selectedIds.size > 0 && (
+          <div style={{
+            padding: "8px 12px",
+            background: "var(--color-brand-light)",
+            borderBottom: "1px solid var(--color-brand-border)",
+            display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
+            flexShrink: 0,
+          }}>
+            <span style={{
+              fontSize: "12px", fontWeight: 600,
+              color: "var(--color-brand)",
+              padding: "4px 10px",
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-brand-border)",
+              borderRadius: "var(--radius-full)",
+              whiteSpace: "nowrap",
+            }}>
+              {selectedIds.size} 件選択中
+            </span>
+
+            {/* ステータス一括変更 */}
+            <div style={{ display: "flex", gap: "4px" }}>
+              {(["todo", "in_progress", "done"] as const).map(s => (
+                <button
+                  key={s}
+                  onClick={() => bulkUpdateStatus(s)}
+                  title={`選択中タスクを「${TASK_STATUS_LABEL[s]}」に変更`}
+                  style={{
+                    padding: "4px 10px", fontSize: "11px", fontWeight: 500,
+                    background: TASK_STATUS_STYLE[s].bg,
+                    color: TASK_STATUS_STYLE[s].color,
+                    border: `1px solid ${TASK_STATUS_STYLE[s].color}`,
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  → {TASK_STATUS_LABEL[s]}
+                </button>
+              ))}
+            </div>
+
+            {/* 担当者一括変更 */}
+            <select
+              value=""
+              onChange={e => { if (e.target.value) bulkUpdateAssignee(e.target.value); }}
+              style={{
+                padding: "4px 24px 4px 10px", fontSize: "11px",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-secondary)",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+              }}
+            >
+              <option value="">担当者を変更…</option>
+              {members.map(m => (
+                <option key={m.id} value={m.id}>{m.display_name}</option>
+              ))}
+            </select>
+
+            <span style={{ flex: 1 }} />
+
+            {/* 一括削除 */}
+            <button
+              onClick={bulkDelete}
+              style={{
+                padding: "4px 12px", fontSize: "11px", fontWeight: 500,
+                color: "var(--btn-danger-text)",
+                background: "var(--btn-danger-bg)",
+                border: `1px solid ${"var(--btn-danger-border)"}`,
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              🗑 削除
+            </button>
+
+            {/* クリア */}
+            <button
+              onClick={clearSelection}
+              style={{
+                padding: "4px 10px", fontSize: "11px",
+                color: "var(--color-text-tertiary)",
+                background: "transparent",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              ✕ 選択解除
+            </button>
+          </div>
+        )}
+
         {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
         <div style={{ flex: 1, overflow: "auto" }}>
           {isMobile ? (
@@ -335,14 +514,27 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                     return (
                       <div key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)}
                         style={{
-                          background: isSel ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                          border: isSel ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
+                          background: selectedIds.has(task.id)
+                            ? "var(--color-brand-light)"
+                            : isSel ? "var(--color-brand-light)"
+                            : "var(--color-bg-primary)",
+                          border: (selectedIds.has(task.id) || isSel)
+                            ? "1px solid var(--color-brand-border)"
+                            : "1px solid var(--color-border-primary)",
                           borderRadius: "var(--radius-lg)",
                           padding: "10px 12px", marginBottom: "4px",
                           cursor: "pointer", opacity: isDone ? 0.6 : 1,
                           transition: "background 0.1s, border-color 0.1s",
                         }}>
                         <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "5px" }}>
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(task.id)}
+                            onChange={() => toggleSelect(task.id)}
+                            onClick={e => e.stopPropagation()}
+                            aria-label={`${task.name} を選択`}
+                            style={{ cursor: "pointer", width: 16, height: 16, marginTop: 2, accentColor: "var(--color-brand)", flexShrink: 0 }}
+                          />
                           <div style={{
                             flex: 1, fontSize: "12px", fontWeight: "500",
                             color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
@@ -425,15 +617,37 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
               <thead style={{ position: "sticky", top: 0, zIndex: 5 }}>
                 <tr style={{ background: "var(--color-bg-secondary)" }}>
                   {cols.map(col => (
-                    <th key={col.key} onClick={() => col.sortKey && handleSort(col.sortKey)} style={{
-                      padding: "6px 10px", textAlign: "left",
-                      borderBottom: "1px solid var(--color-border-primary)",
-                      fontWeight: "500", color: "var(--color-text-secondary)",
-                      width: col.w, cursor: col.sortKey ? "pointer" : "default",
-                      userSelect: "none", whiteSpace: "nowrap",
-                    }}>
-                      {col.label}
-                      {col.sortKey && <SortIcon k={col.sortKey} />}
+                    <th
+                      key={col.key}
+                      onClick={() => {
+                        if (col.key === "select") return;
+                        col.sortKey && handleSort(col.sortKey);
+                      }}
+                      style={{
+                        padding: col.key === "select" ? "6px 6px 6px 12px" : "6px 10px",
+                        textAlign: "left",
+                        borderBottom: "1px solid var(--color-border-primary)",
+                        fontWeight: "500", color: "var(--color-text-secondary)",
+                        width: col.w, cursor: col.sortKey ? "pointer" : "default",
+                        userSelect: "none", whiteSpace: "nowrap",
+                      }}
+                    >
+                      {col.key === "select" ? (
+                        <input
+                          type="checkbox"
+                          checked={allFilteredSelected}
+                          ref={el => { if (el) el.indeterminate = !allFilteredSelected && selectedIds.size > 0; }}
+                          onChange={toggleSelectAll}
+                          onClick={e => e.stopPropagation()}
+                          aria-label="全選択"
+                          style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
+                        />
+                      ) : (
+                        <>
+                          {col.label}
+                          {col.sortKey && <SortIcon k={col.sortKey} />}
+                        </>
+                      )}
                     </th>
                   ))}
                 </tr>
@@ -444,7 +658,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                   return groups.map(group => (
                     <React.Fragment key={group.label}>
                       <tr>
-                        <td colSpan={6} style={{
+                        <td colSpan={cols.length} style={{
                           padding: "7px 10px 4px",
                           background: "var(--color-bg-secondary)",
                           borderBottom: "1px solid var(--color-border-primary)",
@@ -470,10 +684,24 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                         return (
                           <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
                             borderBottom: "1px solid var(--color-bg-tertiary)",
-                            background: isSel ? "var(--color-brand-light)" : isDone ? "var(--color-bg-secondary)" : zebraBg,
+                            background: selectedIds.has(task.id)
+                              ? "var(--color-brand-light)"
+                              : isSel ? "var(--color-brand-light)"
+                              : isDone ? "var(--color-bg-secondary)" : zebraBg,
                             cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
                             boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
                           }}>
+                            {/* チェックボックス（行選択） */}
+                            <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
+                                onClick={e => e.stopPropagation()}>
+                              <input
+                                type="checkbox"
+                                checked={selectedIds.has(task.id)}
+                                onChange={() => toggleSelect(task.id)}
+                                aria-label={`${task.name} を選択`}
+                                style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
+                              />
+                            </td>
                             {/* 担当者 */}
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                               {taskAssignees.length > 0 && (
@@ -552,7 +780,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                   ));
                 })()}
                 {filteredTasks.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
+                  <tr><td colSpan={cols.length} style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
                     条件に一致するタスクがありません
                   </td></tr>
                 )}

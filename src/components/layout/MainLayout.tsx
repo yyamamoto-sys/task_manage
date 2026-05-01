@@ -3,7 +3,7 @@ import { useState, useMemo, useRef, lazy, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppData } from "../../context/AppDataContext";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -114,12 +114,43 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     setAppModeState(m);
   };
 
-  const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs } = useAppData();
+  const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs, tasks: rawTasks } = useAppData();
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]
   );
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
+
+  // 「自分が参加しているPJ」の判定: オーナー or 担当タスクを持つPJ
+  const myProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    projects.forEach(p => {
+      if ((p.owner_member_ids ?? []).includes(currentUser.id)) ids.add(p.id);
+      else if (p.owner_member_id === currentUser.id) ids.add(p.id);
+    });
+    (rawTasks ?? []).forEach((t: Task) => {
+      if (t.is_deleted || !t.project_id) return;
+      const assignees = t.assignee_member_ids?.length
+        ? t.assignee_member_ids
+        : (t.assignee_member_id ? [t.assignee_member_id] : []);
+      if (assignees.includes(currentUser.id)) ids.add(t.project_id);
+    });
+    return ids;
+  }, [projects, rawTasks, currentUser.id]);
+
+  const [showOnlyMyProjects, setShowOnlyMyProjectsState] = useState<boolean>(
+    () => localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY) !== "0", // デフォルト ON
+  );
+  const toggleMyProjectsFilter = () => setShowOnlyMyProjectsState(prev => {
+    const next = !prev;
+    localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, next ? "1" : "0");
+    return next;
+  });
+
+  const visibleProjects = useMemo(
+    () => showOnlyMyProjects ? projects.filter(p => myProjectIds.has(p.id)) : projects,
+    [projects, showOnlyMyProjects, myProjectIds],
+  );
 
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
 
@@ -345,8 +376,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 maxWidth: "80px",
               }}
             >
-              <option value="">全PJ</option>
-              {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <option value="">{showOnlyMyProjects ? "自分のPJ" : "全PJ"}</option>
+              {visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
           {/* AI相談ボタン */}
@@ -622,7 +653,11 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       <Sidebar
         viewMode={viewMode}
         setViewMode={setViewMode}
-        projects={projects}
+        projects={visibleProjects}
+        showOnlyMyProjects={showOnlyMyProjects}
+        onToggleMyProjects={toggleMyProjectsFilter}
+        myProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
+        allProjectsCount={projects.length}
         selectedProjectId={selectedProjectId}
         onSelectProject={handleSelectProject}
         keyResults={keyResults}
@@ -722,6 +757,12 @@ interface SidebarProps {
   viewMode: ViewMode;
   setViewMode: (v: ViewMode) => void;
   projects: Project[];
+  /** プロジェクト表示フィルタ：自分が参加しているPJのみ */
+  showOnlyMyProjects: boolean;
+  onToggleMyProjects: () => void;
+  /** フィルタ切替ボタンのバッジ表示用 */
+  myProjectsCount: number;
+  allProjectsCount: number;
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   keyResults: KeyResult[];
@@ -748,6 +789,7 @@ interface SidebarProps {
 
 function Sidebar({
   viewMode, setViewMode, projects,
+  showOnlyMyProjects, onToggleMyProjects, myProjectsCount, allProjectsCount,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
@@ -864,7 +906,40 @@ function Sidebar({
 
         {/* 計画管理：プロジェクト一覧 */}
         <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
-          {!c && <SectionLabel>プロジェクト</SectionLabel>}
+          {!c && (
+            <div style={{
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              padding: "8px 14px 4px",
+            }}>
+              <span style={{
+                fontSize: "10px", fontWeight: 600,
+                letterSpacing: "0.05em",
+                color: "var(--color-text-tertiary)",
+                textTransform: "uppercase",
+              }}>
+                プロジェクト
+              </span>
+              <button
+                onClick={onToggleMyProjects}
+                title={showOnlyMyProjects
+                  ? `自分のPJのみ (${myProjectsCount}/${allProjectsCount}件) — クリックで全件表示`
+                  : `全PJ表示 (${allProjectsCount}件) — クリックで自分のPJのみ`}
+                style={{
+                  display: "flex", alignItems: "center", gap: "3px",
+                  padding: "2px 7px",
+                  fontSize: "10px", fontWeight: 500,
+                  background: showOnlyMyProjects ? "var(--color-brand-light)" : "transparent",
+                  color: showOnlyMyProjects ? "var(--color-brand)" : "var(--color-text-tertiary)",
+                  border: `1px solid ${showOnlyMyProjects ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
+                  borderRadius: "var(--radius-full)",
+                  cursor: "pointer", lineHeight: 1.4,
+                }}
+              >
+                <span style={{ fontSize: "9px" }}>{showOnlyMyProjects ? "👤" : "🌐"}</span>
+                {showOnlyMyProjects ? "自分" : "全件"}
+              </button>
+            </div>
+          )}
           <NavItem
             active={selectedProjectId === null && selectedKrId === null}
             icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
@@ -878,6 +953,15 @@ function Sidebar({
               onClick={() => onSelectProject(pj.id)} collapsed={c}
             />
           ))}
+          {projects.length === 0 && !c && showOnlyMyProjects && (
+            <div style={{
+              padding: "12px 14px", fontSize: "11px",
+              color: "var(--color-text-tertiary)", lineHeight: 1.5,
+            }}>
+              参加しているPJはまだありません。<br />
+              「全件」に切り替えると全PJが表示されます。
+            </div>
+          )}
           {keyResults.length > 0 && (<>
             {!c && <SectionLabel>OKRタスク</SectionLabel>}
             {keyResults.map(kr => (

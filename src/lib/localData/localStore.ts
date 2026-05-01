@@ -23,6 +23,8 @@ const KEYS = {
   SIDEBAR_COLLAPSED:   "sidebar_collapsed",
   CONSULT_PANEL_WIDTH: "consultation_panel_width",
   OKR_ACTIVE_TOOL:     "okr_active_tool",
+  /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
+  SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
   // 管理画面
   ADMIN_LAST_TAB:      "admin_last_tab",
   ADMIN_FONT_SIZE:     "admin_font_size",
