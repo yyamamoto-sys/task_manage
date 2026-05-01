@@ -15,18 +15,20 @@ import {
   buildContextText,
   getQuarterValue,
   nextQuarterValue,
-  getQuarterOptions,
   getQuarterLabel,
   type QuarterPlanContext,
   type TFStat,
   type SignalEntry,
 } from "../../lib/ai/krQuarterPlanPrompt";
+import { buildMessageContent } from "../../lib/ai/invokeAI";
+import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
 import {
   callQuarterPlanDialogue,
   callQuarterPlanGenerate,
   type PlanMessage,
   type GeneratedPlan,
 } from "../../lib/ai/krQuarterPlanClient";
+import { getContentText } from "../../lib/ai/invokeAI";
 import {
   loadQuarterPlan,
   saveQuarterPlan,
@@ -42,7 +44,6 @@ import { useTypingEffect } from "../../hooks/useTypingEffect";
 // ===== 型 =====
 
 type PlanPhase = "setup" | "loading" | "thinking" | "dialogue" | "generating" | "plan";
-type PlannerRole = "GM" | "AGM" | "OM";
 
 const ACTION_STYLE: Record<ProposedTF["action"], { label: string; bg: string; color: string }> = {
   継続: { label: "継続", bg: "#d1fae5", color: "#065f46" },
@@ -292,9 +293,17 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
 
   // ─── セットアップ状態 ───
   const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
-  const [targetQuarter, setTargetQuarter] = useState(() => nextQuarterValue(getQuarterValue()));
-  const [plannerRole, setPlannerRole] = useState<PlannerRole>("AGM");
+  const [targetYear, setTargetYear] = useState<number>(() => {
+    const next = nextQuarterValue(getQuarterValue());
+    return parseInt(next.split("-")[0]);
+  });
+  const [targetQ, setTargetQ] = useState<number>(() => {
+    const next = nextQuarterValue(getQuarterValue());
+    return parseInt(next.split("-")[1]);
+  });
+  const targetQuarter = `${targetYear}-${targetQ}Q`;
   const [issueFocus, setIssueFocus] = useState("");
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
 
   // ─── フロー制御 ───
   const [phase, setPhase] = useState<PlanPhase>("setup");
@@ -325,8 +334,11 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
-  const quarterOptions = useMemo(() => getQuarterOptions(), []);
   const memberNames = useMemo(() => activeMembers.map(m => m.short_name), [activeMembers]);
+  const yearOptions = useMemo(() => {
+    const y = new Date().getFullYear();
+    return Array.from({ length: 7 }, (_, i) => y - 1 + i);
+  }, []);
 
   // KR・クォーター変更時に保存済み計画を確認
   useEffect(() => {
@@ -396,7 +408,6 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       today: new Date().toISOString().slice(0, 10),
       current_quarter: getQuarterValue(),
       target_quarter: targetQuarter,
-      planner_role: plannerRole,
       objective_title: objective?.title ?? "（未設定）",
       kr_title: selectedKr?.title ?? "",
       tf_stats: tfStats,
@@ -408,7 +419,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
     };
 
     return { ctx, text: buildContextText(ctx) };
-  }, [selectedKrId, targetQuarter, plannerRole, issueFocus, selectedKr, objective, taskForces, todos, tasks, memberNames]);
+  }, [selectedKrId, targetQuarter, issueFocus, selectedKr, objective, taskForces, todos, tasks, memberNames]);
 
   // ─── 計画開始 ───
   const handleStart = async () => {
@@ -427,7 +438,10 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
 
       const firstMsg: PlanMessage = {
         role: "user",
-        content: `${contextText}\n\nこのデータをもとに、${targetQuarter}のTF計画立案を始めてください。`,
+        content: buildMessageContent(
+          `${contextText}\n\nこのデータをもとに、${targetQuarter}のTF計画立案を始めてください。`,
+          attachment,
+        ),
       };
 
       const aiReply = await callQuarterPlanDialogue([firstMsg]);
@@ -509,7 +523,6 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       ``,
       `**KR:** ${krTitle}`,
       `**作成日:** ${new Date().toISOString().slice(0, 10)}`,
-      `**作成者役割:** ${plannerRole}`,
       ``,
       `## 方針サマリー`,
       planSummary,
@@ -574,6 +587,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
     setGeneratedPlan(null);
     setPlanTfs([]);
     setContextSummary(null);
+    setAttachment(null);
   };
 
   const showDialogue = phase === "dialogue"
@@ -606,7 +620,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
             クォーター計画
           </div>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-            AI対話で翌クォーターのTF計画を立案します（GM / AGM / OM向け）
+            AI対話で翌クォーターのTask Force計画を立案します
           </div>
         </div>
         {(phase === "dialogue" || phase === "plan") && (
@@ -658,44 +672,60 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                 )}
               </div>
 
-              {/* 計画対象クォーター */}
-              <div style={{ flex: "1 1 160px" }}>
-                <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "5px" }}>計画対象クォーター</label>
-                <select
-                  value={targetQuarter}
-                  onChange={e => setTargetQuarter(e.target.value)}
-                  style={{ width: "100%", padding: "7px 10px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
-                >
-                  {quarterOptions.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* 役割 */}
-              <div style={{ flex: "1 1 120px" }}>
-                <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "5px" }}>あなたの役割</label>
-                <select
-                  value={plannerRole}
-                  onChange={e => setPlannerRole(e.target.value as PlannerRole)}
-                  style={{ width: "100%", padding: "7px 10px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
-                >
-                  {(["GM", "AGM", "OM"] as PlannerRole[]).map(r => <option key={r} value={r}>{r}</option>)}
-                </select>
+              {/* 計画対象クォーター：年 + Q */}
+              <div style={{ flex: "1 1 220px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "5px" }}>
+                  計画対象クォーター
+                </label>
+                <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                  <select
+                    value={targetYear}
+                    onChange={e => setTargetYear(parseInt(e.target.value))}
+                    style={{ flex: "1 1 80px", padding: "7px 8px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
+                  >
+                    {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
+                  </select>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    {[1, 2, 3, 4].map(q => (
+                      <button
+                        key={q}
+                        onClick={() => setTargetQ(q)}
+                        style={{
+                          padding: "5px 10px", fontSize: "12px", fontWeight: targetQ === q ? "700" : "400",
+                          border: `1.5px solid ${targetQ === q ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                          borderRadius: "var(--radius-md)",
+                          background: targetQ === q ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                          color: targetQ === q ? "var(--color-brand)" : "var(--color-text-secondary)",
+                          cursor: "pointer",
+                        }}
+                      >{q}Q</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                  {getQuarterLabel(targetQuarter)}
+                </div>
               </div>
             </div>
 
             {/* 注力課題 */}
             <div style={{ marginBottom: "14px" }}>
-              <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "5px" }}>
-                注力したい課題・テーマ
-                <span style={{ fontSize: "10px", fontWeight: "400", color: "var(--color-text-tertiary)", marginLeft: "6px" }}>任意。AIが最初の問いかけに活かします</span>
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "5px" }}>
+                <label style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+                  注力したい課題・テーマ
+                  <span style={{ fontSize: "10px", fontWeight: "400", color: "var(--color-text-tertiary)", marginLeft: "6px" }}>任意。AIが最初の問いかけに活かします</span>
+                </label>
+                <FileAttachButton
+                  attachment={attachment}
+                  onAttach={setAttachment}
+                  onRemove={() => setAttachment(null)}
+                />
+              </div>
               <textarea
                 value={issueFocus}
                 onChange={e => setIssueFocus(e.target.value)}
                 rows={3}
-                placeholder="例：TF2の遅延を翌Qでどう取り返すか、メンバーの担当集中をどう分散するか"
+                placeholder={attachment ? "添付ファイルがある場合は空欄のまま開始できます。補足メモを追加することもできます。" : "例：TF2の遅延を翌Qでどう取り返すか、メンバーの担当集中をどう分散するか"}
                 style={{
                   width: "100%", padding: "8px 10px", fontSize: "12px",
                   border: "1px solid var(--color-border-primary)",
@@ -752,20 +782,22 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
               </div>
             )}
 
-            <button
-              onClick={handleStart}
-              disabled={!selectedKr}
-              style={{
-                width: "100%", padding: "11px", fontSize: "13px", fontWeight: "600",
-                background: !selectedKr ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                border: "none", borderRadius: "var(--radius-md)",
-                color: !selectedKr ? "var(--color-text-tertiary)" : "#fff",
-                cursor: !selectedKr ? "not-allowed" : "pointer",
-                boxShadow: selectedKr ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
-              }}
-            >
-              📅 {getQuarterLabel(targetQuarter)} の計画を始める
-            </button>
+            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+              <button
+                onClick={handleStart}
+                disabled={!selectedKr}
+                style={{
+                  padding: "11px 24px", fontSize: "13px", fontWeight: "600",
+                  background: !selectedKr ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                  border: "none", borderRadius: "var(--radius-md)",
+                  color: !selectedKr ? "var(--color-text-tertiary)" : "#fff",
+                  cursor: !selectedKr ? "not-allowed" : "pointer",
+                  boxShadow: selectedKr ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
+                }}
+              >
+                📅 {getQuarterLabel(targetQuarter)} の計画を始める
+              </button>
+            </div>
           </div>
         )}
 
@@ -877,7 +909,8 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
             {/* 会話バブル */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {messages.map((msg, idx) => {
-                if (msg.content.includes("【クォーター計画コンテキスト】")) return null;
+                const textContent = getContentText(msg.content);
+                if (textContent.includes("【クォーター計画コンテキスト】")) return null;
                 return (
                   <div key={idx} className="chat-bubble-in" style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
                     <div style={{
@@ -892,8 +925,8 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                         <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
                       )}
                       {msg.role === "assistant"
-                        ? <TypingMessage text={msg.content} isLatest={idx === typingIndex} />
-                        : msg.content}
+                        ? <TypingMessage text={textContent} isLatest={idx === typingIndex} />
+                        : textContent}
                     </div>
                   </div>
                 );

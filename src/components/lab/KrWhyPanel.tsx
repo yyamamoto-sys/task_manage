@@ -9,8 +9,10 @@ import { useAppData } from "../../context/AppDataContext";
 import type { Member } from "../../lib/localData/types";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { buildMessageContent, getContentText } from "../../lib/ai/invokeAI";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { showToast } from "../common/Toast";
+import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
 
 function ThinkingDots() {
   return (
@@ -67,6 +69,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
 
   const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
   const [issueText, setIssueText] = useState("");
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
   const [phase, setPhase] = useState<Phase>("setup");
   const [messages, setMessages] = useState<WhyMessage[]>([]);
   const [userInput, setUserInput] = useState("");
@@ -193,7 +196,7 @@ ${issueText.trim()}`;
   };
 
   const handleStart = async () => {
-    if (!selectedKr || !issueText.trim()) return;
+    if (!selectedKr || (!issueText.trim() && !attachment)) return;
     setPhase("thinking");
     setError(null);
     setMessages([]);
@@ -202,7 +205,10 @@ ${issueText.trim()}`;
     const context = buildContext();
     const firstUserMsg: WhyMessage = {
       role: "user",
-      content: `${context}\n\nこの課題について、なぜなぜ分析を進めてください。`,
+      content: buildMessageContent(
+        `${context}\n\nこの課題について、なぜなぜ分析を進めてください。`,
+        attachment,
+      ),
     };
 
     try {
@@ -300,6 +306,7 @@ ${issueText.trim()}`;
     setPhase("setup");
     setMessages([]);
     setIssueText("");
+    setAttachment(null);
     setUserInput("");
     setSummary("");
     setTurnCount(0);
@@ -444,13 +451,20 @@ ${issueText.trim()}`;
 
             {/* 課題入力 */}
             <div style={{ marginBottom: "14px" }}>
-              <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                掘り下げたい課題
-              </label>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+                  掘り下げたい課題
+                </label>
+                <FileAttachButton
+                  attachment={attachment}
+                  onAttach={setAttachment}
+                  onRemove={() => setAttachment(null)}
+                />
+              </div>
               <textarea
                 value={issueText}
                 onChange={e => setIssueText(e.target.value)}
-                placeholder={"例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない"}
+                placeholder={attachment ? "添付ファイルがある場合は空欄でも分析を始められます。課題の補足メモを追加することもできます。" : "例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない"}
                 rows={4}
                 style={{
                   width: "100%", padding: "10px 12px", fontSize: "12px",
@@ -468,21 +482,27 @@ ${issueText.trim()}`;
               </div>
             )}
 
-            <button
-              onClick={handleStart}
-              disabled={!selectedKr || !issueText.trim()}
-              style={{
-                width: "100%", padding: "11px", fontSize: "13px", fontWeight: "600",
-                background: !selectedKr || !issueText.trim()
-                  ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                border: "none", borderRadius: "var(--radius-md)",
-                color: !selectedKr || !issueText.trim() ? "var(--color-text-tertiary)" : "#fff",
-                cursor: !selectedKr || !issueText.trim() ? "not-allowed" : "pointer",
-                boxShadow: selectedKr && issueText.trim() ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
-              }}
-            >
-              🔍 なぜなぜ分析を始める
-            </button>
+            {(() => {
+              const canStart = !!selectedKr && (!!issueText.trim() || !!attachment);
+              return (
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button
+                    onClick={handleStart}
+                    disabled={!canStart}
+                    style={{
+                      padding: "11px 24px", fontSize: "13px", fontWeight: "600",
+                      background: canStart ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--color-bg-tertiary)",
+                      border: "none", borderRadius: "var(--radius-md)",
+                      color: canStart ? "#fff" : "var(--color-text-tertiary)",
+                      cursor: canStart ? "pointer" : "not-allowed",
+                      boxShadow: canStart ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
+                    }}
+                  >
+                    🔍 なぜなぜ分析を始める
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         )}
 
@@ -525,7 +545,8 @@ ${issueText.trim()}`;
             {/* 会話履歴 */}
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
               {messages.map((msg, originalIdx) => {
-                if (msg.role === "user" && msg.content.includes("この課題について、なぜなぜ分析を進めてください")) return null;
+                const textContent = getContentText(msg.content);
+                if (msg.role === "user" && textContent.includes("この課題について、なぜなぜ分析を進めてください")) return null;
                 return (
                   <div key={originalIdx} className="chat-bubble-in" style={{
                     display: "flex",
@@ -544,8 +565,8 @@ ${issueText.trim()}`;
                         <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
                       )}
                       {msg.role === "assistant"
-                        ? <TypingMessage text={msg.content} isLatest={originalIdx === typingIndex} />
-                        : msg.content}
+                        ? <TypingMessage text={textContent} isLatest={originalIdx === typingIndex} />
+                        : textContent}
                     </div>
                   </div>
                 );

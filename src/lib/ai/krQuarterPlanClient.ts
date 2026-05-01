@@ -6,14 +6,14 @@
 // ・計画書生成モード（callQuarterPlanGenerate）：JSON形式の計画書を生成する
 // invokeAI経由でSupabase Edge Function（ai-consult）を呼ぶ。
 
-import { invokeAI } from "./invokeAI";
+import { invokeAI, getContentText, type AIMessageInput } from "./invokeAI";
 import type { ProposedTF } from "../supabase/quarterPlanStore";
 import {
   QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT,
   QUARTER_PLAN_GENERATION_SYSTEM_PROMPT,
 } from "./krQuarterPlanPrompt";
 
-export type PlanMessage = { role: "user" | "assistant"; content: string };
+export type PlanMessage = AIMessageInput;
 
 export interface GeneratedPlan {
   quarter: string;
@@ -40,8 +40,8 @@ export async function callQuarterPlanGenerate(
   conversation: PlanMessage[],
 ): Promise<GeneratedPlan> {
   const dialogueLog = conversation
-    .filter(m => !m.content.includes("【クォーター計画コンテキスト】")) // コンテキスト部分は除外
-    .map(m => `${m.role === "user" ? "計画者" : "AI"}: ${m.content}`)
+    .filter(m => !getContentText(m.content).includes("【クォーター計画コンテキスト】"))
+    .map(m => `${m.role === "user" ? "計画者" : "AI"}: ${getContentText(m.content)}`)
     .join("\n");
 
   const userMessage = `【コンテキスト】\n${contextText}\n\n【計画対話記録】\n${dialogueLog}\n\n以上から翌クォーターのTF計画書をJSON形式で生成してください。`;

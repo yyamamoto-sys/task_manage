@@ -11,6 +11,17 @@ export interface AIRawResponse {
   usage?: { input_tokens: number; output_tokens: number };
 }
 
+// マルチモーダルコンテンツブロック（PDF・画像・テキストファイル添付用）
+export type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "document"; source: { type: "base64"; media_type: string; data: string } }
+  | { type: "image"; source: { type: "base64"; media_type: string; data: string } };
+
+export type AIMessageInput = {
+  role: "user" | "assistant";
+  content: string | ContentBlock[];
+};
+
 type EdgeErrorBody = {
   error?: string;
   status?: number;
@@ -32,9 +43,41 @@ function extractEdgeError(data: unknown, fallback: string): string {
   return fallback;
 }
 
+export interface FileAttachment {
+  fileName: string;
+  mediaType: string;
+  data: string;
+  isText: boolean;
+}
+
+export function buildMessageContent(
+  text: string,
+  attachment: FileAttachment | null,
+): string | ContentBlock[] {
+  if (!attachment) return text;
+  if (attachment.isText) {
+    return `${text}\n\n【添付ファイル: ${attachment.fileName}】\n${attachment.data}`;
+  }
+  const blocks: ContentBlock[] = [{ type: "text", text }];
+  if (attachment.mediaType.startsWith("image/")) {
+    blocks.push({ type: "image", source: { type: "base64", media_type: attachment.mediaType, data: attachment.data } });
+  } else {
+    blocks.push({ type: "document", source: { type: "base64", media_type: attachment.mediaType, data: attachment.data } });
+  }
+  return blocks;
+}
+
+export function getContentText(content: string | ContentBlock[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((b): b is { type: "text"; text: string } => b.type === "text")
+    .map(b => b.text)
+    .join("");
+}
+
 export async function invokeAI(
   system: string,
-  messages: { role: "user" | "assistant"; content: string }[],
+  messages: AIMessageInput[],
   maxTokens: number,
 ): Promise<AIRawResponse> {
   if (!messages || messages.length === 0) {

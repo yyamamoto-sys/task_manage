@@ -13,6 +13,7 @@ import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { showToast } from "../common/Toast";
+import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
 
 interface Props {
   onClose: () => void;
@@ -72,6 +73,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
   const [selectedKrId, setSelectedKrId] = useState<string>(initialKrId ?? activeKrs[0]?.id ?? "");
   const [mode, setMode] = useState<KrReportMode>("checkin");
   const [meetingNotes, setMeetingNotes] = useState("");
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
         meetingNotes: meetingNotes.trim(),
       });
 
-      const result = await callKrReportAI(context, mode);
+      const result = await callKrReportAI(context, mode, attachment ?? undefined);
       setReportHtml(result.html);
 
       // localStorage に保存
@@ -382,13 +384,20 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
 
               {/* 議事メモ入力 */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
-                  議事メモ / 文字起こし
-                </label>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+                    議事メモ / 文字起こし
+                  </label>
+                  <FileAttachButton
+                    attachment={attachment}
+                    onAttach={setAttachment}
+                    onRemove={() => setAttachment(null)}
+                  />
+                </div>
                 <textarea
                   value={meetingNotes}
                   onChange={e => setMeetingNotes(e.target.value)}
-                  placeholder="チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。"
+                  placeholder={attachment ? "添付ファイルがある場合は空欄でも生成できます。補足メモを追加することもできます。" : "チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。"}
                   rows={10}
                   style={{
                     width: "100%",
@@ -420,30 +429,32 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
               )}
 
               {/* 生成ボタン */}
-              <button
-                onClick={handleGenerate}
-                disabled={!selectedKr || !meetingNotes.trim()}
-                style={{
-                  width: "100%",
-                  padding: "11px",
-                  background: !selectedKr || !meetingNotes.trim()
-                    ? "var(--color-bg-tertiary)"
-                    : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  color: !selectedKr || !meetingNotes.trim()
-                    ? "var(--color-text-tertiary)"
-                    : "#fff",
-                  fontSize: "13px",
-                  fontWeight: "600",
-                  cursor: !selectedKr || !meetingNotes.trim() ? "not-allowed" : "pointer",
-                  boxShadow: !selectedKr || !meetingNotes.trim()
-                    ? "none"
-                    : "0 2px 8px rgba(124,58,237,0.35)",
-                }}
-              >
-                ✨ AIでレポートを生成する
-              </button>
+              {(() => {
+                const canGenerate = !!selectedKr && (!!meetingNotes.trim() || !!attachment);
+                return (
+                  <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                    <button
+                      onClick={handleGenerate}
+                      disabled={!canGenerate}
+                      style={{
+                        padding: "11px 24px",
+                        background: canGenerate
+                          ? "linear-gradient(135deg, #8b5cf6, #7c3aed)"
+                          : "var(--color-bg-tertiary)",
+                        border: "none",
+                        borderRadius: "var(--radius-md)",
+                        color: canGenerate ? "#fff" : "var(--color-text-tertiary)",
+                        fontSize: "13px",
+                        fontWeight: "600",
+                        cursor: canGenerate ? "pointer" : "not-allowed",
+                        boxShadow: canGenerate ? "0 2px 8px rgba(124,58,237,0.35)" : "none",
+                      }}
+                    >
+                      ✨ AIでレポートを生成する
+                    </button>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* 保存済みレポートバナー（現在のビューに未表示かつ保存データあり） */}

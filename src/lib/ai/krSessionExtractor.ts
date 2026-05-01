@@ -4,7 +4,7 @@
 // 会議の文字起こしテキストからチェックイン・ウィンセッションの構造化データをAIで抽出する。
 // 出力はJSONのみ。確認UIでユーザーが修正できるため、完璧な精度は求めない。
 
-import { invokeAI } from "./invokeAI";
+import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
 
 // ===== 抽出結果の型 =====
 
@@ -99,8 +99,9 @@ declaration_resultのresult_status:
 
 // ===== 呼び出し共通処理 =====
 
-async function callExtractAI(system: string, userMessage: string): Promise<string> {
-  const res = await invokeAI(system, [{ role: "user", content: userMessage }], 4096);
+async function callExtractAI(system: string, userMessage: string, attachment?: FileAttachment): Promise<string> {
+  const content = buildMessageContent(userMessage, attachment ?? null);
+  const res = await invokeAI(system, [{ role: "user", content }], 4096);
   return res.content[0].text;
 }
 
@@ -158,6 +159,7 @@ export async function extractCheckinData(params: {
   krTitle: string;
   memberShortNames: string[];
   transcript: string;
+  attachment?: FileAttachment;
 }): Promise<ExtractedCheckin> {
   const userMessage = JSON.stringify({
     kr_title: params.krTitle,
@@ -165,7 +167,7 @@ export async function extractCheckinData(params: {
     transcript: params.transcript,
   });
 
-  const text = await callExtractAI(CHECKIN_EXTRACT_PROMPT, userMessage);
+  const text = await callExtractAI(CHECKIN_EXTRACT_PROMPT, userMessage, params.attachment);
   const parsed = parseJsonSafe<unknown>(text);
   return validateCheckin(parsed);
 }
@@ -177,6 +179,7 @@ export async function extractWinSessionData(params: {
   memberShortNames: string[];
   previousDeclarations: { index: number; member: string; content: string; due_date: string | null }[];
   transcript: string;
+  attachment?: FileAttachment;
 }): Promise<ExtractedWinSession> {
   const userMessage = JSON.stringify({
     kr_title: params.krTitle,
@@ -185,7 +188,7 @@ export async function extractWinSessionData(params: {
     transcript: params.transcript,
   });
 
-  const text = await callExtractAI(WIN_SESSION_EXTRACT_PROMPT, userMessage);
+  const text = await callExtractAI(WIN_SESSION_EXTRACT_PROMPT, userMessage, params.attachment);
   const parsed = parseJsonSafe<unknown>(text);
   return validateWinSession(parsed);
 }

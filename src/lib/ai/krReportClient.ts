@@ -5,7 +5,7 @@
 // 既存のai-consult Edge Functionを流用するが、OKR/KR/TFデータを含むシステムプロンプトを使用する
 // （ユーザー確認済みポリシー変更：OKR/KR/TFをAIに渡すことが許可された）。
 
-import { invokeAI } from "./invokeAI";
+import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
 import type { KrReportContext, KrReportMode } from "./krReportPrompt";
 import { KR_REPORT_SYSTEM_PROMPTS, REPORT_HTML_WRAPPER } from "./krReportPrompt";
 
@@ -17,12 +17,14 @@ export interface KrReportResult {
 export async function callKrReportAI(
   context: KrReportContext,
   mode: KrReportMode,
+  attachment?: FileAttachment,
 ): Promise<KrReportResult> {
   const systemPrompt = KR_REPORT_SYSTEM_PROMPTS[mode];
 
   const userMessage = JSON.stringify(context, null, 2);
+  const content = buildMessageContent(userMessage, attachment ?? null);
 
-  const res = await invokeAI(systemPrompt, [{ role: "user", content: userMessage }], 8192);
+  const res = await invokeAI(systemPrompt, [{ role: "user", content }], 8192);
   const text = res.content[0].text;
 
   const modeLabel = context.mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";

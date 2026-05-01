@@ -23,6 +23,7 @@ import {
   type KrDeclaration,
 } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
 
 // ===== 型 =====
 
@@ -88,6 +89,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
   const [sessionType, setSessionType] = useState<SessionType>("checkin");
   const [weekStart, setWeekStart] = useState<string>(getThisMonday());
   const [transcript, setTranscript] = useState("");
+  const [attachment, setAttachment] = useState<FileAttachment | null>(null);
 
   // --- フロー制御 ---
   const [step, setStep] = useState<Step>("input");
@@ -131,6 +133,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           krTitle: selectedKr.title,
           memberShortNames: activeMembers.map(m => m.short_name),
           transcript: transcript.trim(),
+          attachment: attachment ?? undefined,
         });
 
         setCheckinSignal(result.signal ?? "yellow");
@@ -163,6 +166,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             due_date: d.due_date,
           })),
           transcript: transcript.trim(),
+          attachment: attachment ?? undefined,
         });
 
         setWinSignal(result.signal ?? "yellow");
@@ -277,6 +281,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
   const handleReset = () => {
     setStep("input");
     setTranscript("");
+    setAttachment(null);
     setError(null);
     setCheckinRows([]);
     setWinRows([]);
@@ -355,6 +360,8 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
               setWeekStart={setWeekStart}
               transcript={transcript}
               setTranscript={setTranscript}
+              attachment={attachment}
+              onAttach={setAttachment}
               error={error}
               onExtract={handleExtract}
             />
@@ -478,6 +485,7 @@ function InputStep({
   sessionType, setSessionType,
   weekStart, setWeekStart,
   transcript, setTranscript,
+  attachment, onAttach,
   error, onExtract,
 }: {
   activeKrs: { id: string; title: string }[];
@@ -485,10 +493,11 @@ function InputStep({
   sessionType: SessionType; setSessionType: (v: SessionType) => void;
   weekStart: string; setWeekStart: (v: string) => void;
   transcript: string; setTranscript: (v: string) => void;
+  attachment: FileAttachment | null; onAttach: (att: FileAttachment | null) => void;
   error: string | null;
   onExtract: () => void;
 }) {
-  const canExtract = !!selectedKrId && transcript.trim().length > 20;
+  const canExtract = !!selectedKrId && (transcript.trim().length > 20 || !!attachment);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -530,8 +539,8 @@ function InputStep({
         <FieldLabel>会議の種類</FieldLabel>
         <div style={{ display: "flex", gap: "10px" }}>
           {([
-            { value: "checkin", label: "チェックイン", sub: "月曜PM：宣言・シグナル入力" },
-            { value: "win_session", label: "ウィンセッション", sub: "金曜：宣言結果・学び入力" },
+            { value: "checkin", label: "チェックイン", sub: "週1回：宣言・シグナル入力" },
+            { value: "win_session", label: "ウィンセッション", sub: "週1回：宣言結果・学び入力" },
           ] as const).map(opt => (
             <button
               key={opt.value}
@@ -555,16 +564,18 @@ function InputStep({
 
       {/* 文字起こし入力 */}
       <div>
-        <FieldLabel>
-          文字起こし / 議事メモ
-          <span style={{ fontSize: "10px", fontWeight: "400", color: "var(--color-text-tertiary)", marginLeft: "8px" }}>
-            Teams録音の文字起こしや手書きメモをそのまま貼り付けてください
-          </span>
-        </FieldLabel>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+          <FieldLabel>文字起こし / 議事メモ</FieldLabel>
+          <FileAttachButton
+            attachment={attachment}
+            onAttach={onAttach}
+            onRemove={() => onAttach(null)}
+          />
+        </div>
         <textarea
           value={transcript}
           onChange={e => setTranscript(e.target.value)}
-          placeholder="会議の文字起こしや議事メモをここに貼り付けてください。AIが宣言・シグナル・結果などを自動で抽出します。"
+          placeholder={attachment ? "添付ファイルがある場合は空欄でもAI解析できます。補足メモを追加することもできます。" : "会議の文字起こしや議事メモをここに貼り付けてください。AIが宣言・シグナル・結果などを自動で抽出します。"}
           rows={12}
           style={{
             width: "100%", padding: "10px 12px", fontSize: "12px",
@@ -579,13 +590,15 @@ function InputStep({
 
       {error && <ErrorBox message={error} />}
 
-      <button
-        onClick={onExtract}
-        disabled={!canExtract}
-        style={primaryButtonStyle(!canExtract)}
-      >
-        🤖 AIで解析する
-      </button>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button
+          onClick={onExtract}
+          disabled={!canExtract}
+          style={{ ...primaryButtonStyle(!canExtract), width: "auto", paddingLeft: "24px", paddingRight: "24px" }}
+        >
+          🤖 AIで解析する
+        </button>
+      </div>
     </div>
   );
 }
@@ -712,9 +725,11 @@ function CheckinConfirmStep({
 
       {error && <ErrorBox message={error} />}
 
-      <button onClick={onSave} style={primaryButtonStyle(false)}>
-        💾 DBに保存する
-      </button>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onSave} style={{ ...primaryButtonStyle(false), width: "auto", paddingLeft: "24px", paddingRight: "24px" }}>
+          💾 DBに保存する
+        </button>
+      </div>
     </div>
   );
 }
@@ -845,9 +860,11 @@ function WinConfirmStep({
 
       {error && <ErrorBox message={error} />}
 
-      <button onClick={onSave} style={primaryButtonStyle(false)}>
-        💾 DBに保存する
-      </button>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onSave} style={{ ...primaryButtonStyle(false), width: "auto", paddingLeft: "24px", paddingRight: "24px" }}>
+          💾 DBに保存する
+        </button>
+      </div>
     </div>
   );
 }

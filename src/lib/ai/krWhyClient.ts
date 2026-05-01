@@ -5,9 +5,9 @@
 // ダイアログターン（短い問い返し）とサマリー生成の2種類の呼び出しを持つ。
 // KR/TF/ToDo/Task/メンバーデータをAIに渡す（ラボ機能例外ルール適用）。
 
-import { invokeAI } from "./invokeAI";
+import { invokeAI, getContentText, type AIMessageInput } from "./invokeAI";
 
-export type WhyMessage = { role: "user" | "assistant"; content: string };
+export type WhyMessage = AIMessageInput;
 
 const DIALOGUE_SYSTEM_PROMPT = `あなたはOKR推進チームのソクラテス式コーチAIです。
 5Whys手法を使って、担当者が抱える課題の根本原因を一緒に探ります。
@@ -68,8 +68,8 @@ export async function callWhyDialogue(messages: WhyMessage[]): Promise<string> {
 
 export async function callWhySummary(context: string, conversation: WhyMessage[]): Promise<string> {
   const dialogueLog = conversation
-    .filter(m => m.role !== "user" || !m.content.includes("この課題について、なぜなぜ分析を進めてください"))
-    .map(m => `${m.role === "user" ? "担当者" : "AI"}: ${m.content}`)
+    .filter(m => m.role !== "user" || !getContentText(m.content).includes("この課題について、なぜなぜ分析を進めてください"))
+    .map(m => `${m.role === "user" ? "担当者" : "AI"}: ${getContentText(m.content)}`)
     .join("\n");
 
   const summaryMessage: WhyMessage = {

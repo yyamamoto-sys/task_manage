@@ -68,7 +68,6 @@ export interface QuarterPlanContext {
   today: string;
   current_quarter: string;    // "2026-2Q"
   target_quarter: string;     // "2026-3Q"
-  planner_role: "GM" | "AGM" | "OM";
   objective_title: string;
   kr_title: string;
   tf_stats: TFStat[];
@@ -110,7 +109,6 @@ export function buildContextText(ctx: QuarterPlanContext): string {
 
   return `【クォーター計画コンテキスト】
 計画日：${ctx.today}
-計画者役割：${ctx.planner_role}
 今クォーター：${ctx.current_quarter}
 計画対象クォーター：${ctx.target_quarter}
 
@@ -142,12 +140,12 @@ ${memberList}`;
 // ===== システムプロンプト =====
 
 export const QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT = `あなたはOKR戦略ファシリテーターAIです。
-クォーター末の計画セッションで、マネージャー（GM/AGM/OM）が翌クォーターの
+クォーター末の計画セッションで、翌クォーターの
 Task Force（TF）計画を立てる対話を支援します。
 
 【コンテキストの読み方】
 最初のユーザーメッセージにクォーター計画コンテキストが含まれます：
-- 現在・翌クォーターの情報と計画者役割
+- 現在・翌クォーターの情報
 - 今QのTF一覧・タスク達成率
 - 週次シグナル推移（チェックイン・ウィンセッション）
 - ウィンセッションの学び・外部環境変化
