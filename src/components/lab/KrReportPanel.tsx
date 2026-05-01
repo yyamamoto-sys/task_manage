@@ -13,7 +13,7 @@ import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { showToast } from "../common/Toast";
-import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
+import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 
 interface Props {
   onClose: () => void;
@@ -394,24 +394,26 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
                     onRemove={() => setAttachment(null)}
                   />
                 </div>
-                <textarea
-                  value={meetingNotes}
-                  onChange={e => setMeetingNotes(e.target.value)}
-                  placeholder={attachment ? "添付ファイルがある場合は空欄でも生成できます。補足メモを追加することもできます。" : "チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。"}
-                  rows={10}
-                  style={{
-                    width: "100%",
-                    padding: "10px 12px",
-                    fontSize: "12px",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    background: "var(--color-bg-primary)",
-                    color: "var(--color-text-primary)",
-                    resize: "vertical",
-                    lineHeight: 1.6,
-                    boxSizing: "border-box",
-                  }}
-                />
+                <FileDropZone onAttach={setAttachment}>
+                  <textarea
+                    value={meetingNotes}
+                    onChange={e => setMeetingNotes(e.target.value)}
+                    placeholder={attachment ? "添付ファイルがある場合は空欄でも生成できます。補足メモを追加することもできます。" : "チェックインまたはウィンセッションの議事メモや文字起こしをここに貼り付けてください。\nまたはファイルをここにドラッグ＆ドロップ"}
+                    rows={10}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      fontSize: "12px",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-md)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                      resize: "vertical",
+                      lineHeight: 1.6,
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </FileDropZone>
               </div>
 
               {/* エラー */}

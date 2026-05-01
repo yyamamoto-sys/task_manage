@@ -23,7 +23,7 @@ import {
   type KrDeclaration,
 } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
-import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
+import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 
 // ===== 型 =====
 
@@ -572,20 +572,22 @@ function InputStep({
             onRemove={() => onAttach(null)}
           />
         </div>
-        <textarea
-          value={transcript}
-          onChange={e => setTranscript(e.target.value)}
-          placeholder={attachment ? "添付ファイルがある場合は空欄でもAI解析できます。補足メモを追加することもできます。" : "会議の文字起こしや議事メモをここに貼り付けてください。AIが宣言・シグナル・結果などを自動で抽出します。"}
-          rows={12}
-          style={{
-            width: "100%", padding: "10px 12px", fontSize: "12px",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-primary)",
-            color: "var(--color-text-primary)",
-            resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
-          }}
-        />
+        <FileDropZone onAttach={a => onAttach(a)}>
+          <textarea
+            value={transcript}
+            onChange={e => setTranscript(e.target.value)}
+            placeholder={attachment ? "添付ファイルがある場合は空欄でもAI解析できます。補足メモを追加することもできます。" : "会議の文字起こしや議事メモをここに貼り付けてください。AIが宣言・シグナル・結果などを自動で抽出します。\nまたはファイルをここにドラッグ＆ドロップ"}
+            rows={12}
+            style={{
+              width: "100%", padding: "10px 12px", fontSize: "12px",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+              resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
+            }}
+          />
+        </FileDropZone>
       </div>
 
       {error && <ErrorBox message={error} />}

@@ -21,7 +21,7 @@ import {
   type SignalEntry,
 } from "../../lib/ai/krQuarterPlanPrompt";
 import { buildMessageContent } from "../../lib/ai/invokeAI";
-import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
+import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 import {
   callQuarterPlanDialogue,
   callQuarterPlanGenerate,
@@ -721,19 +721,21 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                   onRemove={() => setAttachment(null)}
                 />
               </div>
-              <textarea
-                value={issueFocus}
-                onChange={e => setIssueFocus(e.target.value)}
-                rows={3}
-                placeholder={attachment ? "添付ファイルがある場合は空欄のまま開始できます。補足メモを追加することもできます。" : "例：TF2の遅延を翌Qでどう取り返すか、メンバーの担当集中をどう分散するか"}
-                style={{
-                  width: "100%", padding: "8px 10px", fontSize: "12px",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                  resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
-                }}
-              />
+              <FileDropZone onAttach={setAttachment}>
+                <textarea
+                  value={issueFocus}
+                  onChange={e => setIssueFocus(e.target.value)}
+                  rows={3}
+                  placeholder={attachment ? "添付ファイルがある場合は空欄のまま開始できます。補足メモを追加することもできます。" : "例：TF2の遅延を翌Qでどう取り返すか、メンバーの担当集中をどう分散するか\nまたはファイルをここにドラッグ＆ドロップ"}
+                  style={{
+                    width: "100%", padding: "8px 10px", fontSize: "12px",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                    resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
+                  }}
+                />
+              </FileDropZone>
             </div>
 
             {/* 保存済み計画バナー */}

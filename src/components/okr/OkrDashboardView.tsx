@@ -1,5 +1,5 @@
 // src/components/okr/OkrDashboardView.tsx
-// OKR管理モードのメインビュー。タブ型UI：概要/セッション記録/レポート/なぜなぜ/履歴
+// OKR管理モードのメインビュー。タブ型UI：セッション記録（レポート統合）/なぜなぜ/計画/概要
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAppData } from "../../context/AppDataContext";
@@ -10,7 +10,7 @@ import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
 import { fetchKrSessions, updateKrSession, softDeleteKrSession, type KrSession } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "session" | "report" | "why" | "history" | "guide" | "plan" | "overview" | null;
+export type OkrActiveTool = "session" | "why" | "plan" | "overview" | "guide" | null;
 
 interface Props {
   currentUser: Member;
@@ -18,7 +18,6 @@ interface Props {
   onSelectKr: (id: string | null) => void;
   activeTool: OkrActiveTool;
   onSetActiveTool: (tool: OkrActiveTool) => void;
-  onOpenConsult?: () => void;
 }
 
 const SIGNAL_COLOR: Record<string, string> = {
@@ -44,16 +43,13 @@ function getThisMonday(): string {
 
 const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
   { tool: "session",  icon: "🗓️", label: "セッション記録" },
-  { tool: "report",   icon: "📊", label: "レポート" },
   { tool: "why",      icon: "🔍", label: "なぜなぜ" },
-  { tool: "history",  icon: "📋", label: "履歴" },
   { tool: "plan",     icon: "📅", label: "計画" },
   { tool: "overview", icon: "🎯", label: "概要" },
-  { tool: "guide",    icon: "📖", label: "使い方" },
 ];
 
 export function OkrDashboardView({
-  currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool, onOpenConsult,
+  currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool,
 }: Props) {
   const { objective, keyResults, taskForces, tasks, todos } = useAppData();
 
@@ -81,6 +77,9 @@ export function OkrDashboardView({
       return { krId: kr.id, tfs, done, total: krTasks.length };
     });
   }, [activeKrs, activeTfs, todos, tasks]);
+
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [sessionSubMode, setSessionSubMode] = useState<"record" | "report">("record");
 
   // セッション取得（概要・履歴共用）
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
@@ -191,27 +190,26 @@ export function OkrDashboardView({
             </button>
           );
         })}
-        {/* AI相談ボタン（タブとは別扱い） */}
-        {onOpenConsult && (
-          <button
-            onClick={onOpenConsult}
-            title="AIアシスタントに相談する"
-            style={{
-              marginLeft: "auto",
-              display: "flex", alignItems: "center", gap: "5px",
-              padding: "10px 16px",
-              background: "transparent", border: "none",
-              borderBottom: "2px solid transparent",
-              marginBottom: "-1px",
-              fontSize: "12px", fontWeight: "600",
-              color: "#6366f1",
-              cursor: "pointer", whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            🤖 AI相談
-          </button>
-        )}
+        {/* 履歴ボタン（右端） */}
+        <button
+          onClick={() => setHistoryOpen(true)}
+          title="セッション履歴を開く"
+          style={{
+            marginLeft: "auto",
+            display: "flex", alignItems: "center", gap: "4px",
+            padding: "10px 14px",
+            background: "transparent", border: "none",
+            borderBottom: "2px solid transparent",
+            marginBottom: "-1px",
+            fontSize: "11px", fontWeight: "400",
+            color: "var(--color-text-tertiary)",
+            cursor: "pointer", whiteSpace: "nowrap",
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: "14px" }}>🕐</span>
+          <span>履歴</span>
+        </button>
       </div>
 
       {/* コンテンツエリア */}
@@ -447,25 +445,54 @@ export function OkrDashboardView({
           </div>
         )}
 
-        {/* ─── セッション記録タブ ─── */}
+        {/* ─── セッション記録タブ（レポート統合） ─── */}
         {activeTool === "session" && (
-          <KrSessionPanel
-            inline
-            onClose={() => onSetActiveTool(null)}
-            currentUser={currentUser}
-            initialKrId={selectedKrId ?? undefined}
-            onSaved={refreshSessions}
-          />
-        )}
-
-        {/* ─── レポートタブ ─── */}
-        {activeTool === "report" && (
-          <KrReportPanel
-            inline
-            onClose={() => onSetActiveTool(null)}
-            currentUser={currentUser}
-            initialKrId={selectedKrId ?? undefined}
-          />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            {/* サブモード切替 */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: "6px",
+              padding: "8px 16px",
+              borderBottom: "1px solid var(--color-border-primary)",
+              background: "var(--color-bg-secondary)",
+              flexShrink: 0,
+            }}>
+              {([
+                { mode: "record", icon: "🗓️", label: "セッション記録" },
+                { mode: "report", icon: "📊", label: "レポート生成" },
+              ] as const).map(item => (
+                <button
+                  key={item.mode}
+                  onClick={() => setSessionSubMode(item.mode)}
+                  style={{
+                    padding: "4px 12px", fontSize: "11px", fontWeight: "600",
+                    background: sessionSubMode === item.mode ? "var(--color-brand)" : "transparent",
+                    border: `1px solid ${sessionSubMode === item.mode ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                    borderRadius: "var(--radius-md)",
+                    color: sessionSubMode === item.mode ? "#fff" : "var(--color-text-secondary)",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  {item.icon} {item.label}
+                </button>
+              ))}
+            </div>
+            {sessionSubMode === "record" ? (
+              <KrSessionPanel
+                inline
+                onClose={() => onSetActiveTool(null)}
+                currentUser={currentUser}
+                initialKrId={selectedKrId ?? undefined}
+                onSaved={refreshSessions}
+              />
+            ) : (
+              <KrReportPanel
+                inline
+                onClose={() => onSetActiveTool(null)}
+                currentUser={currentUser}
+                initialKrId={selectedKrId ?? undefined}
+              />
+            )}
+          </div>
         )}
 
         {/* ─── なぜなぜタブ ─── */}
@@ -475,20 +502,6 @@ export function OkrDashboardView({
             onClose={() => onSetActiveTool(null)}
             currentUser={currentUser}
             initialKrId={selectedKrId ?? undefined}
-          />
-        )}
-
-        {/* ─── 履歴タブ ─── */}
-        {activeTool === "history" && (
-          <KrSessionHistory
-            selectedKrId={selectedKrId}
-            activeKrs={activeKrs}
-            krSessionsMap={krSessionsMap}
-            loading={sessionsLoading}
-            onSelectKr={onSelectKr}
-            onOpenSession={() => onSetActiveTool("session")}
-            onRefresh={refreshSessions}
-            currentUserId={currentUser.id}
           />
         )}
 
@@ -502,11 +515,71 @@ export function OkrDashboardView({
           />
         )}
 
-        {/* ─── 使い方タブ ─── */}
+        {/* ─── 使い方（サイドバーから起動） ─── */}
         {activeTool === "guide" && (
           <OkrGuide onSetActiveTool={onSetActiveTool} />
         )}
       </div>
+
+      {/* ─── 履歴オーバーレイ ─── */}
+      {historyOpen && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 300,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+          }}
+          onClick={e => { if (e.target === e.currentTarget) setHistoryOpen(false); }}
+        >
+          <div
+            className="panel-slide-up"
+            style={{
+              width: "min(680px, 100vw)",
+              background: "var(--color-bg-primary)",
+              display: "flex", flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: "14px 20px",
+              borderBottom: "1px solid var(--color-border-primary)",
+              display: "flex", alignItems: "center", gap: "10px",
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: "18px" }}>🕐</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+                  セッション履歴
+                </div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                  チェックイン・ウィンセッションの過去記録（編集・削除可）
+                </div>
+              </div>
+              <button
+                onClick={() => setHistoryOpen(false)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1,
+                }}
+              >✕</button>
+            </div>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <KrSessionHistory
+                selectedKrId={selectedKrId}
+                activeKrs={activeKrs}
+                krSessionsMap={krSessionsMap}
+                loading={sessionsLoading}
+                onSelectKr={onSelectKr}
+                onOpenSession={() => { setHistoryOpen(false); onSetActiveTool("session"); }}
+                onRefresh={refreshSessions}
+                currentUserId={currentUser.id}
+              />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -848,8 +921,8 @@ const WEEKLY_FLOW = [
     day: "随時",
     icon: "📊",
     title: "レポート生成",
-    desc: "議事メモを貼り付けるとAIが整形されたOKR進捗レポートを生成します。Teamsへの投稿にも対応しています。",
-    tool: "report" as const,
+    desc: "議事メモを貼り付けるとAIが整形されたOKR進捗レポートを生成します。Teamsへの投稿にも対応しています。セッション記録タブ内「レポート生成」から使えます。",
+    tool: "session" as const,
     color: "#8b5cf6",
   },
   {

@@ -12,7 +12,7 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 import { buildMessageContent, getContentText } from "../../lib/ai/invokeAI";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { showToast } from "../common/Toast";
-import { FileAttachButton, type FileAttachment } from "../common/FileAttachButton";
+import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 
 function ThinkingDots() {
   return (
@@ -68,6 +68,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   );
 
   const [selectedKrId, setSelectedKrId] = useState(initialKrId ?? activeKrs[0]?.id ?? "");
+  const [selectedTfId, setSelectedTfId] = useState<string | null>(null);
   const [issueText, setIssueText] = useState("");
   const [attachment, setAttachment] = useState<FileAttachment | null>(null);
   const [phase, setPhase] = useState<Phase>("setup");
@@ -86,8 +87,9 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
   const relatedTfs = (taskForces ?? []).filter(tf => tf.kr_id === selectedKrId && !tf.is_deleted);
 
-  // KR変更時に保存済みサマリー＆セッション履歴を読み込む
+  // KR変更時に保存済みサマリー＆セッション履歴を読み込む・TF選択をリセット
   useEffect(() => {
+    setSelectedTfId(null);
     setSavedSummary(loadSavedSummary(selectedKrId));
     if (!selectedKrId) return;
     fetchKrSessions(selectedKrId)
@@ -126,7 +128,8 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       .map(kr => `  ${kr.id === selectedKrId ? "▶ " : "  "}${kr.title}`)
       .join("\n");
 
-    const tfDetailLines = relatedTfs.map(tf => {
+    const focusedTfs = selectedTfId ? relatedTfs.filter(tf => tf.id === selectedTfId) : relatedTfs;
+    const tfDetailLines = focusedTfs.map(tf => {
       const relatedTodos = (todos ?? []).filter(
         t => !t.is_deleted && t.tf_id === tf.id,
       );
@@ -405,6 +408,42 @@ ${issueText.trim()}`;
               )}
             </div>
 
+            {/* TF選択（KRにTFがある場合のみ表示） */}
+            {relatedTfs.length > 0 && (
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
+                  対象TF（任意）
+                </label>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                  <button
+                    onClick={() => setSelectedTfId(null)}
+                    style={{
+                      padding: "4px 10px", fontSize: "11px", fontWeight: selectedTfId === null ? "600" : "400",
+                      background: selectedTfId === null ? "var(--color-brand)" : "var(--color-bg-primary)",
+                      border: `1px solid ${selectedTfId === null ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                      borderRadius: "var(--radius-full)",
+                      color: selectedTfId === null ? "#fff" : "var(--color-text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >全TF</button>
+                  {relatedTfs.map(tf => (
+                    <button
+                      key={tf.id}
+                      onClick={() => setSelectedTfId(tf.id === selectedTfId ? null : tf.id)}
+                      style={{
+                        padding: "4px 10px", fontSize: "11px", fontWeight: selectedTfId === tf.id ? "600" : "400",
+                        background: selectedTfId === tf.id ? "var(--color-brand)" : "var(--color-bg-primary)",
+                        border: `1px solid ${selectedTfId === tf.id ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                        borderRadius: "var(--radius-full)",
+                        color: selectedTfId === tf.id ? "#fff" : "var(--color-text-secondary)",
+                        cursor: "pointer",
+                      }}
+                    >TF{tf.tf_number} {tf.name}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* 保存済みサマリーバナー */}
             {savedSummary && (
               <div style={{
@@ -461,19 +500,21 @@ ${issueText.trim()}`;
                   onRemove={() => setAttachment(null)}
                 />
               </div>
-              <textarea
-                value={issueText}
-                onChange={e => setIssueText(e.target.value)}
-                placeholder={attachment ? "添付ファイルがある場合は空欄でも分析を始められます。課題の補足メモを追加することもできます。" : "例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない"}
-                rows={4}
-                style={{
-                  width: "100%", padding: "10px 12px", fontSize: "12px",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                  resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
-                }}
-              />
+              <FileDropZone onAttach={setAttachment}>
+                <textarea
+                  value={issueText}
+                  onChange={e => setIssueText(e.target.value)}
+                  placeholder={attachment ? "添付ファイルがある場合は空欄でも分析を始められます。課題の補足メモを追加することもできます。" : "例：チェックインで毎週「来週こそやる」と宣言するが達成できていない\n例：TF2の新規開拓タスクが2週間以上進んでいない\nまたはファイルをここにドラッグ＆ドロップ"}
+                  rows={4}
+                  style={{
+                    width: "100%", padding: "10px 12px", fontSize: "12px",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                    resize: "vertical", lineHeight: 1.6, boxSizing: "border-box",
+                  }}
+                />
+              </FileDropZone>
             </div>
 
             {error && (
