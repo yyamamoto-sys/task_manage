@@ -24,7 +24,7 @@ export async function callKrReportAI(
   const userMessage = JSON.stringify(context, null, 2);
   const content = buildMessageContent(userMessage, attachment ?? null);
 
-  const res = await invokeAI(systemPrompt, [{ role: "user", content }], 8192);
+  const res = await invokeAI(systemPrompt, [{ role: "user", content }], 8192, "kr-report");
   const text = res.content[0].text;
 
   const modeLabel = context.mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";

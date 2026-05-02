@@ -42,6 +42,14 @@
   --color-brand-light: #e7eaf3;
   --color-brand-border: #8993b8;
 
+  /* AI 機能専用アクセント（ブランドとは別の独自パレット = AI機能を視覚的に区別） */
+  --color-ai-from:      #6366f1;
+  --color-ai-to:        #8b5cf6;
+  --color-ai-from-deep: #7c3aed;
+  --color-ai-to-deep:   #5b21b6;
+  --gradient-ai:        linear-gradient(135deg, var(--color-ai-from) 0%, var(--color-ai-to) 100%);
+  --gradient-ai-deep:   linear-gradient(135deg, var(--color-ai-from-deep) 0%, var(--color-ai-to-deep) 100%);
+
   /* 角丸 */
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -121,6 +129,12 @@
   --color-brand: #8895c4;
   --color-brand-light: #232844;
   --color-brand-border: #5e6790;
+
+  /* AI アクセント（ダークモードで少し明るく） */
+  --color-ai-from:      #818cf8;
+  --color-ai-to:        #a78bfa;
+  --color-ai-from-deep: #9061f9;
+  --color-ai-to-deep:   #6d28d9;
 
   /* シャドウ（暗背景・純黒寄り） */
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.45);

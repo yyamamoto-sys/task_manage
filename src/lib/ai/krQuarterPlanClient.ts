@@ -29,6 +29,7 @@ export async function callQuarterPlanDialogue(messages: PlanMessage[]): Promise<
     QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT,
     messages,
     400,
+    "kr-quarter-plan",
   );
   return res.content[0].text;
 }
@@ -50,6 +51,7 @@ export async function callQuarterPlanGenerate(
     QUARTER_PLAN_GENERATION_SYSTEM_PROMPT,
     [{ role: "user", content: userMessage }],
     3000,
+    "kr-quarter-plan",
   );
 
   return parseGeneratedPlan(res.content[0].text);

@@ -1945,6 +1945,7 @@ function getWeekOfMonth(dateStr: string): number {
 function AIUsageSection() {
   const [logs, setLogs] = useState<AiUsageLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
   const hasFetched = useRef(false);
 
@@ -1953,7 +1954,10 @@ function AIUsageSection() {
     hasFetched.current = true;
     fetchAiUsageLogs()
       .then(setLogs)
-      .catch(() => {})
+      .catch((e: unknown) => {
+        const msg = e instanceof Error ? e.message : "不明なエラー";
+        setFetchError(`AI使用量ログの取得に失敗しました: ${msg}`);
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -2015,6 +2019,17 @@ function AIUsageSection() {
   };
 
   if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
+  if (fetchError) return (
+    <div style={{
+      fontSize: "12px", color: "var(--color-text-danger)",
+      background: "var(--color-bg-danger)",
+      border: "1px solid var(--color-border-danger)",
+      borderRadius: "var(--radius-md)",
+      padding: "12px 14px", margin: "12px 0",
+    }}>
+      ⚠ {fetchError}
+    </div>
+  );
 
   return (
     <div style={{ maxWidth: "620px" }}>

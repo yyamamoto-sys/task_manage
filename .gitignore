@@ -6,3 +6,9 @@ dist/
 
 # シードデータに個人情報が含まれているため除外
 src/lib/localData/seed.ts
+
+# Supabase CLI ローカル状態
+supabase/.temp/
+
+# Skills lock（個別環境用）
+skills-lock.json

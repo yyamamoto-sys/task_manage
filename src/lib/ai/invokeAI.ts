@@ -1,10 +1,44 @@
 // src/lib/ai/invokeAI.ts
 //
 // 【設計意図】
-// supabase.functions.invoke("ai-consult") の共通ラッパー。
+// supabase.functions.invoke("ai-consult") の共通ラッパー。AI 呼び出しの唯一のゲート。
 // non-2xx時に data に格納されたEdge Function側の詳細エラーを取り出してスローする。
+//
+// 【絶対遵守：AI境界ルール（CLAUDE.md Section 6）】
+// このアプリでは Anthropic API へ送るペイロードに何を含めてよいか厳格に制限している。
+//
+// ┌─────────────────────────────────────────────────────────────┐
+// │ 「AIIntent」: 呼び出しの目的・性質をタグ付けし、誤った経路で  │
+// │ OKR データが送信されないようコードレベルで意図を表明させる。  │
+// │                                                              │
+// │ 通常運用：                                                    │
+// │   "task-management" — payloadBuilder.ts 経由・PJ/Task のみ    │
+// │                                                              │
+// │ 例外（ユーザー承認済み・KR/TF/O を AI に渡す機能）：           │
+// │   "kr-report"          — KR レポート生成                      │
+// │   "kr-quarter-plan"    — クォーター計画立案                    │
+// │   "kr-session-extract" — 議事録からセッション抽出              │
+// │   "kr-why"             — なぜなぜ分析                          │
+// │   "meeting-extract"    — 会議メモからタスク抽出                │
+// │   "project-plan"       — AI による PJ 設計                     │
+// │   "todo-decompose"     — ToDo 分解                            │
+// │                                                              │
+// │ 新しい AI 機能を追加するときは、AIIntent に新しいタグを追加し、│
+// │ 当該 prompt builder にコメントで「KR/TF を渡してよい根拠」を   │
+// │ 明示すること。タグなしの呼び出しはコンパイルエラーになる。     │
+// └─────────────────────────────────────────────────────────────┘
 
 import { supabase } from "../supabase/client";
+
+export type AIIntent =
+  | "task-management"      // payloadBuilder 経由・通常のタスク管理相談（PJ/Task のみ）
+  | "kr-report"            // KRレポート生成（KR/TF をAIに渡す）
+  | "kr-quarter-plan"      // クォーター計画（KR/TF/セッション履歴をAIに渡す）
+  | "kr-session-extract"   // セッション議事録抽出
+  | "kr-why"               // なぜなぜ分析
+  | "meeting-extract"      // 会議文字起こしからタスク抽出
+  | "project-plan"         // AIでPJ設計
+  | "todo-decompose";      // ToDo 分解
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];
@@ -75,16 +109,25 @@ export function getContentText(content: string | ContentBlock[]): string {
     .join("");
 }
 
+/**
+ * AI を呼び出す唯一のゲート。intent パラメータで呼び出し元が
+ * AI 境界ルールを意識していることを表明する（CLAUDE.md Section 6）。
+ */
 export async function invokeAI(
   system: string,
   messages: AIMessageInput[],
   maxTokens: number,
+  intent: AIIntent,
 ): Promise<AIRawResponse> {
   if (!messages || messages.length === 0) {
     throw new Error("送信するメッセージが空です。操作をやり直してください。");
   }
   if (messages[0].role !== "user") {
     throw new Error("メッセージはuserロールから始まる必要があります。");
+  }
+  if (!intent) {
+    // TS で intent: AIIntent 必須にしているが防御的に runtime でも検査
+    throw new Error("invokeAI には AIIntent を指定する必要があります（AI境界ルール）。");
   }
   const { data, error } = await supabase.functions.invoke("ai-consult", {
     body: { system, messages, max_tokens: maxTokens },

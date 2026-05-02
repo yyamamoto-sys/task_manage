@@ -58,7 +58,7 @@ const FINALIZE_SYSTEM = `あなたはプロジェクト計画AIです。
 - 担当者が不明なものはnullにする（無理に割り当てない）`;
 
 async function callAI(system: string, messages: PlanMessage[], maxTokens: number): Promise<string> {
-  const res = await invokeAI(system, messages, maxTokens);
+  const res = await invokeAI(system, messages, maxTokens, "project-plan");
   return res.content[0].text;
 }
 

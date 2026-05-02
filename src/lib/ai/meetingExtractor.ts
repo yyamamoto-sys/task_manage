@@ -190,7 +190,7 @@ export async function extractMeetingData(params: ExtractMeetingParams): Promise<
     transcript: params.transcript,
   });
 
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 4096);
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 4096, "meeting-extract");
   const text = res.content[0].text;
   return validateAnalysis(parseJsonSafe<unknown>(text));
 }

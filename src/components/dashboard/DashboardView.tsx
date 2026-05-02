@@ -83,7 +83,10 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
         map[krId] = sessions.slice(0, 8); // 最新8セッション（チェックイン+ウィン計4週分）
       }
       setKrSessionsMap(map);
-    }).catch(() => {});
+    }).catch((e: unknown) => {
+      // ダッシュボードのKRシグナル表示は補助情報なので失敗時は console 警告のみで継続
+      console.warn("KRセッション取得失敗（ダッシュボード表示は継続）:", e);
+    });
   }, [krs]);
 
   // フィルター適用後のタスク

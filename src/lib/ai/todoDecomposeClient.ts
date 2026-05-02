@@ -68,6 +68,6 @@ export async function callTodoDecomposeAI(params: {
     today: params.today,
   });
 
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 1200);
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 1200, "todo-decompose");
   return validateDecomposed(parseJsonSafe(res.content[0].text));
 }

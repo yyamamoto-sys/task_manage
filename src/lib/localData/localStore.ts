@@ -9,6 +9,20 @@
 // データの読み書きは AppDataContext → Supabase を経由する。
 // 例外的に localStorage を直接使うのは「デバイスごとの UI 設定」「ログイン補助」のみ。
 
+/**
+ * 論理削除されていない要素のみを返すヘルパー。
+ * 各コンポーネントで `.filter(x => !x.is_deleted)` を書き散らすと、
+ * 仕様変更（例：削除条件の追加）に追従漏れが必ず出るため一箇所に集約する。
+ *
+ * 通常は AppDataContext がサーバ側でフィルタ済みだが、楽観的更新中の
+ * setState 直後など「is_deleted=true の行が一時的に手元にある」場面で
+ * UI から確実に外すために使う。
+ */
+export function active<T extends { is_deleted?: boolean }>(items: T[] | null | undefined): T[] {
+  if (!items) return [];
+  return items.filter(x => !x.is_deleted);
+}
+
 // ===== 静的キー定義 =====
 
 const KEYS = {

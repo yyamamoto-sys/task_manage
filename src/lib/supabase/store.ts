@@ -3,6 +3,10 @@
 // 【設計意図】
 // Supabaseへの全CRUD操作を集約する低レベル関数群。
 // AppDataContext経由でのみ呼び出すこと。コンポーネントから直接呼ばない。
+//
+// 【楽観ロック (CLAUDE.md Section 5)】
+// 主要エンティティの upsert は saveWithLock 経由で updated_at を比較し、
+// 他者が同時編集していた場合は ConflictError を投げる。
 
 import { supabase } from "./client";
 import type {
@@ -11,6 +15,71 @@ import type {
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
 } from "../localData/types";
+
+// ===== 競合エラー =====
+
+export class ConflictError extends Error {
+  table: string;
+  id: string;
+  constructor(table: string, id: string) {
+    super(`他のユーザーが先に「${table}」を変更しました (${id})`);
+    this.name = "ConflictError";
+    this.table = table;
+    this.id = id;
+  }
+}
+
+/**
+ * 楽観ロック付き保存。
+ * - id で既存行を確認 → 存在しなければ insert、存在すれば updated_at 一致条件で update
+ * - update が 0 件 → ConflictError（他のユーザーによる先行変更）
+ * - update に成功すれば updated_at は DB トリガーで NOW() に置き換わる
+ */
+async function saveWithLock<T extends { id: string; updated_at?: unknown }>(
+  table: string,
+  row: T,
+): Promise<void> {
+  const newUpdatedAt = new Date().toISOString();
+
+  const { data: existing, error: e1 } = await supabase
+    .from(table)
+    .select("id,updated_at")
+    .eq("id", row.id)
+    .maybeSingle();
+  if (e1) throw e1;
+
+  if (!existing) {
+    const insertRow = { ...row, updated_at: newUpdatedAt };
+    const { error } = await supabase.from(table).insert(insertRow);
+    if (error) throw error;
+    return;
+  }
+
+  // 楽観ロック：呼び出し側が握っていた updated_at と DB の現状が一致する場合のみ更新
+  const original = row.updated_at instanceof Date
+    ? row.updated_at.toISOString()
+    : (typeof row.updated_at === "string" ? row.updated_at : null);
+
+  if (!original) {
+    // クライアントが updated_at を持っていない（フォーム新規入力など）
+    // → ロックなし更新にフォールバック
+    const { error } = await supabase.from(table).update({ ...row, updated_at: newUpdatedAt }).eq("id", row.id);
+    if (error) throw error;
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from(table)
+    .update({ ...row, updated_at: newUpdatedAt })
+    .eq("id", row.id)
+    .eq("updated_at", original)
+    .select("id");
+
+  if (error) throw error;
+  if (!data || data.length === 0) {
+    throw new ConflictError(table, row.id);
+  }
+}
 
 // ===== 全データ一括取得 =====
 
@@ -77,8 +146,7 @@ export async function fetchAllData() {
 // ===== Member =====
 
 export async function upsertMember(member: Member) {
-  const { error } = await supabase.from("members").upsert(member);
-  if (error) throw error;
+  await saveWithLock("members", member);
 }
 
 export async function softDeleteMember(id: string, deletedBy: string) {
@@ -92,15 +160,13 @@ export async function softDeleteMember(id: string, deletedBy: string) {
 // ===== Objective =====
 
 export async function upsertObjective(obj: Objective) {
-  const { error } = await supabase.from("objectives").upsert(obj);
-  if (error) throw error;
+  await saveWithLock("objectives", obj);
 }
 
 // ===== KeyResult =====
 
 export async function upsertKeyResult(kr: KeyResult) {
-  const { error } = await supabase.from("key_results").upsert(kr);
-  if (error) throw error;
+  await saveWithLock("key_results", kr);
 }
 
 export async function softDeleteKeyResult(id: string, deletedBy: string) {
@@ -114,8 +180,7 @@ export async function softDeleteKeyResult(id: string, deletedBy: string) {
 // ===== TaskForce =====
 
 export async function upsertTaskForce(tf: TaskForce) {
-  const { error } = await supabase.from("task_forces").upsert(tf);
-  if (error) throw error;
+  await saveWithLock("task_forces", tf);
 }
 
 export async function softDeleteTaskForce(id: string, deletedBy: string) {
@@ -129,8 +194,7 @@ export async function softDeleteTaskForce(id: string, deletedBy: string) {
 // ===== ToDo =====
 
 export async function upsertToDo(todo: ToDo) {
-  const { error } = await supabase.from("todos").upsert(todo);
-  if (error) throw error;
+  await saveWithLock("todos", todo);
 }
 
 export async function softDeleteToDo(id: string, deletedBy: string) {
@@ -153,8 +217,7 @@ export async function upsertProject(project: Project) {
     start_date: project.start_date || null,
     end_date:   project.end_date   || null,
   };
-  const { error } = await supabase.from("projects").upsert(row);
-  if (error) throw error;
+  await saveWithLock("projects", row);
 }
 
 export async function softDeleteProject(id: string, deletedBy: string) {
@@ -182,8 +245,7 @@ export async function upsertTask(task: Task) {
     assignee_member_id:  ids[0] ?? null,
     assignee_member_ids: ids,
   };
-  const { error } = await supabase.from("tasks").upsert(row);
-  if (error) throw error;
+  await saveWithLock("tasks", row);
 }
 
 export async function softDeleteTask(id: string, deletedBy: string) {
@@ -197,8 +259,7 @@ export async function softDeleteTask(id: string, deletedBy: string) {
 // ===== QuarterlyObjective =====
 
 export async function upsertQuarterlyObjective(qObj: QuarterlyObjective) {
-  const { error } = await supabase.from("quarterly_objectives").upsert(qObj);
-  if (error) throw error;
+  await saveWithLock("quarterly_objectives", qObj);
 }
 
 export async function softDeleteQuarterlyObjective(id: string, deletedBy: string) {
@@ -254,8 +315,7 @@ export async function deleteTaskProject(taskId: string, projectId: string) {
 // ===== Milestone =====
 
 export async function upsertMilestone(milestone: Milestone) {
-  const { error } = await supabase.from("milestones").upsert(milestone);
-  if (error) throw error;
+  await saveWithLock("milestones", milestone);
 }
 
 export async function softDeleteMilestone(id: string, deletedBy: string) {

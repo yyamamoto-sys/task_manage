@@ -101,7 +101,7 @@ declaration_resultのresult_status:
 
 async function callExtractAI(system: string, userMessage: string, attachment?: FileAttachment): Promise<string> {
   const content = buildMessageContent(userMessage, attachment ?? null);
-  const res = await invokeAI(system, [{ role: "user", content }], 4096);
+  const res = await invokeAI(system, [{ role: "user", content }], 4096, "kr-session-extract");
   return res.content[0].text;
 }
 

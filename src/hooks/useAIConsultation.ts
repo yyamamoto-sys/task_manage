@@ -152,13 +152,15 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           historyForApi,
         );
 
-        // トークン使用量をDBに記録（失敗しても相談の処理は止めない）
+        // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
         insertAiUsageLog({
           member_id: currentMemberId,
           consultation_type: consultationType,
           input_tokens: usage.input_tokens,
           output_tokens: usage.output_tokens,
-        }).catch(() => {});
+        }).catch((err: unknown) => {
+          console.warn("AI使用量ログの記録に失敗（相談は継続）:", err);
+        });
 
         // レスポンスをパース
         const parsed = parseAIResponse(rawResponse);
