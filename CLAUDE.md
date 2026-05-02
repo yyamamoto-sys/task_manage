@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.2
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.3
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -15,8 +15,13 @@
 #      更新：3-1（TaskForce.tf_numberをドロップダウン選択に変更）
 #      更新：8（画面一覧を現状に合わせて更新）
 #      更新：13（ファイル構成にMainLayout.tsx追加）
+# v2.3 zustand 状態管理移行・楽観ロック実装・ErrorBoundary・AIIntent ガード（2026年5月）
+#      追加：Section 1.5（状態管理アーキテクチャ）
+#      更新：Section 5（楽観ロック実装の現状）
+#      更新：Section 6-1（AIIntent 型ガード）
+#      追加：Section 13（appStore.ts / ErrorBoundary.tsx）
 #
-# 最終更新：2026年4月（v2.2）
+# 最終更新：2026-05-02（v2.3）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -50,6 +55,34 @@
 - Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要
 - Claude APIへのデータ送信について社内ポリシーとの整合性確認が必要
 - Teams埋め込みアプリとしての申請手続き確認が必要
+
+---
+
+## 1.5. 状態管理アーキテクチャ（v2.3 で更新）
+
+### zustand ベース・全 selector 化（2026-05-02 完了）
+
+全アプリデータは **`src/stores/appStore.ts` の zustand ストア** に集約。
+コンポーネントは selector 形式で必要な state slice のみ subscribe する。
+
+```typescript
+// ✅ 正しい使い方：個別 selector
+const tasks    = useAppStore(s => s.tasks);
+const saveTask = useAppStore(s => s.saveTask);
+
+// ❌ 旧コード（撤去済み）：useAppData() の全 state 購読は使わない
+const { tasks, saveTask } = useAppData();
+```
+
+`AppDataProvider`（`src/context/AppDataContext.tsx`）は初回 load と Supabase realtime
+購読の lifecycle 管理のみを担う薄い Wrapper。`useAppData()` は撤去済み。
+
+### グローバル副作用
+
+- **エラーバウンダリ**：`src/components/common/ErrorBoundary.tsx` を `main.tsx` ルートに配置。
+  render 時例外で画面真っ白にならず、fallback UI と再読み込みボタンを表示する。
+- **保存エラー通知**：`appStore.ts` の `handleSaveError` が `ConflictError` を判別して
+  Toast 通知 + load() で楽観更新前の state に戻す。
 
 ---
 
@@ -388,6 +421,16 @@ const { data, error } = await supabase
 
 「それでも上書きする」を選択した場合は updated_at チェックなしで強制保存し、変更履歴に「競合上書き」フラグを残す。
 
+### 実装状況（2026-05-02）
+
+`src/lib/supabase/store.ts` に `saveWithLock()` ヘルパーと `ConflictError` を実装し、
+主要エンティティ（tasks/projects/task_forces/todos/key_results/members/milestones/
+quarterly_objectives）の upsert を全て楽観ロック経由に変更。
+
+- 競合時：`ConflictError` を投げる
+- AppStore の `handleSaveError` で検知 → 「他のメンバーが先に編集していたため最新の内容に戻しました」トースト + load() で整合性回復
+- **「それでも上書きする」UI は未実装**（Section 9 で論点化）。現状はリロード前提
+
 ---
 
 ## 6. AI連携設計（確定）
@@ -407,6 +450,27 @@ const response = await fetch("https://api.anthropic.com/v1/messages", {
 // ✅ 正しい経路
 // クライアント → Supabase Edge Function（ai-consult） → Anthropic API
 ```
+
+### 6-1b. AIIntent 型ガード（v2.3 追加）
+
+`src/lib/ai/invokeAI.ts` の `invokeAI()` は **`intent: AIIntent` パラメータ必須**。
+新規 AI 呼び出しを書く時に、ペイロードの性質をコード上で表明させる仕組み。
+
+```typescript
+export type AIIntent =
+  | "task-management"      // payloadBuilder 経由・PJ/Task のみ
+  | "kr-report"            // KR レポート生成（KR/TF を AI に渡す）
+  | "kr-quarter-plan"      // クォーター計画
+  | "kr-session-extract"   // セッション議事録抽出
+  | "kr-why"               // なぜなぜ分析
+  | "meeting-extract"      // 会議文字起こしからタスク抽出
+  | "project-plan"         // AI で PJ 設計
+  | "todo-decompose";      // ToDo 分解
+```
+
+新しい AI 機能を追加するときは、この型に新タグを追加し、当該 prompt builder に
+「KR/TF を渡してよい根拠」をコメントで明示すること。タグなしの呼び出しは
+コンパイルエラー。
 
 ### 6-2. APIキーの管理
 
@@ -712,8 +776,11 @@ const { submit } = useAIConsultation(projectIds);
 
 ```
 src/
+├── stores/
+│   └── appStore.ts               # zustand ストア（全アプリデータの単一真実）
 ├── lib/
 │   ├── ai/
+│   │   ├── invokeAI.ts           # AI 呼び出しの唯一のゲート（AIIntent 必須）
 │   │   ├── types.ts              # AI連携の全型定義（AIErrorCode含む）
 │   │   ├── systemPrompt.ts       # システムプロンプト定数
 │   │   ├── apiClient.ts          # Claude API呼び出し（Edge Function経由）
@@ -724,13 +791,20 @@ src/
 │   │   ├── sessionManager.ts     # 会話セッション管理（DBに保存しない）
 │   │   ├── krQuarterPlanPrompt.ts  # クォーター計画AI：クォーター計算・コンテキスト生成・システムプロンプト
 │   │   └── krQuarterPlanClient.ts  # クォーター計画AI：対話・計画書生成・JSONパーサー
+│   ├── localData/
+│   │   └── localStore.ts         # localStorage キー一元化（KEYS / LS_KEY / migrateLocalStorage / active()）
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
 │       ├── auth.ts               # セッション取得（getSupabaseSession）
+│       ├── store.ts              # 低レベル CRUD + saveWithLock（楽観ロック）+ ConflictError
 │       └── quarterPlanStore.ts   # クォーター計画保存（Phase 1: localStorage、Supabase移行準備済み）
+├── context/
+│   └── AppDataContext.tsx        # 初回 load + Supabase realtime 購読の lifecycle 管理（薄い Wrapper）
 ├── hooks/
 │   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
 └── components/
+    ├── common/
+    │   └── ErrorBoundary.tsx     # ルート ErrorBoundary（main.tsx で配置）
     ├── layout/
     │   └── MainLayout.tsx                 # メインレイアウト・ナビゲーション・QuickAddTaskModal（FAB）
     ├── consultation/

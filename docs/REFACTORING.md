@@ -30,6 +30,18 @@
 | L4 | AutoTextarea の JS フォールバック削除（CSS field-sizing で代替） | `src/components/admin/AdminView.tsx` |
 | L5 | CLAUDE.md の `todo_id → todo_ids` 記述更新 | `CLAUDE.md` |
 
+## 完了済み（2026-05-01〜02）大規模対応
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| - | **lazy load**: ビュー/ラボパネルを `React.lazy` 化（初回バンドル 105kB→95kB gzip） | `0ed8e50` |
+| - | **DB 最適化**: 索引24本追加・schema.sql 統合・admin_change_logs 自動削除（pg_cron）・サーバー側 is_deleted フィルタ | `6d15e47` |
+| - | **localStorage 一元化**: KEYS / LS_KEY ビルダー + `migrateLocalStorage()` でスキーマバージョン管理 | `f73e4a6` |
+| - | **Refined Stationery テーマ**: インクブルーへ・暖色寄り紙質背景・Noto Serif JP 補助フェイス | `7a20394` |
+| - | **致命的レビュー指摘 ①〜⑥ 修正**: ErrorBoundary・楽観ロック（`saveWithLock` + `ConflictError`）・catch 握りつぶし修正・AIIntent 型ガード・active() ヘルパー・AI 紫トークン化（基盤） | `48e4e9d` |
+| **H4 完了** | **zustand 移行（旧 H1 高リスク扱いの本体）**: AppDataContext を 40行 Wrapper に縮小、22 コンポーネントを `useAppStore(s => s.X)` selector 形式に移行。再レンダー範囲の絞り込み実現 | `3d04b3e` `288c3e6` |
+| - | リスト一括操作（チェックボックス＋ステータス/担当者/削除一括変更）、サイドバー「自分のPJ」フィルタ、なぜなぜTFを現Q絞り込み | `0793f57` |
+
 ---
 
 ## 未完了・次回候補
@@ -50,11 +62,20 @@
 | L2 | useMemo の依存配列見直し（過不足チェック） | 低 | eslint-plugin-react-hooks で自動検出可能 |
 | L3 | 型定義の整理（Task.comment が string | undefined か string かの統一） | 低 | `comment: string` で統一済みの可能性あり。確認のみ |
 
-### 高リスク（実施しない）
-| 項目 | 内容 | 理由 |
+### 高リスク
+| 項目 | 内容 | 状態 |
 |------|------|------|
-| H1 | AdminView.tsx の完全分割（2400行 → 複数ファイル） | コンポーネント間の state 依存が複雑 |
-| H4 | AppDataContext を Custom Hook 群に分割 | 全コンポーネントへの影響が大きい |
+| H1 | AdminView.tsx の完全分割（2400行 → 複数ファイル） | **保留**（state 依存が複雑・効果が見合うか要見極め） |
+| H4 | AppDataContext を Custom Hook 群に分割 | **完了（zustand 移行で代替）** 2026-05-02 / `288c3e6` |
+
+### シニアレビュー指摘の残課題（2026-05-02 監査時点）
+| 項目 | 内容 | 工数目安 |
+|------|------|---------|
+| **A11y 全面対応** | 全 button 化＋aria-label 付与（Teams 埋め込みで必須） | 2 週間規模 |
+| **RLS 細分化** | 全テーブル `using (true)` を owner/role ベースに（業務側でロール定義決定後） | 1 週間 |
+| **テスト基盤** | vitest セットアップ + payloadBuilder/applyProposal/sanitizeComment の最低限テスト | 1 週間 |
+| AI 紫の全置換 | 54箇所の hex を `var(--color-ai-*)` に置換（基盤は `globals.css` で完了済み） | 機械的 sweep |
+| `active()` の全適用 | 各コンポーネントの `.filter(x => !x.is_deleted)` を集約（基盤は `localStore.ts` で完了済み） | 機械的 sweep |
 
 ---
 
