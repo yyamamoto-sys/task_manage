@@ -1,6 +1,6 @@
 // src/components/list/ListView.tsx
 import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
@@ -62,7 +62,11 @@ function lsSet(field: string, value: unknown) {
 }
 
 export function ListView({ currentUser, selectedProject, projects, krTaskIds }: Props) {
-  const { tasks: rawTasks, members: rawMembers, todos: rawTodos, saveTask, deleteTask } = useAppData();
+  const rawTasks   = useAppStore(s => s.tasks);
+  const rawMembers = useAppStore(s => s.members);
+  const rawTodos   = useAppStore(s => s.todos);
+  const saveTask   = useAppStore(s => s.saveTask);
+  const deleteTask = useAppStore(s => s.deleteTask);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);

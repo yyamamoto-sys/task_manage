@@ -8,7 +8,7 @@
 // Phase 1: localStorage保存（Supabase移行はquarterPlanStore.tsのみ差し替え）
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import {
@@ -280,7 +280,12 @@ interface Props {
 }
 
 export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
-  const { keyResults, taskForces, todos, tasks, members, objective } = useAppData();
+  const keyResults = useAppStore(s => s.keyResults);
+  const taskForces = useAppStore(s => s.taskForces);
+  const todos      = useAppStore(s => s.todos);
+  const tasks      = useAppStore(s => s.tasks);
+  const members    = useAppStore(s => s.members);
+  const objective  = useAppStore(s => s.objective);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),

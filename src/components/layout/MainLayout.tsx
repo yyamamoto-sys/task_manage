@@ -1,7 +1,7 @@
 // src/components/layout/MainLayout.tsx
 import { useState, useMemo, useRef, lazy, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
@@ -114,7 +114,11 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     setAppModeState(m);
   };
 
-  const { projects: allProjects, keyResults: rawKrs, taskForces: rawTfs, taskTaskForces: rawTtfs, tasks: rawTasks } = useAppData();
+  const allProjects = useAppStore(s => s.projects);
+  const rawKrs      = useAppStore(s => s.keyResults);
+  const rawTfs      = useAppStore(s => s.taskForces);
+  const rawTtfs     = useAppStore(s => s.taskTaskForces);
+  const rawTasks    = useAppStore(s => s.tasks);
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]

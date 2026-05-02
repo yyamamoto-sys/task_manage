@@ -5,7 +5,7 @@
 // KR/TFデータをAIに渡す（ラボ機能例外ルール適用）。
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { LS_KEY } from "../../lib/localData/localStore";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
@@ -61,10 +61,15 @@ function loadSavedSummary(krId: string): SavedSummary | null {
 }
 
 export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
-  const {
-    keyResults, taskForces, objective, todos, tasks, members, projects,
-    quarterlyObjectives, quarterlyKrTaskForces,
-  } = useAppData();
+  const keyResults              = useAppStore(s => s.keyResults);
+  const taskForces              = useAppStore(s => s.taskForces);
+  const objective               = useAppStore(s => s.objective);
+  const todos                   = useAppStore(s => s.todos);
+  const tasks                   = useAppStore(s => s.tasks);
+  const members                 = useAppStore(s => s.members);
+  const projects                = useAppStore(s => s.projects);
+  const quarterlyObjectives     = useAppStore(s => s.quarterlyObjectives);
+  const quarterlyKrTaskForces   = useAppStore(s => s.quarterlyKrTaskForces);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),

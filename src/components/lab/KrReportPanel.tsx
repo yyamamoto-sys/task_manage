@@ -6,7 +6,7 @@
 // GraphViewと同じフルスクリーンオーバーレイ形式で表示する。
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { LS_KEY } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
@@ -64,7 +64,11 @@ function loadSavedReport(krId: string, m: KrReportMode): SavedReport | null {
 }
 
 export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
-  const { keyResults, taskForces, todos, tasks, members } = useAppData();
+  const keyResults = useAppStore(s => s.keyResults);
+  const taskForces = useAppStore(s => s.taskForces);
+  const todos      = useAppStore(s => s.todos);
+  const tasks      = useAppStore(s => s.tasks);
+  const members    = useAppStore(s => s.members);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),

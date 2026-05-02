@@ -6,7 +6,7 @@
 // ラボ機能（プロトタイプ）として位置づけ。
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -86,11 +86,14 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
     clickStart: { x: number; y: number } | null;
   }>();
 
-  const {
-    objective, keyResults: rawKrs, taskForces: rawTfs,
-    todos: rawTodos, tasks: rawTasks, projects: rawProjects,
-    projectTaskForces, members,
-  } = useAppData();
+  const objective         = useAppStore(s => s.objective);
+  const rawKrs            = useAppStore(s => s.keyResults);
+  const rawTfs            = useAppStore(s => s.taskForces);
+  const rawTodos          = useAppStore(s => s.todos);
+  const rawTasks          = useAppStore(s => s.tasks);
+  const rawProjects       = useAppStore(s => s.projects);
+  const projectTaskForces = useAppStore(s => s.projectTaskForces);
+  const members           = useAppStore(s => s.members);
 
   // メンバーマップ（id→表示名）
   const memberMap = useMemo(

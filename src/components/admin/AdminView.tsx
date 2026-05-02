@@ -8,7 +8,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
@@ -153,9 +153,11 @@ export function AdminView({ currentUser }: Props) {
 // ===================================================
 
 function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const {
-    objective: ctxObj, keyResults: rawKrs, saveObjective, saveKeyResult, deleteKeyResult,
-  } = useAppData();
+  const ctxObj          = useAppStore(s => s.objective);
+  const rawKrs          = useAppStore(s => s.keyResults);
+  const saveObjective   = useAppStore(s => s.saveObjective);
+  const saveKeyResult   = useAppStore(s => s.saveKeyResult);
+  const deleteKeyResult = useAppStore(s => s.deleteKeyResult);
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
@@ -351,16 +353,23 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
 // 割り当て済みTFにはToDoパネルが展開でき、大タスクを直接追加できる。
 
 function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const {
-    objective: ctxObj,
-    taskForces: rawTfs, keyResults: rawKrs, members: rawMembers,
-    todos: rawTodos, tasks: rawTasks,
-    quarterlyObjectives: rawQObjs, quarterlyKrTaskForces,
-    saveTaskForce, deleteTaskForce,
-    saveToDo, deleteToDo, saveTask,
-    addQuarterlyKrTaskForce, removeQuarterlyKrTaskForce,
-    saveQuarterlyObjective, deleteQuarterlyObjective,
-  } = useAppData();
+  const ctxObj                      = useAppStore(s => s.objective);
+  const rawTfs                      = useAppStore(s => s.taskForces);
+  const rawKrs                      = useAppStore(s => s.keyResults);
+  const rawMembers                  = useAppStore(s => s.members);
+  const rawTodos                    = useAppStore(s => s.todos);
+  const rawTasks                    = useAppStore(s => s.tasks);
+  const rawQObjs                    = useAppStore(s => s.quarterlyObjectives);
+  const quarterlyKrTaskForces       = useAppStore(s => s.quarterlyKrTaskForces);
+  const saveTaskForce               = useAppStore(s => s.saveTaskForce);
+  const deleteTaskForce             = useAppStore(s => s.deleteTaskForce);
+  const saveToDo                    = useAppStore(s => s.saveToDo);
+  const deleteToDo                  = useAppStore(s => s.deleteToDo);
+  const saveTask                    = useAppStore(s => s.saveTask);
+  const addQuarterlyKrTaskForce     = useAppStore(s => s.addQuarterlyKrTaskForce);
+  const removeQuarterlyKrTaskForce  = useAppStore(s => s.removeQuarterlyKrTaskForce);
+  const saveQuarterlyObjective      = useAppStore(s => s.saveQuarterlyObjective);
+  const deleteQuarterlyObjective    = useAppStore(s => s.deleteQuarterlyObjective);
 
   const isMobile = useIsMobile();
   const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
@@ -1226,7 +1235,13 @@ function ToDoForm({
 // ===================================================
 
 function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const { projects: rawProjects, members: rawMembers, saveProject, deleteProject, milestones: rawMilestones, saveMilestone, deleteMilestone } = useAppData();
+  const rawProjects     = useAppStore(s => s.projects);
+  const rawMembers      = useAppStore(s => s.members);
+  const saveProject     = useAppStore(s => s.saveProject);
+  const deleteProject   = useAppStore(s => s.deleteProject);
+  const rawMilestones   = useAppStore(s => s.milestones);
+  const saveMilestone   = useAppStore(s => s.saveMilestone);
+  const deleteMilestone = useAppStore(s => s.deleteMilestone);
   const isMobile = useIsMobile();
   const projects   = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
   const members    = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
@@ -1515,7 +1530,9 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 // ===================================================
 
 function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const { members: rawMembers, saveMember, deleteMember } = useAppData();
+  const rawMembers   = useAppStore(s => s.members);
+  const saveMember   = useAppStore(s => s.saveMember);
+  const deleteMember = useAppStore(s => s.deleteMember);
   const isMobile = useIsMobile();
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
 
@@ -2096,9 +2113,10 @@ function AIUsageSection() {
 // ===================================================
 
 function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const {
-    tasks: rawTasks, members: rawMembers, projects: rawProjects, saveTask,
-  } = useAppData();
+  const rawTasks    = useAppStore(s => s.tasks);
+  const rawMembers  = useAppStore(s => s.members);
+  const rawProjects = useAppStore(s => s.projects);
+  const saveTask    = useAppStore(s => s.saveTask);
 
   const tasks    = useMemo(() => rawTasks.filter((t: Task) => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);

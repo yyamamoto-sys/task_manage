@@ -2,7 +2,7 @@
 // OKR管理モードのメインビュー。タブ型UI：セッション記録（レポート統合）/なぜなぜ/計画/概要
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrReportPanel } from "../lab/KrReportPanel";
@@ -51,7 +51,11 @@ const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
 export function OkrDashboardView({
   currentUser, selectedKrId, onSelectKr, activeTool, onSetActiveTool,
 }: Props) {
-  const { objective, keyResults, taskForces, tasks, todos } = useAppData();
+  const objective  = useAppStore(s => s.objective);
+  const keyResults = useAppStore(s => s.keyResults);
+  const taskForces = useAppStore(s => s.taskForces);
+  const tasks      = useAppStore(s => s.tasks);
+  const todos      = useAppStore(s => s.todos);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),

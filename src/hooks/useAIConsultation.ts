@@ -13,7 +13,7 @@
 // useUndoStack内部で使用し、undo/canUndo/undoStackをexportする。
 
 import { useState, useCallback, useRef } from "react";
-import { useAppData } from "../context/AppDataContext";
+import { useAppStore } from "../stores/appStore";
 import type { ConsultationType } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
 import { callAIConsultation } from "../lib/ai/apiClient";
@@ -68,7 +68,14 @@ function getRandomLoadingMessage(): string {
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
 export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
-  const { projects, tasks, members, todos, objective, keyResults, taskForces, reload } = useAppData();
+  const projects   = useAppStore(s => s.projects);
+  const tasks      = useAppStore(s => s.tasks);
+  const members    = useAppStore(s => s.members);
+  const todos      = useAppStore(s => s.todos);
+  const objective  = useAppStore(s => s.objective);
+  const keyResults = useAppStore(s => s.keyResults);
+  const taskForces = useAppStore(s => s.taskForces);
+  const reload     = useAppStore(s => s.reload);
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [session, setSession] = useState<ConsultationSession>(createSession());

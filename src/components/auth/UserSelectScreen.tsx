@@ -1,7 +1,7 @@
 // src/components/auth/UserSelectScreen.tsx
 import { useState } from "react";
 import { getCurrentUser, KEYS } from "../../lib/localData/localStore";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -9,7 +9,8 @@ interface Props {
 }
 
 export function UserSelectScreen({ onLogin }: Props) {
-  const { members: allMembers, loading } = useAppData();
+  const allMembers = useAppStore(s => s.members);
+  const loading    = useAppStore(s => s.loading);
   const members = allMembers.filter(m => !m.is_deleted);
   const lastUser = getCurrentUser();
   const lastUserFromContext = lastUser ? members.find(m => m.id === lastUser.id) ?? null : null;

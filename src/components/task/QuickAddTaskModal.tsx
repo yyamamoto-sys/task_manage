@@ -3,7 +3,7 @@
 // MainLayout.tsx から切り出し。
 
 import { useState, useMemo } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { v4 as uuidv4 } from "uuid";
@@ -18,10 +18,14 @@ interface Props {
 const TODO_OTHER_ID = "__other__";
 
 export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
-  const {
-    saveTask, members: rawMembers, taskForces: rawTfs, todos: rawTodos,
-    keyResults: rawKrs, objective, quarterlyObjectives, quarterlyKrTaskForces,
-  } = useAppData();
+  const saveTask                = useAppStore(s => s.saveTask);
+  const rawMembers              = useAppStore(s => s.members);
+  const rawTfs                  = useAppStore(s => s.taskForces);
+  const rawTodos                = useAppStore(s => s.todos);
+  const rawKrs                  = useAppStore(s => s.keyResults);
+  const objective               = useAppStore(s => s.objective);
+  const quarterlyObjectives     = useAppStore(s => s.quarterlyObjectives);
+  const quarterlyKrTaskForces   = useAppStore(s => s.quarterlyKrTaskForces);
   const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);

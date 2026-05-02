@@ -12,7 +12,7 @@
 import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS } from "../../lib/localData/localStore";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -48,7 +48,7 @@ function getInitials(name: string): string {
 }
 
 export function SetupWizard({ onComplete }: Props) {
-  const { saveMember } = useAppData();
+  const saveMember = useAppStore(s => s.saveMember);
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [members, setMembers] = useState<MemberDraft[]>([
     {

@@ -6,7 +6,7 @@
 // 進行役1人が代表入力するシングル入力モデル。
 
 import { useState, useMemo } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import {
   extractCheckinData,
@@ -80,7 +80,8 @@ interface Props {
 }
 
 export function KrSessionPanel({ onClose, currentUser, inline = false, initialKrId, onSaved }: Props) {
-  const { keyResults, members } = useAppData();
+  const keyResults = useAppStore(s => s.keyResults);
+  const members    = useAppStore(s => s.members);
   const activeKrs = useMemo(() => (keyResults ?? []).filter(kr => !kr.is_deleted), [keyResults]);
   const activeMembers = useMemo(() => (members ?? []).filter(m => !m.is_deleted), [members]);
 

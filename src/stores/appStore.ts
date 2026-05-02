@@ -1,14 +1,15 @@
 // src/stores/appStore.ts
 //
 // 【設計意図】
-// 全アプリデータの zustand ストア。React Context から段階的移行中（Phase 1）。
+// 全アプリデータの zustand ストア。Phase 5 まで完了し全コンポーネントが
+// useAppStore(s => s.X) の selector ベースで購読。
 //
-// AppDataContext から作業を移し、コンポーネントは将来的に
-//   const tasks = useAppStore(s => s.tasks);
-// のような selector 形式に書き換えると、必要な部分だけが再レンダーされる。
+// コンポーネントは必要な state だけを subscribe し、無関係な state 変更による
+// 再レンダーは発生しない（旧 React Context 設計の致命的問題を解消）。
 //
-// 移行期間中は AppDataContext.tsx の useAppData() がこのストアを wrap して
-// 既存の API 互換性を保つ（Phase 1 では挙動・パフォーマンス共に変化なし）。
+// 利用例:
+//   const tasks    = useAppStore(s => s.tasks);
+//   const saveTask = useAppStore(s => s.saveTask);
 //
 // CRUD 操作は楽観的更新パターン:
 //   1. set() でローカル state を即座に更新（UI 反応速度のため）

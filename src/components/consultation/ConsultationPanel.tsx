@@ -8,7 +8,7 @@ import { SessionHistoryPanel } from "./SessionHistoryPanel";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import type { ConsultationType } from "../../lib/ai/types";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
 import { ChatHistory } from "./ChatHistory";
 import { FollowUpButtons } from "./FollowUpButtons";
@@ -181,7 +181,10 @@ export function ConsultationPanel({
   const consultationType: ConsultationType = manualType ?? autoType;
   const isAutoDetected = manualType === null;
 
-  const { reload, members: rawMembers, saveProject, saveTask } = useAppData();
+  const reload      = useAppStore(s => s.reload);
+  const rawMembers  = useAppStore(s => s.members);
+  const saveProject = useAppStore(s => s.saveProject);
+  const saveTask    = useAppStore(s => s.saveTask);
   const members = useMemo(() => (rawMembers ?? []).filter(m => !m.is_deleted), [rawMembers]);
   const today = new Date().toISOString().slice(0, 10);
 

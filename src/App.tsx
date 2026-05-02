@@ -9,7 +9,8 @@ import { SetupWizard } from "./components/auth/SetupWizard";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
-import { AppDataProvider, useAppData } from "./context/AppDataContext";
+import { AppDataProvider } from "./context/AppDataContext";
+import { useAppStore } from "./stores/appStore";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
@@ -106,7 +107,10 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
-  const { members, loading, error, reload } = useAppData();
+  const members = useAppStore(s => s.members);
+  const loading = useAppStore(s => s.loading);
+  const error   = useAppStore(s => s.error);
+  const reload  = useAppStore(s => s.reload);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && members.filter(m => !m.is_deleted).length > 0);

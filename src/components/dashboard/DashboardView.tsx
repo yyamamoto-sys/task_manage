@@ -14,7 +14,7 @@
 // 手動入力方式はPhase 5以降で検討。
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce, ToDo,
@@ -33,10 +33,14 @@ interface Props {
 // ===== メインコンポーネント =====
 
 export function DashboardView({ currentUser, projects, onOpenAiProject }: Props) {
-  const {
-    tasks: rawTasks, members: rawMembers, keyResults: rawKrs,
-    taskForces: rawTfs, projectTaskForces: rawPtfs, todos: rawTodos,
-  } = useAppData();
+  // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
+  // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
+  const rawTasks   = useAppStore(s => s.tasks);
+  const rawMembers = useAppStore(s => s.members);
+  const rawKrs     = useAppStore(s => s.keyResults);
+  const rawTfs     = useAppStore(s => s.taskForces);
+  const rawPtfs    = useAppStore(s => s.projectTaskForces);
+  const rawTodos   = useAppStore(s => s.todos);
   const isMobile = useIsMobile();
 
   const [myOnly, setMyOnly] = useState(false);

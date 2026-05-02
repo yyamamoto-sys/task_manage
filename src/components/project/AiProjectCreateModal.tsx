@@ -6,7 +6,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import {
   callProjectPlanDialogue,
@@ -45,7 +45,9 @@ const PROJECT_COLORS = [
 const MAX_TURNS = 4;
 
 export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
-  const { members: rawMembers, saveProject, saveTask } = useAppData();
+  const rawMembers  = useAppStore(s => s.members);
+  const saveProject = useAppStore(s => s.saveProject);
+  const saveTask    = useAppStore(s => s.saveTask);
   const members = (rawMembers ?? []).filter(m => !m.is_deleted);
   const today = new Date().toISOString().slice(0, 10);
 

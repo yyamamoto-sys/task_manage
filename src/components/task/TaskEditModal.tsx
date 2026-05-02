@@ -8,7 +8,7 @@
 // 削除は確認ダイアログ付き論理削除。
 
 import { useState, useCallback, useMemo } from "react";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, TaskForce, TaskTaskForce, TaskProject } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
@@ -26,12 +26,19 @@ interface Props {
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
-  const {
-    tasks: allTasks, members: allMembers, projects: allProjects,
-    taskForces: allTaskForces, todos: allTodos,
-    taskTaskForces: allTaskTaskForces, taskProjects: allTaskProjects,
-    saveTask, deleteTask, addTaskTaskForce, removeTaskTaskForce, addTaskProject, removeTaskProject,
-  } = useAppData();
+  const allTasks            = useAppStore(s => s.tasks);
+  const allMembers          = useAppStore(s => s.members);
+  const allProjects         = useAppStore(s => s.projects);
+  const allTaskForces       = useAppStore(s => s.taskForces);
+  const allTodos            = useAppStore(s => s.todos);
+  const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
+  const allTaskProjects     = useAppStore(s => s.taskProjects);
+  const saveTask            = useAppStore(s => s.saveTask);
+  const deleteTask          = useAppStore(s => s.deleteTask);
+  const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
+  const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
+  const addTaskProject      = useAppStore(s => s.addTaskProject);
+  const removeTaskProject   = useAppStore(s => s.removeTaskProject);
   const isMobile = useIsMobile();
 
   const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);

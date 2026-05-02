@@ -9,7 +9,7 @@ import { useState } from "react";
 import type { ConfirmationDialog, PjEndDateItem, NewTaskItem } from "../../lib/ai/applyProposal";
 import { applyProposalWithConfirmation } from "../../lib/ai/applyProposal";
 import type { ApplyResult } from "../../lib/ai/applyProposal";
-import { useAppData } from "../../context/AppDataContext";
+import { useAppStore } from "../../stores/appStore";
 
 interface Props {
   dialog: ConfirmationDialog;
@@ -24,7 +24,7 @@ export function ConfirmationDialogModal({
   onClose,
   onApplied,
 }: Props) {
-  const { members } = useAppData();
+  const members = useAppStore(s => s.members);
   const isDateChange = dialog.action_type === "date_change";
   const isDeleteAction =
     dialog.action_type === "scope_reduce" || dialog.action_type === "pause";
