@@ -76,27 +76,15 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
   });
   const [saved, setSaved] = useState(false);
 
-  if (!originalTask) return null;
-
-  const assigneeMembers = members.filter(m =>
-    (originalTask.assignee_member_ids?.length
-      ? originalTask.assignee_member_ids
-      : originalTask.assignee_member_id ? [originalTask.assignee_member_id] : []
-    ).includes(m.id)
-  );
-  const project    = projects.find(p => p.id === originalTask.project_id);
-  const linkedTodos = todos.filter(t => (originalTask.todo_ids ?? []).includes(t.id));
   // ToDo選択肢をTFごとにグループ化
   const todosByTf = useMemo(() => {
     return taskForces
       .filter(tf => todos.some(t => t.tf_id === tf.id))
       .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
   }, [taskForces, todos]);
-  const isOverdue = originalTask.due_date
-    && originalTask.due_date < todayStr()
-    && originalTask.status !== "done";
 
   const handleSave = useCallback(() => {
+    if (!originalTask) return;
     const hours = parseFloat(form.estimated_hours);
     const updated: Task = {
       ...originalTask,
@@ -118,14 +106,30 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     setSaved(true);
     setTimeout(() => { setSaved(false); setEditing(false); }, 800);
     onUpdated?.(updated);
-  }, [form, originalTask, saveTask, onUpdated]);
+  }, [form, originalTask, saveTask, onUpdated, currentUser.id]);
 
   const handleDelete = useCallback(async () => {
+    if (!originalTask) return;
     if (!await confirmDialog(`「${originalTask.name}」を削除しますか？`)) return;
     deleteTask(taskId, currentUser.id);
     onDeleted?.(taskId);
     onClose();
-  }, [originalTask.name, taskId, currentUser.id, deleteTask, onDeleted, onClose]);
+  }, [originalTask, taskId, currentUser.id, deleteTask, onDeleted, onClose]);
+
+  // 全 Hooks を呼び終えた後に early return（react-hooks/rules-of-hooks 遵守）
+  if (!originalTask) return null;
+
+  const assigneeMembers = members.filter(m =>
+    (originalTask.assignee_member_ids?.length
+      ? originalTask.assignee_member_ids
+      : originalTask.assignee_member_id ? [originalTask.assignee_member_id] : []
+    ).includes(m.id)
+  );
+  const project    = projects.find(p => p.id === originalTask.project_id);
+  const linkedTodos = todos.filter(t => (originalTask.todo_ids ?? []).includes(t.id));
+  const isOverdue = originalTask.due_date
+    && originalTask.due_date < todayStr()
+    && originalTask.status !== "done";
 
   const statusArr: Task["status"][] = ["todo", "in_progress", "done"];
 

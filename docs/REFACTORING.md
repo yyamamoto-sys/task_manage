@@ -30,6 +30,33 @@
 | L4 | AutoTextarea の JS フォールバック削除（CSS field-sizing で代替） | `src/components/admin/AdminView.tsx` |
 | L5 | CLAUDE.md の `todo_id → todo_ids` 記述更新 | `CLAUDE.md` |
 
+## 完了済み（2026-05-08）A11y Phase 1：ESLint + jsx-a11y 導入
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **ESLint v9 + jsx-a11y セットアップ** | `eslint`・`@eslint/js`・`typescript-eslint`・`eslint-plugin-react`・`eslint-plugin-react-hooks`・`eslint-plugin-jsx-a11y`・`globals` を devDeps 追加。flat config (`eslint.config.js`) で React 18 + jsx-a11y recommended ルール一式を `error` で固定。`npm run lint` / `lint:fix` 追加 | （次のコミット） |
+| **fix: TaskEditModal の React Hooks ルール違反 8件**（実バグ） | `if (!originalTask) return null;` が `useMemo`/`useCallback` より前に置かれ、Hooks の呼び出し順序が条件分岐していた（`react-hooks/rules-of-hooks` 違反）。null guard を Hook 内部に移し、early return を全 Hooks の後ろに移動。これにより React の hooks 不整合エラーで画面真っ白になるリスクが除去された | 同上 |
+
+### 残違反のベースライン（180 problems = 131 errors + 49 warnings）
+
+ESLint 導入時点でのベースライン。次セッション以降のスイープ対象：
+
+| ルール | 件数 | 種別 | 備考 |
+|---|---|---|---|
+| `jsx-a11y/no-static-element-interactions` | 50 errors | a11y | div onClick → button 化 |
+| `jsx-a11y/click-events-have-key-events` | 43 errors | a11y | 上のペア（同箇所が両方計上） |
+| `jsx-a11y/label-has-associated-control` | 20 errors | a11y | フォームの label 紐づけ |
+| `no-irregular-whitespace` | 10 errors | 品質 | OkrDashboardView.tsx 1ファイルに集中 |
+| `jsx-a11y/no-autofocus` | 8 warnings | a11y | autoFocus の撤去 |
+| `react-hooks/exhaustive-deps` | 7 warnings | 品質 | useCallback/useMemo 依存配列 |
+| `jsx-a11y/no-noninteractive-element-interactions` | 3 warnings | a11y | li/span の click |
+| `@typescript-eslint/no-unused-expressions` | 2 errors | 品質 | ListView.tsx |
+| `no-useless-escape` | 1 error | 品質 | meetingExtractor.ts |
+| `@typescript-eslint/no-unused-vars` | 30 warnings | クリーンアップ | 未使用 import |
+| ~~`react-hooks/rules-of-hooks`~~ | ~~8 errors~~ | ~~実バグ~~ | **解消済（このコミットで修正）** |
+
+実 a11y 違反は 50 + 20 + 11 ≒ 81 ヶ所相当。実質作業は **1ファイル単位の機械的 sweep**（次セッションで実施）。
+
 ## 完了済み（2026-05-08）テスト基盤 Phase A・B・C
 
 合計 53 テスト・3 ファイル。`npm test` で全部回る。
@@ -83,7 +110,7 @@
 ### シニアレビュー指摘の残課題（2026-05-02 監査時点）
 | 項目 | 内容 | 工数目安 |
 |------|------|---------|
-| **A11y 全面対応** | 全 button 化＋aria-label 付与（Teams 埋め込みで必須） | 2 週間規模 |
+| A11y Phase 2: a11y スイープ | ESLint 導入済（`npm run lint`）。残 131 errors / 49 warnings（実 a11y 違反 81 箇所相当）をファイル単位で sweep | 1〜1.5 週 |
 | **RLS 細分化** | 全テーブル `using (true)` を owner/role ベースに（業務側でロール定義決定後） | 1 週間 |
 | ~~**テスト基盤**~~ | ~~vitest セットアップ + sanitize/payloadBuilder/applyProposal の最低限テスト~~ | **Phase A・B・C 全て完了（2026-05-08・1セッション）** |
 | AI 紫の全置換 | 54箇所の hex を `var(--color-ai-*)` に置換（基盤は `globals.css` で完了済み） | 機械的 sweep |
