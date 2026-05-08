@@ -30,14 +30,17 @@
 | L4 | AutoTextarea の JS フォールバック削除（CSS field-sizing で代替） | `src/components/admin/AdminView.tsx` |
 | L5 | CLAUDE.md の `todo_id → todo_ids` 記述更新 | `CLAUDE.md` |
 
-## 完了済み（2026-05-08）テスト基盤 Phase A・B
+## 完了済み（2026-05-08）テスト基盤 Phase A・B・C
+
+合計 53 テスト・3 ファイル。`npm test` で全部回る。
 
 | 項目 | 内容 | コミット |
 |------|------|---------|
 | **vitest セットアップ** | `vitest` 3 + `@vitest/coverage-v8` を devDeps 追加。`vitest.config.ts` 作成。`npm test` / `test:watch` / `test:coverage` スクリプト追加 | `feec28b` |
 | **sanitize テスト 13本** | `src/lib/ai/__tests__/sanitize.test.ts` でネットワークパス／UNC／ローカルパス／メール／複合／イミュータブル性をカバー | `feec28b` |
 | **fix: UNCパス正規表現が URL を破壊するバグ** | `sanitizeComment` の UNCパス検出（`//host/path`）が `https://example.com/...` の `//example.com/...` 部分にもマッチして AI ペイロードの URL を `https:[ファイルパス省略]` に壊していた。負の後読み `(?<!:)` で URL を除外 | `feec28b` |
-| **payloadBuilder テスト 22本** | AI境界（contribution_memo・okr_context が漏れない）／論理削除/archived の除外／shortId とマップ／コメントサニタイズ統合／会計四半期判定（1月=1Q・12月→翌年1Q）／メンバー工数集計／OKRモード（is_deleted KR/TF 除外）／ToDo 仮想PJ化／retry_hint をカバー。`deepHasKey` ヘルパーで漏洩を再帰検査 | （次のコミット） |
+| **payloadBuilder テスト 22本** | AI境界（contribution_memo・okr_context が漏れない）／論理削除/archived の除外／shortId とマップ／コメントサニタイズ統合／会計四半期判定（1月=1Q・12月→翌年1Q）／メンバー工数集計／OKRモード（is_deleted KR/TF 除外）／ToDo 仮想PJ化／retry_hint をカバー。`deepHasKey` ヘルパーで漏洩を再帰検査 | `f4b8714` |
+| **applyProposal テスト 18本** | Supabase クライアントを `vi.mock` で thenable な query builder に差し替え。**物理削除しないこと（CLAUDE.md Section 4）を機械保証**（`.delete()` 呼び出しを検知すればテスト失敗）／scope_reduce/pause が `is_deleted=true` で UPDATE すること／needs_confirmation 系（date_change・assignee）が SELECT のみで UPDATE しないこと／risk・no_tasks・deadline_risk が SELECT+UPDATE の2ステップ＋楽観ロック付きで comment 追記すること／競合検知エラー／add_task の INSERT 時 status="todo"・is_deleted=false／空名タスクのスキップ／milestone/info の error 返却／確認後の date_change/assignee/add_task 確定処理をカバー | （次のコミット） |
 
 ## 完了済み（2026-05-01〜02）大規模対応
 
@@ -82,8 +85,7 @@
 |------|------|---------|
 | **A11y 全面対応** | 全 button 化＋aria-label 付与（Teams 埋め込みで必須） | 2 週間規模 |
 | **RLS 細分化** | 全テーブル `using (true)` を owner/role ベースに（業務側でロール定義決定後） | 1 週間 |
-| ~~**テスト基盤**~~ | ~~vitest セットアップ + sanitize/payloadBuilder/applyProposal の最低限テスト~~ | **Phase A・B 完了（2026-05-08）／Phase C 残** |
-| テスト基盤 Phase C | `applyProposal` テスト（Supabaseモック必要・物理削除しないこと・needs_confirmation 系は DB 触らない・risk追記の SELECT+UPDATE 等） | 0.5〜1週 |
+| ~~**テスト基盤**~~ | ~~vitest セットアップ + sanitize/payloadBuilder/applyProposal の最低限テスト~~ | **Phase A・B・C 全て完了（2026-05-08・1セッション）** |
 | AI 紫の全置換 | 54箇所の hex を `var(--color-ai-*)` に置換（基盤は `globals.css` で完了済み） | 機械的 sweep |
 | `active()` の全適用 | 各コンポーネントの `.filter(x => !x.is_deleted)` を集約（基盤は `localStore.ts` で完了済み） | 機械的 sweep |
 
