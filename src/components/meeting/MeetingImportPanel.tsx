@@ -17,6 +17,7 @@ import {
   type MeetingStatusUpdate,
 } from "../../lib/ai/meetingExtractor";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
 
 const MEETING_PHASES = [
@@ -101,6 +102,9 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const [taskDrafts, setTaskDrafts] = useState<TaskDraft[]>([]);
   const [statusDrafts, setStatusDrafts] = useState<StatusDraft[]>([]);
   const [applyResults, setApplyResults] = useState<{ created: number; updated: number } | null>(null);
+  const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
+    current: 0, total: 1, label: "",
+  });
   const fileInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const dropAreaRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const [isDragging, setIsDragging] = useState(false);
@@ -202,10 +206,23 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     let created = 0;
     let updated = 0;
 
+    const newProjNeeded = taskDrafts.some(d => d.checked && d.project_id === "__new__");
+    const validTaskDrafts = taskDrafts.filter(d => d.checked && d.name.trim());
+    const validStatusDrafts = statusDrafts.filter(d => d.checked && d.task_id);
+    const totalSteps = (newProjNeeded ? 1 : 0) + validTaskDrafts.length + validStatusDrafts.length;
+
+    setSaveProgress({
+      current: 0,
+      total: Math.max(1, totalSteps),
+      label: totalSteps === 0 ? "完了処理…" : "登録処理を開始しています…",
+    });
+
     try {
+      let stepCount = 0;
       // 新規PJが必要な場合は先に作成する
       let resolvedNewProjId: string | null = null;
-      if (taskDrafts.some(d => d.checked && d.project_id === "__new__")) {
+      if (newProjNeeded) {
+        setSaveProgress(p => ({ ...p, current: stepCount, label: "新規プロジェクトを作成中…" }));
         const now = new Date().toISOString();
         resolvedNewProjId = crypto.randomUUID();
         const newProj: Project = {
@@ -225,10 +242,17 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           updated_by: currentUser.id,
         };
         await saveProject(newProj);
+        stepCount += 1;
+        setSaveProgress(p => ({ ...p, current: stepCount }));
       }
 
       // 新規タスク作成
-      for (const draft of taskDrafts.filter(d => d.checked && d.name.trim())) {
+      for (let i = 0; i < validTaskDrafts.length; i++) {
+        const draft = validTaskDrafts[i];
+        setSaveProgress(p => ({
+          ...p, current: stepCount,
+          label: `タスクを追加中… (${i + 1}/${validTaskDrafts.length})`,
+        }));
         const now = new Date().toISOString();
         const resolvedProjId = draft.project_id === "__new__"
           ? resolvedNewProjId
@@ -253,12 +277,23 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         };
         await saveTask(newTask);
         created++;
+        stepCount += 1;
+        setSaveProgress(p => ({ ...p, current: stepCount }));
       }
 
       // ステータス更新
-      for (const draft of statusDrafts.filter(d => d.checked && d.task_id)) {
+      for (let i = 0; i < validStatusDrafts.length; i++) {
+        const draft = validStatusDrafts[i];
+        setSaveProgress(p => ({
+          ...p, current: stepCount,
+          label: `ステータスを更新中… (${i + 1}/${validStatusDrafts.length})`,
+        }));
         const existing = tasks.find(t => t.id === draft.task_id);
-        if (!existing) continue;
+        if (!existing) {
+          stepCount += 1;
+          setSaveProgress(p => ({ ...p, current: stepCount }));
+          continue;
+        }
         await saveTask({
           ...existing,
           status: draft.new_status,
@@ -266,6 +301,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           updated_by: currentUser.id,
         });
         updated++;
+        stepCount += 1;
+        setSaveProgress(p => ({ ...p, current: stepCount }));
       }
 
       setApplyResults({ created, updated });
@@ -274,7 +311,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       setError(formatErrorForUser("登録に失敗しました", e));
       setStep("review");
     }
-  }, [taskDrafts, statusDrafts, tasks, currentUser, saveTask]);
+  }, [taskDrafts, statusDrafts, tasks, currentUser, saveTask, saveProject, pendingNewProjName, pendingNewProjColor]);
 
   const handleReset = () => {
     setStep("input");
@@ -351,7 +388,12 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           />
         )}
         {step === "applying" && (
-          <CenterMessage icon="💾" text="タスクを登録しています..." />
+          <SaveProgressLoader
+            current={saveProgress.current}
+            total={saveProgress.total}
+            label={saveProgress.label}
+            title="会議メモから登録しています"
+          />
         )}
         {step === "done" && applyResults && (
           <DoneStep

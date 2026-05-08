@@ -10,6 +10,7 @@ import { useAppStore } from "../../stores/appStore";
 import type { ToDo, Member } from "../../lib/localData/types";
 import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecomposeClient";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { SaveProgressLoader } from "../common/SaveProgressLoader";
 
 interface Props {
   todo: ToDo;
@@ -32,6 +33,9 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
   const [phase, setPhase] = useState<"loading" | "confirm" | "saving" | "done" | "error">("loading");
   const [suggestions, setSuggestions] = useState<(DecomposedTask & { selected: boolean; editedName: string; editedAssigneeId: string; editedDueDate: string })[]>([]);
   const [errorMsg, setErrorMsg] = useState("");
+  const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
+    current: 0, total: 1, label: "",
+  });
 
   useEffect(() => {
     (async () => {
@@ -64,10 +68,19 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
   const handleSave = async () => {
     const selected = suggestions.filter(s => s.selected && s.editedName.trim());
     if (selected.length === 0) return;
+    setSaveProgress({
+      current: 0, total: selected.length,
+      label: `タスクを追加中… (1/${selected.length})`,
+    });
     setPhase("saving");
     const now = new Date().toISOString();
     try {
-      for (const s of selected) {
+      for (let i = 0; i < selected.length; i++) {
+        const s = selected[i];
+        setSaveProgress(p => ({
+          ...p, current: i,
+          label: `タスクを追加中… (${i + 1}/${selected.length})`,
+        }));
         const task: import("../../lib/localData/types").Task = {
           id: uuidv4(),
           name: s.editedName.trim(),
@@ -87,6 +100,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
           updated_by: currentUser.id,
         };
         await saveTask(task);
+        setSaveProgress(p => ({ ...p, current: i + 1 }));
       }
       setPhase("done");
     } catch (e) {
@@ -167,7 +181,16 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
             </div>
           )}
 
-          {(phase === "confirm" || phase === "saving") && (
+          {phase === "saving" && (
+            <SaveProgressLoader
+              current={saveProgress.current}
+              total={saveProgress.total}
+              label={saveProgress.label}
+              title="タスクを追加しています"
+            />
+          )}
+
+          {phase === "confirm" && (
             <>
               <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
                 追加するタスクにチェックを入れて、担当者・期日を確認してください。
@@ -193,14 +216,14 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
                         value={s.editedName}
                         onChange={e => setSuggestions(prev => prev.map((x, j) => j === i ? { ...x, editedName: e.target.value } : x))}
                         style={{ ...inputStyle, width: "100%" }}
-                        disabled={!s.selected || phase === "saving"}
+                        disabled={!s.selected}
                       />
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                         <select
                           value={s.editedAssigneeId}
                           onChange={e => setSuggestions(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: e.target.value } : x))}
                           style={{ ...inputStyle, flex: "1 1 120px" }}
-                          disabled={!s.selected || phase === "saving"}
+                          disabled={!s.selected}
                         >
                           <option value="">（担当なし）</option>
                           {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
@@ -210,7 +233,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
                           value={s.editedDueDate}
                           onChange={e => setSuggestions(prev => prev.map((x, j) => j === i ? { ...x, editedDueDate: e.target.value } : x))}
                           style={{ ...inputStyle, flex: "0 0 auto" }}
-                          disabled={!s.selected || phase === "saving"}
+                          disabled={!s.selected}
                         />
                       </div>
                       {s.note && (
@@ -225,7 +248,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         </div>
 
         {/* フッター */}
-        {(phase === "confirm" || phase === "saving") && (
+        {phase === "confirm" && (
           <div style={{
             padding: "12px 18px",
             borderTop: "1px solid var(--color-border-primary)",
@@ -246,17 +269,17 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
             </button>
             <button
               onClick={handleSave}
-              disabled={phase === "saving" || suggestions.filter(s => s.selected).length === 0}
+              disabled={suggestions.filter(s => s.selected).length === 0}
               style={{
                 padding: "7px 16px", fontSize: "12px", fontWeight: "600",
-                background: phase === "saving" ? "var(--color-bg-tertiary)" : "var(--color-brand)",
+                background: "var(--color-brand)",
                 border: "none",
                 borderRadius: "var(--radius-md)",
-                cursor: phase === "saving" ? "not-allowed" : "pointer",
-                color: phase === "saving" ? "var(--color-text-tertiary)" : "#fff",
+                cursor: "pointer",
+                color: "#fff",
               }}
             >
-              {phase === "saving" ? "保存中…" : `${suggestions.filter(s => s.selected).length}件のタスクを追加`}
+              {`${suggestions.filter(s => s.selected).length}件のタスクを追加`}
             </button>
           </div>
         )}

@@ -26,6 +26,7 @@ import {
   type KrDeclaration,
 } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 import { formatErrorForUser } from "../../lib/errorMessage";
 
@@ -130,6 +131,14 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
   const [freeformDecisions, setFreeformDecisions] = useState<string[]>([]);
   const [freeformKrMentions, setFreeformKrMentions] = useState<ExtractedKrMention[]>([]);
   const [freeformFollowUps, setFreeformFollowUps] = useState<FreeformFollowUpRow[]>([]);
+
+  // --- 保存進度（DB へのステップ実行を可視化） ---
+  const [saveProgress, setSaveProgress] = useState<{
+    current: number;
+    total: number;
+    label: string;
+    title: string;
+  }>({ current: 0, total: 1, label: "", title: "保存しています" });
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
 
@@ -251,6 +260,14 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
 
     try {
       if (sessionType === "checkin") {
+        const validRows = checkinRows.filter(r => r.content.trim());
+        const total = 1 + validRows.length;
+        setSaveProgress({
+          current: 0, total,
+          title: "チェックインを保存しています",
+          label: "セッション情報を記録中…",
+        });
+
         const session = await insertKrSession({
           kr_id: selectedKrId,
           week_start: weekStart,
@@ -266,9 +283,10 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           created_by: currentUser.id,
           updated_by: currentUser.id,
         });
+        setSaveProgress(p => ({ ...p, current: 1, label: validRows.length === 0 ? "完了処理…" : `宣言を記録中… (1/${validRows.length})` }));
 
-        for (const row of checkinRows) {
-          if (!row.content.trim()) continue;
+        for (let i = 0; i < validRows.length; i++) {
+          const row = validRows[i];
           await insertKrDeclaration({
             session_id: session.id,
             member_id: row.member_id || currentUser.id,
@@ -278,10 +296,25 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             result_note: "",
             updated_by: currentUser.id,
           });
+          setSaveProgress(p => ({
+            ...p,
+            current: 1 + i + 1,
+            label: i + 1 < validRows.length
+              ? `宣言を記録中… (${i + 2}/${validRows.length})`
+              : "完了処理…",
+          }));
         }
       } else if (sessionType === "freeform") {
         // freeform: summary / decisions / kr_mentions を text 列に格納
         // フォローアップは kr_declarations に result_status=null で保存
+        const validFollowUps = freeformFollowUps.filter(r => r.content.trim());
+        const total = 1 + validFollowUps.length;
+        setSaveProgress({
+          current: 0, total,
+          title: "OKR議論を保存しています",
+          label: "サマリ・決定事項を記録中…",
+        });
+
         const session = await insertKrSession({
           kr_id: selectedKrId,
           week_start: weekStart,
@@ -300,9 +333,15 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           created_by: currentUser.id,
           updated_by: currentUser.id,
         });
+        setSaveProgress(p => ({
+          ...p, current: 1,
+          label: validFollowUps.length === 0
+            ? "完了処理…"
+            : `フォローアップを記録中… (1/${validFollowUps.length})`,
+        }));
 
-        for (const row of freeformFollowUps) {
-          if (!row.content.trim()) continue;
+        for (let i = 0; i < validFollowUps.length; i++) {
+          const row = validFollowUps[i];
           await insertKrDeclaration({
             session_id: session.id,
             member_id: row.member_id || currentUser.id,
@@ -312,8 +351,22 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             result_note: "",
             updated_by: currentUser.id,
           });
+          setSaveProgress(p => ({
+            ...p,
+            current: 1 + i + 1,
+            label: i + 1 < validFollowUps.length
+              ? `フォローアップを記録中… (${i + 2}/${validFollowUps.length})`
+              : "完了処理…",
+          }));
         }
       } else {
+        const total = 1 + winRows.length * 2; // session + 結果更新 + スナップショット
+        setSaveProgress({
+          current: 0, total,
+          title: "ウィンセッションを保存しています",
+          label: "セッション情報を記録中…",
+        });
+
         const session = await insertKrSession({
           kr_id: selectedKrId,
           week_start: weekStart,
@@ -329,18 +382,32 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           created_by: currentUser.id,
           updated_by: currentUser.id,
         });
+        let step = 1;
+        setSaveProgress(p => ({
+          ...p, current: step,
+          label: winRows.length === 0 ? "完了処理…" : `先週の宣言結果を更新中… (1/${winRows.length})`,
+        }));
 
         // 前回宣言の結果を更新
-        for (const row of winRows) {
+        for (let i = 0; i < winRows.length; i++) {
+          const row = winRows[i];
           await updateKrDeclarationResult(
             row.declaration_id,
             row.result_status,
             row.result_note,
             currentUser.id,
           );
+          step += 1;
+          setSaveProgress(p => ({
+            ...p, current: step,
+            label: i + 1 < winRows.length
+              ? `先週の宣言結果を更新中… (${i + 2}/${winRows.length})`
+              : `スナップショットを記録中… (1/${winRows.length})`,
+          }));
         }
         // ウィンセッション記録に宣言スナップショットを紐づける（参照用）
-        for (const row of winRows) {
+        for (let i = 0; i < winRows.length; i++) {
+          const row = winRows[i];
           await insertKrDeclaration({
             session_id: session.id,
             member_id: prevDeclarations.find(d => d.id === row.declaration_id)?.member_id ?? currentUser.id,
@@ -350,6 +417,13 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             result_note: row.result_note,
             updated_by: currentUser.id,
           });
+          step += 1;
+          setSaveProgress(p => ({
+            ...p, current: step,
+            label: i + 1 < winRows.length
+              ? `スナップショットを記録中… (${i + 2}/${winRows.length})`
+              : "完了処理…",
+          }));
         }
       }
 
@@ -519,17 +593,14 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             />
           )}
 
-          {/* ステップ4: 保存中 */}
+          {/* ステップ4: 保存中（実進度ベース） */}
           {step === "saving" && (
-            <div style={{
-              display: "flex", flexDirection: "column", alignItems: "center",
-              justifyContent: "center", gap: "16px", minHeight: "200px",
-            }}>
-              <div style={{ fontSize: "32px" }}>💾</div>
-              <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>
-                保存しています...
-              </div>
-            </div>
+            <SaveProgressLoader
+              current={saveProgress.current}
+              total={saveProgress.total}
+              label={saveProgress.label}
+              title={saveProgress.title}
+            />
           )}
 
           {/* ステップ5: 完了 */}

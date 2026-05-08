@@ -16,6 +16,7 @@ import {
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { SaveProgressLoader } from "../common/SaveProgressLoader";
 
 function ThinkingDots() {
   return (
@@ -53,6 +54,9 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
   const today = new Date().toISOString().slice(0, 10);
 
   const [phase, setPhase] = useState<Phase>("chat");
+  const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
+    current: 0, total: 1, label: "",
+  });
   const [messages, setMessages] = useState<PlanMessage[]>([]);
   const [typingIndex, setTypingIndex] = useState(-1);
   const [inputText, setInputText] = useState("");
@@ -147,6 +151,9 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
 
   const handleSave = async () => {
     if (!projectName.trim()) return;
+    const selected = taskRows.filter(r => r.selected && r.editedName.trim());
+    const total = 1 + selected.length;
+    setSaveProgress({ current: 0, total, label: "プロジェクトを作成中…" });
     setPhase("saving");
     const now = new Date().toISOString();
     const newProjectId = uuidv4();
@@ -167,8 +174,12 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
         updated_at: now,
         updated_by: currentUser.id,
       });
-      const selected = taskRows.filter(r => r.selected && r.editedName.trim());
-      for (const r of selected) {
+      setSaveProgress(p => ({
+        ...p, current: 1,
+        label: selected.length === 0 ? "完了処理…" : `タスクを追加中… (1/${selected.length})`,
+      }));
+      for (let i = 0; i < selected.length; i++) {
+        const r = selected[i];
         await saveTask({
           id: uuidv4(),
           name: r.editedName.trim(),
@@ -187,6 +198,12 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
           updated_at: now,
           updated_by: currentUser.id,
         });
+        setSaveProgress(p => ({
+          ...p, current: 1 + i + 1,
+          label: i + 1 < selected.length
+            ? `タスクを追加中… (${i + 2}/${selected.length})`
+            : "完了処理…",
+        }));
       }
       setPhase("done");
       onCreated?.(newProjectId);
@@ -275,6 +292,16 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                 <span /><span /><span />
               </div>
             </div>
+          )}
+
+          {/* 保存中（実進度ベース） */}
+          {phase === "saving" && (
+            <SaveProgressLoader
+              current={saveProgress.current}
+              total={saveProgress.total}
+              label={saveProgress.label}
+              title="プロジェクトを保存しています"
+            />
           )}
 
           {/* 完了 */}
@@ -377,8 +404,8 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
             </>
           )}
 
-          {/* 確認フェーズ */}
-          {(phase === "confirm" || phase === "saving") && (
+          {/* 確認フェーズ（saving時は SaveProgressLoader が表示されるので除外） */}
+          {phase === "confirm" && (
             <div style={{ padding: "16px 18px", display: "flex", flexDirection: "column", gap: "14px" }}>
               {/* PJ基本情報 */}
               <div style={{ padding: "12px 14px", background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)", display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -389,7 +416,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                     value={projectName}
                     onChange={e => setProjectName(e.target.value)}
                     style={inputStyle}
-                    disabled={phase === "saving"}
+
                   />
                 </div>
                 <div>
@@ -399,13 +426,13 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                     onChange={e => setProjectPurpose(e.target.value)}
                     rows={2}
                     style={{ ...inputStyle, resize: "vertical" }}
-                    disabled={phase === "saving"}
+
                   />
                 </div>
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
                     <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>オーナー</label>
-                    <select value={ownerId} onChange={e => setOwnerId(e.target.value)} style={inputStyle} disabled={phase === "saving"}>
+                    <select value={ownerId} onChange={e => setOwnerId(e.target.value)} style={inputStyle}>
                       {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
                     </select>
                   </div>
@@ -454,14 +481,14 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                           value={r.editedName}
                           onChange={e => setTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedName: e.target.value } : x))}
                           style={{ ...inputStyle }}
-                          disabled={!r.selected || phase === "saving"}
+                          disabled={!r.selected}
                         />
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
                           <select
                             value={r.editedAssigneeId}
                             onChange={e => setTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: e.target.value } : x))}
                             style={{ ...inputStyle, flex: "1 1 110px" }}
-                            disabled={!r.selected || phase === "saving"}
+                            disabled={!r.selected}
                           >
                             <option value="">（担当なし）</option>
                             {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
@@ -471,7 +498,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                             value={r.editedDueDate}
                             onChange={e => setTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedDueDate: e.target.value } : x))}
                             style={{ ...inputStyle, flex: "0 0 auto" }}
-                            disabled={!r.selected || phase === "saving"}
+                            disabled={!r.selected}
                           />
                         </div>
                         {r.note && (
@@ -510,25 +537,24 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
           </div>
         )}
 
-        {(phase === "confirm" || phase === "saving") && (
+        {phase === "confirm" && (
           <div style={{ padding: "12px 18px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
             <button
               onClick={() => setPhase("chat")}
-              disabled={phase === "saving"}
               style={{ padding: "7px 14px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", color: "var(--color-text-secondary)" }}
             >← チャットに戻る</button>
             <button
               onClick={handleSave}
-              disabled={phase === "saving" || !projectName.trim() || taskRows.filter(r => r.selected).length === 0}
+              disabled={!projectName.trim() || taskRows.filter(r => r.selected).length === 0}
               style={{
                 padding: "7px 18px", fontSize: "12px", fontWeight: "600",
-                background: phase === "saving" ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
                 border: "none", borderRadius: "var(--radius-md)",
-                cursor: phase === "saving" ? "not-allowed" : "pointer",
-                color: phase === "saving" ? "var(--color-text-tertiary)" : "#fff",
+                cursor: "pointer",
+                color: "#fff",
               }}
             >
-              {phase === "saving" ? "作成中..." : `🚀 プロジェクトを作成`}
+              🚀 プロジェクトを作成
             </button>
           </div>
         )}
