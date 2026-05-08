@@ -93,8 +93,10 @@ interface Props {
 
 export function KrSessionPanel({ onClose, currentUser, inline = false, initialKrId, onSaved }: Props) {
   const keyResults = useAppStore(s => s.keyResults);
+  const taskForces = useAppStore(s => s.taskForces);
   const members    = useAppStore(s => s.members);
   const activeKrs = useMemo(() => (keyResults ?? []).filter(kr => !kr.is_deleted), [keyResults]);
+  const activeTfs = useMemo(() => (taskForces ?? []).filter(t => !t.is_deleted), [taskForces]);
   const activeMembers = useMemo(() => (members ?? []).filter(m => !m.is_deleted), [members]);
 
   // --- 入力ステート ---
@@ -510,6 +512,8 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
               followUps={freeformFollowUps}
               setFollowUps={setFreeformFollowUps}
               members={activeMembers}
+              keyResults={activeKrs}
+              taskForces={activeTfs}
               error={error}
               onSave={handleSave}
             />
@@ -981,16 +985,32 @@ function FreeformConfirmStep({
   decisions, setDecisions,
   krMentions, setKrMentions,
   followUps, setFollowUps,
-  members, error, onSave,
+  members, keyResults, taskForces,
+  error, onSave,
 }: {
   summary: string; setSummary: (v: string) => void;
   decisions: string[]; setDecisions: (v: string[]) => void;
   krMentions: ExtractedKrMention[]; setKrMentions: (v: ExtractedKrMention[]) => void;
   followUps: FreeformFollowUpRow[]; setFollowUps: (v: FreeformFollowUpRow[]) => void;
   members: Member[];
+  keyResults: { id: string; title: string }[];
+  taskForces: { id: string; kr_id: string; tf_number: string; name: string }[];
   error: string | null;
   onSave: () => void;
 }) {
+  // KR/TF を canonical 文字列に整形
+  const formatKr = (kr: { title: string }) => `[KR] ${kr.title}`;
+  const formatTf = (tf: { tf_number: string; name: string }, krTitle: string) =>
+    `[TF${tf.tf_number}] ${tf.name}（${krTitle}）`;
+  // 現在の hint 値が KR/TF にマッチするかを判定
+  const findCurrentSelection = (hint: string): string => {
+    for (const kr of keyResults) if (formatKr(kr) === hint) return `kr:${kr.id}`;
+    for (const tf of taskForces) {
+      const kr = keyResults.find(k => k.id === tf.kr_id);
+      if (kr && formatTf(tf, kr.title) === hint) return `tf:${tf.id}`;
+    }
+    return ""; // 一致なし
+  };
   const updateFollowUp = (tempId: string, patch: Partial<FreeformFollowUpRow>) => {
     setFollowUps(followUps.map(r => r.tempId === tempId ? { ...r, ...patch } : r));
   };
@@ -1074,38 +1094,83 @@ function FreeformConfirmStep({
 
       {/* KR言及 */}
       <Card>
-        <FieldLabel>言及されたKR（{krMentions.length}件）</FieldLabel>
+        <FieldLabel>言及されたKR / TF（{krMentions.length}件）</FieldLabel>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "10px" }}>
+          AIが推測したタイトルが該当しない場合はドロップダウンで選び直してください
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-          {krMentions.map((m, i) => (
-            <div key={i} style={{
-              display: "flex", gap: "8px", alignItems: "flex-start",
-              background: "var(--color-bg-secondary)",
-              padding: "10px", borderRadius: "var(--radius-md)",
-            }}>
-              <input
-                type="text"
-                value={m.kr_title_hint}
-                onChange={e => updateMention(i, { kr_title_hint: e.target.value })}
-                placeholder="KRタイトル"
-                style={{ ...inputStyle, flex: "1 1 200px" }}
-              />
-              <input
-                type="text"
-                value={m.note}
-                onChange={e => updateMention(i, { note: e.target.value })}
-                placeholder="言及内容"
-                style={{ ...inputStyle, flex: "2 1 280px" }}
-              />
-              <button
-                onClick={() => removeMention(i)}
-                style={{
-                  background: "transparent", border: "none", cursor: "pointer",
-                  color: "var(--color-text-tertiary)", fontSize: "16px", padding: "4px",
-                }}
-                aria-label="削除"
-              >✕</button>
-            </div>
-          ))}
+          {krMentions.map((m, i) => {
+            const sel = findCurrentSelection(m.kr_title_hint);
+            const noMatch = sel === "" && !!m.kr_title_hint;
+            return (
+              <div key={i} style={{
+                background: "var(--color-bg-secondary)",
+                padding: "10px", borderRadius: "var(--radius-md)",
+                display: "flex", flexDirection: "column", gap: "6px",
+              }}>
+                <div style={{ display: "flex", gap: "8px", alignItems: "flex-start" }}>
+                  <select
+                    value={sel}
+                    onChange={e => {
+                      const v = e.target.value;
+                      if (v.startsWith("kr:")) {
+                        const kr = keyResults.find(k => k.id === v.slice(3));
+                        if (kr) updateMention(i, { kr_title_hint: formatKr(kr) });
+                      } else if (v.startsWith("tf:")) {
+                        const tf = taskForces.find(t => t.id === v.slice(3));
+                        const kr = tf ? keyResults.find(k => k.id === tf.kr_id) : null;
+                        if (tf && kr) updateMention(i, { kr_title_hint: formatTf(tf, kr.title) });
+                      } else {
+                        updateMention(i, { kr_title_hint: "" });
+                      }
+                    }}
+                    style={{ ...selectStyle, flex: "1 1 280px" }}
+                  >
+                    <option value="">— 該当なし / 未設定 —</option>
+                    {keyResults.length > 0 && (
+                      <optgroup label="Key Result">
+                        {keyResults.map(kr => (
+                          <option key={kr.id} value={`kr:${kr.id}`}>{formatKr(kr)}</option>
+                        ))}
+                      </optgroup>
+                    )}
+                    {taskForces.length > 0 && (
+                      <optgroup label="Task Force">
+                        {taskForces.map(tf => {
+                          const kr = keyResults.find(k => k.id === tf.kr_id);
+                          return (
+                            <option key={tf.id} value={`tf:${tf.id}`}>
+                              {formatTf(tf, kr?.title ?? "?")}
+                            </option>
+                          );
+                        })}
+                      </optgroup>
+                    )}
+                  </select>
+                  <input
+                    type="text"
+                    value={m.note}
+                    onChange={e => updateMention(i, { note: e.target.value })}
+                    placeholder="言及内容"
+                    style={{ ...inputStyle, flex: "2 1 280px" }}
+                  />
+                  <button
+                    onClick={() => removeMention(i)}
+                    style={{
+                      background: "transparent", border: "none", cursor: "pointer",
+                      color: "var(--color-text-tertiary)", fontSize: "16px", padding: "4px",
+                    }}
+                    aria-label="削除"
+                  >✕</button>
+                </div>
+                {noMatch && (
+                  <div style={{ fontSize: "11px", color: "var(--color-text-warning)", paddingLeft: "4px" }}>
+                    AIの推測「{m.kr_title_hint}」は該当 KR/TF が見つかりません。ドロップダウンで選び直すか「該当なし」のままで保存できます。
+                  </div>
+                )}
+              </div>
+            );
+          })}
           <button
             onClick={addMention}
             style={{
@@ -1116,7 +1181,7 @@ function FreeformConfirmStep({
               color: "var(--color-text-secondary)",
               cursor: "pointer",
             }}
-          >＋ KR言及を追加</button>
+          >＋ KR/TF言及を追加</button>
         </div>
       </Card>
 
