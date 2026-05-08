@@ -30,8 +30,13 @@
 #      追加：member_tags / member_tag_members テーブル
 #      追加：管理画面に「メンバータグ」タブ
 #      追加：lib/__tests__/errorMessage.test.ts（10テスト・合計 71 テスト）
+# v2.6 タスク詳細を常時編集可能化・AI使用量計測の全機能カバー（2026-05-08）
+#      変更：TaskEditModal が常時編集可能・自動保存（600ms デバウンス）
+#      追加：lib/ai/usageLog.ts と invokeAI への組み込みで全 AI 機能が自動計上
+#      追加：Section 16（AI 使用量計測ルール・新機能は invokeAI 経由必須）
+#      追加：lib/ai/__tests__/usageLog.test.ts（5テスト・合計 76 テスト）
 #
-# 最終更新：2026-05-08（v2.5）
+# 最終更新：2026-05-08（v2.6）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -911,6 +916,56 @@ catch (e) {
 ### このルールは新規コードに必ず適用する
 
 既存コードもユーザー操作の起点（保存・削除・AI呼び出し等の catch）から順次 `formatErrorForUser` に置き換える。新規コードで `"エラーが発生しました"` 文字列を直接 setError しているのを見つけたら指摘・修正すること。
+
+---
+
+## 16. グランドルール：AI 使用量の計測（必須）
+
+新しい AI 機能を実装する際は、**必ず ai_usage_logs に使用量が記録される経路を通す**こと。これにより管理画面の「AI使用量」タブで全機能の入出力トークン・コストが見える化される。
+
+### 必須：`invokeAI()` を経由する
+
+```typescript
+import { invokeAI } from "../ai/invokeAI";
+
+// ✅ 推奨：invokeAI 経由 → 内部で logAIUsage() が自動的に呼ばれる
+const response = await invokeAI(systemPrompt, messages, 4096, "kr-report");
+const text = response.content[0].text;
+```
+
+`invokeAI` は呼び出し成功後に `logAIUsage(intent, response.usage)` を必ず実行する。**新しい AI 機能を追加するときは何もしなくてよい**——`invokeAI` を経由しているだけで自動的に計上される。
+
+### 禁止：Supabase Edge Function を直接叩く
+
+```typescript
+// ❌ 禁止：invokeAI を経由しないと使用量が記録されない
+const { data } = await supabase.functions.invoke("ai-consult", { body: {...} });
+```
+
+新しい AI 機能で `supabase.functions.invoke("ai-consult", ...)` を直接呼んでいるコードを見つけたら、`invokeAI` 経由に直すこと。
+
+### 例外：`callAIConsultation`（apiClient.ts）
+
+通常のタスク管理相談だけは歴史的経緯で `callAIConsultation` が直接 `supabase.functions.invoke` を呼ぶ別経路になっている。**この経路では `useAIConsultation.submit` 側で個別に `insertAiUsageLog` を呼んで計上している**。
+
+新しい AI 機能でこのパターンを真似ない。必ず `invokeAI` を使う。
+
+### AIIntent タグの追加
+
+新しい AI 機能を追加するときは `src/lib/ai/invokeAI.ts` の `AIIntent` 型に新しいタグを追加する（CLAUDE.md Section 6-1b 参照）。このタグがそのまま `ai_usage_logs.consultation_type` に保存され、AI 使用量タブで機能別の集計に使える。
+
+```typescript
+// 例：新機能「会議サマリ生成」を追加するとき
+export type AIIntent =
+  | "task-management"
+  | "kr-report"
+  // ... 既存
+  | "meeting-summary";  // ← 新規追加
+```
+
+### このルールは新規 AI 機能を実装する時に必ず確認する
+
+「AI を呼ぶ → invokeAI 経由か？」「AIIntent に新タグは追加したか？」をレビュー時にチェックする。
 
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel

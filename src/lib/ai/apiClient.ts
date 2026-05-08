@@ -4,6 +4,11 @@
 // Supabase Edge Function（ai-consult）を呼び出すクライアント。
 // APIキーはEdge Function側にのみ存在し、クライアントには露出しない（CLAUDE.md Section 6-1参照）。
 // このモジュールはuseAIConsultationからのみ呼び出すこと（CLAUDE.md Section 6-12参照）。
+//
+// ⚠ レガシー経路：このファイルは invokeAI を経由せず supabase.functions.invoke を
+//   直接呼ぶため、AI 使用量ログ（ai_usage_logs）の自動記録が効かない。
+//   呼び出し元の useAIConsultation 側で insertAiUsageLog を別途呼んで補っている。
+//   新しい AI 機能を実装するときは invokeAI を経由すること（CLAUDE.md Section 16）。
 
 import { supabase } from "../supabase/client";
 import type { ConsultationType } from "./types";
