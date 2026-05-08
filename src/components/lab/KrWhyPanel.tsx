@@ -13,6 +13,7 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 import { buildMessageContent, getContentText } from "../../lib/ai/invokeAI";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { showToast } from "../common/Toast";
+import { formatErrorForUser } from "../../lib/errorMessage";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 
 function ThinkingDots() {
@@ -273,7 +274,7 @@ ${issueText.trim()}`;
       setTurnCount(1);
       setPhase("dialogue");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました。");
+      setError(formatErrorForUser("AIとの対話に失敗しました", e));
       setPhase("setup");
     }
   };
@@ -296,7 +297,7 @@ ${issueText.trim()}`;
       setTurnCount(turnCount + 1);
       setPhase("dialogue");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました。");
+      setError(formatErrorForUser("AIとの対話に失敗しました", e));
       setPhase("dialogue");
     }
   };
@@ -320,7 +321,7 @@ ${issueText.trim()}`;
       localStorage.setItem(summaryKey(selectedKrId), JSON.stringify(saved));
       setSavedSummary(saved);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "サマリー生成中にエラーが発生しました。");
+      setError(formatErrorForUser("サマリー生成に失敗しました", e));
       setPhase("dialogue");
     }
   };

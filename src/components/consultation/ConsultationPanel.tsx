@@ -26,6 +26,7 @@ import {
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 /**
  * 【設計意図】
@@ -220,7 +221,7 @@ export function ConsultationPanel({
         return next;
       });
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "AI呼び出しに失敗しました。");
+      setCreateError(formatErrorForUser("AI呼び出しに失敗しました", e));
       setCreatePhase("error");
     } finally {
       setCreateThinking(false);
@@ -245,7 +246,7 @@ export function ConsultationPanel({
       }));
       setCreatePhase("confirm");
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "プラン生成に失敗しました。");
+      setCreateError(formatErrorForUser("プラン生成に失敗しました", e));
       setCreatePhase("error");
     }
   }, [createMessages, members, today]);
@@ -278,7 +279,7 @@ export function ConsultationPanel({
       setCreatePhase("done");
       reload();
     } catch (e) {
-      setCreateError(e instanceof Error ? e.message : "保存中にエラーが発生しました。");
+      setCreateError(formatErrorForUser("保存に失敗しました", e));
       setCreatePhase("error");
     }
   }, [projName, projPurpose, projOwnerId, projColor, projTaskRows, currentUser.id, saveProject, saveTask, reload, today]);

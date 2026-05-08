@@ -17,6 +17,7 @@ import {
   type MeetingStatusUpdate,
 } from "../../lib/ai/meetingExtractor";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 const MEETING_PHASES = [
   "テキストを読み込んでいます",
@@ -188,7 +189,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
 
       setStep("review");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "AI解析中にエラーが発生しました。");
+      setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
     }
   }, [rawText, projects, tasks, members]);
@@ -270,7 +271,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       setApplyResults({ created, updated });
       setStep("done");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "登録中にエラーが発生しました。");
+      setError(formatErrorForUser("登録に失敗しました", e));
       setStep("review");
     }
   }, [taskDrafts, statusDrafts, tasks, currentUser, saveTask]);

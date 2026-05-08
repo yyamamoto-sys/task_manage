@@ -15,6 +15,7 @@ import {
   type PlannedTask,
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 function ThinkingDots() {
   return (
@@ -108,7 +109,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
         return next;
       });
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "AI呼び出しに失敗しました。");
+      setErrorMsg(formatErrorForUser("AI呼び出しに失敗しました", e));
       setPhase("error");
     } finally {
       setIsThinking(false);
@@ -139,7 +140,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
       }));
       setPhase("confirm");
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "プラン生成に失敗しました。");
+      setErrorMsg(formatErrorForUser("プラン生成に失敗しました", e));
       setPhase("error");
     }
   };
@@ -190,7 +191,7 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
       setPhase("done");
       onCreated?.(newProjectId);
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "保存中にエラーが発生しました。");
+      setErrorMsg(formatErrorForUser("保存に失敗しました", e));
       setPhase("error");
     }
   };

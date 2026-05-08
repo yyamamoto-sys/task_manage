@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from "uuid";
 import { useAppStore } from "../../stores/appStore";
 import type { ToDo, Member } from "../../lib/localData/types";
 import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecomposeClient";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   todo: ToDo;
@@ -54,7 +55,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         }));
         setPhase("confirm");
       } catch (e) {
-        setErrorMsg(e instanceof Error ? e.message : "AI分解中にエラーが発生しました。");
+        setErrorMsg(formatErrorForUser("AI分解に失敗しました", e));
         setPhase("error");
       }
     })();
@@ -89,7 +90,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
       }
       setPhase("done");
     } catch (e) {
-      setErrorMsg(e instanceof Error ? e.message : "タスク保存中にエラーが発生しました。");
+      setErrorMsg(formatErrorForUser("タスク保存に失敗しました", e));
       setPhase("error");
     }
   };

@@ -861,6 +861,52 @@ docs/REFACTORING.md  ← 完了済み・未完了・進め方・コスト記録
 
 **セッション開始の合言葉**：「リファクタリングをしたい」と言われたら `docs/REFACTORING.md` を読んでから提案すること。
 
+---
+
+## 15. グランドルール：ユーザー向けエラー表示（必須）
+
+ユーザーに見せるエラーメッセージは「何が起きたか」「次に何をすればよいか」が判別できる粒度で表示する。
+
+### 禁止
+
+```typescript
+// ❌ 禁止：何が起きたか分からないため原因究明できない
+catch (e) {
+  setError("エラーが発生しました");
+}
+
+// ❌ 禁止：message だけだとエラーコードが消えるので Supabase 側の原因究明ができない
+catch (e) {
+  setError(e instanceof Error ? e.message : "エラーが発生しました");
+}
+```
+
+### 必須：`formatErrorForUser()` を経由する
+
+```typescript
+import { formatErrorForUser } from "../../lib/errorMessage";
+
+// ✅ 推奨：エラーコード・details・hint を含めて表示
+catch (e) {
+  setError(formatErrorForUser("保存に失敗しました", e));
+}
+```
+
+`formatErrorForUser` は Supabase の `PostgrestError`（code / details / hint）も含めて整形する。
+
+表示例：
+- `保存に失敗しました [42703] column "summary" does not exist`
+- `保存に失敗しました [23514] new row violates check constraint "kr_sessions_session_type_check"`
+- `保存に失敗しました [PGRST116] Cannot find a relationship ...`
+
+### 例外：内部用途で「メッセージ文字列だけ」が必要な場合
+
+`getErrorMessage()` を使う（ログ出力・UI 以外の場所）。
+
+### このルールは新規コードに必ず適用する
+
+既存コードもユーザー操作の起点（保存・削除・AI呼び出し等の catch）から順次 `formatErrorForUser` に置き換える。新規コードで `"エラーが発生しました"` 文字列を直接 setError しているのを見つけたら指摘・修正すること。
+
 <!-- VERCEL BEST PRACTICES START -->
 ## Best practices for developing on Vercel
 

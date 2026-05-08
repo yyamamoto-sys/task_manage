@@ -22,6 +22,7 @@ import {
 } from "../../lib/ai/krQuarterPlanPrompt";
 import { buildMessageContent } from "../../lib/ai/invokeAI";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
+import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   callQuarterPlanDialogue,
   callQuarterPlanGenerate,
@@ -462,7 +463,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       setTurnCount(1);
       setPhase("dialogue");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました。");
+      setError(formatErrorForUser("AIとの対話に失敗しました", e));
       setPhase("setup");
     }
   };
@@ -486,7 +487,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       setTurnCount(c => c + 1);
       setPhase("dialogue");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "エラーが発生しました。");
+      setError(formatErrorForUser("AIとの対話に失敗しました", e));
       setPhase("dialogue");
     }
   };
@@ -505,7 +506,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       setPlanRisk(plan.overall_risk);
       setPhase("plan");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "計画書の生成に失敗しました。");
+      setError(formatErrorForUser("計画書の生成に失敗しました", e));
       setPhase("dialogue");
     }
   };

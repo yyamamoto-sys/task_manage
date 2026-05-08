@@ -13,6 +13,7 @@ import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPr
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
+import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 
@@ -145,7 +146,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
         reportRef.current?.scrollIntoView({ behavior: "smooth" });
       }, 100);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "レポート生成中にエラーが発生しました。");
+      setError(formatErrorForUser("レポート生成に失敗しました", e));
     } finally {
       setGenerating(false);
     }

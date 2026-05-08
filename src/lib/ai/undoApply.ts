@@ -10,6 +10,7 @@
 
 import { supabase } from "../supabase/client";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
+import { formatErrorForUser } from "../errorMessage";
 
 // ===== 型定義 =====
 
@@ -106,7 +107,7 @@ export async function applyUndo(
   } catch (e) {
     return {
       type: "error",
-      message: e instanceof Error ? e.message : "元に戻す処理に失敗しました",
+      message: formatErrorForUser("元に戻す処理に失敗しました", e),
     };
   }
 }

@@ -13,6 +13,7 @@
 import { supabase } from "../supabase/client";
 import type { UIProposal } from "./proposalMapper";
 import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
+import { formatErrorForUser } from "../errorMessage";
 
 // ===== 型定義 =====
 
@@ -344,7 +345,7 @@ export async function applyProposal(
     } catch (e) {
       return {
         type: "error",
-        message: e instanceof Error ? e.message : "コメント追記に失敗しました",
+        message: formatErrorForUser("コメント追記に失敗しました", e),
       };
     }
   }
@@ -677,7 +678,7 @@ export async function applyProposalWithConfirmation(
   } catch (e) {
     return {
       type: "error",
-      message: e instanceof Error ? e.message : "反映処理に失敗しました",
+      message: formatErrorForUser("反映処理に失敗しました", e),
     };
   }
 }

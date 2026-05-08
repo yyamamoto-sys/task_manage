@@ -27,6 +27,7 @@ import {
 } from "../../lib/supabase/krSessionStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 // ===== 型 =====
 
@@ -234,7 +235,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
 
       setStep("confirm");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "AI解析中にエラーが発生しました。");
+      setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
     }
   };
@@ -353,7 +354,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
       setStep("done");
       onSaved?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "保存中にエラーが発生しました。");
+      setError(formatErrorForUser("保存に失敗しました", e));
       setStep("confirm");
     }
   };
