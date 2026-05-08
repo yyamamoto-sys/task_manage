@@ -7,15 +7,15 @@
 // - 編集モード：全フィールドをインライン編集。保存でSupabaseに反映（AppDataContext経由）。
 // 削除は確認ダイアログ付き論理削除。
 
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, ToDo, TaskForce, TaskTaskForce, TaskProject } from "../../lib/localData/types";
+import type { Member, Task } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
-import { renderLinks } from "../../lib/renderLinks";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   taskId: string;
@@ -59,7 +59,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
   }, [allTaskProjects, projects, taskId]);
   const originalTask = allTasks.find(t => t.id === taskId);
 
-  const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     name:                 originalTask?.name ?? "",
     status:               originalTask?.status ?? "todo" as Task["status"],
@@ -74,7 +73,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
     comment:              originalTask?.comment ?? "",
   });
-  const [saved, setSaved] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const isInitialMount = useRef(true);
 
   // ToDo選択肢をTFごとにグループ化
   const todosByTf = useMemo(() => {
@@ -83,7 +84,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
   }, [taskForces, todos]);
 
-  const handleSave = useCallback(() => {
+  // 自動保存ハンドラを ref に保持し、useEffect の依存配列を form のみに絞る
+  // （originalTask の realtime 更新などで saveTask が再発火しないようにする）
+  const handleAutoSaveRef = useRef<() => Promise<void>>(async () => {});
+  handleAutoSaveRef.current = async () => {
     if (!originalTask) return;
     const hours = parseFloat(form.estimated_hours);
     const updated: Task = {
@@ -102,11 +106,32 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       updated_at:          new Date().toISOString(),
       updated_by:          currentUser.id,
     };
-    saveTask(updated);
-    setSaved(true);
-    setTimeout(() => { setSaved(false); setEditing(false); }, 800);
-    onUpdated?.(updated);
-  }, [form, originalTask, saveTask, onUpdated, currentUser.id]);
+    try {
+      await saveTask(updated);
+      setSaveStatus("saved");
+      onUpdated?.(updated);
+      setTimeout(() => {
+        setSaveStatus(s => (s === "saved" ? "idle" : s));
+      }, 1500);
+    } catch (e) {
+      setSaveStatus("error");
+      setSaveError(formatErrorForUser("保存に失敗しました", e));
+    }
+  };
+
+  // 自動保存：form 変更後 600ms のデバウンスで保存
+  useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
+    setSaveStatus("saving");
+    setSaveError(null);
+    const timer = setTimeout(() => {
+      void handleAutoSaveRef.current();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [form]);
 
   const handleDelete = useCallback(async () => {
     if (!originalTask) return;
@@ -119,17 +144,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
   // 全 Hooks を呼び終えた後に early return（react-hooks/rules-of-hooks 遵守）
   if (!originalTask) return null;
 
-  const assigneeMembers = members.filter(m =>
-    (originalTask.assignee_member_ids?.length
-      ? originalTask.assignee_member_ids
-      : originalTask.assignee_member_id ? [originalTask.assignee_member_id] : []
-    ).includes(m.id)
-  );
-  const project    = projects.find(p => p.id === originalTask.project_id);
-  const linkedTodos = todos.filter(t => (originalTask.todo_ids ?? []).includes(t.id));
-  const isOverdue = originalTask.due_date
-    && originalTask.due_date < todayStr()
-    && originalTask.status !== "done";
+  const project = projects.find(p => p.id === originalTask.project_id);
+  const isOverdue = !!form.due_date && form.due_date < todayStr() && form.status !== "done";
 
   const statusArr: Task["status"][] = ["todo", "in_progress", "done"];
 
@@ -175,55 +191,45 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             }} />
           )}
 
-          {editing ? (
-            <input
-              value={form.name}
-              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-              autoFocus
-              maxLength={200}
-              style={{
-                flex: 1, fontSize: "14px", fontWeight: "500",
-                border: "none", outline: "none", padding: "2px 4px",
-                borderBottom: "1.5px solid var(--color-brand)",
-                color: "var(--color-text-primary)",
-                background: "transparent",
-              }}
-            />
-          ) : (
-            <span style={{
+          <input
+            value={form.name}
+            onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+            maxLength={200}
+            placeholder="タスク名"
+            aria-label="タスク名"
+            style={{
               flex: 1, fontSize: "14px", fontWeight: "500",
+              border: "none", outline: "none", padding: "4px 6px",
+              borderBottom: "1px solid transparent",
               color: "var(--color-text-primary)",
-            }}>
-              {originalTask.name}
-            </span>
-          )}
+              background: "transparent",
+              transition: "border-color 0.1s",
+            }}
+            onFocus={e => (e.currentTarget.style.borderBottomColor = "var(--color-brand)")}
+            onBlur={e => (e.currentTarget.style.borderBottomColor = "transparent")}
+          />
 
-          {/* アクションボタン */}
-          {!editing && (
-            <button onClick={() => setEditing(true)} style={ghostBtnSm}>
-              ✏ 編集
-            </button>
-          )}
-          {editing && (
-            <>
-              <button onClick={handleSave} style={{
-                ...primaryBtnSm,
-                background: saved ? "var(--color-bg-success)" : undefined,
-                color: saved ? "var(--color-text-success)" : undefined,
-                border: saved ? "1px solid var(--color-border-success)" : undefined,
-              }}>
-                {saved ? "✓ 保存済み" : "保存"}
-              </button>
-              <button onClick={() => setEditing(false)} style={ghostBtnSm}>
-                キャンセル
-              </button>
-            </>
-          )}
+          {/* 保存状態インジケータ */}
+          <SaveIndicator status={saveStatus} />
+
           <button onClick={onClose} aria-label="閉じる" title="閉じる" style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: "16px", color: "var(--color-text-tertiary)", flexShrink: 0,
           }}>✕</button>
         </div>
+
+        {/* 保存エラー表示 */}
+        {saveStatus === "error" && saveError && (
+          <div style={{
+            padding: "8px 16px",
+            background: "var(--color-bg-danger)",
+            color: "var(--color-text-danger)",
+            fontSize: "11px",
+            borderBottom: "1px solid var(--color-border-danger)",
+          }}>
+            {saveError}
+          </div>
+        )}
 
         {/* ===== ボディ ===== */}
         <div style={{ flex: 1, overflow: "auto", padding: "14px 18px" }}>
@@ -233,17 +239,17 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             <div style={{ display: "flex", gap: "4px" }}>
               {statusArr.map(s => {
                 const cfg = TASK_STATUS_STYLE[s];
-                const isActive = editing ? form.status === s : originalTask.status === s;
+                const isActive = form.status === s;
                 return (
                   <button key={s}
-                    onClick={() => editing && setForm(f => ({ ...f, status: s }))}
+                    onClick={() => setForm(f => ({ ...f, status: s }))}
                     style={{
                       padding: "4px 12px", fontSize: "11px", borderRadius: "var(--radius-md)",
                       fontWeight: isActive ? "500" : "400",
                       background: isActive ? cfg.bg : "transparent",
                       color: isActive ? cfg.color : "var(--color-text-tertiary)",
                       border: isActive ? `1px solid ${cfg.border}` : "1px solid var(--color-border-primary)",
-                      cursor: editing ? "pointer" : "default",
+                      cursor: "pointer",
                       transition: "all 0.1s",
                     }}>
                     {TASK_STATUS_LABEL[s]}
@@ -257,18 +263,18 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
           <FieldSection label="優先度">
             <div style={{ display: "flex", gap: "4px" }}>
               {["", "high", "mid", "low"].map(p => {
-                const isActive = editing ? form.priority === p : (originalTask.priority ?? "") === p;
+                const isActive = form.priority === p;
                 const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
                 return (
                   <button key={p}
-                    onClick={() => editing && setForm(f => ({ ...f, priority: p }))}
+                    onClick={() => setForm(f => ({ ...f, priority: p }))}
                     style={{
                       padding: "4px 10px", fontSize: "11px", borderRadius: "var(--radius-md)",
                       fontWeight: isActive ? "500" : "400",
                       background: isActive && cfg ? cfg.bg : isActive ? "var(--color-bg-secondary)" : "transparent",
                       color: isActive && cfg ? cfg.color : isActive ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
                       border: isActive ? "1px solid currentColor" : "1px solid var(--color-border-primary)",
-                      cursor: editing ? "pointer" : "default",
+                      cursor: "pointer",
                       transition: "all 0.1s",
                       opacity: isActive ? 1 : 0.5,
                     }}>
@@ -281,197 +287,146 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 
           {/* 担当者（複数可） */}
           <FieldSection label="担当者">
-            {editing ? (
-              <>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: form.assignee_member_ids.length > 0 ? "6px" : 0 }}>
-                  {form.assignee_member_ids.map(id => {
-                    const m = members.find(x => x.id === id);
-                    if (!m) return null;
-                    return (
-                      <span key={id} style={chipStyle}>
-                        <Avatar member={m} size={14} />
-                        {m.display_name}
-                        <button
-                          onClick={() => setForm(f => ({ ...f, assignee_member_ids: f.assignee_member_ids.filter(i => i !== id) }))}
-                          style={chipRemoveBtn}>×</button>
-                      </span>
-                    );
-                  })}
-                </div>
-                <select
-                  defaultValue=""
-                  onChange={e => {
-                    const id = e.target.value;
-                    if (id && !form.assignee_member_ids.includes(id))
-                      setForm(f => ({ ...f, assignee_member_ids: [...f.assignee_member_ids, id] }));
-                    e.target.value = "";
-                  }}
-                  style={inputSm}>
-                  <option value="">＋ 担当者を追加...</option>
-                  {members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => (
-                    <option key={m.id} value={m.id}>{m.display_name}</option>
-                  ))}
-                </select>
-              </>
-            ) : assigneeMembers.length > 0 ? (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                {assigneeMembers.map(m => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <Avatar member={m} size={20} />
-                    <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                      {m.display_name}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>未担当</span>
-            )}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: form.assignee_member_ids.length > 0 ? "6px" : 0 }}>
+              {form.assignee_member_ids.map(id => {
+                const m = members.find(x => x.id === id);
+                if (!m) return null;
+                return (
+                  <span key={id} style={chipStyle}>
+                    <Avatar member={m} size={14} />
+                    {m.display_name}
+                    <button
+                      onClick={() => setForm(f => ({ ...f, assignee_member_ids: f.assignee_member_ids.filter(i => i !== id) }))}
+                      aria-label={`${m.display_name} を担当者から外す`}
+                      style={chipRemoveBtn}>×</button>
+                  </span>
+                );
+              })}
+              {form.assignee_member_ids.length === 0 && (
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未担当</span>
+              )}
+            </div>
+            <select
+              defaultValue=""
+              onChange={e => {
+                const id = e.target.value;
+                if (id && !form.assignee_member_ids.includes(id))
+                  setForm(f => ({ ...f, assignee_member_ids: [...f.assignee_member_ids, id] }));
+                e.target.value = "";
+              }}
+              style={inputSm}>
+              <option value="">＋ 担当者を追加...</option>
+              {members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => (
+                <option key={m.id} value={m.id}>{m.display_name}</option>
+              ))}
+            </select>
           </FieldSection>
 
           {/* プロジェクト */}
           <FieldSection label="プロジェクト">
-            {editing ? (
-              <select value={form.project_id ?? ""}
-                onChange={e => setForm(f => ({ ...f, project_id: e.target.value || null }))}
-                style={inputSm}>
-                <option value="">なし</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            ) : project ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                <span style={{
-                  width: 7, height: 7, borderRadius: "50%",
-                  background: project.color_tag, display: "inline-block",
-                }} />
-                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                  {project.name}
-                </span>
-              </div>
-            ) : (
-              <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>なし</span>
-            )}
+            <select value={form.project_id ?? ""}
+              onChange={e => setForm(f => ({ ...f, project_id: e.target.value || null }))}
+              style={inputSm}>
+              <option value="">なし</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
           </FieldSection>
 
           {/* ToDo */}
           <FieldSection label="ToDo（OKR系）">
-            {editing ? (
-              <div style={{
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                padding: "6px 10px",
-                maxHeight: "150px",
-                overflowY: "auto",
-                background: "var(--color-bg-primary)",
-              }}>
-                {todosByTf.length === 0 && (
-                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
-                )}
-                {todosByTf.map(({ tf, items }) => (
-                  <div key={tf.id}>
-                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", padding: "4px 0 2px", fontWeight: 600 }}>
-                      {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
-                    </div>
-                    {items.map(todo => (
-                      <label key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer" }}>
-                        <input
-                          type="checkbox"
-                          checked={form.todo_ids.includes(todo.id)}
-                          onChange={e => setForm(f => ({
-                            ...f,
-                            todo_ids: e.target.checked
-                              ? [...f.todo_ids, todo.id]
-                              : f.todo_ids.filter(id => id !== todo.id),
-                          }))}
-                          style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                        />
-                        <span style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-                          {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
-                        </span>
-                      </label>
-                    ))}
+            <div style={{
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              padding: "6px 10px",
+              maxHeight: "150px",
+              overflowY: "auto",
+              background: "var(--color-bg-primary)",
+            }}>
+              {todosByTf.length === 0 && (
+                <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
+              )}
+              {todosByTf.map(({ tf, items }) => (
+                <div key={tf.id}>
+                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", padding: "4px 0 2px", fontWeight: 600 }}>
+                    {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
                   </div>
-                ))}
-              </div>
-            ) : linkedTodos.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                {linkedTodos.map(td => {
-                  const tf = taskForces.find(t => t.id === td.tf_id);
-                  return (
-                    <div key={td.id} style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                      {tf && (
-                        <span style={{
-                          fontSize: "10px", padding: "1px 6px", borderRadius: "3px", marginRight: "6px",
-                          background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-                          border: "1px solid var(--color-brand-border)",
-                        }}>
-                          {tf.tf_number ? `TF ${tf.tf_number} ` : ""}{tf.name}
-                        </span>
-                      )}
-                      {td.title.slice(0, 50)}{td.title.length > 50 ? "…" : ""}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
-            )}
+                  {items.map(todo => (
+                    <label key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={form.todo_ids.includes(todo.id)}
+                        onChange={e => setForm(f => ({
+                          ...f,
+                          todo_ids: e.target.checked
+                            ? [...f.todo_ids, todo.id]
+                            : f.todo_ids.filter(id => id !== todo.id),
+                        }))}
+                        style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                      />
+                      <span style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+                        {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
           </FieldSection>
 
           {/* 追加プロジェクト */}
           <FieldSection label="追加プロジェクト">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: linkedExtraProjects.length > 0 || editing ? "6px" : 0 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {linkedExtraProjects.map(p => (
                 <span key={p.id} style={chipStyle}>
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color_tag, flexShrink: 0 }} />
                   {p.name}
-                  {editing && (
-                    <button onClick={() => removeTaskProject(taskId, p.id)} style={chipRemoveBtn}>×</button>
-                  )}
+                  <button
+                    onClick={() => removeTaskProject(taskId, p.id)}
+                    aria-label={`${p.name} を解除`}
+                    style={chipRemoveBtn}>×</button>
                 </span>
               ))}
-              {linkedExtraProjects.length === 0 && !editing && (
+              {linkedExtraProjects.length === 0 && (
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
               )}
             </div>
-            {editing && (
-              <select
-                defaultValue=""
-                onChange={e => {
-                  if (!e.target.value) return;
-                  addTaskProject({ task_id: taskId, project_id: e.target.value });
-                  e.target.value = "";
-                }}
-                style={inputSm}
-              >
-                <option value="">＋ プロジェクトを追加...</option>
-                {projects
-                  .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
-                  .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-                }
-              </select>
-            )}
+            <select
+              defaultValue=""
+              onChange={e => {
+                if (!e.target.value) return;
+                addTaskProject({ task_id: taskId, project_id: e.target.value });
+                e.target.value = "";
+              }}
+              style={inputSm}
+            >
+              <option value="">＋ プロジェクトを追加...</option>
+              {projects
+                .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
+                .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+              }
+            </select>
           </FieldSection>
 
           {/* タスクフォース */}
           <FieldSection label="タスクフォース">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: linkedTfs.length > 0 || editing ? "6px" : 0 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {linkedTfs.map(tf => (
                 <span key={tf.id} style={chipStyle}>
                   {tf.tf_number ? <span style={{ fontWeight: "600", marginRight: 2 }}>{tf.tf_number}</span> : null}
                   {tf.name}
-                  {editing && (
-                    <button onClick={() => removeTaskTaskForce(taskId, tf.id)} style={chipRemoveBtn}>×</button>
-                  )}
+                  <button
+                    onClick={() => removeTaskTaskForce(taskId, tf.id)}
+                    aria-label={`${tf.name} を解除`}
+                    style={chipRemoveBtn}>×</button>
                 </span>
               ))}
-              {linkedTfs.length === 0 && !editing && (
+              {linkedTfs.length === 0 && (
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未設定</span>
               )}
             </div>
-            {editing && taskForces.length > 0 && (
+            {taskForces.length > 0 ? (
               <select
                 defaultValue=""
                 onChange={e => {
@@ -491,8 +446,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
                   ))
                 }
               </select>
-            )}
-            {editing && taskForces.length === 0 && (
+            ) : (
               <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
                 管理画面でTask Forceを先に登録してください
               </span>
@@ -502,91 +456,56 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
           {/* 開始日 + 終了日 + 工数（3列） */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             <FieldSection label="開始日">
-              {editing ? (
-                <input type="date" value={form.start_date}
-                  onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
-                  style={inputSm} />
-              ) : (
-                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                  {originalTask.start_date ?? "未設定"}
-                </span>
-              )}
+              <input type="date" value={form.start_date}
+                onChange={e => setForm(f => ({ ...f, start_date: e.target.value }))}
+                style={inputSm} />
             </FieldSection>
 
             <FieldSection label="終了日">
-              {editing ? (
-                <input type="date" value={form.due_date}
-                  onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
-                  style={inputSm} />
-              ) : (
-                <span style={{
-                  fontSize: "12px",
-                  color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-                  fontWeight: isOverdue ? "500" : "400",
-                }}>
-                  {originalTask.due_date ?? "未設定"}
-                  {isOverdue && (
-                    <span style={{ marginLeft: 5, fontSize: "10px",
-                      background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
-                      padding: "1px 5px", borderRadius: "3px" }}>
-                      期限超過
-                    </span>
-                  )}
+              <input type="date" value={form.due_date}
+                onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))}
+                style={{
+                  ...inputSm,
+                  ...(isOverdue ? {
+                    borderColor: "var(--color-border-danger)",
+                    color: "var(--color-text-danger)",
+                  } : {}),
+                }} />
+              {isOverdue && (
+                <span style={{ marginTop: 4, fontSize: "10px", display: "inline-block",
+                  background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
+                  padding: "1px 5px", borderRadius: "3px" }}>
+                  期限超過
                 </span>
               )}
             </FieldSection>
 
             <FieldSection label="工数（時間）">
-              {editing ? (
-                <input type="number" min="0" step="0.5"
-                  value={form.estimated_hours}
-                  onChange={e => setForm(f => ({ ...f, estimated_hours: e.target.value }))}
-                  placeholder="例：2.5"
-                  style={inputSm} />
-              ) : (
-                <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
-                  {originalTask.estimated_hours != null
-                    ? `${originalTask.estimated_hours}h`
-                    : "未設定"}
-                </span>
-              )}
+              <input type="number" min="0" step="0.5"
+                value={form.estimated_hours}
+                onChange={e => setForm(f => ({ ...f, estimated_hours: e.target.value }))}
+                placeholder="例：2.5"
+                style={inputSm} />
             </FieldSection>
           </div>
 
           {/* コメント */}
           <FieldSection label="コメント・メモ">
-            {editing ? (
-              <textarea
-                value={form.comment}
-                onChange={e => setForm(f => ({ ...f, comment: e.target.value }))}
-                rows={5}
-                placeholder={
-                  "メモやURLを入力できます\n" +
-                  "例：https://docs.example.com\n" +
-                  "URLは表示時に自動でリンクになります"
-                }
-                style={{
-                  ...inputSm,
-                  resize: "vertical",
-                  lineHeight: 1.6,
-                  minHeight: "80px",
-                }}
-              />
-            ) : originalTask.comment ? (
-              <div style={{
-                fontSize: "12px", color: "var(--color-text-secondary)",
-                lineHeight: 1.7, whiteSpace: "pre-wrap",
-                background: "var(--color-bg-secondary)",
-                padding: "8px 10px", borderRadius: "var(--radius-md)",
-                border: "1px solid var(--color-border-primary)",
-              }}>
-                {renderLinks(originalTask.comment)}
-              </div>
-            ) : (
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                コメントなし
-              </span>
-            )}
+            <textarea
+              value={form.comment}
+              onChange={e => setForm(f => ({ ...f, comment: e.target.value }))}
+              rows={5}
+              placeholder={
+                "メモやURLを入力できます\n" +
+                "例：https://docs.example.com"
+              }
+              style={{
+                ...inputSm,
+                resize: "vertical",
+                lineHeight: 1.6,
+                minHeight: "80px",
+              }}
+            />
           </FieldSection>
 
           {/* メタ情報 */}
@@ -624,7 +543,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
             🗑 削除
           </button>
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            {editing ? "編集中" : "Escで閉じる"}
+            変更は自動で保存されます
           </span>
         </div>
       </div>
@@ -633,6 +552,31 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
 }
 
 // ===== 小コンポーネント =====
+
+function SaveIndicator({ status }: { status: "idle" | "saving" | "saved" | "error" }) {
+  if (status === "idle") return null;
+  const styles: Record<"saving" | "saved" | "error", { bg: string; color: string; label: string }> = {
+    saving: { bg: "transparent", color: "var(--color-text-tertiary)", label: "保存中…" },
+    saved:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)", label: "✓ 保存しました" },
+    error:  { bg: "var(--color-bg-danger)", color: "var(--color-text-danger)", label: "保存失敗" },
+  };
+  const s = styles[status];
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      style={{
+        fontSize: "10px", padding: "2px 8px",
+        background: s.bg, color: s.color,
+        borderRadius: "99px",
+        flexShrink: 0,
+        transition: "all 0.15s",
+      }}
+    >
+      {s.label}
+    </span>
+  );
+}
 
 function FieldSection({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -673,17 +617,3 @@ const chipRemoveBtn: React.CSSProperties = {
   fontSize: "11px", lineHeight: 1, marginLeft: "2px",
 };
 
-const ghostBtnSm: React.CSSProperties = {
-  padding: "4px 10px", fontSize: "11px",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-  background: "transparent",
-};
-
-const primaryBtnSm: React.CSSProperties = {
-  padding: "4px 12px", fontSize: "11px", fontWeight: "500",
-  background: "var(--color-bg-info)", color: "var(--color-text-info)",
-  border: "1px solid var(--color-border-info)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-};
