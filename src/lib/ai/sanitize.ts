@@ -25,7 +25,8 @@ export function sanitizeComment(comment: string): string {
     // Windowsネットワークパス（\\server\share 形式）
     .replace(/\\\\[^\s]*/g, "[ファイルパス省略]")
     // UNCパス（//server/path 形式）
-    .replace(/\/\/[a-zA-Z0-9._-]+\/[^\s]*/g, "[ファイルパス省略]")
+    // 直前にコロンがある場合（http://, https://, ftp:// 等のURL）は除外
+    .replace(/(?<!:)\/\/[a-zA-Z0-9._-]+\/[^\s]*/g, "[ファイルパス省略]")
     // Windowsローカルパス（C:\... 形式）
     .replace(/[A-Za-z]:\\[^\s]*/g, "[ファイルパス省略]")
     // メールアドレス
