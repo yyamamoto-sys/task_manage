@@ -386,13 +386,18 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       };
     });
 
-    // シグナル履歴（直近20件）
-    const signalHistory: SignalEntry[] = sessions.slice(0, 20).map(s => ({
-      week_start: s.week_start,
-      session_type: s.session_type,
-      signal: s.signal,
-      signal_comment: s.signal_comment ?? "",
-    }));
+    // シグナル履歴（直近20件）。freeform は signal を持たないため除外
+    const signalHistory: SignalEntry[] = sessions
+      .filter((s): s is typeof s & { session_type: "checkin" | "win_session" } =>
+        s.session_type === "checkin" || s.session_type === "win_session",
+      )
+      .slice(0, 20)
+      .map(s => ({
+        week_start: s.week_start,
+        session_type: s.session_type,
+        signal: s.signal,
+        signal_comment: s.signal_comment ?? "",
+      }));
 
     // ウィンセッション学び
     const winSessions = sessions.filter(s => s.session_type === "win_session");

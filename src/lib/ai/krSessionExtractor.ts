@@ -34,6 +34,18 @@ export interface ExtractedWinSession {
   external_changes: string;
 }
 
+export interface ExtractedKrMention {
+  kr_title_hint: string;   // 言及された KR タイトルのヒント（完全一致しなくてもよい）
+  note: string;            // どんな言及だったか（短文）
+}
+
+export interface ExtractedFreeformSession {
+  summary: string;                          // 議論サマリ（5〜10文）
+  decisions: string[];                      // 決定事項のリスト
+  kr_mentions: ExtractedKrMention[];        // 言及された KR
+  follow_up_tasks: ExtractedDeclaration[];  // フォローアップタスク（既存型を再利用）
+}
+
 // ===== システムプロンプト =====
 
 const CHECKIN_EXTRACT_PROMPT = `あなたはOKR会議の文字起こしを構造化JSONに変換するAIです。
@@ -95,6 +107,51 @@ declaration_resultのresult_status:
   ],
   "learnings": "...",
   "external_changes": "..."
+}`;
+
+// ===== freeform プロンプト =====
+//
+// 【ラボ機能例外（CLAUDE.md Section 2）】
+// チェックイン・ウィンセッションと同じく KR/TF を AI に渡す機能のため、
+// AIIntent タグ "kr-session-extract" の枠内で扱う（追加タグは不要）。
+// freeform は「OKR/TF が議題中心の自由形式の会議」を想定する。
+
+const FREEFORM_EXTRACT_PROMPT = `あなたはOKR文脈の会議文字起こしを構造化JSONに変換するAIです。
+チェックイン・ウィンセッションのような決まったフォーマットではなく、
+戦略会議・四半期計画・KRレビュー会議などの自由形式の議論から要点を抽出します。
+
+入力データ:
+- KR情報（議論の中心となっている可能性が高い対象KR）
+- 全KRリスト（言及されたKRの照合用・タイトルのみ）
+- メンバーリスト（short_name一覧）
+- 文字起こしテキスト
+
+抽出するもの:
+1. summary: 議論全体のサマリ（5〜10文・敬体不要）
+2. decisions: 会議で決まったこと・合意事項のリスト（各項目は短く端的に）
+3. kr_mentions: 議論中で言及された KR のリスト（タイトルのヒント＋言及内容の短文）
+   - 対象KR以外の KR にも言及があれば全て拾う
+   - 言及がなければ空配列
+4. follow_up_tasks: 議論から派生したフォローアップタスク候補（誰が・何を・いつまでに）
+   - 「次回までに〜する」「〜さんが調べる」などの発言から拾う
+   - チェックイン宣言と違い、構造化レベルは弱くてよい
+   - メンバーが特定できなければ "未特定"
+   - 期日が言及されていなければ null
+
+出力形式（JSONのみ。マークダウンのコードブロック\`\`\`は絶対に使わない）:
+{
+  "summary": "...",
+  "decisions": ["決定1", "決定2"],
+  "kr_mentions": [
+    { "kr_title_hint": "KRのタイトル", "note": "どんな言及か（短文）" }
+  ],
+  "follow_up_tasks": [
+    {
+      "member_short_name": "メンバーのshort_nameまたは「未特定」",
+      "content": "タスク内容（行動レベルで具体的に）",
+      "due_date": "YYYY-MM-DD" | null
+    }
+  ]
 }`;
 
 // ===== 呼び出し共通処理 =====
@@ -191,4 +248,51 @@ export async function extractWinSessionData(params: {
   const text = await callExtractAI(WIN_SESSION_EXTRACT_PROMPT, userMessage, params.attachment);
   const parsed = parseJsonSafe<unknown>(text);
   return validateWinSession(parsed);
+}
+
+// ===== freeform セッション抽出 =====
+
+function validateFreeform(data: unknown): ExtractedFreeformSession {
+  if (!data || typeof data !== "object") throw new Error("AIレスポンスがオブジェクトではありません。");
+  const d = data as Record<string, unknown>;
+  if (typeof d.summary !== "string") throw new Error("summaryがstringではありません。");
+  if (!Array.isArray(d.decisions)) throw new Error("decisionsが配列ではありません。");
+  for (const x of d.decisions as unknown[]) {
+    if (typeof x !== "string") throw new Error("decisions要素がstringではありません。");
+  }
+  if (!Array.isArray(d.kr_mentions)) throw new Error("kr_mentionsが配列ではありません。");
+  for (const m of d.kr_mentions as unknown[]) {
+    if (!m || typeof m !== "object") throw new Error("kr_mentions要素がオブジェクトではありません。");
+    const mm = m as Record<string, unknown>;
+    if (typeof mm.kr_title_hint !== "string") throw new Error("kr_title_hintがstringではありません。");
+    if (typeof mm.note !== "string") throw new Error("noteがstringではありません。");
+  }
+  if (!Array.isArray(d.follow_up_tasks)) throw new Error("follow_up_tasksが配列ではありません。");
+  for (const t of d.follow_up_tasks as unknown[]) {
+    if (!t || typeof t !== "object") throw new Error("follow_up_tasks要素がオブジェクトではありません。");
+    const tt = t as Record<string, unknown>;
+    if (typeof tt.member_short_name !== "string") throw new Error("member_short_nameがstringではありません。");
+    if (typeof tt.content !== "string") throw new Error("contentがstringではありません。");
+    if (tt.due_date !== null && typeof tt.due_date !== "string") throw new Error("due_dateの型が不正です。");
+  }
+  return d as unknown as ExtractedFreeformSession;
+}
+
+export async function extractFreeformSession(params: {
+  krTitle: string;
+  allKrTitles: string[];
+  memberShortNames: string[];
+  transcript: string;
+  attachment?: FileAttachment;
+}): Promise<ExtractedFreeformSession> {
+  const userMessage = JSON.stringify({
+    kr_title: params.krTitle,
+    all_kr_titles: params.allKrTitles,
+    members: params.memberShortNames,
+    transcript: params.transcript,
+  });
+
+  const text = await callExtractAI(FREEFORM_EXTRACT_PROMPT, userMessage, params.attachment);
+  const parsed = parseJsonSafe<unknown>(text);
+  return validateFreeform(parsed);
 }

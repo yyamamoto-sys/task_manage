@@ -8,16 +8,24 @@ import { supabase } from "./client";
 
 // ===== 型定義 =====
 
+export type KrSessionType = "checkin" | "win_session" | "freeform";
+
 export interface KrSession {
   id: string;
   kr_id: string;
-  week_start: string;       // YYYY-MM-DD（月曜日）
-  session_type: "checkin" | "win_session";
+  week_start: string;       // YYYY-MM-DD（月曜日 or freeform時は議事日）
+  session_type: KrSessionType;
   signal: "green" | "yellow" | "red" | null;
   signal_comment: string;
   learnings: string;
   external_changes: string;
   transcript: string;
+  /** freeform 用：AI 生成サマリ。checkin/win では空 */
+  summary: string;
+  /** freeform 用：決定事項（改行区切り）。checkin/win では空 */
+  decisions: string;
+  /** freeform 用：言及された KR への注記（改行区切り）。checkin/win では空 */
+  kr_mentions: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -106,7 +114,7 @@ export async function insertKrDeclaration(
 
 export async function updateKrSession(
   id: string,
-  fields: Partial<Pick<KrSession, "session_type" | "signal" | "signal_comment" | "learnings" | "external_changes">>,
+  fields: Partial<Pick<KrSession, "session_type" | "signal" | "signal_comment" | "learnings" | "external_changes" | "summary" | "decisions" | "kr_mentions">>,
   updatedBy: string,
 ): Promise<void> {
   const { error } = await supabase

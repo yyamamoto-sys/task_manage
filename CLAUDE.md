@@ -20,8 +20,13 @@
 #      更新：Section 5（楽観ロック実装の現状）
 #      更新：Section 6-1（AIIntent 型ガード）
 #      追加：Section 13（appStore.ts / ErrorBoundary.tsx）
+# v2.4 OKR freeform セッション追加・テスト基盤導入・ESLint/jsx-a11y 導入（2026-05-08）
+#      更新：Section 8（画面一覧に「その他のOKR議論」セッションタイプを追加）
+#      追加：kr_sessions テーブルに summary/decisions/kr_mentions 3列・session_type='freeform' を許可
+#      テスト基盤：vitest 3 + 4 テストファイル（sanitize / payloadBuilder / applyProposal / krSessionExtractor）合計 69 テスト
+#      ESLint：v9 flat config + jsx-a11y recommended（npm run lint）
 #
-# 最終更新：2026-05-02（v2.3）
+# 最終更新：2026-05-08（v2.4）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -684,6 +689,7 @@ interface TaskChangeLog {
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
 | OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
+| KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
 
 ### UI/UX仕様（2026年4月確定）
 

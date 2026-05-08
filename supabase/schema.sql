@@ -236,12 +236,16 @@ CREATE TABLE IF NOT EXISTS kr_sessions (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   kr_id             text NOT NULL REFERENCES key_results(id),
   week_start        date NOT NULL,                    -- 月曜日
-  session_type      text NOT NULL CHECK (session_type IN ('checkin','win_session')),
+  session_type      text NOT NULL CHECK (session_type IN ('checkin','win_session','freeform')),
   signal            text CHECK (signal IN ('green','yellow','red')),
   signal_comment    text NOT NULL DEFAULT '',
   learnings         text NOT NULL DEFAULT '',
   external_changes  text NOT NULL DEFAULT '',
   transcript        text NOT NULL DEFAULT '',
+  -- freeform 用の3列（migrations/20260508_freeform_session.sql 参照）
+  summary           text NOT NULL DEFAULT '',
+  decisions         text NOT NULL DEFAULT '',
+  kr_mentions       text NOT NULL DEFAULT '',
   created_by        text NOT NULL,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),

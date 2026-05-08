@@ -27,10 +27,10 @@ const SIGNAL_DOT: Record<string, string> = {
   green: "🟢", yellow: "🟡", red: "🔴",
 };
 const SESSION_TYPE_LABEL: Record<string, string> = {
-  checkin: "チェックイン", win_session: "ウィンセッション",
+  checkin: "チェックイン", win_session: "ウィンセッション", freeform: "OKR議論",
 };
 const SESSION_TYPE_ICON: Record<string, string> = {
-  checkin: "🗓️", win_session: "🏆",
+  checkin: "🗓️", win_session: "🏆", freeform: "💬",
 };
 
 function getThisMonday(): string {
@@ -591,7 +591,7 @@ export function OkrDashboardView({
 // ===== セッション履歴コンポーネント =====
 
 type EditDraft = {
-  session_type: "checkin" | "win_session";
+  session_type: "checkin" | "win_session" | "freeform";
   signal: "green" | "yellow" | "red" | null;
   signal_comment: string;
   learnings: string;

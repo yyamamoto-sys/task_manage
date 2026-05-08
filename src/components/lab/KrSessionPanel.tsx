@@ -11,8 +11,11 @@ import type { Member } from "../../lib/localData/types";
 import {
   extractCheckinData,
   extractWinSessionData,
+  extractFreeformSession,
   type ExtractedCheckin,
   type ExtractedWinSession,
+  type ExtractedFreeformSession,
+  type ExtractedKrMention,
 } from "../../lib/ai/krSessionExtractor";
 import {
   insertKrSession,
@@ -27,7 +30,7 @@ import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/F
 
 // ===== 型 =====
 
-type SessionType = "checkin" | "win_session";
+type SessionType = "checkin" | "win_session" | "freeform";
 type Step = "input" | "extracting" | "confirm" | "saving" | "done";
 
 interface CheckinRow {
@@ -45,6 +48,14 @@ interface WinRow {
   due_date: string | null;
   result_status: "achieved" | "partial" | "not_achieved";
   result_note: string;
+}
+
+interface FreeformFollowUpRow {
+  tempId: string;
+  member_id: string;
+  member_short_name: string;
+  content: string;
+  due_date: string;
 }
 
 // ===== ユーティリティ =====
@@ -111,6 +122,12 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
   // --- 前回チェックイン宣言（ウィン用） ---
   const [prevDeclarations, setPrevDeclarations] = useState<KrDeclaration[]>([]);
 
+  // --- freeform 確認データ ---
+  const [freeformSummary, setFreeformSummary] = useState("");
+  const [freeformDecisions, setFreeformDecisions] = useState<string[]>([]);
+  const [freeformKrMentions, setFreeformKrMentions] = useState<ExtractedKrMention[]>([]);
+  const [freeformFollowUps, setFreeformFollowUps] = useState<FreeformFollowUpRow[]>([]);
+
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
 
   // --- メンバーshort_nameからIDを解決 ---
@@ -146,6 +163,28 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             member_short_name: d.member_short_name,
             content: d.content,
             due_date: d.due_date ?? "",
+          })),
+        );
+      } else if (sessionType === "freeform") {
+        // freeform: 戦略会議など OKR/TF が中心の自由形式会議
+        const result: ExtractedFreeformSession = await extractFreeformSession({
+          krTitle: selectedKr.title,
+          allKrTitles: activeKrs.map(k => k.title),
+          memberShortNames: activeMembers.map(m => m.short_name),
+          transcript: transcript.trim(),
+          attachment: attachment ?? undefined,
+        });
+
+        setFreeformSummary(result.summary ?? "");
+        setFreeformDecisions(result.decisions ?? []);
+        setFreeformKrMentions(result.kr_mentions ?? []);
+        setFreeformFollowUps(
+          (result.follow_up_tasks ?? []).map((t, i) => ({
+            tempId: `tmp-fu-${i}`,
+            member_id: resolveOrUnknown(t.member_short_name),
+            member_short_name: t.member_short_name,
+            content: t.content,
+            due_date: t.due_date ?? "",
           })),
         );
       } else {
@@ -218,11 +257,48 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           learnings: "",
           external_changes: "",
           transcript: transcript.trim(),
+          summary: "",
+          decisions: "",
+          kr_mentions: "",
           created_by: currentUser.id,
           updated_by: currentUser.id,
         });
 
         for (const row of checkinRows) {
+          if (!row.content.trim()) continue;
+          await insertKrDeclaration({
+            session_id: session.id,
+            member_id: row.member_id || currentUser.id,
+            content: row.content,
+            due_date: row.due_date || null,
+            result_status: null,
+            result_note: "",
+            updated_by: currentUser.id,
+          });
+        }
+      } else if (sessionType === "freeform") {
+        // freeform: summary / decisions / kr_mentions を text 列に格納
+        // フォローアップは kr_declarations に result_status=null で保存
+        const session = await insertKrSession({
+          kr_id: selectedKrId,
+          week_start: weekStart,
+          session_type: "freeform",
+          signal: null,
+          signal_comment: "",
+          learnings: "",
+          external_changes: "",
+          transcript: transcript.trim(),
+          summary: freeformSummary,
+          decisions: freeformDecisions.filter(d => d.trim()).join("\n"),
+          kr_mentions: freeformKrMentions
+            .map(m => `${m.kr_title_hint} — ${m.note}`.trim())
+            .filter(s => s)
+            .join("\n"),
+          created_by: currentUser.id,
+          updated_by: currentUser.id,
+        });
+
+        for (const row of freeformFollowUps) {
           if (!row.content.trim()) continue;
           await insertKrDeclaration({
             session_id: session.id,
@@ -244,6 +320,9 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           learnings: winLearnings,
           external_changes: winExternalChanges,
           transcript: transcript.trim(),
+          summary: "",
+          decisions: "",
+          kr_mentions: "",
           created_by: currentUser.id,
           updated_by: currentUser.id,
         });
@@ -287,6 +366,10 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
     setCheckinRows([]);
     setWinRows([]);
     setPrevDeclarations([]);
+    setFreeformSummary("");
+    setFreeformDecisions([]);
+    setFreeformKrMentions([]);
+    setFreeformFollowUps([]);
   };
 
   // ===== レンダリング =====
@@ -414,6 +497,23 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
             />
           )}
 
+          {/* ステップ3: 確認（freeform） */}
+          {step === "confirm" && sessionType === "freeform" && (
+            <FreeformConfirmStep
+              summary={freeformSummary}
+              setSummary={setFreeformSummary}
+              decisions={freeformDecisions}
+              setDecisions={setFreeformDecisions}
+              krMentions={freeformKrMentions}
+              setKrMentions={setFreeformKrMentions}
+              followUps={freeformFollowUps}
+              setFollowUps={setFreeformFollowUps}
+              members={activeMembers}
+              error={error}
+              onSave={handleSave}
+            />
+          )}
+
           {/* ステップ4: 保存中 */}
           {step === "saving" && (
             <div style={{
@@ -440,7 +540,9 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
                 {sessionType === "checkin"
                   ? "宣言内容がDBに保存されました。金曜のウィンセッション時に自動的に参照されます。"
-                  : "ウィンセッションの結果が保存されました。"}
+                  : sessionType === "freeform"
+                    ? "議論サマリ・決定事項・KR言及・フォローアップが対象KRにぶら下げて保存されました。"
+                    : "ウィンセッションの結果が保存されました。"}
               </div>
               <button
                 onClick={handleReset}
@@ -523,9 +625,9 @@ function InputStep({
           )}
         </div>
 
-        {/* 週選択 */}
+        {/* 日付選択 */}
         <div style={{ flex: "1 1 140px" }}>
-          <FieldLabel>週（月曜日の日付）</FieldLabel>
+          <FieldLabel>{sessionType === "freeform" ? "議事日" : "週（月曜日の日付）"}</FieldLabel>
           <input
             type="date"
             value={weekStart}
@@ -542,6 +644,7 @@ function InputStep({
           {([
             { value: "checkin", label: "チェックイン", sub: "週1回：宣言・シグナル入力" },
             { value: "win_session", label: "ウィンセッション", sub: "週1回：宣言結果・学び入力" },
+            { value: "freeform", label: "その他のOKR議論", sub: "戦略会議・四半期計画など自由形式" },
           ] as const).map(opt => (
             <button
               key={opt.value}
@@ -859,6 +962,227 @@ function WinConfirmStep({
           rows={3}
           style={{ ...inputStyle, resize: "vertical" }}
         />
+      </Card>
+
+      {error && <ErrorBox message={error} />}
+
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        <button onClick={onSave} style={{ ...primaryButtonStyle(false), width: "auto", paddingLeft: "24px", paddingRight: "24px" }}>
+          💾 DBに保存する
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function FreeformConfirmStep({
+  summary, setSummary,
+  decisions, setDecisions,
+  krMentions, setKrMentions,
+  followUps, setFollowUps,
+  members, error, onSave,
+}: {
+  summary: string; setSummary: (v: string) => void;
+  decisions: string[]; setDecisions: (v: string[]) => void;
+  krMentions: ExtractedKrMention[]; setKrMentions: (v: ExtractedKrMention[]) => void;
+  followUps: FreeformFollowUpRow[]; setFollowUps: (v: FreeformFollowUpRow[]) => void;
+  members: Member[];
+  error: string | null;
+  onSave: () => void;
+}) {
+  const updateFollowUp = (tempId: string, patch: Partial<FreeformFollowUpRow>) => {
+    setFollowUps(followUps.map(r => r.tempId === tempId ? { ...r, ...patch } : r));
+  };
+  const addFollowUp = () => {
+    setFollowUps([...followUps, {
+      tempId: `tmp-fu-${Date.now()}`,
+      member_id: members[0]?.id ?? "",
+      member_short_name: members[0]?.short_name ?? "",
+      content: "",
+      due_date: "",
+    }]);
+  };
+  const removeFollowUp = (tempId: string) => {
+    setFollowUps(followUps.filter(r => r.tempId !== tempId));
+  };
+
+  const updateDecision = (idx: number, value: string) => {
+    setDecisions(decisions.map((d, i) => i === idx ? value : d));
+  };
+  const addDecision = () => setDecisions([...decisions, ""]);
+  const removeDecision = (idx: number) => setDecisions(decisions.filter((_, i) => i !== idx));
+
+  const updateMention = (idx: number, patch: Partial<ExtractedKrMention>) => {
+    setKrMentions(krMentions.map((m, i) => i === idx ? { ...m, ...patch } : m));
+  };
+  const addMention = () => setKrMentions([...krMentions, { kr_title_hint: "", note: "" }]);
+  const removeMention = (idx: number) => setKrMentions(krMentions.filter((_, i) => i !== idx));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <SectionHeader icon="✅" title="解析結果を確認・修正してください" />
+
+      {/* 議論サマリ */}
+      <Card>
+        <FieldLabel>議論サマリ</FieldLabel>
+        <textarea
+          value={summary}
+          onChange={e => setSummary(e.target.value)}
+          rows={5}
+          placeholder="会議全体のサマリ"
+          style={{ ...inputStyle, resize: "vertical" }}
+        />
+      </Card>
+
+      {/* 決定事項 */}
+      <Card>
+        <FieldLabel>決定事項（{decisions.length}件）</FieldLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {decisions.map((d, i) => (
+            <div key={i} style={{ display: "flex", gap: "8px" }}>
+              <input
+                type="text"
+                value={d}
+                onChange={e => updateDecision(i, e.target.value)}
+                placeholder="決定内容"
+                style={{ ...inputStyle, flex: 1 }}
+              />
+              <button
+                onClick={() => removeDecision(i)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: "var(--color-text-tertiary)", fontSize: "16px", padding: "4px",
+                }}
+                aria-label="削除"
+              >✕</button>
+            </div>
+          ))}
+          <button
+            onClick={addDecision}
+            style={{
+              fontSize: "11px", padding: "7px",
+              background: "transparent",
+              border: "1px dashed var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)",
+              cursor: "pointer",
+            }}
+          >＋ 決定事項を追加</button>
+        </div>
+      </Card>
+
+      {/* KR言及 */}
+      <Card>
+        <FieldLabel>言及されたKR（{krMentions.length}件）</FieldLabel>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {krMentions.map((m, i) => (
+            <div key={i} style={{
+              display: "flex", gap: "8px", alignItems: "flex-start",
+              background: "var(--color-bg-secondary)",
+              padding: "10px", borderRadius: "var(--radius-md)",
+            }}>
+              <input
+                type="text"
+                value={m.kr_title_hint}
+                onChange={e => updateMention(i, { kr_title_hint: e.target.value })}
+                placeholder="KRタイトル"
+                style={{ ...inputStyle, flex: "1 1 200px" }}
+              />
+              <input
+                type="text"
+                value={m.note}
+                onChange={e => updateMention(i, { note: e.target.value })}
+                placeholder="言及内容"
+                style={{ ...inputStyle, flex: "2 1 280px" }}
+              />
+              <button
+                onClick={() => removeMention(i)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: "var(--color-text-tertiary)", fontSize: "16px", padding: "4px",
+                }}
+                aria-label="削除"
+              >✕</button>
+            </div>
+          ))}
+          <button
+            onClick={addMention}
+            style={{
+              fontSize: "11px", padding: "7px",
+              background: "transparent",
+              border: "1px dashed var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)",
+              cursor: "pointer",
+            }}
+          >＋ KR言及を追加</button>
+        </div>
+      </Card>
+
+      {/* フォローアップタスク */}
+      <Card>
+        <FieldLabel>フォローアップタスク候補（{followUps.length}件）</FieldLabel>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "10px" }}>
+          このKRに紐づく宣言として保存されます（result_status は未設定）
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          {followUps.map(row => (
+            <div key={row.tempId} style={{
+              display: "flex", gap: "8px", alignItems: "flex-start",
+              background: "var(--color-bg-secondary)",
+              padding: "10px", borderRadius: "var(--radius-md)",
+            }}>
+              <select
+                value={row.member_id}
+                onChange={e => {
+                  const m = members.find(m => m.id === e.target.value);
+                  updateFollowUp(row.tempId, {
+                    member_id: e.target.value,
+                    member_short_name: m?.short_name ?? "",
+                  });
+                }}
+                style={{ ...selectStyle, width: "100px", flexShrink: 0 }}
+              >
+                {members.map(m => (
+                  <option key={m.id} value={m.id}>{m.short_name}</option>
+                ))}
+                {!row.member_id && <option value="">未特定</option>}
+              </select>
+              <textarea
+                value={row.content}
+                onChange={e => updateFollowUp(row.tempId, { content: e.target.value })}
+                placeholder="タスク内容"
+                rows={2}
+                style={{ ...inputStyle, flex: 1, resize: "vertical" }}
+              />
+              <input
+                type="date"
+                value={row.due_date}
+                onChange={e => updateFollowUp(row.tempId, { due_date: e.target.value })}
+                style={{ ...inputStyle, width: "130px", flexShrink: 0 }}
+              />
+              <button
+                onClick={() => removeFollowUp(row.tempId)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  color: "var(--color-text-tertiary)", fontSize: "16px", padding: "4px",
+                }}
+                aria-label="削除"
+              >✕</button>
+            </div>
+          ))}
+          <button
+            onClick={addFollowUp}
+            style={{
+              fontSize: "11px", padding: "7px",
+              background: "transparent",
+              border: "1px dashed var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)",
+              cursor: "pointer",
+            }}
+          >＋ フォローアップを追加</button>
+        </div>
       </Card>
 
       {error && <ErrorBox message={error} />}
