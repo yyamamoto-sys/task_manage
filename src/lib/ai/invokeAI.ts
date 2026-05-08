@@ -29,6 +29,7 @@
 // └─────────────────────────────────────────────────────────────┘
 
 import { supabase } from "../supabase/client";
+import { logAIUsage } from "./usageLog";
 
 export type AIIntent =
   | "task-management"      // payloadBuilder 経由・通常のタスク管理相談（PJ/Task のみ）
@@ -137,8 +138,14 @@ export async function invokeAI(
     throw new Error(extractEdgeError(data, error.message));
   }
 
-  const text: string = (data as AIRawResponse)?.content?.[0]?.text ?? "";
+  const response = data as AIRawResponse;
+  const text: string = response?.content?.[0]?.text ?? "";
   if (!text) throw new Error("AIからの応答が空でした。");
 
-  return data as AIRawResponse;
+  // 全 AI 呼び出しの使用量を ai_usage_logs に記録（fire-and-forget）
+  // intent をそのまま consultation_type 列に保存することで、AdminView の
+  // 「AI使用量」タブで全機能の使用量が反映される（CLAUDE.md Section 6-1b 参照）
+  logAIUsage(intent, response.usage);
+
+  return response;
 }
