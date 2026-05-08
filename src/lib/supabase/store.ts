@@ -14,6 +14,7 @@ import type {
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
+  MemberTag, MemberTagMember,
 } from "../localData/types";
 
 // ===== 競合エラー =====
@@ -91,7 +92,7 @@ async function saveWithLock<T extends { id: string; updated_at?: unknown }>(
  * junction テーブル（*_task_forces / task_projects）には is_deleted カラムが無いため除外フィルタは入れない。
  */
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones] =
+  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones, memberTags, memberTagMembers] =
     await Promise.all([
       supabase.from("members").select("*").eq("is_deleted", false),
       supabase.from("objectives").select("*"),
@@ -106,9 +107,13 @@ export async function fetchAllData() {
       supabase.from("task_task_forces").select("*"),
       supabase.from("task_projects").select("*"),
       supabase.from("milestones").select("*").eq("is_deleted", false),
+      supabase.from("member_tags").select("*").eq("is_deleted", false),
+      supabase.from("member_tag_members").select("*"),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
+  // member_tags / member_tag_members はマイグレ未適用環境でも他機能が動くよう
+  // ここでは throw せず、空配列フォールバック（後段で取り扱う）
   const firstError = [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs]
     .find(r => r.error)?.error;
   if (firstError) {
@@ -140,6 +145,8 @@ export async function fetchAllData() {
     taskTaskForces:         (ttfs.data   ?? []) as TaskTaskForce[],
     taskProjects:           (tpjs.data   ?? []) as TaskProject[],
     milestones:             (milestones.data ?? []) as Milestone[],
+    memberTags:             (memberTags.data ?? []) as MemberTag[],
+    memberTagMembers:       (memberTagMembers.data ?? []) as MemberTagMember[],
   };
 }
 
@@ -339,6 +346,38 @@ export async function deleteProjectTaskForce(projectId: string, tfId: string) {
     .eq("project_id", projectId)
     .eq("tf_id", tfId);
   if (error) throw error;
+}
+
+// ===== MemberTag =====
+
+export async function upsertMemberTag(tag: MemberTag) {
+  await saveWithLock("member_tags", tag);
+}
+
+export async function softDeleteMemberTag(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("member_tags")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+/** タグ ↔ メンバーの紐付けを差し替える（既存削除→一括追加） */
+export async function replaceMemberTagMembers(tagId: string, memberIds: string[]) {
+  // まず既存リンクを全削除
+  const { error: delErr } = await supabase
+    .from("member_tag_members")
+    .delete()
+    .eq("tag_id", tagId);
+  if (delErr) throw delErr;
+  // 追加リンクを INSERT（空配列ならスキップ）
+  if (memberIds.length > 0) {
+    const rows = memberIds.map(member_id => ({ tag_id: tagId, member_id }));
+    const { error: insErr } = await supabase
+      .from("member_tag_members")
+      .insert(rows);
+    if (insErr) throw insErr;
+  }
 }
 
 // ===== AI使用量ログ =====

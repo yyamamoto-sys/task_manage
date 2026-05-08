@@ -24,6 +24,7 @@ import type {
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
+  MemberTag, MemberTagMember,
 } from "../lib/localData/types";
 import {
   fetchAllData,
@@ -41,6 +42,7 @@ import {
   insertQuarterlyKrTaskForce, deleteQuarterlyKrTaskForce,
   insertTaskTaskForce, deleteTaskTaskForce,
   insertTaskProject, deleteTaskProject,
+  upsertMemberTag, softDeleteMemberTag, replaceMemberTagMembers,
 } from "../lib/supabase/store";
 
 export interface AppState {
@@ -58,6 +60,8 @@ export interface AppState {
   taskTaskForces: TaskTaskForce[];
   taskProjects: TaskProject[];
   milestones: Milestone[];
+  memberTags: MemberTag[];
+  memberTagMembers: MemberTagMember[];
   loading: boolean;
   error: string | null;
 
@@ -115,6 +119,10 @@ export interface AppState {
   // ===== Milestone =====
   saveMilestone: (milestone: Milestone) => Promise<void>;
   deleteMilestone: (id: string, deletedBy: string) => Promise<void>;
+
+  // ===== MemberTag =====
+  saveMemberTag: (tag: MemberTag, memberIds: string[]) => Promise<void>;
+  deleteMemberTag: (id: string, deletedBy: string) => Promise<void>;
 }
 
 /**
@@ -152,6 +160,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   taskTaskForces: [],
   taskProjects: [],
   milestones: [],
+  memberTags: [],
+  memberTagMembers: [],
   loading: true,
   error: null,
 
@@ -174,6 +184,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         taskTaskForces: data.taskTaskForces,
         taskProjects: data.taskProjects,
         milestones: data.milestones,
+        memberTags: data.memberTags,
+        memberTagMembers: data.memberTagMembers,
         loading: false,
       });
     } catch (e) {
@@ -543,6 +555,41 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     try {
       await softDeleteMilestone(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  // ===== MemberTag =====
+  saveMemberTag: async (tag, memberIds) => {
+    set(state => ({
+      memberTags: state.memberTags.findIndex(t => t.id === tag.id) >= 0
+        ? state.memberTags.map(t => t.id === tag.id ? tag : t)
+        : [...state.memberTags, tag],
+      memberTagMembers: [
+        ...state.memberTagMembers.filter(m => m.tag_id !== tag.id),
+        ...memberIds.map(member_id => ({ tag_id: tag.id, member_id })),
+      ],
+    }));
+    try {
+      await upsertMemberTag(tag);
+      await replaceMemberTagMembers(tag.id, memberIds);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  deleteMemberTag: async (id, deletedBy) => {
+    const now = new Date().toISOString();
+    set(state => ({
+      memberTags: state.memberTags.map(t =>
+        t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
+      ),
+    }));
+    try {
+      await softDeleteMemberTag(id, deletedBy);
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

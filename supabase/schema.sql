@@ -232,6 +232,35 @@ CREATE TABLE IF NOT EXISTS ai_usage_logs (
 );
 
 -- ===== KR セッション記録（ラボ機能） =====
+-- ============================================================
+-- メンバータグ（migrations/20260508_member_tags.sql 参照）
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS member_tags (
+  id          text PRIMARY KEY,
+  name        text NOT NULL,
+  description text NOT NULL DEFAULT '',
+  kind        text NOT NULL DEFAULT 'static'
+              CHECK (kind IN ('static','all_members','kr_members','tf_members')),
+  source_id   text,
+  is_deleted  boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text NOT NULL DEFAULT '',
+  deleted_at  timestamptz,
+  deleted_by  text
+);
+
+CREATE TABLE IF NOT EXISTS member_tag_members (
+  tag_id     text NOT NULL REFERENCES member_tags(id) ON DELETE CASCADE,
+  member_id  text NOT NULL REFERENCES members(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (tag_id, member_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_member_tag_members_member_id ON member_tag_members(member_id);
+CREATE INDEX IF NOT EXISTS idx_member_tags_kind ON member_tags(kind) WHERE is_deleted = false;
+
 CREATE TABLE IF NOT EXISTS kr_sessions (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   kr_id             text NOT NULL REFERENCES key_results(id),
@@ -280,7 +309,8 @@ BEGIN
     ('members'), ('objectives'), ('key_results'), ('task_forces'),
     ('todos'), ('projects'), ('tasks'),
     ('quarterly_objectives'),
-    ('milestones'), ('kr_sessions'), ('kr_declarations')
+    ('milestones'), ('kr_sessions'), ('kr_declarations'),
+    ('member_tags')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -313,6 +343,8 @@ ALTER TABLE admin_change_logs          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE ai_usage_logs              ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_sessions                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_declarations            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE member_tags                ENABLE ROW LEVEL SECURITY;
+ALTER TABLE member_tag_members         ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -324,7 +356,8 @@ BEGIN
     ('task_task_forces'), ('task_projects'),
     ('task_forces'), ('todos'), ('projects'), ('project_task_forces'),
     ('tasks'), ('milestones'), ('admin_change_logs'),
-    ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations')
+    ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
+    ('member_tags'), ('member_tag_members')
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;

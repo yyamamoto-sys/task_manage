@@ -25,8 +25,13 @@
 #      追加：kr_sessions テーブルに summary/decisions/kr_mentions 3列・session_type='freeform' を許可
 #      テスト基盤：vitest 3 + 4 テストファイル（sanitize / payloadBuilder / applyProposal / krSessionExtractor）合計 69 テスト
 #      ESLint：v9 flat config + jsx-a11y recommended（npm run lint）
+# v2.5 グランドルール「エラー表示」追加・メンバータグ Phase Tag-1（2026-05-08）
+#      追加：Section 15（formatErrorForUser 必須化）
+#      追加：member_tags / member_tag_members テーブル
+#      追加：管理画面に「メンバータグ」タブ
+#      追加：lib/__tests__/errorMessage.test.ts（10テスト・合計 71 テスト）
 #
-# 最終更新：2026-05-08（v2.4）
+# 最終更新：2026-05-08（v2.5）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

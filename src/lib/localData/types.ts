@@ -180,6 +180,31 @@ export interface TaskProject {
   project_id: string;
 }
 
+/** メンバータグ：複数メンバーをまとめて担当者として扱う仕組み */
+export type MemberTagKind = "static" | "all_members" | "kr_members" | "tf_members";
+
+export interface MemberTag {
+  id: string;
+  name: string;
+  description: string;
+  /** タグの種別。Phase Tag-1 は static のみ実利用 */
+  kind: MemberTagKind;
+  /** kr_members/tf_members の参照先 ID（Phase Tag-3 で使用） */
+  source_id: string | null;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
+/** メンバータグ ↔ メンバー（多対多） */
+export interface MemberTagMember {
+  tag_id: string;
+  member_id: string;
+}
+
 export type ViewMode = "kanban" | "gantt" | "list" | "dashboard" | "admin";
 
 // ===== 変更履歴（CLAUDE.md Section 7）=====

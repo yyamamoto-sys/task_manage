@@ -12,10 +12,10 @@ import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
-  QuarterlyObjective, Quarter,
+  QuarterlyObjective, Quarter, MemberTag,
 } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
-import { getErrorMessage } from "../../lib/errorMessage";
+import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -23,7 +23,7 @@ import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
 
-type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "ai_usage";
+type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage";
 
 interface Props { currentUser: Member; }
 
@@ -63,6 +63,7 @@ export function AdminView({ currentUser }: Props) {
     { key: "okr",      label: "Objective / KR" },
     { key: "ai_usage", label: "AI使用量" },
     { key: "members",  label: "メンバー" },
+    { key: "tags",     label: "メンバータグ" },
   ];
 
   return (
@@ -142,6 +143,7 @@ export function AdminView({ currentUser }: Props) {
         {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "ai_usage" && <AIUsageSection />}
       </div>
     </div>
@@ -1957,6 +1959,369 @@ function calcCostJpy(input: number, output: number): number {
 function getWeekOfMonth(dateStr: string): number {
   const d = new Date(dateStr);
   return Math.ceil(d.getDate() / 7);
+}
+
+// ===================================================
+// セクション⑤：メンバータグ（Phase Tag-1）
+// ===================================================
+
+function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
+  const memberTags         = useAppStore(s => s.memberTags);
+  const memberTagMembers   = useAppStore(s => s.memberTagMembers);
+  const allMembers         = useAppStore(s => s.members);
+  const saveMemberTag      = useAppStore(s => s.saveMemberTag);
+  const deleteMemberTag    = useAppStore(s => s.deleteMemberTag);
+
+  const activeTags    = useMemo(() => memberTags.filter(t => !t.is_deleted), [memberTags]);
+  const activeMembers = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
+
+  // タグごとのメンバーIDマップ
+  const tagMembersMap = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const link of memberTagMembers) {
+      if (!m.has(link.tag_id)) m.set(link.tag_id, []);
+      m.get(link.tag_id)!.push(link.member_id);
+    }
+    return m;
+  }, [memberTagMembers]);
+
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [draftName, setDraftName] = useState("");
+  const [draftDesc, setDraftDesc] = useState("");
+  const [draftMemberIds, setDraftMemberIds] = useState<string[]>([]);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const isCreating = editingId === "__new__";
+  const isDirty = editingId !== null;
+
+  useEffect(() => {
+    onDirtyChange(isDirty);
+  }, [isDirty, onDirtyChange]);
+
+  const startNew = () => {
+    setEditingId("__new__");
+    setDraftName("");
+    setDraftDesc("");
+    setDraftMemberIds([]);
+    setError(null);
+  };
+
+  const startEdit = (tag: MemberTag) => {
+    setEditingId(tag.id);
+    setDraftName(tag.name);
+    setDraftDesc(tag.description);
+    setDraftMemberIds(tagMembersMap.get(tag.id) ?? []);
+    setError(null);
+  };
+
+  const cancel = () => {
+    setEditingId(null);
+    setError(null);
+  };
+
+  const toggleMember = (memberId: string) => {
+    setDraftMemberIds(prev =>
+      prev.includes(memberId) ? prev.filter(id => id !== memberId) : [...prev, memberId],
+    );
+  };
+
+  const handleSave = async () => {
+    if (!draftName.trim()) {
+      setError("タグ名を入力してください");
+      return;
+    }
+    setError(null);
+    const now = new Date().toISOString();
+    const tag: MemberTag = isCreating
+      ? {
+          id: uuidv4(),
+          name: draftName.trim(),
+          description: draftDesc.trim(),
+          kind: "static",
+          source_id: null,
+          is_deleted: false,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUser.id,
+        }
+      : {
+          ...(activeTags.find(t => t.id === editingId)!),
+          name: draftName.trim(),
+          description: draftDesc.trim(),
+          updated_at: now,
+          updated_by: currentUser.id,
+        };
+    try {
+      await saveMemberTag(tag, draftMemberIds);
+      setEditingId(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1500);
+    } catch (e) {
+      setError(formatErrorForUser("タグ保存に失敗しました", e));
+    }
+  };
+
+  const handleDelete = async (tag: MemberTag) => {
+    const memberCount = tagMembersMap.get(tag.id)?.length ?? 0;
+    const ok = await confirmDialog(
+      `タグ「${tag.name}」を削除しますか？\n${memberCount}名のメンバー紐付けは残ります（タグ自体が論理削除されます）。`,
+    );
+    if (!ok) return;
+    try {
+      await deleteMemberTag(tag.id, currentUser.id);
+    } catch (e) {
+      setError(formatErrorForUser("タグ削除に失敗しました", e));
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+          メンバータグ（{activeTags.length}件）
+        </div>
+        <div style={{ flex: 1 }} />
+        {saved && (
+          <span style={{ fontSize: "11px", color: "var(--color-text-success)" }}>保存しました</span>
+        )}
+        {!isDirty && (
+          <button
+            onClick={startNew}
+            style={{
+              padding: "6px 12px", fontSize: "12px", fontWeight: "500",
+              background: "var(--color-brand)", color: "#fff",
+              border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+            }}
+          >＋ タグを追加</button>
+        )}
+      </div>
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
+        メンバーをグループ化するタグ。「請求書PJ」「広報チーム」「全員」のようなまとまりを定義し、
+        将来のフェーズでタスクの担当者として一括指定できるようになります（現在は定義のみ可能）。
+      </div>
+
+      {error && (
+        <div style={{
+          fontSize: "12px", color: "var(--color-text-danger)",
+          background: "var(--color-bg-danger)",
+          padding: "8px 12px", borderRadius: "var(--radius-md)",
+        }}>{error}</div>
+      )}
+
+      {/* 新規作成 / 編集フォーム */}
+      {editingId !== null && (
+        <div style={{
+          background: "var(--color-bg-secondary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-lg)", padding: "14px 16px",
+          display: "flex", flexDirection: "column", gap: "10px",
+        }}>
+          <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+            {isCreating ? "新しいタグを追加" : "タグを編集"}
+          </div>
+          <div>
+            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+              タグ名
+            </label>
+            <input
+              type="text"
+              value={draftName}
+              onChange={e => setDraftName(e.target.value)}
+              placeholder="例：請求書PJ / 広報チーム / 全員"
+              style={{
+                width: "100%", padding: "7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+              説明（任意）
+            </label>
+            <input
+              type="text"
+              value={draftDesc}
+              onChange={e => setDraftDesc(e.target.value)}
+              placeholder="このタグの用途・対象範囲"
+              style={{
+                width: "100%", padding: "7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+                boxSizing: "border-box",
+              }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "6px" }}>
+              メンバー（{draftMemberIds.length}名選択中）
+            </label>
+            <div style={{
+              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+              gap: "6px",
+              maxHeight: "260px", overflow: "auto",
+              padding: "8px", border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)",
+            }}>
+              {activeMembers.map(m => {
+                const checked = draftMemberIds.includes(m.id);
+                return (
+                  <label
+                    key={m.id}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      fontSize: "12px", cursor: "pointer",
+                      padding: "4px 6px", borderRadius: "var(--radius-sm)",
+                      background: checked ? "var(--color-brand-light)" : "transparent",
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleMember(m.id)}
+                    />
+                    <span>{m.short_name}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+              <button
+                type="button"
+                onClick={() => setDraftMemberIds(activeMembers.map(m => m.id))}
+                style={{
+                  fontSize: "11px", padding: "4px 8px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text-secondary)", cursor: "pointer",
+                }}
+              >全員選択</button>
+              <button
+                type="button"
+                onClick={() => setDraftMemberIds([])}
+                style={{
+                  fontSize: "11px", padding: "4px 8px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text-secondary)", cursor: "pointer",
+                }}
+              >全解除</button>
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
+            <button
+              onClick={cancel}
+              style={{
+                padding: "7px 14px", fontSize: "12px",
+                background: "transparent",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                color: "var(--color-text-secondary)", cursor: "pointer",
+              }}
+            >キャンセル</button>
+            <button
+              onClick={handleSave}
+              style={{
+                padding: "7px 16px", fontSize: "12px", fontWeight: "500",
+                background: "var(--color-brand)", color: "#fff",
+                border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+              }}
+            >{isCreating ? "追加する" : "保存する"}</button>
+          </div>
+        </div>
+      )}
+
+      {/* 既存タグリスト */}
+      {activeTags.length === 0 && editingId === null ? (
+        <div style={{
+          fontSize: "12px", color: "var(--color-text-tertiary)",
+          padding: "20px", textAlign: "center",
+          border: "1px dashed var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+        }}>
+          まだタグがありません。「＋ タグを追加」から作成してください。
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {activeTags.map(tag => {
+            const ids = tagMembersMap.get(tag.id) ?? [];
+            const tagMembers = activeMembers.filter(m => ids.includes(m.id));
+            const isEditing = editingId === tag.id;
+            if (isEditing) return null; // 編集中は上のフォームに移動済
+            return (
+              <div
+                key={tag.id}
+                style={{
+                  background: "var(--color-bg-primary)",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "10px 12px",
+                  display: "flex", alignItems: "center", gap: "10px",
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                    {tag.name}
+                    <span style={{
+                      marginLeft: "8px", fontSize: "10px",
+                      color: "var(--color-text-tertiary)",
+                      background: "var(--color-bg-secondary)",
+                      padding: "1px 6px", borderRadius: "99px",
+                    }}>{ids.length}名</span>
+                  </div>
+                  {tag.description && (
+                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                      {tag.description}
+                    </div>
+                  )}
+                  {tagMembers.length > 0 && (
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+                      {tagMembers.map(m => m.short_name).join(" / ")}
+                    </div>
+                  )}
+                </div>
+                <button
+                  onClick={() => startEdit(tag)}
+                  disabled={isDirty}
+                  style={{
+                    fontSize: "11px", padding: "5px 10px",
+                    background: "transparent",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--color-text-secondary)",
+                    cursor: isDirty ? "not-allowed" : "pointer",
+                    opacity: isDirty ? 0.5 : 1,
+                  }}
+                >編集</button>
+                <button
+                  onClick={() => handleDelete(tag)}
+                  disabled={isDirty}
+                  style={{
+                    fontSize: "11px", padding: "5px 10px",
+                    background: "transparent",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)",
+                    color: "var(--color-text-danger)",
+                    cursor: isDirty ? "not-allowed" : "pointer",
+                    opacity: isDirty ? 0.5 : 1,
+                  }}
+                >削除</button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function AIUsageSection() {
