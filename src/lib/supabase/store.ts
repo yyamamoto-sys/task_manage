@@ -31,12 +31,30 @@ export class ConflictError extends Error {
 }
 
 /**
- * 楽観ロック付き保存。
- * - id で既存行を確認 → 存在しなければ insert、存在すれば updated_at 一致条件で update
- * - update が 0 件 → ConflictError（他のユーザーによる先行変更）
- * - update に成功すれば updated_at は DB トリガーで NOW() に置き換わる
+ * 楽観ロック付き保存（TOCTOU 保護版）。
+ *
+ * 【設計判断 2026-05-12】
+ * 以前は呼び出し側 `row.updated_at` をロック値に使う「フォーム時点の updated_at」
+ * ベースの真の楽観ロックだった。しかし多数のクライアント側コードが
+ * `{ ...originalTask, updated_at: new Date().toISOString() }` のように
+ * 送信直前で updated_at を上書きしており、その新しい値を DB の値と比較する
+ * 結果として常に不一致 → 100% ConflictError になっていた（AI追加直後のタスク
+ * を編集すると自分の操作で衝突する症状）。
+ *
+ * 修正方針：呼び出し側が渡す `row.updated_at` は無視し、SELECT で取得した
+ * DB の現在値を WHERE 句のロック値に使う。
+ * - メリット：クライアントが updated_at を誤って上書きしても破綻しない・
+ *   連続保存も DB を再 SELECT するので必ず通る
+ * - トレードオフ：本当の「フォーム時点」最適化ロックは外れる。SELECT→UPDATE
+ *   間の TOCTOU window のみを保護する弱いロックになる。1〜10名規模の運用では
+ *   実害なし。本格的なマルチユーザー運用時には引数で `expectedUpdatedAt` を
+ *   明示できる API に拡張する余地あり。
+ *
+ * - id で既存行を確認 → 存在しなければ insert、存在すれば DB-fetched updated_at
+ *   一致条件で update
+ * - update が 0 件 → ConflictError（SELECT→UPDATE 間に他者が書き込んだ場合）
  */
-async function saveWithLock<T extends { id: string; updated_at?: unknown }>(
+async function saveWithLock<T extends { id: string }>(
   table: string,
   row: T,
 ): Promise<void> {
@@ -56,14 +74,11 @@ async function saveWithLock<T extends { id: string; updated_at?: unknown }>(
     return;
   }
 
-  // 楽観ロック：呼び出し側が握っていた updated_at と DB の現状が一致する場合のみ更新
-  const original = row.updated_at instanceof Date
-    ? row.updated_at.toISOString()
-    : (typeof row.updated_at === "string" ? row.updated_at : null);
+  // ロック値は DB の SELECT 結果を使う（クライアントの row.updated_at は信頼しない）
+  const expectedUpdatedAt = existing.updated_at as string | null | undefined;
 
-  if (!original) {
-    // クライアントが updated_at を持っていない（フォーム新規入力など）
-    // → ロックなし更新にフォールバック
+  if (!expectedUpdatedAt) {
+    // DB の updated_at が NULL（古い行など）→ ロックなし更新にフォールバック
     const { error } = await supabase.from(table).update({ ...row, updated_at: newUpdatedAt }).eq("id", row.id);
     if (error) throw error;
     return;
@@ -73,7 +88,7 @@ async function saveWithLock<T extends { id: string; updated_at?: unknown }>(
     .from(table)
     .update({ ...row, updated_at: newUpdatedAt })
     .eq("id", row.id)
-    .eq("updated_at", original)
+    .eq("updated_at", expectedUpdatedAt)
     .select("id");
 
   if (error) throw error;

@@ -446,6 +446,29 @@ quarterly_objectives）の upsert を全て楽観ロック経由に変更。
 - AppStore の `handleSaveError` で検知 → 「他のメンバーが先に編集していたため最新の内容に戻しました」トースト + load() で整合性回復
 - **「それでも上書きする」UI は未実装**（Section 9 で論点化）。現状はリロード前提
 
+### 仕様変更（2026-05-12）：TOCTOU 保護版に縮退
+
+**当初の「フォーム時点 updated_at」ベースの真の楽観ロックは無効化**された。理由：
+多数のクライアント側コードが `{ ...originalTask, updated_at: new Date().toISOString() }`
+のように送信直前で updated_at を上書きしており、その新しい値を DB の値と比較する
+結果として常に不一致 → 100% ConflictError になっていた（AI で追加したタスクを
+編集すると自分の操作で衝突する症状で発覚）。
+
+**現在の挙動**：`saveWithLock` は `SELECT id, updated_at` で取得した DB の現在値を
+WHERE 句のロック値に使う。クライアントが渡す `row.updated_at` は無視する。
+
+- ✅ クライアントが updated_at を誤って上書きしても破綻しない
+- ✅ 連続保存も DB を再 SELECT するので必ず通る
+- ✅ SELECT→UPDATE 間の TOCTOU window は引き続き保護される（他者書き込みは検出）
+- ⚠ 「フォームを開いたまま放置して別クライアントが更新したケース」の検出は外れる
+
+1〜10名規模では実害なし。マルチユーザー本格運用時は `saveWithLock` に
+`expectedUpdatedAt` 引数を追加して、本物のフォーム時点ロックに戻す。
+
+回帰防止：`src/lib/supabase/__tests__/store.test.ts` で
+「クライアントが garbage な updated_at を渡しても DB-fetched 値でロックする」
+ことを機械的に保証している。
+
 ---
 
 ## 6. AI連携設計（確定）
