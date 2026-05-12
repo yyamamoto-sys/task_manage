@@ -115,7 +115,10 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     const reader = new FileReader();
     reader.onload = e => {
       const text = (e.target?.result as string) ?? "";
-      setRawText(text.slice(0, MAX_TRANSCRIPT_CHARS + 500));
+      // 上限を超えるファイルはここで上限ちょうどに切り詰める。
+      // （以前は +500 して読み込んでいたため、必ず上限オーバー状態になり
+      //   手動で 500 文字削らないと解析できないバグになっていた）
+      setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text);
     };
     reader.readAsText(file, "utf-8");
   }, []);
@@ -326,8 +329,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const checkedTaskCount = taskDrafts.filter(d => d.checked && d.name.trim()).length;
   const checkedStatusCount = statusDrafts.filter(d => d.checked && d.task_id).length;
   const charCount = rawText.trim().length;
-  const overLimit = charCount > MAX_TRANSCRIPT_CHARS;
-  const canAnalyze = charCount >= 20 && !overLimit;
+  // 上限超過は解析をブロックしない。超過分は handleAnalyze 側で自動的に切り詰める。
+  const canAnalyze = charCount >= 20;
 
   // ===== コンテンツ =====
 
@@ -554,7 +557,7 @@ function InputStep({
           </FieldLabel>
           <span style={{
             fontSize: "10px",
-            color: overLimit ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+            color: overLimit ? "#ca8a04" : "var(--color-text-tertiary)",
           }}>
             {charCount.toLocaleString()} / {MAX_TRANSCRIPT_CHARS.toLocaleString()} 文字
           </span>
@@ -568,7 +571,7 @@ function InputStep({
           style={{
             width: "100%", padding: "10px 12px", fontSize: "12px",
             fontFamily: "monospace",
-            border: `1px solid ${overLimit ? "var(--color-text-danger)" : "var(--color-border-primary)"}`,
+            border: `1px solid ${overLimit ? "#ca8a04" : "var(--color-border-primary)"}`,
             borderRadius: "var(--radius-md)",
             background: "var(--color-bg-primary)",
             color: "var(--color-text-primary)",
@@ -576,8 +579,8 @@ function InputStep({
           }}
         />
         {overLimit && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginTop: "4px" }}>
-            {MAX_TRANSCRIPT_CHARS.toLocaleString()}文字を超えています。テキストを短くしてから解析してください。
+          <div style={{ fontSize: "11px", color: "#ca8a04", marginTop: "4px" }}>
+            {MAX_TRANSCRIPT_CHARS.toLocaleString()}文字を超えた分は解析対象外になります（先頭{MAX_TRANSCRIPT_CHARS.toLocaleString()}文字のみAIに渡します）。そのまま解析できます。
           </div>
         )}
       </div>

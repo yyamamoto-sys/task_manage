@@ -1,6 +1,6 @@
 // src/components/consultation/ConsultationPanel.tsx
 
-import { useState, useRef, useEffect, useMemo, useCallback, lazy, Suspense } from "react";
+import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
 import { createPortal } from "react-dom";
 import { v4 as uuidv4 } from "uuid";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
@@ -27,6 +27,7 @@ import {
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { lazyWithRetry } from "../../lib/lazyWithRetry";
 
 /**
  * 【設計意図】
@@ -34,8 +35,8 @@ import { formatErrorForUser } from "../../lib/errorMessage";
  * MeetingImportPanel は会議読み込みモード時のみ必要なので分離。
  * 両者を切り出すことで GanttView を初回バンドルから外せる。
  */
-const GanttPreviewPanel  = lazy(() => import("./GanttPreviewPanel").then(m => ({ default: m.GanttPreviewPanel })));
-const MeetingImportPanel = lazy(() => import("../meeting/MeetingImportPanel").then(m => ({ default: m.MeetingImportPanel })));
+const GanttPreviewPanel  = lazyWithRetry(() => import("./GanttPreviewPanel").then(m => ({ default: m.GanttPreviewPanel })), "GanttPreviewPanel");
+const MeetingImportPanel = lazyWithRetry(() => import("../meeting/MeetingImportPanel").then(m => ({ default: m.MeetingImportPanel })), "MeetingImportPanel");
 
 const PJ_GEN_PHASES = [
   "プロジェクト構造を設計しています",

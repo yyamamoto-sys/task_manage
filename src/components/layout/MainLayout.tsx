@@ -1,5 +1,5 @@
 // src/components/layout/MainLayout.tsx
-import { useState, useMemo, useRef, lazy, Suspense } from "react";
+import { useState, useMemo, useRef, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -13,6 +13,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+import { lazyWithRetry } from "../../lib/lazyWithRetry";
 
 /**
  * 【設計意図】
@@ -20,16 +21,16 @@ import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
  * 名前付き export を default export 形に変換するブリッジを噛ませている。
  * 切替頻度の低い管理画面・ラボ機能は別チャンクに分離されることで初回 LCP に寄与する。
  */
-const KanbanView         = lazy(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })));
-const AdminView          = lazy(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })));
-const GanttView          = lazy(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })));
-const DashboardView      = lazy(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })));
-const ListView           = lazy(() => import("../list/ListView").then(m => ({ default: m.ListView })));
-const GraphView          = lazy(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })));
-const KrReportPanel      = lazy(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })));
-const KrSessionPanel     = lazy(() => import("../lab/KrSessionPanel").then(m => ({ default: m.KrSessionPanel })));
-const KrWhyPanel         = lazy(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })));
-const OkrDashboardView   = lazy(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })));
+const KanbanView         = lazyWithRetry(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })), "KanbanView");
+const AdminView          = lazyWithRetry(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })), "AdminView");
+const GanttView          = lazyWithRetry(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })), "GanttView");
+const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView");
+const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
+const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
+const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
+const KrSessionPanel     = lazyWithRetry(() => import("../lab/KrSessionPanel").then(m => ({ default: m.KrSessionPanel })), "KrSessionPanel");
+const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
+const OkrDashboardView   = lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView");
 
 function ViewLoading() {
   return (
