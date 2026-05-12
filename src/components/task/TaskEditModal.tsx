@@ -103,7 +103,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
       due_date:            form.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
       comment:             form.comment,
-      updated_at:          new Date().toISOString(),
+      // updated_at は触らない（CLAUDE.md Section 5）。zustand 側で
+      // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
       updated_by:          currentUser.id,
     };
     try {

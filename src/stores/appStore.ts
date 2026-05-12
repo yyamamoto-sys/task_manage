@@ -145,6 +145,18 @@ async function handleSaveError(
   await load();
 }
 
+/**
+ * 配列 state 内の指定 id の要素の updated_at を、DB 書き込み後の新しい値に同期する。
+ * 連続保存時に「フォーム時点 updated_at」が古いまま使われて ConflictError になるのを防ぐ。
+ */
+function syncUpdatedAt<T extends { id: string; updated_at?: string }>(
+  list: T[],
+  id: string,
+  newUpdatedAt: string,
+): T[] {
+  return list.map(item => item.id === id ? { ...item, updated_at: newUpdatedAt } : item);
+}
+
 export const useAppStore = create<AppState>()((set, get) => ({
   // ===== 初期 state =====
   members: [],
@@ -200,13 +212,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Member =====
   saveMember: async (member) => {
+    const expectedUpdatedAt = get().members.find(m => m.id === member.id)?.updated_at;
     set(state => ({
       members: state.members.findIndex(m => m.id === member.id) >= 0
         ? state.members.map(m => m.id === member.id ? member : m)
         : [...state.members, member],
     }));
     try {
-      await upsertMember(member);
+      const newUpdatedAt = await upsertMember(member, expectedUpdatedAt);
+      set(state => ({ members: syncUpdatedAt(state.members, member.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -230,9 +244,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Objective =====
   saveObjective: async (obj) => {
+    const expectedUpdatedAt = get().objective?.id === obj.id ? get().objective?.updated_at : undefined;
     set({ objective: obj });
     try {
-      await upsertObjective(obj);
+      const newUpdatedAt = await upsertObjective(obj, expectedUpdatedAt);
+      set(state => ({
+        objective: state.objective?.id === obj.id
+          ? { ...state.objective, updated_at: newUpdatedAt }
+          : state.objective,
+      }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -241,13 +261,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== KeyResult =====
   saveKeyResult: async (kr) => {
+    const expectedUpdatedAt = get().keyResults.find(k => k.id === kr.id)?.updated_at;
     set(state => ({
       keyResults: state.keyResults.findIndex(k => k.id === kr.id) >= 0
         ? state.keyResults.map(k => k.id === kr.id ? kr : k)
         : [...state.keyResults, kr],
     }));
     try {
-      await upsertKeyResult(kr);
+      const newUpdatedAt = await upsertKeyResult(kr, expectedUpdatedAt);
+      set(state => ({ keyResults: syncUpdatedAt(state.keyResults, kr.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -271,13 +293,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== TaskForce =====
   saveTaskForce: async (tf) => {
+    const expectedUpdatedAt = get().taskForces.find(t => t.id === tf.id)?.updated_at;
     set(state => ({
       taskForces: state.taskForces.findIndex(t => t.id === tf.id) >= 0
         ? state.taskForces.map(t => t.id === tf.id ? tf : t)
         : [...state.taskForces, tf],
     }));
     try {
-      await upsertTaskForce(tf);
+      const newUpdatedAt = await upsertTaskForce(tf, expectedUpdatedAt);
+      set(state => ({ taskForces: syncUpdatedAt(state.taskForces, tf.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -301,13 +325,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== ToDo =====
   saveToDo: async (todo) => {
+    const expectedUpdatedAt = get().todos.find(t => t.id === todo.id)?.updated_at;
     set(state => ({
       todos: state.todos.findIndex(t => t.id === todo.id) >= 0
         ? state.todos.map(t => t.id === todo.id ? todo : t)
         : [...state.todos, todo],
     }));
     try {
-      await upsertToDo(todo);
+      const newUpdatedAt = await upsertToDo(todo, expectedUpdatedAt);
+      set(state => ({ todos: syncUpdatedAt(state.todos, todo.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -331,13 +357,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Project =====
   saveProject: async (project) => {
+    const expectedUpdatedAt = get().projects.find(p => p.id === project.id)?.updated_at;
     set(state => ({
       projects: state.projects.findIndex(p => p.id === project.id) >= 0
         ? state.projects.map(p => p.id === project.id ? project : p)
         : [...state.projects, project],
     }));
     try {
-      await upsertProject(project);
+      const newUpdatedAt = await upsertProject(project, expectedUpdatedAt);
+      set(state => ({ projects: syncUpdatedAt(state.projects, project.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -362,8 +390,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // ===== Task =====
   saveTask: async (task) => {
     // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
-    // get().tasks で最新 state を参照（旧コードの tasksRef 相当）
     const existing = get().tasks.find(t => t.id === task.id);
+    const expectedUpdatedAt = existing?.updated_at;
     const taskToSave: Task = {
       ...task,
       completed_at:
@@ -379,7 +407,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
         : [...state.tasks, taskToSave],
     }));
     try {
-      await upsertTask(taskToSave);
+      const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
+      set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -428,13 +457,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== QuarterlyObjective =====
   saveQuarterlyObjective: async (qObj) => {
+    const expectedUpdatedAt = get().quarterlyObjectives.find(q => q.id === qObj.id)?.updated_at;
     set(state => ({
       quarterlyObjectives: state.quarterlyObjectives.findIndex(q => q.id === qObj.id) >= 0
         ? state.quarterlyObjectives.map(q => q.id === qObj.id ? qObj : q)
         : [...state.quarterlyObjectives, qObj],
     }));
     try {
-      await upsertQuarterlyObjective(qObj);
+      const newUpdatedAt = await upsertQuarterlyObjective(qObj, expectedUpdatedAt);
+      set(state => ({
+        quarterlyObjectives: syncUpdatedAt(state.quarterlyObjectives, qObj.id, newUpdatedAt),
+      }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -533,13 +566,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Milestone =====
   saveMilestone: async (milestone) => {
+    const expectedUpdatedAt = get().milestones.find(m => m.id === milestone.id)?.updated_at;
     set(state => ({
       milestones: state.milestones.findIndex(m => m.id === milestone.id) >= 0
         ? state.milestones.map(m => m.id === milestone.id ? milestone : m)
         : [...state.milestones, milestone],
     }));
     try {
-      await upsertMilestone(milestone);
+      const newUpdatedAt = await upsertMilestone(milestone, expectedUpdatedAt);
+      set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -563,6 +598,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== MemberTag =====
   saveMemberTag: async (tag, memberIds) => {
+    const expectedUpdatedAt = get().memberTags.find(t => t.id === tag.id)?.updated_at;
     set(state => ({
       memberTags: state.memberTags.findIndex(t => t.id === tag.id) >= 0
         ? state.memberTags.map(t => t.id === tag.id ? tag : t)
@@ -573,8 +609,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
       ],
     }));
     try {
-      await upsertMemberTag(tag);
+      const newUpdatedAt = await upsertMemberTag(tag, expectedUpdatedAt);
       await replaceMemberTagMembers(tag.id, memberIds);
+      set(state => ({ memberTags: syncUpdatedAt(state.memberTags, tag.id, newUpdatedAt) }));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

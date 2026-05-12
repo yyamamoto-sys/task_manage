@@ -35,8 +35,17 @@
 #      追加：lib/ai/usageLog.ts と invokeAI への組み込みで全 AI 機能が自動計上
 #      追加：Section 16（AI 使用量計測ルール・新機能は invokeAI 経由必須）
 #      追加：lib/ai/__tests__/usageLog.test.ts（5テスト・合計 76 テスト）
+# v2.7 saveWithLock を多人数運用対応に再昇格（2026-05-12）
+#      変更：saveWithLock に expectedUpdatedAt 引数を追加・新しい updated_at を返す
+#      変更：全 upsertX が expectedUpdatedAt を受け取り Promise<string> を返す
+#      変更：zustand の全 saveX がフォーム時点の updated_at を expectedUpdatedAt
+#             として渡し、保存後の新しい updated_at で store を同期
+#      変更：クライアント側の `updated_at: new Date()` 上書きを全て撤去
+#             （TaskEditModal/KanbanView/AdminView/MeetingImportPanel）
+#      追加：Section 5 を多人数運用版に書き直し
+#      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #
-# 最終更新：2026-05-08（v2.6）
+# 最終更新：2026-05-12（v2.7）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -446,28 +455,55 @@ quarterly_objectives）の upsert を全て楽観ロック経由に変更。
 - AppStore の `handleSaveError` で検知 → 「他のメンバーが先に編集していたため最新の内容に戻しました」トースト + load() で整合性回復
 - **「それでも上書きする」UI は未実装**（Section 9 で論点化）。現状はリロード前提
 
-### 仕様変更（2026-05-12）：TOCTOU 保護版に縮退
+### 仕様（2026-05-12 多人数運用対応版）
 
-**当初の「フォーム時点 updated_at」ベースの真の楽観ロックは無効化**された。理由：
-多数のクライアント側コードが `{ ...originalTask, updated_at: new Date().toISOString() }`
-のように送信直前で updated_at を上書きしており、その新しい値を DB の値と比較する
-結果として常に不一致 → 100% ConflictError になっていた（AI で追加したタスクを
-編集すると自分の操作で衝突する症状で発覚）。
+`saveWithLock` の API：
 
-**現在の挙動**：`saveWithLock` は `SELECT id, updated_at` で取得した DB の現在値を
-WHERE 句のロック値に使う。クライアントが渡す `row.updated_at` は無視する。
+```typescript
+async function saveWithLock<T extends { id: string }>(
+  table: string,
+  row: T,
+  expectedUpdatedAt?: string,  // フォームをロードした時点の updated_at
+): Promise<string>             // DB に書き込んだ新しい updated_at を返す
+```
 
-- ✅ クライアントが updated_at を誤って上書きしても破綻しない
-- ✅ 連続保存も DB を再 SELECT するので必ず通る
-- ✅ SELECT→UPDATE 間の TOCTOU window は引き続き保護される（他者書き込みは検出）
-- ⚠ 「フォームを開いたまま放置して別クライアントが更新したケース」の検出は外れる
+**ロック値の優先順位：**
+1. `expectedUpdatedAt`（明示的に渡された値・本物のフォーム時点楽観ロック）
+2. SELECT で取得した DB の現在値（TOCTOU フォールバック）
+3. 両方 null（古い行）→ ロックなし更新
 
-1〜10名規模では実害なし。マルチユーザー本格運用時は `saveWithLock` に
-`expectedUpdatedAt` 引数を追加して、本物のフォーム時点ロックに戻す。
+**呼び出し側のルール：**
 
-回帰防止：`src/lib/supabase/__tests__/store.test.ts` で
-「クライアントが garbage な updated_at を渡しても DB-fetched 値でロックする」
-ことを機械的に保証している。
+```typescript
+// ❌ クライアント側で updated_at を上書きしない
+const updated: Task = {
+  ...originalTask,
+  // ... fields ...
+  updated_at: new Date().toISOString(),  // ← 絶対に書かない
+  updated_by: currentUser.id,
+};
+
+// ✅ updated_at は触らない。zustand 側で expectedUpdatedAt を渡す
+const updated: Task = {
+  ...originalTask,
+  // ... fields ...
+  updated_by: currentUser.id,
+};
+```
+
+**zustand の各 `saveX` アクションがやること：**
+1. set() で楽観更新する前に、store の現在値から `updated_at` を取って `expectedUpdatedAt` とする
+2. `upsertX(row, expectedUpdatedAt)` を呼ぶ
+3. 成功したら戻ってきた新しい `updated_at` で store を同期（`syncUpdatedAt` ヘルパー）
+
+これにより：
+- ✅ ユーザーAがフォームを開いている間にユーザーBが同じ行を更新したら ConflictError で検出
+- ✅ 同じユーザーの連続保存も毎回 store の updated_at が更新されるので通る
+- ✅ クライアントが間違って `row.updated_at` を新しくしても `expectedUpdatedAt` が別なので影響なし
+
+**回帰防止：** `src/lib/supabase/__tests__/store.test.ts` に 8 本のテスト
+（expectedUpdatedAt 明示時のロック・他者書き込み検出・フォールバック挙動・
+upsertX が新しい updated_at を返すこと等）。
 
 ---
 

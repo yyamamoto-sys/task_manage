@@ -297,7 +297,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         await saveTask({
           ...existing,
           status: draft.new_status,
-          updated_at: new Date().toISOString(),
+          // updated_at は触らない（CLAUDE.md Section 5）
           updated_by: currentUser.id,
         });
         updated++;

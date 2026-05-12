@@ -31,33 +31,30 @@ export class ConflictError extends Error {
 }
 
 /**
- * 楽観ロック付き保存（TOCTOU 保護版）。
+ * 楽観ロック付き保存（多人数運用対応版）。
  *
- * 【設計判断 2026-05-12】
- * 以前は呼び出し側 `row.updated_at` をロック値に使う「フォーム時点の updated_at」
- * ベースの真の楽観ロックだった。しかし多数のクライアント側コードが
- * `{ ...originalTask, updated_at: new Date().toISOString() }` のように
- * 送信直前で updated_at を上書きしており、その新しい値を DB の値と比較する
- * 結果として常に不一致 → 100% ConflictError になっていた（AI追加直後のタスク
- * を編集すると自分の操作で衝突する症状）。
+ * 【設計（2026-05-12 多人数対応に再昇格）】
  *
- * 修正方針：呼び出し側が渡す `row.updated_at` は無視し、SELECT で取得した
- * DB の現在値を WHERE 句のロック値に使う。
- * - メリット：クライアントが updated_at を誤って上書きしても破綻しない・
- *   連続保存も DB を再 SELECT するので必ず通る
- * - トレードオフ：本当の「フォーム時点」最適化ロックは外れる。SELECT→UPDATE
- *   間の TOCTOU window のみを保護する弱いロックになる。1〜10名規模の運用では
- *   実害なし。本格的なマルチユーザー運用時には引数で `expectedUpdatedAt` を
- *   明示できる API に拡張する余地あり。
+ * 呼び出し側から `expectedUpdatedAt`（フォームをロードした時点の updated_at）を
+ * 明示的に受け取り、UPDATE 文の WHERE 句のロック値として使う。これにより：
+ * - 「ユーザーAがフォームを開いている間にユーザーBが同じ行を更新したケース」を
+ *   ちゃんと検出できる（フォーム時点の本物の楽観ロック）
+ * - クライアント側で `row.updated_at` を `new Date()` で誤って上書きしていても
+ *   `expectedUpdatedAt` が別パラメータなので影響しない
  *
- * - id で既存行を確認 → 存在しなければ insert、存在すれば DB-fetched updated_at
- *   一致条件で update
- * - update が 0 件 → ConflictError（SELECT→UPDATE 間に他者が書き込んだ場合）
+ * `expectedUpdatedAt` を省略した場合は SELECT で取得した DB の現在値を使う
+ * TOCTOU 保護ロックにフォールバックする。フォームを介さない自動更新で使う想定。
+ *
+ * 戻り値：DB に書き込んだ新しい updated_at（呼び出し側が store を同期できるよう）。
+ *
+ * - id で既存行を確認 → 存在しなければ insert、存在すれば lockValue 一致条件で update
+ * - update が 0 件 → ConflictError（フォーム時点とは違う値が DB にある＝他者が先行更新）
  */
 async function saveWithLock<T extends { id: string }>(
   table: string,
   row: T,
-): Promise<void> {
+  expectedUpdatedAt?: string,
+): Promise<string> {
   const newUpdatedAt = new Date().toISOString();
 
   const { data: existing, error: e1 } = await supabase
@@ -68,33 +65,38 @@ async function saveWithLock<T extends { id: string }>(
   if (e1) throw e1;
 
   if (!existing) {
+    // 新規行 → INSERT。ロックチェック不要
     const insertRow = { ...row, updated_at: newUpdatedAt };
     const { error } = await supabase.from(table).insert(insertRow);
     if (error) throw error;
-    return;
+    return newUpdatedAt;
   }
 
-  // ロック値は DB の SELECT 結果を使う（クライアントの row.updated_at は信頼しない）
-  const expectedUpdatedAt = existing.updated_at as string | null | undefined;
+  // ロック値の優先順位：
+  // 1. 呼び出し側が明示した expectedUpdatedAt（フォーム時点・本物の楽観ロック）
+  // 2. DB の SELECT 結果（TOCTOU フォールバック・呼び出し側が値を握っていない場合）
+  const dbCurrent = existing.updated_at as string | null | undefined;
+  const lockValue = expectedUpdatedAt ?? dbCurrent ?? null;
 
-  if (!expectedUpdatedAt) {
-    // DB の updated_at が NULL（古い行など）→ ロックなし更新にフォールバック
+  if (!lockValue) {
+    // DB の updated_at も NULL（古い行など）→ ロックなし更新フォールバック
     const { error } = await supabase.from(table).update({ ...row, updated_at: newUpdatedAt }).eq("id", row.id);
     if (error) throw error;
-    return;
+    return newUpdatedAt;
   }
 
   const { data, error } = await supabase
     .from(table)
     .update({ ...row, updated_at: newUpdatedAt })
     .eq("id", row.id)
-    .eq("updated_at", expectedUpdatedAt)
+    .eq("updated_at", lockValue)
     .select("id");
 
   if (error) throw error;
   if (!data || data.length === 0) {
     throw new ConflictError(table, row.id);
   }
+  return newUpdatedAt;
 }
 
 // ===== 全データ一括取得 =====
@@ -167,8 +169,8 @@ export async function fetchAllData() {
 
 // ===== Member =====
 
-export async function upsertMember(member: Member) {
-  await saveWithLock("members", member);
+export async function upsertMember(member: Member, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("members", member, expectedUpdatedAt);
 }
 
 export async function softDeleteMember(id: string, deletedBy: string) {
@@ -181,14 +183,14 @@ export async function softDeleteMember(id: string, deletedBy: string) {
 
 // ===== Objective =====
 
-export async function upsertObjective(obj: Objective) {
-  await saveWithLock("objectives", obj);
+export async function upsertObjective(obj: Objective, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("objectives", obj, expectedUpdatedAt);
 }
 
 // ===== KeyResult =====
 
-export async function upsertKeyResult(kr: KeyResult) {
-  await saveWithLock("key_results", kr);
+export async function upsertKeyResult(kr: KeyResult, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("key_results", kr, expectedUpdatedAt);
 }
 
 export async function softDeleteKeyResult(id: string, deletedBy: string) {
@@ -201,8 +203,8 @@ export async function softDeleteKeyResult(id: string, deletedBy: string) {
 
 // ===== TaskForce =====
 
-export async function upsertTaskForce(tf: TaskForce) {
-  await saveWithLock("task_forces", tf);
+export async function upsertTaskForce(tf: TaskForce, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("task_forces", tf, expectedUpdatedAt);
 }
 
 export async function softDeleteTaskForce(id: string, deletedBy: string) {
@@ -215,8 +217,8 @@ export async function softDeleteTaskForce(id: string, deletedBy: string) {
 
 // ===== ToDo =====
 
-export async function upsertToDo(todo: ToDo) {
-  await saveWithLock("todos", todo);
+export async function upsertToDo(todo: ToDo, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("todos", todo, expectedUpdatedAt);
 }
 
 export async function softDeleteToDo(id: string, deletedBy: string) {
@@ -229,7 +231,7 @@ export async function softDeleteToDo(id: string, deletedBy: string) {
 
 // ===== Project =====
 
-export async function upsertProject(project: Project) {
+export async function upsertProject(project: Project, expectedUpdatedAt?: string): Promise<string> {
   // owner_member_ids は UI 専用フィールド（DB カラム不存在）のため除外する
   // 空文字の日付は PostgreSQL date 型が拒否するため null に変換する
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -239,7 +241,7 @@ export async function upsertProject(project: Project) {
     start_date: project.start_date || null,
     end_date:   project.end_date   || null,
   };
-  await saveWithLock("projects", row);
+  return await saveWithLock("projects", row, expectedUpdatedAt);
 }
 
 export async function softDeleteProject(id: string, deletedBy: string) {
@@ -252,7 +254,7 @@ export async function softDeleteProject(id: string, deletedBy: string) {
 
 // ===== Task =====
 
-export async function upsertTask(task: Task) {
+export async function upsertTask(task: Task, expectedUpdatedAt?: string): Promise<string> {
   // todo_ids は UI専用（DB は todo_id 単数FK）のため変換する
   // assignee_member_ids は DB の配列カラムにそのまま保存し、
   // 後方互換のため先頭要素を assignee_member_id（単数FK）にも反映する
@@ -267,7 +269,7 @@ export async function upsertTask(task: Task) {
     assignee_member_id:  ids[0] ?? null,
     assignee_member_ids: ids,
   };
-  await saveWithLock("tasks", row);
+  return await saveWithLock("tasks", row, expectedUpdatedAt);
 }
 
 export async function softDeleteTask(id: string, deletedBy: string) {
@@ -280,8 +282,8 @@ export async function softDeleteTask(id: string, deletedBy: string) {
 
 // ===== QuarterlyObjective =====
 
-export async function upsertQuarterlyObjective(qObj: QuarterlyObjective) {
-  await saveWithLock("quarterly_objectives", qObj);
+export async function upsertQuarterlyObjective(qObj: QuarterlyObjective, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("quarterly_objectives", qObj, expectedUpdatedAt);
 }
 
 export async function softDeleteQuarterlyObjective(id: string, deletedBy: string) {
@@ -336,8 +338,8 @@ export async function deleteTaskProject(taskId: string, projectId: string) {
 
 // ===== Milestone =====
 
-export async function upsertMilestone(milestone: Milestone) {
-  await saveWithLock("milestones", milestone);
+export async function upsertMilestone(milestone: Milestone, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("milestones", milestone, expectedUpdatedAt);
 }
 
 export async function softDeleteMilestone(id: string, deletedBy: string) {
@@ -365,8 +367,8 @@ export async function deleteProjectTaskForce(projectId: string, tfId: string) {
 
 // ===== MemberTag =====
 
-export async function upsertMemberTag(tag: MemberTag) {
-  await saveWithLock("member_tags", tag);
+export async function upsertMemberTag(tag: MemberTag, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("member_tags", tag, expectedUpdatedAt);
 }
 
 export async function softDeleteMemberTag(id: string, deletedBy: string) {

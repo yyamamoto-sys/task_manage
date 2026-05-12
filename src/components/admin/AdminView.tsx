@@ -232,7 +232,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
     const existing = krs.find(k => k.id === id);
     if (!existing) return;
     try {
-      await saveKeyResult({ ...existing, title, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+      await saveKeyResult({ ...existing, title, updated_by: currentUser.id });
     } catch (e) {
       const msg = getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
@@ -2532,7 +2532,7 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
       is_deleted: true,
       deleted_at: new Date().toISOString(),
       deleted_by: currentUser.id,
-      updated_at: new Date().toISOString(),
+      // updated_at は触らない（CLAUDE.md Section 5）
       updated_by: currentUser.id,
     });
   };

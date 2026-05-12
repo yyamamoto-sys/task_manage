@@ -46,7 +46,9 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
     if (!task) return;
-    saveTask({ ...task, status: newStatus, updated_at: new Date().toISOString(), updated_by: currentUser.id });
+    // updated_at は触らない（CLAUDE.md Section 5）。zustand 側で
+    // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
+    saveTask({ ...task, status: newStatus, updated_by: currentUser.id });
   }, [tasks, saveTask, currentUser.id]);
 
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);

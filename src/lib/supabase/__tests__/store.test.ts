@@ -92,27 +92,64 @@ function makeTask(over: Partial<Task> = {}): Task {
 
 // ===== テスト =====
 
-describe("saveWithLock — クライアントが updated_at を上書きしてもロックが破綻しない（2026-05-12 修正）", () => {
-  it("クライアントが row.updated_at を new Date() に上書きしていても DB-fetched 値でロックして更新が成功する", async () => {
-    const dbUpdatedAt = "2026-05-12T01:00:00.000Z";
-    const clientGarbageUpdatedAt = new Date().toISOString(); // 旧バグでクライアントが入れていた値
+describe("saveWithLock — 多人数運用対応（expectedUpdatedAt 明示）", () => {
+  it("expectedUpdatedAt を渡すとフォーム時点の値で WHERE 句のロックを書く", async () => {
+    const formLoadedAt = "2026-05-12T01:00:00.000Z"; // フォーム表示時に読んだ値
+    const dbCurrent    = "2026-05-12T01:00:00.000Z"; // DB の現在値（他者書き込みなし）
 
-    // 1) SELECT 返却：DB の現在値
-    queueResult("tasks", "select", { data: { id: "task-1", updated_at: dbUpdatedAt }, error: null });
-    // 2) UPDATE 返却：更新成功（1行）
+    queueResult("tasks", "select", { data: { id: "task-1", updated_at: dbCurrent }, error: null });
     queueResult("tasks", "update", { data: [{ id: "task-1" }], error: null });
 
-    // クライアントが garbage な updated_at を渡す（旧バグ再現）
+    // expectedUpdatedAt を明示的に渡す（zustand の saveX が必ずやる）
+    await upsertTask(makeTask(), formLoadedAt);
+
+    const updateCall = mockState.calls.find(c => c.op === "update");
+    const lockFilter = updateCall!.filters.find(f => f.args[0] === "updated_at");
+    expect(lockFilter!.args[1]).toBe(formLoadedAt);
+  });
+
+  it("expectedUpdatedAt と DB の値が違えば ConflictError（他者がフォーム開けっぱの間に更新したケース）", async () => {
+    const formLoadedAt = "2026-05-12T01:00:00.000Z"; // ユーザーAがロードした時の値
+    const dbCurrent    = "2026-05-12T02:30:00.000Z"; // ユーザーBがその後更新した値
+
+    queueResult("tasks", "select", { data: { id: "task-1", updated_at: dbCurrent }, error: null });
+    // UPDATE は 0 行（WHERE updated_at = formLoadedAt にマッチしないので）
+    queueResult("tasks", "update", { data: [], error: null });
+
+    await expect(upsertTask(makeTask(), formLoadedAt)).rejects.toBeInstanceOf(ConflictError);
+  });
+
+  it("upsertTask が新しい updated_at を返す（zustand の store 同期に使う）", async () => {
+    queueResult("tasks", "select", { data: { id: "task-1", updated_at: "2026-05-12T01:00:00.000Z" }, error: null });
+    queueResult("tasks", "update", { data: [{ id: "task-1" }], error: null });
+
+    const before = new Date().toISOString();
+    const newUpdatedAt = await upsertTask(makeTask(), "2026-05-12T01:00:00.000Z");
+    const after = new Date().toISOString();
+
+    expect(newUpdatedAt).toBeDefined();
+    expect(typeof newUpdatedAt).toBe("string");
+    expect(newUpdatedAt >= before).toBe(true);
+    expect(newUpdatedAt <= after).toBe(true);
+  });
+});
+
+describe("saveWithLock — expectedUpdatedAt 省略時のフォールバック（自動更新・realtime sync 用途）", () => {
+  it("expectedUpdatedAt なし + クライアントが garbage な row.updated_at → DB-fetched 値でロック", async () => {
+    const dbUpdatedAt = "2026-05-12T01:00:00.000Z";
+    const clientGarbageUpdatedAt = new Date().toISOString();
+
+    queueResult("tasks", "select", { data: { id: "task-1", updated_at: dbUpdatedAt }, error: null });
+    queueResult("tasks", "update", { data: [{ id: "task-1" }], error: null });
+
+    // expectedUpdatedAt を渡さず、row.updated_at に garbage が入っているケース
     await upsertTask(makeTask({ updated_at: clientGarbageUpdatedAt }));
 
-    // UPDATE 文の WHERE 句に DB-fetched updated_at が使われているか
     const updateCall = mockState.calls.find(c => c.op === "update");
-    expect(updateCall).toBeDefined();
-    const updatedAtFilter = updateCall!.filters.find(f => f.args[0] === "updated_at");
-    expect(updatedAtFilter).toBeDefined();
-    // ★ クライアントの値ではなく、DB から SELECT で取った値が使われている
-    expect(updatedAtFilter!.args[1]).toBe(dbUpdatedAt);
-    expect(updatedAtFilter!.args[1]).not.toBe(clientGarbageUpdatedAt);
+    const lockFilter = updateCall!.filters.find(f => f.args[0] === "updated_at");
+    // 引数省略時は DB の SELECT 結果を使う TOCTOU フォールバック
+    expect(lockFilter!.args[1]).toBe(dbUpdatedAt);
+    expect(lockFilter!.args[1]).not.toBe(clientGarbageUpdatedAt);
   });
 
   it("既存行があり、SELECT→UPDATE 間に他者が書き込んで 0 行更新になったら ConflictError", async () => {
