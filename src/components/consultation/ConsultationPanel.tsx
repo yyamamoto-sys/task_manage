@@ -67,6 +67,8 @@ interface Props {
   inline?: boolean;
   defaultMode?: PanelMode;
   onWidthChange?: (width: number) => void;
+  /** リサイズドラッグ中かどうか（親側でwidth遷移アニメを切るのに使う） */
+  onResizingChange?: (resizing: boolean) => void;
   onOpenTask?: (taskId: string) => void;
 }
 
@@ -129,6 +131,7 @@ export function ConsultationPanel({
   inline = false,
   defaultMode = "consult",
   onWidthChange,
+  onResizingChange,
   onOpenTask,
 }: Props) {
   // ===== パネルモード =====
@@ -318,13 +321,16 @@ export function ConsultationPanel({
     if (last) setLatestAiTimestamp(last.timestamp);
   }, [callState, proposals.length, session.turns]);
 
-  // パネルリサイズ（フローティング時のみ）
+  // パネルリサイズ（左端ハンドルをドラッグ。フローティング・インライン共通）
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     isDraggingPanel.current = true;
     dragStartX.current = e.clientX;
     dragStartW.current = panelWidthRef.current;
-  }, []);
+    onResizingChange?.(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [onResizingChange]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -338,12 +344,15 @@ export function ConsultationPanel({
     const onUp = () => {
       if (!isDraggingPanel.current) return;
       isDraggingPanel.current = false;
+      onResizingChange?.(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
       try { localStorage.setItem(KEYS.CONSULT_PANEL_WIDTH, String(panelWidthRef.current)); } catch { /* ignore */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, []);
+  }, [onResizingChange]);
 
   const handleSubmit = async () => {
     if (!inputText.trim() || callState === "loading") return;
@@ -413,7 +422,7 @@ export function ConsultationPanel({
   }, [isOpen, canUndo, undo, currentUser.id]);
 
   const panelStyle: React.CSSProperties = inline ? {
-    width: "400px", height: "100%",
+    width: `${panelWidth}px`, height: "100%",
     background: "var(--color-bg-primary)",
     borderLeft: "1px solid var(--color-border-primary)",
     display: "flex", flexDirection: "column", overflow: "hidden", flexShrink: 0,
@@ -471,19 +480,18 @@ export function ConsultationPanel({
           </div>
         )}
 
-        {/* リサイズハンドル（フローティング時のみ） */}
-        {!inline && (
-          <div
-            onMouseDown={handleResizeMouseDown}
-            style={{
-              position: "absolute", left: 0, top: 0, bottom: 0, width: 5,
-              cursor: "col-resize", zIndex: 10,
-              background: "transparent",
-            }}
-            onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
-          />
-        )}
+        {/* リサイズハンドル（左端をドラッグして幅を調整） */}
+        <div
+          onMouseDown={handleResizeMouseDown}
+          title="ドラッグで幅を変更"
+          style={{
+            position: "absolute", left: 0, top: 0, bottom: 0, width: 6,
+            cursor: "col-resize", zIndex: 30,
+            background: "transparent",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+        />
 
         {/* ===== ヘッダー（グラデーション） ===== */}
         <div className="ai-shimmer" style={{

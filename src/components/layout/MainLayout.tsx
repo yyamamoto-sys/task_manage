@@ -88,6 +88,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
     try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
   });
+  // AIパネルをドラッグでリサイズ中はwidth/rightの遷移アニメを切る（カーソル追従の遅延を防ぐ）
+  const [isConsultResizing, setIsConsultResizing] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
@@ -597,7 +599,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           position: "fixed",
           bottom: "74px",
           right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-          transition: "right 0.3s ease",
+          transition: isConsultResizing ? "none" : "right 0.3s ease",
           zIndex: 59,
           display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end",
         }}>
@@ -642,7 +644,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           style={{
             position: "fixed", bottom: "24px",
             right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-            transition: "right 0.3s ease, background 0.2s, transform 0.2s",
+            transition: isConsultResizing ? "background 0.2s, transform 0.2s" : "right 0.3s ease, background 0.2s, transform 0.2s",
             zIndex: 60,
             width: "48px", height: "48px", borderRadius: "50%",
             background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
@@ -740,7 +742,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         width: isConsultOpen ? `${consultPanelWidth}px` : "0",
         flexShrink: 0,
         overflow: "hidden",
-        transition: "width 0.3s ease",
+        transition: isConsultResizing ? "none" : "width 0.3s ease",
       }}>
         <ConsultationPanel
           isOpen={isConsultOpen}
@@ -749,6 +751,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           inline
           defaultMode={consultDefaultMode}
           onWidthChange={setConsultPanelWidth}
+          onResizingChange={setIsConsultResizing}
           onOpenTask={setAiEditTaskId}
         />
       </div>
