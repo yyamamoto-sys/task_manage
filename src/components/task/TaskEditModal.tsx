@@ -75,6 +75,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
+  /** 進行中の保存。次の保存はこれが完了してから始める（自己衝突防止） */
+  const inFlightSaveRef = useRef<Promise<void> | null>(null);
 
   // ToDo選択肢をTFごとにグループ化
   const todosByTf = useMemo(() => {
@@ -121,6 +123,14 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   };
 
   // 自動保存：form 変更後 600ms のデバウンスで保存
+  //
+  // 【自己衝突防止】保存をタスク単位でシリアライズする：
+  // 1つ目の保存が in-flight の間に form がさらに変更されると、デバウンス後に
+  // 2つ目の保存が起動するが、その時点では expectedUpdatedAt がまだ古い値
+  // （store が syncUpdatedAt されていない）なので 100% ConflictError になる。
+  // 解決：次の保存は inFlightSaveRef を await してから走らせる。
+  // 待っている間に store が新しい updated_at に同期されるので、save 2 の
+  // expectedUpdatedAt も正しい値で読まれる。
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -129,7 +139,23 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     setSaveStatus("saving");
     setSaveError(null);
     const timer = setTimeout(() => {
-      void handleAutoSaveRef.current();
+      void (async () => {
+        // 前の保存が in-flight ならそれを待つ（エラーは無視・自分の保存は独立）
+        const prev = inFlightSaveRef.current;
+        if (prev) {
+          await prev.catch(() => { /* 前の保存のエラーは別途トーストで通知済 */ });
+        }
+        // 最新の form / originalTask を使って保存（handleAutoSaveRef は ref なので常に最新）
+        const promise = handleAutoSaveRef.current();
+        inFlightSaveRef.current = promise;
+        try {
+          await promise;
+        } finally {
+          if (inFlightSaveRef.current === promise) {
+            inFlightSaveRef.current = null;
+          }
+        }
+      })();
     }, 600);
     return () => clearTimeout(timer);
   }, [form]);
