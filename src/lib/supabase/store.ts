@@ -65,11 +65,17 @@ async function saveWithLock<T extends { id: string }>(
   if (e1) throw e1;
 
   if (!existing) {
-    // 新規行 → INSERT。ロックチェック不要
-    const insertRow = { ...row, updated_at: newUpdatedAt };
-    const { error } = await supabase.from(table).insert(insertRow);
+    // 新規行 → INSERT。ロックチェック不要。
+    // BEFORE UPDATE トリガーは INSERT には効かないので、INSERT は実際に書き込んだ
+    // 値（クライアントが送った newUpdatedAt）と DB の値が一致する。.select() で
+    // 返してきた値を採用しておけば trigger 有無に依らず常に正しい。
+    const { data: inserted, error } = await supabase
+      .from(table)
+      .insert({ ...row, updated_at: newUpdatedAt })
+      .select("updated_at")
+      .single();
     if (error) throw error;
-    return newUpdatedAt;
+    return (inserted?.updated_at as string | undefined) ?? newUpdatedAt;
   }
 
   // ロック値の優先順位：
@@ -80,23 +86,35 @@ async function saveWithLock<T extends { id: string }>(
 
   if (!lockValue) {
     // DB の updated_at も NULL（古い行など）→ ロックなし更新フォールバック
-    const { error } = await supabase.from(table).update({ ...row, updated_at: newUpdatedAt }).eq("id", row.id);
+    const { data: updated, error } = await supabase
+      .from(table)
+      .update({ ...row, updated_at: newUpdatedAt })
+      .eq("id", row.id)
+      .select("updated_at")
+      .single();
     if (error) throw error;
-    return newUpdatedAt;
+    return (updated?.updated_at as string | undefined) ?? newUpdatedAt;
   }
 
+  // 【重要】 BEFORE UPDATE トリガー（schema.sql の trg_*_updated_at）が
+  // NEW.updated_at = NOW() で上書きするため、クライアントが送った newUpdatedAt は
+  // 実際の DB の値とは異なる。.select("updated_at") で trigger 適用後の実値を
+  // 取得して store 同期に使う。
+  // （旧コードは newUpdatedAt をそのまま return していたため、次の保存の
+  //   expectedUpdatedAt が DB と数 μs ずれて 100% ConflictError になっていた）
   const { data, error } = await supabase
     .from(table)
     .update({ ...row, updated_at: newUpdatedAt })
     .eq("id", row.id)
     .eq("updated_at", lockValue)
-    .select("id");
+    .select("id,updated_at");
 
   if (error) throw error;
   if (!data || data.length === 0) {
     throw new ConflictError(table, row.id);
   }
-  return newUpdatedAt;
+  const actualUpdatedAt = data[0].updated_at as string | undefined;
+  return actualUpdatedAt ?? newUpdatedAt;
 }
 
 // ===== 全データ一括取得 =====

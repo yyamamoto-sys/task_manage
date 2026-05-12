@@ -501,9 +501,23 @@ const updated: Task = {
 - ✅ 同じユーザーの連続保存も毎回 store の updated_at が更新されるので通る
 - ✅ クライアントが間違って `row.updated_at` を新しくしても `expectedUpdatedAt` が別なので影響なし
 
+**【重要】 DB の BEFORE UPDATE トリガーへの対応：**
+
+schema.sql には `trg_*_updated_at` という BEFORE UPDATE トリガーが貼られており、
+クライアントが送った `updated_at` 値は `NEW.updated_at = NOW()` で**サーバー側で
+強制的に上書きされる**。そのため `saveWithLock` の戻り値（store 同期用）は
+クライアントが生成した newUpdatedAt ではなく、`.select("id,updated_at")` で
+**DB から返ってきた trigger 適用後の実値**を採用する。
+
+これを怠ると：
+- 1回目の保存：成功 → store には client 値、DB には trigger 値（数 μs ずれる）
+- 2回目の保存：expectedUpdatedAt = client 値（古い）≠ DB の trigger 値 → **ConflictError**
+
+実際 2026-05-12 にこの問題が顕在化して修正済（コミット参照）。
+
 **回帰防止：** `src/lib/supabase/__tests__/store.test.ts` に 8 本のテスト
 （expectedUpdatedAt 明示時のロック・他者書き込み検出・フォールバック挙動・
-upsertX が新しい updated_at を返すこと等）。
+トリガー上書き後の実値を返すこと等）。
 
 ---
 

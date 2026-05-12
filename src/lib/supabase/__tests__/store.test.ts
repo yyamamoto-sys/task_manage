@@ -119,18 +119,27 @@ describe("saveWithLock — 多人数運用対応（expectedUpdatedAt 明示）",
     await expect(upsertTask(makeTask(), formLoadedAt)).rejects.toBeInstanceOf(ConflictError);
   });
 
-  it("upsertTask が新しい updated_at を返す（zustand の store 同期に使う）", async () => {
-    queueResult("tasks", "select", { data: { id: "task-1", updated_at: "2026-05-12T01:00:00.000Z" }, error: null });
-    queueResult("tasks", "update", { data: [{ id: "task-1" }], error: null });
+  it("【重要】DB の BEFORE UPDATE トリガーが updated_at を上書きする場合、その実値を返す", async () => {
+    // 本番の Postgres schema には trg_tasks_updated_at が貼られており、
+    // クライアントが送った updated_at はトリガーで NOW() に上書きされる。
+    // saveWithLock は .select("id,updated_at") でその実値を取って return する必要がある。
+    // （旧コードはクライアント生成値を return していたため、次の保存で
+    //   expectedUpdatedAt が DB と数 μs ずれて 100% ConflictError になっていた）
+    const triggerOverrideValue = "2026-05-12T05:30:00.123456+00:00";
 
-    const before = new Date().toISOString();
-    const newUpdatedAt = await upsertTask(makeTask(), "2026-05-12T01:00:00.000Z");
-    const after = new Date().toISOString();
+    queueResult("tasks", "select", {
+      data: { id: "task-1", updated_at: "2026-05-12T01:00:00.000Z" },
+      error: null,
+    });
+    queueResult("tasks", "update", {
+      data: [{ id: "task-1", updated_at: triggerOverrideValue }],
+      error: null,
+    });
 
-    expect(newUpdatedAt).toBeDefined();
-    expect(typeof newUpdatedAt).toBe("string");
-    expect(newUpdatedAt >= before).toBe(true);
-    expect(newUpdatedAt <= after).toBe(true);
+    const returned = await upsertTask(makeTask(), "2026-05-12T01:00:00.000Z");
+
+    // ★ クライアントが送った時刻ではなく、DB から返ってきた trigger 適用後の値
+    expect(returned).toBe(triggerOverrideValue);
   });
 });
 
