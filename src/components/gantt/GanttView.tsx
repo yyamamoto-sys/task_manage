@@ -1275,7 +1275,6 @@ export function GanttView({
           taskId={editingTaskId}
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
-          onUpdated={() => setEditingTaskId(null)}
           onDeleted={() => setEditingTaskId(null)}
         />
       )}

@@ -21,11 +21,10 @@ interface Props {
   taskId: string;
   currentUser: Member;
   onClose: () => void;
-  onUpdated?: (task: Task) => void;
   onDeleted?: (taskId: string) => void;
 }
 
-export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDeleted }: Props) {
+export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props) {
   const allTasks            = useAppStore(s => s.tasks);
   const allMembers          = useAppStore(s => s.members);
   const allProjects         = useAppStore(s => s.projects);
@@ -110,7 +109,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onUpdated, onDelet
     try {
       await saveTask(updated);
       setSaveStatus("saved");
-      onUpdated?.(updated);
+      // 自動保存ではモーダルを閉じない。親側は zustand 経由で自動的に
+      // 再レンダーされるので、明示的な「保存後のフック」呼び出しは不要。
       setTimeout(() => {
         setSaveStatus(s => (s === "saved" ? "idle" : s));
       }, 1500);

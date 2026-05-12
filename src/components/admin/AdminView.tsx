@@ -2814,7 +2814,6 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
           taskId={editingTaskId}
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
-          onUpdated={() => setEditingTaskId(null)}
           onDeleted={() => setEditingTaskId(null)}
         />
       )}

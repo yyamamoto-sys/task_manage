@@ -972,7 +972,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
           taskId={editingTaskId}
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
-          onUpdated={() => setEditingTaskId(null)}
           onDeleted={() => { setEditingTaskId(null); setSelectedTaskId(null); }}
         />
       )}
