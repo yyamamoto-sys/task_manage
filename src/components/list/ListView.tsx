@@ -194,7 +194,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
     const now = new Date().toISOString();
     try {
       await Promise.all(targets.map(t =>
-        saveTask({ ...t, status, updated_at: now, updated_by: currentUser.id }),
+        saveTask({ ...t, status, updated_by: currentUser.id }),
       ));
       showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`);
       clearSelection();
@@ -213,7 +213,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
         ...t,
         assignee_member_id: memberId,
         assignee_member_ids: [memberId],
-        updated_at: now, updated_by: currentUser.id,
+        updated_by: currentUser.id,
       })));
       const m = members.find(mm => mm.id === memberId);
       showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`);
@@ -583,9 +583,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                               {(["todo", "in_progress", "done"] as const).map(s => (
                                 <button key={s} onClick={e => {
                                   e.stopPropagation();
-                                  const now = new Date().toISOString();
                                   setSidebarForm(f => f ? { ...f, status: s } : f);
-                                  saveTask({ ...task, status: s, updated_at: now, updated_by: currentUser.id });
+                                  saveTask({ ...task, status: s, updated_by: currentUser.id });
                                 }} style={{
                                   flex: 1, padding: "4px 2px", fontSize: "9px", borderRadius: "var(--radius-sm)",
                                   fontWeight: sidebarForm.status === s ? "600" : "400",
@@ -806,22 +805,19 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
         );
 
         const saveStatus = (status: Task["status"]) => {
-          const now = new Date().toISOString();
           setSidebarForm(f => f ? { ...f, status } : f);
-          saveTask({ ...selectedTask, status, updated_at: now, updated_by: currentUser.id });
+          saveTask({ ...selectedTask, status, updated_by: currentUser.id });
         };
         const savePriority = (priority: Task["priority"]) => {
-          const now = new Date().toISOString();
-          saveTask({ ...selectedTask, priority, updated_at: now, updated_by: currentUser.id });
+          saveTask({ ...selectedTask, priority, updated_by: currentUser.id });
         };
         const saveTextFields = () => {
           if (!sidebarDirty) return;
-          const now = new Date().toISOString();
           saveTask({
             ...selectedTask,
             due_date: sidebarForm.due_date || null,
             comment: sidebarForm.comment,
-            updated_at: now, updated_by: currentUser.id,
+            updated_by: currentUser.id,
           });
           setSidebarDirty(false);
         };

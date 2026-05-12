@@ -157,6 +157,41 @@ function syncUpdatedAt<T extends { id: string; updated_at?: string }>(
   return list.map(item => item.id === id ? { ...item, updated_at: newUpdatedAt } : item);
 }
 
+/**
+ * 同じエンティティ id に対する保存をシリアライズするためのキュー。
+ *
+ * 【設計意図】
+ * 同じタスク・PJ等への保存リクエストが重なると（auto-save の連打、ドラッグ&ドロップの
+ * 連続、bulk 操作など）、後発の保存が読む `expectedUpdatedAt` が前発の syncUpdatedAt
+ * 前の古い値になり、DB 側で先に commit された updated_at と不一致 → 100% ConflictError
+ * になる自己衝突レースが発生する。
+ *
+ * 対策：保存処理を id ごとに直列実行する。前発の保存が完了して syncUpdatedAt が
+ * 走った後に、後発の保存が `expectedUpdatedAt` を読み直して DB に投げる。
+ *
+ * 注：optimistic update（store.set）はキューイング対象外で即時実行する（UI 即応性を保つ）。
+ * シリアライズされるのは DB 書き込みと expectedUpdatedAt の読み取り部分のみ。
+ *
+ * key = `${tableName}:${id}` でテーブル間で衝突しないようにする。
+ */
+const saveQueueByKey = new Map<string, Promise<void>>();
+
+async function runSerializedByKey(key: string, work: () => Promise<void>): Promise<void> {
+  const prev = saveQueueByKey.get(key);
+  const current = (async () => {
+    if (prev) await prev.catch(() => { /* 前発のエラーは独立 */ });
+    await work();
+  })();
+  saveQueueByKey.set(key, current);
+  try {
+    await current;
+  } finally {
+    if (saveQueueByKey.get(key) === current) {
+      saveQueueByKey.delete(key);
+    }
+  }
+}
+
 export const useAppStore = create<AppState>()((set, get) => ({
   // ===== 初期 state =====
   members: [],
@@ -212,19 +247,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Member =====
   saveMember: async (member) => {
-    const expectedUpdatedAt = get().members.find(m => m.id === member.id)?.updated_at;
     set(state => ({
       members: state.members.findIndex(m => m.id === member.id) >= 0
         ? state.members.map(m => m.id === member.id ? member : m)
         : [...state.members, member],
     }));
-    try {
-      const newUpdatedAt = await upsertMember(member, expectedUpdatedAt);
-      set(state => ({ members: syncUpdatedAt(state.members, member.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`members:${member.id}`, async () => {
+      const expectedUpdatedAt = get().members.find(m => m.id === member.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertMember(member, expectedUpdatedAt);
+        set(state => ({ members: syncUpdatedAt(state.members, member.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteMember: async (id, deletedBy) => {
@@ -244,36 +281,40 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Objective =====
   saveObjective: async (obj) => {
-    const expectedUpdatedAt = get().objective?.id === obj.id ? get().objective?.updated_at : undefined;
     set({ objective: obj });
-    try {
-      const newUpdatedAt = await upsertObjective(obj, expectedUpdatedAt);
-      set(state => ({
-        objective: state.objective?.id === obj.id
-          ? { ...state.objective, updated_at: newUpdatedAt }
-          : state.objective,
-      }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`objectives:${obj.id}`, async () => {
+      const expectedUpdatedAt = get().objective?.id === obj.id ? get().objective?.updated_at : undefined;
+      try {
+        const newUpdatedAt = await upsertObjective(obj, expectedUpdatedAt);
+        set(state => ({
+          objective: state.objective?.id === obj.id
+            ? { ...state.objective, updated_at: newUpdatedAt }
+            : state.objective,
+        }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   // ===== KeyResult =====
   saveKeyResult: async (kr) => {
-    const expectedUpdatedAt = get().keyResults.find(k => k.id === kr.id)?.updated_at;
     set(state => ({
       keyResults: state.keyResults.findIndex(k => k.id === kr.id) >= 0
         ? state.keyResults.map(k => k.id === kr.id ? kr : k)
         : [...state.keyResults, kr],
     }));
-    try {
-      const newUpdatedAt = await upsertKeyResult(kr, expectedUpdatedAt);
-      set(state => ({ keyResults: syncUpdatedAt(state.keyResults, kr.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`key_results:${kr.id}`, async () => {
+      const expectedUpdatedAt = get().keyResults.find(k => k.id === kr.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertKeyResult(kr, expectedUpdatedAt);
+        set(state => ({ keyResults: syncUpdatedAt(state.keyResults, kr.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteKeyResult: async (id, deletedBy) => {
@@ -293,19 +334,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== TaskForce =====
   saveTaskForce: async (tf) => {
-    const expectedUpdatedAt = get().taskForces.find(t => t.id === tf.id)?.updated_at;
     set(state => ({
       taskForces: state.taskForces.findIndex(t => t.id === tf.id) >= 0
         ? state.taskForces.map(t => t.id === tf.id ? tf : t)
         : [...state.taskForces, tf],
     }));
-    try {
-      const newUpdatedAt = await upsertTaskForce(tf, expectedUpdatedAt);
-      set(state => ({ taskForces: syncUpdatedAt(state.taskForces, tf.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`task_forces:${tf.id}`, async () => {
+      const expectedUpdatedAt = get().taskForces.find(t => t.id === tf.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertTaskForce(tf, expectedUpdatedAt);
+        set(state => ({ taskForces: syncUpdatedAt(state.taskForces, tf.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteTaskForce: async (id, deletedBy) => {
@@ -325,19 +368,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== ToDo =====
   saveToDo: async (todo) => {
-    const expectedUpdatedAt = get().todos.find(t => t.id === todo.id)?.updated_at;
     set(state => ({
       todos: state.todos.findIndex(t => t.id === todo.id) >= 0
         ? state.todos.map(t => t.id === todo.id ? todo : t)
         : [...state.todos, todo],
     }));
-    try {
-      const newUpdatedAt = await upsertToDo(todo, expectedUpdatedAt);
-      set(state => ({ todos: syncUpdatedAt(state.todos, todo.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`todos:${todo.id}`, async () => {
+      const expectedUpdatedAt = get().todos.find(t => t.id === todo.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertToDo(todo, expectedUpdatedAt);
+        set(state => ({ todos: syncUpdatedAt(state.todos, todo.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteToDo: async (id, deletedBy) => {
@@ -357,19 +402,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Project =====
   saveProject: async (project) => {
-    const expectedUpdatedAt = get().projects.find(p => p.id === project.id)?.updated_at;
     set(state => ({
       projects: state.projects.findIndex(p => p.id === project.id) >= 0
         ? state.projects.map(p => p.id === project.id ? project : p)
         : [...state.projects, project],
     }));
-    try {
-      const newUpdatedAt = await upsertProject(project, expectedUpdatedAt);
-      set(state => ({ projects: syncUpdatedAt(state.projects, project.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`projects:${project.id}`, async () => {
+      const expectedUpdatedAt = get().projects.find(p => p.id === project.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertProject(project, expectedUpdatedAt);
+        set(state => ({ projects: syncUpdatedAt(state.projects, project.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteProject: async (id, deletedBy) => {
@@ -391,7 +438,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   saveTask: async (task) => {
     // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
     const existing = get().tasks.find(t => t.id === task.id);
-    const expectedUpdatedAt = existing?.updated_at;
     const taskToSave: Task = {
       ...task,
       completed_at:
@@ -401,18 +447,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
               : new Date().toISOString())
           : null,
     };
+    // 楽観更新（UI 即応性のためシリアライズ対象外）
     set(state => ({
       tasks: state.tasks.findIndex(t => t.id === taskToSave.id) >= 0
         ? state.tasks.map(t => t.id === taskToSave.id ? taskToSave : t)
         : [...state.tasks, taskToSave],
     }));
-    try {
-      const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
-      set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    // 同じ task id への DB 書き込みは直列化（自己衝突防止）
+    await runSerializedByKey(`tasks:${taskToSave.id}`, async () => {
+      // 直前の保存の syncUpdatedAt 後に expectedUpdatedAt を読む
+      const current = get().tasks.find(t => t.id === taskToSave.id);
+      const expectedUpdatedAt = current?.updated_at;
+      try {
+        const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
+        set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteTask: async (id, deletedBy) => {
@@ -457,21 +510,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== QuarterlyObjective =====
   saveQuarterlyObjective: async (qObj) => {
-    const expectedUpdatedAt = get().quarterlyObjectives.find(q => q.id === qObj.id)?.updated_at;
     set(state => ({
       quarterlyObjectives: state.quarterlyObjectives.findIndex(q => q.id === qObj.id) >= 0
         ? state.quarterlyObjectives.map(q => q.id === qObj.id ? qObj : q)
         : [...state.quarterlyObjectives, qObj],
     }));
-    try {
-      const newUpdatedAt = await upsertQuarterlyObjective(qObj, expectedUpdatedAt);
-      set(state => ({
-        quarterlyObjectives: syncUpdatedAt(state.quarterlyObjectives, qObj.id, newUpdatedAt),
-      }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`quarterly_objectives:${qObj.id}`, async () => {
+      const expectedUpdatedAt = get().quarterlyObjectives.find(q => q.id === qObj.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertQuarterlyObjective(qObj, expectedUpdatedAt);
+        set(state => ({
+          quarterlyObjectives: syncUpdatedAt(state.quarterlyObjectives, qObj.id, newUpdatedAt),
+        }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteQuarterlyObjective: async (id, deletedBy) => {
@@ -566,19 +621,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Milestone =====
   saveMilestone: async (milestone) => {
-    const expectedUpdatedAt = get().milestones.find(m => m.id === milestone.id)?.updated_at;
     set(state => ({
       milestones: state.milestones.findIndex(m => m.id === milestone.id) >= 0
         ? state.milestones.map(m => m.id === milestone.id ? milestone : m)
         : [...state.milestones, milestone],
     }));
-    try {
-      const newUpdatedAt = await upsertMilestone(milestone, expectedUpdatedAt);
-      set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`milestones:${milestone.id}`, async () => {
+      const expectedUpdatedAt = get().milestones.find(m => m.id === milestone.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertMilestone(milestone, expectedUpdatedAt);
+        set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteMilestone: async (id, deletedBy) => {
@@ -598,7 +655,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== MemberTag =====
   saveMemberTag: async (tag, memberIds) => {
-    const expectedUpdatedAt = get().memberTags.find(t => t.id === tag.id)?.updated_at;
     set(state => ({
       memberTags: state.memberTags.findIndex(t => t.id === tag.id) >= 0
         ? state.memberTags.map(t => t.id === tag.id ? tag : t)
@@ -608,14 +664,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ...memberIds.map(member_id => ({ tag_id: tag.id, member_id })),
       ],
     }));
-    try {
-      const newUpdatedAt = await upsertMemberTag(tag, expectedUpdatedAt);
-      await replaceMemberTagMembers(tag.id, memberIds);
-      set(state => ({ memberTags: syncUpdatedAt(state.memberTags, tag.id, newUpdatedAt) }));
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
+    await runSerializedByKey(`member_tags:${tag.id}`, async () => {
+      const expectedUpdatedAt = get().memberTags.find(t => t.id === tag.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertMemberTag(tag, expectedUpdatedAt);
+        await replaceMemberTagMembers(tag.id, memberIds);
+        set(state => ({ memberTags: syncUpdatedAt(state.memberTags, tag.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
   },
 
   deleteMemberTag: async (id, deletedBy) => {

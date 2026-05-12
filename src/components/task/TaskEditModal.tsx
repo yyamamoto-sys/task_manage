@@ -29,6 +29,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allMembers          = useAppStore(s => s.members);
   const allProjects         = useAppStore(s => s.projects);
   const allTaskForces       = useAppStore(s => s.taskForces);
+  const allKeyResults       = useAppStore(s => s.keyResults);
   const allTodos            = useAppStore(s => s.todos);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
@@ -44,6 +45,20 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
   const todos      = useMemo(() => allTodos.filter(t => !t.is_deleted), [allTodos]);
+  const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
+
+  // tf.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ
+  // 例：KR1 配下の TF番号 1 → "TF1-1"
+  const tfLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tf of taskForces) {
+      const krIdx = keyResults.findIndex(k => k.id === tf.kr_id);
+      const krLabel = krIdx >= 0 ? `${krIdx + 1}` : "?";
+      const tfNum = tf.tf_number || "?";
+      map.set(tf.id, `TF${krLabel}-${tfNum}`);
+    }
+    return map;
+  }, [taskForces, keyResults]);
 
   // このタスクに紐づくTF
   const linkedTfs = useMemo(() => {
@@ -75,8 +90,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
-  /** 進行中の保存。次の保存はこれが完了してから始める（自己衝突防止） */
-  const inFlightSaveRef = useRef<Promise<void> | null>(null);
 
   // ToDo選択肢をTFごとにグループ化
   const todosByTf = useMemo(() => {
@@ -123,14 +136,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   };
 
   // 自動保存：form 変更後 600ms のデバウンスで保存
-  //
-  // 【自己衝突防止】保存をタスク単位でシリアライズする：
-  // 1つ目の保存が in-flight の間に form がさらに変更されると、デバウンス後に
-  // 2つ目の保存が起動するが、その時点では expectedUpdatedAt がまだ古い値
-  // （store が syncUpdatedAt されていない）なので 100% ConflictError になる。
-  // 解決：次の保存は inFlightSaveRef を await してから走らせる。
-  // 待っている間に store が新しい updated_at に同期されるので、save 2 の
-  // expectedUpdatedAt も正しい値で読まれる。
+  // 自己衝突防止のシリアライズは zustand saveTask 側に集約されているため、
+  // ここでは単純にデバウンスで saveTask を呼ぶだけで OK（同一 task id への
+  // 連続保存は zustand が直列化して expectedUpdatedAt を正しく読み直す）。
   useEffect(() => {
     if (isInitialMount.current) {
       isInitialMount.current = false;
@@ -139,23 +147,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     setSaveStatus("saving");
     setSaveError(null);
     const timer = setTimeout(() => {
-      void (async () => {
-        // 前の保存が in-flight ならそれを待つ（エラーは無視・自分の保存は独立）
-        const prev = inFlightSaveRef.current;
-        if (prev) {
-          await prev.catch(() => { /* 前の保存のエラーは別途トーストで通知済 */ });
-        }
-        // 最新の form / originalTask を使って保存（handleAutoSaveRef は ref なので常に最新）
-        const promise = handleAutoSaveRef.current();
-        inFlightSaveRef.current = promise;
-        try {
-          await promise;
-        } finally {
-          if (inFlightSaveRef.current === promise) {
-            inFlightSaveRef.current = null;
-          }
-        }
-      })();
+      void handleAutoSaveRef.current();
     }, 600);
     return () => clearTimeout(timer);
   }, [form]);
@@ -377,7 +369,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               {todosByTf.map(({ tf, items }) => (
                 <div key={tf.id}>
                   <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", padding: "4px 0 2px", fontWeight: 600 }}>
-                    {tf.tf_number ? `TF ${tf.tf_number}` : ""}{tf.tf_number && tf.name ? " — " : ""}{tf.name}
+                    {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
+                    {tf.name ? ` — ${tf.name}` : ""}
                   </div>
                   {items.map(todo => (
                     <label key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer" }}>
@@ -441,7 +434,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {linkedTfs.map(tf => (
                 <span key={tf.id} style={chipStyle}>
-                  {tf.tf_number ? <span style={{ fontWeight: "600", marginRight: 2 }}>{tf.tf_number}</span> : null}
+                  <span style={{ fontWeight: "600", marginRight: 4 }}>
+                    {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
+                  </span>
                   {tf.name}
                   <button
                     onClick={() => removeTaskTaskForce(taskId, tf.id)}
@@ -466,9 +461,18 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 <option value="">＋ タスクフォースを追加...</option>
                 {taskForces
                   .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+                  // 並び：所属KR の index → tf_number の昇順で揃え、どのKRのTFか
+                  // ぱっと見で分かるようにする
+                  .slice()
+                  .sort((a, b) => {
+                    const ka = keyResults.findIndex(k => k.id === a.kr_id);
+                    const kb = keyResults.findIndex(k => k.id === b.kr_id);
+                    if (ka !== kb) return ka - kb;
+                    return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
+                  })
                   .map(tf => (
                     <option key={tf.id} value={tf.id}>
-                      {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
+                      {(tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`)}{tf.name ? ` ${tf.name}` : ""}
                     </option>
                   ))
                 }

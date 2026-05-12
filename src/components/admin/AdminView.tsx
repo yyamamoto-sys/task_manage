@@ -512,7 +512,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     const now = new Date().toISOString();
     try {
       const existing = tfs.find(t => t.id === editId);
-      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, updated_at: now, updated_by: currentUser.id });
+      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, updated_by: currentUser.id });
       setEditId(null);
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -1308,7 +1308,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
         await saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
       } else {
         const existing = projects.find(p => p.id === editId);
-        if (existing) await saveProject({ ...existing, ...form, owner_member_id, updated_at: now, updated_by: currentUser.id });
+        if (existing) await saveProject({ ...existing, ...form, owner_member_id, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -1588,7 +1588,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, short_name: shortName, initials, updated_at: now, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, short_name: shortName, initials, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -2049,7 +2049,6 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
           ...(activeTags.find(t => t.id === editingId)!),
           name: draftName.trim(),
           description: draftDesc.trim(),
-          updated_at: now,
           updated_by: currentUser.id,
         };
     try {
