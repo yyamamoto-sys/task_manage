@@ -14,11 +14,11 @@ import { formatMD } from "../../lib/date";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   fetchKrMeetingNote, fetchKrMeetingNotesList, fetchKrMeetingNoteById,
-  saveKrMeetingNote, carriedEntriesFrom, emptyEntryFields,
+  saveKrMeetingNote, carriedEntriesFrom, emptyEntryFields, buildCarryMemo,
   type KrMeetingNote, type KrNoteEntryFields, type KrNoteStatus,
 } from "../../lib/supabase/krMeetingNoteStore";
-import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
-import { MarkdownLite } from "../common/MarkdownLite";
+import { fetchLatestOkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
+import { fetchLatestFinalizedKrReport } from "../../lib/supabase/krReportStore";
 
 /** その日が属する週の月曜日（YYYY-MM-DD）を返す。 */
 function mondayOfStr(dateStr: string): string {
@@ -99,6 +99,8 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const [entriesByTf, setEntriesByTf] = useState<Record<string, KrNoteEntryFields>>({});
   const [status, setStatus] = useState<KrNoteStatus>("draft");
   const [carriedFromId, setCarriedFromId] = useState<string | null>(null);
+  const [carryMemo, setCarryMemo] = useState<string>("");
+  const [showCarryMemo, setShowCarryMemo] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -109,16 +111,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const [visitedTfs, setVisitedTfs] = useState<Set<string>>(new Set());
   useEffect(() => { setTfIndex(0); setVisitedTfs(new Set()); }, [krId, weekStart, quarter]);
 
-  // 前回からの引き継ぎ参考：このKRの最新のAI分析（③）を見ながら今週の仮説・次の一手を書ける
-  const [latestAnalysis, setLatestAnalysis] = useState<OkrAnalysis | null>(null);
-  const [showCarryRef, setShowCarryRef] = useState(false);
-  useEffect(() => {
-    setShowCarryRef(false);
-    if (!krId) { setLatestAnalysis(null); return; }
-    let cancelled = false;
-    fetchLatestOkrAnalysis(krId).then(a => { if (!cancelled) setLatestAnalysis(a); }).catch(() => { if (!cancelled) setLatestAnalysis(null); });
-    return () => { cancelled = true; };
-  }, [krId]);
+  // 引き継ぎメモは applyCarryOver / 「↻ 引き継ぎメモを自動生成」ボタンで都度フェッチ＆生成する
 
   // KR/週変更時：ノート一覧 + 当該週ノートを取得
   useEffect(() => {
@@ -143,11 +136,15 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
           setEntriesByTf(m);
           setStatus(full.status);
           setCarriedFromId(full.carried_from_note_id);
+          setCarryMemo(full.carry_memo ?? "");
+          setShowCarryMemo(!!full.carry_memo);
         } else {
           setNote(null);
           setEntriesByTf({});
           setStatus("draft");
           setCarriedFromId(null);
+          setCarryMemo("");
+          setShowCarryMemo(false);
         }
         setDirty(false);
         setSaveError(null);
@@ -175,16 +172,28 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   }, []);
 
   const applyCarryOver = useCallback(async () => {
-    if (!prevNoteRow) return;
+    if (!prevNoteRow || !krId) return;
     setLoading(true);
     try {
-      const prevFull = await fetchKrMeetingNoteById(prevNoteRow.id);
+      // 1) 前週ノートのTFエントリを下書きとして引き継ぐ
+      // 2) 前週の確定レポート＋最新③分析から「前回からの引き継ぎメモ」を生成
+      const [prevFull, prevReport, latestAnalysisFresh] = await Promise.all([
+        fetchKrMeetingNoteById(prevNoteRow.id),
+        fetchLatestFinalizedKrReport(krId, prevNoteRow.week_start).catch(() => null),
+        fetchLatestOkrAnalysis(krId).catch(() => null),
+      ]);
       if (!prevFull) return;
       const carried = carriedEntriesFrom(prevFull);
       const m: Record<string, KrNoteEntryFields> = {};
       for (const tf of tfs) m[tf.id] = carried.get(tf.id) ?? emptyEntryFields();
       setEntriesByTf(m);
       setCarriedFromId(prevNoteRow.id);
+      // 引き継ぎメモを生成（既存に何か書いていたら追記、なければ置換）
+      const memo = buildCarryMemo({ prevReport, latestAnalysis: latestAnalysisFresh });
+      if (memo) {
+        setCarryMemo(prev => prev.trim() ? `${memo}\n\n---\n${prev}` : memo);
+        setShowCarryMemo(true);
+      }
       setDirty(true);
       setSavedFlash(false);
     } catch (e) {
@@ -192,7 +201,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     } finally {
       setLoading(false);
     }
-  }, [prevNoteRow, tfs]);
+  }, [prevNoteRow, krId, tfs]);
 
   const handleSave = useCallback(async () => {
     if (!krId || tfs.length === 0) return;
@@ -202,6 +211,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
       const saved = await saveKrMeetingNote({
         krId, weekStart, status,
         carriedFromNoteId: carriedFromId,
+        carryMemo,
         entries: tfs.map(tf => ({ tf_id: tf.id, ...entryOf(tf.id) })),
       }, currentUser.id);
       setNote(saved);
@@ -226,7 +236,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     } finally {
       setSaving(false);
     }
-  }, [krId, weekStart, status, carriedFromId, tfs, entryOf, currentUser.id]);
+  }, [krId, weekStart, status, carriedFromId, carryMemo, tfs, entryOf, currentUser.id]);
 
   const hasContent = useCallback((tfId: string): boolean => {
     const e = entriesByTf[tfId];
@@ -378,22 +388,52 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
                 最終更新 {new Date(note.updated_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
-            {latestAnalysis && (
-              <button onClick={() => setShowCarryRef(v => !v)} style={{ fontSize: "11px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-full)", padding: "3px 10px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
-                {showCarryRef ? "▲ 閉じる" : "💡 前回の振り返り（③ 分析）を見ながら書く"}
-              </button>
-            )}
+            <button
+              onClick={async () => {
+                if (!krId) return;
+                try {
+                  const [prevReport, latest] = await Promise.all([
+                    fetchLatestFinalizedKrReport(krId, weekStart).catch(() => null),
+                    fetchLatestOkrAnalysis(krId).catch(() => null),
+                  ]);
+                  const memo = buildCarryMemo({ prevReport, latestAnalysis: latest });
+                  if (memo) { setCarryMemo(memo); setShowCarryMemo(true); setDirty(true); }
+                  else setShowCarryMemo(true);
+                } catch { /* noop */ }
+              }}
+              style={{ fontSize: "11px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-full)", padding: "3px 10px", color: "var(--color-text-secondary)", cursor: "pointer" }}
+              title="前週の確定レポートと最新の③分析から「引き継ぎメモ」を自動生成し直す"
+            >
+              ↻ 引き継ぎメモを自動生成
+            </button>
           </div>
 
-          {/* 前回からの引き継ぎ参考：③ AI分析の最新（学び・リスク・次の一手・レポート用要点） */}
-          {showCarryRef && latestAnalysis && (
-            <div style={{ border: "1px solid var(--color-border-primary)", borderLeft: "3px solid var(--color-brand)", borderRadius: "var(--radius-md)", padding: "10px 14px", background: "var(--color-bg-secondary)", maxHeight: "320px", overflow: "auto" }}>
-              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
-                このKRの最新のAI分析（{new Date(latestAnalysis.created_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）— 今週の「先週動かした仮説」「次にやる一手」を書く参考に
-              </div>
-              <MarkdownLite text={latestAnalysis.content} compact />
+          {/* 前回からの引き継ぎメモ（編集可・ノートに保存される） */}
+          <div style={{ border: "1px solid var(--color-border-primary)", borderLeft: "3px solid var(--color-brand)", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", padding: "10px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", flex: 1 }}>📋 前回からの引き継ぎメモ（前週確定レポートの要点＋最新③分析の示唆。各TF欄に反映してから整理してください）</span>
+              <button onClick={() => setShowCarryMemo(v => !v)} style={{ fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer" }}>{showCarryMemo ? "▲ 閉じる" : carryMemo ? "▼ 開く" : "▼ 開く（空）"}</button>
             </div>
-          )}
+            {showCarryMemo && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {!carryMemo.trim() && (
+                  <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                    まだメモがありません。「前週から引き継いで作成」または上の「↻ 引き継ぎメモを自動生成」で前週の確定レポートと最新のAI分析から自動入力できます。
+                  </div>
+                )}
+                <textarea
+                  value={carryMemo}
+                  onChange={e => { setCarryMemo(e.target.value); setDirty(true); }}
+                  rows={Math.min(18, Math.max(6, carryMemo.split("\n").length + 1))}
+                  placeholder="自由に書けるメモです。前週レポートの学び・最新③分析の次の一手などを入れると、今週の会議で参照しやすくなります。"
+                  style={{ width: "100%", padding: "8px 10px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "inherit" }}
+                />
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button onClick={() => { setCarryMemo(""); setDirty(true); }} style={{ fontSize: "10px", padding: "3px 8px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-tertiary)", cursor: "pointer" }}>メモを空にする</button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* TFステップ・ストリップ（●=確認済み ○=未確認） */}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>

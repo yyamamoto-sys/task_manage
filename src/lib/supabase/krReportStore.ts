@@ -25,6 +25,23 @@ export interface KrReport {
   is_deleted: boolean;
 }
 
+/** 指定KRで、指定週（不問なら省略）以前の最新の「確定済み」レポートを取得（なければ null）。前週から引き継ぐメモの素材に使う。 */
+export async function fetchLatestFinalizedKrReport(krId: string, beforeWeekStart?: string): Promise<KrReport | null> {
+  let q = supabase
+    .from("kr_reports")
+    .select("*")
+    .eq("kr_id", krId)
+    .eq("status", "finalized")
+    .eq("is_deleted", false)
+    .order("week_start", { ascending: false })
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (beforeWeekStart) q = q.lte("week_start", beforeWeekStart);
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data?.[0] ?? null) as KrReport | null;
+}
+
 /** 指定KR×週×モードのレポートを1件取得（なければ null）。 */
 export async function fetchKrReport(krId: string, weekStart: string, mode: string): Promise<KrReport | null> {
   const { data, error } = await supabase

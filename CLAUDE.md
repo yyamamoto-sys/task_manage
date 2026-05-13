@@ -98,6 +98,13 @@
 #      追加：OKR管理に「サイクル進捗バー」（選択中KR×今週で①会議ノート→②セッション→③分析→④レポートの状態・各ステップへジャンプ）
 #      追加：会議ノート画面に「💡 前回の振り返り（③分析）を見ながら書く」折りたたみ（最新AI分析を参照）
 #      残：Phase D の ④③→①自動prefill（確定レポートの学び・分析示唆を翌週ノートに自動投入）はまだ手動（参照表示まで）
+# v2.16 OKR循環ワークフロー Phase D 完了：④③→① 自動prefill（2026-05-13）
+#      追加：kr_meeting_notes.carry_memo 列（migrations/20260513f_add_kr_note_carry_memo.sql）
+#      追加：krMeetingNoteStore.buildCarryMemo（前週確定レポートのHTML→テキスト要点＋最新③分析の「次の一手」「レポート作成のための要点」を抽出して引き継ぎマークダウンを生成）
+#      追加：krReportStore.fetchLatestFinalizedKrReport
+#      変更：KrMeetingNotePanel に「📋 前回からの引き継ぎメモ」エディタ（折りたたみ・編集可・保存）。
+#             「前週から引き継いで作成」と「↻ 引き継ぎメモを自動生成」で自動入力。これで OKR循環ワークフロー
+#             ①→②→③→④→翌週の① が閉じる
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #

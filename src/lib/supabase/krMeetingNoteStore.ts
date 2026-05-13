@@ -37,6 +37,8 @@ export interface KrMeetingNote {
   week_start: string;        // YYYY-MM-DD（月曜）
   status: KrNoteStatus;
   carried_from_note_id: string | null;
+  /** 前回からの引き継ぎメモ（前週確定レポートの要点＋最新③分析の示唆、自動生成・編集可） */
+  carry_memo: string;
   created_by: string;
   created_at: string;
   updated_at: string;
@@ -127,13 +129,15 @@ export interface SaveKrNoteInput {
   weekStart: string;
   status: KrNoteStatus;
   carriedFromNoteId: string | null;
+  /** 前回からの引き継ぎメモ（自動生成・編集可） */
+  carryMemo: string;
   /** TFごとのエントリ。tf_id をキーに upsert する */
   entries: ({ tf_id: string } & KrNoteEntryFields)[];
 }
 
 /** ノート（親）とTFエントリ（子）をまとめて保存（新規 or 更新）。保存後の最新を返す。 */
 export async function saveKrMeetingNote(input: SaveKrNoteInput, userId: string): Promise<KrMeetingNoteFull> {
-  const { krId, weekStart, status, carriedFromNoteId, entries } = input;
+  const { krId, weekStart, status, carriedFromNoteId, carryMemo, entries } = input;
 
   // 親ノートの有無を確認
   const { data: existingRows, error: e1 } = await supabase
@@ -150,13 +154,13 @@ export async function saveKrMeetingNote(input: SaveKrNoteInput, userId: string):
     noteId = (existingRows[0] as { id: string }).id;
     const { error: e2 } = await supabase
       .from("kr_meeting_notes")
-      .update({ status, updated_by: userId })
+      .update({ status, carry_memo: carryMemo, updated_by: userId })
       .eq("id", noteId);
     if (e2) throw e2;
   } else {
     const { data: inserted, error: e3 } = await supabase
       .from("kr_meeting_notes")
-      .insert({ kr_id: krId, week_start: weekStart, status, carried_from_note_id: carriedFromNoteId, created_by: userId, updated_by: userId })
+      .insert({ kr_id: krId, week_start: weekStart, status, carried_from_note_id: carriedFromNoteId, carry_memo: carryMemo, created_by: userId, updated_by: userId })
       .select("id")
       .single();
     if (e3) throw e3;
@@ -206,6 +210,78 @@ export function emptyEntryFields(): KrNoteEntryFields {
     hypotheses: "", facts: "", next_actions: "",
     progress_pct: null, progress_reason: "", todo: "",
   };
+}
+
+// ===== 前回からの引き継ぎメモ（④③→①） =====
+
+function stripHtml(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "- ")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+    .replace(/&amp;/g, "&")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** マークダウン中の "## <name>" セクション本文を返す（無ければ null）。複数候補に対応。 */
+function extractMdSection(md: string, names: string[]): string | null {
+  for (const name of names) {
+    const re = new RegExp(`^##\\s+${name.replace(/[.*+?^${}()|[\\\]\\\\]/g, "\\\\$&")}\\s*$([\\s\\S]*?)(?=^##\\s|^#\\s|\\Z)`, "im");
+    const m = re.exec(md);
+    if (m && m[1].trim()) return m[1].trim();
+  }
+  return null;
+}
+
+export interface BuildCarryMemoInput {
+  prevReport?: { content: string; created_at: string; week_start: string; mode: string } | null;
+  latestAnalysis?: { content: string; created_at: string } | null;
+}
+
+/**
+ * 「前回からの引き継ぎメモ」のマークダウンを生成する。
+ * - 前週の確定レポート（HTML）→ プレーンテキストに変換して要点として入れる
+ * - 最新のAI分析（マークダウン）→「次の一手」「レポート作成のための要点」を抽出（無ければ末尾を要約）
+ */
+export function buildCarryMemo(input: BuildCarryMemoInput): string {
+  const parts: string[] = [];
+  parts.push("## 前回からの引き継ぎメモ");
+  parts.push("_前週の確定レポートの要点と、最新のAI分析の示唆を自動で入れています。今週の議論で各TF欄に反映してから、本欄は編集／削除してください。_");
+
+  const r = input.prevReport;
+  if (r && r.content) {
+    const text = stripHtml(r.content);
+    const snippet = text.length > 900 ? text.slice(0, 900).replace(/\s+$/, "") + "…" : text;
+    parts.push("");
+    parts.push(`### 前回の確定レポート（${r.week_start} ${r.mode}）の要点`);
+    parts.push(snippet);
+  }
+
+  const a = input.latestAnalysis;
+  if (a && a.content) {
+    const next = extractMdSection(a.content, ["次の一手（来週・次月へ）", "次の一手", "気になる点・リスク"]);
+    const tips = extractMdSection(a.content, ["レポート作成のための要点"]);
+    const date = a.created_at.slice(0, 10);
+    parts.push("");
+    parts.push(`### 最新のAI分析（${date}）からの示唆`);
+    if (next) { parts.push("**次の一手**"); parts.push(next); }
+    if (tips) { parts.push(""); parts.push("**レポート用の要点**"); parts.push(tips); }
+    if (!next && !tips) {
+      const tail = a.content.length > 700 ? a.content.slice(-700) : a.content;
+      parts.push(tail);
+    }
+  }
+
+  if (parts.length <= 2) return ""; // 何も無いなら空に
+  return parts.join("\n").trim();
 }
 
 /**
