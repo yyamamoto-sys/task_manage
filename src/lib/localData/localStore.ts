@@ -73,8 +73,6 @@ export const LS_KEY = {
   krReport:            (krId: string, mode: string) => `okr_report_${krId}_${mode}`,
   /** クォーター計画（KR × クォーター ごとに保存。Phase 1 用 localStorage） */
   quarterPlan:         (krId: string, quarter: string) => `okr_qplan_${krId}_${quarter}`,
-  /** PJごとのAI分析結果（最新1件をキャッシュ） */
-  projectAnalysis:     (projectId: string) => `project_analysis_${projectId}`,
 } as const;
 
 export { KEYS };

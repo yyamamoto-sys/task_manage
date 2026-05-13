@@ -41,6 +41,14 @@
 #      変更：zustand の全 saveX がフォーム時点の updated_at を expectedUpdatedAt
 #             として渡し、保存後の新しい updated_at で store を同期
 #      変更：クライアント側の `updated_at: new Date()` 上書きを全て撤去
+# v2.8 ダッシュボードのPJ連動・プロジェクトカルテ・PJごとのAI分析（2026-05-13）
+#      変更：DashboardView がサイドバーのPJ選択に連動し絞り込み＋バナー表示
+#      追加：ProjectKarte（PJ選択中のサマリーカード）
+#      追加：PJごとのAI分析（projectAnalysisClient / AIIntent="project-analysis"。
+#             PJ/Task/Milestone/メンバー名のみ送信）。結果は project_analyses テーブルに
+#             保存し最新2件まで保持・最新は全員で共有
+#      追加：project_analyses テーブル（migrations/20260513_add_project_analyses.sql）
+#      追加：common/MarkdownLite（AI出力の軽量マークダウン描画）
 #             （TaskEditModal/KanbanView/AdminView/MeetingImportPanel）
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）

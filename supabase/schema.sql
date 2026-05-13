@@ -297,6 +297,16 @@ CREATE TABLE IF NOT EXISTS kr_declarations (
   is_deleted    boolean NOT NULL DEFAULT false
 );
 
+-- ===== PJごとのAI分析結果（全員で共有・最新2件） =====
+-- migrations/20260513_add_project_analyses.sql 参照
+CREATE TABLE IF NOT EXISTS project_analyses (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id  text NOT NULL REFERENCES projects(id),
+  content     text NOT NULL,
+  created_by  text NOT NULL,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -345,6 +355,7 @@ ALTER TABLE kr_sessions                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_declarations            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_tags                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_tag_members         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE project_analyses           ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -357,7 +368,7 @@ BEGIN
     ('task_forces'), ('todos'), ('projects'), ('project_task_forces'),
     ('tasks'), ('milestones'), ('admin_change_logs'),
     ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
-    ('member_tags'), ('member_tag_members')
+    ('member_tags'), ('member_tag_members'), ('project_analyses')
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
@@ -406,3 +417,4 @@ CREATE INDEX IF NOT EXISTS idx_ai_usage_logs_member_id         ON ai_usage_logs(
 CREATE INDEX IF NOT EXISTS idx_kr_sessions_kr_id_week_start    ON kr_sessions(kr_id, week_start DESC) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_declarations_session_id      ON kr_declarations(session_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_milestones_project_id           ON milestones(project_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_project_analyses_project_id_created_at ON project_analyses(project_id, created_at DESC);

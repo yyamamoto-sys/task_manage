@@ -5,6 +5,9 @@
 // ダッシュボード上部に表示する。進捗・ステータス内訳・期日状況・担当者別負荷・マイルストーン・
 // 紐づくKR、そして「✨ AI分析」ボタン（PJ単位のAI健全性分析）を持つ。
 //
+// AI分析の結果は Supabase（project_analyses テーブル）に保存し、最新のものを全メンバーが見られる。
+// 履歴は 1PJ につき最新 2 件まで（projectAnalysisStore が古い分を削除）。
+//
 // 【AI境界ルール】AI分析に渡すのは PJ/Task/Milestone/メンバー名のみ（projectAnalysisClient 参照）。
 // 紐づくKR名は画面表示はするが、AIには渡さない。
 
@@ -12,11 +15,12 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
-import { KEYS, LS_KEY } from "../../lib/localData/localStore";
+import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
+import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
 
 const ANALYSIS_PHASES = [
@@ -31,9 +35,7 @@ function assigneeIds(t: Task): string[] {
   return t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : [];
 }
 
-interface CachedAnalysis { text: string; at: string }
-
-export function ProjectKarte({ project, currentUser: _currentUser }: { project: Project; currentUser: Member }) {
+export function ProjectKarte({ project, currentUser }: { project: Project; currentUser: Member }) {
   const rawTasks   = useAppStore(s => s.tasks);
   const rawMembers = useAppStore(s => s.members);
   const rawMs      = useAppStore(s => s.milestones);
@@ -115,24 +117,25 @@ export function ProjectKarte({ project, currentUser: _currentUser }: { project: 
     return rawKrs.filter(kr => !kr.is_deleted && krIds.has(kr.id)).map(kr => kr.title);
   }, [rawPtfs, rawTfs, rawKrs, project.id]);
 
-  // ===== AI分析 =====
-  const [analysis, setAnalysis] = useState<CachedAnalysis | null>(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY.projectAnalysis(project.id));
-      return raw ? JSON.parse(raw) as CachedAnalysis : null;
-    } catch { return null; }
-  });
+  // ===== AI分析（Supabase で全員共有・最新2件） =====
+  const [analyses, setAnalyses] = useState<ProjectAnalysisRecord[]>([]);
   const [showAnalysis, setShowAnalysis] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [viewIndex, setViewIndex] = useState(0); // 0=最新, 1=前回
 
-  // PJが切り替わったらキャッシュを読み直す
+  // PJが変わったら最新2件を取り直す（取得失敗はカルテ表示を止めない）
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY.projectAnalysis(project.id));
-      setAnalysis(raw ? JSON.parse(raw) as CachedAnalysis : null);
-    } catch { setAnalysis(null); }
+    let cancelled = false;
     setAnalysisError(null);
+    setViewIndex(0);
+    fetchProjectAnalyses(project.id)
+      .then(rows => { if (!cancelled) setAnalyses(rows); })
+      .catch((e: unknown) => {
+        console.warn("PJ分析の取得に失敗（カルテ表示は継続）:", e);
+        if (!cancelled) setAnalyses([]);
+      });
+    return () => { cancelled = true; };
   }, [project.id]);
 
   const runAnalysis = useCallback(async () => {
@@ -166,17 +169,20 @@ export function ProjectKarte({ project, currentUser: _currentUser }: { project: 
         members_short_names: members.map(m => m.short_name),
         today,
       });
-      const cached: CachedAnalysis = { text, at: new Date().toISOString() };
-      setAnalysis(cached);
-      try { localStorage.setItem(LS_KEY.projectAnalysis(project.id), JSON.stringify(cached)); } catch { /* ignore */ }
+      await insertProjectAnalysis(project.id, text, currentUser.id);
+      const rows = await fetchProjectAnalyses(project.id);
+      setAnalyses(rows);
+      setViewIndex(0);
     } catch (e) {
       setAnalysisError(formatErrorForUser("AI分析に失敗しました", e));
     } finally {
       setAnalyzing(false);
     }
-  }, [project, owners, pjTasks, milestones, members, memberById, today]);
+  }, [project, owners, pjTasks, milestones, members, memberById, today, currentUser.id]);
 
+  const latest = analyses[0] ?? null;
   const accent = project.color_tag;
+  const whoOf = (rec: ProjectAnalysisRecord) => memberById.get(rec.created_by)?.short_name ?? "メンバー";
 
   return (
     <div style={{
@@ -232,14 +238,15 @@ export function ProjectKarte({ project, currentUser: _currentUser }: { project: 
               boxShadow: analyzing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
             }}
           >
-            <span>✨</span> {analyzing ? "分析中…" : analysis ? "AI分析を更新" : "このPJをAI分析"}
+            <span>✨</span> {analyzing ? "分析中…" : latest ? "AI分析を更新" : "このPJをAI分析"}
           </button>
-          {analysis && !analyzing && (
+          {latest && !analyzing && (
             <button
-              onClick={() => setShowAnalysis(true)}
-              style={{ fontSize: "11px", color: "var(--color-brand)", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}
+              onClick={() => { setViewIndex(0); setShowAnalysis(true); }}
+              style={{ fontSize: "11px", color: "var(--color-brand)", background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "right" }}
             >
-              前回の分析を見る（{formatMD(analysis.at.slice(0, 10))}）
+              最新の分析を見る（{formatMD(latest.created_at.slice(0, 10))}・{whoOf(latest)}）
+              {analyses.length > 1 && <span style={{ color: "var(--color-text-tertiary)" }}> ／ 履歴2件</span>}
             </button>
           )}
         </div>
@@ -324,8 +331,10 @@ export function ProjectKarte({ project, currentUser: _currentUser }: { project: 
         <AnalysisModal
           projectName={project.name}
           analyzing={analyzing}
-          text={analysis?.text ?? null}
-          at={analysis?.at ?? null}
+          analyses={analyses}
+          viewIndex={viewIndex}
+          onSelectIndex={setViewIndex}
+          whoOf={whoOf}
           error={analysisError}
           onClose={() => setShowAnalysis(false)}
           onRerun={runAnalysis}
@@ -362,21 +371,26 @@ function Muted({ children }: { children: React.ReactNode }) {
 // ===== AI分析モーダル =====
 
 function AnalysisModal({
-  projectName, analyzing, text, at, error, onClose, onRerun,
+  projectName, analyzing, analyses, viewIndex, onSelectIndex, whoOf, error, onClose, onRerun,
 }: {
   projectName: string;
   analyzing: boolean;
-  text: string | null;
-  at: string | null;
+  analyses: ProjectAnalysisRecord[];
+  viewIndex: number;
+  onSelectIndex: (i: number) => void;
+  whoOf: (rec: ProjectAnalysisRecord) => string;
   error: string | null;
   onClose: () => void;
   onRerun: () => void;
 }) {
   const [copied, setCopied] = useState(false);
+  const current = analyses[viewIndex] ?? analyses[0] ?? null;
   const copy = useCallback(() => {
-    if (!text) return;
-    navigator.clipboard?.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
-  }, [text]);
+    if (!current) return;
+    navigator.clipboard?.writeText(current.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
+  }, [current]);
+
+  const fmtAt = (iso: string) => new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
     <div
@@ -388,23 +402,48 @@ function AnalysisModal({
           <span style={{ fontSize: "16px" }}>✨</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>AI分析：{projectName}</div>
-            {at && !analyzing && <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.8)", marginTop: "1px" }}>{new Date(at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })} 時点</div>}
+            {current && !analyzing && (
+              <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.85)", marginTop: "1px" }}>
+                {fmtAt(current.created_at)}・{whoOf(current)} が実行{viewIndex > 0 ? "（前回の分析）" : ""}
+              </div>
+            )}
           </div>
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "16px", color: "#fff", padding: "3px 8px", borderRadius: "var(--radius-sm)", lineHeight: 1 }}>✕</button>
         </div>
+
+        {/* 履歴タブ（2件あるとき） */}
+        {!analyzing && analyses.length > 1 && (
+          <div style={{ display: "flex", gap: "6px", padding: "8px 16px 0", flexShrink: 0 }}>
+            {analyses.map((rec, i) => (
+              <button
+                key={rec.id}
+                onClick={() => onSelectIndex(i)}
+                style={{
+                  fontSize: "11px", padding: "4px 12px", borderRadius: "var(--radius-full)",
+                  border: i === viewIndex ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                  background: i === viewIndex ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  color: i === viewIndex ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: i === viewIndex ? 600 : 400,
+                }}
+              >
+                {i === 0 ? "最新" : "前回"}（{formatMD(rec.created_at.slice(0, 10))}）
+              </button>
+            ))}
+          </div>
+        )}
 
         <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
           {analyzing && <AIProgressLoader phases={ANALYSIS_PHASES} intervalMs={3800} />}
           {!analyzing && error && (
             <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "12px 14px", borderRadius: "var(--radius-md)" }}>{error}</div>
           )}
-          {!analyzing && !error && text && <MarkdownLite text={text} />}
-          {!analyzing && !error && !text && <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>分析結果がありません。</div>}
+          {!analyzing && !error && current && <MarkdownLite text={current.content} />}
+          {!analyzing && !error && !current && <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>分析結果がありません。「再分析」で作成してください。</div>}
         </div>
 
         <div style={{ flexShrink: 0, borderTop: "1px solid var(--color-border-primary)", padding: "10px 16px", display: "flex", gap: "8px", alignItems: "center" }}>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>AIの分析は参考情報です。事実は元データで確認してください。</span>
-          {text && !analyzing && (
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>AIの分析は参考情報です。事実は元データで確認してください。最新の分析は全員に共有されます。</span>
+          {current && !analyzing && (
             <button onClick={copy} style={ghostBtn}>{copied ? "コピーしました" : "コピー"}</button>
           )}
           <button onClick={analyzing ? undefined : onRerun} disabled={analyzing} style={{ ...ghostBtn, opacity: analyzing ? 0.5 : 1, cursor: analyzing ? "default" : "pointer" }}>
