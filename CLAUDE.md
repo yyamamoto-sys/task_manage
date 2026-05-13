@@ -553,8 +553,12 @@ export type AIIntent =
   | "kr-why"               // なぜなぜ分析
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AI で PJ 設計
+  | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名のみ。KR/TF/O・contribution_memo は渡さない）
   | "todo-decompose";      // ToDo 分解
 ```
+
+`"project-analysis"`（PJごとのAI分析・`projectAnalysisClient.ts`）は通常運用と同じ
+PJ/Task/Milestone/メンバー名のみを渡す。`contribution_memo` と KR/TF/O は渡さない。
 
 新しい AI 機能を追加するときは、この型に新タグを追加し、当該 prompt builder に
 「KR/TF を渡してよい根拠」をコメントで明示すること。タグなしの呼び出しは

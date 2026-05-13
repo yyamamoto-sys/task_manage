@@ -24,6 +24,7 @@ import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../l
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { ProjectKarte } from "./ProjectKarte";
 
 interface Props {
   currentUser: Member;
@@ -389,6 +390,11 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           </div>
         )}
 
+        {/* プロジェクトカルテ（PJ選択中のみ） */}
+        {selectedProject && (
+          <ProjectKarte project={selectedProject} currentUser={currentUser} />
+        )}
+
         {/* リマインダー */}
         <div style={{
           background: "var(--color-bg-primary)",
@@ -690,12 +696,13 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             })}
           </Card>
 
-          {/* ④ PJ進捗一覧（PJ絞り込み中はそのPJのみ） */}
-          <Card title={selectedProject ? "PJ 進捗" : "PJ 進捗一覧"}>
+          {/* ④ PJ進捗一覧（PJ選択中はカルテに集約されるので非表示） */}
+          {!selectedProject && (
+          <Card title="PJ 進捗一覧">
             {pjProgress.length === 0 && (
               <EmptyState>プロジェクトを作成してください</EmptyState>
             )}
-            {(selectedProject ? pjProgress.filter(p => p.pj.id === selectedProject.id) : pjProgress).map(({ pj, done, total, pct }) => (
+            {pjProgress.map(({ pj, done, total, pct }) => (
               <div key={pj.id} style={{ marginBottom: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
                   <span style={{
@@ -724,6 +731,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               </div>
             ))}
           </Card>
+          )}
 
         </div>
 

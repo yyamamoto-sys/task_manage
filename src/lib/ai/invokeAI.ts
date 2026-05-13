@@ -21,6 +21,7 @@
 // │   "kr-why"             — なぜなぜ分析                          │
 // │   "meeting-extract"    — 会議メモからタスク抽出                │
 // │   "project-plan"       — AI による PJ 設計                     │
+// │   "project-analysis"   — 単一PJの健全性分析（KR/TF/O は渡さない）│
 // │   "todo-decompose"     — ToDo 分解                            │
 // │                                                              │
 // │ 新しい AI 機能を追加するときは、AIIntent に新しいタグを追加し、│
@@ -39,6 +40,7 @@ export type AIIntent =
   | "kr-why"               // なぜなぜ分析
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AIでPJ設計
+  | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名のみ。KR/TF/O・contribution_memo は渡さない）
   | "todo-decompose";      // ToDo 分解
 
 export interface AIRawResponse {
