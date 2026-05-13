@@ -561,7 +561,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             );
           }) : ([
             { label: "概要", icon: "🎯", onClick: () => setOkrActiveTool("overview") },
-            { label: "TF会議ノート", icon: "📝", onClick: () => setOkrActiveTool("note") },
+            { label: "会議ノート", icon: "📝", onClick: () => setOkrActiveTool("note") },
             { label: "セッション", icon: "🗓️", onClick: () => setOkrActiveTool("session") },
             { label: "なぜなぜ", icon: "🔍", onClick: () => setOkrActiveTool("why") },
             { label: "計画", icon: "📅", onClick: () => setOkrActiveTool("plan") },

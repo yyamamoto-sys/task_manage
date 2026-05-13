@@ -57,6 +57,12 @@
 #             （migrations/20260513_add_tf_meeting_notes.sql）・tfMeetingNoteStore・TfMeetingNotePanel。
 #             TF×週で1件・前週から下書き引き継ぎ可
 #      Phase B（分析結果ページ）・C（レポート確認・確定制）・D（循環の見える化）は未着手
+# v2.10 会議ノートを TF単位→KR単位（中にTFごとのセクション）に再構成（2026-05-13）
+#      変更：tf_meeting_notes → kr_meeting_notes + kr_note_tf_entries
+#             （migrations/20260513b_restructure_kr_meeting_notes.sql）。tfMeetingNoteStore→krMeetingNoteStore、
+#             TfMeetingNotePanel→KrMeetingNotePanel。OKRタブ「会議ノート」：KR選択→そのKRのTFを順に入力→作成
+#      追加：TFエントリに tf_theme（TF説明・その期のテーマ）・todo（その時期のToDo）欄
+#      修正：TF選択でKR横断の同番号TFが重複して見えていた問題（KR選択でフィルタ＋id重複除去）
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #
