@@ -4,30 +4,29 @@
 // supabase.functions.invoke("ai-consult") の共通ラッパー。AI 呼び出しの唯一のゲート。
 // non-2xx時に data に格納されたEdge Function側の詳細エラーを取り出してスローする。
 //
-// 【絶対遵守：AI境界ルール（CLAUDE.md Section 6）】
-// このアプリでは Anthropic API へ送るペイロードに何を含めてよいか厳格に制限している。
+// 【AI連携（CLAUDE.md Section 6）】
+// 全ての AI 呼び出しはこの invokeAI() を経由する（直叩き禁止／APIキーは Edge Function 側のみ）。
+//
+// 【AI境界ルール（2026-05-13 改定）】
+//   OKR関連情報（O/KR/TF/ToDo）も AI に渡してよい（社内確認済み）。かつての「OKRは一切渡さない」制約は撤廃。
 //
 // ┌─────────────────────────────────────────────────────────────┐
-// │ 「AIIntent」: 呼び出しの目的・性質をタグ付けし、誤った経路で  │
-// │ OKR データが送信されないようコードレベルで意図を表明させる。  │
-// │                                                              │
-// │ 通常運用：                                                    │
-// │   "task-management" — payloadBuilder.ts 経由・PJ/Task のみ    │
-// │                                                              │
-// │ 例外（ユーザー承認済み・KR/TF/O を AI に渡す機能）：           │
-// │   "kr-report"          — KR レポート生成                      │
-// │   "kr-quarter-plan"    — クォーター計画立案                    │
-// │   "kr-session-extract" — 議事録からセッション抽出              │
-// │   "kr-why"             — なぜなぜ分析                          │
-// │   "okr-analysis"       — KR単位のAI分析（ノート＋セッション＋タスク）│
-// │   "meeting-extract"    — 会議メモからタスク抽出                │
-// │   "project-plan"       — AI による PJ 設計                     │
-// │   "project-analysis"   — 単一PJの健全性分析（KR/TF/O は渡さない）│
-// │   "todo-decompose"     — ToDo 分解                            │
-// │                                                              │
-// │ 新しい AI 機能を追加するときは、AIIntent に新しいタグを追加し、│
-// │ 当該 prompt builder にコメントで「KR/TF を渡してよい根拠」を   │
-// │ 明示すること。タグなしの呼び出しはコンパイルエラーになる。     │
+// │ 「AIIntent」: 呼び出しの目的・どんなデータを渡しているかのラベル。│
+// │  そのまま ai_usage_logs.consultation_type に保存され、AI使用量  │
+// │  タブで機能別集計に使われる。漏洩防止というより記録・可読性のため。│
+// │   "task-management"  — payloadBuilder 経由・通常のタスク管理相談  │
+// │   "kr-report"        — KR レポート生成                          │
+// │   "kr-quarter-plan"  — クォーター計画立案                        │
+// │   "kr-session-extract" — 議事録からセッション抽出                │
+// │   "kr-why"           — なぜなぜ分析                              │
+// │   "okr-analysis"     — KR単位のAI分析（ノート＋セッション＋タスク）│
+// │   "meeting-extract"  — 会議メモからタスク抽出                    │
+// │   "project-plan"     — AI による PJ 設計                        │
+// │   "project-analysis" — 単一PJの健全性分析                       │
+// │   "todo-decompose"   — ToDo 分解                                │
+// │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
+// │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
+// │  コンパイルエラー。                                              │
 // └─────────────────────────────────────────────────────────────┘
 
 import { supabase } from "../supabase/client";
@@ -42,7 +41,7 @@ export type AIIntent =
   | "okr-analysis"         // KR単位のAI分析（会議ノート＋KRセッション・宣言＋TFタスクをAIに渡す）
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AIでPJ設計
-  | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名のみ。KR/TF/O・contribution_memo は渡さない）
+  | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名。PJ視点なのでOKRデータは未投入）
   | "todo-decompose";      // ToDo 分解
 
 export interface AIRawResponse {
