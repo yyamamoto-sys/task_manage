@@ -11,6 +11,9 @@ import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
 import { KrMeetingNotePanel } from "./KrMeetingNotePanel";
 import { OkrKrAnalysisPanel } from "./OkrKrAnalysisPanel";
 import { fetchKrSessions, updateKrSession, softDeleteKrSession, fetchKrDeclarations, type KrSession, type KrDeclaration } from "../../lib/supabase/krSessionStore";
+import { fetchKrMeetingNote, type KrMeetingNote } from "../../lib/supabase/krMeetingNoteStore";
+import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
+import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 
 // 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録→③分析→④レポート作成）＋概要
 export type OkrActiveTool = "overview" | "note" | "session" | "analysis" | "report" | "why" | "plan" | "guide" | null;
@@ -119,6 +122,54 @@ export function OkrDashboardView({
   }, [activeKrs, refreshKey]);
 
   const thisMonday = getThisMonday();
+
+  // ===== サイクル進捗（OKR管理の①②③④の状態。選択中KR×今週） =====
+  const [cycleNote, setCycleNote] = useState<KrMeetingNote | null>(null);
+  const [cycleAnalysis, setCycleAnalysis] = useState<OkrAnalysis | null>(null);
+  const [cycleReport, setCycleReport] = useState<KrReport | null>(null);
+  useEffect(() => {
+    if (!inOkrGroup || !selectedKrId) { setCycleNote(null); setCycleAnalysis(null); setCycleReport(null); return; }
+    let cancelled = false;
+    Promise.allSettled([
+      fetchKrMeetingNote(selectedKrId, thisMonday),
+      fetchLatestOkrAnalysis(selectedKrId),
+      fetchKrReport(selectedKrId, thisMonday, "checkin"),
+    ]).then(([n, a, r]) => {
+      if (cancelled) return;
+      setCycleNote(n.status === "fulfilled" ? (n.value as KrMeetingNote | null) : null);
+      setCycleAnalysis(a.status === "fulfilled" ? (a.value as OkrAnalysis | null) : null);
+      setCycleReport(r.status === "fulfilled" ? (r.value as KrReport | null) : null);
+    });
+    return () => { cancelled = true; };
+  }, [inOkrGroup, selectedKrId, thisMonday, activeTool, refreshKey]);
+
+  const fmtMD = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  // ①②③④ それぞれの状態を { label, tone } で返す（tone: "done"=緑 / "wip"=黄 / "none"=灰）
+  const cycleSteps = useMemo<{ tool: OkrActiveTool; icon: string; name: string; label: string; tone: "done" | "wip" | "none" }[]>(() => {
+    if (!selectedKrId) return [];
+    const ses = krSessionsMap[selectedKrId] ?? [];
+    const wkCheckin = ses.find(s => s.week_start === thisMonday && s.session_type === "checkin");
+    const wkWin = ses.find(s => s.week_start === thisMonday && s.session_type === "win_session");
+    const noteStep = cycleNote
+      ? (cycleNote.status === "ready" ? { label: "確認済み", tone: "done" as const } : { label: "下書き", tone: "wip" as const })
+      : { label: "未作成", tone: "none" as const };
+    const sesStep = wkCheckin
+      ? { label: wkWin ? "チェックイン＋ウィン済" : "チェックイン済", tone: "done" as const }
+      : wkWin ? { label: "ウィン済", tone: "wip" as const } : { label: "未記録", tone: "none" as const };
+    const anaStep = cycleAnalysis
+      ? (cycleAnalysis.created_at.slice(0, 10) >= thisMonday ? { label: `今週分あり（${fmtMD(cycleAnalysis.created_at)}）`, tone: "done" as const } : { label: `${fmtMD(cycleAnalysis.created_at)}（やや前）`, tone: "wip" as const })
+      : { label: "なし", tone: "none" as const };
+    const repStep = cycleReport
+      ? (cycleReport.status === "finalized" ? { label: "確定済み", tone: "done" as const } : { label: "下書き（要確認）", tone: "wip" as const })
+      : { label: "未作成", tone: "none" as const };
+    return [
+      { tool: "note" as const,     icon: "📝", name: "① 会議ノート",      ...noteStep },
+      { tool: "session" as const,  icon: "🗓️", name: "② セッション記録",  ...sesStep },
+      { tool: "analysis" as const, icon: "📊", name: "③ 分析",            ...anaStep },
+      { tool: "report" as const,   icon: "📄", name: "④ レポート作成",    ...repStep },
+    ];
+  }, [selectedKrId, krSessionsMap, thisMonday, cycleNote, cycleAnalysis, cycleReport]);
+  const CYCLE_TONE_COLOR: Record<string, string> = { done: "#16a34a", wip: "#ca8a04", none: "var(--color-text-tertiary)" };
 
   // 今週のセッション集計
   const thisWeekStats = useMemo(() => {
@@ -240,6 +291,49 @@ export function OkrDashboardView({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* サイクル進捗バー（選択中KR×今週で ①→②→③→④ がどこまで進んでいるか） */}
+      {inOkrGroup && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
+          padding: "8px 14px", borderBottom: "1px solid var(--color-border-primary)",
+          background: "var(--color-bg-secondary)", flexShrink: 0,
+        }}>
+          {!selectedKrId ? (
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              「概要」でKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション→③分析→④レポート）が表示されます。
+              <button onClick={() => onSetActiveTool("overview")} style={{ marginLeft: "8px", fontSize: "11px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", textDecoration: "underline", padding: 0 }}>概要へ</button>
+            </span>
+          ) : (
+            <>
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                {(activeKrs.find(k => k.id === selectedKrId)?.title ?? "").slice(0, 18)}｜{fmtMD(thisMonday)}週
+              </span>
+              {cycleSteps.map((st, i) => (
+                <div key={st.tool ?? i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  {i > 0 && <span style={{ color: "var(--color-text-tertiary)", fontSize: "11px" }}>›</span>}
+                  <button
+                    onClick={() => onSetActiveTool(st.tool)}
+                    title={`${st.name}：${st.label}`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "5px", padding: "3px 9px", borderRadius: "var(--radius-full)",
+                      border: `1px solid ${activeTool === st.tool ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                      background: activeTool === st.tool ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                      cursor: "pointer", fontSize: "10px", whiteSpace: "nowrap",
+                      color: activeTool === st.tool ? "var(--color-brand)" : "var(--color-text-secondary)", fontWeight: activeTool === st.tool ? 600 : 400,
+                    }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: CYCLE_TONE_COLOR[st.tone], flexShrink: 0 }} />
+                    {st.icon} {st.name}
+                    <span style={{ color: st.tone === "none" ? "var(--color-text-tertiary)" : CYCLE_TONE_COLOR[st.tone], fontSize: "9px" }}>（{st.label}）</span>
+                  </button>
+                </div>
+              ))}
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>↩ 翌週へ</span>
+            </>
+          )}
         </div>
       )}
 

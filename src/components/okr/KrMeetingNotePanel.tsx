@@ -17,6 +17,8 @@ import {
   saveKrMeetingNote, carriedEntriesFrom, emptyEntryFields,
   type KrMeetingNote, type KrNoteEntryFields, type KrNoteStatus,
 } from "../../lib/supabase/krMeetingNoteStore";
+import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
+import { MarkdownLite } from "../common/MarkdownLite";
 
 /** その日が属する週の月曜日（YYYY-MM-DD）を返す。 */
 function mondayOfStr(dateStr: string): string {
@@ -106,6 +108,17 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   // どのTF（tf_id）を開いて確認したか。新規作成はすべてのTFを確認するまでできない
   const [visitedTfs, setVisitedTfs] = useState<Set<string>>(new Set());
   useEffect(() => { setTfIndex(0); setVisitedTfs(new Set()); }, [krId, weekStart, quarter]);
+
+  // 前回からの引き継ぎ参考：このKRの最新のAI分析（③）を見ながら今週の仮説・次の一手を書ける
+  const [latestAnalysis, setLatestAnalysis] = useState<OkrAnalysis | null>(null);
+  const [showCarryRef, setShowCarryRef] = useState(false);
+  useEffect(() => {
+    setShowCarryRef(false);
+    if (!krId) { setLatestAnalysis(null); return; }
+    let cancelled = false;
+    fetchLatestOkrAnalysis(krId).then(a => { if (!cancelled) setLatestAnalysis(a); }).catch(() => { if (!cancelled) setLatestAnalysis(null); });
+    return () => { cancelled = true; };
+  }, [krId]);
 
   // KR/週変更時：ノート一覧 + 当該週ノートを取得
   useEffect(() => {
@@ -365,7 +378,22 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
                 最終更新 {new Date(note.updated_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
               </span>
             )}
+            {latestAnalysis && (
+              <button onClick={() => setShowCarryRef(v => !v)} style={{ fontSize: "11px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-full)", padding: "3px 10px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                {showCarryRef ? "▲ 閉じる" : "💡 前回の振り返り（③ 分析）を見ながら書く"}
+              </button>
+            )}
           </div>
+
+          {/* 前回からの引き継ぎ参考：③ AI分析の最新（学び・リスク・次の一手・レポート用要点） */}
+          {showCarryRef && latestAnalysis && (
+            <div style={{ border: "1px solid var(--color-border-primary)", borderLeft: "3px solid var(--color-brand)", borderRadius: "var(--radius-md)", padding: "10px 14px", background: "var(--color-bg-secondary)", maxHeight: "320px", overflow: "auto" }}>
+              <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
+                このKRの最新のAI分析（{new Date(latestAnalysis.created_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}）— 今週の「先週動かした仮説」「次にやる一手」を書く参考に
+              </div>
+              <MarkdownLite text={latestAnalysis.content} compact />
+            </div>
+          )}
 
           {/* TFステップ・ストリップ（●=確認済み ○=未確認） */}
           <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>

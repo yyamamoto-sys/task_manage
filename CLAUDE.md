@@ -91,6 +91,13 @@
 #             取り消し可)」に。レポート保存先を localStorage → Supabase（kr_reports）へ移行。
 #             レポート生成時に③分析（okr_analyses）の最新結果を素材として議事メモに添える＋バナー表示
 #      補足：OKR循環ワークフロー Phase A〜C 完了。残りは Phase D（循環の見える化＋④③→①の自動引き継ぎ）
+# v2.15 OKR会議記録にWord/PDF対応・Phase D一次（サイクル進捗バー）（2026-05-13）
+#      追加：src/lib/docxText.ts（.docx本文抽出、fflate 依存追加）。MeetingImportPanel が Word/PDF を受け付け
+#             （PDFはdocumentブロックでAIに添付、Wordはテキスト抽出）。FileAttachButton も .docx 対応。
+#             meetingExtractor.extractMeetingData が optional attachment を受け取る
+#      追加：OKR管理に「サイクル進捗バー」（選択中KR×今週で①会議ノート→②セッション→③分析→④レポートの状態・各ステップへジャンプ）
+#      追加：会議ノート画面に「💡 前回の振り返り（③分析）を見ながら書く」折りたたみ（最新AI分析を参照）
+#      残：Phase D の ④③→①自動prefill（確定レポートの学び・分析示唆を翌週ノートに自動投入）はまだ手動（参照表示まで）
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #
