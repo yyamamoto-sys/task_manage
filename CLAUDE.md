@@ -50,6 +50,13 @@
 #      追加：project_analyses テーブル（migrations/20260513_add_project_analyses.sql）
 #      追加：common/MarkdownLite（AI出力の軽量マークダウン描画）
 #             （TaskEditModal/KanbanView/AdminView/MeetingImportPanel）
+# v2.9 OKR循環ワークフロー：履歴に宣言詳細表示・設計doc・TF会議ノート(Phase A)（2026-05-13）
+#      追加：docs/okr-cycle-design.md（①TF会議ノート→②セッション→③分析→④レポートの循環設計）
+#      変更：セッション履歴で宣言（誰が何を宣言・結果・学び・文字起こし）を展開表示
+#      追加：TF会議ノート（OKRモードの新タブ）。tf_meeting_notes テーブル
+#             （migrations/20260513_add_tf_meeting_notes.sql）・tfMeetingNoteStore・TfMeetingNotePanel。
+#             TF×週で1件・前週から下書き引き継ぎ可
+#      Phase B（分析結果ページ）・C（レポート確認・確定制）・D（循環の見える化）は未着手
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #

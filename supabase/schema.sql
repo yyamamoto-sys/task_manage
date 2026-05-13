@@ -307,6 +307,29 @@ CREATE TABLE IF NOT EXISTS project_analyses (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
+-- ===== TF会議ノート（OKR循環ワークフロー Phase A） =====
+-- migrations/20260513_add_tf_meeting_notes.sql / docs/okr-cycle-design.md 参照
+CREATE TABLE IF NOT EXISTS tf_meeting_notes (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  tf_id                text NOT NULL REFERENCES task_forces(id),
+  week_start           date NOT NULL,
+  target_definition    text NOT NULL DEFAULT '',
+  eval_criteria        text NOT NULL DEFAULT '',
+  hypotheses           text NOT NULL DEFAULT '',
+  facts                text NOT NULL DEFAULT '',
+  next_actions         text NOT NULL DEFAULT '',
+  progress_pct         int,
+  progress_reason      text NOT NULL DEFAULT '',
+  todo_status          text NOT NULL DEFAULT '',
+  status               text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ready')),
+  carried_from_note_id uuid REFERENCES tf_meeting_notes(id),
+  created_by           text NOT NULL,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  updated_by           text NOT NULL DEFAULT '',
+  is_deleted           boolean NOT NULL DEFAULT false
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -320,7 +343,7 @@ BEGIN
     ('todos'), ('projects'), ('tasks'),
     ('quarterly_objectives'),
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
-    ('member_tags')
+    ('member_tags'), ('tf_meeting_notes')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -356,6 +379,7 @@ ALTER TABLE kr_declarations            ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_tags                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_tag_members         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_analyses           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tf_meeting_notes           ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -368,7 +392,8 @@ BEGIN
     ('task_forces'), ('todos'), ('projects'), ('project_task_forces'),
     ('tasks'), ('milestones'), ('admin_change_logs'),
     ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
-    ('member_tags'), ('member_tag_members'), ('project_analyses')
+    ('member_tags'), ('member_tag_members'), ('project_analyses'),
+    ('tf_meeting_notes')
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
@@ -418,3 +443,5 @@ CREATE INDEX IF NOT EXISTS idx_kr_sessions_kr_id_week_start    ON kr_sessions(kr
 CREATE INDEX IF NOT EXISTS idx_kr_declarations_session_id      ON kr_declarations(session_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_milestones_project_id           ON milestones(project_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_project_analyses_project_id_created_at ON project_analyses(project_id, created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_tf_meeting_notes_tf_week     ON tf_meeting_notes(tf_id, week_start)      WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_tf_meeting_notes_tf_id_week        ON tf_meeting_notes(tf_id, week_start DESC) WHERE is_deleted = false;

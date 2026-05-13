@@ -8,9 +8,10 @@ import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
+import { TfMeetingNotePanel } from "./TfMeetingNotePanel";
 import { fetchKrSessions, updateKrSession, softDeleteKrSession, fetchKrDeclarations, type KrSession, type KrDeclaration } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "session" | "why" | "plan" | "overview" | "guide" | null;
+export type OkrActiveTool = "note" | "session" | "why" | "plan" | "overview" | "guide" | null;
 
 interface Props {
   currentUser: Member;
@@ -42,6 +43,7 @@ function getThisMonday(): string {
 }
 
 const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
+  { tool: "note",     icon: "📝", label: "TF会議ノート" },
   { tool: "session",  icon: "🗓️", label: "セッション記録" },
   { tool: "why",      icon: "🔍", label: "なぜなぜ" },
   { tool: "plan",     icon: "📅", label: "計画" },
@@ -448,6 +450,16 @@ export function OkrDashboardView({
               </div>
             )}
           </div>
+        )}
+
+        {/* ─── TF会議ノートタブ ─── */}
+        {activeTool === "note" && (
+          <TfMeetingNotePanel
+            inline
+            onClose={() => onSetActiveTool(null)}
+            currentUser={currentUser}
+            initialKrId={selectedKrId ?? undefined}
+          />
         )}
 
         {/* ─── セッション記録タブ（レポート統合） ─── */}
