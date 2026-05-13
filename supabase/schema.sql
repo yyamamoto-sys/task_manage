@@ -342,15 +342,21 @@ CREATE TABLE IF NOT EXISTS kr_note_tf_entries (
 -- ===== KR単位のAI分析の蓄積（OKR循環ワークフロー Phase B） =====
 -- migrations/20260513c_add_okr_tf_analyses.sql → 20260513d_restructure_okr_analyses_to_kr.sql
 CREATE TABLE IF NOT EXISTS okr_analyses (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  kr_id       text NOT NULL REFERENCES key_results(id),
-  content     text NOT NULL,
-  edited      boolean NOT NULL DEFAULT false,
-  created_by  text NOT NULL,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now(),
-  updated_by  text NOT NULL DEFAULT '',
-  is_deleted  boolean NOT NULL DEFAULT false
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  scope        text NOT NULL DEFAULT 'kr' CHECK (scope IN ('kr','objective')),
+  kr_id        text REFERENCES key_results(id),
+  objective_id text REFERENCES objectives(id),
+  content      text NOT NULL,
+  edited       boolean NOT NULL DEFAULT false,
+  created_by   text NOT NULL,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  updated_by   text NOT NULL DEFAULT '',
+  is_deleted   boolean NOT NULL DEFAULT false,
+  CONSTRAINT okr_analyses_scope_target_check CHECK (
+    (scope = 'kr'        AND kr_id        IS NOT NULL AND objective_id IS NULL)
+    OR (scope = 'objective' AND objective_id IS NOT NULL AND kr_id        IS NULL)
+  )
 );
 
 -- ===== KRレポート（OKR循環ワークフロー Phase C）：AI下書き→人が確認・編集→確定 =====
@@ -492,5 +498,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_meeting_notes_kr_week     ON kr_meeting_
 CREATE INDEX IF NOT EXISTS idx_kr_meeting_notes_kr_id_week        ON kr_meeting_notes(kr_id, week_start DESC) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_note_tf_entries_note_id         ON kr_note_tf_entries(note_id);
 CREATE INDEX IF NOT EXISTS idx_okr_analyses_kr_id_created          ON okr_analyses(kr_id, created_at DESC) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_okr_analyses_objective_id_created   ON okr_analyses(objective_id, created_at DESC) WHERE is_deleted = false;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_reports_kr_week_mode        ON kr_reports(kr_id, week_start, mode) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_reports_kr_id_week               ON kr_reports(kr_id, week_start DESC) WHERE is_deleted = false;

@@ -98,6 +98,15 @@
 #      追加：OKR管理に「サイクル進捗バー」（選択中KR×今週で①会議ノート→②セッション→③分析→④レポートの状態・各ステップへジャンプ）
 #      追加：会議ノート画面に「💡 前回の振り返り（③分析）を見ながら書く」折りたたみ（最新AI分析を参照）
 #      残：Phase D の ④③→①自動prefill（確定レポートの学び・分析示唆を翌週ノートに自動投入）はまだ手動（参照表示まで）
+# v2.17 OKR分析にObjectiveスコープを追加・合同セッションモード（2026-05-13）
+#      追加：okr_analyses に scope/objective_id 列（migrations/20260513h_okr_analyses_objective_scope.sql）。
+#             KR/Objective 両対応の1テーブル設計（CHECK でデータ整合性確保）
+#      追加：okrObjectiveAnalysisClient（O+配下KRの最新KR分析・直近セッション・タスク状況を束ねた横断分析）。
+#             AIIntent は "okr-analysis" を流用
+#      変更：OkrKrAnalysisPanel を「対象＝Objective全体 or KR個別」の単一セレクタに改修。
+#             Objective分析は配下KRの最新KR分析を素材にして横断的に分析する
+#      追加：合同セッションモード（KrJointSessionFlow / extractJointCheckinData / extractJointWinSessionData）。
+#             ② セッション記録の対象トグルで「合同（複数KR一括）」「単一KR」を切替（既定＝合同）
 # v2.16 OKR循環ワークフロー Phase D 完了：④③→① 自動prefill（2026-05-13）
 #      追加：kr_meeting_notes.carry_memo 列（migrations/20260513f_add_kr_note_carry_memo.sql）
 #      追加：krMeetingNoteStore.buildCarryMemo（前週確定レポートのHTML→テキスト要点＋最新③分析の「次の一手」「レポート作成のための要点」を抽出して引き継ぎマークダウンを生成）

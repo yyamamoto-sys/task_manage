@@ -1,10 +1,12 @@
 // src/components/okr/OkrKrAnalysisPanel.tsx
 //
 // 【設計意図】
-// OKR循環ワークフローの ③ 分析（KR単位）。そのKRに紐づく全TFの会議ノート履歴＋KRのセッション・宣言＋
-// 各TFのタスクを束ねて AI が分析する。結果は okr_analyses に履歴保存（過去分も残す）、人が手修正もできる。
-// ④レポート作成の素材にもなる（最新の分析をレポート画面から参照）。
-// 詳細設計：docs/okr-cycle-design.md（Phase B）
+// OKR循環ワークフローの ③ 分析。対象を「Objective 全体」または「KR 単位」から選んで AI 分析する。
+// - KR単位：そのKRに紐づく全TFの会議ノート履歴＋KRのセッション・宣言＋各TFのタスクを束ねて分析
+// - Objective全体：配下の各KRの最新KR分析＋直近セッション＋タスクサマリを束ねて横断分析
+// 結果は okr_analyses に scope='kr'/'objective' で履歴保存（過去分も残す）、人が手修正もできる。
+// ④レポート作成の素材にもなる（最新のKR分析をレポート画面から参照）。
+// 詳細設計：docs/okr-cycle-design.md（Phase B 仕上げ）
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
@@ -14,21 +16,41 @@ import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { fetchKrSessions, fetchKrDeclarations } from "../../lib/supabase/krSessionStore";
 import { fetchTfEntryHistory } from "../../lib/supabase/krMeetingNoteStore";
-import { fetchOkrAnalyses, insertOkrAnalysis, updateOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
+import {
+  fetchOkrAnalyses, insertOkrAnalysis, updateOkrAnalysis,
+  fetchObjectiveAnalyses, insertObjectiveAnalysis, fetchLatestOkrAnalysis,
+  type OkrAnalysis,
+} from "../../lib/supabase/okrAnalysisStore";
 import { analyzeKr, type KrAnalysisInput, type KrAnalysisTf } from "../../lib/ai/okrKrAnalysisClient";
+import { analyzeObjective, type ObjectiveAnalysisKrInput } from "../../lib/ai/okrObjectiveAnalysisClient";
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
 function currentQuarter(): Quarter {
   const m = new Date().getMonth() + 1;
   return m <= 3 ? "1Q" : m <= 6 ? "2Q" : m <= 9 ? "3Q" : "4Q";
 }
-const ANALYSIS_PHASES = [
+const KR_PHASES = [
   "各TFの会議ノートを読み込んでいます",
   "セッションと宣言を確認しています",
   "TF横断で進捗と仮説の検証状況を評価しています",
   "リスク・ボトルネックを洗い出しています",
   "レポート用の要点をまとめています",
 ];
+const OBJ_PHASES = [
+  "配下のKRの分析結果を集約しています",
+  "各KRの直近セッション・タスク状況を確認しています",
+  "Objective横断の進捗バランス・リスクを評価しています",
+  "全体としての次の一手をまとめています",
+];
+
+// ===== 対象（Objective か KR）の表現 =====
+type Target = { kind: "objective"; objectiveId: string } | { kind: "kr"; krId: string };
+const encodeTarget = (t: Target): string => t.kind === "objective" ? `obj:${t.objectiveId}` : `kr:${t.krId}`;
+const decodeTarget = (s: string): Target | null => {
+  if (s.startsWith("obj:")) return { kind: "objective", objectiveId: s.slice(4) };
+  if (s.startsWith("kr:"))  return { kind: "kr", krId: s.slice(3) };
+  return null;
+};
 
 interface Props {
   inline?: boolean;
@@ -52,26 +74,39 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   const memberById = useMemo(() => new Map(rawMembers.filter(m => !m.is_deleted).map(m => [m.id, m])), [rawMembers]);
   const shortName = useCallback((id: string) => memberById.get(id)?.short_name ?? "", [memberById]);
 
-  const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : (krs[0]?.id ?? ""));
-  useEffect(() => { if (!krId && krs[0]) setKrId(krs[0].id); }, [krs, krId]);
+  // 既定の対象：initialKrId があればそのKR、無ければ Objective全体（あれば）、それも無ければ先頭のKR
+  const initialTarget = useMemo<Target | null>(() => {
+    if (initialKrId && krs.some(k => k.id === initialKrId)) return { kind: "kr", krId: initialKrId };
+    if (objective) return { kind: "objective", objectiveId: objective.id };
+    if (krs[0]) return { kind: "kr", krId: krs[0].id };
+    return null;
+  }, [initialKrId, krs, objective]);
+
+  const [target, setTarget] = useState<Target | null>(initialTarget);
+  useEffect(() => { if (!target && initialTarget) setTarget(initialTarget); }, [initialTarget, target]);
+
   const [quarter, setQuarter] = useState<Quarter>(currentQuarter());
 
+  // クォーターのKR×TF割り当て（KR分析で使う）
   const qObj = useMemo(
     () => objective ? (rawQObjs.find(q => !q.is_deleted && q.objective_id === objective.id && q.quarter === quarter) ?? null) : null,
     [rawQObjs, objective, quarter],
   );
   const usingQuarterAssignment = !!qObj;
-  const tfs = useMemo(() => {
-    if (!krId) return [];
+
+  /** クォーター割り当てがあれば q-kr-tf、無ければ kr_id でTFを引く共通ヘルパ */
+  const tfsForKr = useCallback((krId: string) => {
     const allActive = rawTfs.filter(tf => !tf.is_deleted);
     const pool = qObj
       ? allActive.filter(tf => new Set(rawQktf.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === krId).map(q => q.tf_id)).has(tf.id))
       : allActive.filter(tf => tf.kr_id === krId);
     const byId = new Map(pool.map(tf => [tf.id, tf]));
     return [...byId.values()].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
-  }, [rawTfs, rawQktf, qObj, krId]);
+  }, [rawTfs, rawQktf, qObj]);
 
-  // 分析履歴（KR単位）
+  const krTfs = useMemo(() => target?.kind === "kr" ? tfsForKr(target.krId) : [], [target, tfsForKr]);
+
+  // 分析履歴（対象に応じて取り直す）
   const [analyses, setAnalyses] = useState<OkrAnalysis[]>([]);
   const [selIndex, setSelIndex] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -84,15 +119,17 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!krId) { setAnalyses([]); return; }
+    if (!target) { setAnalyses([]); return; }
     let cancelled = false;
     setLoading(true); setLoadError(null); setEditing(false); setSelIndex(0);
-    fetchOkrAnalyses(krId)
-      .then(rows => { if (!cancelled) setAnalyses(rows); })
-      .catch((e: unknown) => { if (!cancelled) { setLoadError(formatErrorForUser("分析履歴の取得に失敗しました", e)); setAnalyses([]); } })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    const p = target.kind === "objective"
+      ? fetchObjectiveAnalyses(target.objectiveId)
+      : fetchOkrAnalyses(target.krId);
+    p.then(rows => { if (!cancelled) setAnalyses(rows); })
+     .catch((e: unknown) => { if (!cancelled) { setLoadError(formatErrorForUser("分析履歴の取得に失敗しました", e)); setAnalyses([]); } })
+     .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [krId]);
+  }, [target]);
 
   const current = analyses[selIndex] ?? analyses[0] ?? null;
 
@@ -103,139 +140,219 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
     return rawTasks.filter(t => !t.is_deleted && (direct.has(t.id) || (t.todo_ids ?? []).some(id => todoIds.has(id))));
   }, [rawTtfs, rawTodos, rawTasks]);
 
+  // ===== KR分析 =====
+  const runKrAnalysis = useCallback(async (krId: string) => {
+    const tfs = tfsForKr(krId);
+    if (tfs.length === 0) throw new Error("対象TFがありません");
+    const krTitle = krs.find(k => k.id === krId)?.title ?? "";
+    const tfData: KrAnalysisTf[] = await Promise.all(tfs.map(async tf => {
+      const noteHist = await fetchTfEntryHistory(krId, tf.id, 8);
+      const themeFromNotes = noteHist.find(n => n.tf_theme)?.tf_theme ?? (tf.description ?? "");
+      return {
+        number: tf.tf_number, name: tf.name, theme: themeFromNotes,
+        noteHistory: noteHist.map(n => ({
+          week_start: n.week_start, target_definition: n.target_definition, eval_criteria: n.eval_criteria,
+          hypotheses: n.hypotheses, facts: n.facts, next_actions: n.next_actions,
+          progress_pct: n.progress_pct, progress_reason: n.progress_reason, todo: n.todo,
+        })),
+        tasks: tasksForTf(tf.id).map(t => ({
+          name: t.name, status: t.status, priority: t.priority,
+          assignee: (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).map(shortName).filter(Boolean).join("・"),
+          due_date: t.due_date, updated_at: t.updated_at,
+        })),
+      };
+    }));
+    const sessions = await fetchKrSessions(krId);
+    const recentSessions = sessions.slice(0, 10);
+    const checkinSessions = recentSessions.filter(s => s.session_type === "checkin").slice(0, 4);
+    const declLists = await Promise.all(checkinSessions.map(s => fetchKrDeclarations(s.id).then(ds => ({ week: s.week_start, ds })).catch(() => ({ week: s.week_start, ds: [] }))));
+    const declarations = declLists.flatMap(({ week, ds }) => ds.map(d => ({
+      week_start: week, member: shortName(d.member_id), content: d.content,
+      due_date: d.due_date, result: d.result_status, result_note: d.result_note,
+    })));
+    const input: KrAnalysisInput = {
+      kr: { title: krTitle },
+      tfs: tfData,
+      sessions: recentSessions.map(s => ({
+        week_start: s.week_start, type: s.session_type, signal: s.signal, signal_comment: s.signal_comment,
+        learnings: s.learnings, external_changes: s.external_changes, summary: s.summary, decisions: s.decisions, kr_mentions: s.kr_mentions,
+      })),
+      declarations,
+      today: new Date().toISOString().slice(0, 10),
+    };
+    const text = await analyzeKr(input);
+    await insertOkrAnalysis(krId, text, currentUser.id, false);
+  }, [tfsForKr, krs, tasksForTf, shortName, currentUser.id]);
+
+  // ===== Objective 分析 =====
+  const runObjectiveAnalysis = useCallback(async (objId: string) => {
+    if (!objective || objective.id !== objId) throw new Error("対象Objectiveが見つかりません");
+    const objKrs = krs.filter(k => k.objective_id === objId);
+    if (objKrs.length === 0) throw new Error("配下のKRがありません");
+
+    // 各KRぶんを並列で組み立てる
+    const krInputs: ObjectiveAnalysisKrInput[] = await Promise.all(objKrs.map(async kr => {
+      const [latest, sessions] = await Promise.all([
+        fetchLatestOkrAnalysis(kr.id).catch(() => null),
+        fetchKrSessions(kr.id).catch(() => []),
+      ]);
+      const tfs = tfsForKr(kr.id);
+      // タスクサマリ（このKR配下のTFタスクを集計）
+      const allTasks = new Map<string, ReturnType<typeof tasksForTf>[number]>();
+      for (const tf of tfs) for (const t of tasksForTf(tf.id)) allTasks.set(t.id, t);
+      const today = new Date().toISOString().slice(0, 10);
+      let done = 0, inProg = 0, todo = 0, overdue = 0;
+      for (const t of allTasks.values()) {
+        if (t.status === "done") done++;
+        else if (t.status === "in_progress") inProg++;
+        else todo++;
+        if (t.status !== "done" && t.due_date && t.due_date <= today) overdue++;
+      }
+      const recentSessions = sessions.slice(0, 6).map(s => ({
+        week_start: s.week_start, type: s.session_type, signal: s.signal,
+        signal_comment: s.signal_comment, learnings: s.learnings,
+      }));
+      return {
+        id: kr.id, title: kr.title,
+        tfs: tfs.map(tf => ({ number: tf.tf_number, name: tf.name, theme: tf.description ?? "" })),
+        latestKrAnalysis: latest ? { content: latest.content, created_at: latest.created_at } : null,
+        sessions: recentSessions,
+        taskSummary: { total: allTasks.size, done, in_progress: inProg, todo, overdue },
+      };
+    }));
+
+    const text = await analyzeObjective({
+      objective: { title: objective.title, purpose: objective.purpose, period: objective.period },
+      krs: krInputs,
+      today: new Date().toISOString().slice(0, 10),
+    });
+    await insertObjectiveAnalysis(objId, text, currentUser.id, false);
+  }, [objective, krs, tfsForKr, tasksForTf, currentUser.id]);
+
   const runAnalysis = useCallback(async () => {
-    if (!krId || tfs.length === 0) return;
+    if (!target) return;
     setAnalyzing(true); setActionError(null);
     try {
-      const krTitle = krs.find(k => k.id === krId)?.title ?? "";
-      // 各TFのノート履歴を取得
-      const tfData: KrAnalysisTf[] = await Promise.all(tfs.map(async tf => {
-        const noteHist = await fetchTfEntryHistory(krId, tf.id, 8);
-        const themeFromNotes = noteHist.find(n => n.tf_theme)?.tf_theme ?? (tf.description ?? "");
-        return {
-          number: tf.tf_number, name: tf.name, theme: themeFromNotes,
-          noteHistory: noteHist.map(n => ({
-            week_start: n.week_start, target_definition: n.target_definition, eval_criteria: n.eval_criteria,
-            hypotheses: n.hypotheses, facts: n.facts, next_actions: n.next_actions,
-            progress_pct: n.progress_pct, progress_reason: n.progress_reason, todo: n.todo,
-          })),
-          tasks: tasksForTf(tf.id).map(t => ({
-            name: t.name, status: t.status, priority: t.priority,
-            assignee: (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).map(shortName).filter(Boolean).join("・"),
-            due_date: t.due_date, updated_at: t.updated_at,
-          })),
-        };
-      }));
-      // KRのセッション・宣言
-      const sessions = await fetchKrSessions(krId);
-      const recentSessions = sessions.slice(0, 10);
-      const checkinSessions = recentSessions.filter(s => s.session_type === "checkin").slice(0, 4);
-      const declLists = await Promise.all(checkinSessions.map(s => fetchKrDeclarations(s.id).then(ds => ({ week: s.week_start, ds })).catch(() => ({ week: s.week_start, ds: [] }))));
-      const declarations = declLists.flatMap(({ week, ds }) => ds.map(d => ({
-        week_start: week, member: shortName(d.member_id), content: d.content,
-        due_date: d.due_date, result: d.result_status, result_note: d.result_note,
-      })));
-
-      const input: KrAnalysisInput = {
-        kr: { title: krTitle },
-        tfs: tfData,
-        sessions: recentSessions.map(s => ({
-          week_start: s.week_start, type: s.session_type, signal: s.signal, signal_comment: s.signal_comment,
-          learnings: s.learnings, external_changes: s.external_changes, summary: s.summary, decisions: s.decisions, kr_mentions: s.kr_mentions,
-        })),
-        declarations,
-        today: new Date().toISOString().slice(0, 10),
-      };
-      const text = await analyzeKr(input);
-      await insertOkrAnalysis(krId, text, currentUser.id, false);
-      const rows = await fetchOkrAnalyses(krId);
+      if (target.kind === "objective") await runObjectiveAnalysis(target.objectiveId);
+      else await runKrAnalysis(target.krId);
+      // refresh
+      const rows = target.kind === "objective"
+        ? await fetchObjectiveAnalyses(target.objectiveId)
+        : await fetchOkrAnalyses(target.krId);
       setAnalyses(rows); setSelIndex(0); setEditing(false);
     } catch (e) {
       setActionError(formatErrorForUser("AI分析に失敗しました", e));
     } finally {
       setAnalyzing(false);
     }
-  }, [krId, tfs, krs, tasksForTf, shortName, currentUser.id]);
+  }, [target, runObjectiveAnalysis, runKrAnalysis]);
 
   const startEdit = useCallback(() => { setEditText(current?.content ?? ""); setEditing(true); setActionError(null); }, [current]);
   const saveEdit = useCallback(async () => {
-    if (!krId) return;
+    if (!target) return;
     setSaving(true); setActionError(null);
     try {
-      if (current) await updateOkrAnalysis(current.id, editText, currentUser.id);
-      else await insertOkrAnalysis(krId, editText, currentUser.id, true);
-      const rows = await fetchOkrAnalyses(krId);
+      if (current) {
+        await updateOkrAnalysis(current.id, editText, currentUser.id);
+      } else {
+        if (target.kind === "objective") await insertObjectiveAnalysis(target.objectiveId, editText, currentUser.id, true);
+        else await insertOkrAnalysis(target.krId, editText, currentUser.id, true);
+      }
+      const rows = target.kind === "objective"
+        ? await fetchObjectiveAnalyses(target.objectiveId)
+        : await fetchOkrAnalyses(target.krId);
       setAnalyses(rows); setSelIndex(0); setEditing(false);
     } catch (e) {
       setActionError(formatErrorForUser("保存に失敗しました", e));
     } finally { setSaving(false); }
-  }, [krId, current, editText, currentUser.id]);
+  }, [target, current, editText, currentUser.id]);
   const copy = useCallback(() => {
     if (!current) return;
     navigator.clipboard?.writeText(current.content).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }).catch(() => {});
   }, [current]);
   const fmtAt = (iso: string) => new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-  const totalTasks = useMemo(() => tfs.reduce((n, tf) => n + tasksForTf(tf.id).length, 0), [tfs, tasksForTf]);
+  // 描画用の派生情報
+  const isKr = target?.kind === "kr";
+  const isObj = target?.kind === "objective";
+  const krsUnderObj = useMemo(() => objective ? krs.filter(k => k.objective_id === objective.id) : krs, [objective, krs]);
+  const totalTasksKr = useMemo(() => krTfs.reduce((n, tf) => n + tasksForTf(tf.id).length, 0), [krTfs, tasksForTf]);
+  const phases = isObj ? OBJ_PHASES : KR_PHASES;
+  const targetTitle = isObj && objective ? `Objective：${objective.title}` : isKr ? (krs.find(k => k.id === (target as { krId: string }).krId)?.title ?? "") : "";
+
+  // ボタンの活性条件
+  const canAnalyze = (() => {
+    if (!target) return false;
+    if (isObj) return krsUnderObj.length > 0;
+    if (isKr)  return krTfs.length > 0;
+    return false;
+  })();
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: "1 1 320px" }}>
-          <Label>Key Result（分析する単位）</Label>
-          <select value={krId} onChange={e => setKrId(e.target.value)} style={selStyle}>
-            {krs.length === 0 && <option value="">（KRがありません）</option>}
-            {krs.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
+        <div style={{ flex: "1 1 360px" }}>
+          <Label>分析対象</Label>
+          <select value={target ? encodeTarget(target) : ""} onChange={e => setTarget(decodeTarget(e.target.value))} style={selStyle}>
+            {objective && <option value={`obj:${objective.id}`}>Objective全体（{objective.title}）</option>}
+            {krsUnderObj.length === 0 && !objective && <option value="">（対象がありません）</option>}
+            {krsUnderObj.map(k => <option key={k.id} value={`kr:${k.id}`}>KR：{k.title}</option>)}
           </select>
         </div>
-        <div style={{ flex: "0 1 130px" }}>
-          <Label>クォーター（対象TF）</Label>
-          <select value={quarter} onChange={e => setQuarter(e.target.value as Quarter)} style={selStyle}>
-            {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
-          </select>
-        </div>
+        {isKr && (
+          <div style={{ flex: "0 1 130px" }}>
+            <Label>クォーター（対象TF）</Label>
+            <select value={quarter} onChange={e => setQuarter(e.target.value as Quarter)} style={selStyle}>
+              {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
+            </select>
+          </div>
+        )}
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
       </div>
 
-      {krId && !usingQuarterAssignment && (
+      {isKr && target && !usingQuarterAssignment && (
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
           ※ {quarter} のTF割り当てが未設定のため、このKRに紐づく全TFを対象にしています。
         </div>
       )}
 
-      {!krId && <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>分析対象の Key Result がありません。</div>}
+      {!target && <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>分析対象が見つかりません。</div>}
 
-      {krId && (
+      {target && (
         <>
           <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", flexWrap: "wrap", borderBottom: "1px solid var(--color-border-primary)", paddingBottom: "10px" }}>
             <div style={{ flex: 1, minWidth: "200px" }}>
-              <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{krs.find(k => k.id === krId)?.title}</div>
+              <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>{targetTitle}</div>
               <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
-                対象TF {tfs.length}件・タスク {totalTasks}件＋このKRのセッション・宣言を AI が分析します。結果は履歴に残り、手修正でき、レポート作成の素材になります。
+                {isObj
+                  ? `配下のKR ${krsUnderObj.length}件の最新KR分析＋直近セッション＋タスク状況を束ねて、Objective全体を横断分析します。`
+                  : `対象TF ${krTfs.length}件・タスク ${totalTasksKr}件＋このKRのセッション・宣言を AI が分析します。結果は履歴に残り、手修正でき、レポート作成の素材になります。`}
               </div>
-              {tfs.length > 0 && <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>対象TF：{tfs.map(t => `TF${t.tf_number} ${t.name}`).join(" / ")}</div>}
+              {isKr && krTfs.length > 0 && <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>対象TF：{krTfs.map(t => `TF${t.tf_number} ${t.name}`).join(" / ")}</div>}
+              {isObj && krsUnderObj.length > 0 && <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>配下KR：{krsUnderObj.map(k => k.title).join(" / ")}</div>}
             </div>
-            <button onClick={analyzing ? undefined : runAnalysis} disabled={analyzing || tfs.length === 0} style={{
+            <button onClick={analyzing ? undefined : runAnalysis} disabled={analyzing || !canAnalyze} style={{
               display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px", fontSize: "12px", fontWeight: 600,
               border: "none", borderRadius: "var(--radius-full)",
-              background: (analyzing || tfs.length === 0) ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-              color: (analyzing || tfs.length === 0) ? "var(--color-text-tertiary)" : "#fff", cursor: (analyzing || tfs.length === 0) ? "default" : "pointer",
-              boxShadow: (analyzing || tfs.length === 0) ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
+              background: (analyzing || !canAnalyze) ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              color: (analyzing || !canAnalyze) ? "var(--color-text-tertiary)" : "#fff", cursor: (analyzing || !canAnalyze) ? "default" : "pointer",
+              boxShadow: (analyzing || !canAnalyze) ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
             }}>
-              <span>✨</span> {analyzing ? "分析中…" : analyses.length > 0 ? "AI分析を再実行" : "このKRをAI分析"}
+              <span>✨</span> {analyzing ? "分析中…" : analyses.length > 0 ? "AI分析を再実行" : (isObj ? "Objective全体をAI分析" : "このKRをAI分析")}
             </button>
           </div>
 
           {loadError && <ErrBox>{loadError}</ErrBox>}
           {actionError && <ErrBox>{actionError}</ErrBox>}
           {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
-          {analyzing && <AIProgressLoader phases={ANALYSIS_PHASES} intervalMs={4500} />}
+          {analyzing && <AIProgressLoader phases={phases} intervalMs={4500} />}
 
           {!analyzing && !loading && (
             <>
               {!current && !editing && (
                 <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "28px", background: "var(--color-bg-secondary)", borderRadius: "var(--radius-lg)" }}>
-                  まだ分析がありません。「このKRをAI分析」で作成するか、<button onClick={startEdit} style={linkBtn}>手書きで作成</button>できます。
+                  まだ分析がありません。「AI分析」で作成するか、<button onClick={startEdit} style={linkBtn}>手書きで作成</button>できます。
+                  {isObj && <div style={{ marginTop: "6px", fontSize: "11px" }}>※ 先に各KRの「AI分析」を済ませておくと、Objective分析の素材が濃くなります。</div>}
                 </div>
               )}
 
@@ -277,7 +394,10 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
                   ) : current && <MarkdownLite text={current.content} />}
                 </div>
               )}
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>AIの分析は参考情報です。事実は会議ノート・セッション記録で確認してください。④レポート作成では、この最新の分析を素材として参照できます。</div>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                AIの分析は参考情報です。事実は会議ノート・セッション記録で確認してください。
+                {isKr ? "④レポート作成では、この最新の分析を素材として参照できます。" : "Objective分析は配下KRの最新KR分析を素材にしているので、各KR分析を先に実行しておくと精度が上がります。"}
+              </div>
             </>
           )}
         </>

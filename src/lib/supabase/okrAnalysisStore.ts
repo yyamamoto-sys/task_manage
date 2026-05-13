@@ -1,15 +1,19 @@
 // src/lib/supabase/okrAnalysisStore.ts
 //
 // 【設計意図】
-// okr_analyses テーブルへのCRUD。KR単位のAI分析結果を履歴として蓄積し、過去に遡って読める／
-// 人が手修正できる／レポート作成の素材にする（OKR循環ワークフロー Phase B / ③分析結果）。
+// okr_analyses テーブルへのCRUD。KR単位 と Objective単位 の AI分析結果を1つのテーブルで履歴管理する
+// （scope='kr' / 'objective'）。過去に遡って読める／人が手修正できる／レポート作成の素材にする。
 // 詳細設計：docs/okr-cycle-design.md（Phase B）
 
 import { supabase } from "./client";
 
+export type OkrAnalysisScope = "kr" | "objective";
+
 export interface OkrAnalysis {
   id: string;
-  kr_id: string;
+  scope: OkrAnalysisScope;
+  kr_id: string | null;
+  objective_id: string | null;
   content: string;
   edited: boolean;
   created_by: string;
@@ -19,11 +23,14 @@ export interface OkrAnalysis {
   is_deleted: boolean;
 }
 
+// ===== KR スコープ =====
+
 /** 指定KRの分析を新しい順に取得（全件・過去分も残す）。 */
 export async function fetchOkrAnalyses(krId: string): Promise<OkrAnalysis[]> {
   const { data, error } = await supabase
     .from("okr_analyses")
     .select("*")
+    .eq("scope", "kr")
     .eq("kr_id", krId)
     .eq("is_deleted", false)
     .order("created_at", { ascending: false });
@@ -37,16 +44,50 @@ export async function fetchLatestOkrAnalysis(krId: string): Promise<OkrAnalysis 
   return rows[0] ?? null;
 }
 
-/** 新しい分析結果を保存する（AI生成直後 or 手書き）。 */
+/** KR分析を保存する（AI生成直後 or 手書き）。 */
 export async function insertOkrAnalysis(krId: string, content: string, createdBy: string, edited = false): Promise<OkrAnalysis> {
   const { data, error } = await supabase
     .from("okr_analyses")
-    .insert({ kr_id: krId, content, edited, created_by: createdBy, updated_by: createdBy })
+    .insert({ scope: "kr", kr_id: krId, objective_id: null, content, edited, created_by: createdBy, updated_by: createdBy })
     .select("*")
     .single();
   if (error) throw error;
   return data as OkrAnalysis;
 }
+
+// ===== Objective スコープ =====
+
+/** 指定Objectiveの分析を新しい順に取得。 */
+export async function fetchObjectiveAnalyses(objectiveId: string): Promise<OkrAnalysis[]> {
+  const { data, error } = await supabase
+    .from("okr_analyses")
+    .select("*")
+    .eq("scope", "objective")
+    .eq("objective_id", objectiveId)
+    .eq("is_deleted", false)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as OkrAnalysis[];
+}
+
+/** 指定Objectiveの最新の分析を1件取得。 */
+export async function fetchLatestObjectiveAnalysis(objectiveId: string): Promise<OkrAnalysis | null> {
+  const rows = await fetchObjectiveAnalyses(objectiveId);
+  return rows[0] ?? null;
+}
+
+/** Objective分析を保存する。 */
+export async function insertObjectiveAnalysis(objectiveId: string, content: string, createdBy: string, edited = false): Promise<OkrAnalysis> {
+  const { data, error } = await supabase
+    .from("okr_analyses")
+    .insert({ scope: "objective", objective_id: objectiveId, kr_id: null, content, edited, created_by: createdBy, updated_by: createdBy })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as OkrAnalysis;
+}
+
+// ===== 共通（KR/Objective どちらも id ベースで操作） =====
 
 /** 既存の分析結果を更新（人が手修正したら edited=true にする）。 */
 export async function updateOkrAnalysis(id: string, content: string, updatedBy: string): Promise<OkrAnalysis> {
