@@ -240,7 +240,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         <div key={viewMode} className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
             {viewMode === "dashboard" && (
-              <DashboardView currentUser={currentUser} projects={projects} onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }} />
+              <DashboardView
+                currentUser={currentUser}
+                projects={projects}
+                selectedProject={selectedProject}
+                onClearProjectFilter={() => handleSelectProject(null)}
+                onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+              />
             )}
             {viewMode === "kanban" && (
               <KanbanView

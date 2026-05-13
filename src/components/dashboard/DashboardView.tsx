@@ -7,7 +7,8 @@
 // 3. 期限アラート：期限超過・本日期限のタスク（赤バッジ）
 // 4. PJ進捗一覧：全PJのタスク完了率
 //
-// フィルター：「自分のみ/全員」トグル＋PJチップ（複数選択）
+// フィルター：「自分のみ/全員」トグル＋PJチップ（複数選択）。
+// サイドバーでPJを選択中はそのPJに絞り込まれ、ヘッダーに絞り込みバナーを表示する（PJチップは隠れる）。
 //
 // KR進捗率の計算方針（未決定論点Aの暫定解）：
 // 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
@@ -27,12 +28,16 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 interface Props {
   currentUser: Member;
   projects: Project[];
+  /** サイドバーで選択中のPJ。指定時はダッシュボード全体がそのPJに絞り込まれる */
+  selectedProject?: Project | null;
+  /** 絞り込みバナーの ✕ で呼ぶ。サイドバーのPJ選択を解除する */
+  onClearProjectFilter?: () => void;
   onOpenAiProject?: () => void;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, onOpenAiProject }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(s => s.tasks);
@@ -93,6 +98,12 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
     });
   }, [krs]);
 
+  // 実効PJフィルター：サイドバーでPJ選択中ならそれを優先。未選択時はダッシュボード内チップ／KRクリックで選んだPJ。
+  const effectivePjIds = useMemo(
+    () => selectedProject ? [selectedProject.id] : selectedPjIds,
+    [selectedProject, selectedPjIds],
+  );
+
   // フィルター適用後のタスク
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
@@ -100,11 +111,11 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
       (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
     );
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
-    if (selectedPjIds.length > 0) tasks = tasks.filter(t =>
-      (t.project_id && selectedPjIds.includes(t.project_id)) || t.project_id == null
+    if (effectivePjIds.length > 0) tasks = tasks.filter(t =>
+      (t.project_id && effectivePjIds.includes(t.project_id)) || t.project_id == null
     );
     return tasks;
-  }, [allTasks, myOnly, selectedPjIds, currentUser.id]);
+  }, [allTasks, myOnly, effectivePjIds, currentUser.id]);
 
   const todayS = todayStr();
   const weekLater = addDaysFromToday(7);
@@ -307,37 +318,76 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
             ))}
           </div>
 
-          {/* PJフィルターチップ */}
-          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-            {projects.map(pj => (
+          {/* PJフィルターチップ（サイドバーでPJ選択中はバナーに置き換わる） */}
+          {!selectedProject && (
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+              {projects.map(pj => (
+                <button
+                  key={pj.id}
+                  onClick={() => togglePj(pj.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "4px",
+                    padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
+                    border: selectedPjIds.includes(pj.id)
+                      ? `1px solid ${pj.color_tag}`
+                      : "1px solid var(--color-border-primary)",
+                    background: selectedPjIds.includes(pj.id)
+                      ? `${pj.color_tag}22`
+                      : "var(--color-bg-primary)",
+                    color: selectedPjIds.includes(pj.id)
+                      ? pj.color_tag
+                      : "var(--color-text-secondary)",
+                    cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
+                    transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
+                  }}
+                >
+                  <span style={{
+                    width: 5, height: 5, borderRadius: "50%",
+                    background: pj.color_tag, display: "inline-block",
+                  }} />
+                  {pj.name.slice(0, 10)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* PJ絞り込み中バナー（サイドバーでPJを選んでいるとき） */}
+        {selectedProject && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "8px",
+            padding: "8px 12px", marginBottom: "14px",
+            background: `${selectedProject.color_tag}14`,
+            border: `1px solid ${selectedProject.color_tag}55`,
+            borderRadius: "var(--radius-md)",
+          }}>
+            <span style={{
+              width: 9, height: 9, borderRadius: "50%",
+              background: selectedProject.color_tag, display: "inline-block", flexShrink: 0,
+            }} />
+            <span style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: "500" }}>
+              「{selectedProject.name}」で絞り込み中
+            </span>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              — このPJのタスクだけを表示しています（リマインダーは全PJ・自分宛て）
+            </span>
+            <div style={{ flex: 1 }} />
+            {onClearProjectFilter && (
               <button
-                key={pj.id}
-                onClick={() => togglePj(pj.id)}
+                onClick={onClearProjectFilter}
                 style={{
                   display: "flex", alignItems: "center", gap: "4px",
-                  padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
-                  border: selectedPjIds.includes(pj.id)
-                    ? `1px solid ${pj.color_tag}`
-                    : "1px solid var(--color-border-primary)",
-                  background: selectedPjIds.includes(pj.id)
-                    ? `${pj.color_tag}22`
-                    : "var(--color-bg-primary)",
-                  color: selectedPjIds.includes(pj.id)
-                    ? pj.color_tag
-                    : "var(--color-text-secondary)",
-                  cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
-                  transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
+                  padding: "3px 10px", fontSize: "11px", borderRadius: "var(--radius-full)",
+                  border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)",
+                  color: "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0,
                 }}
+                title="絞り込みを解除して全社俯瞰に戻る"
               >
-                <span style={{
-                  width: 5, height: 5, borderRadius: "50%",
-                  background: pj.color_tag, display: "inline-block",
-                }} />
-                {pj.name.slice(0, 10)}
+                ✕ 絞り込み解除
               </button>
-            ))}
+            )}
           </div>
-        </div>
+        )}
 
         {/* リマインダー */}
         <div style={{
@@ -455,7 +505,7 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
-          key={`${myOnly ? "1" : "0"}-${selectedPjIds.join(",")}-${activeKrId ?? ""}`}
+          key={`${myOnly ? "1" : "0"}-${effectivePjIds.join(",")}-${activeKrId ?? ""}`}
           className="animate-fadeIn"
           style={{
             display: "grid",
@@ -640,12 +690,12 @@ export function DashboardView({ currentUser, projects, onOpenAiProject }: Props)
             })}
           </Card>
 
-          {/* ④ PJ進捗一覧 */}
-          <Card title="PJ 進捗一覧">
+          {/* ④ PJ進捗一覧（PJ絞り込み中はそのPJのみ） */}
+          <Card title={selectedProject ? "PJ 進捗" : "PJ 進捗一覧"}>
             {pjProgress.length === 0 && (
               <EmptyState>プロジェクトを作成してください</EmptyState>
             )}
-            {pjProgress.map(({ pj, done, total, pct }) => (
+            {(selectedProject ? pjProgress.filter(p => p.pj.id === selectedProject.id) : pjProgress).map(({ pj, done, total, pct }) => (
               <div key={pj.id} style={{ marginBottom: "10px" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px" }}>
                   <span style={{
