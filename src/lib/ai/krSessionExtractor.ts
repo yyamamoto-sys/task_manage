@@ -278,6 +278,151 @@ function validateFreeform(data: unknown): ExtractedFreeformSession {
   return d as unknown as ExtractedFreeformSession;
 }
 
+// ===== 合同セッション抽出（複数KR一括） =====
+//
+// 【設計意図】
+// 合同チェックイン／ウィンセッションは1つの議事メモから複数KR分の宣言・シグナル・学びを取り出す。
+// 1回のAI呼び出しで全KRぶんを返してもらい、KR ID 付きで分けてもらう（コスト効率重視）。
+// 文字起こしを2回送る方式に比べて入力トークンが半減する。精度はプロンプトで「KRごとに分けて
+// 抽出してください」を明示することで担保する。
+
+const JOINT_CHECKIN_PROMPT = `あなたはOKR会議の文字起こしを構造化JSONに変換するAIです。
+これは「複数KRが合同で行ったチェックイン会議」の文字起こしです。
+発言の中には複数のKRの話題が混在しています。指定されたKRそれぞれについて、
+そのKRに関係する宣言・シグナル・コメントを分けて抽出してください。
+
+入力データ:
+- KRリスト（id と title。それぞれのKRについて別々に抽出する）
+- メンバーリスト（short_name一覧）
+- 文字起こしテキスト
+
+抽出するもの（KRごと）:
+1. signal: 進捗シグナル（"green"=60%以上達成見込み / "yellow"=50〜59% / "red"=49%以下 / null=言及なし）
+2. signal_comment: シグナルの根拠・補足コメント
+3. declarations: そのKRに対する各メンバーの宣言（誰が・何を・いつまでに）
+
+注意:
+- 発言がどのKRに関係するかは KRタイトル・話題内容・話者の担当領域から判断
+- どのKRに該当するか曖昧な発言は、最も関係しそうなKRに振り分ける。両方に明確に関係する場合は両方に入れてよい
+- 関係しないKRは declarations を空配列、signal を null にして良い
+
+出力形式（JSONのみ。マークダウンのコードブロックは絶対に使わない）:
+{
+  "by_kr": [
+    {
+      "kr_id": "...",
+      "signal": "green" | "yellow" | "red" | null,
+      "signal_comment": "...",
+      "declarations": [
+        { "member_short_name": "...", "content": "...", "due_date": "YYYY-MM-DD" | null }
+      ]
+    }
+  ]
+}`;
+
+const JOINT_WIN_PROMPT = `あなたはOKR会議の文字起こしを構造化JSONに変換するAIです。
+これは「複数KRが合同で行ったウィンセッション（金曜の振り返り）」の文字起こしです。
+発言の中には複数のKRの話題が混在しています。指定されたKRそれぞれについて、
+前回宣言の達成状況・シグナル・学び・外部環境変化を分けて抽出してください。
+
+入力データ:
+- KRリスト（id, title, previous_declarations[index,member,content,due_date]）
+- メンバーリスト（short_name一覧）
+- 文字起こしテキスト
+
+抽出するもの（KRごと）:
+1. signal: 今週の進捗シグナル
+2. signal_comment: シグナルの根拠・補足
+3. declaration_results: そのKRの前回宣言リストへの照合結果（declaration_index と result_status）
+4. learnings: 仮説検証の結果・学び
+5. external_changes: 外部環境変化（言及がなければ空文字）
+
+declaration_resultのresult_status:
+- "achieved": 宣言通り達成
+- "partial": 部分的に達成
+- "not_achieved": 未達成
+- null: 言及なし・判断不明
+
+注意:
+- 発言がどのKRに関係するかは KRタイトル・話題内容・話者の担当領域から判断
+- 関係しないKRは declaration_results を空配列、learnings/external_changes を空文字にして良い
+
+出力形式（JSONのみ。マークダウンのコードブロックは絶対に使わない）:
+{
+  "by_kr": [
+    {
+      "kr_id": "...",
+      "signal": "green" | "yellow" | "red" | null,
+      "signal_comment": "...",
+      "declaration_results": [
+        { "declaration_index": 0, "result_status": "achieved" | "partial" | "not_achieved" | null, "result_note": "..." }
+      ],
+      "learnings": "...",
+      "external_changes": "..."
+    }
+  ]
+}`;
+
+export interface JointCheckinResultEntry { kr_id: string; checkin: ExtractedCheckin }
+export interface JointWinResultEntry { kr_id: string; win: ExtractedWinSession }
+
+function pickByKr(parsed: unknown): unknown[] {
+  if (!parsed || typeof parsed !== "object") throw new Error("AIレスポンスがオブジェクトではありません。");
+  const d = parsed as Record<string, unknown>;
+  if (!Array.isArray(d.by_kr)) throw new Error("by_kr が配列ではありません。");
+  return d.by_kr as unknown[];
+}
+
+/** 合同チェックインの抽出。KRごとの結果を配列で返す。 */
+export async function extractJointCheckinData(params: {
+  krs: { id: string; title: string }[];
+  memberShortNames: string[];
+  transcript: string;
+  attachment?: FileAttachment;
+}): Promise<JointCheckinResultEntry[]> {
+  const userMessage = JSON.stringify({
+    krs: params.krs,
+    members: params.memberShortNames,
+    transcript: params.transcript,
+  });
+  const text = await callExtractAI(JOINT_CHECKIN_PROMPT, userMessage, params.attachment);
+  const list = pickByKr(parseJsonSafe<unknown>(text));
+  const out: JointCheckinResultEntry[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const krId = typeof r.kr_id === "string" ? r.kr_id : "";
+    if (!krId) continue;
+    out.push({ kr_id: krId, checkin: validateCheckin(r) });
+  }
+  return out;
+}
+
+/** 合同ウィンセッションの抽出。KRごとの結果を配列で返す。 */
+export async function extractJointWinSessionData(params: {
+  krs: { id: string; title: string; previousDeclarations: { index: number; member: string; content: string; due_date: string | null }[] }[];
+  memberShortNames: string[];
+  transcript: string;
+  attachment?: FileAttachment;
+}): Promise<JointWinResultEntry[]> {
+  const userMessage = JSON.stringify({
+    krs: params.krs.map(k => ({ id: k.id, title: k.title, previous_declarations: k.previousDeclarations })),
+    members: params.memberShortNames,
+    transcript: params.transcript,
+  });
+  const text = await callExtractAI(JOINT_WIN_PROMPT, userMessage, params.attachment);
+  const list = pickByKr(parseJsonSafe<unknown>(text));
+  const out: JointWinResultEntry[] = [];
+  for (const raw of list) {
+    if (!raw || typeof raw !== "object") continue;
+    const r = raw as Record<string, unknown>;
+    const krId = typeof r.kr_id === "string" ? r.kr_id : "";
+    if (!krId) continue;
+    out.push({ kr_id: krId, win: validateWinSession(r) });
+  }
+  return out;
+}
+
 export async function extractFreeformSession(params: {
   krTitle: string;
   allKrTitles: string[];

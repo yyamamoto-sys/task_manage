@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { KrSessionPanel } from "../lab/KrSessionPanel";
+import { KrJointSessionFlow } from "../lab/KrJointSessionFlow";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
@@ -99,6 +100,12 @@ export function OkrDashboardView({
 
   const [historyOpen, setHistoryOpen] = useState(false);
   const inOkrGroup = OKR_TOOLS.includes(activeTool);
+  // ② セッション記録のモード（合同／単一）。実運用では合同が既定。localStorage に永続化。
+  const [sessionMode, setSessionModeRaw] = useState<"joint" | "single">(() => {
+    const saved = localStorage.getItem("okr_session_mode_v2");
+    return saved === "single" ? "single" : "joint";
+  });
+  const setSessionMode = (m: "joint" | "single") => { localStorage.setItem("okr_session_mode_v2", m); setSessionModeRaw(m); };
 
   // セッション取得（概要・履歴共用）
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
@@ -579,15 +586,37 @@ export function OkrDashboardView({
           />
         )}
 
-        {/* ─── ② セッション記録 ─── */}
+        {/* ─── ② セッション記録（合同 ⇔ 単一KR） ─── */}
         {activeTool === "session" && (
-          <KrSessionPanel
-            inline
-            onClose={() => onSetActiveTool(null)}
-            currentUser={currentUser}
-            initialKrId={selectedKrId ?? undefined}
-            onSaved={refreshSessions}
-          />
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ flexShrink: 0, padding: "6px 16px", borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)", display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}>
+              <span style={{ color: "var(--color-text-tertiary)" }}>対象：</span>
+              {([
+                { v: "joint" as const, label: "合同（複数KR一括）" },
+                { v: "single" as const, label: "単一KR" },
+              ]).map(opt => (
+                <button key={opt.v} onClick={() => setSessionMode(opt.v)} style={{
+                  fontSize: "11px", padding: "3px 11px", borderRadius: "var(--radius-full)",
+                  border: sessionMode === opt.v ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                  background: sessionMode === opt.v ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  color: sessionMode === opt.v ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: sessionMode === opt.v ? 600 : 400,
+                }}>{opt.label}</button>
+              ))}
+              <span style={{ color: "var(--color-text-tertiary)", marginLeft: "8px" }}>{sessionMode === "joint" ? "議事メモを1回貼り付け→AIがKRごとに自動振り分け" : "1つのKRに対する記録（既存フロー）"}</span>
+            </div>
+            {sessionMode === "joint" ? (
+              <KrJointSessionFlow currentUser={currentUser} initialKrId={selectedKrId ?? undefined} onSaved={refreshSessions} />
+            ) : (
+              <KrSessionPanel
+                inline
+                onClose={() => onSetActiveTool(null)}
+                currentUser={currentUser}
+                initialKrId={selectedKrId ?? undefined}
+                onSaved={refreshSessions}
+              />
+            )}
+          </div>
         )}
 
         {/* ─── ③ 分析（KR単位のAI分析・履歴） ─── */}
