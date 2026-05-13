@@ -313,7 +313,6 @@ CREATE TABLE IF NOT EXISTS kr_meeting_notes (
   id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   kr_id                text NOT NULL REFERENCES key_results(id),
   week_start           date NOT NULL,
-  status               text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','ready')),
   carried_from_note_id uuid REFERENCES kr_meeting_notes(id),
   carry_memo           text NOT NULL DEFAULT '',
   created_by           text NOT NULL,

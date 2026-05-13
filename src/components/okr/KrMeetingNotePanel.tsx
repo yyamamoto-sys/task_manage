@@ -15,7 +15,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   fetchKrMeetingNote, fetchKrMeetingNotesList, fetchKrMeetingNoteById,
   saveKrMeetingNote, carriedEntriesFrom, emptyEntryFields, buildCarryMemo,
-  type KrMeetingNote, type KrNoteEntryFields, type KrNoteStatus,
+  type KrMeetingNote, type KrNoteEntryFields,
 } from "../../lib/supabase/krMeetingNoteStore";
 import { fetchLatestOkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchLatestFinalizedKrReport } from "../../lib/supabase/krReportStore";
@@ -97,7 +97,6 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
   const [note, setNote] = useState<KrMeetingNote | null>(null);
   const [entriesByTf, setEntriesByTf] = useState<Record<string, KrNoteEntryFields>>({});
-  const [status, setStatus] = useState<KrNoteStatus>("draft");
   const [carriedFromId, setCarriedFromId] = useState<string | null>(null);
   const [carryMemo, setCarryMemo] = useState<string>("");
   const [showCarryMemo, setShowCarryMemo] = useState(false);
@@ -134,14 +133,12 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             };
           }
           setEntriesByTf(m);
-          setStatus(full.status);
           setCarriedFromId(full.carried_from_note_id);
           setCarryMemo(full.carry_memo ?? "");
           setShowCarryMemo(!!full.carry_memo);
         } else {
           setNote(null);
           setEntriesByTf({});
-          setStatus("draft");
           setCarriedFromId(null);
           setCarryMemo("");
           setShowCarryMemo(false);
@@ -209,7 +206,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     setSaveError(null);
     try {
       const saved = await saveKrMeetingNote({
-        krId, weekStart, status,
+        krId, weekStart,
         carriedFromNoteId: carriedFromId,
         carryMemo,
         entries: tfs.map(tf => ({ tf_id: tf.id, ...entryOf(tf.id) })),
@@ -236,7 +233,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     } finally {
       setSaving(false);
     }
-  }, [krId, weekStart, status, carriedFromId, carryMemo, tfs, entryOf, currentUser.id]);
+  }, [krId, weekStart, carriedFromId, carryMemo, tfs, entryOf, currentUser.id]);
 
   const hasContent = useCallback((tfId: string): boolean => {
     const e = entriesByTf[tfId];
@@ -345,32 +342,6 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
       {krId && !loading && tfs.length > 0 && (
         <>
-          {/* ステータス */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-            <Label>このノートの状態</Label>
-            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-              {([
-                { v: "draft" as const, label: "📝 下書き（編集中）" },
-                { v: "ready" as const, label: "✅ チェックイン会議で使う（更新完了）" },
-              ]).map(opt => (
-                <button key={opt.v} onClick={() => { setStatus(opt.v); setDirty(true); }} style={{
-                  fontSize: "12px", padding: "6px 14px", borderRadius: "var(--radius-md)",
-                  border: status === opt.v ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                  background: status === opt.v ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                  color: status === opt.v ? "var(--color-brand)" : "var(--color-text-secondary)",
-                  cursor: "pointer", fontWeight: status === opt.v ? 600 : 400,
-                }}>
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
-              {status === "draft"
-                ? "TF会議で更新している途中の状態です。週の途中はこちら。"
-                : "TF会議での更新が一通り終わり、月曜のチェックイン会議でこのノートを見ながら報告できる状態です（「会議で使う」にしても引き続き編集できます）。"}
-            </div>
-          </div>
-
           {/* 引き継ぎ / 更新情報 */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {!note && prevNoteRow && (

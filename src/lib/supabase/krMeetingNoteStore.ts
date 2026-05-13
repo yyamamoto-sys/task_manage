@@ -8,8 +8,6 @@
 
 import { supabase } from "./client";
 
-export type KrNoteStatus = "draft" | "ready";
-
 /** TFエントリの編集可能フィールド */
 export interface KrNoteEntryFields {
   tf_theme: string;          // TFの説明・その期のテーマ（OneNoteの「★1Q＝…」）
@@ -35,7 +33,6 @@ export interface KrMeetingNote {
   id: string;
   kr_id: string;
   week_start: string;        // YYYY-MM-DD（月曜）
-  status: KrNoteStatus;
   carried_from_note_id: string | null;
   /** 前回からの引き継ぎメモ（前週確定レポートの要点＋最新③分析の示唆、自動生成・編集可） */
   carry_memo: string;
@@ -127,7 +124,6 @@ export async function fetchKrMeetingNoteById(noteId: string): Promise<KrMeetingN
 export interface SaveKrNoteInput {
   krId: string;
   weekStart: string;
-  status: KrNoteStatus;
   carriedFromNoteId: string | null;
   /** 前回からの引き継ぎメモ（自動生成・編集可） */
   carryMemo: string;
@@ -137,7 +133,7 @@ export interface SaveKrNoteInput {
 
 /** ノート（親）とTFエントリ（子）をまとめて保存（新規 or 更新）。保存後の最新を返す。 */
 export async function saveKrMeetingNote(input: SaveKrNoteInput, userId: string): Promise<KrMeetingNoteFull> {
-  const { krId, weekStart, status, carriedFromNoteId, carryMemo, entries } = input;
+  const { krId, weekStart, carriedFromNoteId, carryMemo, entries } = input;
 
   // 親ノートの有無を確認
   const { data: existingRows, error: e1 } = await supabase
@@ -154,13 +150,13 @@ export async function saveKrMeetingNote(input: SaveKrNoteInput, userId: string):
     noteId = (existingRows[0] as { id: string }).id;
     const { error: e2 } = await supabase
       .from("kr_meeting_notes")
-      .update({ status, carry_memo: carryMemo, updated_by: userId })
+      .update({ carry_memo: carryMemo, updated_by: userId })
       .eq("id", noteId);
     if (e2) throw e2;
   } else {
     const { data: inserted, error: e3 } = await supabase
       .from("kr_meeting_notes")
-      .insert({ kr_id: krId, week_start: weekStart, status, carried_from_note_id: carriedFromNoteId, carry_memo: carryMemo, created_by: userId, updated_by: userId })
+      .insert({ kr_id: krId, week_start: weekStart, carried_from_note_id: carriedFromNoteId, carry_memo: carryMemo, created_by: userId, updated_by: userId })
       .select("id")
       .single();
     if (e3) throw e3;

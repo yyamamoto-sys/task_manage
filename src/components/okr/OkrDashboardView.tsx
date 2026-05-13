@@ -151,7 +151,7 @@ export function OkrDashboardView({
     const wkCheckin = ses.find(s => s.week_start === thisMonday && s.session_type === "checkin");
     const wkWin = ses.find(s => s.week_start === thisMonday && s.session_type === "win_session");
     const noteStep = cycleNote
-      ? (cycleNote.status === "ready" ? { label: "確認済み", tone: "done" as const } : { label: "下書き", tone: "wip" as const })
+      ? { label: "作成済み", tone: "done" as const }
       : { label: "未作成", tone: "none" as const };
     const sesStep = wkCheckin
       ? { label: wkWin ? "チェックイン＋ウィン済" : "チェックイン済", tone: "done" as const }
