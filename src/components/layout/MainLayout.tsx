@@ -31,6 +31,7 @@ const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").th
 const KrSessionPanel     = lazyWithRetry(() => import("../lab/KrSessionPanel").then(m => ({ default: m.KrSessionPanel })), "KrSessionPanel");
 const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
 const OkrDashboardView   = lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView");
+const GuideModeView      = lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView");
 
 function ViewLoading() {
   return (
@@ -107,6 +108,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
@@ -215,6 +217,39 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     </div>
   ) : null;
 
+  // 📖 ガイド（全モード共通・全画面オーバーレイ）
+  const guideOverlay = isGuideOpen ? (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 250,
+      display: "flex", flexDirection: "column",
+      background: "var(--color-bg-primary)",
+    }}>
+      <div style={{
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        display: "flex", alignItems: "center", gap: "10px",
+        flexShrink: 0,
+        background: "var(--color-bg-secondary)",
+      }}>
+        <span style={{ fontSize: "15px" }}>📖</span>
+        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>ガイド</span>
+        <button
+          onClick={() => setIsGuideOpen(false)}
+          style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            fontSize: "18px", color: "var(--color-text-tertiary)", padding: "4px",
+            lineHeight: 1,
+          }}
+        >✕</button>
+      </div>
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <Suspense fallback={<ViewLoading />}>
+          <GuideModeView />
+        </Suspense>
+      </div>
+    </div>
+  ) : null;
+
   const mainContent = (
     <div style={{
       flex: 1,
@@ -291,6 +326,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         {adminOverlay}
+        {guideOverlay}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -688,6 +724,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         onSetOkrActiveTool={setOkrActiveTool}
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
+        onOpenGuide={() => setIsGuideOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
@@ -794,6 +831,7 @@ interface SidebarProps {
   okrActiveTool: OkrActiveTool;
   onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
+  onOpenGuide: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   appMode: AppMode;
@@ -807,7 +845,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, collapsed, onToggleCollapsed,
+  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -1050,6 +1088,27 @@ function Sidebar({
 
       {/* AI相談・設定・ユーザー情報 */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
+        {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
+        <button
+          onClick={onOpenGuide}
+          title="このアプリの使い方ガイドを開きます"
+          style={{
+            width: "100%",
+            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
+            gap: "8px",
+            padding: c ? "6px 0" : "6px 12px",
+            background: "transparent",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            color: "var(--color-text-secondary)",
+            fontSize: "11px",
+            marginBottom: "4px",
+          }}
+        >
+          <span style={{ fontSize: "13px", lineHeight: 1 }}>📖</span>
+          {!c && <span>ガイド</span>}
+        </button>
         {/* 設定（歯車）ボタン */}
         <button
           onClick={onOpenAdmin}

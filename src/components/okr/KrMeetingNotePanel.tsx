@@ -19,6 +19,7 @@ import {
 } from "../../lib/supabase/krMeetingNoteStore";
 import { fetchLatestOkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchLatestFinalizedKrReport } from "../../lib/supabase/krReportStore";
+import { HelpButton } from "../guide/HelpButton";
 
 /** その日が属する週の月曜日（YYYY-MM-DD）を返す。 */
 function mondayOfStr(dateStr: string): string {
@@ -290,7 +291,10 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
             <button onClick={() => setWeekStart(thisMondayStr())} style={{ ...ghostBtn, whiteSpace: "nowrap" }} title="今週にする">今週</button>
           </div>
         </div>
-        <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "6px" }}>
+          <HelpButton modeKey="okr.note" title="① 会議ノートの使い方を開く" />
+          <button onClick={onClose} style={ghostBtn}>閉じる</button>
+        </div>
       </div>
       <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "-8px" }}>
         対象週はカレンダーで日付を選ぶと、その週の起点に揃います。選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
