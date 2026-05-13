@@ -85,6 +85,12 @@
 #      変更：invokeAI.ts のヘッダコメントを新ルールに合わせて書き換え。AIIntent は「漏洩防止」ではなく
 #             「呼び出し目的・渡しているデータのラベル＋使用量計測」の位置づけに
 #      補足：社内確認の結果。各 AI 機能が実際に何を渡すかは個別の prompt builder のコメント参照
+# v2.14 OKRレポートを確認・確定制に（Phase C）（2026-05-13）
+#      追加：kr_reports テーブル（migrations/20260513e_add_kr_reports.sql）・krReportStore
+#      変更：KrReportPanel を「AI下書き(draft)→人が確認・編集(HTML直接編集も可)→確定(finalized、確定者/日時を記録、
+#             取り消し可)」に。レポート保存先を localStorage → Supabase（kr_reports）へ移行。
+#             レポート生成時に③分析（okr_analyses）の最新結果を素材として議事メモに添える＋バナー表示
+#      補足：OKR循環ワークフロー Phase A〜C 完了。残りは Phase D（循環の見える化＋④③→①の自動引き継ぎ）
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #

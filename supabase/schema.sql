@@ -353,6 +353,24 @@ CREATE TABLE IF NOT EXISTS okr_analyses (
   is_deleted  boolean NOT NULL DEFAULT false
 );
 
+-- ===== KRレポート（OKR循環ワークフロー Phase C）：AI下書き→人が確認・編集→確定 =====
+-- migrations/20260513e_add_kr_reports.sql 参照
+CREATE TABLE IF NOT EXISTS kr_reports (
+  id           uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kr_id        text NOT NULL REFERENCES key_results(id),
+  week_start   date NOT NULL,
+  mode         text NOT NULL DEFAULT 'checkin',
+  content      text NOT NULL DEFAULT '',
+  status       text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','finalized')),
+  created_by   text NOT NULL,
+  finalized_by text,
+  finalized_at timestamptz,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  updated_at   timestamptz NOT NULL DEFAULT now(),
+  updated_by   text NOT NULL DEFAULT '',
+  is_deleted   boolean NOT NULL DEFAULT false
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -367,7 +385,7 @@ BEGIN
     ('quarterly_objectives'),
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
-    ('okr_analyses')
+    ('okr_analyses'), ('kr_reports')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -406,6 +424,7 @@ ALTER TABLE project_analyses           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_meeting_notes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_note_tf_entries         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE okr_analyses               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kr_reports                 ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -419,7 +438,7 @@ BEGIN
     ('tasks'), ('milestones'), ('admin_change_logs'),
     ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('member_tag_members'), ('project_analyses'),
-    ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses')
+    ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses'), ('kr_reports')
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
@@ -473,3 +492,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_meeting_notes_kr_week     ON kr_meeting_
 CREATE INDEX IF NOT EXISTS idx_kr_meeting_notes_kr_id_week        ON kr_meeting_notes(kr_id, week_start DESC) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_note_tf_entries_note_id         ON kr_note_tf_entries(note_id);
 CREATE INDEX IF NOT EXISTS idx_okr_analyses_kr_id_created          ON okr_analyses(kr_id, created_at DESC) WHERE is_deleted = false;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_reports_kr_week_mode        ON kr_reports(kr_id, week_start, mode) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_kr_reports_kr_id_week               ON kr_reports(kr_id, week_start DESC) WHERE is_deleted = false;

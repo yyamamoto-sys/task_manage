@@ -8,10 +8,11 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
-import { LS_KEY } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrReport, saveKrReportDraft, updateKrReportContent, finalizeKrReport, unfinalizeKrReport, type KrReport } from "../../lib/supabase/krReportStore";
+import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
@@ -51,20 +52,15 @@ function getThisMonday(): string {
   d.setDate(d.getDate() + diff);
   return d.toISOString().slice(0, 10);
 }
+const fmtDateTime = (iso: string) => new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
-type SavedReport = { html: string; generatedAt: string };
-const reportKey = (krId: string, m: KrReportMode) => LS_KEY.krReport(krId, m);
+const barBtn: React.CSSProperties = {
+  fontSize: "11px", padding: "5px 12px", background: "transparent",
+  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+  color: "var(--color-text-secondary)", cursor: "pointer", whiteSpace: "nowrap",
+};
 
-function loadSavedReport(krId: string, m: KrReportMode): SavedReport | null {
-  try {
-    const raw = localStorage.getItem(reportKey(krId, m));
-    return raw ? (JSON.parse(raw) as SavedReport) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
+export function KrReportPanel({ onClose, inline = false, initialKrId, currentUser }: Props) {
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
@@ -84,19 +80,43 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [reportHtml, setReportHtml] = useState<string | null>(null);
   const [sessions, setSessions] = useState<KrSession[]>([]);
-  const [savedReport, setSavedReport] = useState<SavedReport | null>(null);
+  const [reportRecord, setReportRecord] = useState<KrReport | null>(null);
+  const [latestAnalysis, setLatestAnalysis] = useState<OkrAnalysis | null>(null);
+  const [editing, setEditing] = useState(false);
+  const [editHtml, setEditHtml] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [finalizing, setFinalizing] = useState(false);
   const reportRef = useRef<HTMLIFrameElement>(null);
 
   const today = new Date().toISOString().slice(0, 10);
   const thisMonday = getThisMonday();
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
+  const memberById = useMemo(() => new Map((members ?? []).map(m => [m.id, m])), [members]);
+  const whoName = (id: string | null | undefined) => (id ? (memberById.get(id)?.short_name ?? "メンバー") : "");
 
-  // KR/モード変更時に保存済みレポートを読み込む
+  // KR/モード変更時：Supabase から既存レポートを読み込む（localStorage から移行）
   useEffect(() => {
-    setSavedReport(loadSavedReport(selectedKrId, mode));
     setReportHtml(null);
+    setReportRecord(null);
+    setEditing(false);
     setError(null);
-  }, [selectedKrId, mode]);
+    if (!selectedKrId) return;
+    let cancelled = false;
+    fetchKrReport(selectedKrId, thisMonday, mode)
+      .then(rec => { if (!cancelled && rec) { setReportRecord(rec); setReportHtml(rec.content); } })
+      .catch((e: unknown) => { console.warn("レポート取得に失敗:", e); });
+    return () => { cancelled = true; };
+  }, [selectedKrId, mode, thisMonday]);
+
+  // KR変更時：③ 分析の最新を取得（レポート生成の素材にする）
+  useEffect(() => {
+    if (!selectedKrId) { setLatestAnalysis(null); return; }
+    let cancelled = false;
+    fetchLatestOkrAnalysis(selectedKrId)
+      .then(a => { if (!cancelled) setLatestAnalysis(a); })
+      .catch(() => { if (!cancelled) setLatestAnalysis(null); });
+    return () => { cancelled = true; };
+  }, [selectedKrId]);
 
   // KR選択時にセッション履歴を取得
   useEffect(() => {
@@ -121,8 +141,14 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
     setGenerating(true);
     setError(null);
     setReportHtml(null);
+    setEditing(false);
 
     try {
+      // ③ 分析の最新結果があれば素材として議事メモに添える
+      const notes = latestAnalysis
+        ? `${meetingNotes.trim()}\n\n【参考：③ 分析の最新結果（${fmtDateTime(latestAnalysis.created_at)}）】\n${latestAnalysis.content}`
+        : meetingNotes.trim();
+
       const context = buildKrReportContext({
         today,
         kr: selectedKr,
@@ -131,16 +157,20 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
         tasks: tasks ?? [],
         members: members ?? [],
         mode,
-        meetingNotes: meetingNotes.trim(),
+        meetingNotes: notes,
       });
 
       const result = await callKrReportAI(context, mode, attachment ?? undefined);
       setReportHtml(result.html);
 
-      // localStorage に保存
-      const saved: SavedReport = { html: result.html, generatedAt: new Date().toISOString() };
-      localStorage.setItem(reportKey(selectedKrId, mode), JSON.stringify(saved));
-      setSavedReport(saved);
+      // Supabase に下書きとして保存（既存があれば上書き＝下書きに戻る）
+      try {
+        const rec = await saveKrReportDraft(selectedKrId, thisMonday, mode, result.html, currentUser.id);
+        setReportRecord(rec);
+      } catch (e) {
+        console.warn("レポート下書き保存に失敗（生成自体は成功）:", e);
+        setReportRecord(null);
+      }
 
       setTimeout(() => {
         reportRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -150,6 +180,44 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
     } finally {
       setGenerating(false);
     }
+  };
+
+  const startEdit = () => { setEditHtml(reportHtml ?? ""); setEditing(true); };
+  const handleSaveEdit = async () => {
+    setSavingEdit(true);
+    try {
+      setReportHtml(editHtml);
+      if (reportRecord) {
+        const rec = await updateKrReportContent(reportRecord.id, editHtml, currentUser.id);
+        setReportRecord(rec);
+      }
+      setEditing(false);
+      showToast("レポートを保存しました");
+    } catch (e) {
+      showToast(formatErrorForUser("保存に失敗しました", e), "error");
+    } finally { setSavingEdit(false); }
+  };
+  const handleFinalize = async () => {
+    if (!reportRecord) { showToast("先に保存（生成）してください", "info"); return; }
+    setFinalizing(true);
+    try {
+      const rec = await finalizeKrReport(reportRecord.id, currentUser.id);
+      setReportRecord(rec);
+      showToast("レポートを確定しました");
+    } catch (e) {
+      showToast(formatErrorForUser("確定に失敗しました", e), "error");
+    } finally { setFinalizing(false); }
+  };
+  const handleUnfinalize = async () => {
+    if (!reportRecord) return;
+    setFinalizing(true);
+    try {
+      const rec = await unfinalizeKrReport(reportRecord.id, currentUser.id);
+      setReportRecord(rec);
+      showToast("確定を取り消しました", "info");
+    } catch (e) {
+      showToast(formatErrorForUser("操作に失敗しました", e), "error");
+    } finally { setFinalizing(false); }
   };
 
   const teamsWebhookUrl = import.meta.env.VITE_TEAMS_WEBHOOK_URL as string | undefined;
@@ -214,20 +282,6 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
     } finally {
       setTeamsSending(false);
     }
-  };
-
-  const handleRestoreSaved = () => {
-    if (!savedReport) return;
-    setReportHtml(savedReport.html);
-    setTimeout(() => {
-      reportRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100);
-  };
-
-  const handleDeleteSaved = () => {
-    localStorage.removeItem(reportKey(selectedKrId, mode));
-    setSavedReport(null);
-    showToast("保存済みレポートを削除しました", "info");
   };
 
   const panelContent = (
@@ -436,6 +490,21 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
                 </div>
               )}
 
+              {/* ③ 分析からの素材バナー */}
+              <div style={{
+                display: "flex", alignItems: "center", gap: "8px",
+                background: latestAnalysis ? "var(--color-bg-purple)" : "var(--color-bg-secondary)",
+                border: `1px solid ${latestAnalysis ? "var(--color-border-purple)" : "var(--color-border-primary)"}`,
+                borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: "12px", fontSize: "11px",
+              }}>
+                <span>{latestAnalysis ? "📊" : "💡"}</span>
+                <span style={{ flex: 1, color: "var(--color-text-secondary)" }}>
+                  {latestAnalysis
+                    ? `③ 分析の最新結果（${fmtDateTime(latestAnalysis.created_at)}・${whoName(latestAnalysis.created_by)}）を素材としてAIに渡します。`
+                    : "このKRの「③ 分析」はまだありません。OKR管理 → ③ 分析 で作っておくと、レポート生成の素材になります。"}
+                </span>
+              </div>
+
               {/* 生成ボタン */}
               {(() => {
                 const canGenerate = !!selectedKr && (!!meetingNotes.trim() || !!attachment);
@@ -465,54 +534,54 @@ export function KrReportPanel({ onClose, inline = false, initialKrId }: Props) {
               })()}
             </div>
 
-            {/* 保存済みレポートバナー（現在のビューに未表示かつ保存データあり） */}
-            {savedReport && !reportHtml && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: "10px",
-                background: "var(--color-bg-purple)",
-                border: "1px solid var(--color-border-purple)",
-                borderRadius: "var(--radius-md)",
-                padding: "10px 14px",
-                marginBottom: "20px",
-                fontSize: "12px",
-              }}>
-                <span style={{ fontSize: "16px" }}>💾</span>
-                <div style={{ flex: 1 }}>
-                  <span style={{ fontWeight: "600", color: "var(--color-text-primary)" }}>保存済みレポートがあります</span>
-                  <span style={{ color: "var(--color-text-tertiary)", marginLeft: "8px" }}>
-                    {new Date(savedReport.generatedAt).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                </div>
-                <button
-                  onClick={handleRestoreSaved}
-                  style={{
-                    padding: "5px 12px", fontSize: "11px", fontWeight: "600",
-                    background: "var(--color-brand)", color: "#fff",
-                    border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-                  }}
-                >復元する</button>
-                <button
-                  onClick={handleDeleteSaved}
-                  style={{
-                    padding: "5px 10px", fontSize: "11px",
-                    background: "transparent",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    color: "var(--color-text-tertiary)", cursor: "pointer",
-                  }}
-                >削除</button>
-              </div>
-            )}
-
-            {/* レポート出力エリア */}
+            {/* レポート出力エリア（AI下書き → 人が確認・編集 → 確定） */}
             {reportHtml && (
               <div>
+                {/* ステータス＆操作バー */}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
+                  background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: "10px",
+                }}>
+                  {reportRecord?.status === "finalized" ? (
+                    <span style={{ fontSize: "11px", padding: "2px 9px", borderRadius: "var(--radius-full)", background: "var(--color-bg-success)", color: "var(--color-text-success)", border: "1px solid var(--color-border-success)", fontWeight: 600 }}>
+                      ✅ 確定済み（{whoName(reportRecord.finalized_by)}・{reportRecord.finalized_at ? fmtDateTime(reportRecord.finalized_at) : ""}）
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: "11px", padding: "2px 9px", borderRadius: "var(--radius-full)", background: "var(--color-bg-warning)", color: "var(--color-text-warning)", border: "1px solid var(--color-border-warning)", fontWeight: 600 }}>
+                      📝 下書き（要確認）
+                    </span>
+                  )}
+                  {reportRecord && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>更新 {fmtDateTime(reportRecord.updated_at)}</span>}
+                  <div style={{ flex: 1 }} />
+                  {!editing && (
+                    <>
+                      <button onClick={startEdit} style={barBtn}>✏️ 内容を編集</button>
+                      {reportRecord?.status === "finalized"
+                        ? <button onClick={handleUnfinalize} disabled={finalizing} style={barBtn}>{finalizing ? "…" : "確定を取り消す"}</button>
+                        : <button onClick={handleFinalize} disabled={finalizing || !reportRecord} title={!reportRecord ? "先に生成して保存してください" : ""} style={{ ...barBtn, background: (finalizing || !reportRecord) ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#16a34a,#15803d)", color: (finalizing || !reportRecord) ? "var(--color-text-tertiary)" : "#fff", border: "none", fontWeight: 600 }}>{finalizing ? "確定中…" : "✅ 内容を確認して確定"}</button>}
+                    </>
+                  )}
+                </div>
+
+                {editing && (
+                  <div style={{ marginBottom: "10px", display: "flex", flexDirection: "column", gap: "8px" }}>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>HTML を直接編集できます（プレビューは下に反映されます）。</div>
+                    <textarea value={editHtml} onChange={e => setEditHtml(e.target.value)} rows={16}
+                      style={{ width: "100%", padding: "10px 12px", fontSize: "12px", fontFamily: "monospace", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box" }} />
+                    <div style={{ display: "flex", gap: "8px" }}>
+                      <button onClick={handleSaveEdit} disabled={savingEdit} style={{ ...barBtn, background: savingEdit ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#8b5cf6,#7c3aed)", color: savingEdit ? "var(--color-text-tertiary)" : "#fff", border: "none", fontWeight: 600, padding: "7px 16px" }}>{savingEdit ? "保存中…" : "💾 保存"}</button>
+                      <button onClick={() => setEditing(false)} style={barBtn}>キャンセル</button>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   marginBottom: "12px",
                 }}>
                   <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
-                    生成されたレポート
+                    レポート（プレビュー）
                   </div>
                   <button
                     onClick={handleCopyText}
