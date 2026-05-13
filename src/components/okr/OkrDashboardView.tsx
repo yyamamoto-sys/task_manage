@@ -314,46 +314,37 @@ export function OkrDashboardView({
         </div>
       )}
 
-      {/* サイクル進捗バー（選択中KR×今週で ①→②→③→④ がどこまで進んでいるか） */}
-      {inOkrGroup && (
+      {/* サイクル進捗バー（KRが選ばれている時のみ表示。①→②→③のどこまで進んでいるか） */}
+      {inOkrGroup && selectedKrId && (
         <div style={{
           display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
           padding: "8px 14px", borderBottom: "1px solid var(--color-border-primary)",
           background: "var(--color-bg-secondary)", flexShrink: 0,
         }}>
-          {!selectedKrId ? (
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              右上の「🎯 OKR」を開いてKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション記録&分析→③レポート）が表示されます。
-              <button onClick={() => setOverviewOpen(true)} style={{ marginLeft: "8px", fontSize: "11px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", textDecoration: "underline", padding: 0 }}>OKRを開く</button>
-            </span>
-          ) : (
-            <>
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
-                {(activeKrs.find(k => k.id === selectedKrId)?.title ?? "").slice(0, 18)}｜{fmtMD(thisMonday)}週
-              </span>
-              {cycleSteps.map((st, i) => (
-                <div key={st.tool ?? i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  {i > 0 && <span style={{ color: "var(--color-text-tertiary)", fontSize: "11px" }}>›</span>}
-                  <button
-                    onClick={() => onSetActiveTool(st.tool)}
-                    title={`${st.name}：${st.label}`}
-                    style={{
-                      display: "flex", alignItems: "center", gap: "5px", padding: "3px 9px", borderRadius: "var(--radius-full)",
-                      border: `1px solid ${activeTool === st.tool ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                      background: activeTool === st.tool ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                      cursor: "pointer", fontSize: "10px", whiteSpace: "nowrap",
-                      color: activeTool === st.tool ? "var(--color-brand)" : "var(--color-text-secondary)", fontWeight: activeTool === st.tool ? 600 : 400,
-                    }}
-                  >
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: CYCLE_TONE_COLOR[st.tone], flexShrink: 0 }} />
-                    {st.name}
-                    <span style={{ color: st.tone === "none" ? "var(--color-text-tertiary)" : CYCLE_TONE_COLOR[st.tone], fontSize: "9px" }}>（{st.label}）</span>
-                  </button>
-                </div>
-              ))}
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>↩ 翌週へ</span>
-            </>
-          )}
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+            {(activeKrs.find(k => k.id === selectedKrId)?.title ?? "").slice(0, 18)}｜{fmtMD(thisMonday)}週
+          </span>
+          {cycleSteps.map((st, i) => (
+            <div key={st.tool ?? i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              {i > 0 && <span style={{ color: "var(--color-text-tertiary)", fontSize: "11px" }}>›</span>}
+              <button
+                onClick={() => onSetActiveTool(st.tool)}
+                title={`${st.name}：${st.label}`}
+                style={{
+                  display: "flex", alignItems: "center", gap: "5px", padding: "3px 9px", borderRadius: "var(--radius-full)",
+                  border: `1px solid ${activeTool === st.tool ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                  background: activeTool === st.tool ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  cursor: "pointer", fontSize: "10px", whiteSpace: "nowrap",
+                  color: activeTool === st.tool ? "var(--color-brand)" : "var(--color-text-secondary)", fontWeight: activeTool === st.tool ? 600 : 400,
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: CYCLE_TONE_COLOR[st.tone], flexShrink: 0 }} />
+                {st.name}
+                <span style={{ color: st.tone === "none" ? "var(--color-text-tertiary)" : CYCLE_TONE_COLOR[st.tone], fontSize: "9px" }}>（{st.label}）</span>
+              </button>
+            </div>
+          ))}
+          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>↩ 翌週へ</span>
         </div>
       )}
 
@@ -379,6 +370,7 @@ export function OkrDashboardView({
             onClose={() => onSetActiveTool(null)}
             currentUser={currentUser}
             initialKrId={selectedKrId ?? undefined}
+            onKrChange={id => onSelectKr(id || null)}
           />
         )}
 

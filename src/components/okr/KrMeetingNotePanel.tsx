@@ -49,9 +49,11 @@ interface Props {
   onClose: () => void;
   currentUser: Member;
   initialKrId?: string;
+  /** KR が選ばれた／変更されたときに親に通知（サイクル進捗バーの同期用） */
+  onKrChange?: (krId: string) => void;
 }
 
-export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props) {
+export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChange }: Props) {
   const rawKrs   = useAppStore(s => s.keyResults);
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(s => s.tasks);
@@ -62,8 +64,10 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
-  const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : (krs[0]?.id ?? ""));
-  useEffect(() => { if (!krId && krs[0]) setKrId(krs[0].id); }, [krs, krId]);
+  // 既定では KR は空。親から initialKrId が渡されている場合のみその KR を選択。
+  const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : "");
+  // KR を変更したら親へ通知（サイクル進捗バーの同期）。空選択（解除）も伝える。
+  const changeKr = useCallback((id: string) => { setKrId(id); onKrChange?.(id); }, [onKrChange]);
 
   // クォーター（既定＝今のクォーター）。OKRは「KR通期固定・TF割り当てはクォーターごと」なので、
   // 表示するTFは「選択クォーターのQuarterlyObjectiveに紐づくTF割り当て」に絞る。
@@ -263,8 +267,8 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ flex: "1 1 280px" }}>
           <Label>Key Result（まず選択）</Label>
-          <select value={krId} onChange={e => setKrId(e.target.value)} style={selStyle}>
-            {krs.length === 0 && <option value="">（KRがありません）</option>}
+          <select value={krId} onChange={e => changeKr(e.target.value)} style={selStyle}>
+            <option value="">{krs.length === 0 ? "（KRがありません）" : "— KR を選択 —"}</option>
             {krs.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
           </select>
         </div>
@@ -319,7 +323,9 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
       {!krId && !loading && (
         <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>
-          Key Result が登録されていません。管理画面から登録してください。
+          {krs.length === 0
+            ? "Key Result が登録されていません。管理画面から登録してください。"
+            : "上の「Key Result」セレクタから対象の KR を選ぶと、その KR の今週のサイクル進捗と TF が表示されます。"}
         </div>
       )}
 
