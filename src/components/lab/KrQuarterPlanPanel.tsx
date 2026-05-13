@@ -10,11 +10,15 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
-import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrSessions, fetchKrDeclarations, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrMeetingNotesList, fetchKrMeetingNoteById } from "../../lib/supabase/krMeetingNoteStore";
+import { fetchOkrAnalyses, fetchObjectiveAnalyses } from "../../lib/supabase/okrAnalysisStore";
 import {
   buildContextText,
   getQuarterValue,
   nextQuarterValue,
+  previousQuarterValue,
+  quarterDateRange,
   getQuarterLabel,
   type QuarterPlanContext,
   type TFStat,
@@ -26,9 +30,11 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   callQuarterPlanDialogue,
   callQuarterPlanGenerate,
+  callQuarterPlanInitialAnalysis,
   type PlanMessage,
   type GeneratedPlan,
 } from "../../lib/ai/krQuarterPlanClient";
+import { MarkdownLite } from "../common/MarkdownLite";
 import { getContentText } from "../../lib/ai/invokeAI";
 import {
   loadQuarterPlan,
@@ -363,6 +369,10 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
 
   // ─── コンテキスト構築 ───
   const buildContext = useCallback(async (): Promise<{ ctx: QuarterPlanContext; text: string }> => {
+    // 前クォーターの日付範囲を計算（前クォーターの記録を総動員する）
+    const prevQ = previousQuarterValue(targetQuarter);
+    const prevRange = quarterDateRange(prevQ);
+
     const sessions = await fetchKrSessions(selectedKrId);
 
     // TF統計（対象KRのTF → ToDo → Task）
@@ -416,22 +426,101 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
 
     setContextSummary({ tfStats, signalHistory, winLearnings, checkinHighlights });
 
+    // ===== 前クォーターの「総動員」データ =====
+
+    // 1) 前Qの会議ノート（各TFのテーマ・必達定義・①〜④・TODO）をマークダウン化
+    let prevNotesText = "";
+    try {
+      const noteList = await fetchKrMeetingNotesList(selectedKrId);
+      const prevNotes = noteList.filter(n => n.week_start >= prevRange.start && n.week_start <= prevRange.end);
+      const fulls = await Promise.all(prevNotes.map(n => fetchKrMeetingNoteById(n.id).catch(() => null)));
+      const L: string[] = [];
+      for (const full of fulls) {
+        if (!full) continue;
+        L.push(`### ${full.week_start} 週のノート`);
+        if (full.carry_memo) L.push(`（前回からの引き継ぎメモ）${full.carry_memo.replace(/\s+/g, " ").slice(0, 400)}`);
+        for (const e of full.entries) {
+          const tfMaster = (taskForces ?? []).find(t => t.id === e.tf_id);
+          const tfLabel = tfMaster ? `TF${tfMaster.tf_number} ${tfMaster.name}` : `TF(${e.tf_id.slice(0, 6)})`;
+          L.push(`- ${tfLabel}`);
+          if (e.tf_theme) L.push(`  テーマ：${e.tf_theme.replace(/\s+/g, " ").slice(0, 200)}`);
+          if (e.target_definition) L.push(`  必達定義：${e.target_definition.replace(/\s+/g, " ").slice(0, 300)}`);
+          if (e.hypotheses) L.push(`  ①先週動かした仮説：${e.hypotheses.replace(/\s+/g, " ").slice(0, 300)}`);
+          if (e.facts) L.push(`  ②起きたこと：${e.facts.replace(/\s+/g, " ").slice(0, 400)}`);
+          if (e.next_actions) L.push(`  ③次の一手：${e.next_actions.replace(/\s+/g, " ").slice(0, 300)}`);
+          L.push(`  ④現在の状態：${e.progress_pct != null ? e.progress_pct + "%" : "（%未記入）"}${e.progress_reason ? " — " + e.progress_reason.replace(/\s+/g, " ").slice(0, 200) : ""}`);
+          if (e.todo) L.push(`  TODO：${e.todo.replace(/\s+/g, " ").slice(0, 250)}`);
+        }
+      }
+      prevNotesText = L.join("\n");
+    } catch (e) { console.warn("前Qノート取得失敗:", e); }
+
+    // 2) 前Qのセッション（チェックイン）の宣言と結果
+    let prevDeclarationsText = "";
+    try {
+      const prevSessions = sessions.filter(s => s.week_start >= prevRange.start && s.week_start <= prevRange.end);
+      const checkinPrev = prevSessions.filter(s => s.session_type === "checkin");
+      const L: string[] = [];
+      for (const s of checkinPrev) {
+        const decls = await fetchKrDeclarations(s.id).catch(() => []);
+        if (decls.length === 0) continue;
+        L.push(`### ${s.week_start} 週のチェックイン宣言`);
+        for (const d of decls) {
+          const who = activeMembers.find(m => m.id === d.member_id)?.short_name ?? "（不明）";
+          const res = d.result_status ? `→ ${d.result_status === "achieved" ? "達成" : d.result_status === "partial" ? "一部達成" : "未達"}${d.result_note ? `（${d.result_note.slice(0, 80)}）` : ""}` : "";
+          L.push(`- ${who}：${d.content}${d.due_date ? `（期日 ${d.due_date}）` : ""} ${res}`);
+        }
+      }
+      prevDeclarationsText = L.join("\n");
+    } catch (e) { console.warn("前Q宣言取得失敗:", e); }
+
+    // 3) 前QのAI分析の蓄積（KR単位＋Objective単位）
+    let prevAnalysesText = "";
+    try {
+      const inRange = (iso: string) => { const d = iso.slice(0, 10); return d >= prevRange.start && d <= prevRange.end; };
+      const krAns = await fetchOkrAnalyses(selectedKrId).then(rows => rows.filter(r => inRange(r.created_at))).catch(() => []);
+      const objAns = objective ? await fetchObjectiveAnalyses(objective.id).then(rows => rows.filter(r => inRange(r.created_at))).catch(() => []) : [];
+      const L: string[] = [];
+      if (krAns.length > 0) {
+        L.push("#### KR単位の分析（新しい順）");
+        for (const a of krAns) {
+          L.push(`▼ ${a.created_at.slice(0, 10)}${a.edited ? "（手修正済み）" : ""}`);
+          L.push(a.content);
+          L.push("");
+        }
+      }
+      if (objAns.length > 0) {
+        L.push("#### Objective単位の分析（新しい順）");
+        for (const a of objAns) {
+          L.push(`▼ ${a.created_at.slice(0, 10)}${a.edited ? "（手修正済み）" : ""}`);
+          L.push(a.content);
+          L.push("");
+        }
+      }
+      prevAnalysesText = L.join("\n");
+    } catch (e) { console.warn("前Q分析取得失敗:", e); }
+
     const ctx: QuarterPlanContext = {
       today: new Date().toISOString().slice(0, 10),
       current_quarter: getQuarterValue(),
+      prev_quarter: prevQ,
       target_quarter: targetQuarter,
       objective_title: objective?.title ?? "（未設定）",
+      objective_purpose: objective?.purpose ?? "",
       kr_title: selectedKr?.title ?? "",
       tf_stats: tfStats,
       signal_history: signalHistory,
       win_learnings: winLearnings,
       checkin_highlights: checkinHighlights,
+      prev_notes_text: prevNotesText,
+      prev_declarations_text: prevDeclarationsText,
+      prev_analyses_text: prevAnalysesText,
       members: memberNames,
       issue_focus: issueFocus,
     };
 
     return { ctx, text: buildContextText(ctx) };
-  }, [selectedKrId, targetQuarter, issueFocus, selectedKr, objective, taskForces, todos, tasks, memberNames]);
+  }, [selectedKrId, targetQuarter, issueFocus, selectedKr, objective, taskForces, todos, tasks, memberNames, activeMembers]);
 
   // ─── 計画開始 ───
   const handleStart = async () => {
@@ -456,10 +545,11 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
         ),
       };
 
-      const aiReply = await callQuarterPlanDialogue([firstMsg]);
+      // 初回応答は専用プロンプトでしっかり分析させる。タイプ演出は長文だと遅いのでスキップする
+      const aiReply = await callQuarterPlanInitialAnalysis([firstMsg]);
       const initMsgs: PlanMessage[] = [firstMsg, { role: "assistant", content: aiReply }];
       setMessages(initMsgs);
-      setTypingIndex(initMsgs.length - 1);
+      setTypingIndex(aiReply.length > 400 ? -1 : initMsgs.length - 1);
       setTurnCount(1);
       setPhase("dialogue");
     } catch (e) {
@@ -928,7 +1018,8 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                 return (
                   <div key={idx} className="chat-bubble-in" style={{ display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
                     <div style={{
-                      maxWidth: "85%", padding: "10px 14px",
+                      maxWidth: msg.role === "assistant" ? "95%" : "80%",
+                      padding: "12px 16px",
                       borderRadius: msg.role === "user" ? "12px 12px 4px 12px" : "12px 12px 12px 4px",
                       background: msg.role === "user" ? "var(--color-brand)" : "var(--color-bg-secondary)",
                       color: msg.role === "user" ? "#fff" : "var(--color-text-primary)",
@@ -939,8 +1030,10 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                         <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
                       )}
                       {msg.role === "assistant"
-                        ? <TypingMessage text={textContent} isLatest={idx === typingIndex} />
-                        : textContent}
+                        ? (textContent.length > 400 || textContent.includes("\n##")
+                            ? <MarkdownLite text={textContent} compact />
+                            : <TypingMessage text={textContent} isLatest={idx === typingIndex} />)
+                        : <span style={{ whiteSpace: "pre-wrap" }}>{textContent}</span>}
                     </div>
                   </div>
                 );

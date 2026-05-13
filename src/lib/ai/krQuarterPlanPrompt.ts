@@ -35,6 +35,25 @@ export function nextQuarterValue(value: string): string {
   return `${year}-${q + 1}Q`;
 }
 
+export function previousQuarterValue(value: string): string {
+  const [year, qStr] = value.split("-");
+  const q = parseInt(qStr);
+  if (q === 1) return `${parseInt(year) - 1}-4Q`;
+  return `${year}-${q - 1}Q`;
+}
+
+/** クォーター値（"2026-2Q"）の開始日・終了日（YYYY-MM-DD）を返す。 */
+export function quarterDateRange(value: string): { start: string; end: string } {
+  const [yearStr, qStr] = value.split("-");
+  const year = parseInt(yearStr);
+  const q = parseInt(qStr);
+  const startMonth = (q - 1) * 3 + 1; // 1 / 4 / 7 / 10
+  const start = new Date(year, startMonth - 1, 1);
+  const end = new Date(year, startMonth + 2, 0); // その四半期の最終月の末日
+  const fmt = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return { start: fmt(start), end: fmt(end) };
+}
+
 export function getQuarterOptions(base: Date = new Date()): { value: string; label: string }[] {
   const options: { value: string; label: string }[] = [];
   let current = getQuarterValue(base);
@@ -67,13 +86,21 @@ export interface SignalEntry {
 export interface QuarterPlanContext {
   today: string;
   current_quarter: string;    // "2026-2Q"
+  prev_quarter: string;       // "2026-1Q"（target_quarter の1つ前）
   target_quarter: string;     // "2026-3Q"
   objective_title: string;
+  objective_purpose: string;
   kr_title: string;
   tf_stats: TFStat[];
   signal_history: SignalEntry[];
   win_learnings: string;
   checkin_highlights: string;
+  /** 前クォーターの会議ノート（各TFのテーマ・必達定義・①〜④・TODO）。マークダウン整形済み */
+  prev_notes_text: string;
+  /** 前クォーターの宣言と結果。マークダウン整形済み */
+  prev_declarations_text: string;
+  /** 前クォーターに生成された AI 分析（KR分析・Objective分析）。マークダウン整形済み */
+  prev_analyses_text: string;
   members: string[];
   issue_focus: string;
 }
@@ -110,27 +137,38 @@ export function buildContextText(ctx: QuarterPlanContext): string {
   return `【クォーター計画コンテキスト】
 計画日：${ctx.today}
 今クォーター：${ctx.current_quarter}
+前クォーター：${ctx.prev_quarter}
 計画対象クォーター：${ctx.target_quarter}
 
 【Objective】
 ${ctx.objective_title}
+${ctx.objective_purpose ? `（目的）${ctx.objective_purpose}` : ""}
 
 【対象KR】
 ${ctx.kr_title}
 
-【今クォーターのTF実績】
+【今クォーターのTF実績（タスク達成率）】
 ${tfBlock}
 
 【シグナル推移（直近最大12週）】
 ${signalBlock}
 
-【ウィンセッションの学び・外部環境変化】
+【前クォーターの会議ノート（各TFの必達定義・先週動かした仮説・実際に起きたこと・次の一手・現在の状態・TODO）】
+${ctx.prev_notes_text.trim() || "（記録なし）"}
+
+【前クォーターの宣言と結果（誰が何を宣言し達成/未達か）】
+${ctx.prev_declarations_text.trim() || "（記録なし）"}
+
+【前クォーターのAI分析（KR単位＆Objective単位の蓄積）】
+${ctx.prev_analyses_text.trim() || "（記録なし）"}
+
+【ウィンセッションの学び・外部環境変化（全期間からの抜粋）】
 ${learningsBlock}
 
-【チェックインのシグナルコメント】
+【チェックインのシグナルコメント（全期間からの抜粋）】
 ${highlightBlock}
 
-【計画者が注力したい課題】
+【計画者が注力したい課題・テーマ】
 ${focusBlock}
 
 【メンバー】
@@ -138,6 +176,43 @@ ${memberList}`;
 }
 
 // ===== システムプロンプト =====
+
+/**
+ * 計画セッションの「最初の応答」専用プロンプト。
+ * AI は与えられた前クォーターの全データ（会議ノート・セッション・宣言・分析・タスク実績）を
+ * 総動員し、まずしっかりした分析を提示してから、計画立案のための最初の問いを1つ投げる。
+ */
+export const QUARTER_PLAN_INITIAL_ANALYSIS_SYSTEM_PROMPT = `あなたはOKR戦略ファシリテーターAIです。
+ユーザーは翌クォーターの Task Force（TF）計画を立てようとしています。
+最初のメッセージで、ユーザーから渡されるコンテキスト（前クォーターの会議ノート・週次セッション・
+宣言と達成状況・蓄積された AI 分析・タスク実績・シグナル推移）を「総動員」して、
+**まずしっかりした分析を提示してから**、計画立案のための最初の問いを1つだけ投げてください。
+
+【最初の応答のフォーマット（マークダウン。コードブロックは使わない）】
+
+## 前クォーター（{prev_quarter}）の振り返り
+- このKRの全体感を3〜5文。達成度・シグナル推移のパターン・主要な学び・残った論点をデータに基づいて。
+- 配下KR分析・Objective分析が蓄積されていれば、それを最大限活用し、再分析ではなく要点の統合を行う。
+
+### TFごとの状況
+（コンテキストに含まれる各TFについて）
+#### TF{番号} {名称}
+- 状態：1文（順調/遅れ気味/要対応）。タスク達成率・シグナル・宣言達成状況を根拠に。
+- 翌Q検討の論点：1〜2件。「このTFを継続/変更/廃止/分割するべきか」の判断材料を提示。
+
+## 翌クォーター（{target_quarter}）計画で押さえるべき論点
+- 3〜5件の論点を箇条書き。前Qデータから読み取れる、計画で必ず議論すべき点。
+- 計画者が指定した「注力したい課題・テーマ」がある場合は最優先で組み込む。
+
+## 最初に決めたいこと
+1〜2文で「まずはこの点を決めましょう」と提示し、**最後に問いを1つ**投げる。
+例：「最も低達成率だったTF2について、翌Qで継続するか・縮小するか・廃止するか、まずはどうお考えですか？」
+
+【厳守事項】
+- データに基づかない断定はしない（数字や記録の言及を根拠に）
+- 解決策の押し付けはしない。判断材料を提示して問う形にする
+- 前クォーターの記録が少なくても、与えられた情報を最大限活用してできる範囲で分析する
+- 「分析」は再構成・要点抽出。同じことを繰り返さず、計画判断に直結する形にまとめる`;
 
 export const QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT = `あなたはOKR戦略ファシリテーターAIです。
 クォーター末の計画セッションで、翌クォーターの

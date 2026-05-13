@@ -11,7 +11,20 @@ import type { ProposedTF } from "../supabase/quarterPlanStore";
 import {
   QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT,
   QUARTER_PLAN_GENERATION_SYSTEM_PROMPT,
+  QUARTER_PLAN_INITIAL_ANALYSIS_SYSTEM_PROMPT,
 } from "./krQuarterPlanPrompt";
+
+// ===== 初回分析 AI（前クォーターの全データを総動員してしっかり分析） =====
+
+export async function callQuarterPlanInitialAnalysis(messages: PlanMessage[]): Promise<string> {
+  const res = await invokeAI(
+    QUARTER_PLAN_INITIAL_ANALYSIS_SYSTEM_PROMPT,
+    messages,
+    3500,
+    "kr-quarter-plan",
+  );
+  return res.content[0].text;
+}
 
 export type PlanMessage = AIMessageInput;
 
