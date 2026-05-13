@@ -614,7 +614,7 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
               </div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
                 {sessionType === "checkin"
-                  ? "宣言内容がDBに保存されました。金曜のウィンセッション時に自動的に参照されます。"
+                  ? "宣言内容がDBに保存されました。次回のウィンセッションで自動的に参照されます。"
                   : sessionType === "freeform"
                     ? "議論サマリ・決定事項・KR言及・フォローアップが対象KRにぶら下げて保存されました。"
                     : "ウィンセッションの結果が保存されました。"}
@@ -702,7 +702,7 @@ function InputStep({
 
         {/* 日付選択 */}
         <div style={{ flex: "1 1 140px" }}>
-          <FieldLabel>{sessionType === "freeform" ? "議事日" : "週（月曜日の日付）"}</FieldLabel>
+          <FieldLabel>{sessionType === "freeform" ? "議事日" : "週（週の起点の日付）"}</FieldLabel>
           <input
             type="date"
             value={weekStart}

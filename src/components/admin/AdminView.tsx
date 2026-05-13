@@ -1915,7 +1915,7 @@ function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFormProps)
             />
             {weekVal && (
               <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                月曜起点：{weekRangeLabel(weekToDate(weekVal))}
+                {weekRangeLabel(weekToDate(weekVal))}
               </span>
             )}
           </div>

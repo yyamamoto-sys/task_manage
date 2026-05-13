@@ -359,8 +359,8 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
         <Label>セッションの種類</Label>
         <div style={{ display: "flex", gap: "6px" }}>
           {([
-            { v: "checkin" as const, label: "チェックイン（月曜）" },
-            { v: "win_session" as const, label: "ウィンセッション（金曜）" },
+            { v: "checkin" as const, label: "チェックイン" },
+            { v: "win_session" as const, label: "ウィンセッション" },
           ]).map(opt => (
             <button key={opt.v} onClick={() => setMode(opt.v)} style={{
               fontSize: "12px", padding: "6px 14px", borderRadius: "var(--radius-md)",

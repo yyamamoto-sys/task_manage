@@ -294,13 +294,13 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
               onChange={e => { if (e.target.value) setWeekStart(mondayOfStr(e.target.value)); }}
               style={{ ...selStyle, flex: 1 }}
             />
-            <button onClick={() => setWeekStart(thisMondayStr())} style={{ ...ghostBtn, whiteSpace: "nowrap" }} title="今週の月曜にする">今週</button>
+            <button onClick={() => setWeekStart(thisMondayStr())} style={{ ...ghostBtn, whiteSpace: "nowrap" }} title="今週にする">今週</button>
           </div>
         </div>
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
       </div>
       <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "-8px" }}>
-        対象週はカレンダーで日付を選ぶと、その週の月曜に揃います。選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
+        対象週はカレンダーで日付を選ぶと、その週の起点に揃います。選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
       </div>
 
       {/* ノートのある週へのショートカット */}

@@ -29,12 +29,12 @@ const MODE_OPTIONS: { value: KrReportMode; label: string; description: string }[
   {
     value: "checkin",
     label: "チェックイン分析",
-    description: "月曜PM：今週の宣言・到達可能性・仮説たたき案",
+    description: "今週の宣言・到達可能性・仮説たたき案",
   },
   {
     value: "win_session",
     label: "ウィンセッション分析",
-    description: "金曜：宣言達成確認・学び・次の一手",
+    description: "宣言達成確認・学び・次の一手",
   },
 ];
 

@@ -970,7 +970,7 @@ function KrSessionHistory({
       {weekGroups.map(group => (
         <div key={group.weekStart}>
           <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingBottom: "6px", borderBottom: "1px solid var(--color-border-primary)" }}>
-            週：{group.weekStart}（月曜）
+            週：{group.weekStart}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
             {group.sessions.map(session => {
@@ -1177,7 +1177,7 @@ const TOOL_DETAILS = [
       "Objective と全 KR の一覧を表示します",
       "KRカードに最新シグナル（🟢🟡🔴）と今週の記録状況を表示します",
       "KRをクリックして選択すると、ツール起動時にそのKRが初期選択されます",
-      "月曜・金曜は週次アクションのガイダンスバナーが表示されます",
+      "週次アクションのガイダンスバナーが画面上部に表示されます",
     ],
   },
   {
