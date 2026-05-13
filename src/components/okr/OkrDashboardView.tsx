@@ -8,7 +8,7 @@ import { KrSessionPanel } from "../lab/KrSessionPanel";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
-import { fetchKrSessions, updateKrSession, softDeleteKrSession, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrSessions, updateKrSession, softDeleteKrSession, fetchKrDeclarations, type KrSession, type KrDeclaration } from "../../lib/supabase/krSessionStore";
 
 export type OkrActiveTool = "session" | "why" | "plan" | "overview" | "guide" | null;
 
@@ -56,6 +56,7 @@ export function OkrDashboardView({
   const taskForces = useAppStore(s => s.taskForces);
   const tasks      = useAppStore(s => s.tasks);
   const todos      = useAppStore(s => s.todos);
+  const members    = useAppStore(s => s.members);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),
@@ -579,6 +580,7 @@ export function OkrDashboardView({
                 onOpenSession={() => { setHistoryOpen(false); onSetActiveTool("session"); }}
                 onRefresh={refreshSessions}
                 currentUserId={currentUser.id}
+                members={members}
               />
             </div>
           </div>
@@ -597,8 +599,70 @@ type EditDraft = {
   learnings: string;
 };
 
+// セッションの詳細（宣言・学び・外部環境・freeform要素・文字起こし）を展開表示する
+function SessionDetailBlock({ session, declarations, loading, memberById }: {
+  session: KrSession;
+  declarations: KrDeclaration[] | undefined;
+  loading: boolean;
+  memberById: Map<string, Member>;
+}) {
+  const [showTranscript, setShowTranscript] = useState(false);
+  const RESULT_LABEL: Record<string, string> = { achieved: "✅ 達成", partial: "🔶 一部達成", not_achieved: "❌ 未達" };
+  const decls = declarations ?? [];
+  const declTitle = session.session_type === "checkin" ? "今週の宣言（誰が・何を・いつまでに）"
+    : session.session_type === "win_session" ? "フォローアップ宣言" : "宣言・フォローアップ";
+  const labelStyle: React.CSSProperties = { fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)" };
+  const bodyStyle: React.CSSProperties = { fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" };
+  return (
+    <div style={{ marginTop: "8px", marginLeft: "22px", padding: "10px 12px", background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div>
+        <div style={{ ...labelStyle, marginBottom: "6px" }}>{declTitle}</div>
+        {loading && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
+        {!loading && decls.length === 0 && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>宣言の記録はありません</div>}
+        {decls.map(d => {
+          const m = memberById.get(d.member_id);
+          return (
+            <div key={d.id} style={{ display: "flex", gap: "7px", marginBottom: "6px", fontSize: "12px", lineHeight: 1.6 }}>
+              <span style={{ flexShrink: 0, fontWeight: 600, color: "var(--color-text-primary)" }}>{m?.short_name ?? "（不明）"}</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ color: "var(--color-text-secondary)" }}>{d.content || "（内容なし）"}</div>
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px" }}>
+                  {d.due_date ? `期日: ${d.due_date}` : "期日なし"}
+                  {d.result_status && <> ／ 結果: {RESULT_LABEL[d.result_status] ?? d.result_status}{d.result_note ? `（${d.result_note}）` : ""}</>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {(session.learnings || session.external_changes) && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          {session.learnings && <div><span style={labelStyle}>学び：</span><span style={bodyStyle}>{session.learnings}</span></div>}
+          {session.external_changes && <div><span style={labelStyle}>外部環境の変化：</span><span style={bodyStyle}>{session.external_changes}</span></div>}
+        </div>
+      )}
+
+      {session.summary && <div><span style={labelStyle}>議論サマリ：</span><span style={bodyStyle}>{session.summary}</span></div>}
+      {session.decisions && <div><span style={labelStyle}>決定事項：</span><span style={bodyStyle}>{session.decisions}</span></div>}
+      {session.kr_mentions && <div><span style={labelStyle}>言及されたKR：</span><span style={bodyStyle}>{session.kr_mentions}</span></div>}
+
+      {session.transcript && (
+        <div>
+          <button onClick={() => setShowTranscript(v => !v)} style={{ fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", padding: 0 }}>
+            {showTranscript ? "▲ 文字起こし・議事メモを閉じる" : "▼ 文字起こし・議事メモを見る"}
+          </button>
+          {showTranscript && (
+            <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap", maxHeight: "260px", overflow: "auto", background: "var(--color-bg-secondary)", padding: "8px 10px", borderRadius: "var(--radius-sm)" }}>{session.transcript}</div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function KrSessionHistory({
-  selectedKrId, activeKrs, krSessionsMap, loading, onSelectKr, onOpenSession, onRefresh, currentUserId,
+  selectedKrId, activeKrs, krSessionsMap, loading, onSelectKr, onOpenSession, onRefresh, currentUserId, members,
 }: {
   selectedKrId: string | null;
   activeKrs: { id: string; title: string }[];
@@ -608,6 +672,7 @@ function KrSessionHistory({
   onOpenSession: () => void;
   onRefresh: () => void;
   currentUserId: string;
+  members: Member[];
 }) {
   const [filterKrId, setFilterKrId] = useState(selectedKrId ?? "");
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -616,6 +681,24 @@ function KrSessionHistory({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [declCache, setDeclCache] = useState<Record<string, KrDeclaration[]>>({});
+  const [declLoading, setDeclLoading] = useState<Record<string, boolean>>({});
+
+  const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+
+  const toggleDetail = useCallback((sessionId: string) => {
+    setExpandedId(prev => {
+      const next = prev === sessionId ? null : sessionId;
+      if (next && declCache[next] === undefined && !declLoading[next]) {
+        setDeclLoading(s => ({ ...s, [next]: true }));
+        fetchKrDeclarations(next)
+          .then(rows => setDeclCache(c => ({ ...c, [next]: rows })))
+          .catch((e: unknown) => { console.warn("宣言の取得に失敗:", e); setDeclCache(c => ({ ...c, [next]: [] })); })
+          .finally(() => setDeclLoading(s => ({ ...s, [next]: false })));
+      }
+      return next;
+    });
+  }, [declCache, declLoading]);
 
   useEffect(() => {
     setFilterKrId(selectedKrId ?? "");
@@ -805,20 +888,21 @@ function KrSessionHistory({
                       {session.signal_comment && (
                         <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5, paddingLeft: "22px" }}>{session.signal_comment}</div>
                       )}
-                      {session.learnings && session.session_type === "win_session" && (
-                        <div style={{ marginTop: "4px", paddingLeft: "22px" }}>
-                          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.5 }}>
-                            学び：{expandedId === session.id ? session.learnings : session.learnings.length > 100 ? session.learnings.slice(0, 100) + "…" : session.learnings}
-                          </div>
-                          {session.learnings.length > 100 && (
-                            <button
-                              onClick={() => setExpandedId(expandedId === session.id ? null : session.id)}
-                              style={{ marginTop: "2px", fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", padding: 0, textDecoration: "underline" }}
-                            >
-                              {expandedId === session.id ? "折りたたむ" : "全文を見る"}
-                            </button>
-                          )}
-                        </div>
+                      <div style={{ marginTop: "6px", paddingLeft: "22px" }}>
+                        <button
+                          onClick={() => toggleDetail(session.id)}
+                          style={{ fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", padding: 0 }}
+                        >
+                          {expandedId === session.id ? "▲ 詳細を閉じる" : "▼ 宣言・記録の詳細を見る"}
+                        </button>
+                      </div>
+                      {expandedId === session.id && (
+                        <SessionDetailBlock
+                          session={session}
+                          declarations={declCache[session.id]}
+                          loading={!!declLoading[session.id]}
+                          memberById={memberById}
+                        />
                       )}
                     </>
                   )}
