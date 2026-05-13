@@ -18,6 +18,14 @@ import {
   type KrMeetingNote, type KrNoteEntryFields, type KrNoteStatus,
 } from "../../lib/supabase/krMeetingNoteStore";
 
+/** その日が属する週の月曜日（YYYY-MM-DD）を返す。 */
+function mondayOfStr(dateStr: string): string {
+  const d = new Date(dateStr + "T00:00:00");
+  if (isNaN(d.getTime())) return thisMondayStr();
+  const day = d.getDay();
+  d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+  return d.toISOString().slice(0, 10);
+}
 function thisMondayStr(): string {
   const d = new Date();
   const day = d.getDay();
@@ -135,10 +143,11 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     return () => { cancelled = true; };
   }, [krId, weekStart]);
 
-  const weekOptions = useMemo(() => {
-    const set = new Set<string>([thisMondayStr(), ...notesList.map(n => n.week_start)]);
-    return [...set].sort((a, b) => b.localeCompare(a));
-  }, [notesList]);
+  // 記録（ノート）のある週の一覧（新しい順）。カレンダーとは別にショートカットとして並べる。
+  const weekOptions = useMemo(
+    () => [...new Set(notesList.map(n => n.week_start))].sort((a, b) => b.localeCompare(a)),
+    [notesList],
+  );
 
   const prevNoteRow = useMemo(() => notesList.find(n => n.week_start < weekStart) ?? null, [notesList, weekStart]);
 
@@ -241,16 +250,39 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
           </select>
         </div>
-        <div style={{ flex: "0 1 180px" }}>
-          <Label>対象週（月曜起点）</Label>
-          <select value={weekStart} onChange={e => setWeekStart(e.target.value)} style={selStyle}>
-            {weekOptions.map(w => (
-              <option key={w} value={w}>{formatMD(w)} 週{w === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === w) ? "" : "（新規）"}</option>
-            ))}
-          </select>
+        <div style={{ flex: "0 1 260px" }}>
+          <Label>対象週（カレンダーで日付を選ぶ → その週の月曜になります）</Label>
+          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+            <input
+              type="date"
+              value={weekStart}
+              onChange={e => { if (e.target.value) setWeekStart(mondayOfStr(e.target.value)); }}
+              style={{ ...selStyle, flex: 1 }}
+            />
+            <button onClick={() => setWeekStart(thisMondayStr())} style={{ ...ghostBtn, whiteSpace: "nowrap" }} title="今週の月曜にする">今週</button>
+          </div>
+          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+            選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
+          </div>
         </div>
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
       </div>
+
+      {/* ノートのある週へのショートカット */}
+      {weekOptions.length > 0 && (
+        <div style={{ display: "flex", gap: "5px", flexWrap: "wrap", alignItems: "center" }}>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>記録のある週：</span>
+          {weekOptions.map(w => (
+            <button key={w} onClick={() => setWeekStart(w)} style={{
+              fontSize: "10px", padding: "3px 9px", borderRadius: "var(--radius-full)",
+              border: w === weekStart ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+              background: w === weekStart ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+              color: w === weekStart ? "var(--color-brand)" : "var(--color-text-secondary)",
+              cursor: "pointer",
+            }}>{formatMD(w)} 週</button>
+          ))}
+        </div>
+      )}
 
       {loadError && <ErrBox>{loadError}</ErrBox>}
       {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
