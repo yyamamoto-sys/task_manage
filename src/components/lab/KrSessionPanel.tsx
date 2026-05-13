@@ -471,7 +471,6 @@ export function KrSessionPanel({ onClose, currentUser, inline = false, initialKr
           flexShrink: 0,
           background: "var(--color-bg-secondary)",
         }}>
-          <span style={{ fontSize: "18px" }}>🗓️</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
               KRセッション記録

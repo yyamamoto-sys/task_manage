@@ -411,7 +411,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
           {/* 前回からの引き継ぎメモ（編集可・ノートに保存される） */}
           <div style={{ border: "1px solid var(--color-border-primary)", borderLeft: "3px solid var(--color-brand)", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", padding: "10px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", flex: 1 }}>📋 前回からの引き継ぎメモ（前週確定レポートの要点＋最新③分析の示唆。各TF欄に反映してから整理してください）</span>
+              <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", flex: 1 }}>前回からの引き継ぎメモ（前週確定レポートの要点＋最新③分析の示唆。各TF欄に反映してから整理してください）</span>
               <button onClick={() => setShowCarryMemo(v => !v)} style={{ fontSize: "10px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer" }}>{showCarryMemo ? "▲ 閉じる" : carryMemo ? "▼ 開く" : "▼ 開く（空）"}</button>
             </div>
             {showCarryMemo && (

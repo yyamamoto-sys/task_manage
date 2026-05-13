@@ -54,12 +54,12 @@ const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string }[] =
   { key: "why",  icon: "🔍", label: "なぜなぜ" },
   { key: "plan", icon: "📅", label: "計画" },
 ];
-const OKR_SUB_TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
-  { tool: "overview", icon: "🎯", label: "概要" },
-  { tool: "note",     icon: "📝", label: "① 会議ノート" },
-  { tool: "session",  icon: "🗓️", label: "② セッション記録" },
-  { tool: "analysis", icon: "📊", label: "③ 分析" },
-  { tool: "report",   icon: "📄", label: "④ レポート作成" },
+const OKR_SUB_TABS: { tool: OkrActiveTool; label: string }[] = [
+  { tool: "overview", label: "概要" },
+  { tool: "note",     label: "① 会議ノート" },
+  { tool: "session",  label: "② セッション記録" },
+  { tool: "analysis", label: "③ 分析" },
+  { tool: "report",   label: "④ レポート作成" },
 ];
 
 export function OkrDashboardView({
@@ -145,7 +145,7 @@ export function OkrDashboardView({
 
   const fmtMD = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
   // ①②③④ それぞれの状態を { label, tone } で返す（tone: "done"=緑 / "wip"=黄 / "none"=灰）
-  const cycleSteps = useMemo<{ tool: OkrActiveTool; icon: string; name: string; label: string; tone: "done" | "wip" | "none" }[]>(() => {
+  const cycleSteps = useMemo<{ tool: OkrActiveTool; name: string; label: string; tone: "done" | "wip" | "none" }[]>(() => {
     if (!selectedKrId) return [];
     const ses = krSessionsMap[selectedKrId] ?? [];
     const wkCheckin = ses.find(s => s.week_start === thisMonday && s.session_type === "checkin");
@@ -163,10 +163,10 @@ export function OkrDashboardView({
       ? (cycleReport.status === "finalized" ? { label: "確定済み", tone: "done" as const } : { label: "下書き（要確認）", tone: "wip" as const })
       : { label: "未作成", tone: "none" as const };
     return [
-      { tool: "note" as const,     icon: "📝", name: "① 会議ノート",      ...noteStep },
-      { tool: "session" as const,  icon: "🗓️", name: "② セッション記録",  ...sesStep },
-      { tool: "analysis" as const, icon: "📊", name: "③ 分析",            ...anaStep },
-      { tool: "report" as const,   icon: "📄", name: "④ レポート作成",    ...repStep },
+      { tool: "note" as const,     name: "① 会議ノート",      ...noteStep },
+      { tool: "session" as const,  name: "② セッション記録",  ...sesStep },
+      { tool: "analysis" as const, name: "③ 分析",            ...anaStep },
+      { tool: "report" as const,   name: "④ レポート作成",    ...repStep },
     ];
   }, [selectedKrId, krSessionsMap, thisMonday, cycleNote, cycleAnalysis, cycleReport]);
   const CYCLE_TONE_COLOR: Record<string, string> = { done: "#16a34a", wip: "#ca8a04", none: "var(--color-text-tertiary)" };
@@ -214,7 +214,6 @@ export function OkrDashboardView({
         display: "flex", alignItems: "center", gap: "10px",
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: "16px" }}>🎯</span>
         <div>
           <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", lineHeight: 1.3 }}>
             OKR管理モード
@@ -287,7 +286,7 @@ export function OkrDashboardView({
                   cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
                 }}
               >
-                <span style={{ fontSize: "13px" }}>{sub.icon}</span>{sub.label}
+                {sub.label}
               </button>
             );
           })}
@@ -326,7 +325,7 @@ export function OkrDashboardView({
                     }}
                   >
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: CYCLE_TONE_COLOR[st.tone], flexShrink: 0 }} />
-                    {st.icon} {st.name}
+                    {st.name}
                     <span style={{ color: st.tone === "none" ? "var(--color-text-tertiary)" : CYCLE_TONE_COLOR[st.tone], fontSize: "9px" }}>（{st.label}）</span>
                   </button>
                 </div>

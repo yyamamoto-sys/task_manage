@@ -304,7 +304,6 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
         display: "flex", alignItems: "center", gap: "10px",
         flexShrink: 0,
       }}>
-        <span style={{ fontSize: "18px" }}>📊</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
             KRレポート生成
