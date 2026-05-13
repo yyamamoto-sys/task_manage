@@ -9,7 +9,7 @@
 
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
-import type { Member } from "../../lib/localData/types";
+import type { Member, Quarter } from "../../lib/localData/types";
 import { formatMD } from "../../lib/date";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import {
@@ -25,6 +25,15 @@ function thisMondayStr(): string {
   return d.toISOString().slice(0, 10);
 }
 
+const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
+function currentQuarter(): Quarter {
+  const m = new Date().getMonth() + 1;
+  if (m <= 3) return "1Q";
+  if (m <= 6) return "2Q";
+  if (m <= 9) return "3Q";
+  return "4Q";
+}
+
 interface Props {
   inline?: boolean;
   onClose: () => void;
@@ -37,17 +46,39 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(s => s.tasks);
   const rawTodos = useAppStore(s => s.todos);
+  const objective = useAppStore(s => s.objective);
+  const rawQObjs  = useAppStore(s => s.quarterlyObjectives);
+  const rawQktf   = useAppStore(s => s.quarterlyKrTaskForces);
 
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
   const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : (krs[0]?.id ?? ""));
   useEffect(() => { if (!krId && krs[0]) setKrId(krs[0].id); }, [krs, krId]);
 
-  // 選択KRに紐づくTF（id重複除去・tf_number昇順）
+  // クォーター（既定＝今のクォーター）。OKRは「KR通期固定・TF割り当てはクォーターごと」なので、
+  // 表示するTFは「選択クォーターのQuarterlyObjectiveに紐づくTF割り当て」に絞る。
+  const [quarter, setQuarter] = useState<Quarter>(currentQuarter());
+
+  const qObj = useMemo(
+    () => objective ? (rawQObjs.find(q => !q.is_deleted && q.objective_id === objective.id && q.quarter === quarter) ?? null) : null,
+    [rawQObjs, objective, quarter],
+  );
+
+  // 選択KR×クォーターのTF（id重複除去・tf_number昇順）。クォーター割り当てが無い場合は kr_id で絞る（従来動作）。
+  const usingQuarterAssignment = !!qObj;
   const tfs = useMemo(() => {
-    const byId = new Map(rawTfs.filter(tf => !tf.is_deleted && tf.kr_id === krId).map(tf => [tf.id, tf]));
+    if (!krId) return [];
+    const allActive = rawTfs.filter(tf => !tf.is_deleted);
+    let pool;
+    if (qObj) {
+      const ids = new Set(rawQktf.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === krId).map(q => q.tf_id));
+      pool = allActive.filter(tf => ids.has(tf.id));
+    } else {
+      pool = allActive.filter(tf => tf.kr_id === krId);
+    }
+    const byId = new Map(pool.map(tf => [tf.id, tf]));
     return [...byId.values()].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
-  }, [rawTfs, krId]);
+  }, [rawTfs, rawQktf, qObj, krId]);
 
   const [weekStart, setWeekStart] = useState<string>(thisMondayStr());
   const [notesList, setNotesList] = useState<KrMeetingNote[]>([]);
@@ -64,7 +95,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const [savedFlash, setSavedFlash] = useState(false);
 
   const [tfIndex, setTfIndex] = useState(0);
-  useEffect(() => { setTfIndex(0); }, [krId, weekStart]);
+  useEffect(() => { setTfIndex(0); }, [krId, weekStart, quarter]);
 
   // KR/週変更時：ノート一覧 + 当該週ノートを取得
   useEffect(() => {
@@ -195,16 +226,22 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
-      {/* セレクタ行：KR → 週 */}
+      {/* セレクタ行：KR → クォーター → 週 */}
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
-        <div style={{ flex: "1 1 320px" }}>
+        <div style={{ flex: "1 1 280px" }}>
           <Label>Key Result（まず選択）</Label>
           <select value={krId} onChange={e => setKrId(e.target.value)} style={selStyle}>
             {krs.length === 0 && <option value="">（KRがありません）</option>}
             {krs.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
           </select>
         </div>
-        <div style={{ flex: "0 1 190px" }}>
+        <div style={{ flex: "0 1 110px" }}>
+          <Label>クォーター</Label>
+          <select value={quarter} onChange={e => setQuarter(e.target.value as Quarter)} style={selStyle}>
+            {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: "0 1 180px" }}>
           <Label>対象週（月曜起点）</Label>
           <select value={weekStart} onChange={e => setWeekStart(e.target.value)} style={selStyle}>
             {weekOptions.map(w => (
@@ -217,6 +254,12 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
       {loadError && <ErrBox>{loadError}</ErrBox>}
       {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
+
+      {krId && !loading && !usingQuarterAssignment && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
+          ※ {quarter} の TF 割り当て（QuarterlyObjective）が未設定のため、このKRに紐づく全TFを表示しています。管理画面でクォーターのTF割り当てを設定すると、このクォーターのTFだけが表示されます。
+        </div>
+      )}
 
       {!krId && !loading && (
         <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>
