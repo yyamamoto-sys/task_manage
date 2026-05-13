@@ -4,7 +4,7 @@
 // 会議の文字起こし（VTT/SRT/テキスト）から新規タスク・ステータス更新候補を
 // AIで抽出する。ラボ機能例外ルール適用：PJ・タスク・メンバー情報をAIに渡す。
 
-import { invokeAI } from "./invokeAI";
+import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
 
 // ===== 型定義 =====
 
@@ -61,7 +61,7 @@ export function parseTranscript(raw: string): string {
     if (/^\d+$/.test(line)) continue;
 
     // タイムスタンプ行（VTT / SRT）
-    if (/^\d{2}:\d{2}[:\.,]\d{2,3}\s*-->\s*/.test(line)) continue;
+    if (/^\d{2}:\d{2}[:.,]\d{2,3}\s*-->\s*/.test(line)) continue;
 
     if (line === "") { flush(); continue; }
 
@@ -157,6 +157,8 @@ export interface ExtractMeetingParams {
   tasks: { id: string; name: string; assignee: string; status: string; due_date: string | null }[];
   members: { short_name: string }[];
   today: string;
+  /** PDF等の添付（テキスト起こしが無く添付ファイルで渡す場合）。Word(.docx)はクライアント側でテキスト化してから transcript に入れる */
+  attachment?: FileAttachment | null;
 }
 
 function parseJsonSafe<T>(text: string): T {
@@ -187,10 +189,12 @@ export async function extractMeetingData(params: ExtractMeetingParams): Promise<
       status: t.status,
       due_date: t.due_date,
     })),
-    transcript: params.transcript,
+    transcript: params.transcript || (params.attachment ? `（添付ファイル「${params.attachment.fileName}」を会議の文字起こし／議事メモとして参照してください）` : ""),
   });
 
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 4096, "meeting-extract");
+  // 添付（PDF等）がある場合は document/image ブロックとして同梱（テキスト添付なら本文に追記される）
+  const content = buildMessageContent(userMessage, params.attachment ?? null);
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 4096, "meeting-extract");
   const text = res.content[0].text;
   return validateAnalysis(parseJsonSafe<unknown>(text));
 }

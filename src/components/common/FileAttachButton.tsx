@@ -6,18 +6,26 @@
 
 import { useRef, useState } from "react";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
+import { extractDocxText, isDocxFile } from "../../lib/docxText";
 
 export type { FileAttachment };
 
-const ACCEPT_TYPES = ".pdf,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.html";
+const ACCEPT_TYPES = ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.html";
 const TEXT_MEDIA_TYPES = ["text/plain", "text/markdown", "text/csv", "text/html"];
 const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const DOC_MEDIA_TYPES = ["application/pdf"];
 
 function processFileAttachment(file: File, onAttach: (att: FileAttachment) => void) {
+  // Word(.docx)：Anthropic API は直接読めないのでクライアント側で本文テキストを抽出し、テキスト添付として渡す
+  if (isDocxFile(file)) {
+    extractDocxText(file)
+      .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+    return;
+  }
   const mediaType = resolveMediaType(file);
   if (!isSupported(mediaType)) {
-    alert(`非対応の形式です。\n対応: PDF / 画像(PNG・JPG・WebP・GIF) / テキスト(TXT・MD・CSV・HTML)`);
+    alert(`非対応の形式です。\n対応: PDF / Word(.docx) / 画像(PNG・JPG・WebP・GIF) / テキスト(TXT・MD・CSV・HTML)`);
     return;
   }
   const isText = TEXT_MEDIA_TYPES.includes(mediaType);
@@ -116,7 +124,7 @@ export function FileAttachButton({ attachment, onAttach, onRemove }: Props) {
       ) : (
         <button
           onClick={() => inputRef.current?.click()}
-          title="PDF・画像・テキストを添付"
+          title="PDF・Word(.docx)・画像・テキストを添付"
           style={{
             display: "flex", alignItems: "center", gap: "4px",
             padding: "4px 8px",

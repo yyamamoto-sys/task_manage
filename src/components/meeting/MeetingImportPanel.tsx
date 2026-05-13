@@ -16,6 +16,8 @@ import {
   type MeetingTask,
   type MeetingStatusUpdate,
 } from "../../lib/ai/meetingExtractor";
+import type { FileAttachment } from "../../lib/ai/invokeAI";
+import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -108,18 +110,44 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const fileInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const dropAreaRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const [isDragging, setIsDragging] = useState(false);
+  // PDF はテキスト化せずそのまま AI に添付して渡す（Claude が読める）。Word(.docx) はテキスト抽出して rawText に入れる。
+  const [pdfAttachment, setPdfAttachment] = useState<FileAttachment | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
 
   // ===== ファイル読み込み =====
 
   const handleFile = useCallback((file: File) => {
+    setFileError(null);
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // PDF：添付として保持（テキスト化しない）
+    if (ext === "pdf" || file.type === "application/pdf") {
+      const reader = new FileReader();
+      reader.onload = e => {
+        const dataUrl = (e.target?.result as string) ?? "";
+        const base64 = dataUrl.split(",")[1] ?? "";
+        if (!base64) { setFileError("PDFの読み込みに失敗しました。"); return; }
+        setPdfAttachment({ fileName: file.name, mediaType: "application/pdf", data: base64, isText: false });
+        setRawText("");
+      };
+      reader.onerror = () => setFileError("PDFの読み込みに失敗しました。");
+      reader.readAsDataURL(file);
+      return;
+    }
+    // Word(.docx)：本文テキストを抽出
+    if (isDocxFile(file)) {
+      extractDocxText(file)
+        .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text); })
+        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+      return;
+    }
+    // それ以外：テキストとして読み込む（.vtt / .srt / .txt 等）
     const reader = new FileReader();
     reader.onload = e => {
+      setPdfAttachment(null);
       const text = (e.target?.result as string) ?? "";
-      // 上限を超えるファイルはここで上限ちょうどに切り詰める。
-      // （以前は +500 して読み込んでいたため、必ず上限オーバー状態になり
-      //   手動で 500 文字削らないと解析できないバグになっていた）
       setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text);
     };
+    reader.onerror = () => setFileError("ファイルの読み込みに失敗しました。");
     reader.readAsText(file, "utf-8");
   }, []);
 
@@ -134,12 +162,12 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
 
   const handleAnalyze = useCallback(async () => {
     const text = rawText.trim();
-    if (!text) return;
+    if (!text && !pdfAttachment) return;
     setError(null);
     setStep("analyzing");
 
     try {
-      const cleaned = parseTranscript(text);
+      const cleaned = text ? parseTranscript(text) : "";
       const today = new Date().toISOString().slice(0, 10);
 
       const result = await extractMeetingData({
@@ -156,6 +184,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         })),
         members: members.map(m => ({ short_name: m.short_name })),
         today,
+        attachment: pdfAttachment,
       });
 
       setAnalysis(result);
@@ -199,7 +228,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
     }
-  }, [rawText, projects, tasks, members]);
+  }, [rawText, pdfAttachment, projects, tasks, members]);
 
   // ===== 適用 =====
 
@@ -319,6 +348,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const handleReset = () => {
     setStep("input");
     setRawText("");
+    setPdfAttachment(null);
+    setFileError(null);
     setError(null);
     setAnalysis(null);
     setTaskDrafts([]);
@@ -330,7 +361,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const checkedStatusCount = statusDrafts.filter(d => d.checked && d.task_id).length;
   const charCount = rawText.trim().length;
   // 上限超過は解析をブロックしない。超過分は handleAnalyze 側で自動的に切り詰める。
-  const canAnalyze = charCount >= 20;
+  // PDFを添付している場合はテキストが無くても解析可。
+  const canAnalyze = charCount >= 20 || !!pdfAttachment;
 
   // ===== コンテンツ =====
 
@@ -364,6 +396,9 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
               e.target.value = "";
             }}
             error={error}
+            fileError={fileError}
+            pdfAttachment={pdfAttachment}
+            onRemovePdf={() => setPdfAttachment(null)}
             onAnalyze={handleAnalyze}
           />
         )}
@@ -474,7 +509,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>会議から読み込む</div>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
-              {step === "analyzing" ? "AI解析中..." : "文字起こし（VTT/テキスト）→ AI解析 → タスク登録"}
+              {step === "analyzing" ? "AI解析中..." : "文字起こし（VTT/テキスト/Word/PDF）→ AI解析 → タスク登録"}
             </div>
           </div>
           {step === "review" && (
@@ -495,7 +530,7 @@ function InputStep({
   isDragging, setIsDragging,
   dropAreaRef, fileInputRef,
   onDrop, onFileChange,
-  error, onAnalyze,
+  error, fileError, pdfAttachment, onRemovePdf, onAnalyze,
 }: {
   rawText: string; setRawText: (v: string) => void;
   isDragging: boolean; setIsDragging: (v: boolean) => void;
@@ -504,6 +539,9 @@ function InputStep({
   onDrop: (e: React.DragEvent) => void;
   onFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   error: string | null;
+  fileError: string | null;
+  pdfAttachment: FileAttachment | null;
+  onRemovePdf: () => void;
   onAnalyze: () => void;
 }) {
   const trimmed = rawText.trim();
@@ -535,16 +573,29 @@ function InputStep({
           ファイルをドラッグ＆ドロップ
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          または <span style={{ color: "var(--color-brand)", textDecoration: "underline" }}>クリックして選択</span>（.vtt / .srt / .txt）
+          または <span style={{ color: "var(--color-brand)", textDecoration: "underline" }}>クリックして選択</span>（.vtt / .srt / .txt / .docx(Word) / .pdf）
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".vtt,.srt,.txt,.text"
+          accept=".vtt,.srt,.txt,.text,.docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           style={{ display: "none" }}
           onChange={onFileChange}
         />
       </div>
+
+      {/* 添付PDF（ある場合） */}
+      {pdfAttachment && (
+        <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "var(--color-bg-purple, #ede9fe)", border: "1px solid var(--color-border-purple, #ddd6fe)", borderRadius: "var(--radius-md)", fontSize: "12px" }}>
+          <span>📑</span>
+          <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }}>{pdfAttachment.fileName}</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFをそのままAIに渡します</span>
+          <button onClick={onRemovePdf} title="添付を解除" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: "13px", padding: 0, lineHeight: 1 }}>✕</button>
+        </div>
+      )}
+      {fileError && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{fileError}</div>
+      )}
 
       {/* テキスト入力 */}
       <div>
