@@ -96,7 +96,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
     const saved = localStorage.getItem(KEYS.OKR_ACTIVE_TOOL) as OkrActiveTool | null;
-    const validTools: OkrActiveTool[] = ["note", "session", "why", "plan", "overview", "guide", null];
+    const validTools: OkrActiveTool[] = ["note", "session", "analysis", "why", "plan", "overview", "guide", null];
     return (saved !== undefined && validTools.includes(saved)) ? saved : "session";
   });
   const setOkrActiveToolPersisted = (tool: OkrActiveTool) => {
@@ -563,6 +563,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             { label: "概要", icon: "🎯", onClick: () => setOkrActiveTool("overview") },
             { label: "会議ノート", icon: "📝", onClick: () => setOkrActiveTool("note") },
             { label: "セッション", icon: "🗓️", onClick: () => setOkrActiveTool("session") },
+            { label: "分析結果", icon: "📊", onClick: () => setOkrActiveTool("analysis") },
             { label: "なぜなぜ", icon: "🔍", onClick: () => setOkrActiveTool("why") },
             { label: "計画", icon: "📅", onClick: () => setOkrActiveTool("plan") },
           ] as const).map(item => (

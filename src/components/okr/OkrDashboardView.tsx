@@ -9,9 +9,10 @@ import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
 import { KrQuarterPlanPanel } from "../lab/KrQuarterPlanPanel";
 import { KrMeetingNotePanel } from "./KrMeetingNotePanel";
+import { OkrTfAnalysisPanel } from "./OkrTfAnalysisPanel";
 import { fetchKrSessions, updateKrSession, softDeleteKrSession, fetchKrDeclarations, type KrSession, type KrDeclaration } from "../../lib/supabase/krSessionStore";
 
-export type OkrActiveTool = "note" | "session" | "why" | "plan" | "overview" | "guide" | null;
+export type OkrActiveTool = "note" | "session" | "analysis" | "why" | "plan" | "overview" | "guide" | null;
 
 interface Props {
   currentUser: Member;
@@ -45,6 +46,7 @@ function getThisMonday(): string {
 const TABS: { tool: OkrActiveTool; icon: string; label: string }[] = [
   { tool: "note",     icon: "📝", label: "会議ノート" },
   { tool: "session",  icon: "🗓️", label: "セッション記録" },
+  { tool: "analysis", icon: "📊", label: "分析結果" },
   { tool: "why",      icon: "🔍", label: "なぜなぜ" },
   { tool: "plan",     icon: "📅", label: "計画" },
   { tool: "overview", icon: "🎯", label: "概要" },
@@ -510,6 +512,16 @@ export function OkrDashboardView({
               />
             )}
           </div>
+        )}
+
+        {/* ─── 分析結果タブ（TF単位のAI分析・履歴） ─── */}
+        {activeTool === "analysis" && (
+          <OkrTfAnalysisPanel
+            inline
+            onClose={() => onSetActiveTool(null)}
+            currentUser={currentUser}
+            initialKrId={selectedKrId ?? undefined}
+          />
         )}
 
         {/* ─── なぜなぜタブ ─── */}

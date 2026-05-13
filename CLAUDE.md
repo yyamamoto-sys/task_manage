@@ -63,6 +63,12 @@
 #             TfMeetingNotePanel→KrMeetingNotePanel。OKRタブ「会議ノート」：KR選択→そのKRのTFを順に入力→作成
 #      追加：TFエントリに tf_theme（TF説明・その期のテーマ）・todo（その時期のToDo）欄
 #      修正：TF選択でKR横断の同番号TFが重複して見えていた問題（KR選択でフィルタ＋id重複除去）
+# v2.11 OKR分析結果ページ（Phase B）・会議ノートのカレンダー週選択（2026-05-13）
+#      追加：OKRモードに「📊 分析結果」タブ。okr_tf_analyses テーブル
+#             （migrations/20260513c_add_okr_tf_analyses.sql）・okrTfAnalysisStore・OkrTfAnalysisPanel・
+#             okrTfAnalysisClient（AIIntent="okr-tf-analysis"）。会議ノート履歴＋KRセッション・宣言＋TFタスクを
+#             AIが分析、履歴保存（過去分も残す）・遡り・手書き編集可
+#      変更：会議ノートの対象週を <input type="date">（その週の月曜にスナップ）に。状態(draft/ready)の説明文を表示
 #      追加：Section 5 を多人数運用版に書き直し
 #      追加：lib/supabase/__tests__/store.test.ts に多人数対応テスト追加（合計 84 テスト）
 #
@@ -572,6 +578,7 @@ export type AIIntent =
   | "kr-quarter-plan"      // クォーター計画
   | "kr-session-extract"   // セッション議事録抽出
   | "kr-why"               // なぜなぜ分析
+  | "okr-tf-analysis"      // TF単位のAI分析（会議ノート＋KRセッション・宣言＋TFタスク）
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AI で PJ 設計
   | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名のみ。KR/TF/O・contribution_memo は渡さない）

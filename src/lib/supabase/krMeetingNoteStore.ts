@@ -89,6 +89,25 @@ export async function fetchKrMeetingNote(krId: string, weekStart: string): Promi
   return { ...note, entries };
 }
 
+/** 指定KR×TFのエントリを、週の新しい順に取得（最大 limit 件。分析の入力に使う）。 */
+export async function fetchTfEntryHistory(krId: string, tfId: string, limit = 8): Promise<(KrNoteTfEntry & { week_start: string })[]> {
+  const notes = await fetchKrMeetingNotesList(krId); // 新しい週順
+  if (notes.length === 0) return [];
+  const idToWeek = new Map(notes.map(n => [n.id, n.week_start]));
+  const { data, error } = await supabase
+    .from("kr_note_tf_entries")
+    .select(ENTRY_COLS)
+    .in("note_id", notes.map(n => n.id))
+    .eq("tf_id", tfId);
+  if (error) throw error;
+  const rows = (data ?? []) as KrNoteTfEntry[];
+  return rows
+    .map(e => ({ ...e, week_start: idToWeek.get(e.note_id) ?? "" }))
+    .filter(e => e.week_start)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start))
+    .slice(0, limit);
+}
+
 /** ノートIDからエントリ込みで取得（引き継ぎ元の取得などに使用）。 */
 export async function fetchKrMeetingNoteById(noteId: string): Promise<KrMeetingNoteFull | null> {
   const { data, error } = await supabase

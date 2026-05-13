@@ -19,6 +19,7 @@
 // │   "kr-quarter-plan"    — クォーター計画立案                    │
 // │   "kr-session-extract" — 議事録からセッション抽出              │
 // │   "kr-why"             — なぜなぜ分析                          │
+// │   "okr-tf-analysis"    — TF単位のAI分析（ノート＋セッション＋タスク）│
 // │   "meeting-extract"    — 会議メモからタスク抽出                │
 // │   "project-plan"       — AI による PJ 設計                     │
 // │   "project-analysis"   — 単一PJの健全性分析（KR/TF/O は渡さない）│
@@ -38,6 +39,7 @@ export type AIIntent =
   | "kr-quarter-plan"      // クォーター計画（KR/TF/セッション履歴をAIに渡す）
   | "kr-session-extract"   // セッション議事録抽出
   | "kr-why"               // なぜなぜ分析
+  | "okr-tf-analysis"      // TF単位のAI分析（会議ノート＋KRセッション・宣言＋TFタスクをAIに渡す）
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AIでPJ設計
   | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名のみ。KR/TF/O・contribution_memo は渡さない）

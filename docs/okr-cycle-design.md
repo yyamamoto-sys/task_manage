@@ -236,8 +236,8 @@ CREATE INDEX idx_kr_reports_kr_id_week ON kr_reports(kr_id, week_start DESC) WHE
 
 | Phase | 内容 | 主な成果物 | 完了条件 |
 |---|---|---|---|
-| **A** | 会議ノート | `kr_meeting_notes` + `kr_note_tf_entries` テーブル＋migration＋`krMeetingNoteStore`＋`KrMeetingNotePanel`＋OKRタブ追加＋週次の下書き引き継ぎ | KRを選ぶ→TFを順に入力→ノートを作成・編集・保存でき、前週から引き継いで新規作成できる |
-| **B** | 分析結果ページ | `okr_tf_analyses` テーブル＋store＋`OkrTfAnalysisPanel`＋OKRタブ追加＋`okr-tf-analysis` intent＋AIクライアント | TF単位でAI分析を生成・手修正・保存でき、過去の分析を遡って読める |
+| **A**✅ | 会議ノート | `kr_meeting_notes` + `kr_note_tf_entries` テーブル＋migration＋`krMeetingNoteStore`＋`KrMeetingNotePanel`＋OKRタブ追加＋週次の下書き引き継ぎ | KRを選ぶ→TFを順に入力→ノートを作成・編集・保存でき、前週から引き継いで新規作成できる |
+| **B**✅ | 分析結果ページ | `okr_tf_analyses` テーブル＋`okrTfAnalysisStore`＋`OkrTfAnalysisPanel`＋OKRタブ「分析結果」＋`okr-tf-analysis` intent＋`okrTfAnalysisClient` | （完了 2026-05-13）TF単位でAI分析を生成・手修正・保存でき、過去の分析を遡って読める |
 | **C** | レポート確認・確定 | `kr_reports` テーブル＋store＋KrReportPanel改修（AI下書き→人が編集→確定）＋③から素材を引く | レポートは確定操作を経て初めて `finalized`（確定者・確定日時を記録）になり、`draft` のままは次週引き継ぎに乗らない |
 | **D** | 循環の見える化＋ループを閉じる | OKRモード上部のサイクルナビ＋各画面の「前回からの引き継ぎ」＋④③→①の自動引き継ぎ（学び・分析示唆を次週ノートにprefill）＋`weekly-operation-flow.md` 改訂 | ①〜④がステップとして見え、確定レポートと最新分析が次週ノートに反映される |
 
@@ -265,4 +265,5 @@ CREATE INDEX idx_kr_reports_kr_id_week ON kr_reports(kr_id, week_start DESC) WHE
 | 2026-05-13 | 初版ドラフト作成（レビュー用）。要件：週次・TF単位・下書き引き継ぎ・TFノートはTF単位でToDo/タスク状況も内包・OneNote併用→一本化・レポートは承認制 |
 | 2026-05-13 | レビュー反映：別の承認者は不要（AI下書き→人が編集して確定）。その他未決事項は実装時判断で進める方針に。Phase A から実装着手 |
 | 2026-05-13 | フィードバック反映：ノートを **TF単位→KR単位（中にTFごとのセクション）** に変更。KRを選んでからそのKRのTFを順に入力する方式。TF説明・TODO 欄を追加。テーブルを `tf_meeting_notes` → `kr_meeting_notes` + `kr_note_tf_entries` に作り直し（migration 20260513b）。TF選択の重複も解消 |
+| 2026-05-13 | Phase B 実装：OKRタブ「📊 分析結果」追加。okr_tf_analyses テーブル＋okrTfAnalysisStore＋OkrTfAnalysisPanel＋okrTfAnalysisClient（AIIntent=okr-tf-analysis）。会議ノート履歴＋KRセッション・宣言＋TFタスクをAIが分析、履歴保存・遡り・手書き編集可 |
 | 2026-05-13 | 会議ノートにクォーターセレクタを追加し、表示TFを選択クォーターのTF割り当て（quarterly_kr_task_forces）に絞るように。TF重複の根本原因（過去クォーターのTFも表示されていた）に対応。割り当て未設定時は従来どおり kr_id で絞る＋注記 |
