@@ -275,21 +275,34 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
       {krId && !loading && tfs.length > 0 && (
         <>
-          {/* ステータス / 引き継ぎ */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <div style={{ display: "flex", gap: "4px" }}>
-              {(["draft", "ready"] as const).map(s => (
-                <button key={s} onClick={() => { setStatus(s); setDirty(true); }} style={{
-                  fontSize: "11px", padding: "4px 12px", borderRadius: "var(--radius-full)",
-                  border: status === s ? "1px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                  background: status === s ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                  color: status === s ? "var(--color-brand)" : "var(--color-text-secondary)",
-                  cursor: "pointer", fontWeight: status === s ? 600 : 400,
+          {/* ステータス */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+            <Label>このノートの状態</Label>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {([
+                { v: "draft" as const, label: "📝 下書き（編集中）" },
+                { v: "ready" as const, label: "✅ チェックイン会議で使う（更新完了）" },
+              ]).map(opt => (
+                <button key={opt.v} onClick={() => { setStatus(opt.v); setDirty(true); }} style={{
+                  fontSize: "12px", padding: "6px 14px", borderRadius: "var(--radius-md)",
+                  border: status === opt.v ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                  background: status === opt.v ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  color: status === opt.v ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: status === opt.v ? 600 : 400,
                 }}>
-                  {s === "draft" ? "下書き" : "チェックインに出せる（ready）"}
+                  {opt.label}
                 </button>
               ))}
             </div>
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
+              {status === "draft"
+                ? "TF会議で更新している途中の状態です。週の途中はこちら。"
+                : "TF会議での更新が一通り終わり、月曜のチェックイン会議でこのノートを見ながら報告できる状態です（「会議で使う」にしても引き続き編集できます）。"}
+            </div>
+          </div>
+
+          {/* 引き継ぎ / 更新情報 */}
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {!note && prevNoteRow && (
               <button onClick={applyCarryOver} style={{ ...primaryBtn, fontSize: "11px", padding: "5px 12px" }}>
                 ↩ 前週（{formatMD(prevNoteRow.week_start)} 週）から引き継いで作成
