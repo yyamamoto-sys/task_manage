@@ -1,5 +1,6 @@
 // src/components/okr/OkrDashboardView.tsx
-// OKR管理モードのメインビュー。タブ型UI：セッション記録（レポート統合）/なぜなぜ/計画/概要
+// OKR管理モードのメインビュー。タブ型UI：会議ノート/セッション記録(分析)/レポート作成/なぜなぜ/計画。
+// 概要は「OKR」ボタン（履歴の隣）からオーバーレイで開く（作業画面と分離）。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
@@ -16,10 +17,11 @@ import { fetchKrMeetingNote, type KrMeetingNote } from "../../lib/supabase/krMee
 import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 
-// 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）＋概要
-// （旧「③分析」タブは②に統合済み。"analysis" 値は localStorage 互換のため型に残す）
+// 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）
+// 概要は OKR ボタン（右上）からオーバーレイで開く。
+// （旧「③分析」タブは②に統合済み。"analysis" / "overview" は localStorage 互換のため型に残す）
 export type OkrActiveTool = "overview" | "note" | "session" | "analysis" | "report" | "why" | "plan" | "guide" | null;
-const OKR_TOOLS: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report"];
+const OKR_TOOLS: OkrActiveTool[] = ["note", "session", "analysis", "report"];
 
 interface Props {
   currentUser: Member;
@@ -57,7 +59,6 @@ const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string }[] =
   { key: "plan", icon: "📅", label: "計画" },
 ];
 const OKR_SUB_TABS: { tool: OkrActiveTool; label: string }[] = [
-  { tool: "overview", label: "概要" },
   { tool: "note",     label: "① 会議ノート" },
   { tool: "session",  label: "② セッション記録&分析" },
   { tool: "report",   label: "③ レポート作成" },
@@ -99,6 +100,10 @@ export function OkrDashboardView({
   }, [activeKrs, activeTfs, todos, tasks]);
 
   const [historyOpen, setHistoryOpen] = useState(false);
+  // 概要オーバーレイ（履歴と同じパターン）
+  const [overviewOpen, setOverviewOpen] = useState(false);
+  // 旧 activeTool === "overview" は廃止。会議ノートへ自動移行。
+  useEffect(() => { if (activeTool === "overview") onSetActiveTool("note"); }, [activeTool, onSetActiveTool]);
   const inOkrGroup = OKR_TOOLS.includes(activeTool);
   // ② セッション記録のモード（合同／単一）。実運用では合同が既定。localStorage に永続化。
   const [sessionMode, setSessionModeRaw] = useState<"joint" | "single">(() => {
@@ -241,7 +246,7 @@ export function OkrDashboardView({
           return (
             <button
               key={tab.key}
-              onClick={() => onSetActiveTool(tab.key === "okr" ? (inOkrGroup ? activeTool : "overview") : tab.key)}
+              onClick={() => onSetActiveTool(tab.key === "okr" ? (inOkrGroup ? activeTool : "note") : tab.key)}
               style={{
                 display: "flex", alignItems: "center", gap: "5px", padding: "10px 18px",
                 background: "transparent", border: "none",
@@ -255,12 +260,23 @@ export function OkrDashboardView({
             </button>
           );
         })}
-        {/* 履歴ボタン（右端） */}
+        {/* OKR・履歴ボタン（右端） */}
+        <button
+          onClick={() => setOverviewOpen(true)}
+          title="Objective・KR の概要を開く"
+          style={{
+            marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px", padding: "10px 14px",
+            background: "transparent", border: "none", borderBottom: "2px solid transparent", marginBottom: "-1px",
+            fontSize: "11px", fontWeight: "400", color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: "14px" }}>🎯</span><span>OKR</span>
+        </button>
         <button
           onClick={() => setHistoryOpen(true)}
           title="セッション履歴を開く"
           style={{
-            marginLeft: "auto", display: "flex", alignItems: "center", gap: "4px", padding: "10px 14px",
+            display: "flex", alignItems: "center", gap: "4px", padding: "10px 14px",
             background: "transparent", border: "none", borderBottom: "2px solid transparent", marginBottom: "-1px",
             fontSize: "11px", fontWeight: "400", color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0,
           }}
@@ -307,8 +323,8 @@ export function OkrDashboardView({
         }}>
           {!selectedKrId ? (
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              「概要」でKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション記録&分析→③レポート）が表示されます。
-              <button onClick={() => onSetActiveTool("overview")} style={{ marginLeft: "8px", fontSize: "11px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", textDecoration: "underline", padding: 0 }}>概要へ</button>
+              右上の「🎯 OKR」を開いてKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション記録&分析→③レポート）が表示されます。
+              <button onClick={() => setOverviewOpen(true)} style={{ marginLeft: "8px", fontSize: "11px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", textDecoration: "underline", padding: 0 }}>OKRを開く</button>
             </span>
           ) : (
             <>
@@ -354,225 +370,7 @@ export function OkrDashboardView({
           </div>
         )}
 
-        {/* ─── 概要タブ ─── */}
-        {activeTool === "overview" && (
-          <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "20px" }}>
-
-            {/* 週次ガイダンスバナー */}
-            {guidanceBanner && (
-              <div style={{
-                display: "flex", alignItems: "center", gap: "12px",
-                padding: "12px 16px",
-                background: `${guidanceBanner.color}18`,
-                border: `1px solid ${guidanceBanner.color}40`,
-                borderLeft: `3px solid ${guidanceBanner.color}`,
-                borderRadius: "var(--radius-md)",
-              }}>
-                <span style={{ fontSize: "16px" }}>{guidanceBanner.icon}</span>
-                <div style={{
-                  flex: 1, fontSize: "13px",
-                  fontWeight: guidanceBanner.urgent ? "600" : "400",
-                  color: "var(--color-text-primary)",
-                }}>
-                  {guidanceBanner.text}
-                </div>
-                {guidanceBanner.action && (
-                  <button
-                    onClick={() => onSetActiveTool(guidanceBanner.action!)}
-                    style={{
-                      padding: "6px 14px", fontSize: "12px", fontWeight: "600",
-                      background: guidanceBanner.color, color: "#fff",
-                      border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", whiteSpace: "nowrap",
-                    }}
-                  >記録する →</button>
-                )}
-              </div>
-            )}
-
-            {/* Objective ヘッダー */}
-            {objective ? (
-              <div style={{
-                background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.06))",
-                border: "1px solid rgba(99,102,241,0.2)",
-                borderRadius: "var(--radius-lg)", padding: "20px 24px",
-              }}>
-                <div style={{ fontSize: "10px", fontWeight: "600", color: "#6366f1", letterSpacing: "0.08em", marginBottom: "6px", textTransform: "uppercase" }}>
-                  Objective · {objective.period}
-                </div>
-                <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-                  {objective.title}
-                </div>
-                {objective.purpose && (
-                  <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "6px", lineHeight: 1.6 }}>
-                    {objective.purpose}
-                  </div>
-                )}
-                <div style={{ marginTop: "12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                  KR {activeKrs.length}件 · TF {activeTfs.length}件
-                </div>
-              </div>
-            ) : (
-              <div style={{
-                background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-lg)", padding: "20px 24px",
-                fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center",
-              }}>
-                Objectiveが設定されていません。設定から登録してください。
-              </div>
-            )}
-
-            {/* KR カード一覧 */}
-            {activeKrs.length > 0 && (
-              <div>
-                <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.06em", marginBottom: "10px", textTransform: "uppercase" }}>
-                  Key Results
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                  {activeKrs.map(kr => {
-                    const stat = krStats.find(s => s.krId === kr.id);
-                    const isSelected = kr.id === selectedKrId;
-                    const progressPct = stat && stat.total > 0 ? Math.round((stat.done / stat.total) * 100) : 0;
-                    const sessions = krSessionsMap[kr.id] ?? [];
-                    const latestSession = sessions[0] ?? null;
-                    const thisWeekCheckin = sessions.find(s => s.week_start === thisMonday && s.session_type === "checkin");
-                    const thisWeekWin = sessions.find(s => s.week_start === thisMonday && s.session_type === "win_session");
-                    return (
-                      <div
-                        key={kr.id}
-                        onClick={() => onSelectKr(isSelected ? null : kr.id)}
-                        style={{
-                          background: isSelected ? "rgba(99,102,241,0.06)" : "var(--color-bg-secondary)",
-                          border: `1px solid ${isSelected ? "rgba(99,102,241,0.35)" : "var(--color-border-primary)"}`,
-                          borderRadius: "var(--radius-lg)", padding: "14px 16px",
-                          cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
-                        }}
-                      >
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
-                          {/* 選択インジケーター */}
-                          <div style={{
-                            width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0, marginTop: "2px",
-                            background: isSelected ? "#6366f1" : "var(--color-bg-tertiary)",
-                            border: `2px solid ${isSelected ? "#6366f1" : "var(--color-border-primary)"}`,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                          }}>
-                            {isSelected && <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#fff" }} />}
-                          </div>
-
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            {/* KRタイトル + 最新シグナル */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                              <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-                                {kr.title}
-                              </span>
-                              {latestSession?.signal && (
-                                <span style={{
-                                  fontSize: "11px", padding: "1px 8px",
-                                  background: `${SIGNAL_COLOR[latestSession.signal]}14`,
-                                  color: SIGNAL_COLOR[latestSession.signal],
-                                  border: `1px solid ${SIGNAL_COLOR[latestSession.signal]}40`,
-                                  borderRadius: "var(--radius-full)", fontWeight: "600", whiteSpace: "nowrap",
-                                }}>
-                                  {SIGNAL_DOT[latestSession.signal]} 最新シグナル
-                                </span>
-                              )}
-                            </div>
-
-                            {/* 今週の記録状態 */}
-                            {(thisWeekCheckin || thisWeekWin) && (
-                              <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
-                                {thisWeekCheckin?.signal && (
-                                  <span style={{
-                                    fontSize: "10px", padding: "2px 8px",
-                                    background: `${SIGNAL_COLOR[thisWeekCheckin.signal]}12`,
-                                    border: `1px solid ${SIGNAL_COLOR[thisWeekCheckin.signal]}40`,
-                                    color: SIGNAL_COLOR[thisWeekCheckin.signal],
-                                    borderRadius: "var(--radius-full)",
-                                  }}>
-                                    🗓️ チェックイン済 {SIGNAL_DOT[thisWeekCheckin.signal]}
-                                  </span>
-                                )}
-                                {thisWeekWin?.signal && (
-                                  <span style={{
-                                    fontSize: "10px", padding: "2px 8px",
-                                    background: `${SIGNAL_COLOR[thisWeekWin.signal]}12`,
-                                    border: `1px solid ${SIGNAL_COLOR[thisWeekWin.signal]}40`,
-                                    color: SIGNAL_COLOR[thisWeekWin.signal],
-                                    borderRadius: "var(--radius-full)",
-                                  }}>
-                                    🏆 ウィン済 {SIGNAL_DOT[thisWeekWin.signal]}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-
-                            {/* TF チップ */}
-                            {stat && stat.tfs.length > 0 && (
-                              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "8px" }}>
-                                {stat.tfs.map(tf => (
-                                  <span key={tf.id} style={{
-                                    fontSize: "10px", padding: "2px 7px",
-                                    background: "var(--color-bg-tertiary)",
-                                    border: "1px solid var(--color-border-primary)",
-                                    borderRadius: "var(--radius-sm)",
-                                    color: "var(--color-text-secondary)",
-                                  }}>
-                                    TF{tf.tf_number} {tf.name}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-
-                            {/* タスク進捗バー */}
-                            {stat && stat.total > 0 && (
-                              <div style={{ marginTop: "10px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
-                                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>タスク進捗</span>
-                                  <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", fontWeight: "600" }}>
-                                    {stat.done}/{stat.total} ({progressPct}%)
-                                  </span>
-                                </div>
-                                <div style={{ height: "3px", background: "var(--color-bg-tertiary)", borderRadius: "2px", overflow: "hidden" }}>
-                                  <div style={{
-                                    height: "100%", width: `${progressPct}%`,
-                                    background: progressPct >= 60 ? "#10b981" : progressPct >= 40 ? "#f59e0b" : "#6366f1",
-                                    borderRadius: "2px", transition: "width 0.4s",
-                                  }} />
-                                </div>
-                              </div>
-                            )}
-                          </div>
-
-                          <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end", flexShrink: 0 }}>
-                            {/* なぜなぜ分析ボタン */}
-                            <button
-                              onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onSetActiveTool("why"); }}
-                              title="このKRをなぜなぜ分析"
-                              style={{
-                                padding: "4px 8px", fontSize: "10px",
-                                background: "transparent",
-                                border: "1px solid var(--color-border-primary)",
-                                borderRadius: "var(--radius-sm)",
-                                color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
-                              }}
-                            >🔍 分析</button>
-                            {/* 最終記録日時（B2） */}
-                            {latestSession && (
-                              <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", textAlign: "right", lineHeight: 1.4 }}>
-                                <div>最終記録</div>
-                                <div>{latestSession.week_start}</div>
-                                <div>{SESSION_TYPE_LABEL[latestSession.session_type]}</div>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+        {/* 概要は右上「🎯 OKR」ボタンからオーバーレイで表示（下部の overviewOpen ブロック参照） */}
 
         {/* ─── 会議ノートタブ（KR×週、中にTFごとのセクション） ─── */}
         {activeTool === "note" && (
@@ -669,6 +467,271 @@ export function OkrDashboardView({
           <OkrGuide onSetActiveTool={onSetActiveTool} />
         )}
       </div>
+
+      {/* ─── 概要オーバーレイ（右上「🎯 OKR」ボタンから開く） ─── */}
+      {overviewOpen && (
+        <div
+          style={{
+            position: "fixed", inset: 0, zIndex: 300,
+            background: "rgba(0,0,0,0.45)",
+            display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+          }}
+          onClick={e => { if (e.target === e.currentTarget) setOverviewOpen(false); }}
+        >
+          <div
+            className="panel-slide-up"
+            style={{
+              width: "min(820px, 100vw)",
+              background: "var(--color-bg-primary)",
+              display: "flex", flexDirection: "column",
+              overflow: "hidden",
+              boxShadow: "-4px 0 24px rgba(0,0,0,0.18)",
+            }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{
+              padding: "14px 20px",
+              borderBottom: "1px solid var(--color-border-primary)",
+              display: "flex", alignItems: "center", gap: "10px",
+              flexShrink: 0,
+            }}>
+              <span style={{ fontSize: "18px" }}>🎯</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+                  OKR概要
+                </div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                  Objective・KR の一覧と週次ガイダンス（KRを選ぶと作業画面のサイクル進捗に反映されます）
+                </div>
+              </div>
+              <button
+                onClick={() => setOverviewOpen(false)}
+                style={{
+                  background: "transparent", border: "none", cursor: "pointer",
+                  fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1,
+                }}
+              >✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflow: "auto", padding: "20px 24px", display: "flex", flexDirection: "column", gap: "20px" }}>
+
+              {/* 週次ガイダンスバナー */}
+              {guidanceBanner && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: "12px",
+                  padding: "12px 16px",
+                  background: `${guidanceBanner.color}18`,
+                  border: `1px solid ${guidanceBanner.color}40`,
+                  borderLeft: `3px solid ${guidanceBanner.color}`,
+                  borderRadius: "var(--radius-md)",
+                }}>
+                  <span style={{ fontSize: "16px" }}>{guidanceBanner.icon}</span>
+                  <div style={{
+                    flex: 1, fontSize: "13px",
+                    fontWeight: guidanceBanner.urgent ? "600" : "400",
+                    color: "var(--color-text-primary)",
+                  }}>
+                    {guidanceBanner.text}
+                  </div>
+                  {guidanceBanner.action && (
+                    <button
+                      onClick={() => { onSetActiveTool(guidanceBanner.action!); setOverviewOpen(false); }}
+                      style={{
+                        padding: "6px 14px", fontSize: "12px", fontWeight: "600",
+                        background: guidanceBanner.color, color: "#fff",
+                        border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", whiteSpace: "nowrap",
+                      }}
+                    >記録する →</button>
+                  )}
+                </div>
+              )}
+
+              {/* Objective ヘッダー */}
+              {objective ? (
+                <div style={{
+                  background: "linear-gradient(135deg, rgba(99,102,241,0.08), rgba(139,92,246,0.06))",
+                  border: "1px solid rgba(99,102,241,0.2)",
+                  borderRadius: "var(--radius-lg)", padding: "20px 24px",
+                }}>
+                  <div style={{ fontSize: "10px", fontWeight: "600", color: "#6366f1", letterSpacing: "0.08em", marginBottom: "6px", textTransform: "uppercase" }}>
+                    Objective · {objective.period}
+                  </div>
+                  <div style={{ fontSize: "18px", fontWeight: "700", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+                    {objective.title}
+                  </div>
+                  {objective.purpose && (
+                    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "6px", lineHeight: 1.6 }}>
+                      {objective.purpose}
+                    </div>
+                  )}
+                  <div style={{ marginTop: "12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                    KR {activeKrs.length}件 · TF {activeTfs.length}件
+                  </div>
+                </div>
+              ) : (
+                <div style={{
+                  background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-lg)", padding: "20px 24px",
+                  fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center",
+                }}>
+                  Objectiveが設定されていません。設定から登録してください。
+                </div>
+              )}
+
+              {/* KR カード一覧 */}
+              {activeKrs.length > 0 && (
+                <div>
+                  <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.06em", marginBottom: "10px", textTransform: "uppercase" }}>
+                    Key Results
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {activeKrs.map(kr => {
+                      const stat = krStats.find(s => s.krId === kr.id);
+                      const isSelected = kr.id === selectedKrId;
+                      const progressPct = stat && stat.total > 0 ? Math.round((stat.done / stat.total) * 100) : 0;
+                      const sessions = krSessionsMap[kr.id] ?? [];
+                      const latestSession = sessions[0] ?? null;
+                      const thisWeekCheckin = sessions.find(s => s.week_start === thisMonday && s.session_type === "checkin");
+                      const thisWeekWin = sessions.find(s => s.week_start === thisMonday && s.session_type === "win_session");
+                      return (
+                        <div
+                          key={kr.id}
+                          onClick={() => onSelectKr(isSelected ? null : kr.id)}
+                          style={{
+                            background: isSelected ? "rgba(99,102,241,0.06)" : "var(--color-bg-secondary)",
+                            border: `1px solid ${isSelected ? "rgba(99,102,241,0.35)" : "var(--color-border-primary)"}`,
+                            borderRadius: "var(--radius-lg)", padding: "14px 16px",
+                            cursor: "pointer", transition: "border-color 0.15s, background 0.15s",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: "10px" }}>
+                            {/* 選択インジケーター */}
+                            <div style={{
+                              width: "20px", height: "20px", borderRadius: "50%", flexShrink: 0, marginTop: "2px",
+                              background: isSelected ? "#6366f1" : "var(--color-bg-tertiary)",
+                              border: `2px solid ${isSelected ? "#6366f1" : "var(--color-border-primary)"}`,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>
+                              {isSelected && <div style={{ width: "6px", height: "6px", borderRadius: "50%", background: "#fff" }} />}
+                            </div>
+
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {/* KRタイトル + 最新シグナル */}
+                              <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                                <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+                                  {kr.title}
+                                </span>
+                                {latestSession?.signal && (
+                                  <span style={{
+                                    fontSize: "11px", padding: "1px 8px",
+                                    background: `${SIGNAL_COLOR[latestSession.signal]}14`,
+                                    color: SIGNAL_COLOR[latestSession.signal],
+                                    border: `1px solid ${SIGNAL_COLOR[latestSession.signal]}40`,
+                                    borderRadius: "var(--radius-full)", fontWeight: "600", whiteSpace: "nowrap",
+                                  }}>
+                                    {SIGNAL_DOT[latestSession.signal]} 最新シグナル
+                                  </span>
+                                )}
+                              </div>
+
+                              {/* 今週の記録状態 */}
+                              {(thisWeekCheckin || thisWeekWin) && (
+                                <div style={{ display: "flex", gap: "6px", marginTop: "6px", flexWrap: "wrap" }}>
+                                  {thisWeekCheckin?.signal && (
+                                    <span style={{
+                                      fontSize: "10px", padding: "2px 8px",
+                                      background: `${SIGNAL_COLOR[thisWeekCheckin.signal]}12`,
+                                      border: `1px solid ${SIGNAL_COLOR[thisWeekCheckin.signal]}40`,
+                                      color: SIGNAL_COLOR[thisWeekCheckin.signal],
+                                      borderRadius: "var(--radius-full)",
+                                    }}>
+                                      🗓️ チェックイン済 {SIGNAL_DOT[thisWeekCheckin.signal]}
+                                    </span>
+                                  )}
+                                  {thisWeekWin?.signal && (
+                                    <span style={{
+                                      fontSize: "10px", padding: "2px 8px",
+                                      background: `${SIGNAL_COLOR[thisWeekWin.signal]}12`,
+                                      border: `1px solid ${SIGNAL_COLOR[thisWeekWin.signal]}40`,
+                                      color: SIGNAL_COLOR[thisWeekWin.signal],
+                                      borderRadius: "var(--radius-full)",
+                                    }}>
+                                      🏆 ウィン済 {SIGNAL_DOT[thisWeekWin.signal]}
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+
+                              {/* TF チップ */}
+                              {stat && stat.tfs.length > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginTop: "8px" }}>
+                                  {stat.tfs.map(tf => (
+                                    <span key={tf.id} style={{
+                                      fontSize: "10px", padding: "2px 7px",
+                                      background: "var(--color-bg-tertiary)",
+                                      border: "1px solid var(--color-border-primary)",
+                                      borderRadius: "var(--radius-sm)",
+                                      color: "var(--color-text-secondary)",
+                                    }}>
+                                      TF{tf.tf_number} {tf.name}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* タスク進捗バー */}
+                              {stat && stat.total > 0 && (
+                                <div style={{ marginTop: "10px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>タスク進捗</span>
+                                    <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", fontWeight: "600" }}>
+                                      {stat.done}/{stat.total} ({progressPct}%)
+                                    </span>
+                                  </div>
+                                  <div style={{ height: "3px", background: "var(--color-bg-tertiary)", borderRadius: "2px", overflow: "hidden" }}>
+                                    <div style={{
+                                      height: "100%", width: `${progressPct}%`,
+                                      background: progressPct >= 60 ? "#10b981" : progressPct >= 40 ? "#f59e0b" : "#6366f1",
+                                      borderRadius: "2px", transition: "width 0.4s",
+                                    }} />
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            <div style={{ display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end", flexShrink: 0 }}>
+                              {/* なぜなぜ分析ボタン */}
+                              <button
+                                onClick={e => { e.stopPropagation(); onSelectKr(kr.id); onSetActiveTool("why"); setOverviewOpen(false); }}
+                                title="このKRをなぜなぜ分析"
+                                style={{
+                                  padding: "4px 8px", fontSize: "10px",
+                                  background: "transparent",
+                                  border: "1px solid var(--color-border-primary)",
+                                  borderRadius: "var(--radius-sm)",
+                                  color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
+                                }}
+                              >🔍 分析</button>
+                              {/* 最終記録日時 */}
+                              {latestSession && (
+                                <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", textAlign: "right", lineHeight: 1.4 }}>
+                                  <div>最終記録</div>
+                                  <div>{latestSession.week_start}</div>
+                                  <div>{SESSION_TYPE_LABEL[latestSession.session_type]}</div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── 履歴オーバーレイ ─── */}
       {historyOpen && (

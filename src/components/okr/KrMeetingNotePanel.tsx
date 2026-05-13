@@ -105,10 +105,9 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
 
-  const [tfIndex, setTfIndex] = useState(0);
-  // どのTF（tf_id）を開いて確認したか。新規作成はすべてのTFを確認するまでできない
-  const [visitedTfs, setVisitedTfs] = useState<Set<string>>(new Set());
-  useEffect(() => { setTfIndex(0); setVisitedTfs(new Set()); }, [krId, weekStart, quarter]);
+  // TF を畳んだかどうか（既定はすべて展開・一画面に並ぶ）
+  const [collapsedTfs, setCollapsedTfs] = useState<Set<string>>(new Set());
+  useEffect(() => { setCollapsedTfs(new Set()); }, [krId, weekStart, quarter]);
 
   // 引き継ぎメモは applyCarryOver / 「↻ 引き継ぎメモを自動生成」ボタンで都度フェッチ＆生成する
 
@@ -241,31 +240,21 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
     return !!(e.tf_theme || e.target_definition || e.eval_criteria || e.hypotheses || e.facts || e.next_actions || e.progress_reason || e.todo || e.progress_pct != null);
   }, [entriesByTf]);
 
-  const currentTf = tfs[tfIndex] ?? null;
-  const isLastTf = tfIndex === tfs.length - 1;
   const krTitle = krs.find(k => k.id === krId)?.title ?? "";
 
-  // 開いているTFを「確認済み」にマーク（既存ノートを開いた場合は最初から全TF確認済み扱い）
-  useEffect(() => {
-    if (currentTf) setVisitedTfs(prev => prev.has(currentTf.id) ? prev : new Set(prev).add(currentTf.id));
-  }, [currentTf]);
-  useEffect(() => {
-    if (note && tfs.length > 0) setVisitedTfs(new Set(tfs.map(t => t.id)));
-  }, [note, tfs]);
-
-  const allTfsVisited = tfs.length > 0 && tfs.every(t => visitedTfs.has(t.id));
-  const unvisitedCount = tfs.filter(t => !visitedTfs.has(t.id)).length;
-  // 「ノートを作成」が押せる条件：既存ノートなら常にOK（保存）、新規なら全TFを確認したら
-  const canPersist = !!note || allTfsVisited;
-
-  // 現在TF配下のToDo/タスク件数（記入の参考）
-  const tfWork = useMemo(() => {
-    if (!currentTf) return null;
-    const tfTodos = rawTodos.filter(td => !td.is_deleted && td.tf_id === currentTf.id);
+  // TFごとの配下ToDo/タスク件数（カード見出しの参考表示用）
+  const tfWorkOf = useCallback((tfId: string) => {
+    const tfTodos = rawTodos.filter(td => !td.is_deleted && td.tf_id === tfId);
     const todoIds = new Set(tfTodos.map(td => td.id));
     const tfTasks = rawTasks.filter(t => !t.is_deleted && (t.todo_ids ?? []).some(id => todoIds.has(id)));
     return { todoCount: tfTodos.length, taskCount: tfTasks.length, taskDone: tfTasks.filter(t => t.status === "done").length };
-  }, [currentTf, rawTodos, rawTasks]);
+  }, [rawTodos, rawTasks]);
+
+  const toggleTfCollapsed = useCallback((tfId: string) => {
+    setCollapsedTfs(prev => { const next = new Set(prev); if (next.has(tfId)) next.delete(tfId); else next.add(tfId); return next; });
+  }, []);
+  const expandAll = useCallback(() => setCollapsedTfs(new Set()), []);
+  const collapseAll = useCallback(() => setCollapsedTfs(new Set(tfs.map(t => t.id))), [tfs]);
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -406,116 +395,90 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             )}
           </div>
 
-          {/* TFステップ・ストリップ（●=確認済み ○=未確認） */}
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
-            {tfs.map((tf, i) => {
-              const visited = visitedTfs.has(tf.id);
-              return (
-                <button key={tf.id} onClick={() => setTfIndex(i)} style={{
-                  fontSize: "11px", padding: "5px 11px", borderRadius: "var(--radius-md)",
-                  border: i === tfIndex ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                  background: i === tfIndex ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                  color: i === tfIndex ? "var(--color-brand)" : (visited ? "var(--color-text-secondary)" : "var(--color-text-tertiary)"),
-                  cursor: "pointer", fontWeight: i === tfIndex ? 600 : 400,
-                }}>
-                  <span style={{ opacity: 0.8 }}>{hasContent(tf.id) ? "✓" : visited ? "●" : "○"}</span> TF{tf.tf_number} {tf.name}
-                </button>
-              );
-            })}
-            {!note && (
-              <span style={{ fontSize: "10px", color: allTfsVisited ? "var(--color-text-success)" : "var(--color-text-tertiary)", marginLeft: "4px" }}>
-                {allTfsVisited ? "✓ すべてのTFを確認済み — ノートを作成できます" : `残り ${unvisitedCount} 件のTFを確認するとノートを作成できます`}
-              </span>
-            )}
+          {/* TF展開／折りたたみツールバー */}
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>{tfs.length}件のTFを番号順に並べています。一画面で全TFを入力できます。</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={expandAll} style={ghostBtn}>すべて開く</button>
+            <button onClick={collapseAll} style={ghostBtn}>すべて畳む</button>
           </div>
 
-          {/* 現在TFのフォーム */}
-          {currentTf && (
-            <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-lg)", padding: "14px 16px", display: "flex", flexDirection: "column", gap: "12px" }}>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>TF{currentTf.tf_number} {currentTf.name}</span>
-                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                  （{tfIndex + 1} / {tfs.length}）{tfWork && <> ・配下：ToDo {tfWork.todoCount}件・タスク {tfWork.taskDone}/{tfWork.taskCount}件完了</>}
-                </span>
-              </div>
+          {/* TFカード（番号順・縦並び・折りたたみ可） */}
+          {tfs.map(tf => {
+            const collapsed = collapsedTfs.has(tf.id);
+            const has = hasContent(tf.id);
+            const work = tfWorkOf(tf.id);
+            const entry = entryOf(tf.id);
+            return (
+              <div key={tf.id} style={{ border: `1px solid ${has ? "var(--color-brand-light)" : "var(--color-border-primary)"}`, borderLeft: `3px solid ${has ? "var(--color-brand)" : "var(--color-border-primary)"}`, borderRadius: "var(--radius-lg)", padding: collapsed ? "10px 14px" : "14px 16px", display: "flex", flexDirection: "column", gap: collapsed ? 0 : "12px", background: "var(--color-bg-primary)" }}>
+                <button type="button" onClick={() => toggleTfCollapsed(tf.id)} aria-expanded={!collapsed} style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", cursor: "pointer", userSelect: "none", background: "transparent", border: "none", padding: 0, textAlign: "left", width: "100%", color: "inherit", font: "inherit" }}>
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", width: "10px", display: "inline-block" }}>{collapsed ? "▶" : "▼"}</span>
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>TF{tf.tf_number} {tf.name}</span>
+                  {has && <span style={{ fontSize: "10px", color: "var(--color-brand)", fontWeight: 600 }}>✓ 入力済み</span>}
+                  {entry.progress_pct != null && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>進捗 {entry.progress_pct}%</span>}
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>配下：ToDo {work.todoCount}件・タスク {work.taskDone}/{work.taskCount}件完了</span>
+                </button>
 
-              <Field label="TFの説明・その期のテーマ（OneNoteの「★1Q＝…」相当）">
-                <TextArea value={entryOf(currentTf.id).tf_theme} onChange={v => patchEntry(currentTf.id, { tf_theme: v })} rows={3} placeholder="例：★1Q＝“なぜこの商品をアミタがやるのか”を説明できる状態をつくる四半期" />
-              </Field>
-              <Field label="必達の定義（この月に到達したい状態）">
-                <TextArea value={entryOf(currentTf.id).target_definition} onChange={v => patchEntry(currentTf.id, { target_definition: v })} rows={5} placeholder="例：・4月の商品開発会議で積み残された「…」が整理され…" />
-              </Field>
-              <Field label="評価観点（何をもって達成と見るか）">
-                <TextArea value={entryOf(currentTf.id).eval_criteria} onChange={v => patchEntry(currentTf.id, { eval_criteria: v })} rows={3} />
-              </Field>
+                {!collapsed && (
+                  <>
+                    <Field label="TFの説明・その期のテーマ（OneNoteの「★1Q＝…」相当）">
+                      <TextArea value={entry.tf_theme} onChange={v => patchEntry(tf.id, { tf_theme: v })} rows={3} placeholder="例：★1Q＝&quot;なぜこの商品をアミタがやるのか&quot;を説明できる状態をつくる四半期" />
+                    </Field>
+                    <Field label="必達の定義（この月に到達したい状態）">
+                      <TextArea value={entry.target_definition} onChange={v => patchEntry(tf.id, { target_definition: v })} rows={5} placeholder="例：・4月の商品開発会議で積み残された「…」が整理され…" />
+                    </Field>
+                    <Field label="評価観点（何をもって達成と見るか）">
+                      <TextArea value={entry.eval_criteria} onChange={v => patchEntry(tf.id, { eval_criteria: v })} rows={3} />
+                    </Field>
 
-              <div style={{ borderTop: "1px solid var(--color-border-primary)", paddingTop: "8px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)" }}>チェックイン向け（毎週更新）</div>
-              <Field label="① 先週動かした前提・仮説">
-                <TextArea value={entryOf(currentTf.id).hypotheses} onChange={v => patchEntry(currentTf.id, { hypotheses: v })} rows={5} />
-              </Field>
-              <Field label="② 実際に起きたこと（事実・反応）　※評価・解釈は書かない">
-                <TextArea value={entryOf(currentTf.id).facts} onChange={v => patchEntry(currentTf.id, { facts: v })} rows={6} />
-              </Field>
-              <Field label="③ 次にやる一手（判断）">
-                <TextArea value={entryOf(currentTf.id).next_actions} onChange={v => patchEntry(currentTf.id, { next_actions: v })} rows={5} />
-              </Field>
-              <Field label="④ 現在のプロセス状態">
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                  <input type="number" min={0} max={100}
-                    value={entryOf(currentTf.id).progress_pct ?? ""}
-                    onChange={e => patchEntry(currentTf.id, { progress_pct: e.target.value === "" ? null : Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)) })}
-                    placeholder="—"
-                    style={{ width: "70px", padding: "6px 8px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
-                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>%</span>
-                </div>
-                <TextArea value={entryOf(currentTf.id).progress_reason} onChange={v => patchEntry(currentTf.id, { progress_reason: v })} rows={4} placeholder="その%と判断した理由（達成できている点／まだの点）" />
-              </Field>
-              <Field label="▶ TODO（その時期のToDo）">
-                <TextArea value={entryOf(currentTf.id).todo} onChange={v => patchEntry(currentTf.id, { todo: v })} rows={5} />
-              </Field>
-
-              {/* TFナビ */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", paddingTop: "4px" }}>
-                <button onClick={() => setTfIndex(i => Math.max(0, i - 1))} disabled={tfIndex === 0} style={{ ...ghostBtn, opacity: tfIndex === 0 ? 0.4 : 1, cursor: tfIndex === 0 ? "default" : "pointer" }}>← 前のTF</button>
-                <div style={{ flex: 1 }} />
-                {!isLastTf ? (
-                  <button onClick={() => setTfIndex(i => Math.min(tfs.length - 1, i + 1))} style={primaryBtn}>次のTF（{tfIndex + 2}/{tfs.length}）→</button>
-                ) : (
-                  <button
-                    onClick={(saving || !canPersist) ? undefined : handleSave}
-                    disabled={saving || !canPersist}
-                    title={!canPersist ? `残り ${unvisitedCount} 件のTFを確認してください` : ""}
-                    style={{ ...primaryBtn, opacity: (saving || !canPersist) ? 0.5 : 1, cursor: (saving || !canPersist) ? "not-allowed" : "pointer" }}
-                  >
-                    {saving ? "保存中…" : note ? "このKRノートを保存" : (canPersist ? "このKRノートを作成" : `残り ${unvisitedCount} 件のTFを確認`)}
-                  </button>
+                    <div style={{ borderTop: "1px solid var(--color-border-primary)", paddingTop: "8px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)" }}>チェックイン向け（毎週更新）</div>
+                    <Field label="① 先週動かした前提・仮説">
+                      <TextArea value={entry.hypotheses} onChange={v => patchEntry(tf.id, { hypotheses: v })} rows={5} />
+                    </Field>
+                    <Field label="② 実際に起きたこと（事実・反応）　※評価・解釈は書かない">
+                      <TextArea value={entry.facts} onChange={v => patchEntry(tf.id, { facts: v })} rows={6} />
+                    </Field>
+                    <Field label="③ 次にやる一手（判断）">
+                      <TextArea value={entry.next_actions} onChange={v => patchEntry(tf.id, { next_actions: v })} rows={5} />
+                    </Field>
+                    <Field label="④ 現在のプロセス状態">
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                        <input type="number" min={0} max={100}
+                          value={entry.progress_pct ?? ""}
+                          onChange={e => patchEntry(tf.id, { progress_pct: e.target.value === "" ? null : Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)) })}
+                          placeholder="—"
+                          style={{ width: "70px", padding: "6px 8px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
+                        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>%</span>
+                      </div>
+                      <TextArea value={entry.progress_reason} onChange={v => patchEntry(tf.id, { progress_reason: v })} rows={4} placeholder="その%と判断した理由（達成できている点／まだの点）" />
+                    </Field>
+                    <Field label="▶ TODO（その時期のToDo）">
+                      <TextArea value={entry.todo} onChange={v => patchEntry(tf.id, { todo: v })} rows={5} />
+                    </Field>
+                  </>
                 )}
               </div>
-            </div>
-          )}
+            );
+          })}
 
           {saveError && <ErrBox>{saveError}</ErrBox>}
 
-          {/* 下部バー：既存ノートは常に保存可。新規ノートは全TFを確認するまで作成ボタンは出さない */}
+          {/* 下部バー：一画面に全TFが見えているため、いつでも保存可。 */}
           <div style={{ position: "sticky", bottom: 0, background: "var(--color-bg-primary)", borderTop: "1px solid var(--color-border-primary)", padding: "10px 0", display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "11px", color: savedFlash ? "var(--color-text-success)" : "var(--color-text-tertiary)", flex: 1 }}>
               {savedFlash
                 ? "✓ 保存しました"
                 : note
                   ? (dirty ? "未保存の変更があります" : `保存済み（「${krTitle}」${formatMD(weekStart)}週）`)
-                  : (canPersist ? "すべてのTFを確認しました。ノートを作成できます" : `各TFを順に確認してください（残り ${unvisitedCount} 件）`)}
+                  : (dirty ? "ノートを保存できます" : "各TFに記入してください")}
             </span>
-            {note ? (
-              <button onClick={handleSave} disabled={saving || !dirty} style={{ ...primaryBtn, opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? "default" : "pointer" }}>
-                {saving ? "保存中…" : "保存"}
-              </button>
-            ) : canPersist ? (
-              <button onClick={saving ? undefined : handleSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.5 : 1 }}>
-                {saving ? "保存中…" : "このKRノートを作成"}
-              </button>
-            ) : (
-              <button onClick={() => setTfIndex(tfs.findIndex(t => !visitedTfs.has(t.id)))} style={ghostBtn}>未確認のTFへ →</button>
-            )}
+            <button
+              onClick={saving ? undefined : handleSave}
+              disabled={saving || (!dirty && !!note) || tfs.length === 0}
+              style={{ ...primaryBtn, opacity: (saving || (!dirty && !!note) || tfs.length === 0) ? 0.5 : 1, cursor: (saving || (!dirty && !!note) || tfs.length === 0) ? "default" : "pointer" }}
+            >
+              {saving ? "保存中…" : note ? "保存" : "このKRノートを作成"}
+            </button>
           </div>
         </>
       )}
