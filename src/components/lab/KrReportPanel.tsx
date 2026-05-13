@@ -108,7 +108,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
     return () => { cancelled = true; };
   }, [selectedKrId, mode, thisMonday]);
 
-  // KR変更時：③ 分析の最新を取得（レポート生成の素材にする）
+  // KR変更時：このKRの最新AI分析を取得（②セッション記録&分析で保存されたもの。レポート生成の素材）
   useEffect(() => {
     if (!selectedKrId) { setLatestAnalysis(null); return; }
     let cancelled = false;
@@ -144,9 +144,9 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
     setEditing(false);
 
     try {
-      // ③ 分析の最新結果があれば素材として議事メモに添える
+      // ② セッション記録&分析で保存されたこのKRの最新AI分析があれば素材として議事メモに添える
       const notes = latestAnalysis
-        ? `${meetingNotes.trim()}\n\n【参考：③ 分析の最新結果（${fmtDateTime(latestAnalysis.created_at)}）】\n${latestAnalysis.content}`
+        ? `${meetingNotes.trim()}\n\n【参考：このKRの最新AI分析（${fmtDateTime(latestAnalysis.created_at)}）】\n${latestAnalysis.content}`
         : meetingNotes.trim();
 
       const context = buildKrReportContext({
@@ -489,7 +489,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
                 </div>
               )}
 
-              {/* ③ 分析からの素材バナー */}
+              {/* ② セッション記録&分析からの素材バナー */}
               <div style={{
                 display: "flex", alignItems: "center", gap: "8px",
                 background: latestAnalysis ? "var(--color-bg-purple)" : "var(--color-bg-secondary)",
@@ -499,8 +499,8 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
                 <span>{latestAnalysis ? "📊" : "💡"}</span>
                 <span style={{ flex: 1, color: "var(--color-text-secondary)" }}>
                   {latestAnalysis
-                    ? `③ 分析の最新結果（${fmtDateTime(latestAnalysis.created_at)}・${whoName(latestAnalysis.created_by)}）を素材としてAIに渡します。`
-                    : "このKRの「③ 分析」はまだありません。OKR管理 → ③ 分析 で作っておくと、レポート生成の素材になります。"}
+                    ? `このKRの最新AI分析（${fmtDateTime(latestAnalysis.created_at)}・${whoName(latestAnalysis.created_by)}）を素材としてAIに渡します。`
+                    : "このKRのAI分析はまだありません。OKR管理 → ② セッション記録&分析 で記録すると、AI分析がレポートの素材になります。"}
                 </span>
               </div>
 

@@ -16,7 +16,8 @@ import { fetchKrMeetingNote, type KrMeetingNote } from "../../lib/supabase/krMee
 import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 
-// 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録→③分析→④レポート作成）＋概要
+// 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）＋概要
+// （旧「③分析」タブは②に統合済み。"analysis" 値は localStorage 互換のため型に残す）
 export type OkrActiveTool = "overview" | "note" | "session" | "analysis" | "report" | "why" | "plan" | "guide" | null;
 const OKR_TOOLS: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report"];
 
@@ -58,9 +59,8 @@ const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string }[] =
 const OKR_SUB_TABS: { tool: OkrActiveTool; label: string }[] = [
   { tool: "overview", label: "概要" },
   { tool: "note",     label: "① 会議ノート" },
-  { tool: "session",  label: "② セッション記録" },
-  { tool: "analysis", label: "③ 分析" },
-  { tool: "report",   label: "④ レポート作成" },
+  { tool: "session",  label: "② セッション記録&分析" },
+  { tool: "report",   label: "③ レポート作成" },
 ];
 
 export function OkrDashboardView({
@@ -160,20 +160,18 @@ export function OkrDashboardView({
     const noteStep = cycleNote
       ? { label: "作成済み", tone: "done" as const }
       : { label: "未作成", tone: "none" as const };
+    // ② セッション記録&分析（合体）：記録があれば「記録&分析済」。今週分のKR分析があれば付記。
+    const hasAna = cycleAnalysis && cycleAnalysis.created_at.slice(0, 10) >= thisMonday;
     const sesStep = wkCheckin
-      ? { label: wkWin ? "チェックイン＋ウィン済" : "チェックイン済", tone: "done" as const }
+      ? { label: hasAna ? "記録＆分析済み" : (wkWin ? "チェックイン＋ウィン済" : "チェックイン済"), tone: "done" as const }
       : wkWin ? { label: "ウィン済", tone: "wip" as const } : { label: "未記録", tone: "none" as const };
-    const anaStep = cycleAnalysis
-      ? (cycleAnalysis.created_at.slice(0, 10) >= thisMonday ? { label: `今週分あり（${fmtMD(cycleAnalysis.created_at)}）`, tone: "done" as const } : { label: `${fmtMD(cycleAnalysis.created_at)}（やや前）`, tone: "wip" as const })
-      : { label: "なし", tone: "none" as const };
     const repStep = cycleReport
       ? (cycleReport.status === "finalized" ? { label: "確定済み", tone: "done" as const } : { label: "下書き（要確認）", tone: "wip" as const })
       : { label: "未作成", tone: "none" as const };
     return [
-      { tool: "note" as const,     name: "① 会議ノート",      ...noteStep },
-      { tool: "session" as const,  name: "② セッション記録",  ...sesStep },
-      { tool: "analysis" as const, name: "③ 分析",            ...anaStep },
-      { tool: "report" as const,   name: "④ レポート作成",    ...repStep },
+      { tool: "note" as const,    name: "① 会議ノート",          ...noteStep },
+      { tool: "session" as const, name: "② セッション記録&分析", ...sesStep },
+      { tool: "report" as const,  name: "③ レポート作成",         ...repStep },
     ];
   }, [selectedKrId, krSessionsMap, thisMonday, cycleNote, cycleAnalysis, cycleReport]);
   const CYCLE_TONE_COLOR: Record<string, string> = { done: "#16a34a", wip: "#ca8a04", none: "var(--color-text-tertiary)" };
@@ -271,7 +269,7 @@ export function OkrDashboardView({
         </button>
       </div>
 
-      {/* OKR管理のサブタブバー（①会議ノート → ②セッション記録 → ③分析 → ④レポート作成） */}
+      {/* OKR管理のサブタブバー（①会議ノート → ②セッション記録&分析 → ③レポート作成） */}
       {inOkrGroup && (
         <div style={{
           display: "flex", alignItems: "stretch", borderBottom: "1px solid var(--color-border-primary)",
@@ -309,7 +307,7 @@ export function OkrDashboardView({
         }}>
           {!selectedKrId ? (
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              「概要」でKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション→③分析→④レポート）が表示されます。
+              「概要」でKRを選ぶと、そのKRの今週のサイクル進捗（①会議ノート→②セッション記録&分析→③レポート）が表示されます。
               <button onClick={() => onSetActiveTool("overview")} style={{ marginLeft: "8px", fontSize: "11px", background: "transparent", border: "none", color: "var(--color-brand)", cursor: "pointer", textDecoration: "underline", padding: 0 }}>概要へ</button>
             </span>
           ) : (
@@ -619,7 +617,7 @@ export function OkrDashboardView({
           </div>
         )}
 
-        {/* ─── ③ 分析（KR単位のAI分析・履歴） ─── */}
+        {/* ─── 互換：旧「③ 分析」（タブからは消えたが localStorage 互換のため残置） ─── */}
         {activeTool === "analysis" && (
           <OkrKrAnalysisPanel
             inline
@@ -634,8 +632,8 @@ export function OkrDashboardView({
           <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
             <div style={{ flexShrink: 0, padding: "8px 16px", borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)", fontSize: "11px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "8px" }}>
               <span>💡</span>
-              <span style={{ flex: 1 }}>「③ 分析」タブで最新の分析を作っておくと、レポートの素材になります（自動連携は順次対応）。</span>
-              <button onClick={() => onSetActiveTool("analysis")} style={{ fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>③ 分析へ</button>
+              <span style={{ flex: 1 }}>「② セッション記録&分析」で議事メモから分析を生成しておくと、その内容がそのままレポートの素材になります。</span>
+              <button onClick={() => onSetActiveTool("session")} style={{ fontSize: "11px", padding: "3px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", cursor: "pointer", whiteSpace: "nowrap" }}>② セッションへ</button>
             </div>
             <KrReportPanel
               inline

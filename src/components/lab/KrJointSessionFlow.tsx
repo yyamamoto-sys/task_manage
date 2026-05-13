@@ -1,11 +1,12 @@
 // src/components/lab/KrJointSessionFlow.tsx
 //
 // 【設計意図】
-// 合同チェックイン／ウィンセッションのための入力フロー。
-// グループ全体での議事メモを1回貼り付け／添付し、AI が複数KRぶんを一括で振り分けて抽出する。
-// 抽出結果はKRごとにタブで確認・修正して、KRごとに kr_sessions を保存する。
-// 単一KR用の KrSessionPanel と並列の役割。OkrDashboardView の「② セッション記録」内で
-// モードトグルにより切り替える。
+// 合同チェックイン／ウィンセッションの「記録&分析」を1画面で行う（②セッション記録&分析）。
+// 議事メモ（テキスト or .vtt/.txt/.srt or PDF/Word）を1回投入し、AI に「先に詳細分析→その結果として
+// 宣言・シグナル・学び・リスク・次の一手」をKRごとに整理させる。
+// 保存時は KR ごとに kr_sessions（signal/learnings 等）＋ kr_declarations（宣言）に加え、
+// okr_analyses（scope='kr', KRごとの詳細分析マークダウン）と okr_analyses（scope='objective', 会議全体）を
+// 同時に作る。これでステップ②の中で「記録」「分析」が完結し、③レポート作成の素材になる。
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
@@ -18,6 +19,7 @@ import {
   insertKrSession, insertKrDeclaration, updateKrDeclarationResult,
   fetchLatestCheckinSession, fetchKrDeclarations, type KrDeclaration,
 } from "../../lib/supabase/krSessionStore";
+import { insertOkrAnalysis, insertObjectiveAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import {
   extractJointCheckinData, extractJointWinSessionData,
 } from "../../lib/ai/krSessionExtractor";
@@ -27,15 +29,17 @@ type Step = "input" | "extracting" | "review" | "saving" | "done";
 
 const PHASES_CHECKIN = [
   "文字起こしを読み込んでいます…",
-  "KRごとの発言を振り分けています…",
-  "宣言・シグナルを抽出しています…",
+  "議論の流れ・対立・気づきを把握しています…",
+  "KRごとの宣言・シグナルを拾っています…",
+  "学び・リスク・次の一手を整理しています…",
   "結果をまとめています…",
 ];
 const PHASES_WIN = [
   "文字起こしを読み込んでいます…",
-  "KRごとの発言を振り分けています…",
-  "前回宣言と照合しています…",
-  "学び・外部環境を抽出しています…",
+  "議論の流れ・前回宣言との照合を行っています…",
+  "KRごとの学び・外部環境変化を拾っています…",
+  "リスク・次の一手を整理しています…",
+  "結果をまとめています…",
 ];
 
 function getThisMonday(): string {
@@ -49,30 +53,42 @@ function getThisMonday(): string {
 interface CheckinDraft {
   signal: "green" | "yellow" | "red" | null;
   signal_comment: string;
+  discussion_summary: string;
+  learnings: string;
+  risks: string;       // textarea で編集（改行区切り）
+  next_actions: string;
   declarations: { member_short_name: string; content: string; due_date: string | null }[];
 }
 interface WinDraft {
   signal: "green" | "yellow" | "red" | null;
   signal_comment: string;
-  declaration_results: { declaration_index: number; result_status: "achieved" | "partial" | "not_achieved" | null; result_note: string }[];
+  discussion_summary: string;
   learnings: string;
   external_changes: string;
+  risks: string;
+  next_actions: string;
+  declaration_results: { declaration_index: number; result_status: "achieved" | "partial" | "not_achieved" | null; result_note: string }[];
 }
 interface KrPanelState {
   krId: string;
   krTitle: string;
   selected: boolean;
-  /** チェックイン時のドラフト */
   checkin?: CheckinDraft;
-  /** ウィン時のドラフト */
   win?: WinDraft;
-  /** ウィン時に表示する前回チェックインの宣言（result_results の参照用） */
   previousDeclarations?: KrDeclaration[];
 }
+interface OverallDraft {
+  summary: string;
+  cross_kr_insights: string;
+}
+
+const empCheckin = (): CheckinDraft => ({ signal: null, signal_comment: "", discussion_summary: "", learnings: "", risks: "", next_actions: "", declarations: [] });
+const empWin = (): WinDraft => ({ signal: null, signal_comment: "", discussion_summary: "", learnings: "", external_changes: "", risks: "", next_actions: "", declaration_results: [] });
+const joinLines = (arr: string[]) => arr.filter(s => s.trim()).join("\n");
+const splitLines = (s: string) => s.split(/\r?\n/).map(t => t.trim()).filter(Boolean);
 
 interface Props {
   currentUser: Member;
-  /** 既定で選択されるKR（OKRモードで選択中のKR）。指定があれば対象に含める */
   initialKrId?: string;
   onSaved?: () => void;
 }
@@ -80,6 +96,7 @@ interface Props {
 export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props) {
   const rawKrs = useAppStore(s => s.keyResults);
   const rawMembers = useAppStore(s => s.members);
+  const objective = useAppStore(s => s.objective);
   const activeKrs = useMemo(() => (rawKrs ?? []).filter(k => !k.is_deleted), [rawKrs]);
   const memberById = useMemo(() => new Map((rawMembers ?? []).filter(m => !m.is_deleted).map(m => [m.id, m])), [rawMembers]);
   const memberShortNames = useMemo(() => [...memberById.values()].map(m => m.short_name), [memberById]);
@@ -87,7 +104,6 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
   const [mode, setMode] = useState<JointMode>("checkin");
   const [selectedKrIds, setSelectedKrIds] = useState<Set<string>>(() => new Set(activeKrs.map(k => k.id)));
   useEffect(() => {
-    // アクティブKR一覧が変わったら、それを既定値として再選択。initialKrId があれば必ず含める
     const s = new Set(activeKrs.map(k => k.id));
     if (initialKrId) s.add(initialKrId);
     setSelectedKrIds(s);
@@ -99,33 +115,42 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ current: number; total: number; label: string }>({ current: 0, total: 1, label: "" });
 
-  // 各KRのドラフト（review ステップで使う）
+  // 確認ステップのデータ
   const [panels, setPanels] = useState<KrPanelState[]>([]);
-  const [activeTab, setActiveTab] = useState(0);
+  const [overall, setOverall] = useState<OverallDraft>({ summary: "", cross_kr_insights: "" });
+  // タブ：'overall' or kr_id
+  const [activeTab, setActiveTab] = useState<string>("overall");
 
   const dropAreaRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  const handleDropToTextarea = useCallback((e: React.DragEvent) => {
     e.preventDefault(); setIsDragging(false);
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    // FileDropZone を素直に流用してもいいが、ここは直接処理
-    if (file.name.toLowerCase().endsWith(".vtt") || file.name.toLowerCase().endsWith(".srt") || file.type.startsWith("text/")) {
+    const nm = file.name.toLowerCase();
+    if (nm.endsWith(".vtt") || nm.endsWith(".srt") || nm.endsWith(".txt") || nm.endsWith(".text") || file.type.startsWith("text/")) {
       const reader = new FileReader();
       reader.onload = ev => setTranscript((ev.target?.result as string) ?? "");
       reader.readAsText(file, "utf-8");
     } else {
-      // PDF/docx は FileAttachButton 経由で（こちらでは扱わない）
-      alert("ここに直接ドロップできるのはテキスト系（.vtt / .srt / .txt 等）です。PDF・Word は上の📎ボタンで添付してください。");
+      alert("ここに直接ドロップできるのはテキスト系（.vtt / .srt / .txt 等）です。PDF・Word は📎ボタンで添付してください。");
     }
   }, []);
 
+  // 📄 ファイル選択（.vtt 等）→ textarea に展開
+  const vttInputRef = useRef<HTMLInputElement>(null);
+  const handlePickTextFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    const reader = new FileReader();
+    reader.onload = ev => setTranscript((ev.target?.result as string) ?? "");
+    reader.onerror = () => alert("ファイルの読み込みに失敗しました。");
+    reader.readAsText(f, "utf-8");
+  };
+
   const toggleKr = (id: string) => {
-    setSelectedKrIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
+    setSelectedKrIds(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   };
 
   // ===== 抽出 =====
@@ -140,27 +165,36 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
     setStep("extracting");
     try {
       if (mode === "checkin") {
-        const results = await extractJointCheckinData({
+        const result = await extractJointCheckinData({
           krs: targetKrs.map(k => ({ id: k.id, title: k.title })),
           memberShortNames,
           transcript: text,
           attachment: attachment ?? undefined,
         });
-        // KRごとのパネルを構築（AI が返さなかった KR は空ドラフトで埋める）
-        const byKr = new Map(results.map(r => [r.kr_id, r.checkin] as const));
-        const next: KrPanelState[] = targetKrs.map(k => ({
-          krId: k.id, krTitle: k.title, selected: true,
-          checkin: byKr.get(k.id) ?? { signal: null, signal_comment: "", declarations: [] },
-        }));
-        setPanels(next); setActiveTab(0); setStep("review");
+        const byKr = new Map(result.by_kr.map(r => [r.kr_id, r] as const));
+        const next: KrPanelState[] = targetKrs.map(k => {
+          const r = byKr.get(k.id);
+          return {
+            krId: k.id, krTitle: k.title, selected: true,
+            checkin: r ? {
+              signal: r.signal, signal_comment: r.signal_comment,
+              discussion_summary: r.discussion_summary, learnings: r.learnings,
+              risks: joinLines(r.risks), next_actions: joinLines(r.next_actions),
+              declarations: r.declarations.map(d => ({ member_short_name: d.member_short_name, content: d.content, due_date: d.due_date })),
+            } : empCheckin(),
+          };
+        });
+        setPanels(next);
+        setOverall({ summary: result.overall_analysis.summary, cross_kr_insights: result.overall_analysis.cross_kr_insights });
+        setActiveTab("overall");
+        setStep("review");
       } else {
-        // ウィン：前回チェックイン宣言を各KRぶん取得
         const prevByKr: Record<string, KrDeclaration[]> = {};
         for (const k of targetKrs) {
           const last = await fetchLatestCheckinSession(k.id).catch(() => null);
           prevByKr[k.id] = last ? await fetchKrDeclarations(last.id).catch(() => []) : [];
         }
-        const results = await extractJointWinSessionData({
+        const result = await extractJointWinSessionData({
           krs: targetKrs.map(k => ({
             id: k.id, title: k.title,
             previousDeclarations: (prevByKr[k.id] ?? []).map((d, i) => ({
@@ -174,19 +208,81 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
           transcript: text,
           attachment: attachment ?? undefined,
         });
-        const byKr = new Map(results.map(r => [r.kr_id, r.win] as const));
-        const next: KrPanelState[] = targetKrs.map(k => ({
-          krId: k.id, krTitle: k.title, selected: true,
-          win: byKr.get(k.id) ?? { signal: null, signal_comment: "", declaration_results: [], learnings: "", external_changes: "" },
-          previousDeclarations: prevByKr[k.id] ?? [],
-        }));
-        setPanels(next); setActiveTab(0); setStep("review");
+        const byKr = new Map(result.by_kr.map(r => [r.kr_id, r] as const));
+        const next: KrPanelState[] = targetKrs.map(k => {
+          const r = byKr.get(k.id);
+          return {
+            krId: k.id, krTitle: k.title, selected: true,
+            win: r ? {
+              signal: r.signal, signal_comment: r.signal_comment,
+              discussion_summary: r.discussion_summary, learnings: r.learnings, external_changes: r.external_changes,
+              risks: joinLines(r.risks), next_actions: joinLines(r.next_actions),
+              declaration_results: r.declaration_results.map(x => ({ declaration_index: x.declaration_index, result_status: x.result_status, result_note: x.result_note })),
+            } : empWin(),
+            previousDeclarations: prevByKr[k.id] ?? [],
+          };
+        });
+        setPanels(next);
+        setOverall({ summary: result.overall_analysis.summary, cross_kr_insights: result.overall_analysis.cross_kr_insights });
+        setActiveTab("overall");
+        setStep("review");
       }
     } catch (e) {
       setError(formatErrorForUser("AI抽出に失敗しました", e));
       setStep("input");
     }
   }, [transcript, attachment, activeKrs, selectedKrIds, memberShortNames, memberById, mode]);
+
+  // ===== KRごとのマークダウン生成（okr_analyses 保存用） =====
+
+  const buildKrAnalysisMd = useCallback((p: KrPanelState): string => {
+    const L: string[] = [];
+    L.push(`# ${p.krTitle}（${mode === "checkin" ? "チェックイン" : "ウィンセッション"}）`);
+    if (mode === "checkin" && p.checkin) {
+      const c = p.checkin;
+      if (c.signal) L.push(`**シグナル**：${c.signal === "green" ? "🟢順調" : c.signal === "yellow" ? "🟡注意" : "🔴要対応"}${c.signal_comment ? `（${c.signal_comment}）` : ""}`);
+      if (c.discussion_summary) { L.push("\n## 議論サマリ"); L.push(c.discussion_summary); }
+      if (c.learnings) { L.push("\n## 学び・気づき"); L.push(c.learnings); }
+      const risks = splitLines(c.risks);
+      if (risks.length) { L.push("\n## 気になる点・リスク"); for (const r of risks) L.push(`- ${r}`); }
+      const next = splitLines(c.next_actions);
+      if (next.length) { L.push("\n## 次の一手"); for (const r of next) L.push(`- ${r}`); }
+      if (c.declarations.length) {
+        L.push("\n## 宣言（誰が・何を・いつまでに）");
+        for (const d of c.declarations) if (d.content.trim()) L.push(`- ${d.member_short_name || "（未特定）"}：${d.content}${d.due_date ? `（期日 ${d.due_date}）` : ""}`);
+      }
+    }
+    if (mode === "win_session" && p.win) {
+      const w = p.win;
+      if (w.signal) L.push(`**シグナル**：${w.signal === "green" ? "🟢順調" : w.signal === "yellow" ? "🟡注意" : "🔴要対応"}${w.signal_comment ? `（${w.signal_comment}）` : ""}`);
+      if (w.discussion_summary) { L.push("\n## 議論サマリ"); L.push(w.discussion_summary); }
+      if (w.learnings) { L.push("\n## 学び・気づき"); L.push(w.learnings); }
+      if (w.external_changes) { L.push("\n## 外部環境の変化"); L.push(w.external_changes); }
+      const risks = splitLines(w.risks);
+      if (risks.length) { L.push("\n## 気になる点・リスク"); for (const r of risks) L.push(`- ${r}`); }
+      const next = splitLines(w.next_actions);
+      if (next.length) { L.push("\n## 次の一手"); for (const r of next) L.push(`- ${r}`); }
+      if (w.declaration_results.length && p.previousDeclarations?.length) {
+        L.push("\n## 前回宣言の結果");
+        for (const r of w.declaration_results) {
+          const prev = p.previousDeclarations[r.declaration_index];
+          if (!prev) continue;
+          const who = memberById.get(prev.member_id)?.short_name ?? "（不明）";
+          const st = r.result_status ? (r.result_status === "achieved" ? "達成" : r.result_status === "partial" ? "一部達成" : "未達") : "—";
+          L.push(`- ${who}：${prev.content} → ${st}${r.result_note ? `（${r.result_note}）` : ""}`);
+        }
+      }
+    }
+    return L.join("\n").trim();
+  }, [mode, memberById]);
+
+  const buildObjectiveMd = useCallback((): string => {
+    const L: string[] = [];
+    L.push(`# ${mode === "checkin" ? "チェックイン" : "ウィンセッション"}（合同）の全体分析`);
+    if (overall.summary) { L.push("\n## 会議全体のサマリ"); L.push(overall.summary); }
+    if (overall.cross_kr_insights) { L.push("\n## KR間で見えること"); L.push(overall.cross_kr_insights); }
+    return L.join("\n").trim();
+  }, [mode, overall]);
 
   // ===== 保存 =====
 
@@ -196,10 +292,19 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
     try {
       const weekStart = getThisMonday();
       const selected = panels.filter(p => p.selected);
-      const total = selected.reduce((n, p) => n + 1 + (mode === "checkin" ? (p.checkin?.declarations.length ?? 0) : (p.win?.declaration_results.length ?? 0)), 1);
+      // ステップ：[Objective分析] + 各KR（session, 宣言, KR分析）
+      const total = (objective ? 1 : 0) + selected.reduce((n, p) => n + 1 + 1 /*kr_analysis*/ + (mode === "checkin" ? (p.checkin?.declarations.length ?? 0) : (p.win?.declaration_results.length ?? 0)), 1);
       let cur = 0;
       setProgress({ current: 0, total, label: "保存を開始しています…" });
 
+      // 1) Objective スコープのAI分析を保存（会議全体）
+      if (objective && (overall.summary.trim() || overall.cross_kr_insights.trim())) {
+        setProgress(pr => ({ ...pr, current: cur, label: "全体分析を保存中…" }));
+        try { await insertObjectiveAnalysis(objective.id, buildObjectiveMd(), currentUser.id, false); } catch (e) { console.warn("Objective分析の保存に失敗:", e); }
+        cur++; setProgress(pr => ({ ...pr, current: cur }));
+      }
+
+      // 2) KRごとに保存
       for (const p of selected) {
         setProgress(pr => ({ ...pr, current: cur, label: `${p.krTitle} を保存中…` }));
         if (mode === "checkin") {
@@ -209,10 +314,18 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
             session_type: "checkin",
             signal: p.checkin?.signal ?? null,
             signal_comment: p.checkin?.signal_comment ?? "",
-            learnings: "", external_changes: "", transcript: "", summary: "", decisions: "", kr_mentions: "",
+            learnings: p.checkin?.learnings ?? "",
+            external_changes: "",
+            transcript: transcript.slice(0, 200000), // 文字起こしも参照用に保存（過大なら切る）
+            summary: "", decisions: "", kr_mentions: "",
             created_by: currentUser.id, updated_by: currentUser.id,
           } as Parameters<typeof insertKrSession>[0]);
           cur++; setProgress(pr => ({ ...pr, current: cur }));
+
+          // KRごとの詳細分析を okr_analyses に保存
+          try { await insertOkrAnalysis(p.krId, buildKrAnalysisMd(p), currentUser.id, false); } catch (e) { console.warn("KR分析の保存に失敗:", e); }
+          cur++; setProgress(pr => ({ ...pr, current: cur }));
+
           for (const d of (p.checkin?.declarations ?? [])) {
             if (!d.content.trim()) continue;
             const memberId = [...memberById.values()].find(m => m.short_name === d.member_short_name)?.id ?? currentUser.id;
@@ -235,11 +348,15 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
             signal_comment: p.win?.signal_comment ?? "",
             learnings: p.win?.learnings ?? "",
             external_changes: p.win?.external_changes ?? "",
-            transcript: "", summary: "", decisions: "", kr_mentions: "",
+            transcript: transcript.slice(0, 200000),
+            summary: "", decisions: "", kr_mentions: "",
             created_by: currentUser.id, updated_by: currentUser.id,
           } as Parameters<typeof insertKrSession>[0]);
           cur++; setProgress(pr => ({ ...pr, current: cur }));
-          // 前回チェックイン宣言の結果更新
+
+          try { await insertOkrAnalysis(p.krId, buildKrAnalysisMd(p), currentUser.id, false); } catch (e) { console.warn("KR分析の保存に失敗:", e); }
+          cur++; setProgress(pr => ({ ...pr, current: cur }));
+
           for (const r of (p.win?.declaration_results ?? [])) {
             const prev = p.previousDeclarations?.[r.declaration_index];
             if (!prev || !r.result_status) { cur++; continue; }
@@ -255,10 +372,10 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
       setError(formatErrorForUser("保存に失敗しました", e));
       setStep("review");
     }
-  }, [panels, mode, currentUser.id, memberById, onSaved]);
+  }, [panels, mode, currentUser.id, memberById, onSaved, transcript, objective, overall, buildKrAnalysisMd, buildObjectiveMd]);
 
   const handleReset = () => {
-    setTranscript(""); setAttachment(null); setPanels([]); setActiveTab(0);
+    setTranscript(""); setAttachment(null); setPanels([]); setOverall({ summary: "", cross_kr_insights: "" }); setActiveTab("overall");
     setError(null); setStep("input");
   };
 
@@ -268,79 +385,83 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
   const canExtract = (inputCount >= 20 || !!attachment) && selectedKrIds.size > 0;
 
   if (step === "extracting") {
-    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={mode === "checkin" ? PHASES_CHECKIN : PHASES_WIN} intervalMs={3500} /></div>;
+    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={mode === "checkin" ? PHASES_CHECKIN : PHASES_WIN} intervalMs={4500} /></div>;
   }
   if (step === "saving") {
-    return <div style={{ padding: "32px 24px" }}><SaveProgressLoader current={progress.current} total={progress.total} label={progress.label} title="合同セッションを保存しています" /></div>;
+    return <div style={{ padding: "32px 24px" }}><SaveProgressLoader current={progress.current} total={progress.total} label={progress.label} title="セッションと分析を保存しています" /></div>;
   }
   if (step === "done") {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", padding: "40px 20px" }}>
         <div style={{ fontSize: "44px" }}>🎉</div>
         <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>保存が完了しました</div>
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{panels.filter(p => p.selected).length} 件のKRぶんを記録しました</div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{panels.filter(p => p.selected).length} 件のKRぶんを記録＆分析しました</div>
         <button onClick={handleReset} style={primaryBtn}>続けて別のセッションを記録する</button>
       </div>
     );
   }
 
   if (step === "review") {
-    const cur = panels[activeTab];
+    const cur = activeTab === "overall" ? null : (panels.find(p => p.krId === activeTab) ?? null);
     return (
-      <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>抽出結果を確認・修正してください</span>
-          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>（KRごとにタブで表示。チェック外のKRは保存しません）</span>
-          <div style={{ flex: 1 }} />
-          <button onClick={handleReset} style={ghostBtn}>やり直す</button>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>AI分析・抽出結果を確認・修正してください</span>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>「全体」タブには会議全体の所感、各KRタブには議論サマリ・学び・リスク・次の一手・宣言が入ります。</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={handleReset} style={ghostBtn}>やり直す</button>
+          </div>
+
+          {/* タブ：全体 + KRごと */}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", borderBottom: "1px solid var(--color-border-primary)", paddingBottom: "6px" }}>
+            <button onClick={() => setActiveTab("overall")} style={tabBtn(activeTab === "overall")}>全体（Objective）</button>
+            {panels.map(p => (
+              <button key={p.krId} onClick={() => setActiveTab(p.krId)} style={{ ...tabBtn(activeTab === p.krId), display: "flex", alignItems: "center", gap: "6px" }}>
+                <input type="checkbox" checked={p.selected}
+                  onClick={e => e.stopPropagation()}
+                  onChange={e => { const v = e.target.checked; setPanels(prev => prev.map(q => q.krId === p.krId ? { ...q, selected: v } : q)); }}
+                  style={{ accentColor: "var(--color-brand)" }} />
+                {p.krTitle.length > 22 ? p.krTitle.slice(0, 22) + "…" : p.krTitle}
+              </button>
+            ))}
+          </div>
+
+          {activeTab === "overall" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <Field label="会議全体のサマリ"><TextArea value={overall.summary} onChange={v => setOverall(o => ({ ...o, summary: v }))} rows={6} placeholder="議論の流れ・対立・合意のまとめ" /></Field>
+              <Field label="KR間で見えること（依存・矛盾・温度差など）"><TextArea value={overall.cross_kr_insights} onChange={v => setOverall(o => ({ ...o, cross_kr_insights: v }))} rows={5} /></Field>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>※ Objective に紐づく分析として保存されます。各KRタブも確認のうえ保存してください。</div>
+            </div>
+          )}
+
+          {cur && cur.selected && mode === "checkin" && cur.checkin && (
+            <CheckinReview
+              draft={cur.checkin}
+              memberShortNames={memberShortNames}
+              onChange={patch => setPanels(prev => prev.map(q => q.krId === cur.krId ? { ...q, checkin: { ...cur.checkin!, ...patch } } : q))}
+            />
+          )}
+          {cur && cur.selected && mode === "win_session" && cur.win && (
+            <WinReview
+              draft={cur.win}
+              previousDeclarations={cur.previousDeclarations ?? []}
+              memberById={memberById}
+              onChange={patch => setPanels(prev => prev.map(q => q.krId === cur.krId ? { ...q, win: { ...cur.win!, ...patch } } : q))}
+            />
+          )}
+          {cur && !cur.selected && (
+            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "20px" }}>このKRは保存対象から外れています。タブ内のチェックでON/OFFできます。</div>
+          )}
+
+          {error && <ErrBox>{error}</ErrBox>}
         </div>
 
-        {/* KRタブ */}
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", borderBottom: "1px solid var(--color-border-primary)", paddingBottom: "6px" }}>
-          {panels.map((p, i) => (
-            <button key={p.krId} onClick={() => setActiveTab(i)} style={{
-              display: "flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "var(--radius-md)",
-              border: i === activeTab ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-              background: i === activeTab ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-              color: i === activeTab ? "var(--color-brand)" : "var(--color-text-secondary)",
-              cursor: "pointer", fontSize: "12px", fontWeight: i === activeTab ? 600 : 400,
-            }}>
-              <input
-                type="checkbox" checked={p.selected}
-                onClick={e => e.stopPropagation()}
-                onChange={e => { const v = e.target.checked; setPanels(prev => prev.map((q, j) => j === i ? { ...q, selected: v } : q)); }}
-                style={{ accentColor: "var(--color-brand)" }}
-              />
-              {p.krTitle.length > 22 ? p.krTitle.slice(0, 22) + "…" : p.krTitle}
-            </button>
-          ))}
-        </div>
-
-        {cur && cur.selected && mode === "checkin" && cur.checkin && (
-          <CheckinReview
-            draft={cur.checkin}
-            memberShortNames={memberShortNames}
-            onChange={patch => setPanels(prev => prev.map(q => q.krId === cur.krId ? { ...q, checkin: { ...cur.checkin!, ...patch } } : q))}
-          />
-        )}
-        {cur && cur.selected && mode === "win_session" && cur.win && (
-          <WinReview
-            draft={cur.win}
-            previousDeclarations={cur.previousDeclarations ?? []}
-            memberById={memberById}
-            onChange={patch => setPanels(prev => prev.map(q => q.krId === cur.krId ? { ...q, win: { ...cur.win!, ...patch } } : q))}
-          />
-        )}
-        {cur && !cur.selected && (
-          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "20px" }}>このKRは保存対象から外れています。上のチェックでON/OFFできます。</div>
-        )}
-
-        {error && <ErrBox>{error}</ErrBox>}
-
-        <div style={{ display: "flex", gap: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
-          <div style={{ flex: 1 }} />
+        {/* sticky 保存バー */}
+        <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>保存すると、KRごとに kr_sessions・kr_declarations・KRの詳細分析（okr_analyses）が、会議全体は Objective分析として保存されます。</div>
           <button onClick={handleSave} disabled={panels.filter(p => p.selected).length === 0} style={{ ...primaryBtn, opacity: panels.filter(p => p.selected).length === 0 ? 0.5 : 1 }}>
-            {mode === "checkin" ? "チェックインを保存" : "ウィンセッションを保存"}（{panels.filter(p => p.selected).length} KR）
+            {mode === "checkin" ? "チェックインと分析を保存" : "ウィンセッションと分析を保存"}（{panels.filter(p => p.selected).length} KR）
           </button>
         </div>
       </div>
@@ -349,85 +470,77 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
 
   // step === "input"
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-        合同会議の議事メモを1回貼り付けるか添付すると、選択した各KRの宣言・シグナル・学びをAIが自動で振り分けます。
-      </div>
-
-      {/* モード */}
-      <div>
-        <Label>セッションの種類</Label>
-        <div style={{ display: "flex", gap: "6px" }}>
-          {([
-            { v: "checkin" as const, label: "チェックイン" },
-            { v: "win_session" as const, label: "ウィンセッション" },
-          ]).map(opt => (
-            <button key={opt.v} onClick={() => setMode(opt.v)} style={{
-              fontSize: "12px", padding: "6px 14px", borderRadius: "var(--radius-md)",
-              border: mode === opt.v ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-              background: mode === opt.v ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-              color: mode === opt.v ? "var(--color-brand)" : "var(--color-text-secondary)",
-              cursor: "pointer", fontWeight: mode === opt.v ? 600 : 400,
-            }}>{opt.label}</button>
-          ))}
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+          合同会議の議事メモを投入すると、AIが文字起こしを詳細に分析し、KRごとに「議論サマリ・学び・リスク・次の一手・宣言・シグナル」を整理します。
         </div>
-      </div>
 
-      {/* 対象KR（複数選択） */}
-      <div>
-        <Label>対象KR（複数選択可・既定は全KR）</Label>
-        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-          {activeKrs.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</span>}
-          {activeKrs.map(k => {
-            const on = selectedKrIds.has(k.id);
-            return (
-              <button key={k.id} onClick={() => toggleKr(k.id)} style={{
-                display: "flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "var(--radius-full)",
-                border: on ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                background: on ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                color: on ? "var(--color-brand)" : "var(--color-text-secondary)",
-                cursor: "pointer", fontSize: "11px", fontWeight: on ? 600 : 400, maxWidth: "320px",
-              }}>
-                <span>{on ? "✓" : "○"}</span>
-                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 議事メモ入力 */}
-      <div>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-          <Label>議事メモ / 文字起こし</Label>
-          <FileAttachButton attachment={attachment} onAttach={setAttachment} onRemove={() => setAttachment(null)} />
-          <div style={{ flex: 1 }} />
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{inputCount.toLocaleString()} 文字</span>
-        </div>
-        <FileDropZone onAttach={setAttachment}>
-          <div ref={dropAreaRef} onDragOver={e => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDrop}>
-            <textarea
-              value={transcript}
-              onChange={e => setTranscript(e.target.value)}
-              placeholder={attachment ? "添付ファイルがある場合は空欄でも抽出できます。補足メモを足しても可。" : "合同会議の文字起こし・議事メモをここに貼り付けてください。\nまたはファイルをドラッグ＆ドロップ（PDF / Word は上の📎ボタン）"}
-              rows={12}
-              style={{
-                width: "100%", padding: "10px 12px", fontSize: "12px",
-                border: `1px solid ${isDragging ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                resize: "vertical", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "monospace",
-              }}
-            />
+        {/* モード */}
+        <div>
+          <Label>セッションの種類</Label>
+          <div style={{ display: "flex", gap: "6px" }}>
+            {([{ v: "checkin" as const, label: "チェックイン" }, { v: "win_session" as const, label: "ウィンセッション" }]).map(opt => (
+              <button key={opt.v} onClick={() => setMode(opt.v)} style={modeBtn(mode === opt.v)}>{opt.label}</button>
+            ))}
           </div>
-        </FileDropZone>
+        </div>
+
+        {/* 対象KR */}
+        <div>
+          <Label>対象KR（複数選択可・既定は全KR）</Label>
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {activeKrs.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</span>}
+            {activeKrs.map(k => {
+              const on = selectedKrIds.has(k.id);
+              return (
+                <button key={k.id} onClick={() => toggleKr(k.id)} style={chipBtn(on)}>
+                  <span>{on ? "✓" : "○"}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* 議事メモ入力 */}
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", flexWrap: "wrap" }}>
+            <Label>議事メモ / 文字起こし</Label>
+            <button onClick={() => vttInputRef.current?.click()} style={ghostBtn} title=".vtt / .srt / .txt を選択して本文に読み込み">📄 ファイルから読み込む（.vtt 等）</button>
+            <input ref={vttInputRef} type="file" accept=".vtt,.srt,.txt,.text,text/plain,text/vtt" style={{ display: "none" }} onChange={handlePickTextFile} />
+            <FileAttachButton attachment={attachment} onAttach={setAttachment} onRemove={() => setAttachment(null)} />
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{inputCount.toLocaleString()} 文字</span>
+          </div>
+          <FileDropZone onAttach={setAttachment}>
+            <div ref={dropAreaRef} onDragOver={e => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDropToTextarea}>
+              <textarea
+                value={transcript}
+                onChange={e => setTranscript(e.target.value)}
+                placeholder={attachment ? "添付ファイルがある場合は空欄でも分析できます。補足メモを足しても可。" : "合同会議の文字起こし・議事メモをここに貼り付け／📄ボタンで .vtt 読み込み／PDF・Word は📎で添付できます。"}
+                rows={12}
+                style={{
+                  width: "100%", padding: "10px 12px", fontSize: "12px",
+                  border: `1px solid ${isDragging ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                  borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+                  resize: "vertical", lineHeight: 1.6, boxSizing: "border-box", fontFamily: "monospace",
+                }}
+              />
+            </div>
+          </FileDropZone>
+        </div>
+
+        {error && <ErrBox>{error}</ErrBox>}
       </div>
 
-      {error && <ErrBox>{error}</ErrBox>}
-
-      <div style={{ display: "flex", gap: "8px", paddingTop: "4px" }}>
-        <div style={{ flex: 1 }} />
+      {/* sticky 抽出バー（スクロール不要） */}
+      <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
+          {canExtract ? `${selectedKrIds.size} KR について、議事メモを詳細分析→KRごとに整理します` : "議事メモまたは添付ファイルと、対象KRを1つ以上選択してください"}
+        </div>
         <button onClick={handleExtract} disabled={!canExtract} style={{ ...primaryBtn, opacity: canExtract ? 1 : 0.5, cursor: canExtract ? "pointer" : "not-allowed" }}>
-          ✨ AIで {selectedKrIds.size} KRぶんを抽出する
+          ✨ AIで詳細分析・抽出する
         </button>
       </div>
     </div>
@@ -449,6 +562,10 @@ function CheckinReview({ draft, memberShortNames, onChange }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <SignalRow value={draft.signal} comment={draft.signal_comment} onChange={(s, c) => onChange({ signal: s, signal_comment: c })} />
+      <Field label="議論サマリ（このKRに関する議論の要点）"><TextArea value={draft.discussion_summary} onChange={v => onChange({ discussion_summary: v })} rows={4} /></Field>
+      <Field label="学び・気づき"><TextArea value={draft.learnings} onChange={v => onChange({ learnings: v })} rows={3} /></Field>
+      <Field label="気になる点・リスク（1行1件）"><TextArea value={draft.risks} onChange={v => onChange({ risks: v })} rows={3} placeholder="- 〇〇が止まっている&#10;- △△の判断が未決" /></Field>
+      <Field label="次の一手（1行1件）"><TextArea value={draft.next_actions} onChange={v => onChange({ next_actions: v })} rows={3} placeholder="- 来週△△までに〇〇" /></Field>
       <div>
         <Label>宣言（誰が・何を・いつまでに）</Label>
         <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -490,6 +607,11 @@ function WinReview({ draft, previousDeclarations, memberById, onChange }: {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
       <SignalRow value={draft.signal} comment={draft.signal_comment} onChange={(s, c) => onChange({ signal: s, signal_comment: c })} />
+      <Field label="議論サマリ（このKRに関する議論の要点）"><TextArea value={draft.discussion_summary} onChange={v => onChange({ discussion_summary: v })} rows={4} /></Field>
+      <Field label="学び・気づき"><TextArea value={draft.learnings} onChange={v => onChange({ learnings: v })} rows={3} /></Field>
+      <Field label="外部環境の変化（任意）"><TextArea value={draft.external_changes} onChange={v => onChange({ external_changes: v })} rows={2} /></Field>
+      <Field label="気になる点・リスク（1行1件）"><TextArea value={draft.risks} onChange={v => onChange({ risks: v })} rows={3} /></Field>
+      <Field label="次の一手（1行1件）"><TextArea value={draft.next_actions} onChange={v => onChange({ next_actions: v })} rows={3} /></Field>
       <div>
         <Label>前回チェックイン宣言の結果</Label>
         {previousDeclarations.length === 0 && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>前回のチェックイン宣言は見つかりませんでした。</div>}
@@ -512,8 +634,6 @@ function WinReview({ draft, previousDeclarations, memberById, onChange }: {
           );
         })}
       </div>
-      <Field label="学び・気づき"><TextArea value={draft.learnings} onChange={v => onChange({ learnings: v })} rows={4} /></Field>
-      <Field label="外部環境の変化（任意）"><TextArea value={draft.external_changes} onChange={v => onChange({ external_changes: v })} rows={3} /></Field>
     </div>
   );
 }
@@ -582,3 +702,24 @@ const ghostBtn: React.CSSProperties = {
   border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
   color: "var(--color-text-secondary)", cursor: "pointer",
 };
+const tabBtn = (active: boolean): React.CSSProperties => ({
+  padding: "5px 11px", borderRadius: "var(--radius-md)",
+  border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+  background: active ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+  color: active ? "var(--color-brand)" : "var(--color-text-secondary)",
+  cursor: "pointer", fontSize: "12px", fontWeight: active ? 600 : 400,
+});
+const modeBtn = (active: boolean): React.CSSProperties => ({
+  fontSize: "12px", padding: "6px 14px", borderRadius: "var(--radius-md)",
+  border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+  background: active ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+  color: active ? "var(--color-brand)" : "var(--color-text-secondary)",
+  cursor: "pointer", fontWeight: active ? 600 : 400,
+});
+const chipBtn = (on: boolean): React.CSSProperties => ({
+  display: "flex", alignItems: "center", gap: "6px", padding: "5px 11px", borderRadius: "var(--radius-full)",
+  border: on ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+  background: on ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+  color: on ? "var(--color-brand)" : "var(--color-text-secondary)",
+  cursor: "pointer", fontSize: "11px", fontWeight: on ? 600 : 400, maxWidth: "320px",
+});
