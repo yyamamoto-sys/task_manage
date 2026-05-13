@@ -78,12 +78,12 @@ OneNote で KR会議ごとに更新している内容をアプリ内のフォー
 
 ### ③ 分析結果（新規）
 
-TF単位で、**過去のノート＋セッション履歴＋タスク**をまとめて AI が分析。結果は蓄積（履歴）し、遡って読める。手修正可。
+**KR単位**で、そのKRに紐づく全TFの**会議ノート履歴＋KRのセッション・宣言＋各TFのタスク**をまとめて AI が分析。結果は蓄積（履歴）し、遡って読める。手修正可。④レポート作成の素材にもなる。
 
 - 入力：対象TFの会議ノート（`kr_note_tf_entries` の当該TF分・直近数週）＋ `kr_sessions`/`kr_declarations`（そのTFが紐づくKRのセッション）＋ そのTFに紐づくタスクの状況。
 - 出力：マークダウンの分析レポート（進捗・ペース／仮説の検証状況／リスク・ボトルネック／担当者の負荷／次サイクルへの示唆）。
-- 保存：`okr_tf_analyses` テーブル（履歴を残す。最新N件 or 全件）。AIが下書き → 人が手修正して保存 → 再分析も可能。
-- AI境界：KR/TF コンテキストを渡す機能なので、ラボ機能例外ルール（`kr-*` 系）に倣う。新 `AIIntent = "okr-tf-analysis"` を追加。`contribution_memo` 等の扱いは既存の `kr-report` 系に準拠。
+- 保存：`okr_analyses` テーブル（kr_id・履歴を全件残す）。AIが下書き → 人が手修正して保存 → 再分析も可能。
+- AI境界：KR/TF コンテキストを渡す機能なので、ラボ機能例外ルール（`kr-*` 系）に倣う。`AIIntent = "okr-analysis"`。`contribution_memo` は参照しない。
 
 ### ④ レポート作成（既存 KrReportPanel を改修）
 
@@ -188,7 +188,8 @@ CREATE INDEX idx_kr_reports_kr_id_week ON kr_reports(kr_id, week_start DESC) WHE
 ### OKRモードのタブ並び（左→右で循環順）
 
 ```
-[ ① 会議ノート ] [ ② セッション記録 ] [ ③ 分析結果 ] [ ④ レポート作成 ]   |   [ なぜなぜ ] [ 計画 ] [ 概要 ]   （右上に 🕐 履歴）
+上位タブ：[ 🎯 OKR管理 ] [ 🔍 なぜなぜ ] [ 📅 計画 ]   （右上に 🕐 履歴）
+OKR管理 のサブタブ：[ 概要 ] [ ① 会議ノート ] [ ② セッション記録 ] [ ③ 分析 ] [ ④ レポート作成 ]
 ```
 
 - 上部に **サイクルナビ**（①②③④のステップバー）。今いる位置をハイライトし、「対象KR・対象週・前週はどうだったか（前回ノートのステータス／前回レポートの確定状況）」を表示。
@@ -265,5 +266,6 @@ CREATE INDEX idx_kr_reports_kr_id_week ON kr_reports(kr_id, week_start DESC) WHE
 | 2026-05-13 | 初版ドラフト作成（レビュー用）。要件：週次・TF単位・下書き引き継ぎ・TFノートはTF単位でToDo/タスク状況も内包・OneNote併用→一本化・レポートは承認制 |
 | 2026-05-13 | レビュー反映：別の承認者は不要（AI下書き→人が編集して確定）。その他未決事項は実装時判断で進める方針に。Phase A から実装着手 |
 | 2026-05-13 | フィードバック反映：ノートを **TF単位→KR単位（中にTFごとのセクション）** に変更。KRを選んでからそのKRのTFを順に入力する方式。TF説明・TODO 欄を追加。テーブルを `tf_meeting_notes` → `kr_meeting_notes` + `kr_note_tf_entries` に作り直し（migration 20260513b）。TF選択の重複も解消 |
-| 2026-05-13 | Phase B 実装：OKRタブ「📊 分析結果」追加。okr_tf_analyses テーブル＋okrTfAnalysisStore＋OkrTfAnalysisPanel＋okrTfAnalysisClient（AIIntent=okr-tf-analysis）。会議ノート履歴＋KRセッション・宣言＋TFタスクをAIが分析、履歴保存・遡り・手書き編集可 |
+| 2026-05-13 | OKRモードを2階層に再構成（上位＝OKR管理/なぜなぜ/計画。OKR管理配下に①会議ノート②セッション記録③分析④レポート作成＋概要）。AI分析を **KR単位**に変更（okr_tf_analyses→okr_analyses、migration 20260513d。OkrKrAnalysisPanel/okrKrAnalysisClient、AIIntent=okr-analysis）。④レポート作成を独立サブタブ化。 |
+| 2026-05-13 | Phase B 実装（旧）：OKRタブ「📊 分析結果」追加。okr_tf_analyses テーブル＋okrTfAnalysisStore＋OkrTfAnalysisPanel＋okrTfAnalysisClient（AIIntent=okr-tf-analysis）。会議ノート履歴＋KRセッション・宣言＋TFタスクをAIが分析、履歴保存・遡り・手書き編集可 |
 | 2026-05-13 | 会議ノートにクォーターセレクタを追加し、表示TFを選択クォーターのTF割り当て（quarterly_kr_task_forces）に絞るように。TF重複の根本原因（過去クォーターのTFも表示されていた）に対応。割り当て未設定時は従来どおり kr_id で絞る＋注記 |

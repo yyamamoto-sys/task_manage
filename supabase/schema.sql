@@ -339,11 +339,11 @@ CREATE TABLE IF NOT EXISTS kr_note_tf_entries (
   UNIQUE (note_id, tf_id)
 );
 
--- ===== TF単位のAI分析の蓄積（OKR循環ワークフロー Phase B） =====
--- migrations/20260513c_add_okr_tf_analyses.sql 参照
-CREATE TABLE IF NOT EXISTS okr_tf_analyses (
+-- ===== KR単位のAI分析の蓄積（OKR循環ワークフロー Phase B） =====
+-- migrations/20260513c_add_okr_tf_analyses.sql → 20260513d_restructure_okr_analyses_to_kr.sql
+CREATE TABLE IF NOT EXISTS okr_analyses (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  tf_id       text NOT NULL REFERENCES task_forces(id),
+  kr_id       text NOT NULL REFERENCES key_results(id),
   content     text NOT NULL,
   edited      boolean NOT NULL DEFAULT false,
   created_by  text NOT NULL,
@@ -367,7 +367,7 @@ BEGIN
     ('quarterly_objectives'),
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
-    ('okr_tf_analyses')
+    ('okr_analyses')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -405,7 +405,7 @@ ALTER TABLE member_tag_members         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE project_analyses           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_meeting_notes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_note_tf_entries         ENABLE ROW LEVEL SECURITY;
-ALTER TABLE okr_tf_analyses            ENABLE ROW LEVEL SECURITY;
+ALTER TABLE okr_analyses               ENABLE ROW LEVEL SECURITY;
 
 DO $$
 DECLARE
@@ -419,7 +419,7 @@ BEGIN
     ('tasks'), ('milestones'), ('admin_change_logs'),
     ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('member_tag_members'), ('project_analyses'),
-    ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_tf_analyses')
+    ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses')
   LOOP
     EXECUTE format(
       'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
@@ -472,4 +472,4 @@ CREATE INDEX IF NOT EXISTS idx_project_analyses_project_id_created_at ON project
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_meeting_notes_kr_week     ON kr_meeting_notes(kr_id, week_start)      WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_meeting_notes_kr_id_week        ON kr_meeting_notes(kr_id, week_start DESC) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_note_tf_entries_note_id         ON kr_note_tf_entries(note_id);
-CREATE INDEX IF NOT EXISTS idx_okr_tf_analyses_tf_id_created       ON okr_tf_analyses(tf_id, created_at DESC) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_okr_analyses_kr_id_created          ON okr_analyses(kr_id, created_at DESC) WHERE is_deleted = false;
