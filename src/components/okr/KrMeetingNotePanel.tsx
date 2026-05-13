@@ -103,7 +103,9 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const [savedFlash, setSavedFlash] = useState(false);
 
   const [tfIndex, setTfIndex] = useState(0);
-  useEffect(() => { setTfIndex(0); }, [krId, weekStart, quarter]);
+  // どのTF（tf_id）を開いて確認したか。新規作成はすべてのTFを確認するまでできない
+  const [visitedTfs, setVisitedTfs] = useState<Set<string>>(new Set());
+  useEffect(() => { setTfIndex(0); setVisitedTfs(new Set()); }, [krId, weekStart, quarter]);
 
   // KR/週変更時：ノート一覧 + 当該週ノートを取得
   useEffect(() => {
@@ -223,6 +225,19 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
   const isLastTf = tfIndex === tfs.length - 1;
   const krTitle = krs.find(k => k.id === krId)?.title ?? "";
 
+  // 開いているTFを「確認済み」にマーク（既存ノートを開いた場合は最初から全TF確認済み扱い）
+  useEffect(() => {
+    if (currentTf) setVisitedTfs(prev => prev.has(currentTf.id) ? prev : new Set(prev).add(currentTf.id));
+  }, [currentTf]);
+  useEffect(() => {
+    if (note && tfs.length > 0) setVisitedTfs(new Set(tfs.map(t => t.id)));
+  }, [note, tfs]);
+
+  const allTfsVisited = tfs.length > 0 && tfs.every(t => visitedTfs.has(t.id));
+  const unvisitedCount = tfs.filter(t => !visitedTfs.has(t.id)).length;
+  // 「ノートを作成」が押せる条件：既存ノートなら常にOK（保存）、新規なら全TFを確認したら
+  const canPersist = !!note || allTfsVisited;
+
   // 現在TF配下のToDo/タスク件数（記入の参考）
   const tfWork = useMemo(() => {
     if (!currentTf) return null;
@@ -250,8 +265,8 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
           </select>
         </div>
-        <div style={{ flex: "0 1 260px" }}>
-          <Label>対象週（カレンダーで日付を選ぶ → その週の月曜になります）</Label>
+        <div style={{ flex: "0 1 230px" }}>
+          <Label>対象週</Label>
           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
             <input
               type="date"
@@ -261,11 +276,11 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             />
             <button onClick={() => setWeekStart(thisMondayStr())} style={{ ...ghostBtn, whiteSpace: "nowrap" }} title="今週の月曜にする">今週</button>
           </div>
-          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
-            選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
-          </div>
         </div>
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
+      </div>
+      <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "-8px" }}>
+        対象週はカレンダーで日付を選ぶと、その週の月曜に揃います。選択中：{formatMD(weekStart)} の週{weekStart === thisMondayStr() ? "（今週）" : ""}{notesList.some(n => n.week_start === weekStart) ? "" : "（このKRのこの週はまだ未作成）"}
       </div>
 
       {/* ノートのある週へのショートカット */}
@@ -352,19 +367,27 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
             )}
           </div>
 
-          {/* TFステップ・ストリップ */}
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {tfs.map((tf, i) => (
-              <button key={tf.id} onClick={() => setTfIndex(i)} style={{
-                fontSize: "11px", padding: "5px 11px", borderRadius: "var(--radius-md)",
-                border: i === tfIndex ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                background: i === tfIndex ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                color: i === tfIndex ? "var(--color-brand)" : "var(--color-text-secondary)",
-                cursor: "pointer", fontWeight: i === tfIndex ? 600 : 400,
-              }}>
-                {hasContent(tf.id) ? "✓ " : ""}TF{tf.tf_number} {tf.name}
-              </button>
-            ))}
+          {/* TFステップ・ストリップ（●=確認済み ○=未確認） */}
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", alignItems: "center" }}>
+            {tfs.map((tf, i) => {
+              const visited = visitedTfs.has(tf.id);
+              return (
+                <button key={tf.id} onClick={() => setTfIndex(i)} style={{
+                  fontSize: "11px", padding: "5px 11px", borderRadius: "var(--radius-md)",
+                  border: i === tfIndex ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
+                  background: i === tfIndex ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  color: i === tfIndex ? "var(--color-brand)" : (visited ? "var(--color-text-secondary)" : "var(--color-text-tertiary)"),
+                  cursor: "pointer", fontWeight: i === tfIndex ? 600 : 400,
+                }}>
+                  <span style={{ opacity: 0.8 }}>{hasContent(tf.id) ? "✓" : visited ? "●" : "○"}</span> TF{tf.tf_number} {tf.name}
+                </button>
+              );
+            })}
+            {!note && (
+              <span style={{ fontSize: "10px", color: allTfsVisited ? "var(--color-text-success)" : "var(--color-text-tertiary)", marginLeft: "4px" }}>
+                {allTfsVisited ? "✓ すべてのTFを確認済み — ノートを作成できます" : `残り ${unvisitedCount} 件のTFを確認するとノートを作成できます`}
+              </span>
+            )}
           </div>
 
           {/* 現在TFのフォーム */}
@@ -419,7 +442,14 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
                 {!isLastTf ? (
                   <button onClick={() => setTfIndex(i => Math.min(tfs.length - 1, i + 1))} style={primaryBtn}>次のTF（{tfIndex + 2}/{tfs.length}）→</button>
                 ) : (
-                  <button onClick={handleSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.5 : 1 }}>{saving ? "保存中…" : note ? "このKRノートを保存" : "このKRノートを作成"}</button>
+                  <button
+                    onClick={(saving || !canPersist) ? undefined : handleSave}
+                    disabled={saving || !canPersist}
+                    title={!canPersist ? `残り ${unvisitedCount} 件のTFを確認してください` : ""}
+                    style={{ ...primaryBtn, opacity: (saving || !canPersist) ? 0.5 : 1, cursor: (saving || !canPersist) ? "not-allowed" : "pointer" }}
+                  >
+                    {saving ? "保存中…" : note ? "このKRノートを保存" : (canPersist ? "このKRノートを作成" : `残り ${unvisitedCount} 件のTFを確認`)}
+                  </button>
                 )}
               </div>
             </div>
@@ -427,14 +457,26 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId }: Props)
 
           {saveError && <ErrBox>{saveError}</ErrBox>}
 
-          {/* 常時表示の保存バー */}
+          {/* 下部バー：既存ノートは常に保存可。新規ノートは全TFを確認するまで作成ボタンは出さない */}
           <div style={{ position: "sticky", bottom: 0, background: "var(--color-bg-primary)", borderTop: "1px solid var(--color-border-primary)", padding: "10px 0", display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "11px", color: savedFlash ? "var(--color-text-success)" : "var(--color-text-tertiary)", flex: 1 }}>
-              {savedFlash ? "✓ 保存しました" : dirty ? "未保存の変更があります" : note ? `保存済み（「${krTitle}」${formatMD(weekStart)}週）` : "このノートはまだ保存されていません"}
+              {savedFlash
+                ? "✓ 保存しました"
+                : note
+                  ? (dirty ? "未保存の変更があります" : `保存済み（「${krTitle}」${formatMD(weekStart)}週）`)
+                  : (canPersist ? "すべてのTFを確認しました。ノートを作成できます" : `各TFを順に確認してください（残り ${unvisitedCount} 件）`)}
             </span>
-            <button onClick={handleSave} disabled={saving || (!dirty && !!note)} style={{ ...primaryBtn, opacity: (saving || (!dirty && !!note)) ? 0.5 : 1, cursor: (saving || (!dirty && !!note)) ? "default" : "pointer" }}>
-              {saving ? "保存中…" : note ? "保存" : "このKRノートを作成"}
-            </button>
+            {note ? (
+              <button onClick={handleSave} disabled={saving || !dirty} style={{ ...primaryBtn, opacity: (saving || !dirty) ? 0.5 : 1, cursor: (saving || !dirty) ? "default" : "pointer" }}>
+                {saving ? "保存中…" : "保存"}
+              </button>
+            ) : canPersist ? (
+              <button onClick={saving ? undefined : handleSave} disabled={saving} style={{ ...primaryBtn, opacity: saving ? 0.5 : 1 }}>
+                {saving ? "保存中…" : "このKRノートを作成"}
+              </button>
+            ) : (
+              <button onClick={() => setTfIndex(tfs.findIndex(t => !visitedTfs.has(t.id)))} style={ghostBtn}>未確認のTFへ →</button>
+            )}
           </div>
         </>
       )}
