@@ -627,6 +627,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {adminOverlay}
+      {guideOverlay}
 
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
