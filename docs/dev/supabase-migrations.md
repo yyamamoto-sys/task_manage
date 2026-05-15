@@ -6,10 +6,13 @@ plan-app の Supabase テーブル追加・変更時の標準手順と RLS / GRA
 ## 1. 大原則
 
 - plan-app は **supabase-js（Data API）経由**でクライアントから DB を叩く構造
-- 公開ロールは **`authenticated`** と **`service_role`** のみ使う
-- **`anon` には何も grant しない**（未ログインからは触らせない）
+- **認証は Supabase Auth**（`signInWithPassword`）を使用。ログイン後は同じ anon key が JWT を持つ `authenticated` ロールに昇格してアクセス
+- 公開ロールは **`authenticated`** と **`service_role`** のみに grant する
+- **`anon` には grant しない**（ログイン画面はテーブルアクセスをしないので不要・セキュリティ強化）
 - すべての `public.*` テーブルは **RLS 有効** ＋ **`authenticated full access` ポリシー**を基本とする
 - 例外（特定ユーザのみ・読み取り専用など）はテーブル単位で個別ポリシーを書く
+
+> **既存テーブルの状態（2026-05-15 時点）：** 既存テーブルは過去の Supabase デフォルトに従い `anon` にも全権限が付いている。**これは将来的に REVOKE する方針**（Phase 2 RLS強化と合わせて）。新規テーブルからは下記テンプレに従い anon を付けないこと。
 
 ## 2. 新規テーブル作成テンプレ（コピペ用）
 
@@ -82,13 +85,15 @@ group by grantee, table_name
 order by table_name, grantee;
 ```
 
-期待結果：
+期待結果（新規テーブルから適用される方針）：
 
 | grantee | privileges | 備考 |
 |---|---|---|
-| `authenticated` | `DELETE, INSERT, SELECT, UPDATE` | 全テーブルでこの4つ |
-| `service_role` | `DELETE, INSERT, SELECT, UPDATE` | 全テーブルでこの4つ |
-| `anon` | （行が出ない） | plan-app は `anon` に grant しない方針 |
+| `authenticated` | `DELETE, INSERT, SELECT, UPDATE` | 全テーブル必須 |
+| `service_role` | `DELETE, INSERT, SELECT, UPDATE` | 全テーブル必須 |
+| `anon` | （行が出ない） | 新規方針。既存テーブルは過去デフォルトで `anon` 行あり |
+
+**現状の既存テーブル（2026-05-15 棚卸し）：** 全テーブルで anon/authenticated/service_role に `DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE` の全権限が付与されている。Supabase の旧デフォルト挙動による。
 
 **もし `authenticated` の grant が欠けているテーブルがあれば**、補完 migration を作る：
 
@@ -96,6 +101,16 @@ order by table_name, grantee;
 grant select, insert, update, delete on public.<missing_table> to authenticated;
 grant select, insert, update, delete on public.<missing_table> to service_role;
 ```
+
+**`anon` の全権限を将来的に REVOKE する場合**（Phase 2 RLS強化と合わせる）：
+
+```sql
+revoke all on public.<table_name> from anon;
+-- 全テーブル一括の場合：
+revoke all on all tables in schema public from anon;
+```
+
+> **注意：** REVOKE 後はログイン画面（`<LoginScreen>` 表示時）で**テーブルアクセスが必要にならないか**先にコード確認すること。現在の plan-app はログイン画面で `supabase.from(...)` を呼んでいないので、安全に外せるはず。
 
 ## 6. RLS ポリシーの棚卸し
 
