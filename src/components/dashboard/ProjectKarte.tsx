@@ -42,6 +42,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawKrs     = useAppStore(s => s.keyResults);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
+  const rawTpjs    = useAppStore(s => s.taskProjects);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -51,10 +52,11 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
 
-  const pjTasks = useMemo(
-    () => rawTasks.filter(t => !t.is_deleted && t.project_id === project.id),
-    [rawTasks, project.id],
-  );
+  // PJ配下のタスク：「主プロジェクト = このPJ」または「task_projects 経由でこのPJと紐づく」のどちらか
+  const pjTasks = useMemo(() => {
+    const secondaryTaskIds = new Set(rawTpjs.filter(tp => tp.project_id === project.id).map(tp => tp.task_id));
+    return rawTasks.filter(t => !t.is_deleted && (t.project_id === project.id || secondaryTaskIds.has(t.id)));
+  }, [rawTasks, rawTpjs, project.id]);
 
   const today = todayStr();
   const weekLater = addDaysFromToday(7);
@@ -102,6 +104,28 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       .map(id => memberById.get(id)).filter((m): m is Member => !!m),
     [project.owner_member_ids, project.owner_member_id, memberById],
   );
+
+  // PJメンバー（オーナーとは別の関与者）
+  const pjMembers = useMemo(
+    () => (project.member_ids ?? [])
+      .map(id => memberById.get(id))
+      .filter((m): m is Member => !!m),
+    [project.member_ids, memberById],
+  );
+
+  // AI分析に渡す「このPJに関わる全員」＝オーナー＋メンバー＋タスク担当者の和集合
+  const pjAllMembers = useMemo(() => {
+    const map = new Map<string, Member>();
+    for (const o of owners) map.set(o.id, o);
+    for (const m of pjMembers) map.set(m.id, m);
+    for (const t of pjTasks) {
+      for (const aid of (t.assignee_member_ids?.length ? t.assignee_member_ids : (t.assignee_member_id ? [t.assignee_member_id] : []))) {
+        const m = memberById.get(aid);
+        if (m) map.set(m.id, m);
+      }
+    }
+    return [...map.values()];
+  }, [owners, pjMembers, pjTasks, memberById]);
 
   const milestones = useMemo(
     () => rawMs.filter(m => !m.is_deleted && m.project_id === project.id)
@@ -166,7 +190,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           completed_at: t.completed_at ?? null,
         })),
         milestones: milestones.map(m => ({ name: m.name, date: m.date, description: m.description })),
-        members_short_names: members.map(m => m.short_name),
+        members_short_names: pjAllMembers.map(m => m.short_name),
         today,
       });
       await insertProjectAnalysis(project.id, text, currentUser.id);
@@ -178,7 +202,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
     } finally {
       setAnalyzing(false);
     }
-  }, [project, owners, pjTasks, milestones, members, memberById, today, currentUser.id]);
+  }, [project, owners, pjTasks, milestones, pjAllMembers, today, currentUser.id]);
 
   const latest = analyses[0] ?? null;
   const accent = project.color_tag;

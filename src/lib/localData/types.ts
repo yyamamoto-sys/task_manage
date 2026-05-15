@@ -106,6 +106,8 @@ export interface Project {
   owner_member_id: string;
   /** 複数オーナー対応（DBのowner_member_ids[]と同期） */
   owner_member_ids: string[];
+  /** PJに参加するメンバーID配列。オーナーとは別の「関与者」。空配列も可・未設定でも可。 */
+  member_ids?: string[];
   status: "active" | "completed" | "archived";
   color_tag: string;
   start_date: string;

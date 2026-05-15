@@ -25,6 +25,7 @@ const RESPONSE_FORMAT = `
       "target_task_ids": ["task_001", "task_002"],
       "target_pj_ids": ["pj_001"],
       "suggested_date": "YYYY-MM-DD",
+      "suggested_start_date": "YYYY-MM-DD",
       "suggested_end_date": "YYYY-MM-DD",
       "shift_days": 14,
       "suggested_assignee": "メンバーのshort_name",
@@ -54,7 +55,9 @@ const RESPONSE_FORMAT = `
 - add_task: 新規タスクの追加提案（needs_confirmation=trueにすること）
   titleにタスク名、descriptionに追加する理由を記載する。
   target_pj_idsに追加先プロジェクトのshortIdを含める（プロジェクト不明なら空配列）。
-  suggested_assigneeに担当者のshort_nameを記入（任意）、suggested_dateに期日を記入（任意）。
+  suggested_assigneeに担当者のshort_nameを記入（任意）、suggested_dateに期日（任意）、suggested_start_dateに開始日（任意）を記入。
+  期日と開始日はガントチャート表示の起点・終点として使われるため、両方提案できると親切。明示が無くてもタスクの性質から逆算して妥当な日付を入れて構わない。
+  suggested_start_date と suggested_date が両方ある場合、suggested_start_date <= suggested_date を必ず守ること。
   date_certaintyは"exact"（期日確定）または"unknown"（期日未定）を使う。
 
 ## info アクションの使い方

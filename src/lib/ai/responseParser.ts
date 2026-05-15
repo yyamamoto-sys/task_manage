@@ -26,6 +26,7 @@ export interface Proposal {
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
+  suggested_start_date?: string;
   suggested_end_date?: string;
   shift_days?: number;
   suggested_assignee?: string;

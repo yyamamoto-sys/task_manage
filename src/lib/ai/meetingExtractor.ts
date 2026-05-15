@@ -11,6 +11,7 @@ import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
 export interface MeetingTask {
   name: string;
   assignee_short_name: string | null;
+  start_date: string | null;     // YYYY-MM-DD or null（着手予定日。ガント表示の起点）
   due_date: string | null;       // YYYY-MM-DD or null
   project_hint: string | null;   // プロジェクト名のヒント（AIが推測）
   priority: "high" | "mid" | "low" | null;
@@ -113,7 +114,9 @@ const SYSTEM_PROMPT = `あなたは会議の文字起こしを解析して、タ
 
 【new_tasks 抽出ルール】
 - assignee_short_nameは受け取ったメンバーリストのshort_nameからマッチするものを選ぶ（不明はnull）
+- start_dateは「明日から」「来週月曜から」「すぐ着手」などをYYYY-MM-DD形式に変換（推測できなければnull）。明示が無くてもタスクの性質と期日から逆算して妥当な着手日を推定して構わない（ガント表示のため）
 - due_dateは「今週中」「〇日まで」などをYYYY-MM-DD形式に変換（推測できなければnull）
+- start_dateとdue_dateが両方ある場合、start_date <= due_date を必ず守ること
 - project_hintはプロジェクトリストから関連しそうな名前を選ぶ（不明はnull）
 - priorityは文脈から「急ぎ」「重要」「できれば」などを high/mid/low に変換（不明はnull）
 - source_quoteは根拠となる発言を30文字以内で
@@ -130,6 +133,7 @@ const SYSTEM_PROMPT = `あなたは会議の文字起こしを解析して、タ
     {
       "name": "タスク名",
       "assignee_short_name": "山田" | null,
+      "start_date": "2026-04-20" | null,
       "due_date": "2026-05-01" | null,
       "project_hint": "プロジェクト名" | null,
       "priority": "high" | "mid" | "low" | null,

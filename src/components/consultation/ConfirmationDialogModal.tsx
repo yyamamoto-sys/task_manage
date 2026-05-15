@@ -51,6 +51,7 @@ export function ConfirmationDialogModal({
         for (const item of dialog.new_task_items ?? []) {
           entries.push([`${item.temp_id}_name`, item.task_name]);
           entries.push([`${item.temp_id}_assignee_id`, item.suggested_assignee_id ?? ""]);
+          entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
           entries.push([`${item.temp_id}_due_date`, item.suggested_due_date ?? ""]);
         }
         return Object.fromEntries(entries);
@@ -265,6 +266,25 @@ export function ConfirmationDialogModal({
                       <option key={m.id} value={m.id}>{m.short_name}</option>
                     ))}
                   </select>
+                </div>
+
+                {/* 開始日 */}
+                <div>
+                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>開始日</div>
+                  <input
+                    type="date"
+                    value={confirmedValues[`${item.temp_id}_start_date`] ?? ""}
+                    onChange={(e) =>
+                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_start_date`]: e.target.value }))
+                    }
+                    style={{
+                      fontSize: "11px", padding: "4px 6px",
+                      border: "1px solid var(--color-border-secondary)",
+                      borderRadius: "var(--radius-sm)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  />
                 </div>
 
                 {/* 期日 */}

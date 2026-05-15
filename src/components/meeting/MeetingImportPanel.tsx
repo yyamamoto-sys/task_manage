@@ -47,6 +47,7 @@ interface TaskDraft {
   checked: boolean;
   name: string;
   assignee_member_id: string;
+  start_date: string;
   due_date: string;
   project_id: string;
   priority: "high" | "mid" | "low" | null;
@@ -200,6 +201,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
               m.short_name === t.assignee_short_name ||
               m.display_name.includes(t.assignee_short_name ?? "")
             )?.id ?? (members[0]?.id ?? ""),
+          start_date: t.start_date ?? "",
           due_date: t.due_date ?? "",
           project_id:
             projects.find(p =>
@@ -298,7 +300,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           assignee_member_ids: [draft.assignee_member_id || currentUser.id],
           status: "todo",
           priority: draft.priority,
-          start_date: null,
+          start_date: draft.start_date || null,
           due_date: draft.due_date || null,
           estimated_hours: null,
           comment: draft.source_quote ? `会議メモ：「${draft.source_quote}」` : "",
@@ -941,6 +943,17 @@ function TaskDraftCard({
                   <option key={m.id} value={m.id}>{m.short_name}</option>
                 ))}
               </select>
+            </div>
+
+            {/* 開始日 */}
+            <div style={{ flex: "1 1 130px" }}>
+              <FieldLabel>開始日</FieldLabel>
+              <input
+                type="date"
+                value={draft.start_date}
+                onChange={e => onChange({ start_date: e.target.value })}
+                style={inputStyle}
+              />
             </div>
 
             {/* 期日 */}

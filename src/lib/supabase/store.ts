@@ -166,6 +166,7 @@ export async function fetchAllData() {
       owner_member_ids: (p.owner_member_ids as string[] | undefined)?.length
         ? p.owner_member_ids as string[]
         : p.owner_member_id ? [p.owner_member_id as string] : [],
+      member_ids: Array.isArray(p.member_ids) ? p.member_ids as string[] : [],
     })) as Project[],
     tasks: (tasks.data ?? []).map((t: Record<string, unknown>) => ({
       ...t,

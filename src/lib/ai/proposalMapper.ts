@@ -19,6 +19,7 @@ export interface UIProposal {
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
+  suggested_start_date?: string;
   suggested_end_date?: string;
   shift_days?: number;
   suggested_assignee?: string;
@@ -97,6 +98,7 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       target_task_ids: p.target_task_ids,
       target_pj_ids: p.target_pj_ids,
       suggested_date: p.suggested_date,
+      suggested_start_date: p.suggested_start_date,
       suggested_end_date: p.suggested_end_date,
       shift_days: p.shift_days,
       suggested_assignee: p.suggested_assignee,

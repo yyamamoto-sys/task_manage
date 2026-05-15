@@ -131,12 +131,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   );
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
-  // 「自分が参加しているPJ」の判定: オーナー or 担当タスクを持つPJ
+  // 「自分が参加しているPJ」の判定: オーナー / PJメンバー / 担当タスクを持つPJ
   const myProjectIds = useMemo(() => {
     const ids = new Set<string>();
     projects.forEach(p => {
       if ((p.owner_member_ids ?? []).includes(currentUser.id)) ids.add(p.id);
       else if (p.owner_member_id === currentUser.id) ids.add(p.id);
+      else if ((p.member_ids ?? []).includes(currentUser.id)) ids.add(p.id);
     });
     (rawTasks ?? []).forEach((t: Task) => {
       if (t.is_deleted || !t.project_id) return;

@@ -80,6 +80,7 @@ export interface NewTaskItem {
   project_name?: string;
   suggested_assignee_id?: string;
   suggested_assignee_name?: string;
+  suggested_start_date?: string;
   suggested_due_date?: string;
 }
 
@@ -455,6 +456,7 @@ export async function applyProposal(
           project_name: projectName,
           suggested_assignee_id: assigneeId,
           suggested_assignee_name: assigneeName ?? proposal.suggested_assignee,
+          suggested_start_date: proposal.suggested_start_date,
           suggested_due_date: proposal.suggested_date,
         }],
       },
@@ -646,6 +648,7 @@ export async function applyProposalWithConfirmation(
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
         if (!name) continue;
         const assigneeId = confirmedValues[`${item.temp_id}_assignee_id`] || null;
+        const startDate = confirmedValues[`${item.temp_id}_start_date`] || null;
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
         const newId = generateId();
@@ -657,6 +660,7 @@ export async function applyProposalWithConfirmation(
           assignee_member_id: assigneeId,
           status: "todo",
           is_deleted: false,
+          start_date: startDate,
           due_date: dueDate,
           created_at: now,
           updated_at: now,

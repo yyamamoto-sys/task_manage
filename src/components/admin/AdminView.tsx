@@ -1260,7 +1260,9 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "", purpose: "", contribution_memo: "",
-    owner_member_ids: [] as string[], status: "active" as Project["status"],
+    owner_member_ids: [] as string[],
+    member_ids: [] as string[],
+    status: "active" as Project["status"],
     color_tag: "#7F77DD", start_date: "", end_date: "",
   });
 
@@ -1274,6 +1276,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     setForm({
       name: "", purpose: "", contribution_memo: "",
       owner_member_ids: members[0] ? [members[0].id] : [],
+      member_ids: [],
       status: "active", color_tag: "#7F77DD",
       start_date: new Date().toISOString().split("T")[0],
       end_date: `${new Date().getFullYear()}-12-31`,
@@ -1286,6 +1289,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       name: pj.name, purpose: pj.purpose,
       contribution_memo: pj.contribution_memo,
       owner_member_ids: pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []),
+      member_ids: pj.member_ids ?? [],
       status: pj.status,
       color_tag: pj.color_tag, start_date: pj.start_date, end_date: pj.end_date,
     });
@@ -1502,6 +1506,44 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                   onChange={e => setForm(f => ({...f, color_tag: e.target.value}))}
                   style={{ ...inputStyle, padding: "2px", height: "32px", cursor: "pointer" }} />
               </div>
+            </div>
+
+            {/* メンバー（オーナーとは別の関与者） */}
+            <div>
+              <FieldLabel>メンバー（オーナー以外の関与者・任意）</FieldLabel>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
+                {form.member_ids.map(id => {
+                  const m = members.find(m => m.id === id);
+                  if (!m) return null;
+                  return (
+                    <span key={id} style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      fontSize: "11px", padding: "2px 8px",
+                      background: "var(--color-bg-tertiary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-full)",
+                    }}>
+                      {m.short_name}
+                      <button onClick={() => setForm(f => ({ ...f, member_ids: f.member_ids.filter(i => i !== id) }))}
+                        style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
+                    </span>
+                  );
+                })}
+              </div>
+              <select
+                value=""
+                onChange={e => {
+                  const id = e.target.value;
+                  if (id && !form.member_ids.includes(id))
+                    setForm(f => ({ ...f, member_ids: [...f.member_ids, id] }));
+                }}
+                style={inputStyle}
+              >
+                <option value="">＋ メンバーを追加</option>
+                {members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => (
+                  <option key={m.id} value={m.id}>{m.display_name}</option>
+                ))}
+              </select>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
               <div>
