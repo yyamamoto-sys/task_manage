@@ -17,6 +17,7 @@ import { AIProgressLoader } from "../common/AIProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
+import { HelpButton } from "../guide/HelpButton";
 
 interface Props {
   onClose: () => void;
@@ -312,6 +313,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
             チェックイン・ウィンセッションの議事メモからAIがレポートを生成します
           </div>
         </div>
+        <HelpButton modeKey="okr.report" title="③ レポート作成の使い方を開く" />
         {!inline && (
           <button
             onClick={onClose}

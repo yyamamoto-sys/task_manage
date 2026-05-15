@@ -16,6 +16,7 @@ import { fetchKrSessions, updateKrSession, softDeleteKrSession, fetchKrDeclarati
 import { fetchKrMeetingNote, type KrMeetingNote } from "../../lib/supabase/krMeetingNoteStore";
 import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
+import { HelpButton } from "../guide/HelpButton";
 
 // 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）
 // 概要は OKR ボタン（右上）からオーバーレイで開く。
@@ -224,7 +225,7 @@ export function OkrDashboardView({
         display: "flex", alignItems: "center", gap: "10px",
         flexShrink: 0,
       }}>
-        <div>
+        <div style={{ flex: 1 }}>
           <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)", lineHeight: 1.3 }}>
             OKR管理モード
           </div>
@@ -232,6 +233,7 @@ export function OkrDashboardView({
             Objective・KR の進捗を週次で記録・振り返るモードです
           </div>
         </div>
+        <HelpButton modeKey="okr.cycle" title="OKR週次サイクル全体像のガイドを開く" />
       </div>
 
       {/* 上位タブバー（OKR管理 / なぜなぜ / 計画） */}

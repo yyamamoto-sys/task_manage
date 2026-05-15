@@ -23,6 +23,7 @@ import { insertOkrAnalysis, insertObjectiveAnalysis } from "../../lib/supabase/o
 import {
   extractJointCheckinData, extractJointWinSessionData,
 } from "../../lib/ai/krSessionExtractor";
+import { HelpButton } from "../guide/HelpButton";
 
 type JointMode = "checkin" | "win_session";
 type Step = "input" | "extracting" | "review" | "saving" | "done";
@@ -472,8 +473,11 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
-        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          合同会議の議事メモを投入すると、AIが文字起こしを詳細に分析し、KRごとに「議論サマリ・学び・リスク・次の一手・宣言・シグナル」を整理します。
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
+            合同会議の議事メモを投入すると、AIが文字起こしを詳細に分析し、KRごとに「議論サマリ・学び・リスク・次の一手・宣言・シグナル」を整理します。
+          </div>
+          <HelpButton modeKey="okr.session" title="② セッション記録&分析の使い方を開く" />
         </div>
 
         {/* モード */}
