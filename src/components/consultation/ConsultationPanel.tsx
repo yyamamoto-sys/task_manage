@@ -25,6 +25,7 @@ import {
   type PlannedTask,
 } from "../../lib/ai/projectPlanClient";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { HelpButton } from "../guide/HelpButton";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
@@ -524,6 +525,7 @@ export function ConsultationPanel({
               {panelMode === "create" && (createPhase === "chat" || createPhase === "error") && (
                 <button onClick={resetCreate} style={headerBtnWhite(false)}>リセット</button>
               )}
+              <HelpButton modeKey="consultation.main" title="AIツールの使い方を開く" />
               <button onClick={onClose} aria-label="閉じる" style={{ ...iconBtnWhite, fontSize: "16px" }}>×</button>
             </div>
           </div>

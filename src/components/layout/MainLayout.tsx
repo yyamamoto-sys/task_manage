@@ -14,6 +14,7 @@ import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
+import { HelpButton } from "../guide/HelpButton";
 
 /**
  * 【設計意図】
@@ -200,6 +201,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       }}>
         <span style={{ fontSize: "15px" }}>⚙️</span>
         <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>設定</span>
+        <HelpButton modeKey="admin.settings" title="設定パネルの使い方を開く" />
         <button
           onClick={() => setIsAdminOpen(false)}
           style={{

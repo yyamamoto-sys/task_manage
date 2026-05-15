@@ -25,6 +25,7 @@ import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
+import { HelpButton } from "../guide/HelpButton";
 
 interface Props {
   currentUser: Member;
@@ -288,8 +289,9 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           display: "flex", alignItems: "center", gap: "10px",
           marginBottom: "16px", flexWrap: "wrap",
         }}>
-          <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-            ダッシュボード
+          <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1, display: "flex", alignItems: "center", gap: "8px" }}>
+            <span>ダッシュボード</span>
+            <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />
           </div>
 
           {/* 自分のみ/全員トグル */}
