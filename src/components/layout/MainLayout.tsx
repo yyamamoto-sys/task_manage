@@ -29,7 +29,7 @@ const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardVie
 const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
 const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
-const KrSessionPanel     = lazyWithRetry(() => import("../lab/KrSessionPanel").then(m => ({ default: m.KrSessionPanel })), "KrSessionPanel");
+const KrJointSessionFlow = lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow");
 const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
 const OkrDashboardView   = lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView");
 const GuideModeView      = lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView");
@@ -345,7 +345,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         )}
         {isKrSessionOpen && (
           <Suspense fallback={<ViewLoading />}>
-            <KrSessionPanel onClose={() => setIsKrSessionOpen(false)} currentUser={currentUser} />
+            <KrJointSessionFlow currentUser={currentUser} onClose={() => setIsKrSessionOpen(false)} />
           </Suspense>
         )}
         {isKrWhyOpen && (
@@ -754,9 +754,9 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       )}
       {isKrSessionOpen && (
         <Suspense fallback={<ViewLoading />}>
-          <KrSessionPanel
-            onClose={() => setIsKrSessionOpen(false)}
+          <KrJointSessionFlow
             currentUser={currentUser}
+            onClose={() => setIsKrSessionOpen(false)}
           />
         </Suspense>
       )}

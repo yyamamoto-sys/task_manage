@@ -22,10 +22,11 @@ import {
 import { insertOkrAnalysis, insertObjectiveAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import {
   extractJointCheckinData, extractJointWinSessionData,
+  extractFreeformSession, type ExtractedKrMention,
 } from "../../lib/ai/krSessionExtractor";
 import { HelpButton } from "../guide/HelpButton";
 
-type JointMode = "checkin" | "win_session";
+type JointMode = "checkin" | "win_session" | "freeform";
 type Step = "input" | "extracting" | "review" | "saving" | "done";
 
 const PHASES_CHECKIN = [
@@ -42,6 +43,20 @@ const PHASES_WIN = [
   "リスク・次の一手を整理しています…",
   "結果をまとめています…",
 ];
+const PHASES_FREEFORM = [
+  "文字起こしを読み込んでいます…",
+  "議論サマリを整理しています…",
+  "決定事項を拾っています…",
+  "言及されたKR/TFとフォローアップを抽出しています…",
+  "結果をまとめています…",
+];
+
+interface FreeformFollowUpRow {
+  tempId: string;
+  member_short_name: string;
+  content: string;
+  due_date: string;
+}
 
 function getThisMonday(): string {
   const d = new Date();
@@ -92,9 +107,12 @@ interface Props {
   currentUser: Member;
   initialKrId?: string;
   onSaved?: () => void;
+  // MainLayout のオーバーレイから開いたとき用。OkrDashboardView の
+  // インライン表示では渡さない（その場合は閉じるボタンを表示しない）。
+  onClose?: () => void;
 }
 
-export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props) {
+export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose }: Props) {
   const rawKrs = useAppStore(s => s.keyResults);
   const rawMembers = useAppStore(s => s.members);
   const objective = useAppStore(s => s.objective);
@@ -121,6 +139,19 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
   const [overall, setOverall] = useState<OverallDraft>({ summary: "", cross_kr_insights: "" });
   // タブ：'overall' or kr_id
   const [activeTab, setActiveTab] = useState<string>("overall");
+
+  // freeform 用ステート（メインKR1つに紐づける）
+  const [freeformPrimaryKrId, setFreeformPrimaryKrId] = useState<string>("");
+  const [freeformSummary, setFreeformSummary] = useState("");
+  const [freeformDecisions, setFreeformDecisions] = useState<string[]>([]);
+  const [freeformKrMentions, setFreeformKrMentions] = useState<ExtractedKrMention[]>([]);
+  const [freeformFollowUps, setFreeformFollowUps] = useState<FreeformFollowUpRow[]>([]);
+
+  // freeform 用：メインKR を initialKrId or 先頭で初期化
+  useEffect(() => {
+    if (freeformPrimaryKrId) return;
+    setFreeformPrimaryKrId(initialKrId ?? activeKrs[0]?.id ?? "");
+  }, [initialKrId, activeKrs, freeformPrimaryKrId]);
 
   const dropAreaRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -160,6 +191,37 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
     setError(null);
     const text = transcript.trim();
     if (!text && !attachment) { setError("文字起こしを貼り付けるか、ファイルを添付してください。"); return; }
+
+    // freeform はメインKR 1つだけが対象
+    if (mode === "freeform") {
+      const primary = activeKrs.find(k => k.id === freeformPrimaryKrId);
+      if (!primary) { setError("メインKRを選択してください。"); return; }
+      setStep("extracting");
+      try {
+        const result = await extractFreeformSession({
+          krTitle: primary.title,
+          allKrTitles: activeKrs.map(k => k.title),
+          memberShortNames,
+          transcript: text,
+          attachment: attachment ?? undefined,
+        });
+        setFreeformSummary(result.summary ?? "");
+        setFreeformDecisions(result.decisions ?? []);
+        setFreeformKrMentions(result.kr_mentions ?? []);
+        setFreeformFollowUps((result.follow_up_tasks ?? []).map((t, i) => ({
+          tempId: `tmp-fu-${i}`,
+          member_short_name: t.member_short_name ?? "",
+          content: t.content ?? "",
+          due_date: t.due_date ?? "",
+        })));
+        setStep("review");
+      } catch (e) {
+        setError(formatErrorForUser("AI抽出に失敗しました", e));
+        setStep("input");
+      }
+      return;
+    }
+
     const targetKrs = activeKrs.filter(k => selectedKrIds.has(k.id));
     if (targetKrs.length === 0) { setError("対象KRを1つ以上選択してください。"); return; }
 
@@ -232,7 +294,7 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
       setError(formatErrorForUser("AI抽出に失敗しました", e));
       setStep("input");
     }
-  }, [transcript, attachment, activeKrs, selectedKrIds, memberShortNames, memberById, mode]);
+  }, [transcript, attachment, activeKrs, selectedKrIds, memberShortNames, memberById, mode, freeformPrimaryKrId]);
 
   // ===== KRごとのマークダウン生成（okr_analyses 保存用） =====
 
@@ -292,6 +354,62 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
     setError(null);
     try {
       const weekStart = getThisMonday();
+
+      // freeform 分岐：メインKR 1つに紐づけて 1 セッション + フォローアップを保存
+      if (mode === "freeform") {
+        const primary = activeKrs.find(k => k.id === freeformPrimaryKrId);
+        if (!primary) throw new Error("メインKRが選択されていません");
+        const validFollowUps = freeformFollowUps.filter(r => r.content.trim());
+        const total = 1 + validFollowUps.length;
+        setProgress({ current: 0, total, label: "サマリ・決定事項を保存中…" });
+
+        const session = await insertKrSession({
+          kr_id: primary.id,
+          week_start: weekStart,
+          session_type: "freeform",
+          signal: null,
+          signal_comment: "",
+          learnings: "",
+          external_changes: "",
+          transcript: transcript.slice(0, 200000),
+          summary: freeformSummary,
+          decisions: freeformDecisions.filter(d => d.trim()).join("\n"),
+          kr_mentions: freeformKrMentions
+            .map(m => `${m.kr_title_hint} — ${m.note}`.trim())
+            .filter(s => s)
+            .join("\n"),
+          created_by: currentUser.id,
+          updated_by: currentUser.id,
+        } as Parameters<typeof insertKrSession>[0]);
+        let cur = 1;
+        setProgress({ current: cur, total, label: validFollowUps.length === 0 ? "完了処理…" : `フォローアップを記録中… (1/${validFollowUps.length})` });
+
+        for (let i = 0; i < validFollowUps.length; i++) {
+          const row = validFollowUps[i];
+          const memberId = [...memberById.values()].find(m => m.short_name === row.member_short_name)?.id ?? currentUser.id;
+          await insertKrDeclaration({
+            session_id: session.id,
+            member_id: memberId,
+            content: row.content,
+            due_date: row.due_date || null,
+            result_status: null,
+            result_note: "",
+            updated_by: currentUser.id,
+          } as Parameters<typeof insertKrDeclaration>[0]);
+          cur += 1;
+          setProgress({
+            current: cur, total,
+            label: i + 1 < validFollowUps.length
+              ? `フォローアップを記録中… (${i + 2}/${validFollowUps.length})`
+              : "完了処理…",
+          });
+        }
+        setProgress({ current: total, total, label: "完了" });
+        setStep("done");
+        onSaved?.();
+        return;
+      }
+
       const selected = panels.filter(p => p.selected);
       // ステップ：[Objective分析] + 各KR（session, 宣言, KR分析）
       const total = (objective ? 1 : 0) + selected.reduce((n, p) => n + 1 + 1 /*kr_analysis*/ + (mode === "checkin" ? (p.checkin?.declarations.length ?? 0) : (p.win?.declaration_results.length ?? 0)), 1);
@@ -373,31 +491,149 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
       setError(formatErrorForUser("保存に失敗しました", e));
       setStep("review");
     }
-  }, [panels, mode, currentUser.id, memberById, onSaved, transcript, objective, overall, buildKrAnalysisMd, buildObjectiveMd]);
+  }, [panels, mode, currentUser.id, memberById, onSaved, transcript, objective, overall, buildKrAnalysisMd, buildObjectiveMd,
+      activeKrs, freeformPrimaryKrId, freeformFollowUps, freeformSummary, freeformDecisions, freeformKrMentions]);
 
   const handleReset = () => {
     setTranscript(""); setAttachment(null); setPanels([]); setOverall({ summary: "", cross_kr_insights: "" }); setActiveTab("overall");
+    setFreeformSummary(""); setFreeformDecisions([]); setFreeformKrMentions([]); setFreeformFollowUps([]);
     setError(null); setStep("input");
   };
 
   // ===== 描画 =====
 
   const inputCount = transcript.trim().length;
-  const canExtract = (inputCount >= 20 || !!attachment) && selectedKrIds.size > 0;
+  const canExtract = (inputCount >= 20 || !!attachment) && (
+    mode === "freeform" ? !!freeformPrimaryKrId : selectedKrIds.size > 0
+  );
 
   if (step === "extracting") {
-    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={mode === "checkin" ? PHASES_CHECKIN : PHASES_WIN} intervalMs={4500} /></div>;
+    const phases = mode === "checkin" ? PHASES_CHECKIN
+                 : mode === "win_session" ? PHASES_WIN
+                 : PHASES_FREEFORM;
+    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={phases} intervalMs={4500} /></div>;
   }
   if (step === "saving") {
     return <div style={{ padding: "32px 24px" }}><SaveProgressLoader current={progress.current} total={progress.total} label={progress.label} title="セッションと分析を保存しています" /></div>;
   }
   if (step === "done") {
+    const doneDetail = mode === "freeform"
+      ? "OKR議論（summary・決定事項・フォローアップ）を記録しました"
+      : `${panels.filter(p => p.selected).length} 件のKRぶんを記録＆分析しました`;
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "16px", padding: "40px 20px" }}>
         <div style={{ fontSize: "44px" }}>🎉</div>
         <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>保存が完了しました</div>
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{panels.filter(p => p.selected).length} 件のKRぶんを記録＆分析しました</div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{doneDetail}</div>
         <button onClick={handleReset} style={primaryBtn}>続けて別のセッションを記録する</button>
+      </div>
+    );
+  }
+
+  if (step === "review" && mode === "freeform") {
+    const primary = activeKrs.find(k => k.id === freeformPrimaryKrId);
+    return (
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+            <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>AI抽出結果を確認・修正してください</span>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>メインKR「{primary?.title ?? "—"}」に紐付けて保存します</span>
+            <div style={{ flex: 1 }} />
+            <button onClick={handleReset} style={ghostBtn}>やり直す</button>
+          </div>
+
+          <Field label="議論サマリ">
+            <TextArea value={freeformSummary} onChange={setFreeformSummary} rows={6} placeholder="会議全体のサマリ" />
+          </Field>
+
+          <div>
+            <Label>決定事項（{freeformDecisions.length}件）</Label>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {freeformDecisions.map((d, i) => (
+                <div key={i} style={{ display: "flex", gap: "6px" }}>
+                  <input type="text" value={d}
+                    onChange={e => setFreeformDecisions(freeformDecisions.map((x, j) => j === i ? e.target.value : x))}
+                    placeholder="決定内容"
+                    style={{ ...inputStyle, flex: 1 }} />
+                  <button onClick={() => setFreeformDecisions(freeformDecisions.filter((_, j) => j !== i))}
+                    style={{ ...ghostBtn, padding: "5px 8px" }} title="削除">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setFreeformDecisions([...freeformDecisions, ""])}
+                style={{ ...ghostBtn, alignSelf: "flex-start" }}>＋ 決定事項を追加</button>
+            </div>
+          </div>
+
+          <div>
+            <Label>言及されたKR / TF（{freeformKrMentions.length}件）</Label>
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "5px" }}>
+              AIが推測したタイトルです。必要に応じて言及内容を編集してください
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {freeformKrMentions.map((m, i) => (
+                <div key={i} style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                  <input type="text" value={m.kr_title_hint}
+                    onChange={e => setFreeformKrMentions(freeformKrMentions.map((x, j) => j === i ? { ...x, kr_title_hint: e.target.value } : x))}
+                    placeholder="KR/TF タイトル"
+                    style={{ ...inputStyle, flex: "1 1 240px" }} />
+                  <input type="text" value={m.note}
+                    onChange={e => setFreeformKrMentions(freeformKrMentions.map((x, j) => j === i ? { ...x, note: e.target.value } : x))}
+                    placeholder="言及内容"
+                    style={{ ...inputStyle, flex: "2 1 280px" }} />
+                  <button onClick={() => setFreeformKrMentions(freeformKrMentions.filter((_, j) => j !== i))}
+                    style={{ ...ghostBtn, padding: "5px 8px" }} title="削除">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setFreeformKrMentions([...freeformKrMentions, { kr_title_hint: "", note: "" }])}
+                style={{ ...ghostBtn, alignSelf: "flex-start" }}>＋ KR/TF言及を追加</button>
+            </div>
+          </div>
+
+          <div>
+            <Label>フォローアップタスク候補（{freeformFollowUps.length}件）</Label>
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "5px" }}>
+              メインKRに紐づく宣言として保存されます（result_status 未設定）
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {freeformFollowUps.map(row => (
+                <div key={row.tempId} style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
+                  <select value={row.member_short_name}
+                    onChange={e => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, member_short_name: e.target.value } : r))}
+                    style={selStyleSm}>
+                    <option value="">（誰）</option>
+                    {memberShortNames.map(n => <option key={n} value={n}>{n}</option>)}
+                    {!memberShortNames.includes(row.member_short_name) && row.member_short_name && (
+                      <option value={row.member_short_name}>{row.member_short_name}</option>
+                    )}
+                  </select>
+                  <input type="text" value={row.content}
+                    onChange={e => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, content: e.target.value } : r))}
+                    placeholder="タスク内容"
+                    style={{ ...inputStyle, flex: 1, minWidth: "200px" }} />
+                  <input type="date" value={row.due_date}
+                    onChange={e => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, due_date: e.target.value } : r))}
+                    style={selStyleSm} />
+                  <button onClick={() => setFreeformFollowUps(freeformFollowUps.filter(r => r.tempId !== row.tempId))}
+                    style={{ ...ghostBtn, padding: "5px 8px" }} title="削除">✕</button>
+                </div>
+              ))}
+              <button onClick={() => setFreeformFollowUps([...freeformFollowUps, {
+                tempId: `tmp-fu-${Date.now()}`, member_short_name: "", content: "", due_date: "",
+              }])} style={{ ...ghostBtn, alignSelf: "flex-start" }}>＋ フォローアップを追加</button>
+            </div>
+          </div>
+
+          {error && <ErrBox>{error}</ErrBox>}
+        </div>
+
+        <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
+            保存すると kr_sessions（session_type=freeform）＋ フォローアップが kr_declarations に保存されます。
+          </div>
+          <button onClick={handleSave} disabled={!freeformPrimaryKrId} style={{ ...primaryBtn, opacity: freeformPrimaryKrId ? 1 : 0.5 }}>
+            OKR議論を保存
+          </button>
+        </div>
       </div>
     );
   }
@@ -475,37 +711,67 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
       <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: "14px" }}>
         <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
-            合同会議の議事メモを投入すると、AIが文字起こしを詳細に分析し、KRごとに「議論サマリ・学び・リスク・次の一手・宣言・シグナル」を整理します。
+            {mode === "freeform"
+              ? "戦略会議・四半期計画など自由形式のOKR議論。議事メモから「議論サマリ・決定事項・言及KR/TF・フォローアップ」を抽出します。"
+              : "合同会議の議事メモを投入すると、AIが文字起こしを詳細に分析し、KRごとに「議論サマリ・学び・リスク・次の一手・宣言・シグナル」を整理します。"}
           </div>
           <HelpButton modeKey="okr.session" title="② セッション記録&分析の使い方を開く" />
+          {onClose && (
+            <button onClick={onClose} aria-label="閉じる" title="閉じる" style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              fontSize: "18px", color: "var(--color-text-tertiary)", padding: "2px 6px",
+            }}>✕</button>
+          )}
         </div>
 
         {/* モード */}
         <div>
           <Label>セッションの種類</Label>
-          <div style={{ display: "flex", gap: "6px" }}>
-            {([{ v: "checkin" as const, label: "チェックイン" }, { v: "win_session" as const, label: "ウィンセッション" }]).map(opt => (
+          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+            {([
+              { v: "checkin" as const,     label: "チェックイン" },
+              { v: "win_session" as const, label: "ウィンセッション" },
+              { v: "freeform" as const,    label: "その他のOKR議論（自由形式）" },
+            ]).map(opt => (
               <button key={opt.v} onClick={() => setMode(opt.v)} style={modeBtn(mode === opt.v)}>{opt.label}</button>
             ))}
           </div>
         </div>
 
-        {/* 対象KR */}
-        <div>
-          <Label>対象KR（複数選択可・既定は全KR）</Label>
-          <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-            {activeKrs.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</span>}
-            {activeKrs.map(k => {
-              const on = selectedKrIds.has(k.id);
-              return (
-                <button key={k.id} onClick={() => toggleKr(k.id)} style={chipBtn(on)}>
-                  <span>{on ? "✓" : "○"}</span>
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}</span>
-                </button>
-              );
-            })}
+        {/* 対象KR（mode で UI が切り替わる） */}
+        {mode === "freeform" ? (
+          <div>
+            <Label>メインKR（議論の主軸になる KR を1つ。kr_mentions で他KRも記録可）</Label>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {activeKrs.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</span>}
+              {activeKrs.map(k => {
+                const on = freeformPrimaryKrId === k.id;
+                return (
+                  <button key={k.id} onClick={() => setFreeformPrimaryKrId(k.id)} style={chipBtn(on)}>
+                    <span>{on ? "●" : "○"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div>
+            <Label>対象KR（複数選択可・既定は全KR）</Label>
+            <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+              {activeKrs.length === 0 && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</span>}
+              {activeKrs.map(k => {
+                const on = selectedKrIds.has(k.id);
+                return (
+                  <button key={k.id} onClick={() => toggleKr(k.id)} style={chipBtn(on)}>
+                    <span>{on ? "✓" : "○"}</span>
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{k.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* 議事メモ入力 */}
         <div>
@@ -541,7 +807,13 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved }: Props)
       {/* sticky 抽出バー（スクロール不要） */}
       <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
-          {canExtract ? `${selectedKrIds.size} KR について、議事メモを詳細分析→KRごとに整理します` : "議事メモまたは添付ファイルと、対象KRを1つ以上選択してください"}
+          {!canExtract
+            ? (mode === "freeform"
+                ? "議事メモまたは添付ファイルと、メインKRを選択してください"
+                : "議事メモまたは添付ファイルと、対象KRを1つ以上選択してください")
+            : mode === "freeform"
+              ? "メインKRに紐付けて議論サマリ・決定事項・言及KR・フォローアップを整理します"
+              : `${selectedKrIds.size} KR について、議事メモを詳細分析→KRごとに整理します`}
         </div>
         <button onClick={handleExtract} disabled={!canExtract} style={{ ...primaryBtn, opacity: canExtract ? 1 : 0.5, cursor: canExtract ? "pointer" : "not-allowed" }}>
           ✨ AIで詳細分析・抽出する
