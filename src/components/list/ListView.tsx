@@ -11,6 +11,7 @@ import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   currentUser: Member;
@@ -67,10 +68,31 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
   const deleteTask = useAppStore(s => s.deleteTask);
-  const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const rawTaskForces       = useAppStore(s => s.taskForces);
+  const rawKeyResults       = useAppStore(s => s.keyResults);
+  const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
+  const allTaskProjects     = useAppStore(s => s.taskProjects);
+  const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
+  const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
+  const addTaskProject      = useAppStore(s => s.addTaskProject);
+  const removeTaskProject   = useAppStore(s => s.removeTaskProject);
+  const todos      = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const taskForces = useMemo(() => rawTaskForces.filter(t => !t.is_deleted), [rawTaskForces]);
+  const keyResults = useMemo(() => rawKeyResults.filter(k => !k.is_deleted), [rawKeyResults]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+
+  // tf.id → "TF{KR index+1}-{tf_number}" 形式のラベル
+  const tfLabelById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const tf of taskForces) {
+      const krIdx = keyResults.findIndex(k => k.id === tf.kr_id);
+      const krLabel = krIdx >= 0 ? `${krIdx + 1}` : "?";
+      map.set(tf.id, `TF${krLabel}-${tf.tf_number || "?"}`);
+    }
+    return map;
+  }, [taskForces, keyResults]);
 
   // 永続化フィルター
   const [groupBy,        setGroupByState       ] = useState<GroupBy>(() => lsGet("groupBy", "project"));
@@ -104,17 +126,45 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   }, []);
   const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
 
-  // サイドバー編集フォーム
-  const [sidebarForm, setSidebarForm] = useState<{
-    status: Task["status"]; due_date: string; comment: string;
-  } | null>(null);
-  const [sidebarDirty, setSidebarDirty] = useState(false);
+  // サイドバー編集フォーム（タスク全フィールド対応・自動保存）
+  type SidebarForm = {
+    name: string;
+    status: Task["status"];
+    priority: string;
+    assignee_member_ids: string[];
+    project_id: string | null;
+    todo_ids: string[];
+    start_date: string;
+    due_date: string;
+    estimated_hours: string;
+    comment: string;
+  };
+  const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
+  const [sidebarSaveStatus, setSidebarSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [sidebarSaveError, setSidebarSaveError] = useState<string | null>(null);
+  const sidebarInitialMount = useRef(true);
 
+  // タスク選択切替で sidebarForm を初期化
   useEffect(() => {
     const task = selectedTaskId ? rawTasks.find(t => t.id === selectedTaskId) ?? null : null;
     if (task) {
-      setSidebarForm({ status: task.status, due_date: task.due_date ?? "", comment: task.comment });
-      setSidebarDirty(false);
+      setSidebarForm({
+        name:                task.name,
+        status:              task.status,
+        priority:            task.priority ?? "",
+        assignee_member_ids: task.assignee_member_ids?.length
+                               ? task.assignee_member_ids
+                               : task.assignee_member_id ? [task.assignee_member_id] : [],
+        project_id:          task.project_id ?? null,
+        todo_ids:            task.todo_ids ?? [],
+        start_date:          task.start_date ?? "",
+        due_date:            task.due_date ?? "",
+        estimated_hours:     task.estimated_hours?.toString() ?? "",
+        comment:             task.comment,
+      });
+      setSidebarSaveStatus("idle");
+      setSidebarSaveError(null);
+      sidebarInitialMount.current = true;
     } else {
       setSidebarForm(null);
     }
@@ -275,6 +325,71 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
   }, [filteredTasks, groupBy, projects, members, todos]);
 
   const selectedTask = selectedTaskId ? allTasks.find(t => t.id === selectedTaskId) ?? null : null;
+
+  // 選択中タスクに紐づくTF / 追加PJ / ToDoグループ
+  const sidebarLinkedTfs = useMemo(() => {
+    if (!selectedTaskId) return [];
+    const ids = allTaskTaskForces.filter(t => t.task_id === selectedTaskId).map(t => t.tf_id);
+    return taskForces.filter(tf => ids.includes(tf.id));
+  }, [allTaskTaskForces, taskForces, selectedTaskId]);
+
+  const sidebarLinkedExtraProjects = useMemo(() => {
+    if (!selectedTaskId) return [];
+    const ids = allTaskProjects.filter(t => t.task_id === selectedTaskId).map(t => t.project_id);
+    return projects.filter(p => ids.includes(p.id));
+  }, [allTaskProjects, projects, selectedTaskId]);
+
+  const sidebarTodosByTf = useMemo(() => {
+    return taskForces
+      .filter(tf => todos.some(t => t.tf_id === tf.id))
+      .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
+  }, [taskForces, todos]);
+
+  // 自動保存：sidebarForm 変更後 600ms のデバウンスで保存
+  const sidebarSaveRef = useRef<() => Promise<void>>(async () => {});
+  sidebarSaveRef.current = async () => {
+    if (!selectedTask || !sidebarForm) return;
+    const hours = parseFloat(sidebarForm.estimated_hours);
+    const updated: Task = {
+      ...selectedTask,
+      name:                sidebarForm.name.trim() || selectedTask.name,
+      status:              sidebarForm.status,
+      priority:            (sidebarForm.priority as Task["priority"]) || null,
+      assignee_member_ids: sidebarForm.assignee_member_ids,
+      assignee_member_id:  sidebarForm.assignee_member_ids[0] ?? "",
+      project_id:          sidebarForm.project_id || null,
+      todo_ids:            sidebarForm.todo_ids,
+      start_date:          sidebarForm.start_date || null,
+      due_date:            sidebarForm.due_date || null,
+      estimated_hours:     isNaN(hours) ? null : hours,
+      comment:             sidebarForm.comment,
+      updated_by:          currentUser.id,
+    };
+    try {
+      await saveTask(updated);
+      setSidebarSaveStatus("saved");
+      setTimeout(() => {
+        setSidebarSaveStatus(s => (s === "saved" ? "idle" : s));
+      }, 1500);
+    } catch (e) {
+      setSidebarSaveStatus("error");
+      setSidebarSaveError(formatErrorForUser("保存に失敗しました", e));
+    }
+  };
+
+  useEffect(() => {
+    if (sidebarInitialMount.current) {
+      sidebarInitialMount.current = false;
+      return;
+    }
+    if (!sidebarForm) return;
+    setSidebarSaveStatus("saving");
+    setSidebarSaveError(null);
+    const timer = setTimeout(() => {
+      void sidebarSaveRef.current();
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [sidebarForm]);
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
@@ -514,15 +629,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                     const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
                     const isDone    = task.status === "done";
                     const isOverdue = task.due_date && task.due_date < t0 && !isDone;
-                    const isSel     = selectedTaskId === task.id;
                     return (
-                      <div key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)}
+                      <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                         style={{
                           background: selectedIds.has(task.id)
                             ? "var(--color-brand-light)"
-                            : isSel ? "var(--color-brand-light)"
                             : "var(--color-bg-primary)",
-                          border: (selectedIds.has(task.id) || isSel)
+                          border: selectedIds.has(task.id)
                             ? "1px solid var(--color-brand-border)"
                             : "1px solid var(--color-border-primary)",
                           borderRadius: "var(--radius-lg)",
@@ -541,7 +654,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                           />
                           <div style={{
                             flex: 1, fontSize: "12px", fontWeight: "500",
-                            color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
+                            color: "var(--color-text-primary)",
                             lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
                           }}>{task.name}</div>
                           <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
@@ -576,33 +689,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
                             <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{td.title.split("\n")[0].slice(0, 16)}</span>
                           </div>}
                         </div>
-                        {/* モバイル: 選択時にクイック操作を表示 */}
-                        {isSel && sidebarForm && (
-                          <div style={{ marginTop: "10px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
-                            <div style={{ display: "flex", gap: "4px", marginBottom: "6px" }}>
-                              {(["todo", "in_progress", "done"] as const).map(s => (
-                                <button key={s} onClick={e => {
-                                  e.stopPropagation();
-                                  setSidebarForm(f => f ? { ...f, status: s } : f);
-                                  saveTask({ ...task, status: s, updated_by: currentUser.id });
-                                }} style={{
-                                  flex: 1, padding: "4px 2px", fontSize: "9px", borderRadius: "var(--radius-sm)",
-                                  fontWeight: sidebarForm.status === s ? "600" : "400",
-                                  background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
-                                  color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
-                                  border: sidebarForm.status === s ? `1px solid ${TASK_STATUS_STYLE[s].color}` : "1px solid var(--color-border-primary)",
-                                  cursor: "pointer",
-                                }}>{TASK_STATUS_LABEL[s]}</button>
-                              ))}
-                            </div>
-                            <button onClick={e => { e.stopPropagation(); setEditingTaskId(task.id); }} style={{
-                              width: "100%", padding: "5px", fontSize: "11px",
-                              background: "transparent", color: "var(--color-text-secondary)",
-                              border: "1px solid var(--color-border-primary)",
-                              borderRadius: "var(--radius-md)", cursor: "pointer",
-                            }}>詳細を開く</button>
-                          </div>
-                        )}
                       </div>
                     );
                   })}
@@ -796,167 +882,369 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
       {/* ===== サイドパネル（PC・タブレット） ===== */}
       {selectedTask && sidebarForm && !isMobile && (() => {
         const pj = projects.find(p => p.id === selectedTask.project_id);
-        const sideTd = (selectedTask.todo_ids ?? [])[0] ? todos.find(t => t.id === selectedTask.todo_ids[0]) : undefined;
-        const assigneeList = members.filter(m =>
-          (selectedTask.assignee_member_ids?.length
-            ? selectedTask.assignee_member_ids
-            : selectedTask.assignee_member_id ? [selectedTask.assignee_member_id] : []
-          ).includes(m.id)
-        );
-
-        const saveStatus = (status: Task["status"]) => {
-          setSidebarForm(f => f ? { ...f, status } : f);
-          saveTask({ ...selectedTask, status, updated_by: currentUser.id });
-        };
-        const savePriority = (priority: Task["priority"]) => {
-          saveTask({ ...selectedTask, priority, updated_by: currentUser.id });
-        };
-        const saveTextFields = () => {
-          if (!sidebarDirty) return;
-          saveTask({
-            ...selectedTask,
-            due_date: sidebarForm.due_date || null,
-            comment: sidebarForm.comment,
-            updated_by: currentUser.id,
-          });
-          setSidebarDirty(false);
+        const isOverdue = !!sidebarForm.due_date && sidebarForm.due_date < t0 && sidebarForm.status !== "done";
+        const handleDelete = async () => {
+          if (!await confirmDialog(`「${selectedTask.name}」を削除しますか？`)) return;
+          await deleteTask(selectedTask.id, currentUser.id);
+          setSelectedTaskId(null);
         };
 
         return (
           <div style={{
-            width: "280px", flexShrink: 0,
+            width: "320px", flexShrink: 0,
             borderLeft: "1px solid var(--color-border-primary)",
             background: "var(--color-bg-primary)",
             display: "flex", flexDirection: "column", overflow: "hidden",
           }}>
-            {/* ヘッダー */}
+            {/* ヘッダー：タスク名（インライン編集） */}
             <div style={{
               padding: "10px 12px", borderBottom: "1px solid var(--color-border-primary)",
-              display: "flex", alignItems: "flex-start", gap: "6px", flexShrink: 0,
+              display: "flex", alignItems: "center", gap: "6px", flexShrink: 0,
             }}>
-              <span style={{
-                flex: 1, fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4,
-              }}>{selectedTask.name}</span>
-              <button onClick={() => setSelectedTaskId(null)} style={{
+              {pj && (
+                <div style={{
+                  width: 4, height: 18, borderRadius: 2,
+                  background: pj.color_tag, flexShrink: 0,
+                }} />
+              )}
+              <input
+                value={sidebarForm.name}
+                onChange={e => setSidebarForm(f => f ? { ...f, name: e.target.value } : f)}
+                maxLength={200}
+                placeholder="タスク名"
+                aria-label="タスク名"
+                style={{
+                  flex: 1, fontSize: "13px", fontWeight: "600",
+                  border: "none", outline: "none", padding: "3px 4px",
+                  borderBottom: "1px solid transparent",
+                  color: "var(--color-text-primary)",
+                  background: "transparent",
+                  transition: "border-color 0.1s",
+                }}
+                onFocus={e => (e.currentTarget.style.borderBottomColor = "var(--color-brand)")}
+                onBlur={e => (e.currentTarget.style.borderBottomColor = "transparent")}
+              />
+              <SideSaveIndicator status={sidebarSaveStatus} />
+              <button onClick={() => setSelectedTaskId(null)} aria-label="閉じる" title="閉じる" style={{
                 background: "none", border: "none", cursor: "pointer", fontSize: "14px",
-                color: "var(--color-text-tertiary)", flexShrink: 0, paddingTop: "1px",
+                color: "var(--color-text-tertiary)", flexShrink: 0,
               }}>✕</button>
             </div>
-            <div style={{ flex: 1, overflow: "auto", padding: "12px 12px 0" }}>
-              {/* PJ / ToDo コンテキスト */}
-              {(pj || sideTd) && (
-                <div style={{
-                  marginBottom: "12px", padding: "7px 9px",
-                  background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border-primary)", fontSize: "11px",
-                }}>
-                  {pj && <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />
-                    <span style={{ color: "var(--color-text-secondary)" }}>{pj.name}</span>
-                  </div>}
-                  {sideTd && <div style={{ color: "#059669", marginTop: pj ? "4px" : 0, lineHeight: 1.4, fontSize: "10px" }}>
-                    ToDo: {sideTd.title.split("\n")[0].slice(0, 40)}
-                  </div>}
-                </div>
-              )}
 
-              {/* ステータス（即時保存） */}
+            {sidebarSaveStatus === "error" && sidebarSaveError && (
+              <div style={{
+                padding: "6px 12px",
+                background: "var(--color-bg-danger)",
+                color: "var(--color-text-danger)",
+                fontSize: "10px",
+                borderBottom: "1px solid var(--color-border-danger)",
+              }}>
+                {sidebarSaveError}
+              </div>
+            )}
+
+            <div style={{ flex: 1, overflow: "auto", padding: "12px 12px 0" }}>
+              {/* ステータス */}
               <SideLabel>ステータス</SideLabel>
               <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
                 {(["todo", "in_progress", "done"] as const).map(s => (
-                  <button key={s} onClick={() => saveStatus(s)} style={{
-                    flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
-                    fontWeight: sidebarForm.status === s ? "600" : "400",
-                    background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
-                    color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
-                    border: sidebarForm.status === s
-                      ? `1.5px solid ${TASK_STATUS_STYLE[s].color}`
-                      : "1px solid var(--color-border-primary)",
-                    cursor: "pointer", transition: "all 0.1s",
-                  }}>{TASK_STATUS_LABEL[s]}</button>
+                  <button key={s}
+                    onClick={() => setSidebarForm(f => f ? { ...f, status: s } : f)}
+                    style={{
+                      flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
+                      fontWeight: sidebarForm.status === s ? "600" : "400",
+                      background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
+                      color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
+                      border: sidebarForm.status === s
+                        ? `1.5px solid ${TASK_STATUS_STYLE[s].color}`
+                        : "1px solid var(--color-border-primary)",
+                      cursor: "pointer", transition: "all 0.1s",
+                    }}>{TASK_STATUS_LABEL[s]}</button>
                 ))}
               </div>
 
-              {/* 優先度（即時保存） */}
+              {/* 優先度 */}
               <SideLabel>優先度</SideLabel>
               <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
-                {([null, "high", "mid", "low"] as const).map(p => {
-                  const isActive = (selectedTask.priority ?? null) === p;
+                {(["", "high", "mid", "low"] as const).map(p => {
+                  const isActive = sidebarForm.priority === p;
                   const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
                   return (
-                    <button key={String(p)} onClick={() => savePriority(p)} style={{
-                      flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
-                      fontWeight: isActive ? "600" : "400",
-                      background: isActive && cfg ? cfg.bg : isActive ? "var(--color-bg-secondary)" : "transparent",
-                      color: isActive && cfg ? cfg.color : "var(--color-text-tertiary)",
-                      border: isActive ? "1.5px solid currentColor" : "1px solid var(--color-border-primary)",
-                      cursor: "pointer", transition: "all 0.1s",
-                    }}>{p ? TASK_PRIORITY_LABEL[p] : "なし"}</button>
+                    <button key={p || "none"}
+                      onClick={() => setSidebarForm(f => f ? { ...f, priority: p } : f)}
+                      style={{
+                        flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
+                        fontWeight: isActive ? "600" : "400",
+                        background: isActive && cfg ? cfg.bg : isActive ? "var(--color-bg-secondary)" : "transparent",
+                        color: isActive && cfg ? cfg.color : "var(--color-text-tertiary)",
+                        border: isActive ? "1.5px solid currentColor" : "1px solid var(--color-border-primary)",
+                        cursor: "pointer", transition: "all 0.1s",
+                        opacity: isActive ? 1 : 0.7,
+                      }}>{p ? TASK_PRIORITY_LABEL[p] : "なし"}</button>
                   );
                 })}
               </div>
 
-              {/* 担当者 */}
-              {assigneeList.length > 0 && (
-                <>
-                  <SideLabel>担当者</SideLabel>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "12px" }}>
-                    {assigneeList.map(m => (
-                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <Avatar member={m} size={16} />
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{m.display_name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </>
+              {/* 担当者（複数選択） */}
+              <SideLabel>担当者</SideLabel>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px",
+                marginBottom: sidebarForm.assignee_member_ids.length > 0 ? "5px" : 0 }}>
+                {sidebarForm.assignee_member_ids.map(id => {
+                  const m = members.find(x => x.id === id);
+                  if (!m) return null;
+                  return (
+                    <span key={id} style={sideChipStyle}>
+                      <Avatar member={m} size={14} />
+                      {m.display_name}
+                      <button
+                        onClick={() => setSidebarForm(f => f
+                          ? { ...f, assignee_member_ids: f.assignee_member_ids.filter(i => i !== id) }
+                          : f)}
+                        aria-label={`${m.display_name} を担当者から外す`}
+                        style={sideChipRemoveBtn}>×</button>
+                    </span>
+                  );
+                })}
+                {sidebarForm.assignee_member_ids.length === 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未担当</span>
+                )}
+              </div>
+              <select
+                defaultValue=""
+                onChange={e => {
+                  const id = e.target.value;
+                  if (id && !sidebarForm.assignee_member_ids.includes(id)) {
+                    setSidebarForm(f => f
+                      ? { ...f, assignee_member_ids: [...f.assignee_member_ids, id] }
+                      : f);
+                  }
+                  e.target.value = "";
+                }}
+                style={{ ...sideInput, marginBottom: "12px" }}>
+                <option value="">＋ 担当者を追加...</option>
+                {members.filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => (
+                  <option key={m.id} value={m.id}>{m.display_name}</option>
+                ))}
+              </select>
+
+              {/* プロジェクト */}
+              <SideLabel>プロジェクト</SideLabel>
+              <select
+                value={sidebarForm.project_id ?? ""}
+                onChange={e => setSidebarForm(f => f ? { ...f, project_id: e.target.value || null } : f)}
+                style={{ ...sideInput, marginBottom: "12px" }}>
+                <option value="">なし</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+
+              {/* 追加プロジェクト */}
+              <SideLabel>追加プロジェクト</SideLabel>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
+                {sidebarLinkedExtraProjects.map(p => (
+                  <span key={p.id} style={sideChipStyle}>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color_tag, flexShrink: 0 }} />
+                    {p.name}
+                    <button
+                      onClick={() => removeTaskProject(selectedTask.id, p.id)}
+                      aria-label={`${p.name} を解除`}
+                      style={sideChipRemoveBtn}>×</button>
+                  </span>
+                ))}
+                {sidebarLinkedExtraProjects.length === 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
+                )}
+              </div>
+              <select
+                defaultValue=""
+                onChange={e => {
+                  if (!e.target.value) return;
+                  addTaskProject({ task_id: selectedTask.id, project_id: e.target.value });
+                  e.target.value = "";
+                }}
+                style={{ ...sideInput, marginBottom: "12px" }}>
+                <option value="">＋ プロジェクトを追加...</option>
+                {projects
+                  .filter(p => p.id !== sidebarForm.project_id
+                    && !sidebarLinkedExtraProjects.find(ep => ep.id === p.id))
+                  .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
+                }
+              </select>
+
+              {/* タスクフォース */}
+              <SideLabel>タスクフォース</SideLabel>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
+                {sidebarLinkedTfs.map(tf => (
+                  <span key={tf.id} style={sideChipStyle}>
+                    <span style={{ fontWeight: "600", marginRight: 3 }}>
+                      {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
+                    </span>
+                    {tf.name}
+                    <button
+                      onClick={() => removeTaskTaskForce(selectedTask.id, tf.id)}
+                      aria-label={`${tf.name} を解除`}
+                      style={sideChipRemoveBtn}>×</button>
+                  </span>
+                ))}
+                {sidebarLinkedTfs.length === 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未設定</span>
+                )}
+              </div>
+              {taskForces.length > 0 ? (
+                <select
+                  defaultValue=""
+                  onChange={e => {
+                    if (!e.target.value) return;
+                    addTaskTaskForce({ task_id: selectedTask.id, tf_id: e.target.value });
+                    e.target.value = "";
+                  }}
+                  style={{ ...sideInput, marginBottom: "12px" }}>
+                  <option value="">＋ タスクフォースを追加...</option>
+                  {taskForces
+                    .filter(tf => !sidebarLinkedTfs.find(lt => lt.id === tf.id))
+                    .slice()
+                    .sort((a, b) => {
+                      const ka = keyResults.findIndex(k => k.id === a.kr_id);
+                      const kb = keyResults.findIndex(k => k.id === b.kr_id);
+                      if (ka !== kb) return ka - kb;
+                      return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
+                    })
+                    .map(tf => (
+                      <option key={tf.id} value={tf.id}>
+                        {(tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`)}{tf.name ? ` ${tf.name}` : ""}
+                      </option>
+                    ))
+                  }
+                </select>
+              ) : (
+                <span style={{
+                  display: "block", fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "12px",
+                }}>
+                  管理画面でTask Forceを先に登録してください
+                </span>
               )}
 
-              {/* 期日（blur保存） */}
-              <SideLabel>期日</SideLabel>
-              <input type="date" value={sidebarForm.due_date}
-                onChange={e => { setSidebarForm(f => f ? { ...f, due_date: e.target.value } : f); setSidebarDirty(true); }}
-                onBlur={saveTextFields}
-                style={{
-                  width: "100%", padding: "5px 8px", fontSize: "12px", marginBottom: "12px",
-                  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-                  background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
-                  boxSizing: "border-box",
-                }}
-              />
+              {/* 日程（開始日 / 終了日 2列） */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "12px" }}>
+                <div>
+                  <SideLabel>開始日</SideLabel>
+                  <input type="date" value={sidebarForm.start_date}
+                    onChange={e => setSidebarForm(f => f ? { ...f, start_date: e.target.value } : f)}
+                    style={sideInput} />
+                </div>
+                <div>
+                  <SideLabel>終了日</SideLabel>
+                  <input type="date" value={sidebarForm.due_date}
+                    onChange={e => setSidebarForm(f => f ? { ...f, due_date: e.target.value } : f)}
+                    style={{
+                      ...sideInput,
+                      ...(isOverdue ? {
+                        borderColor: "var(--color-border-danger)",
+                        color: "var(--color-text-danger)",
+                      } : {}),
+                    }} />
+                  {isOverdue && (
+                    <span style={{
+                      marginTop: 3, fontSize: "9px", display: "inline-block",
+                      background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
+                      padding: "1px 4px", borderRadius: "3px",
+                    }}>期限超過</span>
+                  )}
+                </div>
+              </div>
 
-              {/* メモ（blur保存） */}
+              {/* 工数 */}
+              <SideLabel>工数（時間）</SideLabel>
+              <input type="number" min="0" step="0.5"
+                value={sidebarForm.estimated_hours}
+                onChange={e => setSidebarForm(f => f ? { ...f, estimated_hours: e.target.value } : f)}
+                placeholder="例：2.5"
+                style={{ ...sideInput, marginBottom: "12px" }} />
+
+              {/* メモ */}
               <SideLabel>メモ・コメント</SideLabel>
               <textarea value={sidebarForm.comment}
-                onChange={e => { setSidebarForm(f => f ? { ...f, comment: e.target.value } : f); setSidebarDirty(true); }}
-                onBlur={saveTextFields}
-                placeholder="メモを入力..."
-                rows={6}
+                onChange={e => setSidebarForm(f => f ? { ...f, comment: e.target.value } : f)}
+                placeholder={"メモやURLを入力できます\n例：https://docs.example.com"}
+                rows={5}
                 style={{
-                  width: "100%", padding: "6px 8px", fontSize: "11px", lineHeight: 1.6,
-                  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-                  background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                  outline: "none", resize: "vertical", boxSizing: "border-box",
+                  ...sideInput,
+                  resize: "vertical", lineHeight: 1.6, minHeight: "70px",
+                  marginBottom: "14px",
                 }}
               />
-              {sidebarDirty && (
-                <button onClick={saveTextFields} style={{
-                  width: "100%", marginTop: "6px", padding: "5px", fontSize: "11px",
-                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
-                  border: "1px solid var(--color-border-info)",
-                  borderRadius: "var(--radius-md)", cursor: "pointer", fontWeight: "500",
-                }}>保存</button>
-              )}
-              <div style={{ height: "12px" }} />
+
+              {/* ToDo（最下部） */}
+              <SideLabel>ToDo（OKR系）</SideLabel>
+              <div style={{
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                padding: "6px 9px",
+                maxHeight: "150px",
+                overflowY: "auto",
+                background: "var(--color-bg-primary)",
+                marginBottom: "12px",
+              }}>
+                {sidebarTodosByTf.length === 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
+                )}
+                {sidebarTodosByTf.map(({ tf, items }) => (
+                  <div key={tf.id}>
+                    <div style={{
+                      fontSize: "9px", color: "var(--color-text-tertiary)",
+                      padding: "4px 0 2px", fontWeight: 600,
+                    }}>
+                      {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
+                      {tf.name ? ` — ${tf.name}` : ""}
+                    </div>
+                    {items.map(todo => (
+                      <label key={todo.id} style={{
+                        display: "flex", alignItems: "flex-start", gap: "5px",
+                        padding: "2px 0", cursor: "pointer",
+                      }}>
+                        <input
+                          type="checkbox"
+                          checked={sidebarForm.todo_ids.includes(todo.id)}
+                          onChange={e => setSidebarForm(f => f ? {
+                            ...f,
+                            todo_ids: e.target.checked
+                              ? [...f.todo_ids, todo.id]
+                              : f.todo_ids.filter(id => id !== todo.id),
+                          } : f)}
+                          style={{
+                            marginTop: "2px", flexShrink: 0,
+                            accentColor: "var(--color-brand-primary)",
+                          }}
+                        />
+                        <span style={{ fontSize: "11px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+                          {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ height: "10px" }} />
             </div>
 
-            {/* フッター */}
-            <div style={{ padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
-              <button onClick={() => setEditingTaskId(selectedTask.id)} style={{
-                width: "100%", padding: "5px", fontSize: "11px",
-                background: "transparent", color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-border-primary)",
+            {/* フッター：削除 */}
+            <div style={{
+              padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)",
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              flexShrink: 0, background: "var(--color-bg-secondary)",
+            }}>
+              <button onClick={handleDelete} style={{
+                padding: "4px 10px", fontSize: "10px",
+                color: "var(--color-text-danger)",
+                border: "1px solid var(--color-border-danger)",
                 borderRadius: "var(--radius-md)", cursor: "pointer",
-              }}>詳細を開く（担当者・TF・工数など）</button>
+                background: "transparent",
+              }}>🗑 削除</button>
+              <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>
+                自動保存
+              </span>
             </div>
           </div>
         );
@@ -996,6 +1284,47 @@ function SideLabel({ children }: { children: React.ReactNode }) {
     }}>{children}</div>
   );
 }
+
+function SideSaveIndicator({ status }: { status: "idle" | "saving" | "saved" | "error" }) {
+  if (status === "idle") return null;
+  const styles: Record<"saving" | "saved" | "error", { bg: string; color: string; label: string }> = {
+    saving: { bg: "transparent", color: "var(--color-text-tertiary)", label: "保存中…" },
+    saved:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)", label: "✓" },
+    error:  { bg: "var(--color-bg-danger)", color: "var(--color-text-danger)", label: "失敗" },
+  };
+  const s = styles[status];
+  return (
+    <span role="status" aria-live="polite" style={{
+      fontSize: "9px", padding: "2px 6px",
+      background: s.bg, color: s.color,
+      borderRadius: "99px", flexShrink: 0,
+      transition: "all 0.15s",
+    }}>{s.label}</span>
+  );
+}
+
+const sideInput: React.CSSProperties = {
+  width: "100%", padding: "5px 8px", fontSize: "11px",
+  border: "1px solid var(--color-border-primary)",
+  borderRadius: "var(--radius-md)",
+  background: "var(--color-bg-primary)",
+  color: "var(--color-text-primary)",
+  outline: "none", boxSizing: "border-box",
+};
+
+const sideChipStyle: React.CSSProperties = {
+  display: "inline-flex", alignItems: "center", gap: "4px",
+  fontSize: "10px", padding: "2px 7px",
+  background: "var(--color-bg-secondary)",
+  border: "1px solid var(--color-border-primary)",
+  borderRadius: "99px", color: "var(--color-text-secondary)",
+};
+
+const sideChipRemoveBtn: React.CSSProperties = {
+  background: "none", border: "none", cursor: "pointer",
+  padding: "0", color: "var(--color-text-tertiary)",
+  fontSize: "10px", lineHeight: 1, marginLeft: "2px",
+};
 
 // DR は現在未使用だが将来のために残す
 // function DR(...)
