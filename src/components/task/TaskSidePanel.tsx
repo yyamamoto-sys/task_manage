@@ -13,7 +13,7 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
-import { todayStr } from "../../lib/date";
+import { todayStr, dateToQuarter, currentQuarter } from "../../lib/date";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -44,6 +44,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
+  const allQuarterlyObjs    = useAppStore(s => s.quarterlyObjectives);
+  const allQuarterlyKrTfs   = useAppStore(s => s.quarterlyKrTaskForces);
+  const objective           = useAppStore(s => s.objective);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
@@ -77,6 +80,35 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     const ids = allTaskProjects.filter(t => t.task_id === taskId).map(t => t.project_id);
     return projects.filter(p => ids.includes(p.id));
   }, [allTaskProjects, projects, taskId]);
+
+  /**
+   * 「タスクフォースを追加」セレクトに出す TF を、タスクの期日が属する四半期に
+   * 紐づくものだけに絞る。
+   *
+   * 判定優先順位：
+   *   1. タスクの due_date → その四半期
+   *   2. なければ start_date → その四半期
+   *   3. どちらもなければ「今日の四半期」
+   *
+   * 過去クォーターで運用していた TF を誤って追加できないようにするための制限。
+   */
+  const eligibleTfIds = useMemo(() => {
+    if (!selectedTask || !objective) return null; // null は「フィルタ無効＝全TF」
+    const quarter = dateToQuarter(selectedTask.due_date)
+                 ?? dateToQuarter(selectedTask.start_date)
+                 ?? currentQuarter();
+    const targetQObjIds = new Set(
+      allQuarterlyObjs
+        .filter(qo => !qo.is_deleted && qo.objective_id === objective.id && qo.quarter === quarter)
+        .map(qo => qo.id),
+    );
+    if (targetQObjIds.size === 0) return new Set<string>(); // 該当四半期が未登録なら空
+    return new Set(
+      allQuarterlyKrTfs
+        .filter(q => targetQObjIds.has(q.quarterly_objective_id))
+        .map(q => q.tf_id),
+    );
+  }, [selectedTask, objective, allQuarterlyObjs, allQuarterlyKrTfs]);
 
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -372,6 +404,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             <option value="">＋ タスクフォースを追加...</option>
             {taskForces
               .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+              .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
               .slice()
               .sort((a, b) => {
                 const ka = keyResults.findIndex(k => k.id === a.kr_id);

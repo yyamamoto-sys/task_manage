@@ -56,6 +56,27 @@ export function formatMD(s: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+/**
+ * 日付（YYYY-MM-DD）→ 暦四半期（"1Q"〜"4Q"）。
+ * CLAUDE.md Section 6-14 のルールに従う：
+ * 1Q=1〜3月 / 2Q=4〜6月 / 3Q=7〜9月 / 4Q=10〜12月
+ * 無効な値や null には null を返す。
+ */
+export function dateToQuarter(s: string | null | undefined): "1Q" | "2Q" | "3Q" | "4Q" | null {
+  const d = toDate(s ?? null);
+  if (!d) return null;
+  const m = d.getMonth() + 1;
+  if (m <= 3)  return "1Q";
+  if (m <= 6)  return "2Q";
+  if (m <= 9)  return "3Q";
+  return "4Q";
+}
+
+/** 今日が属する四半期を返す */
+export function currentQuarter(): "1Q" | "2Q" | "3Q" | "4Q" {
+  return dateToQuarter(todayStr()) ?? "1Q";
+}
+
 /** start〜end の全日付を配列で返す（両端含む） */
 export function getDaysInRange(start: Date, end: Date): Date[] {
   const days: Date[] = [];

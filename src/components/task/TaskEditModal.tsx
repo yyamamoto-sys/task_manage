@@ -12,7 +12,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
-import { todayStr } from "../../lib/date";
+import { todayStr, dateToQuarter, currentQuarter } from "../../lib/date";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -32,6 +32,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
+  const allQuarterlyObjs    = useAppStore(s => s.quarterlyObjectives);
+  const allQuarterlyKrTfs   = useAppStore(s => s.quarterlyKrTaskForces);
+  const objective           = useAppStore(s => s.objective);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
@@ -70,6 +73,29 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     return projects.filter(p => pjIds.includes(p.id));
   }, [allTaskProjects, projects, taskId]);
   const originalTask = allTasks.find(t => t.id === taskId);
+
+  /**
+   * 「タスクフォースを追加」セレクトに出す TF を、タスクの期日が属する四半期に
+   * 紐づくものだけに絞る。判定優先順位は due_date → start_date → 今日。
+   * TaskSidePanel と同じロジック。
+   */
+  const eligibleTfIds = useMemo(() => {
+    if (!originalTask || !objective) return null;
+    const quarter = dateToQuarter(originalTask.due_date)
+                 ?? dateToQuarter(originalTask.start_date)
+                 ?? currentQuarter();
+    const targetQObjIds = new Set(
+      allQuarterlyObjs
+        .filter(qo => !qo.is_deleted && qo.objective_id === objective.id && qo.quarter === quarter)
+        .map(qo => qo.id),
+    );
+    if (targetQObjIds.size === 0) return new Set<string>();
+    return new Set(
+      allQuarterlyKrTfs
+        .filter(q => targetQObjIds.has(q.quarterly_objective_id))
+        .map(q => q.tf_id),
+    );
+  }, [originalTask, objective, allQuarterlyObjs, allQuarterlyKrTfs]);
 
   const [form, setForm] = useState({
     name:                 originalTask?.name ?? "",
@@ -408,6 +434,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 <option value="">＋ タスクフォースを追加...</option>
                 {taskForces
                   .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+                  .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
                   // 並び：所属KR の index → tf_number の昇順で揃え、どのKRのTFか
                   // ぱっと見で分かるようにする
                   .slice()
