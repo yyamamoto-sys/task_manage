@@ -123,6 +123,20 @@ export interface AppState {
   // ===== MemberTag =====
   saveMemberTag: (tag: MemberTag, memberIds: string[]) => Promise<void>;
   deleteMemberTag: (id: string, deletedBy: string) => Promise<void>;
+
+  // ===== Realtime（他クライアントの変更をリロードなしで反映） =====
+  applyRemoteChange: (event: RealtimeChange) => void;
+}
+
+/**
+ * Supabase Realtime（postgres_changes）から受け取るイベントの最小型。
+ * テーブル名・イベント種別・new/old のみ使う。
+ */
+export type RealtimeChange = {
+  table: string;
+  eventType: "INSERT" | "UPDATE" | "DELETE";
+  new: Record<string, unknown> | null;
+  old: Record<string, unknown> | null;
 }
 
 /**
@@ -691,4 +705,96 @@ export const useAppStore = create<AppState>()((set, get) => ({
       throw e;
     }
   },
+
+  // ===== Realtime: applyRemoteChange =====
+  //
+  // 【設計意図】
+  // 他クライアントの DB 変更を realtime チャンネルから受け取って store に反映する。
+  // 自分の楽観更新と冪等になるよう、updated_at による「手元の方が新しい場合は無視」の
+  // stale チェックを入れる。中間テーブルは複合キーで matching。
+  //
+  // 物理削除は本アプリでは使わない（CLAUDE.md Section 4）が、念のため DELETE ハンドリング
+  // を入れて中間テーブルの解除（addX/removeX 系）も反映できるようにする。
+  applyRemoteChange: (event) => {
+    const row = (event.new ?? event.old) as Record<string, unknown> | null;
+    if (!row) return;
+
+    set(state => {
+      switch (event.table) {
+        case "tasks":
+          return { tasks: upsertById(state.tasks, event, row) };
+        case "projects":
+          return { projects: upsertById(state.projects, event, row) };
+        case "todos":
+          return { todos: upsertById(state.todos, event, row) };
+        case "key_results":
+          return { keyResults: upsertById(state.keyResults, event, row) };
+        case "task_forces":
+          return { taskForces: upsertById(state.taskForces, event, row) };
+        case "milestones":
+          return { milestones: upsertById(state.milestones, event, row) };
+        case "members":
+          return { members: upsertById(state.members, event, row) };
+        case "task_task_forces":
+          return { taskTaskForces: upsertByKeys(state.taskTaskForces, event, row, ["task_id", "tf_id"]) };
+        case "task_projects":
+          return { taskProjects: upsertByKeys(state.taskProjects, event, row, ["task_id", "project_id"]) };
+        case "project_task_forces":
+          return { projectTaskForces: upsertByKeys(state.projectTaskForces, event, row, ["project_id", "tf_id"]) };
+        default:
+          return state;
+      }
+    });
+  },
 }));
+
+/**
+ * id ベースの単純PKテーブル用 upsert/remove。
+ * UPDATE/INSERT は配列内 id を find して replace、なければ push。
+ * 楽観更新後の自分自身からのイベント受信は updated_at で no-op 化する。
+ */
+function upsertById<T extends { id: string; updated_at?: string }>(
+  list: T[],
+  event: RealtimeChange,
+  row: Record<string, unknown>,
+): T[] {
+  const rowId = row.id as string | undefined;
+  if (!rowId) return list;
+
+  if (event.eventType === "DELETE") {
+    return list.some(x => x.id === rowId) ? list.filter(x => x.id !== rowId) : list;
+  }
+
+  const idx = list.findIndex(x => x.id === rowId);
+  if (idx < 0) {
+    return [...list, row as unknown as T];
+  }
+  // stale チェック：手元の updated_at の方が新しい/同じなら no-op
+  const existing = list[idx];
+  const incomingUpdatedAt = row.updated_at as string | undefined;
+  if (existing.updated_at && incomingUpdatedAt && existing.updated_at >= incomingUpdatedAt) {
+    return list;
+  }
+  const next = list.slice();
+  next[idx] = row as unknown as T;
+  return next;
+}
+
+/**
+ * 複合キーの中間テーブル用 upsert/remove。
+ * 内容に updated_at がないため stale チェック不要・存在チェックのみ。
+ */
+function upsertByKeys<T>(
+  list: T[],
+  event: RealtimeChange,
+  row: Record<string, unknown>,
+  keys: string[],
+): T[] {
+  const matches = (x: T) => keys.every(k => (x as Record<string, unknown>)[k] === row[k]);
+
+  if (event.eventType === "DELETE") {
+    return list.some(matches) ? list.filter(x => !matches(x)) : list;
+  }
+  // INSERT/UPDATE：既に存在すれば no-op、なければ追加
+  return list.some(matches) ? list : [...list, row as unknown as T];
+}

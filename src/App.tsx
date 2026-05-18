@@ -11,6 +11,7 @@ import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
 import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
+import { subscribeToRealtime } from "./lib/supabase/realtime";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
@@ -111,6 +112,7 @@ function AuthenticatedApp({
   const loading = useAppStore(s => s.loading);
   const error   = useAppStore(s => s.error);
   const reload  = useAppStore(s => s.reload);
+  const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && members.filter(m => !m.is_deleted).length > 0);
@@ -123,6 +125,14 @@ function AuthenticatedApp({
     const member = members.find(m => m.id === saved.id && !m.is_deleted);
     if (member) onLogin(member);
   }, [loading, members, currentUser, onLogin]);
+
+  // Realtime 購読：他クライアントの DB 変更をリロードなしで反映
+  // 認証済み・初期ロード完了後にだけ subscribe。ログアウト等で unmount したら切断。
+  useEffect(() => {
+    if (loading) return;
+    const unsubscribe = subscribeToRealtime(applyRemoteChange);
+    return unsubscribe;
+  }, [loading, applyRemoteChange]);
 
   // 初回起動時はセットアップウィザードを表示
   if (!loading && !isWizardDone) {
