@@ -30,7 +30,6 @@ type SidebarForm = {
   priority: string;
   assignee_member_ids: string[];
   project_id: string | null;
-  todo_ids: string[];
   start_date: string;
   due_date: string;
   estimated_hours: string;
@@ -43,7 +42,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allProjects         = useAppStore(s => s.projects);
   const allTaskForces       = useAppStore(s => s.taskForces);
   const allKeyResults       = useAppStore(s => s.keyResults);
-  const allTodos            = useAppStore(s => s.todos);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
   const saveTask            = useAppStore(s => s.saveTask);
@@ -56,7 +54,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
   const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
-  const todos      = useMemo(() => allTodos.filter(t => !t.is_deleted), [allTodos]);
   const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
 
   const tfLabelById = useMemo(() => {
@@ -81,12 +78,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     return projects.filter(p => ids.includes(p.id));
   }, [allTaskProjects, projects, taskId]);
 
-  const todosByTf = useMemo(() => {
-    return taskForces
-      .filter(tf => todos.some(t => t.tf_id === tf.id))
-      .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
-  }, [taskForces, todos]);
-
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -106,7 +97,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
                              ? selectedTask.assignee_member_ids
                              : selectedTask.assignee_member_id ? [selectedTask.assignee_member_id] : [],
       project_id:          selectedTask.project_id ?? null,
-      todo_ids:            selectedTask.todo_ids ?? [],
       start_date:          selectedTask.start_date ?? "",
       due_date:            selectedTask.due_date ?? "",
       estimated_hours:     selectedTask.estimated_hours?.toString() ?? "",
@@ -130,7 +120,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       assignee_member_ids: sidebarForm.assignee_member_ids,
       assignee_member_id:  sidebarForm.assignee_member_ids[0] ?? "",
       project_id:          sidebarForm.project_id || null,
-      todo_ids:            sidebarForm.todo_ids,
       start_date:          sidebarForm.start_date || null,
       due_date:            sidebarForm.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
@@ -454,57 +443,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             marginBottom: "14px",
           }}
         />
-
-        {/* ToDo（最下部） */}
-        <SideLabel>ToDo（OKR系）</SideLabel>
-        <div style={{
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-md)",
-          padding: "6px 9px",
-          maxHeight: "150px",
-          overflowY: "auto",
-          background: "var(--color-bg-primary)",
-          marginBottom: "12px",
-        }}>
-          {todosByTf.length === 0 && (
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
-          )}
-          {todosByTf.map(({ tf, items }) => (
-            <div key={tf.id}>
-              <div style={{
-                fontSize: "9px", color: "var(--color-text-tertiary)",
-                padding: "4px 0 2px", fontWeight: 600,
-              }}>
-                {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
-                {tf.name ? ` — ${tf.name}` : ""}
-              </div>
-              {items.map(todo => (
-                <label key={todo.id} style={{
-                  display: "flex", alignItems: "flex-start", gap: "5px",
-                  padding: "2px 0", cursor: "pointer",
-                }}>
-                  <input
-                    type="checkbox"
-                    checked={sidebarForm.todo_ids.includes(todo.id)}
-                    onChange={e => setSidebarForm(f => f ? {
-                      ...f,
-                      todo_ids: e.target.checked
-                        ? [...f.todo_ids, todo.id]
-                        : f.todo_ids.filter(id => id !== todo.id),
-                    } : f)}
-                    style={{
-                      marginTop: "2px", flexShrink: 0,
-                      accentColor: "var(--color-brand-primary)",
-                    }}
-                  />
-                  <span style={{ fontSize: "11px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-                    {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
-                  </span>
-                </label>
-              ))}
-            </div>
-          ))}
-        </div>
 
         <div style={{ height: "10px" }} />
       </div>

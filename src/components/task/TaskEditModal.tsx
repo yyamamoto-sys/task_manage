@@ -30,7 +30,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allProjects         = useAppStore(s => s.projects);
   const allTaskForces       = useAppStore(s => s.taskForces);
   const allKeyResults       = useAppStore(s => s.keyResults);
-  const allTodos            = useAppStore(s => s.todos);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
   const saveTask            = useAppStore(s => s.saveTask);
@@ -44,7 +43,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
   const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
-  const todos      = useMemo(() => allTodos.filter(t => !t.is_deleted), [allTodos]);
   const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
 
   // tf.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ
@@ -81,7 +79,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                             ? originalTask.assignee_member_ids
                             : originalTask?.assignee_member_id ? [originalTask.assignee_member_id] : [] as string[],
     project_id:           originalTask?.project_id ?? null as string | null,
-    todo_ids:             originalTask?.todo_ids ?? [] as string[],
     start_date:           originalTask?.start_date ?? "",
     due_date:             originalTask?.due_date ?? "",
     estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
@@ -90,13 +87,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
-
-  // ToDo選択肢をTFごとにグループ化
-  const todosByTf = useMemo(() => {
-    return taskForces
-      .filter(tf => todos.some(t => t.tf_id === tf.id))
-      .map(tf => ({ tf, items: todos.filter(t => t.tf_id === tf.id) }));
-  }, [taskForces, todos]);
 
   // 自動保存ハンドラを ref に保持し、useEffect の依存配列を form のみに絞る
   // （originalTask の realtime 更新などで saveTask が再発火しないようにする）
@@ -112,7 +102,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
       assignee_member_ids: form.assignee_member_ids,
       assignee_member_id:  form.assignee_member_ids[0] ?? "",
       project_id:          form.project_id || null,
-      todo_ids:            form.todo_ids,
       start_date:          form.start_date || null,
       due_date:            form.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
@@ -351,48 +340,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
-          </FieldSection>
-
-          {/* ToDo */}
-          <FieldSection label="ToDo（OKR系）">
-            <div style={{
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              padding: "6px 10px",
-              maxHeight: "150px",
-              overflowY: "auto",
-              background: "var(--color-bg-primary)",
-            }}>
-              {todosByTf.length === 0 && (
-                <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>ToDoがありません</span>
-              )}
-              {todosByTf.map(({ tf, items }) => (
-                <div key={tf.id}>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", padding: "4px 0 2px", fontWeight: 600 }}>
-                    {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
-                    {tf.name ? ` — ${tf.name}` : ""}
-                  </div>
-                  {items.map(todo => (
-                    <label key={todo.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={form.todo_ids.includes(todo.id)}
-                        onChange={e => setForm(f => ({
-                          ...f,
-                          todo_ids: e.target.checked
-                            ? [...f.todo_ids, todo.id]
-                            : f.todo_ids.filter(id => id !== todo.id),
-                        }))}
-                        style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                      />
-                      <span style={{ fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
-                        {todo.title.slice(0, 50)}{todo.title.length > 50 ? "…" : ""}
-                      </span>
-                    </label>
-                  ))}
-                </div>
-              ))}
-            </div>
           </FieldSection>
 
           {/* 追加プロジェクト */}
