@@ -542,10 +542,13 @@ export function GanttView({
         <div style={{
           width: labelWidth, flexShrink: 0,
           overflow: "hidden",
+          display: "flex", flexDirection: "column",
+          minHeight: 0,
         }}>
           {/* ラベルヘッダー */}
           <div style={{
-            height: 52, borderBottom: "1px solid var(--color-border-primary)",
+            height: 52, flexShrink: 0,
+            borderBottom: "1px solid var(--color-border-primary)",
             background: "var(--color-bg-secondary)",
             display: "flex", alignItems: "flex-end", padding: "0 10px 6px",
             fontSize: "11px", color: "var(--color-text-tertiary)",
@@ -553,11 +556,14 @@ export function GanttView({
             タスク
           </div>
 
-          {/* ラベル行 */}
+          {/* ラベル行（ガント本体と同期スクロール。flex:1 で親の余白を取らないとスクロール領域が機能しない） */}
           <div
             ref={labelBodyRef}
             onScroll={handleLabelScroll}
-            style={{ overflowY: "auto", overflowX: "hidden", scrollbarWidth: "none" }}
+            style={{
+              flex: 1, minHeight: 0,
+              overflowY: "auto", overflowX: "hidden", scrollbarWidth: "none",
+            }}
           >
             {viewMode === "pj" ? (
               <>
