@@ -126,12 +126,11 @@ function AuthenticatedApp({
     if (member) onLogin(member);
   }, [loading, members, currentUser, onLogin]);
 
-  // Realtime 購読：他クライアントの DB 変更をリロードなしで反映
-  // 認証済み・初期ロード完了後にだけ subscribe。ログアウト等で unmount したら切断。
+  // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
+  // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
   useEffect(() => {
     if (loading) return;
-    const unsubscribe = subscribeToRealtime(applyRemoteChange);
-    return unsubscribe;
+    return subscribeToRealtime(applyRemoteChange);
   }, [loading, applyRemoteChange]);
 
   // 初回起動時はセットアップウィザードを表示

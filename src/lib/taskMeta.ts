@@ -1,6 +1,38 @@
 // src/lib/taskMeta.ts
-// タスクのステータス・優先度に関する定数。全Viewで共有する。
-import type { Task } from "./localData/types";
+// タスクのステータス・優先度に関する定数と、タスク派生情報のヘルパー。
+import type { Task, TaskForce, KeyResult } from "./localData/types";
+
+/**
+ * タスクの担当者ID配列を正規化して返す。
+ * 旧設計の単数 assignee_member_id と新設計の assignee_member_ids 配列の両対応。
+ */
+export function getAssigneeIds(t: Pick<Task, "assignee_member_id" | "assignee_member_ids">): string[] {
+  if (t.assignee_member_ids?.length) return t.assignee_member_ids;
+  if (t.assignee_member_id) return [t.assignee_member_id];
+  return [];
+}
+
+/** タスクの担当者に指定メンバーが含まれるか */
+export function isAssignedTo(
+  t: Pick<Task, "assignee_member_id" | "assignee_member_ids">,
+  memberId: string,
+): boolean {
+  return getAssigneeIds(t).includes(memberId);
+}
+
+/**
+ * TF.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ。
+ * 例：KR1 配下の TF番号 1 → "TF1-1"
+ */
+export function buildTfLabelMap(taskForces: TaskForce[], keyResults: KeyResult[]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const tf of taskForces) {
+    const krIdx = keyResults.findIndex(k => k.id === tf.kr_id);
+    const krLabel = krIdx >= 0 ? `${krIdx + 1}` : "?";
+    map.set(tf.id, `TF${krLabel}-${tf.tf_number || "?"}`);
+  }
+  return map;
+}
 
 export const TASK_STATUS_LABEL: Record<Task["status"], string> = {
   todo:        "ToDo",

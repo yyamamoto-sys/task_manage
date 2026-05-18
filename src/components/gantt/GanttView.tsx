@@ -16,6 +16,7 @@ import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "
 import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
+import { isAssignedTo } from "../../lib/taskMeta";
 
 interface Props {
   currentUser: Member;
@@ -90,18 +91,14 @@ export function GanttView({
       ? previewTasks.filter(t => !t.is_deleted)
       : rawTasks.filter(t => !t.is_deleted);
     let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
-    if (mineOnly) {
-      list = list.filter(t => {
-        const ids = t.assignee_member_ids?.length
-          ? t.assignee_member_ids
-          : t.assignee_member_id ? [t.assignee_member_id] : [];
-        return ids.includes(currentUser.id);
-      });
-    }
+    if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     return list;
   }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
+  const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+  const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
 
   // 表示するPJを絞り込む
   const visibleProjects = selectedProject ? [selectedProject] : projects;
@@ -615,7 +612,7 @@ export function GanttView({
 
                       {/* タスク行ラベル */}
                       {!isCollapsed && pjTasks.map(task => {
-                        const m = members.find(mb => mb.id === task.assignee_member_id);
+                        const m = memberById.get(task.assignee_member_id);
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -672,7 +669,7 @@ export function GanttView({
                         </span>
                       </div>
                       {!isCollapsed && sortedTasks.map(task => {
-                        const m = members.find(mb => mb.id === task.assignee_member_id);
+                        const m = memberById.get(task.assignee_member_id);
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -756,7 +753,7 @@ export function GanttView({
 
                       {/* タスク行 */}
                       {!isCollapsed && tasks.map(task => {
-                        const pj = projects.find(p => p.id === task.project_id);
+                        const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                         const isOverdue = (() => {
                           const due = toDate(task.due_date);
                           return due && due < today && task.status !== "done";
@@ -956,7 +953,7 @@ export function GanttView({
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
                           const isStagnant = isTaskStagnant(task);
-                          const pj = projects.find(p => p.id === task.project_id);
+                          const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                           const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
                           const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
                           const isHovered = hoveredTaskId === task.id;
@@ -1132,7 +1129,7 @@ export function GanttView({
                           {bar && due && (
                             <>
                               <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${members.find(m => m.id === task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
+                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
                                 onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
                                   position: "absolute",

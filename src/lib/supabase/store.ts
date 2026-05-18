@@ -9,6 +9,7 @@
 // 他者が同時編集していた場合は ConflictError を投げる。
 
 import { supabase } from "./client";
+import { getAssigneeIds } from "../taskMeta";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -279,9 +280,7 @@ export async function upsertTask(task: Task, expectedUpdatedAt?: string): Promis
   // 後方互換のため先頭要素を assignee_member_id（単数FK）にも反映する
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { todo_ids, ...rest } = task;
-  const ids = task.assignee_member_ids?.length
-    ? task.assignee_member_ids
-    : task.assignee_member_id ? [task.assignee_member_id] : [];
+  const ids = getAssigneeIds(task);
   const row = {
     ...rest,
     todo_id: todo_ids[0] ?? null,

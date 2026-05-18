@@ -23,6 +23,7 @@ import {
 } from "../../lib/supabase/okrAnalysisStore";
 import { analyzeKr, type KrAnalysisInput, type KrAnalysisTf } from "../../lib/ai/okrKrAnalysisClient";
 import { analyzeObjective, type ObjectiveAnalysisKrInput } from "../../lib/ai/okrObjectiveAnalysisClient";
+import { getAssigneeIds } from "../../lib/taskMeta";
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
 function currentQuarter(): Quarter {
@@ -157,7 +158,7 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
         })),
         tasks: tasksForTf(tf.id).map(t => ({
           name: t.name, status: t.status, priority: t.priority,
-          assignee: (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).map(shortName).filter(Boolean).join("・"),
+          assignee: getAssigneeIds(t).map(shortName).filter(Boolean).join("・"),
           due_date: t.due_date, updated_at: t.updated_at,
         })),
       };

@@ -1,19 +1,17 @@
 // src/components/task/TaskSidePanel.tsx
 //
-// 【設計意図】
-// タスククリック時に右側に出る 320px のサイドパネル。
-// リスト・ガント・カンバンの3ビューで共通利用し、UIを統一する。
-// TaskEditModal（520pxフルモーダル）と同じフィールドを 600ms デバウンス自動保存。
-// ToDoは最下部に配置（要望）。
-//
-// モバイル時は呼び出し側で TaskEditModal を出す方が画面圧迫しないため、
-// このコンポーネント自体は PC・タブレット向け。
+// タスククリックで右側に出る 320px サイドパネル。List/Gantt/Kanban で共通利用。
+// モバイルは呼び出し側で TaskEditModal を出す（このコンポーネントは PC・タブレット向け）。
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
-import { todayStr, dateToQuarter, currentQuarter } from "../../lib/date";
+import {
+  TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
+  getAssigneeIds, buildTfLabelMap,
+} from "../../lib/taskMeta";
+import { todayStr } from "../../lib/date";
+import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -59,17 +57,12 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
   const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
 
-  const tfLabelById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const tf of taskForces) {
-      const krIdx = keyResults.findIndex(k => k.id === tf.kr_id);
-      const krLabel = krIdx >= 0 ? `${krIdx + 1}` : "?";
-      map.set(tf.id, `TF${krLabel}-${tf.tf_number || "?"}`);
-    }
-    return map;
-  }, [taskForces, keyResults]);
+  const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
 
-  const selectedTask = allTasks.find(t => t.id === taskId) ?? null;
+  const selectedTask = useMemo(
+    () => allTasks.find(t => t.id === taskId) ?? null,
+    [allTasks, taskId],
+  );
 
   const linkedTfs = useMemo(() => {
     const ids = allTaskTaskForces.filter(t => t.task_id === taskId).map(t => t.tf_id);
@@ -81,34 +74,11 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     return projects.filter(p => ids.includes(p.id));
   }, [allTaskProjects, projects, taskId]);
 
-  /**
-   * 「タスクフォースを追加」セレクトに出す TF を、タスクの期日が属する四半期に
-   * 紐づくものだけに絞る。
-   *
-   * 判定優先順位：
-   *   1. タスクの due_date → その四半期
-   *   2. なければ start_date → その四半期
-   *   3. どちらもなければ「今日の四半期」
-   *
-   * 過去クォーターで運用していた TF を誤って追加できないようにするための制限。
-   */
-  const eligibleTfIds = useMemo(() => {
-    if (!selectedTask || !objective) return null; // null は「フィルタ無効＝全TF」
-    const quarter = dateToQuarter(selectedTask.due_date)
-                 ?? dateToQuarter(selectedTask.start_date)
-                 ?? currentQuarter();
-    const targetQObjIds = new Set(
-      allQuarterlyObjs
-        .filter(qo => !qo.is_deleted && qo.objective_id === objective.id && qo.quarter === quarter)
-        .map(qo => qo.id),
-    );
-    if (targetQObjIds.size === 0) return new Set<string>(); // 該当四半期が未登録なら空
-    return new Set(
-      allQuarterlyKrTfs
-        .filter(q => targetQObjIds.has(q.quarterly_objective_id))
-        .map(q => q.tf_id),
-    );
-  }, [selectedTask, objective, allQuarterlyObjs, allQuarterlyKrTfs]);
+  // selectedTask 全体ではなく日付フィールドだけに依存させて、無関係フィールド更新で再走査しない
+  const eligibleTfIds = useMemo(
+    () => getEligibleTfIds(selectedTask, objective, allQuarterlyObjs, allQuarterlyKrTfs),
+    [selectedTask?.due_date, selectedTask?.start_date, objective, allQuarterlyObjs, allQuarterlyKrTfs], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
@@ -125,9 +95,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       name:                selectedTask.name,
       status:              selectedTask.status,
       priority:            selectedTask.priority ?? "",
-      assignee_member_ids: selectedTask.assignee_member_ids?.length
-                             ? selectedTask.assignee_member_ids
-                             : selectedTask.assignee_member_id ? [selectedTask.assignee_member_id] : [],
+      assignee_member_ids: getAssigneeIds(selectedTask),
       project_id:          selectedTask.project_id ?? null,
       start_date:          selectedTask.start_date ?? "",
       due_date:            selectedTask.due_date ?? "",

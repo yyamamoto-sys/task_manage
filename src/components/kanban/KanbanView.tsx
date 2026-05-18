@@ -3,7 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, TaskForce, TaskTaskForce, TaskProject, ToDo } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -44,14 +44,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     let list = tasks;
     if (selectedProject) list = list.filter(t => t.project_id === selectedProject.id);
     else if (krTaskIds)  list = list.filter(t => krTaskIds.has(t.id));
-    if (mineOnly) {
-      list = list.filter(t => {
-        const ids = t.assignee_member_ids?.length
-          ? t.assignee_member_ids
-          : t.assignee_member_id ? [t.assignee_member_id] : [];
-        return ids.includes(currentUser.id);
-      });
-    }
+    if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     return list;
   }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id]);
 
@@ -98,9 +91,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   }, [addToStatus, saveTask, addTaskTaskForce, addTaskProject, currentUser.id]);
 
   const assigneesForTask = useCallback((task: Task): Member[] => {
-    const ids = task.assignee_member_ids?.length
-      ? task.assignee_member_ids
-      : task.assignee_member_id ? [task.assignee_member_id] : [];
+    const ids = getAssigneeIds(task);
     return members.filter(m => ids.includes(m.id));
   }, [members]);
 
@@ -115,8 +106,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      {/* ヘッダー */}
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        {/* ヘッダー */}
       <div style={{
         padding: "10px 18px", borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center", gap: "10px",
@@ -266,15 +257,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           onDeleted={() => setEditingTaskId(null)}
         />
       )}
-    </div>
-    {/* タスクサイドパネル（PC・タブレット） */}
-    {!isMobile && editingTaskId && (
-      <TaskSidePanel
-        taskId={editingTaskId}
-        currentUser={currentUser}
-        onClose={() => setEditingTaskId(null)}
-      />
-    )}
+      </div>
+      {!isMobile && editingTaskId && (
+        <TaskSidePanel
+          taskId={editingTaskId}
+          currentUser={currentUser}
+          onClose={() => setEditingTaskId(null)}
+        />
+      )}
     </div>
   );
 }

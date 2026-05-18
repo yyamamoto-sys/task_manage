@@ -1,18 +1,18 @@
 // src/components/task/TaskEditModal.tsx
 //
-// 【設計意図】
-// タスク詳細・編集モーダル。カンバン・リスト・ガントから共通で開く。
-// 表示モードと編集モードを切り替え式にする。
-// - 表示モード：全フィールドを読みやすく表示。コメントのURL自動リンク。
-// - 編集モード：全フィールドをインライン編集。保存でSupabaseに反映（AppDataContext経由）。
-// 削除は確認ダイアログ付き論理削除。
+// タスク詳細・編集モーダル（モバイル時のフォールバック・各ビューから共通利用）。
+// 全フィールドを 600ms デバウンス自動保存。削除は確認ダイアログ付き論理削除。
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
-import { todayStr, dateToQuarter, currentQuarter } from "../../lib/date";
+import {
+  TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
+  getAssigneeIds, buildTfLabelMap,
+} from "../../lib/taskMeta";
+import { todayStr } from "../../lib/date";
+import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -48,18 +48,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
   const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
 
-  // tf.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ
-  // 例：KR1 配下の TF番号 1 → "TF1-1"
-  const tfLabelById = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const tf of taskForces) {
-      const krIdx = keyResults.findIndex(k => k.id === tf.kr_id);
-      const krLabel = krIdx >= 0 ? `${krIdx + 1}` : "?";
-      const tfNum = tf.tf_number || "?";
-      map.set(tf.id, `TF${krLabel}-${tfNum}`);
-    }
-    return map;
-  }, [taskForces, keyResults]);
+  const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
 
   // このタスクに紐づくTF
   const linkedTfs = useMemo(() => {
@@ -74,36 +63,16 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   }, [allTaskProjects, projects, taskId]);
   const originalTask = allTasks.find(t => t.id === taskId);
 
-  /**
-   * 「タスクフォースを追加」セレクトに出す TF を、タスクの期日が属する四半期に
-   * 紐づくものだけに絞る。判定優先順位は due_date → start_date → 今日。
-   * TaskSidePanel と同じロジック。
-   */
-  const eligibleTfIds = useMemo(() => {
-    if (!originalTask || !objective) return null;
-    const quarter = dateToQuarter(originalTask.due_date)
-                 ?? dateToQuarter(originalTask.start_date)
-                 ?? currentQuarter();
-    const targetQObjIds = new Set(
-      allQuarterlyObjs
-        .filter(qo => !qo.is_deleted && qo.objective_id === objective.id && qo.quarter === quarter)
-        .map(qo => qo.id),
-    );
-    if (targetQObjIds.size === 0) return new Set<string>();
-    return new Set(
-      allQuarterlyKrTfs
-        .filter(q => targetQObjIds.has(q.quarterly_objective_id))
-        .map(q => q.tf_id),
-    );
-  }, [originalTask, objective, allQuarterlyObjs, allQuarterlyKrTfs]);
+  const eligibleTfIds = useMemo(
+    () => getEligibleTfIds(originalTask, objective, allQuarterlyObjs, allQuarterlyKrTfs),
+    [originalTask?.due_date, originalTask?.start_date, objective, allQuarterlyObjs, allQuarterlyKrTfs], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   const [form, setForm] = useState({
     name:                 originalTask?.name ?? "",
     status:               originalTask?.status ?? "todo" as Task["status"],
     priority:             originalTask?.priority ?? "",
-    assignee_member_ids:  originalTask?.assignee_member_ids?.length
-                            ? originalTask.assignee_member_ids
-                            : originalTask?.assignee_member_id ? [originalTask.assignee_member_id] : [] as string[],
+    assignee_member_ids:  originalTask ? getAssigneeIds(originalTask) : [] as string[],
     project_id:           originalTask?.project_id ?? null as string | null,
     start_date:           originalTask?.start_date ?? "",
     due_date:             originalTask?.due_date ?? "",

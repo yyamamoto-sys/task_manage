@@ -6,6 +6,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
+import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
@@ -131,35 +132,29 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   );
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
-  // 「自分が担当タスクを持つPJ」の判定。
-  // サイドバーの「自分」モードでは、各ビューでタスクが「担当者=自分」に
-  // 絞られるため、PJ表示も自分のタスクが1件以上あるものだけに絞ると一貫する。
-  // （旧仕様：PJオーナー or member_ids でも対象だったが、タスク0件なら
-  //   PJを開いてもビューは空になるため、担当タスクの有無に統一）
+  // 「自分が担当タスクを持つPJ」。サイドバーの「自分」モードで各ビューが
+  // 担当者=自分のタスクに絞られるのと連動して PJ 表示も絞る。
   const myProjectIds = useMemo(() => {
     const ids = new Set<string>();
     (rawTasks ?? []).forEach((t: Task) => {
       if (t.is_deleted || !t.project_id) return;
-      const assignees = t.assignee_member_ids?.length
-        ? t.assignee_member_ids
-        : (t.assignee_member_id ? [t.assignee_member_id] : []);
-      if (assignees.includes(currentUser.id)) ids.add(t.project_id);
+      if (isAssignedTo(t, currentUser.id)) ids.add(t.project_id);
     });
     return ids;
   }, [rawTasks, currentUser.id]);
 
-  const [showOnlyMyProjects, setShowOnlyMyProjectsState] = useState<boolean>(
+  const [mineOnly, setMineOnlyState] = useState<boolean>(
     () => localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY) !== "0", // デフォルト ON
   );
-  const toggleMyProjectsFilter = () => setShowOnlyMyProjectsState(prev => {
+  const toggleMineOnly = () => setMineOnlyState(prev => {
     const next = !prev;
     localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, next ? "1" : "0");
     return next;
   });
 
   const visibleProjects = useMemo(
-    () => showOnlyMyProjects ? projects.filter(p => myProjectIds.has(p.id)) : projects,
-    [projects, showOnlyMyProjects, myProjectIds],
+    () => mineOnly ? projects.filter(p => myProjectIds.has(p.id)) : projects,
+    [projects, mineOnly, myProjectIds],
   );
 
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
@@ -283,7 +278,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
                 onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
-                mineOnly={showOnlyMyProjects}
+                mineOnly={mineOnly}
               />
             )}
             {viewMode === "kanban" && (
@@ -293,7 +288,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={showOnlyMyProjects}
+                mineOnly={mineOnly}
               />
             )}
             {viewMode === "gantt" && (
@@ -303,7 +298,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={showOnlyMyProjects}
+                mineOnly={mineOnly}
               />
             )}
             {viewMode === "admin" && (
@@ -316,7 +311,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
-                mineOnly={showOnlyMyProjects}
+                mineOnly={mineOnly}
               />
             )}
             {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
@@ -431,7 +426,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 maxWidth: "80px",
               }}
             >
-              <option value="">{showOnlyMyProjects ? "自分のPJ" : "全PJ"}</option>
+              <option value="">{mineOnly ? "自分のPJ" : "全PJ"}</option>
               {visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
@@ -709,10 +704,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         viewMode={viewMode}
         setViewMode={setViewMode}
         projects={visibleProjects}
-        showOnlyMyProjects={showOnlyMyProjects}
-        onToggleMyProjects={toggleMyProjectsFilter}
-        myProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
-        allProjectsCount={projects.length}
+        mineOnly={mineOnly}
+        onToggleMineOnly={toggleMineOnly}
+        mineOnlyProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
+        projectsCount={projects.length}
         selectedProjectId={selectedProjectId}
         onSelectProject={handleSelectProject}
         keyResults={keyResults}
@@ -815,11 +810,11 @@ interface SidebarProps {
   setViewMode: (v: ViewMode) => void;
   projects: Project[];
   /** プロジェクト表示フィルタ：自分が参加しているPJのみ */
-  showOnlyMyProjects: boolean;
-  onToggleMyProjects: () => void;
+  mineOnly: boolean;
+  onToggleMineOnly: () => void;
   /** フィルタ切替ボタンのバッジ表示用 */
-  myProjectsCount: number;
-  allProjectsCount: number;
+  mineOnlyProjectsCount: number;
+  projectsCount: number;
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   keyResults: KeyResult[];
@@ -847,7 +842,7 @@ interface SidebarProps {
 
 function Sidebar({
   viewMode, setViewMode, projects,
-  showOnlyMyProjects, onToggleMyProjects, myProjectsCount, allProjectsCount,
+  mineOnly, onToggleMineOnly, mineOnlyProjectsCount, projectsCount,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
@@ -978,23 +973,23 @@ function Sidebar({
                 プロジェクト
               </span>
               <button
-                onClick={onToggleMyProjects}
-                title={showOnlyMyProjects
-                  ? `「自分」モード：各ビューで自分が担当のタスクのみ表示 (該当PJ ${myProjectsCount}/${allProjectsCount}件) — クリックで全件表示`
-                  : `「全件」モード：全タスクを表示 (PJ ${allProjectsCount}件) — クリックで自分のタスクのみに切替`}
+                onClick={onToggleMineOnly}
+                title={mineOnly
+                  ? `「自分」モード：各ビューで自分が担当のタスクのみ表示 (該当PJ ${mineOnlyProjectsCount}/${projectsCount}件) — クリックで全件表示`
+                  : `「全件」モード：全タスクを表示 (PJ ${projectsCount}件) — クリックで自分のタスクのみに切替`}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
                   padding: "2px 7px",
                   fontSize: "10px", fontWeight: 500,
-                  background: showOnlyMyProjects ? "var(--color-brand-light)" : "transparent",
-                  color: showOnlyMyProjects ? "var(--color-brand)" : "var(--color-text-tertiary)",
-                  border: `1px solid ${showOnlyMyProjects ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
+                  background: mineOnly ? "var(--color-brand-light)" : "transparent",
+                  color: mineOnly ? "var(--color-brand)" : "var(--color-text-tertiary)",
+                  border: `1px solid ${mineOnly ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
                   borderRadius: "var(--radius-full)",
                   cursor: "pointer", lineHeight: 1.4,
                 }}
               >
-                <span style={{ fontSize: "9px" }}>{showOnlyMyProjects ? "👤" : "🌐"}</span>
-                {showOnlyMyProjects ? "自分" : "全件"}
+                <span style={{ fontSize: "9px" }}>{mineOnly ? "👤" : "🌐"}</span>
+                {mineOnly ? "自分" : "全件"}
               </button>
             </div>
           )}
@@ -1011,7 +1006,7 @@ function Sidebar({
               onClick={() => onSelectProject(pj.id)} collapsed={c}
             />
           ))}
-          {projects.length === 0 && !c && showOnlyMyProjects && (
+          {projects.length === 0 && !c && mineOnly && (
             <div style={{
               padding: "12px 14px", fontSize: "11px",
               color: "var(--color-text-tertiary)", lineHeight: 1.5,

@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect } from "react"
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { renderLinks } from "../../lib/renderLinks";
 import { KEYS } from "../../lib/localData/localStore";
@@ -128,9 +128,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
     if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
     // 「担当者=自分」フィルタ：内部チップ(filterMyOnly) または サイドバー(mineOnly) のどちらかが ON
-    if (filterMyOnly || mineOnly) tasks = tasks.filter(t =>
-      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
-    );
+    if (filterMyOnly || mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
     if (filterMember !== "all")  tasks = tasks.filter(t =>
       t.assignee_member_ids?.includes(filterMember) || t.assignee_member_id === filterMember
     );
@@ -497,7 +495,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
                   {group.tasks.map(task => {
-                    const taskAssigneeIds = task.assignee_member_ids?.length ? task.assignee_member_ids : task.assignee_member_id ? [task.assignee_member_id] : [];
+                    const taskAssigneeIds = getAssigneeIds(task);
                     const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = projects.find(p => p.id === task.project_id);
                     const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
@@ -636,7 +634,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                       {group.tasks.map(task => {
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
-                        const taskAssigneeIds = task.assignee_member_ids?.length ? task.assignee_member_ids : task.assignee_member_id ? [task.assignee_member_id] : [];
+                        const taskAssigneeIds = getAssigneeIds(task);
                         const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                         const pj = projects.find(p => p.id === task.project_id);
                         const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
@@ -753,7 +751,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         </div>
       </div>
 
-      {/* ===== サイドパネル（PC・タブレット）：TaskSidePanel に統一 ===== */}
       {selectedTask && !isMobile && (
         <TaskSidePanel
           taskId={selectedTask.id}
@@ -762,7 +759,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         />
       )}
 
-      {/* タスク編集モーダル（モバイル時のみ） */}
       {editingTaskId && (
         <TaskEditModal
           taskId={editingTaskId}
@@ -787,9 +783,6 @@ function Chip({ active, onClick, label }: { active: boolean; onClick: () => void
     }}>{label}</button>
   );
 }
-
-// DR は現在未使用だが将来のために残す
-// function DR(...)
 
 const selStyle: React.CSSProperties = {
   padding: "3px 7px", fontSize: "10px",

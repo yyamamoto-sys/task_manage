@@ -26,6 +26,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
 import { HelpButton } from "../guide/HelpButton";
+import { isAssignedTo } from "../../lib/taskMeta";
 
 interface Props {
   currentUser: Member;
@@ -113,9 +114,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // どちらか ON なら担当者フィルタを適用（OR）。
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (myOnly || mineOnly) tasks = tasks.filter(t =>
-      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
-    );
+    if (myOnly || mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
     if (effectivePjIds.length > 0) tasks = tasks.filter(t =>
       (t.project_id && effectivePjIds.includes(t.project_id)) || t.project_id == null
@@ -130,7 +129,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // 自分のリマインダータスク（期限切れ + N日以内）
   const reminderTasks = useMemo(
     () => allTasks.filter(t =>
-      (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id) &&
+      isAssignedTo(t, currentUser.id) &&
       t.status !== "done" &&
       t.due_date != null &&
       t.due_date <= reminderDeadline

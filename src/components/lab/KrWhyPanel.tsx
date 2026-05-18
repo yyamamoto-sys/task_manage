@@ -15,6 +15,7 @@ import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
+import { currentQuarter } from "../../lib/date";
 
 function ThinkingDots() {
   return (
@@ -96,30 +97,19 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
 
-  /**
-   * 【設計意図】
-   * 今日の日付が属する四半期の TF のみを対象にする。
-   * 過去クォーターで運用していた TF は分析の文脈を分散させるため非表示。
-   * 1Q=1〜3月 / 2Q=4〜6月 / 3Q=7〜9月 / 4Q=10〜12月（CLAUDE.md Section 6-14）
-   */
-  const currentQuarter = useMemo<"1Q" | "2Q" | "3Q" | "4Q">(() => {
-    const m = new Date().getMonth() + 1;
-    if (m <= 3) return "1Q";
-    if (m <= 6) return "2Q";
-    if (m <= 9) return "3Q";
-    return "4Q";
-  }, []);
+  // 今日が属する四半期の TF のみを対象にする（過去Qを除外して文脈を絞る）
+  const thisQuarter = useMemo<"1Q" | "2Q" | "3Q" | "4Q">(() => currentQuarter(), []);
 
   const currentQObj = useMemo(() => {
     if (!objective) return null;
     return (quarterlyObjectives ?? []).find(
       qo => qo.objective_id === objective.id
-        && qo.quarter === currentQuarter
+        && qo.quarter === thisQuarter
         && !qo.is_deleted,
     ) ?? null;
-  }, [quarterlyObjectives, objective, currentQuarter]);
+  }, [quarterlyObjectives, objective, thisQuarter]);
 
-  const currentQuarterTfIds = useMemo(() => {
+  const thisQuarterTfIds = useMemo(() => {
     if (!currentQObj || !selectedKrId) return new Set<string>();
     return new Set(
       (quarterlyKrTaskForces ?? [])
@@ -133,10 +123,10 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       .filter(tf =>
         tf.kr_id === selectedKrId
         && !tf.is_deleted
-        && currentQuarterTfIds.has(tf.id),
+        && thisQuarterTfIds.has(tf.id),
       )
       .sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999)),
-    [taskForces, selectedKrId, currentQuarterTfIds],
+    [taskForces, selectedKrId, thisQuarterTfIds],
   );
 
   // KR変更時に保存済みサマリー＆セッション履歴を読み込む・TF選択をリセット
@@ -466,7 +456,7 @@ ${issueText.trim()}`;
                 <label style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", display: "block", marginBottom: "6px" }}>
                   対象TF（任意）
                   <span style={{ fontSize: "10px", fontWeight: "400", color: "var(--color-text-tertiary)", marginLeft: "6px" }}>
-                    {currentQuarter} のTFのみ表示
+                    {thisQuarter} のTFのみ表示
                   </span>
                 </label>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>

@@ -22,6 +22,7 @@ import { AIProgressLoader } from "../common/AIProgressLoader";
 import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
 import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { getAssigneeIds } from "../../lib/taskMeta";
 
 const ANALYSIS_PHASES = [
   "タスクの状況を読み込んでいます",
@@ -30,10 +31,6 @@ const ANALYSIS_PHASES = [
   "担当者の負荷を確認しています",
   "次の一手をまとめています",
 ];
-
-function assigneeIds(t: Task): string[] {
-  return t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : [];
-}
 
 export function ProjectKarte({ project, currentUser }: { project: Project; currentUser: Member }) {
   const rawTasks   = useAppStore(s => s.tasks);
@@ -86,7 +83,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const memberLoad = useMemo(() => {
     const map = new Map<string, { active: number; done: number }>();
     for (const t of pjTasks) {
-      for (const mid of assigneeIds(t)) {
+      for (const mid of getAssigneeIds(t)) {
         const e = map.get(mid) ?? { active: 0, done: 0 };
         if (t.status === "done") e.done++; else e.active++;
         map.set(mid, e);
@@ -119,7 +116,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
     for (const o of owners) map.set(o.id, o);
     for (const m of pjMembers) map.set(m.id, m);
     for (const t of pjTasks) {
-      for (const aid of (t.assignee_member_ids?.length ? t.assignee_member_ids : (t.assignee_member_id ? [t.assignee_member_id] : []))) {
+      for (const aid of getAssigneeIds(t)) {
         const m = memberById.get(aid);
         if (m) map.set(m.id, m);
       }
@@ -180,7 +177,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           name: t.name,
           status: t.status,
           priority: t.priority,
-          assignee_short_name: assigneeIds(t).map(id => memberById.get(id)?.short_name).filter(Boolean).join("・") || "",
+          assignee_short_name: getAssigneeIds(t).map(id => memberById.get(id)?.short_name).filter(Boolean).join("・") || "",
           start_date: t.start_date,
           due_date: t.due_date,
           estimated_hours: t.estimated_hours,

@@ -12,6 +12,7 @@
 import type { Project, Task, Member, ToDo, KeyResult, TaskForce } from "../localData/types";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
+import { dateToQuarter } from "../date";
 
 // ===== 型定義 =====
 
@@ -67,9 +68,7 @@ function makeShortId(prefix: string, index: number): string {
 function buildFiscalCalendar(today: Date): FiscalCalendar {
   const fmt = (d: Date) => d.toISOString().split("T")[0];
   const year = today.getFullYear();
-  const month = today.getMonth() + 1; // 1-12
-
-  const currentQ = month <= 3 ? "1Q" : month <= 6 ? "2Q" : month <= 9 ? "3Q" : "4Q";
+  const currentQ = dateToQuarter(fmt(today)) ?? "1Q";
   const qEnds: Record<string, string> = {
     "1Q": `${year}-03-31`, "2Q": `${year}-06-30`,
     "3Q": `${year}-09-30`, "4Q": `${year}-12-31`,
@@ -88,7 +87,7 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
 
   const todayStr = fmt(today);
   const weekdays = ["日", "月", "火", "水", "木", "金", "土"];
-  const formatted = `${year}年${month}月${today.getDate()}日（${weekdays[today.getDay()]}）`;
+  const formatted = `${year}年${today.getMonth() + 1}月${today.getDate()}日（${weekdays[today.getDay()]}）`;
 
   // 今週末（日曜）と来週の範囲
   const dayOfWeek = today.getDay(); // 0=日, 1=月
