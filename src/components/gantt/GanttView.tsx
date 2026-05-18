@@ -15,6 +15,7 @@ import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
 import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
+import { TaskSidePanel } from "../task/TaskSidePanel";
 
 interface Props {
   currentUser: Member;
@@ -1267,10 +1268,19 @@ export function GanttView({
             </div>
           </div>
         </div>
+
+        {/* タスクサイドパネル（PC・タブレット）— ガント本体の右側に追加。プレビューモードでは表示しない */}
+        {!isPreview && !isMobile && editingTaskId && (
+          <TaskSidePanel
+            taskId={editingTaskId}
+            currentUser={currentUser}
+            onClose={() => setEditingTaskId(null)}
+          />
+        )}
       </div>
 
-      {/* タスク編集モーダル（プレビューモードでは表示しない） */}
-      {!isPreview && editingTaskId && (
+      {/* モバイル時のみ TaskEditModal でフルスクリーン表示 */}
+      {!isPreview && isMobile && editingTaskId && (
         <TaskEditModal
           taskId={editingTaskId}
           currentUser={currentUser}

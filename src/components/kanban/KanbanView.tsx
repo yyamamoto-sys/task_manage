@@ -7,6 +7,7 @@ import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORIT
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
+import { TaskSidePanel } from "../task/TaskSidePanel";
 
 interface Props {
   currentUser: Member;
@@ -102,7 +103,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+    <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
       {/* ヘッダー */}
       <div style={{
         padding: "10px 18px", borderBottom: "1px solid var(--color-border-primary)",
@@ -244,7 +246,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         />
       )}
 
-      {editingTaskId && (
+      {/* モバイル時のみ TaskEditModal でフルスクリーン表示（PCはサイドパネル） */}
+      {isMobile && editingTaskId && (
         <TaskEditModal
           taskId={editingTaskId}
           currentUser={currentUser}
@@ -252,6 +255,15 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           onDeleted={() => setEditingTaskId(null)}
         />
       )}
+    </div>
+    {/* タスクサイドパネル（PC・タブレット） */}
+    {!isMobile && editingTaskId && (
+      <TaskSidePanel
+        taskId={editingTaskId}
+        currentUser={currentUser}
+        onClose={() => setEditingTaskId(null)}
+      />
+    )}
     </div>
   );
 }
