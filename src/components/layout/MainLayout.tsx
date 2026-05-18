@@ -131,14 +131,13 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   );
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
-  // 「自分が参加しているPJ」の判定: オーナー / PJメンバー / 担当タスクを持つPJ
+  // 「自分が担当タスクを持つPJ」の判定。
+  // サイドバーの「自分」モードでは、各ビューでタスクが「担当者=自分」に
+  // 絞られるため、PJ表示も自分のタスクが1件以上あるものだけに絞ると一貫する。
+  // （旧仕様：PJオーナー or member_ids でも対象だったが、タスク0件なら
+  //   PJを開いてもビューは空になるため、担当タスクの有無に統一）
   const myProjectIds = useMemo(() => {
     const ids = new Set<string>();
-    projects.forEach(p => {
-      if ((p.owner_member_ids ?? []).includes(currentUser.id)) ids.add(p.id);
-      else if (p.owner_member_id === currentUser.id) ids.add(p.id);
-      else if ((p.member_ids ?? []).includes(currentUser.id)) ids.add(p.id);
-    });
     (rawTasks ?? []).forEach((t: Task) => {
       if (t.is_deleted || !t.project_id) return;
       const assignees = t.assignee_member_ids?.length
@@ -147,7 +146,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       if (assignees.includes(currentUser.id)) ids.add(t.project_id);
     });
     return ids;
-  }, [projects, rawTasks, currentUser.id]);
+  }, [rawTasks, currentUser.id]);
 
   const [showOnlyMyProjects, setShowOnlyMyProjectsState] = useState<boolean>(
     () => localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY) !== "0", // デフォルト ON
@@ -284,6 +283,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
                 onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+                mineOnly={showOnlyMyProjects}
               />
             )}
             {viewMode === "kanban" && (
@@ -293,6 +293,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
+                mineOnly={showOnlyMyProjects}
               />
             )}
             {viewMode === "gantt" && (
@@ -302,6 +303,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
+                mineOnly={showOnlyMyProjects}
               />
             )}
             {viewMode === "admin" && (
@@ -314,6 +316,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
+                mineOnly={showOnlyMyProjects}
               />
             )}
             {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
@@ -977,8 +980,8 @@ function Sidebar({
               <button
                 onClick={onToggleMyProjects}
                 title={showOnlyMyProjects
-                  ? `自分のPJのみ (${myProjectsCount}/${allProjectsCount}件) — クリックで全件表示`
-                  : `全PJ表示 (${allProjectsCount}件) — クリックで自分のPJのみ`}
+                  ? `「自分」モード：各ビューで自分が担当のタスクのみ表示 (該当PJ ${myProjectsCount}/${allProjectsCount}件) — クリックで全件表示`
+                  : `「全件」モード：全タスクを表示 (PJ ${allProjectsCount}件) — クリックで自分のタスクのみに切替`}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
                   padding: "2px 7px",
@@ -1013,7 +1016,7 @@ function Sidebar({
               padding: "12px 14px", fontSize: "11px",
               color: "var(--color-text-tertiary)", lineHeight: 1.5,
             }}>
-              参加しているPJはまだありません。<br />
+              自分が担当するタスクを持つPJはまだありません。<br />
               「全件」に切り替えると全PJが表示されます。
             </div>
           )}

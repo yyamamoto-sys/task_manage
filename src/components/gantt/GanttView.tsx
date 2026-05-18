@@ -29,6 +29,8 @@ interface Props {
   isPreview?: boolean;
   /** プレビューモード：変更されたタスクIDのセット（ハイライト表示） */
   previewChangedTaskIds?: Set<string>;
+  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
+  mineOnly?: boolean;
 }
 
 // ===== 定数 =====
@@ -68,6 +70,7 @@ export function GanttView({
   previewTasks,
   isPreview = false,
   previewChangedTaskIds,
+  mineOnly = false,
 }: Props) {
   // 【Phase 3 移行済み】個別 selector で必要な state のみを購読する。
   const rawTasks      = useAppStore(s => s.tasks);
@@ -81,12 +84,22 @@ export function GanttView({
   );
   const isMobile = useIsMobile();
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
+  // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
   const allTasks = useMemo(() => {
     const base = previewTasks
       ? previewTasks.filter(t => !t.is_deleted)
       : rawTasks.filter(t => !t.is_deleted);
-    return krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
-  }, [previewTasks, rawTasks, krTaskIds]);
+    let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
+    if (mineOnly) {
+      list = list.filter(t => {
+        const ids = t.assignee_member_ids?.length
+          ? t.assignee_member_ids
+          : t.assignee_member_id ? [t.assignee_member_id] : [];
+        return ids.includes(currentUser.id);
+      });
+    }
+    return list;
+  }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 

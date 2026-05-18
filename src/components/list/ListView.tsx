@@ -19,6 +19,8 @@ interface Props {
   projects: Project[];
   selectedKrId?: string | null;
   krTaskIds?: Set<string> | null;
+  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
+  mineOnly?: boolean;
 }
 
 type GroupBy = "project" | "assignee" | "status";
@@ -62,7 +64,7 @@ function lsSet(field: string, value: unknown) {
   } catch { /* ignore */ }
 }
 
-export function ListView({ currentUser, selectedProject, projects, krTaskIds }: Props) {
+export function ListView({ currentUser, selectedProject, projects, krTaskIds, mineOnly = false }: Props) {
   const rawTasks   = useAppStore(s => s.tasks);
   const rawMembers = useAppStore(s => s.members);
   const rawTodos   = useAppStore(s => s.todos);
@@ -125,7 +127,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
     else if (krTaskIds)          tasks = tasks.filter(t => krTaskIds.has(t.id));
     if (filterStatus !== "all")  tasks = tasks.filter(t => t.status === filterStatus);
     if (filterHideDone)          tasks = tasks.filter(t => t.status !== "done");
-    if (filterMyOnly)            tasks = tasks.filter(t =>
+    // 「担当者=自分」フィルタ：内部チップ(filterMyOnly) または サイドバー(mineOnly) のどちらかが ON
+    if (filterMyOnly || mineOnly) tasks = tasks.filter(t =>
       (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
     );
     if (filterMember !== "all")  tasks = tasks.filter(t =>
@@ -152,7 +155,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds }: 
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
     });
-  }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, filterMember,
+  }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
   // フィルタ変更で見えなくなったタスクは選択から外す

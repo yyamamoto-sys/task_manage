@@ -35,11 +35,13 @@ interface Props {
   /** 絞り込みバナーの ✕ で呼ぶ。サイドバーのPJ選択を解除する */
   onClearProjectFilter?: () => void;
   onOpenAiProject?: () => void;
+  /** サイドバーの「自分」トグルが ON のとき true。自分が担当のタスクのみ表示 */
+  mineOnly?: boolean;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, mineOnly = false }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(s => s.tasks);
@@ -107,9 +109,11 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   );
 
   // フィルター適用後のタスク
+  // mineOnly はサイドバーのトグル由来、myOnly はダッシュボード内部の個別チップ。
+  // どちらか ON なら担当者フィルタを適用（OR）。
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (myOnly) tasks = tasks.filter(t =>
+    if (myOnly || mineOnly) tasks = tasks.filter(t =>
       (t.assignee_member_ids?.length ? t.assignee_member_ids : t.assignee_member_id ? [t.assignee_member_id] : []).includes(currentUser.id)
     );
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
@@ -117,7 +121,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       (t.project_id && effectivePjIds.includes(t.project_id)) || t.project_id == null
     );
     return tasks;
-  }, [allTasks, myOnly, effectivePjIds, currentUser.id]);
+  }, [allTasks, myOnly, mineOnly, effectivePjIds, currentUser.id]);
 
   const todayS = todayStr();
   const weekLater = addDaysFromToday(7);

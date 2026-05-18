@@ -15,9 +15,11 @@ interface Props {
   projects: Project[];
   selectedKrId?: string | null;
   krTaskIds?: Set<string> | null;
+  /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
+  mineOnly?: boolean;
 }
 
-export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds }: Props) {
+export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds, mineOnly = false }: Props) {
   const allTasks         = useAppStore(s => s.tasks);
   const allMembers       = useAppStore(s => s.members);
   const allTaskForces    = useAppStore(s => s.taskForces);
@@ -39,10 +41,19 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const [hideDone, setHideDone] = useState(false);
 
   const visibleTasks = useMemo(() => {
-    if (selectedProject) return tasks.filter(t => t.project_id === selectedProject.id);
-    if (krTaskIds) return tasks.filter(t => krTaskIds.has(t.id));
-    return tasks;
-  }, [tasks, selectedProject, krTaskIds]);
+    let list = tasks;
+    if (selectedProject) list = list.filter(t => t.project_id === selectedProject.id);
+    else if (krTaskIds)  list = list.filter(t => krTaskIds.has(t.id));
+    if (mineOnly) {
+      list = list.filter(t => {
+        const ids = t.assignee_member_ids?.length
+          ? t.assignee_member_ids
+          : t.assignee_member_id ? [t.assignee_member_id] : [];
+        return ids.includes(currentUser.id);
+      });
+    }
+    return list;
+  }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id]);
 
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
