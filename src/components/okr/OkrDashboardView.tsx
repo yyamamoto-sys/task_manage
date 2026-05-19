@@ -56,7 +56,7 @@ function getThisMonday(): string {
 const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string }[] = [
   { key: "okr",  icon: "🎯", label: "OKR管理" },
   { key: "why",  icon: "🔍", label: "なぜなぜ" },
-  { key: "plan", icon: "📅", label: "計画" },
+  { key: "plan", icon: "📅", label: "計画（マネージャー向け）" },
 ];
 const OKR_SUB_TABS: { tool: OkrActiveTool; label: string }[] = [
   { tool: "note",     label: "① 会議ノート" },

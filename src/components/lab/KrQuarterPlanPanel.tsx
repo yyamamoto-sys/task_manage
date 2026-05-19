@@ -719,7 +719,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
         <span style={{ fontSize: "18px" }}>📅</span>
         <div style={{ flex: 1 }}>
           <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
-            クォーター計画
+            クォーター計画（マネージャー向け）
           </div>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
             AI対話で翌クォーターのTask Force計画を立案します
