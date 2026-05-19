@@ -358,6 +358,34 @@ export function OkrDashboardView({
 
         {/* 概要は右上「🎯 OKR」ボタンからオーバーレイで表示（下部の overviewOpen ブロック参照） */}
 
+        {/* タブ別の使い分け説明（初見でも「どこに何を書くか」が分かるように） */}
+        {activeTool && (
+          <div style={{
+            padding: "6px 14px", borderBottom: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-secondary)", flexShrink: 0,
+            fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.5,
+          }}>
+            {activeTool === "note" && (
+              <span>💡 <b>会議ノート</b>は週次のKR×TFごとの進捗・気づきを記録。会議の事後議事は「② セッション記録」へ。</span>
+            )}
+            {activeTool === "session" && (
+              <span>💡 <b>セッション記録</b>は会議の議事メモを AI で抽出（チェックイン／ウィン／自由形式）。日々の進捗は「① 会議ノート」へ。</span>
+            )}
+            {activeTool === "analysis" && (
+              <span>💡 <b>分析</b>は会議ノート＋セッション履歴＋タスクを束ねて AI が整理。レポート作成の素材になります。</span>
+            )}
+            {activeTool === "report" && (
+              <span>💡 <b>レポート</b>は最新の分析を素材に対外説明用の文書を生成・確定する場所。</span>
+            )}
+            {activeTool === "why" && (
+              <span>💡 <b>なぜなぜ</b>は KR/TF の停滞原因を AI と対話で深掘りし、根本原因サマリにまとめる場所。</span>
+            )}
+            {activeTool === "plan" && (
+              <span>💡 <b>クォーター計画</b>は前Qの分析を踏まえて今Qの TF・ToDo を AI と組み立てる場所。</span>
+            )}
+          </div>
+        )}
+
         {/* ─── 会議ノートタブ（KR×週、中にTFごとのセクション） ─── */}
         {activeTool === "note" && (
           <KrMeetingNotePanel
@@ -940,10 +968,10 @@ function KrSessionHistory({
     }
   };
 
-  const SIGNAL_OPTIONS: { value: "green" | "yellow" | "red"; label: string }[] = [
-    { value: "green", label: "🟢 順調" },
-    { value: "yellow", label: "🟡 注意" },
-    { value: "red", label: "🔴 要対応" },
+  const SIGNAL_OPTIONS: { value: "green" | "yellow" | "red"; label: string; tip: string }[] = [
+    { value: "green",  label: "🟢 順調",   tip: "KR進捗 60% 以上の見込み" },
+    { value: "yellow", label: "🟡 注意",   tip: "KR進捗 50〜59% の見込み（テコ入れ検討）" },
+    { value: "red",    label: "🔴 要対応", tip: "KR進捗 49% 以下の見込み（即対応）" },
   ];
 
   const inputStyle: React.CSSProperties = {
@@ -1095,10 +1123,12 @@ function KrSessionHistory({
 
                       {/* シグナル */}
                       <div>
-                        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>シグナル</div>
+                        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>
+                          シグナル <span style={{ fontSize: "10px" }}>（🟢60%以上 / 🟡50〜59% / 🔴49%以下）</span>
+                        </div>
                         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                           {SIGNAL_OPTIONS.map(opt => (
-                            <label key={opt.value} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", cursor: "pointer" }}>
+                            <label key={opt.value} title={opt.tip} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", cursor: "pointer" }}>
                               <input type="radio" name={`signal-${session.id}`} checked={editDraft.signal === opt.value} onChange={() => setEditDraft({ ...editDraft, signal: opt.value })} />
                               {opt.label}
                             </label>

@@ -263,10 +263,11 @@ export function SetupWizard({ onComplete }: Props) {
                     <input
                       value={m.display_name}
                       onChange={e => updateMember(m.id, "display_name", e.target.value)}
-                      placeholder="表示名（例：田中 一郎）"
+                      placeholder="表示名 ※必須（例：田中 一郎）"
+                      aria-required="true"
                       style={{
                         flex: 2, padding: "5px 8px", fontSize: "11px",
-                        border: "1px solid var(--color-border-primary)",
+                        border: `1px solid ${!m.display_name.trim() ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
                         borderRadius: "var(--radius-sm)",
                         background: "var(--color-bg-primary)",
                         color: "var(--color-text-primary)", outline: "none",
@@ -275,10 +276,11 @@ export function SetupWizard({ onComplete }: Props) {
                     <input
                       value={m.short_name}
                       onChange={e => updateMember(m.id, "short_name", e.target.value)}
-                      placeholder="略称（例：田中）"
+                      placeholder="略称 ※必須（例：田中）"
+                      aria-required="true"
                       style={{
                         flex: 1, padding: "5px 8px", fontSize: "11px",
-                        border: "1px solid var(--color-border-primary)",
+                        border: `1px solid ${!m.short_name.trim() ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
                         borderRadius: "var(--radius-sm)",
                         background: "var(--color-bg-primary)",
                         color: "var(--color-text-primary)", outline: "none",
@@ -316,30 +318,52 @@ export function SetupWizard({ onComplete }: Props) {
               ＋ メンバーを追加
             </button>
 
-            <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
-              <button
-                onClick={() => setStep(1)}
-                style={{
-                  flex: 1, padding: "9px", fontSize: "12px",
-                  color: "var(--color-text-secondary)",
-                  background: "transparent",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)", cursor: "pointer",
-                }}
-              >
-                ← 戻る
-              </button>
-              <button
-                onClick={() => setStep(3)}
-                style={{
-                  flex: 2, padding: "9px", fontSize: "12px", fontWeight: "500",
-                  background: "var(--color-brand)", color: "#fff",
-                  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-                }}
-              >
-                次へ →
-              </button>
-            </div>
+            {(() => {
+              const validMembers = members.filter(m => m.display_name.trim() && m.short_name.trim());
+              const incompleteCount = members.length - validMembers.length;
+              const canProceed = validMembers.length > 0;
+              return (
+                <>
+                  {incompleteCount > 0 && (
+                    <div style={{
+                      marginTop: "8px", padding: "6px 10px",
+                      background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+                      borderRadius: "var(--radius-sm)", fontSize: "11px", lineHeight: 1.5,
+                    }}>
+                      未入力のメンバーが {incompleteCount} 件あります。空欄のままだと保存されません。
+                    </div>
+                  )}
+                  <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
+                    <button
+                      onClick={() => setStep(1)}
+                      style={{
+                        flex: 1, padding: "9px", fontSize: "12px",
+                        color: "var(--color-text-secondary)",
+                        background: "transparent",
+                        border: "1px solid var(--color-border-primary)",
+                        borderRadius: "var(--radius-md)", cursor: "pointer",
+                      }}
+                    >
+                      ← 戻る
+                    </button>
+                    <button
+                      onClick={() => setStep(3)}
+                      disabled={!canProceed}
+                      title={canProceed ? "次のステップへ進む" : "表示名と略称を1名以上入力してください"}
+                      style={{
+                        flex: 2, padding: "9px", fontSize: "12px", fontWeight: "500",
+                        background: canProceed ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                        color: canProceed ? "#fff" : "var(--color-text-tertiary)",
+                        border: "none", borderRadius: "var(--radius-md)",
+                        cursor: canProceed ? "pointer" : "not-allowed",
+                      }}
+                    >
+                      次へ →
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
           </div>
         )}
 

@@ -919,18 +919,21 @@ function SignalRow({ value, comment, onChange }: {
   comment: string;
   onChange: (signal: "green" | "yellow" | "red" | null, comment: string) => void;
 }) {
-  const opts: { v: "green" | "yellow" | "red" | null; label: string; color: string }[] = [
-    { v: "green", label: "🟢 順調", color: "#16a34a" },
-    { v: "yellow", label: "🟡 注意", color: "#ca8a04" },
-    { v: "red", label: "🔴 要対応", color: "#dc2626" },
-    { v: null, label: "—", color: "var(--color-text-tertiary)" },
+  const opts: { v: "green" | "yellow" | "red" | null; label: string; color: string; tip: string }[] = [
+    { v: "green",  label: "🟢 順調",   color: "#16a34a",                       tip: "KR進捗 60% 以上の見込み" },
+    { v: "yellow", label: "🟡 注意",   color: "#ca8a04",                       tip: "KR進捗 50〜59% の見込み（テコ入れ検討）" },
+    { v: "red",    label: "🔴 要対応", color: "#dc2626",                       tip: "KR進捗 49% 以下の見込み（即対応）" },
+    { v: null,     label: "—",         color: "var(--color-text-tertiary)",    tip: "未設定" },
   ];
   return (
     <div>
       <Label>シグナル</Label>
+      <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>
+        🟢順調（60%以上） / 🟡注意（50〜59%） / 🔴要対応（49%以下）
+      </div>
       <div style={{ display: "flex", gap: "5px", marginBottom: "6px", flexWrap: "wrap" }}>
         {opts.map(o => (
-          <button key={String(o.v)} onClick={() => onChange(o.v, comment)} style={{
+          <button key={String(o.v)} onClick={() => onChange(o.v, comment)} title={o.tip} style={{
             fontSize: "12px", padding: "5px 12px", borderRadius: "var(--radius-md)",
             border: value === o.v ? `1.5px solid ${o.color}` : "1px solid var(--color-border-primary)",
             background: value === o.v ? `${o.color}18` : "var(--color-bg-primary)",
