@@ -111,7 +111,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
     const saved = localStorage.getItem(KEYS.OKR_ACTIVE_TOOL) as OkrActiveTool | null;
-    const validTools: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report", "why", "plan", "guide", null];
+    const validTools: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report", "why", "plan", null];
     return (saved !== undefined && validTools.includes(saved)) ? saved : "overview";
   });
   const setOkrActiveToolPersisted = (tool: OkrActiveTool) => {
@@ -1247,17 +1247,6 @@ function Sidebar({
           )}
         </div>
 
-        {/* OKR管理：使い方ページ */}
-        <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
-          <NavItem
-            active={okrActiveTool === "guide"}
-            icon={<span style={{ fontSize: "13px" }}>📖</span>}
-            label="使い方・案内"
-            tooltip="このモードでできることの説明と週次の使い方ガイド"
-            onClick={() => onSetOkrActiveTool("guide")}
-            collapsed={c}
-          />
-        </div>
       </>)}
 
       {/* AI相談・設定・ユーザー情報 */}
