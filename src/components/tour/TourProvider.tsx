@@ -166,9 +166,24 @@ interface OverlayProps {
 
 function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev, onNext, onSkip }: OverlayProps) {
   const bubbleRef = useRef<HTMLDivElement>(null);
+  const [bubbleSize, setBubbleSize] = useState<{ w: number; h: number } | null>(null);
 
-  // 吹き出しの位置を計算
-  const bubblePos = calcBubblePos(targetRect, step.placement);
+  // 吹き出しの実サイズを測って配置に反映（初回レンダー直後と内容変更時）
+  useEffect(() => {
+    const el = bubbleRef.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      setBubbleSize({ w: r.width, h: r.height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [step]);
+
+  // 吹き出しの位置を計算（実測サイズが取れたら利用）
+  const bubblePos = calcBubblePos(targetRect, step.placement, bubbleSize);
 
   // ハイライト用の窓（targetRect があれば穴あき、なければ全画面暗幕）
   const cutoutPadding = 6;
@@ -214,6 +229,9 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
           zIndex: 10000,
           ...bubblePos,
           maxWidth: "360px", width: "calc(100vw - 24px)",
+          // 画面より大きい吹き出しは縦スクロール可能に（「次へ」ボタンが隠れない最終防御線）
+          maxHeight: "calc(100vh - 24px)",
+          overflowY: "auto",
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-lg)",
@@ -280,43 +298,77 @@ const ghostBtn: React.CSSProperties = {
 };
 
 // ===== 吹き出しの位置計算 =====
+//
+// 画面外にはみ出さないよう、上下左右すべての方向でクランプし、
+// 「次へ」ボタンが必ず見えるようにする。吹き出しサイズは実測値を優先。
 
-function calcBubblePos(target: DOMRect | null, placement?: TourStep["placement"]): React.CSSProperties {
+function calcBubblePos(
+  target: DOMRect | null,
+  placement: TourStep["placement"] | undefined,
+  measured: { w: number; h: number } | null,
+): React.CSSProperties {
   const margin = 12;
-  const bubbleH = 200; // 概算（実測しなくても見切れにくい）
-  const bubbleW = 360;
+  const pad = 12;
+  const bubbleH = measured?.h ?? 240;
+  const bubbleW = measured?.w ?? 360;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
 
   // ターゲット無し or center 指定なら画面中央
   if (!target || placement === "center") {
     return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
   }
 
-  // auto：上下に空きがある方を選択
+  // ターゲット周辺の空きスペースから自動配置先を決める（auto も含む）
+  const spaceTop    = target.top;
+  const spaceBottom = vh - target.bottom;
+  const spaceLeft   = target.left;
+  const spaceRight  = vw - target.right;
+
   const pick: TourStep["placement"] = placement && placement !== "auto"
     ? placement
-    : (window.innerHeight - target.bottom > target.top ? "bottom" : "top");
+    : (() => {
+        // bubbleH+margin 以上の空きがある方向を優先（下→上→右→左→中央）
+        if (spaceBottom >= bubbleH + margin) return "bottom";
+        if (spaceTop    >= bubbleH + margin) return "top";
+        if (spaceRight  >= bubbleW + margin) return "right";
+        if (spaceLeft   >= bubbleW + margin) return "left";
+        return "center";
+      })();
 
+  // 配置先で空きが足りない場合はフォールバックで center に
+  const needed = (pick === "top" || pick === "bottom") ? bubbleH : bubbleW;
+  const actualSpace = pick === "top" ? spaceTop
+                    : pick === "bottom" ? spaceBottom
+                    : pick === "left" ? spaceLeft
+                    : pick === "right" ? spaceRight
+                    : Infinity;
+  if (pick !== "center" && actualSpace < needed + margin) {
+    return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
+  }
+
+  // 各方向で配置（top/left を画面内に収める clamp 必須）
   switch (pick) {
-    case "top":
-      return {
-        bottom: window.innerHeight - target.top + margin,
-        left: clamp(target.left + target.width / 2 - bubbleW / 2, 8, window.innerWidth - bubbleW - 8),
-      };
-    case "bottom":
-      return {
-        top: target.bottom + margin,
-        left: clamp(target.left + target.width / 2 - bubbleW / 2, 8, window.innerWidth - bubbleW - 8),
-      };
-    case "left":
-      return {
-        right: window.innerWidth - target.left + margin,
-        top: clamp(target.top + target.height / 2 - bubbleH / 2, 8, window.innerHeight - bubbleH - 8),
-      };
-    case "right":
-      return {
-        left: target.right + margin,
-        top: clamp(target.top + target.height / 2 - bubbleH / 2, 8, window.innerHeight - bubbleH - 8),
-      };
+    case "top": {
+      const top  = clamp(target.top - margin - bubbleH, pad, vh - bubbleH - pad);
+      const left = clamp(target.left + target.width / 2 - bubbleW / 2, pad, vw - bubbleW - pad);
+      return { top, left };
+    }
+    case "bottom": {
+      const top  = clamp(target.bottom + margin, pad, vh - bubbleH - pad);
+      const left = clamp(target.left + target.width / 2 - bubbleW / 2, pad, vw - bubbleW - pad);
+      return { top, left };
+    }
+    case "left": {
+      const left = clamp(target.left - margin - bubbleW, pad, vw - bubbleW - pad);
+      const top  = clamp(target.top + target.height / 2 - bubbleH / 2, pad, vh - bubbleH - pad);
+      return { top, left };
+    }
+    case "right": {
+      const left = clamp(target.right + margin, pad, vw - bubbleW - pad);
+      const top  = clamp(target.top + target.height / 2 - bubbleH / 2, pad, vh - bubbleH - pad);
+      return { top, left };
+    }
     default:
       return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
   }

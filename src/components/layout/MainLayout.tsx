@@ -1068,6 +1068,7 @@ function Sidebar({
       {/* AI ツール（モード共通） */}
       <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
         <button
+          data-tour-id="ai-tool-btn"
           onClick={onOpenConsult}
           title="AI相談・PJ/タスク登録・会議読み込みをまとめて使えます"
           style={{
