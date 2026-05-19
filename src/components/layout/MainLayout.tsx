@@ -278,6 +278,8 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
                 onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+                onOpenAdmin={() => setIsAdminOpen(true)}
+                onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
               />
             )}
@@ -523,6 +525,19 @@ export function MainLayout({ currentUser, onLogout }: Props) {
             }}>
               <button
                 className="fab-item-in"
+                onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: "8px",
+                  padding: "10px 16px",
+                  background: "linear-gradient(135deg,#8b5cf6,#a78bfa)",
+                  border: "none", borderRadius: "var(--radius-full)",
+                  color: "#fff", fontSize: "13px", fontWeight: "600",
+                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
+                  whiteSpace: "nowrap", animationDelay: "0.12s",
+                }}
+              >💬 AIに相談する</button>
+              <button
+                className="fab-item-in"
                 onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
@@ -646,6 +661,22 @@ export function MainLayout({ currentUser, onLogout }: Props) {
           zIndex: 59,
           display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end",
         }}>
+          <button
+            className="fab-item-in"
+            onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+            style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              padding: "9px 16px", height: "38px",
+              background: "linear-gradient(135deg,#8b5cf6,#a78bfa)",
+              border: "none", borderRadius: "var(--radius-full)",
+              color: "#fff", fontSize: "13px", fontWeight: "600",
+              boxShadow: "var(--shadow-lg)", cursor: "pointer",
+              whiteSpace: "nowrap",
+              animationDelay: "0.12s",
+            }}
+          >
+            <span>💬</span> AIに相談する
+          </button>
           <button
             className="fab-item-in"
             onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
@@ -974,9 +1005,7 @@ function Sidebar({
               </span>
               <button
                 onClick={onToggleMineOnly}
-                title={mineOnly
-                  ? `「自分」モード：各ビューで自分が担当のタスクのみ表示 (該当PJ ${mineOnlyProjectsCount}/${projectsCount}件) — クリックで全件表示`
-                  : `「全件」モード：全タスクを表示 (PJ ${projectsCount}件) — クリックで自分のタスクのみに切替`}
+                title={mineOnly ? "クリックで全タスクを表示" : "クリックで自分が担当のタスクのみに絞り込み"}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
                   padding: "2px 7px",
@@ -991,6 +1020,16 @@ function Sidebar({
                 <span style={{ fontSize: "9px" }}>{mineOnly ? "👤" : "🌐"}</span>
                 {mineOnly ? "自分" : "全件"}
               </button>
+            </div>
+          )}
+          {!c && (
+            <div style={{
+              padding: "0 14px 6px", fontSize: "10px",
+              color: "var(--color-text-tertiary)", lineHeight: 1.4,
+            }}>
+              {mineOnly
+                ? `自分が担当のタスクのみ表示中（該当PJ ${mineOnlyProjectsCount}/${projectsCount}）`
+                : `全タスクを表示中（PJ ${projectsCount}件）`}
             </div>
           )}
           <NavItem

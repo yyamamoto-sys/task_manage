@@ -12,6 +12,7 @@ import { showToast } from "../common/Toast";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
+import { EmptyState } from "../common/EmptyState";
 
 interface Props {
   currentUser: Member;
@@ -267,21 +268,46 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
-  const cols: { key: string; label: string; w: string; sortKey?: SortKey }[] = [
-    { key: "select",          label: "",         w: "32px"   },
-    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee" },
-    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority" },
-    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name" },
-    { key: "status",          label: "状態",     w: "75px",  sortKey: "status" },
-    { key: "due_date",        label: "期日",     w: "80px",  sortKey: "due_date" },
-    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours" },
+  // 「シンプル」モードでは詳細列（優先度・工数）を非表示にして読みやすさを優先
+  const [density, setDensityState] = useState<"simple" | "detailed">(() => lsGet("density", "simple"));
+  const setDensity = (v: "simple" | "detailed") => { setDensityState(v); lsSet("density", v); };
+
+  const allCols: { key: string; label: string; w: string; sortKey?: SortKey; simple: boolean }[] = [
+    { key: "select",          label: "",         w: "32px",  simple: true  },
+    { key: "assignee",        label: "担当者",   w: "90px",  sortKey: "assignee",        simple: true  },
+    { key: "priority",        label: "優先度",   w: "55px",  sortKey: "priority",        simple: false },
+    { key: "name",            label: "タスク名", w: "auto",  sortKey: "name",            simple: true  },
+    { key: "status",          label: "状態",     w: "75px",  sortKey: "status",          simple: true  },
+    { key: "due_date",        label: "期日",     w: "80px",  sortKey: "due_date",        simple: true  },
+    { key: "estimated_hours", label: "工数",     w: "52px",  sortKey: "estimated_hours", simple: false },
   ];
+  const cols = density === "simple" ? allCols.filter(c => c.simple) : allCols;
 
   // アクティブフィルター数（バッジ用）
   const activeFilterCount = [
     filterStatus !== "all", filterPriority !== "all",
     filterMember !== "all", filterMyOnly, filterThisWeek, filterHideDone,
   ].filter(Boolean).length;
+
+  const clearAllFilters = useCallback(() => {
+    setFilterStatus("all"); setFilterPriority("all"); setFilterMember("all");
+    setFilterMyOnly(false); setFilterThisWeek(false); setFilterHideDone(false);
+    setSearchText("");
+  }, []);
+
+  // 空状態プレースホルダー：絞り込み中 / 全くタスク無し で別メッセージ
+  const emptyStateProps = activeFilterCount > 0 || searchText.trim()
+    ? {
+        icon: "🔍",
+        title: "条件に一致するタスクがありません",
+        hint: "フィルタや検索条件を変更してみてください。",
+        actions: [{ label: "フィルタを解除", onClick: clearAllFilters, variant: "primary" as const }],
+      }
+    : {
+        icon: "📋",
+        title: "タスクがまだありません",
+        hint: "画面右下の ＋ ボタン、またはダッシュボードから追加できます。",
+      };
 
   return (
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
@@ -330,6 +356,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               </span>
             )}
           </span>
+
+          {/* 表示密度トグル */}
+          <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
+            {(["simple", "detailed"] as const).map(d => (
+              <button key={d} onClick={() => setDensity(d)}
+                title={d === "simple" ? "主要4列のみ" : "全列（優先度・工数を含む）"}
+                style={{
+                  padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                  fontWeight: density === d ? "500" : "400",
+                  background: density === d ? "var(--color-bg-primary)" : "transparent",
+                  color: density === d ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  boxShadow: density === d ? "var(--shadow-sm)" : "none",
+                }}>
+                {d === "simple" ? "シンプル" : "詳細"}
+              </button>
+            ))}
+          </div>
 
           {/* CSV */}
           <button onClick={() => exportCSV(filteredTasks, projects, members)} style={{
@@ -566,11 +609,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   })}
                 </div>
               ))}
-              {filteredTasks.length === 0 && (
-                <div style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
-                  条件に一致するタスクがありません
-                </div>
-              )}
+              {filteredTasks.length === 0 && <EmptyState {...emptyStateProps} />}
             </div>
           ) : (
             /* PC：テーブル */
@@ -673,15 +712,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 </div>
                               )}
                             </td>
-                            {/* 優先度 */}
-                            <td style={{ padding: "6px 10px" }}>
-                              {task.priority && (
-                                <span style={{
-                                  fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
-                                  background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
-                                }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
-                              )}
-                            </td>
+                            {/* 優先度（詳細モードのみ） */}
+                            {density === "detailed" && (
+                              <td style={{ padding: "6px 10px" }}>
+                                {task.priority && (
+                                  <span style={{
+                                    fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
+                                    background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
+                                  }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
+                                )}
+                              </td>
+                            )}
                             {/* タスク名 */}
                             <td style={{ padding: "6px 10px" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
@@ -730,10 +771,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                               {task.start_date ? `${task.start_date.slice(5).replace("-", "/")}〜` : ""}
                               {task.due_date ? task.due_date.slice(5).replace("-", "/") : "—"}
                             </td>
-                            {/* 工数 */}
-                            <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
-                              {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
-                            </td>
+                            {/* 工数（詳細モードのみ） */}
+                            {density === "detailed" && (
+                              <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
+                                {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}
@@ -741,9 +784,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   ));
                 })()}
                 {filteredTasks.length === 0 && (
-                  <tr><td colSpan={cols.length} style={{ padding: "36px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>
-                    条件に一致するタスクがありません
-                  </td></tr>
+                  <tr><td colSpan={cols.length}><EmptyState {...emptyStateProps} /></td></tr>
                 )}
               </tbody>
             </table>

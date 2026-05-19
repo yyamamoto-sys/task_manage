@@ -27,6 +27,7 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 import { ProjectKarte } from "./ProjectKarte";
 import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo } from "../../lib/taskMeta";
+import { OnboardingHome } from "./OnboardingHome";
 
 interface Props {
   currentUser: Member;
@@ -36,13 +37,17 @@ interface Props {
   /** 絞り込みバナーの ✕ で呼ぶ。サイドバーのPJ選択を解除する */
   onClearProjectFilter?: () => void;
   onOpenAiProject?: () => void;
+  /** オンボーディングから OKR/PJ 設定画面（管理パネル）を開く */
+  onOpenAdmin?: () => void;
+  /** オンボーディングからクイックタスク追加モーダルを開く */
+  onOpenQuickAdd?: () => void;
   /** サイドバーの「自分」トグルが ON のとき true。自分が担当のタスクのみ表示 */
   mineOnly?: boolean;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, mineOnly = false }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(s => s.tasks);
@@ -283,8 +288,22 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     );
   }
 
+  const showOnboarding = !selectedProject
+    && (krs.length === 0 || projects.length === 0 || allTasks.length < 3)
+    && (onOpenAdmin || onOpenAiProject || onOpenQuickAdd);
+
   return (
     <div style={{ height: "100%", overflow: "auto" }}>
+      {showOnboarding && (
+        <OnboardingHome
+          krCount={krs.length}
+          pjCount={projects.length}
+          taskCount={allTasks.length}
+          onOpenAdmin={onOpenAdmin ?? (() => {})}
+          onOpenAiProject={onOpenAiProject ?? (() => {})}
+          onOpenQuickAdd={onOpenQuickAdd ?? (() => {})}
+        />
+      )}
       <div style={{ padding: "16px 20px", maxWidth: "1000px" }}>
 
         {/* ヘッダー */}
