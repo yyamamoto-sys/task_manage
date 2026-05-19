@@ -397,17 +397,17 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
       };
     });
 
-    // シグナル履歴（直近20件）。freeform は signal を持たないため除外
+    // シグナル履歴（直近20件）。freeform は signal を持たないが、議論サマリ・決定事項は
+    // クォーター計画 AI の素材になるので含める。
     const signalHistory: SignalEntry[] = sessions
-      .filter((s): s is typeof s & { session_type: "checkin" | "win_session" } =>
-        s.session_type === "checkin" || s.session_type === "win_session",
-      )
       .slice(0, 20)
       .map(s => ({
         week_start: s.week_start,
         session_type: s.session_type,
         signal: s.signal,
         signal_comment: s.signal_comment ?? "",
+        summary: s.summary ?? "",
+        decisions: s.decisions ?? "",
       }));
 
     // ウィンセッション学び
@@ -974,11 +974,16 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                   <div>
                     <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "4px" }}>シグナル推移（直近）</div>
                     <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                      {contextSummary.signalHistory.slice(0, 10).map((s, i) => (
-                        <span key={i} title={`${s.week_start} ${s.session_type === "checkin" ? "チェックイン" : "ウィン"}: ${s.signal_comment}`} style={{ fontSize: "14px", cursor: "default" }}>
-                          {s.signal ? SIGNAL_DOT[s.signal] : "—"}
-                        </span>
-                      ))}
+                      {contextSummary.signalHistory.slice(0, 10).map((s, i) => {
+                        const typeJa = s.session_type === "checkin" ? "チェックイン"
+                                     : s.session_type === "win_session" ? "ウィン"
+                                     : "OKR議論";
+                        return (
+                          <span key={i} title={`${s.week_start} ${typeJa}: ${s.signal_comment}`} style={{ fontSize: "14px", cursor: "default" }}>
+                            {s.signal ? SIGNAL_DOT[s.signal] : "—"}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

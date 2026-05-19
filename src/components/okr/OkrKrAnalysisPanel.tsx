@@ -212,6 +212,8 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
       const recentSessions = sessions.slice(0, 6).map(s => ({
         week_start: s.week_start, type: s.session_type, signal: s.signal,
         signal_comment: s.signal_comment, learnings: s.learnings,
+        // freeform 用フィールドも引き渡す（Objective分析 prompt が type で切替して表示）
+        summary: s.summary ?? "", decisions: s.decisions ?? "", kr_mentions: s.kr_mentions ?? "",
       }));
       return {
         id: kr.id, title: kr.title,

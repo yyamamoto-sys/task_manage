@@ -6,6 +6,7 @@
 // OKR/KR/TFデータのAI送信はユーザー確認済みのポリシー変更による許可。
 
 import type { KeyResult, TaskForce, ToDo, Task, Member } from "../localData/types";
+import { getAssigneeIds } from "../taskMeta";
 
 // ===== コンテキスト型 =====
 
@@ -60,11 +61,13 @@ export function buildKrReportContext(params: {
         title: td.title,
         due_date: td.due_date ?? null,
         tasks: tdTasks.map(t => {
-          const assignee = members.find(m => m.id === t.assignee_member_id);
+          const names = getAssigneeIds(t)
+            .map(id => members.find(m => m.id === id)?.short_name)
+            .filter((n): n is string => !!n);
           return {
             name: t.name,
             status: t.status,
-            assignee: assignee?.short_name ?? "未設定",
+            assignee: names.length > 0 ? names.join("・") : "未設定",
             due_date: t.due_date ?? null,
           };
         }),

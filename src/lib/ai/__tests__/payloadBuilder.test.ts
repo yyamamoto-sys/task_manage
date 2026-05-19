@@ -231,13 +231,102 @@ describe("buildPayload — 担当者解決", () => {
   it("該当メンバーがいない場合は assignee は '未担当'", () => {
     const { payload } = buildPayload({
       projects: [makeProject()],
-      tasks: [makeTask({ assignee_member_id: "m-orphan" })],
+      tasks: [makeTask({ assignee_member_id: "m-orphan", assignee_member_ids: ["m-orphan"] })],
       members: [makeMember({ id: "m1" })],
       consultationType: "change",
       consultation: "x",
       scope: "all_pj",
     });
     expect(payload.projects[0].tasks[0].assignee).toBe("未担当");
+  });
+
+  it("複数担当者は short_name を「・」で結合して渡す（旧 単数 assignee_member_id 同期は影響しない）", () => {
+    const { payload } = buildPayload({
+      projects: [makeProject()],
+      tasks: [makeTask({
+        assignee_member_id: "m1",
+        assignee_member_ids: ["m1", "m2", "m3"],
+      })],
+      members: [
+        makeMember({ id: "m1", short_name: "山本" }),
+        makeMember({ id: "m2", short_name: "田中" }),
+        makeMember({ id: "m3", short_name: "中村" }),
+      ],
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.projects[0].tasks[0].assignee).toBe("山本・田中・中村");
+  });
+});
+
+describe("buildPayload — task_projects（追加プロジェクト）", () => {
+  it("task_projects 経由で別PJに紐付くタスクも、そのPJのタスク一覧に含める", () => {
+    const { payload } = buildPayload({
+      projects: [
+        makeProject({ id: "pj-A", name: "PJ A" }),
+        makeProject({ id: "pj-B", name: "PJ B" }),
+      ],
+      tasks: [
+        // 主project_id=pj-A のタスクを task_projects 経由で pj-B にも紐付ける
+        makeTask({ id: "t-shared", name: "横断タスク", project_id: "pj-A" }),
+      ],
+      members: [makeMember()],
+      taskProjects: [{ task_id: "t-shared", project_id: "pj-B" }],
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.projects).toHaveLength(2);
+    const pjA = payload.projects.find(p => p.pj_name === "PJ A")!;
+    const pjB = payload.projects.find(p => p.pj_name === "PJ B")!;
+    expect(pjA.tasks.map(t => t.task_name)).toContain("横断タスク");
+    expect(pjB.tasks.map(t => t.task_name)).toContain("横断タスク");
+  });
+});
+
+describe("buildPayload — Project.member_ids（オーナー以外の関与者）", () => {
+  it("pj_members に member_ids が short_name で展開される", () => {
+    const { payload } = buildPayload({
+      projects: [makeProject({ owner_member_ids: ["m1"], member_ids: ["m2", "m3"] })],
+      tasks: [],
+      members: [
+        makeMember({ id: "m1", short_name: "山本" }),
+        makeMember({ id: "m2", short_name: "田中" }),
+        makeMember({ id: "m3", short_name: "中村" }),
+      ],
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.projects[0].pj_owners).toEqual(["山本"]);
+    expect(payload.projects[0].pj_members).toEqual(["田中", "中村"]);
+  });
+});
+
+describe("buildPayload — member_workload は複数担当者を正しくカウントする", () => {
+  it("assignee_member_ids に自分が含まれるタスクをすべて自分の負荷に積む", () => {
+    const { payload } = buildPayload({
+      projects: [makeProject()],
+      tasks: [
+        makeTask({ id: "t1", assignee_member_id: "m1", assignee_member_ids: ["m1", "m2"], status: "in_progress", estimated_hours: 4 }),
+        makeTask({ id: "t2", assignee_member_id: "m2", assignee_member_ids: ["m2"],       status: "todo",        estimated_hours: 2 }),
+      ],
+      members: [
+        makeMember({ id: "m1", short_name: "山本" }),
+        makeMember({ id: "m2", short_name: "田中" }),
+      ],
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    const m1 = payload.context.member_workload.find(w => w.short_name === "山本")!;
+    const m2 = payload.context.member_workload.find(w => w.short_name === "田中")!;
+    // m1 は t1 のみ担当（共同）。m2 は t1+t2 両方担当（合算）
+    expect(m1.in_progress_count).toBe(1);
+    expect(m1.todo_count).toBe(0);
+    expect(m2.in_progress_count).toBe(1);
+    expect(m2.todo_count).toBe(1);
   });
 });
 
@@ -375,10 +464,10 @@ describe("buildPayload — OKRモード（ラボ機能例外）", () => {
   });
 });
 
-describe("buildPayload — ToDo 紐づけタスク（仮想プロジェクト化）", () => {
-  it("project_id=null + todo_ids 付きタスクは [ToDo] プレフィックスの仮想PJになる", () => {
+describe("buildPayload — ToDo 仮想PJ化は廃止された（UI から todo 編集を撤廃）", () => {
+  it("project_id=null + todo_ids 付きタスクはペイロードに含まれない", () => {
     const todos: ToDo[] = [
-      { id: "td-1", tf_id: "tf-1", title: "中タスク本文", due_date: null, memo: "", is_deleted: false },
+      { id: "td-1", tf_id: "tf-1", title: "ToDo本文", due_date: null, memo: "", is_deleted: false },
     ];
     const { payload } = buildPayload({
       projects: [],
@@ -389,27 +478,8 @@ describe("buildPayload — ToDo 紐づけタスク（仮想プロジェクト化
       consultation: "x",
       scope: "all_pj",
     });
-    expect(payload.projects).toHaveLength(1);
-    expect(payload.projects[0].pj_name).toBe("[ToDo] 中タスク本文");
-    expect(payload.projects[0].pj_purpose).toBe("中タスク本文");
-    expect(payload.projects[0].tasks).toHaveLength(1);
-  });
-
-  it("AI境界ルール：仮想PJ生成でも tf_id・kr_id がペイロードに漏れない", () => {
-    const todos: ToDo[] = [
-      { id: "td-1", tf_id: "tf-secret", title: "ToDo", due_date: null, memo: "", is_deleted: false },
-    ];
-    const { payload } = buildPayload({
-      projects: [],
-      tasks: [makeTask({ id: "t-1", project_id: null, todo_ids: ["td-1"] })],
-      members: [makeMember()],
-      todos,
-      consultationType: "change",
-      consultation: "x",
-      scope: "all_pj",
-    });
-    expect(deepHasKey(payload, "tf_id")).toBe(false);
-    expect(deepHasKey(payload, "kr_id")).toBe(false);
+    // 主project_id=null のタスクは PJ に紐付かないため AI ペイロードから除外される
+    expect(payload.projects).toHaveLength(0);
   });
 });
 

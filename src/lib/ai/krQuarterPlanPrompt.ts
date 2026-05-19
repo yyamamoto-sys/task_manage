@@ -78,9 +78,12 @@ export interface TFStat {
 
 export interface SignalEntry {
   week_start: string;
-  session_type: "checkin" | "win_session";
+  session_type: "checkin" | "win_session" | "freeform";
   signal: "green" | "yellow" | "red" | null;
   signal_comment: string;
+  /** freeform 限定：自由形式OKR議論のサマリ・決定事項（クォーター計画 AI の素材） */
+  summary?: string;
+  decisions?: string;
 }
 
 export interface QuarterPlanContext {
@@ -120,12 +123,20 @@ export function buildContextText(ctx: QuarterPlanContext): string {
     : "（TF未登録）";
 
   const recentSignals = ctx.signal_history.slice(0, 12);
+  const typeLabelMap: Record<SignalEntry["session_type"], string> = {
+    checkin: "チェックイン", win_session: "ウィン", freeform: "OKR議論",
+  };
   const signalBlock = recentSignals.length > 0
     ? recentSignals.map(s => {
         const dot = s.signal ? SIGNAL_LABEL[s.signal] : "—";
-        const typeLabel = s.session_type === "checkin" ? "チェックイン" : "ウィン";
+        const typeLabel = typeLabelMap[s.session_type] ?? s.session_type;
         const comment = s.signal_comment ? `「${s.signal_comment.slice(0, 60)}${s.signal_comment.length > 60 ? "…" : ""}」` : "";
-        return `${s.week_start} ${typeLabel} ${dot} ${comment}`;
+        const extras: string[] = [];
+        if (s.session_type === "freeform") {
+          if (s.summary)   extras.push(`サマリ：${s.summary.slice(0, 80)}${s.summary.length > 80 ? "…" : ""}`);
+          if (s.decisions) extras.push(`決定：${s.decisions.replace(/\n+/g, " / ").slice(0, 80)}`);
+        }
+        return `${s.week_start} ${typeLabel} ${dot} ${comment}${extras.length > 0 ? "  " + extras.join(" / ") : ""}`;
       }).join("\n")
     : "（記録なし）";
 

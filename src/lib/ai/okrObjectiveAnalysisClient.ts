@@ -24,6 +24,10 @@ export interface ObjectiveAnalysisKrInput {
     signal: "green" | "yellow" | "red" | null;
     signal_comment: string;
     learnings: string;
+    // freeform 固有：自由形式のOKR議論で会議の本質情報。type==="freeform" のみ意味あり
+    summary?: string;
+    decisions?: string;
+    kr_mentions?: string;
   }[];
   /** タスクのサマリ */
   taskSummary: { total: number; done: number; in_progress: number; todo: number; overdue: number };
@@ -101,6 +105,12 @@ function buildUserMessage(input: ObjectiveAnalysisInput): string {
     if (kr.sessions.length === 0) L.push("（なし）");
     for (const s of kr.sessions) {
       L.push(`- ${s.week_start} / ${typeJa[s.type] ?? s.type} / ${s.signal ? sigJa[s.signal] : "—"}${s.signal_comment ? ` ｜ ${clip(s.signal_comment, 160)}` : ""}${s.learnings ? ` ｜ 学び：${clip(s.learnings, 180)}` : ""}`);
+      // freeform は議論サマリ・決定事項・言及KRを追加で渡す（会議の本質情報）
+      if (s.type === "freeform") {
+        if (s.summary)     L.push(`    議論サマリ：${clip(s.summary, 220)}`);
+        if (s.decisions)   L.push(`    決定事項：${clip(s.decisions.replace(/\n+/g, " / "), 220)}`);
+        if (s.kr_mentions) L.push(`    言及KR：${clip(s.kr_mentions.replace(/\n+/g, " / "), 180)}`);
+      }
     }
     L.push("");
   }

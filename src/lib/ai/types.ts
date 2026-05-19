@@ -19,12 +19,15 @@ export interface AIProject {
   pj_end_date: string | null;
   pj_progress: { total: number; done: number; in_progress: number; todo: number };
   pj_owners: string[];
+  /** オーナー以外の関与メンバー（short_name 配列） */
+  pj_members: string[];
   tasks: AITask[];
 }
 
 export interface AITask {
   task_id: string;
   task_name: string;
+  /** 担当者の short_name（複数の場合は「・」で結合） */
   assignee: string;
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;

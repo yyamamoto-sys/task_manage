@@ -9,10 +9,11 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type { Project, Task, Member, ToDo, KeyResult, TaskForce } from "../localData/types";
+import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject } from "../localData/types";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { dateToQuarter } from "../date";
+import { getAssigneeIds } from "../taskMeta";
 
 // ===== 型定義 =====
 
@@ -135,7 +136,8 @@ function buildMemberWorkload(members: Member[], tasks: Task[]): MemberWorkload[]
   return members
     .filter(m => !m.is_deleted)
     .map(m => {
-      const myTasks = tasks.filter(t => !t.is_deleted && t.assignee_member_id === m.id);
+      // 複数担当者（assignee_member_ids）に対応：自分が担当者に含まれるタスクをカウント
+      const myTasks = tasks.filter(t => !t.is_deleted && getAssigneeIds(t).includes(m.id));
       const active = myTasks.filter(t => t.status !== "done");
       const withEstimate = active.filter(t => t.estimated_hours != null);
       const withoutEstimate = active.filter(t => t.estimated_hours == null);
@@ -161,8 +163,10 @@ interface BuildOptions {
   projects: Project[];
   tasks: Task[];
   members: Member[];
-  /** ToDoリスト（project_id=nullのタスクをToDo単位でグループ化するために使用） */
+  /** 旧仕様の ToDo→仮想PJ 変換に使っていたが廃止。互換のため受け取るが未使用 */
   todos?: ToDo[];
+  /** タスク↔PJ の追加紐付け（主project_id 以外の関与PJ）。AI に「PJ X に関わるタスク」を正しく届けるため */
+  taskProjects?: TaskProject[];
   consultationType: ConsultationType;
   consultation: string;
   scope: AIConsultationPayload["scope"];
@@ -187,32 +191,48 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
 
   const activePJs = opts.projects.filter(p => !p.is_deleted && p.status !== "archived");
   const activeTasks = opts.tasks.filter(t => !t.is_deleted);
+  const taskProjects = opts.taskProjects ?? [];
 
   // タスクのショートIDはPJをまたいでグローバルに連番にする
   // （shortIdMap.sizeを使うとPJ分のエントリが混入してキーが衝突するため専用カウンターを使う）
   let taskCounter = 0;
 
+  // 担当者ID（複数可）→ short_name 結合文字列を作る
+  const memberById = new Map(opts.members.map(m => [m.id, m]));
+  const buildAssigneeLabel = (task: Task): string => {
+    const names = getAssigneeIds(task)
+      .map(id => memberById.get(id)?.short_name)
+      .filter((n): n is string => !!n);
+    return names.length > 0 ? names.join("・") : "未担当";
+  };
+
+  // PJ ごとに直接紐付くタスクと task_projects 経由のセカンダリタスクを合算
+  const secondaryTaskIdsByPj = new Map<string, Set<string>>();
+  for (const tp of taskProjects) {
+    if (!secondaryTaskIdsByPj.has(tp.project_id)) secondaryTaskIdsByPj.set(tp.project_id, new Set());
+    secondaryTaskIdsByPj.get(tp.project_id)!.add(tp.task_id);
+  }
+
   const aiProjects: AIProject[] = activePJs.map((pj, pjIdx) => {
     const pjShortId = makeShortId("pj", pjIdx);
     shortIdMap.set(pjShortId, pj.id);
 
-    const pjTasks = activeTasks.filter(t => t.project_id === pj.id);
+    const secondaryIds = secondaryTaskIdsByPj.get(pj.id) ?? new Set<string>();
+    const pjTasks = activeTasks.filter(t => t.project_id === pj.id || secondaryIds.has(t.id));
     const aiTasks: AITask[] = pjTasks.map((task) => {
       const taskShortId = makeShortId("task", taskCounter);
       taskCounter++;
       shortIdMap.set(taskShortId, task.id);
 
-      const assignee = opts.members.find(m => m.id === task.assignee_member_id);
       return {
         task_id: taskShortId,
         task_name: task.name,
-        assignee: assignee?.short_name ?? "未担当",
+        assignee: buildAssigneeLabel(task),
         status: task.status,
         priority: task.priority,
         due_date: task.due_date,
         estimated_hours: task.estimated_hours,
         // ❌ contribution_memoは含めない。sanitizeComment()を必ず適用する
-        // task.comment は Supabase から null が返ることがあるため空文字にフォールバック
         comment: sanitizeComment(task.comment ?? ""),
         // completed_atはYYYY-MM-DD形式の日付部分のみ渡す（時刻は不要）
         completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
@@ -220,7 +240,11 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     });
 
     const pjOwners = (pj.owner_member_ids ?? [])
-      .map(id => opts.members.find(m => m.id === id)?.short_name)
+      .map(id => memberById.get(id)?.short_name)
+      .filter((n): n is string => !!n);
+
+    const pjMembers = (pj.member_ids ?? [])
+      .map(id => memberById.get(id)?.short_name)
       .filter((n): n is string => !!n);
 
     return {
@@ -230,6 +254,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       pj_status: pj.status,
       pj_end_date: pj.end_date ?? null,
       pj_owners: pjOwners,
+      pj_members: pjMembers,
       pj_progress: {
         total: pjTasks.length,
         done: pjTasks.filter(t => t.status === "done").length,
@@ -239,62 +264,6 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       tasks: aiTasks,
     };
   });
-
-  // ===== ToDo系タスク（project_id=null）をToDo単位で仮想プロジェクトとして追加 =====
-  // OKR境界ルール（CLAUDE.md Section 2）：TF情報は渡さない。ToDoのtitleのみpurposeとして使う。
-  const activeTodos = (opts.todos ?? []).filter(td => !td.is_deleted);
-  const todoOnlyTasks = activeTasks.filter(t => t.project_id == null && (t.todo_ids ?? []).length > 0);
-
-  // 先頭のtodo_idでタスクをグループ化（仮想プロジェクト生成用）
-  const tasksByTodo = new Map<string, Task[]>();
-  for (const task of todoOnlyTasks) {
-    const tid = task.todo_ids[0];
-    if (!tasksByTodo.has(tid)) tasksByTodo.set(tid, []);
-    tasksByTodo.get(tid)!.push(task);
-  }
-
-  for (const [todoId, tasks] of tasksByTodo) {
-    const todo = activeTodos.find(td => td.id === todoId);
-    if (!todo) continue;
-
-    // ToDo をプロジェクトIDとしてマップに登録
-    const virtualPjShortId = makeShortId("pj", aiProjects.length);
-    shortIdMap.set(virtualPjShortId, todoId); // applyProposalではpj_idは使わないが整合性のため登録
-
-    const aiTasks: AITask[] = tasks.map((task) => {
-      const taskShortId = makeShortId("task", taskCounter);
-      taskCounter++;
-      shortIdMap.set(taskShortId, task.id);
-      const assignee = opts.members.find(m => m.id === task.assignee_member_id);
-      return {
-        task_id: taskShortId,
-        task_name: task.name,
-        assignee: assignee?.short_name ?? "未担当",
-        status: task.status,
-        priority: task.priority,
-        due_date: task.due_date,
-        estimated_hours: task.estimated_hours,
-        comment: sanitizeComment(task.comment ?? ""),
-        completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
-      };
-    });
-
-    aiProjects.push({
-      pj_id: virtualPjShortId,
-      pj_name: `[ToDo] ${todo.title}`,
-      pj_purpose: todo.title,
-      pj_status: "active",
-      pj_end_date: todo.due_date ?? null,
-      pj_owners: [],
-      pj_progress: {
-        total: tasks.length,
-        done: tasks.filter(t => t.status === "done").length,
-        in_progress: tasks.filter(t => t.status === "in_progress").length,
-        todo: tasks.filter(t => t.status === "todo").length,
-      },
-      tasks: aiTasks,
-    });
-  }
 
   // ===== OKRコンテキスト（includeOKR=trueかつデータがある場合のみ） =====
   let okrContext: AIOKR | undefined;
