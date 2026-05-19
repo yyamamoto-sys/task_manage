@@ -43,11 +43,13 @@ interface Props {
   onOpenQuickAdd?: () => void;
   /** サイドバーの「自分」トグルが ON のとき true。自分が担当のタスクのみ表示 */
   mineOnly?: boolean;
+  /** Dashboard 内チップから mineOnly を切り替える（サイドバーと同じ state を共有） */
+  onToggleMineOnly?: () => void;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false, onToggleMineOnly }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(s => s.tasks);
@@ -58,7 +60,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawTodos   = useAppStore(s => s.todos);
   const isMobile = useIsMobile();
 
-  const [myOnly, setMyOnly] = useState(false);
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
@@ -105,17 +106,17 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   );
 
   // フィルター適用後のタスク
-  // mineOnly はサイドバーのトグル由来、myOnly はダッシュボード内部の個別チップ。
-  // どちらか ON なら担当者フィルタを適用（OR）。
+  // 「自分」フィルタは mineOnly（サイドバートグル）に一元化。Dashboard 内のチップも
+  // 同じ state を操作するので、表示と挙動が常に一致する
   const filteredTasks = useMemo(() => {
     let tasks = allTasks;
-    if (myOnly || mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
+    if (mineOnly) tasks = tasks.filter(t => isAssignedTo(t, currentUser.id));
     // PJフィルター選択時は、選択PJに紐づくタスク OR project_id=nullのタスク（ToDo系）を含める
     if (effectivePjIds.length > 0) tasks = tasks.filter(t =>
       (t.project_id && effectivePjIds.includes(t.project_id)) || t.project_id == null
     );
     return tasks;
-  }, [allTasks, myOnly, mineOnly, effectivePjIds, currentUser.id]);
+  }, [allTasks, mineOnly, effectivePjIds, currentUser.id]);
 
   const todayS = todayStr();
   const weekLater = addDaysFromToday(7);
@@ -317,14 +318,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             ].map(({ val, label }) => (
               <button
                 key={label}
-                onClick={() => setMyOnly(val)}
+                onClick={() => { if (mineOnly !== val && onToggleMineOnly) onToggleMineOnly(); }}
+                title="サイドバーの「自分/全件」トグルと連動します"
                 style={{
                   padding: "4px 12px", fontSize: "11px",
                   borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                  fontWeight: myOnly === val ? "500" : "400",
-                  background: myOnly === val ? "var(--color-bg-primary)" : "transparent",
-                  color: myOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                  boxShadow: myOnly === val ? "var(--shadow-sm)" : "none",
+                  fontWeight: mineOnly === val ? "500" : "400",
+                  background: mineOnly === val ? "var(--color-bg-primary)" : "transparent",
+                  color: mineOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                  boxShadow: mineOnly === val ? "var(--shadow-sm)" : "none",
                   transition: "background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)",
                 }}
               >
@@ -523,7 +525,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
-          key={`${myOnly ? "1" : "0"}-${effectivePjIds.join(",")}-${activeKrId ?? ""}`}
+          key={`${mineOnly ? "1" : "0"}-${effectivePjIds.join(",")}-${activeKrId ?? ""}`}
           className="animate-fadeIn"
           style={{
             display: "grid",

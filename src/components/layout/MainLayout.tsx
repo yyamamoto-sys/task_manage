@@ -281,6 +281,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
                 onOpenAdmin={() => setIsAdminOpen(true)}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
+                onToggleMineOnly={toggleMineOnly}
               />
             )}
             {viewMode === "kanban" && (
