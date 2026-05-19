@@ -102,6 +102,9 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
 
   const [note, setNote] = useState<KrMeetingNote | null>(null);
   const [entriesByTf, setEntriesByTf] = useState<Record<string, KrNoteEntryFields>>({});
+  // 前週の TF エントリ（参照表示用・編集不可）と、その週の起点日（M/D 表示用）
+  const [prevEntriesByTf, setPrevEntriesByTf] = useState<Record<string, KrNoteEntryFields>>({});
+  const [prevWeekStart, setPrevWeekStart] = useState<string | null>(null);
   const [carriedFromId, setCarriedFromId] = useState<string | null>(null);
   const [carryMemo, setCarryMemo] = useState<string>("");
   const [showCarryMemo, setShowCarryMemo] = useState(false);
@@ -123,7 +126,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
     setLoading(true);
     setLoadError(null);
     Promise.all([fetchKrMeetingNotesList(krId), fetchKrMeetingNote(krId, weekStart)])
-      .then(([list, full]) => {
+      .then(async ([list, full]) => {
         if (cancelled) return;
         setNotesList(list);
         if (full) {
@@ -147,6 +150,30 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
           setCarryMemo("");
           setShowCarryMemo(false);
         }
+
+        // 前週ノートの取得（参照表示用）。当該週より前で最新のノートを使う
+        const prevRow = list.find(n => n.week_start < weekStart) ?? null;
+        if (prevRow) {
+          const prevFull = await fetchKrMeetingNoteById(prevRow.id).catch(() => null);
+          if (cancelled) return;
+          if (prevFull) {
+            const pm: Record<string, KrNoteEntryFields> = {};
+            for (const e of prevFull.entries) {
+              pm[e.tf_id] = {
+                tf_theme: e.tf_theme, target_definition: e.target_definition, eval_criteria: e.eval_criteria,
+                hypotheses: e.hypotheses, facts: e.facts, next_actions: e.next_actions,
+                progress_pct: e.progress_pct, progress_reason: e.progress_reason, todo: e.todo,
+              };
+            }
+            setPrevEntriesByTf(pm);
+            setPrevWeekStart(prevFull.week_start);
+          } else {
+            setPrevEntriesByTf({}); setPrevWeekStart(null);
+          }
+        } else {
+          setPrevEntriesByTf({}); setPrevWeekStart(null);
+        }
+
         setDirty(false);
         setSaveError(null);
         setSavedFlash(false);
@@ -442,29 +469,47 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
                     </Field>
 
                     <div style={{ borderTop: "1px solid var(--color-border-primary)", paddingTop: "8px", fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)" }}>チェックイン向け（毎週更新）</div>
-                    <Field label="① 先週動かした前提・仮説">
-                      <TextArea value={entry.hypotheses} onChange={v => patchEntry(tf.id, { hypotheses: v })} rows={5} />
-                    </Field>
-                    <Field label="② 実際に起きたこと（事実・反応）　※評価・解釈は書かない">
-                      <TextArea value={entry.facts} onChange={v => patchEntry(tf.id, { facts: v })} rows={6} />
-                    </Field>
-                    <Field label="③ 次にやる一手（判断）">
-                      <TextArea value={entry.next_actions} onChange={v => patchEntry(tf.id, { next_actions: v })} rows={5} />
-                    </Field>
-                    <Field label="④ 現在のプロセス状態">
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-                        <input type="number" min={0} max={100}
-                          value={entry.progress_pct ?? ""}
-                          onChange={e => patchEntry(tf.id, { progress_pct: e.target.value === "" ? null : Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)) })}
-                          placeholder="—"
-                          style={{ width: "70px", padding: "6px 8px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
-                        <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>%</span>
-                      </div>
-                      <TextArea value={entry.progress_reason} onChange={v => patchEntry(tf.id, { progress_reason: v })} rows={4} placeholder="その%と判断した理由（達成できている点／まだの点）" />
-                    </Field>
-                    <Field label="▶ TODO（その時期のToDo）">
-                      <TextArea value={entry.todo} onChange={v => patchEntry(tf.id, { todo: v })} rows={5} />
-                    </Field>
+                    {(() => {
+                      const prev = prevEntriesByTf[tf.id];
+                      const prevLabel = prevWeekStart ? `前週（${formatMD(prevWeekStart)}週）の記録` : "前週の記録";
+                      return (
+                        <>
+                          <Field label="① 先週動かした前提・仮説">
+                            <PrevRef label={prevLabel} text={prev?.hypotheses} />
+                            <TextArea value={entry.hypotheses} onChange={v => patchEntry(tf.id, { hypotheses: v })} rows={5} />
+                          </Field>
+                          <Field label="② 実際に起きたこと（事実・反応）　※評価・解釈は書かない">
+                            <PrevRef label={prevLabel} text={prev?.facts} />
+                            <TextArea value={entry.facts} onChange={v => patchEntry(tf.id, { facts: v })} rows={6} />
+                          </Field>
+                          <Field label="③ 次にやる一手（判断）">
+                            <PrevRef label={prevLabel} text={prev?.next_actions} />
+                            <TextArea value={entry.next_actions} onChange={v => patchEntry(tf.id, { next_actions: v })} rows={5} />
+                          </Field>
+                          <Field label="④ 現在のプロセス状態">
+                            <PrevRef
+                              label={prevLabel}
+                              text={prev && (prev.progress_pct != null || prev.progress_reason)
+                                ? `${prev.progress_pct != null ? `${prev.progress_pct}%　` : ""}${prev.progress_reason ?? ""}`.trim()
+                                : undefined}
+                            />
+                            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                              <input type="number" min={0} max={100}
+                                value={entry.progress_pct ?? ""}
+                                onChange={e => patchEntry(tf.id, { progress_pct: e.target.value === "" ? null : Math.max(0, Math.min(100, parseInt(e.target.value, 10) || 0)) })}
+                                placeholder="—"
+                                style={{ width: "70px", padding: "6px 8px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
+                              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>%</span>
+                            </div>
+                            <TextArea value={entry.progress_reason} onChange={v => patchEntry(tf.id, { progress_reason: v })} rows={4} placeholder="その%と判断した理由（達成できている点／まだの点）" />
+                          </Field>
+                          <Field label="▶ TODO（その時期のToDo）">
+                            <PrevRef label={prevLabel} text={prev?.todo} />
+                            <TextArea value={entry.todo} onChange={v => patchEntry(tf.id, { todo: v })} rows={5} />
+                          </Field>
+                        </>
+                      );
+                    })()}
                   </>
                 )}
               </div>
@@ -503,6 +548,31 @@ function Label({ children }: { children: React.ReactNode }) {
 }
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><Label>{label}</Label>{children}</div>;
+}
+
+/**
+ * 前週の記録を編集不可で参照表示する小コンポーネント。
+ * 本人が書く新規入力欄の直上に置き、「先週の記録を見ながら今週分を書く」運用を支援する。
+ */
+function PrevRef({ label, text }: { label: string; text?: string | null }) {
+  if (!text || !text.trim()) return null;
+  return (
+    <div style={{
+      marginBottom: "6px",
+      padding: "6px 9px",
+      background: "var(--color-bg-secondary)",
+      border: "1px dashed var(--color-border-primary)",
+      borderRadius: "var(--radius-md)",
+      fontSize: "11px",
+      color: "var(--color-text-secondary)",
+      lineHeight: 1.6,
+    }}>
+      <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "2px" }}>
+        ▸ {label}（参考・編集不可）
+      </div>
+      <div style={{ whiteSpace: "pre-wrap" }}>{text}</div>
+    </div>
+  );
 }
 function TextArea({ value, onChange, rows, placeholder }: { value: string; onChange: (v: string) => void; rows: number; placeholder?: string }) {
   return (

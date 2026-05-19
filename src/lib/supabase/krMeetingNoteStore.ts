@@ -288,20 +288,21 @@ export function buildCarryMemo(input: BuildCarryMemoInput): string {
  * 戻り値：tf_id → 引き継ぎ後フィールド の Map
  */
 export function carriedEntriesFrom(prev: KrMeetingNoteFull): Map<string, KrNoteEntryFields> {
+  // 引き継ぐのは「クォーターを通して変わりにくい」上3項目のみ。
+  // 下5項目（hypotheses / facts / next_actions / progress_pct / progress_reason / todo）は
+  // 週次で新たに記入する。前週の内容は UI 側で「参照表示（編集不可）」として見える
   const map = new Map<string, KrNoteEntryFields>();
   for (const e of prev.entries) {
     map.set(e.tf_id, {
       tf_theme: e.tf_theme,
       target_definition: e.target_definition,
       eval_criteria: e.eval_criteria,
-      hypotheses: e.next_actions
-        ? `（前週の「次にやる一手」から引き継ぎ。実際に動かしたものに直してください）\n${e.next_actions}`
-        : "",
+      hypotheses: "",
       facts: "",
-      next_actions: e.next_actions,
-      progress_pct: e.progress_pct,
-      progress_reason: e.progress_reason,
-      todo: e.todo,
+      next_actions: "",
+      progress_pct: null,
+      progress_reason: "",
+      todo: "",
     });
   }
   return map;

@@ -27,7 +27,12 @@ function sectionLabel(key: string): string {
 
 const STORAGE_KEY = "guide_last_slug_v1";
 
-export function GuideModeView() {
+interface GuideModeViewProps {
+  /** 「オンボーディングを見直す」ボタンから呼ばれる（MainLayout で OnboardingHome をオーバーレイ表示） */
+  onShowOnboarding?: () => void;
+}
+
+export function GuideModeView({ onShowOnboarding }: GuideModeViewProps = {}) {
   const groups = useMemo(() => groupedDocs(), []);
   const allEntries = useMemo(() => groups.flatMap(g => g.entries), [groups]);
 
@@ -54,6 +59,21 @@ export function GuideModeView() {
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
             記事数：{allEntries.length}
           </div>
+          {onShowOnboarding && (
+            <button
+              onClick={onShowOnboarding}
+              style={{
+                marginTop: "10px", width: "100%",
+                padding: "6px 10px", fontSize: "11px", fontWeight: 600,
+                background: "linear-gradient(135deg, var(--color-brand-light), var(--color-bg-secondary))",
+                color: "var(--color-brand)",
+                border: "1px solid var(--color-brand-border)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+              }}
+            >
+              👋 オンボーディングを見直す
+            </button>
+          )}
         </div>
         <nav>
           {groups.map(g => (

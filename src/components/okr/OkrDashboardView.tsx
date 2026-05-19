@@ -335,7 +335,6 @@ export function OkrDashboardView({
               >
                 <span style={{ width: 7, height: 7, borderRadius: "50%", background: CYCLE_TONE_COLOR[st.tone], flexShrink: 0 }} />
                 {st.name}
-                <span style={{ color: st.tone === "none" ? "var(--color-text-tertiary)" : CYCLE_TONE_COLOR[st.tone], fontSize: "9px" }}>（{st.label}）</span>
               </button>
             </div>
           ))}

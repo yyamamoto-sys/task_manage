@@ -27,6 +27,7 @@ const KanbanView         = lazyWithRetry(() => import("../kanban/KanbanView").th
 const AdminView          = lazyWithRetry(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })), "AdminView");
 const GanttView          = lazyWithRetry(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })), "GanttView");
 const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView");
+const OnboardingHome     = lazyWithRetry(() => import("../dashboard/OnboardingHome").then(m => ({ default: m.OnboardingHome })), "OnboardingHome");
 const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
 const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
@@ -111,6 +112,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
+  const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
@@ -215,6 +217,56 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   ) : null;
 
   // 📖 ガイド（全モード共通・全画面オーバーレイ）
+  const onboardingOverlay = isOnboardingOverlayOpen ? (
+    <div
+      onClick={() => setIsOnboardingOverlayOpen(false)}
+      style={{
+        position: "fixed", inset: 0, zIndex: 260,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "16px",
+      }}
+    >
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          background: "var(--color-bg-primary)",
+          borderRadius: "var(--radius-lg)",
+          maxWidth: "780px", width: "100%", maxHeight: "92vh", overflow: "auto",
+          boxShadow: "var(--shadow-lg)",
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{
+          padding: "10px 14px", borderBottom: "1px solid var(--color-border-primary)",
+          display: "flex", alignItems: "center", gap: "10px",
+          background: "var(--color-bg-secondary)",
+        }}>
+          <span style={{ fontSize: "13px", fontWeight: 700, flex: 1, color: "var(--color-text-primary)" }}>
+            👋 オンボーディング（運用開始の3ステップ）
+          </span>
+          <button
+            onClick={() => setIsOnboardingOverlayOpen(false)}
+            style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              fontSize: "16px", color: "var(--color-text-tertiary)", padding: "4px",
+            }}
+          >✕</button>
+        </div>
+        <Suspense fallback={<ViewLoading />}>
+          <OnboardingHome
+            krCount={keyResults.filter(k => !k.is_deleted).length}
+            pjCount={projects.length}
+            taskCount={(rawTasks ?? []).filter((t: Task) => !t.is_deleted).length}
+            onOpenAdmin={() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); }}
+            onOpenAiProject={() => { setIsOnboardingOverlayOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+            onOpenQuickAdd={() => { setIsOnboardingOverlayOpen(false); setIsQuickAddOpen(true); }}
+          />
+        </Suspense>
+      </div>
+    </div>
+  ) : null;
+
   const guideOverlay = isGuideOpen ? (
     <div style={{
       position: "fixed", inset: 0, zIndex: 250,
@@ -241,7 +293,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       </div>
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         <Suspense fallback={<ViewLoading />}>
-          <GuideModeView />
+          <GuideModeView onShowOnboarding={() => setIsOnboardingOverlayOpen(true)} />
         </Suspense>
       </div>
     </div>
@@ -331,6 +383,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         {adminOverlay}
         {guideOverlay}
+        {onboardingOverlay}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -642,6 +695,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
       {adminOverlay}
       {guideOverlay}
+      {onboardingOverlay}
 
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />

@@ -140,6 +140,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       tasks = tasks.filter(t => t.name.toLowerCase().includes(q) || t.comment.toLowerCase().includes(q));
     }
     return [...tasks].sort((a, b) => {
+      // 完了は常に下に。sortKey=status のときは既存ロジック（昇順/降順）を尊重し優先しない
+      if (sortKey !== "status") {
+        const aDone = a.status === "done" ? 1 : 0;
+        const bDone = b.status === "done" ? 1 : 0;
+        if (aDone !== bDone) return aDone - bDone;
+      }
       let va: string|number = "", vb: string|number = "";
       if      (sortKey === "name")            { va = a.name;                               vb = b.name; }
       else if (sortKey === "due_date")        { va = a.due_date ?? "9999";                 vb = b.due_date ?? "9999"; }
