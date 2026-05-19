@@ -1260,17 +1260,24 @@ function ToDoForm({
 // ===================================================
 
 function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const rawProjects     = useAppStore(s => s.projects);
-  const rawMembers      = useAppStore(s => s.members);
-  const saveProject     = useAppStore(s => s.saveProject);
-  const deleteProject   = useAppStore(s => s.deleteProject);
-  const rawMilestones   = useAppStore(s => s.milestones);
-  const saveMilestone   = useAppStore(s => s.saveMilestone);
-  const deleteMilestone = useAppStore(s => s.deleteMilestone);
+  const rawProjects             = useAppStore(s => s.projects);
+  const rawMembers              = useAppStore(s => s.members);
+  const saveProject             = useAppStore(s => s.saveProject);
+  const deleteProject           = useAppStore(s => s.deleteProject);
+  const rawMilestones           = useAppStore(s => s.milestones);
+  const saveMilestone           = useAppStore(s => s.saveMilestone);
+  const deleteMilestone         = useAppStore(s => s.deleteMilestone);
+  const rawTaskForces           = useAppStore(s => s.taskForces);
+  const rawKeyResults           = useAppStore(s => s.keyResults);
+  const rawProjectTaskForces    = useAppStore(s => s.projectTaskForces);
+  const addProjectTaskForce     = useAppStore(s => s.addProjectTaskForce);
+  const removeProjectTaskForce  = useAppStore(s => s.removeProjectTaskForce);
   const isMobile = useIsMobile();
   const projects   = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
   const members    = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
   const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
+  const taskForces = useMemo(() => rawTaskForces.filter(t => !t.is_deleted), [rawTaskForces]);
+  const keyResults = useMemo(() => rawKeyResults.filter(k => !k.is_deleted), [rawKeyResults]);
 
   // マイルストーン管理：開閉のみ（フォーム状態は子コンポーネントが管理）
   const [msOpenPjId, setMsOpenPjId] = useState<string | null>(null);
@@ -1287,6 +1294,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     member_ids: [] as string[],
     status: "active" as Project["status"],
     color_tag: "#7F77DD", start_date: "", end_date: "",
+    tf_ids: [] as string[],
   });
 
   // 未保存変更を親に通知
@@ -1303,6 +1311,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       status: "active", color_tag: "#7F77DD",
       start_date: new Date().toISOString().split("T")[0],
       end_date: `${new Date().getFullYear()}-12-31`,
+      tf_ids: [],
     });
   };
 
@@ -1315,6 +1324,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       member_ids: pj.member_ids ?? [],
       status: pj.status,
       color_tag: pj.color_tag, start_date: pj.start_date, end_date: pj.end_date,
+      tf_ids: rawProjectTaskForces.filter(p => p.project_id === pj.id).map(p => p.tf_id),
     });
   };
 
@@ -1331,12 +1341,25 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     }
     const now = new Date().toISOString();
     try {
+      // form の tf_ids は project_task_forces への差分適用用。Project entity 自身には含めない
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { tf_ids, ...projectFields } = form;
+      const projectId = editId === "new" ? uuidv4() : editId!;
       if (editId === "new") {
-        await saveProject({ id: uuidv4(), ...form, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+        await saveProject({ id: projectId, ...projectFields, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
       } else {
         const existing = projects.find(p => p.id === editId);
-        if (existing) await saveProject({ ...existing, ...form, owner_member_id, updated_by: currentUser.id });
+        if (existing) await saveProject({ ...existing, ...projectFields, owner_member_id, updated_by: currentUser.id });
       }
+      // TF 紐付けの差分適用
+      const before = new Set(rawProjectTaskForces.filter(p => p.project_id === projectId).map(p => p.tf_id));
+      const after  = new Set(tf_ids);
+      const toAdd    = [...after].filter(id => !before.has(id));
+      const toRemove = [...before].filter(id => !after.has(id));
+      await Promise.all([
+        ...toAdd.map(tfId => addProjectTaskForce({ project_id: projectId, tf_id: tfId })),
+        ...toRemove.map(tfId => removeProjectTaskForce(projectId, tfId)),
+      ]);
       setEditId(null);
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -1363,6 +1386,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
         const owners = (pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []))
           .map(id => members.find(m => m.id === id))
           .filter((m): m is Member => !!m);
+        const linkedTfCount = rawProjectTaskForces.filter(p => p.project_id === pj.id).length;
         return (
           <div key={pj.id} style={{ marginBottom: "6px" }}>
           <div style={{
@@ -1377,7 +1401,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
               background: pj.color_tag, flexShrink: 0, marginTop: "2px",
             }} />
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px", flexWrap: "wrap" }}>
                 <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
                   {pj.name}
                 </span>
@@ -1388,6 +1412,14 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                 }}>
                   {STATUS_LABELS[pj.status]}
                 </span>
+                {linkedTfCount > 0 && (
+                  <span title={`紐づくTF: ${linkedTfCount}件`} style={{
+                    fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                    background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                  }}>
+                    TF×{linkedTfCount}
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
                 {pj.purpose.slice(0, 60)}{pj.purpose.length > 60 ? "…" : ""}
@@ -1577,6 +1609,78 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                 <FieldLabel>終了日</FieldLabel>
                 <input type="date" value={form.end_date} onChange={e => setForm(f => ({...f, end_date: e.target.value}))} style={inputStyle} />
               </div>
+            </div>
+
+            {/* 紐づける TF（KR グループ別チェックボックス） */}
+            <div>
+              <FieldLabel>紐づける TF（任意・KR との連携）</FieldLabel>
+              {keyResults.length === 0 ? (
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+                  KR がまだ登録されていません。「Objective / KR」タブで KR を作ると、配下の TF をここで紐づけられます。
+                </div>
+              ) : (
+                <div style={{
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  padding: "8px 10px",
+                  background: "var(--color-bg-primary)",
+                  maxHeight: "240px", overflowY: "auto",
+                  display: "flex", flexDirection: "column", gap: "8px",
+                }}>
+                  {keyResults.map((kr, krIdx) => {
+                    const krTfs = taskForces
+                      .filter(tf => tf.kr_id === kr.id)
+                      .slice()
+                      .sort((a, b) => (a.tf_number ?? "").localeCompare(b.tf_number ?? ""));
+                    if (krTfs.length === 0) return null;
+                    return (
+                      <div key={kr.id}>
+                        <div style={{
+                          fontSize: "10px", color: "var(--color-text-tertiary)",
+                          fontWeight: 600, marginBottom: "3px",
+                        }}>
+                          KR{krIdx + 1}：{kr.title}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingLeft: "8px" }}>
+                          {krTfs.map(tf => {
+                            const checked = form.tf_ids.includes(tf.id);
+                            return (
+                              <label key={tf.id} style={{
+                                display: "flex", alignItems: "center", gap: "6px",
+                                fontSize: "11px", color: "var(--color-text-primary)",
+                                cursor: "pointer", padding: "2px 0",
+                              }}>
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={e => setForm(f => ({
+                                    ...f,
+                                    tf_ids: e.target.checked
+                                      ? [...f.tf_ids, tf.id]
+                                      : f.tf_ids.filter(id => id !== tf.id),
+                                  }))}
+                                  style={{ accentColor: "var(--color-brand)", flexShrink: 0 }}
+                                />
+                                <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                                  TF{krIdx + 1}-{tf.tf_number || "?"}
+                                </span>
+                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {tf.name}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {taskForces.length === 0 && (
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                      TF が登録されていません。「Task Force」タブで先に TF を作ってください。
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
