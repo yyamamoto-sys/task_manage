@@ -5,12 +5,19 @@
 
 import type { Tour } from "./types";
 import { firstTimeTour } from "./first-time";
+import { aiIntroTour } from "./ai-intro";
 
 export const ALL_TOURS: Record<string, Tour> = {
   [firstTimeTour.id]: firstTimeTour,
-  // Phase 2 で追加予定：
-  // [aiIntroTour.id]: aiIntroTour,
+  [aiIntroTour.id]: aiIntroTour,
+  // Phase 3 で追加予定：
   // [okrCycleTour.id]: okrCycleTour,
 };
+
+/** ガイドのツアー一覧に表示する順序（重要度の高い順） */
+export const TOUR_LIST: Tour[] = [
+  firstTimeTour,
+  aiIntroTour,
+];
 
 export const FIRST_TIME_TOUR_ID = firstTimeTour.id;

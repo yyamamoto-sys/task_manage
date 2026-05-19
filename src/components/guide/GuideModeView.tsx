@@ -9,6 +9,7 @@ import { useMemo, useState, useEffect } from "react";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { groupedDocs, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
+import { TOUR_LIST } from "../tour/tours";
 
 const SECTION_LABELS: Record<string, string> = {
   "": "トップ",
@@ -30,8 +31,8 @@ const STORAGE_KEY = "guide_last_slug_v1";
 interface GuideModeViewProps {
   /** 「オンボーディングを見直す」ボタンから呼ばれる（MainLayout で OnboardingHome をオーバーレイ表示） */
   onShowOnboarding?: () => void;
-  /** 「ツアーを再生」ボタンから呼ばれる（MainLayout で TourProvider.start を呼ぶ） */
-  onStartTour?: () => void;
+  /** 指定 tour id のツアーを再生する（MainLayout 側で TourProvider.start に橋渡し） */
+  onStartTour?: (tourId: string) => void;
 }
 
 export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewProps = {}) {
@@ -61,19 +62,30 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
             記事数：{allEntries.length}
           </div>
-          {onStartTour && (
-            <button
-              onClick={onStartTour}
-              style={{
-                marginTop: "10px", width: "100%",
-                padding: "6px 10px", fontSize: "11px", fontWeight: 600,
-                background: "var(--color-brand)", color: "#fff",
-                border: "none",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-              }}
-            >
-              ▶ ツアーを再生（90秒）
-            </button>
+          {onStartTour && TOUR_LIST.length > 0 && (
+            <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ fontSize: "9px", fontWeight: 700, color: "var(--color-text-tertiary)", letterSpacing: "0.05em", padding: "2px 2px 0" }}>
+                ▶ ツアー（吹き出しで実演）
+              </div>
+              {TOUR_LIST.map(t => (
+                <button
+                  key={t.id}
+                  onClick={() => onStartTour(t.id)}
+                  title={`${t.title}（約${t.estimatedSeconds ?? 60}秒）を再生`}
+                  style={{
+                    width: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "6px 10px", fontSize: "11px", fontWeight: 600,
+                    background: "var(--color-brand)", color: "#fff",
+                    border: "none",
+                    borderRadius: "var(--radius-md)", cursor: "pointer",
+                  }}
+                >
+                  <span>{t.title}</span>
+                  <span style={{ fontSize: "10px", opacity: 0.85 }}>{t.estimatedSeconds ?? 60}秒</span>
+                </button>
+              ))}
+            </div>
           )}
           {onShowOnboarding && (
             <button

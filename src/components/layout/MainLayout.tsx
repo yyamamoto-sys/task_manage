@@ -366,7 +366,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         <Suspense fallback={<ViewLoading />}>
           <GuideModeView
             onShowOnboarding={() => setIsOnboardingOverlayOpen(true)}
-            onStartTour={() => { setIsGuideOpen(false); tour.start(FIRST_TIME_TOUR_ID); }}
+            onStartTour={(tourId: string) => { setIsGuideOpen(false); tour.start(tourId); }}
           />
         </Suspense>
       </div>
