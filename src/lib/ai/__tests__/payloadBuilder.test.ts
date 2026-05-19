@@ -285,6 +285,75 @@ describe("buildPayload — task_projects（追加プロジェクト）", () => {
   });
 });
 
+describe("buildPayload — PJ↔TF 双方向リンク（projectTaskForces）", () => {
+  it("AIProject.linked_tf_numbers に「TF{krIdx+1}-{番号}」形式のラベル配列が入る", () => {
+    const krs: KeyResult[] = [
+      { id: "kr-1", objective_id: "o-1", title: "KR1", is_deleted: false },
+      { id: "kr-2", objective_id: "o-1", title: "KR2", is_deleted: false },
+    ];
+    const tfs: TaskForce[] = [
+      { id: "tf-A", kr_id: "kr-1", tf_number: "1", name: "TF A", leader_member_id: "m1", is_deleted: false },
+      { id: "tf-B", kr_id: "kr-2", tf_number: "3", name: "TF B", leader_member_id: "m1", is_deleted: false },
+    ];
+    const { payload } = buildPayload({
+      projects: [makeProject({ id: "pj-1", name: "PJ One" })],
+      tasks: [],
+      members: [makeMember()],
+      projectTaskForces: [
+        { project_id: "pj-1", tf_id: "tf-A" },
+        { project_id: "pj-1", tf_id: "tf-B" },
+      ],
+      keyResults: krs,
+      taskForces: tfs,
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.projects[0].linked_tf_numbers).toEqual(["TF1-1", "TF2-3"]);
+  });
+
+  it("OKRコンテキスト有効時：AITaskForce.linked_pj_names に対応PJ名が入る", () => {
+    const krs: KeyResult[] = [
+      { id: "kr-1", objective_id: "o-1", title: "KR1", is_deleted: false },
+    ];
+    const tfs: TaskForce[] = [
+      { id: "tf-A", kr_id: "kr-1", tf_number: "1", name: "TF A", leader_member_id: "m1", is_deleted: false },
+    ];
+    const { payload } = buildPayload({
+      projects: [
+        makeProject({ id: "pj-1", name: "PJ One" }),
+        makeProject({ id: "pj-2", name: "PJ Two" }),
+      ],
+      tasks: [],
+      members: [makeMember()],
+      projectTaskForces: [
+        { project_id: "pj-1", tf_id: "tf-A" },
+        { project_id: "pj-2", tf_id: "tf-A" },
+      ],
+      keyResults: krs,
+      taskForces: tfs,
+      includeOKR: true,
+      currentObjective: { id: "o-1", title: "今期Objective", period: "2026" },
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.okr_context!.key_results[0].task_forces[0].linked_pj_names).toEqual(["PJ One", "PJ Two"]);
+  });
+
+  it("projectTaskForces が空なら linked_tf_numbers / linked_pj_names も空配列", () => {
+    const { payload } = buildPayload({
+      projects: [makeProject()],
+      tasks: [],
+      members: [makeMember()],
+      consultationType: "change",
+      consultation: "x",
+      scope: "all_pj",
+    });
+    expect(payload.projects[0].linked_tf_numbers).toEqual([]);
+  });
+});
+
 describe("buildPayload — Project.member_ids（オーナー以外の関与者）", () => {
   it("pj_members に member_ids が short_name で展開される", () => {
     const { payload } = buildPayload({

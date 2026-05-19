@@ -9,7 +9,7 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject } from "../localData/types";
+import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { dateToQuarter } from "../date";
@@ -167,6 +167,8 @@ interface BuildOptions {
   todos?: ToDo[];
   /** タスク↔PJ の追加紐付け（主project_id 以外の関与PJ）。AI に「PJ X に関わるタスク」を正しく届けるため */
   taskProjects?: TaskProject[];
+  /** PJ↔TF の紐付け。AI に PJ→TF→KR の OKR文脈を伝えるため（双方向に展開） */
+  projectTaskForces?: ProjectTaskForce[];
   consultationType: ConsultationType;
   consultation: string;
   scope: AIConsultationPayload["scope"];
@@ -192,6 +194,34 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   const activePJs = opts.projects.filter(p => !p.is_deleted && p.status !== "archived");
   const activeTasks = opts.tasks.filter(t => !t.is_deleted);
   const taskProjects = opts.taskProjects ?? [];
+  const projectTaskForces = opts.projectTaskForces ?? [];
+
+  // PJ id → 紐付くTFの番号ラベル（"TF{krIdx+1}-{tf_number}"）配列
+  // TF id → 紐付くPJ名 配列
+  // 双方向 join。OKR コンテキストが無くてもラベルから AI が読み取れる形にする
+  const tfNumberById = new Map<string, string>();
+  if (opts.keyResults && opts.taskForces) {
+    for (const tf of opts.taskForces.filter(t => !t.is_deleted)) {
+      const krIdx = opts.keyResults.findIndex(k => k.id === tf.kr_id);
+      const label = `TF${krIdx >= 0 ? krIdx + 1 : "?"}-${tf.tf_number || "?"}`;
+      tfNumberById.set(tf.id, label);
+    }
+  }
+  const pjNameById = new Map(opts.projects.map(p => [p.id, p.name]));
+  const linkedTfLabelsByPj = new Map<string, string[]>();
+  const linkedPjNamesByTf  = new Map<string, string[]>();
+  for (const ptf of projectTaskForces) {
+    const tfLabel = tfNumberById.get(ptf.tf_id);
+    if (tfLabel) {
+      if (!linkedTfLabelsByPj.has(ptf.project_id)) linkedTfLabelsByPj.set(ptf.project_id, []);
+      linkedTfLabelsByPj.get(ptf.project_id)!.push(tfLabel);
+    }
+    const pjName = pjNameById.get(ptf.project_id);
+    if (pjName) {
+      if (!linkedPjNamesByTf.has(ptf.tf_id)) linkedPjNamesByTf.set(ptf.tf_id, []);
+      linkedPjNamesByTf.get(ptf.tf_id)!.push(pjName);
+    }
+  }
 
   // タスクのショートIDはPJをまたいでグローバルに連番にする
   // （shortIdMap.sizeを使うとPJ分のエントリが混入してキーが衝突するため専用カウンターを使う）
@@ -255,6 +285,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       pj_end_date: pj.end_date ?? null,
       pj_owners: pjOwners,
       pj_members: pjMembers,
+      linked_tf_numbers: linkedTfLabelsByPj.get(pj.id) ?? [],
       pj_progress: {
         total: pjTasks.length,
         done: pjTasks.filter(t => t.status === "done").length,
@@ -286,6 +317,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
               tf_number: tf.tf_number,
               name: tf.name,
               leader: leader?.short_name ?? "未設定",
+              linked_pj_names: linkedPjNamesByTf.get(tf.id) ?? [],
             };
           }),
         };

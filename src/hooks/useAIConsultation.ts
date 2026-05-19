@@ -68,14 +68,16 @@ function getRandomLoadingMessage(): string {
  * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
  */
 export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
-  const projects   = useAppStore(s => s.projects);
-  const tasks      = useAppStore(s => s.tasks);
-  const members    = useAppStore(s => s.members);
-  const todos      = useAppStore(s => s.todos);
-  const objective  = useAppStore(s => s.objective);
-  const keyResults = useAppStore(s => s.keyResults);
-  const taskForces = useAppStore(s => s.taskForces);
-  const reload     = useAppStore(s => s.reload);
+  const projects          = useAppStore(s => s.projects);
+  const tasks             = useAppStore(s => s.tasks);
+  const members           = useAppStore(s => s.members);
+  const todos             = useAppStore(s => s.todos);
+  const objective         = useAppStore(s => s.objective);
+  const keyResults        = useAppStore(s => s.keyResults);
+  const taskForces        = useAppStore(s => s.taskForces);
+  const taskProjects      = useAppStore(s => s.taskProjects);
+  const projectTaskForces = useAppStore(s => s.projectTaskForces);
+  const reload            = useAppStore(s => s.reload);
 
   const [callState, setCallState] = useState<CallState>("idle");
   const [session, setSession] = useState<ConsultationSession>(createSession());
@@ -120,6 +122,8 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         tasks,
         members,
         todos,
+        taskProjects,
+        projectTaskForces,
         consultationType,
         consultation,
         scope: projectIds.length > 0 ? "related_pj" : "all_pj",

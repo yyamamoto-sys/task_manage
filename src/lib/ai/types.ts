@@ -21,6 +21,8 @@ export interface AIProject {
   pj_owners: string[];
   /** オーナー以外の関与メンバー（short_name 配列） */
   pj_members: string[];
+  /** このPJが貢献するTF（"TF1-2" 形式の番号配列。OKR文脈での寄与判断に使う） */
+  linked_tf_numbers: string[];
   tasks: AITask[];
 }
 
@@ -42,6 +44,8 @@ export interface AITaskForce {
   tf_number: string;
   name: string;
   leader: string;
+  /** このTFに紐付くPJ名（PJ→TF の双方向参照。OKR と PJ の対応関係を AI に伝える） */
+  linked_pj_names: string[];
 }
 
 export interface AIKeyResult {
