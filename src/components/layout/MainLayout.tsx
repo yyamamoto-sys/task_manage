@@ -1,5 +1,5 @@
 // src/components/layout/MainLayout.tsx
-import { useState, useMemo, useRef, Suspense } from "react";
+import { useState, useMemo, useRef, useEffect, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -16,6 +16,8 @@ import { DashIcon, KanbanIcon, GanttIcon, ListIcon, AdminIcon, GraphIcon, AIIcon
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { HelpButton } from "../guide/HelpButton";
+import { TourProvider, useTour } from "../tour/TourProvider";
+import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
 
 /**
  * 【設計意図】
@@ -66,7 +68,16 @@ const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: Reac
   { view: "list",      label: "リスト",         shortLabel: "LT", icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
 ];
 
-export function MainLayout({ currentUser, onLogout }: Props) {
+export function MainLayout(props: Props) {
+  // ツアー機能を全体で使えるように。useTour() は MainLayoutInner で呼ぶ
+  return (
+    <TourProvider tours={ALL_TOURS}>
+      <MainLayoutInner {...props} />
+    </TourProvider>
+  );
+}
+
+function MainLayoutInner({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
   const { theme, toggle: toggleTheme } = useTheme();
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
@@ -113,6 +124,14 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);
+
+  // ツアー：初回起動で「見ますか？」ダイアログ → ユーザー選択で start
+  const tour = useTour();
+  const [showTourInvite, setShowTourInvite] = useState<boolean>(() => !tour.isCompleted(FIRST_TIME_TOUR_ID));
+  // 招待ダイアログのスキップ判定を localStorage に永続化（再ログイン時に再表示しない）
+  useEffect(() => {
+    if (tour.isCompleted(FIRST_TIME_TOUR_ID)) setShowTourInvite(false);
+  }, [tour]);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
@@ -217,6 +236,58 @@ export function MainLayout({ currentUser, onLogout }: Props) {
   ) : null;
 
   // 📖 ガイド（全モード共通・全画面オーバーレイ）
+  // 初回起動時の「ツアーを見ますか？」招待ダイアログ
+  const tourInviteDialog = showTourInvite ? (
+    <div
+      style={{
+        position: "fixed", inset: 0, zIndex: 270,
+        background: "rgba(0,0,0,0.4)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        padding: "16px",
+      }}
+    >
+      <div style={{
+        background: "var(--color-bg-primary)",
+        borderRadius: "var(--radius-lg)",
+        maxWidth: "460px", width: "100%",
+        boxShadow: "var(--shadow-lg)",
+        padding: "24px 26px",
+      }}>
+        <div style={{ fontSize: "20px", marginBottom: "6px" }}>👋</div>
+        <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>
+          ようこそ。ツアー（約90秒）を見ますか？
+        </div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
+          4つのビュー・AI機能・OKR管理モードの場所と使い方を、画面上の吹き出しでご案内します。<br />
+          後から「📖 ガイド」内の「👋 オンボーディングを見直す」ボタンでいつでも再生できます。
+        </div>
+        <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+          <button
+            onClick={() => { setShowTourInvite(false); tour.end(); /* end() で 'completed' にして二度と出ない */ }}
+            style={{
+              padding: "8px 14px", fontSize: "12px",
+              background: "transparent", color: "var(--color-text-tertiary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)", cursor: "pointer",
+            }}
+          >
+            スキップ
+          </button>
+          <button
+            onClick={() => { setShowTourInvite(false); tour.start(FIRST_TIME_TOUR_ID); }}
+            style={{
+              padding: "8px 18px", fontSize: "12px", fontWeight: 600,
+              background: "var(--color-brand)", color: "#fff",
+              border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+            }}
+          >
+            ツアーを開始 →
+          </button>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   const onboardingOverlay = isOnboardingOverlayOpen ? (
     <div
       onClick={() => setIsOnboardingOverlayOpen(false)}
@@ -293,7 +364,10 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       </div>
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         <Suspense fallback={<ViewLoading />}>
-          <GuideModeView onShowOnboarding={() => setIsOnboardingOverlayOpen(true)} />
+          <GuideModeView
+            onShowOnboarding={() => setIsOnboardingOverlayOpen(true)}
+            onStartTour={() => { setIsGuideOpen(false); tour.start(FIRST_TIME_TOUR_ID); }}
+          />
         </Suspense>
       </div>
     </div>
@@ -384,6 +458,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
         {adminOverlay}
         {guideOverlay}
         {onboardingOverlay}
+        {tourInviteDialog}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -696,6 +771,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {adminOverlay}
       {guideOverlay}
       {onboardingOverlay}
+      {tourInviteDialog}
 
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
@@ -769,6 +845,7 @@ export function MainLayout({ currentUser, onLogout }: Props) {
       {/* PC FABボタン本体（計画モードのみ） */}
       {appMode === "plan" && (
         <button
+          data-tour-id="fab"
           onClick={() => setIsFabMenuOpen(prev => !prev)}
           style={{
             position: "fixed", bottom: "24px",
@@ -940,7 +1017,7 @@ function Sidebar({
   const c = collapsed; // 省略形
 
   return (
-    <div style={{
+    <div data-tour-id="sidebar" style={{
       width: c ? "48px" : "196px",
       flexShrink: 0,
       background: "var(--color-bg-secondary)",
@@ -1028,7 +1105,7 @@ function Sidebar({
 
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
-        <div style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+        <div data-tour-id="nav-items" style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
           {!c && <SectionLabel>メニュー</SectionLabel>}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem
@@ -1186,6 +1263,7 @@ function Sidebar({
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
+          data-tour-id="guide-btn"
           onClick={onOpenGuide}
           title="このアプリの使い方ガイドを開きます"
           style={{
@@ -1414,7 +1492,7 @@ function AppModeToggle({ mode, onToggle, compact = false }: { mode: AppMode; onT
     );
   }
   return (
-    <div style={{
+    <div data-tour-id="app-mode" style={{
       display: "flex", borderRadius: "var(--radius-md)",
       border: "1px solid var(--color-border-primary)",
       overflow: "hidden", fontSize: "10px", fontWeight: "600",

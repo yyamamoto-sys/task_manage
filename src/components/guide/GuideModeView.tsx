@@ -30,9 +30,11 @@ const STORAGE_KEY = "guide_last_slug_v1";
 interface GuideModeViewProps {
   /** 「オンボーディングを見直す」ボタンから呼ばれる（MainLayout で OnboardingHome をオーバーレイ表示） */
   onShowOnboarding?: () => void;
+  /** 「ツアーを再生」ボタンから呼ばれる（MainLayout で TourProvider.start を呼ぶ） */
+  onStartTour?: () => void;
 }
 
-export function GuideModeView({ onShowOnboarding }: GuideModeViewProps = {}) {
+export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewProps = {}) {
   const groups = useMemo(() => groupedDocs(), []);
   const allEntries = useMemo(() => groups.flatMap(g => g.entries), [groups]);
 
@@ -59,11 +61,25 @@ export function GuideModeView({ onShowOnboarding }: GuideModeViewProps = {}) {
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
             記事数：{allEntries.length}
           </div>
+          {onStartTour && (
+            <button
+              onClick={onStartTour}
+              style={{
+                marginTop: "10px", width: "100%",
+                padding: "6px 10px", fontSize: "11px", fontWeight: 600,
+                background: "var(--color-brand)", color: "#fff",
+                border: "none",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+              }}
+            >
+              ▶ ツアーを再生（90秒）
+            </button>
+          )}
           {onShowOnboarding && (
             <button
               onClick={onShowOnboarding}
               style={{
-                marginTop: "10px", width: "100%",
+                marginTop: "6px", width: "100%",
                 padding: "6px 10px", fontSize: "11px", fontWeight: 600,
                 background: "linear-gradient(135deg, var(--color-brand-light), var(--color-bg-secondary))",
                 color: "var(--color-brand)",
@@ -71,7 +87,7 @@ export function GuideModeView({ onShowOnboarding }: GuideModeViewProps = {}) {
                 borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
             >
-              👋 オンボーディングを見直す
+              👋 オンボーディング（3ステップ）を見直す
             </button>
           )}
         </div>
