@@ -541,69 +541,55 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     const taskAssigneeIds = getAssigneeIds(task);
                     const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = projects.find(p => p.id === task.project_id);
-                    const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
                     const isDone    = task.status === "done";
                     const isOverdue = task.due_date && task.due_date < t0 && !isDone;
+                    const isSelected = selectedIds.has(task.id);
+                    // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
+                    // 状態は左カラーバーと文字スタイルで表現し、詳細はタップで TaskEditModal が開く。
+                    const statusColor = TASK_STATUS_STYLE[task.status].color;
                     return (
                       <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                         style={{
-                          background: selectedIds.has(task.id)
-                            ? "var(--color-brand-light)"
-                            : "var(--color-bg-primary)",
-                          border: selectedIds.has(task.id)
+                          display: "flex", alignItems: "center", gap: "10px",
+                          background: isSelected ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                          border: isSelected
                             ? "1px solid var(--color-brand-border)"
                             : "1px solid var(--color-border-primary)",
-                          borderRadius: "var(--radius-lg)",
-                          padding: "10px 12px", marginBottom: "4px",
-                          cursor: "pointer", opacity: isDone ? 0.6 : 1,
-                          transition: "background 0.1s, border-color 0.1s",
+                          borderLeft: `4px solid ${pj?.color_tag ?? statusColor}`,
+                          borderRadius: "var(--radius-md)",
+                          padding: "12px 12px", marginBottom: "6px",
+                          cursor: "pointer", opacity: isDone ? 0.55 : 1,
+                          minHeight: "52px",
                         }}>
-                        <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginBottom: "5px" }}>
-                          <input
-                            type="checkbox"
-                            checked={selectedIds.has(task.id)}
-                            onChange={() => toggleSelect(task.id)}
-                            onClick={e => e.stopPropagation()}
-                            aria-label={`${task.name} を選択`}
-                            style={{ cursor: "pointer", width: 16, height: 16, marginTop: 2, accentColor: "var(--color-brand)", flexShrink: 0 }}
-                          />
-                          <div style={{
-                            flex: 1, fontSize: "12px", fontWeight: "500",
-                            color: "var(--color-text-primary)",
-                            lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
-                          }}>{task.name}</div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "4px", flexShrink: 0 }}>
-                            {task.comment && <span title="メモあり" style={{ fontSize: "11px", opacity: 0.5 }}>💬</span>}
-                            <span style={{
-                              fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                              background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
-                            }}>{TASK_STATUS_LABEL[task.status]}</span>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelect(task.id)}
+                          onClick={e => e.stopPropagation()}
+                          aria-label={`${task.name} を選択`}
+                          style={{ cursor: "pointer", width: 18, height: 18, accentColor: "var(--color-brand)", flexShrink: 0 }}
+                        />
+                        <div style={{
+                          flex: 1, fontSize: "13px", fontWeight: 500, minWidth: 0,
+                          color: "var(--color-text-primary)",
+                          lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>{task.name}</div>
+                        {taskAssignees.length > 0 && (
+                          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+                            {taskAssignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={20} />)}
+                            {taskAssignees.length > 2 && (
+                              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 2}</span>
+                            )}
                           </div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          {taskAssignees.length > 0 && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                            {taskAssignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={14} />)}
-                            {taskAssignees.length === 1 && <span style={{ fontSize: "10px", color: "var(--color-text-secondary)" }}>{taskAssignees[0].short_name}</span>}
-                            {taskAssignees.length > 3 && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 3}</span>}
-                          </div>}
-                          {task.due_date && <span style={{
-                            fontSize: "10px",
+                        )}
+                        {task.due_date && (
+                          <span style={{
+                            fontSize: "11px", flexShrink: 0, minWidth: "42px", textAlign: "right",
                             color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-                            fontWeight: isOverdue ? "500" : "400",
-                          }}>{task.due_date.slice(5).replace("-", "/")}</span>}
-                          {task.priority && <span style={{
-                            fontSize: "9px", padding: "1px 5px", borderRadius: "3px",
-                            background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
-                          }}>{TASK_PRIORITY_LABEL[task.priority]}</span>}
-                          {groupBy !== "project" && pj && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
-                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 12)}</span>
-                          </div>}
-                          {!pj && td && <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                            <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
-                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{td.title.split("\n")[0].slice(0, 16)}</span>
-                          </div>}
-                        </div>
+                            fontWeight: isOverdue ? 600 : 400,
+                          }}>{task.due_date.slice(5).replace("-", "/")}</span>
+                        )}
                       </div>
                     );
                   })}

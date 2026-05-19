@@ -628,7 +628,7 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
 
         <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>
-            保存すると kr_sessions（session_type=freeform）＋ フォローアップが kr_declarations に保存されます。
+            保存すると「OKR議論」セッション＋フォローアップ宣言として記録されます。
           </div>
           <button onClick={handleSave} disabled={!freeformPrimaryKrId} style={{ ...primaryBtn, opacity: freeformPrimaryKrId ? 1 : 0.5 }}>
             OKR議論を保存
@@ -696,7 +696,7 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
 
         {/* sticky 保存バー */}
         <div style={{ flexShrink: 0, padding: "10px 20px", borderTop: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", display: "flex", alignItems: "center", gap: "10px" }}>
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>保存すると、KRごとに kr_sessions・kr_declarations・KRの詳細分析（okr_analyses）が、会議全体は Objective分析として保存されます。</div>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flex: 1 }}>保存すると、KRごとに「セッション議事・宣言・詳細分析」が、会議全体は「Objective分析」として記録されます。</div>
           <button onClick={handleSave} disabled={panels.filter(p => p.selected).length === 0} style={{ ...primaryBtn, opacity: panels.filter(p => p.selected).length === 0 ? 0.5 : 1 }}>
             {mode === "checkin" ? "チェックインと分析を保存" : "ウィンセッションと分析を保存"}（{panels.filter(p => p.selected).length} KR）
           </button>
