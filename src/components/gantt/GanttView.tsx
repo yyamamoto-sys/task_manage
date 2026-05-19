@@ -17,6 +17,7 @@ import { KEYS } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { isAssignedTo } from "../../lib/taskMeta";
+import { EmptyState } from "../common/EmptyState";
 
 interface Props {
   currentUser: Member;
@@ -575,7 +576,15 @@ export function GanttView({
               overflowY: "auto", overflowX: "hidden", scrollbarWidth: "none",
             }}
           >
-            {viewMode === "pj" ? (
+            {visibleProjects.length === 0 && allTasks.length === 0 ? (
+              <EmptyState
+                icon="📅"
+                title="表示するタスクがありません"
+                hint={mineOnly
+                  ? "「自分」モードで担当タスクが無いか、まだ登録されていません。サイドバー上部で「全件」に切り替えるか、＋ボタンで追加してください。"
+                  : "PJ やタスクを登録すると、ここに横長のバーで表示されます。"}
+              />
+            ) : viewMode === "pj" ? (
               <>
                 {visibleProjects.map(pj => {
                   const pjTasks = sortTasks(allTasks.filter(t => t.project_id === pj.id));

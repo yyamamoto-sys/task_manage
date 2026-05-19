@@ -73,16 +73,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     const saved = localStorage.getItem(KEYS.REMINDER_DAYS);
     return saved ? Math.max(1, parseInt(saved, 10) || 7) : 7;
   });
-  const [editingReminder, setEditingReminder] = useState(false);
-  const [reminderInput, setReminderInput] = useState(String(reminderDays));
-
-  const applyReminderDays = useCallback(() => {
-    const n = Math.max(1, parseInt(reminderInput, 10) || 7);
-    setReminderDaysState(n);
-    setReminderInput(String(n));
-    localStorage.setItem(KEYS.REMINDER_DAYS, String(n));
-    setEditingReminder(false);
-  }, [reminderInput]);
 
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
   const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
@@ -445,48 +435,26 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 {reminderTasks.length}件
               </span>
             )}
-            {/* 設定 */}
-            {editingReminder ? (
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={reminderInput}
-                  onChange={e => setReminderInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter") applyReminderDays(); if (e.key === "Escape") setEditingReminder(false); }}
-                  autoFocus
-                  style={{
-                    width: "48px", padding: "2px 6px", fontSize: "11px",
-                    border: "1px solid var(--color-border-secondary)",
-                    borderRadius: "var(--radius-sm)",
-                    background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-                  }}
-                />
-                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>日前</span>
-                <button onClick={applyReminderDays} style={{
-                  fontSize: "10px", padding: "2px 8px",
-                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
-                  border: "1px solid var(--color-border-info)",
-                  borderRadius: "var(--radius-sm)", cursor: "pointer",
-                }}>適用</button>
-                <button onClick={() => setEditingReminder(false)} style={{
-                  fontSize: "10px", padding: "2px 6px", background: "transparent",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-sm)", cursor: "pointer",
-                  color: "var(--color-text-tertiary)",
-                }}>✕</button>
-              </div>
-            ) : (
-              <button onClick={() => { setEditingReminder(true); setReminderInput(String(reminderDays)); }} style={{
-                fontSize: "10px", padding: "2px 8px", background: "transparent",
+            {/* 設定：1クリックで切替 */}
+            <select
+              value={reminderDays}
+              onChange={e => {
+                const n = parseInt(e.target.value, 10);
+                setReminderDaysState(n);
+                localStorage.setItem(KEYS.REMINDER_DAYS, String(n));
+              }}
+              title="リマインダー対象期間"
+              style={{
+                fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
+                background: "transparent", color: "var(--color-text-tertiary)",
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-sm)", cursor: "pointer",
-                color: "var(--color-text-tertiary)",
-              }}>
-                {reminderDays}日前〜 ⚙
-              </button>
-            )}
+              }}
+            >
+              {[3, 7, 14, 30].map(d => (
+                <option key={d} value={d}>{d}日前〜</option>
+              ))}
+            </select>
           </div>
           {/* タスク一覧 */}
           <div style={{ padding: "10px 14px" }}>
@@ -499,31 +467,51 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 {reminderTasks.map(task => {
                   const pj = projects.find(p => p.id === task.project_id);
                   const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
-                  const isOverdue = diff < 0;
-                  const isToday = diff === 0;
+                  const isOverdue  = diff < 0;
+                  const isToday    = diff === 0;
+                  const isTomorrow = diff === 1;
+                  // 緊急度 4段階：超過(赤) > 今日(オレンジ) > 明日(黄薄) > N日後(通常)
+                  const tone = isOverdue ? "danger"
+                             : isToday    ? "warning"
+                             : isTomorrow ? "soft"
+                             : "neutral";
+                  const bg = tone === "danger"  ? "var(--color-bg-danger)"
+                           : tone === "warning" ? "#fff4e0"
+                           : tone === "soft"    ? "var(--color-bg-warning)"
+                           :                      "var(--color-bg-secondary)";
+                  const border = tone === "danger"  ? "var(--color-border-danger)"
+                               : tone === "warning" ? "#f59e0b"
+                               : tone === "soft"    ? "var(--color-border-warning)"
+                               :                      "var(--color-border-primary)";
+                  const fg = tone === "danger"  ? "var(--color-text-danger)"
+                           : tone === "warning" ? "#b45309"
+                           : tone === "soft"    ? "var(--color-text-warning)"
+                           :                      "var(--color-text-secondary)";
                   return (
                     <div key={task.id} style={{
                       display: "flex", alignItems: "center", gap: "6px",
                       padding: "5px 10px",
-                      background: isOverdue ? "var(--color-bg-danger)" : isToday ? "var(--color-bg-warning)" : "var(--color-bg-secondary)",
+                      background: bg,
                       borderRadius: "var(--radius-md)",
-                      border: `1px solid ${isOverdue ? "var(--color-border-danger)" : isToday ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
+                      border: `1px solid ${border}`,
                       flex: isMobile ? "1" : "0 0 auto",
                       minWidth: 0,
                     }}>
                       {pj && <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />}
                       <span style={{
-                        fontSize: "11px", color: "var(--color-text-primary)",
+                        fontSize: "11px",
+                        color: isToday ? fg : "var(--color-text-primary)",
+                        fontWeight: isToday ? 600 : 400,
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                         maxWidth: isMobile ? "none" : "160px",
                       }}>
                         {task.name}
                       </span>
                       <span style={{
-                        fontSize: "10px", flexShrink: 0, fontWeight: "500",
-                        color: isOverdue ? "var(--color-text-danger)" : isToday ? "var(--color-text-warning)" : "var(--color-text-secondary)",
+                        fontSize: "10px", flexShrink: 0, fontWeight: isToday || isOverdue ? 700 : 500,
+                        color: fg,
                       }}>
-                        {isOverdue ? `${Math.abs(diff)}日超過` : isToday ? "今日" : diff === 1 ? "明日" : `${diff}日後`}
+                        {isOverdue ? `${Math.abs(diff)}日超過` : isToday ? "🔥 今日" : isTomorrow ? "明日" : `${diff}日後`}
                       </span>
                     </div>
                   );

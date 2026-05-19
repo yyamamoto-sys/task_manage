@@ -30,9 +30,18 @@ interface Props { currentUser: Member; }
 // ===== ルートコンポーネント =====
 
 export function AdminView({ currentUser }: Props) {
-  const [tab, setTab] = useState<AdminTab>(
-    () => (localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null) ?? "pj"
-  );
+  const krs      = useAppStore(s => s.keyResults);
+  const pjs      = useAppStore(s => s.projects);
+  const krCount  = krs.filter(k => !k.is_deleted).length;
+  const pjCount  = pjs.filter(p => !p.is_deleted).length;
+
+  // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
+  const [tab, setTab] = useState<AdminTab>(() => {
+    const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
+    if (krCount === 0) return "okr";
+    if (pjCount === 0) return "pj";
+    return saved ?? "pj";
+  });
   const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
     () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(KEYS.ADMIN_FONT_SIZE) ?? "1", 10))) as 0 | 1 | 2
   );
@@ -128,6 +137,20 @@ export function AdminView({ currentUser }: Props) {
             </button>
           ))}
         </div>
+        {/* 初見向け：次の推奨ステップ */}
+        {(krCount === 0 || pjCount === 0) && (
+          <div style={{
+            margin: "6px 0 -1px", padding: "5px 10px",
+            background: "var(--color-bg-info)",
+            border: "1px solid var(--color-border-info)",
+            borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
+            fontSize: "10px", color: "var(--color-text-info)", lineHeight: 1.5,
+          }}>
+            {krCount === 0
+              ? "💡 まず「Objective / KR」タブで今期の目標と KR（成果指標）を3〜5本登録しましょう。"
+              : "💡 続いて「プロジェクト」タブで KR を実現する手段（PJ）を登録します。"}
+          </div>
+        )}
       </div>
 
       {/* コンテンツ */}
