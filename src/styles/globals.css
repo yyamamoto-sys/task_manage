@@ -216,6 +216,13 @@ body {
   /* 約物の詰め・カーニング・等幅数字。Refined Stationery 風の組版精度 */
   font-feature-settings: "palt" 1, "kern" 1;
   text-rendering: optimizeLegibility;
+  /* モバイル：横向き時に iOS が勝手に本文を拡大するのを防ぐ */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  /* タップ時の青いハイライト点滅を消す（独自のホバー/アクティブ表現に任せる） */
+  -webkit-tap-highlight-color: transparent;
+  /* ページ端での引っ張り更新・隣接スクロール連鎖を抑える（Teams埋め込み時の誤爆防止） */
+  overscroll-behavior-y: contain;
 }
 
 /* Yu Gothic（非UI版）を使う場合のみフォントウェイトを補正
@@ -611,8 +618,22 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 }
 
 @media (max-width: 768px) {
-  button { min-height: 36px; }
-  input[type="date"], input[type="number"], input[type="text"], input[type="email"], select, textarea {
-    font-size: 16px; /* iOS ズーム防止 */
+  /* タップ領域：iOS HIG / WCAG 2.5.5 の最小 44px を確保。
+     アイコンだけの極小ボタンは .tap-compact を付けて従来サイズに戻せる */
+  button { min-height: 44px; }
+  button.tap-compact { min-height: 0; }
+  /* フォーム部品も指で押せる高さに。font-size:16px は iOS のフォーカス時ズーム防止 */
+  input[type="date"], input[type="number"], input[type="text"], input[type="email"],
+  input[type="search"], select, textarea {
+    font-size: 16px;
+    min-height: 44px;
+  }
+  textarea { min-height: 56px; } /* 複数行は従来の最小高さを優先 */
+
+  /* 横スクロールするビュー（ガント等）に慣性スクロールと端の余白を与える。
+     overflow-x:auto を持つ要素に .mobile-hscroll を付けて使う */
+  .mobile-hscroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
   }
 }
