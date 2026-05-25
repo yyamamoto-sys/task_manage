@@ -116,6 +116,9 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           ? projects.filter((p) => projectIds.includes(p.id))
           : projects;
 
+      // 相談実行者本人（「私／自分」の参照先）を members から解決する
+      const me = members.find((m) => m.id === currentMemberId);
+
       // ペイロード構築
       const { payload, shortIdMap: newShortIdMap } = buildPayload({
         projects: targetProjects,
@@ -132,6 +135,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         currentObjective: objective,
         keyResults,
         taskForces,
+        currentMember: me ? { id: me.id, short_name: me.short_name } : null,
       });
 
       setShortIdMap(newShortIdMap);

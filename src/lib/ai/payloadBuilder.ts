@@ -41,6 +41,8 @@ export interface AIConsultationPayload {
   context: FiscalCalendar & {
     target_deadline: string | null;
     member_workload: MemberWorkload[];
+    /** 相談を実行している本人。AIはこれを「私／自分／あなた」の参照先として使う */
+    current_user: { member_id: string; short_name: string } | null;
   };
   consultation_type: ConsultationType;
   consultation: string;
@@ -173,6 +175,8 @@ interface BuildOptions {
   consultation: string;
   scope: AIConsultationPayload["scope"];
   targetDeadline?: string | null;
+  /** 相談を実行している本人（「私／自分」の参照先）。member_id は実UUID */
+  currentMember?: { id: string; short_name: string } | null;
   retryHint?: string;
   /** OKRモード：trueの場合はOKR構造をペイロードに含める */
   includeOKR?: boolean;
@@ -330,6 +334,9 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       ...buildFiscalCalendar(today),
       target_deadline: opts.targetDeadline ?? null,
       member_workload: buildMemberWorkload(opts.members, opts.tasks),
+      current_user: opts.currentMember
+        ? { member_id: opts.currentMember.id, short_name: opts.currentMember.short_name }
+        : null,
     },
     consultation_type: opts.consultationType,
     consultation: opts.consultation,
