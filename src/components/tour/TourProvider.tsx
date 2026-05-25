@@ -254,7 +254,7 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
       >
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
-            👋 {tourTitle}　{stepIdx + 1} / {totalSteps}
+            👋 {tourTitle} ・ {stepIdx + 1} / {totalSteps}
           </span>
           <button onClick={onSkip} aria-label="スキップ" style={{
             background: "transparent", border: "none", cursor: "pointer",

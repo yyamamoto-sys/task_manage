@@ -1,9 +1,9 @@
 // src/components/guide/GuideModeView.tsx
 //
 // 【設計意図】
-// サイドバー「📖 ガイド」モードの本体。左に目次（セクション→記事）、右に MD 本文。
+// サイドバー「📖 ガイド」モードの本体。左に目次（トップ→ツアー→セクション→記事）、右に本文。
+// 開いた直後は「ガイドトップ」を表示する（大きなツアー導線＋クリックでジャンプできる目次）。
 // docs/guides/**/*.md を import.meta.glob で取り込んだマニフェストから直接描画する。
-// 一覧の見た目は OkrDashboardView の概要オーバーレイのスタイルに揃える。
 
 import { useMemo, useState, useEffect } from "react";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -26,6 +26,9 @@ function sectionLabel(key: string): string {
   return SECTION_LABELS[key] ?? key;
 }
 
+// 記事ではなく「ガイドトップ」を表す内部 slug
+const HOME_SLUG = "__home__";
+
 const STORAGE_KEY = "guide_last_slug_v1";
 
 interface GuideModeViewProps {
@@ -39,18 +42,19 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
   const groups = useMemo(() => groupedDocs(), []);
   const allEntries = useMemo(() => groups.flatMap(g => g.entries), [groups]);
 
-  const [currentSlug, setCurrentSlug] = useState<string>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved ?? (allEntries[0]?.slug ?? "");
-  });
+  // 開いた直後は必ずトップを表示する
+  const [currentSlug, setCurrentSlug] = useState<string>(HOME_SLUG);
 
-  useEffect(() => { if (currentSlug) localStorage.setItem(STORAGE_KEY, currentSlug); }, [currentSlug]);
+  useEffect(() => {
+    if (currentSlug && currentSlug !== HOME_SLUG) localStorage.setItem(STORAGE_KEY, currentSlug);
+  }, [currentSlug]);
 
-  const current: DocEntry | undefined = currentSlug ? getDocBySlug(currentSlug) : undefined;
+  const isHome = currentSlug === HOME_SLUG;
+  const current: DocEntry | undefined = !isHome && currentSlug ? getDocBySlug(currentSlug) : undefined;
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden", background: "var(--color-bg-primary)" }}>
-      {/* 目次 */}
+      {/* 目次（サイドバー） */}
       <aside style={{
         width: "280px", borderRight: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-secondary)", overflow: "auto", flexShrink: 0,
@@ -62,46 +66,20 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
             記事数：{allEntries.length}
           </div>
-          {onStartTour && TOUR_LIST.length > 0 && (
-            <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "4px" }}>
-              <div style={{ fontSize: "9px", fontWeight: 700, color: "var(--color-text-tertiary)", letterSpacing: "0.05em", padding: "2px 2px 0" }}>
-                ▶ ツアー（吹き出しで実演）
-              </div>
-              {TOUR_LIST.map(t => (
-                <button
-                  key={t.id}
-                  onClick={() => onStartTour(t.id)}
-                  title={`${t.title}（約${t.estimatedSeconds ?? 60}秒）を再生`}
-                  style={{
-                    width: "100%",
-                    display: "flex", alignItems: "center", justifyContent: "space-between",
-                    padding: "6px 10px", fontSize: "11px", fontWeight: 600,
-                    background: "var(--color-brand)", color: "#fff",
-                    border: "none",
-                    borderRadius: "var(--radius-md)", cursor: "pointer",
-                  }}
-                >
-                  <span>{t.title}</span>
-                  <span style={{ fontSize: "10px", opacity: 0.85 }}>{t.estimatedSeconds ?? 60}秒</span>
-                </button>
-              ))}
-            </div>
-          )}
-          {onShowOnboarding && (
-            <button
-              onClick={onShowOnboarding}
-              style={{
-                marginTop: "6px", width: "100%",
-                padding: "6px 10px", fontSize: "11px", fontWeight: 600,
-                background: "linear-gradient(135deg, var(--color-brand-light), var(--color-bg-secondary))",
-                color: "var(--color-brand)",
-                border: "1px solid var(--color-brand-border)",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-              }}
-            >
-              👋 オンボーディング（3ステップ）を見直す
-            </button>
-          )}
+          {/* 🏠 ガイドトップへ戻る */}
+          <button
+            onClick={() => setCurrentSlug(HOME_SLUG)}
+            style={{
+              marginTop: "10px", width: "100%", textAlign: "left",
+              padding: "7px 10px", fontSize: "12px", fontWeight: 600,
+              background: isHome ? "var(--color-brand-light)" : "transparent",
+              color: isHome ? "var(--color-brand)" : "var(--color-text-secondary)",
+              border: `1px solid ${isHome ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
+              borderRadius: "var(--radius-md)", cursor: "pointer",
+            }}
+          >
+            🏠 ガイドトップ
+          </button>
         </div>
         <nav>
           {groups.map(g => (
@@ -142,7 +120,14 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
 
       {/* 本文 */}
       <main style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
-        {!current ? (
+        {isHome ? (
+          <GuideHome
+            groups={groups}
+            onOpenDoc={setCurrentSlug}
+            onStartTour={onStartTour}
+            onShowOnboarding={onShowOnboarding}
+          />
+        ) : !current ? (
           <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "60px 0" }}>
             左の目次から記事を選んでください。
           </div>
@@ -187,6 +172,138 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
           </article>
         )}
       </main>
+    </div>
+  );
+}
+
+// ===== ガイドトップページ =====
+//
+// 大きなツアー導線 ＋ クリックでジャンプできる目次。ガイドを開いた直後に表示する。
+
+interface GuideHomeProps {
+  groups: { section: string; entries: DocEntry[] }[];
+  onOpenDoc: (slug: string) => void;
+  onStartTour?: (tourId: string) => void;
+  onShowOnboarding?: () => void;
+}
+
+function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHomeProps) {
+  const mainTour = TOUR_LIST[0];
+  const totalArticles = groups.reduce((n, g) => n + g.entries.length, 0);
+
+  return (
+    <div style={{ maxWidth: "880px", margin: "0 auto", display: "flex", flexDirection: "column", gap: "24px" }}>
+      {/* ヘッダー */}
+      <div>
+        <h1 style={{ fontSize: "22px", fontWeight: 700, color: "var(--color-text-primary)", margin: 0 }}>
+          📖 ガイドへようこそ
+        </h1>
+        <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", margin: "8px 0 0", lineHeight: 1.7 }}>
+          まずはツアーで全体像をつかみ、詳しく知りたいときは下の目次から各マニュアルへどうぞ。
+        </p>
+      </div>
+
+      {/* 大きなツアー導線 */}
+      {onStartTour && mainTour && (
+        <button
+          onClick={() => onStartTour(mainTour.id)}
+          style={{
+            display: "flex", alignItems: "center", gap: "18px", textAlign: "left",
+            width: "100%", padding: "22px 24px",
+            background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+            border: "none", borderRadius: "var(--radius-lg)",
+            cursor: "pointer", color: "#fff",
+            boxShadow: "var(--shadow-md)",
+          }}
+        >
+          <span style={{
+            fontSize: "30px", flexShrink: 0,
+            width: "56px", height: "56px", borderRadius: "50%",
+            background: "rgba(255,255,255,0.18)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>▶</span>
+          <span style={{ flex: 1 }}>
+            <span style={{ display: "block", fontSize: "17px", fontWeight: 700 }}>
+              {mainTour.title}を再生する
+            </span>
+            <span style={{ display: "block", fontSize: "12px", opacity: 0.9, marginTop: "5px", lineHeight: 1.6 }}>
+              主要画面と AI 機能を吹き出しで実演しながら案内します（約 {Math.round((mainTour.estimatedSeconds ?? 150) / 60)} 分）。
+              AI への相談も実際にやってみせます。
+            </span>
+          </span>
+          <span style={{ fontSize: "13px", fontWeight: 700, opacity: 0.9, flexShrink: 0 }}>開始 →</span>
+        </button>
+      )}
+
+      {/* オンボーディング（3ステップ）導線 */}
+      {onShowOnboarding && (
+        <button
+          onClick={onShowOnboarding}
+          style={{
+            alignSelf: "flex-start",
+            padding: "8px 14px", fontSize: "12px", fontWeight: 600,
+            background: "var(--color-brand-light)", color: "var(--color-brand)",
+            border: "1px solid var(--color-brand-border)",
+            borderRadius: "var(--radius-md)", cursor: "pointer",
+          }}
+        >
+          👋 オンボーディング（3ステップ）を見直す
+        </button>
+      )}
+
+      {/* 目次 */}
+      <div>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>
+          📑 ガイド目次
+        </div>
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
+          全 {totalArticles} 記事。タイトルをクリックすると本文へジャンプします。
+        </div>
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))",
+          gap: "14px",
+        }}>
+          {groups.filter(g => g.entries.length > 0).map(g => (
+            <div key={g.section || "_root"} style={{
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              padding: "12px 14px",
+            }}>
+              <div style={{
+                fontSize: "11px", fontWeight: 700, color: "var(--color-text-tertiary)",
+                letterSpacing: "0.05em", textTransform: "uppercase",
+                marginBottom: "8px",
+              }}>
+                {sectionLabel(g.section)}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                {g.entries.map(e => (
+                  <button
+                    key={e.slug}
+                    onClick={() => onOpenDoc(e.slug)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px",
+                      width: "100%", textAlign: "left",
+                      padding: "6px 8px", fontSize: "12px",
+                      background: "transparent", border: "none",
+                      borderRadius: "var(--radius-sm)", cursor: "pointer",
+                      color: "var(--color-text-secondary)",
+                    }}
+                    onMouseEnter={ev => { (ev.currentTarget as HTMLButtonElement).style.background = "var(--color-brand-light)"; (ev.currentTarget as HTMLButtonElement).style.color = "var(--color-brand)"; }}
+                    onMouseLeave={ev => { (ev.currentTarget as HTMLButtonElement).style.background = "transparent"; (ev.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
+                  >
+                    <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>›</span>
+                    <span style={{ flex: 1 }}>{e.title}</span>
+                    {e.deprecated && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>旧</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
