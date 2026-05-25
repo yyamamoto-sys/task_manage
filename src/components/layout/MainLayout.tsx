@@ -134,11 +134,17 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   useEffect(() => {
     if (tour.isCompleted(FIRST_TIME_TOUR_ID)) setShowTourInvite(false);
   }, [tour]);
-  // ツアーの実演アクションを受信 → AI相談パネルを開いて例文を自動入力・送信させる
+  // ツアーの実演アクションを受信 → AI相談パネルを開いて例文を自動入力・送信させる。
+  // StrictMode の副作用二重実行等で "tour:action" が二重発火しても二重送信しないよう、
+  // 直近に起動したら短時間は重複トリガを無視する（再入防止）。
+  const demoTriggerGuardRef = useRef(false);
   useEffect(() => {
     const onTourAction = (e: Event) => {
       const action = (e as CustomEvent).detail as string;
       if (action === "demo-ai-consult") {
+        if (demoTriggerGuardRef.current) return; // 直近に起動済み → 重複は無視
+        demoTriggerGuardRef.current = true;
+        window.setTimeout(() => { demoTriggerGuardRef.current = false; }, 4000);
         setConsultDefaultMode("consult");
         setIsConsultOpen(true);
         setConsultDemoRequest({
