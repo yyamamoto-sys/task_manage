@@ -79,56 +79,46 @@ function validateProposal(p: unknown, index: number): Proposal {
       `proposals[${index}].title が不正です`,
     );
   }
-  if (typeof obj.description !== "string") {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].description が不正です`,
-    );
-  }
+  // description は欠落しても落とさず、return 側で "" に補完する（必須は title / action_type / proposal_id のみ）
   if (!VALID_ACTION_TYPES.includes(obj.action_type as Proposal["action_type"])) {
     throw new AIError(
       "INVALID_RESPONSE",
       `proposals[${index}].action_type "${obj.action_type}" は無効な値です`,
     );
   }
-  if (!Array.isArray(obj.target_task_ids)) {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].target_task_ids が配列ではありません`,
-    );
-  }
-  if (!Array.isArray(obj.target_pj_ids)) {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].target_pj_ids が配列ではありません`,
-    );
-  }
-  if (!VALID_DATE_CERTAINTY.includes(obj.date_certainty as Proposal["date_certainty"])) {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].date_certainty "${obj.date_certainty}" は無効な値です`,
-    );
-  }
-  if (typeof obj.is_simulation !== "boolean") {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].is_simulation が真偽値ではありません`,
-    );
-  }
-  if (typeof obj.needs_confirmation !== "boolean") {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      `proposals[${index}].needs_confirmation が真偽値ではありません`,
-    );
-  }
+
+  // ここから下は欠落・null でもレスポンス全体を壊さず、安全な既定値にフォールバックする。
+  // （info / risk など日付や対象に無関係な提案では date_certainty・target_* 等が
+  //   省略・null で返ることがあるため。必須は proposal_id / title / action_type のみ）
+  const actionType = obj.action_type as Proposal["action_type"];
+
+  // date_certainty：有効値以外（null・欠落含む）は "unknown" 扱い
+  const dateCertainty: Proposal["date_certainty"] =
+    VALID_DATE_CERTAINTY.includes(obj.date_certainty as Proposal["date_certainty"])
+      ? (obj.date_certainty as Proposal["date_certainty"])
+      : "unknown";
+
+  // needs_confirmation：未指定なら「DBを変更する提案は確認必須・それ以外は不要」を既定に
+  // （安全側に倒す。明示の boolean があればそれを優先）
+  const MUTATING_ACTIONS: Proposal["action_type"][] = [
+    "date_change", "assignee", "add_task", "scope_reduce", "pause", "milestone",
+  ];
+  const needsConfirmation =
+    typeof obj.needs_confirmation === "boolean"
+      ? obj.needs_confirmation
+      : MUTATING_ACTIONS.includes(actionType);
 
   return {
     proposal_id: obj.proposal_id as string,
     title: obj.title as string,
-    description: obj.description as string,
-    action_type: obj.action_type as Proposal["action_type"],
-    target_task_ids: (obj.target_task_ids as unknown[]).map(String),
-    target_pj_ids: (obj.target_pj_ids as unknown[]).map(String),
+    description: typeof obj.description === "string" ? obj.description : "",
+    action_type: actionType,
+    target_task_ids: Array.isArray(obj.target_task_ids)
+      ? (obj.target_task_ids as unknown[]).map(String)
+      : [],
+    target_pj_ids: Array.isArray(obj.target_pj_ids)
+      ? (obj.target_pj_ids as unknown[]).map(String)
+      : [],
     suggested_date:
       typeof obj.suggested_date === "string" ? obj.suggested_date : undefined,
     suggested_end_date:
@@ -139,9 +129,9 @@ function validateProposal(p: unknown, index: number): Proposal {
       typeof obj.suggested_assignee === "string"
         ? obj.suggested_assignee
         : undefined,
-    date_certainty: obj.date_certainty as Proposal["date_certainty"],
-    is_simulation: obj.is_simulation as boolean,
-    needs_confirmation: obj.needs_confirmation as boolean,
+    date_certainty: dateCertainty,
+    is_simulation: obj.is_simulation === true,
+    needs_confirmation: needsConfirmation,
   };
 }
 
