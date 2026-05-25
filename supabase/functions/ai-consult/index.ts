@@ -10,7 +10,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-4-6";
+// 既定モデル（後方互換：model 指定が無い古いクライアントはこれを使う）
+const DEFAULT_MODEL = "claude-sonnet-4-6";
+// クライアントから選べるモデル（QuickResponse=haiku / Thinking=sonnet）。
+// 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
+const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -52,6 +56,7 @@ Deno.serve(async (req: Request) => {
     system: string;
     messages: { role: string; content: string }[];
     max_tokens?: number;
+    model?: string;
   };
   try {
     body = await req.json();
@@ -70,6 +75,11 @@ Deno.serve(async (req: Request) => {
     });
   }
 
+  // 使用モデルを決定（ホワイトリスト外・未指定は既定にフォールバック）
+  const model = (typeof body.model === "string" && ALLOWED_MODELS.includes(body.model))
+    ? body.model
+    : DEFAULT_MODEL;
+
   // Anthropic API へ転送
   let anthropicRes: Response;
   try {
@@ -81,7 +91,7 @@ Deno.serve(async (req: Request) => {
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: MODEL,
+        model,
         max_tokens: body.max_tokens ?? 4096,
         system: body.system,
         messages: body.messages,

@@ -72,6 +72,8 @@ export async function callAIConsultation(
   payload: AIConsultationPayload,
   consultationType: ConsultationType,
   history: ChatTurn[],
+  /** 使用モデル（QuickResponse=haiku / Thinking=sonnet）。省略時は Edge Function の既定 */
+  model?: string,
 ): Promise<AICallResult> {
   const systemPrompt = SYSTEM_PROMPTS[consultationType];
 
@@ -100,6 +102,7 @@ export async function callAIConsultation(
         system: systemPrompt,
         messages,
         max_tokens: 4096,
+        ...(model ? { model } : {}),
       },
     });
     data = result.data as AnthropicResponse | null;

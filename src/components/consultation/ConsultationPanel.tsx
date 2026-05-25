@@ -149,6 +149,8 @@ export function ConsultationPanel({
   const [lastSubmittedText, setLastSubmittedText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
   const [includeOKR, setIncludeOKR] = useState(false);
+  // Thinkingモード：ON=Sonnet（高品質・やや遅い）/ OFF=QuickResponse（Haiku・高速・既定）
+  const [thinkingMode, setThinkingMode] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
@@ -375,7 +377,7 @@ export function ConsultationPanel({
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, includeOKR });
+    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, includeOKR, thinkingMode });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -761,6 +763,35 @@ export function ConsultationPanel({
               )}
             </span>
             OKR情報も含める
+          </button>
+
+          {/* Thinkingモード切替（既定OFF=QuickResponse=高速。ONで高品質モデルにする） */}
+          <button
+            onClick={() => setThinkingMode(v => !v)}
+            title="ON：高品質なモデル（Sonnet）でじっくり考えます（少し遅い）。OFF：高速（QuickResponse・既定）。"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: "6px",
+              padding: "4px 10px", alignSelf: "flex-start",
+              background: "transparent",
+              border: `1px solid ${thinkingMode ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+              borderRadius: "var(--radius-full)", cursor: "pointer",
+              fontSize: "10px",
+              color: thinkingMode ? "var(--color-brand)" : "var(--color-text-tertiary)",
+            }}
+          >
+            <span style={{
+              width: 10, height: 10, borderRadius: "2px", flexShrink: 0,
+              background: thinkingMode ? "var(--color-brand)" : "transparent",
+              border: `1.5px solid ${thinkingMode ? "var(--color-brand)" : "var(--color-text-tertiary)"}`,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              {thinkingMode && (
+                <svg width="6" height="5" viewBox="0 0 9 7" fill="none">
+                  <path d="M1 3l2.5 2.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </span>
+            🧠 Thinkingモード（じっくり考える・少し遅い）
           </button>
 
           {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる） */}

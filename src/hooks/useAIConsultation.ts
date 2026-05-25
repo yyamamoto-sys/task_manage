@@ -43,7 +43,13 @@ export interface SubmitOptions {
   targetDeadline?: string | null;
   /** trueの場合、OKR（Objective/KR/TF）情報もペイロードに含める */
   includeOKR?: boolean;
+  /** true=Thinkingモード（Sonnet・高品質/やや遅い）/ false=QuickResponse（Haiku・高速・既定） */
+  thinkingMode?: boolean;
 }
+
+// QuickResponse=高速モデル / Thinking=高品質モデル
+const QUICK_MODEL = "claude-haiku-4-5";
+const THINKING_MODEL = "claude-sonnet-4-6";
 
 // ===== ローディングメッセージ =====
 
@@ -102,9 +108,11 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   const submit = useCallback(
     async (opts: SubmitOptions) => {
-      const { consultation, consultationType, targetDeadline, includeOKR } = opts;
+      const { consultation, consultationType, targetDeadline, includeOKR, thinkingMode } = opts;
 
       if (!consultation.trim()) return;
+
+      const model = thinkingMode ? THINKING_MODEL : QUICK_MODEL;
 
       setCallState("loading");
       setErrorMessage("");
@@ -165,6 +173,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           payload,
           consultationType,
           historyForApi,
+          model,
         );
 
         // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
