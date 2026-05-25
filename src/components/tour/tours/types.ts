@@ -15,6 +15,12 @@ export interface TourStep {
   placement?: "auto" | "top" | "bottom" | "left" | "right" | "center";
   /** ターゲット要素が DOM になければ次のステップへ自動進行（UI 変更耐性のため既定 true 推奨） */
   skipIfMissing?: boolean;
+  /** ステップ表示時に発火するアクション名。TourProvider が window の "tour:action"
+   *  CustomEvent（detail=action）で通知し、アプリ側がリッスンして実演（パネルを開く等）を行う。 */
+  action?: string;
+  /** false にすると暗幕（オーバーレイ）を描かず吹き出しのみ表示する。
+   *  実演でアプリ画面（AIパネル等）をそのまま見せ・操作させたいステップで使う。既定 true。 */
+  dim?: boolean;
 }
 
 export interface Tour {

@@ -124,6 +124,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);
+  // ツアーの実演（AI相談）で相談パネルに渡す自動入力リクエスト
+  const [consultDemoRequest, setConsultDemoRequest] = useState<{ text: string; nonce: number } | null>(null);
 
   // ツアー：初回起動で「見ますか？」ダイアログ → ユーザー選択で start
   const tour = useTour();
@@ -132,6 +134,22 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   useEffect(() => {
     if (tour.isCompleted(FIRST_TIME_TOUR_ID)) setShowTourInvite(false);
   }, [tour]);
+  // ツアーの実演アクションを受信 → AI相談パネルを開いて例文を自動入力・送信させる
+  useEffect(() => {
+    const onTourAction = (e: Event) => {
+      const action = (e as CustomEvent).detail as string;
+      if (action === "demo-ai-consult") {
+        setConsultDefaultMode("consult");
+        setIsConsultOpen(true);
+        setConsultDemoRequest({
+          text: "来週、私が3日間出張で不在になります。担当しているタスクで遅れそうなものと、前倒しできるものを整理してもらえますか？",
+          nonce: Date.now(),
+        });
+      }
+    };
+    window.addEventListener("tour:action", onTourAction);
+    return () => window.removeEventListener("tour:action", onTourAction);
+  }, []);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
@@ -960,6 +978,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onWidthChange={setConsultPanelWidth}
           onResizingChange={setIsConsultResizing}
           onOpenTask={setAiEditTaskId}
+          demoRequest={consultDemoRequest ?? undefined}
         />
       </div>
     </div>

@@ -96,6 +96,13 @@ export function TourProvider({ tours, children }: Props) {
     };
   }, [activeStep, findTarget]);
 
+  // アクション付きステップに入ったらアプリ側へ通知（実演などの副作用はアプリが行う）
+  useEffect(() => {
+    if (activeStep?.action) {
+      window.dispatchEvent(new CustomEvent("tour:action", { detail: activeStep.action }));
+    }
+  }, [activeStep]);
+
   // ステップ範囲外なら終了
   useEffect(() => {
     if (activeTour && stepIdx >= activeTour.steps.length) {
@@ -186,6 +193,8 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
   const bubblePos = calcBubblePos(targetRect, step.placement, bubbleSize);
 
   // ハイライト用の窓（targetRect があれば穴あき、なければ全画面暗幕）
+  // step.dim === false のステップは暗幕を一切描かず吹き出しのみ（実演でアプリ画面を見せる用）
+  const showDim = step.dim !== false;
   const cutoutPadding = 6;
   const showCutout = !!targetRect;
   const cutout = targetRect ? {
@@ -198,12 +207,13 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
   return (
     <>
       {/* 4分割の暗幕（targetRect の周りをくり抜く）。CSS clip-path を避けて互換性高く */}
-      {showCutout && cutout ? (
+      {/* 暗幕クリックではツアーを終了しない（誤操作で中断しないため）。終了は ✕ / スキップ ボタンのみ */}
+      {showDim && (showCutout && cutout ? (
         <>
-          <DimBox style={{ top: 0,                                left: 0,                                  right: 0,                                          height: cutout.top }} onClick={onSkip} />
-          <DimBox style={{ top: cutout.top,                       left: 0,                                  width: cutout.left,                                height: cutout.height }} onClick={onSkip} />
-          <DimBox style={{ top: cutout.top,                       left: cutout.left + cutout.width,         right: 0,                                          height: cutout.height }} onClick={onSkip} />
-          <DimBox style={{ top: cutout.top + cutout.height,       left: 0,                                  right: 0,                                          bottom: 0 }} onClick={onSkip} />
+          <DimBox style={{ top: 0,                                left: 0,                                  right: 0,                                          height: cutout.top }} />
+          <DimBox style={{ top: cutout.top,                       left: 0,                                  width: cutout.left,                                height: cutout.height }} />
+          <DimBox style={{ top: cutout.top,                       left: cutout.left + cutout.width,         right: 0,                                          height: cutout.height }} />
+          <DimBox style={{ top: cutout.top + cutout.height,       left: 0,                                  right: 0,                                          bottom: 0 }} />
           {/* ハイライト枠 */}
           <div style={{
             position: "fixed",
@@ -218,8 +228,8 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
           }} />
         </>
       ) : (
-        <DimBox style={{ inset: 0 }} onClick={onSkip} />
-      )}
+        <DimBox style={{ inset: 0 }} />
+      ))}
 
       {/* 吹き出し */}
       <div
@@ -271,10 +281,10 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
   );
 }
 
-function DimBox({ style, onClick }: { style: React.CSSProperties; onClick: () => void }) {
+function DimBox({ style }: { style: React.CSSProperties }) {
+  // 暗幕はクリックを吸収するだけ（背後のアプリ誤操作を防ぐ）。ツアー終了はしない。
   return (
     <div
-      onClick={onClick}
       style={{
         position: "fixed",
         background: "rgba(0,0,0,0.5)",

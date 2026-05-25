@@ -71,6 +71,8 @@ interface Props {
   /** リサイズドラッグ中かどうか（親側でwidth遷移アニメを切るのに使う） */
   onResizingChange?: (resizing: boolean) => void;
   onOpenTask?: (taskId: string) => void;
+  /** ツアー実演用：nonce が変わるたびに consult モードで text を自動入力→送信する */
+  demoRequest?: { text: string; nonce: number };
 }
 
 const TYPE_CONFIG: {
@@ -134,6 +136,7 @@ export function ConsultationPanel({
   onWidthChange,
   onResizingChange,
   onOpenTask,
+  demoRequest,
 }: Props) {
   // ===== パネルモード =====
   const [panelMode, setPanelMode] = useState<PanelMode>(defaultMode);
@@ -421,6 +424,43 @@ export function ConsultationPanel({
     window.addEventListener("keydown", handleGlobalKeyDown);
     return () => window.removeEventListener("keydown", handleGlobalKeyDown);
   }, [isOpen, canUndo, undo, currentUser.id]);
+
+  // ===== ツアー実演：例文を1文字ずつ自動入力して送信する =====
+  // ツアー（TourProvider）の "demo-ai-consult" アクション起点で MainLayout が
+  // demoRequest を渡す。nonce が変わったときだけ1回実行する（refで重複防止）。
+  const demoNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!demoRequest || !isOpen) return;
+    if (demoRequest.nonce === demoNonceRef.current) return;
+    demoNonceRef.current = demoRequest.nonce;
+
+    setPanelMode("consult");
+    handleReset();          // 直前の会話・選択をクリア
+    const text = demoRequest.text;
+    setInputText("");
+    let i = 0;
+    let submitTimer: ReturnType<typeof setTimeout> | undefined;
+    const typer = setInterval(() => {
+      i += 1;
+      setInputText(text.slice(0, i));
+      if (i >= text.length) {
+        clearInterval(typer);
+        // 入力が見えるよう少し置いてから送信（送信時は入力欄をクリア）
+        submitTimer = setTimeout(() => {
+          setInputText("");
+          submit({
+            consultation: text,
+            consultationType: inferConsultationType(text),
+            targetDeadline: null,
+            includeOKR: false,
+          });
+        }, 800);
+      }
+    }, 40);
+    return () => { clearInterval(typer); if (submitTimer) clearTimeout(submitTimer); };
+    // submit / handleReset は同一パネルでは安定。typing中の再実行を避けるため依存は限定する
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoRequest, isOpen]);
 
   const panelStyle: React.CSSProperties = inline ? {
     width: `${panelWidth}px`, height: "100%",
