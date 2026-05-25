@@ -142,7 +142,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         setConsultDefaultMode("consult");
         setIsConsultOpen(true);
         setConsultDemoRequest({
-          text: "来週、私が3日間出張で不在になります。担当しているタスクで遅れそうなものと、前倒しできるものを整理してもらえますか？",
+          // タスク未登録の初回ユーザーでも有用な回答が返る、データ不要の質問にする
+          text: "計画管理を始めます。タスクはどれくらいの細かさで登録すると管理しやすいですか？コツを教えてください。",
           nonce: Date.now(),
         });
       }
