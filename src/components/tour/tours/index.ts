@@ -2,6 +2,7 @@
 //
 // ツアー登録の唯一の入り口。新しいツアーを追加するときは
 // ここに import + ALL_TOURS に登録するだけで TourProvider に行き渡る。
+// ⚠ 新規ツアー・ステップを作る前に必ず読む：docs/dev/tour-guidelines.md（統一基準）
 //
 // 2026-05：主要画面ツアーと AI機能ツアーを first-time の1本に統合した。
 

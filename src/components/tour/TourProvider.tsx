@@ -1,5 +1,7 @@
 // src/components/tour/TourProvider.tsx
 //
+// ⚠ 改修前に必ず読む：docs/dev/tour-guidelines.md（暗さ・モーション・トンマナ・トークンの統一基準）
+//
 // ツアー（オンボーディング・チュートリアル）の実行エンジン。
 //
 // 【設計方針：機能・UI変更に強く】

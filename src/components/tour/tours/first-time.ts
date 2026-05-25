@@ -1,5 +1,7 @@
 // src/components/tour/tours/first-time.ts
 //
+// ⚠ 文面・絵文字・番号・ステップ構成を変える前に必ず読む：docs/dev/tour-guidelines.md
+//
 // 統合ツアー（主要画面 + AI機能を1本で案内）。ログイン時に自動起動し、ガイドからも再生できる。
 // ターゲットは data-tour-id 属性で指定。skipIfMissing で UI 変更に強く。
 // （旧「AI機能ツアー(ai-intro)」はこのツアーに統合済み）
