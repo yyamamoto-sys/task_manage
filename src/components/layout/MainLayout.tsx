@@ -963,7 +963,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       )}
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
-      <div style={{
+      <div data-tour-id="ai-panel" style={{
         width: isConsultOpen ? `${consultPanelWidth}px` : "0",
         flexShrink: 0,
         overflow: "hidden",

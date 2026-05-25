@@ -145,6 +145,8 @@ export function ConsultationPanel({
   // ===== 相談モード用状態 =====
   const [manualType, setManualType] = useState<ConsultationType | null>(null);
   const [inputText, setInputText] = useState("");
+  // 直近に送信した相談文（送信後も「何を送ったか」を画面上で確認できるようにする）
+  const [lastSubmittedText, setLastSubmittedText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
   const [includeOKR, setIncludeOKR] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -361,6 +363,7 @@ export function ConsultationPanel({
   const handleSubmit = async () => {
     if (!inputText.trim() || callState === "loading") return;
     const text = inputText;
+    setLastSubmittedText(text);
     setInputText("");
 
     // 選択提案がある場合、コンテキストを先頭に付与
@@ -409,6 +412,7 @@ export function ConsultationPanel({
   const handleReset = () => {
     setManualType(null);
     setSelectedProposalIds(new Set());
+    setLastSubmittedText("");
     reset();
     sessionIdRef.current = crypto.randomUUID();
   };
@@ -447,6 +451,7 @@ export function ConsultationPanel({
         clearInterval(typer);
         // 入力が見えるよう少し置いてから送信（送信時は入力欄をクリア）
         submitTimer = setTimeout(() => {
+          setLastSubmittedText(text);
           setInputText("");
           submit({
             consultation: text,
@@ -757,6 +762,26 @@ export function ConsultationPanel({
             </span>
             OKR情報も含める
           </button>
+
+          {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる） */}
+          {lastSubmittedText && callState !== "idle" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em" }}>
+                送信した相談
+              </div>
+              <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div style={{
+                  maxWidth: "85%", padding: "8px 12px",
+                  background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)",
+                  borderRadius: "var(--radius-md) var(--radius-sm) var(--radius-md) var(--radius-md)",
+                  fontSize: "12px", color: "var(--color-text-primary)", lineHeight: 1.6,
+                  whiteSpace: "pre-wrap", wordBreak: "break-word",
+                }}>
+                  {lastSubmittedText}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* ローディング */}
           {callState === "loading" && <LoadingView message={loadingMessage} />}

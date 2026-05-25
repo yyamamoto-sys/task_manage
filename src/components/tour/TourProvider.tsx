@@ -77,8 +77,12 @@ export function TourProvider({ tours, children }: Props) {
     // スクロールで可視化してから測位
     el.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
     // 描画反映を待つため次フレームで rect を測る
-    const r = requestAnimationFrame(() => setTargetRect(el.getBoundingClientRect()));
-    return () => cancelAnimationFrame(r);
+    const measure = () => setTargetRect(el.getBoundingClientRect());
+    const r = requestAnimationFrame(measure);
+    // パネルのスライドイン等、表示直後にサイズが変化するターゲットに追従して数回測り直す
+    const t1 = setTimeout(measure, 200);
+    const t2 = setTimeout(measure, 450);
+    return () => { cancelAnimationFrame(r); clearTimeout(t1); clearTimeout(t2); };
   }, [activeStep, findTarget]);
 
   // リサイズ時に再測位
