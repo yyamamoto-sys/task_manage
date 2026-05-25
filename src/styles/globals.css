@@ -56,6 +56,12 @@
   --radius-lg: 16px;
   --radius-full: 9999px;
 
+  /* ツアー（オンボーディング）専用トークン。基準は docs/dev/tour-guidelines.md */
+  --tour-scrim: rgba(0, 0, 0, 0.5);     /* 背景の暗幕：全ステップ共通・一層のみ */
+  --tour-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  --tour-duration: 0.2s;
+  --tour-spot-pad: 8px;                  /* スポットライトの余白 */
+
   /* シャドウ：暖色寄り多層（umber ink の影） */
   --shadow-sm:
     0 1px 1px rgba(58, 48, 30, 0.04),
@@ -527,6 +533,22 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-toast-in { animation: toastIn 0.2s cubic-bezier(0.16,1,0.3,1) both; }
+
+/* ===== ツアー（オンボーディング）===== docs/dev/tour-guidelines.md 参照 */
+/* 吹き出しの出現（フェード＋軽い浮き上がり）。位置は親要素が持ち、ここは transform を独占できる */
+@keyframes tourBubbleIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.tour-bubble-in { animation: tourBubbleIn var(--tour-duration) var(--tour-ease) both; }
+/* 暗幕のフェードイン */
+@keyframes tourScrimIn { from { opacity: 0; } to { opacity: 1; } }
+.tour-scrim-in { animation: tourScrimIn var(--tour-duration) ease both; }
+
+/* 動きを減らす設定では出現アニメを無効化 */
+@media (prefers-reduced-motion: reduce) {
+  .tour-bubble-in, .tour-scrim-in { animation: none !important; }
+}
 
 /* ===== AI エフェクト ===== */
 

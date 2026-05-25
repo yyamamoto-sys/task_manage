@@ -154,7 +154,6 @@ export function TourProvider({ tours, children }: Props) {
           targetRect={targetRect}
           stepIdx={stepIdx}
           totalSteps={activeTour.steps.length}
-          tourTitle={activeTour.title}
           onPrev={() => setStepIdx(i => Math.max(0, i - 1))}
           onNext={() => setStepIdx(i => i + 1)}
           onSkip={end}
@@ -171,15 +170,35 @@ interface OverlayProps {
   targetRect: DOMRect | null;
   stepIdx: number;
   totalSteps: number;
-  tourTitle: string;
   onPrev: () => void;
   onNext: () => void;
   onSkip: () => void;
 }
 
-function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev, onNext, onSkip }: OverlayProps) {
-  const bubbleRef = useRef<HTMLDivElement>(null);
+// 「動きを減らす」OS設定を尊重するためのフック（インライン transition の出し分けに使う）
+function usePrefersReducedMotion(): boolean {
+  const [reduce, setReduce] = useState<boolean>(() =>
+    typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const on = () => setReduce(mq.matches);
+    mq.addEventListener?.("change", on);
+    return () => mq.removeEventListener?.("change", on);
+  }, []);
+  return reduce;
+}
+
+const srOnly: React.CSSProperties = {
+  position: "fixed", width: 1, height: 1, padding: 0, margin: -1,
+  overflow: "hidden", clip: "rect(0,0,0,0)", whiteSpace: "nowrap", border: 0,
+};
+
+function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, onSkip }: OverlayProps) {
+  const bubbleRef = useRef<HTMLDivElement>(null);   // 内側（実測・出現アニメ）
+  const dialogRef = useRef<HTMLDivElement>(null);   // 外側（位置・フォーカス・role=dialog）
   const [bubbleSize, setBubbleSize] = useState<{ w: number; h: number } | null>(null);
+  const reduce = usePrefersReducedMotion();
 
   // 吹き出しの実サイズを測って配置に反映（初回レンダー直後と内容変更時）
   useEffect(() => {
@@ -195,13 +214,45 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
     return () => ro.disconnect();
   }, [step]);
 
+  // ステップが変わるたびにダイアログへフォーカス（キーボード操作の起点・読み上げのトリガ）
+  useEffect(() => { dialogRef.current?.focus(); }, [stepIdx]);
+
+  // キーボード操作：Esc=終了 / →・Enter=次へ / ←=戻る（入力欄フォーカス時は奪わない）
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const ae = document.activeElement as HTMLElement | null;
+      const inField = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
+      if (e.key === "Escape") { e.preventDefault(); onSkip(); return; }
+      if (inField) return;
+      if (e.key === "ArrowRight") { e.preventDefault(); onNext(); }
+      else if (e.key === "ArrowLeft") { if (stepIdx > 0) { e.preventDefault(); onPrev(); } }
+      else if (e.key === "Enter" && ae?.tagName !== "BUTTON") { e.preventDefault(); onNext(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onNext, onPrev, onSkip, stepIdx]);
+
+  // フォーカストラップ：Tab はダイアログ内のボタンだけを巡回し、背後のアプリへ抜けない
+  const handleTrapKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key !== "Tab") return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const items = Array.from(root.querySelectorAll<HTMLElement>("button"));
+    if (items.length === 0) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement as HTMLElement | null;
+    if (e.shiftKey && (active === first || active === root)) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && active === last) { e.preventDefault(); first.focus(); }
+  };
+
   // 吹き出しの位置を計算（実測サイズが取れたら利用）
   const bubblePos = calcBubblePos(targetRect, step.placement, bubbleSize);
 
   // ハイライト用の窓（targetRect があれば穴あき、なければ全画面暗幕）
   // step.dim === false のステップは暗幕を一切描かず吹き出しのみ（実演でアプリ画面を見せる用）
   const showDim = step.dim !== false;
-  const cutoutPadding = 6;
+  const cutoutPadding = 8; // --tour-spot-pad
   const showCutout = !!targetRect;
   const cutout = targetRect ? {
     top: targetRect.top - cutoutPadding,
@@ -210,77 +261,101 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
     height: targetRect.height + cutoutPadding * 2,
   } : null;
 
+  const move = "var(--tour-duration) var(--tour-ease)";
+  const cutoutTransition = reduce ? "none" : `top ${move}, left ${move}, width ${move}, height ${move}`;
+  const bubbleTransition  = reduce ? "none" : `top ${move}, left ${move}`;
+
   return (
     <>
-      {/* 4分割の暗幕（targetRect の周りをくり抜く）。CSS clip-path を避けて互換性高く */}
-      {/* 暗幕クリックではツアーを終了しない（誤操作で中断しないため）。終了は ✕ / スキップ ボタンのみ */}
+      {/* 暗幕（targetRect の周りをくり抜く・無ければ全画面）。明度は --tour-scrim に統一（二重がけしない）。 */}
+      {/* 暗幕クリックではツアーを終了しない（誤操作防止）。終了は ✕ / スキップ / Esc のみ。 */}
       {showDim && (showCutout && cutout ? (
         <>
-          <DimBox style={{ top: 0,                                left: 0,                                  right: 0,                                          height: cutout.top }} />
-          <DimBox style={{ top: cutout.top,                       left: 0,                                  width: cutout.left,                                height: cutout.height }} />
-          <DimBox style={{ top: cutout.top,                       left: cutout.left + cutout.width,         right: 0,                                          height: cutout.height }} />
-          <DimBox style={{ top: cutout.top + cutout.height,       left: 0,                                  right: 0,                                          bottom: 0 }} />
-          {/* ハイライト枠 */}
+          <DimBox style={{ top: 0,                          left: 0,                          right: 0,  height: cutout.top }} />
+          <DimBox style={{ top: cutout.top,                 left: 0,                          width: cutout.left,                height: cutout.height }} />
+          <DimBox style={{ top: cutout.top,                 left: cutout.left + cutout.width, right: 0,  height: cutout.height }} />
+          <DimBox style={{ top: cutout.top + cutout.height, left: 0,                          right: 0,  bottom: 0 }} />
+          {/* ハイライト枠（暗転はさせない。枠線だけで対象を強調する） */}
           <div style={{
             position: "fixed",
             top: cutout.top, left: cutout.left,
             width: cutout.width, height: cutout.height,
             border: "2px solid var(--color-brand)",
-            borderRadius: "6px",
-            boxShadow: "0 0 0 9999px rgba(0,0,0,0.5)",
+            borderRadius: "var(--radius-md)",
             pointerEvents: "none",
-            zIndex: 9998,
-            transition: "all 0.2s ease",
+            zIndex: 9991,
+            transition: cutoutTransition,
           }} />
         </>
       ) : (
         <DimBox style={{ inset: 0 }} />
       ))}
 
-      {/* 吹き出し */}
+      {/* 進捗のスクリーンリーダー読み上げ（視覚的には隠す） */}
+      <div aria-live="polite" style={srOnly}>ステップ {stepIdx + 1} / {totalSteps}</div>
+
+      {/* 吹き出し：外側＝位置とフォーカス、内側＝見た目と出現アニメ（transform 衝突を避けるため分離） */}
+      {/* role=dialog + tabIndex のフォーカストラップとして意図的に onKeyDown を持たせている */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions */}
       <div
-        ref={bubbleRef}
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="tour-bubble-title"
+        aria-describedby="tour-bubble-body"
+        tabIndex={-1}
+        onKeyDown={handleTrapKeyDown}
         style={{
           position: "fixed",
           zIndex: 10000,
           ...bubblePos,
           maxWidth: "360px", width: "calc(100vw - 24px)",
-          // 画面より大きい吹き出しは縦スクロール可能に（「次へ」ボタンが隠れない最終防御線）
-          maxHeight: "calc(100vh - 24px)",
-          overflowY: "auto",
-          background: "var(--color-bg-primary)",
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          padding: "14px 16px",
-          fontSize: "12px",
-          color: "var(--color-text-primary)",
-          lineHeight: 1.6,
+          transition: bubbleTransition,
+          outline: "none",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
-            👋 {tourTitle} ・ {stepIdx + 1} / {totalSteps}
-          </span>
-          <button onClick={onSkip} aria-label="スキップ" style={{
-            background: "transparent", border: "none", cursor: "pointer",
-            color: "var(--color-text-tertiary)", fontSize: "14px", padding: "2px 4px",
-          }}>✕</button>
-        </div>
-        <div style={{ fontSize: "13px", fontWeight: 700, marginBottom: "6px", color: "var(--color-text-primary)" }}>
-          {step.title}
-        </div>
-        <div style={{ whiteSpace: "pre-wrap", color: "var(--color-text-secondary)" }}>
-          {step.body}
-        </div>
-        <div style={{ display: "flex", gap: "6px", marginTop: "12px", justifyContent: "flex-end" }}>
-          {stepIdx > 0 && (
-            <button onClick={onPrev} style={ghostBtn}>← 戻る</button>
-          )}
-          <button onClick={onSkip} style={ghostBtn}>スキップ</button>
-          <button onClick={onNext} style={primaryBtn}>
-            {stepIdx + 1 < totalSteps ? "次へ →" : "完了"}
-          </button>
+        <div
+          ref={bubbleRef}
+          key={stepIdx}
+          className={reduce ? undefined : "tour-bubble-in"}
+          style={{
+            // 画面より大きい吹き出しは縦スクロール可能に（「次へ」ボタンが隠れない最終防御線）
+            maxHeight: "calc(100vh - 24px)",
+            overflowY: "auto",
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg)",
+            padding: "14px 16px",
+            fontSize: "12px",
+            color: "var(--color-text-primary)",
+            lineHeight: 1.6,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
+              ステップ {stepIdx + 1} / {totalSteps}
+            </span>
+            <button onClick={onSkip} aria-label="ツアーを閉じる" style={{
+              background: "transparent", border: "none", cursor: "pointer",
+              color: "var(--color-text-tertiary)", fontSize: "14px", padding: "2px 4px",
+            }}>✕</button>
+          </div>
+          <div id="tour-bubble-title" style={{ fontSize: "13px", fontWeight: 700, marginBottom: "6px", color: "var(--color-text-primary)" }}>
+            {step.title}
+          </div>
+          <div id="tour-bubble-body" style={{ whiteSpace: "pre-wrap", color: "var(--color-text-secondary)" }}>
+            {step.body}
+          </div>
+          <div style={{ display: "flex", gap: "6px", marginTop: "12px", justifyContent: "flex-end" }}>
+            {stepIdx > 0 && (
+              <button onClick={onPrev} style={ghostBtn}>← 戻る</button>
+            )}
+            <button onClick={onSkip} style={ghostBtn}>スキップ</button>
+            <button onClick={onNext} style={primaryBtn}>
+              {stepIdx + 1 < totalSteps ? "次へ →" : "完了"}
+            </button>
+          </div>
         </div>
       </div>
     </>
@@ -289,12 +364,14 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, tourTitle, onPrev,
 
 function DimBox({ style }: { style: React.CSSProperties }) {
   // 暗幕はクリックを吸収するだけ（背後のアプリ誤操作を防ぐ）。ツアー終了はしない。
+  // 明度は --tour-scrim に統一（全ステップ共通・一層）。開始時にフェードイン。
   return (
     <div
+      className="tour-scrim-in"
       style={{
         position: "fixed",
-        background: "rgba(0,0,0,0.5)",
-        zIndex: 9997,
+        background: "var(--tour-scrim)",
+        zIndex: 9990,
         ...style,
       }}
     />
