@@ -226,6 +226,8 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
               ...filteredKrs.map(kr => ({ value: kr.id, label: kr.title })),
             ]}
             placeholder="KRを選択..."
+            searchable
+            searchPlaceholder="KR名で検索..."
           />
         </div>
 
@@ -244,6 +246,8 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
                 })),
               ]}
               placeholder="タスクフォースを選択..."
+              searchable
+              searchPlaceholder="TF名で検索..."
             />
           </div>
         )}
@@ -324,6 +328,8 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
               ...projects.map(p => ({ value: p.id, label: p.name })),
             ]}
             placeholder="プロジェクトを選択..."
+            searchable
+            searchPlaceholder="プロジェクト名で検索..."
           />
         </div>
 
