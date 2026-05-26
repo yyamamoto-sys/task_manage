@@ -11,6 +11,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
 import { formatMD } from "../../lib/date";
+import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   fetchKrMeetingNote, fetchKrMeetingNotesList, fetchKrMeetingNoteById,
@@ -59,10 +60,6 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(s => s.tasks);
   const rawTodos = useAppStore(s => s.todos);
-  const objective = useAppStore(s => s.objective);
-  const rawQObjs  = useAppStore(s => s.quarterlyObjectives);
-  const rawQktf   = useAppStore(s => s.quarterlyKrTaskForces);
-
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
 
   // 既定では KR は空。親から initialKrId が渡されている場合のみその KR を選択。
@@ -74,26 +71,25 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
   // 表示するTFは「選択クォーターのQuarterlyObjectiveに紐づくTF割り当て」に絞る。
   const [quarter, setQuarter] = useState<Quarter>(currentQuarter());
 
-  const qObj = useMemo(
-    () => objective ? (rawQObjs.find(q => !q.is_deleted && q.objective_id === objective.id && q.quarter === quarter) ?? null) : null,
-    [rawQObjs, objective, quarter],
-  );
-
-  // 選択KR×クォーターのTF（id重複除去・tf_number昇順）。クォーター割り当てが無い場合は kr_id で絞る（従来動作）。
-  const usingQuarterAssignment = !!qObj;
+  // 選択KR×クォーターのTF（tf.quarter基準・id重複除去・tf_number昇順）。
+  // 未割当(legacy)TFは effectiveTfQuarter により「今期」として扱われる。
   const tfs = useMemo(() => {
     if (!krId) return [];
     const allActive = rawTfs.filter(tf => !tf.is_deleted);
-    let pool;
-    if (qObj) {
-      const ids = new Set(rawQktf.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === krId).map(q => q.tf_id));
-      pool = allActive.filter(tf => ids.has(tf.id));
-    } else {
-      pool = allActive.filter(tf => tf.kr_id === krId);
-    }
+    const pool = tfsForKr(allActive, krId, quarter);
     const byId = new Map(pool.map(tf => [tf.id, tf]));
     return [...byId.values()].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
-  }, [rawTfs, rawQktf, qObj, krId]);
+  }, [rawTfs, krId, quarter]);
+
+  // 警告判定：選択KRに四半期未割当(legacy)のTFがあり、かつ今期を見ているときは
+  // それらが今期扱いで表示されている旨を案内する（他Qへフォールバックはしない）。
+  const hasUnassignedTfs = useMemo(
+    () => krId
+      ? rawTfs.some(tf => !tf.is_deleted && tf.kr_id === krId && tf.quarter == null)
+      : false,
+    [rawTfs, krId],
+  );
+  const showUnassignedNotice = hasUnassignedTfs && quarter === currentQuarter();
 
   const [weekStart, setWeekStart] = useState<string>(thisMondayStr());
   const [notesList, setNotesList] = useState<KrMeetingNote[]>([]);
@@ -346,9 +342,9 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
       {loadError && <ErrBox>{loadError}</ErrBox>}
       {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
 
-      {krId && !loading && !usingQuarterAssignment && (
+      {krId && !loading && showUnassignedNotice && (
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
-          ※ {quarter} の TF 割り当て（QuarterlyObjective）が未設定のため、このKRに紐づく全TFを表示しています。管理画面でクォーターのTF割り当てを設定すると、このクォーターのTFだけが表示されます。
+          ※ 四半期が未設定（未割当）のTFは現在の四半期（{quarter}）として表示しています。管理画面でTFのクォーターを設定すると、各クォーターのTFが正しく振り分けられます。
         </div>
       )}
 

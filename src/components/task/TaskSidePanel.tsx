@@ -42,9 +42,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
-  const allQuarterlyObjs    = useAppStore(s => s.quarterlyObjectives);
-  const allQuarterlyKrTfs   = useAppStore(s => s.quarterlyKrTaskForces);
-  const objective           = useAppStore(s => s.objective);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
@@ -76,8 +73,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   // selectedTask 全体ではなく日付フィールドだけに依存させて、無関係フィールド更新で再走査しない
   const eligibleTfIds = useMemo(
-    () => getEligibleTfIds(selectedTask, objective, allQuarterlyObjs, allQuarterlyKrTfs),
-    [selectedTask?.due_date, selectedTask?.start_date, objective, allQuarterlyObjs, allQuarterlyKrTfs], // eslint-disable-line react-hooks/exhaustive-deps
+    () => getEligibleTfIds(selectedTask, allTaskForces),
+    [selectedTask?.due_date, selectedTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);

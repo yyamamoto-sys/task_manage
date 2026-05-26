@@ -5,16 +5,17 @@
 // 全員が編集可（管理者権限なし）。
 // 変更はSupabaseに即時反映（AppDataContext経由）。
 
-import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
-  QuarterlyObjective, Quarter, MemberTag,
+  Quarter, MemberTag,
 } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
+import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -384,17 +385,11 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const rawMembers                  = useAppStore(s => s.members);
   const rawTodos                    = useAppStore(s => s.todos);
   const rawTasks                    = useAppStore(s => s.tasks);
-  const rawQObjs                    = useAppStore(s => s.quarterlyObjectives);
-  const quarterlyKrTaskForces       = useAppStore(s => s.quarterlyKrTaskForces);
   const saveTaskForce               = useAppStore(s => s.saveTaskForce);
   const deleteTaskForce             = useAppStore(s => s.deleteTaskForce);
   const saveToDo                    = useAppStore(s => s.saveToDo);
   const deleteToDo                  = useAppStore(s => s.deleteToDo);
   const saveTask                    = useAppStore(s => s.saveTask);
-  const addQuarterlyKrTaskForce     = useAppStore(s => s.addQuarterlyKrTaskForce);
-  const removeQuarterlyKrTaskForce  = useAppStore(s => s.removeQuarterlyKrTaskForce);
-  const saveQuarterlyObjective      = useAppStore(s => s.saveQuarterlyObjective);
-  const deleteQuarterlyObjective    = useAppStore(s => s.deleteQuarterlyObjective);
 
   const isMobile = useIsMobile();
   const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
@@ -415,12 +410,6 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   // クォーター選択（初期値を現在のQに設定）
   const [selectedQuarter, setSelectedQuarter] = useState<Quarter>(currentQ);
 
-  // 選択クォーターの QuarterlyObjective
-  const qObj = useMemo(
-    () => rawQObjs.find(q => q.quarter === selectedQuarter && q.objective_id === (ctxObj?.id ?? "") && !q.is_deleted) ?? null,
-    [rawQObjs, selectedQuarter, ctxObj]
-  );
-
   // TF編集フォーム（既存TF）
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ kr_id: "", tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
@@ -434,60 +423,26 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     onDirtyChange(editId !== null || newTfFormKrId !== null);
   }, [editId, newTfFormKrId, onDirtyChange]);
 
-  // QuarterlyObjective を必要に応じて自動生成（quarterを指定可能）
-  const ensureQObjForQuarter = async (quarter: Quarter): Promise<QuarterlyObjective> => {
-    const existing = rawQObjs.find(q => q.quarter === quarter && q.objective_id === (ctxObj?.id ?? "") && !q.is_deleted);
-    if (existing) return existing;
-    if (!ctxObj?.id) throw new Error("先に「Objective / KR」タブで通期Objectiveを保存してください");
-    const now = new Date().toISOString();
-    const newQObj: QuarterlyObjective = {
-      id: uuidv4(),
-      objective_id: ctxObj.id,
-      quarter,
-      title: "",
-      is_deleted: false,
-      created_at: now, updated_at: now, updated_by: currentUser.id,
-    };
-    await saveQuarterlyObjective(newQObj);
-    return newQObj;
-  };
-  const ensureQObj = () => ensureQObjForQuarter(selectedQuarter);
-
-  const deleteQObj = async () => {
-    if (!qObj) return;
-    if (!await confirmDialog(`${selectedQuarter}のTF割り当てを解除しますか？`)) return;
+  const handleUnlinkTf = async (_krId: string, tfId: string) => {
+    if (!await confirmDialog("このTFのクォーター割り当てを解除しますか？（TF自体は削除されません。未割当のTFは現在のクォーターに表示されます）")) return;
     try {
-      await deleteQuarterlyObjective(qObj.id, currentUser.id);
+      // 新モデル：QKTFではなく TaskForce.quarter を未設定に戻す（未割当＝effectiveTfQuarterで今期扱い）
+      const existing = tfs.find(t => t.id === tfId);
+      if (!existing) return;
+      await saveTaskForce({ ...existing, quarter: undefined, updated_by: currentUser.id });
     } catch (e) {
       const msg = getErrorMessage(e);
-      await alertDialog(`削除に失敗しました。\n${msg}`);
+      await alertDialog(`解除に失敗しました。\n${msg}`);
     }
   };
 
-  // TF割り当て
-  const handleAddTf = async (krId: string, tfId: string) => {
+  const handleMoveTf = async (_krId: string, tfId: string, targetQuarter: Quarter) => {
+    if (!await confirmDialog(`このTFを ${targetQuarter} に移動しますか？\n現在の ${selectedQuarter} からは外れます。`)) return;
     try {
-      const target = await ensureQObj();
-      await addQuarterlyKrTaskForce({ quarterly_objective_id: target.id, kr_id: krId, tf_id: tfId });
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`追加に失敗しました。\n${msg}`);
-    }
-  };
-
-  const handleUnlinkTf = async (krId: string, tfId: string) => {
-    if (!qObj) return;
-    if (!await confirmDialog("このクォーターからTFの紐づけを解除しますか？（TF自体は削除されません）")) return;
-    await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
-  };
-
-  const handleMoveTf = async (krId: string, tfId: string, targetQuarter: Quarter) => {
-    if (!qObj) return;
-    if (!await confirmDialog(`このTFを ${targetQuarter} に移動しますか？\n現在の ${selectedQuarter} からは解除されます。`)) return;
-    try {
-      const targetQObj = await ensureQObjForQuarter(targetQuarter);
-      await removeQuarterlyKrTaskForce(qObj.id, krId, tfId);
-      await addQuarterlyKrTaskForce({ quarterly_objective_id: targetQObj.id, kr_id: krId, tf_id: tfId });
+      // 新モデル：QKTFではなく TaskForce.quarter 列を更新する（単一の真実）
+      const existing = tfs.find(t => t.id === tfId);
+      if (!existing) return;
+      await saveTaskForce({ ...existing, quarter: targetQuarter, updated_by: currentUser.id });
     } catch (e) {
       const msg = getErrorMessage(e);
       await alertDialog(`移動に失敗しました。\n${msg}`);
@@ -503,10 +458,12 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const handleCreateAndLinkTf = async (krId: string) => {
     if (!newTfForm.name.trim()) return;
     const now = new Date().toISOString();
-    const newTf = {
+    // 新モデル：選択中のクォーターを TaskForce.quarter にセット（QKTFは使わない）
+    const newTf: TaskForce = {
       id: uuidv4(),
       kr_id: krId,
       tf_number: newTfForm.tf_number.trim(),
+      quarter: selectedQuarter,
       name: newTfForm.name.trim(),
       description: newTfForm.description.trim() || undefined,
       background: newTfForm.background.trim() || undefined,
@@ -516,7 +473,6 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     };
     try {
       await saveTaskForce(newTf);
-      await handleAddTf(krId, newTf.id);
       setNewTfFormKrId(null);
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -597,9 +553,6 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
         paddingBottom: "18px",
       }}>
         {krs.map((kr, i) => {
-          const linkedTfIds = qObj
-            ? quarterlyKrTaskForces.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === kr.id).map(q => q.tf_id)
-            : [];
           const sortByTfNumber = (a: typeof tfs[0], b: typeof tfs[0]) => {
             const na = parseInt(a.tf_number, 10);
             const nb = parseInt(b.tf_number, 10);
@@ -608,8 +561,10 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
             if (!isNaN(nb)) return 1;
             return a.tf_number.localeCompare(b.tf_number);
           };
-          const linkedTfs = tfs.filter(t => linkedTfIds.includes(t.id)).sort(sortByTfNumber);
-          const unlinkableTfs = tfs.filter(t => !linkedTfIds.includes(t.id)).sort(sortByTfNumber);
+          // 選択クォーターに属するTFのみ（tf.quarter基準・未設定legacyは今期扱い）。QKTF経由はやめる。
+          const linkedTfs = tfs
+            .filter(t => t.kr_id === kr.id && effectiveTfQuarter(t) === selectedQuarter)
+            .sort(sortByTfNumber);
           return (
             <div key={kr.id} style={{ display: "flex", flexDirection: "column", minHeight: 0, overflow: "hidden" }}>
               {/* KRヘッダー（固定） */}

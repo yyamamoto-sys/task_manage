@@ -32,9 +32,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
-  const allQuarterlyObjs    = useAppStore(s => s.quarterlyObjectives);
-  const allQuarterlyKrTfs   = useAppStore(s => s.quarterlyKrTaskForces);
-  const objective           = useAppStore(s => s.objective);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
@@ -64,8 +61,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const originalTask = allTasks.find(t => t.id === taskId);
 
   const eligibleTfIds = useMemo(
-    () => getEligibleTfIds(originalTask, objective, allQuarterlyObjs, allQuarterlyKrTfs),
-    [originalTask?.due_date, originalTask?.start_date, objective, allQuarterlyObjs, allQuarterlyKrTfs], // eslint-disable-line react-hooks/exhaustive-deps
+    () => getEligibleTfIds(originalTask, allTaskForces),
+    [originalTask?.due_date, originalTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   const [form, setForm] = useState({

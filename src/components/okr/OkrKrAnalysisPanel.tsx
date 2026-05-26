@@ -24,6 +24,7 @@ import {
 import { analyzeKr, type KrAnalysisInput, type KrAnalysisTf } from "../../lib/ai/okrKrAnalysisClient";
 import { analyzeObjective, type ObjectiveAnalysisKrInput } from "../../lib/ai/okrObjectiveAnalysisClient";
 import { getAssigneeIds } from "../../lib/taskMeta";
+import { tfsForKr as tfsForKrInQuarter } from "../../lib/okr/tfQuarter";
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
 function currentQuarter(): Quarter {
@@ -68,8 +69,6 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   const rawTtfs  = useAppStore(s => s.taskTaskForces);
   const rawMembers = useAppStore(s => s.members);
   const objective = useAppStore(s => s.objective);
-  const rawQObjs  = useAppStore(s => s.quarterlyObjectives);
-  const rawQktf   = useAppStore(s => s.quarterlyKrTaskForces);
 
   const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
   const memberById = useMemo(() => new Map(rawMembers.filter(m => !m.is_deleted).map(m => [m.id, m])), [rawMembers]);
@@ -88,22 +87,20 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
 
   const [quarter, setQuarter] = useState<Quarter>(currentQuarter());
 
-  // クォーターのKR×TF割り当て（KR分析で使う）
-  const qObj = useMemo(
-    () => objective ? (rawQObjs.find(q => !q.is_deleted && q.objective_id === objective.id && q.quarter === quarter) ?? null) : null,
-    [rawQObjs, objective, quarter],
-  );
-  const usingQuarterAssignment = !!qObj;
-
-  /** クォーター割り当てがあれば q-kr-tf、無ければ kr_id でTFを引く共通ヘルパ */
+  // 選択クォーターに属するKR配下のTF（tf.quarter基準・tf_number昇順）。
+  // 未割当(legacy)TFは effectiveTfQuarter により「今期」として扱われる。
   const tfsForKr = useCallback((krId: string) => {
     const allActive = rawTfs.filter(tf => !tf.is_deleted);
-    const pool = qObj
-      ? allActive.filter(tf => new Set(rawQktf.filter(q => q.quarterly_objective_id === qObj.id && q.kr_id === krId).map(q => q.tf_id)).has(tf.id))
-      : allActive.filter(tf => tf.kr_id === krId);
-    const byId = new Map(pool.map(tf => [tf.id, tf]));
-    return [...byId.values()].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
-  }, [rawTfs, rawQktf, qObj]);
+    const pool = tfsForKrInQuarter(allActive, krId, quarter);
+    return [...pool].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
+  }, [rawTfs, quarter]);
+
+  // 警告判定：選択中KRに四半期未割当(legacy)のTFがあり、今期を見ているとき案内を出す
+  const hasUnassignedTfsForTarget = useMemo(() => {
+    if (target?.kind !== "kr") return false;
+    return rawTfs.some(tf => !tf.is_deleted && tf.kr_id === target.krId && tf.quarter == null);
+  }, [rawTfs, target]);
+  const showUnassignedNotice = hasUnassignedTfsForTarget && quarter === currentQuarter();
 
   const krTfs = useMemo(() => target?.kind === "kr" ? tfsForKr(target.krId) : [], [target, tfsForKr]);
 
@@ -313,9 +310,9 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
       </div>
 
-      {isKr && target && !usingQuarterAssignment && (
+      {isKr && target && showUnassignedNotice && (
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "7px 10px" }}>
-          ※ {quarter} のTF割り当てが未設定のため、このKRに紐づく全TFを対象にしています。
+          ※ 四半期が未設定（未割当）のTFは現在の四半期（{quarter}）の対象として扱っています。管理画面でTFのクォーターを設定してください。
         </div>
       )}
 

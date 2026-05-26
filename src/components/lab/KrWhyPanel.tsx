@@ -16,6 +16,7 @@ import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 import { currentQuarter } from "../../lib/date";
+import { tfsForKr } from "../../lib/okr/tfQuarter";
 
 function ThinkingDots() {
   return (
@@ -70,8 +71,6 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const tasks                   = useAppStore(s => s.tasks);
   const members                 = useAppStore(s => s.members);
   const projects                = useAppStore(s => s.projects);
-  const quarterlyObjectives     = useAppStore(s => s.quarterlyObjectives);
-  const quarterlyKrTaskForces   = useAppStore(s => s.quarterlyKrTaskForces);
 
   const activeKrs = useMemo(
     () => (keyResults ?? []).filter(kr => !kr.is_deleted),
@@ -97,36 +96,14 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
 
   const selectedKr = activeKrs.find(kr => kr.id === selectedKrId) ?? null;
 
-  // 今日が属する四半期の TF のみを対象にする（過去Qを除外して文脈を絞る）
+  // 今日が属する四半期の TF のみを対象にする（過去Qを除外して文脈を絞る）。
+  // TF→四半期は tf.quarter 基準（未設定legacyは今期扱い）。
   const thisQuarter = useMemo<"1Q" | "2Q" | "3Q" | "4Q">(() => currentQuarter(), []);
 
-  const currentQObj = useMemo(() => {
-    if (!objective) return null;
-    return (quarterlyObjectives ?? []).find(
-      qo => qo.objective_id === objective.id
-        && qo.quarter === thisQuarter
-        && !qo.is_deleted,
-    ) ?? null;
-  }, [quarterlyObjectives, objective, thisQuarter]);
-
-  const thisQuarterTfIds = useMemo(() => {
-    if (!currentQObj || !selectedKrId) return new Set<string>();
-    return new Set(
-      (quarterlyKrTaskForces ?? [])
-        .filter(qktf => qktf.quarterly_objective_id === currentQObj.id && qktf.kr_id === selectedKrId)
-        .map(qktf => qktf.tf_id),
-    );
-  }, [quarterlyKrTaskForces, currentQObj, selectedKrId]);
-
   const relatedTfs = useMemo(
-    () => (taskForces ?? [])
-      .filter(tf =>
-        tf.kr_id === selectedKrId
-        && !tf.is_deleted
-        && thisQuarterTfIds.has(tf.id),
-      )
+    () => tfsForKr((taskForces ?? []).filter(tf => !tf.is_deleted), selectedKrId, thisQuarter)
       .sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999)),
-    [taskForces, selectedKrId, thisQuarterTfIds],
+    [taskForces, selectedKrId, thisQuarter],
   );
 
   // KR変更時に保存済みサマリー＆セッション履歴を読み込む・TF選択をリセット

@@ -68,6 +68,8 @@ export interface TaskForce {
   id: string;
   kr_id: string;
   tf_number: string;
+  /** 所属する四半期。未設定(legacy)は現在の四半期として扱う（lib/okr/tfQuarter.ts） */
+  quarter?: Quarter;
   name: string;
   description?: string;      // TFの目的・詳細（任意）
   background?: string;       // 設定した意図・背景（任意）

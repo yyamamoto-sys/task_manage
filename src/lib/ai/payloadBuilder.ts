@@ -12,7 +12,8 @@
 import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
-import { dateToQuarter } from "../date";
+import { dateToQuarter, currentQuarter } from "../date";
+import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
 
 // ===== 型定義 =====
@@ -203,9 +204,12 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   // PJ id → 紐付くTFの番号ラベル（"TF{krIdx+1}-{tf_number}"）配列
   // TF id → 紐付くPJ名 配列
   // 双方向 join。OKR コンテキストが無くてもラベルから AI が読み取れる形にする
+  // 今期のTFのみ対象にする（tf.quarter基準。未設定legacyは今期扱い）。
+  // 過去/未来Qのラベルを linked_tf_numbers / okr_context に混ぜない。
+  const thisQuarter = currentQuarter();
   const tfNumberById = new Map<string, string>();
   if (opts.keyResults && opts.taskForces) {
-    for (const tf of opts.taskForces.filter(t => !t.is_deleted)) {
+    for (const tf of opts.taskForces.filter(t => !t.is_deleted && effectiveTfQuarter(t) === thisQuarter)) {
       const krIdx = opts.keyResults.findIndex(k => k.id === tf.kr_id);
       const label = `TF${krIdx >= 0 ? krIdx + 1 : "?"}-${tf.tf_number || "?"}`;
       tfNumberById.set(tf.id, label);
@@ -310,7 +314,8 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       title: currentObj.title,
       period: currentObj.period,
       key_results: activeKRs.map((kr, krIdx) => {
-        const activeTFs = opts.taskForces!.filter(tf => !tf.is_deleted && tf.kr_id === kr.id);
+        // 今期のTFのみ（tf.quarter基準。未設定legacyは今期扱い）
+        const activeTFs = opts.taskForces!.filter(tf => !tf.is_deleted && tf.kr_id === kr.id && effectiveTfQuarter(tf) === thisQuarter);
         return {
           kr_id: makeShortId("kr", krIdx),
           title: kr.title,

@@ -21,6 +21,7 @@ import type {
   Member, Project, Task, ToDo,
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
+import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
@@ -197,7 +198,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
   const krProgress = useMemo(() =>
     krs.map(kr => {
-      const krTfs = tfs.filter(tf => tf.kr_id === kr.id);
+      // 今期のTFのみ（tf.quarter基準。未設定legacyは今期扱い）
+      const krTfs = tfsForKr(tfs, kr.id);
       const krTfIds = new Set(krTfs.map(tf => tf.id));
 
       const relatedTaskIds = new Set<string>();
@@ -260,7 +262,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       setSelectedPjIds([]);
       return;
     }
-    const krTfIds = tfs.filter(tf => tf.kr_id === krId).map(tf => tf.id);
+    const krTfIds = tfsForKr(tfs, krId).map(tf => tf.id);
     const pjIds = projectTaskForces
       .filter(ptf => krTfIds.includes(ptf.tf_id))
       .map(ptf => ptf.project_id);

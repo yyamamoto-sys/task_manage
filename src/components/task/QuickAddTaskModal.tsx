@@ -6,6 +6,7 @@ import { useState, useMemo } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
+import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { v4 as uuidv4 } from "uuid";
 
 interface Props {
@@ -23,9 +24,6 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
   const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);
   const rawKrs                  = useAppStore(s => s.keyResults);
-  const objective               = useAppStore(s => s.objective);
-  const quarterlyObjectives     = useAppStore(s => s.quarterlyObjectives);
-  const quarterlyKrTaskForces   = useAppStore(s => s.quarterlyKrTaskForces);
   const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
@@ -39,19 +37,6 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
     if (m <= 9) return "3Q";
     return "4Q";
   }, []);
-
-  // 現在Qに属するTF IDのSet
-  const currentQTfIds = useMemo(() => {
-    const qObj = (quarterlyObjectives ?? []).find(
-      q => q.quarter === currentQ && q.objective_id === (objective?.id ?? "") && !q.is_deleted
-    );
-    if (!qObj) return new Set<string>();
-    return new Set(
-      (quarterlyKrTaskForces ?? [])
-        .filter(q => q.quarterly_objective_id === qObj.id)
-        .map(q => q.tf_id)
-    );
-  }, [quarterlyObjectives, quarterlyKrTaskForces, objective, currentQ]);
 
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
@@ -67,21 +52,21 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
   const handleKrChange = (val: string) => { setKrId(val); setTfId(""); setTodoIds([]); };
   const handleTfChange = (val: string) => { setTfId(val); setTodoIds([]); };
 
-  // 現在QのKR一覧（TFが存在するKRのみ）
+  // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
   const filteredKrs = useMemo(() => {
     return krs.filter(kr => {
-      const krTfs = tfs.filter(tf => tf.kr_id === kr.id && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)));
+      const krTfs = tfs.filter(tf => tf.kr_id === kr.id && effectiveTfQuarter(tf) === currentQ);
       return krTfs.length > 0;
     });
-  }, [krs, tfs, currentQTfIds]);
+  }, [krs, tfs, currentQ]);
 
-  // 選択中KRのTF一覧（TF番号順）
+  // 選択中KRのTF一覧（今期のみ・TF番号順）
   const filteredTfs = useMemo(() => {
     if (!krId) return [];
     return tfs
-      .filter(tf => tf.kr_id === krId && (currentQTfIds.size === 0 || currentQTfIds.has(tf.id)))
+      .filter(tf => tf.kr_id === krId && effectiveTfQuarter(tf) === currentQ)
       .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0));
-  }, [krId, tfs, currentQTfIds]);
+  }, [krId, tfs, currentQ]);
 
   // 選択中TFに属するToDo一覧
   const filteredTodos = useMemo(
