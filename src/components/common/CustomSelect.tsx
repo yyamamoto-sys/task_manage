@@ -27,15 +27,22 @@ interface Props {
   placeholder?: string;
   disabled?: boolean;
   style?: React.CSSProperties;
+  /** true で開いた時に検索ボックスを表示し、入力でラベルを絞り込めるようにする */
+  searchable?: boolean;
+  /** 検索ボックスのプレースホルダ（searchable 時） */
+  searchPlaceholder?: string;
 }
 
 export function CustomSelect({
   value, onChange, options, placeholder = "選択...", disabled, style,
+  searchable = false, searchPlaceholder = "名前で検索...",
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   // トリガー位置からパネルの fixed 座標を計算
   const calcPanelStyle = useCallback(() => {
@@ -79,19 +86,39 @@ export function CustomSelect({
     return () => document.removeEventListener("keydown", handler);
   }, [open]);
 
-  // スクロール・リサイズ時に閉じる（位置ズレ防止）
+  // スクロール・リサイズ時に閉じる（fixed パネルがトリガーから離れるのを防ぐ）。
+  // ただし「パネル内部のスクロール」では閉じない（下の項目までスクロールして選べるように）。
   useEffect(() => {
     if (!open) return;
-    const close = () => setOpen(false);
-    window.addEventListener("scroll", close, true);
-    window.addEventListener("resize", close);
+    const onScroll = (e: Event) => {
+      // ドロップダウン内のスクロールは無視（リスト内スクロールで閉じない）
+      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return;
+      setOpen(false);
+    };
+    const onResize = () => setOpen(false);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
     return () => {
-      window.removeEventListener("scroll", close, true);
-      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 
+  // 開いたら検索クエリをリセットし、検索ボックスにフォーカス
+  useEffect(() => {
+    if (!open) { setQuery(""); return; }
+    if (!searchable) return;
+    const id = requestAnimationFrame(() => searchRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [open, searchable]);
+
   const selected = options.find(o => o.value === value);
+
+  // 検索フィルタ（searchable 時のみ。ラベルの部分一致・大小無視）
+  const q = query.trim().toLowerCase();
+  const filteredOptions = searchable && q
+    ? options.filter(o => o.label.toLowerCase().includes(q))
+    : options;
 
   return (
     <div style={{ position: "relative", ...style }}>
@@ -139,12 +166,43 @@ export function CustomSelect({
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)",
-            maxHeight: "220px",
-            overflowY: "auto",
+            maxHeight: "260px",
+            display: "flex",
+            flexDirection: "column",
             padding: "4px",
           }}
         >
-          {options.map(opt => {
+          {searchable && (
+            <input
+              ref={searchRef}
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter" && filteredOptions.length > 0) {
+                  e.preventDefault();
+                  onChange(filteredOptions[0].value);
+                  setOpen(false);
+                }
+              }}
+              placeholder={searchPlaceholder}
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "7px 10px", marginBottom: "4px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-sm)",
+                background: "var(--color-bg-secondary)",
+                color: "var(--color-text-primary)",
+                outline: "none", flexShrink: 0,
+              }}
+            />
+          )}
+          <div style={{ overflowY: "auto", minHeight: 0 }}>
+          {filteredOptions.length === 0 && (
+            <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
+              該当する候補がありません
+            </div>
+          )}
+          {filteredOptions.map(opt => {
             const isSelected = opt.value === value;
             return (
               <button
@@ -170,6 +228,7 @@ export function CustomSelect({
               </button>
             );
           })}
+          </div>
         </div>,
         document.body,
       )}

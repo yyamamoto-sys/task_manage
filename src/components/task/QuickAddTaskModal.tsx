@@ -194,6 +194,8 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
                 ...members.map(m => ({ value: m.id, label: m.display_name })),
               ]}
               placeholder="担当者を選択..."
+              searchable
+              searchPlaceholder="名前で検索..."
             />
           </div>
           <div>
