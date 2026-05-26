@@ -18,7 +18,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Project, Task, KeyResult, TaskForce, ProjectTaskForce, ToDo,
+  Member, Project, Task, ToDo,
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { KEYS } from "../../lib/localData/localStore";
@@ -45,11 +45,13 @@ interface Props {
   mineOnly?: boolean;
   /** Dashboard 内チップから mineOnly を切り替える（サイドバーと同じ state を共有） */
   onToggleMineOnly?: () => void;
+  /** タスク行クリックで詳細（TaskEditModal）を開く。MainLayout の setAiEditTaskId に橋渡し */
+  onOpenTask?: (taskId: string) => void;
 }
 
 // ===== メインコンポーネント =====
 
-export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false, onToggleMineOnly }: Props) {
+export function DashboardView({ currentUser, projects, selectedProject = null, onClearProjectFilter, onOpenAiProject, onOpenAdmin, onOpenQuickAdd, mineOnly = false, onToggleMineOnly, onOpenTask }: Props) {
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(s => s.tasks);
@@ -180,9 +182,23 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // 経路A: KR → TF → ToDo → Task (Task.todo_id)
   // 経路B: KR → TF → ProjectTaskForce → PJ → Task (Task.project_id)
   // 両経路のタスクをSetで重複排除して完了率を計算する
+  // あるTFに紐づくタスク（経路A: TF→ToDo→Task / 経路B: TF→PJ→Task）の完了状況を集計
+  const tfTaskStats = useCallback((tfId: string) => {
+    const tfTodoIds = new Set(todos.filter(td => td.tf_id === tfId).map(td => td.id));
+    const tfPjIds = new Set(projectTaskForces.filter(ptf => ptf.tf_id === tfId).map(ptf => ptf.project_id));
+    const ids = new Set<string>();
+    allTasks.filter(t => (t.todo_ids ?? []).some(id => tfTodoIds.has(id))).forEach(t => ids.add(t.id));
+    allTasks.filter(t => t.project_id !== null && tfPjIds.has(t.project_id!)).forEach(t => ids.add(t.id));
+    const rel = allTasks.filter(t => ids.has(t.id));
+    const done = rel.filter(t => t.status === "done").length;
+    const total = rel.length;
+    return { done, total, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+  }, [todos, projectTaskForces, allTasks]);
+
   const krProgress = useMemo(() =>
     krs.map(kr => {
-      const krTfIds = new Set(tfs.filter(tf => tf.kr_id === kr.id).map(tf => tf.id));
+      const krTfs = tfs.filter(tf => tf.kr_id === kr.id);
+      const krTfIds = new Set(krTfs.map(tf => tf.id));
 
       const relatedTaskIds = new Set<string>();
 
@@ -202,9 +218,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       const done = relatedTasks.filter(t => t.status === "done").length;
       const total = relatedTasks.length;
       const pct = total > 0 ? Math.round((done / total) * 100) : 0;
-      return { kr, pct, tfCount: krTfIds.size };
+
+      // 今期のTFごとのサマリー（TF番号順）
+      const tfSummaries = [...krTfs]
+        .sort((a, b) => (a.tf_number ?? "").localeCompare(b.tf_number ?? "", undefined, { numeric: true }))
+        .map(tf => ({ tf, ...tfTaskStats(tf.id) }));
+
+      return { kr, pct, tfCount: krTfIds.size, tfSummaries };
     }),
-    [krs, tfs, todos, allTasks, projectTaskForces]
+    [krs, tfs, todos, allTasks, projectTaskForces, tfTaskStats]
   );
 
   // ToDo進捗（TF > ToDo > Task の完了状況）
@@ -490,15 +512,25 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                            : tone === "soft"    ? "var(--color-text-warning)"
                            :                      "var(--color-text-secondary)";
                   return (
-                    <div key={task.id} style={{
-                      display: "flex", alignItems: "center", gap: "6px",
-                      padding: "5px 10px",
-                      background: bg,
-                      borderRadius: "var(--radius-md)",
-                      border: `1px solid ${border}`,
-                      flex: isMobile ? "1" : "0 0 auto",
-                      minWidth: 0,
-                    }}>
+                    // onOpenTask 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+                    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                    <div
+                      key={task.id}
+                      onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
+                      role={onOpenTask ? "button" : undefined}
+                      tabIndex={onOpenTask ? 0 : undefined}
+                      onKeyDown={onOpenTask ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(task.id); } } : undefined}
+                      title={onOpenTask ? "クリックでタスク詳細を開く" : undefined}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "6px",
+                        padding: "5px 10px",
+                        background: bg,
+                        borderRadius: "var(--radius-md)",
+                        border: `1px solid ${border}`,
+                        flex: isMobile ? "1" : "0 0 auto",
+                        minWidth: 0,
+                        cursor: onOpenTask ? "pointer" : undefined,
+                      }}>
                       {pj && <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />}
                       <span style={{
                         fontSize: "11px",
@@ -534,34 +566,39 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             gap: "14px",
           }}>
 
-          {/* ① OKRサマリー */}
-          <Card title="KR 進捗サマリー" badge={`${krs.length}件`}>
+          {/* ① KR進捗サマリー（各KRを囲い、今期のTFごとサマリーを内包） */}
+          <Card title="KR 進捗サマリー" badge={`${krs.length}件`} order={3}>
             {krs.length === 0 && (
               <EmptyState>管理画面でKRを登録してください</EmptyState>
             )}
-            {krProgress.map(({ kr, pct }, i) => {
+            {krProgress.map(({ kr, pct, tfSummaries }, i) => {
               const isActive = activeKrId === kr.id;
+              const krColor = pct >= 80 ? "var(--color-text-success)" : pct >= 40 ? "var(--color-text-warning)" : "var(--color-text-tertiary)";
               return (
+                // KR ボックスはクリックで絞り込みする意図的なインタラクティブ要素
+                // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
                 <div
                   key={kr.id}
                   onClick={() => handleKrClick(kr.id)}
+                  title="クリックでこのKRに紐づくPJに絞り込み"
                   style={{
-                    marginBottom: i < krs.length - 1 ? "12px" : 0,
-                    padding: "6px 8px", borderRadius: "var(--radius-md)",
+                    marginBottom: i < krProgress.length - 1 ? "10px" : 0,
+                    padding: "10px", borderRadius: "var(--radius-md)",
                     cursor: "pointer",
-                    background: isActive ? "var(--color-bg-info)" : "transparent",
-                    border: isActive ? "1px solid var(--color-border-info)" : "1px solid transparent",
+                    background: isActive ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
+                    border: `1px solid ${isActive ? "var(--color-border-info)" : "var(--color-border-primary)"}`,
                     transition: "all 0.1s",
                   }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "3px" }}>
+                  {/* KRヘッダー */}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
                     <span style={{
-                      fontSize: "11px", color: "var(--color-text-secondary)",
+                      fontSize: "11px", color: "var(--color-text-primary)", fontWeight: 500,
                       flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       paddingRight: "8px",
                     }}>
                       <span style={{
-                        display: "inline-block", fontSize: "9px", fontWeight: "600",
+                        display: "inline-block", fontSize: "9px", fontWeight: "700",
                         padding: "1px 5px", borderRadius: "3px", marginRight: "5px",
                         background: "var(--color-bg-info)", color: "var(--color-text-info)",
                       }}>KR{i + 1}</span>
@@ -582,26 +619,48 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                             style={{
                               display: "inline-block",
                               width: "8px", height: "8px", borderRadius: "50%",
-                              background: dot.bg,
-                              opacity: 0.85,
-                              cursor: "default",
+                              background: dot.bg, opacity: 0.85, cursor: "default",
                             }}
                           />
                         );
                       })}
-                      <span style={{
-                        fontSize: "11px", fontWeight: "500",
-                        color: pct >= 80 ? "var(--color-text-success)"
-                          : pct >= 40 ? "var(--color-text-warning)"
-                          : "var(--color-text-tertiary)",
-                      }}>
-                        {pct}%
-                      </span>
+                      <span style={{ fontSize: "12px", fontWeight: "700", color: krColor }}>{pct}%</span>
                     </div>
                   </div>
-                  <ProgressBar pct={pct} color={
-                    pct >= 80 ? "var(--color-text-success)" : pct >= 40 ? "var(--color-text-warning)" : "var(--color-text-tertiary)"
-                  } />
+                  <ProgressBar pct={pct} color={krColor} />
+
+                  {/* 今期のTFごとサマリー */}
+                  <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed var(--color-border-primary)" }}>
+                    <div style={{ fontSize: "9px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "5px" }}>
+                      今期のTF（{tfSummaries.length}）
+                    </div>
+                    {tfSummaries.length === 0 ? (
+                      <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>TFが登録されていません</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                        {tfSummaries.map(({ tf, done, total, pct: tfPct }) => {
+                          const tfColor = total === 0 ? "var(--color-text-tertiary)"
+                            : tfPct >= 80 ? "var(--color-text-success)"
+                            : tfPct >= 40 ? "var(--color-text-warning)"
+                            : "var(--color-text-tertiary)";
+                          return (
+                            <div key={tf.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                <span style={{ color: "var(--color-text-tertiary)", marginRight: "4px" }}>TF{tf.tf_number}</span>
+                                {tf.name}
+                              </span>
+                              <div style={{ width: "56px", flexShrink: 0 }}>
+                                <ProgressBar pct={total === 0 ? 0 : tfPct} color={tfColor} />
+                              </div>
+                              <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "46px", textAlign: "right" }}>
+                                {total === 0 ? "—" : `${done}/${total}・${tfPct}%`}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -612,6 +671,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             title="期限アラート"
             badge={(alertTasks.length + stagnantTasks.length) > 0 ? `${alertTasks.length + stagnantTasks.length}件` : undefined}
             badgeColor="danger"
+            order={4}
           >
             {alertTasks.length === 0 && stagnantTasks.length === 0 && (
               <EmptyState>期限超過・滞留タスクはありません ✓</EmptyState>
@@ -627,6 +687,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   task={task}
                   member={m}
                   project={pj}
+                  onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                   badge={
                     <span style={{
                       fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
@@ -659,6 +720,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                       task={task}
                       member={m}
                       project={pj}
+                      onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                       badge={
                         <span style={{
                           fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
@@ -678,7 +740,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           </Card>
 
           {/* ③ 今週のタスク */}
-          <Card title="今週のタスク" badge={`${thisWeekTasks.length}件`}>
+          <Card title="今週のタスク" badge={`${thisWeekTasks.length}件`} order={1}>
             {thisWeekTasks.length === 0 && (
               <EmptyState>今週期限のタスクはありません</EmptyState>
             )}
@@ -692,6 +754,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   task={task}
                   member={m}
                   project={pj}
+                  onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                   badge={
                     <span style={{
                       fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
@@ -712,7 +775,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
           {/* ④ PJ進捗一覧（PJ選択中はカルテに集約されるので非表示） */}
           {!selectedProject && (
-          <Card title="PJ 進捗一覧">
+          <Card title="PJ 進捗一覧" order={2}>
             {pjProgress.length === 0 && (
               <EmptyState>プロジェクトを作成してください</EmptyState>
             )}
@@ -826,11 +889,13 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 // ===== 小コンポーネント =====
 
 function Card({
-  title, badge, badgeColor = "info", children,
+  title, badge, badgeColor = "info", order, children,
 }: {
   title: string;
   badge?: string;
   badgeColor?: "info" | "danger";
+  /** グリッド内の表示順（CSS order）。JSXを動かさず行の上下を入れ替えるために使う */
+  order?: number;
   children: React.ReactNode;
 }) {
   const badgeStyles = {
@@ -845,6 +910,7 @@ function Card({
       border: "1px solid var(--color-border-primary)",
       borderRadius: "var(--radius-lg)",
       overflow: "hidden",
+      order,
     }}>
       <div style={{
         display: "flex", alignItems: "center", gap: "6px",
@@ -887,19 +953,35 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 }
 
 function TaskRow({
-  task, member, project, badge,
+  task, member, project, badge, onClick,
 }: {
   task: Task;
   member?: Member;
   project?: Project;
   badge: React.ReactNode;
+  /** 指定時：行クリック（Enter/Space）でタスク詳細を開く */
+  onClick?: () => void;
 }) {
   return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: "7px",
-      padding: "5px 0",
-      borderBottom: "1px solid var(--color-bg-tertiary)",
-    }}>
+    // onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(); } } : undefined}
+      title={onClick ? "クリックでタスク詳細を開く" : undefined}
+      onMouseEnter={onClick ? (e) => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-bg-secondary)"; } : undefined}
+      onMouseLeave={onClick ? (e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; } : undefined}
+      style={{
+        display: "flex", alignItems: "center", gap: "7px",
+        padding: "5px 6px", margin: "0 -6px",
+        borderBottom: "1px solid var(--color-bg-tertiary)",
+        borderRadius: "var(--radius-sm)",
+        cursor: onClick ? "pointer" : undefined,
+        background: "transparent",
+        transition: "background var(--transition-fast)",
+      }}>
       {member && <Avatar member={member} size={18} />}
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{

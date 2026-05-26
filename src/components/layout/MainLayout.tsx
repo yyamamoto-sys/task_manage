@@ -433,6 +433,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
                 onToggleMineOnly={toggleMineOnly}
+                onOpenTask={setAiEditTaskId}
               />
             )}
             {viewMode === "kanban" && (
