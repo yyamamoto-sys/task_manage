@@ -148,7 +148,7 @@ export function ConsultationPanel({
   // 直近に送信した相談文（送信後も「何を送ったか」を画面上で確認できるようにする）
   const [lastSubmittedText, setLastSubmittedText] = useState("");
   const [targetDeadline, setTargetDeadline] = useState("");
-  const [includeOKR, setIncludeOKR] = useState(false);
+  // OKR情報は常にペイロードへ含める方針（チェックボックスは廃止）。useAIConsultation 側で既定 true。
   // Thinkingモード：ON=Sonnet（高品質・やや遅い）/ OFF=QuickResponse（Haiku・高速・既定）
   const [thinkingMode, setThinkingMode] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -377,7 +377,7 @@ export function ConsultationPanel({
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, includeOKR, thinkingMode });
+    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, thinkingMode });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -459,7 +459,6 @@ export function ConsultationPanel({
             consultation: text,
             consultationType: inferConsultationType(text),
             targetDeadline: null,
-            includeOKR: false,
           });
         }, 800);
       }
@@ -736,34 +735,6 @@ export function ConsultationPanel({
               />
             </div>
           )}
-
-          {/* OKRトグル（コンパクト） */}
-          <button
-            onClick={() => setIncludeOKR(v => !v)}
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "6px",
-              padding: "4px 10px", alignSelf: "flex-start",
-              background: "transparent",
-              border: `1px solid ${includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-border-primary)"}`,
-              borderRadius: "var(--radius-full)", cursor: "pointer",
-              fontSize: "10px",
-              color: includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-text-tertiary)",
-            }}
-          >
-            <span style={{
-              width: 10, height: 10, borderRadius: "2px", flexShrink: 0,
-              background: includeOKR ? "var(--color-accent, #3b82f6)" : "transparent",
-              border: `1.5px solid ${includeOKR ? "var(--color-accent, #3b82f6)" : "var(--color-text-tertiary)"}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {includeOKR && (
-                <svg width="6" height="5" viewBox="0 0 9 7" fill="none">
-                  <path d="M1 3l2.5 2.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </span>
-            OKR情報も含める
-          </button>
 
           {/* Thinkingモード切替（既定OFF=QuickResponse=高速。ONで高品質モデルにする） */}
           <button

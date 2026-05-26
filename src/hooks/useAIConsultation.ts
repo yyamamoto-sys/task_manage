@@ -41,7 +41,7 @@ export interface SubmitOptions {
   consultation: string;
   consultationType: ConsultationType;
   targetDeadline?: string | null;
-  /** trueの場合、OKR（Objective/KR/TF）情報もペイロードに含める */
+  /** OKR（Objective/KR/TF）情報をペイロードに含めるか。未指定（既定）は true で常に含める */
   includeOKR?: boolean;
   /** true=Thinkingモード（Sonnet・高品質/やや遅い）/ false=QuickResponse（Haiku・高速・既定） */
   thinkingMode?: boolean;
@@ -108,7 +108,9 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   const submit = useCallback(
     async (opts: SubmitOptions) => {
-      const { consultation, consultationType, targetDeadline, includeOKR, thinkingMode } = opts;
+      const { consultation, consultationType, targetDeadline, thinkingMode } = opts;
+      // OKR情報のチェックボックスは廃止。明示指定が無ければ常にOKR情報を含める（既定 true）。
+      const includeOKR = opts.includeOKR ?? true;
 
       if (!consultation.trim()) return;
 
