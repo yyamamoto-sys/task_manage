@@ -91,7 +91,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
-  const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "create" | "meeting">("consult");
+  const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "meeting">("consult");
+  // PJ作成導線などから AI相談チャットの入力欄に下書きをプレフィルするためのリクエスト
+  const [consultPrefill, setConsultPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(
     () => localStorage.getItem(KEYS.SIDEBAR_COLLAPSED) === "1"
   );
@@ -212,6 +214,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const handleSelectKr = (id: string | null) => {
     setSelectedKrId(id);
     setSelectedProjectId(null);
+  };
+
+  /**
+   * 「AIでPJを作る」導線。新規PJ作成は AI相談（consult）チャットの add_project 提案で行う前提に
+   * 統一したため、create モードは廃止。consult チャットを開き、入力欄に下書きをプレフィルする
+   * （送信はせず、ユーザーが目的・背景を追記してから送る）。
+   */
+  const openAiProjectCreate = () => {
+    setConsultDefaultMode("consult");
+    setIsConsultOpen(true);
+    setConsultPrefill({
+      text: "新しいプロジェクトを立ち上げたいです。目的や背景は次のとおりです：",
+      nonce: Date.now(),
+    });
   };
 
   const selectedProject = selectedProjectId
@@ -355,7 +371,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             pjCount={projects.length}
             taskCount={(rawTasks ?? []).filter((t: Task) => !t.is_deleted).length}
             onOpenAdmin={() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); }}
-            onOpenAiProject={() => { setIsOnboardingOverlayOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+            onOpenAiProject={() => { setIsOnboardingOverlayOpen(false); openAiProjectCreate(); }}
             onOpenQuickAdd={() => { setIsOnboardingOverlayOpen(false); setIsQuickAddOpen(true); }}
           />
         </Suspense>
@@ -428,7 +444,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 projects={projects}
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
-                onOpenAiProject={() => { setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+                onOpenAiProject={openAiProjectCreate}
                 onOpenAdmin={() => setIsAdminOpen(true)}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
@@ -661,6 +677,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onClose={() => setIsConsultOpen(false)}
           currentUser={currentUser}
           onOpenTask={setAiEditTaskId}
+          prefillInput={consultPrefill ?? undefined}
         />
 
         {mainContent}
@@ -693,7 +710,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               >💬 AIに相談する</button>
               <button
                 className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+                onClick={() => { setIsFabMenuOpen(false); openAiProjectCreate(); }}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   padding: "10px 16px",
@@ -836,7 +853,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
           <button
             className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("create"); setIsConsultOpen(true); }}
+            onClick={() => { setIsFabMenuOpen(false); openAiProjectCreate(); }}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: "9px 16px", height: "38px",
@@ -987,6 +1004,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onResizingChange={setIsConsultResizing}
           onOpenTask={setAiEditTaskId}
           demoRequest={consultDemoRequest ?? undefined}
+          prefillInput={consultPrefill ?? undefined}
         />
       </div>
     </div>

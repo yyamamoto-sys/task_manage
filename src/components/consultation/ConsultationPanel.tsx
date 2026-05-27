@@ -2,10 +2,9 @@
 
 import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
 import { createPortal } from "react-dom";
-import { v4 as uuidv4 } from "uuid";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
 import { SessionHistoryPanel } from "./SessionHistoryPanel";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import type { ConsultationType } from "../../lib/ai/types";
 import { useAppStore } from "../../stores/appStore";
@@ -18,16 +17,7 @@ import { ProposalCard } from "./ProposalCard";
 import { ChangeHistoryModal } from "./ChangeHistoryModal";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { inferConsultationType } from "../../lib/ai/inferConsultationType";
-import {
-  callProjectPlanDialogue,
-  callProjectPlanFinalize,
-  type PlanMessage,
-  type PlannedTask,
-} from "../../lib/ai/projectPlanClient";
-import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { HelpButton } from "../guide/HelpButton";
-import { AIProgressLoader } from "../common/AIProgressLoader";
-import { formatErrorForUser } from "../../lib/errorMessage";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 
 /**
@@ -39,25 +29,7 @@ import { lazyWithRetry } from "../../lib/lazyWithRetry";
 const GanttPreviewPanel  = lazyWithRetry(() => import("./GanttPreviewPanel").then(m => ({ default: m.GanttPreviewPanel })), "GanttPreviewPanel");
 const MeetingImportPanel = lazyWithRetry(() => import("../meeting/MeetingImportPanel").then(m => ({ default: m.MeetingImportPanel })), "MeetingImportPanel");
 
-const PJ_GEN_PHASES = [
-  "プロジェクト構造を設計しています",
-  "タスクリストを生成しています",
-  "担当者・期日を割り当てています",
-];
-
-type PanelMode = "consult" | "create" | "meeting";
-
-const PROJECT_COLORS = [
-  "#6366f1", "#3b82f6", "#14b8a6", "#10b981",
-  "#f59e0b", "#ef4444", "#ec4899", "#8b5cf6",
-];
-const MAX_CREATE_TURNS = 4;
-
-type CreatePhase = "chat" | "generating" | "confirm" | "saving" | "done" | "error";
-type ProjTaskRow = PlannedTask & {
-  selected: boolean; editedName: string;
-  editedAssigneeId: string; editedDueDate: string;
-};
+type PanelMode = "consult" | "meeting";
 
 interface Props {
   isOpen: boolean;
@@ -73,6 +45,11 @@ interface Props {
   onOpenTask?: (taskId: string) => void;
   /** ツアー実演用：nonce が変わるたびに consult モードで text を自動入力→送信する */
   demoRequest?: { text: string; nonce: number };
+  /**
+   * PJ作成導線などからの下書きプレフィル用。nonce が変わるたびに consult モードへ切り替え、
+   * inputText に text をセットしてフォーカスする（送信はしない）。demoRequest（自動送信）とは別物。
+   */
+  prefillInput?: { text: string; nonce: number };
 }
 
 const TYPE_CONFIG: {
@@ -137,6 +114,7 @@ export function ConsultationPanel({
   onResizingChange,
   onOpenTask,
   demoRequest,
+  prefillInput,
 }: Props) {
   // ===== パネルモード =====
   const [panelMode, setPanelMode] = useState<PanelMode>(defaultMode);
@@ -160,21 +138,6 @@ export function ConsultationPanel({
   // 各セッションに固有IDを割り振る（localStorage保存用）
   const sessionIdRef = useRef<string>(crypto.randomUUID());
 
-  // ===== PJ作成モード用状態 =====
-  const [createPhase, setCreatePhase] = useState<CreatePhase>("chat");
-  const [createMessages, setCreateMessages] = useState<PlanMessage[]>([]);
-  const [createTypingIndex, setCreateTypingIndex] = useState(-1);
-  const [createInput, setCreateInput] = useState("");
-  const [createThinking, setCreateThinking] = useState(false);
-  const [createTurns, setCreateTurns] = useState(0);
-  const [createError, setCreateError] = useState("");
-  const [projName, setProjName] = useState("");
-  const [projPurpose, setProjPurpose] = useState("");
-  const [projColor, setProjColor] = useState(PROJECT_COLORS[0]);
-  const [projOwnerId, setProjOwnerId] = useState(currentUser.id);
-  const [projTaskRows, setProjTaskRows] = useState<ProjTaskRow[]>([]);
-  const createChatEndRef = useRef<HTMLDivElement>(null);
-
   // パネル幅（フローティング時のみ使用）
   const [panelWidth, setPanelWidth] = useState<number>(() => {
     try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
@@ -195,118 +158,7 @@ export function ConsultationPanel({
   const isAutoDetected = manualType === null;
 
   const reload      = useAppStore(s => s.reload);
-  const rawMembers  = useAppStore(s => s.members);
-  const saveProject = useAppStore(s => s.saveProject);
-  const saveTask    = useAppStore(s => s.saveTask);
-  const members = useMemo(() => (rawMembers ?? []).filter(m => !m.is_deleted), [rawMembers]);
-  const today = new Date().toISOString().slice(0, 10);
 
-  // PJ作成モードの初期化（モード切り替え時）
-  useEffect(() => {
-    if (panelMode !== "create" || createMessages.length > 0) return;
-    const firstMsg = "どんなプロジェクトを立ち上げたいですか？目的や背景を教えてください。";
-    setCreateMessages([{ role: "assistant", content: firstMsg }]);
-    setCreateTypingIndex(0);
-  }, [panelMode, createMessages.length]);
-
-  useEffect(() => {
-    createChatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [createMessages, createThinking]);
-
-  const handleCreateSend = useCallback(async () => {
-    const text = createInput.trim();
-    if (!text || createThinking) return;
-    const newMessages: PlanMessage[] = [...createMessages, { role: "user", content: text }];
-    setCreateMessages(newMessages);
-    setCreateInput("");
-    const newTurns = createTurns + 1;
-    setCreateTurns(newTurns);
-    if (newTurns >= MAX_CREATE_TURNS) return;
-    setCreateThinking(true);
-    try {
-      const firstUserIdx = newMessages.findIndex(m => m.role === "user");
-      const apiMsgs = firstUserIdx >= 0 ? newMessages.slice(firstUserIdx) : newMessages;
-      const reply = await callProjectPlanDialogue(apiMsgs);
-      setCreateMessages(prev => {
-        const next = [...prev, { role: "assistant" as const, content: reply }];
-        setCreateTypingIndex(next.length - 1);
-        return next;
-      });
-    } catch (e) {
-      setCreateError(formatErrorForUser("AI呼び出しに失敗しました", e));
-      setCreatePhase("error");
-    } finally {
-      setCreateThinking(false);
-    }
-  }, [createInput, createThinking, createMessages, createTurns]);
-
-  const handleCreateGenerate = useCallback(async () => {
-    setCreatePhase("generating");
-    try {
-      const firstUserIdx = createMessages.findIndex(m => m.role === "user");
-      const apiMsgs = firstUserIdx >= 0 ? createMessages.slice(firstUserIdx) : createMessages;
-      const plan = await callProjectPlanFinalize({
-        messages: apiMsgs,
-        memberShortNames: members.map(m => m.short_name),
-        today,
-      });
-      setProjName(plan.project_name);
-      setProjPurpose(plan.purpose);
-      setProjTaskRows(plan.tasks.map((t: PlannedTask) => {
-        const matched = members.find(m => m.short_name === t.assignee_short_name);
-        return { ...t, selected: true, editedName: t.name, editedAssigneeId: matched?.id ?? "", editedDueDate: t.due_date ?? "" };
-      }));
-      setCreatePhase("confirm");
-    } catch (e) {
-      setCreateError(formatErrorForUser("プラン生成に失敗しました", e));
-      setCreatePhase("error");
-    }
-  }, [createMessages, members, today]);
-
-  const handleCreateSave = useCallback(async () => {
-    if (!projName.trim()) return;
-    setCreatePhase("saving");
-    const now = new Date().toISOString();
-    const newProjectId = uuidv4();
-    try {
-      await saveProject({
-        id: newProjectId, name: projName.trim(), purpose: projPurpose.trim(),
-        contribution_memo: "", owner_member_id: projOwnerId, owner_member_ids: [projOwnerId],
-        status: "active", color_tag: projColor, start_date: today, end_date: "",
-        is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id,
-      });
-      const selected = projTaskRows.filter(r => r.selected && r.editedName.trim());
-      for (const r of selected) {
-        const newTask: Task = {
-          id: uuidv4(), name: r.editedName.trim(), project_id: newProjectId,
-          todo_ids: [], assignee_member_id: r.editedAssigneeId || "",
-          assignee_member_ids: r.editedAssigneeId ? [r.editedAssigneeId] : [],
-          status: "todo", priority: null, start_date: null,
-          due_date: r.editedDueDate || null, estimated_hours: null,
-          comment: r.note || "", is_deleted: false,
-          created_at: now, updated_at: now, updated_by: currentUser.id,
-        };
-        await saveTask(newTask);
-      }
-      setCreatePhase("done");
-      reload();
-    } catch (e) {
-      setCreateError(formatErrorForUser("保存に失敗しました", e));
-      setCreatePhase("error");
-    }
-  }, [projName, projPurpose, projOwnerId, projColor, projTaskRows, currentUser.id, saveProject, saveTask, reload, today]);
-
-  const resetCreate = useCallback(() => {
-    setCreatePhase("chat");
-    setCreateMessages([]);
-    setCreateTypingIndex(-1);
-    setCreateInput("");
-    setCreateThinking(false);
-    setCreateTurns(0);
-    setCreateError("");
-    setProjName(""); setProjPurpose(""); setProjColor(PROJECT_COLORS[0]);
-    setProjOwnerId(currentUser.id); setProjTaskRows([]);
-  }, [currentUser.id]);
   const {
     callState, session, tokenStatus, loadingMessage,
     shortIdMap, proposals, followUpSuggestions, errorMessage,
@@ -468,6 +320,26 @@ export function ConsultationPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [demoRequest, isOpen]);
 
+  // ===== 下書きプレフィル（PJ作成導線など） =====
+  // prefillInput.nonce が変わったら consult モードに切り替え、入力欄に下書きをセットして
+  // フォーカスする（送信はしない）。demoRequest（自動送信）とは別物。
+  const prefillNonceRef = useRef<number>(0);
+  useEffect(() => {
+    if (!prefillInput) return;
+    if (prefillInput.nonce === prefillNonceRef.current) return;
+    prefillNonceRef.current = prefillInput.nonce;
+    setPanelMode("consult");
+    setInputText(prefillInput.text);
+    // パネルの描画後にフォーカス＆末尾へカーソル移動
+    setTimeout(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.selectionStart = el.selectionEnd = el.value.length;
+      }
+    }, 0);
+  }, [prefillInput]);
+
   const panelStyle: React.CSSProperties = inline ? {
     width: `${panelWidth}px`, height: "100%",
     background: "var(--color-bg-primary)",
@@ -568,16 +440,13 @@ export function ConsultationPanel({
                   <ClockIcon />
                 </button>
               )}
-              {panelMode === "create" && (createPhase === "chat" || createPhase === "error") && (
-                <button onClick={resetCreate} style={headerBtnWhite(false)}>リセット</button>
-              )}
               <HelpButton modeKey="consultation.main" title="AIツールの使い方を開く" />
               <button onClick={onClose} aria-label="閉じる" style={{ ...iconBtnWhite, fontSize: "16px" }}>×</button>
             </div>
           </div>
           {/* モードタブ */}
           <div style={{ display: "flex", gap: "4px" }}>
-            {(["consult", "create", "meeting"] as const).map(mode => (
+            {(["consult", "meeting"] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => setPanelMode(mode)}
@@ -589,7 +458,7 @@ export function ConsultationPanel({
                   transition: "all 0.15s", whiteSpace: "nowrap",
                 }}
               >
-                {mode === "consult" ? "💬 相談" : mode === "create" ? "📋 PJ/タスク登録" : "🎙️ 会議"}
+                {mode === "consult" ? "💬 相談" : "🎙️ 会議"}
               </button>
             ))}
           </div>
@@ -606,8 +475,7 @@ export function ConsultationPanel({
           flexShrink: 0,
           lineHeight: 1.4,
         }}>
-          {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます"}
-          {panelMode === "create" && "AIとの会話でPJを設計し、プロジェクトとタスクをまとめて登録できます"}
+          {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます。タスクの追加や新規プロジェクトの作成もここから依頼できます"}
           {panelMode === "meeting" && "会議の文字起こしから新規タスクとステータス変更を自動で提案・登録します"}
         </div>
 
@@ -620,32 +488,6 @@ export function ConsultationPanel({
               currentUser={currentUser}
             />
           </Suspense>
-        )}
-
-        {/* ===== PJ/タスク登録モード ===== */}
-        {panelMode === "create" && (
-          <ProjectCreatePane
-            phase={createPhase}
-            messages={createMessages}
-            typingIndex={createTypingIndex}
-            input={createInput}
-            thinking={createThinking}
-            turns={createTurns}
-            errorMsg={createError}
-            projName={projName} setProjName={setProjName}
-            projPurpose={projPurpose} setProjPurpose={setProjPurpose}
-            projColor={projColor} setProjColor={setProjColor}
-            projOwnerId={projOwnerId} setProjOwnerId={setProjOwnerId}
-            projTaskRows={projTaskRows} setProjTaskRows={setProjTaskRows}
-            members={members}
-            chatEndRef={createChatEndRef}
-            onInput={setCreateInput}
-            onSend={handleCreateSend}
-            onGenerate={handleCreateGenerate}
-            onSave={handleCreateSave}
-            onReset={resetCreate}
-            onBackToChat={() => setCreatePhase("chat")}
-          />
         )}
 
         {/* ===== 相談モード ===== */}
@@ -941,273 +783,5 @@ function ClockIcon({ size = 15 }: { size?: number }) {
       <circle cx="8" cy="8" r="6.5" stroke="currentColor" strokeWidth="1.3"/>
       <path d="M8 4.5V8l2.5 2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
     </svg>
-  );
-}
-
-function ThinkingDots() {
-  return (
-    <div className="ai-thinking-dots" style={{ color: "var(--color-text-tertiary)" }}>
-      <span /><span /><span />
-    </div>
-  );
-}
-
-function TypingMessage({ text }: { text: string }) {
-  const { displayed, done } = useTypingEffect(text);
-  return <span className={done ? "" : "typing-cursor"}>{displayed}</span>;
-}
-
-interface ProjectCreatePaneProps {
-  phase: CreatePhase;
-  messages: PlanMessage[];
-  typingIndex: number;
-  input: string;
-  thinking: boolean;
-  turns: number;
-  errorMsg: string;
-  projName: string; setProjName: (v: string) => void;
-  projPurpose: string; setProjPurpose: (v: string) => void;
-  projColor: string; setProjColor: (v: string) => void;
-  projOwnerId: string; setProjOwnerId: (v: string) => void;
-  projTaskRows: ProjTaskRow[]; setProjTaskRows: React.Dispatch<React.SetStateAction<ProjTaskRow[]>>;
-  members: Member[];
-  chatEndRef: React.RefObject<HTMLDivElement>;
-  onInput: (v: string) => void;
-  onSend: () => void;
-  onGenerate: () => void;
-  onSave: () => void;
-  onReset: () => void;
-  onBackToChat: () => void;
-}
-
-function ProjectCreatePane({
-  phase, messages, typingIndex, input, thinking, turns, errorMsg,
-  projName, setProjName, projPurpose, setProjPurpose,
-  projColor, setProjColor, projOwnerId, setProjOwnerId,
-  projTaskRows, setProjTaskRows, members, chatEndRef,
-  onInput, onSend, onGenerate, onSave, onBackToChat,
-}: ProjectCreatePaneProps) {
-  const inputStyle: React.CSSProperties = {
-    padding: "5px 8px", fontSize: "12px",
-    border: "1px solid var(--color-border-primary)",
-    borderRadius: "var(--radius-sm)",
-    background: "var(--color-bg-primary)",
-    color: "var(--color-text-primary)",
-    width: "100%", boxSizing: "border-box",
-  };
-
-  return (
-    <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column" }}>
-
-      {/* エラー */}
-      {phase === "error" && (
-        <div style={{ padding: "16px 14px" }}>
-          <div style={{ padding: "10px 12px", fontSize: "12px", background: "var(--color-bg-danger)", color: "var(--color-text-danger)", borderRadius: "var(--radius-md)" }}>
-            {errorMsg}
-          </div>
-          <button
-            onClick={onBackToChat}
-            style={{ marginTop: "10px", padding: "6px 14px", fontSize: "12px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}
-          >チャットに戻る</button>
-        </div>
-      )}
-
-      {/* 生成中 */}
-      {phase === "generating" && (
-        <AIProgressLoader phases={PJ_GEN_PHASES} intervalMs={4500} />
-      )}
-
-      {/* 完了 */}
-      {phase === "done" && (
-        <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "12px", padding: "40px" }}>
-          <div style={{ fontSize: "32px" }}>🎉</div>
-          <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)" }}>プロジェクトを作成しました</div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-            「{projName}」と{projTaskRows.filter(r => r.selected).length}件のタスクを追加しました
-          </div>
-        </div>
-      )}
-
-      {/* チャットフェーズ */}
-      {phase === "chat" && (
-        <>
-          <div style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
-            {messages.map((m, i) => (
-              <div key={i} className="chat-bubble-in" style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start" }}>
-                <div style={{
-                  maxWidth: "85%", padding: "8px 12px",
-                  borderRadius: m.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                  background: m.role === "user" ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "var(--color-bg-secondary)",
-                  color: m.role === "user" ? "#fff" : "var(--color-text-primary)",
-                  fontSize: "12px", lineHeight: "1.6",
-                }}>
-                  {m.role === "assistant" && i === typingIndex
-                    ? <TypingMessage text={m.content} />
-                    : m.content}
-                </div>
-              </div>
-            ))}
-            {thinking && (
-              <div className="chat-bubble-in" style={{ display: "flex", justifyContent: "flex-start" }}>
-                <div style={{ borderRadius: "14px 14px 14px 4px", background: "var(--color-bg-secondary)" }}>
-                  <ThinkingDots />
-                </div>
-              </div>
-            )}
-            <div ref={chatEndRef} />
-          </div>
-
-          {/* ターン数インジケータ */}
-          {turns > 0 && (
-            <div style={{ padding: "0 14px 4px", display: "flex", alignItems: "center", gap: "4px" }}>
-              {Array.from({ length: MAX_CREATE_TURNS }).map((_, i) => (
-                <div key={i} style={{
-                  flex: 1, height: "3px", borderRadius: "2px",
-                  background: i < turns ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-                  transition: "background 0.3s",
-                }} />
-              ))}
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginLeft: "6px", whiteSpace: "nowrap" }}>
-                {turns}/{MAX_CREATE_TURNS}
-              </span>
-            </div>
-          )}
-
-          {/* 入力エリア */}
-          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", alignItems: "flex-end" }}>
-            <textarea
-              value={input}
-              onChange={e => onInput(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }}
-              placeholder="メッセージを入力… (Enter で送信)"
-              disabled={thinking || turns >= MAX_CREATE_TURNS}
-              style={{
-                flex: 1, resize: "none", minHeight: "36px", maxHeight: "80px",
-                padding: "7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-secondary)",
-                color: "var(--color-text-primary)",
-                outline: "none", lineHeight: "1.5",
-                fieldSizing: "content" as React.CSSProperties["fieldSizing"],
-              }}
-              rows={1}
-            />
-            <button
-              onClick={onSend}
-              disabled={!input.trim() || thinking || turns >= MAX_CREATE_TURNS}
-              style={{
-                padding: "7px 12px", background: "var(--color-brand)",
-                border: "none", borderRadius: "var(--radius-md)",
-                color: "#fff", fontSize: "12px", cursor: "pointer",
-                opacity: (!input.trim() || thinking || turns >= MAX_CREATE_TURNS) ? 0.4 : 1, flexShrink: 0,
-              }}
-            >送信</button>
-          </div>
-
-          {/* フッター */}
-          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "space-between", alignItems: "center" }}>
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              {turns === 0 ? "AIからの質問に答えてください" : turns >= MAX_CREATE_TURNS ? "情報が揃いました" : `あと${MAX_CREATE_TURNS - turns}ターン入力できます`}
-            </span>
-            <button
-              onClick={onGenerate}
-              disabled={turns === 0 || thinking}
-              style={{
-                padding: "6px 14px", fontSize: "12px", fontWeight: "600",
-                background: turns === 0 || thinking ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                border: "none", borderRadius: "var(--radius-md)",
-                cursor: turns === 0 || thinking ? "not-allowed" : "pointer",
-                color: turns === 0 || thinking ? "var(--color-text-tertiary)" : "#fff",
-              }}
-            >✨ プランを生成する</button>
-          </div>
-        </>
-      )}
-
-      {/* 確認フェーズ */}
-      {(phase === "confirm" || phase === "saving") && (
-        <>
-          <div style={{ flex: 1, overflow: "auto", padding: "14px", display: "flex", flexDirection: "column", gap: "12px" }}>
-            {/* PJ基本情報 */}
-            <div style={{ padding: "10px 12px", background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)", display: "flex", flexDirection: "column", gap: "8px" }}>
-              <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)" }}>プロジェクト情報</div>
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>プロジェクト名</label>
-                <input value={projName} onChange={e => setProjName(e.target.value)} style={inputStyle} disabled={phase === "saving"} />
-              </div>
-              <div>
-                <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>目的・背景</label>
-                <textarea value={projPurpose} onChange={e => setProjPurpose(e.target.value)} rows={2} style={{ ...inputStyle, resize: "vertical" }} disabled={phase === "saving"} />
-              </div>
-              <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-                <div style={{ flex: "1 1 120px" }}>
-                  <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>オーナー</label>
-                  <select value={projOwnerId} onChange={e => setProjOwnerId(e.target.value)} style={inputStyle} disabled={phase === "saving"}>
-                    {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>カラー</label>
-                  <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-                    {PROJECT_COLORS.map(c => (
-                      <button key={c} onClick={() => setProjColor(c)} style={{ width: "18px", height: "18px", borderRadius: "50%", background: c, border: projColor === c ? "2px solid var(--color-text-primary)" : "2px solid transparent", cursor: "pointer", padding: 0 }} />
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* タスク一覧 */}
-            <div>
-              <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
-                タスク候補（{projTaskRows.filter(r => r.selected).length}/{projTaskRows.length} 件選択中）
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                {projTaskRows.map((r, i) => (
-                  <div key={i} style={{
-                    display: "flex", gap: "8px", alignItems: "flex-start",
-                    padding: "8px 10px",
-                    background: r.selected ? "var(--color-bg-secondary)" : "var(--color-bg-tertiary,#f9f9f9)",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    opacity: r.selected ? 1 : 0.5,
-                  }}>
-                    <input type="checkbox" checked={r.selected} onChange={e => setProjTaskRows(prev => prev.map((x, j) => j === i ? { ...x, selected: e.target.checked } : x))} style={{ marginTop: "3px", flexShrink: 0, cursor: "pointer" }} />
-                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <input value={r.editedName} onChange={e => setProjTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedName: e.target.value } : x))} style={inputStyle} disabled={!r.selected || phase === "saving"} />
-                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                        <select value={r.editedAssigneeId} onChange={e => setProjTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: e.target.value } : x))} style={{ ...inputStyle, flex: "1 1 100px" }} disabled={!r.selected || phase === "saving"}>
-                          <option value="">（担当なし）</option>
-                          {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                        </select>
-                        <input type="date" value={r.editedDueDate} onChange={e => setProjTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedDueDate: e.target.value } : x))} style={{ ...inputStyle, flex: "0 0 auto" }} disabled={!r.selected || phase === "saving"} />
-                      </div>
-                      {r.note && <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{r.note}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* 確認フッター */}
-          <div style={{ padding: "10px 14px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
-            <button onClick={onBackToChat} disabled={phase === "saving"} style={{ padding: "6px 12px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", color: "var(--color-text-secondary)" }}>← チャットに戻る</button>
-            <button
-              onClick={onSave}
-              disabled={phase === "saving" || !projName.trim() || projTaskRows.filter(r => r.selected).length === 0}
-              style={{
-                padding: "6px 16px", fontSize: "12px", fontWeight: "600",
-                background: phase === "saving" ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                border: "none", borderRadius: "var(--radius-md)",
-                cursor: phase === "saving" ? "not-allowed" : "pointer",
-                color: phase === "saving" ? "var(--color-text-tertiary)" : "#fff",
-              }}
-            >{phase === "saving" ? "作成中..." : "🚀 プロジェクトを作成"}</button>
-          </div>
-        </>
-      )}
-    </div>
   );
 }
