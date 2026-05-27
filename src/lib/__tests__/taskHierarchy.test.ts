@@ -9,6 +9,7 @@ import {
   parentProgress,
   effectiveStatus,
   eligibleParentTasks,
+  parentTaskCandidates,
 } from "../taskHierarchy";
 
 // テスト用の最小 Task ファクトリ。階層関連と集計に必要な列だけ指定可能にする。
@@ -203,5 +204,36 @@ describe("eligibleParentTasks：2階層制約", () => {
     const ids = eligibleParentTasks(tasks, "pj1").map(t => t.id);
     expect(ids).not.toContain("otherpj");
     expect(ids).not.toContain("del");
+  });
+});
+
+describe("parentTaskCandidates：同一PJ優先・他PJも候補・最上位のみ", () => {
+  const tasks: Task[] = [
+    mk({ id: "top1", project_id: "pj1", display_order: 2 }),
+    mk({ id: "top2", project_id: "pj1", display_order: 1 }),
+    mk({ id: "child1", project_id: "pj1", parent_task_id: "top1" }),
+    mk({ id: "otherA", project_id: "pj2", display_order: 2 }),
+    mk({ id: "otherB", project_id: "pj2", display_order: 1 }),
+    mk({ id: "del", project_id: "pj1", is_deleted: true }),
+  ];
+
+  it("同一PJの最上位を先頭に、その後に他PJの最上位を返す（各グループ内は order 順）", () => {
+    // 同一PJ(pj1)：top2(order1)→top1(order2)、その後 他PJ(pj2)：otherB(order1)→otherA(order2)
+    expect(parentTaskCandidates(tasks, "pj1").map(t => t.id))
+      .toEqual(["top2", "top1", "otherB", "otherA"]);
+  });
+
+  it("自分自身を除外し、小タスク（親持ち）・削除済みは候補に含めない", () => {
+    const ids = parentTaskCandidates(tasks, "pj1", "top1").map(t => t.id);
+    expect(ids).not.toContain("top1");   // 自分自身
+    expect(ids).not.toContain("child1"); // 小タスク（最上位でない）
+    expect(ids).not.toContain("del");    // 削除済み
+    expect(ids).toEqual(["top2", "otherB", "otherA"]);
+  });
+
+  it("currentProjectId が null でも他PJ最上位を全件（order 順）返す", () => {
+    // null と一致するPJがないので全件「他PJ」グループ＝全体を order 順で返す
+    expect(parentTaskCandidates(tasks, null).map(t => t.id))
+      .toEqual(["top2", "otherB", "top1", "otherA"]);
   });
 });

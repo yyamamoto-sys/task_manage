@@ -13,7 +13,7 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
-import { eligibleParentTasks, isParentTask } from "../../lib/taskHierarchy";
+import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -73,12 +73,20 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     [originalTask, allTasks],
   );
 
-  // 親タスク候補＝同一PJの最上位タスク（自分自身を除外）
-  const parentOptions = useMemo(() => ([
-    { value: "", label: "（なし＝大タスク）" },
-    ...eligibleParentTasks(allTasks, originalTask?.project_id ?? null, originalTask?.id)
-      .map(t => ({ value: t.id, label: t.name })),
-  ]), [allTasks, originalTask?.project_id, originalTask?.id]);
+  // 親タスク候補＝全PJの最上位タスク。元タスクのPJを先頭に、他PJはPJ名を併記。
+  // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
+  const currentProjectId = originalTask?.project_id ?? null;
+  const parentOptions = useMemo(() => {
+    const pjName = (id: string | null) =>
+      id ? projects.find(p => p.id === id)?.name : undefined;
+    return [
+      { value: "", label: "（なし＝大タスク）" },
+      ...parentTaskCandidates(allTasks, currentProjectId, originalTask?.id).map(t => {
+        const otherPjName = t.project_id !== currentProjectId ? pjName(t.project_id) : undefined;
+        return { value: t.id, label: otherPjName ? `${t.name}（${otherPjName}）` : t.name };
+      }),
+    ];
+  }, [allTasks, currentProjectId, originalTask?.id, projects]);
 
   const [form, setForm] = useState({
     name:                 originalTask?.name ?? "",

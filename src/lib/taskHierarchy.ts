@@ -120,3 +120,26 @@ export function eligibleParentTasks(
     )
     .sort(sortByOrder);
 }
+
+/**
+ * 親タスク選択用の候補。全PJの最上位タスク（parent_task_id 無し・非削除・自分以外）を、
+ * currentProjectId と同じPJのものを先頭に、その後は他PJ、という順で返す。
+ * （子を選ぶと子は親のPJに揃うため、他PJ親も許容。同一PJを優先表示する目的のヘルパー）
+ */
+export function parentTaskCandidates(
+  tasks: Task[],
+  currentProjectId: string | null,
+  forTaskId?: string,
+): Task[] {
+  const tops = tasks
+    .filter(t =>
+      !t.is_deleted &&
+      t.parent_task_id == null &&   // 最上位のみ（小タスクは親になれない＝孫禁止）
+      t.id !== forTaskId,           // 自分自身を除外
+    )
+    .sort(sortByOrder);
+  // 同一PJを先頭グループ、その後は他PJ。各グループ内は sortByOrder の並びを保つ（安定）。
+  const same = tops.filter(t => t.project_id === currentProjectId);
+  const other = tops.filter(t => t.project_id !== currentProjectId);
+  return [...same, ...other];
+}

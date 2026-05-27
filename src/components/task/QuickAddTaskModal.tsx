@@ -8,7 +8,7 @@ import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from 
 import { CustomSelect } from "../common/CustomSelect";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
-import { eligibleParentTasks } from "../../lib/taskHierarchy";
+import { parentTaskCandidates } from "../../lib/taskHierarchy";
 import { v4 as uuidv4 } from "uuid";
 
 interface Props {
@@ -50,14 +50,23 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
 
   const handleKrChange = (val: string) => { setKrId(val); setTfId(""); setTodoIds([]); };
   const handleTfChange = (val: string) => { setTfId(val); setTodoIds([]); };
-  // PJ を変えたら選択中の親タスクをクリア（親子は同一PJ内のため）
-  const handleProjectChange = (val: string) => { setProjectId(val); setParentId(""); };
+  // PJ を変えても選択中の親タスクはクリアしない（他PJ親も許容するため）。
+  // 親を選んで保存すると project_id は親のPJに揃う（handleSave）。
+  const handleProjectChange = (val: string) => { setProjectId(val); };
 
-  // 親タスク候補＝選択中PJの最上位タスクのみ（taskHierarchy に集約）
-  const parentOptions = useMemo(() => ([
-    { value: "", label: "（なし＝大タスク）" },
-    ...eligibleParentTasks(rawTasks, projectId || null).map(t => ({ value: t.id, label: t.name })),
-  ]), [rawTasks, projectId]);
+  // 親タスク候補＝全PJの最上位タスク。選択中PJを先頭に、他PJはPJ名を併記。
+  // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
+  const parentOptions = useMemo(() => {
+    const pjName = (id: string | null) =>
+      id ? projects.find(p => p.id === id)?.name : undefined;
+    return [
+      { value: "", label: "（なし＝大タスク）" },
+      ...parentTaskCandidates(rawTasks, projectId || null).map(t => {
+        const otherPjName = t.project_id !== (projectId || null) ? pjName(t.project_id) : undefined;
+        return { value: t.id, label: otherPjName ? `${t.name}（${otherPjName}）` : t.name };
+      }),
+    ];
+  }, [rawTasks, projectId, projects]);
 
   // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
   const filteredKrs = useMemo(() => {
@@ -355,15 +364,14 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
           />
         </div>
 
-        {/* 親タスク（任意・2階層固定。PJ選択時のみ有効） */}
+        {/* 親タスク（任意・2階層固定。他PJの親も選べる＝選ぶと子は親のPJに揃う） */}
         <div style={{ marginBottom: "16px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>親タスク（任意）</div>
           <CustomSelect
             value={parentId}
             onChange={setParentId}
             options={parentOptions}
-            placeholder={projectId ? "（なし＝大タスク）" : "先にプロジェクトを選択"}
-            disabled={!projectId}
+            placeholder="（なし＝大タスク）"
             searchable
             searchPlaceholder="親タスクを検索..."
           />
