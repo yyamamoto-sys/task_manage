@@ -8,6 +8,7 @@ import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from 
 import { CustomSelect } from "../common/CustomSelect";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
+import { eligibleParentTasks } from "../../lib/taskHierarchy";
 import { v4 as uuidv4 } from "uuid";
 
 interface Props {
@@ -21,6 +22,7 @@ const TODO_OTHER_ID = "__other__";
 
 export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
+  const rawTasks                = useAppStore(s => s.tasks);
   const rawMembers              = useAppStore(s => s.members);
   const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);
@@ -37,6 +39,7 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
   const [projectId, setProjectId] = useState("");
+  const [parentId, setParentId] = useState("");
   const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");
   const [todoIds, setTodoIds] = useState<string[]>([]);
@@ -47,6 +50,14 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
 
   const handleKrChange = (val: string) => { setKrId(val); setTfId(""); setTodoIds([]); };
   const handleTfChange = (val: string) => { setTfId(val); setTodoIds([]); };
+  // PJ を変えたら選択中の親タスクをクリア（親子は同一PJ内のため）
+  const handleProjectChange = (val: string) => { setProjectId(val); setParentId(""); };
+
+  // 親タスク候補＝選択中PJの最上位タスクのみ（taskHierarchy に集約）
+  const parentOptions = useMemo(() => ([
+    { value: "", label: "（なし＝大タスク）" },
+    ...eligibleParentTasks(rawTasks, projectId || null).map(t => ({ value: t.id, label: t.name })),
+  ]), [rawTasks, projectId]);
 
   // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
   const filteredKrs = useMemo(() => {
@@ -74,10 +85,25 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
     if (!name.trim()) return;
     setSaving(true);
     const now = new Date().toISOString();
+    // 親を選んだら project_id は親のPJ（候補は選択PJで絞り込み済みなので一致するはず）
+    const parent = parentId ? rawTasks.find(t => t.id === parentId) : null;
+    const effectiveProjectId = parent ? (parent.project_id ?? null) : (projectId || null);
+    // display_order：同じ親（または最上位）内の兄弟の最大 display_order + 1
+    // 兄弟＝同 project_id かつ同 parent_task_id の非削除タスク
+    const siblings = rawTasks.filter(t =>
+      !t.is_deleted &&
+      (t.project_id ?? null) === effectiveProjectId &&
+      (t.parent_task_id ?? null) === (parentId || null),
+    );
+    const nextOrder = siblings.length === 0
+      ? 0
+      : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
     const task: Task = {
       id: uuidv4(),
       name: name.trim(),
-      project_id: projectId || null,
+      project_id: effectiveProjectId,
+      parent_task_id: parentId || null,
+      display_order: nextOrder,
       todo_ids: todoIds.filter(id => id !== TODO_OTHER_ID),
       assignee_member_id: assigneeId,
       assignee_member_ids: assigneeId ? [assigneeId] : [],
@@ -314,11 +340,11 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
         )}
 
         {/* プロジェクト */}
-        <div style={{ marginBottom: "16px" }}>
+        <div style={{ marginBottom: "12px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>プロジェクト（任意）</div>
           <CustomSelect
             value={projectId}
-            onChange={setProjectId}
+            onChange={handleProjectChange}
             options={[
               { value: "", label: "プロジェクトを選択..." },
               ...projects.map(p => ({ value: p.id, label: p.name })),
@@ -326,6 +352,20 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
             placeholder="プロジェクトを選択..."
             searchable
             searchPlaceholder="プロジェクト名で検索..."
+          />
+        </div>
+
+        {/* 親タスク（任意・2階層固定。PJ選択時のみ有効） */}
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>親タスク（任意）</div>
+          <CustomSelect
+            value={parentId}
+            onChange={setParentId}
+            options={parentOptions}
+            placeholder={projectId ? "（なし＝大タスク）" : "先にプロジェクトを選択"}
+            disabled={!projectId}
+            searchable
+            searchPlaceholder="親タスクを検索..."
           />
         </div>
 

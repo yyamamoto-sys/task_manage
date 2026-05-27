@@ -13,6 +13,7 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
+import { eligibleParentTasks, isParentTask } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -66,12 +67,26 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     [originalTask?.due_date, originalTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // このタスクが子を持つ親なら、親に設定できない（孫禁止）
+  const isParent = useMemo(
+    () => originalTask ? isParentTask(originalTask, allTasks) : false,
+    [originalTask, allTasks],
+  );
+
+  // 親タスク候補＝同一PJの最上位タスク（自分自身を除外）
+  const parentOptions = useMemo(() => ([
+    { value: "", label: "（なし＝大タスク）" },
+    ...eligibleParentTasks(allTasks, originalTask?.project_id ?? null, originalTask?.id)
+      .map(t => ({ value: t.id, label: t.name })),
+  ]), [allTasks, originalTask?.project_id, originalTask?.id]);
+
   const [form, setForm] = useState({
     name:                 originalTask?.name ?? "",
     status:               originalTask?.status ?? "todo" as Task["status"],
     priority:             originalTask?.priority ?? "",
     assignee_member_ids:  originalTask ? getAssigneeIds(originalTask) : [] as string[],
     project_id:           originalTask?.project_id ?? null as string | null,
+    parent_task_id:       originalTask?.parent_task_id ?? null as string | null,
     start_date:           originalTask?.start_date ?? "",
     due_date:             originalTask?.due_date ?? "",
     estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
@@ -87,6 +102,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   handleAutoSaveRef.current = async () => {
     if (!originalTask) return;
     const hours = parseFloat(form.estimated_hours);
+    // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
+    const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
+    const effectiveProjectId = parent ? (parent.project_id ?? null) : (form.project_id || null);
     const updated: Task = {
       ...originalTask,
       name:                form.name.trim() || originalTask.name,
@@ -94,7 +112,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
       priority:            (form.priority as Task["priority"]) || null,
       assignee_member_ids: form.assignee_member_ids,
       assignee_member_id:  form.assignee_member_ids[0] ?? "",
-      project_id:          form.project_id || null,
+      project_id:          effectiveProjectId,
+      parent_task_id:      form.parent_task_id || null,
+      // display_order は既存値を保持（編集では並び順を変えない＝...originalTask 由来）
       start_date:          form.start_date || null,
       due_date:            form.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
@@ -331,6 +351,21 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               ]}
               searchable searchPlaceholder="プロジェクトで検索..."
             />
+          </FieldSection>
+
+          {/* 親タスク（2階層固定。子を持つタスクは親に設定不可） */}
+          <FieldSection label="親タスク">
+            <CustomSelect value={form.parent_task_id ?? ""}
+              onChange={value => setForm(f => ({ ...f, parent_task_id: value || null }))}
+              options={parentOptions}
+              disabled={isParent}
+              searchable searchPlaceholder="親タスクを検索..."
+            />
+            {isParent && (
+              <div style={{ marginTop: "4px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                子タスクがあるため親に設定できません
+              </div>
+            )}
           </FieldSection>
 
           {/* 追加プロジェクト */}

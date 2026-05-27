@@ -12,6 +12,7 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
+import { eligibleParentTasks, isParentTask } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -29,6 +30,7 @@ type SidebarForm = {
   priority: string;
   assignee_member_ids: string[];
   project_id: string | null;
+  parent_task_id: string | null;
   start_date: string;
   due_date: string;
   estimated_hours: string;
@@ -78,6 +80,19 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     [selectedTask?.due_date, selectedTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
+  // このタスクが子を持つ親なら、親に設定できない（孫禁止）
+  const isParent = useMemo(
+    () => selectedTask ? isParentTask(selectedTask, allTasks) : false,
+    [selectedTask, allTasks],
+  );
+
+  // 親タスク候補＝同一PJの最上位タスク（自分自身を除外）
+  const parentOptions = useMemo(() => ([
+    { value: "", label: "（なし＝大タスク）" },
+    ...eligibleParentTasks(allTasks, selectedTask?.project_id ?? null, selectedTask?.id)
+      .map(t => ({ value: t.id, label: t.name })),
+  ]), [allTasks, selectedTask?.project_id, selectedTask?.id]);
+
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -95,6 +110,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       priority:            selectedTask.priority ?? "",
       assignee_member_ids: getAssigneeIds(selectedTask),
       project_id:          selectedTask.project_id ?? null,
+      parent_task_id:      selectedTask.parent_task_id ?? null,
       start_date:          selectedTask.start_date ?? "",
       due_date:            selectedTask.due_date ?? "",
       estimated_hours:     selectedTask.estimated_hours?.toString() ?? "",
@@ -110,6 +126,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   saveRef.current = async () => {
     if (!selectedTask || !sidebarForm) return;
     const hours = parseFloat(sidebarForm.estimated_hours);
+    // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
+    const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
+    const effectiveProjectId = parent ? (parent.project_id ?? null) : (sidebarForm.project_id || null);
     const updated: Task = {
       ...selectedTask,
       name:                sidebarForm.name.trim() || selectedTask.name,
@@ -117,7 +136,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       priority:            (sidebarForm.priority as Task["priority"]) || null,
       assignee_member_ids: sidebarForm.assignee_member_ids,
       assignee_member_id:  sidebarForm.assignee_member_ids[0] ?? "",
-      project_id:          sidebarForm.project_id || null,
+      project_id:          effectiveProjectId,
+      parent_task_id:      sidebarForm.parent_task_id || null,
+      // display_order は既存値を保持（編集では並び順を変えない＝...selectedTask 由来）
       start_date:          sidebarForm.start_date || null,
       due_date:            sidebarForm.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
@@ -303,6 +324,21 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           ]}
           searchable searchPlaceholder="プロジェクトで検索..."
           style={{ marginBottom: "12px" }} />
+
+        {/* 親タスク（2階層固定。子を持つタスクは親に設定不可） */}
+        <SideLabel>親タスク</SideLabel>
+        <CustomSelect
+          value={sidebarForm.parent_task_id ?? ""}
+          onChange={value => setSidebarForm(f => f ? { ...f, parent_task_id: value || null } : f)}
+          options={parentOptions}
+          disabled={isParent}
+          searchable searchPlaceholder="親タスクを検索..."
+          style={{ marginBottom: isParent ? "4px" : "12px" }} />
+        {isParent && (
+          <div style={{ marginBottom: "12px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            子タスクがあるため親に設定できません
+          </div>
+        )}
 
         {/* 追加プロジェクト */}
         <SideLabel>追加プロジェクト</SideLabel>
