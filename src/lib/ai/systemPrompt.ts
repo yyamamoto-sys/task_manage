@@ -67,6 +67,9 @@ const RESPONSE_FORMAT = `
   new_project_tasks に新規PJの初期タスクを3〜8件提案する（各要素は {name（必須）, suggested_assignee（任意・members の short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）}）。
   日付は context の today / quarters（四半期）から妥当な範囲で設定すること。
   既存タスクへの追加（add_task）とは混同しないこと。新規PJの中身の初期タスクは必ず new_project_tasks に入れ、add_task は使わない。
+  **重要：PJ作成を依頼されたら、情報が乏しくても add_project 提案を必ず1件返すこと**（文脈から妥当なPJ名・目的・初期タスクの「たたき台」を入れる。ユーザーは確認画面で自由に編集できる）。
+  情報が足りないという理由で info の質問だけを返して提案を出さない、ということは避ける。確認したい点は follow_up_suggestions に質問として入れ、提案自体（add_project）は必ず同時に返す。
+  目的が未指定なら description に「（仮）」とした上で妥当な目的案を書き、初期タスクも一般的な立ち上げタスク（要件整理・関係者確認・スケジュール作成 等）でたたき台を作る。
 
 ## info アクションの使い方
 ユーザーが「一覧を見たい」「教えて」「確認したい」などの情報収集系の相談をした場合は info を使うこと。

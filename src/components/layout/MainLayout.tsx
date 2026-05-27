@@ -225,7 +225,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setConsultDefaultMode("consult");
     setIsConsultOpen(true);
     setConsultPrefill({
-      text: "新しいプロジェクトを立ち上げたいです。目的や背景は次のとおりです：",
+      text: "新しいプロジェクトを立ち上げたいです。目的・ゴールの案と初期タスクのたたき台を提案してください。（決まっている目的・期限・担当があればこの文に書き足してください）",
       nonce: Date.now(),
     });
   };
