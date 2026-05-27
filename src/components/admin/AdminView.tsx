@@ -25,6 +25,7 @@ import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
 import { CustomSelect } from "../common/CustomSelect";
+import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 
 type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage";
 
@@ -1959,124 +1960,6 @@ const ghostBtnStyle: React.CSSProperties = {
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
 };
-
-// ===== MilestoneAddForm =====
-// PJごとに独立したフォーム状態を持つことでPJ間の入力混在を防ぐ
-
-// 週文字列（"2026-W13"）をその週の月曜日の日付に変換する
-function weekToDate(weekStr: string): string {
-  const [yearStr, weekPart] = weekStr.split("-W");
-  const year = parseInt(yearStr, 10);
-  const week = parseInt(weekPart, 10);
-  // 1月4日は常にW1に含まれる
-  const jan4 = new Date(year, 0, 4);
-  const monday = new Date(jan4);
-  monday.setDate(jan4.getDate() - ((jan4.getDay() + 6) % 7) + (week - 1) * 7);
-  return monday.toISOString().split("T")[0];
-}
-
-// 日付文字列から週の月曜〜日曜の範囲ラベルを生成する（例: "3/23〜3/29"）
-function weekRangeLabel(dateStr: string): string {
-  const mon = new Date(dateStr);
-  const sun = new Date(mon);
-  sun.setDate(mon.getDate() + 6);
-  return `${mon.getMonth() + 1}/${mon.getDate()}〜${sun.getMonth() + 1}/${sun.getDate()}`;
-}
-
-interface MilestoneAddFormProps {
-  pjId: string;
-  currentUserId: string;
-  onAdd: (ms: import("../../lib/localData/types").Milestone) => Promise<void>;
-}
-
-function MilestoneAddForm({ pjId, currentUserId, onAdd }: MilestoneAddFormProps) {
-  const [dateMode, setDateMode] = useState<"date" | "week">("date");
-  const [dateVal, setDateVal]     = useState("");
-  const [weekVal, setWeekVal]     = useState("");
-  const [name, setName]           = useState("");
-  const [description, setDescription] = useState("");
-
-  const resolvedDate = dateMode === "date" ? dateVal : (weekVal ? weekToDate(weekVal) : "");
-  const canSubmit = name.trim() !== "" && resolvedDate !== "";
-
-  const handleAdd = async () => {
-    if (!canSubmit) return;
-    const now = new Date().toISOString();
-    await onAdd({
-      id: crypto.randomUUID(),
-      project_id: pjId,
-      name: name.trim(),
-      date: resolvedDate,
-      description: description.trim() || undefined,
-      is_deleted: false,
-      created_at: now, updated_at: now, updated_by: currentUserId,
-    });
-    setDateVal(""); setWeekVal(""); setName(""); setDescription("");
-  };
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-      {/* 日付モード切り替え */}
-      <div style={{ display: "flex", gap: "4px" }}>
-        {(["date", "week"] as const).map(mode => (
-          <button key={mode} onClick={() => setDateMode(mode)} style={{
-            padding: "2px 10px", fontSize: "10px",
-            borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)",
-            cursor: "pointer",
-            background: dateMode === mode ? "var(--color-bg-info)" : "transparent",
-            color: dateMode === mode ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-            fontWeight: dateMode === mode ? "500" : "400",
-          }}>
-            {mode === "date" ? "日付" : "週"}
-          </button>
-        ))}
-      </div>
-
-      {/* 日付 or 週 入力 */}
-      <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-        {dateMode === "date" ? (
-          <input type="date" value={dateVal}
-            onChange={e => setDateVal(e.target.value)}
-            style={{ ...inputStyle, width: "140px", flexShrink: 0 }}
-          />
-        ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
-            <input type="week" value={weekVal}
-              onChange={e => setWeekVal(e.target.value)}
-              style={{ ...inputStyle, width: "160px", flexShrink: 0 }}
-            />
-            {weekVal && (
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                {weekRangeLabel(weekToDate(weekVal))}
-              </span>
-            )}
-          </div>
-        )}
-        <input
-          value={name} placeholder="マイルストーン名 *"
-          maxLength={60}
-          onChange={e => setName(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
-          style={{ ...inputStyle, flex: 1, minWidth: "120px" }}
-        />
-      </div>
-
-      {/* 説明（任意） */}
-      <textarea
-        value={description} placeholder="説明（任意）"
-        maxLength={200} rows={2}
-        onChange={e => setDescription(e.target.value)}
-        style={{ ...inputStyle, resize: "vertical" }}
-      />
-
-      <div>
-        <button onClick={handleAdd} disabled={!canSubmit} style={primaryBtnStyle}>
-          追加
-        </button>
-      </div>
-    </div>
-  );
-}
 
 // ===== AI使用量セクション =====
 

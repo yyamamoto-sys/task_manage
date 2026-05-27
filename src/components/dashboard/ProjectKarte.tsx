@@ -25,6 +25,8 @@ import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
 import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { getAssigneeIds } from "../../lib/taskMeta";
+import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
+import { confirmDialog } from "../../lib/dialog";
 
 const ANALYSIS_PHASES = [
   "タスクの状況を読み込んでいます",
@@ -42,6 +44,9 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const rawKrs     = useAppStore(s => s.keyResults);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTpjs    = useAppStore(s => s.taskProjects);
+  const saveMilestone   = useAppStore(s => s.saveMilestone);
+  const deleteMilestone = useAppStore(s => s.deleteMilestone);
+  const [showAddMs, setShowAddMs] = useState(false);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -320,8 +325,23 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
 
         {/* マイルストーン + 紐づくKR */}
         <div>
-          <SectionLabel>マイルストーン</SectionLabel>
-          {milestones.length === 0 && <Muted>設定なし</Muted>}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+            <SectionLabel style={{ marginBottom: "6px" }}>マイルストーン</SectionLabel>
+            <button
+              onClick={() => setShowAddMs(v => !v)}
+              style={{
+                fontSize: "10px", padding: "2px 8px", marginBottom: "6px",
+                borderRadius: "var(--radius-full)", cursor: "pointer",
+                border: "1px solid var(--color-border-primary)",
+                background: showAddMs ? "var(--color-bg-info)" : "transparent",
+                color: showAddMs ? "var(--color-text-info)" : "var(--color-text-secondary)",
+                flexShrink: 0,
+              }}
+            >
+              {showAddMs ? "閉じる" : "＋ 追加"}
+            </button>
+          </div>
+          {milestones.length === 0 && !showAddMs && <Muted>設定なし</Muted>}
           {milestones.slice(0, 5).map(m => {
             const isPast = m.date < today;
             const isNext = nextMilestone?.id === m.id;
@@ -329,10 +349,34 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
               <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", opacity: isPast ? 0.5 : 1 }}>
                 <span style={{ fontSize: "11px" }}>{isPast ? "✅" : isNext ? "🎯" : "•"}</span>
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "44px" }}>{formatMD(m.date)}</span>
-                <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name}</span>
+                <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.name}</span>
+                <button
+                  title="このマイルストーンを削除"
+                  onClick={async () => {
+                    if (await confirmDialog(`マイルストーン「${m.name}」を削除しますか？`)) {
+                      await deleteMilestone(m.id, currentUser.id);
+                    }
+                  }}
+                  style={{
+                    fontSize: "10px", lineHeight: 1, padding: "2px 5px", flexShrink: 0,
+                    border: "none", background: "transparent", cursor: "pointer",
+                    color: "var(--color-text-tertiary)",
+                  }}
+                >
+                  ✕
+                </button>
               </div>
             );
           })}
+          {showAddMs && (
+            <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
+              <MilestoneAddForm
+                pjId={project.id}
+                currentUserId={currentUser.id}
+                onAdd={async (ms) => { await saveMilestone(ms); setShowAddMs(false); }}
+              />
+            </div>
+          )}
           {linkedKrNames.length > 0 && (
             <>
               <SectionLabel style={{ marginTop: "10px" }}>紐づくKR</SectionLabel>
