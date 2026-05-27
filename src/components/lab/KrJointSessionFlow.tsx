@@ -25,6 +25,7 @@ import {
   extractFreeformSession, type ExtractedKrMention,
 } from "../../lib/ai/krSessionExtractor";
 import { HelpButton } from "../guide/HelpButton";
+import { CustomSelect } from "../common/CustomSelect";
 
 type JointMode = "checkin" | "win_session" | "freeform";
 type Step = "input" | "extracting" | "review" | "saving" | "done";
@@ -597,15 +598,16 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {freeformFollowUps.map(row => (
                 <div key={row.tempId} style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-                  <select value={row.member_short_name}
-                    onChange={e => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, member_short_name: e.target.value } : r))}
-                    style={selStyleSm}>
-                    <option value="">（誰）</option>
-                    {memberShortNames.map(n => <option key={n} value={n}>{n}</option>)}
-                    {!memberShortNames.includes(row.member_short_name) && row.member_short_name && (
-                      <option value={row.member_short_name}>{row.member_short_name}</option>
-                    )}
-                  </select>
+                  <CustomSelect value={row.member_short_name}
+                    onChange={value => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, member_short_name: value } : r))}
+                    options={[
+                      { value: "", label: "（誰）" },
+                      ...memberShortNames.map(n => ({ value: n, label: n })),
+                      ...(!memberShortNames.includes(row.member_short_name) && row.member_short_name
+                        ? [{ value: row.member_short_name, label: row.member_short_name }] : []),
+                    ]}
+                    searchable searchPlaceholder="メンバーで検索..."
+                    style={{ minWidth: "100px" }} />
                   <input type="text" value={row.content}
                     onChange={e => setFreeformFollowUps(freeformFollowUps.map(r => r.tempId === row.tempId ? { ...r, content: e.target.value } : r))}
                     placeholder="タスク内容"
@@ -848,11 +850,15 @@ function CheckinReview({ draft, memberShortNames, onChange }: {
           {draft.declarations.length === 0 && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>このKRに該当する宣言はAIが検出しませんでした。必要があれば「＋ 宣言を追加」してください。</div>}
           {draft.declarations.map((d, i) => (
             <div key={i} style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-              <select value={d.member_short_name} onChange={e => updateDecl(i, { member_short_name: e.target.value })} style={selStyleSm}>
-                <option value="">（誰）</option>
-                {memberShortNames.map(n => <option key={n} value={n}>{n}</option>)}
-                {!memberShortNames.includes(d.member_short_name) && d.member_short_name && <option value={d.member_short_name}>{d.member_short_name}</option>}
-              </select>
+              <CustomSelect value={d.member_short_name} onChange={value => updateDecl(i, { member_short_name: value })}
+                options={[
+                  { value: "", label: "（誰）" },
+                  ...memberShortNames.map(n => ({ value: n, label: n })),
+                  ...(!memberShortNames.includes(d.member_short_name) && d.member_short_name
+                    ? [{ value: d.member_short_name, label: d.member_short_name }] : []),
+                ]}
+                searchable searchPlaceholder="メンバーで検索..."
+                style={{ minWidth: "100px" }} />
               <input type="text" value={d.content} onChange={e => updateDecl(i, { content: e.target.value })} placeholder="宣言内容" style={{ ...inputStyle, flex: 1, minWidth: "200px" }} />
               <input type="date" value={d.due_date ?? ""} onChange={e => updateDecl(i, { due_date: e.target.value || null })} style={selStyleSm} />
               <button onClick={() => removeDecl(i)} style={{ ...ghostBtn, padding: "5px 8px" }} title="削除">✕</button>
@@ -899,12 +905,14 @@ function WinReview({ draft, previousDeclarations, memberById, onChange }: {
               <div style={{ flex: "1 1 280px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
                 <span style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>{who}</span>：{pd.content}{pd.due_date ? ` （期日: ${pd.due_date}）` : ""}
               </div>
-              <select value={r?.result_status ?? ""} onChange={e => setResult(i, { result_status: (e.target.value || null) as WinDraft["declaration_results"][number]["result_status"] })} style={selStyleSm}>
-                <option value="">—</option>
-                <option value="achieved">達成</option>
-                <option value="partial">一部達成</option>
-                <option value="not_achieved">未達</option>
-              </select>
+              <CustomSelect value={r?.result_status ?? ""} onChange={value => setResult(i, { result_status: (value || null) as WinDraft["declaration_results"][number]["result_status"] })}
+                options={[
+                  { value: "", label: "—" },
+                  { value: "achieved", label: "達成" },
+                  { value: "partial", label: "一部達成" },
+                  { value: "not_achieved", label: "未達" },
+                ]}
+                style={{ minWidth: "100px" }} />
               <input type="text" value={r?.result_note ?? ""} onChange={e => setResult(i, { result_note: e.target.value })} placeholder="メモ（任意）" style={{ ...inputStyle, flex: "1 1 200px" }} />
             </div>
           );

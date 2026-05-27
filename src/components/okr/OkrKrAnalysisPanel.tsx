@@ -26,6 +26,7 @@ import { analyzeKr, type KrAnalysisInput, type KrAnalysisTf } from "../../lib/ai
 import { analyzeObjective, type ObjectiveAnalysisKrInput } from "../../lib/ai/okrObjectiveAnalysisClient";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { tfsForKr as tfsForKrInQuarter } from "../../lib/okr/tfQuarter";
+import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
 // 今日の四半期判定は lib/date.ts の currentQuarter() に一元化済み（import 済み）。
@@ -291,18 +292,19 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ flex: "1 1 360px" }}>
           <Label>分析対象</Label>
-          <select value={target ? encodeTarget(target) : ""} onChange={e => setTarget(decodeTarget(e.target.value))} style={selStyle}>
-            {objective && <option value={`obj:${objective.id}`}>Objective全体（{objective.title}）</option>}
-            {krsUnderObj.length === 0 && !objective && <option value="">（対象がありません）</option>}
-            {krsUnderObj.map(k => <option key={k.id} value={`kr:${k.id}`}>KR：{k.title}</option>)}
-          </select>
+          <CustomSelect value={target ? encodeTarget(target) : ""} onChange={value => setTarget(decodeTarget(value))}
+            options={[
+              ...(objective ? [{ value: `obj:${objective.id}`, label: `Objective全体（${objective.title}）` }] : []),
+              ...(krsUnderObj.length === 0 && !objective ? [{ value: "", label: "（対象がありません）" }] : []),
+              ...krsUnderObj.map(k => ({ value: `kr:${k.id}`, label: `KR：${k.title}` })),
+            ] as SelectOption[]}
+            searchable searchPlaceholder="KRで検索..." />
         </div>
         {isKr && (
           <div style={{ flex: "0 1 130px" }}>
             <Label>クォーター（対象TF）</Label>
-            <select value={quarter} onChange={e => setQuarter(e.target.value as Quarter)} style={selStyle}>
-              {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
-            </select>
+            <CustomSelect value={quarter} onChange={value => setQuarter(value as Quarter)}
+              options={QUARTERS.map(q => ({ value: q, label: `${q}${q === currentQuarter() ? "（今）" : ""}` }))} />
           </div>
         )}
         <button onClick={onClose} style={{ ...ghostBtn, marginLeft: "auto" }}>閉じる</button>
@@ -410,11 +412,6 @@ function Label({ children }: { children: React.ReactNode }) {
 function ErrBox({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{children}</div>;
 }
-const selStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", fontSize: "12px",
-  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-  background: "var(--color-bg-primary)", color: "var(--color-text-primary)", boxSizing: "border-box",
-};
 const primaryBtn: React.CSSProperties = {
   padding: "8px 18px", fontSize: "12px", fontWeight: 600,
   background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff",

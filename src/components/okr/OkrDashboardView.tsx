@@ -18,6 +18,7 @@ import { fetchKrMeetingNote, type KrMeetingNote } from "../../lib/supabase/krMee
 import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 import { HelpButton } from "../guide/HelpButton";
+import { CustomSelect } from "../common/CustomSelect";
 
 // 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）
 // 概要は OKR ボタン（右上）からオーバーレイで開く。
@@ -963,14 +964,15 @@ function KrSessionHistory({
             チェックイン・ウィンセッションの過去記録（編集・削除可）
           </div>
         </div>
-        <select
+        <CustomSelect
           value={filterKrId}
-          onChange={e => { setFilterKrId(e.target.value); onSelectKr(e.target.value || null); }}
-          style={{ fontSize: "12px", padding: "6px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", color: "var(--color-text-primary)" }}
-        >
-          <option value="">全KR</option>
-          {activeKrs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
-        </select>
+          onChange={value => { setFilterKrId(value); onSelectKr(value || null); }}
+          options={[
+            { value: "", label: "全KR" },
+            ...activeKrs.map(kr => ({ value: kr.id, label: kr.title })),
+          ]}
+          searchable searchPlaceholder="KRで検索..."
+          style={{ width: "200px" }} />
       </div>
 
       {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>読み込み中...</div>}

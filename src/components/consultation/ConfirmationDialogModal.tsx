@@ -10,6 +10,7 @@ import type { ConfirmationDialog, PjEndDateItem, NewTaskItem } from "../../lib/a
 import { applyProposalWithConfirmation } from "../../lib/ai/applyProposal";
 import type { ApplyResult } from "../../lib/ai/applyProposal";
 import { useAppStore } from "../../stores/appStore";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   dialog: ConfirmationDialog;
@@ -247,25 +248,17 @@ export function ConfirmationDialogModal({
                 {/* 担当者 */}
                 <div>
                   <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者</div>
-                  <select
+                  <CustomSelect
                     value={confirmedValues[`${item.temp_id}_assignee_id`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: e.target.value }))
+                    onChange={(value) =>
+                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: value }))
                     }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                      width: "100%",
-                    }}
-                  >
-                    <option value="">未担当</option>
-                    {activeMembers.map((m) => (
-                      <option key={m.id} value={m.id}>{m.short_name}</option>
-                    ))}
-                  </select>
+                    options={[
+                      { value: "", label: "未担当" },
+                      ...activeMembers.map((m) => ({ value: m.id, label: m.short_name })),
+                    ]}
+                    searchable searchPlaceholder="メンバーで検索..."
+                  />
                 </div>
 
                 {/* 開始日 */}
@@ -409,29 +402,18 @@ export function ConfirmationDialogModal({
                     />
                   ) : (
                     /* 担当変更: select（値はUUID） */
-                    <select
+                    <CustomSelect
                       value={confirmedValues[item.task_id] ?? ""}
-                      onChange={(e) =>
+                      onChange={(value) =>
                         setConfirmedValues((prev) => ({
                           ...prev,
-                          [item.task_id]: e.target.value,
+                          [item.task_id]: value,
                         }))
                       }
-                      style={{
-                        fontSize: "11px",
-                        padding: "3px 6px",
-                        border: "1px solid var(--color-border-secondary)",
-                        borderRadius: "var(--radius-sm)",
-                        background: "var(--color-bg-primary)",
-                        color: "var(--color-text-primary)",
-                      }}
-                    >
-                      {activeMembers.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.short_name}
-                          </option>
-                        ))}
-                    </select>
+                      options={activeMembers.map((m) => ({ value: m.id, label: m.short_name }))}
+                      searchable searchPlaceholder="メンバーで検索..."
+                      style={{ minWidth: "120px" }}
+                    />
                   )}
                 </div>
               </div>

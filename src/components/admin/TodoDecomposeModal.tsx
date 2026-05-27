@@ -11,6 +11,7 @@ import type { ToDo, Member } from "../../lib/localData/types";
 import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecomposeClient";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   todo: ToDo;
@@ -219,15 +220,17 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
                         disabled={!s.selected}
                       />
                       <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        <select
+                        <CustomSelect
                           value={s.editedAssigneeId}
-                          onChange={e => setSuggestions(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: e.target.value } : x))}
-                          style={{ ...inputStyle, flex: "1 1 120px" }}
+                          onChange={value => setSuggestions(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: value } : x))}
+                          options={[
+                            { value: "", label: "（担当なし）" },
+                            ...members.map(m => ({ value: m.id, label: m.short_name })),
+                          ]}
+                          searchable searchPlaceholder="メンバーで検索..."
                           disabled={!s.selected}
-                        >
-                          <option value="">（担当なし）</option>
-                          {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                        </select>
+                          style={{ flex: "1 1 120px" }}
+                        />
                         <input
                           type="date"
                           value={s.editedDueDate}

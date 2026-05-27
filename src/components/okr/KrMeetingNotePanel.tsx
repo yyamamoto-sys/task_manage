@@ -21,6 +21,7 @@ import {
 import { fetchLatestOkrAnalysis } from "../../lib/supabase/okrAnalysisStore";
 import { fetchLatestFinalizedKrReport } from "../../lib/supabase/krReportStore";
 import { HelpButton } from "../guide/HelpButton";
+import { CustomSelect } from "../common/CustomSelect";
 
 /** その日が属する週の月曜日（YYYY-MM-DD）を返す。 */
 function mondayOfStr(dateStr: string): string {
@@ -285,16 +286,17 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
       <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "flex-end" }}>
         <div style={{ flex: "1 1 280px" }}>
           <Label>Key Result（まず選択）</Label>
-          <select value={krId} onChange={e => changeKr(e.target.value)} style={selStyle}>
-            <option value="">{krs.length === 0 ? "（KRがありません）" : "— KR を選択 —"}</option>
-            {krs.map(k => <option key={k.id} value={k.id}>{k.title}</option>)}
-          </select>
+          <CustomSelect value={krId} onChange={value => changeKr(value)}
+            options={[
+              { value: "", label: krs.length === 0 ? "（KRがありません）" : "— KR を選択 —" },
+              ...krs.map(k => ({ value: k.id, label: k.title })),
+            ]}
+            searchable searchPlaceholder="KRで検索..." />
         </div>
         <div style={{ flex: "0 1 110px" }}>
           <Label>クォーター</Label>
-          <select value={quarter} onChange={e => setQuarter(e.target.value as Quarter)} style={selStyle}>
-            {QUARTERS.map(q => <option key={q} value={q}>{q}{q === currentQuarter() ? "（今）" : ""}</option>)}
-          </select>
+          <CustomSelect value={quarter} onChange={value => setQuarter(value as Quarter)}
+            options={QUARTERS.map(q => ({ value: q, label: `${q}${q === currentQuarter() ? "（今）" : ""}` }))} />
         </div>
         <div style={{ flex: "0 1 230px" }}>
           <Label>対象週</Label>

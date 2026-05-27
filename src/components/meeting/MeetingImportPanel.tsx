@@ -21,6 +21,7 @@ import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { CustomSelect } from "../common/CustomSelect";
 
 const MEETING_PHASES = [
   "テキストを読み込んでいます",
@@ -819,17 +820,17 @@ function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjC
         PJを一括設定（チェック済みのタスクに適用）
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <select
+        <CustomSelect
           value={bulkProjId}
-          onChange={e => setBulkProjId(e.target.value)}
-          style={{ ...inputStyle, flex: 1 }}
-        >
-          <option value="">（プロジェクトを選択）</option>
-          {projects.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-          <option value="__new__">＋ 新規プロジェクトを作成</option>
-        </select>
+          onChange={value => setBulkProjId(value)}
+          options={[
+            { value: "", label: "（プロジェクトを選択）" },
+            ...projects.map(p => ({ value: p.id, label: p.name })),
+            { value: "__new__", label: "＋ 新規プロジェクトを作成" },
+          ]}
+          searchable searchPlaceholder="プロジェクトで検索..."
+          style={{ flex: 1 }}
+        />
         <button
           onClick={() => { if (canApply) onApplyBulk(bulkProjId); }}
           disabled={!canApply}
@@ -933,16 +934,15 @@ function TaskDraftCard({
             {/* 担当者 */}
             <div style={{ flex: "1 1 120px" }}>
               <FieldLabel>担当者</FieldLabel>
-              <select
+              <CustomSelect
                 value={draft.assignee_member_id}
-                onChange={e => onChange({ assignee_member_id: e.target.value })}
-                style={inputStyle}
-              >
-                <option value="">（未設定）</option>
-                {members.map(m => (
-                  <option key={m.id} value={m.id}>{m.short_name}</option>
-                ))}
-              </select>
+                onChange={value => onChange({ assignee_member_id: value })}
+                options={[
+                  { value: "", label: "（未設定）" },
+                  ...members.map(m => ({ value: m.id, label: m.short_name })),
+                ]}
+                searchable searchPlaceholder="メンバーで検索..."
+              />
             </div>
 
             {/* 開始日 */}
@@ -970,33 +970,30 @@ function TaskDraftCard({
             {/* 優先度 */}
             <div style={{ flex: "1 1 120px" }}>
               <FieldLabel>優先度</FieldLabel>
-              <select
+              <CustomSelect
                 value={draft.priority ?? ""}
-                onChange={e => onChange({ priority: (e.target.value as TaskDraft["priority"]) || null })}
-                style={inputStyle}
-              >
-                <option value="">（未設定）</option>
-                {PRIORITY_OPTIONS.map(o => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
+                onChange={value => onChange({ priority: (value as TaskDraft["priority"]) || null })}
+                options={[
+                  { value: "", label: "（未設定）" },
+                  ...PRIORITY_OPTIONS.map(o => ({ value: o.value, label: o.label })),
+                ]}
+              />
             </div>
           </div>
 
           {/* プロジェクト */}
           <div>
             <FieldLabel>プロジェクト</FieldLabel>
-            <select
+            <CustomSelect
               value={draft.project_id}
-              onChange={e => onChange({ project_id: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="">（未設定）</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-              <option value="__new__">＋ 新規プロジェクト（一括設定で作成）</option>
-            </select>
+              onChange={value => onChange({ project_id: value })}
+              options={[
+                { value: "", label: "（未設定）" },
+                ...projects.map(p => ({ value: p.id, label: p.name })),
+                { value: "__new__", label: "＋ 新規プロジェクト（一括設定で作成）" },
+              ]}
+              searchable searchPlaceholder="プロジェクトで検索..."
+            />
           </div>
 
           {/* 根拠引用 */}
@@ -1063,16 +1060,15 @@ function StatusDraftCard({
           {/* 対象タスク選択 */}
           <div>
             <FieldLabel>対象タスク（既存から選択）</FieldLabel>
-            <select
+            <CustomSelect
               value={draft.task_id}
-              onChange={e => onChange({ task_id: e.target.value })}
-              style={inputStyle}
-            >
-              <option value="">（選択してください）</option>
-              {activeTasks.map(t => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+              onChange={value => onChange({ task_id: value })}
+              options={[
+                { value: "", label: "（選択してください）" },
+                ...activeTasks.map(t => ({ value: t.id, label: t.name })),
+              ]}
+              searchable searchPlaceholder="タスクで検索..."
+            />
           </div>
 
           {/* 新ステータス */}

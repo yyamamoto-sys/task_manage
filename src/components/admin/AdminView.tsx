@@ -24,6 +24,7 @@ import { TaskEditModal } from "../task/TaskEditModal";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
+import { CustomSelect } from "../common/CustomSelect";
 
 type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage";
 
@@ -625,11 +626,11 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                     <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
                       <div style={{ flex: "0 0 76px" }}>
                         <FieldLabel>番号</FieldLabel>
-                        <select value={newTfForm.tf_number} onChange={e => setNewTfForm(f => ({...f, tf_number: e.target.value}))}
-                          style={{ ...inputStyle, fontSize: "11px" }}>
-                          <option value="">－</option>
-                          {[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>TF {n}</option>)}
-                        </select>
+                        <CustomSelect value={newTfForm.tf_number} onChange={value => setNewTfForm(f => ({...f, tf_number: value}))}
+                          options={[
+                            { value: "", label: "－" },
+                            ...[1,2,3,4,5,6,7,8,9].map(n => ({ value: String(n), label: `TF ${n}` })),
+                          ]} />
                       </div>
                       <div style={{ flex: 1 }}>
                         <FieldLabel>TF名 *</FieldLabel>
@@ -639,10 +640,12 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                     </div>
                     <div style={{ marginBottom: "8px" }}>
                       <FieldLabel>リーダー</FieldLabel>
-                      <select value={newTfForm.leader_member_id} onChange={e => setNewTfForm(f => ({...f, leader_member_id: e.target.value}))} style={{ ...inputStyle, fontSize: "11px" }}>
-                        <option value="">（なし）</option>
-                        {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-                      </select>
+                      <CustomSelect value={newTfForm.leader_member_id} onChange={value => setNewTfForm(f => ({...f, leader_member_id: value}))}
+                        options={[
+                          { value: "", label: "（なし）" },
+                          ...members.map(m => ({ value: m.id, label: m.display_name })),
+                        ]}
+                        searchable searchPlaceholder="メンバーで検索..." />
                     </div>
                     <div style={{ marginBottom: "8px" }}>
                       <FieldLabel>詳細・目的（任意）</FieldLabel>
@@ -847,10 +850,11 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "80px 1fr", gap: "8px", marginBottom: "8px" }}>
             <div>
               <FieldLabel>番号</FieldLabel>
-              <select value={editForm.tf_number} onChange={e => setEditForm(f => ({...f, tf_number: e.target.value}))} style={inputStyle}>
-                <option value="">－</option>
-                {[1,2,3,4,5,6,7,8,9].map(n => <option key={n} value={String(n)}>TF {n}</option>)}
-              </select>
+              <CustomSelect value={editForm.tf_number} onChange={value => setEditForm(f => ({...f, tf_number: value}))}
+                options={[
+                  { value: "", label: "－" },
+                  ...[1,2,3,4,5,6,7,8,9].map(n => ({ value: String(n), label: `TF ${n}` })),
+                ]} />
             </div>
             <div>
               <FieldLabel>TF名 *</FieldLabel>
@@ -860,10 +864,12 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           </div>
           <div style={{ marginBottom: "8px" }}>
             <FieldLabel>リーダー</FieldLabel>
-            <select value={editForm.leader_member_id} onChange={e => setEditForm(f => ({...f, leader_member_id: e.target.value}))} style={inputStyle}>
-              <option value="">（なし）</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-            </select>
+            <CustomSelect value={editForm.leader_member_id} onChange={value => setEditForm(f => ({...f, leader_member_id: value}))}
+              options={[
+                { value: "", label: "（なし）" },
+                ...members.map(m => ({ value: m.id, label: m.display_name })),
+              ]}
+              searchable searchPlaceholder="メンバーで検索..." />
           </div>
           <div style={{ marginBottom: "8px" }}>
             <FieldLabel>詳細・目的（任意）</FieldLabel>
@@ -1095,10 +1101,13 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
                           onKeyDown={e => { if (e.key === "Enter") saveNewTask(); if (e.key === "Escape") setAddingTaskForTodoId(null); }}
                           style={{ ...inputStyle, flex: "1 1 180px", fontSize: "11px", padding: "4px 8px" }}
                         />
-                        <select value={taskForm.assignee_member_id} onChange={e => setTaskForm(f => ({ ...f, assignee_member_id: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }}>
-                          <option value="">（なし）</option>
-                          {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                        </select>
+                        <CustomSelect value={taskForm.assignee_member_id} onChange={value => setTaskForm(f => ({ ...f, assignee_member_id: value }))}
+                          options={[
+                            { value: "", label: "（なし）" },
+                            ...members.map(m => ({ value: m.id, label: m.short_name })),
+                          ]}
+                          searchable searchPlaceholder="メンバーで検索..."
+                          style={{ flex: "0 0 auto", minWidth: "120px" }} />
                         <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }} />
                         <button onClick={saveNewTask} style={{ ...primaryBtnStyle, fontSize: "11px", padding: "4px 10px" }}>追加</button>
                         <button onClick={() => setAddingTaskForTodoId(null)} style={{ ...ghostBtnStyle, fontSize: "11px", padding: "4px 10px" }}>×</button>
@@ -1483,28 +1492,27 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                     );
                   })}
                 </div>
-                <select
+                <CustomSelect
                   value=""
-                  onChange={e => {
-                    const id = e.target.value;
+                  onChange={id => {
                     if (id && !form.owner_member_ids.includes(id))
                       setForm(f => ({ ...f, owner_member_ids: [...f.owner_member_ids, id] }));
                   }}
-                  style={inputStyle}
-                >
-                  <option value="">＋ オーナーを追加</option>
-                  {members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => (
-                    <option key={m.id} value={m.id}>{m.display_name}</option>
-                  ))}
-                </select>
+                  options={[
+                    { value: "", label: "＋ オーナーを追加" },
+                    ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                  ]}
+                  searchable searchPlaceholder="メンバーで検索..."
+                />
               </div>
               <div>
                 <FieldLabel>ステータス</FieldLabel>
-                <select value={form.status} onChange={e => setForm(f => ({...f, status: e.target.value as Project["status"]}))} style={inputStyle}>
-                  <option value="active">進行中</option>
-                  <option value="completed">完了</option>
-                  <option value="archived">アーカイブ</option>
-                </select>
+                <CustomSelect value={form.status} onChange={value => setForm(f => ({...f, status: value as Project["status"]}))}
+                  options={[
+                    { value: "active", label: "進行中" },
+                    { value: "completed", label: "完了" },
+                    { value: "archived", label: "アーカイブ" },
+                  ]} />
               </div>
               <div>
                 <FieldLabel>カラー</FieldLabel>
@@ -1536,20 +1544,18 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                   );
                 })}
               </div>
-              <select
+              <CustomSelect
                 value=""
-                onChange={e => {
-                  const id = e.target.value;
+                onChange={id => {
                   if (id && !form.member_ids.includes(id))
                     setForm(f => ({ ...f, member_ids: [...f.member_ids, id] }));
                 }}
-                style={inputStyle}
-              >
-                <option value="">＋ メンバーを追加</option>
-                {members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => (
-                  <option key={m.id} value={m.id}>{m.display_name}</option>
-                ))}
-              </select>
+                options={[
+                  { value: "", label: "＋ メンバーを追加" },
+                  ...members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                ]}
+                searchable searchPlaceholder="メンバーで検索..."
+              />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
               <div>
@@ -2658,14 +2664,6 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
 
   const isMobile = useIsMobile();
 
-  const selectStyle: React.CSSProperties = {
-    padding: "5px 28px 5px 8px", fontSize: "11px",
-    border: "1px solid var(--color-border-primary)",
-    borderRadius: "var(--radius-md)",
-    background: "var(--color-bg-primary)",
-    color: "var(--color-text-primary)",
-  };
-
   return (
     <div>
       {/* フィルターバー */}
@@ -2686,20 +2684,28 @@ function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onD
             color: "var(--color-text-primary)",
           }}
         />
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as Task["status"] | "")} style={selectStyle}>
-          <option value="">すべてのステータス</option>
-          <option value="todo">未着手</option>
-          <option value="in_progress">進行中</option>
-          <option value="done">完了</option>
-        </select>
-        <select value={filterMember} onChange={e => setFilterMember(e.target.value)} style={selectStyle}>
-          <option value="">すべての担当者</option>
-          {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-        </select>
-        <select value={filterProject} onChange={e => setFilterProject(e.target.value)} style={selectStyle}>
-          <option value="">すべてのPJ</option>
-          {projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
+        <CustomSelect value={filterStatus} onChange={value => setFilterStatus(value as Task["status"] | "")}
+          options={[
+            { value: "", label: "すべてのステータス" },
+            { value: "todo", label: "未着手" },
+            { value: "in_progress", label: "進行中" },
+            { value: "done", label: "完了" },
+          ]}
+          style={{ width: "150px" }} />
+        <CustomSelect value={filterMember} onChange={value => setFilterMember(value)}
+          options={[
+            { value: "", label: "すべての担当者" },
+            ...members.map(m => ({ value: m.id, label: m.display_name })),
+          ]}
+          searchable searchPlaceholder="メンバーで検索..."
+          style={{ width: "160px" }} />
+        <CustomSelect value={filterProject} onChange={value => setFilterProject(value)}
+          options={[
+            { value: "", label: "すべてのPJ" },
+            ...projects.map(p => ({ value: p.id, label: p.name })),
+          ]}
+          searchable searchPlaceholder="プロジェクトで検索..."
+          style={{ width: "180px" }} />
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
           {filtered.length}件
         </span>

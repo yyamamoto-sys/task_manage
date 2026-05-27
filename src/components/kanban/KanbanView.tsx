@@ -8,6 +8,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   currentUser: Member;
@@ -514,24 +515,23 @@ function AddTaskModal({
                   ) : null;
                 })}
               </div>
-              <select defaultValue="" onChange={e => {
-                if (!e.target.value) return;
-                setAssigneeIds(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
-                e.target.value = "";
-              }} style={inputStyle}>
-                <option value="">＋ 追加...</option>
-                {members.filter(m => !assigneeIds.includes(m.id)).map(m => (
-                  <option key={m.id} value={m.id}>{m.display_name}</option>
-                ))}
-              </select>
+              <CustomSelect value="" onChange={value => {
+                if (!value) return;
+                setAssigneeIds(prev => prev.includes(value) ? prev : [...prev, value]);
+              }}
+                options={[
+                  { value: "", label: "＋ 追加..." },
+                  ...members.filter(m => !assigneeIds.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                ]}
+                searchable searchPlaceholder="メンバーで検索..." />
             </Field>
             <Field label="プロジェクト（任意）">
-              <select value={projectId} onChange={e => setProjectId(e.target.value)} style={inputStyle}>
-                <option value="">なし</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name.slice(0, 20)}</option>
-                ))}
-              </select>
+              <CustomSelect value={projectId} onChange={value => setProjectId(value)}
+                options={[
+                  { value: "", label: "なし" },
+                  ...projects.map(p => ({ value: p.id, label: p.name.slice(0, 20) })),
+                ]}
+                searchable searchPlaceholder="プロジェクトで検索..." />
             </Field>
           </div>
 
@@ -540,12 +540,13 @@ function AddTaskModal({
               <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
             </Field>
             <Field label="優先度（任意）">
-              <select value={priority ?? ""} onChange={e => setPriority((e.target.value || null) as Task["priority"])} style={inputStyle}>
-                <option value="">なし</option>
-                <option value="high">高</option>
-                <option value="mid">中</option>
-                <option value="low">低</option>
-              </select>
+              <CustomSelect value={priority ?? ""} onChange={value => setPriority((value || null) as Task["priority"])}
+                options={[
+                  { value: "", label: "なし" },
+                  { value: "high", label: "高" },
+                  { value: "mid", label: "中" },
+                  { value: "low", label: "低" },
+                ]} />
             </Field>
           </div>
 
@@ -588,16 +589,15 @@ function AddTaskModal({
                     ) : null;
                   })}
                 </div>
-                <select defaultValue="" onChange={e => {
-                  if (!e.target.value) return;
-                  setSelectedTfIds(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
-                  e.target.value = "";
-                }} style={inputStyle}>
-                  <option value="">＋ 追加...</option>
-                  {taskForces.filter(tf => !selectedTfIds.includes(tf.id)).map(tf => (
-                    <option key={tf.id} value={tf.id}>{tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}</option>
-                  ))}
-                </select>
+                <CustomSelect value="" onChange={value => {
+                  if (!value) return;
+                  setSelectedTfIds(prev => prev.includes(value) ? prev : [...prev, value]);
+                }}
+                  options={[
+                    { value: "", label: "＋ 追加..." },
+                    ...taskForces.filter(tf => !selectedTfIds.includes(tf.id)).map(tf => ({ value: tf.id, label: `${tf.tf_number ? `${tf.tf_number} ` : ""}${tf.name}` })),
+                  ]}
+                  searchable searchPlaceholder="TFで検索..." />
               </Field>
 
               <Field label="追加プロジェクト（任意）">
@@ -613,16 +613,15 @@ function AddTaskModal({
                     ) : null;
                   })}
                 </div>
-                <select defaultValue="" onChange={e => {
-                  if (!e.target.value) return;
-                  setExtraProjectIds(prev => prev.includes(e.target.value) ? prev : [...prev, e.target.value]);
-                  e.target.value = "";
-                }} style={inputStyle}>
-                  <option value="">＋ 追加...</option>
-                  {projects.filter(p => p.id !== projectId && !extraProjectIds.includes(p.id)).map(p => (
-                    <option key={p.id} value={p.id}>{p.name.slice(0, 20)}</option>
-                  ))}
-                </select>
+                <CustomSelect value="" onChange={value => {
+                  if (!value) return;
+                  setExtraProjectIds(prev => prev.includes(value) ? prev : [...prev, value]);
+                }}
+                  options={[
+                    { value: "", label: "＋ 追加..." },
+                    ...projects.filter(p => p.id !== projectId && !extraProjectIds.includes(p.id)).map(p => ({ value: p.id, label: p.name.slice(0, 20) })),
+                  ]}
+                  searchable searchPlaceholder="プロジェクトで検索..." />
               </Field>
 
               {todos.length > 0 && (

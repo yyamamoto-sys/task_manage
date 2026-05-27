@@ -16,6 +16,7 @@ import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   taskId: string;
@@ -306,32 +307,30 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未担当</span>
               )}
             </div>
-            <select
-              defaultValue=""
-              onChange={e => {
-                const id = e.target.value;
+            <CustomSelect
+              value=""
+              onChange={id => {
                 if (id && !form.assignee_member_ids.includes(id))
                   setForm(f => ({ ...f, assignee_member_ids: [...f.assignee_member_ids, id] }));
-                e.target.value = "";
               }}
-              style={inputSm}>
-              <option value="">＋ 担当者を追加...</option>
-              {members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => (
-                <option key={m.id} value={m.id}>{m.display_name}</option>
-              ))}
-            </select>
+              options={[
+                { value: "", label: "＋ 担当者を追加..." },
+                ...members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+              ]}
+              searchable searchPlaceholder="メンバーで検索..."
+            />
           </FieldSection>
 
           {/* プロジェクト */}
           <FieldSection label="プロジェクト">
-            <select value={form.project_id ?? ""}
-              onChange={e => setForm(f => ({ ...f, project_id: e.target.value || null }))}
-              style={inputSm}>
-              <option value="">なし</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.name}</option>
-              ))}
-            </select>
+            <CustomSelect value={form.project_id ?? ""}
+              onChange={value => setForm(f => ({ ...f, project_id: value || null }))}
+              options={[
+                { value: "", label: "なし" },
+                ...projects.map(p => ({ value: p.id, label: p.name })),
+              ]}
+              searchable searchPlaceholder="プロジェクトで検索..."
+            />
           </FieldSection>
 
           {/* 追加プロジェクト */}
@@ -351,21 +350,20 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
               )}
             </div>
-            <select
-              defaultValue=""
-              onChange={e => {
-                if (!e.target.value) return;
-                addTaskProject({ task_id: taskId, project_id: e.target.value });
-                e.target.value = "";
+            <CustomSelect
+              value=""
+              onChange={value => {
+                if (!value) return;
+                addTaskProject({ task_id: taskId, project_id: value });
               }}
-              style={inputSm}
-            >
-              <option value="">＋ プロジェクトを追加...</option>
-              {projects
-                .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
-                .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-              }
-            </select>
+              options={[
+                { value: "", label: "＋ プロジェクトを追加..." },
+                ...projects
+                  .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
+                  .map(p => ({ value: p.id, label: p.name })),
+              ]}
+              searchable searchPlaceholder="プロジェクトで検索..."
+            />
           </FieldSection>
 
           {/* タスクフォース */}
@@ -388,35 +386,33 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               )}
             </div>
             {taskForces.length > 0 ? (
-              <select
-                defaultValue=""
-                onChange={e => {
-                  if (!e.target.value) return;
-                  addTaskTaskForce({ task_id: taskId, tf_id: e.target.value });
-                  e.target.value = "";
+              <CustomSelect
+                value=""
+                onChange={value => {
+                  if (!value) return;
+                  addTaskTaskForce({ task_id: taskId, tf_id: value });
                 }}
-                style={inputSm}
-              >
-                <option value="">＋ タスクフォースを追加...</option>
-                {taskForces
-                  .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
-                  .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
-                  // 並び：所属KR の index → tf_number の昇順で揃え、どのKRのTFか
-                  // ぱっと見で分かるようにする
-                  .slice()
-                  .sort((a, b) => {
-                    const ka = keyResults.findIndex(k => k.id === a.kr_id);
-                    const kb = keyResults.findIndex(k => k.id === b.kr_id);
-                    if (ka !== kb) return ka - kb;
-                    return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
-                  })
-                  .map(tf => (
-                    <option key={tf.id} value={tf.id}>
-                      {(tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`)}{tf.name ? ` ${tf.name}` : ""}
-                    </option>
-                  ))
-                }
-              </select>
+                options={[
+                  { value: "", label: "＋ タスクフォースを追加..." },
+                  ...taskForces
+                    .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+                    .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
+                    // 並び：所属KR の index → tf_number の昇順で揃え、どのKRのTFか
+                    // ぱっと見で分かるようにする
+                    .slice()
+                    .sort((a, b) => {
+                      const ka = keyResults.findIndex(k => k.id === a.kr_id);
+                      const kb = keyResults.findIndex(k => k.id === b.kr_id);
+                      if (ka !== kb) return ka - kb;
+                      return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
+                    })
+                    .map(tf => ({
+                      value: tf.id,
+                      label: `${tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}${tf.name ? ` ${tf.name}` : ""}`,
+                    })),
+                ]}
+                searchable searchPlaceholder="TF・KRで検索..."
+              />
             ) : (
               <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
                 管理画面でTask Forceを先に登録してください

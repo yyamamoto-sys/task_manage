@@ -15,6 +15,7 @@ import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   taskId: string;
@@ -275,35 +276,33 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未担当</span>
           )}
         </div>
-        <select
-          defaultValue=""
-          onChange={e => {
-            const id = e.target.value;
+        <CustomSelect
+          value=""
+          onChange={id => {
             if (id && !sidebarForm.assignee_member_ids.includes(id)) {
               setSidebarForm(f => f
                 ? { ...f, assignee_member_ids: [...f.assignee_member_ids, id] }
                 : f);
             }
-            e.target.value = "";
           }}
-          style={{ ...inputStyle, marginBottom: "12px" }}>
-          <option value="">＋ 担当者を追加...</option>
-          {members.filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => (
-            <option key={m.id} value={m.id}>{m.display_name}</option>
-          ))}
-        </select>
+          options={[
+            { value: "", label: "＋ 担当者を追加..." },
+            ...members.filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+          ]}
+          searchable searchPlaceholder="メンバーで検索..."
+          style={{ marginBottom: "12px" }} />
 
         {/* プロジェクト */}
         <SideLabel>プロジェクト</SideLabel>
-        <select
+        <CustomSelect
           value={sidebarForm.project_id ?? ""}
-          onChange={e => setSidebarForm(f => f ? { ...f, project_id: e.target.value || null } : f)}
-          style={{ ...inputStyle, marginBottom: "12px" }}>
-          <option value="">なし</option>
-          {projects.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+          onChange={value => setSidebarForm(f => f ? { ...f, project_id: value || null } : f)}
+          options={[
+            { value: "", label: "なし" },
+            ...projects.map(p => ({ value: p.id, label: p.name })),
+          ]}
+          searchable searchPlaceholder="プロジェクトで検索..."
+          style={{ marginBottom: "12px" }} />
 
         {/* 追加プロジェクト */}
         <SideLabel>追加プロジェクト</SideLabel>
@@ -322,21 +321,21 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
           )}
         </div>
-        <select
-          defaultValue=""
-          onChange={e => {
-            if (!e.target.value) return;
-            addTaskProject({ task_id: selectedTask.id, project_id: e.target.value });
-            e.target.value = "";
+        <CustomSelect
+          value=""
+          onChange={value => {
+            if (!value) return;
+            addTaskProject({ task_id: selectedTask.id, project_id: value });
           }}
-          style={{ ...inputStyle, marginBottom: "12px" }}>
-          <option value="">＋ プロジェクトを追加...</option>
-          {projects
-            .filter(p => p.id !== sidebarForm.project_id
-              && !linkedExtraProjects.find(ep => ep.id === p.id))
-            .map(p => <option key={p.id} value={p.id}>{p.name}</option>)
-          }
-        </select>
+          options={[
+            { value: "", label: "＋ プロジェクトを追加..." },
+            ...projects
+              .filter(p => p.id !== sidebarForm.project_id
+                && !linkedExtraProjects.find(ep => ep.id === p.id))
+              .map(p => ({ value: p.id, label: p.name })),
+          ]}
+          searchable searchPlaceholder="プロジェクトで検索..."
+          style={{ marginBottom: "12px" }} />
 
         {/* タスクフォース */}
         <SideLabel>タスクフォース</SideLabel>
@@ -358,32 +357,31 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           )}
         </div>
         {taskForces.length > 0 ? (
-          <select
-            defaultValue=""
-            onChange={e => {
-              if (!e.target.value) return;
-              addTaskTaskForce({ task_id: selectedTask.id, tf_id: e.target.value });
-              e.target.value = "";
+          <CustomSelect
+            value=""
+            onChange={value => {
+              if (!value) return;
+              addTaskTaskForce({ task_id: selectedTask.id, tf_id: value });
             }}
-            style={{ ...inputStyle, marginBottom: "12px" }}>
-            <option value="">＋ タスクフォースを追加...</option>
-            {taskForces
-              .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
-              .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
-              .slice()
-              .sort((a, b) => {
-                const ka = keyResults.findIndex(k => k.id === a.kr_id);
-                const kb = keyResults.findIndex(k => k.id === b.kr_id);
-                if (ka !== kb) return ka - kb;
-                return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
-              })
-              .map(tf => (
-                <option key={tf.id} value={tf.id}>
-                  {(tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`)}{tf.name ? ` ${tf.name}` : ""}
-                </option>
-              ))
-            }
-          </select>
+            options={[
+              { value: "", label: "＋ タスクフォースを追加..." },
+              ...taskForces
+                .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
+                .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
+                .slice()
+                .sort((a, b) => {
+                  const ka = keyResults.findIndex(k => k.id === a.kr_id);
+                  const kb = keyResults.findIndex(k => k.id === b.kr_id);
+                  if (ka !== kb) return ka - kb;
+                  return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
+                })
+                .map(tf => ({
+                  value: tf.id,
+                  label: `${tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}${tf.name ? ` ${tf.name}` : ""}`,
+                })),
+            ]}
+            searchable searchPlaceholder="TF・KRで検索..."
+            style={{ marginBottom: "12px" }} />
         ) : (
           <span style={{
             display: "block", fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "12px",

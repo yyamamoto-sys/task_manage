@@ -17,6 +17,7 @@ import {
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
+import { CustomSelect } from "../common/CustomSelect";
 
 function ThinkingDots() {
   return (
@@ -432,9 +433,9 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
                   <div style={{ flex: "1 1 140px" }}>
                     <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>オーナー</label>
-                    <select value={ownerId} onChange={e => setOwnerId(e.target.value)} style={inputStyle}>
-                      {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                    </select>
+                    <CustomSelect value={ownerId} onChange={value => setOwnerId(value)}
+                      options={members.map(m => ({ value: m.id, label: m.short_name }))}
+                      searchable searchPlaceholder="メンバーで検索..." />
                   </div>
                   <div>
                     <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "3px" }}>カラー</label>
@@ -484,15 +485,17 @@ export function AiProjectCreateModal({ currentUser, onClose, onCreated }: Props)
                           disabled={!r.selected}
                         />
                         <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                          <select
+                          <CustomSelect
                             value={r.editedAssigneeId}
-                            onChange={e => setTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: e.target.value } : x))}
-                            style={{ ...inputStyle, flex: "1 1 110px" }}
+                            onChange={value => setTaskRows(prev => prev.map((x, j) => j === i ? { ...x, editedAssigneeId: value } : x))}
+                            options={[
+                              { value: "", label: "（担当なし）" },
+                              ...members.map(m => ({ value: m.id, label: m.short_name })),
+                            ]}
+                            searchable searchPlaceholder="メンバーで検索..."
                             disabled={!r.selected}
-                          >
-                            <option value="">（担当なし）</option>
-                            {members.map(m => <option key={m.id} value={m.id}>{m.short_name}</option>)}
-                          </select>
+                            style={{ flex: "1 1 110px" }}
+                          />
                           <input
                             type="date"
                             value={r.editedDueDate}

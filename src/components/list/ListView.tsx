@@ -13,6 +13,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { EmptyState } from "../common/EmptyState";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   currentUser: Member;
@@ -395,26 +396,33 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           background: "var(--color-bg-secondary)", flexShrink: 0,
           display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap",
         }}>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value as Task["status"] | "all")} style={selStyle}>
-            <option value="all">状態：すべて</option>
-            <option value="todo">ToDo</option>
-            <option value="in_progress">進行中</option>
-            <option value="done">完了</option>
-          </select>
+          <CustomSelect value={filterStatus} onChange={value => setFilterStatus(value as Task["status"] | "all")}
+            options={[
+              { value: "all", label: "状態：すべて" },
+              { value: "todo", label: "ToDo" },
+              { value: "in_progress", label: "進行中" },
+              { value: "done", label: "完了" },
+            ]}
+            style={{ width: "130px" }} />
 
-          <select value={filterPriority} onChange={e => setFilterPriority(e.target.value as "all"|"high"|"mid"|"low")} style={selStyle}>
-            <option value="all">優先度：すべて</option>
-            <option value="high">高</option>
-            <option value="mid">中</option>
-            <option value="low">低</option>
-          </select>
+          <CustomSelect value={filterPriority} onChange={value => setFilterPriority(value as "all"|"high"|"mid"|"low")}
+            options={[
+              { value: "all", label: "優先度：すべて" },
+              { value: "high", label: "高" },
+              { value: "mid", label: "中" },
+              { value: "low", label: "低" },
+            ]}
+            style={{ width: "120px" }} />
 
           {/* 担当者別グループ中は担当者フィルターを非表示（冗長のため） */}
           {groupBy !== "assignee" && (
-            <select value={filterMember} onChange={e => { setFilterMember(e.target.value); setFilterMyOnly(false); }} style={selStyle}>
-              <option value="all">担当者：全員</option>
-              {members.map(m => <option key={m.id} value={m.id}>{m.display_name}</option>)}
-            </select>
+            <CustomSelect value={filterMember} onChange={value => { setFilterMember(value); setFilterMyOnly(false); }}
+              options={[
+                { value: "all", label: "担当者：全員" },
+                ...members.map(m => ({ value: m.id, label: m.display_name })),
+              ]}
+              searchable searchPlaceholder="メンバーで検索..."
+              style={{ width: "150px" }} />
           )}
 
           <div style={{ width: 1, height: 14, background: "var(--color-border-primary)", margin: "0 2px" }} />
@@ -480,22 +488,15 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             </div>
 
             {/* 担当者一括変更 */}
-            <select
+            <CustomSelect
               value=""
-              onChange={e => { if (e.target.value) bulkUpdateAssignee(e.target.value); }}
-              style={{
-                padding: "4px 24px 4px 10px", fontSize: "11px",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-secondary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)", cursor: "pointer",
-              }}
-            >
-              <option value="">担当者を変更…</option>
-              {members.map(m => (
-                <option key={m.id} value={m.id}>{m.display_name}</option>
-              ))}
-            </select>
+              onChange={value => { if (value) bulkUpdateAssignee(value); }}
+              options={[
+                { value: "", label: "担当者を変更…" },
+                ...members.map(m => ({ value: m.id, label: m.display_name })),
+              ]}
+              searchable searchPlaceholder="メンバーで検索..."
+              style={{ width: "160px" }} />
 
             <span style={{ flex: 1 }} />
 
@@ -817,9 +818,3 @@ function Chip({ active, onClick, label }: { active: boolean; onClick: () => void
   );
 }
 
-const selStyle: React.CSSProperties = {
-  padding: "3px 7px", fontSize: "10px",
-  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-  background: "var(--color-bg-primary)", color: "var(--color-text-secondary)",
-  cursor: "pointer", outline: "none",
-};

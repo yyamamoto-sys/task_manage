@@ -48,6 +48,7 @@ import {
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { showToast } from "../common/Toast";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
+import { CustomSelect } from "../common/CustomSelect";
 
 // ===== 型 =====
 
@@ -240,14 +241,15 @@ function TFPlanCard({
             <div>
               <span style={labelStyle}>推奨リーダー</span>
               {editing ? (
-                <select
+                <CustomSelect
                   value={draft.leader_suggestion ?? ""}
-                  onChange={e => setDraft(d => ({ ...d, leader_suggestion: e.target.value || null }))}
-                  style={fieldStyle}
-                >
-                  <option value="">未定</option>
-                  {members.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+                  onChange={value => setDraft(d => ({ ...d, leader_suggestion: value || null }))}
+                  options={[
+                    { value: "", label: "未定" },
+                    ...members.map(m => ({ value: m, label: m })),
+                  ]}
+                  searchable searchPlaceholder="メンバーで検索..."
+                />
               ) : (
                 <div style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: "600" }}>
                   {tf.leader_suggestion ?? "未定"}
@@ -765,13 +767,12 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                 {activeKrs.length === 0 ? (
                   <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>KRが登録されていません</div>
                 ) : (
-                  <select
+                  <CustomSelect
                     value={selectedKrId}
-                    onChange={e => setSelectedKrId(e.target.value)}
-                    style={{ width: "100%", padding: "7px 10px", fontSize: "12px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
-                  >
-                    {activeKrs.map(kr => <option key={kr.id} value={kr.id}>{kr.title}</option>)}
-                  </select>
+                    onChange={value => setSelectedKrId(value)}
+                    options={activeKrs.map(kr => ({ value: kr.id, label: kr.title }))}
+                    searchable searchPlaceholder="KRで検索..."
+                  />
                 )}
               </div>
 
