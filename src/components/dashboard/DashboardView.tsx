@@ -22,6 +22,7 @@ import type {
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
+import { isParentTask } from "../../lib/taskHierarchy";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -169,9 +170,11 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   );
 
   // PJ進捗
+  // 【葉タスク基準】進捗の分母/分子は「子を持つ親タスク」を除いた葉タスクだけで数える
+  // （親を二重計上しない）。フラットデータでは葉=全タスクなので従来と完全一致する。
   const pjProgress = useMemo(() =>
     projects.map(pj => {
-      const pjTasks = allTasks.filter(t => t.project_id === pj.id);
+      const pjTasks = allTasks.filter(t => t.project_id === pj.id && !isParentTask(t, allTasks));
       const done = pjTasks.filter(t => t.status === "done").length;
       const total = pjTasks.length;
       const pct = calcProgressPct(done, total);
@@ -191,7 +194,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     const ids = new Set<string>();
     allTasks.filter(t => (t.todo_ids ?? []).some(id => tfTodoIds.has(id))).forEach(t => ids.add(t.id));
     allTasks.filter(t => t.project_id !== null && tfPjIds.has(t.project_id!)).forEach(t => ids.add(t.id));
-    const rel = allTasks.filter(t => ids.has(t.id));
+    // 葉タスク基準：親（子持ち）を除外して二重計上を防ぐ。フラットでは全タスクが葉。
+    const rel = allTasks.filter(t => ids.has(t.id) && !isParentTask(t, allTasks));
     const done = rel.filter(t => t.status === "done").length;
     const total = rel.length;
     return { done, total, pct: calcProgressPct(done, total) };
@@ -217,7 +221,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       allTasks.filter(t => t.project_id !== null && krPjIds.has(t.project_id!))
         .forEach(t => relatedTaskIds.add(t.id));
 
-      const relatedTasks = allTasks.filter(t => relatedTaskIds.has(t.id));
+      // 葉タスク基準：親（子持ち）を除外して二重計上を防ぐ。フラットでは全タスクが葉。
+      const relatedTasks = allTasks.filter(t => relatedTaskIds.has(t.id) && !isParentTask(t, allTasks));
       const done = relatedTasks.filter(t => t.status === "done").length;
       const total = relatedTasks.length;
       const pct = calcProgressPct(done, total);
@@ -237,7 +242,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     tfs.map(tf => {
       const tfTodos = todos.filter(td => td.tf_id === tf.id);
       const todoItems = tfTodos.map(td => {
-        const tdTasks = allTasks.filter(t => (t.todo_ids ?? []).includes(td.id));
+        // 葉タスク基準：親（子持ち）を除外。フラットでは全タスクが葉。
+        const tdTasks = allTasks.filter(t => (t.todo_ids ?? []).includes(td.id) && !isParentTask(t, allTasks));
         const done = tdTasks.filter(t => t.status === "done").length;
         const total = tdTasks.length;
         const pct = calcProgressPct(done, total);

@@ -16,6 +16,7 @@ import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
+import { isParentTask } from "../../lib/taskHierarchy";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -60,8 +61,11 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const weekLater = addDaysFromToday(7);
 
   const stats = useMemo(() => {
+    // 進捗の分母/分子は葉タスク基準（子を持つ親タスクを除外して二重計上を防ぐ）。
+    // フラットデータでは葉=全タスクなので従来と完全一致する。
+    const leafPjTasks = pjTasks.filter(t => !isParentTask(t, pjTasks));
     let todo = 0, inProg = 0, done = 0, overdue = 0, dueThisWeek = 0, noDue = 0, stagnant = 0;
-    for (const t of pjTasks) {
+    for (const t of leafPjTasks) {
       if (t.status === "done") done++;
       else if (t.status === "in_progress") inProg++;
       else todo++;
@@ -75,7 +79,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         if (days >= stagnantDays) stagnant++;
       }
     }
-    const total = pjTasks.length;
+    const total = leafPjTasks.length;
     const pct = calcProgressPct(done, total);
     return { todo, inProg, done, total, pct, overdue, dueThisWeek, noDue, stagnant };
   }, [pjTasks, today, weekLater, stagnantDays]);

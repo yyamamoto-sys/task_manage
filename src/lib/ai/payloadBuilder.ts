@@ -15,6 +15,7 @@ import { sanitizeComment } from "./sanitize";
 import { dateToQuarter, currentQuarter } from "../date";
 import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
+import { isParentTask } from "../taskHierarchy";
 
 // ===== 型定義 =====
 
@@ -294,12 +295,18 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       pj_owners: pjOwners,
       pj_members: pjMembers,
       linked_tf_numbers: linkedTfLabelsByPj.get(pj.id) ?? [],
-      pj_progress: {
-        total: pjTasks.length,
-        done: pjTasks.filter(t => t.status === "done").length,
-        in_progress: pjTasks.filter(t => t.status === "in_progress").length,
-        todo: pjTasks.filter(t => t.status === "todo").length,
-      },
+      // pj_progress は葉タスク基準でカウントする（子を持つ親タスクを除外して二重計上を防ぐ）。
+      // 親判定は全非削除タスク（activeTasks）に対して行う。tasks（aiTasks）は葉に絞らない。
+      // フラットデータでは葉=全タスクなので従来と完全一致する。
+      pj_progress: (() => {
+        const leafPjTasks = pjTasks.filter(t => !isParentTask(t, activeTasks));
+        return {
+          total: leafPjTasks.length,
+          done: leafPjTasks.filter(t => t.status === "done").length,
+          in_progress: leafPjTasks.filter(t => t.status === "in_progress").length,
+          todo: leafPjTasks.filter(t => t.status === "todo").length,
+        };
+      })(),
       tasks: aiTasks,
     };
   });

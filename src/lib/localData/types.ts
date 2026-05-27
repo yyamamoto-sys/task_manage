@@ -145,6 +145,10 @@ export interface Task {
   deleted_by?: string;
   /** ステータスがdoneになった日時（doneから外れたらnullに戻す） */
   completed_at?: string | null;
+  /** 親タスク（2階層固定）。null/未設定=大タスク（最上位）、値あり=小タスク */
+  parent_task_id?: string | null;
+  /** 同一親（またはPJ直下）内での手動並び順 */
+  display_order?: number;
 }
 
 export interface Milestone {
