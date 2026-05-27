@@ -7,6 +7,7 @@ import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
+import { currentQuarter } from "../../lib/date";
 import { v4 as uuidv4 } from "uuid";
 
 interface Props {
@@ -30,13 +31,8 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
   const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
   // 今日の日付から現在のQを計算（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
-  const currentQ = useMemo<Quarter>(() => {
-    const m = new Date().getMonth() + 1;
-    if (m <= 3) return "1Q";
-    if (m <= 6) return "2Q";
-    if (m <= 9) return "3Q";
-    return "4Q";
-  }, []);
+  // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
+  const currentQ = useMemo<Quarter>(() => currentQuarter(), []);
 
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);

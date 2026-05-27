@@ -10,7 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
-import { formatMD } from "../../lib/date";
+import { formatMD, currentQuarter } from "../../lib/date";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import {
@@ -38,13 +38,7 @@ function thisMondayStr(): string {
 }
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
-function currentQuarter(): Quarter {
-  const m = new Date().getMonth() + 1;
-  if (m <= 3) return "1Q";
-  if (m <= 6) return "2Q";
-  if (m <= 9) return "3Q";
-  return "4Q";
-}
+// 今日の四半期判定は lib/date.ts の currentQuarter() に一元化済み（import 済み）。
 
 interface Props {
   inline?: boolean;

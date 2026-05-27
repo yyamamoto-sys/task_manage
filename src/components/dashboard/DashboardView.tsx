@@ -21,6 +21,7 @@ import type {
   Member, Project, Task, ToDo,
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
+import { calcProgressPct } from "../../lib/stats";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -173,7 +174,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       const pjTasks = allTasks.filter(t => t.project_id === pj.id);
       const done = pjTasks.filter(t => t.status === "done").length;
       const total = pjTasks.length;
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      const pct = calcProgressPct(done, total);
       return { pj, done, total, pct };
     }),
     [projects, allTasks]
@@ -193,7 +194,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     const rel = allTasks.filter(t => ids.has(t.id));
     const done = rel.filter(t => t.status === "done").length;
     const total = rel.length;
-    return { done, total, pct: total > 0 ? Math.round((done / total) * 100) : 0 };
+    return { done, total, pct: calcProgressPct(done, total) };
   }, [todos, projectTaskForces, allTasks]);
 
   const krProgress = useMemo(() =>
@@ -219,7 +220,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       const relatedTasks = allTasks.filter(t => relatedTaskIds.has(t.id));
       const done = relatedTasks.filter(t => t.status === "done").length;
       const total = relatedTasks.length;
-      const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+      const pct = calcProgressPct(done, total);
 
       // 今期のTFごとのサマリー（TF番号順）
       const tfSummaries = [...krTfs]
@@ -239,7 +240,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         const tdTasks = allTasks.filter(t => (t.todo_ids ?? []).includes(td.id));
         const done = tdTasks.filter(t => t.status === "done").length;
         const total = tdTasks.length;
-        const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+        const pct = calcProgressPct(done, total);
         return { todo: td, done, total, pct };
       });
       return { tf, todoItems: todoItems.filter(t => t.total > 0) };

@@ -5,6 +5,8 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { formatMD } from "../../lib/date";
+import { calcProgressPct } from "../../lib/stats";
 import { KrJointSessionFlow } from "../lab/KrJointSessionFlow";
 import { KrReportPanel } from "../lab/KrReportPanel";
 import { KrWhyPanel } from "../lab/KrWhyPanel";
@@ -149,7 +151,7 @@ export function OkrDashboardView({
     return () => { cancelled = true; };
   }, [inOkrGroup, selectedKrId, thisMonday, activeTool, refreshKey]);
 
-  const fmtMD = (iso: string) => { const d = new Date(iso); return `${d.getMonth() + 1}/${d.getDate()}`; };
+  // M/D 整形は lib/date.ts の formatMD() に一元化済み（import 済み）。
   // ①②③④ それぞれの状態を { label, tone } で返す（tone: "done"=緑 / "wip"=黄 / "none"=灰）
   const cycleSteps = useMemo<{ tool: OkrActiveTool; name: string; label: string; tone: "done" | "wip" | "none" }[]>(() => {
     if (!selectedKrId) return [];
@@ -317,7 +319,7 @@ export function OkrDashboardView({
           background: "var(--color-bg-secondary)", flexShrink: 0,
         }}>
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
-            {(activeKrs.find(k => k.id === selectedKrId)?.title ?? "").slice(0, 18)}｜{fmtMD(thisMonday)}週
+            {(activeKrs.find(k => k.id === selectedKrId)?.title ?? "").slice(0, 18)}｜{formatMD(thisMonday)}週
           </span>
           {cycleSteps.map((st, i) => (
             <div key={st.tool ?? i} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -544,7 +546,7 @@ export function OkrDashboardView({
                     {activeKrs.map(kr => {
                       const stat = krStats.find(s => s.krId === kr.id);
                       const isSelected = kr.id === selectedKrId;
-                      const progressPct = stat && stat.total > 0 ? Math.round((stat.done / stat.total) * 100) : 0;
+                      const progressPct = calcProgressPct(stat?.done ?? 0, stat?.total ?? 0);
                       const sessions = krSessionsMap[kr.id] ?? [];
                       const latestSession = sessions[0] ?? null;
                       const thisWeekCheckin = sessions.find(s => s.week_start === thisMonday && s.session_type === "checkin");

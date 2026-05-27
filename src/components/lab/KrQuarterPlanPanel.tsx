@@ -25,6 +25,7 @@ import {
   type SignalEntry,
 } from "../../lib/ai/krQuarterPlanPrompt";
 import { buildMessageContent } from "../../lib/ai/invokeAI";
+import { calcProgressPct } from "../../lib/stats";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import {
@@ -393,7 +394,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
         done_tasks: done,
         in_progress_tasks: inProg,
         todo_tasks: total - done - inProg,
-        completion_pct: total > 0 ? Math.round((done / total) * 100) : 0,
+        completion_pct: calcProgressPct(done, total),
       };
     });
 

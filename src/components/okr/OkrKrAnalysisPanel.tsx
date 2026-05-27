@@ -11,6 +11,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
+import { currentQuarter } from "../../lib/date";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
@@ -27,10 +28,7 @@ import { getAssigneeIds } from "../../lib/taskMeta";
 import { tfsForKr as tfsForKrInQuarter } from "../../lib/okr/tfQuarter";
 
 const QUARTERS: Quarter[] = ["1Q", "2Q", "3Q", "4Q"];
-function currentQuarter(): Quarter {
-  const m = new Date().getMonth() + 1;
-  return m <= 3 ? "1Q" : m <= 6 ? "2Q" : m <= 9 ? "3Q" : "4Q";
-}
+// 今日の四半期判定は lib/date.ts の currentQuarter() に一元化済み（import 済み）。
 const KR_PHASES = [
   "各TFの会議ノートを読み込んでいます",
   "セッションと宣言を確認しています",

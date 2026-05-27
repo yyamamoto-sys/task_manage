@@ -16,6 +16,7 @@ import type {
 } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
+import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -399,13 +400,8 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
 
   // 現在の日付から今のQを求める（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
-  const currentQ = useMemo<Quarter>(() => {
-    const m = new Date().getMonth() + 1;
-    if (m <= 3) return "1Q";
-    if (m <= 6) return "2Q";
-    if (m <= 9) return "3Q";
-    return "4Q";
-  }, []);
+  // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
+  const currentQ = useMemo<Quarter>(() => currentQuarter(), []);
 
   // クォーター選択（初期値を現在のQに設定）
   const [selectedQuarter, setSelectedQuarter] = useState<Quarter>(currentQ);

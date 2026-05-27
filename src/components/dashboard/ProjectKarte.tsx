@@ -15,6 +15,7 @@ import { useMemo, useState, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
+import { calcProgressPct } from "../../lib/stats";
 import { KEYS } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -75,7 +76,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       }
     }
     const total = pjTasks.length;
-    const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+    const pct = calcProgressPct(done, total);
     return { todo, inProg, done, total, pct, overdue, dueThisWeek, noDue, stagnant };
   }, [pjTasks, today, weekLater, stagnantDays]);
 
