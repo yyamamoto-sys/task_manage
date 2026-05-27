@@ -12,8 +12,9 @@
 // return { ..., undo, canUndo, undoStack }
 // useUndoStack内部で使用し、undo/canUndo/undoStackをexportする。
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
+import { useConsultSessionStore } from "../stores/consultSessionStore";
 import type { ConsultationType } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
 import { callAIConsultation } from "../lib/ai/apiClient";
@@ -86,15 +87,24 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
   const reload            = useAppStore(s => s.reload);
 
   const [callState, setCallState] = useState<CallState>("idle");
-  const [session, setSession] = useState<ConsultationSession>(createSession());
+  // 【seed】再マウントで会話が消えないよう、各 state の初期値をミラーストアの現在値で seed する。
+  //   seed は getState() で初期値関数として1回だけ読む（ストアを購読しない）。
+  const [session, setSession] = useState<ConsultationSession>(() => useConsultSessionStore.getState().session);
   // sessionRef: useCallback内でstale closureを避けるための参照
   // （sessionをuseCallbackの依存配列に含めると毎回新しい関数参照が生成されるため）
   const sessionRef = useRef<ConsultationSession>(session);
   const [loadingMessage, setLoadingMessage] = useState<string>(LOADING_MESSAGES[0]);
-  const [shortIdMap, setShortIdMap] = useState<Map<string, string>>(new Map());
-  const [proposals, setProposals] = useState<UIProposal[]>([]);
+  const [shortIdMap, setShortIdMap] = useState<Map<string, string>>(() => useConsultSessionStore.getState().shortIdMap);
+  const [proposals, setProposals] = useState<UIProposal[]>(() => useConsultSessionStore.getState().proposals);
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>([]);
+  const [followUpSuggestions, setFollowUpSuggestions] = useState<string[]>(() => useConsultSessionStore.getState().followUpSuggestions);
+
+  // 【mirror】上記が変化したらミラーストアへ write-through する（再マウント時の seed 元になる）。
+  //   getState().saveAi 経由でストアを更新するだけ（このフックはストアを購読しないので無限ループしない）。
+  //   callState/loadingMessage/errorMessage は transient なのでミラーしない（ローカルのまま）。
+  useEffect(() => {
+    useConsultSessionStore.getState().saveAi({ session, shortIdMap, proposals, followUpSuggestions });
+  }, [session, shortIdMap, proposals, followUpSuggestions]);
 
   // Undo
   const { stack: undoStack, push: pushUndo, pop: popUndo, popUntil: popUndoUntil, canUndo } = useUndoStack();
@@ -233,6 +243,8 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
     setFollowUpSuggestions([]);
     setCallState("idle");
     setErrorMessage("");
+    // ミラーストアも初期状態に戻す（session/shortIdMap/proposals/followUp/inputDraft/lastSubmitted を空に）
+    useConsultSessionStore.getState().resetAi();
     // undoStackはリセットしない（パネルを閉じても履歴は維持する）
   }, []);
 

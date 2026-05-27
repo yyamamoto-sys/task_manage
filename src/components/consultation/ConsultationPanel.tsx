@@ -8,6 +8,7 @@ import type { Member, Project } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import type { ConsultationType } from "../../lib/ai/types";
 import { useAppStore } from "../../stores/appStore";
+import { useConsultSessionStore } from "../../stores/consultSessionStore";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
 import { ChatHistory } from "./ChatHistory";
 import { FollowUpButtons } from "./FollowUpButtons";
@@ -122,9 +123,11 @@ export function ConsultationPanel({
 
   // ===== 相談モード用状態 =====
   const [manualType, setManualType] = useState<ConsultationType | null>(null);
-  const [inputText, setInputText] = useState("");
+  // 【seed】入力中の下書き・直近送信文を、再マウントで消えないようミラーストアから seed する。
+  //   seed は getState() で初期値として1回だけ読む（ストアを購読しない）。
+  const [inputText, setInputText] = useState(() => useConsultSessionStore.getState().inputDraft);
   // 直近に送信した相談文（送信後も「何を送ったか」を画面上で確認できるようにする）
-  const [lastSubmittedText, setLastSubmittedText] = useState("");
+  const [lastSubmittedText, setLastSubmittedText] = useState(() => useConsultSessionStore.getState().lastSubmittedText);
   const [targetDeadline, setTargetDeadline] = useState("");
   // OKR情報は常にペイロードへ含める方針（チェックボックスは廃止）。useAIConsultation 側で既定 true。
   // Thinkingモード：ON=Sonnet（高品質・やや遅い）/ OFF=QuickResponse（Haiku・高速・既定）
@@ -136,7 +139,16 @@ export function ConsultationPanel({
   const [latestAiTimestamp, setLatestAiTimestamp] = useState<string | undefined>(undefined);
 
   // 各セッションに固有IDを割り振る（localStorage保存用）
-  const sessionIdRef = useRef<string>(crypto.randomUUID());
+  // 【seed】再マウントで sessionId が変わると localStorage 上のチャット履歴が分裂するため、
+  //   ミラーに既存IDがあればそれを使い、無ければ新規発行してミラーに載せる。
+  const sessionIdRef = useRef<string>(
+    useConsultSessionStore.getState().sessionId || crypto.randomUUID(),
+  );
+  useEffect(() => {
+    if (useConsultSessionStore.getState().sessionId !== sessionIdRef.current) {
+      useConsultSessionStore.getState().saveAi({ sessionId: sessionIdRef.current });
+    }
+  }, []);
 
   // パネル幅（フローティング時のみ使用）
   const [panelWidth, setPanelWidth] = useState<number>(() => {
@@ -167,6 +179,16 @@ export function ConsultationPanel({
 
   const currentType = TYPE_CONFIG.find(t => t.value === consultationType)!;
   const hasHistory = session.turns.length > 0;
+
+  // 【mirror】入力中の下書き・直近送信文をミラーストアへ write-through する。
+  //   再マウント時の seed 元になる。getState().saveAi 経由なのでストアを購読せず無限ループしない。
+  //   submit 時に inputText をクリアする既存挙動はそのまま（クリアもミラーされる）。
+  useEffect(() => {
+    useConsultSessionStore.getState().saveAi({ inputDraft: inputText });
+  }, [inputText]);
+  useEffect(() => {
+    useConsultSessionStore.getState().saveAi({ lastSubmittedText });
+  }, [lastSubmittedText]);
 
   // deadline_check 以外に切り替わったら日付をクリア
   useEffect(() => {
@@ -266,9 +288,12 @@ export function ConsultationPanel({
   const handleReset = () => {
     setManualType(null);
     setSelectedProposalIds(new Set());
+    setInputText("");
     setLastSubmittedText("");
-    reset();
+    reset();                      // ミラーの session/proposals/shortIdMap/followUp/inputDraft/lastSubmitted を空に戻す
     sessionIdRef.current = crypto.randomUUID();
+    // 新しい sessionId をミラーにも反映（resetAi が sessionId="" に戻すため上書きする）
+    useConsultSessionStore.getState().saveAi({ sessionId: sessionIdRef.current });
   };
 
   useEffect(() => {
