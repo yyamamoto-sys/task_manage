@@ -190,10 +190,25 @@ export function parseAIResponse(rawText: string): AIResponseData {
   try {
     parsed = JSON.parse(cleaned);
   } catch {
-    throw new AIError(
-      "INVALID_RESPONSE",
-      "AIのレスポンスをJSONとしてパースできませんでした",
-    );
+    // フォールバック：AIがJSONの前後に説明文を付けて返した場合に備え、
+    // 本文中の最初の "{" 〜 最後の "}" を取り出して再パースする。
+    const start = cleaned.indexOf("{");
+    const end = cleaned.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      try {
+        parsed = JSON.parse(cleaned.slice(start, end + 1));
+      } catch {
+        throw new AIError(
+          "INVALID_RESPONSE",
+          "AIのレスポンスをJSONとしてパースできませんでした",
+        );
+      }
+    } else {
+      throw new AIError(
+        "INVALID_RESPONSE",
+        "AIのレスポンスをJSONとしてパースできませんでした",
+      );
+    }
   }
 
   if (!parsed || typeof parsed !== "object") {

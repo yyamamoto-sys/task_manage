@@ -73,6 +73,19 @@ describe("parseAIResponse", () => {
     expect(parseAIResponse(raw).proposals).toHaveLength(1);
   });
 
+  it("JSONの前後に説明文があってもパースできる（フォールバック抽出）", () => {
+    const json = wrap([{ proposal_id: "p", title: "t", description: "d", action_type: "info" }]);
+    const raw = "承知しました。以下が提案です。\n```json\n" + json + "\n```\nご確認ください。";
+    expect(parseAIResponse(raw).proposals).toHaveLength(1);
+    // フェンスなし・前後に文章があるケースも
+    const raw2 = "提案: " + json + " 以上です。";
+    expect(parseAIResponse(raw2).proposals).toHaveLength(1);
+  });
+
+  it("JSONオブジェクトが全く無ければ従来どおりエラー", () => {
+    expect(() => parseAIResponse("プロジェクトの作り方を教えます。まず…")).toThrow();
+  });
+
   it("add_project は new_project_tasks をパースし、needs_confirmation 未指定なら true", () => {
     const raw = wrap([{
       proposal_id: "prop_001",
