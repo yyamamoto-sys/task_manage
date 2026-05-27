@@ -120,6 +120,21 @@ interface Task {
 
 ---
 
+## 5.5 再利用・ベストプラクティス（統合コストを下げる方針）
+
+新規の並行構造を作らず、既存モジュール・パターンに寄せる。四半期判定の二の舞（各所で再実装→混入）を避け、**派生値は保存せず単一ヘルパーに集約**する。
+
+1. **`src/lib/taskHierarchy.ts` を唯一の真実に**：`childrenOf(tasks, parentId)` / `isParent(task)` / `leafTasks(tasks)` / `rollupStatus(parent, children)` / `parentProgress(children)` / `eligibleParents(tasks, projectId)`（2階層制約・親候補抽出）を集約。List・Dashboard・ProjectKarte・payloadBuilder・AI・DnD は**すべてこのヘルパー**を使う（各所で再実装しない）。
+2. **進捗% は `src/lib/stats.ts` の `calcProgressPct` を再利用**（新しい計算式を作らない）。
+3. **親タスク選択UIは既存の検索付き `CustomSelect`**（候補＝同一PJの最上位タスク）。新しいドロップダウンを作らない。
+4. **保存は既存 zustand `saveTask`→`saveWithLock`（楽観ロック）をそのまま**。Task に2列を足すだけで素通り。新CRUD経路を作らない。
+5. **リストのグループ表示は既存 `groupBy`＋localStorage 永続パターンを拡張**（並行のツリー実装を別途作らない）。トグル開閉状態の保存も既存 KEYS パターンに倣う。
+6. **dnd-kit は「並べ替え可能リスト」を汎用フック/コンポーネント化**し、将来 TF順・ToDo順など他の並べ替えにも再利用できる形にする（このタスクツリー専用の一回限りにしない）。既存 Kanban の HTML5 DnD は別物だが、将来 dnd-kit へ寄せれば統一可（任意）。
+7. **既存共通部品を流用**：Avatar / 進捗バー / バッジ / `formatMD` / `currentQuarter` / `effectiveTfQuarter` 等。重複定義を作らない（必要なら共通化してから使う）。
+8. **派生値は state に保存しない**：親のステータス・進捗は `tasks` から都度算出（`effectiveTfQuarter` と同じ「派生は関数で」方針）。DBに親ステータス列を持たせない。
+9. **ToDo層（TF>ToDo>Task）との将来統合余地**：taskHierarchy ヘルパーの集計I/Fを汎用に保ち、将来 ToDo 集計も同じ関数に寄せられるようにする（当面は併存・無理に統合しない）。
+10. **AI連携**：`add_task` の親指定・`add_project` の subtasks も、上記ヘルパーと既存の確認ダイアログ/Undo の流儀に統合（新フローを作らない）。
+
 ## 6. 未決・実装時に詰める点
 - 親の due_date 自動算出（子の最大期日）をオプションで入れるか。
 - カンバンで親カードと子カードの見せ方（集約 vs 個別）。
