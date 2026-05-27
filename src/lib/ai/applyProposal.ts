@@ -35,6 +35,12 @@ function generateId(): string {
 }
 
 /**
+ * add_project で新規PJの color_tag に使う固定パレット（1色を採用）。
+ * ConsultationPanel / AiProjectCreateModal の PROJECT_COLORS と同系統の値。
+ */
+const DEFAULT_PROJECT_COLOR = "#6366f1";
+
+/**
  * action_typeとタスク数からsnapshotのlabelを生成する
  */
 function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: number, pjCount: number): string {
@@ -59,7 +65,7 @@ function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: nu
 
 export interface ConfirmationDialog {
   proposal_id: string;
-  action_type: "date_change" | "assignee" | "scope_reduce" | "pause" | "add_task";
+  action_type: "date_change" | "assignee" | "scope_reduce" | "pause" | "add_task" | "add_project";
   items: ConfirmationItem[];
   /** date_change 用：プロジェクト終了日の変更 */
   pj_end_date_items?: PjEndDateItem[];
@@ -71,6 +77,10 @@ export interface ConfirmationDialog {
   target_task_uuids?: string[];
   /** add_task 用：新規タスク情報 */
   new_task_items?: NewTaskItem[];
+  /** add_project 用：作成する新規PJ情報 */
+  new_project?: { name: string; purpose: string };
+  /** add_project 用：新規PJに紐づく初期タスク（NewTaskItem を流用。project_id は新規PJなので未確定＝空） */
+  new_project_task_items?: NewTaskItem[];
 }
 
 export interface NewTaskItem {
@@ -463,6 +473,51 @@ export async function applyProposal(
     };
   }
 
+  // ===== add_project: 新規PJ作成の確認ダイアログを返す =====
+  if (action_type === "add_project") {
+    // members を short_name → id で解決するため一括取得（new_project_tasks の担当者解決用）
+    const { data: memberRows } = await supabase
+      .from("members")
+      .select("id, short_name")
+      .eq("is_deleted", false);
+    const memberByShortName = new Map<string, { id: string; short_name: string }>();
+    for (const m of memberRows ?? []) {
+      memberByShortName.set(m.short_name as string, {
+        id: m.id as string,
+        short_name: m.short_name as string,
+      });
+    }
+
+    const taskItems: NewTaskItem[] = (proposal.new_project_tasks ?? [])
+      .filter((t) => t.name && t.name.trim())
+      .map((t) => {
+        const matched = t.suggested_assignee
+          ? memberByShortName.get(t.suggested_assignee)
+          : undefined;
+        return {
+          temp_id: generateId(),
+          task_name: t.name,
+          // project_id は新規PJなので未確定（applyProposalWithConfirmation で採番後に紐づける）
+          project_id: undefined,
+          suggested_assignee_id: matched?.id,
+          suggested_assignee_name: matched?.short_name ?? t.suggested_assignee,
+          suggested_start_date: t.suggested_start_date,
+          suggested_due_date: t.suggested_due_date,
+        };
+      });
+
+    return {
+      type: "needs_confirmation",
+      dialog: {
+        proposal_id: proposal.proposal_id,
+        action_type: "add_project",
+        items: [],
+        new_project: { name: proposal.title, purpose: proposal.description },
+        new_project_task_items: taskItems,
+      },
+    };
+  }
+
   return { type: "error", message: "未対応のアクションタイプです" };
 }
 
@@ -674,6 +729,75 @@ export async function applyProposalWithConfirmation(
         label: `タスク追加 (${addedCount}件)`,
         appliedAt: now,
         operations: [],
+      };
+      return { type: "success", snapshot };
+    }
+
+    // ===== add_project: 新規PJ作成（PJ insert → 初期タスク insert） =====
+    // ConsultationPanel.handleCreateSave の projects insert 項目に合わせて必要列を網羅する。
+    if (dialog.action_type === "add_project") {
+      const operations: UndoOperation[] = [];
+
+      const projectId = generateId();
+      const projectName = (confirmedValues["project_name"] ?? dialog.new_project?.name ?? "").trim();
+      if (!projectName) {
+        return { type: "error", message: "プロジェクト名が入力されていません" };
+      }
+      const projectPurpose = (confirmedValues["project_purpose"] ?? dialog.new_project?.purpose ?? "").trim();
+
+      const { error: pjError } = await supabase.from("projects").insert({
+        id: projectId,
+        name: projectName,
+        purpose: projectPurpose,
+        contribution_memo: "",
+        owner_member_id: currentUserId,
+        owner_member_ids: [currentUserId],
+        status: "active",
+        color_tag: DEFAULT_PROJECT_COLOR,
+        start_date: null,
+        end_date: null,
+        is_deleted: false,
+        created_at: now,
+        updated_at: now,
+        updated_by: currentUserId,
+      });
+      if (pjError) throw new Error(`プロジェクト作成エラー: ${pjError.message}`);
+      operations.push({ type: "pj_restore", pjId: projectId });
+
+      // 初期タスクを作成（add_task と同じ命名規則で confirmedValues から取得）
+      let taskCount = 0;
+      for (const item of dialog.new_project_task_items ?? []) {
+        const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
+        if (!name) continue;
+        const assigneeId = confirmedValues[`${item.temp_id}_assignee_id`] || null;
+        const startDate = confirmedValues[`${item.temp_id}_start_date`] || null;
+        const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
+
+        const newTaskId = generateId();
+        const { error: taskError } = await supabase.from("tasks").insert({
+          id: newTaskId,
+          name,
+          project_id: projectId,
+          todo_ids: [],
+          assignee_member_id: assigneeId,
+          status: "todo",
+          is_deleted: false,
+          start_date: startDate,
+          due_date: dueDate,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUserId,
+        });
+        if (taskError) throw new Error(`初期タスク作成エラー (${name}): ${taskError.message}`);
+        operations.push({ type: "task_restore", taskId: newTaskId });
+        taskCount++;
+      }
+
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: `PJ作成 (${taskCount}タスク)`,
+        appliedAt: now,
+        operations,
       };
       return { type: "success", snapshot };
     }

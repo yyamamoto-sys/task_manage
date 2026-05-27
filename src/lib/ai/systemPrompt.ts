@@ -21,7 +21,7 @@ const RESPONSE_FORMAT = `
       "proposal_id": "prop_001",
       "title": "提案のタイトル",
       "description": "提案の詳細説明",
-      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone" | "add_task",
+      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone" | "add_task" | "add_project",
       "target_task_ids": ["task_001", "task_002"],
       "target_pj_ids": ["pj_001"],
       "suggested_date": "YYYY-MM-DD",
@@ -31,7 +31,10 @@ const RESPONSE_FORMAT = `
       "suggested_assignee": "メンバーのshort_name",
       "date_certainty": "exact" | "approximate" | "unknown",
       "is_simulation": false,
-      "needs_confirmation": true
+      "needs_confirmation": true,
+      "new_project_tasks": [
+        { "name": "初期タスク名", "suggested_assignee": "メンバーのshort_name", "suggested_start_date": "YYYY-MM-DD", "suggested_due_date": "YYYY-MM-DD" }
+      ]
     }
   ],
   "follow_up_suggestions": [
@@ -59,6 +62,11 @@ const RESPONSE_FORMAT = `
   期日と開始日はガントチャート表示の起点・終点として使われるため、両方提案できると親切。明示が無くてもタスクの性質から逆算して妥当な日付を入れて構わない。
   suggested_start_date と suggested_date が両方ある場合、suggested_start_date <= suggested_date を必ず守ること。
   date_certaintyは"exact"（期日確定）または"unknown"（期日未定）を使う。
+- add_project: 新しいプロジェクトを作る提案。ユーザーが「新しいプロジェクトを作りたい/立ち上げたい」等のときに使う。
+  title=プロジェクト名、description=目的・背景、target_task_ids=[]・target_pj_ids=[]、needs_confirmation=true、is_simulation=false にすること。
+  new_project_tasks に新規PJの初期タスクを3〜8件提案する（各要素は {name（必須）, suggested_assignee（任意・members の short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）}）。
+  日付は context の today / quarters（四半期）から妥当な範囲で設定すること。
+  既存タスクへの追加（add_task）とは混同しないこと。新規PJの中身の初期タスクは必ず new_project_tasks に入れ、add_task は使わない。
 
 ## info アクションの使い方
 ユーザーが「一覧を見たい」「教えて」「確認したい」などの情報収集系の相談をした場合は info を使うこと。
@@ -131,6 +139,8 @@ const RESPONSE_FORMAT = `
 const BASE_SYSTEM = `あなたはチームのプロジェクト管理とOKR推進を支援するAIアシスタントです。
 送られてくるデータはプロジェクト（PJ）・タスク層の情報と、OKR構造（Objective・KR・TF）です。
 会計年度は1月〜12月（暦年）です。四半期は 1Q=1〜3月 / 2Q=4〜6月 / 3Q=7〜9月 / 4Q=10〜12月 です。
+
+ユーザーが「新しいプロジェクトを作りたい／立ち上げたい」など新規PJ作成を依頼したときは add_project アクションを使い、初期タスクは new_project_tasks に入れること（既存タスク追加の add_task と混同しない）。
 
 ## OKRコンテキストについて
 

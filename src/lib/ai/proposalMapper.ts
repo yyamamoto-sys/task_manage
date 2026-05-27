@@ -5,7 +5,7 @@
 // action_typeごとに表示ラベル・色を付与する。
 // canApplyの計算ロジックもここで一元管理する。
 
-import type { Proposal } from "./responseParser";
+import type { Proposal, NewProjectTaskInput } from "./responseParser";
 
 // ===== UI表示用型定義 =====
 
@@ -26,6 +26,8 @@ export interface UIProposal {
   date_certainty: "exact" | "approximate" | "unknown";
   is_simulation: boolean;
   needs_confirmation: boolean;
+  /** add_project 用：作成するPJに紐づく初期タスク（素通し） */
+  new_project_tasks?: NewProjectTaskInput[];
   /** date_certainty !== "unknown" && !is_simulation の場合にtrue（「反映する」ボタン活性） */
   canApply: boolean;
 }
@@ -76,6 +78,10 @@ const ACTION_TYPE_CONFIG: Record<
     label: "タスク追加",
     color: "var(--color-brand)",
   },
+  add_project: {
+    label: "新規PJ",
+    color: "var(--color-brand)",
+  },
 };
 
 /**
@@ -105,7 +111,8 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       date_certainty: p.date_certainty,
       is_simulation: p.is_simulation,
       needs_confirmation: p.needs_confirmation,
-      canApply: !p.is_simulation && (p.date_certainty !== "unknown" || p.action_type === "add_task"),
+      new_project_tasks: p.new_project_tasks,
+      canApply: !p.is_simulation && (p.date_certainty !== "unknown" || p.action_type === "add_task" || p.action_type === "add_project"),
     };
   });
 }

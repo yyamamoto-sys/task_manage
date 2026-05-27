@@ -72,4 +72,38 @@ describe("parseAIResponse", () => {
     const raw = "```json\n" + wrap([{ proposal_id: "p", title: "t", description: "d", action_type: "info" }]) + "\n```";
     expect(parseAIResponse(raw).proposals).toHaveLength(1);
   });
+
+  it("add_project は new_project_tasks をパースし、needs_confirmation 未指定なら true", () => {
+    const raw = wrap([{
+      proposal_id: "prop_001",
+      title: "新サイト構築PJ",
+      description: "コーポレートサイトのリニューアル",
+      action_type: "add_project",
+      new_project_tasks: [
+        { name: "要件定義", suggested_assignee: "山本", suggested_start_date: "2026-06-01", suggested_due_date: "2026-06-10" },
+        { name: "デザイン", suggested_due_date: "2026-06-20" },
+      ],
+    }]);
+    const res = parseAIResponse(raw);
+    expect(res.proposals[0].action_type).toBe("add_project");
+    expect(res.proposals[0].needs_confirmation).toBe(true);
+    expect(res.proposals[0].new_project_tasks).toHaveLength(2);
+    expect(res.proposals[0].new_project_tasks?.[0].name).toBe("要件定義");
+    expect(res.proposals[0].new_project_tasks?.[0].suggested_assignee).toBe("山本");
+    expect(res.proposals[0].new_project_tasks?.[1].suggested_assignee).toBeUndefined();
+  });
+
+  it("add_project の new_project_tasks は name 欠落・非配列を寛容に処理する", () => {
+    // 非配列は undefined（フィールド省略扱い）
+    const raw1 = wrap([{ proposal_id: "p", title: "PJ", description: "d", action_type: "add_project", new_project_tasks: "x" }]);
+    expect(parseAIResponse(raw1).proposals[0].new_project_tasks).toBeUndefined();
+    // name のない要素は除外され、name のある要素のみ採用
+    const raw2 = wrap([{
+      proposal_id: "p", title: "PJ", description: "d", action_type: "add_project",
+      new_project_tasks: [{ suggested_assignee: "山本" }, { name: "有効タスク" }],
+    }]);
+    const tasks = parseAIResponse(raw2).proposals[0].new_project_tasks;
+    expect(tasks).toHaveLength(1);
+    expect(tasks?.[0].name).toBe("有効タスク");
+  });
 });

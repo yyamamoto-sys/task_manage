@@ -72,6 +72,122 @@ export function ProposalCard({
     }
   };
 
+  // add_project カードは別レンダリング（新規PJ + 初期タスク一覧 + 作成ボタン）
+  if (proposal.action_type === "add_project") {
+    const tasks = proposal.new_project_tasks ?? [];
+    return (
+      <>
+        <div
+          style={{
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-brand-border, var(--color-border-primary))",
+            borderRadius: "var(--radius-md)",
+            padding: "12px 14px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "8px",
+            boxShadow: "var(--shadow-sm)",
+          }}
+        >
+          <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-brand)" }}>
+            {proposal.action_label}
+          </div>
+          <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.4 }}>
+            🆕 新規プロジェクト：{proposal.title}
+          </div>
+          {proposal.description && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+              {proposal.description}
+            </div>
+          )}
+
+          {tasks.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "2px" }}>
+              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)" }}>
+                初期タスク（{tasks.length}件）
+              </div>
+              {tasks.map((t, i) => (
+                <div
+                  key={i}
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--color-text-primary)",
+                    padding: "4px 8px",
+                    background: "var(--color-bg-secondary)",
+                    borderRadius: "var(--radius-sm)",
+                    display: "flex",
+                    gap: "8px",
+                    flexWrap: "wrap",
+                    alignItems: "baseline",
+                  }}
+                >
+                  <span style={{ fontWeight: "500" }}>{t.name}</span>
+                  {t.suggested_assignee && (
+                    <span style={{ color: "var(--color-text-tertiary)" }}>担当：{t.suggested_assignee}</span>
+                  )}
+                  {t.suggested_due_date && (
+                    <span style={{ color: "var(--color-text-info)" }}>期日：{t.suggested_due_date}</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+
+          {resultMessage && (
+            <div
+              style={{
+                fontSize: "11px",
+                color: resultMessage.type === "success" ? "var(--color-text-success)" : "var(--color-text-danger)",
+                padding: "4px 8px",
+                background: resultMessage.type === "success" ? "var(--color-bg-success)" : "var(--color-bg-danger)",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >
+              {resultMessage.text}
+            </div>
+          )}
+
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <button
+              onClick={handleApply}
+              disabled={applying || resultMessage?.type === "success"}
+              style={{
+                fontSize: "11px",
+                padding: "5px 14px",
+                background: applying || resultMessage?.type === "success" ? "var(--color-bg-tertiary)" : "var(--color-brand)",
+                border: "none",
+                borderRadius: "var(--radius-md)",
+                color: applying || resultMessage?.type === "success" ? "var(--color-text-tertiary)" : "#fff",
+                cursor: applying || resultMessage?.type === "success" ? "not-allowed" : "pointer",
+                fontWeight: "500",
+              }}
+            >
+              {applying ? "処理中..." : resultMessage?.type === "success" ? "作成済み" : "このプロジェクトを作成"}
+            </button>
+          </div>
+        </div>
+
+        {/* 確認ダイアログ */}
+        {confirmDialog && (
+          <ConfirmationDialogModal
+            dialog={confirmDialog}
+            currentUserId={currentUserId}
+            onClose={() => setConfirmDialog(null)}
+            onApplied={(result) => {
+              setConfirmDialog(null);
+              if (result.type === "success") {
+                setResultMessage({ type: "success", text: "プロジェクトを作成しました" });
+                onApplied?.(result.snapshot);
+              } else if (result.type === "error") {
+                setResultMessage({ type: "error", text: result.message });
+              }
+            }}
+          />
+        )}
+      </>
+    );
+  }
+
   // info カードは別レンダリング（ボタンなし・一覧表示専用）
   if (proposal.action_type === "info") {
     return (

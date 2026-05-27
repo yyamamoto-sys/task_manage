@@ -8,6 +8,14 @@ import { AIError } from "./apiClient";
 
 // ===== Proposal型定義 =====
 
+/** add_project 用：作成するPJに紐づく初期タスク */
+export interface NewProjectTaskInput {
+  name: string;
+  suggested_assignee?: string;
+  suggested_start_date?: string;
+  suggested_due_date?: string;
+}
+
 export interface Proposal {
   proposal_id: string;
   title: string;
@@ -22,7 +30,8 @@ export interface Proposal {
     | "pause"
     | "milestone"
     | "info"
-    | "add_task";
+    | "add_task"
+    | "add_project";
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
@@ -33,6 +42,8 @@ export interface Proposal {
   date_certainty: "exact" | "approximate" | "unknown";
   is_simulation: boolean;
   needs_confirmation: boolean;
+  /** add_project 用：作成するPJに紐づく初期タスク */
+  new_project_tasks?: NewProjectTaskInput[];
 }
 
 export interface AIResponseData {
@@ -53,9 +64,34 @@ const VALID_ACTION_TYPES = [
   "milestone",
   "info",
   "add_task",
+  "add_project",
 ] as const;
 
 const VALID_DATE_CERTAINTY = ["exact", "approximate", "unknown"] as const;
+
+/**
+ * new_project_tasks を寛容にパースする。
+ * 配列でなければ []。各要素は name が文字列のもののみ採用し、他フィールドは任意。
+ */
+function parseNewProjectTasks(raw: unknown): NewProjectTaskInput[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const tasks: NewProjectTaskInput[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const o = item as Record<string, unknown>;
+    if (typeof o.name !== "string" || !o.name.trim()) continue;
+    tasks.push({
+      name: o.name,
+      suggested_assignee:
+        typeof o.suggested_assignee === "string" ? o.suggested_assignee : undefined,
+      suggested_start_date:
+        typeof o.suggested_start_date === "string" ? o.suggested_start_date : undefined,
+      suggested_due_date:
+        typeof o.suggested_due_date === "string" ? o.suggested_due_date : undefined,
+    });
+  }
+  return tasks;
+}
 
 function validateProposal(p: unknown, index: number): Proposal {
   if (!p || typeof p !== "object") {
@@ -101,7 +137,7 @@ function validateProposal(p: unknown, index: number): Proposal {
   // needs_confirmation：未指定なら「DBを変更する提案は確認必須・それ以外は不要」を既定に
   // （安全側に倒す。明示の boolean があればそれを優先）
   const MUTATING_ACTIONS: Proposal["action_type"][] = [
-    "date_change", "assignee", "add_task", "scope_reduce", "pause", "milestone",
+    "date_change", "assignee", "add_task", "add_project", "scope_reduce", "pause", "milestone",
   ];
   const needsConfirmation =
     typeof obj.needs_confirmation === "boolean"
@@ -121,6 +157,8 @@ function validateProposal(p: unknown, index: number): Proposal {
       : [],
     suggested_date:
       typeof obj.suggested_date === "string" ? obj.suggested_date : undefined,
+    suggested_start_date:
+      typeof obj.suggested_start_date === "string" ? obj.suggested_start_date : undefined,
     suggested_end_date:
       typeof obj.suggested_end_date === "string" ? obj.suggested_end_date : undefined,
     shift_days:
@@ -132,6 +170,7 @@ function validateProposal(p: unknown, index: number): Proposal {
     date_certainty: dateCertainty,
     is_simulation: obj.is_simulation === true,
     needs_confirmation: needsConfirmation,
+    new_project_tasks: parseNewProjectTasks(obj.new_project_tasks),
   };
 }
 
