@@ -9,6 +9,8 @@ import { renderLinks } from "../../lib/renderLinks";
 import { KEYS } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
+import { childrenOf, isParentTask, effectiveStatus, parentProgress } from "../../lib/taskHierarchy";
+import { v4 as uuidv4 } from "uuid";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -96,6 +98,25 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const [searchText,     setSearchText    ] = useState("");
   const [selectedTaskId, setSelectedTaskId] = useState<string|null>(null);
   const [editingTaskId,  setEditingTaskId ] = useState<string|null>(null);
+
+  // 親タスクの折りたたみ状態：localStorage には「折りたたみ中の親ID集合」を保存（既定＝展開）。
+  // 展開集合ではなく折りたたみ集合を持つことで、新規親は既定で展開表示になる。
+  const [collapsedIds, setCollapsedIds] = useState<Set<string>>(
+    () => new Set(lsGet<string[]>("collapsedParents", [])),
+  );
+  const toggleCollapse = useCallback((id: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setCollapsedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      lsSet("collapsedParents", Array.from(next));
+      return next;
+    });
+  }, []);
+
+  // 「＋子タスク」インライン追加：開いている親ID（最上位）と入力中テキスト
+  const [addingChildFor, setAddingChildFor] = useState<string | null>(null);
+  const [childDraft, setChildDraft] = useState("");
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -234,6 +255,51 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     }
   }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
 
+  // 「＋子タスク」インライン作成。QuickAddTaskModal の既定に合わせる
+  // （parent_task_id=親id・project_id=親のPJ・status="todo"・display_order=兄弟max+1・他は既定値）。
+  const createChildTask = useCallback(async (parent: Task, rawName: string) => {
+    const name = rawName.trim();
+    if (!name) return;
+    const now = new Date().toISOString();
+    const siblings = allTasks.filter(t => t.parent_task_id === parent.id);
+    const nextOrder = siblings.length === 0
+      ? 0
+      : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
+    const child: Task = {
+      id: uuidv4(),
+      name,
+      project_id: parent.project_id ?? null,
+      parent_task_id: parent.id,
+      display_order: nextOrder,
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    try {
+      await saveTask(child);
+      // 追加直後は親を展開状態にして子が見えるようにする
+      setCollapsedIds(prev => {
+        if (!prev.has(parent.id)) return prev;
+        const next = new Set(prev); next.delete(parent.id);
+        lsSet("collapsedParents", Array.from(next));
+        return next;
+      });
+      setChildDraft("");
+    } catch (err) {
+      showToast(`子タスクの追加に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, saveTask, currentUser.id]);
+
   const groups = useMemo(() => {
     if (groupBy === "project") {
       const map = new Map<string, Task[]>();
@@ -270,6 +336,61 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [filteredTasks, groupBy, projects, members, todos]);
 
   const selectedTask = selectedTaskId ? allTasks.find(t => t.id === selectedTaskId) ?? null : null;
+
+  // ===== 親子ツリーの行構築 =====
+  // groupBy="project"（および ToDo/未設定）では親→子をネスト表示。
+  // groupBy="assignee"/"status" では親子が別グループに散り得るためネストせず、
+  // 子行に「↳ 親タスク名」注記を出す（ツリーが壊れない範囲で対応）。
+  // 派生値（親ステータス・進捗）は保存せず taskHierarchy で都度算出する。
+  const nestTree = groupBy === "project";
+
+  // 注記用：親タスク名を引く（フィルタで親が除外されても allTasks から名前を取得し「孤児の親名」を出す）
+  const parentNameOf = useCallback((task: Task): string | undefined => {
+    if (!task.parent_task_id) return undefined;
+    return allTasks.find(p => p.id === task.parent_task_id)?.name;
+  }, [allTasks]);
+
+  type RenderRow = { task: Task; depth: 0 | 1; parentNote?: string; isParent: boolean };
+
+  // グループ内タスク配列 → 描画順の行配列（ネスト or フラット）に変換する。
+  // group.tasks は既存のソート順を保持しているのでその順序を尊重しつつ、
+  // ネスト時のみ親直下に子（display_order 順）を差し込む。
+  const buildRows = useCallback((groupTasks: Task[]): RenderRow[] => {
+    if (!nestTree) {
+      // フラット：親子はネストしない。親を持つ子には注記を付ける。
+      return groupTasks.map(t => ({
+        task: t,
+        depth: 0 as const,
+        parentNote: parentNameOf(t),
+        isParent: isParentTask(t, filteredTasks),
+      }));
+    }
+    // ネスト：このグループ内の子IDを把握し、親の直下に寄せる。
+    const idsInGroup = new Set(groupTasks.map(t => t.id));
+    const rows: RenderRow[] = [];
+    for (const t of groupTasks) {
+      if (t.parent_task_id) {
+        // 親が同じグループ内に居る子は、親の直下で描画するのでここではスキップ。
+        // 親がこのグループに居ない（フィルタ除外/別PJ）孤児の子は最上位行＋注記で出す。
+        if (idsInGroup.has(t.parent_task_id)) continue;
+        rows.push({ task: t, depth: 0, parentNote: parentNameOf(t), isParent: false });
+        continue;
+      }
+      // 最上位タスク
+      const parent = t;
+      const childrenHere = isParentTask(parent, filteredTasks);
+      rows.push({ task: parent, depth: 0, isParent: childrenHere });
+      // 子（フィルタ後に表示対象として残っているもののみ）を display_order 順で差し込む
+      if (childrenHere && !collapsedIds.has(parent.id)) {
+        for (const c of childrenOf(filteredTasks, parent.id)) {
+          if (idsInGroup.has(c.id)) {
+            rows.push({ task: c, depth: 1, isParent: false });
+          }
+        }
+      }
+    }
+    return rows;
+  }, [nestTree, parentNameOf, filteredTasks, collapsedIds]);
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
@@ -544,20 +665,25 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
-                  {group.tasks.map(task => {
+                  {buildRows(group.tasks).map(({ task, depth, parentNote, isParent }) => {
                     const taskAssigneeIds = getAssigneeIds(task);
                     const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = projects.find(p => p.id === task.project_id);
-                    const isDone    = task.status === "done";
+                    // 親はステータス・進捗を子から導出
+                    const dispStatus = isParent ? effectiveStatus(task, filteredTasks) : task.status;
+                    const isDone    = dispStatus === "done";
                     const isOverdue = task.due_date && task.due_date < t0 && !isDone;
                     const isSelected = selectedIds.has(task.id);
+                    const collapsed = collapsedIds.has(task.id);
+                    const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
                     // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
                     // 状態は左カラーバーと文字スタイルで表現し、詳細はタップで TaskEditModal が開く。
-                    const statusColor = TASK_STATUS_STYLE[task.status].color;
+                    const statusColor = TASK_STATUS_STYLE[dispStatus].color;
                     return (
                       <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                         style={{
                           display: "flex", alignItems: "center", gap: "10px",
+                          marginLeft: depth === 1 ? 18 : 0,
                           background: isSelected ? "var(--color-brand-light)" : "var(--color-bg-primary)",
                           border: isSelected
                             ? "1px solid var(--color-brand-border)"
@@ -576,12 +702,35 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           aria-label={`${task.name} を選択`}
                           style={{ cursor: "pointer", width: 18, height: 18, accentColor: "var(--color-brand)", flexShrink: 0 }}
                         />
-                        <div style={{
-                          flex: 1, fontSize: "13px", fontWeight: 500, minWidth: 0,
-                          color: "var(--color-text-primary)",
-                          lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        }}>{task.name}</div>
+                        {isParent && (
+                          <button
+                            onClick={e => toggleCollapse(task.id, e)}
+                            aria-label={collapsed ? "子タスクを表示" : "子タスクを隠す"}
+                            aria-expanded={!collapsed}
+                            style={{
+                              flexShrink: 0, width: 18, height: 18, padding: 0, border: "none",
+                              background: "transparent", cursor: "pointer", fontSize: "10px",
+                              color: "var(--color-text-tertiary)",
+                            }}
+                          >{collapsed ? "▶" : "▼"}</button>
+                        )}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{
+                            fontSize: "13px", fontWeight: isParent ? 700 : 500,
+                            color: "var(--color-text-primary)",
+                            lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
+                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          }}>
+                            {depth === 1 && !parentNote && <span style={{ color: "var(--color-text-tertiary)", marginRight: 3 }}>↳</span>}
+                            {task.name}
+                          </div>
+                          {isParent && prog && (
+                            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
+                          )}
+                          {parentNote && (
+                            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {parentNote}</div>
+                          )}
+                        </div>
                         {taskAssignees.length > 0 && (
                           <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
                             {taskAssignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={20} />)}
@@ -663,17 +812,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           </div>
                         </td>
                       </tr>
-                      {group.tasks.map(task => {
+                      {buildRows(group.tasks).map(({ task, depth, parentNote, isParent }) => {
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
                         const taskAssigneeIds = getAssigneeIds(task);
                         const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                         const pj = projects.find(p => p.id === task.project_id);
                         const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
-                        const isDone    = task.status === "done";
+                        // 親行のステータスは子から導出（rollupStatus）。子無しは自身の値。
+                        const dispStatus = isParent ? effectiveStatus(task, filteredTasks) : task.status;
+                        const isDone    = dispStatus === "done";
                         const isOverdue = task.due_date && task.due_date < t0 && !isDone;
                         const isSel     = selectedTaskId === task.id;
                         const zebraBg   = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
+                        // ＋子タスクを出せるのは最上位タスク（親を持たない）のみ。孤児の子（depth0だが parent あり）は除外。
+                        const canAddChild = !task.parent_task_id;
+                        const collapsed = collapsedIds.has(task.id);
+                        const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
                         return (
                           <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
                             borderBottom: "1px solid var(--color-bg-tertiary)",
@@ -716,16 +871,39 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 )}
                               </td>
                             )}
-                            {/* タスク名 */}
-                            <td style={{ padding: "6px 10px" }}>
+                            {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
+                            <td style={{ padding: "6px 10px", paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                                {/* 折りたたみトグル（子を持つ親のみ） */}
+                                {isParent ? (
+                                  <button
+                                    onClick={e => toggleCollapse(task.id, e)}
+                                    aria-label={collapsed ? "子タスクを表示" : "子タスクを隠す"}
+                                    aria-expanded={!collapsed}
+                                    style={{
+                                      flexShrink: 0, width: 16, height: 16, lineHeight: "16px", padding: 0,
+                                      border: "none", background: "transparent", cursor: "pointer",
+                                      fontSize: "9px", color: "var(--color-text-tertiary)",
+                                    }}
+                                  >{collapsed ? "▶" : "▼"}</button>
+                                ) : depth === 1 && (
+                                  <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
+                                )}
                                 <div style={{
                                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                                   maxWidth: "360px",
                                   color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
                                   textDecoration: isDone ? "line-through" : "none",
-                                  fontWeight: isSel ? "500" : "400",
+                                  fontWeight: isSel ? "500" : isParent ? "600" : "400",
                                 }}>{task.name}</div>
+                                {/* 親：子 n/m・◯% バッジ */}
+                                {isParent && prog && (
+                                  <span title="子タスクの完了状況（自動算出）" style={{
+                                    flexShrink: 0, fontSize: "9px", padding: "1px 6px", borderRadius: "99px",
+                                    background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)",
+                                    whiteSpace: "nowrap",
+                                  }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
+                                )}
                                 {task.comment && (
                                   <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
                                 )}
@@ -733,6 +911,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                   <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
                                 )}
                               </div>
+                              {/* 親タスク名の注記（ネストできない/孤児の子） */}
+                              {parentNote && (
+                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
+                                    ↳ {parentNote}
+                                  </span>
+                                </div>
+                              )}
                               {groupBy !== "project" && pj && (
                                 <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
                                   <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
@@ -747,13 +933,51 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                   </span>
                                 </div>
                               )}
+                              {/* ＋子タスク（最上位行のみ） */}
+                              {canAddChild && (
+                                addingChildFor === task.id ? (
+                                  <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "3px" }}>
+                                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>↳</span>
+                                    <input
+                                      // eslint-disable-next-line jsx-a11y/no-autofocus -- インライン追加の即時入力のため
+                                      autoFocus
+                                      value={childDraft}
+                                      onClick={e => e.stopPropagation()}
+                                      onChange={e => setChildDraft(e.target.value)}
+                                      onKeyDown={e => {
+                                        if (e.key === "Enter") { e.preventDefault(); createChildTask(task, childDraft); }
+                                        else if (e.key === "Escape") { setAddingChildFor(null); setChildDraft(""); }
+                                      }}
+                                      placeholder="子タスク名を入力して Enter"
+                                      style={{
+                                        flex: 1, minWidth: "120px", maxWidth: "300px", padding: "3px 8px", fontSize: "11px",
+                                        border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)",
+                                        background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
+                                      }}
+                                    />
+                                    <button onClick={e => { e.stopPropagation(); setAddingChildFor(null); setChildDraft(""); }} style={{
+                                      padding: "2px 6px", fontSize: "10px", color: "var(--color-text-tertiary)",
+                                      border: "none", background: "transparent", cursor: "pointer",
+                                    }}>✕</button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); setChildDraft(""); setAddingChildFor(task.id); }}
+                                    style={{
+                                      marginTop: "2px", padding: "1px 4px", fontSize: "9px",
+                                      color: "var(--color-text-tertiary)", border: "none",
+                                      background: "transparent", cursor: "pointer",
+                                    }}
+                                  >＋ 子タスク</button>
+                                )
+                              )}
                             </td>
-                            {/* 状態 */}
+                            {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                              <span style={{
+                              <span title={isParent ? "子から自動算出" : undefined} style={{
                                 fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                                background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
-                              }}>{TASK_STATUS_LABEL[task.status]}</span>
+                                background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
+                              }}>{TASK_STATUS_LABEL[dispStatus]}</span>
                             </td>
                             {/* 期日 */}
                             <td style={{
