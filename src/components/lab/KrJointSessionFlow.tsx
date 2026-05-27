@@ -15,6 +15,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { FileAttachButton, FileDropZone, type FileAttachment } from "../common/FileAttachButton";
+import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
 import {
   insertKrSession, insertKrDeclaration, updateKrDeclarationResult,
   fetchLatestCheckinSession, fetchKrDeclarations, type KrDeclaration,
@@ -161,12 +162,19 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
     const file = e.dataTransfer.files[0];
     if (!file) return;
     const nm = file.name.toLowerCase();
+    // HTML：本文テキストを抽出してから展開（raw HTML は渡さない）
+    if (isHtmlFile(file)) {
+      extractHtmlText(file)
+        .then(text => setTranscript(text))
+        .catch((err: unknown) => alert(err instanceof Error ? err.message : "HTMLファイルの読み込みに失敗しました。"));
+      return;
+    }
     if (nm.endsWith(".vtt") || nm.endsWith(".srt") || nm.endsWith(".txt") || nm.endsWith(".text") || file.type.startsWith("text/")) {
       const reader = new FileReader();
       reader.onload = ev => setTranscript((ev.target?.result as string) ?? "");
       reader.readAsText(file, "utf-8");
     } else {
-      alert("ここに直接ドロップできるのはテキスト系（.vtt / .srt / .txt 等）です。PDF・Word は📎ボタンで添付してください。");
+      alert("ここに直接ドロップできるのはテキスト系（.vtt / .srt / .txt / .html 等）です。PDF・Word は📎ボタンで添付してください。");
     }
   }, []);
 
@@ -176,6 +184,13 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
     const f = e.target.files?.[0];
     e.target.value = "";
     if (!f) return;
+    // HTML：本文テキストを抽出してから展開
+    if (isHtmlFile(f)) {
+      extractHtmlText(f)
+        .then(text => setTranscript(text))
+        .catch((err: unknown) => alert(err instanceof Error ? err.message : "HTMLファイルの読み込みに失敗しました。"));
+      return;
+    }
     const reader = new FileReader();
     reader.onload = ev => setTranscript((ev.target?.result as string) ?? "");
     reader.onerror = () => alert("ファイルの読み込みに失敗しました。");
@@ -779,8 +794,8 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px", flexWrap: "wrap" }}>
             <Label>議事メモ / 文字起こし</Label>
-            <button onClick={() => vttInputRef.current?.click()} style={ghostBtn} title=".vtt / .srt / .txt を選択して本文に読み込み">📄 ファイルから読み込む（.vtt 等）</button>
-            <input ref={vttInputRef} type="file" accept=".vtt,.srt,.txt,.text,text/plain,text/vtt" style={{ display: "none" }} onChange={handlePickTextFile} />
+            <button onClick={() => vttInputRef.current?.click()} style={ghostBtn} title=".vtt / .srt / .txt / .html を選択して本文に読み込み">📄 ファイルから読み込む（.vtt 等）</button>
+            <input ref={vttInputRef} type="file" accept=".vtt,.srt,.txt,.text,.html,.htm,text/plain,text/vtt,text/html" style={{ display: "none" }} onChange={handlePickTextFile} />
             <FileAttachButton attachment={attachment} onAttach={setAttachment} onRemove={() => setAttachment(null)} />
             <div style={{ flex: 1 }} />
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{inputCount.toLocaleString()} 文字</span>

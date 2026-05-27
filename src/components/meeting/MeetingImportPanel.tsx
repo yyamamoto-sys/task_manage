@@ -18,6 +18,7 @@ import {
 } from "../../lib/ai/meetingExtractor";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
+import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -140,6 +141,13 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       extractDocxText(file)
         .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text); })
         .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+      return;
+    }
+    // HTML(.html/.htm)：本文テキストを抽出（raw HTML ではなく textContent を渡す）
+    if (isHtmlFile(file)) {
+      extractHtmlText(file)
+        .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TRANSCRIPT_CHARS ? text.slice(0, MAX_TRANSCRIPT_CHARS) : text); })
+        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "HTMLファイルの読み込みに失敗しました。"));
       return;
     }
     // それ以外：テキストとして読み込む（.vtt / .srt / .txt 等）
@@ -576,12 +584,12 @@ function InputStep({
           ファイルをドラッグ＆ドロップ
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          または <span style={{ color: "var(--color-brand)", textDecoration: "underline" }}>クリックして選択</span>（.vtt / .srt / .txt / .docx(Word) / .pdf）
+          または <span style={{ color: "var(--color-brand)", textDecoration: "underline" }}>クリックして選択</span>（.vtt / .srt / .txt / .docx(Word) / .pdf / .html）
         </div>
         <input
           ref={fileInputRef}
           type="file"
-          accept=".vtt,.srt,.txt,.text,.docx,.pdf,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          accept=".vtt,.srt,.txt,.text,.docx,.pdf,.html,.htm,text/html,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           style={{ display: "none" }}
           onChange={onFileChange}
         />

@@ -7,10 +7,11 @@
 import { useRef, useState } from "react";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
+import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
 
 export type { FileAttachment };
 
-const ACCEPT_TYPES = ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.html";
+const ACCEPT_TYPES = ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.html,.htm";
 const TEXT_MEDIA_TYPES = ["text/plain", "text/markdown", "text/csv", "text/html"];
 const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
 const DOC_MEDIA_TYPES = ["application/pdf"];
@@ -21,6 +22,13 @@ function processFileAttachment(file: File, onAttach: (att: FileAttachment) => vo
     extractDocxText(file)
       .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
       .catch((e: unknown) => alert(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+    return;
+  }
+  // HTML(.html/.htm)：raw HTML ではなく本文テキストを抽出し、text/plain のテキスト添付として渡す
+  if (isHtmlFile(file)) {
+    extractHtmlText(file)
+      .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : "HTMLファイルの読み込みに失敗しました。"));
     return;
   }
   const mediaType = resolveMediaType(file);
