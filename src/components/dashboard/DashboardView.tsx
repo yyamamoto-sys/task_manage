@@ -610,9 +610,9 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                     <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
                       {/* シグナル履歴ドット（最新4週、古い順） */}
                       {(krSessionsMap[kr.id] ?? []).slice(0, 4).reverse().map((s, si) => {
-                        const dot = s.signal === "green" ? { bg: "#22c55e", title: "🟢" }
-                          : s.signal === "yellow" ? { bg: "#eab308", title: "🟡" }
-                          : s.signal === "red" ? { bg: "#ef4444", title: "🔴" }
+                        const dot = s.signal === "green" ? { bg: "var(--color-signal-green)", title: "🟢" }
+                          : s.signal === "yellow" ? { bg: "var(--color-signal-yellow)", title: "🟡" }
+                          : s.signal === "red" ? { bg: "var(--color-signal-red)", title: "🔴" }
                           : { bg: "#d1d5db", title: "−" };
                         const typeLabel = s.session_type === "checkin" ? "C" : "W";
                         return (

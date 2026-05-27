@@ -958,7 +958,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
                           <div style={{ flex: 1, height: "4px", background: "var(--color-bg-tertiary)", borderRadius: "2px", overflow: "hidden" }}>
                             <div style={{
                               height: "100%", width: `${tf.completion_pct}%`,
-                              background: tf.completion_pct >= 60 ? "#10b981" : tf.completion_pct >= 40 ? "#f59e0b" : "#ef4444",
+                              background: tf.completion_pct >= 60 ? "#10b981" : tf.completion_pct >= 40 ? "#f59e0b" : "var(--color-signal-red)",
                               borderRadius: "2px",
                             }} />
                           </div>
