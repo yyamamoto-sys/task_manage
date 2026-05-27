@@ -254,6 +254,21 @@ export function GanttView({
     scrollRef.current.scrollLeft = Math.max(0, targetX - scrollRef.current.clientWidth / 2);
   }, [days, rangeStart, todayX, dayWidth]);
 
+  // プロジェクト切替時：表示を「今日中心」にリセットする。
+  // （切替前のスクロール位置が残って遠い期間が見えてしまうのを防ぐ。
+  //   一番見たいのは今日周辺なので、切り替えたら今日を画面中央に戻す）
+  const prevPjKeyRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const pjKey = selectedProject?.id ?? null;
+    // 初回はマウント時のスクロール初期化に任せてスキップ
+    if (prevPjKeyRef.current === undefined) { prevPjKeyRef.current = pjKey; return; }
+    if (prevPjKeyRef.current === pjKey) return;
+    prevPjKeyRef.current = pjKey;
+    if (scrollRef.current && days.length > 0) {
+      scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
+    }
+  }, [selectedProject?.id, days.length, todayX]);
+
   const handleGanttScroll = useCallback(() => {
     clearTimeout(scrollSaveTimer.current);
     scrollSaveTimer.current = setTimeout(() => {
