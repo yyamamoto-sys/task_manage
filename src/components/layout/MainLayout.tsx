@@ -216,6 +216,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setSelectedProjectId(null);
   };
 
+  // 設定/ガイドはメインコンテンツ領域の独立パネルとして表示する。
+  // ビュー・モード・PJ・KR・OKRツールなどナビ操作で切り替えたら自動的に閉じる
+  // （その操作対象のビューを mainContent に出すため）。閉じるのは✕とこのeffectのみ。
+  useEffect(() => {
+    setIsAdminOpen(false);
+    setIsGuideOpen(false);
+  }, [viewMode, appMode, selectedProjectId, selectedKrId, okrActiveTool]);
+
   /**
    * 「AIでPJを作る」導線。新規PJ作成は AI相談（consult）チャットの add_project 提案で行う前提に
    * 統一したため、create モードは廃止。consult チャットを開き、入力欄に下書きをプレフィルする
@@ -245,8 +253,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   const adminOverlay = isAdminOpen ? (
     <div style={{
-      position: "fixed", inset: 0, zIndex: 250,
+      flex: 1, minHeight: 0,
       display: "flex", flexDirection: "column",
+      overflow: "hidden",
       background: "var(--color-bg-primary)",
     }}>
       <div style={{
@@ -381,8 +390,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   const guideOverlay = isGuideOpen ? (
     <div style={{
-      position: "fixed", inset: 0, zIndex: 250,
+      flex: 1, minHeight: 0,
       display: "flex", flexDirection: "column",
+      overflow: "hidden",
       background: "var(--color-bg-primary)",
     }}>
       <div style={{
@@ -422,7 +432,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       paddingBottom: isMobile ? "56px" : 0,
     }}>
-      {appMode === "okr" ? (
+      {isGuideOpen ? guideOverlay : isAdminOpen ? adminOverlay : appMode === "okr" ? (
         <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
             <OkrDashboardView
@@ -497,8 +507,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   if (isMobile) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
-        {adminOverlay}
-        {guideOverlay}
         {onboardingOverlay}
         {tourInviteDialog}
         {isQuickAddOpen && (
@@ -811,8 +819,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // PC レイアウト
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
-      {adminOverlay}
-      {guideOverlay}
       {onboardingOverlay}
       {tourInviteDialog}
 
@@ -1083,9 +1089,6 @@ function Sidebar({
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               グループ計画管理
-            </div>
-            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px" }}>
-              チーム計画管理ツール
             </div>
           </div>
         )}
