@@ -5,7 +5,7 @@
 // 全員が編集可（管理者権限なし）。
 // 変更はSupabaseに即時反映（AppDataContext経由）。
 
-import { useState, useMemo, useEffect, useRef } from "react";
+import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore } from "../../stores/appStore";
@@ -2339,23 +2339,42 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
 }
 
 function AIUsageSection() {
+  const members = useAppStore(s => s.members);
+
   const [logs, setLogs] = useState<AiUsageLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set());
-  const hasFetched = useRef(false);
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
 
-  useEffect(() => {
-    if (hasFetched.current) return;
-    hasFetched.current = true;
-    fetchAiUsageLogs()
-      .then(setLogs)
-      .catch((e: unknown) => {
-        const msg = e instanceof Error ? e.message : "不明なエラー";
-        setFetchError(`AI使用量ログの取得に失敗しました: ${msg}`);
-      })
-      .finally(() => setLoading(false));
+  // ログを取得して state に反映する。silent=true のときは全画面ローディングを出さない（自動更新用）。
+  const reload = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    try {
+      const data = await fetchAiUsageLogs();
+      setLogs(data);
+      setLastUpdated(new Date());
+      setFetchError(null);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "不明なエラー";
+      setFetchError(`AI使用量ログの取得に失敗しました: ${msg}`);
+    } finally {
+      if (silent) setRefreshing(false);
+      else setLoading(false);
+    }
   }, []);
+
+  // 初回取得（loading 表示あり）
+  useEffect(() => {
+    void reload(false);
+  }, [reload]);
+
+  // 自動更新：マウント中は 30 秒ごとに silent reload。unmount で clear。
+  useEffect(() => {
+    const id = setInterval(() => { void reload(true); }, 30_000);
+    return () => clearInterval(id);
+  }, [reload]);
 
   // 月ごとに集計
   const monthlyData = useMemo(() => {
@@ -2389,6 +2408,31 @@ function AIUsageSection() {
       });
   }, [logs]);
 
+  // メンバー別内訳（今月）：最新月（=monthlyData 先頭）or 現在の YYYY-MM のログを member_id で集計。
+  const memberBreakdown = useMemo(() => {
+    // monthlyData は月降順ソート済み。先頭が最新月。無ければ現在の YYYY-MM。
+    const targetMonth = monthlyData[0]?.month ?? new Date().toISOString().slice(0, 7);
+    const monthLogs = logs.filter(l => (l.called_at ?? "").slice(0, 7) === targetMonth);
+    const map = new Map<string, { count: number; input: number; output: number }>();
+    for (const log of monthLogs) {
+      const key = log.member_id ?? "";
+      const cur = map.get(key) ?? { count: 0, input: 0, output: 0 };
+      cur.count  += 1;
+      cur.input  += log.input_tokens;
+      cur.output += log.output_tokens;
+      map.set(key, cur);
+    }
+    const rows = Array.from(map.entries())
+      .map(([memberId, agg]) => {
+        const m = members.find(mm => mm.id === memberId);
+        const name = m?.display_name || m?.short_name
+          || (memberId ? `不明（${memberId.slice(0, 8)}）` : "不明");
+        return { memberId, name, ...agg };
+      })
+      .sort((a, b) => b.count - a.count);
+    return { targetMonth, rows };
+  }, [logs, monthlyData, members]);
+
   const toggleMonth = (month: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -2414,8 +2458,10 @@ function AIUsageSection() {
     padding: "4px 10px 6px",
   };
 
+  // 初回読み込み中のみ全画面ローディング（自動更新では出さない）
   if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
-  if (fetchError) return (
+  // 初回取得自体が失敗してデータが無い場合は全面エラー表示
+  if (fetchError && logs.length === 0) return (
     <div style={{
       fontSize: "12px", color: "var(--color-text-danger)",
       background: "var(--color-bg-danger)",
@@ -2427,12 +2473,55 @@ function AIUsageSection() {
     </div>
   );
 
+  const lastUpdatedLabel = lastUpdated
+    ? `最終更新 ${String(lastUpdated.getHours()).padStart(2, "0")}:${String(lastUpdated.getMinutes()).padStart(2, "0")}`
+    : null;
+
   return (
     <div style={{ maxWidth: "620px" }}>
-      <SectionHeader title="AI使用量" />
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+        <div style={{ flex: 1 }}>
+          <SectionHeader title="AI使用量" />
+        </div>
+        {lastUpdatedLabel && (
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+            {refreshing ? "更新中…" : lastUpdatedLabel}
+          </span>
+        )}
+        <button
+          onClick={() => { void reload(true); }}
+          disabled={refreshing}
+          title="最新の使用量を再取得"
+          style={{
+            ...ghostBtnStyle, fontSize: "11px", padding: "4px 10px", flexShrink: 0,
+            opacity: refreshing ? 0.6 : 1, cursor: refreshing ? "default" : "pointer",
+          }}
+        >
+          🔄 更新
+        </button>
+      </div>
+      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
+        アプリ全体（全メンバーの合計）の使用量です。約30秒ごとに自動更新します。
+      </div>
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
         料金目安：入力 $3/100万トークン・出力 $15/100万トークン（1ドル=150円換算）
       </div>
+
+      {/* 自動更新中に発生したエラーは控えめなバナーで通知（既存データは保持） */}
+      {fetchError && logs.length > 0 && (
+        <div style={{
+          fontSize: "11px", color: "var(--color-text-danger)",
+          background: "var(--color-bg-danger)",
+          border: "1px solid var(--color-border-danger)",
+          borderRadius: "var(--radius-md)",
+          padding: "8px 12px", marginBottom: "12px",
+        }}>
+          ⚠ {fetchError}
+        </div>
+      )}
+
+      {/* メンバー別内訳（今月） */}
+      <MemberUsageBreakdown breakdown={memberBreakdown} rowStyle={rowStyle} headerStyle={headerStyle} />
 
       {monthlyData.length === 0 && (
         <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>まだデータがありません。</div>
@@ -2483,6 +2572,49 @@ function AIUsageSection() {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+// メンバー別内訳（今月）。今月分が無ければ「今月の利用はまだありません」を表示。
+function MemberUsageBreakdown({
+  breakdown, rowStyle, headerStyle,
+}: {
+  breakdown: { targetMonth: string; rows: { memberId: string; name: string; count: number; input: number; output: number }[] };
+  rowStyle: React.CSSProperties;
+  headerStyle: React.CSSProperties;
+}) {
+  const { targetMonth, rows } = breakdown;
+  const [y, m] = targetMonth.split("-");
+  const monthLabel = y && m ? `${y}年${parseInt(m)}月` : "今月";
+
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+        メンバー別内訳（{monthLabel}）
+      </div>
+      {rows.length === 0 ? (
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>今月の利用はまだありません。</div>
+      ) : (
+        <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+          <div style={headerStyle}>
+            <span>メンバー</span>
+            <span style={{ textAlign: "right" }}>回数</span>
+            <span style={{ textAlign: "right" }}>入力tok</span>
+            <span style={{ textAlign: "right" }}>出力tok</span>
+            <span style={{ textAlign: "right" }}>費用目安</span>
+          </div>
+          {rows.map(r => (
+            <div key={r.memberId || "unknown"} style={{ ...rowStyle, color: "var(--color-text-secondary)", borderTop: "1px solid var(--color-border-primary)" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+              <span style={{ textAlign: "right" }}>{r.count}回</span>
+              <span style={{ textAlign: "right" }}>{r.input.toLocaleString()}</span>
+              <span style={{ textAlign: "right" }}>{r.output.toLocaleString()}</span>
+              <span style={{ textAlign: "right", color: "var(--color-text-info)", fontWeight: "600" }}>¥{Math.round(calcCostJpy(r.input, r.output))}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
