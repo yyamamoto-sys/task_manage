@@ -5,7 +5,7 @@
 // 全員が編集可（管理者権限なし）。
 // 変更はSupabaseに即時反映（AppDataContext経由）。
 
-import { useState, useMemo, useEffect, useRef, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore } from "../../stores/appStore";
@@ -486,7 +486,6 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
   const saveTfEdit = async () => {
     if (!form.name.trim()) return;
-    const now = new Date().toISOString();
     try {
       const existing = tfs.find(t => t.id === editId);
       if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, updated_by: currentUser.id });
@@ -1303,7 +1302,6 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     const now = new Date().toISOString();
     try {
       // form の tf_ids は project_task_forces への差分適用用。Project entity 自身には含めない
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { tf_ids, ...projectFields } = form;
       const projectId = editId === "new" ? uuidv4() : editId!;
       if (editId === "new") {
@@ -2436,7 +2434,8 @@ function AIUsageSection() {
   const toggleMonth = (month: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
-      next.has(month) ? next.delete(month) : next.add(month);
+      if (next.has(month)) next.delete(month);
+      else next.add(month);
       return next;
     });
   };

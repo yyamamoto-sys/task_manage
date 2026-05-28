@@ -5,7 +5,6 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { todayStr, addDaysFromToday } from "../../lib/date";
-import { renderLinks } from "../../lib/renderLinks";
 import { KEYS } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
@@ -207,7 +206,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const bulkUpdateStatus = useCallback(async (status: Task["status"]) => {
     const targets = allTasks.filter(t => selectedIds.has(t.id));
     if (targets.length === 0) return;
-    const now = new Date().toISOString();
     try {
       await Promise.all(targets.map(t =>
         saveTask({ ...t, status, updated_by: currentUser.id }),
@@ -223,7 +221,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const bulkUpdateAssignee = useCallback(async (memberId: string) => {
     const targets = allTasks.filter(t => selectedIds.has(t.id));
     if (targets.length === 0) return;
-    const now = new Date().toISOString();
     try {
       await Promise.all(targets.map(t => saveTask({
         ...t,
@@ -763,7 +760,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                       key={col.key}
                       onClick={() => {
                         if (col.key === "select") return;
-                        col.sortKey && handleSort(col.sortKey);
+                        if (col.sortKey) handleSort(col.sortKey);
                       }}
                       style={{
                         padding: col.key === "select" ? "6px 6px 6px 12px" : "6px 10px",

@@ -108,8 +108,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   // Undo
   const { stack: undoStack, push: pushUndo, pop: popUndo, popUntil: popUndoUntil, canUndo } = useUndoStack();
-  // currentUserIdをundo時に使えるように保持
-  const [currentUserId, setCurrentUserId] = useState<string>("");
 
   const tokenStatus: TokenStatus =
     session.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";

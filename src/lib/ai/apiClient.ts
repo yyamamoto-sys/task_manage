@@ -107,7 +107,7 @@ export async function callAIConsultation(
     });
     data = result.data as AnthropicResponse | null;
     error = result.error as Error | null;
-  } catch (e) {
+  } catch {
     throw new AIError(
       "NETWORK_ERROR",
       "ネットワークエラーが発生しました。接続を確認してください。",

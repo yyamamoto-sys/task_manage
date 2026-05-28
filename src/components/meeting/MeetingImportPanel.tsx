@@ -1151,18 +1151,6 @@ function DoneStep({ created, updated, onReset, onClose }: {
 
 // ===== ユーティリティコンポーネント =====
 
-function CenterMessage({ icon, text }: { icon: string; text: string }) {
-  return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", gap: "16px", minHeight: "200px",
-    }}>
-      <div style={{ fontSize: "36px" }}>{icon}</div>
-      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>{text}</div>
-    </div>
-  );
-}
-
 function SectionHeader({ icon, title }: { icon: string; title: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>

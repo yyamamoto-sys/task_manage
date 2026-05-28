@@ -254,7 +254,6 @@ export async function softDeleteToDo(id: string, deletedBy: string) {
 export async function upsertProject(project: Project, expectedUpdatedAt?: string): Promise<string> {
   // owner_member_ids は UI 専用フィールド（DB カラム不存在）のため除外する
   // 空文字の日付は PostgreSQL date 型が拒否するため null に変換する
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { owner_member_ids: _omit, ...rest } = project;
   const row = {
     ...rest,
@@ -278,7 +277,6 @@ export async function upsertTask(task: Task, expectedUpdatedAt?: string): Promis
   // todo_ids は UI専用（DB は todo_id 単数FK）のため変換する
   // assignee_member_ids は DB の配列カラムにそのまま保存し、
   // 後方互換のため先頭要素を assignee_member_id（単数FK）にも反映する
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { todo_ids, ...rest } = task;
   const ids = getAssigneeIds(task);
   const row = {

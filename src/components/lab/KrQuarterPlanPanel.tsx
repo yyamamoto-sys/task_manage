@@ -10,7 +10,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
-import { fetchKrSessions, fetchKrDeclarations, type KrSession } from "../../lib/supabase/krSessionStore";
+import { fetchKrSessions, fetchKrDeclarations } from "../../lib/supabase/krSessionStore";
 import { fetchKrMeetingNotesList, fetchKrMeetingNoteById } from "../../lib/supabase/krMeetingNoteStore";
 import { fetchOkrAnalyses, fetchObjectiveAnalyses } from "../../lib/supabase/okrAnalysisStore";
 import {
@@ -40,7 +40,6 @@ import { getContentText } from "../../lib/ai/invokeAI";
 import {
   loadQuarterPlan,
   saveQuarterPlan,
-  finalizeQuarterPlan,
   deleteQuarterPlan,
   type ProposedTF,
   type QuarterPlan,

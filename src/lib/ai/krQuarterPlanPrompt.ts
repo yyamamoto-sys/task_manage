@@ -5,8 +5,6 @@
 // AIへ渡す構造化テキスト生成・システムプロンプト定数を集約する。
 // KR/TF/セッションデータをAIに渡す（ラボ機能例外ルール適用）。
 
-import type { KrSession } from "../supabase/krSessionStore";
-
 // ===== クォーター計算ユーティリティ =====
 
 const QUARTER_MONTHS: Record<number, string> = {

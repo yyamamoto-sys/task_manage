@@ -13,7 +13,7 @@
 
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
-import type { Member, Project, Task } from "../../lib/localData/types";
+import type { Member, Project } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";

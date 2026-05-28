@@ -2,7 +2,7 @@
 import { useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, TaskForce, TaskTaskForce, TaskProject, ToDo } from "../../lib/localData/types";
+import type { Member, Project, Task, TaskForce, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
@@ -26,7 +26,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const allTaskForces    = useAppStore(s => s.taskForces);
   const rawTodos         = useAppStore(s => s.todos);
   const saveTask         = useAppStore(s => s.saveTask);
-  const deleteTask       = useAppStore(s => s.deleteTask);
   const addTaskTaskForce = useAppStore(s => s.addTaskTaskForce);
   const addTaskProject   = useAppStore(s => s.addTaskProject);
   const isMobile = useIsMobile();

@@ -116,7 +116,7 @@ export function SetupWizard({ onComplete }: Props) {
       }
       localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
       onComplete();
-    } catch (e) {
+    } catch {
       setSaveError("保存に失敗しました。Supabaseの設定を確認してください。");
       setSaving(false);
     }
