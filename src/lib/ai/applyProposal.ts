@@ -36,7 +36,7 @@ function generateId(): string {
 
 /**
  * add_project で新規PJの color_tag に使う固定パレット（1色を採用）。
- * ConsultationPanel / AiProjectCreateModal の PROJECT_COLORS と同系統の値。
+ * ConsultationPanel の PROJECT_COLORS と同系統の値。
  */
 const DEFAULT_PROJECT_COLOR = "#6366f1";
 
