@@ -200,6 +200,31 @@ export function GanttView({
     });
   }, [sortOrder]);
 
+  // 親子（PJ>大>小）を「親→その子」の順に並べ、各行の depth と子件数を付与する。
+  // ラベル列とバー列の両方でこれを使うことで、子タスクを親の直下にインデント表示しつつ
+  // 2つのループの行順・行数を完全一致させる（ずれ防止）。親がこの集合に居ない子は最上位扱い。
+  const orderTasksHierarchically = useCallback((tasks: Task[]): { task: Task; depth: number; childCount: number }[] => {
+    const ids = new Set(tasks.map(t => t.id));
+    const childrenByParent = new Map<string, Task[]>();
+    const tops: Task[] = [];
+    for (const t of tasks) {
+      if (t.parent_task_id && ids.has(t.parent_task_id)) {
+        const arr = childrenByParent.get(t.parent_task_id) ?? [];
+        arr.push(t);
+        childrenByParent.set(t.parent_task_id, arr);
+      } else {
+        tops.push(t);
+      }
+    }
+    const result: { task: Task; depth: number; childCount: number }[] = [];
+    for (const top of sortTasks(tops)) {
+      const kids = childrenByParent.get(top.id) ?? [];
+      result.push({ task: top, depth: 0, childCount: kids.length });
+      for (const c of sortTasks(kids)) result.push({ task: c, depth: 1, childCount: 0 });
+    }
+    return result;
+  }, [sortTasks]);
+
   // PJの開閉状態
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const togglePJ = (id: string) =>
@@ -502,7 +527,7 @@ export function GanttView({
               fontSize: "13px", fontWeight: 500, color: "var(--color-text-primary)",
               lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{task.name}</div>
+            }}>{task.parent_task_id ? "↳ " : ""}{task.name}</div>
             <div style={{
               fontSize: "11px", marginTop: "3px",
               color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
@@ -797,7 +822,7 @@ export function GanttView({
             ) : viewMode === "pj" ? (
               <>
                 {visibleProjects.map(pj => {
-                  const pjTasks = sortTasks(allTasks.filter(t => t.project_id === pj.id));
+                  const orderedTasks = orderTasksHierarchically(allTasks.filter(t => t.project_id === pj.id));
                   const isCollapsed = collapsed[pj.id];
                   return (
                     <div key={pj.id}>
@@ -829,28 +854,42 @@ export function GanttView({
                         </span>
                       </div>
 
-                      {/* タスク行ラベル */}
-                      {!isCollapsed && pjTasks.map(task => {
+                      {/* タスク行ラベル（子タスクはインデント＋↳で明示。親は「子N」を表示） */}
+                      {!isCollapsed && orderedTasks.map(({ task, depth, childCount }) => {
                         const m = memberById.get(task.assignee_member_id);
+                        const isChild = depth > 0;
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
                             onMouseLeave={() => setHoveredTaskId(null)}
                             style={{
                             height: 30, display: "flex", alignItems: "center",
-                            gap: "6px", padding: "0 8px 0 26px",
+                            gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 26px",
                             borderBottom: "1px solid var(--color-border-primary)",
                             background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
                             cursor: "pointer", transition: "background 0.1s",
                           }}>
+                            {isChild && (
+                              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
+                            )}
                             <StatusDot status={task.status} />
                             <span style={{
-                              fontSize: "11px", color: "var(--color-text-secondary)",
+                              fontSize: "11px",
+                              color: isChild ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
                               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                               flex: 1,
                             }}>
                               {task.name}
                             </span>
+                            {childCount > 0 && (
+                              <span style={{
+                                fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
+                                background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)",
+                                borderRadius: "var(--radius-full)", padding: "0 5px", flexShrink: 0,
+                              }}>
+                                子{childCount}
+                              </span>
+                            )}
                             {m && (
                               <div style={{
                                 width: 16, height: 16, borderRadius: "50%",
@@ -1002,7 +1041,7 @@ export function GanttView({
                               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                               flex: 1,
                             }}>
-                              {task.name}
+                              {task.parent_task_id ? "↳ " : ""}{task.name}
                             </span>
                           </div>
                         );
@@ -1248,7 +1287,9 @@ export function GanttView({
               ) : null}
 
               {viewMode === "pj" && visibleProjects.map(pj => {
-                const pjTasks = sortTasks(allTasks.filter(t => t.project_id === pj.id));
+                const pjTaskList = allTasks.filter(t => t.project_id === pj.id);
+                const pjTasks = sortTasks(pjTaskList);
+                const orderedTasks = orderTasksHierarchically(pjTaskList);
                 const isCollapsed = collapsed[pj.id];
 
                 // PJバーの範囲
@@ -1319,8 +1360,8 @@ export function GanttView({
                       })}
                     </div>
 
-                    {/* タスク行 */}
-                    {!isCollapsed && pjTasks.map(task => {
+                    {/* タスク行（子タスクはバーを細く＝親と区別） */}
+                    {!isCollapsed && orderedTasks.map(({ task, depth }) => {
                       const previewDue = resizePreviewDates[task.id];
                       const due = toDate(previewDue ?? task.due_date);
                       const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
@@ -1348,13 +1389,13 @@ export function GanttView({
                           {bar && due && (
                             <>
                               <div
-                                title={`${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
+                                title={`${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`}
                                 onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
                                 style={{
                                   position: "absolute",
                                   left: bar.barX, top: "50%", transform: "translateY(-50%)",
-                                  width: bar.barWidth, height: 18,
-                                  borderRadius: hasRange ? "4px" : "9px",
+                                  width: bar.barWidth, height: depth > 0 ? 12 : 18,
+                                  borderRadius: depth > 0 ? "6px" : hasRange ? "4px" : "9px",
                                   background: barColor,
                                   opacity: isDone ? 0.5 : 1,
                                   cursor: isPreview ? "default" : "pointer",

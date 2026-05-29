@@ -34,6 +34,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const tasks = useMemo(() => active(allTasks), [allTasks]);
   const members = useMemo(() => active(allMembers), [allMembers]);
 
+  // 子タスク表示用：id→タスク名（子カードに親名を出す）と 親id→子件数（親カードに「子N件」を出す）
+  const taskNameById = useMemo(() => new Map(tasks.map(t => [t.id, t.name])), [tasks]);
+  const childCountByParent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const t of tasks) if (t.parent_task_id) m.set(t.parent_task_id, (m.get(t.parent_task_id) ?? 0) + 1);
+    return m;
+  }, [tasks]);
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
   const [draggingId, setDraggingId] = useState<string | null>(null);
@@ -208,6 +216,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       project={projectForTask(task)}
                       todo={todoForTask(task)}
                       assignees={assigneesForTask(task)}
+                      parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
+                      childCount={childCountByParent.get(task.id) ?? 0}
                       onDragStart={() => handleDragStart(task.id)}
                       onStatusChange={handleStatusChange}
                       isDragging={draggingId === task.id}
@@ -273,12 +283,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 // ===== タスクカード =====
 
 function TaskCard({
-  task, project, todo, assignees, onDragStart, onStatusChange, isDragging, onClick,
+  task, project, todo, assignees, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick,
 }: {
   task: Task;
   project?: Project;
   todo?: ToDo;
   assignees: Member[];
+  parentName?: string;
+  childCount?: number;
   onDragStart: () => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
@@ -324,7 +336,17 @@ function TaskCard({
         </div>
       ) : null}
 
-      {/* タスク名 */}
+      {/* 子タスク：親タスク名（子であることを明示） */}
+      {parentName && (
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginBottom: "5px" }}>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>↳</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
+            {parentName} の子タスク
+          </span>
+        </div>
+      )}
+
+      {/* タスク名（親タスクには子件数チップ） */}
       <div style={{
         fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)",
         marginBottom: "7px", lineHeight: 1.4,
@@ -332,6 +354,16 @@ function TaskCard({
         opacity: isDone ? 0.6 : 1,
       }}>
         {task.name}
+        {childCount > 0 && (
+          <span style={{
+            marginLeft: "6px", fontSize: "9px", fontWeight: "600",
+            color: "var(--color-text-purple)", background: "var(--color-brand-light)",
+            border: "1px solid var(--color-brand-border)",
+            borderRadius: "var(--radius-full)", padding: "1px 6px", whiteSpace: "nowrap",
+          }}>
+            子{childCount}
+          </span>
+        )}
       </div>
 
       {/* フッター */}
