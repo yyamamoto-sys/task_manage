@@ -5,6 +5,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { KrJointSessionFlow } from "../lab/KrJointSessionFlow";
@@ -78,11 +79,11 @@ export function OkrDashboardView({
   const members    = useAppStore(s => s.members);
 
   const activeKrs = useMemo(
-    () => (keyResults ?? []).filter(kr => !kr.is_deleted),
+    () => active(keyResults),
     [keyResults],
   );
   const activeTfs = useMemo(
-    () => (taskForces ?? []).filter(tf => !tf.is_deleted),
+    () => active(taskForces),
     [taskForces],
   );
 

@@ -13,7 +13,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { isAssignedTo, getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
@@ -90,13 +90,13 @@ export function GanttView({
   // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
   const allTasks = useMemo(() => {
     const base = previewTasks
-      ? previewTasks.filter(t => !t.is_deleted)
-      : rawTasks.filter(t => !t.is_deleted);
+      ? active(previewTasks)
+      : active(rawTasks);
     let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
     if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     return list;
   }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id]);
-  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
   const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);

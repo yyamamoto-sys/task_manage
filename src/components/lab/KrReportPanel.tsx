@@ -8,6 +8,7 @@
 import { useState, useRef, useMemo, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
 import { callKrReportAI } from "../../lib/ai/krReportClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
@@ -69,7 +70,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
   const members    = useAppStore(s => s.members);
 
   const activeKrs = useMemo(
-    () => (keyResults ?? []).filter(kr => !kr.is_deleted),
+    () => active(keyResults),
     [keyResults],
   );
 

@@ -7,6 +7,7 @@ import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
   getAssigneeIds, buildTfLabelMap,
@@ -42,10 +43,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const removeTaskProject   = useAppStore(s => s.removeTaskProject);
   const isMobile = useIsMobile();
 
-  const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
-  const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
-  const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
-  const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
+  const members    = useMemo(() => active(allMembers), [allMembers]);
+  const projects   = useMemo(() => active(allProjects), [allProjects]);
+  const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
+  const keyResults = useMemo(() => active(allKeyResults), [allKeyResults]);
 
   const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
 

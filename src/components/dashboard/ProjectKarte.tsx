@@ -17,7 +17,7 @@ import type { Member, Project } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
@@ -53,7 +53,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
     return saved ? Math.max(1, parseInt(saved, 10) || 5) : 5;
   }, []);
 
-  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const members = useMemo(() => active(rawMembers), [rawMembers]);
   const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
 
   // PJ配下のタスク：「主プロジェクト = このPJ」または「task_projects 経由でこのPJと紐づく」のどちらか

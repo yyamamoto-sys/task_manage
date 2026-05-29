@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
   getAssigneeIds, buildTfLabelMap,
@@ -52,10 +53,10 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const addTaskProject      = useAppStore(s => s.addTaskProject);
   const removeTaskProject   = useAppStore(s => s.removeTaskProject);
 
-  const members    = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
-  const projects   = useMemo(() => allProjects.filter(p => !p.is_deleted), [allProjects]);
-  const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
-  const keyResults = useMemo(() => allKeyResults.filter(k => !k.is_deleted), [allKeyResults]);
+  const members    = useMemo(() => active(allMembers), [allMembers]);
+  const projects   = useMemo(() => active(allProjects), [allProjects]);
+  const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
+  const keyResults = useMemo(() => active(allKeyResults), [allKeyResults]);
 
   const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
 

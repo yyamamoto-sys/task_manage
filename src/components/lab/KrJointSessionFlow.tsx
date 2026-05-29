@@ -11,6 +11,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
@@ -118,8 +119,8 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
   const rawKrs = useAppStore(s => s.keyResults);
   const rawMembers = useAppStore(s => s.members);
   const objective = useAppStore(s => s.objective);
-  const activeKrs = useMemo(() => (rawKrs ?? []).filter(k => !k.is_deleted), [rawKrs]);
-  const memberById = useMemo(() => new Map((rawMembers ?? []).filter(m => !m.is_deleted).map(m => [m.id, m])), [rawMembers]);
+  const activeKrs = useMemo(() => active(rawKrs), [rawKrs]);
+  const memberById = useMemo(() => new Map(active(rawMembers).map(m => [m.id, m])), [rawMembers]);
   const memberShortNames = useMemo(() => [...memberById.values()].map(m => m.short_name), [memberById]);
 
   const [mode, setMode] = useState<JointMode>("checkin");

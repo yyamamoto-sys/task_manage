@@ -10,6 +10,7 @@ import type { ConfirmationDialog, PjEndDateItem, NewTaskItem } from "../../lib/a
 import { applyProposalWithConfirmation } from "../../lib/ai/applyProposal";
 import type { ApplyResult } from "../../lib/ai/applyProposal";
 import { useAppStore } from "../../stores/appStore";
+import { active } from "../../lib/localData/localStore";
 import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
@@ -37,7 +38,7 @@ export function ConfirmationDialogModal({
   // - scope_reduce / pause: 確認のみでユーザー入力は不要
   const isAddTask = dialog.action_type === "add_task";
   const isAddProject = dialog.action_type === "add_project";
-  const activeMembers = members.filter((m) => !m.is_deleted);
+  const activeMembers = active(members);
   const [confirmedValues, setConfirmedValues] = useState<Record<string, string>>(
     () => {
       if (isDateChange) {

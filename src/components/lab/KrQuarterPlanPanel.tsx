@@ -10,6 +10,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { fetchKrSessions, fetchKrDeclarations } from "../../lib/supabase/krSessionStore";
 import { fetchKrMeetingNotesList, fetchKrMeetingNoteById } from "../../lib/supabase/krMeetingNoteStore";
 import { fetchOkrAnalyses, fetchObjectiveAnalyses } from "../../lib/supabase/okrAnalysisStore";
@@ -297,11 +298,11 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
   const objective  = useAppStore(s => s.objective);
 
   const activeKrs = useMemo(
-    () => (keyResults ?? []).filter(kr => !kr.is_deleted),
+    () => active(keyResults),
     [keyResults],
   );
   const activeMembers = useMemo(
-    () => (members ?? []).filter(m => !m.is_deleted),
+    () => active(members),
     [members],
   );
 

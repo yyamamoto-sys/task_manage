@@ -5,7 +5,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { todayStr, addDaysFromToday } from "../../lib/date";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { childrenOf, isParentTask, effectiveStatus, parentProgress } from "../../lib/taskHierarchy";
@@ -75,8 +75,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const deleteTask = useAppStore(s => s.deleteTask);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
-  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
-  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
+  const members  = useMemo(() => active(rawMembers), [rawMembers]);
 
   // 永続化フィルター
   const [groupBy,        setGroupByState       ] = useState<GroupBy>(() => lsGet("groupBy", "project"));

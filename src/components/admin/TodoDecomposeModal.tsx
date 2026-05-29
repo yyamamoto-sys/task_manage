@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useAppStore } from "../../stores/appStore";
 import type { ToDo, Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecomposeClient";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
@@ -25,7 +26,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const allMembers = useAppStore(s => s.members);
-  const members = (allMembers ?? []).filter(m => !m.is_deleted);
+  const members = active(allMembers);
 
   const tf = (taskForces ?? []).find(t => t.id === tfId);
   const kr = tf ? (keyResults ?? []).find(k => k.id === tf.kr_id) : null;

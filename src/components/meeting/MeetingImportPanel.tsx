@@ -9,6 +9,7 @@
 import { useState, useRef, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import {
   parseTranscript,
   extractMeetingData,
@@ -90,11 +91,11 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     [allProjects],
   );
   const tasks = useMemo(
-    () => allTasks.filter(t => !t.is_deleted),
+    () => active(allTasks),
     [allTasks],
   );
   const members = useMemo(
-    () => allMembers.filter(m => !m.is_deleted),
+    () => active(allMembers),
     [allMembers],
   );
 

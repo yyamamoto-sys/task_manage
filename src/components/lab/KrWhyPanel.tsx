@@ -7,7 +7,7 @@
 import { useState, useMemo, useRef, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
-import { LS_KEY } from "../../lib/localData/localStore";
+import { LS_KEY, active } from "../../lib/localData/localStore";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { buildMessageContent, getContentText } from "../../lib/ai/invokeAI";
@@ -73,7 +73,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const projects                = useAppStore(s => s.projects);
 
   const activeKrs = useMemo(
-    () => (keyResults ?? []).filter(kr => !kr.is_deleted),
+    () => active(keyResults),
     [keyResults],
   );
 
@@ -101,7 +101,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const thisQuarter = useMemo<"1Q" | "2Q" | "3Q" | "4Q">(() => currentQuarter(), []);
 
   const relatedTfs = useMemo(
-    () => tfsForKr((taskForces ?? []).filter(tf => !tf.is_deleted), selectedKrId, thisQuarter)
+    () => tfsForKr(active(taskForces), selectedKrId, thisQuarter)
       .sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999)),
     [taskForces, selectedKrId, thisQuarter],
   );
@@ -133,7 +133,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
       (members ?? []).map(m => [m.id, m.short_name]),
     );
     const projectMap = Object.fromEntries(
-      (projects ?? []).filter(p => !p.is_deleted).map(p => [p.id, p.name]),
+      active(projects).map(p => [p.id, p.name]),
     );
     const STATUS_LABEL: Record<string, string> = {
       todo: "未着手", in_progress: "進行中", done: "完了",

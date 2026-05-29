@@ -18,7 +18,7 @@ import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORIT
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
@@ -36,8 +36,8 @@ interface Props { currentUser: Member; }
 export function AdminView({ currentUser }: Props) {
   const krs      = useAppStore(s => s.keyResults);
   const pjs      = useAppStore(s => s.projects);
-  const krCount  = krs.filter(k => !k.is_deleted).length;
-  const pjCount  = pjs.filter(p => !p.is_deleted).length;
+  const krCount  = active(krs).length;
+  const pjCount  = active(pjs).length;
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   const [tab, setTab] = useState<AdminTab>(() => {
@@ -187,7 +187,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
   const saveObjective   = useAppStore(s => s.saveObjective);
   const saveKeyResult   = useAppStore(s => s.saveKeyResult);
   const deleteKeyResult = useAppStore(s => s.deleteKeyResult);
-  const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
+  const krs = useMemo(() => active(rawKrs), [rawKrs]);
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [newKrTitle, setNewKrTitle] = useState("");
@@ -395,11 +395,11 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const saveTask                    = useAppStore(s => s.saveTask);
 
   const isMobile = useIsMobile();
-  const tfs     = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
-  const krs     = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
-  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
-  const todos   = useMemo(() => rawTodos.filter(t => !t.is_deleted), [rawTodos]);
-  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
+  const tfs     = useMemo(() => active(rawTfs), [rawTfs]);
+  const krs     = useMemo(() => active(rawKrs), [rawKrs]);
+  const members = useMemo(() => active(rawMembers), [rawMembers]);
+  const todos   = useMemo(() => active(rawTodos), [rawTodos]);
+  const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
 
   // 現在の日付から今のQを求める（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
   // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
@@ -1233,11 +1233,11 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const addProjectTaskForce     = useAppStore(s => s.addProjectTaskForce);
   const removeProjectTaskForce  = useAppStore(s => s.removeProjectTaskForce);
   const isMobile = useIsMobile();
-  const projects   = useMemo(() => rawProjects.filter(p => !p.is_deleted), [rawProjects]);
-  const members    = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const projects   = useMemo(() => active(rawProjects), [rawProjects]);
+  const members    = useMemo(() => active(rawMembers), [rawMembers]);
   const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
-  const taskForces = useMemo(() => rawTaskForces.filter(t => !t.is_deleted), [rawTaskForces]);
-  const keyResults = useMemo(() => rawKeyResults.filter(k => !k.is_deleted), [rawKeyResults]);
+  const taskForces = useMemo(() => active(rawTaskForces), [rawTaskForces]);
+  const keyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
 
   // マイルストーン管理：開閉のみ（フォーム状態は子コンポーネントが管理）
   const [msOpenPjId, setMsOpenPjId] = useState<string | null>(null);
@@ -1667,7 +1667,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
   const saveMember   = useAppStore(s => s.saveMember);
   const deleteMember = useAppStore(s => s.deleteMember);
   const isMobile = useIsMobile();
-  const members = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
+  const members = useMemo(() => active(rawMembers), [rawMembers]);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -1985,8 +1985,8 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
   const saveMemberTag      = useAppStore(s => s.saveMemberTag);
   const deleteMemberTag    = useAppStore(s => s.deleteMemberTag);
 
-  const activeTags    = useMemo(() => memberTags.filter(t => !t.is_deleted), [memberTags]);
-  const activeMembers = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
+  const activeTags    = useMemo(() => active(memberTags), [memberTags]);
+  const activeMembers = useMemo(() => active(allMembers), [allMembers]);
 
   // タグごとのメンバーIDマップ
   const tagMembersMap = useMemo(() => {

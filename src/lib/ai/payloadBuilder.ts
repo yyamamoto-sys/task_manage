@@ -10,6 +10,7 @@
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
 import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
+import { active } from "../localData/localStore";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { dateToQuarter, currentQuarter } from "../date";
@@ -137,8 +138,7 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
 // ===== メンバー工数集計 =====
 
 function buildMemberWorkload(members: Member[], tasks: Task[]): MemberWorkload[] {
-  return members
-    .filter(m => !m.is_deleted)
+  return active(members)
     .map(m => {
       // 複数担当者（assignee_member_ids）に対応：自分が担当者に含まれるタスクをカウント
       const myTasks = tasks.filter(t => !t.is_deleted && getAssigneeIds(t).includes(m.id));
@@ -198,7 +198,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   const shortIdMap = new Map<string, string>();
 
   const activePJs = opts.projects.filter(p => !p.is_deleted && p.status !== "archived");
-  const activeTasks = opts.tasks.filter(t => !t.is_deleted);
+  const activeTasks = active(opts.tasks);
   const taskProjects = opts.taskProjects ?? [];
   const projectTaskForces = opts.projectTaskForces ?? [];
 

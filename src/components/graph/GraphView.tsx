@@ -8,6 +8,7 @@
 import { useEffect, useRef, useCallback, useMemo } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 
 interface Props {
   onClose: () => void;
@@ -103,11 +104,11 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
 
   // グラフデータ構築
   const { nodes, edges } = useMemo(() => {
-    const krs      = rawKrs.filter(k => !k.is_deleted);
-    const tfs      = rawTfs.filter(t => !t.is_deleted);
-    const todos    = rawTodos.filter(t => !t.is_deleted);
-    const tasks    = rawTasks.filter(t => !t.is_deleted);
-    const projects = rawProjects.filter(p => !p.is_deleted);
+    const krs      = active(rawKrs);
+    const tfs      = active(rawTfs);
+    const todos    = active(rawTodos);
+    const tasks    = active(rawTasks);
+    const projects = active(rawProjects);
 
     const nodes: GNode[] = [];
     const edges: GEdge[] = [];

@@ -10,6 +10,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { formatMD, currentQuarter } from "../../lib/date";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -55,7 +56,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
   const rawTfs   = useAppStore(s => s.taskForces);
   const rawTasks = useAppStore(s => s.tasks);
   const rawTodos = useAppStore(s => s.todos);
-  const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
+  const krs = useMemo(() => active(rawKrs), [rawKrs]);
 
   // 既定では KR は空。親から initialKrId が渡されている場合のみその KR を選択。
   const [krId, setKrId] = useState<string>(initialKrId && krs.some(k => k.id === initialKrId) ? initialKrId : "");
@@ -70,7 +71,7 @@ export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChan
   // 未割当(legacy)TFは effectiveTfQuarter により「今期」として扱われる。
   const tfs = useMemo(() => {
     if (!krId) return [];
-    const allActive = rawTfs.filter(tf => !tf.is_deleted);
+    const allActive = active(rawTfs);
     const pool = tfsForKr(allActive, krId, quarter);
     const byId = new Map(pool.map(tf => [tf.id, tf]));
     return [...byId.values()].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));

@@ -10,6 +10,7 @@
 import { useMemo, useState, useEffect } from "react";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { useAppStore } from "../../stores/appStore";
+import { active } from "../../lib/localData/localStore";
 import { GanttView } from "../gantt/GanttView";
 import type { Member, Project, Task } from "../../lib/localData/types";
 
@@ -78,7 +79,7 @@ export function GanttPreviewPanel({
     return { previewTasks: modified, changedTaskIds: changed };
   }, [tasks, proposal, shortIdMap]);
 
-  const visibleProjects = selectedProject ? [selectedProject] : projects.filter(p => !p.is_deleted);
+  const visibleProjects = selectedProject ? [selectedProject] : active(projects);
 
   return (
     <div

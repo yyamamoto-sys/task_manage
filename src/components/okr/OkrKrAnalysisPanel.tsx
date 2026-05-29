@@ -11,6 +11,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { currentQuarter } from "../../lib/date";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -69,8 +70,8 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   const rawMembers = useAppStore(s => s.members);
   const objective = useAppStore(s => s.objective);
 
-  const krs = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
-  const memberById = useMemo(() => new Map(rawMembers.filter(m => !m.is_deleted).map(m => [m.id, m])), [rawMembers]);
+  const krs = useMemo(() => active(rawKrs), [rawKrs]);
+  const memberById = useMemo(() => new Map(active(rawMembers).map(m => [m.id, m])), [rawMembers]);
   const shortName = useCallback((id: string) => memberById.get(id)?.short_name ?? "", [memberById]);
 
   // 既定の対象：initialKrId があればそのKR、無ければ Objective全体（あれば）、それも無ければ先頭のKR
@@ -89,7 +90,7 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
   // 選択クォーターに属するKR配下のTF（tf.quarter基準・tf_number昇順）。
   // 未割当(legacy)TFは effectiveTfQuarter により「今期」として扱われる。
   const tfsForKr = useCallback((krId: string) => {
-    const allActive = rawTfs.filter(tf => !tf.is_deleted);
+    const allActive = active(rawTfs);
     const pool = tfsForKrInQuarter(allActive, krId, quarter);
     return [...pool].sort((a, b) => (Number(a.tf_number) || 999) - (Number(b.tf_number) || 999));
   }, [rawTfs, quarter]);

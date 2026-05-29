@@ -3,6 +3,7 @@ import { useState, useMemo, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, TaskForce, ToDo } from "../../lib/localData/types";
+import { active } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { v4 as uuidv4 } from "uuid";
@@ -30,8 +31,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const addTaskProject   = useAppStore(s => s.addTaskProject);
   const isMobile = useIsMobile();
 
-  const tasks = useMemo(() => allTasks.filter(t => !t.is_deleted), [allTasks]);
-  const members = useMemo(() => allMembers.filter(m => !m.is_deleted), [allMembers]);
+  const tasks = useMemo(() => active(allTasks), [allTasks]);
+  const members = useMemo(() => active(allMembers), [allMembers]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
@@ -56,7 +57,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     saveTask({ ...task, status: newStatus, updated_by: currentUser.id });
   }, [tasks, saveTask, currentUser.id]);
 
-  const taskForces = useMemo(() => allTaskForces.filter(t => !t.is_deleted), [allTaskForces]);
+  const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
   const handleAddTask = useCallback((

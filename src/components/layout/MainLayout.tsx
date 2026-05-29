@@ -4,7 +4,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -375,7 +375,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         </div>
         <Suspense fallback={<ViewLoading />}>
           <OnboardingHome
-            krCount={keyResults.filter(k => !k.is_deleted).length}
+            krCount={active(keyResults).length}
             pjCount={projects.length}
             taskCount={(rawTasks ?? []).filter((t: Task) => !t.is_deleted).length}
             onOpenAdmin={() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); }}

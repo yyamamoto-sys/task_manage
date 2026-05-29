@@ -24,7 +24,7 @@ import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../l
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
-import { KEYS } from "../../lib/localData/localStore";
+import { KEYS, active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
@@ -80,10 +80,10 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     return saved ? Math.max(1, parseInt(saved, 10) || 7) : 7;
   });
 
-  const allTasks = useMemo(() => rawTasks.filter(t => !t.is_deleted), [rawTasks]);
-  const members  = useMemo(() => rawMembers.filter(m => !m.is_deleted), [rawMembers]);
-  const krs      = useMemo(() => rawKrs.filter(k => !k.is_deleted), [rawKrs]);
-  const tfs      = useMemo(() => rawTfs.filter(t => !t.is_deleted), [rawTfs]);
+  const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
+  const members  = useMemo(() => active(rawMembers), [rawMembers]);
+  const krs      = useMemo(() => active(rawKrs), [rawKrs]);
+  const tfs      = useMemo(() => active(rawTfs), [rawTfs]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const projectTaskForces = rawPtfs;
 

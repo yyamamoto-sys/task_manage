@@ -1,6 +1,6 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
-import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS } from "./lib/localData/localStore";
+import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { getSession, onAuthStateChange } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -115,7 +115,7 @@ function AuthenticatedApp({
   const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
-  const isWizardDone = wizardCompleted || (!loading && members.filter(m => !m.is_deleted).length > 0);
+  const isWizardDone = wizardCompleted || (!loading && active(members).length > 0);
 
   // メンバー読み込み完了後、前回ユーザーを自動復元
   useEffect(() => {
