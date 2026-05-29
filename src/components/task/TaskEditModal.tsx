@@ -18,7 +18,7 @@ import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { CustomSelect } from "../common/CustomSelect";
+import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 
 interface Props {
   taskId: string;
@@ -77,16 +77,26 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   // 親タスク候補＝全PJの最上位タスク。元タスクのPJを先頭に、他PJはPJ名を併記。
   // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
   const currentProjectId = originalTask?.project_id ?? null;
-  const parentOptions = useMemo(() => {
-    const pjName = (id: string | null) =>
-      id ? projects.find(p => p.id === id)?.name : undefined;
-    return [
-      { value: "", label: "（なし＝大タスク）" },
-      ...parentTaskCandidates(allTasks, currentProjectId, originalTask?.id).map(t => {
-        const otherPjName = t.project_id !== currentProjectId ? pjName(t.project_id) : undefined;
-        return { value: t.id, label: otherPjName ? `${t.name}（${otherPjName}）` : t.name };
-      }),
-    ];
+  const parentOptions = useMemo<SelectOption[]>(() => {
+    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
+    const currentPjColor = pjOf(currentProjectId)?.color_tag ?? "var(--color-border-secondary)";
+    const cands = parentTaskCandidates(allTasks, currentProjectId, originalTask?.id);
+    const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
+    const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
+    const opts: SelectOption[] = [{ value: "", label: "（なし＝大タスク）" }];
+    if (same.length) {
+      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
+      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
+    }
+    if (other.length) {
+      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
+      for (const t of other) opts.push({
+        value: t.id, label: t.name,
+        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
+        meta: pjOf(t.project_id)?.name, dim: true,
+      });
+    }
+    return opts;
   }, [allTasks, currentProjectId, originalTask?.id, projects]);
 
   const [form, setForm] = useState({

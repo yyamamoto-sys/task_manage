@@ -5,7 +5,7 @@
 import { useState, useMemo } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
-import { CustomSelect } from "../common/CustomSelect";
+import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
 import { parentTaskCandidates } from "../../lib/taskHierarchy";
@@ -56,16 +56,27 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
 
   // 親タスク候補＝全PJの最上位タスク。選択中PJを先頭に、他PJはPJ名を併記。
   // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
-  const parentOptions = useMemo(() => {
-    const pjName = (id: string | null) =>
-      id ? projects.find(p => p.id === id)?.name : undefined;
-    return [
-      { value: "", label: "（なし＝大タスク）" },
-      ...parentTaskCandidates(rawTasks, projectId || null).map(t => {
-        const otherPjName = t.project_id !== (projectId || null) ? pjName(t.project_id) : undefined;
-        return { value: t.id, label: otherPjName ? `${t.name}（${otherPjName}）` : t.name };
-      }),
-    ];
+  const parentOptions = useMemo<SelectOption[]>(() => {
+    const cur = projectId || null;
+    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
+    const currentPjColor = pjOf(cur)?.color_tag ?? "var(--color-border-secondary)";
+    const cands = parentTaskCandidates(rawTasks, cur);
+    const same  = cands.filter(t => (t.project_id ?? null) === cur);
+    const other = cands.filter(t => (t.project_id ?? null) !== cur);
+    const opts: SelectOption[] = [{ value: "", label: "（なし＝大タスク）" }];
+    if (same.length) {
+      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
+      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
+    }
+    if (other.length) {
+      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
+      for (const t of other) opts.push({
+        value: t.id, label: t.name,
+        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
+        meta: pjOf(t.project_id)?.name, dim: true,
+      });
+    }
+    return opts;
   }, [rawTasks, projectId, projects]);
 
   // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）

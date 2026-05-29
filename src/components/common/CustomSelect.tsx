@@ -18,6 +18,14 @@ import { createPortal } from "react-dom";
 export interface SelectOption {
   value: string;
   label: string;
+  /** 左に表示する色ドット（PJカラー等で属性を視覚化する） */
+  color?: string;
+  /** 右側に薄く表示する補助テキスト（他PJ名など） */
+  meta?: string;
+  /** 文字を控えめに表示（現PJ外などの弱表示） */
+  dim?: boolean;
+  /** 見出し行（選択不可・グループ分け用） */
+  header?: boolean;
 }
 
 interface Props {
@@ -117,7 +125,7 @@ export function CustomSelect({
   // 検索フィルタ（searchable 時のみ。ラベルの部分一致・大小無視）
   const q = query.trim().toLowerCase();
   const filteredOptions = searchable && q
-    ? options.filter(o => o.label.toLowerCase().includes(q))
+    ? options.filter(o => !o.header && o.label.toLowerCase().includes(q))
     : options;
 
   return (
@@ -147,10 +155,15 @@ export function CustomSelect({
         }}
       >
         <span style={{
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
-          fontSize: "12px",
+          display: "flex", alignItems: "center", gap: "7px",
+          overflow: "hidden", flex: 1, fontSize: "12px",
         }}>
-          {selected ? selected.label : placeholder}
+          {selected?.color && (
+            <span style={{ width: 8, height: 8, borderRadius: "50%", background: selected.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
+          )}
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {selected ? selected.label : placeholder}
+          </span>
         </span>
         <ChevronIcon open={open} />
       </button>
@@ -178,10 +191,9 @@ export function CustomSelect({
               value={query}
               onChange={e => setQuery(e.target.value)}
               onKeyDown={e => {
-                if (e.key === "Enter" && filteredOptions.length > 0) {
-                  e.preventDefault();
-                  onChange(filteredOptions[0].value);
-                  setOpen(false);
+                if (e.key === "Enter") {
+                  const first = filteredOptions.find(o => !o.header);
+                  if (first) { e.preventDefault(); onChange(first.value); setOpen(false); }
                 }
               }}
               placeholder={searchPlaceholder}
@@ -202,7 +214,15 @@ export function CustomSelect({
               該当する候補がありません
             </div>
           )}
-          {filteredOptions.map(opt => {
+          {filteredOptions.map((opt, i) => {
+            if (opt.header) {
+              return (
+                <div key={`__h${i}`} style={{
+                  padding: "8px 10px 3px", fontSize: "10px", fontWeight: 700,
+                  letterSpacing: "0.04em", color: "var(--color-text-tertiary)",
+                }}>{opt.label}</div>
+              );
+            }
             const isSelected = opt.value === value;
             return (
               <button
@@ -211,20 +231,26 @@ export function CustomSelect({
                 onClick={() => { onChange(opt.value); setOpen(false); }}
                 style={{
                   width: "100%",
-                  display: "block",
+                  display: "flex", alignItems: "center", gap: "8px",
                   padding: "7px 10px",
                   fontSize: "12px",
                   textAlign: "left",
                   border: "none",
                   borderRadius: "var(--radius-sm)",
                   background: isSelected ? "var(--color-brand-light)" : "transparent",
-                  color: isSelected ? "var(--color-brand)" : "var(--color-text-primary)",
+                  color: isSelected ? "var(--color-brand)" : opt.dim ? "var(--color-text-tertiary)" : "var(--color-text-primary)",
                   fontWeight: isSelected ? 600 : 400,
                   cursor: "pointer",
                   transition: "background var(--transition-fast)",
                 }}
               >
-                {opt.label}
+                {opt.color && (
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: opt.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
+                )}
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
+                {opt.meta && (
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, maxWidth: "48%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.meta}</span>
+                )}
               </button>
             );
           })}

@@ -13,11 +13,12 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
-import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
+import { parentTaskCandidates, isParentTask, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { CustomSelect } from "../common/CustomSelect";
+import { showToast } from "../common/Toast";
+import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 
 interface Props {
   taskId: string;
@@ -89,22 +90,38 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   // 親タスク候補＝全PJの最上位タスク。選択中タスクのPJを先頭に、他PJはPJ名を併記。
   // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
+  // 親タスク候補。現PJのタスクと他PJのタスクを見出しで分け、PJカラーのドットで属性を可視化する
+  // （どこまでが今のプロジェクトに属するか色で判別できるようにする）。
   const currentProjectId = selectedTask?.project_id ?? null;
-  const parentOptions = useMemo(() => {
-    const pjName = (id: string | null) =>
-      id ? projects.find(p => p.id === id)?.name : undefined;
-    return [
-      { value: "", label: "（なし＝大タスク）" },
-      ...parentTaskCandidates(allTasks, currentProjectId, selectedTask?.id).map(t => {
-        const otherPjName = t.project_id !== currentProjectId ? pjName(t.project_id) : undefined;
-        return { value: t.id, label: otherPjName ? `${t.name}（${otherPjName}）` : t.name };
-      }),
-    ];
+  const parentOptions = useMemo<SelectOption[]>(() => {
+    const pjOf = (id: string | null) => (id ? projects.find(p => p.id === id) : undefined);
+    const currentPjColor = pjOf(currentProjectId)?.color_tag ?? "var(--color-border-secondary)";
+    const cands = parentTaskCandidates(allTasks, currentProjectId, selectedTask?.id);
+    const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
+    const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
+    const opts: SelectOption[] = [{ value: "", label: "（なし＝大タスク）" }];
+    if (same.length) {
+      opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
+      for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
+    }
+    if (other.length) {
+      opts.push({ value: "__h_other", label: "他のプロジェクト", header: true });
+      for (const t of other) opts.push({
+        value: t.id, label: t.name,
+        color: pjOf(t.project_id)?.color_tag ?? "var(--color-border-secondary)",
+        meta: pjOf(t.project_id)?.name, dim: true,
+      });
+    }
+    return opts;
   }, [allTasks, currentProjectId, selectedTask?.id, projects]);
 
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 子タスク選択（親側から子を複数チェックして決定する）UI の状態
+  const [childPickerOpen, setChildPickerOpen] = useState(false);
+  const [childPickerChecked, setChildPickerChecked] = useState<Set<string>>(new Set());
+  const [childSearch, setChildSearch] = useState("");
   const initialMount = useRef(true);
 
   // taskId 切替で sidebarForm を初期化
@@ -182,6 +199,60 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const isOverdue = !!sidebarForm.due_date
     && sidebarForm.due_date < todayStr()
     && sidebarForm.status !== "done";
+
+  // ===== 子タスク（このタスクを親として子を複数紐づける） =====
+  // このタスク自身が子タスク（親を持つ）なら、2階層固定のため子は持てない。
+  const isChild = selectedTask.parent_task_id != null;
+  const children = childrenOf(allTasks, selectedTask.id);
+  const childCandidates = isChild
+    ? []
+    : eligibleChildTasks(allTasks, selectedTask).filter(t => t.parent_task_id !== selectedTask.id);
+  const childQ = childSearch.trim().toLowerCase();
+  const visibleChildCandidates = childQ
+    ? childCandidates.filter(t => t.name.toLowerCase().includes(childQ))
+    : childCandidates;
+
+  const toggleChild = (id: string) => setChildPickerChecked(prev => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
+  });
+
+  const applyChildren = async () => {
+    const ids = [...childPickerChecked];
+    if (ids.length === 0) return;
+    // 兄弟の display_order 最大値から連番で付与し、選んだ順に親直下へ並べる
+    let order = children.reduce((mx, c) => Math.max(mx, c.display_order ?? 0), 0);
+    try {
+      for (const id of ids) {
+        const t = allTasks.find(x => x.id === id);
+        if (!t) continue;
+        order += 1;
+        await saveTask({
+          ...t,
+          parent_task_id: selectedTask.id,
+          project_id: selectedTask.project_id ?? null, // 子は親と同一PJに揃える
+          display_order: order,
+          updated_by: currentUser.id,
+        });
+      }
+      showToast(`${ids.length}件を「${selectedTask.name}」の子タスクにしました`);
+      setChildPickerChecked(new Set());
+      setChildPickerOpen(false);
+    } catch (e) {
+      showToast(formatErrorForUser("子タスクの設定に失敗しました", e), "error");
+    }
+  };
+
+  const detachChild = async (childId: string) => {
+    const t = allTasks.find(x => x.id === childId);
+    if (!t) return;
+    try {
+      await saveTask({ ...t, parent_task_id: null, updated_by: currentUser.id });
+    } catch (e) {
+      showToast(formatErrorForUser("子タスクの解除に失敗しました", e), "error");
+    }
+  };
 
   const handleDelete = async () => {
     if (!await confirmDialog(`「${selectedTask.name}」を削除しますか？`)) return;
@@ -346,6 +417,83 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
         {isParent && (
           <div style={{ marginBottom: "12px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
             子タスクがあるため親に設定できません
+          </div>
+        )}
+
+        {/* 子タスク（このタスクを親として、子にしたいタスクを複数チェックして決定する） */}
+        <SideLabel>子タスク</SideLabel>
+        {isChild ? (
+          <div style={{ marginBottom: "12px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            このタスクは子タスクのため、さらに子を持てません（2階層）。
+          </div>
+        ) : (
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
+              {children.map(c => (
+                <span key={c.id} style={chipStyle}>
+                  <span style={{ color: "var(--color-text-tertiary)" }}>↳</span>{c.name}
+                  <button onClick={() => detachChild(c.id)} aria-label={`${c.name} を子タスクから外す`} style={chipRemoveBtn}>×</button>
+                </span>
+              ))}
+              {children.length === 0 && (
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
+              )}
+            </div>
+            <button
+              onClick={() => { setChildPickerChecked(new Set()); setChildSearch(""); setChildPickerOpen(v => !v); }}
+              style={{
+                width: "100%", padding: "6px 10px", fontSize: "11px",
+                border: `1px solid ${childPickerOpen ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                background: childPickerOpen ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                color: childPickerOpen ? "var(--color-brand)" : "var(--color-text-secondary)",
+              }}>
+              {childPickerOpen ? "閉じる" : "＋ 子タスクを選ぶ"}
+            </button>
+            {childPickerOpen && (
+              <div style={{
+                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                padding: "8px", marginTop: "6px", background: "var(--color-bg-secondary)",
+              }}>
+                <input value={childSearch} onChange={e => setChildSearch(e.target.value)}
+                  placeholder="タスクを検索..." aria-label="子タスク候補を検索"
+                  style={{ ...inputStyle, marginBottom: "6px" }} />
+                <div style={{ maxHeight: "180px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px" }}>
+                  {visibleChildCandidates.length === 0 && (
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 2px" }}>
+                      候補がありません（同じプロジェクトで、子を持たないタスクが対象です）
+                    </div>
+                  )}
+                  {visibleChildCandidates.map(t => {
+                    const checked = childPickerChecked.has(t.id);
+                    const curParent = t.parent_task_id ? allTasks.find(p => p.id === t.parent_task_id) : null;
+                    return (
+                      <label key={t.id} style={{
+                        display: "flex", alignItems: "center", gap: "7px",
+                        padding: "4px 6px", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "12px",
+                        background: checked ? "var(--color-brand-light)" : "transparent",
+                      }}>
+                        <input type="checkbox" checked={checked} onChange={() => toggleChild(t.id)} style={{ cursor: "pointer", flexShrink: 0 }} />
+                        <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+                        {curParent && (
+                          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>現: {curParent.name}</span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+                <button onClick={applyChildren} disabled={childPickerChecked.size === 0}
+                  style={{
+                    width: "100%", marginTop: "8px", padding: "7px 10px", fontSize: "11px", fontWeight: 600,
+                    border: "none", borderRadius: "var(--radius-md)",
+                    background: childPickerChecked.size === 0 ? "var(--color-bg-tertiary)" : "var(--color-brand)",
+                    color: childPickerChecked.size === 0 ? "var(--color-text-tertiary)" : "#fff",
+                    cursor: childPickerChecked.size === 0 ? "not-allowed" : "pointer",
+                  }}>
+                  {childPickerChecked.size > 0 ? `${childPickerChecked.size}件を子タスクにする` : "子にするタスクを選択"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

@@ -143,3 +143,22 @@ export function parentTaskCandidates(
   const other = tops.filter(t => t.project_id !== currentProjectId);
   return [...same, ...other];
 }
+
+/**
+ * ある親タスクの「子タスクにできる候補」（親側から子を複数選ぶUI用）。
+ * - 親タスクと同一 project_id（親子は同一PJ内に限定）
+ * - 親タスク自身は除外
+ * - 既に子を持つタスク（=親）は除外（2階層固定・孫禁止）
+ * - 既に他タスクの子であるタスクも候補に含む（選ぶと付け替え。呼び出し側で現在の親を併記してよい）
+ * 親タスクは最上位（parent_task_id 無し）である前提（呼び出し側で担保すること）。
+ */
+export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
+  return tasks
+    .filter(t =>
+      !t.is_deleted &&
+      t.id !== parent.id &&
+      (t.project_id ?? null) === (parent.project_id ?? null) &&
+      !isParentTask(t, tasks),
+    )
+    .sort(sortByOrder);
+}
