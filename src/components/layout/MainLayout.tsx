@@ -13,6 +13,7 @@ import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
@@ -120,6 +121,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setOkrActiveTool(tool);
   };
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
+  const [isMilestoneAddOpen, setIsMilestoneAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
@@ -511,6 +513,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
         )}
+        {isMilestoneAddOpen && (
+          <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
+        )}
         {isGraphOpen && (
           <Suspense fallback={<ViewLoading />}>
             <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
@@ -717,17 +722,17 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               >💬 AIに相談する</button>
               <button
                 className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); openAiProjectCreate(); }}
+                onClick={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   padding: "10px 16px",
-                  background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  background: "linear-gradient(135deg,#f59e0b,#d97706)",
                   border: "none", borderRadius: "var(--radius-full)",
                   color: "#fff", fontSize: "13px", fontWeight: "600",
                   boxShadow: "var(--shadow-lg)", cursor: "pointer",
                   whiteSpace: "nowrap", animationDelay: "0.06s",
                 }}
-              >✨ AIでPJを作る</button>
+              >◆ マイルストーン追加</button>
               <button
                 className="fab-item-in"
                 onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
@@ -824,6 +829,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}
+      {isMilestoneAddOpen && (
+        <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
+      )}
       {/* PC FAB（計画モードのみ） */}
       {appMode === "plan" && isFabMenuOpen && (
         <div
@@ -858,11 +866,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
           <button
             className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); openAiProjectCreate(); }}
+            onClick={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: "9px 16px", height: "38px",
-              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              background: "linear-gradient(135deg,#f59e0b,#d97706)",
               border: "none", borderRadius: "var(--radius-full)",
               color: "#fff", fontSize: "13px", fontWeight: "600",
               boxShadow: "var(--shadow-lg)", cursor: "pointer",
@@ -870,7 +878,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               animationDelay: "0.06s",
             }}
           >
-            <span>✨</span> AIでPJを作る
+            <span>◆</span> マイルストーン追加
           </button>
           <button
             className="fab-item-in"
