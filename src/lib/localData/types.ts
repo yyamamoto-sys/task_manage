@@ -1,12 +1,17 @@
 // src/lib/localData/types.ts
 // アプリ全体で使う型定義
 
+/** 期限アラートの通知方法（ユーザーごとに選択） */
+export type NotifyPref = "none" | "browser" | "teams";
+
 export interface Member {
   id: string;
   display_name: string;
   short_name: string;
   initials: string;
   teams_account: string;
+  /** 期限通知の受け取り方。未設定（マイグレ前の行）は "none" 扱い */
+  notify_pref?: NotifyPref;
   color_bg: string;
   color_text: string;
   is_deleted: boolean;

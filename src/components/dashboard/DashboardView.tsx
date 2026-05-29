@@ -18,7 +18,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Project, Task, ToDo,
+  Member, Project, Task, ToDo, NotifyPref,
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
@@ -31,6 +31,7 @@ import { ProjectKarte } from "./ProjectKarte";
 import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
+import { showToast } from "../common/Toast";
 
 interface Props {
   currentUser: Member;
@@ -63,6 +64,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTodos   = useAppStore(s => s.todos);
+  const saveMember = useAppStore(s => s.saveMember);
   const isMobile = useIsMobile();
 
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
@@ -137,6 +139,24 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [allTasks, currentUser.id, reminderDeadline]
   );
+
+  // 期限通知の受け取り方（ユーザーごと）。リマインダーカードのセレクタで切替。
+  const selfMember = members.find(m => m.id === currentUser.id);
+  const notifyPref: NotifyPref = selfMember?.notify_pref ?? "none";
+  const handleNotifyPrefChange = async (pref: NotifyPref) => {
+    if (!selfMember) return;
+    if (pref === "browser" && "Notification" in window) {
+      if (Notification.permission === "default") {
+        try { await Notification.requestPermission(); } catch { /* ignore */ }
+      }
+      if (Notification.permission === "denied") {
+        showToast("ブラウザ通知がブロックされています。ブラウザの設定で許可してください。", "error");
+      }
+    }
+    try {
+      await saveMember({ ...selfMember, notify_pref: pref, updated_by: currentUser.id });
+    } catch { /* saveMember 側で ConflictError をトースト処理 */ }
+  };
 
   // 今週のタスク
   const thisWeekTasks = useMemo(
@@ -468,6 +488,22 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 {reminderTasks.length}件
               </span>
             )}
+            {/* 通知方法（ユーザーごと：なし / ブラウザ / Teamsまとめ） */}
+            <select
+              value={notifyPref}
+              onChange={e => handleNotifyPrefChange(e.target.value as NotifyPref)}
+              title="期限の通知方法（自分の設定）"
+              style={{
+                fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
+                background: "transparent", color: "var(--color-text-tertiary)",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-sm)", cursor: "pointer",
+              }}
+            >
+              <option value="none">🔕 通知なし</option>
+              <option value="browser">🔔 ブラウザ通知</option>
+              <option value="teams">💬 Teamsまとめ</option>
+            </select>
             {/* 設定：1クリックで切替 */}
             <select
               value={reminderDays}

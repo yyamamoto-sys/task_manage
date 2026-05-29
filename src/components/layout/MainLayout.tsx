@@ -3,6 +3,7 @@ import { useState, useMemo, useRef, useEffect, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -124,6 +125,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isMilestoneAddOpen, setIsMilestoneAddOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
+
+  // 期限のブラウザ通知（自分の notify_pref==="browser" のときだけ発火・アプリ表示中のみ）
+  useDeadlineNotifications(currentUser.id);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);

@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS members (
   short_name    text NOT NULL,
   initials      text NOT NULL,
   teams_account text NOT NULL DEFAULT '',
+  notify_pref   text NOT NULL DEFAULT 'none' CHECK (notify_pref IN ('none','browser','teams')),
   color_bg      text NOT NULL,
   color_text    text NOT NULL,
   is_deleted    boolean NOT NULL DEFAULT false,

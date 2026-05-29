@@ -73,6 +73,8 @@ export const LS_KEY = {
   krReport:            (krId: string, mode: string) => `okr_report_${krId}_${mode}`,
   /** クォーター計画（KR × クォーター ごとに保存。Phase 1 用 localStorage） */
   quarterPlan:         (krId: string, quarter: string) => `okr_qplan_${krId}_${quarter}`,
+  /** 期限のブラウザ通知：当日に通知済みのタスクID（ユーザーごと・二重通知防止） */
+  deadlineNotified:    (userId: string) => `deadline_notified_v1_${userId}`,
 } as const;
 
 export { KEYS };
