@@ -14,13 +14,16 @@ import { v4 as uuidv4 } from "uuid";
 interface Props {
   currentUser: Member;
   projects: Project[];
+  /** 開いた時点で選択中のPJ。指定があればプロジェクト欄の初期値にする
+   *  （PJ選択中に追加したタスクがそのPJのリスト/ガントにそのまま出るように） */
+  defaultProjectId?: string;
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(s => s.tasks);
   const rawMembers              = useAppStore(s => s.members);
@@ -38,7 +41,10 @@ export function QuickAddTaskModal({ currentUser, projects, onClose }: Props) {
 
   const [name, setName] = useState("");
   const [assigneeId, setAssigneeId] = useState(currentUser.id);
-  const [projectId, setProjectId] = useState("");
+  // 選択中PJがあればそれを初期選択（無ければ「プロジェクト（任意）」のまま）
+  const [projectId, setProjectId] = useState(
+    () => (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : ""),
+  );
   const [parentId, setParentId] = useState("");
   const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");

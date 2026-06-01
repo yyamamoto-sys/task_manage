@@ -19,6 +19,9 @@ interface TourContextValue {
   start: (tourId: string) => void;
   /** 現在のツアーを終了 */
   end: () => void;
+  /** ツアーを開始せずに「完了済み」フラグだけ立てる（招待ダイアログのスキップ用）。
+   *  end() は activeTour が無いと何も保存しないため、招待段階のスキップではこちらを使う。 */
+  markCompleted: (tourId: string) => void;
   /** 指定ツアーが localStorage 上で完了済みか */
   isCompleted: (tourId: string) => boolean;
   /** ツアーが進行中か */
@@ -139,11 +142,17 @@ export function TourProvider({ tours, children }: Props) {
     setStepIdx(0);
   }, [activeTour]);
 
+  const markCompleted = useCallback((tourId: string) => {
+    const map = loadCompleted();
+    map[tourId] = true;
+    saveCompleted(map);
+  }, []);
+
   const isCompleted = useCallback((tourId: string) => !!loadCompleted()[tourId], []);
 
   const value = useMemo<TourContextValue>(() => ({
-    start, end, isCompleted, isRunning: !!activeTour,
-  }), [start, end, isCompleted, activeTour]);
+    start, end, markCompleted, isCompleted, isRunning: !!activeTour,
+  }), [start, end, markCompleted, isCompleted, activeTour]);
 
   return (
     <TourContext.Provider value={value}>

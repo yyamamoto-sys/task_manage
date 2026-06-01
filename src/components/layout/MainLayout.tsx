@@ -318,7 +318,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         </div>
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button
-            onClick={() => { setShowTourInvite(false); tour.end(); /* end() で 'completed' にして二度と出ない */ }}
+            onClick={() => { setShowTourInvite(false); tour.markCompleted(FIRST_TIME_TOUR_ID); /* 開始せず完了フラグを保存。再ログインで再表示しない */ }}
             style={{
               padding: "8px 14px", fontSize: "12px",
               background: "transparent", color: "var(--color-text-tertiary)",
@@ -515,7 +515,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {onboardingOverlay}
         {tourInviteDialog}
         {isQuickAddOpen && (
-          <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
+          <QuickAddTaskModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsQuickAddOpen(false)} />
         )}
         {isMilestoneAddOpen && (
           <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
