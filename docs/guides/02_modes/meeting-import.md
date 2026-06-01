@@ -3,7 +3,7 @@ title: 会議読み込み（議事メモから登録）
 audience: [all]
 mode: meeting.import
 order: 3
-last_updated: 2026-05-15
+last_updated: 2026-06-01
 owner: yamamoto
 related: [consultation.main, okr.session]
 ---
@@ -22,7 +22,7 @@ OKR の②セッション記録とは別に、**普段の会議メモから ToDo
 
 ## 使い方
 
-1. サイドバー上部 **「✨ AIツールを開く」** → モードを **「会議読み込み」** に切り替え
+1. サイドバー上部 **「✨ AIツールを開く」** → モードを **「🎙️ 会議」** に切り替え
 2. 議事メモを貼り付け／ファイル添付（PDF・Word・VTT・画像 OK）
 3. **「タスクを抽出」** をクリック
 4. AI が候補（PJ・ToDo・タスク）を提案
@@ -49,5 +49,5 @@ OKR の②セッション記録とは別に、**普段の会議メモから ToDo
 
 ## 関連
 
-- [AI相談・PJ/タスク登録・会議読み込み](./consultation.md)
+- [AI相談・会議読み込み](./consultation.md)
 - [② セッション記録 & 分析](./okr/02_session.md)（OKR用）
