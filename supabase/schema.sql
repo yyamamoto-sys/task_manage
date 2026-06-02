@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS task_forces (
   name             text NOT NULL,
   description      text,
   background       text,
+  quarter          text CONSTRAINT task_forces_quarter_check CHECK (quarter IS NULL OR quarter IN ('1Q','2Q','3Q','4Q')),
   leader_member_id text REFERENCES members(id),
   is_deleted       boolean NOT NULL DEFAULT false,
   deleted_at       timestamptz,
