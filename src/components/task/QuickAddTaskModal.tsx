@@ -53,7 +53,11 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");
   const [todoIds, setTodoIds] = useState<string[]>([]);
+  const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [comment, setComment] = useState("");
+  // 子タスク（1行1タスク）。最上位タスク作成時のみ表示・一括作成する（2階層固定のため）。
+  const [childDraft, setChildDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [tooltipTodo, setTooltipTodo] = useState<ToDo | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, left: 0, y: 0 });
@@ -139,17 +143,46 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       assignee_member_ids: assigneeId ? [assigneeId] : [],
       status: "todo",
       priority: null,
-      start_date: null,
+      start_date: startDate || null,
       due_date: dueDate || null,
+      estimated_hours: null,
+      comment: comment.trim(),
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    // 最上位タスク作成時のみ：子タスクを一括作成（1行1タスク・空行は無視）。
+    // 2階層固定のため、親を選んでいる（＝このタスク自体が子）場合は子を作らない。
+    const childNames = !parentId
+      ? childDraft.split("\n").map(s => s.trim()).filter(Boolean)
+      : [];
+    const childTasks: Task[] = childNames.map((cn, idx) => ({
+      id: uuidv4(),
+      name: cn,
+      project_id: effectiveProjectId,
+      parent_task_id: task.id,
+      display_order: idx,
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: null,
       estimated_hours: null,
       comment: "",
       is_deleted: false,
       created_at: now,
       updated_at: now,
       updated_by: currentUser.id,
-    };
+    }));
     try {
+      // 親を先に保存（子の parent_task_id が親IDを参照するため）→ その後に子を順次保存
       await saveTask(task);
+      for (const child of childTasks) {
+        await saveTask(child);
+      }
       onClose();
     } finally {
       setSaving(false);
@@ -235,19 +268,38 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           />
         </div>
 
+        {/* 担当者 */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
+          <CustomSelect
+            value={assigneeId}
+            onChange={setAssigneeId}
+            options={[
+              { value: "", label: "（なし）" },
+              ...members.map(m => ({ value: m.id, label: m.display_name })),
+            ]}
+            placeholder="担当者を選択..."
+            searchable
+            searchPlaceholder="名前で検索..."
+          />
+        </div>
+
+        {/* 開始日・期日 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
           <div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>担当者</div>
-            <CustomSelect
-              value={assigneeId}
-              onChange={setAssigneeId}
-              options={[
-                { value: "", label: "（なし）" },
-                ...members.map(m => ({ value: m.id, label: m.display_name })),
-              ]}
-              placeholder="担当者を選択..."
-              searchable
-              searchPlaceholder="名前で検索..."
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>開始日（任意）</div>
+            <input
+              type="date"
+              value={startDate}
+              max={dueDate || undefined}
+              onChange={e => setStartDate(e.target.value)}
+              style={{
+                width: "100%", padding: "7px 10px", fontSize: "12px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+              }}
             />
           </div>
           <div>
@@ -255,6 +307,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
             <input
               type="date"
               value={dueDate}
+              min={startDate || undefined}
               onChange={e => setDueDate(e.target.value)}
               style={{
                 width: "100%", padding: "7px 10px", fontSize: "12px",
@@ -395,6 +448,46 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
             placeholder="（なし＝親タスク）"
             searchable
             searchPlaceholder="親タスクを検索..."
+          />
+        </div>
+
+        {/* 子タスク（任意・最上位タスク作成時のみ。1行に1つ＝まとめて子タスクを作成） */}
+        {!parentId && (
+          <div style={{ marginBottom: "12px" }}>
+            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>子タスク（任意・1行に1つ）</div>
+            <textarea
+              value={childDraft}
+              onChange={e => setChildDraft(e.target.value)}
+              placeholder={"子タスク名を1行に1つ入力...\n例：\n要件整理\nデザイン案作成"}
+              rows={3}
+              style={{
+                width: "100%", padding: "8px 12px", fontSize: "12px", lineHeight: 1.6,
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-primary)",
+                color: "var(--color-text-primary)",
+                outline: "none", resize: "vertical", fontFamily: "inherit",
+              }}
+            />
+          </div>
+        )}
+
+        {/* メモ */}
+        <div style={{ marginBottom: "16px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>メモ（任意）</div>
+          <textarea
+            value={comment}
+            onChange={e => setComment(e.target.value)}
+            placeholder="補足・メモを入力..."
+            rows={2}
+            style={{
+              width: "100%", padding: "8px 12px", fontSize: "12px", lineHeight: 1.6,
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-primary)",
+              color: "var(--color-text-primary)",
+              outline: "none", resize: "vertical", fontFamily: "inherit",
+            }}
           />
         </div>
 
