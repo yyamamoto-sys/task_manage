@@ -180,6 +180,25 @@ export function ConsultationPanel({
   const currentType = TYPE_CONFIG.find(t => t.value === consultationType)!;
   const hasHistory = session.turns.length > 0;
 
+  // 【二重表示の防止】最新のやりとりは上部の「送信した相談」＋「最新の提案」で表示するため、
+  // 会話履歴（ChatHistory）からは除外する。除外しないと最新の質問・回答が画面に2回出る。
+  // - 提案付き成功時：末尾の user+assistant の2ターンが「現在のやりとり」
+  // - エラー時：末尾の user 1ターン（回答はまだ無い）
+  // - ローディング/初期/提案なし成功：session 末尾に未コミット or 履歴側で表示するため除外しない
+  const omitTailCount =
+    callState === "success" && proposals.length > 0 ? 2 :
+    callState === "error" ? 1 : 0;
+  const historyTurns = omitTailCount > 0
+    ? session.turns.slice(0, Math.max(0, session.turns.length - omitTailCount))
+    : session.turns;
+  const hasOlderHistory = historyTurns.length > 0;
+  // 「送信した相談」エコーは、質問が会話履歴に二重表示されない条件でのみ出す
+  // （提案なし成功時は質問を会話履歴側で表示するのでエコーは出さない）。
+  const showSubmittedEcho = !!lastSubmittedText && (
+    callState === "loading" || callState === "error" ||
+    (callState === "success" && proposals.length > 0)
+  );
+
   // 【mirror】入力中の下書き・直近送信文をミラーストアへ write-through する。
   //   再マウント時の seed 元になる。getState().saveAi 経由なのでストアを購読せず無限ループしない。
   //   submit 時に inputText をクリアする既存挙動はそのまま（クリアもミラーされる）。
@@ -632,8 +651,8 @@ export function ConsultationPanel({
             🧠 Thinkingモード（じっくり考える・少し遅い）
           </button>
 
-          {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる） */}
-          {lastSubmittedText && callState !== "idle" && (
+          {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる。会話履歴との二重表示は showSubmittedEcho で防止） */}
+          {showSubmittedEcho && (
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em" }}>
                 送信した相談
@@ -711,13 +730,13 @@ export function ConsultationPanel({
             <FollowUpButtons suggestions={followUpSuggestions} onSelect={handleFollowUpSelect} />
           )}
 
-          {/* 会話履歴 */}
-          {hasHistory && (
+          {/* 会話履歴（最新のやりとりは上部で表示済みなので、それより前のターンのみ） */}
+          {hasOlderHistory && (
             <div>
               <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
                 会話履歴
               </div>
-              <ChatHistory session={session} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
+              <ChatHistory session={{ ...session, turns: historyTurns }} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
             </div>
           )}
 
