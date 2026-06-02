@@ -99,7 +99,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     const cands = parentTaskCandidates(allTasks, currentProjectId, selectedTask?.id);
     const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
     const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
-    const opts: SelectOption[] = [{ value: "", label: "（なし＝大タスク）" }];
+    const opts: SelectOption[] = [{ value: "", label: "（なし＝親タスク）" }];
     if (same.length) {
       opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
       for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });

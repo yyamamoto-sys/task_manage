@@ -17,13 +17,17 @@ interface Props {
   /** 開いた時点で選択中のPJ。指定があればプロジェクト欄の初期値にする
    *  （PJ選択中に追加したタスクがそのPJのリスト/ガントにそのまま出るように） */
   defaultProjectId?: string;
+  /** 子タスクとして追加するときの親タスクID。指定があれば親タスク欄の初期値にする
+   *  （リスト画面の「＋子タスク」から、親を固定してこのモーダルを開く用途）。
+   *  保存時は project_id が親のPJに揃う（handleSave）。 */
+  defaultParentId?: string;
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(s => s.tasks);
   const rawMembers              = useAppStore(s => s.members);
@@ -45,7 +49,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, onC
   const [projectId, setProjectId] = useState(
     () => (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : ""),
   );
-  const [parentId, setParentId] = useState("");
+  const [parentId, setParentId] = useState(defaultParentId ?? "");
   const [krId, setKrId] = useState("");
   const [tfId, setTfId] = useState("");
   const [todoIds, setTodoIds] = useState<string[]>([]);
@@ -69,7 +73,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, onC
     const cands = parentTaskCandidates(rawTasks, cur);
     const same  = cands.filter(t => (t.project_id ?? null) === cur);
     const other = cands.filter(t => (t.project_id ?? null) !== cur);
-    const opts: SelectOption[] = [{ value: "", label: "（なし＝大タスク）" }];
+    const opts: SelectOption[] = [{ value: "", label: "（なし＝親タスク）" }];
     if (same.length) {
       opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
       for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
@@ -388,7 +392,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, onC
             value={parentId}
             onChange={setParentId}
             options={parentOptions}
-            placeholder="（なし＝大タスク）"
+            placeholder="（なし＝親タスク）"
             searchable
             searchPlaceholder="親タスクを検索..."
           />

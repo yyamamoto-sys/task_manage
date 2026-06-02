@@ -9,10 +9,10 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { childrenOf, isParentTask, effectiveStatus, parentProgress } from "../../lib/taskHierarchy";
-import { v4 as uuidv4 } from "uuid";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
+import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
 
@@ -113,9 +113,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     });
   }, []);
 
-  // 「＋子タスク」インライン追加：開いている親ID（最上位）と入力中テキスト
-  const [addingChildFor, setAddingChildFor] = useState<string | null>(null);
-  const [childDraft, setChildDraft] = useState("");
+  // 「＋子タスク」：親を固定して QuickAddTaskModal（親タスク追加と同じモーダル）を開く。
+  // 値＝親タスクID、null＝閉じている。
+  const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -252,50 +252,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     }
   }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
 
-  // 「＋子タスク」インライン作成。QuickAddTaskModal の既定に合わせる
-  // （parent_task_id=親id・project_id=親のPJ・status="todo"・display_order=兄弟max+1・他は既定値）。
-  const createChildTask = useCallback(async (parent: Task, rawName: string) => {
-    const name = rawName.trim();
-    if (!name) return;
-    const now = new Date().toISOString();
-    const siblings = allTasks.filter(t => t.parent_task_id === parent.id);
-    const nextOrder = siblings.length === 0
-      ? 0
-      : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
-    const child: Task = {
-      id: uuidv4(),
-      name,
-      project_id: parent.project_id ?? null,
-      parent_task_id: parent.id,
-      display_order: nextOrder,
-      todo_ids: [],
-      assignee_member_id: "",
-      assignee_member_ids: [],
-      status: "todo",
-      priority: null,
-      start_date: null,
-      due_date: null,
-      estimated_hours: null,
-      comment: "",
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUser.id,
-    };
-    try {
-      await saveTask(child);
-      // 追加直後は親を展開状態にして子が見えるようにする
-      setCollapsedIds(prev => {
-        if (!prev.has(parent.id)) return prev;
-        const next = new Set(prev); next.delete(parent.id);
-        lsSet("collapsedParents", Array.from(next));
-        return next;
-      });
-      setChildDraft("");
-    } catch (err) {
-      showToast(`子タスクの追加に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
-    }
-  }, [allTasks, saveTask, currentUser.id]);
+  // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
+  // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
+  //   QuickAddTaskModal.handleSave 側に一元化されている）。
+  const openAddChild = useCallback((parent: Task) => {
+    setCollapsedIds(prev => {
+      if (!prev.has(parent.id)) return prev;
+      const next = new Set(prev); next.delete(parent.id);
+      lsSet("collapsedParents", Array.from(next));
+      return next;
+    });
+    setQuickAddParentId(parent.id);
+  }, []);
 
   const groups = useMemo(() => {
     if (groupBy === "project") {
@@ -930,43 +898,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                   </span>
                                 </div>
                               )}
-                              {/* ＋子タスク（最上位行のみ） */}
+                              {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI） */}
                               {canAddChild && (
-                                addingChildFor === task.id ? (
-                                  <div style={{ display: "flex", alignItems: "center", gap: "4px", marginTop: "3px" }}>
-                                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>↳</span>
-                                    <input
-                                      // eslint-disable-next-line jsx-a11y/no-autofocus -- インライン追加の即時入力のため
-                                      autoFocus
-                                      value={childDraft}
-                                      onClick={e => e.stopPropagation()}
-                                      onChange={e => setChildDraft(e.target.value)}
-                                      onKeyDown={e => {
-                                        if (e.key === "Enter") { e.preventDefault(); createChildTask(task, childDraft); }
-                                        else if (e.key === "Escape") { setAddingChildFor(null); setChildDraft(""); }
-                                      }}
-                                      placeholder="子タスク名を入力して Enter"
-                                      style={{
-                                        flex: 1, minWidth: "120px", maxWidth: "300px", padding: "3px 8px", fontSize: "11px",
-                                        border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)",
-                                        background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
-                                      }}
-                                    />
-                                    <button onClick={e => { e.stopPropagation(); setAddingChildFor(null); setChildDraft(""); }} style={{
-                                      padding: "2px 6px", fontSize: "10px", color: "var(--color-text-tertiary)",
-                                      border: "none", background: "transparent", cursor: "pointer",
-                                    }}>✕</button>
-                                  </div>
-                                ) : (
-                                  <button
-                                    onClick={e => { e.stopPropagation(); setChildDraft(""); setAddingChildFor(task.id); }}
-                                    style={{
-                                      marginTop: "2px", padding: "1px 4px", fontSize: "9px",
-                                      color: "var(--color-text-tertiary)", border: "none",
-                                      background: "transparent", cursor: "pointer",
-                                    }}
-                                  >＋ 子タスク</button>
-                                )
+                                <button
+                                  onClick={e => { e.stopPropagation(); openAddChild(task); }}
+                                  style={{
+                                    marginTop: "2px", padding: "1px 4px", fontSize: "9px",
+                                    color: "var(--color-text-tertiary)", border: "none",
+                                    background: "transparent", cursor: "pointer",
+                                  }}
+                                >＋ 子タスク</button>
                               )}
                             </td>
                             {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
@@ -1020,6 +961,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
           onDeleted={() => { setEditingTaskId(null); setSelectedTaskId(null); }}
+        />
+      )}
+
+      {/* 子タスク追加：親タスク追加と同じモーダル（親を固定・PJは親に追従） */}
+      {quickAddParentId && (
+        <QuickAddTaskModal
+          currentUser={currentUser}
+          projects={projects}
+          defaultParentId={quickAddParentId}
+          defaultProjectId={allTasks.find(t => t.id === quickAddParentId)?.project_id ?? undefined}
+          onClose={() => setQuickAddParentId(null)}
         />
       )}
     </div>
