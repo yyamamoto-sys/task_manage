@@ -44,6 +44,8 @@ export interface Proposal {
   needs_confirmation: boolean;
   /** add_project 用：作成するPJに紐づく初期タスク */
   new_project_tasks?: NewProjectTaskInput[];
+  /** add_task 用：このタスクを親として、その下にぶら下げる子タスク（2階層固定） */
+  new_subtasks?: NewProjectTaskInput[];
 }
 
 export interface AIResponseData {
@@ -171,6 +173,7 @@ function validateProposal(p: unknown, index: number): Proposal {
     is_simulation: obj.is_simulation === true,
     needs_confirmation: needsConfirmation,
     new_project_tasks: parseNewProjectTasks(obj.new_project_tasks),
+    new_subtasks: parseNewProjectTasks(obj.new_subtasks),
   };
 }
 

@@ -75,8 +75,10 @@ export interface ConfirmationDialog {
   target_pj_uuids?: string[];
   /** scope_reduce / pause 用：削除対象のタスク UUID一覧 */
   target_task_uuids?: string[];
-  /** add_task 用：新規タスク情報 */
+  /** add_task 用：新規タスク情報（new_subtask_items がある場合は new_task_items[0] が親タスク） */
   new_task_items?: NewTaskItem[];
+  /** add_task 用：親タスク（new_task_items[0]）にぶら下げる子タスク（2階層固定） */
+  new_subtask_items?: NewTaskItem[];
   /** add_project 用：作成する新規PJ情報 */
   new_project?: { name: string; purpose: string };
   /** add_project 用：新規PJに紐づく初期タスク（NewTaskItem を流用。project_id は新規PJなので未確定＝空） */
@@ -441,18 +443,39 @@ export async function applyProposal(
       }
     }
 
-    let assigneeId: string | undefined;
-    let assigneeName: string | undefined;
-    if (proposal.suggested_assignee) {
-      const { data: member } = await supabase
-        .from("members")
-        .select("id, short_name")
-        .eq("short_name", proposal.suggested_assignee)
-        .single();
-      if (member) { assigneeId = member.id as string; assigneeName = member.short_name as string; }
+    // 担当者解決用に有効メンバーを一括取得（親タスク＋子タスクの short_name→id 変換に使う）
+    const { data: memberRows } = await supabase
+      .from("members")
+      .select("id, short_name")
+      .eq("is_deleted", false);
+    const memberByShortName = new Map<string, { id: string; short_name: string }>();
+    for (const m of memberRows ?? []) {
+      memberByShortName.set(m.short_name as string, { id: m.id as string, short_name: m.short_name as string });
     }
 
+    const parentMatch = proposal.suggested_assignee
+      ? memberByShortName.get(proposal.suggested_assignee)
+      : undefined;
+
     const tempId = generateId();
+
+    // new_subtasks がある場合は「親タスク＋子タスク」の階層作成。子タスクの担当も解決する。
+    const subtaskItems: NewTaskItem[] = (proposal.new_subtasks ?? [])
+      .filter((t) => t.name && t.name.trim())
+      .map((t) => {
+        const matched = t.suggested_assignee ? memberByShortName.get(t.suggested_assignee) : undefined;
+        return {
+          temp_id: generateId(),
+          task_name: t.name,
+          project_id: projectId,
+          project_name: projectName,
+          suggested_assignee_id: matched?.id,
+          suggested_assignee_name: matched?.short_name ?? t.suggested_assignee,
+          suggested_start_date: t.suggested_start_date,
+          suggested_due_date: t.suggested_due_date,
+        };
+      });
+
     return {
       type: "needs_confirmation",
       dialog: {
@@ -464,11 +487,12 @@ export async function applyProposal(
           task_name: proposal.title,
           project_id: projectId,
           project_name: projectName,
-          suggested_assignee_id: assigneeId,
-          suggested_assignee_name: assigneeName ?? proposal.suggested_assignee,
+          suggested_assignee_id: parentMatch?.id,
+          suggested_assignee_name: parentMatch?.short_name ?? proposal.suggested_assignee,
           suggested_start_date: proposal.suggested_start_date,
           suggested_due_date: proposal.suggested_date,
         }],
+        new_subtask_items: subtaskItems.length > 0 ? subtaskItems : undefined,
       },
     };
   }
@@ -696,9 +720,17 @@ export async function applyProposalWithConfirmation(
       return { type: "success", snapshot };
     }
 
-    // ===== add_task: タスク新規作成 =====
+    // ===== add_task: タスク新規作成（new_subtask_items があれば 親＋子の階層作成）=====
     if (dialog.action_type === "add_task") {
+      const operations: UndoOperation[] = [];
+      const subtaskItems = dialog.new_subtask_items ?? [];
+      const hasHierarchy = subtaskItems.length > 0;
+
       let addedCount = 0;
+      let parentId: string | null = null;
+      let parentProjectId: string | null = null;
+
+      // 親（または単体）タスクを作成。new_task_items[0] を親として扱う。
       for (const item of dialog.new_task_items ?? []) {
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
         if (!name) continue;
@@ -722,13 +754,50 @@ export async function applyProposalWithConfirmation(
           updated_by: currentUserId,
         });
         if (error) throw new Error(`タスク作成エラー: ${error.message}`);
+        operations.push({ type: "task_restore", taskId: newId });
         addedCount++;
+        if (parentId === null) { parentId = newId; parentProjectId = item.project_id ?? null; }
       }
+
+      // 子タスクを作成（親に parent_task_id でぶら下げ・project_id は親に揃える）
+      if (hasHierarchy && parentId) {
+        let order = 0;
+        for (const sub of subtaskItems) {
+          const name = (confirmedValues[`${sub.temp_id}_name`] ?? sub.task_name).trim();
+          if (!name) continue;
+          const assigneeId = confirmedValues[`${sub.temp_id}_assignee_id`] || null;
+          const startDate = confirmedValues[`${sub.temp_id}_start_date`] || null;
+          const dueDate = confirmedValues[`${sub.temp_id}_due_date`] || null;
+
+          const childId = generateId();
+          const { error } = await supabase.from("tasks").insert({
+            id: childId,
+            name,
+            project_id: parentProjectId,
+            parent_task_id: parentId,
+            display_order: order,
+            todo_ids: [],
+            assignee_member_id: assigneeId,
+            status: "todo",
+            is_deleted: false,
+            start_date: startDate,
+            due_date: dueDate,
+            created_at: now,
+            updated_at: now,
+            updated_by: currentUserId,
+          });
+          if (error) throw new Error(`子タスク作成エラー (${name}): ${error.message}`);
+          operations.push({ type: "task_restore", taskId: childId });
+          addedCount++;
+          order++;
+        }
+      }
+
       const snapshot: UndoSnapshot = {
         id: generateId(),
-        label: `タスク追加 (${addedCount}件)`,
+        label: hasHierarchy ? `タスク階層化 (${addedCount}件)` : `タスク追加 (${addedCount}件)`,
         appliedAt: now,
-        operations: [],
+        operations,
       };
       return { type: "success", snapshot };
     }

@@ -524,4 +524,50 @@ describe("applyProposalWithConfirmation — add_task", () => {
     expect(result.type).toBe("success");
     expect(mockState.calls.filter(c => c.op === "insert")).toHaveLength(0);
   });
+
+  it("new_subtask_items があると 親→子（parent_task_id・project_id継承・display_order連番）を作成する", async () => {
+    queueResult("tasks", "insert", { data: null, error: null }); // 親
+    queueResult("tasks", "insert", { data: null, error: null }); // 子1
+    queueResult("tasks", "insert", { data: null, error: null }); // 子2
+
+    const dialog: ConfirmationDialog = {
+      proposal_id: "p1",
+      action_type: "add_task",
+      items: [],
+      new_task_items: [{ temp_id: "parent", task_name: "大分類", project_id: "pj-1" }],
+      new_subtask_items: [
+        { temp_id: "c1", task_name: "子1", project_id: "pj-1" },
+        { temp_id: "c2", task_name: "子2", project_id: "pj-1" },
+      ],
+    };
+    const result = await applyProposalWithConfirmation(
+      dialog,
+      { parent_name: "大分類", c1_name: "子1", c2_name: "子2" },
+      "user-1",
+    );
+
+    expect(result.type).toBe("success");
+    const inserts = mockState.calls.filter(c => c.op === "insert" && c.table === "tasks");
+    expect(inserts).toHaveLength(3);
+
+    // 1件目＝親（parent_task_id を持たない）
+    const parent = inserts[0].payload as Record<string, unknown>;
+    expect(parent.name).toBe("大分類");
+    expect(parent.parent_task_id).toBeUndefined();
+
+    // 2・3件目＝子（親の id にぶら下がる・project_id は親に揃う・display_order は 0,1）
+    const child1 = inserts[1].payload as Record<string, unknown>;
+    const child2 = inserts[2].payload as Record<string, unknown>;
+    expect(child1.name).toBe("子1");
+    expect(child1.parent_task_id).toBe(parent.id);
+    expect(child1.project_id).toBe("pj-1");
+    expect(child1.display_order).toBe(0);
+    expect(child2.parent_task_id).toBe(parent.id);
+    expect(child2.display_order).toBe(1);
+
+    // Undo 用に親＋子の3件分の操作が積まれる
+    if (result.type !== "success") return;
+    expect(result.snapshot.operations).toHaveLength(3);
+    expect(result.snapshot.label).toContain("階層化");
+  });
 });

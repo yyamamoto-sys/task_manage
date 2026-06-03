@@ -38,6 +38,8 @@ export function ConfirmationDialogModal({
   // - scope_reduce / pause: 確認のみでユーザー入力は不要
   const isAddTask = dialog.action_type === "add_task";
   const isAddProject = dialog.action_type === "add_project";
+  // add_task に子タスクが付く＝階層化（親＋子の一括作成）
+  const isHierarchy = isAddTask && (dialog.new_subtask_items ?? []).length > 0;
   const activeMembers = active(members);
   const [confirmedValues, setConfirmedValues] = useState<Record<string, string>>(
     () => {
@@ -51,7 +53,7 @@ export function ConfirmationDialogModal({
       }
       if (isAddTask) {
         const entries: [string, string][] = [];
-        for (const item of dialog.new_task_items ?? []) {
+        for (const item of [...(dialog.new_task_items ?? []), ...(dialog.new_subtask_items ?? [])]) {
           entries.push([`${item.temp_id}_name`, item.task_name]);
           entries.push([`${item.temp_id}_assignee_id`, item.suggested_assignee_id ?? ""]);
           entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
@@ -160,7 +162,7 @@ export function ConfirmationDialogModal({
             {isAddProject
               ? "新規プロジェクト作成の確認"
               : isAddTask
-                ? "タスク追加の確認"
+                ? (isHierarchy ? "タスク階層化の確認" : "タスク追加の確認")
                 : isDateChange
                   ? "日程変更の確認"
                   : isDeleteAction
@@ -197,7 +199,9 @@ export function ConfirmationDialogModal({
             {isAddProject
               ? "以下の内容で新規プロジェクトと初期タスクを作成します。内容を確認・修正してから「確定して反映」を押してください。"
               : isAddTask
-                ? "以下の内容でタスクを新規作成します。内容を確認・修正してから「確定して反映」を押してください。"
+                ? (isHierarchy
+                    ? "親タスク（大分類）とその子タスクを作成します。内容を確認・修正してから「確定して反映」を押してください。"
+                    : "以下の内容でタスクを新規作成します。内容を確認・修正してから「確定して反映」を押してください。")
                 : isDeleteAction
                   ? "以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「確定して反映」を押してください。"
                   : "以下の内容で反映します。値を確認・修正してから「確定して反映」を押してください。"}
@@ -379,7 +383,7 @@ export function ConfirmationDialogModal({
                 }}
               >
                 <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-brand)", marginBottom: "2px" }}>
-                  ＋ 新規タスク
+                  {isHierarchy ? "＋ 親タスク（大分類）" : "＋ 新規タスク"}
                 </div>
 
                 {/* タスク名 */}
@@ -450,6 +454,92 @@ export function ConfirmationDialogModal({
                   <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>期日</div>
                   <input
                     type="date"
+                    value={confirmedValues[`${item.temp_id}_due_date`] ?? ""}
+                    onChange={(e) =>
+                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_due_date`]: e.target.value }))
+                    }
+                    style={{
+                      fontSize: "11px", padding: "4px 6px",
+                      border: "1px solid var(--color-border-secondary)",
+                      borderRadius: "var(--radius-sm)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  />
+                </div>
+              </div>
+            ))}
+
+            {/* add_task: 子タスク（階層化）。上の親タスクにぶら下がる */}
+            {isAddTask && (dialog.new_subtask_items ?? []).length > 0 && (
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                ↳ 子タスク（{(dialog.new_subtask_items ?? []).length}件）— 上の親タスクの下に作成されます
+              </div>
+            )}
+            {isAddTask && (dialog.new_subtask_items ?? []).map((item: NewTaskItem) => (
+              <div
+                key={item.temp_id}
+                style={{
+                  padding: "10px 12px",
+                  marginLeft: "14px",
+                  background: "var(--color-bg-secondary)",
+                  borderRadius: "var(--radius-md)",
+                  borderLeft: "2px solid var(--color-brand-border, var(--color-border-secondary))",
+                  display: "flex", flexDirection: "column", gap: "8px",
+                }}
+              >
+                <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-secondary)" }}>
+                  └ 子タスク
+                </div>
+                {/* タスク名 */}
+                <input
+                  type="text"
+                  value={confirmedValues[`${item.temp_id}_name`] ?? ""}
+                  onChange={(e) =>
+                    setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_name`]: e.target.value }))
+                  }
+                  placeholder="子タスク名"
+                  style={{
+                    width: "100%", boxSizing: "border-box",
+                    fontSize: "12px", padding: "5px 8px",
+                    border: "1px solid var(--color-border-secondary)",
+                    borderRadius: "var(--radius-sm)",
+                    background: "var(--color-bg-primary)",
+                    color: "var(--color-text-primary)",
+                  }}
+                />
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ flex: 1, minWidth: "120px" }}>
+                    <CustomSelect
+                      value={confirmedValues[`${item.temp_id}_assignee_id`] ?? ""}
+                      onChange={(value) =>
+                        setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: value }))
+                      }
+                      options={[
+                        { value: "", label: "未担当" },
+                        ...activeMembers.map((m) => ({ value: m.id, label: m.short_name })),
+                      ]}
+                      searchable searchPlaceholder="メンバーで検索..."
+                    />
+                  </div>
+                  <input
+                    type="date"
+                    title="開始日"
+                    value={confirmedValues[`${item.temp_id}_start_date`] ?? ""}
+                    onChange={(e) =>
+                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_start_date`]: e.target.value }))
+                    }
+                    style={{
+                      fontSize: "11px", padding: "4px 6px",
+                      border: "1px solid var(--color-border-secondary)",
+                      borderRadius: "var(--radius-sm)",
+                      background: "var(--color-bg-primary)",
+                      color: "var(--color-text-primary)",
+                    }}
+                  />
+                  <input
+                    type="date"
+                    title="期日"
                     value={confirmedValues[`${item.temp_id}_due_date`] ?? ""}
                     onChange={(e) =>
                       setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_due_date`]: e.target.value }))

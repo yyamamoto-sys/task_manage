@@ -35,6 +35,31 @@ describe("parseAIResponse", () => {
     expect(res.proposals[0].description).toBe("");
   });
 
+  it("add_task の new_subtasks（子タスク）をパースする（name必須・他は任意）", () => {
+    const raw = wrap([{
+      proposal_id: "prop_001",
+      title: "大分類：会場準備",
+      description: "x",
+      action_type: "add_task",
+      target_pj_ids: ["pj_001"],
+      new_subtasks: [
+        { name: "会場下見", suggested_assignee: "山本", suggested_due_date: "2026-06-10" },
+        { name: "備品手配" },
+        { name: "" },            // 空 name は捨てられる
+        { suggested_assignee: "x" }, // name 無しは捨てられる
+      ],
+    }]);
+    const res = parseAIResponse(raw);
+    expect(res.proposals[0].new_subtasks).toHaveLength(2);
+    expect(res.proposals[0].new_subtasks![0]).toEqual({
+      name: "会場下見",
+      suggested_assignee: "山本",
+      suggested_start_date: undefined,
+      suggested_due_date: "2026-06-10",
+    });
+    expect(res.proposals[0].new_subtasks![1].name).toBe("備品手配");
+  });
+
   it("DB変更系（date_change）は needs_confirmation 未指定なら安全側で true", () => {
     const raw = wrap([{
       proposal_id: "prop_001",

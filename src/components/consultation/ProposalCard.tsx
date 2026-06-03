@@ -332,6 +332,39 @@ export function ProposalCard({
           {renderDescriptionWithLinks(proposal.description, shortIdMap, onOpenTask)}
         </div>
 
+        {/* add_task の子タスク（階層化）プレビュー：親＝このタスク、その下に子タスク一覧 */}
+        {proposal.action_type === "add_task" && (proposal.new_subtasks?.length ?? 0) > 0 && (
+          <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginTop: "2px" }}>
+            <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)" }}>
+              子タスク（{proposal.new_subtasks!.length}件）
+            </div>
+            {proposal.new_subtasks!.map((t, i) => (
+              <div
+                key={i}
+                style={{
+                  fontSize: "11px",
+                  color: "var(--color-text-primary)",
+                  padding: "3px 8px",
+                  marginLeft: "8px",
+                  background: "var(--color-bg-secondary)",
+                  borderLeft: "2px solid var(--color-brand-border, var(--color-border-secondary))",
+                  borderRadius: "var(--radius-sm)",
+                  display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "baseline",
+                }}
+              >
+                <span style={{ color: "var(--color-text-tertiary)" }}>└</span>
+                <span style={{ fontWeight: "500" }}>{t.name}</span>
+                {t.suggested_assignee && (
+                  <span style={{ color: "var(--color-text-tertiary)" }}>担当：{t.suggested_assignee}</span>
+                )}
+                {t.suggested_due_date && (
+                  <span style={{ color: "var(--color-text-info)" }}>期日：{t.suggested_due_date}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 提案値（suggested_date / suggested_assignee） */}
         {(proposal.suggested_date || proposal.suggested_assignee) && (
           <div

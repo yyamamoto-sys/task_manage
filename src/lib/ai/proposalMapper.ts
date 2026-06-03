@@ -28,6 +28,8 @@ export interface UIProposal {
   needs_confirmation: boolean;
   /** add_project 用：作成するPJに紐づく初期タスク（素通し） */
   new_project_tasks?: NewProjectTaskInput[];
+  /** add_task 用：親タスクにぶら下げる子タスク（素通し） */
+  new_subtasks?: NewProjectTaskInput[];
   /** date_certainty !== "unknown" && !is_simulation の場合にtrue（「反映する」ボタン活性） */
   canApply: boolean;
 }
@@ -112,6 +114,7 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       is_simulation: p.is_simulation,
       needs_confirmation: p.needs_confirmation,
       new_project_tasks: p.new_project_tasks,
+      new_subtasks: p.new_subtasks,
       canApply: !p.is_simulation && (p.date_certainty !== "unknown" || p.action_type === "add_task" || p.action_type === "add_project"),
     };
   });
