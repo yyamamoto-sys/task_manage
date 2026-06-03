@@ -554,6 +554,9 @@ describe("applyProposalWithConfirmation — add_task", () => {
     const parent = inserts[0].payload as Record<string, unknown>;
     expect(parent.name).toBe("大分類");
     expect(parent.parent_task_id).toBeUndefined();
+    // DBの実カラムは todo_id（単数）。todo_ids（複数）を送るとスキーマエラーになるので送らないこと
+    expect(parent).not.toHaveProperty("todo_ids");
+    expect(parent.todo_id).toBeNull();
 
     // 2・3件目＝子（親の id にぶら下がる・project_id は親に揃う・display_order は 0,1）
     const child1 = inserts[1].payload as Record<string, unknown>;
