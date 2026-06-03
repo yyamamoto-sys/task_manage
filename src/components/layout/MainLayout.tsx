@@ -19,6 +19,7 @@ import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
+import { isGuestMember } from "../../lib/guestMode";
 
 /**
  * 【設計意図】
@@ -80,6 +81,9 @@ export function MainLayout(props: Props) {
 
 function MainLayoutInner({ currentUser, onLogout }: Props) {
   const isMobile = useIsMobile();
+  // ゲスト（閲覧のみ）：書き込みは client.ts でブロック済み。UI 側では設定（管理）を隠し、
+  // 上部に閲覧専用バナーを出す。AI機能は表示する（反映だけブロックされる）。
+  const isGuest = isGuestMember(currentUser);
   const { theme, toggle: toggleTheme } = useTheme();
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(KEYS.VIEW_MODE) as ViewMode | null;
@@ -437,7 +441,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       paddingBottom: isMobile ? "56px" : 0,
     }}>
-      {isGuideOpen ? guideOverlay : isAdminOpen ? adminOverlay : appMode === "okr" ? (
+      {isGuest && (
+        <div style={{
+          flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+          padding: "5px 12px",
+          background: "linear-gradient(135deg,#f59e0b,#d97706)",
+          color: "#fff", fontSize: "11px", fontWeight: 600,
+        }}>
+          <span>👁 ゲストモード（閲覧のみ）— 編集はできません</span>
+        </div>
+      )}
+      {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : appMode === "okr" ? (
         <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
             <OkrDashboardView
@@ -648,7 +663,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             🧪
           </button>
-          {/* 設定ボタン */}
+          {/* 設定ボタン（ゲストは非表示） */}
+          {!isGuest && (
           <button
             onClick={() => setIsAdminOpen(true)}
             title="設定"
@@ -663,6 +679,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             <GearIcon />
           </button>
+          )}
           {/* テーマ切り替え */}
           <button
             onClick={toggleTheme}
@@ -699,7 +716,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {mainContent}
 
         {/* モバイル：FAB（計画モードのみ） */}
-        {appMode === "plan" && (<>
+        {appMode === "plan" && !isGuest && (<>
           {isFabMenuOpen && (
             <div
               style={{ position: "fixed", inset: 0, zIndex: 58 }}
@@ -902,8 +919,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
         </div>
       )}
-      {/* PC FABボタン本体（計画モードのみ） */}
-      {appMode === "plan" && (
+      {/* PC FABボタン本体（計画モードのみ・ゲストは非表示） */}
+      {appMode === "plan" && !isGuest && (
         <button
           data-tour-id="fab"
           onClick={() => setIsFabMenuOpen(prev => !prev)}
@@ -1076,6 +1093,7 @@ function Sidebar({
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
+  const isGuest = isGuestMember(currentUser);
   const c = collapsed; // 省略形
 
   return (
@@ -1332,7 +1350,8 @@ function Sidebar({
           <span style={{ fontSize: "13px", lineHeight: 1 }}>📖</span>
           {!c && <span>ガイド</span>}
         </button>
-        {/* 設定（歯車）ボタン */}
+        {/* 設定（歯車）ボタン（ゲストは非表示） */}
+        {!isGuest && (
         <button
           onClick={onOpenAdmin}
           title="設定"
@@ -1353,6 +1372,7 @@ function Sidebar({
           <GearIcon />
           {!c && <span>設定</span>}
         </button>
+        )}
         <div style={{
           display: "flex", alignItems: "center",
           justifyContent: c ? "center" : "flex-start",

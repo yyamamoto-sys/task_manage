@@ -1,6 +1,7 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
+import { setGuestMode, isGuestMember } from "./lib/guestMode";
 import { getSession, onAuthStateChange } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -55,11 +56,20 @@ export default function App() {
   }, []);
 
   const handleLogin = (member: Member) => {
+    if (isGuestMember(member)) {
+      // ゲストは閲覧専用。書き込みブロックを有効化し、localStorage には保存しない
+      // （次回起動時にゲストへ自動復元されないように）。
+      setGuestMode(true);
+      setCurrentUserState(member);
+      return;
+    }
+    setGuestMode(false);
     setCurrentUser(member.id);
     setCurrentUserState(member);
   };
 
   const handleLogout = () => {
+    setGuestMode(false);
     clearCurrentUser();
     setCurrentUserState(null);
   };

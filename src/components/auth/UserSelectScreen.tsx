@@ -3,6 +3,7 @@ import { useState } from "react";
 import { getCurrentUser, KEYS, active } from "../../lib/localData/localStore";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
+import { GUEST_MEMBER } from "../../lib/guestMode";
 
 interface Props {
   onLogin: (member: Member) => void;
@@ -142,6 +143,41 @@ export function UserSelectScreen({ onLogin }: Props) {
                 </button>
               </div>
             )}
+          </>
+        )}
+
+        {/* ゲスト（閲覧のみ）：社外の見学者・経営役員などが中身を見て回るための閲覧専用モード */}
+        {!loading && members.length > 0 && (
+          <>
+            <div style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              margin: "14px 0 10px", color: "var(--color-text-tertiary)", fontSize: "11px",
+            }}>
+              <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
+              <span>見学の方</span>
+              <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
+            </div>
+            <button
+              onClick={() => onLogin(GUEST_MEMBER)}
+              style={{
+                width: "100%", display: "flex", alignItems: "center", gap: "10px",
+                padding: "9px 12px",
+                background: "var(--color-bg-secondary)",
+                border: "1px dashed var(--color-border-secondary)",
+                borderRadius: "var(--radius-md)", cursor: "pointer",
+                transition: "background 0.1s",
+              }}
+            >
+              <span style={{ fontSize: "16px", flexShrink: 0 }}>👁</span>
+              <div style={{ flex: 1, textAlign: "left" }}>
+                <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-secondary)" }}>
+                  ゲスト（閲覧のみ）
+                </div>
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                  編集はできません。中身を見て回れます
+                </div>
+              </div>
+            </button>
           </>
         )}
 
