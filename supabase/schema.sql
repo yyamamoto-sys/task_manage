@@ -201,6 +201,7 @@ CREATE TABLE IF NOT EXISTS milestones (
   project_id  text NOT NULL REFERENCES projects(id),
   name        text NOT NULL,
   date        date NOT NULL,
+  description text,                         -- メモ・詳細（任意。migrations/20260603_add_milestone_description.sql で追加）
   is_deleted  boolean NOT NULL DEFAULT false,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
@@ -208,6 +209,8 @@ CREATE TABLE IF NOT EXISTS milestones (
   deleted_at  timestamptz,
   deleted_by  text
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+ALTER TABLE milestones ADD COLUMN IF NOT EXISTS description text;
 
 -- ===== 変更履歴 =====
 CREATE TABLE IF NOT EXISTS admin_change_logs (

@@ -13,7 +13,7 @@
 
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { useAppStore } from "../../stores/appStore";
-import type { Member, Project } from "../../lib/localData/types";
+import type { Member, Project, Milestone } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
@@ -26,6 +26,7 @@ import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
+import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { confirmDialog } from "../../lib/dialog";
 
 const ANALYSIS_PHASES = [
@@ -47,6 +48,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const saveMilestone   = useAppStore(s => s.saveMilestone);
   const deleteMilestone = useAppStore(s => s.deleteMilestone);
   const [showAddMs, setShowAddMs] = useState(false);
+  const [editingMs, setEditingMs] = useState<Milestone | null>(null);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -346,13 +348,21 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
             const isPast = m.date < today;
             const isNext = nextMilestone?.id === m.id;
             return (
-              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", opacity: isPast ? 0.5 : 1 }}>
+              <div
+                key={m.id}
+                onClick={() => setEditingMs(m)}
+                title="クリックして編集（メモ・詳細）"
+                style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", opacity: isPast ? 0.5 : 1, cursor: "pointer", borderRadius: "var(--radius-sm)" }}
+              >
                 <span style={{ fontSize: "11px" }}>{isPast ? "✅" : isNext ? "🎯" : "•"}</span>
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "44px" }}>{formatMD(m.date)}</span>
-                <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{m.name}</span>
+                <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+                  {m.name}{m.description ? " 📝" : ""}
+                </span>
                 <button
                   title="このマイルストーンを削除"
-                  onClick={async () => {
+                  onClick={async (e) => {
+                    e.stopPropagation();
                     if (await confirmDialog(`マイルストーン「${m.name}」を削除しますか？`)) {
                       await deleteMilestone(m.id, currentUser.id);
                     }
@@ -376,6 +386,14 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
                 onAdd={async (ms) => { await saveMilestone(ms); setShowAddMs(false); }}
               />
             </div>
+          )}
+          {editingMs && (
+            <MilestoneEditModal
+              milestone={editingMs}
+              currentUser={currentUser}
+              project={project}
+              onClose={() => setEditingMs(null)}
+            />
           )}
           {linkedKrNames.length > 0 && (
             <>

@@ -26,6 +26,7 @@ import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
 import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
+import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 
 type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage";
 
@@ -1241,6 +1242,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
   // マイルストーン管理：開閉のみ（フォーム状態は子コンポーネントが管理）
   const [msOpenPjId, setMsOpenPjId] = useState<string | null>(null);
+  const [editingMs, setEditingMs] = useState<Milestone | null>(null);
 
   const removeMilestone = async (id: string) => {
     if (!await confirmDialog("このマイルストーンを削除しますか？")) return;
@@ -1419,17 +1421,21 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
               ) : (
                 <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "8px" }}>
                   {milestones.filter(ms => ms.project_id === pj.id).sort((a, b) => a.date.localeCompare(b.date)).map(ms => (
-                    <div key={ms.id} style={{
-                      display: "flex", alignItems: "center", gap: "8px",
-                      padding: "4px 8px",
-                      background: "var(--color-bg-primary)",
-                      border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-sm)",
-                    }}>
+                    <div key={ms.id}
+                      onClick={() => setEditingMs(ms)}
+                      title="クリックして編集（メモ・詳細）"
+                      style={{
+                        display: "flex", alignItems: "center", gap: "8px",
+                        padding: "4px 8px",
+                        background: "var(--color-bg-primary)",
+                        border: "1px solid var(--color-border-primary)",
+                        borderRadius: "var(--radius-sm)",
+                        cursor: "pointer",
+                      }}>
                       <span style={{ fontSize: "11px", color: "#f59e0b", flexShrink: 0 }}>◆</span>
                       <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flexShrink: 0 }}>{ms.date}</span>
-                      <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}</span>
-                      <IconBtn danger onClick={() => removeMilestone(ms.id)}>✕</IconBtn>
+                      <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}{ms.description ? " 📝" : ""}</span>
+                      <IconBtn danger onClick={(e) => { e?.stopPropagation?.(); removeMilestone(ms.id); }}>✕</IconBtn>
                     </div>
                   ))}
                 </div>
@@ -1445,6 +1451,16 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
           </div>
         );
       })}
+
+      {/* マイルストーン編集モーダル（一覧の行クリックで開く） */}
+      {editingMs && (
+        <MilestoneEditModal
+          milestone={editingMs}
+          currentUser={currentUser}
+          project={projects.find(p => p.id === editingMs.project_id) ?? null}
+          onClose={() => setEditingMs(null)}
+        />
+      )}
 
       {/* 追加・編集フォーム */}
       {editId && (
@@ -1895,12 +1911,12 @@ function AutoTextarea({ value, onChange, placeholder, maxLength, minRows = 2, st
 }
 
 function IconBtn({ children, onClick, title, danger }: {
-  children: React.ReactNode; onClick: () => void; title?: string; danger?: boolean;
+  children: React.ReactNode; onClick: (e?: React.MouseEvent) => void; title?: string; danger?: boolean;
 }) {
   const [hover, setHover] = useState(false);
   return (
     <button
-      onClick={onClick} title={title}
+      onClick={(e) => onClick(e)} title={title}
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{

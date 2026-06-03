@@ -15,6 +15,7 @@ import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
+import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { isAssignedTo, getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
@@ -176,6 +177,8 @@ export function GanttView({
 
   // マイルストーンホバーツールチップ
   const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; x: number; y: number } | null>(null);
+  // ◆クリックで開くマイルストーン編集モーダル（プレビュー時は無効）
+  const [editingMs, setEditingMs] = useState<Milestone | null>(null);
 
   // タスクの並び順
   const [sortOrder, setSortOrder] = useState<GanttSortOrder>(
@@ -1343,6 +1346,8 @@ export function GanttView({
                             onMouseEnter={e => setHoveredMs({ ms, x: e.clientX, y: e.clientY })}
                             onMouseMove={e => setHoveredMs(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
                             onMouseLeave={() => setHoveredMs(null)}
+                            onClick={() => { if (!isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
+                            title={isPreview ? undefined : "クリックして編集"}
                             style={{
                               position: "absolute",
                               left: msX - 7,
@@ -1352,7 +1357,7 @@ export function GanttView({
                               border: "2px solid #d97706",
                               zIndex: 4,
                               pointerEvents: "auto",
-                              cursor: "default",
+                              cursor: isPreview ? "default" : "pointer",
                               flexShrink: 0,
                             }}
                           />
@@ -1562,6 +1567,16 @@ export function GanttView({
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
           onDeleted={() => setEditingTaskId(null)}
+        />
+      )}
+
+      {/* マイルストーン編集（◆クリック） */}
+      {!isPreview && editingMs && (
+        <MilestoneEditModal
+          milestone={editingMs}
+          currentUser={currentUser}
+          project={projectById.get(editingMs.project_id) ?? null}
+          onClose={() => setEditingMs(null)}
         />
       )}
 
