@@ -130,7 +130,26 @@ flowchart TD
 
 ---
 
-## 5. 次の一歩（任意・未実施）
-- 各機能モジュールの入口フォルダに短い `README.md`（責務・主要ファイル・注意点）を置く＝「中身のメンテ」を文書で支える。
-- さらに進めるなら **Package by Feature** へフォルダ再編（例：`features/consultation/` 配下に UI・hook・lib をまとめる）。※ import 大量変更を伴うため、やるなら段階的に。
-- `CLAUDE.md`（設計の正本・v2.19）と本地図はセットで維持する。
+## 5. 各モジュールの README（2026-06-03 設置済み）
+主要モジュールの入口フォルダに、責務・主なファイル・注意点をまとめた `README.md` を置いた。
+**改修・バグ探しは、まず本地図でモジュールを特定 → そのフォルダの README → 必要なファイル、の順で読む。**
+
+| モジュール | README |
+|---|---|
+| B AI相談 | `src/components/consultation/README.md` |
+| C 会議読み込み | `src/components/meeting/README.md` |
+| D OKR | `src/components/okr/README.md` |
+| F 管理/設定 | `src/components/admin/README.md` |
+| G オンボーディング | `src/components/tour/README.md` |
+| H グラフ | `src/components/graph/README.md` |
+| A 計画ビュー（概要） | `src/components/dashboard/README.md` |
+| A タスク編集 / マイルストーン | `src/components/task/README.md` / `src/components/milestone/README.md` |
+| 共通基盤：AI基盤 | `src/lib/ai/README.md` |
+| 共通基盤：データ永続化 | `src/lib/supabase/README.md` |
+| 共通基盤：状態管理 | `src/stores/README.md` |
+
+※ E PJ別AI分析・I 通知 は lib/hook 中心の小モジュールのため、本地図と上記READMEで参照（専用READMEなし）。
+
+## 6. さらに先（任意・未実施）
+- **Package by Feature** へのフォルダ再編（例：`features/consultation/` に UI・hook・lib をまとめる）。※ import 大量変更を伴うため、やるなら段階的に。
+- `CLAUDE.md`（設計の正本・v2.19）と本地図・各README はセットで維持する（機能追加のたびに更新）。
