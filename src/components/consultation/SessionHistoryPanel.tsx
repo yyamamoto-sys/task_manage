@@ -32,16 +32,41 @@ function formatDate(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function parseProposalTitles(content: string): string[] {
+interface ParsedProposal {
+  title: string;
+  description: string;
+}
+
+interface ParsedAssistant {
+  proposals: ParsedProposal[];
+  followUps: string[];
+}
+
+/**
+ * assistant ターンの生JSONから、提案（タイトル＋説明本文）と次の相談候補を取り出す。
+ * 履歴は read-only なので反映用フィールドは捨て、人が読める内容だけを抽出する。
+ * 旧実装はタイトルしか拾わず「AIの回答本文が見られない」不具合になっていた。
+ */
+function parseAssistantContent(content: string): ParsedAssistant {
   try {
     const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) return [];
+    if (!jsonMatch) return { proposals: [], followUps: [] };
     const parsed = JSON.parse(jsonMatch[0]);
-    if (Array.isArray(parsed.proposals)) {
-      return (parsed.proposals as { title?: string }[]).map(p => p.title ?? "").filter(Boolean);
-    }
-  } catch { /* ignore */ }
-  return [];
+    const proposals: ParsedProposal[] = Array.isArray(parsed.proposals)
+      ? (parsed.proposals as { title?: string; description?: string }[])
+          .map(p => ({
+            title: typeof p.title === "string" ? p.title : "",
+            description: typeof p.description === "string" ? p.description : "",
+          }))
+          .filter(p => p.title || p.description)
+      : [];
+    const followUps: string[] = Array.isArray(parsed.follow_up_suggestions)
+      ? (parsed.follow_up_suggestions as unknown[]).filter((s): s is string => typeof s === "string")
+      : [];
+    return { proposals, followUps };
+  } catch {
+    return { proposals: [], followUps: [] };
+  }
 }
 
 export function SessionHistoryPanel({ userId, onClose }: Props) {
@@ -109,8 +134,8 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
               );
             }
 
-            // assistantターン：提案タイトル一覧をテキストで表示
-            const titles = parseProposalTitles(turn.content);
+            // assistantターン：AIの回答（提案タイトル＋説明本文）と次の相談候補を表示
+            const { proposals, followUps } = parseAssistantContent(turn.content);
             return (
               <div key={i} style={{
                 padding: "8px 12px",
@@ -119,16 +144,35 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
                 fontSize: "11px", color: "var(--color-text-secondary)",
                 lineHeight: 1.6,
               }}>
-                {titles.length > 0 ? (
+                {proposals.length > 0 ? (
                   <>
-                    <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "4px" }}>
-                      AIの提案（{titles.length}件）
+                    <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
+                      AIの回答（{proposals.length}件）
                     </div>
-                    {titles.map((t, ti) => (
-                      <div key={ti} style={{ paddingLeft: "8px", borderLeft: "2px solid var(--color-border-secondary)", marginBottom: "3px" }}>
-                        {t}
+                    {proposals.map((p, ti) => (
+                      <div key={ti} style={{ paddingLeft: "8px", borderLeft: "2px solid var(--color-border-secondary)", marginBottom: "8px" }}>
+                        {p.title && (
+                          <div style={{ fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "2px" }}>
+                            {p.title}
+                          </div>
+                        )}
+                        {p.description && (
+                          <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+                            {p.description}
+                          </div>
+                        )}
                       </div>
                     ))}
+                    {followUps.length > 0 && (
+                      <div style={{ marginTop: "6px", paddingTop: "6px", borderTop: "1px solid var(--color-border-primary)" }}>
+                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>
+                          次の相談候補
+                        </div>
+                        {followUps.map((f, fi) => (
+                          <div key={fi} style={{ color: "var(--color-text-tertiary)", marginBottom: "2px" }}>・{f}</div>
+                        ))}
+                      </div>
+                    )}
                   </>
                 ) : (
                   <div style={{ color: "var(--color-text-tertiary)" }}>AIからの返信</div>
