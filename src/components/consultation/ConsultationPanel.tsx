@@ -477,7 +477,7 @@ export function ConsultationPanel({
                 <button onClick={() => setIsHistoryOpen(true)} style={headerBtnWhite(false)}>履歴</button>
               )}
               {panelMode === "consult" && hasHistory && (
-                <button onClick={handleReset} style={headerBtnWhite(false)}>リセット</button>
+                <button onClick={handleReset} title="相談をリセット（新しい相談を始める）" aria-label="相談をリセット" style={headerBtnWhite(false)}>↺</button>
               )}
               {panelMode === "consult" && (
                 <button onClick={() => setIsSessionHistoryOpen(true)} title="相談履歴" style={iconBtnWhite}>
@@ -648,7 +648,7 @@ export function ConsultationPanel({
                 </svg>
               )}
             </span>
-            🧠 Thinkingモード（じっくり考える・少し遅い）
+            🧠 Thinking（高品質・少し遅い）
           </button>
 
           {/* 会話履歴（古い→新しいの順。最新のやりとりは下部に表示するので、ここはそれより前のターン） */}
@@ -656,12 +656,9 @@ export function ConsultationPanel({
             <ChatHistory session={{ ...session, turns: historyTurns }} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
           )}
 
-          {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる。会話履歴との二重表示は showSubmittedEcho で防止） */}
+          {/* 送信した相談（吹き出しのみ＝右寄せで「送信済み」が自明なのでラベルは省略） */}
           {showSubmittedEcho && (
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em" }}>
-                送信した相談
-              </div>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <div style={{
                   maxWidth: "85%", padding: "8px 12px",

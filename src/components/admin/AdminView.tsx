@@ -1407,11 +1407,9 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
               <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "4px" }}>
                 ◆ マイルストーン
               </div>
-              {/* 説明（初めての方向け）：何のための機能か・例・ガントでの見え方 */}
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6, marginBottom: "8px" }}>
-                プロジェクトの<b style={{ color: "var(--color-text-secondary)" }}>重要な節目の日付</b>に印をつける機能です（例：キックオフ、β版リリース、納品、審査会、社内レビュー）。
-                タスク（担当者がやる作業）とは別に「<b style={{ color: "var(--color-text-secondary)" }}>この日が大事</b>」という目印を置けます。
-                登録するとガントチャート上に <span style={{ color: "#f59e0b" }}>◆</span> で表示され、チーム全体で締切・節目を意識合わせできます。
+              {/* 説明（1行に圧縮。詳細はガイドへ） */}
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.5, marginBottom: "8px" }}>
+                PJの節目（例：β版リリース）の日付マーカー。ガントに <span style={{ color: "#f59e0b" }}>◆</span> で表示されます。
               </div>
               {/* 既存一覧 */}
               {milestones.filter(ms => ms.project_id === pj.id).length === 0 ? (

@@ -718,8 +718,8 @@ export function GanttView({
             ))}
           </div>
         )}
-        {!isPreview && viewMode === "pj" && <button onClick={expandAll}  style={headerBtnStyle}>すべて開く</button>}
-        {!isPreview && viewMode === "pj" && <button onClick={collapseAll} style={headerBtnStyle}>すべて閉じる</button>}
+        {!isPreview && viewMode === "pj" && <button onClick={expandAll}  title="すべて開く" aria-label="すべて開く" style={headerBtnStyle}>⊞</button>}
+        {!isPreview && viewMode === "pj" && <button onClick={collapseAll} title="すべて閉じる" aria-label="すべて閉じる" style={headerBtnStyle}>⊟</button>}
         {/* タスク並び順トグル */}
         {!isPreview && (
           <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>

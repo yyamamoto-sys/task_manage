@@ -483,12 +483,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             ))}
           </div>
 
-          {/* CSV */}
-          <button onClick={() => exportCSV(filteredTasks, projects, members)} style={{
-            padding: "4px 10px", fontSize: "10px", color: "var(--color-text-secondary)",
+          {/* CSV（アイコンのみ・tooltip） */}
+          <button onClick={() => exportCSV(filteredTasks, projects, members)} title="CSV出力" aria-label="CSV出力" style={{
+            padding: "4px 8px", fontSize: "11px", color: "var(--color-text-secondary)",
             border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
             cursor: "pointer", background: "transparent", whiteSpace: "nowrap",
-          }}>↓ CSV</button>
+          }}>⭳</button>
         </div>
 
         {/* ===== ツールバー 2段目：フィルター群 ===== */}

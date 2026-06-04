@@ -1084,7 +1084,7 @@ interface SidebarProps {
 
 function Sidebar({
   viewMode, setViewMode, projects,
-  mineOnly, onToggleMineOnly, mineOnlyProjectsCount, projectsCount,
+  mineOnly, onToggleMineOnly,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
@@ -1244,16 +1244,6 @@ function Sidebar({
             </div>
           )}
           {(c || pjOpen) && (<>
-          {!c && (
-            <div style={{
-              padding: "0 14px 6px", fontSize: "10px",
-              color: "var(--color-text-tertiary)", lineHeight: 1.4,
-            }}>
-              {mineOnly
-                ? `自分が担当のタスクのみ表示中（該当PJ ${mineOnlyProjectsCount}/${projectsCount}）`
-                : `全タスクを表示中（PJ ${projectsCount}件）`}
-            </div>
-          )}
           <NavItem
             active={selectedProjectId === null && selectedKrId === null}
             icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
