@@ -310,6 +310,13 @@ function TaskCard({
       style={{
         background: "var(--color-bg-primary)",
         border: "1px solid var(--color-border-primary)",
+        // 親子の位置づけを視覚化：子＝左にインデント＋グレーの太い左罫線、親（子を持つ）＝ブランド色の左罫線
+        borderLeft: parentName
+          ? "3px solid var(--color-border-secondary)"
+          : childCount > 0
+            ? "3px solid var(--color-brand)"
+            : "1px solid var(--color-border-primary)",
+        marginLeft: parentName ? "14px" : 0,
         borderRadius: "var(--radius-lg)",
         padding: "9px 11px",
         cursor: "grab",

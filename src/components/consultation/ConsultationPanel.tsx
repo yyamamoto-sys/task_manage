@@ -651,6 +651,11 @@ export function ConsultationPanel({
             🧠 Thinkingモード（じっくり考える・少し遅い）
           </button>
 
+          {/* 会話履歴（古い→新しいの順。最新のやりとりは下部に表示するので、ここはそれより前のターン） */}
+          {hasOlderHistory && (
+            <ChatHistory session={{ ...session, turns: historyTurns }} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
+          )}
+
           {/* 送信した相談（生成中・回答後も「何を送ったか」を確認できる。会話履歴との二重表示は showSubmittedEcho で防止） */}
           {showSubmittedEcho && (
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -728,16 +733,6 @@ export function ConsultationPanel({
           {/* フォローアップボタン */}
           {followUpSuggestions.length > 0 && (
             <FollowUpButtons suggestions={followUpSuggestions} onSelect={handleFollowUpSelect} />
-          )}
-
-          {/* 会話履歴（最新のやりとりは上部で表示済みなので、それより前のターンのみ） */}
-          {hasOlderHistory && (
-            <div>
-              <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "8px", paddingTop: "8px", borderTop: "1px solid var(--color-border-primary)" }}>
-                会話履歴
-              </div>
-              <ChatHistory session={{ ...session, turns: historyTurns }} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
-            </div>
           )}
 
           {/* スクロール余白 */}

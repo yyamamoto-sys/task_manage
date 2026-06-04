@@ -1094,6 +1094,11 @@ function Sidebar({
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
+  // サイドバーのセクション開閉（PJが増えても省略できるように）。localStorage で記憶。
+  const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_pj_open") !== "0"; } catch { return true; } });
+  const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_okr_open") !== "0"; } catch { return true; } });
+  const togglePjOpen  = () => setPjOpen(v => { const n = !v; try { localStorage.setItem("sidebar_pj_open", n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  const toggleOkrOpen = () => setOkrOpen(v => { const n = !v; try { localStorage.setItem("sidebar_okr_open", n ? "1" : "0"); } catch { /* ignore */ } return n; });
   const c = collapsed; // 省略形
 
   return (
@@ -1205,14 +1210,20 @@ function Sidebar({
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "8px 14px 4px",
             }}>
-              <span style={{
-                fontSize: "10px", fontWeight: 600,
-                letterSpacing: "0.05em",
-                color: "var(--color-text-tertiary)",
-                textTransform: "uppercase",
-              }}>
+              <button
+                onClick={togglePjOpen}
+                aria-expanded={pjOpen}
+                title={pjOpen ? "プロジェクト一覧を省略" : "プロジェクト一覧を展開"}
+                style={{
+                  display: "flex", alignItems: "center", gap: "4px",
+                  background: "transparent", border: "none", cursor: "pointer", padding: 0,
+                  fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
+                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
+                }}
+              >
+                <span style={{ fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
                 プロジェクト
-              </span>
+              </button>
               <button
                 onClick={onToggleMineOnly}
                 title={mineOnly ? "クリックで全タスクを表示" : "クリックで自分が担当のタスクのみに絞り込み"}
@@ -1232,6 +1243,7 @@ function Sidebar({
               </button>
             </div>
           )}
+          {(c || pjOpen) && (<>
           {!c && (
             <div style={{
               padding: "0 14px 6px", fontSize: "10px",
@@ -1264,9 +1276,26 @@ function Sidebar({
               「全件」に切り替えると全PJが表示されます。
             </div>
           )}
+          </>)}
           {keyResults.length > 0 && (<>
-            {!c && <SectionLabel>OKRタスク</SectionLabel>}
-            {keyResults.map(kr => (
+            {!c && (
+              <button
+                onClick={toggleOkrOpen}
+                aria-expanded={okrOpen}
+                title={okrOpen ? "OKRタスクを省略" : "OKRタスクを展開"}
+                style={{
+                  display: "flex", alignItems: "center", gap: "4px", width: "100%",
+                  background: "transparent", border: "none", cursor: "pointer",
+                  padding: "8px 14px 4px",
+                  fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
+                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
+                }}
+              >
+                <span style={{ fontSize: "8px", display: "inline-block", transform: okrOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+                OKRタスク
+              </button>
+            )}
+            {(c || okrOpen) && keyResults.map(kr => (
               <NavItem key={kr.id} active={selectedKrId === kr.id}
                 icon={<KrIcon />} label={kr.title} tooltip={kr.title}
                 onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)} collapsed={c}
