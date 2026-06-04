@@ -1,0 +1,125 @@
+# 英語化（i18n）ロードマップ — task_manage
+
+> **目的**：アプリ全体を日本語／英語で切り替えられるようにする。
+> **進め方**：[`module-map.md`](./module-map.md) のモジュール単位で**段階的**に。土台→骨格→機能を1つずつ。
+> **状態**：📝 **計画のみ（実装は未着手）**。最終更新 2026-06-04。
+
+---
+
+## 0. 決定事項（前提）
+
+| 項目 | 決定 |
+|---|---|
+| 実装方式 | **軽量自前 i18n**（依存追加なし。`t("key")` ＋ JA/EN 辞書）。react-i18next は採用しない |
+| 対象範囲 | **3層すべて（段階的）**：① UI文言 ② AIの応答 ③ ガイド/ヘルプ文書 |
+| 翻訳しないもの | **ユーザー入力データ**（PJ名・タスク名・メモ・OKR本文等）＝原文のまま |
+| 既定言語 | 日本語（`ja`）。英語（`en`）を追加。将来3言語目も足せる設計に |
+| 言語の保存 | localStorage（テーマ切替と同じ要領）。端末ごと |
+
+### 規模感（現状＝全部ハードコード日本語）
+- `.tsx` で日本語を含む行 **約3,100・57ファイル**。重いのは **管理(AdminView 348)／OKR系(計約810)／計画ビュー(計約850)／AI相談(計約360)／会議(140)／骨格(MainLayout 139)**。
+- 規模順：**L＝OKR・計画ビュー・管理 / M＝AI相談・会議・骨格・各ビュー / S＝グラフ・マイルストーン・共通UI小物・認証**。
+
+---
+
+## 1. 3つの層と扱い方
+
+| 層 | 中身 | 扱い | 量・優先度 |
+|---|---|---|---|
+| **① UI文言** | ボタン・ラベル・メニュー・トースト・確認文 | `t("key")` に置換＋JA/EN辞書 | 多い・**最優先** |
+| **② AIの応答** | 相談・分析・レポート等の生成文 | プロンプトに言語を渡す（systemPrompt 等に「Respond in {lang}」）。`invokeAI` 経由の各クライアントへ `lang` を伝播 | 中・UI①が一段落してから |
+| **③ ガイド/文書** | `docs/guides/**` の日本語Markdown | 英語版 `docs/guides/en/**` を用意し、ロケールで出し分け（`lib/docs/manifest.ts` を locale 対応に） | 大・**最後でよい** |
+
+---
+
+## 2. 土台の設計（Phase 0 で作るもの・設計案）
+
+> ※下記は実装イメージ。実装時に確定する。
+
+**`src/lib/i18n.ts`（仕組み）**
+```ts
+export type Lang = "ja" | "en";
+// 辞書はモジュールごとに分割し、ここで束ねる（高凝集・モジュール化）
+import { commonJa, commonEn } from "../i18n/common";
+import { planningJa, planningEn } from "../i18n/planning";
+// ...
+const DICT: Record<Lang, Record<string, string>> = {
+  ja: { ...commonJa, ...planningJa, /* ... */ },
+  en: { ...commonEn, ...planningEn, /* ... */ },
+};
+// t("planning.task.add") → 現在言語の文字列（無ければ ja フォールバック＋警告）
+// {name} 等の差し込みにも対応させる
+```
+**言語state＋フック**：zustand の小さな `langStore`（localStorage 同期）＋ `useT()` フック
+（言語切替で再レンダーされるよう、コンポーネントは `const t = useT()` を使う）。
+
+**言語切替トグル**：`MainLayout` のテーマ切替の隣／設定に「🌐 日本語 | English」。
+
+**キー命名規約**：`<module>.<area>.<name>`（例：`consultation.proposal.apply` / `admin.tab.members`）。
+辞書ファイルは **モジュールごと**に持つ（`src/i18n/<module>.ts`）＝英語化もモジュール単位で進む。
+
+**日付/曜日**：`lib/date.ts` を `lang` 対応に（曜日名・フォーマット）。
+
+---
+
+## 3. モジュール別ロードマップ（フェーズ順）
+
+> 各フェーズの完了基準（DoD）：そのモジュールの**画面に日本語ハードコードが残っていない**／
+> 言語切替で日英が切り替わる／`tsc`・テスト・build 通過。
+
+### 🧱 Phase 0：土台（最初・小）
+- `src/lib/i18n.ts`＋`langStore`＋`useT()`＋言語切替トグル＋キー命名規約＋`lib/date.ts` ロケール対応。
+- 既存の `useTheme` を参考にできる。**ここだけは実装が必要だが小さい**。これが無いと他が進まない。
+
+### 🟦 Phase 1：アプリ骨格＋共通UI（みんなが見る枠）
+| 対象 | 主ファイル | 規模 |
+|---|---|---|
+| App Shell / レイアウト | `App.tsx` / `layout/MainLayout.tsx` | M |
+| 認証・ゲスト・初期設定 | `auth/{LoginScreen,UserSelectScreen,SetupWizard}` | S |
+| 共通UI | `components/common/*`（Toast/Confirm/EmptyState/ErrorBoundary 等） | S〜M |
+
+### 🟩 Phase 2：計画ビュー（A・最も使う画面）
+| 対象 | 主ファイル | 規模 |
+|---|---|---|
+| ダッシュボード/カルテ | `dashboard/{DashboardView,ProjectKarte,OnboardingHome}` | M |
+| ガント/カンバン/リスト | `gantt/GanttView` `kanban/KanbanView` `list/ListView` | M×3 |
+| タスク編集/追加 | `task/{TaskEditModal,QuickAddTaskModal,TaskSidePanel}` | M |
+| マイルストーン | `milestone/*` | S |
+
+### 🟪 Phase 3：AI相談（B）＋②AI応答の言語化
+| 対象 | 主ファイル | 規模 |
+|---|---|---|
+| 相談UI | `consultation/*` | M |
+| ②AI応答 | `lib/ai/systemPrompt.ts` ほか各 prompt に `lang` を渡し「英語で回答」分岐 | M（横断） |
+
+### 🟧 Phase 4：OKR（D・最大級）
+- `okr/*` ＋ `lab/{KrJointSessionFlow,KrReportPanel,KrWhyPanel,KrQuarterPlanPanel}` ＋ 各 AI 応答（②）。**ボリューム大**なので、さらに会議ノート/セッション/レポート/なぜなぜ/計画と**小分け**して進める。
+
+### 🟥 Phase 5：管理・設定（F・大）／会議読み込み（C）
+- `admin/{AdminView,TodoDecomposeModal}`（348行・最大の単一ファイル。タブ単位で小分け）。
+- `meeting/MeetingImportPanel`＋②AI応答。
+
+### ⬜ Phase 6：オンボーディング（G）＋グラフ（H）
+- `tour/*`（文面は `tour-guidelines.md` 準拠）・`guide/*`・`graph/GraphView`。
+
+### 📚 別トラック（③ガイド・最後でよい）
+- `docs/guides/en/**` を新設し、`lib/docs/manifest.ts` を locale 対応に。ガイド本文の英訳（量大）。UIが一通り英語化されてから。
+
+---
+
+## 4. 進め方のルール（モジュール化を効かせる）
+1. **1フェーズ＝1〜数モジュール**を完結させる（辞書ファイルもモジュール単位）。混ぜない。
+2. 着手前に該当モジュールの `README.md` と本計画の該当行を見る。
+3. **共通UI（Phase 1）を先に**英語化すると、以降の機能モジュールで共通部品の文言が自動的に揃う。
+4. 各フェーズ完了で `tsc`・vitest・build を通し、言語切替で日英が切り替わることを目視確認。
+5. 新規コードは**最初から `t()` で書く**（日本語ハードコードを増やさない）。
+
+## 5. 留意点・リスク
+- **量が多い**：UI①だけで約3,100行。一気にやらず必ずフェーズ分割。
+- **AI応答②**：英語UIなのに回答が日本語、を避けるため `lang` をプロンプトまで伝播。ユーザーデータ（日本語のPJ名等）が混じる点は許容（翻訳しない）。
+- **ガイド③**：英訳の維持コストが高い。優先度最後。まずUIだけでも実用価値は高い。
+- **既存テスト**：日本語の文言をassertしているテスト（systemPrompt.test 等）は、英語化で文言を変える箇所に注意（キー化で吸収）。
+
+## 6. 最初の一歩（合意できれば）
+**Phase 0（土台）だけを実装**して「型」を作り、**Phase 1 の小さな1画面（例：ログイン画面）だけ**を日英対応にして動作確認する——ここまでで「やり方が回る」ことを確認してから Phase 2 以降へ。
+（※本ドキュメント時点では未実装。実装着手は別途指示で。）
