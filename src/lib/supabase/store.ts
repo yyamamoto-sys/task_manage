@@ -175,6 +175,7 @@ export async function fetchAllData() {
         : t.todo_id ? [t.todo_id as string] : [],
       assignee_member_ids: Array.isArray(t.assignee_member_ids) ? t.assignee_member_ids as string[]
         : t.assignee_member_id ? [t.assignee_member_id as string] : [],
+      tags: Array.isArray(t.tags) ? t.tags as string[] : [],
     })) as Task[],
     projectTaskForces:    (ptf.data        ?? []) as ProjectTaskForce[],
     quarterlyObjectives:    (qObjs.data  ?? []) as QuarterlyObjective[],

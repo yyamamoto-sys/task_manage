@@ -26,7 +26,7 @@ interface Props {
   mineOnly?: boolean;
 }
 
-type GroupBy = "project" | "assignee" | "status";
+type GroupBy = "project" | "assignee" | "status" | "tag";
 type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee";
 type SortDir = "asc" | "desc";
 
@@ -295,6 +295,22 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       return members.filter(m => (map.get(m.id)?.length ?? 0) > 0)
         .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)! }));
     }
+    if (groupBy === "tag") {
+      // タグ別：1タスクが複数タグを持つ場合は各タグ群に重複して現れる。タグなしは末尾にまとめる。
+      const map = new Map<string, Task[]>();
+      const noTag: Task[] = [];
+      filteredTasks.forEach(t => {
+        const tags = t.tags ?? [];
+        if (tags.length === 0) { noTag.push(t); return; }
+        tags.forEach(tag => { if (!map.has(tag)) map.set(tag, []); map.get(tag)!.push(t); });
+      });
+      const tagGroups = [...map.entries()]
+        .sort(([a], [b]) => a.localeCompare(b, "ja"))
+        .map(([tag, tasks]) => ({ label: `# ${tag}`, color: "var(--color-brand)", tasks }));
+      const noTagGroup = noTag.length > 0
+        ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag }] : [];
+      return [...tagGroups, ...noTagGroup];
+    }
     return (["in_progress", "todo", "done"] as const)
       .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s) }))
       .filter(g => g.tasks.length > 0);
@@ -415,7 +431,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         }}>
           {/* グループ切替 */}
           <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
-            {(["project", "assignee", "status"] as const).map(g => (
+            {(["project", "assignee", "status", "tag"] as const).map(g => (
               <button key={g} onClick={() => setGroupBy(g)} style={{
                 padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
                 fontWeight: groupBy === g ? "500" : "400",
@@ -423,7 +439,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                 color: groupBy === g ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
                 boxShadow: groupBy === g ? "var(--shadow-sm)" : "none",
               }}>
-                {g === "project" ? "PJ別" : g === "assignee" ? "担当者別" : "ステータス別"}
+                {g === "project" ? "PJ別" : g === "assignee" ? "担当者別" : g === "status" ? "ステータス別" : "タグ別"}
               </button>
             ))}
           </div>
@@ -692,6 +708,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           {isParent && prog && (
                             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
                           )}
+                          {(task.tags?.length ?? 0) > 0 && (
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
+                              {task.tags!.map((tag, ti) => (
+                                <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
+                              ))}
+                            </div>
+                          )}
                           {parentNote && (
                             <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {parentNote}</div>
                           )}
@@ -876,6 +899,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                   <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
                                 )}
                               </div>
+                              {/* タグ */}
+                              {(task.tags?.length ?? 0) > 0 && (
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
+                                  {task.tags!.map((tag, ti) => (
+                                    <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
+                                  ))}
+                                </div>
+                              )}
                               {/* 親タスク名の注記（ネストできない/孤児の子） */}
                               {parentNote && (
                                 <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>

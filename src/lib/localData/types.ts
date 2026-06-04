@@ -154,6 +154,8 @@ export interface Task {
   parent_task_id?: string | null;
   /** 同一親（またはPJ直下）内での手動並び順 */
   display_order?: number;
+  /** 自由入力タグ（例：「懇親会」「レイアウト」）。同一PJ内でのグルーピング/ソートに使う。DBは text[]（migration 20260604） */
+  tags?: string[];
 }
 
 export interface Milestone {

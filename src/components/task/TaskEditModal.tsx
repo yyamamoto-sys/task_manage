@@ -110,7 +110,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     due_date:             originalTask?.due_date ?? "",
     estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
     comment:              originalTask?.comment ?? "",
+    tags:                 originalTask?.tags ?? [] as string[],
   });
+  const [tagDraft, setTagDraft] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
@@ -138,6 +140,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
       due_date:            form.due_date || null,
       estimated_hours:     isNaN(hours) ? null : hours,
       comment:             form.comment,
+      tags:                form.tags,
       // updated_at は触らない（CLAUDE.md Section 5）。zustand 側で
       // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
       updated_by:          currentUser.id,
@@ -527,6 +530,49 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 minHeight: "80px",
               }}
             />
+          </FieldSection>
+
+          {/* タグ（自由入力・同一PJ内のグルーピング/ソート用） */}
+          <FieldSection label="タグ">
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", alignItems: "center" }}>
+              {form.tags.map((tag, i) => (
+                <span key={`${tag}-${i}`} style={{
+                  display: "inline-flex", alignItems: "center", gap: "4px",
+                  fontSize: "11px", padding: "2px 4px 2px 9px",
+                  background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+                  border: "1px solid var(--color-brand-border)", borderRadius: "var(--radius-full)",
+                }}>
+                  {tag}
+                  <button
+                    onClick={() => setForm(f => ({ ...f, tags: f.tags.filter((_, j) => j !== i) }))}
+                    aria-label={`タグ「${tag}」を削除`}
+                    style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-purple)", fontSize: "12px", lineHeight: 1, padding: "0 3px" }}
+                  >×</button>
+                </span>
+              ))}
+              <input
+                value={tagDraft}
+                onChange={e => setTagDraft(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const v = tagDraft.trim();
+                    if (v && !form.tags.includes(v)) setForm(f => ({ ...f, tags: [...f.tags, v] }));
+                    setTagDraft("");
+                  } else if (e.key === "Backspace" && !tagDraft && form.tags.length > 0) {
+                    setForm(f => ({ ...f, tags: f.tags.slice(0, -1) }));
+                  }
+                }}
+                onBlur={() => {
+                  const v = tagDraft.trim();
+                  if (v && !form.tags.includes(v)) setForm(f => ({ ...f, tags: [...f.tags, v] }));
+                  setTagDraft("");
+                }}
+                placeholder={form.tags.length === 0 ? "例：懇親会（Enterで追加）" : "タグを追加…"}
+                maxLength={20}
+                style={{ ...inputSm, flex: 1, minWidth: "120px", width: "auto" }}
+              />
+            </div>
           </FieldSection>
 
           {/* メタ情報 */}

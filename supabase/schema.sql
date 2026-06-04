@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   due_date            date,
   estimated_hours     numeric,
   comment             text NOT NULL DEFAULT '',
+  tags                text[] NOT NULL DEFAULT '{}',     -- 自由入力タグ（migration 20260604）
   is_deleted          boolean NOT NULL DEFAULT false,
   deleted_at          timestamptz,
   deleted_by          text,
@@ -176,6 +177,10 @@ CREATE TABLE IF NOT EXISTS tasks (
   updated_at          timestamptz NOT NULL DEFAULT now(),
   updated_by          text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}';
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id text REFERENCES tasks(id);  -- migration 20260527
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS display_order integer NOT NULL DEFAULT 0;  -- migration 20260527
 
 -- ===== Task ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS task_task_forces (
