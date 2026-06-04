@@ -263,6 +263,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 親タスクのドラッグ並べ替え：dragged を target の位置へ移動し、同一PJ直下の
   // 最上位タスクの display_order を振り直して保存する（saveTask→DB→Realtimeで全員に反映）。
+  // 基準は「今“見えている”順」（filteredTasks）。期日順などで並んでいても、見た目の順を
+  // そのまま起点に dragged を target の位置へ移すので、どの並びからでも直感的に動く。
   const reorderParent = useCallback(async (draggedId: string, targetId: string) => {
     if (draggedId === targetId) return;
     const dragged = allTasks.find(t => t.id === draggedId);
@@ -270,12 +272,15 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     if (!dragged || !target) return;
     // 最上位タスク同士・同じPJ（グループ）内のみ
     if (dragged.parent_task_id || target.parent_task_id) return;
-    if ((dragged.project_id ?? null) !== (target.project_id ?? null)) return;
-    // 同一PJ直下の最上位タスクを現在の表示順（display_order）で取得
-    const siblings = allTasks
-      .filter(t => !t.parent_task_id && (t.project_id ?? null) === (dragged.project_id ?? null))
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
-    const ids = siblings.map(t => t.id).filter(id => id !== draggedId);
+    const pjId = dragged.project_id ?? null;
+    if (pjId !== (target.project_id ?? null)) return;
+    const isTop = (t: Task) => !t.parent_task_id && (t.project_id ?? null) === pjId;
+    // 見えている順を起点に、フィルタで隠れている分は display_order 順で末尾に足して全体順を作る
+    const visible = filteredTasks.filter(isTop);
+    const visibleSet = new Set(visible.map(t => t.id));
+    const hidden = allTasks.filter(t => isTop(t) && !visibleSet.has(t.id))
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const ids = [...visible, ...hidden].map(t => t.id).filter(id => id !== draggedId);
     const targetIdx = ids.indexOf(targetId);
     if (targetIdx < 0) return;
     ids.splice(targetIdx, 0, draggedId); // target の直前に挿入
@@ -288,7 +293,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     } catch (err) {
       showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
     }
-  }, [allTasks, saveTask, currentUser.id]);
+  }, [allTasks, filteredTasks, saveTask, currentUser.id]);
 
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
@@ -876,13 +881,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         const collapsed = collapsedIds.has(task.id);
                         const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
                         // 手動順＋PJ別のとき、最上位タスクをドラッグで並べ替え可能
-                        const canDrag = sortKey === "manual" && groupBy === "project" && !task.parent_task_id;
+                        // ⠿ は常時表示（PJ別の最上位タスク）。ドラッグしたら自動で手動順に切替。
+                        const canDrag = groupBy === "project" && !task.parent_task_id;
+                        // PJ別では全行でハンドル列の幅を確保（親=⠿/子=スペーサー）してチェックボックス列を揃える
+                        const showHandleCol = groupBy === "project";
                         return (
                           <tr key={task.id}
                             onClick={() => setSelectedTaskId(isSel ? null : task.id)}
                             onDragOver={canDrag ? (e => { if (draggingId && draggingId !== task.id) { e.preventDefault(); setDragOverId(task.id); } }) : undefined}
                             onDragLeave={canDrag ? (() => setDragOverId(d => d === task.id ? null : d)) : undefined}
-                            onDrop={canDrag ? (e => { e.preventDefault(); if (draggingId) reorderParent(draggingId, task.id); setDraggingId(null); setDragOverId(null); }) : undefined}
+                            onDrop={canDrag ? (e => { e.preventDefault(); if (draggingId) { reorderParent(draggingId, task.id); if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); } } setDraggingId(null); setDragOverId(null); }) : undefined}
                             style={{
                             borderBottom: "1px solid var(--color-bg-tertiary)",
                             borderTop: dragOverId === task.id ? "2px solid var(--color-brand)" : undefined,
@@ -897,14 +905,19 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
                                 onClick={e => e.stopPropagation()}>
                               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                {canDrag && (
-                                  <span
-                                    draggable
-                                    onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
-                                    onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
-                                    title="ドラッグして並べ替え"
-                                    style={{ cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
-                                  >⠿</span>
+                                {/* ハンドル列：親=⠿（ドラッグ可）/ 子=同幅スペーサー（チェックボックス列を揃える） */}
+                                {showHandleCol && (
+                                  canDrag ? (
+                                    <span
+                                      draggable
+                                      onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
+                                      onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+                                      title="ドラッグして並べ替え"
+                                      style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
+                                    >⠿</span>
+                                  ) : (
+                                    <span aria-hidden style={{ width: 12, flexShrink: 0 }} />
+                                  )
                                 )}
                                 <input
                                   type="checkbox"
