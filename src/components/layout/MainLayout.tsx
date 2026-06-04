@@ -34,6 +34,7 @@ const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardVie
 const OnboardingHome     = lazyWithRetry(() => import("../dashboard/OnboardingHome").then(m => ({ default: m.OnboardingHome })), "OnboardingHome");
 const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
+const CalendarLabView    = lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView");
 const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
 const KrJointSessionFlow = lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow");
 const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
@@ -113,6 +114,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // AIパネルをドラッグでリサイズ中はwidth/rightの遷移アニメを切る（カーソル追従の遅延を防ぐ）
   const [isConsultResizing, setIsConsultResizing] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
@@ -540,6 +542,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
           </Suspense>
         )}
+        {isCalendarOpen && (
+          <Suspense fallback={<ViewLoading />}>
+            <CalendarLabView onClose={() => setIsCalendarOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+          </Suspense>
+        )}
         {isKrReportOpen && (
           <Suspense fallback={<ViewLoading />}>
             <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
@@ -582,6 +589,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               </div>
               {[
                 { icon: "🕸️", label: "関係グラフ", desc: "PJ・タスクの関係を可視化", onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: "カレンダー", desc: "タスクの期日を月カレンダーで表示", onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: "KRセッション記録", desc: "文字起こしからチェックイン・ウィン記録", onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "📊", label: "KRレポート生成", desc: "議事メモからKRレポートをAI生成", onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🔍", label: "KRなぜなぜ分析", desc: "AIとの対話で根本原因を5Whys形式で掘り下げ", onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
@@ -960,6 +968,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         theme={theme}
         onToggleTheme={toggleTheme}
         onOpenGraph={() => setIsGraphOpen(true)}
+        onOpenCalendar={() => setIsCalendarOpen(true)}
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
@@ -977,6 +986,15 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         <Suspense fallback={<ViewLoading />}>
           <GraphView
             onClose={() => setIsGraphOpen(false)}
+            currentUser={currentUser}
+            onOpenTask={taskId => setGraphEditTaskId(taskId)}
+          />
+        </Suspense>
+      )}
+      {isCalendarOpen && (
+        <Suspense fallback={<ViewLoading />}>
+          <CalendarLabView
+            onClose={() => setIsCalendarOpen(false)}
             currentUser={currentUser}
             onOpenTask={taskId => setGraphEditTaskId(taskId)}
           />
@@ -1069,6 +1087,7 @@ interface SidebarProps {
   theme: "light" | "dark";
   onToggleTheme: () => void;
   onOpenGraph: () => void;
+  onOpenCalendar: () => void;
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
@@ -1088,7 +1107,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
+  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
   onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
@@ -1316,6 +1335,16 @@ function Sidebar({
             label="関係グラフ"
             tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
             onClick={onOpenGraph}
+            collapsed={c}
+          />
+        )}
+        {labOpen && (
+          <NavItem
+            active={false}
+            icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
+            label="カレンダー"
+            tooltip="タスクの期日を月カレンダーで表示（ラボ）"
+            onClick={onOpenCalendar}
             collapsed={c}
           />
         )}
