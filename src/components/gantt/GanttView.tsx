@@ -727,6 +727,8 @@ export function GanttView({
               <button
                 key={s}
                 onClick={() => changeSortOrder(s)}
+                title={s === "date" ? "期日順に並べる" : "名前順に並べる"}
+                aria-label={s === "date" ? "期日順" : "名前順"}
                 style={{
                   ...headerBtnStyle,
                   padding: "3px 8px",
@@ -737,7 +739,7 @@ export function GanttView({
                   boxShadow: sortOrder === s ? "var(--shadow-sm)" : "none",
                 }}
               >
-                {s === "date" ? "期日順" : "名前順"}
+                {s === "date" ? "📅" : "🔠"}
               </button>
             ))}
           </div>

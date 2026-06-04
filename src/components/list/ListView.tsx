@@ -478,7 +478,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   color: density === d ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
                   boxShadow: density === d ? "var(--shadow-sm)" : "none",
                 }}>
-                {d === "simple" ? "シンプル" : "詳細"}
+                {d === "simple" ? "▤" : "▦"}
               </button>
             ))}
           </div>
@@ -529,9 +529,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
           <div style={{ width: 1, height: 14, background: "var(--color-border-primary)", margin: "0 2px" }} />
 
-          <Chip active={filterMyOnly}   onClick={() => { setFilterMyOnly(v => !v); setFilterMember("all"); }} label="自分担当" />
-          <Chip active={filterThisWeek} onClick={() => setFilterThisWeek(v => !v)} label="今週期限" />
-          <Chip active={filterHideDone} onClick={() => setFilterHideDone(v => !v)} label="完了を隠す" />
+          <Chip active={filterMyOnly}   onClick={() => { setFilterMyOnly(v => !v); setFilterMember("all"); }} label="👤" title="自分担当のみ" />
+          <Chip active={filterThisWeek} onClick={() => setFilterThisWeek(v => !v)} label="📅" title="今週期限のみ" />
+          <Chip active={filterHideDone} onClick={() => setFilterHideDone(v => !v)} label="🙈" title="完了を隠す" />
 
           {/* フィルタークリア */}
           {activeFilterCount > 0 && (
@@ -539,11 +539,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               setFilterStatus("all"); setFilterPriority("all");
               setFilterMember("all"); setFilterMyOnly(false);
               setFilterThisWeek(false); setFilterHideDone(false);
-            }} style={{
-              marginLeft: "auto", padding: "2px 8px", fontSize: "10px",
+            }} title="フィルターをクリア" aria-label="フィルターをクリア" style={{
+              marginLeft: "auto", padding: "2px 8px", fontSize: "11px",
               color: "var(--color-text-tertiary)", border: "none",
               background: "transparent", cursor: "pointer",
-            }}>✕ クリア</button>
+            }}>✕</button>
           )}
         </div>
 
@@ -1009,10 +1009,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   );
 }
 
-function Chip({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
+function Chip({ active, onClick, label, title }: { active: boolean; onClick: () => void; label: string; title?: string }) {
   return (
-    <button onClick={onClick} style={{
-      padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)", cursor: "pointer",
+    <button onClick={onClick} title={title} aria-label={title ?? label} style={{
+      padding: "3px 9px", fontSize: "12px", borderRadius: "var(--radius-full)", cursor: "pointer",
+      lineHeight: 1.2,
       fontWeight: active ? "500" : "400",
       background: active ? "var(--color-brand-light)" : "transparent",
       color: active ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
