@@ -343,12 +343,12 @@ function TaskCard({
         </div>
       ) : null}
 
-      {/* 子タスク：親タスク名（子であることを明示） */}
+      {/* 子タスク：親タスク名（インデント＋左罫線で子は自明なので「の子タスク」は省略） */}
       {parentName && (
-        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginBottom: "5px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "3px", marginBottom: "5px" }} title={`「${parentName}」の子タスク`}>
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>↳</span>
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
-            {parentName} の子タスク
+            {parentName}
           </span>
         </div>
       )}

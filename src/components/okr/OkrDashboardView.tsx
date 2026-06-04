@@ -57,10 +57,10 @@ function getThisMonday(): string {
 }
 
 // 上位タブ（3本）。「OKR管理」配下にサブタブ①〜④＋概要を持つ
-const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string }[] = [
+const TOP_TABS: { key: "okr" | "why" | "plan"; icon: string; label: string; title?: string }[] = [
   { key: "okr",  icon: "🎯", label: "OKR管理" },
   { key: "why",  icon: "🔍", label: "なぜなぜ" },
-  { key: "plan", icon: "📅", label: "計画（マネージャー向け）" },
+  { key: "plan", icon: "📅", label: "計画", title: "計画（マネージャー向け）" },
 ];
 const OKR_SUB_TABS: { tool: OkrActiveTool; label: string }[] = [
   { tool: "note",     label: "① 会議ノート" },
@@ -246,6 +246,7 @@ export function OkrDashboardView({
             <button
               key={tab.key}
               onClick={() => onSetActiveTool(tab.key === "okr" ? (inOkrGroup ? activeTool : "note") : tab.key)}
+              title={tab.title ?? tab.label}
               style={{
                 display: "flex", alignItems: "center", gap: "5px", padding: "10px 18px",
                 background: "transparent", border: "none",
