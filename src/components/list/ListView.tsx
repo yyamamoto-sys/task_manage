@@ -27,7 +27,7 @@ interface Props {
 }
 
 type GroupBy = "project" | "assignee" | "status" | "tag";
-type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee";
+type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 type SortDir = "asc" | "desc";
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
@@ -117,6 +117,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 値＝親タスクID、null＝閉じている。
   const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
 
+  // 親タスクのドラッグ並べ替え（手動順モード時）。display_order を更新して全員に共有。
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [dragOverId, setDragOverId] = useState<string | null>(null);
+
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
@@ -161,6 +165,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       tasks = tasks.filter(t => t.name.toLowerCase().includes(q) || t.comment.toLowerCase().includes(q));
     }
     return [...tasks].sort((a, b) => {
+      // 手動順：display_order（ドラッグで保存した並び）をそのまま尊重する（完了を下に送らない）
+      if (sortKey === "manual") {
+        return (a.display_order ?? 0) - (b.display_order ?? 0)
+          || (a.created_at ?? "").localeCompare(b.created_at ?? "");
+      }
       // 完了は常に下に。sortKey=status のときは既存ロジック（昇順/降順）を尊重し優先しない
       if (sortKey !== "status") {
         const aDone = a.status === "done" ? 1 : 0;
@@ -251,6 +260,35 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       showToast(`一括削除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
     }
   }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
+
+  // 親タスクのドラッグ並べ替え：dragged を target の位置へ移動し、同一PJ直下の
+  // 最上位タスクの display_order を振り直して保存する（saveTask→DB→Realtimeで全員に反映）。
+  const reorderParent = useCallback(async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const dragged = allTasks.find(t => t.id === draggedId);
+    const target  = allTasks.find(t => t.id === targetId);
+    if (!dragged || !target) return;
+    // 最上位タスク同士・同じPJ（グループ）内のみ
+    if (dragged.parent_task_id || target.parent_task_id) return;
+    if ((dragged.project_id ?? null) !== (target.project_id ?? null)) return;
+    // 同一PJ直下の最上位タスクを現在の表示順（display_order）で取得
+    const siblings = allTasks
+      .filter(t => !t.parent_task_id && (t.project_id ?? null) === (dragged.project_id ?? null))
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0) || (a.created_at ?? "").localeCompare(b.created_at ?? ""));
+    const ids = siblings.map(t => t.id).filter(id => id !== draggedId);
+    const targetIdx = ids.indexOf(targetId);
+    if (targetIdx < 0) return;
+    ids.splice(targetIdx, 0, draggedId); // target の直前に挿入
+    try {
+      await Promise.all(ids.map((id, idx) => {
+        const t = allTasks.find(x => x.id === id);
+        if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
+        return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
+      }));
+    } catch (err) {
+      showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, saveTask, currentUser.id]);
 
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
@@ -445,6 +483,24 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               </button>
             ))}
           </div>
+
+          {/* 手動並べ替えトグル（ON時：PJ別＋display_order順＝ドラッグで親タスクを並べ替え可能） */}
+          <button
+            onClick={() => {
+              const enable = sortKey !== "manual";
+              setSortKeyState(enable ? "manual" : "due_date"); lsSet("sortKey", enable ? "manual" : "due_date");
+              if (enable) { setGroupByState("project"); lsSet("groupBy", "project"); }
+            }}
+            title={sortKey === "manual" ? "手動並べ替えを終了（期日順に戻す）" : "親タスクをドラッグで並べ替え（全員に共有）"}
+            aria-label="手動並べ替え"
+            style={{
+              padding: "3px 9px", fontSize: "11px", borderRadius: "var(--radius-md)", cursor: "pointer",
+              border: `1px solid ${sortKey === "manual" ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
+              background: sortKey === "manual" ? "var(--color-brand-light)" : "transparent",
+              color: sortKey === "manual" ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
+              whiteSpace: "nowrap", flexShrink: 0,
+            }}
+          >⠿ 並べ替え</button>
 
           {/* 検索 */}
           <input value={searchText} onChange={e => setSearchText(e.target.value)}
@@ -819,9 +875,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         const canAddChild = !task.parent_task_id;
                         const collapsed = collapsedIds.has(task.id);
                         const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
+                        // 手動順＋PJ別のとき、最上位タスクをドラッグで並べ替え可能
+                        const canDrag = sortKey === "manual" && groupBy === "project" && !task.parent_task_id;
                         return (
-                          <tr key={task.id} onClick={() => setSelectedTaskId(isSel ? null : task.id)} style={{
+                          <tr key={task.id}
+                            onClick={() => setSelectedTaskId(isSel ? null : task.id)}
+                            onDragOver={canDrag ? (e => { if (draggingId && draggingId !== task.id) { e.preventDefault(); setDragOverId(task.id); } }) : undefined}
+                            onDragLeave={canDrag ? (() => setDragOverId(d => d === task.id ? null : d)) : undefined}
+                            onDrop={canDrag ? (e => { e.preventDefault(); if (draggingId) reorderParent(draggingId, task.id); setDraggingId(null); setDragOverId(null); }) : undefined}
+                            style={{
                             borderBottom: "1px solid var(--color-bg-tertiary)",
+                            borderTop: dragOverId === task.id ? "2px solid var(--color-brand)" : undefined,
                             background: selectedIds.has(task.id)
                               ? "var(--color-brand-light)"
                               : isSel ? "var(--color-brand-light)"
@@ -829,16 +893,27 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
                             boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
                           }}>
-                            {/* チェックボックス（行選択） */}
+                            {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
                             <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
                                 onClick={e => e.stopPropagation()}>
-                              <input
-                                type="checkbox"
-                                checked={selectedIds.has(task.id)}
-                                onChange={() => toggleSelect(task.id)}
-                                aria-label={`${task.name} を選択`}
-                                style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
-                              />
+                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                                {canDrag && (
+                                  <span
+                                    draggable
+                                    onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
+                                    onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
+                                    title="ドラッグして並べ替え"
+                                    style={{ cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
+                                  >⠿</span>
+                                )}
+                                <input
+                                  type="checkbox"
+                                  checked={selectedIds.has(task.id)}
+                                  onChange={() => toggleSelect(task.id)}
+                                  aria-label={`${task.name} を選択`}
+                                  style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
+                                />
+                              </div>
                             </td>
                             {/* 担当者 */}
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
