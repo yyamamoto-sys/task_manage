@@ -34,22 +34,23 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
   const tasks      = useMemo(() => active(rawTasks).filter(t => !!t.due_date), [rawTasks]);
   const milestones = useMemo(() => (rawMilestones ?? []).filter(m => !m.is_deleted), [rawMilestones]);
 
-  const today = useMemo(() => new Date(), []);
-  const todayStr = toStr(today);
-  const [ym, setYm] = useState<{ y: number; m: number }>({ y: today.getFullYear(), m: today.getMonth() });
+  const todayStr = toStr(new Date());
+  const [ym, setYm] = useState<{ y: number; m: number }>(() => { const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() }; });
   const [mineOnly, setMineOnly] = useState(false);
+  const [hideDone, setHideDone] = useState(true); // 完了タスクは既定で非表示
 
   // 表示中タスク（自分のみフィルタ）→ 期日ごとにまとめる
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>();
     for (const t of tasks) {
       if (mineOnly && !isAssignedTo(t, currentUser.id)) continue;
+      if (hideDone && t.status === "done") continue; // 完了タスクを除外
       const key = t.due_date as string;
       if (!map.has(key)) map.set(key, []);
       map.get(key)!.push(t);
     }
     return map;
-  }, [tasks, mineOnly, currentUser.id]);
+  }, [tasks, mineOnly, hideDone, currentUser.id]);
 
   const milestonesByDate = useMemo(() => {
     const map = new Map<string, { name: string; pjColor?: string }[]>();
@@ -73,7 +74,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
 
   const goPrev  = () => setYm(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }));
   const goNext  = () => setYm(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }));
-  const goToday = () => setYm({ y: today.getFullYear(), m: today.getMonth() });
+  const goToday = () => { const n = new Date(); setYm({ y: n.getFullYear(), m: n.getMonth() }); };
 
   const headerBtn: React.CSSProperties = {
     padding: "4px 10px", fontSize: "12px", cursor: "pointer",
@@ -114,6 +115,16 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
             borderColor: mineOnly ? "var(--color-brand-border)" : "var(--color-border-primary)",
           }}
         >👤 自分のみ</button>
+        <button
+          onClick={() => setHideDone(v => !v)}
+          title={hideDone ? "完了タスクも表示する" : "完了タスクを非表示にする"}
+          style={{
+            ...headerBtn,
+            background: hideDone ? "var(--color-bg-secondary)" : "var(--color-brand-light)",
+            color: hideDone ? "var(--color-text-secondary)" : "var(--color-text-purple)",
+            borderColor: hideDone ? "var(--color-border-primary)" : "var(--color-brand-border)",
+          }}
+        >🙈 完了を隠す</button>
 
         <div style={{ flex: 1 }} />
         <button onClick={onClose} title="閉じる" aria-label="閉じる" style={{ ...headerBtn, fontSize: "16px", padding: "2px 10px" }}>×</button>
@@ -131,7 +142,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
 
       {/* カレンダー本体（6週） */}
       <div style={{ flex: 1, display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gridTemplateRows: "repeat(6, 1fr)", overflow: "auto" }}>
-        {cells.map((d, i) => {
+        {cells.map((d) => {
           const ds = toStr(d);
           const inMonth = d.getMonth() === ym.m;
           const isToday = ds === todayStr;
@@ -139,9 +150,12 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
           const dayMs = milestonesByDate.get(ds) ?? [];
           const weekday = d.getDay();
           return (
-            <div key={i} style={{
-              minHeight: 0, borderRight: (i % 7 !== 6) ? "1px solid var(--color-border-primary)" : "none",
+            <div key={ds} style={{
+              minHeight: 0,
+              borderRight: (d.getDay() !== 6) ? "1px solid var(--color-border-primary)" : "none",
               borderBottom: "1px solid var(--color-border-primary)",
+              outline: isToday ? "2px solid var(--color-brand)" : "none",
+              outlineOffset: "-2px",
               padding: "4px 5px", overflow: "hidden",
               display: "flex", flexDirection: "column", gap: "2px",
               background: isToday ? "var(--color-brand-light)" : inMonth ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
