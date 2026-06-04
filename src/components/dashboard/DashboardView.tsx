@@ -436,8 +436,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             <span style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: "500" }}>
               「{selectedProject.name}」で絞り込み中
             </span>
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              — このPJのタスクだけを表示しています（リマインダーは全PJ・自分宛て）
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }} title="このPJのタスクだけを表示中。リマインダーは全PJ・自分宛てです">
+              （このPJのみ）
             </span>
             <div style={{ flex: 1 }} />
             {onClearProjectFilter && (

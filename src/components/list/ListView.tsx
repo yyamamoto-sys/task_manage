@@ -408,14 +408,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const emptyStateProps = activeFilterCount > 0 || searchText.trim()
     ? {
         icon: "🔍",
-        title: "条件に一致するタスクがありません",
-        hint: "フィルタや検索条件を変更してみてください。",
+        title: "該当するタスクがありません",
+        hint: "",
         actions: [{ label: "フィルタを解除", onClick: clearAllFilters, variant: "primary" as const }],
       }
     : {
         icon: "📋",
         title: "タスクがまだありません",
-        hint: "画面右下の ＋ ボタン、またはダッシュボードから追加できます。",
+        hint: "右下の ＋ から追加できます。",
       };
 
   return (
@@ -432,14 +432,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           {/* グループ切替 */}
           <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
             {(["project", "assignee", "status", "tag"] as const).map(g => (
-              <button key={g} onClick={() => setGroupBy(g)} style={{
+              <button key={g} onClick={() => setGroupBy(g)}
+                title={g === "project" ? "プロジェクト別にまとめる" : g === "assignee" ? "担当者別にまとめる" : g === "status" ? "ステータス別にまとめる" : "タグ別にまとめる"}
+                style={{
                 padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
                 fontWeight: groupBy === g ? "500" : "400",
                 background: groupBy === g ? "var(--color-bg-primary)" : "transparent",
                 color: groupBy === g ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
                 boxShadow: groupBy === g ? "var(--shadow-sm)" : "none",
               }}>
-                {g === "project" ? "PJ別" : g === "assignee" ? "担当者別" : g === "status" ? "ステータス別" : "タグ別"}
+                {g === "project" ? "PJ" : g === "assignee" ? "担当" : g === "status" ? "状態" : "タグ"}
               </button>
             ))}
           </div>
