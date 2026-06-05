@@ -220,13 +220,19 @@
 
 /* ===== リセット ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-html, body, #root { height: 100%; }
+html { height: 100%; }
 body {
+  height: 100%;
   font-family: var(--font-sans);
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-text-primary);
-  background: var(--color-bg-secondary);
+  /* 外周余白の背景色。#root の角丸カードがこの上に浮かぶ */
+  background: var(--color-bg-tertiary);
+  /* 四方に余白（画面端ミチミチ感の解消） */
+  padding: 8px;
+  /* スクロール時も余白を保つ */
+  min-height: 100%;
   -webkit-font-smoothing: antialiased;  /* macOS Chrome/Safari */
   -moz-osx-font-smoothing: grayscale;   /* macOS Firefox */
   /* 約物の詰め・カーニング・等幅数字。Refined Stationery 風の組版精度 */
@@ -668,4 +674,18 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
+  /* モバイルは余白を極小にして表示領域を最大化 */
+  body { padding: 4px; }
+}
+
+/* ===== アプリ外枠（余白＋角丸）===== */
+/* body の padding が「外周の隙間」を作り、#root がその上に角丸のカードとして浮かぶ。
+   position:fixed な子要素（モーダル・オーバーレイ）は #root に依存しないため影響なし。 */
+#root {
+  height: 100%;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  /* 右端の scrollbar が body の角丸からはみ出さないようにクリップ */
+  isolation: isolate;
 }
