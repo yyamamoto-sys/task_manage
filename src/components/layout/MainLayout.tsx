@@ -171,6 +171,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     return () => window.removeEventListener("tour:action", onTourAction);
   }, []);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
+  // カレンダー/グラフなど zIndex が高いオーバーレイ上でタスク編集を開く専用 state。
+  // TaskEditModal の zIndex(200) < CalendarLabView(250) のため、カレンダーの上に
+  // 出るよう zIndex:300 のラッパーでレンダリングする。
+  const [calendarEditTaskId, setCalendarEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
@@ -544,7 +548,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         )}
         {isCalendarOpen && (
           <Suspense fallback={<ViewLoading />}>
-            <CalendarLabView onClose={() => setIsCalendarOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+            <CalendarLabView onClose={() => setIsCalendarOpen(false)} currentUser={currentUser} onOpenTask={taskId => setCalendarEditTaskId(taskId)} />
           </Suspense>
         )}
         {isKrReportOpen && (
@@ -564,6 +568,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         )}
         {graphEditTaskId && (
           <TaskEditModal taskId={graphEditTaskId} currentUser={currentUser} onClose={() => setGraphEditTaskId(null)} />
+        )}
+        {/* カレンダーからのタスク編集：zIndex:300 でカレンダー(250)の上に出す */}
+        {calendarEditTaskId && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+            <TaskEditModal taskId={calendarEditTaskId} currentUser={currentUser} onClose={() => setCalendarEditTaskId(null)} />
+          </div>
         )}
         {aiEditTaskId && (
           <TaskEditModal taskId={aiEditTaskId} currentUser={currentUser} onClose={() => setAiEditTaskId(null)} />
@@ -996,7 +1006,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <CalendarLabView
             onClose={() => setIsCalendarOpen(false)}
             currentUser={currentUser}
-            onOpenTask={taskId => setGraphEditTaskId(taskId)}
+            onOpenTask={taskId => setCalendarEditTaskId(taskId)}
           />
         </Suspense>
       )}
@@ -1030,6 +1040,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           currentUser={currentUser}
           onClose={() => setGraphEditTaskId(null)}
         />
+      )}
+      {/* カレンダーからのタスク編集：zIndex:300 でカレンダー(250)の上に出す */}
+      {calendarEditTaskId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+          <TaskEditModal
+            taskId={calendarEditTaskId}
+            currentUser={currentUser}
+            onClose={() => setCalendarEditTaskId(null)}
+          />
+        </div>
       )}
       {aiEditTaskId && (
         <TaskEditModal
