@@ -615,7 +615,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             <CustomSelect value={filterMember} onChange={value => { setFilterMember(value); setFilterMyOnly(false); }}
               options={[
                 { value: "all", label: "担当者：全員" },
-                ...members.map(m => ({ value: m.id, label: m.display_name })),
+                ...[...members].sort((a, b) =>
+                  a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+                ).map(m => ({ value: m.id, label: m.display_name })),
               ]}
               searchable searchPlaceholder="メンバーで検索..."
               style={{ width: "150px" }} />
@@ -689,7 +691,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               onChange={value => { if (value) bulkUpdateAssignee(value); }}
               options={[
                 { value: "", label: "担当者を変更…" },
-                ...members.map(m => ({ value: m.id, label: m.display_name })),
+                ...[...members].sort((a, b) =>
+                  a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+                ).map(m => ({ value: m.id, label: m.display_name })),
               ]}
               searchable searchPlaceholder="メンバーで検索..."
               style={{ width: "160px" }} />

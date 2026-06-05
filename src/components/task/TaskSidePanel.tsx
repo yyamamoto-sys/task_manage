@@ -388,7 +388,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           }}
           options={[
             { value: "", label: "＋ 担当者を追加..." },
-            ...members.filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+            ...[...members].sort((a, b) =>
+              a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+            ).filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
           ]}
           searchable searchPlaceholder="メンバーで検索..."
           style={{ marginBottom: "12px" }} />

@@ -357,7 +357,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               }}
               options={[
                 { value: "", label: "＋ 担当者を追加..." },
-                ...members.filter(m => !form.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                // 自分自身を先頭に、残りは元の順（すでに追加済みの担当者は除く）
+                ...[...members].sort((a, b) =>
+                  a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+                ).filter(m => !form.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
               ]}
               searchable searchPlaceholder="メンバーで検索..."
             />

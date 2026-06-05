@@ -276,7 +276,10 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
             onChange={setAssigneeId}
             options={[
               { value: "", label: "（なし）" },
-              ...members.map(m => ({ value: m.id, label: m.display_name })),
+              // 自分自身を先頭に、残りは元の順
+              ...[...members].sort((a, b) =>
+                a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+              ).map(m => ({ value: m.id, label: m.display_name })),
             ]}
             placeholder="担当者を選択..."
             searchable

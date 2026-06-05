@@ -254,6 +254,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           taskForces={taskForces}
           todos={todos}
           defaultProjectId={selectedProject?.id ?? projects[0]?.id ?? ""}
+          currentUser={currentUser}
           onAdd={handleAddTask}
           onClose={() => setShowAddModal(false)}
         />
@@ -460,7 +461,7 @@ function TaskCard({
 // ===== タスク追加モーダル =====
 
 function AddTaskModal({
-  defaultStatus, projects, members, taskForces, todos, defaultProjectId, onAdd, onClose,
+  defaultStatus, projects, members, taskForces, todos, defaultProjectId, currentUser, onAdd, onClose,
 }: {
   defaultStatus: Task["status"];
   projects: Project[];
@@ -468,6 +469,7 @@ function AddTaskModal({
   taskForces: TaskForce[];
   todos: ToDo[];
   defaultProjectId: string;
+  currentUser: Member;
   onAdd: (name: string, assigneeIds: string[], projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[], todoIds: string[]) => void;
   onClose: () => void;
 }) {
@@ -560,7 +562,9 @@ function AddTaskModal({
               }}
                 options={[
                   { value: "", label: "＋ 追加..." },
-                  ...members.filter(m => !assigneeIds.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                  ...[...members].sort((a, b) =>
+                    a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+                  ).filter(m => !assigneeIds.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
                 ]}
                 searchable searchPlaceholder="メンバーで検索..." />
             </Field>
