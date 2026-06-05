@@ -295,6 +295,37 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     }
   }, [allTasks, filteredTasks, saveTask, currentUser.id]);
 
+  // 子タスクのドラッグ並べ替え：同一親の子同士の display_order を振り直す。
+  // 基準は「今見えている順」。親が異なる場合は拒否。saveTask→DB→Realtimeで全員に反映。
+  const reorderChild = useCallback(async (draggedId: string, targetId: string) => {
+    if (draggedId === targetId) return;
+    const dragged = allTasks.find(t => t.id === draggedId);
+    const target  = allTasks.find(t => t.id === targetId);
+    if (!dragged || !target) return;
+    // 子タスク同士・同じ親のみ
+    if (!dragged.parent_task_id || dragged.parent_task_id !== target.parent_task_id) return;
+    const parentId = dragged.parent_task_id;
+    const isSibling = (t: Task) => t.parent_task_id === parentId;
+    // 見えている順を起点に、フィルタで隠れた子は display_order 順で末尾に補完
+    const visible = filteredTasks.filter(isSibling);
+    const visibleSet = new Set(visible.map(t => t.id));
+    const hidden = allTasks.filter(t => isSibling(t) && !visibleSet.has(t.id))
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+    const ids = [...visible, ...hidden].map(t => t.id).filter(id => id !== draggedId);
+    const targetIdx = ids.indexOf(targetId);
+    if (targetIdx < 0) return;
+    ids.splice(targetIdx, 0, draggedId);
+    try {
+      await Promise.all(ids.map((id, idx) => {
+        const t = allTasks.find(x => x.id === id);
+        if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
+        return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
+      }));
+    } catch (err) {
+      showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, filteredTasks, saveTask, currentUser.id]);
+
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
   //   QuickAddTaskModal.handleSave 側に一元化されている）。
@@ -880,17 +911,30 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         const canAddChild = !task.parent_task_id;
                         const collapsed = collapsedIds.has(task.id);
                         const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
-                        // 手動順＋PJ別のとき、最上位タスクをドラッグで並べ替え可能
-                        // ⠿ は常時表示（PJ別の最上位タスク）。ドラッグしたら自動で手動順に切替。
-                        const canDrag = groupBy === "project" && !task.parent_task_id;
-                        // PJ別では全行でハンドル列の幅を確保（親=⠿/子=スペーサー）してチェックボックス列を揃える
+                        // PJ別：親=⠿で親並べ替え、子=⠿で子並べ替え（同一親内のみ）
+                        const canDragParent = groupBy === "project" && !task.parent_task_id;
+                        const canDragChild  = groupBy === "project" && !!task.parent_task_id;
+                        const canDrag = canDragParent || canDragChild;
+                        // PJ別では全行でハンドル列の幅を確保してチェックボックス列を揃える
                         const showHandleCol = groupBy === "project";
                         return (
                           <tr key={task.id}
                             onClick={() => setSelectedTaskId(isSel ? null : task.id)}
                             onDragOver={canDrag ? (e => { if (draggingId && draggingId !== task.id) { e.preventDefault(); setDragOverId(task.id); } }) : undefined}
                             onDragLeave={canDrag ? (() => setDragOverId(d => d === task.id ? null : d)) : undefined}
-                            onDrop={canDrag ? (e => { e.preventDefault(); if (draggingId) { reorderParent(draggingId, task.id); if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); } } setDraggingId(null); setDragOverId(null); }) : undefined}
+                            onDrop={canDrag ? (e => {
+                              e.preventDefault();
+                              if (draggingId) {
+                                if (canDragParent) {
+                                  reorderParent(draggingId, task.id);
+                                  if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+                                } else {
+                                  reorderChild(draggingId, task.id);
+                                  if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+                                }
+                              }
+                              setDraggingId(null); setDragOverId(null);
+                            }) : undefined}
                             style={{
                             borderBottom: "1px solid var(--color-bg-tertiary)",
                             borderTop: dragOverId === task.id ? "2px solid var(--color-brand)" : undefined,
@@ -905,14 +949,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
                                 onClick={e => e.stopPropagation()}>
                               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                {/* ハンドル列：親=⠿（ドラッグ可）/ 子=同幅スペーサー（チェックボックス列を揃える） */}
+                                {/* ハンドル列：親=⠿ / 子=⠿（同一親内で並べ替え） */}
                                 {showHandleCol && (
                                   canDrag ? (
                                     <span
                                       draggable
                                       onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
                                       onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
-                                      title="ドラッグして並べ替え"
+                                      title={canDragChild ? "ドラッグして子タスクの順序を変更" : "ドラッグして並べ替え"}
                                       style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
                                     >⠿</span>
                                   ) : (
