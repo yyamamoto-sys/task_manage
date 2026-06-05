@@ -546,11 +546,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
           </Suspense>
         )}
-        {isCalendarOpen && (
-          <Suspense fallback={<ViewLoading />}>
-            <CalendarLabView onClose={() => setIsCalendarOpen(false)} currentUser={currentUser} onOpenTask={taskId => setCalendarEditTaskId(taskId)} />
-          </Suspense>
-        )}
+        {/* CalendarLabView はモバイル・PC 共通で PC return ブロック側に1つだけ置く
+            ここに置くと PC では2つ同時にDOMに存在してしまい印刷2ページ・マイルストーン重複が起きる */}
         {isKrReportOpen && (
           <Suspense fallback={<ViewLoading />}>
             <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />

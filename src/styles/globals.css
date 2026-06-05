@@ -699,16 +699,31 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
  * body/#root を visibility:hidden で一括非表示にし、.cal-body だけを復元する。
  * ※ :has() は Chrome 105+ / Firefox 121+ / Safari 15.4+ で対応（2024年以降のモダンブラウザ） */
 @media print {
+  /* カレンダー以外を非表示 */
   body:has(.cal-body) {
     visibility: hidden;
     overflow: visible !important;
+    padding: 0 !important;    /* 余白帯を消して印刷領域を最大化 */
   }
   body:has(.cal-body) #root {
     overflow: visible !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+  /* cal-root（暗幕ラッパー）を静的配置にして独立ページにならないようにする
+   * position:fixed は印刷で全ページ繰り返されるため absolute+height:100dvh に変更 */
+  body:has(.cal-body) .cal-root {
+    visibility: visible !important;
+    position: absolute !important;
+    inset: 0 !important;
+    background: transparent !important;
+    padding: 0 !important;
+    display: block !important;
+    height: 100dvh !important;
   }
   body:has(.cal-body) .cal-body {
     visibility: visible !important;
-    position: fixed !important;
+    position: absolute !important;   /* fixed→absolute：全ページ繰り返しを防止 */
     inset: 0 !important;
     border-radius: 0 !important;
     box-shadow: none !important;
@@ -723,7 +738,7 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   body:has(.cal-body) .cal-note-area { display: flex !important; }
   body:has(.cal-body) .cal-grid {
     flex: 1 !important;
-    page-break-inside: avoid;
     overflow: visible !important;
+    page-break-inside: avoid;
   }
 }
