@@ -90,19 +90,40 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
       {/* ===== 印刷スタイル ===== */}
       <style>{`
         @media print {
-          /* ヘッダー操作ボタン・閉じるボタンを非表示 */
+          /* ===== 印刷専用レイアウト =====
+           * body / #root を含む全要素を一旦 visibility:hidden で非表示にし、
+           * .cal-body とその子孫だけを visibility:visible で復元する。
+           * これにより サイドバー・ナビ・背景 は一切印刷されない。
+           */
+          body, #root { visibility: hidden; overflow: visible !important; }
+
+          /* カレンダー本体だけをページ全体に展開して可視化 */
+          .cal-body {
+            visibility: visible !important;
+            position: fixed !important;
+            inset: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+            max-width: none !important;
+            max-height: none !important;
+            overflow: visible !important;
+            display: flex !important;
+            flex-direction: column !important;
+          }
+          .cal-body * { visibility: visible !important; }
+
+          /* 操作ボタン類は印刷から除外（ただし .cal-body の子なので visibility を戻す必要あり） */
           .cal-print-hide { display: none !important; }
+
           /* 備考欄を強制展開 */
-          .cal-note-area { display: block !important; }
-          /* オーバーレイを外してページ全体に印刷 */
-          .cal-root {
-            position: static !important;
-            height: auto !important;
+          .cal-note-area { display: flex !important; }
+
+          /* カレンダーグリッドをページいっぱいに伸ばす */
+          .cal-grid {
+            flex: 1 !important;
+            page-break-inside: avoid;
             overflow: visible !important;
           }
-          .cal-body { overflow: visible !important; }
-          /* セルがページをまたがないように */
-          .cal-grid { page-break-inside: avoid; }
         }
       `}</style>
 
