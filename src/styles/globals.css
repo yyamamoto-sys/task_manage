@@ -233,6 +233,8 @@ body {
   padding: 8px;
   /* スクロール時も余白を保つ */
   min-height: 100%;
+  /* 余白帯は視覚的装飾のみ。クリックは #root に通過させる（エッジ付近のボタンが押せなくなる問題の解消） */
+  pointer-events: none;
   -webkit-font-smoothing: antialiased;  /* macOS Chrome/Safari */
   -moz-osx-font-smoothing: grayscale;   /* macOS Firefox */
   /* 約物の詰め・カーニング・等幅数字。Refined Stationery 風の組版精度 */
@@ -674,8 +676,8 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
   }
-  /* モバイルは余白を極小にして表示領域を最大化 */
-  body { padding: 4px; }
+  /* モバイルは余白なしで表示領域を最大化（タップ領域を守るため） */
+  body { padding: 0; }
 }
 
 /* ===== アプリ外枠（余白＋角丸）===== */
@@ -688,6 +690,8 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   box-shadow: var(--shadow-lg);
   /* 右端の scrollbar が body の角丸からはみ出さないようにクリップ */
   isolation: isolate;
+  /* body の pointer-events:none を上書きしてクリックを確実に受け取る */
+  pointer-events: auto;
 }
 
 /* ===== カレンダー印刷（#2: <style>タグをコンポーネント外に移動してDOMへの重複注入を防ぐ） =====
