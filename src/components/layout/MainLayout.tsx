@@ -713,6 +713,19 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             {theme === "dark" ? "☀" : "☾"}
           </button>
+          {/* カレンダー（ラボ） */}
+          <button
+            onClick={() => setIsCalendarOpen(true)}
+            title="カレンダー（タスクの期日を月表示）"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "15px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >🗓️</button>
           <button
             onClick={onLogout}
             style={{ background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
@@ -1466,6 +1479,12 @@ function Sidebar({
               {theme === "dark" ? "☀" : "☾"}
             </button>
           )}
+          {/* カレンダー（サイドバー：折りたたみ時もアイコンで表示） */}
+          <button
+            onClick={onOpenCalendar}
+            style={{ fontSize: "14px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+            title="カレンダー（タスクの期日を月表示）"
+          >🗓️</button>
           {!c && (
             <button
               onClick={onLogout}
