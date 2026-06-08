@@ -18,6 +18,7 @@ import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { extractMentions, mentionsEqual } from "../../lib/mentions";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 
@@ -177,6 +178,27 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     return () => clearTimeout(timer);
   }, [form]);
 
+  // モーダルを閉じるときに finalized_mentions を確定保存する。
+  // 自動保存はコメント変化のたびに走るが finalized_mentions は触らない。
+  // 閉じる時点のコメントから @mentions を抽出し、前回と異なれば DB に保存する。
+  // この列の変化を useMentionNotifications が監視することで「閉じた時のみ通知」を実現する。
+  const handleClose = useCallback(() => {
+    if (originalTask) {
+      const current = extractMentions(form.comment);
+      const previous = originalTask.finalized_mentions ?? [];
+      if (!mentionsEqual(current, previous)) {
+        // fire-and-forget: 保存完了を待たずに閉じる（Supabase 呼び出しは非同期で継続）
+        void saveTask({
+          ...originalTask,
+          comment:             form.comment,
+          finalized_mentions:  current,
+          updated_by:          currentUser.id,
+        });
+      }
+    }
+    onClose();
+  }, [originalTask, form.comment, currentUser.id, saveTask, onClose]);
+
   const handleDelete = useCallback(async () => {
     if (!originalTask) return;
     if (!await confirmDialog(`「${originalTask.name}」を削除しますか？`)) return;
@@ -203,7 +225,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
         justifyContent: "center",
         paddingTop: isMobile ? 0 : "60px",
       }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
     >
       <div
         className="animate-fadeIn"
@@ -256,7 +278,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
           {/* 保存状態インジケータ */}
           <SaveIndicator status={saveStatus} />
 
-          <button onClick={onClose} aria-label="閉じる" title="閉じる" style={{
+          <button onClick={handleClose} aria-label="閉じる" title="閉じる" style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: "16px", color: "var(--color-text-tertiary)", flexShrink: 0,
           }}>✕</button>

@@ -156,6 +156,8 @@ export interface Task {
   display_order?: number;
   /** 自由入力タグ（例：「懇親会」「レイアウト」）。同一PJ内でのグルーピング/ソートに使う。DBは text[]（migration 20260604） */
   tags?: string[];
+  /** メンション通知の確定スナップショット。モーダルを閉じたときだけ更新。useMentionNotifications がこれを監視する（migration 20260608） */
+  finalized_mentions?: string[];
 }
 
 export interface Milestone {
