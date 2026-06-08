@@ -3,10 +3,13 @@
 // コメント・メモ欄の @ メンション対応 textarea。
 // "@" を入力するとメンバーサジェストが Portal で表示され、選択すると @short_name を挿入する。
 // createPortal で body 直下に描画するため、モーダル内でも z-index 問題が起きない。
+//
+// 注意: onChange / value を useCallback の依存に入れると TaskEditModal 側でインライン関数が
+// 毎レンダー再生成され handleChange が常に古い onChange を参照する stale closure が発生する。
+// そのため onChange は ref で保持し、select は ta.value (DOM値) を直接参照する。
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { active } from "../../lib/localData/localStore";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -20,11 +23,15 @@ interface Props {
 
 export function MentionTextarea({ value, onChange, members, rows = 4, placeholder, style }: Props) {
   const taRef = useRef<HTMLTextAreaElement>(null);
-  const [open, setOpen]     = useState(false);
-  const [query, setQuery]   = useState("");
-  const [pos, setPos]       = useState({ top: 0, left: 0, width: 0 });
+  const [open, setOpen]   = useState(false);
+  const [query, setQuery] = useState("");
+  const [pos, setPos]     = useState({ top: 0, left: 0, width: 0 });
 
-  const activeMembers = active(members);
+  // onChange は毎レンダーで参照が変わりうるので ref で保持する
+  const onChangeRef = useRef(onChange);
+  useEffect(() => { onChangeRef.current = onChange; });
+
+  const activeMembers = members.filter(m => !m.is_deleted);
   const filtered = activeMembers.filter(m =>
     query === "" ||
     m.display_name.toLowerCase().includes(query.toLowerCase()) ||
@@ -32,43 +39,44 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
   );
 
   // "@" から始まる入力中の単語を検出してサジェストを開閉する
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value;
-    onChange(v);
+    onChangeRef.current(v);
 
     const cursor = e.target.selectionStart ?? 0;
     const before = v.slice(0, cursor);
-    const m = before.match(/@([^\s@]*)$/);
-    if (m) {
-      setQuery(m[1]);
+    const match = before.match(/@([^\s@]*)$/);
+    if (match) {
+      setQuery(match[1]);
       const rect = e.target.getBoundingClientRect();
       setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
       setOpen(true);
     } else {
       setOpen(false);
     }
-  }, [onChange]);
+  };
 
-  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape" && open) { setOpen(false); e.stopPropagation(); }
-  }, [open]);
+  };
 
   // メンバーを選択して @short_name を挿入
-  const select = useCallback((m: Member) => {
+  // ta.value（DOM値）を使うことで stale な value prop を参照しない
+  const select = (member: Member) => {
     const ta = taRef.current;
     if (!ta) return;
     const cursor = ta.selectionStart ?? 0;
-    const before = value.slice(0, cursor);
-    const match  = before.match(/@([^\s@]*)$/);
+    const currentVal = ta.value;
+    const before = currentVal.slice(0, cursor);
+    const match = before.match(/@([^\s@]*)$/);
     if (!match) { setOpen(false); return; }
-    const start   = cursor - match[0].length;
-    const newVal  = value.slice(0, start) + `@${m.short_name} ` + value.slice(cursor);
-    onChange(newVal);
+    const start  = cursor - match[0].length;
+    const newVal = currentVal.slice(0, start) + `@${member.short_name} ` + currentVal.slice(cursor);
+    onChangeRef.current(newVal);
     setOpen(false);
-    // カーソルをメンション末尾に移動
-    const newCursor = start + m.short_name.length + 2;
+    const newCursor = start + member.short_name.length + 2;
     setTimeout(() => { ta.focus(); ta.setSelectionRange(newCursor, newCursor); }, 0);
-  }, [value, onChange]);
+  };
 
   // ポップアップ外クリックで閉じる
   useEffect(() => {

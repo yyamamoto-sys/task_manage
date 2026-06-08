@@ -158,6 +158,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     } catch { /* saveMember 側で ConflictError をトースト処理 */ }
   };
 
+  // 自分がメンションされているタスク（未完了・@short_name がコメントに含まれる）
+  const mentionedTasks = useMemo(() => {
+    const token = `@${currentUser.short_name}`;
+    return allTasks.filter(t => t.status !== "done" && (t.comment ?? "").includes(token));
+  }, [allTasks, currentUser.short_name]);
+
   // 今週のタスク
   const thisWeekTasks = useMemo(
     () => filteredTasks.filter(t =>
@@ -855,9 +861,67 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           </Card>
           )}
 
+          {/* ⑤ メンション（@自分が含まれるタスク） */}
+          {mentionedTasks.length > 0 && (
+            <Card
+              title="自分へのメンション"
+              badge={`${mentionedTasks.length}件`}
+              order={5}
+            >
+              {mentionedTasks.map(task => {
+                const m   = members.find(mb => mb.id === task.updated_by);
+                const pj  = projects.find(p => p.id === task.project_id);
+                const token = `@${currentUser.short_name}`;
+                // コメントからメンション周辺の抜粋を作る（前後20文字）
+                const idx = (task.comment ?? "").indexOf(token);
+                const snippet = idx >= 0
+                  ? "…" + (task.comment ?? "").slice(Math.max(0, idx - 10), idx + token.length + 20).trim() + "…"
+                  : "";
+                return (
+                  <div
+                    key={task.id}
+                    onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
+                    style={{
+                      padding: "8px 0",
+                      borderBottom: "1px solid var(--color-border-primary)",
+                      cursor: onOpenTask ? "pointer" : "default",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      {m && (
+                        <span style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
+                          fontSize: "9px", fontWeight: 700,
+                          background: m.color_bg || "var(--color-brand-primary)",
+                          color: m.color_text || "#fff",
+                        }}>
+                          {m.initials}
+                        </span>
+                      )}
+                      <span style={{ fontSize: "12px", fontWeight: 500, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {task.name}
+                      </span>
+                      {pj && (
+                        <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                          {pj.name}
+                        </span>
+                      )}
+                    </div>
+                    {snippet && (
+                      <div style={{ fontSize: "10px", color: "var(--color-text-secondary)", marginTop: "2px", paddingLeft: "24px" }}>
+                        {snippet}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </Card>
+          )}
+
         </div>
 
-        {/* ⑤ ToDo進捗一覧（フルwidth） */}
+        {/* ⑥ ToDo進捗一覧（フルwidth） */}
         {todoProgress.length > 0 && (
           <div style={{ marginTop: "14px" }}>
             <Card title="ToDo 進捗一覧">
