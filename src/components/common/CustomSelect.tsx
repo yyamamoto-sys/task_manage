@@ -183,6 +183,7 @@ export function CustomSelect({
             display: "flex",
             flexDirection: "column",
             padding: "4px",
+            pointerEvents: "auto",  // body { pointer-events:none } の影響を Portal 要素で打ち消す
           }}
         >
           {searchable && (
