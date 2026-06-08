@@ -19,6 +19,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
+import { MentionTextarea } from "../common/MentionTextarea";
 
 interface Props {
   taskId: string;
@@ -516,22 +517,15 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             </FieldSection>
           </div>
 
-          {/* コメント */}
+          {/* コメント（@ でメンバーをメンション可） */}
           <FieldSection label="コメント・メモ">
-            <textarea
+            <MentionTextarea
               value={form.comment}
-              onChange={e => setForm(f => ({ ...f, comment: e.target.value }))}
+              onChange={v => setForm(f => ({ ...f, comment: v }))}
+              members={allMembers}
               rows={5}
-              placeholder={
-                "メモやURLを入力できます\n" +
-                "例：https://docs.example.com"
-              }
-              style={{
-                ...inputSm,
-                resize: "vertical",
-                lineHeight: 1.6,
-                minHeight: "80px",
-              }}
+              placeholder={"メモやURLを入力できます\n@名前 でメンション・通知できます"}
+              style={{ ...inputSm, resize: "vertical", lineHeight: 1.6, minHeight: "80px" }}
             />
           </FieldSection>
 

@@ -4,6 +4,7 @@ import { useTheme } from "../../hooks/useTheme";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
+import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -134,6 +135,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   // 期限のブラウザ通知（自分の notify_pref==="browser" のときだけ発火・アプリ表示中のみ）
   useDeadlineNotifications(currentUser.id);
+  // @メンション通知（コメントに @自分 が新たに現れたらブラウザ通知）
+  useMentionNotifications(currentUser.id);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);
@@ -869,9 +872,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     );
   }
 
-  // PC レイアウト
+  // PC レイアウト（height: 100% = #root に追従。100vh だと body padding 分だけ下部がはみ出てクリップされる）
   return (
-    <div style={{ display: "flex", height: "100vh", overflow: "hidden" }}>
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
       {onboardingOverlay}
       {tourInviteDialog}
 

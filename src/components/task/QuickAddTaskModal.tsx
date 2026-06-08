@@ -6,6 +6,7 @@ import { useState, useMemo } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
+import { MentionTextarea } from "../common/MentionTextarea";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
 import { parentTaskCandidates } from "../../lib/taskHierarchy";
@@ -475,14 +476,15 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           </div>
         )}
 
-        {/* メモ */}
+        {/* メモ（@ でメンバーをメンション可） */}
         <div style={{ marginBottom: "16px" }}>
           <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>メモ（任意）</div>
-          <textarea
+          <MentionTextarea
             value={comment}
-            onChange={e => setComment(e.target.value)}
-            placeholder="補足・メモを入力..."
+            onChange={setComment}
+            members={members}
             rows={2}
+            placeholder="補足・メモを入力... @名前 でメンション"
             style={{
               width: "100%", padding: "8px 12px", fontSize: "12px", lineHeight: 1.6,
               border: "1px solid var(--color-border-primary)",
