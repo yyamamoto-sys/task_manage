@@ -36,6 +36,7 @@ const OnboardingHome     = lazyWithRetry(() => import("../dashboard/OnboardingHo
 const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
 const CalendarLabView    = lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView");
+const ProjectStructureView = lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView");
 const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
 const KrJointSessionFlow = lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow");
 const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
@@ -116,6 +117,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isConsultResizing, setIsConsultResizing] = useState(false);
   const [isGraphOpen,   setIsGraphOpen]   = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
+  const [isStructureOpen, setIsStructureOpen] = useState(false);
   const [isKrReportOpen, setIsKrReportOpen] = useState(false);
   const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
   const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
@@ -566,6 +568,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
           </Suspense>
         )}
+        {isStructureOpen && (
+          <Suspense fallback={<ViewLoading />}>
+            <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
+          </Suspense>
+        )}
         {graphEditTaskId && (
           <TaskEditModal taskId={graphEditTaskId} currentUser={currentUser} onClose={() => setGraphEditTaskId(null)} />
         )}
@@ -598,6 +605,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 🧪 ラボ機能
               </div>
               {[
+                { icon: "🏢", label: "体制図", desc: "PJの役割・担当体制を図示", onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🕸️", label: "関係グラフ", desc: "PJ・タスクの関係を可視化", onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: "カレンダー", desc: "タスクの期日を月カレンダーで表示", onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: "KRセッション記録", desc: "文字起こしからチェックイン・ウィン記録", onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
@@ -992,6 +1000,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onToggleTheme={toggleTheme}
         onOpenGraph={() => setIsGraphOpen(true)}
         onOpenCalendar={() => setIsCalendarOpen(true)}
+        onOpenStructure={() => setIsStructureOpen(true)}
         onOpenKrReport={() => setIsKrReportOpen(true)}
         onOpenKrSession={() => setIsKrSessionOpen(true)}
         onOpenKrWhy={() => setIsKrWhyOpen(true)}
@@ -1020,6 +1029,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             onClose={() => setIsCalendarOpen(false)}
             currentUser={currentUser}
             onOpenTask={taskId => setCalendarEditTaskId(taskId)}
+          />
+        </Suspense>
+      )}
+      {isStructureOpen && (
+        <Suspense fallback={<ViewLoading />}>
+          <ProjectStructureView
+            onClose={() => setIsStructureOpen(false)}
+            currentUser={currentUser}
           />
         </Suspense>
       )}
@@ -1121,6 +1138,7 @@ interface SidebarProps {
   onToggleTheme: () => void;
   onOpenGraph: () => void;
   onOpenCalendar: () => void;
+  onOpenStructure: () => void;
   onOpenKrReport: () => void;
   onOpenKrSession: () => void;
   onOpenKrWhy: () => void;
@@ -1140,7 +1158,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
+  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
   onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
@@ -1349,39 +1367,83 @@ function Sidebar({
         {/* 計画管理：ラボセクション */}
         <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
           {c ? (
-            <button onClick={() => setLabOpen(o => !o)} title="ラボ"
-              style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px 0", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "15px" }}
-            >🧪</button>
+            <>
+              <button onClick={() => setLabOpen(o => !o)} title="ラボ"
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px 0", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "15px" }}
+              >🧪</button>
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<span style={{ fontSize: "13px" }}>🏢</span>}
+                  label="体制図"
+                  tooltip="PJの役割・担当体制を図示"
+                  onClick={onOpenStructure}
+                  collapsed={c}
+                />
+              )}
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<GraphIcon />}
+                  label="関係グラフ"
+                  tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
+                  onClick={onOpenGraph}
+                  collapsed={c}
+                />
+              )}
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
+                  label="カレンダー"
+                  tooltip="タスクの期日を月カレンダーで表示（ラボ）"
+                  onClick={onOpenCalendar}
+                  collapsed={c}
+                />
+              )}
+            </>
           ) : (
-            <button onClick={() => setLabOpen(o => !o)}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: "7px", padding: "6px 10px", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "11px" }}
-            >
-              <span style={{ fontSize: "13px" }}>🧪</span>
-              <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
-              <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
-            </button>
-        )}
-        {labOpen && (
-          <NavItem
-            active={false}
-            icon={<GraphIcon />}
-            label="関係グラフ"
-            tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
-            onClick={onOpenGraph}
-            collapsed={c}
-          />
-        )}
-        {labOpen && (
-          <NavItem
-            active={false}
-            icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
-            label="カレンダー"
-            tooltip="タスクの期日を月カレンダーで表示（ラボ）"
-            onClick={onOpenCalendar}
-            collapsed={c}
-          />
-        )}
-      </div>
+            <>
+              <button onClick={() => setLabOpen(o => !o)}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: "7px", padding: "6px 10px", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "11px" }}
+              >
+                <span style={{ fontSize: "13px" }}>🧪</span>
+                <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
+                <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
+              </button>
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<span style={{ fontSize: "13px" }}>🏢</span>}
+                  label="体制図"
+                  tooltip="PJの役割・担当体制を図示"
+                  onClick={onOpenStructure}
+                  collapsed={c}
+                />
+              )}
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<GraphIcon />}
+                  label="関係グラフ"
+                  tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
+                  onClick={onOpenGraph}
+                  collapsed={c}
+                />
+              )}
+              {labOpen && (
+                <NavItem
+                  active={false}
+                  icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
+                  label="カレンダー"
+                  tooltip="タスクの期日を月カレンダーで表示（ラボ）"
+                  onClick={onOpenCalendar}
+                  collapsed={c}
+                />
+              )}
+            </>
+          )}
+        </div>
       </>) : (<>
         {/* OKR管理：KR一覧（フィルター用） */}
         <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>

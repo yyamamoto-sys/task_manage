@@ -745,6 +745,11 @@ export function ConsultationPanel({
           flexShrink: 0,
           display: "flex", flexDirection: "column", gap: "8px",
         }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "2px" }}>
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+              Ctrl+Enter で送信
+            </span>
+          </div>
           <textarea
             ref={textareaRef}
             value={inputText}
@@ -759,7 +764,7 @@ export function ConsultationPanel({
               borderRadius: "var(--radius-md)",
               background: callState === "loading" ? "var(--color-bg-tertiary)" : "var(--color-bg-secondary)",
               color: "var(--color-text-primary)",
-              resize: "vertical", lineHeight: 1.6, minHeight: "72px",
+              resize: "vertical", lineHeight: 1.6, minHeight: "72px", maxHeight: "200px", overflowY: "auto",
               outline: "none",
             }}
           />
@@ -769,10 +774,7 @@ export function ConsultationPanel({
               提案 {selectedProposalIds.size}件を選択中 — 送信すると選択した提案へのフィードバックとして送られます
             </div>
           )}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
-              Ctrl+Enter で送信
-            </span>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
             <button
               onClick={handleSubmit}
               disabled={!inputText.trim() || callState === "loading"}

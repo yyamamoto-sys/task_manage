@@ -115,6 +115,8 @@ export interface Project {
   owner_member_ids: string[];
   /** PJに参加するメンバーID配列。オーナーとは別の「関与者」。空配列も可・未設定でも可。 */
   member_ids?: string[];
+  /** 各メンバーの役割テキスト。キー=member_id、値=役割（例：{"uuid": "PJリーダー"}） */
+  member_roles?: Record<string, string>;
   status: "active" | "completed" | "archived";
   color_tag: string;
   start_date: string;
