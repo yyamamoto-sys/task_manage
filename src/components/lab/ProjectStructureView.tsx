@@ -1,9 +1,9 @@
 // src/components/lab/ProjectStructureView.tsx
 //
 // 【設計意図】
-// ラボ機能：PJの体制図をフリーフォームキャンバスで表示・編集する。
-// カードを自由にドラッグ配置し、カード間に矢印線を手動で引ける（miro風）。
-// 座標・エッジはlocalStorageに保存し、PJ切替時に復元する。
+// ラボ機能：PJの体制図を階層ブロック型で表示・編集する。
+// オーナー層 / メンバー層の2ブロック。カードをD&Dでブロック間移動（昇格・降格）できる。
+// localStorage は使わない。
 
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
@@ -15,50 +15,13 @@ interface Props {
   currentUser: Member;
 }
 
-// ===== レイアウトのデータ構造 =====
-
-interface NodePos { x: number; y: number; }
-interface Edge { id: string; from: string; to: string; }
-
-interface StructureLayout {
-  pjId: string;
-  nodes: Record<string, NodePos>; // key = memberId
-  edges: Edge[];
-}
-
-const LAYOUT_KEY = "structure_layout_v1";
-
-function loadLayout(pjId: string): StructureLayout | null {
-  try {
-    const raw = localStorage.getItem(LAYOUT_KEY);
-    if (!raw) return null;
-    const all: Record<string, StructureLayout> = JSON.parse(raw);
-    return all[pjId] ?? null;
-  } catch {
-    return null;
-  }
-}
-
-function saveLayout(layout: StructureLayout) {
-  try {
-    const raw = localStorage.getItem(LAYOUT_KEY);
-    const all: Record<string, StructureLayout> = raw ? JSON.parse(raw) : {};
-    all[layout.pjId] = layout;
-    localStorage.setItem(LAYOUT_KEY, JSON.stringify(all));
-  } catch {
-    // ストレージ失敗は黙って無視
-  }
-}
-
-// ===== カードのサイズ定数 =====
-const CARD_W = 140;
-const CARD_H = 110; // 大まかな高さ（ドラッグ用）
-
 // ===== アバター色 =====
+
 const AVATAR_COLORS = [
   "#6366f1", "#8b5cf6", "#ec4899", "#f59e0b",
   "#10b981", "#3b82f6", "#ef4444", "#14b8a6",
 ];
+
 function avatarColor(id: string): string {
   let hash = 0;
   for (let i = 0; i < id.length; i++) {
@@ -66,6 +29,7 @@ function avatarColor(id: string): string {
   }
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 }
+
 function initials(member: Member): string {
   if (member.initials) return member.initials;
   return (member.display_name ?? "").slice(0, 2);
@@ -104,6 +68,7 @@ function RoleInput({ value, placeholder, onSave, disabled }: RoleInputProps) {
           if (e.key === "Enter") { e.preventDefault(); commit(); }
           if (e.key === "Escape") { setDraft(value); setEditing(false); }
         }}
+        onClick={e => e.stopPropagation()}
         style={{
           fontSize: "11px", width: "100%", padding: "3px 6px",
           border: "1px solid var(--color-brand)",
@@ -176,34 +141,45 @@ interface OwnerCardProps {
   member: Member;
   role: string;
   onRoleSave: (v: string) => void;
-  onChangeOwner: () => void;
+  onDemote: () => void;   // メンバー層に降格
+  canDemote: boolean;     // オーナーが1人のみの場合 false
   saving: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onHandleMouseDown: (e: React.MouseEvent) => void;
   isDragging: boolean;
+  showChangeOwner: boolean;
+  onToggleChangeOwner: () => void;
+  ownerCandidates: Member[];
+  onChangeOwner: (id: string) => void;
 }
 
 function OwnerCard({
-  member, role, onRoleSave, onChangeOwner, saving,
-  onMouseDown, onHandleMouseDown, isDragging,
+  member, role, onRoleSave, onDemote, canDemote, saving, isDragging,
+  showChangeOwner, onToggleChangeOwner, ownerCandidates, onChangeOwner,
 }: OwnerCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData("memberId", member.id);
+        e.dataTransfer.setData("fromZone", "owner");
+        e.dataTransfer.effectAllowed = "move";
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onMouseDown={onMouseDown}
       style={{
-        position: "relative", width: CARD_W,
+        position: "relative", width: 132,
         padding: "12px 14px", boxSizing: "border-box",
         background: "var(--color-brand-light, rgba(99,102,241,0.08))",
         border: "2px solid var(--color-brand)",
         borderRadius: "var(--radius-md)",
         display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-        flexShrink: 0, cursor: isDragging ? "grabbing" : "grab",
+        flexShrink: 0,
+        cursor: isDragging ? "grabbing" : "grab",
+        opacity: isDragging ? 0.4 : 1,
         boxShadow: hovered ? "0 4px 16px rgba(99,102,241,0.18)" : "0 1px 4px rgba(0,0,0,0.06)",
-        transition: isDragging ? "none" : "box-shadow 0.15s",
+        transition: "box-shadow 0.15s, opacity 0.15s",
         userSelect: "none",
       }}
     >
@@ -211,16 +187,37 @@ function OwnerCard({
       <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", marginTop: 2, textAlign: "center" }}>
         {member.display_name}
       </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        <span style={{ fontSize: "11px", color: "var(--color-brand)", fontWeight: 600 }}>👑 オーナー</span>
+      <div style={{ fontSize: "11px", color: "var(--color-brand)", fontWeight: 600 }}>
+        オーナー
       </div>
       <RoleInput value={role} placeholder="役割を入力…" onSave={onRoleSave} />
-      {hovered && !saving && !isDragging && (
+
+      {/* 降格ボタン（オーナーが2人以上のとき hover で表示） */}
+      {hovered && !saving && canDemote && (
         <button
-          onClick={e => { e.stopPropagation(); onChangeOwner(); }}
+          onClick={e => { e.stopPropagation(); onDemote(); }}
+          title="メンバー層に移動"
           style={{
-            position: "absolute", top: 6, right: 6,
-            fontSize: "9px", padding: "2px 6px",
+            position: "absolute", top: 5, right: 5,
+            width: 18, height: 18, borderRadius: "50%",
+            border: "none", background: "var(--color-bg-secondary)",
+            color: "var(--color-text-secondary)", cursor: "pointer",
+            fontSize: "11px", fontWeight: 700, lineHeight: "18px",
+            textAlign: "center", padding: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          ×
+        </button>
+      )}
+
+      {/* オーナー変更ボタン */}
+      {hovered && !saving && (
+        <button
+          onClick={e => { e.stopPropagation(); onToggleChangeOwner(); }}
+          style={{
+            position: "absolute", top: 6, left: 6,
+            fontSize: "9px", padding: "2px 5px",
             borderRadius: "var(--radius-sm)",
             border: "1px solid var(--color-brand)",
             background: "var(--color-bg-primary)",
@@ -230,8 +227,59 @@ function OwnerCard({
           変更
         </button>
       )}
-      {/* 線引きハンドル */}
-      <EdgeHandle onMouseDown={onHandleMouseDown} hovered={hovered} />
+
+      {/* オーナー変更ドロップダウン */}
+      {showChangeOwner && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 4px)", left: "50%",
+          transform: "translateX(-50%)",
+          background: "var(--color-bg-primary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+          boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
+          zIndex: 30, minWidth: 160, maxHeight: 200, overflow: "auto",
+        }}>
+          <div style={{ padding: "6px 10px", fontSize: "11px", color: "var(--color-text-tertiary)", borderBottom: "1px solid var(--color-border-primary)" }}>
+            新しいオーナーを選択
+          </div>
+          {ownerCandidates.length === 0 && (
+            <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>候補なし</div>
+          )}
+          {ownerCandidates.map(mc => (
+            <button
+              key={mc.id}
+              onClick={e => { e.stopPropagation(); onChangeOwner(mc.id); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                width: "100%", padding: "7px 10px",
+                background: "transparent", border: "none",
+                cursor: "pointer", fontSize: "12px",
+                color: "var(--color-text-primary)", textAlign: "left",
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
+              onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
+            >
+              <div style={{
+                width: 24, height: 24, borderRadius: "50%",
+                background: avatarColor(mc.id),
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: "#fff", fontSize: "10px", fontWeight: 700, flexShrink: 0,
+              }}>{initials(mc)}</div>
+              {mc.display_name}
+            </button>
+          ))}
+          <button
+            onClick={e => { e.stopPropagation(); onToggleChangeOwner(); }}
+            style={{
+              display: "block", width: "100%", padding: "6px 10px",
+              background: "transparent", border: "none",
+              borderTop: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "11px",
+              color: "var(--color-text-tertiary)", textAlign: "center",
+            }}
+          >キャンセル</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -244,32 +292,35 @@ interface MemberCardProps {
   onRoleSave: (v: string) => void;
   onRemove: () => void;
   saving: boolean;
-  onMouseDown: (e: React.MouseEvent) => void;
-  onHandleMouseDown: (e: React.MouseEvent) => void;
   isDragging: boolean;
 }
 
-function MemberCard({
-  member, role, onRoleSave, onRemove, saving,
-  onMouseDown, onHandleMouseDown, isDragging,
-}: MemberCardProps) {
+function MemberCard({ member, role, onRoleSave, onRemove, saving, isDragging }: MemberCardProps) {
   const [hovered, setHovered] = useState(false);
 
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      draggable
+      onDragStart={e => {
+        e.dataTransfer.setData("memberId", member.id);
+        e.dataTransfer.setData("fromZone", "member");
+        e.dataTransfer.effectAllowed = "move";
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onMouseDown={onMouseDown}
       style={{
-        position: "relative", width: CARD_W,
+        position: "relative", width: 132,
         padding: "12px 14px", boxSizing: "border-box",
         background: "var(--color-bg-secondary)",
         border: `1.5px solid ${hovered ? "var(--color-brand)" : "var(--color-border-primary)"}`,
         borderRadius: "var(--radius-md)",
         display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-        flexShrink: 0, cursor: isDragging ? "grabbing" : "grab",
+        flexShrink: 0,
+        cursor: isDragging ? "grabbing" : "grab",
+        opacity: isDragging ? 0.4 : 1,
         boxShadow: hovered ? "0 4px 12px rgba(0,0,0,0.10)" : "0 1px 3px rgba(0,0,0,0.05)",
-        transition: isDragging ? "none" : "box-shadow 0.15s, border-color 0.15s",
+        transition: "box-shadow 0.15s, border-color 0.15s, opacity 0.15s",
         userSelect: "none",
       }}
     >
@@ -278,10 +329,10 @@ function MemberCard({
         {member.display_name}
       </div>
       <RoleInput value={role} placeholder="役割を入力…" onSave={onRoleSave} />
-      {hovered && !saving && !isDragging && (
+      {hovered && !saving && (
         <button
           onClick={e => { e.stopPropagation(); onRemove(); }}
-          title="メンバーを外す"
+          title="PJから外す"
           style={{
             position: "absolute", top: 5, right: 5,
             width: 18, height: 18, borderRadius: "50%",
@@ -295,119 +346,114 @@ function MemberCard({
           ×
         </button>
       )}
-      {/* 線引きハンドル */}
-      <EdgeHandle onMouseDown={onHandleMouseDown} hovered={hovered} />
     </div>
   );
 }
 
-// ===== EdgeHandle（各カード下端の接続ハンドル） =====
+// ===== DropZone =====
 
-function EdgeHandle({ onMouseDown, hovered }: {
-  onMouseDown: (e: React.MouseEvent) => void;
-  hovered: boolean;
-}) {
-  const [handleHovered, setHandleHovered] = useState(false);
+interface DropZoneProps {
+  zone: "owner" | "member";
+  isOver: boolean;
+  onDragOver: (e: React.DragEvent) => void;
+  onDragLeave: () => void;
+  onDrop: (e: React.DragEvent) => void;
+  label: string;
+  children: React.ReactNode;
+}
+
+function DropZone({ zone: _zone, isOver, onDragOver, onDragLeave, onDrop, label, children }: DropZoneProps) {
   return (
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
-      onMouseDown={e => { e.stopPropagation(); onMouseDown(e); }}
-      onMouseEnter={() => setHandleHovered(true)}
-      onMouseLeave={() => setHandleHovered(false)}
-      title="ドラッグして別カードへ線を引く"
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
       style={{
-        position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)",
-        width: 12, height: 12, borderRadius: "50%",
-        background: handleHovered ? "var(--color-brand)" : "var(--color-border-primary)",
-        border: "2px solid var(--color-bg-primary)",
-        cursor: "crosshair", zIndex: 2,
-        opacity: hovered || handleHovered ? 1 : 0,
-        transition: "opacity 0.15s, background 0.15s",
+        border: isOver
+          ? "2px dashed var(--color-brand)"
+          : "2px dashed var(--color-border-primary)",
+        borderRadius: "var(--radius-lg)",
+        background: isOver
+          ? "rgba(99,102,241,0.04)"
+          : "var(--color-bg-secondary)",
+        padding: "16px 20px",
+        transition: "border-color 0.15s, background 0.15s",
+        minHeight: 120,
       }}
-    />
+    >
+      <div style={{
+        fontSize: "12px", fontWeight: 700,
+        color: "var(--color-text-secondary)",
+        marginBottom: 12,
+      }}>
+        {label}
+      </div>
+      <div style={{
+        display: "flex", flexWrap: "wrap", gap: 12, alignItems: "flex-start",
+      }}>
+        {children}
+      </div>
+    </div>
   );
 }
 
-// ===== キャンバスのSVGレイヤー =====
+// ===== SVG接続線 =====
 
-interface CanvasSVGProps {
-  edges: Edge[];
-  nodes: Record<string, NodePos>;
-  allMemberIds: string[]; // ownerIds + memberIds
-  draggingEdge: DraggingEdge | null;
-  onEdgeRightClick: (edgeId: string, e: React.MouseEvent) => void;
+interface ConnectorSVGProps {
+  ownerBlockRef: React.RefObject<HTMLDivElement | null>;
+  memberBlockRef: React.RefObject<HTMLDivElement | null>;
+  containerRef: React.RefObject<HTMLDivElement | null>;
+  hasMember: boolean;
 }
 
-interface DraggingEdge {
-  fromId: string;
-  fromX: number;
-  fromY: number;
-  toX: number;
-  toY: number;
-}
+function ConnectorSVG({ ownerBlockRef, memberBlockRef, containerRef, hasMember }: ConnectorSVGProps) {
+  const [line, setLine] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(null);
 
-// カードの下端中央座標を計算
-function edgePoint(id: string, nodes: Record<string, NodePos>): { x: number; y: number } {
-  const pos = nodes[id];
-  if (!pos) return { x: 0, y: 0 };
-  return { x: pos.x + CARD_W / 2, y: pos.y + CARD_H };
-}
-// カードの上端中央座標を計算（矢印終点）
-function arrowEndPoint(id: string, nodes: Record<string, NodePos>): { x: number; y: number } {
-  const pos = nodes[id];
-  if (!pos) return { x: 0, y: 0 };
-  return { x: pos.x + CARD_W / 2, y: pos.y };
-}
+  useEffect(() => {
+    if (!hasMember) { setLine(null); return; }
 
-function CanvasSVG({ edges, nodes, allMemberIds, draggingEdge, onEdgeRightClick }: CanvasSVGProps) {
+    const calc = () => {
+      const container = containerRef.current;
+      const ownerBlock = ownerBlockRef.current;
+      const memberBlock = memberBlockRef.current;
+      if (!container || !ownerBlock || !memberBlock) return;
+      const containerRect = container.getBoundingClientRect();
+      const ownerRect = ownerBlock.getBoundingClientRect();
+      const memberRect = memberBlock.getBoundingClientRect();
+      setLine({
+        x1: ownerRect.left + ownerRect.width / 2 - containerRect.left,
+        y1: ownerRect.bottom - containerRect.top,
+        x2: memberRect.left + memberRect.width / 2 - containerRect.left,
+        y2: memberRect.top - containerRect.top,
+      });
+    };
+
+    calc();
+    const observer = new ResizeObserver(calc);
+    if (ownerBlockRef.current) observer.observe(ownerBlockRef.current);
+    if (memberBlockRef.current) observer.observe(memberBlockRef.current);
+    if (containerRef.current) observer.observe(containerRef.current);
+    return () => observer.disconnect();
+  }, [hasMember, ownerBlockRef, memberBlockRef, containerRef]);
+
+  if (!line) return null;
+
   return (
     <svg
-      style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none", overflow: "visible" }}
+      style={{
+        position: "absolute", inset: 0,
+        width: "100%", height: "100%",
+        pointerEvents: "none", overflow: "visible",
+      }}
     >
-      <defs>
-        <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="var(--color-border-primary)" />
-        </marker>
-        <marker id="arrow-drag" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-          <path d="M0,0 L0,6 L8,3 z" fill="var(--color-brand)" />
-        </marker>
-      </defs>
-
-      {/* 確定済みエッジ */}
-      {edges.map(edge => {
-        const from = nodes[edge.from];
-        const to = nodes[edge.to];
-        if (!from || !to) return null;
-        const start = edgePoint(edge.from, nodes);
-        const end = arrowEndPoint(edge.to, nodes);
-        return (
-          <line
-            key={edge.id}
-            x1={start.x} y1={start.y}
-            x2={end.x} y2={end.y}
-            stroke="var(--color-border-primary)"
-            strokeWidth={2}
-            markerEnd="url(#arrow)"
-            style={{ pointerEvents: "stroke", cursor: "context-menu" }}
-            onContextMenu={e => { e.preventDefault(); onEdgeRightClick(edge.id, e); }}
-          />
-        );
-      })}
-
-      {/* ドラッグ中の仮線 */}
-      {draggingEdge && (
-        <line
-          x1={draggingEdge.fromX} y1={draggingEdge.fromY}
-          x2={draggingEdge.toX} y2={draggingEdge.toY}
-          stroke="var(--color-brand)"
-          strokeWidth={2}
-          strokeDasharray="6 3"
-          markerEnd="url(#arrow-drag)"
-          style={{ pointerEvents: "none" }}
-        />
-      )}
-
-      {/* 未使用変数エラー抑制 */}
-      {allMemberIds.length === 0 && null}
+      <line
+        x1={line.x1} y1={line.y1}
+        x2={line.x2} y2={line.y2}
+        stroke="var(--color-border-primary)"
+        strokeWidth={2}
+        strokeDasharray="6 3"
+      />
     </svg>
   );
 }
@@ -428,7 +474,15 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [showAddDropdown, setShowAddDropdown] = useState(false);
-  const [showOwnerDropdown, setShowOwnerDropdown] = useState(false);
+  const [showChangeOwnerForId, setShowChangeOwnerForId] = useState<string | null>(null);
+
+  // D&D 状態
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const [overZone, setOverZone] = useState<"owner" | "member" | null>(null);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const ownerBlockRef = useRef<HTMLDivElement>(null);
+  const memberBlockRef = useRef<HTMLDivElement>(null);
 
   const project = useMemo(
     () => activeProjects.find(p => p.id === selectedPjId) ?? null,
@@ -453,8 +507,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     return (project.member_ids ?? []).filter(id => !ownerSet.has(id));
   }, [project, ownerIds]);
 
-  const allMemberIds = useMemo(() => [...ownerIds, ...memberIds], [ownerIds, memberIds]);
-
   const addCandidates = useMemo<Member[]>(() => {
     if (!project) return [];
     const ownerSet = new Set(ownerIds);
@@ -462,305 +514,16 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     return members.filter(m => !m.is_deleted && !ownerSet.has(m.id) && !memberSet.has(m.id));
   }, [members, ownerIds, memberIds, project]);
 
-  const ownerCandidates = useMemo<Member[]>(() => {
+  const ownerCandidates = useCallback((_ownerId: string): Member[] => {
     if (!project) return [];
     const ownerSet = new Set(ownerIds);
+    // 自分以外のメンバー（オーナーセット外）が候補
     return members.filter(m => !m.is_deleted && !ownerSet.has(m.id));
   }, [members, ownerIds, project]);
 
-  // ===== キャンバス状態 =====
+  // ===== 保存処理 =====
 
-  const canvasContainerRef = useRef<HTMLDivElement>(null);
-
-  // ノード座標
-  const [nodes, setNodes] = useState<Record<string, NodePos>>({});
-  // エッジ（接続線）
-  const [edges, setEdges] = useState<Edge[]>([]);
-
-  // パン（背景移動）
-  const [panX, setPanX] = useState(0);
-  const [panY, setPanY] = useState(0);
-
-  // カードドラッグ状態
-  const draggingCardRef = useRef<{
-    id: string;
-    startMouseX: number;
-    startMouseY: number;
-    startCardX: number;
-    startCardY: number;
-  } | null>(null);
-  const isDraggingCardRef = useRef(false);
-
-  // パン状態
-  const panningRef = useRef<{
-    startMouseX: number;
-    startMouseY: number;
-    startPanX: number;
-    startPanY: number;
-  } | null>(null);
-
-  // 線引き状態
-  const [draggingEdge, setDraggingEdge] = useState<DraggingEdge | null>(null);
-  const draggingEdgeRef = useRef<DraggingEdge | null>(null);
-  const edgeFromIdRef = useRef<string | null>(null);
-
-  // ドラッグ中かどうか（クリックイベント抑制用）
-  const [draggingCardId, setDraggingCardId] = useState<string | null>(null);
-
-  // ===== レイアウト初期化 =====
-
-  const buildInitialLayout = useCallback((ids: string[], canvasW: number): Record<string, NodePos> => {
-    const result: Record<string, NodePos> = {};
-    // ownerIds を先頭に配置
-    const ownerCount = ownerIds.length;
-    const memberCount = ids.length - ownerCount;
-
-    // オーナー行（上部中央）
-    ownerIds.forEach((id, i) => {
-      const total = ownerCount;
-      const startX = canvasW / 2 - (total * (CARD_W + 20)) / 2 + 10;
-      result[id] = { x: startX + i * (CARD_W + 20), y: 60 };
-    });
-
-    // メンバー行（オーナーの下）
-    const memberIdsLocal = ids.filter(id => !ownerIds.includes(id));
-    memberIdsLocal.forEach((id, i) => {
-      const total = memberCount || 1;
-      const startX = canvasW / 2 - (total * (CARD_W + 20)) / 2 + 10;
-      result[id] = { x: startX + i * (CARD_W + 20), y: 230 };
-    });
-
-    return result;
-  }, [ownerIds]);
-
-  // PJ選択変更時にレイアウトを復元or初期化
-  useEffect(() => {
-    if (!selectedPjId || allMemberIds.length === 0) {
-      setNodes({});
-      setEdges([]);
-      return;
-    }
-
-    const saved = loadLayout(selectedPjId);
-    if (saved) {
-      // 保存済みレイアウト：新メンバー分を補完
-      const newNodes: Record<string, NodePos> = { ...saved.nodes };
-      allMemberIds.forEach((id, i) => {
-        if (!newNodes[id]) {
-          // 新規メンバーは右下に配置
-          const canvasW = canvasContainerRef.current?.clientWidth ?? 800;
-          newNodes[id] = { x: canvasW - CARD_W - 20, y: 60 + i * (CARD_H + 20) };
-        }
-      });
-      // 削除済みメンバーのノードを除去
-      const validIds = new Set(allMemberIds);
-      Object.keys(newNodes).forEach(id => { if (!validIds.has(id)) delete newNodes[id]; });
-      setNodes(newNodes);
-      // 削除済みメンバーに紐づくエッジを除去
-      setEdges(saved.edges.filter(e => validIds.has(e.from) && validIds.has(e.to)));
-    } else {
-      // 初回：自動配置
-      const canvasW = canvasContainerRef.current?.clientWidth ?? 800;
-      setNodes(buildInitialLayout(allMemberIds, canvasW));
-      setEdges([]);
-    }
-
-    // パンをリセット
-    setPanX(0);
-    setPanY(0);
-  }, [selectedPjId]); // eslint-disable-line react-hooks/exhaustive-deps
-  // buildInitialLayout は ownerIds に依存するが、PJ変更時だけ実行したい
-
-  // nodes/edges を localStorage に保存（変更のたびに）
-  useEffect(() => {
-    if (!selectedPjId || Object.keys(nodes).length === 0) return;
-    saveLayout({ pjId: selectedPjId, nodes, edges });
-  }, [nodes, edges, selectedPjId]);
-
-  // ===== Escキーで線引きキャンセル =====
-
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        edgeFromIdRef.current = null;
-        draggingEdgeRef.current = null;
-        setDraggingEdge(null);
-      }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, []);
-
-  // ===== グローバルmousemove / mouseup =====
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      // カードドラッグ
-      if (draggingCardRef.current) {
-        isDraggingCardRef.current = true;
-        const drag = draggingCardRef.current;
-        const dx = e.clientX - drag.startMouseX;
-        const dy = e.clientY - drag.startMouseY;
-        setNodes(prev => ({
-          ...prev,
-          [drag.id]: { x: drag.startCardX + dx, y: drag.startCardY + dy },
-        }));
-        return;
-      }
-
-      // パン
-      if (panningRef.current) {
-        const dx = e.clientX - panningRef.current.startMouseX;
-        const dy = e.clientY - panningRef.current.startMouseY;
-        setPanX(panningRef.current.startPanX + dx);
-        setPanY(panningRef.current.startPanY + dy);
-        return;
-      }
-
-      // 線引きドラッグ
-      if (edgeFromIdRef.current !== null && canvasContainerRef.current) {
-        const rect = canvasContainerRef.current.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left - panX;
-        const mouseY = e.clientY - rect.top - panY;
-        const fromPos = nodes[edgeFromIdRef.current];
-        if (fromPos) {
-          const newDragEdge: DraggingEdge = {
-            fromId: edgeFromIdRef.current,
-            fromX: fromPos.x + CARD_W / 2,
-            fromY: fromPos.y + CARD_H,
-            toX: mouseX,
-            toY: mouseY,
-          };
-          draggingEdgeRef.current = newDragEdge;
-          setDraggingEdge(newDragEdge);
-        }
-      }
-    };
-
-    const onUp = (e: MouseEvent) => {
-      // カードドラッグ終了
-      if (draggingCardRef.current) {
-        draggingCardRef.current = null;
-        // 少し遅らせてからdraggingCardIdをクリア（クリックイベント抑制のため）
-        setTimeout(() => {
-          isDraggingCardRef.current = false;
-          setDraggingCardId(null);
-        }, 50);
-        return;
-      }
-
-      // パン終了
-      if (panningRef.current) {
-        panningRef.current = null;
-        return;
-      }
-
-      // 線引き終了：ターゲットカードを探す
-      if (edgeFromIdRef.current !== null) {
-        const fromId = edgeFromIdRef.current;
-        edgeFromIdRef.current = null;
-        draggingEdgeRef.current = null;
-        setDraggingEdge(null);
-
-        // マウス位置からカードを探す
-        if (canvasContainerRef.current) {
-          const rect = canvasContainerRef.current.getBoundingClientRect();
-          const mouseX = e.clientX - rect.left - panX;
-          const mouseY = e.clientY - rect.top - panY;
-
-          const toId = Object.entries(nodes).find(([id, pos]) => {
-            return (
-              id !== fromId &&
-              mouseX >= pos.x && mouseX <= pos.x + CARD_W &&
-              mouseY >= pos.y && mouseY <= pos.y + CARD_H
-            );
-          })?.[0];
-
-          if (toId) {
-            // self-loop・重複チェック
-            setEdges(prev => {
-              const exists = prev.some(edge => edge.from === fromId && edge.to === toId);
-              if (exists) return prev;
-              return [...prev, { id: `${fromId}_${toId}_${Date.now()}`, from: fromId, to: toId }];
-            });
-          }
-        }
-      }
-    };
-
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      window.removeEventListener("mouseup", onUp);
-    };
-  }, [nodes, panX, panY]);
-
-  // ===== イベントハンドラ =====
-
-  const handleCardMouseDown = useCallback((id: string) => (e: React.MouseEvent) => {
-    // 右クリックは無視
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    const pos = nodes[id];
-    if (!pos) return;
-    setDraggingCardId(id);
-    draggingCardRef.current = {
-      id,
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      startCardX: pos.x,
-      startCardY: pos.y,
-    };
-  }, [nodes]);
-
-  const handleHandleMouseDown = useCallback((id: string) => (e: React.MouseEvent) => {
-    if (e.button !== 0) return;
-    e.stopPropagation();
-    edgeFromIdRef.current = id;
-    const pos = nodes[id];
-    if (pos) {
-      const initDrag: DraggingEdge = {
-        fromId: id,
-        fromX: pos.x + CARD_W / 2,
-        fromY: pos.y + CARD_H,
-        toX: pos.x + CARD_W / 2,
-        toY: pos.y + CARD_H,
-      };
-      draggingEdgeRef.current = initDrag;
-      setDraggingEdge(initDrag);
-    }
-  }, [nodes]);
-
-  const handleCanvasMouseDown = (e: React.MouseEvent) => {
-    // 左クリックのみパン開始
-    if (e.button !== 0) return;
-    panningRef.current = {
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
-      startPanX: panX,
-      startPanY: panY,
-    };
-  };
-
-  const handleEdgeRightClick = useCallback((edgeId: string, _e: React.MouseEvent) => {
-    setEdges(prev => prev.filter(e => e.id !== edgeId));
-  }, []);
-
-  // ===== 配置リセット =====
-
-  const handleResetLayout = () => {
-    const canvasW = canvasContainerRef.current?.clientWidth ?? 800;
-    setNodes(buildInitialLayout(allMemberIds, canvasW));
-  };
-
-  const handleClearEdges = () => {
-    setEdges([]);
-  };
-
-  // ===== PJ保存処理 =====
-
-  const doSave = async (updated: Project) => {
+  const doSave = useCallback(async (updated: Project) => {
     setSaveError(null);
     setSaving(true);
     try {
@@ -770,7 +533,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     } finally {
       setSaving(false);
     }
-  };
+  }, [saveProject, currentUser.id]);
 
   const handleRoleSave = (memberId: string, role: string) => {
     if (!project) return;
@@ -783,9 +546,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     const newRoles = { ...(project.member_roles ?? {}) };
     delete newRoles[memberId];
     doSave({ ...project, member_ids: newMemberIds, member_roles: newRoles });
-    // ノードとエッジからも削除
-    setNodes(prev => { const n = { ...prev }; delete n[memberId]; return n; });
-    setEdges(prev => prev.filter(e => e.from !== memberId && e.to !== memberId));
   };
 
   const handleAddMember = (memberId: string) => {
@@ -793,18 +553,99 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     setShowAddDropdown(false);
     const newMemberIds = [...(project.member_ids ?? []), memberId];
     doSave({ ...project, member_ids: newMemberIds });
-    // 新しいノードを追加（右下に仮配置）
-    const canvasW = canvasContainerRef.current?.clientWidth ?? 800;
-    setNodes(prev => ({
-      ...prev,
-      [memberId]: { x: canvasW - CARD_W - 40, y: 60 + Object.keys(prev).length * (CARD_H + 20) },
-    }));
   };
 
-  const handleChangeOwner = (newOwnerId: string) => {
+  const handleChangeOwner = (currentOwnerId: string, newOwnerId: string) => {
     if (!project) return;
-    setShowOwnerDropdown(false);
-    doSave({ ...project, owner_member_id: newOwnerId, owner_member_ids: [newOwnerId] });
+    setShowChangeOwnerForId(null);
+    // 既存のオーナーIDを差し替え（単純置換）
+    const newOwnerIds = ownerIds.map(id => id === currentOwnerId ? newOwnerId : id);
+    // member_ids からは外す（すでに外れている場合は無視）
+    const newMemberIds = (project.member_ids ?? []).filter(id => id !== newOwnerId);
+    doSave({
+      ...project,
+      owner_member_ids: newOwnerIds,
+      owner_member_id: newOwnerIds[0] ?? newOwnerId,
+      member_ids: newMemberIds,
+    });
+  };
+
+  // ===== D&D ハンドラ =====
+
+  const handleDragStart = useCallback((id: string) => {
+    setDraggingId(id);
+  }, []);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null);
+    setOverZone(null);
+  }, []);
+
+  const handleDragOverZone = useCallback((zone: "owner" | "member") => (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    setOverZone(zone);
+  }, []);
+
+  const handleDragLeaveZone = useCallback(() => {
+    setOverZone(null);
+  }, []);
+
+  const handleDropOnOwner = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setOverZone(null);
+    const memberId = e.dataTransfer.getData("memberId");
+    const fromZone = e.dataTransfer.getData("fromZone");
+    if (!project || !memberId || fromZone === "owner") return;
+
+    // メンバー → オーナーへ昇格
+    const newOwnerIds = [...ownerIds, memberId];
+    const newMemberIds = (project.member_ids ?? []).filter(id => id !== memberId);
+    doSave({
+      ...project,
+      owner_member_ids: newOwnerIds,
+      owner_member_id: project.owner_member_id || newOwnerIds[0],
+      member_ids: newMemberIds,
+    });
+  }, [project, ownerIds, doSave]);
+
+  const handleDropOnMember = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setOverZone(null);
+    const memberId = e.dataTransfer.getData("memberId");
+    const fromZone = e.dataTransfer.getData("fromZone");
+    if (!project || !memberId || fromZone === "member") return;
+
+    // オーナー → メンバーへ降格（オーナーが1人のみなら拒否）
+    if (ownerIds.length <= 1) {
+      setSaveError("オーナーは最低1人必要です");
+      return;
+    }
+
+    const newOwnerIds = ownerIds.filter(id => id !== memberId);
+    const newMemberIds = [...(project.member_ids ?? []), memberId];
+    doSave({
+      ...project,
+      owner_member_ids: newOwnerIds,
+      owner_member_id: newOwnerIds[0] ?? project.owner_member_id,
+      member_ids: newMemberIds,
+    });
+  }, [project, ownerIds, doSave]);
+
+  // 降格ボタン（×ボタン）でも同じロジック
+  const handleDemoteOwner = (ownerId: string) => {
+    if (!project || ownerIds.length <= 1) {
+      setSaveError("オーナーは最低1人必要です");
+      return;
+    }
+    const newOwnerIds = ownerIds.filter(id => id !== ownerId);
+    const newMemberIds = [...(project.member_ids ?? []), ownerId];
+    doSave({
+      ...project,
+      owner_member_ids: newOwnerIds,
+      owner_member_id: newOwnerIds[0] ?? project.owner_member_id,
+      member_ids: newMemberIds,
+    });
   };
 
   // ===== レンダリング =====
@@ -816,6 +657,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
         background: "var(--color-bg-primary)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}
+      onDragEnd={handleDragEnd}
     >
       {/* ヘッダー */}
       <div style={{
@@ -824,14 +666,14 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-secondary)",
       }}>
-        <span style={{ fontSize: "15px" }}>🏢</span>
-        <span style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)" }}>PJ体制図</span>
+        <span style={{ fontSize: "15px" }}>PJ体制図</span>
         <select
           value={selectedPjId}
           onChange={e => {
             setSelectedPjId(e.target.value);
             setShowAddDropdown(false);
-            setShowOwnerDropdown(false);
+            setShowChangeOwnerForId(null);
+            setSaveError(null);
           }}
           style={{
             fontSize: "12px", padding: "4px 8px",
@@ -845,9 +687,20 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
           {activeProjects.length === 0 && <option value="">（PJなし）</option>}
           {activeProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
         </select>
+
+        {project?.purpose && (
+          <div style={{
+            fontSize: "11px", color: "var(--color-text-tertiary)",
+            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            maxWidth: 360,
+          }}>
+            {project.purpose}
+          </div>
+        )}
+
         <div style={{ flex: 1 }} />
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          役割をクリックして編集
+          カードをドラッグして層間を移動
         </div>
         <button
           onClick={onClose}
@@ -859,61 +712,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
         >✕</button>
       </div>
 
-      {/* PJ目的 */}
-      {project?.purpose && (
-        <div style={{
-          flexShrink: 0, padding: "6px 16px",
-          fontSize: "12px", color: "var(--color-text-secondary)",
-          borderBottom: "1px solid var(--color-border-primary)",
-          background: "var(--color-bg-secondary)",
-          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        }}>
-          {project.purpose}
-        </div>
-      )}
-
-      {/* ツールバー */}
-      {project && allMemberIds.length > 0 && (
-        <div style={{
-          flexShrink: 0, display: "flex", alignItems: "center", gap: 8,
-          padding: "6px 12px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          background: "var(--color-bg-secondary)",
-        }}>
-          <button
-            onClick={handleResetLayout}
-            style={{
-              fontSize: "11px", padding: "3px 10px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--color-bg-primary)",
-              color: "var(--color-text-secondary)",
-              cursor: "pointer",
-            }}
-          >
-            リセット配置
-          </button>
-          <button
-            onClick={handleClearEdges}
-            disabled={edges.length === 0}
-            style={{
-              fontSize: "11px", padding: "3px 10px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-sm)",
-              background: "var(--color-bg-primary)",
-              color: edges.length === 0 ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
-              cursor: edges.length === 0 ? "default" : "pointer",
-              opacity: edges.length === 0 ? 0.5 : 1,
-            }}
-          >
-            線をすべて消す
-          </button>
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginLeft: 4 }}>
-            カード下端の丸をドラッグして線を引く / 線を右クリックで削除 / 背景ドラッグでパン / Escで線引きキャンセル
-          </div>
-        </div>
-      )}
-
       {/* エラーバー */}
       {saveError && (
         <div style={{
@@ -921,26 +719,31 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
           background: "var(--color-bg-danger, #fef2f2)",
           color: "var(--color-text-danger, #b91c1c)",
           fontSize: "12px", borderBottom: "1px solid var(--color-border-primary)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
         }}>
-          {saveError}
+          <span>{saveError}</span>
+          <button
+            onClick={() => setSaveError(null)}
+            style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", color: "var(--color-text-danger, #b91c1c)" }}
+          >✕</button>
         </div>
       )}
 
       {/* ドロップダウン外側クリックで閉じるオーバーレイ */}
-      {(showOwnerDropdown || showAddDropdown) && (
+      {(showChangeOwnerForId !== null || showAddDropdown) && (
         <div
-          onClick={() => { setShowOwnerDropdown(false); setShowAddDropdown(false); }}
+          onClick={() => { setShowChangeOwnerForId(null); setShowAddDropdown(false); }}
           style={{ position: "fixed", inset: 0, zIndex: 9 }}
         />
       )}
 
-      {/* キャンバス本体 */}
+      {/* コンテンツ */}
       <div
-        ref={canvasContainerRef}
-        onMouseDown={handleCanvasMouseDown}
+        ref={containerRef}
         style={{
-          flex: 1, position: "relative", overflow: "hidden",
-          cursor: panningRef.current ? "grabbing" : "default",
+          flex: 1, overflowY: "auto", overflowX: "hidden",
+          padding: "24px 32px",
+          position: "relative",
         }}
       >
         {!project && (
@@ -951,58 +754,137 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
 
         {project && ownerIds.length === 0 && (
           <div style={{ textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", marginTop: "60px" }}>
-            ⚠ オーナーが設定されていません。管理画面でPJを編集してください。
+            オーナーが設定されていません。管理画面でPJを編集してください。
           </div>
         )}
 
         {project && ownerIds.length > 0 && (
-          <div
-            style={{
-              position: "absolute", inset: 0,
-              transform: `translate(${panX}px, ${panY}px)`,
-            }}
-          >
-            {/* SVGレイヤー（線・矢印） */}
-            <CanvasSVG
-              edges={edges}
-              nodes={nodes}
-              allMemberIds={allMemberIds}
-              draggingEdge={draggingEdge}
-              onEdgeRightClick={handleEdgeRightClick}
+          <div style={{ display: "flex", flexDirection: "column", gap: 0, maxWidth: 900 }}>
+
+            {/* SVG接続線（ブロック間） */}
+            <ConnectorSVG
+              ownerBlockRef={ownerBlockRef}
+              memberBlockRef={memberBlockRef}
+              containerRef={containerRef}
+              hasMember={memberIds.length > 0}
             />
 
-            {/* オーナーカード */}
-            {ownerIds.map((ownerId, idx) => {
-              const m = activeMemberMap.get(ownerId);
-              const pos = nodes[ownerId];
-              if (!m || !pos) return null;
-              const role = project.member_roles?.[ownerId] ?? "";
-              return (
-                <div
-                  key={ownerId}
-                  style={{ position: "absolute", left: pos.x, top: pos.y, zIndex: draggingCardId === ownerId ? 20 : 5 }}
-                >
-                  {/* オーナー変更ドロップダウン（最初のオーナーのみ） */}
-                  {idx === 0 && showOwnerDropdown && (
+            {/* オーナーブロック */}
+            <div ref={ownerBlockRef}>
+              <DropZone
+                zone="owner"
+                isOver={overZone === "owner"}
+                onDragOver={handleDragOverZone("owner")}
+                onDragLeave={handleDragLeaveZone}
+                onDrop={handleDropOnOwner}
+                label="オーナー層"
+              >
+                {ownerIds.map(ownerId => {
+                  const m = activeMemberMap.get(ownerId);
+                  if (!m) return null;
+                  const role = project.member_roles?.[ownerId] ?? "";
+                  return (
+                    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                    <div
+                      key={ownerId}
+                      onDragStart={() => handleDragStart(ownerId)}
+                    >
+                      <OwnerCard
+                        member={m}
+                        role={role}
+                        onRoleSave={v => handleRoleSave(ownerId, v)}
+                        onDemote={() => handleDemoteOwner(ownerId)}
+                        canDemote={ownerIds.length > 1}
+                        saving={saving}
+                        isDragging={draggingId === ownerId}
+                        showChangeOwner={showChangeOwnerForId === ownerId}
+                        onToggleChangeOwner={() => {
+                          setShowChangeOwnerForId(v => v === ownerId ? null : ownerId);
+                          setShowAddDropdown(false);
+                        }}
+                        ownerCandidates={ownerCandidates(ownerId)}
+                        onChangeOwner={newId => handleChangeOwner(ownerId, newId)}
+                      />
+                    </div>
+                  );
+                })}
+              </DropZone>
+            </div>
+
+            {/* ブロック間スペーサー（接続線の余白） */}
+            <div style={{ height: 40 }} />
+
+            {/* メンバーブロック */}
+            <div ref={memberBlockRef}>
+              <DropZone
+                zone="member"
+                isOver={overZone === "member"}
+                onDragOver={handleDragOverZone("member")}
+                onDragLeave={handleDragLeaveZone}
+                onDrop={handleDropOnMember}
+                label="メンバー層"
+              >
+                {memberIds.map(memberId => {
+                  const m = activeMemberMap.get(memberId);
+                  if (!m) return null;
+                  const role = project.member_roles?.[memberId] ?? "";
+                  return (
+                    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                    <div
+                      key={memberId}
+                      onDragStart={() => handleDragStart(memberId)}
+                    >
+                      <MemberCard
+                        member={m}
+                        role={role}
+                        onRoleSave={v => handleRoleSave(memberId, v)}
+                        onRemove={() => handleRemoveMember(memberId)}
+                        saving={saving}
+                        isDragging={draggingId === memberId}
+                      />
+                    </div>
+                  );
+                })}
+
+                {/* メンバー追加ボタン */}
+                <div style={{ position: "relative" }}>
+                  <button
+                    onClick={() => { setShowAddDropdown(v => !v); setShowChangeOwnerForId(null); }}
+                    disabled={saving || addCandidates.length === 0}
+                    title={addCandidates.length === 0 ? "追加できるメンバーがいません" : "メンバーを追加"}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 5,
+                      padding: "8px 14px", height: 90,
+                      border: "1.5px dashed var(--color-border-primary)",
+                      borderRadius: "var(--radius-md)",
+                      background: "transparent",
+                      color: "var(--color-text-secondary)",
+                      cursor: saving || addCandidates.length === 0 ? "not-allowed" : "pointer",
+                      fontSize: "12px", fontWeight: 600,
+                      opacity: addCandidates.length === 0 ? 0.45 : 1,
+                      flexDirection: "column", justifyContent: "center",
+                    }}
+                  >
+                    <span style={{ fontSize: "18px", lineHeight: 1 }}>＋</span>
+                    <span>メンバーを追加</span>
+                  </button>
+
+                  {showAddDropdown && (
                     <div style={{
-                      position: "absolute", top: "calc(100% + 4px)", left: "50%",
-                      transform: "translateX(-50%)",
+                      position: "absolute", top: "calc(100% + 4px)", left: 0,
                       background: "var(--color-bg-primary)",
                       border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-md)",
                       boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                      zIndex: 30, minWidth: 160, maxHeight: 200, overflow: "auto",
+                      zIndex: 30, minWidth: 180, maxHeight: 240, overflow: "auto",
                     }}>
                       <div style={{ padding: "6px 10px", fontSize: "11px", color: "var(--color-text-tertiary)", borderBottom: "1px solid var(--color-border-primary)" }}>
-                        新しいオーナーを選択
+                        追加するメンバーを選択
                       </div>
-                      {ownerCandidates.length === 0 && (
-                        <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>候補なし</div>
-                      )}
-                      {ownerCandidates.map(mc => (
+                      {addCandidates.map(mc => (
                         <button
                           key={mc.id}
-                          onClick={() => handleChangeOwner(mc.id)}
+                          onClick={() => handleAddMember(mc.id)}
                           style={{
                             display: "flex", alignItems: "center", gap: 8,
                             width: "100%", padding: "7px 10px",
@@ -1022,122 +904,12 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
                           {mc.display_name}
                         </button>
                       ))}
-                      <button
-                        onClick={() => setShowOwnerDropdown(false)}
-                        style={{
-                          display: "block", width: "100%", padding: "6px 10px",
-                          background: "transparent", border: "none",
-                          borderTop: "1px solid var(--color-border-primary)",
-                          cursor: "pointer", fontSize: "11px",
-                          color: "var(--color-text-tertiary)", textAlign: "center",
-                        }}
-                      >キャンセル</button>
                     </div>
                   )}
-
-                  <OwnerCard
-                    member={m}
-                    role={role}
-                    onRoleSave={v => handleRoleSave(ownerId, v)}
-                    onChangeOwner={() => { setShowOwnerDropdown(v => !v); setShowAddDropdown(false); }}
-                    saving={saving}
-                    onMouseDown={handleCardMouseDown(ownerId)}
-                    onHandleMouseDown={handleHandleMouseDown(ownerId)}
-                    isDragging={draggingCardId === ownerId}
-                  />
                 </div>
-              );
-            })}
-
-            {/* メンバーカード */}
-            {memberIds.map(memberId => {
-              const m = activeMemberMap.get(memberId);
-              const pos = nodes[memberId];
-              if (!m || !pos) return null;
-              const role = project.member_roles?.[memberId] ?? "";
-              return (
-                <div
-                  key={memberId}
-                  style={{ position: "absolute", left: pos.x, top: pos.y, zIndex: draggingCardId === memberId ? 20 : 5 }}
-                >
-                  <MemberCard
-                    member={m}
-                    role={role}
-                    onRoleSave={v => handleRoleSave(memberId, v)}
-                    onRemove={() => handleRemoveMember(memberId)}
-                    saving={saving}
-                    onMouseDown={handleCardMouseDown(memberId)}
-                    onHandleMouseDown={handleHandleMouseDown(memberId)}
-                    isDragging={draggingCardId === memberId}
-                  />
-                </div>
-              );
-            })}
-
-            {/* メンバー追加ボタン（キャンバス内の固定位置） */}
-            <div style={{ position: "absolute", bottom: 20, right: 20, zIndex: 10 }}>
-              <div style={{ position: "relative" }}>
-                <button
-                  onClick={() => { setShowAddDropdown(v => !v); setShowOwnerDropdown(false); }}
-                  disabled={saving || addCandidates.length === 0}
-                  title={addCandidates.length === 0 ? "追加できるメンバーがいません" : "メンバーを追加"}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 5,
-                    padding: "8px 14px",
-                    border: "1.5px dashed var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    background: "var(--color-bg-secondary)",
-                    color: "var(--color-text-secondary)",
-                    cursor: saving || addCandidates.length === 0 ? "not-allowed" : "pointer",
-                    fontSize: "12px", fontWeight: 600,
-                    opacity: addCandidates.length === 0 ? 0.45 : 1,
-                    whiteSpace: "nowrap",
-                    boxShadow: "0 2px 8px rgba(0,0,0,0.08)",
-                  }}
-                >
-                  <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span>
-                  <span>メンバーを追加</span>
-                </button>
-
-                {showAddDropdown && (
-                  <div style={{
-                    position: "absolute", bottom: "calc(100% + 4px)", right: 0,
-                    background: "var(--color-bg-primary)",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                    zIndex: 30, minWidth: 180, maxHeight: 240, overflow: "auto",
-                  }}>
-                    <div style={{ padding: "6px 10px", fontSize: "11px", color: "var(--color-text-tertiary)", borderBottom: "1px solid var(--color-border-primary)" }}>
-                      追加するメンバーを選択
-                    </div>
-                    {addCandidates.map(mc => (
-                      <button
-                        key={mc.id}
-                        onClick={() => handleAddMember(mc.id)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          width: "100%", padding: "7px 10px",
-                          background: "transparent", border: "none",
-                          cursor: "pointer", fontSize: "12px",
-                          color: "var(--color-text-primary)", textAlign: "left",
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      >
-                        <div style={{
-                          width: 24, height: 24, borderRadius: "50%",
-                          background: avatarColor(mc.id),
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          color: "#fff", fontSize: "10px", fontWeight: 700, flexShrink: 0,
-                        }}>{initials(mc)}</div>
-                        {mc.display_name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
+              </DropZone>
             </div>
+
           </div>
         )}
       </div>
