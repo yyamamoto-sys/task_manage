@@ -729,7 +729,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
                     whiteSpace: "nowrap",
                     height: 36,
                     alignSelf: "center",
-                    marginTop: memberIds.length > 0 ? 52 : 0,
+                    marginTop: memberIds.length > 0 ? 48 : 0,
                   }}
                 >
                   <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span>
@@ -783,74 +783,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
               </div>
             </div>
 
-            {/* メンバー0人の時の追加エリア */}
-            {memberIds.length === 0 && (
-              <div style={{ marginTop: 16, position: "relative" }}>
-                <button
-                  onClick={() => { setShowAddDropdown(v => !v); setShowOwnerDropdown(false); }}
-                  disabled={saving || addCandidates.length === 0}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 6,
-                    padding: "10px 18px",
-                    border: "1.5px dashed var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    background: "transparent",
-                    color: "var(--color-text-secondary)",
-                    cursor: saving || addCandidates.length === 0 ? "not-allowed" : "pointer",
-                    fontSize: "13px",
-                    fontWeight: 600,
-                    opacity: addCandidates.length === 0 ? 0.45 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: "18px" }}>＋</span>
-                  メンバーを追加
-                </button>
-                {showAddDropdown && (
-                  <div style={{
-                    position: "absolute",
-                    top: "calc(100% + 4px)",
-                    left: "50%",
-                    transform: "translateX(-50%)",
-                    background: "var(--color-bg-primary)",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    boxShadow: "0 4px 16px rgba(0,0,0,0.12)",
-                    zIndex: 10,
-                    minWidth: 180,
-                    maxHeight: 240,
-                    overflow: "auto",
-                  }}>
-                    <div style={{ padding: "6px 10px", fontSize: "11px", color: "var(--color-text-tertiary)", borderBottom: "1px solid var(--color-border-primary)" }}>
-                      追加するメンバーを選択
-                    </div>
-                    {addCandidates.map(m => (
-                      <button
-                        key={m.id}
-                        onClick={() => handleAddMember(m.id)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: 8,
-                          width: "100%", padding: "7px 10px",
-                          background: "transparent", border: "none",
-                          cursor: "pointer", fontSize: "12px",
-                          color: "var(--color-text-primary)",
-                          textAlign: "left",
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = "var(--color-bg-secondary)")}
-                        onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
-                      >
-                        <div style={{
-                          width: 24, height: 24, borderRadius: "50%",
-                          background: avatarColor(m.id),
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          color: "#fff", fontSize: "10px", fontWeight: 700, flexShrink: 0,
-                        }}>{initials(m)}</div>
-                        {m.display_name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
 
           </div>
         )}
