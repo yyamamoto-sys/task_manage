@@ -180,6 +180,7 @@ export function CustomSelect({
             borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)",
             maxHeight: "260px",
+            overflow: "hidden",
             display: "flex",
             flexDirection: "column",
             padding: "4px",
@@ -209,7 +210,7 @@ export function CustomSelect({
               }}
             />
           )}
-          <div style={{ overflowY: "auto", minHeight: 0 }}>
+          <div style={{ overflowY: "auto", minHeight: 0, flex: 1 }}>
           {filteredOptions.length === 0 && (
             <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
               該当する候補がありません
