@@ -187,12 +187,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
   // 滞留タスク（進行中のまま N 日以上 updated_at が動いていない）
   const stagnantTasks = useMemo(
-    () => allTasks.filter(t => {
+    () => filteredTasks.filter(t => {
       if (t.status !== "in_progress" || t.is_deleted || !t.updated_at) return false;
       const diffMs = Date.now() - new Date(t.updated_at).getTime();
       return diffMs / (1000 * 60 * 60 * 24) >= stagnantDays;
     }).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? "")),
-    [allTasks, stagnantDays]
+    [filteredTasks, stagnantDays]
   );
 
   // PJ進捗
@@ -443,8 +443,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           <ProjectKarte project={selectedProject} currentUser={currentUser} />
         )}
 
-        {/* リマインダー */}
-        <div style={{
+        {/* リマインダー（PJ選択中は非表示） */}
+        {!selectedProject && (<div style={{
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-lg)",
@@ -579,7 +579,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               </div>
             )}
           </div>
-        </div>
+        </div>)}
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
@@ -592,8 +592,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             gap: "14px",
           }}>
 
-          {/* ① KR進捗サマリー（各KRを囲い、今期のTFごとサマリーを内包） */}
-          <Card title="KR 進捗サマリー" badge={`${krs.length}件`} order={3}>
+          {/* ① KR進捗サマリー（PJ選択中は非表示） */}
+          {!selectedProject && (<Card title="KR 進捗サマリー" badge={`${krs.length}件`} order={3}>
             {krs.length === 0 && (
               <EmptyState>管理画面でKRを登録してください</EmptyState>
             )}
@@ -690,7 +690,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 </div>
               );
             })}
-          </Card>
+          </Card>)}
 
           {/* ② 期限アラート + 滞留タスク */}
           <Card
@@ -836,8 +836,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           </Card>
           )}
 
-          {/* ⑤ メンション（@自分が含まれるタスク） */}
-          {mentionedTasks.length > 0 && (
+          {/* ⑤ メンション（PJ選択中は非表示） */}
+          {!selectedProject && mentionedTasks.length > 0 && (
             <Card
               title="自分へのメンション"
               badge={`${mentionedTasks.length}件`}
@@ -896,8 +896,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
         </div>
 
-        {/* ⑥ ToDo進捗一覧（フルwidth） */}
-        {todoProgress.length > 0 && (
+        {/* ⑥ ToDo進捗一覧（PJ選択中は非表示） */}
+        {!selectedProject && todoProgress.length > 0 && (
           <div style={{ marginTop: "14px" }}>
             <Card title="ToDo 進捗一覧">
               {todoProgress.map(({ tf, todoItems }) => (
