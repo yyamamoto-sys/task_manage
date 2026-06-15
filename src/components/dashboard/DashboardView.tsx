@@ -341,7 +341,91 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     && (onOpenAdmin || onOpenAiProject || onOpenQuickAdd);
 
   return (
-    <div style={{ height: "100%", overflow: "auto" }}>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
+      {/* ===== 固定ヘッダー帯 ===== */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: "8px",
+        padding: "10px 16px",
+        borderBottom: "1px solid var(--color-border-primary)",
+        background: "var(--color-bg-primary)", flexShrink: 0,
+        flexWrap: "wrap",
+      }}>
+        {/* タイトル：サイドバーPJ選択中は色ドット＋PJ名＋✕解除ボタン、未選択は「全プロジェクト」 */}
+        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1, display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+          {selectedProject ? (
+            <>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: selectedProject.color_tag, display: "inline-block", flexShrink: 0 }} />
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {selectedProject.name}
+              </span>
+              {onClearProjectFilter && (
+                <button
+                  onClick={onClearProjectFilter}
+                  title="絞り込みを解除して全プロジェクトに戻る"
+                  style={{
+                    display: "flex", alignItems: "center", gap: "3px",
+                    padding: "2px 8px", fontSize: "10px", borderRadius: "var(--radius-full)",
+                    border: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)",
+                    color: "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0,
+                  }}
+                >✕ 解除</button>
+              )}
+            </>
+          ) : (
+            <span>全プロジェクト</span>
+          )}
+          <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />
+        </div>
+
+        {/* PJフィルターチップ（サイドバーPJ未選択時のみ） */}
+        {!selectedProject && projects.length > 0 && (
+          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+            {projects.map(pj => (
+              <button
+                key={pj.id}
+                onClick={() => togglePj(pj.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "4px",
+                  padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
+                  border: selectedPjIds.includes(pj.id) ? `1px solid ${pj.color_tag}` : "1px solid var(--color-border-primary)",
+                  background: selectedPjIds.includes(pj.id) ? `${pj.color_tag}22` : "var(--color-bg-primary)",
+                  color: selectedPjIds.includes(pj.id) ? pj.color_tag : "var(--color-text-secondary)",
+                  cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
+                  transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
+                }}
+              >
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
+                {pj.name.slice(0, 10)}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 自分のみ/全員トグル */}
+        <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px", gap: "2px", flexShrink: 0 }}>
+          {[{ val: false, label: "全員" }, { val: true, label: "自分のみ" }].map(({ val, label }) => (
+            <button
+              key={label}
+              onClick={() => { if (mineOnly !== val && onToggleMineOnly) onToggleMineOnly(); }}
+              title="サイドバーの「自分/全件」トグルと連動します"
+              style={{
+                padding: "4px 12px", fontSize: "11px",
+                borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                fontWeight: mineOnly === val ? "500" : "400",
+                background: mineOnly === val ? "var(--color-bg-primary)" : "transparent",
+                color: mineOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                boxShadow: mineOnly === val ? "var(--shadow-sm)" : "none",
+                transition: "background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)",
+              }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ===== スクロールラッパー ===== */}
+      <div style={{ flex: 1, overflow: "auto" }}>
       {showOnboarding && (
         <OnboardingHome
           krCount={krs.length}
@@ -353,115 +437,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         />
       )}
       <div style={{ padding: "16px 20px", maxWidth: "1000px" }}>
-
-        {/* ヘッダー */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: "10px",
-          marginBottom: "16px", flexWrap: "wrap",
-        }}>
-          <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1, display: "flex", alignItems: "center", gap: "8px" }}>
-            <span>ダッシュボード</span>
-            <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />
-          </div>
-
-          {/* 自分のみ/全員トグル */}
-          <div style={{
-            display: "flex", background: "var(--color-bg-tertiary)",
-            borderRadius: "var(--radius-md)", padding: "2px", gap: "2px",
-          }}>
-            {[
-              { val: false, label: "全員" },
-              { val: true,  label: "自分のみ" },
-            ].map(({ val, label }) => (
-              <button
-                key={label}
-                onClick={() => { if (mineOnly !== val && onToggleMineOnly) onToggleMineOnly(); }}
-                title="サイドバーの「自分/全件」トグルと連動します"
-                style={{
-                  padding: "4px 12px", fontSize: "11px",
-                  borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                  fontWeight: mineOnly === val ? "500" : "400",
-                  background: mineOnly === val ? "var(--color-bg-primary)" : "transparent",
-                  color: mineOnly === val ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                  boxShadow: mineOnly === val ? "var(--shadow-sm)" : "none",
-                  transition: "background var(--transition-fast), color var(--transition-fast), box-shadow var(--transition-fast)",
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-
-          {/* PJフィルターチップ（サイドバーでPJ選択中はバナーに置き換わる） */}
-          {!selectedProject && (
-            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-              {projects.map(pj => (
-                <button
-                  key={pj.id}
-                  onClick={() => togglePj(pj.id)}
-                  style={{
-                    display: "flex", alignItems: "center", gap: "4px",
-                    padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
-                    border: selectedPjIds.includes(pj.id)
-                      ? `1px solid ${pj.color_tag}`
-                      : "1px solid var(--color-border-primary)",
-                    background: selectedPjIds.includes(pj.id)
-                      ? `${pj.color_tag}22`
-                      : "var(--color-bg-primary)",
-                    color: selectedPjIds.includes(pj.id)
-                      ? pj.color_tag
-                      : "var(--color-text-secondary)",
-                    cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
-                    transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
-                  }}
-                >
-                  <span style={{
-                    width: 5, height: 5, borderRadius: "50%",
-                    background: pj.color_tag, display: "inline-block",
-                  }} />
-                  {pj.name.slice(0, 10)}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* PJ絞り込み中バナー（サイドバーでPJを選んでいるとき） */}
-        {selectedProject && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: "8px",
-            padding: "8px 12px", marginBottom: "14px",
-            background: `${selectedProject.color_tag}14`,
-            border: `1px solid ${selectedProject.color_tag}55`,
-            borderRadius: "var(--radius-md)",
-          }}>
-            <span style={{
-              width: 9, height: 9, borderRadius: "50%",
-              background: selectedProject.color_tag, display: "inline-block", flexShrink: 0,
-            }} />
-            <span style={{ fontSize: "12px", color: "var(--color-text-primary)", fontWeight: "500" }}>
-              「{selectedProject.name}」で絞り込み中
-            </span>
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }} title="このPJのタスクだけを表示中。リマインダーは全PJ・自分宛てです">
-              （このPJのみ）
-            </span>
-            <div style={{ flex: 1 }} />
-            {onClearProjectFilter && (
-              <button
-                onClick={onClearProjectFilter}
-                style={{
-                  display: "flex", alignItems: "center", gap: "4px",
-                  padding: "3px 10px", fontSize: "11px", borderRadius: "var(--radius-full)",
-                  border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)",
-                  color: "var(--color-text-secondary)", cursor: "pointer", flexShrink: 0,
-                }}
-                title="絞り込みを解除して全社俯瞰に戻る"
-              >
-                ✕ 絞り込み解除
-              </button>
-            )}
-          </div>
-        )}
 
         {/* プロジェクトカルテ（PJ選択中のみ） */}
         {selectedProject && (
@@ -990,6 +965,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             </Card>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
