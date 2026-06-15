@@ -49,6 +49,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const deleteMilestone = useAppStore(s => s.deleteMilestone);
   const [showAddMs, setShowAddMs] = useState(false);
   const [editingMs, setEditingMs] = useState<Milestone | null>(null);
+  const [purposeExpanded, setPurposeExpanded] = useState(false);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -238,9 +239,37 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
               </span>
             )}
           </div>
-          {project.purpose && (
-            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", lineHeight: 1.6 }}>{project.purpose}</div>
-          )}
+          {project.purpose && (() => {
+            const THRESHOLD = 80;
+            const needsCollapse = project.purpose.length > THRESHOLD;
+            return (
+              <div style={{ marginTop: "4px" }}>
+                <div style={{
+                  fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6,
+                  ...(!purposeExpanded && needsCollapse ? {
+                    display: "-webkit-box",
+                    WebkitLineClamp: 3,
+                    WebkitBoxOrient: "vertical",
+                    overflow: "hidden",
+                  } as React.CSSProperties : {}),
+                }}>
+                  {project.purpose}
+                </div>
+                {needsCollapse && (
+                  <button
+                    type="button"
+                    onClick={() => setPurposeExpanded(v => !v)}
+                    style={{
+                      fontSize: "11px", color: "var(--color-brand)", background: "transparent",
+                      border: "none", cursor: "pointer", padding: "2px 0", marginTop: "1px",
+                    }}
+                  >
+                    {purposeExpanded ? "閉じる" : "続きを読む"}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
             {owners.length > 0 && (
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
