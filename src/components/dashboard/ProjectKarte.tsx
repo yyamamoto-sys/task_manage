@@ -220,13 +220,14 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
 
   return (
     <div style={{
-      border: `1px solid ${accent}44`,
+      border: "1px solid var(--color-border-primary)",
       borderLeft: `4px solid ${accent}`,
       borderRadius: "var(--radius-lg)",
       background: "var(--color-bg-primary)",
-      padding: "14px 16px",
+      overflow: "hidden",
       marginBottom: "14px",
     }}>
+    <div style={{ padding: "14px 16px" }}>
       {/* 見出し行 */}
       <div style={{ display: "flex", alignItems: "flex-start", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: "200px" }}>
@@ -457,6 +458,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           onRerun={runAnalysis}
         />
       )}
+    </div>
     </div>
   );
 }

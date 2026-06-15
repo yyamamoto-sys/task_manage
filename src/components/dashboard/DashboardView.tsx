@@ -444,142 +444,129 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         )}
 
         {/* リマインダー（PJ選択中は非表示） */}
-        {!selectedProject && (<div style={{
-          background: "var(--color-bg-primary)",
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-lg)",
-          overflow: "hidden",
-          marginBottom: "14px",
-        }}>
-          {/* カードヘッダー */}
-          <div style={{
-            display: "flex", alignItems: "center", gap: "6px",
-            padding: "10px 14px 8px",
-            borderBottom: "1px solid var(--color-border-primary)",
-          }}>
-            <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-              🔔 自分のリマインダー
-            </span>
-            {reminderTasks.length > 0 && (
-              <span style={{
-                fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)",
-                background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
-                border: "1px solid var(--color-border-warning)", fontWeight: "500",
-              }}>
-                {reminderTasks.length}件
-              </span>
-            )}
-            {/* 通知方法（ユーザーごと：なし / ブラウザ / Teamsまとめ） */}
-            <select
-              value={notifyPref}
-              onChange={e => handleNotifyPrefChange(e.target.value as NotifyPref)}
-              title="期限の通知方法（自分の設定）"
-              style={{
-                fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
-                background: "transparent", color: "var(--color-text-tertiary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-sm)", cursor: "pointer",
-              }}
+        {!selectedProject && (
+          <div style={{ marginBottom: "14px" }}>
+            <Card
+              title="🔔 自分のリマインダー"
+              headerExtra={
+                <>
+                  {reminderTasks.length > 0 && (
+                    <span style={{
+                      fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+                      background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+                      border: "1px solid var(--color-border-warning)", fontWeight: "500",
+                    }}>
+                      {reminderTasks.length}件
+                    </span>
+                  )}
+                  <select
+                    value={notifyPref}
+                    onChange={e => handleNotifyPrefChange(e.target.value as NotifyPref)}
+                    title="期限の通知方法（自分の設定）"
+                    style={{
+                      fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
+                      background: "transparent", color: "var(--color-text-tertiary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-sm)", cursor: "pointer",
+                    }}
+                  >
+                    <option value="none">🔕 通知なし</option>
+                    <option value="browser">🔔 ブラウザ通知</option>
+                    <option value="teams">💬 Teamsまとめ</option>
+                  </select>
+                  <select
+                    value={reminderDays}
+                    onChange={e => {
+                      const n = parseInt(e.target.value, 10);
+                      setReminderDaysState(n);
+                      localStorage.setItem(KEYS.REMINDER_DAYS, String(n));
+                    }}
+                    title="リマインダー対象期間"
+                    style={{
+                      fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
+                      background: "transparent", color: "var(--color-text-tertiary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-sm)", cursor: "pointer",
+                    }}
+                  >
+                    {[3, 7, 14, 30].map(d => (
+                      <option key={d} value={d}>{d}日前〜</option>
+                    ))}
+                  </select>
+                </>
+              }
             >
-              <option value="none">🔕 通知なし</option>
-              <option value="browser">🔔 ブラウザ通知</option>
-              <option value="teams">💬 Teamsまとめ</option>
-            </select>
-            {/* 設定：1クリックで切替 */}
-            <select
-              value={reminderDays}
-              onChange={e => {
-                const n = parseInt(e.target.value, 10);
-                setReminderDaysState(n);
-                localStorage.setItem(KEYS.REMINDER_DAYS, String(n));
-              }}
-              title="リマインダー対象期間"
-              style={{
-                fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
-                background: "transparent", color: "var(--color-text-tertiary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-sm)", cursor: "pointer",
-              }}
-            >
-              {[3, 7, 14, 30].map(d => (
-                <option key={d} value={d}>{d}日前〜</option>
-              ))}
-            </select>
+              {reminderTasks.length === 0 ? (
+                <div style={{ textAlign: "center", padding: "12px 0", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                  {reminderDays}日以内に期限のタスクはありません ✓
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: "4px" }}>
+                  {reminderTasks.map(task => {
+                    const pj = projects.find(p => p.id === task.project_id);
+                    const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
+                    const isOverdue  = diff < 0;
+                    const isToday    = diff === 0;
+                    const isTomorrow = diff === 1;
+                    const tone = isOverdue ? "danger"
+                               : isToday    ? "warning"
+                               : isTomorrow ? "soft"
+                               : "neutral";
+                    const bg = tone === "danger"  ? "var(--color-bg-danger)"
+                             : tone === "warning" ? "#fff4e0"
+                             : tone === "soft"    ? "var(--color-bg-warning)"
+                             :                      "var(--color-bg-secondary)";
+                    const border = tone === "danger"  ? "var(--color-border-danger)"
+                                 : tone === "warning" ? "#f59e0b"
+                                 : tone === "soft"    ? "var(--color-border-warning)"
+                                 :                      "var(--color-border-primary)";
+                    const fg = tone === "danger"  ? "var(--color-text-danger)"
+                             : tone === "warning" ? "#b45309"
+                             : tone === "soft"    ? "var(--color-text-warning)"
+                             :                      "var(--color-text-secondary)";
+                    return (
+                      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+                      <div
+                        key={task.id}
+                        onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
+                        role={onOpenTask ? "button" : undefined}
+                        tabIndex={onOpenTask ? 0 : undefined}
+                        onKeyDown={onOpenTask ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(task.id); } } : undefined}
+                        title={onOpenTask ? "クリックでタスク詳細を開く" : undefined}
+                        style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          padding: "5px 10px",
+                          background: bg,
+                          borderRadius: "var(--radius-md)",
+                          border: `1px solid ${border}`,
+                          flex: isMobile ? "1" : "0 0 auto",
+                          minWidth: 0,
+                          cursor: onOpenTask ? "pointer" : undefined,
+                        }}>
+                        {pj && <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />}
+                        <span style={{
+                          fontSize: "11px",
+                          color: isToday ? fg : "var(--color-text-primary)",
+                          fontWeight: isToday ? 600 : 400,
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                          maxWidth: isMobile ? "none" : "160px",
+                        }}>
+                          {task.name}
+                        </span>
+                        <span style={{
+                          fontSize: "10px", flexShrink: 0, fontWeight: isToday || isOverdue ? 700 : 500,
+                          color: fg,
+                        }}>
+                          {isOverdue ? `${Math.abs(diff)}日超過` : isToday ? "🔥 今日" : isTomorrow ? "明日" : `${diff}日後`}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Card>
           </div>
-          {/* タスク一覧 */}
-          <div style={{ padding: "10px 14px" }}>
-            {reminderTasks.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "12px 0", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                {reminderDays}日以内に期限のタスクはありません ✓
-              </div>
-            ) : (
-              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", flexWrap: "wrap", gap: "4px" }}>
-                {reminderTasks.map(task => {
-                  const pj = projects.find(p => p.id === task.project_id);
-                  const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
-                  const isOverdue  = diff < 0;
-                  const isToday    = diff === 0;
-                  const isTomorrow = diff === 1;
-                  // 緊急度 4段階：超過(赤) > 今日(オレンジ) > 明日(黄薄) > N日後(通常)
-                  const tone = isOverdue ? "danger"
-                             : isToday    ? "warning"
-                             : isTomorrow ? "soft"
-                             : "neutral";
-                  const bg = tone === "danger"  ? "var(--color-bg-danger)"
-                           : tone === "warning" ? "#fff4e0"
-                           : tone === "soft"    ? "var(--color-bg-warning)"
-                           :                      "var(--color-bg-secondary)";
-                  const border = tone === "danger"  ? "var(--color-border-danger)"
-                               : tone === "warning" ? "#f59e0b"
-                               : tone === "soft"    ? "var(--color-border-warning)"
-                               :                      "var(--color-border-primary)";
-                  const fg = tone === "danger"  ? "var(--color-text-danger)"
-                           : tone === "warning" ? "#b45309"
-                           : tone === "soft"    ? "var(--color-text-warning)"
-                           :                      "var(--color-text-secondary)";
-                  return (
-                    // onOpenTask 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
-                    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
-                    <div
-                      key={task.id}
-                      onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
-                      role={onOpenTask ? "button" : undefined}
-                      tabIndex={onOpenTask ? 0 : undefined}
-                      onKeyDown={onOpenTask ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(task.id); } } : undefined}
-                      title={onOpenTask ? "クリックでタスク詳細を開く" : undefined}
-                      style={{
-                        display: "flex", alignItems: "center", gap: "6px",
-                        padding: "5px 10px",
-                        background: bg,
-                        borderRadius: "var(--radius-md)",
-                        border: `1px solid ${border}`,
-                        flex: isMobile ? "1" : "0 0 auto",
-                        minWidth: 0,
-                        cursor: onOpenTask ? "pointer" : undefined,
-                      }}>
-                      {pj && <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, flexShrink: 0 }} />}
-                      <span style={{
-                        fontSize: "11px",
-                        color: isToday ? fg : "var(--color-text-primary)",
-                        fontWeight: isToday ? 600 : 400,
-                        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                        maxWidth: isMobile ? "none" : "160px",
-                      }}>
-                        {task.name}
-                      </span>
-                      <span style={{
-                        fontSize: "10px", flexShrink: 0, fontWeight: isToday || isOverdue ? 700 : 500,
-                        color: fg,
-                      }}>
-                        {isOverdue ? `${Math.abs(diff)}日超過` : isToday ? "🔥 今日" : isTomorrow ? "明日" : `${diff}日後`}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>)}
+        )}
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
@@ -974,13 +961,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 // ===== 小コンポーネント =====
 
 function Card({
-  title, badge, badgeColor = "info", order, children,
+  title, badge, badgeColor = "info", order, headerExtra, children,
 }: {
   title: string;
   badge?: string;
   badgeColor?: "info" | "danger";
   /** グリッド内の表示順（CSS order）。JSXを動かさず行の上下を入れ替えるために使う */
   order?: number;
+  /** ヘッダー右端に追加するコンテンツ（セレクタ・カスタムバッジ等） */
+  headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const badgeStyles = {
@@ -1014,6 +1003,7 @@ function Card({
             {badge}
           </span>
         )}
+        {headerExtra}
       </div>
       <div style={{ padding: "10px 14px", minHeight: "80px" }}>
         {children}
