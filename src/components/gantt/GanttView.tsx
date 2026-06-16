@@ -233,15 +233,23 @@ export function GanttView({
 
   // 各親タスクの実効期間：子タスクの最早 start_date〜最遅 due_date を計算する。
   // ガントのバー描画でこれを使い、親バーが常に子の範囲を包むように表示する（DB は変更しない）。
+  // 旧実装は親ごとに allTasks.filter を呼ぶ O(n²)。
+  // ここでは 1パス目で子を親ID別 Map に集め、2パス目で min/max を算出する O(n) に改善。
   const parentEffectiveDates = useMemo(() => {
-    const map = new Map<string, { start_date: string | undefined; due_date: string | undefined }>();
+    // 1パス目：子タスクを親ID別にグループ化
+    const childrenByParent = new Map<string, Task[]>();
     for (const t of allTasks) {
-      if (t.parent_task_id) continue;
-      const children = allTasks.filter(c => c.parent_task_id === t.id);
-      if (children.length === 0) continue;
+      if (!t.parent_task_id) continue;
+      const arr = childrenByParent.get(t.parent_task_id) ?? [];
+      arr.push(t);
+      childrenByParent.set(t.parent_task_id, arr);
+    }
+    // 2パス目：親ごとに最早 start / 最遅 due を算出
+    const map = new Map<string, { start_date: string | undefined; due_date: string | undefined }>();
+    for (const [parentId, children] of childrenByParent) {
       const starts = children.map(c => c.start_date).filter((s): s is string => !!s);
       const dues   = children.map(c => c.due_date).filter((d): d is string => !!d);
-      map.set(t.id, {
+      map.set(parentId, {
         start_date: starts.length > 0 ? [...starts].sort()[0] : undefined,
         due_date:   dues.length   > 0 ? [...dues].sort()[dues.length - 1] : undefined,
       });
