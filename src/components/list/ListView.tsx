@@ -411,17 +411,28 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // group.tasks は既存のソート順を保持しているのでその順序を尊重しつつ、
   // ネスト時のみ親直下に子（display_order 順）を差し込む。
   const buildRows = useCallback((groupTasks: Task[]): RenderRow[] => {
+    const idsInGroup = new Set(groupTasks.map(t => t.id));
     if (!nestTree) {
-      // フラット：親子はネストしない。親を持つ子には注記を付ける。
-      return groupTasks.map(t => ({
-        task: t,
-        depth: 0 as const,
-        parentNote: parentNameOf(t),
-        isParent: isParentTask(t, filteredTasks),
-      }));
+      // フラット（担当/状態/タグ別）：同一グループに親子が揃う場合のみネスト・トグルを有効化。
+      // 別グループに散った子は従来どおり parentNote（↳ 親名）で注記表示のみ。
+      const rows: RenderRow[] = [];
+      for (const t of groupTasks) {
+        // 同一グループに親がいて折りたたみ中の場合はスキップ
+        if (t.parent_task_id && idsInGroup.has(t.parent_task_id) && collapsedIds.has(t.parent_task_id)) {
+          continue;
+        }
+        const parentInGroup = !!(t.parent_task_id && idsInGroup.has(t.parent_task_id));
+        const isParentHere = groupTasks.some(g => g.parent_task_id === t.id);
+        rows.push({
+          task: t,
+          depth: (parentInGroup ? 1 : 0) as 0 | 1,
+          parentNote: parentInGroup ? undefined : parentNameOf(t),
+          isParent: isParentHere,
+        });
+      }
+      return rows;
     }
     // ネスト：このグループ内の子IDを把握し、親の直下に寄せる。
-    const idsInGroup = new Set(groupTasks.map(t => t.id));
     const rows: RenderRow[] = [];
     for (const t of groupTasks) {
       if (t.parent_task_id) {
