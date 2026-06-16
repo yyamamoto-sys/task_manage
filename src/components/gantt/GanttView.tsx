@@ -257,6 +257,17 @@ export function GanttView({
     return map;
   }, [allTasks]);
 
+  // PJごとの階層順タスクリスト（ラベル列・バー列の両方で共有）
+  // 以前はラベル列・バー列それぞれで orderTasksHierarchically を呼んでいたが、
+  // ここで一度計算して Map に持つことで二重計算を解消する。
+  const pjOrderedTasksMap = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof orderTasksHierarchically>>();
+    for (const pj of visibleProjects) {
+      map.set(pj.id, orderTasksHierarchically(allTasks.filter(t => t.project_id === pj.id)));
+    }
+    return map;
+  }, [visibleProjects, allTasks]);
+
   // 子を持つ親タスクIDの一覧（全折りたたみ/全展開の対象）
   const parentTaskIds = useMemo(() => {
     const childParentIds = new Set(
@@ -892,7 +903,7 @@ export function GanttView({
             ) : viewMode === "pj" ? (
               <>
                 {visibleProjects.map(pj => {
-                  const orderedTasks = orderTasksHierarchically(allTasks.filter(t => t.project_id === pj.id));
+                  const orderedTasks = pjOrderedTasksMap.get(pj.id) ?? [];
                   const isCollapsed = collapsed[pj.id];
                   return (
                     <div key={pj.id}>
@@ -1371,10 +1382,9 @@ export function GanttView({
               ) : null}
 
               {viewMode === "pj" && visibleProjects.map(pj => {
-                const pjTaskList = allTasks.filter(t => t.project_id === pj.id);
-                const pjTasks = sortTasks(pjTaskList);
-                const orderedTasks = orderTasksHierarchically(pjTaskList);
-                const isCollapsed = collapsed[pj.id];
+                const orderedTasks = pjOrderedTasksMap.get(pj.id) ?? [];
+                const pjTaskList   = orderedTasks.map(r => r.task);
+                const isCollapsed  = collapsed[pj.id];
 
                 // PJバーの範囲
                 const pjStart = toDate(pj.start_date);
@@ -1383,9 +1393,9 @@ export function GanttView({
                 const pjBarW  = (pjStart && pjEnd)
                   ? (diffDays(pjStart, pjEnd) + 1) * dayWidth : null;
 
-                // PJの完了率（タスクから計算）
-                const done = pjTasks.filter(t => t.status === "done").length;
-                const pct  = pjTasks.length > 0 ? done / pjTasks.length : 0;
+                // PJの完了率（タスクから計算。完了数カウントにソートは不要）
+                const done = pjTaskList.filter(t => t.status === "done").length;
+                const pct  = pjTaskList.length > 0 ? done / pjTaskList.length : 0;
 
                 // このPJのマイルストーン
                 const pjMilestones = milestones.filter(ms => ms.project_id === pj.id);
