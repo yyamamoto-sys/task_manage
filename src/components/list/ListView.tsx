@@ -654,7 +654,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           )}
         </div>
 
-        {/* ===== 一括操作バー（選択時のみ表示） ===== */}
+        {/* ===== 一括操作バー（選択時のみ表示・スムーズ展開でレイアウト飛びを防止） ===== */}
+        <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "120px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
         {selectedIds.size > 0 && (
           <div style={{
             padding: "8px 12px",
@@ -742,6 +743,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             </button>
           </div>
         )}
+        </div>
 
         {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
         <div style={{ flex: 1, overflow: "auto" }}>
