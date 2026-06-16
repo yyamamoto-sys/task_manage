@@ -1461,11 +1461,13 @@ export function GanttView({
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
                       const isStagnant = isTaskStagnant(task);
-                      const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                      // effectiveTask はバーの実描画範囲（親は子の最早〜最遅に上書き済み）なので
+                      // hasRange・dateLabel も task ではなく effectiveTask から算出する
+                      const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
                       const isHovered = hoveredTaskId === task.id;
                       const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
                       const dateLabel = due ? (hasRange
-                        ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                        ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
 
                       return (
