@@ -318,7 +318,7 @@ export function GanttView({
     return members
       .map(m => {
         const tasks = allTasks
-          .filter(t => t.assignee_member_id === m.id)
+          .filter(t => isAssignedTo(t, m.id))
           .sort((a, b) => {
             const da = toDate(a.due_date);
             const db = toDate(b.due_date);
