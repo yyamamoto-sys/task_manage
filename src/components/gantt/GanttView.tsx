@@ -216,10 +216,10 @@ export function GanttView({
   const [sortOrder, setSortOrder] = useState<GanttSortOrder>(
     () => (localStorage.getItem(KEYS.GANTT_SORT) as GanttSortOrder | null) ?? "date"
   );
-  const changeSortOrder = (s: GanttSortOrder) => {
+  const changeSortOrder = useCallback((s: GanttSortOrder) => {
     localStorage.setItem(KEYS.GANTT_SORT, s);
     setSortOrder(s);
-  };
+  }, []);
   const sortTasks = useCallback((tasks: Task[]): Task[] => {
     if (sortOrder === "name") {
       return [...tasks].sort((a, b) => a.name.localeCompare(b.name, "ja"));
