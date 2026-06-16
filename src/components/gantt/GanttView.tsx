@@ -246,6 +246,14 @@ export function GanttView({
     return map;
   }, [allTasks]);
 
+  // 子を持つ親タスクIDの一覧（全折りたたみ/全展開の対象）
+  const parentTaskIds = useMemo(() => {
+    const childParentIds = new Set(
+      allTasks.filter(t => t.parent_task_id).map(t => t.parent_task_id!)
+    );
+    return allTasks.filter(t => childParentIds.has(t.id)).map(t => t.id);
+  }, [allTasks]);
+
   // PJの開閉状態（キー：PJ ID / ToDo ID / 担当者 ID / 親タスク ID）
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const togglePJ = (id: string) =>
@@ -273,12 +281,26 @@ export function GanttView({
       .filter(g => g.tasks.length > 0);
   }, [members, allTasks]);
 
-  // 全開・全閉
+  // 全開・全閉（PJレベル）
   const expandAll  = () => setCollapsed({});
   const collapseAll = () => {
     const m: Record<string, boolean> = {};
     visibleProjects.forEach(p => { m[p.id] = true; });
     setCollapsed(m);
+  };
+
+  // 親タスクレベルの全折りたたみ/全展開
+  const allParentsCollapsed = parentTaskIds.length > 0 && parentTaskIds.every(id => collapsed[id]);
+  const toggleAllParents = () => {
+    setCollapsed(prev => {
+      const next = { ...prev };
+      if (allParentsCollapsed) {
+        parentTaskIds.forEach(id => delete next[id]);
+      } else {
+        parentTaskIds.forEach(id => { next[id] = true; });
+      }
+      return next;
+    });
   };
 
   // スクロール位置の永続化（中心日付をlocalStorageに保存）
@@ -823,6 +845,20 @@ export function GanttView({
             fontSize: "11px", color: "var(--color-text-tertiary)",
           }}>
             タスク
+            {!isPreview && viewMode === "pj" && parentTaskIds.length > 0 && (
+              <button
+                onClick={toggleAllParents}
+                title={allParentsCollapsed ? "子タスクをすべて展開" : "子タスクをすべて折りたたむ"}
+                style={{
+                  marginLeft: "auto", padding: "2px 6px", fontSize: "9px",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-sm)", background: "transparent",
+                  color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >
+                {allParentsCollapsed ? "⊞ 展開" : "⊟ 畳む"}
+              </button>
+            )}
           </div>
 
           {/* ラベル行（ガント本体と同期スクロール。flex:1 で親の余白を取らないとスクロール領域が機能しない） */}
