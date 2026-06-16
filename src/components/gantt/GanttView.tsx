@@ -42,6 +42,9 @@ interface Props {
 const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
 const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
 const STAGNANT_THRESHOLD_DAYS = 5;
+const TODO_COLOR = "#6ee7b7";
+const MS_COLOR   = "#f59e0b";
+const MS_BORDER  = "#d97706";
 
 type GanttSortOrder = "date" | "name";
 
@@ -123,7 +126,7 @@ export function GanttView({
       todo: todos.find(td => td.id === todoId),
       todoId,
       tasks,
-    })).filter(g => g.todo != null);
+    })).filter((g): g is { todo: NonNullable<typeof g.todo>; todoId: string; tasks: Task[] } => g.todo != null);
   }, [selectedProject, allTasks, todos]);
 
   // 全体の日付範囲を計算（PJとタスクの最も早い開始〜最も遅い終了）
@@ -170,9 +173,12 @@ export function GanttView({
 
   const totalWidth = days.length * dayWidth;
 
-  // 今日のx座標
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  // 今日のx座標（マウント時に固定。毎レンダーで new Date() しない）
+  const today = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   // ===== グリッド描画の最適化 =====
   // 土日背景色を CSS repeating-linear-gradient で描画する（days.map の全日 div を廃止）。
@@ -976,6 +982,8 @@ export function GanttView({
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
                             onMouseLeave={() => setHoveredTaskId(null)}
+                            role="button" tabIndex={0}
+                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
                             style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
@@ -1047,9 +1055,9 @@ export function GanttView({
                         cursor: "pointer",
                       }} onClick={() => togglePJ(`todo_${todoId}`)}>
                         <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#6ee7b7", flexShrink: 0 }} />
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
                         <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                          {`[ToDo] ${(todo!.title.split("\n")[0]).slice(0, 14)}${todo!.title.length > 14 ? "…" : ""}`}
+                          {`[ToDo] ${(todo.title.split("\n")[0]).slice(0, 14)}${todo.title.length > 14 ? "…" : ""}`}
                         </span>
                       </div>
                       {!isCollapsed && sortedTasks.map(task => {
@@ -1058,6 +1066,8 @@ export function GanttView({
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
                             onMouseLeave={() => setHoveredTaskId(null)}
+                            role="button" tabIndex={0}
+                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
                             style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "6px", padding: "0 8px 0 26px",
@@ -1146,6 +1156,8 @@ export function GanttView({
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
                             onMouseLeave={() => setHoveredTaskId(null)}
+                            role="button" tabIndex={0}
+                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
                             style={{
                             height: 30, display: "flex", alignItems: "center",
                             gap: "5px", padding: "0 8px 0 26px",
@@ -1465,14 +1477,16 @@ export function GanttView({
                             onMouseMove={e => setHoveredMs(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
                             onMouseLeave={() => setHoveredMs(null)}
                             onClick={() => { if (!isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
+                            role="button" tabIndex={isPreview ? -1 : 0}
+                            onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
                             title={isPreview ? undefined : "クリックして編集"}
                             style={{
                               position: "absolute",
                               left: msX - 7,
                               top: "50%", transform: "translateY(-50%) rotate(45deg)",
                               width: 12, height: 12,
-                              background: "#f59e0b",
-                              border: "2px solid #d97706",
+                              background: MS_COLOR,
+                              border: `2px solid ${MS_BORDER}`,
                               zIndex: 4,
                               pointerEvents: "auto",
                               cursor: isPreview ? "default" : "pointer",
@@ -1599,7 +1613,7 @@ export function GanttView({
                       <div style={{
                         height: 8, borderRadius: 4,
                         background: `rgba(110,231,183,${0.2 + pct * 0.5})`,
-                        border: "1.5px solid #6ee7b7",
+                        border: `1.5px solid ${TODO_COLOR}`,
                         width: `${Math.max(pct * 100, 4)}%`,
                         minWidth: 4,
                       }} />
@@ -1635,7 +1649,7 @@ export function GanttView({
                                   position: "absolute", left: bar.barX, top: "50%", transform: "translateY(-50%)",
                                   width: bar.barWidth, height: 18,
                                   borderRadius: hasRange ? "4px" : "9px",
-                                  background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "#6ee7b7",
+                                  background: isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : TODO_COLOR,
                                   opacity: isDone ? 0.5 : 1,
                                   cursor: isPreview ? "default" : "pointer",
                                   zIndex: 2,
@@ -1739,7 +1753,7 @@ export function GanttView({
           >
             <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: ms.description ? "4px" : 0 }}>
               <div style={{
-                width: 8, height: 8, background: "#f59e0b", border: "1.5px solid #d97706",
+                width: 8, height: 8, background: MS_COLOR, border: `1.5px solid ${MS_BORDER}`,
                 transform: "rotate(45deg)", flexShrink: 0,
               }} />
               <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", lineHeight: 1.3 }}>
@@ -1785,14 +1799,14 @@ export function GanttView({
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <div style={{
             width: 12, height: 8, borderRadius: 4,
-            background: "linear-gradient(90deg, #818cf8 0%, #34d399 50%, #f59e0b 100%)",
+            background: `linear-gradient(90deg, #818cf8 0%, #34d399 50%, ${MS_COLOR} 100%)`,
           }} />
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>通常（PJカラー）</span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           <div style={{
             width: 10, height: 10,
-            background: "#f59e0b", border: "2px solid #d97706",
+            background: MS_COLOR, border: `2px solid ${MS_BORDER}`,
             transform: "rotate(45deg)", flexShrink: 0,
           }} />
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>マイルストーン</span>
