@@ -303,11 +303,13 @@ export function GanttView({
       .filter(g => g.tasks.length > 0);
   }, [members, allTasks]);
 
-  // 全開・全閉（PJレベル）
+  // 全開・全閉（PJ / ToDo グループ / 人別グループすべて対象）
   const expandAll  = () => setCollapsed({});
   const collapseAll = () => {
     const m: Record<string, boolean> = {};
     visibleProjects.forEach(p => { m[p.id] = true; });
+    todoGroups.forEach(g => { m[`todo_${g.todoId}`] = true; });
+    members.forEach(mem => { m[`person_${mem.id}`] = true; });
     setCollapsed(m);
   };
 
