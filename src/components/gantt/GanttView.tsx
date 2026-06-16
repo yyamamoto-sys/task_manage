@@ -173,6 +173,35 @@ export function GanttView({
   // 今日のx座標
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+
+  // ===== グリッド描画の最適化 =====
+  // 土日背景色を CSS repeating-linear-gradient で描画する（days.map の全日 div を廃止）。
+  // 1週間（7日）を1周期として、日曜=赤/土曜=青/平日=透明 のパターンを繰り返す。
+  // bgOffsetX で rangeStart の曜日に合わせてパターンをシフトする。
+  const weekPeriod = 7 * dayWidth;
+  const bgOffsetX  = (7 - rangeStart.getDay()) % 7 * dayWidth;
+  const weekendGradient = [
+    `linear-gradient(to right,`,
+    `  rgba(239,68,68,0.05) 0px, rgba(239,68,68,0.05) ${dayWidth}px,`,
+    `  transparent ${dayWidth}px, transparent ${6 * dayWidth}px,`,
+    `  rgba(59,130,246,0.05) ${6 * dayWidth}px, rgba(59,130,246,0.05) ${7 * dayWidth}px`,
+    `)`,
+  ].join(" ");
+
+  // 境界線が必要な日（月初・月曜）のみ div を残す（365 → 約65/年）
+  const borderDays = useMemo(
+    () => days.filter(d => d.getDate() === 1 || d.getDay() === 1),
+    [days]
+  );
+
+  // 日ラベル：小ズーム（dayWidth<28）では月初・月曜・今日だけ表示して DOM を削減
+  const todayStr2 = toDateStr(today);
+  const labelDays = useMemo(
+    () => dayWidth >= 28
+      ? days
+      : days.filter(d => d.getDate() === 1 || d.getDay() === 1 || toDateStr(d) === todayStr2),
+    [days, dayWidth, todayStr2]
+  );
   const todayX = diffDays(rangeStart, today) * dayWidth;
 
   // タスク編集モーダル
@@ -1195,13 +1224,14 @@ export function GanttView({
                   </div>
                 ))}
               </div>
-              {/* 日ラベル行 */}
+              {/* 日ラベル行（小ズームでは月初・月曜・今日のみ描画） */}
               <div style={{ height: 28, position: "relative" }}>
-                {days.map((d, i) => {
+                {labelDays.map(d => {
+                  const i = diffDays(rangeStart, d);
                   const isSun = d.getDay() === 0;
                   const isSat = d.getDay() === 6;
-                  const isToday = toDateStr(d) === toDateStr(today);
-                  const isFirst = d.getDate() === 1 || i === 0;
+                  const isToday = toDateStr(d) === todayStr2;
+                  const isFirst = d.getDate() === 1;
                   return (
                     <div key={i} style={{
                       position: "absolute",
@@ -1219,37 +1249,32 @@ export function GanttView({
                       borderRadius: isToday ? "3px" : "0",
                       borderLeft: isFirst ? "1px solid var(--color-border-primary)" : "none",
                     }}>
-                      {isFirst && i > 0
-                        ? `${d.getMonth() + 1}/${d.getDate()}`
-                        : d.getDate()}
+                      {isFirst ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* ボディ */}
-            <div style={{ position: "relative" }}>
-              {/* 縦罫線 + 土日背景色 */}
-              {days.map((d, i) => {
-                const isSun = d.getDay() === 0;
-                const isSat = d.getDay() === 6;
-                const isMon = d.getDay() === 1;
+            {/* ボディ：土日背景は CSS gradient、月初・月曜境界線のみ個別 div */}
+            <div style={{
+              position: "relative",
+              backgroundImage: weekendGradient,
+              backgroundSize: `${weekPeriod}px 100%`,
+              backgroundRepeat: "repeat-x",
+              backgroundPosition: `${bgOffsetX}px 0`,
+            }}>
+              {/* 月初（2px）・月曜（1px）境界線（約65本/年 ≪ 旧来の365本） */}
+              {borderDays.map(d => {
+                const i = diffDays(rangeStart, d);
                 const isMonthStart = d.getDate() === 1;
                 return (
-                  <div key={i} style={{
-                    position: "absolute", left: i * dayWidth, width: dayWidth,
-                    top: 0, bottom: 0,
-                    background: isSun
-                      ? "rgba(239,68,68,0.05)"
-                      : isSat
-                      ? "rgba(59,130,246,0.05)"
-                      : "transparent",
+                  <div key={d.toISOString()} style={{
+                    position: "absolute", left: i * dayWidth,
+                    top: 0, bottom: 0, width: 0,
                     borderLeft: isMonthStart
                       ? "2px solid var(--color-border-primary)"
-                      : isMon
-                      ? "1px solid var(--color-border-secondary)"
-                      : "none",
+                      : "1px solid var(--color-border-secondary)",
                     pointerEvents: "none",
                     boxSizing: "border-box",
                   }} />
