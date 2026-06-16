@@ -1,9 +1,13 @@
 // src/lib/date.ts
 // 日付操作ユーティリティ。全Viewで共有する。
 
-/** 今日の日付を YYYY-MM-DD 形式で返す */
+/** 今日の日付を YYYY-MM-DD 形式で返す（ローカルタイムゾーン基準） */
 export function todayStr(): string {
-  return new Date().toISOString().split("T")[0];
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /** 文字列・null から Date を安全に生成する。無効な値は null を返す */
@@ -14,9 +18,12 @@ export function toDate(s: string | null | undefined): Date | null {
   return isNaN(d.getTime()) ? null : d;
 }
 
-/** Date を YYYY-MM-DD 形式の文字列に変換する */
+/** Date を YYYY-MM-DD 形式の文字列に変換する（ローカルタイムゾーン基準） */
 export function toDateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 /** Date に n 日加算して新しい Date を返す */
@@ -35,8 +42,10 @@ export function addDaysFromToday(n: number): string {
 
 /** 2つの日付の差（日数）を返す。b - a の符号 */
 export function diffDays(a: Date | string, b: Date | string): number {
-  const da = typeof a === "string" ? new Date(a) : a;
-  const db = typeof b === "string" ? new Date(b) : b;
+  // new Date("YYYY-MM-DD") は UTC midnight を返すが toDate() はローカル midnight を返す。
+  // 混在させると最大 ±0.5 日のずれが生じるため、文字列は toDate() で統一する。
+  const da = typeof a === "string" ? (toDate(a) ?? new Date(a)) : a;
+  const db = typeof b === "string" ? (toDate(b) ?? new Date(b)) : b;
   return Math.round((db.getTime() - da.getTime()) / 86400000);
 }
 
@@ -52,7 +61,8 @@ export function formatYM(d: Date): string {
 
 /** 日付文字列を「M/D」形式に変換する */
 export function formatMD(s: string): string {
-  const d = new Date(s);
+  const d = toDate(s);
+  if (!d) return "";
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
