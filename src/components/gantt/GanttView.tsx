@@ -103,8 +103,11 @@ export function GanttView({
   const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
 
-  // 表示するPJを絞り込む
-  const visibleProjects = selectedProject ? [selectedProject] : projects;
+  // 表示するPJを絞り込む（毎レンダーで新配列を作らないよう useMemo 化）
+  const visibleProjects = useMemo(
+    () => selectedProject ? [selectedProject] : projects,
+    [selectedProject, projects]
+  );
 
   // project_id=null のToDo系タスクをToDo単位でグループ化（selectedProject未選択時のみ表示）
   const todoGroups = useMemo(() => {
