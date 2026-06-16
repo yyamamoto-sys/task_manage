@@ -45,9 +45,9 @@ const STAGNANT_THRESHOLD_DAYS = 5;
 
 type GanttSortOrder = "date" | "name";
 
-function isTaskStagnant(task: Task): boolean {
+function isTaskStagnant(task: Task, now = Date.now()): boolean {
   if (task.status !== "in_progress" || !task.updated_at) return false;
-  const diffMs = Date.now() - new Date(task.updated_at).getTime();
+  const diffMs = now - new Date(task.updated_at).getTime();
   return diffMs / (1000 * 60 * 60 * 24) >= STAGNANT_THRESHOLD_DAYS;
 }
 
