@@ -228,7 +228,25 @@ export function GanttView({
     return result;
   }, [sortTasks]);
 
-  // PJの開閉状態
+  // 各親タスクの実効期間：子タスクの最早 start_date〜最遅 due_date を計算する。
+  // ガントのバー描画でこれを使い、親バーが常に子の範囲を包むように表示する（DB は変更しない）。
+  const parentEffectiveDates = useMemo(() => {
+    const map = new Map<string, { start_date: string | undefined; due_date: string | undefined }>();
+    for (const t of allTasks) {
+      if (t.parent_task_id) continue;
+      const children = allTasks.filter(c => c.parent_task_id === t.id);
+      if (children.length === 0) continue;
+      const starts = children.map(c => c.start_date).filter((s): s is string => !!s);
+      const dues   = children.map(c => c.due_date).filter((d): d is string => !!d);
+      map.set(t.id, {
+        start_date: starts.length > 0 ? [...starts].sort()[0] : undefined,
+        due_date:   dues.length   > 0 ? [...dues].sort()[dues.length - 1] : undefined,
+      });
+    }
+    return map;
+  }, [allTasks]);
+
+  // PJの開閉状態（キー：PJ ID / ToDo ID / 担当者 ID / 親タスク ID）
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const togglePJ = (id: string) =>
     setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
@@ -859,8 +877,10 @@ export function GanttView({
                         </span>
                       </div>
 
-                      {/* タスク行ラベル（子タスクはインデント＋↳で明示。親は「子N」を表示） */}
+                      {/* タスク行ラベル（子タスクはインデント＋↳で明示。親は▾トグルで個別折りたたみ可） */}
                       {!isCollapsed && orderedTasks.map(({ task, depth, childCount }) => {
+                        // 親タスクが折りたたまれている子はスキップ
+                        if (depth > 0 && collapsed[task.parent_task_id!]) return null;
                         const m = memberById.get(task.assignee_member_id);
                         const isChild = depth > 0;
                         return (
@@ -869,13 +889,25 @@ export function GanttView({
                             onMouseLeave={() => setHoveredTaskId(null)}
                             style={{
                             height: 30, display: "flex", alignItems: "center",
-                            gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 26px",
+                            gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
                             borderBottom: "1px solid var(--color-border-primary)",
                             background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
                             cursor: "pointer", transition: "background 0.1s",
                           }}>
-                            {isChild && (
+                            {isChild ? (
                               <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
+                            ) : childCount > 0 ? (
+                              <span
+                                onClick={e => { e.stopPropagation(); togglePJ(task.id); }}
+                                style={{
+                                  fontSize: "11px", color: "var(--color-text-secondary)",
+                                  transition: "transform 0.15s", display: "inline-block",
+                                  transform: collapsed[task.id] ? "rotate(-90deg)" : "rotate(0deg)",
+                                  flexShrink: 0, cursor: "pointer", width: 14, textAlign: "center",
+                                }}
+                              >▾</span>
+                            ) : (
+                              <span style={{ flexShrink: 0, width: 14 }} />
                             )}
                             <StatusDot status={task.status} />
                             <span style={{
@@ -1369,9 +1401,23 @@ export function GanttView({
 
                     {/* タスク行（子タスクはバーを細く＝親と区別） */}
                     {!isCollapsed && orderedTasks.map(({ task, depth }) => {
+                      // 親タスクが折りたたまれている子はスキップ
+                      if (depth > 0 && collapsed[task.parent_task_id!]) return null;
                       const previewDue = resizePreviewDates[task.id];
-                      const due = toDate(previewDue ?? task.due_date);
-                      const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
+                      // 親タスク（depth===0）のバーは子の最早開始〜最遅期日に合わせる
+                      let effectiveTask = previewDue ? { ...task, due_date: previewDue } : task;
+                      if (depth === 0 && !previewDue) {
+                        const eff = parentEffectiveDates.get(task.id);
+                        if (eff && (eff.start_date || eff.due_date)) {
+                          effectiveTask = {
+                            ...effectiveTask,
+                            start_date: eff.start_date ?? effectiveTask.start_date,
+                            due_date:   eff.due_date   ?? effectiveTask.due_date,
+                          };
+                        }
+                      }
+                      const due = toDate(effectiveTask.due_date);
+                      const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
