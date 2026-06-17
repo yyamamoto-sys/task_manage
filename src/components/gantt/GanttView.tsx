@@ -17,9 +17,23 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo, getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
+import { isAssignedTo } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
-import { Avatar } from "../auth/UserSelectScreen";
+import {
+  DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
+  TODO_COLOR, MS_COLOR, MS_BORDER,
+  type GanttSortOrder, isTaskStagnant, calcTaskBar,
+} from "./ganttUtils";
+import { TaskBarRow, StatusDot, ZoomIcon } from "./GanttParts";
+import { GanttMobileView } from "./GanttMobileView";
+
+const headerBtnStyle: React.CSSProperties = {
+  padding: "4px 10px", fontSize: "11px",
+  color: "var(--color-text-secondary)",
+  border: "1px solid var(--color-border-primary)",
+  borderRadius: "var(--radius-md)", cursor: "pointer",
+  background: "transparent",
+};
 
 interface Props {
   currentUser: Member;
@@ -35,35 +49,6 @@ interface Props {
   previewChangedTaskIds?: Set<string>;
   /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
   mineOnly?: boolean;
-}
-
-// ===== 定数 =====
-
-const DAY_WIDTH_DEFAULT = 28; // 1日あたりのデフォルトpx幅
-const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
-const STAGNANT_THRESHOLD_DAYS = 5;
-const TODO_COLOR = "#6ee7b7";
-const MS_COLOR   = "#f59e0b";
-const MS_BORDER  = "#d97706";
-
-type GanttSortOrder = "date" | "name";
-
-function isTaskStagnant(task: Task, now = Date.now()): boolean {
-  if (task.status !== "in_progress" || !task.updated_at) return false;
-  const diffMs = now - new Date(task.updated_at).getTime();
-  return diffMs / (1000 * 60 * 60 * 24) >= STAGNANT_THRESHOLD_DAYS;
-}
-
-function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { barX: number; barWidth: number } | null {
-  const due = toDate(task.due_date);
-  if (!due) return null;
-  const start = toDate(task.start_date ?? null);
-  if (start && start <= due) {
-    const barX = diffDays(rangeStart, start) * dayWidth;
-    const barWidth = Math.max((diffDays(start, due) + 1) * dayWidth - 4, dayWidth - 4);
-    return { barX, barWidth };
-  }
-  return { barX: diffDays(rangeStart, due) * dayWidth, barWidth: dayWidth - 4 };
 }
 
 // ===== メインコンポーネント =====
@@ -577,196 +562,30 @@ export function GanttView({
   }, [draggingResizeTask, dayWidth, allTasks, saveTask]);
 
   // ===== モバイル：タイムラインリスト表示 =====
-  // 【設計意図】狭い画面ではガントの横スクロール表（日付×PJ/タスクのマトリクス）が
-  // 破綻し操作不能になるため、PJ別／人別にグルーピングした縦スクロールのカードリストに
-  // 切り替える。各カードは「タスク名＋期間＋担当者」を表示し、タップで TaskEditModal を開く。
-  // タイムラインの価値（いつ・誰が）は期間テキストと期限超過の色で表現する。
   // 全フック宣言後の早期 return なので hooks 順序は崩れない。
   if (isMobile) {
-    const todayStrVal = toDateStr(today);
-    const md = (d?: string | null) => (d ? d.slice(5).replace("-", "/") : "");
-    const rangeText = (t: Task): string => {
-      const s = t.start_date ?? null;
-      const e = t.due_date ?? null;
-      if (s && e) return `${md(s)} → ${md(e)}`;
-      if (e) return `〜 ${md(e)}`;
-      if (s) return `${md(s)} 〜`;
-      return "期日未定";
-    };
-
-    const renderCard = (task: Task) => {
-      const assignees = getAssigneeIds(task)
-        .map(id => memberById.get(id))
-        .filter((m): m is Member => !!m);
-      const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-      const isDone = task.status === "done";
-      const isOverdue = !!task.due_date && task.due_date < todayStrVal && !isDone;
-      const statusColor = TASK_STATUS_STYLE[task.status].color;
-      const isChanged = previewChangedTaskIds?.has(task.id);
-      return (
-        <div
-          key={task.id}
-          role="button"
-          tabIndex={0}
-          onClick={() => { if (!isPreview) setEditingTaskId(task.id); }}
-          onKeyDown={e => {
-            if (isPreview) return;
-            if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditingTaskId(task.id); }
-          }}
-          style={{
-            display: "flex", alignItems: "center", gap: "10px",
-            background: isChanged ? "var(--color-bg-info)" : "var(--color-bg-primary)",
-            border: isChanged ? "1px solid var(--color-text-info)" : "1px solid var(--color-border-primary)",
-            borderLeft: `4px solid ${pj?.color_tag ?? statusColor}`,
-            borderRadius: "var(--radius-md)",
-            padding: "10px 12px", marginBottom: "6px",
-            cursor: isPreview ? "default" : "pointer", opacity: isDone ? 0.55 : 1,
-            minHeight: "56px",
-          }}
-        >
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: "13px", fontWeight: 500, color: "var(--color-text-primary)",
-              lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
-              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-            }}>{task.parent_task_id ? "↳ " : ""}{task.name}</div>
-            <div style={{
-              fontSize: "11px", marginTop: "3px",
-              color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-              fontWeight: isOverdue ? 600 : 400,
-            }}>
-              {rangeText(task)}{isOverdue ? " ・期限超過" : ""}
-            </div>
-          </div>
-          {assignees.length > 0 && (
-            <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
-              {assignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={22} />)}
-              {assignees.length > 2 && (
-                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>+{assignees.length - 2}</span>
-              )}
-            </div>
-          )}
-        </div>
-      );
-    };
-
-    const groupHeader = (color: string, label: string, count: number) => (
-      <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "10px 4px 4px" }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
-        <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
-        <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{count}件</span>
-      </div>
-    );
-
-    const pjGroups = viewMode === "pj"
-      ? visibleProjects
-          .map(pj => ({
-            pj,
-            tasks: sortTasks(allTasks.filter(t => t.project_id === pj.id)),
-            msList: milestones
-              .filter(ms => ms.project_id === pj.id)
-              .sort((a, b) => (a.date < b.date ? -1 : 1)),
-          }))
-          .filter(g => g.tasks.length > 0 || g.msList.length > 0)
-      : [];
-
-    const hasAny = viewMode === "pj"
-      ? pjGroups.length > 0 || todoGroups.length > 0
-      : personGroups.length > 0;
-
     return (
-      <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-        {/* モバイル簡易ヘッダー */}
-        <div style={{
-          display: "flex", alignItems: "center", gap: "8px", padding: "10px 12px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          background: isPreview ? "var(--color-bg-info)" : "var(--color-bg-primary)", flexShrink: 0,
-        }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {isPreview && <span style={{ fontSize: "10px", padding: "2px 8px", background: "var(--color-text-info)", color: "#fff", borderRadius: "var(--radius-full)", marginRight: "6px" }}>変更後（仮）</span>}
-            {selectedProject ? selectedProject.name : krTaskIds ? "OKRタスク" : "全プロジェクト"}
-          </div>
-          {!isPreview && (
-            <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>
-              {(["pj", "person"] as const).map(mode => (
-                <button
-                  key={mode}
-                  className="tap-compact"
-                  onClick={() => setViewMode(mode)}
-                  style={{
-                    padding: "6px 12px", fontSize: "12px", borderRadius: "var(--radius-sm)", border: "none",
-                    background: viewMode === mode ? "var(--color-bg-primary)" : "transparent",
-                    color: viewMode === mode ? "var(--color-brand)" : "var(--color-text-secondary)",
-                    fontWeight: viewMode === mode ? 600 : 400,
-                    boxShadow: viewMode === mode ? "var(--shadow-sm)" : "none",
-                  }}
-                >
-                  {mode === "pj" ? "PJ別" : "人別"}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* 本体（縦スクロール） */}
-        <div style={{ flex: 1, overflow: "auto", padding: "4px 10px 16px" }}>
-          {!hasAny && (
-            <EmptyState
-              icon="📅"
-              title="表示するタスクがありません"
-              hint={mineOnly
-                ? "「自分」モードで担当タスクが無いか、まだ登録されていません。サイドバー上部で「全件」に切り替えるか、＋ボタンで追加してください。"
-                : "PJ やタスクを登録すると、ここに一覧で表示されます。"}
-            />
-          )}
-
-          {viewMode === "pj" && (
-            <>
-              {pjGroups.map(g => (
-                <div key={g.pj.id}>
-                  {groupHeader(g.pj.color_tag ?? "var(--color-text-tertiary)", g.pj.name, g.tasks.length)}
-                  {g.tasks.map(renderCard)}
-                  {g.msList.map(ms => (
-                    <div key={ms.id} style={{
-                      display: "flex", alignItems: "center", gap: "8px",
-                      padding: "8px 12px", marginBottom: "6px", fontSize: "12px",
-                      color: "var(--color-text-secondary)", background: "var(--color-bg-tertiary)",
-                      borderRadius: "var(--radius-md)",
-                    }}>
-                      <span style={{ flexShrink: 0 }}>◆</span>
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ms.name}</span>
-                      <span style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }}>{md(ms.date)}</span>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {todoGroups.map(g => (
-                <div key={g.todoId}>
-                  {groupHeader("var(--color-text-tertiary)", g.todo?.title ?? "(ToDo)", g.tasks.length)}
-                  {sortTasks(g.tasks).map(renderCard)}
-                </div>
-              ))}
-            </>
-          )}
-
-          {viewMode === "person" && personGroups.map(g => (
-            <div key={g.member.id}>
-              {groupHeader("var(--color-brand)", g.member.display_name, g.tasks.length)}
-              {g.tasks.map(renderCard)}
-            </div>
-          ))}
-        </div>
-
-        {/* タスク編集（フルスクリーン） */}
-        {!isPreview && editingTaskId && (
-          <TaskEditModal
-            taskId={editingTaskId}
-            currentUser={currentUser}
-            onClose={() => setEditingTaskId(null)}
-            onDeleted={() => setEditingTaskId(null)}
-          />
-        )}
-      </div>
+      <GanttMobileView
+        today={today}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        visibleProjects={visibleProjects}
+        allTasks={allTasks}
+        todoGroups={todoGroups}
+        personGroups={personGroups}
+        milestones={milestones}
+        memberById={memberById}
+        projectById={projectById}
+        sortTasks={sortTasks}
+        previewChangedTaskIds={previewChangedTaskIds}
+        isPreview={isPreview}
+        editingTaskId={editingTaskId}
+        setEditingTaskId={setEditingTaskId}
+        mineOnly={mineOnly}
+        selectedProject={selectedProject}
+        krTaskIds={krTaskIds}
+        currentUser={currentUser}
+      />
     );
   }
 
@@ -1693,133 +1512,3 @@ export function GanttView({
   );
 }
 
-// ===== 小コンポーネント =====
-
-interface TaskBarRowProps {
-  bar: { barX: number; barWidth: number } | null;
-  barColor: string;
-  barHeight?: number;
-  borderRadius?: string;
-  isDone: boolean;
-  isStagnant: boolean;
-  isChanged?: boolean;
-  isHovered: boolean;
-  isPreview: boolean;
-  dateLabel: string;
-  tooltip: string;
-  onEdit: () => void;
-  onResize: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onMouseEnter: () => void;
-  onMouseLeave: () => void;
-}
-
-function TaskBarRow({
-  bar, barColor, barHeight = 18, borderRadius = "9px",
-  isDone, isStagnant, isChanged = false,
-  isHovered, isPreview,
-  dateLabel, tooltip, onEdit, onResize, onMouseEnter, onMouseLeave,
-}: TaskBarRowProps) {
-  return (
-    <div
-      onMouseEnter={onMouseEnter}
-      onMouseLeave={onMouseLeave}
-      style={{
-        height: 30, position: "relative",
-        borderBottom: "1px solid var(--color-border-primary)",
-        background: isChanged
-          ? "rgba(127,119,221,0.06)"
-          : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
-        transition: "background 0.1s",
-      }}
-    >
-      {bar && (
-        <>
-          <div
-            title={tooltip}
-            onClick={isPreview ? undefined : onEdit}
-            style={{
-              position: "absolute",
-              left: bar.barX, top: "50%", transform: "translateY(-50%)",
-              width: bar.barWidth, height: barHeight,
-              borderRadius,
-              background: barColor,
-              opacity: isDone ? 0.5 : 1,
-              cursor: isPreview ? "default" : "pointer",
-              zIndex: 2,
-              outline: isChanged
-                ? "2px solid var(--color-brand)"
-                : isStagnant && !isDone ? "1.5px solid #f97316" : "none",
-              outlineOffset: "1px",
-              overflow: "hidden",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
-              transition: "filter 0.1s",
-            }}
-          >
-            {bar.barWidth > 52 && (
-              <span style={{
-                fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
-                whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-                padding: "0 4px", pointerEvents: "none",
-              }}>{dateLabel}</span>
-            )}
-          </div>
-          {isStagnant && !isDone && !isPreview && (
-            <div style={{
-              position: "absolute", left: bar.barX + 2, top: "50%", transform: "translateY(-50%)",
-              fontSize: "9px", zIndex: 5, pointerEvents: "none", lineHeight: 1,
-            }}>⚠</div>
-          )}
-          {!isPreview && !isDone && (
-            <div
-              onMouseDown={onResize}
-              style={{
-                position: "absolute",
-                left: bar.barX + bar.barWidth - 4,
-                top: "50%", transform: "translateY(-50%)",
-                width: 8, height: 22, cursor: "col-resize", zIndex: 3,
-              }}
-            />
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: Task["status"] }) {
-  const colors = {
-    todo: "var(--color-border-secondary)",
-    in_progress: "var(--color-text-info)",
-    done: "var(--color-text-success)",
-  };
-  return (
-    <div style={{
-      width: 6, height: 6, borderRadius: "50%",
-      background: colors[status], flexShrink: 0,
-    }} />
-  );
-}
-
-const headerBtnStyle: React.CSSProperties = {
-  padding: "4px 10px", fontSize: "11px",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-  background: "transparent",
-};
-
-function ZoomIcon({ minus = false }: { minus?: boolean }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ display: "block" }}>
-      {/* 虫眼鏡の円 */}
-      <circle cx="6" cy="6" r="4.5" stroke="currentColor" strokeWidth="1.4" fill="none" />
-      {/* ハンドル */}
-      <line x1="9.5" y1="9.5" x2="12.5" y2="12.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
-      {/* 横棒（共通） */}
-      <line x1="3.8" y1="6" x2="8.2" y2="6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-      {/* 縦棒（＋のみ） */}
-      {!minus && <line x1="6" y1="3.8" x2="6" y2="8.2" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />}
-    </svg>
-  );
-}
