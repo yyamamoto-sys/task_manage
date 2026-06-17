@@ -199,7 +199,7 @@ export function GanttView({
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
 
   // マイルストーンホバーツールチップ
-  const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; x: number; y: number } | null>(null);
+  const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; rect: DOMRect } | null>(null);
   // ◆クリックで開くマイルストーン編集モーダル（プレビュー時は無効）
   const [editingMs, setEditingMs] = useState<Milestone | null>(null);
 
@@ -1250,8 +1250,7 @@ export function GanttView({
                         return (
                           <div
                             key={ms.id}
-                            onMouseEnter={e => setHoveredMs({ ms, x: e.clientX, y: e.clientY })}
-                            onMouseMove={e => setHoveredMs(prev => prev ? { ...prev, x: e.clientX, y: e.clientY } : null)}
+                            onMouseEnter={e => setHoveredMs({ ms, rect: e.currentTarget.getBoundingClientRect() })}
                             onMouseLeave={() => setHoveredMs(null)}
                             onClick={() => { if (!isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
                             role="button" tabIndex={isPreview ? -1 : 0}
@@ -1426,11 +1425,18 @@ export function GanttView({
 
       {/* マイルストーンツールチップ */}
       {hoveredMs && (() => {
-        const { ms, x, y } = hoveredMs;
-        // 画面右端・下端からはみ出さないように位置を調整
+        const { ms, rect } = hoveredMs;
+        // ◆要素の BoundingRect を基準にツールチップを配置し、viewport からはみ出さないよう補正する
         const tipW = 200;
-        const left = x + 14 + tipW > window.innerWidth ? x - tipW - 6 : x + 14;
-        const top  = y + 10;
+        const MARGIN = 8;
+        const estimatedTipH = ms.description ? 90 : 56;
+        // 横：◆の中心に合わせ、右端を超えたら左にずらす
+        let left = rect.left + rect.width / 2 - tipW / 2;
+        if (left + tipW > window.innerWidth - MARGIN) left = window.innerWidth - tipW - MARGIN;
+        if (left < MARGIN) left = MARGIN;
+        // 縦：◆の直下、はみ出すなら◆の直上
+        let top = rect.bottom + MARGIN;
+        if (top + estimatedTipH > window.innerHeight - MARGIN) top = rect.top - estimatedTipH - MARGIN;
         return (
           <div
             style={{
