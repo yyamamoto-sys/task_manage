@@ -50,6 +50,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const [showAddMs, setShowAddMs] = useState(false);
   const [editingMs, setEditingMs] = useState<Milestone | null>(null);
   const [purposeExpanded, setPurposeExpanded] = useState(false);
+  const [detailExpanded, setDetailExpanded] = useState(false);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -326,7 +327,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
       </div>
 
       {/* ステータス内訳 + 期日 */}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "12px" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
         <Chip label="未着手" value={stats.todo} />
         <Chip label="進行中" value={stats.inProg} color="#2563eb" />
         <Chip label="完了" value={stats.done} color="#16a34a" />
@@ -337,7 +338,21 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         {stats.noDue > 0 && <Chip label="期日未設定" value={stats.noDue} />}
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
+      {/* 担当者別負荷・マイルストーン トグル */}
+      <button
+        onClick={() => setDetailExpanded(v => !v)}
+        style={{
+          display: "flex", alignItems: "center", gap: "4px",
+          fontSize: "11px", color: "var(--color-text-tertiary)",
+          background: "transparent", border: "none", cursor: "pointer",
+          padding: "2px 0", marginBottom: detailExpanded ? "10px" : "0",
+        }}
+      >
+        <span style={{ display: "inline-block", transition: "transform 0.15s", transform: detailExpanded ? "rotate(0deg)" : "rotate(-90deg)" }}>▾</span>
+        担当者別の負荷・マイルストーン
+      </button>
+
+      {detailExpanded && <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px" }}>
         {/* 担当者別負荷 */}
         <div>
           <SectionLabel>担当者別の負荷（未完了 / 完了）</SectionLabel>
@@ -437,7 +452,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
             </>
           )}
         </div>
-      </div>
+      </div>}
 
       {analysisError && !showAnalysis && (
         <div style={{ marginTop: "10px", fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
