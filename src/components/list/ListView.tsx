@@ -854,7 +854,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
             </div>
           ) : (
             /* PC：テーブル */
-            <table style={{ width: "auto", borderCollapse: "collapse", fontSize: "11px" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "11px" }}>
               <thead style={{ position: "sticky", top: 0, zIndex: 5 }}>
                 <tr style={{ background: "var(--color-bg-secondary)" }}>
                   {cols.map(col => (
