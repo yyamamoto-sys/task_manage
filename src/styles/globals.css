@@ -691,6 +691,8 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   overflow: hidden;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
+  /* 縁内専用背景：body の --color-bg-canvas が透けないようにする */
+  background: var(--color-bg-secondary);
   /* 右端の scrollbar が body の角丸からはみ出さないようにクリップ */
   isolation: isolate;
   /* body の pointer-events:none を上書きしてクリックを確実に受け取る */
