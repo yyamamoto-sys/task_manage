@@ -23,7 +23,7 @@
   /* テキスト：暖色寄りの濃灰（純黒を避ける） */
   --color-text-primary: #221f1a;
   --color-text-secondary: #56524a;
-  --color-text-tertiary: #9d978b;
+  --color-text-tertiary: #6e6860;  /* ↑ bg-primary比5.1:1・WCAG AA合格（旧#9d978b=2.5:1で不合格） */
   --color-text-info: #2c4f8f;
   --color-text-success: #2f6b3c;
   --color-text-warning: #8a5d10;
@@ -123,7 +123,7 @@
   /* テキスト：純白を避けて暖色寄りオフホワイト */
   --color-text-primary: #ebe6dc;
   --color-text-secondary: #a5a094;
-  --color-text-tertiary: #6f6a5e;
+  --color-text-tertiary: #938d80;  /* ↑ bg-primary比5.4:1・WCAG AA合格（旧#6f6a5e=3.5:1で不合格） */
   --color-text-info: #7a9ad8;
   --color-text-success: #84c08a;
   --color-text-warning: #d4ad60;
@@ -227,7 +227,7 @@ html { height: 100%; }
 body {
   height: 100%;
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.6;
   color: var(--color-text-primary);
   /* 外周余白の背景色。#root の角丸カードがこの上に浮かぶ */
