@@ -734,7 +734,9 @@ export async function applyProposalWithConfirmation(
       for (const item of dialog.new_task_items ?? []) {
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
         if (!name) continue;
-        const assigneeId = confirmedValues[`${item.temp_id}_assignee_id`] || null;
+        const assigneeIdsStr = confirmedValues[`${item.temp_id}_assignee_ids`] ?? "";
+        const assigneeIdList = assigneeIdsStr ? assigneeIdsStr.split(",").filter(Boolean) : [];
+        const assigneeId = assigneeIdList[0] ?? null;
         const startDate = confirmedValues[`${item.temp_id}_start_date`] || null;
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
@@ -745,6 +747,7 @@ export async function applyProposalWithConfirmation(
           project_id: item.project_id ?? null,
           todo_id: null,
           assignee_member_id: assigneeId,
+          assignee_member_ids: assigneeIdList,
           status: "todo",
           is_deleted: false,
           start_date: startDate,
@@ -765,7 +768,9 @@ export async function applyProposalWithConfirmation(
         for (const sub of subtaskItems) {
           const name = (confirmedValues[`${sub.temp_id}_name`] ?? sub.task_name).trim();
           if (!name) continue;
-          const assigneeId = confirmedValues[`${sub.temp_id}_assignee_id`] || null;
+          const subIdsStr = confirmedValues[`${sub.temp_id}_assignee_ids`] ?? "";
+          const subIdList = subIdsStr ? subIdsStr.split(",").filter(Boolean) : [];
+          const assigneeId = subIdList[0] ?? null;
           const startDate = confirmedValues[`${sub.temp_id}_start_date`] || null;
           const dueDate = confirmedValues[`${sub.temp_id}_due_date`] || null;
 
@@ -778,6 +783,7 @@ export async function applyProposalWithConfirmation(
             display_order: order,
             todo_id: null,
             assignee_member_id: assigneeId,
+            assignee_member_ids: subIdList,
             status: "todo",
             is_deleted: false,
             start_date: startDate,
@@ -838,7 +844,9 @@ export async function applyProposalWithConfirmation(
       for (const item of dialog.new_project_task_items ?? []) {
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
         if (!name) continue;
-        const assigneeId = confirmedValues[`${item.temp_id}_assignee_id`] || null;
+        const pjTaskIdsStr = confirmedValues[`${item.temp_id}_assignee_ids`] ?? "";
+        const pjTaskIdList = pjTaskIdsStr ? pjTaskIdsStr.split(",").filter(Boolean) : [];
+        const assigneeId = pjTaskIdList[0] ?? null;
         const startDate = confirmedValues[`${item.temp_id}_start_date`] || null;
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
@@ -849,6 +857,7 @@ export async function applyProposalWithConfirmation(
           project_id: projectId,
           todo_id: null,
           assignee_member_id: assigneeId,
+          assignee_member_ids: pjTaskIdList,
           status: "todo",
           is_deleted: false,
           start_date: startDate,

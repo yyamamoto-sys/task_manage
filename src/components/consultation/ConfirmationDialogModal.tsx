@@ -20,6 +20,13 @@ interface Props {
   onApplied: (result: ApplyResult) => void;
 }
 
+function toggleMemberId(current: string, memberId: string): string {
+  const ids = current ? current.split(",") : [];
+  const idx = ids.indexOf(memberId);
+  if (idx >= 0) return ids.filter((_, i) => i !== idx).join(",");
+  return [...ids, memberId].join(",");
+}
+
 export function ConfirmationDialogModal({
   dialog,
   currentUserId,
@@ -55,7 +62,7 @@ export function ConfirmationDialogModal({
         const entries: [string, string][] = [];
         for (const item of [...(dialog.new_task_items ?? []), ...(dialog.new_subtask_items ?? [])]) {
           entries.push([`${item.temp_id}_name`, item.task_name]);
-          entries.push([`${item.temp_id}_assignee_id`, item.suggested_assignee_id ?? ""]);
+          entries.push([`${item.temp_id}_assignee_ids`, item.suggested_assignee_id ?? ""]);
           entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
           entries.push([`${item.temp_id}_due_date`, item.suggested_due_date ?? ""]);
         }
@@ -68,7 +75,7 @@ export function ConfirmationDialogModal({
         ];
         for (const item of dialog.new_project_task_items ?? []) {
           entries.push([`${item.temp_id}_name`, item.task_name]);
-          entries.push([`${item.temp_id}_assignee_id`, item.suggested_assignee_id ?? ""]);
+          entries.push([`${item.temp_id}_assignee_ids`, item.suggested_assignee_id ?? ""]);
           entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
           entries.push([`${item.temp_id}_due_date`, item.suggested_due_date ?? ""]);
         }
@@ -316,18 +323,21 @@ export function ConfirmationDialogModal({
 
                 {/* 担当者 */}
                 <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者</div>
-                  <CustomSelect
-                    value={confirmedValues[`${item.temp_id}_assignee_id`] ?? ""}
-                    onChange={(value) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: value }))
-                    }
-                    options={[
-                      { value: "", label: "未担当" },
-                      ...activeMembers.map((m) => ({ value: m.id, label: m.short_name })),
-                    ]}
-                    searchable searchPlaceholder="メンバーで検索..."
-                  />
+                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数選択可）</div>
+                  <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "6px 8px", maxHeight: "120px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px", background: "var(--color-bg-primary)" }}>
+                    {activeMembers.map(m => {
+                      const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
+                      return (
+                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)", padding: "2px 0" }}>
+                          <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
+                          <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "7px", fontWeight: "600", flexShrink: 0 }}>
+                            {m.initials.slice(0, 1)}
+                          </div>
+                          <span>{m.short_name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 開始日 */}
@@ -416,18 +426,21 @@ export function ConfirmationDialogModal({
 
                 {/* 担当者 */}
                 <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者</div>
-                  <CustomSelect
-                    value={confirmedValues[`${item.temp_id}_assignee_id`] ?? ""}
-                    onChange={(value) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: value }))
-                    }
-                    options={[
-                      { value: "", label: "未担当" },
-                      ...activeMembers.map((m) => ({ value: m.id, label: m.short_name })),
-                    ]}
-                    searchable searchPlaceholder="メンバーで検索..."
-                  />
+                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数選択可）</div>
+                  <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "6px 8px", maxHeight: "120px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px", background: "var(--color-bg-primary)" }}>
+                    {activeMembers.map(m => {
+                      const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
+                      return (
+                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)", padding: "2px 0" }}>
+                          <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
+                          <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "7px", fontWeight: "600", flexShrink: 0 }}>
+                            {m.initials.slice(0, 1)}
+                          </div>
+                          <span>{m.short_name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* 開始日 */}
@@ -509,18 +522,22 @@ export function ConfirmationDialogModal({
                   }}
                 />
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ flex: 1, minWidth: "120px" }}>
-                    <CustomSelect
-                      value={confirmedValues[`${item.temp_id}_assignee_id`] ?? ""}
-                      onChange={(value) =>
-                        setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_assignee_id`]: value }))
-                      }
-                      options={[
-                        { value: "", label: "未担当" },
-                        ...activeMembers.map((m) => ({ value: m.id, label: m.short_name })),
-                      ]}
-                      searchable searchPlaceholder="メンバーで検索..."
-                    />
+                  <div style={{ flex: 1, minWidth: "140px" }}>
+                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数可）</div>
+                    <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "4px 8px", maxHeight: "100px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px", background: "var(--color-bg-primary)" }}>
+                      {activeMembers.map(m => {
+                        const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
+                        return (
+                          <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "11px", color: "var(--color-text-primary)" }}>
+                            <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
+                            <div style={{ width: 12, height: 12, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "6px", fontWeight: "600", flexShrink: 0 }}>
+                              {m.initials.slice(0, 1)}
+                            </div>
+                            <span>{m.short_name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                   <input
                     type="date"
