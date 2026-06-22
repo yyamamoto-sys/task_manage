@@ -50,6 +50,16 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
   const [mineOnly, setMineOnly] = useState(false);
   const [hideDone, setHideDone] = useState(true);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [pjMenuOpen, setPjMenuOpen] = useState(false);
+  const [selectedPjIds, setSelectedPjIds] = useState<Set<string>>(new Set());
+
+  const togglePj = (id: string) => {
+    setSelectedPjIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
   // #7: noteText を localStorage に永続化（閉じても保持される）
   const [noteText, setNoteText] = useState<string>(() => {
     try { return localStorage.getItem("cal_note_text") ?? ""; } catch { return ""; }
@@ -76,22 +86,24 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
       if (due < gridRange.start || due > gridRange.end) continue;
       if (mineOnly && !isAssignedTo(t, currentUser.id)) continue;
       if (hideDone && t.status === "done") continue;
+      if (selectedPjIds.size > 0 && (!t.project_id || !selectedPjIds.has(t.project_id))) continue;
       if (!map.has(due)) map.set(due, []);
       map.get(due)!.push(t);
     }
     return map;
-  }, [tasks, mineOnly, hideDone, currentUser.id, gridRange]);
+  }, [tasks, mineOnly, hideDone, currentUser.id, gridRange, selectedPjIds]);
 
   const milestonesByDate = useMemo(() => {
     const map = new Map<string, { name: string; pjColor?: string }[]>();
     for (const m of milestones) {
       // 表示グリッド外のマイルストーンはスキップ
       if (m.date < gridRange.start || m.date > gridRange.end) continue;
+      if (selectedPjIds.size > 0 && !selectedPjIds.has(m.project_id)) continue;
       if (!map.has(m.date)) map.set(m.date, []);
       map.get(m.date)!.push({ name: m.name, pjColor: projectById.get(m.project_id)?.color_tag });
     }
     return map;
-  }, [milestones, projectById, gridRange]);
+  }, [milestones, projectById, gridRange, selectedPjIds]);
 
   const cells = useMemo(() => {
     const first = new Date(ym.y, ym.m, 1);
@@ -160,6 +172,12 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
           >🙈 完了を隠す</button>
 
           <button className="cal-print-hide"
+            onClick={() => setPjMenuOpen(v => !v)}
+            title="表示するプロジェクトを絞り込む"
+            style={{ ...HEADER_BTN, background: selectedPjIds.size > 0 ? "var(--color-brand-light)" : pjMenuOpen ? "var(--color-bg-tertiary)" : "var(--color-bg-secondary)", color: selectedPjIds.size > 0 ? "var(--color-text-purple)" : "var(--color-text-secondary)", borderColor: selectedPjIds.size > 0 ? "var(--color-brand-border)" : "var(--color-border-primary)" }}
+          >📁 {selectedPjIds.size > 0 ? `${selectedPjIds.size}PJ選択中` : "PJ絞り込み"}</button>
+
+          <button className="cal-print-hide"
             onClick={() => setNoteOpen(v => !v)}
             title="印刷用の備考・注釈欄を開く"
             style={{ ...HEADER_BTN, background: noteOpen ? "var(--color-bg-info)" : "var(--color-bg-secondary)", color: noteOpen ? "var(--color-text-info)" : "var(--color-text-secondary)", borderColor: noteOpen ? "var(--color-border-info)" : "var(--color-border-primary)" }}
@@ -174,6 +192,51 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
           <div style={{ flex: 1 }} />
           <button className="cal-print-hide" onClick={onClose} title="閉じる" aria-label="閉じる" style={{ ...HEADER_BTN, fontSize: "16px", padding: "2px 10px" }}>×</button>
         </div>
+
+        {/* ===== PJ絞り込みパネル ===== */}
+        {pjMenuOpen && (
+          <div className="cal-print-hide" style={{
+            padding: "10px 18px",
+            borderBottom: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-secondary)",
+            flexShrink: 0,
+          }}>
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "7px" }}>
+              表示するプロジェクトを選択（未選択＝全プロジェクト表示）
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+              {projects.map(p => {
+                const sel = selectedPjIds.has(p.id);
+                return (
+                  <button
+                    key={p.id}
+                    onClick={() => togglePj(p.id)}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "5px",
+                      padding: "3px 10px", borderRadius: "var(--radius-full)",
+                      fontSize: "11px", cursor: "pointer",
+                      border: sel ? `1.5px solid ${p.color_tag ?? "var(--color-brand)"}` : "1px solid var(--color-border-primary)",
+                      background: sel ? `${p.color_tag ?? "#6366f1"}22` : "var(--color-bg-primary)",
+                      color: sel ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+                      fontWeight: sel ? "600" : "400",
+                    }}
+                  >
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: p.color_tag ?? "var(--color-text-tertiary)", flexShrink: 0 }} />
+                    {p.name}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedPjIds.size > 0 && (
+              <button
+                onClick={() => setSelectedPjIds(new Set())}
+                style={{ marginTop: "8px", fontSize: "10px", color: "var(--color-text-tertiary)", background: "none", border: "none", cursor: "pointer", textDecoration: "underline", padding: 0 }}
+              >
+                選択をリセット（全PJ表示）
+              </button>
+            )}
+          </div>
+        )}
 
         {/* ===== 備考・注釈欄 ===== */}
         <div className="cal-note-area" style={{
