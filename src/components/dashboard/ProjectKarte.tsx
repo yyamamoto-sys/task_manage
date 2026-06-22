@@ -11,7 +11,7 @@
 // 【AI境界ルール】AI分析に渡すのは PJ/Task/Milestone/メンバー名のみ（projectAnalysisClient 参照）。
 // 紐づくKR名は画面表示はするが、AIには渡さない。
 
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Project, Milestone } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
@@ -47,10 +47,56 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const rawTpjs    = useAppStore(s => s.taskProjects);
   const saveMilestone   = useAppStore(s => s.saveMilestone);
   const deleteMilestone = useAppStore(s => s.deleteMilestone);
+  const saveProject     = useAppStore(s => s.saveProject);
   const [showAddMs, setShowAddMs] = useState(false);
   const [editingMs, setEditingMs] = useState<Milestone | null>(null);
   const [purposeExpanded, setPurposeExpanded] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
+
+  // ===== インライン編集 =====
+  type EditField = "purpose" | "owners" | "dates";
+  const [editingField, setEditingField] = useState<EditField | null>(null);
+  const [draftPurpose, setDraftPurpose] = useState("");
+  const [draftOwnerIds, setDraftOwnerIds] = useState<string[]>([]);
+  const [draftStartDate, setDraftStartDate] = useState("");
+  const [draftEndDate, setDraftEndDate] = useState("");
+  const [fieldSaving, setFieldSaving] = useState(false);
+  const purposeRef = useRef<HTMLTextAreaElement>(null);
+
+  const openEdit = useCallback((field: EditField) => {
+    if (field === "purpose") setDraftPurpose(project.purpose ?? "");
+    if (field === "owners")  setDraftOwnerIds(project.owner_member_ids?.length ? project.owner_member_ids : (project.owner_member_id ? [project.owner_member_id] : []));
+    if (field === "dates")   { setDraftStartDate(project.start_date ?? ""); setDraftEndDate(project.end_date ?? ""); }
+    setEditingField(field);
+  }, [project]);
+
+  const cancelEdit = useCallback(() => setEditingField(null), []);
+
+  const saveField = useCallback(async () => {
+    if (!editingField || fieldSaving) return;
+    setFieldSaving(true);
+    try {
+      const updated: Project = { ...project, updated_by: currentUser.id };
+      if (editingField === "purpose") updated.purpose = draftPurpose.trim();
+      if (editingField === "owners") {
+        updated.owner_member_ids = draftOwnerIds;
+        updated.owner_member_id  = draftOwnerIds[0] ?? project.owner_member_id;
+      }
+      if (editingField === "dates") {
+        updated.start_date = draftStartDate;
+        updated.end_date   = draftEndDate;
+      }
+      await saveProject(updated);
+      setEditingField(null);
+    } catch {
+      // handleSaveError already shows toast in store
+    } finally {
+      setFieldSaving(false);
+    }
+  }, [editingField, fieldSaving, project, draftPurpose, draftOwnerIds, draftStartDate, draftEndDate, saveProject, currentUser.id]);
+
+  // purposeエディタが開いたらフォーカス
+  useEffect(() => { if (editingField === "purpose") purposeRef.current?.focus(); }, [editingField]);
 
   const stagnantDays = useMemo(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -241,48 +287,129 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
               </span>
             )}
           </div>
-          {project.purpose && (() => {
-            const THRESHOLD = 80;
-            const needsCollapse = project.purpose.length > THRESHOLD;
-            return (
-              <div style={{ marginTop: "4px" }}>
-                <div style={{
-                  fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6,
-                  ...(!purposeExpanded && needsCollapse ? {
-                    display: "-webkit-box",
-                    WebkitLineClamp: 3,
-                    WebkitBoxOrient: "vertical",
-                    overflow: "hidden",
-                  } as React.CSSProperties : {}),
-                }}>
-                  {project.purpose}
-                </div>
-                {needsCollapse && (
-                  <button
-                    type="button"
-                    onClick={() => setPurposeExpanded(v => !v)}
-                    style={{
-                      fontSize: "11px", color: "var(--color-brand)", background: "transparent",
-                      border: "none", cursor: "pointer", padding: "2px 0", marginTop: "1px",
-                    }}
-                  >
-                    {purposeExpanded ? "閉じる" : "続きを読む"}
-                  </button>
+          {/* 説明（purpose） */}
+          {editingField === "purpose" ? (
+            <div style={{ marginTop: "6px" }}>
+              <textarea
+                ref={purposeRef}
+                value={draftPurpose}
+                onChange={e => setDraftPurpose(e.target.value)}
+                maxLength={200}
+                placeholder="何のためのPJか一行で"
+                style={{
+                  width: "100%", fontSize: "12px", lineHeight: 1.6, padding: "5px 8px",
+                  borderRadius: "var(--radius-sm)", border: "1px solid var(--color-brand)",
+                  resize: "vertical", background: "var(--color-bg-secondary)",
+                  color: "var(--color-text-primary)", boxSizing: "border-box",
+                  outline: "none", minHeight: "52px",
+                }}
+              />
+              <div style={{ display: "flex", gap: "6px", marginTop: "4px" }}>
+                <button onClick={saveField} disabled={fieldSaving || !draftPurpose.trim()} style={saveInlineBtn}>保存</button>
+                <button onClick={cancelEdit} style={cancelInlineBtn}>キャンセル</button>
+              </div>
+            </div>
+          ) : (
+            <div style={{ marginTop: "4px", display: "flex", alignItems: "flex-start", gap: "4px" }}>
+              <div style={{ flex: 1 }}>
+                {project.purpose ? (() => {
+                  const THRESHOLD = 80;
+                  const needsCollapse = project.purpose.length > THRESHOLD;
+                  return (
+                    <>
+                      <div style={{
+                        fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6,
+                        ...(!purposeExpanded && needsCollapse ? {
+                          display: "-webkit-box",
+                          WebkitLineClamp: 3,
+                          WebkitBoxOrient: "vertical",
+                          overflow: "hidden",
+                        } as React.CSSProperties : {}),
+                      }}>
+                        {project.purpose}
+                      </div>
+                      {needsCollapse && (
+                        <button type="button" onClick={() => setPurposeExpanded(v => !v)}
+                          style={{ fontSize: "11px", color: "var(--color-brand)", background: "transparent", border: "none", cursor: "pointer", padding: "2px 0", marginTop: "1px" }}>
+                          {purposeExpanded ? "閉じる" : "続きを読む"}
+                        </button>
+                      )}
+                    </>
+                  );
+                })() : (
+                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>説明がありません</span>
                 )}
               </div>
-            );
-          })()}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
-            {owners.length > 0 && (
+              <button onClick={() => openEdit("purpose")} title="説明を編集" style={pencilBtn}>✏</button>
+            </div>
+          )}
+
+          {/* オーナー・期間 */}
+          <div style={{ display: "flex", alignItems: "flex-start", gap: "8px", marginTop: "6px", flexWrap: "wrap" }}>
+            {/* オーナー */}
+            {editingField === "owners" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px", flex: 1 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                  {draftOwnerIds.map(id => {
+                    const m = memberById.get(id);
+                    if (!m) return null;
+                    return (
+                      <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "3px", fontSize: "11px", padding: "2px 7px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)" }}>
+                        <Avatar member={m} size={14} />
+                        {m.short_name}
+                        <button onClick={() => setDraftOwnerIds(ids => ids.filter(i => i !== id))}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: "0 0 0 2px", lineHeight: 1, color: "var(--color-text-tertiary)", fontSize: "12px" }}>×</button>
+                      </span>
+                    );
+                  })}
+                  <select
+                    value=""
+                    onChange={e => { if (e.target.value && !draftOwnerIds.includes(e.target.value)) setDraftOwnerIds(ids => [...ids, e.target.value]); }}
+                    style={{ fontSize: "11px", padding: "2px 4px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                  >
+                    <option value="">＋ 追加</option>
+                    {members.filter(m => !draftOwnerIds.includes(m.id)).map(m => (
+                      <option key={m.id} value={m.id}>{m.short_name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button onClick={saveField} disabled={fieldSaving || draftOwnerIds.length === 0} style={saveInlineBtn}>保存</button>
+                  <button onClick={cancelEdit} style={cancelInlineBtn}>キャンセル</button>
+                </div>
+              </div>
+            ) : (
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                {owners.map(o => <Avatar key={o.id} member={o} size={18} />)}
+                {owners.length > 0
+                  ? owners.map(o => <Avatar key={o.id} member={o} size={18} />)
+                  : <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>未設定</span>}
                 <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>オーナー</span>
+                <button onClick={() => openEdit("owners")} title="担当者を編集" style={pencilBtn}>✏</button>
               </div>
             )}
-            {(project.start_date || project.end_date) && (
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                📅 {project.start_date ? formatMD(project.start_date) : "—"} 〜 {project.end_date ? formatMD(project.end_date) : "—"}
-              </span>
+
+            {/* 期間 */}
+            {editingField === "dates" ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                  <input type="date" value={draftStartDate} onChange={e => setDraftStartDate(e.target.value)}
+                    style={{ fontSize: "11px", padding: "3px 5px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>〜</span>
+                  <input type="date" value={draftEndDate} onChange={e => setDraftEndDate(e.target.value)}
+                    style={{ fontSize: "11px", padding: "3px 5px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }} />
+                </div>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button onClick={saveField} disabled={fieldSaving} style={saveInlineBtn}>保存</button>
+                  <button onClick={cancelEdit} style={cancelInlineBtn}>キャンセル</button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                  📅 {project.start_date ? formatMD(project.start_date) : "—"} 〜 {project.end_date ? formatMD(project.end_date) : "—"}
+                </span>
+                <button onClick={() => openEdit("dates")} title="期間を編集" style={pencilBtn}>✏</button>
+              </div>
             )}
           </div>
         </div>
@@ -594,4 +721,24 @@ const ghostBtn: React.CSSProperties = {
   fontSize: "11px", padding: "5px 12px", background: "transparent",
   border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
   color: "var(--color-text-secondary)", cursor: "pointer",
+};
+
+const pencilBtn: React.CSSProperties = {
+  background: "transparent", border: "none", cursor: "pointer",
+  fontSize: "11px", color: "var(--color-text-tertiary)",
+  padding: "1px 3px", lineHeight: 1, flexShrink: 0,
+  opacity: 0.6,
+  transition: "opacity 0.1s",
+};
+
+const saveInlineBtn: React.CSSProperties = {
+  fontSize: "11px", padding: "3px 10px",
+  background: "var(--color-brand)", color: "#fff",
+  border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer",
+};
+
+const cancelInlineBtn: React.CSSProperties = {
+  fontSize: "11px", padding: "3px 10px",
+  background: "transparent", color: "var(--color-text-secondary)",
+  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", cursor: "pointer",
 };
