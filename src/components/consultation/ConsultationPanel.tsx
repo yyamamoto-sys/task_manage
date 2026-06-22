@@ -433,6 +433,7 @@ export function ConsultationPanel({
               <button
                 key={mode}
                 onClick={() => setPanelMode(mode)}
+                {...(mode === "meeting" ? { "data-tour-id": "ai-mode-tab-meeting" } : {})}
                 style={{
                   padding: "5px 12px", fontSize: "11px", fontWeight: "600",
                   borderRadius: "var(--radius-full)", border: "none", cursor: "pointer",

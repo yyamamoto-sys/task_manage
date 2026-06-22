@@ -290,6 +290,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         {/* AI分析ボタン */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
           <button
+            data-tour-id="pj-ai-analyze-btn"
             onClick={analyzing ? undefined : runAnalysis}
             disabled={analyzing}
             style={{
