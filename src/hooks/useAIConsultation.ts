@@ -44,14 +44,10 @@ export interface SubmitOptions {
   targetDeadline?: string | null;
   /** OKR（Objective/KR/TF）情報をペイロードに含めるか。未指定（既定）は true で常に含める */
   includeOKR?: boolean;
-  /** true=Thinkingモード（Sonnet・高品質/やや遅い）/ false=QuickResponse（Haiku・高速・既定） */
-  thinkingMode?: boolean;
   /** 回答ボリューム設定（short=簡潔 / normal=普通・既定 / detailed=詳細） */
   responseVolume?: ResponseVolume;
 }
 
-// QuickResponse=高速モデル / Thinking=高品質モデル
-const QUICK_MODEL = "claude-haiku-4-5";
 const THINKING_MODEL = "claude-sonnet-4-6";
 
 // ===== ローディングメッセージ =====
@@ -118,13 +114,13 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   const submit = useCallback(
     async (opts: SubmitOptions) => {
-      const { consultation, consultationType, targetDeadline, thinkingMode, responseVolume } = opts;
+      const { consultation, consultationType, targetDeadline, responseVolume } = opts;
       // OKR情報のチェックボックスは廃止。明示指定が無ければ常にOKR情報を含める（既定 true）。
       const includeOKR = opts.includeOKR ?? true;
 
       if (!consultation.trim()) return;
 
-      const model = thinkingMode ? THINKING_MODEL : QUICK_MODEL;
+      const model = THINKING_MODEL;
 
       setCallState("loading");
       setErrorMessage("");

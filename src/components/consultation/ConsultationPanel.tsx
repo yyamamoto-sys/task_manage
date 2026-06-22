@@ -53,55 +53,6 @@ interface Props {
   prefillInput?: { text: string; nonce: number };
 }
 
-const TYPE_CONFIG: {
-  value: ConsultationType;
-  label: string;
-  shortLabel: string;
-  description: string;
-  placeholder: string;
-  hint: string;
-}[] = [
-  {
-    value: "change",
-    label: "変更の影響整理",
-    shortLabel: "影響整理",
-    description: "メンバーの不在・異動・スケジュール変更など、何かが変わったときに影響範囲を整理します。",
-    placeholder: "例：○○さんが来週から長期休みに入ります。担当しているタスクへの影響を確認してください。",
-    hint: "起きた変化を伝えてください。",
-  },
-  {
-    value: "simulate",
-    label: "What-If シミュレーション",
-    shortLabel: "What-If",
-    description: "「もし〜したら？」という仮定を試します。実際の変更は行わず、画面上でのシミュレーションのみです。",
-    placeholder: "例：もし○○プロジェクトの締め切りを1ヶ月延ばしたら、他への影響はどうなりますか？",
-    hint: "まだ決定していないことを気軽に試してみてください。",
-  },
-  {
-    value: "diagnose",
-    label: "現状診断",
-    shortLabel: "診断",
-    description: "今のプロジェクト・タスクの状況を分析して、リスクや課題を洗い出します。",
-    placeholder: "例：今のプロジェクト全体を見て、遅延リスクや問題になりそな箇所を教えてください。",
-    hint: "特定の変更がなくても「今どういう状態か確認したい」ときに使います。",
-  },
-  {
-    value: "deadline_check",
-    label: "締め切り逆算",
-    shortLabel: "逆算",
-    description: "目標日までに完了させるには何をすればよいかを逆算します。先に下の「締め切り日」を入力してください。",
-    placeholder: "例：○○プロジェクトを上の締め切り日までに完了させるには今のペースで間に合いますか？",
-    hint: "まず締め切り日を入力してから相談してください。",
-  },
-  {
-    value: "scope_change",
-    label: "スコープ縮小・停止",
-    shortLabel: "縮小/停止",
-    description: "プロジェクトやタスクを停止・縮小するときに、影響を確認しながら整理します。",
-    placeholder: "例：○○プロジェクトの優先度が下がりました。止めるとしたらどのタスクから整理すればいいですか？",
-    hint: "「リソースが足りなくなった」「優先度が下がった」ものがあるときに使います。",
-  },
-];
 
 export function ConsultationPanel({
   isOpen,
@@ -122,16 +73,11 @@ export function ConsultationPanel({
   useEffect(() => { setPanelMode(defaultMode); }, [defaultMode]);
 
   // ===== 相談モード用状態 =====
-  const [manualType, setManualType] = useState<ConsultationType | null>(null);
   // 【seed】入力中の下書き・直近送信文を、再マウントで消えないようミラーストアから seed する。
   //   seed は getState() で初期値として1回だけ読む（ストアを購読しない）。
   const [inputText, setInputText] = useState(() => useConsultSessionStore.getState().inputDraft);
   // 直近に送信した相談文（送信後も「何を送ったか」を画面上で確認できるようにする）
   const [lastSubmittedText, setLastSubmittedText] = useState(() => useConsultSessionStore.getState().lastSubmittedText);
-  const [targetDeadline, setTargetDeadline] = useState("");
-  // OKR情報は常にペイロードへ含める方針（チェックボックスは廃止）。useAIConsultation 側で既定 true。
-  // Thinkingモード：ON=Sonnet（高品質・やや遅い）/ OFF=QuickResponse（Haiku・高速・既定）
-  const [thinkingMode, setThinkingMode] = useState(false);
   // 回答ボリューム：short=簡潔 / normal=普通（既定） / detailed=詳細
   const [responseVolume, setResponseVolume] = useState<ResponseVolume>("normal");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -167,10 +113,8 @@ export function ConsultationPanel({
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const userEchoRef = useRef<HTMLDivElement>(null);
 
-  // 自動判定 or 手動上書き
-  const autoType = useMemo(() => inferConsultationType(inputText), [inputText]);
-  const consultationType: ConsultationType = manualType ?? autoType;
-  const isAutoDetected = manualType === null;
+  // 入力内容からAIが相談の種類を自動判定
+  const consultationType: ConsultationType = useMemo(() => inferConsultationType(inputText), [inputText]);
 
   const reload      = useAppStore(s => s.reload);
 
@@ -180,7 +124,6 @@ export function ConsultationPanel({
     submit, reset, undoStack, canUndo, pushUndoSnapshot, undo, undoUntil,
   } = useAIConsultation([], currentUser.id);
 
-  const currentType = TYPE_CONFIG.find(t => t.value === consultationType)!;
   const hasHistory = session.turns.length > 0;
 
   // 【二重表示の防止】最新のやりとりは上部の「送信した相談」＋「最新の提案」で表示するため、
@@ -211,11 +154,6 @@ export function ConsultationPanel({
   useEffect(() => {
     useConsultSessionStore.getState().saveAi({ lastSubmittedText });
   }, [lastSubmittedText]);
-
-  // deadline_check 以外に切り替わったら日付をクリア
-  useEffect(() => {
-    if (consultationType !== "deadline_check") setTargetDeadline("");
-  }, [consultationType]);
 
   // 提案が来たら送信メッセージの位置へスクロール（最下部ではなく送信位置先頭）＆最新AIターンを記録
   useEffect(() => {
@@ -277,7 +215,7 @@ export function ConsultationPanel({
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, thinkingMode, responseVolume });
+    await submit({ consultation, consultationType, responseVolume });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -290,11 +228,6 @@ export function ConsultationPanel({
       e.preventDefault();
       handleSubmit();
     }
-  };
-
-  const handleTypeChange = (v: ConsultationType | null) => {
-    setManualType(v);
-    if (v !== "deadline_check") setTargetDeadline("");
   };
 
   // AIからの返信が来るたびにlocalStorageへ自動保存（ユーザー端末のみ・DBには送らない）
@@ -312,7 +245,6 @@ export function ConsultationPanel({
   }, [session.turns, currentUser.id, consultationType]);
 
   const handleReset = () => {
-    setManualType(null);
     setSelectedProposalIds(new Set());
     setInputText("");
     setLastSubmittedText("");
@@ -566,98 +498,6 @@ export function ConsultationPanel({
         {/* ===== スクロール可能エリア ===== */}
         <div ref={scrollAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>
 
-          {/* 相談の種類タブ（自動 + 5種） */}
-          <div>
-            <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.04em" }}>
-              相談の種類
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
-              {/* 自動ボタン */}
-              <button
-                onClick={() => handleTypeChange(null)}
-                title="入力内容からAIが相談の種類を自動判定します"
-                style={{
-                  fontSize: "11px", padding: "4px 10px",
-                  borderRadius: "var(--radius-full)",
-                  border: isAutoDetected ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                  background: isAutoDetected ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                  color: isAutoDetected ? "#fff" : "var(--color-text-secondary)",
-                  cursor: "pointer", fontWeight: isAutoDetected ? "600" : "400",
-                  transition: "all 0.1s", whiteSpace: "nowrap",
-                }}
-              >
-                自動
-              </button>
-              {/* 5種類ボタン */}
-              {TYPE_CONFIG.map(t => {
-                const active = !isAutoDetected && consultationType === t.value;
-                return (
-                  <button
-                    key={t.value}
-                    onClick={() => handleTypeChange(t.value)}
-                    title={`${t.label}\n${t.description}`}
-                    style={{
-                      fontSize: "11px", padding: "4px 10px",
-                      borderRadius: "var(--radius-full)",
-                      border: active ? "1.5px solid var(--color-brand)" : "1px solid var(--color-border-primary)",
-                      background: active ? "var(--color-brand)" : "var(--color-bg-secondary)",
-                      color: active ? "#fff" : "var(--color-text-secondary)",
-                      cursor: "pointer", fontWeight: active ? "600" : "400",
-                      transition: "all 0.1s", whiteSpace: "nowrap",
-                    }}
-                  >
-                    {t.shortLabel}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-
-          {/* 締め切り日入力（逆算モード時のみ） */}
-          {consultationType === "deadline_check" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-              <label style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", letterSpacing: "0.04em" }}>
-                締め切り日（必須）
-              </label>
-              <input
-                type="date"
-                value={targetDeadline}
-                onChange={e => setTargetDeadline(e.target.value)}
-                style={{ fontSize: "12px", padding: "6px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", color: "var(--color-text-primary)" }}
-              />
-            </div>
-          )}
-
-          {/* Thinkingモード切替（既定OFF=QuickResponse=高速。ONで高品質モデルにする） */}
-          <button
-            onClick={() => setThinkingMode(v => !v)}
-            title="ON：高品質なモデル（Sonnet）でじっくり考えます（少し遅い）。OFF：高速（QuickResponse・既定）。"
-            style={{
-              display: "inline-flex", alignItems: "center", gap: "6px",
-              padding: "4px 10px", alignSelf: "flex-start",
-              background: "transparent",
-              border: `1px solid ${thinkingMode ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-              borderRadius: "var(--radius-full)", cursor: "pointer",
-              fontSize: "10px",
-              color: thinkingMode ? "var(--color-brand)" : "var(--color-text-tertiary)",
-            }}
-          >
-            <span style={{
-              width: 10, height: 10, borderRadius: "2px", flexShrink: 0,
-              background: thinkingMode ? "var(--color-brand)" : "transparent",
-              border: `1.5px solid ${thinkingMode ? "var(--color-brand)" : "var(--color-text-tertiary)"}`,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}>
-              {thinkingMode && (
-                <svg width="6" height="5" viewBox="0 0 9 7" fill="none">
-                  <path d="M1 3l2.5 2.5L8 1" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              )}
-            </span>
-            🧠 Thinking（高品質・少し遅い）
-          </button>
-
           {/* 回答ボリューム切替（short=簡潔 / normal=普通 / detailed=詳細） */}
           <div style={{ display: "flex", alignItems: "center", gap: "6px", alignSelf: "flex-start" }}>
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>回答量</span>
@@ -747,7 +587,7 @@ export function ConsultationPanel({
                   onApplied={snapshot => { pushUndoSnapshot(snapshot); reload(); }}
                   onGanttPreview={p => setGanttPreviewProposal(p)}
                   onDecline={followUpText => {
-                    submit({ consultation: followUpText, consultationType, targetDeadline: targetDeadline || null });
+                    submit({ consultation: followUpText, consultationType });
                   }}
                   isSelected={selectedProposalIds.has(proposal.proposal_id)}
                   onToggleSelect={() => setSelectedProposalIds(prev => {
@@ -790,7 +630,7 @@ export function ConsultationPanel({
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={currentType.placeholder}
+            placeholder="相談内容を入力してください（例：○○さんが来週から休みに入ります。タスクへの影響を確認して）"
             rows={3}
             disabled={callState === "loading"}
             style={{
