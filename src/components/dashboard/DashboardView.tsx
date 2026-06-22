@@ -29,9 +29,13 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
 import { HelpButton } from "../guide/HelpButton";
-import { isAssignedTo } from "../../lib/taskMeta";
+import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { showToast } from "../common/Toast";
+import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
+import { AIProgressLoader } from "../common/AIProgressLoader";
+import { MarkdownLite } from "../common/MarkdownLite";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   currentUser: Member;
@@ -64,8 +68,16 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTodos   = useAppStore(s => s.todos);
+  const rawMs      = useAppStore(s => s.milestones);
   const saveMember = useAppStore(s => s.saveMember);
   const isMobile = useIsMobile();
+
+  // ===== 全PJ AI分析 =====
+  const [showAllAnalysis, setShowAllAnalysis] = useState(false);
+  const [allAnalyzing, setAllAnalyzing] = useState(false);
+  const [allAnalysisResult, setAllAnalysisResult] = useState<string | null>(null);
+  const [allAnalysisError, setAllAnalysisError] = useState<string | null>(null);
+  const [allAnalysisCopied, setAllAnalysisCopied] = useState(false);
 
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
@@ -86,7 +98,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const krs      = useMemo(() => active(rawKrs), [rawKrs]);
   const tfs      = useMemo(() => active(rawTfs), [rawTfs]);
-  const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const todos      = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
+  const milestones = useMemo(() => (rawMs ?? []).filter(m => !m.is_deleted), [rawMs]);
   const projectTaskForces = rawPtfs;
 
   // KRごとのシグナル履歴をフェッチ（最大4週分）
@@ -280,6 +293,66 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     [tfs, todos, allTasks]
   );
 
+  const runAllProjectsAnalysis = useCallback(async () => {
+    setAllAnalyzing(true);
+    setAllAnalysisError(null);
+    setAllAnalysisResult(null);
+    setShowAllAnalysis(true);
+    try {
+      const activePjs = projects.filter(pj => pj.status === "active");
+      const pjSummaries: AllProjectsPjSummary[] = activePjs.map(pj => {
+        const pjTasks = allTasks.filter(t => t.project_id === pj.id && !isParentTask(t, allTasks));
+        const pjMs = milestones
+          .filter(m => m.project_id === pj.id)
+          .sort((a, b) => a.date.localeCompare(b.date));
+        const nextMs = pjMs.find(m => m.date >= todayS);
+        const loadMap = new Map<string, number>();
+        for (const t of pjTasks) {
+          if (t.status === "done") continue;
+          for (const id of getAssigneeIds(t)) loadMap.set(id, (loadMap.get(id) ?? 0) + 1);
+        }
+        const ownerIds = pj.owner_member_ids?.length
+          ? pj.owner_member_ids
+          : pj.owner_member_id ? [pj.owner_member_id] : [];
+        return {
+          name: pj.name,
+          purpose: pj.purpose ?? "",
+          status: pj.status,
+          start_date: pj.start_date ?? "",
+          end_date: pj.end_date ?? "",
+          owner_short_names: ownerIds.map(id => members.find(m => m.id === id)?.short_name).filter((s): s is string => !!s),
+          task_stats: {
+            total: pjTasks.length,
+            todo: pjTasks.filter(t => t.status === "todo").length,
+            in_progress: pjTasks.filter(t => t.status === "in_progress").length,
+            done: pjTasks.filter(t => t.status === "done").length,
+            overdue: pjTasks.filter(t => t.status !== "done" && t.due_date != null && t.due_date <= todayS).length,
+            no_due: pjTasks.filter(t => t.status !== "done" && !t.due_date).length,
+            stagnant: pjTasks.filter(t =>
+              t.status === "in_progress" && t.updated_at &&
+              (Date.now() - new Date(t.updated_at).getTime()) / 86400000 >= stagnantDays
+            ).length,
+          },
+          assignee_loads: [...loadMap.entries()]
+            .map(([id, active]) => ({ short_name: members.find(m => m.id === id)?.short_name ?? "", active }))
+            .filter(l => l.short_name)
+            .sort((a, b) => b.active - a.active),
+          next_milestone: nextMs ? { name: nextMs.name, date: nextMs.date } : undefined,
+        };
+      });
+      const result = await analyzeAllProjects({
+        projects: pjSummaries,
+        members_short_names: members.map(m => m.short_name),
+        today: todayS,
+      });
+      setAllAnalysisResult(result);
+    } catch (e) {
+      setAllAnalysisError(formatErrorForUser("AI分析に失敗しました", e));
+    } finally {
+      setAllAnalyzing(false);
+    }
+  }, [projects, allTasks, milestones, members, todayS, stagnantDays]);
+
   const togglePj = (id: string) => {
     setActiveKrId(null);
     setSelectedPjIds(prev =>
@@ -372,7 +445,26 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               )}
             </>
           ) : (
-            <span>全プロジェクト</span>
+            <>
+              <span>全プロジェクト</span>
+              <button
+                onClick={allAnalyzing ? undefined : () => { setShowAllAnalysis(true); if (!allAnalysisResult) runAllProjectsAnalysis(); }}
+                disabled={allAnalyzing}
+                title="全PJをポートフォリオ視点でAI分析します"
+                style={{
+                  display: "flex", alignItems: "center", gap: "5px",
+                  padding: "4px 12px", fontSize: "11px", fontWeight: 600,
+                  border: "none", borderRadius: "var(--radius-full)", flexShrink: 0,
+                  background: allAnalyzing ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  color: allAnalyzing ? "var(--color-text-tertiary)" : "#fff",
+                  cursor: allAnalyzing ? "default" : "pointer",
+                  boxShadow: allAnalyzing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
+                }}
+              >
+                <span>✨</span>
+                {allAnalyzing ? "分析中…" : allAnalysisResult ? "分析結果を見る" : "全PJをAI分析"}
+              </button>
+            </>
           )}
           <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />
         </div>
@@ -423,6 +515,61 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           ))}
         </div>
       </div>
+
+      {/* ===== 全PJ AI分析モーダル ===== */}
+      {showAllAnalysis && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+          onClick={e => { if (e.target === e.currentTarget) setShowAllAnalysis(false); }}
+        >
+          <div style={{ width: "min(740px, 100%)", maxHeight: "calc(100vh - 48px)", background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
+            <div className="ai-shimmer" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+              <span style={{ fontSize: "16px" }}>✨</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>AI分析：全プロジェクト ポートフォリオ</div>
+                {!allAnalyzing && allAnalysisResult && (
+                  <div style={{ fontSize: "10px", color: "rgba(255,255,255,0.85)", marginTop: "1px" }}>
+                    {projects.filter(p => p.status === "active").length}件のアクティブPJを横断分析
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setShowAllAnalysis(false)} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "16px", color: "#fff", padding: "3px 8px", borderRadius: "var(--radius-sm)", lineHeight: 1 }}>✕</button>
+            </div>
+
+            <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
+              {allAnalyzing && (
+                <AIProgressLoader
+                  phases={["プロジェクト一覧を読み込んでいます", "タスク状況を集計しています", "リスクを横断的に評価しています", "担当者の負荷バランスを確認しています", "全体の次の一手をまとめています"]}
+                  intervalMs={4000}
+                />
+              )}
+              {!allAnalyzing && allAnalysisError && (
+                <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "12px 14px", borderRadius: "var(--radius-md)" }}>{allAnalysisError}</div>
+              )}
+              {!allAnalyzing && !allAnalysisError && allAnalysisResult && <MarkdownLite text={allAnalysisResult} />}
+            </div>
+
+            <div style={{ flexShrink: 0, borderTop: "1px solid var(--color-border-primary)", padding: "10px 16px", display: "flex", gap: "8px", alignItems: "center" }}>
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>AIの分析は参考情報です。事実は元データで確認してください。</span>
+              {allAnalysisResult && !allAnalyzing && (
+                <button
+                  onClick={() => { navigator.clipboard?.writeText(allAnalysisResult).then(() => { setAllAnalysisCopied(true); setTimeout(() => setAllAnalysisCopied(false), 1500); }).catch(() => {}); }}
+                  style={{ fontSize: "11px", padding: "5px 12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                >
+                  {allAnalysisCopied ? "コピーしました" : "コピー"}
+                </button>
+              )}
+              <button
+                onClick={allAnalyzing ? undefined : runAllProjectsAnalysis}
+                disabled={allAnalyzing}
+                style={{ fontSize: "11px", padding: "5px 12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: allAnalyzing ? "default" : "pointer", opacity: allAnalyzing ? 0.5 : 1 }}
+              >
+                {allAnalyzing ? "分析中…" : "再分析"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ===== スクロールラッパー ===== */}
       <div style={{ flex: 1, overflow: "auto" }}>

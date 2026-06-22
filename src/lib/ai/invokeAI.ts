@@ -41,8 +41,9 @@ export type AIIntent =
   | "okr-analysis"         // KR単位のAI分析（会議ノート＋KRセッション・宣言＋TFタスクをAIに渡す）
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AIでPJ設計
-  | "project-analysis"     // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名。PJ視点なのでOKRデータは未投入）
-  | "todo-decompose";      // ToDo 分解
+  | "project-analysis"          // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名。PJ視点なのでOKRデータは未投入）
+  | "all-projects-analysis"     // 全PJ横断ポートフォリオ分析（全PJの概要＋タスク統計を渡す）
+  | "todo-decompose";           // ToDo 分解
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];
