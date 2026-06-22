@@ -163,6 +163,7 @@ export function ConsultationPanel({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const userEchoRef = useRef<HTMLDivElement>(null);
 
   // 自動判定 or 手動上書き
   const autoType = useMemo(() => inferConsultationType(inputText), [inputText]);
@@ -214,10 +215,14 @@ export function ConsultationPanel({
     if (consultationType !== "deadline_check") setTargetDeadline("");
   }, [consultationType]);
 
-  // 提案が来たらスクロールエリアを一番下へ＆最新AIターンを記録
+  // 提案が来たら送信メッセージの位置へスクロール（最下部ではなく送信位置先頭）＆最新AIターンを記録
   useEffect(() => {
     if (callState !== "success") return;
-    if (scrollAreaRef.current) scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    if (userEchoRef.current) {
+      userEchoRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (scrollAreaRef.current) {
+      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+    }
     const last = [...session.turns].reverse().find(t => t.role === "assistant");
     if (last) setLatestAiTimestamp(last.timestamp);
   }, [callState, proposals.length, session.turns]);
@@ -658,7 +663,7 @@ export function ConsultationPanel({
 
           {/* 送信した相談（吹き出しのみ＝右寄せで「送信済み」が自明なのでラベルは省略） */}
           {showSubmittedEcho && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            <div ref={userEchoRef} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <div style={{ display: "flex", justifyContent: "flex-end" }}>
                 <div style={{
                   maxWidth: "85%", padding: "8px 12px",
