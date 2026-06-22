@@ -313,7 +313,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           start_date: draft.start_date || null,
           due_date: draft.due_date || null,
           estimated_hours: null,
-          comment: draft.source_quote ? `会議メモ：「${draft.source_quote}」` : "",
+          comment: draft.source_quote ? `資料メモ：「${draft.source_quote}」` : "",
           is_deleted: false,
           created_at: now,
           updated_at: now,
@@ -442,7 +442,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
             current={saveProgress.current}
             total={saveProgress.total}
             label={saveProgress.label}
-            title="会議メモから登録しています"
+            title="資料から登録しています"
           />
         )}
         {step === "done" && applyResults && (
@@ -472,7 +472,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
             disabled={!canAnalyze}
             style={primaryButtonStyle(!canAnalyze)}
           >
-            🤖 AIで会議内容を解析する
+            🤖 AIで内容を解析する
           </button>
         </div>
       )}
@@ -517,11 +517,11 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
           display: "flex", alignItems: "center", gap: "10px",
           flexShrink: 0,
         }}>
-          <span style={{ fontSize: "20px" }}>🎙️</span>
+          <span style={{ fontSize: "20px" }}>📄</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>会議から読み込む</div>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>資料インプット</div>
             <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
-              {step === "analyzing" ? "AI解析中..." : "文字起こし（VTT/テキスト/Word/PDF）→ AI解析 → タスク登録"}
+              {step === "analyzing" ? "AI解析中..." : "議事録・資料（テキスト/Word/PDF）→ AI解析 → タスク登録"}
             </div>
           </div>
           {step === "review" && (
@@ -615,7 +615,7 @@ function InputStep({
           <FieldLabel>
             または直接貼り付け
             <span style={{ fontSize: "10px", fontWeight: "400", color: "var(--color-text-tertiary)", marginLeft: "8px" }}>
-              Teams・Zoom・Googleミートの文字起こし、議事メモ何でも可
+              議事録・会議メモ・資料・報告書など何でも可
             </span>
           </FieldLabel>
           <span style={{
@@ -689,9 +689,9 @@ function ReviewStep({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
 
-      {/* 会議サマリー */}
+      {/* 資料サマリー */}
       <Card>
-        <SectionHeader icon="📝" title="会議サマリー" />
+        <SectionHeader icon="📝" title="資料サマリー" />
         <div style={{ marginTop: "10px", fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
           {analysis.summary}
         </div>
@@ -1140,7 +1140,7 @@ function DoneStep({ created, updated, onReset, onClose }: {
       </div>
       <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
         <button onClick={onReset} style={ghostButtonStyle}>
-          別の会議を読み込む
+          別の資料を読み込む
         </button>
         <button onClick={onClose} style={primaryButtonStyle(false)}>
           閉じる

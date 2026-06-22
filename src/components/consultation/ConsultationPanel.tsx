@@ -441,7 +441,7 @@ export function ConsultationPanel({
                   transition: "all 0.15s", whiteSpace: "nowrap",
                 }}
               >
-                {mode === "consult" ? "💬 相談" : "🎙️ 会議"}
+                {mode === "consult" ? "💬 相談" : "📄 資料インプット"}
               </button>
             ))}
           </div>
@@ -459,7 +459,7 @@ export function ConsultationPanel({
           lineHeight: 1.4,
         }}>
           {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます。タスクの追加や新規プロジェクトの作成もここから依頼できます"}
-          {panelMode === "meeting" && "会議の文字起こしから新規タスクとステータス変更を自動で提案・登録します"}
+          {panelMode === "meeting" && "議事録・資料などを読み込み、新規タスクとステータス変更を自動で提案・登録します"}
         </div>
 
         {/* ===== 会議読み込みモード ===== */}
