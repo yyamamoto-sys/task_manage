@@ -156,6 +156,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // StrictMode の副作用二重実行等で "tour:action" が二重発火しても二重送信しないよう、
   // 直近に起動したら短時間は重複トリガを無視する（再入防止）。
   const demoTriggerGuardRef = useRef(false);
+  // ツアーの "open-dashboard-pj-analysis" アクションで参照するため、最新の projects を ref で持つ
+  const projectsRef = useRef<Project[]>([]);
   useEffect(() => {
     const onTourAction = (e: Event) => {
       const action = (e as CustomEvent).detail as string;
@@ -170,6 +172,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           text: "計画管理を始めます。タスクはどれくらいの細かさで登録すると管理しやすいですか？コツを教えてください。",
           nonce: Date.now(),
         });
+      }
+      // ダッシュボードへ移動して最初のアクティブPJを選択（pj-karteツアーステップ用）
+      if (action === "open-dashboard-pj-analysis") {
+        setViewMode("dashboard");
+        const firstPj = projectsRef.current[0];
+        if (firstPj) setSelectedProjectId(firstPj.id);
       }
     };
     window.addEventListener("tour:action", onTourAction);
@@ -198,6 +206,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]
   );
+  // ツアーのアクションハンドラが最新のprojectsを参照できるよう同期
+  useEffect(() => { projectsRef.current = projects; }, [projects]);
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
   // 「自分が担当タスクを持つPJ」。サイドバーの「自分」モードで各ビューが
