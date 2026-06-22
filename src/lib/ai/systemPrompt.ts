@@ -5,7 +5,7 @@
 // コード内にインラインで書かない（CLAUDE.md Section 6-13参照）。
 // consultation_typeを追加する場合はCLAUDE.md Section 6-6も同時に更新すること。
 
-import type { ConsultationType } from "./types";
+import type { ConsultationType, ResponseVolume } from "./types";
 
 // ===== レスポンス構造のJSON定義（全モード共通） =====
 
@@ -428,3 +428,28 @@ ${RESPONSE_FORMAT}`,
 
 ${RESPONSE_FORMAT}`,
 };
+
+// ===== 回答ボリューム指示（システムプロンプト末尾に付加） =====
+
+const VOLUME_INSTRUCTIONS: Record<ResponseVolume, string> = {
+  short: `
+
+## 回答ボリューム指定（優先）
+各提案の description は2〜3文以内で簡潔にまとめること。箇条書き・見出し・長い説明は不要。要点のみ記載する。`,
+  normal: "",
+  detailed: `
+
+## 回答ボリューム指定（優先）
+各提案の description には背景・理由・具体的なアクション手順・注意点を含め、読んですぐ動けるレベルで詳しく書くこと。見出しや箇条書きを積極的に使って読みやすくまとめる。`,
+};
+
+/**
+ * consultation_type と responseVolume を組み合わせてシステムプロンプトを生成する。
+ * apiClient.ts からのみ呼び出すこと。
+ */
+export function buildSystemPrompt(
+  consultationType: ConsultationType,
+  volume: ResponseVolume = "normal",
+): string {
+  return SYSTEM_PROMPTS[consultationType] + VOLUME_INSTRUCTIONS[volume];
+}

@@ -6,7 +6,7 @@ import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
 import { SessionHistoryPanel } from "./SessionHistoryPanel";
 import type { Member, Project } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
-import type { ConsultationType } from "../../lib/ai/types";
+import type { ConsultationType, ResponseVolume } from "../../lib/ai/types";
 import { useAppStore } from "../../stores/appStore";
 import { useConsultSessionStore } from "../../stores/consultSessionStore";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
@@ -132,6 +132,8 @@ export function ConsultationPanel({
   // OKR情報は常にペイロードへ含める方針（チェックボックスは廃止）。useAIConsultation 側で既定 true。
   // Thinkingモード：ON=Sonnet（高品質・やや遅い）/ OFF=QuickResponse（Haiku・高速・既定）
   const [thinkingMode, setThinkingMode] = useState(false);
+  // 回答ボリューム：short=簡潔 / normal=普通（既定） / detailed=詳細
+  const [responseVolume, setResponseVolume] = useState<ResponseVolume>("normal");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
@@ -275,7 +277,7 @@ export function ConsultationPanel({
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, thinkingMode });
+    await submit({ consultation, consultationType, targetDeadline: targetDeadline || null, thinkingMode, responseVolume });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -655,6 +657,34 @@ export function ConsultationPanel({
             </span>
             🧠 Thinking（高品質・少し遅い）
           </button>
+
+          {/* 回答ボリューム切替（short=簡潔 / normal=普通 / detailed=詳細） */}
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", alignSelf: "flex-start" }}>
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>回答量</span>
+            {(["short", "normal", "detailed"] as const).map(vol => {
+              const labels: Record<ResponseVolume, string> = { short: "短め", normal: "普通", detailed: "詳細" };
+              const active = responseVolume === vol;
+              return (
+                <button
+                  key={vol}
+                  onClick={() => setResponseVolume(vol)}
+                  title={vol === "short" ? "2〜3文で簡潔に回答" : vol === "detailed" ? "背景・手順・注意点まで詳しく回答" : "標準的な回答量"}
+                  style={{
+                    padding: "4px 10px",
+                    border: `1px solid ${active ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                    borderRadius: "var(--radius-full)",
+                    background: active ? "var(--color-brand)" : "transparent",
+                    color: active ? "#fff" : "var(--color-text-tertiary)",
+                    cursor: "pointer",
+                    fontSize: "10px",
+                    fontWeight: active ? "600" : "400",
+                  }}
+                >
+                  {labels[vol]}
+                </button>
+              );
+            })}
+          </div>
 
           {/* 会話履歴（古い→新しいの順。最新のやりとりは下部に表示するので、ここはそれより前のターン） */}
           {hasOlderHistory && (

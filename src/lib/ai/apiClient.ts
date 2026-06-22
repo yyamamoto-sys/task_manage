@@ -11,9 +11,9 @@
 //   新しい AI 機能を実装するときは invokeAI を経由すること（CLAUDE.md Section 16）。
 
 import { supabase } from "../supabase/client";
-import type { ConsultationType } from "./types";
+import type { ConsultationType, ResponseVolume } from "./types";
 import type { AIConsultationPayload } from "./payloadBuilder";
-import { SYSTEM_PROMPTS } from "./systemPrompt";
+import { buildSystemPrompt } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";
 
 // ===== エラー型定義 =====
@@ -74,8 +74,10 @@ export async function callAIConsultation(
   history: ChatTurn[],
   /** 使用モデル（QuickResponse=haiku / Thinking=sonnet）。省略時は Edge Function の既定 */
   model?: string,
+  /** 回答ボリューム設定。省略時は "normal" */
+  responseVolume?: ResponseVolume,
 ): Promise<AICallResult> {
-  const systemPrompt = SYSTEM_PROMPTS[consultationType];
+  const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal");
 
   // 会話履歴をAnthropic形式に変換
   const messages: { role: "user" | "assistant"; content: string }[] = [];

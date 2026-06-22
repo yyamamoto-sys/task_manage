@@ -10,6 +10,9 @@ export type ConsultationType =
   | "deadline_check" // 締め切り逆算（target_deadline必須）
   | "scope_change";  // PJ停止・スコープ縮小
 
+/** AIの回答ボリューム設定 */
+export type ResponseVolume = "short" | "normal" | "detailed";
+
 /** AIに渡すプロジェクト情報（contribution_memoは含めない） */
 export interface AIProject {
   pj_id: string;

@@ -15,7 +15,7 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { useAppStore } from "../stores/appStore";
 import { useConsultSessionStore } from "../stores/consultSessionStore";
-import type { ConsultationType } from "../lib/ai/types";
+import type { ConsultationType, ResponseVolume } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
 import { callAIConsultation } from "../lib/ai/apiClient";
 import { AIError } from "../lib/ai/apiClient";
@@ -46,6 +46,8 @@ export interface SubmitOptions {
   includeOKR?: boolean;
   /** true=Thinkingモード（Sonnet・高品質/やや遅い）/ false=QuickResponse（Haiku・高速・既定） */
   thinkingMode?: boolean;
+  /** 回答ボリューム設定（short=簡潔 / normal=普通・既定 / detailed=詳細） */
+  responseVolume?: ResponseVolume;
 }
 
 // QuickResponse=高速モデル / Thinking=高品質モデル
@@ -116,7 +118,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   const submit = useCallback(
     async (opts: SubmitOptions) => {
-      const { consultation, consultationType, targetDeadline, thinkingMode } = opts;
+      const { consultation, consultationType, targetDeadline, thinkingMode, responseVolume } = opts;
       // OKR情報のチェックボックスは廃止。明示指定が無ければ常にOKR情報を含める（既定 true）。
       const includeOKR = opts.includeOKR ?? true;
 
@@ -184,6 +186,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           consultationType,
           historyForApi,
           model,
+          responseVolume,
         );
 
         // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
