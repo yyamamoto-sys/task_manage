@@ -3,7 +3,7 @@
 // タスククリックで右側に出る 320px サイドパネル。List/Gantt/Kanban で共通利用。
 // モバイルは呼び出し側で TaskEditModal を出す（このコンポーネントは PC・タブレット向け）。
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -193,6 +193,44 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     return () => clearTimeout(timer);
   }, [sidebarForm]);
 
+  // パネル幅（左端ハンドルをドラッグして調整。min 240px / max 680px）
+  const [panelWidth, setPanelWidth] = useState<number>(() => {
+    try { return Math.min(680, Math.max(240, parseInt(localStorage.getItem("task_side_panel_width") ?? "320", 10) || 320)); } catch { return 320; }
+  });
+  const panelWidthRef = useRef(panelWidth);
+  const isDraggingPanel = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartW = useRef(0);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    isDraggingPanel.current = true;
+    dragStartX.current = e.clientX;
+    dragStartW.current = panelWidthRef.current;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, []);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDraggingPanel.current) return;
+      const delta = dragStartX.current - e.clientX;
+      const w = Math.min(680, Math.max(240, dragStartW.current + delta));
+      panelWidthRef.current = w;
+      setPanelWidth(w);
+    };
+    const onUp = () => {
+      if (!isDraggingPanel.current) return;
+      isDraggingPanel.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { localStorage.setItem("task_side_panel_width", String(panelWidthRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
   if (!selectedTask || !sidebarForm) return null;
 
   const pj = projects.find(p => p.id === selectedTask.project_id);
@@ -262,11 +300,24 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   return (
     <div style={{
-      width: "320px", flexShrink: 0,
+      width: `${panelWidth}px`, flexShrink: 0,
       borderLeft: "1px solid var(--color-border-primary)",
       background: "var(--color-bg-primary)",
       display: "flex", flexDirection: "column", overflow: "hidden",
+      position: "relative",
     }}>
+      {/* リサイズハンドル（左端をドラッグして幅を調整） */}
+      <div
+        onMouseDown={handleResizeMouseDown}
+        title="ドラッグで幅を変更"
+        style={{
+          position: "absolute", left: 0, top: 0, bottom: 0, width: 6,
+          cursor: "col-resize", zIndex: 30,
+          background: "transparent",
+        }}
+        onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
+        onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+      />
       {/* ヘッダー：タスク名（インライン編集） */}
       <div style={{
         padding: "10px 12px", borderBottom: "1px solid var(--color-border-primary)",
