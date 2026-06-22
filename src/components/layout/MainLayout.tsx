@@ -674,21 +674,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             <AIIcon />
           </button>
-          {/* ラボボタン */}
-          <button
-            onClick={() => setIsMobileLabOpen(true)}
-            title="ラボ機能"
-            style={{
-              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-secondary)",
-              border: "1px solid var(--color-border-primary)",
-              cursor: "pointer", fontSize: "16px",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0,
-            }}
-          >
-            🧪
-          </button>
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
           <button
@@ -720,6 +705,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             }}
           >
             {theme === "dark" ? "☀" : "☾"}
+          </button>
+          {/* ラボボタン */}
+          <button
+            onClick={() => setIsMobileLabOpen(true)}
+            title="ラボ機能"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "16px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            🧪
           </button>
           {/* カレンダー（ラボ） */}
           <button
@@ -1364,86 +1364,14 @@ function Sidebar({
           </>)}
         </div>
 
-        {/* 計画管理：ラボセクション */}
-        <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
-          {c ? (
-            <>
-              <button onClick={() => setLabOpen(o => !o)} title="ラボ"
-                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "7px 0", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "15px" }}
-              >🧪</button>
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<span style={{ fontSize: "13px" }}>🏢</span>}
-                  label="体制図"
-                  tooltip="PJの役割・担当体制を図示"
-                  onClick={onOpenStructure}
-                  collapsed={c}
-                />
-              )}
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<GraphIcon />}
-                  label="関係グラフ"
-                  tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
-                  onClick={onOpenGraph}
-                  collapsed={c}
-                />
-              )}
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
-                  label="カレンダー"
-                  tooltip="タスクの期日を月カレンダーで表示（ラボ）"
-                  onClick={onOpenCalendar}
-                  collapsed={c}
-                />
-              )}
-            </>
-          ) : (
-            <>
-              <button onClick={() => setLabOpen(o => !o)}
-                style={{ width: "100%", display: "flex", alignItems: "center", gap: "7px", padding: "6px 10px", background: "transparent", border: "none", cursor: "pointer", borderRadius: "6px", color: "var(--color-text-tertiary)", fontSize: "11px" }}
-              >
-                <span style={{ fontSize: "13px" }}>🧪</span>
-                <span style={{ flex: 1, textAlign: "left" }}>ラボ</span>
-                <span style={{ fontSize: "9px" }}>{labOpen ? "▴" : "▾"}</span>
-              </button>
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<span style={{ fontSize: "13px" }}>🏢</span>}
-                  label="体制図"
-                  tooltip="PJの役割・担当体制を図示"
-                  onClick={onOpenStructure}
-                  collapsed={c}
-                />
-              )}
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<GraphIcon />}
-                  label="関係グラフ"
-                  tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化"
-                  onClick={onOpenGraph}
-                  collapsed={c}
-                />
-              )}
-              {labOpen && (
-                <NavItem
-                  active={false}
-                  icon={<span style={{ fontSize: "13px" }}>🗓️</span>}
-                  label="カレンダー"
-                  tooltip="タスクの期日を月カレンダーで表示（ラボ）"
-                  onClick={onOpenCalendar}
-                  collapsed={c}
-                />
-              )}
-            </>
-          )}
-        </div>
+        {/* ラボ サブメニュー（🧪ボタンで開閉） */}
+        {labOpen && (
+          <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label="体制図" tooltip="PJの役割・担当体制を図示" onClick={onOpenStructure} collapsed={c} />
+            <NavItem active={false} icon={<GraphIcon />} label="関係グラフ" tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化" onClick={onOpenGraph} collapsed={c} />
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="カレンダー" tooltip="タスクの期日を月カレンダーで表示（ラボ）" onClick={onOpenCalendar} collapsed={c} />
+          </div>
+        )}
       </>) : (<>
         {/* OKR管理：KR一覧（フィルター用） */}
         <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
@@ -1541,6 +1469,11 @@ function Sidebar({
               {theme === "dark" ? "☀" : "☾"}
             </button>
           )}
+          <button
+            onClick={() => setLabOpen(o => !o)}
+            style={{ fontSize: "13px", color: labOpen ? "var(--color-text-primary)" : "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+            title="ラボ（実験的機能）"
+          >🧪</button>
           {/* カレンダー（サイドバー：折りたたみ時もアイコンで表示） */}
           <button
             onClick={onOpenCalendar}
