@@ -807,7 +807,17 @@ export function GanttView({
                             height: 30, display: "flex", alignItems: "center",
                             gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
                             borderBottom: "1px solid var(--color-border-primary)",
-                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+                            borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
+                            background: hoveredTaskId === task.id
+                              ? "var(--color-bg-secondary)"
+                              : isChild ? "var(--color-bg-primary)"
+                              : childCount > 0 ? "var(--color-bg-secondary)"
+                              : "var(--color-bg-primary)",
+                            boxShadow: !isChild && childCount > 0
+                              ? "inset 3px 0 0 var(--color-brand)"
+                              : isChild
+                              ? "inset 2px 0 0 var(--color-brand-border)"
+                              : "none",
                             cursor: "pointer", transition: "background 0.1s",
                           }}>
                             {isChild ? (
@@ -828,7 +838,8 @@ export function GanttView({
                             <StatusDot status={task.status} />
                             <span style={{
                               fontSize: "11px",
-                              color: isChild ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+                              fontWeight: (!isChild && childCount > 0) ? "600" : "400",
+                              color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
                               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                               flex: 1,
                             }}>

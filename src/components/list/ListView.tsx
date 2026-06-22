@@ -911,7 +911,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           </div>
                         </td>
                       </tr>
-                      {buildRows(group.tasks).map(({ task, depth, parentNote, isParent }) => {
+                      {(() => {
+                        const rows = buildRows(group.tasks);
+                        return rows.map(({ task, depth, parentNote, isParent }, ri) => {
+                        const closesGroup = depth === 1 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
                         const taskAssigneeIds = getAssigneeIds(task);
@@ -953,14 +956,26 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                               setDraggingId(null); setDragOverId(null);
                             }) : undefined}
                             style={{
-                            borderBottom: "1px solid var(--color-bg-tertiary)",
-                            borderTop: dragOverId === task.id ? "2px solid var(--color-brand)" : undefined,
+                            borderBottom: closesGroup
+                              ? "2px solid var(--color-border-primary)"
+                              : "1px solid var(--color-bg-tertiary)",
+                            borderTop: dragOverId === task.id
+                              ? "2px solid var(--color-brand)"
+                              : (isParent && depth === 0)
+                              ? "2px solid var(--color-border-primary)"
+                              : undefined,
                             background: selectedIds.has(task.id)
                               ? "var(--color-brand-light)"
                               : isSel ? "var(--color-brand-light)"
                               : isDone ? "var(--color-bg-secondary)" : zebraBg,
                             cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
-                            boxShadow: isSel ? "inset 3px 0 0 var(--color-brand)" : "none",
+                            boxShadow: (selectedIds.has(task.id) || isSel)
+                              ? "inset 3px 0 0 var(--color-brand)"
+                              : isParent
+                              ? "inset 3px 0 0 var(--color-brand)"
+                              : depth === 1
+                              ? "inset 2px 0 0 var(--color-brand-border)"
+                              : "none",
                           }}>
                             {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
                             <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
@@ -993,9 +1008,26 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
                               {taskAssignees.length > 0 && (
                                 <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                                  {taskAssignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={16} />)}
-                                  {taskAssignees.length === 1 && <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>{taskAssignees[0].short_name}</span>}
-                                  {taskAssignees.length > 3 && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 3}</span>}
+                                  {taskAssignees.slice(0, 3).map(m => (
+                                    <div key={m.id} style={{
+                                      width: 14, height: 14, borderRadius: "50%",
+                                      background: m.color_bg, color: m.color_text,
+                                      display: "flex", alignItems: "center", justifyContent: "center",
+                                      fontSize: "7px", fontWeight: "600", flexShrink: 0,
+                                    }}>
+                                      {m.initials.slice(0, 1)}
+                                    </div>
+                                  ))}
+                                  {taskAssignees.length === 1 && (
+                                    <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>
+                                      {taskAssignees[0].short_name}
+                                    </span>
+                                  )}
+                                  {taskAssignees.length > 3 && (
+                                    <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>
+                                      +{taskAssignees.length - 3}
+                                    </span>
+                                  )}
                                 </div>
                               )}
                             </td>
@@ -1116,7 +1148,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             )}
                           </tr>
                         );
-                      })}
+                      });
+                        })()}
                     </React.Fragment>
                   ));
                 })()}
