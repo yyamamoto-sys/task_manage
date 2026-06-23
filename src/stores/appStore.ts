@@ -67,6 +67,7 @@ export interface AppState {
   loading: boolean;
   backgroundLoading: boolean;   // Phase-2（OKRデータ）取得中。メイン UI はブロックしない
   loadProgress: number;         // 現フェーズの進捗 0-100（フェーズ切替で 0 にリセット）
+  loadingHint: string;          // ローディング画面の補足メッセージ（再試行中など）
   error: string | null;
 
   // ===== 取得 =====
@@ -195,6 +196,37 @@ let _activeLoad: Promise<void> | null = null;
 let _pendingLoad = false;
 
 /**
+ * タイムアウト／ネットワーク系エラーのみリトライするヘルパー。
+ * - 最大 MAX_RETRIES 回（合計 MAX_RETRIES+1 試行）
+ * - 指数バックオフ: 1秒 → 2秒 → 4秒
+ * - タイムアウト以外（DB エラー等）は即座に再スロー
+ */
+const MAX_RETRIES = 3;
+
+function isRetryable(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const msg = e.message.toLowerCase();
+  return msg.includes("timeout") || msg.includes("failed to fetch") || msg.includes("network");
+}
+
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  onRetry: (attempt: number, delaySec: number) => void,
+): Promise<T> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (!isRetryable(e) || attempt === MAX_RETRIES) throw e;
+      const delaySec = 2 ** attempt; // 1, 2, 4 秒
+      onRetry(attempt + 1, delaySec);
+      await new Promise<void>(r => setTimeout(r, delaySec * 1000));
+    }
+  }
+  throw new Error("unreachable");
+}
+
+/**
  * 同じエンティティ id に対する保存をシリアライズするためのキュー。
  *
  * 【設計意図】
@@ -249,6 +281,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   loading: true,
   backgroundLoading: false,
   loadProgress: 0,
+  loadingHint: "",
   error: null,
 
   // ===== load =====
@@ -265,14 +298,25 @@ export const useAppStore = create<AppState>()((set, get) => ({
       _pendingLoad = true;
       return;
     }
-    set({ loading: true, backgroundLoading: false, loadProgress: 0, error: null });
+    set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null });
     _activeLoad = (async () => {
       try {
         // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
-        // クエリが1件完了するごとに loadProgress を更新（0→100）
-        const critical = await fetchCriticalData((done, total) => {
-          set({ loadProgress: Math.round((done / total) * 100) });
-        });
+        // タイムアウト時は最大 MAX_RETRIES 回まで指数バックオフで自動リトライ
+        const critical = await withRetry(
+          () => {
+            set({ loadingHint: "", loadProgress: 0 }); // リトライ開始時にリセット
+            return fetchCriticalData((done, total) => {
+              set({ loadProgress: Math.round((done / total) * 100) });
+            });
+          },
+          (attempt, delaySec) => {
+            set({
+              loadProgress: 0,
+              loadingHint: `接続タイムアウト — ${delaySec}秒後に再接続 (${attempt}/${MAX_RETRIES})`,
+            });
+          },
+        );
         set({
           members:          critical.members,
           projects:         critical.projects,
@@ -284,6 +328,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           loading:          false,          // ← ここでUIが表示される
           backgroundLoading: true,          // ← OKRをバックグラウンド取得中
           loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
+          loadingHint:      "",             // ← ヒントをクリア
         });
 
         // Phase 2: OKR系（8テーブル）→ バックグラウンド取得
@@ -309,11 +354,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         }
       } catch (e) {
         const raw = e instanceof Error ? e.message : "データの読み込みに失敗しました";
-        // タイムアウト系エラーは「再試行」を促すメッセージに置換
-        const msg = raw.toLowerCase().includes("timeout")
-          ? "サーバーへの接続がタイムアウトしました。右の「再試行」を押してください。"
+        // タイムアウト系エラーは「再試行」を促すメッセージに置換（自動リトライ上限超え）
+        const msg = isRetryable(e)
+          ? `接続がタイムアウトしました（${MAX_RETRIES}回リトライ後）。右の「再試行」を押してください。`
           : raw;
-        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0 });
+        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, loadingHint: "" });
       } finally {
         _activeLoad = null;
         // 進行中に追加の変更があった場合は1回だけ追従ロード

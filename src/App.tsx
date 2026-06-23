@@ -122,6 +122,7 @@ function AuthenticatedApp({
   const loading           = useAppStore(s => s.loading);
   const backgroundLoading = useAppStore(s => s.backgroundLoading);
   const loadProgress      = useAppStore(s => s.loadProgress);
+  const loadingHint       = useAppStore(s => s.loadingHint);
   const error             = useAppStore(s => s.error);
   const reload            = useAppStore(s => s.reload);
   const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
@@ -192,7 +193,7 @@ function AuthenticatedApp({
           </div>
 
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
-            {loadProgress}%
+            {loadingHint || `${loadProgress}%`}
           </div>
         </div>
       </div>
