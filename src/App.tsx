@@ -121,6 +121,7 @@ function AuthenticatedApp({
   const members           = useAppStore(s => s.members);
   const loading           = useAppStore(s => s.loading);
   const backgroundLoading = useAppStore(s => s.backgroundLoading);
+  const loadProgress      = useAppStore(s => s.loadProgress);
   const error             = useAppStore(s => s.error);
   const reload            = useAppStore(s => s.reload);
   const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
@@ -160,20 +161,38 @@ function AuthenticatedApp({
     return (
       <div style={{
         height: "100vh", display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: "20px",
+        alignItems: "center", justifyContent: "center", gap: "24px",
         background: "var(--color-bg-primary)",
       }}>
-        <svg width="36" height="36" viewBox="0 0 36 36" style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }}>
-          <circle cx="18" cy="18" r="15" fill="none" stroke="var(--color-bg-tertiary)" strokeWidth="3" />
-          <circle cx="18" cy="18" r="15" fill="none" stroke="var(--color-brand)" strokeWidth="3"
-            strokeLinecap="round" strokeDasharray="60 36" />
+        {/* アイコン */}
+        <svg width="40" height="40" viewBox="0 0 40 40" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
+          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--color-bg-tertiary)" strokeWidth="3" />
+          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--color-brand)" strokeWidth="3"
+            strokeLinecap="round" strokeDasharray="68 38" />
         </svg>
-        <div style={{ textAlign: "center", lineHeight: 1.6 }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+
+        {/* テキスト＋プログレスバー */}
+        <div style={{ textAlign: "center", lineHeight: 1.6, width: "200px" }}>
+          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "6px" }}>
             データを読み込み中...
           </div>
-          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
-            プロジェクトとタスクを取得しています
+
+          {/* 決定的プログレスバー */}
+          <div style={{
+            height: "5px", borderRadius: "3px",
+            background: "var(--color-bg-tertiary)", overflow: "hidden",
+          }}>
+            <div style={{
+              height: "100%",
+              width: `${loadProgress}%`,
+              background: "var(--color-brand)",
+              borderRadius: "3px",
+              transition: "width 0.25s ease",
+            }} />
+          </div>
+
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
+            {loadProgress}%
           </div>
         </div>
       </div>
@@ -186,11 +205,14 @@ function AuthenticatedApp({
       {backgroundLoading && (
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, height: 3, zIndex: 9998,
-          background: "var(--color-bg-tertiary)", overflow: "hidden",
+          background: "var(--color-bg-tertiary)",
           pointerEvents: "none",
         }}>
-          <div className="progress-bar-indeterminate" style={{
-            height: "100%", background: "var(--color-brand)",
+          <div style={{
+            height: "100%",
+            width: `${loadProgress}%`,
+            background: "var(--color-brand)",
+            transition: "width 0.25s ease",
           }} />
         </div>
       )}

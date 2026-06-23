@@ -66,6 +66,7 @@ export interface AppState {
   memberTagMembers: MemberTagMember[];
   loading: boolean;
   backgroundLoading: boolean;   // Phase-2（OKRデータ）取得中。メイン UI はブロックしない
+  loadProgress: number;         // 現フェーズの進捗 0-100（フェーズ切替で 0 にリセット）
   error: string | null;
 
   // ===== 取得 =====
@@ -247,6 +248,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   memberTagMembers: [],
   loading: true,
   backgroundLoading: false,
+  loadProgress: 0,
   error: null,
 
   // ===== load =====
@@ -263,11 +265,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
       _pendingLoad = true;
       return;
     }
-    set({ loading: true, backgroundLoading: false, error: null });
+    set({ loading: true, backgroundLoading: false, loadProgress: 0, error: null });
     _activeLoad = (async () => {
       try {
         // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
-        const critical = await fetchCriticalData();
+        // クエリが1件完了するごとに loadProgress を更新（0→100）
+        const critical = await fetchCriticalData((done, total) => {
+          set({ loadProgress: Math.round((done / total) * 100) });
+        });
         set({
           members:          critical.members,
           projects:         critical.projects,
@@ -278,12 +283,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
           memberTagMembers: critical.memberTagMembers,
           loading:          false,          // ← ここでUIが表示される
           backgroundLoading: true,          // ← OKRをバックグラウンド取得中
+          loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
         });
 
         // Phase 2: OKR系（8テーブル）→ バックグラウンド取得
         // 失敗してもメイン UI はブロックしない（サイレントエラー）
         try {
-          const okr = await fetchOkrData();
+          const okr = await fetchOkrData((done, total) => {
+            set({ loadProgress: Math.round((done / total) * 100) });
+          });
           set({
             objective:             okr.objectives.find(o => o.is_current) ?? okr.objectives[0] ?? null,
             keyResults:            okr.keyResults,
@@ -294,15 +302,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
             quarterlyKrTaskForces: okr.quarterlyKrTaskForces,
             taskTaskForces:        okr.taskTaskForces,
             backgroundLoading:     false,
+            loadProgress:          100,
           });
         } catch {
-          set({ backgroundLoading: false });
+          set({ backgroundLoading: false, loadProgress: 100 });
         }
       } catch (e) {
         set({
           error: e instanceof Error ? e.message : "データの読み込みに失敗しました",
           loading: false,
           backgroundLoading: false,
+          loadProgress: 0,
         });
       } finally {
         _activeLoad = null;

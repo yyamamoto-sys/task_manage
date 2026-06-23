@@ -136,17 +136,22 @@ async function saveWithLock<T extends { id: string }>(
 /**
  * Phase-1: UIを使える状態にするのに必要な7テーブルを並列取得。
  * 論理削除済み行はサーバー側で除外する。
+ * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
  */
-export async function fetchCriticalData() {
+export async function fetchCriticalData(onProgress?: (done: number, total: number) => void) {
+  const TOTAL = 7;
+  let done = 0;
+  const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
+
   const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers] =
     await Promise.all([
-      supabase.from("members").select("*").eq("is_deleted", false),
-      supabase.from("projects").select("*").eq("is_deleted", false),
-      supabase.from("tasks").select("*").eq("is_deleted", false),
-      supabase.from("task_projects").select("*"),
-      supabase.from("milestones").select("*").eq("is_deleted", false),
-      supabase.from("member_tags").select("*").eq("is_deleted", false),
-      supabase.from("member_tag_members").select("*"),
+      supabase.from("members").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("projects").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("tasks").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("task_projects").select("*").then(tick),
+      supabase.from("milestones").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("member_tags").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("member_tag_members").select("*").then(tick),
     ]);
 
   const firstError = [members, projects, tasks].find(r => r.error)?.error;
@@ -179,18 +184,23 @@ export async function fetchCriticalData() {
 /**
  * Phase-2: OKR関連8テーブルをバックグラウンドで取得。
  * 失敗してもメイン UI には影響しない。
+ * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
  */
-export async function fetchOkrData() {
+export async function fetchOkrData(onProgress?: (done: number, total: number) => void) {
+  const TOTAL = 8;
+  let done = 0;
+  const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
+
   const [objectives, keyResults, taskForces, todos, ptf, qObjs, qKrTfs, ttfs] =
     await Promise.all([
-      supabase.from("objectives").select("*"),
-      supabase.from("key_results").select("*").eq("is_deleted", false),
-      supabase.from("task_forces").select("*").eq("is_deleted", false),
-      supabase.from("todos").select("*").eq("is_deleted", false),
-      supabase.from("project_task_forces").select("*"),
-      supabase.from("quarterly_objectives").select("*").eq("is_deleted", false),
-      supabase.from("quarterly_kr_task_forces").select("*"),
-      supabase.from("task_task_forces").select("*"),
+      supabase.from("objectives").select("*").then(tick),
+      supabase.from("key_results").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("task_forces").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("todos").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("project_task_forces").select("*").then(tick),
+      supabase.from("quarterly_objectives").select("*").eq("is_deleted", false).then(tick),
+      supabase.from("quarterly_kr_task_forces").select("*").then(tick),
+      supabase.from("task_task_forces").select("*").then(tick),
     ]);
 
   return {
