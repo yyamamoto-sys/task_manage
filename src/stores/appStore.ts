@@ -308,12 +308,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
           set({ backgroundLoading: false, loadProgress: 100 });
         }
       } catch (e) {
-        set({
-          error: e instanceof Error ? e.message : "データの読み込みに失敗しました",
-          loading: false,
-          backgroundLoading: false,
-          loadProgress: 0,
-        });
+        const raw = e instanceof Error ? e.message : "データの読み込みに失敗しました";
+        // タイムアウト系エラーは「再試行」を促すメッセージに置換
+        const msg = raw.toLowerCase().includes("timeout")
+          ? "サーバーへの接続がタイムアウトしました。右の「再試行」を押してください。"
+          : raw;
+        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0 });
       } finally {
         _activeLoad = null;
         // 進行中に追加の変更があった場合は1回だけ追従ロード

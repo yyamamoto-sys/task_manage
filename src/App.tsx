@@ -224,7 +224,7 @@ function AuthenticatedApp({
           padding: "10px 16px", fontSize: "12px",
           display: "flex", alignItems: "center", gap: "10px",
         }}>
-          <span style={{ flex: 1 }}>⚠ データの取得に失敗しました: {error}</span>
+          <span style={{ flex: 1 }}>⚠ {error}</span>
           <button
             onClick={reload}
             style={{

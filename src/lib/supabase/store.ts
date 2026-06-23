@@ -155,7 +155,10 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
     ]);
 
   const firstError = [members, projects, tasks].find(r => r.error)?.error;
-  if (firstError) throw new Error(`データの取得に失敗しました: ${firstError.message} (${firstError.code})`);
+  if (firstError) {
+    const code = firstError.code ? ` (${firstError.code})` : "";
+    throw new Error(`${firstError.message}${code}`);
+  }
 
   return {
     members: (members.data ?? []) as Member[],
