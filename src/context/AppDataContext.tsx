@@ -9,6 +9,10 @@
 //
 // 【再エクスポート（後方互換）】
 //   ConflictError — store.ts から再エクスポート
+//
+// 【Thundering herd 対策（2026-06-23）】
+// realtime イベントを 400ms デバウンスして複数ユーザーの同時接続時でも
+// load() が殺到しないようにする。store 側の並列ガードと二重防衛。
 
 import { useEffect, type ReactNode } from "react";
 import { supabase } from "../lib/supabase/client";
@@ -29,13 +33,24 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   }, [load]);
 
   // Supabase realtime: tasks / projects テーブルへの外部書き込みを検知して再取得
+  // デバウンス 400ms: 複数ユーザーが同時接続しても load() が一度に大量発行されないよう集約する
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const debouncedLoad = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => load(), 400);
+    };
+
     const channel = supabase
       .channel("app-data-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => load())
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, () => load())
+      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, debouncedLoad)
+      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, debouncedLoad)
       .subscribe();
-    return () => { supabase.removeChannel(channel); };
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      supabase.removeChannel(channel);
+    };
   }, [load]);
 
   return <>{children}</>;

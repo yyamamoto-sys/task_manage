@@ -172,6 +172,25 @@ function syncUpdatedAt<T extends { id: string; updated_at?: string }>(
 }
 
 /**
+ * load() の並列実行を防ぐフラグ（Thundering herd 対策）。
+ *
+ * 【設計意図】
+ * realtime イベントが短時間に大量発行されると、デバウンス後でも ConflictError
+ * 回復の load() が重なる場合がある。同時に複数の fetchAllData()（15 並列クエリ）
+ * が走ると Supabase の接続プールを圧迫し、応答遅延やデータ不整合を引き起こす。
+ *
+ * 対策：
+ * - _activeLoad: 現在進行中の load() Promise。非 null なら後発の load() は
+ *   _pendingLoad フラグだけ立てて即リターン。
+ * - _pendingLoad: 進行中に「もう1回必要」というフラグ。activeLoad 完了後に
+ *   1回だけ追加実行することで、進行中に発生した変更も取りこぼさない。
+ * - これにより並列実行は「現在 + 次の1回」に抑えられ、N 人同時接続でも
+ *   実質 1〜2 回の fetchAllData() で済む。
+ */
+let _activeLoad: Promise<void> | null = null;
+let _pendingLoad = false;
+
+/**
  * 同じエンティティ id に対する保存をシリアライズするためのキュー。
  *
  * 【設計意図】
@@ -228,33 +247,48 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== load =====
   load: async () => {
-    set({ loading: true, error: null });
-    try {
-      const data = await fetchAllData();
-      set({
-        members: data.members,
-        objective: data.objectives.find(o => o.is_current) ?? data.objectives[0] ?? null,
-        keyResults: data.keyResults,
-        taskForces: data.taskForces,
-        todos: data.todos,
-        projects: data.projects,
-        tasks: data.tasks,
-        projectTaskForces: data.projectTaskForces,
-        quarterlyObjectives: data.quarterlyObjectives,
-        quarterlyKrTaskForces: data.quarterlyKrTaskForces,
-        taskTaskForces: data.taskTaskForces,
-        taskProjects: data.taskProjects,
-        milestones: data.milestones,
-        memberTags: data.memberTags,
-        memberTagMembers: data.memberTagMembers,
-        loading: false,
-      });
-    } catch (e) {
-      set({
-        error: e instanceof Error ? e.message : "データの読み込みに失敗しました",
-        loading: false,
-      });
+    // 並列 load() を防ぐ: 進行中なら「次が必要」フラグを立てるだけ
+    if (_activeLoad) {
+      _pendingLoad = true;
+      return;
     }
+    set({ loading: true, error: null });
+    _activeLoad = (async () => {
+      try {
+        const data = await fetchAllData();
+        set({
+          members: data.members,
+          objective: data.objectives.find(o => o.is_current) ?? data.objectives[0] ?? null,
+          keyResults: data.keyResults,
+          taskForces: data.taskForces,
+          todos: data.todos,
+          projects: data.projects,
+          tasks: data.tasks,
+          projectTaskForces: data.projectTaskForces,
+          quarterlyObjectives: data.quarterlyObjectives,
+          quarterlyKrTaskForces: data.quarterlyKrTaskForces,
+          taskTaskForces: data.taskTaskForces,
+          taskProjects: data.taskProjects,
+          milestones: data.milestones,
+          memberTags: data.memberTags,
+          memberTagMembers: data.memberTagMembers,
+          loading: false,
+        });
+      } catch (e) {
+        set({
+          error: e instanceof Error ? e.message : "データの読み込みに失敗しました",
+          loading: false,
+        });
+      } finally {
+        _activeLoad = null;
+        // 進行中に追加の変更があった場合は1回だけ追従ロード
+        if (_pendingLoad) {
+          _pendingLoad = false;
+          get().load();
+        }
+      }
+    })();
+    await _activeLoad;
   },
 
   reload: async () => { await get().load(); },
