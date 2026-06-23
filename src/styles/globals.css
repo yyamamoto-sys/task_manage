@@ -541,6 +541,17 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   to   { opacity: 1; transform: translateY(0)   scaleY(1); }
 }
 
+/* バックグラウンドロード中のトップバー */
+@keyframes progress-indeterminate {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(60%); }
+  100% { transform: translateX(200%); }
+}
+.progress-bar-indeterminate {
+  width: 45%;
+  animation: progress-indeterminate 1.4s ease-in-out infinite;
+}
+
 .animate-spin       { animation: spin 0.8s linear infinite; }
 .animate-fadeIn     { animation: fadeIn 0.25s cubic-bezier(0.16,1,0.3,1) both; }
 .animate-modalEnter { animation: modalEnter 0.22s cubic-bezier(0.16,1,0.3,1) both; }

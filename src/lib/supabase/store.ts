@@ -118,13 +118,96 @@ async function saveWithLock<T extends { id: string }>(
   return actualUpdatedAt ?? newUpdatedAt;
 }
 
-// ===== 全データ一括取得 =====
+// ===== データ取得 =====
 
 /**
- * 【設計意図】
- * 論理削除済み行はサーバー側で除外する。クライアント側にダウンロードしてから
- * `filter(x => !x.is_deleted)` していたが、データ量が増えると無駄な転送・JS フィルタになる。
- * 「削除済みを参照する UI」は現状ないため、サーバーで弾いて問題ない。
+ * 【フェーズ分割取得 — 2026-06-23】
+ *
+ * 従来の fetchAllData()（15テーブル一括）は、全クエリが揃うまで UI が表示されない。
+ * 2フェーズに分割し、主要データが揃い次第 loading=false にして UI を表示する。
+ *
+ * Phase 1（fetchCriticalData）: 7テーブル — メンバー・PJ・タスク・マイルストーン等。
+ *   load() がここだけ終えると loading=false になり、ユーザー自動復元と画面描画が走る。
+ *
+ * Phase 2（fetchOkrData）: 8テーブル — OKR関連。バックグラウンドで取得し、
+ *   backgroundLoading フラグで細いトップバーを表示する（メイン UI はブロックしない）。
+ */
+
+/**
+ * Phase-1: UIを使える状態にするのに必要な7テーブルを並列取得。
+ * 論理削除済み行はサーバー側で除外する。
+ */
+export async function fetchCriticalData() {
+  const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers] =
+    await Promise.all([
+      supabase.from("members").select("*").eq("is_deleted", false),
+      supabase.from("projects").select("*").eq("is_deleted", false),
+      supabase.from("tasks").select("*").eq("is_deleted", false),
+      supabase.from("task_projects").select("*"),
+      supabase.from("milestones").select("*").eq("is_deleted", false),
+      supabase.from("member_tags").select("*").eq("is_deleted", false),
+      supabase.from("member_tag_members").select("*"),
+    ]);
+
+  const firstError = [members, projects, tasks].find(r => r.error)?.error;
+  if (firstError) throw new Error(`データの取得に失敗しました: ${firstError.message} (${firstError.code})`);
+
+  return {
+    members: (members.data ?? []) as Member[],
+    projects: (projects.data ?? []).map((p: Record<string, unknown>) => ({
+      ...p,
+      owner_member_ids: (p.owner_member_ids as string[] | undefined)?.length
+        ? p.owner_member_ids as string[]
+        : p.owner_member_id ? [p.owner_member_id as string] : [],
+      member_ids: Array.isArray(p.member_ids) ? p.member_ids as string[] : [],
+    })) as Project[],
+    tasks: (tasks.data ?? []).map((t: Record<string, unknown>) => ({
+      ...t,
+      todo_ids: Array.isArray(t.todo_ids) ? t.todo_ids as string[]
+        : t.todo_id ? [t.todo_id as string] : [],
+      assignee_member_ids: Array.isArray(t.assignee_member_ids) ? t.assignee_member_ids as string[]
+        : t.assignee_member_id ? [t.assignee_member_id as string] : [],
+      tags: Array.isArray(t.tags) ? t.tags as string[] : [],
+    })) as Task[],
+    taskProjects:     (tpjs.data        ?? []) as TaskProject[],
+    milestones:       (milestones.data  ?? []) as Milestone[],
+    memberTags:       (memberTags.data  ?? []) as MemberTag[],
+    memberTagMembers: (memberTagMembers.data ?? []) as MemberTagMember[],
+  };
+}
+
+/**
+ * Phase-2: OKR関連8テーブルをバックグラウンドで取得。
+ * 失敗してもメイン UI には影響しない。
+ */
+export async function fetchOkrData() {
+  const [objectives, keyResults, taskForces, todos, ptf, qObjs, qKrTfs, ttfs] =
+    await Promise.all([
+      supabase.from("objectives").select("*"),
+      supabase.from("key_results").select("*").eq("is_deleted", false),
+      supabase.from("task_forces").select("*").eq("is_deleted", false),
+      supabase.from("todos").select("*").eq("is_deleted", false),
+      supabase.from("project_task_forces").select("*"),
+      supabase.from("quarterly_objectives").select("*").eq("is_deleted", false),
+      supabase.from("quarterly_kr_task_forces").select("*"),
+      supabase.from("task_task_forces").select("*"),
+    ]);
+
+  return {
+    objectives:            (objectives.data ?? []) as Objective[],
+    keyResults:            (keyResults.data ?? []) as KeyResult[],
+    taskForces:            (taskForces.data ?? []) as TaskForce[],
+    todos:                 (todos.data      ?? []) as ToDo[],
+    projectTaskForces:     (ptf.data        ?? []) as ProjectTaskForce[],
+    quarterlyObjectives:   (qObjs.data      ?? []) as QuarterlyObjective[],
+    quarterlyKrTaskForces: (qKrTfs.data     ?? []) as QuarterlyKrTaskForce[],
+    taskTaskForces:        (ttfs.data       ?? []) as TaskTaskForce[],
+  };
+}
+
+/**
+ * 全15テーブルを一括取得（後方互換用）。
+ * 論理削除済み行はサーバー側で除外する。
  * junction テーブル（*_task_forces / task_projects）には is_deleted カラムが無いため除外フィルタは入れない。
  */
 export async function fetchAllData() {

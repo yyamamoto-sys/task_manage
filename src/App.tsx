@@ -118,10 +118,11 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
-  const members = useAppStore(s => s.members);
-  const loading = useAppStore(s => s.loading);
-  const error   = useAppStore(s => s.error);
-  const reload  = useAppStore(s => s.reload);
+  const members           = useAppStore(s => s.members);
+  const loading           = useAppStore(s => s.loading);
+  const backgroundLoading = useAppStore(s => s.backgroundLoading);
+  const error             = useAppStore(s => s.error);
+  const reload            = useAppStore(s => s.reload);
   const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
@@ -153,11 +154,46 @@ function AuthenticatedApp({
     return <UserSelectScreen onLogin={onLogin} />;
   }
 
-  // ロード中はスピナー
-  if (!currentUser) return null;
+  // データ読み込み中（Phase 1 完了前）はローディング画面を表示
+  // ※ currentUser は loading=false になってから自動復元されるため、loading 中は必ず null
+  if (!currentUser) {
+    return (
+      <div style={{
+        height: "100vh", display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center", gap: "20px",
+        background: "var(--color-bg-primary)",
+      }}>
+        <svg width="36" height="36" viewBox="0 0 36 36" style={{ animation: "spin 0.9s linear infinite", flexShrink: 0 }}>
+          <circle cx="18" cy="18" r="15" fill="none" stroke="var(--color-bg-tertiary)" strokeWidth="3" />
+          <circle cx="18" cy="18" r="15" fill="none" stroke="var(--color-brand)" strokeWidth="3"
+            strokeLinecap="round" strokeDasharray="60 36" />
+        </svg>
+        <div style={{ textAlign: "center", lineHeight: 1.6 }}>
+          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+            データを読み込み中...
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+            プロジェクトとタスクを取得しています
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
+      {/* バックグラウンドローディングバー: OKRデータ（Phase 2）取得中に表示 */}
+      {backgroundLoading && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, height: 3, zIndex: 9998,
+          background: "var(--color-bg-tertiary)", overflow: "hidden",
+          pointerEvents: "none",
+        }}>
+          <div className="progress-bar-indeterminate" style={{
+            height: "100%", background: "var(--color-brand)",
+          }} />
+        </div>
+      )}
       {error && (
         <div style={{
           position: "fixed", top: 0, left: 0, right: 0, zIndex: 9999,

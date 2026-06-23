@@ -28,6 +28,8 @@ import type {
 } from "../lib/localData/types";
 import {
   fetchAllData,
+  fetchCriticalData,
+  fetchOkrData,
   ConflictError,
   upsertMember, softDeleteMember,
   upsertObjective,
@@ -63,6 +65,7 @@ export interface AppState {
   memberTags: MemberTag[];
   memberTagMembers: MemberTagMember[];
   loading: boolean;
+  backgroundLoading: boolean;   // Phase-2（OKRデータ）取得中。メイン UI はブロックしない
   error: string | null;
 
   // ===== 取得 =====
@@ -243,41 +246,63 @@ export const useAppStore = create<AppState>()((set, get) => ({
   memberTags: [],
   memberTagMembers: [],
   loading: true,
+  backgroundLoading: false,
   error: null,
 
   // ===== load =====
+  //
+  // 【2フェーズロード — 2026-06-23】
+  // Phase 1: 重要7テーブル（members/projects/tasks/milestones 等）を取得 → loading=false でUI解放
+  // Phase 2: OKR系8テーブルをバックグラウンド取得 → backgroundLoading=false でトップバーを消す
+  //
+  // これにより「15テーブル全部揃うまで真っ白」ではなく
+  // 「主要データが揃い次第すぐ表示、OKRは後から反映」になる。
   load: async () => {
     // 並列 load() を防ぐ: 進行中なら「次が必要」フラグを立てるだけ
     if (_activeLoad) {
       _pendingLoad = true;
       return;
     }
-    set({ loading: true, error: null });
+    set({ loading: true, backgroundLoading: false, error: null });
     _activeLoad = (async () => {
       try {
-        const data = await fetchAllData();
+        // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
+        const critical = await fetchCriticalData();
         set({
-          members: data.members,
-          objective: data.objectives.find(o => o.is_current) ?? data.objectives[0] ?? null,
-          keyResults: data.keyResults,
-          taskForces: data.taskForces,
-          todos: data.todos,
-          projects: data.projects,
-          tasks: data.tasks,
-          projectTaskForces: data.projectTaskForces,
-          quarterlyObjectives: data.quarterlyObjectives,
-          quarterlyKrTaskForces: data.quarterlyKrTaskForces,
-          taskTaskForces: data.taskTaskForces,
-          taskProjects: data.taskProjects,
-          milestones: data.milestones,
-          memberTags: data.memberTags,
-          memberTagMembers: data.memberTagMembers,
-          loading: false,
+          members:          critical.members,
+          projects:         critical.projects,
+          tasks:            critical.tasks,
+          taskProjects:     critical.taskProjects,
+          milestones:       critical.milestones,
+          memberTags:       critical.memberTags,
+          memberTagMembers: critical.memberTagMembers,
+          loading:          false,          // ← ここでUIが表示される
+          backgroundLoading: true,          // ← OKRをバックグラウンド取得中
         });
+
+        // Phase 2: OKR系（8テーブル）→ バックグラウンド取得
+        // 失敗してもメイン UI はブロックしない（サイレントエラー）
+        try {
+          const okr = await fetchOkrData();
+          set({
+            objective:             okr.objectives.find(o => o.is_current) ?? okr.objectives[0] ?? null,
+            keyResults:            okr.keyResults,
+            taskForces:            okr.taskForces,
+            todos:                 okr.todos,
+            projectTaskForces:     okr.projectTaskForces,
+            quarterlyObjectives:   okr.quarterlyObjectives,
+            quarterlyKrTaskForces: okr.quarterlyKrTaskForces,
+            taskTaskForces:        okr.taskTaskForces,
+            backgroundLoading:     false,
+          });
+        } catch {
+          set({ backgroundLoading: false });
+        }
       } catch (e) {
         set({
           error: e instanceof Error ? e.message : "データの読み込みに失敗しました",
           loading: false,
+          backgroundLoading: false,
         });
       } finally {
         _activeLoad = null;
