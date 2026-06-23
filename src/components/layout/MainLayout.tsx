@@ -16,6 +16,7 @@ import { ErrorBar } from "../common/ErrorBar";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
+import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
@@ -132,6 +133,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   };
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMilestoneAddOpen, setIsMilestoneAddOpen] = useState(false);
+  const [isPjCreateOpen, setIsPjCreateOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
 
@@ -902,6 +904,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       {isMilestoneAddOpen && (
         <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
       )}
+      {isPjCreateOpen && (
+        <ProjectCreateModal
+          currentUser={currentUser}
+          onClose={() => setIsPjCreateOpen(false)}
+          onCreated={id => { handleSelectProject(id); }}
+        />
+      )}
       {/* PC FAB（計画モードのみ） */}
       {appMode === "plan" && isFabMenuOpen && (
         <div
@@ -1018,6 +1027,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
+        onCreateProject={() => setIsPjCreateOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
@@ -1156,6 +1166,7 @@ interface SidebarProps {
   onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
   onOpenGuide: () => void;
+  onCreateProject: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
   appMode: AppMode;
@@ -1169,7 +1180,7 @@ function Sidebar({
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, collapsed, onToggleCollapsed,
+  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
@@ -1290,20 +1301,36 @@ function Sidebar({
               display: "flex", alignItems: "center", justifyContent: "space-between",
               padding: "8px 14px 4px",
             }}>
-              <button
-                onClick={togglePjOpen}
-                aria-expanded={pjOpen}
-                title={pjOpen ? "プロジェクト一覧を省略" : "プロジェクト一覧を展開"}
-                style={{
-                  display: "flex", alignItems: "center", gap: "4px",
-                  background: "transparent", border: "none", cursor: "pointer", padding: 0,
-                  fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
-                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
-                }}
-              >
-                <span style={{ fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-                プロジェクト
-              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1, minWidth: 0 }}>
+                <button
+                  onClick={togglePjOpen}
+                  aria-expanded={pjOpen}
+                  title={pjOpen ? "プロジェクト一覧を省略" : "プロジェクト一覧を展開"}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "4px",
+                    background: "transparent", border: "none", cursor: "pointer", padding: 0,
+                    fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
+                    color: "var(--color-text-tertiary)", textTransform: "uppercase",
+                  }}
+                >
+                  <span style={{ fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+                  プロジェクト
+                </button>
+                <button
+                  onClick={onCreateProject}
+                  title="新規プロジェクトを作成"
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    width: 16, height: 16, flexShrink: 0,
+                    background: "transparent", border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-sm)", cursor: "pointer",
+                    fontSize: "12px", lineHeight: 1, color: "var(--color-text-tertiary)",
+                    padding: 0,
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "var(--color-bg-tertiary)"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-secondary)"; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "var(--color-text-tertiary)"; }}
+                >＋</button>
+              </div>
               <button
                 onClick={onToggleMineOnly}
                 title={mineOnly ? "クリックで全タスクを表示" : "クリックで自分が担当のタスクのみに絞り込み"}
