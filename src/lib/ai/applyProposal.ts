@@ -14,6 +14,7 @@ import { supabase } from "../supabase/client";
 import type { UIProposal } from "./proposalMapper";
 import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
+import { toDate, addDays, toDateStr } from "../date";
 
 // ===== 型定義 =====
 
@@ -220,11 +221,11 @@ export async function applyProposal(
       if (!task) continue;
 
       // shift_days が指定されている場合は現在の期日に日数を加算、なければ suggested_date を使う
+      // toDate()+addDays()+toDateStr() を使うことでJSTタイムゾーンのずれを防ぐ
       let suggestedValue = proposal.suggested_date ?? "未定";
       if (proposal.shift_days && task.due_date) {
-        const d = new Date(task.due_date as string);
-        d.setDate(d.getDate() + proposal.shift_days);
-        suggestedValue = d.toISOString().split("T")[0];
+        const d = toDate(task.due_date as string);
+        if (d) suggestedValue = toDateStr(addDays(d, proposal.shift_days));
       }
 
       items.push({
@@ -250,9 +251,8 @@ export async function applyProposal(
 
       let suggestedEndDate = proposal.suggested_end_date ?? "";
       if (proposal.shift_days && pj.end_date) {
-        const d = new Date(pj.end_date as string);
-        d.setDate(d.getDate() + proposal.shift_days);
-        suggestedEndDate = d.toISOString().split("T")[0];
+        const d = toDate(pj.end_date as string);
+        if (d) suggestedEndDate = toDateStr(addDays(d, proposal.shift_days));
       }
 
       pjEndDateItems.push({

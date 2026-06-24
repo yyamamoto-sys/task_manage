@@ -35,9 +35,27 @@ export function addDays(base: Date, n: number): Date {
 
 /** 今日から n 日後の日付を YYYY-MM-DD 形式で返す */
 export function addDaysFromToday(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() + n);
-  return d.toISOString().split("T")[0];
+  return toDateStr(addDays(new Date(), n));
+}
+
+/**
+ * 指定日（省略時=今日）を含む週の月曜日から weeks 週分の月曜日リストを返す。
+ * AI が日付の曜日を正確に算出するための基準テーブルとして使う。
+ * リスト内の日付はすべて月曜日（YYYY-MM-DD）。+5=土曜、+6=日曜。
+ */
+export function getMondayAnchors(base: Date = new Date(), weeks = 16): string[] {
+  const dow = base.getDay(); // 0=日, 1=月
+  const daysToMonday = dow === 0 ? -6 : 1 - dow;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() + daysToMonday);
+  monday.setHours(0, 0, 0, 0);
+  const result: string[] = [];
+  for (let i = 0; i < weeks; i++) {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i * 7);
+    result.push(toDateStr(d));
+  }
+  return result;
 }
 
 /** 2つの日付の差（日数）を返す。b - a の符号 */

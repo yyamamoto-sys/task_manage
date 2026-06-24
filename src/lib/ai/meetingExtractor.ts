@@ -5,6 +5,7 @@
 // AIで抽出する。ラボ機能例外ルール適用：PJ・タスク・メンバー情報をAIに渡す。
 
 import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
+import { getMondayAnchors } from "../date";
 
 // ===== 型定義 =====
 
@@ -117,6 +118,7 @@ const SYSTEM_PROMPT = `あなたは会議の文字起こしを解析して、タ
 - start_dateは「明日から」「来週月曜から」「すぐ着手」などをYYYY-MM-DD形式に変換（推測できなければnull）。明示が無くてもタスクの性質と期日から逆算して妥当な着手日を推定して構わない（ガント表示のため）
 - due_dateは「今週中」「〇日まで」などをYYYY-MM-DD形式に変換（推測できなければnull）
 - start_dateとdue_dateが両方ある場合、start_date <= due_date を必ず守ること
+- **【曜日の確認必須】** 日付を決める際は context.monday_anchors（月曜日リスト）を参照すること。リスト内は全て月曜日。+1=火、+2=水、+3=木、+4=金、+5=土（稼働日外）、+6=日（稼働日外）。start_date・due_dateに土日を充てないこと
 - project_hintはプロジェクトリストから関連しそうな名前を選ぶ（不明はnull）
 - priorityは文脈から「急ぎ」「重要」「できれば」などを high/mid/low に変換（不明はnull）
 - source_quoteは根拠となる発言を30文字以内で
@@ -184,6 +186,7 @@ function validateAnalysis(data: unknown): MeetingAnalysis {
 export async function extractMeetingData(params: ExtractMeetingParams): Promise<MeetingAnalysis> {
   const userMessage = JSON.stringify({
     today: params.today,
+    monday_anchors: getMondayAnchors(),
     members: params.members.map(m => m.short_name),
     projects: params.projects.map(p => ({ id: p.id, name: p.name })),
     tasks: params.tasks.map(t => ({

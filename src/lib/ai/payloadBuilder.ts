@@ -13,7 +13,7 @@ import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject, Pr
 import { active } from "../localData/localStore";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
-import { dateToQuarter, currentQuarter } from "../date";
+import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
 import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
 import { isParentTask } from "../taskHierarchy";
@@ -78,7 +78,7 @@ function makeShortId(prefix: string, index: number): string {
 // CLAUDE.md Section 6-14 参照
 
 function buildFiscalCalendar(today: Date): FiscalCalendar {
-  const fmt = (d: Date) => d.toISOString().split("T")[0];
+  const fmt = (d: Date) => toDateStr(d);
   const year = today.getFullYear();
   const currentQ = dateToQuarter(fmt(today)) ?? "1Q";
   const qEnds: Record<string, string> = {
@@ -108,14 +108,8 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
   const nextWeekStart = new Date(thisWeekEnd); nextWeekStart.setDate(thisWeekEnd.getDate() + 1);
   const nextWeekEnd = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
 
-  // 今週月曜から16週分の月曜日リスト（AIの曜日計算基準テーブル）
-  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 今週月曜へのオフセット
-  const thisWeekMonday = new Date(today); thisWeekMonday.setDate(today.getDate() + daysToMonday);
-  const monday_anchors: string[] = [];
-  for (let i = 0; i < 16; i++) {
-    const mon = new Date(thisWeekMonday); mon.setDate(thisWeekMonday.getDate() + i * 7);
-    monday_anchors.push(fmt(mon));
-  }
+  // 今週月曜から16週分の月曜日リスト（AIの曜日計算基準テーブル・date.tsで生成）
+  const monday_anchors = getMondayAnchors(today, 16);
 
   // 今月末と残り平日数（今日〜月末、月〜金）
   const thisMonthEnd = new Date(year, today.getMonth() + 1, 0);
