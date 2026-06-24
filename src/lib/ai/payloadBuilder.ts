@@ -38,6 +38,12 @@ interface FiscalCalendar {
     next_quarter_start: string;
     next_quarter_end: string;
   };
+  /**
+   * 今週の月曜から16週分の月曜日リスト（YYYY-MM-DD）。
+   * AIが日付の曜日を正確に算出するための基準テーブル。
+   * 例：このリストの日付+5=土曜、+6=日曜、+7=翌週月曜。
+   */
+  monday_anchors: string[];
 }
 
 export interface AIConsultationPayload {
@@ -102,6 +108,15 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
   const nextWeekStart = new Date(thisWeekEnd); nextWeekStart.setDate(thisWeekEnd.getDate() + 1);
   const nextWeekEnd = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 6);
 
+  // 今週月曜から16週分の月曜日リスト（AIの曜日計算基準テーブル）
+  const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 今週月曜へのオフセット
+  const thisWeekMonday = new Date(today); thisWeekMonday.setDate(today.getDate() + daysToMonday);
+  const monday_anchors: string[] = [];
+  for (let i = 0; i < 16; i++) {
+    const mon = new Date(thisWeekMonday); mon.setDate(thisWeekMonday.getDate() + i * 7);
+    monday_anchors.push(fmt(mon));
+  }
+
   // 今月末と残り平日数（今日〜月末、月〜金）
   const thisMonthEnd = new Date(year, today.getMonth() + 1, 0);
   let remainingWeekdays = 0;
@@ -118,6 +133,7 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
     next_week_end: fmt(nextWeekEnd),
     this_month_end: fmt(thisMonthEnd),
     remaining_weekdays_this_month: remainingWeekdays,
+    monday_anchors,
     fiscal_year: {
       start: `${year}-01-01`,
       end: `${year}-12-31`,

@@ -65,6 +65,7 @@ const RESPONSE_FORMAT = `
   期日と開始日はガントチャート表示の起点・終点として使われるため、両方提案できると親切。明示が無くてもタスクの性質から逆算して妥当な日付を入れて構わない。
   suggested_start_date と suggested_date が両方ある場合、suggested_start_date <= suggested_date を必ず守ること。
   date_certaintyは"exact"（期日確定）または"unknown"（期日未定）を使う。
+  **【曜日の確認必須】** 日付を設定するときは context.monday_anchors（月曜日リスト）を参照すること。リスト内の日付は全て月曜日。+1=火、+2=水、+3=木、+4=金、+5=土、+6=日。土日は稼働日ではないため、タスクの開始日・期日に土日を充てないこと。
   **タスクの階層化（大分類＋子タスク）**：ユーザーが「タスクを分類して子タスクに分けたい」「大分類ごとに整理したい」等と言ったら、add_task を「親タスク（＝大分類）」として使い、その下に new_subtasks（子タスクの配列。各要素は {name（必須）, suggested_assignee（任意・short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）}）を付ける。これで確認後に「親タスク＋その子タスク」が一括作成される（このアプリは2階層固定なので、子の下にさらに子は作らない）。
   大分類が複数あるときは、add_task 提案を分類の数だけ複数返す（1提案＝1親＋その子たち）。各提案の target_pj_ids に対象PJの shortId を必ず入れる。
   info で「こう分類すると良い」と説明して終わるのではなく、反映可能な add_task（new_subtasks 付き）として返すこと。
@@ -72,6 +73,7 @@ const RESPONSE_FORMAT = `
   title=プロジェクト名、description=目的・背景、target_task_ids=[]・target_pj_ids=[]、needs_confirmation=true、is_simulation=false にすること。
   new_project_tasks に新規PJの初期タスクを3〜8件提案する（各要素は {name（必須）, suggested_assignee（任意・members の short_name）, suggested_start_date（任意・YYYY-MM-DD）, suggested_due_date（任意・YYYY-MM-DD）}）。
   日付は context の today / quarters（四半期）から妥当な範囲で設定すること。
+  **【曜日の確認必須】** 日付を設定するときは context.monday_anchors（月曜日リスト）を参照すること。リスト内の日付は全て月曜日。+1=火、+2=水、+3=木、+4=金、+5=土、+6=日。土日は稼働日ではないため、スケジュールに土日を充てないこと。
   既存タスクへの追加（add_task）とは混同しないこと。新規PJの中身の初期タスクは必ず new_project_tasks に入れ、add_task は使わない。
   **add_project 提案を出す前に、原則として下記「## 新規PJ作成のヒアリング・プロトコル」に従い、不足している要点を短く確認すること。** ヒアリングを終えた（または不要と判断した）段階で add_project 提案を1件返す。
   いったん提案を出すと決めたら、情報が多少不足していても文脈から妥当なPJ名・目的・初期タスクの「たたき台」を埋めて必ず1件返すこと（ユーザーは確認画面で自由に編集できる）。
