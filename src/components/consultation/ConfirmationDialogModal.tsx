@@ -12,6 +12,7 @@ import type { ApplyResult } from "../../lib/ai/applyProposal";
 import { useAppStore } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
 import { CustomSelect } from "../common/CustomSelect";
+import { BTN_APPLY_CONFIRMED, btnShift } from "../../lib/ai/uiGuide";
 
 interface Props {
   dialog: ConfirmationDialog;
@@ -204,14 +205,14 @@ export function ConfirmationDialogModal({
             }}
           >
             {isAddProject
-              ? "以下の内容で新規プロジェクトと初期タスクを作成します。内容を確認・修正してから「確定して反映」を押してください。"
+              ? `以下の内容で新規プロジェクトと初期タスクを作成します。内容を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`
               : isAddTask
                 ? (isHierarchy
-                    ? "親タスク（大分類）とその子タスクを作成します。内容を確認・修正してから「確定して反映」を押してください。"
-                    : "以下の内容でタスクを新規作成します。内容を確認・修正してから「確定して反映」を押してください。")
+                    ? `親タスク（大分類）とその子タスクを作成します。内容を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`
+                    : `以下の内容でタスクを新規作成します。内容を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`)
                 : isDeleteAction
-                  ? "以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「確定して反映」を押してください。"
-                  : "以下の内容で反映します。値を確認・修正してから「確定して反映」を押してください。"}
+                  ? `以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「${BTN_APPLY_CONFIRMED}」を押してください。`
+                  : `以下の内容で反映します。値を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`}
           </div>
 
           {/* 一括シフトボタン */}
@@ -226,7 +227,7 @@ export function ConfirmationDialogModal({
                 borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
             >
-              全て +{dialog.shift_days}日シフト（AIの提案に揃える）
+              {btnShift(dialog.shift_days!)}
             </button>
           )}
 
@@ -732,7 +733,7 @@ export function ConfirmationDialogModal({
               opacity: applying ? 0.7 : 1,
             }}
           >
-            {applying ? "反映中..." : "確定して反映"}
+            {applying ? "反映中..." : BTN_APPLY_CONFIRMED}
           </button>
         </div>
       </div>

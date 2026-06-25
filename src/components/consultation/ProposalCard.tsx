@@ -17,6 +17,7 @@ import type { ConfirmationDialog } from "../../lib/ai/applyProposal";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { SimulationBanner } from "./SimulationBanner";
 import { ConfirmationDialogModal } from "./ConfirmationDialogModal";
+import { BTN_CONFIRM_CREATE, BTN_APPLY } from "../../lib/ai/uiGuide";
 
 interface Props {
   proposal: UIProposal;
@@ -162,7 +163,7 @@ export function ProposalCard({
                 fontWeight: "500",
               }}
             >
-              {applying ? "処理中..." : resultMessage?.type === "success" ? "作成済み" : "確認して作成"}
+              {applying ? "処理中..." : resultMessage?.type === "success" ? "作成済み" : BTN_CONFIRM_CREATE}
             </button>
           </div>
         </div>
@@ -497,7 +498,7 @@ export function ProposalCard({
                     : "not-allowed",
               }}
             >
-              {applying ? "反映中..." : resultMessage?.type === "success" ? "反映済み" : "反映する"}
+              {applying ? "反映中..." : resultMessage?.type === "success" ? "反映済み" : BTN_APPLY}
             </button>
           )}
         </div>
