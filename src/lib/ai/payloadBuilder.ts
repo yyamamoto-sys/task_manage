@@ -307,6 +307,7 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       pj_name: pj.name,
       pj_purpose: pj.purpose,
       pj_status: pj.status,
+      pj_start_date: pj.start_date ?? null,
       pj_end_date: pj.end_date ?? null,
       pj_owners: pjOwners,
       pj_members: pjMembers,

@@ -19,6 +19,8 @@ export interface AIProject {
   pj_name: string;
   pj_purpose: string;
   pj_status: "active" | "completed" | "archived";
+  /** PJ開始予定日（YYYY-MM-DD）。スケジュール分析・経過日数計算に使う */
+  pj_start_date: string | null;
   pj_end_date: string | null;
   pj_progress: { total: number; done: number; in_progress: number; todo: number };
   pj_owners: string[];
