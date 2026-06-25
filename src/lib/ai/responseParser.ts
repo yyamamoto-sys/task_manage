@@ -14,6 +14,7 @@ export interface NewProjectTaskInput {
   suggested_assignee?: string;
   suggested_start_date?: string;
   suggested_due_date?: string;
+  suggested_description?: string;
 }
 
 export interface Proposal {
@@ -90,6 +91,8 @@ function parseNewProjectTasks(raw: unknown): NewProjectTaskInput[] | undefined {
         typeof o.suggested_start_date === "string" ? o.suggested_start_date : undefined,
       suggested_due_date:
         typeof o.suggested_due_date === "string" ? o.suggested_due_date : undefined,
+      suggested_description:
+        typeof o.suggested_description === "string" ? o.suggested_description : undefined,
     });
   }
   return tasks;

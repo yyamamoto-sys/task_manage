@@ -95,6 +95,7 @@ export interface NewTaskItem {
   suggested_assignee_name?: string;
   suggested_start_date?: string;
   suggested_due_date?: string;
+  suggested_description?: string;
 }
 
 export interface ConfirmationItem {
@@ -473,6 +474,7 @@ export async function applyProposal(
           suggested_assignee_name: matched?.short_name ?? t.suggested_assignee,
           suggested_start_date: t.suggested_start_date,
           suggested_due_date: t.suggested_due_date,
+          suggested_description: t.suggested_description,
         };
       });
 
@@ -527,6 +529,7 @@ export async function applyProposal(
           suggested_assignee_name: matched?.short_name ?? t.suggested_assignee,
           suggested_start_date: t.suggested_start_date,
           suggested_due_date: t.suggested_due_date,
+          suggested_description: t.suggested_description,
         };
       });
 
@@ -752,6 +755,7 @@ export async function applyProposalWithConfirmation(
           is_deleted: false,
           start_date: startDate,
           due_date: dueDate,
+          comment: confirmedValues[`${item.temp_id}_description`] || null,
           created_at: now,
           updated_at: now,
           updated_by: currentUserId,
@@ -788,6 +792,7 @@ export async function applyProposalWithConfirmation(
             is_deleted: false,
             start_date: startDate,
             due_date: dueDate,
+            comment: confirmedValues[`${sub.temp_id}_description`] || null,
             created_at: now,
             updated_at: now,
             updated_by: currentUserId,
@@ -862,6 +867,7 @@ export async function applyProposalWithConfirmation(
           is_deleted: false,
           start_date: startDate,
           due_date: dueDate,
+          comment: confirmedValues[`${item.temp_id}_description`] || null,
           created_at: now,
           updated_at: now,
           updated_by: currentUserId,

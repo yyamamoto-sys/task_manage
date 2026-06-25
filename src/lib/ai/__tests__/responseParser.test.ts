@@ -56,6 +56,7 @@ describe("parseAIResponse", () => {
       suggested_assignee: "山本",
       suggested_start_date: undefined,
       suggested_due_date: "2026-06-10",
+      suggested_description: undefined,
     });
     expect(res.proposals[0].new_subtasks![1].name).toBe("備品手配");
   });

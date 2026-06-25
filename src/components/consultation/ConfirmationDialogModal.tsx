@@ -28,6 +28,141 @@ function toggleMemberId(current: string, memberId: string): string {
   return [...ids, memberId].join(",");
 }
 
+interface TaskFormRowProps {
+  item: NewTaskItem;
+  roleLabel: string;
+  roleLabelColor: string;
+  confirmedValues: Record<string, string>;
+  setConfirmedValues: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  activeMembers: Array<{ id: string; short_name: string; color_bg: string; color_text: string; initials: string }>;
+  showProjectName?: string;
+  indent?: boolean;
+}
+
+function NewTaskFormRow({
+  item,
+  roleLabel,
+  roleLabelColor,
+  confirmedValues,
+  setConfirmedValues,
+  activeMembers,
+  showProjectName,
+  indent = false,
+}: TaskFormRowProps) {
+  const tid = item.temp_id;
+  return (
+    <div
+      style={{
+        padding: "12px",
+        marginLeft: indent ? "14px" : undefined,
+        background: "var(--color-bg-secondary)",
+        borderRadius: "var(--radius-md)",
+        border: "1px solid var(--color-border-primary)",
+        borderLeft: indent ? "2px solid var(--color-brand-border, var(--color-border-secondary))" : undefined,
+        display: "flex",
+        flexDirection: "column",
+        gap: "10px",
+      }}
+    >
+      <div style={{ fontSize: "10px", fontWeight: "600", color: roleLabelColor, marginBottom: "2px" }}>
+        {roleLabel}
+      </div>
+
+      {/* タスク名 */}
+      <div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>タスク名</div>
+        <input
+          type="text"
+          value={confirmedValues[`${tid}_name`] ?? ""}
+          onChange={(e) => setConfirmedValues((prev) => ({ ...prev, [`${tid}_name`]: e.target.value }))}
+          style={{
+            width: "100%", boxSizing: "border-box",
+            fontSize: "12px", padding: "5px 8px",
+            border: "1px solid var(--color-border-secondary)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg-primary)",
+            color: "var(--color-text-primary)",
+          }}
+        />
+      </div>
+
+      {/* 詳細・メモ */}
+      <div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>詳細・メモ（任意）</div>
+        <textarea
+          value={confirmedValues[`${tid}_description`] ?? ""}
+          onChange={(e) => setConfirmedValues((prev) => ({ ...prev, [`${tid}_description`]: e.target.value }))}
+          rows={2}
+          placeholder="タスクの詳細やメモを入力..."
+          style={{
+            width: "100%", boxSizing: "border-box",
+            fontSize: "12px", padding: "5px 8px", resize: "vertical",
+            border: "1px solid var(--color-border-secondary)",
+            borderRadius: "var(--radius-sm)",
+            background: "var(--color-bg-primary)",
+            color: "var(--color-text-primary)",
+            fontFamily: "inherit",
+          }}
+        />
+      </div>
+
+      {/* プロジェクト（表示のみ） */}
+      {showProjectName && (
+        <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}>
+          <span style={{ color: "var(--color-text-tertiary)" }}>プロジェクト：</span>
+          <span style={{ color: "var(--color-text-primary)", fontWeight: "500" }}>{showProjectName}</span>
+        </div>
+      )}
+
+      {/* 担当者 */}
+      <div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数選択可）</div>
+        <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "6px 8px", maxHeight: "120px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px", background: "var(--color-bg-primary)" }}>
+          {activeMembers.map((m) => {
+            const selSet = new Set((confirmedValues[`${tid}_assignee_ids`] ?? "").split(",").filter(Boolean));
+            return (
+              <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)", padding: "2px 0" }}>
+                <input
+                  type="checkbox"
+                  checked={selSet.has(m.id)}
+                  onChange={() => setConfirmedValues((prev) => ({ ...prev, [`${tid}_assignee_ids`]: toggleMemberId(prev[`${tid}_assignee_ids`] ?? "", m.id) }))}
+                  style={{ cursor: "pointer", flexShrink: 0 }}
+                />
+                <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "7px", fontWeight: "600", flexShrink: 0 }}>
+                  {m.initials.slice(0, 1)}
+                </div>
+                <span>{m.short_name}</span>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 開始日 */}
+      <div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>開始日</div>
+        <input
+          type="date"
+          value={confirmedValues[`${tid}_start_date`] ?? ""}
+          onChange={(e) => setConfirmedValues((prev) => ({ ...prev, [`${tid}_start_date`]: e.target.value }))}
+          style={{ fontSize: "11px", padding: "4px 6px", border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
+        />
+      </div>
+
+      {/* 期日 */}
+      <div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>期日</div>
+        <input
+          type="date"
+          value={confirmedValues[`${tid}_due_date`] ?? ""}
+          onChange={(e) => setConfirmedValues((prev) => ({ ...prev, [`${tid}_due_date`]: e.target.value }))}
+          style={{ fontSize: "11px", padding: "4px 6px", border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
+        />
+      </div>
+    </div>
+  );
+}
+
 export function ConfirmationDialogModal({
   dialog,
   currentUserId,
@@ -66,6 +201,7 @@ export function ConfirmationDialogModal({
           entries.push([`${item.temp_id}_assignee_ids`, item.suggested_assignee_id ?? ""]);
           entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
           entries.push([`${item.temp_id}_due_date`, item.suggested_due_date ?? ""]);
+          entries.push([`${item.temp_id}_description`, item.suggested_description ?? ""]);
         }
         return Object.fromEntries(entries);
       }
@@ -79,6 +215,7 @@ export function ConfirmationDialogModal({
           entries.push([`${item.temp_id}_assignee_ids`, item.suggested_assignee_id ?? ""]);
           entries.push([`${item.temp_id}_start_date`, item.suggested_start_date ?? ""]);
           entries.push([`${item.temp_id}_due_date`, item.suggested_due_date ?? ""]);
+          entries.push([`${item.temp_id}_description`, item.suggested_description ?? ""]);
         }
         return Object.fromEntries(entries);
       }
@@ -286,202 +423,31 @@ export function ConfirmationDialogModal({
               </div>
             )}
 
-            {/* add_project: 初期タスク一覧（add_task の編集UIを流用） */}
+            {/* add_project: 初期タスク一覧 */}
             {isAddProject && (dialog.new_project_task_items ?? []).map((item: NewTaskItem) => (
-              <div
+              <NewTaskFormRow
                 key={item.temp_id}
-                style={{
-                  padding: "12px",
-                  background: "var(--color-bg-secondary)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border-primary)",
-                  display: "flex", flexDirection: "column", gap: "10px",
-                }}
-              >
-                <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
-                  ＋ 初期タスク
-                </div>
-
-                {/* タスク名 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>タスク名</div>
-                  <input
-                    type="text"
-                    value={confirmedValues[`${item.temp_id}_name`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_name`]: e.target.value }))
-                    }
-                    style={{
-                      width: "100%", boxSizing: "border-box",
-                      fontSize: "12px", padding: "5px 8px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-
-                {/* 担当者 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数選択可）</div>
-                  <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "6px 8px", maxHeight: "120px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px", background: "var(--color-bg-primary)" }}>
-                    {activeMembers.map(m => {
-                      const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
-                      return (
-                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)", padding: "2px 0" }}>
-                          <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
-                          <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "7px", fontWeight: "600", flexShrink: 0 }}>
-                            {m.initials.slice(0, 1)}
-                          </div>
-                          <span>{m.short_name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 開始日 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>開始日</div>
-                  <input
-                    type="date"
-                    value={confirmedValues[`${item.temp_id}_start_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_start_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-
-                {/* 期日 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>期日</div>
-                  <input
-                    type="date"
-                    value={confirmedValues[`${item.temp_id}_due_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_due_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-              </div>
+                item={item}
+                roleLabel="＋ 初期タスク"
+                roleLabelColor="var(--color-text-secondary)"
+                confirmedValues={confirmedValues}
+                setConfirmedValues={setConfirmedValues}
+                activeMembers={activeMembers}
+              />
             ))}
 
             {/* add_task: 新規タスク作成フォーム */}
             {isAddTask && (dialog.new_task_items ?? []).map((item: NewTaskItem) => (
-              <div
+              <NewTaskFormRow
                 key={item.temp_id}
-                style={{
-                  padding: "12px",
-                  background: "var(--color-bg-secondary)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-brand-border, var(--color-border-primary))",
-                  display: "flex", flexDirection: "column", gap: "10px",
-                }}
-              >
-                <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-brand)", marginBottom: "2px" }}>
-                  {isHierarchy ? "＋ 親タスク（大分類）" : "＋ 新規タスク"}
-                </div>
-
-                {/* タスク名 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>タスク名</div>
-                  <input
-                    type="text"
-                    value={confirmedValues[`${item.temp_id}_name`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_name`]: e.target.value }))
-                    }
-                    style={{
-                      width: "100%", boxSizing: "border-box",
-                      fontSize: "12px", padding: "5px 8px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-
-                {/* プロジェクト（表示のみ） */}
-                {item.project_name && (
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px" }}>
-                    <span style={{ color: "var(--color-text-tertiary)" }}>プロジェクト：</span>
-                    <span style={{ color: "var(--color-text-primary)", fontWeight: "500" }}>{item.project_name}</span>
-                  </div>
-                )}
-
-                {/* 担当者 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数選択可）</div>
-                  <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "6px 8px", maxHeight: "120px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "3px", background: "var(--color-bg-primary)" }}>
-                    {activeMembers.map(m => {
-                      const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
-                      return (
-                        <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)", padding: "2px 0" }}>
-                          <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
-                          <div style={{ width: 14, height: 14, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "7px", fontWeight: "600", flexShrink: 0 }}>
-                            {m.initials.slice(0, 1)}
-                          </div>
-                          <span>{m.short_name}</span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 開始日 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>開始日</div>
-                  <input
-                    type="date"
-                    value={confirmedValues[`${item.temp_id}_start_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_start_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-
-                {/* 期日 */}
-                <div>
-                  <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>期日</div>
-                  <input
-                    type="date"
-                    value={confirmedValues[`${item.temp_id}_due_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_due_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-              </div>
+                item={item}
+                roleLabel={isHierarchy ? "＋ 親タスク（大分類）" : "＋ 新規タスク"}
+                roleLabelColor="var(--color-brand)"
+                confirmedValues={confirmedValues}
+                setConfirmedValues={setConfirmedValues}
+                activeMembers={activeMembers}
+                showProjectName={item.project_name}
+              />
             ))}
 
             {/* add_task: 子タスク（階層化）。上の親タスクにぶら下がる */}
@@ -491,87 +457,16 @@ export function ConfirmationDialogModal({
               </div>
             )}
             {isAddTask && (dialog.new_subtask_items ?? []).map((item: NewTaskItem) => (
-              <div
+              <NewTaskFormRow
                 key={item.temp_id}
-                style={{
-                  padding: "10px 12px",
-                  marginLeft: "14px",
-                  background: "var(--color-bg-secondary)",
-                  borderRadius: "var(--radius-md)",
-                  borderLeft: "2px solid var(--color-brand-border, var(--color-border-secondary))",
-                  display: "flex", flexDirection: "column", gap: "8px",
-                }}
-              >
-                <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-secondary)" }}>
-                  └ 子タスク
-                </div>
-                {/* タスク名 */}
-                <input
-                  type="text"
-                  value={confirmedValues[`${item.temp_id}_name`] ?? ""}
-                  onChange={(e) =>
-                    setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_name`]: e.target.value }))
-                  }
-                  placeholder="子タスク名"
-                  style={{
-                    width: "100%", boxSizing: "border-box",
-                    fontSize: "12px", padding: "5px 8px",
-                    border: "1px solid var(--color-border-secondary)",
-                    borderRadius: "var(--radius-sm)",
-                    background: "var(--color-bg-primary)",
-                    color: "var(--color-text-primary)",
-                  }}
-                />
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                  <div style={{ flex: 1, minWidth: "140px" }}>
-                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>担当者（複数可）</div>
-                    <div style={{ border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", padding: "4px 8px", maxHeight: "100px", overflowY: "auto", display: "flex", flexDirection: "column", gap: "2px", background: "var(--color-bg-primary)" }}>
-                      {activeMembers.map(m => {
-                        const selSet = new Set((confirmedValues[`${item.temp_id}_assignee_ids`] ?? "").split(",").filter(Boolean));
-                        return (
-                          <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "5px", cursor: "pointer", fontSize: "11px", color: "var(--color-text-primary)" }}>
-                            <input type="checkbox" checked={selSet.has(m.id)} onChange={() => setConfirmedValues(prev => ({ ...prev, [`${item.temp_id}_assignee_ids`]: toggleMemberId(prev[`${item.temp_id}_assignee_ids`] ?? "", m.id) }))} style={{ cursor: "pointer", flexShrink: 0 }} />
-                            <div style={{ width: 12, height: 12, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "6px", fontWeight: "600", flexShrink: 0 }}>
-                              {m.initials.slice(0, 1)}
-                            </div>
-                            <span>{m.short_name}</span>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                  <input
-                    type="date"
-                    title="開始日"
-                    value={confirmedValues[`${item.temp_id}_start_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_start_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                  <input
-                    type="date"
-                    title="期日"
-                    value={confirmedValues[`${item.temp_id}_due_date`] ?? ""}
-                    onChange={(e) =>
-                      setConfirmedValues((prev) => ({ ...prev, [`${item.temp_id}_due_date`]: e.target.value }))
-                    }
-                    style={{
-                      fontSize: "11px", padding: "4px 6px",
-                      border: "1px solid var(--color-border-secondary)",
-                      borderRadius: "var(--radius-sm)",
-                      background: "var(--color-bg-primary)",
-                      color: "var(--color-text-primary)",
-                    }}
-                  />
-                </div>
-              </div>
+                item={item}
+                roleLabel="└ 子タスク"
+                roleLabelColor="var(--color-text-secondary)"
+                confirmedValues={confirmedValues}
+                setConfirmedValues={setConfirmedValues}
+                activeMembers={activeMembers}
+                indent={true}
+              />
             ))}
 
             {/* プロジェクト終了日 */}
