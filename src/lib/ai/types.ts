@@ -36,10 +36,16 @@ export interface AITask {
   assignee: string;
   status: "todo" | "in_progress" | "done";
   priority: "high" | "mid" | "low" | null;
+  /** 作業開始予定日（YYYY-MM-DD）。期日との組み合わせでスケジュール判断に使う */
+  start_date: string | null;
   due_date: string | null;
   estimated_hours: number | null;
   comment: string;
   completed_at: string | null;
+  /** 親タスク名（子タスクの場合のみ設定。階層構造の把握に使う） */
+  parent_task_name: string | null;
+  /** タスクに付いたタグ（自由入力）。テーマ・種別の分類に使う */
+  tags: string[];
 }
 
 export interface AITaskForce {

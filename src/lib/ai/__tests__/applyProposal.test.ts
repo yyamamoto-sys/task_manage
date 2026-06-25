@@ -490,7 +490,7 @@ describe("applyProposalWithConfirmation — add_task", () => {
       dialog,
       {
         "tmp-1_name": "確定タスク名",
-        "tmp-1_assignee_id": "m-1",
+        "tmp-1_assignee_ids": "m-1",
         "tmp-1_due_date": "2026-06-01",
       },
       "user-1",

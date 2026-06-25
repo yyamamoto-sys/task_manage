@@ -246,6 +246,9 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   // （shortIdMap.sizeを使うとPJ分のエントリが混入してキーが衝突するため専用カウンターを使う）
   let taskCounter = 0;
 
+  // parent_task_name の解決用：全タスクの UUID → name マップ（プロジェクトまたぎで参照できる）
+  const taskNameByUuid = new Map(activeTasks.map(t => [t.id, t.name]));
+
   // 担当者ID（複数可）→ short_name 結合文字列を作る
   const memberById = new Map(opts.members.map(m => [m.id, m]));
   const buildAssigneeLabel = (task: Task): string => {
@@ -279,12 +282,15 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         assignee: buildAssigneeLabel(task),
         status: task.status,
         priority: task.priority,
+        start_date: task.start_date ?? null,
         due_date: task.due_date,
         estimated_hours: task.estimated_hours,
         // ❌ contribution_memoは含めない。sanitizeComment()を必ず適用する
         comment: sanitizeComment(task.comment ?? ""),
         // completed_atはYYYY-MM-DD形式の日付部分のみ渡す（時刻は不要）
         completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
+        parent_task_name: task.parent_task_id ? (taskNameByUuid.get(task.parent_task_id) ?? null) : null,
+        tags: task.tags ?? [],
       };
     });
 
