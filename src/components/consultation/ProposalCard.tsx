@@ -162,7 +162,7 @@ export function ProposalCard({
                 fontWeight: "500",
               }}
             >
-              {applying ? "処理中..." : resultMessage?.type === "success" ? "作成済み" : "このプロジェクトを作成"}
+              {applying ? "処理中..." : resultMessage?.type === "success" ? "作成済み" : "確認して作成"}
             </button>
           </div>
         </div>

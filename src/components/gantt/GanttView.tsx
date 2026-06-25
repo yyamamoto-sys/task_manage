@@ -70,6 +70,7 @@ export function GanttView({
   const rawTodos      = useAppStore(s => s.todos);
   const rawMilestones = useAppStore(s => s.milestones);
   const saveTask      = useAppStore(s => s.saveTask);
+  const saveProject   = useAppStore(s => s.saveProject);
   const milestones = useMemo(
     () => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted),
     [rawMilestones],
@@ -197,6 +198,17 @@ export function GanttView({
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+
+  // PJ名インライン編集
+  const [editingPjNameId, setEditingPjNameId] = useState<string | null>(null);
+  const [editingPjNameValue, setEditingPjNameValue] = useState("");
+  const handleSavePjName = useCallback(async (pj: Project) => {
+    const newName = editingPjNameValue.trim();
+    if (newName && newName !== pj.name) {
+      await saveProject({ ...pj, name: newName, updated_by: currentUser.id });
+    }
+    setEditingPjNameId(null);
+  }, [editingPjNameValue, saveProject, currentUser.id]);
 
   // マイルストーンホバーツールチップ
   const [hoveredMs, setHoveredMs] = useState<{ ms: Milestone; rect: DOMRect } | null>(null);
@@ -636,8 +648,8 @@ export function GanttView({
             ))}
           </div>
         )}
-        {!isPreview && viewMode === "pj" && <button onClick={expandAll}  title="すべて開く" aria-label="すべて開く" style={headerBtnStyle}>⊞</button>}
-        {!isPreview && viewMode === "pj" && <button onClick={collapseAll} title="すべて閉じる" aria-label="すべて閉じる" style={headerBtnStyle}>⊟</button>}
+        {!isPreview && viewMode === "pj" && <button onClick={expandAll}  title="PJをすべて展開" aria-label="PJをすべて展開" style={headerBtnStyle}>⊞</button>}
+        {!isPreview && viewMode === "pj" && <button onClick={collapseAll} title="PJをすべて折りたたむ" aria-label="PJをすべて折りたたむ" style={headerBtnStyle}>⊟</button>}
         {/* タスク並び順トグル */}
         {!isPreview && (
           <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>
@@ -734,7 +746,7 @@ export function GanttView({
                   color: "var(--color-text-tertiary)", cursor: "pointer", whiteSpace: "nowrap",
                 }}
               >
-                {allParentsCollapsed ? "⊞ 展開" : "⊟ 畳む"}
+                {allParentsCollapsed ? "⊞ 子タスクを展開" : "⊟ 子タスクを畳む"}
               </button>
             )}
           </div>
@@ -769,26 +781,67 @@ export function GanttView({
                         gap: "6px", padding: "0 8px 0 10px",
                         background: "var(--color-bg-secondary)",
                         borderBottom: "1px solid var(--color-border-primary)",
-                        cursor: "pointer",
-                      }} onClick={() => togglePJ(pj.id)}>
+                        cursor: editingPjNameId === pj.id ? "default" : "pointer",
+                      }} onClick={() => { if (editingPjNameId !== pj.id) togglePJ(pj.id); }}>
                         <span style={{
                           fontSize: "11px", color: "var(--color-text-secondary)",
                           transition: "transform 0.15s",
                           display: "inline-block",
+                          flexShrink: 0,
                           transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
                         }}>▾</span>
                         <div style={{
                           width: 8, height: 8, borderRadius: "50%",
                           background: pj.color_tag, flexShrink: 0,
                         }} />
-                        <span style={{
-                          fontSize: "11px", fontWeight: "500",
-                          color: "var(--color-text-primary)",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          flex: 1,
-                        }}>
-                          {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
-                        </span>
+                        {editingPjNameId === pj.id ? (
+                          <input
+                            autoFocus
+                            value={editingPjNameValue}
+                            onChange={e => setEditingPjNameValue(e.target.value)}
+                            onBlur={() => handleSavePjName(pj)}
+                            onKeyDown={e => {
+                              e.stopPropagation();
+                              if (e.key === "Enter") handleSavePjName(pj);
+                              if (e.key === "Escape") setEditingPjNameId(null);
+                            }}
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                              flex: 1, minWidth: 0, fontSize: "11px", fontWeight: "500",
+                              padding: "2px 4px", border: "1px solid var(--color-brand)",
+                              borderRadius: "var(--radius-sm)",
+                              background: "var(--color-bg-primary)",
+                              color: "var(--color-text-primary)",
+                              outline: "none",
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <span style={{
+                              fontSize: "11px", fontWeight: "500",
+                              color: "var(--color-text-primary)",
+                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                              flex: 1,
+                            }}>
+                              {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
+                            </span>
+                            {!isPreview && (
+                              <button
+                                onClick={e => {
+                                  e.stopPropagation();
+                                  setEditingPjNameId(pj.id);
+                                  setEditingPjNameValue(pj.name);
+                                }}
+                                title="プロジェクト名を変更"
+                                style={{
+                                  background: "transparent", border: "none", cursor: "pointer",
+                                  fontSize: "10px", color: "var(--color-text-tertiary)",
+                                  padding: "2px 3px", lineHeight: 1, flexShrink: 0,
+                                }}
+                              >✏️</button>
+                            )}
+                          </>
+                        )}
                       </div>
 
                       {/* タスク行ラベル（子タスクはインデント＋↳で明示。親は▾トグルで個別折りたたみ可） */}
