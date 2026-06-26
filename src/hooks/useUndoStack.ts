@@ -19,7 +19,9 @@ export interface UndoSnapshot {
 export type UndoOperation =
   | { type: "task_field"; taskId: string; field: string; oldValue: unknown }
   | { type: "task_restore"; taskId: string }
+  | { type: "task_delete"; taskId: string }
   | { type: "pj_restore"; pjId: string }
+  | { type: "pj_delete"; pjId: string }
   | { type: "pj_field"; pjId: string; field: string; oldValue: unknown };
 
 const MAX_STACK = 5;

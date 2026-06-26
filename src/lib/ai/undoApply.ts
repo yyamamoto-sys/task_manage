@@ -3,8 +3,10 @@
 // 【設計意図】
 // UndoSnapshotをDBに反映する（各operationを逆順に適用して元に戻す）。
 // - task_field: 指定フィールドをoldValueに戻す
-// - task_restore: is_deleted=false に戻す（論理削除を取り消す）
-// - pj_restore: PJとその配下の全タスクをis_deleted=falseに戻す
+// - task_restore: is_deleted=false に戻す（scope_reduce/pause の取り消し）
+// - task_delete: is_deleted=true にする（add_task で作成したタスクの取り消し）
+// - pj_restore: PJとその配下の全タスクをis_deleted=falseに戻す（scope_reduce/pause の取り消し）
+// - pj_delete: PJとその配下の全タスクをis_deleted=trueにする（add_project の取り消し）
 //
 // 物理削除は絶対に行わない（CLAUDE.md Section 4参照）
 
@@ -66,6 +68,54 @@ export async function applyUndo(
 
         if (error) {
           throw new Error(`タスク復元エラー: ${error.message}`);
+        }
+      } else if (op.type === "task_delete") {
+        // add_task で新規作成したタスクの Undo = 論理削除
+        const { error } = await supabase
+          .from("tasks")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("id", op.taskId);
+
+        if (error) {
+          throw new Error(`タスク削除（Undo）エラー: ${error.message}`);
+        }
+      } else if (op.type === "pj_delete") {
+        // add_project で新規作成したPJの Undo = PJと配下タスクを論理削除
+        const { error: tasksError } = await supabase
+          .from("tasks")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("project_id", op.pjId)
+          .eq("is_deleted", false);
+
+        if (tasksError) {
+          throw new Error(`タスク一括削除（Undo）エラー: ${tasksError.message}`);
+        }
+
+        const { error: pjError } = await supabase
+          .from("projects")
+          .update({
+            is_deleted: true,
+            deleted_at: now,
+            deleted_by: currentUserId,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("id", op.pjId);
+
+        if (pjError) {
+          throw new Error(`PJ削除（Undo）エラー: ${pjError.message}`);
         }
       } else if (op.type === "pj_restore") {
         // PJ配下の全タスクを復元

@@ -761,7 +761,7 @@ export async function applyProposalWithConfirmation(
           updated_by: currentUserId,
         });
         if (error) throw new Error(`タスク作成エラー: ${error.message}`);
-        operations.push({ type: "task_restore", taskId: newId });
+        operations.push({ type: "task_delete", taskId: newId });
         addedCount++;
         if (parentId === null) { parentId = newId; parentProjectId = item.project_id ?? null; }
       }
@@ -798,7 +798,7 @@ export async function applyProposalWithConfirmation(
             updated_by: currentUserId,
           });
           if (error) throw new Error(`子タスク作成エラー (${name}): ${error.message}`);
-          operations.push({ type: "task_restore", taskId: childId });
+          operations.push({ type: "task_delete", taskId: childId });
           addedCount++;
           order++;
         }
@@ -842,7 +842,7 @@ export async function applyProposalWithConfirmation(
         updated_by: currentUserId,
       });
       if (pjError) throw new Error(`プロジェクト作成エラー: ${pjError.message}`);
-      operations.push({ type: "pj_restore", pjId: projectId });
+      operations.push({ type: "pj_delete", pjId: projectId });
 
       // 初期タスクを作成（add_task と同じ命名規則で confirmedValues から取得）
       let taskCount = 0;
@@ -873,7 +873,6 @@ export async function applyProposalWithConfirmation(
           updated_by: currentUserId,
         });
         if (taskError) throw new Error(`初期タスク作成エラー (${name}): ${taskError.message}`);
-        operations.push({ type: "task_restore", taskId: newTaskId });
         taskCount++;
       }
 
