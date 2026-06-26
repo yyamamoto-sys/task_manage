@@ -14,13 +14,11 @@ import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
   Quarter, MemberTag,
 } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
-import { TaskEditModal } from "../task/TaskEditModal";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
@@ -28,7 +26,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 
-type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
 interface Props { currentUser: Member; }
 
@@ -64,11 +62,12 @@ export function AdminView({ currentUser }: Props) {
   const pjCount  = active(pjs).length;
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
+  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups"];
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
     if (krCount === 0) return "okr";
     if (pjCount === 0) return "pj";
-    return saved ?? "pj";
+    return (saved && validTabs.includes(saved)) ? saved : "pj";
   });
   const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
     () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(KEYS.ADMIN_FONT_SIZE) ?? "1", 10))) as 0 | 1 | 2
@@ -94,7 +93,6 @@ export function AdminView({ currentUser }: Props) {
   };
 
   const tabs: { key: AdminTab; label: string }[] = [
-    { key: "tasks",    label: "タスク" },
     { key: "pj",       label: "プロジェクト" },
     { key: "tf",       label: "Task Force" },
     { key: "okr",      label: "Objective / KR" },
@@ -190,7 +188,6 @@ export function AdminView({ currentUser }: Props) {
         zoom: zoomLevels[fontSizeLevel],
         display: "flex", flexDirection: "column", minHeight: 0,
       }}>
-        {tab === "tasks"    && <TasksSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
@@ -2867,354 +2864,6 @@ function MemberUsageBreakdown({
             </div>
           ))}
         </div>
-      )}
-    </div>
-  );
-}
-
-// ===================================================
-// セクション⑥：タスク管理
-// ===================================================
-
-function TasksSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const rawTasks    = useAppStore(s => s.tasks);
-  const rawMembers  = useAppStore(s => s.members);
-  const rawProjects = useAppStore(s => s.projects);
-  const saveTask    = useAppStore(s => s.saveTask);
-
-  const tasks    = useMemo(() => rawTasks.filter((t: Task) => !t.is_deleted), [rawTasks]);
-  const members  = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
-  const projects = useMemo(() => rawProjects.filter((p: Project) => !p.is_deleted), [rawProjects]);
-
-  // フィルター状態
-  const [search,     setSearch]     = useState("");
-  const [filterStatus,   setFilterStatus]   = useState<Task["status"] | "">("");
-  const [filterMember,   setFilterMember]   = useState("");
-  const [filterProject,  setFilterProject]  = useState("");
-
-  // 編集モーダル
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-
-  // 未保存変更を親に通知
-  useEffect(() => {
-    onDirtyChange(editingTaskId !== null);
-  }, [editingTaskId, onDirtyChange]);
-
-  // フィルタリング
-  const filtered = useMemo(() => {
-    return tasks.filter(t => {
-      if (filterStatus  && t.status !== filterStatus) return false;
-      if (filterMember  && t.assignee_member_id !== filterMember) return false;
-      if (filterProject && t.project_id !== filterProject) return false;
-      if (search) {
-        const q = search.toLowerCase();
-        const name = t.name.toLowerCase();
-        const assignee = members.find(m => m.id === t.assignee_member_id)?.display_name.toLowerCase() ?? "";
-        const pj = projects.find(p => p.id === t.project_id)?.name.toLowerCase() ?? "";
-        if (!name.includes(q) && !assignee.includes(q) && !pj.includes(q)) return false;
-      }
-      return true;
-    }).sort((a, b) => {
-      // 期日昇順、nullは最後
-      if (!a.due_date && !b.due_date) return 0;
-      if (!a.due_date) return 1;
-      if (!b.due_date) return -1;
-      return a.due_date < b.due_date ? -1 : 1;
-    });
-  }, [tasks, filterStatus, filterMember, filterProject, search, members, projects]);
-
-  const handleDelete = async (task: Task) => {
-    const ok = await confirmDialog(`「${task.name}」を削除しますか？`);
-    if (!ok) return;
-    await saveTask({
-      ...task,
-      is_deleted: true,
-      deleted_at: new Date().toISOString(),
-      deleted_by: currentUser.id,
-      // updated_at は触らない（CLAUDE.md Section 5）
-      updated_by: currentUser.id,
-    });
-  };
-
-  const isMobile = useIsMobile();
-
-  return (
-    <div>
-      {/* フィルターバー */}
-      <div style={{
-        display: "flex", flexWrap: "wrap", gap: "8px",
-        marginBottom: "14px", alignItems: "center",
-      }}>
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="タスク名・担当者・PJで検索..."
-          style={{
-            flex: "1 1 180px", padding: "5px 10px", fontSize: "12px",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            background: "var(--color-bg-primary)",
-            color: "var(--color-text-primary)",
-          }}
-        />
-        <CustomSelect value={filterStatus} onChange={value => setFilterStatus(value as Task["status"] | "")}
-          options={[
-            { value: "", label: "すべてのステータス" },
-            { value: "todo", label: "未着手" },
-            { value: "in_progress", label: "進行中" },
-            { value: "done", label: "完了" },
-          ]}
-          style={{ width: "150px" }} />
-        <CustomSelect value={filterMember} onChange={value => setFilterMember(value)}
-          options={[
-            { value: "", label: "すべての担当者" },
-            ...members.map(m => ({ value: m.id, label: m.display_name })),
-          ]}
-          searchable searchPlaceholder="メンバーで検索..."
-          style={{ width: "160px" }} />
-        <CustomSelect value={filterProject} onChange={value => setFilterProject(value)}
-          options={[
-            { value: "", label: "すべてのPJ" },
-            ...projects.map(p => ({ value: p.id, label: p.name })),
-          ]}
-          searchable searchPlaceholder="プロジェクトで検索..."
-          style={{ width: "180px" }} />
-        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
-          {filtered.length}件
-        </span>
-      </div>
-
-      {/* タスク一覧 */}
-      {filtered.length === 0 ? (
-        <div style={{
-          padding: "40px", textAlign: "center",
-          color: "var(--color-text-tertiary)", fontSize: "13px",
-        }}>
-          該当するタスクがありません
-        </div>
-      ) : (
-        <div style={{
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-lg)",
-          overflow: "hidden",
-        }}>
-          {/* テーブルヘッダー */}
-          {!isMobile && (
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 80px 120px 80px 80px 80px",
-              padding: "7px 14px",
-              background: "var(--color-bg-secondary)",
-              borderBottom: "1px solid var(--color-border-primary)",
-              fontSize: "10px", fontWeight: "600",
-              color: "var(--color-text-tertiary)",
-              gap: "8px",
-            }}>
-              <span>タスク名</span>
-              <span>担当者</span>
-              <span>プロジェクト</span>
-              <span>ステータス</span>
-              <span>期日</span>
-              <span></span>
-            </div>
-          )}
-
-          {/* タスク行 */}
-          {filtered.map((task, i) => {
-            const assignee = members.find(m => m.id === task.assignee_member_id);
-            const pj = projects.find(p => p.id === task.project_id);
-            const statusColor = TASK_STATUS_STYLE[task.status];
-            const isOverdue = task.due_date && task.due_date < new Date().toISOString().split("T")[0] && task.status !== "done";
-
-            return (
-              <div
-                key={task.id}
-                style={{
-                  display: isMobile ? "block" : "grid",
-                  gridTemplateColumns: isMobile ? undefined : "1fr 80px 120px 80px 80px 80px",
-                  gap: "8px",
-                  padding: isMobile ? "10px 14px" : "8px 14px",
-                  borderBottom: i < filtered.length - 1 ? "1px solid var(--color-border-primary)" : "none",
-                  background: "var(--color-bg-primary)",
-                  alignItems: "center",
-                  transition: "background 0.1s",
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-bg-secondary)"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-bg-primary)"; }}
-              >
-                {/* タスク名 */}
-                <div style={{
-                  fontSize: "12px", fontWeight: "500",
-                  color: "var(--color-text-primary)",
-                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  marginBottom: isMobile ? "6px" : 0,
-                }}>
-                  {task.priority && (
-                    <span style={{
-                      fontSize: "9px", marginRight: "5px",
-                      color: TASK_PRIORITY_STYLE[task.priority]?.color,
-                      fontWeight: "700",
-                    }}>
-                      [{TASK_PRIORITY_LABEL[task.priority]}]
-                    </span>
-                  )}
-                  {task.name}
-                </div>
-
-                {isMobile ? (
-                  /* モバイル：サブ情報を横並びで */
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                    {assignee && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <div style={{
-                          width: 18, height: 18, borderRadius: "50%",
-                          background: assignee.color_bg, color: assignee.color_text,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: "8px", fontWeight: "700", flexShrink: 0,
-                        }}>
-                          {assignee.initials.slice(0, 2)}
-                        </div>
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{assignee.short_name}</span>
-                      </div>
-                    )}
-                    {pj && (
-                      <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                        <div style={{ width: 6, height: 6, borderRadius: "50%", background: pj.color_tag ?? "var(--color-border-secondary)" }} />
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>{pj.name}</span>
-                      </div>
-                    )}
-                    <span style={{
-                      fontSize: "10px", padding: "1px 7px",
-                      borderRadius: "var(--radius-full)",
-                      background: statusColor.bg, color: statusColor.color,
-                      border: `1px solid ${statusColor.border}`,
-                    }}>
-                      {TASK_STATUS_LABEL[task.status]}
-                    </span>
-                    {task.due_date && (
-                      <span style={{ fontSize: "11px", color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)" }}>
-                        {task.due_date}
-                      </span>
-                    )}
-                    <div style={{ display: "flex", gap: "6px", marginLeft: "auto" }}>
-                      <button
-                        onClick={() => setEditingTaskId(task.id)}
-                        style={{
-                          padding: "3px 10px", fontSize: "11px",
-                          border: "1px solid var(--color-border-primary)",
-                          borderRadius: "var(--radius-md)",
-                          background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer",
-                        }}
-                      >編集</button>
-                      <button
-                        onClick={() => handleDelete(task)}
-                        style={{
-                          padding: "3px 10px", fontSize: "11px",
-                          border: "1px solid var(--color-border-danger)",
-                          borderRadius: "var(--radius-md)",
-                          background: "transparent", color: "var(--color-text-danger)", cursor: "pointer",
-                        }}
-                      >削除</button>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    {/* 担当者 */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                      {assignee ? (
-                        <>
-                          <div style={{
-                            width: 20, height: 20, borderRadius: "50%",
-                            background: assignee.color_bg, color: assignee.color_text,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            fontSize: "8px", fontWeight: "700", flexShrink: 0,
-                          }}>
-                            {assignee.initials.slice(0, 2)}
-                          </div>
-                          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {assignee.short_name}
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>—</span>
-                      )}
-                    </div>
-
-                    {/* PJ */}
-                    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                      {pj ? (
-                        <>
-                          <div style={{ width: 6, height: 6, borderRadius: "50%", background: pj.color_tag ?? "var(--color-border-secondary)", flexShrink: 0 }} />
-                          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {pj.name}
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>—</span>
-                      )}
-                    </div>
-
-                    {/* ステータス */}
-                    <div>
-                      <span style={{
-                        fontSize: "10px", padding: "2px 8px",
-                        borderRadius: "var(--radius-full)",
-                        background: statusColor.bg, color: statusColor.color,
-                        border: `1px solid ${statusColor.border}`,
-                        whiteSpace: "nowrap",
-                      }}>
-                        {TASK_STATUS_LABEL[task.status]}
-                      </span>
-                    </div>
-
-                    {/* 期日 */}
-                    <div style={{
-                      fontSize: "11px",
-                      color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-                      fontWeight: isOverdue ? "600" : "400",
-                      whiteSpace: "nowrap",
-                    }}>
-                      {task.due_date ?? "—"}
-                    </div>
-
-                    {/* 操作 */}
-                    <div style={{ display: "flex", gap: "5px", justifyContent: "flex-end" }}>
-                      <button
-                        onClick={() => setEditingTaskId(task.id)}
-                        style={{
-                          padding: "3px 10px", fontSize: "11px",
-                          border: "1px solid var(--color-border-primary)",
-                          borderRadius: "var(--radius-md)",
-                          background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer",
-                        }}
-                      >編集</button>
-                      <button
-                        onClick={() => handleDelete(task)}
-                        style={{
-                          padding: "3px 10px", fontSize: "11px",
-                          border: "1px solid var(--color-border-danger)",
-                          borderRadius: "var(--radius-md)",
-                          background: "transparent", color: "var(--color-text-danger)", cursor: "pointer",
-                        }}
-                      >削除</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {/* タスク編集モーダル */}
-      {editingTaskId && (
-        <TaskEditModal
-          taskId={editingTaskId}
-          currentUser={currentUser}
-          onClose={() => setEditingTaskId(null)}
-          onDeleted={() => setEditingTaskId(null)}
-        />
       )}
     </div>
   );
