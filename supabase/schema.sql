@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS members (
   short_name    text NOT NULL,
   initials      text NOT NULL,
   teams_account text NOT NULL DEFAULT '',
+  email         text,                       -- Supabase Auth メールとの自動マッチング用（migration 20260626）
   notify_pref   text NOT NULL DEFAULT 'none' CHECK (notify_pref IN ('none','browser','teams')),
   color_bg      text NOT NULL,
   color_text    text NOT NULL,

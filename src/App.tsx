@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { setGuestMode, isGuestMember } from "./lib/guestMode";
-import { getSession, onAuthStateChange } from "./lib/supabase/auth";
+import { getSession, onAuthStateChange, getAuthEmail } from "./lib/supabase/auth";
 import { isMisconfigured } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
@@ -130,13 +130,29 @@ function AuthenticatedApp({
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && active(members).length > 0);
 
-  // メンバー読み込み完了後、前回ユーザーを自動復元
+  // メンバー読み込み完了後、ログインユーザーを自動マッチング
+  // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー
   useEffect(() => {
     if (loading || currentUser) return;
-    const saved = getCurrentUser();
-    if (!saved) return;
-    const member = members.find(m => m.id === saved.id && !m.is_deleted);
-    if (member) onLogin(member);
+    const activeMembers = active(members);
+
+    async function autoMatch() {
+      // ① Auth email が members.email と一致するメンバーを優先（セキュアな自動同定）
+      const authEmail = await getAuthEmail();
+      if (authEmail) {
+        const matched = activeMembers.find(
+          m => m.email && m.email.toLowerCase() === authEmail.toLowerCase(),
+        );
+        if (matched) { onLogin(matched); return; }
+      }
+      // ② email 未設定のケース：localStorage の前回ユーザーにフォールバック
+      const saved = getCurrentUser();
+      if (!saved) return;
+      const member = activeMembers.find(m => m.id === saved.id);
+      if (member) onLogin(member);
+    }
+
+    void autoMatch();
   }, [loading, members, currentUser, onLogin]);
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で

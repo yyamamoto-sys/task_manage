@@ -1685,7 +1685,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    display_name: "", short_name: "", teams_account: "",
+    display_name: "", short_name: "", teams_account: "", email: "",
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
   });
 
@@ -1705,12 +1705,12 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)" });
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)" });
   };
 
   const openEdit = (m: Member) => {
     setEditId(m.id);
-    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, color_bg: m.color_bg, color_text: m.color_text });
+    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text });
   };
 
   const save = async () => {
@@ -1721,19 +1721,21 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
     const now = new Date().toISOString();
     try {
+      const emailVal = form.email.trim() || null;
       if (editId === "new") {
         await saveMember({
           id: uuidv4(), initials,
           display_name: form.display_name.trim(),
           short_name: shortName,
           teams_account: form.teams_account,
+          email: emailVal,
           color_bg: form.color_bg, color_text: form.color_text,
           is_deleted: false,
           created_at: now, updated_at: now, updated_by: currentUser.id,
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, short_name: shortName, initials, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, email: emailVal, short_name: shortName, initials, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -1773,6 +1775,9 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                   </span>
                 )}
               </div>
+              {m.email && (
+                <div style={{ fontSize: "10px", color: "var(--color-brand)" }}>{m.email}</div>
+              )}
               {m.teams_account && (
                 <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
               )}
@@ -1803,6 +1808,14 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 <FieldLabel>短縮名（省略可）</FieldLabel>
                 <input value={form.short_name} onChange={e => setForm(f => ({...f, short_name: e.target.value}))}
                   placeholder="例：田中（未入力で姓を使用）" style={inputStyle} />
+              </div>
+            </div>
+            <div>
+              <FieldLabel>ログイン用メールアドレス（任意）</FieldLabel>
+              <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
+                placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                設定するとログイン後にこのメンバーが自動選択されます
               </div>
             </div>
             <div>

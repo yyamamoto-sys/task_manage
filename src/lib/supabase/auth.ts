@@ -23,6 +23,11 @@ export async function getSession(): Promise<Session | null> {
   return data.session;
 }
 
+export async function getAuthEmail(): Promise<string | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  return user?.email ?? null;
+}
+
 export function onAuthStateChange(callback: (session: Session | null) => void) {
   const { data } = supabase.auth.onAuthStateChange((_event, session) => {
     callback(session);

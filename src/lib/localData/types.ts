@@ -10,6 +10,8 @@ export interface Member {
   short_name: string;
   initials: string;
   teams_account: string;
+  /** Supabase Auth のメールアドレスと突き合わせてログイン時に自動マッチングする（任意） */
+  email?: string | null;
   /** 期限通知の受け取り方。未設定（マイグレ前の行）は "none" 扱い */
   notify_pref?: NotifyPref;
   color_bg: string;
