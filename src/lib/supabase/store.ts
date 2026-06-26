@@ -11,7 +11,7 @@
 import { supabase } from "./client";
 import { getAssigneeIds } from "../taskMeta";
 import type {
-  Member, Objective, KeyResult, TaskForce, ToDo,
+  Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
@@ -119,6 +119,30 @@ async function saveWithLock<T extends { id: string }>(
 }
 
 // ===== データ取得 =====
+
+// ===== Group =====
+
+export async function fetchGroups(): Promise<Group[]> {
+  const { data, error } = await supabase
+    .from("groups")
+    .select("*")
+    .eq("is_deleted", false)
+    .order("name");
+  if (error) throw error;
+  return (data ?? []) as Group[];
+}
+
+export async function upsertGroup(group: Group, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("groups", group, expectedUpdatedAt);
+}
+
+export async function softDeleteGroup(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("groups")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
 
 /**
  * 【フェーズ分割取得 — 2026-06-23】

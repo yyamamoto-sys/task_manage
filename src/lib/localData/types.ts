@@ -4,6 +4,18 @@
 /** 期限アラートの通知方法（ユーザーごとに選択） */
 export type NotifyPref = "none" | "browser" | "teams";
 
+/** マルチテナントのグループ（部署単位）。全データはグループに属する */
+export interface Group {
+  id: string;
+  name: string;
+  is_deleted: boolean;
+  deleted_at?: string;
+  deleted_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  updated_by: string;
+}
+
 export interface Member {
   id: string;
   display_name: string;
@@ -17,6 +29,8 @@ export interface Member {
   color_bg: string;
   color_text: string;
   is_deleted: boolean;
+  /** 所属グループID（マルチテナント対応） */
+  group_id?: string | null;
   // audit fields（Supabase移行後に必須化）
   created_at?: string;
   updated_at?: string;
@@ -124,6 +138,8 @@ export interface Project {
   start_date: string;
   end_date: string;
   is_deleted: boolean;
+  /** 所属グループID（マルチテナント対応） */
+  group_id?: string | null;
   // audit fields（updated_atはSupabase移行時の競合検知に使用）
   created_at?: string;
   updated_at?: string;
@@ -146,6 +162,8 @@ export interface Task {
   estimated_hours: number | null;
   comment: string;
   is_deleted: boolean;
+  /** 所属グループID（マルチテナント対応） */
+  group_id?: string | null;
   // audit fields（updated_atはSupabase移行時の競合検知に使用）
   created_at?: string;
   updated_at?: string;

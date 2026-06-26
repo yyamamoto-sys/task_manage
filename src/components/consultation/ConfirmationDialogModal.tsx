@@ -17,6 +17,7 @@ import { BTN_APPLY_CONFIRMED, btnShift } from "../../lib/ai/uiGuide";
 interface Props {
   dialog: ConfirmationDialog;
   currentUserId: string;
+  currentGroupId?: string | null;
   onClose: () => void;
   onApplied: (result: ApplyResult) => void;
 }
@@ -166,6 +167,7 @@ function NewTaskFormRow({
 export function ConfirmationDialogModal({
   dialog,
   currentUserId,
+  currentGroupId,
   onClose,
   onApplied,
 }: Props) {
@@ -259,6 +261,7 @@ export function ConfirmationDialogModal({
       dialog,
       confirmedValues,
       currentUserId,
+      currentGroupId,
     );
     setApplying(false);
     onApplied(result);

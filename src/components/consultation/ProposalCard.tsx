@@ -23,6 +23,7 @@ interface Props {
   proposal: UIProposal;
   shortIdMap: Map<string, string>;
   currentUserId: string;
+  currentGroupId?: string | null;
   onApplied?: (snapshot: UndoSnapshot) => void;
   /** ガントで比較ボタンクリック時のコールバック */
   onGanttPreview?: (proposal: UIProposal) => void;
@@ -40,6 +41,7 @@ export function ProposalCard({
   proposal,
   shortIdMap,
   currentUserId,
+  currentGroupId,
   onApplied,
   onGanttPreview,
   onDecline,
@@ -60,7 +62,7 @@ export function ProposalCard({
     setApplying(true);
     setResultMessage(null);
 
-    const result = await applyProposal(proposal, shortIdMap, currentUserId);
+    const result = await applyProposal(proposal, shortIdMap, currentUserId, currentGroupId);
     setApplying(false);
 
     if (result.type === "success") {
@@ -173,6 +175,7 @@ export function ProposalCard({
           <ConfirmationDialogModal
             dialog={confirmDialog}
             currentUserId={currentUserId}
+            currentGroupId={currentGroupId}
             onClose={() => setConfirmDialog(null)}
             onApplied={(result) => {
               setConfirmDialog(null);
@@ -509,6 +512,7 @@ export function ProposalCard({
         <ConfirmationDialogModal
           dialog={confirmDialog}
           currentUserId={currentUserId}
+          currentGroupId={currentGroupId}
           onClose={() => setConfirmDialog(null)}
           onApplied={(result) => {
             setConfirmDialog(null);

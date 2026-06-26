@@ -11,7 +11,7 @@ import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
+  Group, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
   Quarter, MemberTag,
 } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE } from "../../lib/taskMeta";
@@ -28,7 +28,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 
-type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage";
+type AdminTab = "tasks" | "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
 interface Props { currentUser: Member; }
 
@@ -78,6 +78,7 @@ export function AdminView({ currentUser }: Props) {
     { key: "ai_usage", label: "AI使用量" },
     { key: "members",  label: "メンバー" },
     { key: "tags",     label: "メンバータグ" },
+    { key: "groups",   label: "グループ" },
   ];
 
   return (
@@ -173,6 +174,7 @@ export function AdminView({ currentUser }: Props) {
         {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         {tab === "ai_usage" && <AIUsageSection />}
+        {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
       </div>
     </div>
   );
@@ -1678,15 +1680,18 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
 function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const rawMembers   = useAppStore(s => s.members);
+  const rawGroups    = useAppStore(s => s.groups);
   const saveMember   = useAppStore(s => s.saveMember);
   const deleteMember = useAppStore(s => s.deleteMember);
   const isMobile = useIsMobile();
   const members = useMemo(() => active(rawMembers), [rawMembers]);
+  const groups  = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
     display_name: "", short_name: "", teams_account: "", email: "",
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
+    group_id: "" as string,
   });
 
   // 未保存変更を親に通知
@@ -1705,12 +1710,12 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)" });
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "" });
   };
 
   const openEdit = (m: Member) => {
     setEditId(m.id);
-    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text });
+    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "" });
   };
 
   const save = async () => {
@@ -1722,6 +1727,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     const now = new Date().toISOString();
     try {
       const emailVal = form.email.trim() || null;
+      const groupIdVal = form.group_id || null;
       if (editId === "new") {
         await saveMember({
           id: uuidv4(), initials,
@@ -1729,13 +1735,14 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
           short_name: shortName,
           teams_account: form.teams_account,
           email: emailVal,
+          group_id: groupIdVal,
           color_bg: form.color_bg, color_text: form.color_text,
           is_deleted: false,
           created_at: now, updated_at: now, updated_by: currentUser.id,
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, email: emailVal, short_name: shortName, initials, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -1818,6 +1825,19 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 設定するとログイン後にこのメンバーが自動選択されます
               </div>
             </div>
+            {groups.length > 0 && (
+              <div>
+                <FieldLabel>グループ（任意）</FieldLabel>
+                <CustomSelect
+                  value={form.group_id}
+                  onChange={v => setForm(f => ({ ...f, group_id: v }))}
+                  options={[
+                    { value: "", label: "（未設定）" },
+                    ...groups.map(g => ({ value: g.id, label: g.name })),
+                  ]}
+                />
+              </div>
+            )}
             <div>
               <FieldLabel>Teamsアカウント（任意）</FieldLabel>
               <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}
@@ -1861,6 +1881,155 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
               ...primaryBtnStyle,
               opacity: form.display_name.trim() ? 1 : 0.4,
               cursor: form.display_name.trim() ? "pointer" : "not-allowed",
+            }}>保存</button>
+            <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ===================================================
+// セクション⑥：グループ（マルチテナント管理）
+// ===================================================
+
+function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
+  const rawGroups   = useAppStore(s => s.groups);
+  const rawMembers  = useAppStore(s => s.members);
+  const saveGroup   = useAppStore(s => s.saveGroup);
+  const deleteGroup = useAppStore(s => s.deleteGroup);
+  const groups  = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
+  const members = useMemo(() => active(rawMembers), [rawMembers]);
+
+  const [editId, setEditId] = useState<string | null>(null);
+  const [form, setForm] = useState({ name: "" });
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onDirtyChange(editId !== null);
+  }, [editId, onDirtyChange]);
+
+  const openAdd = () => {
+    setEditId("new");
+    setForm({ name: "" });
+    setError(null);
+  };
+
+  const openEdit = (g: Group) => {
+    setEditId(g.id);
+    setForm({ name: g.name });
+    setError(null);
+  };
+
+  const save = async () => {
+    if (!form.name.trim()) return;
+    const now = new Date().toISOString();
+    try {
+      if (editId === "new") {
+        await saveGroup({
+          id: `grp-${Date.now()}`,
+          name: form.name.trim(),
+          is_deleted: false,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUser.id,
+        });
+      } else {
+        const existing = groups.find(g => g.id === editId);
+        if (existing) {
+          await saveGroup({ ...existing, name: form.name.trim(), updated_by: currentUser.id });
+        }
+      }
+      setEditId(null);
+    } catch (e) {
+      setError(formatErrorForUser("保存に失敗しました", e));
+    }
+  };
+
+  const handleDelete = async (g: Group) => {
+    const memberCount = members.filter(m => m.group_id === g.id).length;
+    if (memberCount > 0) {
+      await alertDialog(`このグループには ${memberCount} 名のメンバーがいます。\nメンバーのグループ変更後に削除してください。`);
+      return;
+    }
+    if (!await confirmDialog(`グループ「${g.name}」を削除しますか？`)) return;
+    try {
+      await deleteGroup(g.id, currentUser.id);
+    } catch (e) {
+      setError(formatErrorForUser("削除に失敗しました", e));
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: "560px" }}>
+      <SectionHeader title="グループ管理" action={
+        <button onClick={openAdd} style={primaryBtnStyle}>＋ 追加</button>
+      } />
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "10px" }}>
+        グループ単位でデータが隔離されます（マルチテナント）。メンバーは1グループに属します。
+      </div>
+
+      {error && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginBottom: "8px" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginBottom: "14px" }}>
+        {groups.map(g => {
+          const memberCount = members.filter(m => m.group_id === g.id).length;
+          return (
+            <div key={g.id} style={{
+              display: "flex", alignItems: "center", gap: "10px",
+              padding: "8px 12px",
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+            }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                  {g.name}
+                </div>
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                  メンバー {memberCount}名 / ID: {g.id}
+                </div>
+              </div>
+              <IconBtn onClick={() => openEdit(g)}>✏</IconBtn>
+              <IconBtn danger onClick={() => { void handleDelete(g); }}>✕</IconBtn>
+            </div>
+          );
+        })}
+        {groups.length === 0 && (
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+            グループがありません。「＋ 追加」から作成してください。
+          </div>
+        )}
+      </div>
+
+      {editId && (
+        <div style={{
+          padding: "14px", background: "var(--color-bg-secondary)",
+          border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+        }}>
+          <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
+            {editId === "new" ? "グループを追加" : "グループを編集"}
+          </div>
+          <div>
+            <FieldLabel>グループ名 *</FieldLabel>
+            <input
+              value={form.name}
+              onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="例：EGG、営業部、開発チーム"
+              maxLength={50}
+              style={inputStyle}
+            />
+          </div>
+          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            <button onClick={() => { void save(); }} disabled={!form.name.trim()} style={{
+              ...primaryBtnStyle,
+              opacity: form.name.trim() ? 1 : 0.4,
+              cursor: form.name.trim() ? "pointer" : "not-allowed",
             }}>保存</button>
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>

@@ -185,11 +185,13 @@ function resolveUUID(shortId: string, shortIdMap: Map<string, string>): string |
  * @param proposal - 反映する提案
  * @param shortIdMap - shortId→UUIDの変換マップ（payloadBuilderが生成）
  * @param currentUserId - 操作者のメンバーID
+ * @param currentGroupId - ログイン中ユーザーのグループID（新規タスク/PJに付与）
  */
 export async function applyProposal(
   proposal: UIProposal,
   shortIdMap: Map<string, string>,
   currentUserId: string,
+  currentGroupId?: string | null,
 ): Promise<ApplyResult> {
   const { action_type } = proposal;
 
@@ -555,11 +557,13 @@ export async function applyProposal(
  * @param dialog - applyProposalが返したConfirmationDialog
  * @param confirmedValues - key: UUID, value: 新しい値（日付またはメンバーID）
  * @param currentUserId - 操作者のメンバーID
+ * @param currentGroupId - ログイン中ユーザーのグループID（新規タスク/PJに付与）
  */
 export async function applyProposalWithConfirmation(
   dialog: ConfirmationDialog,
   confirmedValues: Record<string, string>,
   currentUserId: string,
+  currentGroupId?: string | null,
 ): Promise<ApplyResult> {
   try {
     const now = new Date().toISOString();
@@ -759,6 +763,7 @@ export async function applyProposalWithConfirmation(
           start_date: startDate,
           due_date: dueDate,
           comment: confirmedValues[`${item.temp_id}_description`] || null,
+          group_id: currentGroupId ?? null,
           created_at: now,
           updated_at: now,
           updated_by: currentUserId,
@@ -796,6 +801,7 @@ export async function applyProposalWithConfirmation(
             start_date: startDate,
             due_date: dueDate,
             comment: confirmedValues[`${sub.temp_id}_description`] || null,
+            group_id: currentGroupId ?? null,
             created_at: now,
             updated_at: now,
             updated_by: currentUserId,
@@ -840,6 +846,7 @@ export async function applyProposalWithConfirmation(
         start_date: null,
         end_date: null,
         is_deleted: false,
+        group_id: currentGroupId ?? null,
         created_at: now,
         updated_at: now,
         updated_by: currentUserId,
@@ -871,6 +878,7 @@ export async function applyProposalWithConfirmation(
           start_date: startDate,
           due_date: dueDate,
           comment: confirmedValues[`${item.temp_id}_description`] || null,
+          group_id: currentGroupId ?? null,
           created_at: now,
           updated_at: now,
           updated_by: currentUserId,

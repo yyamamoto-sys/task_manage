@@ -116,7 +116,8 @@ export function ConsultationPanel({
   // 入力内容からAIが相談の種類を自動判定
   const consultationType: ConsultationType = useMemo(() => inferConsultationType(inputText), [inputText]);
 
-  const reload      = useAppStore(s => s.reload);
+  const reload         = useAppStore(s => s.reload);
+  const currentGroupId = useAppStore(s => s.currentGroupId);
 
   const {
     callState, session, tokenStatus, loadingMessage,
@@ -585,6 +586,7 @@ export function ConsultationPanel({
                   proposal={proposal}
                   shortIdMap={shortIdMap}
                   currentUserId={currentUser.id}
+                  currentGroupId={currentGroupId}
                   onApplied={snapshot => { pushUndoSnapshot(snapshot); reload(); }}
                   onGanttPreview={p => setGanttPreviewProposal(p)}
                   onDecline={followUpText => {

@@ -118,14 +118,15 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
-  const members           = useAppStore(s => s.members);
-  const loading           = useAppStore(s => s.loading);
-  const backgroundLoading = useAppStore(s => s.backgroundLoading);
-  const loadProgress      = useAppStore(s => s.loadProgress);
-  const loadingHint       = useAppStore(s => s.loadingHint);
-  const error             = useAppStore(s => s.error);
-  const reload            = useAppStore(s => s.reload);
-  const applyRemoteChange = useAppStore(s => s.applyRemoteChange);
+  const members            = useAppStore(s => s.members);
+  const loading            = useAppStore(s => s.loading);
+  const backgroundLoading  = useAppStore(s => s.backgroundLoading);
+  const loadProgress       = useAppStore(s => s.loadProgress);
+  const loadingHint        = useAppStore(s => s.loadingHint);
+  const error              = useAppStore(s => s.error);
+  const reload             = useAppStore(s => s.reload);
+  const applyRemoteChange  = useAppStore(s => s.applyRemoteChange);
+  const setCurrentGroupId  = useAppStore(s => s.setCurrentGroupId);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && active(members).length > 0);
@@ -143,13 +144,20 @@ function AuthenticatedApp({
         const matched = activeMembers.find(
           m => m.email && m.email.toLowerCase() === authEmail.toLowerCase(),
         );
-        if (matched) { onLogin(matched); return; }
+        if (matched) {
+          setCurrentGroupId(matched.group_id ?? null);
+          onLogin(matched);
+          return;
+        }
       }
       // ② email 未設定のケース：localStorage の前回ユーザーにフォールバック
       const saved = getCurrentUser();
       if (!saved) return;
       const member = activeMembers.find(m => m.id === saved.id);
-      if (member) onLogin(member);
+      if (member) {
+        setCurrentGroupId(member.group_id ?? null);
+        onLogin(member);
+      }
     }
 
     void autoMatch();

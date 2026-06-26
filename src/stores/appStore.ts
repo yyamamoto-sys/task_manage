@@ -20,7 +20,7 @@ import { create } from "zustand";
 import { showToast } from "../components/common/Toast";
 import { reportError } from "../lib/errorReporter";
 import type {
-  Member, Objective, KeyResult, TaskForce, ToDo,
+  Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject,
@@ -30,7 +30,9 @@ import {
   fetchAllData,
   fetchCriticalData,
   fetchOkrData,
+  fetchGroups,
   ConflictError,
+  upsertGroup, softDeleteGroup,
   upsertMember, softDeleteMember,
   upsertObjective,
   upsertKeyResult, softDeleteKeyResult,
@@ -49,6 +51,8 @@ import {
 
 export interface AppState {
   // ===== データ =====
+  groups: Group[];
+  currentGroupId: string | null;
   members: Member[];
   objective: Objective | null;
   keyResults: KeyResult[];
@@ -73,6 +77,11 @@ export interface AppState {
   // ===== 取得 =====
   load: () => Promise<void>;
   reload: () => Promise<void>;
+
+  // ===== Group =====
+  setCurrentGroupId: (id: string | null) => void;
+  saveGroup: (group: Group) => Promise<void>;
+  deleteGroup: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== Member =====
   saveMember: (member: Member) => Promise<void>;
@@ -263,6 +272,8 @@ async function runSerializedByKey(key: string, work: () => Promise<void>): Promi
 
 export const useAppStore = create<AppState>()((set, get) => ({
   // ===== 初期 state =====
+  groups: [],
+  currentGroupId: null,
   members: [],
   objective: null,
   keyResults: [],
@@ -317,7 +328,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
             });
           },
         );
+        // groups はサイレントフェッチ（失敗してもメイン UI はブロックしない）
+        let fetchedGroups: Group[] = [];
+        try {
+          fetchedGroups = await fetchGroups();
+        } catch {
+          // groups テーブル未適用環境でもアプリを起動できるよう握りつぶす
+        }
+
         set({
+          groups:           fetchedGroups,
           members:          critical.members,
           projects:         critical.projects,
           tasks:            critical.tasks,
@@ -373,18 +393,57 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   reload: async () => { await get().load(); },
 
+  // ===== Group =====
+  setCurrentGroupId: (id) => set({ currentGroupId: id }),
+
+  saveGroup: async (group) => {
+    set(state => ({
+      groups: state.groups.findIndex(g => g.id === group.id) >= 0
+        ? state.groups.map(g => g.id === group.id ? group : g)
+        : [...state.groups, group],
+    }));
+    await runSerializedByKey(`groups:${group.id}`, async () => {
+      const expectedUpdatedAt = get().groups.find(g => g.id === group.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertGroup(group, expectedUpdatedAt);
+        set(state => ({ groups: syncUpdatedAt(state.groups, group.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
+  },
+
+  deleteGroup: async (id, deletedBy) => {
+    const now = new Date().toISOString();
+    set(state => ({
+      groups: state.groups.map(g =>
+        g.id === id ? { ...g, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : g
+      ),
+    }));
+    try {
+      await softDeleteGroup(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
   // ===== Member =====
   saveMember: async (member) => {
+    const memberToSave: Member = member.group_id != null
+      ? member
+      : { ...member, group_id: get().currentGroupId ?? undefined };
     set(state => ({
-      members: state.members.findIndex(m => m.id === member.id) >= 0
-        ? state.members.map(m => m.id === member.id ? member : m)
-        : [...state.members, member],
+      members: state.members.findIndex(m => m.id === memberToSave.id) >= 0
+        ? state.members.map(m => m.id === memberToSave.id ? memberToSave : m)
+        : [...state.members, memberToSave],
     }));
-    await runSerializedByKey(`members:${member.id}`, async () => {
-      const expectedUpdatedAt = get().members.find(m => m.id === member.id)?.updated_at;
+    await runSerializedByKey(`members:${memberToSave.id}`, async () => {
+      const expectedUpdatedAt = get().members.find(m => m.id === memberToSave.id)?.updated_at;
       try {
-        const newUpdatedAt = await upsertMember(member, expectedUpdatedAt);
-        set(state => ({ members: syncUpdatedAt(state.members, member.id, newUpdatedAt) }));
+        const newUpdatedAt = await upsertMember(memberToSave, expectedUpdatedAt);
+        set(state => ({ members: syncUpdatedAt(state.members, memberToSave.id, newUpdatedAt) }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -530,16 +589,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Project =====
   saveProject: async (project) => {
+    const projectToSave: Project = project.group_id != null
+      ? project
+      : { ...project, group_id: get().currentGroupId ?? undefined };
     set(state => ({
-      projects: state.projects.findIndex(p => p.id === project.id) >= 0
-        ? state.projects.map(p => p.id === project.id ? project : p)
-        : [...state.projects, project],
+      projects: state.projects.findIndex(p => p.id === projectToSave.id) >= 0
+        ? state.projects.map(p => p.id === projectToSave.id ? projectToSave : p)
+        : [...state.projects, projectToSave],
     }));
-    await runSerializedByKey(`projects:${project.id}`, async () => {
-      const expectedUpdatedAt = get().projects.find(p => p.id === project.id)?.updated_at;
+    await runSerializedByKey(`projects:${projectToSave.id}`, async () => {
+      const expectedUpdatedAt = get().projects.find(p => p.id === projectToSave.id)?.updated_at;
       try {
-        const newUpdatedAt = await upsertProject(project, expectedUpdatedAt);
-        set(state => ({ projects: syncUpdatedAt(state.projects, project.id, newUpdatedAt) }));
+        const newUpdatedAt = await upsertProject(projectToSave, expectedUpdatedAt);
+        set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, newUpdatedAt) }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -564,10 +626,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Task =====
   saveTask: async (task) => {
-    // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
+    // group_id が未設定なら現在のグループを注入する
     const existing = get().tasks.find(t => t.id === task.id);
+    const taskToSave0: Task = task.group_id != null
+      ? task
+      : { ...task, group_id: get().currentGroupId ?? undefined };
+    // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
     const taskToSave: Task = {
-      ...task,
+      ...taskToSave0,
       completed_at:
         task.status === "done"
           ? (existing?.status === "done"
