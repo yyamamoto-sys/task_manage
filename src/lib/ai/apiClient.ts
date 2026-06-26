@@ -119,8 +119,15 @@ export async function callAIConsultation(
   if (error) {
     const msg = error.message ?? "";
 
-    // Edge Function が ANTHROPIC_ERROR を返した場合、detail を取り出す
+    // Edge Function が返したエラー本文を取り出す
     const errData = (data as Record<string, unknown> | null);
+
+    // Edge Function 自身のレート制限（1分あたり上限超過）
+    if (errData && errData.error === "RATE_LIMIT_EXCEEDED") {
+      const detail = typeof errData.message === "string" ? errData.message : "しばらく待ってから再試行してください。";
+      throw new AIError("RATE_LIMIT", detail);
+    }
+
     if (errData && errData.error === "ANTHROPIC_ERROR") {
       const status = errData.status as number | undefined;
       let detail = "";

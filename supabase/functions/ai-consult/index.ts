@@ -4,8 +4,9 @@
 // Anthropic APIのAPIキーをサーバーサイドにのみ保持するためのEdge Function。
 // クライアントから直接Anthropic APIを呼ばせない（CLAUDE.md Section 6-1参照）。
 // - Supabase Auth JWTによる認証チェック（未認証は401）
+// - ユーザーごとのレート制限（1分あたりRATELIMIT_PER_MIN回まで、デフォルト20）
+// - CORS: ALLOWED_ORIGINS 環境変数で許可ドメインを管理（カンマ区切り）
 // - リクエストボディのpayloadをAnthropic APIに転送
-// - CORSヘッダー対応
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
@@ -16,13 +17,62 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 // 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
 const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-};
+// ===== CORS =====
+// ALLOWED_ORIGINS 環境変数にカンマ区切りで本番ドメインを設定する。
+// 例: "https://your-app.vercel.app,https://your-custom-domain.com"
+// 未設定の場合はローカル開発用 localhost のみ（本番では必ず設定すること）。
+const ALLOWED_ORIGINS = new Set<string>([
+  "http://localhost:5173",
+  "http://localhost:4173",
+  ...(Deno.env.get("ALLOWED_ORIGINS") ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+]);
+
+function getCorsHeaders(origin: string | null): Record<string, string> {
+  const allow =
+    origin && ALLOWED_ORIGINS.has(origin) ? origin : [...ALLOWED_ORIGINS][0] ?? "*";
+  return {
+    "Access-Control-Allow-Origin": allow,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+  };
+}
+
+// ===== レート制限（インメモリ・インスタンス単位） =====
+// Edge Function のインスタンスが複数立つと完全ではないが、
+// ループ呼び出し等の事故防止・コスト暴走防止として有効。
+const RATE_LIMIT = Number(Deno.env.get("RATE_LIMIT_PER_MIN") ?? "20");
+const RATE_WINDOW_MS = 60_000;
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+
+function checkRateLimit(userId: string): { allowed: boolean; remaining: number } {
+  const now = Date.now();
+
+  // メモリリーク防止：エントリ数が膨らんだら期限切れを掃除
+  if (rateLimitMap.size > 1000) {
+    for (const [key, val] of rateLimitMap) {
+      if (now >= val.resetAt) rateLimitMap.delete(key);
+    }
+  }
+
+  const entry = rateLimitMap.get(userId);
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(userId, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return { allowed: true, remaining: RATE_LIMIT - 1 };
+  }
+  if (entry.count >= RATE_LIMIT) {
+    return { allowed: false, remaining: 0 };
+  }
+  entry.count++;
+  return { allowed: true, remaining: RATE_LIMIT - entry.count };
+}
 
 Deno.serve(async (req: Request) => {
+  const origin = req.headers.get("origin");
+  const corsHeaders = getCorsHeaders(origin);
+
   // CORS プリフライト
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -49,6 +99,27 @@ Deno.serve(async (req: Request) => {
       status: 401,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
+  }
+
+  // レート制限チェック（認証後にユーザーIDで判定）
+  const rateCheck = checkRateLimit(user.id);
+  if (!rateCheck.allowed) {
+    console.warn(`[ai-consult] rate limit exceeded: ${user.id}`);
+    return new Response(
+      JSON.stringify({
+        error: "RATE_LIMIT_EXCEEDED",
+        message: "1分あたりの利用上限に達しました。しばらくお待ちください。",
+      }),
+      {
+        status: 429,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+          "Retry-After": "60",
+          "X-RateLimit-Remaining": "0",
+        },
+      },
+    );
   }
 
   // リクエストボディのパース
@@ -99,14 +170,16 @@ Deno.serve(async (req: Request) => {
     });
   } catch (fetchErr) {
     console.error("[ai-consult] Anthropic fetch failed:", fetchErr);
-    return new Response(JSON.stringify({ error: "ANTHROPIC_FETCH_FAILED", detail: String(fetchErr) }), {
-      status: 502,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    return new Response(
+      JSON.stringify({ error: "ANTHROPIC_FETCH_FAILED", detail: String(fetchErr) }),
+      { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
   }
 
   const responseText = await anthropicRes.text();
-  console.log(`[ai-consult] Anthropic status: ${anthropicRes.status}`);
+  console.log(
+    `[ai-consult] status=${anthropicRes.status} user=${user.id} remaining=${rateCheck.remaining}`,
+  );
 
   // Anthropic がエラーを返した場合、詳細をそのまま502で返す
   if (!anthropicRes.ok) {
@@ -119,6 +192,10 @@ Deno.serve(async (req: Request) => {
 
   return new Response(responseText, {
     status: 200,
-    headers: { ...corsHeaders, "Content-Type": "application/json" },
+    headers: {
+      ...corsHeaders,
+      "Content-Type": "application/json",
+      "X-RateLimit-Remaining": String(rateCheck.remaining),
+    },
   });
 });
