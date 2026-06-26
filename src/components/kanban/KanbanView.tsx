@@ -10,6 +10,9 @@ import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { CustomSelect } from "../common/CustomSelect";
+import { InlineEditText } from "../common/InlineEditText";
+import { InlineEditDate } from "../common/InlineEditDate";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 
 interface Props {
   currentUser: Member;
@@ -216,12 +219,15 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       project={projectForTask(task)}
                       todo={todoForTask(task)}
                       assignees={assigneesForTask(task)}
+                      allMembers={members}
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
                       onDragStart={() => handleDragStart(task.id)}
                       onStatusChange={handleStatusChange}
                       isDragging={draggingId === task.id}
                       onClick={() => setEditingTaskId(task.id)}
+                      onSaveTask={saveTask}
+                      currentUserId={currentUser.id}
                     />
                   ))
                 )}
@@ -284,18 +290,21 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 // ===== タスクカード =====
 
 function TaskCard({
-  task, project, todo, assignees, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick,
+  task, project, todo, assignees, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
   todo?: ToDo;
   assignees: Member[];
+  allMembers: Member[];
   parentName?: string;
   childCount?: number;
   onDragStart: () => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
   onClick: () => void;
+  onSaveTask: (task: Task) => void;
+  currentUserId: string;
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const isDone = task.status === "done";
@@ -354,20 +363,28 @@ function TaskCard({
         </div>
       )}
 
-      {/* タスク名（親タスクには子件数チップ） */}
+      {/* タスク名（インライン編集） */}
       <div style={{
         fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)",
         marginBottom: "7px", lineHeight: 1.4,
         textDecoration: isDone ? "line-through" : "none",
         opacity: isDone ? 0.6 : 1,
-      }}>
-        {task.name}
+        display: "flex", alignItems: "center", gap: "4px",
+      }}
+        onClick={e => e.stopPropagation()}
+      >
+        <InlineEditText
+          value={task.name}
+          onSave={name => onSaveTask({ ...task, name, updated_by: currentUserId })}
+          style={{ fontSize: "12px", fontWeight: "500" }}
+        />
         {childCount > 0 && (
           <span style={{
-            marginLeft: "6px", fontSize: "9px", fontWeight: "600",
+            fontSize: "9px", fontWeight: "600",
             color: "var(--color-text-purple)", background: "var(--color-brand-light)",
             border: "1px solid var(--color-brand-border)",
             borderRadius: "var(--radius-full)", padding: "1px 6px", whiteSpace: "nowrap",
+            flexShrink: 0,
           }}>
             子{childCount}
           </span>
@@ -376,22 +393,21 @@ function TaskCard({
 
       {/* フッター */}
       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-        {/* 複数担当者アバター */}
-        {assignees.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
-            {assignees.slice(0, 3).map(m => <Avatar key={m.id} member={m} size={16} />)}
-            {assignees.length > 3 && (
-              <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>+{assignees.length - 3}</span>
-            )}
-          </div>
-        )}
-        <span style={{
-          fontSize: "10px", flex: 1,
-          color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-          fontWeight: isOverdue ? "500" : "400",
-        }}>
-          {task.due_date ? `〜${task.due_date.slice(5).replace("-", "/")}` : ""}
-        </span>
+        {/* 担当者インライン編集 */}
+        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            members={allMembers}
+            onSave={ids => onSaveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUserId })}
+          />
+        </div>
+        {/* 期日インライン編集 */}
+        <div onClick={e => e.stopPropagation()} style={{ flex: 1, fontSize: "10px" }}>
+          <InlineEditDate
+            value={task.due_date}
+            onSave={due_date => onSaveTask({ ...task, due_date, updated_by: currentUserId })}
+          />
+        </div>
         {/* 工数バッジ */}
         {task.estimated_hours != null && (
           <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>

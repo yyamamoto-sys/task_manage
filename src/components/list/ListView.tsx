@@ -4,6 +4,9 @@ import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
+import { InlineEditText } from "../common/InlineEditText";
+import { InlineEditDate } from "../common/InlineEditDate";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
@@ -1004,32 +1007,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 />
                               </div>
                             </td>
-                            {/* 担当者 */}
-                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                              {taskAssignees.length > 0 && (
-                                <div style={{ display: "flex", alignItems: "center", gap: "3px" }}>
-                                  {taskAssignees.slice(0, 3).map(m => (
-                                    <div key={m.id} style={{
-                                      width: 14, height: 14, borderRadius: "50%",
-                                      background: m.color_bg, color: m.color_text,
-                                      display: "flex", alignItems: "center", justifyContent: "center",
-                                      fontSize: "7px", fontWeight: "600", flexShrink: 0,
-                                    }}>
-                                      {m.initials.slice(0, 1)}
-                                    </div>
-                                  ))}
-                                  {taskAssignees.length === 1 && (
-                                    <span style={{ color: "var(--color-text-secondary)", fontSize: "10px" }}>
-                                      {taskAssignees[0].short_name}
-                                    </span>
-                                  )}
-                                  {taskAssignees.length > 3 && (
-                                    <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>
-                                      +{taskAssignees.length - 3}
-                                    </span>
-                                  )}
-                                </div>
-                              )}
+                            {/* 担当者（インライン編集） */}
+                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+                              onClick={e => e.stopPropagation()}>
+                              <InlineEditAssignee
+                                assigneeIds={getAssigneeIds(task)}
+                                members={members}
+                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
+                              />
                             </td>
                             {/* 優先度（詳細モードのみ） */}
                             {density === "detailed" && (
@@ -1060,13 +1045,20 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 ) : depth === 1 && (
                                   <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
                                 )}
-                                <div style={{
-                                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                                  maxWidth: "360px",
-                                  color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
-                                  textDecoration: isDone ? "line-through" : "none",
-                                  fontWeight: isSel ? "500" : isParent ? "600" : "400",
-                                }}>{task.name}</div>
+                                <div
+                                  onClick={e => e.stopPropagation()}
+                                  style={{
+                                    overflow: "hidden", maxWidth: "360px",
+                                    textDecoration: isDone ? "line-through" : "none",
+                                    fontWeight: isSel ? "500" : isParent ? "600" : "400",
+                                    color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
+                                  }}>
+                                  <InlineEditText
+                                    value={task.name}
+                                    onSave={name => saveTask({ ...task, name, updated_by: currentUser.id })}
+                                    style={{ fontWeight: "inherit", color: "inherit" }}
+                                  />
+                                </div>
                                 {/* 親：子 n/m・◯% バッジ */}
                                 {isParent && prog && (
                                   <span title="子タスクの完了状況（自動算出）" style={{
@@ -1131,14 +1123,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
                               }}>{TASK_STATUS_LABEL[dispStatus]}</span>
                             </td>
-                            {/* 期日 */}
-                            <td style={{
-                              padding: "6px 10px", whiteSpace: "nowrap",
-                              color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-                              fontWeight: isOverdue ? "500" : "400",
-                            }}>
-                              {task.start_date ? `${task.start_date.slice(5).replace("-", "/")}〜` : ""}
-                              {task.due_date ? task.due_date.slice(5).replace("-", "/") : "—"}
+                            {/* 期日（インライン編集） */}
+                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+                              onClick={e => e.stopPropagation()}>
+                              {task.start_date && (
+                                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                                  {task.start_date.slice(5).replace("-", "/")}〜
+                                </span>
+                              )}
+                              <InlineEditDate
+                                value={task.due_date}
+                                onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
+                              />
                             </td>
                             {/* 工数（詳細モードのみ） */}
                             {density === "detailed" && (

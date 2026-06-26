@@ -35,6 +35,29 @@ interface Props { currentUser: Member; }
 // ===== ルートコンポーネント =====
 
 export function AdminView({ currentUser }: Props) {
+  // 管理者ガード：グループ内にis_admin=trueのアクティブメンバーが1人以上いる場合、
+  // 現在ユーザーがis_admin=trueでないとアクセスを拒否する。
+  // 誰もis_adminでない場合はブートストラップモードとして全員アクセス可。
+  const allMembers = useAppStore(s => s.members);
+  const activeAdmins = useMemo(() => active(allMembers).filter(m => m.is_admin === true), [allMembers]);
+  const hasAnyAdmin = activeAdmins.length > 0;
+  const isCurrentUserAdmin = currentUser.is_admin === true;
+  if (hasAnyAdmin && !isCurrentUserAdmin) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100%",
+        flexDirection: "column", gap: "12px",
+      }}>
+        <div style={{
+          fontSize: "14px", color: "var(--color-text-secondary)",
+          textAlign: "center", lineHeight: 2,
+        }}>
+          🔒 管理者のみアクセスできます
+        </div>
+      </div>
+    );
+  }
   const krs      = useAppStore(s => s.keyResults);
   const pjs      = useAppStore(s => s.projects);
   const krCount  = active(krs).length;
@@ -1692,6 +1715,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     display_name: "", short_name: "", teams_account: "", email: "",
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
     group_id: "" as string,
+    is_admin: false,
   });
 
   // 未保存変更を親に通知
@@ -1710,12 +1734,12 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "" });
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "", is_admin: false });
   };
 
   const openEdit = (m: Member) => {
     setEditId(m.id);
-    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "" });
+    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", is_admin: m.is_admin ?? false });
   };
 
   const save = async () => {
@@ -1728,6 +1752,14 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     try {
       const emailVal = form.email.trim() || null;
       const groupIdVal = form.group_id || null;
+      // 自分自身の is_admin を外せない保護：自分を編集中かつ is_admin を false にしようとした場合、
+      // グループ内に他の管理者が1人以上いる場合のみ許可する。
+      const targetIsCurrentUser = editId === currentUser.id;
+      const otherAdmins = members.filter(m => m.id !== editId && m.is_admin === true);
+      const isAdminVal = (targetIsCurrentUser && !form.is_admin && otherAdmins.length === 0)
+        ? true  // 最後の管理者なので外させない
+        : form.is_admin;
+
       if (editId === "new") {
         await saveMember({
           id: uuidv4(), initials,
@@ -1737,12 +1769,13 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
           email: emailVal,
           group_id: groupIdVal,
           color_bg: form.color_bg, color_text: form.color_text,
+          is_admin: isAdminVal,
           is_deleted: false,
           created_at: now, updated_at: now, updated_by: currentUser.id,
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, is_admin: isAdminVal, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -1779,6 +1812,11 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 {m.id === currentUser.id && (
                   <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-purple)", background: "var(--color-brand-light)", padding: "1px 6px", borderRadius: "3px" }}>
                     あなた
+                  </span>
+                )}
+                {m.is_admin && (
+                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-brand)", padding: "1px 6px", borderRadius: "3px" }}>
+                    管理者
                   </span>
                 )}
               </div>
@@ -1838,6 +1876,26 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 />
               </div>
             )}
+            {/* 管理者権限 */}
+            <div>
+              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={form.is_admin}
+                  onChange={e => setForm(f => ({ ...f, is_admin: e.target.checked }))}
+                  disabled={
+                    // 自分自身の管理者権限を外せない（他に管理者がいない場合）
+                    editId === currentUser.id && form.is_admin
+                      && members.filter(m => m.id !== editId && m.is_admin === true).length === 0
+                  }
+                  style={{ width: 14, height: 14, accentColor: "var(--color-brand)", cursor: "pointer" }}
+                />
+                <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>管理者権限</span>
+                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                  （管理者が1人以上いる場合、非管理者は管理画面にアクセスできません）
+                </span>
+              </label>
+            </div>
             <div>
               <FieldLabel>Teamsアカウント（任意）</FieldLabel>
               <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}

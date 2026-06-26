@@ -26,6 +26,8 @@ export interface Member {
   email?: string | null;
   /** 期限通知の受け取り方。未設定（マイグレ前の行）は "none" 扱い */
   notify_pref?: NotifyPref;
+  /** 管理者権限フラグ。true のメンバーが1人以上いる場合、管理画面は is_admin=true のみアクセス可 */
+  is_admin?: boolean;
   color_bg: string;
   color_text: string;
   is_deleted: boolean;
