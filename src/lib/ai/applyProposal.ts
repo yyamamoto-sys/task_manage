@@ -626,18 +626,20 @@ export async function applyProposalWithConfirmation(
         const newAssigneeId = confirmedValues[item.task_id];
         if (!newAssigneeId) continue;
 
-        // Undo用に現在のassignee_member_idを取得
+        // Undo用に現在の担当者フィールドを両方取得
         const { data: taskData } = await supabase
           .from("tasks")
-          .select("assignee_member_id")
+          .select("assignee_member_id, assignee_member_ids")
           .eq("id", item.task_id)
           .single();
         const oldAssigneeId = (taskData?.assignee_member_id as string) ?? null;
+        const oldAssigneeIds = (taskData?.assignee_member_ids as string[]) ?? [];
 
         const { error } = await supabase
           .from("tasks")
           .update({
             assignee_member_id: newAssigneeId,
+            assignee_member_ids: [newAssigneeId],
             updated_at: now,
             updated_by: currentUserId,
           })
@@ -645,6 +647,7 @@ export async function applyProposalWithConfirmation(
 
         if (error) throw new Error(`担当者更新エラー (${item.task_name}): ${error.message}`);
         operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_id", oldValue: oldAssigneeId });
+        operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_ids", oldValue: oldAssigneeIds });
       }
       const snapshot: UndoSnapshot = {
         id: generateId(),

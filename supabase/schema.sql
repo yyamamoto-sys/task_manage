@@ -135,6 +135,7 @@ CREATE TABLE IF NOT EXISTS projects (
   contribution_memo text NOT NULL DEFAULT '',
   owner_member_id   text REFERENCES members(id),       -- 互換目的の単数 FK
   owner_member_ids  text[] NOT NULL DEFAULT '{}',      -- 複数オーナー対応
+  member_roles      jsonb NOT NULL DEFAULT '{}',       -- メンバー別役割マップ（migration 20260612）
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','archived')),
   color_tag         text NOT NULL DEFAULT '#7F77DD',
   start_date        date,
@@ -146,6 +147,8 @@ CREATE TABLE IF NOT EXISTS projects (
   updated_at        timestamptz NOT NULL DEFAULT now(),
   updated_by        text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS member_roles jsonb NOT NULL DEFAULT '{}';  -- migration 20260612
 
 -- ===== Project ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS project_task_forces (
@@ -170,6 +173,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   estimated_hours     numeric,
   comment             text NOT NULL DEFAULT '',
   tags                text[] NOT NULL DEFAULT '{}',     -- 自由入力タグ（migration 20260604）
+  finalized_mentions  text[] NOT NULL DEFAULT '{}',     -- メンション通知確定スナップショット（migration 20260608）
   is_deleted          boolean NOT NULL DEFAULT false,
   deleted_at          timestamptz,
   deleted_by          text,
@@ -181,6 +185,7 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id text REFERENCES tasks(id);  -- migration 20260527
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS display_order integer NOT NULL DEFAULT 0;  -- migration 20260527
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS finalized_mentions text[] NOT NULL DEFAULT '{}';  -- migration 20260608
 
 -- ===== Task ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS task_task_forces (
