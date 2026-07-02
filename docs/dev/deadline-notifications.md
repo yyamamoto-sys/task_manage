@@ -1,6 +1,6 @@
 # 期限の通知（リマインダーのアラート化）— 設計・デプロイ手順
 
-> ステータス：実装済み（クライアント）／**Dはデプロイ待ち** ・ 作成 2026-05-29
+> ステータス：**B・D ともに実装・デプロイ完了** ・ 作成 2026-05-29／2026-07-02 Dのデプロイ完了に更新
 > 関連：`DashboardView`（設定UI）, `hooks/useDeadlineNotifications.ts`（方式B）,
 > `supabase/functions/notify-deadlines/`（方式D）, `KrReportPanel`（既存のTeams送信＝MessageCard形式の参考）
 
@@ -12,7 +12,9 @@
 | 方式 | いつ届く | 担当コード | 状態 |
 |---|---|---|---|
 | **B ブラウザ通知** | アプリ（タブ）を開いている間 | `useDeadlineNotifications`（MainLayoutで起動） | ✅ 実装・本番反映で有効 |
-| **D Teamsまとめ投稿** | タブを閉じていても（毎朝Teamsに） | Edge Function `notify-deadlines` ＋ pg_cron | ⏳ 下記手順でデプロイ |
+| **D Teamsまとめ投稿** | タブを閉じていても（毎朝Teamsに） | Edge Function `notify-deadlines` ＋ pg_cron | ✅ 2026-07-02 本番配線完了（毎朝 JST 8:30） |
+
+**2026-07-02 実施内容：** Edge Function デプロイ済み・`TEAMS_WEBHOOK_URL`/`NOTIFY_CRON_SECRET` 設定済み・curl手動テストで疎通確認済み・`supabase/migrations/20260702_schedule_notify_deadlines.sql`（プレースホルダー版）でpg_cronスケジュール登録済み。**Webhook URLは Power Automate「Workflows」形式**（O365コネクタは2026年5月に完全廃止済みのため）。MessageCard形式のペイロードのままでWorkflows側が受理することを確認（コード変更不要）。あとは各メンバーがダッシュボードで通知方法を「Teamsまとめ」に切り替えるだけで有効化される。
 
 - 対象タスク：自分担当・未完了・**期限切れ＋本日期限**（`due_date <= 当日`）。
 - ユーザー設定：ダッシュボードのリマインダーカード右上のセレクタ（なし/ブラウザ/Teamsまとめ）。`members.notify_pref` に保存。
@@ -84,7 +86,7 @@ select cron.schedule(
 ```
 
 ## 注意・将来の論点
-- **O365 受信Webコネクタは Microsoft が段階的に廃止予定**。後継は Power Automate の「Workflows」（HTTPトリガー → チャネル/チャットへ Adaptive Card 投稿）。移行時は `TEAMS_WEBHOOK_URL` を Workflows のURLに差し替え、必要ならペイロード形式を MessageCard → Adaptive Card に変更するだけで Edge Function のロジックは流用可能。
+- **O365 受信Webコネクタは 2026年5月18〜22日に Microsoft により完全廃止済み**。本番は最初から Power Automate の「Workflows」（テンプレート「Webhook 要求を受信したときにチャンネルに投稿する」）で構築。Workflows は MessageCard 形式をそのまま受理するため、Edge Function 側のペイロード変更は不要だった。
 - **個別（各自に私信）通知**は受信Webhookでは不可。Power Automate Workflows もしくは Graph API＋Azure AD（IT部門）が要る。今回は共有チャンネルまとめで開始し、要件が固まってから検討（`members.teams_account` を宛先解決に使える）。
 - **送信内容**：タスク名・期日・PJ名・担当者名のみ。`comment` 等の機微情報は載せない。
 - **社用PCのブラウザ通知**：グループポリシーで無効化されている可能性あり。その場合は Teams（D）が確実。
