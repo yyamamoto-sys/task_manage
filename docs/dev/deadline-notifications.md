@@ -1,6 +1,6 @@
 # 期限の通知（リマインダーのアラート化）— 設計・デプロイ手順
 
-> ステータス：**B・D ともに実装・デプロイ完了** ・ 作成 2026-05-29／2026-07-02 Dを「毎週月曜・全員向け週次レポート」仕様に変更
+> ステータス：**B・D ともに実装・デプロイ完了**（Dの@メンション化は作業中・Power Automateフロー未整備） ・ 作成 2026-05-29／2026-07-02 Dを「毎週月曜・全員向け週次レポート」仕様に変更／2026-07-02b @メンション対応の構造化JSON化＋dryRun追加
 > 関連：`DashboardView`（設定UI・Bのみ対象）, `hooks/useDeadlineNotifications.ts`（方式B）,
 > `supabase/functions/notify-deadlines/`（方式D）, `KrReportPanel`（既存のTeams送信＝MessageCard形式の参考）
 
@@ -24,10 +24,46 @@
   - どちらのカテゴリにも該当タスクが無いPJはレポートから省略
 - **マルチテナント非対応**：現状は全メンバーが単一グループ（`grp-egg`）のため`group_id`での絞り込みはしていない。将来複数グループが実運用されたら要対応（コード側にコメント済み）。
 
-- 対象タスク：自分担当・未完了・**期限切れ＋本日期限**（`due_date <= 当日`）。
-- ユーザー設定：ダッシュボードのリマインダーカード右上のセレクタ（なし/ブラウザ/Teamsまとめ）。`members.notify_pref` に保存。
-- B は `notify_pref='browser'` かつブラウザ通知許可が前提。同じ日の二重通知は localStorage で防止。
-- D は `notify_pref='teams'` のメンバーの期限タスクを**担当者別にまとめ**、Teams受信Webhookへ MessageCard を投稿（=共有チャンネルに1日1回）。
+### D の担当者を Teams @メンションにする（2026-07-02b・作業中）
+
+担当者を「（駒井 映里）」という平文ではなく、実際に本人へ通知が飛ぶ **@メンション** にする改修に着手。
+
+**技術的な制約：**
+- @メンショントークンは **Power Automate フロー側でしか生成できない**（Edge Functionからは作れない）。MessageCard形式自体もメンションに対応していない。
+- そのため Edge Function の出力形式を、MessageCardの直送りから**構造化JSON**に変更した：
+  ```json
+  {
+    "messageText": "...本文全体（担当者名の代わりに %%mention_1%% のようなプレースホルダーが入っている）...",
+    "mentions": [ { "placeholder": "%%mention_1%%", "email": "someone@amita-net.co.jp" } ],
+    "totalOverdue": 50, "totalThisWeek": 2, "projectCount": 6
+  }
+  ```
+- `email` が未登録のメンバーはメンション不可のため、その担当者だけ表示名の平文になる（フォールバック）。
+- **Flow bot（ボットとして投稿）だと @メンショントークンが機能しないことがある**という既知の制約報告あり。今のPower Automateフローはこの投稿方式のため、動作しない可能性がある。「投稿者」をFlow botではなく接続アカウント本人（User）にする設定に変更すると改善する可能性がある（要現地確認）。
+
+**現状のブロッカー（2026-07-02 dryRunで判明）：**
+- **`members.email` が誰も登録されていない**（`mentions: []`）。メンションを実現する前提として、まず管理画面「メンバー」タブで各人の会社メールアドレス（Microsoft 365のログインメールと同じもの）を入力する必要がある。
+
+**安全なテスト方法（`?dryRun=1`）：**
+```bash
+curl -X POST "https://<PROJECT_REF>.supabase.co/functions/v1/notify-deadlines?dryRun=1" \
+  -H "x-cron-secret: <NOTIFY_CRON_SECRET>" -H "Content-Type: application/json" -d "{}"
+```
+Teamsへは投稿されず、生成される `messageText` / `mentions` の中身だけを確認できる。emailを入力したメンバーの分だけ `mentions` 配列に追加されるはずなので、まずこれで登録状況を確認できる。
+
+**残作業（山本さん・Power Automate側）：**
+1. 管理画面でメンバーの `email` を埋める
+2. `?dryRun=1` で `mentions` 配列が空でなくなることを確認
+3. Power Automateフローを「MessageCard直送り」から下記のロジックに作り直す：
+   1. HTTPトリガーの受信ボディから `messageText` と `mentions` を取得
+   2. 文字列変数 `resultText` を初期化し、`messageText` を代入
+   3. `mentions` 配列に対して **Apply to each（同時実行数を1に設定＝順次実行）**：
+      - アクション「ユーザーの@メンショントークンを取得する」に `email`（`item()?['email']`）を渡す
+      - `resultText` を `replace(variables('resultText'), item()?['placeholder'], <取得したメンショントークンの動的な値>)` で更新
+   4. ループ後、「チャットまたはチャネルでメッセージを投稿する」で `resultText` を本文として投稿
+      - **投稿者（Post as）は「Flow bot」ではなく「User」（フロー所有者）に変更してみる**（メンションがbot contextで動かない既知の制約への対策）
+4. 動作確認は少人数（1〜2件）でまず試す
+5. うまくいかない場合は投稿者設定・トリガー種別を再検討
 
 ## デプロイ手順（D）
 
@@ -65,6 +101,7 @@ curl -X POST "https://<PROJECT_REF>.supabase.co/functions/v1/notify-deadlines" \
 - 期待：PJごとに期限超過／今週中のタスクがあれば Teamsチャンネルに投稿され `{"posted":true,"totalOverdue":n,"totalThisWeek":n,"projects":n}`。
 - **注意：`notify_pref` に関係なく全員のタスクが対象なので、このcurlを叩くと実際に本番Teamsチャンネルに投稿される。** テスト目的でも本番相当の内容が飛ぶことを踏まえて実行すること。
 - 対象タスクが1件もなければ投稿せず `{"posted":false,"reason":"no target tasks"}`。
+- **末尾に `?dryRun=1` を付けるとTeamsへ投稿せず、生成されるJSON（`messageText`/`mentions`）だけを確認できる。** Power Automateフロー未整備の間や `email` 登録状況の確認はこちらを使うこと。
 
 ### 5. 毎週月曜の定期実行（pg_cron）
 Supabase SQL Editor で（`<PROJECT_REF>` と `<NOTIFY_CRON_SECRET>` を置換。詳細は `supabase/migrations/20260702b_reschedule_notify_deadlines_weekly.sql`）：
