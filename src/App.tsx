@@ -66,6 +66,19 @@ export default function App() {
     setGuestMode(false);
     setCurrentUser(member.id);
     setCurrentUserState(member);
+
+    // members.email が未登録なら、Authのログインメールで一度だけ自動補完する。
+    // 新規登録画面はSupabase Authのアカウント作成のみを行い members.email へは反映されない
+    // 設計のため、ここで埋めておかないと①のAuth email自動マッチングもTeamsメンションも機能しない。
+    if (!member.email) {
+      void (async () => {
+        const authEmail = await getAuthEmail();
+        if (!authEmail) return;
+        try {
+          await useAppStore.getState().saveMember({ ...member, email: authEmail, updated_by: member.id });
+        } catch { /* 失敗しても致命的ではないため黙って無視（次回ログイン時に再試行される） */ }
+      })();
+    }
   };
 
   const handleLogout = () => {
