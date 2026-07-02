@@ -517,24 +517,24 @@ RETURNS text
 LANGUAGE sql
 SECURITY DEFINER STABLE
 SET search_path = ''
-AS $$
+AS $fn_group_id$
   SELECT group_id FROM public.members
   WHERE email = auth.email()
     AND is_deleted = false
   LIMIT 1
-$$;
+$fn_group_id$;
 
 CREATE OR REPLACE FUNCTION current_member_is_admin()
 RETURNS boolean
 LANGUAGE sql
 SECURITY DEFINER STABLE
 SET search_path = ''
-AS $$
+AS $fn_is_admin$
   SELECT COALESCE(is_admin, false) FROM public.members
   WHERE email = auth.email()
     AND is_deleted = false
   LIMIT 1
-$$;
+$fn_is_admin$;
 
 -- members / projects / tasks：グループ一致のみ許可（NULL 抜け穴を作らない）
 DROP POLICY IF EXISTS "authenticated full access" ON members;
@@ -574,7 +574,7 @@ RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
-AS $$
+AS $fn_guard$
 DECLARE
   admin_count integer;
 BEGIN
@@ -601,7 +601,7 @@ BEGIN
 
   RETURN NEW;
 END;
-$$;
+$fn_guard$;
 
 DROP TRIGGER IF EXISTS trg_members_guard_privilege ON members;
 CREATE TRIGGER trg_members_guard_privilege
