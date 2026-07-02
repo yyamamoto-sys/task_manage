@@ -151,6 +151,6 @@ flowchart TD
 ※ E PJ別AI分析・I 通知 は lib/hook 中心の小モジュールのため、本地図と上記READMEで参照（専用READMEなし）。
 
 ## 6. さらに先（任意・未実施）
-- **英語化（i18n）**：本地図のモジュール単位で段階的に進める計画 → [`i18n-plan.md`](./i18n-plan.md)（計画のみ・未実装）。
+- **英語化（i18n）**：本地図のモジュール単位で段階的に進める計画 → [`i18n-plan.md`](./i18n-plan.md)（Phase 0＝土台 完了／Phase 1 は `LoginScreen` のみ完了・2026-07-02）。
 - **Package by Feature** へのフォルダ再編（例：`features/consultation/` に UI・lib をまとめる）。※ import 大量変更を伴うため、やるなら段階的に。
 - `CLAUDE.md`（設計の正本・v2.19）と本地図・各README はセットで維持する（機能追加のたびに更新）。

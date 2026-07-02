@@ -31,6 +31,8 @@ const KEYS = {
   CURRENT_USER:        "current_user",
   // テーマ
   THEME:               "theme",
+  // 言語（i18n）
+  LANG:                "lang",
   // メインレイアウト
   VIEW_MODE:           "plan_app_view",
   APP_MODE:            "plan_app_mode",

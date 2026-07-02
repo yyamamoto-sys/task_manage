@@ -1,6 +1,7 @@
 // src/components/auth/LoginScreen.tsx
 import { useState } from "react";
 import { signIn, signUp } from "../../lib/supabase/auth";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   onLogin: () => void;
@@ -9,6 +10,7 @@ interface Props {
 type Mode = "login" | "signup" | "signup_done";
 
 export function LoginScreen({ onLogin }: Props) {
+  const t = useT();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -28,11 +30,11 @@ export function LoginScreen({ onLogin }: Props) {
     setError("");
 
     if (mode === "signup" && password !== passwordConfirm) {
-      setError("パスワードが一致しません。");
+      setError(t("auth.error.passwordMismatch"));
       return;
     }
     if (mode === "signup" && password.length < 6) {
-      setError("パスワードは6文字以上で設定してください。");
+      setError(t("auth.error.passwordTooShort"));
       return;
     }
 
@@ -52,11 +54,11 @@ export function LoginScreen({ onLogin }: Props) {
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "";
       if (mode === "login") {
-        setError("メールアドレスまたはパスワードが正しくありません。");
+        setError(t("auth.error.loginFailed"));
       } else if (msg.includes("already registered") || msg.includes("User already registered")) {
-        setError("このメールアドレスはすでに登録されています。ログインしてください。");
+        setError(t("auth.error.emailAlreadyRegistered"));
       } else {
-        setError("登録に失敗しました。もう一度お試しください。");
+        setError(t("auth.error.signupFailed"));
       }
     } finally {
       setLoading(false);
@@ -100,11 +102,11 @@ export function LoginScreen({ onLogin }: Props) {
           <div style={{ textAlign: "center", marginBottom: "20px" }}>
             <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
             <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>
-              確認メールを送信しました
+              {t("auth.signup.done.title")}
             </h1>
             <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-              <strong>{email}</strong> 宛にメールを送りました。<br />
-              メール内のリンクをクリックして登録を完了してください。
+              {t("auth.signup.done.sentTo", { email })}<br />
+              {t("auth.signup.done.instruction")}
             </p>
           </div>
           <div style={{
@@ -116,8 +118,8 @@ export function LoginScreen({ onLogin }: Props) {
             lineHeight: 1.7,
             marginBottom: "20px",
           }}>
-            確認後、このページに戻ってログインしてください。<br />
-            メールが届かない場合は迷惑メールフォルダをご確認ください。
+            {t("auth.signup.done.afterConfirm")}<br />
+            {t("auth.signup.done.noEmail")}
           </div>
           <button
             onClick={() => switchMode("login")}
@@ -128,7 +130,7 @@ export function LoginScreen({ onLogin }: Props) {
               fontSize: "14px", fontWeight: 600, cursor: "pointer",
             }}
           >
-            ログイン画面へ戻る
+            {t("auth.signup.done.backToLogin")}
           </button>
         </div>
       </div>
@@ -152,7 +154,7 @@ export function LoginScreen({ onLogin }: Props) {
             </svg>
           </div>
           <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--color-text-primary)" }}>
-            グループ計画管理
+            {t("common.app.name")}
           </h1>
         </div>
 
@@ -170,7 +172,7 @@ export function LoginScreen({ onLogin }: Props) {
                 marginBottom: "-1px", transition: "color 0.1s",
               }}
             >
-              {m === "login" ? "ログイン" : "新規登録"}
+              {m === "login" ? t("auth.tab.login") : t("auth.tab.signup")}
             </button>
           ))}
         </div>
@@ -178,21 +180,21 @@ export function LoginScreen({ onLogin }: Props) {
         <form onSubmit={handleSubmit}>
           {/* メールアドレス */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={labelStyle}>メールアドレス</label>
+            <label style={labelStyle}>{t("auth.form.email")}</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
               required
               autoFocus
-              placeholder="example@company.com"
+              placeholder={t("auth.form.emailPlaceholder")}
               style={inputStyle}
             />
           </div>
 
           {/* パスワード */}
           <div style={{ marginBottom: mode === "signup" ? "16px" : "24px" }}>
-            <label style={labelStyle}>パスワード{mode === "signup" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（6文字以上）</span>}</label>
+            <label style={labelStyle}>{t("auth.form.password")}{mode === "signup" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>{t("auth.form.passwordHint")}</span>}</label>
             <input
               type="password"
               value={password}
@@ -205,7 +207,7 @@ export function LoginScreen({ onLogin }: Props) {
           {/* パスワード確認（新規登録のみ） */}
           {mode === "signup" && (
             <div style={{ marginBottom: "24px" }}>
-              <label style={labelStyle}>パスワード（確認）</label>
+              <label style={labelStyle}>{t("auth.form.passwordConfirm")}</label>
               <input
                 type="password"
                 value={passwordConfirm}
@@ -233,14 +235,16 @@ export function LoginScreen({ onLogin }: Props) {
               cursor: loading ? "not-allowed" : "pointer",
             }}
           >
-            {loading ? (mode === "login" ? "ログイン中..." : "登録中...") : (mode === "login" ? "ログイン" : "アカウントを作成")}
+            {loading
+              ? (mode === "login" ? t("auth.submit.loggingIn") : t("auth.submit.signingUp"))
+              : (mode === "login" ? t("auth.submit.login") : t("auth.submit.signup"))}
           </button>
         </form>
 
         {/* パスワードリセット（ログイン時のみ） */}
         {mode === "login" && (
           <p style={{ marginTop: "16px", textAlign: "center", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-            パスワードをお忘れの場合は管理者にご連絡ください。
+            {t("auth.note.forgotPassword")}
           </p>
         )}
       </div>

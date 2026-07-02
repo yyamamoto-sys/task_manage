@@ -1,6 +1,7 @@
 // src/components/layout/MainLayout.tsx
 import { useState, useMemo, useRef, useEffect, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
+import { useLangStore } from "../../stores/langStore";
 import { useAppStore } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
@@ -89,6 +90,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 上部に閲覧専用バナーを出す。AI機能は表示する（反映だけブロックされる）。
   const isGuest = isGuestMember(currentUser);
   const { theme, toggle: toggleTheme } = useTheme();
+  const lang = useLangStore(s => s.lang);
+  const toggleLang = useLangStore(s => s.toggleLang);
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(KEYS.VIEW_MODE) as ViewMode | null;
     // "admin" は設定パネルに移行したため、ダッシュボードにフォールバック
@@ -718,6 +721,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             {theme === "dark" ? "☀" : "☾"}
           </button>
+          {/* 言語切り替え（🌐 日本語 | English） */}
+          <button
+            onClick={toggleLang}
+            title={lang === "ja" ? "🌐 日本語 | English（クリックで English に切替）" : "🌐 日本語 | English（click to switch to 日本語）"}
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "11px", fontWeight: 600,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0, color: "var(--color-text-secondary)",
+            }}
+          >
+            {lang === "ja" ? "EN" : "JA"}
+          </button>
           {/* ラボボタン */}
           <button
             onClick={() => setIsMobileLabOpen(true)}
@@ -1185,6 +1203,8 @@ function Sidebar({
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
+  const lang = useLangStore(s => s.lang);
+  const toggleLang = useLangStore(s => s.toggleLang);
   // サイドバーのセクション開閉（PJが増えても省略できるように）。localStorage で記憶。
   const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_pj_open") !== "0"; } catch { return true; } });
   const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_okr_open") !== "0"; } catch { return true; } });
@@ -1504,6 +1524,16 @@ function Sidebar({
               title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
             >
               {theme === "dark" ? "☀" : "☾"}
+            </button>
+          )}
+          {/* 言語切り替え（🌐 日本語 | English） */}
+          {!c && (
+            <button
+              onClick={toggleLang}
+              style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
+              title={lang === "ja" ? "🌐 日本語 | English（クリックで English に切替）" : "🌐 日本語 | English（click to switch to 日本語）"}
+            >
+              {lang === "ja" ? "EN" : "JA"}
             </button>
           )}
           <button

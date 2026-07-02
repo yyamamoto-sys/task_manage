@@ -2,7 +2,7 @@
 
 > **目的**：アプリ全体を日本語／英語で切り替えられるようにする。
 > **進め方**：[`module-map.md`](./module-map.md) のモジュール単位で**段階的**に。土台→骨格→機能を1つずつ。
-> **状態**：📝 **計画のみ（実装は未着手）**。最終更新 2026-06-04。
+> **状態**：🟢 **Phase 0（土台）完了／Phase 1 は `LoginScreen` のみ完了**（Phase 1 の残り＝`App.tsx`/`MainLayout` 本体/共通UI/認証その他画面は未着手）。最終更新 2026-07-02。
 
 ---
 
@@ -34,31 +34,39 @@
 
 ## 2. 土台の設計（Phase 0 で作るもの・設計案）
 
-> ※下記は実装イメージ。実装時に確定する。
+> ✅ **実装済み**（2026-07-02）。以下は確定した実装。
 
 **`src/lib/i18n.ts`（仕組み）**
 ```ts
 export type Lang = "ja" | "en";
 // 辞書はモジュールごとに分割し、ここで束ねる（高凝集・モジュール化）
 import { commonJa, commonEn } from "../i18n/common";
-import { planningJa, planningEn } from "../i18n/planning";
+import { authJa, authEn } from "../i18n/auth";
 // ...
 const DICT: Record<Lang, Record<string, string>> = {
-  ja: { ...commonJa, ...planningJa, /* ... */ },
-  en: { ...commonEn, ...planningEn, /* ... */ },
+  ja: { ...commonJa, ...authJa, /* ... */ },
+  en: { ...commonEn, ...authEn, /* ... */ },
 };
-// t("planning.task.add") → 現在言語の文字列（無ければ ja フォールバック＋警告）
-// {name} 等の差し込みにも対応させる
+// translate(lang, "auth.tab.login") → 現在言語の文字列
+//   1) 現在言語に無ければ ja にフォールバック＋console.warn
+//   2) ja にも無ければ key 自体を返す＋console.warn（画面を壊さない）
+// {name} 形式のプレースホルダの差し込みに対応（例：t("auth.signup.done.sentTo", { email })）
 ```
-**言語state＋フック**：zustand の小さな `langStore`（localStorage 同期）＋ `useT()` フック
-（言語切替で再レンダーされるよう、コンポーネントは `const t = useT()` を使う）。
+**言語state＋フック**：`src/stores/langStore.ts`（zustand。`useTheme` と同じ要領で localStorage
+キー `KEYS.LANG` に同期）＋ `src/hooks/useT.ts` の `useT()` フック
+（`lang` を selector で subscribe するため、言語切替で `useT()` を使うコンポーネントは自動再レンダーされる）。
 
-**言語切替トグル**：`MainLayout` のテーマ切替の隣／設定に「🌐 日本語 | English」。
+**言語切替トグル**：実装済み。`MainLayout` のテーマ切替の隣（モバイルヘッダー／デスクトップサイドバー下部の
+2箇所）に「EN」⇄「JA」ボタン（title に「🌐 日本語 | English」を表示）。
 
-**キー命名規約**：`<module>.<area>.<name>`（例：`consultation.proposal.apply` / `admin.tab.members`）。
+**キー命名規約**：`<module>.<area>.<name>`（例：`auth.tab.login` / `auth.signup.done.sentTo`）。
 辞書ファイルは **モジュールごと**に持つ（`src/i18n/<module>.ts`）＝英語化もモジュール単位で進む。
+Phase 0 では `src/i18n/common.ts`（アプリ名・汎用ボタン等）と、Phase 1 パイロット用に
+`src/i18n/auth.ts`（ログイン画面）を作成した。
 
-**日付/曜日**：`lib/date.ts` を `lang` 対応に（曜日名・フォーマット）。
+**日付/曜日**：`lib/date.ts` には現状 曜日名を出すロジックが無い（各画面が個別に日本語ハードコードしている）ため、
+今回はスキップ（plan記載の「無ければスキップしてよい」に従った）。曜日名の英語化は該当モジュールの
+Phase で個別対応する。
 
 ---
 
@@ -67,16 +75,17 @@ const DICT: Record<Lang, Record<string, string>> = {
 > 各フェーズの完了基準（DoD）：そのモジュールの**画面に日本語ハードコードが残っていない**／
 > 言語切替で日英が切り替わる／`tsc`・テスト・build 通過。
 
-### 🧱 Phase 0：土台（最初・小）
-- `src/lib/i18n.ts`＋`langStore`＋`useT()`＋言語切替トグル＋キー命名規約＋`lib/date.ts` ロケール対応。
-- 既存の `useTheme` を参考にできる。**ここだけは実装が必要だが小さい**。これが無いと他が進まない。
+### 🧱 Phase 0：土台（最初・小）— ✅ 完了（2026-07-02）
+- `src/lib/i18n.ts`＋`src/stores/langStore.ts`＋`src/hooks/useT.ts`＋言語切替トグル（`MainLayout`）＋キー命名規約＋`src/i18n/{common,auth}.ts`。
+- `lib/date.ts` のロケール対応は対象ロジックが無いためスキップ（上記 Section 2 参照）。
+- テスト：`src/lib/__tests__/i18n.test.ts`（`translate()` のフォールバック・プレースホルダ差し込みを検証）。
 
-### 🟦 Phase 1：アプリ骨格＋共通UI（みんなが見る枠）
-| 対象 | 主ファイル | 規模 |
-|---|---|---|
-| App Shell / レイアウト | `App.tsx` / `layout/MainLayout.tsx` | M |
-| 認証・ゲスト・初期設定 | `auth/{LoginScreen,UserSelectScreen,SetupWizard}` | S |
-| 共通UI | `components/common/*`（Toast/Confirm/EmptyState/ErrorBoundary 等） | S〜M |
+### 🟦 Phase 1：アプリ骨格＋共通UI（みんなが見る枠）— 🟡 一部着手（`LoginScreen` のみ完了）
+| 対象 | 主ファイル | 規模 | 状態 |
+|---|---|---|---|
+| App Shell / レイアウト | `App.tsx` / `layout/MainLayout.tsx` | M | 未着手（言語トグルの土台のみ追加済み。画面文言は未英語化） |
+| 認証・ゲスト・初期設定 | `auth/{LoginScreen,UserSelectScreen,SetupWizard}` | S | `LoginScreen` ✅完了（2026-07-02）／`UserSelectScreen`・`SetupWizard` は未着手 |
+| 共通UI | `components/common/*`（Toast/Confirm/EmptyState/ErrorBoundary 等） | S〜M | 未着手 |
 
 ### 🟩 Phase 2：計画ビュー（A・最も使う画面）
 | 対象 | 主ファイル | 規模 |
@@ -122,4 +131,9 @@ const DICT: Record<Lang, Record<string, string>> = {
 
 ## 6. 最初の一歩（合意できれば）
 **Phase 0（土台）だけを実装**して「型」を作り、**Phase 1 の小さな1画面（例：ログイン画面）だけ**を日英対応にして動作確認する——ここまでで「やり方が回る」ことを確認してから Phase 2 以降へ。
-（※本ドキュメント時点では未実装。実装着手は別途指示で。）
+
+✅ **2026-07-02 完了**：Phase 0（土台）＋ Phase 1 の `LoginScreen` のみ実装済み（詳細は Section 2・3 参照）。
+`tsc`・vitest（152件）・build 通過済み。動作確認は `translate()` の単体テスト＋コードレビュー（`LoginScreen` の
+日本語ハードコードが全て `t("auth.*")` に置換済み・`useT()` が `langStore` を subscribe して再レンダーされる配線）
+で実施（このセッションではブラウザでの目視クリック確認は未実施）。
+次は Phase 1 の残り（`App.tsx`／`MainLayout` 本体の文言／共通UI／`UserSelectScreen`・`SetupWizard`）から着手する。
