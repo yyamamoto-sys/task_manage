@@ -298,7 +298,7 @@ export function GanttView({
       map.set(pj.id, orderTasksHierarchically(allTasks.filter(t => t.project_id === pj.id)));
     }
     return map;
-  }, [visibleProjects, allTasks]);
+  }, [visibleProjects, allTasks, orderTasksHierarchically]);
 
   // 子を持つ親タスクIDの一覧（全折りたたみ/全展開の対象）
   const parentTaskIds = useMemo(() => {
@@ -320,20 +320,11 @@ export function GanttView({
   const personGroups = useMemo(() => {
     return members
       .map(m => {
-        const tasks = allTasks
-          .filter(t => isAssignedTo(t, m.id))
-          .sort((a, b) => {
-            const da = toDate(a.due_date);
-            const db = toDate(b.due_date);
-            if (!da && !db) return 0;
-            if (!da) return 1;
-            if (!db) return -1;
-            return da.getTime() - db.getTime();
-          });
+        const tasks = sortTasks(allTasks.filter(t => isAssignedTo(t, m.id)));
         return { member: m, tasks };
       })
       .filter(g => g.tasks.length > 0);
-  }, [members, allTasks]);
+  }, [members, allTasks, sortTasks]);
 
   // 全開・全閉（PJ / ToDo グループ / 人別グループすべて対象）
   const expandAll  = () => setCollapsed({});
