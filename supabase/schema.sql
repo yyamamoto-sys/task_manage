@@ -1,6 +1,6 @@
 -- ============================================================
 -- グループ計画管理アプリ スキーマ定義（統合版）
--- 最終更新: 2026-05-01
+-- 最終更新: 2026-07-02
 -- Supabase SQL エディタで上から順に実行してください
 -- ============================================================
 --
@@ -8,6 +8,8 @@
 -- 旧スキーマ + supabase/migrations/* の全マイグレーション + CLAUDE.md
 -- 記載のテーブル定義（milestones）+ 実コードから推定したテーブル
 -- (ai_usage_logs / kr_sessions / kr_declarations）を統合した完全版。
+-- 2026-07-02：マルチテナント分離（groups/group_id/RLS）・is_admin 自己昇格防止
+-- （migrations/20260702_fix_multitenancy_rls.sql）を反映。
 --
 -- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
 -- 新規環境ではこのファイル一発で初期化できる。
@@ -23,6 +25,23 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- ===== グループ（マルチテナント）=====
+-- migrations/20260626_add_multitenancy.sql 参照
+CREATE TABLE IF NOT EXISTS groups (
+  id         text PRIMARY KEY,
+  name       text NOT NULL,
+  is_deleted boolean NOT NULL DEFAULT false,
+  deleted_at timestamptz,
+  deleted_by text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text NOT NULL DEFAULT ''
+);
+
+INSERT INTO groups (id, name, updated_by)
+VALUES ('grp-egg', 'EGG', 'system')
+ON CONFLICT (id) DO NOTHING;
+
 -- ===== メンバーマスタ =====
 CREATE TABLE IF NOT EXISTS members (
   id            text PRIMARY KEY,
@@ -31,6 +50,8 @@ CREATE TABLE IF NOT EXISTS members (
   initials      text NOT NULL,
   teams_account text NOT NULL DEFAULT '',
   email         text,                       -- Supabase Auth メールとの自動マッチング用（migration 20260626）
+  is_admin      boolean NOT NULL DEFAULT false,  -- migration 20260626_add_is_admin.sql
+  group_id      text REFERENCES groups(id),      -- migration 20260626_add_multitenancy.sql
   notify_pref   text NOT NULL DEFAULT 'none' CHECK (notify_pref IN ('none','browser','teams')),
   color_bg      text NOT NULL,
   color_text    text NOT NULL,
@@ -41,6 +62,14 @@ CREATE TABLE IF NOT EXISTS members (
   updated_at    timestamptz NOT NULL DEFAULT now(),
   updated_by    text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+ALTER TABLE members ADD COLUMN IF NOT EXISTS email text;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
+UPDATE members SET group_id = 'grp-egg' WHERE group_id IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS members_email_unique
+  ON members(email)
+  WHERE email IS NOT NULL AND is_deleted = false;
 
 -- ===== Objective（年間） =====
 CREATE TABLE IF NOT EXISTS objectives (
@@ -137,6 +166,7 @@ CREATE TABLE IF NOT EXISTS projects (
   owner_member_id   text REFERENCES members(id),       -- 互換目的の単数 FK
   owner_member_ids  text[] NOT NULL DEFAULT '{}',      -- 複数オーナー対応
   member_roles      jsonb NOT NULL DEFAULT '{}',       -- メンバー別役割マップ（migration 20260612）
+  group_id          text REFERENCES groups(id),        -- migration 20260626_add_multitenancy.sql
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','archived')),
   color_tag         text NOT NULL DEFAULT '#7F77DD',
   start_date        date,
@@ -150,6 +180,8 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 -- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS member_roles jsonb NOT NULL DEFAULT '{}';  -- migration 20260612
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);  -- migration 20260626_add_multitenancy.sql
+UPDATE projects SET group_id = 'grp-egg' WHERE group_id IS NULL;
 
 -- ===== Project ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS project_task_forces (
@@ -187,6 +219,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags text[] NOT NULL DEFAULT '{}';
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS parent_task_id text REFERENCES tasks(id);  -- migration 20260527
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS display_order integer NOT NULL DEFAULT 0;  -- migration 20260527
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS finalized_mentions text[] NOT NULL DEFAULT '{}';  -- migration 20260608
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);  -- migration 20260626_add_multitenancy.sql
+UPDATE tasks SET group_id = 'grp-egg' WHERE group_id IS NULL;
 
 -- ===== Task ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS task_task_forces (
@@ -423,6 +457,7 @@ END $$;
 -- 10名規模・全員フラットな権限設計（CLAUDE.md 設計原則）
 -- ============================================================
 
+ALTER TABLE groups                     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE members                    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE objectives                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE key_results                ENABLE ROW LEVEL SECURITY;
@@ -448,16 +483,20 @@ ALTER TABLE kr_note_tf_entries         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE okr_analyses               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_reports                 ENABLE ROW LEVEL SECURITY;
 
+-- members / projects / tasks / groups はグループ分離・権限昇格防止のため
+-- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
+-- ポリシーをそれ以外のテーブルにのみ適用する。
+-- 【注意】objectives 以下の OKR 系テーブルはまだグループ分離未対応（既知の残課題）。
 DO $$
 DECLARE
   t text;
 BEGIN
   FOR t IN VALUES
-    ('members'), ('objectives'), ('key_results'),
+    ('objectives'), ('key_results'),
     ('quarterly_objectives'), ('quarterly_kr_task_forces'),
     ('task_task_forces'), ('task_projects'),
-    ('task_forces'), ('todos'), ('projects'), ('project_task_forces'),
-    ('tasks'), ('milestones'), ('admin_change_logs'),
+    ('task_forces'), ('todos'), ('project_task_forces'),
+    ('milestones'), ('admin_change_logs'),
     ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('member_tag_members'), ('project_analyses'),
     ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses'), ('kr_reports')
@@ -468,6 +507,106 @@ BEGIN
          FOR ALL TO authenticated USING (true) WITH CHECK (true);', t);
   END LOOP;
 END $$;
+
+-- ============================================================
+-- マルチテナント分離：ヘルパー関数（SECURITY DEFINER で members の RLS を迂回）
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION current_member_group_id()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $$
+  SELECT group_id FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$$;
+
+CREATE OR REPLACE FUNCTION current_member_is_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $$
+  SELECT COALESCE(is_admin, false) FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$$;
+
+-- members / projects / tasks：グループ一致のみ許可（NULL 抜け穴を作らない）
+DROP POLICY IF EXISTS "authenticated full access" ON members;
+DROP POLICY IF EXISTS "members_group" ON members;
+CREATE POLICY "members_group" ON members FOR ALL TO authenticated
+  USING (group_id = current_member_group_id());
+
+DROP POLICY IF EXISTS "authenticated full access" ON projects;
+DROP POLICY IF EXISTS "projects_group" ON projects;
+CREATE POLICY "projects_group" ON projects FOR ALL TO authenticated
+  USING (group_id = current_member_group_id());
+
+DROP POLICY IF EXISTS "authenticated full access" ON tasks;
+DROP POLICY IF EXISTS "tasks_group" ON tasks;
+CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
+  USING (group_id = current_member_group_id());
+
+-- groups：参照は全員可、作成・変更・削除は管理者のみ
+DROP POLICY IF EXISTS "authenticated full access" ON groups;
+DROP POLICY IF EXISTS "groups_auth" ON groups;
+DROP POLICY IF EXISTS "groups_select" ON groups;
+CREATE POLICY "groups_select" ON groups FOR SELECT TO authenticated USING (true);
+DROP POLICY IF EXISTS "groups_insert_admin" ON groups;
+CREATE POLICY "groups_insert_admin" ON groups FOR INSERT TO authenticated
+  WITH CHECK (current_member_is_admin());
+DROP POLICY IF EXISTS "groups_update_admin" ON groups;
+CREATE POLICY "groups_update_admin" ON groups FOR UPDATE TO authenticated
+  USING (current_member_is_admin());
+DROP POLICY IF EXISTS "groups_delete_admin" ON groups;
+CREATE POLICY "groups_delete_admin" ON groups FOR DELETE TO authenticated
+  USING (current_member_is_admin());
+
+-- members：is_admin / group_id の自己昇格防止（列単位のガードは RLS では書けないためトリガーで実装）
+-- そのグループに is_admin=true が1人もいない間（ブートストラップ）は自己昇格を許可する。
+CREATE OR REPLACE FUNCTION guard_member_privilege_columns()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+DECLARE
+  admin_count integer;
+BEGIN
+  IF NEW.is_admin IS DISTINCT FROM OLD.is_admin
+     OR NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+
+    IF public.current_member_is_admin() THEN
+      RETURN NEW;
+    END IF;
+
+    SELECT count(*) INTO admin_count
+    FROM public.members
+    WHERE group_id = OLD.group_id
+      AND is_admin = true
+      AND is_deleted = false;
+
+    IF admin_count = 0 THEN
+      RETURN NEW; -- ブートストラップ中は許可（クライアント側ロジックと整合）
+    END IF;
+
+    NEW.is_admin := OLD.is_admin;
+    NEW.group_id := OLD.group_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_members_guard_privilege ON members;
+CREATE TRIGGER trg_members_guard_privilege
+  BEFORE UPDATE ON members
+  FOR EACH ROW EXECUTE FUNCTION guard_member_privilege_columns();
 
 -- ============================================================
 -- インデックス

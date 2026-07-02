@@ -16,6 +16,8 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 // クライアントから選べるモデル（QuickResponse=haiku / Thinking=sonnet）。
 // 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
 const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
+// クライアント指定 max_tokens の上限（コスト暴走防止。レート制限と併用）
+const MAX_TOKENS_CAP = 8192;
 
 // ===== CORS =====
 // ALLOWED_ORIGINS 環境変数にカンマ区切りで本番ドメインを設定する。
@@ -163,7 +165,7 @@ Deno.serve(async (req: Request) => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: body.max_tokens ?? 4096,
+        max_tokens: Math.min(body.max_tokens ?? 4096, MAX_TOKENS_CAP),
         system: body.system,
         messages: body.messages,
       }),
