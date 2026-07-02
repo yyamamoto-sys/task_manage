@@ -2,7 +2,7 @@
 import { useState, useMemo, useRef, useEffect, Suspense } from "react";
 import { useTheme } from "../../hooks/useTheme";
 import { useLangStore } from "../../stores/langStore";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
 import { useMentionNotifications } from "../../hooks/useMentionNotifications";
@@ -202,11 +202,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setAppModeState(m);
   };
 
-  const allProjects = useAppStore(s => s.projects);
+  const allProjects = useAppStore(selectScopedProjects);
   const rawKrs      = useAppStore(s => s.keyResults);
   const rawTfs      = useAppStore(s => s.taskForces);
   const rawTtfs     = useAppStore(s => s.taskTaskForces);
-  const rawTasks    = useAppStore(s => s.tasks);
+  const rawTasks    = useAppStore(selectScopedTasks);
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]
@@ -1253,6 +1253,16 @@ function Sidebar({
         </button>
       </div>
 
+      {/*
+        【設計意図】ズーム率や画面高さによってサイドバー全体の合計高さが
+        コンテナ高さを超えると、外枠の overflow:hidden がヘッダー以外の
+        末尾要素（フッターのボタン等）を不可視・クリック不可にしてしまう
+        （CustomSelect/MainLayout で過去に踏んだ overflow 設計ミスと同種）。
+        モードトグル〜ラボサブメニューまでを1つの flex:1 + overflow-y:auto
+        領域にまとめ、はみ出た場合は必ずスクロールで到達可能にする。
+      */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }}>
+
       {/* モードトグル */}
       <div style={{ padding: c ? "6px 4px" : "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
         <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
@@ -1314,8 +1324,8 @@ function Sidebar({
           ))}
         </div>
 
-        {/* 計画管理：プロジェクト一覧 */}
-        <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
+        {/* 計画管理：プロジェクト一覧（スクロールは親の flex:1 ラッパーが担う） */}
+        <div style={{ padding: c ? "6px 0" : "4px 0" }}>
           {!c && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -1430,8 +1440,8 @@ function Sidebar({
           </div>
         )}
       </>) : (<>
-        {/* OKR管理：KR一覧（フィルター用） */}
-        <div style={{ flex: 1, overflow: "auto", padding: c ? "6px 0" : "4px 0" }}>
+        {/* OKR管理：KR一覧（フィルター用、スクロールは親の flex:1 ラッパーが担う） */}
+        <div style={{ padding: c ? "6px 0" : "4px 0" }}>
           {!c && <SectionLabel>Key Results</SectionLabel>}
           <NavItem
             active={selectedKrId === null}
@@ -1454,8 +1464,11 @@ function Sidebar({
 
       </>)}
 
-      {/* AI相談・設定・ユーザー情報 */}
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px" }}>
+      </div>
+      {/* ↑ モードトグル〜ラボサブメニューまでのスクロール領域はここまで */}
+
+      {/* AI相談・設定・ユーザー情報（常にクリック可能な位置に固定表示） */}
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
           data-tour-id="guide-btn"
