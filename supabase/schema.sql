@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS groups (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by text NOT NULL DEFAULT ''
 );
+-- migrations/20260703_add_group_teams_webhook.sql 参照
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS teams_webhook_url text;
 
 INSERT INTO groups (id, name, updated_by)
 VALUES ('grp-egg', 'EGG', 'system')

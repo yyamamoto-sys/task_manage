@@ -1,6 +1,6 @@
 # 期限の通知（リマインダーのアラート化）— 設計・デプロイ手順
 
-> ステータス：**B・D ともに実装・デプロイ完了**（Dの@メンション化は作業中・Power Automateフロー未整備） ・ 作成 2026-05-29／2026-07-02 Dを「毎週月曜・全員向け週次レポート」仕様に変更／2026-07-02b @メンション対応の構造化JSON化＋dryRun追加
+> ステータス：**B・D ともに実装・デプロイ完了**（Dの@メンション化は作業中・Power Automateフロー未整備） ・ 作成 2026-05-29／2026-07-02 Dを「毎週月曜・全員向け週次レポート」仕様に変更／2026-07-02b @メンション対応の構造化JSON化＋dryRun追加／2026-07-03 部署ごとに別Webhookへ送れるように変更
 > 関連：`DashboardView`（設定UI・Bのみ対象）, `hooks/useDeadlineNotifications.ts`（方式B）,
 > `supabase/functions/notify-deadlines/`（方式D）, `KrReportPanel`（既存のTeams送信＝MessageCard形式の参考）
 
@@ -22,7 +22,16 @@
   - 🟡 今週中に完了予定（`今日 < due_date <= 今週の日曜`）
   - 各行は `- タスク名（担当者）` 形式。担当者が複数いる場合は `/` 区切り
   - どちらのカテゴリにも該当タスクが無いPJはレポートから省略
-- **マルチテナント非対応**：現状は全メンバーが単一グループ（`grp-egg`）のため`group_id`での絞り込みはしていない。将来複数グループが実運用されたら要対応（コード側にコメント済み）。
+- **部署別Webhook対応（2026-07-03）**：`groups.teams_webhook_url` を設定した部署は、その部署のタスクのみでレポートを組み立てて専用チャンネルへ投稿する。未設定の部署（および `group_id` が付いていない旧データ）は全社共通の `TEAMS_WEBHOOK_URL` にまとめてフォールバックする。部署の数だけ個別にWebhookへPOSTするため、実行結果は部署ごとの配列 `{ results: [...] }` で返る。
+
+### D を部署ごとに別チャンネルへ送る（2026-07-03）
+
+**設定方法：** 管理画面 → グループ → 対象の部署を編集 → 「Teams Webhook URL」欄に、その部署専用のPower Automate WorkflowのURLを入力して保存（super-admin限定の操作）。
+
+**挙動：**
+- `groups.teams_webhook_url` が設定されている部署 → その部署の `group_id` が付いたタスクだけを集計し、その部署専用のWebhookへ1通投稿
+- 未設定の部署・`group_id` が付いていないタスク（部署導入前の旧データ等） → まとめて全社共通の `TEAMS_WEBHOOK_URL` へ1通投稿（既存の全社一括表示と同じ挙動）
+- 部署の数だけ個別にPOSTするため、レスポンスは `{ "results": [{ "bucket": "...", "groupName": "...", "posted": true, "totalOverdue": n, ... }, ...] }` の配列になる（旧仕様の単一オブジェクトから変更）。`?dryRun=1` も同様に `{ "dryRun": true, "payloads": { "<部署key>": { "groupName": "...", "payload": {...} } } }` の部署別マップに変更。
 
 ### D の担当者を Teams @メンションにする（2026-07-02b・作業中）
 
@@ -98,10 +107,10 @@ supabase functions deploy notify-deadlines
 curl -X POST "https://<PROJECT_REF>.supabase.co/functions/v1/notify-deadlines" \
   -H "x-cron-secret: <NOTIFY_CRON_SECRET>" -H "Content-Type: application/json" -d "{}"
 ```
-- 期待：PJごとに期限超過／今週中のタスクがあれば Teamsチャンネルに投稿され `{"posted":true,"totalOverdue":n,"totalThisWeek":n,"projects":n}`。
+- 期待：部署（またはフォールバック先）ごとに期限超過／今週中のタスクがあればそれぞれのTeamsチャンネルに投稿され、`{"results":[{"bucket":"...","groupName":"...","posted":true,"totalOverdue":n,"totalThisWeek":n,"projects":n,"mentionCount":n}, ...]}` が返る（2026-07-03以降・部署ごとの配列形式）。
 - **注意：`notify_pref` に関係なく全員のタスクが対象なので、このcurlを叩くと実際に本番Teamsチャンネルに投稿される。** テスト目的でも本番相当の内容が飛ぶことを踏まえて実行すること。
-- 対象タスクが1件もなければ投稿せず `{"posted":false,"reason":"no target tasks"}`。
-- **末尾に `?dryRun=1` を付けるとTeamsへ投稿せず、生成されるJSON（`messageText`/`mentions`）だけを確認できる。** Power Automateフロー未整備の間や `email` 登録状況の確認はこちらを使うこと。
+- 対象タスクが1件もなければ `{"posted":false,"reason":"no target tasks"}` 全体が返る。部署ごとに「その部署だけ対象タスクなし」の場合は該当部署の要素が `{"bucket":"...","groupName":"...","posted":false,"reason":"no target tasks"}` になる。Webhook未設定の部署は `{"bucket":"...","groupName":"...","posted":false,"reason":"webhook not configured"}`。
+- **末尾に `?dryRun=1` を付けるとTeamsへ投稿せず、部署ごとに生成されるJSON（`messageText`/`mentions`）だけを確認できる。** レスポンスは `{"dryRun":true,"payloads":{"<部署key>":{"groupName":"...","payload":{...}}}}`。Power Automateフロー未整備の間や `email` 登録状況の確認はこちらを使うこと。
 
 ### 5. 毎週月曜の定期実行（pg_cron）
 Supabase SQL Editor で（`<PROJECT_REF>` と `<NOTIFY_CRON_SECRET>` を置換。詳細は `supabase/migrations/20260702b_reschedule_notify_deadlines_weekly.sql`）：

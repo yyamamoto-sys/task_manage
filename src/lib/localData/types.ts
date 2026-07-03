@@ -8,6 +8,8 @@ export type NotifyPref = "none" | "browser" | "teams";
 export interface Group {
   id: string;
   name: string;
+  /** この部署専用のTeams Webhook URL（週次期限通知の投稿先）。未設定なら全社共通のTEAMS_WEBHOOK_URLにフォールバック */
+  teams_webhook_url?: string | null;
   is_deleted: boolean;
   deleted_at?: string;
   deleted_by?: string;

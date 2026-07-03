@@ -22,12 +22,16 @@
 // という手順を組む（詳細は docs/dev/deadline-notifications.md 参照）。
 // メールアドレスが未設定のメンバーはメンション不可のため、表示名の平文のままにする。
 //
-// 必要な Edge Function secrets（supabase secrets set ...）：
-//   SUPABASE_URL（自動設定）/ SUPABASE_SERVICE_ROLE_KEY / TEAMS_WEBHOOK_URL / NOTIFY_CRON_SECRET
+// 【2026-07-03 変更】部署（groups）ごとに別々のTeamsチャンネルへ送れるようにした。
+// - groups.teams_webhook_url が設定されている部署は、その部署のtasks/projects/members
+//   のみでレポートを組み立て、その部署専用のWebhookへ投稿する。
+// - teams_webhook_url が未設定の部署（グループ移行前の既存データ・group_id=NULLのタスクを含む）
+//   は、全社共通の TEAMS_WEBHOOK_URL 環境変数にフォールバックしてまとめて1通投稿する
+//   （後方互換：部署別Webhookを設定していない間は今まで通りの挙動を維持するため）。
+// - 部署ごとに1リクエストずつ投稿するため、実行結果は部署別の配列で返す。
 //
-// 【現状の制約】マルチテナント（groups テーブル）には未対応。現状は全メンバーが単一グループ
-// （grp-egg）のため group_id での絞り込みをしていない。将来複数グループが実運用に乗ったら、
-// グループごとに Webhook 先を分けるか group_id でのフィルタが必要になる。
+// 必要な Edge Function secrets（supabase secrets set ...）：
+//   SUPABASE_URL（自動設定）/ SUPABASE_SERVICE_ROLE_KEY / TEAMS_WEBHOOK_URL（フォールバック用）/ NOTIFY_CRON_SECRET
 //
 // 注意：Microsoft は受信Webhook（O365コネクタ）を2026年5月に完全廃止済み。本番は
 // Power Automate の「Workflows」（Webhook要求受信→チャンネル投稿）で構築している。
@@ -56,13 +60,17 @@ type TaskRow = {
   name: string;
   due_date: string;
   project_id: string | null;
+  group_id: string | null;
   assignee_member_id: string | null;
   assignee_member_ids: string[] | null;
 };
 
 type MemberRow = { id: string; display_name: string; email: string | null };
+type GroupRow = { id: string; name: string; teams_webhook_url: string | null };
 
 const NO_PJ_KEY = "__no_pj__";
+// 部署未設定（group_id=NULL）のタスク・部署別Webhook未設定の部署は、この共通バケットにまとめる
+const FALLBACK_GROUP_KEY = "__fallback__";
 
 Deno.serve(async (req: Request) => {
   // ===== 認証（共有シークレット） =====
@@ -71,8 +79,7 @@ Deno.serve(async (req: Request) => {
     return json({ error: "Unauthorized" }, 401);
   }
 
-  const webhookUrl = Deno.env.get("TEAMS_WEBHOOK_URL");
-  if (!webhookUrl) return json({ error: "TEAMS_WEBHOOK_URL not configured" }, 500);
+  const fallbackWebhookUrl = Deno.env.get("TEAMS_WEBHOOK_URL") ?? null;
 
   const supabase = createClient(
     Deno.env.get("SUPABASE_URL") ?? "",
@@ -86,7 +93,7 @@ Deno.serve(async (req: Request) => {
   // ここには「期限超過（本日含む）」と「今週中に完了予定」の両方が含まれる。以降で振り分ける。
   const { data: tasks, error: tErr } = await supabase
     .from("tasks")
-    .select("id, name, due_date, status, project_id, assignee_member_id, assignee_member_ids")
+    .select("id, name, due_date, status, project_id, group_id, assignee_member_id, assignee_member_ids")
     .eq("is_deleted", false)
     .neq("status", "done")
     .not("due_date", "is", null)
@@ -101,9 +108,95 @@ Deno.serve(async (req: Request) => {
     .from("members").select("id, display_name, email").eq("is_deleted", false);
   if (mErr) return json({ error: "members query failed", detail: mErr.message }, 500);
 
+  const { data: groups, error: gErr } = await supabase
+    .from("groups").select("id, name, teams_webhook_url").eq("is_deleted", false);
+  if (gErr) return json({ error: "groups query failed", detail: gErr.message }, 500);
+
+  const groupById = new Map((groups ?? []).map((g) => [g.id as string, g as GroupRow]));
   const pjNameById = new Map((projects ?? []).map((p) => [p.id as string, p.name as string]));
   const memberById = new Map((members ?? []).map((m) => [m.id as string, m as MemberRow]));
 
+  // ===== タスクを「送信先バケット」ごとに振り分ける =====
+  // 部署別Webhookが設定されている部署は自部署バケットへ、それ以外（group_id=NULL・
+  // Webhook未設定の部署）はまとめて FALLBACK_GROUP_KEY バケットへ。
+  const bucketKeyForTask = (t: TaskRow): string => {
+    if (!t.group_id) return FALLBACK_GROUP_KEY;
+    const g = groupById.get(t.group_id);
+    if (!g || !g.teams_webhook_url) return FALLBACK_GROUP_KEY;
+    return t.group_id;
+  };
+
+  const tasksByBucket = new Map<string, TaskRow[]>();
+  for (const t of (tasks ?? []) as TaskRow[]) {
+    const key = bucketKeyForTask(t);
+    const arr = tasksByBucket.get(key) ?? [];
+    arr.push(t);
+    tasksByBucket.set(key, arr);
+  }
+
+  if (tasksByBucket.size === 0) return json({ posted: false, reason: "no target tasks" }, 200);
+
+  const results: Array<{ bucket: string; groupName: string; posted: boolean; reason?: string; error?: string; totalOverdue?: number; totalThisWeek?: number; projects?: number; mentionCount?: number }> = [];
+  const dryRun = new URL(req.url).searchParams.get("dryRun") === "1";
+  const dryRunPayloads: Record<string, unknown> = {};
+
+  for (const [bucketKey, bucketTasks] of tasksByBucket) {
+    const webhookUrl = bucketKey === FALLBACK_GROUP_KEY
+      ? fallbackWebhookUrl
+      : groupById.get(bucketKey)!.teams_webhook_url;
+    const groupName = bucketKey === FALLBACK_GROUP_KEY
+      ? "（全社共通・部署別Webhook未設定分）"
+      : (groupById.get(bucketKey)?.name ?? bucketKey);
+
+    if (!webhookUrl) {
+      results.push({ bucket: bucketKey, groupName, posted: false, reason: "webhook not configured" });
+      continue;
+    }
+
+    const built = buildReport(bucketTasks, pjNameById, memberById, today);
+    if (!built) {
+      results.push({ bucket: bucketKey, groupName, posted: false, reason: "no target tasks" });
+      continue;
+    }
+
+    if (dryRun) {
+      dryRunPayloads[bucketKey] = { groupName, payload: built.payload };
+      continue;
+    }
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(built.payload),
+    });
+    if (!res.ok) {
+      const detail = await res.text();
+      results.push({ bucket: bucketKey, groupName, posted: false, error: `Webhook POST failed: ${res.status} ${detail}` });
+      continue;
+    }
+    results.push({
+      bucket: bucketKey, groupName, posted: true,
+      totalOverdue: built.totalOverdue, totalThisWeek: built.totalThisWeek,
+      projects: built.pjBlockCount, mentionCount: built.payload.mentions.length,
+    });
+  }
+
+  if (dryRun) return json({ dryRun: true, payloads: dryRunPayloads }, 200);
+
+  return json({ results }, 200);
+});
+
+function buildReport(
+  bucketTasks: TaskRow[],
+  pjNameById: Map<string, string>,
+  memberById: Map<string, MemberRow>,
+  today: string,
+): {
+  payload: { messageText: string; mentions: { placeholder: string; email: string }[]; totalOverdue: number; totalThisWeek: number; projectCount: number };
+  totalOverdue: number;
+  totalThisWeek: number;
+  pjBlockCount: number;
+} | null {
   // ===== メンション用プレースホルダーの発行（メンバーごとに1つ・使い回す） =====
   // email が無いメンバーは None のまま＝本文では表示名の平文になる。
   const placeholderByMemberId = new Map<string, string>();
@@ -131,7 +224,7 @@ Deno.serve(async (req: Request) => {
 
   // ===== PJごとに「期限超過（本日含む）」「今週中」に振り分け =====
   const byProject = new Map<string, { overdue: TaskRow[]; thisWeek: TaskRow[] }>();
-  for (const t of (tasks ?? []) as TaskRow[]) {
+  for (const t of bucketTasks) {
     const key = t.project_id ?? NO_PJ_KEY;
     const bucket = byProject.get(key) ?? { overdue: [], thisWeek: [] };
     if (t.due_date <= today) bucket.overdue.push(t);
@@ -168,7 +261,7 @@ Deno.serve(async (req: Request) => {
     pjBlocks.push(parts.join("\n"));
   }
 
-  if (pjBlocks.length === 0) return json({ posted: false, reason: "no target tasks" }, 200);
+  if (pjBlocks.length === 0) return null;
 
   const messageText = [
     `📋 今週のタスクアラート（${today} の週）`,
@@ -177,26 +270,13 @@ Deno.serve(async (req: Request) => {
     pjBlocks.join("\n\n"),
   ].join("\n");
 
-  // ===== Power Automate フローへ POST（フロー側でメンショントークンに置換して投稿する） =====
-  const payload = { messageText, mentions, totalOverdue, totalThisWeek, projectCount: pjBlocks.length };
-
-  // ?dryRun=1 のときは Webhook へ送らず payload をそのまま返す（フロー未整備の段階での安全な確認用）
-  if (new URL(req.url).searchParams.get("dryRun") === "1") {
-    return json({ dryRun: true, payload }, 200);
-  }
-
-  const res = await fetch(webhookUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) {
-    const detail = await res.text();
-    return json({ posted: false, error: `Webhook POST failed: ${res.status}`, detail }, 502);
-  }
-
-  return json({ posted: true, totalOverdue, totalThisWeek, projects: pjBlocks.length, mentionCount: mentions.length }, 200);
-});
+  return {
+    payload: { messageText, mentions, totalOverdue, totalThisWeek, projectCount: pjBlocks.length },
+    totalOverdue,
+    totalThisWeek,
+    pjBlockCount: pjBlocks.length,
+  };
+}
 
 function json(body: unknown, status: number): Response {
   return new Response(JSON.stringify(body), {

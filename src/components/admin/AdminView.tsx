@@ -2008,7 +2008,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "",
+    name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: "",
   });
   const [error, setError] = useState<string | null>(null);
 
@@ -2018,13 +2018,13 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
+    setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: "" });
     setError(null);
   };
 
   const openEdit = (g: Group) => {
     setEditId(g.id);
-    setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
+    setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: g.teams_webhook_url ?? "" });
     setError(null);
   };
 
@@ -2037,6 +2037,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
         await saveGroup({
           id: newGroupId,
           name: form.name.trim(),
+          teams_webhook_url: form.teamsWebhookUrl.trim() || null,
           is_deleted: false,
           created_at: now,
           updated_at: now,
@@ -2065,7 +2066,12 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       } else {
         const existing = groups.find(g => g.id === editId);
         if (existing) {
-          await saveGroup({ ...existing, name: form.name.trim(), updated_by: currentUser.id });
+          await saveGroup({
+            ...existing,
+            name: form.name.trim(),
+            teams_webhook_url: form.teamsWebhookUrl.trim() || null,
+            updated_by: currentUser.id,
+          });
         }
       }
       setEditId(null);
@@ -2185,6 +2191,19 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               maxLength={50}
               style={inputStyle}
             />
+          </div>
+          <div style={{ marginTop: "10px" }}>
+            <FieldLabel>Teams Webhook URL（任意）</FieldLabel>
+            <input
+              value={form.teamsWebhookUrl}
+              onChange={e => setForm(f => ({ ...f, teamsWebhookUrl: e.target.value }))}
+              placeholder="https://..."
+              style={inputStyle}
+            />
+            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+              週次の期限通知（毎週月曜）をこの部署専用のTeamsチャンネルへ送る場合に設定します。
+              未設定の場合は全社共通のチャンネルにフォールバックします。
+            </div>
           </div>
           {editId === "new" && (
             <div style={{ marginTop: "10px" }}>
