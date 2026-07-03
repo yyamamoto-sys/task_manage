@@ -15,7 +15,7 @@
 // 手動入力方式はPhase 5以降で検討。
 
 import { useState, useMemo, useCallback, useEffect } from "react";
-import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Member, Project, Task, ToDo, NotifyPref,
@@ -63,7 +63,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // 【Phase 2 移行済み】個別 selector で必要な state のみを購読する。
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(selectScopedTasks);
-  const rawMembers = useAppStore(s => s.members);
+  const rawMembers = useAppStore(selectScopedMembers);
   const rawKrs     = useAppStore(s => s.keyResults);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);

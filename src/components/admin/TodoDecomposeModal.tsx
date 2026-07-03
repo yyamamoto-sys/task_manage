@@ -6,7 +6,7 @@
 
 import { useState, useEffect } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedMembers } from "../../stores/appStore";
 import type { ToDo, Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecomposeClient";
@@ -25,7 +25,7 @@ interface Props {
 export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose }: Props) {
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
-  const allMembers = useAppStore(s => s.members);
+  const allMembers = useAppStore(selectScopedMembers);
   const members = active(allMembers);
 
   const tf = (taskForces ?? []).find(t => t.id === tfId);

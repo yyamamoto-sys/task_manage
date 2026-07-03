@@ -1013,3 +1013,12 @@ export const selectScopedTasks = memoizeScopedSelector((s: AppState): Task[] =>
 
 export const selectScopedProjects = memoizeScopedSelector((s: AppState): Project[] =>
   s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId));
+
+// 【2026-07-03追記】s.members にも同じ絞り込みが必要と判明。AI関連機能（相談・全PJ分析・
+// KR分析・会議取り込み等）が「担当者名一覧」等をAIプロンプトに含める際、素の s.members を
+// 参照していたため、super-adminがA部署向けにAI機能を使ってもB部署以降のメンバー氏名が
+// Anthropic APIへ送信されてしまっていた（tasks/projectsは元から絞り込み済みだった）。
+// 管理画面（AdminView）のメンバー管理は super-admin が全部署を横断管理する必要があるため
+// 意図的にこのセレクタを使わず s.members を素で読む（そちらは対象外）。
+export const selectScopedMembers = memoizeScopedSelector((s: AppState): Member[] =>
+  s.members.filter(m => m.group_id == null || m.group_id === s.currentGroupId));

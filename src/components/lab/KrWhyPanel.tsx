@@ -5,7 +5,7 @@
 // KR/TFデータをAIに渡す（ラボ機能例外ルール適用）。
 
 import { useState, useMemo, useRef, useEffect } from "react";
-import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { LS_KEY, active } from "../../lib/localData/localStore";
 import { callWhyDialogue, callWhySummary, type WhyMessage } from "../../lib/ai/krWhyClient";
@@ -69,7 +69,7 @@ export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
   const objective               = useAppStore(s => s.objective);
   const todos                   = useAppStore(s => s.todos);
   const tasks                   = useAppStore(selectScopedTasks);
-  const members                 = useAppStore(s => s.members);
+  const members                 = useAppStore(selectScopedMembers);
   const projects                = useAppStore(selectScopedProjects);
 
   const activeKrs = useMemo(

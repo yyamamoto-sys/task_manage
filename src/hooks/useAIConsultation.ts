@@ -13,7 +13,7 @@
 // useUndoStack内部で使用し、undo/canUndo/undoStackをexportする。
 
 import { useState, useCallback, useRef, useEffect } from "react";
-import { useAppStore, selectScopedTasks, selectScopedProjects } from "../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../stores/appStore";
 import { useConsultSessionStore } from "../stores/consultSessionStore";
 import type { ConsultationType, ResponseVolume } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
@@ -75,7 +75,7 @@ function getRandomLoadingMessage(): string {
 export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
   const projects          = useAppStore(selectScopedProjects);
   const tasks             = useAppStore(selectScopedTasks);
-  const members           = useAppStore(s => s.members);
+  const members           = useAppStore(selectScopedMembers);
   const todos             = useAppStore(s => s.todos);
   const objective         = useAppStore(s => s.objective);
   const keyResults        = useAppStore(s => s.keyResults);
