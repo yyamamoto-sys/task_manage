@@ -1,0 +1,1243 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>グループ計画管理アプリ — 技術構造ガイド</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;600;700&family=Noto+Sans+JP:wght@300;400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --navy-900: #0b1220;
+    --navy-800: #131d2e;
+    --navy-700: #1a2740;
+    --navy-600: #233354;
+    --navy-500: #2e4270;
+    --indigo: #4f6cbe;
+    --violet: #7c5cbf;
+    --violet-light: #9d7de8;
+    --cyan: #3ab7c8;
+    --white: #f0f4ff;
+    --white-dim: #c0cce8;
+    --white-muted: #7a8aaa;
+    --gold: #e8c56a;
+    --green: #4cba8e;
+    --orange: #e07845;
+    --border: rgba(79, 108, 190, 0.25);
+    --border-bright: rgba(124, 92, 191, 0.5);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--navy-900);
+    color: var(--white);
+    font-family: 'Noto Sans JP', sans-serif;
+    font-weight: 400;
+    line-height: 1.75;
+    font-size: 15px;
+  }
+
+  /* ─────────── HERO ─────────── */
+  .hero {
+    background: linear-gradient(135deg, var(--navy-900) 0%, #0e1830 40%, #160f28 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 72px 40px 60px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -120px; right: -80px;
+    width: 480px; height: 480px;
+    background: radial-gradient(circle, rgba(124,92,191,0.15) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: -60px;
+    width: 360px; height: 360px;
+    background: radial-gradient(circle, rgba(58,183,200,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .hero-inner { max-width: 900px; margin: 0 auto; position: relative; z-index: 1; }
+
+  .hero-tag {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--violet-light);
+    border: 1px solid var(--border-bright);
+    padding: 4px 12px;
+    border-radius: 20px;
+    margin-bottom: 20px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .hero h1 {
+    font-family: 'Noto Serif JP', serif;
+    font-size: clamp(28px, 4vw, 48px);
+    font-weight: 700;
+    line-height: 1.25;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+    background: linear-gradient(135deg, var(--white) 40%, var(--violet-light));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-subtitle {
+    font-size: 17px;
+    color: var(--white-dim);
+    max-width: 620px;
+    line-height: 1.8;
+    margin-bottom: 32px;
+  }
+
+  .hero-meta {
+    display: flex;
+    gap: 32px;
+    flex-wrap: wrap;
+  }
+
+  .meta-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .meta-label {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--white-muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  .meta-value {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--white-dim);
+  }
+
+  /* ─────────── LAYOUT ─────────── */
+  .page { max-width: 960px; margin: 0 auto; padding: 0 40px 80px; }
+
+  /* ─────────── SECTION ─────────── */
+  .section {
+    padding: 64px 0 0;
+    animation: fadeUp 0.5s ease both;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(16px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 32px;
+  }
+
+  .section-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--violet-light);
+    opacity: 0.8;
+    min-width: 28px;
+  }
+
+  .section-title {
+    font-family: 'Noto Serif JP', serif;
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--white);
+    letter-spacing: -0.01em;
+  }
+
+  .section-line {
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, var(--border-bright), transparent);
+  }
+
+  /* ─────────── OVERVIEW CARD ─────────── */
+  .overview-card {
+    background: linear-gradient(135deg, var(--navy-800), var(--navy-700));
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 36px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .overview-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--violet), var(--cyan));
+  }
+
+  .overview-card p {
+    font-size: 16px;
+    color: var(--white-dim);
+    line-height: 1.9;
+  }
+
+  .overview-card strong {
+    color: var(--white);
+    font-weight: 600;
+  }
+
+  .overview-highlight {
+    margin-top: 20px;
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+
+  .highlight-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(79, 108, 190, 0.15);
+    border: 1px solid rgba(79, 108, 190, 0.3);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 13px;
+    color: var(--white-dim);
+  }
+
+  .highlight-pill .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    flex-shrink: 0;
+  }
+
+  /* ─────────── TECH STACK GRID ─────────── */
+  .stack-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+  }
+
+  .stack-card {
+    background: var(--navy-800);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+    transition: border-color 0.2s, transform 0.2s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .stack-card:hover {
+    border-color: var(--border-bright);
+    transform: translateY(-2px);
+  }
+
+  .stack-card-accent {
+    position: absolute;
+    top: 0; left: 0;
+    width: 3px; height: 100%;
+  }
+
+  .stack-role {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--white-muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 6px;
+  }
+
+  .stack-name {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--white);
+    margin-bottom: 6px;
+  }
+
+  .stack-desc {
+    font-size: 13px;
+    color: var(--white-muted);
+    line-height: 1.6;
+  }
+
+  /* ─────────── ARCHITECTURE SVG ─────────── */
+  .arch-container {
+    background: var(--navy-800);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 24px;
+    overflow-x: auto;
+  }
+
+  .arch-svg { display: block; margin: 0 auto; }
+
+  /* ─────────── FLOW STEPS ─────────── */
+  .flow-section {
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  .flow-item {
+    background: var(--navy-800);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+
+  .flow-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 24px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+
+  .flow-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 20px;
+    flex-shrink: 0;
+  }
+
+  .flow-title {
+    font-weight: 600;
+    font-size: 15px;
+    color: var(--white);
+  }
+
+  .flow-body { padding: 24px; }
+
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    position: relative;
+  }
+
+  .flow-step + .flow-step { margin-top: 0; }
+
+  .flow-step-left {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+    width: 36px;
+  }
+
+  .flow-step-circle {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 1;
+  }
+
+  .flow-step-line {
+    width: 2px;
+    flex: 1;
+    min-height: 28px;
+    background: var(--border);
+    margin: 2px 0;
+  }
+
+  .flow-step:last-child .flow-step-line { display: none; }
+
+  .flow-step-content {
+    padding: 4px 0 28px;
+    flex: 1;
+  }
+
+  .flow-step:last-child .flow-step-content { padding-bottom: 0; }
+
+  .flow-step-name {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--white);
+    margin-bottom: 2px;
+  }
+
+  .flow-step-note {
+    font-size: 13px;
+    color: var(--white-muted);
+    line-height: 1.6;
+  }
+
+  .flow-step-security {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    font-size: 11px;
+    color: var(--green);
+    background: rgba(76, 186, 142, 0.1);
+    border: 1px solid rgba(76, 186, 142, 0.25);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* ─────────── FEATURE CARDS ─────────── */
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+
+  .feature-card {
+    background: var(--navy-800);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px;
+    transition: border-color 0.2s;
+  }
+
+  .feature-card:hover { border-color: var(--border-bright); }
+
+  .feature-icon {
+    font-size: 26px;
+    margin-bottom: 10px;
+    display: block;
+  }
+
+  .feature-name {
+    font-weight: 700;
+    font-size: 14px;
+    color: var(--white);
+    margin-bottom: 6px;
+  }
+
+  .feature-desc {
+    font-size: 13px;
+    color: var(--white-muted);
+    line-height: 1.65;
+  }
+
+  /* ─────────── COST TABLE ─────────── */
+  .cost-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .cost-table th {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--white-muted);
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 500;
+    text-align: left;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(255,255,255,0.02);
+  }
+
+  .cost-table td {
+    padding: 16px 20px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    color: var(--white-dim);
+    vertical-align: top;
+  }
+
+  .cost-table tr:last-child td { border-bottom: none; }
+
+  .cost-table tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .cost-item-name { font-weight: 600; color: var(--white); font-size: 14px; }
+
+  .cost-free {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--green);
+    background: rgba(76, 186, 142, 0.1);
+    border: 1px solid rgba(76, 186, 142, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 4px;
+  }
+
+  .cost-pay {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--gold);
+    background: rgba(232, 197, 106, 0.1);
+    border: 1px solid rgba(232, 197, 106, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 4px;
+  }
+
+  .cost-reduce {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 12px;
+    color: var(--cyan);
+    background: rgba(58, 183, 200, 0.1);
+    border: 1px solid rgba(58, 183, 200, 0.2);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 4px;
+  }
+
+  /* ─────────── HOW TO BUILD ─────────── */
+  .howto-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .howto-card {
+    background: var(--navy-800);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+  }
+
+  .howto-step-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--violet-light);
+    margin-bottom: 8px;
+    display: block;
+  }
+
+  .howto-title {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--white);
+    margin-bottom: 6px;
+  }
+
+  .howto-desc {
+    font-size: 13px;
+    color: var(--white-muted);
+    line-height: 1.6;
+  }
+
+  .notice-box {
+    background: rgba(124, 92, 191, 0.1);
+    border: 1px solid rgba(124, 92, 191, 0.3);
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin-top: 8px;
+  }
+
+  .notice-box-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--violet-light);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .notice-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .notice-list li {
+    font-size: 13px;
+    color: var(--white-muted);
+    padding-left: 16px;
+    position: relative;
+    line-height: 1.6;
+  }
+
+  .notice-list li::before {
+    content: '▸';
+    position: absolute;
+    left: 0;
+    color: var(--violet-light);
+    font-size: 10px;
+    top: 3px;
+  }
+
+  /* ─────────── FOOTER ─────────── */
+  .footer {
+    border-top: 1px solid var(--border);
+    padding: 40px;
+    text-align: center;
+    color: var(--white-muted);
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.05em;
+    margin-top: 80px;
+  }
+
+  /* ─────────── PRINT ─────────── */
+  @media print {
+    body { background: white; color: #111; }
+    .hero { background: #f8f9fc; border-bottom: 2px solid #ddd; }
+    .hero h1 { -webkit-text-fill-color: #111; color: #111; }
+    .hero-subtitle, .meta-value { color: #444; }
+    .overview-card, .stack-card, .flow-item, .feature-card, .howto-card {
+      background: #f8f9fc; border: 1px solid #ddd;
+    }
+    .stack-desc, .feature-desc, .howto-desc, .notice-list li { color: #555; }
+    .section-title { color: #111; }
+    .cost-table th, .cost-table td { color: #333; border-color: #ddd; }
+    .footer { border-top-color: #ddd; color: #888; }
+    .arch-container { border: 1px solid #ddd; background: #f8f9fc; }
+  }
+
+  @media (max-width: 640px) {
+    .hero { padding: 48px 20px 40px; }
+    .page { padding: 0 20px 60px; }
+    .hero-meta { gap: 20px; }
+    .stack-grid, .feature-grid, .howto-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════ HERO ═══════════ -->
+<header class="hero">
+  <div class="hero-inner">
+    <span class="hero-tag">Technical Architecture Overview</span>
+    <h1>グループ計画管理アプリ<br>技術構造ガイド</h1>
+    <p class="hero-subtitle">
+      チームのプロジェクト・タスクをリアルタイムで共有し、AIと対話しながら意思決定できるWebアプリの<br>
+      仕組みと技術選定を、エンジニア以外の方にも伝わるよう整理したドキュメントです。
+    </p>
+    <div class="hero-meta">
+      <div class="meta-item">
+        <span class="meta-label">作成</span>
+        <span class="meta-value">アミタホールディングス DX推進</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">対象</span>
+        <span class="meta-value">ダッシュボード開発検討チーム</span>
+      </div>
+      <div class="meta-item">
+        <span class="meta-label">更新</span>
+        <span class="meta-value">2026年6月</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- ═══════════ 1. OVERVIEW ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">01</span>
+      <h2 class="section-title">アプリ概要</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="overview-card">
+      <p>
+        <strong>グループ計画管理アプリ</strong>は、チームのプロジェクト・タスク・OKRを
+        <strong>リアルタイムで全員が共有・管理</strong>できるWebアプリです。
+        誰かが更新した内容は即座に全員の画面に反映され、
+        <strong>AIに変更の影響を相談したり、進捗を分析</strong>させることもできます。<br>
+        社内でゼロから内製開発したアプリで、初期費用ゼロ・保守もAI支援で行っています。
+      </p>
+      <div class="overview-highlight">
+        <div class="highlight-pill"><span class="dot"></span>PCブラウザから使える</div>
+        <div class="highlight-pill"><span class="dot"></span>複数人が同時編集しても競合しない</div>
+        <div class="highlight-pill"><span class="dot"></span>AIが変更の影響を整理・相談に応じる</div>
+        <div class="highlight-pill"><span class="dot"></span>Teamsと連携して通知を受け取れる</div>
+        <div class="highlight-pill"><span class="dot"></span>追加投資なし（無料枠で運用中）</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ 2. TECH STACK ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">02</span>
+      <h2 class="section-title">技術スタック</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="stack-grid">
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--cyan);"></div>
+        <div class="stack-role">Frontend</div>
+        <div class="stack-name">React + TypeScript</div>
+        <div class="stack-desc">ブラウザ上で動く画面を構成する部品。操作への反応が速く、複雑な画面もコンポーネント単位で管理できる。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--green);"></div>
+        <div class="stack-role">Database &amp; Realtime</div>
+        <div class="stack-name">Supabase (PostgreSQL)</div>
+        <div class="stack-desc">データを保存するクラウドDB。WebSocket通信で「誰かが更新した瞬間」を全員の画面にリアルタイムで届ける。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--violet);"></div>
+        <div class="stack-role">AI</div>
+        <div class="stack-name">Anthropic Claude API</div>
+        <div class="stack-desc">タスク変更の影響整理・シミュレーション・OKR分析・レポート生成などAI機能全般を担う。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--indigo);"></div>
+        <div class="stack-role">AI Security Layer</div>
+        <div class="stack-name">Supabase Edge Function</div>
+        <div class="stack-desc">AIのAPIキーをサーバー側だけで保持するための中継役。ブラウザにキーが漏れない安全な構造を実現する。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: #6264A7;"></div>
+        <div class="stack-role">Notification</div>
+        <div class="stack-name">Microsoft Teams Webhook</div>
+        <div class="stack-desc">期限アラートやメンション通知をTeamsチャンネルに自動投稿。毎朝8時に定期チェックを実行。</div>
+      </div>
+
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--gold);"></div>
+        <div class="stack-role">Hosting &amp; CI/CD</div>
+        <div class="stack-name">Vercel + GitHub</div>
+        <div class="stack-desc">GitHubにコードを push した瞬間に本番環境へ自動デプロイ。インフラの管理作業は一切不要。</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════ 3. ARCHITECTURE ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">03</span>
+      <h2 class="section-title">全体アーキテクチャ</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="arch-container">
+      <svg class="arch-svg" viewBox="0 0 860 540" fill="none" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:860px;">
+
+        <defs>
+          <marker id="arr" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="rgba(79,108,190,0.8)"/>
+          </marker>
+          <marker id="arr-green" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="rgba(76,186,142,0.8)"/>
+          </marker>
+          <marker id="arr-violet" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="rgba(157,125,232,0.8)"/>
+          </marker>
+          <marker id="arr-orange" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L0,6 L8,3 z" fill="rgba(224,120,69,0.8)"/>
+          </marker>
+          <filter id="glow">
+            <feGaussianBlur stdDeviation="3" result="blur"/>
+            <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+          </filter>
+        </defs>
+
+        <!-- ── LEGEND ── -->
+        <rect x="20" y="16" width="820" height="30" rx="6" fill="rgba(255,255,255,0.02)"/>
+        <circle cx="42" cy="31" r="5" fill="rgba(79,108,190,0.8)"/>
+        <text x="52" y="35" fill="rgba(192,204,232,0.7)" font-family="'JetBrains Mono',monospace" font-size="10">データ保存・取得</text>
+        <circle cx="162" cy="31" r="5" fill="rgba(76,186,142,0.8)"/>
+        <text x="172" y="35" fill="rgba(192,204,232,0.7)" font-family="'JetBrains Mono',monospace" font-size="10">リアルタイム通知</text>
+        <circle cx="292" cy="31" r="5" fill="rgba(157,125,232,0.8)"/>
+        <text x="302" y="35" fill="rgba(192,204,232,0.7)" font-family="'JetBrains Mono',monospace" font-size="10">AI呼び出し</text>
+        <circle cx="392" cy="31" r="5" fill="rgba(224,120,69,0.8)"/>
+        <text x="402" y="35" fill="rgba(192,204,232,0.7)" font-family="'JetBrains Mono',monospace" font-size="10">Teams通知</text>
+        <circle cx="492" cy="31" r="5" fill="rgba(232,197,106,0.7)"/>
+        <text x="502" y="35" fill="rgba(192,204,232,0.7)" font-family="'JetBrains Mono',monospace" font-size="10">自動デプロイ</text>
+
+        <!-- ══════ BROWSER BOX ══════ -->
+        <rect x="20" y="60" width="320" height="320" rx="14" fill="rgba(26,39,64,0.9)" stroke="rgba(79,108,190,0.4)" stroke-width="1.5"/>
+        <rect x="20" y="60" width="320" height="36" rx="14" fill="rgba(79,108,190,0.2)"/>
+        <rect x="20" y="80" width="320" height="16" fill="rgba(79,108,190,0.2)"/>
+        <text x="42" y="83" fill="rgba(192,204,232,0.6)" font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="0.1em">BROWSER</text>
+        <circle cx="310" cy="78" r="5" fill="rgba(58,183,200,0.6)"/>
+        <circle cx="323" cy="78" r="5" fill="rgba(76,186,142,0.4)"/>
+
+        <!-- Browser: React App inner -->
+        <rect x="38" y="110" width="284" height="92" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(58,183,200,0.3)" stroke-width="1"/>
+        <text x="52" y="133" fill="#3ab7c8" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">React アプリ</text>
+        <text x="52" y="153" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">画面描画・ユーザー操作</text>
+        <text x="52" y="171" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">zustand（状態管理）</text>
+        <text x="52" y="189" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">TypeScript で型安全に実装</text>
+
+        <!-- Browser: Realtime listener -->
+        <rect x="38" y="216" width="284" height="58" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(76,186,142,0.3)" stroke-width="1"/>
+        <text x="52" y="239" fill="#4cba8e" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">Realtime 受信</text>
+        <text x="52" y="259" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">WebSocket 常時接続 → 全員の画面に即反映</text>
+
+        <!-- Browser: Notification -->
+        <rect x="38" y="288" width="284" height="80" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(157,125,232,0.25)" stroke-width="1"/>
+        <text x="52" y="310" fill="var(--violet-light,#9d7de8)" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">ブラウザ通知</text>
+        <text x="52" y="330" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">期限アラート・メンション通知</text>
+        <text x="52" y="350" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">（Notification API）</text>
+
+        <!-- Browser label bottom -->
+        <text x="180" y="370" fill="rgba(192,204,232,0.35)" font-family="'Noto Sans JP',sans-serif" font-size="11" text-anchor="middle">チームメンバー A / B / C ... が利用</text>
+
+        <!-- ══════ SUPABASE BOX ══════ -->
+        <rect x="380" y="60" width="280" height="380" rx="14" fill="rgba(26,39,64,0.9)" stroke="rgba(76,186,142,0.4)" stroke-width="1.5"/>
+        <rect x="380" y="60" width="280" height="36" rx="14" fill="rgba(76,186,142,0.15)"/>
+        <rect x="380" y="80" width="280" height="16" fill="rgba(76,186,142,0.15)"/>
+        <text x="400" y="83" fill="rgba(192,204,232,0.6)" font-family="'JetBrains Mono',monospace" font-size="10" letter-spacing="0.1em">SUPABASE  (Backend as a Service)</text>
+
+        <!-- Supabase: PostgreSQL -->
+        <rect x="398" y="110" width="244" height="70" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(76,186,142,0.35)" stroke-width="1"/>
+        <text x="412" y="133" fill="#4cba8e" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">PostgreSQL データベース</text>
+        <text x="412" y="152" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">タスク・プロジェクト・メンバー・OKR</text>
+        <text x="412" y="169" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">pg_cron で毎朝8時に期限チェック</text>
+
+        <!-- Supabase: Realtime -->
+        <rect x="398" y="196" width="244" height="60" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(58,183,200,0.3)" stroke-width="1"/>
+        <text x="412" y="220" fill="#3ab7c8" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">Realtime (WebSocket)</text>
+        <text x="412" y="240" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">DB変更を全ブラウザへリアルタイム配信</text>
+
+        <!-- Supabase: Edge Function -->
+        <rect x="398" y="272" width="244" height="80" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(157,125,232,0.35)" stroke-width="1"/>
+        <text x="412" y="295" fill="#9d7de8" font-family="'Noto Sans JP',sans-serif" font-size="13" font-weight="700">Edge Function (ai-consult)</text>
+        <text x="412" y="315" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">APIキーをここだけに保持（安全）</text>
+        <text x="412" y="333" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">AI呼び出し中継・Teams Webhook送信</text>
+        <text x="412" y="351" fill="rgba(157,125,232,0.5)" font-family="'JetBrains Mono',monospace" font-size="10">🔑 ANTHROPIC_API_KEY はここのみ</text>
+
+        <!-- Supabase: RLS -->
+        <rect x="398" y="366" width="244" height="58" rx="8" fill="rgba(19,29,46,0.8)" stroke="rgba(79,108,190,0.25)" stroke-width="1"/>
+        <text x="412" y="388" fill="rgba(192,204,232,0.8)" font-family="'Noto Sans JP',sans-serif" font-size="12" font-weight="600">Row Level Security (RLS)</text>
+        <text x="412" y="406" fill="rgba(192,204,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="11">認証ユーザーのみデータアクセス可</text>
+
+        <!-- ══════ EXTERNAL SERVICES ══════ -->
+        <!-- Claude API -->
+        <rect x="700" y="80" width="148" height="80" rx="10" fill="rgba(26,39,64,0.9)" stroke="rgba(157,125,232,0.5)" stroke-width="1.5"/>
+        <text x="774" y="114" fill="#9d7de8" font-family="'Noto Sans JP',sans-serif" font-size="12" font-weight="700" text-anchor="middle">Claude API</text>
+        <text x="774" y="132" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">Anthropic</text>
+        <text x="774" y="150" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">AI推論エンジン</text>
+
+        <!-- Teams -->
+        <rect x="700" y="210" width="148" height="80" rx="10" fill="rgba(26,39,64,0.9)" stroke="rgba(98,100,167,0.5)" stroke-width="1.5"/>
+        <text x="774" y="244" fill="#8b8fd0" font-family="'Noto Sans JP',sans-serif" font-size="12" font-weight="700" text-anchor="middle">Microsoft Teams</text>
+        <text x="774" y="262" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">Webhook 受信チャンネル</text>
+        <text x="774" y="279" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">期限アラート投稿</text>
+
+        <!-- GitHub -->
+        <rect x="700" y="340" width="148" height="70" rx="10" fill="rgba(26,39,64,0.9)" stroke="rgba(232,197,106,0.4)" stroke-width="1.5"/>
+        <text x="774" y="372" fill="#e8c56a" font-family="'Noto Sans JP',sans-serif" font-size="12" font-weight="700" text-anchor="middle">GitHub</text>
+        <text x="774" y="390" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">コード管理・push で</text>
+        <text x="774" y="407" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">Vercel 自動デプロイ</text>
+
+        <!-- Vercel -->
+        <rect x="258" y="430" width="164" height="68" rx="10" fill="rgba(26,39,64,0.9)" stroke="rgba(232,197,106,0.4)" stroke-width="1.5"/>
+        <text x="340" y="461" fill="#e8c56a" font-family="'Noto Sans JP',sans-serif" font-size="12" font-weight="700" text-anchor="middle">Vercel</text>
+        <text x="340" y="479" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">React アプリをホスティング</text>
+        <text x="340" y="493" fill="rgba(192,204,232,0.55)" font-family="'Noto Sans JP',sans-serif" font-size="10" text-anchor="middle">世界中のCDNで高速配信</text>
+
+        <!-- ══════ ARROWS ══════ -->
+        <!-- Browser ↔ Supabase DB (data) -->
+        <path d="M340,160 L395,160" stroke="rgba(79,108,190,0.7)" stroke-width="1.5" stroke-dasharray="none" marker-end="url(#arr)"/>
+        <path d="M395,175 L340,175" stroke="rgba(79,108,190,0.5)" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+        <text x="356" y="155" fill="rgba(192,204,232,0.45)" font-family="'Noto Sans JP',sans-serif" font-size="9">保存</text>
+        <text x="352" y="192" fill="rgba(192,204,232,0.45)" font-family="'Noto Sans JP',sans-serif" font-size="9">取得</text>
+
+        <!-- Supabase Realtime → Browser -->
+        <path d="M395,226 L340,252" stroke="rgba(76,186,142,0.7)" stroke-width="1.5" marker-end="url(#arr-green)"/>
+        <text x="345" y="233" fill="rgba(76,186,142,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="9">WebSocket</text>
+
+        <!-- Browser → Edge Function (AI) -->
+        <path d="M322,316 L395,312" stroke="rgba(157,125,232,0.7)" stroke-width="1.5" marker-end="url(#arr-violet)"/>
+        <path d="M395,330 L322,328" stroke="rgba(157,125,232,0.5)" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr-violet)"/>
+        <text x="326" y="308" fill="rgba(157,125,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="9">相談データ送信</text>
+        <text x="328" y="346" fill="rgba(157,125,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="9">AI回答を返す</text>
+
+        <!-- Edge Function → Claude API -->
+        <path d="M642,300 L698,130" stroke="rgba(157,125,232,0.7)" stroke-width="1.5" marker-end="url(#arr-violet)"/>
+        <text x="646" y="220" fill="rgba(157,125,232,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="9">API呼び出し</text>
+
+        <!-- Edge Function → Teams -->
+        <path d="M642,330 L698,250" stroke="rgba(224,120,69,0.7)" stroke-width="1.5" marker-end="url(#arr-orange)"/>
+        <text x="650" y="290" fill="rgba(224,120,69,0.6)" font-family="'Noto Sans JP',sans-serif" font-size="9">Webhook</text>
+
+        <!-- GitHub → Vercel -->
+        <path d="M740,410 L420,428" stroke="rgba(232,197,106,0.5)" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+        <text x="560" y="415" fill="rgba(232,197,106,0.5)" font-family="'Noto Sans JP',sans-serif" font-size="9">push → 自動デプロイ</text>
+
+        <!-- Vercel → Browser -->
+        <path d="M300,430 L240,393" stroke="rgba(232,197,106,0.5)" stroke-width="1.5" stroke-dasharray="5,4" marker-end="url(#arr)"/>
+        <text x="225" y="425" fill="rgba(232,197,106,0.5)" font-family="'Noto Sans JP',sans-serif" font-size="9">配信</text>
+      </svg>
+    </div>
+  </section>
+
+  <!-- ═══════════ 4. DATA FLOWS ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">04</span>
+      <h2 class="section-title">データフロー — 3つのシナリオ</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="flow-section">
+
+      <!-- FLOW 1: Task Update -->
+      <div class="flow-item">
+        <div class="flow-header">
+          <span class="flow-badge" style="background:rgba(79,108,190,0.2);color:#7ba0e8;border:1px solid rgba(79,108,190,0.4);">シナリオ ①</span>
+          <span class="flow-title">タスクを更新したとき — リアルタイム同期</span>
+        </div>
+        <div class="flow-body">
+          <div class="flow-steps">
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(79,108,190,0.3);color:#7ba0e8;">1</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">ユーザー A が画面でタスクを更新</div>
+                <div class="flow-step-note">ステータス変更・担当者変更・コメント入力など</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(79,108,190,0.3);color:#7ba0e8;">2</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Supabase の PostgreSQL に保存</div>
+                <div class="flow-step-note">更新前の日時（updated_at）と照合し、競合があれば警告を表示する「楽観的ロック」方式で多人数の同時編集を安全に処理</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(76,186,142,0.3);color:#4cba8e;">3</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Realtime が変化を WebSocket で全員に配信</div>
+                <div class="flow-step-note">DB の変更が検知された瞬間、接続中の全ブラウザへ差分データを送信</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(76,186,142,0.3);color:#4cba8e;">4</div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">ユーザー B・C の画面が即時に更新される</div>
+                <div class="flow-step-note">ページの再読み込みなしで変更が反映。全員が常に最新の状態を見ている</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLOW 2: AI -->
+      <div class="flow-item">
+        <div class="flow-header">
+          <span class="flow-badge" style="background:rgba(157,125,232,0.2);color:#b89cf0;border:1px solid rgba(157,125,232,0.4);">シナリオ ②</span>
+          <span class="flow-title">AI に相談したとき — セキュアな中継</span>
+        </div>
+        <div class="flow-body">
+          <div class="flow-steps">
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(157,125,232,0.3);color:#b89cf0;">1</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">画面の「AI に相談」からメッセージを送信</div>
+                <div class="flow-step-note">タスク変更の影響範囲を整理、シミュレーション、進捗診断など 5 種類のモードから選択可</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(157,125,232,0.3);color:#b89cf0;">2</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Supabase Edge Function（サーバー側）が受け取る</div>
+                <div class="flow-step-note">ブラウザではなくサーバーが次のステップを実行するため、APIキーが外部に漏れない</div>
+                <span class="flow-step-security">🔑 APIキーはサーバー内部にのみ存在</span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(157,125,232,0.3);color:#b89cf0;">3</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Edge Function が Anthropic の Claude API を呼ぶ</div>
+                <div class="flow-step-note">プロジェクト情報・タスク情報・相談内容をまとめて送信。個人名などセンシティブな項目はマスク処理済み</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(157,125,232,0.3);color:#b89cf0;">4</div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">AI の回答が画面に表示される</div>
+                <div class="flow-step-note">「反映する」ボタンを押すと AI が提案した日程・担当者変更が実際のデータに適用される。会話履歴はセッション中のみ保持（DBに保存されない）</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FLOW 3: Deadline notification -->
+      <div class="flow-item">
+        <div class="flow-header">
+          <span class="flow-badge" style="background:rgba(224,120,69,0.2);color:#e8a07a;border:1px solid rgba(224,120,69,0.4);">シナリオ ③</span>
+          <span class="flow-title">期限アラート — 毎朝の自動通知</span>
+        </div>
+        <div class="flow-body">
+          <div class="flow-steps">
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(224,120,69,0.3);color:#e8a07a;">1</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">毎朝 8:00、Supabase の pg_cron が起動</div>
+                <div class="flow-step-note">DB に内蔵されたタイマー（pg_cron）が自動実行。外部サービスや手作業は不要</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(224,120,69,0.3);color:#e8a07a;">2</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">期限 3 日以内・超過のタスクを抽出</div>
+                <div class="flow-step-note">メンバーごとに「通知方法の設定」を参照し、「Teams」設定のメンバーの分をまとめる</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(224,120,69,0.3);color:#e8a07a;">3</div>
+                <div class="flow-step-line"></div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Edge Function が Teams Webhook を呼び出す</div>
+                <div class="flow-step-note">対象タスク一覧を整形して Teams の指定チャンネルへ自動投稿</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left">
+                <div class="flow-step-circle" style="background:rgba(224,120,69,0.3);color:#e8a07a;">4</div>
+              </div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">Teams チャンネルにアラートが届く</div>
+                <div class="flow-step-note">ブラウザ通知（リアルタイム）またはこの Teams まとめ通知を、メンバーごとに選択可能</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════ 5. FEATURES ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">05</span>
+      <h2 class="section-title">主な機能</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="feature-grid">
+
+      <div class="feature-card">
+        <span class="feature-icon">📋</span>
+        <div class="feature-name">プロジェクト・タスク管理</div>
+        <div class="feature-desc">ガント・カンバン・リスト・カレンダーの4ビューを切り替えて表示。タスクに担当者・期日・優先度・親子関係を設定できる。</div>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">⚡</span>
+        <div class="feature-name">リアルタイム同期</div>
+        <div class="feature-desc">誰かが更新した内容が即座に全員の画面に反映される。複数人が同時に編集しても競合を検知して安全に処理する。</div>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">🤖</span>
+        <div class="feature-name">AI に変更を相談</div>
+        <div class="feature-desc">「影響範囲の整理」「What-If シミュレーション」「現状診断」「締め切り逆算」「スコープ縮小」の5モードでAIと対話できる。</div>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">🎯</span>
+        <div class="feature-name">OKR 管理</div>
+        <div class="feature-desc">目標（O）・KR・タスクフォース・セッション記録・AI 分析・レポート生成まで OKR サイクルを一元管理。</div>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">🔔</span>
+        <div class="feature-name">期限アラート</div>
+        <div class="feature-desc">メンバーごとに「ブラウザ通知」か「Teams まとめ通知」かを選択。毎朝 8 時に期限 3 日以内・超過タスクを自動通知。</div>
+      </div>
+
+      <div class="feature-card">
+        <span class="feature-icon">💬</span>
+        <div class="feature-name">@メンション通知</div>
+        <div class="feature-desc">コメント欄で @ を入力するとメンバー候補が表示され、選択するとメンションされたメンバーに通知が届く。</div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ═══════════ 6. COST ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">06</span>
+      <h2 class="section-title">運用コスト感（概算・参考値）</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div style="background:var(--navy-800);border:1px solid var(--border);border-radius:14px;overflow:hidden;">
+      <table class="cost-table">
+        <thead>
+          <tr>
+            <th style="width:160px;">項目</th>
+            <th style="width:160px;">費用感</th>
+            <th>補足</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="cost-item-name">Supabase</span></td>
+            <td><span class="cost-free">¥0</span></td>
+            <td style="color:var(--white-muted);font-size:13px;">無料枠（Freeプラン）で運用中。DBストレージ 500MB・帯域 5GB/月まで無料。10人前後の社内利用には十分。</td>
+          </tr>
+          <tr>
+            <td><span class="cost-item-name">Vercel</span></td>
+            <td><span class="cost-free">¥0</span></td>
+            <td style="color:var(--white-muted);font-size:13px;">個人・小規模チームは無料枠で運用可。商用・大規模利用時は Pro プランへ移行（$20/月〜）。</td>
+          </tr>
+          <tr>
+            <td><span class="cost-item-name">Claude API</span></td>
+            <td><span class="cost-pay">従量課金</span></td>
+            <td style="color:var(--white-muted);font-size:13px;">AI を使った分だけ課金。月の利用頻度によるが、社内 10 名規模では数百〜数千円/月程度が目安。</td>
+          </tr>
+          <tr>
+            <td><span class="cost-item-name">開発コスト</span></td>
+            <td><span class="cost-reduce">大幅削減</span></td>
+            <td style="color:var(--white-muted);font-size:13px;">Claude Code（AI 支援開発ツール）を使ってゼロから内製開発。専門エンジニアへの外注費用が不要。</td>
+          </tr>
+          <tr>
+            <td><span class="cost-item-name">GitHub</span></td>
+            <td><span class="cost-free">¥0</span></td>
+            <td style="color:var(--white-muted);font-size:13px;">個人・小規模チームは無料。プライベートリポジトリも無料枠内で利用可能。</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- ═══════════ 7. HOW TO BUILD ═══════════ -->
+  <section class="section">
+    <div class="section-header">
+      <span class="section-num">07</span>
+      <h2 class="section-title">同様のアプリを作るには</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="howto-grid">
+
+      <div class="howto-card">
+        <span class="howto-step-num">STEP 01</span>
+        <div class="howto-title">アカウント登録（3つ）</div>
+        <div class="howto-desc">GitHub・Supabase・Vercel の 3 サービスに Web から登録するだけ。すべて無料で始められる。インストール作業は不要。</div>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-step-num">STEP 02</span>
+        <div class="howto-title">AI 支援開発で設計・実装</div>
+        <div class="howto-desc">Claude Code などの AI 開発ツールを使えば、設計から実装まで非エンジニアでも対話しながら進められる。初期構築は数週間〜数ヶ月。</div>
+      </div>
+
+      <div class="howto-card">
+        <span class="howto-step-num">STEP 03</span>
+        <div class="howto-title">GitHub に push → 即デプロイ</div>
+        <div class="howto-desc">コードを GitHub に push するだけで Vercel が自動でビルドし本番環境に反映。独自ドメインも簡単に設定できる。</div>
+      </div>
+
+    </div>
+
+    <div class="notice-box">
+      <div class="notice-box-title">⚠ 社内展開前に確認すべき事項</div>
+      <ul class="notice-list">
+        <li>保存するデータの機密レベルを確認し、Supabase への保管が社内情報セキュリティポリシーに適合するかを IT 部門に確認する</li>
+        <li>Claude API（Anthropic）にどんなデータを送信するかを整理し、社内の情報管理ルールとの整合性を確認する</li>
+        <li>API キーや認証情報の管理方法（Vercel / Supabase の環境変数）を理解し、GitHub に誤って公開しない運用ルールを定める</li>
+        <li>Anthropic の利用規約（コンシューマー規約 / 商用規約）を確認し、学習オプトアウトの設定と規約の適用範囲を把握する</li>
+      </ul>
+    </div>
+
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div style="color:var(--white-muted);margin-bottom:6px;">グループ計画管理アプリ — 技術構造ガイド</div>
+  <div style="color:rgba(122,138,170,0.5);">作成：アミタホールディングス DX推進 / 2026年6月 / 社内資料</div>
+</footer>
+
+<script>
+  // Intersection Observer で入場アニメーション
+  const sections = document.querySelectorAll('.section');
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.style.animationPlayState = 'running';
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.05 });
+  sections.forEach(s => {
+    s.style.animationPlayState = 'paused';
+    io.observe(s);
+  });
+</script>
+
+</body>
+</html>
