@@ -423,12 +423,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         background: "var(--color-bg-primary)", flexShrink: 0,
         flexWrap: "wrap",
       }}>
-        {/* タイトル：サイドバーPJ選択中は色ドット＋PJ名＋✕解除ボタン、未選択は「全プロジェクト」 */}
-        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1, display: "flex", alignItems: "center", gap: "8px", minWidth: 0 }}>
+        {/* タイトル：サイドバーPJ選択中は色ドット＋PJ名＋✕解除ボタン、未選択は「全プロジェクト」
+            flexShrink:0で常に自然幅を確保する（横幅が足りない場合は後続のPJフィルターチップ側が
+            外側のflexWrapで2行目に折り返す。このdiv自体を縮めると「全プロジェクト」の文字が
+            1文字ずつ縦に折り返され、ボタンとPJチップが重なってクリック不能になる不具合があった） */}
+        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
           {selectedProject ? (
             <>
               <span style={{ width: 9, height: 9, borderRadius: "50%", background: selectedProject.color_tag, display: "inline-block", flexShrink: 0 }} />
-              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "240px" }}>
                 {selectedProject.name}
               </span>
               {onClearProjectFilter && (
@@ -446,7 +449,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             </>
           ) : (
             <>
-              <span>全プロジェクト</span>
+              <span style={{ whiteSpace: "nowrap" }}>全プロジェクト</span>
               <button
                 onClick={allAnalyzing ? undefined : () => { setShowAllAnalysis(true); if (!allAnalysisResult) runAllProjectsAnalysis(); }}
                 disabled={allAnalyzing}
