@@ -28,6 +28,8 @@ export interface Member {
   notify_pref?: NotifyPref;
   /** 管理者権限フラグ。true のメンバーが1人以上いる場合、管理画面は is_admin=true のみアクセス可 */
   is_admin?: boolean;
+  /** 全社スーパー管理者フラグ。部署をまたいだ権限（is_adminとは独立・直交するロール） */
+  is_super_admin?: boolean;
   color_bg: string;
   color_text: string;
   is_deleted: boolean;

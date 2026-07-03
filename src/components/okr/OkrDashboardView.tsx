@@ -3,7 +3,7 @@
 // 概要は「OKR」ボタン（履歴の隣）からオーバーレイで開く（作業画面と分離）。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { formatMD } from "../../lib/date";
@@ -74,7 +74,7 @@ export function OkrDashboardView({
   const objective  = useAppStore(s => s.objective);
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
-  const tasks      = useAppStore(s => s.tasks);
+  const tasks      = useAppStore(selectScopedTasks);
   const todos      = useAppStore(s => s.todos);
   const members    = useAppStore(s => s.members);
 

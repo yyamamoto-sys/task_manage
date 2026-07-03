@@ -6,7 +6,7 @@
 // ラボ機能（プロトタイプ）として位置づけ。
 
 import { useEffect, useRef, useCallback, useMemo } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 
@@ -91,8 +91,8 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   const rawKrs            = useAppStore(s => s.keyResults);
   const rawTfs            = useAppStore(s => s.taskForces);
   const rawTodos          = useAppStore(s => s.todos);
-  const rawTasks          = useAppStore(s => s.tasks);
-  const rawProjects       = useAppStore(s => s.projects);
+  const rawTasks          = useAppStore(selectScopedTasks);
+  const rawProjects       = useAppStore(selectScopedProjects);
   const projectTaskForces = useAppStore(s => s.projectTaskForces);
   const members           = useAppStore(s => s.members);
 

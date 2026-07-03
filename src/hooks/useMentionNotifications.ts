@@ -6,10 +6,10 @@
 // notify_pref==="browser" かつ許可済みのみ動作。
 
 import { useEffect, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../stores/appStore";
 
 export function useMentionNotifications(currentUserId: string) {
-  const tasks   = useAppStore(s => s.tasks);
+  const tasks   = useAppStore(selectScopedTasks);
   const members = useAppStore(s => s.members);
 
   // タスクごとの前回 finalized_mentions（カンマ結合文字列で保持）

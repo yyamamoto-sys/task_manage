@@ -1,6 +1,6 @@
 // src/components/kanban/KanbanView.tsx
 import { useState, useMemo, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, TaskForce, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -25,7 +25,7 @@ interface Props {
 }
 
 export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds, mineOnly = false }: Props) {
-  const allTasks         = useAppStore(s => s.tasks);
+  const allTasks         = useAppStore(selectScopedTasks);
   const allMembers       = useAppStore(s => s.members);
   const allTaskForces    = useAppStore(s => s.taskForces);
   const rawTodos         = useAppStore(s => s.todos);

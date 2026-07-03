@@ -11,7 +11,7 @@
 // CLAUDE.md：派生値は state に保存しない方針に従い、対象タスクは都度算出する。
 
 import { useEffect, useRef } from "react";
-import { useAppStore } from "../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../stores/appStore";
 import { todayStr } from "../lib/date";
 import { isAssignedTo } from "../lib/taskMeta";
 import { active, LS_KEY } from "../lib/localData/localStore";
@@ -40,7 +40,7 @@ function saveNotified(userId: string, rec: NotifiedRecord) {
  * notify_pref が "browser" 以外、または通知未許可のときは何もしない。
  */
 export function useDeadlineNotifications(currentUserId: string) {
-  const tasks   = useAppStore(s => s.tasks);
+  const tasks   = useAppStore(selectScopedTasks);
   const members = useAppStore(s => s.members);
 
   // interval 内で stale を避けるため最新値を ref に保持

@@ -9,7 +9,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import type { UIProposal } from "../../lib/ai/proposalMapper";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
 import { GanttView } from "../gantt/GanttView";
 import type { Member, Project, Task } from "../../lib/localData/types";
@@ -29,8 +29,8 @@ export function GanttPreviewPanel({
   selectedProject,
   onClose,
 }: Props) {
-  const tasks    = useAppStore(s => s.tasks);
-  const projects = useAppStore(s => s.projects);
+  const tasks    = useAppStore(selectScopedTasks);
+  const projects = useAppStore(selectScopedProjects);
 
   // アニメーション用state
   const [visible, setVisible] = useState(false);

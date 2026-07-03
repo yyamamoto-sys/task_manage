@@ -3,7 +3,7 @@
 // MainLayout.tsx から切り出し。
 
 import { useState, useMemo } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
@@ -30,7 +30,7 @@ const TODO_OTHER_ID = "__other__";
 
 export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
-  const rawTasks                = useAppStore(s => s.tasks);
+  const rawTasks                = useAppStore(selectScopedTasks);
   const rawMembers              = useAppStore(s => s.members);
   const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);

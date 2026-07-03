@@ -6,7 +6,7 @@
 // GraphViewと同じフルスクリーンオーバーレイ形式で表示する。
 
 import { useState, useRef, useMemo, useEffect } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { buildKrReportContext, type KrReportMode } from "../../lib/ai/krReportPrompt";
@@ -66,7 +66,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
-  const tasks      = useAppStore(s => s.tasks);
+  const tasks      = useAppStore(selectScopedTasks);
   const members    = useAppStore(s => s.members);
 
   const activeKrs = useMemo(

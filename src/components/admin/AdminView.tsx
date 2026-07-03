@@ -8,7 +8,7 @@
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
@@ -36,11 +36,14 @@ export function AdminView({ currentUser }: Props) {
   // 管理者ガード：グループ内にis_admin=trueのアクティブメンバーが1人以上いる場合、
   // 現在ユーザーがis_admin=trueでないとアクセスを拒否する。
   // 誰もis_adminでない場合はブートストラップモードとして全員アクセス可。
+  // 全社スーパー管理者（is_super_admin）は所属部署のis_admin状態によらず常にアクセス可。
   const allMembers = useAppStore(s => s.members);
   const activeAdmins = useMemo(() => active(allMembers).filter(m => m.is_admin === true), [allMembers]);
   const hasAnyAdmin = activeAdmins.length > 0;
   const isCurrentUserAdmin = currentUser.is_admin === true;
-  if (hasAnyAdmin && !isCurrentUserAdmin) {
+  const isCurrentUserSuperAdmin = currentUser.is_super_admin === true;
+  const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
+  if (hasAnyAdmin && !canAccessAdmin) {
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -57,7 +60,7 @@ export function AdminView({ currentUser }: Props) {
     );
   }
   const krs      = useAppStore(s => s.keyResults);
-  const pjs      = useAppStore(s => s.projects);
+  const pjs      = useAppStore(selectScopedProjects);
   const krCount  = active(krs).length;
   const pjCount  = active(pjs).length;
 
@@ -410,7 +413,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const rawKrs                      = useAppStore(s => s.keyResults);
   const rawMembers                  = useAppStore(s => s.members);
   const rawTodos                    = useAppStore(s => s.todos);
-  const rawTasks                    = useAppStore(s => s.tasks);
+  const rawTasks                    = useAppStore(selectScopedTasks);
   const saveTaskForce               = useAppStore(s => s.saveTaskForce);
   const deleteTaskForce             = useAppStore(s => s.deleteTaskForce);
   const saveToDo                    = useAppStore(s => s.saveToDo);
@@ -1243,7 +1246,7 @@ function ToDoForm({
 // ===================================================
 
 function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const rawProjects             = useAppStore(s => s.projects);
+  const rawProjects             = useAppStore(selectScopedProjects);
   const rawMembers              = useAppStore(s => s.members);
   const saveProject             = useAppStore(s => s.saveProject);
   const deleteProject           = useAppStore(s => s.deleteProject);
@@ -1713,6 +1716,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
     group_id: "" as string,
     is_admin: false,
+    is_super_admin: false,
   });
 
   // 未保存変更を親に通知
@@ -1731,12 +1735,12 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "", is_admin: false });
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "", is_admin: false, is_super_admin: false });
   };
 
   const openEdit = (m: Member) => {
     setEditId(m.id);
-    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", is_admin: m.is_admin ?? false });
+    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", is_admin: m.is_admin ?? false, is_super_admin: m.is_super_admin ?? false });
   };
 
   const save = async () => {
@@ -1756,6 +1760,11 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
       const isAdminVal = (targetIsCurrentUser && !form.is_admin && otherAdmins.length === 0)
         ? true  // 最後の管理者なので外させない
         : form.is_admin;
+      // 自分自身の is_super_admin を外せない保護（全社スーパー管理者版・同じロジック）
+      const otherSuperAdmins = members.filter(m => m.id !== editId && m.is_super_admin === true);
+      const isSuperAdminVal = (targetIsCurrentUser && !form.is_super_admin && otherSuperAdmins.length === 0 && currentUser.is_super_admin === true)
+        ? true  // 最後の全社スーパー管理者なので外させない
+        : form.is_super_admin;
 
       if (editId === "new") {
         await saveMember({
@@ -1767,12 +1776,13 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
           group_id: groupIdVal,
           color_bg: form.color_bg, color_text: form.color_text,
           is_admin: isAdminVal,
+          is_super_admin: isSuperAdminVal,
           is_deleted: false,
           created_at: now, updated_at: now, updated_by: currentUser.id,
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, is_admin: isAdminVal, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, is_admin: isAdminVal, is_super_admin: isSuperAdminVal, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
@@ -1816,7 +1826,17 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                     管理者
                   </span>
                 )}
+                {m.is_super_admin && (
+                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "#7c3aed", padding: "1px 6px", borderRadius: "3px" }}>
+                    全社スーパー管理者
+                  </span>
+                )}
               </div>
+              {groups.length > 1 && (
+                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                  {groups.find(g => g.id === m.group_id)?.name ?? "（部署未設定）"}
+                </div>
+              )}
               {m.email && (
                 <div style={{ fontSize: "10px", color: "var(--color-brand)" }}>{m.email}</div>
               )}
@@ -1893,6 +1913,28 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 </span>
               </label>
             </div>
+            {/* 全社スーパー管理者（自分がスーパー管理者、またはまだ誰もスーパー管理者になっていない場合のみ表示） */}
+            {(currentUser.is_super_admin === true || members.every(m => m.is_super_admin !== true)) && (
+              <div>
+                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={form.is_super_admin}
+                    onChange={e => setForm(f => ({ ...f, is_super_admin: e.target.checked }))}
+                    disabled={
+                      // 自分自身の全社スーパー管理者権限を外せない（他にスーパー管理者がいない場合）
+                      editId === currentUser.id && form.is_super_admin
+                        && members.filter(m => m.id !== editId && m.is_super_admin === true).length === 0
+                    }
+                    style={{ width: 14, height: 14, accentColor: "#7c3aed", cursor: "pointer" }}
+                  />
+                  <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                    （部署をまたいで全部署を横断管理できます。新規部署の作成もこの権限が必要です）
+                  </span>
+                </label>
+              </div>
+            )}
             <div>
               <FieldLabel>Teamsアカウント（任意）</FieldLabel>
               <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}
@@ -1953,12 +1995,21 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   const rawGroups   = useAppStore(s => s.groups);
   const rawMembers  = useAppStore(s => s.members);
   const saveGroup   = useAppStore(s => s.saveGroup);
+  const saveMember  = useAppStore(s => s.saveMember);
   const deleteGroup = useAppStore(s => s.deleteGroup);
   const groups  = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
   const members = useMemo(() => active(rawMembers), [rawMembers]);
+  const isSuperAdmin = currentUser.is_super_admin === true;
+
+  // super-admin は全部署、部署管理者は自分の所属部署のみ改名・削除可能
+  // （groups_update_admin RLSと同じ条件。合致しない場合は編集/削除アイコンを出さず、
+  //  RLSエラーで詰まる無駄なクリックを避ける）
+  const canManage = (g: Group) => isSuperAdmin || (currentUser.is_admin === true && g.id === currentUser.group_id);
 
   const [editId, setEditId] = useState<string | null>(null);
-  const [form, setForm] = useState({ name: "" });
+  const [form, setForm] = useState({
+    name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "",
+  });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -1967,13 +2018,13 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ name: "" });
+    setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
   };
 
   const openEdit = (g: Group) => {
     setEditId(g.id);
-    setForm({ name: g.name });
+    setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
   };
 
@@ -1982,14 +2033,35 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     const now = new Date().toISOString();
     try {
       if (editId === "new") {
+        const newGroupId = `grp-${Date.now()}`;
         await saveGroup({
-          id: `grp-${Date.now()}`,
+          id: newGroupId,
           name: form.name.trim(),
           is_deleted: false,
           created_at: now,
           updated_at: now,
           updated_by: currentUser.id,
         });
+        // 最初のメンバー（この部署の管理者）を作成。
+        // group_id は saveMember の自動注入（自分の所属部署）に頼らず、
+        // 新しく作った部署のIDを必ず明示的に渡す。
+        if (form.firstMemberName.trim()) {
+          const initials = form.firstMemberName.replace(/[\s　]+/g, "").slice(0, 2).toUpperCase();
+          const shortName = form.firstMemberShortName.trim() || form.firstMemberName.trim().split(/[\s　]/)[0];
+          await saveMember({
+            id: uuidv4(),
+            display_name: form.firstMemberName.trim(),
+            short_name: shortName,
+            initials,
+            teams_account: "",
+            email: form.firstMemberEmail.trim() || null,
+            group_id: newGroupId,
+            is_admin: true,
+            color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
+            is_deleted: false,
+            created_at: now, updated_at: now, updated_by: currentUser.id,
+          });
+        }
       } else {
         const existing = groups.find(g => g.id === editId);
         if (existing) {
@@ -2004,11 +2076,14 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
 
   const handleDelete = async (g: Group) => {
     const memberCount = members.filter(m => m.group_id === g.id).length;
-    if (memberCount > 0) {
+    if (memberCount > 0 && !isSuperAdmin) {
       await alertDialog(`このグループには ${memberCount} 名のメンバーがいます。\nメンバーのグループ変更後に削除してください。`);
       return;
     }
-    if (!await confirmDialog(`グループ「${g.name}」を削除しますか？`)) return;
+    const confirmMsg = memberCount > 0
+      ? `グループ「${g.name}」には ${memberCount} 名のメンバーがいますが、全社スーパー管理者として強制削除しますか？`
+      : `グループ「${g.name}」を削除しますか？`;
+    if (!await confirmDialog(confirmMsg)) return;
     try {
       await deleteGroup(g.id, currentUser.id);
     } catch (e) {
@@ -2019,15 +2094,42 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   return (
     <div style={{ maxWidth: "560px" }}>
       <SectionHeader title="グループ管理" action={
-        <button onClick={openAdd} style={primaryBtnStyle}>＋ 追加</button>
+        isSuperAdmin
+          ? <button onClick={openAdd} style={primaryBtnStyle}>＋ 部署を追加</button>
+          : undefined
       } />
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "10px" }}>
-        グループ単位でデータが隔離されます（マルチテナント）。メンバーは1グループに属します。
+        グループ（部署）単位でデータが隔離されます（マルチテナント）。メンバーは1グループに属します。
+        {!isSuperAdmin && "新規部署の作成は全社スーパー管理者のみ行えます。"}
       </div>
 
       {error && (
         <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginBottom: "8px" }}>
           {error}
+        </div>
+      )}
+
+      {isSuperAdmin && (
+        <div style={{ marginBottom: "16px" }}>
+          <SectionHeader title="全部署の概要" />
+          <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {groups.map(g => {
+              const groupMembers = members.filter(m => m.group_id === g.id);
+              const adminCount = groupMembers.filter(m => m.is_admin === true).length;
+              return (
+                <div key={g.id} style={{
+                  display: "flex", justifyContent: "space-between",
+                  padding: "6px 12px", fontSize: "11px",
+                  background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
+                }}>
+                  <span style={{ color: "var(--color-text-primary)" }}>{g.name}</span>
+                  <span style={{ color: "var(--color-text-tertiary)" }}>
+                    メンバー {groupMembers.length}名・管理者 {adminCount}名
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -2050,14 +2152,18 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
                   メンバー {memberCount}名 / ID: {g.id}
                 </div>
               </div>
-              <IconBtn onClick={() => openEdit(g)}>✏</IconBtn>
-              <IconBtn danger onClick={() => { void handleDelete(g); }}>✕</IconBtn>
+              {canManage(g) && (
+                <>
+                  <IconBtn onClick={() => openEdit(g)}>✏</IconBtn>
+                  <IconBtn danger onClick={() => { void handleDelete(g); }}>✕</IconBtn>
+                </>
+              )}
             </div>
           );
         })}
         {groups.length === 0 && (
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
-            グループがありません。「＋ 追加」から作成してください。
+            グループがありません。「＋ 部署を追加」から作成してください。
           </div>
         )}
       </div>
@@ -2068,7 +2174,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
-            {editId === "new" ? "グループを追加" : "グループを編集"}
+            {editId === "new" ? "部署を追加" : "グループを編集"}
           </div>
           <div>
             <FieldLabel>グループ名 *</FieldLabel>
@@ -2080,6 +2186,38 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               style={inputStyle}
             />
           </div>
+          {editId === "new" && (
+            <div style={{ marginTop: "10px" }}>
+              <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+                最初のメンバー（この部署の管理者・任意）
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                <input
+                  value={form.firstMemberName}
+                  onChange={e => setForm(f => ({ ...f, firstMemberName: e.target.value }))}
+                  placeholder="氏名（例：田中 一郎）"
+                  maxLength={50}
+                  style={inputStyle}
+                />
+                <input
+                  value={form.firstMemberShortName}
+                  onChange={e => setForm(f => ({ ...f, firstMemberShortName: e.target.value }))}
+                  placeholder="短縮名（未入力で姓を使用）"
+                  style={inputStyle}
+                />
+                <input
+                  type="email"
+                  value={form.firstMemberEmail}
+                  onChange={e => setForm(f => ({ ...f, firstMemberEmail: e.target.value }))}
+                  placeholder="ログイン用メールアドレス"
+                  style={inputStyle}
+                />
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+                入力すると、この部署の最初の管理者として作成されます（後からメンバータブでも追加可）。
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={() => { void save(); }} disabled={!form.name.trim()} style={{
               ...primaryBtnStyle,

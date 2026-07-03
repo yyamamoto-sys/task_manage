@@ -9,7 +9,7 @@
 // 詳細設計：docs/okr-cycle-design.md（Phase B 仕上げ）
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { currentQuarter } from "../../lib/date";
@@ -64,7 +64,7 @@ interface Props {
 export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props) {
   const rawKrs   = useAppStore(s => s.keyResults);
   const rawTfs   = useAppStore(s => s.taskForces);
-  const rawTasks = useAppStore(s => s.tasks);
+  const rawTasks = useAppStore(selectScopedTasks);
   const rawTodos = useAppStore(s => s.todos);
   const rawTtfs  = useAppStore(s => s.taskTaskForces);
   const rawMembers = useAppStore(s => s.members);

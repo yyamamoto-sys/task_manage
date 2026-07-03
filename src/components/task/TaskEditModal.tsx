@@ -4,7 +4,7 @@
 // 全フィールドを 600ms デバウンス自動保存。削除は確認ダイアログ付き論理削除。
 
 import { useState, useCallback, useMemo, useEffect, useRef } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -30,9 +30,9 @@ interface Props {
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props) {
-  const allTasks            = useAppStore(s => s.tasks);
+  const allTasks            = useAppStore(selectScopedTasks);
   const allMembers          = useAppStore(s => s.members);
-  const allProjects         = useAppStore(s => s.projects);
+  const allProjects         = useAppStore(selectScopedProjects);
   const allTaskForces       = useAppStore(s => s.taskForces);
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);

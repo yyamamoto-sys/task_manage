@@ -9,7 +9,7 @@
 // - ドラッグによる日程変更は将来実装（現時点はクリックで編集ダイアログ）
 
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
@@ -65,7 +65,7 @@ export function GanttView({
   mineOnly = false,
 }: Props) {
   // 【Phase 3 移行済み】個別 selector で必要な state のみを購読する。
-  const rawTasks      = useAppStore(s => s.tasks);
+  const rawTasks      = useAppStore(selectScopedTasks);
   const rawMembers    = useAppStore(s => s.members);
   const rawTodos      = useAppStore(s => s.todos);
   const rawMilestones = useAppStore(s => s.milestones);

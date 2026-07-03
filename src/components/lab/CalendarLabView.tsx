@@ -10,7 +10,7 @@
 // DOM 重複注入を防ぐため）。
 
 import { useMemo, useState } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { isAssignedTo } from "../../lib/taskMeta";
@@ -35,8 +35,8 @@ function toStr(d: Date): string {
 }
 
 export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
-  const rawTasks      = useAppStore(s => s.tasks);
-  const rawProjects   = useAppStore(s => s.projects);
+  const rawTasks      = useAppStore(selectScopedTasks);
+  const rawProjects   = useAppStore(selectScopedProjects);
   const rawMilestones = useAppStore(s => s.milestones);
 
   const projects    = useMemo(() => active(rawProjects), [rawProjects]);

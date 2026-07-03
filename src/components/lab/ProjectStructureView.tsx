@@ -7,7 +7,7 @@
 // メンバーのPJ追加・除外は saveProject 経由で DB にも反映する。
 
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
 import { formatErrorForUser } from "../../lib/errorMessage";
 
@@ -717,7 +717,7 @@ function LayerConnector({ upperRef, lowerRef, containerRef }: LayerConnectorProp
 // ===== Main Component =====
 
 export function ProjectStructureView({ onClose, currentUser }: Props) {
-  const allProjects = useAppStore(s => s.projects);
+  const allProjects = useAppStore(selectScopedProjects);
   const members = useAppStore(s => s.members);
   const saveProject = useAppStore(s => s.saveProject);
 

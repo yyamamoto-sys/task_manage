@@ -12,7 +12,7 @@
 // 紐づくKR名は画面表示はするが、AIには渡さない。
 
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member, Project, Milestone } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
@@ -38,7 +38,7 @@ const ANALYSIS_PHASES = [
 ];
 
 export function ProjectKarte({ project, currentUser }: { project: Project; currentUser: Member }) {
-  const rawTasks   = useAppStore(s => s.tasks);
+  const rawTasks   = useAppStore(selectScopedTasks);
   const rawMembers = useAppStore(s => s.members);
   const rawMs      = useAppStore(s => s.milestones);
   const rawTfs     = useAppStore(s => s.taskForces);

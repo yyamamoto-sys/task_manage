@@ -8,7 +8,7 @@
 // 詳細設計：docs/okr-cycle-design.md（Phase A）
 
 import { useState, useEffect, useMemo, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member, Quarter } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { formatMD, currentQuarter } from "../../lib/date";
@@ -54,7 +54,7 @@ interface Props {
 export function KrMeetingNotePanel({ onClose, currentUser, initialKrId, onKrChange }: Props) {
   const rawKrs   = useAppStore(s => s.keyResults);
   const rawTfs   = useAppStore(s => s.taskForces);
-  const rawTasks = useAppStore(s => s.tasks);
+  const rawTasks = useAppStore(selectScopedTasks);
   const rawTodos = useAppStore(s => s.todos);
   const krs = useMemo(() => active(rawKrs), [rawKrs]);
 

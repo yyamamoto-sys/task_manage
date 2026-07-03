@@ -7,7 +7,7 @@
 // ラボ機能例外ルール適用：PJ・タスク・メンバー情報をAIに渡す。
 
 import { useState, useRef, useMemo, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
@@ -80,8 +80,8 @@ type Step = "input" | "analyzing" | "review" | "applying" | "done";
 // ===== メインコンポーネント =====
 
 export function MeetingImportPanel({ onClose, currentUser, inline = false }: Props) {
-  const allProjects = useAppStore(s => s.projects);
-  const allTasks    = useAppStore(s => s.tasks);
+  const allProjects = useAppStore(selectScopedProjects);
+  const allTasks    = useAppStore(selectScopedTasks);
   const allMembers  = useAppStore(s => s.members);
   const saveTask    = useAppStore(s => s.saveTask);
   const saveProject = useAppStore(s => s.saveProject);

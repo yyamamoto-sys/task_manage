@@ -10,6 +10,8 @@
 -- (ai_usage_logs / kr_sessions / kr_declarations）を統合した完全版。
 -- 2026-07-02：マルチテナント分離（groups/group_id/RLS）・is_admin 自己昇格防止
 -- （migrations/20260702_fix_multitenancy_rls.sql）を反映。
+-- 2026-07-02c：全社スーパー管理者ロール（is_super_admin）・部署ガバナンス強化
+-- （migrations/20260702c_add_super_admin_and_department_governance.sql）を反映。
 --
 -- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
 -- 新規環境ではこのファイル一発で初期化できる。
@@ -51,6 +53,7 @@ CREATE TABLE IF NOT EXISTS members (
   teams_account text NOT NULL DEFAULT '',
   email         text,                       -- Supabase Auth メールとの自動マッチング用（migration 20260626）
   is_admin      boolean NOT NULL DEFAULT false,  -- migration 20260626_add_is_admin.sql
+  is_super_admin boolean NOT NULL DEFAULT false, -- migration 20260702c（部署をまたぐ全社ロール）
   group_id      text REFERENCES groups(id),      -- migration 20260626_add_multitenancy.sql
   notify_pref   text NOT NULL DEFAULT 'none' CHECK (notify_pref IN ('none','browser','teams')),
   color_bg      text NOT NULL,
@@ -65,6 +68,7 @@ CREATE TABLE IF NOT EXISTS members (
 -- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
 ALTER TABLE members ADD COLUMN IF NOT EXISTS email text;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT false;
+ALTER TABLE members ADD COLUMN IF NOT EXISTS is_super_admin boolean NOT NULL DEFAULT false;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
 UPDATE members SET group_id = 'grp-egg' WHERE group_id IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_unique
@@ -536,39 +540,58 @@ AS $fn_is_admin$
   LIMIT 1
 $fn_is_admin$;
 
--- members / projects / tasks：グループ一致のみ許可（NULL 抜け穴を作らない）
+-- 全社スーパー管理者判定（部署非依存。migration 20260702c）
+CREATE OR REPLACE FUNCTION current_member_is_super_admin()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_is_super_admin$
+  SELECT COALESCE(is_super_admin, false) FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$fn_is_super_admin$;
+
+-- members / projects / tasks：グループ一致、またはsuper-adminなら部署をまたいで許可
 DROP POLICY IF EXISTS "authenticated full access" ON members;
 DROP POLICY IF EXISTS "members_group" ON members;
 CREATE POLICY "members_group" ON members FOR ALL TO authenticated
-  USING (group_id = current_member_group_id());
+  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
 
 DROP POLICY IF EXISTS "authenticated full access" ON projects;
 DROP POLICY IF EXISTS "projects_group" ON projects;
 CREATE POLICY "projects_group" ON projects FOR ALL TO authenticated
-  USING (group_id = current_member_group_id());
+  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
 
 DROP POLICY IF EXISTS "authenticated full access" ON tasks;
 DROP POLICY IF EXISTS "tasks_group" ON tasks;
 CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
-  USING (group_id = current_member_group_id());
+  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
 
--- groups：参照は全員可、作成・変更・削除は管理者のみ
+-- groups：参照は全員可。新規部署の作成はsuper-admin限定、改名・編集はsuper-admin
+-- または自分の部署のadminのみ、物理DELETE（アプリは未使用）はsuper-admin限定。
 DROP POLICY IF EXISTS "authenticated full access" ON groups;
 DROP POLICY IF EXISTS "groups_auth" ON groups;
 DROP POLICY IF EXISTS "groups_select" ON groups;
 CREATE POLICY "groups_select" ON groups FOR SELECT TO authenticated USING (true);
 DROP POLICY IF EXISTS "groups_insert_admin" ON groups;
 CREATE POLICY "groups_insert_admin" ON groups FOR INSERT TO authenticated
-  WITH CHECK (current_member_is_admin());
+  WITH CHECK (current_member_is_super_admin());
 DROP POLICY IF EXISTS "groups_update_admin" ON groups;
 CREATE POLICY "groups_update_admin" ON groups FOR UPDATE TO authenticated
-  USING (current_member_is_admin());
+  USING (
+    current_member_is_super_admin()
+    OR (current_member_is_admin() AND id = current_member_group_id())
+  );
 DROP POLICY IF EXISTS "groups_delete_admin" ON groups;
 CREATE POLICY "groups_delete_admin" ON groups FOR DELETE TO authenticated
-  USING (current_member_is_admin());
+  USING (current_member_is_super_admin());
 
--- members：is_admin / group_id の自己昇格防止（列単位のガードは RLS では書けないためトリガーで実装）
--- そのグループに is_admin=true が1人もいない間（ブートストラップ）は自己昇格を許可する。
+-- members：is_admin / group_id / is_super_admin の自己昇格防止
+-- （列単位のガードは RLS では書けないためトリガーで実装。INSERT/UPDATE 両方に適用
+--  ＝INSERT時に他人のメールアドレスで先回りis_admin/is_super_admin行を作られる
+--  穴を防ぐ。migration 20260702c で INSERT にも拡張）
 CREATE OR REPLACE FUNCTION guard_member_privilege_columns()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -576,27 +599,70 @@ SECURITY DEFINER
 SET search_path = ''
 AS $fn_guard$
 DECLARE
-  admin_count integer;
+  dept_admin_count    integer;
+  super_admin_count   integer;
+  acting_super_admin  boolean;
+  will_be_super_admin boolean;
+  old_is_admin        boolean;
+  old_is_super_admin  boolean;
+  old_group_id        text;
+  check_group_id      text;
 BEGIN
-  IF NEW.is_admin IS DISTINCT FROM OLD.is_admin
-     OR NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+  IF TG_OP = 'INSERT' THEN
+    old_is_admin       := false;
+    old_is_super_admin := false;
+    old_group_id       := NEW.group_id;
+    check_group_id     := NEW.group_id;
+  ELSE
+    old_is_admin       := OLD.is_admin;
+    old_is_super_admin := OLD.is_super_admin;
+    old_group_id       := OLD.group_id;
+    check_group_id     := OLD.group_id;
+  END IF;
 
-    IF public.current_member_is_admin() THEN
-      RETURN NEW;
+  acting_super_admin := public.current_member_is_super_admin();
+
+  -- フェーズ1: is_super_admin（全社ロール。他人の代理昇格は不可、自分自身のみブートストラップ可）
+  IF NEW.is_super_admin IS DISTINCT FROM old_is_super_admin THEN
+    IF acting_super_admin THEN
+      NULL;
+    ELSE
+      SELECT count(*) INTO super_admin_count
+      FROM public.members
+      WHERE is_super_admin = true AND is_deleted = false;
+
+      IF super_admin_count = 0 AND NEW.email = auth.email() THEN
+        NULL;
+      ELSE
+        NEW.is_super_admin := old_is_super_admin;
+      END IF;
     END IF;
+  END IF;
 
-    SELECT count(*) INTO admin_count
-    FROM public.members
-    WHERE group_id = OLD.group_id
-      AND is_admin = true
-      AND is_deleted = false;
+  will_be_super_admin := NEW.is_super_admin;
 
-    IF admin_count = 0 THEN
-      RETURN NEW; -- ブートストラップ中は許可（クライアント側ロジックと整合）
+  -- フェーズ2: is_admin / group_id（部署内権限・所属）
+  IF NEW.is_admin IS DISTINCT FROM old_is_admin
+     OR NEW.group_id IS DISTINCT FROM old_group_id THEN
+
+    IF acting_super_admin OR will_be_super_admin THEN
+      NULL; -- super-admin（既存 or フェーズ1で自己昇格した本人）は自由に変更可
+    ELSIF public.current_member_is_admin() THEN
+      NULL; -- 部署管理者は変更可（部署越境はRLSが別途ブロック）
+    ELSE
+      SELECT count(*) INTO dept_admin_count
+      FROM public.members
+      WHERE group_id = check_group_id
+        AND is_admin = true
+        AND is_deleted = false;
+
+      IF dept_admin_count = 0 THEN
+        NULL; -- 部署ブートストラップ：その部署にis_admin=trueが1人もいなければ許可
+      ELSE
+        NEW.is_admin  := old_is_admin;
+        NEW.group_id  := old_group_id;
+      END IF;
     END IF;
-
-    NEW.is_admin := OLD.is_admin;
-    NEW.group_id := OLD.group_id;
   END IF;
 
   RETURN NEW;
@@ -605,8 +671,46 @@ $fn_guard$;
 
 DROP TRIGGER IF EXISTS trg_members_guard_privilege ON members;
 CREATE TRIGGER trg_members_guard_privilege
-  BEFORE UPDATE ON members
+  BEFORE INSERT OR UPDATE ON members
   FOR EACH ROW EXECUTE FUNCTION guard_member_privilege_columns();
+
+-- groups：非空の部署はsuper-admin以外は論理削除できない（クライアント側の
+-- memberCount>0チェックだけだとAPI直叩きで回避できるため、DB側にも安全装置を置く）
+CREATE OR REPLACE FUNCTION guard_group_deletion()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_guard_group_del$
+DECLARE
+  active_member_count integer;
+BEGIN
+  IF NEW.is_deleted = true AND OLD.is_deleted = false THEN
+    IF public.current_member_is_super_admin() THEN
+      RETURN NEW; -- super-adminは非空の部署でも強制削除可（統廃合用途）
+    END IF;
+
+    SELECT count(*) INTO active_member_count
+    FROM public.members
+    WHERE group_id = OLD.id
+      AND is_deleted = false;
+
+    IF active_member_count > 0 THEN
+      RAISE EXCEPTION
+        'このグループには % 名のアクティブなメンバーがいるため削除できません（全社スーパー管理者のみ強制削除可）',
+        active_member_count
+        USING ERRCODE = 'check_violation';
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$fn_guard_group_del$;
+
+DROP TRIGGER IF EXISTS trg_groups_guard_deletion ON groups;
+CREATE TRIGGER trg_groups_guard_deletion
+  BEFORE UPDATE ON groups
+  FOR EACH ROW EXECUTE FUNCTION guard_group_deletion();
 
 -- ============================================================
 -- インデックス

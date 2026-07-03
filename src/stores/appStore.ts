@@ -978,3 +978,20 @@ function upsertByKeys<T>(
   // INSERT/UPDATE：既に存在すれば no-op、なければ追加
   return list.some(matches) ? list : [...list, row as unknown as T];
 }
+
+// ============================================================
+// 全社スーパー管理者用スコープ絞り込み selector
+//
+// 【設計意図】RLSがsuper-adminに全部署のmembers/projects/tasksを返すようになった
+// ため（migration 20260702c）、s.tasks / s.projects を素で購読しているカンバン・
+// ガント・リスト・ダッシュボード等の画面は、super-adminログイン時に全部署の
+// データが混ざって表示されてしまう。currentGroupId（ログイン時に自分の所属部署
+// から設定される・切替UIはまだ無い）で自分のホーム部署だけに絞り込む。
+// 非super-adminには実質ノーオペ（元々RLSで自部署にしか絞られていないため
+// currentGroupId と必ず一致する）。
+// ============================================================
+export const selectScopedTasks = (s: AppState): Task[] =>
+  s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId);
+
+export const selectScopedProjects = (s: AppState): Project[] =>
+  s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId);

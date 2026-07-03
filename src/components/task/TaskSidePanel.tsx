@@ -4,7 +4,7 @@
 // モバイルは呼び出し側で TaskEditModal を出す（このコンポーネントは PC・タブレット向け）。
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
@@ -40,9 +40,9 @@ type SidebarForm = {
 };
 
 export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
-  const allTasks            = useAppStore(s => s.tasks);
+  const allTasks            = useAppStore(selectScopedTasks);
   const allMembers          = useAppStore(s => s.members);
-  const allProjects         = useAppStore(s => s.projects);
+  const allProjects         = useAppStore(selectScopedProjects);
   const allTaskForces       = useAppStore(s => s.taskForces);
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
