@@ -18,6 +18,7 @@ import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS, active } from "../../lib/localData/localStore";
+import { HelpButton } from "../guide/HelpButton";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
@@ -2193,7 +2194,10 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             />
           </div>
           <div style={{ marginTop: "10px" }}>
-            <FieldLabel>Teams Webhook URL（任意）</FieldLabel>
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <FieldLabel>Teams Webhook URL（任意）</FieldLabel>
+              <HelpButton modeKey="admin.groups-webhook" title="Teams通知チャンネルの設定方法を開く" />
+            </div>
             <input
               value={form.teamsWebhookUrl}
               onChange={e => setForm(f => ({ ...f, teamsWebhookUrl: e.target.value }))}
