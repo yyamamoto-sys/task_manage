@@ -17,8 +17,9 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo } from "../../lib/taskMeta";
+import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER,
@@ -840,7 +841,6 @@ export function GanttView({
                       {!isCollapsed && orderedTasks.map(({ task, depth, childCount }) => {
                         // 親タスクが折りたたまれている子はスキップ
                         if (depth > 0 && collapsed[task.parent_task_id!]) return null;
-                        const m = memberById.get(task.assignee_member_id);
                         const isChild = depth > 0;
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
@@ -899,16 +899,14 @@ export function GanttView({
                                 子{childCount}
                               </span>
                             )}
-                            {m && (
-                              <div style={{
-                                width: 16, height: 16, borderRadius: "50%",
-                                background: m.color_bg, color: m.color_text,
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: "8px", fontWeight: "600", flexShrink: 0,
-                              }}>
-                                {m.initials.slice(0, 1)}
-                              </div>
-                            )}
+                            {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
+                            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                              <InlineEditAssignee
+                                assigneeIds={getAssigneeIds(task)}
+                                members={members}
+                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
+                              />
+                            </div>
                           </div>
                         );
                       })}
@@ -936,7 +934,6 @@ export function GanttView({
                         </span>
                       </div>
                       {!isCollapsed && sortedTasks.map(task => {
-                        const m = memberById.get(task.assignee_member_id);
                         return (
                           <div key={task.id} onClick={() => setEditingTaskId(task.id)}
                             onMouseEnter={() => setHoveredTaskId(task.id)}
@@ -954,11 +951,14 @@ export function GanttView({
                             <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
                               {task.name}
                             </span>
-                            {m && (
-                              <div style={{ width: 16, height: 16, borderRadius: "50%", background: m.color_bg, color: m.color_text, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", fontWeight: "600", flexShrink: 0 }}>
-                                {m.initials.slice(0, 1)}
-                              </div>
-                            )}
+                            {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
+                            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+                              <InlineEditAssignee
+                                assigneeIds={getAssigneeIds(task)}
+                                members={members}
+                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
+                              />
+                            </div>
                           </div>
                         );
                       })}
