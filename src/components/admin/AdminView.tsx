@@ -7,6 +7,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
+import { supabase } from "../../lib/supabase/client";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -2012,10 +2013,37 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const [templateDownloading, setTemplateDownloading] = useState(false);
 
   useEffect(() => {
     onDirtyChange(editId !== null);
   }, [editId, onDirtyChange]);
+
+  // Power Automateフローのテンプレート（.zip）をダウンロードする。
+  // ログイン必須のSupabase Storage（admin-templatesバケット）から取得する
+  // （Viteのpublic/直下だと未ログインでも取得できる公開URLになってしまうため避けた）。
+  const downloadTemplate = async () => {
+    setTemplateDownloading(true);
+    setError(null);
+    try {
+      const { data, error: dlError } = await supabase.storage
+        .from("admin-templates")
+        .download("teams-webhook-flow-template.zip");
+      if (dlError) throw dlError;
+      const url = URL.createObjectURL(data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "teams-webhook-flow-template.zip";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(formatErrorForUser("テンプレートのダウンロードに失敗しました", e));
+    } finally {
+      setTemplateDownloading(false);
+    }
+  };
 
   const openAdd = () => {
     setEditId("new");
@@ -2208,6 +2236,21 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               週次の期限通知（毎週月曜）をこの部署専用のTeamsチャンネルへ送る場合に設定します。
               未設定の場合は全社共通のチャンネルにフォールバックします。
             </div>
+            <button
+              type="button"
+              onClick={() => { void downloadTemplate(); }}
+              disabled={templateDownloading}
+              style={{
+                marginTop: "8px", display: "flex", alignItems: "center", gap: "5px",
+                padding: "5px 10px", fontSize: "11px", fontWeight: 500,
+                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                background: "var(--color-bg-secondary)", color: "var(--color-text-secondary)",
+                cursor: templateDownloading ? "default" : "pointer",
+                opacity: templateDownloading ? 0.6 : 1,
+              }}
+            >
+              ⬇ {templateDownloading ? "ダウンロード中…" : "Power Automate用テンプレートをダウンロード"}
+            </button>
           </div>
           {editId === "new" && (
             <div style={{ marginTop: "10px" }}>
