@@ -131,6 +131,43 @@
     color: var(--white-dim);
   }
 
+  /* ─────────── TOC NAV ─────────── */
+  .toc-nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(11, 18, 32, 0.92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--border);
+  }
+  .toc-inner {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 10px 40px;
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    overflow-x: auto;
+  }
+  .toc-inner a {
+    font-size: 12px;
+    color: var(--white-dim);
+    text-decoration: none;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    white-space: nowrap;
+    transition: all 0.15s;
+    font-family: 'Noto Sans JP', sans-serif;
+  }
+  .toc-inner a:hover, .toc-inner a.active {
+    color: var(--white);
+    border-color: var(--border-bright);
+    background: rgba(124, 92, 191, 0.15);
+  }
+  @media print { .toc-nav { display: none; } }
+
   /* ─────────── LAYOUT ─────────── */
   .page { max-width: 960px; margin: 0 auto; padding: 0 40px 80px; }
 
@@ -645,7 +682,8 @@
     <h1>グループ計画管理アプリ<br>技術構造ガイド</h1>
     <p class="hero-subtitle">
       チームのプロジェクト・タスクをリアルタイムで共有し、AIと対話しながら意思決定できるWebアプリの<br>
-      仕組みと技術選定を、エンジニア以外の方にも伝わるよう整理したドキュメントです。
+      仕組み・開発体制・引継ぎに関わる情報を、エンジニア以外の方にも伝わるよう整理したドキュメントです。<br>
+      会議に参加しなくても、これ1本で全体像がつかめることを目指しています。
     </p>
     <div class="hero-meta">
       <div class="meta-item">
@@ -654,20 +692,37 @@
       </div>
       <div class="meta-item">
         <span class="meta-label">対象</span>
-        <span class="meta-value">ダッシュボード開発検討チーム</span>
+        <span class="meta-value">後任者・関係者向け引継ぎ参考資料</span>
       </div>
       <div class="meta-item">
         <span class="meta-label">更新</span>
-        <span class="meta-value">2026年6月</span>
+        <span class="meta-value">2026年7月</span>
       </div>
     </div>
   </div>
 </header>
 
+<nav class="toc-nav">
+  <div class="toc-inner">
+    <a href="#sec-01">01 概要</a>
+    <a href="#sec-02">02 技術スタック</a>
+    <a href="#sec-03">03 アーキテクチャ</a>
+    <a href="#sec-04">04 データフロー</a>
+    <a href="#sec-05">05 主な機能</a>
+    <a href="#sec-06">06 コスト</a>
+    <a href="#sec-07">07 作り方</a>
+    <a href="#sec-08">08 部署とロール</a>
+    <a href="#sec-09">09 開発体制</a>
+    <a href="#sec-10">10 アカウント</a>
+    <a href="#sec-11">11 今後の課題</a>
+    <a href="#sec-12">12 資料の地図</a>
+  </div>
+</nav>
+
 <main class="page">
 
   <!-- ═══════════ 1. OVERVIEW ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-01">
     <div class="section-header">
       <span class="section-num">01</span>
       <h2 class="section-title">アプリ概要</h2>
@@ -693,7 +748,7 @@
   </section>
 
   <!-- ═══════════ 2. TECH STACK ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-02">
     <div class="section-header">
       <span class="section-num">02</span>
       <h2 class="section-title">技術スタック</h2>
@@ -748,7 +803,7 @@
   </section>
 
   <!-- ═══════════ 3. ARCHITECTURE ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-03">
     <div class="section-header">
       <span class="section-num">03</span>
       <h2 class="section-title">全体アーキテクチャ</h2>
@@ -910,7 +965,7 @@
   </section>
 
   <!-- ═══════════ 4. DATA FLOWS ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-04">
     <div class="section-header">
       <span class="section-num">04</span>
       <h2 class="section-title">データフロー — 3つのシナリオ</h2>
@@ -1077,7 +1132,7 @@
   </section>
 
   <!-- ═══════════ 5. FEATURES ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-05">
     <div class="section-header">
       <span class="section-num">05</span>
       <h2 class="section-title">主な機能</h2>
@@ -1126,7 +1181,7 @@
   </section>
 
   <!-- ═══════════ 6. COST ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-06">
     <div class="section-header">
       <span class="section-num">06</span>
       <h2 class="section-title">運用コスト感（概算・参考値）</h2>
@@ -1174,7 +1229,7 @@
   </section>
 
   <!-- ═══════════ 7. HOW TO BUILD ═══════════ -->
-  <section class="section">
+  <section class="section" id="sec-07">
     <div class="section-header">
       <span class="section-num">07</span>
       <h2 class="section-title">同様のアプリを作るには</h2>
@@ -1215,11 +1270,234 @@
 
   </section>
 
+  <!-- ═══════════ 8. MULTITENANCY ═══════════ -->
+  <section class="section" id="sec-08">
+    <div class="section-header">
+      <span class="section-num">08</span>
+      <h2 class="section-title">部署とロール（マルチテナンシー）</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="overview-card">
+      <p>
+        2026年6月末から、<strong>複数の部署（グループ）が同じアプリを使いながら、お互いのデータは見えない</strong>
+        仕組みを導入しました。たとえるなら、同じ建物（アプリ）の中に部署ごとの個室があり、
+        自分の部署の部屋だけが見える状態です。既存のデータはすべて「EGG」という部署に割り当て済みです。
+      </p>
+    </div>
+
+    <div class="stack-grid" style="margin-top:20px;">
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--cyan);"></div>
+        <div class="stack-role">Role</div>
+        <div class="stack-name">部署管理者</div>
+        <div class="stack-desc">自分の部署内のメンバー・データを管理できる。部署ごとに最低1人必要。</div>
+      </div>
+      <div class="stack-card">
+        <div class="stack-card-accent" style="background: var(--violet);"></div>
+        <div class="stack-role">Role</div>
+        <div class="stack-name">全社スーパー管理者</div>
+        <div class="stack-desc">部署をまたいで全データにアクセスできる。新しい部署の追加・削除もこの権限のみ可能。</div>
+      </div>
+    </div>
+
+    <div class="notice-box" style="margin-top:20px;">
+      <div class="notice-box-title">⚠ 現時点で部署分離されていない機能</div>
+      <ul class="notice-list">
+        <li>OKR機能（目標・KR・タスクフォース・ToDo）はまだ部署をまたいで共有されている状態です</li>
+        <li>新しい部署を追加する場合、当面はプロジェクト・タスク管理機能のみを使ってもらってください</li>
+        <li>技術的な詳細は <code>CLAUDE.md</code> Section 1.6 を参照してください</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 9. DEVELOPMENT STRUCTURE ═══════════ -->
+  <section class="section" id="sec-09">
+    <div class="section-header">
+      <span class="section-num">09</span>
+      <h2 class="section-title">開発体制</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="overview-card">
+      <p>
+        このアプリは<strong>専任のエンジニアチームがいるわけではなく</strong>、DX推進担当が
+        <strong>「バイブコーディング」</strong>（AIと対話しながらコードを書く開発スタイル）でゼロから
+        内製しています。使っているAIツールは<strong>Claude Code</strong>（このドキュメントを作っているのと
+        同じAI）です。
+      </p>
+    </div>
+
+    <div class="flow-section" style="margin-top:24px;">
+      <div class="flow-item">
+        <div class="flow-header">
+          <span class="flow-badge" style="background:rgba(232,197,106,0.2);color:#e8c56a;border:1px solid rgba(232,197,106,0.4);">開発の流れ</span>
+          <span class="flow-title">「思いつき」から「本番反映」まで</span>
+        </div>
+        <div class="flow-body">
+          <div class="flow-steps">
+            <div class="flow-step">
+              <div class="flow-step-left"><div class="flow-step-circle" style="background:rgba(232,197,106,0.3);color:#e8c56a;">1</div><div class="flow-step-line"></div></div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">「こうしたい」をClaude Codeに伝える</div>
+                <div class="flow-step-note">日本語の会話で要望を伝える。設計や実装方法はAIが提案する</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left"><div class="flow-step-circle" style="background:rgba(232,197,106,0.3);color:#e8c56a;">2</div><div class="flow-step-line"></div></div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">CLAUDE.md（設計書）を確認しながら実装</div>
+                <div class="flow-step-note">過去の設計判断・禁止事項・データ構造がまとめられた「AIへの指示書」。矛盾する実装をしないためのガードレール</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left"><div class="flow-step-circle" style="background:rgba(232,197,106,0.3);color:#e8c56a;">3</div><div class="flow-step-line"></div></div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">自動テストで安全確認</div>
+                <div class="flow-step-note">型チェック（TypeScript）・単体テスト（vitest、150件超）・コード品質チェック（ESLint）を毎回実行してから確定</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-step-left"><div class="flow-step-circle" style="background:rgba(232,197,106,0.3);color:#e8c56a;">4</div></div>
+              <div class="flow-step-content">
+                <div class="flow-step-name">GitHubへpush → Vercelが自動で本番反映</div>
+                <div class="flow-step-note">人がサーバー作業をすることはない。コードを確定した瞬間に世界中に配信される</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="notice-box" style="margin-top:20px;">
+      <div class="notice-box-title">📖 CLAUDE.mdについて</div>
+      <ul class="notice-list">
+        <li>リポジトリ直下にある設計書。「なぜこの仕様にしたか」「触ってはいけないルール」が全部書いてある</li>
+        <li>更新のたびにバージョン番号（v2.20など）を上げて変更履歴を記録している</li>
+        <li>後任のClaude Codeも、コードを変更する前に必ずこのファイルを読む決まりになっている</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 10. ACCOUNTS ═══════════ -->
+  <section class="section" id="sec-10">
+    <div class="section-header">
+      <span class="section-num">10</span>
+      <h2 class="section-title">アカウント・サービス一覧</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div style="background:var(--navy-800);border:1px solid var(--border);border-radius:14px;overflow:hidden;">
+      <table class="cost-table">
+        <thead><tr><th>サービス</th><th>役割</th><th>現状</th></tr></thead>
+        <tbody>
+          <tr><td><span class="cost-item-name">GitHub</span></td><td style="color:var(--white-muted);font-size:13px;">コード保管・変更履歴</td><td style="color:var(--white-muted);font-size:13px;">個人アカウント（共有アカウントへ移管予定）</td></tr>
+          <tr><td><span class="cost-item-name">Vercel</span></td><td style="color:var(--white-muted);font-size:13px;">アプリのホスティング・自動デプロイ</td><td style="color:var(--white-muted);font-size:13px;">個人アカウント（共有アカウントへ移管予定）</td></tr>
+          <tr><td><span class="cost-item-name">Supabase</span></td><td style="color:var(--white-muted);font-size:13px;">データベース・認証・AI中継</td><td style="color:var(--white-muted);font-size:13px;">個人アカウント（共有アカウントへ移管予定）</td></tr>
+          <tr><td><span class="cost-item-name">Anthropic（Claude API）</span></td><td style="color:var(--white-muted);font-size:13px;">AI機能の呼び出し先</td><td style="color:var(--white-muted);font-size:13px;">個人アカウント（共有アカウントへ移管予定）</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notice-box" style="margin-top:20px;">
+      <div class="notice-box-title">🔑 APIキー・パスワードについて</div>
+      <ul class="notice-list">
+        <li>実際のキーの値はこのドキュメントを含め、どのファイルにも書きません</li>
+        <li>キーの実体は各サービスのダッシュボード（環境変数設定画面）にあります</li>
+        <li>詳しい移管手順・チェックリストは <code>docs/dev/handover-checklist.md</code> を参照してください</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 11. OPEN ISSUES ═══════════ -->
+  <section class="section" id="sec-11">
+    <div class="section-header">
+      <span class="section-num">11</span>
+      <h2 class="section-title">今後の開発テーマ・既知の課題</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div class="feature-grid">
+      <div class="feature-card">
+        <span class="feature-icon">🏢</span>
+        <div class="feature-name">OKR機能の部署分離</div>
+        <div class="feature-desc">目標・KR・タスクフォース等はまだ部署をまたいで共有されている。全社展開が進む前に対応が必要</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🔒</span>
+        <div class="feature-name">RLSのさらなる強化</div>
+        <div class="feature-desc">匿名アクセスの権限見直し・KR代表ロール別のアクセス制御</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">♿</span>
+        <div class="feature-name">アクセシビリティ Phase 2</div>
+        <div class="feature-desc">オーバーレイ背景のキーボード操作対応</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🏷️</span>
+        <div class="feature-name">タグ機能の拡張（Tag-2/3）</div>
+        <div class="feature-desc">現在は基本のタグ機能のみ実装済み</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">📄</span>
+        <div class="feature-name">PDF出力</div>
+        <div class="feature-desc">CSV・Excelは実装済み。PDFは実装方式を検討中</div>
+      </div>
+      <div class="feature-card">
+        <span class="feature-icon">🌐</span>
+        <div class="feature-name">英語化（i18n）</div>
+        <div class="feature-desc">土台とログイン画面のみ対応済み。他画面は順次対応予定</div>
+      </div>
+    </div>
+
+    <div class="notice-box" style="margin-top:20px;">
+      <div class="notice-box-title">📋 詳しい最新状況</div>
+      <ul class="notice-list">
+        <li>正確な最新状況は <code>CLAUDE.md</code> の「未解決の設計論点」（Section 9）とバージョン履歴を確認してください</li>
+        <li>このドキュメントの一覧は作成時点のスナップショットです。日々更新されるためズレることがあります</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═══════════ 12. DOCUMENT MAP ═══════════ -->
+  <section class="section" id="sec-12">
+    <div class="section-header">
+      <span class="section-num">12</span>
+      <h2 class="section-title">もっと詳しく知りたいときは（資料の地図）</h2>
+      <div class="section-line"></div>
+    </div>
+
+    <div style="background:var(--navy-800);border:1px solid var(--border);border-radius:14px;overflow:hidden;">
+      <table class="cost-table">
+        <thead><tr><th>知りたいこと</th><th>読む場所</th></tr></thead>
+        <tbody>
+          <tr><td style="color:var(--white);">アプリの使い方</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/guides/</code>（アプリ内「📖 ガイド」からも閲覧可）</td></tr>
+          <tr><td style="color:var(--white);">設計・仕様の詳細</td><td style="color:var(--white-muted);font-size:13px;"><code>CLAUDE.md</code>（リポジトリ直下）</td></tr>
+          <tr><td style="color:var(--white);">データ構造</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/data-model.md</code></td></tr>
+          <tr><td style="color:var(--white);">コードの全体構成</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/module-map.md</code></td></tr>
+          <tr><td style="color:var(--white);">DBマイグレーションの運用</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/supabase-migrations.md</code></td></tr>
+          <tr><td style="color:var(--white);">障害が起きたときの対処</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/runbook.md</code></td></tr>
+          <tr><td style="color:var(--white);">引継ぎの手順・チェックリスト</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/handover-checklist.md</code></td></tr>
+          <tr><td style="color:var(--white);">期限通知の仕組み</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/deadline-notifications.md</code></td></tr>
+          <tr><td style="color:var(--white);">英語化の計画</td><td style="color:var(--white-muted);font-size:13px;"><code>docs/dev/i18n-plan.md</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="notice-box" style="margin-top:20px;">
+      <div class="notice-box-title">🆘 それでも分からないとき</div>
+      <ul class="notice-list">
+        <li>後任者のClaude Codeにこのリポジトリを開いた状態で質問すれば、CLAUDE.mdやdocsを読んで答えてくれます</li>
+        <li>それでも解決しない場合は前の担当者（山本 勇気）またはEGG全体統括（藤本 阿可理さん）に連絡してください</li>
+      </ul>
+    </div>
+  </section>
+
 </main>
 
 <footer class="footer">
   <div style="color:var(--white-muted);margin-bottom:6px;">グループ計画管理アプリ — 技術構造ガイド</div>
-  <div style="color:rgba(122,138,170,0.5);">作成：アミタホールディングス DX推進 / 2026年6月 / 社内資料</div>
+  <div style="color:rgba(122,138,170,0.5);">作成：アミタホールディングス DX推進 / 初版2026年6月・引継ぎ資料として2026年7月拡充 / 社内資料</div>
 </footer>
 
 <script>
@@ -1237,6 +1515,19 @@
     s.style.animationPlayState = 'paused';
     io.observe(s);
   });
+
+  // TOCナビの現在地ハイライト
+  const tocLinks = document.querySelectorAll('.toc-inner a');
+  const navObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        tocLinks.forEach(l => l.classList.remove('active'));
+        const active = document.querySelector(`.toc-inner a[href="#${entry.target.id}"]`);
+        if (active) active.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -70% 0px' });
+  document.querySelectorAll('main [id^="sec-"]').forEach(s => navObserver.observe(s));
 </script>
 
 </body>
