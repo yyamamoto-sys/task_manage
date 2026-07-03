@@ -989,9 +989,27 @@ function upsertByKeys<T>(
 // から設定される・切替UIはまだ無い）で自分のホーム部署だけに絞り込む。
 // 非super-adminには実質ノーオペ（元々RLSで自部署にしか絞られていないため
 // currentGroupId と必ず一致する）。
+//
+// 【重要】zustand v5 は useStore(selector) の戻り値を Object.is で比較する
+// （React の useSyncExternalStore 経由）。.filter() は呼ぶたびに新しい配列を
+// 返すため、メモ化しないと store の状態が変わっていなくても毎回「変化した」と
+// 判定され、無限レンダリングループ（React error #185: Maximum update depth
+// exceeded）でアプリ全体がクラッシュする。同一の state オブジェクト（zustand は
+// set() が起きない限り参照を変えない）に対しては同じ配列参照を返すようキャッシュする。
 // ============================================================
-export const selectScopedTasks = (s: AppState): Task[] =>
-  s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId);
+function memoizeScopedSelector<T>(filterFn: (s: AppState) => T[]): (s: AppState) => T[] {
+  let lastState: AppState | undefined;
+  let lastResult: T[] | undefined;
+  return (s: AppState) => {
+    if (s === lastState && lastResult) return lastResult;
+    lastState = s;
+    lastResult = filterFn(s);
+    return lastResult;
+  };
+}
 
-export const selectScopedProjects = (s: AppState): Project[] =>
-  s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId);
+export const selectScopedTasks = memoizeScopedSelector((s: AppState): Task[] =>
+  s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId));
+
+export const selectScopedProjects = memoizeScopedSelector((s: AppState): Project[] =>
+  s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId));
