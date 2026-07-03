@@ -25,7 +25,7 @@ import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
 import { tfsForKr } from "../../lib/okr/tfQuarter";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { Avatar } from "../auth/UserSelectScreen";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
 import { HelpButton } from "../guide/HelpButton";
@@ -70,6 +70,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawTodos   = useAppStore(s => s.todos);
   const rawMs      = useAppStore(s => s.milestones);
   const saveMember = useAppStore(s => s.saveMember);
+  const saveTask   = useAppStore(s => s.saveTask);
   const isMobile = useIsMobile();
 
   // ===== 全PJ AI分析 =====
@@ -840,7 +841,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               <EmptyState>期限超過・滞留タスクはありません ✓</EmptyState>
             )}
             {alertTasks.map(task => {
-              const m = members.find(mb => mb.id === task.assignee_member_id);
               const pj = projects.find(p => p.id === task.project_id);
               const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
               const isToday = diff === 0;
@@ -848,7 +848,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 <TaskRow
                   key={task.id}
                   task={task}
-                  member={m}
+                  members={members}
+                  saveTask={saveTask}
                   project={pj}
                   onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                   badge={
@@ -873,7 +874,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   滞留タスク（{stagnantDays}日以上進捗なし）
                 </div>
                 {stagnantTasks.map(task => {
-                  const m = members.find(mb => mb.id === task.assignee_member_id);
                   const pj = projects.find(p => p.id === task.project_id);
                   const diffMs = Date.now() - new Date(task.updated_at ?? Date.now()).getTime();
                   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
@@ -881,7 +881,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                     <TaskRow
                       key={task.id}
                       task={task}
-                      member={m}
+                      members={members}
+                      saveTask={saveTask}
                       project={pj}
                       onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                       badge={
@@ -908,14 +909,14 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               <EmptyState>今週期限のタスクはありません</EmptyState>
             )}
             {thisWeekTasks.map(task => {
-              const m = members.find(mb => mb.id === task.assignee_member_id);
               const pj = projects.find(p => p.id === task.project_id);
               const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
               return (
                 <TaskRow
                   key={task.id}
                   task={task}
-                  member={m}
+                  members={members}
+                  saveTask={saveTask}
                   project={pj}
                   onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                   badge={
@@ -1178,14 +1179,16 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 }
 
 function TaskRow({
-  task, member, project, badge, onClick,
+  task, project, badge, onClick, members, saveTask,
 }: {
   task: Task;
-  member?: Member;
   project?: Project;
   badge: React.ReactNode;
   /** 指定時：行クリック（Enter/Space）でタスク詳細を開く */
   onClick?: () => void;
+  /** 担当者アイコンをクリックしての変更（複数選択可）に使う */
+  members: Member[];
+  saveTask: (task: Task) => Promise<void> | void;
 }) {
   return (
     // onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
@@ -1207,7 +1210,14 @@ function TaskRow({
         background: "transparent",
         transition: "background var(--transition-fast)",
       }}>
-      {member && <Avatar member={member} size={18} />}
+      {/* 行クリックでタスク詳細が開くため、アイコンクリックはそちらに伝播させない */}
+      <div onClick={e => e.stopPropagation()}>
+        <InlineEditAssignee
+          assigneeIds={getAssigneeIds(task)}
+          members={members}
+          onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
+        />
+      </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{
           fontSize: "11px", color: "var(--color-text-primary)",

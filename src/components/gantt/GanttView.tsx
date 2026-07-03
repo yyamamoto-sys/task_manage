@@ -577,7 +577,6 @@ export function GanttView({
         todoGroups={todoGroups}
         personGroups={personGroups}
         milestones={milestones}
-        memberById={memberById}
         projectById={projectById}
         sortTasks={sortTasks}
         previewChangedTaskIds={previewChangedTaskIds}
@@ -588,6 +587,8 @@ export function GanttView({
         selectedProject={selectedProject}
         krTaskIds={krTaskIds}
         currentUser={currentUser}
+        members={members}
+        saveTask={saveTask}
       />
     );
   }

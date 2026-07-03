@@ -6,7 +6,7 @@ import { toDateStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
-import { Avatar } from "../auth/UserSelectScreen";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 
 interface GanttMobileViewProps {
   today: Date;
@@ -17,7 +17,6 @@ interface GanttMobileViewProps {
   todoGroups: Array<{ todo: ToDo; todoId: string; tasks: Task[] }>;
   personGroups: Array<{ member: Member; tasks: Task[] }>;
   milestones: Milestone[];
-  memberById: Map<string, Member>;
   projectById: Map<string, Project>;
   sortTasks: (tasks: Task[]) => Task[];
   previewChangedTaskIds?: Set<string>;
@@ -28,15 +27,19 @@ interface GanttMobileViewProps {
   selectedProject: Project | null;
   krTaskIds?: Set<string> | null;
   currentUser: Member;
+  /** 担当者アイコンをクリックしての変更（複数選択可）に使う */
+  members: Member[];
+  saveTask: (task: Task) => Promise<void> | void;
 }
 
 export function GanttMobileView({
   today, viewMode, setViewMode,
   visibleProjects, allTasks, todoGroups, personGroups, milestones,
-  memberById, projectById, sortTasks,
+  projectById, sortTasks,
   previewChangedTaskIds, isPreview,
   editingTaskId, setEditingTaskId,
   mineOnly, selectedProject, krTaskIds, currentUser,
+  members, saveTask,
 }: GanttMobileViewProps) {
   const todayStrVal = toDateStr(today);
   const md = (d?: string | null) => (d ? d.slice(5).replace("-", "/") : "");
@@ -50,9 +53,6 @@ export function GanttMobileView({
   };
 
   const renderCard = (task: Task) => {
-    const assignees = getAssigneeIds(task)
-      .map(id => memberById.get(id))
-      .filter((m): m is Member => !!m);
     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
     const isDone = task.status === "done";
     const isOverdue = !!task.due_date && task.due_date < todayStrVal && !isDone;
@@ -93,14 +93,14 @@ export function GanttMobileView({
             {rangeText(task)}{isOverdue ? " ・期限超過" : ""}
           </div>
         </div>
-        {assignees.length > 0 && (
-          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
-            {assignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={22} />)}
-            {assignees.length > 2 && (
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>+{assignees.length - 2}</span>
-            )}
-          </div>
-        )}
+        {/* カード全体クリックでモーダルが開くため、アイコンクリックはそちらに伝播させない */}
+        <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            members={members}
+            onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
+          />
+        </div>
       </div>
     );
   };
