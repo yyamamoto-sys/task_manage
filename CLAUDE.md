@@ -132,8 +132,17 @@
 #             親選択中＝子作成モードでは非表示）
 #      修正：AI相談で最新のやりとりが「送信した相談／最新の提案」と「会話履歴」で二重表示される不具合。
 #             会話履歴から現在のやりとりを除外（ConsultationPanel）
+# v2.20 マルチテナンシー（部署／グループ）のドキュメント化漏れを解消（2026-07-03）
+#      追記：Section 1.6（マルチテナンシー・ロール・RLS・権限昇格ガード・過去の事故と教訓）
+#      補足：実装自体は2026-06-26〜07-02に本番導入済みだったが、CLAUDE.mdへの反映が漏れていた
+#             （groups テーブル・group_id 分離・is_admin/is_super_admin ロール・RLSのNULL抜け穴修正
+#             （20260626_add_multitenancy.sql／20260702b_fix_multitenancy_rls.sql／
+#             20260702c_add_super_admin_and_department_governance.sql）が未記載のままだった）
+#      注意：この期間に入った他の変更（i18n Phase 0-1・期限通知のTeams週次レポート化等）は
+#             docs/dev/i18n-plan.md・docs/dev/deadline-notifications.md 側で個別管理されており、
+#             今回のCLAUDE.md追記はマルチテナンシーの一件に限定。他の抜け漏れが無いかは未確認。
 #
-# 最終更新：2026-06-02（v2.19）
+# 最終更新：2026-07-03（v2.20）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -195,6 +204,82 @@ const { tasks, saveTask } = useAppData();
   render 時例外で画面真っ白にならず、fallback UI と再読み込みボタンを表示する。
 - **保存エラー通知**：`appStore.ts` の `handleSaveError` が `ConflictError` を判別して
   Toast 通知 + load() で楽観更新前の state に戻す。
+
+---
+
+## 1.6. マルチテナンシー（部署／グループ）とロール（2026-06-26〜07-02 で導入）
+
+> **【重要】このセクションは実装済みだがCLAUDE.mdへの追記が長らく漏れていた（2026-07-03発覚・追記）。**
+> 全社展開に向けて、部署（グループ）単位でデータを分離する仕組みが本番導入済み。既存データはすべて `grp-egg`（EGG）グループへ移行済み。
+
+### groups テーブル
+
+```sql
+CREATE TABLE groups (
+  id         text PRIMARY KEY,   -- 例: 'grp-egg'
+  name       text NOT NULL,      -- 例: 'EGG'
+  is_deleted boolean NOT NULL DEFAULT false,
+  deleted_at timestamptz,
+  deleted_by text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  updated_by text NOT NULL DEFAULT ''
+);
+```
+
+### 対象テーブルと分離範囲
+
+- `members` / `projects` / `tasks` に `group_id` 列を追加。RLSで自部署のみ参照・操作可能。
+- **【対象外】OKR系テーブル（objectives / key_results / task_forces / todos 等）は部署分離されていない。** 新しい部署を追加した場合、その部署にはPJ/タスク管理機能のみを使わせ、OKR機能は使わせないこと（Phase 2で対応予定・Section 9の未解決論点に追記要）。
+
+### ロール（2階層・直交）
+
+| ロール | 列 | 権限範囲 |
+|---|---|---|
+| 部署管理者 | `members.is_admin` | 自部署内のメンバー・データ管理 |
+| 全社スーパー管理者 | `members.is_super_admin` | 部署をまたいだ全データアクセス・部署（groups）の作成／削除 |
+
+一方がもう一方を含意しない。全社スーパー管理者でなくても部署管理者にはなれるし、その逆も可。
+
+### RLSの要点（3つのSECURITY DEFINER関数）
+
+- `current_member_group_id()` — 自分の所属 `group_id` を返す（membersテーブル自体のRLSを迂回するためSECURITY DEFINER）
+- `current_member_is_admin()` — 部署管理者か
+- `current_member_is_super_admin()` — 全社スーパー管理者か
+
+いずれも `SET search_path = ''` で固定済み（関数ハイジャック対策）。`members` / `projects` / `tasks` は
+`group_id = current_member_group_id() OR current_member_is_super_admin()` で参照制御する。
+
+### groups テーブル自体の書き込み権限
+
+- **参照**：全認証ユーザー可
+- **新規作成**：全社スーパー管理者のみ
+- **改名・編集**：全社スーパー管理者、または自部署のadmin
+- **削除**：全社スーパー管理者のみ。かつ**アクティブメンバーが1人でもいる部署はトリガーで物理的に削除をブロック**（統廃合等でどうしても削除したい場合はスーパー管理者権限で強制削除は可能）
+
+### 権限昇格ガード（`guard_member_privilege_columns` トリガー）
+
+`members.is_admin` / `is_super_admin` / `group_id` はクライアントから自由に書き換えられない。BEFORE INSERT/UPDATEトリガーが以下のルールで守る：
+
+- 既存の（全社／部署）管理者は他人の行を含めて変更可
+- **ブートストラップ猶予**：company-wide に `is_super_admin=true` が1人もいない間は、自分自身の行に限り自己昇格を許可（他人の代理昇格は不可）。同様に、対象部署に `is_admin=true` が1人もいない間は、その部署内で自己昇格を許可
+- 上記に当たらない変更は、該当列だけ静かに元の値へ巻き戻される（表示名などの他フィールドの保存は妨げない）
+
+**新しいマイグレーションを適用した直後は、company-wide/部署ともに管理者0人＝ブートストラップ窓が開いた状態になる。窓を開けたまま放置せず、適用直後にオーナー自身がアプリの管理画面（MembersSection）から自分の行を昇格させ、窓を閉じること。** SQL Editorはservice roleでRLSを素通りするため、この昇格操作は必ずアプリ経由（クライアント経由のUPDATE）で行う。
+
+### 過去に実際に起きた事故と教訓（重要）
+
+2026-06-26の初回実装（`20260626_add_multitenancy.sql`）には、移行期間の猶予のつもりで
+`group_id = current_member_group_id() OR current_member_group_id() IS NULL` という一文が入っていた。
+しかし実際には**新規サインアップ直後でmembersにまだ登録されていない全ユーザーに対して、全部署のmembers/projects/tasksを無制限公開してしまう抜け穴**になっていた（`current_member_group_id()`がNULLを返すと猶予条項がtrueになり、group_id一致チェックが素通りする）。2026-07-02のセキュリティ調査で発見し、`20260702b_fix_multitenancy_rls.sql`でNULL抜け穴を除去した。
+
+**教訓：RLSに「移行期間の猶予」を書くときは、それが「未認証・未登録ユーザーに何を許してしまうか」を必ず検証すること。** OR条件でNULL/未登録状態を許可する書き方は特に危険。
+
+### 関連migrationファイル
+
+- `supabase/migrations/20260626_add_multitenancy.sql` — 初回導入（groups/group_id/RLS）
+- `supabase/migrations/20260702b_fix_multitenancy_rls.sql` — NULL抜け穴修正・管理者限定化・自己昇格ガード
+- `supabase/migrations/20260702c_add_super_admin_and_department_governance.sql` — 全社スーパー管理者・部署ガバナンス強化
 
 ---
 
@@ -873,6 +958,7 @@ interface TaskChangeLog {
 | D | Teamsへの埋め込みに伴うウィンドウサイズ対応 | 中 | — |
 | E | マイルストーン実装（設計完了・帰宅後に実施） | 中 | 下記Section 3-5参照。4ファイル変更が必要 |
 | F | PDF出力の実装方法（サーバーサイド vs Print API） | 低 | 将来検討 |
+| G | OKR系テーブル（objectives/key_results/task_forces/todos等）が部署分離未対応 | 高 | Section 1.6参照。新しい部署はPJ/タスク管理機能のみ使う運用でしのいでいる。全社展開が進む前にPhase 2で対応要 |
 
 ---
 
@@ -923,7 +1009,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026年4月（v2.2）
+- 最終更新：2026-07-03（v2.20）
 
 ---
 
