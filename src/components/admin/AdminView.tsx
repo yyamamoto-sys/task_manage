@@ -20,6 +20,7 @@ import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { HelpButton } from "../guide/HelpButton";
+import { GuideOverlay } from "../guide/GuideOverlay";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
@@ -2014,6 +2015,8 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   });
   const [error, setError] = useState<string | null>(null);
   const [templateDownloading, setTemplateDownloading] = useState(false);
+  // ダウンロード後「次に何をすればいいか分からない」とならないよう、成功直後に手順ガイドを自動表示する
+  const [showWebhookGuide, setShowWebhookGuide] = useState(false);
 
   useEffect(() => {
     onDirtyChange(editId !== null);
@@ -2038,6 +2041,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      setShowWebhookGuide(true);
     } catch (e) {
       setError(formatErrorForUser("テンプレートのダウンロードに失敗しました", e));
     } finally {
@@ -2293,6 +2297,9 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
         </div>
+      )}
+      {showWebhookGuide && (
+        <GuideOverlay modeKey="admin.groups-webhook" onClose={() => setShowWebhookGuide(false)} />
       )}
     </div>
   );
