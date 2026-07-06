@@ -16,18 +16,6 @@ import { subscribeToRealtime } from "./lib/supabase/realtime";
 import type { Member } from "./lib/localData/types";
 
 export default function App() {
-  if (isMisconfigured) {
-    return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "12px", fontFamily: "sans-serif" }}>
-        <div style={{ fontSize: "20px" }}>⚠️ 設定エラー</div>
-        <div style={{ fontSize: "14px", color: "#666" }}>Vercel の Environment Variables に以下を設定してください</div>
-        <code style={{ background: "#f3f4f6", padding: "12px 20px", borderRadius: "8px", fontSize: "12px", lineHeight: 2 }}>
-          VITE_SUPABASE_URL<br />
-          VITE_SUPABASE_ANON_KEY
-        </code>
-      </div>
-    );
-  }
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUserState] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
@@ -54,6 +42,22 @@ export default function App() {
 
     return () => subscription.unsubscribe();
   }, []);
+
+  // 環境変数未設定の早期returnは全フック宣言の後に置く（react-hooks/rules-of-hooks 対応）。
+  // isMisconfigured はモジュール定数で実行時に値が変わることはないが、
+  // ESLintのルールに従いフックより前には置かない。
+  if (isMisconfigured) {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "12px", fontFamily: "sans-serif" }}>
+        <div style={{ fontSize: "20px" }}>⚠️ 設定エラー</div>
+        <div style={{ fontSize: "14px", color: "#666" }}>Vercel の Environment Variables に以下を設定してください</div>
+        <code style={{ background: "#f3f4f6", padding: "12px 20px", borderRadius: "8px", fontSize: "12px", lineHeight: 2 }}>
+          VITE_SUPABASE_URL<br />
+          VITE_SUPABASE_ANON_KEY
+        </code>
+      </div>
+    );
+  }
 
   const handleLogin = (member: Member) => {
     if (isGuestMember(member)) {
@@ -174,7 +178,7 @@ function AuthenticatedApp({
     }
 
     void autoMatch();
-  }, [loading, members, currentUser, onLogin]);
+  }, [loading, members, currentUser, onLogin, setCurrentGroupId]);
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
   // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
