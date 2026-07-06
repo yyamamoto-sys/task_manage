@@ -54,6 +54,8 @@ export function InlineEditDate({ value, onSave }: Props) {
   return (
     <span
       onClick={e => { e.stopPropagation(); setEditing(true); }}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); } }}
       title="クリックして期日を編集"
       style={{
         cursor: "text",

@@ -1454,6 +1454,8 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                   {milestones.filter(ms => ms.project_id === pj.id).sort((a, b) => a.date.localeCompare(b.date)).map(ms => (
                     <div key={ms.id}
                       onClick={() => setEditingMs(ms)}
+                      role="button" tabIndex={0}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingMs(ms); }}
                       title="クリックして編集（メモ・詳細）"
                       style={{
                         display: "flex", alignItems: "center", gap: "8px",

@@ -802,6 +802,8 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{inputCount.toLocaleString()} 文字</span>
           </div>
           <FileDropZone onAttach={setAttachment}>
+            {/* ドラッグ&ドロップ専用ゾーン。テキスト入力自体は下のtextareaで直接キーボード操作可能 */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
             <div ref={dropAreaRef} onDragOver={e => { e.preventDefault(); setIsDragging(true); }} onDragLeave={() => setIsDragging(false)} onDrop={handleDropToTextarea}>
               <textarea
                 value={transcript}

@@ -34,6 +34,8 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
     <div ref={containerRef} style={{ position: "relative", display: "inline-block" }}>
       <div
         onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
+        role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setOpen(v => !v); } }}
         title="クリックして担当者を変更"
         style={{
           display: "inline-flex", alignItems: "center", gap: "2px",
@@ -75,6 +77,8 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
               <div
                 key={m.id}
                 onMouseDown={e => { e.preventDefault(); toggle(m.id); }}
+                role="option" aria-selected={selected} tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggle(m.id); } }}
                 style={{
                   display: "flex", alignItems: "center", gap: "8px",
                   padding: "6px 10px", cursor: "pointer",

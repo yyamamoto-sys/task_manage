@@ -306,7 +306,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       display: "flex", flexDirection: "column", overflow: "hidden",
       position: "relative",
     }}>
-      {/* リサイズハンドル（左端をドラッグして幅を調整） */}
+      {/* リサイズハンドル（左端をドラッグして幅を調整）。マウスのドラッグ操作専用でキーボード代替手段はない */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         onMouseDown={handleResizeMouseDown}
         title="ドラッグで幅を変更"

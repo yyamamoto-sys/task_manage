@@ -56,6 +56,8 @@ export function InlineEditText({ value, onSave, placeholder, style }: Props) {
   return (
     <span
       onClick={e => { e.stopPropagation(); setDraft(value); setEditing(true); }}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setDraft(value); setEditing(true); } }}
       title="クリックして編集"
       style={{
         cursor: "text",

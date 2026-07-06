@@ -189,6 +189,9 @@ export function FileDropZone({
   };
 
   return (
+    // ドラッグ&ドロップ専用ゾーン。ファイル選択自体は別途キーボード操作可能な
+    // 「添付」ボタン（input[type=file]）から可能なため、ここはマウス専用でよい
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       onDragEnter={handleDragEnter}
       onDragLeave={handleDragLeave}

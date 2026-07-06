@@ -229,6 +229,8 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
             <div
               key={session.id}
               onClick={() => setSelectedSession(session)}
+              role="button" tabIndex={0}
+              onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setSelectedSession(session); }}
               style={{
                 padding: "10px 14px",
                 borderBottom: "1px solid var(--color-border-primary)",
