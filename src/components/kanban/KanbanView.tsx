@@ -126,6 +126,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           const isDoneCol = status === "done";
           const isDropTarget = dragOverStatus === status;
           return (
+            // ドラッグ&ドロップ専用の列（ドロップでステータス変更）。マウス操作専用でキーボード代替手段はない
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
             <div
               key={status}
               style={{
@@ -270,6 +272,8 @@ const TaskCard = memo(function TaskCard({
       draggable
       onDragStart={() => onDragStart(task.id)}
       onClick={() => onClick(task.id)}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(task.id); } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -318,7 +322,8 @@ const TaskCard = memo(function TaskCard({
         </div>
       )}
 
-      {/* タスク名（インライン編集） */}
+      {/* タスク名（インライン編集）。カードクリックで詳細が開くため、こちらはそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div style={{
         fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)",
         marginBottom: "7px", lineHeight: 1.4,
@@ -348,7 +353,8 @@ const TaskCard = memo(function TaskCard({
 
       {/* フッター */}
       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-        {/* 担当者インライン編集 */}
+        {/* 担当者インライン編集（クリックしても何も起きないラッパー） */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
         <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
           <InlineEditAssignee
             assigneeIds={getAssigneeIds(task)}
@@ -356,7 +362,8 @@ const TaskCard = memo(function TaskCard({
             onSave={ids => onSaveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUserId })}
           />
         </div>
-        {/* 期日インライン編集 */}
+        {/* 期日インライン編集（クリックしても何も起きないラッパー） */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
         <div onClick={e => e.stopPropagation()} style={{ flex: 1, fontSize: "10px" }}>
           <InlineEditDate
             value={task.due_date}

@@ -1064,6 +1064,8 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
   const statusColor = TASK_STATUS_STYLE[dispStatus].color;
   return (
     <div onClick={() => onOpen(task.id)}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onOpen(task.id); }}
       style={{
         display: "flex", alignItems: "center", gap: "10px",
         marginLeft: depth === 1 ? 18 : 0,
@@ -1240,6 +1242,8 @@ const ListTaskRow = memo(function ListTaskRow({
           {/* ハンドル列：ドラッグで並べ替え。他タスクの行の中央に落とすとその子に、上下端に落とすと並び替え */}
           {showHandleCol && (
             canDrag ? (
+              // ドラッグハンドル（並べ替え・親子付け替え専用）。マウスのドラッグ操作専用でキーボード代替手段はない
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
               <span
                 draggable
                 onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
@@ -1298,6 +1302,8 @@ const ListTaskRow = memo(function ListTaskRow({
           ) : depth === 1 && (
             <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
           )}
+          {/* 行クリックでタスク詳細が開くため、名前部分のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
           <div
             onClick={e => e.stopPropagation()}
             style={{
