@@ -401,7 +401,7 @@ export function GanttView({
       labelBodyRef.current.scrollTop = scrollRef.current.scrollTop;
       syncingRef.current = false;
     }
-  }, [days]);
+  }, [days, dayWidth]);
 
   const handleLabelScroll = useCallback(() => {
     if (!syncingRef.current && scrollRef.current && labelBodyRef.current) {
