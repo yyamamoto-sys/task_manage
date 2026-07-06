@@ -374,6 +374,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   ) : null;
 
   const onboardingOverlay = isOnboardingOverlayOpen ? (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       onClick={() => setIsOnboardingOverlayOpen(false)}
       style={{
@@ -383,6 +386,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         padding: "16px",
       }}
     >
+      {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         onClick={e => e.stopPropagation()}
         style={{
@@ -602,10 +607,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         )}
         {/* ラボ機能ボトムシート */}
         {isMobileLabOpen && (
+          // 背景クリック・Escapeキーで閉じる（項目を選ばずに閉じる唯一の手段のため、
+          // 他の背景オーバーレイと違いここは実際にキーボード操作可能にする）
           <div
             style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
             onClick={() => setIsMobileLabOpen(false)}
+            role="button" tabIndex={0}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " " || e.key === "Escape") setIsMobileLabOpen(false); }}
           >
+            {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
             <div
               style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
@@ -787,6 +798,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {/* モバイル：FAB（計画モードのみ） */}
         {appMode === "plan" && !isGuest && (<>
           {isFabMenuOpen && (
+            // 背景クリックで閉じる（マウス操作の補助）。FABボタン自体がキーボードで開閉トグル
+            // 可能なため、背景要素をフォーカス可能にする必要はない
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
             <div
               style={{ position: "fixed", inset: 0, zIndex: 58 }}
               onClick={() => setIsFabMenuOpen(false)}
@@ -931,6 +945,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       )}
       {/* PC FAB（計画モードのみ） */}
       {appMode === "plan" && isFabMenuOpen && (
+        // 背景クリックで閉じる（マウス操作の補助）。FABボタン自体がキーボードで開閉トグル
+        // 可能なため、背景要素をフォーカス可能にする必要はない
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
           style={{ position: "fixed", inset: 0, zIndex: 58 }}
           onClick={() => setIsFabMenuOpen(false)}
