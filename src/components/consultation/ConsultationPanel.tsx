@@ -361,6 +361,9 @@ export function ConsultationPanel({
         document.body,
       )}
       {!inline && isOpen && (
+        // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体はヘッダーのボタンで
+        // キーボードから可能なため、背景要素をフォーカス可能にする必要はない
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.2)", zIndex: 90 }} />
       )}
 
@@ -381,7 +384,8 @@ export function ConsultationPanel({
           </div>
         )}
 
-        {/* リサイズハンドル（左端をドラッグして幅を調整） */}
+        {/* リサイズハンドル（左端をドラッグして幅を調整）。マウスのドラッグ操作専用でキーボード代替手段はない */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
         <div
           onMouseDown={handleResizeMouseDown}
           title="ドラッグで幅を変更"

@@ -28,6 +28,9 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
   }, [entry, modeKey, slug]);
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 300,
@@ -36,6 +39,8 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
+      {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         className="panel-slide-up"
         style={{

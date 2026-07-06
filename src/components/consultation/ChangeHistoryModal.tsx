@@ -39,6 +39,9 @@ export function ChangeHistoryModal({ stack, onClose, onUndoUntil }: Props) {
   if (stack.length === 0) return null;
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{
         position: "fixed",

@@ -42,6 +42,8 @@ function TaskBarRowImpl({
   dateLabel, tooltip, onEdit, onResize, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   return (
+    // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       onMouseEnter={() => onMouseEnter(taskId)}
       onMouseLeave={onMouseLeave}
@@ -59,6 +61,9 @@ function TaskBarRowImpl({
           <div
             title={tooltip}
             onClick={isPreview ? undefined : () => onEdit(taskId)}
+            role={isPreview ? undefined : "button"}
+            tabIndex={isPreview ? undefined : 0}
+            onKeyDown={isPreview ? undefined : (e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEdit(taskId); } })}
             style={{
               position: "absolute",
               left: bar.barX, top: "50%", transform: "translateY(-50%)",
@@ -93,6 +98,8 @@ function TaskBarRowImpl({
             }}>⚠</div>
           )}
           {!isPreview && !isDone && (
+            // 右端ドラッグによる期日変更専用のハンドル。マウスのドラッグ操作専用でキーボード代替手段はない
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
             <div
               onMouseDown={e => onResize(e, taskId)}
               style={{
@@ -181,6 +188,10 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       ) : childCount > 0 ? (
         <span
           onClick={e => { e.stopPropagation(); onToggleCollapse(task.id); }}
+          role="button" tabIndex={0}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); onToggleCollapse(task.id); } }}
+          aria-label={isCollapsed ? "子タスクを表示" : "子タスクを隠す"}
+          aria-expanded={!isCollapsed}
           style={{
             fontSize: "11px", color: "var(--color-text-secondary)",
             transition: "transform 0.15s", display: "inline-block",
@@ -210,7 +221,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           子{childCount}
         </span>
       )}
-      {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
+      {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}
@@ -254,6 +266,8 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
         {task.name}
       </span>
+      {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}

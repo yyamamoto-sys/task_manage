@@ -39,6 +39,9 @@ export function ConfirmModal() {
   if (!state.open) return null;
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-noninteractive-element-interactions
     <div
       role="dialog"
       aria-modal="true"
@@ -50,6 +53,8 @@ export function ConfirmModal() {
         padding: "16px",
       }}
     >
+      {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         onClick={e => e.stopPropagation()}
         style={{

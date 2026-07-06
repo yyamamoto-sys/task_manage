@@ -524,6 +524,8 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
               <div
                 key={m.id}
                 onClick={() => setEditingMs(m)}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingMs(m); }}
                 title="クリックして編集（メモ・詳細）"
                 style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "4px", opacity: isPast ? 0.5 : 1, cursor: "pointer", borderRadius: "var(--radius-sm)" }}
               >
@@ -655,6 +657,9 @@ function AnalysisModal({
   const fmtAt = (iso: string) => new Date(iso).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" });
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}

@@ -93,7 +93,8 @@ export function GanttMobileView({
             {rangeText(task)}{isOverdue ? " ・期限超過" : ""}
           </div>
         </div>
-        {/* カード全体クリックでモーダルが開くため、アイコンクリックはそちらに伝播させない */}
+        {/* カード全体クリックでモーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
         <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           <InlineEditAssignee
             assigneeIds={getAssigneeIds(task)}

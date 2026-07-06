@@ -522,6 +522,9 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
       {/* ===== 全PJ AI分析モーダル ===== */}
       {showAllAnalysis && (
+        // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+        // 背景要素をフォーカス可能にする必要はない
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
           style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
           onClick={e => { if (e.target === e.currentTarget) setShowAllAnalysis(false); }}
@@ -991,9 +994,14 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   ? "…" + (task.comment ?? "").slice(Math.max(0, idx - 10), idx + token.length + 20).trim() + "…"
                   : "";
                 return (
+                  // onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+                  // eslint-disable-next-line jsx-a11y/no-static-element-interactions
                   <div
                     key={task.id}
                     onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
+                    role={onOpenTask ? "button" : undefined}
+                    tabIndex={onOpenTask ? 0 : undefined}
+                    onKeyDown={onOpenTask ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpenTask(task.id); } } : undefined}
                     style={{
                       padding: "8px 0",
                       borderBottom: "1px solid var(--color-border-primary)",
@@ -1210,7 +1218,8 @@ function TaskRow({
         background: "transparent",
         transition: "background var(--transition-fast)",
       }}>
-      {/* 行クリックでタスク詳細が開くため、アイコンクリックはそちらに伝播させない */}
+      {/* 行クリックでタスク詳細が開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div onClick={e => e.stopPropagation()}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}
