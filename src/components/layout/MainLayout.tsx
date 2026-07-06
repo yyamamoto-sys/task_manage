@@ -14,6 +14,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
+import { ViewSkeleton } from "../common/Skeleton";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
@@ -46,19 +47,8 @@ const OkrDashboardView   = lazyWithRetry(() => import("../okr/OkrDashboardView")
 const GuideModeView      = lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView");
 
 function ViewLoading() {
-  return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <div
-        className="animate-spin"
-        style={{
-          width: "24px", height: "24px",
-          border: "2px solid var(--color-border-primary)",
-          borderTopColor: "var(--color-brand)",
-          borderRadius: "50%",
-        }}
-      />
-    </div>
-  );
+  // スピナー単体よりレイアウトの骨格を見せた方が体感が速い（スケルトンUI）
+  return <ViewSkeleton />;
 }
 
 type AppMode = "plan" | "okr";
