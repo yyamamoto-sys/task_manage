@@ -22,13 +22,16 @@ interface Props {
    *  （リスト画面の「＋子タスク」から、親を固定してこのモーダルを開く用途）。
    *  保存時は project_id が親のPJに揃う（handleSave）。 */
   defaultParentId?: string;
+  /** 作成するタスクの初期ステータス（未指定は "todo"）。
+   *  カンバンビューの列ごとの「＋ タスクを追加」から、その列のステータスを渡す用途。 */
+  defaultStatus?: Task["status"];
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
   const rawMembers              = useAppStore(s => s.members);
@@ -56,6 +59,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [todoIds, setTodoIds] = useState<string[]>([]);
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
+  const [priority, setPriority] = useState<Task["priority"]>(null);
   const [comment, setComment] = useState("");
   // 子タスク（1行1タスク）。最上位タスク作成時のみ表示・一括作成する（2階層固定のため）。
   const [childDraft, setChildDraft] = useState("");
@@ -142,8 +146,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       todo_ids: todoIds.filter(id => id !== TODO_OTHER_ID),
       assignee_member_id: assigneeId,
       assignee_member_ids: assigneeId ? [assigneeId] : [],
-      status: "todo",
-      priority: null,
+      status: defaultStatus ?? "todo",
+      priority,
       start_date: startDate || null,
       due_date: dueDate || null,
       estimated_hours: null,
@@ -288,7 +292,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           />
         </div>
 
-        {/* 開始日・期日 */}
+        {/* 開始日・期日・優先度 */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "12px" }}>
           <div>
             <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>開始日（任意）</div>
@@ -322,6 +326,21 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
               }}
             />
           </div>
+        </div>
+
+        {/* 優先度 */}
+        <div style={{ marginBottom: "12px" }}>
+          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>優先度（任意）</div>
+          <CustomSelect
+            value={priority ?? ""}
+            onChange={value => setPriority((value || null) as Task["priority"])}
+            options={[
+              { value: "", label: "なし" },
+              { value: "high", label: "高" },
+              { value: "mid", label: "中" },
+              { value: "low", label: "低" },
+            ]}
+          />
         </div>
 
         {/* KR選択 */}

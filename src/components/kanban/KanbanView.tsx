@@ -2,14 +2,12 @@
 import { useState, useMemo, useCallback, memo } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, TaskForce, ToDo } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
-import { Avatar } from "../auth/UserSelectScreen";
-import { v4 as uuidv4 } from "uuid";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { CustomSelect } from "../common/CustomSelect";
+import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
@@ -27,11 +25,8 @@ interface Props {
 export function KanbanView({ currentUser, selectedProject, projects, selectedKrId: _selectedKrId, krTaskIds, mineOnly = false }: Props) {
   const allTasks         = useAppStore(selectScopedTasks);
   const allMembers       = useAppStore(s => s.members);
-  const allTaskForces    = useAppStore(s => s.taskForces);
   const rawTodos         = useAppStore(s => s.todos);
   const saveTask         = useAppStore(s => s.saveTask);
-  const addTaskTaskForce = useAppStore(s => s.addTaskTaskForce);
-  const addTaskProject   = useAppStore(s => s.addTaskProject);
   const isMobile = useIsMobile();
 
   const tasks = useMemo(() => active(allTasks), [allTasks]);
@@ -52,8 +47,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
   const todoById    = useMemo(() => new Map(todos.map(td => [td.id, td])), [todos]);
 
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
+  // null=閉じている。値ありならその列のステータスでQuickAddTaskModalを開く
+  const [addingStatus, setAddingStatus] = useState<Task["status"] | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<Task["status"] | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -74,39 +69,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
     saveTask({ ...task, status: newStatus, updated_by: currentUser.id });
   }, [tasks, saveTask, currentUser.id]);
-
-  const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
-
-  const handleAddTask = useCallback((
-    name: string, assigneeIds: string[], projectId: string | null, dueDate: string,
-    priority: Task["priority"], estimatedHours: number | null,
-    tfIds: string[], extraProjectIds: string[], todoIds: string[],
-  ) => {
-    const now = new Date().toISOString();
-    const taskId = uuidv4();
-    const newTask: Task = {
-      id: taskId,
-      name,
-      project_id: projectId,
-      todo_ids: todoIds,
-      assignee_member_ids: assigneeIds,
-      assignee_member_id: assigneeIds[0] ?? "",
-      status: addToStatus,
-      priority,
-      start_date: null,
-      due_date: dueDate || null,
-      estimated_hours: estimatedHours,
-      comment: "",
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUser.id,
-    };
-    saveTask(newTask);
-    tfIds.forEach(tfId => addTaskTaskForce({ task_id: taskId, tf_id: tfId }));
-    extraProjectIds.forEach(pjId => addTaskProject({ task_id: taskId, project_id: pjId }));
-    setShowAddModal(false);
-  }, [addToStatus, saveTask, addTaskTaskForce, addTaskProject, currentUser.id]);
 
   // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
   const handleDragStart = useCallback((taskId: string) => setDraggingId(taskId), []);
@@ -232,7 +194,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                 )}
                 {/* ＋ タスクを追加 */}
                 <button
-                  onClick={() => { setAddToStatus(status); setShowAddModal(true); }}
+                  onClick={() => setAddingStatus(status)}
                   style={{
                     display: "flex", alignItems: "center", gap: "4px",
                     padding: "6px 10px", fontSize: "11px",
@@ -251,17 +213,13 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
         })}
       </div>
 
-      {showAddModal && (
-        <AddTaskModal
-          defaultStatus={addToStatus}
-          projects={projects}
-          members={members}
-          taskForces={taskForces}
-          todos={todos}
-          defaultProjectId={selectedProject?.id ?? projects[0]?.id ?? ""}
+      {addingStatus !== null && (
+        <QuickAddTaskModal
           currentUser={currentUser}
-          onAdd={handleAddTask}
-          onClose={() => setShowAddModal(false)}
+          projects={projects}
+          defaultProjectId={selectedProject?.id}
+          defaultStatus={addingStatus}
+          onClose={() => setAddingStatus(null)}
         />
       )}
 
@@ -471,313 +429,3 @@ const TaskCard = memo(function TaskCard({
   );
 });
 
-// ===== タスク追加モーダル =====
-
-function AddTaskModal({
-  defaultStatus, projects, members, taskForces, todos, defaultProjectId, currentUser, onAdd, onClose,
-}: {
-  defaultStatus: Task["status"];
-  projects: Project[];
-  members: Member[];
-  taskForces: TaskForce[];
-  todos: ToDo[];
-  defaultProjectId: string;
-  currentUser: Member;
-  onAdd: (name: string, assigneeIds: string[], projectId: string | null, dueDate: string, priority: Task["priority"], estimatedHours: number | null, tfIds: string[], extraProjectIds: string[], todoIds: string[]) => void;
-  onClose: () => void;
-}) {
-  const [name, setName] = useState("");
-  const [assigneeIds, setAssigneeIds] = useState<string[]>(members[0]?.id ? [members[0].id] : []);
-  const [projectId, setProjectId] = useState(defaultProjectId ?? "");
-  const [dueDate, setDueDate] = useState("");
-  const [priority, setPriority] = useState<Task["priority"]>(null);
-  const [estimatedHours, setEstimatedHours] = useState("");
-  const [selectedTfIds, setSelectedTfIds] = useState<string[]>([]);
-  const [extraProjectIds, setExtraProjectIds] = useState<string[]>([]);
-  const [todoIds, setTodoIds] = useState<string[]>([]);
-  const [showAdvanced, setShowAdvanced] = useState(false);
-
-  const handleAdd = () => {
-    if (!name.trim()) return;
-    onAdd(name, assigneeIds, projectId || null, dueDate, priority, estimatedHours ? Number(estimatedHours) : null, selectedTfIds, extraProjectIds, todoIds);
-  };
-
-  return (
-    <div
-      style={{
-        position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)",
-        display: "flex", alignItems: "flex-start", justifyContent: "center",
-        paddingTop: "80px", zIndex: 100,
-      }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div
-        className="animate-fadeIn"
-        style={{
-          background: "var(--color-bg-primary)",
-          border: "1px solid var(--color-border-secondary)",
-          borderRadius: "var(--radius-lg)",
-          width: "480px", overflow: "hidden",
-          boxShadow: "var(--shadow-lg)",
-        }}
-      >
-        {/* ヘッダー */}
-        <div style={{
-          display: "flex", alignItems: "center", padding: "12px 16px",
-          borderBottom: "1px solid var(--color-border-primary)",
-        }}>
-          <span style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-            タスクを追加
-          </span>
-          <span style={{
-            fontSize: "10px", padding: "2px 7px", borderRadius: "var(--radius-full)",
-            background: TASK_STATUS_STYLE[defaultStatus].bg,
-            color: TASK_STATUS_STYLE[defaultStatus].color,
-            border: `1px solid ${TASK_STATUS_STYLE[defaultStatus].border}`,
-          }}>
-            {TASK_STATUS_LABEL[defaultStatus]}
-          </span>
-          <button onClick={onClose} style={{ marginLeft: "10px", background: "none", border: "none", fontSize: "16px", color: "var(--color-text-tertiary)", cursor: "pointer" }}>×</button>
-        </div>
-
-        {/* フォーム */}
-        <div style={{ padding: "16px" }}>
-          <Field label="タスク名" required>
-            <input
-              autoFocus
-              value={name}
-              onChange={e => setName(e.target.value)}
-              placeholder="例：メンバーへのヒアリング"
-              maxLength={200}
-              style={inputStyle}
-              onKeyDown={e => { if (e.key === "Enter") handleAdd(); }}
-            />
-          </Field>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px" }}>
-            {/* 担当者（複数選択） */}
-            <Field label="担当者">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: assigneeIds.length > 0 ? "6px" : 0 }}>
-                {assigneeIds.map(id => {
-                  const m = members.find(mb => mb.id === id);
-                  return m ? (
-                    <span key={id} style={chipStyle}>
-                      <Avatar member={m} size={14} />
-                      {m.short_name}
-                      <button onClick={() => setAssigneeIds(prev => prev.filter(i => i !== id))} style={chipRemoveStyle}>×</button>
-                    </span>
-                  ) : null;
-                })}
-              </div>
-              <CustomSelect value="" onChange={value => {
-                if (!value) return;
-                setAssigneeIds(prev => prev.includes(value) ? prev : [...prev, value]);
-              }}
-                options={[
-                  { value: "", label: "＋ 追加..." },
-                  ...[...members].sort((a, b) =>
-                    a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
-                  ).filter(m => !assigneeIds.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
-                ]}
-                searchable searchPlaceholder="メンバーで検索..." />
-            </Field>
-            <Field label="プロジェクト（任意）">
-              <CustomSelect value={projectId} onChange={value => setProjectId(value)}
-                options={[
-                  { value: "", label: "なし" },
-                  ...projects.map(p => ({ value: p.id, label: p.name.slice(0, 20) })),
-                ]}
-                searchable searchPlaceholder="プロジェクトで検索..." />
-            </Field>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px", marginTop: "10px" }}>
-            <Field label="終了日（任意）">
-              <input type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} style={inputStyle} />
-            </Field>
-            <Field label="優先度（任意）">
-              <CustomSelect value={priority ?? ""} onChange={value => setPriority((value || null) as Task["priority"])}
-                options={[
-                  { value: "", label: "なし" },
-                  { value: "high", label: "高" },
-                  { value: "mid", label: "中" },
-                  { value: "low", label: "低" },
-                ]} />
-            </Field>
-          </div>
-
-          {/* 詳細オプション折りたたみ */}
-          <button
-            onClick={() => setShowAdvanced(v => !v)}
-            style={{
-              marginTop: "12px", width: "100%", padding: "6px",
-              fontSize: "11px", color: "var(--color-text-tertiary)",
-              background: "var(--color-bg-secondary)", border: "none",
-              borderRadius: "var(--radius-md)", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
-            }}
-          >
-            <span style={{ transition: "transform 0.15s", display: "inline-block", transform: showAdvanced ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
-            詳細オプション（工数・タスクフォース・ToDo紐づけ）
-          </button>
-
-          {showAdvanced && (
-            <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "10px" }}>
-              <Field label="工数（任意・時間）">
-                <input
-                  type="number" min="0" step="0.5"
-                  value={estimatedHours}
-                  onChange={e => setEstimatedHours(e.target.value)}
-                  placeholder="例：2"
-                  style={inputStyle}
-                />
-              </Field>
-
-              <Field label="タスクフォース（任意）">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: selectedTfIds.length > 0 ? "6px" : 0 }}>
-                  {selectedTfIds.map(tfId => {
-                    const tf = taskForces.find(t => t.id === tfId);
-                    return tf ? (
-                      <span key={tfId} style={chipStyle}>
-                        {tf.tf_number ? `${tf.tf_number} ` : ""}{tf.name}
-                        <button onClick={() => setSelectedTfIds(prev => prev.filter(id => id !== tfId))} style={chipRemoveStyle}>×</button>
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-                <CustomSelect value="" onChange={value => {
-                  if (!value) return;
-                  setSelectedTfIds(prev => prev.includes(value) ? prev : [...prev, value]);
-                }}
-                  options={[
-                    { value: "", label: "＋ 追加..." },
-                    ...taskForces.filter(tf => !selectedTfIds.includes(tf.id)).map(tf => ({ value: tf.id, label: `${tf.tf_number ? `${tf.tf_number} ` : ""}${tf.name}` })),
-                  ]}
-                  searchable searchPlaceholder="TFで検索..." />
-              </Field>
-
-              <Field label="追加プロジェクト（任意）">
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: extraProjectIds.length > 0 ? "6px" : 0 }}>
-                  {extraProjectIds.map(pjId => {
-                    const pj = projects.find(p => p.id === pjId);
-                    return pj ? (
-                      <span key={pjId} style={chipStyle}>
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: pj.color_tag, flexShrink: 0, display: "inline-block" }} />
-                        {pj.name}
-                        <button onClick={() => setExtraProjectIds(prev => prev.filter(id => id !== pjId))} style={chipRemoveStyle}>×</button>
-                      </span>
-                    ) : null;
-                  })}
-                </div>
-                <CustomSelect value="" onChange={value => {
-                  if (!value) return;
-                  setExtraProjectIds(prev => prev.includes(value) ? prev : [...prev, value]);
-                }}
-                  options={[
-                    { value: "", label: "＋ 追加..." },
-                    ...projects.filter(p => p.id !== projectId && !extraProjectIds.includes(p.id)).map(p => ({ value: p.id, label: p.name.slice(0, 20) })),
-                  ]}
-                  searchable searchPlaceholder="プロジェクトで検索..." />
-              </Field>
-
-              {todos.length > 0 && (
-                <Field label="ToDo（複数選択可）">
-                  <div style={{
-                    border: `1px solid ${inputStyle.border}`,
-                    borderRadius: inputStyle.borderRadius,
-                    padding: "6px 8px", maxHeight: "100px", overflowY: "auto",
-                    background: inputStyle.background,
-                  }}>
-                    {todos.map(td => (
-                      <label key={td.id} style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "3px 0", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
-                        <input
-                          type="checkbox"
-                          checked={todoIds.includes(td.id)}
-                          onChange={e => setTodoIds(prev => e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id))}
-                          style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                        />
-                        <span>{td.title.split("\n")[0].slice(0, 40)}</span>
-                      </label>
-                    ))}
-                  </div>
-                </Field>
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* フッター */}
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "10px 16px", borderTop: "1px solid var(--color-border-primary)",
-        }}>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>Enter で追加</span>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={onClose} style={ghostBtnStyle}>キャンセル</button>
-            <button
-              disabled={!name.trim()}
-              onClick={handleAdd}
-              style={{
-                ...primaryBtnStyle,
-                opacity: name.trim() ? 1 : 0.45,
-                cursor: name.trim() ? "pointer" : "not-allowed",
-              }}
-            >
-              追加する
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
-  return (
-    <div>
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
-        {label}
-        {required && <span style={{ color: "var(--color-text-danger)", marginLeft: "3px" }}>*</span>}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "6px 9px",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", fontSize: "12px",
-  color: "var(--color-text-primary)", background: "var(--color-bg-primary)",
-  outline: "none",
-};
-
-const ghostBtnStyle: React.CSSProperties = {
-  padding: "5px 12px", fontSize: "12px",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-  background: "transparent",
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "5px 16px", fontSize: "12px", fontWeight: "500",
-  background: "var(--color-bg-info)", color: "var(--color-text-info)",
-  border: "1px solid var(--color-border-info)",
-  borderRadius: "var(--radius-md)",
-};
-
-const chipStyle: React.CSSProperties = {
-  display: "inline-flex", alignItems: "center", gap: "4px",
-  padding: "2px 7px", borderRadius: "var(--radius-full)",
-  fontSize: "11px", background: "var(--color-bg-secondary)",
-  color: "var(--color-text-primary)", border: "1px solid var(--color-border-primary)",
-};
-
-const chipRemoveStyle: React.CSSProperties = {
-  background: "none", border: "none", cursor: "pointer",
-  padding: "0", lineHeight: 1, fontSize: "12px",
-  color: "var(--color-text-tertiary)",
-};
-
-import React from "react";
