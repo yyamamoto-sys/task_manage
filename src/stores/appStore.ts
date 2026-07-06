@@ -27,7 +27,6 @@ import type {
   MemberTag, MemberTagMember,
 } from "../lib/localData/types";
 import {
-  fetchAllData,
   fetchCriticalData,
   fetchOkrData,
   fetchGroups,

@@ -37,7 +37,6 @@ interface Props {
   onClose: () => void;
   currentUser: Member;
   selectedProject?: Project | null;
-  projects?: Project[];
   inline?: boolean;
   defaultMode?: PanelMode;
   onWidthChange?: (width: number) => void;
@@ -59,7 +58,6 @@ export function ConsultationPanel({
   onClose,
   currentUser,
   selectedProject = null,
-  projects = [],
   inline = false,
   defaultMode = "consult",
   onWidthChange,

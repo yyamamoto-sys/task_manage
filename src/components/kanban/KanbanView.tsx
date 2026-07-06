@@ -47,16 +47,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   }, [tasks]);
 
   // TaskCard を React.memo で軽量化するための「参照が安定した」ルックアップ。
-  // .find()/.filter() をそのまま props に渡すと呼ぶたびに新しい配列/毎回O(n)探索になり、
-  // ドラッグ中のホバーや編集モーダルの開閉など無関係な state 変化でも全カードが再レンダリングされてしまう。
+  // .find()をそのまま呼ぶと毎回O(n)探索になり、ドラッグ中のホバーや編集モーダルの
+  // 開閉など無関係な state 変化でも全カードが再レンダリングされてしまう。
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
-  const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
   const todoById    = useMemo(() => new Map(todos.map(td => [td.id, td])), [todos]);
-  const assigneesByTaskId = useMemo(() => {
-    const m = new Map<string, Member[]>();
-    for (const t of tasks) m.set(t.id, getAssigneeIds(t).map(id => memberById.get(id)).filter((x): x is Member => !!x));
-    return m;
-  }, [tasks, memberById]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
@@ -224,7 +218,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       task={task}
                       project={task.project_id ? projectById.get(task.project_id) : undefined}
                       todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
-                      assignees={assigneesByTaskId.get(task.id) ?? []}
                       allMembers={members}
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
@@ -296,12 +289,11 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, assignees, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, onSaveTask, currentUserId,
+  task, project, todo, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
   todo?: ToDo;
-  assignees: Member[];
   allMembers: Member[];
   parentName?: string;
   childCount?: number;
@@ -314,7 +306,6 @@ const TaskCard = memo(function TaskCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const isDone = task.status === "done";
-  const isOverdue = task.due_date && !isDone && task.due_date < new Date().toISOString().split("T")[0];
 
   return (
     <div

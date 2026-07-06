@@ -1038,11 +1038,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenGraph={() => setIsGraphOpen(true)}
         onOpenCalendar={() => setIsCalendarOpen(true)}
         onOpenStructure={() => setIsStructureOpen(true)}
-        onOpenKrReport={() => setIsKrReportOpen(true)}
-        onOpenKrSession={() => setIsKrSessionOpen(true)}
-        onOpenKrWhy={() => setIsKrWhyOpen(true)}
-        onSetOkrActiveTool={setOkrActiveTool}
-        okrActiveTool={okrActiveTool}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
         onCreateProject={() => setIsPjCreateOpen(true)}
@@ -1177,11 +1172,6 @@ interface SidebarProps {
   onOpenGraph: () => void;
   onOpenCalendar: () => void;
   onOpenStructure: () => void;
-  onOpenKrReport: () => void;
-  onOpenKrSession: () => void;
-  onOpenKrWhy: () => void;
-  okrActiveTool: OkrActiveTool;
-  onSetOkrActiveTool: (tool: OkrActiveTool) => void;
   onOpenAdmin: () => void;
   onOpenGuide: () => void;
   onCreateProject: () => void;
@@ -1197,8 +1187,8 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenKrReport, onOpenKrSession, onOpenKrWhy,
-  onSetOkrActiveTool, okrActiveTool, onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
+  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure,
+  onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);

@@ -191,7 +191,9 @@ export async function applyProposal(
   proposal: UIProposal,
   shortIdMap: Map<string, string>,
   currentUserId: string,
-  currentGroupId?: string | null,
+  // このパスは add_task/add_project を扱わない（needs_confirmation経由でapplyProposalWithConfirmationへ）
+  // ため未使用。呼び出し元との引数構成を揃えるために残す。
+  _currentGroupId?: string | null,
 ): Promise<ApplyResult> {
   const { action_type } = proposal;
 

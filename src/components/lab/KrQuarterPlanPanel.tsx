@@ -289,7 +289,7 @@ interface Props {
   initialKrId?: string;
 }
 
-export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
+export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline = false, initialKrId }: Props) {
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
