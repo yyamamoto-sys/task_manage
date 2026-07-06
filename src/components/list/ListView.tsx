@@ -513,6 +513,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     return rows;
   }, [nestTree, parentNameOf, filteredTasks, collapsedIds]);
 
+  // buildRows() は isParentTask/childrenOf を親タスクごとに呼ぶため実質 O(件数²)。
+  // ドラッグ中は dropZone が高頻度（ほぼ毎フレーム）で更新されるため、buildRows を
+  // render のたびに呼び直すとドラッグ中に顕著なカクつきが出る。groups が変わらない限り
+  // （＝実データや折りたたみ状態が変わらない限り）同じ結果を使い回すようグループ単位でキャッシュする。
+  const rowsByGroup = useMemo(() => {
+    const map = new Map<string, RenderRow[]>();
+    for (const g of groups) map.set(g.label, buildRows(g.tasks));
+    return map;
+  }, [groups, buildRows]);
+
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
@@ -836,7 +846,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
-                  {buildRows(group.tasks).map(({ task, depth, parentNote, isParent }) => {
+                  {(rowsByGroup.get(group.label) ?? []).map(({ task, depth, parentNote, isParent }) => {
                     const taskAssigneeIds = getAssigneeIds(task);
                     const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
@@ -1002,7 +1012,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         </td>
                       </tr>
                       {(() => {
-                        const rows = buildRows(group.tasks);
+                        const rows = rowsByGroup.get(group.label) ?? [];
                         return rows.map(({ task, depth, parentNote, isParent }, ri) => {
                         const closesGroup = depth === 1 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
                         const isEven = rowIdx % 2 === 0;
