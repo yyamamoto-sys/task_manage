@@ -211,7 +211,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       if (va > vb) return sortDir === "asc" ?  1 : -1;
       return 0;
     });
-  }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
+  }, [allTasks, selectedProject, krTaskIds, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
   // 親タスクの導出ステータス・進捗（PC表の行ごとに effectiveStatus/parentProgress を呼ぶと

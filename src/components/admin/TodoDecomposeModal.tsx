@@ -65,6 +65,10 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         setPhase("error");
       }
     })();
+    // モーダルを開いた時点のスナップショットで1回だけAI分解を呼ぶ意図的な設計。
+    // todo/tf/kr/membersを依存に含めると、ストアの無関係な更新のたびにAI呼び出しが
+    // 再実行されてしまう（コスト増・二重提案のおそれ）。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSave = async () => {

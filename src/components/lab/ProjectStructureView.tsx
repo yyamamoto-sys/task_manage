@@ -779,7 +779,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
   const allPjMemberIds = useMemo(() => {
     if (!project) return new Set<string>();
     return new Set([...ownerIds, ...(project.member_ids ?? [])]);
-  }, [project, ownerIds, memberIds]);
+  }, [project, ownerIds]);
 
   // グループ内に既にいるメンバーのIDをorg全体から収集
   const orgMemberIdSet = useMemo(() => {

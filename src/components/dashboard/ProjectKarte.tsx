@@ -259,7 +259,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
     } finally {
       setAnalyzing(false);
     }
-  }, [project, owners, pjTasks, milestones, pjAllMembers, today, currentUser.id]);
+  }, [project, owners, pjTasks, milestones, pjAllMembers, memberById, today, currentUser.id]);
 
   const latest = analyses[0] ?? null;
   const accent = project.color_tag;

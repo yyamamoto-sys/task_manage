@@ -66,6 +66,9 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
   });
 
   // #1: todayStr を useMemo でメモ化（ym が変わるたびに再評価 → 日跨ぎでも正確）
+  // ym 自体は式の中で参照しないが、月移動のたびに new Date() を取り直すための
+  // 意図的なトリガー依存（ESLintのunnecessary-dependency警告は無視してよい）。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   const todayStr = useMemo(() => toStr(new Date()), [ym]);
 
   // 表示グリッドの日付範囲（6週分）を ym から導出してフィルタに使う

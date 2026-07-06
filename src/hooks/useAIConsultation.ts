@@ -226,7 +226,8 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         setCallState("error");
       }
     },
-    [projects, tasks, members, todos, projectIds],
+    [projects, tasks, members, todos, projectIds, currentMemberId,
+      objective, keyResults, taskForces, taskProjects, projectTaskForces],
   );
 
   // ===== reset: セッションをリセット =====
