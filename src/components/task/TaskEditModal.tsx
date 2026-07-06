@@ -21,6 +21,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import { extractMentions, mentionsEqual } from "../../lib/mentions";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
+import { showToast } from "../common/Toast";
 
 interface Props {
   taskId: string;
@@ -39,6 +40,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allTaskProjects     = useAppStore(s => s.taskProjects);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
+  const restoreTask         = useAppStore(s => s.restoreTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
   const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
   const addTaskProject      = useAppStore(s => s.addTaskProject);
@@ -203,9 +205,13 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     if (!originalTask) return;
     if (!await confirmDialog(`「${originalTask.name}」を削除しますか？`)) return;
     deleteTask(taskId, currentUser.id);
+    showToast(`「${originalTask.name}」を削除しました`, "info", {
+      label: "元に戻す",
+      onClick: () => { restoreTask(taskId); },
+    });
     onDeleted?.(taskId);
     onClose();
-  }, [originalTask, taskId, currentUser.id, deleteTask, onDeleted, onClose]);
+  }, [originalTask, taskId, currentUser.id, deleteTask, restoreTask, onDeleted, onClose]);
 
   // 全 Hooks を呼び終えた後に early return（react-hooks/rules-of-hooks 遵守）
   if (!originalTask) return null;

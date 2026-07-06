@@ -417,6 +417,15 @@ export async function softDeleteTask(id: string, deletedBy: string) {
   if (error) throw error;
 }
 
+/** ソフト削除の取り消し（トーストの「元に戻す」用） */
+export async function restoreTask(id: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("tasks")
+    .update({ is_deleted: false, deleted_at: null, deleted_by: null, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ===== QuarterlyObjective =====
 
 export async function upsertQuarterlyObjective(qObj: QuarterlyObjective, expectedUpdatedAt?: string): Promise<string> {

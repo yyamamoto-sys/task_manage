@@ -87,6 +87,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
   const deleteTask = useAppStore(s => s.deleteTask);
+  const restoreTask = useAppStore(s => s.restoreTask);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
@@ -248,11 +249,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const bulkUpdateStatus = useCallback(async (status: Task["status"]) => {
     const targets = allTasks.filter(t => selectedIds.has(t.id));
     if (targets.length === 0) return;
+    // Undo用に変更前ステータスを控える。巻き戻しは「Undo時点の最新タスク」に
+    // 旧ステータスだけ適用する（古いスナップショット全体を保存すると楽観ロックと衝突するため）
+    const prevStatusById = new Map(targets.map(t => [t.id, t.status]));
     try {
       await Promise.all(targets.map(t =>
         saveTask({ ...t, status, updated_by: currentUser.id }),
       ));
-      showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`);
+      showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`, "success", {
+        label: "元に戻す",
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          prevStatusById.forEach((prevStatus, id) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({ ...t, status: prevStatus, updated_by: currentUser.id });
+          });
+        },
+      });
       clearSelection();
     } catch (err) {
       showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
@@ -263,6 +276,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const bulkUpdateAssignee = useCallback(async (memberId: string) => {
     const targets = allTasks.filter(t => selectedIds.has(t.id));
     if (targets.length === 0) return;
+    // Undo用に変更前の担当者を控える（方式はbulkUpdateStatusと同じ）
+    const prevAssigneesById = new Map(targets.map(t => [
+      t.id,
+      { single: t.assignee_member_id, multi: t.assignee_member_ids },
+    ]));
     try {
       await Promise.all(targets.map(t => saveTask({
         ...t,
@@ -271,7 +289,21 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         updated_by: currentUser.id,
       })));
       const m = members.find(mm => mm.id === memberId);
-      showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`);
+      showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`, "success", {
+        label: "元に戻す",
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          prevAssigneesById.forEach((prev, id) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({
+              ...t,
+              assignee_member_id: prev.single,
+              assignee_member_ids: prev.multi,
+              updated_by: currentUser.id,
+            });
+          });
+        },
+      });
       clearSelection();
     } catch (err) {
       showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
@@ -287,12 +319,15 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     try {
       const ids = Array.from(selectedIds);
       await Promise.all(ids.map(id => deleteTask(id, currentUser.id)));
-      showToast(`${count}件のタスクを削除しました`);
+      showToast(`${count}件のタスクを削除しました`, "info", {
+        label: "元に戻す",
+        onClick: () => { ids.forEach(id => restoreTask(id)); },
+      });
       clearSelection();
     } catch (err) {
       showToast(`一括削除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
     }
-  }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
+  }, [selectedIds, deleteTask, restoreTask, currentUser.id, clearSelection]);
 
   // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける：
   // - 上端/下端（before/after）：ドロップ先と同じ階層（同じ親、または両方最上位）の並びに挿入

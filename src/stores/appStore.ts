@@ -38,7 +38,7 @@ import {
   upsertTaskForce, softDeleteTaskForce,
   upsertToDo, softDeleteToDo,
   upsertProject, softDeleteProject,
-  upsertTask, softDeleteTask,
+  upsertTask, softDeleteTask, restoreTask as restoreTaskDb,
   upsertMilestone, softDeleteMilestone,
   insertProjectTaskForce, deleteProjectTaskForce,
   upsertQuarterlyObjective, softDeleteQuarterlyObjective,
@@ -108,6 +108,7 @@ export interface AppState {
   // ===== Task =====
   saveTask: (task: Task) => Promise<void>;
   deleteTask: (id: string, deletedBy: string) => Promise<void>;
+  restoreTask: (id: string) => Promise<void>;
 
   // ===== ProjectTaskForce =====
   addProjectTaskForce: (ptf: ProjectTaskForce) => Promise<void>;
@@ -670,6 +671,20 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     try {
       await softDeleteTask(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  restoreTask: async (id) => {
+    set(state => ({
+      tasks: state.tasks.map(t =>
+        t.id === id ? { ...t, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : t
+      ),
+    }));
+    try {
+      await restoreTaskDb(id);
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
