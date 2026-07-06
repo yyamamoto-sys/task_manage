@@ -779,13 +779,20 @@ export function GanttView({
                   return (
                     <div key={pj.id}>
                       {/* PJ行ラベル */}
+                      {/* onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素 */}
+                      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
                       <div style={{
                         height: 36, display: "flex", alignItems: "center",
                         gap: "6px", padding: "0 8px 0 10px",
                         background: "var(--color-bg-secondary)",
                         borderBottom: "1px solid var(--color-border-primary)",
                         cursor: editingPjNameId === pj.id ? "default" : "pointer",
-                      }} onClick={() => { if (editingPjNameId !== pj.id) togglePJ(pj.id); }}>
+                      }}
+                        onClick={() => { if (editingPjNameId !== pj.id) togglePJ(pj.id); }}
+                        role={editingPjNameId === pj.id ? undefined : "button"}
+                        tabIndex={editingPjNameId === pj.id ? undefined : 0}
+                        onKeyDown={editingPjNameId === pj.id ? undefined : (e => { if (e.key === "Enter" || e.key === " ") togglePJ(pj.id); })}
+                      >
                         <span style={{
                           fontSize: "11px", color: "var(--color-text-secondary)",
                           transition: "transform 0.15s",
@@ -884,7 +891,11 @@ export function GanttView({
                         background: "var(--color-bg-secondary)",
                         borderBottom: "1px solid var(--color-border-primary)",
                         cursor: "pointer",
-                      }} onClick={() => togglePJ(`todo_${todoId}`)}>
+                      }}
+                        onClick={() => togglePJ(`todo_${todoId}`)}
+                        role="button" tabIndex={0}
+                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`todo_${todoId}`); }}
+                      >
                         <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
                         <div style={{ width: 8, height: 8, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
                         <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
@@ -923,7 +934,11 @@ export function GanttView({
                         background: "var(--color-bg-secondary)",
                         borderBottom: "1px solid var(--color-border-primary)",
                         cursor: "pointer",
-                      }} onClick={() => togglePJ(`person_${m.id}`)}>
+                      }}
+                        onClick={() => togglePJ(`person_${m.id}`)}
+                        role="button" tabIndex={0}
+                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`person_${m.id}`); }}
+                      >
                         <span style={{
                           fontSize: "11px", color: "var(--color-text-secondary)",
                           transition: "transform 0.15s", display: "inline-block",
@@ -987,7 +1002,8 @@ export function GanttView({
           </div>
         </div>
 
-        {/* リサイズハンドル */}
+        {/* リサイズハンドル（ラベル列幅の調整）。マウスのドラッグ操作専用でキーボード代替手段はない */}
+        {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
         <div
           onMouseDown={!isMobile ? handleDividerMouseDown : undefined}
           onMouseEnter={() => setIsDividerHovered(true)}

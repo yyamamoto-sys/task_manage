@@ -702,6 +702,8 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   // ===== レンダリング =====
 
   const content = (
+    // クリックしても何も起きないラッパー（inline=false時に背景クリックのバブリングを防止するだけ）
+    // eslint-disable-next-line jsx-a11y/click-events-have-key-events
     <div style={{
       width: inline ? "100%" : "min(1040px, 100vw)",
       height: "100%",
@@ -1215,6 +1217,9 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   if (inline) return content;
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 200,

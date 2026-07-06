@@ -492,6 +492,9 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   // ===== フローティングモード =====
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+    // 背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 200,
@@ -500,6 +503,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
+      {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         style={{
           width: "min(760px, 100vw)",
@@ -579,6 +584,8 @@ function InputStep({
           cursor: "pointer",
         }}
         onClick={() => fileInputRef.current?.click()}
+        role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
       >
         <div style={{ fontSize: "28px", marginBottom: "8px" }}>📄</div>
         <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "4px" }}>
@@ -875,6 +882,9 @@ function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjC
               <div
                 key={c.hex}
                 onClick={() => { setNewColor(c.hex); onNewProjColorChange(c.hex); }}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setNewColor(c.hex); onNewProjColorChange(c.hex); } }}
+                aria-pressed={newColor === c.hex}
                 title={c.label}
                 style={{
                   width: "20px",
