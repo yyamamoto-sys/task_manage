@@ -88,6 +88,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const canSave = name.trim() && purpose.trim() && ownerIds.length > 0;
 
   return (
+    // 背景クリックで閉じる（マウス操作の補助）。Escapeキー（handleKeyDown）と
+    // ✕ボタンでキーボードからも閉じられるため、背景要素をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}

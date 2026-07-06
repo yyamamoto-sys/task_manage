@@ -431,6 +431,9 @@ export function OkrDashboardView({
 
       {/* ─── 概要オーバーレイ（右上「🎯 OKR」ボタンから開く） ─── */}
       {overviewOpen && (
+        // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+        // 背景要素をフォーカス可能にする必要はない
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
           style={{
             position: "fixed", inset: 0, zIndex: 300,
@@ -439,6 +442,8 @@ export function OkrDashboardView({
           }}
           onClick={e => { if (e.target === e.currentTarget) setOverviewOpen(false); }}
         >
+          {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
           <div
             className="panel-slide-up"
             style={{
@@ -558,6 +563,9 @@ export function OkrDashboardView({
                         <div
                           key={kr.id}
                           onClick={() => onSelectKr(isSelected ? null : kr.id)}
+                          role="button" tabIndex={0}
+                          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onSelectKr(isSelected ? null : kr.id); }}
+                          aria-pressed={isSelected}
                           style={{
                             background: isSelected ? "rgba(99,102,241,0.06)" : "var(--color-bg-secondary)",
                             border: `1px solid ${isSelected ? "rgba(99,102,241,0.35)" : "var(--color-border-primary)"}`,
@@ -696,6 +704,9 @@ export function OkrDashboardView({
 
       {/* ─── 履歴オーバーレイ ─── */}
       {historyOpen && (
+        // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
+        // 背景要素をフォーカス可能にする必要はない
+        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
           style={{
             position: "fixed", inset: 0, zIndex: 300,
@@ -704,6 +715,8 @@ export function OkrDashboardView({
           }}
           onClick={e => { if (e.target === e.currentTarget) setHistoryOpen(false); }}
         >
+          {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
+          {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
           <div
             className="panel-slide-up"
             style={{

@@ -230,7 +230,9 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           )}
         </div>
       )}
-      {/* オーバーレイ */}
+      {/* オーバーレイ：背景クリックで閉じる（マウス操作の補助）。閉じる操作自体はキャンセルボタンで
+          キーボードから可能なため、背景要素をフォーカス可能にする必要はない */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         className="animate-overlay"
         onClick={onClose}
