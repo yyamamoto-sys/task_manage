@@ -11,7 +11,7 @@ import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
-import { childrenOf, isParentTask, effectiveStatus, parentProgress } from "../../lib/taskHierarchy";
+import { childrenOf, isParentTask } from "../../lib/taskHierarchy";
 import { calcProgressPct } from "../../lib/stats";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -97,6 +97,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 行の描画ループで .find() を毎回呼ぶと O(件数×行数) になるため、O(1)ルックアップ用のMapを用意する
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
   const todoById    = useMemo(() => new Map(todos.map(td => [td.id, td])), [todos]);
+  const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+  // モバイルカード行（ListMobileTaskRow）を React.memo で軽量化するための参照安定な担当者配列。
+  // .filter() をそのまま渡すと毎回新しい配列になりmemoが効かない。
+  const assigneesByTaskId = useMemo(() => {
+    const m = new Map<string, Member[]>();
+    for (const t of allTasks) m.set(t.id, getAssigneeIds(t).map(id => memberById.get(id)).filter((x): x is Member => !!x));
+    return m;
+  }, [allTasks, memberById]);
 
   // 永続化フィルター
   const [groupBy,        setGroupByState       ] = useState<GroupBy>(() => lsGet("groupBy", "project"));
@@ -847,94 +855,29 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                   </div>
                   {(rowsByGroup.get(group.label) ?? []).map(({ task, depth, parentNote, isParent }) => {
-                    const taskAssigneeIds = getAssigneeIds(task);
-                    const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
                     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-                    // 親はステータス・進捗を子から導出
-                    const dispStatus = isParent ? effectiveStatus(task, filteredTasks) : task.status;
-                    const isDone    = dispStatus === "done";
-                    const isOverdue = task.due_date && task.due_date < t0 && !isDone;
-                    const isSelected = selectedIds.has(task.id);
-                    const collapsed = collapsedIds.has(task.id);
-                    const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
-                    // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
-                    // 状態は左カラーバーと文字スタイルで表現し、詳細はタップで TaskEditModal が開く。
-                    const statusColor = TASK_STATUS_STYLE[dispStatus].color;
+                    // 親のステータス・進捗は derivedByParentId から引く（参照安定＝React.memo が効く）
+                    const derived = isParent ? derivedByParentId.get(task.id) : undefined;
+                    const dispStatus = derived?.status ?? task.status;
+                    const isDone = dispStatus === "done";
                     return (
-                      <div key={task.id} onClick={() => setEditingTaskId(task.id)}
-                        style={{
-                          display: "flex", alignItems: "center", gap: "10px",
-                          marginLeft: depth === 1 ? 18 : 0,
-                          background: isSelected ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                          border: isSelected
-                            ? "1px solid var(--color-brand-border)"
-                            : "1px solid var(--color-border-primary)",
-                          borderLeft: `4px solid ${pj?.color_tag ?? statusColor}`,
-                          borderRadius: "var(--radius-md)",
-                          padding: "12px 12px", marginBottom: "6px",
-                          cursor: "pointer", opacity: isDone ? 0.55 : 1,
-                          minHeight: "52px",
-                        }}>
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelect(task.id)}
-                          onClick={e => e.stopPropagation()}
-                          aria-label={`${task.name} を選択`}
-                          style={{ cursor: "pointer", width: 18, height: 18, accentColor: "var(--color-brand)", flexShrink: 0 }}
-                        />
-                        {isParent && (
-                          <button
-                            onClick={e => toggleCollapse(task.id, e)}
-                            aria-label={collapsed ? "子タスクを表示" : "子タスクを隠す"}
-                            aria-expanded={!collapsed}
-                            style={{
-                              flexShrink: 0, width: 18, height: 18, padding: 0, border: "none",
-                              background: "transparent", cursor: "pointer", fontSize: "10px",
-                              color: "var(--color-text-tertiary)",
-                            }}
-                          >{collapsed ? "▶" : "▼"}</button>
-                        )}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{
-                            fontSize: "13px", fontWeight: isParent ? 700 : 500,
-                            color: "var(--color-text-primary)",
-                            lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
-                            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          }}>
-                            {depth === 1 && !parentNote && <span style={{ color: "var(--color-text-tertiary)", marginRight: 3 }}>↳</span>}
-                            {task.name}
-                          </div>
-                          {isParent && prog && (
-                            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
-                          )}
-                          {(task.tags?.length ?? 0) > 0 && (
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
-                              {task.tags!.map((tag, ti) => (
-                                <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
-                              ))}
-                            </div>
-                          )}
-                          {parentNote && (
-                            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {parentNote}</div>
-                          )}
-                        </div>
-                        {taskAssignees.length > 0 && (
-                          <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
-                            {taskAssignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={20} />)}
-                            {taskAssignees.length > 2 && (
-                              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>+{taskAssignees.length - 2}</span>
-                            )}
-                          </div>
-                        )}
-                        {task.due_date && (
-                          <span style={{
-                            fontSize: "11px", flexShrink: 0, minWidth: "42px", textAlign: "right",
-                            color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
-                            fontWeight: isOverdue ? 600 : 400,
-                          }}>{task.due_date.slice(5).replace("-", "/")}</span>
-                        )}
-                      </div>
+                      <ListMobileTaskRow
+                        key={task.id}
+                        task={task}
+                        depth={depth}
+                        parentNote={parentNote}
+                        isParent={isParent}
+                        pj={pj}
+                        assignees={assigneesByTaskId.get(task.id) ?? []}
+                        dispStatus={dispStatus}
+                        isOverdue={!!(task.due_date && task.due_date < t0 && !isDone)}
+                        isChecked={selectedIds.has(task.id)}
+                        isCollapsed={collapsedIds.has(task.id)}
+                        prog={derived ?? null}
+                        onOpen={setEditingTaskId}
+                        onToggleSelect={toggleSelect}
+                        onToggleCollapse={toggleCollapse}
+                      />
                     );
                   })}
                 </div>
@@ -1108,6 +1051,114 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     </div>
   );
 }
+
+// ===== ListMobileTaskRow（モバイルのカード行） =====
+//
+// 【設計意図】React.memo 化。PC表の行と同じ理由（選択・折りたたみ操作のたびに
+// 全カードが再レンダリングされるのを防ぐ）。
+
+interface ListMobileTaskRowProps {
+  task: Task;
+  depth: 0 | 1;
+  parentNote?: string;
+  isParent: boolean;
+  pj?: Project;
+  assignees: Member[];
+  dispStatus: Task["status"];
+  isOverdue: boolean;
+  isChecked: boolean;
+  isCollapsed: boolean;
+  prog: ParentDerived | null;
+  onOpen: (taskId: string) => void;
+  onToggleSelect: (id: string, e?: React.MouseEvent) => void;
+  onToggleCollapse: (id: string, e?: React.MouseEvent) => void;
+}
+
+const ListMobileTaskRow = memo(function ListMobileTaskRow({
+  task, depth, parentNote, isParent, pj, assignees, dispStatus, isOverdue,
+  isChecked, isCollapsed, prog, onOpen, onToggleSelect, onToggleCollapse,
+}: ListMobileTaskRowProps) {
+  const isDone = dispStatus === "done";
+  // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
+  // 状態は左カラーバーと文字スタイルで表現し、詳細はタップで TaskEditModal が開く。
+  const statusColor = TASK_STATUS_STYLE[dispStatus].color;
+  return (
+    <div onClick={() => onOpen(task.id)}
+      style={{
+        display: "flex", alignItems: "center", gap: "10px",
+        marginLeft: depth === 1 ? 18 : 0,
+        background: isChecked ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+        border: isChecked
+          ? "1px solid var(--color-brand-border)"
+          : "1px solid var(--color-border-primary)",
+        borderLeft: `4px solid ${pj?.color_tag ?? statusColor}`,
+        borderRadius: "var(--radius-md)",
+        padding: "12px 12px", marginBottom: "6px",
+        cursor: "pointer", opacity: isDone ? 0.55 : 1,
+        minHeight: "52px",
+      }}>
+      <input
+        type="checkbox"
+        checked={isChecked}
+        onChange={() => onToggleSelect(task.id)}
+        onClick={e => e.stopPropagation()}
+        aria-label={`${task.name} を選択`}
+        style={{ cursor: "pointer", width: 18, height: 18, accentColor: "var(--color-brand)", flexShrink: 0 }}
+      />
+      {isParent && (
+        <button
+          onClick={e => onToggleCollapse(task.id, e)}
+          aria-label={isCollapsed ? "子タスクを表示" : "子タスクを隠す"}
+          aria-expanded={!isCollapsed}
+          style={{
+            flexShrink: 0, width: 18, height: 18, padding: 0, border: "none",
+            background: "transparent", cursor: "pointer", fontSize: "10px",
+            color: "var(--color-text-tertiary)",
+          }}
+        >{isCollapsed ? "▶" : "▼"}</button>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontSize: "13px", fontWeight: isParent ? 700 : 500,
+          color: "var(--color-text-primary)",
+          lineHeight: 1.4, textDecoration: isDone ? "line-through" : "none",
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}>
+          {depth === 1 && !parentNote && <span style={{ color: "var(--color-text-tertiary)", marginRight: 3 }}>↳</span>}
+          {task.name}
+        </div>
+        {isParent && prog && (
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
+        )}
+        {(task.tags?.length ?? 0) > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
+            {task.tags!.map((tag, ti) => (
+              <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
+            ))}
+          </div>
+        )}
+        {parentNote && (
+          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>↳ {parentNote}</div>
+        )}
+      </div>
+      {assignees.length > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "2px", flexShrink: 0 }}>
+          {assignees.slice(0, 2).map(m => <Avatar key={m.id} member={m} size={20} />)}
+          {assignees.length > 2 && (
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>+{assignees.length - 2}</span>
+          )}
+        </div>
+      )}
+      {task.due_date && (
+        <span style={{
+          fontSize: "11px", flexShrink: 0, minWidth: "42px", textAlign: "right",
+          color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+          fontWeight: isOverdue ? 600 : 400,
+        }}>{task.due_date.slice(5).replace("-", "/")}</span>
+      )}
+    </div>
+  );
+});
 
 // ===== ListTaskRow（PC表の1行） =====
 //
