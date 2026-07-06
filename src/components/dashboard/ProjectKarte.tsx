@@ -424,7 +424,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
               display: "flex", alignItems: "center", gap: "6px",
               padding: "7px 14px", fontSize: "12px", fontWeight: 600,
               border: "none", borderRadius: "var(--radius-full)",
-              background: analyzing ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              background: analyzing ? "var(--color-bg-tertiary)" : "var(--gradient-ai)",
               color: analyzing ? "var(--color-text-tertiary)" : "#fff",
               cursor: analyzing ? "default" : "pointer",
               boxShadow: analyzing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
@@ -660,7 +660,7 @@ function AnalysisModal({
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div style={{ width: "min(720px, 100%)", maxHeight: "calc(100vh - 48px)", background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
-        <div className="ai-shimmer" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+        <div className="ai-shimmer" style={{ background: "var(--gradient-ai)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
           <span style={{ fontSize: "16px" }}>✨</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>AI分析：{projectName}</div>

@@ -396,7 +396,7 @@ export function ConsultationPanel({
 
         {/* ===== ヘッダー（グラデーション） ===== */}
         <div className="ai-shimmer" style={{
-          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+          background: "var(--gradient-ai)",
           flexShrink: 0, padding: "12px 14px 10px",
         }}>
           {/* タイトル行 */}
@@ -437,7 +437,7 @@ export function ConsultationPanel({
                   padding: "5px 12px", fontSize: "11px", fontWeight: "600",
                   borderRadius: "var(--radius-full)", border: "none", cursor: "pointer",
                   background: panelMode === mode ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.18)",
-                  color: panelMode === mode ? "#6366f1" : "rgba(255,255,255,0.85)",
+                  color: panelMode === mode ? "var(--color-ai-from)" : "rgba(255,255,255,0.85)",
                   transition: "all 0.15s", whiteSpace: "nowrap",
                 }}
               >
@@ -453,7 +453,7 @@ export function ConsultationPanel({
           background: "rgba(99,102,241,0.06)",
           borderBottom: "1px solid rgba(99,102,241,0.12)",
           fontSize: "11px",
-          color: "#6366f1",
+          color: "var(--color-ai-from)",
           fontWeight: "500",
           flexShrink: 0,
           lineHeight: 1.4,

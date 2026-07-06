@@ -518,7 +518,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
                       style={{
                         padding: "11px 24px",
                         background: canGenerate
-                          ? "linear-gradient(135deg, #8b5cf6, #7c3aed)"
+                          ? "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))"
                           : "var(--color-bg-tertiary)",
                         border: "none",
                         borderRadius: "var(--radius-md)",
@@ -572,7 +572,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
                     <textarea value={editHtml} onChange={e => setEditHtml(e.target.value)} rows={16}
                       style={{ width: "100%", padding: "10px 12px", fontSize: "12px", fontFamily: "monospace", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box" }} />
                     <div style={{ display: "flex", gap: "8px" }}>
-                      <button onClick={handleSaveEdit} disabled={savingEdit} style={{ ...barBtn, background: savingEdit ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#8b5cf6,#7c3aed)", color: savingEdit ? "var(--color-text-tertiary)" : "#fff", border: "none", fontWeight: 600, padding: "7px 16px" }}>{savingEdit ? "保存中…" : "💾 保存"}</button>
+                      <button onClick={handleSaveEdit} disabled={savingEdit} style={{ ...barBtn, background: savingEdit ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))", color: savingEdit ? "var(--color-text-tertiary)" : "#fff", border: "none", fontWeight: 600, padding: "7px 16px" }}>{savingEdit ? "保存中…" : "💾 保存"}</button>
                       <button onClick={() => setEditing(false)} style={barBtn}>キャンセル</button>
                     </div>
                   </div>

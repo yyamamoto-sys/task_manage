@@ -393,7 +393,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             style={{
               display: "inline-flex", alignItems: "center", gap: "8px",
               padding: "12px 24px",
-              background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              background: "var(--gradient-ai)",
               border: "none", borderRadius: "var(--radius-full)",
               color: "#fff", fontSize: "14px", fontWeight: "700",
               boxShadow: "0 4px 16px rgba(99,102,241,0.4)",
@@ -459,7 +459,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   display: "flex", alignItems: "center", gap: "5px",
                   padding: "4px 12px", fontSize: "11px", fontWeight: 600,
                   border: "none", borderRadius: "var(--radius-full)", flexShrink: 0,
-                  background: allAnalyzing ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  background: allAnalyzing ? "var(--color-bg-tertiary)" : "var(--gradient-ai)",
                   color: allAnalyzing ? "var(--color-text-tertiary)" : "#fff",
                   cursor: allAnalyzing ? "default" : "pointer",
                   boxShadow: allAnalyzing ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
@@ -527,7 +527,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           onClick={e => { if (e.target === e.currentTarget) setShowAllAnalysis(false); }}
         >
           <div style={{ width: "min(740px, 100%)", maxHeight: "calc(100vh - 48px)", background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
-            <div className="ai-shimmer" style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
+            <div className="ai-shimmer" style={{ background: "var(--gradient-ai)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
               <span style={{ fontSize: "16px" }}>✨</span>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>AI分析：全プロジェクト ポートフォリオ</div>

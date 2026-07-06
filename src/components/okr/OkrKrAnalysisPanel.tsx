@@ -335,7 +335,7 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
             <button onClick={analyzing ? undefined : runAnalysis} disabled={analyzing || !canAnalyze} style={{
               display: "flex", alignItems: "center", gap: "6px", padding: "8px 16px", fontSize: "12px", fontWeight: 600,
               border: "none", borderRadius: "var(--radius-full)",
-              background: (analyzing || !canAnalyze) ? "var(--color-bg-tertiary)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+              background: (analyzing || !canAnalyze) ? "var(--color-bg-tertiary)" : "var(--gradient-ai)",
               color: (analyzing || !canAnalyze) ? "var(--color-text-tertiary)" : "#fff", cursor: (analyzing || !canAnalyze) ? "default" : "pointer",
               boxShadow: (analyzing || !canAnalyze) ? "none" : "0 2px 8px rgba(99,102,241,0.3)",
             }}>
@@ -415,7 +415,7 @@ function ErrBox({ children }: { children: React.ReactNode }) {
 }
 const primaryBtn: React.CSSProperties = {
   padding: "8px 18px", fontSize: "12px", fontWeight: 600,
-  background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff",
+  background: "var(--gradient-ai)", color: "#fff",
   border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
 };
 const ghostBtn: React.CSSProperties = {

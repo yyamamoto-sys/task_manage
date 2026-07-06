@@ -894,7 +894,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
                 disabled={!selectedKr}
                 style={{
                   padding: "11px 24px", fontSize: "13px", fontWeight: "600",
-                  background: !selectedKr ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+                  background: !selectedKr ? "var(--color-bg-tertiary)" : "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
                   border: "none", borderRadius: "var(--radius-md)",
                   color: !selectedKr ? "var(--color-text-tertiary)" : "#fff",
                   cursor: !selectedKr ? "not-allowed" : "pointer",
@@ -1012,7 +1012,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
               <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
                 <span>第{turnCount}ターン</span>
                 {turnCount >= 2 && (
-                  <span style={{ color: "#6366f1" }}>計画書を生成できます</span>
+                  <span style={{ color: "var(--color-ai-from)" }}>計画書を生成できます</span>
                 )}
               </div>
             )}
@@ -1034,7 +1034,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
                       fontSize: "13px", lineHeight: 1.7,
                     }}>
                       {msg.role === "assistant" && (
-                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
+                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-ai-from-deep)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
                       )}
                       {msg.role === "assistant"
                         ? (textContent.length > 400 || textContent.includes("\n##")
@@ -1094,7 +1094,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
                     disabled={turnCount < 1}
                     style={{
                       padding: "9px 16px", fontSize: "12px", fontWeight: "600",
-                      background: turnCount >= 1 ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--color-bg-tertiary)",
+                      background: turnCount >= 1 ? "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))" : "var(--color-bg-tertiary)",
                       border: "none", borderRadius: "var(--radius-md)",
                       color: turnCount >= 1 ? "#fff" : "var(--color-text-tertiary)",
                       cursor: turnCount >= 1 ? "pointer" : "not-allowed",
@@ -1149,7 +1149,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
               padding: "16px 18px",
               marginBottom: "14px",
             }}>
-              <div style={{ fontSize: "10px", fontWeight: "600", color: "#6366f1", letterSpacing: "0.08em", marginBottom: "6px" }}>方針サマリー</div>
+              <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-ai-from)", letterSpacing: "0.08em", marginBottom: "6px" }}>方針サマリー</div>
               <textarea
                 value={planSummary}
                 onChange={e => setPlanSummary(e.target.value)}

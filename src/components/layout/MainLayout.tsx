@@ -681,7 +681,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             title="AIに変更を相談"
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
-              background: isConsultOpen ? "linear-gradient(135deg,#7c3aed,#5b21b6)" : "linear-gradient(135deg,#8b5cf6,#7c3aed)",
+              background: isConsultOpen ? "var(--gradient-ai-deep)" : "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
               border: "none", cursor: "pointer", color: "#fff",
               display: "flex", alignItems: "center", justifyContent: "center",
               flexShrink: 0,
@@ -1270,7 +1270,7 @@ function Sidebar({
             width: "100%", boxSizing: "border-box",
             justifyContent: c ? "center" : "flex-start",
             background: isConsultOpen
-              ? "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)"
+              ? "var(--gradient-ai)"
               : "linear-gradient(135deg, rgba(99,102,241,0.1) 0%, rgba(139,92,246,0.1) 100%)",
             border: `1.5px solid ${isConsultOpen ? "transparent" : "rgba(99,102,241,0.3)"}`,
             borderRadius: "var(--radius-md)",
@@ -1281,7 +1281,7 @@ function Sidebar({
           <span style={{ fontSize: c ? "18px" : "15px", flexShrink: 0, lineHeight: 1 }}>✨</span>
           {!c && (
             <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
-              <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "#6366f1", lineHeight: 1.3 }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "var(--color-ai-from)", lineHeight: 1.3 }}>
                 AIツールを開く
               </div>
               <div style={{ fontSize: "10px", color: isConsultOpen ? "rgba(255,255,255,0.8)" : "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

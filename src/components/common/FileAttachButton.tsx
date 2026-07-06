@@ -201,14 +201,14 @@ export function FileDropZone({
         <div style={{
           position: "absolute", inset: 0,
           background: "rgba(99,102,241,0.07)",
-          border: "2px dashed #6366f1",
+          border: "2px dashed var(--color-ai-from)",
           borderRadius: "var(--radius-md)",
           display: "flex", alignItems: "center", justifyContent: "center",
           zIndex: 10,
           pointerEvents: "none",
         }}>
           <div style={{
-            fontSize: "12px", color: "#6366f1", fontWeight: "600",
+            fontSize: "12px", color: "var(--color-ai-from)", fontWeight: "600",
             background: "rgba(99,102,241,0.1)", padding: "6px 14px",
             borderRadius: "var(--radius-full)",
           }}>

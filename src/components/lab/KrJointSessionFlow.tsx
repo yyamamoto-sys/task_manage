@@ -997,7 +997,7 @@ const inputStyle: React.CSSProperties = {
 const selStyleSm: React.CSSProperties = { ...inputStyle, padding: "6px 8px", minWidth: "100px" };
 const primaryBtn: React.CSSProperties = {
   padding: "8px 18px", fontSize: "12px", fontWeight: 600,
-  background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff",
+  background: "var(--gradient-ai)", color: "#fff",
   border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
 };
 const ghostBtn: React.CSSProperties = {

@@ -559,7 +559,7 @@ ${issueText.trim()}`;
                     disabled={!canStart}
                     style={{
                       padding: "11px 24px", fontSize: "13px", fontWeight: "600",
-                      background: canStart ? "linear-gradient(135deg, #8b5cf6, #7c3aed)" : "var(--color-bg-tertiary)",
+                      background: canStart ? "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))" : "var(--color-bg-tertiary)",
                       border: "none", borderRadius: "var(--radius-md)",
                       color: canStart ? "#fff" : "var(--color-text-tertiary)",
                       cursor: canStart ? "pointer" : "not-allowed",
@@ -605,7 +605,7 @@ ${issueText.trim()}`;
                   )}
                 </div>
                 <div style={{ height: 4, background: "var(--color-bg-tertiary)", borderRadius: 2, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, #8b5cf6, #7c3aed)", borderRadius: 2, transition: "width 0.3s" }} />
+                  <div style={{ height: "100%", width: `${progressPct}%`, background: "linear-gradient(90deg, var(--color-ai-to), var(--color-ai-from-deep))", borderRadius: 2, transition: "width 0.3s" }} />
                 </div>
               </div>
             )}
@@ -630,7 +630,7 @@ ${issueText.trim()}`;
                       fontSize: "13px", lineHeight: 1.7,
                     }}>
                       {msg.role === "assistant" && (
-                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-text-purple, #7c3aed)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
+                        <div style={{ fontSize: "10px", fontWeight: "600", color: "var(--color-ai-from-deep)", marginBottom: "4px", opacity: 0.8 }}>AI</div>
                       )}
                       {msg.role === "assistant"
                         ? <TypingMessage text={textContent} isLatest={originalIdx === typingIndex} />

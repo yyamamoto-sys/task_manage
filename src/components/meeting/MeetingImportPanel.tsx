@@ -512,7 +512,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         onClick={e => e.stopPropagation()}
       >
         <div className="ai-shimmer" style={{
-          background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+          background: "var(--gradient-ai)",
           padding: "14px 20px",
           display: "flex", alignItems: "center", gap: "10px",
           flexShrink: 0,
@@ -846,7 +846,7 @@ function BulkProjectBar({ projects, onApplyBulk, onNewProjNameChange, onNewProjC
           style={{
             padding: "7px 14px",
             background: canApply
-              ? "linear-gradient(135deg, #8b5cf6, #7c3aed)"
+              ? "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))"
               : "var(--color-bg-tertiary)",
             border: "none",
             borderRadius: "var(--radius-md)",
@@ -1209,7 +1209,7 @@ const primaryButtonStyle = (disabled: boolean): React.CSSProperties => ({
   padding: "11px 24px",
   background: disabled
     ? "var(--color-bg-tertiary)"
-    : "linear-gradient(135deg, #8b5cf6, #7c3aed)",
+    : "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
   border: "none",
   borderRadius: "var(--radius-md)",
   color: disabled ? "var(--color-text-tertiary)" : "#fff",

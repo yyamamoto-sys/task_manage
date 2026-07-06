@@ -61,8 +61,8 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
           />
           <defs>
             <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#6366f1" />
-              <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.3" />
+              <stop offset="0%" stopColor="var(--color-ai-from)" />
+              <stop offset="100%" stopColor="var(--color-ai-to)" stopOpacity="0.3" />
             </linearGradient>
           </defs>
         </svg>
@@ -95,7 +95,7 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
           <div style={{
             height: "100%",
             width: `${totalPct}%`,
-            background: "linear-gradient(90deg, #6366f1 0%, #8b5cf6 100%)",
+            background: "linear-gradient(90deg, var(--color-ai-from) 0%, var(--color-ai-to) 100%)",
             borderRadius: "3px",
             transition: "width 0.15s ease-out",
           }} />
@@ -107,7 +107,7 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
             {phases[phaseIndex]}
           </span>
-          <span style={{ fontWeight: "600", color: "#6366f1", flexShrink: 0, marginLeft: "8px" }}>
+          <span style={{ fontWeight: "600", color: "var(--color-ai-from)", flexShrink: 0, marginLeft: "8px" }}>
             {totalPct}%
           </span>
         </div>
@@ -121,9 +121,9 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
             width: i === phaseIndex ? "18px" : "6px",
             borderRadius: "3px",
             background: i < phaseIndex
-              ? "#6366f1"
+              ? "var(--color-ai-from)"
               : i === phaseIndex
-                ? "linear-gradient(90deg, #6366f1, #8b5cf6)"
+                ? "linear-gradient(90deg, var(--color-ai-from), var(--color-ai-to))"
                 : "var(--color-bg-tertiary)",
             transition: "all 0.3s ease",
             flexShrink: 0,
