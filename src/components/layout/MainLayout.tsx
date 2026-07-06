@@ -15,6 +15,7 @@ import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
 import { ViewSkeleton } from "../common/Skeleton";
+import { CommandPalette } from "../common/CommandPalette";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
@@ -129,6 +130,19 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isPjCreateOpen, setIsPjCreateOpen] = useState(false);
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  // Ctrl+K / Cmd+K でコマンドパレットをトグル（PC向け）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setIsPaletteOpen(prev => !prev);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // 期限のブラウザ通知（自分の notify_pref==="browser" のときだけ発火・アプリ表示中のみ）
   useDeadlineNotifications(currentUser.id);
@@ -228,6 +242,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const visibleProjects = useMemo(
     () => mineOnly ? projects.filter(p => myProjectIds.has(p.id)) : projects,
     [projects, mineOnly, myProjectIds],
+  );
+
+  // コマンドパレットの検索対象タスク（スコープ済み・非削除）
+  const paletteTasks = useMemo(
+    () => (rawTasks ?? []).filter((t: Task) => !t.is_deleted),
+    [rawTasks],
   );
 
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
@@ -1128,6 +1148,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onClose={() => setAiEditTaskId(null)}
         />
       )}
+      <CommandPalette
+        isOpen={isPaletteOpen}
+        onClose={() => setIsPaletteOpen(false)}
+        tasks={paletteTasks}
+        projects={projects}
+        canCreate={!isGuest}
+        onOpenTask={setAiEditTaskId}
+        onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
+        onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}
+        onQuickAdd={() => setIsQuickAddOpen(true)}
+        onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+      />
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div data-tour-id="ai-panel" style={{
