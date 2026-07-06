@@ -10,6 +10,7 @@ import {
   effectiveStatus,
   eligibleParentTasks,
   parentTaskCandidates,
+  buildParentDerivedMap,
 } from "../taskHierarchy";
 
 // テスト用の最小 Task ファクトリ。階層関連と集計に必要な列だけ指定可能にする。
@@ -176,6 +177,45 @@ describe("parentProgress", () => {
   it("子0件 → total=0, pct=0", () => {
     const t = [mk({ id: "p" })];
     expect(parentProgress(t, "p")).toEqual({ done: 0, total: 0, pct: 0 });
+  });
+});
+
+describe("buildParentDerivedMap：rollupStatus/parentProgressの一括版", () => {
+  it("複数の親を1回の呼び出しでまとめて算出し、rollupStatus/parentProgressと同じ結果になる", () => {
+    const t: Task[] = [
+      mk({ id: "p1", status: "todo" }),
+      mk({ id: "p1c1", parent_task_id: "p1", status: "done" }),
+      mk({ id: "p1c2", parent_task_id: "p1", status: "done" }),
+      mk({ id: "p1c3", parent_task_id: "p1", status: "todo" }),
+      mk({ id: "p2", status: "in_progress" }),
+      mk({ id: "p2c1", parent_task_id: "p2", status: "todo" }),
+      mk({ id: "p2c2", parent_task_id: "p2", status: "todo" }),
+      mk({ id: "leaf" }), // 子なし＝親ではない
+    ];
+    const map = buildParentDerivedMap(t);
+
+    expect(map.get("p1")).toEqual({
+      status: rollupStatus(t[0], t),
+      ...parentProgress(t, "p1"),
+    });
+    expect(map.get("p2")).toEqual({
+      status: rollupStatus(t[4], t),
+      ...parentProgress(t, "p2"),
+    });
+  });
+
+  it("子を持たないタスクはMapに含まれない（子0件=葉）", () => {
+    const t: Task[] = [mk({ id: "leaf", status: "todo" })];
+    expect(buildParentDerivedMap(t).has("leaf")).toBe(false);
+  });
+
+  it("削除済みの子は集計に含めない", () => {
+    const t: Task[] = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "cdel", parent_task_id: "p", status: "todo", is_deleted: true }),
+    ];
+    expect(buildParentDerivedMap(t).get("p")).toEqual({ status: "done", done: 1, total: 1, pct: 100 });
   });
 });
 

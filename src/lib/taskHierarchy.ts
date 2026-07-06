@@ -96,6 +96,40 @@ export function effectiveStatus(task: Task, tasks: Task[]): Task["status"] {
   return rollupStatus(task, tasks);
 }
 
+export interface ParentDerived {
+  status: Task["status"];
+  done: number;
+  total: number;
+  pct: number;
+}
+
+/**
+ * 全親タスクのステータス・進捗を1パス（O(n)）で一括算出する。
+ * rollupStatus/parentProgress を一覧の行ごとに呼ぶと、呼ぶたびに childrenOf() が
+ * 全タスクを走査するため実質 O(件数²) になる（一覧・カンバン等で多数の親を扱う場合に問題化）。
+ * ロジックは rollupStatus/parentProgress と完全に同一・同じ結果を返す。
+ * 単発でよい呼び出し（1タスクだけ知りたい）は従来どおり rollupStatus/parentProgress を使う。
+ */
+export function buildParentDerivedMap(tasks: Task[]): Map<string, ParentDerived> {
+  const childrenByParent = new Map<string, Task[]>();
+  for (const t of tasks) {
+    if (t.is_deleted || !t.parent_task_id) continue;
+    const arr = childrenByParent.get(t.parent_task_id) ?? [];
+    arr.push(t);
+    childrenByParent.set(t.parent_task_id, arr);
+  }
+  const result = new Map<string, ParentDerived>();
+  for (const [parentId, children] of childrenByParent) {
+    const total = children.length;
+    const done  = children.filter(c => c.status === "done").length;
+    const status: Task["status"] = children.every(c => c.status === "done") ? "done"
+      : children.every(c => c.status === "todo") ? "todo"
+      : "in_progress";
+    result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });
+  }
+  return result;
+}
+
 /**
  * PJ内で親に指定できる候補（2階層固定）。
  * - projectId が null → []（親子は同一PJ内のみ）

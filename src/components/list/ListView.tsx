@@ -11,8 +11,7 @@ import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
-import { childrenOf, isParentTask } from "../../lib/taskHierarchy";
-import { calcProgressPct } from "../../lib/stats";
+import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -35,8 +34,6 @@ type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" |
 type SortDir = "asc" | "desc";
 /** ドラッグ中タスクをドロップ先の行のどこに落としたか。before/after=並び替え、nest=ドロップ先の子にする */
 type DropZone = "before" | "nest" | "after";
-/** 親タスクの導出ステータス・進捗（子から集計。derivedByParentId の値型） */
-type ParentDerived = { status: Task["status"]; done: number; total: number; pct: number };
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, done: 2 };
@@ -224,27 +221,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 親タスクの導出ステータス・進捗（PC表の行ごとに effectiveStatus/parentProgress を呼ぶと
   // 呼ぶたびに childrenOf() が全タスクを走査する上、毎回新しいオブジェクトを返すため
-  // React.memo の props 比較が効かなくなる。ここで1回だけ集計し、Mapの値をそのまま props に渡す
-  // ことで、filteredTasks が変わらない限り同じ参照を返し続ける（＝無関係な再レンダーでは行が固定される）。
-  const derivedByParentId = useMemo(() => {
-    const childrenByParent = new Map<string, Task[]>();
-    for (const t of filteredTasks) {
-      if (!t.parent_task_id) continue;
-      const arr = childrenByParent.get(t.parent_task_id) ?? [];
-      arr.push(t);
-      childrenByParent.set(t.parent_task_id, arr);
-    }
-    const result = new Map<string, ParentDerived>();
-    for (const [parentId, children] of childrenByParent) {
-      const total = children.length;
-      const done  = children.filter(c => c.status === "done").length;
-      const status: Task["status"] = children.every(c => c.status === "done") ? "done"
-        : children.every(c => c.status === "todo") ? "todo"
-        : "in_progress";
-      result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });
-    }
-    return result;
-  }, [filteredTasks]);
+  // React.memo の props 比較が効かなくなる。taskHierarchy.ts の buildParentDerivedMap で
+  // 1回だけ集計し、Mapの値をそのまま props に渡すことで、filteredTasks が変わらない限り
+  // 同じ参照を返し続ける（＝無関係な再レンダーでは行が固定される）。
+  const derivedByParentId = useMemo(() => buildParentDerivedMap(filteredTasks), [filteredTasks]);
 
   // フィルタ変更で見えなくなったタスクは選択から外す
   useEffect(() => {
