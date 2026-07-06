@@ -46,22 +46,6 @@ export function AdminView({ currentUser }: Props) {
   const isCurrentUserAdmin = currentUser.is_admin === true;
   const isCurrentUserSuperAdmin = currentUser.is_super_admin === true;
   const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
-  if (hasAnyAdmin && !canAccessAdmin) {
-    return (
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "center",
-        height: "100%",
-        flexDirection: "column", gap: "12px",
-      }}>
-        <div style={{
-          fontSize: "14px", color: "var(--color-text-secondary)",
-          textAlign: "center", lineHeight: 2,
-        }}>
-          🔒 管理者のみアクセスできます
-        </div>
-      </div>
-    );
-  }
   const krs      = useAppStore(s => s.keyResults);
   const pjs      = useAppStore(selectScopedProjects);
   const krCount  = active(krs).length;
@@ -81,6 +65,27 @@ export function AdminView({ currentUser }: Props) {
   const zoomLevels = [0.85, 1, 1.15] as const;
 
   const [isDirty, setIsDirty] = useState(false);
+
+  // 管理者ガード判定は全フック宣言の後で行う（react-hooks/rules-of-hooks 対応）。
+  // メンバーデータは非同期で読み込まれるため、表示中に hasAnyAdmin/canAccessAdmin が
+  // 変化してこの early return の有無が切り替わると、以前はフック呼び出し数がずれて
+  // Reactがクラッシュし得た（TaskEditModalで過去に修正した画面真っ白と同一パターン）。
+  if (hasAnyAdmin && !canAccessAdmin) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100%",
+        flexDirection: "column", gap: "12px",
+      }}>
+        <div style={{
+          fontSize: "14px", color: "var(--color-text-secondary)",
+          textAlign: "center", lineHeight: 2,
+        }}>
+          🔒 管理者のみアクセスできます
+        </div>
+      </div>
+    );
+  }
 
   const changeTab = async (t: AdminTab) => {
     if (isDirty && t !== tab) {
