@@ -146,8 +146,13 @@ function RoleInput({ value, placeholder, onSave, disabled }: RoleInputProps) {
 
   if (value) {
     return (
+      // disabled=false 時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+      // eslint-disable-next-line jsx-a11y/no-static-element-interactions
       <div
         onClick={e => { if (!disabled) { e.stopPropagation(); setDraft(value); setEditing(true); } }}
+        role={disabled ? undefined : "button"}
+        tabIndex={disabled ? undefined : 0}
+        onKeyDown={disabled ? undefined : (e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setDraft(value); setEditing(true); } })}
         title={disabled ? undefined : "クリックして役割を編集"}
         style={{
           display: "inline-block", fontSize: "10px", color: "var(--color-brand)",
@@ -164,8 +169,13 @@ function RoleInput({ value, placeholder, onSave, disabled }: RoleInputProps) {
   }
 
   return (
+    // disabled=false 時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       onClick={e => { if (!disabled) { e.stopPropagation(); setDraft(""); setEditing(true); } }}
+      role={disabled ? undefined : "button"}
+      tabIndex={disabled ? undefined : 0}
+      onKeyDown={disabled ? undefined : (e => { if (e.key === "Enter" || e.key === " ") { e.stopPropagation(); setDraft(""); setEditing(true); } })}
       title={disabled ? undefined : "クリックして役割を入力"}
       style={{
         fontSize: "10px", color: "var(--color-text-tertiary)",
@@ -312,6 +322,8 @@ function LayerNameInput({ value, onSave }: LayerNameInputProps) {
     <span
       style={{ fontSize: "13px", fontWeight: 700, color: "var(--color-text-primary)", cursor: "text" }}
       onClick={() => { setDraft(value); setEditing(true); }}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setDraft(value); setEditing(true); } }}
       title="クリックして層名を編集"
     >
       {value}
@@ -371,6 +383,8 @@ function GroupNameInput({ value, onSave }: GroupNameInputProps) {
         cursor: "text", padding: "1px 2px",
       }}
       onClick={() => { setDraft(value); setEditing(true); }}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { setDraft(value); setEditing(true); } }}
       title="クリックしてグループ名を編集"
     >
       {value || "（名前なし）"}
@@ -1026,10 +1040,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     updateOrg(nextOrg);
   }, [org, updateOrg]);
 
-  // ===== ドロップダウン外側クリック制御 =====
-
-  const [_hasDropdown, setHasDropdown] = useState(false);
-
   // ===== レンダリング =====
 
   // SVG接続線用に各層ブロックのrefを収集するコールバック
@@ -1042,6 +1052,8 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
   }, []);
 
   return (
+    // ドラッグ中の要素がどこにドロップされてもクリーンアップするためのハンドラのみ。マウス操作専用でキーボード代替手段はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       style={{
         position: "fixed", inset: 0, zIndex: 250,
@@ -1117,14 +1129,6 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
             style={{ background: "none", border: "none", cursor: "pointer", fontSize: "14px", color: "var(--color-text-danger, #b91c1c)" }}
           >✕</button>
         </div>
-      )}
-
-      {/* ドロップダウン外側クリックで閉じるオーバーレイ */}
-      {_hasDropdown && (
-        <div
-          onClick={() => setHasDropdown(false)}
-          style={{ position: "fixed", inset: 0, zIndex: 9 }}
-        />
       )}
 
       {/* コンテンツ */}
