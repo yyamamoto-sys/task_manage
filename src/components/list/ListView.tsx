@@ -1,5 +1,5 @@
 // src/components/list/ListView.tsx
-import React, { useState, useMemo, useCallback, useRef, useEffect } from "react";
+import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
@@ -12,6 +12,7 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { childrenOf, isParentTask, effectiveStatus, parentProgress } from "../../lib/taskHierarchy";
+import { calcProgressPct } from "../../lib/stats";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -32,9 +33,22 @@ interface Props {
 type GroupBy = "project" | "assignee" | "status" | "tag";
 type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 type SortDir = "asc" | "desc";
+/** ドラッグ中タスクをドロップ先の行のどこに落としたか。before/after=並び替え、nest=ドロップ先の子にする */
+type DropZone = "before" | "nest" | "after";
+/** 親タスクの導出ステータス・進捗（子から集計。derivedByParentId の値型） */
+type ParentDerived = { status: Task["status"]; done: number; total: number; pct: number };
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, done: 2 };
+
+/** 行のうち上30%/下30%＝before/after（並び替え）、中央40%＝nest（子にする）。
+ *  ドロップ先が既に子タスクの場合は「孫禁止」のため中央帯を作らず上下半分でbefore/afterのみにする。 */
+function computeDropZone(e: React.DragEvent, target: Task): DropZone {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+  if (target.parent_task_id) return ratio < 0.5 ? "before" : "after";
+  return ratio < 0.3 ? "before" : ratio > 0.7 ? "after" : "nest";
+}
 
 function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
   const header = ["タスク名","ステータス","担当者","プロジェクト","優先度","開始日","期日","工数(h)","コメント"];
@@ -80,6 +94,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
+  // 行の描画ループで .find() を毎回呼ぶと O(件数×行数) になるため、O(1)ルックアップ用のMapを用意する
+  const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
+  const todoById    = useMemo(() => new Map(todos.map(td => [td.id, td])), [todos]);
 
   // 永続化フィルター
   const [groupBy,        setGroupByState       ] = useState<GroupBy>(() => lsGet("groupBy", "project"));
@@ -120,9 +137,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 値＝親タスクID、null＝閉じている。
   const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
 
-  // 親タスクのドラッグ並べ替え（手動順モード時）。display_order を更新して全員に共有。
+  // タスクのドラッグ並べ替え・親子変更（PJ別表示時）。display_order / parent_task_id を更新して全員に共有。
+  // dropZone：ドラッグ中のタスクがホバー中の行のどこに居るか（before=上端/nest=中央=子にする/after=下端）
   const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dragOverId, setDragOverId] = useState<string | null>(null);
+  const [dropZone, setDropZone] = useState<{ id: string; zone: "before" | "nest" | "after" } | null>(null);
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -196,6 +214,30 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [allTasks, selectedProject, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
+  // 親タスクの導出ステータス・進捗（PC表の行ごとに effectiveStatus/parentProgress を呼ぶと
+  // 呼ぶたびに childrenOf() が全タスクを走査する上、毎回新しいオブジェクトを返すため
+  // React.memo の props 比較が効かなくなる。ここで1回だけ集計し、Mapの値をそのまま props に渡す
+  // ことで、filteredTasks が変わらない限り同じ参照を返し続ける（＝無関係な再レンダーでは行が固定される）。
+  const derivedByParentId = useMemo(() => {
+    const childrenByParent = new Map<string, Task[]>();
+    for (const t of filteredTasks) {
+      if (!t.parent_task_id) continue;
+      const arr = childrenByParent.get(t.parent_task_id) ?? [];
+      arr.push(t);
+      childrenByParent.set(t.parent_task_id, arr);
+    }
+    const result = new Map<string, ParentDerived>();
+    for (const [parentId, children] of childrenByParent) {
+      const total = children.length;
+      const done  = children.filter(c => c.status === "done").length;
+      const status: Task["status"] = children.every(c => c.status === "done") ? "done"
+        : children.every(c => c.status === "todo") ? "todo"
+        : "in_progress";
+      result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });
+    }
+    return result;
+  }, [filteredTasks]);
+
   // フィルタ変更で見えなくなったタスクは選択から外す
   useEffect(() => {
     const visible = new Set(filteredTasks.map(t => t.id));
@@ -264,52 +306,42 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     }
   }, [selectedIds, deleteTask, currentUser.id, clearSelection]);
 
-  // 親タスクのドラッグ並べ替え：dragged を target の位置へ移動し、同一PJ直下の
-  // 最上位タスクの display_order を振り直して保存する（saveTask→DB→Realtimeで全員に反映）。
-  // 基準は「今“見えている”順」（filteredTasks）。期日順などで並んでいても、見た目の順を
-  // そのまま起点に dragged を target の位置へ移すので、どの並びからでも直感的に動く。
-  const reorderParent = useCallback(async (draggedId: string, targetId: string) => {
+  // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける：
+  // - 上端/下端（before/after）：ドロップ先と同じ階層（同じ親、または両方最上位）の並びに挿入
+  //   ドロップ先が最上位で dragged が子だった場合はここで最上位に昇格する（＝子→親）
+  //   ドロップ先が子で dragged が最上位だった場合はここでその子の兄弟になる（＝親→子）
+  // - 中央（nest）：ドロップ先の子にする（最上位タスクへの nest のみ・孫禁止のため子への nest は前段で before/after に丸める）
+  // 親→子の変更（子持ちタスクを子にする）は2階層固定と矛盾するため拒否する。
+  const handleTaskDrop = useCallback(async (draggedId: string, targetId: string, zone: DropZone) => {
     if (draggedId === targetId) return;
     const dragged = allTasks.find(t => t.id === draggedId);
     const target  = allTasks.find(t => t.id === targetId);
     if (!dragged || !target) return;
-    // 最上位タスク同士・同じPJ（グループ）内のみ
-    if (dragged.parent_task_id || target.parent_task_id) return;
-    const pjId = dragged.project_id ?? null;
-    if (pjId !== (target.project_id ?? null)) return;
-    const isTop = (t: Task) => !t.parent_task_id && (t.project_id ?? null) === pjId;
-    // 見えている順を起点に、フィルタで隠れている分は display_order 順で末尾に足して全体順を作る
-    const visible = filteredTasks.filter(isTop);
-    const visibleSet = new Set(visible.map(t => t.id));
-    const hidden = allTasks.filter(t => isTop(t) && !visibleSet.has(t.id))
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
-    const ids = [...visible, ...hidden].map(t => t.id).filter(id => id !== draggedId);
-    const targetIdx = ids.indexOf(targetId);
-    if (targetIdx < 0) return;
-    ids.splice(targetIdx, 0, draggedId); // target の直前に挿入
-    try {
-      await Promise.all(ids.map((id, idx) => {
-        const t = allTasks.find(x => x.id === id);
-        if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
-        return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
-      }));
-    } catch (err) {
-      showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
-    }
-  }, [allTasks, filteredTasks, saveTask, currentUser.id]);
 
-  // 子タスクのドラッグ並べ替え：同一親の子同士の display_order を振り直す。
-  // 基準は「今見えている順」。親が異なる場合は拒否。saveTask→DB→Realtimeで全員に反映。
-  const reorderChild = useCallback(async (draggedId: string, targetId: string) => {
-    if (draggedId === targetId) return;
-    const dragged = allTasks.find(t => t.id === draggedId);
-    const target  = allTasks.find(t => t.id === targetId);
-    if (!dragged || !target) return;
-    // 子タスク同士・同じ親のみ
-    if (!dragged.parent_task_id || dragged.parent_task_id !== target.parent_task_id) return;
-    const parentId = dragged.parent_task_id;
-    const isSibling = (t: Task) => t.parent_task_id === parentId;
-    // 見えている順を起点に、フィルタで隠れた子は display_order 順で末尾に補完
+    if (zone === "nest") {
+      if (target.parent_task_id === dragged.id) return; // 自分の子には入れない（循環防止）
+      if (dragged.parent_task_id === target.id) return; // 既に子
+      if (isParentTask(dragged, allTasks)) {
+        showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
+        return;
+      }
+      try {
+        await saveTask({ ...dragged, parent_task_id: target.id, project_id: target.project_id, updated_by: currentUser.id });
+        if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+      } catch (err) {
+        showToast(`親子変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      }
+      return;
+    }
+
+    // before/after：ドロップ先と同じ階層・同じPJに合わせて挿入（見えている順を起点に、隠れた分は末尾に補完）
+    const newParentId = target.parent_task_id ?? null;
+    const newProjectId = target.project_id ?? null;
+    if (newParentId && isParentTask(dragged, allTasks)) {
+      showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
+      return;
+    }
+    const isSibling = (t: Task) => (t.parent_task_id ?? null) === newParentId && (t.project_id ?? null) === newProjectId;
     const visible = filteredTasks.filter(isSibling);
     const visibleSet = new Set(visible.map(t => t.id));
     const hidden = allTasks.filter(t => isSibling(t) && !visibleSet.has(t.id))
@@ -317,17 +349,37 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     const ids = [...visible, ...hidden].map(t => t.id).filter(id => id !== draggedId);
     const targetIdx = ids.indexOf(targetId);
     if (targetIdx < 0) return;
-    ids.splice(targetIdx, 0, draggedId);
+    ids.splice(zone === "before" ? targetIdx : targetIdx + 1, 0, draggedId);
     try {
       await Promise.all(ids.map((id, idx) => {
+        if (id === draggedId) {
+          if ((dragged.display_order ?? 0) === idx && (dragged.parent_task_id ?? null) === newParentId && (dragged.project_id ?? null) === newProjectId) return Promise.resolve();
+          return saveTask({ ...dragged, parent_task_id: newParentId, project_id: newProjectId, display_order: idx, updated_by: currentUser.id });
+        }
         const t = allTasks.find(x => x.id === id);
         if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
         return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
       }));
+      if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
     } catch (err) {
       showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
     }
-  }, [allTasks, filteredTasks, saveTask, currentUser.id]);
+  }, [allTasks, filteredTasks, saveTask, currentUser.id, sortKey]);
+
+  // PJ見出しへのドロップ＝親を解除して指定PJの最上位タスクの末尾に追加する（子→親）。
+  const handleUnparentDrop = useCallback(async (draggedId: string, projectId: string) => {
+    const dragged = allTasks.find(t => t.id === draggedId);
+    if (!dragged) return;
+    if (!dragged.parent_task_id && (dragged.project_id ?? null) === projectId) return; // 変化なし
+    const isTop = (t: Task) => !t.parent_task_id && (t.project_id ?? null) === projectId;
+    const maxOrder = allTasks.filter(isTop).reduce((m, t) => Math.max(m, t.display_order ?? 0), -1);
+    try {
+      await saveTask({ ...dragged, parent_task_id: null, project_id: projectId, display_order: maxOrder + 1, updated_by: currentUser.id });
+      if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+    } catch (err) {
+      showToast(`親の解除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, saveTask, currentUser.id, sortKey]);
 
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
@@ -348,7 +400,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       projects.forEach(p => map.set(p.id, []));
       filteredTasks.forEach(t => { const a = t.project_id ? map.get(t.project_id) : undefined; if (a) a.push(t); });
       const pjGroups = projects.filter(p => (map.get(p.id)?.length ?? 0) > 0)
-        .map(p => ({ label: p.name, color: p.color_tag, tasks: map.get(p.id) ?? [] }));
+        .map(p => ({ label: p.name, color: p.color_tag, tasks: map.get(p.id) ?? [], projectId: p.id as string | null }));
       const noPjTasks = filteredTasks.filter(t => t.project_id == null);
       const todoMap = new Map<string, Task[]>();
       const noTodoTasks: Task[] = [];
@@ -359,10 +411,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       });
       const todoGroups = [...todoMap.entries()].map(([todoId, tasks]) => {
         const td = todos.find(t => t.id === todoId);
-        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0, 30)}` : "[ToDo]", color: "#6ee7b7", tasks };
+        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0, 30)}` : "[ToDo]", color: "#6ee7b7", tasks, projectId: null as string | null };
       });
       const unassigned = noTodoTasks.length > 0
-        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks }] : [];
+        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks, projectId: null as string | null }] : [];
       return [...pjGroups, ...todoGroups, ...unassigned];
     }
     if (groupBy === "assignee") {
@@ -370,7 +422,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       members.forEach(m => map.set(m.id, []));
       filteredTasks.forEach(t => { const a = map.get(t.assignee_member_id); if (a) a.push(t); });
       return members.filter(m => (map.get(m.id)?.length ?? 0) > 0)
-        .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)! }));
+        .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)!, projectId: null as string | null }));
     }
     if (groupBy === "tag") {
       // タグ別：1タスクが複数タグを持つ場合は各タグ群に重複して現れる。タグなしは末尾にまとめる。
@@ -383,13 +435,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       });
       const tagGroups = [...map.entries()]
         .sort(([a], [b]) => a.localeCompare(b, "ja"))
-        .map(([tag, tasks]) => ({ label: `# ${tag}`, color: "var(--color-brand)", tasks }));
+        .map(([tag, tasks]) => ({ label: `# ${tag}`, color: "var(--color-brand)", tasks, projectId: null as string | null }));
       const noTagGroup = noTag.length > 0
-        ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag }] : [];
+        ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag, projectId: null as string | null }] : [];
       return [...tagGroups, ...noTagGroup];
     }
     return (["in_progress", "todo", "done"] as const)
-      .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s) }))
+      .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s), projectId: null as string | null }))
       .filter(g => g.tasks.length > 0);
   }, [filteredTasks, groupBy, projects, members, todos]);
 
@@ -551,6 +603,30 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               whiteSpace: "nowrap", flexShrink: 0,
             }}
           >⠿ 並べ替え</button>
+
+          {/* タスク並び順トグル（期日順⇔名前順・ガントビューと同じ見た目） */}
+          <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>
+            {(["due_date", "name"] as const).map(k => (
+              <button
+                key={k}
+                onClick={() => {
+                  setSortKeyState(k); lsSet("sortKey", k);
+                  setSortDirState("asc"); lsSet("sortDir", "asc");
+                }}
+                title={k === "due_date" ? "期日順に並べる" : "名前順に並べる"}
+                aria-label={k === "due_date" ? "期日順" : "名前順"}
+                style={{
+                  padding: "3px 8px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
+                  background: sortKey === k ? "var(--color-bg-primary)" : "transparent",
+                  color: sortKey === k ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  fontWeight: sortKey === k ? "600" : "400",
+                  boxShadow: sortKey === k ? "var(--shadow-sm)" : "none",
+                }}
+              >
+                {k === "due_date" ? "📅" : "🔠"}
+              </button>
+            ))}
+          </div>
 
           {/* 検索 */}
           <input value={searchText} onChange={e => setSearchText(e.target.value)}
@@ -763,7 +839,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   {buildRows(group.tasks).map(({ task, depth, parentNote, isParent }) => {
                     const taskAssigneeIds = getAssigneeIds(task);
                     const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
-                    const pj = projects.find(p => p.id === task.project_id);
+                    const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                     // 親はステータス・進捗を子から導出
                     const dispStatus = isParent ? effectiveStatus(task, filteredTasks) : task.status;
                     const isDone    = dispStatus === "done";
@@ -899,9 +975,19 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               <tbody>
                 {(() => {
                   let rowIdx = 0;
-                  return groups.map(group => (
+                  return groups.map(group => {
+                    // PJ見出しへドロップ＝親解除（最上位化）。実PJを持つ見出しでのみ有効。
+                    const canUnparentHere = groupBy === "project" && group.projectId != null;
+                    return (
                     <React.Fragment key={group.label}>
-                      <tr>
+                      <tr
+                        onDragOver={canUnparentHere ? (e => { if (draggingId) e.preventDefault(); }) : undefined}
+                        onDrop={canUnparentHere ? (e => {
+                          e.preventDefault();
+                          if (draggingId) handleUnparentDrop(draggingId, group.projectId!);
+                          setDraggingId(null); setDropZone(null);
+                        }) : undefined}
+                      >
                         <td colSpan={cols.length} style={{
                           padding: "7px 10px 4px",
                           background: "var(--color-bg-secondary)",
@@ -911,6 +997,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
                             <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
+                            {canUnparentHere && draggingId && <span style={{ fontSize: "10px", color: "var(--color-brand)" }}>↑ ここに落とすと最上位タスクになります</span>}
                           </div>
                         </td>
                       </tr>
@@ -920,234 +1007,57 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         const closesGroup = depth === 1 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
-                        const taskAssigneeIds = getAssigneeIds(task);
-                        const taskAssignees   = members.filter(mb => taskAssigneeIds.includes(mb.id));
-                        const pj = projects.find(p => p.id === task.project_id);
-                        const td = (task.todo_ids ?? [])[0] ? todos.find(t => t.id === task.todo_ids[0]) : undefined;
-                        // 親行のステータスは子から導出（rollupStatus）。子無しは自身の値。
-                        const dispStatus = isParent ? effectiveStatus(task, filteredTasks) : task.status;
-                        const isDone    = dispStatus === "done";
-                        const isOverdue = task.due_date && task.due_date < t0 && !isDone;
-                        const isSel     = selectedTaskId === task.id;
-                        const zebraBg   = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
+                        const pj = task.project_id ? projectById.get(task.project_id) : undefined;
+                        const todoItem = (task.todo_ids ?? [])[0] ? todoById.get(task.todo_ids[0]) : undefined;
+                        // 親行のステータス・進捗は derivedByParentId から引く（参照安定＝React.memo が効く）
+                        const derived = isParent ? derivedByParentId.get(task.id) : undefined;
+                        const dispStatus = derived?.status ?? task.status;
                         // ＋子タスクを出せるのは最上位タスク（親を持たない）のみ。孤児の子（depth0だが parent あり）は除外。
                         const canAddChild = !task.parent_task_id;
-                        const collapsed = collapsedIds.has(task.id);
-                        const prog = isParent ? parentProgress(filteredTasks, task.id) : null;
-                        // PJ別：親=⠿で親並べ替え、子=⠿で子並べ替え（同一親内のみ）
-                        const canDragParent = groupBy === "project" && !task.parent_task_id;
-                        const canDragChild  = groupBy === "project" && !!task.parent_task_id;
-                        const canDrag = canDragParent || canDragChild;
-                        // PJ別では全行でハンドル列の幅を確保してチェックボックス列を揃える
+                        // PJ別表示中は全行がドラッグ元・ドロップ先の両方になれる（並び替え・親子変更とも可能）
+                        const canDrag = groupBy === "project";
                         const showHandleCol = groupBy === "project";
+                        const myZone = dropZone?.id === task.id ? dropZone.zone : null;
                         return (
-                          <tr key={task.id}
-                            onClick={() => setSelectedTaskId(isSel ? null : task.id)}
-                            onDragOver={canDrag ? (e => { if (draggingId && draggingId !== task.id) { e.preventDefault(); setDragOverId(task.id); } }) : undefined}
-                            onDragLeave={canDrag ? (() => setDragOverId(d => d === task.id ? null : d)) : undefined}
-                            onDrop={canDrag ? (e => {
-                              e.preventDefault();
-                              if (draggingId) {
-                                if (canDragParent) {
-                                  reorderParent(draggingId, task.id);
-                                  if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
-                                } else {
-                                  reorderChild(draggingId, task.id);
-                                  if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
-                                }
-                              }
-                              setDraggingId(null); setDragOverId(null);
-                            }) : undefined}
-                            style={{
-                            borderBottom: closesGroup
-                              ? "2px solid var(--color-border-primary)"
-                              : "1px solid var(--color-bg-tertiary)",
-                            borderTop: dragOverId === task.id
-                              ? "2px solid var(--color-brand)"
-                              : (isParent && depth === 0)
-                              ? "2px solid var(--color-border-primary)"
-                              : undefined,
-                            background: selectedIds.has(task.id)
-                              ? "var(--color-brand-light)"
-                              : isSel ? "var(--color-brand-light)"
-                              : isDone ? "var(--color-bg-secondary)" : zebraBg,
-                            cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
-                            boxShadow: (selectedIds.has(task.id) || isSel)
-                              ? "inset 3px 0 0 var(--color-brand)"
-                              : isParent
-                              ? "inset 3px 0 0 var(--color-brand)"
-                              : depth === 1
-                              ? "inset 2px 0 0 var(--color-brand-border)"
-                              : "none",
-                          }}>
-                            {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
-                            <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
-                                onClick={e => e.stopPropagation()}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                                {/* ハンドル列：親=⠿ / 子=⠿（同一親内で並べ替え） */}
-                                {showHandleCol && (
-                                  canDrag ? (
-                                    <span
-                                      draggable
-                                      onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
-                                      onDragEnd={() => { setDraggingId(null); setDragOverId(null); }}
-                                      title={canDragChild ? "ドラッグして子タスクの順序を変更" : "ドラッグして並べ替え"}
-                                      style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
-                                    >⠿</span>
-                                  ) : (
-                                    <span aria-hidden style={{ width: 12, flexShrink: 0 }} />
-                                  )
-                                )}
-                                <input
-                                  type="checkbox"
-                                  checked={selectedIds.has(task.id)}
-                                  onChange={() => toggleSelect(task.id)}
-                                  aria-label={`${task.name} を選択`}
-                                  style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
-                                />
-                              </div>
-                            </td>
-                            {/* 担当者（インライン編集） */}
-                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
-                              onClick={e => e.stopPropagation()}>
-                              <InlineEditAssignee
-                                assigneeIds={getAssigneeIds(task)}
-                                members={members}
-                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
-                              />
-                            </td>
-                            {/* 優先度（詳細モードのみ） */}
-                            {density === "detailed" && (
-                              <td style={{ padding: "6px 10px" }}>
-                                {task.priority && (
-                                  <span style={{
-                                    fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
-                                    background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
-                                  }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
-                                )}
-                              </td>
-                            )}
-                            {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
-                            <td style={{ padding: "6px 10px", paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
-                                {/* 折りたたみトグル（子を持つ親のみ） */}
-                                {isParent ? (
-                                  <button
-                                    onClick={e => toggleCollapse(task.id, e)}
-                                    aria-label={collapsed ? "子タスクを表示" : "子タスクを隠す"}
-                                    aria-expanded={!collapsed}
-                                    style={{
-                                      flexShrink: 0, width: 16, height: 16, lineHeight: "16px", padding: 0,
-                                      border: "none", background: "transparent", cursor: "pointer",
-                                      fontSize: "9px", color: "var(--color-text-tertiary)",
-                                    }}
-                                  >{collapsed ? "▶" : "▼"}</button>
-                                ) : depth === 1 && (
-                                  <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
-                                )}
-                                <div
-                                  onClick={e => e.stopPropagation()}
-                                  style={{
-                                    overflow: "hidden", maxWidth: "360px",
-                                    textDecoration: isDone ? "line-through" : "none",
-                                    fontWeight: isSel ? "500" : isParent ? "600" : "400",
-                                    color: isSel ? "var(--color-text-purple)" : "var(--color-text-primary)",
-                                  }}>
-                                  <InlineEditText
-                                    value={task.name}
-                                    onSave={name => saveTask({ ...task, name, updated_by: currentUser.id })}
-                                    style={{ fontWeight: "inherit", color: "inherit" }}
-                                  />
-                                </div>
-                                {/* 親：子 n/m・◯% バッジ */}
-                                {isParent && prog && (
-                                  <span title="子タスクの完了状況（自動算出）" style={{
-                                    flexShrink: 0, fontSize: "9px", padding: "1px 6px", borderRadius: "99px",
-                                    background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)",
-                                    whiteSpace: "nowrap",
-                                  }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
-                                )}
-                                {task.comment && (
-                                  <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
-                                )}
-                                {isSel && (
-                                  <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
-                                )}
-                              </div>
-                              {/* タグ */}
-                              {(task.tags?.length ?? 0) > 0 && (
-                                <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
-                                  {task.tags!.map((tag, ti) => (
-                                    <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
-                                  ))}
-                                </div>
-                              )}
-                              {/* 親タスク名の注記（ネストできない/孤児の子） */}
-                              {parentNote && (
-                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
-                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
-                                    ↳ {parentNote}
-                                  </span>
-                                </div>
-                              )}
-                              {groupBy !== "project" && pj && (
-                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
-                                  <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
-                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 14)}</span>
-                                </div>
-                              )}
-                              {!pj && td && (
-                                <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
-                                  <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
-                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>
-                                    {td.title.split("\n")[0].slice(0, 20)}
-                                  </span>
-                                </div>
-                              )}
-                              {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI） */}
-                              {canAddChild && (
-                                <button
-                                  onClick={e => { e.stopPropagation(); openAddChild(task); }}
-                                  style={{
-                                    marginTop: "2px", padding: "1px 4px", fontSize: "9px",
-                                    color: "var(--color-text-tertiary)", border: "none",
-                                    background: "transparent", cursor: "pointer",
-                                  }}
-                                >＋ 子タスク</button>
-                              )}
-                            </td>
-                            {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
-                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
-                              <span title={isParent ? "子から自動算出" : undefined} style={{
-                                fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
-                                background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
-                              }}>{TASK_STATUS_LABEL[dispStatus]}</span>
-                            </td>
-                            {/* 期日（インライン編集） */}
-                            <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
-                              onClick={e => e.stopPropagation()}>
-                              {task.start_date && (
-                                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                                  {task.start_date.slice(5).replace("-", "/")}〜
-                                </span>
-                              )}
-                              <InlineEditDate
-                                value={task.due_date}
-                                onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
-                              />
-                            </td>
-                            {/* 工数（詳細モードのみ） */}
-                            {density === "detailed" && (
-                              <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
-                                {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
-                              </td>
-                            )}
-                          </tr>
+                          <ListTaskRow
+                            key={task.id}
+                            task={task}
+                            depth={depth}
+                            parentNote={parentNote}
+                            isParent={isParent}
+                            closesGroup={closesGroup}
+                            isEven={isEven}
+                            pj={pj}
+                            todoItem={todoItem}
+                            dispStatus={dispStatus}
+                            isSelected={selectedTaskId === task.id}
+                            isChecked={selectedIds.has(task.id)}
+                            canAddChild={canAddChild}
+                            isCollapsed={collapsedIds.has(task.id)}
+                            prog={derived ?? null}
+                            canDrag={canDrag}
+                            showHandleCol={showHandleCol}
+                            myZone={myZone}
+                            density={density}
+                            groupBy={groupBy}
+                            members={members}
+                            currentUser={currentUser}
+                            draggingId={draggingId}
+                            saveTask={saveTask}
+                            setSelectedTaskId={setSelectedTaskId}
+                            toggleSelect={toggleSelect}
+                            toggleCollapse={toggleCollapse}
+                            openAddChild={openAddChild}
+                            setDraggingId={setDraggingId}
+                            setDropZone={setDropZone}
+                            handleTaskDrop={handleTaskDrop}
+                          />
                         );
                       });
                         })()}
                     </React.Fragment>
-                  ));
+                    );
+                  });
                 })()}
                 {filteredTasks.length === 0 && (
                   <tr><td colSpan={cols.length}><EmptyState {...emptyStateProps} /></td></tr>
@@ -1188,6 +1098,265 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     </div>
   );
 }
+
+// ===== ListTaskRow（PC表の1行） =====
+//
+// 【設計意図】React.memo 化。以前は行のJSXをListViewの描画ループに直接書いていたため、
+// 選択・ドラッグ中のホバーなど無関係な state 変化のたびに全行が再レンダリングされていた
+// （カクつきの主因）。行を切り出して memo 化し、コールバックは呼び出し側で useCallback/
+// useState のsetterをそのまま渡すことで、実際に変化した行だけが再レンダリングされるようにする。
+
+interface ListTaskRowProps {
+  task: Task;
+  depth: 0 | 1;
+  parentNote?: string;
+  isParent: boolean;
+  closesGroup: boolean;
+  isEven: boolean;
+  pj?: Project;
+  todoItem?: ToDo;
+  dispStatus: Task["status"];
+  isSelected: boolean;
+  isChecked: boolean;
+  canAddChild: boolean;
+  isCollapsed: boolean;
+  prog: ParentDerived | null;
+  canDrag: boolean;
+  showHandleCol: boolean;
+  myZone: DropZone | null;
+  density: "simple" | "detailed";
+  groupBy: GroupBy;
+  members: Member[];
+  currentUser: Member;
+  draggingId: string | null;
+  saveTask: (task: Task) => Promise<void>;
+  setSelectedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+  toggleSelect: (id: string, e?: React.MouseEvent) => void;
+  toggleCollapse: (id: string, e?: React.MouseEvent) => void;
+  openAddChild: (task: Task) => void;
+  setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
+  setDropZone: React.Dispatch<React.SetStateAction<{ id: string; zone: DropZone } | null>>;
+  handleTaskDrop: (draggedId: string, targetId: string, zone: DropZone) => void;
+}
+
+const ListTaskRow = memo(function ListTaskRow({
+  task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
+  dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
+  canDrag, showHandleCol, myZone, density, groupBy, members, currentUser,
+  draggingId, saveTask, setSelectedTaskId, toggleSelect, toggleCollapse,
+  openAddChild, setDraggingId, setDropZone, handleTaskDrop,
+}: ListTaskRowProps) {
+  const isDone = dispStatus === "done";
+  const zebraBg = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
+
+  return (
+    <tr
+      onClick={() => setSelectedTaskId(prev => prev === task.id ? null : task.id)}
+      onDragOver={canDrag ? (e => {
+        if (!draggingId || draggingId === task.id) return;
+        e.preventDefault();
+        const zone = computeDropZone(e, task);
+        setDropZone(z => (z && z.id === task.id && z.zone === zone) ? z : { id: task.id, zone });
+      }) : undefined}
+      onDragLeave={canDrag ? (() => setDropZone(z => (z?.id === task.id ? null : z))) : undefined}
+      onDrop={canDrag ? (e => {
+        e.preventDefault();
+        if (draggingId && myZone) handleTaskDrop(draggingId, task.id, myZone);
+        setDraggingId(null); setDropZone(null);
+      }) : undefined}
+      style={{
+      borderBottom: myZone === "after"
+        ? "2px solid var(--color-brand)"
+        : closesGroup
+        ? "2px solid var(--color-border-primary)"
+        : "1px solid var(--color-bg-tertiary)",
+      borderTop: myZone === "before"
+        ? "2px solid var(--color-brand)"
+        : (isParent && depth === 0)
+        ? "2px solid var(--color-border-primary)"
+        : undefined,
+      background: myZone === "nest"
+        ? "var(--color-brand-light)"
+        : isChecked
+        ? "var(--color-brand-light)"
+        : isSelected ? "var(--color-brand-light)"
+        : isDone ? "var(--color-bg-secondary)" : zebraBg,
+      cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
+      boxShadow: myZone === "nest"
+        ? "inset 0 0 0 2px var(--color-brand)"
+        : (isChecked || isSelected)
+        ? "inset 3px 0 0 var(--color-brand)"
+        : isParent
+        ? "inset 3px 0 0 var(--color-brand)"
+        : depth === 1
+        ? "inset 2px 0 0 var(--color-brand-border)"
+        : "none",
+    }}>
+      {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
+      <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
+          onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+          {/* ハンドル列：ドラッグで並べ替え。他タスクの行の中央に落とすとその子に、上下端に落とすと並び替え */}
+          {showHandleCol && (
+            canDrag ? (
+              <span
+                draggable
+                onDragStart={e => { setDraggingId(task.id); e.dataTransfer.effectAllowed = "move"; }}
+                onDragEnd={() => { setDraggingId(null); setDropZone(null); }}
+                title="ドラッグして並べ替え／他のタスクの中央に落とすとその子タスクにできます"
+                style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none" }}
+              >⠿</span>
+            ) : (
+              <span aria-hidden style={{ width: 12, flexShrink: 0 }} />
+            )
+          )}
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={() => toggleSelect(task.id)}
+            aria-label={`${task.name} を選択`}
+            style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
+          />
+        </div>
+      </td>
+      {/* 担当者（インライン編集） */}
+      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+        onClick={e => e.stopPropagation()}>
+        <InlineEditAssignee
+          assigneeIds={getAssigneeIds(task)}
+          members={members}
+          onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
+        />
+      </td>
+      {/* 優先度（詳細モードのみ） */}
+      {density === "detailed" && (
+        <td style={{ padding: "6px 10px" }}>
+          {task.priority && (
+            <span style={{
+              fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
+              background: TASK_PRIORITY_STYLE[task.priority].bg, color: TASK_PRIORITY_STYLE[task.priority].color,
+            }}>{TASK_PRIORITY_LABEL[task.priority]}</span>
+          )}
+        </td>
+      )}
+      {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
+      <td style={{ padding: "6px 10px", paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+          {/* 折りたたみトグル（子を持つ親のみ） */}
+          {isParent ? (
+            <button
+              onClick={e => toggleCollapse(task.id, e)}
+              aria-label={isCollapsed ? "子タスクを表示" : "子タスクを隠す"}
+              aria-expanded={!isCollapsed}
+              style={{
+                flexShrink: 0, width: 16, height: 16, lineHeight: "16px", padding: 0,
+                border: "none", background: "transparent", cursor: "pointer",
+                fontSize: "9px", color: "var(--color-text-tertiary)",
+              }}
+            >{isCollapsed ? "▶" : "▼"}</button>
+          ) : depth === 1 && (
+            <span style={{ flexShrink: 0, width: 12, color: "var(--color-text-tertiary)", fontSize: "10px" }}>↳</span>
+          )}
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{
+              overflow: "hidden", maxWidth: "360px",
+              textDecoration: isDone ? "line-through" : "none",
+              fontWeight: isSelected ? "500" : isParent ? "600" : "400",
+              color: isSelected ? "var(--color-text-purple)" : "var(--color-text-primary)",
+            }}>
+            <InlineEditText
+              value={task.name}
+              onSave={name => saveTask({ ...task, name, updated_by: currentUser.id })}
+              style={{ fontWeight: "inherit", color: "inherit" }}
+            />
+          </div>
+          {/* 親：子 n/m・◯% バッジ */}
+          {isParent && prog && (
+            <span title="子タスクの完了状況（自動算出）" style={{
+              flexShrink: 0, fontSize: "9px", padding: "1px 6px", borderRadius: "99px",
+              background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)",
+              whiteSpace: "nowrap",
+            }}>子 {prog.done}/{prog.total}・{prog.pct}%</span>
+          )}
+          {task.comment && (
+            <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
+          )}
+          {isSelected && (
+            <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
+          )}
+        </div>
+        {/* タグ */}
+        {(task.tags?.length ?? 0) > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginTop: "2px" }}>
+            {task.tags!.map((tag, ti) => (
+              <span key={ti} style={{ fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px", background: "var(--color-brand-light)", color: "var(--color-text-purple)", border: "1px solid var(--color-brand-border)" }}>#{tag}</span>
+            ))}
+          </div>
+        )}
+        {/* 親タスク名の注記（ネストできない/孤児の子） */}
+        {parentNote && (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "200px" }}>
+              ↳ {parentNote}
+            </span>
+          </div>
+        )}
+        {groupBy !== "project" && pj && (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+            <span style={{ width: 4, height: 4, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
+            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{pj.name.slice(0, 14)}</span>
+          </div>
+        )}
+        {!pj && todoItem && (
+          <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+            <span style={{ fontSize: "9px", color: "#059669", fontWeight: "500" }}>ToDo</span>
+            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "120px" }}>
+              {todoItem.title.split("\n")[0].slice(0, 20)}
+            </span>
+          </div>
+        )}
+        {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI） */}
+        {canAddChild && (
+          <button
+            onClick={e => { e.stopPropagation(); openAddChild(task); }}
+            style={{
+              marginTop: "2px", padding: "1px 4px", fontSize: "9px",
+              color: "var(--color-text-tertiary)", border: "none",
+              background: "transparent", cursor: "pointer",
+            }}
+          >＋ 子タスク</button>
+        )}
+      </td>
+      {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
+      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+        <span title={isParent ? "子から自動算出" : undefined} style={{
+          fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
+          background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
+        }}>{TASK_STATUS_LABEL[dispStatus]}</span>
+      </td>
+      {/* 期日（インライン編集） */}
+      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+        onClick={e => e.stopPropagation()}>
+        {task.start_date && (
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            {task.start_date.slice(5).replace("-", "/")}〜
+          </span>
+        )}
+        <InlineEditDate
+          value={task.due_date}
+          onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
+        />
+      </td>
+      {/* 工数（詳細モードのみ） */}
+      {density === "detailed" && (
+        <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
+          {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
+        </td>
+      )}
+    </tr>
+  );
+});
 
 function Chip({ active, onClick, label, title }: { active: boolean; onClick: () => void; label: string; title?: string }) {
   return (

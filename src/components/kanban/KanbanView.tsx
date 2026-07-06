@@ -1,5 +1,5 @@
 // src/components/kanban/KanbanView.tsx
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, memo } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, TaskForce, ToDo } from "../../lib/localData/types";
@@ -36,6 +36,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   const tasks = useMemo(() => active(allTasks), [allTasks]);
   const members = useMemo(() => active(allMembers), [allMembers]);
+  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
   // 子タスク表示用：id→タスク名（子カードに親名を出す）と 親id→子件数（親カードに「子N件」を出す）
   const taskNameById = useMemo(() => new Map(tasks.map(t => [t.id, t.name])), [tasks]);
@@ -44,6 +45,18 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     for (const t of tasks) if (t.parent_task_id) m.set(t.parent_task_id, (m.get(t.parent_task_id) ?? 0) + 1);
     return m;
   }, [tasks]);
+
+  // TaskCard を React.memo で軽量化するための「参照が安定した」ルックアップ。
+  // .find()/.filter() をそのまま props に渡すと呼ぶたびに新しい配列/毎回O(n)探索になり、
+  // ドラッグ中のホバーや編集モーダルの開閉など無関係な state 変化でも全カードが再レンダリングされてしまう。
+  const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
+  const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+  const todoById    = useMemo(() => new Map(todos.map(td => [td.id, td])), [todos]);
+  const assigneesByTaskId = useMemo(() => {
+    const m = new Map<string, Member[]>();
+    for (const t of tasks) m.set(t.id, getAssigneeIds(t).map(id => memberById.get(id)).filter((x): x is Member => !!x));
+    return m;
+  }, [tasks, memberById]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addToStatus, setAddToStatus] = useState<Task["status"]>("todo");
@@ -69,7 +82,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   }, [tasks, saveTask, currentUser.id]);
 
   const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
-  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
 
   const handleAddTask = useCallback((
     name: string, assigneeIds: string[], projectId: string | null, dueDate: string,
@@ -102,15 +114,9 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     setShowAddModal(false);
   }, [addToStatus, saveTask, addTaskTaskForce, addTaskProject, currentUser.id]);
 
-  const assigneesForTask = useCallback((task: Task): Member[] => {
-    const ids = getAssigneeIds(task);
-    return members.filter(m => ids.includes(m.id));
-  }, [members]);
-
-  const projectForTask = (task: Task) => projects.find(p => p.id === task.project_id);
-  const todoForTask    = (task: Task) => task.todo_ids?.length ? todos.find(td => td.id === task.todo_ids[0]) : undefined;
-
-  const handleDragStart = (taskId: string) => setDraggingId(taskId);
+  // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
+  const handleDragStart = useCallback((taskId: string) => setDraggingId(taskId), []);
+  const handleCardClick = useCallback((taskId: string) => setEditingTaskId(taskId), []);
   const handleDrop = (status: Task["status"]) => {
     if (draggingId) { handleStatusChange(draggingId, status); setDraggingId(null); }
     setDragOverStatus(null);
@@ -216,16 +222,16 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                     <TaskCard
                       key={task.id}
                       task={task}
-                      project={projectForTask(task)}
-                      todo={todoForTask(task)}
-                      assignees={assigneesForTask(task)}
+                      project={task.project_id ? projectById.get(task.project_id) : undefined}
+                      todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
+                      assignees={assigneesByTaskId.get(task.id) ?? []}
                       allMembers={members}
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
-                      onDragStart={() => handleDragStart(task.id)}
+                      onDragStart={handleDragStart}
                       onStatusChange={handleStatusChange}
                       isDragging={draggingId === task.id}
-                      onClick={() => setEditingTaskId(task.id)}
+                      onClick={handleCardClick}
                       onSaveTask={saveTask}
                       currentUserId={currentUser.id}
                     />
@@ -289,7 +295,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
 // ===== タスクカード =====
 
-function TaskCard({
+const TaskCard = memo(function TaskCard({
   task, project, todo, assignees, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, onSaveTask, currentUserId,
 }: {
   task: Task;
@@ -299,10 +305,10 @@ function TaskCard({
   allMembers: Member[];
   parentName?: string;
   childCount?: number;
-  onDragStart: () => void;
+  onDragStart: (taskId: string) => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
-  onClick: () => void;
+  onClick: (taskId: string) => void;
   onSaveTask: (task: Task) => void;
   currentUserId: string;
 }) {
@@ -313,8 +319,8 @@ function TaskCard({
   return (
     <div
       draggable
-      onDragStart={onDragStart}
-      onClick={onClick}
+      onDragStart={() => onDragStart(task.id)}
+      onClick={() => onClick(task.id)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
@@ -472,7 +478,7 @@ function TaskCard({
       </div>
     </div>
   );
-}
+});
 
 // ===== タスク追加モーダル =====
 

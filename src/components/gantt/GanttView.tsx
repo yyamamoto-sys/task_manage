@@ -17,15 +17,14 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
+import { isAssignedTo } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
-import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
 } from "./ganttUtils";
-import { TaskBarRow, StatusDot, ZoomIcon } from "./GanttParts";
+import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
 
 const headerBtnStyle: React.CSSProperties = {
@@ -92,6 +91,7 @@ export function GanttView({
   // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
   const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
+  const taskById    = useMemo(() => new Map(allTasks.map(t => [t.id, t])), [allTasks]);
 
   // 表示するPJを絞り込む（毎レンダーで新配列を作らないよう useMemo 化）
   const visibleProjects = useMemo(
@@ -311,8 +311,9 @@ export function GanttView({
 
   // PJの開閉状態（キー：PJ ID / ToDo ID / 担当者 ID / 親タスク ID）
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const togglePJ = (id: string) =>
-    setCollapsed(prev => ({ ...prev, [id]: !prev[id] }));
+  // useCallback で参照を固定する（行コンポーネントの React.memo を効かせるため）
+  const togglePJ = useCallback((id: string) =>
+    setCollapsed(prev => ({ ...prev, [id]: !prev[id] })), []);
 
   // ビューモード（PJ別 / 人別）
   const [viewMode, setViewMode] = useState<"pj" | "person">("pj");
@@ -507,6 +508,14 @@ export function GanttView({
   }, []);
 
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  // 行コンポーネント（TaskBarRow/GanttXxxLabelRow）に渡すコールバックは
+  // useCallback で参照を固定する。無関係な hover の変化で全行が再レンダリングされるのを防ぐため。
+  const handleRowEdit = useCallback((taskId: string) => setEditingTaskId(taskId), []);
+  const handleRowHoverEnter = useCallback((taskId: string) => setHoveredTaskId(taskId), []);
+  const handleRowHoverLeave = useCallback(() => setHoveredTaskId(null), []);
+  const handleSaveRowAssignees = useCallback((task: Task, ids: string[]) => {
+    saveTask({ ...task, assignee_member_ids: ids });
+  }, [saveTask]);
 
   // 右端ドラッグによる期日変更
   const [draggingResizeTask, setDraggingResizeTask] = useState<{
@@ -526,12 +535,13 @@ export function GanttView({
     scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
   }, [todayX]);
 
-  const handleResizeDragStart = useCallback((e: React.MouseEvent, task: Task) => {
+  const handleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     e.stopPropagation();
     e.preventDefault();
-    if (!task.due_date || isPreview) return;
+    const task = taskById.get(taskId);
+    if (!task?.due_date || isPreview) return;
     setDraggingResizeTask({ taskId: task.id, startX: e.clientX, originalDueDate: task.due_date });
-  }, [isPreview]);
+  }, [isPreview, taskById]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -841,73 +851,21 @@ export function GanttView({
                       {!isCollapsed && orderedTasks.map(({ task, depth, childCount }) => {
                         // 親タスクが折りたたまれている子はスキップ
                         if (depth > 0 && collapsed[task.parent_task_id!]) return null;
-                        const isChild = depth > 0;
                         return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
-                            onMouseEnter={() => setHoveredTaskId(task.id)}
-                            onMouseLeave={() => setHoveredTaskId(null)}
-                            role="button" tabIndex={0}
-                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
-                            style={{
-                            height: 30, display: "flex", alignItems: "center",
-                            gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
-                            borderBottom: "1px solid var(--color-border-primary)",
-                            borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
-                            background: hoveredTaskId === task.id
-                              ? "var(--color-bg-secondary)"
-                              : isChild ? "var(--color-bg-primary)"
-                              : childCount > 0 ? "var(--color-bg-secondary)"
-                              : "var(--color-bg-primary)",
-                            boxShadow: !isChild && childCount > 0
-                              ? "inset 3px 0 0 var(--color-brand)"
-                              : isChild
-                              ? "inset 2px 0 0 var(--color-brand-border)"
-                              : "none",
-                            cursor: "pointer", transition: "background 0.1s",
-                          }}>
-                            {isChild ? (
-                              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
-                            ) : childCount > 0 ? (
-                              <span
-                                onClick={e => { e.stopPropagation(); togglePJ(task.id); }}
-                                style={{
-                                  fontSize: "11px", color: "var(--color-text-secondary)",
-                                  transition: "transform 0.15s", display: "inline-block",
-                                  transform: collapsed[task.id] ? "rotate(-90deg)" : "rotate(0deg)",
-                                  flexShrink: 0, cursor: "pointer", width: 14, textAlign: "center",
-                                }}
-                              >▾</span>
-                            ) : (
-                              <span style={{ flexShrink: 0, width: 14 }} />
-                            )}
-                            <StatusDot status={task.status} />
-                            <span style={{
-                              fontSize: "11px",
-                              fontWeight: (!isChild && childCount > 0) ? "600" : "400",
-                              color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                              flex: 1,
-                            }}>
-                              {task.name}
-                            </span>
-                            {childCount > 0 && (
-                              <span style={{
-                                fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
-                                background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)",
-                                borderRadius: "var(--radius-full)", padding: "0 5px", flexShrink: 0,
-                              }}>
-                                子{childCount}
-                              </span>
-                            )}
-                            {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
-                            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
-                              <InlineEditAssignee
-                                assigneeIds={getAssigneeIds(task)}
-                                members={members}
-                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
-                              />
-                            </div>
-                          </div>
+                          <GanttPjLabelRow
+                            key={task.id}
+                            task={task}
+                            isChild={depth > 0}
+                            childCount={childCount}
+                            isHovered={hoveredTaskId === task.id}
+                            isCollapsed={!!collapsed[task.id]}
+                            members={members}
+                            onEdit={handleRowEdit}
+                            onHoverEnter={handleRowHoverEnter}
+                            onHoverLeave={handleRowHoverLeave}
+                            onToggleCollapse={togglePJ}
+                            onSaveAssignees={handleSaveRowAssignees}
+                          />
                         );
                       })}
                     </div>
@@ -933,35 +891,18 @@ export function GanttView({
                           {`[ToDo] ${(todo.title.split("\n")[0]).slice(0, 14)}${todo.title.length > 14 ? "…" : ""}`}
                         </span>
                       </div>
-                      {!isCollapsed && sortedTasks.map(task => {
-                        return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
-                            onMouseEnter={() => setHoveredTaskId(task.id)}
-                            onMouseLeave={() => setHoveredTaskId(null)}
-                            role="button" tabIndex={0}
-                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
-                            style={{
-                            height: 30, display: "flex", alignItems: "center",
-                            gap: "6px", padding: "0 8px 0 26px",
-                            borderBottom: "1px solid var(--color-border-primary)",
-                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
-                            cursor: "pointer", transition: "background 0.1s",
-                          }}>
-                            <StatusDot status={task.status} />
-                            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                              {task.name}
-                            </span>
-                            {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
-                            <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
-                              <InlineEditAssignee
-                                assigneeIds={getAssigneeIds(task)}
-                                members={members}
-                                onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                      {!isCollapsed && sortedTasks.map(task => (
+                        <GanttTodoLabelRow
+                          key={task.id}
+                          task={task}
+                          isHovered={hoveredTaskId === task.id}
+                          members={members}
+                          onEdit={handleRowEdit}
+                          onHoverEnter={handleRowHoverEnter}
+                          onHoverLeave={handleRowHoverLeave}
+                          onSaveAssignees={handleSaveRowAssignees}
+                        />
+                      ))}
                     </div>
                   );
                 })}
@@ -1023,40 +964,19 @@ export function GanttView({
                       {/* タスク行 */}
                       {!isCollapsed && tasks.map(task => {
                         const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-                        const isOverdue = (() => {
-                          const due = toDate(task.due_date);
-                          return due && due < today && task.status !== "done";
-                        })();
+                        const due = toDate(task.due_date);
+                        const isOverdue = !!(due && due < today && task.status !== "done");
                         return (
-                          <div key={task.id} onClick={() => setEditingTaskId(task.id)}
-                            onMouseEnter={() => setHoveredTaskId(task.id)}
-                            onMouseLeave={() => setHoveredTaskId(null)}
-                            role="button" tabIndex={0}
-                            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") setEditingTaskId(task.id); }}
-                            style={{
-                            height: 30, display: "flex", alignItems: "center",
-                            gap: "5px", padding: "0 8px 0 26px",
-                            borderBottom: "1px solid var(--color-border-primary)",
-                            background: hoveredTaskId === task.id ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
-                            cursor: "pointer", transition: "background 0.1s",
-                          }}>
-                            <StatusDot status={task.status} />
-                            {/* PJカラードット */}
-                            {pj && (
-                              <div style={{
-                                width: 6, height: 6, borderRadius: "50%",
-                                background: pj.color_tag, flexShrink: 0,
-                              }} />
-                            )}
-                            <span style={{
-                              fontSize: "11px",
-                              color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                              flex: 1,
-                            }}>
-                              {task.parent_task_id ? "↳ " : ""}{task.name}
-                            </span>
-                          </div>
+                          <GanttPersonLabelRow
+                            key={task.id}
+                            task={task}
+                            isHovered={hoveredTaskId === task.id}
+                            isOverdue={isOverdue}
+                            pj={pj}
+                            onEdit={handleRowEdit}
+                            onHoverEnter={handleRowHoverEnter}
+                            onHoverLeave={handleRowHoverLeave}
+                          />
                         );
                       })}
                     </div>
@@ -1231,6 +1151,7 @@ export function GanttView({
                           return (
                             <TaskBarRow
                               key={task.id}
+                              taskId={task.id}
                               bar={bar}
                               barColor={barColor}
                               borderRadius={hasRange ? "4px" : "9px"}
@@ -1240,10 +1161,10 @@ export function GanttView({
                               isPreview={isPreview}
                               dateLabel={dateLabel}
                               tooltip={tooltip}
-                              onEdit={() => setEditingTaskId(task.id)}
-                              onResize={e => handleResizeDragStart(e, task)}
-                              onMouseEnter={() => setHoveredTaskId(task.id)}
-                              onMouseLeave={() => setHoveredTaskId(null)}
+                              onEdit={handleRowEdit}
+                              onResize={handleResizeDragStart}
+                              onMouseEnter={handleRowHoverEnter}
+                              onMouseLeave={handleRowHoverLeave}
                             />
                           );
                         })}
@@ -1365,6 +1286,7 @@ export function GanttView({
                       return (
                         <TaskBarRow
                           key={task.id}
+                          taskId={task.id}
                           bar={bar}
                           barColor={barColor}
                           barHeight={depth > 0 ? 12 : 18}
@@ -1376,10 +1298,10 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
-                          onEdit={() => setEditingTaskId(task.id)}
-                          onResize={e => handleResizeDragStart(e, task)}
-                          onMouseEnter={() => setHoveredTaskId(task.id)}
-                          onMouseLeave={() => setHoveredTaskId(null)}
+                          onEdit={handleRowEdit}
+                          onResize={handleResizeDragStart}
+                          onMouseEnter={handleRowHoverEnter}
+                          onMouseLeave={handleRowHoverLeave}
                         />
                       );
                     })}
@@ -1426,6 +1348,7 @@ export function GanttView({
                       return (
                         <TaskBarRow
                           key={task.id}
+                          taskId={task.id}
                           bar={bar}
                           barColor={isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : TODO_COLOR}
                           borderRadius={hasRange ? "4px" : "9px"}
@@ -1435,10 +1358,10 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
-                          onEdit={() => setEditingTaskId(task.id)}
-                          onResize={e => handleResizeDragStart(e, task)}
-                          onMouseEnter={() => setHoveredTaskId(task.id)}
-                          onMouseLeave={() => setHoveredTaskId(null)}
+                          onEdit={handleRowEdit}
+                          onResize={handleResizeDragStart}
+                          onMouseEnter={handleRowHoverEnter}
+                          onMouseLeave={handleRowHoverLeave}
                         />
                       );
                     })}

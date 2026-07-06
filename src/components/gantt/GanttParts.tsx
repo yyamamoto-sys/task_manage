@@ -1,11 +1,23 @@
 // src/components/gantt/GanttParts.tsx
 // ガントビューで使う小コンポーネント群
 
-import type { Task } from "../../lib/localData/types";
+import { memo } from "react";
+import type { Task, Member, Project } from "../../lib/localData/types";
+import { getAssigneeIds } from "../../lib/taskMeta";
+import { InlineEditAssignee } from "../common/InlineEditAssignee";
 
 // ===== TaskBarRow =====
+//
+// 【設計意図】React.memo 化。GanttView は hoveredTaskId 等の状態が親コンポーネントに
+// あるため、1本のバーへのマウスオーバーだけで画面全体のバーが再レンダリングされていた
+// （カクつきの主因）。ここを memo 化し、コールバックは親側で useCallback により参照を
+// 固定してもらうことで、実際に変化した行だけが再レンダリングされるようにする。
+// ただし bar は毎レンダー calcTaskBar() が新しいオブジェクトを返すため、デフォルトの
+// 浅い比較では常に「変化した」と判定されてしまう → barX/barWidth の値で比較するカスタム
+// comparator を使う。
 
 export interface TaskBarRowProps {
+  taskId: string;
   bar: { barX: number; barWidth: number } | null;
   barColor: string;
   barHeight?: number;
@@ -17,21 +29,21 @@ export interface TaskBarRowProps {
   isPreview: boolean;
   dateLabel: string;
   tooltip: string;
-  onEdit: () => void;
-  onResize: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onMouseEnter: () => void;
+  onEdit: (taskId: string) => void;
+  onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
+  onMouseEnter: (taskId: string) => void;
   onMouseLeave: () => void;
 }
 
-export function TaskBarRow({
-  bar, barColor, barHeight = 18, borderRadius = "9px",
+function TaskBarRowImpl({
+  taskId, bar, barColor, barHeight = 18, borderRadius = "9px",
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, onEdit, onResize, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   return (
     <div
-      onMouseEnter={onMouseEnter}
+      onMouseEnter={() => onMouseEnter(taskId)}
       onMouseLeave={onMouseLeave}
       style={{
         height: 30, position: "relative",
@@ -46,7 +58,7 @@ export function TaskBarRow({
         <>
           <div
             title={tooltip}
-            onClick={isPreview ? undefined : onEdit}
+            onClick={isPreview ? undefined : () => onEdit(taskId)}
             style={{
               position: "absolute",
               left: bar.barX, top: "50%", transform: "translateY(-50%)",
@@ -82,7 +94,7 @@ export function TaskBarRow({
           )}
           {!isPreview && !isDone && (
             <div
-              onMouseDown={onResize}
+              onMouseDown={e => onResize(e, taskId)}
               style={{
                 position: "absolute",
                 left: bar.barX + bar.barWidth - 4,
@@ -96,6 +108,209 @@ export function TaskBarRow({
     </div>
   );
 }
+
+function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean {
+  return (
+    prev.taskId === next.taskId &&
+    (prev.bar?.barX ?? null) === (next.bar?.barX ?? null) &&
+    (prev.bar?.barWidth ?? null) === (next.bar?.barWidth ?? null) &&
+    prev.barColor === next.barColor &&
+    prev.barHeight === next.barHeight &&
+    prev.borderRadius === next.borderRadius &&
+    prev.isDone === next.isDone &&
+    prev.isStagnant === next.isStagnant &&
+    prev.isChanged === next.isChanged &&
+    prev.isHovered === next.isHovered &&
+    prev.isPreview === next.isPreview &&
+    prev.dateLabel === next.dateLabel &&
+    prev.tooltip === next.tooltip &&
+    prev.onEdit === next.onEdit &&
+    prev.onResize === next.onResize &&
+    prev.onMouseEnter === next.onMouseEnter &&
+    prev.onMouseLeave === next.onMouseLeave
+  );
+}
+
+export const TaskBarRow = memo(TaskBarRowImpl, barRowPropsEqual);
+
+// ===== GanttPjLabelRow（PJ別ビュー・ラベル列のタスク行） =====
+
+export interface GanttPjLabelRowProps {
+  task: Task;
+  isChild: boolean;
+  childCount: number;
+  isHovered: boolean;
+  isCollapsed: boolean;
+  members: Member[];
+  onEdit: (taskId: string) => void;
+  onHoverEnter: (taskId: string) => void;
+  onHoverLeave: () => void;
+  onToggleCollapse: (taskId: string) => void;
+  onSaveAssignees: (task: Task, ids: string[]) => void;
+}
+
+export const GanttPjLabelRow = memo(function GanttPjLabelRow({
+  task, isChild, childCount, isHovered, isCollapsed, members,
+  onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
+}: GanttPjLabelRowProps) {
+  return (
+    <div key={task.id} onClick={() => onEdit(task.id)}
+      onMouseEnter={() => onHoverEnter(task.id)}
+      onMouseLeave={onHoverLeave}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
+      style={{
+      height: 30, display: "flex", alignItems: "center",
+      gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
+      borderBottom: "1px solid var(--color-border-primary)",
+      borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
+      background: isHovered
+        ? "var(--color-bg-secondary)"
+        : isChild ? "var(--color-bg-primary)"
+        : childCount > 0 ? "var(--color-bg-secondary)"
+        : "var(--color-bg-primary)",
+      boxShadow: !isChild && childCount > 0
+        ? "inset 3px 0 0 var(--color-brand)"
+        : isChild
+        ? "inset 2px 0 0 var(--color-brand-border)"
+        : "none",
+      cursor: "pointer", transition: "background 0.1s",
+    }}>
+      {isChild ? (
+        <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
+      ) : childCount > 0 ? (
+        <span
+          onClick={e => { e.stopPropagation(); onToggleCollapse(task.id); }}
+          style={{
+            fontSize: "11px", color: "var(--color-text-secondary)",
+            transition: "transform 0.15s", display: "inline-block",
+            transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+            flexShrink: 0, cursor: "pointer", width: 14, textAlign: "center",
+          }}
+        >▾</span>
+      ) : (
+        <span style={{ flexShrink: 0, width: 14 }} />
+      )}
+      <StatusDot status={task.status} />
+      <span style={{
+        fontSize: "11px",
+        fontWeight: (!isChild && childCount > 0) ? "600" : "400",
+        color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        flex: 1,
+      }}>
+        {task.name}
+      </span>
+      {childCount > 0 && (
+        <span style={{
+          fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
+          background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)",
+          borderRadius: "var(--radius-full)", padding: "0 5px", flexShrink: 0,
+        }}>
+          子{childCount}
+        </span>
+      )}
+      {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない */}
+      <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+        <InlineEditAssignee
+          assigneeIds={getAssigneeIds(task)}
+          members={members}
+          onSave={ids => onSaveAssignees(task, ids)}
+        />
+      </div>
+    </div>
+  );
+});
+
+// ===== GanttTodoLabelRow（ToDo系グループ・ラベル列のタスク行） =====
+
+export interface GanttTodoLabelRowProps {
+  task: Task;
+  isHovered: boolean;
+  members: Member[];
+  onEdit: (taskId: string) => void;
+  onHoverEnter: (taskId: string) => void;
+  onHoverLeave: () => void;
+  onSaveAssignees: (task: Task, ids: string[]) => void;
+}
+
+export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
+  task, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
+}: GanttTodoLabelRowProps) {
+  return (
+    <div key={task.id} onClick={() => onEdit(task.id)}
+      onMouseEnter={() => onHoverEnter(task.id)}
+      onMouseLeave={onHoverLeave}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
+      style={{
+      height: 30, display: "flex", alignItems: "center",
+      gap: "6px", padding: "0 8px 0 26px",
+      borderBottom: "1px solid var(--color-border-primary)",
+      background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      cursor: "pointer", transition: "background 0.1s",
+    }}>
+      <StatusDot status={task.status} />
+      <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+        {task.name}
+      </span>
+      <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+        <InlineEditAssignee
+          assigneeIds={getAssigneeIds(task)}
+          members={members}
+          onSave={ids => onSaveAssignees(task, ids)}
+        />
+      </div>
+    </div>
+  );
+});
+
+// ===== GanttPersonLabelRow（人別ビュー・ラベル列のタスク行） =====
+
+export interface GanttPersonLabelRowProps {
+  task: Task;
+  isHovered: boolean;
+  isOverdue: boolean;
+  pj: Project | undefined;
+  onEdit: (taskId: string) => void;
+  onHoverEnter: (taskId: string) => void;
+  onHoverLeave: () => void;
+}
+
+export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
+  task, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
+}: GanttPersonLabelRowProps) {
+  return (
+    <div key={task.id} onClick={() => onEdit(task.id)}
+      onMouseEnter={() => onHoverEnter(task.id)}
+      onMouseLeave={onHoverLeave}
+      role="button" tabIndex={0}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
+      style={{
+      height: 30, display: "flex", alignItems: "center",
+      gap: "5px", padding: "0 8px 0 26px",
+      borderBottom: "1px solid var(--color-border-primary)",
+      background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+      cursor: "pointer", transition: "background 0.1s",
+    }}>
+      <StatusDot status={task.status} />
+      {pj && (
+        <div style={{
+          width: 6, height: 6, borderRadius: "50%",
+          background: pj.color_tag, flexShrink: 0,
+        }} />
+      )}
+      <span style={{
+        fontSize: "11px",
+        color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        flex: 1,
+      }}>
+        {task.parent_task_id ? "↳ " : ""}{task.name}
+      </span>
+    </div>
+  );
+});
 
 // ===== StatusDot =====
 
