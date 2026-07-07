@@ -388,6 +388,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       onClick={() => setIsOnboardingOverlayOpen(false)}
       style={{
         position: "fixed", inset: 0, zIndex: 260,
@@ -399,6 +400,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
+        className="animate-fadeIn"
         onClick={e => e.stopPropagation()}
         style={{
           background: "var(--color-bg-primary)",
@@ -632,6 +634,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           // 背景クリック・Escapeキーで閉じる（項目を選ばずに閉じる唯一の手段のため、
           // 他の背景オーバーレイと違いここは実際にキーボード操作可能にする）
           <div
+            className="animate-overlay"
             style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.45)" }}
             onClick={() => setIsMobileLabOpen(false)}
             role="button" tabIndex={0}
@@ -640,6 +643,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
             {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
             <div
+              className="panel-slide-up"
               style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "var(--color-bg-primary)",

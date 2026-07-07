@@ -496,6 +496,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.55)",
@@ -506,6 +507,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
+        className="panel-slide-up"
         style={{
           width: "min(760px, 100vw)",
           height: "100%",

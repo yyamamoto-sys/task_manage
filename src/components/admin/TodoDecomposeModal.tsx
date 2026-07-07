@@ -128,6 +128,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 300,
         background: "rgba(0,0,0,0.45)",
@@ -136,7 +137,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div style={{
+      <div className="animate-fadeIn" style={{
         width: "min(640px, 100%)",
         maxHeight: "90vh",
         background: "var(--color-bg-primary)",

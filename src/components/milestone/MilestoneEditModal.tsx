@@ -81,6 +81,7 @@ export function MilestoneEditModal({ milestone, currentUser, project, onClose }:
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 300,
         background: "rgba(0,0,0,0.5)",

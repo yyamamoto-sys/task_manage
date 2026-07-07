@@ -272,6 +272,7 @@ export function ConfirmationDialogModal({
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       style={{
         position: "fixed",
         inset: 0,
@@ -287,6 +288,7 @@ export function ConfirmationDialogModal({
       }}
     >
       <div
+        className="animate-fadeIn"
         style={{
           background: "var(--color-bg-primary)",
           borderRadius: "var(--radius-lg)",

@@ -704,7 +704,9 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   const content = (
     // クリックしても何も起きないラッパー（inline=false時に背景クリックのバブリングを防止するだけ）
     // eslint-disable-next-line jsx-a11y/click-events-have-key-events
-    <div style={{
+    <div
+      className={inline ? "" : "panel-slide-up"}
+      style={{
       width: inline ? "100%" : "min(1040px, 100vw)",
       height: "100%",
       background: "var(--color-bg-primary)",
@@ -1221,6 +1223,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
+      className="animate-overlay"
       style={{
         position: "fixed", inset: 0, zIndex: 200,
         background: "rgba(0,0,0,0.55)",
