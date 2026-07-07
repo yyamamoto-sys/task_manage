@@ -320,7 +320,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   };
 
   return (
-    <div style={{
+    <div className="animate-side-panel-in" style={{
       width: `${panelWidth}px`, flexShrink: 0,
       borderLeft: "1px solid var(--color-border-primary)",
       background: "var(--color-bg-primary)",

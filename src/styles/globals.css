@@ -559,6 +559,13 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 .animate-slideDown  { animation: slideDown 0.18s cubic-bezier(0.16,1,0.3,1) both; }
 .animate-dropdown   { animation: dropdownOpen 0.14s cubic-bezier(0.16,1,0.3,1); transform-origin: top; }
 
+/* 右ドック型パネルの出現（TaskSidePanel等：右端からわずかにスライド+フェード） */
+@keyframes sidePanelSlideIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.animate-side-panel-in { animation: sidePanelSlideIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+
 /* トースト通知（下から浮き上がる） */
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(12px); }
@@ -577,9 +584,14 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 @keyframes tourScrimIn { from { opacity: 0; } to { opacity: 1; } }
 .tour-scrim-in { animation: tourScrimIn var(--tour-duration) ease both; }
 
-/* 動きを減らす設定では出現アニメを無効化 */
+/* 動きを減らす設定では出現アニメを無効化（モーダル・パネル・トースト等の出現アニメ全般が対象。
+   ホバーの色変化など「動き」を伴わないtransitionはここでは止めない） */
 @media (prefers-reduced-motion: reduce) {
-  .tour-bubble-in, .tour-scrim-in { animation: none !important; }
+  .tour-bubble-in, .tour-scrim-in,
+  .animate-fadeIn, .animate-modalEnter, .animate-overlay, .animate-slideDown, .animate-dropdown,
+  .animate-side-panel-in, .animate-toast-in, .panel-slide-up, .chat-bubble-in, .fab-item-in {
+    animation: none !important;
+  }
 }
 
 /* ===== AI エフェクト ===== */
