@@ -451,20 +451,22 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           )}
         </div>
         <CustomSelect
+          multi
           value=""
-          onChange={id => {
-            if (id && !sidebarForm.assignee_member_ids.includes(id)) {
-              setSidebarForm(f => f
-                ? { ...f, assignee_member_ids: [...f.assignee_member_ids, id] }
-                : f);
-            }
-          }}
-          options={[
-            { value: "", label: "＋ 担当者を追加..." },
-            ...[...members].sort((a, b) =>
-              a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
-            ).filter(m => !sidebarForm.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
-          ]}
+          onChange={() => {}}
+          selectedValues={sidebarForm.assignee_member_ids}
+          onToggle={id => setSidebarForm(f => f
+            ? {
+                ...f,
+                assignee_member_ids: f.assignee_member_ids.includes(id)
+                  ? f.assignee_member_ids.filter(i => i !== id)
+                  : [...f.assignee_member_ids, id],
+              }
+            : f)}
+          options={[...members].sort((a, b) =>
+            a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+          ).map(m => ({ value: m.id, label: m.display_name }))}
+          placeholder="＋ 担当者を追加..."
           searchable searchPlaceholder="メンバーで検索..."
           style={{ marginBottom: "12px" }} />
 

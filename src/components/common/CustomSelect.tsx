@@ -39,11 +39,23 @@ interface Props {
   searchable?: boolean;
   /** 検索ボックスのプレースホルダ（searchable 時） */
   searchPlaceholder?: string;
+  /**
+   * true で複数選択モードにする（担当者の複数選択など）。
+   * 各行の左にチェックボックスを表示し、選択してもパネルは閉じない
+   * （閉じるのは外側クリック／Escapeのみ）ため、続けて複数人を選べる。
+   * multi=true のときは selectedValues/onToggle が必須（value/onChange は無視）。
+   */
+  multi?: boolean;
+  /** multi=true 時の選択済み value 一覧 */
+  selectedValues?: string[];
+  /** multi=true 時：行クリックで value の選択/解除をトグルする */
+  onToggle?: (value: string) => void;
 }
 
 export function CustomSelect({
   value, onChange, options, placeholder = "選択...", disabled, style,
   searchable = false, searchPlaceholder = "名前で検索...",
+  multi = false, selectedValues, onToggle,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -121,6 +133,7 @@ export function CustomSelect({
   }, [open, searchable]);
 
   const selected = options.find(o => o.value === value);
+  const selectedCount = multi ? (selectedValues?.length ?? 0) : 0;
 
   // 検索フィルタ（searchable 時のみ。ラベルの部分一致・大小無視）
   const q = query.trim().toLowerCase();
@@ -147,7 +160,7 @@ export function CustomSelect({
           border: `1px solid ${open ? "var(--color-brand)" : "var(--color-border-primary)"}`,
           borderRadius: "var(--radius-md)",
           background: "var(--color-bg-primary)",
-          color: selected ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+          color: (multi ? selectedCount > 0 : !!selected) ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
           textAlign: "left",
           cursor: disabled ? "not-allowed" : "pointer",
           boxShadow: open ? "0 0 0 2px var(--color-brand-light)" : "none",
@@ -158,11 +171,13 @@ export function CustomSelect({
           display: "flex", alignItems: "center", gap: "7px",
           overflow: "hidden", flex: 1, fontSize: "12px",
         }}>
-          {selected?.color && (
+          {!multi && selected?.color && (
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: selected.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
           )}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {selected ? selected.label : placeholder}
+            {multi
+              ? (selectedCount > 0 ? `${selectedCount}件選択中` : placeholder)
+              : (selected ? selected.label : placeholder)}
           </span>
         </span>
         <ChevronIcon open={open} />
@@ -195,7 +210,10 @@ export function CustomSelect({
               onKeyDown={e => {
                 if (e.key === "Enter") {
                   const first = filteredOptions.find(o => !o.header);
-                  if (first) { e.preventDefault(); onChange(first.value); setOpen(false); }
+                  if (!first) return;
+                  e.preventDefault();
+                  if (multi) onToggle?.(first.value);
+                  else { onChange(first.value); setOpen(false); }
                 }
               }}
               placeholder={searchPlaceholder}
@@ -225,12 +243,15 @@ export function CustomSelect({
                 }}>{opt.label}</div>
               );
             }
-            const isSelected = opt.value === value;
+            const isSelected = multi ? (selectedValues?.includes(opt.value) ?? false) : opt.value === value;
             return (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => { onChange(opt.value); setOpen(false); }}
+                onClick={() => {
+                  if (multi) onToggle?.(opt.value);
+                  else { onChange(opt.value); setOpen(false); }
+                }}
                 style={{
                   width: "100%",
                   display: "flex", alignItems: "center", gap: "8px",
@@ -246,6 +267,23 @@ export function CustomSelect({
                   transition: "background var(--transition-fast)",
                 }}
               >
+                {multi && (
+                  <span
+                    aria-hidden
+                    style={{
+                      width: 14, height: 14, flexShrink: 0, borderRadius: "3px",
+                      border: `1.5px solid ${isSelected ? "var(--color-brand)" : "var(--color-border-secondary)"}`,
+                      background: isSelected ? "var(--color-brand)" : "transparent",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                  >
+                    {isSelected && (
+                      <svg width="9" height="7" viewBox="0 0 9 7" fill="none">
+                        <path d="M1 3.5L3.2 5.7L8 1" stroke="#fff" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </span>
+                )}
                 {opt.color && (
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: opt.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
                 )}

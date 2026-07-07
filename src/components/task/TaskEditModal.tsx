@@ -382,18 +382,23 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               )}
             </div>
             <CustomSelect
+              multi
               value=""
-              onChange={id => {
-                if (id && !form.assignee_member_ids.includes(id))
-                  setForm(f => ({ ...f, assignee_member_ids: [...f.assignee_member_ids, id] }));
-              }}
-              options={[
-                { value: "", label: "＋ 担当者を追加..." },
-                // 自分自身を先頭に、残りは元の順（すでに追加済みの担当者は除く）
-                ...[...members].sort((a, b) =>
+              onChange={() => {}}
+              selectedValues={form.assignee_member_ids}
+              onToggle={id => setForm(f => ({
+                ...f,
+                assignee_member_ids: f.assignee_member_ids.includes(id)
+                  ? f.assignee_member_ids.filter(i => i !== id)
+                  : [...f.assignee_member_ids, id],
+              }))}
+              options={
+                // 自分自身を先頭に、残りは元の順
+                [...members].sort((a, b) =>
                   a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
-                ).filter(m => !form.assignee_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
-              ]}
+                ).map(m => ({ value: m.id, label: m.display_name }))
+              }
+              placeholder="＋ 担当者を追加..."
               searchable searchPlaceholder="メンバーで検索..."
             />
           </FieldSection>
