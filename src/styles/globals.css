@@ -559,12 +559,15 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
 .animate-slideDown  { animation: slideDown 0.18s cubic-bezier(0.16,1,0.3,1) both; }
 .animate-dropdown   { animation: dropdownOpen 0.14s cubic-bezier(0.16,1,0.3,1); transform-origin: top; }
 
-/* 右ドック型パネルの出現（TaskSidePanel等：右端からわずかにスライド+フェード） */
+/* 右ドック型パネルの出現（TaskSidePanel等：幅0から実際の幅まで広がる+フェード）。
+   to側でwidthを指定しないことで、要素の実際の（JSで決まる可変の）幅へ自然に収束させる。
+   AI相談パネル（幅をtransitionで0→実幅にする手法）と同じ「広がって出てくる」体感に合わせている。
+   ルート要素は元々 overflow:hidden なので、幅が狭い間の中身は自動的にクリップされる。 */
 @keyframes sidePanelSlideIn {
-  from { opacity: 0; transform: translateX(16px); }
-  to   { opacity: 1; transform: translateX(0); }
+  from { opacity: 0; width: 0; }
+  to   { opacity: 1; }
 }
-.animate-side-panel-in { animation: sidePanelSlideIn 0.22s cubic-bezier(0.16,1,0.3,1) both; }
+.animate-side-panel-in { animation: sidePanelSlideIn 0.3s cubic-bezier(0.16,1,0.3,1) both; }
 
 /* トースト通知（下から浮き上がる） */
 @keyframes toastIn {
