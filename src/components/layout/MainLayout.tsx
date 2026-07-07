@@ -615,6 +615,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {aiEditTaskId && (
           <TaskEditModal taskId={aiEditTaskId} currentUser={currentUser} onClose={() => setAiEditTaskId(null)} />
         )}
+        <CommandPalette
+          isOpen={isPaletteOpen}
+          onClose={() => setIsPaletteOpen(false)}
+          tasks={paletteTasks}
+          projects={projects}
+          canCreate={!isGuest}
+          onOpenTask={setAiEditTaskId}
+          onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
+          onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}
+          onQuickAdd={() => setIsQuickAddOpen(true)}
+          onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+        />
         {/* ラボ機能ボトムシート */}
         {isMobileLabOpen && (
           // 背景クリック・Escapeキーで閉じる（項目を選ばずに閉じる唯一の手段のため、
@@ -697,6 +709,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             </select>
           )}
           {/* AI相談ボタン */}
+          {/* 検索（コマンドパレット。モバイルはCtrl+Kが使えないためボタンが唯一の起動手段） */}
+          <button
+            onClick={() => setIsPaletteOpen(true)}
+            title="タスク・プロジェクトを検索"
+            style={{
+              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
+              background: "var(--color-bg-secondary)",
+              border: "1px solid var(--color-border-primary)",
+              cursor: "pointer", fontSize: "13px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            🔍
+          </button>
           <button
             onClick={() => setIsConsultOpen(prev => !prev)}
             title="AIに変更を相談"
@@ -1072,6 +1099,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
         onToggleMode={() => setAppMode(appMode === "plan" ? "okr" : "plan")}
+        onOpenPalette={() => setIsPaletteOpen(true)}
       />
       {mainContent}
       {isGraphOpen && (
@@ -1218,6 +1246,7 @@ interface SidebarProps {
   onToggleCollapsed: () => void;
   appMode: AppMode;
   onToggleMode: () => void;
+  onOpenPalette: () => void;
 }
 
 function Sidebar({
@@ -1228,7 +1257,7 @@ function Sidebar({
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
-  appMode, onToggleMode,
+  appMode, onToggleMode, onOpenPalette,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -1295,6 +1324,37 @@ function Sidebar({
       {/* モードトグル */}
       <div style={{ padding: c ? "6px 4px" : "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
         <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
+      </div>
+
+      {/* 検索（コマンドパレット起動）。Ctrl+K だけでは気づけないため常設ボタンを置く */}
+      <div style={{ padding: c ? "6px 4px 0" : "8px 8px 0", flexShrink: 0 }}>
+        <button
+          onClick={onOpenPalette}
+          title="タスク・プロジェクトを横断検索（Ctrl+K）"
+          style={{
+            display: "flex", alignItems: "center", gap: c ? 0 : "8px",
+            padding: c ? "8px 0" : "7px 10px",
+            width: "100%", boxSizing: "border-box",
+            justifyContent: c ? "center" : "flex-start",
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            color: "var(--color-text-tertiary)",
+          }}
+        >
+          <span style={{ fontSize: c ? "14px" : "12px", flexShrink: 0, lineHeight: 1 }}>🔍</span>
+          {!c && (
+            <>
+              <span style={{ flex: 1, textAlign: "left", fontSize: "11px" }}>検索...</span>
+              <kbd style={{
+                fontSize: "9px", padding: "1px 5px",
+                border: "1px solid var(--color-border-primary)", borderRadius: "3px",
+                background: "var(--color-bg-secondary)", color: "var(--color-text-tertiary)",
+              }}>Ctrl+K</kbd>
+            </>
+          )}
+        </button>
       </div>
 
       {/* AI ツール（モード共通） */}
