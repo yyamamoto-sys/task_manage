@@ -157,9 +157,11 @@
 #             （古いスナップショット全体を保存すると楽観ロックと衝突するため）
 #      追加②：ビュー切替（lazyチャンク読込中）のスピナーをスケルトンUI（common/Skeleton.tsx の
 #             ViewSkeleton）に置換。初回ロードは既存の決定的プログレスバーを継続使用
-#      追加③：Ctrl+K / Cmd+K のコマンドパレット（common/CommandPalette.tsx・PC向け）。
+#      追加③：Ctrl+K / Cmd+K のコマンドパレット（common/CommandPalette.tsx）。
 #             タスク・PJの横断検索＆ジャンプ、ビュー切替・新規タスク・AI相談のクイックアクション。
-#             タスク選択は aiEditTaskId 経由で TaskEditModal を開く。ゲストには作成系アクション非表示
+#             タスク選択は aiEditTaskId 経由で TaskEditModal を開く。ゲストには作成系アクション非表示。
+#             起動手段はショートカットのほか、PCサイドバーの検索ボタン（Ctrl+Kヒント付き）と
+#             モバイルヘッダーの🔍ボタン（モバイルはボタンが唯一の起動手段）を常設
 #
 # 最終更新：2026-07-06（v2.22）
 
