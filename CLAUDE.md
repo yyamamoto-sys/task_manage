@@ -201,8 +201,33 @@
 #             ドラッグ開始の瞬間に全PJ見出しへ同時出現し、その分だけ見出し行の横幅が
 #             一瞬で変わっていた（継続的なループではなく開始時の単発の揺れ）。
 #             常時マウントしvisibility切替に変更し、幅を最初から確保することで解消
+# v2.26 アニメーション未設定箇所の洗い出し＋出現アニメーション統一（2026-07-07）
+#      経緯：「AI相談パネルの出現・カンバンのホバーは滑らかだが、タスク詳細を開く時など
+#             未設定の動きがある」という指摘を受け、position:fixed inset:0のオーバーレイ・
+#             パネル系21箇所を全数調査。結果、①完全に無アニメーション＝13箇所、
+#             ②本体だけアニメーションがあり背景（暗幕）が瞬間表示＝6箇所、が判明
+#      最優先対応：TaskSidePanel（ガント/リスト/カンバン右側のタスク詳細パネル）に
+#             新規keyframe sidePanelSlideIn（右へ16pxオフセット+フェード）を追加。
+#             ドッキング型で背景暗幕を持たないため専用のkeyframeとした。taskId切替では
+#             パネルが再マウントされないため、パネルを開いた瞬間だけ再生される
+#      次点対応：ConfirmModal（削除確認。17箇所から呼び出される最頻出モーダル）の背景に
+#             animate-overlayを追加。本体も直書きinline animationから共通クラス
+#             animate-fadeInへ統一（inline animationはCSSクラス経由のreduced-motion
+#             指定の対象外だったため）
+#      残り一括対応：ConfirmationDialogModal・ChangeHistoryModal・ProjectCreateModal・
+#             TodoDecomposeModal・DashboardView/ProjectKarteの全PJ AI分析モーダル・
+#             KrQuarterPlanPanel・KrReportPanel（フローティング時）・MeetingImportPanel・
+#             MainLayoutのオンボーディングオーバーレイ/モバイルラボボトムシート・
+#             MilestoneAddModal・MilestoneEditModal・GuideOverlay・KrWhyPanel（同）・
+#             TaskEditModal・OkrDashboardView（概要・履歴の2オーバーレイ）・
+#             GraphView・CalendarLabView・ProjectStructureView（全画面ラボ系3つ）に
+#             animate-overlay（背景）＋animate-fadeInまたはpanel-slide-up（本体）を適用
+#      補足：prefers-reduced-motion（動きを減らす設定）のガード対象を、従来ツアー機能
+#             のみだった範囲から既存の出現アニメーション全般（animate-fadeIn/
+#             modalEnter/overlay/slideDown/dropdown/toast-in・panel-slide-up/
+#             chat-bubble-in/fab-item-in）に拡大し、今回追加したsidePanelSlideInも含めた
 #
-# 最終更新：2026-07-07（v2.25）
+# 最終更新：2026-07-07（v2.26）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -1069,7 +1094,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-07（v2.25）
+- 最終更新：2026-07-07（v2.26）
 
 ---
 

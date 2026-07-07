@@ -129,13 +129,13 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
 
   return (
     // #2: <style>タグを削除。印刷 CSS は globals.css の @media print に移動済み
-    <div className="cal-root" style={{
+    <div className="cal-root animate-overlay" style={{
       position: "fixed", inset: 0, zIndex: 250,
       background: "rgba(0,0,0,0.45)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "24px 32px",
     }}>
-      <div className="cal-body" style={{
+      <div className="cal-body animate-fadeIn" style={{
         width: "100%", maxWidth: "1100px",
         height: "100%", maxHeight: "100%",
         background: "var(--color-bg-primary)",

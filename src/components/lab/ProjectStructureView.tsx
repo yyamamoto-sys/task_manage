@@ -1055,6 +1055,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     // ドラッグ中の要素がどこにドロップされてもクリーンアップするためのハンドラのみ。マウス操作専用でキーボード代替手段はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
+      className="animate-fadeIn"
       style={{
         position: "fixed", inset: 0, zIndex: 250,
         background: "var(--color-bg-primary)",
