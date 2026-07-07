@@ -965,7 +965,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
                             <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
-                            {canUnparentHere && draggingId && <span style={{ fontSize: "10px", color: "var(--color-brand)" }}>↑ ここに落とすと最上位タスクになります</span>}
+                            {canUnparentHere && (
+                              // ドラッグ開始時にこのspanが出現/消滅すると、その瞬間だけ見出し行の
+                              // 幅が変わりレイアウトが動く（複数PJ見出しで同時に発生）。
+                              // visibility で常時マウントし、幅は最初から確保しておくことで
+                              // ドラッグ開始時のガタつきを防ぐ
+                              <span style={{
+                                fontSize: "10px", color: "var(--color-brand)",
+                                visibility: draggingId ? "visible" : "hidden",
+                              }}>↑ ここに落とすと最上位タスクになります</span>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -1227,6 +1236,22 @@ const ListTaskRow = memo(function ListTaskRow({
   const isDone = dispStatus === "done";
   const zebraBg = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
 
+  // 【重要】強調表示（ドロップ位置・親子ライン等）はすべて box-shadow の inset で表現し、
+  // border は常に固定値のまま変えない。以前は border-top/border-bottom の「幅」を
+  // ホバー時だけ 1px→2px（あるいは 0→2px）に変えていたため、ホバーした瞬間に行の高さが
+  // 変わって行がわずかにずれ、その結果マウスが行の外に出て dragleave→（隣接行への）
+  // dragover→…を高頻度で往復するフィードバックループが発生し、ドラッグ移動中の激しい
+  // カクつき・フリーズの原因になっていた。box-shadow はレイアウト（行の高さ・位置）に
+  // 一切影響しないため、複数の状態を重ねても行のジオメトリは常に不変になる。
+  const shadowLayers: string[] = [];
+  if (myZone === "nest") shadowLayers.push("inset 0 0 0 2px var(--color-brand)");
+  if (isChecked || isSelected || isParent) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
+  else if (depth === 1) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
+  if (myZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
+  else if (isParent && depth === 0) shadowLayers.push("inset 0 2px 0 var(--color-border-primary)");
+  if (myZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
+  else if (closesGroup) shadowLayers.push("inset 0 -2px 0 var(--color-border-primary)");
+
   return (
     <tr
       onClick={() => setSelectedTaskId(prev => prev === task.id ? null : task.id)}
@@ -1243,16 +1268,8 @@ const ListTaskRow = memo(function ListTaskRow({
         setDraggingId(null); setDropZone(null);
       }) : undefined}
       style={{
-      borderBottom: myZone === "after"
-        ? "2px solid var(--color-brand)"
-        : closesGroup
-        ? "2px solid var(--color-border-primary)"
-        : "1px solid var(--color-bg-tertiary)",
-      borderTop: myZone === "before"
-        ? "2px solid var(--color-brand)"
-        : (isParent && depth === 0)
-        ? "2px solid var(--color-border-primary)"
-        : undefined,
+      // 常に 1px 固定（幅は変えない・色も固定）。強調表示は上の shadowLayers（box-shadow）側で行う
+      borderBottom: "1px solid var(--color-bg-tertiary)",
       background: myZone === "nest"
         ? "var(--color-brand-light)"
         : isChecked
@@ -1260,15 +1277,7 @@ const ListTaskRow = memo(function ListTaskRow({
         : isSelected ? "var(--color-brand-light)"
         : isDone ? "var(--color-bg-secondary)" : zebraBg,
       cursor: "pointer", opacity: isDone ? 0.65 : 1, transition: "background 0.1s",
-      boxShadow: myZone === "nest"
-        ? "inset 0 0 0 2px var(--color-brand)"
-        : (isChecked || isSelected)
-        ? "inset 3px 0 0 var(--color-brand)"
-        : isParent
-        ? "inset 3px 0 0 var(--color-brand)"
-        : depth === 1
-        ? "inset 2px 0 0 var(--color-brand-border)"
-        : "none",
+      boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
     }}>
       {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
       <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}

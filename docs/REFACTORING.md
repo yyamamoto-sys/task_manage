@@ -14,6 +14,16 @@
 
 ---
 
+## 完了済み（2026-07-07）実バグ：ListViewドラッグ移動中のカクつき・フリーズ
+
+CLAUDE.md v2.25に詳細記録。要約：`ListTaskRow`の`border-top`/`border-bottom`が
+ドロップ位置ハイライト時だけ「幅」を1px/0px→2pxに変えていたため、ホバーで行の
+高さがズレ→マウスが行外に出る→dragleave→枠が戻り高さも戻る→マウスが行内に
+戻りdragover再発火、という自己誘発的な往復（reflowフィードバックループ）が
+発生し続けていた。border幅は常に固定し、強調表示は全てbox-shadow（inset・
+レイアウトに影響しないペイントのみ）に統一して解消。KanbanViewの列ドロップ枠
+（元から「2px固定・色だけ変更」）との比較が診断の決め手になった。
+
 ## 完了済み（2026-07-06）Phase 4 a11yスイープ（`no-static-element-interactions`/`click-events-have-key-events`全解消）
 
 | 項目 | 内容 | コミット |
