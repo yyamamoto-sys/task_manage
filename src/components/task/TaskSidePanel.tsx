@@ -13,7 +13,7 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
-import { parentTaskCandidates, isParentTask, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
+import { parentTaskCandidates, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -82,12 +82,6 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     [selectedTask?.due_date, selectedTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  // このタスクが子を持つ親なら、親に設定できない（孫禁止）
-  const isParent = useMemo(
-    () => selectedTask ? isParentTask(selectedTask, allTasks) : false,
-    [selectedTask, allTasks],
-  );
-
   // 親タスク候補＝全PJの最上位タスク。選択中タスクのPJを先頭に、他PJはPJ名を併記。
   // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
   // 親タスク候補。現PJのタスクと他PJのタスクを見出しで分け、PJカラーのドットで属性を可視化する
@@ -99,7 +93,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     const cands = parentTaskCandidates(allTasks, currentProjectId, selectedTask?.id);
     const same  = cands.filter(t => (t.project_id ?? null) === currentProjectId);
     const other = cands.filter(t => (t.project_id ?? null) !== currentProjectId);
-    const opts: SelectOption[] = [{ value: "", label: "（なし＝親タスク）" }];
+    const opts: SelectOption[] = [{ value: "", label: "（親タスクを選択...）" }];
     if (same.length) {
       opts.push({ value: "__h_same", label: "このプロジェクト", header: true });
       for (const t of same) opts.push({ value: t.id, label: t.name, color: currentPjColor });
@@ -118,6 +112,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 階層モード：単独（none）／子タスク（child＝親を選ぶ）／親タスク（parent＝子を選ぶ）。
+  // 両方のUIを同時に出すと混乱するため、選んだモード専用のUIだけを表示する。
+  const [hierarchyMode, setHierarchyMode] = useState<"none" | "child" | "parent">("none");
   // 子タスク選択（親側から子を複数チェックして決定する）UI の状態
   const [childPickerOpen, setChildPickerOpen] = useState(false);
   const [childPickerChecked, setChildPickerChecked] = useState<Set<string>>(new Set());
@@ -142,6 +139,15 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       estimated_hours:     selectedTask.estimated_hours?.toString() ?? "",
       comment:             selectedTask.comment,
     });
+    // 現在の親子状態から階層モードを導出
+    setHierarchyMode(
+      selectedTask.parent_task_id ? "child"
+      : childrenOf(allTasks, selectedTask.id).length > 0 ? "parent"
+      : "none"
+    );
+    setChildPickerOpen(false);
+    setChildPickerChecked(new Set());
+    setChildSearch("");
     setSaveStatus("idle");
     setSaveError(null);
     initialMount.current = true;
@@ -238,13 +244,28 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     && sidebarForm.due_date < todayStr()
     && sidebarForm.status !== "done";
 
-  // ===== 子タスク（このタスクを親として子を複数紐づける） =====
-  // このタスク自身が子タスク（親を持つ）なら、2階層固定のため子は持てない。
-  const isChild = selectedTask.parent_task_id != null;
+  // ===== 階層（親子関係） =====
   const children = childrenOf(allTasks, selectedTask.id);
-  const childCandidates = isChild
-    ? []
-    : eligibleChildTasks(allTasks, selectedTask).filter(t => t.parent_task_id !== selectedTask.id);
+  const hasChildren = children.length > 0;
+
+  // モード切替。子が付いている間は「親タスク」以外に切り替えられない（先に子を外す）。
+  // 「子タスク」以外に切り替えたら親設定はクリアする（自動保存が拾う）。
+  const switchHierarchyMode = (mode: "none" | "child" | "parent") => {
+    if (mode === hierarchyMode) return;
+    if (hasChildren && mode !== "parent") return;
+    setHierarchyMode(mode);
+    if (mode !== "child" && sidebarForm.parent_task_id) {
+      setSidebarForm(f => f ? { ...f, parent_task_id: null } : f);
+    }
+    if (mode !== "parent") {
+      setChildPickerOpen(false);
+      setChildPickerChecked(new Set());
+    }
+  };
+
+  const childCandidates = hierarchyMode === "parent"
+    ? eligibleChildTasks(allTasks, selectedTask).filter(t => t.parent_task_id !== selectedTask.id)
+    : [];
   const childQ = childSearch.trim().toLowerCase();
   const visibleChildCandidates = childQ
     ? childCandidates.filter(t => t.name.toLowerCase().includes(childQ))
@@ -459,28 +480,59 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           searchable searchPlaceholder="プロジェクトで検索..."
           style={{ marginBottom: "12px" }} />
 
-        {/* 親タスク（2階層固定。子を持つタスクは親に設定不可） */}
-        <SideLabel>親タスク</SideLabel>
-        <CustomSelect
-          value={sidebarForm.parent_task_id ?? ""}
-          onChange={value => setSidebarForm(f => f ? { ...f, parent_task_id: value || null } : f)}
-          options={parentOptions}
-          disabled={isParent}
-          searchable searchPlaceholder="親タスクを検索..."
-          style={{ marginBottom: isParent ? "4px" : "12px" }} />
-        {isParent && (
-          <div style={{ marginBottom: "12px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            子タスクがあるため親に設定できません
+        {/* 階層（親子関係）。単独／子タスク／親タスクのどれかを選び、選んだモード専用のUIだけを出す
+            （親セレクタと子ピッカーの同時表示は「どちらも変更できて違和感」というフィードバックを受け廃止） */}
+        <SideLabel>階層</SideLabel>
+        <div style={{ display: "flex", gap: "4px", marginBottom: "8px" }}>
+          {([
+            { mode: "none"   as const, label: "単独",     hint: "親も子も持たない通常のタスク" },
+            { mode: "child"  as const, label: "子タスク", hint: "親タスクの下にぶら下げる" },
+            { mode: "parent" as const, label: "親タスク", hint: "子タスクを複数まとめる" },
+          ]).map(seg => {
+            const isActive = hierarchyMode === seg.mode;
+            const isDisabled = hasChildren && seg.mode !== "parent";
+            return (
+              <button
+                key={seg.mode}
+                onClick={() => switchHierarchyMode(seg.mode)}
+                disabled={isDisabled}
+                title={isDisabled ? "子タスクをすべて外すと変更できます" : seg.hint}
+                style={{
+                  flex: 1, padding: "6px 4px", fontSize: "11px", fontWeight: isActive ? 600 : 400,
+                  border: `1px solid ${isActive ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                  borderRadius: "var(--radius-md)",
+                  background: isActive ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                  color: isDisabled ? "var(--color-text-tertiary)"
+                    : isActive ? "var(--color-brand)" : "var(--color-text-secondary)",
+                  cursor: isDisabled ? "not-allowed" : "pointer",
+                  opacity: isDisabled ? 0.55 : 1,
+                }}
+              >
+                {seg.label}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 子タスクモード：親を1つ選ぶ専用UI */}
+        {hierarchyMode === "child" && (
+          <div style={{ marginBottom: "12px" }}>
+            <CustomSelect
+              value={sidebarForm.parent_task_id ?? ""}
+              onChange={value => setSidebarForm(f => f ? { ...f, parent_task_id: value || null } : f)}
+              options={parentOptions}
+              searchable searchPlaceholder="親タスクを検索..."
+            />
+            {!sidebarForm.parent_task_id && (
+              <div style={{ marginTop: "4px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                親タスクを選ぶと、そのタスクの下にぶら下がります（親のPJに揃います）
+              </div>
+            )}
           </div>
         )}
 
-        {/* 子タスク（このタスクを親として、子にしたいタスクを複数チェックして決定する） */}
-        <SideLabel>子タスク</SideLabel>
-        {isChild ? (
-          <div style={{ marginBottom: "12px", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            このタスクは子タスクのため、さらに子を持てません（2階層）。
-          </div>
-        ) : (
+        {/* 親タスクモード：子を複数選ぶ専用UI */}
+        {hierarchyMode === "parent" && (
           <div style={{ marginBottom: "12px" }}>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {children.map(c => (
@@ -490,7 +542,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
                 </span>
               ))}
               {children.length === 0 && (
-                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
+                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>まだ子タスクがありません</span>
               )}
             </div>
             <button

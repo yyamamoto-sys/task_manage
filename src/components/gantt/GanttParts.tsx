@@ -209,6 +209,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         flex: 1,
+        textDecoration: task.status === "done" ? "line-through" : "none",
+        opacity: task.status === "done" ? 0.6 : 1,
       }}>
         {task.name}
       </span>
@@ -263,7 +265,12 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       cursor: "pointer", transition: "background 0.1s",
     }}>
       <StatusDot status={task.status} />
-      <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+      <span style={{
+        fontSize: "11px", color: "var(--color-text-secondary)",
+        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
+        textDecoration: task.status === "done" ? "line-through" : "none",
+        opacity: task.status === "done" ? 0.6 : 1,
+      }}>
         {task.name}
       </span>
       {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
@@ -319,6 +326,8 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
         color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         flex: 1,
+        textDecoration: task.status === "done" ? "line-through" : "none",
+        opacity: task.status === "done" ? 0.6 : 1,
       }}>
         {task.parent_task_id ? "↳ " : ""}{task.name}
       </span>
