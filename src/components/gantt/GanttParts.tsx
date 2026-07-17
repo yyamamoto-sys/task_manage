@@ -5,6 +5,26 @@ import { memo } from "react";
 import type { Task, Member, Project } from "../../lib/localData/types";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
+import type { LinkSide } from "../../lib/dependencies/linkDirection";
+
+// ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
+//
+// 【設計意図】ドラッグ結線に関わる値をまとめて1つの任意プロップに束ねる（ghostBar と同じ流儀）。
+// フラットプロップを増やしすぎず、かつ memo の比較は各フィールドを直接比較することで
+// 意図しない再レンダリングを避ける。
+export interface TaskBarLinkUi {
+  /** 🔗依存トグルON かつ 非プレビュー のときだけ true。false ならハンドルを一切描画しない */
+  enabled: boolean;
+  /** このバーがドラッグ元のとき、どちら側のハンドルからか（ドラッグ中でなければ null） */
+  sourceSide: LinkSide | null;
+  /** ドラッグ中、このバーが現在のドロップ候補かどうか */
+  isTarget: boolean;
+  /** isTarget のとき、対象になっている具体的な側（null＝バー本体への漠然としたドロップ候補） */
+  targetSide: LinkSide | null;
+  /** isTarget のときのみ意味を持つ。追加可否の判定結果（null＝未判定） */
+  isValid: boolean | null;
+  onHandleDown: (e: React.MouseEvent, taskId: string, side: LinkSide) => void;
+}
 
 // ===== TaskBarRow =====
 //
@@ -39,6 +59,8 @@ export interface TaskBarRowProps {
   delayLabel?: string | null;
   /** B4：delayLabel が遅延（正）か前倒し（負）か。色分けに使う */
   isDelayed?: boolean;
+  /** B5：ドラッグして依存を結線するハンドル関連。undefined なら機能自体を描画しない */
+  linkUi?: TaskBarLinkUi;
   onEdit: (taskId: string) => void;
   onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
@@ -50,9 +72,12 @@ function TaskBarRowImpl({
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
-  ghostBar, delayLabel, isDelayed = false,
+  ghostBar, delayLabel, isDelayed = false, linkUi,
   onEdit, onResize, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
+  // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
+  const showLinkHandles = !isPreview && !!linkUi?.enabled
+    && (isHovered || linkUi.sourceSide != null || linkUi.isTarget);
   const rightEdge = Math.max(
     bar ? bar.barX + bar.barWidth : -Infinity,
     ghostBar ? ghostBar.barX + ghostBar.barWidth : -Infinity,
@@ -116,6 +141,11 @@ function TaskBarRowImpl({
               display: "flex", alignItems: "center", justifyContent: "center",
               filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
               transition: "filter 0.1s",
+              // B5：結線ドラッグ中、このバーが「バー本体への漠然としたドロップ候補」のときだけ全体をリング表示
+              // （具体的なハンドルが対象のときはハンドル側を光らせるのでここでは出さない＝二重強調を避ける）
+              boxShadow: linkUi?.isTarget && linkUi.targetSide === null
+                ? `0 0 0 2px ${linkUi.isValid === false ? "var(--color-text-danger)" : "var(--color-brand)"}`
+                : undefined,
             }}
           >
             {bar.barWidth > 52 && (
@@ -169,6 +199,39 @@ function TaskBarRowImpl({
               }}
             />
           )}
+          {/* B5：依存を結線するハンドル（開始＝左／期日＝右）。バーの端より外側に浮かせて
+              右端リサイズのヒット領域（barX+barWidth-4 〜 +4）と重ならないようにする。
+              🔗依存トグルON＋ホバー中（or 自分がドラッグ元／ドロップ候補）のときだけ描画 */}
+          {showLinkHandles && linkUi && (["start", "due"] as const).map(side => {
+            const isSourceHere = linkUi.sourceSide === side;
+            const isTargetHere = linkUi.isTarget && linkUi.targetSide === side;
+            const x = side === "start" ? bar.barX - 9 : bar.barX + bar.barWidth + 9;
+            const ringColor = isTargetHere
+              ? (linkUi.isValid === false ? "var(--color-text-danger)" : "var(--color-brand)")
+              : isSourceHere ? "var(--color-brand)" : "var(--color-text-tertiary)";
+            return (
+              // マウスのドラッグ操作専用でキーボード代替手段はない（既存の右端リサイズハンドルと同じ扱い）
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+              <div
+                key={side}
+                data-link-handle-task-id={taskId}
+                data-link-handle-side={side}
+                title={side === "start" ? "開始：ドラッグして先行タスクと接続" : "期日：ドラッグして後続タスクと接続"}
+                onMouseDown={e => linkUi.onHandleDown(e, taskId, side)}
+                style={{
+                  position: "absolute",
+                  left: x, top: "50%",
+                  transform: (isSourceHere || isTargetHere) ? "translate(-50%, -50%) scale(1.3)" : "translate(-50%, -50%)",
+                  width: 9, height: 9, borderRadius: "50%",
+                  background: isSourceHere ? "var(--color-brand)" : "var(--color-bg-primary)",
+                  border: `1.5px solid ${ringColor}`,
+                  boxShadow: "var(--shadow-sm)",
+                  cursor: "crosshair", zIndex: 9,
+                  transition: "transform 0.1s",
+                }}
+              />
+            );
+          })}
         </>
       )}
       {/* B4：遅延/前倒しラベル。バー・ゴーストバーどちらか右端の外側に小さく表示 */}
@@ -209,6 +272,12 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     (prev.ghostBar?.barWidth ?? null) === (next.ghostBar?.barWidth ?? null) &&
     prev.delayLabel === next.delayLabel &&
     prev.isDelayed === next.isDelayed &&
+    (prev.linkUi?.enabled ?? false) === (next.linkUi?.enabled ?? false) &&
+    (prev.linkUi?.sourceSide ?? null) === (next.linkUi?.sourceSide ?? null) &&
+    (prev.linkUi?.isTarget ?? false) === (next.linkUi?.isTarget ?? false) &&
+    (prev.linkUi?.targetSide ?? null) === (next.linkUi?.targetSide ?? null) &&
+    (prev.linkUi?.isValid ?? null) === (next.linkUi?.isValid ?? null) &&
+    (prev.linkUi?.onHandleDown ?? null) === (next.linkUi?.onHandleDown ?? null) &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onMouseEnter === next.onMouseEnter &&
