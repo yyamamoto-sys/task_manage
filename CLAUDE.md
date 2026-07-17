@@ -429,7 +429,57 @@
 #             「コピー失敗」を表示する
 #      DBマイグレ不要（フロントのみの変更）
 #
-# 最終更新：2026-07-17（v2.35）
+# v2.36 feat: タスク依存関係 フェーズB3（自動リスケジュール連鎖）を追加（2026-07-17）
+#      背景：B1（依存ゲート）・B2（ガント矢印）・B4（ベースライン差分）に続く段階リリースの
+#             最終段。先行タスクの期日が後ろ倒しになった時、後続タスクの日付を自動で
+#             追随させる。依存機能の中で最も重量・最もデリケート（既存の日付を自動で
+#             書き換えるため）。統括Claudeとの壁打ちで確定した設計に厳密に従って実装
+#      モデル＝制約充足プッシュ（constraint-only push）：後続を動かすのは「先行の
+#             （更新後の）期日が、後続の開始日を追い越した時だけ」。余裕があるなら
+#             動かさない（同日開始は可＝ギャップ強制なし）。動かす量は「ぶつからない
+#             位置まで」だけ：delta = 先行.due − 後続.start、新start = 先行.due、
+#             新due = 後続.due + delta（作業期間を保持）。押す方向のみ（先行の前倒しで
+#             後続を自動で引き寄せない・delta<=0なら無変更）。複数先行は全先行の期日の
+#             最大値で判定。後続に開始日・期日のどちらか無いタスクはスキップ（FS計算・
+#             作業期間保持ができないため）。先行に期日が無ければその先行からの制約は
+#             無視。暦日計算（土日祝を飛ばさない）。FS依存1種のみ
+#      追加：src/lib/dependencies/reschedule.ts（computeCascadeShifts。純粋関数）。
+#             origin（編集されたタスク）から辿れる後続タスク群をBFSで収集し、
+#             Kahnのアルゴリズムでトポロジカル順に並べてから1回のパスで全シフトを
+#             一括計算する（保存が保存を呼ぶ無限ループを避けるため。各タスクの新startは
+#             「max(自身の元start, 全先行の確定due)」で1回だけ確定）。B1の
+#             canAddDependencyでは通常発生しないが、循環データが紛れ込んでも
+#             トポロジカル順が全ノードを網羅できなければ安全側に倒して空配列を返す防御あり
+#      変更：appStore.saveTask（B1ゲート・B4ベースライン捕捉と同じ choke point）。
+#             ローカル編集の永続化後、due_date が実際に変化した場合のみ
+#             computeCascadeShifts を呼ぶ（renameなど無関係な編集でのサプライズ発火を
+#             防ぐ）。シフトが1件以上あれば各タスクを { skipCascade: true } 付きで
+#             saveTask 経由で保存（Promise.allSettled・多人数の割り切りとして
+#             楽観ロック競合はskip+reloadで整合回復・トランザクションにはしない）。
+#             成功件数をまとめて1つのトースト「N件のタスクの日付を自動調整しました」＋
+#             「元に戻す」アクションで通知。Undoは動いた全タスクを { skipCascade: true }
+#             で旧start/dueに復元する（Undo自体は再cascadeを起こさない）
+#      追加：saveTask の第2引数に options?: { skipCascade?: boolean }（省略時=false）。
+#             既存の呼び出し箇所は全て省略のままで後方互換
+#      トリガの限定：cascadeはローカルユーザーの編集（saveTask起点）でのみ発火する。
+#             realtimeで他クライアントの変更を受信したとき（applyRemoteChange）は
+#             state を直接更新する別経路のため、cascadeは一切発火しない（各クライアントが
+#             多重にcascadeすると混乱するため）
+#      永続化・可視化：DBマイグレ不要・新規列も作らない。「自動調整された」ことは
+#             既存のB4（ゴーストバー＋「遅延◯日」表示）で十分可視化されるため、
+#             B3専用の永続フラグは作らない
+#      テスト：src/lib/dependencies/__tests__/reschedule.test.ts（純粋関数の網羅テスト
+#             13件：単一リンクで押す／余裕があれば押さない／複数先行は最大値判定／
+#             A→B→C連鎖伝播／前倒しでは動かさない／開始日・期日の無い後続はスキップ／
+#             作業期間保持／循環の防御／delta<=0で無変更 等）＋
+#             src/stores/__tests__/cascadeReschedule.test.ts（appStore配線の統合テスト
+#             6件：saveTask経由でDBまで反映／余裕があればDBも動かない／トーストUndoで
+#             元に戻り再cascadeしない／realtime受信では発火しない／due_date不変では
+#             計算自体が起きない／A→B→C連鎖がDBまで一括反映）。既存テスト237件も
+#             全通過（合計 243 テスト）
+#      DBマイグレ不要（フロントのみの変更）
+#
+# 最終更新：2026-07-17（v2.36）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -823,7 +873,7 @@ interface Member {
 
 ---
 
-### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化／B4：ベースライン差分・2026-07-17実装）
+### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化／B3：自動リスケ連鎖／B4：ベースライン差分・2026-07-17実装）
 
 PMツール化の第二機能。任意の2タスク間の先行→後続関係（FS依存1種のみ）。親子関係（parent_task_id）
 とは完全に独立の別概念で、UI上も別ブロックとして表示する（混同させないことが重要なUX要件）。
@@ -877,7 +927,27 @@ interface TaskDependency {
 `KEYS.GANTT_SHOW_BASELINE`）で表示/非表示切替可。`GanttMobileView`は対象外。手動での再ベースラインUI
 は無い（自動捕捉のみ）。
 
-**B1/B2/B4のスコープ外（次フェーズ）**：遅延時の自動リスケジュール連鎖（B3）のみ。
+**B3：自動リスケジュール連鎖（constraint-only push）**：先行タスクの（更新後の）期日が後続タスクの
+開始日を追い越した時だけ、後続を「ぶつからない位置まで」後ろ倒しする。余裕があるタスクは動かさない
+（同日開始は可＝ギャップ強制なし）。押す方向のみ（先行が前倒しになっても後続を自動で引き寄せない）。
+複数先行は全先行の期日の最大値で判定。純粋関数は`src/lib/dependencies/reschedule.ts`の
+`computeCascadeShifts`（origin＝編集されたタスクから辿れる後続群をBFSで収集し、Kahnのアルゴリズムで
+トポロジカル順に並べてから1パスで全シフトを一括計算。保存が保存を呼ぶ無限ループを避ける）。
+後続に開始日・期日のどちらか無いタスクはスキップ（FS計算・作業期間保持ができないため）。
+`appStore.saveTask`（B1・B4と同じ choke point）で、ローカル編集の永続化後・due_dateが実際に変化した
+時だけ呼ぶ（renameなど無関係編集でのサプライズ発火を防ぐ）。シフトは`{ skipCascade: true }`付きで
+saveTask経由で適用（再cascade抑止のガード。第2引数`options?: { skipCascade?: boolean }`は省略時
+false＝通常のローカル編集）。動いた件数をまとめて1つのトースト「N件のタスクの日付を自動調整しました」
+＋「元に戻す」で通知、Undoも`skipCascade: true`で全タスクを旧日付に復元する（Undo自体は再cascadeしない）。
+**トリガはローカルユーザーの編集のみ**：realtimeで他クライアントの変更を受信したとき
+（`applyRemoteChange`）はstateを直接更新する別経路のため、cascadeは一切発火しない（各クライアントが
+多重cascadeすると混乱するため）。多人数競合は既存の直列化saveTask経由で逐次適用し、途中の楽観ロック
+競合はskip+reloadで整合回復する（トランザクションにはしない＝割り切り）。DBマイグレ不要・新規列も
+作らない（「自動調整された」ことは既存のB4ゴーストバー＋「遅延◯日」表示で可視化されるため、
+B3専用の永続フラグは持たない）。
+
+**B1/B2/B3/B4のスコープ外（次フェーズ以降）**：SS/FF/SF等の依存種別・ラグ・クリティカルパス自動計算・
+営業日カレンダー（土日祝考慮）は未実装。
 
 ---
 
@@ -1391,9 +1461,10 @@ src/
 │   │   └── krQuarterPlanClient.ts  # クォーター計画AI：対話・計画書生成・JSONパーサー
 │   ├── localData/
 │   │   └── localStore.ts         # localStorage キー一元化（KEYS / LS_KEY / migrateLocalStorage / active()）
-│   ├── dependencies/              # タスク依存関係（B1）の純粋ロジック
+│   ├── dependencies/              # タスク依存関係（B1/B3）の純粋ロジック
 │   │   ├── cycleCheck.ts         # wouldCreateCycle / canAddDependency（自己依存・重複・循環のDFSチェック）
-│   │   └── gate.ts               # getIncompletePredecessors / formatBlockerNames（完了ゲート・着手警告）
+│   │   ├── gate.ts               # getIncompletePredecessors / formatBlockerNames（完了ゲート・着手警告）
+│   │   └── reschedule.ts         # B3：computeCascadeShifts（制約充足プッシュの自動リスケ連鎖・純粋関数）
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
 │       ├── auth.ts               # セッション取得（getSupabaseSession）

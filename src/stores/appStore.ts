@@ -51,6 +51,7 @@ import {
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
+import { computeCascadeShifts } from "../lib/dependencies/reschedule";
 
 export interface AppState {
   // ===== データ =====
@@ -111,7 +112,9 @@ export interface AppState {
   deleteProject: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== Task =====
-  saveTask: (task: Task) => Promise<void>;
+  // options.skipCascade: 自動リスケジュール連鎖（B3）が計算済みのシフトを適用する内部呼び出し、
+  // および連鎖のUndoで使う。再cascade計算を起こさないためのガード（省略時=false＝通常のローカル編集）。
+  saveTask: (task: Task, options?: { skipCascade?: boolean }) => Promise<void>;
   deleteTask: (id: string, deletedBy: string) => Promise<void>;
   restoreTask: (id: string) => Promise<void>;
 
@@ -180,6 +183,61 @@ async function handleSaveError(
   }
   reportError(e);
   await load();
+}
+
+/**
+ * 自動リスケジュール連鎖（B3）：先行タスクの期日変更を受けて、後続タスクを
+ * 「ぶつからない位置まで」だけ後ろ倒しする（制約充足プッシュ・押す方向のみ）。
+ *
+ * 【設計意図】
+ * - computeCascadeShifts（純粋関数）が origin から末端までの全シフトをトポロジカル順で
+ *   一括計算済みなので、ここでは計算結果をそのまま saveTask で書き込むだけでよい。
+ * - 適用時の saveTask 呼び出しは必ず { skipCascade: true } を付ける（再cascade計算による
+ *   無限ループ防止。連鎖全体は既に一括計算済みで、適用時に再計算する必要は無い）。
+ * - 個々の保存が楽観ロック競合等で失敗しても、他のシフト適用は止めない
+ *   （Promise.allSettled。失敗分は saveTask 内部の handleSaveError が
+ *   トースト＋reload で整合性回復する。トランザクションにはしない＝多人数の割り切り）。
+ * - 動いた件数をまとめて1つのトースト＋Undo（Undoも { skipCascade: true } で再cascade抑止）。
+ */
+async function runCascade(
+  originTaskId: string,
+  get: () => AppState,
+): Promise<void> {
+  const shifts = computeCascadeShifts(originTaskId, get().tasks, get().taskDependencies);
+  if (shifts.length === 0) return;
+
+  const results = await Promise.allSettled(
+    shifts.map(shift => {
+      const current = get().tasks.find(t => t.id === shift.taskId);
+      if (!current) return Promise.resolve();
+      return get().saveTask(
+        { ...current, start_date: shift.newStart, due_date: shift.newDue },
+        { skipCascade: true },
+      );
+    }),
+  );
+
+  const appliedShifts = shifts.filter((_, i) => results[i]?.status === "fulfilled");
+  if (appliedShifts.length === 0) return;
+
+  showToast(
+    `${appliedShifts.length}件のタスクの日付を自動調整しました`,
+    "info",
+    {
+      label: "元に戻す",
+      onClick: () => {
+        appliedShifts.forEach(shift => {
+          const t = get().tasks.find(x => x.id === shift.taskId);
+          if (t) {
+            get().saveTask(
+              { ...t, start_date: shift.oldStart, due_date: shift.oldDue },
+              { skipCascade: true },
+            );
+          }
+        });
+      },
+    },
+  );
 }
 
 /**
@@ -636,7 +694,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== Task =====
-  saveTask: async (task) => {
+  saveTask: async (task, options) => {
     const existing = get().tasks.find(t => t.id === task.id);
 
     // ===== 依存ゲート（B1）=====
@@ -697,6 +755,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
         throw e;
       }
     });
+
+    // ===== 自動リスケジュール連鎖（B3）=====
+    // トリガはローカルユーザーの編集（このsaveTask呼び出し自体）でのみ発火する。
+    // - skipCascade（cascade適用自体・Undo）では再cascadeしない
+    // - due_date が変化していなければ後続を押しうる可能性が無いので計算すらしない
+    //   （renameなど無関係な編集で日付が動くサプライズを防ぐ）
+    // - realtimeで他人の変更を受信したとき（applyRemoteChange）はこの経路を通らないため
+    //   各クライアントが多重にcascadeすることはない
+    if (!options?.skipCascade && taskToSave.due_date && existing?.due_date !== taskToSave.due_date) {
+      await runCascade(taskToSave.id, get);
+    }
   },
 
   deleteTask: async (id, deletedBy) => {
