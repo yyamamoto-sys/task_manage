@@ -4,7 +4,7 @@
 // モバイルは呼び出し側で TaskEditModal を出す（このコンポーネントは PC・タブレット向け）。
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
@@ -14,6 +14,7 @@ import {
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
 import { parentTaskCandidates, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
+import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -47,12 +48,15 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allKeyResults       = useAppStore(s => s.keyResults);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
+  const allTaskDependencies = useAppStore(selectScopedTaskDependencies);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
   const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
   const addTaskProject      = useAppStore(s => s.addTaskProject);
   const removeTaskProject   = useAppStore(s => s.removeTaskProject);
+  const addTaskDependency    = useAppStore(s => s.addTaskDependency);
+  const removeTaskDependency = useAppStore(s => s.removeTaskDependency);
 
   const members    = useMemo(() => active(allMembers), [allMembers]);
   const projects   = useMemo(() => active(allProjects), [allProjects]);
@@ -75,6 +79,34 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     const ids = allTaskProjects.filter(t => t.task_id === taskId).map(t => t.project_id);
     return projects.filter(p => ids.includes(p.id));
   }, [allTaskProjects, projects, taskId]);
+
+  // ===== 先行タスク（B1：依存ゲート。親子関係（階層セグメント）とは独立の別概念） =====
+  const predecessorDeps = useMemo(
+    () => allTaskDependencies.filter(d => !d.is_deleted && d.successor_task_id === taskId),
+    [allTaskDependencies, taskId],
+  );
+  const predecessorTasks = useMemo(() => {
+    const ids = new Set(predecessorDeps.map(d => d.predecessor_task_id));
+    return allTasks.filter(t => ids.has(t.id));
+  }, [predecessorDeps, allTasks]);
+  // このタスクの完了を待っている後続タスク（読み取り専用表示）
+  const successorDeps = useMemo(
+    () => allTaskDependencies.filter(d => !d.is_deleted && d.predecessor_task_id === taskId),
+    [allTaskDependencies, taskId],
+  );
+  const successorTasks = useMemo(() => {
+    const ids = new Set(successorDeps.map(d => d.successor_task_id));
+    return allTasks.filter(t => ids.has(t.id));
+  }, [successorDeps, allTasks]);
+  // 先行タスク候補：自分自身・選択済み・循環を作る組み合わせを除外
+  const predecessorCandidates = useMemo(() => {
+    return allTasks.filter(t =>
+      !t.is_deleted
+      && t.id !== taskId
+      && !predecessorDeps.some(d => d.predecessor_task_id === t.id)
+      && !wouldCreateCycle(allTaskDependencies, t.id, taskId),
+    );
+  }, [allTasks, taskId, predecessorDeps, allTaskDependencies]);
 
   // selectedTask 全体ではなく日付フィールドだけに依存させて、無関係フィールド更新で再走査しない
   const eligibleTfIds = useMemo(
@@ -604,6 +636,64 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             )}
           </div>
         )}
+
+        {/* 先行タスク（B1：依存ゲート）。階層（親子関係）とは別概念のため、枠で囲んで視覚的に分離する。
+            完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない） */}
+        <div style={{
+          marginBottom: "12px", padding: "8px 8px 7px",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+          background: "var(--color-bg-secondary)",
+        }}>
+          <div style={{
+            fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)",
+            textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: "5px",
+          }}>
+            ⏱ 先行タスク（前に完了すべきタスク）
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
+            {predecessorTasks.map(t => {
+              const dep = predecessorDeps.find(d => d.predecessor_task_id === t.id);
+              return (
+                <span key={t.id} style={chipStyle}>
+                  <span aria-hidden>{t.status === "done" ? "✅" : "⏳"}</span>
+                  {t.name}
+                  <button
+                    onClick={() => dep && removeTaskDependency(dep.id, currentUser.id)}
+                    aria-label={`${t.name} を先行タスクから外す`}
+                    style={chipRemoveBtn}>×</button>
+                </span>
+              );
+            })}
+            {predecessorTasks.length === 0 && (
+              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
+            )}
+          </div>
+          <CustomSelect
+            value=""
+            onChange={value => {
+              if (!value) return;
+              addTaskDependency(value, selectedTask.id, currentUser.id);
+            }}
+            options={[
+              { value: "", label: "＋ 先行タスクを追加..." },
+              ...predecessorCandidates.map(t => ({ value: t.id, label: t.name })),
+            ]}
+            searchable searchPlaceholder="タスクで検索..."
+          />
+          {successorTasks.length > 0 && (
+            <div style={{ marginTop: "7px" }}>
+              <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>
+                このタスクの完了を待っている後続タスク：
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                {successorTasks.map(t => (
+                  <span key={t.id} style={{ ...chipStyle, opacity: 0.75 }}>{t.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* 追加プロジェクト */}
         <SideLabel>追加プロジェクト</SideLabel>

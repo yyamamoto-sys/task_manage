@@ -244,6 +244,25 @@ CREATE TABLE IF NOT EXISTS task_projects (
   PRIMARY KEY (task_id, project_id)
 );
 
+-- ===== Task 依存関係（先行→後続。B1：依存ゲート） =====
+-- migrations/20260717_add_task_dependencies.sql 参照。
+-- task_task_forces/task_projects と違い is_deleted による論理削除の監査証跡を持つため
+-- 複合PKではなく独立 id（milestones/kr_reports と同じ流儀）にする。
+CREATE TABLE IF NOT EXISTS task_dependencies (
+  id                   uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  predecessor_task_id  text NOT NULL REFERENCES tasks(id),  -- 先に完了すべきタスク
+  successor_task_id    text NOT NULL REFERENCES tasks(id),  -- それを待つタスク
+  group_id             text NOT NULL REFERENCES groups(id), -- 新規テーブルのためNULL猶予なし
+  is_deleted           boolean NOT NULL DEFAULT false,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  created_by           text NOT NULL DEFAULT '',
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  updated_by           text NOT NULL DEFAULT '',
+  deleted_at           timestamptz,
+  deleted_by           text,
+  CONSTRAINT task_dependencies_no_self_dep CHECK (predecessor_task_id <> successor_task_id)
+);
+
 -- ===== Milestones（PJ に紐づく期日マーカー） =====
 -- 注: project_id は projects.id と型を合わせるため text にする
 -- （CLAUDE.md の旧 DDL は uuid だったが projects.id が text のため整合性なし）
@@ -447,7 +466,7 @@ BEGIN
     ('quarterly_objectives'),
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
-    ('okr_analyses'), ('kr_reports')
+    ('okr_analyses'), ('kr_reports'), ('task_dependencies')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -471,6 +490,7 @@ ALTER TABLE quarterly_objectives       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE quarterly_kr_task_forces   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_task_forces           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_projects              ENABLE ROW LEVEL SECURITY;
+ALTER TABLE task_dependencies          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE task_forces                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE todos                      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects                   ENABLE ROW LEVEL SECURITY;
@@ -569,6 +589,13 @@ CREATE POLICY "projects_group" ON projects FOR ALL TO authenticated
 DROP POLICY IF EXISTS "authenticated full access" ON tasks;
 DROP POLICY IF EXISTS "tasks_group" ON tasks;
 CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
+  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+
+-- task_dependencies（B1）：tasks と同じ group_id スコープ。NULL猶予条項は入れない
+-- （20260702b の教訓＝NULLを許すとRLSの穴になる。このテーブルはgroup_idがNOT NULLなので該当なし）
+DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
+DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
+CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
   USING (group_id = current_member_group_id() OR current_member_is_super_admin());
 
 -- groups：参照は全員可。新規部署の作成はsuper-admin限定、改名・編集はsuper-admin
@@ -762,3 +789,11 @@ CREATE INDEX IF NOT EXISTS idx_okr_analyses_kr_id_created          ON okr_analys
 CREATE INDEX IF NOT EXISTS idx_okr_analyses_objective_id_created   ON okr_analyses(objective_id, created_at DESC) WHERE is_deleted = false;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_reports_kr_week_mode        ON kr_reports(kr_id, week_start, mode) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_reports_kr_id_week               ON kr_reports(kr_id, week_start DESC) WHERE is_deleted = false;
+
+-- task_dependencies（B1）：同一ペアの重複防止（論理削除は除外し、削除後の再追加を許す）
+CREATE UNIQUE INDEX IF NOT EXISTS uq_task_dependencies_pair
+  ON task_dependencies(predecessor_task_id, successor_task_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor
+  ON task_dependencies(successor_task_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_task_dependencies_predecessor
+  ON task_dependencies(predecessor_task_id) WHERE is_deleted = false;

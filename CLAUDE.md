@@ -251,8 +251,40 @@
 #             主軸はアクティブ件数（未着手+進行中）、工数は補助表示、期限超過をバッジ表示。
 #             突出負荷（平均1.5倍以上かつ3件以上）を赤強調。PJ絞り込みフィルタ・未割当バッジあり
 #      DBマイグレ不要（既存フィールドのみ使用）。コミット 2bf7659
+# v2.29 feat: タスク依存関係 フェーズB1（依存モデル＋先行タスクピッカー＋完了ハードゲート＋
+#      着手ソフト警告）を新規追加（2026-07-17）
+#      背景：プロマネ特化ツール化の2本目の柱（project_task_manage.md「機能B」参照）。
+#             山本さんの実需＝手続きの順番を踏ませたい（手戻り事故が実際に発生）。
+#             段階リリースの1段目（B1）のみ。B2＝ガント矢印可視化／B3＝自動リスケ連鎖／
+#             B4＝ベースライン差分は今回未着手（次フェーズ）
+#      追加：task_dependencies テーブル（migrations/20260717_add_task_dependencies.sql）。
+#             predecessor_task_id/successor_task_id/group_id/監査列（is_deleted等）。
+#             既存 task_task_forces/task_projects と違い is_deleted による論理削除の監査証跡を
+#             持たせるため milestones/kr_reports と同じ「独立id・soft delete」流儀にした。
+#             自己依存はCHECK制約・同一ペア重複は部分ユニークインデックス（is_deleted=falseのみ）で防止。
+#             RLSはtasks/projects/membersと同じgroup_idスコープ（NULL猶予条項なし。group_id自体をNOT NULLに）。
+#             Realtime購読対象にも追加（11テーブル目）
+#      追加：src/lib/localData/types.ts に TaskDependency 型
+#      追加：src/lib/dependencies/cycleCheck.ts（wouldCreateCycle・canAddDependency＝
+#             自己依存/重複/循環のクライアント側DFSチェック）・gate.ts（getIncompletePredecessors・
+#             formatBlockerNames）。それぞれ__tests__に単体テスト（10件・8件）
+#      追加：appStore.ts に taskDependencies state・addTaskDependency/removeTaskDependency・
+#             selectScopedTaskDependencies。task_dependencies はOKR系(Phase2)ではなくPhase1
+#             （fetchCriticalData）で取得し、初回描画時点からゲート判定できるようにした
+#      変更：saveTask（唯一のchoke point）に依存ゲートを統合。status="done"への遷移時、
+#             未完了(done以外・非削除)の先行タスクが1件でもあればハードブロック（トースト＋例外・
+#             楽観更新やDB書き込みは一切行わない）。todo→in_progressへの遷移時は非ブロッキングの
+#             ソフト警告トーストのみ（着手は止めない）。カンバンD&D・ステータスDD・インライン編集・
+#             ListViewの一括ステータス変更は全てsaveTask経由のためこの1箇所で全経路をカバーする
+#             （AI相談のapplyProposalは現状status変更経路を持たないため対象外・将来追加時は要確認）
+#      追加：TaskEditModal・TaskSidePanelに「⏱ 先行タスク」ブロックを新設。親子関係（階層セグメント/
+#             親タスクセレクタ）とは枠線で囲んだ別ブロックとして視覚的に分離。チップ+CustomSelectで
+#             複数設定可（既存の追加プロジェクト/タスクフォースと同型のUI）。候補は自分自身・循環を
+#             作る組み合わせ・選択済みを除外。後続タスク（このタスクを待っているタスク）も読み取り専用で表示
+#      DBマイグレ要：supabase/migrations/20260717_add_task_dependencies.sql をSupabase SQL Editorで
+#             手動適用（山本さん）。schema.sqlにも同一定義を反映済み（drift防止）
 #
-# 最終更新：2026-07-17（v2.28）
+# 最終更新：2026-07-17（v2.29）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -643,6 +675,43 @@ interface Member {
   updated_by: string;
 }
 ```
+
+---
+
+### 3-6. タスク依存関係（B1：依存ゲート・2026-07-17実装）
+
+PMツール化の第二機能。任意の2タスク間の先行→後続関係（FS依存1種のみ）。親子関係（parent_task_id）
+とは完全に独立の別概念で、UI上も別ブロックとして表示する（混同させないことが重要なUX要件）。
+段階リリースの詳細・設計判断の経緯は project_task_manage.md「機能B」参照。
+
+```typescript
+interface TaskDependency {
+  id: string;
+  predecessor_task_id: string; // 先に完了すべきタスク
+  successor_task_id: string;   // それを待つタスク
+  is_deleted: boolean;
+  group_id?: string | null;    // マルチテナント（新規テーブルのためDB上はNOT NULL）
+  created_at?: string;
+  created_by?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+```
+
+**ゲートの挙動（appStore.saveTask が唯一の choke point）：**
+- **完了（status→"done"）**：未完了（done以外・非削除）の先行タスクが1件でもあればハードブロック。
+  トースト表示＋例外を投げ、楽観更新・DB書き込みは一切行わない。
+- **着手（todo→"in_progress"）**：未完了の先行タスクがあっても非ブロッキングのソフト警告トーストのみ。
+  着手自体は止めない（Human-in-the-loop：完了は硬く、着手は柔らかく）。
+
+**循環防止**：DB制約では「A→B→…→A」を表現できないため、追加操作は必ず
+`lib/dependencies/cycleCheck.ts` の `canAddDependency`（DFS）を通す。自己依存・重複も同時に弾く。
+
+**B1のスコープ外（次フェーズ）**：ガント矢印の描画（B2）・遅延時の自動リスケジュール連鎖（B3）・
+ベースライン記録＋ガントのゴーストバー差分表示（B4）。`baseline_start_date`/`baseline_due_date`
+列はまだ存在しない。
 
 ---
 
@@ -1119,7 +1188,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-07（v2.27）
+- 最終更新：2026-07-17（v2.29）
 
 ---
 
@@ -1156,6 +1225,9 @@ src/
 │   │   └── krQuarterPlanClient.ts  # クォーター計画AI：対話・計画書生成・JSONパーサー
 │   ├── localData/
 │   │   └── localStore.ts         # localStorage キー一元化（KEYS / LS_KEY / migrateLocalStorage / active()）
+│   ├── dependencies/              # タスク依存関係（B1）の純粋ロジック
+│   │   ├── cycleCheck.ts         # wouldCreateCycle / canAddDependency（自己依存・重複・循環のDFSチェック）
+│   │   └── gate.ts               # getIncompletePredecessors / formatBlockerNames（完了ゲート・着手警告）
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
 │       ├── auth.ts               # セッション取得（getSupabaseSession）

@@ -23,7 +23,7 @@ import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
-  TaskTaskForce, TaskProject,
+  TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember,
 } from "../lib/localData/types";
 import {
@@ -45,8 +45,11 @@ import {
   insertQuarterlyKrTaskForce, deleteQuarterlyKrTaskForce,
   insertTaskTaskForce, deleteTaskTaskForce,
   insertTaskProject, deleteTaskProject,
+  insertTaskDependency, softDeleteTaskDependency,
   upsertMemberTag, softDeleteMemberTag, replaceMemberTagMembers,
 } from "../lib/supabase/store";
+import { canAddDependency } from "../lib/dependencies/cycleCheck";
+import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 
 export interface AppState {
   // ===== データ =====
@@ -64,6 +67,7 @@ export interface AppState {
   quarterlyKrTaskForces: QuarterlyKrTaskForce[];
   taskTaskForces: TaskTaskForce[];
   taskProjects: TaskProject[];
+  taskDependencies: TaskDependency[];
   milestones: Milestone[];
   memberTags: MemberTag[];
   memberTagMembers: MemberTagMember[];
@@ -129,6 +133,10 @@ export interface AppState {
   // ===== TaskProject =====
   addTaskProject: (tp: TaskProject) => Promise<void>;
   removeTaskProject: (taskId: string, projectId: string) => Promise<void>;
+
+  // ===== TaskDependency（B1：依存ゲート） =====
+  addTaskDependency: (predecessorTaskId: string, successorTaskId: string, createdBy: string) => Promise<void>;
+  removeTaskDependency: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== Milestone =====
   saveMilestone: (milestone: Milestone) => Promise<void>;
@@ -286,6 +294,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   quarterlyKrTaskForces: [],
   taskTaskForces: [],
   taskProjects: [],
+  taskDependencies: [],
   milestones: [],
   memberTags: [],
   memberTagMembers: [],
@@ -342,6 +351,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           projects:         critical.projects,
           tasks:            critical.tasks,
           taskProjects:     critical.taskProjects,
+          taskDependencies: critical.taskDependencies,
           milestones:       critical.milestones,
           memberTags:       critical.memberTags,
           memberTagMembers: critical.memberTagMembers,
@@ -626,8 +636,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Task =====
   saveTask: async (task) => {
-    // group_id が未設定なら現在のグループを注入する
     const existing = get().tasks.find(t => t.id === task.id);
+
+    // ===== 依存ゲート（B1）=====
+    // 「完了」は先行タスクが全部doneになるまでハードブロック。「着手」(todo→進行中)は
+    // ソフト警告のみ（止めない）。saveTask はカンバンD&D・ステータスのドロップダウン・
+    // インライン編集・ListViewの一括変更・AI提案の反映など全経路が通る唯一の choke point
+    // なので、ここ1箇所のガードで全経路をカバーする（UIの1箇所だけで弾く実装は禁止）。
+    if (task.status === "done" && existing?.status !== "done") {
+      const blockers = getIncompletePredecessors(task.id, get().tasks, get().taskDependencies);
+      if (blockers.length > 0) {
+        const names = formatBlockerNames(blockers);
+        const message = `先行タスク${names}が未完了のため完了にできません`;
+        showToast(message, "error");
+        throw new Error(message);
+      }
+    } else if (task.status === "in_progress" && existing?.status === "todo") {
+      const blockers = getIncompletePredecessors(task.id, get().tasks, get().taskDependencies);
+      if (blockers.length > 0) {
+        showToast(`⚠ 先行タスク${formatBlockerNames(blockers)}がまだ完了していません`, "info");
+      }
+    }
+
+    // group_id が未設定なら現在のグループを注入する
     const taskToSave0: Task = task.group_id != null
       ? task
       : { ...task, group_id: get().currentGroupId ?? undefined };
@@ -827,6 +858,47 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
 
+  // ===== TaskDependency（B1：依存ゲート） =====
+  addTaskDependency: async (predecessorTaskId, successorTaskId, createdBy) => {
+    // 自己依存・重複・循環はここで弾く（DB制約だけでは循環を表現できないため必須の関所）
+    const check = canAddDependency(get().taskDependencies, predecessorTaskId, successorTaskId);
+    if (!check.ok) {
+      const message = check.reason ?? "先行タスクを追加できません";
+      showToast(message, "error");
+      throw new Error(message);
+    }
+    const dep: TaskDependency = {
+      id: crypto.randomUUID(),
+      predecessor_task_id: predecessorTaskId,
+      successor_task_id: successorTaskId,
+      is_deleted: false,
+      group_id: get().currentGroupId ?? undefined,
+      created_by: createdBy,
+    };
+    set(state => ({ taskDependencies: [...state.taskDependencies, dep] }));
+    try {
+      await insertTaskDependency(dep);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  removeTaskDependency: async (id, deletedBy) => {
+    const now = new Date().toISOString();
+    set(state => ({
+      taskDependencies: state.taskDependencies.map(d =>
+        d.id === id ? { ...d, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : d
+      ),
+    }));
+    try {
+      await softDeleteTaskDependency(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
   // ===== Milestone =====
   saveMilestone: async (milestone) => {
     set(state => ({
@@ -935,6 +1007,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
           return { taskProjects: upsertByKeys(state.taskProjects, event, row, ["task_id", "project_id"]) };
         case "project_task_forces":
           return { projectTaskForces: upsertByKeys(state.projectTaskForces, event, row, ["project_id", "tf_id"]) };
+        case "task_dependencies":
+          return { taskDependencies: upsertById(state.taskDependencies, event, row) };
         default:
           return state;
       }
@@ -1027,6 +1101,9 @@ export const selectScopedTasks = memoizeScopedSelector((s: AppState): Task[] =>
 
 export const selectScopedProjects = memoizeScopedSelector((s: AppState): Project[] =>
   s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId));
+
+export const selectScopedTaskDependencies = memoizeScopedSelector((s: AppState): TaskDependency[] =>
+  s.taskDependencies.filter(d => d.group_id == null || d.group_id === s.currentGroupId));
 
 // 【2026-07-03追記】s.members にも同じ絞り込みが必要と判明。AI関連機能（相談・全PJ分析・
 // KR分析・会議取り込み等）が「担当者名一覧」等をAIプロンプトに含める際、素の s.members を

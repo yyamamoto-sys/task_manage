@@ -19,6 +19,7 @@ function reset() {
     quarterlyKrTaskForces: [],
     taskTaskForces: [],
     taskProjects: [],
+    taskDependencies: [],
     milestones: [],
     memberTags: [],
     memberTagMembers: [],
@@ -152,6 +153,22 @@ describe("applyRemoteChange: id ベースのテーブル", () => {
 
     expect(useAppStore.getState().projects).toHaveLength(1);
     expect(useAppStore.getState().members).toHaveLength(1);
+  });
+
+  it("task_dependencies（B1）も id ベースでルーティングされる", () => {
+    useAppStore.getState().applyRemoteChange({
+      table: "task_dependencies",
+      eventType: "INSERT",
+      new: {
+        id: "d1", predecessor_task_id: "t1", successor_task_id: "t2",
+        is_deleted: false, updated_at: "2026-07-17T10:00:00Z",
+      },
+      old: null,
+    });
+
+    const deps = useAppStore.getState().taskDependencies;
+    expect(deps).toHaveLength(1);
+    expect(deps[0]).toMatchObject({ predecessor_task_id: "t1", successor_task_id: "t2" });
   });
 });
 

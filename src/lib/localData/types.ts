@@ -225,6 +225,26 @@ export interface TaskProject {
   project_id: string;
 }
 
+/**
+ * タスク依存関係（先行→後続）。B1（依存ゲート）で使用。
+ * predecessor = 先に完了すべきタスク、successor = それを待つタスク。
+ * FS（Finish-to-Start）依存1種のみ・親子関係（parent_task_id）とは独立した別概念。
+ */
+export interface TaskDependency {
+  id: string;
+  predecessor_task_id: string;
+  successor_task_id: string;
+  is_deleted: boolean;
+  /** 所属グループID（マルチテナント対応。新規テーブルのため必須） */
+  group_id?: string | null;
+  created_at?: string;
+  created_by?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 /** メンバータグ：複数メンバーをまとめて担当者として扱う仕組み */
 export type MemberTagKind = "static" | "all_members" | "kr_members" | "tf_members";
 

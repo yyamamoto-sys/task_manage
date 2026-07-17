@@ -14,7 +14,7 @@ import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
-  TaskTaskForce, TaskProject,
+  TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember,
 } from "../localData/types";
 
@@ -163,11 +163,13 @@ export async function softDeleteGroup(id: string, deletedBy: string) {
  * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
  */
 export async function fetchCriticalData(onProgress?: (done: number, total: number) => void) {
-  const TOTAL = 7;
+  // B1（依存ゲート）: task_dependencies は「タスク完了時に先行が終わっているか」を
+  // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
+  const TOTAL = 8;
   let done = 0;
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
 
-  const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers] =
+  const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers, taskDeps] =
     await Promise.all([
       supabase.from("members").select("*").eq("is_deleted", false).then(tick),
       supabase.from("projects").select("*").eq("is_deleted", false).then(tick),
@@ -176,6 +178,7 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
       supabase.from("milestones").select("*").eq("is_deleted", false).then(tick),
       supabase.from("member_tags").select("*").eq("is_deleted", false).then(tick),
       supabase.from("member_tag_members").select("*").then(tick),
+      supabase.from("task_dependencies").select("*").eq("is_deleted", false).then(tick),
     ]);
 
   const firstError = [members, projects, tasks].find(r => r.error)?.error;
@@ -205,6 +208,7 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
     milestones:       (milestones.data  ?? []) as Milestone[],
     memberTags:       (memberTags.data  ?? []) as MemberTag[],
     memberTagMembers: (memberTagMembers.data ?? []) as MemberTagMember[],
+    taskDependencies: (taskDeps.data    ?? []) as TaskDependency[],
   };
 }
 
@@ -248,7 +252,7 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
  * junction テーブル（*_task_forces / task_projects）には is_deleted カラムが無いため除外フィルタは入れない。
  */
 export async function fetchAllData() {
-  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones, memberTags, memberTagMembers] =
+  const [members, objectives, keyResults, taskForces, todos, projects, tasks, ptf, qObjs, qKrTfs, ttfs, tpjs, milestones, memberTags, memberTagMembers, taskDeps] =
     await Promise.all([
       supabase.from("members").select("*").eq("is_deleted", false),
       supabase.from("objectives").select("*"),
@@ -265,6 +269,7 @@ export async function fetchAllData() {
       supabase.from("milestones").select("*").eq("is_deleted", false),
       supabase.from("member_tags").select("*").eq("is_deleted", false),
       supabase.from("member_tag_members").select("*"),
+      supabase.from("task_dependencies").select("*").eq("is_deleted", false),
     ]);
 
   // いずれかのテーブルでエラーが発生した場合は例外を投げる
@@ -305,6 +310,7 @@ export async function fetchAllData() {
     milestones:             (milestones.data ?? []) as Milestone[],
     memberTags:             (memberTags.data ?? []) as MemberTag[],
     memberTagMembers:       (memberTagMembers.data ?? []) as MemberTagMember[],
+    taskDependencies:       (taskDeps.data ?? []) as TaskDependency[],
   };
 }
 
@@ -479,6 +485,24 @@ export async function insertTaskProject(tp: TaskProject) {
 export async function deleteTaskProject(taskId: string, projectId: string) {
   const { error } = await supabase.from("task_projects")
     .delete().eq("task_id", taskId).eq("project_id", projectId);
+  if (error) throw error;
+}
+
+// ===== TaskDependency（B1：依存ゲート） =====
+// task_task_forces/task_projects と違い is_deleted による論理削除の監査証跡を持つため
+// milestones と同様 id ベースの insert / soft-delete で扱う。バリデーション
+// （自己依存・重複・循環）は appStore.addTaskDependency 側（lib/dependencies/cycleCheck）で行う。
+
+export async function insertTaskDependency(dep: TaskDependency) {
+  const { error } = await supabase.from("task_dependencies").insert(dep);
+  if (error) throw error;
+}
+
+export async function softDeleteTaskDependency(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("task_dependencies")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
   if (error) throw error;
 }
 

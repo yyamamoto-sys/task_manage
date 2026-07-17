@@ -1,6 +1,6 @@
 // src/lib/supabase/realtime.ts
 //
-// 主要10テーブルの DB 変更を WebSocket 経由で購読し、他クライアントの変更を
+// 主要11テーブルの DB 変更を WebSocket 経由で購読し、他クライアントの変更を
 // appStore に流す。1チャンネル相乗りで接続数を最小化する。
 // 対象は migrations/20260518_realtime_publication.sql の publication と一致。
 
@@ -12,7 +12,7 @@ const TABLES = [
   "tasks", "projects", "todos",
   "task_task_forces", "task_projects", "project_task_forces",
   "key_results", "task_forces", "milestones",
-  "members",
+  "members", "task_dependencies",
 ] as const;
 
 /**
