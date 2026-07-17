@@ -307,7 +307,42 @@
 #             既存の TaskEditModal をそのまま開く（DashboardViewと同じ配線パターン）
 #      DBマイグレ不要（既存フィールド・既存テーブルのみ使用）
 #
-# 最終更新：2026-07-17（v2.30）
+# v2.31 feat: タスク依存関係 フェーズB2（ガント上に依存の矢印を可視化）を追加（2026-07-17）
+#      背景：B1（依存モデル・完了ゲート）は「守らせる」機能だったが、「見える化」がまだなかった。
+#             ガント上で先行→後続の矢印が見えないと、依存の全体像を俯瞰できない。
+#             段階リリースの2段目（B2）。B3＝自動リスケ連鎖／B4＝ベースライン差分は次フェーズ
+#      設計方針：行のY座標を数式で再計算せず、描画済みバー（TaskBarRow の実バー要素に
+#             data-task-id 属性を付与）の getBoundingClientRect() をボディコンテナ基準で実測する。
+#             PJ別/ToDo別/人別の3グルーピング×折りたたみ×フィルタ（自分のみ/完了を隠す）の
+#             全組合せをレイアウトロジックの二重化なしで堅牢に扱うための判断（数式再計算は壊れやすい）
+#      追加：src/components/gantt/ganttDependencyArrows.ts（純粋関数のみ）。
+#             buildDependencyElbowPoints＝先行バー右端→後続バー左端を結ぶ直角エルボーの頂点列
+#             （後続が先行より前から始まる逆方向ケースは右→縦→左→後続のS字迂回に切替、最終区間が
+#             必ず右向き＝矢印が正しい向きで後続に入るようにする）。pointsToPathD＝SVG path文字列化。
+#             computeDependencyRenders＝依存リストとタスク矩形Mapから「両端が実測できたペア＝矢印」
+#             「片端だけ実測できたペア＝見えている側にバッジ」「両端とも実測できない＝何も出さない」
+#             を判定。__tests__/ganttDependencyArrows.test.ts に9テスト
+#      追加：GanttView.tsx に依存矢印レイヤー。ボディdiv（position:relative）内にSVGオーバーレイを
+#             配置（バーと同じスクロール文脈に載るためスクロールリスナー不要）。zIndexはバー(2)より
+#             下(1)・矢印はpointerEvents:noneでバーのクリックを一切邪魔しない。ホバー中の
+#             hoveredTaskId（既存state）に接続する矢印だけ太く・濃く強調。先行タスクが未完了の
+#             依存線はごく僅かに点線化（任意仕様）
+#      追加：画面外バッジ（⏱・TaskBarRow内、native title属性でツールチップ）。依存の相手タスクが
+#             フィルタ除外・別グループ・折りたたみで非表示のとき、見えている側のバー端に表示。
+#             「存在するが今は見えていない（フィルタ除外）」と「削除済みで存在しない」は区別し、
+#             後者は矢印もバッジも出さない（scopedTaskDependencies を mineOnly/krTaskIds 等の表示
+#             フィルタより広いスコープ＝activeTaskById で判定するのがポイント）
+#      追加：ガントツールバーに「🔗依存」トグル（既定ON・localStorageで状態保持＝
+#             KEYS.GANTT_SHOW_DEPS）。矢印が煩雑なときのエスケープハッチ
+#      再計算タイミング：useLayoutEffect（ズーム・折りたたみ・並び順・ビュー切替・データ変更・
+#             ドラッグリサイズ中のプレビュー）＋ ResizeObserver（ウィンドウ／コンテナのリサイズ）
+#      スコープ：デスクトップ GanttView のみ。GanttMobileView は対象外（B1の依存バッジのみで
+#             情報は伝わる。データ属性・SVGとも追加していないため既存モバイル表示への影響ゼロ）。
+#             isPreview（AI提案プレビュー）時は矢印レイヤーごと非表示（プレビュー用の仮タスク集合と
+#             依存の整合性を保証できないため。GanttPreviewPanel は isPreview=true で呼ぶ既存挙動のまま）
+#      DBマイグレ不要（B1のtask_dependenciesテーブルをそのまま使用）
+#
+# 最終更新：2026-07-17（v2.31）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -701,7 +736,7 @@ interface Member {
 
 ---
 
-### 3-6. タスク依存関係（B1：依存ゲート・2026-07-17実装）
+### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化・2026-07-17実装）
 
 PMツール化の第二機能。任意の2タスク間の先行→後続関係（FS依存1種のみ）。親子関係（parent_task_id）
 とは完全に独立の別概念で、UI上も別ブロックとして表示する（混同させないことが重要なUX要件）。
@@ -732,9 +767,18 @@ interface TaskDependency {
 **循環防止**：DB制約では「A→B→…→A」を表現できないため、追加操作は必ず
 `lib/dependencies/cycleCheck.ts` の `canAddDependency`（DFS）を通す。自己依存・重複も同時に弾く。
 
-**B1のスコープ外（次フェーズ）**：ガント矢印の描画（B2）・遅延時の自動リスケジュール連鎖（B3）・
-ベースライン記録＋ガントのゴーストバー差分表示（B4）。`baseline_start_date`/`baseline_due_date`
-列はまだ存在しない。
+**B2：ガント矢印可視化（デスクトップ GanttView のみ）**：先行バー右端→後続バー左端を直角エルボー
+（逆方向はS字迂回）で結び、矢じり付きで描画する。行のY座標を数式で再計算せず、`data-task-id` 属性
+付きのバー要素を `getBoundingClientRect()` で実測する設計（PJ別/ToDo別/人別×折りたたみ×フィルタの
+全組合せに対してレイアウトロジックを二重化しないため）。純粋関数は
+`src/components/gantt/ganttDependencyArrows.ts`（`buildDependencyElbowPoints`／`pointsToPathD`／
+`computeDependencyRenders`）。依存の相手が画面外（フィルタ除外・折りたたみ・別グループ）のときは
+矢印を描かず、見えている側のバーに⏱バッジ（ツールチップで相手タスク名）を出す。`hoveredTaskId`に
+接続する矢印だけ強調。ツールバーの「🔗依存」トグル（既定ON・`KEYS.GANTT_SHOW_DEPS`）で表示/非表示
+切替可。`GanttMobileView`とAI提案プレビュー（`isPreview`）は対象外。
+
+**B1/B2のスコープ外（次フェーズ）**：遅延時の自動リスケジュール連鎖（B3）・ベースライン記録＋
+ガントのゴーストバー差分表示（B4）。`baseline_start_date`/`baseline_due_date`列はまだ存在しない。
 
 ---
 
@@ -1211,7 +1255,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-17（v2.30）
+- 最終更新：2026-07-17（v2.31）
 
 ---
 
@@ -1275,7 +1319,8 @@ src/
     │   ├── LoadingView.tsx                # ローディング表示
     │   └── ErrorView.tsx                  # エラー表示
     ├── gantt/
-    │   └── GanttView.tsx                  # ガントビュー（PJ別・人別の2モード）
+    │   ├── GanttView.tsx                  # ガントビュー（PJ別・人別の2モード）
+    │   └── ganttDependencyArrows.ts       # B2：依存矢印の座標計算（純粋関数のみ。DOM実測はGanttView側）
     ├── kanban/
     │   └── KanbanView.tsx                 # カンバンビュー（ドラッグ&ドロップ）
     ├── graph/

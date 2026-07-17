@@ -29,6 +29,10 @@ export interface TaskBarRowProps {
   isPreview: boolean;
   dateLabel: string;
   tooltip: string;
+  /** B2：依存の相手（先行）が画面外のとき表示するバッジのツールチップ文言。undefined なら非表示 */
+  depBadgeLeftTitle?: string;
+  /** B2：依存の相手（後続）が画面外のとき表示するバッジのツールチップ文言。undefined なら非表示 */
+  depBadgeRightTitle?: string;
   onEdit: (taskId: string) => void;
   onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
@@ -39,7 +43,8 @@ function TaskBarRowImpl({
   taskId, bar, barColor, barHeight = 18, borderRadius = "9px",
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
-  dateLabel, tooltip, onEdit, onResize, onMouseEnter, onMouseLeave,
+  dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
+  onEdit, onResize, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   return (
     // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）
@@ -60,6 +65,7 @@ function TaskBarRowImpl({
         <>
           <div
             title={tooltip}
+            data-task-id={taskId}
             onClick={isPreview ? undefined : () => onEdit(taskId)}
             role={isPreview ? undefined : "button"}
             tabIndex={isPreview ? undefined : 0}
@@ -97,6 +103,30 @@ function TaskBarRowImpl({
               fontSize: "9px", zIndex: 5, pointerEvents: "none", lineHeight: 1,
             }}>⚠</div>
           )}
+          {/* B2：依存の相手が画面外（フィルタ除外・別グループ・折りたたみで非表示）のときのバッジ。
+              先行が画面外＝バーの左側、後続が画面外＝バーの右側に出す */}
+          {depBadgeLeftTitle && (
+            <div
+              title={depBadgeLeftTitle}
+              style={{
+                position: "absolute", left: bar.barX - 3, top: "50%", transform: "translate(-100%, -50%)",
+                fontSize: "9px", zIndex: 6, lineHeight: 1, cursor: "default",
+                background: "var(--color-bg-tertiary)", border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-full)", padding: "1px 3px",
+              }}
+            >⏱</div>
+          )}
+          {depBadgeRightTitle && (
+            <div
+              title={depBadgeRightTitle}
+              style={{
+                position: "absolute", left: bar.barX + bar.barWidth + 3, top: "50%", transform: "translateY(-50%)",
+                fontSize: "9px", zIndex: 6, lineHeight: 1, cursor: "default",
+                background: "var(--color-bg-tertiary)", border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-full)", padding: "1px 3px",
+              }}
+            >⏱</div>
+          )}
           {!isPreview && !isDone && (
             // 右端ドラッグによる期日変更専用のハンドル。マウスのドラッグ操作専用でキーボード代替手段はない
             // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -131,6 +161,8 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     prev.isPreview === next.isPreview &&
     prev.dateLabel === next.dateLabel &&
     prev.tooltip === next.tooltip &&
+    prev.depBadgeLeftTitle === next.depBadgeLeftTitle &&
+    prev.depBadgeRightTitle === next.depBadgeRightTitle &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onMouseEnter === next.onMouseEnter &&

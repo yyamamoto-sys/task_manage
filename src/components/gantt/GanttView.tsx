@@ -8,8 +8,8 @@
 // - マイルストーン：◆で表示
 // - ドラッグによる日程変更は将来実装（現時点はクリックで編集ダイアログ）
 
-import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
@@ -26,6 +26,10 @@ import {
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
+import {
+  computeDependencyRenders, pointsToPathD,
+  type TaskRect, type DependencyArrowGeometry, type DependencyBadgeInfo,
+} from "./ganttDependencyArrows";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -575,6 +579,87 @@ export function GanttView({
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [draggingResizeTask, dayWidth, allTasks, saveTask]);
 
+  // ===== タスク依存関係の矢印（B2） =====
+  //
+  // 【設計意図】行のY座標を数式で再計算せず、描画済みバー（data-task-id 付き要素）の
+  // getBoundingClientRect() をボディコンテナ基準で実測する。3グルーピング×折りたたみ×
+  // フィルタの全組合せをレイアウトロジックの二重化なしで堅牢に扱うため。
+  const ganttBodyRef = useRef<HTMLDivElement>(null);
+  const [showDepArrows, setShowDepArrows] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.GANTT_SHOW_DEPS) !== "0"; } catch { return true; }
+  });
+  const toggleShowDepArrows = useCallback(() => {
+    setShowDepArrows(prev => {
+      const next = !prev;
+      try { localStorage.setItem(KEYS.GANTT_SHOW_DEPS, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
+  const scopedTaskDependencies = useAppStore(selectScopedTaskDependencies);
+  // 「相手が画面外か」の判定は mineOnly/krTaskIds 等の表示フィルタより広いスコープで行う必要がある
+  // （フィルタで除外されたタスクも「存在はする＝画面外バッジ対象」であり、「削除済み＝対象外」とは区別する）
+  const activeTaskById = useMemo(() => new Map(active(rawTasks).map(t => [t.id, t])), [rawTasks]);
+  const logicalDeps = useMemo(
+    () => scopedTaskDependencies.filter(d => !d.is_deleted
+      && activeTaskById.has(d.predecessor_task_id)
+      && activeTaskById.has(d.successor_task_id)),
+    [scopedTaskDependencies, activeTaskById],
+  );
+
+  const [depRender, setDepRender] = useState<{
+    arrows: DependencyArrowGeometry[];
+    badgesByTaskId: Map<string, DependencyBadgeInfo[]>;
+    svgHeight: number;
+  }>({ arrows: [], badgesByTaskId: new Map(), svgHeight: 0 });
+
+  const remeasureDeps = useCallback(() => {
+    const bodyEl = ganttBodyRef.current;
+    if (isPreview || !showDepArrows || logicalDeps.length === 0 || !bodyEl) {
+      setDepRender(prev => (prev.arrows.length === 0 && prev.badgesByTaskId.size === 0)
+        ? prev
+        : { arrows: [], badgesByTaskId: new Map(), svgHeight: prev.svgHeight });
+      return;
+    }
+    const bodyRect = bodyEl.getBoundingClientRect();
+    const rectMap = new Map<string, TaskRect>();
+    bodyEl.querySelectorAll<HTMLElement>("[data-task-id]").forEach(el => {
+      const id = el.dataset.taskId;
+      // 人別ビューでは複数担当者の行に同じタスクが重複して出ることがあるため、最初の1件のみ使う
+      if (!id || rectMap.has(id)) return;
+      const r = el.getBoundingClientRect();
+      rectMap.set(id, { x: r.left - bodyRect.left, y: r.top - bodyRect.top, width: r.width, height: r.height });
+    });
+    const result = computeDependencyRenders(logicalDeps, rectMap);
+    setDepRender({ ...result, svgHeight: bodyEl.scrollHeight });
+  }, [isPreview, showDepArrows, logicalDeps]);
+
+  // 再計算タイミング：ズーム・折りたたみ開閉・並び順・ビュー切替・データ変更・ドラッグリサイズ中のプレビュー
+  useLayoutEffect(() => {
+    remeasureDeps();
+  }, [remeasureDeps, collapsed, sortOrder, viewMode, dayWidth, allTasks, resizePreviewDates]);
+
+  // 再計算タイミング：ウィンドウ／コンテナのリサイズ
+  useEffect(() => {
+    const el = ganttBodyRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => remeasureDeps());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [remeasureDeps]);
+
+  // タスクバーに渡す「相手が画面外」バッジのツールチップ文言を組み立てる
+  const getDepBadgeTitles = useCallback((taskId: string): { left?: string; right?: string } => {
+    const badges = depRender.badgesByTaskId.get(taskId);
+    if (!badges || badges.length === 0) return {};
+    const leftNames = badges.filter(b => b.hiddenSide === "predecessor").map(b => activeTaskById.get(b.otherTaskId)?.name ?? "?");
+    const rightNames = badges.filter(b => b.hiddenSide === "successor").map(b => activeTaskById.get(b.otherTaskId)?.name ?? "?");
+    return {
+      left: leftNames.length ? `先行タスク（画面外）：${leftNames.join("、")}` : undefined,
+      right: rightNames.length ? `後続タスク（画面外）：${rightNames.join("、")}` : undefined,
+    };
+  }, [depRender.badgesByTaskId, activeTaskById]);
+
   // ===== モバイル：タイムラインリスト表示 =====
   // 全フック宣言後の早期 return なので hooks 順序は崩れない。
   if (isMobile) {
@@ -676,6 +761,20 @@ export function GanttView({
               </button>
             ))}
           </div>
+        )}
+        {/* 依存矢印トグル（B2） */}
+        {!isPreview && (
+          <button
+            onClick={toggleShowDepArrows}
+            title={showDepArrows ? "依存関係の矢印を隠す" : "依存関係の矢印を表示する"}
+            aria-pressed={showDepArrows}
+            style={{
+              ...headerBtnStyle,
+              color: showDepArrows ? "var(--color-brand)" : "var(--color-text-secondary)",
+              borderColor: showDepArrows ? "var(--color-brand-border)" : "var(--color-border-primary)",
+              fontWeight: showDepArrows ? "600" : "400",
+            }}
+          >🔗依存</button>
         )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
@@ -1080,7 +1179,7 @@ export function GanttView({
             </div>
 
             {/* ボディ：土日背景は CSS gradient、月初・月曜境界線のみ個別 div */}
-            <div style={{
+            <div ref={ganttBodyRef} style={{
               position: "relative",
               backgroundImage: weekendGradient,
               backgroundSize: `${weekPeriod}px 100%`,
@@ -1114,6 +1213,45 @@ export function GanttView({
                 pointerEvents: "none",
                 zIndex: 5,
               }} />
+
+              {/* 依存関係の矢印（B2）。バーより下の層（zIndex 1）に描き、クリックを邪魔しない */}
+              {!isPreview && showDepArrows && depRender.arrows.length > 0 && (
+                <svg
+                  aria-hidden="true"
+                  style={{
+                    position: "absolute", left: 0, top: 0,
+                    width: totalWidth, height: depRender.svgHeight || undefined,
+                    overflow: "visible", pointerEvents: "none", zIndex: 1,
+                  }}
+                >
+                  <defs>
+                    <marker id="gantt-dep-arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-border-secondary)" />
+                    </marker>
+                    <marker id="gantt-dep-arrowhead-hover" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-brand)" />
+                    </marker>
+                  </defs>
+                  {depRender.arrows.map(({ dep, points }) => {
+                    const isHoveredArrow = hoveredTaskId != null
+                      && (dep.predecessor_task_id === hoveredTaskId || dep.successor_task_id === hoveredTaskId);
+                    const predTask = activeTaskById.get(dep.predecessor_task_id);
+                    const isPredIncomplete = predTask?.status !== "done";
+                    return (
+                      <path
+                        key={dep.id}
+                        d={pointsToPathD(points)}
+                        fill="none"
+                        stroke={isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
+                        strokeWidth={isHoveredArrow ? 2 : 1}
+                        strokeOpacity={isHoveredArrow ? 0.9 : 0.5}
+                        strokeDasharray={isPredIncomplete ? "4 3" : undefined}
+                        markerEnd={isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
+                      />
+                    );
+                  })}
+                </svg>
+              )}
 
               {/* PJ・タスクバー / 人別バー */}
               {viewMode === "person" ? (
@@ -1164,6 +1302,7 @@ export function GanttView({
                             ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                             : `${due.getMonth()+1}/${due.getDate()}`) : "";
                           const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                          const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                           return (
                             <TaskBarRow
                               key={task.id}
@@ -1177,6 +1316,8 @@ export function GanttView({
                               isPreview={isPreview}
                               dateLabel={dateLabel}
                               tooltip={tooltip}
+                              depBadgeLeftTitle={depBadgeLeft}
+                              depBadgeRightTitle={depBadgeRight}
                               onEdit={handleRowEdit}
                               onResize={handleResizeDragStart}
                               onMouseEnter={handleRowHoverEnter}
@@ -1299,6 +1440,7 @@ export function GanttView({
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
 
                       const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                      const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                       return (
                         <TaskBarRow
                           key={task.id}
@@ -1314,6 +1456,8 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
+                          depBadgeLeftTitle={depBadgeLeft}
+                          depBadgeRightTitle={depBadgeRight}
                           onEdit={handleRowEdit}
                           onResize={handleResizeDragStart}
                           onMouseEnter={handleRowHoverEnter}
@@ -1361,6 +1505,7 @@ export function GanttView({
                         ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
                       const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                      const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                       return (
                         <TaskBarRow
                           key={task.id}
@@ -1374,6 +1519,8 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
+                          depBadgeLeftTitle={depBadgeLeft}
+                          depBadgeRightTitle={depBadgeRight}
                           onEdit={handleRowEdit}
                           onResize={handleResizeDragStart}
                           onMouseEnter={handleRowHoverEnter}
