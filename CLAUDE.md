@@ -236,8 +236,23 @@
 #             幅へ自然に収束させる。ルート要素は元々overflow:hiddenなので幅が狭い間の
 #             中身は自動的にクリップされる。AI相談パネル（幅をtransitionで0→実幅にする
 #             手法）と同じ「広がって出てくる」体感に統一。所要時間も0.22s→0.3sに調整
+# v2.28 feat: メンバー別ワークロードビューを新規追加（プロマネ特化の第一歩）（2026-07-17）
+#      背景：本アプリを単なるタスク管理から「プロジェクトマネジメント特化」へ進化させる
+#             方針の第一段。PMツール調査（PMBOK10知識エリア基準）で、資源管理（リソース／
+#             ワークロード）が未UI化のギャップとして高優先と判定された。集計ロジック自体は
+#             AI相談用にbuildMemberWorkloadとして既に存在したが画面が無い状態だった
+#      追加：src/lib/workload/computeWorkload.ts（computeMemberWorkloadRows。件数・工数・
+#             期限超過集計の単一の真実源）＋ __tests__/computeWorkload.test.ts（6テスト）
+#      追加：src/components/workload/WorkloadView.tsx。ViewModeに"workload"追加・NAV_ITEMS・
+#             lazyWithRetry登録・CommandPalette（Ctrl+K）クイックアクションにも追加
+#      変更：payloadBuilder.tsのbuildMemberWorkloadを共有関数を呼ぶだけに変更。AI相談
+#             ペイロード出力（member_workload）は完全に不変（既存テスト全グリーンで担保）
+#      仕様：部署スコープはselectScopedTasks/selectScopedMembersを厳守（過去の越境漏洩の教訓）。
+#             主軸はアクティブ件数（未着手+進行中）、工数は補助表示、期限超過をバッジ表示。
+#             突出負荷（平均1.5倍以上かつ3件以上）を赤強調。PJ絞り込みフィルタ・未割当バッジあり
+#      DBマイグレ不要（既存フィールドのみ使用）。コミット 2bf7659
 #
-# 最終更新：2026-07-07（v2.27）
+# 最終更新：2026-07-17（v2.28）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
