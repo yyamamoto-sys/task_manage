@@ -20,6 +20,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { extractMentions, mentionsEqual } from "../../lib/mentions";
+import { buildTaskUpdatePayload, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { showToast } from "../common/Toast";
@@ -137,7 +138,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     return opts;
   }, [allTasks, currentProjectId, originalTask?.id, projects]);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<TaskEditFormState>({
     name:                 originalTask?.name ?? "",
     status:               originalTask?.status ?? "todo" as Task["status"],
     priority:             originalTask?.priority ?? "",
@@ -154,37 +155,22 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const isInitialMount = useRef(true);
+  // dirty: form が最後に成功した保存以降に変更されている（＝デバウンス未発火の保留編集がある）
+  // inFlight: デバウンスは発火済みで saveTask の Promise がまだ解決していない
+  // （閉じる操作でこの2つを見て「保留編集があれば1回だけフラッシュ」を判定する）
+  const formDirtyRef = useRef(false);
+  const saveInFlightRef = useRef(false);
 
   // 自動保存ハンドラを ref に保持し、useEffect の依存配列を form のみに絞る
   // （originalTask の realtime 更新などで saveTask が再発火しないようにする）
   const handleAutoSaveRef = useRef<() => Promise<void>>(async () => {});
   handleAutoSaveRef.current = async () => {
     if (!originalTask) return;
-    const hours = parseFloat(form.estimated_hours);
-    // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
     const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
-    const effectiveProjectId = parent ? (parent.project_id ?? null) : (form.project_id || null);
-    const updated: Task = {
-      ...originalTask,
-      name:                form.name.trim() || originalTask.name,
-      status:              form.status,
-      priority:            (form.priority as Task["priority"]) || null,
-      assignee_member_ids: form.assignee_member_ids,
-      assignee_member_id:  form.assignee_member_ids[0] ?? "",
-      project_id:          effectiveProjectId,
-      parent_task_id:      form.parent_task_id || null,
-      // display_order は既存値を保持（編集では並び順を変えない＝...originalTask 由来）
-      start_date:          form.start_date || null,
-      due_date:            form.due_date || null,
-      estimated_hours:     isNaN(hours) ? null : hours,
-      comment:             form.comment,
-      tags:                form.tags,
-      // updated_at は触らない（CLAUDE.md Section 5）。zustand 側で
-      // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
-      updated_by:          currentUser.id,
-    };
+    const updated = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
     try {
       await saveTask(updated);
+      formDirtyRef.current = false;
       setSaveStatus("saved");
       // 自動保存ではモーダルを閉じない。親側は zustand 経由で自動的に
       // 再レンダーされるので、明示的な「保存後のフック」呼び出しは不要。
@@ -194,6 +180,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     } catch (e) {
       setSaveStatus("error");
       setSaveError(formatErrorForUser("保存に失敗しました", e));
+      // dirty は落とさない（保存できていないため）。失敗は store 側の
+      // handleSaveError が別途トースト＋load()で拾う（appStore.saveTask 参照）。
+    } finally {
+      saveInFlightRef.current = false;
     }
   };
 
@@ -206,34 +196,52 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
       isInitialMount.current = false;
       return;
     }
+    formDirtyRef.current = true;
     setSaveStatus("saving");
     setSaveError(null);
     const timer = setTimeout(() => {
+      saveInFlightRef.current = true;
       void handleAutoSaveRef.current();
     }, 600);
     return () => clearTimeout(timer);
   }, [form]);
 
-  // モーダルを閉じるときに finalized_mentions を確定保存する。
-  // 自動保存はコメント変化のたびに走るが finalized_mentions は触らない。
-  // 閉じる時点のコメントから @mentions を抽出し、前回と異なれば DB に保存する。
-  // この列の変化を useMentionNotifications が監視することで「閉じた時のみ通知」を実現する。
+  // モーダルを閉じるときの保存フラッシュ＋ finalized_mentions 確定保存。
+  //
+  // ①保留編集（デバウンス600ms待ち中でまだ saveTask が発火していない変更）がある場合、
+  //   ✕を押した瞬間にその場でフォーム全項目を保存発火する（await はしない＝閉じる操作を
+  //   ブロックしない。saveTask は store 層で直列化されバックグラウンドで完走する）。
+  //   これにより「✕を押すと直前の編集が失われる」バグを防ぐ（デバウンス発火前にモーダルが
+  //   アンマウントされ useEffect のクリーンアップが setTimeout を握り潰していたのが原因）。
+  // ②既に保存発火済み（saveInFlightRef=true）の場合は二重発火しない
+  //   （そのままバックグラウンドで完走するため何もしなくてよい）。
+  // ③finalized_mentions（@メンション通知は「閉じた時だけ確定」の既存仕様）は①の保存に
+  //   まとめて1回で送る。①を発火しない場合（フォームは保存済み・mentionsだけ変化）は
+  //   finalized_mentions 単体の保存を1回だけ行う。
+  //   → いずれの分岐でも close 時の saveTask 呼び出しは最大1回。
   const handleClose = useCallback(() => {
     if (originalTask) {
-      const current = extractMentions(form.comment);
-      const previous = originalTask.finalized_mentions ?? [];
-      if (!mentionsEqual(current, previous)) {
+      const currentMentions = extractMentions(form.comment);
+      const mentionsChanged = !mentionsEqual(currentMentions, originalTask.finalized_mentions ?? []);
+
+      if (formDirtyRef.current && !saveInFlightRef.current) {
+        const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
+        const payload = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
+        formDirtyRef.current = false;
         // fire-and-forget: 保存完了を待たずに閉じる（Supabase 呼び出しは非同期で継続）
+        void saveTask(mentionsChanged ? { ...payload, finalized_mentions: currentMentions } : payload);
+      } else if (mentionsChanged) {
+        // フォームは既に保存済み／発火済み。finalized_mentions のみ確定保存する。
         void saveTask({
           ...originalTask,
           comment:             form.comment,
-          finalized_mentions:  current,
+          finalized_mentions:  currentMentions,
           updated_by:          currentUser.id,
         });
       }
     }
     onClose();
-  }, [originalTask, form.comment, currentUser.id, saveTask, onClose]);
+  }, [originalTask, form, allTasks, currentUser.id, saveTask, onClose]);
 
   const handleDelete = useCallback(async () => {
     if (!originalTask) return;

@@ -394,7 +394,28 @@
 #             portalする）に同じ漏れを発見・同様に修正（ルートdivに pointerEvents: "auto" 追加）
 #      DBマイグレ不要（CSSプロパティの修正のみ）
 #
-# 最終更新：2026-07-17（v2.33）
+# v2.34 fix: TaskEditModal で「保存中…」の間に✕を押すと直前の編集が失われる不具合を修正（2026-07-17）
+#      原因：フォーム編集は useEffect([form]) が600msデバウンス後に handleAutoSaveRef.current()
+#             （saveTask 発火）を呼ぶ設計。✕押下→onClose()でモーダルがアンマウントされると、
+#             その useEffect のクリーンアップ（clearTimeout(timer)）が「まだ発火していないデバウンス
+#             保存」を握り潰していた。saveTask 自体は store層で直列化された非同期処理のため、
+#             既に発火済みの保存はモーダルを閉じても背景で完走する＝問題はデバウンス待ち600msの
+#             窓の間に✕を押した場合のみ
+#      修正：src/lib/taskEditPayload.ts（NEW）に buildTaskUpdatePayload（フォーム→Task変換の
+#             純粋関数）を抽出し、autosave と close時フラッシュの両方から呼ぶ単一の真実源にした。
+#             TaskEditModal に formDirtyRef（最後の成功保存以降にformが変更されているか）・
+#             saveInFlightRef（デバウンス発火済みでsaveTaskのPromiseが未解決か）の2つのrefを追加。
+#             handleClose で「dirty かつ in-flight でない」場合のみ、閉じる直前にフォーム全項目＋
+#             finalized_mentions（メンション確定通知。既存仕様＝閉じた時のみ確定）を1回の saveTask
+#             にまとめて fire-and-forget 発火（await せず即 onClose）。既に発火済み（in-flight）の
+#             場合は二重発火せず、finalized_mentionsの変化があればそれだけ1回送る。close時の
+#             saveTask呼び出しはどの分岐でも最大1回（二重保存を作らない設計）
+#      追加：src/lib/__tests__/taskEditPayload.test.ts（buildTaskUpdatePayloadの単体テスト7件。
+#             trim・親PJ追従・estimated_hours/priority空値処理・担当者0人時の単数フィールド等）
+#      スコープ外：自動保存のデバウンス方式自体（600ms）は変更しない。閉じる時のフラッシュのみ追加
+#      DBマイグレ不要（フロントのみの変更）
+#
+# 最終更新：2026-07-17（v2.34）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
