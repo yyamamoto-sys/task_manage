@@ -74,6 +74,18 @@ export function GraphIcon() {
   );
 }
 
+export function WorkloadIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+      <circle cx="4" cy="3.5" r="2" stroke="currentColor" strokeWidth="1.2"/>
+      <path d="M1 12c0-2.5 1.4-3.8 3-3.8s3 1.3 3 3.8" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      <line x1="9" y1="10" x2="13" y2="10" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+      <line x1="9" y1="7"  x2="13" y2="7"  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.7"/>
+      <line x1="9" y1="4"  x2="11" y2="4"  stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" opacity="0.45"/>
+    </svg>
+  );
+}
+
 export function AIIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">

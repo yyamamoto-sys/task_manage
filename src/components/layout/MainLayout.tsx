@@ -16,7 +16,7 @@ import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
 import { ViewSkeleton } from "../common/Skeleton";
 import { CommandPalette } from "../common/CommandPalette";
-import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon } from "../common/icons/NavIcons";
+import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon, WorkloadIcon } from "../common/icons/NavIcons";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
 import { ProjectCreateModal } from "../project/ProjectCreateModal";
@@ -38,6 +38,7 @@ const GanttView          = lazyWithRetry(() => import("../gantt/GanttView").then
 const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView");
 const OnboardingHome     = lazyWithRetry(() => import("../dashboard/OnboardingHome").then(m => ({ default: m.OnboardingHome })), "OnboardingHome");
 const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
+const WorkloadView       = lazyWithRetry(() => import("../workload/WorkloadView").then(m => ({ default: m.WorkloadView })), "WorkloadView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
 const CalendarLabView    = lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView");
 const ProjectStructureView = lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView");
@@ -64,6 +65,7 @@ const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: Reac
   { view: "kanban",    label: "カンバン",       shortLabel: "KB", icon: <KanbanIcon />, tooltip: "タスクを「未着手／進行中／完了」の列でドラッグ&ドロップ管理できます" },
   { view: "gantt",     label: "ガント",         shortLabel: "GT", icon: <GanttIcon />,  tooltip: "プロジェクトの期間とタスクの期日をカレンダー形式で一覧できます" },
   { view: "list",      label: "リスト",         shortLabel: "LT", icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
+  { view: "workload",  label: "ワークロード",   shortLabel: "WL", icon: <WorkloadIcon />, tooltip: "メンバー別のタスク件数・負荷を一目で確認できます" },
 ];
 
 export function MainLayout(props: Props) {
@@ -558,7 +560,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 mineOnly={mineOnly}
               />
             )}
-            {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && (
+            {viewMode === "workload" && (
+              <WorkloadView projects={projects} />
+            )}
+            {viewMode !== "dashboard" && viewMode !== "kanban" && viewMode !== "gantt" && viewMode !== "list" && viewMode !== "admin" && viewMode !== "workload" && (
               <ComingSoon view={viewMode} />
             )}
           </Suspense>
@@ -1847,6 +1852,7 @@ function ComingSoon({ view }: { view: ViewMode }) {
     gantt: "ガント",
     list: "リスト",
     admin: "管理画面",
+    workload: "ワークロード",
   };
   return (
     <div style={{

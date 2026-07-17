@@ -32,6 +32,7 @@ const VIEW_ACTIONS: { view: ViewMode; label: string; icon: string }[] = [
   { view: "kanban",    label: "カンバンを開く",       icon: "📋" },
   { view: "gantt",     label: "ガントを開く",         icon: "📅" },
   { view: "list",      label: "リストを開く",         icon: "📝" },
+  { view: "workload",  label: "ワークロードを開く",   icon: "🧑‍🤝‍🧑" },
 ];
 
 export function CommandPalette({

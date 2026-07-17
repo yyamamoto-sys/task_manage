@@ -17,6 +17,7 @@ import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../d
 import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
 import { isParentTask } from "../taskHierarchy";
+import { computeMemberWorkloadRows } from "../workload/computeWorkload";
 
 // ===== 型定義 =====
 
@@ -146,29 +147,19 @@ function buildFiscalCalendar(today: Date): FiscalCalendar {
 }
 
 // ===== メンバー工数集計 =====
+// 集計ロジック本体は src/lib/workload/computeWorkload.ts に共有化済み（ワークロードビューと共通）。
+// AIペイロードの出力（MemberWorkload）は変えないため、リッチな行型から必要な6フィールドだけ抜き出す。
 
 function buildMemberWorkload(members: Member[], tasks: Task[]): MemberWorkload[] {
-  return active(members)
-    .map(m => {
-      // 複数担当者（assignee_member_ids）に対応：自分が担当者に含まれるタスクをカウント
-      const myTasks = tasks.filter(t => !t.is_deleted && getAssigneeIds(t).includes(m.id));
-      const active = myTasks.filter(t => t.status !== "done");
-      const withEstimate = active.filter(t => t.estimated_hours != null);
-      const withoutEstimate = active.filter(t => t.estimated_hours == null);
-      // 工数入力済みタスクのみ合計する（未入力を0とみなさない）
-      const totalHours = withEstimate.length > 0
-        ? withEstimate.reduce((sum, t) => sum + (t.estimated_hours ?? 0), 0)
-        : null;
-      return {
-        member_id: m.id,
-        short_name: m.short_name,
-        todo_count: active.filter(t => t.status === "todo").length,
-        in_progress_count: active.filter(t => t.status === "in_progress").length,
-        total_estimated_hours: totalHours,
-        tasks_with_estimate: withEstimate.length,
-        tasks_without_estimate: withoutEstimate.length,
-      };
-    });
+  return computeMemberWorkloadRows(members, tasks).map(row => ({
+    member_id: row.member_id,
+    short_name: row.short_name,
+    todo_count: row.todo_count,
+    in_progress_count: row.in_progress_count,
+    total_estimated_hours: row.total_estimated_hours,
+    tasks_with_estimate: row.tasks_with_estimate,
+    tasks_without_estimate: row.tasks_without_estimate,
+  }));
 }
 
 // ===== メインのビルド関数 =====

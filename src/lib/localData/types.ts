@@ -250,7 +250,7 @@ export interface MemberTagMember {
   member_id: string;
 }
 
-export type ViewMode = "kanban" | "gantt" | "list" | "dashboard" | "admin";
+export type ViewMode = "kanban" | "gantt" | "list" | "dashboard" | "admin" | "workload";
 
 // ===== 変更履歴（CLAUDE.md Section 7）=====
 
