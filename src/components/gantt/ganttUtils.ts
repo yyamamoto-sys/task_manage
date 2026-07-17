@@ -1,8 +1,8 @@
 // src/components/gantt/ganttUtils.ts
 // ガントビュー共通の定数・型・純粋関数
 
-import type { Task } from "../../lib/localData/types";
-import { toDate, diffDays } from "../../lib/date";
+import type { Task, Milestone } from "../../lib/localData/types";
+import { toDate, toDateStr, diffDays } from "../../lib/date";
 
 export const DAY_WIDTH_DEFAULT = 28;
 export const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
@@ -97,6 +97,47 @@ export function computeWeekBlocks(days: Date[], dayWidth: number): WeekBlock[] {
     i = j;
   }
   return blocks;
+}
+
+/**
+ * 週コラム境界（週ブロックの開始x座標）の一覧。月初（W1＝月の境界）は borderDays 側の
+ * 太い境界線が既に引かれているため対象外にする（同じ位置に二重線を描かない）。
+ * 淡い列グリッドはこの関数が返す x 座標にだけ描く。
+ */
+export function computeWeekGridLines(weekBlocks: WeekBlock[]): number[] {
+  return weekBlocks.filter(wb => !wb.isMonthStart).map(wb => wb.startX);
+}
+
+// ===== マイルストーン帯（PJ内・スクロールしても埋もれないようにする視認補助） =====
+
+/**
+ * マイルストーンの帯色を1箇所から取得する。現状は全マイルストーン共通の MS_COLOR だが、
+ * 将来マイルストーンごとに個別色を持つようになったら、ここだけ変更すれば帯・◆印の色が揃う。
+ */
+export function getMilestoneBandColor(_ms: Milestone): string {
+  return MS_COLOR;
+}
+
+export interface MilestoneBand {
+  x: number;
+  color: string;
+}
+
+/**
+ * 同じPJ内のマイルストーンから、帯を描く対象日の x 座標一覧を計算する（純粋関数）。
+ * 同一日に複数マイルストーンがあっても帯は1本だけ描く（重ねて濃くなりすぎるのを防ぐため、
+ * 日付で重複除去する。色は最初に見つかった1件の色を採用する）。
+ */
+export function computeMilestoneBands(pjMilestones: Milestone[], rangeStart: Date, dayWidth: number): MilestoneBand[] {
+  const seen = new Map<string, MilestoneBand>();
+  for (const ms of pjMilestones) {
+    const d = toDate(ms.date);
+    if (!d) continue;
+    const key = toDateStr(d);
+    if (seen.has(key)) continue;
+    seen.set(key, { x: diffDays(rangeStart, d) * dayWidth, color: getMilestoneBandColor(ms) });
+  }
+  return [...seen.values()];
 }
 
 // ===== バー端リサイズ（右端＝期日／左端＝開始日） =====

@@ -2,8 +2,9 @@ import { describe, it, expect } from "vitest";
 import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate,
+  computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
 } from "../ganttUtils";
-import type { Task } from "../../../lib/localData/types";
+import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange } from "../../../lib/date";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
@@ -145,6 +146,64 @@ describe("applyResizePreview", () => {
     const t = applyResizePreview(base, { due: "2026-07-15" });
     expect(t.start_date).toBe("2026-07-05");
     expect(t.due_date).toBe("2026-07-15");
+  });
+});
+
+describe("computeWeekGridLines", () => {
+  it("月初（W1）を除いた週境界のx座標を返す", () => {
+    // 2026年8月：W1(月初・除外)/W2/W3/W4/W5の5ブロック
+    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 31));
+    const blocks = computeWeekBlocks(days, 28);
+    expect(computeWeekGridLines(blocks)).toEqual([7 * 28, 14 * 28, 21 * 28, 28 * 28]);
+  });
+
+  it("先頭ブロックが月初でなければ含まれる", () => {
+    // 8/10始まり：W2(先頭・月初でない)/W3
+    const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 16));
+    const blocks = computeWeekBlocks(days, 28);
+    expect(computeWeekGridLines(blocks)).toEqual([0, 5 * 28]);
+  });
+});
+
+function makeMilestone(overrides: Partial<Milestone> & { id: string; project_id: string; date: string }): Milestone {
+  return { name: "ms", is_deleted: false, ...overrides };
+}
+
+describe("getMilestoneBandColor", () => {
+  it("現状は全マイルストーン共通のMS_COLORを返す", () => {
+    const ms = makeMilestone({ id: "m1", project_id: "p1", date: "2026-07-10" });
+    expect(getMilestoneBandColor(ms)).toBe(MS_COLOR);
+  });
+});
+
+describe("computeMilestoneBands", () => {
+  it("マイルストーンごとにx座標を計算する", () => {
+    const mss = [
+      makeMilestone({ id: "m1", project_id: "p1", date: "2026-07-05" }),
+      makeMilestone({ id: "m2", project_id: "p1", date: "2026-07-10" }),
+    ];
+    const bands = computeMilestoneBands(mss, rangeStart, dayWidth);
+    expect(bands).toEqual([
+      { x: 4 * dayWidth, color: MS_COLOR },
+      { x: 9 * dayWidth, color: MS_COLOR },
+    ]);
+  });
+
+  it("同一日に複数マイルストーンがあっても帯は1本だけ（重複除去）", () => {
+    const mss = [
+      makeMilestone({ id: "m1", project_id: "p1", date: "2026-07-05" }),
+      makeMilestone({ id: "m2", project_id: "p1", date: "2026-07-05" }),
+    ];
+    expect(computeMilestoneBands(mss, rangeStart, dayWidth)).toHaveLength(1);
+  });
+
+  it("日付が無効/未設定なものはスキップする", () => {
+    const mss = [makeMilestone({ id: "m1", project_id: "p1", date: "" })];
+    expect(computeMilestoneBands(mss, rangeStart, dayWidth)).toEqual([]);
+  });
+
+  it("空配列なら空配列", () => {
+    expect(computeMilestoneBands([], rangeStart, dayWidth)).toEqual([]);
   });
 });
 

@@ -601,7 +601,45 @@
 #             tsc/build一発グリーン
 #      DBマイグレ不要（表示ロジックのみ・既存task_dependenciesをそのまま使用）
 #
-# 最終更新：2026-07-17（v2.39）
+# v2.40 feat: ガントビューに週コラムの淡いグリッド線＋PJ内マイルストーン帯を追加（2026-07-17）
+#      背景：①週ラベル（8月W1〜W5）を導入した後も、本文側に週コラムの境界が無く、今どの週の
+#             範囲かをバーの位置から目で辿るのが難しかった。②マイルストーン◆はPJ行にしか
+#             無いため、PJの行数が多く下にスクロールすると印が画面外に出て見えなくなっていた
+#      追加1（週コラムの淡いグリッド線）：src/components/gantt/ganttUtils.ts に
+#             computeWeekGridLines(weekBlocks)（週ブロックのうち月初=W1を除いた開始x座標一覧を
+#             返す純粋関数。月初は既存の月初境界線＝borderDaysの2px線が既にあるため対象外にして
+#             二重線を避ける）。GanttView.tsx のボディに、borderDays（月初・月曜線）の直後・
+#             今日線の直前として、weekGridLinesの各x座標に1px・opacity 0.35の縦線を
+#             pointerEvents:none・zIndex:1で描画。全ズーム（dayWidth 14〜48）で
+#             computeWeekBlocks依存のため自動的に破綻しない
+#      追加2（PJ内マイルストーン帯）：ganttUtils.ts に getMilestoneBandColor(ms)（帯色を1箇所から
+#             取得する関数。現状は全マイルストーン共通のMS_COLORを返すのみだが、将来マイルストーンに
+#             個別色が付いたらここだけ変更すれば◆印・帯の色が揃う設計）・
+#             computeMilestoneBands(pjMilestones, rangeStart, dayWidth)（PJ内マイルストーンから
+#             帯を描く日付のx座標一覧を計算する純粋関数。同一日に複数マイルストーンがあっても
+#             日付で重複除去し帯は1本だけ＝重ねて濃くなりすぎない）。GanttView.tsx のPJ別ビュー・
+#             PJコンテナ（`<div key={pj.id}>`）にposition:relativeを付与し、その最初の子として
+#             msBandsの各x座標にwidth=dayWidthの縦帯div（background=マイルストーン色・opacity
+#             0.12・top:0/bottom:0でコンテナの高さいっぱい・pointerEvents:none）を描画。
+#             DOM実測は不要（position:relativeのコンテナ基準の絶対配置で、コンテナの高さは
+#             通常フローの子＝PJ行＋タスク行で自然に決まるため、帯が自動的にPJの行ブロック内
+#             だけに収まる）。zIndexは明示的にband=1・週グリッド線=1・既存のタスクバー本体=2
+#             （既存のまま）とし、「行の背景色（position:relativeだがz-index:auto）より確実に
+#             前面・タスクバー本体より確実に背面」という重ね順をz-index:autoの暗黙の解決に
+#             頼らず固定した。対象はPJ別ビューのみ（人別・ToDo別はPJが飛び飛びになり
+#             「PJ内の帯」が成立しないため今回は対象外・従来のマイルストーン表示のまま）
+#      既存のマイルストーン◆印（名前付きマーカー・ホバーツールチップ・クリック編集）は無変更で
+#             そのまま残る。帯はスクロールしても埋もれない視認補助として追加するだけ
+#      テスト：src/components/gantt/__tests__/ganttUtils.test.ts に20テスト追加
+#             （computeWeekGridLines2件・getMilestoneBandColor1件・computeMilestoneBands4件、
+#             ほか関連ケース含む）。既存281テストのうち261件は無変更で全通過（合計281テスト）。
+#             eslint新規0（baseline比較=36問題で完全一致）・tsc/build一発グリーン
+#      スコープ：デスクトップ GanttView のみ。GanttMobileView は元々日単位グリッドを持たず対象外
+#             （未変更・影響なし）
+#      DBマイグレ不要（フロントのみ・Milestoneに色フィールドは追加していない＝将来の個別色対応は
+#             getMilestoneBandColorの中身を変えるだけで済む設計にとどめた）
+#
+# 最終更新：2026-07-17（v2.40）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

@@ -26,6 +26,7 @@ import {
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, type ResizePreview,
+  computeWeekGridLines, computeMilestoneBands,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -206,6 +207,8 @@ export function GanttView({
   // ズームレベルに関わらずブロック数は月あたり4〜5個で一定のため、旧labelDaysのような
   // ズーム閾値によるDOM間引きは不要
   const weekBlocks = useMemo(() => computeWeekBlocks(days, dayWidth), [days, dayWidth]);
+  // 週コラムの淡いグリッド線のx座標（月初＝W1はborderDays側の太い境界線と重複するため対象外）
+  const weekGridLines = useMemo(() => computeWeekGridLines(weekBlocks), [weekBlocks]);
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -1419,6 +1422,19 @@ export function GanttView({
                 );
               })}
 
+              {/* 週コラムの淡いグリッド線（週境界＝W2〜W5開始日。月初=W1は上のborderDaysで太めに描画済み） */}
+              {weekGridLines.map(x => (
+                <div key={`wgl-${x}`} style={{
+                  position: "absolute", left: x,
+                  top: 0, bottom: 0, width: 0,
+                  borderLeft: "1px solid var(--color-border-secondary)",
+                  opacity: 0.35,
+                  pointerEvents: "none",
+                  zIndex: 1,
+                  boxSizing: "border-box",
+                }} />
+              ))}
+
               {/* 今日線 */}
               <div style={{
                 position: "absolute",
@@ -1596,9 +1612,23 @@ export function GanttView({
 
                 // このPJのマイルストーン
                 const pjMilestones = milestones.filter(ms => ms.project_id === pj.id);
+                // マイルストーンのある列を、このPJの行ブロック内だけ淡く塗る（下にスクロールしても
+                // 埋もれないようにする視認補助）。position:relativeのこのコンテナ自身の高さは
+                // 通常フローの子（PJ行＋タスク行）で自然に決まるため、top:0/bottom:0で高さいっぱいに広がる
+                const msBands = computeMilestoneBands(pjMilestones, rangeStart, dayWidth);
 
                 return (
-                  <div key={pj.id}>
+                  <div key={pj.id} style={{ position: "relative" }}>
+                    {/* zIndex:1＝行の背景（position:relativeだがz-index:auto）より確実に前面、
+                        タスクバー本体（zIndex:2）より確実に背面、という関係を明示的に固定する */}
+                    {msBands.map(band => (
+                      <div key={`msband-${band.x}`} style={{
+                        position: "absolute", left: band.x, width: dayWidth,
+                        top: 0, bottom: 0,
+                        background: band.color, opacity: 0.12,
+                        zIndex: 1, pointerEvents: "none",
+                      }} />
+                    ))}
                     {/* PJ行 */}
                     <div style={{
                       height: 36, position: "relative",
