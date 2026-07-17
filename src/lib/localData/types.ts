@@ -186,6 +186,10 @@ export interface Task {
   tags?: string[];
   /** メンション通知の確定スナップショット。モーダルを閉じたときだけ更新。useMentionNotifications がこれを監視する（migration 20260608） */
   finalized_mentions?: string[];
+  /** 当初計画の開始日（B4：ベースライン差分）。start_date/due_dateが初めて両方揃った時点で凍結、以後は自動更新しない */
+  baseline_start_date?: string | null;
+  /** 当初計画の期日（B4：ベースライン差分）。start_date/due_dateが初めて両方揃った時点で凍結、以後は自動更新しない */
+  baseline_due_date?: string | null;
 }
 
 export interface Milestone {

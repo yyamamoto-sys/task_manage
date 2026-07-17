@@ -16,6 +16,7 @@ import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { getIncompletePredecessors, formatBlockerNames } from "../../lib/dependencies/gate";
 import { todayStr, formatMD, diffDaysFromToday } from "../../lib/date";
+import { computeDelayDays, formatDelayLabel } from "../gantt/ganttUtils";
 import { Avatar } from "../auth/UserSelectScreen";
 import { EmptyState } from "../common/EmptyState";
 
@@ -232,6 +233,7 @@ function MemberTaskRow({
 }) {
   const statusStyle = TASK_STATUS_STYLE[task.status];
   const diff = task.due_date ? diffDaysFromToday(task.due_date) : null;
+  const delayLabel = formatDelayLabel(computeDelayDays(task));
 
   return (
     <div
@@ -254,6 +256,18 @@ function MemberTaskRow({
       }}>
         {task.name}
       </span>
+      {delayLabel && (
+        <span
+          title="当初計画（ベースライン）比"
+          style={{
+            fontSize: "9px", padding: "1px 6px", borderRadius: "var(--radius-full)", flexShrink: 0,
+            background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)",
+            border: "1px solid var(--color-border-primary)", fontWeight: 500,
+          }}
+        >
+          {delayLabel}（当初比）
+        </span>
+      )}
       {blockers.length > 0 && (
         <span
           title={`先行未完了：${formatBlockerNames(blockers)}`}

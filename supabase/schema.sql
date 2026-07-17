@@ -227,6 +227,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS display_order integer NOT NULL DEFAUL
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS finalized_mentions text[] NOT NULL DEFAULT '{}';  -- migration 20260608
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);  -- migration 20260626_add_multitenancy.sql
 UPDATE tasks SET group_id = 'grp-egg' WHERE group_id IS NULL;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS baseline_start_date date;  -- migration 20260717b_add_task_baseline.sql（B4）
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS baseline_due_date date;    -- migration 20260717b_add_task_baseline.sql（B4）
 
 -- ===== Task ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS task_task_forces (

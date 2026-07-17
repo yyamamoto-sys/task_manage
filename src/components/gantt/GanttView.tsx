@@ -23,6 +23,7 @@ import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
+  calcGhostBar, computeDelayDays, formatDelayLabel,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -596,6 +597,27 @@ export function GanttView({
     });
   }, []);
 
+  // ===== ベースライン（当初計画）差分表示（B4） =====
+  const [showBaseline, setShowBaseline] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.GANTT_SHOW_BASELINE) !== "0"; } catch { return true; }
+  });
+  const toggleShowBaseline = useCallback(() => {
+    setShowBaseline(prev => {
+      const next = !prev;
+      try { localStorage.setItem(KEYS.GANTT_SHOW_BASELINE, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  // タスクのゴーストバー座標＋遅延ラベルをまとめて算出する。実バーと座標が完全一致するときは
+  // ゴーストバーを描かない（重なって見えないだけの要素を増やさない）
+  const getBaselineRender = useCallback((task: Task, bar: { barX: number; barWidth: number } | null) => {
+    if (isPreview || !showBaseline) return { ghostBar: null, delayLabel: null, isDelayed: false };
+    const rawGhost = calcGhostBar(task, rangeStart, dayWidth);
+    const ghostBar = rawGhost && bar && rawGhost.barX === bar.barX && rawGhost.barWidth === bar.barWidth ? null : rawGhost;
+    const delayDays = computeDelayDays(task);
+    return { ghostBar, delayLabel: formatDelayLabel(delayDays), isDelayed: (delayDays ?? 0) > 0 };
+  }, [isPreview, showBaseline, rangeStart, dayWidth]);
+
   const scopedTaskDependencies = useAppStore(selectScopedTaskDependencies);
   // 「相手が画面外か」の判定は mineOnly/krTaskIds 等の表示フィルタより広いスコープで行う必要がある
   // （フィルタで除外されたタスクも「存在はする＝画面外バッジ対象」であり、「削除済み＝対象外」とは区別する）
@@ -775,6 +797,20 @@ export function GanttView({
               fontWeight: showDepArrows ? "600" : "400",
             }}
           >🔗依存</button>
+        )}
+        {/* ベースライン表示トグル（B4） */}
+        {!isPreview && (
+          <button
+            onClick={toggleShowBaseline}
+            title={showBaseline ? "当初計画（ベースライン）を隠す" : "当初計画（ベースライン）を表示する"}
+            aria-pressed={showBaseline}
+            style={{
+              ...headerBtnStyle,
+              color: showBaseline ? "var(--color-brand)" : "var(--color-text-secondary)",
+              borderColor: showBaseline ? "var(--color-brand-border)" : "var(--color-border-primary)",
+              fontWeight: showBaseline ? "600" : "400",
+            }}
+          >▤ベースライン</button>
         )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
@@ -1303,6 +1339,7 @@ export function GanttView({
                             : `${due.getMonth()+1}/${due.getDate()}`) : "";
                           const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
                           const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+                          const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                           return (
                             <TaskBarRow
                               key={task.id}
@@ -1316,6 +1353,9 @@ export function GanttView({
                               isPreview={isPreview}
                               dateLabel={dateLabel}
                               tooltip={tooltip}
+                              ghostBar={ghostBar}
+                              delayLabel={delayLabel}
+                              isDelayed={isDelayed}
                               depBadgeLeftTitle={depBadgeLeft}
                               depBadgeRightTitle={depBadgeRight}
                               onEdit={handleRowEdit}
@@ -1441,6 +1481,7 @@ export function GanttView({
 
                       const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
                       const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+                      const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                       return (
                         <TaskBarRow
                           key={task.id}
@@ -1456,6 +1497,9 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
+                          ghostBar={ghostBar}
+                          delayLabel={delayLabel}
+                          isDelayed={isDelayed}
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           onEdit={handleRowEdit}
@@ -1506,6 +1550,7 @@ export function GanttView({
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
                       const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
                       const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+                      const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                       return (
                         <TaskBarRow
                           key={task.id}
@@ -1519,6 +1564,9 @@ export function GanttView({
                           isPreview={isPreview}
                           dateLabel={dateLabel}
                           tooltip={tooltip}
+                          ghostBar={ghostBar}
+                          delayLabel={delayLabel}
+                          isDelayed={isDelayed}
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           onEdit={handleRowEdit}

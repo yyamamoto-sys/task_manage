@@ -33,6 +33,12 @@ export interface TaskBarRowProps {
   depBadgeLeftTitle?: string;
   /** B2：依存の相手（後続）が画面外のとき表示するバッジのツールチップ文言。undefined なら非表示 */
   depBadgeRightTitle?: string;
+  /** B4：ベースライン（当初計画）の座標。null/undefined なら描かない。bar と同一位置なら描画側で渡さない運用 */
+  ghostBar?: { barX: number; barWidth: number } | null;
+  /** B4：遅延/前倒しラベル（例："遅延3日"）。null/undefined なら非表示 */
+  delayLabel?: string | null;
+  /** B4：delayLabel が遅延（正）か前倒し（負）か。色分けに使う */
+  isDelayed?: boolean;
   onEdit: (taskId: string) => void;
   onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
@@ -44,8 +50,13 @@ function TaskBarRowImpl({
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
+  ghostBar, delayLabel, isDelayed = false,
   onEdit, onResize, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
+  const rightEdge = Math.max(
+    bar ? bar.barX + bar.barWidth : -Infinity,
+    ghostBar ? ghostBar.barX + ghostBar.barWidth : -Infinity,
+  );
   return (
     // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -61,6 +72,24 @@ function TaskBarRowImpl({
         transition: "background 0.1s",
       }}
     >
+      {/* B4：ベースライン（当初計画）のゴーストバー。実バーより下の層（zIndex 1）に描く */}
+      {ghostBar && (
+        <div
+          title="当初計画（ベースライン）"
+          style={{
+            position: "absolute",
+            left: ghostBar.barX, top: "50%", transform: "translateY(-50%)",
+            width: ghostBar.barWidth, height: barHeight,
+            borderRadius,
+            background: "transparent",
+            border: "1.5px dashed var(--color-text-tertiary)",
+            opacity: 0.55,
+            zIndex: 1,
+            boxSizing: "border-box",
+            pointerEvents: "none",
+          }}
+        />
+      )}
       {bar && (
         <>
           <div
@@ -142,6 +171,19 @@ function TaskBarRowImpl({
           )}
         </>
       )}
+      {/* B4：遅延/前倒しラベル。バー・ゴーストバーどちらか右端の外側に小さく表示 */}
+      {delayLabel && rightEdge > -Infinity && (
+        <div
+          style={{
+            position: "absolute",
+            left: rightEdge + (depBadgeRightTitle ? 18 : 3),
+            top: "50%", transform: "translateY(-50%)",
+            fontSize: "9px", zIndex: 4, lineHeight: 1, whiteSpace: "nowrap",
+            pointerEvents: "none", fontWeight: isDelayed ? 600 : 400,
+            color: isDelayed ? "var(--color-text-danger)" : "var(--color-text-tertiary)",
+          }}
+        >{delayLabel}</div>
+      )}
     </div>
   );
 }
@@ -163,6 +205,10 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     prev.tooltip === next.tooltip &&
     prev.depBadgeLeftTitle === next.depBadgeLeftTitle &&
     prev.depBadgeRightTitle === next.depBadgeRightTitle &&
+    (prev.ghostBar?.barX ?? null) === (next.ghostBar?.barX ?? null) &&
+    (prev.ghostBar?.barWidth ?? null) === (next.ghostBar?.barWidth ?? null) &&
+    prev.delayLabel === next.delayLabel &&
+    prev.isDelayed === next.isDelayed &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onMouseEnter === next.onMouseEnter &&

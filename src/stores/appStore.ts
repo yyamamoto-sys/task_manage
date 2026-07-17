@@ -50,6 +50,7 @@ import {
 } from "../lib/supabase/store";
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
+import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 
 export interface AppState {
   // ===== データ =====
@@ -662,9 +663,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const taskToSave0: Task = task.group_id != null
       ? task
       : { ...task, group_id: get().currentGroupId ?? undefined };
+    // ===== ベースライン捕捉（B4）=====
+    // start_date・due_date が初めて両方揃った時点のスナップショットを凍結する。
+    // 一度セットされたら二度と自動上書きしない（resolveBaselineFieldsが判定）。
+    const baselineFields = resolveBaselineFields(existing, taskToSave0);
     // ステータスが done に変わった瞬間に completed_at をセット、外れたらクリア
     const taskToSave: Task = {
       ...taskToSave0,
+      ...baselineFields,
       completed_at:
         task.status === "done"
           ? (existing?.status === "done"

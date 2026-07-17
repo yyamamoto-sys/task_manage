@@ -342,7 +342,44 @@
 #             依存の整合性を保証できないため。GanttPreviewPanel は isPreview=true で呼ぶ既存挙動のまま）
 #      DBマイグレ不要（B1のtask_dependenciesテーブルをそのまま使用）
 #
-# 最終更新：2026-07-17（v2.31）
+# v2.32 feat: タスク依存関係 フェーズB4（ベースライン差分＝当初計画 vs 実際）を追加（2026-07-17）
+#      背景：B1（依存ゲート）・B2（ガント矢印）に続く段階リリースの3段目。B3（自動リスケ連鎖）は
+#             今回もスコープ外のまま。「当初いつ終わる予定だったか」と「実際どうなっているか」を
+#             両方見えるようにし、遅延の蓄積に気づけるようにする
+#      捕捉タイミング（確定設計）：タスクの start_date と due_date の**両方が初めて揃った時点**で
+#             baseline_start_date/baseline_due_date にその時の値を凍結する。以後は自動更新しない
+#             （一度setされたら二度と上書きしない。set後に日付をクリアしても凍結値は残る）。暦日計算
+#             （土日祝を飛ばさない）。手動での再ベースライン用UIは今回入れない（自動捕捉のみ）
+#      追加：tasks.baseline_start_date / baseline_due_date（nullable date列。
+#             migrations/20260717b_add_task_baseline.sql）。既存タスクで両日付が既に揃っている行は
+#             マイグレ適用時点の現在値をbaselineとしてバックフィル（＝以後の変更だけが遅延として計測される）
+#      追加：src/lib/baseline/baselineCapture.ts（resolveBaselineFields。既存のbaseline値と
+#             保存しようとしている候補の日付から「凍結すべきか／既存の凍結値を維持すべきか」を
+#             1箇所で判定する純粋関数）。__tests__に8テスト
+#      変更：appStore.saveTask（B1のゲートと同じ choke point）で保存直前に resolveBaselineFields を
+#             通す。全経路（インライン編集・モーダル・カンバン・AI提案の反映）でこの1箇所がカバーする
+#      追加：src/components/gantt/ganttUtils.ts に calcGhostBar（baseline日付を差し込んでcalcTaskBarを
+#             呼ぶだけ＝座標計算ロジックの二重化を避ける）・computeDelayDays（現在due−baseline due の
+#             暦日差。正=遅延・負=前倒し・null=ベースライン未凍結）・formatDelayLabel（「遅延◯日」/
+#             「◯日前倒し」/差分ゼロはnullで非表示）。__tests__に12テスト
+#      追加：GanttParts.tsx TaskBarRow に ghostBar/delayLabel/isDelayedの3プロップ。ゴーストバーは
+#             実バーより下の層（zIndex 1・破線アウトライン・opacity 0.55）に描き、実バーと座標が
+#             完全一致するときは呼び出し側が渡さない（重複要素を増やさない）。遅延ラベルはバー／
+#             ゴーストバーいずれか右端の外側に小さく表示（B2の⏱バッジと衝突しないようオフセット調整）
+#      追加：GanttView.tsx にツールバー「▤ベースライン」トグル（既定ON・localStorage
+#             KEYS.GANTT_SHOW_BASELINE・B2の「🔗依存」と同じ流儀）。PJ別/ToDo別/人別の3ビュー全てで
+#             baseline計算はタスク自身のbaseline_start_date/due_dateを使う（PJ別の親タスク行は子の
+#             最早〜最遅で実バーを合成するeffectiveTaskを使うが、baselineは親タスク自身の凍結値を使う
+#             ＝集計値と混同しない）
+#      追加（任意仕様）：MemberDetailPanel（ワークロードのメンバー詳細）の各タスク行に
+#             「遅延◯日（当初比）」バッジ。formatDelayLabel/computeDelayDaysをgantt/ganttUtilsから
+#             共有（新規の集計ロジックを増やさない）
+#      スコープ外（今回やらない）：自動リスケジュール（B3）・手動での再ベースラインUI・
+#             GanttMobileViewへのゴーストバー描画（対象外のまま。遅延テキストも今回は追加していない）
+#      DBマイグレ要：supabase/migrations/20260717b_add_task_baseline.sql をSupabase SQL Editorで
+#             手動適用（山本さん・prod/dev両方）。schema.sqlにも同一定義を反映済み（drift防止）
+#
+# 最終更新：2026-07-17（v2.32）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -736,7 +773,7 @@ interface Member {
 
 ---
 
-### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化・2026-07-17実装）
+### 3-6. タスク依存関係（B1：依存ゲート／B2：ガント矢印可視化／B4：ベースライン差分・2026-07-17実装）
 
 PMツール化の第二機能。任意の2タスク間の先行→後続関係（FS依存1種のみ）。親子関係（parent_task_id）
 とは完全に独立の別概念で、UI上も別ブロックとして表示する（混同させないことが重要なUX要件）。
@@ -777,8 +814,20 @@ interface TaskDependency {
 接続する矢印だけ強調。ツールバーの「🔗依存」トグル（既定ON・`KEYS.GANTT_SHOW_DEPS`）で表示/非表示
 切替可。`GanttMobileView`とAI提案プレビュー（`isPreview`）は対象外。
 
-**B1/B2のスコープ外（次フェーズ）**：遅延時の自動リスケジュール連鎖（B3）・ベースライン記録＋
-ガントのゴーストバー差分表示（B4）。`baseline_start_date`/`baseline_due_date`列はまだ存在しない。
+**B4：ベースライン差分（当初計画 vs 実際）**：`tasks.baseline_start_date`/`baseline_due_date`
+（nullable date列）。捕捉タイミングは「`start_date`・`due_date`が初めて両方揃った時点」の1回のみ。
+`src/lib/baseline/baselineCapture.ts`の`resolveBaselineFields`（純粋関数）が「凍結すべきか／既存の
+凍結値を維持すべきか」を判定し、`appStore.saveTask`（B1と同じ choke point）から呼ぶ。一度セットされ
+たら二度と自動上書きしない（日付をクリアしても凍結値は残る）。暦日計算（土日祝を飛ばさない）。既存
+タスクで両日付が既に揃っている行はマイグレ適用時点の値をバックフィル済み（＝以後の変更だけが遅延と
+して計測される）。可視化は`src/components/gantt/ganttUtils.ts`の`calcGhostBar`（baseline日付を差し
+込んで`calcTaskBar`を呼ぶだけ）・`computeDelayDays`（暦日差。正=遅延・負=前倒し）・
+`formatDelayLabel`。ガントの`TaskBarRow`が薄い破線アウトラインのゴーストバー（実バーより下の層）と
+「遅延◯日」/「◯日前倒し」ラベルを描画。ツールバーの「▤ベースライン」トグル（既定ON・
+`KEYS.GANTT_SHOW_BASELINE`）で表示/非表示切替可。`GanttMobileView`は対象外。手動での再ベースラインUI
+は無い（自動捕捉のみ）。
+
+**B1/B2/B4のスコープ外（次フェーズ）**：遅延時の自動リスケジュール連鎖（B3）のみ。
 
 ---
 
