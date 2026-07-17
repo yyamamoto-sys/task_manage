@@ -14,7 +14,7 @@
 // - ソートは display_order ?? 0
 // したがってフラットなデータでは「葉=全タスク」となり、進捗集計は従来と完全一致する。
 
-import type { Task } from "./localData/types";
+import type { Task, TaskDependency } from "./localData/types";
 import { calcProgressPct } from "./stats";
 
 /** display_order（未設定は0）→ created_at の昇順で安定ソートする内部ヘルパー */
@@ -25,11 +25,113 @@ function sortByOrder(a: Task, b: Task): number {
   return (a.created_at ?? "").localeCompare(b.created_at ?? "");
 }
 
-/** parentId の非削除の子（display_order→created_at 順） */
-export function childrenOf(tasks: Task[], parentId: string): Task[] {
-  return tasks
+/**
+ * parentId の非削除の子（display_order→created_at 順）。
+ * dependencies を渡すと、同じ親を共有する子同士に限り依存関係順（先行→後続）で
+ * 並べ替える（orderSiblingsWithDependencies 参照）。渡さない場合は従来どおり
+ * display_order 順のみ（既存呼び出しへの後方互換）。
+ */
+export function childrenOf(tasks: Task[], parentId: string, dependencies?: TaskDependency[]): Task[] {
+  const base = tasks
     .filter(t => !t.is_deleted && t.parent_task_id === parentId)
     .sort(sortByOrder);
+  return dependencies ? orderSiblingsWithDependencies(base, dependencies) : base;
+}
+
+/**
+ * 同じ親を共有する兄弟タスク配列を、依存関係（先行タスク→後続タスク）を考慮して
+ * 安定トポロジカルソートで並べ替える純粋関数。
+ *
+ * 【並び順ルール】
+ * - 先行タスクは必ず後続タスクより上（チェーン A→B→C・複数先行も対応）
+ * - 依存で縛られていない兄弟同士は、渡された children の並び（呼び出し側の
+ *   sortByOrder / 日付順等、既存の並び順）をそのまま保つ（＝安定ソート）
+ * - dependencies は「先行・後続の両方が children に含まれるペア」のみを制約として使う。
+ *   片方でも children に含まれないエッジ（親をまたぐ依存・別グループの子）は無視する。
+ *   呼び出し側は「同じ親を持つ子だけの配列」を渡す前提（childrenOf 等がこれを担保する）
+ * - 論理削除された依存（is_deleted）は無視する
+ *
+ * 【アルゴリズム】Kahn法のトポロジカルソートを、「まだ出力しておらず入次数0のノードのうち
+ * children 配列で最も手前にあるもの」を毎回選ぶ方式にすることで、制約の無い部分は
+ * 元の並び順をそのまま保つ「安定」トポロジカルソートになる。
+ *
+ * 【循環フォールバック】B1（cycleCheck.ts）で新規追加時の循環は防止済みのため通常は
+ * 起こらないが、万一トポロジカルソートが完結しない（循環が残っている）場合は例外を
+ * 投げず、渡された children の並び（＝呼び出し側の display_order 順）をそのまま返す。
+ */
+export function orderSiblingsWithDependencies(
+  children: Task[],
+  dependencies: TaskDependency[],
+): Task[] {
+  if (children.length < 2) return children;
+
+  const ids = children.map(t => t.id);
+  const indexSet = new Set(ids);
+  const outEdges = new Map<string, Set<string>>();
+  const inDegree = new Map<string, number>(ids.map(id => [id, 0]));
+
+  for (const d of dependencies) {
+    if (d.is_deleted) continue;
+    const from = d.predecessor_task_id;
+    const to = d.successor_task_id;
+    if (from === to) continue;
+    if (!indexSet.has(from) || !indexSet.has(to)) continue; // 親をまたぐ／範囲外のエッジは無視
+    const set = outEdges.get(from) ?? new Set<string>();
+    if (!set.has(to)) {
+      set.add(to);
+      outEdges.set(from, set);
+      inDegree.set(to, (inDegree.get(to) ?? 0) + 1);
+    }
+  }
+
+  const remaining = new Set(ids);
+  const resultIds: string[] = [];
+  while (remaining.size > 0) {
+    let picked: string | null = null;
+    for (const id of ids) {
+      if (remaining.has(id) && (inDegree.get(id) ?? 0) === 0) { picked = id; break; }
+    }
+    if (picked === null) {
+      // 循環が残っていて解けない：クラッシュさせず display_order（元の並び）にフォールバック
+      return children;
+    }
+    resultIds.push(picked);
+    remaining.delete(picked);
+    for (const succ of outEdges.get(picked) ?? []) {
+      if (remaining.has(succ)) inDegree.set(succ, (inDegree.get(succ) ?? 0) - 1);
+    }
+  }
+
+  const taskById = new Map(children.map(t => [t.id, t]));
+  return resultIds.map(id => taskById.get(id)!);
+}
+
+/**
+ * 親子が混在するフラットなタスク配列（例：担当者別・ToDo別に集めた一覧。GanttView人別ビュー・
+ * GanttMobileView等）で、同じ parent_task_id を共有する要素同士の相対順序だけを
+ * orderSiblingsWithDependencies で並べ替える。全体の並び（親タスクの位置・他の親の子との
+ * 相対位置）は変えない。parent_task_id を持たないタスク（最上位）は対象外＝そのままの位置を保つ。
+ */
+export function applyDependencyOrderWithinSiblings(
+  list: Task[],
+  dependencies: TaskDependency[],
+): Task[] {
+  const groups = new Map<string, number[]>();
+  list.forEach((t, i) => {
+    if (!t.parent_task_id) return;
+    const arr = groups.get(t.parent_task_id) ?? [];
+    arr.push(i);
+    groups.set(t.parent_task_id, arr);
+  });
+  if (groups.size === 0) return list;
+  const result = list.slice();
+  for (const indices of groups.values()) {
+    if (indices.length < 2) continue;
+    const subset = indices.map(i => list[i]);
+    const reordered = orderSiblingsWithDependencies(subset, dependencies);
+    indices.forEach((idx, k) => { result[idx] = reordered[k]; });
+  }
+  return result;
 }
 
 /**

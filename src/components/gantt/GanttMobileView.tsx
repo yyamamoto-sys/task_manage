@@ -1,12 +1,13 @@
 // src/components/gantt/GanttMobileView.tsx
 // モバイル向けガント代替ビュー（縦スクロールカードリスト）
 
-import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo, Milestone, TaskDependency } from "../../lib/localData/types";
 import { toDateStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
+import { applyDependencyOrderWithinSiblings } from "../../lib/taskHierarchy";
 
 interface GanttMobileViewProps {
   today: Date;
@@ -19,6 +20,8 @@ interface GanttMobileViewProps {
   milestones: Milestone[];
   projectById: Map<string, Project>;
   sortTasks: (tasks: Task[]) => Task[];
+  /** 同じ親を共有するタスク同士の並びに依存関係順を適用するため（表示のみ・非破壊） */
+  taskDependencies: TaskDependency[];
   previewChangedTaskIds?: Set<string>;
   isPreview?: boolean;
   editingTaskId: string | null;
@@ -35,7 +38,7 @@ interface GanttMobileViewProps {
 export function GanttMobileView({
   today, viewMode, setViewMode,
   visibleProjects, allTasks, todoGroups, personGroups, milestones,
-  projectById, sortTasks,
+  projectById, sortTasks, taskDependencies,
   previewChangedTaskIds, isPreview,
   editingTaskId, setEditingTaskId,
   mineOnly, selectedProject, krTaskIds, currentUser,
@@ -118,7 +121,10 @@ export function GanttMobileView({
     ? visibleProjects
         .map(pj => ({
           pj,
-          tasks: sortTasks(allTasks.filter(t => t.project_id === pj.id)),
+          tasks: applyDependencyOrderWithinSiblings(
+            sortTasks(allTasks.filter(t => t.project_id === pj.id)),
+            taskDependencies,
+          ),
           msList: milestones
             .filter(ms => ms.project_id === pj.id)
             .sort((a, b) => (a.date < b.date ? -1 : 1)),
@@ -199,7 +205,7 @@ export function GanttMobileView({
             {todoGroups.map(g => (
               <div key={g.todoId}>
                 {groupHeader("var(--color-text-tertiary)", g.todo?.title ?? "(ToDo)", g.tasks.length)}
-                {sortTasks(g.tasks).map(renderCard)}
+                {applyDependencyOrderWithinSiblings(sortTasks(g.tasks), taskDependencies).map(renderCard)}
               </div>
             ))}
           </>

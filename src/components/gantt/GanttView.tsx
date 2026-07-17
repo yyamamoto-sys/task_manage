@@ -35,6 +35,7 @@ import {
 } from "./ganttDependencyArrows";
 import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/linkDirection";
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
+import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings } from "../../lib/taskHierarchy";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -80,6 +81,9 @@ export function GanttView({
   const rawMilestones = useAppStore(s => s.milestones);
   const saveTask      = useAppStore(s => s.saveTask);
   const saveProject   = useAppStore(s => s.saveProject);
+  // 兄弟タスクの依存関係順ソート（orderTasksHierarchically 等）に使う。B2の矢印描画（下記 logicalDeps）
+  // より前で必要なため、purposely ここで先に取得する
+  const scopedTaskDependencies = useAppStore(selectScopedTaskDependencies);
   const milestones = useMemo(
     () => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted),
     [rawMilestones],
@@ -248,6 +252,9 @@ export function GanttView({
   // 親子（PJ>大>小）を「親→その子」の順に並べ、各行の depth と子件数を付与する。
   // ラベル列とバー列の両方でこれを使うことで、子タスクを親の直下にインデント表示しつつ
   // 2つのループの行順・行数を完全一致させる（ずれ防止）。親がこの集合に居ない子は最上位扱い。
+  // 子（同じ親を共有する兄弟）の並びは、依存関係が張られていれば依存順（先行→後続）が
+  // 日付/名前ソートより優先される（orderSiblingsWithDependencies。表示のみの非破壊処理・
+  // 依存が無いペアは sortTasks の並びをそのまま保つ）。トップレベルの並びは変えない。
   const orderTasksHierarchically = useCallback((tasks: Task[]): { task: Task; depth: number; childCount: number }[] => {
     const ids = new Set(tasks.map(t => t.id));
     const childrenByParent = new Map<string, Task[]>();
@@ -265,10 +272,12 @@ export function GanttView({
     for (const top of sortTasks(tops)) {
       const kids = childrenByParent.get(top.id) ?? [];
       result.push({ task: top, depth: 0, childCount: kids.length });
-      for (const c of sortTasks(kids)) result.push({ task: c, depth: 1, childCount: 0 });
+      for (const c of orderSiblingsWithDependencies(sortTasks(kids), scopedTaskDependencies)) {
+        result.push({ task: c, depth: 1, childCount: 0 });
+      }
     }
     return result;
-  }, [sortTasks]);
+  }, [sortTasks, scopedTaskDependencies]);
 
   // 各親タスクの実効期間：子タスクの最早 start_date〜最遅 due_date を計算する。
   // ガントのバー描画でこれを使い、親バーが常に子の範囲を包むように表示する（DB は変更しない）。
@@ -307,6 +316,17 @@ export function GanttView({
     return map;
   }, [visibleProjects, allTasks, orderTasksHierarchically]);
 
+  // ToDoグループごとのソート済みタスク（ラベル列・バー列の両方で共有。pjOrderedTasksMapと同じ理由で
+  // 二重計算を避ける）。同じ親を共有するタスク同士は依存関係順を優先する
+  // （applyDependencyOrderWithinSiblings＝親を持たないタスクの位置は変えない）
+  const todoGroupSortedMap = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const g of todoGroups) {
+      map.set(g.todoId, applyDependencyOrderWithinSiblings(sortTasks(g.tasks), scopedTaskDependencies));
+    }
+    return map;
+  }, [todoGroups, sortTasks, scopedTaskDependencies]);
+
   // 子を持つ親タスクIDの一覧（全折りたたみ/全展開の対象）
   const parentTaskIds = useMemo(() => {
     const childParentIds = new Set(
@@ -324,15 +344,20 @@ export function GanttView({
   // ビューモード（PJ別 / 人別）
   const [viewMode, setViewMode] = useState<"pj" | "person">("pj");
 
-  // 人別ビュー用データ：担当者ごとにタスクをグループ化
+  // 人別ビュー用データ：担当者ごとにタスクをグループ化。
+  // 同じ親を共有するタスク同士が同じ担当者一覧に並ぶ場合は、依存関係順を優先する
+  // （applyDependencyOrderWithinSiblings＝親を持たないタスクの位置は変えない）。
   const personGroups = useMemo(() => {
     return members
       .map(m => {
-        const tasks = sortTasks(allTasks.filter(t => isAssignedTo(t, m.id)));
+        const tasks = applyDependencyOrderWithinSiblings(
+          sortTasks(allTasks.filter(t => isAssignedTo(t, m.id))),
+          scopedTaskDependencies,
+        );
         return { member: m, tasks };
       })
       .filter(g => g.tasks.length > 0);
-  }, [members, allTasks, sortTasks]);
+  }, [members, allTasks, sortTasks, scopedTaskDependencies]);
 
   // 全開・全閉（PJ / ToDo グループ / 人別グループすべて対象）
   const expandAll  = () => setCollapsed({});
@@ -647,7 +672,6 @@ export function GanttView({
     return { ghostBar, delayLabel: formatDelayLabel(delayDays), isDelayed: (delayDays ?? 0) > 0 };
   }, [isPreview, showBaseline, rangeStart, dayWidth]);
 
-  const scopedTaskDependencies = useAppStore(selectScopedTaskDependencies);
   // 「相手が画面外か」の判定は mineOnly/krTaskIds 等の表示フィルタより広いスコープで行う必要がある
   // （フィルタで除外されたタスクも「存在はする＝画面外バッジ対象」であり、「削除済み＝対象外」とは区別する）
   const activeTaskById = useMemo(() => new Map(active(rawTasks).map(t => [t.id, t])), [rawTasks]);
@@ -862,6 +886,7 @@ export function GanttView({
         milestones={milestones}
         projectById={projectById}
         sortTasks={sortTasks}
+        taskDependencies={scopedTaskDependencies}
         previewChangedTaskIds={previewChangedTaskIds}
         isPreview={isPreview}
         editingTaskId={editingTaskId}
@@ -1182,7 +1207,7 @@ export function GanttView({
                 {/* ToDo系タスクグループ（ラベル） */}
                 {todoGroups.map(({ todo, todoId, tasks }) => {
                   const isCollapsed = collapsed[`todo_${todoId}`];
-                  const sortedTasks = sortTasks(tasks);
+                  const sortedTasks = todoGroupSortedMap.get(todoId) ?? sortTasks(tasks);
                   return (
                     <div key={todoId}>
                       <div style={{
@@ -1700,7 +1725,7 @@ export function GanttView({
               {/* ToDo系タスクグループ（バー）— PJ別ビューのみ */}
               {viewMode === "pj" && todoGroups.map(({ todoId, tasks }) => {
                 const isCollapsed = collapsed[`todo_${todoId}`];
-                const sortedTasks = sortTasks(tasks);
+                const sortedTasks = todoGroupSortedMap.get(todoId) ?? sortTasks(tasks);
                 const done = tasks.filter(t => t.status === "done").length;
                 const pct  = tasks.length > 0 ? done / tasks.length : 0;
                 return (

@@ -562,7 +562,46 @@
 #             eslint新規0（baseline比較=36問題で完全一致）・tsc/build一発グリーン
 #      DBマイグレ不要（フロントのみの変更）
 #
-# 最終更新：2026-07-17（v2.38）
+# v2.39 feat: 依存関係を作成したタスクを、同じ親タスク内で依存関係順（先行→後続）に上下並べる（2026-07-17）
+#      背景：B1（依存モデル・完了ゲート）は先行未完了での完了をブロックするが、画面上の並び順は
+#             従来どおり display_order／日付順のままだった。「先行タスクが画面でも上に来る」という
+#             見た目の直感と実際の制約を一致させたいという要望
+#      並び順ルール（確定設計）：同じ親タスクの子同士に限り、依存関係（先行→後続）を最優先の順序とし、
+#             依存で縛られていない兄弟同士は既存の並び（display_order・日付順等）をそのまま保つ
+#             「安定トポロジカルソート」。チェーン（A→B→C）・複数先行（全先行より後続が下）にも対応。
+#             親をまたぐ依存エッジ・トップレベルタスクの並びは対象外（今回変えない）。表示のみの
+#             非破壊処理（display_order 自体は書き換えない・都度描画時に計算）。循環（B1で防止済みだが
+#             念のための防御）が残っている場合は例外を投げず display_order（渡された元の並び）へ
+#             フォールバックする
+#      追加：src/lib/taskHierarchy.ts に orderSiblingsWithDependencies（同じ親の兄弟配列＋依存配列→
+#             安定トポロジカルソート済み配列を返す純粋関数。Kahn法を「入次数0のノードのうち元の並びで
+#             最も手前のものを毎回選ぶ」方式にすることで安定性を実現）・
+#             applyDependencyOrderWithinSiblings（親子混在のフラット配列で、同じparent_task_idを
+#             共有する要素同士の相対順序だけを並べ替え、他要素の位置・トップレベルの位置は変えない。
+#             GanttView人別ビュー・ToDo別ビュー・GanttMobileViewの「親子混在の1本のリスト」向け）
+#      変更：childrenOf(tasks, parentId, dependencies?) に第3引数を追加（省略時は従来どおり
+#             display_order順のみ＝既存呼び出し全箇所は無変更で後方互換）。ListView（PJ別ツリー表示の
+#             子差し込み箇所）はこの第3引数にスコープ済みtask_dependenciesを渡す形に変更
+#      変更：GanttView.tsx の orderTasksHierarchically（PJ別ビューの親子並び。ラベル列・バー列で
+#             共有する唯一の並び順計算）で、子（kids）をsortTasksした後にorderSiblingsWithDependencies
+#             を通す。人別ビュー（personGroups）・ToDo別ビュー（新設のtodoGroupSortedMapで
+#             ラベル列・バー列を統一・二重計算を解消）にもapplyDependencyOrderWithinSiblingsを適用。
+#             GanttMobileViewにも新規propとしてtaskDependenciesを渡し、PJ別・ToDo別の各タスク一覧に
+#             同じ関数を適用（人別ビューはGanttViewから並べ替え済みのpersonGroupsをそのまま受け取るため
+#             追加対応不要）
+#      対象外：TaskSidePanelのchildrenOf呼び出し（子の有無判定のみで表示順に影響しないため変更なし）・
+#             カンバン（列＝ステータスの横並びで縦の親子並びではないため対象外）
+#      仕様として明記：表示のみの安定トポロジカルソートのため、依存で縛られたペアは常に依存順が勝つ
+#             （後続を先行の上へドラッグしても再描画で依存順に戻る＝意図した挙動）。依存の無いタスク
+#             同士の手動ドラッグ並べ替え（ListViewのdisplay_order）は従来どおり効く
+#      テスト：src/lib/__tests__/taskHierarchy.test.ts に13テスト追加（orderSiblingsWithDependencies
+#             9件＝先行が上/チェーン/安定性/混在/親またぎ無視/循環フォールバック/複数先行/論理削除依存
+#             無視/0-1件・childrenOfの依存引数2件・applyDependencyOrderWithinSiblings2件）。
+#             既存261テストも全通過（合計274テスト）。eslint新規0（baseline比較=36問題で完全一致）・
+#             tsc/build一発グリーン
+#      DBマイグレ不要（表示ロジックのみ・既存task_dependenciesをそのまま使用）
+#
+# 最終更新：2026-07-17（v2.39）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

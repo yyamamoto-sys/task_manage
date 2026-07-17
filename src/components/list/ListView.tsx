@@ -1,6 +1,6 @@
 // src/components/list/ListView.tsx
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
@@ -83,6 +83,7 @@ function lsSet(field: string, value: unknown) {
 
 export function ListView({ currentUser, selectedProject, projects, krTaskIds, mineOnly = false }: Props) {
   const rawTasks   = useAppStore(selectScopedTasks);
+  const taskDependencies = useAppStore(selectScopedTaskDependencies);
   const rawMembers = useAppStore(s => s.members);
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
@@ -526,7 +527,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       rows.push({ task: parent, depth: 0, isParent: childrenHere });
       // 子（フィルタ後に表示対象として残っているもののみ）を display_order 順で差し込む
       if (childrenHere && !collapsedIds.has(parent.id)) {
-        for (const c of childrenOf(filteredTasks, parent.id)) {
+        for (const c of childrenOf(filteredTasks, parent.id, taskDependencies)) {
           if (idsInGroup.has(c.id)) {
             rows.push({ task: c, depth: 1, isParent: false });
           }
@@ -534,7 +535,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       }
     }
     return rows;
-  }, [nestTree, parentNameOf, filteredTasks, collapsedIds]);
+  }, [nestTree, parentNameOf, filteredTasks, collapsedIds, taskDependencies]);
 
   // buildRows() は isParentTask/childrenOf を親タスクごとに呼ぶため実質 O(件数²)。
   // ドラッグ中は dropZone が高頻度（ほぼ毎フレーム）で更新されるため、buildRows を
