@@ -31,6 +31,15 @@ export interface MemberWorkloadRow {
 }
 
 /**
+ * 指定メンバーの現在アクティブ（todo/in_progress）なタスク一覧を返す。
+ * computeMemberWorkloadRows と同じ判定基準（is_deleted除外・done除外）を共有する単一の真実源。
+ * ワークロード画面のメンバー詳細パネル（ドリルダウン）が実タスクを表示する際に使う。
+ */
+export function getMemberActiveTasks(memberId: string, tasks: Task[]): Task[] {
+  return tasks.filter(t => !t.is_deleted && t.status !== "done" && getAssigneeIds(t).includes(memberId));
+}
+
+/**
  * メンバーごとのタスク負荷を集計する（純粋関数）。
  * done のタスクは集計対象外。1つのタスクに複数担当者がいる場合は各担当者の負荷に
  * 個別に積む（担当を分担しているわけではなく、全員がそのタスクを負っているとみなす）。
@@ -38,8 +47,7 @@ export interface MemberWorkloadRow {
 export function computeMemberWorkloadRows(members: Member[], tasks: Task[]): MemberWorkloadRow[] {
   const today = todayStr();
   return active(members).map(m => {
-    const myTasks = tasks.filter(t => !t.is_deleted && getAssigneeIds(t).includes(m.id));
-    const activeTasks = myTasks.filter(t => t.status !== "done");
+    const activeTasks = getMemberActiveTasks(m.id, tasks);
     const withEstimate = activeTasks.filter(t => t.estimated_hours != null);
     const withoutEstimate = activeTasks.filter(t => t.estimated_hours == null);
     const totalHours = withEstimate.length > 0

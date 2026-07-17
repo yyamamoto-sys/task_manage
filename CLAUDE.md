@@ -283,8 +283,31 @@
 #             作る組み合わせ・選択済みを除外。後続タスク（このタスクを待っているタスク）も読み取り専用で表示
 #      DBマイグレ要：supabase/migrations/20260717_add_task_dependencies.sql をSupabase SQL Editorで
 #             手動適用（山本さん）。schema.sqlにも同一定義を反映済み（drift防止）
+# v2.30 feat: ワークロードビューにメンバー行のドリルダウン（状況詳細パネル）を追加（2026-07-17）
+#      背景：v2.28で追加したワークロードビューは負荷の一覧表示のみで、「誰が何を抱えているか」
+#             の中身を見るには結局リストビュー等を開き直す必要があった。山本さんの実需
+#             「ワークロード画面の中で人をクリックすると、その人の状況詳細が確認できるようにしたい」
+#      追加：src/lib/workload/computeWorkload.ts に getMemberActiveTasks（メンバーの現在アクティブ
+#             タスク一覧を返す）を追加。computeMemberWorkloadRows 内の集計もこの関数経由に統一
+#             （件数集計と詳細パネルの中身が乖離しない単一の真実源）。既存6テスト・回帰なし
+#      追加：src/components/workload/MemberDetailPanel.tsx（新規）。TaskSidePanel（List/Gantt/Kanban
+#             共通の右サイドパネル）と同じ視覚言語（animate-side-panel-in）をデスクトップで採用し、
+#             モバイルはMainLayoutのラボボトムシートと同型（animate-overlay背景＋panel-slide-up本体）
+#             に切り替える完全レスポンシブ設計。ヘッダー（アバター・氏名・管理者/全社スーパー管理者
+#             バッジ）・サマリー（未着手/進行中内訳・期限超過件数・工数合計）・タスク一覧（PJ別
+#             グルーピング、期限超過のPJ/タスクを上に並べ替え＋赤強調）で構成
+#      追加（任意仕様・B1連携）：各タスク行に、B1（task_dependencies）で先行未完了のタスクがある
+#             場合「⏳先行未完了」バッジを表示（getIncompletePredecessors流用。ホバーで先行タスク名）。
+#             判定は必ずPJ絞り込み前の全スコープタスク（allTasks）で行う（PJ絞り込みで先行タスクが
+#             除外されるとブロック判定を誤るため、詳細パネル表示用のtasksとは別に受け取る）
+#      変更：WorkloadView の各メンバー行をクリック可能に（role="button"・tabIndex・onKeyDown で
+#             Enter/Space対応）。クリックでMemberDetailPanelを開き、行のPJ絞り込み（pjFilter）は
+#             パネルの中身にもそのまま適用される（同じfilteredTasksを渡すため一覧の件数と一致する）。
+#             各タスク行のクリックは MainLayout の aiEditTaskId（onOpenTask props経由）に委譲し、
+#             既存の TaskEditModal をそのまま開く（DashboardViewと同じ配線パターン）
+#      DBマイグレ不要（既存フィールド・既存テーブルのみ使用）
 #
-# 最終更新：2026-07-17（v2.29）
+# 最終更新：2026-07-17（v2.30）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -1188,7 +1211,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-17（v2.29）
+- 最終更新：2026-07-17（v2.30）
 
 ---
 
