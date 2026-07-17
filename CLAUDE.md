@@ -379,7 +379,22 @@
 #      DBマイグレ要：supabase/migrations/20260717b_add_task_baseline.sql をSupabase SQL Editorで
 #             手動適用（山本さん・prod/dev両方）。schema.sqlにも同一定義を反映済み（drift防止）
 #
-# 最終更新：2026-07-17（v2.32）
+# v2.33 fix: エラー履歴パネルがマウス操作を一切受け付けない不具合を修正（2026-07-17）
+#      原因：globals.css で body { pointer-events: none }・#root { pointer-events: auto }
+#             というグローバル設定（アプリ外周の余白帯のクリック透過対策）があるところ、
+#             ErrorBar.tsx の HistoryPanel（履歴パネル）が createPortal(..., document.body) で
+#             #root の外・body直下に描画されており、オーバーレイdiv・パネル本体divの両方に
+#             pointerEvents:"auto" が設定されていなかったため、body の none を打ち消せず
+#             パネル全体（背景クリック閉じ・全コピー/クリア/×/各行コピー）が操作不能だった
+#      修正：HistoryPanel のオーバーレイdivとパネル本体divに pointerEvents: "auto" を追加
+#      横展開調査：createPortal(..., document.body) を使う他の箇所（CustomSelect・
+#             MentionTextarea・ConsultationPanel経由のGanttPreviewPanel）を全数確認。
+#             CustomSelect・MentionTextaraは既に pointerEvents:"auto" を持っていたが、
+#             GanttPreviewPanel（AI提案のガントプレビュー。ConsultationPanelがbody直下に
+#             portalする）に同じ漏れを発見・同様に修正（ルートdivに pointerEvents: "auto" 追加）
+#      DBマイグレ不要（CSSプロパティの修正のみ）
+#
+# 最終更新：2026-07-17（v2.33）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -1304,7 +1319,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-17（v2.31）
+- 最終更新：2026-07-17（v2.33）
 
 ---
 

@@ -91,6 +91,7 @@ export function GanttPreviewPanel({
         flexDirection: "column",
         transform: visible ? "translateY(0)" : "translateY(100%)",
         transition: "transform 0.3s ease",
+        pointerEvents: "auto",
       }}
     >
       {/* 上半分：現在のガント */}

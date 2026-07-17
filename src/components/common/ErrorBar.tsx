@@ -102,6 +102,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
         style={{
           position: "fixed", inset: 0, zIndex: 8990,
           background: "rgba(0,0,0,0.3)",
+          pointerEvents: "auto",
         }}
       />
       {/* パネル */}
@@ -116,6 +117,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
         borderRadius: "8px",
         boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
         overflow: "hidden",
+        pointerEvents: "auto",
       }}>
         {/* ヘッダー */}
         <div style={{
