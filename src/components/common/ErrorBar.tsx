@@ -43,6 +43,32 @@ function formatEntry(err: AppError) {
   ].filter(Boolean).join("\n");
 }
 
+// navigator.clipboard が使えない/失敗する環境向けに execCommand へフォールバック。
+// 成功/失敗を呼び出し元に返し、視覚フィードバックに使う。
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
+// コピーボタンの一時フィードバック状態（"all" | err.timestamp をid として使う）
+type CopyStatus = { id: string; ok: boolean } | null;
+
 // ===== 履歴パネル =====
 
 interface HistoryPanelProps {
@@ -51,40 +77,21 @@ interface HistoryPanelProps {
 
 function HistoryPanel({ onClose }: HistoryPanelProps) {
   const [history, setHistory] = useState<AppError[]>(() => loadHistory().slice().reverse());
-  const [copied, setCopied] = useState<string | null>(null);
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>(null);
 
   const copyAll = useCallback(async () => {
     const text = loadHistory().slice().reverse()
       .map((e, i) => `--- ${i + 1} ---\n${formatEntry(e)}`)
       .join("\n\n");
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    setCopied("all");
-    setTimeout(() => setCopied(null), 1500);
+    const ok = await copyText(text);
+    setCopyStatus({ id: "all", ok });
+    setTimeout(() => setCopyStatus(null), 1500);
   }, []);
 
   const copyOne = useCallback(async (err: AppError) => {
-    const text = formatEntry(err);
-    try {
-      await navigator.clipboard.writeText(text);
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
-    setCopied(err.timestamp);
-    setTimeout(() => setCopied(null), 1500);
+    const ok = await copyText(formatEntry(err));
+    setCopyStatus({ id: err.timestamp, ok });
+    setTimeout(() => setCopyStatus(null), 1500);
   }, []);
 
   const clearAll = useCallback(() => {
@@ -138,11 +145,13 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
                 background: "rgba(255,255,255,0.08)",
                 border: "1px solid rgba(255,255,255,0.15)",
                 borderRadius: "4px",
-                color: copied === "all" ? "rgba(100,255,150,0.9)" : "rgba(255,255,255,0.6)",
+                color: copyStatus?.id === "all"
+                  ? (copyStatus.ok ? "rgba(100,255,150,0.9)" : "rgba(255,120,120,0.9)")
+                  : "rgba(255,255,255,0.6)",
                 cursor: "pointer",
               }}
             >
-              {copied === "all" ? "コピー済" : "全コピー"}
+              {copyStatus?.id === "all" ? (copyStatus.ok ? "コピー済" : "コピー失敗") : "全コピー"}
             </button>
           )}
           {history.length > 0 && (
@@ -218,11 +227,13 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
                       background: "rgba(255,255,255,0.06)",
                       border: "1px solid rgba(255,255,255,0.12)",
                       borderRadius: "3px",
-                      color: copied === err.timestamp ? "rgba(100,255,150,0.9)" : "rgba(255,255,255,0.45)",
+                      color: copyStatus?.id === err.timestamp
+                        ? (copyStatus.ok ? "rgba(100,255,150,0.9)" : "rgba(255,120,120,0.9)")
+                        : "rgba(255,255,255,0.45)",
                       cursor: "pointer",
                     }}
                   >
-                    {copied === err.timestamp ? "済" : "コピー"}
+                    {copyStatus?.id === err.timestamp ? (copyStatus.ok ? "済" : "失敗") : "コピー"}
                   </button>
                 </div>
                 <div style={{
@@ -247,6 +258,7 @@ export function ErrorBar() {
   const [errors, setErrors] = useState<AppError[]>([]);
   const [historyCount, setHistoryCount] = useState(() => loadHistory().length);
   const [showHistory, setShowHistory] = useState(false);
+  const [copyStatus, setCopyStatus] = useState<CopyStatus>(null);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -275,16 +287,9 @@ export function ErrorBar() {
   }, []);
 
   const copyError = useCallback(async (err: AppError) => {
-    try {
-      await navigator.clipboard.writeText(formatEntry(err));
-    } catch {
-      const ta = document.createElement("textarea");
-      ta.value = formatEntry(err);
-      document.body.appendChild(ta);
-      ta.select();
-      document.execCommand("copy");
-      document.body.removeChild(ta);
-    }
+    const ok = await copyText(formatEntry(err));
+    setCopyStatus({ id: err.timestamp, ok });
+    setTimeout(() => setCopyStatus(null), 1500);
   }, []);
 
   // 履歴パネルを閉じたとき件数を再取得
@@ -373,11 +378,13 @@ export function ErrorBar() {
                 background: "rgba(255,255,255,0.1)",
                 border: "1px solid rgba(255,255,255,0.2)",
                 borderRadius: "4px",
-                color: "rgba(255,255,255,0.7)",
+                color: copyStatus?.id === err.timestamp
+                  ? (copyStatus.ok ? "rgba(100,255,150,0.9)" : "rgba(255,120,120,0.9)")
+                  : "rgba(255,255,255,0.7)",
                 cursor: "pointer",
               }}
             >
-              コピー
+              {copyStatus?.id === err.timestamp ? (copyStatus.ok ? "コピーしました" : "コピー失敗") : "コピー"}
             </button>
 
             <button
