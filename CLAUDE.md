@@ -639,7 +639,35 @@
 #      DBマイグレ不要（フロントのみ・Milestoneに色フィールドは追加していない＝将来の個別色対応は
 #             getMilestoneBandColorの中身を変えるだけで済む設計にとどめた）
 #
-# 最終更新：2026-07-17（v2.40）
+# v2.41 feat: ガントビューに「完了を隠す（🙈）」フィルタトグルを追加（2026-07-17）
+#      背景：山本さんの要望「ガントビューで表示するタスクを絞り込みできるようにしたい。
+#             未完了のみで絞るなど」。単純に status==="done" を消すと、未完了の子を持つ
+#             親タスクまで一緒に消えてしまい子だけが孤立表示される不整合が起きるため、
+#             taskHierarchy.ts の buildParentDerivedMap（親子ロールアップ）を使って判定する
+#      追加：src/lib/taskHierarchy.ts に filterHideCompletedTasks（純粋関数）。
+#             親＝子から算出した実効ステータス（ロールアップ）・葉＝自身のstatusで判定し、
+#             未完了（done以外）なら残す。完全に完了した枝（親も全子もdone）だけが消える。
+#             渡された配列内で親子関係が完結する前提（呼び出し側が既に mineOnly 等の表示
+#             スコープを適用した配列を渡す＝GanttViewのallTasksがそれに当たる）。
+#             __tests__/taskHierarchy.test.ts に5テスト追加
+#      追加：src/lib/localData/localStore.ts に KEYS.GANTT_HIDE_DONE（localStorage永続化）
+#      変更：GanttView.tsx にツールバー「🙈完了を隠す」トグル（既定OFF・B2「🔗依存」・
+#             B4「▤ベースライン」と同じ流儀）。allTasks の算出パイプラインの最後
+#             （mineOnly適用後・並べ替え/グルーピングより前段）で filterHideCompletedTasks を
+#             適用するため、PJ別・ToDo別（PJ未選択時にPJ一覧の後に並ぶToDoグループ）・人別の
+#             3グルーピング全て、および mineOnly（自分のみ）との併用に自動的に対応する
+#             （pjOrderedTasksMap・todoGroupSortedMap・personGroups・parentEffectiveDates・
+#             日付レンジ計算が全て allTasks から派生する既存構造のため、二重実装なし）。
+#             マイルストーン・マイルストーン帯・週グリッド線・依存矢印の画面外⏱バッジロジックは
+#             対象外のまま無変更で機能する（依存矢印はactiveTaskById＝mineOnly/hideCompletedより
+#             広いスコープで相手の存在有無を判定する既存設計のため、隠れた相手には⏱バッジが出る）
+#      追加：GanttMobileView.tsx にも同じ state を props 経由で反映（hideCompletedTasks /
+#             onToggleHideCompletedTasks）。allTasks/todoGroups/personGroups は既に GanttView 側で
+#             フィルタ済みのものが渡るため自動反映、モバイルヘッダーにも🙈アイコンのみの
+#             コンパクトなトグルボタンを追加（画面幅が狭いため文言は付けずアイコンのみ）
+#      DBマイグレ不要（表示ロジックのみ・既存フィールドのみ使用）
+#
+# 最終更新：2026-07-17（v2.41）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

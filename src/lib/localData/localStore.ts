@@ -51,6 +51,7 @@ const KEYS = {
   GANTT_LABEL_WIDTH:   "gantt_label_width",
   GANTT_SHOW_DEPS:     "gantt_show_deps",
   GANTT_SHOW_BASELINE: "gantt_show_baseline",
+  GANTT_HIDE_DONE:     "gantt_hide_done",
   // リスト
   LIST_VIEW_SETTINGS:  "list_view_settings",
   // ダッシュボード

@@ -13,6 +13,7 @@ import {
   buildParentDerivedMap,
   orderSiblingsWithDependencies,
   applyDependencyOrderWithinSiblings,
+  filterHideCompletedTasks,
 } from "../taskHierarchy";
 
 // テスト用の最小 Task ファクトリ。階層関連と集計に必要な列だけ指定可能にする。
@@ -426,5 +427,52 @@ describe("applyDependencyOrderWithinSiblings：親子混在フラット配列で
       mk({ id: "b", display_order: 2 }),
     ];
     expect(applyDependencyOrderWithinSiblings(list, [mkDep("b", "a")]).map(t => t.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("filterHideCompletedTasks：ガント🙈トグル用の完了フィルタ（親子ロールアップ考慮）", () => {
+  it("子0件の葉タスクは自身の status で判定：done は消え、それ以外は残る", () => {
+    const t = [
+      mk({ id: "a", status: "done" }),
+      mk({ id: "b", status: "todo" }),
+      mk({ id: "c", status: "in_progress" }),
+    ];
+    expect(filterHideCompletedTasks(t).map(x => x.id)).toEqual(["b", "c"]);
+  });
+
+  it("全子 done の親は、子ともども消える（完全に完了した枝だけ隠す）", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }), // 親自身のstatus値は無視される（rollup優先）
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "done" }),
+    ];
+    expect(filterHideCompletedTasks(t).map(x => x.id)).toEqual([]);
+  });
+
+  it("未完了の子を1件でも持つ親は残る（子は個別に done/非done で判定される）", () => {
+    const t = [
+      mk({ id: "p", status: "done" }), // 親自身のstatusがdoneでも rollup が優先される
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "todo" }),
+    ];
+    const result = filterHideCompletedTasks(t).map(x => x.id);
+    // 親pは残る（rollup=in_progress）。done の子c1は消え、未完了のc2は残る
+    expect(result).toEqual(["p", "c2"]);
+  });
+
+  it("削除済みの子はロールアップ判定に含めない（既存 rollupStatus と同じ挙動）", () => {
+    // cdel は is_deleted のため rollup 計算からは除外される。非削除の子は c1(done) のみなので
+    // rollup=done→親p・c1は消える。cdel 自身は関数が is_deleted で除外する責務は持たない
+    // （呼び出し側が active() 済みの配列を渡す前提。ここでは自身の status=todo で判定され残る）。
+    const t = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "cdel", parent_task_id: "p", status: "todo", is_deleted: true }),
+    ];
+    expect(filterHideCompletedTasks(t).map(x => x.id)).toEqual(["cdel"]);
+  });
+
+  it("空配列を渡すと空配列を返す", () => {
+    expect(filterHideCompletedTasks([])).toEqual([]);
   });
 });

@@ -298,3 +298,23 @@ export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
     )
     .sort(sortByOrder);
 }
+
+/**
+ * 「完了を隠す」表示フィルタ（ガントの🙈トグル用）の純粋関数。
+ *
+ * 単純に `status === "done"` のタスクを消すと、未完了の子を1件でも持つ親タスクまで
+ * 一緒に消えてしまい、子だけが孤立表示される不整合が起きる。これを避けるため、
+ * 判定は buildParentDerivedMap による実効ステータス（親＝子から算出したロールアップ、
+ * 葉＝自身の status）で行う（effectiveStatus と同じ考え方を、O(n²) を避けて一括で適用する）。
+ *
+ * 渡された tasks 配列の中だけで親子関係が完結する前提（呼び出し側は mineOnly 等の表示
+ * スコープを既に適用した「同じ配列」を渡すこと＝GanttView の allTasks がそれに当たる）。
+ */
+export function filterHideCompletedTasks(tasks: Task[]): Task[] {
+  const derivedMap = buildParentDerivedMap(tasks);
+  return tasks.filter(t => {
+    const derived = derivedMap.get(t.id);
+    const status = derived ? derived.status : t.status;
+    return status !== "done";
+  });
+}

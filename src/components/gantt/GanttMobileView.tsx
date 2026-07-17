@@ -33,6 +33,9 @@ interface GanttMobileViewProps {
   /** 担当者アイコンをクリックしての変更（複数選択可）に使う */
   members: Member[];
   saveTask: (task: Task) => Promise<void> | void;
+  /** 完了を隠すトグル（GanttView側のstateをそのまま使う。allTasks等は既に適用済みで渡される） */
+  hideCompletedTasks?: boolean;
+  onToggleHideCompletedTasks?: () => void;
 }
 
 export function GanttMobileView({
@@ -43,6 +46,7 @@ export function GanttMobileView({
   editingTaskId, setEditingTaskId,
   mineOnly, selectedProject, krTaskIds, currentUser,
   members, saveTask,
+  hideCompletedTasks, onToggleHideCompletedTasks,
 }: GanttMobileViewProps) {
   const todayStrVal = toDateStr(today);
   const md = (d?: string | null) => (d ? d.slice(5).replace("-", "/") : "");
@@ -167,6 +171,22 @@ export function GanttMobileView({
               </button>
             ))}
           </div>
+        )}
+        {!isPreview && onToggleHideCompletedTasks && (
+          <button
+            className="tap-compact"
+            onClick={onToggleHideCompletedTasks}
+            title={hideCompletedTasks ? "完了タスクも表示する" : "完了タスクを非表示にする（未完了のみ表示）"}
+            aria-pressed={!!hideCompletedTasks}
+            style={{
+              padding: "6px 10px", fontSize: "12px", borderRadius: "var(--radius-sm)",
+              border: hideCompletedTasks ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
+              background: hideCompletedTasks ? "var(--color-brand-light)" : "transparent",
+              color: hideCompletedTasks ? "var(--color-text-purple)" : "var(--color-text-secondary)",
+              fontWeight: hideCompletedTasks ? 600 : 400,
+              flexShrink: 0,
+            }}
+          >🙈</button>
         )}
       </div>
 

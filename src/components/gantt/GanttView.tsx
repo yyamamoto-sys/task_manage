@@ -36,7 +36,7 @@ import {
 } from "./ganttDependencyArrows";
 import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/linkDirection";
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
-import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings } from "../../lib/taskHierarchy";
+import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks } from "../../lib/taskHierarchy";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -90,16 +90,34 @@ export function GanttView({
     [rawMilestones],
   );
   const isMobile = useIsMobile();
+  // ===== 完了タスクを隠す（🙈トグル） =====
+  // B2「🔗依存」・B4「▤ベースライン」と同じ流儀（localStorage で状態保持）。
+  const [hideCompletedTasks, setHideCompletedTasks] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.GANTT_HIDE_DONE) === "1"; } catch { return false; }
+  });
+  const toggleHideCompletedTasks = useCallback(() => {
+    setHideCompletedTasks(prev => {
+      const next = !prev;
+      try { localStorage.setItem(KEYS.GANTT_HIDE_DONE, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
   // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
+  // 完了を隠すフィルタ（hideCompletedTasks）は mineOnly と併用でき、必ず並べ替え・グルーピング
+  // （orderTasksHierarchically・personGroups・todoGroups 等、すべて allTasks から派生）より前段
+  // で効かせる。単純な status==="done" 除外ではなく filterHideCompletedTasks（親子ロールアップ
+  // 考慮）を使うことで、未完了の子を持つ親タスクは残る（CLAUDE.md参照）。
   const allTasks = useMemo(() => {
     const base = previewTasks
       ? active(previewTasks)
       : active(rawTasks);
     let list = krTaskIds ? base.filter(t => krTaskIds.has(t.id)) : base;
     if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
+    if (hideCompletedTasks) list = filterHideCompletedTasks(list);
     return list;
-  }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id]);
+  }, [previewTasks, rawTasks, krTaskIds, mineOnly, currentUser.id, hideCompletedTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   // ホットループ用：タスク行ごとの find を回避するため id→entity の Map を一度だけ作る
@@ -900,6 +918,8 @@ export function GanttView({
         currentUser={currentUser}
         members={members}
         saveTask={saveTask}
+        hideCompletedTasks={hideCompletedTasks}
+        onToggleHideCompletedTasks={toggleHideCompletedTasks}
       />
     );
   }
@@ -1004,6 +1024,20 @@ export function GanttView({
               fontWeight: showBaseline ? "600" : "400",
             }}
           >▤ベースライン</button>
+        )}
+        {/* 完了を隠すトグル（未完了の子を持つ親タスクは残す） */}
+        {!isPreview && (
+          <button
+            onClick={toggleHideCompletedTasks}
+            title={hideCompletedTasks ? "完了タスクも表示する" : "完了タスクを非表示にする（未完了のみ表示）"}
+            aria-pressed={hideCompletedTasks}
+            style={{
+              ...headerBtnStyle,
+              color: hideCompletedTasks ? "var(--color-brand)" : "var(--color-text-secondary)",
+              borderColor: hideCompletedTasks ? "var(--color-brand-border)" : "var(--color-border-primary)",
+              fontWeight: hideCompletedTasks ? "600" : "400",
+            }}
+          >🙈完了を隠す</button>
         )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
