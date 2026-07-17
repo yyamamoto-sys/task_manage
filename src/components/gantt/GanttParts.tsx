@@ -62,7 +62,10 @@ export interface TaskBarRowProps {
   /** B5：ドラッグして依存を結線するハンドル関連。undefined なら機能自体を描画しない */
   linkUi?: TaskBarLinkUi;
   onEdit: (taskId: string) => void;
+  /** 右端ドラッグ：期日変更 */
   onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
+  /** 左端ドラッグ：開始日変更（右端と対称）。isDone のときは非表示にする点も右端と同じ */
+  onResizeStart: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
   onMouseLeave: () => void;
 }
@@ -73,7 +76,7 @@ function TaskBarRowImpl({
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
   ghostBar, delayLabel, isDelayed = false, linkUi,
-  onEdit, onResize, onMouseEnter, onMouseLeave,
+  onEdit, onResize, onResizeStart, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
   const showLinkHandles = !isPreview && !!linkUi?.enabled
@@ -187,21 +190,38 @@ function TaskBarRowImpl({
             >⏱</div>
           )}
           {!isPreview && !isDone && (
+            // 左端ドラッグによる開始日変更専用のハンドル（右端と対称）。バーの端そのもの（±4px）に
+            // 重ねて配置＝結線ハンドル（端の外側±9px、B5）とは位置で明確に区別される。
+            // マウスのドラッグ操作専用でキーボード代替手段はない
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+            <div
+              onMouseDown={e => onResizeStart(e, taskId)}
+              title="ドラッグして開始日を変更"
+              style={{
+                position: "absolute",
+                left: bar.barX - 4,
+                top: "50%", transform: "translateY(-50%)",
+                width: 8, height: 22, cursor: "ew-resize", zIndex: 3,
+              }}
+            />
+          )}
+          {!isPreview && !isDone && (
             // 右端ドラッグによる期日変更専用のハンドル。マウスのドラッグ操作専用でキーボード代替手段はない
             // eslint-disable-next-line jsx-a11y/no-static-element-interactions
             <div
               onMouseDown={e => onResize(e, taskId)}
+              title="ドラッグして期日を変更"
               style={{
                 position: "absolute",
                 left: bar.barX + bar.barWidth - 4,
                 top: "50%", transform: "translateY(-50%)",
-                width: 8, height: 22, cursor: "col-resize", zIndex: 3,
+                width: 8, height: 22, cursor: "ew-resize", zIndex: 3,
               }}
             />
           )}
-          {/* B5：依存を結線するハンドル（開始＝左／期日＝右）。バーの端より外側に浮かせて
-              右端リサイズのヒット領域（barX+barWidth-4 〜 +4）と重ならないようにする。
-              🔗依存トグルON＋ホバー中（or 自分がドラッグ元／ドロップ候補）のときだけ描画 */}
+          {/* B5：依存を結線するハンドル（開始＝左／期日＝右）。バーの端より外側（±9px）に浮かせて
+              左右のリサイズハンドルのヒット領域（左：barX-4〜+4／右：barX+barWidth-4〜+4）と
+              重ならないようにする。🔗依存トグルON＋ホバー中（or 自分がドラッグ元／ドロップ候補）のときだけ描画 */}
           {showLinkHandles && linkUi && (["start", "due"] as const).map(side => {
             const isSourceHere = linkUi.sourceSide === side;
             const isTargetHere = linkUi.isTarget && linkUi.targetSide === side;
@@ -280,6 +300,7 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     (prev.linkUi?.onHandleDown ?? null) === (next.linkUi?.onHandleDown ?? null) &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
+    prev.onResizeStart === next.onResizeStart &&
     prev.onMouseEnter === next.onMouseEnter &&
     prev.onMouseLeave === next.onMouseLeave
   );

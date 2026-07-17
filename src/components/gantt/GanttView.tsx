@@ -25,6 +25,7 @@ import {
   TODO_COLOR, MS_COLOR, MS_BORDER,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
+  computeWeekBlocks, applyResizePreview, clampStartDate, type ResizePreview,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -195,15 +196,12 @@ export function GanttView({
     [days]
   );
 
-  // 日ラベル：小ズーム（dayWidth<28）では月初・月曜・今日だけ表示して DOM を削減
-  const todayStr2 = toDateStr(today);
-  const labelDays = useMemo(
-    () => dayWidth >= 28
-      ? days
-      : days.filter(d => d.getDate() === 1 || d.getDay() === 1 || toDateStr(d) === todayStr2),
-    [days, dayWidth, todayStr2]
-  );
   const todayX = diffDays(rangeStart, today) * dayWidth;
+
+  // 週ラベル（月内日数ブロック方式：8月W1〜W5）。日単位の日付数字行を置き換える。
+  // ズームレベルに関わらずブロック数は月あたり4〜5個で一定のため、旧labelDaysのような
+  // ズーム閾値によるDOM間引きは不要
+  const weekBlocks = useMemo(() => computeWeekBlocks(days, dayWidth), [days, dayWidth]);
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -525,56 +523,91 @@ export function GanttView({
     saveTask({ ...task, assignee_member_ids: ids });
   }, [saveTask]);
 
-  // 右端ドラッグによる期日変更
+  // バー端ドラッグによる日付変更（右端＝期日／左端＝開始日）。既存の右端リサイズと対称に実装。
+  // 確定は必ず saveTask 経由（B3自動リスケ連鎖・B4ベースライン凍結がこの1箇所で自動的に効く）
   const [draggingResizeTask, setDraggingResizeTask] = useState<{
-    taskId: string; startX: number; originalDueDate: string;
+    taskId: string; edge: "start" | "due"; startX: number; originalDate: string;
+    /** edge==="start" のときのみ使用。開始日が期日を超えないようにするためのクランプ対象日 */
+    clampAgainst?: string;
   } | null>(null);
-  const [resizePreviewDates, setResizePreviewDates] = useState<Record<string, string>>({});
+  const [resizePreviewDates, setResizePreviewDates] = useState<Record<string, ResizePreview>>({});
+
+  const clearPreviewEdge = useCallback((taskId: string, edge: "start" | "due") => {
+    setResizePreviewDates(prev => {
+      if (!prev[taskId]) return prev;
+      const entry = { ...prev[taskId] };
+      delete entry[edge];
+      const n = { ...prev };
+      if (Object.keys(entry).length === 0) delete n[taskId]; else n[taskId] = entry;
+      return n;
+    });
+  }, []);
 
   const scrollToToday = useCallback(() => {
     if (!scrollRef.current) return;
     scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
   }, [todayX]);
 
+  // 右端ドラッグ：期日変更
   const handleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     e.stopPropagation();
     e.preventDefault();
     const task = taskById.get(taskId);
     if (!task?.due_date || isPreview) return;
-    setDraggingResizeTask({ taskId: task.id, startX: e.clientX, originalDueDate: task.due_date });
+    setDraggingResizeTask({ taskId: task.id, edge: "due", startX: e.clientX, originalDate: task.due_date });
+  }, [isPreview, taskById]);
+
+  // 左端ドラッグ：開始日変更。開始日が未設定なら期日を起点にドラッグできる（開始日を新規に作る操作を許容）
+  const handleStartResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    const task = taskById.get(taskId);
+    if (!task?.due_date || isPreview) return;
+    setDraggingResizeTask({
+      taskId: task.id, edge: "start", startX: e.clientX,
+      originalDate: task.start_date ?? task.due_date, clampAgainst: task.due_date,
+    });
   }, [isPreview, taskById]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!draggingResizeTask) return;
-      const deltaDays = Math.round((e.clientX - draggingResizeTask.startX) / dayWidth);
+      const { taskId, edge, startX, originalDate, clampAgainst } = draggingResizeTask;
+      const deltaDays = Math.round((e.clientX - startX) / dayWidth);
       if (deltaDays === 0) {
-        setResizePreviewDates(prev => { const n = { ...prev }; delete n[draggingResizeTask.taskId]; return n; });
+        clearPreviewEdge(taskId, edge);
         return;
       }
-      const orig = toDate(draggingResizeTask.originalDueDate);
+      const orig = toDate(originalDate);
       if (!orig) return;
-      const newDate = toDateStr(addDays(orig, deltaDays));
-      setResizePreviewDates(prev => ({ ...prev, [draggingResizeTask.taskId]: newDate }));
+      let newDate = toDateStr(addDays(orig, deltaDays));
+      if (edge === "start" && clampAgainst) newDate = clampStartDate(newDate, clampAgainst);
+      setResizePreviewDates(prev => ({ ...prev, [taskId]: { ...prev[taskId], [edge]: newDate } }));
     };
     const onUp = async (e: MouseEvent) => {
       if (!draggingResizeTask) return;
-      const deltaDays = Math.round((e.clientX - draggingResizeTask.startX) / dayWidth);
-      const { taskId, originalDueDate } = draggingResizeTask;
+      const { taskId, edge, startX, originalDate, clampAgainst } = draggingResizeTask;
+      const deltaDays = Math.round((e.clientX - startX) / dayWidth);
       setDraggingResizeTask(null);
-      setResizePreviewDates(prev => { const n = { ...prev }; delete n[taskId]; return n; });
+      clearPreviewEdge(taskId, edge);
       if (deltaDays !== 0) {
         const task = allTasks.find(t => t.id === taskId);
-        if (task) {
-          const orig = toDate(originalDueDate);
-          if (orig) await saveTask({ ...task, due_date: toDateStr(addDays(orig, deltaDays)) });
+        const orig = toDate(originalDate);
+        if (task && orig) {
+          let newDate = toDateStr(addDays(orig, deltaDays));
+          if (edge === "start") {
+            if (clampAgainst) newDate = clampStartDate(newDate, clampAgainst);
+            await saveTask({ ...task, start_date: newDate });
+          } else {
+            await saveTask({ ...task, due_date: newDate });
+          }
         }
       }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [draggingResizeTask, dayWidth, allTasks, saveTask]);
+  }, [draggingResizeTask, dayWidth, allTasks, saveTask, clearPreviewEdge]);
 
   // ===== タスク依存関係の矢印（B2） =====
   //
@@ -809,6 +842,10 @@ export function GanttView({
     if (linkDrag) return;
     handleResizeDragStart(e, taskId);
   }, [linkDrag, handleResizeDragStart]);
+  const guardedHandleStartResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
+    if (linkDrag) return;
+    handleStartResizeDragStart(e, taskId);
+  }, [linkDrag, handleStartResizeDragStart]);
 
   // ===== モバイル：タイムラインリスト表示 =====
   // 全フック宣言後の早期 return なので hooks 順序は崩れない。
@@ -1310,35 +1347,25 @@ export function GanttView({
                   </div>
                 ))}
               </div>
-              {/* 日ラベル行（小ズームでは月初・月曜・今日のみ描画） */}
+              {/* 週ラベル行（月内日数ブロック：W1=1-7/W2=8-14/W3=15-21/W4=22-28/W5=29〜月末。
+                  各週は必ずその月に属す＝月をまたいだ瞬間に翌月のW1から数え直す） */}
               <div style={{ height: 28, position: "relative" }}>
-                {labelDays.map(d => {
-                  const i = diffDays(rangeStart, d);
-                  const isSun = d.getDay() === 0;
-                  const isSat = d.getDay() === 6;
-                  const isToday = toDateStr(d) === todayStr2;
-                  const isFirst = d.getDate() === 1;
-                  return (
-                    <div key={i} style={{
-                      position: "absolute",
-                      left: i * dayWidth, width: dayWidth,
-                      height: "100%",
-                      display: "flex", alignItems: "center", justifyContent: "center",
-                      fontSize: "9px",
-                      fontWeight: isToday ? "700" : "400",
-                      color: isToday
-                        ? "#fff"
-                        : isSun ? "var(--color-text-danger)"
-                        : isSat ? "var(--color-text-info)"
-                        : "var(--color-text-tertiary)",
-                      background: isToday ? "var(--color-brand)" : "transparent",
-                      borderRadius: isToday ? "3px" : "0",
-                      borderLeft: isFirst ? "1px solid var(--color-border-primary)" : "none",
-                    }}>
-                      {isFirst ? `${d.getMonth() + 1}/${d.getDate()}` : d.getDate()}
-                    </div>
-                  );
-                })}
+                {weekBlocks.map((wb, i) => (
+                  <div key={i} title={wb.label} style={{
+                    position: "absolute",
+                    left: wb.startX, width: wb.width,
+                    height: "100%",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: "10px", fontWeight: "500",
+                    color: "var(--color-text-tertiary)",
+                    overflow: "hidden", whiteSpace: "nowrap", textOverflow: "clip",
+                    boxSizing: "border-box",
+                    // 月の最初の週（W1）＝月境界。区切り線を少し強めて月の大局を掴めるようにする
+                    borderLeft: wb.isMonthStart ? "1px solid var(--color-border-primary)" : "1px solid var(--color-border-secondary)",
+                  }}>
+                    {wb.label}
+                  </div>
+                ))}
               </div>
             </div>
 
@@ -1476,18 +1503,19 @@ export function GanttView({
 
                         {/* タスク行バー */}
                         {!isCollapsed && tasks.map(task => {
-                          const previewDue = resizePreviewDates[task.id];
-                          const due = toDate(previewDue ?? task.due_date);
-                          const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
+                          const preview = resizePreviewDates[task.id];
+                          const effectiveTask = applyResizePreview(task, preview);
+                          const due = toDate(effectiveTask.due_date);
+                          const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
                           const isDone = task.status === "done";
                           const isOverdue = due && due < today && !isDone;
                           const isStagnant = isTaskStagnant(task);
                           const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                           const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
-                          const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                          const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
                           const isHovered = hoveredTaskId === task.id;
                           const dateLabel = due ? (hasRange
-                            ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                            ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                             : `${due.getMonth()+1}/${due.getDate()}`) : "";
                           const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
                           const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
@@ -1513,6 +1541,7 @@ export function GanttView({
                               linkUi={getLinkUi(task.id)}
                               onEdit={guardedHandleRowEdit}
                               onResize={guardedHandleResizeDragStart}
+                              onResizeStart={guardedHandleStartResizeDragStart}
                               onMouseEnter={handleRowHoverEnter}
                               onMouseLeave={handleRowHoverLeave}
                             />
@@ -1604,10 +1633,10 @@ export function GanttView({
                     {!isCollapsed && orderedTasks.map(({ task, depth }) => {
                       // 親タスクが折りたたまれている子はスキップ
                       if (depth > 0 && collapsed[task.parent_task_id!]) return null;
-                      const previewDue = resizePreviewDates[task.id];
+                      const preview = resizePreviewDates[task.id];
                       // 親タスク（depth===0）のバーは子の最早開始〜最遅期日に合わせる
-                      let effectiveTask = previewDue ? { ...task, due_date: previewDue } : task;
-                      if (depth === 0 && !previewDue) {
+                      let effectiveTask = applyResizePreview(task, preview);
+                      if (depth === 0 && !preview) {
                         const eff = parentEffectiveDates.get(task.id);
                         if (eff && (eff.start_date || eff.due_date)) {
                           effectiveTask = {
@@ -1658,6 +1687,7 @@ export function GanttView({
                           linkUi={getLinkUi(task.id)}
                           onEdit={guardedHandleRowEdit}
                           onResize={guardedHandleResizeDragStart}
+                          onResizeStart={guardedHandleStartResizeDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
                         />
@@ -1691,16 +1721,17 @@ export function GanttView({
                       }} />
                     </div>
                     {!isCollapsed && sortedTasks.map(task => {
-                      const previewDue = resizePreviewDates[task.id];
-                      const due = toDate(previewDue ?? task.due_date);
-                      const bar = calcTaskBar(previewDue ? { ...task, due_date: previewDue } : task, rangeStart, dayWidth);
+                      const preview = resizePreviewDates[task.id];
+                      const effectiveTask = applyResizePreview(task, preview);
+                      const due = toDate(effectiveTask.due_date);
+                      const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
                       const isDone = task.status === "done";
                       const isOverdue = due && due < today && !isDone;
                       const isStagnant = isTaskStagnant(task);
-                      const hasRange = !!(task.start_date && due && toDate(task.start_date)! <= due);
+                      const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
                       const isHovered = hoveredTaskId === task.id;
                       const dateLabel = due ? (hasRange
-                        ? `${toDate(task.start_date!)!.getMonth()+1}/${toDate(task.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+                        ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
                       const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
                       const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
@@ -1726,6 +1757,7 @@ export function GanttView({
                           linkUi={getLinkUi(task.id)}
                           onEdit={guardedHandleRowEdit}
                           onResize={guardedHandleResizeDragStart}
+                          onResizeStart={guardedHandleStartResizeDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
                         />
