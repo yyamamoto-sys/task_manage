@@ -31,7 +31,7 @@ import {
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
-import { GanttShortcutsPanel } from "./GanttShortcutsPanel";
+import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import {
   computeDependencyRenders, pointsToPathD,
   type TaskRect, type DependencyArrowGeometry, type DependencyBadgeInfo,
@@ -71,6 +71,14 @@ interface Props {
    * オーバーレイ表示するため、明示的に false を渡してどちらのキー操作も奪わないようにする。
    */
   enableKeyboardShortcuts?: boolean;
+  /**
+   * ショートカット一覧パネル（全ビュー共通・MainLayoutが1つだけ管理）の開閉を親から制御する場合に渡す。
+   * 渡された場合、凡例バーの「⌨ショートカット」リンクはこの2つを使い、パネル自体は自前で描画しない
+   * （MainLayout側の共通パネルが表示を担う）。渡されない場合（GanttPreviewPanelでの2画面同時表示など）
+   * は従来どおり内部stateで完結し、このコンポーネント自身がパネルを描画する。
+   */
+  shortcutsOpen?: boolean;
+  onToggleShortcuts?: () => void;
 }
 
 // ===== メインコンポーネント =====
@@ -86,6 +94,8 @@ export function GanttView({
   previewChangedTaskIds,
   mineOnly = false,
   enableKeyboardShortcuts = true,
+  shortcutsOpen: shortcutsOpenProp,
+  onToggleShortcuts,
 }: Props) {
   // 【Phase 3 移行済み】個別 selector で必要な state のみを購読する。
   const rawTasks      = useAppStore(selectScopedTasks);
@@ -107,9 +117,17 @@ export function GanttView({
   // 【設計意図】非モーダル・✕のみで閉じる・自動表示なしの3点が要件。セッション内state
   // のみで良く（既定=閉じ）、localStorage永続化は不要（「開いたままにしない」を優先）。
   // Escapeは既存の選択解除／結線キャンセルとバインドが競合するため絶対に使わない。
-  const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
-  const toggleShortcutsPanel = useCallback(() => setShowShortcutsPanel(prev => !prev), []);
-  const closeShortcutsPanel = useCallback(() => setShowShortcutsPanel(false), []);
+  // shortcutsOpen/onToggleShortcuts が親（MainLayout）から渡されたら、開閉状態は全ビュー共通の
+  // 親側stateに委譲し、このコンポーネント自身はパネルを描画しない（MainLayoutが1つだけ描画する）。
+  // 渡されない場合（GanttPreviewPanelでの2画面同時表示）は従来どおり内部で完結する。
+  const isShortcutsControlled = onToggleShortcuts !== undefined;
+  const [internalShortcutsOpen, setInternalShortcutsOpen] = useState(false);
+  const showShortcutsPanel = isShortcutsControlled ? !!shortcutsOpenProp : internalShortcutsOpen;
+  const toggleShortcutsPanel = useCallback(() => {
+    if (onToggleShortcuts) onToggleShortcuts();
+    else setInternalShortcutsOpen(prev => !prev);
+  }, [onToggleShortcuts]);
+  const closeShortcutsPanel = useCallback(() => setInternalShortcutsOpen(false), []);
   // ===== 完了タスクを隠す（🙈トグル） =====
   // B2「🔗依存」・B4「▤ベースライン」と同じ流儀（localStorage で状態保持）。
   const [hideCompletedTasks, setHideCompletedTasks] = useState<boolean>(() => {
@@ -2421,7 +2439,7 @@ export function GanttView({
         >⌨ ショートカット</span>
       </div>
 
-      {showShortcutsPanel && <GanttShortcutsPanel onClose={closeShortcutsPanel} />}
+      {!isShortcutsControlled && showShortcutsPanel && <ShortcutsPanel currentView="gantt" onClose={closeShortcutsPanel} />}
     </div>
   );
 }

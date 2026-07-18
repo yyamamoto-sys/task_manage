@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.3
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.52
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1068,7 +1068,39 @@
 #             共通化する際にまとめて反映する方針。今回はパネル更新スコープ外。v2.50と同じ扱い）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.51）
+# v2.52 feat: ショートカット一覧パネルを全ビュー共通化（2026-07-18）
+#      背景：全ビュー横断ショートカット統一の3/3件目（仕上げ）。v2.50（リスト）・v2.51（カンバン）で
+#             反映を先送りしていたパネル更新をここでまとめて行う。従来はガント（v2.47）にしか
+#             ショートカット一覧が無く、「ガントでしか使えないショートカットは混乱を招く」ため、
+#             全ビューから同じ一覧を開けるようにした
+#      追加：`src/components/common/ShortcutsPanel.tsx`（NEW）。`src/components/gantt/
+#             GanttShortcutsPanel.tsx`を汎用化して置き換え（旧ファイルは削除）。ショートカット定義は
+#             本ファイル内の`SECTIONS`配列1箇所（key: "common"|"list"|"kanban"|"gantt"）にまとめ、
+#             「全ビュー共通」（Ctrl/Cmd+K・Ctrl/Cmd+Z）→「リスト」→「カンバン」→「ガント」の
+#             見出し付きセクションで表示。開いているビューに対応するセクションは「全ビュー共通」の
+#             直後に並べ替えた上で（"（今のビュー）"ラベル＋brand色の左ボーダー＋background:
+#             var(--color-brand-light)で）軽く強調する。非モーダル・✕のみで閉じる・Escでは閉じない・
+#             createPortal(...,document.body)＋pointerEvents:"auto"（body{pointer-events:none}を
+#             打ち消す。CLAUDE.md v2.33の罠）は旧GanttShortcutsPanelからそのまま踏襲
+#      追加：MainLayoutに画面右下常設の「⌨ ショートカット」affordance（全ビュー共通・PC/モバイル
+#             両方）。isShortcutsOpen state を1つだけ持ち、クリックでShortcutsPanelをトグル。
+#             配置はfixed・bottom:100px（PC）/128px（モバイル）・right:16px（PCはAI相談パネルが
+#             開いている間consultPanelWidth+16pxへ退避＝FABと同じ考え方）・zIndex:140。
+#             Toast（bottom:24/right:24, z10000）・ErrorBar（bottom:0全幅, z9000）の通常時の
+#             占有域より上に置くことで重ならないようにし、zIndexはモーダル類（z200以上）より低く
+#             保つ（モーダル表示中はこのボタンがモーダルの上に浮いて見えないようにするため）。
+#             Toast/ErrorBarは元々モーダルより上に出る設計のため、位置がまれに重なった場合はそちらが
+#             上に見える＝トーストは数秒で自動消去されるため実害は小さい、という考え方を採用
+#      変更：ガント凡例バーの既存「⌨ ショートカット」リンクは、同じ共通パネルを開くように繋ぎ替え
+#             （パネルを2つ作らない）。GanttViewに任意prop `shortcutsOpen`/`onToggleShortcuts`を追加し、
+#             渡された場合（MainLayoutからの通常利用）は開閉stateをMainLayout側に委譲しGanttView自身は
+#             パネルを描画しない。渡されない場合（AI相談のガントプレビュー`GanttPreviewPanel`が2画面を
+#             同時表示するケース）は従来どおり内部stateで完結し、GanttView自身がShortcutsPanelを描画する
+#             （後方互換・GanttPreviewPanel側の変更は不要）
+#      削除：`src/components/gantt/GanttShortcutsPanel.tsx`（ShortcutsPanel.tsxへ統合のため）
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.52）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2024,7 +2056,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-18（v2.48）
+- 最終更新：2026-07-18（v2.52）
 
 ---
 
@@ -2077,7 +2109,10 @@ src/
 │   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
 └── components/
     ├── common/
-    │   └── ErrorBoundary.tsx     # ルート ErrorBoundary（main.tsx で配置）
+    │   ├── ErrorBoundary.tsx     # ルート ErrorBoundary（main.tsx で配置）
+    │   └── ShortcutsPanel.tsx    # 全ビュー共通ショートカット一覧パネル（旧gantt/GanttShortcutsPanelを汎用化）。
+    │                             # MainLayoutが唯一の描画元・画面右下の常設「⌨ショートカット」ボタンとガント凡例の
+    │                             # リンク両方から同じstateで開く
     ├── layout/
     │   └── MainLayout.tsx                 # メインレイアウト・ナビゲーション・QuickAddTaskModal（FAB）
     ├── consultation/
@@ -2091,8 +2126,7 @@ src/
     │   └── ErrorView.tsx                  # エラー表示
     ├── gantt/
     │   ├── GanttView.tsx                  # ガントビュー（PJ別・人別の2モード）
-    │   ├── ganttDependencyArrows.ts       # B2：依存矢印の座標計算（純粋関数のみ。DOM実測はGanttView側）
-    │   └── GanttShortcutsPanel.tsx        # 凡例バー「⌨ショートカット」から開く非モーダルな操作一覧ポップアップ
+    │   └── ganttDependencyArrows.ts       # B2：依存矢印の座標計算（純粋関数のみ。DOM実測はGanttView側）
     ├── kanban/
     │   └── KanbanView.tsx                 # カンバンビュー（ドラッグ&ドロップ）
     ├── graph/

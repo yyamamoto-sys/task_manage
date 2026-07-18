@@ -14,6 +14,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
+import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import { dismissUndoToasts } from "../common/Toast";
 import { consumeLastUndoAction } from "../../lib/lastUndoStore";
 import { ViewSkeleton } from "../common/Skeleton";
@@ -135,6 +136,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  // ショートカット一覧パネル（全ビュー共通・MainLayoutが唯一の描画元）。非モーダル・✕でのみ閉じる。
+  // 開閉stateはここに1つだけ持ち、ガント凡例バーのリンクにも同じstateを渡して繋ぎ替える
+  // （2つのパネルを作らない。CLAUDE.md 参照）。
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
+  const toggleShortcuts = () => setIsShortcutsOpen(prev => !prev);
+  const closeShortcuts = () => setIsShortcutsOpen(false);
 
   // Ctrl+K / Cmd+K でコマンドパレットをトグル（PC向け）
   useEffect(() => {
@@ -503,6 +510,46 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     </div>
   ) : null;
 
+  // ショートカット一覧パネルで「現在のビュー」を強調するための対象（計画モードのビューのみ対応。
+  // OKRモード・ダッシュボード・ワークロード・設定は対応セクションが無いためハイライト無し＝
+  // 「全ビュー共通」だけが表示される）
+  const shortcutsCurrentView = appMode === "plan" ? viewMode : null;
+
+  // 全ビュー共通・画面右下付近に薄く常設する「⌨ ショートカット」affordance。
+  // 【配置の注意】Toast（bottom:24/right:24, z10000）・ErrorBar（bottom:0 全幅, z9000）と
+  // 座標が重ならないよう、Toast/FAB/ErrorBarの通常時の占有域より上（bottom:100px/128px）に置く。
+  // z-indexはモーダル類（z200以上）より低く保つ（モーダル表示中はこのボタンが上に浮いて見えない
+  // ようにするため）。Toast/ErrorBarは元々モーダルより上に出る設計のため、それらが同じ位置に
+  // 一時的に重なった場合はToast/ErrorBarが上に見える＝トーストは自動で数秒で消えるため実害は小さい。
+  // AI相談パネル（PC・インライン）が開いているときは、FABと同じ考え方でパネル幅ぶん左へ避ける。
+  const shortcutsButton = (
+    <button
+      onClick={toggleShortcuts}
+      title="ショートカット一覧を表示（全ビュー共通・画面右下）"
+      aria-pressed={isShortcutsOpen}
+      style={{
+        position: "fixed",
+        bottom: isMobile ? "128px" : "100px",
+        right: (!isMobile && isConsultOpen) ? `${consultPanelWidth + 16}px` : "16px",
+        transition: isConsultResizing ? "none" : "right 0.3s ease",
+        zIndex: 140,
+        display: "flex", alignItems: "center", gap: "5px",
+        padding: "6px 10px",
+        fontSize: "11px", fontWeight: 500,
+        background: "var(--color-bg-primary)",
+        border: "1px solid var(--color-border-primary)",
+        borderRadius: "var(--radius-full)",
+        color: "var(--color-text-tertiary)",
+        boxShadow: "var(--shadow-md)",
+        cursor: "pointer",
+        opacity: 0.85,
+      }}
+    >
+      <span style={{ fontSize: "12px", lineHeight: 1 }}>⌨</span>
+      <span>ショートカット</span>
+    </button>
+  );
+
   const mainContent = (
     <div style={{
       flex: 1,
@@ -570,6 +617,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 selectedKrId={selectedKrId}
                 krTaskIds={krTaskIds}
                 mineOnly={mineOnly}
+                shortcutsOpen={isShortcutsOpen}
+                onToggleShortcuts={toggleShortcuts}
               />
             )}
             {viewMode === "admin" && (
@@ -990,6 +1039,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             </button>
           ))}
         </div>
+        {shortcutsButton}
+        {isShortcutsOpen && <ShortcutsPanel currentView={shortcutsCurrentView} onClose={closeShortcuts} />}
         <ErrorBar />
       </div>
     );
@@ -1222,6 +1273,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onQuickAdd={() => setIsQuickAddOpen(true)}
         onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
       />
+      {shortcutsButton}
+      {isShortcutsOpen && <ShortcutsPanel currentView={shortcutsCurrentView} onClose={closeShortcuts} />}
       <ErrorBar />
       {/* AIパネルをインライン横並びで配置。width遷移でコンテンツ幅が自然に縮む */}
       <div data-tour-id="ai-panel" style={{
