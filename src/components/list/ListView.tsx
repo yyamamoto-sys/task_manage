@@ -139,6 +139,21 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     });
   }, []);
 
+  // グループ見出しの折りたたみ状態：collapsedIds（親子ツリー用）と同じ「折りたたみ集合」方式。
+  // キーは `${groupBy}:${group.label}` にして、グルーピングモードを切り替えても
+  // 別モードの折りたたみ状態と衝突しない（新規グループは既定で展開表示）。
+  const [collapsedGroupKeys, setCollapsedGroupKeys] = useState<Set<string>>(
+    () => new Set(lsGet<string[]>("collapsedGroups", [])),
+  );
+  const toggleGroupCollapse = useCallback((key: string) => {
+    setCollapsedGroupKeys(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      lsSet("collapsedGroups", Array.from(next));
+      return next;
+    });
+  }, []);
+
   // 「＋子タスク」：親を固定して QuickAddTaskModal（親タスク追加と同じモーダル）を開く。
   // 値＝親タスクID、null＝閉じている。
   const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
@@ -471,9 +486,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // （＝実データや折りたたみ状態が変わらない限り）同じ結果を使い回すようグループ単位でキャッシュする。
   const rowsByGroup = useMemo(() => {
     const map = new Map<string, RenderRow[]>();
-    for (const g of groups) map.set(g.label, buildRows(g.tasks));
+    for (const g of groups) {
+      const key = `${groupBy}:${g.label}`;
+      map.set(g.label, collapsedGroupKeys.has(key) ? [] : buildRows(g.tasks));
+    }
     return map;
-  }, [groups, buildRows]);
+  }, [groups, buildRows, groupBy, collapsedGroupKeys]);
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」。rowsByGroup が既に
   // グルーピング・階層ネスト・折りたたみを反映した描画順そのものなので、ガント側のような
@@ -860,13 +878,26 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           {isMobile ? (
             /* モバイル：カードリスト */
             <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>
-              {groups.map(group => (
+              {groups.map(group => {
+                const groupKey = `${groupBy}:${group.label}`;
+                const isGroupCollapsed = collapsedGroupKeys.has(groupKey);
+                return (
                 <div key={group.label}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 4px 4px" }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
+                  <button
+                    onClick={() => toggleGroupCollapse(groupKey)}
+                    aria-expanded={!isGroupCollapsed}
+                    aria-label={`${group.label}を${isGroupCollapsed ? "展開" : "折りたたむ"}`}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px", padding: "6px 4px 4px",
+                      width: "100%", border: "none", background: "transparent", cursor: "pointer",
+                      textAlign: "left", font: "inherit",
+                    }}
+                  >
+                    <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "10px" }}>{isGroupCollapsed ? "▶" : "▼"}</span>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
                     <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
-                  </div>
+                  </button>
                   {(rowsByGroup.get(group.label) ?? []).map(({ task, depth, parentNote, isParent }) => {
                     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                     // 親のステータス・進捗は derivedByParentId から引く（参照安定＝React.memo が効く）
@@ -894,7 +925,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     );
                   })}
                 </div>
-              ))}
+                );
+              })}
               {filteredTasks.length === 0 && <EmptyState {...emptyStateProps} />}
             </div>
           ) : (
@@ -944,6 +976,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   return groups.map(group => {
                     // PJ見出しへドロップ＝親解除（最上位化）。実PJを持つ見出しでのみ有効。
                     const canUnparentHere = groupBy === "project" && group.projectId != null;
+                    const groupKey = `${groupBy}:${group.label}`;
+                    const isGroupCollapsed = collapsedGroupKeys.has(groupKey);
                     return (
                     <React.Fragment key={group.label}>
                       <tr
@@ -955,12 +989,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         }) : undefined}
                       >
                         <td colSpan={cols.length} style={{
-                          padding: "7px 10px 4px",
+                          padding: 0,
                           background: "var(--color-bg-secondary)",
                           borderBottom: "1px solid var(--color-border-primary)",
                         }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block" }} />
+                          <button
+                            onClick={() => toggleGroupCollapse(groupKey)}
+                            aria-expanded={!isGroupCollapsed}
+                            aria-label={`${group.label}を${isGroupCollapsed ? "展開" : "折りたたむ"}`}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "6px",
+                              width: "100%", padding: "7px 10px 4px",
+                              border: "none", background: "transparent", cursor: "pointer",
+                              textAlign: "left", font: "inherit",
+                            }}
+                          >
+                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "10px" }}>{isGroupCollapsed ? "▶" : "▼"}</span>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
                             <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
                             {canUnparentHere && (
@@ -973,7 +1018,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                 visibility: draggingId ? "visible" : "hidden",
                               }}>↑ ここに落とすと最上位タスクになります</span>
                             )}
-                          </div>
+                          </button>
                         </td>
                       </tr>
                       {(() => {
