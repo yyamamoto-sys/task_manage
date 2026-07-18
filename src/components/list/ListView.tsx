@@ -1434,6 +1434,7 @@ const ListTaskRow = memo(function ListTaskRow({
         )}
         <InlineEditDate
           value={task.due_date}
+          isDone={isDone}
           onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
         />
       </td>

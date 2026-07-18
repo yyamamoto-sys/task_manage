@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.57
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.59
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1215,8 +1215,21 @@
 #             を削除（縦スクロールのラベル列同期は維持）。ズーム時の中心維持（別effect）・「今日」ボタン
 #             （scrollToToday）・PJ切替時の今日リセットは不変。GANTT_CENTER_DATEキー定義は無害な死蔵として残置。
 #      検証：tsc エラー0／eslint 新規0（既存tabIndex/autoFocus警告のみ）／build 成功。DBマイグレ不要。
+# v2.59 fix: PCテーブルの期日セルに期限超過の赤字強調を追加（モバイルカード行と表現を統一）（2026-07-19）
+#      背景：`ListMobileTaskRow`は`isOverdue`（due_date < 今日 かつ 未完了）で期日を赤字強調していたが、
+#             `InlineEditDate`（PC/カンバン共通の期日インライン編集コンポーネント）は完了ステータスを
+#             考慮せず期限超過を判定していたため、完了済みタスクの過去日付まで赤字強調される
+#             不整合があった（未完了/完了で表現が食い違っていた）。
+#      修正：`InlineEditDate`に`isDone?: boolean`を追加し、`isOverdue = !isDone && !!value && value < todayStr()`
+#             に変更（日付比較を`new Date().toISOString()`のUTC基準から`lib/date.ts`の`todayStr()`
+#             ＝ローカルタイムゾーン基準に統一。モバイル側`ListView.tsx`と同じ関数を流用）。
+#             `ListView.tsx`のPCテーブル行（`ListTaskRow`）から`isDone`を渡すよう変更。
+#             `isDone`未指定の既存呼び出し元（`KanbanView.tsx`）は完了判定こそ従来どおり考慮しないが、
+#             today基準がUTCからローカルタイムゾーンに変わる（JSTでは最大1日分、境界日の判定が是正される）。
+#      検証：`npx tsc --noEmit` エラー0／`npx vitest run` 381件全通過／`npx eslint src` 新規エラーなし／
+#             `npm run build` 成功。DBマイグレ不要（フロントのみ）。
 #
-# 最終更新：2026-07-19（v2.58）
+# 最終更新：2026-07-19（v2.59）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2172,7 +2185,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-19（v2.58）
+- 最終更新：2026-07-19（v2.59）
 
 ---
 

@@ -1,11 +1,14 @@
 import { useState, useRef, useEffect } from "react";
+import { todayStr } from "../../lib/date";
 
 interface Props {
   value: string | null;
   onSave: (v: string | null) => void;
+  /** 完了タスクは期限超過でも赤字強調しない（モバイルカード行と同じ判定に揃える） */
+  isDone?: boolean;
 }
 
-export function InlineEditDate({ value, onSave }: Props) {
+export function InlineEditDate({ value, onSave, isDone }: Props) {
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -13,7 +16,7 @@ export function InlineEditDate({ value, onSave }: Props) {
     if (editing) inputRef.current?.focus();
   }, [editing]);
 
-  const isOverdue = value && value < new Date().toISOString().split("T")[0];
+  const isOverdue = !isDone && !!value && value < todayStr();
 
   if (editing) {
     return (
