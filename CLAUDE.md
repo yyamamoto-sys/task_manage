@@ -883,7 +883,31 @@
 #             isPreview・showOverload=OFF・viewMode≠"person" のときは計算自体を省略する
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.46）
+# v2.47 feat: ガントビューに「ショートカット」常設ポップアップを追加（見えない操作の発見可能性）（2026-07-18）
+#      背景：Ctrl+クリックでの複数選択・バー中央/端のドラッグ・端の外側の点での結線など、表示だけでは
+#             分からない操作が増えたため、一覧で確認できるようにしたいという要望
+#      追加：src/components/gantt/GanttShortcutsPanel.tsx（NEW）。マウス操作（Ctrl/Cmd+クリック＝複数選択・
+#             選択中バー中央ドラッグ＝一括シフト・バー中央ドラッグ＝タスク全体移動・バー左端/右端ドラッグ＝
+#             開始日/期日変更・端の外側の点ドラッグ＝依存結線・バークリック＝詳細を開く・空白クリック＝
+#             選択解除）・キーボード（Esc＝選択解除／結線キャンセル）・ツールバートグル（🔗依存/▤ベースライン/
+#             🙈完了を隠す/🎯クリティカルパス/⚠過負荷）の3セクションで構成。実装済みの実挙動
+#             （guardedHandleBarEdit・guardedHandleRowEdit・handleGanttBodyClick・各ドラッグハンドラ）を
+#             正として記述
+#      追加：GanttView.tsx 凡例バー（右端）に薄い文字「⌨ ショートカット」リンクを追加
+#             （marginLeft:"auto"で右寄せ・既存凡例ラベルと同じトーン）。クリックで
+#             showShortcutsPanel（セッション内state・既定=閉じ・localStorage永続化なし）をトグル
+#      **非モーダル設計（要件の核）**：GanttShortcutsPanelは全画面バックドロップを持たない
+#             （背景を一切塞がない）。閉じるのは✕ボタンのみ実装し、クリックアウトサイド・Escapeでは
+#             閉じない。Escapeは既存のガント側処理（選択解除／結線キャンセル）とバインドが競合するため
+#             絶対に併用しない設計とした。パネルを開いたままバーのドラッグ・クリック等ガント本体の
+#             操作が行える（オーバーレイが存在しないため自動的に満たされる）
+#      **ポータルのpointer-events罠**：createPortal(..., document.body)で#root外（bodyの直下）に
+#             描画するため、globals.cssのbody{pointer-events:none}を打ち消すべくパネルのルート要素に
+#             pointerEvents:"auto"を明示（v2.33で発見・修正したErrorBar/GanttPreviewPanelと同じ罠）
+#      スコープ：デスクトップ GanttView のみ（GanttMobileView は対象外・未変更）
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.47）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -1839,7 +1863,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-17（v2.33）
+- 最終更新：2026-07-18（v2.47）
 
 ---
 
@@ -1906,7 +1930,8 @@ src/
     │   └── ErrorView.tsx                  # エラー表示
     ├── gantt/
     │   ├── GanttView.tsx                  # ガントビュー（PJ別・人別の2モード）
-    │   └── ganttDependencyArrows.ts       # B2：依存矢印の座標計算（純粋関数のみ。DOM実測はGanttView側）
+    │   ├── ganttDependencyArrows.ts       # B2：依存矢印の座標計算（純粋関数のみ。DOM実測はGanttView側）
+    │   └── GanttShortcutsPanel.tsx        # 凡例バー「⌨ショートカット」から開く非モーダルな操作一覧ポップアップ
     ├── kanban/
     │   └── KanbanView.tsx                 # カンバンビュー（ドラッグ&ドロップ）
     ├── graph/

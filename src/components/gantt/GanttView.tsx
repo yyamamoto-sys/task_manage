@@ -30,6 +30,7 @@ import {
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
+import { GanttShortcutsPanel } from "./GanttShortcutsPanel";
 import {
   computeDependencyRenders, pointsToPathD,
   type TaskRect, type DependencyArrowGeometry, type DependencyBadgeInfo,
@@ -94,6 +95,13 @@ export function GanttView({
     [rawMilestones],
   );
   const isMobile = useIsMobile();
+  // ===== ショートカット一覧ポップアップ（凡例バー右端「⌨ ショートカット」） =====
+  // 【設計意図】非モーダル・✕のみで閉じる・自動表示なしの3点が要件。セッション内state
+  // のみで良く（既定=閉じ）、localStorage永続化は不要（「開いたままにしない」を優先）。
+  // Escapeは既存の選択解除／結線キャンセルとバインドが競合するため絶対に使わない。
+  const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
+  const toggleShortcutsPanel = useCallback(() => setShowShortcutsPanel(prev => !prev), []);
+  const closeShortcutsPanel = useCallback(() => setShowShortcutsPanel(false), []);
   // ===== 完了タスクを隠す（🙈トグル） =====
   // B2「🔗依存」・B4「▤ベースライン」と同じ流儀（localStorage で状態保持）。
   const [hideCompletedTasks, setHideCompletedTasks] = useState<boolean>(() => {
@@ -2298,7 +2306,23 @@ export function GanttView({
           }} />
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>マイルストーン</span>
         </div>
+        <span
+          role="button"
+          tabIndex={0}
+          onClick={toggleShortcutsPanel}
+          onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleShortcutsPanel(); } }}
+          title="ガントの操作方法（Ctrl+クリックでの複数選択・ドラッグ操作等）一覧を表示"
+          aria-pressed={showShortcutsPanel}
+          style={{
+            marginLeft: "auto",
+            fontSize: "10px",
+            color: "var(--color-text-tertiary)",
+            cursor: "pointer",
+          }}
+        >⌨ ショートカット</span>
       </div>
+
+      {showShortcutsPanel && <GanttShortcutsPanel onClose={closeShortcutsPanel} />}
     </div>
   );
 }
