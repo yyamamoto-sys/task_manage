@@ -5,7 +5,10 @@
 // 「どのショートカットがどのビューで効くか」をスコープ別（全ビュー共通／リスト／カンバン／ガント）に
 // セクション分けして1つのパネルにまとめる。定義は本ファイルの SECTIONS 配列1箇所にまとめてあり、
 // 新しいビューにショートカットが増えたらここに1セクション追記すればよい。
-// 現在開いているビューに対応するセクションは、共通セクションの直後に並べ替えた上で軽く強調する。
+// 【表示フィルタ】現在のビューで実際に使えないショートカットを混乱させないため、表示するのは
+// 「全ビュー共通」セクション＋現在のビューに対応するセクションのみ（他ビューのセクションは出さない）。
+// list/kanban/gantt に対応するビューにいないとき（ダッシュボード・ワークロード・管理画面・OKR等）は
+// 「全ビュー共通」だけを表示する。
 //
 // 【非モーダルであることが最重要要件（旧GanttShortcutsPanelから踏襲）】
 // - 全画面バックドロップは置かない（背景をクリック/ドラッグして塞がない）。
@@ -154,17 +157,17 @@ function ShortcutList({ items }: { items: ShortcutItem[] }) {
 }
 
 interface ShortcutsPanelProps {
-  /** 現在開いているビュー。対応するセクションを共通セクションの直後に並べ替え、軽く強調する */
+  /** 現在開いているビュー。対応するセクションのみを共通セクションの後ろに表示する */
   currentView: ViewMode | null;
   onClose: () => void;
 }
 
 export function ShortcutsPanel({ currentView, onClose }: ShortcutsPanelProps) {
-  // 「全ビュー共通」を先頭固定 → 現在のビューのセクション → 残り、の順に並べ替える
+  // 「全ビュー共通」は常に表示 + 現在のビューに対応するセクションがあればそれだけを追加。
+  // 対応するセクションが無いビュー（ダッシュボード・ワークロード・管理画面・OKR等）は共通のみになる。
   const commonSection = SECTIONS.find(s => s.key === "common")!;
   const currentSection = currentView ? SECTIONS.find(s => s.view === currentView) : undefined;
-  const otherSections = SECTIONS.filter(s => s.key !== "common" && s !== currentSection);
-  const orderedSections = [commonSection, ...(currentSection ? [currentSection] : []), ...otherSections];
+  const orderedSections = [commonSection, ...(currentSection ? [currentSection] : [])];
 
   return createPortal(
     // 【非モーダル】背景バックドロップは意図的に置かない。パネルの外側は常にクリック・
