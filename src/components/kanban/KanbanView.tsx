@@ -1,16 +1,21 @@
 // src/components/kanban/KanbanView.tsx
-import { useState, useMemo, useCallback, memo } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
+import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
+import { computeRangeSelection } from "../../lib/selectionRange";
+import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
+import { CustomSelect } from "../common/CustomSelect";
 
 interface Props {
   currentUser: Member;
@@ -54,6 +59,23 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [hideDone, setHideDone] = useState(false);
 
+  // 一括操作用：複数選択（リストビューと同じ流儀）
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたカード）。
+  // レンダーを介す必要が無いため ref で持つ（ガント/リストの selectionAnchorRef と同じ流儀）
+  const selectionAnchorRef = useRef<string | null>(null);
+  const toggleSelect = useCallback((id: string) => {
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+  const clearSelection = useCallback(() => {
+    selectionAnchorRef.current = null;
+    setSelectedIds(new Set());
+  }, []);
+
   const visibleTasks = useMemo(() => {
     let list = tasks;
     if (selectedProject) list = list.filter(t => t.project_id === selectedProject.id);
@@ -61,6 +83,24 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
     return list;
   }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id]);
+
+  // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
+  // （列＝todo→in_progress→done を左→右、各列内は上→下でフラット化。hideDone中はdone列を除外）
+  const orderedTaskIds = useMemo(() => computeKanbanOrderedIds(visibleTasks, hideDone), [visibleTasks, hideDone]);
+
+  // 表示中のPJ/KR/自分フィルタが変わって見えなくなったカードは選択から外す
+  useEffect(() => {
+    const visible = new Set(visibleTasks.map(t => t.id));
+    setSelectedIds(prev => {
+      const next = new Set<string>();
+      prev.forEach(id => { if (visible.has(id)) next.add(id); });
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleTasks]);
+
+  const { bulkUpdateStatus, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+    tasks, members, selectedIds, currentUser.id, clearSelection,
+  );
 
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
@@ -72,11 +112,74 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
   const handleDragStart = useCallback((taskId: string) => setDraggingId(taskId), []);
-  const handleCardClick = useCallback((taskId: string) => setEditingTaskId(taskId), []);
+
+  // カードクリック：修飾キー無し＝従来どおり詳細を開く＋アンカー更新。Ctrl/Cmd+クリック＝
+  // 選択のみトグル（詳細は開かない）。Shift+クリック＝アンカー〜クリック先の範囲を現在の
+  // 表示順（orderedTaskIds）で選択に追加（詳細は開かない）。KeyboardEventもctrlKey/shiftKey/
+  // metaKeyを持つため、Enter/Spaceでのキーボード操作も同じハンドラで扱える
+  const handleCardClick = useCallback((e: ReactMouseEvent | ReactKeyboardEvent, taskId: string) => {
+    if (e.shiftKey) {
+      const anchorId = selectionAnchorRef.current;
+      const rangeIds = computeRangeSelection(orderedTaskIds, anchorId, taskId);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        rangeIds.forEach(id => next.add(id));
+        return next;
+      });
+      selectionAnchorRef.current = anchorId ?? taskId;
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      toggleSelect(taskId);
+      selectionAnchorRef.current = taskId;
+      return;
+    }
+    selectionAnchorRef.current = taskId;
+    setEditingTaskId(taskId);
+  }, [orderedTaskIds, toggleSelect]);
+
+  // ドロップ：ドラッグ中のカードが選択中（かつ選択が複数）なら、選択中の全カードを
+  // まとめてその列（ステータス）へ移動する＝一括ステータス変更として1つのUndoにまとまる。
+  // それ以外（単体ドラッグ）は従来どおり1件だけステータス変更。
   const handleDrop = (status: Task["status"]) => {
-    if (draggingId) { handleStatusChange(draggingId, status); setDraggingId(null); }
+    if (draggingId) {
+      if (selectedIds.has(draggingId) && selectedIds.size > 1) {
+        bulkUpdateStatus(status);
+      } else {
+        handleStatusChange(draggingId, status);
+      }
+      setDraggingId(null);
+    }
     setDragOverStatus(null);
   };
+
+  // ===== キーボードショートカット（Ctrl/Cmd+A=表示中の全選択／Esc=選択解除） =====
+  // ガード：①入力中（input/textarea/select/contenteditable）は一切ハイジャックしない。
+  // ②タスク詳細（editingTaskId＝PCサイドパネル/モバイルのTaskEditModal共用）・
+  // 子タスク追加モーダル（QuickAddTaskModal＝addingStatus!==null）のいずれかが開いている間は
+  // 発火しない。③モバイル（isMobile）では無効化。④カンバンビューがアクティブなときのみ発火する点は
+  // MainLayoutでviewMode==="kanban"の間だけKanbanViewが条件レンダーされる既存構造で自然に満たされる
+  // （リスト/ガントと同じ設計方針）
+  useEffect(() => {
+    if (isMobile) return;
+    if (editingTaskId || addingStatus !== null) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
+      if (isTyping) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        setSelectedIds(new Set(orderedTaskIds));
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Escape") {
+        clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobile, editingTaskId, addingStatus, orderedTaskIds, clearSelection]);
 
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
@@ -109,6 +212,97 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           border: hideDone ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
           transition: "all 0.1s",
         }}>完了を隠す</button>
+      </div>
+
+      {/* ===== 一括操作バー（選択時のみ表示・リストビューと同等のUI/挙動） ===== */}
+      <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "60px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
+      {selectedIds.size > 0 && (
+        <div style={{
+          padding: "8px 12px",
+          background: "var(--color-brand-light)",
+          borderBottom: "1px solid var(--color-brand-border)",
+          display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
+          flexShrink: 0,
+        }}>
+          <span style={{
+            fontSize: "12px", fontWeight: 600,
+            color: "var(--color-brand)",
+            padding: "4px 10px",
+            background: "var(--color-bg-primary)",
+            border: "1px solid var(--color-brand-border)",
+            borderRadius: "var(--radius-full)",
+            whiteSpace: "nowrap",
+          }}>
+            {selectedIds.size} 件選択中
+          </span>
+
+          {/* ステータス一括変更 */}
+          <div style={{ display: "flex", gap: "4px" }}>
+            {(["todo", "in_progress", "done"] as const).map(s => (
+              <button
+                key={s}
+                onClick={() => bulkUpdateStatus(s)}
+                title={`選択中タスクを「${TASK_STATUS_LABEL[s]}」に変更`}
+                style={{
+                  padding: "4px 10px", fontSize: "11px", fontWeight: 500,
+                  background: TASK_STATUS_STYLE[s].bg,
+                  color: TASK_STATUS_STYLE[s].color,
+                  border: `1px solid ${TASK_STATUS_STYLE[s].color}`,
+                  borderRadius: "var(--radius-md)",
+                  cursor: "pointer", whiteSpace: "nowrap",
+                }}
+              >
+                → {TASK_STATUS_LABEL[s]}
+              </button>
+            ))}
+          </div>
+
+          {/* 担当者一括変更 */}
+          <CustomSelect
+            value=""
+            onChange={value => { if (value) bulkUpdateAssignee(value); }}
+            options={[
+              { value: "", label: "担当者を変更…" },
+              ...[...members].sort((a, b) =>
+                a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
+              ).map(m => ({ value: m.id, label: m.display_name })),
+            ]}
+            searchable searchPlaceholder="メンバーで検索..."
+            style={{ width: "160px" }} />
+
+          <span style={{ flex: 1 }} />
+
+          {/* 一括削除 */}
+          <button
+            onClick={bulkDelete}
+            style={{
+              padding: "4px 12px", fontSize: "11px", fontWeight: 500,
+              color: "var(--btn-danger-text)",
+              background: "var(--btn-danger-bg)",
+              border: `1px solid ${"var(--btn-danger-border)"}`,
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            🗑 削除
+          </button>
+
+          {/* クリア */}
+          <button
+            onClick={clearSelection}
+            style={{
+              padding: "4px 10px", fontSize: "11px",
+              color: "var(--color-text-tertiary)",
+              background: "transparent",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            ✕ 選択解除
+          </button>
+        </div>
+      )}
       </div>
 
       {/* カンバン本体 */}
@@ -189,6 +383,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       onStatusChange={handleStatusChange}
                       isDragging={draggingId === task.id}
                       onClick={handleCardClick}
+                      isSelected={selectedIds.has(task.id)}
                       onSaveTask={saveTask}
                       currentUserId={currentUser.id}
                     />
@@ -249,7 +444,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, onSaveTask, currentUserId,
+  task, project, todo, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
@@ -260,7 +455,8 @@ const TaskCard = memo(function TaskCard({
   onDragStart: (taskId: string) => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
-  onClick: (taskId: string) => void;
+  onClick: (e: ReactMouseEvent | ReactKeyboardEvent, taskId: string) => void;
+  isSelected: boolean;
   onSaveTask: (task: Task) => void;
   currentUserId: string;
 }) {
@@ -271,13 +467,13 @@ const TaskCard = memo(function TaskCard({
     <div
       draggable
       onDragStart={() => onDragStart(task.id)}
-      onClick={() => onClick(task.id)}
+      onClick={e => onClick(e, task.id)}
       role="button" tabIndex={0}
-      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(task.id); } }}
+      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(e, task.id); } }}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
       style={{
-        background: "var(--color-bg-primary)",
+        background: isSelected ? "var(--color-brand-light)" : "var(--color-bg-primary)",
         border: "1px solid var(--color-border-primary)",
         // 親子の位置づけを視覚化：子＝左にインデント＋グレーの太い左罫線、親（子を持つ）＝ブランド色の左罫線
         borderLeft: parentName
@@ -290,9 +486,9 @@ const TaskCard = memo(function TaskCard({
         padding: "9px 11px",
         cursor: "grab",
         opacity: isDragging ? 0.4 : isDone ? 0.55 : 1,
-        boxShadow: isDragging ? "var(--shadow-lg)" : isHovered ? "var(--shadow-md)" : "var(--shadow-sm)",
+        boxShadow: isDragging ? "var(--shadow-lg)" : isSelected ? "0 0 0 2px var(--color-brand)" : isHovered ? "var(--shadow-md)" : "var(--shadow-sm)",
         transform: isHovered && !isDragging ? "translateY(-1px)" : "none",
-        transition: "opacity 0.15s, box-shadow 0.15s, transform 0.15s",
+        transition: "opacity 0.15s, box-shadow 0.15s, transform 0.15s, background 0.1s",
       }}
     >
       {/* PJバッジ or ToDoバッジ */}

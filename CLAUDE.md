@@ -1018,7 +1018,57 @@
 #             全ビュー共通化する際にまとめて反映する方針。今回はパネル更新スコープ外）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.50）
+# v2.51 feat: カンバンビューに複数選択＋一括操作を追加（2026-07-18）
+#      背景：全ビュー横断ショートカット統一の2/3件目。ガント（v2.48）・リスト（v2.50）は
+#             既に複数選択＋一括操作を持っていたが、カンバン（KanbanView）には選択の仕組みが
+#             無かった（カードのドラッグで単体ステータス変更のみ）
+#      追加：カードのCtrl(Cmd)+クリック＝選択トグル（詳細は開かない）。Shift+クリック＝
+#             アンカー（直近クリック/選択したカード・selectionAnchorRef）〜クリック先を
+#             表示順（列＝todo→in_progress→doneを左→右、各列内は上→下でフラット化）で
+#             範囲選択（既存選択に追加）。Ctrl(Cmd)+A＝表示中の全カードを選択。Esc＝選択解除。
+#             修飾キー無しの通常クリックは従来どおり詳細（TaskSidePanel/モバイルはTaskEditModal）
+#             を開く＋アンカー更新。カードのrole="button"のKeyboardEventもctrlKey/shiftKey/
+#             metaKeyを持つため、Enter/Spaceでのキーボード操作もクリックと同じハンドラ
+#             （handleCardClick）で分岐できる（新規イベント型の分岐は不要だった）
+#      追加：選択1件以上で一括操作バーを表示（一括ステータス変更・一括担当者変更・一括削除）。
+#             リストビューと同一のUI/挙動。各操作はUndoトースト（isUndo:true）を出しCtrl+Zで
+#             戻せる
+#      追加（カンバンらしい操作）：選択中の複数カードのうち1枚を別列へドラッグしたら、選択中の
+#             全カードをまとめてその列（ステータス）へ移動。実装は「ドラッグ中のカードが
+#             selectedIdsに含まれ、かつselectedIds.size>1ならbulkUpdateStatus(status)を、
+#             そうでなければ従来どおり単体のhandleStatusChangeを呼ぶ」という条件分岐のみで
+#             完結（bulkUpdateStatusは元々selectedIds全体を対象にしているため、1つのUndoに
+#             自然にまとまる。バルクドラッグ専用の別ロジックは不要だった）
+#      共有化（リストと共通化）：一括ステータス変更・一括担当者変更・一括削除のロジックを
+#             `src/hooks/useBulkTaskActions.ts`（NEW）へ抽出。元はListView.tsx内にあった
+#             3関数（bulkUpdateStatus/bulkUpdateAssignee/bulkDelete）をそのまま移し、
+#             ListView側もこのフック呼び出しに置き換え（ListViewから`deleteTask`/`restoreTask`
+#             の直接購読・`confirmDialog`の直接importを削除。`useAppStore.getState().tasks`で
+#             Undo時点の最新タスクを取る方式もフック内にそのまま踏襲）。KanbanViewは
+#             元々`tasks`という変数名で全アクティブタスクを持っていたためそれをそのまま渡す
+#      追加：`src/lib/kanbanOrder.ts`（NEW・`computeKanbanOrderedIds`）。カンバンの表示順
+#             フラット化ロジックを純粋関数として分離（Shift+クリック範囲選択の
+#             `computeRangeSelection`とCtrl/Cmd+Aの選択対象算出で共有）。hideDone（完了を隠す）
+#             ONの間はdone列のカードが個別にクリックできなくなるため、done列全体を選択対象
+#             から除外する。`src/lib/__tests__/kanbanOrder.test.ts`（NEW・4件）
+#      視覚：選択中カードは背景（--color-brand-light）＋2pxのブランド色リング
+#             （boxShadow: "0 0 0 2px var(--color-brand)"）でハイライト
+#      ガード：①入力中（input/textarea/select/contenteditable）は一切ハイジャックしない。
+#             ②タスク詳細（editingTaskId＝PCサイドパネル/モバイルのTaskEditModal共用）・
+#             子タスク追加モーダル（QuickAddTaskModal＝addingStatus!==null）のいずれかが
+#             開いている間は発火しない。③モバイル（isMobile）では無効化。④カンバンビューが
+#             アクティブなときのみ発火する点はMainLayoutでviewMode==="kanban"の間だけ
+#             KanbanViewが条件レンダーされる既存構造で自然に満たされる（リスト/ガントと同じ
+#             設計方針・追加のview判定コードは不要）
+#      既存との非干渉：MainLayoutのCtrl+K（コマンドパレット）・Ctrl+Z（Undo）は本機能と
+#             キーの重複が無くそのまま動作。既存のカードドラッグ（単体列移動）・インライン編集
+#             （タスク名/担当者/期日）・カードクリック詳細・列の＋追加・完了を隠すトグル・
+#             フィルタ・リストの一括操作は無変更
+#      ショートカット一覧パネルへの反映は未実施（3件目でGanttShortcutsPanel相当を全ビュー
+#             共通化する際にまとめて反映する方針。今回はパネル更新スコープ外。v2.50と同じ扱い）
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.51）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

@@ -9,7 +9,6 @@ import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -19,6 +18,7 @@ import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
 import { computeRangeSelection } from "../../lib/selectionRange";
+import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 
 interface Props {
   currentUser: Member;
@@ -88,8 +88,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const rawMembers = useAppStore(s => s.members);
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
-  const deleteTask = useAppStore(s => s.deleteTask);
-  const restoreTask = useAppStore(s => s.restoreTask);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
@@ -255,92 +253,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     else setSelectedIds(new Set(filteredTasks.map(t => t.id)));
   }, [allFilteredSelected, filteredTasks]);
 
-  // 一括ステータス変更
-  const bulkUpdateStatus = useCallback(async (status: Task["status"]) => {
-    const targets = allTasks.filter(t => selectedIds.has(t.id));
-    if (targets.length === 0) return;
-    // Undo用に変更前ステータスを控える。巻き戻しは「Undo時点の最新タスク」に
-    // 旧ステータスだけ適用する（古いスナップショット全体を保存すると楽観ロックと衝突するため）
-    const prevStatusById = new Map(targets.map(t => [t.id, t.status]));
-    try {
-      await Promise.all(targets.map(t =>
-        saveTask({ ...t, status, updated_by: currentUser.id }),
-      ));
-      showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`, "success", {
-        label: "元に戻す",
-        isUndo: true,
-        onClick: () => {
-          const tasksNow = useAppStore.getState().tasks;
-          prevStatusById.forEach((prevStatus, id) => {
-            const t = tasksNow.find(x => x.id === id);
-            if (t) saveTask({ ...t, status: prevStatus, updated_by: currentUser.id });
-          });
-        },
-      });
-      clearSelection();
-    } catch (err) {
-      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
-    }
-  }, [allTasks, selectedIds, saveTask, currentUser.id, clearSelection]);
-
-  // 一括担当者変更
-  const bulkUpdateAssignee = useCallback(async (memberId: string) => {
-    const targets = allTasks.filter(t => selectedIds.has(t.id));
-    if (targets.length === 0) return;
-    // Undo用に変更前の担当者を控える（方式はbulkUpdateStatusと同じ）
-    const prevAssigneesById = new Map(targets.map(t => [
-      t.id,
-      { single: t.assignee_member_id, multi: t.assignee_member_ids },
-    ]));
-    try {
-      await Promise.all(targets.map(t => saveTask({
-        ...t,
-        assignee_member_id: memberId,
-        assignee_member_ids: [memberId],
-        updated_by: currentUser.id,
-      })));
-      const m = members.find(mm => mm.id === memberId);
-      showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`, "success", {
-        label: "元に戻す",
-        isUndo: true,
-        onClick: () => {
-          const tasksNow = useAppStore.getState().tasks;
-          prevAssigneesById.forEach((prev, id) => {
-            const t = tasksNow.find(x => x.id === id);
-            if (t) saveTask({
-              ...t,
-              assignee_member_id: prev.single,
-              assignee_member_ids: prev.multi,
-              updated_by: currentUser.id,
-            });
-          });
-        },
-      });
-      clearSelection();
-    } catch (err) {
-      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
-    }
-  }, [allTasks, selectedIds, saveTask, currentUser.id, members, clearSelection]);
-
-  // 一括削除
-  const bulkDelete = useCallback(async () => {
-    const count = selectedIds.size;
-    if (count === 0) return;
-    const ok = await confirmDialog(`選択中の ${count} 件のタスクを削除します。\n（変更履歴から復元できます）`);
-    if (!ok) return;
-    try {
-      const ids = Array.from(selectedIds);
-      await Promise.all(ids.map(id => deleteTask(id, currentUser.id)));
-      showToast(`${count}件のタスクを削除しました`, "info", {
-        label: "元に戻す",
-        isUndo: true,
-        onClick: () => { ids.forEach(id => restoreTask(id)); },
-      });
-      clearSelection();
-    } catch (err) {
-      showToast(`一括削除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
-    }
-  }, [selectedIds, deleteTask, restoreTask, currentUser.id, clearSelection]);
+  // 一括ステータス変更・一括担当者変更・一括削除（カンバンビューと共有・useBulkTaskActions）
+  const { bulkUpdateStatus, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+    allTasks, members, selectedIds, currentUser.id, clearSelection,
+  );
 
   // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける：
   // - 上端/下端（before/after）：ドロップ先と同じ階層（同じ親、または両方最上位）の並びに挿入
