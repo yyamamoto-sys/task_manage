@@ -734,7 +734,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             gap: "14px",
           }}>
 
-          {/* ① KR進捗サマリー（PJ選択中は非表示） */}
+          {/* ③ KR進捗サマリー（PJ選択中は非表示） */}
           {!selectedProject && (<Card title="KR 進捗サマリー" badge={`${krs.length}件`} order={3}>
             {krs.length === 0 && (
               <EmptyState>管理画面でKRを登録してください</EmptyState>
@@ -834,12 +834,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             })}
           </Card>)}
 
-          {/* ② 期限アラート + 滞留タスク */}
+          {/* ① 期限アラート + 滞留タスク（最優先＝最上部） */}
           <Card
             title="期限アラート"
             badge={(alertTasks.length + stagnantTasks.length) > 0 ? `${alertTasks.length + stagnantTasks.length}件` : undefined}
             badgeColor="danger"
-            order={4}
+            order={1}
           >
             {alertTasks.length === 0 && stagnantTasks.length === 0 && (
               <EmptyState>期限超過・滞留タスクはありません ✓</EmptyState>
@@ -907,8 +907,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             )}
           </Card>
 
-          {/* ③ 今週のタスク */}
-          <Card title="今週のタスク" badge={`${thisWeekTasks.length}件`} order={1}>
+          {/* ② 今週のタスク */}
+          <Card title="今週のタスク" badge={`${thisWeekTasks.length}件`} order={2}>
             {thisWeekTasks.length === 0 && (
               <EmptyState>今週期限のタスクはありません</EmptyState>
             )}
@@ -943,7 +943,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
           {/* ④ PJ進捗一覧（PJ選択中はカルテに集約されるので非表示） */}
           {!selectedProject && (
-          <Card title="PJ 進捗一覧" order={2}>
+          <Card title="PJ 進捗一覧" order={4}>
             {pjProgress.length === 0 && (
               <EmptyState>プロジェクトを作成してください</EmptyState>
             )}
