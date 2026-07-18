@@ -11,6 +11,7 @@ import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { showToast } from "../common/Toast";
 import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
+import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -67,6 +68,25 @@ function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
   const a = document.createElement("a");
   a.href=url; a.download=`tasks_${todayStr()}.csv`; a.click();
   URL.revokeObjectURL(url);
+}
+
+/** グループ見出しの集計バッジ（完了率の小さな進捗バー＋% ／ 工数合計）。
+ *  工数は全タスク未入力（totalHours===null）なら非表示。折りたたみ中でも見出し自体は
+ *  常に描画されるため、重いPJ・滞留PJが畳んだ状態でも一目で分かる。 */
+function GroupStatsBadge({ total, doneCount, completionRate, totalHours }: import("../../lib/list/groupSummary").GroupSummary) {
+  if (total === 0) return null;
+  const pct = Math.round(completionRate * 100);
+  return (
+    <span style={{ display: "flex", alignItems: "center", gap: "5px", flexShrink: 0 }}>
+      <span style={{ width: 28, height: 4, borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", overflow: "hidden", display: "inline-block" }}>
+        <span style={{ display: "block", height: "100%", width: `${pct}%`, background: "var(--color-brand)", borderRadius: "var(--radius-full)" }} />
+      </span>
+      <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{doneCount}/{total}（{pct}%）</span>
+      {totalHours != null && (
+        <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>計 {totalHours}h</span>
+      )}
+    </span>
+  );
 }
 
 // ===== ビュー設定の永続化ヘルパー =====
@@ -493,6 +513,14 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     return map;
   }, [groups, buildRows, groupBy, collapsedGroupKeys]);
 
+  // グループ見出しの集計（完了率・工数合計）。group.tasks は既にフィルタ適用後の
+  // そのグループのタスクなので、折りたたみ状態に関係なく常に算出できる（畳んだ見出しでも見える）。
+  const summaryByGroup = useMemo(() => {
+    const map = new Map<string, ReturnType<typeof computeGroupSummary>>();
+    for (const g of groups) map.set(g.label, computeGroupSummary(g.tasks));
+    return map;
+  }, [groups]);
+
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」。rowsByGroup が既に
   // グルーピング・階層ネスト・折りたたみを反映した描画順そのものなので、ガント側のような
   // 専用の順序組み立て関数は不要（groups→rowsByGroup をそのまま辿るだけで一致する）。
@@ -897,6 +925,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
                     <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                     <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
+                    {summaryByGroup.get(group.label) && <GroupStatsBadge {...summaryByGroup.get(group.label)!} />}
                   </button>
                   {(rowsByGroup.get(group.label) ?? []).map(({ task, depth, parentNote, isParent }) => {
                     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
@@ -1008,6 +1037,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
                             <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
                             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
+                            {summaryByGroup.get(group.label) && <GroupStatsBadge {...summaryByGroup.get(group.label)!} />}
                             {canUnparentHere && (
                               // ドラッグ開始時にこのspanが出現/消滅すると、その瞬間だけ見出し行の
                               // 幅が変わりレイアウトが動く（複数PJ見出しで同時に発生）。
