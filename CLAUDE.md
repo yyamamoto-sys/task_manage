@@ -848,7 +848,42 @@
 #             必要（今回は明示的にスコープ外。ステータス由来の慣例値で代替）
 #      DBマイグレ不要（フロントのみ。既存フィールドのみ使用）
 #
-# 最終更新：2026-07-18（v2.45）
+# v2.46 feat: ガントビューに人別ビュー限定でメンバーの過負荷（オーバーアロケーション）を
+#      タイムライン上に可視化する機能を追加（2026-07-18）
+#      背景：既存プロマネツール調査（PMBOK10基準）で高優先と判定された改善5件の5件目・最終
+#             （1件目＝v2.42バー中央ドラッグ単体移動／2件目＝v2.43複数選択一括シフト／
+#             3件目＝v2.44クリティカルパス／4件目＝v2.45進捗フィル）
+#      定義：あるメンバーについて、同時に抱えるアクティブ（done以外）タスクの重なりが
+#             閾値（既定=3、`OVERLOAD_THRESHOLD_DEFAULT`）を超える日を「過負荷日」とする。
+#             工数（estimated_hours）は入力が疎なため、件数ベース（同時アクティブタスク数）を
+#             判定の主軸にした（山本さん方針）。タスクは start_date〜due_date の期間その日を
+#             占有、開始日なし（期日のみ）は due_date の1日だけ占有。
+#      追加：`src/lib/gantt/overload.ts`（NEW）：`computeOverloadRanges(memberActiveTasks,
+#             rangeStart, rangeEnd, threshold?)` → 過負荷日の連続区間配列（純粋関数。
+#             `computeWorkload.getMemberActiveTasks` と同じ「アクティブ＝done以外」判定基準を
+#             共有する前提で呼び出す）。`__tests__/overload.test.ts` 新規10テスト
+#             （単純重なり検出／閾値以下は非過負荷／連続区間の結合／期日のみの1日占有／
+#             done除外／担当者フィルタ（getMemberActiveTasksとの結合）／表示範囲外クランプ／
+#             カスタム閾値／due_date欠落の除外／rangeStart>rangeEnd）
+#      追加：`ganttUtils.ts` に `OVERLOAD_COLOR`（マイルストーンamber・クリティカルパスredとは
+#             別のオレンジ固定hex）と `overloadRangesToBands(ranges, rangeStart, dayWidth)`
+#             （日付区間→ピクセルx/widthへの変換。既存 `computeMilestoneBands` と同じ
+#             「メンバー行ブロック内・position:relativeコンテナへの絶対配置」に使う変換）
+#      表示：**対象は人別グルーピングのみ**（PJ別/ToDo別はメンバーが飛び飛びに並ぶため帯が
+#             成立せず何もしない＝崩さない）。ガントツールバーに「⚠過負荷」トグル追加
+#             （既定OFF・`gantt_show_overload` にlocalStorage保持、既存🔗▤🙈🎯と同じ流儀）。
+#             ONのときだけ、人別ビューの各メンバー行ブロック（`position:relative`コンテナ）内に
+#             過負荷日の列を`OVERLOAD_COLOR`・opacity 0.14の縦帯で高さいっぱいに塗る
+#             （zIndex:1＝マイルストーン帯と同じ層。バー本体zIndex:2より背面）。連続する過負荷日は
+#             1本の帯にまとめる（computeOverloadRangesが既に区間化済み）。メンバーヘッダー行に
+#             「⚠過負荷N日」の小さな要約テキストも追加（トグルON・該当日ありの時のみ）
+#      入力データ：`overloadRangesByMember`（useMemo）が `personGroups`（krTaskIds/mineOnly/
+#             hideCompletedTasks反映後の部署スコープ済みallTasksから派生）の各メンバーに対し
+#             `getMemberActiveTasks(m.id, allTasks)` → `computeOverloadRanges` を適用。
+#             isPreview・showOverload=OFF・viewMode≠"person" のときは計算自体を省略する
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.46）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

@@ -3,6 +3,7 @@
 
 import type { Task, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
+import type { OverloadRange } from "../../lib/gantt/overload";
 
 export const DAY_WIDTH_DEFAULT = 28;
 export const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
@@ -17,6 +18,12 @@ export const MS_BORDER  = "#d97706";
  * ライト/ダークどちらの背景でも視認できるよう固定hex（stagnantの#f97316と同じ流儀）。
  */
 export const CRITICAL_COLOR = "#dc2626";
+/**
+ * 過負荷（オーバーアロケーション）帯の色（人別ビュー専用）。マイルストーン帯（MS_COLOR＝amber）・
+ * クリティカルパス（CRITICAL_COLOR＝red）と混同しないよう、警告色として別のオレンジを固定hexで使う
+ * （stagnantの#f97316と同系統・同じ流儀）。
+ */
+export const OVERLOAD_COLOR = "#f97316";
 
 export type GanttSortOrder = "date" | "name";
 
@@ -145,6 +152,26 @@ export function computeMilestoneBands(pjMilestones: Milestone[], rangeStart: Dat
     seen.set(key, { x: diffDays(rangeStart, d) * dayWidth, color: getMilestoneBandColor(ms) });
   }
   return [...seen.values()];
+}
+
+// ===== 過負荷（オーバーアロケーション）帯（人別ビュー専用） =====
+
+export interface OverloadBand {
+  x: number;
+  width: number;
+}
+
+/**
+ * computeOverloadRanges（lib/gantt/overload.ts）が返す日付区間を、マイルストーン帯と同じ
+ * 「メンバー行ブロック内・position:relativeコンテナへの絶対配置」用のピクセル座標に変換する（純粋関数）。
+ */
+export function overloadRangesToBands(ranges: OverloadRange[], rangeStart: Date, dayWidth: number): OverloadBand[] {
+  return ranges.map(r => {
+    const s = toDate(r.start);
+    const e = toDate(r.end);
+    if (!s || !e) return { x: 0, width: 0 };
+    return { x: diffDays(rangeStart, s) * dayWidth, width: (diffDays(s, e) + 1) * dayWidth };
+  }).filter(b => b.width > 0);
 }
 
 // ===== バー端リサイズ（右端＝期日／左端＝開始日） =====

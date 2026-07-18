@@ -22,11 +22,11 @@ import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
-  TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR,
+  TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
-  computeWeekGridLines, computeMilestoneBands,
+  computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -38,6 +38,8 @@ import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/link
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
 import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks, buildProgressFractionMap } from "../../lib/taskHierarchy";
 import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
+import { computeOverloadRanges } from "../../lib/gantt/overload";
+import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -869,6 +871,32 @@ export function GanttView({
     return computeCriticalTaskIds([...activeTaskById.values()], scopedTaskDependencies);
   }, [isPreview, showCriticalPath, activeTaskById, scopedTaskDependencies]);
 
+  // ===== 過負荷（オーバーアロケーション）表示（人別ビュー専用） =====
+  //
+  // 【設計意図】人別グルーピングでのみ意味を持つ（PJ別/ToDo別はメンバーが飛び飛びで並ぶため
+  // 帯が成立しない）。対象は personGroups が既に持つ絞り込み済み allTasks（krTaskIds/mineOnly/
+  // hideCompletedTasks 反映後）を入力に、メンバーごとに getMemberActiveTasks（ワークロードビューと
+  // 同じ「アクティブ＝done以外」判定基準の単一の真実源）で絞り込んでから computeOverloadRanges に渡す。
+  const [showOverload, setShowOverload] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.GANTT_SHOW_OVERLOAD) === "1"; } catch { return false; }
+  });
+  const toggleShowOverload = useCallback(() => {
+    setShowOverload(prev => {
+      const next = !prev;
+      try { localStorage.setItem(KEYS.GANTT_SHOW_OVERLOAD, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const overloadRangesByMember = useMemo(() => {
+    const map = new Map<string, { start: string; end: string }[]>();
+    if (isPreview || !showOverload || viewMode !== "person") return map;
+    for (const { member } of personGroups) {
+      const memberActiveTasks = getMemberActiveTasks(member.id, allTasks);
+      map.set(member.id, computeOverloadRanges(memberActiveTasks, rangeStart, rangeEnd));
+    }
+    return map;
+  }, [isPreview, showOverload, viewMode, personGroups, allTasks, rangeStart, rangeEnd]);
+
   const [depRender, setDepRender] = useState<{
     arrows: DependencyArrowGeometry[];
     badgesByTaskId: Map<string, DependencyBadgeInfo[]>;
@@ -1244,6 +1272,21 @@ export function GanttView({
             }}
           >🎯クリティカルパス</button>
         )}
+        {/* 過負荷（オーバーアロケーション）表示トグル。人別ビューでのみ帯が出る（PJ別/ToDo別では
+            何も描かれない＝崩さない）。既定OFF。 */}
+        {!isPreview && (
+          <button
+            onClick={toggleShowOverload}
+            title={showOverload ? "メンバーの過負荷（同時アクティブタスクの重なり）表示を隠す" : "メンバーの過負荷（同時アクティブタスクの重なり）を人別ビューで強調表示する"}
+            aria-pressed={showOverload}
+            style={{
+              ...headerBtnStyle,
+              color: showOverload ? OVERLOAD_COLOR : "var(--color-text-secondary)",
+              borderColor: showOverload ? OVERLOAD_COLOR : "var(--color-border-primary)",
+              fontWeight: showOverload ? "600" : "400",
+            }}
+          >⚠過負荷</button>
+        )}
         {/* 複数選択インジケータ：Ctrl/Cmd+クリックで選択したタスクの件数。選択中のバーの中央を
             ドラッグすると選択中の全タスクが一括でシフトする */}
         {!isPreview && selectedTaskIds.size > 0 && (
@@ -1516,6 +1559,8 @@ export function GanttView({
                   const isCollapsed = collapsed[`person_${m.id}`];
                   const doneCount = tasks.filter(t => t.status === "done").length;
                   const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
+                  const overloadDayCount = (overloadRangesByMember.get(m.id) ?? [])
+                    .reduce((sum, r) => sum + (diffDays(r.start, r.end) + 1), 0);
                   return (
                     <div key={m.id}>
                       {/* メンバーヘッダー行 */}
@@ -1564,6 +1609,14 @@ export function GanttView({
                             width: 6, height: 6, borderRadius: "50%",
                             background: "var(--color-text-info)", flexShrink: 0,
                           }} />
+                        )}
+                        {showOverload && overloadDayCount > 0 && (
+                          <span style={{
+                            fontSize: "9px", fontWeight: "600", color: OVERLOAD_COLOR,
+                            flexShrink: 0, whiteSpace: "nowrap",
+                          }} title="過負荷（同時アクティブタスクの重なり）の日数">
+                            ⚠過負荷{overloadDayCount}日
+                          </span>
                         )}
                       </div>
 
@@ -1795,8 +1848,19 @@ export function GanttView({
                     const latest   = dueDates.length > 0 ? dueDates.reduce((a, b) => a > b ? a : b) : null;
                     const spanX = earliest ? diffDays(rangeStart, earliest) * dayWidth : null;
                     const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * dayWidth : null;
+                    // 過負荷帯（このメンバーの行ブロック内だけを高さいっぱいに塗る。マイルストーン帯と同じ
+                    // 「position:relativeコンテナへの絶対配置」手法。バー（zIndex 2）より背面（zIndex 1）。
+                    const overloadBands = overloadRangesToBands(overloadRangesByMember.get(m.id) ?? [], rangeStart, dayWidth);
                     return (
-                      <div key={m.id}>
+                      <div key={m.id} style={{ position: "relative" }}>
+                        {overloadBands.map(band => (
+                          <div key={`ovl-${m.id}-${band.x}`} style={{
+                            position: "absolute", left: band.x, width: band.width,
+                            top: 0, bottom: 0,
+                            background: OVERLOAD_COLOR, opacity: 0.14,
+                            zIndex: 1, pointerEvents: "none",
+                          }} />
+                        ))}
                         {/* メンバーヘッダー行バー */}
                         <div style={{
                           height: 36, position: "relative",

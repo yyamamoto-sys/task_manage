@@ -53,6 +53,7 @@ const KEYS = {
   GANTT_SHOW_BASELINE: "gantt_show_baseline",
   GANTT_HIDE_DONE:     "gantt_hide_done",
   GANTT_SHOW_CRITICAL: "gantt_show_critical",
+  GANTT_SHOW_OVERLOAD: "gantt_show_overload",
   // リスト
   LIST_VIEW_SETTINGS:  "list_view_settings",
   // ダッシュボード
