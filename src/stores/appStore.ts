@@ -51,7 +51,8 @@ import {
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
-import { computeCascadeShifts } from "../lib/dependencies/reschedule";
+import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
+import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 
 export interface AppState {
   // ===== データ =====
@@ -117,6 +118,10 @@ export interface AppState {
   saveTask: (task: Task, options?: { skipCascade?: boolean }) => Promise<void>;
   deleteTask: (id: string, deletedBy: string) => Promise<void>;
   restoreTask: (id: string) => Promise<void>;
+  // ===== ガント複数選択の一括シフト =====
+  // 選択中の複数タスクを同じ日数だけ移動する（バー中央ドラッグの単体移動を選択集合に拡張したもの）。
+  // 1つの論理操作として扱う：全対象へのdelta適用→B3カスケードを1回だけ計算・適用→1トースト＋Undo。
+  bulkShiftTasks: (taskIds: string[], deltaDays: number, updatedBy?: string) => Promise<void>;
 
   // ===== ProjectTaskForce =====
   addProjectTaskForce: (ptf: ProjectTaskForce) => Promise<void>;
@@ -231,6 +236,93 @@ async function runCascade(
           if (t) {
             get().saveTask(
               { ...t, start_date: shift.oldStart, due_date: shift.oldDue },
+              { skipCascade: true },
+            );
+          }
+        });
+      },
+    },
+  );
+}
+
+/**
+ * ガント複数選択の一括シフト：選択中の全タスクを同じ日数だけ移動する（バー中央ドラッグの
+ * 単体移動＝computeMoveShift/saveTaskの choke point を選択集合に拡張したもの）。
+ *
+ * 【設計意図】
+ * - 1つの論理操作として扱う：①対象全ての移動前日付を控える ②各対象にdeltaを適用して
+ *   永続化（{ skipCascade: true } で per-task の B3 カスケードは起こさない＝トースト嵐防止）
+ *   ③全適用後に computeCascadeShiftsMulti で B3 カスケードを1回だけ計算・適用
+ *   ④動いた件数をまとめて1つのトースト＋Undo（直接シフト分＋カスケード分の全タスクを対象）。
+ * - done タスク・削除済み・期日未設定タスクは computeBulkMoveShifts が対象外にする
+ *   （バー中央ドラッグの単体移動と同じ「doneはシフト対象外」ルール）。
+ * - 個々の保存が楽観ロック競合等で失敗しても他のシフト適用は止めない（Promise.allSettled。
+ *   runCascade と同じ多人数の割り切り）。
+ * - Undo自体は { skipCascade: true } で再cascadeを起こさない（B3のUndoパターンを踏襲）。
+ */
+async function runBulkShift(
+  taskIds: string[],
+  deltaDays: number,
+  updatedBy: string | undefined,
+  get: () => AppState,
+): Promise<void> {
+  if (deltaDays === 0 || taskIds.length === 0) return;
+  const targetTasks = taskIds
+    .map(id => get().tasks.find(t => t.id === id))
+    .filter((t): t is Task => !!t);
+  const directShifts = computeBulkMoveShifts(targetTasks, deltaDays);
+  if (directShifts.length === 0) return;
+
+  const directResults = await Promise.allSettled(
+    directShifts.map(s => {
+      const current = get().tasks.find(t => t.id === s.taskId);
+      if (!current) return Promise.resolve();
+      const payload: Task = {
+        ...current,
+        due_date: s.newDue,
+        ...(updatedBy ? { updated_by: updatedBy } : {}),
+      };
+      if (s.newStart !== null) payload.start_date = s.newStart;
+      return get().saveTask(payload, { skipCascade: true });
+    }),
+  );
+  const appliedDirect = directShifts.filter((_, i) => directResults[i]?.status === "fulfilled");
+  if (appliedDirect.length === 0) return;
+
+  // B3カスケードは複数originから1回だけ計算・適用（origin同士の間では二重シフトしない）
+  const cascadeShifts = computeCascadeShiftsMulti(
+    appliedDirect.map(s => s.taskId),
+    get().tasks,
+    get().taskDependencies,
+  );
+  const cascadeResults = await Promise.allSettled(
+    cascadeShifts.map(shift => {
+      const current = get().tasks.find(t => t.id === shift.taskId);
+      if (!current) return Promise.resolve();
+      return get().saveTask(
+        { ...current, start_date: shift.newStart, due_date: shift.newDue },
+        { skipCascade: true },
+      );
+    }),
+  );
+  const appliedCascade = cascadeShifts.filter((_, i) => cascadeResults[i]?.status === "fulfilled");
+
+  const undoTargets = [
+    ...appliedDirect.map(s => ({ taskId: s.taskId, oldStart: s.oldStart, oldDue: s.oldDue })),
+    ...appliedCascade.map(s => ({ taskId: s.taskId, oldStart: s.oldStart, oldDue: s.oldDue })),
+  ];
+  const cascadeSuffix = appliedCascade.length > 0 ? `（＋自動調整${appliedCascade.length}件）` : "";
+  showToast(
+    `${appliedDirect.length}件のタスクを移動しました${cascadeSuffix}`,
+    "info",
+    {
+      label: "元に戻す",
+      onClick: () => {
+        undoTargets.forEach(u => {
+          const t = get().tasks.find(x => x.id === u.taskId);
+          if (t) {
+            get().saveTask(
+              { ...t, start_date: u.oldStart, due_date: u.oldDue },
               { skipCascade: true },
             );
           }
@@ -795,6 +887,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
       await handleSaveError(e, get().load);
       throw e;
     }
+  },
+
+  bulkShiftTasks: async (taskIds, deltaDays, updatedBy) => {
+    await runBulkShift(taskIds, deltaDays, updatedBy, get);
   },
 
   // ===== ProjectTaskForce =====

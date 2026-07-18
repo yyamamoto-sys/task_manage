@@ -63,13 +63,18 @@ export interface TaskBarRowProps {
   linkUi?: TaskBarLinkUi;
   /** バー中央ドラッグでこのバーが今まさに移動中かどうか（grab/grabbingカーソルの切替に使う） */
   isMoving?: boolean;
-  onEdit: (taskId: string) => void;
+  /** 複数選択（Ctrl/Cmd+クリック）で選択中かどうか。選択中の全バーは一括ドラッグの対象になる */
+  isSelected?: boolean;
+  /** クリック（Ctrl/Cmd 押下時は選択トグル、それ以外は詳細を開く＋選択クリア）。
+      Enter/Space によるキーボード操作も同じハンドラを通す */
+  onEdit: (e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>, taskId: string) => void;
   /** 右端ドラッグ：期日変更 */
   onResize: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   /** 左端ドラッグ：開始日変更（右端と対称）。isDone のときは非表示にする点も右端と同じ */
   onResizeStart: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   /** バー中央（端のリサイズハンドル・外側の結線ハンドルのどちらでもない領域）ドラッグ：タスク全体の移動。
-      isDone のときは無効（リサイズハンドルと同じ扱い） */
+      選択中（isSelected）かつ選択が2件以上なら選択中の全タスクが一緒に動く。isDone のときは無効
+      （リサイズハンドルと同じ扱い） */
   onMoveStart: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
   onMouseLeave: () => void;
@@ -80,7 +85,7 @@ function TaskBarRowImpl({
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
-  ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false,
+  ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false, isSelected = false,
   onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
@@ -128,7 +133,7 @@ function TaskBarRowImpl({
           <div
             title={tooltip}
             data-task-id={taskId}
-            onClick={isPreview ? undefined : () => onEdit(taskId)}
+            onClick={isPreview ? undefined : e => onEdit(e, taskId)}
             // バー中央（左右端のリサイズハンドル・外側の結線ハンドルに覆われていない領域）へのmousedownは
             // このバー本体自身が受け取る（ハンドルはより高いzIndexで上に乗っているため自然にヒットテストで
             // 除外される）。移動閾値未満ならクリックとして扱われ通常どおり onClick が発火する（GanttView側で
@@ -136,7 +141,7 @@ function TaskBarRowImpl({
             onMouseDown={isPreview || isDone ? undefined : e => onMoveStart(e, taskId)}
             role={isPreview ? undefined : "button"}
             tabIndex={isPreview ? undefined : 0}
-            onKeyDown={isPreview ? undefined : (e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEdit(taskId); } })}
+            onKeyDown={isPreview ? undefined : (e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onEdit(e, taskId); } })}
             style={{
               position: "absolute",
               left: bar.barX, top: "50%", transform: "translateY(-50%)",
@@ -146,7 +151,9 @@ function TaskBarRowImpl({
               opacity: isDone ? 0.5 : 1,
               cursor: isPreview ? "default" : isDone ? "pointer" : isMoving ? "grabbing" : "grab",
               zIndex: 2,
-              outline: isChanged
+              outline: isSelected
+                ? "2px solid var(--color-text-info)"
+                : isChanged
                 ? "2px solid var(--color-brand)"
                 : isStagnant && !isDone ? "1.5px solid #f97316" : "none",
               outlineOffset: "1px",
@@ -309,6 +316,7 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     (prev.linkUi?.isValid ?? null) === (next.linkUi?.isValid ?? null) &&
     (prev.linkUi?.onHandleDown ?? null) === (next.linkUi?.onHandleDown ?? null) &&
     (prev.isMoving ?? false) === (next.isMoving ?? false) &&
+    (prev.isSelected ?? false) === (next.isSelected ?? false) &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onResizeStart === next.onResizeStart &&

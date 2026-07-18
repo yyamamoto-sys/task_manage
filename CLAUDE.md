@@ -705,7 +705,65 @@
 #             のみ（GanttMobileView は対象外・未変更）
 #      DBマイグレ不要（フロントのみ。既存の saveTask 経路をそのまま使用）
 #
-# 最終更新：2026-07-18（v2.42）
+# v2.43 feat: ガントビューに複数タスクを選択して一括で日付シフトする機能を追加（2026-07-18）
+#      背景：既存プロマネツール調査（PMBOK10基準）で高優先と判定された改善5件の2件目
+#             （1件目＝v2.42のバー中央ドラッグ単体移動。他3件＝クリティカルパス／進捗率
+#             バー塗り／過負荷可視化は後続で別途実装）。v2.42の単体移動を選択集合に拡張する
+#      複数選択：Ctrl/Cmd+クリックでタスクバーの選択をトグル（選択中は水色アウトライン表示）。
+#             修飾キー無しの通常クリック（かつ移動していない）は従来どおり詳細を開く＋選択を
+#             クリア。空白（バー以外）クリック・Escapeでも選択クリア。選択はタスクidベース
+#             （人別ビュー等で同一タスクが複数行に出てもid単位で扱う）。ラベル列（PJ名/ToDo名/
+#             人名の行クリック）は対象外（既存のguardedHandleRowEditのまま）・実タスクバー
+#             （data-task-idを持つ要素）のみ新設のguardedHandleBarEditが担う
+#      追加：GanttParts.tsx TaskBarRowにisSelectedプロップ（選択中は
+#             outline:2px solid var(--color-text-info)。isChanged/isStagnantの outline と
+#             排他で優先順位をつけて合成）。onEditの型をReact.MouseEvent|React.KeyboardEventの
+#             union に拡張（Ctrl/Cmd判定のためevent自体を渡す必要があったため。ラベル行用の
+#             既存onEditは型変更していない＝別ハンドラに分離）
+#      追加：src/components/gantt/ganttUtils.ts に computeBulkMoveShifts（純粋関数）。
+#             複数タスク＋deltaDaysから各タスクの新旧日付をまとめて計算。内部でcomputeMoveShift
+#             を1件ずつ適用するだけ（ロジックの二重化なし）。done・削除済み・期日未設定タスクは
+#             対象外にする判定をここ1箇所に集約（単体移動と同じ「doneはシフト対象外」ルール）。
+#             __tests__/ganttUtils.test.ts に6テスト追加
+#      追加：src/lib/dependencies/reschedule.ts に computeCascadeShiftsMulti（純粋関数）。
+#             複数origin（一括シフトで直接動いたタスク群）から辿れる後続への自動リスケ連鎖
+#             （B3）を1回のトポロジカル順パスで合成計算する。既存computeCascadeShiftsは
+#             `computeCascadeShiftsMulti([originTaskId], ...)` に委譲するリファクタに変更
+#             （既存の単一origin呼び出し・テスト18件は無改造で全通過＝後方互換）。
+#             設計上の要注意点：BFS/トポロジカルソート自体はorigin集合を特別扱いせず素直に
+#             走らせる（単一origin時の循環データ安全網＝Kahnデッドロック検出を複数origin版でも
+#             完全に同じ形で保つため。最初origin自体をBFSから除外する実装を試したところ、
+#             既存の「循環が無限ループにならない」防御テストを壊した＝原点への逆流エッジが
+#             見えなくなり安全網が働かなくなっていた）。origin同士が直接の依存で繋がっている
+#             場合（例：AとBを両方選択してドラッグ、A→Bの依存あり）だけ、ループの中で
+#             origin自身へのshift適用をスキップする（bulk側で既に同じdeltaだけ直接シフト済み
+#             のため、他originからの制約で二重にカスケードシフトしない）。__tests__に5テスト追加
+#      追加：appStore.ts に bulkShiftTasks(taskIds, deltaDays, updatedBy) アクション＋
+#             module levelのrunBulkShiftヘルパー（runCascadeと同じ流儀）。1つの論理操作として
+#             扱う：①computeBulkMoveShiftsで対象全ての移動前後日付を算出 ②各対象に
+#             { skipCascade: true } でsaveTaskを呼び直接シフトを永続化（per-taskのB3カスケードは
+#             発火させずトースト嵐を防ぐ。Promise.allSettledで多人数の割り切り） ③直接シフトが
+#             成功した全タスクidを使いcomputeCascadeShiftsMultiでB3カスケードを1回だけ計算・
+#             適用（同じく{ skipCascade: true }） ④1つのトースト「N件のタスクを移動しました
+#             （＋自動調整M件）」＋Undo（直接シフト分＋カスケード分の全タスクの旧日付を
+#             { skipCascade: true } で復元。Undo自体は再カスケードしない＝B3の既存Undo
+#             パターンを踏襲）。__tests__/bulkShiftTasks.test.ts に7テスト追加
+#             （Supabaseクライアントをモックしstores/__tests__/cascadeReschedule.test.tsと
+#             同じ方式でDB書き込みまで検証）
+#      変更：GanttView.tsx のバー中央ドラッグ（v2.42）を選択集合に拡張。ドラッグ元のバーが
+#             選択中（selectedTaskIds）かつ選択が2件以上のときだけdraggingMoveTask.bulkTargets
+#             を持たせ（1件以下・非選択なら従来どおり単体移動のまま）、プレビュー
+#             （resizePreviewDates）は対象全件についてcomputeMoveShiftを回して書き込む。
+#             確定はbulkShiftTasks（複数）またはsaveTask（単体）に分岐。movingTaskIds
+#             （useMemoのSet）でisMovingプロップを対象全件に一括反映
+#      追加：ツールバーに選択件数インジケータ（「N件選択中 ✕」）。選択が空のときは非表示
+#      スコープ：実タスクバー（data-task-id）のみ・デスクトップGanttViewのみ
+#             （GanttMobileViewは対象外・未変更）。既存の単体移動・リサイズ・B5結線・
+#             クリック詳細・B2矢印・B4ゴーストバー・列グリッド・MS帯・依存順並べ替え・
+#             完了フィルタ・ズーム・折りたたみ・3グルーピングは無改造（回帰テスト309件全通過）
+#      DBマイグレ不要（フロントのみ。既存の saveTask 経路をそのまま使用）
+#
+# 最終更新：2026-07-18（v2.43）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

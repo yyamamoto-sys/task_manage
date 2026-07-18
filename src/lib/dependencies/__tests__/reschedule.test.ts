@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeCascadeShifts } from "../reschedule";
+import { computeCascadeShifts, computeCascadeShiftsMulti } from "../reschedule";
 import type { Task, TaskDependency } from "../../localData/types";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
@@ -174,5 +174,57 @@ describe("computeCascadeShifts", () => {
       makeDep({ predecessor_task_id: "A", successor_task_id: "C", is_deleted: true }),
     ];
     expect(computeCascadeShifts("A", [a, b, c], deps)).toEqual([]);
+  });
+});
+
+describe("computeCascadeShiftsMulti（ガント複数選択の一括シフト用・複数origin版）", () => {
+  it("単一originならcomputeCascadeShiftsと同じ結果", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    expect(computeCascadeShiftsMulti(["A"], [a, b], deps)).toEqual(computeCascadeShifts("A", [a, b], deps));
+  });
+
+  it("複数originからの後続を1回のパスで合成する（それぞれ別の後続を押す）", () => {
+    // A→X、B→Y。AとBを一括シフトした後の状態（allTasksに反映済み）から、XとYがそれぞれ押される
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-01", due_date: "2026-08-12" });
+    const x = makeTask({ id: "X", start_date: "2026-08-05", due_date: "2026-08-08" });
+    const y = makeTask({ id: "Y", start_date: "2026-08-05", due_date: "2026-08-09" });
+    const deps = [
+      makeDep({ predecessor_task_id: "A", successor_task_id: "X" }),
+      makeDep({ predecessor_task_id: "B", successor_task_id: "Y" }),
+    ];
+    const shifts = computeCascadeShiftsMulti(["A", "B"], [a, b, x, y], deps);
+    expect(shifts).toEqual([
+      { taskId: "X", oldStart: "2026-08-05", oldDue: "2026-08-08", newStart: "2026-08-10", newDue: "2026-08-13" },
+      { taskId: "Y", oldStart: "2026-08-05", oldDue: "2026-08-09", newStart: "2026-08-12", newDue: "2026-08-16" },
+    ]);
+  });
+
+  it("origin同士が依存で繋がっていても、origin自身はカスケード対象にしない（bulk側で既に同delta適用済みのため）", () => {
+    // A→B（両方origin）。Aが押してもBはreachableに含めない＝Bはcascadeシフトされない
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-01", due_date: "2026-08-12" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    expect(computeCascadeShiftsMulti(["A", "B"], [a, b], deps)).toEqual([]);
+  });
+
+  it("複数originが同じ後続を押す場合、より大きい方（最大値）が採用される", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-09" });
+    const b = makeTask({ id: "B", start_date: "2026-08-01", due_date: "2026-08-12" });
+    const c = makeTask({ id: "C", start_date: "2026-08-05", due_date: "2026-08-08" });
+    const deps = [
+      makeDep({ predecessor_task_id: "A", successor_task_id: "C" }),
+      makeDep({ predecessor_task_id: "B", successor_task_id: "C" }),
+    ];
+    const shifts = computeCascadeShiftsMulti(["A", "B"], [a, b, c], deps);
+    expect(shifts).toEqual([
+      { taskId: "C", oldStart: "2026-08-05", oldDue: "2026-08-08", newStart: "2026-08-12", newDue: "2026-08-15" },
+    ]);
+  });
+
+  it("空配列を渡すと空配列", () => {
+    expect(computeCascadeShiftsMulti([], [], [])).toEqual([]);
   });
 });

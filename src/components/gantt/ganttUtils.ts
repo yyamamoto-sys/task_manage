@@ -180,3 +180,37 @@ export function computeMoveShift(origStartDate: string | null, origDueDate: stri
   if (!start) return { due: newDue };
   return { start: toDateStr(addDays(start, deltaDays)), due: newDue };
 }
+
+// ===== 複数選択の一括シフト =====
+
+export interface BulkMoveShift {
+  taskId: string;
+  oldStart: string | null;
+  oldDue: string;
+  newStart: string | null;
+  newDue: string;
+}
+
+/**
+ * 選択中の複数タスクを同じ日数だけシフトする際の、各タスクの新旧日付をまとめて計算する（純粋関数）。
+ * 内部で computeMoveShift を1件ずつ適用するだけ（ロジックの二重化を避ける）。完了(done)・削除済み・
+ * 期日未設定のタスクは対象外にする（バー中央ドラッグの単体移動と同じ「doneはシフト対象外」ルールを
+ * ここ1箇所に集約する）。
+ */
+export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMoveShift[] {
+  if (deltaDays === 0) return [];
+  const result: BulkMoveShift[] = [];
+  for (const task of tasks) {
+    if (task.status === "done" || task.is_deleted || !task.due_date) continue;
+    const shift = computeMoveShift(task.start_date ?? null, task.due_date, deltaDays);
+    if (Object.keys(shift).length === 0) continue;
+    result.push({
+      taskId: task.id,
+      oldStart: task.start_date ?? null,
+      oldDue: task.due_date,
+      newStart: shift.start ?? null,
+      newDue: shift.due!,
+    });
+  }
+  return result;
+}

@@ -81,6 +81,7 @@ export function GanttView({
   const rawTodos      = useAppStore(s => s.todos);
   const rawMilestones = useAppStore(s => s.milestones);
   const saveTask      = useAppStore(s => s.saveTask);
+  const bulkShiftTasks = useAppStore(s => s.bulkShiftTasks);
   const saveProject   = useAppStore(s => s.saveProject);
   // 兄弟タスクの依存関係順ソート（orderTasksHierarchically 等）に使う。B2の矢印描画（下記 logicalDeps）
   // より前で必要なため、purposely ここで先に取得する
@@ -102,6 +103,37 @@ export function GanttView({
       return next;
     });
   }, []);
+
+  // ===== 複数選択（Ctrl/Cmd+クリック）＋一括シフト =====
+  //
+  // 【設計意図】選択はタスクidベース（人別ビュー等で同一タスクが複数行に出ても id 単位で扱う）。
+  // Ctrl/Cmd+クリックでトグル、修飾キー無しの通常クリックは詳細を開く＋選択クリア、空白クリック・
+  // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
+  // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const toggleTaskSelection = useCallback((taskId: string) => {
+    setSelectedTaskIds(prev => {
+      const n = new Set(prev);
+      if (n.has(taskId)) n.delete(taskId); else n.add(taskId);
+      return n;
+    });
+  }, []);
+  const clearTaskSelection = useCallback(() => {
+    setSelectedTaskIds(prev => (prev.size === 0 ? prev : new Set()));
+  }, []);
+  // Escapeで選択クリア。選択が空のときはリスナーを貼らない（他機能のEscape処理と競合しないよう最小限に）
+  useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") clearTaskSelection(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedTaskIds.size, clearTaskSelection]);
+  // 空白（バー以外）クリックで選択クリア。data-task-id を持つ要素上でのクリックは対象外
+  // （そちらは guardedHandleRowEdit 側で選択トグル or 選択クリア+詳細表示を担う）
+  const handleGanttBodyClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("[data-task-id]")) return;
+    clearTaskSelection();
+  }, [clearTaskSelection]);
 
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
   // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
@@ -659,8 +691,15 @@ export function GanttView({
   // 確定は必ず saveTask 経由（右端/左端リサイズと同じ choke point。B3自動リスケ連鎖・B4ベースライン
   // 凍結がここでも自動的に効く）。プレビューは既存の resizePreviewDates をそのまま流用する
   // （move が両端を同時にシフトした {start, due} を書き込むだけで、リサイズと排他利用のため衝突しない）。
+  //
+  // 複数選択の一括ドラッグ：ドラッグ元のバーが選択中（selectedTaskIds）かつ選択が2件以上のときだけ
+  // bulkTargets を持たせる（1件以下・非選択なら単体移動と同じ経路のまま）。プレビューは
+  // bulkTargets の全件についてそれぞれ computeMoveShift を計算して resizePreviewDates に書き込む
+  // （単体移動の1件版を targets ループに一般化しただけ）。確定は appStore.bulkShiftTasks
+  // （直接シフト全件→B3カスケード1回→1トースト＋Undo、をひとつの論理操作として担う）。
   const [draggingMoveTask, setDraggingMoveTask] = useState<{
     taskId: string; startX: number; origStart: string | null; origDue: string;
+    bulkTargets?: { taskId: string; origStart: string | null; origDue: string }[];
   } | null>(null);
   // クリックとドラッグ移動の区別：水平4pxの移動閾値を超えた時点で true にする（レンダーを介さない ref。
   // window mouseup ハンドラ内で suppressNextClickRef に引き継ぎ、直後に発火する React の onClick 側で
@@ -669,23 +708,45 @@ export function GanttView({
   const suppressNextClickRef = useRef(false);
   const MOVE_THRESHOLD_PX = 4;
 
+  // ドラッグ中／完了直後のバーがどれか（bulkTargets込み）を判定するための Set。
+  // TaskBarRow の isMoving プロップに使う（単体移動時は自身のみ、一括移動時は選択中の全対象）
+  const movingTaskIds = useMemo(() => {
+    if (!draggingMoveTask) return null;
+    if (draggingMoveTask.bulkTargets) return new Set(draggingMoveTask.bulkTargets.map(t => t.taskId));
+    return new Set([draggingMoveTask.taskId]);
+  }, [draggingMoveTask]);
+
   const handleMoveDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     const task = taskById.get(taskId);
     if (!task?.due_date || isPreview) return;
     e.preventDefault();
     moveHasShiftedRef.current = false;
-    setDraggingMoveTask({ taskId: task.id, startX: e.clientX, origStart: task.start_date ?? null, origDue: task.due_date });
-  }, [isPreview, taskById]);
+    const isBulk = selectedTaskIds.has(taskId) && selectedTaskIds.size > 1;
+    const bulkTargets = isBulk
+      ? [...selectedTaskIds]
+          .map(id => taskById.get(id))
+          .filter((t): t is Task => !!t && t.status !== "done" && !!t.due_date)
+          .map(t => ({ taskId: t.id, origStart: t.start_date ?? null, origDue: t.due_date! }))
+      : undefined;
+    setDraggingMoveTask({
+      taskId: task.id, startX: e.clientX,
+      origStart: task.start_date ?? null, origDue: task.due_date,
+      bulkTargets: bulkTargets && bulkTargets.length > 1 ? bulkTargets : undefined,
+    });
+  }, [isPreview, taskById, selectedTaskIds]);
 
   useEffect(() => {
     if (!draggingMoveTask) return;
-    const { taskId, startX, origStart, origDue } = draggingMoveTask;
+    const { taskId, startX, origStart, origDue, bulkTargets } = draggingMoveTask;
+    const targets = bulkTargets ?? [{ taskId, origStart, origDue }];
     const clearPreview = () => {
       setResizePreviewDates(prev => {
-        if (!prev[taskId]) return prev;
+        let changed = false;
         const n = { ...prev };
-        delete n[taskId];
-        return n;
+        for (const t of targets) {
+          if (n[t.taskId]) { delete n[t.taskId]; changed = true; }
+        }
+        return changed ? n : prev;
       });
     };
     const onMove = (e: MouseEvent) => {
@@ -695,9 +756,15 @@ export function GanttView({
         moveHasShiftedRef.current = true;
       }
       const deltaDays = Math.round(deltaPixels / dayWidth);
-      const shift = computeMoveShift(origStart, origDue, deltaDays);
-      if (Object.keys(shift).length === 0) { clearPreview(); return; }
-      setResizePreviewDates(prev => ({ ...prev, [taskId]: shift }));
+      setResizePreviewDates(prev => {
+        const n = { ...prev };
+        for (const t of targets) {
+          const shift = computeMoveShift(t.origStart, t.origDue, deltaDays);
+          if (Object.keys(shift).length === 0) { delete n[t.taskId]; continue; }
+          n[t.taskId] = shift;
+        }
+        return n;
+      });
     };
     const onUp = async (e: MouseEvent) => {
       const wasMoved = moveHasShiftedRef.current;
@@ -707,6 +774,11 @@ export function GanttView({
       // クリックとして解釈されないよう、直後に発火する onClick 側（guardedHandleRowEdit）で消費させる
       suppressNextClickRef.current = true;
       const deltaDays = Math.round((e.clientX - startX) / dayWidth);
+      if (deltaDays === 0) return;
+      if (targets.length > 1) {
+        await bulkShiftTasks(targets.map(t => t.taskId), deltaDays, currentUser.id);
+        return;
+      }
       const shift = computeMoveShift(origStart, origDue, deltaDays);
       if (Object.keys(shift).length === 0) return;
       const task = allTasks.find(t => t.id === taskId);
@@ -720,7 +792,7 @@ export function GanttView({
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
-  }, [draggingMoveTask, dayWidth, allTasks, saveTask]);
+  }, [draggingMoveTask, dayWidth, allTasks, saveTask, bulkShiftTasks, currentUser.id]);
 
   // ===== タスク依存関係の矢印（B2） =====
   //
@@ -957,6 +1029,19 @@ export function GanttView({
     if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
     handleRowEdit(taskId);
   }, [linkDrag, handleRowEdit]);
+  // タスクバー専用のクリックハンドラ（複数選択：Ctrl/Cmd+クリック対応）。ラベル列の行クリック
+  // （guardedHandleRowEdit）とは別に持つ。Ctrl/Cmd+クリックは選択トグルのみ（詳細は開かず、
+  // 既存の選択も保持する）。修飾キー無しの通常クリックは選択をクリアしてから詳細を開く
+  const guardedHandleBarEdit = useCallback((e: React.MouseEvent | React.KeyboardEvent, taskId: string) => {
+    if (linkDrag) return;
+    if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
+    if (e.ctrlKey || e.metaKey) {
+      toggleTaskSelection(taskId);
+      return;
+    }
+    clearTaskSelection();
+    handleRowEdit(taskId);
+  }, [linkDrag, toggleTaskSelection, clearTaskSelection, handleRowEdit]);
   const guardedHandleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     if (linkDrag || draggingMoveTask) return;
     handleResizeDragStart(e, taskId);
@@ -1116,6 +1201,30 @@ export function GanttView({
               fontWeight: hideCompletedTasks ? "600" : "400",
             }}
           >🙈完了を隠す</button>
+        )}
+        {/* 複数選択インジケータ：Ctrl/Cmd+クリックで選択したタスクの件数。選択中のバーの中央を
+            ドラッグすると選択中の全タスクが一括でシフトする */}
+        {!isPreview && selectedTaskIds.size > 0 && (
+          <div style={{
+            display: "flex", alignItems: "center", gap: "4px",
+            padding: "3px 4px 3px 10px",
+            border: "1px solid var(--color-brand-border)",
+            borderRadius: "var(--radius-md)",
+            color: "var(--color-brand)", fontSize: "11px", fontWeight: "600",
+            background: "var(--color-brand-light)",
+          }}>
+            {selectedTaskIds.size}件選択中
+            <button
+              onClick={clearTaskSelection}
+              title="選択を解除"
+              aria-label="選択を解除"
+              style={{
+                ...headerBtnStyle,
+                border: "none", padding: "2px 6px",
+                color: "var(--color-brand)", fontWeight: "600",
+              }}
+            >✕</button>
+          </div>
         )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
@@ -1509,8 +1618,11 @@ export function GanttView({
               </div>
             </div>
 
-            {/* ボディ：土日背景は CSS gradient、月初・月曜境界線のみ個別 div */}
-            <div ref={ganttBodyRef} style={{
+            {/* ボディ：土日背景は CSS gradient、月初・月曜境界線のみ個別 div。onClick は
+                空白（バー以外）クリックで複数選択をクリアするためだけの背景クリック検知
+                （キーボード操作の対象ではない背景領域のため、モーダル背景クリックと同じ扱い） */}
+            {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+            <div ref={ganttBodyRef} onClick={handleGanttBodyClick} style={{
               position: "relative",
               backgroundImage: weekendGradient,
               backgroundSize: `${weekPeriod}px 100%`,
@@ -1692,8 +1804,9 @@ export function GanttView({
                               depBadgeLeftTitle={depBadgeLeft}
                               depBadgeRightTitle={depBadgeRight}
                               linkUi={getLinkUi(task.id)}
-                              isMoving={draggingMoveTask?.taskId === task.id}
-                              onEdit={guardedHandleRowEdit}
+                              isMoving={movingTaskIds?.has(task.id) ?? false}
+                              isSelected={selectedTaskIds.has(task.id)}
+                              onEdit={guardedHandleBarEdit}
                               onResize={guardedHandleResizeDragStart}
                               onResizeStart={guardedHandleStartResizeDragStart}
                               onMoveStart={guardedHandleMoveDragStart}
@@ -1854,8 +1967,9 @@ export function GanttView({
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           linkUi={getLinkUi(task.id)}
-                          isMoving={draggingMoveTask?.taskId === task.id}
-                          onEdit={guardedHandleRowEdit}
+                          isMoving={movingTaskIds?.has(task.id) ?? false}
+                          isSelected={selectedTaskIds.has(task.id)}
+                          onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
                           onMoveStart={guardedHandleMoveDragStart}
@@ -1926,8 +2040,9 @@ export function GanttView({
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           linkUi={getLinkUi(task.id)}
-                          isMoving={draggingMoveTask?.taskId === task.id}
-                          onEdit={guardedHandleRowEdit}
+                          isMoving={movingTaskIds?.has(task.id) ?? false}
+                          isSelected={selectedTaskIds.has(task.id)}
+                          onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
                           onMoveStart={guardedHandleMoveDragStart}

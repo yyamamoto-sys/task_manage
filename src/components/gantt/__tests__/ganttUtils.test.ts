@@ -3,7 +3,7 @@ import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
-  computeMoveShift,
+  computeMoveShift, computeBulkMoveShifts,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange } from "../../../lib/date";
@@ -230,6 +230,47 @@ describe("computeMoveShift", () => {
 
   it("期日が無効な日付なら{}", () => {
     expect(computeMoveShift("2026-07-05", "", 3)).toEqual({});
+  });
+});
+
+describe("computeBulkMoveShifts", () => {
+  it("複数タスクを同じ日数だけシフトする", () => {
+    const tasks = [
+      makeTask({ id: "t1", start_date: "2026-07-05", due_date: "2026-07-10" }),
+      makeTask({ id: "t2", start_date: "2026-07-08", due_date: "2026-07-09" }),
+    ];
+    const shifts = computeBulkMoveShifts(tasks, 3);
+    expect(shifts).toEqual([
+      { taskId: "t1", oldStart: "2026-07-05", oldDue: "2026-07-10", newStart: "2026-07-08", newDue: "2026-07-13" },
+      { taskId: "t2", oldStart: "2026-07-08", oldDue: "2026-07-09", newStart: "2026-07-11", newDue: "2026-07-12" },
+    ]);
+  });
+
+  it("完了(done)タスクは対象外", () => {
+    const tasks = [makeTask({ id: "t1", status: "done", start_date: "2026-07-05", due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);
+  });
+
+  it("削除済みタスクは対象外", () => {
+    const tasks = [makeTask({ id: "t1", is_deleted: true, start_date: "2026-07-05", due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);
+  });
+
+  it("期日未設定タスクは対象外", () => {
+    const tasks = [makeTask({ id: "t1", start_date: "2026-07-05", due_date: null })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);
+  });
+
+  it("開始日が無い（期日のみ）タスクはnewStart=nullのまま期日だけシフトする", () => {
+    const tasks = [makeTask({ id: "t1", start_date: null, due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([
+      { taskId: "t1", oldStart: null, oldDue: "2026-07-10", newStart: null, newDue: "2026-07-13" },
+    ]);
+  });
+
+  it("deltaDays===0なら空配列", () => {
+    const tasks = [makeTask({ id: "t1", start_date: "2026-07-05", due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 0)).toEqual([]);
   });
 });
 
