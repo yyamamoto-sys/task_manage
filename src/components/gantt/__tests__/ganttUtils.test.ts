@@ -3,6 +3,7 @@ import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
+  computeMoveShift,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange } from "../../../lib/date";
@@ -204,6 +205,31 @@ describe("computeMilestoneBands", () => {
 
   it("空配列なら空配列", () => {
     expect(computeMilestoneBands([], rangeStart, dayWidth)).toEqual([]);
+  });
+});
+
+describe("computeMoveShift", () => {
+  it("開始日・期日の両方があれば同じ日数だけ両方シフトする（duration保持）", () => {
+    const shift = computeMoveShift("2026-07-05", "2026-07-10", 3);
+    expect(shift).toEqual({ start: "2026-07-08", due: "2026-07-13" });
+  });
+
+  it("負のdeltaDays（前方向へのドラッグ）でも両方シフトする", () => {
+    const shift = computeMoveShift("2026-07-05", "2026-07-10", -2);
+    expect(shift).toEqual({ start: "2026-07-03", due: "2026-07-08" });
+  });
+
+  it("開始日が無い（期日のみ）タスクは期日だけシフトする", () => {
+    const shift = computeMoveShift(null, "2026-07-10", 3);
+    expect(shift).toEqual({ due: "2026-07-13" });
+  });
+
+  it("deltaDays===0なら{}（no-op）", () => {
+    expect(computeMoveShift("2026-07-05", "2026-07-10", 0)).toEqual({});
+  });
+
+  it("期日が無効な日付なら{}", () => {
+    expect(computeMoveShift("2026-07-05", "", 3)).toEqual({});
   });
 });
 

@@ -2,7 +2,7 @@
 // ガントビュー共通の定数・型・純粋関数
 
 import type { Task, Milestone } from "../../lib/localData/types";
-import { toDate, toDateStr, diffDays } from "../../lib/date";
+import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
 
 export const DAY_WIDTH_DEFAULT = 28;
 export const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
@@ -161,4 +161,22 @@ export function applyResizePreview(task: Task, preview: ResizePreview | undefine
 /** 左端ドラッグ（開始日変更）のクランプ：開始日が期日を超えないようにする（同日は許可） */
 export function clampStartDate(candidateStartDate: string, dueDate: string): string {
   return candidateStartDate > dueDate ? dueDate : candidateStartDate;
+}
+
+// ===== バー中央ドラッグ（タスク全体の移動） =====
+
+/**
+ * バー中央ドラッグによる全体移動：start_date/due_date を同じ日数だけシフトする（duration保持）。
+ * origStartDate が null（期日のみタスク）の場合は due_date だけシフトする。
+ * deltaDays===0 または origDueDate が無効な日付なら {}（プレビュー・保存とも no-op として扱われる）。
+ */
+export function computeMoveShift(origStartDate: string | null, origDueDate: string, deltaDays: number): ResizePreview {
+  if (deltaDays === 0) return {};
+  const due = toDate(origDueDate);
+  if (!due) return {};
+  const newDue = toDateStr(addDays(due, deltaDays));
+  if (!origStartDate) return { due: newDue };
+  const start = toDate(origStartDate);
+  if (!start) return { due: newDue };
+  return { start: toDateStr(addDays(start, deltaDays)), due: newDue };
 }

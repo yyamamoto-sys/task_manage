@@ -25,7 +25,7 @@ import {
   TODO_COLOR, MS_COLOR, MS_BORDER,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
-  computeWeekBlocks, applyResizePreview, clampStartDate, type ResizePreview,
+  computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
@@ -655,6 +655,73 @@ export function GanttView({
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [draggingResizeTask, dayWidth, allTasks, saveTask, clearPreviewEdge]);
 
+  // バー中央ドラッグ：タスク全体の移動（start_date/due_date を同じ日数だけシフト・duration保持）。
+  // 確定は必ず saveTask 経由（右端/左端リサイズと同じ choke point。B3自動リスケ連鎖・B4ベースライン
+  // 凍結がここでも自動的に効く）。プレビューは既存の resizePreviewDates をそのまま流用する
+  // （move が両端を同時にシフトした {start, due} を書き込むだけで、リサイズと排他利用のため衝突しない）。
+  const [draggingMoveTask, setDraggingMoveTask] = useState<{
+    taskId: string; startX: number; origStart: string | null; origDue: string;
+  } | null>(null);
+  // クリックとドラッグ移動の区別：水平4pxの移動閾値を超えた時点で true にする（レンダーを介さない ref。
+  // window mouseup ハンドラ内で suppressNextClickRef に引き継ぎ、直後に発火する React の onClick 側で
+  // 消費・リセットする。同期的な mousedown→mouseup→click の順序に依存した標準的な click-vs-drag 判定）
+  const moveHasShiftedRef = useRef(false);
+  const suppressNextClickRef = useRef(false);
+  const MOVE_THRESHOLD_PX = 4;
+
+  const handleMoveDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
+    const task = taskById.get(taskId);
+    if (!task?.due_date || isPreview) return;
+    e.preventDefault();
+    moveHasShiftedRef.current = false;
+    setDraggingMoveTask({ taskId: task.id, startX: e.clientX, origStart: task.start_date ?? null, origDue: task.due_date });
+  }, [isPreview, taskById]);
+
+  useEffect(() => {
+    if (!draggingMoveTask) return;
+    const { taskId, startX, origStart, origDue } = draggingMoveTask;
+    const clearPreview = () => {
+      setResizePreviewDates(prev => {
+        if (!prev[taskId]) return prev;
+        const n = { ...prev };
+        delete n[taskId];
+        return n;
+      });
+    };
+    const onMove = (e: MouseEvent) => {
+      const deltaPixels = e.clientX - startX;
+      if (!moveHasShiftedRef.current) {
+        if (Math.abs(deltaPixels) <= MOVE_THRESHOLD_PX) return;
+        moveHasShiftedRef.current = true;
+      }
+      const deltaDays = Math.round(deltaPixels / dayWidth);
+      const shift = computeMoveShift(origStart, origDue, deltaDays);
+      if (Object.keys(shift).length === 0) { clearPreview(); return; }
+      setResizePreviewDates(prev => ({ ...prev, [taskId]: shift }));
+    };
+    const onUp = async (e: MouseEvent) => {
+      const wasMoved = moveHasShiftedRef.current;
+      setDraggingMoveTask(null);
+      clearPreview();
+      if (!wasMoved) return;
+      // クリックとして解釈されないよう、直後に発火する onClick 側（guardedHandleRowEdit）で消費させる
+      suppressNextClickRef.current = true;
+      const deltaDays = Math.round((e.clientX - startX) / dayWidth);
+      const shift = computeMoveShift(origStart, origDue, deltaDays);
+      if (Object.keys(shift).length === 0) return;
+      const task = allTasks.find(t => t.id === taskId);
+      if (!task) return;
+      await saveTask({
+        ...task,
+        ...(shift.start !== undefined ? { start_date: shift.start } : {}),
+        ...(shift.due !== undefined ? { due_date: shift.due } : {}),
+      });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [draggingMoveTask, dayWidth, allTasks, saveTask]);
+
   // ===== タスク依存関係の矢印（B2） =====
   //
   // 【設計意図】行のY座標を数式で再計算せず、描画済みバー（data-task-id 付き要素）の
@@ -775,7 +842,7 @@ export function GanttView({
   const linkDragTargetRef = useRef<{ taskId: string; side: LinkSide | null } | null>(null);
 
   const handleLinkHandleDown = useCallback((e: React.MouseEvent, taskId: string, side: LinkSide) => {
-    if (isPreview || draggingResizeTask) return;
+    if (isPreview || draggingResizeTask || draggingMoveTask) return;
     e.stopPropagation();
     e.preventDefault();
     const bodyEl = ganttBodyRef.current;
@@ -790,7 +857,7 @@ export function GanttView({
     setLinkDragTarget(null);
     setLinkDragPreviewPoint(sourcePoint);
     setLinkDrag({ sourceTaskId: taskId, sourceSide: side, sourcePoint });
-  }, [isPreview, draggingResizeTask]);
+  }, [isPreview, draggingResizeTask, draggingMoveTask]);
 
   useEffect(() => {
     if (!linkDrag) return;
@@ -849,11 +916,15 @@ export function GanttView({
   }, [linkDrag, addTaskDependency, currentUser.id]);
 
   useEffect(() => {
-    const active = isResizing || !!draggingResizeTask || !!linkDrag;
-    document.body.style.cursor     = linkDrag ? "crosshair" : active ? "col-resize" : "";
+    const resizeActive = isResizing || !!draggingResizeTask;
+    const active = resizeActive || !!draggingMoveTask || !!linkDrag;
+    document.body.style.cursor = linkDrag
+      ? "crosshair"
+      : draggingMoveTask ? "grabbing"
+      : resizeActive ? "col-resize" : "";
     document.body.style.userSelect = active ? "none" : "";
     return () => { document.body.style.cursor = ""; document.body.style.userSelect = ""; };
-  }, [isResizing, draggingResizeTask, linkDrag]);
+  }, [isResizing, draggingResizeTask, draggingMoveTask, linkDrag]);
 
   // ドラッグ中のドロップ候補の可否をリアルタイム判定する（store の addTaskDependency が実際に見るのと
   // 同じ taskDependencies を使い、プレビューと実際の結果を一致させる）
@@ -878,19 +949,26 @@ export function GanttView({
     onHandleDown: handleLinkHandleDown,
   }), [isPreview, showDepArrows, linkDrag, linkDragTarget, linkDropValidity, handleLinkHandleDown]);
 
-  // ドラッグ中は他のバー操作（編集モーダル・リサイズ開始）を抑制する
+  // ドラッグ中は他のバー操作（編集モーダル・リサイズ開始・結線開始）を抑制する。
+  // guardedHandleRowEdit は「クリックと移動ドラッグの区別」も兼ねる：中央ドラッグが移動閾値を
+  // 超えて発火した直後の onClick は suppressNextClickRef で1回だけ消費し、詳細パネルを開かせない
   const guardedHandleRowEdit = useCallback((taskId: string) => {
     if (linkDrag) return;
+    if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
     handleRowEdit(taskId);
   }, [linkDrag, handleRowEdit]);
   const guardedHandleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
-    if (linkDrag) return;
+    if (linkDrag || draggingMoveTask) return;
     handleResizeDragStart(e, taskId);
-  }, [linkDrag, handleResizeDragStart]);
+  }, [linkDrag, draggingMoveTask, handleResizeDragStart]);
   const guardedHandleStartResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
-    if (linkDrag) return;
+    if (linkDrag || draggingMoveTask) return;
     handleStartResizeDragStart(e, taskId);
-  }, [linkDrag, handleStartResizeDragStart]);
+  }, [linkDrag, draggingMoveTask, handleStartResizeDragStart]);
+  const guardedHandleMoveDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
+    if (linkDrag || draggingResizeTask) return;
+    handleMoveDragStart(e, taskId);
+  }, [linkDrag, draggingResizeTask, handleMoveDragStart]);
 
   // ===== モバイル：タイムラインリスト表示 =====
   // 全フック宣言後の早期 return なので hooks 順序は崩れない。
@@ -1614,9 +1692,11 @@ export function GanttView({
                               depBadgeLeftTitle={depBadgeLeft}
                               depBadgeRightTitle={depBadgeRight}
                               linkUi={getLinkUi(task.id)}
+                              isMoving={draggingMoveTask?.taskId === task.id}
                               onEdit={guardedHandleRowEdit}
                               onResize={guardedHandleResizeDragStart}
                               onResizeStart={guardedHandleStartResizeDragStart}
+                              onMoveStart={guardedHandleMoveDragStart}
                               onMouseEnter={handleRowHoverEnter}
                               onMouseLeave={handleRowHoverLeave}
                             />
@@ -1774,9 +1854,11 @@ export function GanttView({
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           linkUi={getLinkUi(task.id)}
+                          isMoving={draggingMoveTask?.taskId === task.id}
                           onEdit={guardedHandleRowEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
+                          onMoveStart={guardedHandleMoveDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
                         />
@@ -1844,9 +1926,11 @@ export function GanttView({
                           depBadgeLeftTitle={depBadgeLeft}
                           depBadgeRightTitle={depBadgeRight}
                           linkUi={getLinkUi(task.id)}
+                          isMoving={draggingMoveTask?.taskId === task.id}
                           onEdit={guardedHandleRowEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
+                          onMoveStart={guardedHandleMoveDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
                         />

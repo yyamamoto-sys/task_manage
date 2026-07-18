@@ -667,7 +667,45 @@
 #             コンパクトなトグルボタンを追加（画面幅が狭いため文言は付けずアイコンのみ）
 #      DBマイグレ不要（表示ロジックのみ・既存フィールドのみ使用）
 #
-# 最終更新：2026-07-17（v2.41）
+# v2.42 feat: ガントビューにバー中央ドラッグでタスク全体を移動する機能を追加（2026-07-18）
+#      背景：既存プロマネツール調査（PMBOK10基準）で高優先と判定された改善5件の1件目（他4件＝
+#             複数選択一括シフト／クリティカルパス／進捗率バー塗り／過負荷可視化は後続で別途実装）。
+#             従来はバー端±4pxのリサイズ（開始日／期日を個別に変更）しかできず、タスク全体を
+#             同じ日数だけずらすには編集モーダルを開いて両方の日付を手打ちする必要があった
+#      追加：src/components/gantt/ganttUtils.ts に computeMoveShift（純粋関数）。
+#             origStartDate/origDueDate/deltaDays を受け取り、両方あれば両方を同じ日数シフト
+#             （duration保持）、開始日が無い（期日のみ）タスクは期日だけシフトする。deltaDays===0
+#             または期日が無効なら {}（no-op）。プレビュー・保存の両方で同じ関数を使う。
+#             __tests__/ganttUtils.test.ts に5テスト追加（既存の resizePreviewDates/
+#             applyResizePreview の型（Record<string, {start?, due?}>）をそのまま流用できる設計
+#             にしたため、move専用の新しいプレビュー状態は増やしていない）
+#      追加：GanttParts.tsx TaskBarRow に onMoveStart/isMoving プロップ。バー本体（data-task-id
+#             を持つ要素そのもの）に onMouseDown を追加。左右端のリサイズハンドル（zIndex 3）・
+#             外側±9pxの結線ハンドル（B5・zIndex 9）は元からバー本体（zIndex 2）より前面に
+#             重なっているため、ブラウザの通常のヒットテストだけで「バー中央＝リサイズでも
+#             結線でもない領域」が自然に定義される（新しい当たり判定用の要素は増やしていない）。
+#             isDone のタスクは無効（リサイズハンドルが非表示になるのと同じ扱い）
+#      追加：GanttView.tsx に draggingMoveTask state（saveTask経由の確定は右端/左端リサイズと
+#             同じ choke point。B3自動リスケ連鎖・B4ベースライン凍結がここでも自動的に効く）。
+#             プレビューは新しい state を増やさず既存の resizePreviewDates にそのまま
+#             {start, due} を書き込む（move とリサイズは同一タスクに対して排他利用のため衝突しない）
+#      クリックとドラッグ移動の区別：水平4px以下の移動はクリック（従来どおり詳細パネルを開く）、
+#             4pxを超えたら移動ドラッグと判定する。判定は moveHasShiftedRef（レンダーを介さない
+#             ref）で行い、mouseup 時に超えていれば suppressNextClickRef を1回だけ立てて、
+#             直後に発火する React の onClick（guardedHandleRowEdit）側で消費・リセットする
+#             （mousedown→mouseup→clickが同期的に発火するブラウザの標準順序に依拠した判定）
+#      3操作の相互ガード：中央ドラッグ開始（guardedHandleMoveDragStart）はリサイズ中・結線中なら
+#             発火せず、逆にリサイズ開始（guardedHandleResizeDragStart/guardedHandleStartResizeDragStart）
+#             と結線開始（handleLinkHandleDown）は移動ドラッグ中なら発火しない。カーソルも
+#             body側で明確に分離（結線=crosshair／移動中=grabbing／リサイズ中=col-resize、
+#             バー内部の通常時ホバーは grab、端は ew-resize、外側の結線ハンドルは crosshair）
+#      スコープ：実タスクバー（data-task-id を持つ行）のみ。PJ/担当者/ToDoのヘッダー帯バーは
+#             元々 TaskBarRow を使わない別コンポーネントのため対象外のまま。PJ別/ToDo別/人別の
+#             3グルーピング全てで同じ TaskBarRow 経由のため自動的に対応。デスクトップ GanttView
+#             のみ（GanttMobileView は対象外・未変更）
+#      DBマイグレ不要（フロントのみ。既存の saveTask 経路をそのまま使用）
+#
+# 最終更新：2026-07-18（v2.42）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
