@@ -199,6 +199,24 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     [filteredTasks, todayS]
   );
 
+  // ===== KPIサマリー行（既存の filteredTasks / alertTasks / thisWeekTasks のスコープをそのまま流用） =====
+  // 期限超過・今日締切は alertTasks（due<=today && !done）を日付で二分するだけで求まる
+  const kpiOverdueCount = useMemo(
+    () => alertTasks.filter(t => (t.due_date ?? "") < todayS).length,
+    [alertTasks, todayS]
+  );
+  const kpiTodayCount = alertTasks.length - kpiOverdueCount;
+  const kpiInProgressCount = useMemo(
+    () => filteredTasks.filter(t => t.status === "in_progress").length,
+    [filteredTasks]
+  );
+  // 今週の完了率：今週締切のタスク（完了済みも含む）のうち完了済みの割合
+  const kpiWeekCompletion = useMemo(() => {
+    const weekDue = filteredTasks.filter(t => t.due_date && t.due_date >= todayS && t.due_date <= weekLater);
+    const done = weekDue.filter(t => t.status === "done").length;
+    return { done, total: weekDue.length, pct: calcProgressPct(done, weekDue.length) };
+  }, [filteredTasks, todayS, weekLater]);
+
   // 滞留タスク（進行中のまま N 日以上 updated_at が動いていない）
   const stagnantTasks = useMemo(
     () => filteredTasks.filter(t => {
@@ -592,6 +610,20 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         />
       )}
       <div style={{ padding: "16px 20px", maxWidth: "1000px" }}>
+
+        {/* KPIサマリー行（PJ選択／自分のみトグルのスコープを反映） */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+          gap: "10px",
+          marginBottom: "14px",
+        }}>
+          <KpiTile label="期限超過" value={`${kpiOverdueCount}件`} tone="danger" stripe />
+          <KpiTile label="今日締切" value={`${kpiTodayCount}件`} tone="warning" />
+          <KpiTile label="今週締切" value={`${thisWeekTasks.length}件`} tone="info" />
+          <KpiTile label="進行中" value={`${kpiInProgressCount}件`} tone="accent" />
+          <KpiTile label="今週の完了率" value={`${kpiWeekCompletion.pct}%`} tone="success" />
+        </div>
 
         {/* プロジェクトカルテ（PJ選択中のみ） */}
         {selectedProject && (
@@ -1167,6 +1199,49 @@ function Card({
       </div>
       <div style={{ padding: "10px 14px", minHeight: "80px" }}>
         {children}
+      </div>
+    </div>
+  );
+}
+
+/** KPIサマリー行の1タイル。数値は大きく tabular-nums、ラベルは小さく。 */
+function KpiTile({
+  label, value, tone, stripe = false,
+}: {
+  label: string;
+  value: string;
+  tone: "danger" | "warning" | "info" | "accent" | "success";
+  /** 期限超過タイルなど、左端に色ストライプを付けて強調する */
+  stripe?: boolean;
+}) {
+  const toneColors: Record<typeof tone, { fg: string; stripe: string }> = {
+    danger:  { fg: "var(--color-text-danger)",  stripe: "var(--color-border-danger)" },
+    warning: { fg: "var(--color-text-warning)", stripe: "var(--color-border-warning)" },
+    info:    { fg: "var(--color-text-info)",    stripe: "var(--color-border-info)" },
+    accent:  { fg: "var(--color-brand)",        stripe: "var(--color-brand-border)" },
+    success: { fg: "var(--color-text-success)", stripe: "var(--color-border-success)" },
+  };
+  const c = toneColors[tone];
+  return (
+    <div style={{
+      background: "var(--color-bg-primary)",
+      border: "1px solid var(--color-border-primary)",
+      borderLeft: stripe ? `4px solid ${c.stripe}` : "1px solid var(--color-border-primary)",
+      borderRadius: "var(--radius-lg)",
+      padding: "10px 14px",
+      minWidth: 0,
+    }}>
+      <div style={{
+        fontSize: "22px", fontWeight: 700, color: c.fg,
+        fontVariantNumeric: "tabular-nums", lineHeight: 1.2,
+      }}>
+        {value}
+      </div>
+      <div style={{
+        fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px",
+        whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+      }}>
+        {label}
       </div>
     </div>
   );
