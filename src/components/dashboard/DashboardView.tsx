@@ -30,6 +30,8 @@ import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionSto
 import { ProjectKarte } from "./ProjectKarte";
 import { DueForecastChart } from "./DueForecastChart";
 import { computeDueForecast } from "../../lib/computeDueForecast";
+import { VelocityChart } from "./VelocityChart";
+import { computeWeeklyVelocity } from "../../lib/computeWeeklyVelocity";
 import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
@@ -236,6 +238,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     () => computeDueForecast(filteredTasks, todayS).reduce((sum, b) => sum + b.count, 0),
     [filteredTasks, todayS]
   );
+
+  // 完了ペース（直近8週の最終週＝今週の完了件数。バッジ表示用）
+  const velocityThisWeekCount = useMemo(() => {
+    const buckets = computeWeeklyVelocity(filteredTasks, todayS);
+    return buckets[buckets.length - 1]?.count ?? 0;
+  }, [filteredTasks, todayS]);
 
   // PJ進捗
   // 【葉タスク基準】進捗の分母/分子は「子を持つ親タスク」を除いた葉タスクだけで数える
@@ -775,10 +783,18 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           </div>
         )}
 
-        {/* 締切の見通し（今後2週間の日別未完了タスク数） */}
-        <div style={{ marginBottom: "14px" }}>
+        {/* 締切の見通し（今後2週間の日別未完了タスク数）＋ 完了ペース（直近8週の週次折れ線） */}
+        <div style={{
+          marginBottom: "14px",
+          display: "grid",
+          gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr",
+          gap: "14px",
+        }}>
           <Card title="締切の見通し" badge={dueForecastTotal > 0 ? `${dueForecastTotal}件` : undefined}>
             <DueForecastChart tasks={filteredTasks} />
+          </Card>
+          <Card title="完了ペース" badge={`今週 ${velocityThisWeekCount}件`}>
+            <VelocityChart tasks={filteredTasks} />
           </Card>
         </div>
 
