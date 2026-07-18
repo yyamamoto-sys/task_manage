@@ -973,7 +973,52 @@
 #             「Ctrl / Cmd + Z：直前の操作を元に戻す」を追記
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.49）
+# v2.50 feat: リストビューにキーボード/修飾キーによる選択ショートカットを追加（2026-07-18）
+#      背景：全ビュー横断ショートカット統一の1/3件目。ガント（v2.48）は既にCtrl/Cmd+クリック・
+#             Shift+クリック範囲選択・Ctrl+A全選択・Escapeを持っていたが、リストビューには
+#             チェックボックスでの複数選択・一括操作しかなくキーボード/修飾キー操作が無かった
+#      追加：Ctrl(Cmd)+A＝現在フィルタ後の全タスクを選択（既存の「全選択」ロジック
+#             `setSelectedIds(new Set(filteredTasks.map(t=>t.id)))` をそのまま再利用）。
+#             Esc＝選択解除（`clearSelection`）。Ctrl/Cmd+クリック（行）＝その行の選択を
+#             トグル（詳細は開かない）。Shift+クリック（行）＝アンカー（直近クリック/選択した行）
+#             〜クリック先までを現在の表示順で選択に追加（既存選択はクリアしない。アンカー未設定時は
+#             単体選択）。修飾キー無しの通常クリックは従来どおり詳細（TaskSidePanel）を開く
+#      設計判断（ガントとの差分・意図的）：通常クリックで既存のチェックボックス選択
+#             （selectedIds）はクリアしない。ガントの「通常クリックで選択クリア」とは
+#             あえて挙動を変えている＝一括選択を保ったまま行を順にプレビューできるようにするため
+#             （リストは元々チェックボックスと行クリックが独立した操作として共存していたため、
+#             その既存UXを壊さない判断）
+#      共有化：`computeRangeSelection`（Shift+クリック範囲選択の純粋関数）を
+#             `src/components/gantt/ganttUtils.ts` から `src/lib/selectionRange.ts`（NEW）へ
+#             実体を移動し、ganttUtils.ts は re-export のみに変更（既存の呼び出し元・
+#             ganttUtils.test.ts の import パスは無変更で動作）。テストも
+#             `src/lib/__tests__/selectionRange.test.ts`（NEW・6件）に移動。表示順配列
+#             （visibleOrderedTaskIds）は組み立て方がビューごとに異なるため共有せず、リスト側は
+#             既存の `groups`→`rowsByGroup`（グルーピング・親子ネスト・折りたたみを反映した
+#             描画順そのもの）をそのまま辿って組み立てる専用ロジックのまま（ガントの
+#             computeVisibleOrderedTaskIds のような専用関数は不要だった）
+#      ガード（最重要）：①入力中（document.activeElementがinput/textarea/select/
+#             contenteditable）は一切ハイジャックしない。②タスク詳細
+#             （TaskSidePanel=selectedTaskId、モバイルのTaskEditModal=editingTaskId）・
+#             子タスク追加モーダル（QuickAddTaskModal=quickAddParentId）のいずれかが開いている間は
+#             Ctrl+A/Escとも発火しない（ガントが自身の「詳細/モーダル開いている間は無効化」と
+#             同じ設計方針を踏襲）。③モバイル（isMobile）では無効化（GanttViewのisMobile除外と
+#             同じ扱い）。④リストビューがアクティブなときのみ発火する点は、MainLayoutで
+#             viewMode==="list"のときだけListViewが条件レンダーされる既存構造により
+#             コンポーネントのライフサイクルで自然に満たされる（ガントと同じ考え方・追加の
+#             view判定コードは不要）
+#      既存との非干渉：MainLayoutのCtrl+K（コマンドパレット）・Ctrl+Z（Undo）は本機能と
+#             キーの重複が無くそのまま動作。既存のチェックボックス一括選択・一括操作・行クリック
+#             詳細・インライン編集・ドラッグ並べ替え・フィルタ・グルーピングは無変更
+#      変更：`ListTaskRow` の `<tr onClick>` を直接の `setSelectedTaskId` 呼び出しから
+#             `onRowClick`（修飾キー分岐を持つ新ハンドラ）呼び出しに置き換え（プロップ名も
+#             `setSelectedTaskId`→`onRowClick`に変更。行コンポーネント内での他の用途は
+#             無かったため置き換えのみで完結）
+#      ショートカット一覧パネルへの反映は未実施（3件目でGanttShortcutsPanel相当を
+#             全ビュー共通化する際にまとめて反映する方針。今回はパネル更新スコープ外）
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.50）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

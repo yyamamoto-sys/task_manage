@@ -4,6 +4,11 @@
 import type { Task, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
 import type { OverloadRange } from "../../lib/gantt/overload";
+import { computeRangeSelection } from "../../lib/selectionRange";
+
+// computeRangeSelection は src/lib/selectionRange.ts に集約（ListView と共有するため）。
+// 既存の呼び出し元（本ファイル内・ganttUtils.test.ts）を壊さないよう再エクスポートする。
+export { computeRangeSelection };
 
 export const DAY_WIDTH_DEFAULT = 28;
 export const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
@@ -305,15 +310,4 @@ export function computeVisibleOrderedTaskIds(input: VisibleOrderInput): string[]
   return ids;
 }
 
-/**
- * Shift+クリックの範囲選択：表示順配列上でアンカー（直近クリック/選択したタスク）〜ターゲットの
- * 間のidを両端含めて返す（純粋関数）。アンカーが無い、またはどちらかが表示順配列に見当たらない
- * （フィルタ変更等で画面外になった）場合はターゲット単体を返す＝単一選択扱いにフォールバックする。
- */
-export function computeRangeSelection(orderedIds: string[], anchorId: string | null, targetId: string): string[] {
-  const anchorIdx = anchorId != null ? orderedIds.indexOf(anchorId) : -1;
-  const targetIdx = orderedIds.indexOf(targetId);
-  if (anchorIdx < 0 || targetIdx < 0) return [targetId];
-  const [from, to] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
-  return orderedIds.slice(from, to + 1);
-}
+// computeRangeSelection 本体は src/lib/selectionRange.ts に移動（上部で re-export 済み）。

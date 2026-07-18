@@ -18,6 +18,7 @@ import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
+import { computeRangeSelection } from "../../lib/selectionRange";
 
 interface Props {
   currentUser: Member;
@@ -151,6 +152,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックした行）。
+  // レンダーを介す必要が無いため ref で持つ（GanttViewの selectionAnchorRef と同じ流儀）。
+  // 選択が丸ごとクリアされる操作（Esc・チェックボックスでの全解除等）では必ずアンカーも一緒に
+  // リセットする（clearSelection に集約）。
+  const selectionAnchorRef = useRef<string | null>(null);
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setSelectedIds(prev => {
@@ -159,7 +165,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       return next;
     });
   }, []);
-  const clearSelection = useCallback(() => setSelectedIds(new Set()), []);
+  const clearSelection = useCallback(() => {
+    selectionAnchorRef.current = null;
+    setSelectedIds(new Set());
+  }, []);
 
 
   const handleSort = useCallback((key: SortKey) => {
@@ -549,6 +558,75 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     for (const g of groups) map.set(g.label, buildRows(g.tasks));
     return map;
   }, [groups, buildRows]);
+
+  // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」。rowsByGroup が既に
+  // グルーピング・階層ネスト・折りたたみを反映した描画順そのものなので、ガント側のような
+  // 専用の順序組み立て関数は不要（groups→rowsByGroup をそのまま辿るだけで一致する）。
+  const visibleOrderedTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const g of groups) {
+      for (const row of rowsByGroup.get(g.label) ?? []) ids.push(row.task.id);
+    }
+    return ids;
+  }, [groups, rowsByGroup]);
+
+  // 行クリックのハンドラ（ガントのタスクバー用ハンドラと同じ流儀）。
+  // 修飾キー無し＝従来どおり詳細（TaskSidePanel）を開く＋アンカー更新。既存のチェックボックス
+  // 選択（selectedIds）はクリアしない（詳細をプレビューしながら一括選択を保ちたいケースがあるため、
+  // ガントの「通常クリックで選択クリア」とはあえて挙動を変えている）。
+  // Ctrl/Cmd+クリック＝選択のみトグル（詳細は開かない）。Shift+クリック＝アンカー〜クリック先の
+  // 範囲を現在の表示順（visibleOrderedTaskIds）で選択に追加（詳細は開かない）。
+  const handleRowClick = useCallback((e: React.MouseEvent, taskId: string) => {
+    if (e.shiftKey) {
+      const anchorId = selectionAnchorRef.current;
+      const rangeIds = computeRangeSelection(visibleOrderedTaskIds, anchorId, taskId);
+      setSelectedIds(prev => {
+        const next = new Set(prev);
+        rangeIds.forEach(id => next.add(id));
+        return next;
+      });
+      selectionAnchorRef.current = anchorId ?? taskId;
+      return;
+    }
+    if (e.ctrlKey || e.metaKey) {
+      toggleSelect(taskId);
+      selectionAnchorRef.current = taskId;
+      return;
+    }
+    selectionAnchorRef.current = taskId;
+    setSelectedTaskId(prev => prev === taskId ? null : taskId);
+  }, [visibleOrderedTaskIds, toggleSelect]);
+
+  // ===== キーボードショートカット（Ctrl/Cmd+A=表示中の全選択／Esc=選択解除） =====
+  //
+  // 【設計意図】ListViewがマウントされている間だけ（＝MainLayoutでviewMode==="list"の間だけ
+  // ListViewが条件レンダーされる既存構造）有効にする＝「リストビューがアクティブなときのみ」は
+  // コンポーネントのライフサイクルで自然に満たされる（GanttViewの既存ショートカットと同じ考え方）。
+  // ガードは以下：①入力中（input/textarea/select/contenteditableにフォーカス）は一切
+  // ハイジャックしない（タイピング・インライン編集・ブラウザのテキスト全選択を壊さないため）。
+  // ②タスク詳細（TaskSidePanel=selectedTaskId、モバイルのTaskEditModal=editingTaskId）・
+  // 子タスク追加モーダル（QuickAddTaskModal=quickAddParentId）のいずれかが開いている間は発火しない。
+  // ③モバイル（isMobile）では無効化（タッチ操作主体・GanttViewのisMobile除外と同じ扱い）。
+  useEffect(() => {
+    if (isMobile) return;
+    if (selectedTaskId || editingTaskId || quickAddParentId) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
+      if (isTyping) return;
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        setSelectedIds(new Set(filteredTasks.map(t => t.id)));
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Escape") {
+        clearSelection();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobile, selectedTaskId, editingTaskId, quickAddParentId, filteredTasks, clearSelection]);
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
@@ -1025,7 +1103,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             currentUser={currentUser}
                             draggingId={draggingId}
                             saveTask={saveTask}
-                            setSelectedTaskId={setSelectedTaskId}
+                            onRowClick={handleRowClick}
                             toggleSelect={toggleSelect}
                             toggleCollapse={toggleCollapse}
                             openAddChild={openAddChild}
@@ -1221,7 +1299,7 @@ interface ListTaskRowProps {
   currentUser: Member;
   draggingId: string | null;
   saveTask: (task: Task) => Promise<void>;
-  setSelectedTaskId: React.Dispatch<React.SetStateAction<string | null>>;
+  onRowClick: (e: React.MouseEvent, taskId: string) => void;
   toggleSelect: (id: string, e?: React.MouseEvent) => void;
   toggleCollapse: (id: string, e?: React.MouseEvent) => void;
   openAddChild: (task: Task) => void;
@@ -1234,7 +1312,7 @@ const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
   canDrag, showHandleCol, myZone, density, groupBy, members, currentUser,
-  draggingId, saveTask, setSelectedTaskId, toggleSelect, toggleCollapse,
+  draggingId, saveTask, onRowClick, toggleSelect, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
   const isDone = dispStatus === "done";
@@ -1258,7 +1336,7 @@ const ListTaskRow = memo(function ListTaskRow({
 
   return (
     <tr
-      onClick={() => setSelectedTaskId(prev => prev === task.id ? null : task.id)}
+      onClick={e => onRowClick(e, task.id)}
       onDragOver={canDrag ? (e => {
         if (!draggingId || draggingId === task.id) return;
         e.preventDefault();
