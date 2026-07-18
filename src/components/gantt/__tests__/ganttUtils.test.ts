@@ -4,6 +4,7 @@ import {
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   computeMoveShift, computeBulkMoveShifts,
+  clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection, ZOOM_LEVELS,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange } from "../../../lib/date";
@@ -285,5 +286,149 @@ describe("clampStartDate", () => {
 
   it("開始日が期日を超えたら期日にクランプされる", () => {
     expect(clampStartDate("2026-07-15", "2026-07-10")).toBe("2026-07-10");
+  });
+});
+
+describe("clampZoom", () => {
+  it("ズームインで次のレベルに進む", () => {
+    expect(clampZoom(ZOOM_LEVELS[1], "in")).toBe(ZOOM_LEVELS[2]);
+  });
+
+  it("ズームアウトで前のレベルに戻る", () => {
+    expect(clampZoom(ZOOM_LEVELS[1], "out")).toBe(ZOOM_LEVELS[0]);
+  });
+
+  it("最大レベルでズームインしても現在値のまま（clamp）", () => {
+    const max = ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
+    expect(clampZoom(max, "in")).toBe(max);
+  });
+
+  it("最小レベルでズームアウトしても現在値のまま（clamp）", () => {
+    const min = ZOOM_LEVELS[0];
+    expect(clampZoom(min, "out")).toBe(min);
+  });
+
+  it("ZOOM_LEVELSに無い値が渡されたら現在値のまま", () => {
+    expect(clampZoom(999, "in")).toBe(999);
+    expect(clampZoom(999, "out")).toBe(999);
+  });
+});
+
+describe("computeVisibleOrderedTaskIds", () => {
+  it("PJ別ビュー：PJ→親→子→ToDoグループの順に並べる", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "pj",
+      collapsed: {},
+      personGroups: [],
+      pjGroups: [
+        {
+          pjId: "pj1",
+          rows: [
+            { taskId: "t1", depth: 0, parentTaskId: null },
+            { taskId: "t1a", depth: 1, parentTaskId: "t1" },
+            { taskId: "t2", depth: 0, parentTaskId: null },
+          ],
+        },
+      ],
+      todoGroups: [{ todoId: "td1", taskIds: ["t3"] }],
+    });
+    expect(ids).toEqual(["t1", "t1a", "t2", "t3"]);
+  });
+
+  it("折りたたまれたPJのタスクは除外される", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "pj",
+      collapsed: { pj1: true },
+      personGroups: [],
+      pjGroups: [{ pjId: "pj1", rows: [{ taskId: "t1", depth: 0, parentTaskId: null }] }],
+      todoGroups: [],
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it("折りたたまれた親タスクの子は除外される（親自身は残る）", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "pj",
+      collapsed: { t1: true },
+      personGroups: [],
+      pjGroups: [
+        {
+          pjId: "pj1",
+          rows: [
+            { taskId: "t1", depth: 0, parentTaskId: null },
+            { taskId: "t1a", depth: 1, parentTaskId: "t1" },
+          ],
+        },
+      ],
+      todoGroups: [],
+    });
+    expect(ids).toEqual(["t1"]);
+  });
+
+  it("折りたたまれたToDoグループは除外される", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "pj",
+      collapsed: { todo_td1: true },
+      personGroups: [],
+      pjGroups: [],
+      todoGroups: [{ todoId: "td1", taskIds: ["t3"] }],
+    });
+    expect(ids).toEqual([]);
+  });
+
+  it("人別ビュー：担当者→タスクの順に並べる（PJ/ToDoグループは無視）", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "person",
+      collapsed: {},
+      personGroups: [
+        { memberId: "m1", taskIds: ["t1", "t2"] },
+        { memberId: "m2", taskIds: ["t3"] },
+      ],
+      pjGroups: [{ pjId: "pj1", rows: [{ taskId: "t4", depth: 0, parentTaskId: null }] }],
+      todoGroups: [],
+    });
+    expect(ids).toEqual(["t1", "t2", "t3"]);
+  });
+
+  it("折りたたまれた担当者のタスクは除外される（人別ビュー）", () => {
+    const ids = computeVisibleOrderedTaskIds({
+      viewMode: "person",
+      collapsed: { person_m1: true },
+      personGroups: [
+        { memberId: "m1", taskIds: ["t1"] },
+        { memberId: "m2", taskIds: ["t2"] },
+      ],
+      pjGroups: [],
+      todoGroups: [],
+    });
+    expect(ids).toEqual(["t2"]);
+  });
+});
+
+describe("computeRangeSelection", () => {
+  const ordered = ["a", "b", "c", "d", "e"];
+
+  it("アンカー→ターゲットが前方なら間のidを両端含めて返す", () => {
+    expect(computeRangeSelection(ordered, "b", "d")).toEqual(["b", "c", "d"]);
+  });
+
+  it("アンカー→ターゲットが後方（逆順クリック）でも同じ範囲を返す", () => {
+    expect(computeRangeSelection(ordered, "d", "b")).toEqual(["b", "c", "d"]);
+  });
+
+  it("アンカーとターゲットが同じなら単体を返す", () => {
+    expect(computeRangeSelection(ordered, "c", "c")).toEqual(["c"]);
+  });
+
+  it("アンカーが無い（null）ならターゲット単体を返す", () => {
+    expect(computeRangeSelection(ordered, null, "c")).toEqual(["c"]);
+  });
+
+  it("アンカーが表示順配列に存在しないならターゲット単体を返す（フォールバック）", () => {
+    expect(computeRangeSelection(ordered, "z", "c")).toEqual(["c"]);
+  });
+
+  it("ターゲットが表示順配列に存在しないならターゲット単体を返す（フォールバック）", () => {
+    expect(computeRangeSelection(ordered, "b", "z")).toEqual(["z"]);
   });
 });

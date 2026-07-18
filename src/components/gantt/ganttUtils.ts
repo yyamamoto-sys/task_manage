@@ -248,3 +248,72 @@ export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMov
   }
   return result;
 }
+
+// ===== キーボードショートカット：ズーム / 全選択 / 範囲選択 =====
+
+/**
+ * ZOOM_LEVELS 配列上で1段階ズームイン/アウトした次の値を返す（clamp：既に最大/最小なら現在値のまま）。
+ * ズームボタンのクリックとキーボードショートカット（+/-）の両方がこの1関数を通ることで、
+ * ロジックの二重化を避ける。
+ */
+export function clampZoom(current: number, direction: "in" | "out"): number {
+  const idx = (ZOOM_LEVELS as readonly number[]).indexOf(current);
+  if (idx < 0) return current;
+  if (direction === "in") {
+    return idx >= ZOOM_LEVELS.length - 1 ? current : ZOOM_LEVELS[idx + 1];
+  }
+  return idx <= 0 ? current : ZOOM_LEVELS[idx - 1];
+}
+
+/** Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」を組み立てるための入力データ */
+export interface VisibleOrderInput {
+  viewMode: "pj" | "person";
+  /** キー：PJ ID／`todo_${todoId}`／`person_${memberId}`／親タスクID。true＝折りたたみ中 */
+  collapsed: Record<string, boolean>;
+  personGroups: { memberId: string; taskIds: string[] }[];
+  pjGroups: { pjId: string; rows: { taskId: string; depth: number; parentTaskId: string | null }[] }[];
+  todoGroups: { todoId: string; taskIds: string[] }[];
+}
+
+/**
+ * 現在画面に表示されているタスクバーのidを、表示順（PJ別ビュー＝PJ→親→子→ToDoグループ／
+ * 人別ビュー＝担当者→タスク）で並べた配列にする（純粋関数）。GanttView本体のJSXレンダー順と
+ * 完全に対応させる必要があるため、折りたたみ（PJ／ToDoグループ／担当者／親タスク）を全て考慮する。
+ * Ctrl/Cmd+A（表示中の全選択）とShift+クリック（範囲選択）の両方でこの1関数を共有する。
+ */
+export function computeVisibleOrderedTaskIds(input: VisibleOrderInput): string[] {
+  const { viewMode, collapsed, personGroups, pjGroups, todoGroups } = input;
+  const ids: string[] = [];
+  if (viewMode === "person") {
+    for (const g of personGroups) {
+      if (collapsed[`person_${g.memberId}`]) continue;
+      ids.push(...g.taskIds);
+    }
+    return ids;
+  }
+  for (const g of pjGroups) {
+    if (collapsed[g.pjId]) continue;
+    for (const row of g.rows) {
+      if (row.depth > 0 && row.parentTaskId && collapsed[row.parentTaskId]) continue;
+      ids.push(row.taskId);
+    }
+  }
+  for (const g of todoGroups) {
+    if (collapsed[`todo_${g.todoId}`]) continue;
+    ids.push(...g.taskIds);
+  }
+  return ids;
+}
+
+/**
+ * Shift+クリックの範囲選択：表示順配列上でアンカー（直近クリック/選択したタスク）〜ターゲットの
+ * 間のidを両端含めて返す（純粋関数）。アンカーが無い、またはどちらかが表示順配列に見当たらない
+ * （フィルタ変更等で画面外になった）場合はターゲット単体を返す＝単一選択扱いにフォールバックする。
+ */
+export function computeRangeSelection(orderedIds: string[], anchorId: string | null, targetId: string): string[] {
+  const anchorIdx = anchorId != null ? orderedIds.indexOf(anchorId) : -1;
+  const targetIdx = orderedIds.indexOf(targetId);
+  if (anchorIdx < 0 || targetIdx < 0) return [targetId];
+  const [from, to] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
+  return orderedIds.slice(from, to + 1);
+}

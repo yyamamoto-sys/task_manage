@@ -26,6 +26,7 @@ interface ShortcutItem {
 
 const MOUSE_SHORTCUTS: ShortcutItem[] = [
   { gesture: "Ctrl / Cmd + クリック", description: "タスクを複数選択（トグル）" },
+  { gesture: "Shift + クリック", description: "直前に選択したタスク〜クリックしたタスクまでを表示順に範囲選択" },
   { gesture: "選択中バーの中央をドラッグ", description: "選択した複数タスクをまとめて日付シフト" },
   { gesture: "バー中央をドラッグ", description: "タスク全体を移動（開始日・期日を同時にずらす）" },
   { gesture: "バー左端をドラッグ", description: "開始日を変更" },
@@ -37,6 +38,10 @@ const MOUSE_SHORTCUTS: ShortcutItem[] = [
 
 const KEY_SHORTCUTS: ShortcutItem[] = [
   { gesture: "Esc", description: "選択解除、または結線操作のキャンセル" },
+  { gesture: "T", description: "今日の位置へジャンプ" },
+  { gesture: "+ / =　・　- / _", description: "ズームイン／ズームアウト" },
+  { gesture: "Ctrl / Cmd + A", description: "現在表示中の全タスクを選択" },
+  { gesture: "Enter", description: "1件選択中のタスクの詳細を開く（複数選択時は何もしない）" },
 ];
 
 const TOGGLE_SHORTCUTS: ShortcutItem[] = [

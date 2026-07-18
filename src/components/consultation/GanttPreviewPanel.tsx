@@ -129,6 +129,7 @@ export function GanttPreviewPanel({
           currentUser={currentUser}
           selectedProject={selectedProject}
           projects={visibleProjects}
+          enableKeyboardShortcuts={false}
         />
       </div>
 
@@ -150,6 +151,7 @@ export function GanttPreviewPanel({
           previewTasks={previewTasks}
           isPreview={true}
           previewChangedTaskIds={changedTaskIds}
+          enableKeyboardShortcuts={false}
         />
 
         {/* 閉じるボタン */}

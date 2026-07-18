@@ -27,6 +27,7 @@ import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
+  clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -64,6 +65,12 @@ interface Props {
   previewChangedTaskIds?: Set<string>;
   /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
   mineOnly?: boolean;
+  /**
+   * キーボードショートカット（T/+-/Ctrl+A/Enter）を有効にするか。既定 true。
+   * AI相談のガントプレビュー（GanttPreviewPanel）は1画面に2つの GanttView を同時に
+   * オーバーレイ表示するため、明示的に false を渡してどちらのキー操作も奪わないようにする。
+   */
+  enableKeyboardShortcuts?: boolean;
 }
 
 // ===== メインコンポーネント =====
@@ -78,6 +85,7 @@ export function GanttView({
   isPreview = false,
   previewChangedTaskIds,
   mineOnly = false,
+  enableKeyboardShortcuts = true,
 }: Props) {
   // 【Phase 3 移行済み】個別 selector で必要な state のみを購読する。
   const rawTasks      = useAppStore(selectScopedTasks);
@@ -122,6 +130,10 @@ export function GanttView({
   // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
   // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたタスク）。
+  // レンダーを介す必要が無いため ref で持つ。選択が丸ごとクリアされる操作（背景クリック・Escape・
+  // 通常クリックでの選択クリア）では必ずアンカーも一緒にリセットする（clearTaskSelection に集約）。
+  const selectionAnchorRef = useRef<string | null>(null);
   const toggleTaskSelection = useCallback((taskId: string) => {
     setSelectedTaskIds(prev => {
       const n = new Set(prev);
@@ -130,6 +142,7 @@ export function GanttView({
     });
   }, []);
   const clearTaskSelection = useCallback(() => {
+    selectionAnchorRef.current = null;
     setSelectedTaskIds(prev => (prev.size === 0 ? prev : new Set()));
   }, []);
   // Escapeで選択クリア。選択が空のときはリスナーを貼らない（他機能のEscape処理と競合しないよう最小限に）
@@ -427,6 +440,24 @@ export function GanttView({
       .filter(g => g.tasks.length > 0);
   }, [members, allTasks, sortTasks, scopedTaskDependencies]);
 
+  // 現在の表示順（折りたたみ・ビューモード反映後）に並んだタスクidの配列。Ctrl/Cmd+A（表示中の
+  // 全選択）とShift+クリック（範囲選択）が共有する（computeVisibleOrderedTaskIds＝純粋関数、
+  // 上のJSXレンダー順と対応させるためここで組み立てる）。
+  const visibleOrderedTaskIds = useMemo(() => computeVisibleOrderedTaskIds({
+    viewMode, collapsed,
+    personGroups: personGroups.map(g => ({ memberId: g.member.id, taskIds: g.tasks.map(t => t.id) })),
+    pjGroups: visibleProjects.map(pj => ({
+      pjId: pj.id,
+      rows: (pjOrderedTasksMap.get(pj.id) ?? []).map(r => ({
+        taskId: r.task.id, depth: r.depth, parentTaskId: r.task.parent_task_id ?? null,
+      })),
+    })),
+    todoGroups: todoGroups.map(g => ({
+      todoId: g.todoId,
+      taskIds: (todoGroupSortedMap.get(g.todoId) ?? sortTasks(g.tasks)).map(t => t.id),
+    })),
+  }), [viewMode, collapsed, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, sortTasks]);
+
   // 全開・全閉（PJ / ToDo グループ / 人別グループすべて対象）
   const expandAll  = () => setCollapsed({});
   const collapseAll = () => {
@@ -541,20 +572,16 @@ export function GanttView({
 
   const zoomIn = useCallback(() => {
     setDayWidth(cur => {
-      const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
-      if (idx < 0 || idx >= ZOOM_LEVELS.length - 1) return cur;
-      const next = ZOOM_LEVELS[idx + 1];
-      localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
+      const next = clampZoom(cur, "in");
+      if (next !== cur) localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
       return next;
     });
   }, []);
 
   const zoomOut = useCallback(() => {
     setDayWidth(cur => {
-      const idx = (ZOOM_LEVELS as readonly number[]).indexOf(cur);
-      if (idx <= 0) return cur;
-      const next = ZOOM_LEVELS[idx - 1];
-      localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
+      const next = clampZoom(cur, "out");
+      if (next !== cur) localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
       return next;
     });
   }, []);
@@ -640,6 +667,61 @@ export function GanttView({
     if (!scrollRef.current) return;
     scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
   }, [todayX]);
+
+  // ===== キーボードショートカット（T=今日／+-=ズーム／Ctrl(Cmd)+A=表示中の全選択／Enter=1件選択時に詳細を開く） =====
+  //
+  // 【設計意図】ガントビューがマウントされている間だけ（＝MainLayoutでviewMode==="gantt"の間
+  // だけGanttViewが条件レンダーされる既存構造）有効にする。加えて以下は明示的にガードする：
+  // ①入力中（input/textarea/select/contenteditable にフォーカス）は一切ハイジャックしない
+  // （タイピング・ブラウザのテキスト全選択を壊さないため）。②GanttView自身が開いているモーダル
+  // 相当（TaskEditModal・TaskSidePanel＝editingTaskId、MilestoneEditModal＝editingMs）が
+  // 開いている間は発火しない。③isPreview、またはAI相談のガントプレビュー（GanttPreviewPanelが
+  // 1画面に2つのGanttViewを同時オーバーレイ表示する）に埋め込まれた場合は
+  // enableKeyboardShortcuts=false で無効化する。④スコープ外の GanttMobileView（isMobile）でも
+  // 無効化する（ウィンドウを狭めてisMobile判定になった通常のデスクトップブラウザでも同様）。
+  // ⑤Ctrl/Cmd+と組んだ他のブラウザ・アプリのショートカット（ブラウザの拡大縮小=Ctrl++/Ctrl+-等）
+  // と衝突しないよう、T・+-・Enterは ctrlKey/metaKey/altKey押下時は反応しない。
+  useEffect(() => {
+    if (isPreview || !enableKeyboardShortcuts || isMobile) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (editingTaskId || editingMs) return;
+      const el = document.activeElement as HTMLElement | null;
+      const tag = el?.tagName;
+      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
+      if (isTyping) return;
+      const hasOtherModifier = e.ctrlKey || e.metaKey || e.altKey;
+      if (!hasOtherModifier && (e.key === "t" || e.key === "T")) {
+        scrollToToday();
+        return;
+      }
+      if (!hasOtherModifier && (e.key === "+" || e.key === "=")) {
+        e.preventDefault();
+        zoomIn();
+        return;
+      }
+      if (!hasOtherModifier && (e.key === "-" || e.key === "_")) {
+        e.preventDefault();
+        zoomOut();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "a" || e.key === "A")) {
+        e.preventDefault();
+        setSelectedTaskIds(new Set(visibleOrderedTaskIds));
+        return;
+      }
+      if (!hasOtherModifier && e.key === "Enter") {
+        if (selectedTaskIds.size === 1) {
+          const [onlyTaskId] = selectedTaskIds;
+          handleRowEdit(onlyTaskId);
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [
+    isPreview, enableKeyboardShortcuts, isMobile, editingTaskId, editingMs,
+    scrollToToday, zoomIn, zoomOut, visibleOrderedTaskIds, selectedTaskIds, handleRowEdit,
+  ]);
 
   // 右端ドラッグ：期日変更
   const handleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
@@ -1095,16 +1177,33 @@ export function GanttView({
   // タスクバー専用のクリックハンドラ（複数選択：Ctrl/Cmd+クリック対応）。ラベル列の行クリック
   // （guardedHandleRowEdit）とは別に持つ。Ctrl/Cmd+クリックは選択トグルのみ（詳細は開かず、
   // 既存の選択も保持する）。修飾キー無しの通常クリックは選択をクリアしてから詳細を開く
+  // 【Shift+クリック＝範囲選択】アンカー（selectionAnchorRef）〜クリックしたタスクの間を、
+  // 現在の表示順（visibleOrderedTaskIds）で選択に追加する（既存選択はクリアしない）。
+  // アンカーが無い場合は単一選択として扱い、そのタスクを新しいアンカーにする。詳細は開かない
+  // （Ctrl/Cmd+クリックと同じ「選択のみ」の扱い）。
   const guardedHandleBarEdit = useCallback((e: React.MouseEvent | React.KeyboardEvent, taskId: string) => {
     if (linkDrag) return;
     if (suppressNextClickRef.current) { suppressNextClickRef.current = false; return; }
+    if (e.shiftKey) {
+      const anchorId = selectionAnchorRef.current;
+      const rangeIds = computeRangeSelection(visibleOrderedTaskIds, anchorId, taskId);
+      setSelectedTaskIds(prev => {
+        const n = new Set(prev);
+        rangeIds.forEach(id => n.add(id));
+        return n;
+      });
+      selectionAnchorRef.current = anchorId ?? taskId;
+      return;
+    }
     if (e.ctrlKey || e.metaKey) {
       toggleTaskSelection(taskId);
+      selectionAnchorRef.current = taskId;
       return;
     }
     clearTaskSelection();
+    selectionAnchorRef.current = taskId;
     handleRowEdit(taskId);
-  }, [linkDrag, toggleTaskSelection, clearTaskSelection, handleRowEdit]);
+  }, [linkDrag, toggleTaskSelection, clearTaskSelection, handleRowEdit, visibleOrderedTaskIds]);
   const guardedHandleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     if (linkDrag || draggingMoveTask) return;
     handleResizeDragStart(e, taskId);

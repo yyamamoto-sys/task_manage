@@ -907,7 +907,40 @@
 #      スコープ：デスクトップ GanttView のみ（GanttMobileView は対象外・未変更）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.47）
+# v2.48 feat: ガントビューにキーボードショートカット（安全な操作系5つ）を追加（2026-07-18）
+#      背景：PMツール調査で高優先と判定したショートカット追加の1/2件目（2件目のCtrl+Zは別途実装）。
+#             ガントには既に複数選択・一括シフト・ズーム・今日へスクロール等の下地機能があったが
+#             マウス操作限定で、キーボードから素早く扱えなかった
+#      追加：T＝今日へジャンプ（既存scrollToToday）／+ ・ =＝ズームイン／- ・ _＝ズームアウト
+#             （既存zoomIn/zoomOutを流用）／Ctrl(Cmd)+A＝現在の表示順（折りたたみ・PJ別/人別・
+#             ToDoグループ反映後）で見えている全タスクバーを選択（既存selectedTaskIdsに乗せる）／
+#             Enter＝選択が1件のときそのタスクの詳細を開く（複数選択時は何もしない）
+#      追加：Shift+クリックで範囲選択。直近クリック/選択したタスク（アンカー・selectionAnchorRef）
+#             〜Shift+クリックしたタスクまでを現在の表示順で選択に追加する（既存選択はクリアしない）。
+#             アンカーはCtrl/Cmd+クリック・通常クリックの単一選択でも更新し、選択が丸ごとクリアされる
+#             操作（背景クリック・Escape）では clearTaskSelection に集約してリセットする
+#      追加（純粋関数・ganttUtils.ts）：clampZoom（ZOOM_LEVELS配列上の1段階ズームin/out・既存の
+#             zoomIn/zoomOutインラインロジックをここに集約）／computeVisibleOrderedTaskIds
+#             （PJ別＝PJ→親→子→ToDoグループ／人別＝担当者→タスクの表示順にidを並べる。折りたたみ
+#             （PJ・ToDoグループ・担当者・親タスク）を全て考慮しJSXレンダー順と対応させる。Ctrl+Aと
+#             Shift+クリックの両方がこの1関数の出力=visibleOrderedTaskIdsを共有）／
+#             computeRangeSelection（表示順配列上でアンカー〜ターゲットの間のidを両端含めて返す。
+#             アンカー無し／どちらかが配列に存在しない場合はターゲット単体にフォールバック）。
+#             ganttUtils.test.ts に17件テスト追加（既存40件→57件）
+#      **最重要ガード**：①入力中（document.activeElementがinput/textarea/select/contenteditable）
+#             は一切ハイジャックしない（タイピングを壊さないため）。②GanttView自身のモーダル相当
+#             （TaskEditModal・TaskSidePanel＝editingTaskId、MilestoneEditModal＝editingMs）が
+#             開いている間は発火しない。③ T・+-・Enter は ctrlKey/metaKey/altKey 押下時は反応しない
+#             （ブラウザのCtrl++/Ctrl+-拡大縮小・その他ブラウザショートカットと衝突しないため）
+#      追加：GanttView に `enableKeyboardShortcuts?: boolean`（既定true）prop。isPreview中は
+#             常に無効化に加え、AI相談のガントプレビュー（GanttPreviewPanelが1画面に2つの
+#             GanttViewを同時オーバーレイ表示する）の両方の埋め込みで明示的に false を渡し無効化
+#      変更：GanttShortcutsPanel.tsx にキーボードセクション4件（T/+-/Ctrl+A/Enter）・
+#             マウスセクションにShift+クリックを追記
+#      スコープ：デスクトップ GanttView のみ（GanttMobileView は対象外・未変更）
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.48）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -1863,7 +1896,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-18（v2.47）
+- 最終更新：2026-07-18（v2.48）
 
 ---
 
