@@ -454,15 +454,17 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         </span>
       </div>
 
-      {/* ステータス内訳 + 期日 */}
+      {/* ステータス内訳 + 期日
+          「完了」は上の進捗バー（done/total・pct%）と同じ情報の二重表現になるためチップからは外し、
+          進捗の表現は進捗バーに一本化する。色は他ダッシュボード要素と同じセマンティクスに揃える：
+          進行中=accent、滞留・今週期限（締切間近）=warning、期限超過=danger */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
         <Chip label="未着手" value={stats.todo} />
-        <Chip label="進行中" value={stats.inProg} color="#2563eb" />
-        <Chip label="完了" value={stats.done} color="#16a34a" />
-        {stats.stagnant > 0 && <Chip label={`滞留(${stagnantDays}日+)`} value={stats.stagnant} color="#ca8a04" />}
+        <Chip label="進行中" value={stats.inProg} color="var(--color-brand)" />
+        {stats.stagnant > 0 && <Chip label={`滞留(${stagnantDays}日+)`} value={stats.stagnant} color="var(--color-text-warning)" />}
         <div style={{ width: "1px", background: "var(--color-border-primary)", margin: "0 2px" }} />
-        {stats.overdue > 0 && <Chip label="期限超過" value={stats.overdue} color="#dc2626" />}
-        <Chip label="今週期限" value={stats.dueThisWeek} color={stats.dueThisWeek > 0 ? "#ca8a04" : undefined} />
+        {stats.overdue > 0 && <Chip label="期限超過" value={stats.overdue} color="var(--color-text-danger)" />}
+        <Chip label="今週期限" value={stats.dueThisWeek} color={stats.dueThisWeek > 0 ? "var(--color-text-info)" : undefined} />
         {stats.noDue > 0 && <Chip label="期日未設定" value={stats.noDue} />}
       </div>
 

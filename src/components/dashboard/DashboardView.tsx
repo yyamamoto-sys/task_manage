@@ -83,6 +83,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const [selectedPjIds, setSelectedPjIds] = useState<string[]>([]);
   const [activeKrId, setActiveKrId] = useState<string | null>(null);
   const [krSessionsMap, setKrSessionsMap] = useState<Record<string, KrSession[]>>({});
+  // KR進捗サマリーのTF内訳（既定は折りたたみ。密度を下げてスキャンしやすくする）
+  const [expandedKrTfIds, setExpandedKrTfIds] = useState<Set<string>>(new Set());
 
   const [stagnantDays] = useState<number>(() => {
     const saved = localStorage.getItem(KEYS.STAGNANT_DAYS);
@@ -395,6 +397,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     setSelectedPjIds(pjIds.length > 0 ? [...new Set(pjIds)] : []);
   };
 
+  // KR進捗サマリーのTF内訳の折りたたみ切替（KRボックス自体のクリック＝絞り込みとは独立）
+  const toggleKrTfExpanded = useCallback((krId: string) => {
+    setExpandedKrTfIds(prev => {
+      const next = new Set(prev);
+      if (next.has(krId)) next.delete(krId); else next.add(krId);
+      return next;
+    });
+  }, []);
+
   if (projects.length === 0) {
     return (
       <div style={{ height: "100%", display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
@@ -695,20 +706,21 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                     const isOverdue  = diff < 0;
                     const isToday    = diff === 0;
                     const isTomorrow = diff === 1;
+                    // 「今日」「明日」はどちらも締切間近＝warningセマンティクスに統一（濃淡はfontWeightで区別）
                     const tone = isOverdue ? "danger"
                                : isToday    ? "warning"
                                : isTomorrow ? "soft"
                                : "neutral";
                     const bg = tone === "danger"  ? "var(--color-bg-danger)"
-                             : tone === "warning" ? "#fff4e0"
+                             : tone === "warning" ? "var(--color-bg-warning)"
                              : tone === "soft"    ? "var(--color-bg-warning)"
                              :                      "var(--color-bg-secondary)";
                     const border = tone === "danger"  ? "var(--color-border-danger)"
-                                 : tone === "warning" ? "#f59e0b"
+                                 : tone === "warning" ? "var(--color-border-warning)"
                                  : tone === "soft"    ? "var(--color-border-warning)"
                                  :                      "var(--color-border-primary)";
                     const fg = tone === "danger"  ? "var(--color-text-danger)"
-                             : tone === "warning" ? "#b45309"
+                             : tone === "warning" ? "var(--color-text-warning)"
                              : tone === "soft"    ? "var(--color-text-warning)"
                              :                      "var(--color-text-secondary)";
                     return (
@@ -773,6 +785,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             )}
             {krProgress.map(({ kr, pct, tfSummaries }, i) => {
               const isActive = activeKrId === kr.id;
+              const isTfExpanded = expandedKrTfIds.has(kr.id);
               const krColor = pct >= 80 ? "var(--color-text-success)" : pct >= 40 ? "var(--color-text-warning)" : "var(--color-text-tertiary)";
               return (
                 // KR ボックスはクリックで絞り込みする意図的なインタラクティブ要素
@@ -829,35 +842,51 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   </div>
                   <ProgressBar pct={pct} color={krColor} />
 
-                  {/* 今期のTFごとサマリー */}
-                  <div style={{ marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed var(--color-border-primary)" }}>
-                    <div style={{ fontSize: "9px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.04em", marginBottom: "5px" }}>
+                  {/* 今期のTFごとサマリー（既定は折りたたみ。▸クリックで展開） */}
+                  <div style={{ marginTop: "6px" }}>
+                    <button
+                      type="button"
+                      onClick={e => { e.stopPropagation(); toggleKrTfExpanded(kr.id); }}
+                      aria-expanded={isTfExpanded}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "5px",
+                        fontSize: "9px", fontWeight: "600", color: "var(--color-text-tertiary)",
+                        letterSpacing: "0.04em", background: "transparent", border: "none",
+                        padding: "3px 0 0", width: "100%", textAlign: "left", cursor: "pointer",
+                      }}
+                    >
+                      <span style={{ display: "inline-block", transition: "transform 0.15s", transform: isTfExpanded ? "rotate(90deg)" : "rotate(0deg)" }}>▸</span>
                       今期のTF（{tfSummaries.length}）
-                    </div>
-                    {tfSummaries.length === 0 ? (
-                      <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>TFが登録されていません</div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                        {tfSummaries.map(({ tf, done, total, pct: tfPct }) => {
-                          const tfColor = total === 0 ? "var(--color-text-tertiary)"
-                            : tfPct >= 80 ? "var(--color-text-success)"
-                            : tfPct >= 40 ? "var(--color-text-warning)"
-                            : "var(--color-text-tertiary)";
-                          return (
-                            <div key={tf.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                <span style={{ color: "var(--color-text-tertiary)", marginRight: "4px" }}>TF{tf.tf_number}</span>
-                                {tf.name}
-                              </span>
-                              <div style={{ width: "56px", flexShrink: 0 }}>
-                                <ProgressBar pct={total === 0 ? 0 : tfPct} color={tfColor} />
-                              </div>
-                              <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "46px", textAlign: "right" }}>
-                                {total === 0 ? "—" : `${done}/${total}・${tfPct}%`}
-                              </span>
-                            </div>
-                          );
-                        })}
+                    </button>
+
+                    {isTfExpanded && (
+                      <div style={{ marginTop: "6px", paddingTop: "6px", borderTop: "1px dashed var(--color-border-primary)" }}>
+                        {tfSummaries.length === 0 ? (
+                          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>TFが登録されていません</div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                            {tfSummaries.map(({ tf, done, total, pct: tfPct }) => {
+                              const tfColor = total === 0 ? "var(--color-text-tertiary)"
+                                : tfPct >= 80 ? "var(--color-text-success)"
+                                : tfPct >= 40 ? "var(--color-text-warning)"
+                                : "var(--color-text-tertiary)";
+                              return (
+                                <div key={tf.id} style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                                  <span style={{ fontSize: "10px", color: "var(--color-text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                    <span style={{ color: "var(--color-text-tertiary)", marginRight: "4px" }}>TF{tf.tf_number}</span>
+                                    {tf.name}
+                                  </span>
+                                  <div style={{ width: "56px", flexShrink: 0 }}>
+                                    <ProgressBar pct={total === 0 ? 0 : tfPct} color={tfColor} />
+                                  </div>
+                                  <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "46px", textAlign: "right" }}>
+                                    {total === 0 ? "—" : `${done}/${total}・${tfPct}%`}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -924,9 +953,9 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                       badge={
                         <span style={{
                           fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
-                          background: "#fff7ed",
-                          color: "#c2410c",
-                          border: "1px solid #fed7aa",
+                          background: "var(--color-bg-warning)",
+                          color: "var(--color-text-warning)",
+                          border: "1px solid var(--color-border-warning)",
                           fontWeight: "500",
                         }}>
                           ⚠ {days}日滞留
@@ -1047,7 +1076,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
                           width: 18, height: 18, borderRadius: "50%", flexShrink: 0,
                           fontSize: "9px", fontWeight: 700,
-                          background: m.color_bg || "var(--color-brand-primary)",
+                          background: m.color_bg || "var(--color-brand)",
                           color: m.color_text || "#fff",
                         }}>
                           {m.initials}

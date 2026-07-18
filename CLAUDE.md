@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.54
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.55
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1130,7 +1130,35 @@
 #             ダークモード自動対応。表示のみ（クリック不可）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.54）
+# v2.55 refactor: ダッシュボード改善第3弾（③ KR進捗のTF内訳を折りたたみ化＋④ 色の意味の統一＋
+#      ⑤ ProjectKarteの進捗バー/ステータスチップの重複整理）（2026-07-18）
+#      ③：`DashboardView.tsx` の「KR 進捗サマリー」カードで、各KRの進捗バー＋%は既定表示のまま、
+#             下位の「今期のTF」内訳（TFごとの進捗バー・件数）を既定で折りたたみに変更。
+#             `▸ 今期のTF（n）`ボタンクリックで展開（▸→90度回転）。KrMeetingNotePanelの
+#             TF折りたたみ（Set<string>で開閉管理・▶/▼トグル）と同じパターンを流用し、新規の
+#             汎用Collapsibleコンポーネントは作らなかった。KRボックス自体のクリック（PJ絞り込み）と
+#             競合しないようトグルボタンで`e.stopPropagation()`。新state `expandedKrTfIds`
+#      ④：ダッシュボード内の色の意味をKPIサマリー行（v2.54）の配色に統一
+#             - 未定義トークン `var(--color-brand-primary)`（存在しないCSS変数）を使っていた
+#               メンションアイコンの既定背景色を `var(--color-brand)` に修正
+#             - リマインダーカードの「今日」バッジ・期限アラートの「滞留」バッジが生の16進数
+#               （`#fff4e0`/`#f59e0b`/`#b45309`/`#fff7ed`/`#c2410c`/`#fed7aa`）で警告色を
+#               ハードコードしていたのを `var(--color-bg-warning)`/`var(--color-border-warning)`/
+#               `var(--color-text-warning)` に統一（「明日」バッジは元々同トークン使用）
+#             - `ProjectKarte.tsx` のステータスチップも同様に生の16進数（進行中=`#2563eb`・
+#               滞留=`#ca8a04`・期限超過=`#dc2626`・今週期限=`#ca8a04`）を廃止し、
+#               進行中=`var(--color-brand)`（accent）・滞留/今週期限=`var(--color-text-warning)`〜
+#               `var(--color-text-info)`・期限超過=`var(--color-text-danger)` に統一
+#               （今週期限はKPIサマリー行の「今週締切」＝infoに合わせ、以前の警告色から変更）
+#      ⑤：`ProjectKarte.tsx` のステータスチップから「完了」チップを削除（進捗バー直下の
+#             `{done}/{total} 完了（{pct}%）`と同じ情報の二重表現だったため）。件数自体は
+#             進捗バー側の表示に一本化されており情報は減っていない
+#      検証：`npx tsc --noEmit` エラー0／`npx vitest run` 367件全通過／
+#             `npx eslint src` 新規エラーなし（DashboardView.tsx/ProjectKarte.tsxは変更前と同じ
+#             3件の既存tabIndex警告のみ・エラー0）／`npm run build` 成功
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.55）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2086,7 +2114,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-18（v2.54）
+- 最終更新：2026-07-18（v2.55）
 
 ---
 
