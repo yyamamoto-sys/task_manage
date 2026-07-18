@@ -7,7 +7,7 @@ import { TaskEditModal } from "../task/TaskEditModal";
 import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
-import { applyDependencyOrderWithinSiblings } from "../../lib/taskHierarchy";
+import { applyDependencyOrderWithinSiblings, taskProgressFraction } from "../../lib/taskHierarchy";
 
 interface GanttMobileViewProps {
   today: Date;
@@ -65,6 +65,9 @@ export function GanttMobileView({
     const isOverdue = !!task.due_date && task.due_date < todayStrVal && !isDone;
     const statusColor = TASK_STATUS_STYLE[task.status].color;
     const isChanged = previewChangedTaskIds?.has(task.id);
+    // 進捗フィル（デスクトップのTaskBarRowと同じ純粋関数）。カードには専用のバー要素が無いため、
+    // 名前/期日の下に薄いトラック＋フィルを1本追加するだけの簡易反映にとどめる
+    const progress = taskProgressFraction(task, allTasks);
     return (
       <div
         key={task.id}
@@ -99,6 +102,18 @@ export function GanttMobileView({
           }}>
             {rangeText(task)}{isOverdue ? " ・期限超過" : ""}
           </div>
+          {progress > 0 && (
+            <div style={{
+              marginTop: "5px", height: 3, borderRadius: 2,
+              background: "var(--color-bg-tertiary)", overflow: "hidden",
+            }}>
+              <div style={{
+                height: "100%", width: `${progress * 100}%`,
+                background: pj?.color_tag ?? statusColor, opacity: isDone ? 0.5 : 0.85,
+                borderRadius: 2,
+              }} />
+            </div>
+          )}
         </div>
         {/* カード全体クリックでモーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
         {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}

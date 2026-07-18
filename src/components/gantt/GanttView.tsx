@@ -36,7 +36,7 @@ import {
 } from "./ganttDependencyArrows";
 import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/linkDirection";
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
-import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks } from "../../lib/taskHierarchy";
+import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks, buildProgressFractionMap } from "../../lib/taskHierarchy";
 import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 
 const headerBtnStyle: React.CSSProperties = {
@@ -358,6 +358,10 @@ export function GanttView({
     }
     return map;
   }, [allTasks]);
+
+  // タスクごとの進捗率（0〜1）：親=子からのロールアップ・葉=ステータス由来（taskHierarchy.ts参照）。
+  // バー内の進捗フィルは常時表示（トグルなし）。O(n)の一括版を使う（行ごとに個別関数を呼ぶとO(n²)）
+  const progressFractionMap = useMemo(() => buildProgressFractionMap(allTasks), [allTasks]);
 
   // PJごとの階層順タスクリスト（ラベル列・バー列の両方で共有）
   // 以前はラベル列・バー列それぞれで orderTasksHierarchically を呼んでいたが、
@@ -1853,6 +1857,7 @@ export function GanttView({
                               isMoving={movingTaskIds?.has(task.id) ?? false}
                               isSelected={selectedTaskIds.has(task.id)}
                               isCritical={criticalTaskIds.has(task.id)}
+                              progressFraction={progressFractionMap.get(task.id)}
                               onEdit={guardedHandleBarEdit}
                               onResize={guardedHandleResizeDragStart}
                               onResizeStart={guardedHandleStartResizeDragStart}
@@ -2017,6 +2022,7 @@ export function GanttView({
                           isMoving={movingTaskIds?.has(task.id) ?? false}
                           isSelected={selectedTaskIds.has(task.id)}
                           isCritical={criticalTaskIds.has(task.id)}
+                          progressFraction={progressFractionMap.get(task.id)}
                           onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
@@ -2091,6 +2097,7 @@ export function GanttView({
                           isMoving={movingTaskIds?.has(task.id) ?? false}
                           isSelected={selectedTaskIds.has(task.id)}
                           isCritical={criticalTaskIds.has(task.id)}
+                          progressFraction={progressFractionMap.get(task.id)}
                           onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}

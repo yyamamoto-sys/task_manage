@@ -14,6 +14,8 @@ import {
   orderSiblingsWithDependencies,
   applyDependencyOrderWithinSiblings,
   filterHideCompletedTasks,
+  taskProgressFraction,
+  buildProgressFractionMap,
 } from "../taskHierarchy";
 
 // テスト用の最小 Task ファクトリ。階層関連と集計に必要な列だけ指定可能にする。
@@ -427,6 +429,78 @@ describe("applyDependencyOrderWithinSiblings：親子混在フラット配列で
       mk({ id: "b", display_order: 2 }),
     ];
     expect(applyDependencyOrderWithinSiblings(list, [mkDep("b", "a")]).map(t => t.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("taskProgressFraction：ガントのバー内進捗フィル用（0〜1）", () => {
+  it("葉タスク：todo=0", () => {
+    const t = [mk({ id: "a", status: "todo" })];
+    expect(taskProgressFraction(t[0], t)).toBe(0);
+  });
+
+  it("葉タスク：in_progress=0.5（慣例値）", () => {
+    const t = [mk({ id: "a", status: "in_progress" })];
+    expect(taskProgressFraction(t[0], t)).toBe(0.5);
+  });
+
+  it("葉タスク：done=1", () => {
+    const t = [mk({ id: "a", status: "done" })];
+    expect(taskProgressFraction(t[0], t)).toBe(1);
+  });
+
+  it("親タスク：子からのロールアップ（parentProgressのpctを0〜1に正規化）", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }), // 親自身のstatusは無視される
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "done" }),
+      mk({ id: "c3", parent_task_id: "p", status: "todo" }),
+    ];
+    expect(taskProgressFraction(t[0], t)).toBeCloseTo(0.67, 2);
+  });
+
+  it("親タスク：全子done→1", () => {
+    const t = [
+      mk({ id: "p" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+    ];
+    expect(taskProgressFraction(t[0], t)).toBe(1);
+  });
+
+  it("削除済みの子は集計から除外される（rollup系と同じ挙動）", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "cdel", parent_task_id: "p", status: "todo", is_deleted: true }),
+    ];
+    expect(taskProgressFraction(t[0], t)).toBe(1);
+  });
+});
+
+describe("buildProgressFractionMap：taskProgressFraction の一括版（O(n)）", () => {
+  it("親・葉が混在するタスク集合で、個別呼び出しの taskProgressFraction と同じ結果を返す", () => {
+    const t: Task[] = [
+      mk({ id: "p1", status: "todo" }),
+      mk({ id: "p1c1", parent_task_id: "p1", status: "done" }),
+      mk({ id: "p1c2", parent_task_id: "p1", status: "todo" }),
+      mk({ id: "leaf_todo", status: "todo" }),
+      mk({ id: "leaf_inprogress", status: "in_progress" }),
+      mk({ id: "leaf_done", status: "done" }),
+    ];
+    const map = buildProgressFractionMap(t);
+    for (const task of t) {
+      expect(map.get(task.id)).toBe(taskProgressFraction(task, t));
+    }
+  });
+
+  it("削除済みタスクはMapに含まれない", () => {
+    const t: Task[] = [mk({ id: "a" }), mk({ id: "del", is_deleted: true })];
+    const map = buildProgressFractionMap(t);
+    expect(map.has("a")).toBe(true);
+    expect(map.has("del")).toBe(false);
+  });
+
+  it("空配列を渡すと空のMapを返す", () => {
+    expect(buildProgressFractionMap([]).size).toBe(0);
   });
 });
 

@@ -70,6 +70,10 @@ export interface TaskBarRowProps {
       （太い赤枠）で強調する。isOverdueの塗り色・isStagnantの細い枠とは独立した別レイヤーで
       表現し、既存の「期限超過の赤」やホバー強調と混同しないようにする */
   isCritical?: boolean;
+  /** 進捗フィル（0〜1）。バー内の左からこの割合だけ暗いオーバーレイを重ねて塗る（taskHierarchy.ts
+      の taskProgressFraction／buildProgressFractionMap で算出：親=子からのロールアップ、
+      葉=ステータス由来の慣例値）。undefined/0 は描画しない（既存のバー表現を一切変えない） */
+  progressFraction?: number;
   /** クリック（Ctrl/Cmd 押下時は選択トグル、それ以外は詳細を開く＋選択クリア）。
       Enter/Space によるキーボード操作も同じハンドラを通す */
   onEdit: (e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>, taskId: string) => void;
@@ -91,9 +95,11 @@ function TaskBarRowImpl({
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
   ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false, isSelected = false,
-  isCritical = false,
+  isCritical = false, progressFraction,
   onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
+  // 進捗フィル：0〜1にクランプ。0以下（未着手）は何も描画しない＝既存のバー表現を一切変えない
+  const clampedProgress = progressFraction == null ? 0 : Math.max(0, Math.min(1, progressFraction));
   // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
   const showLinkHandles = !isPreview && !!linkUi?.enabled
     && (isHovered || linkUi.sourceSide != null || linkUi.isTarget);
@@ -181,6 +187,21 @@ function TaskBarRowImpl({
               boxShadow: [linkTargetShadow, criticalShadow].filter(Boolean).join(", ") || undefined,
             }}
           >
+            {/* 進捗フィル：左からclampedProgressの割合だけ暗いオーバーレイを重ねる（塗り色そのものは
+                変えず、常にbarColorの上に半透明の黒を重ねる方式＝どのbarColorでも「地の色より少し濃い」
+                シェードになる。孤立した右端に薄い縦線を添えて未着手部分との境界を分かりやすくする） */}
+            {clampedProgress > 0 && (
+              <div
+                aria-hidden="true"
+                style={{
+                  position: "absolute", left: 0, top: 0, bottom: 0,
+                  width: `${clampedProgress * 100}%`,
+                  background: "rgba(0,0,0,0.24)",
+                  borderRight: clampedProgress < 1 ? "1px solid rgba(255,255,255,0.4)" : "none",
+                  pointerEvents: "none",
+                }}
+              />
+            )}
             {bar.barWidth > 52 && (
               <span style={{
                 fontSize: "8px", color: "rgba(255,255,255,0.9)", fontWeight: "500",
@@ -331,6 +352,7 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     (prev.isMoving ?? false) === (next.isMoving ?? false) &&
     (prev.isSelected ?? false) === (next.isSelected ?? false) &&
     (prev.isCritical ?? false) === (next.isCritical ?? false) &&
+    (prev.progressFraction ?? 0) === (next.progressFraction ?? 0) &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onResizeStart === next.onResizeStart &&

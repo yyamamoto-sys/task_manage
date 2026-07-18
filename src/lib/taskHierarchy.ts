@@ -299,6 +299,43 @@ export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
     .sort(sortByOrder);
 }
 
+/** 葉タスクの慣例的な進捗率（0〜1）。0〜100%の実測フィールドが無いための代替表現
+ *  （todo=0 / in_progress=0.5 / done=1）。実測%を持たせる場合は将来DB列＋入力UIが必要（今回は未対応）。 */
+function leafProgressFraction(status: Task["status"]): number {
+  if (status === "done") return 1;
+  if (status === "in_progress") return 0.5;
+  return 0;
+}
+
+/**
+ * タスクの進捗率（0〜1）を算出する純粋関数（ガントのバー内進捗フィル用）。
+ * - 子を持つ親タスク：子からのロールアップ（parentProgress の pct を 0〜1 に正規化）
+ * - 子を持たない葉タスク：ステータス由来の慣例値（leafProgressFraction）
+ * 単発呼び出し用。一覧描画（多数行）では buildProgressFractionMap（O(n)一括版）を使うこと。
+ */
+export function taskProgressFraction(task: Task, tasks: Task[]): number {
+  const { total, pct } = parentProgress(tasks, task.id);
+  if (total > 0) return pct / 100;
+  return leafProgressFraction(task.status);
+}
+
+/**
+ * taskProgressFraction の一括版（O(n)）。buildParentDerivedMap を1回計算し、親はそこから、
+ * 葉はステータスから算出する。GanttView のように多数行を描画する画面向け
+ * （行ごとに taskProgressFraction を呼ぶと親判定のたびに childrenOf が全走査し O(n²) になる。
+ * buildParentDerivedMap と同じ理由で分離した一括版）。
+ */
+export function buildProgressFractionMap(tasks: Task[]): Map<string, number> {
+  const derivedMap = buildParentDerivedMap(tasks);
+  const map = new Map<string, number>();
+  for (const t of tasks) {
+    if (t.is_deleted) continue;
+    const derived = derivedMap.get(t.id);
+    map.set(t.id, derived ? derived.pct / 100 : leafProgressFraction(t.status));
+  }
+  return map;
+}
+
 /**
  * 「完了を隠す」表示フィルタ（ガントの🙈トグル用）の純粋関数。
  *
