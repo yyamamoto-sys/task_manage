@@ -249,6 +249,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     deleteTask(taskId, currentUser.id);
     showToast(`「${originalTask.name}」を削除しました`, "info", {
       label: "元に戻す",
+      isUndo: true,
       onClick: () => { restoreTask(taskId); },
     });
     onDeleted?.(taskId);

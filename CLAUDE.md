@@ -940,7 +940,40 @@
 #      スコープ：デスクトップ GanttView のみ（GanttMobileView は対象外・未変更）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.48）
+# v2.49 feat: Ctrl/Cmd+Z で直前の操作を元に戻すショートカットを追加（2026-07-18）
+#      背景：PMツール調査で高優先と判定したショートカット追加の2/2件目（1件目はv2.48の
+#             ガント個別ショートカット）。既存のUndoは「削除・一括操作・タスク移動・自動リスケ
+#             連鎖・複数選択一括シフト」等でトースト「元に戻す」ボタンを押す方式のみだった
+#      方針：本格的な多段Undo履歴（スタック）は作らず、「直前に出たUndoトースト1件」だけを
+#             Ctrl/Cmd+Zで発火する軽量版。対象はアプリ全体（トースト機構自体がアプリ全体で
+#             使われているため、ガント限定にしない）
+#      追加：`src/lib/lastUndoStore.ts`（NEW）：直前のUndoアクション1件を保持する最小限のモジュール
+#             （setLastUndoAction/consumeLastUndoAction/clearLastUndoAction/peekLastUndoAction）。
+#             consumeは取り出すと同時にクリア（二重発火防止）。より新しい登録は自動的に古い登録を
+#             上書きする。テスト`lastUndoStore.test.ts`（6件・純粋ロジックを直接assert）
+#      変更：`Toast.tsx`：`ToastAction`に`isUndo?: boolean`を追加。`showToast()`は
+#             `action.isUndo`が真のときだけ`setLastUndoAction(action.onClick)`を呼ぶ
+#             （＝一般の通知トーストは登録されない）。`dismissUndoToasts()`（NEW export）で
+#             Ctrl+Z実行後に画面に残っているUndoトーストを閉じられるようにした。トースト内の
+#             「元に戻す」ボタンを直接クリックした場合も`clearLastUndoAction()`を呼び、
+#             後からCtrl+Zを押しても同じUndoが二重発火しないようにした
+#      変更：`isUndo:true`を付与した6箇所（Undo付きトースト全て）：
+#             `appStore.ts`のrunCascade（自動リスケ連鎖）・runBulkShift（ガント複数選択の
+#             一括シフト）／`ListView.tsx`の一括ステータス変更・一括担当者変更・一括削除／
+#             `TaskEditModal.tsx`の単体タスク削除。既存のトーストクリックUndoの挙動は無変更
+#             （Ctrl+Zは同じUndoを別経路で発火するだけ）
+#      追加：`MainLayout.tsx`にwindow keydownリスナー（アプリ全体・トップレベル）。
+#             Ctrl/Cmd+Zで`consumeLastUndoAction()`を取り出し実行→`dismissUndoToasts()`。
+#      **最重要ガード**：`document.activeElement`がinput/textarea/select/contenteditableの
+#             ときは一切ハイジャックしない（`preventDefault`しない・自前Undoも発火しない）。
+#             これによりテキスト入力欄では常にブラウザ標準のテキストUndoが優先される
+#      未実装（将来課題）：Shift+Ctrl/Cmd+Z（Redo）。Redoスタックの追加設計が必要なため今回は
+#             見送り
+#      変更：`GanttShortcutsPanel.tsx`のキーボードセクションに
+#             「Ctrl / Cmd + Z：直前の操作を元に戻す」を追記
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.49）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

@@ -259,6 +259,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       ));
       showToast(`${targets.length}件のステータスを「${TASK_STATUS_LABEL[status]}」に変更しました`, "success", {
         label: "元に戻す",
+        isUndo: true,
         onClick: () => {
           const tasksNow = useAppStore.getState().tasks;
           prevStatusById.forEach((prevStatus, id) => {
@@ -292,6 +293,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       const m = members.find(mm => mm.id === memberId);
       showToast(`${targets.length}件の担当者を「${m?.display_name ?? memberId}」に変更しました`, "success", {
         label: "元に戻す",
+        isUndo: true,
         onClick: () => {
           const tasksNow = useAppStore.getState().tasks;
           prevAssigneesById.forEach((prev, id) => {
@@ -322,6 +324,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       await Promise.all(ids.map(id => deleteTask(id, currentUser.id)));
       showToast(`${count}件のタスクを削除しました`, "info", {
         label: "元に戻す",
+        isUndo: true,
         onClick: () => { ids.forEach(id => restoreTask(id)); },
       });
       clearSelection();

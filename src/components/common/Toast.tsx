@@ -2,14 +2,21 @@
 // イベントベースのトースト通知。alert() の代替。
 // showToast() をどこからでも呼び出せる。ToastContainer を App のルートに1つ置く。
 // 第3引数 action を渡すと「元に戻す」等のアクションボタン付きトーストになる（表示時間も延長）。
+//
+// 【isUndo フラグ】action.isUndo:true を付けたトーストは、表示と同時に
+// lastUndoStore へ「直前のUndoアクション」として登録される（Ctrl/Cmd+Z で発火する軽量版
+// Undo・詳細は lastUndoStore.ts）。単なる情報系トーストの「戻す」ボタン等には付けないこと。
 
 import { useState, useEffect, useRef } from "react";
+import { setLastUndoAction, clearLastUndoAction } from "../../lib/lastUndoStore";
 
 export type ToastType = "success" | "error" | "info";
 
 export interface ToastAction {
   label: string;
   onClick: () => void;
+  /** true の場合、このトーストの onClick を Ctrl/Cmd+Z の「直前のUndo」として登録する */
+  isUndo?: boolean;
 }
 
 interface ToastItem {
@@ -21,10 +28,17 @@ interface ToastItem {
 
 let _nextId = 0;
 const _listeners = new Set<(item: ToastItem) => void>();
+const _dismissUndoListeners = new Set<() => void>();
 
 export function showToast(message: string, type: ToastType = "success", action?: ToastAction) {
   const item: ToastItem = { id: _nextId++, message, type, action };
+  if (action?.isUndo) setLastUndoAction(action.onClick);
   _listeners.forEach(fn => fn(item));
+}
+
+/** Ctrl/Cmd+Z でUndoを実行した後、画面に残っているUndoトーストを閉じる */
+export function dismissUndoToasts(): void {
+  _dismissUndoListeners.forEach(fn => fn());
 }
 
 const STYLE: Record<ToastType, { bg: string; icon: string }> = {
@@ -52,8 +66,19 @@ export function ToastContainer() {
       timers.set(item.id, timer);
     };
     _listeners.add(handler);
+    // Ctrl/Cmd+Z 実行後、画面に残っている「元に戻す」付きトーストを閉じる
+    const dismissUndo = () => {
+      setToasts(prev => prev.filter(t => {
+        if (!t.action?.isUndo) return true;
+        const timer = timers.get(t.id);
+        if (timer) { clearTimeout(timer); timers.delete(t.id); }
+        return false;
+      }));
+    };
+    _dismissUndoListeners.add(dismissUndo);
     return () => {
       _listeners.delete(handler);
+      _dismissUndoListeners.delete(dismissUndo);
       timers.forEach(t => clearTimeout(t));
       timers.clear();
     };
@@ -94,7 +119,12 @@ export function ToastContainer() {
             {toast.message}
             {toast.action && (
               <button
-                onClick={() => { toast.action?.onClick(); dismiss(toast.id); }}
+                onClick={() => {
+                  toast.action?.onClick();
+                  // クリックで実行済みのため、Ctrl/Cmd+Zでの二重発火を防ぐ
+                  if (toast.action?.isUndo) clearLastUndoAction();
+                  dismiss(toast.id);
+                }}
                 style={{
                   flexShrink: 0, marginLeft: "4px",
                   padding: "4px 10px", fontSize: "11px", fontWeight: "700",

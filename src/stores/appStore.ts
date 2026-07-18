@@ -230,6 +230,7 @@ async function runCascade(
     "info",
     {
       label: "元に戻す",
+      isUndo: true,
       onClick: () => {
         appliedShifts.forEach(shift => {
           const t = get().tasks.find(x => x.id === shift.taskId);
@@ -317,6 +318,7 @@ async function runBulkShift(
     "info",
     {
       label: "元に戻す",
+      isUndo: true,
       onClick: () => {
         undoTargets.forEach(u => {
           const t = get().tasks.find(x => x.id === u.taskId);

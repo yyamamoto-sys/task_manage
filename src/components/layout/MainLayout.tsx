@@ -14,6 +14,8 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { ErrorBar } from "../common/ErrorBar";
+import { dismissUndoToasts } from "../common/Toast";
+import { consumeLastUndoAction } from "../../lib/lastUndoStore";
 import { ViewSkeleton } from "../common/Skeleton";
 import { CommandPalette } from "../common/CommandPalette";
 import { DashIcon, KanbanIcon, GanttIcon, ListIcon, GraphIcon, AIIcon, WorkloadIcon } from "../common/icons/NavIcons";
@@ -141,6 +143,29 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         e.preventDefault();
         setIsPaletteOpen(prev => !prev);
       }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  // Ctrl+Z / Cmd+Z で「直前のUndo」を発火する軽量版Undo（アプリ全体）。
+  // 本格的な多段Undo履歴は作らず、直前に出たUndoトースト1件だけを対象にする。
+  // 入力欄（input/textarea/select/contenteditable）ではブラウザ標準のテキストUndoを
+  // 優先させるため、ここでは何もしない（preventDefaultしない・自前Undoも発火しない）。
+  // Redo（Shift+Ctrl/Cmd+Z）は今回未実装（将来課題）。
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.key.toLowerCase() !== "z" || e.shiftKey) return;
+      const el = document.activeElement;
+      const tag = el?.tagName;
+      const isEditable = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT"
+        || (el instanceof HTMLElement && el.isContentEditable);
+      if (isEditable) return;
+      const action = consumeLastUndoAction();
+      if (!action) return;
+      e.preventDefault();
+      action();
+      dismissUndoToasts();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);

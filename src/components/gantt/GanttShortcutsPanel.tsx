@@ -42,6 +42,7 @@ const KEY_SHORTCUTS: ShortcutItem[] = [
   { gesture: "+ / =　・　- / _", description: "ズームイン／ズームアウト" },
   { gesture: "Ctrl / Cmd + A", description: "現在表示中の全タスクを選択" },
   { gesture: "Enter", description: "1件選択中のタスクの詳細を開く（複数選択時は何もしない）" },
+  { gesture: "Ctrl / Cmd + Z", description: "直前の操作を元に戻す（アプリ全体・削除や一括操作などUndo付きトーストが出た直後に有効。入力欄では代わりにブラウザ標準のテキストUndoが働く）" },
 ];
 
 const TOGGLE_SHORTCUTS: ShortcutItem[] = [
