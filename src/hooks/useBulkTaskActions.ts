@@ -1,9 +1,10 @@
 // src/hooks/useBulkTaskActions.ts
 //
-// リスト/カンバン共通の一括操作ロジック（一括ステータス変更・一括担当者変更・一括削除）。
+// リスト/カンバン共通の一括操作ロジック（一括ステータス変更・一括優先度変更・一括担当者変更・一括削除）。
 // 元はListView.tsx内にあった3関数（bulkUpdateStatus/bulkUpdateAssignee/bulkDelete）を
 // そのままこのフックへ移し、カンバンビューにも同じロジックを持たせるために共有する
 // （KanbanViewの複数選択＋一括操作を追加した際の抽出。CLAUDE.md v2.51）。
+// bulkUpdatePriority はリストビュー改良第4弾で追加（CLAUDE.md v2.62）。
 //
 // 選択状態（selectedIds・Shift+クリックのアンカー等）は各ビューの選択UIに強く紐づくため
 // 呼び出し側（ListView/KanbanView）で管理し、このフックは「選択中IDに対して何をするか」
@@ -13,7 +14,7 @@
 import { useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { Member, Task } from "../lib/localData/types";
-import { TASK_STATUS_LABEL } from "../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_PRIORITY_LABEL } from "../lib/taskMeta";
 import { confirmDialog } from "../lib/dialog";
 import { showToast } from "../components/common/Toast";
 
@@ -47,6 +48,34 @@ export function useBulkTaskActions(
           prevStatusById.forEach((prevStatus, id) => {
             const t = tasksNow.find(x => x.id === id);
             if (t) saveTask({ ...t, status: prevStatus, updated_by: currentUserId });
+          });
+        },
+      });
+      clearSelection();
+    } catch (err) {
+      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+    }
+  }, [allTasks, selectedIds, saveTask, currentUserId, clearSelection]);
+
+  // 一括優先度変更
+  const bulkUpdatePriority = useCallback(async (priority: Task["priority"]) => {
+    const targets = allTasks.filter(t => selectedIds.has(t.id));
+    if (targets.length === 0) return;
+    // Undo用に変更前優先度を控える（方式はbulkUpdateStatusと同じ）
+    const prevPriorityById = new Map(targets.map(t => [t.id, t.priority]));
+    try {
+      await Promise.all(targets.map(t =>
+        saveTask({ ...t, priority, updated_by: currentUserId }),
+      ));
+      const label = priority ? TASK_PRIORITY_LABEL[priority] : "なし";
+      showToast(`${targets.length}件の優先度を「${label}」に変更しました`, "success", {
+        label: "元に戻す",
+        isUndo: true,
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          prevPriorityById.forEach((prevPriority, id) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({ ...t, priority: prevPriority, updated_by: currentUserId });
           });
         },
       });
@@ -115,5 +144,5 @@ export function useBulkTaskActions(
     }
   }, [selectedIds, deleteTask, restoreTask, currentUserId, clearSelection]);
 
-  return { bulkUpdateStatus, bulkUpdateAssignee, bulkDelete };
+  return { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete };
 }

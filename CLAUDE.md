@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.61
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.62
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1258,8 +1258,22 @@
 #      検証：`npx tsc --noEmit` エラー0／`npx vitest run` 385件全通過（新規4件含む）／
 #             `npx eslint src` 新規エラーなし（ListView.tsx・src/lib/list単体でも0件）／
 #             `npm run build` 成功。DBマイグレ不要（フロントのみ）。
+# v2.62 feat: 一括操作に「優先度の一括変更」を追加（リストビュー改良第4弾＝最終）（2026-07-19）
+#      追加：`src/hooks/useBulkTaskActions.ts`に`bulkUpdatePriority(priority)`を追加
+#             （既存`bulkUpdateStatus`と同じ流儀＝変更前priorityをUndo用に控え、
+#             `saveTask`経由・楽観ロック整合・Undoトーストは`isUndo:true`でCtrl+Zに乗る）。
+#      追加：`ListView.tsx`の一括操作バーに優先度セグメントボタン（なし/高/中/低）を追加。
+#             既存の一括ステータス変更ボタンと同じ見た目・配置（担当者セレクトの前）。
+#      追加：`KanbanView.tsx`の一括操作バーにも同じ優先度ボタンを追加（フック共有のため
+#             自然に対応可能と判断。バーの`maxHeight`を60px→100pxに拡張し折返しに対応）。
+#      不変：既存の一括ステータス/担当者/削除・選択・折りたたみ・グループ集計・
+#             期限超過赤字表示・リストビュー改良①〜③（本シリーズはこれで一区切り）。
+#      検証：`npx tsc --noEmit` エラー0／`npx vitest run` 385件全通過／
+#             `npx eslint src` 新規エラーなし（ListView.tsx・KanbanView.tsx・
+#             useBulkTaskActions.ts単体でも0件）／`npm run build` 成功。
+#             DBマイグレ不要（`priority`列は既存カラムの一括更新のみ・フロントのみ）。
 #
-# 最終更新：2026-07-19（v2.61）
+# 最終更新：2026-07-19（v2.62）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2215,7 +2229,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-19（v2.61）
+- 最終更新：2026-07-19（v2.62）
 
 ---
 

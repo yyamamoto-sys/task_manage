@@ -98,7 +98,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     });
   }, [visibleTasks]);
 
-  const { bulkUpdateStatus, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
     tasks, members, selectedIds, currentUser.id, clearSelection,
   );
 
@@ -215,7 +215,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
       </div>
 
       {/* ===== 一括操作バー（選択時のみ表示・リストビューと同等のUI/挙動） ===== */}
-      <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "60px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
+      <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "100px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
       {selectedIds.size > 0 && (
         <div style={{
           padding: "8px 12px",
@@ -255,6 +255,30 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                 → {TASK_STATUS_LABEL[s]}
               </button>
             ))}
+          </div>
+
+          {/* 優先度一括変更 */}
+          <div style={{ display: "flex", gap: "4px" }}>
+            {(["", "high", "mid", "low"] as const).map(p => {
+              const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
+              return (
+                <button
+                  key={p || "none"}
+                  onClick={() => bulkUpdatePriority(p || null)}
+                  title={`選択中タスクの優先度を「${p ? TASK_PRIORITY_LABEL[p] : "なし"}」に変更`}
+                  style={{
+                    padding: "4px 10px", fontSize: "11px", fontWeight: 500,
+                    background: cfg ? cfg.bg : "var(--color-bg-tertiary)",
+                    color: cfg ? cfg.color : "var(--color-text-secondary)",
+                    border: `1px solid ${cfg ? cfg.color : "var(--color-border-primary)"}`,
+                    borderRadius: "var(--radius-md)",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                  }}
+                >
+                  → {p ? TASK_PRIORITY_LABEL[p] : "なし"}
+                </button>
+              );
+            })}
           </div>
 
           {/* 担当者一括変更 */}

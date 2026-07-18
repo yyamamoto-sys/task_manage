@@ -288,8 +288,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     else setSelectedIds(new Set(filteredTasks.map(t => t.id)));
   }, [allFilteredSelected, filteredTasks]);
 
-  // 一括ステータス変更・一括担当者変更・一括削除（カンバンビューと共有・useBulkTaskActions）
-  const { bulkUpdateStatus, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+  // 一括ステータス変更・一括優先度変更・一括担当者変更・一括削除（カンバンビューと共有・useBulkTaskActions）
+  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
     allTasks, members, selectedIds, currentUser.id, clearSelection,
   );
 
@@ -851,6 +851,30 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                   → {TASK_STATUS_LABEL[s]}
                 </button>
               ))}
+            </div>
+
+            {/* 優先度一括変更 */}
+            <div style={{ display: "flex", gap: "4px" }}>
+              {(["", "high", "mid", "low"] as const).map(p => {
+                const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
+                return (
+                  <button
+                    key={p || "none"}
+                    onClick={() => bulkUpdatePriority(p || null)}
+                    title={`選択中タスクの優先度を「${p ? TASK_PRIORITY_LABEL[p] : "なし"}」に変更`}
+                    style={{
+                      padding: "4px 10px", fontSize: "11px", fontWeight: 500,
+                      background: cfg ? cfg.bg : "var(--color-bg-tertiary)",
+                      color: cfg ? cfg.color : "var(--color-text-secondary)",
+                      border: `1px solid ${cfg ? cfg.color : "var(--color-border-primary)"}`,
+                      borderRadius: "var(--radius-md)",
+                      cursor: "pointer", whiteSpace: "nowrap",
+                    }}
+                  >
+                    → {p ? TASK_PRIORITY_LABEL[p] : "なし"}
+                  </button>
+                );
+              })}
             </div>
 
             {/* 担当者一括変更 */}
