@@ -6,6 +6,7 @@ import type { Task, Member, Project } from "../../lib/localData/types";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
+import { CRITICAL_COLOR } from "./ganttUtils";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -65,6 +66,10 @@ export interface TaskBarRowProps {
   isMoving?: boolean;
   /** 複数選択（Ctrl/Cmd+クリック）で選択中かどうか。選択中の全バーは一括ドラッグの対象になる */
   isSelected?: boolean;
+  /** B6：クリティカルパス上のタスクかどうか（🎯トグルON時のみ渡される想定）。専用のアクセント
+      （太い赤枠）で強調する。isOverdueの塗り色・isStagnantの細い枠とは独立した別レイヤーで
+      表現し、既存の「期限超過の赤」やホバー強調と混同しないようにする */
+  isCritical?: boolean;
   /** クリック（Ctrl/Cmd 押下時は選択トグル、それ以外は詳細を開く＋選択クリア）。
       Enter/Space によるキーボード操作も同じハンドラを通す */
   onEdit: (e: React.MouseEvent<HTMLDivElement> | React.KeyboardEvent<HTMLDivElement>, taskId: string) => void;
@@ -86,6 +91,7 @@ function TaskBarRowImpl({
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
   ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false, isSelected = false,
+  isCritical = false,
   onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave,
 }: TaskBarRowProps) {
   // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
@@ -95,6 +101,13 @@ function TaskBarRowImpl({
     bar ? bar.barX + bar.barWidth : -Infinity,
     ghostBar ? ghostBar.barX + ghostBar.barWidth : -Infinity,
   );
+  // B6：クリティカルパスの外側ハロー（box-shadow）。isSelected/isChanged/isStagnantのoutlineが
+  // 何色を取っていても、この赤いハローだけは独立して常に見える（優先順位の奪い合いにしない＝
+  // 「選択中かつクリティカル」でも両方の情報が視覚的に共存する設計）
+  const criticalShadow = isCritical && !isPreview ? `0 0 0 4px ${CRITICAL_COLOR}4d` : null;
+  const linkTargetShadow = linkUi?.isTarget && linkUi.targetSide === null
+    ? `0 0 0 2px ${linkUi.isValid === false ? "var(--color-text-danger)" : "var(--color-brand)"}`
+    : null;
   return (
     // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -155,17 +168,17 @@ function TaskBarRowImpl({
                 ? "2px solid var(--color-text-info)"
                 : isChanged
                 ? "2px solid var(--color-brand)"
+                : isCritical
+                ? `2.5px solid ${CRITICAL_COLOR}`
                 : isStagnant && !isDone ? "1.5px solid #f97316" : "none",
               outlineOffset: "1px",
               overflow: "hidden",
               display: "flex", alignItems: "center", justifyContent: "center",
               filter: isHovered && !isPreview ? "brightness(1.15)" : "none",
               transition: "filter 0.1s",
-              // B5：結線ドラッグ中、このバーが「バー本体への漠然としたドロップ候補」のときだけ全体をリング表示
-              // （具体的なハンドルが対象のときはハンドル側を光らせるのでここでは出さない＝二重強調を避ける）
-              boxShadow: linkUi?.isTarget && linkUi.targetSide === null
-                ? `0 0 0 2px ${linkUi.isValid === false ? "var(--color-text-danger)" : "var(--color-brand)"}`
-                : undefined,
+              // B5：結線ドラッグ中のドロップ候補リング（linkTargetShadow）と、B6：クリティカルパスの
+              // 外側ハロー（criticalShadow）は互いに独立したレイヤーなので両方同時に出しうる（カンマ結合）
+              boxShadow: [linkTargetShadow, criticalShadow].filter(Boolean).join(", ") || undefined,
             }}
           >
             {bar.barWidth > 52 && (
@@ -317,6 +330,7 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     (prev.linkUi?.onHandleDown ?? null) === (next.linkUi?.onHandleDown ?? null) &&
     (prev.isMoving ?? false) === (next.isMoving ?? false) &&
     (prev.isSelected ?? false) === (next.isSelected ?? false) &&
+    (prev.isCritical ?? false) === (next.isCritical ?? false) &&
     prev.onEdit === next.onEdit &&
     prev.onResize === next.onResize &&
     prev.onResizeStart === next.onResizeStart &&

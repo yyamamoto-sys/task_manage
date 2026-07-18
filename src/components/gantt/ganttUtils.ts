@@ -10,6 +10,13 @@ export const STAGNANT_THRESHOLD_DAYS = 5;
 export const TODO_COLOR = "#6ee7b7";
 export const MS_COLOR   = "#f59e0b";
 export const MS_BORDER  = "#d97706";
+/**
+ * クリティカルパス専用アクセント色（B6）。既存の期限超過（var(--color-border-danger)＝
+ * 淡いくすみ色の"塗り"）やホバー強調（filter:brightness）とは混同しないよう、彩度の高い
+ * 単色を"太い枠線"というまったく別の視覚要素として使う（塗りではなく線種で区別できる設計）。
+ * ライト/ダークどちらの背景でも視認できるよう固定hex（stagnantの#f97316と同じ流儀）。
+ */
+export const CRITICAL_COLOR = "#dc2626";
 
 export type GanttSortOrder = "date" | "name";
 

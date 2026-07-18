@@ -22,7 +22,7 @@ import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
-  TODO_COLOR, MS_COLOR, MS_BORDER,
+  TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
@@ -37,6 +37,7 @@ import {
 import { resolveLinkDirection, type LinkSide } from "../../lib/dependencies/linkDirection";
 import { canAddDependency } from "../../lib/dependencies/cycleCheck";
 import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filterHideCompletedTasks } from "../../lib/taskHierarchy";
+import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -842,6 +843,28 @@ export function GanttView({
     [scopedTaskDependencies, activeTaskById],
   );
 
+  // ===== クリティカルパス表示（B6） =====
+  //
+  // 【設計意図】mineOnly/hideCompletedTasks 等の表示フィルタで隠れているタスクがあっても、
+  // プロジェクトの「本当の」クリティカルパスは変わらないため、activeTaskById（部署スコープ済み・
+  // 論理削除のみ除外、表示フィルタは未適用の広いスコープ）を入力に使う。表示フィルタで隠れている
+  // タスクはそもそもバー自体が描画されないため、isCritical を渡しても自然に何も起きない
+  // （B2の画面外バッジと同じ考え方）。トグルOFF・プレビュー中は計算自体を省略する。
+  const [showCriticalPath, setShowCriticalPath] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.GANTT_SHOW_CRITICAL) === "1"; } catch { return false; }
+  });
+  const toggleShowCriticalPath = useCallback(() => {
+    setShowCriticalPath(prev => {
+      const next = !prev;
+      try { localStorage.setItem(KEYS.GANTT_SHOW_CRITICAL, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const criticalTaskIds = useMemo(() => {
+    if (isPreview || !showCriticalPath) return new Set<string>();
+    return computeCriticalTaskIds([...activeTaskById.values()], scopedTaskDependencies);
+  }, [isPreview, showCriticalPath, activeTaskById, scopedTaskDependencies]);
+
   const [depRender, setDepRender] = useState<{
     arrows: DependencyArrowGeometry[];
     badgesByTaskId: Map<string, DependencyBadgeInfo[]>;
@@ -1201,6 +1224,21 @@ export function GanttView({
               fontWeight: hideCompletedTasks ? "600" : "400",
             }}
           >🙈完了を隠す</button>
+        )}
+        {/* クリティカルパス表示トグル（B6）。既定OFF。ONの間はクリティカルなタスクのバー・
+            クリティカルなタスク間の矢印を専用アクセント（太い赤枠）で強調する */}
+        {!isPreview && (
+          <button
+            onClick={toggleShowCriticalPath}
+            title={showCriticalPath ? "クリティカルパスの強調を隠す" : "クリティカルパス（プロジェクトの所要期間を決める最長の依存連鎖）を強調表示する"}
+            aria-pressed={showCriticalPath}
+            style={{
+              ...headerBtnStyle,
+              color: showCriticalPath ? CRITICAL_COLOR : "var(--color-text-secondary)",
+              borderColor: showCriticalPath ? CRITICAL_COLOR : "var(--color-border-primary)",
+              fontWeight: showCriticalPath ? "600" : "400",
+            }}
+          >🎯クリティカルパス</button>
         )}
         {/* 複数選択インジケータ：Ctrl/Cmd+クリックで選択したタスクの件数。選択中のバーの中央を
             ドラッグすると選択中の全タスクが一括でシフトする */}
@@ -1687,22 +1725,30 @@ export function GanttView({
                     <marker id="gantt-dep-arrowhead-hover" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto" markerUnits="strokeWidth">
                       <path d="M0,0 L6,3 L0,6 Z" fill="var(--color-brand)" />
                     </marker>
+                    {/* B6：クリティカルパス専用の矢印（濃い赤・太め）。既存の通常/ホバーとは独立した3つ目の見た目 */}
+                    <marker id="gantt-dep-arrowhead-critical" markerWidth="7" markerHeight="7" refX="5.5" refY="3.5" orient="auto" markerUnits="strokeWidth">
+                      <path d="M0,0 L7,3.5 L0,7 Z" fill={CRITICAL_COLOR} />
+                    </marker>
                   </defs>
                   {depRender.arrows.map(({ dep, points }) => {
                     const isHoveredArrow = hoveredTaskId != null
                       && (dep.predecessor_task_id === hoveredTaskId || dep.successor_task_id === hoveredTaskId);
                     const predTask = activeTaskById.get(dep.predecessor_task_id);
                     const isPredIncomplete = predTask?.status !== "done";
+                    // B6：両端がクリティカルなタスクの矢印だけ専用アクセントで強調する
+                    // （既存の期限超過赤・ホバー強調とは別の濃さ・太さ・矢印マーカーで判別可能にする）
+                    const isCriticalArrow = showCriticalPath
+                      && criticalTaskIds.has(dep.predecessor_task_id) && criticalTaskIds.has(dep.successor_task_id);
                     return (
                       <path
                         key={dep.id}
                         d={pointsToPathD(points)}
                         fill="none"
-                        stroke={isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
-                        strokeWidth={isHoveredArrow ? 2 : 1}
-                        strokeOpacity={isHoveredArrow ? 0.9 : 0.5}
+                        stroke={isCriticalArrow ? CRITICAL_COLOR : isHoveredArrow ? "var(--color-brand)" : "var(--color-border-secondary)"}
+                        strokeWidth={isCriticalArrow ? (isHoveredArrow ? 3 : 2.2) : isHoveredArrow ? 2 : 1}
+                        strokeOpacity={isCriticalArrow ? 0.95 : isHoveredArrow ? 0.9 : 0.5}
                         strokeDasharray={isPredIncomplete ? "4 3" : undefined}
-                        markerEnd={isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
+                        markerEnd={isCriticalArrow ? "url(#gantt-dep-arrowhead-critical)" : isHoveredArrow ? "url(#gantt-dep-arrowhead-hover)" : "url(#gantt-dep-arrowhead)"}
                       />
                     );
                   })}
@@ -1782,7 +1828,7 @@ export function GanttView({
                           const dateLabel = due ? (hasRange
                             ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                             : `${due.getMonth()+1}/${due.getDate()}`) : "";
-                          const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                          const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
                           const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                           const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                           return (
@@ -1806,6 +1852,7 @@ export function GanttView({
                               linkUi={getLinkUi(task.id)}
                               isMoving={movingTaskIds?.has(task.id) ?? false}
                               isSelected={selectedTaskIds.has(task.id)}
+                              isCritical={criticalTaskIds.has(task.id)}
                               onEdit={guardedHandleBarEdit}
                               onResize={guardedHandleResizeDragStart}
                               onResizeStart={guardedHandleStartResizeDragStart}
@@ -1943,7 +1990,7 @@ export function GanttView({
                         ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
 
-                      const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                      const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
                       const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                       const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                       return (
@@ -1969,6 +2016,7 @@ export function GanttView({
                           linkUi={getLinkUi(task.id)}
                           isMoving={movingTaskIds?.has(task.id) ?? false}
                           isSelected={selectedTaskIds.has(task.id)}
+                          isCritical={criticalTaskIds.has(task.id)}
                           onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
@@ -2018,7 +2066,7 @@ export function GanttView({
                       const dateLabel = due ? (hasRange
                         ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
                         : `${due.getMonth()+1}/${due.getDate()}`) : "";
-                      const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}`;
+                      const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
                       const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
                       const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
                       return (
@@ -2042,6 +2090,7 @@ export function GanttView({
                           linkUi={getLinkUi(task.id)}
                           isMoving={movingTaskIds?.has(task.id) ?? false}
                           isSelected={selectedTaskIds.has(task.id)}
+                          isCritical={criticalTaskIds.has(task.id)}
                           onEdit={guardedHandleBarEdit}
                           onResize={guardedHandleResizeDragStart}
                           onResizeStart={guardedHandleStartResizeDragStart}
