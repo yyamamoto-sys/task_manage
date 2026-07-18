@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.55
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.56
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1158,7 +1158,29 @@
 #             3件の既存tabIndex警告のみ・エラー0）／`npm run build` 成功
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-18（v2.55）
+# v2.56 feat: ダッシュボード改善第4弾（「締切の見通し」棒グラフを追加）（2026-07-18）
+#      追加：`src/lib/computeDueForecast.ts`（純粋関数）。スコープ済みタスク（filteredTasks＝
+#             PJ選択/自分のみを尊重）から未完了タスクを due_date で日別集計。先頭に「超過」
+#             （today より前・未完了）の合計バケット、続けて today〜13日後の14バケットを返す。
+#             done除外・is_deleted除外・due_date なしタスクは除外。today は呼び出し側から渡す
+#             （Date.now()に依存しない純粋関数・テスト容易性のため）
+#      追加：`src/components/dashboard/DueForecastChart.tsx`（インラインSVG・外部ライブラリ
+#             不使用）。マグニチュード表現のため単一色相（`var(--color-brand)`=accent）でバーを
+#             描画。超過バケットのみ状態色（`var(--color-text-danger)`）で意味を分離。土日は
+#             opacity 0.45で淡く、今日はハイライト帯（`var(--color-brand-light)`）＋太字ラベルで
+#             強調。0基準の薄い基線（`var(--color-border-primary)`）を表示。最多の日（山場）には
+#             「▲山場」ラベル。各バーに`<title>`ツールチップ（「日付：n件」）
+#      変更：`DashboardView.tsx` に「締切の見通し」カードを1枚追加（今週のタスク/KR進捗の近く、
+#             グリッドの直前＝配置は既存レイアウトに馴染む位置とした）。バッジは超過込みの
+#             合計件数。既存セクション（並び順・KPI行・各カード）は変更なし
+#      テスト：`src/lib/__tests__/computeDueForecast.test.ts`（7テスト・超過集計／当日／土日／
+#             期日なし除外／完了除外／論理削除除外／既定14日範囲の検証）
+#      検証：`npx tsc --noEmit` エラー0／`npx vitest run` 374件全通過（新規7件）／
+#             `npx eslint src` 新規エラーなし（DashboardView.tsxは変更前と同じ3件の既存
+#             tabIndex警告のみ・新規ファイル2件はエラー0）／`npm run build` 成功
+#      DBマイグレ不要（フロントのみ）
+#
+# 最終更新：2026-07-18（v2.56）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2114,7 +2136,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-18（v2.55）
+- 最終更新：2026-07-18（v2.56）
 
 ---
 

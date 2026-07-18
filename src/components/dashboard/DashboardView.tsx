@@ -28,6 +28,8 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { fetchKrSessions, type KrSession } from "../../lib/supabase/krSessionStore";
 import { ProjectKarte } from "./ProjectKarte";
+import { DueForecastChart } from "./DueForecastChart";
+import { computeDueForecast } from "../../lib/computeDueForecast";
 import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
@@ -227,6 +229,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       return diffMs / (1000 * 60 * 60 * 24) >= stagnantDays;
     }).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? "")),
     [filteredTasks, stagnantDays]
+  );
+
+  // 締切の見通し（超過＋今後14日の日別件数の合計。バッジ表示用）
+  const dueForecastTotal = useMemo(
+    () => computeDueForecast(filteredTasks, todayS).reduce((sum, b) => sum + b.count, 0),
+    [filteredTasks, todayS]
   );
 
   // PJ進捗
@@ -766,6 +774,13 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             </Card>
           </div>
         )}
+
+        {/* 締切の見通し（今後2週間の日別未完了タスク数） */}
+        <div style={{ marginBottom: "14px" }}>
+          <Card title="締切の見通し" badge={dueForecastTotal > 0 ? `${dueForecastTotal}件` : undefined}>
+            <DueForecastChart tasks={filteredTasks} />
+          </Card>
+        </div>
 
         {/* グリッド — key でフィルター変更時にアニメーションを再発火 */}
         <div
