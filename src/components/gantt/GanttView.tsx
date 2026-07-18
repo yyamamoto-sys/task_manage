@@ -503,21 +503,15 @@ export function GanttView({
   // スクロール位置の永続化（中心日付をlocalStorageに保存）
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollInitialized = useRef(false);
-  const scrollSaveTimer = useRef<ReturnType<typeof setTimeout>>();
   const labelBodyRef    = useRef<HTMLDivElement>(null);
   const syncingRef      = useRef(false);
 
-  // 初回マウント時のみ実行：保存済み日付があればそこへ、なければ今日へ
+  // 初回マウント時のみ実行：いつ開いても今日を画面中央に表示する（前回のスクロール位置は復元しない）
   useEffect(() => {
     if (!scrollRef.current || scrollInitialized.current || days.length === 0) return;
     scrollInitialized.current = true;
-    const saved = localStorage.getItem(KEYS.GANTT_CENTER_DATE);
-    const targetDate = saved ? toDate(saved) : null;
-    const targetX = targetDate
-      ? diffDays(rangeStart, targetDate) * dayWidth
-      : todayX;
-    scrollRef.current.scrollLeft = Math.max(0, targetX - scrollRef.current.clientWidth / 2);
-  }, [days, rangeStart, todayX, dayWidth]);
+    scrollRef.current.scrollLeft = Math.max(0, todayX - scrollRef.current.clientWidth / 2);
+  }, [days, todayX]);
 
   // プロジェクト切替時：表示を「今日中心」にリセットする。
   // （切替前のスクロール位置が残って遠い期間が見えてしまうのを防ぐ。
@@ -535,21 +529,13 @@ export function GanttView({
   }, [selectedProject?.id, days.length, todayX]);
 
   const handleGanttScroll = useCallback(() => {
-    clearTimeout(scrollSaveTimer.current);
-    scrollSaveTimer.current = setTimeout(() => {
-      const el = scrollRef.current;
-      if (!el) return;
-      const centerX = el.scrollLeft + el.clientWidth / 2;
-      const idx = Math.floor(centerX / dayWidth);
-      if (days[idx]) localStorage.setItem(KEYS.GANTT_CENTER_DATE, toDateStr(days[idx]));
-    }, 300);
-    // 縦スクロールをラベル列と同期
+    // 縦スクロールをラベル列と同期（横スクロール位置は保存しない＝毎回今日中心で開く）
     if (!syncingRef.current && labelBodyRef.current && scrollRef.current) {
       syncingRef.current = true;
       labelBodyRef.current.scrollTop = scrollRef.current.scrollTop;
       syncingRef.current = false;
     }
-  }, [days, dayWidth]);
+  }, []);
 
   const handleLabelScroll = useCallback(() => {
     if (!syncingRef.current && scrollRef.current && labelBodyRef.current) {
