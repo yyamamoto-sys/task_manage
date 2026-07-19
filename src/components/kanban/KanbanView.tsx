@@ -10,6 +10,7 @@ import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORIT
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
+import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -345,6 +346,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
       }}>
         {(["todo", "in_progress", "done"] as const).map(status => {
           const colTasks = visibleTasks.filter(t => t.status === status);
+          const colSummary = computeGroupSummary(colTasks);
           const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
           const isDoneCol = status === "done";
           const isDropTarget = dragOverStatus === status;
@@ -368,22 +370,40 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
               onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStatus(null); }}
               onDrop={() => handleDrop(status)}
             >
-              {/* 列ヘッダー */}
+              {/* 列ヘッダー：ドット＋列名＋件数、下に完了率バー＋工数合計（computeGroupSummary をリストビューと共用） */}
               <div style={{
-                display: "flex", alignItems: "center", gap: "6px",
+                display: "flex", flexDirection: "column", gap: "5px",
                 padding: "6px 10px", borderRadius: "var(--radius-md)",
                 background: cfg.bg, marginBottom: "8px",
               }}>
-                <span style={{ fontSize: "12px", fontWeight: "500", color: cfg.color, flex: 1 }}>
-                  {cfg.label}
-                </span>
-                <span style={{
-                  fontSize: "10px", color: cfg.color, opacity: 0.8,
-                  background: "rgba(255,255,255,0.6)", padding: "1px 6px",
-                  borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
-                }}>
-                  {colTasks.length}
-                </span>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: cfg.color, display: "inline-block", flexShrink: 0 }} />
+                  <span style={{ fontSize: "12px", fontWeight: "500", color: cfg.color, flex: 1 }}>
+                    {cfg.label}
+                  </span>
+                  <span style={{
+                    fontSize: "10px", color: cfg.color, opacity: 0.8,
+                    background: "rgba(255,255,255,0.6)", padding: "1px 6px",
+                    borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
+                  }}>
+                    {colTasks.length}
+                  </span>
+                </div>
+                {colSummary.total > 0 && (
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span
+                      title={`${colSummary.doneCount}/${colSummary.total}（${Math.round(colSummary.completionRate * 100)}%）`}
+                      style={{ flex: 1, height: "3px", borderRadius: "var(--radius-full)", background: "rgba(255,255,255,0.6)", overflow: "hidden", display: "inline-block" }}
+                    >
+                      <span style={{ display: "block", height: "100%", width: `${Math.round(colSummary.completionRate * 100)}%`, background: cfg.color, borderRadius: "var(--radius-full)" }} />
+                    </span>
+                    {colSummary.totalHours != null && (
+                      <span style={{ fontSize: "9px", color: cfg.color, opacity: 0.8, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        計 {colSummary.totalHours}h
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* タスクカード */}
