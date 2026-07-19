@@ -11,6 +11,7 @@ import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
+import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
@@ -517,6 +518,12 @@ const TaskCard = memo(function TaskCard({
   const isOverdue = !isDone && !!task.due_date && task.due_date < todayStr();
   // 優先度の左ストライプ色（親子のインデント表現＝marginLeft/子バッジとは独立。優先度未設定は無彩色）
   const stripeColor = task.priority ? TASK_PRIORITY_STRIPE_COLOR[task.priority] : "var(--color-border-primary)";
+  // 滞留バッジ：ガントの isTaskStagnant/STAGNANT_THRESHOLD_DAYS をそのまま流用（判定ロジックの二重化を避ける）。
+  // in_progress以外・閾値未満は isTaskStagnant が false を返すため、ここでの追加条件分岐は不要
+  const stagnant = isTaskStagnant(task);
+  const stagnantDays = stagnant && task.updated_at
+    ? Math.floor((Date.now() - new Date(task.updated_at).getTime()) / (1000 * 60 * 60 * 24))
+    : 0;
 
   return (
     <div
@@ -650,6 +657,21 @@ const TaskCard = memo(function TaskCard({
             />
           </span>
         </div>
+        {/* 滞留バッジ（進行中かつ STAGNANT_THRESHOLD_DAYS 日以上 updated_at が動いていない場合のみ）。
+            クリックしても何も起きないラッパー */}
+        {stagnant && (
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+          <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+            <span title={`${STAGNANT_THRESHOLD_DAYS}日以上更新なし`} style={{
+              display: "inline-flex", alignItems: "center", gap: "3px",
+              padding: "2px 7px", borderRadius: "var(--radius-full)", fontSize: "10px",
+              background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+              border: "1px solid var(--color-border-warning)", whiteSpace: "nowrap",
+            }}>
+              🕒 {stagnantDays}日停滞
+            </span>
+          </div>
+        )}
         <span style={{ flex: 1 }} />
         {/* 工数バッジ */}
         {task.estimated_hours != null && (

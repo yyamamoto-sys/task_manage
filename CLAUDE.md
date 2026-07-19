@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.69
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.70
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1494,7 +1494,29 @@
 #             比較＝24エラー・11警告で完全一致（KanbanView.tsxに新規エラー0件）／`npm run build`成功
 #      スコープ外（後続③〜⑤）：滞留バッジ・WIP制限・ドロップ位置プレースホルダ
 #
-# 最終更新：2026-07-19（v2.69）
+# v2.70 feat: カンバンビューの刷新 第3弾（長く動いていない進行中タスクに「滞留」バッジを追加）（2026-07-19）
+#      対象：`src/components/kanban/KanbanView.tsx`のみ。DBマイグレ不要。既存のカード・ドラッグ・
+#             選択・一括操作・インライン編集・②列ヘッダ集計は不変
+#      流用：新しい滞留判定ロジックは作らず、ガントが既に持つ`src/components/gantt/ganttUtils.ts`の
+#             `isTaskStagnant`（status==="in_progress" かつ updated_at から `STAGNANT_THRESHOLD_DAYS`
+#             ＝既定5日以上経過）と`STAGNANT_THRESHOLD_DAYS`をそのままimportしてカードに適用（判定
+#             ロジックの二重化を避ける。閾値変更時もganttUtils.ts側1箇所を直せば両ビューに反映される）
+#      追加：`TaskCard`内で`stagnant = isTaskStagnant(task)`・経過日数`stagnantDays`
+#             （DashboardView.tsxの滞留タスク表示と同じ`Math.floor(diffMs/日)`計算を踏襲。新規の
+#             共有ヘルパーは作らず、既存コードベースの慣例に合わせた）を算出し、フッターの期日チップの
+#             直後に「🕒 ◯日停滞」バッジを表示。進行中以外・閾値未満（`isTaskStagnant`がfalseを返す
+#             ケース）は何も描画しない
+#      配色：DashboardView/ProjectKarteの既存「滞留」バッジと同じ`var(--color-bg-warning)`/
+#             `var(--color-text-warning)`/`var(--color-border-warning)`（stale系のオレンジ茶トーン）に
+#             統一（新規トークンは作らず、アプリ内で既に確立している「滞留」の配色語彙をそのまま踏襲。
+#             ダークモードは既存トークンのため自動対応）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 392件全通過（既存回帰なし・`isTaskStagnant`
+#             自体は`ganttUtils.test.ts`で既にテスト済みのため新規テスト追加なし）／`npx eslint src`を
+#             HEAD時点と比較＝24エラー・11警告で完全一致（KanbanView.tsxに新規エラー0件）／
+#             `npm run build`成功
+#      スコープ外（後続④〜⑤）：WIP制限・ドロップ位置プレースホルダ
+#
+# 最終更新：2026-07-19（v2.70）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
