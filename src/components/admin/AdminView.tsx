@@ -29,6 +29,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { Card, SummaryTile, SummaryRow } from "../common/Card";
+import { DangerZone, DangerAction } from "../common/DangerZone";
 
 type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
@@ -302,6 +303,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
   const krs = useMemo(() => active(rawKrs), [rawKrs]);
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
+  const [krDangerId, setKrDangerId] = useState<string | null>(null);
   const [newKrTitle, setNewKrTitle] = useState("");
   const [objTitle, setObjTitle] = useState(ctxObj?.title ?? "");
   const [objPurpose, setObjPurpose] = useState(ctxObj?.purpose ?? "");
@@ -382,6 +384,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
   const deleteKr = async (id: string) => {
     if (!await confirmDialog("このKRを削除しますか？")) return;
     await deleteKeyResult(id, currentUser.id);
+    setKrDangerId(null);
   };
 
   return (
@@ -440,36 +443,51 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
       <Card title="Key Results" badge={`${krs.length}件`}>
         <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
           {krs.map((kr, i) => (
-            <div key={kr.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-              <div style={{
-                width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
-                background: "var(--color-bg-info)", color: "var(--color-text-info)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
-              }}>
-                {i + 1}
-              </div>
-              {editingKrId === kr.id ? (
-                <EditInline
-                  value={kr.title}
-                  onSave={v => updateKr(kr.id, v)}
-                  onCancel={() => setEditingKrId(null)}
-                />
-              ) : (
+            <div key={kr.id}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
                 <div style={{
-                  flex: 1, padding: "6px 10px",
-                  background: "var(--color-bg-secondary)",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)", fontSize: "12px",
-                  color: "var(--color-text-primary)", lineHeight: 1.5,
+                  width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
                 }}>
-                  {kr.title}
+                  {i + 1}
                 </div>
-              )}
-              <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginTop: "4px" }}>
-                <IconBtn title="編集" onClick={() => setEditingKrId(kr.id)}>✏</IconBtn>
-                <IconBtn title="削除" danger onClick={() => deleteKr(kr.id)}>✕</IconBtn>
+                {editingKrId === kr.id ? (
+                  <EditInline
+                    value={kr.title}
+                    onSave={v => updateKr(kr.id, v)}
+                    onCancel={() => setEditingKrId(null)}
+                  />
+                ) : (
+                  <div style={{
+                    flex: 1, padding: "6px 10px",
+                    background: "var(--color-bg-secondary)",
+                    border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)", fontSize: "12px",
+                    color: "var(--color-text-primary)", lineHeight: 1.5,
+                  }}>
+                    {kr.title}
+                  </div>
+                )}
+                <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginTop: "4px" }}>
+                  <IconBtn title="編集" onClick={() => setEditingKrId(kr.id)}>✏</IconBtn>
+                  <IconBtn
+                    title="危険な操作（削除）"
+                    danger
+                    onClick={() => setKrDangerId(id => id === kr.id ? null : kr.id)}
+                  >✕</IconBtn>
+                </div>
               </div>
+              {krDangerId === kr.id && (
+                <DangerZone style={{ marginTop: "6px", marginLeft: "30px" }}>
+                  <DangerAction
+                    label="このKRを削除"
+                    description="紐づくTF・ToDo・タスクの表示に影響します。この操作は取り消せません。"
+                    onConfirm={() => deleteKr(kr.id)}
+                  />
+                </DangerZone>
+              )}
             </div>
           ))}
           {krs.length === 0 && (
@@ -1015,14 +1033,17 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
               placeholder="なぜこのTFを設定したか、背景・経緯・意図（任意）" maxLength={1000} rows={2}
               style={{ ...inputStyle, lineHeight: 1.5 }} />
           </div>
-          <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
             <button onClick={onSaveEdit} style={primaryBtnStyle}>保存</button>
             <button onClick={onCancelEdit} style={ghostBtnStyle}>キャンセル</button>
-            <button
-              onClick={onDeleteTF}
-              style={{ ...ghostBtnStyle, marginLeft: "auto", color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }}
-            >TFを削除</button>
           </div>
+          <DangerZone style={{ marginTop: "12px" }}>
+            <DangerAction
+              label="このTask Forceを完全に削除"
+              description="紐づくToDo・タスクとの関連付けも失われます。この操作は取り消せません。"
+              onConfirm={onDeleteTF}
+            />
+          </DangerZone>
         </div>
       )}
 
@@ -1462,6 +1483,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const deletePJ = async (id: string) => {
     if (!await confirmDialog("このプロジェクトを削除しますか？紐づくタスクも一緒に削除されます。")) return;
     await deleteProject(id, currentUser.id);
+    setEditId(null);
   };
 
   const STATUS_LABELS: Record<Project["status"], string> = {
@@ -1536,7 +1558,6 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
             <div style={{ display: "flex", gap: "4px", flexShrink: 0 }}>
               <IconBtn onClick={() => setMsOpenPjId(msOpenPjId === pj.id ? null : pj.id)}>◆</IconBtn>
               <IconBtn onClick={() => openEdit(pj)}>✏</IconBtn>
-              <IconBtn danger onClick={() => deletePJ(pj.id)}>✕</IconBtn>
             </div>
           </div>
 
@@ -1813,6 +1834,16 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
             </button>
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+
+          {editId !== "new" && (
+            <DangerZone style={{ marginTop: "16px" }}>
+              <DangerAction
+                label="このプロジェクトを削除"
+                description="紐づくタスクも一緒に削除されます。この操作は取り消せません。"
+                onConfirm={() => deletePJ(editId)}
+              />
+            </DangerZone>
+          )}
         </div>
       )}
     </div>
@@ -1915,8 +1946,10 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
   const handleDeleteMember = async (id: string) => {
     if (id === currentUser.id) { await alertDialog("自分自身は削除できません。"); return; }
-    if (!await confirmDialog("このメンバーを削除しますか？担当タスクは「未担当」になります。")) return;
+    // 不可逆・影響が大きい操作のため、確認ダイアログではなく対象名の再入力（DangerZone側）を
+    // ガードとして使う。ここでの二重確認は行わない
     await deleteMember(id, currentUser.id);
+    setEditId(null);
   };
 
   const adminCount = members.filter(m => m.is_admin === true).length;
@@ -1978,7 +2011,6 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
               )}
             </div>
             <IconBtn onClick={() => openEdit(m)}>✏</IconBtn>
-            <IconBtn danger onClick={() => handleDeleteMember(m.id)}>✕</IconBtn>
           </div>
         ))}
       </div>
@@ -2115,6 +2147,22 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
             }}>保存</button>
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+
+          {editId !== "new" && editId !== currentUser.id && (
+            <DangerZone key={editId} style={{ marginTop: "16px" }}>
+              <DangerAction
+                label="このメンバーを削除"
+                description="担当タスクは「未担当」になります。この操作は取り消せません。"
+                requireNameMatch={members.find(m => m.id === editId)?.display_name ?? ""}
+                onConfirm={() => handleDeleteMember(editId)}
+              />
+            </DangerZone>
+          )}
+          {editId !== "new" && editId === currentUser.id && (
+            <div style={{ marginTop: "16px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              自分自身は削除できません。
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -2250,12 +2298,11 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       await alertDialog(`このグループには ${memberCount} 名のメンバーがいます。\nメンバーのグループ変更後に削除してください。`);
       return;
     }
-    const confirmMsg = memberCount > 0
-      ? `グループ「${g.name}」には ${memberCount} 名のメンバーがいますが、全社スーパー管理者として強制削除しますか？`
-      : `グループ「${g.name}」を削除しますか？`;
-    if (!await confirmDialog(confirmMsg)) return;
+    // 不可逆・影響が大きい操作（特にメンバーがいる部署の強制削除）のため、確認ダイアログではなく
+    // 対象名の再入力（DangerZone側）をガードとして使う。ここでの二重確認は行わない
     try {
       await deleteGroup(g.id, currentUser.id);
+      setEditId(null);
     } catch (e) {
       setError(formatErrorForUser("削除に失敗しました", e));
     }
@@ -2329,10 +2376,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
                 </div>
               </div>
               {canManage(g) && (
-                <>
-                  <IconBtn onClick={() => openEdit(g)}>✏</IconBtn>
-                  <IconBtn danger onClick={() => { void handleDelete(g); }}>✕</IconBtn>
-                </>
+                <IconBtn onClick={() => openEdit(g)}>✏</IconBtn>
               )}
             </div>
           );
@@ -2434,6 +2478,34 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             }}>保存</button>
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+
+          {editId !== "new" && (() => {
+            const g = groups.find(x => x.id === editId);
+            if (!g || !canManage(g)) return null;
+            const memberCount = members.filter(m => m.group_id === g.id).length;
+            const blocked = memberCount > 0 && !isSuperAdmin;
+            return (
+              <DangerZone key={editId} style={{ marginTop: "16px" }}>
+                {blocked ? (
+                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                    このグループには {memberCount} 名のメンバーがいます。メンバーのグループ変更後に削除してください。
+                  </div>
+                ) : (
+                  <DangerAction
+                    label={memberCount > 0 ? `このグループを強制削除（${memberCount}名が所属中）` : "このグループを削除"}
+                    description={
+                      memberCount > 0
+                        ? "メンバーが所属したまま削除します（全社スーパー管理者のみ実行可）。この操作は取り消せません。"
+                        : "この操作は取り消せません。"
+                    }
+                    buttonLabel={memberCount > 0 ? "強制削除する" : "削除する"}
+                    requireNameMatch={g.name}
+                    onConfirm={() => handleDelete(g)}
+                  />
+                )}
+              </DangerZone>
+            );
+          })()}
         </div>
       )}
       {showWebhookGuide && (
@@ -2688,6 +2760,7 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
     if (!ok) return;
     try {
       await deleteMemberTag(tag.id, currentUser.id);
+      setEditingId(null);
     } catch (e) {
       setError(formatErrorForUser("タグ削除に失敗しました", e));
     }
@@ -2839,6 +2912,21 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
               }}
             >{isCreating ? "追加する" : "保存する"}</button>
           </div>
+
+          {!isCreating && (() => {
+            const tag = activeTags.find(t => t.id === editingId);
+            if (!tag) return null;
+            const memberCount = tagMembersMap.get(tag.id)?.length ?? 0;
+            return (
+              <DangerZone key={editingId} style={{ marginTop: "4px" }}>
+                <DangerAction
+                  label="このタグを削除"
+                  description={`${memberCount}名のメンバー紐付けは残ります（タグ自体が論理削除されます）。`}
+                  onConfirm={() => handleDelete(tag)}
+                />
+              </DangerZone>
+            );
+          })()}
         </div>
       )}
 
@@ -2918,19 +3006,6 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
                     opacity: isDirty ? 0.5 : 1,
                   }}
                 >編集</button>
-                <button
-                  onClick={() => handleDelete(tag)}
-                  disabled={isDirty}
-                  style={{
-                    fontSize: "11px", padding: "5px 10px",
-                    background: "transparent",
-                    border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)",
-                    color: "var(--color-text-danger)",
-                    cursor: isDirty ? "not-allowed" : "pointer",
-                    opacity: isDirty ? 0.5 : 1,
-                  }}
-                >削除</button>
               </div>
             );
           })}

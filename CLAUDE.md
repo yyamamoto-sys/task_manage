@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.64
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.65
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1353,7 +1353,47 @@
 #             baseline比較=9件で完全一致・新規`Card.tsx`はエラー0）／`npm run build`成功。
 #             DBマイグレ不要（フロントのみ・見た目の変更のみ）。
 #
-# 最終更新：2026-07-19（v2.64）
+# v2.65 refactor: 設定/管理画面の刷新 第3弾（削除操作を「⚠ 危険な操作（Danger Zone）」に隔離）（2026-07-19）
+#      背景：①（左ナビ）②（Card化）に続く第3弾。削除（グループ強制削除・PJ削除・メンバー削除・
+#             KR/TF削除・タグ削除）が通常の✕/編集ボタンの隣にニュートラルな見た目で並んでいた
+#             （GitHub方式で赤枠の別ブロックに隔離する）。ToDo削除・マイルストーン削除は今回のスコープ外
+#             （後者は Gantt/ProjectKarte 等 AdminView 外の3画面でも使われる共有モーダルのため、
+#             見た目変更の影響範囲が本刷新の対象外に及ぶのを避けて据え置いた）
+#      追加：`src/components/common/DangerZone.tsx`（NEW）。`DangerZone`（赤枠＋「⚠ 危険な操作」見出し
+#             のコンテナ）と`DangerAction`（個々の削除アクション。label/description/buttonLabel＋
+#             `requireNameMatch`を渡すと対象名の完全一致入力がない限りボタンを無効化するガード付き）。
+#             `src/lib/dangerZoneConfirm.ts`（NEW）に判定の純粋関数`isNameConfirmed`を分離し
+#             `__tests__/dangerZoneConfirm.test.ts`（7テスト）でユニットテスト
+#      変更（Danger Zoneへの移設。既存の削除ロジック・権限ゲート・confirmDialogは無改造のまま
+#             呼び出し導線と見た目だけ変更）：
+#             ・KR（OKRSection）：一覧行の✕は即削除→「危険な操作」トグルに変更。押すと行の下に
+#               DangerZoneが展開表示（confirmDialogは従来どおりdeleteKr内で発火）
+#             ・TF（TFRow編集フォーム）：フォーム下部の「TFを削除」ボタンをDangerZoneで包む
+#               （Save/Cancel行から独立させ、内部の確認ロジックは無改造）
+#             ・プロジェクト（PJSection）：一覧行の✕を廃止し、編集フォームを開いた時だけ末尾に
+#               DangerZoneを表示（`editId !== "new"`）。削除後はフォームを閉じるよう`deletePJ`に
+#               `setEditId(null)`を追加
+#             ・メンバータグ（TagsSection）：一覧行の「削除」ボタンを廃止し、編集フォーム末尾に
+#               DangerZoneを表示（新規作成中は非表示）。削除後は`setEditingId(null)`でフォームを閉じる
+#      変更（確認強度の引き上げ・不可逆かつ影響が大きい2操作のみ）：
+#             ・メンバー削除（MembersSection）：一覧行の✕を廃止。編集フォーム末尾のDangerZoneで
+#               `requireNameMatch`にそのメンバーの`display_name`を渡し、対象名を再入力しないと
+#               削除ボタンが有効化されない方式に変更。既存の`confirmDialog`ポップアップは廃止
+#               （名前再入力の方が強い確認のため、二重確認にはしない）。自分自身は従来どおり削除不可
+#               （DangerZone自体を表示せず、代わりに「自分自身は削除できません」の注記を表示）
+#             ・グループ（部署）削除（GroupsSection）：一覧行の✕を廃止。編集フォーム末尾のDangerZoneで
+#               `requireNameMatch`にグループ名を渡す方式に変更（通常削除・メンバーがいる部署の
+#               全社スーパー管理者による強制削除の両方が対象。`confirmDialog`は廃止）。部署管理者が
+#               メンバーがいる部署を削除しようとするブロック（`alertDialog`案内）はDangerZone内の
+#               案内文として維持し無改造。削除成功時は`setEditId(null)`でフォームを閉じる
+#      スコープ外（今回やらない）：ToDo削除・マイルストーン削除のDanger Zone化、TFタスクフォーム統一、
+#             古い文言/直書き色の是正（④⑤は引き続き次回以降）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 392件全通過（新規7件＋既存385件回帰なし）／
+#             `npx eslint src` AdminView.tsx単体でbaseline比較=9件（7 error・2 warning）で完全一致・
+#             新規`DangerZone.tsx`/`dangerZoneConfirm.ts`ともエラー0／`npm run build`成功。
+#             DBマイグレ不要（フロントのみ・削除ロジック自体は無改造）。
+#
+# 最終更新：2026-07-19（v2.65）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2309,7 +2349,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-19（v2.64）
+- 最終更新：2026-07-19（v2.65）
 
 ---
 
