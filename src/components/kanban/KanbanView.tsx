@@ -11,6 +11,7 @@ import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
+import { isOverWipLimit, WIP_LIMIT_DEFAULT } from "../../lib/kanbanWip";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -351,6 +352,9 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
           const isDoneCol = status === "done";
           const isDropTarget = dragOverStatus === status;
+          // WIP上限（進行中列のみ）：抱えすぎ検知のためのソフト警告。カード移動はブロックしない
+          const isInProgressCol = status === "in_progress";
+          const isOverWip = isInProgressCol && isOverWipLimit(colTasks.length, WIP_LIMIT_DEFAULT);
           return (
             // ドラッグ&ドロップ専用の列（ドロップでステータス変更）。マウス操作専用でキーボード代替手段はない
             // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -382,13 +386,30 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                   <span style={{ fontSize: "12px", fontWeight: "500", color: cfg.color, flex: 1 }}>
                     {cfg.label}
                   </span>
-                  <span style={{
-                    fontSize: "10px", color: cfg.color, opacity: 0.8,
-                    background: "rgba(255,255,255,0.6)", padding: "1px 6px",
-                    borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
-                  }}>
-                    {colTasks.length}
-                  </span>
+                  {isInProgressCol ? (
+                    <span
+                      title={`WIP（進行中件数） ${colTasks.length} / 上限 ${WIP_LIMIT_DEFAULT}`}
+                      style={{
+                        fontSize: "10px", fontWeight: isOverWip ? "600" : "400",
+                        color: isOverWip ? "var(--color-text-danger)" : cfg.color,
+                        opacity: isOverWip ? 1 : 0.8,
+                        background: isOverWip ? "var(--color-bg-danger)" : "rgba(255,255,255,0.6)",
+                        padding: "1px 6px", borderRadius: "var(--radius-full)",
+                        border: `1px solid ${isOverWip ? "var(--color-border-danger)" : cfg.border}`,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      WIP {colTasks.length} / 上限 {WIP_LIMIT_DEFAULT}{isOverWip ? " ⚠" : ""}
+                    </span>
+                  ) : (
+                    <span style={{
+                      fontSize: "10px", color: cfg.color, opacity: 0.8,
+                      background: "rgba(255,255,255,0.6)", padding: "1px 6px",
+                      borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
+                    }}>
+                      {colTasks.length}
+                    </span>
+                  )}
                 </div>
                 {colSummary.total > 0 && (
                   <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>

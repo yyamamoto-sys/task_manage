@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.70
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.71
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1516,7 +1516,26 @@
 #             `npm run build`成功
 #      スコープ外（後続④〜⑤）：WIP制限・ドロップ位置プレースホルダ
 #
-# 最終更新：2026-07-19（v2.70）
+# v2.71 feat: カンバンビューの刷新 第4弾（進行中列にWIP上限のソフト警告を追加）（2026-07-19）
+#      対象：`src/components/kanban/KanbanView.tsx`・`src/lib/kanbanWip.ts`（NEW）・
+#             `src/lib/__tests__/kanbanWip.test.ts`（NEW）。DBマイグレ不要。既存のカード・ドラッグ
+#             （ブロックしない）・選択・一括操作・インライン編集・②列ヘッダ集計・③滞留バッジは不変
+#      追加：進行中（in_progress）列のヘッダーの件数バッジを「WIP ◯ / 上限N」表示に変更。
+#             上限値は`src/lib/kanbanWip.ts`の`WIP_LIMIT_DEFAULT`（既定4、10名弱の運用で
+#             「進行中の抱えすぎ」を検知する値として設定。将来ユーザー設定化する際もこの1箇所を
+#             差し替えれば済むよう定数化）。超過判定は純粋関数`isOverWipLimit(count, limit)`に
+#             切り出しテスト済み（`kanbanWip.test.ts`4件）
+#      挙動：**ソフト警告のみ**（Human-in-the-loop）。上限を超えてもカードのドラッグ移動は
+#             一切ブロックしない。超過時はバッジを赤系（`--color-bg-danger`/`--color-text-danger`/
+#             `--color-border-danger`。ダーク/ライト両トークン対応）＋「⚠」表示に切り替えるのみ。
+#             件数はスコープ（PJ選択/自分のみ等の既存フィルタ）適用後の`visibleTasks`から算出する
+#             `colTasks.length`をそのまま使用（②③と同じ集計対象）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 396件全通過（新規4件）／`npx eslint src`を
+#             HEAD時点と比較＝24エラー・11警告で完全一致（KanbanView.tsx・kanbanWip.tsに新規
+#             エラー0件）／`npm run build`成功
+#      スコープ外（後続⑤）：ドロップ位置プレースホルダ
+#
+# 最終更新：2026-07-19（v2.71）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
