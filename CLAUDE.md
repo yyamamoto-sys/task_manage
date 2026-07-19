@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.66
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.67
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1423,7 +1423,34 @@
 #             が消えた分）・QuickAddTaskModal.tsxは完全一致（新規0件）／`npm run build`成功。
 #             DBマイグレ不要（フロントのみ）。
 #
-# 最終更新：2026-07-19（v2.66）
+# v2.67 fix: 設定/管理画面の刷新 第5弾＝最終（古い文言の是正＋直書き色のトークン化）（2026-07-19）
+#      背景：①〜④で構造（左ナビ＋カテゴリ・7セクション・DangerZone・QuickAddTaskModal統一）を刷新した後、
+#             文言と直書き色が実態と乖離したまま残っていた最後の仕上げ
+#      修正①（文言）：ヘッダーの権限バッジ「全員が編集できます」→「部署管理者・全社スーパー管理者が
+#             編集できます」に修正（`canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin`という
+#             実際のアクセス制御と一致させた。用語はCLAUDE.md Section 1.6の「部署管理者」「全社スーパー
+#             管理者」に統一）。ファイル冒頭コメントも「OKR/KR・Task Force・PJ・メンバーの4セクション。
+#             全員が編集可（管理者権限なし）。AppDataContext経由」という旧説明（4セクション・権限なし・
+#             存在しないAppDataContext）を、現状（左ナビ4カテゴリ・7セクション・is_admin/is_super_admin
+#             ゲート・ブートストラップモード・appStore経由）に書き換え
+#      修正②（直書き色→トークン化）：マイルストーン日付マーカー`◆`の`#f59e0b`（2箇所）を
+#             `var(--color-signal-yellow)`へ。全社スーパー管理者バッジ背景とそのチェックボックス
+#             `accentColor`の`#7c3aed`（計2箇所）を、Card.tsxの`tone="purple"`（本画面の「全社管理者」
+#             サマリータイルで既に使用）と同じ`var(--color-text-purple)`へ統一
+#      判断（意図的に変更しなかった直書き色）：
+#             ・`color_tag: "#7F77DD"`（PJ新規作成時の初期値・2箇所）→ `<input type="color">`で
+#               ユーザーが自由選択するデータ値であり、UIのテーマ色ではないためトークン化対象外
+#             ・`color: "#fff"`（ブランド色ボタン/バッジの白文字・計4箇所）→ 他13ファイルでも
+#               同一パターン（`background: var(--color-brand)` + `color: "#fff"`）が使われている
+#               アプリ全体の確立済みイディオムであり、AdminView単体で新規トークンを作ると
+#               かえって他画面と不整合になるため据え置き（新規CSS変数を増やさない方針とも整合）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 392件全通過／`npx eslint src/components/admin/
+#             AdminView.tsx`をHEAD時点とdiff比較＝完全一致8件（新規0件、既存のno-irregular-whitespace
+#             5件・label-has-associated-control 2件・autoFocus警告1件は行番号がずれただけ）／
+#             `npm run build`成功。DBマイグレ不要（フロントのみ）。これで設定/管理画面刷新シリーズ
+#             （①骨組み→②Card統一→③DangerZone→④タスク追加統一→⑤文言・色是正）完了。
+#
+# 最終更新：2026-07-19（v2.67）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

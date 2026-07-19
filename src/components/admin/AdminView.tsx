@@ -1,9 +1,12 @@
 // src/components/admin/AdminView.tsx
 //
 // 【設計意図】
-// 管理画面。OKR/KR・Task Force・PJ・メンバーの4セクションを管理する。
-// 全員が編集可（管理者権限なし）。
-// 変更はSupabaseに即時反映（AppDataContext経由）。
+// 管理画面。左ナビ（作業設定／人／組織／レポートの4カテゴリ）配下に
+// プロジェクト・Task Force・Objective/KR・メンバー・メンバータグ・グループ／部署・AI使用量の
+// 7セクションを持つ。
+// アクセス制御：部署管理者（is_admin）または全社スーパー管理者（is_super_admin）のみ編集可。
+// ただしグループ内にis_admin=trueのメンバーが1人もいない間はブートストラップモードとして全員アクセス可。
+// 変更はSupabaseに即時反映（appStore経由）。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
@@ -167,7 +170,7 @@ export function AdminView({ currentUser }: Props) {
             background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
             border: "1px solid var(--color-border-warning)", borderRadius: "99px",
           }}>
-            全員が編集できます
+            部署管理者・全社スーパー管理者が編集できます
           </span>
           {/* フォントサイズ切り替え */}
           <div style={{
@@ -1542,7 +1545,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
               </div>
               {/* 説明（1行に圧縮。詳細はガイドへ） */}
               <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.5, marginBottom: "8px" }}>
-                PJの節目（例：β版リリース）の日付マーカー。ガントに <span style={{ color: "#f59e0b" }}>◆</span> で表示されます。
+                PJの節目（例：β版リリース）の日付マーカー。ガントに <span style={{ color: "var(--color-signal-yellow)" }}>◆</span> で表示されます。
               </div>
               {/* 既存一覧 */}
               {milestones.filter(ms => ms.project_id === pj.id).length === 0 ? (
@@ -1565,7 +1568,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
                       }}>
-                      <span style={{ fontSize: "11px", color: "#f59e0b", flexShrink: 0 }}>◆</span>
+                      <span style={{ fontSize: "11px", color: "var(--color-signal-yellow)", flexShrink: 0 }}>◆</span>
                       <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flexShrink: 0 }}>{ms.date}</span>
                       <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}{ms.description ? " 📝" : ""}</span>
                       <IconBtn danger onClick={(e) => { e?.stopPropagation?.(); removeMilestone(ms.id); }}>✕</IconBtn>
@@ -1961,7 +1964,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                   </span>
                 )}
                 {m.is_super_admin && (
-                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "#7c3aed", padding: "1px 6px", borderRadius: "3px" }}>
+                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
                     全社スーパー管理者
                   </span>
                 )}
@@ -2060,7 +2063,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                       editId === currentUser.id && form.is_super_admin
                         && members.filter(m => m.id !== editId && m.is_super_admin === true).length === 0
                     }
-                    style={{ width: 14, height: 14, accentColor: "#7c3aed", cursor: "pointer" }}
+                    style={{ width: 14, height: 14, accentColor: "var(--color-text-purple)", cursor: "pointer" }}
                   />
                   <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
                   <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
