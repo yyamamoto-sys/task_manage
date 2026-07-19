@@ -28,6 +28,7 @@ import { TodoDecomposeModal } from "./TodoDecomposeModal";
 import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
+import { Card, SummaryTile, SummaryRow } from "../common/Card";
 
 type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
@@ -385,10 +386,13 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
 
   return (
     <div style={{ maxWidth: "680px" }}>
-      <SectionHeader title="Objective" badge={ctxObj?.period ?? "2026年度"} />
+      <SummaryRow>
+        <SummaryTile label="Objective" value={ctxObj?.period ?? "未設定"} tone="accent" />
+        <SummaryTile label="KR数" value={krs.length} tone="info" />
+      </SummaryRow>
 
       {/* Objective編集 */}
-      <div style={{ marginBottom: "20px" }}>
+      <Card title="Objective" badge={ctxObj?.period ?? "2026年度"} badgeColor="success" style={{ marginBottom: "20px" }}>
         <FieldLabel>Objective（O）タイトル</FieldLabel>
         <AutoTextarea
           value={objTitle}
@@ -430,58 +434,64 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
             {saved ? "✓ 保存" : "保存"}
           </button>
         </div>
-      </div>
+      </Card>
 
       {/* KR一覧 */}
-      <SectionHeader title="Key Results" />
-      <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
-        {krs.map((kr, i) => (
-          <div key={kr.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
-            <div style={{
-              width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
-              background: "var(--color-bg-info)", color: "var(--color-text-info)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
-            }}>
-              {i + 1}
-            </div>
-            {editingKrId === kr.id ? (
-              <EditInline
-                value={kr.title}
-                onSave={v => updateKr(kr.id, v)}
-                onCancel={() => setEditingKrId(null)}
-              />
-            ) : (
+      <Card title="Key Results" badge={`${krs.length}件`}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "12px" }}>
+          {krs.map((kr, i) => (
+            <div key={kr.id} style={{ display: "flex", alignItems: "flex-start", gap: "8px" }}>
               <div style={{
-                flex: 1, padding: "6px 10px",
-                background: "var(--color-bg-primary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)", fontSize: "12px",
-                color: "var(--color-text-primary)", lineHeight: 1.5,
+                width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
+                background: "var(--color-bg-info)", color: "var(--color-text-info)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
               }}>
-                {kr.title}
+                {i + 1}
               </div>
-            )}
-            <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginTop: "4px" }}>
-              <IconBtn title="編集" onClick={() => setEditingKrId(kr.id)}>✏</IconBtn>
-              <IconBtn title="削除" danger onClick={() => deleteKr(kr.id)}>✕</IconBtn>
+              {editingKrId === kr.id ? (
+                <EditInline
+                  value={kr.title}
+                  onSave={v => updateKr(kr.id, v)}
+                  onCancel={() => setEditingKrId(null)}
+                />
+              ) : (
+                <div style={{
+                  flex: 1, padding: "6px 10px",
+                  background: "var(--color-bg-secondary)",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)", fontSize: "12px",
+                  color: "var(--color-text-primary)", lineHeight: 1.5,
+                }}>
+                  {kr.title}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: "4px", flexShrink: 0, marginTop: "4px" }}>
+                <IconBtn title="編集" onClick={() => setEditingKrId(kr.id)}>✏</IconBtn>
+                <IconBtn title="削除" danger onClick={() => deleteKr(kr.id)}>✕</IconBtn>
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+          {krs.length === 0 && (
+            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+              まだKRがありません。下の入力欄から追加してください。
+            </div>
+          )}
+        </div>
 
-      {/* KR追加 */}
-      <div style={{ display: "flex", gap: "8px" }}>
-        <input
-          value={newKrTitle}
-          onChange={e => setNewKrTitle(e.target.value)}
-          placeholder="新しいKRを入力して追加"
-          maxLength={200}
-          style={{ ...inputStyle, flex: 1 }}
-          onKeyDown={e => { if (e.key === "Enter") addKr(); }}
-        />
-        <button onClick={addKr} style={primaryBtnStyle}>＋ 追加</button>
-      </div>
+        {/* KR追加 */}
+        <div style={{ display: "flex", gap: "8px" }}>
+          <input
+            value={newKrTitle}
+            onChange={e => setNewKrTitle(e.target.value)}
+            placeholder="新しいKRを入力して追加"
+            maxLength={200}
+            style={{ ...inputStyle, flex: 1 }}
+            onKeyDown={e => { if (e.key === "Enter") addKr(); }}
+          />
+          <button onClick={addKr} style={addBtnStyle}>＋ 追加</button>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -518,6 +528,10 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
   // クォーター選択（初期値を現在のQに設定）
   const [selectedQuarter, setSelectedQuarter] = useState<Quarter>(currentQ);
+  const tfsInSelectedQuarter = useMemo(
+    () => tfs.filter(t => effectiveTfQuarter(t) === selectedQuarter).length,
+    [tfs, selectedQuarter],
+  );
 
   // TF編集フォーム（既存TF）
   const [editId, setEditId] = useState<string | null>(null);
@@ -615,8 +629,15 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      <div style={{ flexShrink: 0 }}>
+        <SummaryRow>
+          <SummaryTile label="TF総数" value={tfs.length} tone="accent" />
+          <SummaryTile label={`${selectedQuarter}のTF`} value={tfsInSelectedQuarter} tone="info" />
+        </SummaryRow>
+      </div>
+
       {/* クォーター選択タブ */}
-      <div style={{ display: "flex", gap: "4px", marginBottom: "20px" }}>
+      <div style={{ display: "flex", gap: "4px", marginBottom: "20px", flexShrink: 0 }}>
         {(["1Q", "2Q", "3Q", "4Q"] as Quarter[]).map(q => (
           <button
             key={q}
@@ -1447,12 +1468,25 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
     active: "進行中", completed: "完了", archived: "アーカイブ",
   };
 
+  const activeStatusCount = projects.filter(pj => pj.status === "active").length;
+
   return (
     <div style={{ maxWidth: "720px" }}>
-      <SectionHeader title="プロジェクト一覧" action={
-        <button onClick={openAdd} style={primaryBtnStyle}>＋ 追加</button>
-      } />
+      <SummaryRow>
+        <SummaryTile label="PJ総数" value={projects.length} tone="accent" />
+        <SummaryTile label="進行中" value={activeStatusCount} tone="success" />
+      </SummaryRow>
 
+      <Card
+        title="プロジェクト一覧"
+        badge={`${projects.length}件`}
+        headerExtra={<button onClick={openAdd} style={addBtnStyle}>＋ 追加</button>}
+      >
+      {projects.length === 0 && (
+        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+          まだプロジェクトがありません。「＋ 追加」から作成してください。
+        </div>
+      )}
       {projects.map(pj => {
         const owners = (pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []))
           .map(id => members.find(m => m.id === id))
@@ -1561,6 +1595,7 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
           </div>
         );
       })}
+      </Card>
 
       {/* マイルストーン編集モーダル（一覧の行クリックで開く） */}
       {editingMs && (
@@ -1884,13 +1919,24 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     await deleteMember(id, currentUser.id);
   };
 
+  const adminCount = members.filter(m => m.is_admin === true).length;
+  const superAdminCount = members.filter(m => m.is_super_admin === true).length;
+
   return (
     <div style={{ maxWidth: "560px" }}>
-      <SectionHeader title="メンバーマスタ" action={
-        <button onClick={openAdd} style={primaryBtnStyle}>＋ 追加</button>
-      } />
+      <SummaryRow>
+        <SummaryTile label="総メンバー" value={members.length} tone="accent" />
+        <SummaryTile label="管理者" value={adminCount} tone="info" />
+        <SummaryTile label="全社管理者" value={superAdminCount} tone="purple" />
+        <SummaryTile label="所属部署" value={groups.length} tone="success" />
+      </SummaryRow>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginBottom: "14px" }}>
+      <Card
+        title="メンバー一覧"
+        badge={`${members.length}名`}
+        headerExtra={<button onClick={openAdd} style={addBtnStyle}>＋ 追加</button>}
+      >
+      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
         {members.map(m => (
           <div key={m.id} style={{
             display: "flex", alignItems: "center", gap: "10px",
@@ -1936,11 +1982,12 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
           </div>
         ))}
       </div>
+      </Card>
 
       {/* 追加・編集フォーム */}
       {editId && (
         <div style={{
-          padding: "14px", background: "var(--color-bg-secondary)",
+          marginTop: "12px", padding: "14px", background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
@@ -2214,14 +2261,16 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     }
   };
 
+  const webhookConfiguredCount = groups.filter(g => !!g.teams_webhook_url).length;
+
   return (
     <div style={{ maxWidth: "560px" }}>
-      <SectionHeader title="グループ管理" action={
-        isSuperAdmin
-          ? <button onClick={openAdd} style={primaryBtnStyle}>＋ 部署を追加</button>
-          : undefined
-      } />
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "10px" }}>
+      <SummaryRow>
+        <SummaryTile label="部署数" value={groups.length} tone="accent" />
+        <SummaryTile label="Webhook設定済み" value={webhookConfiguredCount} tone="info" />
+      </SummaryRow>
+
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
         グループ（部署）単位でデータが隔離されます（マルチテナント）。メンバーは1グループに属します。
         {!isSuperAdmin && "新規部署の作成は全社スーパー管理者のみ行えます。"}
       </div>
@@ -2233,8 +2282,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       )}
 
       {isSuperAdmin && (
-        <div style={{ marginBottom: "16px" }}>
-          <SectionHeader title="全部署の概要" />
+        <Card title="全部署の概要" style={{ marginBottom: "16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             {groups.map(g => {
               const groupMembers = members.filter(m => m.group_id === g.id);
@@ -2253,10 +2301,15 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               );
             })}
           </div>
-        </div>
+        </Card>
       )}
 
-      <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginBottom: "14px" }}>
+      <Card
+        title="グループ一覧"
+        badge={`${groups.length}件`}
+        headerExtra={isSuperAdmin ? <button onClick={openAdd} style={addBtnStyle}>＋ 部署を追加</button> : undefined}
+      >
+      <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
         {groups.map(g => {
           const memberCount = members.filter(m => m.group_id === g.id).length;
           return (
@@ -2290,10 +2343,11 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           </div>
         )}
       </div>
+      </Card>
 
       {editId && (
         <div style={{
-          padding: "14px", background: "var(--color-bg-secondary)",
+          marginTop: "12px", padding: "14px", background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
@@ -2504,6 +2558,12 @@ const ghostBtnStyle: React.CSSProperties = {
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
 };
+/** 各セクションヘッダーの「＋ 追加」系ボタン（ブランド色の塗りつぶし・モックのトーン） */
+const addBtnStyle: React.CSSProperties = {
+  padding: "6px 12px", fontSize: "12px", fontWeight: "500",
+  background: "var(--color-brand)", color: "#fff",
+  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+};
 
 // ===== AI使用量セクション =====
 
@@ -2635,25 +2695,9 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-        <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-          メンバータグ（{activeTags.length}件）
-        </div>
-        <div style={{ flex: 1 }} />
-        {saved && (
-          <span style={{ fontSize: "11px", color: "var(--color-text-success)" }}>保存しました</span>
-        )}
-        {!isDirty && (
-          <button
-            onClick={startNew}
-            style={{
-              padding: "6px 12px", fontSize: "12px", fontWeight: "500",
-              background: "var(--color-brand)", color: "#fff",
-              border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-            }}
-          >＋ タグを追加</button>
-        )}
-      </div>
+      <SummaryRow>
+        <SummaryTile label="タグ数" value={activeTags.length} tone="accent" />
+      </SummaryRow>
 
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
         メンバーをグループ化するタグ。「請求書PJ」「広報チーム」「全員」のようなまとまりを定義し、
@@ -2799,6 +2843,20 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
       )}
 
       {/* 既存タグリスト */}
+      <Card
+        title="タグ一覧"
+        badge={`${activeTags.length}件`}
+        headerExtra={
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {saved && (
+              <span style={{ fontSize: "11px", color: "var(--color-text-success)" }}>保存しました</span>
+            )}
+            {!isDirty && (
+              <button onClick={startNew} style={addBtnStyle}>＋ タグを追加</button>
+            )}
+          </div>
+        }
+      >
       {activeTags.length === 0 && editingId === null ? (
         <div style={{
           fontSize: "12px", color: "var(--color-text-tertiary)",
@@ -2878,6 +2936,7 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
           })}
         </div>
       )}
+      </Card>
     </div>
   );
 }
