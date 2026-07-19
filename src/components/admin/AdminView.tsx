@@ -46,10 +46,18 @@ export function AdminView({ currentUser }: Props) {
   const isCurrentUserAdmin = currentUser.is_admin === true;
   const isCurrentUserSuperAdmin = currentUser.is_super_admin === true;
   const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
-  const krs      = useAppStore(s => s.keyResults);
-  const pjs      = useAppStore(selectScopedProjects);
-  const krCount  = active(krs).length;
-  const pjCount  = active(pjs).length;
+  const isMobile = useIsMobile();
+  const krs        = useAppStore(s => s.keyResults);
+  const pjs        = useAppStore(selectScopedProjects);
+  const rawTfs     = useAppStore(s => s.taskForces);
+  const rawGroups  = useAppStore(s => s.groups);
+  const rawTags    = useAppStore(s => s.memberTags);
+  const krCount     = active(krs).length;
+  const pjCount     = active(pjs).length;
+  const tfCount     = active(rawTfs).length;
+  const memberCount = active(allMembers).length;
+  const tagCount    = active(rawTags).length;
+  const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups"];
@@ -103,27 +111,53 @@ export function AdminView({ currentUser }: Props) {
     localStorage.setItem(KEYS.ADMIN_FONT_SIZE, String(level));
   };
 
-  const tabs: { key: AdminTab; label: string }[] = [
-    { key: "pj",       label: "プロジェクト" },
-    { key: "tf",       label: "Task Force" },
-    { key: "okr",      label: "Objective / KR" },
-    { key: "ai_usage", label: "AI使用量" },
-    { key: "members",  label: "メンバー" },
-    { key: "tags",     label: "メンバータグ" },
-    { key: "groups",   label: "グループ" },
+  // 左ナビ：カテゴリ分け（作業設定 / 人 / 組織 / レポート）
+  const categories: { label: string; items: { key: AdminTab; label: string; count?: number }[] }[] = [
+    { label: "作業設定", items: [
+        { key: "pj",  label: "プロジェクト",     count: pjCount },
+        { key: "tf",  label: "Task Force",       count: tfCount },
+        { key: "okr", label: "Objective・KR",    count: krCount },
+    ] },
+    { label: "人", items: [
+        { key: "members", label: "メンバー",     count: memberCount },
+        { key: "tags",     label: "メンバータグ", count: tagCount },
+    ] },
+    { label: "組織", items: [
+        { key: "groups", label: "グループ・部署", count: groupCount },
+    ] },
+    { label: "レポート", items: [
+        { key: "ai_usage", label: "AI使用量" },
+    ] },
   ];
+  const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
+
+  const navButtonStyle = (isActive: boolean): React.CSSProperties => ({
+    display: "flex", alignItems: "center", gap: "8px", width: "100%",
+    padding: "7px 8px", marginBottom: "2px", fontSize: "12px", textAlign: "left",
+    borderRadius: "var(--radius-md)", border: "none", cursor: "pointer",
+    background: isActive ? "var(--color-bg-info)" : "transparent",
+    color: isActive ? "var(--color-text-info)" : "var(--color-text-secondary)",
+    fontWeight: isActive ? "500" : "400",
+    transition: "background 0.1s, color 0.1s",
+  });
+  const navBadgeStyle = (isActive: boolean): React.CSSProperties => ({
+    fontSize: "10px", padding: "1px 6px", borderRadius: "99px", flexShrink: 0,
+    background: isActive ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
+    color: isActive ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+    border: "1px solid var(--color-border-primary)",
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
       {/* ヘッダー */}
       <div style={{
-        padding: "10px 20px 0",
+        padding: "10px 20px",
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-primary)", flexShrink: 0,
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
           <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-            管理
+            管理{isMobile && currentTabLabel ? ` ・ ${currentTabLabel}` : ""}
           </div>
           <span style={{
             fontSize: "10px", padding: "2px 8px",
@@ -154,58 +188,101 @@ export function AdminView({ currentUser }: Props) {
             ))}
           </div>
         </div>
-        {/* タブ */}
-        <div style={{ display: "flex", gap: "0" }}>
-          {tabs.map(t => (
-            <button
-              key={t.key}
-              onClick={() => { void changeTab(t.key); }}
-              style={{
-                padding: "6px 14px", fontSize: "12px",
-                fontWeight: tab === t.key ? "500" : "400",
-                color: tab === t.key ? "var(--color-text-purple)" : "var(--color-text-secondary)",
-                background: "transparent", border: "none", cursor: "pointer",
-                borderBottom: tab === t.key
-                  ? "2px solid var(--color-brand)"
-                  : "2px solid transparent",
-                transition: "color 0.1s",
-              }}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+
+        {/* モバイル：カテゴリ見出し付きセレクトに畳む */}
+        {isMobile && (
+          <select
+            value={tab}
+            onChange={e => { void changeTab(e.target.value as AdminTab); }}
+            style={{ ...inputStyle, marginTop: "10px" }}
+          >
+            {categories.map(cat => (
+              <optgroup label={cat.label} key={cat.label}>
+                {cat.items.map(it => (
+                  <option key={it.key} value={it.key}>
+                    {it.label}{it.count != null ? `（${it.count}）` : ""}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        )}
+
         {/* 初見向け：次の推奨ステップ */}
         {(krCount === 0 || pjCount === 0) && (
           <div style={{
-            margin: "6px 0 -1px", padding: "5px 10px",
+            margin: "10px 0 0", padding: "5px 10px",
             background: "var(--color-bg-info)",
             border: "1px solid var(--color-border-info)",
-            borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
+            borderRadius: "var(--radius-sm)",
             fontSize: "10px", color: "var(--color-text-info)", lineHeight: 1.5,
           }}>
             {krCount === 0
-              ? "💡 まず「Objective / KR」タブで今期の目標と KR（成果指標）を3〜5本登録しましょう。"
-              : "💡 続いて「プロジェクト」タブで KR を実現する手段（PJ）を登録します。"}
+              ? "💡 まず「Objective・KR」で今期の目標と KR（成果指標）を3〜5本登録しましょう。"
+              : "💡 続いて「プロジェクト」で KR を実現する手段（PJ）を登録します。"}
           </div>
         )}
       </div>
 
-      {/* コンテンツ */}
-      <div style={{
-        flex: 1,
-        overflow: tab === "tf" ? "hidden" : "auto",
-        padding: tab === "tf" ? "18px 20px 0" : "18px 20px",
-        zoom: zoomLevels[fontSizeLevel],
-        display: "flex", flexDirection: "column", minHeight: 0,
-      }}>
-        {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-        {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-        {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-        {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-        {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-        {tab === "ai_usage" && <AIUsageSection />}
-        {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+      {/* 左ナビ＋コンテンツの2カラム（モバイルは左ナビ非表示・上部セレクトのみ） */}
+      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
+        {!isMobile && (
+          <nav style={{
+            width: "188px", flexShrink: 0, overflowY: "auto",
+            padding: "14px 10px", borderRight: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-primary)",
+          }}>
+            {categories.map(cat => (
+              <div key={cat.label} style={{ marginBottom: "16px" }}>
+                <div style={{
+                  fontSize: "10px", fontWeight: "600", letterSpacing: "0.06em",
+                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
+                  padding: "0 8px 6px",
+                }}>
+                  {cat.label}
+                </div>
+                {cat.items.map(it => {
+                  const isActive = tab === it.key;
+                  return (
+                    <button
+                      key={it.key}
+                      onClick={() => { void changeTab(it.key); }}
+                      style={navButtonStyle(isActive)}
+                    >
+                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {it.label}
+                      </span>
+                      {it.count != null && (
+                        <span style={navBadgeStyle(isActive)}>{it.count}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+          </nav>
+        )}
+
+        {/* コンテンツ */}
+        <div
+          key={tab}
+          className="animate-fadeIn"
+          style={{
+            flex: 1, minWidth: 0,
+            overflow: tab === "tf" ? "hidden" : "auto",
+            padding: tab === "tf" ? "18px 20px 0" : "18px 20px",
+            zoom: zoomLevels[fontSizeLevel],
+            display: "flex", flexDirection: "column", minHeight: 0,
+          }}
+        >
+          {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "ai_usage" && <AIUsageSection />}
+          {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+        </div>
       </div>
     </div>
   );
