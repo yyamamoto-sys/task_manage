@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.65
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.66
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1393,7 +1393,37 @@
 #             新規`DangerZone.tsx`/`dangerZoneConfirm.ts`ともエラー0／`npm run build`成功。
 #             DBマイグレ不要（フロントのみ・削除ロジック自体は無改造）。
 #
-# 最終更新：2026-07-19（v2.65）
+# v2.66 refactor: 設定/管理画面の刷新 第4弾（TFセクションToDoパネルのタスク簡易追加を
+#             QuickAddTaskModalへ統一・機能重複の解消）（2026-07-19）
+#      背景：調査で見つかった唯一の明確な機能重複。TFセクション→ToDoパネル内の「＋タスクを追加」が、
+#             タスク名・担当者・期日の3項目のみの簡易フォームの独自実装で、通常ビューの
+#             `QuickAddTaskModal`（PJ/TF/ToDo紐づけ・担当者・開始日・期日・メモ・優先度・子タスク
+#             一括まで対応）の劣化した別実装になっていた
+#      変更：`ToDoPanel`（AdminView.tsx）の簡易フォーム（`taskForm`state・`saveNewTask`）を削除し、
+#             「＋タスクを追加」ボタンで`QuickAddTaskModal`を開く方式に統一。`addingTaskForTodoId`は
+#             「開いているモーダルの対象ToDo ID」として役割を変えて再利用
+#      追加：`QuickAddTaskModal`に`defaultTfId`/`defaultTodoId`prop（ToDo→TF紐づけの既定選択用）。
+#             ToDoパネル側は`defaultTfId={tfId}`（TFは確実に正しい）と`defaultTodoId={todo.id}`の
+#             両方を渡し、todoIds初期値・krId/tfId初期値（TF→KR逆引き）に反映
+#      設計判断：ToDoパネルはクォーターセレクタで選んだ`selectedQuarter`のTFを表示するのに対し、
+#             `QuickAddTaskModal`のKR/TF絞り込みは常に「実際の今日時点のクォーター」基準
+#             （`currentQuarter()`固定）で行っている。過去/未来クォーターのTFにあるToDoから開いた場合、
+#             既定選択したKR/TFが絞り込みリストから漏れて選択が消える不整合がありうるため、
+#             `filteredKrs`/`filteredTfs`に「既定のKR/TFは絞り込み条件を満たさなくても選択肢の先頭に
+#             強制的に含める」フォールバックを追加（union方式）。紐づけ自体（保存される`todo_ids`）は
+#             このuseState初期値のみで決まり選択肢の表示問題とは独立なので、通常の同一クォーター利用では
+#             見た目の変化なし
+#      整理：`ToDoPanel`に`projects`propを追加（`AdminView`本体→`TFSection`→`TFRow`→`ToDoPanel`と
+#             `selectScopedProjects`をpropで縦流し）。未使用になった`taskForm`state・`CustomSelect`の
+#             簡易フォーム内呼び出しを削除
+#      スコープ外：AI自動分解（🤖）・ToDo本体のCRUD等、ToDoパネルの他機能は無改造
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 392件全通過（既存回帰なし・本変更にテスト
+#             追加なし＝UI配線のみのため）／`npx eslint src`をAdminView.tsx・QuickAddTaskModal.tsx単体で
+#             baseline（HEAD時点）比較＝AdminView.tsxはむしろ1件減（削除した簡易フォームのautoFocus警告
+#             が消えた分）・QuickAddTaskModal.tsxは完全一致（新規0件）／`npm run build`成功。
+#             DBマイグレ不要（フロントのみ）。
+#
+# 最終更新：2026-07-19（v2.66）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2349,7 +2379,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-19（v2.65）
+- 最終更新：2026-07-19（v2.66）
 
 ---
 

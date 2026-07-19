@@ -25,13 +25,20 @@ interface Props {
   /** 作成するタスクの初期ステータス（未指定は "todo"）。
    *  カンバンビューの列ごとの「＋ タスクを追加」から、その列のステータスを渡す用途。 */
   defaultStatus?: Task["status"];
+  /** 紐づけるTF ID（既定選択用）。管理画面のToDoパネルからの追加で使用。
+   *  defaultTodoIdのTFが選択中クォーター外でも解決できるよう、defaultTodoIdと合わせて渡す。 */
+  defaultTfId?: string;
+  /** 紐づけるToDo ID（既定でチェック状態にする）。管理画面のToDoパネルの「＋ タスクを追加」から
+   *  このモーダルを開く用途。該当ToDoが今期以外のTFに属していても、KR/TFの選択肢に
+   *  強制的に含める（filteredKrs/filteredTfs）ことで選択が失われないようにする。 */
+  defaultTodoId?: string;
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
   const rawMembers              = useAppStore(s => s.members);
@@ -42,6 +49,11 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
+
+  // ToDoパネルからの追加時：defaultTodoIdからTFを、TFからKRを逆引きして初期選択に使う
+  // （defaultTfIdが明示的に渡っていればそちらを優先）
+  const resolvedDefaultTfId = defaultTfId ?? todos.find(td => td.id === defaultTodoId)?.tf_id;
+  const defaultKrId = tfs.find(tf => tf.id === resolvedDefaultTfId)?.kr_id;
 
   // 今日の日付から現在のQを計算（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
   // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
@@ -54,9 +66,9 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
     () => (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : ""),
   );
   const [parentId, setParentId] = useState(defaultParentId ?? "");
-  const [krId, setKrId] = useState("");
-  const [tfId, setTfId] = useState("");
-  const [todoIds, setTodoIds] = useState<string[]>([]);
+  const [krId, setKrId] = useState(defaultKrId ?? "");
+  const [tfId, setTfId] = useState(resolvedDefaultTfId ?? "");
+  const [todoIds, setTodoIds] = useState<string[]>(defaultTodoId ? [defaultTodoId] : []);
   const [startDate, setStartDate] = useState("");
   const [dueDate, setDueDate] = useState("");
   const [priority, setPriority] = useState<Task["priority"]>(null);
@@ -99,20 +111,32 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   }, [rawTasks, projectId, projects]);
 
   // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
+  // ToDoパネルからの既定KRが他クォーターのTFしか持たない場合も選択肢が消えないよう強制的に含める
   const filteredKrs = useMemo(() => {
-    return krs.filter(kr => {
+    const base = krs.filter(kr => {
       const krTfs = tfs.filter(tf => tf.kr_id === kr.id && effectiveTfQuarter(tf) === currentQ);
       return krTfs.length > 0;
     });
-  }, [krs, tfs, currentQ]);
+    if (defaultKrId && !base.some(kr => kr.id === defaultKrId)) {
+      const forced = krs.find(kr => kr.id === defaultKrId);
+      if (forced) return [forced, ...base];
+    }
+    return base;
+  }, [krs, tfs, currentQ, defaultKrId]);
 
   // 選択中KRのTF一覧（今期のみ・TF番号順）
+  // ToDoパネルからの既定TFが他クォーターのものでも、選択肢が消えないよう強制的に含める
   const filteredTfs = useMemo(() => {
     if (!krId) return [];
-    return tfs
+    const base = tfs
       .filter(tf => tf.kr_id === krId && effectiveTfQuarter(tf) === currentQ)
       .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0));
-  }, [krId, tfs, currentQ]);
+    if (resolvedDefaultTfId && krId === defaultKrId && !base.some(tf => tf.id === resolvedDefaultTfId)) {
+      const forced = tfs.find(tf => tf.id === resolvedDefaultTfId);
+      if (forced) return [forced, ...base];
+    }
+    return base;
+  }, [krId, tfs, currentQ, resolvedDefaultTfId, defaultKrId]);
 
   // 選択中TFに属するToDo一覧
   const filteredTodos = useMemo(

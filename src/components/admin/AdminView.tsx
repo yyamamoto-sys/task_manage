@@ -25,6 +25,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
 import { TodoDecomposeModal } from "./TodoDecomposeModal";
+import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
@@ -527,6 +528,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const rawMembers                  = useAppStore(s => s.members);
   const rawTodos                    = useAppStore(s => s.todos);
   const rawTasks                    = useAppStore(selectScopedTasks);
+  const rawProjects                 = useAppStore(selectScopedProjects);
   const saveTaskForce               = useAppStore(s => s.saveTaskForce);
   const deleteTaskForce             = useAppStore(s => s.deleteTaskForce);
   const saveToDo                    = useAppStore(s => s.saveToDo);
@@ -539,6 +541,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const todos   = useMemo(() => active(rawTodos), [rawTodos]);
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
+  const projects = useMemo(() => active(rawProjects), [rawProjects]);
 
   // 現在の日付から今のQを求める（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
   // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
@@ -742,6 +745,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                   <TFRow key={tf.id} tf={tf} members={members}
                     todos={todos.filter(t => t.tf_id === tf.id)}
                     tasks={allTasks} saveTask={saveTask}
+                    projects={projects}
                     currentUser={currentUser}
                     onEdit={() => openEdit(tf)}
                     onDelete={() => { void handleUnlinkTf(kr.id, tf.id); }}
@@ -824,11 +828,12 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   );
 }
 
-function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo,
+function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo,
   isEditing, editForm, setEditForm, onSaveEdit, onCancelEdit, onDeleteTF, currentQuarter, onMoveTo }: {
   tf: TaskForce; members: Member[];
   todos: ToDo[]; tasks: import("../../lib/localData/types").Task[];
   saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
+  projects: Project[];
   currentUser: Member;
   onEdit: () => void; onDelete: () => void;
   onSaveToDo: (todo: ToDo) => Promise<void>;
@@ -1055,6 +1060,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
           tasks={tasks}
           members={members}
           saveTask={saveTask}
+          projects={projects}
           currentUser={currentUser}
           onSave={onSaveToDo}
           onDelete={onDeleteToDo}
@@ -1066,11 +1072,12 @@ function TFRow({ tf, members, todos, tasks, saveTask, currentUser, onEdit, onDel
 
 // ===== ToDoパネル =====
 
-function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave, onDelete }: {
+function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUser, onSave, onDelete }: {
   tfId: string; todos: ToDo[];
   tasks: import("../../lib/localData/types").Task[];
   members: Member[];
   saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
+  projects: Project[];
   currentUser: Member;
   onSave: (todo: ToDo) => Promise<void>;
   onDelete: (id: string, deletedBy: string) => Promise<void>;
@@ -1078,7 +1085,6 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", title: "", due_date: "", memo: "" });
   const [addingTaskForTodoId, setAddingTaskForTodoId] = useState<string | null>(null);
-  const [taskForm, setTaskForm] = useState({ name: "", assignee_member_id: "", due_date: "" });
   const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
   const [decomposeTodoId, setDecomposeTodoId] = useState<string | null>(null);
 
@@ -1120,32 +1126,6 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
 
   const openAddTask = (todoId: string) => {
     setAddingTaskForTodoId(todoId);
-    setTaskForm({ name: "", assignee_member_id: "", due_date: "" });
-  };
-
-  const saveNewTask = async () => {
-    if (!taskForm.name.trim() || !addingTaskForTodoId) return;
-    const now = new Date().toISOString();
-    const newTask: import("../../lib/localData/types").Task = {
-      id: uuidv4(),
-      name: taskForm.name.trim(),
-      project_id: null,
-      todo_ids: addingTaskForTodoId ? [addingTaskForTodoId] : [],
-      assignee_member_ids: taskForm.assignee_member_id ? [taskForm.assignee_member_id] : [],
-      assignee_member_id: taskForm.assignee_member_id,
-      status: "todo",
-      priority: null,
-      start_date: null,
-      due_date: taskForm.due_date || null,
-      estimated_hours: null,
-      comment: "",
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUser.id,
-    };
-    await saveTask(newTask);
-    setAddingTaskForTodoId(null);
   };
 
   const toggleTodoTasks = (todoId: string) => {
@@ -1243,31 +1223,8 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
                       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>タスクなし</div>
                     )}
 
-                    {/* タスク追加フォーム */}
-                    {addingTaskForTodoId === todo.id ? (
-                      <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                        <input
-                          autoFocus
-                          value={taskForm.name}
-                          onChange={e => setTaskForm(f => ({ ...f, name: e.target.value }))}
-                          placeholder="タスク名"
-                          onKeyDown={e => { if (e.key === "Enter") saveNewTask(); if (e.key === "Escape") setAddingTaskForTodoId(null); }}
-                          style={{ ...inputStyle, flex: "1 1 180px", fontSize: "11px", padding: "4px 8px" }}
-                        />
-                        <CustomSelect value={taskForm.assignee_member_id} onChange={value => setTaskForm(f => ({ ...f, assignee_member_id: value }))}
-                          options={[
-                            { value: "", label: "（なし）" },
-                            ...members.map(m => ({ value: m.id, label: m.short_name })),
-                          ]}
-                          searchable searchPlaceholder="メンバーで検索..."
-                          style={{ flex: "0 0 auto", minWidth: "120px" }} />
-                        <input type="date" value={taskForm.due_date} onChange={e => setTaskForm(f => ({ ...f, due_date: e.target.value }))} style={{ ...inputStyle, flex: "0 0 auto", fontSize: "11px", padding: "4px 8px" }} />
-                        <button onClick={saveNewTask} style={{ ...primaryBtnStyle, fontSize: "11px", padding: "4px 10px" }}>追加</button>
-                        <button onClick={() => setAddingTaskForTodoId(null)} style={{ ...ghostBtnStyle, fontSize: "11px", padding: "4px 10px" }}>×</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => openAddTask(todo.id)} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ タスクを追加</button>
-                    )}
+                    {/* タスク追加：通常ビューと同じQuickAddTaskModalに統一（重複実装の解消） */}
+                    <button onClick={() => openAddTask(todo.id)} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ タスクを追加</button>
                   </div>
                 );
               })()}
@@ -1302,6 +1259,17 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, currentUser, onSave,
           />
         );
       })()}
+
+      {/* タスク追加モーダル（通常ビューと共通のQuickAddTaskModal。対象ToDo/TFを既定選択で渡す） */}
+      {addingTaskForTodoId && (
+        <QuickAddTaskModal
+          currentUser={currentUser}
+          projects={projects}
+          defaultTfId={tfId}
+          defaultTodoId={addingTaskForTodoId}
+          onClose={() => setAddingTaskForTodoId(null)}
+        />
+      )}
     </div>
   );
 }
