@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.71
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.72
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1535,7 +1535,35 @@
 #             エラー0件）／`npm run build`成功
 #      スコープ外（後続⑤）：ドロップ位置プレースホルダ
 #
-# 最終更新：2026-07-19（v2.71）
+# v2.72 feat: カンバンビューの刷新 第5弾＝最終（ドラッグ中のドロップ位置プレースホルダを追加）（2026-07-19）
+#      対象：`src/components/kanban/KanbanView.tsx`のみ。DBマイグレ不要。既存のカード・ドラッグ確定
+#             （列間ステータス変更・バルクドラッグ）・選択・一括操作・インライン編集・②列ヘッダ集計・
+#             ③滞留・④WIP警告は不変
+#      実装方式（既存D&Dへの上乗せ）：既存はHTML5ネイティブdrag events（`draggable`＋
+#             `onDragStart`/`onDragOver`/`onDrop`）で列（ステータス）単位のドロップのみを扱い、
+#             列内の並び順（display_order等）は元々持たない実装だった。今回もドロップの確定ロジック
+#             （`handleDrop`）は一切変更せず、**見た目のフィードバックだけ**を追加：列コンテナの
+#             `onDragOver`（既存は`e.preventDefault()`のみ）を`handleColumnDragOver`に差し替え、
+#             ドラッグ中のマウスY座標と各カード（`data-kanban-card`属性）の`getBoundingClientRect()`
+#             中点を比較して「何番目のカードの前に入るか」（`dropIndicator: {status, index}`）を算出。
+#             rAFで間引き（dragoverの高頻度発火によるレイアウト計測のしすぎを防止。ListViewの
+#             reflowループ事故＝v2.25の教訓を踏まえた設計判断）。算出した位置に破線枠＋薄いaccent
+#             背景・カード高さ相当（58px）の`DropPlaceholder`をカード配列の間（Fragment key=task.id）
+#             または列末尾に描画する。列内に並び順の永続化が無いため「その列のどこに視覚的に
+#             入りそうか」を示すだけの純粋な表示要素で、ドロップ確定後の実際の並びには影響しない
+#             （仕様どおり＝並び替えを新規実装したわけではない）
+#      消去タイミング：ドロップ成功は`handleDrop`内で`setDropIndicator(null)`。ドラッグの
+#             キャンセル（列外での離脱・Esc等）は、ドロップの成否によらず必ず発火するネイティブ
+#             `dragend`イベントを新規に拾う`handleDragEnd`（`draggingId`/`dragOverStatus`/
+#             `dropIndicator`を一括リセット）で消える。列を離脱した場合（`onDragLeave`の
+#             `contains`判定）もその場でクリア
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 396件全通過（既存回帰なし・本変更に
+#             テスト追加なし＝UI配線のみのため）／`npx eslint src`をHEAD時点と比較＝24エラー・
+#             11警告で完全一致（KanbanView.tsxに新規エラー0件）／`npm run build`成功
+#      補足：カンバンビュー刷新シリーズ（①ビジュアル洗練＋優先度ストライプ→②列ヘッダ集計→
+#             ③滞留バッジ→④WIP上限ソフト警告→⑤ドロップ位置プレースホルダ）はこれで一区切り
+#
+# 最終更新：2026-07-19（v2.72）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

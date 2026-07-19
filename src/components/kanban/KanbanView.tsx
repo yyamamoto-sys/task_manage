@@ -1,6 +1,6 @@
 // src/components/kanban/KanbanView.tsx
-import { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect, memo, Fragment } from "react";
+import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, DragEvent as ReactDragEvent } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
@@ -64,6 +64,17 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const [addingStatus, setAddingStatus] = useState<Task["status"] | null>(null);
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dragOverStatus, setDragOverStatus] = useState<Task["status"] | null>(null);
+  // ドロップ位置プレースホルダ：ドラッグ中のカードがどの列の何番目（0=先頭〜colTasks.length=末尾）に
+  // 入るかを表す。並び順自体は持たない実装（display_orderで管理していない）ため、ここは純粋に
+  // 視覚フィードバックのみ。ドロップの確定ロジック（handleDrop）はこの値を一切参照しない
+  const [dropIndicator, setDropIndicator] = useState<{ status: Task["status"]; index: number } | null>(null);
+  // 各列のカード一覧コンテナ実要素（DOM実測でプレースホルダの挿入位置を求めるための参照。
+  // ガントのB2依存矢印と同じ「座標を数式で再計算せず実測する」設計方針を踏襲）
+  const cardListRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  // dragover は高頻度で発火するため rAF で間引く（レイアウト再計算=getBoundingClientRectの
+  // 呼びすぎを防ぐ。ListViewのreflowループ事故＝CLAUDE.md v2.25の教訓を踏まえ、layoutを
+  // 動かす処理を高頻度で回さない）
+  const dropRafRef = useRef<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [hideDone, setHideDone] = useState(false);
 
@@ -120,6 +131,36 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
   const handleDragStart = useCallback((taskId: string) => setDraggingId(taskId), []);
+  // ドラッグ終了（ドロップ成功／キャンセルの両方でdragendは必ず発火する）でプレースホルダ・
+  // ハイライトを消す。handleDropの成功パスでも重ねて呼ばれるが、状態を消すだけなので無害
+  const handleDragEnd = useCallback(() => {
+    setDraggingId(null);
+    setDragOverStatus(null);
+    setDropIndicator(null);
+    dropRafRef.current = null;
+  }, []);
+
+  // 列内のドロップ挿入位置を実測して求める。カード要素（data-kanban-card）の中点Yと
+  // マウスのclientYを比較し、最初に「マウスより下にある」カードの手前を挿入位置とする
+  // （全カードより下ならその列の末尾＝colTasks.length）
+  const handleColumnDragOver = useCallback((e: ReactDragEvent<HTMLDivElement>, status: Task["status"]) => {
+    e.preventDefault();
+    if (!draggingId) return;
+    const clientY = e.clientY;
+    if (dropRafRef.current != null) return;
+    dropRafRef.current = requestAnimationFrame(() => {
+      dropRafRef.current = null;
+      const container = cardListRefs.current[status];
+      if (!container) return;
+      const cards = container.querySelectorAll<HTMLElement>('[data-kanban-card="true"]');
+      let index = cards.length;
+      for (let i = 0; i < cards.length; i++) {
+        const rect = cards[i].getBoundingClientRect();
+        if (clientY < rect.top + rect.height / 2) { index = i; break; }
+      }
+      setDropIndicator(prev => (prev && prev.status === status && prev.index === index) ? prev : { status, index });
+    });
+  }, [draggingId]);
 
   // カードクリック：修飾キー無し＝従来どおり詳細を開く＋アンカー更新。Ctrl/Cmd+クリック＝
   // 選択のみトグル（詳細は開かない）。Shift+クリック＝アンカー〜クリック先の範囲を現在の
@@ -159,6 +200,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
       setDraggingId(null);
     }
     setDragOverStatus(null);
+    setDropIndicator(null);
   };
 
   // ===== キーボードショートカット（Ctrl/Cmd+A=表示中の全選択／Esc=選択解除） =====
@@ -370,9 +412,14 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                 transition: "border-color 0.15s, background 0.15s",
                 padding: "2px",
               }}
-              onDragOver={e => e.preventDefault()}
+              onDragOver={e => handleColumnDragOver(e, status)}
               onDragEnter={() => setDragOverStatus(status)}
-              onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOverStatus(null); }}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverStatus(null);
+                  setDropIndicator(prev => (prev && prev.status === status) ? null : prev);
+                }
+              }}
               onDrop={() => handleDrop(status)}
             >
               {/* 列ヘッダー：ドット＋列名＋件数、下に完了率バー＋工数合計（computeGroupSummary をリストビューと共用） */}
@@ -429,7 +476,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
               </div>
 
               {/* タスクカード */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                ref={el => { cardListRefs.current[status] = el; }}
+              >
                 {/* done列でhideDoneの場合は折りたたみ */}
                 {isDoneCol && hideDone ? (
                   <div style={{
@@ -441,25 +491,35 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                     {colTasks.length}件（非表示中）
                   </div>
                 ) : (
-                  colTasks.map(task => (
-                    <TaskCard
-                      key={task.id}
-                      task={task}
-                      project={task.project_id ? projectById.get(task.project_id) : undefined}
-                      todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
-                      allMembers={members}
-                      parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
-                      childCount={childCountByParent.get(task.id) ?? 0}
-                      progress={parentDerivedById.get(task.id)}
-                      onDragStart={handleDragStart}
-                      onStatusChange={handleStatusChange}
-                      isDragging={draggingId === task.id}
-                      onClick={handleCardClick}
-                      isSelected={selectedIds.has(task.id)}
-                      onSaveTask={saveTask}
-                      currentUserId={currentUser.id}
-                    />
-                  ))
+                  <>
+                    {colTasks.map((task, i) => (
+                      <Fragment key={task.id}>
+                        {dropIndicator && dropIndicator.status === status && dropIndicator.index === i && (
+                          <DropPlaceholder />
+                        )}
+                        <TaskCard
+                          task={task}
+                          project={task.project_id ? projectById.get(task.project_id) : undefined}
+                          todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
+                          allMembers={members}
+                          parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
+                          childCount={childCountByParent.get(task.id) ?? 0}
+                          progress={parentDerivedById.get(task.id)}
+                          onDragStart={handleDragStart}
+                          onDragEnd={handleDragEnd}
+                          onStatusChange={handleStatusChange}
+                          isDragging={draggingId === task.id}
+                          onClick={handleCardClick}
+                          isSelected={selectedIds.has(task.id)}
+                          onSaveTask={saveTask}
+                          currentUserId={currentUser.id}
+                        />
+                      </Fragment>
+                    ))}
+                    {dropIndicator && dropIndicator.status === status && dropIndicator.index === colTasks.length && (
+                      <DropPlaceholder />
+                    )}
+                  </>
                 )}
                 {/* ＋ タスクを追加 */}
                 <button
@@ -513,10 +573,27 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   );
 }
 
+// ===== ドロップ位置プレースホルダ（承認済みモックの`.drop`＝破線枠・薄いaccent背景・カード高さ相当） =====
+
+function DropPlaceholder() {
+  return (
+    <div
+      aria-hidden
+      style={{
+        height: "58px",
+        flexShrink: 0,
+        borderRadius: "var(--radius-lg)",
+        border: "2px dashed var(--color-brand-border)",
+        background: "var(--color-brand-light)",
+      }}
+    />
+  );
+}
+
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, allMembers, parentName, childCount = 0, progress, onDragStart, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
+  task, project, todo, allMembers, parentName, childCount = 0, progress, onDragStart, onDragEnd, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
@@ -527,6 +604,8 @@ const TaskCard = memo(function TaskCard({
   /** 親タスク（子を持つ）のみ渡される、子からのロールアップ進捗（done/total/pct） */
   progress?: ParentDerived;
   onDragStart: (taskId: string) => void;
+  /** ドロップ成功／キャンセル問わず必ず発火（ドロッププレースホルダ・ハイライトの後始末用） */
+  onDragEnd: () => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
   onClick: (e: ReactMouseEvent | ReactKeyboardEvent, taskId: string) => void;
@@ -549,7 +628,9 @@ const TaskCard = memo(function TaskCard({
   return (
     <div
       draggable
+      data-kanban-card="true"
       onDragStart={() => onDragStart(task.id)}
+      onDragEnd={onDragEnd}
       onClick={e => onClick(e, task.id)}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onClick(e, task.id); } }}
