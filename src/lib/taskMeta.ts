@@ -57,3 +57,11 @@ export const TASK_PRIORITY_STYLE: Record<string, { bg: string; color: string }> 
   mid:  { bg: "var(--color-bg-warning)", color: "var(--color-text-warning)" },
   low:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)" },
 };
+
+/** カンバンカード左端の優先度ストライプ色（カード全体の視認性重視で既存の text-* トークンを流用）。
+ *  優先度未設定は border-primary（無彩色）にフォールバックする。 */
+export const TASK_PRIORITY_STRIPE_COLOR: Record<string, string> = {
+  high: "var(--color-text-danger)",
+  mid:  "var(--color-text-warning)",
+  low:  "var(--color-text-info)",
+};

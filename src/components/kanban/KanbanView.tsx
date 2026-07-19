@@ -6,9 +6,11 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
+import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
+import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
@@ -45,6 +47,9 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     for (const t of tasks) if (t.parent_task_id) m.set(t.parent_task_id, (m.get(t.parent_task_id) ?? 0) + 1);
     return m;
   }, [tasks]);
+  // 親カードのサブタスク進捗ミニバー用（done/total/pct）。フィルタ前の tasks から算出し、
+  // childCountByParent と同じ考え方で常に全体の進捗を出す
+  const parentDerivedById = useMemo(() => buildParentDerivedMap(tasks), [tasks]);
 
   // TaskCard を React.memo で軽量化するための「参照が安定した」ルックアップ。
   // .find()をそのまま呼ぶと毎回O(n)探索になり、ドラッグ中のホバーや編集モーダルの
@@ -403,6 +408,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       allMembers={members}
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
+                      progress={parentDerivedById.get(task.id)}
                       onDragStart={handleDragStart}
                       onStatusChange={handleStatusChange}
                       isDragging={draggingId === task.id}
@@ -468,7 +474,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, allMembers, parentName, childCount = 0, onDragStart, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
+  task, project, todo, allMembers, parentName, childCount = 0, progress, onDragStart, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
@@ -476,6 +482,8 @@ const TaskCard = memo(function TaskCard({
   allMembers: Member[];
   parentName?: string;
   childCount?: number;
+  /** 親タスク（子を持つ）のみ渡される、子からのロールアップ進捗（done/total/pct） */
+  progress?: ParentDerived;
   onDragStart: (taskId: string) => void;
   onStatusChange: (id: string, status: Task["status"]) => void;
   isDragging: boolean;
@@ -486,6 +494,9 @@ const TaskCard = memo(function TaskCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const isDone = task.status === "done";
+  const isOverdue = !isDone && !!task.due_date && task.due_date < todayStr();
+  // 優先度の左ストライプ色（親子のインデント表現＝marginLeft/子バッジとは独立。優先度未設定は無彩色）
+  const stripeColor = task.priority ? TASK_PRIORITY_STRIPE_COLOR[task.priority] : "var(--color-border-primary)";
 
   return (
     <div
@@ -499,12 +510,8 @@ const TaskCard = memo(function TaskCard({
       style={{
         background: isSelected ? "var(--color-brand-light)" : "var(--color-bg-primary)",
         border: "1px solid var(--color-border-primary)",
-        // 親子の位置づけを視覚化：子＝左にインデント＋グレーの太い左罫線、親（子を持つ）＝ブランド色の左罫線
-        borderLeft: parentName
-          ? "3px solid var(--color-border-secondary)"
-          : childCount > 0
-            ? "3px solid var(--color-brand)"
-            : "1px solid var(--color-border-primary)",
+        borderLeft: `3px solid ${stripeColor}`,
+        // 子タスクは左にインデントして親子関係を視覚化（優先度ストライプの色とは独立）
         marginLeft: parentName ? "14px" : 0,
         borderRadius: "var(--radius-lg)",
         padding: "9px 11px",
@@ -571,6 +578,29 @@ const TaskCard = memo(function TaskCard({
         )}
       </div>
 
+      {/* タグチップ */}
+      {(task.tags?.length ?? 0) > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "3px", marginBottom: "7px" }}>
+          {task.tags!.map((tag, ti) => (
+            <span key={ti} style={{
+              fontSize: "9px", padding: "0 5px", lineHeight: 1.6, borderRadius: "99px",
+              background: "var(--color-brand-light)", color: "var(--color-text-purple)",
+              border: "1px solid var(--color-brand-border)",
+            }}>#{tag}</span>
+          ))}
+        </div>
+      )}
+
+      {/* サブタスク進捗ミニバー（親タスクのみ） */}
+      {progress && progress.total > 0 && (
+        <div style={{ display: "flex", alignItems: "center", gap: "5px", marginBottom: "7px" }}>
+          <span style={{ width: "36px", height: "4px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", overflow: "hidden", display: "inline-block", flexShrink: 0 }}>
+            <span style={{ display: "block", height: "100%", width: `${progress.pct}%`, background: "var(--color-brand)", borderRadius: "var(--radius-full)" }} />
+          </span>
+          <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>{progress.done}/{progress.total}</span>
+        </div>
+      )}
+
       {/* フッター */}
       <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
         {/* 担当者インライン編集（クリックしても何も起きないラッパー） */}
@@ -582,14 +612,25 @@ const TaskCard = memo(function TaskCard({
             onSave={ids => onSaveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUserId })}
           />
         </div>
-        {/* 期日インライン編集（クリックしても何も起きないラッパー） */}
+        {/* 期日チップ（期限超過は赤・完了は✓）。クリックしても何も起きないラッパー */}
         {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
-        <div onClick={e => e.stopPropagation()} style={{ flex: 1, fontSize: "10px" }}>
-          <InlineEditDate
-            value={task.due_date}
-            onSave={due_date => onSaveTask({ ...task, due_date, updated_by: currentUserId })}
-          />
+        <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
+          <span style={{
+            display: "inline-flex", alignItems: "center", gap: "3px",
+            padding: task.due_date ? "2px 7px" : "1px 2px",
+            borderRadius: "var(--radius-full)", fontSize: "10px",
+            background: !task.due_date ? "transparent" : isDone ? "var(--color-bg-success)" : isOverdue ? "var(--color-bg-danger)" : "var(--color-bg-tertiary)",
+            border: !task.due_date ? "none" : `1px solid ${isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : "var(--color-border-primary)"}`,
+          }}>
+            {isDone && task.due_date && <span aria-hidden style={{ color: "var(--color-text-success)" }}>✓</span>}
+            <InlineEditDate
+              value={task.due_date}
+              isDone={isDone}
+              onSave={due_date => onSaveTask({ ...task, due_date, updated_by: currentUserId })}
+            />
+          </span>
         </div>
+        <span style={{ flex: 1 }} />
         {/* 工数バッジ */}
         {task.estimated_hours != null && (
           <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
