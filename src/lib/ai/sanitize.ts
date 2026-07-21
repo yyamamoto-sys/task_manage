@@ -33,11 +33,3 @@ export function sanitizeComment(comment: string): string {
     .replace(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g, "[メールアドレス省略]")
     .trim();
 }
-
-/**
- * 複数フィールドをまとめてサニタイズする。
- * タスクオブジェクトのcommentフィールド適用時に使用。
- */
-export function sanitizeTaskComment<T extends { comment: string }>(task: T): T {
-  return { ...task, comment: sanitizeComment(task.comment) };
-}

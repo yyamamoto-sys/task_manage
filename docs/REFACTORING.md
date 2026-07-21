@@ -37,7 +37,7 @@
 | H グラフ | 2026-07-21 | 2026-07-21（凡例クリックの再レンダー漏れを修正） | 約790行（GraphView.tsx） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録） | 初回巡回実施。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録 |
 | I 通知 | 2026-07-21 | 2026-07-21（未使用select列`status`を削除） | 約390行（フロントhook+Edge Function） | M18（`notify_pref="teams"`が実質dead。次回候補へ記録） | 3回目巡回で点検。小さい実害の薄い1件を修正。Edge Function側（`supabase/functions/notify-deadlines`）はgit push対象外・個別デプロイ運用の点に注意（今回の修正も要手動デプロイ） |
 | データ基盤 | 2026-07-06 | 2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | 約3,426行 | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇 |
-| AI基盤 | 2026-06-26 | 2026-06-26（Edge Function CORS/レート制限のセキュリティ強化`af80481`） | 約5,262行 | ai-consultの`max_tokens`上限追加（2026-07-02）はコード変更済みだがEdge Function再デプロイ未実施（別途project memory記載の残課題） | — |
+| AI基盤 | 2026-07-21 | 2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠） |
 | 共通UI | 2026-07-17 | 2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | 約3,120行 | 既存表になし | 新規追加のCard/DangerZone/ShortcutsPanel/CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施 |
 | ユーティリティ/フック | 2026-07-06 | 2026-07-06（taskHierarchy統合・未使用変数スイープ） | 約2,042行（lib直下+hooks直下） | L3 Task.comment型統一（低優先・確認のみ） | selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
 
@@ -48,6 +48,30 @@
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 
 ---
+
+## 完了済み（2026-07-21）巡回台帳の13回目の巡回：AI基盤（ユニット全体）
+
+12回目終了時点で台帳を精査した結果、「AI基盤」（最終点検日2026-06-26）が全ユニット中最古と判明したため選定。
+`docs/dev/module-map.md`定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function
+`supabase/functions/ai-consult/index.ts`（実測合計785行）を1セッションで全体点検。
+
+**規模感の訂正**：台帳の旧記載「約5,262行」は実際には`lib/ai/`ディレクトリ全体（27ファイル・5,163行＋Edge
+Function）の行数だった。module-map.mdの定義上、`payloadBuilder`/`systemPrompt`/`applyProposal`/
+`krSessionExtractor`等はB（AI相談）・D（OKR）・C（会議読み込み）・E（PJ別AI分析）・F（管理・設定）の
+各モジュール所属ファイルであり、AI基盤（AI呼び出しの唯一のゲート＋使用量計上）としての対象範囲ではない。
+実測785行は1セッション予算（700〜1,800行）に収まったため、サブ領域分割はせず一度に全体点検した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **実バグ：invokeAI.tsのRATE_LIMIT_EXCEEDED生コード表示** | Edge Functionはレート制限超過時に`{error:"RATE_LIMIT_EXCEEDED", message:"1分あたりの利用上限に達しました…"}`を返すが、`invokeAI.ts`の`extractEdgeError`はこのケースを個別処理しておらず`if (d.error) return d.error`のフォールバックで生コード文字列"RATE_LIMIT_EXCEEDED"をそのままユーザーに表示していた（レガシー経路の`apiClient.ts`＝AI相談チャットのみは既に同種の分岐で正しくハンドリング済みだったが、`invokeAI`経由の全AI機能＝kr-report/kr-quarter-plan/meeting-extract/project-analysis/todo-decompose等ではこの不親切な表示が起きていた）。`apiClient.ts`と同じ分岐を追加し修正 | ローカルコミット参照 |
+| **未使用exportの削除** | `sanitize.ts`の`sanitizeTaskComment`はテストからのみ呼ばれ、初回コミット（`9aa7eb2`）以来一度も本番コード（`payloadBuilder.ts`）から呼ばれていなかった（本番は`sanitizeComment`を直接インライン呼び出し）。`git log -S`で追加以来の呼び出し元0件を確認し削除 | ローカルコミット参照 |
+| **AIIntentドキュメント乖離の修正** | `invokeAI.ts`冒頭のAIIntent一覧コメント（ASCIIアートの箱）とCLAUDE.md Section 6-1bのコード例が、型定義に実在する`"all-projects-analysis"`（E PJ別AI分析・v2.8頃導入）を欠いたままだった。両方に追記して型定義と一致させた | ローカルコミット参照 |
+| **max_tokens再デプロイ未実施（既知課題）の解消確認** | `supabase functions list --project-ref`でai-consultの`version:13`・`updated_at`が2026-07-02T05:23:54Z（コミット`614c7a6`の約18分後）であることを確認し、`supabase functions download`で取得した実デプロイ済みソースとローカル`index.ts`を`diff`＝完全一致（0差分）。2026-07-02に`MAX_TOKENS_CAP`追加と同時に既にデプロイ済みだったと判明。台帳の残課題記載を解消として更新 | — |
+| **CORS/レート制限の現状確認** | `supabase secrets list`で`ALLOWED_ORIGINS`（設定済み・2026-07-03更新）を確認。`RATE_LIMIT_PER_MIN`は未設定シークレットのためコード既定値20で稼働中（Section 18準拠） | — |
+
+次回候補として記録：M28＝`uiGuide.ts`の`FEATURE_LIST_SECTION`（AIへの機能一覧説明・systemPromptに埋め込まれAIの自己紹介として使われる）が、v2.28（ワークロードビュー）以降に追加された大型機能（タスク依存関係B1-B5・ガントの複数選択/クリティカルパス/進捗フィル/過負荷可視化・全ビュー共通ショートカット・ステータス5値化＝保留/中止等）に一切追従できておらず、AIがユーザーに「できること」を古い機能一覧のまま案内する状態になっている（CLAUDE.md Section 17のチェックリストが機能追加のたびに徹底されていなかった実例）。内容の取捨選択に編集判断が要るため、今回は修正せず次回候補に記録するのみ。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 421件全通過（新規4件＋既存419件－削除2件）／`npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功。
 
 ## 完了済み（2026-07-21）巡回台帳の12回目の巡回：認証・入口（ユニット全体）
 

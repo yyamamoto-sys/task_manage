@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeComment, sanitizeTaskComment } from "../sanitize";
+import { sanitizeComment } from "../sanitize";
 
 describe("sanitizeComment", () => {
   it("空文字・undefined は空文字を返す", () => {
@@ -54,30 +54,5 @@ describe("sanitizeComment", () => {
 
   it("前後の空白をトリムする", () => {
     expect(sanitizeComment("  hello  ")).toBe("hello");
-  });
-});
-
-describe("sanitizeTaskComment", () => {
-  it("task.comment にサニタイズを適用し、他のフィールドは保持する", () => {
-    const task = {
-      id: "task-1",
-      name: "資料確認",
-      comment: "\\\\srv\\share\\file.xlsx を見る",
-      assignee: "yamamoto",
-    };
-    const result = sanitizeTaskComment(task);
-    expect(result).toEqual({
-      id: "task-1",
-      name: "資料確認",
-      comment: "[ファイルパス省略] を見る",
-      assignee: "yamamoto",
-    });
-  });
-
-  it("元のオブジェクトは破壊しない（イミュータブル）", () => {
-    const task = { comment: "\\\\srv\\file.xlsx" };
-    const original = { ...task };
-    sanitizeTaskComment(task);
-    expect(task).toEqual(original);
   });
 });

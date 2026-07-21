@@ -2356,6 +2356,7 @@ export type AIIntent =
   | "meeting-extract"      // 会議文字起こしからタスク抽出
   | "project-plan"         // AI で PJ 設計
   | "project-analysis"     // 単一PJの健全性分析
+  | "all-projects-analysis" // 全PJ横断ポートフォリオ分析
   | "todo-decompose";      // ToDo 分解
 ```
 

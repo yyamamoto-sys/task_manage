@@ -23,6 +23,7 @@
 // │   "meeting-extract"  — 会議メモからタスク抽出                    │
 // │   "project-plan"     — AI による PJ 設計                        │
 // │   "project-analysis" — 単一PJの健全性分析                       │
+// │   "all-projects-analysis" — 全PJ横断ポートフォリオ分析          │
 // │   "todo-decompose"   — ToDo 分解                                │
 // │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
 // │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
@@ -65,6 +66,7 @@ type EdgeErrorBody = {
   error?: string;
   status?: number;
   detail?: string;
+  message?: string;
 };
 
 function extractEdgeError(data: unknown, fallback: string): string {
@@ -75,6 +77,10 @@ function extractEdgeError(data: unknown, fallback: string): string {
     try { msg = JSON.parse(d.detail ?? "")?.error?.message ?? d.detail ?? ""; } catch { /* ignore */ }
     const statusStr = d.status ? ` (${d.status})` : "";
     return `Anthropic APIエラー${statusStr}: ${msg}`;
+  }
+  // Edge Function 側のユーザーごとのレート制限（apiClient.ts と同じ扱い。CLAUDE.md Section 18）
+  if (d.error === "RATE_LIMIT_EXCEEDED") {
+    return d.message ?? "1分あたりの利用上限に達しました。しばらくお待ちください。";
   }
   if (d.error === "API key not configured") return "Edge FunctionにAPIキーが設定されていません。Supabaseの環境変数を確認してください。";
   if (d.error === "Unauthorized") return "認証エラー：ログインし直してください。";
