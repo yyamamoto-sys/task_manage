@@ -196,13 +196,19 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   );
 
   // 期限超過・本日期限（中止・保留になったタスクは期限超過として騒がない）
+  // 子タスクを持つ親タスク自体は一覧から除外する（親と子が並列に表示されると、
+  // どちらが実際の作業単位か分かりにくい違和感があるため。子タスク側の行に
+  // 親タスク名をラベルとして添えることで、所属関係は分かるようにする）。
+  // 親判定は絞り込み前の allTasks で行う（filteredTasks で子だけが除外されていても
+  // 親を誤って残さないため）
   const alertTasks = useMemo(
     () => filteredTasks.filter(t =>
       t.due_date &&
       t.due_date <= todayS &&
-      !suppressOverdue(t.status)
+      !suppressOverdue(t.status) &&
+      !isParentTask(t, allTasks)
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
-    [filteredTasks, todayS]
+    [filteredTasks, todayS, allTasks]
   );
 
   // ===== KPIサマリー行（既存の filteredTasks / alertTasks / thisWeekTasks のスコープをそのまま流用） =====
@@ -227,13 +233,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   }, [filteredTasks, todayS, weekLater]);
 
   // 滞留タスク（進行中のまま N 日以上 updated_at が動いていない）
+  // alertTasks と同じ理由で、子タスクを持つ親タスク自体は一覧から除外する
   const stagnantTasks = useMemo(
     () => filteredTasks.filter(t => {
       if (t.status !== "in_progress" || t.is_deleted || !t.updated_at) return false;
+      if (isParentTask(t, allTasks)) return false;
       const diffMs = Date.now() - new Date(t.updated_at).getTime();
       return diffMs / (1000 * 60 * 60 * 24) >= stagnantDays;
     }).sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? "")),
-    [filteredTasks, stagnantDays]
+    [filteredTasks, stagnantDays, allTasks]
   );
 
   // 締切の見通し（超過＋今後14日の日別件数の合計。バッジ表示用）
@@ -943,6 +951,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             )}
             {alertTasks.map(task => {
               const pj = projects.find(p => p.id === task.project_id);
+              const parentTask = task.parent_task_id ? allTasks.find(t => t.id === task.parent_task_id) : undefined;
               const diff = task.due_date ? diffDaysFromToday(task.due_date) : 0;
               const isToday = diff === 0;
               return (
@@ -952,6 +961,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                   members={members}
                   saveTask={saveTask}
                   project={pj}
+                  parentLabel={parentTask?.name}
                   onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                   badge={
                     <span style={{
@@ -976,6 +986,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 </div>
                 {stagnantTasks.map(task => {
                   const pj = projects.find(p => p.id === task.project_id);
+                  const parentTask = task.parent_task_id ? allTasks.find(t => t.id === task.parent_task_id) : undefined;
                   const diffMs = Date.now() - new Date(task.updated_at ?? Date.now()).getTime();
                   const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
                   return (
@@ -985,6 +996,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                       members={members}
                       saveTask={saveTask}
                       project={pj}
+                      parentLabel={parentTask?.name}
                       onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
                       badge={
                         <span style={{
@@ -1328,10 +1340,12 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 }
 
 function TaskRow({
-  task, project, badge, onClick, members, saveTask,
+  task, project, parentLabel, badge, onClick, members, saveTask,
 }: {
   task: Task;
   project?: Project;
+  /** 子タスクの行に添える所属親タスク名（期限アラート等、親を一覧から除外する画面用） */
+  parentLabel?: string;
   badge: React.ReactNode;
   /** 指定時：行クリック（Enter/Space）でタスク詳細を開く */
   onClick?: () => void;
@@ -1375,14 +1389,20 @@ function TaskRow({
         }}>
           {task.name}
         </div>
-        {project && (
+        {(project || parentLabel) && (
           <div style={{ display: "flex", alignItems: "center", gap: "3px", marginTop: "1px" }}>
+            {project && (
+              <span style={{
+                width: 4, height: 4, borderRadius: "50%",
+                background: project.color_tag, display: "inline-block", flexShrink: 0,
+              }} />
+            )}
             <span style={{
-              width: 4, height: 4, borderRadius: "50%",
-              background: project.color_tag, display: "inline-block",
-            }} />
-            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>
-              {project.name.slice(0, 16)}
+              fontSize: "9px", color: "var(--color-text-tertiary)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {[project?.name.slice(0, 16), parentLabel ? `↳ ${parentLabel.slice(0, 16)}` : null]
+                .filter(Boolean).join(" ")}
             </span>
           </div>
         )}
