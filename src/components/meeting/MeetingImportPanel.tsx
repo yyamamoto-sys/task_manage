@@ -24,6 +24,7 @@ import { AIProgressLoader } from "../common/AIProgressLoader";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { CustomSelect } from "../common/CustomSelect";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL } from "../../lib/taskMeta";
 
 const MEETING_PHASES = [
   "テキストを読み込んでいます",
@@ -37,11 +38,10 @@ const MEETING_PHASES = [
 
 const MAX_TRANSCRIPT_CHARS = 30000;
 
-const PRIORITY_OPTIONS: { value: "high" | "mid" | "low"; label: string; color: string }[] = [
-  { value: "high", label: "高", color: "#dc2626" },
-  { value: "mid",  label: "中", color: "#ca8a04" },
-  { value: "low",  label: "低", color: "#2563eb" },
-];
+// ラベルは taskMeta.ts（アプリ全体の単一の真実源）から取得し、他画面（リスト/カンバン等）との表記統一を保つ
+const PRIORITY_OPTIONS: { value: "high" | "mid" | "low"; label: string }[] = (
+  ["high", "mid", "low"] as const
+).map(value => ({ value, label: TASK_PRIORITY_LABEL[value] }));
 
 // ===== タスクドラフト型 =====
 
@@ -1036,13 +1036,10 @@ function TaskDraftCard({
 
 // ===== StatusDraftCard =====
 
-const STATUS_OPTIONS: { value: "todo" | "in_progress" | "done" | "on_hold" | "cancelled"; label: string; color: string }[] = [
-  { value: "todo",        label: "未着手",  color: "#64748b" },
-  { value: "in_progress", label: "進行中",  color: "#2563eb" },
-  { value: "done",        label: "完了",    color: "#16a34a" },
-  { value: "on_hold",     label: "保留",    color: "#d97706" },
-  { value: "cancelled",   label: "中止",    color: "#6b7280" },
-];
+// ラベル・色は taskMeta.ts（アプリ全体の単一の真実源）から取得し、他画面（リスト/カンバン等）との表記・トークン統一を保つ
+const STATUS_OPTIONS: { value: "todo" | "in_progress" | "done" | "on_hold" | "cancelled"; label: string }[] = (
+  ["todo", "in_progress", "done", "on_hold", "cancelled"] as const
+).map(value => ({ value, label: TASK_STATUS_LABEL[value] }));
 
 function StatusDraftCard({
   draft, tasks, onChange,
@@ -1098,20 +1095,24 @@ function StatusDraftCard({
           <div>
             <FieldLabel>新しいステータス</FieldLabel>
             <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              {STATUS_OPTIONS.map(opt => (
-                <button
-                  key={opt.value}
-                  onClick={() => onChange({ new_status: opt.value })}
-                  style={{
-                    flex: "1 1 30%", padding: "6px 8px", fontSize: "11px", fontWeight: "600",
-                    border: `1.5px solid ${draft.new_status === opt.value ? opt.color : "var(--color-border-primary)"}`,
-                    borderRadius: "var(--radius-md)",
-                    background: draft.new_status === opt.value ? `${opt.color}18` : "var(--color-bg-primary)",
-                    color: draft.new_status === opt.value ? opt.color : "var(--color-text-tertiary)",
-                    cursor: "pointer",
-                  }}
-                >{opt.label}</button>
-              ))}
+              {STATUS_OPTIONS.map(opt => {
+                const isActive = draft.new_status === opt.value;
+                const style = TASK_STATUS_STYLE[opt.value];
+                return (
+                  <button
+                    key={opt.value}
+                    onClick={() => onChange({ new_status: opt.value })}
+                    style={{
+                      flex: "1 1 30%", padding: "6px 8px", fontSize: "11px", fontWeight: "600",
+                      border: `1.5px solid ${isActive ? style.border : "var(--color-border-primary)"}`,
+                      borderRadius: "var(--radius-md)",
+                      background: isActive ? style.bg : "var(--color-bg-primary)",
+                      color: isActive ? style.color : "var(--color-text-tertiary)",
+                      cursor: "pointer",
+                    }}
+                  >{opt.label}</button>
+                );
+              })}
             </div>
           </div>
 
