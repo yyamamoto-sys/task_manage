@@ -10,6 +10,6 @@ const CONSULT_PHASES = [
   "内容を最終確認しています",
 ];
 
-export function LoadingView({ message: _ }: { message: string }) {
+export function LoadingView() {
   return <AIProgressLoader phases={CONSULT_PHASES} intervalMs={3800} />;
 }

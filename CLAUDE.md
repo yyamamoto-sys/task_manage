@@ -2502,9 +2502,10 @@ export async function applyProposalWithConfirmation(
 ### 6-12. useAIConsultationのexportルール
 
 ```typescript
-// 実際のexport（2026-07-21確認・実装と一致するよう更新。以下は最小限ではなく現状の全量）
+// 実際のexport（2026-07-21・巡回20回目で更新。loadingMessageは2026-04-30のAIProgressLoader
+// 導入でLoadingView側が固定フェーズ表示に切り替わり表示先を失っていたため削除）
 return {
-  callState, session, tokenStatus, loadingMessage, shortIdMap,
+  callState, session, tokenStatus, shortIdMap,
   proposals, followUpSuggestions, errorMessage,       // AI応答の表示に使う派生state
   submit, reset,
   undoStack, canUndo, pushUndoSnapshot, undo, undoUntil, // Undo機能（後から追加）

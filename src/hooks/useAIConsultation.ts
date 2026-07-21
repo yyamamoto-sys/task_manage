@@ -5,7 +5,7 @@
 // このHook以外からAPIを直接呼ばないこと（CLAUDE.md Section 6-12参照）。
 //
 // CLAUDE.md Section 6-12のexportルール：
-// return { callState, session, tokenStatus, loadingMessage, shortIdMap, submit, reset };
+// return { callState, session, tokenStatus, shortIdMap, submit, reset };
 // useFollowUpはexportしない（誤用防止）。
 //
 // Undo機能（追加）：
@@ -50,21 +50,6 @@ export interface SubmitOptions {
 
 const THINKING_MODEL = "claude-sonnet-4-6";
 
-// ===== ローディングメッセージ =====
-
-const LOADING_MESSAGES = [
-  "AIが考えています...",
-  "データを分析中...",
-  "提案を生成しています...",
-  "スケジュールを確認中...",
-  "工数を計算しています...",
-  "リスクを洗い出しています...",
-];
-
-function getRandomLoadingMessage(): string {
-  return LOADING_MESSAGES[Math.floor(Math.random() * LOADING_MESSAGES.length)];
-}
-
 // ===== Hook本体 =====
 
 /**
@@ -90,7 +75,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
   // sessionRef: useCallback内でstale closureを避けるための参照
   // （sessionをuseCallbackの依存配列に含めると毎回新しい関数参照が生成されるため）
   const sessionRef = useRef<ConsultationSession>(session);
-  const [loadingMessage, setLoadingMessage] = useState<string>(LOADING_MESSAGES[0]);
   const [shortIdMap, setShortIdMap] = useState<Map<string, string>>(() => useConsultSessionStore.getState().shortIdMap);
   const [proposals, setProposals] = useState<UIProposal[]>(() => useConsultSessionStore.getState().proposals);
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -98,7 +82,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
   // 【mirror】上記が変化したらミラーストアへ write-through する（再マウント時の seed 元になる）。
   //   getState().saveAi 経由でストアを更新するだけ（このフックはストアを購読しないので無限ループしない）。
-  //   callState/loadingMessage/errorMessage は transient なのでミラーしない（ローカルのまま）。
+  //   callState/errorMessage は transient なのでミラーしない（ローカルのまま）。
   useEffect(() => {
     useConsultSessionStore.getState().saveAi({ session, shortIdMap, proposals, followUpSuggestions });
   }, [session, shortIdMap, proposals, followUpSuggestions]);
@@ -123,7 +107,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
       setCallState("loading");
       setErrorMessage("");
-      setLoadingMessage(getRandomLoadingMessage());
 
       // 対象プロジェクトを絞り込む
       const targetProjects =
@@ -272,7 +255,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
     callState,
     session,
     tokenStatus,
-    loadingMessage,
     shortIdMap,
     proposals,
     followUpSuggestions,

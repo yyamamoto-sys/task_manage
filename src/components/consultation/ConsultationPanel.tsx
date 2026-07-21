@@ -118,7 +118,7 @@ export function ConsultationPanel({
   const currentGroupId = useAppStore(s => s.currentGroupId);
 
   const {
-    callState, session, tokenStatus, loadingMessage,
+    callState, session, tokenStatus,
     shortIdMap, proposals, followUpSuggestions, errorMessage,
     submit, reset, undoStack, canUndo, pushUndoSnapshot, undo, undoUntil,
   } = useAIConsultation([], currentUser.id);
@@ -553,7 +553,7 @@ export function ConsultationPanel({
           )}
 
           {/* ローディング */}
-          {callState === "loading" && <LoadingView message={loadingMessage} />}
+          {callState === "loading" && <LoadingView />}
 
           {/* エラー */}
           {callState === "error" && (
