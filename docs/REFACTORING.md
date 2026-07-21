@@ -28,7 +28,7 @@
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
-| B AI相談 | 2026-07-06 | 2026-07-21（18回目：undoApply.tsに`pj_field`の未ハンドリングを発見・修正） | **約5,855行**（16回目に実測。予算超過のためサブ領域分割が必須） | M10 ConsultationPanel整合性確認は17回目で確認済み・問題なし（解消）。M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補） | **17回目：①ペイロード構築〜レスポンス解釈系（計約1,335行）を点検完了。18回目：②`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`系（反映・Undo・履歴、実測約1,280行・台帳記載と一致）を点検完了。** 残りサブ領域：③`components/consultation/*`（UIコンポーネント一式、2,919行・複数セッションへの再分割が必要）。次回はこの続き |
+| B AI相談 | 2026-07-06 | 2026-07-21（19回目：`ConfirmationDialogModal.tsx`の一括シフト日付演算をJSTセーフな`toDate`/`addDays`/`toDateStr`に統一） | **約5,855行**（16回目に実測。予算超過のためサブ領域分割が必須） | M10 ConsultationPanel整合性確認は17回目で確認済み・問題なし（解消）。M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見） | **17回目：①ペイロード構築〜レスポンス解釈系（計約1,335行）を点検完了。18回目：②`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`系（反映・Undo・履歴、実測約1,280行・台帳記載と一致）を点検完了。19回目：③`components/consultation/*`のうち`ConfirmationDialogModal.tsx`(645行)+`ProposalCard.tsx`(577行)＝計1,222行を点検（18回目引き継ぎのJST日付演算バグを修正）。** 残りサブ領域：③の残り9ファイル（`ConsultationPanel.tsx`705行・`SessionHistoryPanel.tsx`296行・`ChangeHistoryModal.tsx`215行・`GanttPreviewPanel.tsx`181行・`ChatHistory.tsx`134行・`FollowUpButtons.tsx`80行・`SimulationBanner.tsx`26行・`ErrorView.tsx`45行・`LoadingView.tsx`15行＝計約1,697行）。次回はこの続き（`ConsultationPanel.tsx`単体で1セッション分の予算に収まる規模） |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手） |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
@@ -46,6 +46,47 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-21）巡回台帳の19回目の巡回：B AI相談（部分点検・③components/consultation/* の一部＝ConfirmationDialogModal.tsx＋ProposalCard.tsx）
+
+18回目に続き、B AI相談ユニットの残りサブ領域③`components/consultation/*`（全11ファイル・実測2,919行）に着手。
+1セッション予算に収まるよう、規模・重要度・前回引き継ぎ事項を踏まえて`ConfirmationDialogModal.tsx`
+（645行）と`ProposalCard.tsx`（577行）の2ファイル＝計1,222行を選んで点検した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **実バグ：ConfirmationDialogModal.tsxの「全て+N日」一括シフトがJSTセーフな日付演算を使っていなかった（18回目引き継ぎ・修正）** | `handleBulkShift`が`new Date(item.current_value)`→`d.setDate(d.getDate()+n)`→`d.toISOString().split("T")[0]`という、`lib/date.ts`の`toDate`/`addDays`/`toDateStr`を経由しない自前実装になっていた。日本（JST=UTC+9、正のオフセット）で動く限りは`new Date("YYYY-MM-DD")`のUTC深夜0時と現地日付が同じ暦日に収まるため実害は出ないが、UTCより遅れたタイムゾーン（米州等）のブラウザで開くと日付が±1日ずれる設計上の欠陥だった。他の日付演算箇所（ガント・ダッシュボード等）は全て`lib/date.ts`のJSTセーフなヘルパーに統一済みで、この1箇所だけ取り残されていた。`toDate`/`addDays`/`toDateStr`を使う実装に置き換えて修正 | `a6fd429` |
+
+**観察のみ（次回候補・M30として台帳に記録）**：`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で
+`var(--color-accent, #3b82f6)`／`var(--color-accent-bg, #eff6ff)`というCSS変数フォールバックが使われているが、
+`--color-accent`／`--color-accent-bg`自体は`globals.css`のライト/ダークどちらの`:root`にも定義がなく、
+常にフォールバック値（ハードコードのブルー系16進数）が採用される状態だった。既存の`--color-text-info`系
+トークンと役割が近く、正式なアクセントトークンとして`globals.css`に定義するか既存の`info`トークンへ統一
+するかは設計判断が要るため、今回は修正せず次回候補として記録するに留めた（修正対象が`ProposalCard.tsx`
+（今回のスコープ内）と`ConsultationPanel.tsx`（次回③の対象）の2ファイルにまたがり、`globals.css`の
+トークン追加を伴う判断が必要なため）。
+
+型定義（`applyProposal.ts`の`ConfirmationDialog`/`NewTaskItem`/`PjEndDateItem`/`ConfirmationItem`）と
+`ConfirmationDialogModal.tsx`・`ProposalCard.tsx`の実際の使用箇所を突き合わせて確認したが乖離なし。
+`${tid}_assignee_ids`のカンマ区切り文字列の規約も`applyProposal.ts`側の読み取りロジックと一致していた。
+`ProposalCard.tsx`は`uiGuide.ts`の`BTN_CONFIRM_CREATE`/`BTN_APPLY`定数を経由しておりCLAUDE.md Section 17
+準拠（ボタン名のハードコードなし）。エラーの握りつぶし（Section 15違反）・未使用export・
+`GanttPreviewPanel`/`SimulationBanner`との連携も確認したが問題なし。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 429件全通過（UIのみの修正のため新規テスト追加なし・既存回帰なし）／
+`npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／
+`npm run build`成功。**B AI相談ユニット全体（約5,855行）のうち①②③の一部（①②2,615行＋③の一部1,222行＝
+計3,837行）の点検が完了。** ③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・
+`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・
+`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）が未点検のまま残っているため
+「最終点検日」は2026-07-06のまま据え置き（台帳の備考欄を更新）。
+
+次点検の最有力候補は「B AI相談」の続き（③の残り・`ConsultationPanel.tsx`(705行)を中心に。1ファイルで
+1セッション予算に収まる規模）。次点は「データ基盤」（最終点検日2026-07-06・約2,573行。`appStore.ts`の
+楽観ロック・依存ゲート等は実害が大きいため触る場合は特に慎重な進行が必要）。「A 計画ビュー」
+（2026-07-07・約11,930行）はその次点。
 
 ---
 
