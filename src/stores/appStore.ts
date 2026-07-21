@@ -52,6 +52,7 @@ import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
+import { computeParentAutoStatus } from "../lib/taskHierarchy";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 
 export interface AppState {
@@ -811,6 +812,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       }
     }
 
+    // ===== 親タスクの手動完了ソフト警告 =====
+    // 子タスクを持つ親タスクを手動で「完了」にした際、子がまだ全部 done/cancelled
+    // でなければソフト警告のみ（B1の着手時ソフト警告と同じ非ブロッキング方式。
+    // 強制的に完了にすること自体は許可する＝ハードブロックしない）。
+    if (task.status === "done" && existing?.status !== "done") {
+      const children = get().tasks.filter(t => !t.is_deleted && t.parent_task_id === task.id);
+      if (children.length > 0 && !children.every(c => c.status === "done" || c.status === "cancelled")) {
+        showToast("子タスクが完了していませんが、この親タスクを完了にします", "info");
+      }
+    }
+
     // group_id が未設定なら現在のグループを注入する
     const taskToSave0: Task = task.group_id != null
       ? task
@@ -849,6 +861,30 @@ export const useAppStore = create<AppState>()((set, get) => ({
         throw e;
       }
     });
+
+    // ===== 親タスクの自動完了／自動差し戻し（子から算出）=====
+    // 子タスクの status が変化するたびに、兄弟（同じ parent_task_id を持つ他の子）を
+    // 含めて親の完了状態を再判定する。2階層固定（孫なし）のため、ここで親を
+    // saveTask する再帰呼び出し自体が「親の親」を探すことはなく連鎖は1段で止まる。
+    // { skipCascade: true } を必ず付け、親の自動更新自体が新たなB3連鎖判定を
+    // 誘発しないようにする（B3のcascade適用パターンを踏襲）。
+    if (taskToSave.parent_task_id && existing?.status !== taskToSave.status) {
+      const parent = get().tasks.find(t => t.id === taskToSave.parent_task_id);
+      if (parent && !parent.is_deleted) {
+        const siblings = get().tasks.filter(t => !t.is_deleted && t.parent_task_id === parent.id);
+        const nextStatus = computeParentAutoStatus(parent, siblings);
+        if (nextStatus) {
+          try {
+            await get().saveTask({ ...parent, status: nextStatus }, { skipCascade: true });
+          } catch (e) {
+            // 子タスクの保存自体は既に成功しているため、親の自動更新の失敗
+            // （B1ゲート＝親自身に未完了の先行タスクがある等）をここで
+            // 呼び出し元まで伝播させない（子の保存操作を失敗扱いにしない）。
+            reportError(e, "parent-auto-status");
+          }
+        }
+      }
+    }
 
     // ===== 自動リスケジュール連鎖（B3）=====
     // トリガはローカルユーザーの編集（このsaveTask呼び出し自体）でのみ発火する。

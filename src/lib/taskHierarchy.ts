@@ -164,19 +164,47 @@ export function topLevelTasks(tasks: Task[]): Task[] {
 }
 
 /**
+ * 子が「全員終わっている」か（done または cancelled のみで構成、かつ1件以上）。
+ * rollupStatus・computeParentAutoStatus の共通コア判定（CLAUDE.md 2026-07-21
+ * 親タスク自動完了）。cancelled は「実施しないと決めて終わった」ので done と同じ
+ * 「もう動かない」扱い。on_hold は「まだ動く可能性がある」ので終了とみなさない。
+ */
+function allChildrenTerminal(children: Task[]): boolean {
+  return children.length > 0 && children.every(c => c.status === "done" || c.status === "cancelled");
+}
+
+/**
  * 子から親ステータスを算出：
  * - 子0件 → そのタスク自身の status（フラット/葉タスクは従来どおり手動値）
- * - 全done → "done"
- * - 1件でも done/in_progress があり、かつ全doneでない（＝todoとの混在含む）→ "in_progress"
+ * - 全員 done または cancelled → "done"
  * - 全todo → "todo"
+ * - それ以外（in_progress混在・on_hold混在・done/todo混在など）→ "in_progress"
  */
 export function rollupStatus(task: Task, tasks: Task[]): Task["status"] {
   const children = childrenOf(tasks, task.id);
   if (children.length === 0) return task.status;
-  if (children.every(c => c.status === "done")) return "done";
+  if (allChildrenTerminal(children)) return "done";
   if (children.every(c => c.status === "todo")) return "todo";
-  // done/in_progress/todo の混在（todoとdoneだけの混在も含む）→ in_progress
   return "in_progress";
+}
+
+/**
+ * 子タスクの状態変化を受けて、親タスクの status を自動更新すべきか判定する純粋関数
+ * （CLAUDE.md 2026-07-21 親タスク自動完了）。appStore.saveTask の choke point から、
+ * 子タスク保存の副作用として呼ばれる想定。
+ * - 子が0件（葉タスク）→ null（親子関係が無いので判定不要）
+ * - 全ての子が done/cancelled → "done"（parent が既に done なら変更不要＝null）
+ * - 親が既に done で、子が1件でも done/cancelled 以外に戻った → "in_progress" へ差し戻す
+ *   （rollupStatus の値ではなく明示的に in_progress。一貫性を保つための単純な差し戻し）
+ * - 上記いずれでもない → null（手動管理を尊重し、勝手に触らない）
+ */
+export function computeParentAutoStatus(parent: Task, children: Task[]): Task["status"] | null {
+  if (children.length === 0) return null;
+  if (allChildrenTerminal(children)) {
+    return parent.status === "done" ? null : "done";
+  }
+  if (parent.status === "done") return "in_progress";
+  return null;
 }
 
 /** 子の完了集計（calcProgressPct 使用） */
@@ -224,7 +252,7 @@ export function buildParentDerivedMap(tasks: Task[]): Map<string, ParentDerived>
   for (const [parentId, children] of childrenByParent) {
     const total = children.length;
     const done  = children.filter(c => c.status === "done").length;
-    const status: Task["status"] = children.every(c => c.status === "done") ? "done"
+    const status: Task["status"] = allChildrenTerminal(children) ? "done"
       : children.every(c => c.status === "todo") ? "todo"
       : "in_progress";
     result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });

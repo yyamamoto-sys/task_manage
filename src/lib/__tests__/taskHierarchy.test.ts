@@ -11,6 +11,7 @@ import {
   eligibleParentTasks,
   parentTaskCandidates,
   buildParentDerivedMap,
+  computeParentAutoStatus,
   orderSiblingsWithDependencies,
   applyDependencyOrderWithinSiblings,
   filterHideCompletedTasks,
@@ -175,6 +176,92 @@ describe("rollupStatus：各パターン", () => {
       mk({ id: "c1", parent_task_id: "p", status: "done" }),
     ];
     expect(effectiveStatus(t[0], t)).toBe(rollupStatus(t[0], t));
+  });
+
+  it("全 done/cancelled 混在（cancelled は done と同じ「終わった」扱い）→ done", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "cancelled" }),
+    ];
+    expect(rollupStatus(t[0], t)).toBe("done");
+  });
+
+  it("全 cancelled（doneが1件も無くても）→ done", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "cancelled" }),
+      mk({ id: "c2", parent_task_id: "p", status: "cancelled" }),
+    ];
+    expect(rollupStatus(t[0], t)).toBe("done");
+  });
+
+  it("on_hold が1件でも混在 → in_progress（doneにならない）", () => {
+    const t = [
+      mk({ id: "p", status: "todo" }),
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "on_hold" }),
+    ];
+    expect(rollupStatus(t[0], t)).toBe("in_progress");
+  });
+});
+
+describe("computeParentAutoStatus：親タスクの自動完了／自動差し戻し", () => {
+  it("子0件（葉タスク）→ null（判定不要）", () => {
+    const parent = mk({ id: "p", status: "in_progress" });
+    expect(computeParentAutoStatus(parent, [])).toBeNull();
+  });
+
+  it("全子が done/cancelled かつ親が done でない → done", () => {
+    const parent = mk({ id: "p", status: "in_progress" });
+    const children = [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "cancelled" }),
+    ];
+    expect(computeParentAutoStatus(parent, children)).toBe("done");
+  });
+
+  it("全子が done/cancelled で親が既に done → null（変更不要）", () => {
+    const parent = mk({ id: "p", status: "done" });
+    const children = [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "cancelled" }),
+    ];
+    expect(computeParentAutoStatus(parent, children)).toBeNull();
+  });
+
+  it("on_hold の子が1件でも残っていれば親は完了にならない（親がdoneでなければnull）", () => {
+    const parent = mk({ id: "p", status: "in_progress" });
+    const children = [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "on_hold" }),
+    ];
+    expect(computeParentAutoStatus(parent, children)).toBeNull();
+  });
+
+  it("親が既に done で、子が todo/in_progress/on_hold のいずれかに戻った → in_progress へ差し戻す", () => {
+    const parentDone = mk({ id: "p", status: "done" });
+    expect(computeParentAutoStatus(parentDone, [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "todo" }),
+    ])).toBe("in_progress");
+    expect(computeParentAutoStatus(parentDone, [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "in_progress" }),
+    ])).toBe("in_progress");
+    expect(computeParentAutoStatus(parentDone, [
+      mk({ id: "c1", parent_task_id: "p", status: "done" }),
+      mk({ id: "c2", parent_task_id: "p", status: "on_hold" }),
+    ])).toBe("in_progress");
+  });
+
+  it("親が done 以外・子も全終了でない → null（手動管理を尊重）", () => {
+    const parent = mk({ id: "p", status: "todo" });
+    const children = [
+      mk({ id: "c1", parent_task_id: "p", status: "todo" }),
+      mk({ id: "c2", parent_task_id: "p", status: "in_progress" }),
+    ];
+    expect(computeParentAutoStatus(parent, children)).toBeNull();
   });
 });
 
