@@ -210,7 +210,7 @@ function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHo
           style={{
             display: "flex", alignItems: "center", gap: "18px", textAlign: "left",
             width: "100%", padding: "22px 24px",
-            background: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)",
+            background: "var(--gradient-ai)",
             border: "none", borderRadius: "var(--radius-lg)",
             cursor: "pointer", color: "#fff",
             boxShadow: "var(--shadow-md)",
