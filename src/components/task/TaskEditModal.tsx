@@ -10,7 +10,7 @@ import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
-  getAssigneeIds, buildTfLabelMap,
+  getAssigneeIds, buildTfLabelMap, suppressOverdue,
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
@@ -260,9 +260,9 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   if (!originalTask) return null;
 
   const project = projects.find(p => p.id === originalTask.project_id);
-  const isOverdue = !!form.due_date && form.due_date < todayStr() && form.status !== "done";
+  const isOverdue = !!form.due_date && form.due_date < todayStr() && !suppressOverdue(form.status);
 
-  const statusArr: Task["status"][] = ["todo", "in_progress", "done"];
+  const statusArr: Task["status"][] = ["todo", "in_progress", "done", "on_hold", "cancelled"];
 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
@@ -355,7 +355,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
 
           {/* ステータス（セグメントコントロール） */}
           <FieldSection label="ステータス">
-            <div style={{ display: "flex", gap: "4px" }}>
+            <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
               {statusArr.map(s => {
                 const cfg = TASK_STATUS_STYLE[s];
                 const isActive = form.status === s;
@@ -493,7 +493,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 const dep = predecessorDeps.find(d => d.predecessor_task_id === t.id);
                 return (
                   <span key={t.id} style={chipStyle}>
-                    <span aria-hidden>{t.status === "done" ? "✅" : "⏳"}</span>
+                    <span aria-hidden>{t.status === "done" ? "✅" : t.status === "cancelled" ? "🚫" : t.status === "on_hold" ? "⏸" : "⏳"}</span>
                     {t.name}
                     <button
                       onClick={() => dep && removeTaskDependency(dep.id, currentUser.id)}

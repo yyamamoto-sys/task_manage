@@ -4,7 +4,7 @@
 import type { Member, Project, Task, ToDo, Milestone, TaskDependency } from "../../lib/localData/types";
 import { toDateStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
-import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
+import { getAssigneeIds, TASK_STATUS_STYLE, suppressOverdue } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { applyDependencyOrderWithinSiblings, taskProgressFraction } from "../../lib/taskHierarchy";
@@ -61,8 +61,8 @@ export function GanttMobileView({
 
   const renderCard = (task: Task) => {
     const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-    const isDone = task.status === "done";
-    const isOverdue = !!task.due_date && task.due_date < todayStrVal && !isDone;
+    const isDone = task.status === "done" || task.status === "cancelled";
+    const isOverdue = !!task.due_date && task.due_date < todayStrVal && !suppressOverdue(task.status);
     const statusColor = TASK_STATUS_STYLE[task.status].color;
     const isChanged = previewChangedTaskIds?.has(task.id);
     // 進捗フィル（デスクトップのTaskBarRowと同じ純粋関数）。カードには専用のバー要素が無いため、

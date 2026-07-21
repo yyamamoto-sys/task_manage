@@ -9,7 +9,7 @@ import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
-  getAssigneeIds, buildTfLabelMap,
+  getAssigneeIds, buildTfLabelMap, suppressOverdue,
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
@@ -274,7 +274,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const pj = projects.find(p => p.id === selectedTask.project_id);
   const isOverdue = !!sidebarForm.due_date
     && sidebarForm.due_date < todayStr()
-    && sidebarForm.status !== "done";
+    && !suppressOverdue(sidebarForm.status);
 
   // ===== 階層（親子関係） =====
   const children = childrenOf(allTasks, selectedTask.id);
@@ -419,12 +419,12 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       <div style={{ flex: 1, overflow: "auto", padding: "12px 12px 0" }}>
         {/* ステータス */}
         <SideLabel>ステータス</SideLabel>
-        <div style={{ display: "flex", gap: "4px", marginBottom: "12px" }}>
-          {(["todo", "in_progress", "done"] as const).map(s => (
+        <div style={{ display: "flex", gap: "4px", marginBottom: "12px", flexWrap: "wrap" }}>
+          {(["todo", "in_progress", "done", "on_hold", "cancelled"] as const).map(s => (
             <button key={s}
               onClick={() => setSidebarForm(f => f ? { ...f, status: s } : f)}
               style={{
-                flex: 1, padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
+                flex: "1 1 30%", padding: "5px 2px", fontSize: "10px", borderRadius: "var(--radius-md)",
                 fontWeight: sidebarForm.status === s ? "600" : "400",
                 background: sidebarForm.status === s ? TASK_STATUS_STYLE[s].bg : "transparent",
                 color: sidebarForm.status === s ? TASK_STATUS_STYLE[s].color : "var(--color-text-tertiary)",
@@ -656,7 +656,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
               const dep = predecessorDeps.find(d => d.predecessor_task_id === t.id);
               return (
                 <span key={t.id} style={chipStyle}>
-                  <span aria-hidden>{t.status === "done" ? "✅" : "⏳"}</span>
+                  <span aria-hidden>{t.status === "done" ? "✅" : t.status === "cancelled" ? "🚫" : t.status === "on_hold" ? "⏸" : "⏳"}</span>
                   {t.name}
                   <button
                     onClick={() => dep && removeTaskDependency(dep.id, currentUser.id)}

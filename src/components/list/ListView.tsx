@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
 import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
@@ -960,7 +960,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                     // 親のステータス・進捗は derivedByParentId から引く（参照安定＝React.memo が効く）
                     const derived = isParent ? derivedByParentId.get(task.id) : undefined;
                     const dispStatus = derived?.status ?? task.status;
-                    const isDone = dispStatus === "done";
                     return (
                       <ListMobileTaskRow
                         key={task.id}
@@ -971,7 +970,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         pj={pj}
                         assignees={assigneesByTaskId.get(task.id) ?? []}
                         dispStatus={dispStatus}
-                        isOverdue={!!(task.due_date && task.due_date < t0 && !isDone)}
+                        isOverdue={!!(task.due_date && task.due_date < t0 && !suppressOverdue(dispStatus))}
                         isChecked={selectedIds.has(task.id)}
                         isCollapsed={collapsedIds.has(task.id)}
                         prog={derived ?? null}
@@ -1203,7 +1202,7 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
   task, depth, parentNote, isParent, pj, assignees, dispStatus, isOverdue,
   isChecked, isCollapsed, prog, onOpen, onToggleSelect, onToggleCollapse,
 }: ListMobileTaskRowProps) {
-  const isDone = dispStatus === "done";
+  const isDone = dispStatus === "done" || dispStatus === "cancelled";
   // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
   // 状態は左カラーバーと文字スタイルで表現し、詳細はタップで TaskEditModal が開く。
   const statusColor = TASK_STATUS_STYLE[dispStatus].color;
@@ -1334,7 +1333,7 @@ const ListTaskRow = memo(function ListTaskRow({
   draggingId, saveTask, onRowClick, toggleSelect, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
-  const isDone = dispStatus === "done";
+  const isDone = dispStatus === "done" || dispStatus === "cancelled";
   const zebraBg = isEven ? "var(--color-bg-primary)" : "var(--color-bg-secondary)";
 
   // 【重要】強調表示（ドロップ位置・親子ライン等）はすべて box-shadow の inset で表現し、
@@ -1537,7 +1536,7 @@ const ListTaskRow = memo(function ListTaskRow({
         )}
         <InlineEditDate
           value={task.due_date}
-          isDone={isDone}
+          isDone={suppressOverdue(dispStatus)}
           onSave={due_date => saveTask({ ...task, due_date, updated_by: currentUser.id })}
         />
       </td>

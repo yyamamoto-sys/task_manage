@@ -17,7 +17,7 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo } from "../../lib/taskMeta";
+import { isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
@@ -1735,7 +1735,7 @@ export function GanttView({
                       {!isCollapsed && tasks.map(task => {
                         const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                         const due = toDate(task.due_date);
-                        const isOverdue = !!(due && due < today && task.status !== "done");
+                        const isOverdue = !!(due && due < today && !suppressOverdue(task.status));
                         return (
                           <GanttPersonLabelRow
                             key={task.id}
@@ -1997,8 +1997,8 @@ export function GanttView({
                           const effectiveTask = applyResizePreview(task, preview);
                           const due = toDate(effectiveTask.due_date);
                           const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                          const isDone = task.status === "done";
-                          const isOverdue = due && due < today && !isDone;
+                          const isDone = task.status === "done" || task.status === "cancelled";
+                          const isOverdue = due && due < today && !suppressOverdue(task.status);
                           const isStagnant = isTaskStagnant(task);
                           const pj = task.project_id ? projectById.get(task.project_id) : undefined;
                           const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
@@ -2157,8 +2157,8 @@ export function GanttView({
                       }
                       const due = toDate(effectiveTask.due_date);
                       const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                      const isDone = task.status === "done";
-                      const isOverdue = due && due < today && !isDone;
+                      const isDone = task.status === "done" || task.status === "cancelled";
+                      const isOverdue = due && due < today && !suppressOverdue(task.status);
                       const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
                       const isStagnant = isTaskStagnant(task);
                       // effectiveTask はバーの実描画範囲（親は子の最早〜最遅に上書き済み）なので
@@ -2239,8 +2239,8 @@ export function GanttView({
                       const effectiveTask = applyResizePreview(task, preview);
                       const due = toDate(effectiveTask.due_date);
                       const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                      const isDone = task.status === "done";
-                      const isOverdue = due && due < today && !isDone;
+                      const isDone = task.status === "done" || task.status === "cancelled";
+                      const isOverdue = due && due < today && !suppressOverdue(task.status);
                       const isStagnant = isTaskStagnant(task);
                       const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
                       const isHovered = hoveredTaskId === task.id;
