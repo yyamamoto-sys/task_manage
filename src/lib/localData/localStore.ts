@@ -38,6 +38,8 @@ const KEYS = {
   APP_MODE:            "plan_app_mode",
   SIDEBAR_COLLAPSED:   "sidebar_collapsed",
   CONSULT_PANEL_WIDTH: "consultation_panel_width",
+  /** AI相談パネルの「次の相談候補」折りたたみ開閉状態 */
+  CONSULT_FOLLOWUP_OPEN: "consult_followup_open",
   OKR_ACTIVE_TOOL:     "okr_active_tool",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",

@@ -9,8 +9,7 @@
 // ヘッダーをクリックすると候補ボタン群を展開する（トグル）。localStorageで開閉を記憶。
 
 import { useState } from "react";
-
-const LS_KEY = "consult_followup_open";
+import { KEYS } from "../../lib/localData/localStore";
 
 interface Props {
   suggestions: string[];
@@ -19,7 +18,7 @@ interface Props {
 
 export function FollowUpButtons({ suggestions, onSelect }: Props) {
   const [open, setOpen] = useState<boolean>(() => {
-    try { return localStorage.getItem(LS_KEY) === "1"; } catch { return false; }
+    try { return localStorage.getItem(KEYS.CONSULT_FOLLOWUP_OPEN) === "1"; } catch { return false; }
   });
 
   if (suggestions.length === 0) return null;
@@ -27,7 +26,7 @@ export function FollowUpButtons({ suggestions, onSelect }: Props) {
   const toggle = () => {
     setOpen(prev => {
       const next = !prev;
-      try { localStorage.setItem(LS_KEY, next ? "1" : "0"); } catch { /* ignore */ }
+      try { localStorage.setItem(KEYS.CONSULT_FOLLOWUP_OPEN, next ? "1" : "0"); } catch { /* ignore */ }
       return next;
     });
   };
