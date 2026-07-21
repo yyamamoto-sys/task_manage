@@ -39,13 +39,47 @@
 | データ基盤 | 2026-07-06 | 2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | 約3,426行 | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇 |
 | AI基盤 | 2026-07-21 | 2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠） |
 | 共通UI | 2026-07-17 | 2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | 約3,120行 | 既存表になし | 新規追加のCard/DangerZone/ShortcutsPanel/CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施 |
-| ユーティリティ/フック | 2026-07-06 | 2026-07-06（taskHierarchy統合・未使用変数スイープ） | 約2,042行（lib直下+hooks直下） | L3 Task.comment型統一（低優先・確認のみ） | selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
+| ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
 
 ### 巡回ルール
 - 次にどのユニットを触るか迷ったら、台帳で「最終点検日」が最古（または「未点検」）のユニットを優先する
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-21）巡回台帳の15回目の巡回：ユーティリティ/フック（ユニット全体）
+
+14回目終了時点で台帳を精査した結果、「App Shell」「B AI相談」「データ基盤」「ユーティリティ/フック」の
+4ユニットが最終点検日2026-07-06で並んでいたため、この中で規模が最小と見積もられた
+「ユーティリティ/フック」を選定。`docs/dev/module-map.md`定義の
+`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,docxText,lazyWithRetry,
+dialog,guestMode,mentions,i18n,lastUndoStore}` / `hooks/{useIsMobile,useTheme,useTypingEffect,
+useUndoStack,useT,useMentionNotifications}` のうち、`docxText.ts`（14回目・C会議読み込みで点検済み）・
+`guestMode.ts`（12回目・認証・入口で点検済み）を除外した実質12ファイル＋6フックを実測。
+
+**規模感の訂正**：台帳の旧記載「約2,042行」に対し、実測（点検対象ファイルのみ・`renderLinks.tsx`削除前）
+は約1,249行、削除後は**約1,167行**で、1セッション予算（700〜1,800行）に十分収まったため
+サブ領域分割はせず一度に全体点検した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **死蔵コード：taskHierarchy.tsの未使用export4件を削除** | `eligibleParentTasks`（2026-05-27の`5db39d8`で全PJ横断対応の`parentTaskCandidates`に置き換えられて以来、呼び出し元0件のまま2ヶ月弱残置。テストのみが参照していた）・`topLevelTasks`・`leafTasks`（いずれも2026-04-24の初回実装コミット`f13e267`で追加されて以来、テスト以外から一度も呼ばれていない）・`effectiveStatus`（2026-05-08の`80493da`パフォーマンス改善コミットで、O(n²)回避のため呼び出し元が`buildParentDerivedMap`経由に置き換えられ、以後は関数コメント内の言及以外は死蔵）の4関数を削除。「◯◯から△△へ移行した」系の履歴を`git log -S`で追跡して確認するパターンが今回も有効だった（14回目のAI抽出プロンプト文言追跡と同種の手法）。対応するテスト8件（`taskHierarchy.test.ts`）・`ListView.tsx`内の`effectiveStatus`を名指しした古いコメント1箇所も削除・修正 | ローカルコミット参照 |
+| **死蔵ファイル全体：renderLinks.tsx（30行）を削除** | 2026-05-24の`5d3fc05`で追加されたが、2026-05-28の`02a1b5e`（死にコード/未使用シンボルの一括除去コミット）で唯一の呼び出し元（`ListView.tsx`の未使用import）だけが削除され、ファイル本体の削除が漏れたまま2ヶ月弱放置されていた。全リポジトリ横断で import・呼び出しとも0件を確認し、ファイルごと削除。`docs/dev/module-map.md`のファイル一覧からも除去（`docs/REFACTORING.md`内の2026-04-25〜26付「完了済み」欄の当時の記録は事実の記録として削除せず残置） | ローカルコミット参照 |
+| **実バグ：mentionsEqualの集合比較ロジック** | `src/lib/mentions.ts`の`mentionsEqual(a, b)`は「配列の長さが同じ」を「同じ集合」の代理指標にし、かつ`a`だけをSet化して`b`の要素が含まれるかを一方向にしか確認していなかった。そのため `a=["a","b"]`・`b=["a","a"]`（重複混入）のような要素数が一致するが実際の集合が異なるケースを誤って「同じ」と判定してしまう设計だった。現状の唯一の呼び出し元（`TaskEditModal.tsx`の`finalized_mentions`変化判定）は両辺とも`extractMentions()`由来の重複排除済み配列のため実害は顕在化していなかったが、潜在バグとして純粋な集合比較（両辺をSet化し要素数と包含を確認）に修正。`mentions.ts`にテストが1件も無かったため`__tests__/mentions.test.ts`を新規作成（6テスト、うち1件は旧実装で実際に失敗することを確認した上で追加） | ローカルコミット参照 |
+| **ドキュメント乖離：CLAUDE.md Section 3-3のTask型定義が古いまま（L3の実態確認）** | 台帳の既知課題L3「Task.commentがstring\|undefinedかstringかの統一」を確認した結果、`src/lib/localData/types.ts`は初回コミット（`9aa7eb2`）から一貫して`comment: string`（非オプショナル）で統一されており、コード側の型は元々矛盾していなかった（DB側も`comment text NOT NULL DEFAULT ''`で一致）。混乱の実際の原因は**CLAUDE.md Section 3-3のTask interfaceドキュメントが`comment?: string`のまま古かったこと**、かつ同じ箇所の`status`が5値化（v2.74）後も3値のまま、`assignee_member_ids`（v2.24で追加）も未記載のままだったこと。L3は「コード上は解消済み」と判定し、CLAUDE.md側のドキュメント記述を実態（comment非オプショナル・status5値・assignee_member_ids追記）に合わせて修正 | ローカルコミット参照 |
+
+**観察のみ（次回候補にはしない）**：`htmlText.ts`の`htmlStringToText`は関数コメントで「テスト容易化のため分離」と明記されているにもかかわらず対応する専用テストファイルが存在しない（`extractHtmlText`経由の間接動作は本番コードで使われているため死蔵ではない。テスト未整備のみ。14回目の`meetingExtractor.ts`と同種の「設計判断を要しないテスト未整備」のため候補表には挙げない）。
+
+`errorMessage.ts`・`errorReporter.ts`（CLAUDE.md Section 15の実装当事者）は自己矛盾なし（`formatErrorForUser`がコード・詳細・ヒントを含めて整形する仕様どおりに実装されており、握りつぶしは無い）。`date.ts`・`i18n.ts`・`dialog.ts`・`lazyWithRetry.ts`・`lastUndoStore.ts`・`stats.ts`・全hooksはexhaustive-deps違反・正規表現エスケープミスとも無し（`useTypingEffect`/`useTheme`/`useIsMobile`の`useEffect`依存配列はいずれも正しい）。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 419件全通過（削除8件＋新規6件・純増-2＝421件では
+なく419件なのは、削除対象4関数のテストがtaskHierarchy.test.ts側で62→54に減った一方
+mentions.test.tsを新規追加した差分が相殺されたため。既存回帰なし）／`npx eslint src`は変更前と
+同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功。
+**これで「ユーティリティ/フック」ユニット（約1,167行）の点検が完了したため、台帳の「最終点検日」を
+2026-07-21に更新**（規模感も実測値に訂正・L3は解消済みとして既知課題欄から更新・備考欄に経緯を集約）。
 
 ---
 
