@@ -7,9 +7,11 @@ export function extractMentions(comment: string): string[] {
   return [...new Set(matches.map(m => m.slice(1)))];
 }
 
-/** 2つの mentions 配列が同じ集合かどうかを判定。 */
+/** 2つの mentions 配列が同じ集合かどうかを判定（重複・順序は無視）。 */
 export function mentionsEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
   const setA = new Set(a);
-  return b.every(x => setA.has(x));
+  const setB = new Set(b);
+  if (setA.size !== setB.size) return false;
+  for (const x of setA) if (!setB.has(x)) return false;
+  return true;
 }
