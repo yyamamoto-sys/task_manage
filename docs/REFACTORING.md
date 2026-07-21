@@ -25,7 +25,7 @@
 
 | ユニット | 最終点検日 | 最終リファクタ日 | 規模感（主要ファイル行数目安） | 既知の課題（既存の中優先度/低優先度/高リスク表と相互参照） | 備考 |
 |---|---|---|---|---|---|
-| App Shell | 2026-07-06 | 2026-07-06（`63259ab`App.tsxフック順序・`aa554e8`MainLayoutモバイルラボa11y修正） | 約2,290行（App/main/MainLayout） | 既存表になし | 07-06以降はNAV_ITEMS追加（workload等）等の機能追加のみで点検は入っていない |
+| App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
 | B AI相談 | 2026-07-06 | 2026-07-06（`69b5e52`exhaustive-deps実バグ修正／`d523586`未使用変数スイープ） | 約2,919行 | M10 ConsultationPanel整合性再確認（低優先） | — |
@@ -46,6 +46,45 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-21）巡回台帳の16回目の巡回：App Shell（ユニット全体）
+
+15回目終了時点で台帳を精査した結果、「App Shell」「B AI相談」「データ基盤」の3ユニットが
+最終点検日2026-07-06で並んでいたため、実測して比較した：
+- App Shell：`src/App.tsx`(287行)+`src/main.tsx`(18行)+`components/layout/MainLayout.tsx`(1,985行)＝
+  **約2,290行**（旧記載と一致・誤記なし）
+- B AI相談：`components/consultation/*`(2,949行)+`hooks/useAIConsultation.ts`(291行)+
+  `stores/consultSessionStore.ts`(66行)+`lib/ai/{payloadBuilder,systemPrompt,responseParser,
+  proposalMapper,applyProposal,inferConsultationType,sessionManager,undoApply,
+  chatHistoryStorage}.ts`(2,458行)+`hooks/useUndoStack.ts`(91行)＝**約5,855行**
+  （1セッション予算700〜1,800行を大幅超過。次回選定時はサブ領域分割が必須）
+- データ基盤：`lib/localData/{types,localStore}.ts`(448行)+`stores/appStore.ts`(1,324行)+
+  `context/AppDataContext.tsx`(57行)+`lib/supabase/{client,store,realtime,auth}.ts`(744行)＝
+  **約2,573行**（`appStore.ts`単体が1,324行と大きく、楽観ロック・依存ゲート等の実害が大きい
+  choke pointを含むため単独でも要注意）
+
+3つの中で最小かつ予算内に収まる「App Shell」を選定し、1セッションで全体点検した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **死蔵コード：`viewMode==="admin"`の描画分岐を削除** | `MainLayout.tsx`の`mainContent`内に`{viewMode === "admin" && <AdminView currentUser={currentUser} />}`という分岐が残っていたが、`git log`で追跡すると2026-04-30の`3da29da`（「管理画面をナビから外し、歯車アイコンの設定パネルに移行」）以降、`NAV_ITEMS`に`admin`は存在せず、`CommandPalette.tsx`の`VIEW_ACTIONS`にも`admin`は無く、`viewMode`初期化時に保存値が`"admin"`なら`"dashboard"`へフォールバックするガードまで入っていた。つまりこの分岐へ到達する経路がアプリ内のどこにも無い、約3ヶ月弱死蔵していたコードだった（ヘッダー・閉じるボタン・Suspenseラッパーも無い剥き出しの`AdminView`で、実際の設定画面オーバーレイ`adminOverlay`とは見た目も不整合）。「仕様変更後に死んだ選択肢」パターンの典型例として削除。`ViewMode`型自体（`"admin"`を含む）・`ComingSoon`の`admin`ラベルは、localStorage破損時の防御的フォールバック表示として意味があるため据え置き（型を削るのはより大きい変更のため次回候補） | ローカルコミット参照 |
+| **localStorageキーの直書きをKEYS定数に統一** | `Sidebar`コンポーネントの「プロジェクト」「OKRタスク」セクション開閉状態が`"sidebar_pj_open"`/`"sidebar_okr_open"`という文字列リテラルを直書きしていた。`localStore.ts`冒頭のコメントで明言されている「localStorageキーをこのファイルに一元化する」設計方針に唯一反していた箇所（他の全キーは`KEYS`経由）。`localStore.ts`の`KEYS`に`SIDEBAR_PJ_OPEN`/`SIDEBAR_OKR_OPEN`を追加し置き換え | ローカルコミット参照 |
+
+**観察のみ（次回候補にはしない）**：`App.tsx`・`MainLayout.tsx`とも`catch`ブロックはlocalStorage読み書き・メール自動補完のbest-effortフォールバックのみで、CLAUDE.md Section 15（ユーザー向けエラー表示）が対象とするユーザー操作起点のエラーではないため違反なし。`useEffect`依存配列はeslint`react-hooks/exhaustive-deps`(warn)で新規指摘0件（既存35件のベースラインに変化なし）。`ComingSoon`コンポーネントは`ViewMode`型に含まれる6値のうち5値（dashboard/kanban/gantt/list/workload）は専用分岐があり、残る`admin`はローカルの分岐削除後も型上は到達しうる（localStorage改ざん等の異常系のみ）ため、意図的な防御的フォールバックとして現状維持。`GanttView.tsx`/`GanttMobileView.tsx`の`setViewMode`はGantt内部の`"pj"|"person"`ローカルstateで、MainLayoutの`ViewMode`とは無関係の別概念（名前が同じだけで衝突なし・要修正なし）。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 419件全通過（本変更に伴う機能変更なし・テスト追加なし）／
+`npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／
+`npm run build`成功。**これで「App Shell」ユニット（約2,290行）の点検が完了したため、台帳の
+「最終点検日」を2026-07-21に更新**（規模感は実測一致で誤記なし）。
+
+次点検の最有力候補は「B AI相談」（最終点検日2026-07-06のまま・実測約5,855行のため次回はサブ領域
+分割必須。例：`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/
+`inferConsultationType`/`sessionManager`系と、`applyProposal`/`undoApply`/`useUndoStack`/
+`chatHistoryStorage`/`consultSessionStore`系で分ける等）。「データ基盤」（同じく2026-07-06・
+約2,573行）も僅差の候補だが、`appStore.ts`の楽観ロック・依存ゲート等は実害が大きいため触る場合は
+特に慎重な進行が必要。
 
 ---
 
