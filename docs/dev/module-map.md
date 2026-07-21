@@ -111,7 +111,7 @@ flowchart TD
 | **データ基盤** | 全データの単一の真実・永続化・競合制御・リアルタイム反映 | `lib/localData/{types,localStore}` / `stores/appStore` / `context/AppDataContext` / `lib/supabase/{client,store,realtime,auth}` ＋ エンティティ別store群 |
 | **AI基盤** | AI呼び出しの唯一のゲート＋使用量計上（APIキーはEdgeのみ） | `lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}` / `supabase/functions/ai-consult`（Edge） |
 | **共通UI** | 横断的に使うUI部品 | `components/common/*`（Toast, ConfirmModal, CustomSelect, MarkdownLite, ErrorBoundary, EmptyState, AIProgressLoader, FileAttachButton, Card/SummaryTile/SummaryRow, DangerZone, ShortcutsPanel, CommandPalette, Skeleton, InlineEdit{Text,Date,Assignee}, MentionTextarea, ...） |
-| **ユーティリティ/フック** | 日付・エラー整形・統計・タスク派生・権限(guestMode)・汎用hooks | `lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,docxText,renderLinks,lazyWithRetry,dialog,guestMode,mentions,i18n,lastUndoStore}` / `hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}` |
+| **ユーティリティ/フック** | 日付・エラー整形・統計・タスク派生・権限(guestMode)・汎用hooks | `lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,docxText,lazyWithRetry,dialog,guestMode,mentions,i18n,lastUndoStore}` / `hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}` |
 
 ---
 
