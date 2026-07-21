@@ -265,7 +265,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [allTasks, selectedProject, krTaskIds, filterStatus, filterHideDone, filterMyOnly, mineOnly, filterMember,
       filterThisWeek, filterPriority, searchText, sortKey, sortDir, currentUser.id, t0, t7, members]);
 
-  // 親タスクの導出ステータス・進捗（PC表の行ごとに effectiveStatus/parentProgress を呼ぶと
+  // 親タスクの導出ステータス・進捗（PC表の行ごとに rollupStatus/parentProgress を呼ぶと
   // 呼ぶたびに childrenOf() が全タスクを走査する上、毎回新しいオブジェクトを返すため
   // React.memo の props 比較が効かなくなる。taskHierarchy.ts の buildParentDerivedMap で
   // 1回だけ集計し、Mapの値をそのまま props に渡すことで、filteredTasks が変わらない限り

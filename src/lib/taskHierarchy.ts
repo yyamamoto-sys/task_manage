@@ -143,27 +143,6 @@ export function isParentTask(task: Task, tasks: Task[]): boolean {
 }
 
 /**
- * 子を持たないタスク（進捗集計の単位＝葉）。
- * フラットデータでは誰も子を持たないので「葉=全非削除タスク」になり、
- * done/total 集計が従来と完全一致する。
- */
-export function leafTasks(tasks: Task[]): Task[] {
-  // 子を持つ親IDの集合を先に作る（O(n) 化）
-  const parentIds = new Set<string>();
-  for (const t of tasks) {
-    if (!t.is_deleted && t.parent_task_id) parentIds.add(t.parent_task_id);
-  }
-  return tasks.filter(t => !t.is_deleted && !parentIds.has(t.id));
-}
-
-/** 最上位タスク（parent_task_id 無し・非削除） */
-export function topLevelTasks(tasks: Task[]): Task[] {
-  return tasks
-    .filter(t => !t.is_deleted && t.parent_task_id == null)
-    .sort(sortByOrder);
-}
-
-/**
  * 子が「全員終わっている」か（done または cancelled のみで構成、かつ1件以上）。
  * rollupStatus・computeParentAutoStatus の共通コア判定（CLAUDE.md 2026-07-21
  * 親タスク自動完了）。cancelled は「実施しないと決めて終わった」ので done と同じ
@@ -218,14 +197,6 @@ export function parentProgress(
   return { done, total, pct: calcProgressPct(done, total) };
 }
 
-/**
- * ある task の表示用ステータス（親なら導出・子無しなら自身）。
- * rollupStatus と同義だが、呼び出し意図を明確にするための薄いラッパ。
- */
-export function effectiveStatus(task: Task, tasks: Task[]): Task["status"] {
-  return rollupStatus(task, tasks);
-}
-
 export interface ParentDerived {
   status: Task["status"];
   done: number;
@@ -258,31 +229,6 @@ export function buildParentDerivedMap(tasks: Task[]): Map<string, ParentDerived>
     result.set(parentId, { status, done, total, pct: calcProgressPct(done, total) });
   }
   return result;
-}
-
-/**
- * PJ内で親に指定できる候補（2階層固定）。
- * - projectId が null → []（親子は同一PJ内のみ）
- * - 最上位タスク（parent_task_id 無し）のみを候補にする
- * - forTaskId（自分自身）は除外
- * - 子を持つタスクも除外しない…のではなく「孫禁止」のため、
- *   ここでは「子を持てる＝最上位」を候補に出す。小タスク（親持ち）は候補に出さない。
- *   （= forTaskId 自身と、親を持つ小タスクを除いた最上位タスク）
- */
-export function eligibleParentTasks(
-  tasks: Task[],
-  projectId: string | null,
-  forTaskId?: string,
-): Task[] {
-  if (projectId == null) return [];
-  return tasks
-    .filter(t =>
-      !t.is_deleted &&
-      t.project_id === projectId &&
-      t.parent_task_id == null &&   // 最上位のみ（小タスクは親になれない＝孫禁止）
-      t.id !== forTaskId,           // 自分自身を除外
-    )
-    .sort(sortByOrder);
 }
 
 /**
@@ -370,7 +316,7 @@ export function buildProgressFractionMap(tasks: Task[]): Map<string, number> {
  * 単純に `status === "done"` のタスクを消すと、未完了の子を1件でも持つ親タスクまで
  * 一緒に消えてしまい、子だけが孤立表示される不整合が起きる。これを避けるため、
  * 判定は buildParentDerivedMap による実効ステータス（親＝子から算出したロールアップ、
- * 葉＝自身の status）で行う（effectiveStatus と同じ考え方を、O(n²) を避けて一括で適用する）。
+ * 葉＝自身の status）で行う（rollupStatus と同じ考え方を、O(n²) を避けて一括で適用する）。
  *
  * 渡された tasks 配列の中だけで親子関係が完結する前提（呼び出し側は mineOnly 等の表示
  * スコープを既に適用した「同じ配列」を渡すこと＝GanttView の allTasks がそれに当たる）。

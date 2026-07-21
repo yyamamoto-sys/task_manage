@@ -3,12 +3,8 @@ import type { Task, TaskDependency } from "../localData/types";
 import {
   childrenOf,
   isParentTask,
-  leafTasks,
-  topLevelTasks,
   rollupStatus,
   parentProgress,
-  effectiveStatus,
-  eligibleParentTasks,
   parentTaskCandidates,
   buildParentDerivedMap,
   computeParentAutoStatus,
@@ -83,7 +79,7 @@ describe("childrenOf：display_order→created_at 順で非削除の子のみ", 
   });
 });
 
-describe("isParentTask / leafTasks", () => {
+describe("isParentTask", () => {
   const tasks: Task[] = [
     mk({ id: "p" }),
     mk({ id: "c1", parent_task_id: "p", status: "done" }),
@@ -95,27 +91,6 @@ describe("isParentTask / leafTasks", () => {
   it("子を持つタスクは親、持たないタスクは非親", () => {
     expect(isParentTask(tasks[0], tasks)).toBe(true);   // p
     expect(isParentTask(tasks[3], tasks)).toBe(false);  // flat
-  });
-
-  it("leafTasks は親（子持ち）を除外し、子とフラットを返す", () => {
-    expect(leafTasks(tasks).map(t => t.id).sort()).toEqual(["c1", "c2", "flat"]);
-  });
-
-  it("フラットデータでは葉=全非削除タスク（現状一致の根拠）", () => {
-    const flat = [mk({ id: "a" }), mk({ id: "b" }), mk({ id: "c", is_deleted: true })];
-    expect(leafTasks(flat).map(t => t.id)).toEqual(["a", "b"]);
-  });
-});
-
-describe("topLevelTasks", () => {
-  it("parent_task_id 無し・非削除のみを order 順で返す", () => {
-    const tasks = [
-      mk({ id: "t2", display_order: 2 }),
-      mk({ id: "t1", display_order: 1 }),
-      mk({ id: "child", parent_task_id: "t1" }),
-      mk({ id: "del", is_deleted: true }),
-    ];
-    expect(topLevelTasks(tasks).map(t => t.id)).toEqual(["t1", "t2"]);
   });
 });
 
@@ -168,14 +143,6 @@ describe("rollupStatus：各パターン", () => {
       mk({ id: "cdel", parent_task_id: "p", status: "todo", is_deleted: true }),
     ];
     expect(rollupStatus(t[0], t)).toBe("done");
-  });
-
-  it("effectiveStatus は rollupStatus と同値", () => {
-    const t = [
-      mk({ id: "p", status: "todo" }),
-      mk({ id: "c1", parent_task_id: "p", status: "done" }),
-    ];
-    expect(effectiveStatus(t[0], t)).toBe(rollupStatus(t[0], t));
   });
 
   it("全 done/cancelled 混在（cancelled は done と同じ「終わった」扱い）→ done", () => {
@@ -318,34 +285,6 @@ describe("buildParentDerivedMap：rollupStatus/parentProgressの一括版", () =
       mk({ id: "cdel", parent_task_id: "p", status: "todo", is_deleted: true }),
     ];
     expect(buildParentDerivedMap(t).get("p")).toEqual({ status: "done", done: 1, total: 1, pct: 100 });
-  });
-});
-
-describe("eligibleParentTasks：2階層制約", () => {
-  const tasks: Task[] = [
-    mk({ id: "top1", project_id: "pj1", display_order: 1 }),
-    mk({ id: "top2", project_id: "pj1", display_order: 2 }),
-    mk({ id: "child1", project_id: "pj1", parent_task_id: "top1" }),
-    mk({ id: "otherpj", project_id: "pj2" }),
-    mk({ id: "del", project_id: "pj1", is_deleted: true }),
-  ];
-
-  it("projectId が null なら空配列（親子は同一PJ内のみ）", () => {
-    expect(eligibleParentTasks(tasks, null)).toEqual([]);
-  });
-
-  it("同一PJの最上位タスクのみを候補に出す（小タスク=親持ちは除外＝孫禁止）", () => {
-    expect(eligibleParentTasks(tasks, "pj1").map(t => t.id)).toEqual(["top1", "top2"]);
-  });
-
-  it("forTaskId（自分自身）は候補から除外する", () => {
-    expect(eligibleParentTasks(tasks, "pj1", "top1").map(t => t.id)).toEqual(["top2"]);
-  });
-
-  it("他PJ・削除済みは候補に含めない", () => {
-    const ids = eligibleParentTasks(tasks, "pj1").map(t => t.id);
-    expect(ids).not.toContain("otherpj");
-    expect(ids).not.toContain("del");
   });
 });
 
