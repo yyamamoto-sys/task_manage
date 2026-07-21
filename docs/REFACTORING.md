@@ -29,7 +29,7 @@
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
 | B AI相談 | 2026-07-06 | 2026-07-06（`69b5e52`exhaustive-deps実バグ修正／`d523586`未使用変数スイープ） | 約2,919行 | M10 ConsultationPanel整合性再確認（低優先） | — |
-| C 会議読み込み | 2026-07-06 | 2026-07-06（a11yスイープでMeetingImportPanelのドロップゾーン対応） | 約1,448行 | 既存表になし | 技術的負債の専用点検は未実施（a11y横断調査で軽く触れたのみ） |
+| C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手） |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
 | F 管理・設定 | 2026-07-19 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない** | 見た目/構造の刷新は完了したが、H1本体（機能分割）は未着手のまま |
@@ -48,6 +48,39 @@
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 
 ---
+
+## 完了済み（2026-07-21）巡回台帳の14回目の巡回：C 会議読み込み（ユニット全体）
+
+13回目終了時点で台帳を精査した結果、巡回台帳制度創設（2026-07-21）以前の横断スイープ実績により
+「App Shell」「B AI相談」「C 会議読み込み」「データ基盤」「ユーティリティ/フック」の5ユニットが
+最終点検日2026-07-06で並んでいたため、この中で規模が最小の「C 会議読み込み」を選定。
+`docs/dev/module-map.md`定義の`components/meeting/MeetingImportPanel`（実測1,243行）＋
+`lib/ai/meetingExtractor.ts`（実測210行）＋`lib/docxText.ts`（実測57行）＝合計約1,510行を
+1セッションで全体点検した（台帳の旧記載「約1,448行」は近似値だったため実測値に訂正。AI基盤
+（13回目）ほどの大幅な誤記ではなかった）。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **AIプロンプトと実ペイロードの乖離（実害小・修正）** | `meetingExtractor.ts`のSYSTEM_PROMPTが「日付を決める際は`context.monday_anchors`（月曜日リスト）を参照すること」という指示文になっていたが、実際に送信するJSON（`extractMeetingData`内の`JSON.stringify({...})`）は`monday_anchors`をトップレベルに持つフラット構造で、`context`というラップは存在しない。`payloadBuilder.ts`のAIConsultationPayload（`context`配下に`monday_anchors`を持つ設計。CLAUDE.md Section 6-3）由来の言い回しが、そのままコピーされて本ファイル・`krSessionExtractor.ts`（D OKR）・`todoDecomposeClient.ts`（F管理設定）の3ファイルに広がっていた（`grep`で確認）。同じ問題がD/F側にも残っているが、それらは既に点検済みユニットのため今回はC会議読み込みの担当分＝`meetingExtractor.ts`のみ修正し、D/Fは対象外（次回そのユニットが巡回対象になった際の参考情報として記録のみ）。実害は限定的（AIは実際に渡されたJSONのキー名を見て判断するため）だが、指示文と実データの不整合を解消 | `d6e4304` |
+| **重複ロジック＋design tokenハードコード＋ラベル不整合（実害小・修正）** | `MeetingImportPanel.tsx`の`STATUS_OPTIONS`/`PRIORITY_OPTIONS`が、ラベル・色を独自に生の16進数でハードコードしていた。`taskMeta.ts`（ステータス・優先度のラベル/色を管理する単一の真実源。リスト/カンバン等アプリ全体が参照）と比較した結果、①ステータス「todo」のラベルが本ファイルだけ「未着手」（他画面は`TASK_STATUS_LABEL`由来の「ToDo」で統一）とズレていた ②色がCSS変数（design token）ではなく直書き16進数で、Section 8「カラーはvar(--color-*)で管理・ハードコード禁止」に抵触 ③`StatusDraftCard`の選択中背景色は`` `${opt.color}18` ``という16進数へのアルファ値連結ハックで実装されており、`var(...)`関数呼び出しの文字列には使えず、ダークモード対応もされていなかった ④`PRIORITY_OPTIONS`の`color`フィールドは定義されているだけで呼び出し元がコードベース内に0件の死蔵フィールドだった。`taskMeta.ts`の`TASK_STATUS_LABEL`/`TASK_STATUS_STYLE`/`TASK_PRIORITY_LABEL`から動的に生成する方式に変更し、選択中背景色は`TASK_STATUS_STYLE`が既に持つtoken化済みの`bg`値をそのまま使うよう修正（アルファ連結ハックを解消） | `db4fc6f` |
+| **アプリ内ヘルプの実態乖離（実害あり・修正）** | `docs/guides/02_modes/meeting-import.md`が「ファイル添付（PDF・Word・VTT・画像 OK）」と案内していたが、`git log`で追跡すると本機能（`MeetingImportPanel.tsx`）は初回実装から一度も画像ファイル（PNG/JPG等）の添付に対応しておらず（`accept`属性・`handleFile`の各分岐とも画像mimeタイプが無い）、当初からガイドの記述が事実と異なっていたと判明。同じAIツール内の「相談」モード（`ConsultationPanel`）が使う`FileAttachButton.tsx`は画像対応しているが、会議モードは`MeetingImportPanel`独自の別実装のため対応形式が異なる（役割混同に注意、と同ガイド内で既に案内されている「OKRセッションとは別物」の注意書きと同種の混同ポイント）。実際に画像を添付しようとしたユーザーはファイルが無言でテキストとして誤読され込まれる（`FileReader.readAsText`）ため実害があると判断し、実際の対応形式（PDF・Word(.docx)・VTT/SRT・HTML・テキスト）に修正し画像非対応を明記。D OKR（11回目）・認証・入口（12回目）に続き、今回もこのパターン（仕様と乖離したアプリ内ヘルプ）を発見 | `ffcf089` |
+
+`MeetingImportPanel.tsx`本体はESLintクリーン（既存の`label-has-associated-control` 1件＝
+`StatusDraftCard`のcheckbox+説明文ラベルはM15記載の既知のa11yバックログと同種・修正対象外）。
+`handleFile`/`handleAnalyze`/`handleApply`の3つの`useCallback`は依存配列に漏れなし、`any`型なし。
+`docxText.ts`の正規表現（`decodeXmlEntities`のエンティティ置換順序・段落/改行抽出）はエスケープ
+ミスなし（`&amp;`を最後に置換する順序は二重エンコード文字列を正しく1段階だけ復号するための
+意図的な順序と確認）。`meetingExtractor.ts`の`parseTranscript`（VTT/SRT/プレーンテキストの
+簡易パーサー）・`extractMeetingData`とも呼び出し元は`MeetingImportPanel.tsx`のみで死蔵エクスポート
+なし。`meetingExtractor.ts`・`docxText.ts`にはユニットテストが1件も無い（`src/lib/ai/__tests__`・
+`src/lib/__tests__`のいずれにも対応するテストファイルが存在しない）が、設計判断を要する項目では
+なく単なるテスト未整備のため次回候補には挙げず観察のみに留めた。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 421件全通過（既存回帰なし。UI表示ロジック＋
+プロンプト文言＋ドキュメントの変更のみのため新規テスト無し）／`npx eslint src`は変更前と同じ
+35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功。
+**これで「C 会議読み込み」ユニット（約1,510行）の点検が完了したため、台帳の「最終点検日」を
+2026-07-21に更新**（規模感も実測値に訂正・備考欄も経緯を集約）。
 
 ## 完了済み（2026-07-21）巡回台帳の13回目の巡回：AI基盤（ユニット全体）
 
