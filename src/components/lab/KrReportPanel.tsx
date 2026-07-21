@@ -280,7 +280,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       showToast("Teamsに送信しました");
     } catch (e) {
-      showToast(`Teams送信エラー: ${e instanceof Error ? e.message : String(e)}`, "error");
+      showToast(formatErrorForUser("Teams送信に失敗しました", e), "error");
     } finally {
       setTeamsSending(false);
     }

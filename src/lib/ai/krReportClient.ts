@@ -11,7 +11,6 @@ import { KR_REPORT_SYSTEM_PROMPTS, REPORT_HTML_WRAPPER } from "./krReportPrompt"
 
 export interface KrReportResult {
   html: string;
-  usage: { input_tokens: number; output_tokens: number };
 }
 
 export async function callKrReportAI(
@@ -31,8 +30,5 @@ export async function callKrReportAI(
   const title = `KRレポート｜${context.kr_title}｜${context.today}｜${modeLabel}`;
   const html = REPORT_HTML_WRAPPER(text, title);
 
-  return {
-    html,
-    usage: res.usage ?? { input_tokens: 0, output_tokens: 0 },
-  };
+  return { html };
 }
