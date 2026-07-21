@@ -1992,7 +1992,7 @@ interface Task {
   project_id: string | null; // ← NULL許可（ToDo単独紐づけの場合はnull）
   todo_ids: string[];        // ← ToDoへの紐づき（複数可・任意）。project_idと併用可
   assignee_member_id: string;        // DBの主FK（先頭1人）
-  assignee_member_ids: string[];     // UI専用。複数担当者。fetchAllData で正規化（v2.24）
+  assignee_member_ids: string[];     // UI専用。複数担当者。fetchCriticalData で正規化（v2.24）
   status: 'todo' | 'in_progress' | 'done' | 'on_hold' | 'cancelled'; // 5値（v2.74で保留/中止を追加）
   priority?: 'high' | 'mid' | 'low';
   start_date?: Date;
@@ -2706,7 +2706,7 @@ src/
 │   │   └── linkDirection.ts      # B5：resolveLinkDirection（ガント上のドラッグ結線の先行/後続解決・純粋関数）
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
-│       ├── auth.ts               # セッション取得（getSupabaseSession）
+│       ├── auth.ts               # セッション取得（getSession）
 │       ├── store.ts              # 低レベル CRUD + saveWithLock（楽観ロック）+ ConflictError
 │       └── quarterPlanStore.ts   # クォーター計画保存（Phase 1: localStorage、Supabase移行準備済み）
 ├── context/

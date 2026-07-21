@@ -7,9 +7,9 @@
 | ファイル | 役割 |
 |---|---|
 | `client.ts` | Supabaseクライアント生成。**ゲスト時は from(table).insert/update/upsert/delete をProxyでブロック**（[[guestMode]]） |
-| `store.ts` | 低レベルCRUD。`saveWithLock`（楽観ロック）＋`ConflictError`、各 `upsertX`/`softDeleteX`、`fetchAllData` |
-| `realtime.ts` | tasks/projects等の変更購読（1チャンネル相乗り） |
-| `auth.ts` | セッション取得・匿名認証 |
+| `store.ts` | 低レベルCRUD。`saveWithLock`（楽観ロック）＋`ConflictError`、各 `upsertX`/`softDeleteX`、`fetchCriticalData`/`fetchOkrData`（2フェーズ取得） |
+| `realtime.ts` | 主要11テーブルの変更購読（1チャンネル相乗り。`App.tsx`が`applyRemoteChange`で購読開始） |
+| `auth.ts` | メール/パスワード認証（サインイン・サインアップ・セッション取得） |
 | `krSessionStore` `krMeetingNoteStore` `krReportStore` `okrAnalysisStore` `projectAnalysisStore` `quarterPlanStore` | OKR/分析系のエンティティ別store |
 
 ## 改修・バグ探しの注意点（落とし穴）

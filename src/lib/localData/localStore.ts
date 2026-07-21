@@ -81,8 +81,6 @@ export const LS_KEY = {
   consultationHistory: (userId: string) => `consultation_history_v1_${userId}`,
   /** KR なぜなぜサマリ（KR ごとに保存） */
   krWhySummary:        (krId: string) => `okr_why_${krId}`,
-  /** KR レポート（KR × モード ごとに保存） */
-  krReport:            (krId: string, mode: string) => `okr_report_${krId}_${mode}`,
   /** クォーター計画（KR × クォーター ごとに保存。Phase 1 用 localStorage） */
   quarterPlan:         (krId: string, quarter: string) => `okr_qplan_${krId}_${quarter}`,
   /** 期限のブラウザ通知：当日に通知済みのタスクID（ユーザーごと・二重通知防止） */
