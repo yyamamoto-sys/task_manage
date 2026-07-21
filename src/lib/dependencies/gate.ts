@@ -9,7 +9,10 @@
 import type { Task, TaskDependency } from "../localData/types";
 
 /**
- * taskId の未完了（status !== "done"）かつ非削除の先行タスクを返す。
+ * taskId の未完了かつ非削除の先行タスクを返す。
+ * 「完了扱い」＝ done または cancelled（方針転換等で中止＝もう実施しないタスクは、後続を
+ * ブロックする意味が無いため done と同じ扱いにする）。on_hold（保留）は引き続き未完了扱い
+ * （後続をブロックする＝再開されるまで先行が終わっていないのと同じ状態）。
  * 依存自体が論理削除されている行（is_deleted）は無視する。
  */
 export function getIncompletePredecessors(
@@ -23,7 +26,9 @@ export function getIncompletePredecessors(
   if (predecessorIds.length === 0) return [];
 
   const idSet = new Set(predecessorIds);
-  return tasks.filter(t => idSet.has(t.id) && !t.is_deleted && t.status !== "done");
+  return tasks.filter(t =>
+    idSet.has(t.id) && !t.is_deleted && t.status !== "done" && t.status !== "cancelled"
+  );
 }
 
 /** 未完了の先行タスク名を「」で連結した文字列（トースト表示用） */

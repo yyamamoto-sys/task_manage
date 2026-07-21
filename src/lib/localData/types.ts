@@ -161,7 +161,8 @@ export interface Task {
   todo_ids: string[];        // UI専用。DB は todo_id（単数）。fetchAllData で正規化。
   assignee_member_id: string;          // DBの主FK（先頭1人）
   assignee_member_ids: string[];       // UI専用。複数担当者。fetchAllData で正規化。
-  status: "todo" | "in_progress" | "done";
+  /** on_hold=保留（一旦停止・将来また検討する可能性あり）、cancelled=中止（方針転換等でもう実施しない） */
+  status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   priority: "high" | "mid" | "low" | null;
   start_date: string | null; // 開始日（任意）
   due_date: string | null;

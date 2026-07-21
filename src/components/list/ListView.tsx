@@ -38,7 +38,7 @@ type SortDir = "asc" | "desc";
 type DropZone = "before" | "nest" | "after";
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
-const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, done: 2 };
+const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, on_hold: 2, done: 3, cancelled: 4 };
 
 /** 行のうち上30%/下30%＝before/after（並び替え）、中央40%＝nest（子にする）。
  *  ドロップ先が既に子タスクの場合は「孫禁止」のため中央帯を作らず上下半分でbefore/afterのみにする。 */
@@ -240,10 +240,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         return (a.display_order ?? 0) - (b.display_order ?? 0)
           || (a.created_at ?? "").localeCompare(b.created_at ?? "");
       }
-      // 完了は常に下に。sortKey=status のときは既存ロジック（昇順/降順）を尊重し優先しない
+      // 完了・中止は常に下に（中止も「もう動かない仕事」としてdoneと同じ扱い）。
+      // 保留(on_hold)は「まだ動きうる仕事」のため沈めない。
+      // sortKey=status のときは既存ロジック（昇順/降順）を尊重し優先しない
       if (sortKey !== "status") {
-        const aDone = a.status === "done" ? 1 : 0;
-        const bDone = b.status === "done" ? 1 : 0;
+        const aDone = a.status === "done" || a.status === "cancelled" ? 1 : 0;
+        const bDone = b.status === "done" || b.status === "cancelled" ? 1 : 0;
         if (aDone !== bDone) return aDone - bDone;
       }
       let va: string|number = "", vb: string|number = "";
@@ -427,7 +429,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag, projectId: null as string | null }] : [];
       return [...tagGroups, ...noTagGroup];
     }
-    return (["in_progress", "todo", "done"] as const)
+    return (["in_progress", "todo", "on_hold", "done", "cancelled"] as const)
       .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s), projectId: null as string | null }))
       .filter(g => g.tasks.length > 0);
   }, [filteredTasks, groupBy, projects, members, todos]);
@@ -764,7 +766,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               { value: "all", label: "状態：すべて" },
               { value: "todo", label: "ToDo" },
               { value: "in_progress", label: "進行中" },
+              { value: "on_hold", label: "保留" },
               { value: "done", label: "完了" },
+              { value: "cancelled", label: "中止" },
             ]}
             style={{ width: "130px" }} />
 

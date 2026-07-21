@@ -1,7 +1,8 @@
 // src/lib/gantt/overload.ts
 //
 // 【設計意図】人別ガントビューの過負荷（オーバーアロケーション）可視化。
-// あるメンバーが同時に抱えるアクティブ（done以外）タスクの数が閾値を超える日を「過負荷日」とし、
+// あるメンバーが同時に抱えるアクティブ（todo/in_progress。done・cancelled・on_holdは除く）
+// タスクの数が閾値を超える日を「過負荷日」とし、
 // 連続する過負荷日をひとつの区間にまとめて返す。工数（estimated_hours）は入力が疎なため、
 // 件数ベース（同時に重なっているタスク数）を判定の主軸にする（CLAUDE.md方針）。
 //
@@ -10,6 +11,7 @@
 
 import type { Task } from "../localData/types";
 import { toDate, toDateStr, addDays } from "../date";
+import { isActiveTaskStatus } from "../taskMeta";
 
 /** 既定の過負荷閾値：同時アクティブタスク数がこれを超えたら過負荷（4件以上で過負荷＝3件以下は許容）。 */
 export const OVERLOAD_THRESHOLD_DEFAULT = 3;
@@ -45,7 +47,7 @@ export function computeOverloadRanges(
 
   const dayCounts = new Map<string, number>();
   for (const task of memberActiveTasks) {
-    if (task.is_deleted || task.status === "done") continue;
+    if (task.is_deleted || !isActiveTaskStatus(task.status)) continue;
     const due = toDate(task.due_date ?? null);
     if (!due) continue;
     const start = toDate(task.start_date ?? null);

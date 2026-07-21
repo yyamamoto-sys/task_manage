@@ -28,7 +28,7 @@ interface GNode {
   vy: number;
   pinned: boolean;
   // task固有フィールド（typeが"task"の時のみ使用）
-  taskStatus?: "todo" | "in_progress" | "done";
+  taskStatus?: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   taskDueDate?: string | null;
   taskAssigneeIds?: string[];
 }
@@ -57,7 +57,7 @@ const EDGE_COLOR: Record<string, string> = {
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  todo: "未着手", in_progress: "進行中", done: "完了",
+  todo: "未着手", in_progress: "進行中", done: "完了", on_hold: "保留", cancelled: "中止",
 };
 
 function getNodeColor(node: GNode, todayStr: string): string {

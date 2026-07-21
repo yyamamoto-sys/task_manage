@@ -21,6 +21,29 @@ export function isAssignedTo(
 }
 
 /**
+ * 「アクティブ（作業中）」ステータスかどうか。todo・in_progress のみ true。
+ * done（完了）・cancelled（中止）・on_hold（保留）は false。
+ * ワークロード集計・過負荷計算・クリティカルパスのノード除外・期限アラートの対象判定で
+ * 共有する「アクティブ」の単一の定義（CLAUDE.md 2026-07-21 ステータス拡張）。
+ */
+export function isActiveTaskStatus(status: Task["status"]): boolean {
+  return status === "todo" || status === "in_progress";
+}
+
+/** 中止・保留（＝実質的に動いていない仕事）かどうか。done は含まない（done判定は別途行うこと）。 */
+export function isPausedOrCancelledStatus(status: Task["status"]): boolean {
+  return status === "cancelled" || status === "on_hold";
+}
+
+/**
+ * 期限超過の赤字強調を抑制すべきステータスか（完了・中止・保留）。
+ * 中止・保留になったタスクを「期限超過」として騒がせないための共通判定。
+ */
+export function suppressOverdue(status: Task["status"]): boolean {
+  return status === "done" || isPausedOrCancelledStatus(status);
+}
+
+/**
  * TF.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ。
  * 例：KR1 配下の TF番号 1 → "TF1-1"
  */
@@ -38,12 +61,18 @@ export const TASK_STATUS_LABEL: Record<Task["status"], string> = {
   todo:        "ToDo",
   in_progress: "進行中",
   done:        "完了",
+  on_hold:     "保留",
+  cancelled:   "中止",
 };
 
 export const TASK_STATUS_STYLE: Record<Task["status"], { bg: string; color: string; border: string }> = {
-  todo:        { bg: "var(--color-bg-tertiary)",  color: "var(--color-text-secondary)", border: "var(--color-border-primary)" },
-  in_progress: { bg: "var(--color-bg-info)",      color: "var(--color-text-info)",      border: "var(--color-border-info)" },
-  done:        { bg: "var(--color-bg-success)",   color: "var(--color-text-success)",   border: "var(--color-border-success)" },
+  todo:        { bg: "var(--color-bg-tertiary)",   color: "var(--color-text-secondary)", border: "var(--color-border-primary)" },
+  in_progress: { bg: "var(--color-bg-info)",       color: "var(--color-text-info)",      border: "var(--color-border-info)" },
+  done:        { bg: "var(--color-bg-success)",    color: "var(--color-text-success)",   border: "var(--color-border-success)" },
+  // 保留＝オレンジ（警告系。doneの緑・in_progressの青と混同しない）
+  on_hold:     { bg: "var(--color-bg-warning)",    color: "var(--color-text-warning)",   border: "var(--color-border-warning)" },
+  // 中止＝グレー（無彩色。todoのグレーより一段沈んだtertiaryトークンで見分ける・UI側で取り消し線も併用）
+  cancelled:   { bg: "var(--color-bg-secondary)",  color: "var(--color-text-tertiary)",  border: "var(--color-border-secondary)" },
 };
 
 export const TASK_PRIORITY_LABEL: Record<string, string> = {

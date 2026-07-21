@@ -26,7 +26,7 @@ export interface ProjectAnalysisInput {
   };
   tasks: {
     name: string;
-    status: "todo" | "in_progress" | "done";
+    status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
     priority: "high" | "mid" | "low" | null;
     assignee_short_name: string;
     start_date: string | null;
@@ -96,7 +96,7 @@ function buildUserMessage(input: ProjectAnalysisInput): string {
   if (input.tasks.length === 0) {
     lines.push("（タスクなし）");
   } else {
-    const statusJa: Record<string, string> = { todo: "未着手", in_progress: "進行中", done: "完了" };
+    const statusJa: Record<string, string> = { todo: "未着手", in_progress: "進行中", done: "完了", on_hold: "保留", cancelled: "中止" };
     const prioJa: Record<string, string> = { high: "高", mid: "中", low: "低" };
     for (const t of input.tasks) {
       const parts = [

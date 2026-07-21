@@ -36,7 +36,7 @@ export interface AITask {
   task_name: string;
   /** 担当者の short_name（複数の場合は「・」で結合） */
   assignee: string;
-  status: "todo" | "in_progress" | "done";
+  status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   priority: "high" | "mid" | "low" | null;
   /** 作業開始予定日（YYYY-MM-DD）。期日との組み合わせでスケジュール判断に使う */
   start_date: string | null;

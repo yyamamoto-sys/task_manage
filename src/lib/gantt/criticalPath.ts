@@ -21,6 +21,7 @@
 
 import type { Task, TaskDependency } from "../localData/types";
 import { toDate, diffDays } from "../date";
+import { isPausedOrCancelledStatus } from "../taskMeta";
 
 /** タスクのduration（暦日）。start/dueどちらか欠けていれば0（安全なフォールバック）。両方あれば最小1日。 */
 function taskDuration(task: Task): number {
@@ -37,9 +38,12 @@ function taskDuration(task: Task): number {
 export function computeCriticalTaskIds(tasks: Task[], dependencies: TaskDependency[]): Set<string> {
   const critical = new Set<string>();
 
+  // 中止(cancelled)・保留(on_hold)のタスクはクリティカルパス計算のノード集合から除外する
+  // （＝依存グラフ上「無かったこと」として扱う。is_deletedと同じ扱い。done は引き続き含める＝
+  // 完了済みタスクも実績としてパス長に寄与させる。2026-07-21 ステータス拡張）
   const taskById = new Map<string, Task>();
   for (const t of tasks) {
-    if (!t.is_deleted) taskById.set(t.id, t);
+    if (!t.is_deleted && !isPausedOrCancelledStatus(t.status)) taskById.set(t.id, t);
   }
   if (taskById.size === 0) return critical;
 

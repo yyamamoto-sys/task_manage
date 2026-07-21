@@ -31,6 +31,7 @@ import { TodoDecomposeModal } from "./TodoDecomposeModal";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { CustomSelect } from "../common/CustomSelect";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { Card, SummaryTile, SummaryRow } from "../common/Card";
 import { DangerZone, DangerAction } from "../common/DangerZone";
@@ -1210,11 +1211,9 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
                       <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "6px" }}>
                         {todoTasks.map(task => {
                           const m = members.find(mb => mb.id === task.assignee_member_id);
-                          const statusColors = { todo: "var(--color-text-tertiary)", in_progress: "var(--color-text-info)", done: "var(--color-text-success)" };
-                          const statusLabels = { todo: "未着手", in_progress: "進行中", done: "完了" };
                           return (
                             <div key={task.id} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "var(--color-bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)" }}>
-                              <span style={{ fontSize: "9px", color: statusColors[task.status], fontWeight: "500", flexShrink: 0 }}>{statusLabels[task.status]}</span>
+                              <span style={{ fontSize: "9px", color: TASK_STATUS_STYLE[task.status].color, fontWeight: "500", flexShrink: 0 }}>{TASK_STATUS_LABEL[task.status]}</span>
                               <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</span>
                               {m && <Avatar member={m} size={14} />}
                               {task.due_date && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{task.due_date.slice(5).replace("-", "/")}</span>}

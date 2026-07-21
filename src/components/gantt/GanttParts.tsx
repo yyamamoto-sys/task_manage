@@ -3,7 +3,7 @@
 
 import { memo } from "react";
 import type { Task, Member, Project } from "../../lib/localData/types";
-import { getAssigneeIds } from "../../lib/taskMeta";
+import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
 import { CRITICAL_COLOR } from "./ganttUtils";
@@ -433,8 +433,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         flex: 1,
-        textDecoration: task.status === "done" ? "line-through" : "none",
-        opacity: task.status === "done" ? 0.6 : 1,
+        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
       }}>
         {task.name}
       </span>
@@ -492,8 +492,8 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       <span style={{
         fontSize: "11px", color: "var(--color-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
-        textDecoration: task.status === "done" ? "line-through" : "none",
-        opacity: task.status === "done" ? 0.6 : 1,
+        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
       }}>
         {task.name}
       </span>
@@ -550,8 +550,8 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
         color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
         flex: 1,
-        textDecoration: task.status === "done" ? "line-through" : "none",
-        opacity: task.status === "done" ? 0.6 : 1,
+        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
       }}>
         {task.parent_task_id ? "↳ " : ""}{task.name}
       </span>
@@ -562,15 +562,10 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
 // ===== StatusDot =====
 
 export function StatusDot({ status }: { status: Task["status"] }) {
-  const colors = {
-    todo: "var(--color-border-secondary)",
-    in_progress: "var(--color-text-info)",
-    done: "var(--color-text-success)",
-  };
   return (
     <div style={{
       width: 6, height: 6, borderRadius: "50%",
-      background: colors[status], flexShrink: 0,
+      background: TASK_STATUS_STYLE[status].color, flexShrink: 0,
     }} />
   );
 }

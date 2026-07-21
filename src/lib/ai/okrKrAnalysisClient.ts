@@ -27,7 +27,7 @@ export interface KrAnalysisNoteEntry {
 }
 export interface KrAnalysisTask {
   name: string;
-  status: "todo" | "in_progress" | "done";
+  status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   priority: "high" | "mid" | "low" | null;
   assignee: string;
   due_date: string | null;
@@ -120,7 +120,7 @@ function buildUserMessage(input: KrAnalysisInput): string {
   const sigJa: Record<string, string> = { green: "🟢順調", yellow: "🟡注意", red: "🔴要対応" };
   const typeJa: Record<string, string> = { checkin: "チェックイン", win_session: "ウィン", freeform: "OKR議論" };
   const resJa: Record<string, string> = { achieved: "達成", partial: "一部達成", not_achieved: "未達" };
-  const statJa: Record<string, string> = { todo: "未着手", in_progress: "進行中", done: "完了" };
+  const statJa: Record<string, string> = { todo: "未着手", in_progress: "進行中", done: "完了", on_hold: "保留", cancelled: "中止" };
   const prioJa: Record<string, string> = { high: "高", mid: "中", low: "低" };
 
   L.push(`【今日】${input.today}`);

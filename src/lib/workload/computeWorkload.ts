@@ -12,7 +12,7 @@
 
 import type { Member, Task } from "../localData/types";
 import { active } from "../localData/localStore";
-import { getAssigneeIds } from "../taskMeta";
+import { getAssigneeIds, isActiveTaskStatus } from "../taskMeta";
 import { todayStr } from "../date";
 
 export interface MemberWorkloadRow {
@@ -32,17 +32,19 @@ export interface MemberWorkloadRow {
 
 /**
  * 指定メンバーの現在アクティブ（todo/in_progress）なタスク一覧を返す。
- * computeMemberWorkloadRows と同じ判定基準（is_deleted除外・done除外）を共有する単一の真実源。
- * ワークロード画面のメンバー詳細パネル（ドリルダウン）が実タスクを表示する際に使う。
+ * computeMemberWorkloadRows と同じ判定基準（is_deleted除外・done/cancelled/on_hold除外）を
+ * 共有する単一の真実源。ワークロード画面のメンバー詳細パネル（ドリルダウン）が実タスクを
+ * 表示する際に使う。中止(cancelled)・保留(on_hold)は「今動いていない仕事」としてワークロードの
+ * 対象から除外する（2026-07-21 ステータス拡張）。
  */
 export function getMemberActiveTasks(memberId: string, tasks: Task[]): Task[] {
-  return tasks.filter(t => !t.is_deleted && t.status !== "done" && getAssigneeIds(t).includes(memberId));
+  return tasks.filter(t => !t.is_deleted && isActiveTaskStatus(t.status) && getAssigneeIds(t).includes(memberId));
 }
 
 /**
  * メンバーごとのタスク負荷を集計する（純粋関数）。
- * done のタスクは集計対象外。1つのタスクに複数担当者がいる場合は各担当者の負荷に
- * 個別に積む（担当を分担しているわけではなく、全員がそのタスクを負っているとみなす）。
+ * done・cancelled・on_hold のタスクは集計対象外。1つのタスクに複数担当者がいる場合は
+ * 各担当者の負荷に個別に積む（担当を分担しているわけではなく、全員がそのタスクを負っているとみなす）。
  */
 export function computeMemberWorkloadRows(members: Member[], tasks: Task[]): MemberWorkloadRow[] {
   const today = todayStr();

@@ -205,7 +205,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   todo_id             text REFERENCES todos(id),       -- ToDo への紐づき（任意・単数互換）
   assignee_member_id  text REFERENCES members(id),     -- 互換目的の単数 FK
   assignee_member_ids text[] NOT NULL DEFAULT '{}',    -- 複数担当者対応
-  status              text NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','in_progress','done')),
+  status              text NOT NULL DEFAULT 'todo' CHECK (status IN ('todo','in_progress','done','on_hold','cancelled')),  -- on_hold/cancelledはmigration 20260721_add_task_status_hold_cancelled.sql
   priority            text CHECK (priority IN ('high','mid','low')),
   start_date          date,
   due_date            date,
