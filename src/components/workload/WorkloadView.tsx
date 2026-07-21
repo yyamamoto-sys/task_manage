@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
 import { computeMemberWorkloadRows, type MemberWorkloadRow } from "../../lib/workload/computeWorkload";
-import { getAssigneeIds } from "../../lib/taskMeta";
+import { getAssigneeIds, isActiveTaskStatus } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { CustomSelect } from "../common/CustomSelect";
 import { EmptyState } from "../common/EmptyState";
@@ -56,7 +56,10 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
     : 0;
   const overloadThreshold = Math.max(3, avgActive * 1.5);
 
-  const unassignedCount = filteredTasks.filter(t => !t.is_deleted && t.status !== "done" && getAssigneeIds(t).length === 0).length;
+  // 「アクティブ」の定義は computeMemberWorkloadRows と同じ（done・cancelled・on_hold は対象外。
+  // 中止・保留の未割当タスクを「未割当」として騒がせない＝2026-07-21ステータス拡張時に本行が
+  // 追従漏れしていたのを修正）
+  const unassignedCount = filteredTasks.filter(t => !t.is_deleted && isActiveTaskStatus(t.status) && getAssigneeIds(t).length === 0).length;
 
   const selectedMember = selectedMemberId ? memberById.get(selectedMemberId) : undefined;
 
