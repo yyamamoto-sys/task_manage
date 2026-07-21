@@ -114,6 +114,11 @@ const RESPONSE_FORMAT = `
 - 「〇〇プロジェクトのメンバーは？」→ 該当PJのタスクのassigneeを重複排除してリスト化
 - 「PJの進捗は？」→ 各プロジェクトの pj_progress（done/total）をパーセントで表示
 - 「何も進んでいないタスクは？」→ status=todo かつ due_date が近いタスクをリスト化
+- タスクの status は todo / in_progress / done / on_hold（保留） / cancelled（中止）の5種類。
+  「進んでいない」「残っている」「未完了」「期限が近い/超過」等の問いでは on_hold・cancelled は
+  基本的に含めない（保留・中止は今動いていない仕事であり、催促や未完了扱いをしないこと）。
+  ユーザーが明示的に「保留中の」「中止した」タスクを聞いた場合はそれぞれ status=on_hold /
+  status=cancelled で抽出する
 - descriptionには見やすいテキスト形式（箇条書き・表）で内容を書くこと
 - target_task_ids / target_pj_ids は空配列でよい
 - needs_confirmation=false、is_simulation=false にすること

@@ -22,6 +22,10 @@ export interface AllProjectsPjSummary {
     todo: number;
     in_progress: number;
     done: number;
+    /** 保留（一旦停止・将来また検討する可能性あり） */
+    on_hold: number;
+    /** 中止（方針転換等でもう実施しない） */
+    cancelled: number;
     overdue: number;
     no_due: number;
     stagnant: number;
@@ -87,7 +91,8 @@ function buildUserMessage(input: AllProjectsAnalysisInput): string {
     lines.push(`- ステータス：${pj.status}`);
     if (pj.start_date || pj.end_date) lines.push(`- 期間：${pj.start_date || "未設定"} 〜 ${pj.end_date || "未設定"}`);
     if (pj.owner_short_names.length) lines.push(`- オーナー：${pj.owner_short_names.join("、")}`);
-    lines.push(`- タスク：全${s.total}件（未着手:${s.todo} / 進行中:${s.in_progress} / 完了:${s.done}）`);
+    const pausedPart = (s.on_hold > 0 || s.cancelled > 0) ? ` / 保留:${s.on_hold} / 中止:${s.cancelled}` : "";
+    lines.push(`- タスク：全${s.total}件（未着手:${s.todo} / 進行中:${s.in_progress} / 完了:${s.done}${pausedPart}）`);
     if (s.overdue > 0)  lines.push(`- 期限超過：${s.overdue}件`);
     if (s.stagnant > 0) lines.push(`- 滞留（進行中のまま長期間更新なし）：${s.stagnant}件`);
     if (s.no_due > 0)   lines.push(`- 期日未設定：${s.no_due}件`);

@@ -80,6 +80,16 @@ describe("computeDueForecast", () => {
     expect(total).toBe(0);
   });
 
+  it("中止(cancelled)・保留(on_hold)タスクは集計から除外される（2026-07-21 ステータス拡張）", () => {
+    const tasks: Task[] = [
+      mk({ id: "t1", due_date: "2026-07-18", status: "cancelled" }), // 超過だが中止
+      mk({ id: "t2", due_date: TODAY, status: "on_hold" }),
+    ];
+    const buckets = computeDueForecast(tasks, TODAY);
+    const total = buckets.reduce((sum, b) => sum + b.count, 0);
+    expect(total).toBe(0);
+  });
+
   it("論理削除(is_deleted)タスクは集計から除外される", () => {
     const tasks: Task[] = [mk({ id: "t1", due_date: TODAY, is_deleted: true })];
     const buckets = computeDueForecast(tasks, TODAY);

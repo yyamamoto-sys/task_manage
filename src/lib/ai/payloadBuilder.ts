@@ -313,6 +313,8 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
           done: leafPjTasks.filter(t => t.status === "done").length,
           in_progress: leafPjTasks.filter(t => t.status === "in_progress").length,
           todo: leafPjTasks.filter(t => t.status === "todo").length,
+          on_hold: leafPjTasks.filter(t => t.status === "on_hold").length,
+          cancelled: leafPjTasks.filter(t => t.status === "cancelled").length,
         };
       })(),
       tasks: aiTasks,

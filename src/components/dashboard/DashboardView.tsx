@@ -33,7 +33,7 @@ import { computeDueForecast } from "../../lib/computeDueForecast";
 import { VelocityChart } from "./VelocityChart";
 import { computeWeeklyVelocity } from "../../lib/computeWeeklyVelocity";
 import { HelpButton } from "../guide/HelpButton";
-import { isAssignedTo, getAssigneeIds } from "../../lib/taskMeta";
+import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { showToast } from "../common/Toast";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
@@ -153,7 +153,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const reminderTasks = useMemo(
     () => allTasks.filter(t =>
       isAssignedTo(t, currentUser.id) &&
-      t.status !== "done" &&
+      !suppressOverdue(t.status) &&
       t.due_date != null &&
       t.due_date <= reminderDeadline
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
@@ -184,23 +184,23 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     return allTasks.filter(t => t.status !== "done" && (t.comment ?? "").includes(token));
   }, [allTasks, currentUser.short_name]);
 
-  // 今週のタスク
+  // 今週のタスク（中止・保留になったタスクは対象外＝催促しない）
   const thisWeekTasks = useMemo(
     () => filteredTasks.filter(t =>
       t.due_date &&
       t.due_date >= todayS &&
       t.due_date <= weekLater &&
-      t.status !== "done"
+      !suppressOverdue(t.status)
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [filteredTasks, todayS, weekLater]
   );
 
-  // 期限超過・本日期限
+  // 期限超過・本日期限（中止・保留になったタスクは期限超過として騒がない）
   const alertTasks = useMemo(
     () => filteredTasks.filter(t =>
       t.due_date &&
       t.due_date <= todayS &&
-      t.status !== "done"
+      !suppressOverdue(t.status)
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [filteredTasks, todayS]
   );
@@ -216,9 +216,12 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     () => filteredTasks.filter(t => t.status === "in_progress").length,
     [filteredTasks]
   );
-  // 今週の完了率：今週締切のタスク（完了済みも含む）のうち完了済みの割合
+  // 今週の完了率：今週締切のタスク（完了済みも含む）のうち完了済みの割合。
+  // 中止・保留は「今週やる予定の仕事」の分母からも外す（達成率を不当に下げないため）
   const kpiWeekCompletion = useMemo(() => {
-    const weekDue = filteredTasks.filter(t => t.due_date && t.due_date >= todayS && t.due_date <= weekLater);
+    const weekDue = filteredTasks.filter(t =>
+      t.due_date && t.due_date >= todayS && t.due_date <= weekLater && !isPausedOrCancelledStatus(t.status)
+    );
     const done = weekDue.filter(t => t.status === "done").length;
     return { done, total: weekDue.length, pct: calcProgressPct(done, weekDue.length) };
   }, [filteredTasks, todayS, weekLater]);
@@ -345,7 +348,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         const nextMs = pjMs.find(m => m.date >= todayS);
         const loadMap = new Map<string, number>();
         for (const t of pjTasks) {
-          if (t.status === "done") continue;
+          if (!isActiveTaskStatus(t.status)) continue;
           for (const id of getAssigneeIds(t)) loadMap.set(id, (loadMap.get(id) ?? 0) + 1);
         }
         const ownerIds = pj.owner_member_ids?.length
@@ -363,8 +366,10 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             todo: pjTasks.filter(t => t.status === "todo").length,
             in_progress: pjTasks.filter(t => t.status === "in_progress").length,
             done: pjTasks.filter(t => t.status === "done").length,
-            overdue: pjTasks.filter(t => t.status !== "done" && t.due_date != null && t.due_date <= todayS).length,
-            no_due: pjTasks.filter(t => t.status !== "done" && !t.due_date).length,
+            on_hold: pjTasks.filter(t => t.status === "on_hold").length,
+            cancelled: pjTasks.filter(t => t.status === "cancelled").length,
+            overdue: pjTasks.filter(t => !suppressOverdue(t.status) && t.due_date != null && t.due_date <= todayS).length,
+            no_due: pjTasks.filter(t => !suppressOverdue(t.status) && !t.due_date).length,
             stagnant: pjTasks.filter(t =>
               t.status === "in_progress" && t.updated_at &&
               (Date.now() - new Date(t.updated_at).getTime()) / 86400000 >= stagnantDays

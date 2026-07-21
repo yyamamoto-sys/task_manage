@@ -22,7 +22,13 @@ export interface AIProject {
   /** PJ開始予定日（YYYY-MM-DD）。スケジュール分析・経過日数計算に使う */
   pj_start_date: string | null;
   pj_end_date: string | null;
-  pj_progress: { total: number; done: number; in_progress: number; todo: number };
+  pj_progress: {
+    total: number; done: number; in_progress: number; todo: number;
+    /** 保留（一旦停止・将来また検討する可能性あり）件数 */
+    on_hold: number;
+    /** 中止（方針転換等でもう実施しない）件数 */
+    cancelled: number;
+  };
   pj_owners: string[];
   /** オーナー以外の関与メンバー（short_name 配列） */
   pj_members: string[];
