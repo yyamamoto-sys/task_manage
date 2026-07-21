@@ -63,7 +63,9 @@ function loadSavedSummary(krId: string): SavedSummary | null {
   }
 }
 
-export function KrWhyPanel({ onClose, inline = false, initialKrId }: Props) {
+// currentUser は Props に残すが未使用（KrQuarterPlanPanel と同じ扱い＝サマリーは
+// localStorage のみに保存され誰の生成かは記録しない設計のため。将来Supabase移行時に使う）
+export function KrWhyPanel({ onClose, inline = false, initialKrId, currentUser: _currentUser }: Props) {
   const keyResults              = useAppStore(s => s.keyResults);
   const taskForces              = useAppStore(s => s.taskForces);
   const objective               = useAppStore(s => s.objective);

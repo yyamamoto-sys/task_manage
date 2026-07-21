@@ -30,7 +30,7 @@
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
 | B AI相談 | 2026-07-06 | 2026-07-06（`69b5e52`exhaustive-deps実バグ修正／`d523586`未使用変数スイープ） | 約2,919行 | M10 ConsultationPanel整合性再確認（低優先） | — |
 | C 会議読み込み | 2026-07-06 | 2026-07-06（a11yスイープでMeetingImportPanelのドロップゾーン対応） | 約1,448行 | 既存表になし | 技術的負債の専用点検は未実施（a11y横断調査で軽く触れたのみ） |
-| D OKR | 2026-07-06 | 2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除。部分点検） | 約7,562行（okr/lab計） | 既存表になし | **8回目巡回で `components/lab/KrReportPanel.tsx`＋`lib/ai/{krReportClient,krReportPrompt}.ts`＋`lib/supabase/krReportStore.ts`（週次循環ワークフロー④レポート作成。計約1,153行）を点検。** 7回目（`OkrDashboardView.tsx`・約1,174行）・6回目（`KrMeetingNotePanel.tsx`＋`krMeetingNoteStore.ts`・約903行）・5回目（`OkrKrAnalysisPanel.tsx`＋`okrKrAnalysisClient/okrObjectiveAnalysisClient`・約738行）と合わせ計約3,968行を点検済み。ユニット全体の点検は完了していないため最終点検日は据え置き。残る`components/lab/{KrJointSessionFlow,KrWhyPanel,KrQuarterPlanPanel}.tsx`（計約3,064行）・`lib/ai/{krSessionExtractor,krWhyClient,krQuarterPlanClient,krQuarterPlanPrompt}.ts`・`lib/supabase/{krSessionStore,quarterPlanStore}.ts`（`okrAnalysisStore.ts`は5回目点検済みだが未使用export2件・非効率取得1件が未修正のまま残置。`krReportStore.ts`の`softDeleteKrReport`は8回目で未使用exportと判明・M23として次回候補へ）・`lib/okr/*`は未点検のまま次回以降へ持ち越し。週次循環ワークフロー本体のうち②セッション・なぜなぜ・クォーター計画の専門点検は依然未実施 |
+| D OKR | 2026-07-06 | 2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除。部分点検） | 約7,562行（okr/lab計） | 既存表になし | **9回目巡回で`components/lab/KrWhyPanel.tsx`＋`lib/ai/krWhyClient.ts`（なぜなぜ分析。計約867行）を点検。** 8回目（`KrReportPanel.tsx`＋`krReportClient/krReportPrompt.ts`＋`krReportStore.ts`・約1,153行）・7回目（`OkrDashboardView.tsx`・約1,174行）・6回目（`KrMeetingNotePanel.tsx`＋`krMeetingNoteStore.ts`・約903行）・5回目（`OkrKrAnalysisPanel.tsx`＋`okrKrAnalysisClient/okrObjectiveAnalysisClient`・約738行）と合わせ計約4,835行を点検済み。ユニット全体の点検は完了していないため最終点検日は据え置き。残る`components/lab/{KrJointSessionFlow,KrQuarterPlanPanel}.tsx`（計約2,277行）・`lib/ai/{krSessionExtractor,krQuarterPlanClient,krQuarterPlanPrompt}.ts`・`lib/supabase/{krSessionStore,quarterPlanStore}.ts`（`okrAnalysisStore.ts`は5回目点検済みだが未使用export2件・非効率取得1件が未修正のまま残置。`krReportStore.ts`の`softDeleteKrReport`は8回目で未使用exportと判明・M23として次回候補へ）・`lib/okr/*`は未点検のまま次回以降へ持ち越し。週次循環ワークフロー本体のうち②セッション・クォーター計画の専門点検は依然未実施（なぜなぜは9回目で完了） |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
 | F 管理・設定 | 2026-07-19 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない** | 見た目/構造の刷新は完了したが、H1本体（機能分割）は未着手のまま |
 | G オンボーディング | 2026-07-21 | 2026-07-21（ガイドトップのAI紫グラデーションをトークン化・ツアー2ステップにskipIfMissing付与） | 約1,117行（tour/guide計） | M19（統合ツアーが11ステップでtour-guidelines.md §9の上限7〜9を超過。次回候補）／M20（タイトル絵文字の付け方が3ステップで基準§4からズレ。次回候補） | 4回目巡回で点検。台帳上「未点検」だった最後の1ユニット。小さい実害のある2件を修正、ツアー本文の構成変更を伴う2件はM19/M20として次回候補へ |
@@ -48,6 +48,37 @@
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 
 ---
+
+## 完了済み（2026-07-21）巡回台帳の9回目の巡回：D OKR（部分点検・なぜなぜ分析）
+
+8回目に続きD OKR（規模約7,562行・1セッションに収まらないため継続してサブ領域単位）。
+残っていたサブ領域`components/lab/{KrJointSessionFlow,KrWhyPanel,KrQuarterPlanPanel}.tsx`
+（787〜1,247行）のうち最小の`KrWhyPanel.tsx`（787行）＋そのAIクライアント`lib/ai/krWhyClient.ts`
+（80行、計約867行）を選定。選定理由：3ファイルとも単体で787〜1,247行あり過去4回
+（738/903/1,174/1,153行）と同程度の予算制約があるため1ファイルのみ選ぶ必要があったところ、
+残り2ファイル（`KrJointSessionFlow.tsx`1,030行・`KrQuarterPlanPanel.tsx`1,247行）より
+小さい`KrWhyPanel.tsx`を選び、機能的にセットのAIクライアント（80行）を合わせても867行に収まったため。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **型定義と実際の呼び出し元の乖離（実害小・修正）** | `KrWhyPanel`の`Props`型に`currentUser: Member`が必須フィールドとして定義され、呼び出し元（`OkrDashboardView.tsx`・`MainLayout.tsx`の2箇所）は実際のMemberを渡していたが、コンポーネント本体は分割代入で`currentUser`を一切受け取っておらず（`{ onClose, inline, initialKrId }`のみ）、値は静かに握りつぶされていた。同じ`components/lab/`の兄弟ファイルを確認すると、`KrReportPanel.tsx`・`KrJointSessionFlow.tsx`は`currentUser.id`をDB保存の`created_by`/`updated_by`に実際に使っており、`KrQuarterPlanPanel.tsx`だけは`currentUser: _currentUser`とアンダースコア接頭辞で「意図的に未使用」と明示していた（Phase 1がlocalStorage保存のためユーザー紐付け不要・将来Supabase移行時に使う設計とコメントで確認済み）。`KrWhyPanel`のなぜなぜ分析サマリーも同じくlocalStorageのみに保存されユーザー紐付けが無い設計（`docs/okr-cycle-design.md`に「なぜなぜは当面そのまま」と明記）のため、`KrQuarterPlanPanel.tsx`と全く同じ理由で未使用のはずだが、そちらは意図を示すアンダースコア命名がされておらず、分割代入から静かに省かれているだけだった（読み手には「型定義と実装が食い違っている」ようにしか見えない）。ESLintの`no-unused-vars`は分割代入されていない値には反応しないため検知されずに残っていた。`KrQuarterPlanPanel.tsx`と同じ`_currentUser`命名＋理由コメントに統一し、意図的な未使用であることを明示 | （次のコミット） |
+
+`krWhyClient.ts`はSYSTEM_PROMPT・型・呼び出し元とも整合しておりAI境界ルールと矛盾する死蔵段落は
+見つからなかった。ファイル内のローカル関数`getCurrentQuarter(date: Date): string`（AIへの
+コンテキスト文中に「1Q（1〜3月）」の形式で四半期ラベルを埋め込むための表示専用フォーマッタ）は、
+`lib/date.ts`の`currentQuarter()`/`dateToQuarter()`（TF絞り込み用に`"1Q"`のようなコード値のみを
+返す）と計算ロジックが並行しているが、返す文字列の用途・フォーマットが明確に異なる（月範囲の
+日本語ラベルが必要）ため、重複ではなく意図の異なる別関数と判断し据え置き（次回候補にも入れない
+軽微な観察）。TypingMessage/ThinkingDots等の表示用サブコンポーネント・`buildContext`のTF/ToDo/
+セッション履歴の組み立てロジックはESLintクリーン（既存の`no-irregular-whitespace`
+198行目の全角スペースはM15記載の既知の意図的使用・`label-has-associated-control` 2件も
+アプリ全体のa11yバックログ・いずれも修正対象外）・`any`型なし・exhaustive-deps違反なし。
+`handleStart`/`handleSendAnswer`/`handleGenerateSummary`の3つのcatch節は全て既に
+`formatErrorForUser`経由でグランドルールSection 15に準拠済みだった（修正不要）。
+
+`npx tsc --noEmit`クリーン・vitest 419/419 pass（新規テスト無し・回帰なし）・eslint 24 errors/11 warnings
+（HEAD時点と完全一致・新規0件）・build成功で確認。**ユニット全体の点検は完了していないため「最終点検日」は
+2026-07-06のまま据え置き**（台帳の備考欄に持ち越しサブ領域を明記）。
 
 ## 完了済み（2026-07-21）巡回台帳の8回目の巡回：D OKR（部分点検・④レポート作成）
 
