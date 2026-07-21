@@ -28,7 +28,7 @@
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
-| B AI相談 | 2026-07-06 | 2026-07-06（`69b5e52`exhaustive-deps実バグ修正／`d523586`未使用変数スイープ） | 約2,919行 | M10 ConsultationPanel整合性再確認（低優先） | — |
+| B AI相談 | 2026-07-06 | 2026-07-21（17回目：payloadBuilder.tsの死蔵`todos`パラメータ削除＋systemPrompt.tsのボタン名ハードコード3箇所をuiGuide.ts定数経由に修正） | **約5,855行**（16回目に実測。予算超過のためサブ領域分割が必須） | M10 ConsultationPanel整合性確認は17回目で確認済み・問題なし（解消）。M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補） | **17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`、計約1,335行）を点検完了。** 残りサブ領域：②`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`系（反映・Undo・履歴、計約1,280行）／③`components/consultation/*`（UIコンポーネント一式、2,919行・複数セッションに再分割が必要）。次回はこの続き |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手） |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
@@ -46,6 +46,67 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-21）巡回台帳の17回目の巡回：B AI相談（部分点検・①ペイロード構築〜レスポンス解釈系）
+
+16回目終了時点で台帳を精査した結果、「B AI相談」（最終点検日2026-07-06）が「データ基盤」（同日）と
+並んで全ユニット中最古と判明。16回目に実測した約5,855行は1セッション予算（700〜1,800行）を大幅に
+超えるため、D OKR（5〜11回目）と同じ要領でサブ領域分割が必須と判断した。
+
+### サブ領域の選定
+
+実測した3案のうち、AI呼び出しの前処理（ペイロード構築・システムプロンプト）〜後処理（レスポンス
+パース・UI変換・種別推定・セッション管理）という一連の自己完結したパイプラインである案Aを選定：
+
+- **案A（選定）**：`payloadBuilder.ts`(372行)+`systemPrompt.ts`(478行)+`responseParser.ts`(244行)+
+  `proposalMapper.ts`(121行)+`inferConsultationType.ts`(51行)+`sessionManager.ts`(69行)＝
+  **約1,335行**（予算内）
+- 案B：`applyProposal.ts`(908行)+`undoApply.ts`(163行)+`chatHistoryStorage.ts`(52行)+
+  `useUndoStack.ts`(91行)+`consultSessionStore.ts`(66行)＝約1,280行（反映・Undo・履歴系。次回候補）
+- 案C：`components/consultation/*`（2,919行）はそれ自体が予算超過のため、点検するとしても
+  1〜2ファイルへの再分割が必要（次々回以降の候補）
+
+案Aを選んだ決め手は、システムプロンプト・ペイロード構築部分が「AI境界ルール/プロンプトの死蔵段落」
+「AIと実UIの乖離（CLAUDE.md Section 17）」が過去の巡回（C会議読み込み・D OKR・AI基盤）で
+繰り返し見つかっているホットスポットであり、B AI相談自身のこの部分を最優先で確認すべきと判断したため。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **死蔵コード：payloadBuilder.tsの`todos`パラメータ（実害小・修正）** | `BuildOptions.todos`（コメントで「旧仕様のToDo→仮想PJ変換に使っていたが廃止。互換のため受け取るが未使用」と明記済み）が、関数本体で一度も参照されないまま残置されていた。`git log -S`で追跡すると、初回のToDo→仮想PJ変換ロジック削除時にフィールド自体の削除だけが漏れていた。さらに唯一の呼び出し元`useAIConsultation.ts`が`useAppStore(s => s.todos)`でストアを購読し続け、`submit`の`useCallback`依存配列にも含めていた（無関係なToDo変更のたびに関数が再生成される無駄な依存）。`ToDo`型importごと削除し、テストのtodosフィクスチャも整理 | `3b37ee1` |
+| **Section 17違反：systemPrompt.tsのボタン名ハードコード3箇所（実害あり・修正）** | `uiGuide.ts`はCLAUDE.md Section 17に沿って`BTN_CONFIRM_CREATE`/`BTN_APPLY_CONFIRMED`/`BTN_APPLY`を一元管理し、`UI_GUIDE_SECTION`経由でsystemPromptに埋め込む設計になっていたが、その一元管理とは別に、`systemPrompt.ts`の`RESPONSE_FORMAT`（add_project操作説明・新規PJ作成ヒアリング・プロトコル文中の2箇所）と`simulate`モードの注意書き（1箇所）で「確認して作成」「確定して反映」「反映する」という同じボタン名が直接日本語リテラルとしてハードコードされていた。Section 17が名指しで禁止する「systemPrompt.tsにボタン名のハードコードを追加する」に該当し、将来`uiGuide.ts`側でボタン名を変更した際にこの3箇所だけ古いラベルのままAIが案内し続ける危険があった（ConsultationPanel側のUIボタン自体は変わるのに、AIが説明する文言だけ古いままになるユーザー向け実害）。3箇所とも`BTN_*`定数のテンプレートリテラル参照に置換 | `281c79d` |
+| **M10（ConsultationPanel整合性確認・AI境界ルール遵守チェック）の確認完了** | 既存の中優先度表に長期未着手のまま残っていたM10を確認。`ProposalCard.tsx`・`ConfirmationDialogModal.tsx`は両方とも`uiGuide.ts`の`BTN_CONFIRM_CREATE`/`BTN_APPLY_CONFIRMED`/`BTN_APPLY`/`btnShift`を正しくimportして使用しており、ボタン名のハードコードはゼロ件（コメント内の言及のみ）。両ファイルとも今回の点検範囲（`components/consultation/*`）そのものではないが、systemPrompt.ts側のボタン名を確認する過程で合わせて確認できたため、M10は「問題なし・解消」として次回候補から削除する | — |
+| **CLAUDE.mdドキュメント乖離2件（実害小・修正）** | ①Section 6-12「useAIConsultationのexportルール」が`callState`/`session`/`tokenStatus`/`loadingMessage`/`shortIdMap`/`submit`/`reset`の7つのみを正本のように記載していたが、実装（初回コミット時点から）は`proposals`/`followUpSuggestions`/`errorMessage`の3フィールドも含み、Undo機能追加時に`undoStack`/`canUndo`/`pushUndoSnapshot`/`undo`/`undoUntil`も加わっていた。実態に合わせて更新。②Section 6-8「date_certaintyの画面表示ルール」の表に、`proposalMapper.ts`の`canApply`が`add_task`/`add_project`のみ`date_certainty="unknown"`でも反映ボタンを非活性にしない例外（新規作成系は仮の日付のまま作成後に編集できるための意図的な設計）を明記していなかったため追記 | `895270e`／`d5eb6ec` |
+
+**見つけたが直さなかった課題（設計判断が要るため次回候補へ・M29として記録）**：`payloadBuilder.ts`の
+`retry_hint`／`BuildOptions.retryHint`は初回コミット以来一度も呼び出し元（`useAIConsultation.ts`の
+`buildPayload`呼び出し）から渡されたことがなく、UI側の唯一の再試行導線である`ErrorView.tsx`の
+「再試行」ボタンも常にヒント無しの`onRetry: () => void`で呼ばれる。ただし`buildPayload`単体としては
+専用テスト（`retryHint`が指定された場合／されない場合の2ケース）まで用意されており、実装・テストとも
+健全な「作ったが配線がまだ済んでいない機能」に見える（`todos`のような完全な廃止済みコードとは性質が
+異なる）。削除するか、将来「AIの提案が的外れだったときにヒントを添えて再試行する」UIを実装して
+配線するかは設計判断が要るため、コードは変更せず記録のみに留めた。
+
+**観察のみ（次回候補にはしない）**：`responseParser.ts`のバリデーション（`VALID_ACTION_TYPES`・
+`MUTATING_ACTIONS`・寛容なフォールバック方針）・`proposalMapper.ts`の`ACTION_TYPE_CONFIG`・
+`inferConsultationType.ts`の判定優先度（`deadline_check > scope_change > simulate > diagnose > change`）
+はいずれもCLAUDE.md（Section 6-6・6-8・6-9）と一致し矛盾なし。`sessionManager.ts`の
+`MAX_TURNS_WARNING`/`MAX_TURNS_KEEP`もSection 6-7の記載どおり。`systemPrompt.ts`の
+「milestone: マイルストーン関連（現在未対応）」という記述は、Milestone機能自体はSection 3-5で
+実装済みだがAIの`applyProposal`経由のmilestone action_typeは今も本当に未実装（`applyProposal.ts`が
+エラーを返す設計のまま）のため、死んだ記述ではなく現状と一致していると確認した。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 419件全通過（`todos`削除に伴うテスト微修正のみ・
+新規テスト追加なし・回帰なし）／`npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の
+無関係な指摘のみ。新規エラー0件）／`npm run build`成功。**B AI相談ユニット全体（約5,855行）の
+うち①ペイロード構築〜レスポンス解釈系（約1,335行）の点検が完了。ユニット全体は完了していないため
+「最終点検日」は2026-07-06のまま据え置き**（台帳の備考欄に残りサブ領域②③を明記）。
+
+次点検の最有力候補は「B AI相談」の続き（②`applyProposal`/`undoApply`/`chatHistoryStorage`/
+`useUndoStack`/`consultSessionStore`系、約1,280行）。「データ基盤」（同じく最終点検日2026-07-06・
+約2,573行）も僅差の候補だが、16回目の記録どおり`appStore.ts`の楽観ロック・依存ゲート等は実害が
+大きいため触る場合は特に慎重な進行が必要。
 
 ---
 
