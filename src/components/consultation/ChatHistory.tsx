@@ -8,6 +8,7 @@
 import { parseAIResponse } from "../../lib/ai/responseParser";
 import { mapProposalsToUI } from "../../lib/ai/proposalMapper";
 import type { ConsultationSession } from "../../lib/ai/sessionManager";
+import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { ProposalCard } from "./ProposalCard";
 import { useTypingEffect } from "../../hooks/useTypingEffect";
 
@@ -16,7 +17,8 @@ interface Props {
   shortIdMap: Map<string, string>;
   currentUserId: string;
   latestAssistantTimestamp?: string;
-  onProposalApplied?: () => void;
+  /** 履歴内の提案を反映した際にUndoスタックへ積む・画面を再読み込みするコールバック */
+  onProposalApplied?: (snapshot: UndoSnapshot) => void;
   onOpenTask?: (taskId: string) => void;
 }
 

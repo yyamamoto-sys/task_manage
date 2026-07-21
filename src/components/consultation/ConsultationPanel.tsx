@@ -532,7 +532,14 @@ export function ConsultationPanel({
 
           {/* 会話履歴（古い→新しいの順。最新のやりとりは下部に表示するので、ここはそれより前のターン） */}
           {hasOlderHistory && (
-            <ChatHistory session={{ ...session, turns: historyTurns }} shortIdMap={shortIdMap} currentUserId={currentUser.id} latestAssistantTimestamp={latestAiTimestamp} onOpenTask={onOpenTask} />
+            <ChatHistory
+              session={{ ...session, turns: historyTurns }}
+              shortIdMap={shortIdMap}
+              currentUserId={currentUser.id}
+              latestAssistantTimestamp={latestAiTimestamp}
+              onOpenTask={onOpenTask}
+              onProposalApplied={snapshot => { pushUndoSnapshot(snapshot); reload(); }}
+            />
           )}
 
           {/* 送信した相談（吹き出しのみ＝右寄せで「送信済み」が自明なのでラベルは省略） */}
