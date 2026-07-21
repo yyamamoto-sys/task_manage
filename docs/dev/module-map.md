@@ -8,7 +8,7 @@
 > 業務領域ごとに境界を引く＝**ドメイン駆動設計（DDD）／モジュラーモノリス**。
 > 目標は **高凝集・低結合**（1モジュールの中身は関連が強く、モジュール間の依存は弱く）。
 >
-> 最終更新：2026-06-03（初版）。機能追加のたびに更新すること。
+> 最終更新：2026-07-21（v2.28〜v2.72の新規ファイル群を反映）。機能追加のたびに更新すること。
 
 ---
 
@@ -95,12 +95,12 @@ flowchart TD
 ### ② 機能モジュール (Features)
 | # | モジュール | 責務（バグ探しの入口） | 主なファイル | 主な依存 |
 |---|---|---|---|---|
-| **A** | **計画ビュー** | PJ・タスク・マイルストーンの閲覧/編集（ダッシュボード/ガント/カンバン/リスト/タスク編集/マイルストーン） | `components/dashboard/*` / `gantt/GanttView` / `kanban/KanbanView` / `list/ListView` / `task/{TaskEditModal,QuickAddTaskModal,TaskSidePanel}` / `milestone/*` | データ基盤, 共通UI, `lib/okr`, `lib/taskHierarchy` |
+| **A** | **計画ビュー** | PJ・タスク・マイルストーンの閲覧/編集（ダッシュボード/ガント/カンバン/リスト/タスク編集/マイルストーン/ワークロード/タスク依存関係/ベースライン差分） | `components/dashboard/*`（`DueForecastChart`/`VelocityChart`含む） / `gantt/{GanttView,GanttParts,GanttMobileView,ganttUtils,ganttDependencyArrows,GanttShortcutsPanel}` / `kanban/KanbanView` / `list/ListView` / `task/{TaskEditModal,QuickAddTaskModal,TaskSidePanel,taskEditPayload}` / `milestone/*` / `workload/{WorkloadView,MemberDetailPanel}`（v2.28/v2.30・メンバー別負荷とドリルダウン） / `lib/dependencies/{cycleCheck,gate,reschedule,linkDirection}`（v2.29/v2.36・依存ゲート＋自動リスケ連鎖） / `lib/baseline/baselineCapture`（v2.32・ベースライン捕捉） / `lib/gantt/{criticalPath,overload}`（クリティカルパス・過負荷判定） / `lib/workload/computeWorkload` / `lib/{kanbanOrder,kanbanWip,selectionRange}`（カンバン順序/WIP制限・複数選択レンジ） / `lib/list/groupSummary`（list/kanban共有のグループ集計） / `lib/computeDueForecast` / `lib/computeWeeklyVelocity` / `hooks/useBulkTaskActions`（List/Kanban共有の一括操作） | データ基盤, 共通UI, `lib/okr`, `lib/taskHierarchy` |
 | **B** | **AI相談** | チャットで相談 / PJ・タスク登録 / タスク階層化 / 提案の反映・Undo | `components/consultation/*` / `hooks/useAIConsultation` / `stores/consultSessionStore` / `lib/ai/{payloadBuilder,systemPrompt,responseParser,proposalMapper,applyProposal,inferConsultationType,sessionManager,undoApply,chatHistoryStorage}` / `hooks/useUndoStack` | AI基盤, データ基盤, （例外）A |
 | **C** | **会議読み込み** | 議事メモ/VTT/Word/PDFからタスク抽出→登録 | `components/meeting/MeetingImportPanel` / `lib/ai/meetingExtractor` / `lib/docxText` | AI基盤, データ基盤 |
 | **D** | **OKR** | 週次サイクル（①会議ノート→②セッション&分析→③レポート）/ なぜなぜ / クォーター計画 | `components/okr/*` / `components/lab/{KrJointSessionFlow,KrReportPanel,KrWhyPanel,KrQuarterPlanPanel}` / `lib/ai/{krSessionExtractor,krReportClient,krReportPrompt,krWhyClient,krQuarterPlanClient,krQuarterPlanPrompt,okrKrAnalysisClient,okrObjectiveAnalysisClient}` / `lib/supabase/{krSessionStore,krMeetingNoteStore,krReportStore,okrAnalysisStore,quarterPlanStore}` / `lib/okr/*` | AI基盤, データ基盤 |
-| **E** | **PJ別AI分析** | 1つのPJの健全性をAI分析（プロジェクトカルテから起動） | `lib/ai/projectAnalysisClient` / `lib/supabase/projectAnalysisStore`（UIは `dashboard/ProjectKarte`） | AI基盤, データ基盤 |
-| **F** | **管理・設定** | メンバー/Objective/KR/TF/PJ/タグ/AI使用量の管理・ToDo分解 | `components/admin/{AdminView,TodoDecomposeModal}` / `lib/ai/todoDecomposeClient` | データ基盤, AI基盤 |
+| **E** | **PJ別AI分析** | 1つのPJの健全性をAI分析（プロジェクトカルテから起動）／全PJ横断のポートフォリオ分析 | `lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}` / `lib/supabase/projectAnalysisStore`（UIは `dashboard/ProjectKarte`・`dashboard/DashboardView`） | AI基盤, データ基盤 |
+| **F** | **管理・設定** | メンバー/Objective/KR/TF/PJ/タグ/AI使用量の管理・ToDo分解（左ナビ＋カテゴリ構成・Danger Zone隔離） | `components/admin/{AdminView,TodoDecomposeModal}` / `lib/ai/todoDecomposeClient` / `lib/dangerZoneConfirm`（`common/DangerZone`と対） | データ基盤, AI基盤, 共通UI |
 | **G** | **オンボーディング** | ツアー / 📖ガイド / `?`ヘルプ（docs/guides を表示） | `components/tour/*` / `components/guide/*` / `lib/docs/*` / `docs/guides/**` | 共通UI, データ基盤 |
 | **H** | **グラフ（ラボ）** | 関係性グラフの可視化（Canvas物理シミュ） | `components/graph/GraphView` | データ基盤 |
 | **I** | **通知** | 期限のブラウザ通知 / Teamsまとめ（Edge） | `hooks/useDeadlineNotifications` / `supabase/functions/notify-deadlines` | データ基盤 |
@@ -109,9 +109,9 @@ flowchart TD
 | モジュール | 責務 | 主なファイル |
 |---|---|---|
 | **データ基盤** | 全データの単一の真実・永続化・競合制御・リアルタイム反映 | `lib/localData/{types,localStore}` / `stores/appStore` / `context/AppDataContext` / `lib/supabase/{client,store,realtime,auth}` ＋ エンティティ別store群 |
-| **AI基盤** | AI呼び出しの唯一のゲート＋使用量計上（APIキーはEdgeのみ） | `lib/ai/{invokeAI,apiClient,usageLog,sanitize,types}` / `supabase/functions/ai-consult`（Edge） |
-| **共通UI** | 横断的に使うUI部品 | `components/common/*`（Toast, ConfirmModal, CustomSelect, MarkdownLite, ErrorBoundary, EmptyState, AIProgressLoader, FileAttachButton, ...） |
-| **ユーティリティ/フック** | 日付・エラー整形・統計・タスク派生・権限(guestMode)・汎用hooks | `lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,docxText,renderLinks,lazyWithRetry,dialog,guestMode}` / `hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack}` |
+| **AI基盤** | AI呼び出しの唯一のゲート＋使用量計上（APIキーはEdgeのみ） | `lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}` / `supabase/functions/ai-consult`（Edge） |
+| **共通UI** | 横断的に使うUI部品 | `components/common/*`（Toast, ConfirmModal, CustomSelect, MarkdownLite, ErrorBoundary, EmptyState, AIProgressLoader, FileAttachButton, Card/SummaryTile/SummaryRow, DangerZone, ShortcutsPanel, CommandPalette, Skeleton, InlineEdit{Text,Date,Assignee}, MentionTextarea, ...） |
+| **ユーティリティ/フック** | 日付・エラー整形・統計・タスク派生・権限(guestMode)・汎用hooks | `lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,docxText,renderLinks,lazyWithRetry,dialog,guestMode,mentions,i18n,lastUndoStore}` / `hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}` |
 
 ---
 
