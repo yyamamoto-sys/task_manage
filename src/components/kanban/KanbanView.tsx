@@ -6,7 +6,7 @@ import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
-import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo } from "../../lib/taskMeta";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
@@ -77,6 +77,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const dropRafRef = useRef<number | null>(null);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [hideDone, setHideDone] = useState(false);
+  // 保留(on_hold)・中止(cancelled)は既定では列に表示しない（🙈完了を隠すの逆＝既定OFFの「見せる」トグル）
+  const [showPaused, setShowPaused] = useState(false);
 
   // 一括操作用：複数選択（リストビューと同じ流儀）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -105,7 +107,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
   // （列＝todo→in_progress→done を左→右、各列内は上→下でフラット化。hideDone中はdone列を除外）
-  const orderedTaskIds = useMemo(() => computeKanbanOrderedIds(visibleTasks, hideDone), [visibleTasks, hideDone]);
+  const orderedTaskIds = useMemo(
+    () => computeKanbanOrderedIds(visibleTasks, hideDone, showPaused),
+    [visibleTasks, hideDone, showPaused],
+  );
 
   // 表示中のPJ/KR/自分フィルタが変わって見えなくなったカードは選択から外す
   useEffect(() => {
@@ -262,6 +267,15 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           border: hideDone ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
           transition: "all 0.1s",
         }}>完了を隠す</button>
+        {/* 保留・中止を表示トグル（既定OFF＝隠す。🙈完了を隠すの逆＝既定で見せない列を出す） */}
+        <button onClick={() => setShowPaused(v => !v)} title="保留・中止のタスクを列として表示する" style={{
+          padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)", cursor: "pointer",
+          fontWeight: showPaused ? "500" : "400",
+          background: showPaused ? "var(--color-brand-light)" : "transparent",
+          color: showPaused ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
+          border: showPaused ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
+          transition: "all 0.1s",
+        }}>{showPaused ? "👁" : "🙈"} 保留・中止を表示</button>
       </div>
 
       {/* ===== 一括操作バー（選択時のみ表示・リストビューと同等のUI/挙動） ===== */}
@@ -288,7 +302,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
           {/* ステータス一括変更 */}
           <div style={{ display: "flex", gap: "4px" }}>
-            {(["todo", "in_progress", "done"] as const).map(s => (
+            {(["todo", "in_progress", "done", "on_hold", "cancelled"] as const).map(s => (
               <button
                 key={s}
                 onClick={() => bulkUpdateStatus(s)}
@@ -540,6 +554,106 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             </div>
           );
         })}
+
+        {/* ===== 保留・中止列（showPaused=true のときのみ。既存3列とは独立した追加ブロック。
+            既存3列のD&D・WIP・一括操作ロジックには一切手を入れず、同じ土台（handleColumnDragOver/
+            handleDrop/TaskCard）を流用するだけの薄い追加として実装する） ===== */}
+        {showPaused && (["on_hold", "cancelled"] as const).map(status => {
+          const colTasks = visibleTasks.filter(t => t.status === status);
+          const cfg = { label: TASK_STATUS_LABEL[status], ...TASK_STATUS_STYLE[status] };
+          const isDropTarget = dragOverStatus === status;
+          return (
+            // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+            <div
+              key={status}
+              style={{
+                width: isMobile ? "calc(100vw - 40px)" : "260px",
+                flexShrink: 0,
+                scrollSnapAlign: isMobile ? "start" : undefined,
+                borderRadius: "var(--radius-lg)",
+                border: isDropTarget ? `2px solid ${cfg.border}` : "2px solid transparent",
+                background: isDropTarget ? cfg.bg : "transparent",
+                transition: "border-color 0.15s, background 0.15s",
+                padding: "2px",
+              }}
+              onDragOver={e => handleColumnDragOver(e, status)}
+              onDragEnter={() => setDragOverStatus(status)}
+              onDragLeave={e => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setDragOverStatus(null);
+                  setDropIndicator(prev => (prev && prev.status === status) ? null : prev);
+                }
+              }}
+              onDrop={() => handleDrop(status)}
+            >
+              <div style={{
+                display: "flex", alignItems: "center", gap: "6px",
+                padding: "6px 10px", borderRadius: "var(--radius-md)",
+                background: cfg.bg, marginBottom: "8px",
+              }}>
+                <span style={{ width: "6px", height: "6px", borderRadius: "50%", background: cfg.color, display: "inline-block", flexShrink: 0 }} />
+                <span style={{ fontSize: "12px", fontWeight: "500", color: cfg.color, flex: 1 }}>
+                  {cfg.label}
+                </span>
+                <span style={{
+                  fontSize: "10px", color: cfg.color, opacity: 0.8,
+                  background: "rgba(255,255,255,0.6)", padding: "1px 6px",
+                  borderRadius: "var(--radius-full)", border: `1px solid ${cfg.border}`,
+                }}>
+                  {colTasks.length}
+                </span>
+              </div>
+
+              <div
+                style={{ display: "flex", flexDirection: "column", gap: "6px" }}
+                ref={el => { cardListRefs.current[status] = el; }}
+              >
+                {colTasks.map((task, i) => (
+                  <Fragment key={task.id}>
+                    {dropIndicator && dropIndicator.status === status && dropIndicator.index === i && (
+                      <DropPlaceholder />
+                    )}
+                    <TaskCard
+                      task={task}
+                      project={task.project_id ? projectById.get(task.project_id) : undefined}
+                      todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
+                      allMembers={members}
+                      parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
+                      childCount={childCountByParent.get(task.id) ?? 0}
+                      progress={parentDerivedById.get(task.id)}
+                      onDragStart={handleDragStart}
+                      onDragEnd={handleDragEnd}
+                      onStatusChange={handleStatusChange}
+                      isDragging={draggingId === task.id}
+                      onClick={handleCardClick}
+                      isSelected={selectedIds.has(task.id)}
+                      onSaveTask={saveTask}
+                      currentUserId={currentUser.id}
+                    />
+                  </Fragment>
+                ))}
+                {dropIndicator && dropIndicator.status === status && dropIndicator.index === colTasks.length && (
+                  <DropPlaceholder />
+                )}
+                {/* ＋ タスクを追加 */}
+                <button
+                  onClick={() => setAddingStatus(status)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: "4px",
+                    padding: "6px 10px", fontSize: "11px",
+                    color: "var(--color-text-tertiary)",
+                    background: "transparent",
+                    border: "1px dashed var(--color-border-primary)",
+                    borderRadius: "var(--radius-md)", cursor: "pointer",
+                    width: "100%",
+                  }}
+                >
+                  ＋ タスクを追加
+                </button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {addingStatus !== null && (
@@ -615,7 +729,12 @@ const TaskCard = memo(function TaskCard({
 }) {
   const [isHovered, setIsHovered] = useState(false);
   const isDone = task.status === "done";
-  const isOverdue = !isDone && !!task.due_date && task.due_date < todayStr();
+  const isCancelled = task.status === "cancelled";
+  const isPaused = task.status === "on_hold";
+  // 中止(cancelled)はdoneと同じ「終わった見た目」（取り消し線・薄い表示）にする。保留(on_hold)は
+  // まだ動きうる仕事のため見た目は変えない（列自体で保留とわかる）
+  const isClosed = isDone || isCancelled;
+  const isOverdue = !suppressOverdue(task.status) && !!task.due_date && task.due_date < todayStr();
   // 優先度の左ストライプ色（親子のインデント表現＝marginLeft/子バッジとは独立。優先度未設定は無彩色）
   const stripeColor = task.priority ? TASK_PRIORITY_STRIPE_COLOR[task.priority] : "var(--color-border-primary)";
   // 滞留バッジ：ガントの isTaskStagnant/STAGNANT_THRESHOLD_DAYS をそのまま流用（判定ロジックの二重化を避ける）。
@@ -645,7 +764,7 @@ const TaskCard = memo(function TaskCard({
         borderRadius: "var(--radius-lg)",
         padding: "9px 11px",
         cursor: "grab",
-        opacity: isDragging ? 0.4 : isDone ? 0.55 : 1,
+        opacity: isDragging ? 0.4 : isClosed ? 0.55 : 1,
         boxShadow: isDragging ? "var(--shadow-lg)" : isSelected ? "0 0 0 2px var(--color-brand)" : isHovered ? "var(--shadow-md)" : "var(--shadow-sm)",
         transform: isHovered && !isDragging ? "translateY(-1px)" : "none",
         transition: "opacity 0.15s, box-shadow 0.15s, transform 0.15s, background 0.1s",
@@ -683,8 +802,8 @@ const TaskCard = memo(function TaskCard({
       <div style={{
         fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)",
         marginBottom: "7px", lineHeight: 1.4,
-        textDecoration: isDone ? "line-through" : "none",
-        opacity: isDone ? 0.6 : 1,
+        textDecoration: isClosed ? "line-through" : "none",
+        opacity: isClosed ? 0.6 : 1,
         display: "flex", alignItems: "center", gap: "4px",
       }}
         onClick={e => e.stopPropagation()}
@@ -754,7 +873,7 @@ const TaskCard = memo(function TaskCard({
             {isDone && task.due_date && <span aria-hidden style={{ color: "var(--color-text-success)" }}>✓</span>}
             <InlineEditDate
               value={task.due_date}
-              isDone={isDone}
+              isDone={suppressOverdue(task.status)}
               onSave={due_date => onSaveTask({ ...task, due_date, updated_by: currentUserId })}
             />
           </span>
@@ -796,8 +915,8 @@ const TaskCard = memo(function TaskCard({
             {TASK_PRIORITY_LABEL[task.priority]}
           </span>
         )}
-        {/* ステータス前進ボタン（todo→進行中→完了）*/}
-        {!isDone && (
+        {/* ステータス前進ボタン（todo→進行中→完了）。保留・中止のカードには出さない（ToDoに戻すボタンに置き換え） */}
+        {task.status === "todo" || task.status === "in_progress" ? (
           <button
             onClick={e => {
               e.stopPropagation();
@@ -814,6 +933,26 @@ const TaskCard = memo(function TaskCard({
             }}
           >
             ✓
+          </button>
+        ) : null}
+        {/* 保留・中止を ToDo に戻すボタン */}
+        {(isPaused || isCancelled) && (
+          <button
+            onClick={e => {
+              e.stopPropagation();
+              onStatusChange(task.id, "todo");
+            }}
+            title="ToDoに戻す"
+            style={{
+              width: "24px", height: "24px", borderRadius: "50%",
+              border: "1.5px solid var(--color-border-secondary)",
+              background: "transparent", cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "10px", color: "var(--color-text-tertiary)",
+              flexShrink: 0,
+            }}
+          >
+            ↩
           </button>
         )}
         {/* 完了を戻すボタン */}

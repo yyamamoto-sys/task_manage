@@ -29,4 +29,22 @@ describe("computeKanbanOrderedIds", () => {
     ];
     expect(computeKanbanOrderedIds(same, false)).toEqual(["a", "b"]);
   });
+
+  it("showPaused=false（既定）では on_hold/cancelled を対象から除外する", () => {
+    const withPaused = [
+      ...tasks,
+      { id: "t6", status: "on_hold" as const },
+      { id: "t7", status: "cancelled" as const },
+    ];
+    expect(computeKanbanOrderedIds(withPaused, false)).toEqual(["t1", "t3", "t2", "t5", "t4"]);
+  });
+
+  it("showPaused=true では todo→in_progress→done→on_hold→cancelled の順で対象に含める", () => {
+    const withPaused = [
+      ...tasks,
+      { id: "t6", status: "on_hold" as const },
+      { id: "t7", status: "cancelled" as const },
+    ];
+    expect(computeKanbanOrderedIds(withPaused, false, true)).toEqual(["t1", "t3", "t2", "t5", "t4", "t6", "t7"]);
+  });
 });
