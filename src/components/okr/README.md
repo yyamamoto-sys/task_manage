@@ -9,7 +9,7 @@
 | `components/okr/OkrDashboardView.tsx` | OKRモードの土台。上位タブ（OKR管理/なぜなぜ/計画）＋サブタブ（①会議ノート/②セッション記録&分析/③レポート作成） |
 | `components/okr/KrMeetingNotePanel.tsx` | ① 会議ノート（KR×週で1件・引き継ぎメモ） |
 | `components/okr/OkrKrAnalysisPanel.tsx` | ③ 分析（KR/Objectiveスコープ） |
-| `components/lab/KrJointSessionFlow.tsx` | ② セッション記録&分析（合同/単一KR・文字起こし抽出） |
+| `components/lab/KrJointSessionFlow.tsx` | ② セッション記録&分析（合同・freeform・文字起こし抽出。単一KRパネルは`d547b69`で廃止済み） |
 | `components/lab/KrReportPanel.tsx` / `KrWhyPanel.tsx` / `KrQuarterPlanPanel.tsx` | レポート / なぜなぜ / クォーター計画 |
 | `lib/ai/kr*`・`okr*Client` | 各AI（抽出・分析・レポート・なぜなぜ・計画）。AI基盤 `invokeAI` 経由 |
 | `lib/supabase/kr*Store`・`okrAnalysisStore`・`quarterPlanStore` | 永続化 |

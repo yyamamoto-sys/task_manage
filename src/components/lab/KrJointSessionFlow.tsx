@@ -429,7 +429,7 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
 
       const selected = panels.filter(p => p.selected);
       // ステップ：[Objective分析] + 各KR（session, 宣言, KR分析）
-      const total = (objective ? 1 : 0) + selected.reduce((n, p) => n + 1 + 1 /*kr_analysis*/ + (mode === "checkin" ? (p.checkin?.declarations.length ?? 0) : (p.win?.declaration_results.length ?? 0)), 1);
+      const total = (objective ? 1 : 0) + selected.reduce((n, p) => n + 1 + 1 /*kr_analysis*/ + (mode === "checkin" ? (p.checkin?.declarations.length ?? 0) : (p.win?.declaration_results.length ?? 0)), 0);
       let cur = 0;
       setProgress({ current: 0, total, label: "保存を開始しています…" });
 
