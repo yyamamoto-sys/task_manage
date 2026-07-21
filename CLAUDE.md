@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.74
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.75
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1645,8 +1645,55 @@
 #      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 410件全通過／`npx eslint src`は変更前と
 #             同じ35件（24エラー・11警告、いずれも既存の無関係な指摘。新規エラー0件）／
 #             `npm run build`成功
+# v2.75 feat: 子タスク完了で親タスクを自動完了・期限アラートの親子並列表示を解消（2026-07-21）
+#      背景：v2.74でステータスを5値化した際の残課題2点（山本さんの要望）。①子タスクを持つ
+#             親タスクは、子タスクが全て完了したことをもって完了とする ②期限アラートに
+#             親タスクと子タスクが並列表示される違和感を解消する。孫は存在しない（2階層固定）
+#             ため再帰は不要、直下の子だけを見ればよい
+#      追加（A：親タスクの自動完了。`src/lib/taskHierarchy.ts`）：`computeParentAutoStatus`
+#             （純粋関数）。全ての子がdone/cancelledになった時点で親をdoneに、逆に
+#             done済みの親の子が未完了（todo/in_progress/on_hold）へ戻された場合は
+#             親を明示的にin_progressへ差し戻す（rollupStatusの値をそのまま流用せず、
+#             一貫性のため常にin_progress固定）。それ以外（親がdone以外・子も全終了でない）
+#             はnull＝手動管理を尊重し何もしない。cancelledはdoneと同じ「終わった」扱い、
+#             on_holdは「まだ動く可能性がある」ため終了とみなさない（on_holdの子が1件でも
+#             残っていれば親は完了にならない）
+#      変更（choke point統合。`src/stores/appStore.ts` saveTask）：子タスク保存のDB書き込み
+#             成功後、`existing?.status !== taskToSave.status`（statusが実際に変化した時）
+#             のみ兄弟を含めて`computeParentAutoStatus`を判定し、変更が必要なら
+#             `get().saveTask({ ...parent, status: nextStatus }, { skipCascade: true })`で
+#             親を更新（B3の cascade 適用パターンを踏襲。親の自動更新自体が新たなB3連鎖・
+#             再帰探索を誘発しない＝2階層固定なので1段で止まる）。親のB1ゲート（先行タスク
+#             未完了等）で自動完了が失敗した場合は子の保存自体を失敗させないようtry/catchで
+#             握りつぶし`reportError`のみ行う。加えて、子を持つ親タスクを手動で「完了」に
+#             した際、子がまだ全部done/cancelledでなければソフト警告のみ（B1の着手時ソフト
+#             警告と同じ非ブロッキング方式。強制完了は可能）
+#      変更（表示用ロールアップとの整合。`taskHierarchy.ts`）：`rollupStatus`・
+#             `buildParentDerivedMap`の「全done→done」判定を「全done/cancelled→done」に
+#             統一する共通ヘルパー`allChildrenTerminal`を新設（v2.74の既知残課題「子に
+#             cancelled/on_hold混在時の粗い扱い」を今回で整合。rollup関数自体のシグネチャ・
+#             他の分岐（全todo→todo／それ以外→in_progress）は無変更、Gantt完了フィルタ・
+#             ListView集計等の既存依存箇所は壊さない）
+#      追加（B：期限アラートの親子並列表示改善。`src/components/dashboard/DashboardView.tsx`）：
+#             `alertTasks`・`stagnantTasks`（同じ「期限アラート」カード内の2リスト）の
+#             フィルタ条件に`!isParentTask(t, allTasks)`を追加し、子タスクを持つ親タスク
+#             自体を一覧から除外（既存パターン踏襲。この判定は絞り込み前のallTasksで行い、
+#             mineOnly等で子だけが除外された場合に親を誤って残さないようにする）。
+#             `TaskRow`に`parentLabel?: string`を追加し、子タスクの行にはPJ名に加えて
+#             所属する親タスク名（`↳ 親タスク名`）を併記。KPIサマリー（期限超過・今日締切
+#             件数）はalertTasksから算出済みのため自動的に整合
+#      スコープ外：Teams週次通知（`supabase/functions/notify-deadlines/index.ts`）は同様の
+#             親子並列表示課題を抱えるが未対応（Deno Edge Functionの別デプロイが必要・
+#             今回は任意対応と位置づけ）。次回候補として記録するのみ
+#      テスト：`taskHierarchy.test.ts`に`computeParentAutoStatus`の回帰テスト6件＋
+#             `rollupStatus`のcancelled関連3件を追加（既存410テスト全通過を確認した上で
+#             計9テスト追加・合計419テスト）。DashboardView.tsxは既存どおり専用テスト
+#             ファイルを持たない設計（フィルタは既存テスト済みの`isParentTask`の組み合わせ）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 419件全通過／`npx eslint src`は
+#             変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／
+#             `npm run build`成功
 #
-# 最終更新：2026-07-21（v2.74）
+# 最終更新：2026-07-21（v2.75）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
