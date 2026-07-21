@@ -41,6 +41,9 @@ const KEYS = {
   OKR_ACTIVE_TOOL:     "okr_active_tool",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
+  /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態 */
+  SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
+  SIDEBAR_OKR_OPEN:    "sidebar_okr_open",
   // 管理画面
   ADMIN_LAST_TAB:      "admin_last_tab",
   ADMIN_FONT_SIZE:     "admin_font_size",

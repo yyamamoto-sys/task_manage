@@ -621,9 +621,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 onToggleShortcuts={toggleShortcuts}
               />
             )}
-            {viewMode === "admin" && (
-              <AdminView currentUser={currentUser} />
-            )}
             {viewMode === "list" && (
               <ListView
                 currentUser={currentUser}
@@ -1351,10 +1348,10 @@ function Sidebar({
   const lang = useLangStore(s => s.lang);
   const toggleLang = useLangStore(s => s.toggleLang);
   // サイドバーのセクション開閉（PJが増えても省略できるように）。localStorage で記憶。
-  const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_pj_open") !== "0"; } catch { return true; } });
-  const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem("sidebar_okr_open") !== "0"; } catch { return true; } });
-  const togglePjOpen  = () => setPjOpen(v => { const n = !v; try { localStorage.setItem("sidebar_pj_open", n ? "1" : "0"); } catch { /* ignore */ } return n; });
-  const toggleOkrOpen = () => setOkrOpen(v => { const n = !v; try { localStorage.setItem("sidebar_okr_open", n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_PJ_OPEN) !== "0"; } catch { return true; } });
+  const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_OKR_OPEN) !== "0"; } catch { return true; } });
+  const togglePjOpen  = () => setPjOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_PJ_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  const toggleOkrOpen = () => setOkrOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_OKR_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
   const c = collapsed; // 省略形
 
   return (
