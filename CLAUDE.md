@@ -1991,13 +1991,14 @@ interface Task {
   name: string;
   project_id: string | null; // ← NULL許可（ToDo単独紐づけの場合はnull）
   todo_ids: string[];        // ← ToDoへの紐づき（複数可・任意）。project_idと併用可
-  assignee_member_id: string;
-  status: 'todo' | 'in_progress' | 'done';
+  assignee_member_id: string;        // DBの主FK（先頭1人）
+  assignee_member_ids: string[];     // UI専用。複数担当者。fetchAllData で正規化（v2.24）
+  status: 'todo' | 'in_progress' | 'done' | 'on_hold' | 'cancelled'; // 5値（v2.74で保留/中止を追加）
   priority?: 'high' | 'mid' | 'low';
   start_date?: Date;
   due_date?: Date;
   estimated_hours?: number;
-  comment?: string;         // URL・ネットワークパスを含む可能性あり
+  comment: string;          // NOT NULL DEFAULT ''（DB制約に合わせ必須。URL・ネットワークパスを含む可能性あり）
   is_deleted: boolean;
   deleted_at?: Date;
   deleted_by?: string;
