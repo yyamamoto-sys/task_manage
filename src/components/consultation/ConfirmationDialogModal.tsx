@@ -13,6 +13,7 @@ import { useAppStore } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
 import { CustomSelect } from "../common/CustomSelect";
 import { BTN_APPLY_CONFIRMED, btnShift } from "../../lib/ai/uiGuide";
+import { toDate, addDays, toDateStr } from "../../lib/date";
 
 interface Props {
   dialog: ConfirmationDialog;
@@ -235,21 +236,21 @@ export function ConfirmationDialogModal({
   const [applying, setApplying] = useState(false);
 
   // 一括シフト：全タスク・PJの期日を現在値+shift_days で再計算
+  // JSTセーフな日付演算（toDate/addDays/toDateStr）を使う。new Date().setDate()+toISOString()は
+  // UTC基準の変換を挟むためタイムゾーンによっては日付が±1日ずれる（lib/date.tsのコメント参照）
   const handleBulkShift = () => {
     if (!dialog.shift_days) return;
     const next: Record<string, string> = {};
     dialog.items.forEach((item) => {
-      if (item.current_value && item.current_value !== "未設定") {
-        const d = new Date(item.current_value);
-        d.setDate(d.getDate() + dialog.shift_days!);
-        next[item.task_id] = d.toISOString().split("T")[0];
+      const d = item.current_value && item.current_value !== "未設定" ? toDate(item.current_value) : null;
+      if (d) {
+        next[item.task_id] = toDateStr(addDays(d, dialog.shift_days!));
       }
     });
     (dialog.pj_end_date_items ?? []).forEach((item) => {
-      if (item.current_end_date) {
-        const d = new Date(item.current_end_date);
-        d.setDate(d.getDate() + dialog.shift_days!);
-        next[item.pj_id] = d.toISOString().split("T")[0];
+      const d = item.current_end_date ? toDate(item.current_end_date) : null;
+      if (d) {
+        next[item.pj_id] = toDateStr(addDays(d, dialog.shift_days!));
       }
     });
     setConfirmedValues((prev) => ({ ...prev, ...next }));
