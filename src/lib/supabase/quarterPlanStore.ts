@@ -63,14 +63,6 @@ export function saveQuarterPlan(
   return saved;
 }
 
-export function finalizeQuarterPlan(krId: string, quarter: string): QuarterPlan | null {
-  const plan = loadQuarterPlan(krId, quarter);
-  if (!plan) return null;
-  const finalized: QuarterPlan = { ...plan, status: "finalized", saved_at: new Date().toISOString() };
-  localStorage.setItem(planKey(krId, quarter), JSON.stringify(finalized));
-  return finalized;
-}
-
 export function deleteQuarterPlan(krId: string, quarter: string): void {
   localStorage.removeItem(planKey(krId, quarter));
 }
