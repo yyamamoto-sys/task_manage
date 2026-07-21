@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import type { SavedChatSession } from "../../lib/ai/chatHistoryStorage";
-import { loadChatHistory, deleteChatSession } from "../../lib/ai/chatHistoryStorage";
+import { loadChatHistory, deleteChatSession, MAX_HISTORY } from "../../lib/ai/chatHistoryStorage";
 
 interface Props {
   userId: string;
@@ -200,7 +200,7 @@ export function SessionHistoryPanel({ userId, onClose }: Props) {
           相談履歴
         </span>
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          {history.length} / 10件
+          {history.length} / {MAX_HISTORY}件
         </span>
         <button
           onClick={onClose}

@@ -20,7 +20,7 @@ export interface SavedChatSession {
   }[];
 }
 
-const MAX_HISTORY = 10;
+export const MAX_HISTORY = 10;
 
 export function loadChatHistory(userId: string): SavedChatSession[] {
   try {
