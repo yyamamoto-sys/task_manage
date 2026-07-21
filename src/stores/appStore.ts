@@ -19,6 +19,7 @@
 import { create } from "zustand";
 import { showToast } from "../components/common/Toast";
 import { reportError } from "../lib/errorReporter";
+import { formatErrorForUser } from "../lib/errorMessage";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -184,8 +185,7 @@ async function handleSaveError(
   if (e instanceof ConflictError) {
     showToast("他のメンバーが先に編集していたため、最新の内容に戻しました。再度編集して保存してください。", "error");
   } else {
-    const msg = e instanceof Error ? e.message : "不明なエラー";
-    showToast(`保存に失敗しました: ${msg}`, "error");
+    showToast(formatErrorForUser("保存に失敗しました", e), "error");
   }
   reportError(e);
   await load();
