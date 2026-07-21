@@ -30,7 +30,7 @@
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
 | B AI相談 | 2026-07-06 | 2026-07-06（`69b5e52`exhaustive-deps実バグ修正／`d523586`未使用変数スイープ） | 約2,919行 | M10 ConsultationPanel整合性再確認（低優先） | — |
 | C 会議読み込み | 2026-07-06 | 2026-07-06（a11yスイープでMeetingImportPanelのドロップゾーン対応） | 約1,448行 | 既存表になし | 技術的負債の専用点検は未実施（a11y横断調査で軽く触れたのみ） |
-| D OKR | 2026-07-06 | 2026-07-06（a11yスイープでKRカード対応／未使用変数スイープでKrQuarterPlanPanel対応） | 約7,562行（okr/lab計） | 既存表になし | 週次循環ワークフロー（①会議ノート→②セッション→③分析→④レポート）が複雑化しており、専用の技術的負債点検は2026-05-13の機能実装以降未実施。次点検の有力候補 |
+| D OKR | 2026-07-06 | 2026-07-21（KR分析AIの死んだプロンプト段落`linked_pj_names`を削除。部分点検） | 約7,562行（okr/lab計） | 既存表になし | **5回目巡回で `components/okr/OkrKrAnalysisPanel.tsx`＋`lib/ai/{okrKrAnalysisClient,okrObjectiveAnalysisClient}.ts`のサブ領域のみ点検（規模約738行）。ユニット全体の点検は完了していないため最終点検日は据え置き。** 残る`components/okr/KrMeetingNotePanel.tsx`・`components/lab/*`（KrJointSessionFlow/KrReportPanel/KrWhyPanel/KrQuarterPlanPanel/CalendarLabView/ProjectStructureView）・`lib/ai/kr{SessionExtractor,ReportClient,ReportPrompt,WhyClient,QuarterPlanClient,QuarterPlanPrompt}.ts`・`lib/supabase/kr*`／`lib/okr/*`は未点検のまま次回以降へ持ち越し。週次循環ワークフロー本体（①会議ノート→②セッション→③分析→④レポート）の専門点検は依然未実施 |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
 | F 管理・設定 | 2026-07-19 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない** | 見た目/構造の刷新は完了したが、H1本体（機能分割）は未着手のまま |
 | G オンボーディング | 2026-07-21 | 2026-07-21（ガイドトップのAI紫グラデーションをトークン化・ツアー2ステップにskipIfMissing付与） | 約1,117行（tour/guide計） | M19（統合ツアーが11ステップでtour-guidelines.md §9の上限7〜9を超過。次回候補）／M20（タイトル絵文字の付け方が3ステップで基準§4からズレ。次回候補） | 4回目巡回で点検。台帳上「未点検」だった最後の1ユニット。小さい実害のある2件を修正、ツアー本文の構成変更を伴う2件はM19/M20として次回候補へ |
@@ -48,6 +48,38 @@
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 
 ---
+
+## 完了済み（2026-07-21）巡回台帳の5回目の巡回：D OKR（部分点検・サブ領域のみ）
+
+台帳の「最終点検日」が最古だったD OKR（2026-07-06）を選定。ただし規模が約7,562行と
+過去4回（317〜1,117行）よりずっと大きく1セッションの予算に収まらないため、
+`components/okr/OkrKrAnalysisPanel.tsx`（③分析パネル。KR単位/Objective単位のAI分析を
+1画面で切替）＋その2つのAIクライアント`lib/ai/okrKrAnalysisClient.ts`・
+`lib/ai/okrObjectiveAnalysisClient.ts`（規模計約738行）のサブ領域のみを今回の点検範囲とした。
+選定理由：`okrKrAnalysisClient.ts`・`okrObjectiveAnalysisClient.ts`は2026-05-19
+（`2a2b4a4`）以降ノータッチで他の候補（`OkrDashboardView.tsx`は07-07、`KrMeetingNotePanel.tsx`は
+07-06に触られている）より放置期間が長く、E PJ別AI分析（2回目巡回）で見つかった
+「AI境界ルールと矛盾する死蔵プロンプト段落」と同種のパターンが起きやすい箇所と判断した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **死んだプロンプト段落（実害小・修正）** | `okrKrAnalysisClient.ts`のSYSTEM_PROMPTに「linked_pj_names（このTFに貢献するPJの名前）が与えられている場合」という条件付き指示があったが、`KrAnalysisTf`型にそのフィールドは存在せず、`buildUserMessage`も一度もこの値を出力していなかった。`git log`で追跡すると、2026-05-19の`2a2b4a4`（3つの主要system promptに新フィールド参照ヒントを一括追記した回）で仕込まれ、兄弟コミットの`projectAnalysisClient.ts`側（同じ`linked_tf_numbers`系の死蔵段落）は2回目巡回（E PJ別AI分析）で既に削除済みだったが、`okrKrAnalysisClient.ts`側は今回まで見落とされていた。常にfalseの条件分岐を毎回AIに送るだけの死蔵指示だったため削除 | `38ebd77` |
+
+`okrObjectiveAnalysisClient.ts`は型・出力とも整合しており修正不要と判断。`OkrKrAnalysisPanel.tsx`は
+ESLintクリーン・`any`なし・exhaustive-deps違反なしで技術的負債は見つからなかった。
+
+見つけたが直さなかった課題（設計判断が要るため次回候補へ）：`lib/supabase/okrAnalysisStore.ts`の
+`softDeleteOkrAnalysis`・`fetchLatestObjectiveAnalysis`の2関数がファイル内・呼び出し元とも未使用
+（`OkrKrAnalysisPanel.tsx`にAI分析結果の削除UIが無く、Objective分析の最新取得は`fetchObjectiveAnalyses`の
+`rows[0]`で代替されている）。実害は薄いが、削除するか使う（削除UIを追加する）かはUX判断が要るため
+今回は見送り。また`fetchLatestOkrAnalysis`/`fetchLatestObjectiveAnalysis`はいずれも全履歴を取得してから
+`rows[0]`を返す実装で、KR/Objective分析実行のたびに毎回全件フェッチしている（`Promise.all`でKR数分
+並列発生）。件数が少ないうちは実害はないが、母数が増えると軽い非効率になりうる（`.order().limit(1)`化は
+次回候補）。
+
+`npx tsc --noEmit`クリーン・vitest 401/401 pass（新規テスト無し・回帰なし）・eslint 24 errors/11 warnings
+（HEAD時点と完全一致・新規0件）・build成功で確認。**ユニット全体の点検は完了していないため「最終点検日」は
+2026-07-06のまま据え置き**（台帳の備考欄に持ち越しサブ領域を明記）。
 
 ## 完了済み（2026-07-21）巡回台帳の4回目の巡回：G オンボーディング
 
