@@ -230,7 +230,7 @@ function stripHtml(html: string): string {
 /** マークダウン中の "## <name>" セクション本文を返す（無ければ null）。複数候補に対応。 */
 function extractMdSection(md: string, names: string[]): string | null {
   for (const name of names) {
-    const re = new RegExp(`^##\\s+${name.replace(/[.*+?^${}()|[\\\]\\\\]/g, "\\\\$&")}\\s*$([\\s\\S]*?)(?=^##\\s|^#\\s|\\Z)`, "im");
+    const re = new RegExp(`^##\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*$([\\s\\S]*?)(?=^##\\s|^#\\s|\\Z)`, "im");
     const m = re.exec(md);
     if (m && m[1].trim()) return m[1].trim();
   }
@@ -282,9 +282,10 @@ export function buildCarryMemo(input: BuildCarryMemoInput): string {
 
 /**
  * 前週ノートのTFエントリから「下書き」として引き継ぐフィールドを作る。
- * - TF説明・必達定義・評価観点・次の一手・現在の状態(%)・理由・TODO：そのままコピー
- * - ① 先週動かした前提・仮説：前週の「③ 次にやる一手」を素材として差し込む（編集前提）
- * - ② 実際に起きたこと：空（毎週新規）
+ * - TF説明・必達定義・評価観点（クォーターを通して変わりにくい上3項目）：そのままコピー
+ * - ① 先週動かした前提・仮説／② 実際に起きたこと／③ 次にやる一手／④ 現在の状態(%)・理由／
+ *   ▶ TODO（週次で新たに記入する下5項目）：空にする。前週の内容は UI 側で
+ *   `PrevRef`（参照表示・編集不可）として各欄の直上に表示される
  * 戻り値：tf_id → 引き継ぎ後フィールド の Map
  */
 export function carriedEntriesFrom(prev: KrMeetingNoteFull): Map<string, KrNoteEntryFields> {
