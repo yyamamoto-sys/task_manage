@@ -7,7 +7,7 @@ import {
   clampZoom, computeVisibleOrderedTaskIds, ZOOM_LEVELS,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
-import { getDaysInRange } from "../../../lib/date";
+import { getDaysInRange, toDateStr } from "../../../lib/date";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
   return {
@@ -128,6 +128,15 @@ describe("computeWeekBlocks", () => {
     const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 14));
     const blocks = computeWeekBlocks(days, 14);
     expect(blocks.map(b => b.width)).toEqual([7 * 14, 7 * 14]);
+  });
+
+  it("各ブロックにstartDate/endDate（ブロック内の最初/最後の日）を持つ（ツールチップ表示用）", () => {
+    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 31));
+    const blocks = computeWeekBlocks(days, 28);
+    expect(toDateStr(blocks[0].startDate)).toBe("2026-08-01");
+    expect(toDateStr(blocks[0].endDate)).toBe("2026-08-07");
+    expect(toDateStr(blocks[4].startDate)).toBe("2026-08-29");
+    expect(toDateStr(blocks[4].endDate)).toBe("2026-08-31");
   });
 });
 

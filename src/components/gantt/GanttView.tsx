@@ -12,7 +12,7 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } fr
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
-import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange } from "../../lib/date";
+import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
@@ -1806,7 +1806,7 @@ export function GanttView({
                   各週は必ずその月に属す＝月をまたいだ瞬間に翌月のW1から数え直す） */}
               <div style={{ height: 28, position: "relative" }}>
                 {weekBlocks.map((wb, i) => (
-                  <div key={i} title={wb.label} style={{
+                  <div key={i} title={formatDateRangeWithWeekday(wb.startDate, wb.endDate)} style={{
                     position: "absolute",
                     left: wb.startX, width: wb.width,
                     height: "100%",

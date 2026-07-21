@@ -90,6 +90,10 @@ export interface WeekBlock {
   width: number;
   /** そのブロックが月の最初の週（W1）＝月の境界。ヘッダーの区切り線の強調に使う */
   isMonthStart: boolean;
+  /** ブロック内の最初の日（ツールチップ表示用） */
+  startDate: Date;
+  /** ブロック内の最後の日（ツールチップ表示用） */
+  endDate: Date;
 }
 
 export function computeWeekBlocks(days: Date[], dayWidth: number): WeekBlock[] {
@@ -112,6 +116,8 @@ export function computeWeekBlocks(days: Date[], dayWidth: number): WeekBlock[] {
       startX: i * dayWidth,
       width: (j - i) * dayWidth,
       isMonthStart: weekNum === 1,
+      startDate: days[i],
+      endDate: days[j - 1],
     });
     i = j;
   }

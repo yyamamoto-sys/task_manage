@@ -84,6 +84,18 @@ export function formatMD(s: string): string {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
+const WEEKDAY_KANJI = ["日", "月", "火", "水", "木", "金", "土"];
+
+/** Date を「M月D日(曜)」形式に変換する（曜日は漢字1文字・半角括弧） */
+export function formatMDWithWeekday(d: Date): string {
+  return `${d.getMonth() + 1}月${d.getDate()}日(${WEEKDAY_KANJI[d.getDay()]})`;
+}
+
+/** 期間（開始日〜終了日）を「M月D日(曜)〜M月D日(曜)」形式に変換する（ガント週ラベルのツールチップ等） */
+export function formatDateRangeWithWeekday(start: Date, end: Date): string {
+  return `${formatMDWithWeekday(start)}〜${formatMDWithWeekday(end)}`;
+}
+
 /**
  * 日付（YYYY-MM-DD）→ 暦四半期（"1Q"〜"4Q"）。
  * CLAUDE.md Section 6-14 のルールに従う：
