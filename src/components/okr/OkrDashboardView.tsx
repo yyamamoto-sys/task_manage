@@ -20,6 +20,7 @@ import { fetchLatestOkrAnalysis, type OkrAnalysis } from "../../lib/supabase/okr
 import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 import { HelpButton } from "../guide/HelpButton";
 import { CustomSelect } from "../common/CustomSelect";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 // 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）
 // 概要は OKR ボタン（右上）からオーバーレイで開く。
@@ -195,19 +196,19 @@ export function OkrDashboardView({
 
   // 週次ガイダンスバナー（曜日依存なし）
   const guidanceBanner = useMemo((): {
-    icon: string; text: string; action: "session" | null; color: string; urgent: boolean;
+    icon: string; text: string; action: "session" | null; color: string;
   } | null => {
     if (activeKrs.length === 0 || sessionsLoading) return null;
     const total = thisWeekStats.checkins + thisWeekStats.winSessions;
     if (total === 0) return {
       icon: "📋",
       text: "今週はまだ記録がありません",
-      action: "session", color: "#6366f1", urgent: false,
+      action: "session", color: "#6366f1",
     };
     return {
       icon: "✅",
       text: `今週の記録　チェックイン ${thisWeekStats.checkins} 件・ウィン ${thisWeekStats.winSessions} 件`,
-      action: null, color: "#10b981", urgent: false,
+      action: null, color: "#10b981",
     };
   }, [thisWeekStats, activeKrs.length, sessionsLoading]);
 
@@ -494,8 +495,7 @@ export function OkrDashboardView({
                 }}>
                   <span style={{ fontSize: "16px" }}>{guidanceBanner.icon}</span>
                   <div style={{
-                    flex: 1, fontSize: "13px",
-                    fontWeight: guidanceBanner.urgent ? "600" : "400",
+                    flex: 1, fontSize: "13px", fontWeight: "400",
                     color: "var(--color-text-primary)",
                   }}>
                     {guidanceBanner.text}
@@ -864,6 +864,7 @@ function KrSessionHistory({
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [declCache, setDeclCache] = useState<Record<string, KrDeclaration[]>>({});
   const [declLoading, setDeclLoading] = useState<Record<string, boolean>>({});
 
@@ -912,6 +913,7 @@ function KrSessionHistory({
   const startEdit = (session: KrSession) => {
     setEditingId(session.id);
     setDeleteConfirmId(null);
+    setActionError(null);
     setEditDraft({
       session_type: session.session_type,
       signal: session.signal,
@@ -920,11 +922,12 @@ function KrSessionHistory({
     });
   };
 
-  const cancelEdit = () => { setEditingId(null); setEditDraft(null); };
+  const cancelEdit = () => { setEditingId(null); setEditDraft(null); setActionError(null); };
 
   const handleSave = async (sessionId: string) => {
     if (!editDraft) return;
     setSavingId(sessionId);
+    setActionError(null);
     try {
       await updateKrSession(sessionId, {
         session_type: editDraft.session_type,
@@ -935,8 +938,8 @@ function KrSessionHistory({
       setEditingId(null);
       setEditDraft(null);
       onRefresh();
-    } catch {
-      // error silently — user can retry
+    } catch (e) {
+      setActionError(formatErrorForUser("保存に失敗しました", e));
     } finally {
       setSavingId(null);
     }
@@ -944,12 +947,13 @@ function KrSessionHistory({
 
   const handleDelete = async (sessionId: string) => {
     setDeletingId(sessionId);
+    setActionError(null);
     try {
       await softDeleteKrSession(sessionId, currentUserId);
       setDeleteConfirmId(null);
       onRefresh();
-    } catch {
-      // error silently
+    } catch (e) {
+      setActionError(formatErrorForUser("削除に失敗しました", e));
     } finally {
       setDeletingId(null);
     }
@@ -991,6 +995,12 @@ function KrSessionHistory({
           searchable searchPlaceholder="KRで検索..."
           style={{ width: "200px" }} />
       </div>
+
+      {actionError && (
+        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+          {actionError}
+        </div>
+      )}
 
       {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px" }}>読み込み中...</div>}
 
