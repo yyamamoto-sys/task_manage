@@ -62,7 +62,7 @@ interface StatusDraft {
   checked: boolean;
   task_id: string;          // 紐づける既存タスクのID
   task_name_hint: string;
-  new_status: "todo" | "in_progress" | "done";
+  new_status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   reason: string;
   source_quote: string;
 }
@@ -1036,10 +1036,12 @@ function TaskDraftCard({
 
 // ===== StatusDraftCard =====
 
-const STATUS_OPTIONS: { value: "todo" | "in_progress" | "done"; label: string; color: string }[] = [
+const STATUS_OPTIONS: { value: "todo" | "in_progress" | "done" | "on_hold" | "cancelled"; label: string; color: string }[] = [
   { value: "todo",        label: "未着手",  color: "#64748b" },
   { value: "in_progress", label: "進行中",  color: "#2563eb" },
   { value: "done",        label: "完了",    color: "#16a34a" },
+  { value: "on_hold",     label: "保留",    color: "#d97706" },
+  { value: "cancelled",   label: "中止",    color: "#6b7280" },
 ];
 
 function StatusDraftCard({
@@ -1095,13 +1097,13 @@ function StatusDraftCard({
           {/* 新ステータス */}
           <div>
             <FieldLabel>新しいステータス</FieldLabel>
-            <div style={{ display: "flex", gap: "8px" }}>
+            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
               {STATUS_OPTIONS.map(opt => (
                 <button
                   key={opt.value}
                   onClick={() => onChange({ new_status: opt.value })}
                   style={{
-                    flex: 1, padding: "6px 8px", fontSize: "11px", fontWeight: "600",
+                    flex: "1 1 30%", padding: "6px 8px", fontSize: "11px", fontWeight: "600",
                     border: `1.5px solid ${draft.new_status === opt.value ? opt.color : "var(--color-border-primary)"}`,
                     borderRadius: "var(--radius-md)",
                     background: draft.new_status === opt.value ? `${opt.color}18` : "var(--color-bg-primary)",

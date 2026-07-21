@@ -91,8 +91,8 @@ export function CommandPalette({
       // タスク（名前部分一致・未完了を先に・最大8件）
       const matched = tasks.filter(t => t.name.toLowerCase().includes(q));
       matched.sort((a, b) => {
-        const ad = a.status === "done" ? 1 : 0;
-        const bd = b.status === "done" ? 1 : 0;
+        const ad = a.status === "done" || a.status === "cancelled" ? 1 : 0;
+        const bd = b.status === "done" || b.status === "cancelled" ? 1 : 0;
         return ad - bd;
       });
       matched.slice(0, 8).forEach(t => result.push({
@@ -232,8 +232,8 @@ export function CommandPalette({
                     <div style={{
                       fontSize: "13px", color: "var(--color-text-primary)",
                       overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                      textDecoration: item.kind === "task" && item.task.status === "done" ? "line-through" : "none",
-                      opacity: item.kind === "task" && item.task.status === "done" ? 0.6 : 1,
+                      textDecoration: item.kind === "task" && (item.task.status === "done" || item.task.status === "cancelled") ? "line-through" : "none",
+                      opacity: item.kind === "task" && (item.task.status === "done" || item.task.status === "cancelled") ? 0.6 : 1,
                     }}>
                       {item.label}
                     </div>

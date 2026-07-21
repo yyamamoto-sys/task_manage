@@ -22,7 +22,8 @@ export interface MeetingTask {
 export interface MeetingStatusUpdate {
   task_name_hint: string;        // 既存タスク名のヒント
   suggested_task_id: string | null;
-  new_status: "todo" | "in_progress" | "done";
+  /** on_hold=保留（一旦停止・将来また検討）、cancelled=中止（方針転換等でもう実施しない） */
+  new_status: "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
   reason: string;
   source_quote: string;
 }
@@ -125,7 +126,9 @@ const SYSTEM_PROMPT = `あなたは会議の文字起こしを解析して、タ
 
 【status_updates 抽出ルール】
 - suggested_task_idはタスクリストから最もマッチするタスクのID（不明はnull）
-- new_statusは"todo"/"in_progress"/"done"のいずれか
+- new_statusは"todo"/"in_progress"/"done"/"on_hold"/"cancelled"のいずれか
+- 「中止になった」「やらないことになった」「なくなった」等の方針転換の発言は new_status="cancelled"
+- 「一旦保留」「様子見」「後で検討」等、今は止めるが将来また検討しうる発言は new_status="on_hold"
 
 出力はJSONのみ。コードブロック\`\`\`は絶対に使わない。
 
