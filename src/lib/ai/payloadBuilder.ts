@@ -9,7 +9,7 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type { Project, Task, Member, ToDo, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
+import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
 import { active } from "../localData/localStore";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
@@ -168,8 +168,6 @@ interface BuildOptions {
   projects: Project[];
   tasks: Task[];
   members: Member[];
-  /** 旧仕様の ToDo→仮想PJ 変換に使っていたが廃止。互換のため受け取るが未使用 */
-  todos?: ToDo[];
   /** タスク↔PJ の追加紐付け（主project_id 以外の関与PJ）。AI に「PJ X に関わるタスク」を正しく届けるため */
   taskProjects?: TaskProject[];
   /** PJ↔TF の紐付け。AI に PJ→TF→KR の OKR文脈を伝えるため（双方向に展開） */

@@ -1,6 +1,6 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { buildPayload } from "../payloadBuilder";
-import type { Member, Project, Task, ToDo, KeyResult, TaskForce } from "../../localData/types";
+import type { Member, Project, Task, KeyResult, TaskForce } from "../../localData/types";
 
 // ===== フィクスチャヘルパー =====
 
@@ -535,14 +535,10 @@ describe("buildPayload — OKRモード（ラボ機能例外）", () => {
 
 describe("buildPayload — ToDo 仮想PJ化は廃止された（UI から todo 編集を撤廃）", () => {
   it("project_id=null + todo_ids 付きタスクはペイロードに含まれない", () => {
-    const todos: ToDo[] = [
-      { id: "td-1", tf_id: "tf-1", title: "ToDo本文", due_date: null, memo: "", is_deleted: false },
-    ];
     const { payload } = buildPayload({
       projects: [],
       tasks: [makeTask({ id: "t-1", name: "実作業", project_id: null, todo_ids: ["td-1"] })],
       members: [makeMember()],
-      todos,
       consultationType: "change",
       consultation: "x",
       scope: "all_pj",

@@ -76,7 +76,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
   const projects          = useAppStore(selectScopedProjects);
   const tasks             = useAppStore(selectScopedTasks);
   const members           = useAppStore(selectScopedMembers);
-  const todos             = useAppStore(s => s.todos);
   const objective         = useAppStore(s => s.objective);
   const keyResults        = useAppStore(s => s.keyResults);
   const taskForces        = useAppStore(s => s.taskForces);
@@ -140,7 +139,6 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         projects: targetProjects,
         tasks,
         members,
-        todos,
         taskProjects,
         projectTaskForces,
         consultationType,
@@ -226,7 +224,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         setCallState("error");
       }
     },
-    [projects, tasks, members, todos, projectIds, currentMemberId,
+    [projects, tasks, members, projectIds, currentMemberId,
       objective, keyResults, taskForces, taskProjects, projectTaskForces],
   );
 
