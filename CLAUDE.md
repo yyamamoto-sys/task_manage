@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.73
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.74
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1584,7 +1584,69 @@
 #             （変更前に確認済み・無変更）
 #      DBマイグレ不要（フロントのみ）
 #
-# 最終更新：2026-07-21（v2.73）
+# v2.74 feat: タスクステータスに「保留(on_hold)」「中止(cancelled)」を追加（2026-07-21）
+#      背景：過去に登録したタスクが方針転換で実施しなくなる（中止）・状況変化で一旦保留し将来また
+#             検討する可能性がある（保留）、というケースにステータスを付与できるようにしたい
+#             （山本さんの要望）。`Task.status`は`'todo'|'in_progress'|'done'`の3値のみだった
+#      変更：`Task.status`を`'todo'|'in_progress'|'done'|'on_hold'|'cancelled'`の5値に拡張
+#             （`src/lib/localData/types.ts`）
+#      DBマイグレ必要：`supabase/migrations/20260721_add_task_status_hold_cancelled.sql`
+#             （山本さんの手動適用。`tasks.status`のCHECK制約を動的に探して落とし、5値許可の
+#             制約を再作成するDOブロック方式。`schema.sql`のCHECK制約も同期反映済み）
+#      追加：`src/lib/taskMeta.ts`に`isActiveTaskStatus`（アクティブ＝todo/in_progressのみ）・
+#             `isPausedOrCancelledStatus`（中止・保留か）・`suppressOverdue`（期限超過の赤字強調を
+#             抑制すべきか＝done/cancelled/on_hold）の3判定関数を新設。`TASK_STATUS_LABEL`/
+#             `TASK_STATUS_STYLE`に保留（オレンジ系warningトークン）・中止（グレー系secondary/
+#             tertiaryトークン＋取り消し線）を追加
+#      変更（依存ゲートB1）：`lib/dependencies/gate.ts`の`getIncompletePredecessors`。先行タスクが
+#             cancelledなら「完了扱い」として後続の完了ブロックに使わない（doneと同じ扱い）。
+#             on_holdは引き続き「未完了扱い」（後続をブロックする＝再開されるまで先行が終わって
+#             いないのと同じ）
+#      変更（ワークロード・過負荷・クリティカルパス）：「アクティブ＝done以外」の判定基準を
+#             「アクティブ＝done・cancelled・on_holdのいずれでもない」に統一。
+#             `computeWorkload.getMemberActiveTasks`・`overload.computeOverloadRanges`は
+#             `isActiveTaskStatus`を使用。`criticalPath.computeCriticalTaskIds`はcancelled/on_hold
+#             をノード集合から除外（is_deletedと同じ扱い＝依存グラフ上「無かったこと」）。doneは
+#             従来通りノードに含める（実績としてパス長に寄与させる。cancelled/on_holdとは異なる扱い）
+#      変更（カンバンビュー）：既存3列（未着手/進行中/完了）のレイアウト・WIP制限・D&D・一括操作は
+#             無変更。「保留・中止を表示」トグル（既定OFF・🙈完了を隠すの逆発想）で開閉する追加列
+#             （on_hold/cancelled）を新設。トグルON時は既存のD&D基盤（`handleColumnDragOver`/
+#             `handleDrop`）をそのまま流用でき、任意の列からドラッグで保留・中止にできる。カードは
+#             中止のみdoneと同じ取り消し線・グレーアウト表示、保留・中止カードは期限超過表示を抑制し
+#             「ToDoに戻す」ボタンを表示。一括ステータス変更ツールバーにも保留・中止ボタンを追加。
+#             `lib/kanbanOrder.ts`の`computeKanbanOrderedIds`に`showPaused`引数を追加（Ctrl+A・
+#             Shift範囲選択の対象算出）
+#      変更（リスト/ガント/編集UI）：`ListView`（状態フィルタ・グループ化・並び順STATUS_ORDER・
+#             行の取り消し線・期限超過表示）、`GanttView`/`GanttMobileView`/`GanttParts`（バー・
+#             カードの期限超過表示・完了扱いの取り消し線・`StatusDot`）、`TaskEditModal`/
+#             `TaskSidePanel`（ステータス選択肢に保留・中止を追加・先行タスクチップのアイコンを
+#             ✅/🚫/⏸/⏳の4種に・期限超過表示）に反映。中止はdoneと同じ「終わった見た目」に、
+#             保留・中止いずれも期限超過の赤字強調は出さない
+#      変更（ダッシュボード）：期限超過・今日締切・今週締切・自分のリマインダー・今週の完了率の
+#             集計から on_hold/cancelled を除外（中止・保留になったタスクを期限超過として騒がない）。
+#             `computeDueForecast`（締切の見通し）も同様。**スコープ外**：「親タスクの自動完了」
+#             「期限アラートの親子並列表示改善」は別セッションで後続対応（今回はステータス追加と
+#             その波及のみ）。`taskHierarchy.ts`の親子ロールアップ（`rollupStatus`/
+#             `buildParentDerivedMap`）はcancelled/on_hold混在時の表示精緻化を今回は未対応
+#             （既知の残課題。子にcancelled/on_holdが混じっても例外的な誤表示はしないが、
+#             「全done」以外は一律in_progress扱いのまま）
+#      変更（AI連携）：`payloadBuilder.ts`のpj_progress・`allProjectsAnalysisClient.ts`の
+#             task_stats にon_hold/cancelled件数を追加（doneまでの内訳合計がtotalと一致しない
+#             状態を解消）。`ai/types.ts`（AITask.status・AIProject.pj_progress）・
+#             `projectAnalysisClient.ts`・`okrKrAnalysisClient.ts`のstatus型を5値に拡張。
+#             `systemPrompt.ts`にステータス5種の説明と「保留・中止は催促しない」指針を追記。
+#             会議メモAI抽出（`meetingExtractor.ts`のstatus_updates経路。applyProposal.tsとは別の
+#             既存のAI起点ステータス変更経路）が「中止になった」「一旦保留」等の発言から
+#             on_hold/cancelledを提案できるように拡張。コマンドパレットも中止タスクをdoneと同様に
+#             下位ソート・取り消し線表示
+#      テスト：`gate.test.ts`・`computeWorkload.test.ts`・`overload.test.ts`・`criticalPath.test.ts`・
+#             `kanbanOrder.test.ts`・`computeDueForecast.test.ts`に新ステータスの回帰テストを追加
+#             （既存401テスト全通過を確認した上で計9テスト追加・合計410テスト）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 410件全通過／`npx eslint src`は変更前と
+#             同じ35件（24エラー・11警告、いずれも既存の無関係な指摘。新規エラー0件）／
+#             `npm run build`成功
+#
+# 最終更新：2026-07-21（v2.74）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
