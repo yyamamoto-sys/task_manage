@@ -2459,6 +2459,11 @@ setShortIdMap(new Map());
 | `"approximate"` | ⚠ 「日数は要確認」バッジ | 活性 |
 | `"unknown"` | ❓ 「日数未定」バッジ | 非活性 |
 
+**例外**：`add_task`・`add_project`（`proposalMapper.ts`の`canApply`）は、日付が未定（`"unknown"`）でも
+反映ボタンを活性のままにする。新規タスク・新規PJの提案は日付が仮決めでも「確認して作成」画面で
+編集できるため、date_certainty による非活性化の対象外とする意図的な設計（date_change・assignee等の
+既存データ変更とは異なり、作成系は空欄のまま作ってから後で編集すればよいため）。
+
 ### 6-9. simulation_stateの画面表示ルール
 
 ```typescript
