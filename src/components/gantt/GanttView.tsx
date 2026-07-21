@@ -826,7 +826,10 @@ export function GanttView({
     const bulkTargets = isBulk
       ? [...selectedTaskIds]
           .map(id => taskById.get(id))
-          .filter((t): t is Task => !!t && t.status !== "done" && !!t.due_date)
+          // done・cancelled は「終わった」タスクとして個別ドラッグ（TaskBarRowのisDone）と
+          // 同じくシフト対象外にする（v2.74でcancelled追加後、ここが旧3値のまま
+          // "done"のみ除外していた漏れを修正。on_holdは引き続き対象＝個別ドラッグ可能なため）
+          .filter((t): t is Task => !!t && t.status !== "done" && t.status !== "cancelled" && !!t.due_date)
           .map(t => ({ taskId: t.id, origStart: t.start_date ?? null, origDue: t.due_date! }))
       : undefined;
     setDraggingMoveTask({
@@ -1902,7 +1905,11 @@ export function GanttView({
                     const isHoveredArrow = hoveredTaskId != null
                       && (dep.predecessor_task_id === hoveredTaskId || dep.successor_task_id === hoveredTaskId);
                     const predTask = activeTaskById.get(dep.predecessor_task_id);
-                    const isPredIncomplete = predTask?.status !== "done";
+                    // 「未完了」の定義は lib/dependencies/gate.ts の getIncompletePredecessors と揃える：
+                    // done・cancelled は完了扱い（cancelledは後続をブロックしない）。on_holdのみ未完了扱い。
+                    // v2.74でcancelled追加後、ここが旧2値のまま"done以外は未完了"だったため
+                    // cancelled先行の依存線が誤って点線（未完了）表示になっていたのを修正。
+                    const isPredIncomplete = predTask?.status !== "done" && predTask?.status !== "cancelled";
                     // B6：両端がクリティカルなタスクの矢印だけ専用アクセントで強調する
                     // （既存の期限超過赤・ホバー強調とは別の濃さ・太さ・矢印マーカーで判別可能にする）
                     const isCriticalArrow = showCriticalPath
