@@ -93,7 +93,7 @@ Deno.serve(async (req: Request) => {
   // ここには「期限超過（本日含む）」と「今週中に完了予定」の両方が含まれる。以降で振り分ける。
   const { data: tasks, error: tErr } = await supabase
     .from("tasks")
-    .select("id, name, due_date, status, project_id, group_id, assignee_member_id, assignee_member_ids")
+    .select("id, name, due_date, project_id, group_id, assignee_member_id, assignee_member_ids")
     .eq("is_deleted", false)
     .neq("status", "done")
     .not("due_date", "is", null)
