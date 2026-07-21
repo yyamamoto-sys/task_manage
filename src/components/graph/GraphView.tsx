@@ -5,7 +5,7 @@
 // D3.jsを使わず、Canvas + カスタム物理シミュレーションで実装。
 // ラボ機能（プロトタイプ）として位置づけ。
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -616,6 +616,10 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   const mutedColor = dark ? "#6B7280" : "#9CA3AF";
 
   // 凡例クリック：タイプ表示切替
+  // legendVersion は Canvas 描画には使わず、凡例ボタンの opacity（hiddenTypes 由来）を
+  // 再レンダーさせるためだけの値。stateRef はミュータブルな ref なので、書き換えただけでは
+  // JSX 側（凡例ボタンの薄表示）が更新されない。
+  const [, setLegendVersion] = useState(0);
   const toggleType = (type: NodeType) => {
     const s = stateRef.current;
     if (!s) return;
@@ -625,8 +629,8 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
       s.hiddenTypes.add(type);
     }
     resumeLoop();
-    // React stateを使わずCanvasで再描画するため forceUpdate 相当として draw を呼ぶ
     draw();
+    setLegendVersion(v => v + 1);
   };
 
   const today = todayStr();
