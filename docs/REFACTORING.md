@@ -36,7 +36,7 @@
 | G オンボーディング | 2026-07-21 | 2026-07-21（ガイドトップのAI紫グラデーションをトークン化・ツアー2ステップにskipIfMissing付与） | 約1,117行（tour/guide計） | M19（統合ツアーが11ステップでtour-guidelines.md §9の上限7〜9を超過。次回候補）／M20（タイトル絵文字の付け方が3ステップで基準§4からズレ。次回候補） | 4回目巡回で点検。台帳上「未点検」だった最後の1ユニット。小さい実害のある2件を修正、ツアー本文の構成変更を伴う2件はM19/M20として次回候補へ |
 | H グラフ | 2026-07-21 | 2026-07-21（凡例クリックの再レンダー漏れを修正） | 約790行（GraphView.tsx） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録） | 初回巡回実施。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録 |
 | I 通知 | 2026-07-21 | 2026-07-21（未使用select列`status`を削除） | 約390行（フロントhook+Edge Function） | M18（`notify_pref="teams"`が実質dead。次回候補へ記録） | 3回目巡回で点検。小さい実害の薄い1件を修正。Edge Function側（`supabase/functions/notify-deadlines`）はgit push対象外・個別デプロイ運用の点に注意（今回の修正も要手動デプロイ） |
-| データ基盤 | 2026-07-06 | 2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744。旧「約3,426行」は誤記だったため訂正。サブ領域②＝`appStore.ts`を除く1,254行を21回目で点検済み、サブ領域①＝`appStore.ts`単体1,324行が次回候補） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。2026-04-27にAppDataContext側の実装が先に入り、2026-05-18に11テーブル対応のrealtime.tsが追加された経緯があり、後者が前者を代替できる設計に見えるが、削除するとrealtime障害時のフォールバック網羅性が変わる可能性があるため設計判断が必要。次回候補） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。21回目でappStore.ts自体（楽観ロック・依存ゲート等のchoke point）は無改造のまま据え置き（次回サブ領域①として集中点検予定） |
+| データ基盤 | 2026-07-22 | 2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。22回目に`appStore.ts`側の`applyRemoteChange`実装・`App.tsx`の`subscribeToRealtime`呼び出しを直接確認し、`realtime.ts`の`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースが完全一致していることを再確認。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。22回目にM31を深掘りする過程で発見。低頻度更新のマスタ系データのため実害は小さいと見られるが、`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補) | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約2,578行）を21〜22回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正 |
 | AI基盤 | 2026-07-21 | 2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠） |
 | 共通UI | 2026-07-17 | 2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | 約3,120行 | 既存表になし | 新規追加のCard/DangerZone/ShortcutsPanel/CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施 |
 | ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
@@ -46,6 +46,76 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-22）巡回台帳の22回目の巡回：データ基盤（完結・サブ領域①appStore.ts単体）
+
+21回目（サブ領域②＝`appStore.ts`を除く1,254行）に続き、今回はデータ基盤ユニット最後の残り
+`appStore.ts`単体（1,324行）を点検し、これでデータ基盤ユニット全体（約2,578行）を21〜22回目の
+2セッションで完結させた。
+
+### 方針（21回目からの継続）
+
+`appStore.ts`は楽観ロック（`saveWithLock`）・B1依存ゲート・B3自動リスケ連鎖・B4ベースライン捕捉・
+親タスク自動完了（v2.75）等、多数のchoke pointロジックが集中する最重要ファイルのため、設計判断が
+要るもの・少しでも挙動が変わる可能性があるものは一切直さず、明らかに機械的・無害と確認できるものだけ
+小さく直す方針を21回目より厳しく維持した。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **Section 15違反：`handleSaveError`の保存失敗トーストが`e.message`のみ表示（実害あり・修正）** | 全21種類のエンティティ保存（group/member/objective/keyResult/taskForce/todo/project/task/milestone/memberTag等、`ConflictError`以外の全保存失敗経路が通る唯一の共通ハンドラ）が`const msg = e instanceof Error ? e.message : "不明なエラー"; showToast(\`保存に失敗しました: ${msg}\`, "error")`という、CLAUDE.md Section 15が名指しで禁止する「message だけだとエラーコードが消えるので Supabase 側の原因究明ができない」パターンそのものだった。`KrReportPanel.tsx`等で既に確立している`formatErrorForUser(prefix, e)`（Supabaseの`PostgrestError`のcode/details/hintも含めて整形）経由に統一。表示文言のみの変更でロジック・分岐・挙動は一切変えていない（`ConflictError`分岐は無変更） | `16b945b` |
+
+**choke point の相互作用チェック（無改造・観察のみ）**：B1（依存ゲート）・B3（自動リスケ連鎈）・
+B4（ベースライン捕捉）・v2.75（親タスク自動完了）の4ロジックの発火順序・条件分岐を1行ずつ突き合わせた。
+- B1の完了ハードブロック（先行タスク未完了）とv2.75の「子タスク未完了での親手動完了」ソフト警告は、
+  前者が`task.id`の先行タスク、後者が`task.id`の子タスクを見ており対象集合が異なるため重複なし。
+- v2.75の親自動完了の再帰`saveTask`呼び出し（`{skipCascade:true}`）が、その内部で再度
+  「子タスク未完了での親手動完了」ソフト警告条件を満たすかを検証したところ、`computeParentAutoStatus`が
+  既に「全子がdone/cancelled」を確認した後にのみ呼ばれるため、再帰呼び出し内の`children.every(...)`判定は
+  必ずtrueになり警告は出ない（誤ったトーストの二重発火なし）。
+- 親の自動更新自体がB1完了ゲートに引っかかった場合（親自身に未完了の先行タスクがある等）はtry/catchで
+  握りつぶし`reportError(e, "parent-auto-status")`のみ行う設計（子タスクの保存自体は成功のまま失敗を
+  伝播させない）。コメントと実装が一致していることを確認した。
+- B3自動リスケ連鎖はv2.75の親自動更新より後（コード上の順序も後）に判定されるが、親の自動更新は
+  status変更のみでdue_dateは変えないため、そもそも判定条件（`due_date`が実際に変化）を満たさず
+  発火しない。2階層固定（孫なし）のため親のさらなる親を探す再帰は起こらず、コメント「1段で止まる」の
+  記述どおりであることを確認した。
+- 以上、明らかな実装ミス（同一条件チェックの重複・コメントと実装のズレ）は見つからなかった。
+
+**Section 5（楽観ロック契約）の再確認**：group/member/objective/keyResult/taskForce/todo/project/
+task/quarterlyObjective/milestone/memberTagの全11エンティティで`runSerializedByKey`+
+`expectedUpdatedAt`+`syncUpdatedAt`のパターンが一貫していることを、21回目の外側からの確認に続き、
+appStore.ts自体を読んで再確認した（矛盾なし）。中間テーブル（ProjectTaskForce/TaskTaskForce/
+TaskProject/QuarterlyKrTaskForce）・TaskDependencyがこのパターンを使わないのは、これらが
+「編集可能なフィールドを持たない作成/削除のみのレコード」であり競合の起きようがないためで、
+意図的な設計上の除外であり漏れではないと判断した。
+
+**M31の深掘り（appStore.ts側から）**：`applyRemoteChange`（appStore.ts内・realtime受信の反映処理）
+の実装を直接確認し、`realtime.ts`の`TABLES`定数（11テーブル：tasks/projects/todos/
+task_task_forces/task_projects/project_task_forces/key_results/task_forces/milestones/members/
+task_dependencies）と`applyRemoteChange`のswitch文の11ケースが完全に一致していることを確認した。
+`upsertById`は`updated_at`の`>=`比較で「手元の方が新しい/同じなら無視」というstaleチェックが
+正しく実装されていることも確認した。M31自体（AppDataContextの400msデバウンスreloadとの二重発火）は
+設計判断が要るため無改造のまま次回候補に残す。
+
+**新規発見（M32・次回候補へ記録）**：M31を深掘りする過程で、`groups`・`quarterly_objectives`・
+`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルが`realtime.ts`の
+`TABLES`にも`AppDataContext.tsx`の購読対象（tasks/projectsのみ）にも含まれておらず、他クライアントの
+変更が一切リアルタイム反映されないことを発見した。低頻度更新のマスタ系データのため実害は小さいと
+見られるが、`TABLES`に追加するか意図的な対象外（変更頻度が低いため許容）とするかは設計判断が要るため
+コードは変更せず記録のみに留めた。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 429件全通過（既存回帰なし・本変更にテスト追加なし＝
+表示文言の統一のみのため）／`npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な
+指摘のみ。新規エラー0件）／`npm run build`成功。**これでデータ基盤ユニット全体（約2,578行）の
+点検が21〜22回目の2セッションで完結したため、台帳の「最終点検日」を2026-07-22に更新**
+（備考欄も21〜22回目の経緯を集約）。
+
+台帳全体を見渡した結果、次点検の最有力候補は**「A 計画ビュー」**（最終点検日2026-07-07・全ユニット中
+最古。約11,930行。2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン
+刷新が集中投入され点検日以降の増分が最大のため、着手時はサブ領域分割が必須）。次点は「共通UI」
+（2026-07-17・約3,120行）。
 
 ---
 
