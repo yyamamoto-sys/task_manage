@@ -27,7 +27,7 @@
 |---|---|---|---|---|---|
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
-| A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
+| A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`）／2026-07-22（23回目：`WorkloadView.tsx`の`unassignedCount`がv2.74ステータス拡張（保留/中止追加）に追従できておらず`t.status !== "done"`のままだった不整合を`isActiveTaskStatus`経由に修正） | **約13,173行**（23回目に実測。`dashboard`2,548+`gantt`components3,719+`kanban`982+`list`1,566+`task`components2,284+`milestone`481+`workload`components518+`lib/dependencies`337+`lib/baseline`39+`lib/gantt`235+`lib/{kanbanOrder,kanbanWip,selectionRange}`52+`lib/list/groupSummary`31+`lib/workload/computeWorkload`75+`lib/{computeDueForecast,computeWeeklyVelocity}`104+`lib/taskEditPayload`54+`hooks/useBulkTaskActions`148。旧「約11,930行」はcomponents配下のみの近似値で`lib/`側の純粋関数群を含んでおらず実測値に訂正。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **他ユニットの数倍の規模のため23回目にサブ領域分割案（①〜⑨）を策定・23回目は⑧を点検済み（詳細は下記「23回目の巡回」節）。** 残り①〜⑦・⑨は次回以降に持ち越し。①Dashboard核（DashboardView+DueForecastChart+VelocityChart=1,645行）②Dashboard PJ系（ProjectKarte+OnboardingHome=903行）③GanttView.tsx単体（2,432行・単一ファイルのため分割困難、他ユニットの16回目App Shell実績＝2,290行と同等規模で1セッション相応）④Gantt周辺（GanttParts+GanttMobileView+ganttUtils+ganttDependencyArrows+lib/gantt/{criticalPath,overload}=1,522行）⑤タスク編集系（TaskEditModal+TaskSidePanel+taskEditPayload=1,781行）⑥タスク追加+カンバン（QuickAddTaskModal+KanbanView+kanbanOrder/kanbanWip=1,575行）⑦リスト+リストlib（ListView+groupSummary+selectionRange=1,613行）⑧マイルストーン+ワークロード（milestone481+workload components518+workload lib75=1,074行・**済＝23回目点検完了**）⑨依存関係+ベースライン+小物（lib/dependencies337+lib/baseline39+computeDueForecast/computeWeeklyVelocity104+useBulkTaskActions148=628行）。次点検はこの分割案の①〜⑦・⑨から１つずつ進める |
 | B AI相談 | 2026-07-21 | 2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照 |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手） |
@@ -46,6 +46,87 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-22）巡回台帳の23回目の巡回：A 計画ビュー（初着手・実測＋サブ領域分割案策定＋サブ領域⑧点検）
+
+データ基盤ユニット完結（21〜22回目）を受け、台帳上「未点検」で全ユニット中最大かつ最古
+（最終点検日2026-07-07）だった最後の1ユニット「A 計画ビュー」に初めて着手した。
+
+### 実測結果（最重要成果物）
+
+台帳の旧規模感「約11,930行」は`components/{dashboard,gantt,kanban,list,task,milestone,workload}`の
+実装ファイルのみの近似値で、`lib/`側の純粋関数群（依存関係・ベースライン・ガント計算・カンバン順序・
+ワークロード集計等）を含んでいなかった。`wc -l`で全ファイル（テストファイル除く）を実測した結果、
+**約13,173行**（全ユニット中最大）と判明。
+
+| # | サブ領域 | 対象 | 行数 | 状態 |
+|---|---|---|---|---|
+| ① | Dashboard核 | DashboardView.tsx+DueForecastChart.tsx+VelocityChart.tsx | 1,645 | 未点検 |
+| ② | Dashboard PJ系 | ProjectKarte.tsx+OnboardingHome.tsx | 903 | 未点検 |
+| ③ | GanttView.tsx単体 | GanttView.tsx（単一ファイル。App Shell16回目実績2,290行と同等規模） | 2,432 | 未点検 |
+| ④ | Gantt周辺 | GanttParts.tsx+GanttMobileView.tsx+ganttUtils.ts+ganttDependencyArrows.ts+lib/gantt/{criticalPath,overload}.ts | 1,522 | 未点検 |
+| ⑤ | タスク編集系 | TaskEditModal.tsx+TaskSidePanel.tsx+taskEditPayload.ts | 1,781 | 未点検 |
+| ⑥ | タスク追加+カンバン | QuickAddTaskModal.tsx+KanbanView.tsx+kanbanOrder.ts+kanbanWip.ts | 1,575 | 未点検 |
+| ⑦ | リスト+リストlib | ListView.tsx+groupSummary.ts+selectionRange.ts | 1,613 | 未点検 |
+| ⑧ | マイルストーン+ワークロード | milestone/*+workload/*（components）+lib/workload/computeWorkload.ts | 1,074 | **済（本回点検）** |
+| ⑨ | 依存関係+ベースライン+小物 | lib/dependencies/*+lib/baseline/*+computeDueForecast.ts+computeWeeklyVelocity.ts+useBulkTaskActions.ts | 628 | 未点検 |
+
+合計 13,173行（①〜⑨の総和と一致）。`lib/taskHierarchy.ts`は前回（15回目・ユーティリティ/フック）で
+既に点検済みのため対象外とした（重複確認済み）。
+
+### サブ領域⑧の選定理由
+
+「最も独立性が高く・複雑度が低い」観点で⑧マイルストーン+ワークロードを選定。理由：
+- マイルストーン（3ファイル）・ワークロード（2コンポーネント+1lib）とも他機能との相互依存が薄く、
+  フォルダ内で完結している
+- 依存関係（B1-B5）・自動リスケ（B3）等の複雑な choke point ロジックを持たず、通常のCRUD＋
+  集計表示が中心で読解・検証コストが低い
+- v2.74（ステータス5値化）・v2.30（ドリルダウン追加）という比較的最近の変更が集中しており、
+  横断的な追従漏れが無いか確認する価値が高いと判断
+
+### 発見・修正した実バグ（1件）
+
+`src/components/workload/WorkloadView.tsx`の`unassignedCount`（「未割当タスク」バッジの件数）が、
+v2.74（2026-07-21・ステータス5値化）で導入された「アクティブ＝done・cancelled・on_holdのいずれでも
+ない」という統一定義（`lib/taskMeta.ts`の`isActiveTaskStatus`。`computeWorkload.ts`の
+`computeMemberWorkloadRows`/`getMemberActiveTasks`は既にこの定義に統一済み）に追従できておらず、
+`t.status !== "done"`のままだった。中止・保留になった未割当タスクが「未割当タスク◯件」バッジに
+誤って含まれ続ける実害のある不整合（v2.28導入時からの独自集計で、v2.74の横断修正パスから漏れていた）。
+`isActiveTaskStatus(t.status)`を使うよう1行修正。
+
+### 観察のみ（修正不要・実害なし）
+
+- `MilestoneAddForm.tsx`の`weekToDate`/`weekRangeLabel`は同ファイル内でのみ使用されており外部呼び出し
+  元は0件。ただし「未使用exportの死蔵コード」ではなく単に不要なexport修飾がついているだけ（機能は
+  生きている）ため修正対象にしなかった
+- `MilestoneAddModal.tsx`/`MilestoneEditModal.tsx`のヘッダー背景`linear-gradient(135deg,#f59e0b,#d97706)`
+  はハードコード色だが、`ganttUtils.ts`の`MS_COLOR`/`MS_BORDER`（マイルストーン◆の色）と完全に同じ値。
+  `MainLayout.tsx`の3箇所でも同じグラデーションが使われておりアプリ全体の確立済み「マイルストーン
+  アンバー」の慣用句（CLAUDE.md v2.67で判断した「#fff」文字色と同種の意図的な据え置き）と判断し、
+  トークン化の対象にしなかった
+- `MemberDetailPanel.tsx`は`getMemberActiveTasks`経由で既に`isActiveTaskStatus`基準に統一されており、
+  期限超過・グルーピング等の判定に不整合なし
+- `milestone/README.md`は現行実装（`description`列・保存経路・編集の開き口）と一致しており更新不要
+
+### 検証
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 429件全通過（既存回帰なし・本修正にテスト追加なし＝
+1行の判定条件変更のため）／`npx eslint src`は変更前と同じ35件（24 error・11 warning、いずれも既存の
+無関係な指摘。新規エラー0件）／`npm run build`成功。
+
+### コミット
+
+- `596bf1a` fix: WorkloadViewの未割当タスク件数が中止・保留を含めていた不整合を修正
+
+### 次回巡回への申し送り
+
+台帳全体を見渡した結果、次点検の最有力候補は引き続き**「A 計画ビュー」の残りサブ領域**
+（①〜⑦・⑨のいずれか）。次点検は③GanttView.tsx単体（2,432行・最大の単一ファイル）が最有力候補
+（他ユニット横断で最も複雑な choke point（B1-B5・ズーム・折りたたみ・複数選択・キーボード
+ショートカット）が集中しているため、早めに着手してリスクの高い箇所を把握しておく価値が高い）。
+軽めに済ませたい場合は⑨（628行・純粋関数中心で既存テストが厚い）や②（903行）も選択肢。
 
 ---
 
