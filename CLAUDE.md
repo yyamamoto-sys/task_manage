@@ -2497,8 +2497,13 @@ export async function applyProposalWithConfirmation(
 ### 6-12. useAIConsultationのexportルール
 
 ```typescript
-// 以下をexportする
-return { callState, session, tokenStatus, loadingMessage, shortIdMap, submit, reset };
+// 実際のexport（2026-07-21確認・実装と一致するよう更新。以下は最小限ではなく現状の全量）
+return {
+  callState, session, tokenStatus, loadingMessage, shortIdMap,
+  proposals, followUpSuggestions, errorMessage,       // AI応答の表示に使う派生state
+  submit, reset,
+  undoStack, canUndo, pushUndoSnapshot, undo, undoUntil, // Undo機能（後から追加）
+};
 
 // useFollowUpはexportしない
 // 理由：FollowUpButtonsのonSelectはinputTextへの挿入のみ行う。
