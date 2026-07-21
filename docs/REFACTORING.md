@@ -28,7 +28,7 @@
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
 | A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`） | 約11,930行（dashboard/gantt/kanban/list/task/milestone/workload計） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断） | **2026-07-17〜19に依存関係(B1-B4)・ワークロード・ガント/ダッシュ/リスト/カンバン刷新が集中投入され、点検日以降の増分が最大**。次点検の最有力候補 |
-| B AI相談 | 2026-07-06 | 2026-07-21（19回目：`ConfirmationDialogModal.tsx`の一括シフト日付演算をJSTセーフな`toDate`/`addDays`/`toDateStr`に統一） | **約5,855行**（16回目に実測。予算超過のためサブ領域分割が必須） | M10 ConsultationPanel整合性確認は17回目で確認済み・問題なし（解消）。M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見） | **17回目：①ペイロード構築〜レスポンス解釈系（計約1,335行）を点検完了。18回目：②`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`系（反映・Undo・履歴、実測約1,280行・台帳記載と一致）を点検完了。19回目：③`components/consultation/*`のうち`ConfirmationDialogModal.tsx`(645行)+`ProposalCard.tsx`(577行)＝計1,222行を点検（18回目引き継ぎのJST日付演算バグを修正）。** 残りサブ領域：③の残り9ファイル（`ConsultationPanel.tsx`705行・`SessionHistoryPanel.tsx`296行・`ChangeHistoryModal.tsx`215行・`GanttPreviewPanel.tsx`181行・`ChatHistory.tsx`134行・`FollowUpButtons.tsx`80行・`SimulationBanner.tsx`26行・`ErrorView.tsx`45行・`LoadingView.tsx`15行＝計約1,697行）。次回はこの続き（`ConsultationPanel.tsx`単体で1セッション分の予算に収まる規模） |
+| B AI相談 | 2026-07-21 | 2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照 |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手） |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
@@ -46,6 +46,58 @@
 - 1セッションにつき原則1ユニット、トークン予算20〜30k厳守（既存ルールを踏襲）
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
+
+---
+
+## 完了済み（2026-07-21）巡回台帳の20回目の巡回：B AI相談（完結・③components/consultation/* の残り9ファイル）
+
+19回目に続き、B AI相談ユニットの最後のサブ領域③`components/consultation/*`の残り9ファイル
+（`ConsultationPanel.tsx`705行・`SessionHistoryPanel.tsx`296行・`ChangeHistoryModal.tsx`215行・
+`GanttPreviewPanel.tsx`181行・`ChatHistory.tsx`134行・`FollowUpButtons.tsx`80行・
+`SimulationBanner.tsx`26行・`ErrorView.tsx`45行・`LoadingView.tsx`15行＝実測1,697行・台帳記載と一致）
+を点検し、これでB AI相談ユニット全体（約5,855行）を17〜20回目の4セッションで完結させた。
+
+| 項目 | 内容 | コミット |
+|------|------|---------|
+| **死蔵コード：`loadingMessage`配線が2026-04-30以来まるごと死蔵していた（修正）** | `useAIConsultation.ts`の`loadingMessage`/`setLoadingMessage`/`LOADING_MESSAGES`/`getRandomLoadingMessage()`は`submit()`のたびにランダムな読み込み中メッセージを計算し`ConsultationPanel.tsx`経由で`LoadingView.tsx`へ渡していたが、`LoadingView`は`{ message: _ }`で受け取って握りつぶし、内部で完全に別の固定4フェーズ配列（`CONSULT_PHASES`）を`AIProgressLoader`に渡す実装に置き換わっていた。`git log --follow`で追跡すると2026-04-30の`29facc7`（AI処理中の進捗ローダー追加）でLoadingViewが書き換えられた際、表示先を失った`message`プロップの受け渡し自体（呼び出し元のuseAIConsultation側の生成ロジック）の削除だけが漏れ、以来3ヶ月弱死蔵していた。C会議読み込み（14回目）・ユーティリティ/フック（15回目）で見つけた「仕様変更後に死んだ選択肢」と同じパターン。`LoadingView`のprops自体を削除し、`useAIConsultation.ts`のexport・CLAUDE.md Section 6-12のexportルール記載も合わせて更新 | `7503437` |
+| **実バグ：会話履歴からのAI提案反映がUndoスタックに積まれない（修正）** | `ConsultationPanel.tsx`は「最新の提案」の`ProposalCard`には`onApplied={snapshot => { pushUndoSnapshot(snapshot); reload(); }}`を渡すが、`ChatHistory`（会話履歴内の過去ターンの`ProposalCard`再表示）には`onProposalApplied`を一切渡していなかった。`ChatHistory.tsx`の`onProposalApplied?: () => void`という型（引数無し）も、`git log -S`で確認すると初回コミット（`187d5c0`）以来どの呼び出し元からも実引数を渡されたことが無い状態で、履歴上の古い提案を「反映する」で適用すると、DB書き込み自体は成功し画面には「反映しました」と表示されるにもかかわらず、Undoスタックに積まれずヘッダーの「元に戻す」「履歴」から取り消せない、という気づきにくい部分的な機能欠落だった。型を`(snapshot: UndoSnapshot) => void`に修正し、現在の提案と同じ`pushUndoSnapshot`+`reload`を`ConsultationPanel.tsx`から渡すよう配線 | `8cffc99` |
+| **localStorageキー直書き：`FollowUpButtons.tsx`（修正）** | 「次の相談候補」の開閉状態が`"consult_followup_open"`という文字列リテラルを直書きしており、`localStore.ts`冒頭の「localStorageキーをこのファイルに一元化する」設計方針に唯一反していた（16回目のApp Shell巡回で見つけたSidebarの同種漏れと同じパターン）。`KEYS.CONSULT_FOLLOWUP_OPEN`を追加し置き換え（キー文字列自体は不変のため既存ユーザーの開閉状態は保持される） | `82b038d` |
+| **マジックナンバー重複：`SessionHistoryPanel.tsx`の「◯ / 10件」（修正）** | 保存件数上限の表示`10`が、実際の上限を管理する`chatHistoryStorage.ts`の`MAX_HISTORY`（同じく10）と別に直書きされていた。値は現状一致しているため実害は無いが、将来どちらかだけ変更すると表示と実際の保存上限がズレる。`MAX_HISTORY`をexportし`SessionHistoryPanel.tsx`から参照する形に統一 | `7bf7481` |
+
+**GanttPreviewPanel.tsx特有の観点（境界整合性の確認）**：`GanttPreviewPanel.tsx`は`shortcutsOpen`/
+`onToggleShortcuts`のいずれも渡していないため、`GanttView.tsx`側の`isShortcutsControlled`判定により
+2つの埋め込み`GanttView`（現在／プレビュー）はそれぞれ独立した内部stateでショートカットパネルを
+自前描画する（v2.52で設計された「渡されない場合の後方互換」動作どおり）。`enableKeyboardShortcuts={false}`
+も両方に渡されており、v2.48で確定した「AI提案のガントプレビューでは埋め込み側のキーボード
+ショートカットを無効化する」仕様とも一致。GanttView.tsx自体（別ユニット「A計画ビュー」所属）との
+境界に不整合は無かった。
+
+**観察のみ（次回候補にはしない）**：`ConsultationPanel.tsx`の`var(--color-accent, #3b82f6)`
+フォールバック2箇所（選択中提案バッジ・選択チップ背景）は19回目に記録済みのM30と同一パターンで、
+新規箇所は無かった（既存M30の範囲内として台帳に集約）。`ChangeHistoryModal.tsx`のコメント
+「MAX_STACK(5)を超えた変更履歴からでも」は`useUndoStack.ts`の実際の`MAX_STACK = 5`と一致（乖離なし）。
+`SessionHistoryPanel.tsx`の`parseAssistantContent`（履歴JSONの手動パース・catch握りつぶし）は
+read-only表示のbest-effort処理でCLAUDE.md Section 15の対象（ユーザー操作起点のエラー）ではないため
+違反なし。`ConsultationPanel.tsx`の`useEffect`群（inputDraft/lastSubmittedTextのミラー書き込み・
+スクロール・ツアー実演・下書きプレフィル）はいずれもexhaustive-deps違反なし（ツアー実演effectの
+意図的な`eslint-disable`はコメントで理由明記済み）。`ErrorView.tsx`はmessageをそのまま表示するのみで
+握りつぶしは無いが、その`errorMessage`の生成元（`useAIConsultation.ts`の`catch`節）は
+`formatErrorForUser`を経由せず`AIError`/`Error`の`.message`をそのまま使っている。ただし`AIError`は
+`apiClient.ts`側で状態コード・詳細付きの日本語メッセージを個別に組み立てて投げる設計（レガシー経路・
+CLAUDE.md Section 16の既存の例外）のため、Section 15が問題視する「エラーが発生しました」的な情報
+欠落ではないと判断し、今回のスコープ（`components/consultation/*`）外の`useAIConsultation.ts`/
+`apiClient.ts`への変更は見送った（設計判断が要るため次回候補にもしない・現状の設計を追認）。
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 429件全通過（既存回帰なし・本変更にテスト追加なし＝
+死蔵コード削除とUI配線修正のみのため）／`npx eslint src`は変更前と同じ35件（24エラー・11警告、
+既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功。**これで「B AI相談」ユニット
+（約5,855行）の点検が17〜20回目の4セッションで完結したため、台帳の「最終点検日」を2026-07-21に
+更新**（備考欄も17〜20回目の経緯を集約）。
+
+台帳全体を見渡した結果、次点検の最有力候補は**「データ基盤」**（最終点検日2026-07-06・最古。
+約2,573行。`appStore.ts`の楽観ロック・依存ゲート等は実害が大きいため触る場合は特に慎重な進行が
+必要）。僅差の次点は「A 計画ビュー」（2026-07-07・約11,930行。2026-07-17〜19の依存関係/ワークロード/
+ガント刷新の集中投入で点検日以降の増分が最大のため、着手時はサブ領域分割が必須）。
 
 ---
 
