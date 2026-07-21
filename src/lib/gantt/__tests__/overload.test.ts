@@ -83,6 +83,18 @@ describe("computeOverloadRanges", () => {
     expect(result).toEqual([]);
   });
 
+  it("5b. cancelled/on_hold のタスクは占有カウントから除外される（2026-07-21 ステータス拡張）", () => {
+    const tasks = [
+      makeTask({ id: "A", start_date: "2026-08-05", due_date: "2026-08-10" }),
+      makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-10" }),
+      makeTask({ id: "C", start_date: "2026-08-05", due_date: "2026-08-10" }),
+      makeTask({ id: "D", start_date: "2026-08-05", due_date: "2026-08-10", status: "cancelled" }),
+      makeTask({ id: "E", start_date: "2026-08-05", due_date: "2026-08-10", status: "on_hold" }),
+    ];
+    const result = computeOverloadRanges(tasks, RANGE_START, RANGE_END);
+    expect(result).toEqual([]);
+  });
+
   it("6. 担当者フィルタ：getMemberActiveTasks で絞り込んだ結果だけがそのメンバーの過負荷判定に使われる", () => {
     const allTasks = [
       makeTask({ id: "A", start_date: "2026-08-05", due_date: "2026-08-10", assignee_member_ids: ["m1"] }),

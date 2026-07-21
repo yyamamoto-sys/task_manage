@@ -144,6 +144,29 @@ describe("computeCriticalTaskIds", () => {
     expect(result).toEqual(new Set(["A"]));
   });
 
+  it("8b. cancelled/on_hold のタスクはノード集合から除外される（is_deletedと同じ扱い。2026-07-21）", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-05" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08", status: "cancelled" });
+    const c = makeTask({ id: "C", start_date: "2026-08-01", due_date: "2026-08-02" });
+    const d = makeTask({ id: "D", start_date: "2026-08-01", due_date: "2026-08-03", status: "on_hold" });
+    const deps = [
+      makeDep({ predecessor_task_id: "A", successor_task_id: "B" }),
+      makeDep({ predecessor_task_id: "A", successor_task_id: "D" }),
+    ];
+    const result = computeCriticalTaskIds([a, b, c, d], deps);
+    expect(result.has("B")).toBe(false);
+    expect(result.has("D")).toBe(false);
+    expect(result).toEqual(new Set(["A"]));
+  });
+
+  it("8c. done のタスクは引き続きノード集合に含まれる（cancelled/on_holdとは異なる扱い）", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-05", status: "done" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    const result = computeCriticalTaskIds([a, b], deps);
+    expect(result).toEqual(new Set(["A", "B"]));
+  });
+
   it("空配列を渡すと空集合", () => {
     expect(computeCriticalTaskIds([], [])).toEqual(new Set());
   });

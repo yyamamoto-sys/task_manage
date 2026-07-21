@@ -69,6 +69,20 @@ describe("computeMemberWorkloadRows — 件数集計", () => {
     expect(m2.active_count).toBe(2);
   });
 
+  it("cancelled/on_hold は active_count に含めない（2026-07-21 ステータス拡張）", () => {
+    const rows = computeMemberWorkloadRows(
+      [makeMember({ id: "m1" })],
+      [
+        makeTask({ id: "t1", status: "todo", assignee_member_id: "m1" }),
+        makeTask({ id: "t2", status: "cancelled", assignee_member_id: "m1" }),
+        makeTask({ id: "t3", status: "on_hold", assignee_member_id: "m1" }),
+      ],
+    );
+    const row = rows[0];
+    expect(row.todo_count).toBe(1);
+    expect(row.active_count).toBe(1);
+  });
+
   it("is_deleted なタスク・メンバーは除外する", () => {
     const rows = computeMemberWorkloadRows(
       [makeMember({ id: "m1" }), makeMember({ id: "m2", is_deleted: true })],

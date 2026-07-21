@@ -74,6 +74,21 @@ describe("getIncompletePredecessors", () => {
     const result = getIncompletePredecessors("succ", [pred1, pred2, succ], deps);
     expect(result.map(t => t.id)).toEqual(["p1"]);
   });
+
+  it("先行タスクが cancelled なら done と同じく完了扱い（除外する）", () => {
+    const pred = makeTask({ id: "pred", status: "cancelled" });
+    const succ = makeTask({ id: "succ" });
+    const dep = makeDep({ predecessor_task_id: "pred", successor_task_id: "succ" });
+    expect(getIncompletePredecessors("succ", [pred, succ], [dep])).toEqual([]);
+  });
+
+  it("先行タスクが on_hold なら引き続き未完了扱い（後続をブロックする）", () => {
+    const pred = makeTask({ id: "pred", status: "on_hold" });
+    const succ = makeTask({ id: "succ" });
+    const dep = makeDep({ predecessor_task_id: "pred", successor_task_id: "succ" });
+    const result = getIncompletePredecessors("succ", [pred, succ], [dep]);
+    expect(result.map(t => t.id)).toEqual(["pred"]);
+  });
 });
 
 describe("formatBlockerNames", () => {
