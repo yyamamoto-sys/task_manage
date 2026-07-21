@@ -13,6 +13,7 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS } from "../../lib/localData/localStore";
 import { useAppStore } from "../../stores/appStore";
+import { formatErrorForUser } from "../../lib/errorMessage";
 import type { Member } from "../../lib/localData/types";
 
 interface Props {
@@ -116,8 +117,8 @@ export function SetupWizard({ onComplete }: Props) {
       }
       localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
       onComplete();
-    } catch {
-      setSaveError("保存に失敗しました。Supabaseの設定を確認してください。");
+    } catch (e) {
+      setSaveError(formatErrorForUser("保存に失敗しました", e));
       setSaving(false);
     }
   };
@@ -192,13 +193,12 @@ export function SetupWizard({ onComplete }: Props) {
             </div>
 
             <div style={{
-              background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)",
+              background: "var(--color-bg-info)", border: "1px solid var(--color-border-info)",
               borderRadius: "var(--radius-md)", padding: "10px 12px",
-              fontSize: "11px", color: "var(--color-text-warning)", lineHeight: 1.6,
+              fontSize: "11px", color: "var(--color-text-info)", lineHeight: 1.6,
               marginBottom: "24px",
             }}>
-              ⚠ 現在はデモ版です。データはこのブラウザのみに保存されます。<br />
-              Supabase移行後にチーム全員でデータを共有できます。
+              ℹ ここで登録したメンバーはSupabaseに保存され、チーム全員でリアルタイムに共有されます。
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
