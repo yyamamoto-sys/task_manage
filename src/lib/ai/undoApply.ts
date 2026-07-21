@@ -5,6 +5,7 @@
 // - task_field: 指定フィールドをoldValueに戻す
 // - task_restore: is_deleted=false に戻す（scope_reduce/pause の取り消し）
 // - task_delete: is_deleted=true にする（add_task で作成したタスクの取り消し）
+// - pj_field: PJの指定フィールドをoldValueに戻す（date_changeのPJ終了日変更の取り消し）
 // - pj_restore: PJとその配下の全タスクをis_deleted=falseに戻す（scope_reduce/pause の取り消し）
 // - pj_delete: PJとその配下の全タスクをis_deleted=trueにする（add_project の取り消し）
 //
@@ -116,6 +117,19 @@ export async function applyUndo(
 
         if (pjError) {
           throw new Error(`PJ削除（Undo）エラー: ${pjError.message}`);
+        }
+      } else if (op.type === "pj_field") {
+        const { error } = await supabase
+          .from("projects")
+          .update({
+            [op.field]: op.oldValue,
+            updated_at: now,
+            updated_by: currentUserId,
+          })
+          .eq("id", op.pjId);
+
+        if (error) {
+          throw new Error(`PJフィールド復元エラー (${op.field}): ${error.message}`);
         }
       } else if (op.type === "pj_restore") {
         // PJ配下の全タスクを復元
