@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.77
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.78
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1757,7 +1757,31 @@
 #      補足：strategist調査レポートの高優先3件のうち①。②優先度ストライプ・滞留バッジ（v2.78）・
 #             ③日付セルから直接タスク作成（v2.79）は別コミットで実施
 #
-# 最終更新：2026-07-22（v2.77）
+# v2.78 feat: カレンダービューに優先度ストライプ・滞留バッジを追加（刷新第2弾②）（2026-07-22）
+#      背景：strategist調査レポート（`docs/dev/calendar-improvement-research.md`）の高優先②。
+#             カレンダーのタスク行はPJカラードット1つのみで視覚差が乏しく、カンバン（v2.68優先度
+#             ストライプ・v2.70滞留バッジ）・ダッシュボードで確立した「色に意味を持たせる」設計が
+#             カレンダーだけ手薄だった
+#      変更：`src/components/lab/CalendarLabView.tsx`のタスク行に、カンバンの
+#             `TASK_PRIORITY_STRIPE_COLOR`（`src/lib/taskMeta.ts`）をそのまま流用した左3px枠線の
+#             優先度ストライプ（高＝danger赤／中＝warning橙／低＝info青／未設定＝border-primaryで無彩色）
+#             を追加。ガントの`isTaskStagnant`/`STAGNANT_THRESHOLD_DAYS`（`src/components/gantt/
+#             ganttUtils.ts`）をそのまま流用した滞留バッジ「🕒N日」をタスク名の右側に追加
+#             （in_progressかつ`STAGNANT_THRESHOLD_DAYS`日以上`updated_at`が動いていない場合のみ表示。
+#             日数計算もカンバンの表示と同じ`Math.floor`ベース）。判定ロジックの二重化を避けるため、
+#             新しい配色定数・滞留判定は作らずカンバン/ガントの既存exportをimportするのみ
+#      設計判断：モックはセル1行の高さを増やさない方針のため、タスク行の`padding`・行間`gap`は
+#             一切変更していない（ストライプはborderLeftの3px追加のみ、滞留バッジはタスク名と同じ
+#             10px行の中にflexShrink:0で収める8pxの小さいテキストとして実装。カンバンの
+#             丸ピル型バッジ（`padding:"2px 7px"`＋`border-radius:full`）はセル内の縦スペースが
+#             無いため踏襲せず、素のテキストラベルに簡略化）
+#      対象：`src/components/lab/CalendarLabView.tsx`のみ
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 446件全通過（既存テストのみ・回帰なし。
+#             純粋関数の新規切り出しは無いためユニットテスト追加なし）／`npx eslint src`は変更前と
+#             同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功
+#      DBマイグレ不要（フロントのみの変更）
+#
+# 最終更新：2026-07-22（v2.78）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

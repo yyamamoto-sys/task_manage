@@ -13,7 +13,8 @@ import { useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
-import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue } from "../../lib/taskMeta";
+import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
+import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 
 interface Props {
   onClose: () => void;
@@ -347,6 +348,13 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
                   // まだ動きうる仕事のため見た目は変えない（他ビューと同じ扱い。CLAUDE.md v2.77）
                   const isClosed = t.status === "done" || t.status === "cancelled";
                   const isOverdue = !suppressOverdue(t.status) && ds <= todayStr;
+                  // ② 優先度ストライプ（カンバンの TASK_PRIORITY_STRIPE_COLOR をそのまま流用。判定ロジックの二重化を避ける）
+                  const stripeColor = t.priority ? TASK_PRIORITY_STRIPE_COLOR[t.priority] : "var(--color-border-primary)";
+                  // ② 滞留バッジ（ガントの isTaskStagnant/STAGNANT_THRESHOLD_DAYS をそのまま流用）
+                  const stagnant = isTaskStagnant(t);
+                  const stagnantDays = stagnant && t.updated_at
+                    ? Math.floor((Date.now() - new Date(t.updated_at).getTime()) / (1000 * 60 * 60 * 24))
+                    : 0;
                   return (
                     <button
                       key={t.id}
@@ -355,18 +363,27 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
                       style={{
                         display: "flex", alignItems: "center", gap: "4px",
                         padding: "1px 5px", borderRadius: "var(--radius-sm)", cursor: "pointer",
-                        background: "var(--color-bg-secondary)", border: "none", textAlign: "left",
+                        background: "var(--color-bg-secondary)",
+                        border: "none", borderLeft: `3px solid ${stripeColor}`,
+                        textAlign: "left",
                         overflow: "hidden", flexShrink: 0,
                         opacity: isClosed ? 0.5 : 1,
                       }}
                     >
                       <span style={{ width: 5, height: 5, borderRadius: "50%", flexShrink: 0, background: pj?.color_tag ?? "var(--color-text-tertiary)" }} />
                       <span style={{
+                        flex: 1,
                         fontSize: "10px", lineHeight: 1.4,
                         color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-primary)",
                         textDecoration: isClosed ? "line-through" : "none",
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>{t.name}</span>
+                      {stagnant && (
+                        <span title={`${STAGNANT_THRESHOLD_DAYS}日以上更新なし`} style={{
+                          flexShrink: 0, fontSize: "8px", lineHeight: 1.4,
+                          color: "var(--color-text-warning)", whiteSpace: "nowrap",
+                        }}>🕒{stagnantDays}日</span>
+                      )}
                     </button>
                   );
                 })}
