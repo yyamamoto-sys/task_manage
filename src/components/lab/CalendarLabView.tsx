@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
-import { isAssignedTo } from "../../lib/taskMeta";
+import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue } from "../../lib/taskMeta";
 
 interface Props {
   onClose: () => void;
@@ -88,7 +88,8 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
       // 表示グリッド外のタスクはスキップ（全期間ループのパフォーマンス問題を解消）
       if (due < gridRange.start || due > gridRange.end) continue;
       if (mineOnly && !isAssignedTo(t, currentUser.id)) continue;
-      if (hideDone && t.status === "done") continue;
+      // 完了・保留・中止をまとめて隠す（他ビュー v2.74〜76 のステータス5値化に追従。CLAUDE.md v2.77）
+      if (hideDone && (t.status === "done" || isPausedOrCancelledStatus(t.status))) continue;
       if (selectedPjIds.size > 0 && (!t.project_id || !selectedPjIds.has(t.project_id))) continue;
       if (!map.has(due)) map.set(due, []);
       map.get(due)!.push(t);
@@ -170,9 +171,9 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
 
           <button className="cal-print-hide"
             onClick={() => setHideDone(v => !v)}
-            title={hideDone ? "完了タスクも表示する" : "完了タスクを非表示にする"}
+            title={hideDone ? "完了・保留・中止タスクも表示する" : "完了・保留・中止タスクを非表示にする"}
             style={{ ...HEADER_BTN, background: hideDone ? "var(--color-bg-secondary)" : "var(--color-brand-light)", color: hideDone ? "var(--color-text-secondary)" : "var(--color-text-purple)", borderColor: hideDone ? "var(--color-border-primary)" : "var(--color-brand-border)" }}
-          >🙈 完了を隠す</button>
+          >🙈 完了・保留・中止を隠す</button>
 
           <button className="cal-print-hide"
             onClick={() => setPjMenuOpen(v => !v)}
@@ -276,7 +277,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
             <span style={{ color: "var(--color-text-danger)" }}>🔴 赤字 ＝ 期限超過（当日含む）</span>
             <span>● 色ドット ＝ プロジェクト別カラー</span>
             {mineOnly && <span>👤 自分担当のタスクのみ表示</span>}
-            {hideDone && <span>🙈 完了タスクは非表示</span>}
+            {hideDone && <span>🙈 完了・保留・中止タスクは非表示</span>}
           </div>
         </div>
 
@@ -341,10 +342,11 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
 
                 {/* タスク（最大4件＋残数） */}
                 {dayTasks.slice(0, 4).map(t => {
-                  const pj     = t.project_id ? projectById.get(t.project_id) : undefined;
-                  const isDone = t.status === "done";
-                  // #3: <= で「今日期限のタスク」も期限超過として強調表示
-                  const isOverdue = ds <= todayStr && !isDone;
+                  const pj = t.project_id ? projectById.get(t.project_id) : undefined;
+                  // 中止(cancelled)はdoneと同じ「終わった見た目」（取り消し線・薄い表示）。保留(on_hold)は
+                  // まだ動きうる仕事のため見た目は変えない（他ビューと同じ扱い。CLAUDE.md v2.77）
+                  const isClosed = t.status === "done" || t.status === "cancelled";
+                  const isOverdue = !suppressOverdue(t.status) && ds <= todayStr;
                   return (
                     <button
                       key={t.id}
@@ -355,14 +357,14 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
                         padding: "1px 5px", borderRadius: "var(--radius-sm)", cursor: "pointer",
                         background: "var(--color-bg-secondary)", border: "none", textAlign: "left",
                         overflow: "hidden", flexShrink: 0,
-                        opacity: isDone ? 0.5 : 1,
+                        opacity: isClosed ? 0.5 : 1,
                       }}
                     >
                       <span style={{ width: 5, height: 5, borderRadius: "50%", flexShrink: 0, background: pj?.color_tag ?? "var(--color-text-tertiary)" }} />
                       <span style={{
                         fontSize: "10px", lineHeight: 1.4,
                         color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-primary)",
-                        textDecoration: isDone ? "line-through" : "none",
+                        textDecoration: isClosed ? "line-through" : "none",
                         overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
                       }}>{t.name}</span>
                     </button>
