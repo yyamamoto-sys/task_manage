@@ -1,0 +1,61 @@
+-- 【重大】members / projects / tasks に残っていた全公開ポリシーを削除する
+-- 適用方法: Supabase SQL Editor に全文貼って実行
+-- 適用状況: 2026-07-22 に dev / prod とも適用・動作確認済み（このファイルは記録用）
+--
+-- 【背景・何が起きていたか】
+-- マルチテナンシー導入（20260626_add_multitenancy.sql）以降、members/projects/tasks には
+-- 部署スコープのポリシー（members_group / projects_group / tasks_group）を作成していたが、
+-- それ以前から存在した "authenticated full access"（USING (true)）を削除していなかった。
+--
+-- PostgreSQL の RLS は **PERMISSIVE ポリシーを OR で結合する**ため、実際の判定は
+--   (group_ids && current_member_group_ids() OR current_member_is_super_admin())
+--   OR true
+--   → 常に true
+-- となり、**部署分離は導入以来一度も実効していなかった**（ログイン済みであれば誰でも
+-- 全部署の members / projects / tasks を参照・更新できる状態だった）。
+--
+-- 2026-07-22、部署を増やす準備として pg_policies を実地調査して発覚。
+-- マイグレーションのコードだけを読んでいたときは「分離は効いている」と誤認していた。
+-- **教訓：RLSの実効性は、マイグレーションのコードではなく本番の pg_policies を見て確認する。**
+-- 同じ名前のポリシーを CREATE し直しても、別名の緩いポリシーが残っていれば OR で無効化される。
+--
+-- なお supabase/schema.sql は既に正しく（この3テーブルについて DROP してから
+-- 部署スコープのポリシーを作る形に）修正済みだったため、新規環境をschema.sqlから
+-- 構築した場合はこの穴は再現しない。穴が残っていたのは積み上げ式で構築された既存環境のみ。
+--
+-- 【適用前の安全確認（2026-07-22に実施済み・全てクリア）】
+--   1. members / projects / tasks とも group_id が group_ids に含まれない行が 0 件
+--   2. members / projects / tasks とも group_ids が空配列の行が 0 件
+--      （空だと削除後にその行・その人が何も見えなくなるため）
+--   3. 全社スーパー管理者が1名以上存在する（万一の際に全体を確認できる人の確保）
+-- 上記が崩れている環境では、先にデータを整えてからでないと適用しないこと。
+--
+-- 【スコープ外＝この時点で意図的に残した全公開ポリシー】
+-- ・groups の groups_select（USING (true)）
+--     部署の一覧は全認証ユーザーが参照できる設計（CLAUDE.md Section 1.6 に明記）。意図的。
+-- ・OKR系（objectives / key_results / task_forces / todos / kr_* / okr_analyses /
+--   quarterly_* 等）および中間テーブル・ログ系（member_tags / task_projects /
+--   task_task_forces / project_task_forces / admin_change_logs / ai_usage_logs /
+--   project_analyses 等）
+--     2026-07-02のセキュリティ調査時点で「マルチテナント未対応・今回は対象外」と
+--     山本さんが判断した既知の残課題。別途設計してから対応する。
+
+DROP POLICY IF EXISTS "authenticated full access" ON members;
+DROP POLICY IF EXISTS "authenticated full access" ON projects;
+DROP POLICY IF EXISTS "authenticated full access" ON tasks;
+
+-- ============================================================
+-- 適用後の確認クエリ（別途実行）
+-- ============================================================
+-- 下記を実行し、members / projects / tasks について
+-- "authenticated full access" が消えていること、
+-- *_group ポリシーだけが残っていることを確認する。
+--
+-- SELECT c.relname AS tbl, p.polname AS policy,
+--        pg_get_expr(p.polqual, p.polrelid) AS using_expr
+-- FROM pg_class c
+-- JOIN pg_namespace n ON n.oid = c.relnamespace
+-- JOIN pg_policy p ON p.polrelid = c.oid
+-- WHERE n.nspname = 'public'
+--   AND c.relname IN ('members','projects','tasks')
+-- ORDER BY c.relname, p.polname;
