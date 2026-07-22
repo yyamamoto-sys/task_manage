@@ -1151,7 +1151,14 @@ export function GanttView({
   }, [isResizing, draggingResizeTask, draggingMoveTask, linkDrag]);
 
   // ドラッグ中のドロップ候補の可否をリアルタイム判定する（store の addTaskDependency が実際に見るのと
-  // 同じ taskDependencies を使い、プレビューと実際の結果を一致させる）
+  // 同じ taskDependencies（is_deleted除外も含めて同一のフィルタ）を使い、プレビューと実際の結果を
+  // 一致させる。is_deleted を除外しないと、他クライアントが削除した依存が realtime UPDATE で
+  // 配列内に残ったまま（upsertByIdはDELETEイベントでしか行を除去しないため）重複・循環判定に
+  // 亡霊として残り続けてしまう）。
+  const activeTaskDependenciesRaw = useMemo(
+    () => taskDependenciesRaw.filter(d => !d.is_deleted),
+    [taskDependenciesRaw],
+  );
   const linkDropValidity = useMemo((): boolean | null => {
     if (!linkDrag || !linkDragTarget || linkDragTarget.taskId === linkDrag.sourceTaskId) return null;
     const resolved = resolveLinkDirection(
@@ -1159,8 +1166,8 @@ export function GanttView({
       { taskId: linkDragTarget.taskId, side: linkDragTarget.side },
     );
     if (!resolved) return false;
-    return canAddDependency(taskDependenciesRaw, resolved.predecessorTaskId, resolved.successorTaskId).ok;
-  }, [linkDrag, linkDragTarget, taskDependenciesRaw]);
+    return canAddDependency(activeTaskDependenciesRaw, resolved.predecessorTaskId, resolved.successorTaskId).ok;
+  }, [linkDrag, linkDragTarget, activeTaskDependenciesRaw]);
 
   // 各タスク行に渡す linkUi を組み立てる（TaskBarRow は memo 化されているため、対象外の行は
   // sourceSide/isTarget が全て変化しないオブジェクトを都度作っても comparator で弾かれ再レンダリングされない）

@@ -105,4 +105,19 @@ describe("addTaskDependency: 循環・自己依存・重複の防止（B1）", (
     ).rejects.toThrow(/循環/);
     expect(useAppStore.getState().taskDependencies).toHaveLength(1);
   });
+
+  it("is_deleted:true の依存（他クライアントの削除がrealtime UPDATEで配列に残ったもの）は重複・循環判定を邪魔しない", async () => {
+    // upsertById はDELETEイベントでのみ行を除去するため、他クライアントの論理削除（UPDATE）を
+    // 受け取った直後は taskDependencies 配列に is_deleted:true の行が残ったままになりうる。
+    const deletedDup = makeDep({ predecessor_task_id: "t1", successor_task_id: "t2", is_deleted: true });
+    useAppStore.setState({ taskDependencies: [deletedDup] });
+
+    // 削除済みのはずの t1→t2 を再度追加してもバリデーション（自己依存・重複・循環）は通過する
+    // （楽観更新は同期的にバリデーション直後へ行われるため、その後のネットワーク呼び出しの
+    // 成否を待たずに検証できる。実DBが無いテスト環境ではinsertTaskDependency自体は失敗しうるが、
+    // それはこのテストの検証対象ではない）
+    await useAppStore.getState().addTaskDependency("t1", "t2", "m1").catch(() => { /* network is unmocked here */ });
+    const deps = useAppStore.getState().taskDependencies;
+    expect(deps.some(d => d.predecessor_task_id === "t1" && d.successor_task_id === "t2" && !d.is_deleted)).toBe(true);
+  });
 });

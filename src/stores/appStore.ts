@@ -1069,8 +1069,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== TaskDependency（B1：依存ゲート） =====
   addTaskDependency: async (predecessorTaskId, successorTaskId, createdBy) => {
-    // 自己依存・重複・循環はここで弾く（DB制約だけでは循環を表現できないため必須の関所）
-    const check = canAddDependency(get().taskDependencies, predecessorTaskId, successorTaskId);
+    // 自己依存・重複・循環はここで弾く（DB制約だけでは循環を表現できないため必須の関所）。
+    // is_deleted は必ず除外する：他クライアントが依存を削除した realtime UPDATE は upsertById が
+    // 行を配列内に残したまま is_deleted:true で上書きするだけ（DELETE イベントではないため）で、
+    // フィルタしないと「削除済みの依存」が重複・循環判定に亡霊として残り続けてしまう。
+    const activeDeps = get().taskDependencies.filter(d => !d.is_deleted);
+    const check = canAddDependency(activeDeps, predecessorTaskId, successorTaskId);
     if (!check.ok) {
       const message = check.reason ?? "先行タスクを追加できません";
       showToast(message, "error");
