@@ -17,6 +17,7 @@ import type { Member, Task } from "../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_PRIORITY_LABEL } from "../lib/taskMeta";
 import { confirmDialog } from "../lib/dialog";
 import { showToast } from "../components/common/Toast";
+import { formatErrorForUser } from "../lib/errorMessage";
 
 export function useBulkTaskActions(
   allTasks: Task[],
@@ -53,7 +54,7 @@ export function useBulkTaskActions(
       });
       clearSelection();
     } catch (err) {
-      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("一括変更に失敗しました", err), "error");
     }
   }, [allTasks, selectedIds, saveTask, currentUserId, clearSelection]);
 
@@ -81,7 +82,7 @@ export function useBulkTaskActions(
       });
       clearSelection();
     } catch (err) {
-      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("一括変更に失敗しました", err), "error");
     }
   }, [allTasks, selectedIds, saveTask, currentUserId, clearSelection]);
 
@@ -120,7 +121,7 @@ export function useBulkTaskActions(
       });
       clearSelection();
     } catch (err) {
-      showToast(`一括変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("一括変更に失敗しました", err), "error");
     }
   }, [allTasks, selectedIds, saveTask, currentUserId, members, clearSelection]);
 
@@ -140,7 +141,7 @@ export function useBulkTaskActions(
       });
       clearSelection();
     } catch (err) {
-      showToast(`一括削除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("一括削除に失敗しました", err), "error");
     }
   }, [selectedIds, deleteTask, restoreTask, currentUserId, clearSelection]);
 
