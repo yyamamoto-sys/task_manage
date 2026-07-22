@@ -64,6 +64,11 @@ const KEYS = {
   // ダッシュボード
   REMINDER_DAYS:       "reminder_days",
   STAGNANT_DAYS:       "stagnant_days_threshold",
+  // カレンダー（ラボ機能）
+  /** 月／週の表示モード切替（刷新第2弾④） */
+  CAL_VIEW_MODE:       "cal_view_mode",
+  /** 週末（土日）セルを淡くするトグル（刷新第2弾⑥・既定OFF） */
+  CAL_DIM_WEEKENDS:    "cal_dim_weekends",
   // エラー履歴
   ERROR_HISTORY:       "app:error_history",
   // スキーマバージョン管理（内部用）

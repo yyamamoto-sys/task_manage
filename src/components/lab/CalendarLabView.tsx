@@ -12,7 +12,7 @@
 import { useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
-import { active } from "../../lib/localData/localStore";
+import { active, KEYS } from "../../lib/localData/localStore";
 import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 
@@ -57,6 +57,17 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
   const [selectedPjIds, setSelectedPjIds] = useState<Set<string>>(new Set());
   // ③ 日付セルホバー時の「＋」表示用（PCのみのアフォーダンス。タッチ端末はセル自体のクリックで開く）
   const [hoveredCell, setHoveredCell] = useState<string | null>(null);
+  // ⑥ 週末（土日）セルを淡くするトグル（既定OFF。土日の列自体は消さない＝暦の形を保つ）
+  const [dimWeekends, setDimWeekends] = useState<boolean>(() => {
+    try { return localStorage.getItem(KEYS.CAL_DIM_WEEKENDS) === "1"; } catch { return false; }
+  });
+  const toggleDimWeekends = () => {
+    setDimWeekends(v => {
+      const next = !v;
+      try { localStorage.setItem(KEYS.CAL_DIM_WEEKENDS, next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const togglePj = (id: string) => {
     setSelectedPjIds(prev => {
@@ -187,6 +198,12 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
           >📁 {selectedPjIds.size > 0 ? `${selectedPjIds.size}PJ選択中` : "PJ絞り込み"}</button>
 
           <button className="cal-print-hide"
+            onClick={toggleDimWeekends}
+            title={dimWeekends ? "週末セルの淡い表示をやめる" : "土日のセルを淡く表示する"}
+            style={{ ...HEADER_BTN, background: dimWeekends ? "var(--color-brand-light)" : "var(--color-bg-secondary)", color: dimWeekends ? "var(--color-text-purple)" : "var(--color-text-secondary)", borderColor: dimWeekends ? "var(--color-brand-border)" : "var(--color-border-primary)" }}
+          >🗓 週末を淡く</button>
+
+          <button className="cal-print-hide"
             onClick={() => setNoteOpen(v => !v)}
             title="印刷用の備考・注釈欄を開く"
             style={{ ...HEADER_BTN, background: noteOpen ? "var(--color-bg-info)" : "var(--color-bg-secondary)", color: noteOpen ? "var(--color-text-info)" : "var(--color-text-secondary)", borderColor: noteOpen ? "var(--color-border-info)" : "var(--color-border-primary)" }}
@@ -283,6 +300,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
             <span>● 色ドット ＝ プロジェクト別カラー</span>
             {mineOnly && <span>👤 自分担当のタスクのみ表示</span>}
             {hideDone && <span>🙈 完了・保留・中止タスクは非表示</span>}
+            {dimWeekends && <span>🗓 土日のセルを淡く表示</span>}
           </div>
         </div>
 
@@ -333,7 +351,13 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                   padding: "4px 6px",
                   overflow: "hidden",
                   display: "flex", flexDirection: "column", gap: "2px",
-                  background: isToday ? "var(--color-brand-light)" : inMonth ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
+                  // ⑥ 週末を淡く：今日の強調が最優先、次に週末ダイマー、それ以外は従来どおり
+                  // 「表示月の外は淡色（inMonth）」判定（暦の形自体は変えない＝土日の列は消さない）
+                  background: isToday
+                    ? "var(--color-brand-light)"
+                    : dimWeekends && (weekday === 0 || weekday === 6)
+                    ? "var(--color-bg-secondary)"
+                    : inMonth ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
                   opacity: inMonth ? 1 : 0.5,
                 }}>
                 {/* ＋ 新規タスク追加（PCのホバー時のみ表示。印刷には出さない） */}

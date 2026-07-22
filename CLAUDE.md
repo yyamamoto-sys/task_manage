@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.79
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.80
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1813,7 +1813,32 @@
 #             ストライプ・滞留バッジ＝v2.78／③日付セルから直接タスク作成＝本v2.79）が完結。
 #             中優先4件〜6件（週表示・期間バー・週末トグル）は別セッションで第2弾として実施予定
 #
-# 最終更新：2026-07-22（v2.79）
+# v2.80 feat: カレンダービューに「週末を淡く」トグルを追加（刷新第2弾⑥）（2026-07-22）
+#      背景：strategist調査レポート（`docs/dev/calendar-improvement-research.md`）の中優先⑥。
+#             monday.com・Outlookの「週末の表示/非表示切替」相当だが、月間の「暦の形」自体を保つ
+#             このビューの性質上、土日の列を消すとレイアウトが崩れる（調査でOutlookも月表示では
+#             非対応と裏付け済み）ため、列は残したままトーンだけ落とす軽量な実装にとどめた
+#      追加：`src/components/lab/CalendarLabView.tsx`にツールバー「🗓 週末を淡く」トグル（既定OFF）。
+#             ONで土曜・日曜のセル背景を`var(--color-bg-secondary)`にする。優先順位は
+#             「今日の強調（isToday）＞週末ダイマー＞表示月外（inMonth）の淡色」の順（今日が土日でも
+#             今日の強調を優先）。土日の列・セル自体は消さない（暦の形を維持）
+#      追加：`src/lib/localData/localStore.ts`のKEYSに`CAL_VIEW_MODE`（v2.81で使用）・
+#             `CAL_DIM_WEEKENDS`を追加。localStorage直書きを禁止するルールに従い、必ずKEYS経由で
+#             永続化する（既存の`cal_note_text`は直書きのまま残る旧実装だが、今回のスコープでは
+#             修正していない＝既知の技術的負債として据え置き）
+#      対象：`src/components/lab/CalendarLabView.tsx`／`src/lib/localData/localStore.ts`。
+#             併せて`src/lib/calendar/calendarUtils.ts`（v2.81週表示・v2.82期間バーで使う純粋関数
+#             `chunkIntoWeeks`/`assignBarLanes`/`computeWeekBarSegments`）とそのユニットテスト18件を
+#             このコミットで先行実装（次コミット以降でCalendarLabView.tsxから実際に呼び出す）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 464件全通過（既存446件＋
+#             `calendarUtils.test.ts`新規18件。CalendarLabView.tsx自体は本コミット時点では
+#             まだ未使用のためCalendarLabView側の回帰なし）／`npx eslint src`は変更前と同じ35件
+#             （24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功
+#      DBマイグレ不要（フロントのみの変更）
+#      補足：strategist調査レポートの中優先3件（④週表示・⑤期間バー・⑥週末を淡く）のうち⑥。
+#             ④週表示（v2.81）・⑤期間バー（v2.82）は別コミットで実施
+#
+# 最終更新：2026-07-22（v2.80）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
