@@ -16,6 +16,7 @@ import { active, KEYS } from "../../lib/localData/localStore";
 import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { toDate, addDays } from "../../lib/date";
+import { chunkIntoWeeks, assignBarLanes, computeWeekBarSegments } from "../../lib/calendar/calendarUtils";
 
 interface Props {
   onClose: () => void;
@@ -26,6 +27,19 @@ interface Props {
 }
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+// ⑤ 期間バーの寸法（週行の position:relative コンテナ基準の絶対配置に使う）
+const BAR_H = 14;        // バー1本の高さ(px)
+const BAR_GAP = 2;       // バー間の縦の隙間(px)
+const BAR_TOP = 24;      // 日付数字の下からバー領域を始める位置(px)
+const BAR_LANE_H = BAR_H + BAR_GAP;
+/**
+ * 月表示でのバー表示レーン数の上限。
+ * 【設計判断】月表示のセルは高さが限られており、期間バーが増えるほどその日のタスク行を押し出してしまう。
+ * 上限を超えた分は帯を描かないが、そのタスクは期日のセルにタスク行として従来どおり出るため情報は失われない。
+ * 週表示はセルが十分に高く縦スクロールも効くため上限を設けない。
+ */
+const MONTH_MAX_BAR_LANES = 2;
 
 // #8: コンポーネント外に置くことで再レンダーごとの再生成を防ぐ
 const HEADER_BTN: React.CSSProperties = {
@@ -155,6 +169,32 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
     }
     return map;
   }, [tasks, mineOnly, hideDone, currentUser.id, gridRange, selectedPjIds]);
+
+  // ⑤ 期間バーの対象タスク。tasksByDate と同じ絞り込み（自分のみ／完了・保留・中止を隠す／PJ）を適用する。
+  // 【設計判断】開始日と期日が同じ日のタスクは帯にしない（`s >= due` で除外）。1日分の帯は同じセルに出る
+  // タスク行と情報が重複し、帯のレーンだけ消費して他の複数日タスクを押し出すため。
+  // 範囲判定は「due が表示範囲内」ではなく「表示範囲と重なるか」で見る（表示範囲より前に始まって
+  // 途中まで続くタスクも帯として見せたいため）。
+  const barTasks = useMemo(() => {
+    const out: Task[] = [];
+    for (const t of tasks) {
+      const s = t.start_date as string | null | undefined;
+      const due = t.due_date as string | null | undefined;
+      if (!s || !due || s >= due) continue;
+      if (s > gridRange.end || due < gridRange.start) continue;
+      if (mineOnly && !isAssignedTo(t, currentUser.id)) continue;
+      if (hideDone && (t.status === "done" || isPausedOrCancelledStatus(t.status))) continue;
+      if (selectedPjIds.size > 0 && (!t.project_id || !selectedPjIds.has(t.project_id))) continue;
+      out.push(t);
+    }
+    return out;
+  }, [tasks, mineOnly, hideDone, currentUser.id, gridRange, selectedPjIds]);
+
+  // レーン番号はタスク単位でグローバルに決める（週ごとに決めると同じタスクが週をまたぐたびに段がずれるため）
+  const barLanes = useMemo(() => assignBarLanes(barTasks), [barTasks]);
+  const barTaskById = useMemo(() => new Map(barTasks.map(t => [t.id, t])), [barTasks]);
+
+  const weeks = useMemo(() => chunkIntoWeeks(cells), [cells]);
 
   const milestonesByDate = useMemo(() => {
     const map = new Map<string, { name: string; pjColor?: string }[]>();
@@ -413,11 +453,29 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
         <div className="cal-grid" style={{
           flex: 1, minHeight: 0,
           display: "grid",
-          gridTemplateColumns: "repeat(7, 1fr)",
-          gridTemplateRows: `repeat(${cells.length / 7}, 1fr)`,
+          gridTemplateRows: `repeat(${weeks.length}, 1fr)`,
           overflow: "auto",
         }}>
-          {cells.map((d) => {
+          {weeks.map((week) => {
+            // ⑤ この週に重なる期間バーの座標。週をまたぐタスクは週ごとの呼び出しで自然に分割される
+            const weekStart = week[0];
+            const weekEnd   = week[6];
+            const allSegments = computeWeekBarSegments(weekStart, weekEnd, barTasks, barLanes);
+            // 月表示のみレーン数を制限（超過分は帯を描かないが、期日セルのタスク行としては従来どおり出る）
+            const segments = viewMode === "week"
+              ? allSegments
+              : allSegments.filter(s => s.lane < MONTH_MAX_BAR_LANES);
+            const laneCount = segments.reduce((mx, s) => Math.max(mx, s.lane + 1), 0);
+            // 帯の本数ぶんだけ各セル上部に余白を確保し、帯とタスク行が重ならないようにする
+            const barAreaH = laneCount * BAR_LANE_H;
+            return (
+              <div key={toStr(weekStart)} style={{
+                position: "relative",
+                display: "grid",
+                gridTemplateColumns: "repeat(7, 1fr)",
+                minHeight: 0,
+              }}>
+                {week.map((d) => {
             const ds = toStr(d);
             // ④ 週表示では「表示月の外」という概念自体が無い（全7日が対象週として等しく主役）ため
             // 常にinMonth=true扱いにし、月表示特有の淡色・4件上限を適用しない
@@ -487,6 +545,9 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                        : "var(--color-text-secondary)",
                 }}>{d.getDate()}</div>
 
+                {/* ⑤ 期間バー領域の高さぶんの余白（帯は週行の絶対配置レイヤー側に描く） */}
+                {barAreaH > 0 && <div style={{ height: `${barAreaH}px`, flexShrink: 0 }} />}
+
                 {/* マイルストーン */}
                 {dayMs.map((m, mi) => (
                   <div key={`ms-${mi}`} title={`◆ ${m.name}`} style={{
@@ -548,6 +609,52 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                 {viewMode !== "week" && dayTasks.length > 4 && (
                   <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
                     +{dayTasks.length - 4} 件
+                  </div>
+                )}
+              </div>
+            );
+                })}
+
+                {/* ===== ⑤ 期間バーレイヤー（週行コンテナ基準の絶対配置） =====
+                    CSS Grid の列幅は均等なので、ガントのような DOM 実測（getBoundingClientRect）は不要で
+                    calendarUtils の % 計算だけで座標が決まる。レイヤー自体は pointerEvents:none にして
+                    セルのクリック（＝その日にタスク追加）を邪魔せず、帯そのものだけを操作可能にする。 */}
+                {segments.length > 0 && (
+                  <div style={{
+                    position: "absolute", left: 0, right: 0, top: `${BAR_TOP}px`,
+                    height: 0, pointerEvents: "none",
+                  }}>
+                    {segments.map(seg => {
+                      const t = barTaskById.get(seg.taskId);
+                      if (!t) return null;
+                      const pj = t.project_id ? projectById.get(t.project_id) : undefined;
+                      const isClosed = t.status === "done" || t.status === "cancelled";
+                      return (
+                        <button
+                          key={seg.taskId}
+                          onClick={e => { e.stopPropagation(); onOpenTask(t.id); }}
+                          title={`${t.name}${pj ? `（${pj.name}）` : ""} / ${t.start_date} 〜 ${t.due_date}`}
+                          style={{
+                            position: "absolute",
+                            left: `${seg.leftPct}%`,
+                            width: `calc(${seg.widthPct}% - 4px)`,
+                            top: `${seg.lane * BAR_LANE_H}px`,
+                            height: `${BAR_H}px`,
+                            marginLeft: "2px",
+                            pointerEvents: "auto",
+                            display: "flex", alignItems: "center",
+                            padding: "0 6px", border: "none",
+                            borderRadius: "var(--radius-sm)", cursor: "pointer",
+                            background: pj?.color_tag ?? "var(--color-text-tertiary)",
+                            color: "#fff",
+                            fontSize: "9px", lineHeight: `${BAR_H}px`, textAlign: "left",
+                            whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                            opacity: isClosed ? 0.45 : 0.92,
+                            textDecoration: isClosed ? "line-through" : "none",
+                          }}
+                        >{t.name}</button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
