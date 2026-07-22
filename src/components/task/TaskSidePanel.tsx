@@ -20,6 +20,7 @@ import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
+import { buildTaskUpdatePayload, type TaskEditFormState } from "../../lib/taskEditPayload";
 
 interface Props {
   taskId: string;
@@ -27,18 +28,9 @@ interface Props {
   onClose: () => void;
 }
 
-type SidebarForm = {
-  name: string;
-  status: Task["status"];
-  priority: string;
-  assignee_member_ids: string[];
-  project_id: string | null;
-  parent_task_id: string | null;
-  start_date: string;
-  due_date: string;
-  estimated_hours: string;
-  comment: string;
-};
+// タグ編集UIが無いため tags を除いた TaskEditFormState のサブセット。
+// buildTaskUpdatePayload は tags 省略時に originalTask.tags を維持する。
+type SidebarForm = Omit<TaskEditFormState, "tags">;
 
 export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allTasks            = useAppStore(selectScopedTasks);
@@ -152,11 +144,31 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const [childPickerChecked, setChildPickerChecked] = useState<Set<string>>(new Set());
   const [childSearch, setChildSearch] = useState("");
   const initialMount = useRef(true);
+  // dirty: sidebarForm が最後に成功した保存以降に変更されている（＝デバウンス未発火の保留編集がある）
+  // inFlight: デバウンスは発火済みで saveTask の Promise がまだ解決していない
+  // （閉じる操作・別タスクへの切替でこの2つを見て「保留編集があれば1回だけフラッシュ」を判定する。
+  // TaskEditModal.tsx の handleClose と同じ設計。以前はこのフラッシュが無く、編集直後に✕や
+  // 別タスク行クリックで閉じる/切り替えると600ms未満の保留編集が消える実データロスバグがあった）
+  const formDirtyRef = useRef(false);
+  const saveInFlightRef = useRef(false);
+  // sidebarForm が今どのタスクのものかを保持する（taskId 切替時、旧タスクの保留編集を
+  // 正しい originalTask に対してフラッシュするために必要）
+  const formTaskRef = useRef<Task | null>(null);
 
   // taskId 切替で sidebarForm を初期化
   useEffect(() => {
+    // 旧タスクに保留編集（デバウンス未発火）が残っていれば、新タスクへ切り替える前にフラッシュする
+    if (formDirtyRef.current && !saveInFlightRef.current && formTaskRef.current && sidebarForm) {
+      const prevTask = formTaskRef.current;
+      const prevForm = sidebarForm;
+      formDirtyRef.current = false;
+      void saveTask(buildTaskUpdatePayload(prevTask, prevForm, prevForm.parent_task_id ? allTasks.find(t => t.id === prevForm.parent_task_id) : null, currentUser.id))
+        .catch(e => showToast(formatErrorForUser("保存に失敗しました", e), "error"));
+    }
+
     if (!selectedTask) {
       setSidebarForm(null);
+      formTaskRef.current = null;
       return;
     }
     setSidebarForm({
@@ -171,6 +183,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       estimated_hours:     selectedTask.estimated_hours?.toString() ?? "",
       comment:             selectedTask.comment,
     });
+    formTaskRef.current = selectedTask;
     // 現在の親子状態から階層モードを導出
     setHierarchyMode(
       selectedTask.parent_task_id ? "child"
@@ -189,33 +202,20 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const saveRef = useRef<() => Promise<void>>(async () => {});
   saveRef.current = async () => {
     if (!selectedTask || !sidebarForm) return;
-    const hours = parseFloat(sidebarForm.estimated_hours);
     // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
     const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
-    const effectiveProjectId = parent ? (parent.project_id ?? null) : (sidebarForm.project_id || null);
-    const updated: Task = {
-      ...selectedTask,
-      name:                sidebarForm.name.trim() || selectedTask.name,
-      status:              sidebarForm.status,
-      priority:            (sidebarForm.priority as Task["priority"]) || null,
-      assignee_member_ids: sidebarForm.assignee_member_ids,
-      assignee_member_id:  sidebarForm.assignee_member_ids[0] ?? "",
-      project_id:          effectiveProjectId,
-      parent_task_id:      sidebarForm.parent_task_id || null,
-      // display_order は既存値を保持（編集では並び順を変えない＝...selectedTask 由来）
-      start_date:          sidebarForm.start_date || null,
-      due_date:            sidebarForm.due_date || null,
-      estimated_hours:     isNaN(hours) ? null : hours,
-      comment:             sidebarForm.comment,
-      updated_by:          currentUser.id,
-    };
+    const updated = buildTaskUpdatePayload(selectedTask, sidebarForm, parent, currentUser.id);
     try {
       await saveTask(updated);
+      formDirtyRef.current = false;
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
     } catch (e) {
       setSaveStatus("error");
       setSaveError(formatErrorForUser("保存に失敗しました", e));
+      // dirty は落とさない（保存できていないため）
+    } finally {
+      saveInFlightRef.current = false;
     }
   };
 
@@ -225,9 +225,13 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       return;
     }
     if (!sidebarForm) return;
+    formDirtyRef.current = true;
     setSaveStatus("saving");
     setSaveError(null);
-    const timer = setTimeout(() => { void saveRef.current(); }, 600);
+    const timer = setTimeout(() => {
+      saveInFlightRef.current = true;
+      void saveRef.current();
+    }, 600);
     return () => clearTimeout(timer);
   }, [sidebarForm]);
 
@@ -351,6 +355,19 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     onClose();
   };
 
+  // 閉じるときの保存フラッシュ（TaskEditModal.tsx の handleClose と同じ設計）。
+  // 保留編集（デバウンス600ms待ち中）があれば、閉じる瞬間にその場で発火する。
+  // 既に発火済み（saveInFlightRef）ならバックグラウンドで完走するため何もしない。
+  const handleClose = () => {
+    if (formDirtyRef.current && !saveInFlightRef.current) {
+      const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
+      const payload = buildTaskUpdatePayload(selectedTask, sidebarForm, parent, currentUser.id);
+      formDirtyRef.current = false;
+      void saveTask(payload).catch(e => showToast(formatErrorForUser("保存に失敗しました", e), "error"));
+    }
+    onClose();
+  };
+
   return (
     <div className="animate-side-panel-in" style={{
       width: `${panelWidth}px`, flexShrink: 0,
@@ -398,7 +415,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           onBlur={e => (e.currentTarget.style.borderBottomColor = "transparent")}
         />
         <SaveIndicator status={saveStatus} />
-        <button onClick={onClose} aria-label="閉じる" title="閉じる" style={{
+        <button onClick={handleClose} aria-label="閉じる" title="閉じる" style={{
           background: "none", border: "none", cursor: "pointer", fontSize: "14px",
           color: "var(--color-text-tertiary)", flexShrink: 0,
         }}>✕</button>

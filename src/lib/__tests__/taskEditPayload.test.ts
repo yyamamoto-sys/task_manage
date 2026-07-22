@@ -23,6 +23,7 @@ function mk(partial: Partial<Task> & { id: string }): Task {
     completed_at: partial.completed_at ?? null,
     parent_task_id: partial.parent_task_id,
     display_order: partial.display_order,
+    tags: partial.tags,
   };
 }
 
@@ -115,5 +116,12 @@ describe("buildTaskUpdatePayload", () => {
     const form = mkForm({ assignee_member_ids: [] });
     const result = buildTaskUpdatePayload(original, form, null, "me");
     expect(result.assignee_member_id).toBe("");
+  });
+
+  it("form.tags が省略されている場合（TaskSidePanel にはタグUIが無い）originalTask.tags を維持する", () => {
+    const original = mk({ id: "t1", tags: ["既存タグ"] });
+    const { tags: _omit, ...formWithoutTags } = mkForm();
+    const result = buildTaskUpdatePayload(original, formWithoutTags, null, "me");
+    expect(result.tags).toEqual(["既存タグ"]);
   });
 });

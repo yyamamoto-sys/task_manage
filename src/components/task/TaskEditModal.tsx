@@ -138,7 +138,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     return opts;
   }, [allTasks, currentProjectId, originalTask?.id, projects]);
 
-  const [form, setForm] = useState<TaskEditFormState>({
+  // このモーダルはタグ編集UIを持つため、tags は常に配列で保持する（TaskSidePanel と違い省略しない）
+  const [form, setForm] = useState<TaskEditFormState & { tags: string[] }>({
     name:                 originalTask?.name ?? "",
     status:               originalTask?.status ?? "todo" as Task["status"],
     priority:             originalTask?.priority ?? "",

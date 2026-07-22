@@ -1,8 +1,8 @@
 // src/lib/taskEditPayload.ts
 //
-// TaskEditModal のフォーム状態からDB保存用の Task ペイロードを組み立てる純粋関数。
-// autosave（デバウンス発火時）と、閉じる操作時のフラッシュ保存（TaskEditModal.tsx の
-// handleClose）の両方から呼ばれる、フィールド組み立てロジックの単一の真実源。
+// TaskEditModal・TaskSidePanel のフォーム状態からDB保存用の Task ペイロードを組み立てる
+// 純粋関数。autosave（デバウンス発火時）と、閉じる操作時のフラッシュ保存の両方から呼ばれる、
+// フィールド組み立てロジックの単一の真実源。
 // ここを2箇所に重複実装すると、片方だけ直して挙動がズレる事故になるため分離した。
 
 import type { Task } from "./localData/types";
@@ -18,7 +18,9 @@ export interface TaskEditFormState {
   due_date: string;
   estimated_hours: string;
   comment: string;
-  tags: string[];
+  // TaskSidePanel にはタグ編集UIが無いため省略可能にしてある。省略時は originalTask.tags を
+  // そのまま維持する（サイドパネル経由の保存でタグが消えないようにするため）。
+  tags?: string[];
 }
 
 /**
@@ -48,7 +50,7 @@ export function buildTaskUpdatePayload(
     due_date:            form.due_date || null,
     estimated_hours:     isNaN(hours) ? null : hours,
     comment:             form.comment,
-    tags:                form.tags,
+    tags:                form.tags ?? originalTask.tags,
     updated_by:          currentUserId,
   };
 }
