@@ -20,6 +20,8 @@ interface Props {
   onClose: () => void;
   currentUser: Member;
   onOpenTask: (taskId: string) => void;
+  /** 日付セルクリック（空白部分／タッチ端末は全面）で、その日を期日初期値としたQuickAddTaskModalを開く */
+  onRequestQuickAdd: (dateStr: string) => void;
 }
 
 const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
@@ -35,7 +37,7 @@ function toStr(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
+export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQuickAdd }: Props) {
   const rawTasks      = useAppStore(selectScopedTasks);
   const rawProjects   = useAppStore(selectScopedProjects);
   const rawMilestones = useAppStore(s => s.milestones);
@@ -53,6 +55,8 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
   const [noteOpen, setNoteOpen] = useState(false);
   const [pjMenuOpen, setPjMenuOpen] = useState(false);
   const [selectedPjIds, setSelectedPjIds] = useState<Set<string>>(new Set());
+  // ③ 日付セルホバー時の「＋」表示用（PCのみのアフォーダンス。タッチ端末はセル自体のクリックで開く）
+  const [hoveredCell, setHoveredCell] = useState<string | null>(null);
 
   const togglePj = (id: string) => {
     setSelectedPjIds(prev => {
@@ -307,19 +311,49 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
             const dayTasks = tasksByDate.get(ds) ?? [];
             const dayMs    = milestonesByDate.get(ds) ?? [];
             const weekday  = d.getDay();
+            const isHovered = hoveredCell === ds;
             return (
-              <div key={ds} style={{
-                minHeight: 0,
-                borderRight:  d.getDay() !== 6 ? "1px solid var(--color-border-primary)" : "none",
-                borderBottom: "1px solid var(--color-border-primary)",
-                outline: isToday ? "2px solid var(--color-brand)" : "none",
-                outlineOffset: "-2px",
-                padding: "4px 6px",
-                overflow: "hidden",
-                display: "flex", flexDirection: "column", gap: "2px",
-                background: isToday ? "var(--color-brand-light)" : inMonth ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
-                opacity: inMonth ? 1 : 0.5,
-              }}>
+              // ③ 空白部分クリック（またはタッチ端末はセル全体クリック）でその日を期日初期値にQuickAddTaskModalを開く。
+              // タスク行・「＋」ボタン側で stopPropagation しているため、それらのクリックはここまで伝播しない
+              <div
+                key={ds}
+                role="button"
+                tabIndex={0}
+                onClick={() => onRequestQuickAdd(ds)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onRequestQuickAdd(ds); } }}
+                onMouseEnter={() => setHoveredCell(ds)}
+                onMouseLeave={() => setHoveredCell(prev => (prev === ds ? null : prev))}
+                title={`${ds} にタスクを追加`}
+                style={{
+                  position: "relative", minHeight: 0, cursor: "pointer",
+                  borderRight:  d.getDay() !== 6 ? "1px solid var(--color-border-primary)" : "none",
+                  borderBottom: "1px solid var(--color-border-primary)",
+                  outline: isToday ? "2px solid var(--color-brand)" : "none",
+                  outlineOffset: "-2px",
+                  padding: "4px 6px",
+                  overflow: "hidden",
+                  display: "flex", flexDirection: "column", gap: "2px",
+                  background: isToday ? "var(--color-brand-light)" : inMonth ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
+                  opacity: inMonth ? 1 : 0.5,
+                }}>
+                {/* ＋ 新規タスク追加（PCのホバー時のみ表示。印刷には出さない） */}
+                {isHovered && (
+                  <button
+                    className="cal-print-hide"
+                    onClick={e => { e.stopPropagation(); onRequestQuickAdd(ds); }}
+                    title="この日にタスクを追加"
+                    aria-label="この日にタスクを追加"
+                    style={{
+                      position: "absolute", top: "2px", right: "3px", zIndex: 1,
+                      width: "16px", height: "16px", lineHeight: "14px",
+                      fontSize: "12px", fontWeight: 700, textAlign: "center", padding: 0,
+                      borderRadius: "var(--radius-full)", cursor: "pointer",
+                      background: "var(--color-brand)", color: "var(--btn-primary-text)",
+                      border: "none",
+                    }}
+                  >＋</button>
+                )}
+
                 {/* 日付 */}
                 <div style={{
                   fontSize: "11px", fontWeight: isToday ? 700 : 500, flexShrink: 0,
@@ -358,7 +392,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask }: Props) {
                   return (
                     <button
                       key={t.id}
-                      onClick={() => onOpenTask(t.id)}
+                      onClick={e => { e.stopPropagation(); onOpenTask(t.id); }}
                       title={`${t.name}${pj ? `（${pj.name}）` : ""}`}
                       style={{
                         display: "flex", alignItems: "center", gap: "4px",

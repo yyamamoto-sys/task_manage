@@ -231,6 +231,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // TaskEditModal の zIndex(200) < CalendarLabView(250) のため、カレンダーの上に
   // 出るよう zIndex:300 のラッパーでレンダリングする。
   const [calendarEditTaskId, setCalendarEditTaskId] = useState<string | null>(null);
+  // ③ カレンダーの日付セルから開くQuickAddTaskModal（zIndex 300 で calendarEditTaskId と同じ流儀）
+  const [calendarQuickAddDate, setCalendarQuickAddDate] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
@@ -1199,6 +1201,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             onClose={() => setIsCalendarOpen(false)}
             currentUser={currentUser}
             onOpenTask={taskId => setCalendarEditTaskId(taskId)}
+            onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
           />
         </Suspense>
       )}
@@ -1248,6 +1251,17 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             taskId={calendarEditTaskId}
             currentUser={currentUser}
             onClose={() => setCalendarEditTaskId(null)}
+          />
+        </div>
+      )}
+      {/* カレンダーの日付セルからのタスク追加：同じくzIndex:300 でカレンダー(250)の上に出す */}
+      {calendarQuickAddDate && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+          <QuickAddTaskModal
+            currentUser={currentUser}
+            projects={projects}
+            defaultDueDate={calendarQuickAddDate}
+            onClose={() => setCalendarQuickAddDate(null)}
           />
         </div>
       )}

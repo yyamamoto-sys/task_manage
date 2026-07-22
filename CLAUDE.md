@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.78
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.79
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1781,7 +1781,39 @@
 #             同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／`npm run build`成功
 #      DBマイグレ不要（フロントのみの変更）
 #
-# 最終更新：2026-07-22（v2.78）
+# v2.79 feat: カレンダービューの日付セルから直接タスク作成（刷新第3弾③＝高優先3件 完結）（2026-07-22）
+#      背景：strategist調査レポート（`docs/dev/calendar-improvement-research.md`）の高優先③。
+#             従来のカレンダーは完全な読み取り専用ビューで、Notion／ClickUp／Google Calendarで
+#             共通の最重要導線（カレンダー上で見つけた空き日にそのまま予定を入れる）が無かった
+#      追加：`QuickAddTaskModal`に`defaultDueDate?: string`propを新設（既存の`defaultParentId`/
+#             `defaultStatus`/`defaultTfId`/`defaultTodoId`と同じ「初期値を渡すだけ」パターン。
+#             `dueDate`stateの初期値に採用するのみ）
+#      変更：`CalendarLabView.tsx`に`onRequestQuickAdd(dateStr)`propを追加。日付セルを
+#             `role="button" tabIndex={0} onClick onKeyDown`でクリック可能にし（Enter/Spaceにも対応）、
+#             クリックでその日を期日初期値としたQuickAddTaskModalを開くよう`MainLayout.tsx`から配線。
+#             PCではセルホバー時のみ右上に「＋」ボタン（`cal-print-hide`で印刷除外）を表示する
+#             アフォーダンスを追加（ホバーが無いタッチ端末では出さず、セル自体のクリックで同じ動作に
+#             フォールバック）。タスク行の`onClick`・「＋」ボタンの`onClick`はいずれも
+#             `e.stopPropagation()`でセルのクリックへの伝播を止め、タスク詳細を開く操作／追加操作が
+#             セルクリック（タスク追加）と二重発火しないようにした
+#      配線：`MainLayout.tsx`は既存の`calendarEditTaskId`（TaskEditModalをカレンダー(zIndex 250)より
+#             前面のzIndex 300で重ねる仕組み）と全く同じ流儀で`calendarQuickAddDate` stateを新設し、
+#             QuickAddTaskModalを同じくzIndex 300のラッパーdivで包んで描画。CalendarLabViewは
+#             `MainLayout.tsx`の唯一の呼び出し元（PCレイアウトのreturnブロック側の1箇所のみ。
+#             モバイル側は既存コメントの通りCalendarLabView自体を描画しないためこの配線も不要）
+#      a11y：日付セルは`role="button"`のためjsx-a11yのerror級ルール
+#             （`no-static-element-interactions`/`click-events-have-key-events`）に抵触しない
+#      対象：`src/components/lab/CalendarLabView.tsx`／`src/components/task/QuickAddTaskModal.tsx`／
+#             `src/components/layout/MainLayout.tsx`
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 446件全通過（既存テストのみ・回帰なし）／
+#             `npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。
+#             新規エラー0件）／`npm run build`成功
+#      DBマイグレ不要（フロントのみの変更）
+#      補足：これでstrategist調査レポートの高優先3件（①ステータス5値化追従＝v2.77／②優先度
+#             ストライプ・滞留バッジ＝v2.78／③日付セルから直接タスク作成＝本v2.79）が完結。
+#             中優先4件〜6件（週表示・期間バー・週末トグル）は別セッションで第2弾として実施予定
+#
+# 最終更新：2026-07-22（v2.79）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

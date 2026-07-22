@@ -32,13 +32,15 @@ interface Props {
    *  このモーダルを開く用途。該当ToDoが今期以外のTFに属していても、KR/TFの選択肢に
    *  強制的に含める（filteredKrs/filteredTfs）ことで選択が失われないようにする。 */
   defaultTodoId?: string;
+  /** 作成するタスクの初期期日（YYYY-MM-DD）。カレンダーの日付セルから開く用途。 */
+  defaultDueDate?: string;
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, defaultDueDate, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
   const rawMembers              = useAppStore(s => s.members);
@@ -70,7 +72,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [tfId, setTfId] = useState(resolvedDefaultTfId ?? "");
   const [todoIds, setTodoIds] = useState<string[]>(defaultTodoId ? [defaultTodoId] : []);
   const [startDate, setStartDate] = useState("");
-  const [dueDate, setDueDate] = useState("");
+  const [dueDate, setDueDate] = useState(defaultDueDate ?? "");
   const [priority, setPriority] = useState<Task["priority"]>(null);
   const [comment, setComment] = useState("");
   // 子タスク（1行1タスク）。最上位タスク作成時のみ表示・一括作成する（2階層固定のため）。
