@@ -179,9 +179,10 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   };
 
   // 自分がメンションされているタスク（未完了・@short_name がコメントに含まれる）
+  // アクティブ（todo/in_progress）のみ対象。中止・保留になったタスクは催促しない（v2.74の方針に合わせる）
   const mentionedTasks = useMemo(() => {
     const token = `@${currentUser.short_name}`;
-    return allTasks.filter(t => t.status !== "done" && (t.comment ?? "").includes(token));
+    return allTasks.filter(t => isActiveTaskStatus(t.status) && (t.comment ?? "").includes(token));
   }, [allTasks, currentUser.short_name]);
 
   // 今週のタスク（中止・保留になったタスクは対象外＝催促しない）
