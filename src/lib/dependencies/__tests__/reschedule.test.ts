@@ -175,6 +175,41 @@ describe("computeCascadeShifts", () => {
     ];
     expect(computeCascadeShifts("A", [a, b, c], deps)).toEqual([]);
   });
+
+  it("10. 後続がdoneなら自動で動かさない（computeBulkMoveShiftsと同じ「終わったタスク」ルール）", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08", status: "done" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    expect(computeCascadeShifts("A", [a, b], deps)).toEqual([]);
+  });
+
+  it("11. 後続がcancelledなら自動で動かさない", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08", status: "cancelled" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    expect(computeCascadeShifts("A", [a, b], deps)).toEqual([]);
+  });
+
+  it("12. 後続がon_holdなら引き続き自動で動かす（保留はシフト対象のまま）", () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08", status: "on_hold" });
+    const deps = [makeDep({ predecessor_task_id: "A", successor_task_id: "B" })];
+    expect(computeCascadeShifts("A", [a, b], deps)).toEqual([
+      { taskId: "B", oldStart: "2026-08-05", oldDue: "2026-08-08", newStart: "2026-08-10", newDue: "2026-08-13" },
+    ]);
+  });
+
+  it("13. 途中がdoneで動かない場合、その先の後続への伝播はそこで止まる（元の期日のまま判定）", () => {
+    // A→B(done)→C。Bはdoneのため動かない。CはBの「元の」dueで判定し、余裕があるので動かない。
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-10" });
+    const b = makeTask({ id: "B", start_date: "2026-08-05", due_date: "2026-08-08", status: "done" });
+    const c = makeTask({ id: "C", start_date: "2026-08-09", due_date: "2026-08-11" });
+    const deps = [
+      makeDep({ predecessor_task_id: "A", successor_task_id: "B" }),
+      makeDep({ predecessor_task_id: "B", successor_task_id: "C" }),
+    ];
+    expect(computeCascadeShifts("A", [a, b, c], deps)).toEqual([]);
+  });
 });
 
 describe("computeCascadeShiftsMulti（ガント複数選択の一括シフト用・複数origin版）", () => {

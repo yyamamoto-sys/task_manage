@@ -13,6 +13,10 @@
 //   （保存が保存を呼ぶ無限ループを避けるため。各タスクの新startは1回だけ確定する）。
 // - 後続に開始日(start_date)が無いタスクはスキップ（FSが計算できないため）。
 //   後続に期日(due_date)が無いタスクもスキップ（作業期間を保持できないため）。
+// - 後続が done・cancelled（＝終わったタスク）ならスキップし日付を動かさない。ganttUtils.ts の
+//   computeBulkMoveShifts（バー中央ドラッグの単体/一括移動）と同じ「done・cancelledはシフト対象外・
+//   on_holdは引き続き対象」ルールに揃える（v2.74でstatusが5値化された際の追従。それより先の
+//   後続への伝播は、動かなかったこのタスクの元の期日のまま計算する）。
 // - 先行に期日(due_date)が無ければその先行からの制約は無視する（押せない）。
 // - 暦日計算（土日祝を飛ばさない）。FS依存1種のみ。
 //
@@ -169,6 +173,7 @@ export function computeCascadeShiftsMulti(
     if (originSet.has(id)) continue;
 
     if (requiredStart === null) continue;           // 制約する先行が無い
+    if (task.status === "done" || task.status === "cancelled") continue; // 終わったタスクは自動で動かさない
     if (!task.start_date || !task.due_date) continue; // 開始日/期日が無い後続はスキップ（FS計算・作業期間保持ができない）
     if (requiredStart <= task.start_date) continue;  // 余裕がある（delta<=0）→ 動かさない
 
