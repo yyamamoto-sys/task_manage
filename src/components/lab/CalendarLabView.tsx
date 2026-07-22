@@ -15,6 +15,7 @@ import type { Member, Task } from "../../lib/localData/types";
 import { active, KEYS } from "../../lib/localData/localStore";
 import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
+import { toDate, addDays } from "../../lib/date";
 
 interface Props {
   onClose: () => void;
@@ -50,6 +51,11 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
   const [ym, setYm] = useState<{ y: number; m: number }>(() => {
     const n = new Date(); return { y: n.getFullYear(), m: n.getMonth() };
   });
+  // ④ 月／週の表示モード（既定=月）。週表示中は ym は動かさず weekAnchor（週内の任意の日）で管理する
+  const [viewMode, setViewMode] = useState<"month" | "week">(() => {
+    try { return localStorage.getItem(KEYS.CAL_VIEW_MODE) === "week" ? "week" : "month"; } catch { return "month"; }
+  });
+  const [weekAnchor, setWeekAnchor] = useState<string>(() => toStr(new Date()));
   const [mineOnly, setMineOnly] = useState(false);
   const [hideDone, setHideDone] = useState(true);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -69,6 +75,21 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
     });
   };
 
+  // ④ 月⇔週の切替。切替時に「今どのあたりを見ていたか」を引き継ぐ
+  // （月→週：月表示で見ていた月の1日を含む週を初期表示に／週→月：週表示で見ていた週が属する月に）
+  const handleSetViewMode = (mode: "month" | "week") => {
+    if (mode !== viewMode) {
+      if (mode === "week") {
+        setWeekAnchor(toStr(new Date(ym.y, ym.m, 1)));
+      } else {
+        const d = toDate(weekAnchor) ?? new Date();
+        setYm({ y: d.getFullYear(), m: d.getMonth() });
+      }
+      setViewMode(mode);
+      try { localStorage.setItem(KEYS.CAL_VIEW_MODE, mode); } catch { /* ignore */ }
+    }
+  };
+
   const togglePj = (id: string) => {
     setSelectedPjIds(prev => {
       const next = new Set(prev);
@@ -81,21 +102,43 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
     try { return localStorage.getItem("cal_note_text") ?? ""; } catch { return ""; }
   });
 
-  // #1: todayStr を useMemo でメモ化（ym が変わるたびに再評価 → 日跨ぎでも正確）
-  // ym 自体は式の中で参照しないが、月移動のたびに new Date() を取り直すための
+  // #1: todayStr を useMemo でメモ化（ym/weekAnchor が変わるたびに再評価 → 日跨ぎでも正確）
+  // ym/weekAnchor 自体は式の中で参照しないが、月・週移動のたびに new Date() を取り直すための
   // 意図的なトリガー依存（ESLintのunnecessary-dependency警告は無視してよい）。
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  const todayStr = useMemo(() => toStr(new Date()), [ym]);
+  const todayStr = useMemo(() => toStr(new Date()), [ym, weekAnchor]);
 
-  // 表示グリッドの日付範囲（6週分）を ym から導出してフィルタに使う
-  // #5 #6: 全期間でなく表示月の前後を含む範囲だけ処理してパフォーマンス改善
-  const gridRange = useMemo(() => {
-    const first    = new Date(ym.y, ym.m, 1);
-    const startDay = new Date(ym.y, ym.m, 1 - first.getDay());
-    const endDay   = new Date(startDay);
-    endDay.setDate(startDay.getDate() + 41);
-    return { start: toStr(startDay), end: toStr(endDay) };
+  // ④ 月間グリッド（6週・42セル。従来どおり）
+  const monthCells = useMemo(() => {
+    const first = new Date(ym.y, ym.m, 1);
+    const start = new Date(ym.y, ym.m, 1 - first.getDay());
+    return Array.from({ length: 42 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
   }, [ym]);
+
+  // ④ 週間グリッド（weekAnchor を含む週の日曜〜土曜・7セル）
+  const weekCells = useMemo(() => {
+    const anchor = toDate(weekAnchor) ?? new Date();
+    const start = new Date(anchor);
+    start.setDate(anchor.getDate() - anchor.getDay());
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(start);
+      d.setDate(start.getDate() + i);
+      return d;
+    });
+  }, [weekAnchor]);
+
+  const cells = viewMode === "week" ? weekCells : monthCells;
+
+  // 表示グリッドの日付範囲を cells から導出してフィルタに使う（月表示=6週／週表示=1週の両方に対応）
+  // #5 #6: 全期間でなく表示中の範囲だけ処理してパフォーマンス改善
+  const gridRange = useMemo(() => ({
+    start: toStr(cells[0]),
+    end: toStr(cells[cells.length - 1]),
+  }), [cells]);
 
   const tasksByDate = useMemo(() => {
     const map = new Map<string, Task[]>();
@@ -125,19 +168,27 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
     return map;
   }, [milestones, projectById, gridRange, selectedPjIds]);
 
-  const cells = useMemo(() => {
-    const first = new Date(ym.y, ym.m, 1);
-    const start = new Date(ym.y, ym.m, 1 - first.getDay());
-    return Array.from({ length: 42 }, (_, i) => {
-      const d = new Date(start);
-      d.setDate(start.getDate() + i);
-      return d;
-    });
-  }, [ym]);
-
-  const goPrev  = () => setYm(({ y, m }) => (m === 0  ? { y: y - 1, m: 11 } : { y, m: m - 1 }));
-  const goNext  = () => setYm(({ y, m }) => (m === 11 ? { y: y + 1, m: 0  } : { y, m: m + 1 }));
-  const goToday = () => { const n = new Date(); setYm({ y: n.getFullYear(), m: n.getMonth() }); };
+  // ④ 前後ナビは表示モードに応じて月送り／週送りに切り替える
+  const goPrev = () => {
+    if (viewMode === "week") {
+      setWeekAnchor(prev => toStr(addDays(toDate(prev) ?? new Date(), -7)));
+    } else {
+      setYm(({ y, m }) => (m === 0 ? { y: y - 1, m: 11 } : { y, m: m - 1 }));
+    }
+  };
+  const goNext = () => {
+    if (viewMode === "week") {
+      setWeekAnchor(prev => toStr(addDays(toDate(prev) ?? new Date(), 7)));
+    } else {
+      setYm(({ y, m }) => (m === 11 ? { y: y + 1, m: 0 } : { y, m: m + 1 }));
+    }
+  };
+  // 「今日」ボタンは両モードで機能させる（今見ていないモード側も今日基準にリセットしておく）
+  const goToday = () => {
+    const n = new Date();
+    setYm({ y: n.getFullYear(), m: n.getMonth() });
+    setWeekAnchor(toStr(n));
+  };
 
   const handleNoteChange = (v: string) => {
     setNoteText(v);
@@ -171,12 +222,44 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
           <span style={{ fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)" }}>ラボ</span>
 
           <div style={{ display: "flex", alignItems: "center", gap: "4px", marginLeft: "6px" }}>
-            <button className="cal-print-hide" onClick={goPrev}  title="前の月" aria-label="前の月" style={HEADER_BTN}>‹</button>
-            <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", minWidth: "92px", textAlign: "center" }}>
-              {ym.y}年{ym.m + 1}月
+            <button className="cal-print-hide" onClick={goPrev}  title={viewMode === "week" ? "前の週" : "前の月"} aria-label={viewMode === "week" ? "前の週" : "前の月"} style={HEADER_BTN}>‹</button>
+            <span style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", minWidth: "120px", textAlign: "center" }}>
+              {viewMode === "week"
+                ? (weekCells[0].getMonth() === weekCells[6].getMonth()
+                    ? `${weekCells[0].getFullYear()}年${weekCells[0].getMonth() + 1}月${weekCells[0].getDate()}〜${weekCells[6].getDate()}日`
+                    : `${weekCells[0].getMonth() + 1}/${weekCells[0].getDate()}〜${weekCells[6].getMonth() + 1}/${weekCells[6].getDate()}`)
+                : `${ym.y}年${ym.m + 1}月`}
             </span>
-            <button className="cal-print-hide" onClick={goNext}  title="次の月" aria-label="次の月" style={HEADER_BTN}>›</button>
-            <button className="cal-print-hide" onClick={goToday} title="今月へ" style={{ ...HEADER_BTN, marginLeft: "4px" }}>今日</button>
+            <button className="cal-print-hide" onClick={goNext}  title={viewMode === "week" ? "次の週" : "次の月"} aria-label={viewMode === "week" ? "次の週" : "次の月"} style={HEADER_BTN}>›</button>
+            <button className="cal-print-hide" onClick={goToday} title="今日へ" style={{ ...HEADER_BTN, marginLeft: "4px" }}>今日</button>
+          </div>
+
+          {/* ④ 月／週 表示モード切替（セグメント） */}
+          <div className="cal-print-hide" style={{
+            display: "flex", alignItems: "center",
+            border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden",
+          }}>
+            <button
+              onClick={() => handleSetViewMode("month")}
+              title="月表示"
+              style={{
+                padding: "4px 10px", fontSize: "12px", cursor: "pointer", border: "none",
+                background: viewMode === "month" ? "var(--color-brand-light)" : "var(--color-bg-secondary)",
+                color: viewMode === "month" ? "var(--color-text-purple)" : "var(--color-text-secondary)",
+                fontWeight: viewMode === "month" ? 600 : 400,
+              }}
+            >月</button>
+            <button
+              onClick={() => handleSetViewMode("week")}
+              title="週表示"
+              style={{
+                padding: "4px 10px", fontSize: "12px", cursor: "pointer",
+                border: "none", borderLeft: "1px solid var(--color-border-primary)",
+                background: viewMode === "week" ? "var(--color-brand-light)" : "var(--color-bg-secondary)",
+                color: viewMode === "week" ? "var(--color-text-purple)" : "var(--color-text-secondary)",
+                fontWeight: viewMode === "week" ? 600 : 400,
+              }}
+            >週</button>
           </div>
 
           <button className="cal-print-hide"
@@ -304,27 +387,41 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
           </div>
         </div>
 
-        {/* ===== 曜日見出し ===== */}
+        {/* ===== 曜日見出し（④ 週表示では日付も併記＝「日 19」の形） ===== */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", flexShrink: 0, borderBottom: "1px solid var(--color-border-primary)" }}>
-          {WEEKDAYS.map((w, i) => (
-            <div key={w} style={{
-              textAlign: "center", padding: "6px 0", fontSize: "11px", fontWeight: 600,
-              color: i === 0 ? "var(--color-text-danger)" : i === 6 ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-            }}>{w}</div>
-          ))}
+          {viewMode === "week"
+            ? weekCells.map((d, i) => {
+                const isHeaderToday = toStr(d) === todayStr;
+                return (
+                  <div key={toStr(d)} style={{
+                    textAlign: "center", padding: "6px 0", fontSize: "11px", fontWeight: isHeaderToday ? 700 : 600,
+                    color: isHeaderToday
+                      ? "var(--color-brand)"
+                      : i === 0 ? "var(--color-text-danger)" : i === 6 ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+                  }}>{WEEKDAYS[i]} {d.getDate()}</div>
+                );
+              })
+            : WEEKDAYS.map((w, i) => (
+                <div key={w} style={{
+                  textAlign: "center", padding: "6px 0", fontSize: "11px", fontWeight: 600,
+                  color: i === 0 ? "var(--color-text-danger)" : i === 6 ? "var(--color-text-info)" : "var(--color-text-tertiary)",
+                }}>{w}</div>
+              ))}
         </div>
 
-        {/* ===== カレンダー本体（6週） ===== */}
+        {/* ===== カレンダー本体（月表示=6週／週表示=1週。行数はcellsの長さから自動算出） ===== */}
         <div className="cal-grid" style={{
           flex: 1, minHeight: 0,
           display: "grid",
           gridTemplateColumns: "repeat(7, 1fr)",
-          gridTemplateRows: "repeat(6, 1fr)",
+          gridTemplateRows: `repeat(${cells.length / 7}, 1fr)`,
           overflow: "auto",
         }}>
           {cells.map((d) => {
             const ds = toStr(d);
-            const inMonth  = d.getMonth() === ym.m;
+            // ④ 週表示では「表示月の外」という概念自体が無い（全7日が対象週として等しく主役）ため
+            // 常にinMonth=true扱いにし、月表示特有の淡色・4件上限を適用しない
+            const inMonth  = viewMode === "week" ? true : d.getMonth() === ym.m;
             const isToday  = ds === todayStr;
             const dayTasks = tasksByDate.get(ds) ?? [];
             const dayMs    = milestonesByDate.get(ds) ?? [];
@@ -335,6 +432,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
               // タスク行・「＋」ボタン側で stopPropagation しているため、それらのクリックはここまで伝播しない
               <div
                 key={ds}
+                className="cal-cell"
                 role="button"
                 tabIndex={0}
                 onClick={() => onRequestQuickAdd(ds)}
@@ -349,7 +447,9 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                   outline: isToday ? "2px solid var(--color-brand)" : "none",
                   outlineOffset: "-2px",
                   padding: "4px 6px",
-                  overflow: "hidden",
+                  // ④ 週表示はその日の全タスクを縦に並べるため、セル内で縦スクロール可にする
+                  // （印刷時はglobals.cssの.cal-cellルールでoverflow:visibleに上書きされ、全件そのまま出力される）
+                  overflow: viewMode === "week" ? "auto" : "hidden",
                   display: "flex", flexDirection: "column", gap: "2px",
                   // ⑥ 週末を淡く：今日の強調が最優先、次に週末ダイマー、それ以外は従来どおり
                   // 「表示月の外は淡色（inMonth）」判定（暦の形自体は変えない＝土日の列は消さない）
@@ -399,8 +499,8 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                   </div>
                 ))}
 
-                {/* タスク（最大4件＋残数） */}
-                {dayTasks.slice(0, 4).map(t => {
+                {/* タスク（月表示は最大4件＋残数。週表示は上限なしで全件縦に並べる） */}
+                {(viewMode === "week" ? dayTasks : dayTasks.slice(0, 4)).map(t => {
                   const pj = t.project_id ? projectById.get(t.project_id) : undefined;
                   // 中止(cancelled)はdoneと同じ「終わった見た目」（取り消し線・薄い表示）。保留(on_hold)は
                   // まだ動きうる仕事のため見た目は変えない（他ビューと同じ扱い。CLAUDE.md v2.77）
@@ -445,7 +545,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                     </button>
                   );
                 })}
-                {dayTasks.length > 4 && (
+                {viewMode !== "week" && dayTasks.length > 4 && (
                   <div style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
                     +{dayTasks.length - 4} 件
                   </div>

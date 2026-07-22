@@ -781,4 +781,9 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     overflow: visible !important;
     page-break-inside: avoid;
   }
+  /* ④ 週表示のセル（overflow:auto でスクロール可）は印刷時は必ず全件出力する
+   * （スクロールという操作自体が印刷では成立しないため、クリップされないようにする） */
+  body:has(.cal-body) .cal-cell {
+    overflow: visible !important;
+  }
 }
