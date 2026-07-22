@@ -8,7 +8,10 @@
 > 業務領域ごとに境界を引く＝**ドメイン駆動設計（DDD）／モジュラーモノリス**。
 > 目標は **高凝集・低結合**（1モジュールの中身は関連が強く、モジュール間の依存は弱く）。
 >
-> 最終更新：2026-07-21（v2.28〜v2.72の新規ファイル群を反映）。機能追加のたびに更新すること。
+> 最終更新：2026-07-22（H グラフ・ラボビューに`CalendarLabView`/`ProjectStructureView`を追加登録。
+> 旧「H グラフ（ラボ）」時代はD OKR以外のラボ系ファイルの置き場が地図に無く、巡回台帳・v2.74横展開の
+> 対象からも漏れていた実バグの再発防止。経緯はCLAUDE.md v2.77参照）。
+> 旧履歴：2026-07-21（v2.28〜v2.72の新規ファイル群を反映）。機能追加のたびに更新すること。
 
 ---
 
@@ -62,7 +65,7 @@ flowchart TD
     E["E PJ別AI分析\nprojectAnalysis"]
     F["F 管理/設定\nadmin"]
     G["G オンボーディング\ntour/guide/docs"]
-    H["H グラフ(ラボ)\ngraph"]
+    H["H グラフ・ラボビュー\ngraph + lab(Calendar/Structure)"]
     I["I 通知\nuseDeadlineNotifications"]
   end
 
@@ -102,7 +105,7 @@ flowchart TD
 | **E** | **PJ別AI分析** | 1つのPJの健全性をAI分析（プロジェクトカルテから起動）／全PJ横断のポートフォリオ分析 | `lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}` / `lib/supabase/projectAnalysisStore`（UIは `dashboard/ProjectKarte`・`dashboard/DashboardView`） | AI基盤, データ基盤 |
 | **F** | **管理・設定** | メンバー/Objective/KR/TF/PJ/タグ/AI使用量の管理・ToDo分解（左ナビ＋カテゴリ構成・Danger Zone隔離） | `components/admin/{AdminView,TodoDecomposeModal}` / `lib/ai/todoDecomposeClient` / `lib/dangerZoneConfirm`（`common/DangerZone`と対） | データ基盤, AI基盤, 共通UI |
 | **G** | **オンボーディング** | ツアー / 📖ガイド / `?`ヘルプ（docs/guides を表示） | `components/tour/*` / `components/guide/*` / `lib/docs/*` / `docs/guides/**` | 共通UI, データ基盤 |
-| **H** | **グラフ（ラボ）** | 関係性グラフの可視化（Canvas物理シミュ） | `components/graph/GraphView` | データ基盤 |
+| **H** | **グラフ・ラボビュー** | 関係性グラフの可視化（Canvas物理シミュ）／カレンダー（月間・印刷報告用）／PJ構造（役割・層・グループの可視化編集）。いずれもD OKR以外の「ラボ機能（プロトタイプ）」の受け皿（2026-07-22・`CalendarLabView`/`ProjectStructureView`をD OKR専用ファイルと切り分けて本ユニットに追加登録。従来`components/lab/`配下という理由だけでD OKRと同一視され、v2.74ステータス拡張の横展開・巡回台帳の対象からも漏れていた実バグの再発防止） | `components/graph/GraphView` / `components/lab/{CalendarLabView,ProjectStructureView}` | データ基盤 |
 | **I** | **通知** | 期限のブラウザ通知 / Teamsまとめ（Edge） | `hooks/useDeadlineNotifications` / `supabase/functions/notify-deadlines` | データ基盤 |
 
 ### ③ 共通基盤 (Foundation)
