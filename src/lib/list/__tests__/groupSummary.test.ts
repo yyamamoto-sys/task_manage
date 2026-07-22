@@ -40,6 +40,29 @@ describe("computeGroupSummary", () => {
     expect(s.completionRate).toBe(0.5);
   });
 
+  it("cancelledはdoneと同じ完了扱いでdoneCountに含める（M33解消・2026-07-22）", () => {
+    const tasks = [
+      makeTask({ id: "1", status: "done" }),
+      makeTask({ id: "2", status: "cancelled" }),
+      makeTask({ id: "3", status: "todo" }),
+      makeTask({ id: "4", status: "on_hold" }),
+    ];
+    const s = computeGroupSummary(tasks);
+    expect(s.total).toBe(4);
+    expect(s.doneCount).toBe(2);
+    expect(s.completionRate).toBe(0.5);
+  });
+
+  it("on_holdは引き続き未完了扱い（doneCountに含めない）", () => {
+    const tasks = [
+      makeTask({ id: "1", status: "on_hold" }),
+      makeTask({ id: "2", status: "on_hold" }),
+    ];
+    const s = computeGroupSummary(tasks);
+    expect(s.doneCount).toBe(0);
+    expect(s.completionRate).toBe(0);
+  });
+
   it("工数入力済みタスクのみ合算し、未入力は0扱いしない", () => {
     const tasks = [
       makeTask({ id: "1", estimated_hours: 3 }),

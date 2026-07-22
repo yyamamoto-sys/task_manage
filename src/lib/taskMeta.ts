@@ -44,6 +44,21 @@ export function suppressOverdue(status: Task["status"]): boolean {
 }
 
 /**
+ * 進捗%集計（分子側）で「完了扱い」とみなすステータスか。
+ * done はもちろん、cancelled（実施しないと決めて終わった）も「もう動かない」= 完了扱いに含める。
+ * on_hold は「まだ動く可能性がある」ため引き続き未完了扱い（分子に含めない）。
+ * これは taskHierarchy.ts の allChildrenTerminal（親タスク自動完了・v2.75）と同じ判定基準を、
+ * 進捗%集計（分母にon_hold/cancelledを含めたまま分子だけstatus==="done"限定にしていた非対称＝
+ * M33）を解消するために切り出したもの（CLAUDE.md 2026-07-22）。
+ * GanttView（PJ別/ToDo別グループ進捗%）・DashboardView（pjProgress/krProgress/tfTaskStats/
+ * todoProgress）・groupSummary.computeGroupSummary（ListView/Kanbanのグループ見出し集計）の
+ * 4箇所で共有する。
+ */
+export function isCompletedForProgress(status: Task["status"]): boolean {
+  return status === "done" || status === "cancelled";
+}
+
+/**
  * TF.id → "TF{KR index+1}-{tf_number}" 形式のラベルマップ。
  * 例：KR1 配下の TF番号 1 → "TF1-1"
  */

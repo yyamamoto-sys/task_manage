@@ -33,7 +33,7 @@ import { computeDueForecast } from "../../lib/computeDueForecast";
 import { VelocityChart } from "./VelocityChart";
 import { computeWeeklyVelocity } from "../../lib/computeWeeklyVelocity";
 import { HelpButton } from "../guide/HelpButton";
-import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus } from "../../lib/taskMeta";
+import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus, isCompletedForProgress } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { showToast } from "../common/Toast";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
@@ -263,7 +263,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const pjProgress = useMemo(() =>
     projects.map(pj => {
       const pjTasks = allTasks.filter(t => t.project_id === pj.id && !isParentTask(t, allTasks));
-      const done = pjTasks.filter(t => t.status === "done").length;
+      // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+      const done = pjTasks.filter(t => isCompletedForProgress(t.status)).length;
       const total = pjTasks.length;
       const pct = calcProgressPct(done, total);
       return { pj, done, total, pct };
@@ -284,7 +285,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     allTasks.filter(t => t.project_id !== null && tfPjIds.has(t.project_id!)).forEach(t => ids.add(t.id));
     // 葉タスク基準：親（子持ち）を除外して二重計上を防ぐ。フラットでは全タスクが葉。
     const rel = allTasks.filter(t => ids.has(t.id) && !isParentTask(t, allTasks));
-    const done = rel.filter(t => t.status === "done").length;
+    // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+    const done = rel.filter(t => isCompletedForProgress(t.status)).length;
     const total = rel.length;
     return { done, total, pct: calcProgressPct(done, total) };
   }, [todos, projectTaskForces, allTasks]);
@@ -311,7 +313,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
       // 葉タスク基準：親（子持ち）を除外して二重計上を防ぐ。フラットでは全タスクが葉。
       const relatedTasks = allTasks.filter(t => relatedTaskIds.has(t.id) && !isParentTask(t, allTasks));
-      const done = relatedTasks.filter(t => t.status === "done").length;
+      // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+      const done = relatedTasks.filter(t => isCompletedForProgress(t.status)).length;
       const total = relatedTasks.length;
       const pct = calcProgressPct(done, total);
 
@@ -332,7 +335,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       const todoItems = tfTodos.map(td => {
         // 葉タスク基準：親（子持ち）を除外。フラットでは全タスクが葉。
         const tdTasks = allTasks.filter(t => (t.todo_ids ?? []).includes(td.id) && !isParentTask(t, allTasks));
-        const done = tdTasks.filter(t => t.status === "done").length;
+        // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+        const done = tdTasks.filter(t => isCompletedForProgress(t.status)).length;
         const total = tdTasks.length;
         const pct = calcProgressPct(done, total);
         return { todo: td, done, total, pct };

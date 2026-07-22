@@ -16,6 +16,7 @@
 
 import type { Task, TaskDependency } from "./localData/types";
 import { calcProgressPct } from "./stats";
+import { isCompletedForProgress } from "./taskMeta";
 
 /** display_order（未設定は0）→ created_at の昇順で安定ソートする内部ヘルパー */
 function sortByOrder(a: Task, b: Task): number {
@@ -274,9 +275,12 @@ export function eligibleChildTasks(tasks: Task[], parent: Task): Task[] {
 }
 
 /** 葉タスクの慣例的な進捗率（0〜1）。0〜100%の実測フィールドが無いための代替表現
- *  （todo=0 / in_progress=0.5 / done=1）。実測%を持たせる場合は将来DB列＋入力UIが必要（今回は未対応）。 */
+ *  （todo=0 / in_progress=0.5 / done=1）。実測%を持たせる場合は将来DB列＋入力UIが必要（今回は未対応）。
+ *  cancelled は isCompletedForProgress と同じ基準で done と同じ1（100%）扱いにする
+ *  （M33解消・CLAUDE.md 2026-07-22。「実施しないと決めて終わった」= もう動かないため、
+ *  進捗フィルの表現上も完了扱いに揃える）。on_hold は「まだ動く可能性がある」ため引き続き0のまま。 */
 function leafProgressFraction(status: Task["status"]): number {
-  if (status === "done") return 1;
+  if (isCompletedForProgress(status)) return 1;
   if (status === "in_progress") return 0.5;
   return 0;
 }

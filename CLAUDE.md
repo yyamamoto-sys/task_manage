@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.75
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.76
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1693,7 +1693,47 @@
 #             変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。新規エラー0件）／
 #             `npm run build`成功
 #
-# 最終更新：2026-07-21（v2.75）
+# v2.76 fix: 進捗%集計のcancelled非対称を一括解消（M33）（2026-07-22）
+#      背景：A計画ビューの巡回（23〜31回目）で繰り返し発見された同型の設計課題（`docs/REFACTORING.md`
+#             中優先度表M33）。進捗%の分母（全体件数）にはon_hold/cancelledを含めるが、分子（完了
+#             扱い件数）は`status==="done"`限定という非対称があり、中止・保留タスクが分母に残り
+#             続けて達成率を実際より低く見せていた。今回、方針を確定：**cancelled（中止）はdoneと
+#             同様に「完了扱い」として進捗%の分子にも含める。on_hold（保留）は引き続き「未完了」
+#             扱いのまま**（既存の依存ゲート・v2.75親タスク自動完了の`allChildrenTerminal`共通コア
+#             判定と完全に同じ基準）
+#      追加：`src/lib/taskMeta.ts`に`isCompletedForProgress(status)`（`status==="done" ||
+#             status==="cancelled"`。`allChildrenTerminal`と同じ判定基準を進捗%集計向けに切り出した
+#             共有ヘルパー）を新設。`src/lib/__tests__/taskMeta.test.ts`（NEW・5テスト）
+#      変更（対象4箇所を`isCompletedForProgress`経由に統一。分母・全体件数の集計ロジックは無変更）：
+#             ①`GanttView.tsx`：PJ別ビューのPJグループ進捗%（`viewMode==="pj"`のPJバー行）・ToDo別
+#             グループ進捗%（`todoGroups`のバー）の2箇所の`done`算出 ②`DashboardView.tsx`：
+#             `pjProgress`（PJ進捗一覧）・`tfTaskStats`（TF内訳。`krProgress`のTFサマリーと共有）・
+#             `krProgress`（KR進捗サマリー）・`todoProgress`（ToDo進捗一覧）の4箇所の`done`算出
+#             ③`src/lib/list/groupSummary.ts`の`computeGroupSummary`：`doneCount`算出
+#             （`ListView.tsx`のグループ見出し・`KanbanView.tsx`の列ヘッダー集計の両方に自動反映）
+#      変更（葉タスクの進捗率フィル。`src/lib/taskHierarchy.ts`）：`leafProgressFraction`
+#             （v2.45導入・ガントのバー内進捗フィル用ステータス由来慣例値）の判定を
+#             `status==="done"`単独から`isCompletedForProgress`経由に変更し、cancelledもdoneと
+#             同じ1（100%）扱いに統一（「実施しないと決めて終わった」＝もう動かないため、進捗
+#             フィルの表現上も完了扱いに揃える判断）。on_holdは引き続き0のまま（まだ動く可能性が
+#             あるため）。`taskProgressFraction`/`buildProgressFractionMap`のシグネチャ・親タスクの
+#             ロールアップ経路（`parentProgress`・`buildParentDerivedMap`の`done`算出自体は
+#             `status==="done"`単独のまま無変更）には手を入れていない
+#      スコープ外（意図的に据え置き）：`taskHierarchy.ts`の`parentProgress`/`buildParentDerivedMap`
+#             が算出する親タスク自身の`done`（ガントの個別タスクバー進捗フィル・ListViewの親行
+#             `derivedByParentId`表示で使用）は、`docs/REFACTORING.md`のM33が対象化した4箇所には
+#             含まれておらず、M11（親子ステータス・進捗集計の一元化・2026-07-06完了）の残課題として
+#             別管理されている集計のため、今回は変更していない（同じ非対称が理論上残るが、対象を
+#             広げると影響範囲がM33の指示スコープを超えるため今回は見送り。次回の巡回候補として記録）
+#      テスト：`taskHierarchy.test.ts`に`taskProgressFraction`のcancelled/on_hold回帰テスト2件、
+#             `groupSummary.test.ts`にcancelled/on_hold回帰テスト2件、`taskMeta.test.ts`（NEW）に
+#             `isCompletedForProgress`の単体テスト5件を追加（計9テスト追加）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 446件全通過（新規9件込み）／
+#             `npx eslint src`は変更前と同じ35件（24エラー・11警告、既存の無関係な指摘のみ。
+#             新規エラー0件）／`npm run build`成功
+#      DBマイグレ不要（フロントのみの変更）
+#
+# 最終更新：2026-07-22（v2.76）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2662,7 +2702,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-19（v2.66）
+- 最終更新：2026-07-22（v2.76）
 
 ---
 

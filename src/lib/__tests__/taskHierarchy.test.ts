@@ -474,6 +474,16 @@ describe("taskProgressFraction：ガントのバー内進捗フィル用（0〜1
     expect(taskProgressFraction(t[0], t)).toBe(1);
   });
 
+  it("葉タスク：cancelled=1（doneと同じ完了扱い。M33解消・2026-07-22）", () => {
+    const t = [mk({ id: "a", status: "cancelled" })];
+    expect(taskProgressFraction(t[0], t)).toBe(1);
+  });
+
+  it("葉タスク：on_hold=0（引き続き未完了扱い）", () => {
+    const t = [mk({ id: "a", status: "on_hold" })];
+    expect(taskProgressFraction(t[0], t)).toBe(0);
+  });
+
   it("親タスク：子からのロールアップ（parentProgressのpctを0〜1に正規化）", () => {
     const t = [
       mk({ id: "p", status: "todo" }), // 親自身のstatusは無視される

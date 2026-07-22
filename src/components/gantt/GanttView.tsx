@@ -17,7 +17,7 @@ import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
-import { isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
+import { isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib/taskMeta";
 import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
@@ -2075,7 +2075,8 @@ export function GanttView({
                   ? (diffDays(pjStart, pjEnd) + 1) * dayWidth : null;
 
                 // PJの完了率（タスクから計算。完了数カウントにソートは不要）
-                const done = pjTaskList.filter(t => t.status === "done").length;
+                // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+                const done = pjTaskList.filter(t => isCompletedForProgress(t.status)).length;
                 const pct  = pjTaskList.length > 0 ? done / pjTaskList.length : 0;
 
                 // このPJのマイルストーン
@@ -2229,7 +2230,8 @@ export function GanttView({
               {viewMode === "pj" && todoGroups.map(({ todoId, tasks }) => {
                 const isCollapsed = collapsed[`todo_${todoId}`];
                 const sortedTasks = todoGroupSortedMap.get(todoId) ?? sortTasks(tasks);
-                const done = tasks.filter(t => t.status === "done").length;
+                // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+                const done = tasks.filter(t => isCompletedForProgress(t.status)).length;
                 const pct  = tasks.length > 0 ? done / tasks.length : 0;
                 return (
                   <div key={todoId}>
