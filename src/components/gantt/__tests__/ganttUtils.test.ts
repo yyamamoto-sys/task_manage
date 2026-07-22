@@ -261,6 +261,18 @@ describe("computeBulkMoveShifts", () => {
     expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);
   });
 
+  it("中止(cancelled)タスクは対象外（M34：done以外を除外していなかった漏れの回帰防止）", () => {
+    const tasks = [makeTask({ id: "t1", status: "cancelled", start_date: "2026-07-05", due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);
+  });
+
+  it("保留(on_hold)タスクは対象（cancelledと違い引き続きシフト可能）", () => {
+    const tasks = [makeTask({ id: "t1", status: "on_hold", start_date: "2026-07-05", due_date: "2026-07-10" })];
+    expect(computeBulkMoveShifts(tasks, 3)).toEqual([
+      { taskId: "t1", oldStart: "2026-07-05", oldDue: "2026-07-10", newStart: "2026-07-08", newDue: "2026-07-13" },
+    ]);
+  });
+
   it("削除済みタスクは対象外", () => {
     const tasks = [makeTask({ id: "t1", is_deleted: true, start_date: "2026-07-05", due_date: "2026-07-10" })];
     expect(computeBulkMoveShifts(tasks, 3)).toEqual([]);

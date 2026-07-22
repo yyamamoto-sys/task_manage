@@ -238,15 +238,16 @@ export interface BulkMoveShift {
 
 /**
  * 選択中の複数タスクを同じ日数だけシフトする際の、各タスクの新旧日付をまとめて計算する（純粋関数）。
- * 内部で computeMoveShift を1件ずつ適用するだけ（ロジックの二重化を避ける）。完了(done)・削除済み・
- * 期日未設定のタスクは対象外にする（バー中央ドラッグの単体移動と同じ「doneはシフト対象外」ルールを
- * ここ1箇所に集約する）。
+ * 内部で computeMoveShift を1件ずつ適用するだけ（ロジックの二重化を避ける）。完了(done)・中止(cancelled)・
+ * 削除済み・期日未設定のタスクは対象外にする（バー中央ドラッグの単体移動＝GanttView.tsxの
+ * guardedHandleMoveDragStart/bulkTargets構築と同じ「done・cancelledは終わったタスクとしてシフト対象外」
+ * ルールをここ1箇所に集約する。on_holdは引き続き対象＝個別ドラッグ可能なため）。
  */
 export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMoveShift[] {
   if (deltaDays === 0) return [];
   const result: BulkMoveShift[] = [];
   for (const task of tasks) {
-    if (task.status === "done" || task.is_deleted || !task.due_date) continue;
+    if (task.status === "done" || task.status === "cancelled" || task.is_deleted || !task.due_date) continue;
     const shift = computeMoveShift(task.start_date ?? null, task.due_date, deltaDays);
     if (Object.keys(shift).length === 0) continue;
     result.push({
