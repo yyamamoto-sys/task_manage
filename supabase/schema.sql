@@ -1,6 +1,6 @@
 -- ============================================================
 -- グループ計画管理アプリ スキーマ定義（統合版）
--- 最終更新: 2026-07-02
+-- 最終更新: 2026-07-22
 -- Supabase SQL エディタで上から順に実行してください
 -- ============================================================
 --
@@ -12,6 +12,9 @@
 -- （migrations/20260702_fix_multitenancy_rls.sql）を反映。
 -- 2026-07-02c：全社スーパー管理者ロール（is_super_admin）・部署ガバナンス強化
 -- （migrations/20260702c_add_super_admin_and_department_governance.sql）を反映。
+-- 2026-07-22：オンボーディング経路の是正（M25対応）。is_system_bootstrapped() /
+-- bootstrap_first_group_and_member() の2関数を追加
+-- （migrations/20260722_add_onboarding_bootstrap.sql）を反映。
 --
 -- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
 -- 新規環境ではこのファイル一発で初期化できる。
@@ -742,6 +745,97 @@ DROP TRIGGER IF EXISTS trg_groups_guard_deletion ON groups;
 CREATE TRIGGER trg_groups_guard_deletion
   BEFORE UPDATE ON groups
   FOR EACH ROW EXECUTE FUNCTION guard_group_deletion();
+
+-- ============================================================
+-- オンボーディング経路の是正（M25対応。migration 20260722）
+--
+-- RLSは「自分のgroup_idと一致するか、super-adminか」でしか可視性を判定できないため、
+-- 未登録の認証ユーザーには members が0件に見える。これは「本当にシステムが空
+-- （初回セットアップ）」なのか「自分に権限が無いだけ」なのかクライアント側では
+-- 区別できない。この2関数でサーバー側に判定・処理を寄せる。
+-- ============================================================
+
+-- 「アクティブなmembersが1件でも存在するか」だけを返す（真偽値のみ・情報漏洩を最小化）。
+-- 未登録の認証ユーザーからも呼べる必要があるため GRANT EXECUTE TO authenticated。
+CREATE OR REPLACE FUNCTION public.is_system_bootstrapped()
+RETURNS boolean
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_is_bootstrapped$
+  SELECT EXISTS (SELECT 1 FROM public.members WHERE is_deleted = false)
+$fn_is_bootstrapped$;
+
+GRANT EXECUTE ON FUNCTION public.is_system_bootstrapped() TO authenticated;
+
+-- 「membersが0件のときに限り」部署＋最初のメンバー（is_admin=true かつ
+-- is_super_admin=true）を作成する。通常のクライアントINSERTはgroups_insert_admin
+-- ポリシー（super-admin限定）に阻まれるため、真の初回セットアップ専用の抜け道。
+-- 【安全性の要】関数内の「membersが0件」ガードが、2回目以降にこの関数が呼ばれて
+-- 誰でもsuper_adminになれてしまう穴を防ぐ唯一の防波堤。emailはクライアントの引数
+-- からではなく必ずauth.email()から取得する（なりすまし防止）。
+CREATE OR REPLACE FUNCTION public.bootstrap_first_group_and_member(
+  p_group_name   text,
+  p_display_name text,
+  p_short_name   text,
+  p_initials     text,
+  p_color_bg     text,
+  p_color_text   text
+)
+RETURNS TABLE(group_id text, member_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_bootstrap$
+DECLARE
+  v_email        text;
+  v_group_id     text;
+  v_member_id    text;
+  v_active_count integer;
+BEGIN
+  -- 同時に2つのブートストラップ呼び出しが走るTOCTOUレースを防ぐアドバイザリロック
+  -- （真の初回セットアップは通常1人しか行わないため実運用上のボトルネックにはならない）。
+  PERFORM pg_advisory_xact_lock(hashtext('bootstrap_first_group_and_member'));
+
+  SELECT count(*) INTO v_active_count FROM public.members WHERE is_deleted = false;
+  IF v_active_count > 0 THEN
+    RAISE EXCEPTION 'システムは既に初期化済みのため、ブートストラップは実行できません'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  v_email := auth.email();
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION '認証されたメールアドレスが取得できません' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  IF coalesce(trim(p_group_name), '') = '' THEN
+    RAISE EXCEPTION '部署名を入力してください' USING ERRCODE = 'check_violation';
+  END IF;
+  IF coalesce(trim(p_display_name), '') = '' OR coalesce(trim(p_short_name), '') = '' THEN
+    RAISE EXCEPTION '表示名・略称を入力してください' USING ERRCODE = 'check_violation';
+  END IF;
+
+  v_group_id  := 'grp-' || replace(gen_random_uuid()::text, '-', '');
+  v_member_id := gen_random_uuid()::text;
+
+  INSERT INTO public.groups (id, name, updated_by)
+  VALUES (v_group_id, trim(p_group_name), v_member_id);
+
+  INSERT INTO public.members (
+    id, display_name, short_name, initials, teams_account, email,
+    is_admin, is_super_admin, group_id, color_bg, color_text,
+    is_deleted, updated_by
+  ) VALUES (
+    v_member_id, trim(p_display_name), trim(p_short_name), p_initials, '', v_email,
+    true, true, v_group_id, p_color_bg, p_color_text,
+    false, v_member_id
+  );
+
+  RETURN QUERY SELECT v_group_id, v_member_id;
+END;
+$fn_bootstrap$;
+
+GRANT EXECUTE ON FUNCTION public.bootstrap_first_group_and_member(text, text, text, text, text, text) TO authenticated;
 
 -- ============================================================
 -- インデックス
