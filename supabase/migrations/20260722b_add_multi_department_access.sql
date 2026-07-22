@@ -110,10 +110,14 @@ WITH computed AS (
   SELECT
     t.id,
     CASE
-      WHEN t.project_id IS NOT NULL THEN
-        COALESCE(p.group_ids, CASE WHEN t.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[t.group_id] END)
-      WHEN t.group_id IS NULL THEN '{}'::text[]
-      ELSE ARRAY[t.group_id]
+      -- PJ紐づきタスク：そのPJの group_ids をそのまま継承する
+      WHEN t.project_id IS NOT NULL AND p.group_ids IS NOT NULL THEN
+        p.group_ids
+      -- 参照先PJが見つからない異常系／PJ紐づきなし：ホーム部署のみ
+      WHEN t.group_id IS NULL THEN
+        '{}'::text[]
+      ELSE
+        ARRAY[t.group_id]
     END AS new_group_ids
   FROM tasks t
   LEFT JOIN projects p ON p.id = t.project_id
