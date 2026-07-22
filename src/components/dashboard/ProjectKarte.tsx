@@ -24,7 +24,7 @@ import { AIProgressLoader } from "../common/AIProgressLoader";
 import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
 import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { getAssigneeIds } from "../../lib/taskMeta";
+import { getAssigneeIds, isActiveTaskStatus, suppressOverdue } from "../../lib/taskMeta";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { confirmDialog } from "../../lib/dialog";
@@ -123,8 +123,10 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
     for (const t of leafPjTasks) {
       if (t.status === "done") done++;
       else if (t.status === "in_progress") inProg++;
-      else todo++;
-      if (t.status !== "done") {
+      else if (t.status === "todo") todo++;
+      // on_hold/cancelled はtodo/inProg/doneいずれにも含めない（v2.74で追加された非アクティブ状態。
+      // 「未着手」に混ぜて数えると内訳の合計がtotalと食い違う＝payloadBuilder.tsのpj_progressと同じ流儀）
+      if (!suppressOverdue(t.status)) {
         if (t.due_date && t.due_date <= today) overdue++;
         else if (t.due_date && t.due_date <= weekLater) dueThisWeek++;
         else if (!t.due_date) noDue++;
@@ -143,9 +145,13 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const memberLoad = useMemo(() => {
     const map = new Map<string, { active: number; done: number }>();
     for (const t of pjTasks) {
+      const isDone = t.status === "done";
+      // on_hold/cancelled は「未完了の負荷」に数えない（computeWorkload.getMemberActiveTasksと
+      // 同じisActiveTaskStatus基準。保留・中止タスクを負荷として見せると実態より過大に見える）
+      if (!isDone && !isActiveTaskStatus(t.status)) continue;
       for (const mid of getAssigneeIds(t)) {
         const e = map.get(mid) ?? { active: 0, done: 0 };
-        if (t.status === "done") e.done++; else e.active++;
+        if (isDone) e.done++; else e.active++;
         map.set(mid, e);
       }
     }
