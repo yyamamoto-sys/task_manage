@@ -15,6 +15,11 @@
 -- 2026-07-22：オンボーディング経路の是正（M25対応）。is_system_bootstrapped() /
 -- bootstrap_first_group_and_member() の2関数を追加
 -- （migrations/20260722_add_onboarding_bootstrap.sql）を反映。
+-- 2026-07-22b：複数部署アクセス（メンバーの兼務・プロジェクトの部署横断）フェーズ1。
+-- members/projects/tasks に group_ids(text[]) 追加・バックフィル・CHECK制約(members/projects)・
+-- current_member_group_ids()・RLSの配列オーバーラップ化・tasks.group_ids自動導出トリガー・
+-- projects→tasksカスケード・guard_member_privilege_columns/guard_group_deletionの拡張を反映
+-- （migrations/20260722b_add_multi_department_access.sql）。フロントエンドは未対応（次フェーズ）。
 --
 -- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
 -- 新規環境ではこのファイル一発で初期化できる。
@@ -76,6 +81,10 @@ ALTER TABLE members ADD COLUMN IF NOT EXISTS is_admin boolean NOT NULL DEFAULT f
 ALTER TABLE members ADD COLUMN IF NOT EXISTS is_super_admin boolean NOT NULL DEFAULT false;
 ALTER TABLE members ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
 UPDATE members SET group_id = 'grp-egg' WHERE group_id IS NULL;
+-- 複数部署アクセス（兼務）対応：migrations/20260722b_add_multi_department_access.sql 参照
+ALTER TABLE members ADD COLUMN IF NOT EXISTS group_ids text[] NOT NULL DEFAULT '{}';
+UPDATE members SET group_ids = array_append(group_ids, group_id)
+  WHERE group_id IS NOT NULL AND NOT (group_id = ANY(group_ids));
 CREATE UNIQUE INDEX IF NOT EXISTS members_email_unique
   ON members(email)
   WHERE email IS NOT NULL AND is_deleted = false;
@@ -191,6 +200,10 @@ CREATE TABLE IF NOT EXISTS projects (
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS member_roles jsonb NOT NULL DEFAULT '{}';  -- migration 20260612
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);  -- migration 20260626_add_multitenancy.sql
 UPDATE projects SET group_id = 'grp-egg' WHERE group_id IS NULL;
+-- 複数部署アクセス（兼務・プロジェクトの部署横断）対応：migrations/20260722b_add_multi_department_access.sql 参照
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_ids text[] NOT NULL DEFAULT '{}';
+UPDATE projects SET group_ids = array_append(group_ids, group_id)
+  WHERE group_id IS NOT NULL AND NOT (group_id = ANY(group_ids));
 
 -- ===== Project ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS project_task_forces (
@@ -232,6 +245,20 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id); 
 UPDATE tasks SET group_id = 'grp-egg' WHERE group_id IS NULL;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS baseline_start_date date;  -- migration 20260717b_add_task_baseline.sql（B4）
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS baseline_due_date date;    -- migration 20260717b_add_task_baseline.sql（B4）
+-- 複数部署アクセス対応：tasks.group_ids はDBトリガー（sync_task_group_ids）が唯一の真実。
+-- ここでは既存データのバックフィルのみ行う（migrations/20260722b_add_multi_department_access.sql 参照）。
+-- project_idがあればそのプロジェクトのgroup_ids（projectsは上のブロックで既にバックフィル済み）を、
+-- 無ければホーム部署（tasks.group_id）のみの配列を採用する。
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS group_ids text[] NOT NULL DEFAULT '{}';
+UPDATE tasks t
+SET group_ids = CASE
+  WHEN t.project_id IS NOT NULL THEN
+    COALESCE((SELECT p.group_ids FROM projects p WHERE p.id = t.project_id),
+              CASE WHEN t.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[t.group_id] END)
+  WHEN t.group_id IS NULL THEN '{}'::text[]
+  ELSE ARRAY[t.group_id]
+END
+WHERE t.group_ids = '{}';  -- 新規追加列の初期バックフィルのみ対象（再適用時に既存の値を壊さない）
 
 -- ===== Task ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS task_task_forces (
@@ -580,21 +607,38 @@ AS $fn_is_super_admin$
   LIMIT 1
 $fn_is_super_admin$;
 
--- members / projects / tasks：グループ一致、またはsuper-adminなら部署をまたいで許可
+-- 複数部署アクセス（兼務）対応：アクセス可能な部署の全リストを返すヘルパー関数（新規）。
+-- current_member_group_id()（単数・ホーム部署）は変更せず併存させる（is_admin判定・新規
+-- レコードのデフォルト割当は引き続きこちらを基準にする）。migration 20260722b 参照。
+CREATE OR REPLACE FUNCTION current_member_group_ids()
+RETURNS text[]
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_group_ids$
+  SELECT group_ids FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$fn_group_ids$;
+
+-- members / projects / tasks：group_ids（アクセス可能な部署の全リスト）が自分の
+-- group_ids と1つでも重なるか、またはsuper-adminなら部署をまたいで許可
+-- （migration 20260722b で group_id 単一値比較 → 配列オーバーラップに置き換え）
 DROP POLICY IF EXISTS "authenticated full access" ON members;
 DROP POLICY IF EXISTS "members_group" ON members;
 CREATE POLICY "members_group" ON members FOR ALL TO authenticated
-  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
 
 DROP POLICY IF EXISTS "authenticated full access" ON projects;
 DROP POLICY IF EXISTS "projects_group" ON projects;
 CREATE POLICY "projects_group" ON projects FOR ALL TO authenticated
-  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
 
 DROP POLICY IF EXISTS "authenticated full access" ON tasks;
 DROP POLICY IF EXISTS "tasks_group" ON tasks;
 CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
-  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
 
 -- task_dependencies（B1）：tasks と同じ group_id スコープ。NULL猶予条項は入れない
 -- （20260702b の教訓＝NULLを許すとRLSの穴になる。このテーブルはgroup_idがNOT NULLなので該当なし）
@@ -602,6 +646,106 @@ DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
 DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
 CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
   USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+
+-- 複数部署アクセス：不変条件をCHECK制約で強制（members / projects のみ。tasksはDBトリガーが
+-- 唯一の真実のため対象外）。migration 20260722b 参照。
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'members_group_id_in_group_ids'
+  ) THEN
+    ALTER TABLE members
+      ADD CONSTRAINT members_group_id_in_group_ids
+      CHECK (group_id IS NULL OR group_id = ANY(group_ids));
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'projects_group_id_in_group_ids'
+  ) THEN
+    ALTER TABLE projects
+      ADD CONSTRAINT projects_group_id_in_group_ids
+      CHECK (group_id IS NULL OR group_id = ANY(group_ids));
+  END IF;
+END $$;
+
+-- 複数部署アクセス：tasks.group_ids はDBトリガーが唯一の真実（アプリからは直接編集させない）。
+-- project_id があればそのプロジェクトの group_ids をコピー、無ければホーム部署のみに正規化する。
+CREATE OR REPLACE FUNCTION sync_task_group_ids()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_sync_task_group_ids$
+DECLARE
+  proj_group_ids text[];
+BEGIN
+  IF NEW.project_id IS NOT NULL THEN
+    SELECT group_ids INTO proj_group_ids FROM public.projects WHERE id = NEW.project_id;
+    IF proj_group_ids IS NULL THEN
+      NEW.group_ids := CASE WHEN NEW.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[NEW.group_id] END;
+    ELSE
+      NEW.group_ids := proj_group_ids;
+    END IF;
+  ELSE
+    NEW.group_ids := CASE WHEN NEW.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[NEW.group_id] END;
+  END IF;
+  RETURN NEW;
+END;
+$fn_sync_task_group_ids$;
+
+DROP TRIGGER IF EXISTS trg_tasks_sync_group_ids ON tasks;
+CREATE TRIGGER trg_tasks_sync_group_ids
+  BEFORE INSERT OR UPDATE ON tasks
+  FOR EACH ROW EXECUTE FUNCTION sync_task_group_ids();
+
+-- 複数部署アクセス：projects.group_ids が変化したら配下タスクへカスケード反映
+-- （既知の副作用：配下タスク全部のupdated_atが動きうる。B3自動リスケ連鎖等と同種の割り切り）
+CREATE OR REPLACE FUNCTION cascade_project_group_ids_to_tasks()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cascade_pj_group_ids$
+BEGIN
+  IF NEW.group_ids IS DISTINCT FROM OLD.group_ids THEN
+    UPDATE public.tasks
+    SET group_ids = NEW.group_ids
+    WHERE project_id = NEW.id
+      AND group_ids IS DISTINCT FROM NEW.group_ids;
+  END IF;
+  RETURN NEW;
+END;
+$fn_cascade_pj_group_ids$;
+
+DROP TRIGGER IF EXISTS trg_projects_cascade_group_ids ON projects;
+CREATE TRIGGER trg_projects_cascade_group_ids
+  AFTER UPDATE ON projects
+  FOR EACH ROW EXECUTE FUNCTION cascade_project_group_ids_to_tasks();
+
+-- 複数部署アクセス：projects.group_ids の正規化トリガー（安全網）。プロジェクトは全員編集可・
+-- 特別なゲーティングなしの設計のため、group_id（ホーム部署）だけが変更されgroup_idsが
+-- 追従しないケースでもCHECK制約違反にならないよう自動的に追加する（既存値の削除は行わない）。
+CREATE OR REPLACE FUNCTION normalize_project_group_ids()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_normalize_pj_group_ids$
+BEGIN
+  IF NEW.group_id IS NOT NULL AND NOT (NEW.group_id = ANY(NEW.group_ids)) THEN
+    NEW.group_ids := array_append(NEW.group_ids, NEW.group_id);
+  END IF;
+  RETURN NEW;
+END;
+$fn_normalize_pj_group_ids$;
+
+DROP TRIGGER IF EXISTS trg_projects_normalize_group_ids ON projects;
+CREATE TRIGGER trg_projects_normalize_group_ids
+  BEFORE INSERT OR UPDATE ON projects
+  FOR EACH ROW EXECUTE FUNCTION normalize_project_group_ids();
 
 -- groups：参照は全員可。新規部署の作成はsuper-admin限定、改名・編集はsuper-admin
 -- または自分の部署のadminのみ、物理DELETE（アプリは未使用）はsuper-admin限定。
@@ -641,17 +785,20 @@ DECLARE
   old_is_super_admin  boolean;
   old_group_id        text;
   check_group_id      text;
+  old_group_ids       text[];
 BEGIN
   IF TG_OP = 'INSERT' THEN
     old_is_admin       := false;
     old_is_super_admin := false;
     old_group_id       := NEW.group_id;
     check_group_id     := NEW.group_id;
+    old_group_ids      := NULL; -- INSERTには「以前の行」が存在しない
   ELSE
     old_is_admin       := OLD.is_admin;
     old_is_super_admin := OLD.is_super_admin;
     old_group_id       := OLD.group_id;
     check_group_id     := OLD.group_id;
+    old_group_ids      := OLD.group_ids;
   END IF;
 
   acting_super_admin := public.current_member_is_super_admin();
@@ -699,6 +846,24 @@ BEGIN
     END IF;
   END IF;
 
+  -- フェーズ3（複数部署アクセス。migration 20260722b）: group_ids（追加部署アクセス）
+  -- 直接付与・剥奪はsuper-admin限定。非super-adminがホーム部署(group_id)を付け替えた場合
+  -- （部署ブートストラップ含む）・新規作成時は、group_idsを新ホーム部署のみにリセットする
+  -- （追記のまま残すと部署admin経由で複数部署アクセスを迂回的に付与できる抜け穴になるため）。
+  -- NEW.group_id はフェーズ2で既に最終確定済み（差し戻された場合は old_group_id と一致）。
+  IF acting_super_admin OR will_be_super_admin THEN
+    NULL; -- super-adminは自由に付与・剥奪可（末尾の正規化で group_id 包含だけ保証する）
+  ELSIF TG_OP = 'INSERT' OR NEW.group_id IS DISTINCT FROM old_group_id THEN
+    NEW.group_ids := CASE WHEN NEW.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[NEW.group_id] END;
+  ELSE
+    NEW.group_ids := old_group_ids; -- 非super-adminによるgroup_ids自体の直接変更は差し戻す
+  END IF;
+
+  -- 常に NEW.group_id が NEW.group_ids に含まれるよう最終正規化する（安全網）
+  IF NEW.group_id IS NOT NULL AND NOT (NEW.group_id = ANY(COALESCE(NEW.group_ids, '{}'::text[]))) THEN
+    NEW.group_ids := array_append(COALESCE(NEW.group_ids, '{}'::text[]), NEW.group_id);
+  END IF;
+
   RETURN NEW;
 END;
 $fn_guard$;
@@ -724,14 +889,16 @@ BEGIN
       RETURN NEW; -- super-adminは非空の部署でも強制削除可（統廃合用途）
     END IF;
 
+    -- group_id = OLD.id：ホーム部署としてこの部署に所属。OLD.id = ANY(group_ids)：追加部署
+    -- アクセスとしてのみこの部署に所属（migration 20260722b で判定条件を拡張）。
     SELECT count(*) INTO active_member_count
     FROM public.members
-    WHERE group_id = OLD.id
+    WHERE (group_id = OLD.id OR OLD.id = ANY(group_ids))
       AND is_deleted = false;
 
     IF active_member_count > 0 THEN
       RAISE EXCEPTION
-        'このグループには % 名のアクティブなメンバーがいるため削除できません（全社スーパー管理者のみ強制削除可）',
+        'このグループには % 名のアクティブなメンバー（追加部署アクセスとして所属する人を含む）がいるため削除できません（全社スーパー管理者のみ強制削除可）',
         active_member_count
         USING ERRCODE = 'check_violation';
     END IF;
