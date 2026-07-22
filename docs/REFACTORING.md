@@ -27,7 +27,7 @@
 |---|---|---|---|---|---|
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約950行（LoginScreen/SetupWizard/UserSelectScreen/guestMode計） | M25（新規テナント初回メンバー作成のRLSブートストラップ欠落・要設計判断）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果、SetupWizardの新規メンバー作成にgroup_idが一切設定されない設計上の欠落を発見（M25として記録・修正は見送り） |
-| A 計画ビュー | 2026-07-07 | 2026-07-07（`ListView`のborder幅reflowバグ根本修正）／2026-07-06（M11ロールアップ集約`5feb485`）／2026-07-22（23回目：`WorkloadView.tsx`の`unassignedCount`がv2.74ステータス拡張（保留/中止追加）に追従できておらず`t.status !== "done"`のままだった不整合を`isActiveTaskStatus`経由に修正）／2026-07-22（24回目：`GanttView.tsx`の①複数選択一括シフトの対象フィルタ、②依存矢印の「先行未完了→点線」判定、の2箇所がv2.74のcancelled導入に追従できておらず`t.status !== "done"`のままだった不整合を修正）／2026-07-22（25回目：`ganttUtils.ts`の`computeBulkMoveShifts`本体がM34のとおり`task.status === "done"`のみ除外しcancelledを除外していなかった不整合を修正＝`b587fd0`）／2026-07-22（26回目：`TaskSidePanel.tsx`に、編集直後（デバウンス600ms未満）に✕ボタンや別タスク行クリックで閉じる／切り替えると保留編集が保存されず消える実データロスバグを発見・`TaskEditModal.tsx`のhandleClose相当のフラッシュ機構を移植して修正。あわせて`TaskSidePanel.tsx`内で`taskEditPayload.ts`の`buildTaskUpdatePayload`と重複実装されていたペイロード組み立てロジックを`buildTaskUpdatePayload`側（tags省略時はoriginalTask.tagsを維持するよう拡張）に統合し重複を解消）／2026-07-22（27回目：`KanbanView.tsx`・`QuickAddTaskModal.tsx`・`kanbanOrder.ts`・`kanbanWip.ts`はv2.74/v2.75に既に追従済みで健全と確認。副産物として、List/Kanban共用の`hooks/useBulkTaskActions.ts`のcatchブロック4箇所が`err.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に修正＝`23462c3`）／2026-07-22（28回目：`lib/dependencies/gate.ts`はv2.74のcancelled完了扱いに既に追従済みで健全と確認。`lib/dependencies/reschedule.ts`の`computeCascadeShiftsMulti`（自動リスケ連鎖B3）がdone/cancelledの後続タスクも自動でシフトしてしまう不整合を発見・`computeBulkMoveShifts`と同じ「done・cancelledは対象外、on_holdは対象」ルールに統一し回帰テスト4件追加。`lib/dependencies/cycleCheck.ts`の`canAddDependency`/`wouldCreateCycle`は「呼び出し元がis_deleted除外済みの配列を渡す」契約だが、`appStore.ts`の`addTaskDependency`・`GanttView.tsx`のB5結線プレビュー判定・`TaskEditModal.tsx`/`TaskSidePanel.tsx`の先行タスク候補ピッカーの計4箇所が未フィルタのまま渡していたため、他クライアントが削除した依存がrealtime UPDATEで配列に残ったまま（`upsertById`はDELETEイベントでしか行を除去しない）重複・循環判定の亡霊になりうる不整合を発見・4箇所とも修正（回帰テスト1件追加）。`lib/baseline/baselineCapture.ts`・`lib/computeDueForecast.ts`・`lib/computeWeeklyVelocity.ts`はcancelled/on_hold除外を含め健全と確認）／2026-07-22（29回目：`ProjectKarte.tsx`（サブ領域②Dashboard PJ系）の進捗チップ集計（`stats`）が`t.status !== "done"`のままで、on_hold/cancelledタスクを「未着手」チップおよび「期限超過／今週期限／期日未設定」に誤って含めていた不整合を`suppressOverdue`経由に修正。同ファイルの`memberLoad`（担当者別負荷）も同根で`t.status === "done"`以外を全て「未完了の負荷」に含めており、on_hold/cancelledタスクが負荷として過大計上されていた不整合を`isActiveTaskStatus`経由に修正（`computeWorkload.getMemberActiveTasks`と同じ判定基準に統一）。`OnboardingHome.tsx`はタスクステータスを扱わない純粋な初見ガイドUIのため対象外・無改造で健全と確認。PJ別AI分析（Eユニット）とのAI境界・型整合（`projectAnalysisClient.ts`の5値status型）も確認し一致・健全）／2026-07-22（30回目：`DashboardView.tsx`（サブ領域①Dashboard核）の`mentionedTasks`（自分へのメンションカード）が`t.status !== "done"`のままで、on_hold/cancelledタスクへの過去のメンションを無期限に表示し続けていた不整合を`isActiveTaskStatus`経由に修正。`reminderTasks`/`thisWeekTasks`/`alertTasks`/`stagnantTasks`/KPIサマリー行/`runAllProjectsAnalysis`のtask_stats/`computeDueForecast.ts`/`computeWeeklyVelocity.ts`/`DueForecastChart.tsx`/`VelocityChart.tsx`は全て健全と確認。`pjProgress`/`krProgress`/`tfTaskStats`/`todoProgress`の4つの進捗%集計がM33と同根の設計判断待ち課題を抱えていることを確認しM33側に追記（詳細は下記「30回目の巡回」節）） | **約13,173行**（23回目に実測。`dashboard`2,548+`gantt`components3,719+`kanban`982+`list`1,566+`task`components2,284+`milestone`481+`workload`components518+`lib/dependencies`337+`lib/baseline`39+`lib/gantt`235+`lib/{kanbanOrder,kanbanWip,selectionRange}`52+`lib/list/groupSummary`31+`lib/workload/computeWorkload`75+`lib/{computeDueForecast,computeWeeklyVelocity}`104+`lib/taskEditPayload`54+`hooks/useBulkTaskActions`148。旧「約11,930行」はcomponents配下のみの近似値で`lib/`側の純粋関数群を含んでおらず実測値に訂正。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断）／M33（GanttView.tsxのPJ別/ToDo別ビューのPJ・ToDoグループ進捗%(`done/total`)がcancelledを完了扱いしていない。個別タスクの`progressFractionMap`（v2.75で`allChildrenTerminal`統一済み）とは基準が異なるが、cancelledをPJ進捗%に含めるかは設計判断が要るため24回目・25回目とも据え置き。25回目時点でM33の対象ファイル（GanttView.tsx本体）はサブ領域③=既に点検済み扱いのため④点検では対象外のまま。**30回目に対象拡張を確認**：`DashboardView.tsx`の`pjProgress`（PJ進捗一覧）・`krProgress`/`tfTaskStats`（KR進捗サマリー・TF内訳）・`todoProgress`（ToDo進捗一覧）の4集計も同じ「total にon_hold/cancelledを含めるがdoneはstatus==="done"のみ」基準で、M33のメモ欄が予見していた「ダッシュボードのKPI等にも波及しうる」が的中した形。修正方針（分母除外 or 完了扱い）は依然として設計判断が必要なため据え置き）／**M34は25回目で解消済み**（`ganttUtils.ts`の`computeBulkMoveShifts`が`task.status === "done"`のみ除外しcancelledを除外していなかった潜在バグ。24回目は`GanttView.tsx`側の`bulkTargets`構築のみ先に修正し本体は`ganttUtils.ts`＝サブ領域④の対象として持ち越していたが、25回目に`t.status !== "done" && t.status !== "cancelled"`へ修正し回帰テスト2件追加。コミット`b587fd0`）／M35（`TaskSidePanel.tsx`のコメント欄が素の`<textarea>`のままで、`TaskEditModal.tsx`が使う`MentionTextarea`＋`extractMentions`/`finalized_mentions`確定保存の仕組みが一切無い。List/Gantt/Kanbanの主要導線であるサイドパネルから`@名前`と書いても補完もハイライトも通知も発生しない。TaskEditModalは別経路（Graph/Calendar/AI編集・MainLayout側のeditingTaskId系）から到達可能なため機能自体が完全に失われているわけではないが、最頻導線での機能欠落のため次回候補。26回目のサブ領域⑤点検で発見。UI幅240〜680pxの可変パネルへの実装フィット・通知セマンティクスの検討が要るため設計判断が必要）／M36（`TaskSidePanel.tsx`にはタグ編集UIが無く、`SidebarForm`型にも`tags`フィールドが無いため、List/Gantt/Kanbanのサイドパネルからはタグの追加・削除ができない。TaskEditModal側にのみタグUIがあり、そちらは別経路〈Graph/Calendar/AI編集〉からのみ到達可能。26回目にサブ領域⑤点検で発見し、`buildTaskUpdatePayload`のtags省略時挙動をoriginalTask.tags維持に修正した際に判明。サイドパネルへのタグUI追加はパネル幅・レイアウトの設計判断が要るため次回候補） | **他ユニットの数倍の規模のため23回目にサブ領域分割案（①〜⑨）を策定・23回目は⑧・24回目は③・25回目は④・26回目は⑤・27回目は⑥・28回目は⑨・29回目は②・30回目は①を点検済み（詳細は下記「30回目の巡回」節）。** 残り⑦のみ次回に持ち越し。①Dashboard核（DashboardView+DueForecastChart+VelocityChart=1,645行・**済＝30回目点検完了。`DashboardView.tsx`の`mentionedTasks`がv2.74ステータス拡張に追従できておらずon_hold/cancelledタスクへの過去メンションを表示し続けていた実バグ1件を発見・修正。`pjProgress`/`krProgress`/`todoProgress`等の進捗%集計はM33と同根の設計判断待ち課題（対象拡張としてM33に追記）。`computeDueForecast.ts`/`computeWeeklyVelocity.ts`/両チャートコンポーネントは健全と確認**）②Dashboard PJ系（ProjectKarte+OnboardingHome=903行・**済＝29回目点検完了。`ProjectKarte.tsx`の進捗チップ集計・担当者別負荷がv2.74ステータス拡張に追従できておらずon_hold/cancelledを誤集計していた実バグ2件を発見・修正。`OnboardingHome.tsx`は対象外機能のため健全と確認**）③GanttView.tsx単体（2,432行・単一ファイル・**済＝24回目点検完了**）④Gantt周辺（GanttParts+GanttMobileView+ganttUtils+ganttDependencyArrows+lib/gantt/{criticalPath,overload}=1,522行・**済＝25回目点検完了。M34解消のほかはv2.74/v2.75追従済みで健全と確認**）⑤タスク編集系（TaskEditModal+TaskSidePanel+taskEditPayload=1,781行・**済＝26回目点検完了。TaskSidePanelのフラッシュ欠落による実データロスバグ（M35/M36とは別・その場で修正済み）を修正し、重複ペイロード構築ロジックをtaskEditPayload.tsに統合。B1（先行タスク依存ゲート）・v2.74（保留/中止ステータス）・v2.75（親タスク自動完了）は両ファイルともappStore.ts側の中央集権実装（saveTask経由）に乗っているため追従漏れなし・健全と確認。@メンション機能とタグ編集の欠落をM35/M36として発見**）⑥タスク追加+カンバン（QuickAddTaskModal+KanbanView+kanbanOrder/kanbanWip=1,575行・**済＝27回目点検完了。v2.74/v2.75は3回連続で健全と確認。副産物としてサブ領域⑨所属の`useBulkTaskActions.ts`のSection 15違反4件を先行修正**）⑦リスト+リストlib（ListView+groupSummary+selectionRange=1,613行）⑧マイルストーン+ワークロード（milestone481+workload components518+workload lib75=1,074行・済＝23回目点検完了）⑨依存関係+ベースライン+小物（lib/dependencies337+lib/baseline39+computeDueForecast/computeWeeklyVelocity104+useBulkTaskActions148=628行・**済＝28回目点検完了。`useBulkTaskActions.ts`のSection 15違反は27回目で先行修正済み。gate.tsは健全、reschedule.ts（B3のdone/cancelled後続除外漏れ）・cycleCheck.ts（呼び出し元4箇所のis_deleted未フィルタ）に実バグを発見・修正（詳細は下記「28回目の巡回」節）**）。残るは⑦リストのみ。次点検の最有力候補は⑦リスト（1,613行）。⑦が点検完了するまで「最終点検日」は2026-07-07のまま据え置く |
+| A 計画ビュー | 2026-07-22 | 2026-07-22（31回目：⑦リスト＋リストlib（`ListView.tsx`+`groupSummary.ts`+`selectionRange.ts`・約1,613行）を点検しA計画ビュー全9サブ領域が点検完了。`ListView.tsx`のドラッグ操作系3箇所（親子変更・並べ替え・親の解除の各catchブロック）がSection15禁止パターン（`err.message`のみ表示）のままだったのを`formatErrorForUser`経由に修正＝`eccc159`。`groupSummary.ts`（グループ見出しの完了率集計）にM33と同型の課題（`doneCount`はstatus==="done"限定・`total`にはon_hold/cancelledも含む）を確認し対象ファイルとしてM33へ追記。他の観点（STATUS_ORDER・sortの完了/中止沈め・状態フィルタ選択肢・isOverdue判定・PC/モバイルの表示ロジック）は5値とも網羅済みで健全と確認）／2026-07-07〜2026-07-22の23〜30回目（8セッション）でサブ領域①②③④⑤⑥⑧⑨を分割点検し、v2.74/v2.75追従漏れの実バグを多数発見・修正（`WorkloadView.tsx`・`GanttView.tsx`・`ganttUtils.ts`・`TaskSidePanel.tsx`・`ProjectKarte.tsx`・`DashboardView.tsx`等）。詳細は下記「31回目の巡回」節および各回の節を参照 | **約13,173行**（23回目に実測。内訳は下記「30回目の巡回」節参照。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断）／**M33**（`GanttView.tsx`のPJ別/ToDo別グループ進捗%・`DashboardView.tsx`の`pjProgress`/`krProgress`/`tfTaskStats`/`todoProgress`・**31回目に対象拡張**：`groupSummary.ts`（ListView/Kanbanのグループ見出し完了率。`computeGroupSummary`は`KanbanView.tsx`の列ヘッダー集計とも共有＝同じ課題が両ビューに波及）が、いずれも「totalにon_hold/cancelledを含めるがdoneはstatus==="done"のみで数える」同じ基準で、中止・保留タスクが分母に残り達成率を実際より低く見せる。修正は「cancelledを分母から除外する／完了扱いにする」の設計判断が要るため据え置き）／M34は25回目で解消済み（`ganttUtils.ts`の`computeBulkMoveShifts`のcancelled除外漏れ。`b587fd0`）／M35（`TaskSidePanel.tsx`に@メンション機能が無い。26回目発見・要設計判断）／M36（`TaskSidePanel.tsx`にタグ編集UIが無い。26回目発見・要設計判断） | **A計画ビューユニット全体（約13,173行）を23〜31回目の巡回（9セッション）で点検完了。** サブ領域①Dashboard核（30回目）②Dashboard PJ系（29回目）③GanttView.tsx単体（24回目）④Gantt周辺（25回目）⑤タスク編集系（26回目）⑥タスク追加+カンバン（27回目）⑦リスト+リストlib（31回目）⑧マイルストーン+ワークロード（23回目）⑨依存関係+ベースライン+小物（28回目）の全9つに分割し、v2.74（保留/中止ステータス追加）・v2.75（親タスク自動完了）への追従状況を軸に点検。cancelled/on_hold追従漏れの実バグをのべ10件前後発見・修正（`unassignedCount`・ガント一括シフト対象・依存矢印判定・`computeBulkMoveShifts`・`ProjectKarte`の進捗チップ/負荷集計・`DashboardView`の`mentionedTasks`等）。TaskSidePanelの編集直後クローズでのデータロスバグ（26回目）・依存の重複循環判定の亡霊バグ（28回目）等、ステータス追従とは別の実データ不整合バグも複数発見。これで他の全12ユニット（D OKRは作り直し方針のため除外扱い）と合わせ13ユニット全体の初回巡回が一巡した |
 | B AI相談 | 2026-07-21 | 2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照 |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手）。**🔴 2026-07-22 山本さん方針：OKRモードは全面的にゼロから作り直す予定（見切り発車で試験導入したところニーズが確認できたため、実用化に向けた根本的な再設計が必要と判断）。再設計に着手するまで、本ユニットへの追加リファクタ点検・巡回対象からの選定は行わない（作り直し前提のコードを磨くのは無駄になるため）。再設計時は現行の情報構造（Objective>KR>TF>ToDo>Task・週次循環ワークフロー①〜④等）を前提とせず、一から考え直すこと。** |
@@ -47,6 +47,105 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-07-22）巡回台帳の31回目の巡回：A 計画ビュー（サブ領域⑦リスト＋リストlib・完結）
+
+30回目（①Dashboard核）に続き、A計画ビューの最後の残りサブ領域⑦リスト＋リストlib
+（`ListView.tsx`1,566行＋`lib/list/groupSummary.ts`31行＋`lib/selectionRange.ts`16行・
+計約1,613行）を点検した。30回目の申し送りどおり、これまでの巡回で繰り返し見つかっている
+「cancelled/on_hold追従漏れ」パターンと、①②で見つかった「同一ファイル内での集計ロジックの
+部分的追従漏れ」パターンが無いか、状態フィルタ・並び順・グループ集計・期限超過表示を
+1つずつ通し番号で洗い直した。
+
+### v2.74（保留/中止）・v2.75（親タスク自動完了）の追従状況（結果：ListView.tsx本体は健全・groupSummary.tsに既知パターンを確認）
+
+- `STATUS_ORDER`（並び順キー`status`用）は5値すべて定義済み（`{ in_progress:0, todo:1,
+  on_hold:2, done:3, cancelled:4 }`）で健全。
+- 既定ソートの「完了・中止を常に下に送る」ロジック（`aDone`/`bDone`）も
+  `status === "done" || status === "cancelled"`で正しく2値を対象にし、on_holdは沈めない
+  （コメントに明記された設計方針どおり）。
+- 状態フィルタの選択肢（`CustomSelect`）・`groupBy === "status"`のグループ内訳
+  （`["in_progress", "todo", "on_hold", "done", "cancelled"]`）はいずれも5値を網羅済み。
+- 期限超過の赤字表示は`suppressOverdue(dispStatus)`をPC（`InlineEditDate`のisDoneプロップ経由）・
+  モバイル（`ListMobileTaskRow`内で直接算出）の両方で使用しており、判定基準が完全に一致（表現の
+  非対称なし）。取り消し線・グレーアウトの`isDone`判定（`dispStatus === "done" ||
+  dispStatus === "cancelled"`）もPC/モバイル両方で同一。
+- **`lib/list/groupSummary.ts`の`computeGroupSummary`に、既知のM33（`GanttView.tsx`のPJ別/
+  ToDo別グループ進捗%）・30回目に対象拡張された`DashboardView.tsx`の`pjProgress`等と全く同じ
+  設計判断待ちの課題を確認**：`doneCount`は`status === "done"`限定（cancelledを含まない）だが
+  `total`は`tasks.length`（on_hold/cancelledも含む）のため、中止・保留タスクが混じるグループの
+  完了率（`GroupStatsBadge`のPC見出し・モバイル見出し両方に表示）が実際より低く見える。
+  さらに`computeGroupSummary`はv2.69で`KanbanView.tsx`の列ヘッダー集計にも共有されているため、
+  この課題はListViewだけでなくKanbanビューの列ヘッダー完了率にも波及している（新規バグの発見
+  ではなく、M33が予見していた「他のユニットにも波及しうる」の再確認）。修正は「cancelledを
+  分母から除外する／完了扱いにする」の設計判断が要るため、コードは変更せずM33の対象ファイルに
+  `groupSummary.ts`（およびKanbanでの共有先）を追記するに留めた（台帳のM33欄を参照）。
+
+### 発見・修正：CLAUDE.md Section 15違反（3箇所）
+
+`ListView.tsx`のドラッグ操作系3つのcatchブロック（親子変更`handleTaskDrop`のnest分岐・
+before/after分岐、親の解除`handleUnparentDrop`）が、いずれも
+`` `失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}` `` という
+Section 15禁止パターン（エラーコード・詳細を含めない生の`message`のみ表示）のまま残っていた。
+27回目に発見・修正した`useBulkTaskActions.ts`と同型の指摘。`formatErrorForUser`経由に統一した。
+
+### その他の確認（問題なし）
+
+- `型定義と実際の呼び出し元の乖離`：`Member.color_bg`・`Task.tags`/`display_order`等、参照している
+  フィールドはすべて`types.ts`に存在。`saveTask`のprops型（単一引数版）と実際のstore実装
+  （第2引数optionsあり・戻り値`Promise<string>`）の差異はvoid-returning関数への代入として
+  TypeScript上も問題なし（`tsc --noEmit`エラー0で確認済み）。
+- `呼び出し元0件の未使用export`：`ListView.tsx`の唯一のexport（`ListView`本体）・
+  `groupSummary.ts`の`computeGroupSummary`/`GroupSummary`型（ListView・KanbanView両方から使用）・
+  `selectionRange.ts`の`computeRangeSelection`（ListView・GanttView・KanbanViewの3箇所から使用、
+  ganttUtils.tsはre-exportのみ）はいずれも呼び出し元ありで健全。
+- `死んだ選択肢・設定`：localStorage永続化フィールド（groupBy/filterStatus/filterPriority/
+  sortKey/sortDir/density/collapsedParents/collapsedGroups）は全て読み書きの対応が取れており
+  死蔵なし。
+- `同種機能の非対称実装`（26回目で見つかったPC/モバイルの実装漏れパターン）：PC（`ListTaskRow`）
+  とモバイル（`ListMobileTaskRow`）を項目単位で突き合わせた。ドラッグ並べ替え・優先度表示・
+  工数表示・インライン編集がPCのみなのは「モバイルはタップで`TaskEditModal`を開いて編集する」
+  という既存の設計方針どおりの意図的な簡略化（CLAUDE.md記載の「タスク名＋担当者＋期日のみの
+  シンプル表示」通り）であり、実装漏れではないと判断。一括操作バー・グループ集計バッジ
+  （`GroupStatsBadge`）・折りたたみはPC/モバイル両方に実装されており非対称なし。
+
+### 検証
+
+`npx tsc --noEmit`エラー0／`npx vitest run` 437件全通過（`groupSummary.test.ts`4件・
+`selectionRange.test.ts`6件を含め回帰なし。エラーメッセージの表示経路変更のみのため新規テスト
+追加なし）／`npx eslint src`は変更前と同じ35件（24 error・11 warning、いずれも既存の無関係な
+指摘。新規エラー0件）／`npm run build`成功。
+
+### コミット
+
+- `fix: リストビューのドラッグ操作エラー表示をformatErrorForUser経由に統一（CLAUDE.md Section 15）`（`eccc159`）
+
+### A計画ビュー全体の完結
+
+これでA計画ビューの9サブ領域（①Dashboard核／②Dashboard PJ系／③GanttView.tsx単体／
+④Gantt周辺／⑤タスク編集系／⑥タスク追加+カンバン／⑦リスト+リストlib／⑧マイルストーン+
+ワークロード／⑨依存関係+ベースライン+小物）すべての点検が完了した（23〜31回目・9セッション）。
+台帳の「最終点検日」を2026-07-22に更新し、備考欄を全9サブ領域の集約サマリーに書き直した
+（過去の細かい経緯は簡潔化。M33等の設計判断待ち項目は引き続き既存の記載を維持）。
+
+### 13ユニット全体の現状（初回巡回が一巡）
+
+A計画ビューの完結により、D OKR（作り直し方針のため巡回対象から除外）を除く**全12ユニットの
+初回巡回が一巡した**。台帳の「最終点検日」列で状況を俯瞰すると：
+
+| 最終点検日 | ユニット |
+|---|---|
+| 2026-07-22 | A 計画ビュー（今回完結）／データ基盤 |
+| 2026-07-21 | App Shell／認証・入口／B AI相談／C 会議読み込み／D OKR（🔴巡回対象から除外・作り直し方針）／E PJ別AI分析／G オンボーディング／H グラフ／I 通知／AI基盤 |
+| 2026-07-19 | F 管理・設定（H1＝AdminView.tsx完全分割は高リスクのため保留のまま） |
+| 2026-07-17 | 共通UI |
+
+次に巡回すべきユニットの提案：D OKRを除く全12ユニットの初回巡回が一巡したため、次回以降は
+「2周目」に入るのが自然な流れ。巡回ルールどおり「最終点検日が最古のユニット」を優先するなら
+次点は**共通UI（2026-07-17）**、僅差で**F 管理・設定（2026-07-19・H1は引き続き対象外）**。
+D OKRは山本さんの再設計方針が固まり次第、台帳から除外を解除して巡回対象に戻すこと。
 
 ---
 
