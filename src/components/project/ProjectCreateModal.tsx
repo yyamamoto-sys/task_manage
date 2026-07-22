@@ -4,14 +4,36 @@
 // サイドバーの「＋」ボタンから素早くプロジェクトを作成するための簡易モーダル。
 // 必須フィールド（名前・目的・オーナー）のみで即座に作成でき、
 // 細かい設定（TF連携・メンバー・contribution_memo等）は作成後に管理画面で補完する。
+//
+// 【他PJからのタスク引き継ぎ（山本さん確定仕様・2026-07-22）】
+// 「まっさらな新規作成」に加え、過去含む他PJを選んでそのタスクをチェックボックスで
+// 引き継ぎながら新PJを作る導線を追加。同じ段取りで回す案件（フォーラム運営・定例調査等）を
+// 毎回ゼロから作らずに済むようにするため。日付は元PJ開始日からの相対日数を保ったまま新PJ
+// 開始日にスライド・ステータスは全てtodoにリセット・担当者は引き継ぐ・依存関係は先行/後続の
+// 両方がチェックされている組だけ引き継ぐ（詳細は lib/project/taskInheritance.ts）。
+// タスク作成は既存の appStore.saveTask/addTaskDependency 経由で行う（B1/B3/B4/v2.75の
+// choke pointをそのまま活かすため）。新規作成する大量タスクでB3自動リスケ連鎖を
+// 誤発火させないよう { skipCascade: true } を必ず付ける（依存関係はタスク作成後にまとめて
+// 張るため、作成時点では対象タスクに依存の相手がまだ存在せずcascadeは元々no-opだが、
+// 安全側かつ無駄な計算を避けるため明示的にskipする）。
 
-import { useState, useCallback, useEffect, useRef } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
-import type { Member, Project } from "../../lib/localData/types";
+import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { showToast } from "../common/Toast";
+import { CustomSelect, type SelectOption } from "../common/CustomSelect";
+import { todayStr } from "../../lib/date";
+import { childrenOf } from "../../lib/taskHierarchy";
+import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
+import { defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies } from "../../lib/project/taskInheritance";
+
+const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
+  active: "進行中", completed: "完了", archived: "アーカイブ",
+};
 
 const COLOR_PRESETS = [
   "#7F77DD", "#4A90D9", "#27AE60", "#F59E0B",
@@ -28,6 +50,8 @@ interface Props {
 
 export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const rawMembers = useAppStore(s => s.members);
+  const rawProjects = useAppStore(selectScopedProjects);
+  const rawTasksAll = useAppStore(selectScopedTasks);
   const saveProject = useAppStore(s => s.saveProject);
   const members = active(rawMembers);
 
@@ -40,6 +64,11 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ===== 他PJからのタスク引き継ぎ =====
+  const [mode, setMode] = useState<"blank" | "inherit">("blank");
+  const [originProjectId, setOriginProjectId] = useState("");
+  const [checkedTaskIds, setCheckedTaskIds] = useState<Set<string>>(new Set());
+
   const nameRef = useRef<HTMLInputElement>(null);
   useEffect(() => { nameRef.current?.focus(); }, []);
 
@@ -47,8 +76,118 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     if (e.key === "Escape") onClose();
   };
 
+  // 引き継ぎ元候補：過去（完了・アーカイブ・終了日超過）も含む非削除PJ。過去のものは一覧上で分かるよう dim + meta 表示
+  const originOptions = useMemo<SelectOption[]>(() => {
+    const today = todayStr();
+    return active(rawProjects)
+      .map(p => {
+        const isPastByDate = !!p.end_date && p.end_date < today;
+        const isPast = p.status !== "active" || isPastByDate;
+        const meta = p.status !== "active"
+          ? PROJECT_STATUS_LABEL[p.status]
+          : (isPastByDate ? "進行中・終了日超過" : "進行中");
+        return { value: p.id, label: p.name, color: p.color_tag, meta, dim: isPast };
+      })
+      .sort((a, b) => Number(a.dim) - Number(b.dim));
+  }, [rawProjects]);
+
+  const originTasks = useMemo(
+    () => (mode === "inherit" && originProjectId)
+      ? rawTasksAll.filter(t => !t.is_deleted && t.project_id === originProjectId)
+      : [],
+    [mode, originProjectId, rawTasksAll],
+  );
+
+  const topLevelOriginTasks = useMemo(
+    () => originTasks.filter(t => !t.parent_task_id).sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)),
+    [originTasks],
+  );
+
+  // 引き継ぎ元PJを切り替えた時だけチェック状態を既定値に初期化する。
+  // originTasks（rawTasksAllから派生）を依存に含めると、他人の無関係なタスク編集で
+  // rawTasksAll の参照が変わるたびにユーザーが手で外したチェックがリセットされてしまうため、
+  // 依存は mode/originProjectId のみにし、既定値の算出はここで最新スナップショットを直接読む。
+  useEffect(() => {
+    if (mode !== "inherit" || !originProjectId) {
+      setCheckedTaskIds(new Set());
+      return;
+    }
+    const liveTasks = selectScopedTasks(useAppStore.getState())
+      .filter(t => !t.is_deleted && t.project_id === originProjectId);
+    setCheckedTaskIds(defaultCheckedTaskIds(liveTasks));
+  }, [mode, originProjectId]);
+
+  const toggleTask = useCallback((id: string) => {
+    setCheckedTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }, []);
+
+  /**
+   * チェックされたタスク（＋両端がチェック済みの依存関係）を新PJに複製する。
+   * 親を先に保存してから子を保存（FK制約対応・既存のQuickAddTaskModalと同じ順序）。
+   * 個々の保存が失敗しても他は止めない（Promise.allSettled・B3カスケード等と同じ
+   * 「最善努力＋失敗はトースト」の割り切り）。親の保存が失敗した子はダングリングした
+   * parent_task_id のままだとFK違反で確実に失敗するため、親なしとして保存を試みる。
+   */
+  const inheritTasksFromOrigin = useCallback(async (newProjectId: string, newProjectStartDate: string) => {
+    const state = useAppStore.getState();
+    const liveOriginTasks = selectScopedTasks(state).filter(t => !t.is_deleted && t.project_id === originProjectId);
+    const liveOriginProject = selectScopedProjects(state).find(p => p.id === originProjectId);
+    const liveOriginDeps = selectScopedTaskDependencies(state).filter(d => !d.is_deleted);
+
+    const now = new Date().toISOString();
+    const { tasks, idMap } = buildInheritedTasks({
+      originTasks: liveOriginTasks,
+      checkedTaskIds,
+      newProjectId,
+      newProjectStartDate,
+      originProjectStartDate: liveOriginProject?.start_date ?? null,
+      createdBy: currentUser.id,
+      now,
+      generateId: () => uuidv4(),
+    });
+    if (tasks.length === 0) return;
+
+    const topLevel = tasks.filter(t => !t.parent_task_id);
+    const children = tasks.filter(t => t.parent_task_id);
+
+    const topResults = await Promise.allSettled(
+      topLevel.map(t => state.saveTask(t, { skipCascade: true })),
+    );
+    const succeededIds = new Set<string>();
+    topLevel.forEach((t, i) => { if (topResults[i].status === "fulfilled") succeededIds.add(t.id); });
+
+    const childrenToSave = children.map(c =>
+      c.parent_task_id && !succeededIds.has(c.parent_task_id) ? { ...c, parent_task_id: null } : c,
+    );
+    const childResults = await Promise.allSettled(
+      childrenToSave.map(t => state.saveTask(t, { skipCascade: true })),
+    );
+    childrenToSave.forEach((t, i) => { if (childResults[i].status === "fulfilled") succeededIds.add(t.id); });
+
+    const successfulIdMap = new Map([...idMap].filter(([, newId]) => succeededIds.has(newId)));
+    const depPairs = buildInheritedDependencies(liveOriginDeps, successfulIdMap);
+    const depResults = await Promise.allSettled(
+      depPairs.map(p => state.addTaskDependency(p.predecessorTaskId, p.successorTaskId, currentUser.id)),
+    );
+    const succeededDeps = depResults.filter(r => r.status === "fulfilled").length;
+
+    const failedTasks = tasks.length - succeededIds.size;
+    const failedDeps = depPairs.length - succeededDeps;
+    if (failedTasks > 0 || failedDeps > 0) {
+      const parts = [`プロジェクトは作成されましたが、タスクは${succeededIds.size}/${tasks.length}件しか引き継げませんでした。`];
+      if (failedDeps > 0) parts.push(`依存関係も${failedDeps}件引き継げませんでした。`);
+      parts.push("不足分は編集画面から手動で追加してください。");
+      showToast(parts.join(""), "error");
+    }
+  }, [originProjectId, checkedTaskIds, currentUser.id]);
+
   const handleSave = useCallback(async () => {
     if (!name.trim() || !purpose.trim() || ownerIds.length === 0) return;
+    if (mode === "inherit" && !originProjectId) return;
     if (startDate && endDate && startDate > endDate) {
       setError("開始日は終了日より前に設定してください。");
       return;
@@ -58,6 +197,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     try {
       const id = uuidv4();
       const now = new Date().toISOString();
+      const resolvedStartDate = startDate || todayStr();
       const newProject: Project = {
         id,
         name: name.trim(),
@@ -68,7 +208,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
         member_ids: [],
         status: "active",
         color_tag: colorTag,
-        start_date: startDate || new Date().toISOString().split("T")[0],
+        start_date: resolvedStartDate,
         end_date: endDate || `${new Date().getFullYear()}-12-31`,
         is_deleted: false,
         created_at: now,
@@ -76,6 +216,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
         updated_by: currentUser.id,
       };
       await saveProject(newProject);
+      if (mode === "inherit" && originProjectId) {
+        await inheritTasksFromOrigin(id, resolvedStartDate);
+      }
       onCreated?.(id);
       onClose();
     } catch (e) {
@@ -83,9 +226,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [name, purpose, ownerIds, colorTag, startDate, endDate, saveProject, currentUser.id, onCreated, onClose]);
+  }, [name, purpose, ownerIds, colorTag, startDate, endDate, mode, originProjectId, inheritTasksFromOrigin, saveProject, currentUser.id, onCreated, onClose]);
 
-  const canSave = name.trim() && purpose.trim() && ownerIds.length > 0;
+  const canSave = name.trim() && purpose.trim() && ownerIds.length > 0 && (mode === "blank" || !!originProjectId);
 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。Escapeキー（handleKeyDown）と
@@ -107,6 +250,85 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
 
         {/* フォーム */}
         <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto" }}>
+
+          {/* 作成方法 */}
+          <div>
+            <Label>作成方法</Label>
+            <div style={{ display: "flex", gap: "4px" }}>
+              {([
+                { value: "blank" as const, label: "まっさらな新規作成" },
+                { value: "inherit" as const, label: "他のPJから引き継ぐ" },
+              ]).map(seg => {
+                const isActive = mode === seg.value;
+                return (
+                  <button
+                    key={seg.value}
+                    type="button"
+                    onClick={() => setMode(seg.value)}
+                    style={{
+                      flex: 1, padding: "7px 4px", fontSize: "12px", fontWeight: isActive ? 600 : 400,
+                      border: `1px solid ${isActive ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                      borderRadius: "var(--radius-md)",
+                      background: isActive ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                      color: isActive ? "var(--color-brand)" : "var(--color-text-secondary)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    {seg.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 引き継ぎ元PJ選択＋タスクチェックリスト（他PJから引き継ぐ選択時のみ） */}
+          {mode === "inherit" && (
+            <div className="animate-slideDown">
+              <Label>引き継ぎ元プロジェクト *</Label>
+              <CustomSelect
+                value={originProjectId}
+                onChange={setOriginProjectId}
+                options={originOptions}
+                placeholder="プロジェクトを選択..."
+                searchable
+                searchPlaceholder="プロジェクト名で検索..."
+              />
+              {originProjectId && (
+                <div style={{ marginTop: "10px" }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                    <Label>引き継ぐタスク（{checkedTaskIds.size}/{originTasks.length}件選択中）</Label>
+                    <div style={{ display: "flex", gap: "6px" }}>
+                      <button type="button" onClick={() => setCheckedTaskIds(new Set(originTasks.map(t => t.id)))} style={miniBtnStyle}>全選択</button>
+                      <button type="button" onClick={() => setCheckedTaskIds(new Set())} style={miniBtnStyle}>全解除</button>
+                    </div>
+                  </div>
+                  {originTasks.length === 0 ? (
+                    <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+                      このプロジェクトにはタスクがありません。
+                    </div>
+                  ) : (
+                    <div style={{
+                      border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                      maxHeight: "220px", overflowY: "auto", padding: "2px 10px",
+                      background: "var(--color-bg-secondary)",
+                    }}>
+                      {topLevelOriginTasks.map(t => (
+                        <div key={t.id}>
+                          <TaskCheckRow task={t} checked={checkedTaskIds.has(t.id)} onToggle={toggleTask} members={members} />
+                          {childrenOf(originTasks, t.id).map(c => (
+                            <TaskCheckRow key={c.id} task={c} checked={checkedTaskIds.has(c.id)} onToggle={toggleTask} members={members} indent />
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                    ステータスは全て「ToDo」にリセットされ、日付は新PJの開始日を基準にスライドして引き継がれます。
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* カラー＋PJ名 */}
           <div>
@@ -235,6 +457,45 @@ function Label({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "5px" }}>{children}</div>;
 }
 
+/** 引き継ぎタスクチェックリストの1行（親・子共通。indent=trueで子の表示に使う） */
+function TaskCheckRow({ task, checked, onToggle, members, indent }: {
+  task: Task;
+  checked: boolean;
+  onToggle: (id: string) => void;
+  members: Member[];
+  indent?: boolean;
+}) {
+  const assignee = members.find(m => m.id === task.assignee_member_id);
+  const showStatusBadge = task.status !== "todo" && task.status !== "in_progress";
+  return (
+    <label
+      style={{
+        display: "flex", alignItems: "center", gap: "7px", padding: "4px 0",
+        paddingLeft: indent ? "20px" : 0, cursor: "pointer", fontSize: "12px",
+        color: "var(--color-text-primary)", borderBottom: "1px solid var(--color-border-primary)",
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => onToggle(task.id)}
+        style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+      />
+      {indent && <span style={{ color: "var(--color-text-tertiary)" }}>↳</span>}
+      <span style={{ flex: 1, textDecoration: task.status === "cancelled" ? "line-through" : "none" }}>{task.name}</span>
+      {assignee && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{assignee.short_name}</span>}
+      {showStatusBadge && (
+        <span style={{
+          fontSize: "10px", padding: "1px 6px", borderRadius: "var(--radius-full)", flexShrink: 0,
+          background: TASK_STATUS_STYLE[task.status].bg, color: TASK_STATUS_STYLE[task.status].color,
+        }}>
+          {TASK_STATUS_LABEL[task.status]}
+        </span>
+      )}
+    </label>
+  );
+}
+
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
@@ -245,4 +506,14 @@ const inputStyle: React.CSSProperties = {
   color: "var(--color-text-primary)",
   boxSizing: "border-box",
   outline: "none",
+};
+
+const miniBtnStyle: React.CSSProperties = {
+  fontSize: "10px",
+  padding: "2px 8px",
+  borderRadius: "var(--radius-sm)",
+  border: "1px solid var(--color-border-primary)",
+  background: "var(--color-bg-primary)",
+  color: "var(--color-text-secondary)",
+  cursor: "pointer",
 };
