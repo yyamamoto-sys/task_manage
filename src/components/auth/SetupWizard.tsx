@@ -1,10 +1,24 @@
 // src/components/auth/SetupWizard.tsx
 //
 // 【設計意図】
-// 初回起動時のみ表示するセットアップウィザード。
+// 初回起動時のみ表示するセットアップウィザード。App.tsx側でis_system_bootstrapped()
+// による判定を経て「システムに本当に誰もいない」場合のみ表示される（M25対応）。
 // ステップ1: ようこそ（アプリ概要説明）
-// ステップ2: メンバー登録（チームメンバーを追加）
+// ステップ2: 部署名＋メンバー登録（チームメンバーを追加）
 // ステップ3: 完了
+//
+// 【ブートストラップの仕組み】
+// このアプリのRLSでは、部署（groups）の新規作成はsuper-admin限定・membersの
+// is_admin/is_super_admin/group_idは自己昇格ガード付きのため、通常のクライアント
+// INSERTでは「誰もいない状態から最初の部署と管理者を作る」ことができない。
+// そこで完了時、リストの先頭（有効な）メンバーを「あなた（この部署の最初のメンバー）」
+// として扱い、SECURITY DEFINER関数 bootstrap_first_group_and_member() を1回だけ
+// 呼び出す。この関数は「membersが0件のときに限り」部署作成＋そのメンバーを
+// is_admin=true かつ is_super_admin=true として作成する（CLAUDE.md Section 1.6の
+// 「ブートストラップ猶予」と同じ考え方をDB関数として明文化したもの）。
+// 2人目以降のメンバーは、ブートストラップ後にcurrentGroupIdが設定された状態で
+// 通常のsaveMember経由で登録する（super-adminになった直後の自分は他人の行も
+// 作成できるため、通常のRLSで問題なく通る）。
 //
 // 完了後に WIZARD_COMPLETED フラグを localStorage に保存し、
 // 2回目以降は表示しない。
@@ -13,6 +27,8 @@ import { useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS } from "../../lib/localData/localStore";
 import { useAppStore } from "../../stores/appStore";
+import { supabase } from "../../lib/supabase/client";
+import { getAuthEmail } from "../../lib/supabase/auth";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import type { Member } from "../../lib/localData/types";
 
@@ -50,7 +66,10 @@ function getInitials(name: string): string {
 
 export function SetupWizard({ onComplete }: Props) {
   const saveMember = useAppStore(s => s.saveMember);
+  const setCurrentGroupId = useAppStore(s => s.setCurrentGroupId);
+  const reload = useAppStore(s => s.reload);
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [groupName, setGroupName] = useState("");
   const [members, setMembers] = useState<MemberDraft[]>([
     {
       id: uuidv4(),
@@ -92,7 +111,7 @@ export function SetupWizard({ onComplete }: Props) {
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const handleComplete = async () => {
-    // 有効なメンバーのみ保存
+    // 有効なメンバーのみ保存。先頭が「あなた（この部署の最初のメンバー）」になる。
     const validMembers: Member[] = members
       .filter(m => m.display_name.trim())
       .map(m => ({
@@ -109,12 +128,49 @@ export function SetupWizard({ onComplete }: Props) {
         updated_by: "setup",
       }));
 
+    const [you, ...rest] = validMembers;
+    if (!you) {
+      setSaveError("メンバーを1名以上入力してください");
+      return;
+    }
+
     setSaving(true);
     setSaveError(null);
     try {
-      for (const member of validMembers) {
+      const authEmail = await getAuthEmail();
+      if (!authEmail) {
+        throw new Error("ログイン中のメールアドレスが取得できませんでした。一度ログインし直してください");
+      }
+
+      // ブートストラップ専用のSECURITY DEFINER関数を1回だけ呼ぶ。
+      // 「membersが0件のときに限り」部署＋最初のメンバー（super-admin）を作成する。
+      const { data, error } = await supabase.rpc("bootstrap_first_group_and_member", {
+        p_group_name: groupName.trim(),
+        p_display_name: you.display_name,
+        p_short_name: you.short_name,
+        p_initials: you.initials,
+        p_color_bg: you.color_bg,
+        p_color_text: you.color_text,
+      });
+      if (error) throw error;
+      const row = Array.isArray(data) ? data[0] : data;
+      const newGroupId = row?.group_id as string | undefined;
+      if (!newGroupId) throw new Error("部署の作成に失敗しました");
+
+      // これ以降のcurrentGroupId注入（saveMember等）が新しい部署を向くようにする。
+      setCurrentGroupId(newGroupId);
+
+      // 残りのメンバー（あなた以外）は通常のsaveMember経由で登録する。
+      // 直前のブートストラップで「あなた」がis_super_admin=trueになっているため、
+      // 他人の行を新しい部署に作成してもRLSで弾かれない。
+      for (const member of rest) {
         await saveMember(member);
       }
+
+      // ブートストラップで作った部署・メンバーをローカルstoreに反映する
+      // （SECURITY DEFINER関数経由の変更はstoreのオプティミスティック更新を経由しないため）。
+      await reload();
+
       localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
       onComplete();
     } catch (e) {
@@ -144,7 +200,7 @@ export function SetupWizard({ onComplete }: Props) {
         }}>
           {[
             { n: 1, label: "ようこそ" },
-            { n: 2, label: "メンバー登録" },
+            { n: 2, label: "部署・メンバー登録" },
             { n: 3, label: "完了" },
           ].map(({ n, label }) => (
             <div key={n} style={{
@@ -228,27 +284,53 @@ export function SetupWizard({ onComplete }: Props) {
           </div>
         )}
 
-        {/* ステップ2：メンバー登録 */}
+        {/* ステップ2：部署名＋メンバー登録 */}
         {step === 2 && (
           <div style={{ padding: "20px 24px" }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "4px" }}>
-                チームメンバーを登録
+                部署とチームメンバーを登録
               </div>
               <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                後から管理画面でいつでも変更できます
+                部署名は後から管理画面で変更できます。メンバーも後からいつでも追加・変更できます
               </div>
             </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "320px", overflow: "auto" }}>
+            <div style={{ marginBottom: "14px" }}>
+              <input
+                value={groupName}
+                onChange={e => setGroupName(e.target.value)}
+                placeholder="部署名 ※必須（例：EGG、AID など）"
+                aria-required="true"
+                style={{
+                  width: "100%", padding: "7px 10px", fontSize: "12px",
+                  border: `1px solid ${!groupName.trim() ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-primary)",
+                  color: "var(--color-text-primary)", outline: "none",
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            {(() => {
+              const firstValidId = members.find(m => m.display_name.trim() && m.short_name.trim())?.id;
+              return (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "300px", overflow: "auto" }}>
               {members.map((m, i) => (
-                <div key={m.id} style={{
-                  display: "flex", alignItems: "center", gap: "10px",
-                  padding: "10px 12px",
-                  background: "var(--color-bg-secondary)",
-                  borderRadius: "var(--radius-md)",
-                  border: "1px solid var(--color-border-primary)",
-                }}>
+                <div key={m.id}>
+                  {m.id === firstValidId && (
+                    <div style={{ fontSize: "10px", color: "var(--color-text-info)", marginBottom: "4px", fontWeight: 600 }}>
+                      👑 あなた（この部署の最初のメンバー・自動的に管理者になります）
+                    </div>
+                  )}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: "10px",
+                    padding: "10px 12px",
+                    background: "var(--color-bg-secondary)",
+                    borderRadius: "var(--radius-md)",
+                    border: "1px solid var(--color-border-primary)",
+                  }}>
                   {/* アバタープレビュー */}
                   <div style={{
                     width: 32, height: 32, borderRadius: "50%",
@@ -300,9 +382,12 @@ export function SetupWizard({ onComplete }: Props) {
                       ×
                     </button>
                   )}
+                  </div>
                 </div>
               ))}
             </div>
+              );
+            })()}
 
             <button
               onClick={addMember}
@@ -321,9 +406,19 @@ export function SetupWizard({ onComplete }: Props) {
             {(() => {
               const validMembers = members.filter(m => m.display_name.trim() && m.short_name.trim());
               const incompleteCount = members.length - validMembers.length;
-              const canProceed = validMembers.length > 0;
+              const hasGroupName = !!groupName.trim();
+              const canProceed = validMembers.length > 0 && hasGroupName;
               return (
                 <>
+                  {!hasGroupName && (
+                    <div style={{
+                      marginTop: "8px", padding: "6px 10px",
+                      background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+                      borderRadius: "var(--radius-sm)", fontSize: "11px", lineHeight: 1.5,
+                    }}>
+                      部署名を入力してください。
+                    </div>
+                  )}
                   {incompleteCount > 0 && (
                     <div style={{
                       marginTop: "8px", padding: "6px 10px",
@@ -349,7 +444,7 @@ export function SetupWizard({ onComplete }: Props) {
                     <button
                       onClick={() => setStep(3)}
                       disabled={!canProceed}
-                      title={canProceed ? "次のステップへ進む" : "表示名と略称を1名以上入力してください"}
+                      title={canProceed ? "次のステップへ進む" : "部署名の入力、および表示名と略称を1名以上入力してください"}
                       style={{
                         flex: 2, padding: "9px", fontSize: "12px", fontWeight: "500",
                         background: canProceed ? "var(--color-brand)" : "var(--color-bg-tertiary)",
@@ -375,7 +470,7 @@ export function SetupWizard({ onComplete }: Props) {
               セットアップ完了！
             </div>
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "8px", lineHeight: 1.7 }}>
-              {members.filter(m => m.display_name.trim()).length}名のメンバーを登録しました。
+              部署「{groupName.trim()}」を作成し、{members.filter(m => m.display_name.trim()).length}名のメンバーを登録します。
             </div>
             <div style={{
               fontSize: "11px", color: "var(--color-text-tertiary)",
@@ -383,7 +478,7 @@ export function SetupWizard({ onComplete }: Props) {
               borderRadius: "var(--radius-md)", padding: "10px 12px",
               marginBottom: "24px", lineHeight: 1.6,
             }}>
-              管理画面からOKR・タスクフォース・プロジェクトを設定してください。
+              最初のメンバーはこの部署の管理者・全社スーパー管理者になります。管理画面からOKR・タスクフォース・プロジェクトを設定してください。
             </div>
             {saveError && (
               <div style={{

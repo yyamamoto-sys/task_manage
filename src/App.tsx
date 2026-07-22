@@ -3,10 +3,11 @@ import { useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { setGuestMode, isGuestMember } from "./lib/guestMode";
 import { getSession, onAuthStateChange, getAuthEmail } from "./lib/supabase/auth";
-import { isMisconfigured } from "./lib/supabase/client";
+import { isMisconfigured, supabase } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
+import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
@@ -148,6 +149,28 @@ function AuthenticatedApp({
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && active(members).length > 0);
 
+  // ①未登録ユーザーをSetupWizardに入れない（M25対応）：
+  // RLSでは「本当にシステムが空」と「自分に権限が無いだけで0件に見える」を区別できない
+  // （current_member_group_id()がNULLを返し、group_id一致チェックがNULL=偽になるだけ）。
+  // isWizardDoneがfalseになり得るケースに限り、RLSを迂回するSECURITY DEFINER関数
+  // is_system_bootstrapped() でサーバー側に判定してもらう。
+  const [bootstrapStatus, setBootstrapStatus] = useState<"checking" | "empty" | "populated" | "error">("checking");
+  useEffect(() => {
+    if (loading || isWizardDone) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.rpc("is_system_bootstrapped");
+        if (cancelled) return;
+        if (error) throw error;
+        setBootstrapStatus(data ? "populated" : "empty");
+      } catch {
+        if (!cancelled) setBootstrapStatus("error");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, isWizardDone]);
+
   // メンバー読み込み完了後、ログインユーザーを自動マッチング
   // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー
   useEffect(() => {
@@ -187,9 +210,26 @@ function AuthenticatedApp({
     return subscribeToRealtime(applyRemoteChange);
   }, [loading, applyRemoteChange]);
 
-  // 初回起動時はセットアップウィザードを表示
+  // 初回起動時はセットアップウィザードを表示（本当にシステムが空の場合のみ）
   if (!loading && !isWizardDone) {
-    return <SetupWizard onComplete={onWizardComplete} />;
+    if (bootstrapStatus === "empty") {
+      return <SetupWizard onComplete={onWizardComplete} />;
+    }
+    if (bootstrapStatus === "checking") {
+      return (
+        <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <div style={{ width: "20px", height: "20px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
+        </div>
+      );
+    }
+    // "populated"（既に他のメンバーがいる＝自分に権限が無いだけ）または
+    // "error"（is_system_bootstrapped() 呼び出し失敗。マイグレ未適用の環境など）は
+    // 安全側に倒し、SetupWizardではなくアクセス拒否画面を表示する。
+    // 【安全側の理由】ここで誤ってSetupWizardを出すと、未登録の第三者がgroup_id無しの
+    // 宙に浮いたメンバー行を作ろうとする経路を開いてしまう（実際にはRLSのWITH CHECKで
+    // 弾かれるが、ユーザーに「保存に失敗しました」という不親切な失敗を見せるより、
+    // 最初から「アクセス権がありません」と正しく案内する方が安全かつ親切）。
+    return <AccessDeniedScreen onLogout={onLogout} />;
   }
 
   // メンバー未選択かつ自動復元待ち → 選択画面（復元できなかった場合のフォールバック）
