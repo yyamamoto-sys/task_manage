@@ -10,6 +10,7 @@ import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { showToast } from "../common/Toast";
+import { formatErrorForUser } from "../../lib/errorMessage";
 import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -318,7 +319,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         await saveTask({ ...dragged, parent_task_id: target.id, project_id: target.project_id, updated_by: currentUser.id });
         if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
       } catch (err) {
-        showToast(`親子変更に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+        showToast(formatErrorForUser("親子変更に失敗しました", err), "error");
       }
       return;
     }
@@ -351,7 +352,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       }));
       if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
     } catch (err) {
-      showToast(`並べ替えに失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("並べ替えに失敗しました", err), "error");
     }
   }, [allTasks, filteredTasks, saveTask, currentUser.id, sortKey]);
 
@@ -366,7 +367,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       await saveTask({ ...dragged, parent_task_id: null, project_id: projectId, display_order: maxOrder + 1, updated_by: currentUser.id });
       if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
     } catch (err) {
-      showToast(`親の解除に失敗しました: ${err instanceof Error ? err.message : "不明なエラー"}`, "error");
+      showToast(formatErrorForUser("親の解除に失敗しました", err), "error");
     }
   }, [allTasks, saveTask, currentUser.id, sortKey]);
 
