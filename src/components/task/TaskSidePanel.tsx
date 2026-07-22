@@ -73,9 +73,16 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   }, [allTaskProjects, projects, taskId]);
 
   // ===== 先行タスク（B1：依存ゲート。親子関係（階層セグメント）とは独立の別概念） =====
+  // is_deleted除外済みの依存一覧（wouldCreateCycleはこの除外をしない契約のため、渡す前に必ず絞る。
+  // 除外しないと、他クライアントが削除した依存がrealtime UPDATEで配列に残ったまま
+  // 〈upsertByIdはDELETEイベントでしか行を除去しないため〉循環判定に亡霊として残ってしまう）
+  const activeTaskDependencies = useMemo(
+    () => allTaskDependencies.filter(d => !d.is_deleted),
+    [allTaskDependencies],
+  );
   const predecessorDeps = useMemo(
-    () => allTaskDependencies.filter(d => !d.is_deleted && d.successor_task_id === taskId),
-    [allTaskDependencies, taskId],
+    () => activeTaskDependencies.filter(d => d.successor_task_id === taskId),
+    [activeTaskDependencies, taskId],
   );
   const predecessorTasks = useMemo(() => {
     const ids = new Set(predecessorDeps.map(d => d.predecessor_task_id));
@@ -83,8 +90,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   }, [predecessorDeps, allTasks]);
   // このタスクの完了を待っている後続タスク（読み取り専用表示）
   const successorDeps = useMemo(
-    () => allTaskDependencies.filter(d => !d.is_deleted && d.predecessor_task_id === taskId),
-    [allTaskDependencies, taskId],
+    () => activeTaskDependencies.filter(d => d.predecessor_task_id === taskId),
+    [activeTaskDependencies, taskId],
   );
   const successorTasks = useMemo(() => {
     const ids = new Set(successorDeps.map(d => d.successor_task_id));
@@ -96,9 +103,9 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       !t.is_deleted
       && t.id !== taskId
       && !predecessorDeps.some(d => d.predecessor_task_id === t.id)
-      && !wouldCreateCycle(allTaskDependencies, t.id, taskId),
+      && !wouldCreateCycle(activeTaskDependencies, t.id, taskId),
     );
-  }, [allTasks, taskId, predecessorDeps, allTaskDependencies]);
+  }, [allTasks, taskId, predecessorDeps, activeTaskDependencies]);
 
   // selectedTask 全体ではなく日付フィールドだけに依存させて、無関係フィールド更新で再走査しない
   const eligibleTfIds = useMemo(
