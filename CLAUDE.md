@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.83
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.84
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -1985,7 +1985,67 @@
 #             み。新規エラー0件）／`npm run build`成功
 #      DBマイグレ不要（既存テーブル・既存カラムのみ使用）
 #
-# 最終更新：2026-07-22（v2.83）
+# v2.84 fix: 部署拡大に向けたオンボーディング経路の是正（M25対応）（2026-07-22）
+#      背景（既知課題M25。第12回リファクタ巡回2026-07-21で発見）：RLS（20260702b/c）は
+#             「自分のgroup_idと一致するか、super-adminか」でしか可視性を判定できないため、
+#             まだmembersに登録されていない認証ユーザーにはmembers/projects/tasksが0件に
+#             見える（current_member_group_id()がNULLを返し、比較がNULL=偽になるだけ）。
+#             ところがApp.tsx側は「DBにmembersが0件＝初回セットアップ（システムが空）」と
+#             誤認し、SetupWizardを表示していた。これは「システムに他の誰かが既にいるが、
+#             自分がまだ登録されていないだけ」のケースと区別がつかない、クライアント側だけ
+#             では解決不能な問題（RLSを迂回するサーバー側判定が必須）。
+#      ①未登録ユーザーをSetupWizardに入れない：新規マイグレーション
+#             `20260722_add_onboarding_bootstrap.sql`で`is_system_bootstrapped()`
+#             （SECURITY DEFINER・SET search_path=''・真偽値のみ返す・
+#             GRANT EXECUTE TO authenticated）を追加。App.tsxの`AuthenticatedApp`は
+#             `isWizardDone`がfalseになるケースに限りこの関数を呼び、
+#             false（本当に空）→SetupWizard／true（既に誰かいる）またはerror
+#             （関数呼び出し失敗＝マイグレ未適用等）→新設`AccessDeniedScreen`
+#             （ログイン中のメールアドレス表示・管理者への登録依頼案内・ログアウトボタン）
+#             を表示。**安全側の判断**：populated/errorのいずれも一律アクセス拒否側に倒した。
+#             理由＝ここで誤ってSetupWizardを出すと、未登録の第三者がgroup_id無しの宙に
+#             浮いたメンバー行を作ろうとする経路を開いてしまう（実際にはRLSのWITH CHECKで
+#             `group_id = current_member_group_id() OR is_super_admin()`が両辺NULLで
+#             弾くため保存自体は失敗するが、ユーザーに不親切な失敗を見せるより最初から
+#             正しく案内する方が安全かつ親切）
+#      ②本当の初回セットアップ（membersが0件）でgroup_idを正しく設定：同マイグレーションに
+#             `bootstrap_first_group_and_member(p_group_name, p_display_name, p_short_name,
+#             p_initials, p_color_bg, p_color_text)`（SECURITY DEFINER）を追加。
+#             「membersが0件のときに限り」部署（groups）作成＋最初のメンバーを
+#             is_admin=true かつ is_super_admin=true として作成する。emailはクライアント
+#             引数からではなく必ずauth.email()から取得（なりすまし防止）。
+#             **安全性の要**：関数内の「membersが0件」ガードが、2回目以降にこの関数が
+#             呼ばれて誰でもsuper_adminになれてしまう穴を防ぐ唯一の防波堤（0件でなければ
+#             例外を投げて何もしない）。同時呼び出しのTOCTOUレースは
+#             `pg_advisory_xact_lock`で直列化。`SetupWizard.tsx`は部署名入力欄を追加、
+#             メンバーリストの先頭（有効な）1件を「あなた」として上記関数に渡し、
+#             残りは通常の`saveMember`（ブートストラップ後はcurrentGroupIdが設定され
+#             自分がsuper-adminのため通常のRLSで通る）。既存の入力項目・体裁は維持
+#             （多人数登録・アバター選択等は無改造）
+#      ③運用手順のドキュメント化：`docs/guides/05_admin/departments-and-members.md`
+#             新設（URLを送るだけでは使えない・先にメンバー登録してから本人がサインアップ
+#             する順序・メールアドレス一致が紐づけの鍵・新部署追加はAdminViewの既存
+#             「＋部署を追加」機能で可能、を明記）。`docs/guides/03_roles/admin.md`の
+#             ダングリング参照（存在しない`admin.members`モードキー）を是正し新ページへ
+#             リンク、実態と乖離していた「全テーブルauthenticated full access方針」の
+#             記述も是正（members/projects/tasks/groups/task_dependenciesは部署分離済み、
+#             それ以外のOKR系テーブルのみ未対応、と正確化）
+#      Section 1.6追記：新しいオンボーディング経路（is_system_bootstrapped /
+#             AccessDeniedScreen）とブートストラップ関数（bootstrap_first_group_and_member）
+#             の説明を追加
+#      既存ユーザーへの影響：EGG等、既にmembersが1件以上ある環境は
+#             `is_system_bootstrapped()`が常にtrueを返すため`SetupWizard`には到達せず、
+#             `bootstrap_first_group_and_member()`もmembers非0件で必ず拒否される
+#             （既存ログイン・自動マッチングへの影響なし）
+#      マイグレ適用要（山本さんが手動でSupabase SQL Editorに全文貼付）：
+#             `supabase/migrations/20260722_add_onboarding_bootstrap.sql`
+#             （`supabase/schema.sql`にも同内容を反映済み・drift防止）
+#      テスト：既存テスト全484件が無改造で通過（新規ロジックはRPC呼び出し・UI分岐が
+#             中心でありSupabase実インスタンス無しに意味のある単体テストが組みにくいため
+#             新規テストは追加していない。`npx tsc --noEmit`エラー0／`npx eslint src`は
+#             変更前と同じ35件（新規エラー0件）／`npm run build`成功
+#
+# 最終更新：2026-07-22（v2.84）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2118,11 +2178,21 @@ CREATE TABLE groups (
 
 **教訓：RLSに「移行期間の猶予」を書くときは、それが「未認証・未登録ユーザーに何を許してしまうか」を必ず検証すること。** OR条件でNULL/未登録状態を許可する書き方は特に危険。
 
+### オンボーディング経路（2026-07-22追加・M25対応）
+
+RLSは「自分のgroup_idと一致するか、super-adminか」でしか可視性を判定できないため、**まだmembersに登録されていない認証ユーザーには何も見えない**。これは「本当にシステムが空（初回セットアップすべき）」なのか「システムには既に他の誰かがいるが、自分がまだ登録されていないだけ」なのかをクライアント側だけでは区別できないという問題を生む（既知課題M25）。この区別と、真の初回セットアップの実行を、RLSを迂回するSECURITY DEFINER関数2本に切り出して解決した。
+
+- **`is_system_bootstrapped()`** — 「アクティブなmembersが1件でも存在するか」だけを返す（真偽値のみ・情報漏洩の最小化）。未登録の認証ユーザーからも呼べる（`GRANT EXECUTE TO authenticated`）。`App.tsx`の`AuthenticatedApp`は`isWizardDone`がfalseになるケースに限りこれを呼び、`false`（本当に空）なら`SetupWizard`、`true`（既に誰かいる）または呼び出し失敗（マイグレ未適用など）なら新設の`AccessDeniedScreen`（`src/components/auth/AccessDeniedScreen.tsx`。ログイン中のメールアドレス表示・管理者への登録依頼案内・ログアウトボタン）を表示する。**populated/errorのどちらも一律アクセス拒否側に倒す**（安全側の判断。理由＝ここで誤ってSetupWizardを出すと、未登録の第三者がgroup_id無しの宙に浮いたメンバー行を作ろうとする経路を開いてしまうため。実際にはRLSのWITH CHECKで弾かれるが、ユーザーに不親切な失敗を見せるより最初から正しく案内する方が安全かつ親切）。
+- **`bootstrap_first_group_and_member(p_group_name, p_display_name, p_short_name, p_initials, p_color_bg, p_color_text)`** — 「membersが0件のときに限り」部署（groups）と最初のメンバー（`is_admin=true` かつ `is_super_admin=true`）を作成する。通常のクライアントINSERTは`groups_insert_admin`ポリシー（super-admin限定のWITH CHECK）に阻まれるため、真の初回セットアップ専用の抜け道として用意した。**安全性の要＝関数内の「membersが0件」ガード**（0件でなければ例外を投げて何もしない。これが2回目以降にこの関数が呼ばれて誰でもsuper_adminになれてしまう穴を防ぐ唯一の防波堤）。emailはクライアントの引数からではなく必ず`auth.email()`から取得（なりすまし防止）。同時呼び出しのTOCTOUレースは`pg_advisory_xact_lock`で直列化。`SetupWizard.tsx`は部署名入力欄を追加し、メンバーリストの先頭（有効な）1件を「あなた」としてこの関数に渡す。残りのメンバーは、ブートストラップ後に`currentGroupId`が設定され自分がsuper-adminになった状態で通常の`saveMember`経由で登録する（super-adminはRLS上どの部署の行も作成できるため通る）。
+- 「ブートストラップ猶予」（本セクション上部の権限昇格ガード）は既存行のUPDATEによる自己昇格のみを対象としていたが、`bootstrap_first_group_and_member()`はそれとは別に「membersが0件のときのみ許可されるINSERT専用の抜け道」を明文化したもの。両者は独立した安全装置。
+- 既存EGG等、既にmembersが1件以上ある環境では`is_system_bootstrapped()`が常にtrueを返すため`SetupWizard`には到達せず、`bootstrap_first_group_and_member()`もmembers非0件で必ず拒否される（既存ユーザーへの影響なし）。
+
 ### 関連migrationファイル
 
 - `supabase/migrations/20260626_add_multitenancy.sql` — 初回導入（groups/group_id/RLS）
 - `supabase/migrations/20260702b_fix_multitenancy_rls.sql` — NULL抜け穴修正・管理者限定化・自己昇格ガード
 - `supabase/migrations/20260702c_add_super_admin_and_department_governance.sql` — 全社スーパー管理者・部署ガバナンス強化
+- `supabase/migrations/20260722_add_onboarding_bootstrap.sql` — オンボーディング経路の是正（M25対応）。`is_system_bootstrapped()` / `bootstrap_first_group_and_member()`
 
 ---
 

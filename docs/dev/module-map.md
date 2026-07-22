@@ -93,7 +93,7 @@ flowchart TD
 | モジュール | 責務 | 主なファイル |
 |---|---|---|
 | **App Shell** | 起動・ログイン状態・画面切替・全体レイアウト・FAB | `src/App.tsx` / `src/main.tsx` / `components/layout/MainLayout.tsx` |
-| **認証・入口** | メンバー選択 / ゲスト(閲覧のみ) / 初期セットアップ | `components/auth/{LoginScreen,UserSelectScreen,SetupWizard}.tsx` / `lib/guestMode.ts` |
+| **認証・入口** | メンバー選択 / ゲスト(閲覧のみ) / 初期セットアップ / アクセス拒否 | `components/auth/{LoginScreen,UserSelectScreen,SetupWizard,AccessDeniedScreen}.tsx` / `lib/guestMode.ts` |
 
 ### ② 機能モジュール (Features)
 | # | モジュール | 責務（バグ探しの入口） | 主なファイル | 主な依存 |
