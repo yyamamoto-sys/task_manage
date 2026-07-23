@@ -25,6 +25,7 @@
 // │   "project-analysis" — 単一PJの健全性分析                       │
 // │   "all-projects-analysis" — 全PJ横断ポートフォリオ分析          │
 // │   "todo-decompose"   — ToDo 分解                                │
+// │   "okr-import"       — Kintone OKR(PDF/テキスト)からO/KR/TF抽出 │
 // │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
 // │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
 // │  コンパイルエラー。                                              │
@@ -44,7 +45,8 @@ export type AIIntent =
   | "project-plan"         // AIでPJ設計
   | "project-analysis"          // 単一PJの健全性分析（PJ/Task/Milestone/メンバー名。PJ視点なのでOKRデータは未投入）
   | "all-projects-analysis"     // 全PJ横断ポートフォリオ分析（全PJの概要＋タスク統計を渡す）
-  | "todo-decompose";           // ToDo 分解
+  | "todo-decompose"            // ToDo 分解
+  | "okr-import";               // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];
