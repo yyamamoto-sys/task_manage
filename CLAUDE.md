@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.91
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.92
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2233,8 +2233,45 @@
 #      DBマイグレ不要（v2.85で適用済みの`20260722b_add_multi_department_access.sql`のみ）。
 #             `npx tsc --noEmit`／`npx eslint src`（既存35件のまま新規エラー0）／`npm run build`成功。
 #             テスト全487件（既存484件＋今回追加した回帰テスト3件）通過
+# v2.92 feat: KintoneのOKR（PDF/テキスト）を読み込んでObjective/KR/TFを自動登録（2026-07-23）
+#      背景：山本さんの要望「OKRの登録が面倒。Kintoneで記録しているOKR画面をPDF化して読み込ませる
+#             だけで、計画ビューの設定に必要なObjective/KR/TFを自動登録したい」。既存の「資料インプット」
+#             （`MeetingImportPanel.tsx`＋`meetingExtractor.ts`）と同じ作法（PDFはdocumentブロックで
+#             添付・AI抽出→人が確認・編集→登録のHuman-in-the-loop）を踏襲。OKRモードは将来「全面刷新」
+#             予定だが、KR/TFの骨組み自体は刷新後も必要なため、今回の実装は刷新時にも活きる想定
+#      マッピング（Kintoneの器→現行アプリのエンティティ）：年度・範囲・Purpose・設定の意図/背景→
+#             Objective（1件）／KR1,KR2...→KeyResult（複数）／KR1-TF1,TF2...→TaskForce（複数、
+#             description/backgroundにTFの目的・検証プロセス要約を格納）／担当OM・リーダーの氏名→
+#             TaskForce.leader_member_id（メンバー突合）。評価基準バンド・ロジックモデル・5W1H・
+#             月次タスク/ToDoレベルは今回のスコープ外（刷新時に別設計）
+#      追加：`lib/ai/okrImportExtractor.ts`（AIIntent="okr-import"を新設・invokeAI.tsに追記）。
+#             SYSTEM_PROMPTでKintoneのフィールド→Objective/KeyResult/TaskForce構造への抽出ルールを
+#             明示、抽出しないもの（評価基準バンド等）も明記。meetingExtractor.tsと同じ手書き
+#             バリデーション（`validateOkrImportAnalysis`）。テスト`__tests__/okrImportExtractor.test.ts`
+#             （invokeAIをモック化・8件）
+#      追加：`lib/okr/okrImportMatch.ts`の`matchMemberByName`（氏名ヒント→既存メンバーの純粋関数）。
+#             完全一致（display_name/short_name）→部分一致（1件のみヒット時のみ採用、複数ヒットは
+#             曖昧としてnull）の順で判定し、未登録者を勝手に新規メンバー登録しない設計。
+#             テスト`lib/okr/__tests__/okrImportMatch.test.ts`（6件）
+#      追加：`components/admin/OkrImportModal.tsx`（AdminViewのOKRセクション最上部に「📄 PDFから
+#             取込」ボタンを新設し起動）。入力（PDF/Word/テキスト）→AI解析→確認・編集→登録の4ステップ。
+#             確認画面で「登録先」を選択（既定＝新しい期のObjectiveとして作成／既存のObjectiveに追記）、
+#             既存追記時はKRごとに「新規KRとして追加」または既存KR（同一Objective配下）への紐づけを
+#             選べる。KR/TFはチェックボックスで取捨選択・全項目編集可（TF番号/名称/詳細/背景/
+#             クォーター/担当リーダー）。担当リーダーはmatchMemberByNameの自動マッチ結果を初期選択
+#             （曖昧・不一致時は空欄＝CustomSelectで手動選択 or 未設定のままスキップ）
+#      二重登録防止：「新しい期のObjectiveとして作成」を選ぶと、新規Objective（is_current:true）を
+#             作成すると同時に、既存の現在Objectiveがあれば`is_current:false`に更新する（appStoreは
+#             `is_current`な1件だけを「現在のObjective」として扱う設計のため、旧Objectiveを残したまま
+#             is_currentを外さないと「現在のObjective」が不定になる）。既存の`saveObjective`/
+#             `saveKeyResult`/`saveTaskForce`をそのまま使用（スキーマ・保存ロジックは無改造）
+#      機微情報対応：山本さんのサンプルPDF（経営確認事項・熊野メッセージ等を含む）は一切コミット
+#             していない。テストは架空メンバー名・架空OKRタイトルの最小データのみ使用
+#      DBマイグレ不要（既存のobjectives/key_results/task_forcesテーブルをそのまま使用。列の追加なし）。
+#             `npx tsc --noEmit`／`npx vitest run`（全501件通過）／`npx eslint src`（既存35件のまま
+#             新規エラー0）／`npm run build`成功
 #
-# 最終更新：2026-07-23（v2.91）
+# 最終更新：2026-07-23（v2.92）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2915,7 +2952,8 @@ export type AIIntent =
   | "project-plan"         // AI で PJ 設計
   | "project-analysis"     // 単一PJの健全性分析
   | "all-projects-analysis" // 全PJ横断ポートフォリオ分析
-  | "todo-decompose";      // ToDo 分解
+  | "todo-decompose"       // ToDo 分解
+  | "okr-import";          // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
 ```
 
 新しい AI 機能を追加するときは、この型に新タグを追加し、当該 prompt builder に
@@ -3133,6 +3171,7 @@ interface TaskChangeLog {
 |---|---|---|
 | セットアップウィザード | ✅ 実装済み | 初回起動時のみ表示 |
 | 管理画面 | ✅ 実装済み | カテゴリ分け左ナビ（v2.63）＋件数サマリー行・モダンCard体裁（v2.64）：作業設定（PJ/TF/Objective・KR）／人（メンバー/メンバータグ）／組織（グループ・部署）／レポート（AI使用量）。部署管理者・全社スーパー管理者が編集可。アクセス可能な部署が2つ以上のユーザーには部署絞り込みセレクタ（設定画面ローカル）を表示、メンバー/PJ/タグ/AI使用量を選択部署で絞り込む（v2.86）。メンバー・PJ・TFの「＋追加」はマイルストーン追加と同じポップアップモーダル形式（v2.86） |
+| OKR PDF取込（`OkrImportModal`） | ✅ 実装済み（v2.92） | 設定画面「Objective・KR」タブの「📄 PDFから取込」ボタンから起動。KintoneのOKR画面PDF/テキストをAIが解析しObjective/KR/TFを構造抽出→人が確認・編集（担当リーダーの自動突合含む）→登録。二重登録防止のため登録先（新しい期のObjectiveとして作成／既存Objectiveに追記）を選択可 |
 | ダッシュボード | ✅ 実装済み | OKR進捗・今週タスク・アラート・フィルター付き |
 | カンバンビュー | ✅ 実装済み | ドラッグ&ドロップ対応。タスク追加はFABに一本化（右上ボタンは廃止） |
 | ガントビュー | ✅ 実装済み | PJ別・人別の2ビューモード。PJバー・マイルストーン・今日線・トグル開閉 |
@@ -3219,7 +3258,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-23（v2.90）
+- 最終更新：2026-07-23（v2.92）
 
 ---
 
