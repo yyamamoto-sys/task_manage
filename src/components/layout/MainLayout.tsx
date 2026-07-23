@@ -201,6 +201,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const demoTriggerGuardRef = useRef(false);
   // ツアーの "open-dashboard-pj-analysis" アクションで参照するため、最新の projects を ref で持つ
   const projectsRef = useRef<Project[]>([]);
+  // ツアーの "demo-ai-consult" アクションで、実データの有無を判定するため最新の tasks を ref で持つ
+  const tasksRef = useRef<Task[]>([]);
   useEffect(() => {
     const onTourAction = (e: Event) => {
       const action = (e as CustomEvent).detail as string;
@@ -210,9 +212,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         window.setTimeout(() => { demoTriggerGuardRef.current = false; }, 4000);
         setConsultDefaultMode("consult");
         setIsConsultOpen(true);
+        // 部署スコープ済みのPJ/タスクが1件でもあれば、AIが送っているコンテキストを
+        // 実際に活かせる分析質問にする。まだ何も無ければ始め方の質問にフォールバック
+        const hasData = projectsRef.current.length > 0 || tasksRef.current.length > 0;
         setConsultDemoRequest({
-          // タスク未登録の初回ユーザーでも有用な回答が返る、データ不要の質問にする
-          text: "計画管理を始めます。タスクはどれくらいの細かさで登録すると管理しやすいですか？コツを教えてください。",
+          text: hasData
+            ? "今登録されているタスクの中で、優先的に進めるべきものと、遅れそうなものを教えて。次の一手も教えてください。"
+            : "これから計画管理を始めます。最初にどんな単位でプロジェクトやタスクを作ると、後で管理しやすいですか？",
           nonce: Date.now(),
         });
       }
@@ -253,6 +259,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   );
   // ツアーのアクションハンドラが最新のprojectsを参照できるよう同期
   useEffect(() => { projectsRef.current = projects; }, [projects]);
+  // ツアーの "demo-ai-consult" アクションが最新のtasks（スコープ済み・非削除）を参照できるよう同期
+  useEffect(() => { tasksRef.current = (rawTasks ?? []).filter((t: Task) => !t.is_deleted); }, [rawTasks]);
   const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
 
   // 「自分が担当タスクを持つPJ」。サイドバーの「自分」モードで各ビューが
