@@ -552,6 +552,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // ようにするため）。Toast/ErrorBarは元々モーダルより上に出る設計のため、それらが同じ位置に
   // 一時的に重なった場合はToast/ErrorBarが上に見える＝トーストは自動で数秒で消えるため実害は小さい。
   // AI相談パネル（PC・インライン）が開いているときは、FABと同じ考え方でパネル幅ぶん左へ避ける。
+  // 【FAB展開時の重なり対策】FABを開くと展開項目（3つ）がFABボタンの上に積み上がる
+  // （PC: bottom 74px起点で高さ約126px＝top端200px付近／モバイル: bottom 122px起点で
+  // 高さ約124px＝top端246px付近）。このショートカットボタンのz-index(140)はFAB展開項目(59)
+  // より高いため、通常位置のままだと展開項目の上に覆い被さって視認性を損なう＝これが
+  // 「＋ボタンを押すとショートカットボタンと被る」の実体。isFabMenuOpen中だけ展開項目の
+  // 積み上げ範囲より上（PC:216px/モバイル:270px）へ退避させ、閉じたら元の位置に戻す。
   const shortcutsButton = (
     <button
       onClick={toggleShortcuts}
@@ -559,9 +565,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       aria-pressed={isShortcutsOpen}
       style={{
         position: "fixed",
-        bottom: isMobile ? "128px" : "100px",
+        bottom: isFabMenuOpen
+          ? (isMobile ? "270px" : "216px")
+          : (isMobile ? "128px" : "100px"),
         right: (!isMobile && isConsultOpen) ? `${consultPanelWidth + 16}px` : "16px",
-        transition: isConsultResizing ? "none" : "right 0.3s ease",
+        transition: isConsultResizing ? "bottom 0.2s ease" : "right 0.3s ease, bottom 0.2s ease",
         zIndex: 140,
         display: "flex", alignItems: "center", gap: "5px",
         padding: "6px 10px",
