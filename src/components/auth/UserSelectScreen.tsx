@@ -28,10 +28,12 @@ export function UserSelectScreen({ onLogin }: Props) {
         border: "1px solid var(--color-border-primary)",
         borderRadius: "var(--radius-lg)",
         padding: "28px 32px", width: "100%", maxWidth: "380px",
+        maxHeight: "calc(100vh - 48px)",
         boxShadow: "var(--shadow-md)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         {/* ロゴ */}
-        <div style={{ marginBottom: "22px" }}>
+        <div style={{ marginBottom: "22px", flexShrink: 0 }}>
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
             <div style={{
               width: "28px", height: "28px", borderRadius: "var(--radius-md)",
@@ -55,7 +57,7 @@ export function UserSelectScreen({ onLogin }: Props) {
 
         {/* 前回ユーザー */}
         {lastUserFromContext && (
-          <div style={{ marginBottom: "14px" }}>
+          <div style={{ marginBottom: "14px", flexShrink: 0 }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
               前回のユーザーで続ける
             </div>
@@ -97,7 +99,7 @@ export function UserSelectScreen({ onLogin }: Props) {
 
         {/* ローディング中 */}
         {loading && (
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", gap: "8px", flexShrink: 0 }}>
             <div style={{ width: "16px", height: "16px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
             <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中...</span>
           </div>
@@ -107,11 +109,16 @@ export function UserSelectScreen({ onLogin }: Props) {
         {!loading && (
           <>
             {!lastUserFromContext && members.length > 0 && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px" }}>
+              <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px", flexShrink: 0 }}>
                 あなたはどなたですか？
               </div>
             )}
-            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+            {/* 一覧が画面に収まりきらない場合はこの領域だけスクロールする
+               （super_admin は全部署メンバーが並ぶため人数が多くなりうる） */}
+            <div style={{
+              display: "flex", flexDirection: "column", gap: "4px",
+              overflowY: "auto", minHeight: 0, flexShrink: 1,
+            }}>
               {others.map(member => (
                 <MemberButton key={member.id} member={member} onClick={() => onLogin(member)} />
               ))}
@@ -122,7 +129,7 @@ export function UserSelectScreen({ onLogin }: Props) {
               <div style={{
                 padding: "16px 12px", background: "var(--color-bg-warning)",
                 border: "1px solid var(--color-border-warning)",
-                borderRadius: "var(--radius-md)", textAlign: "center",
+                borderRadius: "var(--radius-md)", textAlign: "center", flexShrink: 0,
               }}>
                 <div style={{ fontSize: "12px", color: "var(--color-text-warning)", marginBottom: "10px", lineHeight: 1.6 }}>
                   メンバーが見つかりません。<br />
@@ -152,6 +159,7 @@ export function UserSelectScreen({ onLogin }: Props) {
             <div style={{
               display: "flex", alignItems: "center", gap: "8px",
               margin: "14px 0 10px", color: "var(--color-text-tertiary)", fontSize: "11px",
+              flexShrink: 0,
             }}>
               <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
               <span>見学の方</span>
@@ -166,6 +174,7 @@ export function UserSelectScreen({ onLogin }: Props) {
                 border: "1px dashed var(--color-border-secondary)",
                 borderRadius: "var(--radius-md)", cursor: "pointer",
                 transition: "background 0.1s",
+                flexShrink: 0,
               }}
             >
               <span style={{ fontSize: "16px", flexShrink: 0 }}>👁</span>
@@ -187,6 +196,7 @@ export function UserSelectScreen({ onLogin }: Props) {
             marginTop: "16px", padding: "8px 10px",
             background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
             fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6,
+            flexShrink: 0,
           }}>
             選択したユーザーは次回も自動で維持されます。
           </div>

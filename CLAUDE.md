@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.89
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.90
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2164,8 +2164,35 @@
 #      ツアー側：`first-time.ts`の`ai-consult-demo`ステップの本文を実データ有無どちらにも
 #             触れる内容に更新（v2.88で実施済み）
 #      DBマイグレ不要。既存テスト全484件が無改造で通過。`npx tsc --noEmit`エラー0
+# v2.90 fix: ユーザー選択画面の不要表示抑止＋一覧のスクロール収め（2026-07-23）
+#      問題①：`App.tsx`の`AuthenticatedApp`は`autoMatch()`（Auth emailで`members.email`と照合する
+#             **非同期**処理）でログインユーザーを自動特定するが、描画側は`!currentUser && !loading`
+#             の一発判定でUserSelectScreenを出していたため、メールが一致するユーザーでも
+#             「データロード完了〜autoMatchの非同期判定が終わるまでの一瞬」に選択画面が
+#             チラつく／出てしまっていた
+#      変更①：`matchState`（"matching"|"matched"|"unmatched"）を新設。autoMatchのeffectが
+#             走るたびに"matching"にリセットし、①email一致 or ②localStorage復元のどちらかが
+#             成立したら"matched"（同時にonLogin）、どちらも不成立と判明した時点でのみ
+#             "unmatched"に確定する。描画側は`matching`中はローディングスピナー、
+#             `unmatched`確定後にのみUserSelectScreenを出すよう分岐を追加
+#      結果①：メールが`members.email`と一致するユーザー（山本さん含む）はUserSelectScreenが
+#             二度と表示されなくなる。email/localStorageのどちらも一致しない人だけが対象のまま
+#      問題②：`UserSelectScreen.tsx`はカードに`min-height:100vh`のみでメンバー一覧に
+#             スクロール領域が無く、部署横断RLS対応後はsuper_admin（全部署の全メンバーが
+#             一覧表示）で人数が多いと一覧が画面外にはみ出し、下部のユーザーやゲストボタンが
+#             クリックできなくなっていた
+#      変更②：カードを`display:flex; flex-direction:column; max-height:calc(100vh - 48px);
+#             overflow:hidden`にし、メンバー一覧（`others.map`のコンテナ）のみ
+#             `overflow-y:auto; min-height:0`のスクロール領域に。ロゴ・前回ユーザー・
+#             「あなたはどなたですか？」・空メンバー時の回復オプション・ゲストボタン・注記は
+#             すべて`flexShrink:0`でスクロール対象から除外し、常に画面内に表示され続ける
+#      結果②：一覧が多くてもカード自体は画面内に収まり、一覧部分だけが内部スクロール。
+#             ゲストボタン・区切り線・見た目（余白・角丸・影・トークン）は無改造
+#      厳守事項：Auth email自動マッチング・localStorage復元・ゲストモード・
+#             SetupWizard/AccessDeniedScreenの分岐（bootstrapStatus・M25対応）は無改造
+#      DBマイグレ不要。既存テスト全484件が無改造で通過。`npx tsc --noEmit`／`npx eslint src`エラー0
 #
-# 最終更新：2026-07-23（v2.89）
+# 最終更新：2026-07-23（v2.90）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3150,7 +3177,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-23（v2.89）
+- 最終更新：2026-07-23（v2.90）
 
 ---
 

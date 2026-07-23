@@ -173,34 +173,47 @@ function AuthenticatedApp({
 
   // メンバー読み込み完了後、ログインユーザーを自動マッチング
   // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー
+  //
+  // matchState: autoMatch の非同期判定が完了するまで UserSelectScreen を
+  // 出さないためのガード。"matching" の間はローディング表示に留め、
+  // email/localStorage のどちらでも一致しないと確定した場合だけ "unmatched"
+  // にして選択画面を出す（メール一致ユーザーには選択画面を一切見せない）。
+  const [matchState, setMatchState] = useState<"matching" | "matched" | "unmatched">("matching");
   useEffect(() => {
     if (loading || currentUser) return;
+    setMatchState("matching");
+    let cancelled = false;
     const activeMembers = active(members);
 
     async function autoMatch() {
       // ① Auth email が members.email と一致するメンバーを優先（セキュアな自動同定）
       const authEmail = await getAuthEmail();
+      if (cancelled) return;
       if (authEmail) {
         const matched = activeMembers.find(
           m => m.email && m.email.toLowerCase() === authEmail.toLowerCase(),
         );
         if (matched) {
           setCurrentGroupId(matched.group_id ?? null);
+          setMatchState("matched");
           onLogin(matched);
           return;
         }
       }
       // ② email 未設定のケース：localStorage の前回ユーザーにフォールバック
       const saved = getCurrentUser();
-      if (!saved) return;
-      const member = activeMembers.find(m => m.id === saved.id);
+      const member = saved ? activeMembers.find(m => m.id === saved.id) : undefined;
       if (member) {
         setCurrentGroupId(member.group_id ?? null);
+        setMatchState("matched");
         onLogin(member);
+        return;
       }
+      if (!cancelled) setMatchState("unmatched");
     }
 
     void autoMatch();
+    return () => { cancelled = true; };
   }, [loading, members, currentUser, onLogin, setCurrentGroupId]);
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
@@ -232,8 +245,18 @@ function AuthenticatedApp({
     return <AccessDeniedScreen onLogout={onLogout} />;
   }
 
-  // メンバー未選択かつ自動復元待ち → 選択画面（復元できなかった場合のフォールバック）
-  if (!currentUser && !loading) {
+  // メンバー未選択かつ自動マッチング判定中 → ローディング表示
+  // （email 一致/localStorage 復元の判定が終わるまで選択画面を出さない）
+  if (!currentUser && !loading && matchState === "matching") {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ width: "20px", height: "20px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
+      </div>
+    );
+  }
+
+  // メンバー未選択かつ自動マッチング不成立確定 → 選択画面（復元できなかった場合のフォールバック）
+  if (!currentUser && !loading && matchState === "unmatched") {
     return <UserSelectScreen onLogin={onLogin} />;
   }
 
