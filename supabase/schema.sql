@@ -137,6 +137,9 @@ CREATE TABLE IF NOT EXISTS quarterly_objectives (
   title        text NOT NULL,
   purpose      text,
   background   text,
+  -- 所属部署（2026-07-23・20260723c）。objectivesと同型。RLSは変更せず表示絞り込みのみ
+  -- （src/lib/okr/deptScope.ts参照）。既存行はobjective_id経由の親Objectiveから継承バックフィル。
+  group_id     text REFERENCES groups(id),
   is_deleted   boolean NOT NULL DEFAULT false,
   deleted_at   timestamptz,
   deleted_by   text,

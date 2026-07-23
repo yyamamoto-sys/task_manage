@@ -13,7 +13,7 @@
 import { useState, useRef, useCallback, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useAppStore } from "../../stores/appStore";
-import type { Member, Objective, KeyResult, TaskForce, Quarter } from "../../lib/localData/types";
+import type { Member, Objective, KeyResult, TaskForce, QuarterlyObjective, Quarter } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
   extractOkrImportData,
@@ -70,6 +70,9 @@ interface KrDraft {
 }
 
 type TargetMode = "new" | "existing";
+/** この資料が通期OKRか四半期OKRか（Kintoneは通期版と四半期版で別出力のため、
+ *  自動判別ではなくユーザーに選ばせる。山本さん確定仕様・2026-07-23）。 */
+type DocType = "annual" | "quarterly";
 type Step = "input" | "analyzing" | "review" | "applying" | "done";
 
 interface Props {
@@ -87,6 +90,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
   const saveObjective = useAppStore(s => s.saveObjective);
   const saveKeyResult = useAppStore(s => s.saveKeyResult);
   const saveTaskForce = useAppStore(s => s.saveTaskForce);
+  const saveQuarterlyObjective = useAppStore(s => s.saveQuarterlyObjective);
 
   // targetGroupId（取込先部署）の現在Objective。アプリ全体のcurrentGroupId（表示中の部署）
   // とは独立（AdminViewの部署セレクタで別部署を見ながら取り込むケースがあるため）。
@@ -102,6 +106,10 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
   );
 
   const [step, setStep] = useState<Step>("input");
+  // 資料の種類（通期／四半期）。入力ステップで選ばせ、解析前に確定させる
+  // （四半期選択時はTFドラフトの既定クォーターに使うため）。
+  const [docType, setDocType] = useState<DocType>("annual");
+  const [importQuarter, setImportQuarter] = useState<Quarter>(currentQuarter());
   const [rawText, setRawText] = useState("");
   const [pdfAttachment, setPdfAttachment] = useState<FileAttachment | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -121,7 +129,9 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({
     current: 0, total: 1, label: "",
   });
-  const [applyResults, setApplyResults] = useState<{ objectives: number; krs: number; tfs: number } | null>(null);
+  const [applyResults, setApplyResults] = useState<{
+    objectives: number; krs: number; tfs: number; quarterlyObjective: Quarter | null;
+  } | null>(null);
 
   // ===== ファイル読み込み（PDF/Word/テキスト） =====
 
@@ -196,7 +206,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
           name: tf.name,
           description: tf.description ?? "",
           background: tf.background ?? "",
-          quarter: currentQuarter(),
+          quarter: docType === "quarterly" ? importQuarter : currentQuarter(),
           leader_member_id: matchMemberByName(tf.leader_name_hint, members)?.id ?? "",
           source_quote: tf.source_quote,
         })),
@@ -207,7 +217,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
       setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
     }
-  }, [rawText, pdfAttachment, ctxObj, members]);
+  }, [rawText, pdfAttachment, ctxObj, members, docType, importQuarter]);
 
   // ===== 登録 =====
 
@@ -224,6 +234,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
     const newObjNeeded = targetMode === "new";
     const validKrDrafts = krDrafts.filter(d => d.checked && d.title.trim());
     const totalSteps = (newObjNeeded ? 1 : 0)
+      + (docType === "quarterly" ? 1 : 0)
       + validKrDrafts.filter(d => d.linkTo === "new").length
       + validKrDrafts.reduce((sum, d) => sum + d.tfDrafts.filter(t => t.checked && t.name.trim()).length, 0);
 
@@ -265,6 +276,33 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
       } else {
         if (!ctxObj) throw new Error("既存のObjectiveが見つかりません。");
         targetObjectiveId = ctxObj.id;
+      }
+
+      // 1b) 四半期OKRの場合はQuarterlyObjectiveの骨組みを作成する。
+      // 【注意】QuarterlyObjective/QuarterlyKrTaskForceは2026-05-26のTF四半期判定モデル
+      // 移行（→TaskForce.quarter列）以降どの画面からも表示されない（docs/REFACTORING.md
+      // M24）。四半期の実体はTF側の quarter 列（上のTFドラフトで既に選択四半期を既定値と
+      // している）で表現されるため、ここでは「取込元が四半期版であった」という記録として
+      // QuarterlyObjectiveを1件作成するに留める（KR/TFをこの下に紐づける処理はしない）。
+      if (docType === "quarterly") {
+        setSaveProgress(p => ({ ...p, current: stepCount, label: "QuarterlyObjectiveを記録中…" }));
+        const now = new Date().toISOString();
+        const newQObj: QuarterlyObjective = {
+          id: uuidv4(),
+          objective_id: targetObjectiveId,
+          quarter: importQuarter,
+          title: objTitle.trim() || "（無題）",
+          purpose: objPurpose,
+          background: objBackground,
+          is_deleted: false,
+          group_id: targetGroupId,
+          created_at: now,
+          updated_at: now,
+          updated_by: currentUser.id,
+        };
+        await saveQuarterlyObjective(newQObj);
+        stepCount += 1;
+        setSaveProgress(p => ({ ...p, current: stepCount }));
       }
 
       // 2) KR + TF
@@ -317,13 +355,19 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
         }
       }
 
-      setApplyResults({ objectives: objectivesCreated, krs: krsCreated, tfs: tfsCreated });
+      setApplyResults({
+        objectives: objectivesCreated, krs: krsCreated, tfs: tfsCreated,
+        quarterlyObjective: docType === "quarterly" ? importQuarter : null,
+      });
       setStep("done");
     } catch (e) {
       setError(formatErrorForUser("登録に失敗しました", e));
       setStep("review");
     }
-  }, [targetMode, krDrafts, objTitle, objPurpose, objBackground, objPeriod, ctxObj, targetGroupId, currentUser, saveObjective, saveKeyResult, saveTaskForce]);
+  }, [
+    targetMode, krDrafts, objTitle, objPurpose, objBackground, objPeriod, ctxObj, targetGroupId, currentUser,
+    docType, importQuarter, saveObjective, saveKeyResult, saveTaskForce, saveQuarterlyObjective,
+  ]);
 
   const handleReset = () => {
     setStep("input");
@@ -394,6 +438,29 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
         <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
           {step === "input" && (
             <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <div>
+                <FieldLabel>この資料は</FieldLabel>
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <label aria-label="通期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                    <input type="radio" checked={docType === "annual"} onChange={() => setDocType("annual")} />
+                    通期OKR
+                  </label>
+                  <label aria-label="四半期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                    <input type="radio" checked={docType === "quarterly"} onChange={() => setDocType("quarterly")} />
+                    四半期OKR
+                  </label>
+                </div>
+                {docType === "quarterly" && (
+                  <div style={{ marginTop: "8px", maxWidth: "220px" }}>
+                    <FieldLabel>対象クォーター</FieldLabel>
+                    <CustomSelect
+                      value={importQuarter}
+                      onChange={value => setImportQuarter(value as Quarter)}
+                      options={QUARTER_OPTIONS.map(q => ({ value: q.value, label: q.label }))}
+                    />
+                  </div>
+                )}
+              </div>
               <div
                 ref={dropAreaRef}
                 onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
@@ -468,6 +535,8 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
           {step === "review" && analysis && (
             <ReviewStep
               ctxObj={ctxObj}
+              docType={docType}
+              importQuarter={importQuarter}
               targetMode={targetMode}
               setTargetMode={setTargetMode}
               objTitle={objTitle} setObjTitle={setObjTitle}
@@ -529,12 +598,13 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
 // ===== ReviewStep =====
 
 function ReviewStep({
-  ctxObj, targetMode, setTargetMode,
+  ctxObj, docType, importQuarter, targetMode, setTargetMode,
   objTitle, setObjTitle, objPurpose, setObjPurpose, objBackground, setObjBackground, objPeriod, setObjPeriod,
   krDrafts, existingKrs, members, updateKr, updateTf,
   error, checkedKrCount, checkedTfCount, hasAnything, onApply,
 }: {
   ctxObj: Objective | null;
+  docType: DocType; importQuarter: Quarter;
   targetMode: TargetMode; setTargetMode: (m: TargetMode) => void;
   objTitle: string; setObjTitle: (v: string) => void;
   objPurpose: string; setObjPurpose: (v: string) => void;
@@ -553,6 +623,10 @@ function ReviewStep({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+        資料の種類：{docType === "quarterly" ? `四半期OKR（${importQuarter}）` : "通期OKR"}
+      </div>
+
       {/* 登録先の選択（二重登録防止） */}
       <Card>
         <SectionHeader icon="🎯" title="登録先" />
@@ -779,7 +853,7 @@ function TfDraftCard({ draft, members, onChange }: {
 // ===== DoneStep =====
 
 function DoneStep({ results, onReset, onClose }: {
-  results: { objectives: number; krs: number; tfs: number };
+  results: { objectives: number; krs: number; tfs: number; quarterlyObjective: Quarter | null };
   onReset: () => void; onClose: () => void;
 }) {
   return (
@@ -789,7 +863,8 @@ function DoneStep({ results, onReset, onClose }: {
       <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
         {results.objectives > 0 && <div>Objective {results.objectives}件 を新規作成しました</div>}
         {results.krs > 0 && <div>KR {results.krs}件 を新規作成しました</div>}
-        {results.tfs > 0 && <div>TF {results.tfs}件 を新規作成しました</div>}
+        {results.tfs > 0 && <div>TF {results.tfs}件 を新規作成しました（クォーターは各TFに設定済み）</div>}
+        {results.quarterlyObjective && <div>四半期OKR（{results.quarterlyObjective}）として記録しました</div>}
         {results.objectives === 0 && results.krs === 0 && results.tfs === 0 && <div>変更はありませんでした</div>}
       </div>
       <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>

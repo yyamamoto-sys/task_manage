@@ -15,8 +15,15 @@
 // group_idがnullになることは無い。コードデプロイとマイグレーション適用の間の窓（デプロイ
 // 順序次第で発生しうる。CLAUDE.md記載の教訓参照）でnullなObjectiveに遭遇した場合に
 // 備えた安全網として、nullはgrp-egg扱いにフォールバックする。
+//
+// 【QuarterlyObjectiveについて（2026-07-23追加）】
+// quarterly_objectives.group_id追加（20260723c）に伴い、objectivesInGroup等と同型の
+// 絞り込み関数を用意する。ただし【重要】QuarterlyObjective/QuarterlyKrTaskForceは
+// 2026-05-26のTF四半期判定モデル移行（→TaskForce.quarter列）以降どの画面からも
+// 表示されない死蔵データ（docs/REFACTORING.md M24）。以下の関数は将来の再設計に
+// 備えた土台のみで、現状呼び出し元は無い。
 
-import type { Objective, KeyResult, TaskForce } from "../localData/types";
+import type { Objective, KeyResult, TaskForce, QuarterlyObjective, Quarter } from "../localData/types";
 
 export const DEFAULT_OKR_GROUP_ID = "grp-egg";
 
@@ -53,4 +60,23 @@ export function taskForcesInGroup(
 ): TaskForce[] {
   const krIds = new Set(keyResultsInGroup(keyResults, objectives, groupId).map(k => k.id));
   return taskForces.filter(tf => krIds.has(tf.kr_id));
+}
+
+function quarterlyObjectiveGroupId(qo: QuarterlyObjective): string {
+  return qo.group_id ?? DEFAULT_OKR_GROUP_ID;
+}
+
+/** 指定部署に属するQuarterlyObjectiveだけを返す（groupId未確定=nullなら空配列） */
+export function quarterlyObjectivesInGroup(
+  quarterlyObjectives: QuarterlyObjective[], groupId: string | null,
+): QuarterlyObjective[] {
+  if (!groupId) return [];
+  return quarterlyObjectives.filter(qo => quarterlyObjectiveGroupId(qo) === groupId);
+}
+
+/** 指定部署×指定四半期のQuarterlyObjectiveだけを返す */
+export function quarterlyObjectivesInGroupForQuarter(
+  quarterlyObjectives: QuarterlyObjective[], groupId: string | null, quarter: Quarter,
+): QuarterlyObjective[] {
+  return quarterlyObjectivesInGroup(quarterlyObjectives, groupId).filter(qo => qo.quarter === quarter);
 }

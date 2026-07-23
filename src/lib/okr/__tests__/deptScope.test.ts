@@ -5,8 +5,10 @@ import {
   pickCurrentObjectiveForGroup,
   keyResultsInGroup,
   taskForcesInGroup,
+  quarterlyObjectivesInGroup,
+  quarterlyObjectivesInGroupForQuarter,
 } from "../deptScope";
-import type { Objective, KeyResult, TaskForce } from "../../localData/types";
+import type { Objective, KeyResult, TaskForce, QuarterlyObjective } from "../../localData/types";
 
 function obj(id: string, groupId: string | null, isCurrent: boolean): Objective {
   return {
@@ -21,6 +23,12 @@ function tf(id: string, krId: string): TaskForce {
   return {
     id, kr_id: krId, tf_number: "1", name: `tf-${id}`,
     leader_member_id: "m1", is_deleted: false, updated_by: "u1",
+  };
+}
+function qObj(id: string, groupId: string | null, quarter: QuarterlyObjective["quarter"]): QuarterlyObjective {
+  return {
+    id, objective_id: "o-egg", quarter, title: `qo-${id}`,
+    group_id: groupId, is_deleted: false, updated_by: "u1",
   };
 }
 
@@ -73,5 +81,32 @@ describe("keyResultsInGroup / taskForcesInGroup", () => {
   it("TFはKR経由で部署を継承する", () => {
     expect(taskForcesInGroup(taskForces, keyResults, objectives, "grp-aid").map(t => t.id)).toEqual(["tf-aid"]);
     expect(taskForcesInGroup(taskForces, keyResults, objectives, "grp-egg").map(t => t.id)).toEqual(["tf-egg"]);
+  });
+});
+
+describe("quarterlyObjectivesInGroup / quarterlyObjectivesInGroupForQuarter", () => {
+  it("group_idが一致するQuarterlyObjectiveだけを返す", () => {
+    const qObjs = [qObj("qo-egg", "grp-egg", "1Q"), qObj("qo-aid", "grp-aid", "1Q")];
+    expect(quarterlyObjectivesInGroup(qObjs, "grp-aid").map(q => q.id)).toEqual(["qo-aid"]);
+  });
+
+  it("groupIdがnullなら空配列を返す", () => {
+    const qObjs = [qObj("qo-egg", "grp-egg", "1Q")];
+    expect(quarterlyObjectivesInGroup(qObjs, null)).toEqual([]);
+  });
+
+  it("group_idがnullのQuarterlyObjectiveはgrp-egg扱い（バックフィル前の安全網）", () => {
+    const qObjs = [qObj("qo-legacy", null, "1Q")];
+    expect(quarterlyObjectivesInGroup(qObjs, DEFAULT_OKR_GROUP_ID).map(q => q.id)).toEqual(["qo-legacy"]);
+    expect(quarterlyObjectivesInGroup(qObjs, "grp-aid")).toEqual([]);
+  });
+
+  it("部署×四半期の両方で絞り込む", () => {
+    const qObjs = [
+      qObj("qo-aid-1q", "grp-aid", "1Q"),
+      qObj("qo-aid-2q", "grp-aid", "2Q"),
+      qObj("qo-egg-1q", "grp-egg", "1Q"),
+    ];
+    expect(quarterlyObjectivesInGroupForQuarter(qObjs, "grp-aid", "1Q").map(q => q.id)).toEqual(["qo-aid-1q"]);
   });
 });

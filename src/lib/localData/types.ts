@@ -90,6 +90,12 @@ export interface QuarterlyObjective {
   title: string;
   purpose?: string;     // 何を達成するか（Purpose）
   background?: string;  // 設計の意図や背景
+  /** 所属部署（マルチテナント対応・2026-07-23）。objectivesと同型。既存データは
+   *  objective_id経由の親Objectiveからバックフィル済み（未設定=null は原則発生しない）。
+   *  【注意】QuarterlyObjective/QuarterlyKrTaskForceは2026-05-26のTF四半期判定モデル移行
+   *  （→TaskForce.quarter列）以降どの画面からも表示されない（docs/REFACTORING.md M24）。
+   *  この列は将来の再設計に備えた土台のみで、単体では表示挙動に影響しない。 */
+  group_id?: string | null;
   is_deleted: boolean;
   // audit fields
   created_at?: string;
