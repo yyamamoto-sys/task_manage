@@ -1,6 +1,6 @@
 -- ============================================================
 -- グループ計画管理アプリ スキーマ定義（統合版）
--- 最終更新: 2026-07-22
+-- 最終更新: 2026-07-23
 -- Supabase SQL エディタで上から順に実行してください
 -- ============================================================
 --
@@ -20,6 +20,9 @@
 -- current_member_group_ids()・RLSの配列オーバーラップ化・tasks.group_ids自動導出トリガー・
 -- projects→tasksカスケード・guard_member_privilege_columns/guard_group_deletionの拡張を反映
 -- （migrations/20260722b_add_multi_department_access.sql）。フロントエンドは未対応（次フェーズ）。
+-- 2026-07-23b：OKR/TFの部署別表示。objectives.group_id を追加・既存Objectiveを全てgrp-eggへ
+-- バックフィル（migrations/20260723b_add_objective_group_id.sql）。KR/TFはgroup_id列を持たず
+-- objective_id / kr_id を辿ってこの部署を継承する（表示の絞り込みのみ・RLSは今回変更しない）。
 --
 -- 既存環境で再適用しても安全（IF NOT EXISTS 多用）。
 -- 新規環境ではこのファイル一発で初期化できる。
@@ -97,11 +100,21 @@ CREATE TABLE IF NOT EXISTS objectives (
   purpose     text,
   background  text,
   is_current  boolean NOT NULL DEFAULT true,
+  group_id    text REFERENCES groups(id),      -- migration 20260723b_add_objective_group_id.sql
   archived_at timestamptz,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
   updated_by  text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+--
+-- 【今回のスコープ】objectives.group_id は表示の絞り込み（UI側）専用。KR/TFはgroup_id列を
+-- 持たず、objective_id / kr_id を辿ってこの部署を継承する（lib/okr/deptScope.ts参照）。
+-- RLSは今回一切変更しない（下部の「authenticated full access」= USING(true) のまま。
+-- OKR全面刷新時にまとめて部署分離する。CLAUDE.md Section 1.6参照）。
+ALTER TABLE objectives ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
+-- 既存Objectiveは全てEGGへバックフィル（AID等の新しいOKRはPDF取込・手入力で入れ直す方針）
+UPDATE objectives SET group_id = 'grp-egg' WHERE group_id IS NULL;
 
 -- ===== Key Results（年間・通年固定） =====
 CREATE TABLE IF NOT EXISTS key_results (
@@ -555,6 +568,9 @@ BEGIN
   -- 差し替えたためこのループから除外。member_tags 本体は全社共通マスタとして
   -- 全公開のまま維持（部署概念が無いため）。残る OKR 系はマルチテナント未対応の
   -- 既知の残課題（OKR全面刷新時にまとめて対応する）。
+  -- 【2026-07-23b】objectives は group_id 列を追加したが、RLSはこのブロックの
+  -- 「authenticated full access」のまま据え置く（表示の絞り込みはUI側のみ・
+  -- lib/okr/deptScope.ts参照）。KR/TFはgroup_id列を持たないため引き続きここに含める。
   FOR t IN VALUES
     ('objectives'), ('key_results'),
     ('quarterly_objectives'), ('quarterly_kr_task_forces'),

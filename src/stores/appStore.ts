@@ -55,6 +55,7 @@ import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
 import { computeParentAutoStatus } from "../lib/taskHierarchy";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
+import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
 
 export interface AppState {
   // ===== データ =====
@@ -66,6 +67,13 @@ export interface AppState {
   // 返しているためクライアントで重ねて絞らない（絞ると兼務2部署目がUIから消える）。
   currentUserIsSuperAdmin: boolean;
   members: Member[];
+  // 【2026-07-23】objectives は全部署分のObjectiveを生のまま保持する（OKR系はRLS非対応の
+  // ため全ユーザーが全部署分を受け取る。CLAUDE.md Section 1.6参照）。objective は
+  // 「currentGroupId（表示中の部署）の現在Objective」を表す派生値で、load()／
+  // setCurrentGroupId()／saveObjective() のたびに pickCurrentObjectiveForGroup() で
+  // 再計算し続ける。OKRモード各画面（OkrDashboardView等）はこの objective を今まで通り
+  // 読むだけで、部署別スコープの恩恵を受けられる（個別の変更不要）。
+  objectives: Objective[];
   objective: Objective | null;
   keyResults: KeyResult[];
   taskForces: TaskForce[];
@@ -444,6 +452,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   currentGroupId: null,
   currentUserIsSuperAdmin: false,
   members: [],
+  objectives: [],
   objective: null,
   keyResults: [],
   taskForces: [],
@@ -528,8 +537,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
           const okr = await fetchOkrData((done, total) => {
             set({ loadProgress: Math.round((done / total) * 100) });
           });
-          set({
-            objective:             okr.objectives.find(o => o.is_current) ?? okr.objectives[0] ?? null,
+          set(state => ({
+            objectives:            okr.objectives,
+            // 【2026-07-23】部署別に「現在Objective」が存在しうるため、is_current の単純な
+            // グローバル1件抽出ではなく currentGroupId（表示中の部署）でスコープする。
+            // currentGroupId がまだ未確定（autoMatch未完了）の間はnullになるが、後続の
+            // setCurrentGroupId() 呼び出しで再計算されるため実害はない。
+            objective:             pickCurrentObjectiveForGroup(okr.objectives, state.currentGroupId),
             keyResults:            okr.keyResults,
             taskForces:            okr.taskForces,
             todos:                 okr.todos,
@@ -539,7 +553,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             taskTaskForces:        okr.taskTaskForces,
             backgroundLoading:     false,
             loadProgress:          100,
-          });
+          }));
         } catch {
           set({ backgroundLoading: false, loadProgress: 100 });
         }
@@ -565,7 +579,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   reload: async () => { await get().load(); },
 
   // ===== Group =====
-  setCurrentGroupId: (id) => set({ currentGroupId: id }),
+  setCurrentGroupId: (id) => set(state => ({
+    currentGroupId: id,
+    // 部署切替時に「現在Objective」も追従させる（Section 1.6参照）。OKR系はRLS非対応の
+    // ため手元に全部署分の objectives が既にあり、再フェッチ無しでスコープし直せる。
+    objective: pickCurrentObjectiveForGroup(state.objectives, id),
+  })),
   setCurrentUserIsSuperAdmin: (v) => set({ currentUserIsSuperAdmin: v }),
 
   saveGroup: async (group) => {
@@ -639,17 +658,24 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== Objective =====
+  // 【2026-07-23】objectives は部署をまたいだ複数件を保持する配列（KeyResult/TaskForce と
+  // 同じ upsert-by-id パターン）に変更。objective（表示部署の現在Objective）は保存の
+  // たびに currentGroupId で再導出する。
   saveObjective: async (obj) => {
-    set({ objective: obj });
+    set(state => {
+      const objectives = state.objectives.findIndex(o => o.id === obj.id) >= 0
+        ? state.objectives.map(o => o.id === obj.id ? obj : o)
+        : [...state.objectives, obj];
+      return { objectives, objective: pickCurrentObjectiveForGroup(objectives, state.currentGroupId) };
+    });
     await runSerializedByKey(`objectives:${obj.id}`, async () => {
-      const expectedUpdatedAt = get().objective?.id === obj.id ? get().objective?.updated_at : undefined;
+      const expectedUpdatedAt = get().objectives.find(o => o.id === obj.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertObjective(obj, expectedUpdatedAt);
-        set(state => ({
-          objective: state.objective?.id === obj.id
-            ? { ...state.objective, updated_at: newUpdatedAt }
-            : state.objective,
-        }));
+        set(state => {
+          const objectives = syncUpdatedAt(state.objectives, obj.id, newUpdatedAt);
+          return { objectives, objective: pickCurrentObjectiveForGroup(objectives, state.currentGroupId) };
+        });
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;

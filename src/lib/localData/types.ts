@@ -56,6 +56,11 @@ export interface Objective {
   background?: string;  // 設計の意図や背景
   period: string;
   is_current: boolean;
+  /** 所属部署（マルチテナント対応・2026-07-23）。KR/TFはgroup_id列を持たず
+   *  objective_id / kr_id を辿ってこの部署を継承する。既存データは全てgrp-eggへ
+   *  バックフィル済み（未設定=null は原則発生しないが、lib/okr/deptScope.ts が
+   *  安全網としてgrp-egg扱いにフォールバックする） */
+  group_id?: string | null;
   // audit fields
   created_at?: string;
   updated_at?: string;
