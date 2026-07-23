@@ -27,13 +27,13 @@ ALTER TABLE quarterly_objectives
 -- ============================================================
 -- ブロック2: 既存行をバックフィル（objective_id を辿って親Objectiveのgroup_idを継承）
 --
--- 【注意】このUPDATEが trg_quarterly_objectives_updated_at（BEFORE UPDATE、無条件で
--- updated_at=NOW()にする既存トリガー）を再発火させ、既存の全QuarterlyObjectiveの
--- updated_atが一律で「今」になってしまう副作用があるため、バックフィルの間だけ
--- 一時的に無効化する（20260723bのバックフィル手法に倣う）。
+-- 【注意】quarterly_objectives には updated_at 自動更新トリガー
+-- （trg_quarterly_objectives_updated_at）が存在しない（objectives 等と違い、この
+-- テーブルにはトリガーが貼られていなかった。2026-07-23適用時に
+-- 「trigger ... does not exist」で発覚）。そのため 20260723b のような
+-- DISABLE/ENABLE TRIGGER は不要。加えて本テーブルは死蔵でデータがほぼ無く、
+-- updated_at の巻き込みも実害が無いため、トリガー操作なしで素直にUPDATEする。
 -- ============================================================
-ALTER TABLE quarterly_objectives DISABLE TRIGGER trg_quarterly_objectives_updated_at;
-
 UPDATE quarterly_objectives qo
 SET group_id = o.group_id
 FROM objectives o
@@ -43,8 +43,6 @@ WHERE qo.objective_id = o.id
 
 -- 親Objectiveのgroup_idが（万一）未設定の場合の安全網＝grp-eggへフォールバック
 UPDATE quarterly_objectives SET group_id = 'grp-egg' WHERE group_id IS NULL;
-
-ALTER TABLE quarterly_objectives ENABLE TRIGGER trg_quarterly_objectives_updated_at;
 
 -- ============================================================
 -- ブロック3: 適用後、必ず実行して確認するクエリ
