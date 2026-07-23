@@ -72,9 +72,15 @@ const SYSTEM_PROMPT = `あなたはKintoneで記録されたOKR（Objective・Ke
 - task_forces[].description: TFの目的・検証プロセスの要約（1〜3文程度。長い場合は要約する）
 - task_forces[].background: なぜこのTFを設定したかの背景（あれば）
 - task_forces[].leader_name_hint: 担当OM・リーダーとして記載された氏名（フルネームまたは表示名のまま。不明はnull）
-- source_quoteは根拠となる原文の一部（30文字以内）
+- source_quoteは根拠となる原文の短い一部（20文字以内）。原文の引用符・記号はそのまま写さず要約的に短く。
 
-出力はJSONのみ。コードブロック\`\`\`は絶対に使わない。
+【最重要：JSONの厳格な作法（守らないとパースに失敗する）】
+- 出力は厳密なJSONオブジェクトのみ。前後に説明文・コードブロック\`\`\`・注釈を一切付けない。
+- 文字列値の中で二重引用符 " を使う必要がある場合は必ず \\" とエスケープする。
+  ただし日本語の引用は原則 " ではなく「」『』を使い、ASCII二重引用符を値に含めないこと。
+- 文字列値の中に生の改行を入れない（必要なら \\n を使うか、1行に要約する）。
+- 末尾カンマを付けない。全てのプロパティ名・文字列値は二重引用符で囲む。
+- 値が不明なときは文字列 "" ではなく null を使う（スキーマで null 許容のもの）。
 
 {
   "objective": {
@@ -109,9 +115,20 @@ export interface ExtractOkrImportParams {
   attachment?: FileAttachment | null;
 }
 
+/**
+ * AIが返した文字列からJSONオブジェクトを取り出してパースする。
+ * ①コードブロックフェンスを除去 ②最初の { から最後の } までを切り出す
+ * （前後に説明文が付いても本体だけを取り出せる）。OKRのような引用符の多い
+ * リッチテキストではモデルが不正JSONを返しやすいため、呼び出し側（extractOkrImportData）で
+ * 失敗時に1回だけ自己修正リトライする。
+ */
 function parseJsonSafe<T>(text: string): T {
   const cleaned = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```\s*$/i, "").trim();
-  return JSON.parse(cleaned) as T;
+  // 前後に混入した説明文を除き、JSONオブジェクト本体（最初の { 〜 最後の }）だけを取り出す
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  const body = start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+  return JSON.parse(body) as T;
 }
 
 function validateTaskForce(data: unknown, path: string): OkrImportTaskForce {
@@ -164,7 +181,29 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
 
   // 添付（PDF等）がある場合は document ブロックとして同梱
   const content = buildMessageContent(userMessage, params.attachment ?? null);
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 4096, "okr-import");
+  // OKRは大きく引用符が多いため、出力切れを避けるため max_tokens を広めに取る
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 8192, "okr-import");
   const text = res.content[0].text;
-  return validateOkrImportAnalysis(parseJsonSafe<unknown>(text));
+
+  try {
+    return validateOkrImportAnalysis(parseJsonSafe<unknown>(text));
+  } catch (firstErr) {
+    // 1回だけ自己修正リトライ：直前の不正な出力を渡し、厳密なJSONに直させる。
+    // OKRの原文に含まれる引用符のエスケープ漏れ等でJSONが壊れるケースを救済する。
+    const reason = firstErr instanceof Error ? firstErr.message : String(firstErr);
+    const repairMessages = [
+      { role: "user" as const, content },
+      { role: "assistant" as const, content: text },
+      {
+        role: "user" as const,
+        content:
+          `あなたの直前の出力はJSONとして解析できませんでした（エラー: ${reason}）。` +
+          `同じ内容を、厳密に正しいJSONオブジェクトだけで出力し直してください。` +
+          `二重引用符は \\" とエスケープし、日本語の引用は「」を使い、生の改行は入れず、` +
+          `コードブロックや説明文は一切付けないこと。`,
+      },
+    ];
+    const retry = await invokeAI(SYSTEM_PROMPT, repairMessages, 8192, "okr-import");
+    return validateOkrImportAnalysis(parseJsonSafe<unknown>(retry.content[0].text));
+  }
 }

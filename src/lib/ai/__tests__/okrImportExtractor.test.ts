@@ -71,6 +71,26 @@ describe("extractOkrImportData — 正常系", () => {
     expect(mockedInvokeAI.mock.calls[0][3]).toBe("okr-import");
   });
 
+  it("JSON本体の前後に説明文が混じっても本体だけを抽出する", async () => {
+    mockedInvokeAI.mockResolvedValueOnce({
+      content: [{ type: "text" as const, text: "以下が抽出結果です。\n" + JSON.stringify(VALID_PAYLOAD) + "\n以上です。" }],
+    });
+    const result = await extractOkrImportData({ transcript: "x" });
+    expect(result.objective.title).toBe("架空OKR 2026年度サンプル");
+  });
+
+  it("1回目が不正JSONでも自己修正リトライで救済される", async () => {
+    // 1回目：末尾が壊れた不正JSON → 2回目：正しいJSON
+    mockedInvokeAI
+      .mockResolvedValueOnce({ content: [{ type: "text" as const, text: '{ "objective": { "title": "壊れた' }] })
+      .mockResolvedValueOnce(aiText(VALID_PAYLOAD));
+    const result = await extractOkrImportData({ transcript: "x" });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
+    expect(result.objective.title).toBe("架空OKR 2026年度サンプル");
+    // リトライも同じ okr-import intent で計測に乗る
+    expect(mockedInvokeAI.mock.calls[1][3]).toBe("okr-import");
+  });
+
   it("null許容フィールドが欠けていてもnullで補完される", async () => {
     mockedInvokeAI.mockResolvedValueOnce(aiText({
       objective: { title: "タイトルのみ" },
