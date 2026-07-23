@@ -60,6 +60,11 @@ export interface AppState {
   // ===== データ =====
   groups: Group[];
   currentGroupId: string | null;
+  // ログイン中ユーザーが全社スーパー管理者か（複数部署アクセスのフロント分岐に使う）。
+  // super-admin は手元に全部署分のデータが載るため currentGroupId で「表示する部署」を
+  // 絞り込む必要があるが、非super-admin（兼務者含む）はRLSが既に自部署＋兼務先だけを
+  // 返しているためクライアントで重ねて絞らない（絞ると兼務2部署目がUIから消える）。
+  currentUserIsSuperAdmin: boolean;
   members: Member[];
   objective: Objective | null;
   keyResults: KeyResult[];
@@ -88,6 +93,7 @@ export interface AppState {
 
   // ===== Group =====
   setCurrentGroupId: (id: string | null) => void;
+  setCurrentUserIsSuperAdmin: (v: boolean) => void;
   saveGroup: (group: Group) => Promise<void>;
   deleteGroup: (id: string, deletedBy: string) => Promise<void>;
 
@@ -436,6 +442,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   // ===== 初期 state =====
   groups: [],
   currentGroupId: null,
+  currentUserIsSuperAdmin: false,
   members: [],
   objective: null,
   keyResults: [],
@@ -559,6 +566,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Group =====
   setCurrentGroupId: (id) => set({ currentGroupId: id }),
+  setCurrentUserIsSuperAdmin: (v) => set({ currentUserIsSuperAdmin: v }),
 
   saveGroup: async (group) => {
     set(state => ({
@@ -1309,20 +1317,37 @@ function memoizeScopedSelector<T>(filterFn: (s: AppState) => T[]): (s: AppState)
   };
 }
 
+// 【2026-07-23 複数部署アクセス対応】
+// 非super-admin（兼務者含む一般ユーザー）は、RLSが既に「自部署＋兼務先」だけを返している。
+// クライアントで t.group_id === currentGroupId の単一値比較を重ねると、RLSでは見えている
+// 兼務2部署目がUIから消える（新機能が画面上機能しないように見える）。そのため非super-admin
+// では一切フィルタせず元配列を「同一参照」で返す（参照安定性も同時に満たす＝新配列を作らない）。
+// super-admin は手元に全部署分が載るため、従来通り currentGroupId（=表示中の部署。切替UIで
+// 変わる）で絞り込む。super-admin が「他部署を表示中」でも、絞った結果その部署のデータだけを
+// 見る＝AI越境漏洩（2026-07-03の教訓）も起きない。
 export const selectScopedTasks = memoizeScopedSelector((s: AppState): Task[] =>
-  s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId));
+  s.currentUserIsSuperAdmin
+    ? s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId)
+    : s.tasks);
 
 export const selectScopedProjects = memoizeScopedSelector((s: AppState): Project[] =>
-  s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId));
+  s.currentUserIsSuperAdmin
+    ? s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId)
+    : s.projects);
 
 export const selectScopedTaskDependencies = memoizeScopedSelector((s: AppState): TaskDependency[] =>
-  s.taskDependencies.filter(d => d.group_id == null || d.group_id === s.currentGroupId));
+  s.currentUserIsSuperAdmin
+    ? s.taskDependencies.filter(d => d.group_id == null || d.group_id === s.currentGroupId)
+    : s.taskDependencies);
 
-// 【2026-07-03追記】s.members にも同じ絞り込みが必要と判明。AI関連機能（相談・全PJ分析・
-// KR分析・会議取り込み等）が「担当者名一覧」等をAIプロンプトに含める際、素の s.members を
-// 参照していたため、super-adminがA部署向けにAI機能を使ってもB部署以降のメンバー氏名が
-// Anthropic APIへ送信されてしまっていた（tasks/projectsは元から絞り込み済みだった）。
-// 管理画面（AdminView）のメンバー管理は super-admin が全部署を横断管理する必要があるため
-// 意図的にこのセレクタを使わず s.members を素で読む（そちらは対象外）。
+// 【2026-07-03追記／2026-07-23更新】AI関連機能（相談・全PJ分析・KR分析・会議取り込み等）が
+// 「担当者名一覧」等をAIプロンプトに含める際、素の s.members を参照していたため、super-admin が
+// A部署向けにAI機能を使ってもB部署以降のメンバー氏名が Anthropic API へ送信されていた事故の対策。
+// super-admin は手元に全部署メンバーが載るため currentGroupId で絞る必要がある。非super-admin は
+// RLSにより手元に自部署＋兼務先しか無いため、素で返しても他部署メンバーは送りようがない（安全）。
+// 管理画面（AdminView）のメンバー管理は super-admin が全部署を横断管理するため意図的にこの
+// セレクタを使わず s.members を素で読む（そちらは対象外）。
 export const selectScopedMembers = memoizeScopedSelector((s: AppState): Member[] =>
-  s.members.filter(m => m.group_id == null || m.group_id === s.currentGroupId));
+  s.currentUserIsSuperAdmin
+    ? s.members.filter(m => m.group_id == null || m.group_id === s.currentGroupId)
+    : s.members);

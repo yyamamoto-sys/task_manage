@@ -6,7 +6,8 @@ import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stor
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
 import { useMentionNotifications } from "../../hooks/useMentionNotifications";
-import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task } from "../../lib/localData/types";
+import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
+import { CustomSelect } from "../common/CustomSelect";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { isAssignedTo } from "../../lib/taskMeta";
@@ -253,6 +254,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const rawTfs      = useAppStore(s => s.taskForces);
   const rawTtfs     = useAppStore(s => s.taskTaskForces);
   const rawTasks    = useAppStore(selectScopedTasks);
+  // 部署切替UI（サイドバー）用。CLAUDE.md Section 1.6参照。
+  const rawGroups              = useAppStore(s => s.groups);
+  const currentGroupId         = useAppStore(s => s.currentGroupId);
+  const setCurrentGroupId      = useAppStore(s => s.setCurrentGroupId);
+  const currentUserIsSuperAdmin = useAppStore(s => s.currentUserIsSuperAdmin);
+  const accessibleGroups = useMemo(() => {
+    const groupsActive = rawGroups.filter(g => !g.is_deleted);
+    if (currentUserIsSuperAdmin) return groupsActive;
+    const ids = currentUser.group_ids?.length ? currentUser.group_ids
+      : (currentUser.group_id ? [currentUser.group_id] : []);
+    return groupsActive.filter(g => ids.includes(g.id));
+  }, [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id]);
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
     [allProjects]
@@ -1192,6 +1205,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         appMode={appMode}
         onToggleMode={() => setAppMode(appMode === "plan" ? "okr" : "plan")}
         onOpenPalette={() => setIsPaletteOpen(true)}
+        accessibleGroups={accessibleGroups}
+        currentGroupId={currentGroupId}
+        onSelectGroup={setCurrentGroupId}
       />
       {mainContent}
       {isGraphOpen && (
@@ -1353,6 +1369,11 @@ interface SidebarProps {
   appMode: AppMode;
   onToggleMode: () => void;
   onOpenPalette: () => void;
+  /** アクセス可能な部署一覧（2件以上のときだけ切替UIを表示）。super-adminは全部署、
+   *  それ以外は自分のgroup_ids（兼務先含む）。1件以下ならSidebarは何も描画しない。 */
+  accessibleGroups: Group[];
+  currentGroupId: string | null;
+  onSelectGroup: (id: string) => void;
 }
 
 function Sidebar({
@@ -1364,6 +1385,7 @@ function Sidebar({
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode, onOpenPalette,
+  accessibleGroups, currentGroupId, onSelectGroup,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -1431,6 +1453,25 @@ function Sidebar({
       <div style={{ padding: c ? "6px 4px" : "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
         <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
       </div>
+
+      {/* 表示部署の切替（アクセス可能な部署が2件以上のときだけ表示。折りたたみ時は非表示＝
+          セレクタのラベル文言が入らないため）。CLAUDE.md Section 1.6参照：super-adminは
+          currentGroupIdでダッシュボード等の表示部署そのものを切り替えられる。非super-adminの
+          兼務者は選択してもselectScopedが絞り込みをしない（自部署＋兼務先が常に全部見える）ため、
+          ここでの選択は「新規作成時のデフォルト所属部署」を選ぶ程度の意味にとどまる。 */}
+      {!c && accessibleGroups.length >= 2 && (
+        <div style={{ padding: "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+          <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "4px", letterSpacing: "0.03em" }}>
+            表示部署
+          </div>
+          <CustomSelect
+            value={currentGroupId ?? ""}
+            onChange={onSelectGroup}
+            options={accessibleGroups.map(g => ({ value: g.id, label: g.name }))}
+            placeholder="部署を選択"
+          />
+        </div>
+      )}
 
       {/* 検索（コマンドパレット起動）。Ctrl+K だけでは気づけないため常設ボタンを置く */}
       <div style={{ padding: c ? "6px 4px 0" : "8px 8px 0", flexShrink: 0 }}>

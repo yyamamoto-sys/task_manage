@@ -145,6 +145,7 @@ function AuthenticatedApp({
   const reload             = useAppStore(s => s.reload);
   const applyRemoteChange  = useAppStore(s => s.applyRemoteChange);
   const setCurrentGroupId  = useAppStore(s => s.setCurrentGroupId);
+  const setCurrentUserIsSuperAdmin = useAppStore(s => s.setCurrentUserIsSuperAdmin);
 
   // DBにメンバーが1人以上存在すればウィザード完了とみなす（localStorage不要）
   const isWizardDone = wizardCompleted || (!loading && active(members).length > 0);
@@ -195,6 +196,7 @@ function AuthenticatedApp({
         );
         if (matched) {
           setCurrentGroupId(matched.group_id ?? null);
+          setCurrentUserIsSuperAdmin(matched.is_super_admin === true);
           setMatchState("matched");
           onLogin(matched);
           return;
@@ -205,6 +207,7 @@ function AuthenticatedApp({
       const member = saved ? activeMembers.find(m => m.id === saved.id) : undefined;
       if (member) {
         setCurrentGroupId(member.group_id ?? null);
+        setCurrentUserIsSuperAdmin(member.is_super_admin === true);
         setMatchState("matched");
         onLogin(member);
         return;
@@ -214,7 +217,7 @@ function AuthenticatedApp({
 
     void autoMatch();
     return () => { cancelled = true; };
-  }, [loading, members, currentUser, onLogin, setCurrentGroupId]);
+  }, [loading, members, currentUser, onLogin, setCurrentGroupId, setCurrentUserIsSuperAdmin]);
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
   // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
