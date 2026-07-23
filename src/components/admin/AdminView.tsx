@@ -61,6 +61,19 @@ function projectInGroup(p: Project, groupId: string): boolean {
   return p.group_id === groupId;
 }
 
+// メンバー保存時の 23505（members_email_unique）検知。
+// 「兼務は同じメールでメンバーをもう1件作る」という誤った操作の典型的な入口になるため、
+// 生のPostgrestエラーではなく「既存メンバーのgroup_idsに部署を足す」という正しい手順を案内する。
+function isMemberEmailUniqueViolation(e: unknown): boolean {
+  if (e == null || typeof e !== "object") return false;
+  const obj = e as Record<string, unknown>;
+  if (obj.code !== "23505") return false;
+  const text = [obj.message, obj.details, obj.hint]
+    .filter((v): v is string => typeof v === "string")
+    .join(" ");
+  return text.includes("members_email_unique");
+}
+
 // ===== ルートコンポーネント =====
 
 export function AdminView({ currentUser }: Props) {
@@ -2025,6 +2038,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
     display_name: "", short_name: "", teams_account: "", email: "",
     color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)",
     group_id: "" as string,
+    group_ids: [] as string[],
     is_admin: false,
     is_super_admin: false,
   });
@@ -2036,12 +2050,14 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
 
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: selectedGroupId || groups[0]?.id || "", is_admin: false, is_super_admin: false });
+    const homeId = selectedGroupId || groups[0]?.id || "";
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: homeId, group_ids: homeId ? [homeId] : [], is_admin: false, is_super_admin: false });
   };
 
   const openEdit = (m: Member) => {
     setEditId(m.id);
-    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", is_admin: m.is_admin ?? false, is_super_admin: m.is_super_admin ?? false });
+    const groupIds = m.group_ids?.length ? m.group_ids : (m.group_id ? [m.group_id] : []);
+    setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", group_ids: groupIds, is_admin: m.is_admin ?? false, is_super_admin: m.is_super_admin ?? false });
   };
 
   const save = async () => {
@@ -2054,6 +2070,11 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
     try {
       const emailVal = form.email.trim() || null;
       const groupIdVal = form.group_id || null;
+      // ホーム部署は必ず group_ids に含める最終正規化（DBのCHECK制約 members_group_id_in_group_ids
+      // 及びトリガー guard_member_privilege_columns の前提と一致させる）
+      const groupIdsVal = groupIdVal && !form.group_ids.includes(groupIdVal)
+        ? [...form.group_ids, groupIdVal]
+        : form.group_ids;
       // 自分自身の is_admin を外せない保護：自分を編集中かつ is_admin を false にしようとした場合、
       // グループ内に他の管理者が1人以上いる場合のみ許可する。
       const targetIsCurrentUser = editId === currentUser.id;
@@ -2075,6 +2096,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           teams_account: form.teams_account,
           email: emailVal,
           group_id: groupIdVal,
+          group_ids: groupIdsVal,
           color_bg: form.color_bg, color_text: form.color_text,
           is_admin: isAdminVal,
           is_super_admin: isSuperAdminVal,
@@ -2083,11 +2105,13 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
         });
       } else {
         const existing = members.find(m => m.id === editId);
-        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, short_name: shortName, initials, is_admin: isAdminVal, is_super_admin: isSuperAdminVal, updated_by: currentUser.id });
+        if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, group_ids: groupIdsVal, short_name: shortName, initials, is_admin: isAdminVal, is_super_admin: isSuperAdminVal, updated_by: currentUser.id });
       }
       setEditId(null);
     } catch (e) {
-      const msg = getErrorMessage(e);
+      const msg = isMemberEmailUniqueViolation(e)
+        ? "このメールアドレスは既に別のメンバーに登録されています。同じ人を複数部署に所属させたい場合は、そのメンバーを編集して「アクセス可能な部署」に部署を追加してください。"
+        : getErrorMessage(e);
       await alertDialog(`保存に失敗しました。\n${msg}`);
     }
   };
@@ -2145,6 +2169,11 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
                 {m.is_super_admin && (
                   <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
                     全社スーパー管理者
+                  </span>
+                )}
+                {(m.group_ids?.length ?? 0) > 1 && (
+                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-info)", background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px" }}>
+                    兼務（{m.group_ids!.length}部署）
                   </span>
                 )}
               </div>
@@ -2239,7 +2268,7 @@ const MEMBER_AVATAR_COLORS = [
 // 呼び出し元のMembersSectionに一元化したまま、見た目の器だけを分けるための抽出）
 interface MemberFormState {
   display_name: string; short_name: string; teams_account: string; email: string;
-  color_bg: string; color_text: string; group_id: string;
+  color_bg: string; color_text: string; group_id: string; group_ids: string[];
   is_admin: boolean; is_super_admin: boolean;
 }
 function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser, members }: {
@@ -2275,15 +2304,95 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
       </div>
       {groups.length > 0 && (
         <div>
-          <FieldLabel>グループ（任意）</FieldLabel>
+          <FieldLabel>グループ（任意・ホーム部署）</FieldLabel>
           <CustomSelect
             value={form.group_id}
-            onChange={v => setForm(f => ({ ...f, group_id: v }))}
+            onChange={v => setForm(f => ({
+              ...f,
+              group_id: v,
+              // ホーム部署を変えたら、必ずアクセス可能な部署にも含める（CHECK制約と一致させる）
+              group_ids: v && !f.group_ids.includes(v) ? [...f.group_ids, v] : f.group_ids,
+            }))}
             options={[
               { value: "", label: "（未設定）" },
               ...groups.map(g => ({ value: g.id, label: g.name })),
             ]}
           />
+        </div>
+      )}
+      {groups.length > 0 && (
+        <div>
+          <FieldLabel>アクセス可能な部署（複数可）</FieldLabel>
+          {currentUser.is_super_admin === true ? (
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
+                {form.group_ids.map(id => {
+                  const g = groups.find(g => g.id === id);
+                  if (!g) return null;
+                  const isHome = id === form.group_id;
+                  return (
+                    <span key={id} style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      fontSize: "11px", padding: "2px 8px",
+                      background: isHome ? "var(--color-brand-light)" : "var(--color-bg-tertiary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-full)",
+                    }}>
+                      {g.name}
+                      {isHome ? (
+                        <span style={{ fontSize: "9px", color: "var(--color-brand)" }}>（ホーム）</span>
+                      ) : (
+                        <button onClick={() => setForm(f => ({ ...f, group_ids: f.group_ids.filter(i => i !== id) }))}
+                          style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
+              <CustomSelect
+                value=""
+                onChange={id => {
+                  if (id && !form.group_ids.includes(id))
+                    setForm(f => ({ ...f, group_ids: [...f.group_ids, id] }));
+                }}
+                options={[
+                  { value: "", label: "＋ 部署を追加" },
+                  ...groups.filter(g => !form.group_ids.includes(g.id)).map(g => ({ value: g.id, label: g.name })),
+                ]}
+                searchable searchPlaceholder="部署で検索..."
+              />
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                ホーム部署は必ず含まれ、外せません。兼務させたい部署をここに追加してください。
+              </div>
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
+                {form.group_ids.length === 0 && (
+                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>（未設定）</span>
+                )}
+                {form.group_ids.map(id => {
+                  const g = groups.find(g => g.id === id);
+                  if (!g) return null;
+                  const isHome = id === form.group_id;
+                  return (
+                    <span key={id} style={{
+                      display: "inline-flex", alignItems: "center", gap: "4px",
+                      fontSize: "11px", padding: "2px 8px",
+                      background: isHome ? "var(--color-brand-light)" : "var(--color-bg-tertiary)",
+                      border: "1px solid var(--color-border-primary)",
+                      borderRadius: "var(--radius-full)",
+                    }}>
+                      {g.name}{isHome && <span style={{ fontSize: "9px", color: "var(--color-brand)" }}>（ホーム）</span>}
+                    </span>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                複数部署の付与・変更は全社スーパー管理者のみ行えます。
+              </div>
+            </>
+          )}
         </div>
       )}
       {/* 管理者権限 */}
