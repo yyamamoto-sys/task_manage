@@ -549,14 +549,18 @@ DO $$
 DECLARE
   t text;
 BEGIN
+  -- 【2026-07-23】PJ・タスク周辺テーブル（milestones/project_analyses/
+  -- project_task_forces/task_task_forces/task_projects/member_tag_members/
+  -- admin_change_logs/ai_usage_logs）は下部で親を辿る部署スコープポリシーに
+  -- 差し替えたためこのループから除外。member_tags 本体は全社共通マスタとして
+  -- 全公開のまま維持（部署概念が無いため）。残る OKR 系はマルチテナント未対応の
+  -- 既知の残課題（OKR全面刷新時にまとめて対応する）。
   FOR t IN VALUES
     ('objectives'), ('key_results'),
     ('quarterly_objectives'), ('quarterly_kr_task_forces'),
-    ('task_task_forces'), ('task_projects'),
-    ('task_forces'), ('todos'), ('project_task_forces'),
-    ('milestones'), ('admin_change_logs'),
-    ('ai_usage_logs'), ('kr_sessions'), ('kr_declarations'),
-    ('member_tags'), ('member_tag_members'), ('project_analyses'),
+    ('task_forces'), ('todos'),
+    ('kr_sessions'), ('kr_declarations'),
+    ('member_tags'),
     ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses'), ('kr_reports')
   LOOP
     EXECUTE format(
@@ -646,6 +650,82 @@ DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
 DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
 CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
   USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+
+-- ============================================================
+-- PJ・タスク周辺（子）テーブルの部署スコープ（migration 20260723 参照）。
+-- これらは group_id 列を持たないため、親（projects/tasks/members）を辿って判定する。
+-- ポリシーのUSING内から親を直接SELECTするとRLSが二重適用されるため、
+-- SECURITY DEFINER のヘルパー関数（RLS迂回）で親の group_ids を引く。
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.can_access_group_ids(p_group_ids text[])
+RETURNS boolean LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_can_access$
+  SELECT coalesce(p_group_ids && public.current_member_group_ids(), false)
+    OR public.current_member_is_super_admin()
+$fn_can_access$;
+GRANT EXECUTE ON FUNCTION public.can_access_group_ids(text[]) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.project_group_ids(p_project_id text)
+RETURNS text[] LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_pj_gids$
+  SELECT group_ids FROM public.projects WHERE id = p_project_id
+$fn_pj_gids$;
+GRANT EXECUTE ON FUNCTION public.project_group_ids(text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.task_group_ids(p_task_id text)
+RETURNS text[] LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_task_gids$
+  SELECT group_ids FROM public.tasks WHERE id = p_task_id
+$fn_task_gids$;
+GRANT EXECUTE ON FUNCTION public.task_group_ids(text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.member_group_ids(p_member_id text)
+RETURNS text[] LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_mem_gids$
+  SELECT group_ids FROM public.members WHERE id = p_member_id
+$fn_mem_gids$;
+GRANT EXECUTE ON FUNCTION public.member_group_ids(text) TO authenticated;
+
+DROP POLICY IF EXISTS "authenticated_all" ON milestones;
+DROP POLICY IF EXISTS "authenticated full access" ON milestones;
+DROP POLICY IF EXISTS "milestones_group" ON milestones;
+CREATE POLICY "milestones_group" ON milestones FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON project_analyses;
+DROP POLICY IF EXISTS "project_analyses_group" ON project_analyses;
+CREATE POLICY "project_analyses_group" ON project_analyses FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON project_task_forces;
+DROP POLICY IF EXISTS "project_task_forces_group" ON project_task_forces;
+CREATE POLICY "project_task_forces_group" ON project_task_forces FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON task_projects;
+DROP POLICY IF EXISTS "task_projects_group" ON task_projects;
+CREATE POLICY "task_projects_group" ON task_projects FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.task_group_ids(task_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON task_task_forces;
+DROP POLICY IF EXISTS "task_task_forces_group" ON task_task_forces;
+CREATE POLICY "task_task_forces_group" ON task_task_forces FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.task_group_ids(task_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON member_tag_members;
+DROP POLICY IF EXISTS "member_tag_members_group" ON member_tag_members;
+CREATE POLICY "member_tag_members_group" ON member_tag_members FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.member_group_ids(member_id)));
+
+DROP POLICY IF EXISTS "authenticated full access" ON admin_change_logs;
+DROP POLICY IF EXISTS "admin_change_logs_group" ON admin_change_logs;
+CREATE POLICY "admin_change_logs_group" ON admin_change_logs FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.member_group_ids(performed_by)));
+
+DROP POLICY IF EXISTS "authenticated users can select" ON ai_usage_logs;
+DROP POLICY IF EXISTS "ai_usage_logs_select_group" ON ai_usage_logs;
+CREATE POLICY "ai_usage_logs_select_group" ON ai_usage_logs FOR SELECT TO authenticated
+  USING (public.can_access_group_ids(public.member_group_ids(member_id)));
 
 -- 複数部署アクセス：不変条件をCHECK制約で強制（members / projects のみ。tasksはDBトリガーが
 -- 唯一の真実のため対象外）。migration 20260722b 参照。
