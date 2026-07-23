@@ -9,6 +9,7 @@ import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { KEYS, active } from "../../lib/localData/localStore";
+import { keyResultsInGroup } from "../../lib/okr/deptScope";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -251,6 +252,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   const allProjects = useAppStore(selectScopedProjects);
   const rawKrs      = useAppStore(s => s.keyResults);
+  const rawObjectives = useAppStore(s => s.objectives);
   const rawTfs      = useAppStore(s => s.taskForces);
   const rawTtfs     = useAppStore(s => s.taskTaskForces);
   const rawTasks    = useAppStore(selectScopedTasks);
@@ -274,7 +276,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   useEffect(() => { projectsRef.current = projects; }, [projects]);
   // ツアーの "demo-ai-consult" アクションが最新のtasks（スコープ済み・非削除）を参照できるよう同期
   useEffect(() => { tasksRef.current = (rawTasks ?? []).filter((t: Task) => !t.is_deleted); }, [rawTasks]);
-  const keyResults = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
+  // 「OKRタスク」KR一覧は表示中の部署（currentGroupId）でスコープする（CLAUDE.md Section 1.6参照。
+  // OKR系はRLS非対応のため全員が全部署分を手元に持っており、Objective.group_id経由で絞り込む）。
+  const keyResults = useMemo(
+    () => keyResultsInGroup((rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), rawObjectives, currentGroupId),
+    [rawKrs, rawObjectives, currentGroupId],
+  );
 
   // 「自分が担当タスクを持つPJ」。サイドバーの「自分」モードで各ビューが
   // 担当者=自分のタスクに絞られるのと連動して PJ 表示も絞る。
