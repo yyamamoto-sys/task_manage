@@ -36,6 +36,7 @@ import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { Card, SummaryTile, SummaryRow } from "../common/Card";
 import { DangerZone, DangerAction } from "../common/DangerZone";
 import { AdminFormModal } from "./AdminFormModal";
+import { OkrImportModal } from "./OkrImportModal";
 
 type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
@@ -375,6 +376,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
   const [objBackground, setObjBackground] = useState(ctxObj?.background ?? "");
   const [saved, setSaved] = useState(false);
   const [objEdited, setObjEdited] = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   // OKRフォームの変更を親に通知
   useEffect(() => {
@@ -458,6 +460,24 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
         <SummaryTile label="Objective" value={ctxObj?.period ?? "未設定"} tone="accent" />
         <SummaryTile label="KR数" value={krs.length} tone="info" />
       </SummaryRow>
+
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: "12px" }}>
+        <button
+          onClick={() => setShowImport(true)}
+          style={{
+            padding: "7px 14px", fontSize: "12px", fontWeight: "600",
+            background: "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
+            border: "none", borderRadius: "var(--radius-md)",
+            color: "#fff", cursor: "pointer",
+            display: "flex", alignItems: "center", gap: "6px",
+          }}
+        >
+          📄 PDFから取込
+        </button>
+      </div>
+      {showImport && (
+        <OkrImportModal currentUser={currentUser} onClose={() => setShowImport(false)} />
+      )}
 
       {/* Objective編集 */}
       <Card title="Objective" badge={ctxObj?.period ?? "2026年度"} badgeColor="success" style={{ marginBottom: "20px" }}>
