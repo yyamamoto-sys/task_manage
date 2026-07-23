@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.98
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.99
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2415,8 +2415,16 @@
 #             pointer-events罠の対象外）。TF以外のDangerAction・削除フローに同型バグは見つからず。
 #      DBマイグレ不要。検証：tsc 0/vitest 515件全通過/eslint 新規0（既存8件はAdminView.tsx内の
 #             全角スペース正規表現・label関連付けで変更前から存在）/build成功
+# v2.99 設定画面の左ナビ件数バッジをselectedGroupIdでスコープ（2026-07-23）
+#      修正：AdminViewの左ナビ「プロジェクト」「メンバー」件数バッジが、既に部署スコープ済みの
+#             KR/TF（v2.94）と異なり全部署合計のままだった（pjCountはアプリ全体のcurrentGroupId
+#             基準selectScopedProjects・memberCountは無絞り込み）。PJSection/MembersSectionが
+#             実際に表示する一覧と同じprojectInGroup/memberInGroup関数でselectedGroupIdに
+#             揃え、krCount/tfCountと同じuseMemoパターンに統一。タグ件数（全社共通マスタ・
+#             絞らない方針）・グループ件数（部署一覧そのもの）は既存どおり変更なし（コメントで明記）。
+#      DBマイグレ不要。検証：tsc 0/vitest 519件全通過/eslint 新規0/build成功
 #
-# 最終更新：2026-07-23（v2.98）
+# 最終更新：2026-07-23（v2.99）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3405,7 +3413,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-23（v2.95）
+- 最終更新：2026-07-23（v2.99）
 
 ---
 

@@ -89,14 +89,19 @@ export function AdminView({ currentUser }: Props) {
   const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
   const isMobile = useIsMobile();
   const krs        = useAppStore(s => s.keyResults);
-  const pjs        = useAppStore(selectScopedProjects);
+  // 件数バッジ用は selectedGroupId（設定画面ローカルの部署選択）で絞り込むため、
+  // アプリ全体のcurrentGroupId基準のselectScopedProjectsではなく未絞り込みのs.projectsを
+  // 素で取得する（PJSectionが実際に表示する一覧と同じ絞り込み関数=projectInGroupを使う）。
+  const rawProjects = useAppStore(s => s.projects);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawObjectives = useAppStore(s => s.objectives);
   const rawGroups  = useAppStore(s => s.groups);
   const rawTags    = useAppStore(s => s.memberTags);
-  const pjCount     = active(pjs).length;
-  const memberCount = active(allMembers).length;
+  // タグ本体（member_tags）は部署概念を持たない全社共通マスタのため件数は絞り込まない
+  // （TagsSectionのactiveTagsと同じ方針。CLAUDE.md Section 1.6参照）。
   const tagCount    = active(rawTags).length;
+  // グループ（部署）数はその部署一覧そのものなので、selectedGroupIdで絞る対象ではない
+  // （GroupsSectionのgroups一覧と同じ全社件数）。
   const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
 
   // 部署絞り込みセレクタ：アクセス可能な部署が2つ以上のときだけ表示する
@@ -130,6 +135,16 @@ export function AdminView({ currentUser }: Props) {
   const tfCount = useMemo(
     () => taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId || null).length,
     [rawTfs, krs, rawObjectives, selectedGroupId],
+  );
+  // プロジェクト・メンバーの件数も同じくselectedGroupIdでスコープする
+  // （PJSection/MembersSectionが実際に表示する一覧=projectInGroup/memberInGroupと同じ絞り込み）。
+  const pjCount = useMemo(
+    () => active(rawProjects).filter(p => projectInGroup(p, selectedGroupId)).length,
+    [rawProjects, selectedGroupId],
+  );
+  const memberCount = useMemo(
+    () => active(allMembers).filter(m => memberInGroup(m, selectedGroupId)).length,
+    [allMembers, selectedGroupId],
   );
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
