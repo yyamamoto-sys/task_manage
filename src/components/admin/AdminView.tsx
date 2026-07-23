@@ -19,6 +19,7 @@ import type {
   Quarter, MemberTag,
 } from "../../lib/localData/types";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
+import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS, active } from "../../lib/localData/localStore";
@@ -77,11 +78,10 @@ export function AdminView({ currentUser }: Props) {
   const krs        = useAppStore(s => s.keyResults);
   const pjs        = useAppStore(selectScopedProjects);
   const rawTfs     = useAppStore(s => s.taskForces);
+  const rawObjectives = useAppStore(s => s.objectives);
   const rawGroups  = useAppStore(s => s.groups);
   const rawTags    = useAppStore(s => s.memberTags);
-  const krCount     = active(krs).length;
   const pjCount     = active(pjs).length;
-  const tfCount     = active(rawTfs).length;
   const memberCount = active(allMembers).length;
   const tagCount    = active(rawTags).length;
   const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
@@ -105,6 +105,19 @@ export function AdminView({ currentUser }: Props) {
       setSelectedGroupId(accessibleGroups[0].id);
     }
   }, [accessibleGroups, selectedGroupId]);
+
+  // KR/TFの件数は selectedGroupId（設定画面のローカル部署選択）でスコープする
+  // （Objective.group_id → KR.objective_id → TF.kr_id と部署を継承。CLAUDE.md Section 1.6参照）。
+  // ナビのバッジ数・初期タブ選択・「まだ何も無い」案内が、実際にOKRSection/TFSectionで
+  // 表示される件数と一致するようにする。
+  const krCount = useMemo(
+    () => keyResultsInGroup(active(krs), rawObjectives, selectedGroupId || null).length,
+    [krs, rawObjectives, selectedGroupId],
+  );
+  const tfCount = useMemo(
+    () => taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId || null).length,
+    [rawTfs, krs, rawObjectives, selectedGroupId],
+  );
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups"];
@@ -343,8 +356,8 @@ export function AdminView({ currentUser }: Props) {
             display: "flex", flexDirection: "column", minHeight: 0,
           }}
         >
-          {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "okr"      && <OKRSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {tab === "tf"       && <TFSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
           {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
           {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
           {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
@@ -360,13 +373,25 @@ export function AdminView({ currentUser }: Props) {
 // セクション①：Objective / KR
 // ===================================================
 
-function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const ctxObj          = useAppStore(s => s.objective);
+function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
+  currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string;
+}) {
+  const rawObjectives   = useAppStore(s => s.objectives);
   const rawKrs          = useAppStore(s => s.keyResults);
   const saveObjective   = useAppStore(s => s.saveObjective);
   const saveKeyResult   = useAppStore(s => s.saveKeyResult);
   const deleteKeyResult = useAppStore(s => s.deleteKeyResult);
-  const krs = useMemo(() => active(rawKrs), [rawKrs]);
+  // selectedGroupId（設定画面のローカル部署選択）でスコープする。key={selectedGroupId}で
+  // 部署切替のたびに本コンポーネントごと再マウントされるため、下のローカル編集state
+  // （objTitle等）が前の部署の内容を引きずることはない。
+  const ctxObj = useMemo(
+    () => pickCurrentObjectiveForGroup(rawObjectives, selectedGroupId || null),
+    [rawObjectives, selectedGroupId],
+  );
+  const krs = useMemo(
+    () => keyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
+    [rawKrs, rawObjectives, selectedGroupId],
+  );
 
   const [editingKrId, setEditingKrId] = useState<string | null>(null);
   const [krDangerId, setKrDangerId] = useState<string | null>(null);
@@ -401,6 +426,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
       background: objBackground,
       period: ctxObj?.period ?? "2026年度",
       is_current: true,
+      group_id: ctxObj?.group_id ?? selectedGroupId,
       created_at: ctxObj?.created_at ?? now,
       updated_at: now,
       updated_by: currentUser.id,
@@ -476,7 +502,7 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
         </button>
       </div>
       {showImport && (
-        <OkrImportModal currentUser={currentUser} onClose={() => setShowImport(false)} />
+        <OkrImportModal currentUser={currentUser} targetGroupId={selectedGroupId} onClose={() => setShowImport(false)} />
       )}
 
       {/* Objective編集 */}
@@ -605,8 +631,10 @@ function OKRSection({ currentUser, onDirtyChange }: { currentUser: Member; onDir
 // クォーターを選択し、通期KRごとにTFを割り当てる。
 // 割り当て済みTFにはToDoパネルが展開でき、大タスクを直接追加できる。
 
-function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const ctxObj                      = useAppStore(s => s.objective);
+function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
+  currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string;
+}) {
+  const rawObjectives               = useAppStore(s => s.objectives);
   const rawTfs                      = useAppStore(s => s.taskForces);
   const rawKrs                      = useAppStore(s => s.keyResults);
   const rawMembers                  = useAppStore(s => s.members);
@@ -620,8 +648,20 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const saveTask                    = useAppStore(s => s.saveTask);
 
   const isMobile = useIsMobile();
-  const tfs     = useMemo(() => active(rawTfs), [rawTfs]);
-  const krs     = useMemo(() => active(rawKrs), [rawKrs]);
+  // selectedGroupId（設定画面のローカル部署選択）でスコープする。key={selectedGroupId}で
+  // 部署切替のたびに本コンポーネントごと再マウントされる。
+  const ctxObj = useMemo(
+    () => pickCurrentObjectiveForGroup(rawObjectives, selectedGroupId || null),
+    [rawObjectives, selectedGroupId],
+  );
+  const krs = useMemo(
+    () => keyResultsInGroup(active(rawKrs), rawObjectives, selectedGroupId || null),
+    [rawKrs, rawObjectives, selectedGroupId],
+  );
+  const tfs = useMemo(
+    () => taskForcesInGroup(active(rawTfs), active(rawKrs), rawObjectives, selectedGroupId || null),
+    [rawTfs, rawKrs, rawObjectives, selectedGroupId],
+  );
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const todos   = useMemo(() => active(rawTodos), [rawTodos]);
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);

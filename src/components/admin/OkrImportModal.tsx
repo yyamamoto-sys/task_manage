@@ -20,6 +20,7 @@ import {
   type OkrImportAnalysis,
 } from "../../lib/ai/okrImportExtractor";
 import { matchMemberByName } from "../../lib/okr/okrImportMatch";
+import { pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { currentQuarter } from "../../lib/date";
@@ -74,15 +75,25 @@ type Step = "input" | "analyzing" | "review" | "applying" | "done";
 interface Props {
   onClose: () => void;
   currentUser: Member;
+  /** 取込先の部署（AdminViewのローカル部署セレクタ selectedGroupId）。
+   *  新規Objectiveのgroup_id・「既存に追記」時のctxObjの決定に使う。 */
+  targetGroupId: string;
 }
 
-export function OkrImportModal({ onClose, currentUser }: Props) {
-  const ctxObj      = useAppStore(s => s.objective);
+export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
+  const rawObjectives = useAppStore(s => s.objectives);
   const rawKrs      = useAppStore(s => s.keyResults);
   const rawMembers  = useAppStore(s => s.members);
   const saveObjective = useAppStore(s => s.saveObjective);
   const saveKeyResult = useAppStore(s => s.saveKeyResult);
   const saveTaskForce = useAppStore(s => s.saveTaskForce);
+
+  // targetGroupId（取込先部署）の現在Objective。アプリ全体のcurrentGroupId（表示中の部署）
+  // とは独立（AdminViewの部署セレクタで別部署を見ながら取り込むケースがあるため）。
+  const ctxObj = useMemo(
+    () => pickCurrentObjectiveForGroup(rawObjectives, targetGroupId),
+    [rawObjectives, targetGroupId],
+  );
 
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const existingKrs = useMemo(
@@ -237,13 +248,15 @@ export function OkrImportModal({ onClose, currentUser }: Props) {
           background: objBackground,
           period: objPeriod.trim() || "2026年度",
           is_current: true,
+          group_id: targetGroupId,
           created_at: now,
           updated_at: now,
           updated_by: currentUser.id,
         };
         await saveObjective(newObj);
         objectivesCreated++;
-        // 従来のObjectiveは is_current を外す（appStoreは is_current な1件だけを「現在のObjective」として扱うため）
+        // 従来のObjectiveは is_current を外す（同じ部署=targetGroupIdの現在Objectiveのみを
+        // 対象にしているため、他部署の現在Objectiveを巻き込まない）
         if (ctxObj && ctxObj.id !== targetObjectiveId) {
           await saveObjective({ ...ctxObj, is_current: false, updated_by: currentUser.id });
         }
@@ -309,7 +322,7 @@ export function OkrImportModal({ onClose, currentUser }: Props) {
       setError(formatErrorForUser("登録に失敗しました", e));
       setStep("review");
     }
-  }, [targetMode, krDrafts, objTitle, objPurpose, objBackground, objPeriod, ctxObj, currentUser, saveObjective, saveKeyResult, saveTaskForce]);
+  }, [targetMode, krDrafts, objTitle, objPurpose, objBackground, objPeriod, ctxObj, targetGroupId, currentUser, saveObjective, saveKeyResult, saveTaskForce]);
 
   const handleReset = () => {
     setStep("input");
