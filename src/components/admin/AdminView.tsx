@@ -35,10 +35,29 @@ import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { Card, SummaryTile, SummaryRow } from "../common/Card";
 import { DangerZone, DangerAction } from "../common/DangerZone";
+import { AdminFormModal } from "./AdminFormModal";
 
 type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
 
 interface Props { currentUser: Member; }
+
+// ===== 部署絞り込み（設定画面ローカル・2026-07-23） =====
+//
+// 【設計意図】アプリ全体のcurrentGroupId（ログイン時に自分の所属部署から設定・全画面の表示部署）
+// とは連動させない、AdminView専用のローカル選択。全社スーパー管理者・複数部署アクセスを持つ
+// メンバーが、管理画面上で「今どの部署を見て/編集しているか」を明示的に切り替えられるようにする。
+// group_ids（複数部署アクセス・migration 20260722b）が入っていればそれで判定し、
+// 未設定（バックフィル漏れ等）の古いデータは group_id（ホーム部署）にフォールバックする。
+function memberInGroup(m: Member, groupId: string): boolean {
+  if (!groupId) return true;
+  if (m.group_ids && m.group_ids.length > 0) return m.group_ids.includes(groupId);
+  return m.group_id === groupId;
+}
+function projectInGroup(p: Project, groupId: string): boolean {
+  if (!groupId) return true;
+  if (p.group_ids && p.group_ids.length > 0) return p.group_ids.includes(groupId);
+  return p.group_id === groupId;
+}
 
 // ===== ルートコンポーネント =====
 
@@ -65,6 +84,26 @@ export function AdminView({ currentUser }: Props) {
   const memberCount = active(allMembers).length;
   const tagCount    = active(rawTags).length;
   const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
+
+  // 部署絞り込みセレクタ：アクセス可能な部署が2つ以上のときだけ表示する
+  // （全社スーパー管理者は全部署、それ以外は自分のgroup_idsに含まれる部署のみ。
+  //  1部署しか持たない普通の部署管理者には選択肢が1つしか無く無意味なため出さない）。
+  const groupsActive = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
+  const accessibleGroups = useMemo(() => {
+    if (isCurrentUserSuperAdmin) return groupsActive;
+    const ids = currentUser.group_ids?.length ? currentUser.group_ids
+      : (currentUser.group_id ? [currentUser.group_id] : []);
+    return groupsActive.filter(g => ids.includes(g.id));
+  }, [groupsActive, isCurrentUserSuperAdmin, currentUser.group_ids, currentUser.group_id]);
+  const showGroupSelector = accessibleGroups.length >= 2;
+  const [selectedGroupId, setSelectedGroupId] = useState<string>(currentUser.group_id ?? "");
+  // ホーム部署がアクセス可能一覧に含まれない/未設定の場合のフォールバック（初回ロード時のデータ到着待ち等）
+  useEffect(() => {
+    if (accessibleGroups.length === 0) return;
+    if (!accessibleGroups.some(g => g.id === selectedGroupId)) {
+      setSelectedGroupId(accessibleGroups[0].id);
+    }
+  }, [accessibleGroups, selectedGroupId]);
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups"];
@@ -196,6 +235,27 @@ export function AdminView({ currentUser }: Props) {
           </div>
         </div>
 
+        {/* 部署絞り込みセレクタ（アクセス可能な部署が2つ以上のときだけ表示） */}
+        {showGroupSelector && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+              🏢 表示する部署
+            </span>
+            <div style={{ width: isMobile ? "100%" : "220px" }}>
+              <CustomSelect
+                value={selectedGroupId}
+                onChange={setSelectedGroupId}
+                options={accessibleGroups.map(g => ({ value: g.id, label: g.name }))}
+              />
+            </div>
+            {!isMobile && (
+              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                この選択は設定画面内だけで有効です（他の画面の表示部署には影響しません）
+              </span>
+            )}
+          </div>
+        )}
+
         {/* モバイル：カテゴリ見出し付きセレクトに畳む */}
         {isMobile && (
           <select
@@ -284,10 +344,10 @@ export function AdminView({ currentUser }: Props) {
         >
           {tab === "okr"      && <OKRSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
           {tab === "tf"       && <TFSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "ai_usage" && <AIUsageSection />}
+          {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {tab === "ai_usage" && <AIUsageSection selectedGroupId={selectedGroupId} />}
           {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>
@@ -768,7 +828,7 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 
               {/* TF追加コントロール（固定下部） */}
               <div style={{ flexShrink: 0 }}>
-                {ctxObj?.id && newTfFormKrId !== kr.id && (
+                {ctxObj?.id && (
                   <div style={{ marginTop: "6px" }}>
                     <button
                       onClick={() => openNewTfForm(kr.id)}
@@ -776,58 +836,67 @@ function TFSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
                     >＋ 新規TFを作成</button>
                   </div>
                 )}
-
-                {/* 新規TF作成インラインフォーム */}
-                {newTfFormKrId === kr.id && (
-                  <div style={{ marginTop: "8px", padding: "12px 14px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
-                    <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "10px" }}>新しいTask Forceを作成してリンク</div>
-                    <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
-                      <div style={{ flex: "0 0 76px" }}>
-                        <FieldLabel>番号</FieldLabel>
-                        <CustomSelect value={newTfForm.tf_number} onChange={value => setNewTfForm(f => ({...f, tf_number: value}))}
-                          options={[
-                            { value: "", label: "－" },
-                            ...[1,2,3,4,5,6,7,8,9].map(n => ({ value: String(n), label: `TF ${n}` })),
-                          ]} />
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <FieldLabel>TF名 *</FieldLabel>
-                        <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
-                          placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }} />
-                      </div>
-                    </div>
-                    <div style={{ marginBottom: "8px" }}>
-                      <FieldLabel>リーダー</FieldLabel>
-                      <CustomSelect value={newTfForm.leader_member_id} onChange={value => setNewTfForm(f => ({...f, leader_member_id: value}))}
-                        options={[
-                          { value: "", label: "（なし）" },
-                          ...members.map(m => ({ value: m.id, label: m.display_name })),
-                        ]}
-                        searchable searchPlaceholder="メンバーで検索..." />
-                    </div>
-                    <div style={{ marginBottom: "8px" }}>
-                      <FieldLabel>詳細・目的（任意）</FieldLabel>
-                      <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
-                        placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
-                        style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
-                    </div>
-                    <div style={{ marginBottom: "10px" }}>
-                      <FieldLabel>設定した意図・背景（任意）</FieldLabel>
-                      <textarea value={newTfForm.background} onChange={e => setNewTfForm(f => ({...f, background: e.target.value}))}
-                        placeholder="なぜこのTFを設定するか、背景・経緯（任意）" maxLength={1000} rows={2}
-                        style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
-                    </div>
-                    <div style={{ display: "flex", gap: "6px" }}>
-                      <button onClick={() => { void handleCreateAndLinkTf(kr.id); }} style={primaryBtnStyle}>作成してリンク</button>
-                      <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* 新規TF作成モーダル（マイルストーン追加と同じポップアップ形式・2026-07-23） */}
+      {newTfFormKrId !== null && (() => {
+        const krId = newTfFormKrId;
+        if (!krId) return null;
+        const krIdx = krs.findIndex(k => k.id === krId);
+        const kr = krs[krIdx];
+        return (
+          <AdminFormModal
+            title="Task Forceを追加"
+            subtitle={kr ? `KR${krIdx + 1}：${kr.title}` : undefined}
+            onClose={() => setNewTfFormKrId(null)}
+          >
+            <div style={{ display: "flex", gap: "8px", marginBottom: "8px" }}>
+              <div style={{ flex: "0 0 76px" }}>
+                <FieldLabel>番号</FieldLabel>
+                <CustomSelect value={newTfForm.tf_number} onChange={value => setNewTfForm(f => ({...f, tf_number: value}))}
+                  options={[
+                    { value: "", label: "－" },
+                    ...[1,2,3,4,5,6,7,8,9].map(n => ({ value: String(n), label: `TF ${n}` })),
+                  ]} />
+              </div>
+              <div style={{ flex: 1 }}>
+                <FieldLabel>TF名 *</FieldLabel>
+                <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
+                  placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }} />
+              </div>
+            </div>
+            <div style={{ marginBottom: "8px" }}>
+              <FieldLabel>リーダー</FieldLabel>
+              <CustomSelect value={newTfForm.leader_member_id} onChange={value => setNewTfForm(f => ({...f, leader_member_id: value}))}
+                options={[
+                  { value: "", label: "（なし）" },
+                  ...members.map(m => ({ value: m.id, label: m.display_name })),
+                ]}
+                searchable searchPlaceholder="メンバーで検索..." />
+            </div>
+            <div style={{ marginBottom: "8px" }}>
+              <FieldLabel>詳細・目的（任意）</FieldLabel>
+              <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
+                placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
+                style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+            </div>
+            <div style={{ marginBottom: "10px" }}>
+              <FieldLabel>設定した意図・背景（任意）</FieldLabel>
+              <textarea value={newTfForm.background} onChange={e => setNewTfForm(f => ({...f, background: e.target.value}))}
+                placeholder="なぜこのTFを設定するか、背景・経緯（任意）" maxLength={1000} rows={2}
+                style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button onClick={() => { void handleCreateAndLinkTf(krId); }} style={primaryBtnStyle}>作成してリンク</button>
+              <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
+            </div>
+          </AdminFormModal>
+        );
+      })()}
     </div>
   );
 }
@@ -1342,8 +1411,11 @@ function ToDoForm({
 // セクション③：プロジェクト
 // ===================================================
 
-function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
-  const rawProjects             = useAppStore(selectScopedProjects);
+function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
+  // 【2026-07-23】以前はアプリ全体のcurrentGroupId基準のselectScopedProjectsを使っていたが、
+  // 設定画面はローカルの部署セレクタ（selectedGroupId）で独立に絞り込む方針に変更したため、
+  // 未絞り込みの s.projects を素で取得し、下の useMemo で selectedGroupId により絞り込む。
+  const rawProjects             = useAppStore(s => s.projects);
   const rawMembers              = useAppStore(s => s.members);
   const saveProject             = useAppStore(s => s.saveProject);
   const deleteProject           = useAppStore(s => s.deleteProject);
@@ -1356,8 +1428,14 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
   const addProjectTaskForce     = useAppStore(s => s.addProjectTaskForce);
   const removeProjectTaskForce  = useAppStore(s => s.removeProjectTaskForce);
   const isMobile = useIsMobile();
-  const projects   = useMemo(() => active(rawProjects), [rawProjects]);
-  const members    = useMemo(() => active(rawMembers), [rawMembers]);
+  const projects   = useMemo(
+    () => active(rawProjects).filter(p => projectInGroup(p, selectedGroupId)),
+    [rawProjects, selectedGroupId],
+  );
+  const members    = useMemo(
+    () => active(rawMembers).filter(m => memberInGroup(m, selectedGroupId)),
+    [rawMembers, selectedGroupId],
+  );
   const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
   const taskForces = useMemo(() => active(rawTaskForces), [rawTaskForces]);
   const keyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
@@ -1429,7 +1507,10 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
       const { tf_ids, ...projectFields } = form;
       const projectId = editId === "new" ? uuidv4() : editId!;
       if (editId === "new") {
-        await saveProject({ id: projectId, ...projectFields, owner_member_id, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
+        // group_id は今見ている部署（selectedGroupId）を明示指定する。省略すると
+        // appStore.saveProject がアプリ全体のcurrentGroupId（自分のホーム部署）で
+        // 補完してしまい、他部署を見ながら追加したPJが自分の部署に紛れ込む事故になるため。
+        await saveProject({ id: projectId, ...projectFields, owner_member_id, group_id: selectedGroupId || undefined, is_deleted: false, created_at: now, updated_at: now, updated_by: currentUser.id });
       } else {
         const existing = projects.find(p => p.id === editId);
         if (existing) await saveProject({ ...existing, ...projectFields, owner_member_id, updated_by: currentUser.id });
@@ -1598,8 +1679,8 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
         />
       )}
 
-      {/* 追加・編集フォーム */}
-      {editId && (
+      {/* 編集フォーム（既存PJをクリック→インライン表示。従来どおり） */}
+      {editId && editId !== "new" && (
         <div style={{
           marginTop: "12px", padding: "16px",
           background: "var(--color-bg-secondary)",
@@ -1607,196 +1688,9 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
           borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "12px", color: "var(--color-text-primary)" }}>
-            {editId === "new" ? "プロジェクトを追加" : "プロジェクトを編集"}
+            プロジェクトを編集
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            <div>
-              <FieldLabel>PJ名 *</FieldLabel>
-              <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
-                placeholder="例：AI動画生成の効率化" maxLength={100} style={inputStyle} />
-            </div>
-            <div>
-              <FieldLabel>目的 * （何のためのPJか1行で）</FieldLabel>
-              <input value={form.purpose} onChange={e => setForm(f => ({...f, purpose: e.target.value}))}
-                placeholder="例：動画生成AIを活用し全員が動画を作れる体制を構築する" maxLength={200} style={inputStyle} />
-            </div>
-            <div>
-              <FieldLabel>貢献メモ（KRとの関連）</FieldLabel>
-              <textarea value={form.contribution_memo} onChange={e => setForm(f => ({...f, contribution_memo: e.target.value}))}
-                placeholder="例：KR②のインバウンドマーケティング目標達成に貢献" rows={2}
-                maxLength={500}
-                style={{ ...inputStyle, resize: "vertical" }} />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "8px" }}>
-              <div>
-                <FieldLabel>オーナー</FieldLabel>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
-                  {form.owner_member_ids.map(id => {
-                    const m = members.find(m => m.id === id);
-                    if (!m) return null;
-                    return (
-                      <span key={id} style={{
-                        display: "inline-flex", alignItems: "center", gap: "4px",
-                        fontSize: "11px", padding: "2px 8px",
-                        background: "var(--color-bg-tertiary)",
-                        border: "1px solid var(--color-border-primary)",
-                        borderRadius: "var(--radius-full)",
-                      }}>
-                        {m.short_name}
-                        <button onClick={() => setForm(f => ({ ...f, owner_member_ids: f.owner_member_ids.filter(i => i !== id) }))}
-                          style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
-                      </span>
-                    );
-                  })}
-                </div>
-                <CustomSelect
-                  value=""
-                  onChange={id => {
-                    if (id && !form.owner_member_ids.includes(id))
-                      setForm(f => ({ ...f, owner_member_ids: [...f.owner_member_ids, id] }));
-                  }}
-                  options={[
-                    { value: "", label: "＋ オーナーを追加" },
-                    ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
-                  ]}
-                  searchable searchPlaceholder="メンバーで検索..."
-                />
-              </div>
-              <div>
-                <FieldLabel>ステータス</FieldLabel>
-                <CustomSelect value={form.status} onChange={value => setForm(f => ({...f, status: value as Project["status"]}))}
-                  options={[
-                    { value: "active", label: "進行中" },
-                    { value: "completed", label: "完了" },
-                    { value: "archived", label: "アーカイブ" },
-                  ]} />
-              </div>
-              <div>
-                <FieldLabel>カラー</FieldLabel>
-                <input type="color" value={form.color_tag}
-                  onChange={e => setForm(f => ({...f, color_tag: e.target.value}))}
-                  style={{ ...inputStyle, padding: "2px", height: "32px", cursor: "pointer" }} />
-              </div>
-            </div>
-
-            {/* メンバー（オーナーとは別の関与者） */}
-            <div>
-              <FieldLabel>メンバー（オーナー以外の関与者・任意）</FieldLabel>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
-                {form.member_ids.map(id => {
-                  const m = members.find(m => m.id === id);
-                  if (!m) return null;
-                  return (
-                    <span key={id} style={{
-                      display: "inline-flex", alignItems: "center", gap: "4px",
-                      fontSize: "11px", padding: "2px 8px",
-                      background: "var(--color-bg-tertiary)",
-                      border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-full)",
-                    }}>
-                      {m.short_name}
-                      <button onClick={() => setForm(f => ({ ...f, member_ids: f.member_ids.filter(i => i !== id) }))}
-                        style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
-                    </span>
-                  );
-                })}
-              </div>
-              <CustomSelect
-                value=""
-                onChange={id => {
-                  if (id && !form.member_ids.includes(id))
-                    setForm(f => ({ ...f, member_ids: [...f.member_ids, id] }));
-                }}
-                options={[
-                  { value: "", label: "＋ メンバーを追加" },
-                  ...members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
-                ]}
-                searchable searchPlaceholder="メンバーで検索..."
-              />
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
-              <div>
-                <FieldLabel>開始日</FieldLabel>
-                <input type="date" value={form.start_date} onChange={e => setForm(f => ({...f, start_date: e.target.value}))} style={inputStyle} />
-              </div>
-              <div>
-                <FieldLabel>終了日</FieldLabel>
-                <input type="date" value={form.end_date} onChange={e => setForm(f => ({...f, end_date: e.target.value}))} style={inputStyle} />
-              </div>
-            </div>
-
-            {/* 紐づける TF（KR グループ別チェックボックス） */}
-            <div>
-              <FieldLabel>紐づける TF（任意・KR との連携）</FieldLabel>
-              {keyResults.length === 0 ? (
-                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
-                  KR がまだ登録されていません。「Objective / KR」タブで KR を作ると、配下の TF をここで紐づけられます。
-                </div>
-              ) : (
-                <div style={{
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  padding: "8px 10px",
-                  background: "var(--color-bg-primary)",
-                  maxHeight: "240px", overflowY: "auto",
-                  display: "flex", flexDirection: "column", gap: "8px",
-                }}>
-                  {keyResults.map((kr, krIdx) => {
-                    const krTfs = taskForces
-                      .filter(tf => tf.kr_id === kr.id)
-                      .slice()
-                      .sort((a, b) => (a.tf_number ?? "").localeCompare(b.tf_number ?? ""));
-                    if (krTfs.length === 0) return null;
-                    return (
-                      <div key={kr.id}>
-                        <div style={{
-                          fontSize: "10px", color: "var(--color-text-tertiary)",
-                          fontWeight: 600, marginBottom: "3px",
-                        }}>
-                          KR{krIdx + 1}：{kr.title}
-                        </div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingLeft: "8px" }}>
-                          {krTfs.map(tf => {
-                            const checked = form.tf_ids.includes(tf.id);
-                            return (
-                              <label key={tf.id} style={{
-                                display: "flex", alignItems: "center", gap: "6px",
-                                fontSize: "11px", color: "var(--color-text-primary)",
-                                cursor: "pointer", padding: "2px 0",
-                              }}>
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={e => setForm(f => ({
-                                    ...f,
-                                    tf_ids: e.target.checked
-                                      ? [...f.tf_ids, tf.id]
-                                      : f.tf_ids.filter(id => id !== tf.id),
-                                  }))}
-                                  style={{ accentColor: "var(--color-brand)", flexShrink: 0 }}
-                                />
-                                <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>
-                                  TF{krIdx + 1}-{tf.tf_number || "?"}
-                                </span>
-                                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                                  {tf.name}
-                                </span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                  {taskForces.length === 0 && (
-                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                      TF が登録されていません。「Task Force」タブで先に TF を作ってください。
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
+          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResults} taskForces={taskForces} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} style={primaryBtnStyle}
               disabled={!form.name.trim() || !form.purpose.trim()}>
@@ -1805,17 +1699,243 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
 
-          {editId !== "new" && (
-            <DangerZone style={{ marginTop: "16px" }}>
-              <DangerAction
-                label="このプロジェクトを削除"
-                description="紐づくタスクも一緒に削除されます。この操作は取り消せません。"
-                onConfirm={() => deletePJ(editId)}
-              />
-            </DangerZone>
-          )}
+          <DangerZone style={{ marginTop: "16px" }}>
+            <DangerAction
+              label="このプロジェクトを削除"
+              description="紐づくタスクも一緒に削除されます。この操作は取り消せません。"
+              onConfirm={() => deletePJ(editId)}
+            />
+          </DangerZone>
         </div>
       )}
+
+      {/* 追加フォーム（マイルストーン追加と同じポップアップ形式・2026-07-23） */}
+      {editId === "new" && (
+        <AdminFormModal
+          title="プロジェクトを追加"
+          subtitle="新しいプロジェクトを登録します"
+          onClose={() => setEditId(null)}
+          maxWidth="640px"
+        >
+          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResults} taskForces={taskForces} isMobile={isMobile} />
+          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            <button onClick={save} style={primaryBtnStyle}
+              disabled={!form.name.trim() || !form.purpose.trim()}>
+              保存
+            </button>
+            <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
+          </div>
+        </AdminFormModal>
+      )}
+    </div>
+  );
+}
+
+// PJ追加・編集フォームのフィールド一式（PJSectionの編集用インラインパネル／追加用モーダルの
+// 両方から呼ばれる共通部品。バリデーション・保存は呼び出し元のPJSectionに一元化したまま、
+// 見た目の器（インライン or モーダル）だけを分けるための抽出）
+interface ProjectFormState {
+  name: string; purpose: string; contribution_memo: string;
+  owner_member_ids: string[]; member_ids: string[];
+  status: Project["status"]; color_tag: string; start_date: string; end_date: string;
+  tf_ids: string[];
+}
+function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isMobile }: {
+  form: ProjectFormState;
+  setForm: React.Dispatch<React.SetStateAction<ProjectFormState>>;
+  members: Member[];
+  keyResults: KeyResult[];
+  taskForces: TaskForce[];
+  isMobile: boolean;
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+      <div>
+        <FieldLabel>PJ名 *</FieldLabel>
+        <input value={form.name} onChange={e => setForm(f => ({...f, name: e.target.value}))}
+          placeholder="例：AI動画生成の効率化" maxLength={100} style={inputStyle} />
+      </div>
+      <div>
+        <FieldLabel>目的 * （何のためのPJか1行で）</FieldLabel>
+        <input value={form.purpose} onChange={e => setForm(f => ({...f, purpose: e.target.value}))}
+          placeholder="例：動画生成AIを活用し全員が動画を作れる体制を構築する" maxLength={200} style={inputStyle} />
+      </div>
+      <div>
+        <FieldLabel>貢献メモ（KRとの関連）</FieldLabel>
+        <textarea value={form.contribution_memo} onChange={e => setForm(f => ({...f, contribution_memo: e.target.value}))}
+          placeholder="例：KR②のインバウンドマーケティング目標達成に貢献" rows={2}
+          maxLength={500}
+          style={{ ...inputStyle, resize: "vertical" }} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "8px" }}>
+        <div>
+          <FieldLabel>オーナー</FieldLabel>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
+            {form.owner_member_ids.map(id => {
+              const m = members.find(m => m.id === id);
+              if (!m) return null;
+              return (
+                <span key={id} style={{
+                  display: "inline-flex", alignItems: "center", gap: "4px",
+                  fontSize: "11px", padding: "2px 8px",
+                  background: "var(--color-bg-tertiary)",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-full)",
+                }}>
+                  {m.short_name}
+                  <button onClick={() => setForm(f => ({ ...f, owner_member_ids: f.owner_member_ids.filter(i => i !== id) }))}
+                    style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
+                </span>
+              );
+            })}
+          </div>
+          <CustomSelect
+            value=""
+            onChange={id => {
+              if (id && !form.owner_member_ids.includes(id))
+                setForm(f => ({ ...f, owner_member_ids: [...f.owner_member_ids, id] }));
+            }}
+            options={[
+              { value: "", label: "＋ オーナーを追加" },
+              ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+            ]}
+            searchable searchPlaceholder="メンバーで検索..."
+          />
+        </div>
+        <div>
+          <FieldLabel>ステータス</FieldLabel>
+          <CustomSelect value={form.status} onChange={value => setForm(f => ({...f, status: value as Project["status"]}))}
+            options={[
+              { value: "active", label: "進行中" },
+              { value: "completed", label: "完了" },
+              { value: "archived", label: "アーカイブ" },
+            ]} />
+        </div>
+        <div>
+          <FieldLabel>カラー</FieldLabel>
+          <input type="color" value={form.color_tag}
+            onChange={e => setForm(f => ({...f, color_tag: e.target.value}))}
+            style={{ ...inputStyle, padding: "2px", height: "32px", cursor: "pointer" }} />
+        </div>
+      </div>
+
+      {/* メンバー（オーナーとは別の関与者） */}
+      <div>
+        <FieldLabel>メンバー（オーナー以外の関与者・任意）</FieldLabel>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "4px" }}>
+          {form.member_ids.map(id => {
+            const m = members.find(m => m.id === id);
+            if (!m) return null;
+            return (
+              <span key={id} style={{
+                display: "inline-flex", alignItems: "center", gap: "4px",
+                fontSize: "11px", padding: "2px 8px",
+                background: "var(--color-bg-tertiary)",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-full)",
+              }}>
+                {m.short_name}
+                <button onClick={() => setForm(f => ({ ...f, member_ids: f.member_ids.filter(i => i !== id) }))}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
+              </span>
+            );
+          })}
+        </div>
+        <CustomSelect
+          value=""
+          onChange={id => {
+            if (id && !form.member_ids.includes(id))
+              setForm(f => ({ ...f, member_ids: [...f.member_ids, id] }));
+          }}
+          options={[
+            { value: "", label: "＋ メンバーを追加" },
+            ...members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+          ]}
+          searchable searchPlaceholder="メンバーで検索..."
+        />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
+        <div>
+          <FieldLabel>開始日</FieldLabel>
+          <input type="date" value={form.start_date} onChange={e => setForm(f => ({...f, start_date: e.target.value}))} style={inputStyle} />
+        </div>
+        <div>
+          <FieldLabel>終了日</FieldLabel>
+          <input type="date" value={form.end_date} onChange={e => setForm(f => ({...f, end_date: e.target.value}))} style={inputStyle} />
+        </div>
+      </div>
+
+      {/* 紐づける TF（KR グループ別チェックボックス） */}
+      <div>
+        <FieldLabel>紐づける TF（任意・KR との連携）</FieldLabel>
+        {keyResults.length === 0 ? (
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+            KR がまだ登録されていません。「Objective / KR」タブで KR を作ると、配下の TF をここで紐づけられます。
+          </div>
+        ) : (
+          <div style={{
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            padding: "8px 10px",
+            background: "var(--color-bg-primary)",
+            maxHeight: "240px", overflowY: "auto",
+            display: "flex", flexDirection: "column", gap: "8px",
+          }}>
+            {keyResults.map((kr, krIdx) => {
+              const krTfs = taskForces
+                .filter(tf => tf.kr_id === kr.id)
+                .slice()
+                .sort((a, b) => (a.tf_number ?? "").localeCompare(b.tf_number ?? ""));
+              if (krTfs.length === 0) return null;
+              return (
+                <div key={kr.id}>
+                  <div style={{
+                    fontSize: "10px", color: "var(--color-text-tertiary)",
+                    fontWeight: 600, marginBottom: "3px",
+                  }}>
+                    KR{krIdx + 1}：{kr.title}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "3px", paddingLeft: "8px" }}>
+                    {krTfs.map(tf => {
+                      const checked = form.tf_ids.includes(tf.id);
+                      return (
+                        <label key={tf.id} style={{
+                          display: "flex", alignItems: "center", gap: "6px",
+                          fontSize: "11px", color: "var(--color-text-primary)",
+                          cursor: "pointer", padding: "2px 0",
+                        }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => setForm(f => ({
+                              ...f,
+                              tf_ids: e.target.checked
+                                ? [...f.tf_ids, tf.id]
+                                : f.tf_ids.filter(id => id !== tf.id),
+                            }))}
+                            style={{ accentColor: "var(--color-brand)", flexShrink: 0 }}
+                          />
+                          <span style={{ color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+                            TF{krIdx + 1}-{tf.tf_number || "?"}
+                          </span>
+                          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {tf.name}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+            {taskForces.length === 0 && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                TF が登録されていません。「Task Force」タブで先に TF を作ってください。
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -1824,13 +1944,20 @@ function PJSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirt
 // セクション④：メンバー
 // ===================================================
 
-function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
+function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
   const rawMembers   = useAppStore(s => s.members);
   const rawGroups    = useAppStore(s => s.groups);
   const saveMember   = useAppStore(s => s.saveMember);
   const deleteMember = useAppStore(s => s.deleteMember);
   const isMobile = useIsMobile();
+  // members：組織全体のアクティブメンバー（「最後の管理者」保護などの判定はグループを問わず
+  // 組織全体で行う必要があるため、こちらは絞り込まない）。
+  // scopedMembers：一覧表示だけを選択中の部署に絞り込んだもの（設定画面の部署絞り込み・2026-07-23）。
   const members = useMemo(() => active(rawMembers), [rawMembers]);
+  const scopedMembers = useMemo(
+    () => members.filter(m => memberInGroup(m, selectedGroupId)),
+    [members, selectedGroupId],
+  );
   const groups  = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
 
   const [editId, setEditId] = useState<string | null>(null);
@@ -1847,18 +1974,9 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     onDirtyChange(editId !== null);
   }, [editId, onDirtyChange]);
 
-  const COLORS = [
-    { bg: "var(--avatar-1-bg)", text: "var(--avatar-1-text)" },
-    { bg: "var(--avatar-2-bg)", text: "var(--avatar-2-text)" },
-    { bg: "var(--avatar-3-bg)", text: "var(--avatar-3-text)" },
-    { bg: "var(--avatar-0-bg)", text: "var(--avatar-0-text)" },
-    { bg: "var(--avatar-5-bg)", text: "var(--avatar-5-text)" },
-    { bg: "var(--avatar-7-bg)", text: "var(--avatar-7-text)" },
-  ];
-
   const openAdd = () => {
     setEditId("new");
-    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: groups[0]?.id ?? "", is_admin: false, is_super_admin: false });
+    setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: selectedGroupId || groups[0]?.id || "", is_admin: false, is_super_admin: false });
   };
 
   const openEdit = (m: Member) => {
@@ -1922,13 +2040,15 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
     setEditId(null);
   };
 
-  const adminCount = members.filter(m => m.is_admin === true).length;
-  const superAdminCount = members.filter(m => m.is_super_admin === true).length;
+  // サマリー・一覧は選択中の部署に絞り込んだ scopedMembers 基準
+  // （「最後の管理者」保護など保存時の安全ロジックは members=組織全体で継続）
+  const adminCount = scopedMembers.filter(m => m.is_admin === true).length;
+  const superAdminCount = scopedMembers.filter(m => m.is_super_admin === true).length;
 
   return (
     <div style={{ maxWidth: "560px" }}>
       <SummaryRow>
-        <SummaryTile label="総メンバー" value={members.length} tone="accent" />
+        <SummaryTile label="総メンバー" value={scopedMembers.length} tone="accent" />
         <SummaryTile label="管理者" value={adminCount} tone="info" />
         <SummaryTile label="全社管理者" value={superAdminCount} tone="purple" />
         <SummaryTile label="所属部署" value={groups.length} tone="success" />
@@ -1936,11 +2056,11 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
 
       <Card
         title="メンバー一覧"
-        badge={`${members.length}名`}
+        badge={`${scopedMembers.length}名`}
         headerExtra={<button onClick={openAdd} style={addBtnStyle}>＋ 追加</button>}
       >
       <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-        {members.map(m => (
+        {scopedMembers.map(m => (
           <div key={m.id} style={{
             display: "flex", alignItems: "center", gap: "10px",
             padding: "8px 12px",
@@ -1986,129 +2106,16 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
       </div>
       </Card>
 
-      {/* 追加・編集フォーム */}
-      {editId && (
+      {/* 編集フォーム（既存メンバーをクリック→インライン表示。従来どおり） */}
+      {editId && editId !== "new" && (
         <div style={{
           marginTop: "12px", padding: "14px", background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
-            {editId === "new" ? "メンバーを追加" : "メンバーを編集"}
+            メンバーを編集
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
-              <div>
-                <FieldLabel>氏名 * （イニシャルは自動生成）</FieldLabel>
-                <input value={form.display_name} onChange={e => setForm(f => ({...f, display_name: e.target.value}))}
-                  placeholder="例：田中 一郎" maxLength={50} style={inputStyle} />
-              </div>
-              <div>
-                <FieldLabel>短縮名（省略可）</FieldLabel>
-                <input value={form.short_name} onChange={e => setForm(f => ({...f, short_name: e.target.value}))}
-                  placeholder="例：田中（未入力で姓を使用）" style={inputStyle} />
-              </div>
-            </div>
-            <div>
-              <FieldLabel>ログイン用メールアドレス（任意）</FieldLabel>
-              <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
-                placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
-                設定するとログイン後にこのメンバーが自動選択されます
-              </div>
-            </div>
-            {groups.length > 0 && (
-              <div>
-                <FieldLabel>グループ（任意）</FieldLabel>
-                <CustomSelect
-                  value={form.group_id}
-                  onChange={v => setForm(f => ({ ...f, group_id: v }))}
-                  options={[
-                    { value: "", label: "（未設定）" },
-                    ...groups.map(g => ({ value: g.id, label: g.name })),
-                  ]}
-                />
-              </div>
-            )}
-            {/* 管理者権限 */}
-            <div>
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={form.is_admin}
-                  onChange={e => setForm(f => ({ ...f, is_admin: e.target.checked }))}
-                  disabled={
-                    // 自分自身の管理者権限を外せない（他に管理者がいない場合）
-                    editId === currentUser.id && form.is_admin
-                      && members.filter(m => m.id !== editId && m.is_admin === true).length === 0
-                  }
-                  style={{ width: 14, height: 14, accentColor: "var(--color-brand)", cursor: "pointer" }}
-                />
-                <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>管理者権限</span>
-                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                  （管理者が1人以上いる場合、非管理者は管理画面にアクセスできません）
-                </span>
-              </label>
-            </div>
-            {/* 全社スーパー管理者（自分がスーパー管理者、またはまだ誰もスーパー管理者になっていない場合のみ表示） */}
-            {(currentUser.is_super_admin === true || members.every(m => m.is_super_admin !== true)) && (
-              <div>
-                <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-                  <input
-                    type="checkbox"
-                    checked={form.is_super_admin}
-                    onChange={e => setForm(f => ({ ...f, is_super_admin: e.target.checked }))}
-                    disabled={
-                      // 自分自身の全社スーパー管理者権限を外せない（他にスーパー管理者がいない場合）
-                      editId === currentUser.id && form.is_super_admin
-                        && members.filter(m => m.id !== editId && m.is_super_admin === true).length === 0
-                    }
-                    style={{ width: 14, height: 14, accentColor: "var(--color-text-purple)", cursor: "pointer" }}
-                  />
-                  <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
-                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                    （部署をまたいで全部署を横断管理できます。新規部署の作成もこの権限が必要です）
-                  </span>
-                </label>
-              </div>
-            )}
-            <div>
-              <FieldLabel>Teamsアカウント（任意）</FieldLabel>
-              <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}
-                placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
-            </div>
-            <div>
-              <FieldLabel>アバターカラー</FieldLabel>
-              <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
-                {COLORS.map(c => (
-                  <button
-                    key={c.bg}
-                    onClick={() => setForm(f => ({...f, color_bg: c.bg, color_text: c.text}))}
-                    style={{
-                      width: "28px", height: "28px", borderRadius: "50%",
-                      background: c.bg, border: form.color_bg === c.bg
-                        ? `2px solid ${c.text}` : "2px solid transparent",
-                      cursor: "pointer",
-                      boxShadow: form.color_bg === c.bg ? "0 0 0 2px white inset" : "none",
-                    }}
-                  />
-                ))}
-              </div>
-              {/* プレビュー */}
-              <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <div style={{
-                  width: "28px", height: "28px", borderRadius: "50%",
-                  background: form.color_bg, color: form.color_text,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "11px", fontWeight: "600",
-                }}>
-                  {form.display_name.replace(/[\s　]+/g,"").slice(0,2).toUpperCase() || "??"}
-                </div>
-                <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
-                  {form.display_name || "氏名を入力してください"}
-                </span>
-              </div>
-            </div>
-          </div>
+          <MemberFormFields form={form} setForm={setForm} groups={groups} isMobile={isMobile} editId={editId} currentUser={currentUser} members={members} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} disabled={!form.display_name.trim()} style={{
               ...primaryBtnStyle,
@@ -2118,7 +2125,7 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
 
-          {editId !== "new" && editId !== currentUser.id && (
+          {editId !== currentUser.id ? (
             <DangerZone key={editId} style={{ marginTop: "16px" }}>
               <DangerAction
                 label="このメンバーを削除"
@@ -2127,14 +2134,177 @@ function MembersSection({ currentUser, onDirtyChange }: { currentUser: Member; o
                 onConfirm={() => handleDeleteMember(editId)}
               />
             </DangerZone>
-          )}
-          {editId !== "new" && editId === currentUser.id && (
+          ) : (
             <div style={{ marginTop: "16px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
               自分自身は削除できません。
             </div>
           )}
         </div>
       )}
+
+      {/* 追加フォーム（マイルストーン追加と同じポップアップ形式・2026-07-23） */}
+      {editId === "new" && (
+        <AdminFormModal
+          title="メンバーを追加"
+          subtitle="新しいメンバーを登録します"
+          onClose={() => setEditId(null)}
+        >
+          <MemberFormFields form={form} setForm={setForm} groups={groups} isMobile={isMobile} editId={editId} currentUser={currentUser} members={members} />
+          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            <button onClick={save} disabled={!form.display_name.trim()} style={{
+              ...primaryBtnStyle,
+              opacity: form.display_name.trim() ? 1 : 0.4,
+              cursor: form.display_name.trim() ? "pointer" : "not-allowed",
+            }}>保存</button>
+            <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
+          </div>
+        </AdminFormModal>
+      )}
+    </div>
+  );
+}
+
+// メンバーのアバターカラー選択肢（MemberFormFields専用）
+const MEMBER_AVATAR_COLORS = [
+  { bg: "var(--avatar-1-bg)", text: "var(--avatar-1-text)" },
+  { bg: "var(--avatar-2-bg)", text: "var(--avatar-2-text)" },
+  { bg: "var(--avatar-3-bg)", text: "var(--avatar-3-text)" },
+  { bg: "var(--avatar-0-bg)", text: "var(--avatar-0-text)" },
+  { bg: "var(--avatar-5-bg)", text: "var(--avatar-5-text)" },
+  { bg: "var(--avatar-7-bg)", text: "var(--avatar-7-text)" },
+];
+
+// メンバー追加・編集フォームのフィールド一式（MembersSectionの編集用インラインパネル／
+// 追加用モーダルの両方から呼ばれる共通部品。バリデーション・保存・「最後の管理者」保護判定は
+// 呼び出し元のMembersSectionに一元化したまま、見た目の器だけを分けるための抽出）
+interface MemberFormState {
+  display_name: string; short_name: string; teams_account: string; email: string;
+  color_bg: string; color_text: string; group_id: string;
+  is_admin: boolean; is_super_admin: boolean;
+}
+function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser, members }: {
+  form: MemberFormState;
+  setForm: React.Dispatch<React.SetStateAction<MemberFormState>>;
+  groups: Group[];
+  isMobile: boolean;
+  editId: string | null;
+  currentUser: Member;
+  members: Member[];
+}) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "8px" }}>
+        <div>
+          <FieldLabel>氏名 * （イニシャルは自動生成）</FieldLabel>
+          <input value={form.display_name} onChange={e => setForm(f => ({...f, display_name: e.target.value}))}
+            placeholder="例：田中 一郎" maxLength={50} style={inputStyle} />
+        </div>
+        <div>
+          <FieldLabel>短縮名（省略可）</FieldLabel>
+          <input value={form.short_name} onChange={e => setForm(f => ({...f, short_name: e.target.value}))}
+            placeholder="例：田中（未入力で姓を使用）" style={inputStyle} />
+        </div>
+      </div>
+      <div>
+        <FieldLabel>ログイン用メールアドレス（任意）</FieldLabel>
+        <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
+          placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+          設定するとログイン後にこのメンバーが自動選択されます
+        </div>
+      </div>
+      {groups.length > 0 && (
+        <div>
+          <FieldLabel>グループ（任意）</FieldLabel>
+          <CustomSelect
+            value={form.group_id}
+            onChange={v => setForm(f => ({ ...f, group_id: v }))}
+            options={[
+              { value: "", label: "（未設定）" },
+              ...groups.map(g => ({ value: g.id, label: g.name })),
+            ]}
+          />
+        </div>
+      )}
+      {/* 管理者権限 */}
+      <div>
+        <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+          <input
+            type="checkbox"
+            checked={form.is_admin}
+            onChange={e => setForm(f => ({ ...f, is_admin: e.target.checked }))}
+            disabled={
+              // 自分自身の管理者権限を外せない（他に管理者がいない場合）
+              editId === currentUser.id && form.is_admin
+                && members.filter(m => m.id !== editId && m.is_admin === true).length === 0
+            }
+            style={{ width: 14, height: 14, accentColor: "var(--color-brand)", cursor: "pointer" }}
+          />
+          <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>管理者権限</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            （管理者が1人以上いる場合、非管理者は管理画面にアクセスできません）
+          </span>
+        </label>
+      </div>
+      {/* 全社スーパー管理者（自分がスーパー管理者、またはまだ誰もスーパー管理者になっていない場合のみ表示） */}
+      {(currentUser.is_super_admin === true || members.every(m => m.is_super_admin !== true)) && (
+        <div>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={form.is_super_admin}
+              onChange={e => setForm(f => ({ ...f, is_super_admin: e.target.checked }))}
+              disabled={
+                // 自分自身の全社スーパー管理者権限を外せない（他にスーパー管理者がいない場合）
+                editId === currentUser.id && form.is_super_admin
+                  && members.filter(m => m.id !== editId && m.is_super_admin === true).length === 0
+              }
+              style={{ width: 14, height: 14, accentColor: "var(--color-text-purple)", cursor: "pointer" }}
+            />
+            <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+              （部署をまたいで全部署を横断管理できます。新規部署の作成もこの権限が必要です）
+            </span>
+          </label>
+        </div>
+      )}
+      <div>
+        <FieldLabel>Teamsアカウント（任意）</FieldLabel>
+        <input value={form.teams_account} onChange={e => setForm(f => ({...f, teams_account: e.target.value}))}
+          placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
+      </div>
+      <div>
+        <FieldLabel>アバターカラー</FieldLabel>
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap" }}>
+          {MEMBER_AVATAR_COLORS.map(c => (
+            <button
+              key={c.bg}
+              onClick={() => setForm(f => ({...f, color_bg: c.bg, color_text: c.text}))}
+              style={{
+                width: "28px", height: "28px", borderRadius: "50%",
+                background: c.bg, border: form.color_bg === c.bg
+                  ? `2px solid ${c.text}` : "2px solid transparent",
+                cursor: "pointer",
+                boxShadow: form.color_bg === c.bg ? "0 0 0 2px white inset" : "none",
+              }}
+            />
+          ))}
+        </div>
+        {/* プレビュー */}
+        <div style={{ marginTop: "6px", display: "flex", alignItems: "center", gap: "6px" }}>
+          <div style={{
+            width: "28px", height: "28px", borderRadius: "50%",
+            background: form.color_bg, color: form.color_text,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: "11px", fontWeight: "600",
+          }}>
+            {form.display_name.replace(/[\s　]+/g,"").slice(0,2).toUpperCase() || "??"}
+          </div>
+          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+            {form.display_name || "氏名を入力してください"}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2626,15 +2796,23 @@ function getWeekOfMonth(dateStr: string): number {
 // セクション⑤：メンバータグ（Phase Tag-1）
 // ===================================================
 
-function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
+function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
   const memberTags         = useAppStore(s => s.memberTags);
   const memberTagMembers   = useAppStore(s => s.memberTagMembers);
   const allMembers         = useAppStore(s => s.members);
   const saveMemberTag      = useAppStore(s => s.saveMemberTag);
   const deleteMemberTag    = useAppStore(s => s.deleteMemberTag);
 
+  // タグ自体（member_tags）は部署概念を持たない全社共通マスタのため一覧は絞り込まない
+  // （2026-07-23のRLS是正でもこの方針は維持。詳細はCLAUDE.md参照）。
+  // ただし新規作成・編集時のメンバー選択チェックボックスは、選択中の部署に絞ると
+  // 一覧が探しやすくなるため scopedMembers を用意する。
   const activeTags    = useMemo(() => active(memberTags), [memberTags]);
   const activeMembers = useMemo(() => active(allMembers), [allMembers]);
+  const scopedMembers = useMemo(
+    () => activeMembers.filter(m => memberInGroup(m, selectedGroupId)),
+    [activeMembers, selectedGroupId],
+  );
 
   // タグごとのメンバーIDマップ
   const tagMembersMap = useMemo(() => {
@@ -2755,8 +2933,8 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
         }}>{error}</div>
       )}
 
-      {/* 新規作成 / 編集フォーム */}
-      {editingId !== null && (
+      {/* 編集フォーム（既存タグをクリック→インライン表示。従来どおり） */}
+      {editingId !== null && !isCreating && (
         <div style={{
           background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)",
@@ -2764,104 +2942,10 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
           display: "flex", flexDirection: "column", gap: "10px",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-            {isCreating ? "新しいタグを追加" : "タグを編集"}
+            タグを編集
           </div>
-          <div>
-            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
-              タグ名
-            </label>
-            <input
-              type="text"
-              value={draftName}
-              onChange={e => setDraftName(e.target.value)}
-              placeholder="例：請求書PJ / 広報チーム / 全員"
-              style={{
-                width: "100%", padding: "7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
-              説明（任意）
-            </label>
-            <input
-              type="text"
-              value={draftDesc}
-              onChange={e => setDraftDesc(e.target.value)}
-              placeholder="このタグの用途・対象範囲"
-              style={{
-                width: "100%", padding: "7px 10px", fontSize: "12px",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-primary)",
-                color: "var(--color-text-primary)",
-                boxSizing: "border-box",
-              }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "6px" }}>
-              メンバー（{draftMemberIds.length}名選択中）
-            </label>
-            <div style={{
-              display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-              gap: "6px",
-              maxHeight: "260px", overflow: "auto",
-              padding: "8px", border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)",
-            }}>
-              {activeMembers.map(m => {
-                const checked = draftMemberIds.includes(m.id);
-                return (
-                  <label
-                    key={m.id}
-                    style={{
-                      display: "flex", alignItems: "center", gap: "6px",
-                      fontSize: "12px", cursor: "pointer",
-                      padding: "4px 6px", borderRadius: "var(--radius-sm)",
-                      background: checked ? "var(--color-brand-light)" : "transparent",
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleMember(m.id)}
-                    />
-                    <span>{m.short_name}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
-              <button
-                type="button"
-                onClick={() => setDraftMemberIds(activeMembers.map(m => m.id))}
-                style={{
-                  fontSize: "11px", padding: "4px 8px",
-                  background: "transparent",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-text-secondary)", cursor: "pointer",
-                }}
-              >全員選択</button>
-              <button
-                type="button"
-                onClick={() => setDraftMemberIds([])}
-                style={{
-                  fontSize: "11px", padding: "4px 8px",
-                  background: "transparent",
-                  border: "1px solid var(--color-border-primary)",
-                  borderRadius: "var(--radius-md)",
-                  color: "var(--color-text-secondary)", cursor: "pointer",
-                }}
-              >全解除</button>
-            </div>
-          </div>
+          <TagFormFields draftName={draftName} setDraftName={setDraftName} draftDesc={draftDesc} setDraftDesc={setDraftDesc}
+            draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} />
           <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
             <button
               onClick={cancel}
@@ -2880,10 +2964,10 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
                 background: "var(--color-brand)", color: "#fff",
                 border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
-            >{isCreating ? "追加する" : "保存する"}</button>
+            >保存する</button>
           </div>
 
-          {!isCreating && (() => {
+          {(() => {
             const tag = activeTags.find(t => t.id === editingId);
             if (!tag) return null;
             const memberCount = tagMembersMap.get(tag.id)?.length ?? 0;
@@ -2898,6 +2982,36 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
             );
           })()}
         </div>
+      )}
+
+      {/* 追加フォーム（マイルストーン追加と同じポップアップ形式・2026-07-23） */}
+      {isCreating && (
+        <AdminFormModal title="タグを追加" subtitle="メンバーをまとめるタグを作成します" onClose={cancel}>
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            <TagFormFields draftName={draftName} setDraftName={setDraftName} draftDesc={draftDesc} setDraftDesc={setDraftDesc}
+              draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} />
+            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
+              <button
+                onClick={cancel}
+                style={{
+                  padding: "7px 14px", fontSize: "12px",
+                  background: "transparent",
+                  border: "1px solid var(--color-border-primary)",
+                  borderRadius: "var(--radius-md)",
+                  color: "var(--color-text-secondary)", cursor: "pointer",
+                }}
+              >キャンセル</button>
+              <button
+                onClick={handleSave}
+                style={{
+                  padding: "7px 16px", fontSize: "12px", fontWeight: "500",
+                  background: "var(--color-brand)", color: "#fff",
+                  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
+                }}
+              >追加する</button>
+            </div>
+          </div>
+        </AdminFormModal>
       )}
 
       {/* 既存タグリスト */}
@@ -2986,8 +3100,125 @@ function TagsSection({ currentUser, onDirtyChange }: { currentUser: Member; onDi
   );
 }
 
-function AIUsageSection() {
+// タグ追加・編集フォームのフィールド一式（TagsSectionの編集用インラインパネル／追加用モーダルの
+// 両方から呼ばれる共通部品。バリデーション・保存は呼び出し元のTagsSectionに一元化したまま、
+// 見た目の器だけを分けるための抽出）
+function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draftMemberIds, toggleMember, setDraftMemberIds, members }: {
+  draftName: string; setDraftName: (v: string) => void;
+  draftDesc: string; setDraftDesc: (v: string) => void;
+  draftMemberIds: string[]; toggleMember: (id: string) => void; setDraftMemberIds: (ids: string[]) => void;
+  members: Member[];
+}) {
+  return (
+    <>
+      <div>
+        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+          タグ名
+        </label>
+        <input
+          type="text"
+          value={draftName}
+          onChange={e => setDraftName(e.target.value)}
+          placeholder="例：請求書PJ / 広報チーム / 全員"
+          style={{
+            width: "100%", padding: "7px 10px", fontSize: "12px",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-bg-primary)",
+            color: "var(--color-text-primary)",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+      <div>
+        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+          説明（任意）
+        </label>
+        <input
+          type="text"
+          value={draftDesc}
+          onChange={e => setDraftDesc(e.target.value)}
+          placeholder="このタグの用途・対象範囲"
+          style={{
+            width: "100%", padding: "7px 10px", fontSize: "12px",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-bg-primary)",
+            color: "var(--color-text-primary)",
+            boxSizing: "border-box",
+          }}
+        />
+      </div>
+      <div>
+        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "6px" }}>
+          メンバー（{draftMemberIds.length}名選択中）
+        </label>
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+          gap: "6px",
+          maxHeight: "260px", overflow: "auto",
+          padding: "8px", border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)",
+        }}>
+          {members.map(m => {
+            const checked = draftMemberIds.includes(m.id);
+            return (
+              <label
+                key={m.id}
+                style={{
+                  display: "flex", alignItems: "center", gap: "6px",
+                  fontSize: "12px", cursor: "pointer",
+                  padding: "4px 6px", borderRadius: "var(--radius-sm)",
+                  background: checked ? "var(--color-brand-light)" : "transparent",
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleMember(m.id)}
+                />
+                <span>{m.short_name}</span>
+              </label>
+            );
+          })}
+        </div>
+        <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+          <button
+            type="button"
+            onClick={() => setDraftMemberIds(members.map(m => m.id))}
+            style={{
+              fontSize: "11px", padding: "4px 8px",
+              background: "transparent",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)", cursor: "pointer",
+            }}
+          >全員選択</button>
+          <button
+            type="button"
+            onClick={() => setDraftMemberIds([])}
+            style={{
+              fontSize: "11px", padding: "4px 8px",
+              background: "transparent",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              color: "var(--color-text-secondary)", cursor: "pointer",
+            }}
+          >全解除</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
   const members = useAppStore(s => s.members);
+  // ログ自体は部署を持たない（ai_usage_logsはmember_id経由でRLSが部署判定する）ため、
+  // クライアント側で「そのログを打ったメンバーが選択中の部署に属するか」でフィルタする。
+  const scopedMemberIds = useMemo(
+    () => new Set(members.filter(m => memberInGroup(m, selectedGroupId)).map(m => m.id)),
+    [members, selectedGroupId],
+  );
 
   const [logs, setLogs] = useState<AiUsageLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3024,10 +3255,16 @@ function AIUsageSection() {
     return () => clearInterval(id);
   }, [reload]);
 
+  // 選択中の部署のメンバーによるログのみに絞り込む（設定画面の部署絞り込み・2026-07-23）
+  const scopedLogs = useMemo(
+    () => logs.filter(l => scopedMemberIds.has(l.member_id ?? "")),
+    [logs, scopedMemberIds],
+  );
+
   // 月ごとに集計
   const monthlyData = useMemo(() => {
     const map = new Map<string, AiUsageLog[]>();
-    for (const log of logs) {
+    for (const log of scopedLogs) {
       const month = (log.called_at ?? "").slice(0, 7); // YYYY-MM
       if (!map.has(month)) map.set(month, []);
       map.get(month)!.push(log);
@@ -3054,13 +3291,13 @@ function AIUsageSection() {
           }));
         return { month, count: entries.length, input: totalInput, output: totalOutput, weeks };
       });
-  }, [logs]);
+  }, [scopedLogs]);
 
   // メンバー別内訳（今月）：最新月（=monthlyData 先頭）or 現在の YYYY-MM のログを member_id で集計。
   const memberBreakdown = useMemo(() => {
     // monthlyData は月降順ソート済み。先頭が最新月。無ければ現在の YYYY-MM。
     const targetMonth = monthlyData[0]?.month ?? new Date().toISOString().slice(0, 7);
-    const monthLogs = logs.filter(l => (l.called_at ?? "").slice(0, 7) === targetMonth);
+    const monthLogs = scopedLogs.filter(l => (l.called_at ?? "").slice(0, 7) === targetMonth);
     const map = new Map<string, { count: number; input: number; output: number }>();
     for (const log of monthLogs) {
       const key = log.member_id ?? "";
@@ -3079,7 +3316,7 @@ function AIUsageSection() {
       })
       .sort((a, b) => b.count - a.count);
     return { targetMonth, rows };
-  }, [logs, monthlyData, members]);
+  }, [scopedLogs, monthlyData, members]);
 
   const toggleMonth = (month: string) => {
     setExpandedMonths(prev => {
@@ -3150,7 +3387,7 @@ function AIUsageSection() {
         </button>
       </div>
       <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
-        アプリ全体（全メンバーの合計）の使用量です。約30秒ごとに自動更新します。
+        設定画面で選択中の部署のメンバーの使用量です。約30秒ごとに自動更新します。
       </div>
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
         料金目安：入力 $3/100万トークン・出力 $15/100万トークン（1ドル=150円換算）

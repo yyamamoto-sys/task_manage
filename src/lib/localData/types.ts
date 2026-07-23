@@ -35,8 +35,12 @@ export interface Member {
   color_bg: string;
   color_text: string;
   is_deleted: boolean;
-  /** 所属グループID（マルチテナント対応） */
+  /** 所属グループID（マルチテナント対応。ホーム部署） */
   group_id?: string | null;
+  /** アクセス可能な部署の全リスト（複数部署アクセス対応・2026-07-23）。ホーム部署を必ず含む。
+   *  DBトリガー（guard_member_privilege_columns）が group_id を必ず含むよう正規化するため、
+   *  フロントから明示的に送らなくても group_id だけで安全に作成できる */
+  group_ids?: string[] | null;
   // audit fields（Supabase移行後に必須化）
   created_at?: string;
   updated_at?: string;
@@ -144,8 +148,12 @@ export interface Project {
   start_date: string;
   end_date: string;
   is_deleted: boolean;
-  /** 所属グループID（マルチテナント対応） */
+  /** 所属グループID（マルチテナント対応。主部署） */
   group_id?: string | null;
+  /** アクセス可能な部署の全リスト（複数部署アクセス対応・2026-07-23）。主部署を必ず含む。
+   *  DBトリガー（normalize_project_group_ids）が group_id を必ず含むよう正規化するため、
+   *  フロントから明示的に送らなくても group_id だけで安全に作成できる */
+  group_ids?: string[] | null;
   // audit fields（updated_atはSupabase移行時の競合検知に使用）
   created_at?: string;
   updated_at?: string;
