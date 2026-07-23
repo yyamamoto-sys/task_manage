@@ -76,7 +76,7 @@ export function buildKrReportContext(params: {
     return {
       tf_number: tf.tf_number,
       name: tf.name,
-      description: tf.description,
+      description: tf.description ?? undefined,
       todos: todosWithTasks,
     };
   });

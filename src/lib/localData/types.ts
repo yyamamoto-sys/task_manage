@@ -104,11 +104,14 @@ export interface TaskForce {
   id: string;
   kr_id: string;
   tf_number: string;
-  /** 所属する四半期。未設定(legacy)は現在の四半期として扱う（lib/okr/tfQuarter.ts） */
-  quarter?: Quarter;
+  /** 所属する四半期。未設定(legacy)は現在の四半期として扱う（lib/okr/tfQuarter.ts）
+   * DBはnullable。「解除」で未割当に戻す際はundefinedではなくnullを送ること
+   * （undefinedはJSON.stringifyで消え、Supabaseへの更新から列ごと抜け落ちてDBに反映されない）。 */
+  quarter?: Quarter | null;
   name: string;
-  description?: string;      // TFの目的・詳細（任意）
-  background?: string;       // 設定した意図・背景（任意）
+  // description/backgroundもDBはnullable。空にして保存する場合はundefinedではなくnullを送ること（上記と同じ理由）。
+  description?: string | null;      // TFの目的・詳細（任意）
+  background?: string | null;       // 設定した意図・背景（任意）
   // 担当リーダー。DBは nullable（FK: members(id)）で「担当者未設定」が正当な状態。
   // 空文字はメンバーIDとして存在せずFK違反になるため、保存時は必ず null に正規化する。
   leader_member_id: string | null;
@@ -125,7 +128,9 @@ export interface TaskForce {
 export interface ToDo {
   id: string;
   tf_id: string;           // 紐づくTaskForce
-  name?: string;           // 短いタイトル（任意・単一行）
+  // DBはnullable。空にして保存する場合はundefinedではなくnullを送ること
+  // （undefinedはJSON.stringifyで消え、Supabaseへの更新から列ごと抜け落ちてDBに反映されない）。
+  name?: string | null;    // 短いタイトル（任意・単一行）
   title: string;           // ToDo内容（複数行テキスト・長文対応）
   due_date: string | null; // 任意
   memo: string;            // 備考（任意）

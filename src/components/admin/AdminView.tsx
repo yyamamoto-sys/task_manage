@@ -708,9 +708,11 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
     if (!await confirmDialog("このTFのクォーター割り当てを解除しますか？（TF自体は削除されません。未割当のTFは現在のクォーターに表示されます）")) return;
     try {
       // 新モデル：QKTFではなく TaskForce.quarter を未設定に戻す（未割当＝effectiveTfQuarterで今期扱い）
+      // quarterはundefinedではなくnullで送る（undefinedはJSON.stringifyで消え、更新から
+      // 列ごと抜け落ちてDBのquarterが古い値のまま残ってしまうため）
       const existing = tfs.find(t => t.id === tfId);
       if (!existing) return;
-      await saveTaskForce({ ...existing, quarter: undefined, updated_by: currentUser.id });
+      await saveTaskForce({ ...existing, quarter: null, updated_by: currentUser.id });
     } catch (e) {
       const msg = getErrorMessage(e);
       await alertDialog(`解除に失敗しました。\n${msg}`);
@@ -771,8 +773,10 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   const saveTfEdit = async () => {
     if (!form.name.trim()) return;
     try {
+      // description/backgroundはundefinedではなくnullで送る（undefinedはJSON.stringifyで消え、
+      // 更新から列ごと抜け落ちるため、空にして保存してもDBの古い値がそのまま残ってしまう）
       const existing = tfs.find(t => t.id === editId);
-      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, leader_member_id: form.leader_member_id || null, updated_by: currentUser.id });
+      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || null, background: form.background || null, leader_member_id: form.leader_member_id || null, updated_by: currentUser.id });
       setEditId(null);
     } catch (e) {
       const msg = getErrorMessage(e);
@@ -893,7 +897,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
                     setEditForm={setForm}
                     onSaveEdit={() => { void saveTfEdit(); }}
                     onCancelEdit={() => setEditId(null)}
-                    onDeleteTF={() => { void deleteTF(editId!); }}
+                    onDeleteTF={() => deleteTF(editId!)}
                     currentQuarter={selectedQuarter}
                     onMoveTo={(targetQ) => { void handleMoveTf(kr.id, tf.id, targetQ); }}
                   />
@@ -990,7 +994,10 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
   setEditForm: React.Dispatch<React.SetStateAction<{ kr_id: string; tf_number: string; name: string; description: string; background: string; leader_member_id: string }>>;
   onSaveEdit: () => void;
   onCancelEdit: () => void;
-  onDeleteTF: () => void;
+  // DangerAction の busy 状態・エラー捕捉が実際の削除完了を待てるよう Promise を返す
+  // （() => void で void 経由の fire-and-forget にすると、DangerAction 側の
+  //  try/finally が削除完了より先に終わってしまう）
+  onDeleteTF: () => Promise<void>;
   currentQuarter: Quarter;
   onMoveTo: (targetQuarter: Quarter) => void;
 }) {
@@ -1253,7 +1260,9 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
     const todo: ToDo = {
       id: isNew ? uuidv4() : editId!,
       tf_id: tfId,
-      name: form.name.trim() || undefined,
+      // undefinedではなくnullで送る（undefinedはJSON.stringifyで消え、既存ToDoのnameを
+      // 空に戻す編集で更新から列ごと抜け落ちるため）
+      name: form.name.trim() || null,
       title: form.title.trim(),
       due_date: form.due_date || null,
       memo: form.memo,

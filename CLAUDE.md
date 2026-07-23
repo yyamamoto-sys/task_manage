@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.97
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.98
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2383,7 +2383,40 @@
 #             トランジション付き）。right退避（AI相談パネル開時）・Toast/ErrorBarとの非干渉は既存のまま維持。
 #      DBマイグレ不要（`MainLayout.tsx`のみ）。検証：tsc 0/vitest 515件全通過/eslint 新規0/build成功
 #
-# 最終更新：2026-07-23（v2.97）
+# v2.98 fix: TF「解除」でクォーターがDBに反映されない不具合＋DangerZone削除の防御強化（2026-07-23）
+#      症状：設定画面のTaskForceタブで「不要なTFを削除しようとしても反応がない」と報告。
+#      調査：TF行の見た目上の削除系操作は2つ（①「解除」＝現在のクォーターからTF.quarterを
+#             未設定に戻すだけの操作、②編集フォームを開いた先のDangerZone「削除する」＝is_deleted論理削除）。
+#             ②の削除自体のクリック連鎖（DangerAction→confirmDialog→appStore.deleteTaskForce→
+#             is_deletedフラグ）はロジック上正しく、確認ダイアログ・楽観更新・エラートースト
+#             （handleSaveError）も揃っていることをコード追跡で確認。
+#      原因①（実バグ・確定）：①「解除」で `saveTaskForce({ ...existing, quarter: undefined, ... })`
+#             としていたが、`JSON.stringify` は値が`undefined`のキーを丸ごと落とす
+#             （`@supabase/postgrest-js`は`JSON.stringify(this.body)`でPATCH bodyを作るため、
+#             quarter列がUPDATE文から抜け落ちてDBのquarterが古い値のまま変わらない）。
+#             選択中のクォーターが「現在の四半期」のときは`effectiveTfQuarter`の
+#             フォールバック（未設定=今期扱い）でローカル表示上も変化がなく、
+#             「解除ボタンを押しても何も起きない」ように見える一因と判断。
+#             同型のバグがTF編集保存の`description`/`background`クリア、ToDoの`name`クリアにも存在。
+#      原因②（構造的な非対称・是正）：DangerZoneを使う削除6箇所（KR/PJ/メンバー/グループ/タグ/TF）のうち
+#             TFの`onDeleteTF`だけが子コンポーネント(TFRow)へのprop経由で
+#             `() => { void deleteTF(editId!); }`という fire-and-forget 形になっており、
+#             DangerActionの`await onConfirm()`が実際の削除完了を待たずに解決していた
+#             （他の5箇所は`() => deleteXxx(id)`で素直にPromiseを返す一貫した形）。
+#             deleteTaskForce自体はappStore内でエラーを捕捉しトースト表示するため無反応の直接原因では
+#             ないが、busy状態の不整合・将来の例外握りつぶしリスクがあるため是正。
+#      修正：`quarter`/TFの`description`/`background`/ToDoの`name`を、クリア時は`undefined`ではなく
+#             `null`で送るよう統一（型を`Quarter|null`等に拡張）。`TFRow.onDeleteTF`の型を
+#             `() => Promise<void>`にし、呼び出し側を`() => deleteTF(editId!)`に変更（他5箇所と同型に統一）。
+#      横断調査：AdminViewの主要削除・保存ボタン（メンバー/PJ/KR/TF/タグ/グループ・DangerZone全6箇所、
+#             マイルストーン、ToDo）を全数点検。stopPropagation誤用・zIndex競合・
+#             確認ダイアログ非表示（v2.33のポータルpointer-events罠）・requireNameMatchによる
+#             disabled固着は該当なし（ConfirmModalは#root配下の通常子要素でポータル不使用のため
+#             pointer-events罠の対象外）。TF以外のDangerAction・削除フローに同型バグは見つからず。
+#      DBマイグレ不要。検証：tsc 0/vitest 515件全通過/eslint 新規0（既存8件はAdminView.tsx内の
+#             全角スペース正規表現・label関連付けで変更前から存在）/build成功
+#
+# 最終更新：2026-07-23（v2.98）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
