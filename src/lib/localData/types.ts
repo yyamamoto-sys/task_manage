@@ -109,7 +109,9 @@ export interface TaskForce {
   name: string;
   description?: string;      // TFの目的・詳細（任意）
   background?: string;       // 設定した意図・背景（任意）
-  leader_member_id: string;
+  // 担当リーダー。DBは nullable（FK: members(id)）で「担当者未設定」が正当な状態。
+  // 空文字はメンバーIDとして存在せずFK違反になるため、保存時は必ず null に正規化する。
+  leader_member_id: string | null;
   is_deleted: boolean;
   // audit fields
   created_at?: string;

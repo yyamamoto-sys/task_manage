@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.95
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v2.96
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2356,7 +2356,24 @@
 #      DBマイグレ不要（group_ids列・CHECK制約・トリガーは全てv2.85/20260722bで適用済み）。
 #             検証：tsc/eslint（新規0・既存8件は変更前から存在）/vitest 515件全通過/build成功
 #
-# 最終更新：2026-07-23（v2.95）
+# v2.96 fix: TaskForceの担当リーダー未設定でFK違反になるバグを修正（2026-07-23）
+#      症状：OKR PDF取込で「登録する」を押すと途中で
+#             「insert or update on table "task_forces" violates foreign key constraint
+#             "task_forces_leader_member_id_fkey" — Key is not present in table members」。
+#      原因：`task_forces.leader_member_id` はDB上 nullable（FK: members(id)）で「担当者未設定」が
+#             正当な状態だが、型定義が `string`（非null）で、UI/取込が未設定時に空文字 "" を送っていた。
+#             空文字はメンバーIDとして存在しないためFK違反になる。OKR取込（`OkrImportModal` 200行目
+#             `matchMemberByName(...)?.id ?? ""`＝氏名突合失敗時）で顕在化したが、AdminViewの通常の
+#             TF新規作成・編集でも担当者未選択なら同じFK違反になる潜在バグだった。
+#      修正：`TaskForce.leader_member_id` を `string | null` に変更（DBの実態に合わせる）。保存経路で
+#             空文字を null に正規化：OkrImportModal（TF作成）・AdminView（TF新規作成 line751・編集
+#             保存 line774）の3箇所を `leader_member_id || null` に。編集フォーム初期化は
+#             `tf.leader_member_id ?? ""`（フォーム内は空文字・保存時にnull変換で一貫）。
+#             読み取り側（AdminView `members.find(m => m.id === tf.leader_member_id)`／
+#             payloadBuilder同）は元から `.find` でnull/空でもundefinedになり安全＝無改造。
+#      DBマイグレ不要（列は既にnullable）。検証：tsc 0/vitest 515件全通過/eslint 既存35件のまま新規0/build成功
+#
+# 最終更新：2026-07-23（v2.96）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

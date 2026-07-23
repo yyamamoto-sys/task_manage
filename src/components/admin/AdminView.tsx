@@ -748,7 +748,8 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
       name: newTfForm.name.trim(),
       description: newTfForm.description.trim() || undefined,
       background: newTfForm.background.trim() || undefined,
-      leader_member_id: newTfForm.leader_member_id,
+      // 空文字（担当者未選択）はFK違反になるため null に正規化
+      leader_member_id: newTfForm.leader_member_id || null,
       is_deleted: false,
       created_at: now, updated_at: now, updated_by: currentUser.id,
     };
@@ -764,14 +765,14 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   // 既存TFの編集・削除
   const openEdit = (tf: TaskForce) => {
     setEditId(tf.id);
-    setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, description: tf.description ?? "", background: tf.background ?? "", leader_member_id: tf.leader_member_id });
+    setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, description: tf.description ?? "", background: tf.background ?? "", leader_member_id: tf.leader_member_id ?? "" });
   };
 
   const saveTfEdit = async () => {
     if (!form.name.trim()) return;
     try {
       const existing = tfs.find(t => t.id === editId);
-      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, updated_by: currentUser.id });
+      if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || undefined, background: form.background || undefined, leader_member_id: form.leader_member_id || null, updated_by: currentUser.id });
       setEditId(null);
     } catch (e) {
       const msg = getErrorMessage(e);

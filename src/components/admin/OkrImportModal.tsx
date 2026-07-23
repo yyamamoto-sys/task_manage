@@ -303,7 +303,8 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
             name: tfDraft.name.trim(),
             description: tfDraft.description.trim() || undefined,
             background: tfDraft.background.trim() || undefined,
-            leader_member_id: tfDraft.leader_member_id,
+            // 空文字（未設定・スキップ）はFK違反になるため null に正規化
+            leader_member_id: tfDraft.leader_member_id || null,
             is_deleted: false,
             created_at: now,
             updated_at: now,
