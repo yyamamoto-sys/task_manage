@@ -98,18 +98,20 @@ export function formatDelayLabel(delayDays: number | null): string | null {
   return delayDays > 0 ? `遅延${delayDays}日` : `${Math.abs(delayDays)}日前倒し`;
 }
 
-// ===== ヘッダー週ラベル（月内日数ブロック方式） =====
+// ===== ヘッダー週ラベル（カレンダー週＝月曜始まり・日曜終わり方式。CLAUDE.md v3.09） =====
 //
-// 【設計方針】週の数え方は「月内の日数ブロック」で固定（山本さん確定・カレンダー週や暦週とは異なる）：
-// W1=1〜7日／W2=8〜14日／W3=15〜21日／W4=22〜28日／W5=29日〜月末。各週は必ずその月に属し、
-// 月をまたいだ瞬間に翌月のW1から数え直す（days は getDaysInRange の連続日付配列前提で、
-// 年+月+週番号が変わったところでブロックを区切るだけで自然にこの定義になる）。
+// 【設計方針】週はカレンダー表示と同じ「月曜〜日曜」で整列させる（山本さん確定・v2.38の
+// 「月内日数ブロック」から変更）。W1＝その月の1日〜その月で最初の日曜（月頭の半端な週。
+// 1日が日曜ならその日だけ）。W2以降は月曜始まり・日曜終わりの7日間。週番号は月ごとにリセット
+// （月が変わったら常にW1から数え直す）。結果としてブロックの区切りは「毎週月曜(getDay()===1)」
+// と「月の1日(getDate()===1)」に入り、月をまたぐカレンダー週は月境界で切れる
+// （days は getDaysInRange の連続日付配列前提）。
 export interface WeekBlock {
   /** 例："8月W1" */
   label: string;
   startX: number;
   width: number;
-  /** そのブロックが月の最初の週（W1）＝月の境界。ヘッダーの区切り線の強調に使う */
+  /** そのブロックが月の最初の日（1日）から始まる＝月の境界。ヘッダーの区切り線の強調に使う */
   isMonthStart: boolean;
   /** ブロック内の最初の日（ツールチップ表示用） */
   startDate: Date;
@@ -117,26 +119,39 @@ export interface WeekBlock {
   endDate: Date;
 }
 
+/**
+ * 日付 → その月内でのカレンダー週番号（1始まり・月曜始まり週で数える）。
+ * 月の1日の曜日から「月頭の半端な週（W1）の長さ」を求め（1日が日曜なら1日、それ以外は
+ * 次の日曜までの日数）、以降は7日ずつのMon-Sun週として数える。days配列がどの日から
+ * 始まっていても（月の途中スタートでも）その日単体から正しい週番号を求められる純粋関数。
+ */
+function calendarWeekNumber(d: Date): number {
+  const day = d.getDate();
+  const firstDow = new Date(d.getFullYear(), d.getMonth(), 1).getDay(); // 0=日〜6=土
+  const firstWeekLen = firstDow === 0 ? 1 : 8 - firstDow;
+  if (day <= firstWeekLen) return 1;
+  return 2 + Math.floor((day - firstWeekLen - 1) / 7);
+}
+
 export function computeWeekBlocks(days: Date[], dayWidth: number): WeekBlock[] {
   const blocks: WeekBlock[] = [];
   let i = 0;
   while (i < days.length) {
     const d = days[i];
-    const year = d.getFullYear();
     const month = d.getMonth();
-    const weekNum = Math.floor((d.getDate() - 1) / 7) + 1; // 1〜5
+    const year = d.getFullYear();
     let j = i + 1;
     while (j < days.length) {
       const dj = days[j];
-      if (dj.getFullYear() !== year || dj.getMonth() !== month) break;
-      if (Math.floor((dj.getDate() - 1) / 7) + 1 !== weekNum) break;
+      if (dj.getFullYear() !== year || dj.getMonth() !== month) break; // 月境界
+      if (dj.getDay() === 1) break; // 月曜境界
       j++;
     }
     blocks.push({
-      label: `${month + 1}月W${weekNum}`,
+      label: `${month + 1}月W${calendarWeekNumber(d)}`,
       startX: i * dayWidth,
       width: (j - i) * dayWidth,
-      isMonthStart: weekNum === 1,
+      isMonthStart: d.getDate() === 1,
       startDate: days[i],
       endDate: days[j - 1],
     });

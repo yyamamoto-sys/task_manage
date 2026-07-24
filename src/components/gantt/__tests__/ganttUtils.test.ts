@@ -141,48 +141,63 @@ describe("formatDelayLabel", () => {
 });
 
 describe("computeWeekBlocks", () => {
-  it("月内日数ブロック（W1=1-7/W2=8-14/W3=15-21/W4=22-28/W5=29〜月末）に区切る", () => {
-    // 2026年8月は31日まで：W1(1-7)/W2(8-14)/W3(15-21)/W4(22-28)/W5(29-31)の5ブロック
-    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 31));
+  it("カレンダー週（月曜始まり・日曜終わり）に区切る：1日=水（2026年7月）", () => {
+    // 2026年7月1日は水曜：W1=7/1(水)〜7/5(日)=5日／W2=7/6〜7/12=7日／W3=7/13〜7/19=7日／
+    // W4=7/20〜7/26=7日／W5=7/27(月)〜7/31(金)=5日
+    const days = getDaysInRange(new Date(2026, 6, 1), new Date(2026, 6, 31));
     const blocks = computeWeekBlocks(days, 28);
-    expect(blocks.map(b => b.label)).toEqual(["8月W1", "8月W2", "8月W3", "8月W4", "8月W5"]);
-    expect(blocks.map(b => b.width)).toEqual([7 * 28, 7 * 28, 7 * 28, 7 * 28, 3 * 28]);
+    expect(blocks.map(b => b.label)).toEqual(["7月W1", "7月W2", "7月W3", "7月W4", "7月W5"]);
+    expect(blocks.map(b => b.width)).toEqual([5 * 28, 7 * 28, 7 * 28, 7 * 28, 5 * 28]);
     expect(blocks[0].startX).toBe(0);
-    expect(blocks[4].startX).toBe(28 * 28);
     expect(blocks.map(b => b.isMonthStart)).toEqual([true, false, false, false, false]);
+    expect(toDateStr(blocks[0].startDate)).toBe("2026-07-01");
+    expect(toDateStr(blocks[0].endDate)).toBe("2026-07-05");
+    expect(toDateStr(blocks[1].startDate)).toBe("2026-07-06");
+    expect(toDateStr(blocks[4].startDate)).toBe("2026-07-27");
+    expect(toDateStr(blocks[4].endDate)).toBe("2026-07-31");
   });
 
-  it("月をまたぐと翌月のW1から数え直す（月をまたいだ週ブロックは作らない）", () => {
-    // 2026-07-29 〜 2026-08-03：7月W5(29-31=3日) → 8月W1(1-3=3日)
+  it("カレンダー週に区切る：1日=土（2026年8月）", () => {
+    // 2026年8月1日は土曜：W1=8/1(土)〜8/2(日)=2日／W2=8/3(月)〜8/9(日)=7日／W3=8/10〜8/16=7日
+    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 16));
+    const blocks = computeWeekBlocks(days, 28);
+    expect(blocks.map(b => b.label)).toEqual(["8月W1", "8月W2", "8月W3"]);
+    expect(blocks.map(b => b.width)).toEqual([2 * 28, 7 * 28, 7 * 28]);
+    expect(blocks.map(b => b.isMonthStart)).toEqual([true, false, false]);
+  });
+
+  it("月の1日が月曜の場合、月境界と月曜が一致しW1がそのままフル週（月〜日）になる", () => {
+    // 2026年6月1日は月曜：W1=6/1(月)〜6/7(日)=7日（丸ごとフル週）
+    const days = getDaysInRange(new Date(2026, 5, 1), new Date(2026, 5, 14));
+    const blocks = computeWeekBlocks(days, 28);
+    expect(blocks.map(b => b.label)).toEqual(["6月W1", "6月W2"]);
+    expect(blocks.map(b => b.width)).toEqual([7 * 28, 7 * 28]);
+    expect(blocks[0].isMonthStart).toBe(true);
+  });
+
+  it("月をまたぐカレンダー週は月境界で切れ、前月の最終週と新月のW1に分かれる", () => {
+    // 2026-07-29(水)〜2026-08-03(月)：7月W5(27-31のうち29-31=3日) → 8月W1(8/1-2=2日) → 8月W2(8/3のみ=1日)
     const days = getDaysInRange(new Date(2026, 6, 29), new Date(2026, 7, 3));
     const blocks = computeWeekBlocks(days, 28);
-    expect(blocks.map(b => b.label)).toEqual(["7月W5", "8月W1"]);
-    expect(blocks.map(b => b.width)).toEqual([3 * 28, 3 * 28]);
-    expect(blocks[1].isMonthStart).toBe(true);
+    expect(blocks.map(b => b.label)).toEqual(["7月W5", "8月W1", "8月W2"]);
+    expect(blocks.map(b => b.width)).toEqual([3 * 28, 2 * 28, 1 * 28]);
+    expect(blocks.map(b => b.isMonthStart)).toEqual([false, true, false]);
   });
 
-  it("範囲の先頭が週の途中でも部分ブロックとして扱う（月をまたがない）", () => {
-    // 2026-08-10（W2の途中）〜2026-08-16（W3の途中）
-    const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 16));
+  it("範囲の先頭が週の途中（月曜始まり）でも部分ブロックとして扱う（月をまたがない）", () => {
+    // 2026-08-10（月）〜2026-08-23（日）：W3(8/10-16=7日)／W4(8/17-23=7日)
+    const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 23));
     const blocks = computeWeekBlocks(days, 28);
-    expect(blocks.map(b => b.label)).toEqual(["8月W2", "8月W3"]);
-    // W2は8/8-14のうち8/10-14の5日分、W3は8/15-21のうち8/15-16の2日分
-    expect(blocks.map(b => b.width)).toEqual([5 * 28, 2 * 28]);
+    expect(blocks.map(b => b.label)).toEqual(["8月W3", "8月W4"]);
+    expect(blocks.map(b => b.width)).toEqual([7 * 28, 7 * 28]);
+    expect(blocks.map(b => b.isMonthStart)).toEqual([false, false]);
   });
 
   it("dayWidthが変わればstartX/widthも比例して変わる", () => {
-    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 14));
+    // 2026-08-03(月)〜2026-08-16(日)：W2(8/3-9)／W3(8/10-16)、それぞれ丸ごと7日
+    const days = getDaysInRange(new Date(2026, 7, 3), new Date(2026, 7, 16));
     const blocks = computeWeekBlocks(days, 14);
     expect(blocks.map(b => b.width)).toEqual([7 * 14, 7 * 14]);
-  });
-
-  it("各ブロックにstartDate/endDate（ブロック内の最初/最後の日）を持つ（ツールチップ表示用）", () => {
-    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 31));
-    const blocks = computeWeekBlocks(days, 28);
-    expect(toDateStr(blocks[0].startDate)).toBe("2026-08-01");
-    expect(toDateStr(blocks[0].endDate)).toBe("2026-08-07");
-    expect(toDateStr(blocks[4].startDate)).toBe("2026-08-29");
-    expect(toDateStr(blocks[4].endDate)).toBe("2026-08-31");
   });
 });
 
@@ -207,18 +222,18 @@ describe("applyResizePreview", () => {
 });
 
 describe("computeWeekGridLines", () => {
-  it("月初（W1）を除いた週境界のx座標を返す", () => {
-    // 2026年8月：W1(月初・除外)/W2/W3/W4/W5の5ブロック
-    const days = getDaysInRange(new Date(2026, 7, 1), new Date(2026, 7, 31));
+  it("月初（W1）を除いた週境界（＝月曜開始のブロック）のx座標を返す", () => {
+    // 2026年7月：W1(月初・除外)/W2(7/6開始)/W3(7/13開始)/W4(7/20開始)/W5(7/27開始)
+    const days = getDaysInRange(new Date(2026, 6, 1), new Date(2026, 6, 31));
     const blocks = computeWeekBlocks(days, 28);
-    expect(computeWeekGridLines(blocks)).toEqual([7 * 28, 14 * 28, 21 * 28, 28 * 28]);
+    expect(computeWeekGridLines(blocks)).toEqual([5 * 28, 12 * 28, 19 * 28, 26 * 28]);
   });
 
-  it("先頭ブロックが月初でなければ含まれる", () => {
-    // 8/10始まり：W2(先頭・月初でない)/W3
-    const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 16));
+  it("先頭ブロックが月初でなければ含まれる（月曜始まりの通常ブロック）", () => {
+    // 8/10(月)始まり：W3(先頭・月初でない)/W4
+    const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 23));
     const blocks = computeWeekBlocks(days, 28);
-    expect(computeWeekGridLines(blocks)).toEqual([0, 5 * 28]);
+    expect(computeWeekGridLines(blocks)).toEqual([0, 7 * 28]);
   });
 });
 

@@ -303,9 +303,9 @@ export function GanttView({
 
   const todayX = diffDays(rangeStart, today) * dayWidth;
 
-  // 週ラベル（月内日数ブロック方式：8月W1〜W5）。日単位の日付数字行を置き換える。
-  // ズームレベルに関わらずブロック数は月あたり4〜5個で一定のため、旧labelDaysのような
-  // ズーム閾値によるDOM間引きは不要
+  // 週ラベル（カレンダー週＝月曜始まり・日曜終わり方式：8月W1〜W5。CLAUDE.md v3.09）。
+  // 日単位の日付数字行を置き換える。ズームレベルに関わらずブロック数は月あたり4〜5個で一定のため、
+  // 旧labelDaysのようなズーム閾値によるDOM間引きは不要
   const weekBlocks = useMemo(() => computeWeekBlocks(days, dayWidth), [days, dayWidth]);
   // 週コラムの淡いグリッド線のx座標（月初＝W1はborderDays側の太い境界線と重複するため対象外）
   const weekGridLines = useMemo(() => computeWeekGridLines(weekBlocks), [weekBlocks]);
@@ -2436,8 +2436,8 @@ export function GanttView({
                   </div>
                 ))}
               </div>
-              {/* 週ラベル行（月内日数ブロック：W1=1-7/W2=8-14/W3=15-21/W4=22-28/W5=29〜月末。
-                  各週は必ずその月に属す＝月をまたいだ瞬間に翌月のW1から数え直す） */}
+              {/* 週ラベル行（カレンダー週＝月曜始まり・日曜終わり。W1=月頭〜最初の日曜の半端週。
+                  週番号は月ごとにリセット＝月をまたいだ瞬間に翌月のW1から数え直す。CLAUDE.md v3.09） */}
               <div style={{ height: GANTT_HEADER_WEEK_HEIGHT, position: "relative" }}>
                 {weekBlocks.map((wb, i) => (
                   <div key={i} title={formatDateRangeWithWeekday(wb.startDate, wb.endDate)} style={{
