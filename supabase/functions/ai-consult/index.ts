@@ -17,7 +17,10 @@ const DEFAULT_MODEL = "claude-sonnet-4-6";
 // 未知の値は無視して既定にフォールバック（任意モデル指定の悪用を防ぐ）
 const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
 // クライアント指定 max_tokens の上限（コスト暴走防止。レート制限と併用）
-const MAX_TOKENS_CAP = 8192;
+// 2026-07-24: メイン相談（apiClient.ts）が複数タスクの構造化提案等で出力が
+// 4096を超えて途中で切れる不具合があったため、16384に引き上げ（v2.93の
+// okrImportExtractor.ts同様8192に上げていたが、それでも上限に達していたため再拡大）
+const MAX_TOKENS_CAP = 16384;
 
 // ===== CORS =====
 // ALLOWED_ORIGINS 環境変数にカンマ区切りで本番ドメインを設定する。

@@ -17,9 +17,8 @@ import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembe
 import { useConsultSessionStore } from "../stores/consultSessionStore";
 import type { ConsultationType, ResponseVolume } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
-import { callAIConsultation } from "../lib/ai/apiClient";
 import { AIError } from "../lib/ai/apiClient";
-import { parseAIResponse } from "../lib/ai/responseParser";
+import { runAIConsultation } from "../lib/ai/consultationRunner";
 import { mapProposalsToUI } from "../lib/ai/proposalMapper";
 import type { UIProposal } from "../lib/ai/proposalMapper";
 import {
@@ -157,8 +156,8 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           : currentSession.turns.slice(0, -1); // 最後のユーザーターンはpayloadに含めるので除外
 
       try {
-        // APIコール
-        const { text: rawResponse, usage } = await callAIConsultation(
+        // APIコール＋パース（パース失敗時は1回だけ自己修正リトライ。consultationRunner.ts参照）
+        const result = await runAIConsultation(
           payload,
           consultationType,
           historyForApi,
@@ -167,26 +166,35 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         );
 
         // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
+        // リトライが発生した場合は実際に消費した2回分をそれぞれ記録する
         insertAiUsageLog({
           member_id: currentMemberId,
           consultation_type: consultationType,
-          input_tokens: usage.input_tokens,
-          output_tokens: usage.output_tokens,
+          input_tokens: result.usage.input_tokens,
+          output_tokens: result.usage.output_tokens,
         }).catch((err: unknown) => {
           console.warn("AI使用量ログの記録に失敗（相談は継続）:", err);
         });
+        if (result.retryUsage) {
+          insertAiUsageLog({
+            member_id: currentMemberId,
+            consultation_type: consultationType,
+            input_tokens: result.retryUsage.input_tokens,
+            output_tokens: result.retryUsage.output_tokens,
+          }).catch((err: unknown) => {
+            console.warn("AI使用量ログ（リトライ分）の記録に失敗（相談は継続）:", err);
+          });
+        }
 
-        // レスポンスをパース
-        const parsed = parseAIResponse(rawResponse);
-        const uiProposals = mapProposalsToUI(parsed.proposals);
+        const uiProposals = mapProposalsToUI(result.proposals);
 
         setProposals(uiProposals);
-        setFollowUpSuggestions(parsed.follow_up_suggestions);
+        setFollowUpSuggestions(result.follow_up_suggestions);
 
-        // アシスタントターンを追加
+        // アシスタントターンを追加（リトライ成功時は最終的な正しいJSONを履歴に残す）
         const assistantTurn = {
           role: "assistant" as const,
-          content: rawResponse,
+          content: result.rawResponse,
           timestamp: new Date().toISOString(),
         };
         currentSession = addTurn(currentSession, assistantTurn);

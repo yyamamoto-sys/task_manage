@@ -66,7 +66,22 @@ interface AnthropicResponse {
 export interface AICallResult {
   text: string;
   usage: { input_tokens: number; output_tokens: number };
+  /** Anthropicの終了理由（"end_turn"|"max_tokens"等）。出力切れの検知に使う */
+  stopReason: string;
 }
+
+/** 自己修正リトライ用：直前の不正出力を添えて厳密なJSONで出し直させる */
+export interface AIRetryContext {
+  previousResponseText: string;
+  /** パース失敗の理由（AIへの説明文に埋め込む） */
+  reason: string;
+}
+
+// 相談1回あたりのmax_tokens。会話を重ねる・複数タスクの構造化提案など出力が
+// 大きくなる相談で応答が途中で切れてJSONパースに失敗する事故があったため、
+// v2.93（okrImportExtractor）と同様に十分大きな値を確保する（Edge Function側の
+// MAX_TOKENS_CAPと合わせて上げること。cap未変更だと静かにここより小さい値に丸められる）。
+const MAX_TOKENS = 16384;
 
 export async function callAIConsultation(
   payload: AIConsultationPayload,
@@ -76,6 +91,8 @@ export async function callAIConsultation(
   model?: string,
   /** 回答ボリューム設定。省略時は "normal" */
   responseVolume?: ResponseVolume,
+  /** 直前の応答がJSONパースに失敗した場合の自己修正リトライ用コンテキスト */
+  retryContext?: AIRetryContext,
 ): Promise<AICallResult> {
   const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal");
 
@@ -95,6 +112,20 @@ export async function callAIConsultation(
     content: JSON.stringify(payload),
   });
 
+  // 自己修正リトライ：直前の不正な出力→修正依頼を会話として追加する
+  // （okrImportExtractor.tsと同じ作法。引用符エスケープ漏れ等max_tokens以外の破損を救済する）
+  if (retryContext) {
+    messages.push({ role: "assistant", content: retryContext.previousResponseText });
+    messages.push({
+      role: "user",
+      content:
+        `あなたの直前の出力はJSONとして解析できませんでした（エラー: ${retryContext.reason}）。` +
+        `同じ内容を、厳密に正しいJSONオブジェクトだけで出力し直してください。` +
+        `二重引用符は \\" とエスケープし、日本語の引用は「」を使い、生の改行は入れず、` +
+        `コードブロックや説明文は一切付けないこと。`,
+    });
+  }
+
   let data: AnthropicResponse | null = null;
   let error: Error | null = null;
 
@@ -103,7 +134,7 @@ export async function callAIConsultation(
       body: {
         system: systemPrompt,
         messages,
-        max_tokens: 4096,
+        max_tokens: MAX_TOKENS,
         ...(model ? { model } : {}),
       },
     });
@@ -154,5 +185,6 @@ export async function callAIConsultation(
   return {
     text: data.content[0].text,
     usage: data.usage ?? { input_tokens: 0, output_tokens: 0 },
+    stopReason: data.stop_reason ?? "",
   };
 }

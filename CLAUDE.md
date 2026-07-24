@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.06
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.07
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2843,7 +2843,75 @@
 #      検証：tsc 0/vitest 553件全通過（548件+新規5件＝dragReorder computeInsertAfterOrder）/
 #             eslint 35件で完全一致（baseline比較・新規0）/build成功
 #
-# 最終更新：2026-07-24（v3.06）
+# v3.07 fix: AI相談（メイン相談フロー）がターンを重ねるとJSONパース失敗で応答不能になる
+#      バグを修正（複数タスクの日程調整など大きな構造化提案で発生）（2026-07-24）
+#      症状：スケジュール調整でAIと3回ほど相談を重ねた後、画面に「AIのレスポンスをJSONとして
+#             パースできませんでした」＋再試行ボタンが出て応答が返らなくなる（2回同一現象で報告）。
+#      根本原因：`apiClient.ts`（メイン相談＝ConsultationPanel/useAIConsultationの経路）が
+#             `max_tokens: 4096`固定で呼んでいた。会話を重ねる＋複数タスクの日程調整のような
+#             大きな構造化JSON提案では出力が4096トークンを超えて途中で切れ、
+#             `responseParser.ts`のJSONパース（```フェンス除去→最初の{〜最後の}抽出の
+#             フォールバックも含む）が失敗しAIError("INVALID_RESPONSE")になっていた。
+#      v2.93との関係：OKR取込（`okrImportExtractor.ts`）では同種の出力切れ・不正JSON対策を
+#             2026-07-23に先行実装済み（max_tokens 4096→8192・自己修正リトライ・プロンプト
+#             厳格化）だったが、メイン相談フローには未適用のまま残っていた。今回はそれを
+#             メイン相談フローへ横展開した形。
+#      修正1（`apiClient.ts`）：max_tokensを4096→**16384**に引き上げ（定数`MAX_TOKENS`）。
+#             中〜長い相談・複数タスクの構造化提案でも出力が途中で切れないようにする。
+#      修正2（Edge Function・要再デプロイ）：`supabase/functions/ai-consult/index.ts`の
+#             `MAX_TOKENS_CAP`が**8192**にハードコードされていた（v2.93でOKR取込用に8192へ
+#             上げた名残）。クライアントの`max_tokens`は`Math.min(body.max_tokens, MAX_TOKENS_CAP)`
+#             で丸められるため、フロントを16384にしてもEdge Function側の上限が8192のままだと
+#             静かに8192へ丸められ、修正が完全には効かない。**MAX_TOKENS_CAPも16384に引き上げ**、
+#             Edge Functionの再デプロイが必要（詳細は本コミットの報告参照。CLIまたはSupabase
+#             管理画面での手動再デプロイ・git pushでは反映されない）。
+#             なお`stop_reason`は元々レスポンス全文をそのまま転送する実装だったため、Edge
+#             Function側の変更なしで既にクライアントまで届いていた（今回追加の変更は不要）。
+#      修正3（`apiClient.ts`/`responseParser.ts`）：Anthropicレスポンスの`stop_reason`を
+#             `AICallResult.stopReason`としてクライアントまで通し、`parseAIResponse(rawText,
+#             stopReason)`が`stopReason==="max_tokens"`の場合はパース失敗時に汎用的な
+#             「AIのレスポンスをJSONとしてパースできませんでした」ではなく「応答が長くなり
+#             すぎて途中で切れました。相談を分けるか、もう一度お試しください。」という的確な
+#             案内をAIErrorとしてthrowするようにした（`TRUNCATED_RESPONSE_MESSAGE`定数）。
+#      修正4（新規`src/lib/ai/consultationRunner.ts`・自己修正リトライ）：v2.93の
+#             `okrImportExtractor.extractOkrImportData`と同じ作法で、`callAIConsultation`→
+#             `parseAIResponse`を束ねる`runAIConsultation()`を新設。パース失敗時、
+#             `stop_reason==="max_tokens"`（出力切れ）ならリトライしても同じ壁にぶつかるだけ
+#             なので即座にエラーを伝播し、それ以外（引用符エスケープ漏れ等）の場合のみ
+#             1回だけ、直前の不正出力をassistantターンとして渡し「厳密なJSONで出し直して」と
+#             リトライする（`apiClient.ts`の`callAIConsultation`に`retryContext`引数を追加）。
+#             `useAIConsultation.ts`はこの`runAIConsultation()`を呼ぶ形にリファクタ
+#             （callAIConsultation+parseAIResponseの直接呼び出しをやめた）。リトライで
+#             実際に2回APIを呼んだ場合は`ai_usage_logs`にも2回分を記録する（実コストの
+#             正確な計上。CLAUDE.md Section 16の趣旨）。会話履歴（セッション）にはリトライ
+#             成功後の正しいJSONを保存する。apiClient.ts↔responseParser.tsの循環import
+#             を避けるため、この束ね役はどちらにも依存する別モジュールとして新設した。
+#      確認5（会話履歴トランケート）：`sessionManager.ts`の`truncateOldTurns`（10ターン超で
+#             warning→続行時に直近5ターンのみ残す）は`useAIConsultation.ts`側で従来どおり
+#             機能していることを確認。今回のバグの主因ではなかったため変更なし（現状維持）。
+#      修正6（プロンプト厳格化・`systemPrompt.ts`）：`RESPONSE_FORMAT`の「## 重要なルール」に、
+#             v2.93の`okrImportExtractor.ts` SYSTEM_PROMPTと同内容のJSON厳格化指示
+#             （二重引用符は\\"でエスケープ・日本語引用は「」を使う・生の改行禁止・末尾カンマ
+#             禁止）を追加。全5モード（change/simulate/diagnose/deadline_check/scope_change）
+#             に反映される（RESPONSE_FORMATは共通テンプレートのため）。
+#      テスト：`responseParser.test.ts`に3件（stop_reason=max_tokens時の的確メッセージ／
+#             end_turn時は従来メッセージ／max_tokensでもパース成功なら誤検知しない）、
+#             新規`apiClient.test.ts`3件（max_tokens=16384で送信・stop_reasonの通過・
+#             retryContextのメッセージ構築）、新規`consultationRunner.test.ts`4件（1回で成功／
+#             不正JSONから1回リトライで救済／max_tokensはリトライせず即エラー／リトライ後も
+#             失敗なら最終的にエラー伝播）、`systemPrompt.test.ts`に1件（全モードにJSON厳格化
+#             指示が含まれる）を追加。計564件（553件+新規11件）全通過。tsc 0・eslint 35件で
+#             完全一致（baseline比較・新規0）・build成功。
+#      デプロイ：フロント分（apiClient.ts/responseParser.ts/systemPrompt.ts/
+#             useAIConsultation.ts/consultationRunner.ts）はcommit＋push済み（Vercel自動
+#             デプロイ）。**Edge Function（supabase/functions/ai-consult/index.ts）の
+#             MAX_TOKENS_CAP変更は山本さんの手動再デプロイが必要**（Supabase CLI:
+#             `supabase functions deploy ai-consult`、または管理画面のEdge Functionsから
+#             再デプロイ。git pushでは反映されない）。再デプロイ完了までは、クライアントが
+#             16384を要求してもEdge Function側で8192に丸められるため、4096→8192相当の
+#             改善までは即時に効くが、16384までの完全な効果は再デプロイ後になる。
+#
+# 最終更新：2026-07-24（v3.07）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。

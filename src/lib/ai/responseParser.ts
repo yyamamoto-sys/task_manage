@@ -180,17 +180,28 @@ function validateProposal(p: unknown, index: number): Proposal {
   };
 }
 
+/** stop_reason==="max_tokens"（出力上限で途中切れ）のときにユーザーへ示す案内 */
+export const TRUNCATED_RESPONSE_MESSAGE =
+  "応答が長くなりすぎて途中で切れました。相談を分けるか、もう一度お試しください。";
+
 /**
  * AIの生レスポンス文字列（JSON）をパースしてAIResponseDataを返す。
  * パース失敗・型エラーの場合はAIError("INVALID_RESPONSE")をthrow。
+ *
+ * @param stopReason - Anthropicレスポンスのstop_reason。"max_tokens"（出力上限で
+ *   途中切れ）の場合は、JSONパース失敗時に分かりにくい汎用メッセージではなく
+ *   「応答が長くなりすぎて〜」という的確な案内をthrowする。
  */
-export function parseAIResponse(rawText: string): AIResponseData {
+export function parseAIResponse(rawText: string, stopReason?: string): AIResponseData {
   // AIがコードブロックで囲んで返す場合があるため除去する
   // マルチライン（s フラグ）で先頭の ```json または ``` と末尾の ``` をまとめて除去する
   const cleaned = rawText
     .replace(/^```(?:json)?\s*/is, "")
     .replace(/\s*```\s*$/is, "")
     .trim();
+
+  const parseFailureMessage =
+    stopReason === "max_tokens" ? TRUNCATED_RESPONSE_MESSAGE : "AIのレスポンスをJSONとしてパースできませんでした";
 
   let parsed: unknown;
   try {
@@ -204,16 +215,10 @@ export function parseAIResponse(rawText: string): AIResponseData {
       try {
         parsed = JSON.parse(cleaned.slice(start, end + 1));
       } catch {
-        throw new AIError(
-          "INVALID_RESPONSE",
-          "AIのレスポンスをJSONとしてパースできませんでした",
-        );
+        throw new AIError("INVALID_RESPONSE", parseFailureMessage);
       }
     } else {
-      throw new AIError(
-        "INVALID_RESPONSE",
-        "AIのレスポンスをJSONとしてパースできませんでした",
-      );
+      throw new AIError("INVALID_RESPONSE", parseFailureMessage);
     }
   }
 

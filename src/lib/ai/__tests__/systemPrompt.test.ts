@@ -44,4 +44,11 @@ describe("systemPrompt: 新規PJ作成ヒアリング・プロトコル", () => 
       );
     }
   });
+
+  it("全モードにJSON厳格化ルール（引用符エスケープ・改行禁止）が含まれる（v3.07）", () => {
+    for (const [type, prompt] of prompts) {
+      expect(prompt, `${type} モードに引用符エスケープ指示が無い`).toContain('\\" とエスケープ');
+      expect(prompt, `${type} モードに生の改行禁止指示が無い`).toContain("生の改行を入れない");
+    }
+  });
 });

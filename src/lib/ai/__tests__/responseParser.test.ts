@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseAIResponse } from "../responseParser";
+import { parseAIResponse, TRUNCATED_RESPONSE_MESSAGE } from "../responseParser";
 
 function wrap(proposals: unknown[]): string {
   return JSON.stringify({ proposals, follow_up_suggestions: [] });
@@ -144,5 +144,28 @@ describe("parseAIResponse", () => {
     const tasks = parseAIResponse(raw2).proposals[0].new_project_tasks;
     expect(tasks).toHaveLength(1);
     expect(tasks?.[0].name).toBe("有効タスク");
+  });
+});
+
+describe("parseAIResponse — stop_reason=max_tokens（出力の途中切れ）", () => {
+  it("途中で切れた不正JSON＋stopReason=max_tokensでは分かりやすい案内をthrowする", () => {
+    // 応答が途中で終わっている（構造化提案が閉じずに切れた想定）
+    const truncated = '{ "proposals": [ { "proposal_id": "prop_001", "title": "期日変更", "descriptio';
+    expect(() => parseAIResponse(truncated, "max_tokens")).toThrow(TRUNCATED_RESPONSE_MESSAGE);
+  });
+
+  it("同じ壊れ方でもstopReasonがend_turn（or未指定）なら従来どおり汎用メッセージ", () => {
+    const truncated = '{ "proposals": [ { "proposal_id": "prop_001", "title": "期日変更", "descriptio';
+    expect(() => parseAIResponse(truncated, "end_turn")).toThrow(
+      "AIのレスポンスをJSONとしてパースできませんでした",
+    );
+    expect(() => parseAIResponse(truncated)).toThrow(
+      "AIのレスポンスをJSONとしてパースできませんでした",
+    );
+  });
+
+  it("stopReason=max_tokensでもパースに成功する場合はエラーにならない（誤検知しない）", () => {
+    const raw = wrap([{ proposal_id: "p", title: "t", description: "d", action_type: "info" }]);
+    expect(parseAIResponse(raw, "max_tokens").proposals).toHaveLength(1);
   });
 });
