@@ -1,7 +1,7 @@
 // src/components/gantt/ganttUtils.ts
 // ガントビュー共通の定数・型・純粋関数
 
-import type { Task, Milestone } from "../../lib/localData/types";
+import type { Task, Milestone, Project, Member, ToDo } from "../../lib/localData/types";
 import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
@@ -426,4 +426,147 @@ export function xToDate(x: number, rangeStart: Date, dayWidth: number): Date {
  */
 export function computeDragCreateRange(dateA: string, dateB: string): { start: string; due: string } {
   return dateA <= dateB ? { start: dateA, due: dateB } : { start: dateB, due: dateA };
+}
+
+// ===== 共有行モデル（ganttRows）。左ラベル列・右バー列を1つの配列から描画する（CLAUDE.md v3.08） =====
+//
+// 【設計意図】旧実装は左ラベル列（labelBodyRef）と右バー列（scrollRef）がそれぞれ独立に
+// PJ/ToDo/担当者のツリーを辿ってJSXを組み立てていたため、折りたたみ・簡易追加行・ヘッダー高さ
+// などの表示条件をどちらか片方だけ変更してしまうと行数・行高さが非対称になり縦にズレる事故が
+// v3.04〜v3.06で繰り返し発生した（CLAUDE.md該当changelog参照。個別修正はもぐら叩きで再発する）。
+// ここでは「縦方向に並ぶ全行」を、折りたたみ・親折りたたみ・簡易追加行の表示可否まで含めて
+// 1回だけ判定し、1つの配列（GanttRow[]）として組み立てる。GanttView.tsx はこの配列を
+// 左右それぞれで1回ずつ map するだけにする（表示条件の分岐を二重に書かない）ことで、
+// 行数・各行の高さが構造的に必ず一致する（ズレが原理的に起きない）。
+
+/** PJ別ビュー・人別ビュー共通のグループ見出し行の高さ（PJ行／ToDoグループ行／担当者行）。 */
+export const GANTT_GROUP_ROW_HEIGHT = 36;
+/** タスク1件を表す行の高さ（PJ別／ToDo別／人別、全ビュー共通）。 */
+export const GANTT_TASK_ROW_HEIGHT = 30;
+
+export type GanttRowKind =
+  | "pj-header" | "task" | "quick-add"
+  | "todo-header" | "todo-task"
+  | "person-header" | "person-task";
+
+interface GanttRowCommon {
+  /** React key。人別ビュー等で同じ task.id が複数ブロックに現れうるため、呼び出し側で
+      ブロックキーを含めて組み立て一意にする */
+  key: string;
+  height: number;
+  /** 同じブロック（PJ／ToDoグループ／担当者）に属する行を束ねる識別子。
+      computeGanttBlockRanges が「連続する同じ blockKey の行」の累積Y範囲を算出するのに使う。
+      既存の collapsed state のキー（pj.id／`todo_${id}`／`person_${id}`）とそのまま揃えている。 */
+  blockKey: string;
+}
+
+export interface GanttPjHeaderRow extends GanttRowCommon { kind: "pj-header"; pj: Project; }
+export interface GanttTaskRow extends GanttRowCommon { kind: "task"; task: Task; depth: number; childCount: number; pj: Project; }
+export interface GanttQuickAddRow extends GanttRowCommon { kind: "quick-add"; pj: Project; }
+export interface GanttTodoHeaderRow extends GanttRowCommon { kind: "todo-header"; todo: ToDo; todoId: string; tasks: Task[]; }
+export interface GanttTodoTaskRow extends GanttRowCommon { kind: "todo-task"; task: Task; todoId: string; }
+export interface GanttPersonHeaderRow extends GanttRowCommon { kind: "person-header"; member: Member; tasks: Task[]; }
+export interface GanttPersonTaskRow extends GanttRowCommon { kind: "person-task"; task: Task; member: Member; }
+
+export type GanttRow =
+  | GanttPjHeaderRow | GanttTaskRow | GanttQuickAddRow
+  | GanttTodoHeaderRow | GanttTodoTaskRow
+  | GanttPersonHeaderRow | GanttPersonTaskRow;
+
+export interface BuildPjViewGanttRowsInput {
+  visibleProjects: Project[];
+  /** PJ.id → 親→子の順に並んだタスク一覧（GanttView.tsx の pjOrderedTasksMap） */
+  pjOrderedTasksMap: Map<string, { task: Task; depth: number; childCount: number }[]>;
+  todoGroups: { todo: ToDo; todoId: string; tasks: Task[] }[];
+  /** todoId → ソート済みタスク一覧（GanttView.tsx の todoGroupSortedMap） */
+  todoGroupSortedMap: Map<string, Task[]>;
+  /** 折りたたみ状態（キー：PJ.id／`todo_${todoId}`／親タスクid） */
+  collapsed: Record<string, boolean>;
+  /** プレビューモードでは簡易追加行を出さない */
+  isPreview: boolean;
+}
+
+/**
+ * PJ別ビューの全行を組み立てる（純粋関数）。折りたたみ（PJ／親タスク／ToDoグループ）・
+ * 簡易追加行の表示可否（!isCollapsed && !isPreview）をここで1回だけ判定する。
+ * GanttView.tsx はこの結果を左ラベル列・右バー列の両方でそのまま map するだけでよい。
+ */
+export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow[] {
+  const { visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview } = input;
+  const rows: GanttRow[] = [];
+  for (const pj of visibleProjects) {
+    const isCollapsed = !!collapsed[pj.id];
+    rows.push({ kind: "pj-header", key: `pjh_${pj.id}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey: pj.id, pj });
+    if (!isCollapsed) {
+      const ordered = pjOrderedTasksMap.get(pj.id) ?? [];
+      for (const { task, depth, childCount } of ordered) {
+        if (depth > 0 && task.parent_task_id && collapsed[task.parent_task_id]) continue;
+        rows.push({ kind: "task", key: `${pj.id}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey: pj.id, task, depth, childCount, pj });
+      }
+      if (!isPreview) {
+        rows.push({ kind: "quick-add", key: `qa_${pj.id}`, height: QUICK_ADD_ROW_HEIGHT, blockKey: pj.id, pj });
+      }
+    }
+  }
+  for (const g of todoGroups) {
+    const blockKey = `todo_${g.todoId}`;
+    const isCollapsed = !!collapsed[blockKey];
+    rows.push({ kind: "todo-header", key: `todoh_${g.todoId}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey, todo: g.todo, todoId: g.todoId, tasks: g.tasks });
+    if (!isCollapsed) {
+      const sorted = todoGroupSortedMap.get(g.todoId) ?? g.tasks;
+      for (const task of sorted) {
+        rows.push({ kind: "todo-task", key: `${blockKey}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey, task, todoId: g.todoId });
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * 人別ビューの全行を組み立てる（純粋関数）。担当者グループの折りたたみのみ判定する
+ * （人別ビューには親子インデント・簡易追加行が無いため、PJ別ビューより単純）。
+ */
+export function buildPersonViewGanttRows(
+  personGroups: { member: Member; tasks: Task[] }[],
+  collapsed: Record<string, boolean>,
+): GanttRow[] {
+  const rows: GanttRow[] = [];
+  for (const { member, tasks } of personGroups) {
+    const blockKey = `person_${member.id}`;
+    const isCollapsed = !!collapsed[blockKey];
+    rows.push({ kind: "person-header", key: `personh_${member.id}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey, member, tasks });
+    if (!isCollapsed) {
+      for (const task of tasks) {
+        rows.push({ kind: "person-task", key: `${blockKey}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey, task, member });
+      }
+    }
+  }
+  return rows;
+}
+
+/**
+ * ganttRows の各行の高さを先頭から積み上げ、ブロック（PJ／ToDoグループ／担当者。blockKeyで判別）
+ * ごとのY範囲（top＝ブロック先頭行の開始Y、height＝ブロック内の全行の高さ合計）を返す（純粋関数）。
+ * マイルストーン帯・過負荷帯を「バー列全体を覆う絶対配置オーバーレイ」として描く際の座標源になる
+ * （CLAUDE.md v3.08。同じ blockKey の行は必ず連続している＝buildPjViewGanttRows/
+ * buildPersonViewGanttRows の組み立て方に由来する前提）。
+ */
+export function computeGanttBlockRanges(rows: GanttRow[]): Map<string, { top: number; height: number }> {
+  const map = new Map<string, { top: number; height: number }>();
+  let y = 0;
+  for (const row of rows) {
+    const existing = map.get(row.blockKey);
+    if (existing) {
+      existing.height += row.height;
+    } else {
+      map.set(row.blockKey, { top: y, height: row.height });
+    }
+    y += row.height;
+  }
+  return map;
+}
+
+/** ganttRows の全行の高さ合計。左右の総高さが一致することを確認する用途（ユニットテスト参照）。 */
+export function computeGanttRowsTotalHeight(rows: GanttRow[]): number {
+  return rows.reduce((sum, r) => sum + r.height, 0);
 }

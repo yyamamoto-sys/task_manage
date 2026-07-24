@@ -7,8 +7,11 @@ import {
   computeMoveShift, computeBulkMoveShifts,
   clampZoom, computeVisibleOrderedTaskIds, ZOOM_LEVELS,
   xToDate, computeDragCreateRange,
+  buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges, computeGanttRowsTotalHeight,
+  GANTT_GROUP_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT, QUICK_ADD_ROW_HEIGHT,
+  type GanttRow,
 } from "../ganttUtils";
-import type { Task, Milestone } from "../../../lib/localData/types";
+import type { Task, Milestone, Project, Member, ToDo } from "../../../lib/localData/types";
 import { getDaysInRange, toDateStr } from "../../../lib/date";
 import { isHoliday } from "../../../lib/date/holidays";
 
@@ -25,6 +28,46 @@ function makeTask(overrides: Partial<Task> & { id: string }): Task {
     due_date: null,
     estimated_hours: null,
     comment: "",
+    is_deleted: false,
+    ...overrides,
+  };
+}
+
+function makeProject(overrides: Partial<Project> & { id: string }): Project {
+  return {
+    name: "PJ",
+    purpose: "",
+    contribution_memo: "",
+    owner_member_id: "m1",
+    owner_member_ids: ["m1"],
+    status: "active",
+    color_tag: "#000",
+    start_date: "2026-07-01",
+    end_date: "2026-07-31",
+    is_deleted: false,
+    ...overrides,
+  };
+}
+
+function makeMember(overrides: Partial<Member> & { id: string }): Member {
+  return {
+    display_name: "山本",
+    short_name: "山本",
+    initials: "YY",
+    teams_account: "",
+    color_bg: "#fff",
+    color_text: "#000",
+    is_deleted: false,
+    ...overrides,
+  };
+}
+
+function makeToDo(overrides: Partial<ToDo> & { id: string }): ToDo {
+  return {
+    tf_id: "tf1",
+    title: "ToDo",
+    due_date: null,
+    memo: "",
     is_deleted: false,
     ...overrides,
   };
@@ -511,5 +554,189 @@ describe("computeDragCreateRange", () => {
 
   it("同日ドラッグはstart=dueの単日タスクとして許容される", () => {
     expect(computeDragCreateRange("2026-07-03", "2026-07-03")).toEqual({ start: "2026-07-03", due: "2026-07-03" });
+  });
+});
+
+// ===== 共有行モデル（ganttRows）。CLAUDE.md v3.08 =====
+
+describe("buildPjViewGanttRows", () => {
+  const pj1 = makeProject({ id: "pj1" });
+  const pj2 = makeProject({ id: "pj2" });
+  const parent = makeTask({ id: "parent", project_id: "pj1" });
+  const child = makeTask({ id: "child", project_id: "pj1", parent_task_id: "parent" });
+  const pjOrderedTasksMap = new Map([
+    ["pj1", [
+      { task: parent, depth: 0, childCount: 1 },
+      { task: child, depth: 1, childCount: 0 },
+    ]],
+    ["pj2", []],
+  ]);
+
+  it("PJ見出し→タスク→簡易追加行の順に組み立てる（複数PJ）", () => {
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1, pj2],
+      pjOrderedTasksMap,
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: {},
+      isPreview: false,
+    });
+    expect(rows.map(r => r.kind)).toEqual([
+      "pj-header", "task", "task", "quick-add",
+      "pj-header", "quick-add",
+    ]);
+    expect(rows.every(r => r.height > 0)).toBe(true);
+  });
+
+  it("PJが折りたたまれている間はタスク・簡易追加行を含まない（見出し行のみ残る）", () => {
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1],
+      pjOrderedTasksMap,
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: { pj1: true },
+      isPreview: false,
+    });
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("pj-header");
+  });
+
+  it("親タスクが折りたたまれている子タスクはスキップする", () => {
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1],
+      pjOrderedTasksMap,
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: { parent: true },
+      isPreview: false,
+    });
+    const kinds = rows.filter(r => r.kind === "task").map(r => (r as { task: Task }).task.id);
+    expect(kinds).toEqual(["parent"]);
+  });
+
+  it("isPreviewのときは簡易追加行を含まない", () => {
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1],
+      pjOrderedTasksMap,
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: {},
+      isPreview: true,
+    });
+    expect(rows.some(r => r.kind === "quick-add")).toBe(false);
+  });
+
+  it("ToDoグループはPJの後・折りたたみ状態も個別に判定する", () => {
+    const todoTask = makeTask({ id: "todo-task", project_id: null });
+    const todo = makeToDo({ id: "todo1" });
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [],
+      pjOrderedTasksMap: new Map(),
+      todoGroups: [{ todo, todoId: "todo1", tasks: [todoTask] }],
+      todoGroupSortedMap: new Map([["todo1", [todoTask]]]),
+      collapsed: {},
+      isPreview: false,
+    });
+    expect(rows.map(r => r.kind)).toEqual(["todo-header", "todo-task"]);
+  });
+
+  it("行の高さはGANTT_GROUP_ROW_HEIGHT/GANTT_TASK_ROW_HEIGHT/QUICK_ADD_ROW_HEIGHTのいずれかと一致する", () => {
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1],
+      pjOrderedTasksMap,
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: {},
+      isPreview: false,
+    });
+    for (const row of rows) {
+      if (row.kind === "pj-header") expect(row.height).toBe(GANTT_GROUP_ROW_HEIGHT);
+      if (row.kind === "task") expect(row.height).toBe(GANTT_TASK_ROW_HEIGHT);
+      if (row.kind === "quick-add") expect(row.height).toBe(QUICK_ADD_ROW_HEIGHT);
+    }
+  });
+});
+
+describe("buildPersonViewGanttRows", () => {
+  const m1 = makeMember({ id: "m1" });
+  const m2 = makeMember({ id: "m2" });
+  const t1 = makeTask({ id: "t1" });
+  const t2 = makeTask({ id: "t2" });
+
+  it("担当者見出し→タスクの順に組み立てる（複数担当者）", () => {
+    const rows = buildPersonViewGanttRows(
+      [{ member: m1, tasks: [t1, t2] }, { member: m2, tasks: [] }],
+      {},
+    );
+    expect(rows.map(r => r.kind)).toEqual(["person-header", "person-task", "person-task", "person-header"]);
+  });
+
+  it("担当者が折りたたまれている間はタスク行を含まない", () => {
+    const rows = buildPersonViewGanttRows(
+      [{ member: m1, tasks: [t1, t2] }],
+      { person_m1: true },
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].kind).toBe("person-header");
+  });
+
+  it("同じtaskIdが複数担当者に現れてもrow.keyは重複しない（人別ビューの前提）", () => {
+    const rows = buildPersonViewGanttRows(
+      [{ member: m1, tasks: [t1] }, { member: m2, tasks: [t1] }],
+      {},
+    );
+    const keys = rows.map(r => r.key);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+});
+
+describe("computeGanttBlockRanges / computeGanttRowsTotalHeight", () => {
+  it("同じblockKeyの連続する行の高さを積み上げてtop/heightを算出する", () => {
+    const rows: GanttRow[] = [
+      { kind: "pj-header", key: "h1", height: 36, blockKey: "pj1", pj: makeProject({ id: "pj1" }) },
+      { kind: "task", key: "t1", height: 30, blockKey: "pj1", task: makeTask({ id: "t1" }), depth: 0, childCount: 0, pj: makeProject({ id: "pj1" }) },
+      { kind: "quick-add", key: "qa1", height: 26, blockKey: "pj1", pj: makeProject({ id: "pj1" }) },
+      { kind: "pj-header", key: "h2", height: 36, blockKey: "pj2", pj: makeProject({ id: "pj2" }) },
+    ];
+    const ranges = computeGanttBlockRanges(rows);
+    expect(ranges.get("pj1")).toEqual({ top: 0, height: 92 });
+    expect(ranges.get("pj2")).toEqual({ top: 92, height: 36 });
+  });
+
+  it("ganttRowsの全行の高さ合計は各行heightの単純合計と一致する（左右の総高さ一致の基盤）", () => {
+    const rows: GanttRow[] = [
+      { kind: "pj-header", key: "h1", height: 36, blockKey: "pj1", pj: makeProject({ id: "pj1" }) },
+      { kind: "task", key: "t1", height: 30, blockKey: "pj1", task: makeTask({ id: "t1" }), depth: 0, childCount: 0, pj: makeProject({ id: "pj1" }) },
+      { kind: "quick-add", key: "qa1", height: 26, blockKey: "pj1", pj: makeProject({ id: "pj1" }) },
+    ];
+    expect(computeGanttRowsTotalHeight(rows)).toBe(92);
+    // ブロック範囲の最終ブロックの top+height も全体高さと一致する（左右のスクロール総高さが
+    // 一致することの検証に使う不変条件）
+    const ranges = computeGanttBlockRanges(rows);
+    const last = ranges.get("pj1")!;
+    expect(last.top + last.height).toBe(computeGanttRowsTotalHeight(rows));
+  });
+
+  it("PJ別ビューの実データでも左右の行配列（同一参照）から求めた総高さは常に一致する", () => {
+    const pj1 = makeProject({ id: "pj1" });
+    const parent = makeTask({ id: "parent", project_id: "pj1" });
+    const child = makeTask({ id: "child", project_id: "pj1", parent_task_id: "parent" });
+    const rows = buildPjViewGanttRows({
+      visibleProjects: [pj1],
+      pjOrderedTasksMap: new Map([["pj1", [
+        { task: parent, depth: 0, childCount: 1 },
+        { task: child, depth: 1, childCount: 0 },
+      ]]]),
+      todoGroups: [],
+      todoGroupSortedMap: new Map(),
+      collapsed: {},
+      isPreview: false,
+    });
+    // 左ラベル列・右バー列は同じ rows 配列を1回ずつ map するだけの実装（GanttView.tsx）なので、
+    // 「両列の総高さが常に一致する」ことは「同一配列から求めた高さの合計が1つに定まる」ことと同値
+    const totalA = computeGanttRowsTotalHeight(rows);
+    const totalB = computeGanttRowsTotalHeight(rows);
+    expect(totalA).toBe(totalB);
+    expect(totalA).toBe(GANTT_GROUP_ROW_HEIGHT * 1 + GANTT_TASK_ROW_HEIGHT * 2 + QUICK_ADD_ROW_HEIGHT);
   });
 });

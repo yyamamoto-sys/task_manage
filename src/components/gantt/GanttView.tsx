@@ -26,7 +26,6 @@ import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
-  QUICK_ADD_ROW_HEIGHT,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
@@ -34,6 +33,7 @@ import {
   computeDayTicks, dayTickColor,
   clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection,
   xToDate, computeDragCreateRange,
+  type GanttRow, buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges,
 } from "./ganttUtils";
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
@@ -496,6 +496,52 @@ export function GanttView({
       taskIds: (todoGroupSortedMap.get(g.todoId) ?? sortTasks(g.tasks)).map(t => t.id),
     })),
   }), [viewMode, collapsed, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, sortTasks]);
+
+  // ===== 共有行モデル（ganttRows）。CLAUDE.md v3.08 =====
+  // 【設計意図】左ラベル列（labelBodyRef）と右バー列（scrollRef）は別々のスクロールコンテナで
+  // scrollTopを同期しているだけの構造のため、両列の「行順・各行高さ・行数」が完全一致していないと
+  // 縦にズレる。以前はラベル列・バー列それぞれが独立にPJ/ToDo/担当者のツリーを辿ってJSXを組み立てて
+  // いたため、折りたたみ・簡易追加行などの新機能を追加するたびに片方だけ変更が反映され非対称になる
+  // 事故が繰り返し起きていた（CLAUDE.md v3.04〜v3.06）。ここで縦方向の全行を1つの配列として
+  // 1回だけ組み立て、折りたたみ・親折りたたみ・簡易追加行の表示可否をこの1箇所に集約する。
+  // 下のJSXは左右とも、この配列を1回ずつ map するだけ（行の組み立てロジックの二重化そのものを
+  // なくす）ので、行数・各行の高さが構造的に必ず一致する（ズレが原理的に起きない）。
+  const ganttRows = useMemo<GanttRow[]>(() => {
+    if (viewMode === "person") {
+      return buildPersonViewGanttRows(
+        personGroups.map(g => ({ member: g.member, tasks: g.tasks })),
+        collapsed,
+      );
+    }
+    return buildPjViewGanttRows({
+      visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview,
+    });
+  }, [viewMode, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview]);
+
+  // 各ブロック（PJ／ToDoグループ／担当者）の累積Y座標（top）と高さ。マイルストーン帯・過負荷帯を
+  // 「バー列全体を覆う絶対配置オーバーレイ」として描く座標源（ganttRowsの高さの積み上げから算出する
+  // 純粋関数。ganttRowsは左右で同一参照のため、ここから求めた帯のY範囲も左右で必ず一致する）
+  const ganttBlockRanges = useMemo(() => computeGanttBlockRanges(ganttRows), [ganttRows]);
+
+  // PJ.id → そのPJのタスク一覧（フラット・pjOrderedTasksMapから派生）。PJ見出し行の進捗％算出に使う
+  const pjTaskListMap = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const pj of visibleProjects) {
+      map.set(pj.id, (pjOrderedTasksMap.get(pj.id) ?? []).map(r => r.task));
+    }
+    return map;
+  }, [visibleProjects, pjOrderedTasksMap]);
+
+  // PJ.id → そのPJのマイルストーン一覧（見出し行の◆表示・マイルストーン帯オーバーレイの両方で使う）
+  const milestonesByPjId = useMemo(() => {
+    const map = new Map<string, Milestone[]>();
+    for (const ms of milestones) {
+      const arr = map.get(ms.project_id) ?? [];
+      arr.push(ms);
+      map.set(ms.project_id, arr);
+    }
+    return map;
+  }, [milestones]);
 
   // 全開・全閉（PJ / ToDo グループ / 人別グループすべて対象）
   const expandAll  = () => setCollapsed({});
@@ -1457,6 +1503,589 @@ export function GanttView({
     handleMoveDragStart(e, taskId);
   }, [linkDrag, draggingResizeTask, handleMoveDragStart]);
 
+  // ===== 共有行モデル：左ラベル列・右バー列の描画（CLAUDE.md v3.08） =====
+  // 【設計意図】ganttRows（上でuseMemo済み・左右で同一参照）を1回ずつmapするだけにすることで、
+  // 行の組み立てロジック（折りたたみ・簡易追加行の表示可否等）を二重に書かない。以下の2関数は
+  // 純粋なJSXビルダー（hooksではない・普通の関数）で、参照する状態・ハンドラは全てこの上で
+  // 既に宣言済み。renderLabelRow/renderBarRowは行の「見た目」だけを担い、「どの行が存在するか」
+  // の判断はganttRows組み立て側（ganttUtils.ts）に一元化されている。
+  function renderLabelRow(row: GanttRow) {
+    switch (row.kind) {
+      case "pj-header": {
+        const pj = row.pj;
+        const isCollapsed = !!collapsed[pj.id];
+        return (
+          // onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素
+          // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+          <div key={row.key} style={{
+            height: row.height, display: "flex", alignItems: "center",
+            gap: "6px", padding: "0 8px 0 10px",
+            background: "var(--color-bg-secondary)",
+            borderBottom: "1px solid var(--color-border-primary)",
+            cursor: editingPjNameId === pj.id ? "default" : "pointer",
+          }}
+            onClick={() => { if (editingPjNameId !== pj.id) togglePJ(pj.id); }}
+            role={editingPjNameId === pj.id ? undefined : "button"}
+            tabIndex={editingPjNameId === pj.id ? undefined : 0}
+            onKeyDown={editingPjNameId === pj.id ? undefined : (e => { if (e.key === "Enter" || e.key === " ") togglePJ(pj.id); })}
+          >
+            <span style={{
+              fontSize: "11px", color: "var(--color-text-secondary)",
+              transition: "transform 0.15s",
+              display: "inline-block",
+              flexShrink: 0,
+              transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+            }}>▾</span>
+            <div style={{
+              width: 8, height: 8, borderRadius: "50%",
+              background: pj.color_tag, flexShrink: 0,
+            }} />
+            {editingPjNameId === pj.id ? (
+              <input
+                autoFocus
+                value={editingPjNameValue}
+                onChange={e => setEditingPjNameValue(e.target.value)}
+                onBlur={() => handleSavePjName(pj)}
+                onKeyDown={e => {
+                  e.stopPropagation();
+                  if (e.key === "Enter") handleSavePjName(pj);
+                  if (e.key === "Escape") setEditingPjNameId(null);
+                }}
+                onClick={e => e.stopPropagation()}
+                style={{
+                  flex: 1, minWidth: 0, fontSize: "11px", fontWeight: "500",
+                  padding: "2px 4px", border: "1px solid var(--color-brand)",
+                  borderRadius: "var(--radius-sm)",
+                  background: "var(--color-bg-primary)",
+                  color: "var(--color-text-primary)",
+                  outline: "none",
+                }}
+              />
+            ) : (
+              <>
+                <span style={{
+                  fontSize: "11px", fontWeight: "500",
+                  color: "var(--color-text-primary)",
+                  overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  flex: 1,
+                }}>
+                  {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
+                </span>
+                {!isPreview && (
+                  <button
+                    onClick={e => {
+                      e.stopPropagation();
+                      setEditingPjNameId(pj.id);
+                      setEditingPjNameValue(pj.name);
+                    }}
+                    title="プロジェクト名を変更"
+                    style={{
+                      background: "transparent", border: "none", cursor: "pointer",
+                      fontSize: "10px", color: "var(--color-text-tertiary)",
+                      padding: "2px 3px", lineHeight: 1, flexShrink: 0,
+                    }}
+                  >✏️</button>
+                )}
+              </>
+            )}
+          </div>
+        );
+      }
+      case "task": {
+        const { task, depth, childCount } = row;
+        return (
+          <GanttPjLabelRow
+            key={row.key}
+            rowHeight={row.height}
+            task={task}
+            isChild={depth > 0}
+            childCount={childCount}
+            isHovered={hoveredTaskId === task.id}
+            isCollapsed={!!collapsed[task.id]}
+            members={members}
+            onEdit={guardedHandleRowEdit}
+            onHoverEnter={handleRowHoverEnter}
+            onHoverLeave={handleRowHoverLeave}
+            onToggleCollapse={togglePJ}
+            onSaveAssignees={handleSaveRowAssignees}
+            onSaveName={handleSaveRowName}
+            autoEditName={autoEditTaskId === task.id}
+            onInsertAfter={handleInsertTaskAfter}
+            draggingId={ganttDraggingId}
+            dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
+            onDragHandleStart={handleDragHandleStart}
+            onDragHandleEnd={handleDragHandleEnd}
+            onRowDragOver={handleRowDragOver}
+            onRowDragLeave={handleRowDragLeave}
+            onRowDrop={handleRowDrop}
+          />
+        );
+      }
+      case "quick-add":
+        return <GanttQuickAddTaskRow key={row.key} height={row.height} onAdd={name => handleQuickAddTask(row.pj.id, name)} />;
+      case "todo-header": {
+        const isCollapsed = !!collapsed[`todo_${row.todoId}`];
+        return (
+          <div key={row.key} style={{
+            height: row.height, display: "flex", alignItems: "center",
+            gap: "6px", padding: "0 8px 0 10px",
+            background: "var(--color-bg-secondary)",
+            borderBottom: "1px solid var(--color-border-primary)",
+            cursor: "pointer",
+          }}
+            onClick={() => togglePJ(`todo_${row.todoId}`)}
+            role="button" tabIndex={0}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`todo_${row.todoId}`); }}
+          >
+            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
+            <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
+              {`[ToDo] ${(row.todo.title.split("\n")[0]).slice(0, 14)}${row.todo.title.length > 14 ? "…" : ""}`}
+            </span>
+          </div>
+        );
+      }
+      case "todo-task":
+        return (
+          <GanttTodoLabelRow
+            key={row.key}
+            rowHeight={row.height}
+            task={row.task}
+            isHovered={hoveredTaskId === row.task.id}
+            members={members}
+            onEdit={guardedHandleRowEdit}
+            onHoverEnter={handleRowHoverEnter}
+            onHoverLeave={handleRowHoverLeave}
+            onSaveAssignees={handleSaveRowAssignees}
+            onSaveName={handleSaveRowName}
+          />
+        );
+      case "person-header": {
+        const { member: m, tasks } = row;
+        const isCollapsed = !!collapsed[`person_${m.id}`];
+        const doneCount = tasks.filter(t => t.status === "done").length;
+        const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
+        const overloadDayCount = (overloadRangesByMember.get(m.id) ?? [])
+          .reduce((sum, r) => sum + (diffDays(r.start, r.end) + 1), 0);
+        return (
+          <div key={row.key} style={{
+            height: row.height, display: "flex", alignItems: "center",
+            gap: "6px", padding: "0 8px 0 10px",
+            background: "var(--color-bg-secondary)",
+            borderBottom: "1px solid var(--color-border-primary)",
+            cursor: "pointer",
+          }}
+            onClick={() => togglePJ(`person_${m.id}`)}
+            role="button" tabIndex={0}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`person_${m.id}`); }}
+          >
+            <span style={{
+              fontSize: "11px", color: "var(--color-text-secondary)",
+              transition: "transform 0.15s", display: "inline-block",
+              transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
+            }}>▾</span>
+            <div style={{
+              width: 20, height: 20, borderRadius: "50%",
+              background: m.color_bg, color: m.color_text,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: "9px", fontWeight: "700", flexShrink: 0,
+            }}>
+              {m.initials.slice(0, 2)}
+            </div>
+            <span style={{
+              fontSize: "11px", fontWeight: "600",
+              color: "var(--color-text-primary)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              flex: 1,
+            }}>
+              {m.short_name}
+            </span>
+            <span style={{
+              fontSize: "9px", color: "var(--color-text-tertiary)",
+              flexShrink: 0,
+            }}>
+              {doneCount}/{tasks.length}
+            </span>
+            {inProgressCount > 0 && (
+              <div style={{
+                width: 6, height: 6, borderRadius: "50%",
+                background: "var(--color-text-info)", flexShrink: 0,
+              }} />
+            )}
+            {showOverload && overloadDayCount > 0 && (
+              <span style={{
+                fontSize: "9px", fontWeight: "600", color: OVERLOAD_COLOR,
+                flexShrink: 0, whiteSpace: "nowrap",
+              }} title="過負荷（同時アクティブタスクの重なり）の日数">
+                ⚠過負荷{overloadDayCount}日
+              </span>
+            )}
+          </div>
+        );
+      }
+      case "person-task": {
+        const { task } = row;
+        const pj = task.project_id ? projectById.get(task.project_id) : undefined;
+        const due = toDate(task.due_date);
+        const isOverdue = !!(due && due < today && !suppressOverdue(task.status));
+        return (
+          <GanttPersonLabelRow
+            key={row.key}
+            rowHeight={row.height}
+            task={task}
+            isHovered={hoveredTaskId === task.id}
+            isOverdue={isOverdue}
+            pj={pj}
+            onEdit={guardedHandleRowEdit}
+            onHoverEnter={handleRowHoverEnter}
+            onHoverLeave={handleRowHoverLeave}
+            onSaveName={handleSaveRowName}
+          />
+        );
+      }
+      default: {
+        const _exhaustive: never = row;
+        return _exhaustive;
+      }
+    }
+  }
+
+  function renderBarRow(row: GanttRow) {
+    switch (row.kind) {
+      case "pj-header": {
+        const pj = row.pj;
+        const pjTaskList = pjTaskListMap.get(pj.id) ?? [];
+        const pjStart = toDate(pj.start_date);
+        const pjEnd = toDate(pj.end_date);
+        const pjBarX = pjStart ? diffDays(rangeStart, pjStart) * dayWidth : null;
+        const pjBarW = (pjStart && pjEnd) ? (diffDays(pjStart, pjEnd) + 1) * dayWidth : null;
+        // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+        const done = pjTaskList.filter(t => isCompletedForProgress(t.status)).length;
+        const pct = pjTaskList.length > 0 ? done / pjTaskList.length : 0;
+        const pjMilestones = milestonesByPjId.get(pj.id) ?? [];
+        return (
+          <div key={row.key} style={{
+            height: row.height, position: "relative",
+            borderBottom: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-secondary)",
+          }}>
+            {pjBarX !== null && pjBarW !== null && (
+              <div style={{
+                position: "absolute",
+                left: pjBarX + 2, width: Math.max(pjBarW - 4, 8),
+                top: "50%", transform: "translateY(-50%)",
+                height: 14, borderRadius: 7,
+                background: `${pj.color_tag}33`,
+                border: `1.5px solid ${pj.color_tag}`,
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  height: "100%", width: `${pct * 100}%`,
+                  background: pj.color_tag, opacity: 0.5,
+                  borderRadius: 7,
+                }} />
+              </div>
+            )}
+            {pjMilestones.map(ms => {
+              const msDate = toDate(ms.date);
+              if (!msDate) return null;
+              const msX = diffDays(rangeStart, msDate) * dayWidth + dayWidth / 2;
+              return (
+                <div
+                  key={ms.id}
+                  onMouseEnter={e => setHoveredMs({ ms, rect: e.currentTarget.getBoundingClientRect() })}
+                  onMouseLeave={() => setHoveredMs(null)}
+                  onClick={() => { if (!isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
+                  role="button" tabIndex={isPreview ? -1 : 0}
+                  onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
+                  title={isPreview ? undefined : "クリックして編集"}
+                  style={{
+                    position: "absolute",
+                    left: msX - 7,
+                    top: "50%", transform: "translateY(-50%) rotate(45deg)",
+                    width: 12, height: 12,
+                    background: MS_COLOR,
+                    border: `2px solid ${MS_BORDER}`,
+                    zIndex: 4,
+                    pointerEvents: "auto",
+                    cursor: isPreview ? "default" : "pointer",
+                    flexShrink: 0,
+                  }}
+                />
+              );
+            })}
+          </div>
+        );
+      }
+      case "task": {
+        const { task, depth, pj } = row;
+        const preview = resizePreviewDates[task.id];
+        // 親タスク（depth===0）のバーは子の最早開始〜最遅期日に合わせる
+        let effectiveTask = applyResizePreview(task, preview);
+        if (depth === 0 && !preview) {
+          const eff = parentEffectiveDates.get(task.id);
+          if (eff && (eff.start_date || eff.due_date)) {
+            effectiveTask = {
+              ...effectiveTask,
+              start_date: eff.start_date ?? effectiveTask.start_date,
+              due_date: eff.due_date ?? effectiveTask.due_date,
+            };
+          }
+        }
+        const due = toDate(effectiveTask.due_date);
+        const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
+        const isDone = task.status === "done" || task.status === "cancelled";
+        const isOverdue = due && due < today && !suppressOverdue(task.status);
+        const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
+        const isStagnant = isTaskStagnant(task);
+        const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
+        const isHovered = hoveredTaskId === task.id;
+        const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
+        const dateLabel = due ? (hasRange
+          ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+          : `${due.getMonth()+1}/${due.getDate()}`) : "";
+        const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+        const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        return (
+          <TaskBarRow
+            key={row.key}
+            rowHeight={row.height}
+            taskId={task.id}
+            bar={bar}
+            barColor={barColor}
+            barHeight={depth > 0 ? 12 : 18}
+            borderRadius={depth > 0 ? "6px" : hasRange ? "4px" : "9px"}
+            isDone={isDone}
+            isStagnant={isStagnant}
+            isChanged={isChanged}
+            isHovered={isHovered}
+            isPreview={isPreview}
+            dateLabel={dateLabel}
+            tooltip={tooltip}
+            ghostBar={ghostBar}
+            delayLabel={delayLabel}
+            isDelayed={isDelayed}
+            depBadgeLeftTitle={depBadgeLeft}
+            depBadgeRightTitle={depBadgeRight}
+            linkUi={getLinkUi(task.id)}
+            isMoving={movingTaskIds?.has(task.id) ?? false}
+            isSelected={selectedTaskIds.has(task.id)}
+            isCritical={criticalTaskIds.has(task.id)}
+            progressFraction={progressFractionMap.get(task.id)}
+            onEdit={guardedHandleBarEdit}
+            onResize={guardedHandleResizeDragStart}
+            onResizeStart={guardedHandleStartResizeDragStart}
+            onMoveStart={guardedHandleMoveDragStart}
+            onMouseEnter={handleRowHoverEnter}
+            onMouseLeave={handleRowHoverLeave}
+            onEmptyDragStart={handleEmptyRowDragStart}
+          />
+        );
+      }
+      case "quick-add":
+        // 簡易タスク追加行スペーサー（CLAUDE.md v3.06→v3.08）。ラベル列側は
+        // GanttQuickAddTaskRow（実際の追加UI）を描くが、バー列には対応するタスクが無い
+        // （バーを持たない見出し専用行のため）。row.heightはganttRows組み立て時に
+        // QUICK_ADD_ROW_HEIGHT（ganttUtils.ts）から設定済みの同じ値なので、ラベル列の
+        // 実際の行と高さが乖離しようがない
+        return <div key={row.key} style={{ height: row.height, borderBottom: "1px solid var(--color-border-primary)" }} />;
+      case "todo-header": {
+        // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
+        const done = row.tasks.filter(t => isCompletedForProgress(t.status)).length;
+        const pct = row.tasks.length > 0 ? done / row.tasks.length : 0;
+        return (
+          <div key={row.key} style={{
+            height: row.height, position: "relative",
+            borderBottom: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-secondary)",
+            display: "flex", alignItems: "center", padding: "0 8px",
+          }}>
+            <div style={{
+              height: 8, borderRadius: 4,
+              background: `rgba(110,231,183,${0.2 + pct * 0.5})`,
+              border: `1.5px solid ${TODO_COLOR}`,
+              width: `${Math.max(pct * 100, 4)}%`,
+              minWidth: 4,
+            }} />
+          </div>
+        );
+      }
+      case "todo-task": {
+        const { task } = row;
+        const preview = resizePreviewDates[task.id];
+        const effectiveTask = applyResizePreview(task, preview);
+        const due = toDate(effectiveTask.due_date);
+        const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
+        const isDone = task.status === "done" || task.status === "cancelled";
+        const isOverdue = due && due < today && !suppressOverdue(task.status);
+        const isStagnant = isTaskStagnant(task);
+        const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
+        const isHovered = hoveredTaskId === task.id;
+        const dateLabel = due ? (hasRange
+          ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+          : `${due.getMonth()+1}/${due.getDate()}`) : "";
+        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+        const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        return (
+          <TaskBarRow
+            key={row.key}
+            rowHeight={row.height}
+            taskId={task.id}
+            bar={bar}
+            barColor={isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : TODO_COLOR}
+            borderRadius={hasRange ? "4px" : "9px"}
+            isDone={isDone}
+            isStagnant={isStagnant}
+            isHovered={isHovered}
+            isPreview={isPreview}
+            dateLabel={dateLabel}
+            tooltip={tooltip}
+            ghostBar={ghostBar}
+            delayLabel={delayLabel}
+            isDelayed={isDelayed}
+            depBadgeLeftTitle={depBadgeLeft}
+            depBadgeRightTitle={depBadgeRight}
+            linkUi={getLinkUi(task.id)}
+            isMoving={movingTaskIds?.has(task.id) ?? false}
+            isSelected={selectedTaskIds.has(task.id)}
+            isCritical={criticalTaskIds.has(task.id)}
+            progressFraction={progressFractionMap.get(task.id)}
+            onEdit={guardedHandleBarEdit}
+            onResize={guardedHandleResizeDragStart}
+            onResizeStart={guardedHandleStartResizeDragStart}
+            onMoveStart={guardedHandleMoveDragStart}
+            onMouseEnter={handleRowHoverEnter}
+            onMouseLeave={handleRowHoverLeave}
+            onEmptyDragStart={handleEmptyRowDragStart}
+          />
+        );
+      }
+      case "person-header": {
+        const { member: m, tasks } = row;
+        const dueDates = tasks.map(t => toDate(t.due_date)).filter(Boolean) as Date[];
+        const earliest = dueDates.length > 0 ? dueDates.reduce((a, b) => a < b ? a : b) : null;
+        const latest = dueDates.length > 0 ? dueDates.reduce((a, b) => a > b ? a : b) : null;
+        const spanX = earliest ? diffDays(rangeStart, earliest) * dayWidth : null;
+        const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * dayWidth : null;
+        return (
+          <div key={row.key} style={{
+            height: row.height, position: "relative",
+            borderBottom: "1px solid var(--color-border-primary)",
+            background: "var(--color-bg-secondary)",
+          }}>
+            {spanX !== null && spanW !== null && (
+              <div style={{
+                position: "absolute",
+                left: spanX + 2, width: Math.max(spanW - 4, 8),
+                top: "50%", transform: "translateY(-50%)",
+                height: 6, borderRadius: 3,
+                background: `${m.color_bg}`,
+                border: `1.5px solid ${m.color_text}`,
+                opacity: 0.6,
+              }} />
+            )}
+          </div>
+        );
+      }
+      case "person-task": {
+        const { task, member: m } = row;
+        const preview = resizePreviewDates[task.id];
+        const effectiveTask = applyResizePreview(task, preview);
+        const due = toDate(effectiveTask.due_date);
+        const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
+        const isDone = task.status === "done" || task.status === "cancelled";
+        const isOverdue = due && due < today && !suppressOverdue(task.status);
+        const isStagnant = isTaskStagnant(task);
+        const pj = task.project_id ? projectById.get(task.project_id) : undefined;
+        const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
+        const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
+        const isHovered = hoveredTaskId === task.id;
+        const dateLabel = due ? (hasRange
+          ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
+          : `${due.getMonth()+1}/${due.getDate()}`) : "";
+        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
+        const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
+        return (
+          <TaskBarRow
+            key={row.key}
+            rowHeight={row.height}
+            taskId={task.id}
+            bar={bar}
+            barColor={barColor}
+            borderRadius={hasRange ? "4px" : "9px"}
+            isDone={isDone}
+            isStagnant={isStagnant}
+            isHovered={isHovered}
+            isPreview={isPreview}
+            dateLabel={dateLabel}
+            tooltip={tooltip}
+            ghostBar={ghostBar}
+            delayLabel={delayLabel}
+            isDelayed={isDelayed}
+            depBadgeLeftTitle={depBadgeLeft}
+            depBadgeRightTitle={depBadgeRight}
+            linkUi={getLinkUi(task.id)}
+            isMoving={movingTaskIds?.has(task.id) ?? false}
+            isSelected={selectedTaskIds.has(task.id)}
+            isCritical={criticalTaskIds.has(task.id)}
+            progressFraction={progressFractionMap.get(task.id)}
+            onEdit={guardedHandleBarEdit}
+            onResize={guardedHandleResizeDragStart}
+            onResizeStart={guardedHandleStartResizeDragStart}
+            onMoveStart={guardedHandleMoveDragStart}
+            onMouseEnter={handleRowHoverEnter}
+            onMouseLeave={handleRowHoverLeave}
+            onEmptyDragStart={handleEmptyRowDragStart}
+          />
+        );
+      }
+      default: {
+        const _exhaustive: never = row;
+        return _exhaustive;
+      }
+    }
+  }
+
+  // マイルストーン帯（PJ別ビュー）・過負荷帯（人別ビュー）：バー列全体を覆う絶対配置オーバーレイ
+  // （CLAUDE.md v3.08）。従来はPJ／メンバーごとのposition:relativeラッパー内に個別描画していたが、
+  // 共有行モデルでラッパーをやめてフラット化したのに伴い、ganttBlockRanges（ganttRowsの高さの
+  // 累積から算出した各ブロックのY範囲）を使って1箇所にまとめた。依存矢印SVGと同じ
+  // 「コンテナ全体への絶対配置」という考え方
+  function renderGanttBandsOverlay() {
+    if (viewMode === "pj") {
+      return visibleProjects.map(pj => {
+        const range = ganttBlockRanges.get(pj.id);
+        if (!range) return null;
+        const pjMilestones = milestonesByPjId.get(pj.id) ?? [];
+        const msBands = computeMilestoneBands(pjMilestones, rangeStart, dayWidth);
+        return msBands.map(band => (
+          <div key={`msband-${pj.id}-${band.x}`} style={{
+            position: "absolute", left: band.x, width: dayWidth,
+            top: range.top, height: range.height,
+            background: band.color, opacity: 0.12,
+            zIndex: 1, pointerEvents: "none",
+          }} />
+        ));
+      });
+    }
+    return personGroups.map(({ member }) => {
+      const range = ganttBlockRanges.get(`person_${member.id}`);
+      if (!range) return null;
+      const overloadBands = overloadRangesToBands(overloadRangesByMember.get(member.id) ?? [], rangeStart, dayWidth);
+      return overloadBands.map(band => (
+        <div key={`ovl-${member.id}-${band.x}`} style={{
+          position: "absolute", left: band.x, width: band.width,
+          top: range.top, height: range.height,
+          background: OVERLOAD_COLOR, opacity: 0.14,
+          zIndex: 1, pointerEvents: "none",
+        }} />
+      ));
+    });
+  }
+
   // ===== モバイル：タイムラインリスト表示 =====
   // 全フック宣言後の早期 return なので hooks 順序は崩れない。
   if (isMobile) {
@@ -1754,259 +2383,10 @@ export function GanttView({
                   ? "「自分」モードで担当タスクが無いか、まだ登録されていません。サイドバー上部で「全件」に切り替えるか、＋ボタンで追加してください。"
                   : "PJ やタスクを登録すると、ここに横長のバーで表示されます。"}
               />
-            ) : viewMode === "pj" ? (
-              <>
-                {visibleProjects.map(pj => {
-                  const orderedTasks = pjOrderedTasksMap.get(pj.id) ?? [];
-                  const isCollapsed = collapsed[pj.id];
-                  return (
-                    <div key={pj.id}>
-                      {/* PJ行ラベル */}
-                      {/* onClick 指定時のみ role/tabIndex/onKeyDown を付与する条件付きインタラクティブ要素 */}
-                      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
-                      <div style={{
-                        height: 36, display: "flex", alignItems: "center",
-                        gap: "6px", padding: "0 8px 0 10px",
-                        background: "var(--color-bg-secondary)",
-                        borderBottom: "1px solid var(--color-border-primary)",
-                        cursor: editingPjNameId === pj.id ? "default" : "pointer",
-                      }}
-                        onClick={() => { if (editingPjNameId !== pj.id) togglePJ(pj.id); }}
-                        role={editingPjNameId === pj.id ? undefined : "button"}
-                        tabIndex={editingPjNameId === pj.id ? undefined : 0}
-                        onKeyDown={editingPjNameId === pj.id ? undefined : (e => { if (e.key === "Enter" || e.key === " ") togglePJ(pj.id); })}
-                      >
-                        <span style={{
-                          fontSize: "11px", color: "var(--color-text-secondary)",
-                          transition: "transform 0.15s",
-                          display: "inline-block",
-                          flexShrink: 0,
-                          transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
-                        }}>▾</span>
-                        <div style={{
-                          width: 8, height: 8, borderRadius: "50%",
-                          background: pj.color_tag, flexShrink: 0,
-                        }} />
-                        {editingPjNameId === pj.id ? (
-                          <input
-                            autoFocus
-                            value={editingPjNameValue}
-                            onChange={e => setEditingPjNameValue(e.target.value)}
-                            onBlur={() => handleSavePjName(pj)}
-                            onKeyDown={e => {
-                              e.stopPropagation();
-                              if (e.key === "Enter") handleSavePjName(pj);
-                              if (e.key === "Escape") setEditingPjNameId(null);
-                            }}
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                              flex: 1, minWidth: 0, fontSize: "11px", fontWeight: "500",
-                              padding: "2px 4px", border: "1px solid var(--color-brand)",
-                              borderRadius: "var(--radius-sm)",
-                              background: "var(--color-bg-primary)",
-                              color: "var(--color-text-primary)",
-                              outline: "none",
-                            }}
-                          />
-                        ) : (
-                          <>
-                            <span style={{
-                              fontSize: "11px", fontWeight: "500",
-                              color: "var(--color-text-primary)",
-                              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                              flex: 1,
-                            }}>
-                              {pj.name.length > 14 ? pj.name.slice(0, 14) + "…" : pj.name}
-                            </span>
-                            {!isPreview && (
-                              <button
-                                onClick={e => {
-                                  e.stopPropagation();
-                                  setEditingPjNameId(pj.id);
-                                  setEditingPjNameValue(pj.name);
-                                }}
-                                title="プロジェクト名を変更"
-                                style={{
-                                  background: "transparent", border: "none", cursor: "pointer",
-                                  fontSize: "10px", color: "var(--color-text-tertiary)",
-                                  padding: "2px 3px", lineHeight: 1, flexShrink: 0,
-                                }}
-                              >✏️</button>
-                            )}
-                          </>
-                        )}
-                      </div>
-
-                      {/* タスク行ラベル（子タスクはインデント＋↳で明示。親は▾トグルで個別折りたたみ可） */}
-                      {!isCollapsed && orderedTasks.map(({ task, depth, childCount }) => {
-                        // 親タスクが折りたたまれている子はスキップ
-                        if (depth > 0 && collapsed[task.parent_task_id!]) return null;
-                        return (
-                          <GanttPjLabelRow
-                            key={task.id}
-                            task={task}
-                            isChild={depth > 0}
-                            childCount={childCount}
-                            isHovered={hoveredTaskId === task.id}
-                            isCollapsed={!!collapsed[task.id]}
-                            members={members}
-                            onEdit={guardedHandleRowEdit}
-                            onHoverEnter={handleRowHoverEnter}
-                            onHoverLeave={handleRowHoverLeave}
-                            onToggleCollapse={togglePJ}
-                            onSaveAssignees={handleSaveRowAssignees}
-                            onSaveName={handleSaveRowName}
-                            autoEditName={autoEditTaskId === task.id}
-                            onInsertAfter={handleInsertTaskAfter}
-                            draggingId={ganttDraggingId}
-                            dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
-                            onDragHandleStart={handleDragHandleStart}
-                            onDragHandleEnd={handleDragHandleEnd}
-                            onRowDragOver={handleRowDragOver}
-                            onRowDragLeave={handleRowDragLeave}
-                            onRowDrop={handleRowDrop}
-                          />
-                        );
-                      })}
-                      {/* 簡易タスク追加（名前のみ。CLAUDE.md v3.04・PJ別ビューのみ） */}
-                      {!isCollapsed && !isPreview && (
-                        <GanttQuickAddTaskRow onAdd={name => handleQuickAddTask(pj.id, name)} />
-                      )}
-                    </div>
-                  );
-                })}
-
-                {/* ToDo系タスクグループ（ラベル） */}
-                {todoGroups.map(({ todo, todoId, tasks }) => {
-                  const isCollapsed = collapsed[`todo_${todoId}`];
-                  const sortedTasks = todoGroupSortedMap.get(todoId) ?? sortTasks(tasks);
-                  return (
-                    <div key={todoId}>
-                      <div style={{
-                        height: 36, display: "flex", alignItems: "center",
-                        gap: "6px", padding: "0 8px 0 10px",
-                        background: "var(--color-bg-secondary)",
-                        borderBottom: "1px solid var(--color-border-primary)",
-                        cursor: "pointer",
-                      }}
-                        onClick={() => togglePJ(`todo_${todoId}`)}
-                        role="button" tabIndex={0}
-                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`todo_${todoId}`); }}
-                      >
-                        <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", transition: "transform 0.15s", display: "inline-block", transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: TODO_COLOR, flexShrink: 0 }} />
-                        <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>
-                          {`[ToDo] ${(todo.title.split("\n")[0]).slice(0, 14)}${todo.title.length > 14 ? "…" : ""}`}
-                        </span>
-                      </div>
-                      {!isCollapsed && sortedTasks.map(task => (
-                        <GanttTodoLabelRow
-                          key={task.id}
-                          task={task}
-                          isHovered={hoveredTaskId === task.id}
-                          members={members}
-                          onEdit={guardedHandleRowEdit}
-                          onHoverEnter={handleRowHoverEnter}
-                          onHoverLeave={handleRowHoverLeave}
-                          onSaveAssignees={handleSaveRowAssignees}
-                          onSaveName={handleSaveRowName}
-                        />
-                      ))}
-                    </div>
-                  );
-                })}
-              </>
             ) : (
-              /* ===== 人別ビュー ラベル ===== */
-              <>
-                {personGroups.map(({ member: m, tasks }) => {
-                  const isCollapsed = collapsed[`person_${m.id}`];
-                  const doneCount = tasks.filter(t => t.status === "done").length;
-                  const inProgressCount = tasks.filter(t => t.status === "in_progress").length;
-                  const overloadDayCount = (overloadRangesByMember.get(m.id) ?? [])
-                    .reduce((sum, r) => sum + (diffDays(r.start, r.end) + 1), 0);
-                  return (
-                    <div key={m.id}>
-                      {/* メンバーヘッダー行 */}
-                      <div style={{
-                        height: 36, display: "flex", alignItems: "center",
-                        gap: "6px", padding: "0 8px 0 10px",
-                        background: "var(--color-bg-secondary)",
-                        borderBottom: "1px solid var(--color-border-primary)",
-                        cursor: "pointer",
-                      }}
-                        onClick={() => togglePJ(`person_${m.id}`)}
-                        role="button" tabIndex={0}
-                        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(`person_${m.id}`); }}
-                      >
-                        <span style={{
-                          fontSize: "11px", color: "var(--color-text-secondary)",
-                          transition: "transform 0.15s", display: "inline-block",
-                          transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)",
-                        }}>▾</span>
-                        {/* アバター */}
-                        <div style={{
-                          width: 20, height: 20, borderRadius: "50%",
-                          background: m.color_bg, color: m.color_text,
-                          display: "flex", alignItems: "center", justifyContent: "center",
-                          fontSize: "9px", fontWeight: "700", flexShrink: 0,
-                        }}>
-                          {m.initials.slice(0, 2)}
-                        </div>
-                        <span style={{
-                          fontSize: "11px", fontWeight: "600",
-                          color: "var(--color-text-primary)",
-                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                          flex: 1,
-                        }}>
-                          {m.short_name}
-                        </span>
-                        {/* タスク数バッジ */}
-                        <span style={{
-                          fontSize: "9px", color: "var(--color-text-tertiary)",
-                          flexShrink: 0,
-                        }}>
-                          {doneCount}/{tasks.length}
-                        </span>
-                        {inProgressCount > 0 && (
-                          <div style={{
-                            width: 6, height: 6, borderRadius: "50%",
-                            background: "var(--color-text-info)", flexShrink: 0,
-                          }} />
-                        )}
-                        {showOverload && overloadDayCount > 0 && (
-                          <span style={{
-                            fontSize: "9px", fontWeight: "600", color: OVERLOAD_COLOR,
-                            flexShrink: 0, whiteSpace: "nowrap",
-                          }} title="過負荷（同時アクティブタスクの重なり）の日数">
-                            ⚠過負荷{overloadDayCount}日
-                          </span>
-                        )}
-                      </div>
-
-                      {/* タスク行 */}
-                      {!isCollapsed && tasks.map(task => {
-                        const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-                        const due = toDate(task.due_date);
-                        const isOverdue = !!(due && due < today && !suppressOverdue(task.status));
-                        return (
-                          <GanttPersonLabelRow
-                            key={task.id}
-                            task={task}
-                            isHovered={hoveredTaskId === task.id}
-                            isOverdue={isOverdue}
-                            pj={pj}
-                            onEdit={guardedHandleRowEdit}
-                            onHoverEnter={handleRowHoverEnter}
-                            onHoverLeave={handleRowHoverLeave}
-                            onSaveName={handleSaveRowName}
-                          />
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </>
+              // 共有行モデル（ganttRows）。右バー列（下）と同じ配列を1回mapするだけ＝
+              // 行数・各行の高さが構造的に一致する（CLAUDE.md v3.08）
+              ganttRows.map(row => renderLabelRow(row))
             )}
           </div>
         </div>
@@ -2233,357 +2613,13 @@ export function GanttView({
                 </svg>
               )}
 
-              {/* PJ・タスクバー / 人別バー */}
-              {viewMode === "person" ? (
-                /* ===== 人別ビュー バー ===== */
-                <>
-                  {personGroups.map(({ member: m, tasks }) => {
-                    const isCollapsed = collapsed[`person_${m.id}`];
-                    // メンバーの稼働中タスクの最早期日〜最遅期日をバー表示
-                    const dueDates = tasks.map(t => toDate(t.due_date)).filter(Boolean) as Date[];
-                    const earliest = dueDates.length > 0 ? dueDates.reduce((a, b) => a < b ? a : b) : null;
-                    const latest   = dueDates.length > 0 ? dueDates.reduce((a, b) => a > b ? a : b) : null;
-                    const spanX = earliest ? diffDays(rangeStart, earliest) * dayWidth : null;
-                    const spanW = (earliest && latest) ? (diffDays(earliest, latest) + 1) * dayWidth : null;
-                    // 過負荷帯（このメンバーの行ブロック内だけを高さいっぱいに塗る。マイルストーン帯と同じ
-                    // 「position:relativeコンテナへの絶対配置」手法。バー（zIndex 2）より背面（zIndex 1）。
-                    const overloadBands = overloadRangesToBands(overloadRangesByMember.get(m.id) ?? [], rangeStart, dayWidth);
-                    return (
-                      <div key={m.id} style={{ position: "relative" }}>
-                        {overloadBands.map(band => (
-                          <div key={`ovl-${m.id}-${band.x}`} style={{
-                            position: "absolute", left: band.x, width: band.width,
-                            top: 0, bottom: 0,
-                            background: OVERLOAD_COLOR, opacity: 0.14,
-                            zIndex: 1, pointerEvents: "none",
-                          }} />
-                        ))}
-                        {/* メンバーヘッダー行バー */}
-                        <div style={{
-                          height: 36, position: "relative",
-                          borderBottom: "1px solid var(--color-border-primary)",
-                          background: "var(--color-bg-secondary)",
-                        }}>
-                          {spanX !== null && spanW !== null && (
-                            <div style={{
-                              position: "absolute",
-                              left: spanX + 2, width: Math.max(spanW - 4, 8),
-                              top: "50%", transform: "translateY(-50%)",
-                              height: 6, borderRadius: 3,
-                              background: `${m.color_bg}`,
-                              border: `1.5px solid ${m.color_text}`,
-                              opacity: 0.6,
-                            }} />
-                          )}
-                        </div>
+              {/* マイルストーン帯（PJ別）／過負荷帯（人別）：バー列全体を覆う絶対配置オーバーレイ
+                  （CLAUDE.md v3.08。renderGanttBandsOverlay定義部のコメント参照） */}
+              {renderGanttBandsOverlay()}
 
-                        {/* タスク行バー */}
-                        {!isCollapsed && tasks.map(task => {
-                          const preview = resizePreviewDates[task.id];
-                          const effectiveTask = applyResizePreview(task, preview);
-                          const due = toDate(effectiveTask.due_date);
-                          const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                          const isDone = task.status === "done" || task.status === "cancelled";
-                          const isOverdue = due && due < today && !suppressOverdue(task.status);
-                          const isStagnant = isTaskStagnant(task);
-                          const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-                          const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
-                          const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
-                          const isHovered = hoveredTaskId === task.id;
-                          const dateLabel = due ? (hasRange
-                            ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                            : `${due.getMonth()+1}/${due.getDate()}`) : "";
-                          const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
-                          const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
-                          const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
-                          return (
-                            <TaskBarRow
-                              key={task.id}
-                              taskId={task.id}
-                              bar={bar}
-                              barColor={barColor}
-                              borderRadius={hasRange ? "4px" : "9px"}
-                              isDone={isDone}
-                              isStagnant={isStagnant}
-                              isHovered={isHovered}
-                              isPreview={isPreview}
-                              dateLabel={dateLabel}
-                              tooltip={tooltip}
-                              ghostBar={ghostBar}
-                              delayLabel={delayLabel}
-                              isDelayed={isDelayed}
-                              depBadgeLeftTitle={depBadgeLeft}
-                              depBadgeRightTitle={depBadgeRight}
-                              linkUi={getLinkUi(task.id)}
-                              isMoving={movingTaskIds?.has(task.id) ?? false}
-                              isSelected={selectedTaskIds.has(task.id)}
-                              isCritical={criticalTaskIds.has(task.id)}
-                              progressFraction={progressFractionMap.get(task.id)}
-                              onEdit={guardedHandleBarEdit}
-                              onResize={guardedHandleResizeDragStart}
-                              onResizeStart={guardedHandleStartResizeDragStart}
-                              onMoveStart={guardedHandleMoveDragStart}
-                              onMouseEnter={handleRowHoverEnter}
-                              onMouseLeave={handleRowHoverLeave}
-                              onEmptyDragStart={handleEmptyRowDragStart}
-                            />
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
-                </>
-              ) : null}
-
-              {viewMode === "pj" && visibleProjects.map(pj => {
-                const orderedTasks = pjOrderedTasksMap.get(pj.id) ?? [];
-                const pjTaskList   = orderedTasks.map(r => r.task);
-                const isCollapsed  = collapsed[pj.id];
-
-                // PJバーの範囲
-                const pjStart = toDate(pj.start_date);
-                const pjEnd   = toDate(pj.end_date);
-                const pjBarX  = pjStart ? diffDays(rangeStart, pjStart) * dayWidth : null;
-                const pjBarW  = (pjStart && pjEnd)
-                  ? (diffDays(pjStart, pjEnd) + 1) * dayWidth : null;
-
-                // PJの完了率（タスクから計算。完了数カウントにソートは不要）
-                // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
-                const done = pjTaskList.filter(t => isCompletedForProgress(t.status)).length;
-                const pct  = pjTaskList.length > 0 ? done / pjTaskList.length : 0;
-
-                // このPJのマイルストーン
-                const pjMilestones = milestones.filter(ms => ms.project_id === pj.id);
-                // マイルストーンのある列を、このPJの行ブロック内だけ淡く塗る（下にスクロールしても
-                // 埋もれないようにする視認補助）。position:relativeのこのコンテナ自身の高さは
-                // 通常フローの子（PJ行＋タスク行）で自然に決まるため、top:0/bottom:0で高さいっぱいに広がる
-                const msBands = computeMilestoneBands(pjMilestones, rangeStart, dayWidth);
-
-                return (
-                  <div key={pj.id} style={{ position: "relative" }}>
-                    {/* zIndex:1＝行の背景（position:relativeだがz-index:auto）より確実に前面、
-                        タスクバー本体（zIndex:2）より確実に背面、という関係を明示的に固定する */}
-                    {msBands.map(band => (
-                      <div key={`msband-${band.x}`} style={{
-                        position: "absolute", left: band.x, width: dayWidth,
-                        top: 0, bottom: 0,
-                        background: band.color, opacity: 0.12,
-                        zIndex: 1, pointerEvents: "none",
-                      }} />
-                    ))}
-                    {/* PJ行 */}
-                    <div style={{
-                      height: 36, position: "relative",
-                      borderBottom: "1px solid var(--color-border-primary)",
-                      background: "var(--color-bg-secondary)",
-                    }}>
-                      {pjBarX !== null && pjBarW !== null && (
-                        <div style={{
-                          position: "absolute",
-                          left: pjBarX + 2, width: Math.max(pjBarW - 4, 8),
-                          top: "50%", transform: "translateY(-50%)",
-                          height: 14, borderRadius: 7,
-                          background: `${pj.color_tag}33`,
-                          border: `1.5px solid ${pj.color_tag}`,
-                          overflow: "hidden",
-                        }}>
-                          {/* 進捗 */}
-                          <div style={{
-                            height: "100%", width: `${pct * 100}%`,
-                            background: pj.color_tag, opacity: 0.5,
-                            borderRadius: 7,
-                          }} />
-                        </div>
-                      )}
-                      {/* マイルストーン ◆ */}
-                      {pjMilestones.map(ms => {
-                        const msDate = toDate(ms.date);
-                        if (!msDate) return null;
-                        const msX = diffDays(rangeStart, msDate) * dayWidth + dayWidth / 2;
-                        return (
-                          <div
-                            key={ms.id}
-                            onMouseEnter={e => setHoveredMs({ ms, rect: e.currentTarget.getBoundingClientRect() })}
-                            onMouseLeave={() => setHoveredMs(null)}
-                            onClick={() => { if (!isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
-                            role="button" tabIndex={isPreview ? -1 : 0}
-                            onKeyDown={e => { if ((e.key === "Enter" || e.key === " ") && !isPreview) { setHoveredMs(null); setEditingMs(ms); } }}
-                            title={isPreview ? undefined : "クリックして編集"}
-                            style={{
-                              position: "absolute",
-                              left: msX - 7,
-                              top: "50%", transform: "translateY(-50%) rotate(45deg)",
-                              width: 12, height: 12,
-                              background: MS_COLOR,
-                              border: `2px solid ${MS_BORDER}`,
-                              zIndex: 4,
-                              pointerEvents: "auto",
-                              cursor: isPreview ? "default" : "pointer",
-                              flexShrink: 0,
-                            }}
-                          />
-                        );
-                      })}
-                    </div>
-
-                    {/* タスク行（子タスクはバーを細く＝親と区別） */}
-                    {!isCollapsed && orderedTasks.map(({ task, depth }) => {
-                      // 親タスクが折りたたまれている子はスキップ
-                      if (depth > 0 && collapsed[task.parent_task_id!]) return null;
-                      const preview = resizePreviewDates[task.id];
-                      // 親タスク（depth===0）のバーは子の最早開始〜最遅期日に合わせる
-                      let effectiveTask = applyResizePreview(task, preview);
-                      if (depth === 0 && !preview) {
-                        const eff = parentEffectiveDates.get(task.id);
-                        if (eff && (eff.start_date || eff.due_date)) {
-                          effectiveTask = {
-                            ...effectiveTask,
-                            start_date: eff.start_date ?? effectiveTask.start_date,
-                            due_date:   eff.due_date   ?? effectiveTask.due_date,
-                          };
-                        }
-                      }
-                      const due = toDate(effectiveTask.due_date);
-                      const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                      const isDone = task.status === "done" || task.status === "cancelled";
-                      const isOverdue = due && due < today && !suppressOverdue(task.status);
-                      const isChanged = isPreview && previewChangedTaskIds?.has(task.id);
-                      const isStagnant = isTaskStagnant(task);
-                      // effectiveTask はバーの実描画範囲（親は子の最早〜最遅に上書き済み）なので
-                      // hasRange・dateLabel も task ではなく effectiveTask から算出する
-                      const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
-                      const isHovered = hoveredTaskId === task.id;
-                      const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
-                      const dateLabel = due ? (hasRange
-                        ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                        : `${due.getMonth()+1}/${due.getDate()}`) : "";
-
-                      const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
-                      const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
-                      const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
-                      return (
-                        <TaskBarRow
-                          key={task.id}
-                          taskId={task.id}
-                          bar={bar}
-                          barColor={barColor}
-                          barHeight={depth > 0 ? 12 : 18}
-                          borderRadius={depth > 0 ? "6px" : hasRange ? "4px" : "9px"}
-                          isDone={isDone}
-                          isStagnant={isStagnant}
-                          isChanged={isChanged}
-                          isHovered={isHovered}
-                          isPreview={isPreview}
-                          dateLabel={dateLabel}
-                          tooltip={tooltip}
-                          ghostBar={ghostBar}
-                          delayLabel={delayLabel}
-                          isDelayed={isDelayed}
-                          depBadgeLeftTitle={depBadgeLeft}
-                          depBadgeRightTitle={depBadgeRight}
-                          linkUi={getLinkUi(task.id)}
-                          isMoving={movingTaskIds?.has(task.id) ?? false}
-                          isSelected={selectedTaskIds.has(task.id)}
-                          isCritical={criticalTaskIds.has(task.id)}
-                          progressFraction={progressFractionMap.get(task.id)}
-                          onEdit={guardedHandleBarEdit}
-                          onResize={guardedHandleResizeDragStart}
-                          onResizeStart={guardedHandleStartResizeDragStart}
-                          onMoveStart={guardedHandleMoveDragStart}
-                          onMouseEnter={handleRowHoverEnter}
-                          onMouseLeave={handleRowHoverLeave}
-                          onEmptyDragStart={handleEmptyRowDragStart}
-                        />
-                      );
-                    })}
-                    {/* 簡易タスク追加行スペーサー（CLAUDE.md v3.06）。左ラベル列は
-                        GanttQuickAddTaskRow（高さ26px＋borderBottom 1px）をPJブロック末尾に
-                        描画するが、右バー列には対応するタスク行が無い（バーを持たない見出し専用行の
-                        ため）。styleを完全一致させることでbox-sizingに関係なく左右のPJブロック高さを
-                        揃える（左右スクロールコンテナのscrollTop同期がズレる根本原因を断つ） */}
-                    {!isCollapsed && !isPreview && (
-                      <div style={{ height: QUICK_ADD_ROW_HEIGHT, borderBottom: "1px solid var(--color-border-primary)" }} />
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* ToDo系タスクグループ（バー）— PJ別ビューのみ */}
-              {viewMode === "pj" && todoGroups.map(({ todoId, tasks }) => {
-                const isCollapsed = collapsed[`todo_${todoId}`];
-                const sortedTasks = todoGroupSortedMap.get(todoId) ?? sortTasks(tasks);
-                // cancelledはdoneと同じ「完了扱い」で分子に含める（M33解消・CLAUDE.md 2026-07-22）
-                const done = tasks.filter(t => isCompletedForProgress(t.status)).length;
-                const pct  = tasks.length > 0 ? done / tasks.length : 0;
-                return (
-                  <div key={todoId}>
-                    {/* ToDo行（進捗バーなし） */}
-                    <div style={{
-                      height: 36, position: "relative",
-                      borderBottom: "1px solid var(--color-border-primary)",
-                      background: "var(--color-bg-secondary)",
-                      display: "flex", alignItems: "center", padding: "0 8px",
-                    }}>
-                      <div style={{
-                        height: 8, borderRadius: 4,
-                        background: `rgba(110,231,183,${0.2 + pct * 0.5})`,
-                        border: `1.5px solid ${TODO_COLOR}`,
-                        width: `${Math.max(pct * 100, 4)}%`,
-                        minWidth: 4,
-                      }} />
-                    </div>
-                    {!isCollapsed && sortedTasks.map(task => {
-                      const preview = resizePreviewDates[task.id];
-                      const effectiveTask = applyResizePreview(task, preview);
-                      const due = toDate(effectiveTask.due_date);
-                      const bar = calcTaskBar(effectiveTask, rangeStart, dayWidth);
-                      const isDone = task.status === "done" || task.status === "cancelled";
-                      const isOverdue = due && due < today && !suppressOverdue(task.status);
-                      const isStagnant = isTaskStagnant(task);
-                      const hasRange = !!(effectiveTask.start_date && due && toDate(effectiveTask.start_date)! <= due);
-                      const isHovered = hoveredTaskId === task.id;
-                      const dateLabel = due ? (hasRange
-                        ? `${toDate(effectiveTask.start_date!)!.getMonth()+1}/${toDate(effectiveTask.start_date!)!.getDate()}〜${due.getMonth()+1}/${due.getDate()}`
-                        : `${due.getMonth()+1}/${due.getDate()}`) : "";
-                      const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
-                      const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
-                      const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
-                      return (
-                        <TaskBarRow
-                          key={task.id}
-                          taskId={task.id}
-                          bar={bar}
-                          barColor={isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : TODO_COLOR}
-                          borderRadius={hasRange ? "4px" : "9px"}
-                          isDone={isDone}
-                          isStagnant={isStagnant}
-                          isHovered={isHovered}
-                          isPreview={isPreview}
-                          dateLabel={dateLabel}
-                          tooltip={tooltip}
-                          ghostBar={ghostBar}
-                          delayLabel={delayLabel}
-                          isDelayed={isDelayed}
-                          depBadgeLeftTitle={depBadgeLeft}
-                          depBadgeRightTitle={depBadgeRight}
-                          linkUi={getLinkUi(task.id)}
-                          isMoving={movingTaskIds?.has(task.id) ?? false}
-                          isSelected={selectedTaskIds.has(task.id)}
-                          isCritical={criticalTaskIds.has(task.id)}
-                          progressFraction={progressFractionMap.get(task.id)}
-                          onEdit={guardedHandleBarEdit}
-                          onResize={guardedHandleResizeDragStart}
-                          onResizeStart={guardedHandleStartResizeDragStart}
-                          onMoveStart={guardedHandleMoveDragStart}
-                          onMouseEnter={handleRowHoverEnter}
-                          onMouseLeave={handleRowHoverLeave}
-                          onEmptyDragStart={handleEmptyRowDragStart}
-                        />
-                      );
-                    })}
-                  </div>
-                );
-              })}
+              {/* PJ・タスクバー / 人別バー：共有行モデル（ganttRows）。左ラベル列と同じ配列を
+                  1回mapするだけ＝行数・各行の高さが構造的に一致する（CLAUDE.md v3.08） */}
+              {ganttRows.map(row => renderBarRow(row))}
             </div>
           </div>
         </div>

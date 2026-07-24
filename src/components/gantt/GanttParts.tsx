@@ -7,7 +7,7 @@ import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
-import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT } from "./ganttUtils";
+import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT } from "./ganttUtils";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -40,6 +40,10 @@ export interface TaskBarLinkUi {
 
 export interface TaskBarRowProps {
   taskId: string;
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。
+      ラベル列側の対応する行コンポーネントと必ず同じ ganttRows[i].height を渡すことで、
+      左右の行高さが構造的に一致する（barHeight＝バー本体の見た目の太さとは別物）。 */
+  rowHeight?: number;
   bar: { barX: number; barWidth: number } | null;
   barColor: string;
   barHeight?: number;
@@ -95,7 +99,7 @@ export interface TaskBarRowProps {
 }
 
 function TaskBarRowImpl({
-  taskId, bar, barColor, barHeight = 18, borderRadius = "9px",
+  taskId, rowHeight = GANTT_TASK_ROW_HEIGHT, bar, barColor, barHeight = 18, borderRadius = "9px",
   isDone, isStagnant, isChanged = false,
   isHovered, isPreview,
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
@@ -132,7 +136,7 @@ function TaskBarRowImpl({
       onMouseLeave={onMouseLeave}
       onMouseDown={canDragEmptyRow ? e => onEmptyDragStart!(e, taskId) : undefined}
       style={{
-        height: 30, position: "relative",
+        height: rowHeight, position: "relative",
         borderBottom: "1px solid var(--color-border-primary)",
         background: isChanged
           ? "rgba(127,119,221,0.06)"
@@ -348,6 +352,7 @@ function TaskBarRowImpl({
 function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean {
   return (
     prev.taskId === next.taskId &&
+    (prev.rowHeight ?? GANTT_TASK_ROW_HEIGHT) === (next.rowHeight ?? GANTT_TASK_ROW_HEIGHT) &&
     (prev.bar?.barX ?? null) === (next.bar?.barX ?? null) &&
     (prev.bar?.barWidth ?? null) === (next.bar?.barWidth ?? null) &&
     prev.barColor === next.barColor &&
@@ -392,6 +397,9 @@ export const TaskBarRow = memo(TaskBarRowImpl, barRowPropsEqual);
 
 export interface GanttPjLabelRowProps {
   task: Task;
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。
+      呼び出し側は対応する ganttRows[i].height（バー列側の TaskBarRow に渡す rowHeight と同じ値）を渡す。 */
+  rowHeight?: number;
   isChild: boolean;
   childCount: number;
   isHovered: boolean;
@@ -422,7 +430,7 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, isChild, childCount, isHovered, isCollapsed, members,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed, members,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
@@ -446,7 +454,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
       style={{
-      height: 30, display: "flex", alignItems: "center",
+      height: rowHeight, display: "flex", alignItems: "center",
       gap: "5px", padding: isChild ? "0 8px 0 40px" : "0 8px 0 10px",
       borderBottom: "1px solid var(--color-border-primary)",
       borderTop: (!isChild && childCount > 0) ? "2px solid var(--color-border-primary)" : undefined,
@@ -562,6 +570,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
 
 export interface GanttTodoLabelRowProps {
   task: Task;
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
+  rowHeight?: number;
   isHovered: boolean;
   members: Member[];
   onEdit: (taskId: string) => void;
@@ -572,7 +582,7 @@ export interface GanttTodoLabelRowProps {
 }
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
-  task, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
   onSaveName,
 }: GanttTodoLabelRowProps) {
   return (
@@ -582,7 +592,7 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
       style={{
-      height: 30, display: "flex", alignItems: "center",
+      height: rowHeight, display: "flex", alignItems: "center",
       gap: "6px", padding: "0 8px 0 26px",
       borderBottom: "1px solid var(--color-border-primary)",
       background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
@@ -618,6 +628,8 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
 
 export interface GanttPersonLabelRowProps {
   task: Task;
+  /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
+  rowHeight?: number;
   isHovered: boolean;
   isOverdue: boolean;
   pj: Project | undefined;
@@ -628,7 +640,7 @@ export interface GanttPersonLabelRowProps {
 }
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
-  task, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
   onSaveName,
 }: GanttPersonLabelRowProps) {
   return (
@@ -638,7 +650,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
       style={{
-      height: 30, display: "flex", alignItems: "center",
+      height: rowHeight, display: "flex", alignItems: "center",
       gap: "5px", padding: "0 8px 0 26px",
       borderBottom: "1px solid var(--color-border-primary)",
       background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
@@ -678,7 +690,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
 // 「保存後も編集状態を保つ」点が固有の要件のため、既存コンポーネントを流用せず専用実装にした）。
 // 空のままEscapeまたはフォーカスアウトで折りたたみに戻る。スコープはPJ別ビューのみ
 // （D&D並べ替えと同じスコープ方針。人別・ToDo別ビューは対象外）。
-export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void }) {
+export function GanttQuickAddTaskRow({ onAdd, height = QUICK_ADD_ROW_HEIGHT }: { onAdd: (name: string) => void; height?: number }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -702,7 +714,7 @@ export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void 
         role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
         style={{
-          height: QUICK_ADD_ROW_HEIGHT, display: "flex", alignItems: "center",
+          height, display: "flex", alignItems: "center",
           padding: "0 8px 0 34px", cursor: "pointer",
           borderBottom: "1px solid var(--color-border-primary)",
           color: "var(--color-text-tertiary)", fontSize: "11px",
@@ -712,7 +724,7 @@ export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void 
   }
   return (
     <div style={{
-      height: QUICK_ADD_ROW_HEIGHT, display: "flex", alignItems: "center",
+      height, display: "flex", alignItems: "center",
       padding: "0 8px 0 34px",
       borderBottom: "1px solid var(--color-border-primary)",
     }}>
