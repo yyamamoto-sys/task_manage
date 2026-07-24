@@ -108,10 +108,11 @@ CREATE TABLE IF NOT EXISTS objectives (
 );
 -- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
 --
--- 【今回のスコープ】objectives.group_id は表示の絞り込み（UI側）専用。KR/TFはgroup_id列を
--- 持たず、objective_id / kr_id を辿ってこの部署を継承する（lib/okr/deptScope.ts参照）。
--- RLSは今回一切変更しない（下部の「authenticated full access」= USING(true) のまま。
--- OKR全面刷新時にまとめて部署分離する。CLAUDE.md Section 1.6参照）。
+-- 【2026-07-23b時点】objectives.group_id は当初は表示の絞り込み（UI側）専用として追加。
+-- 【2026-07-24更新】migration 20260724_scope_okr_core_tables.sqlでKR/TF/ToDoにも自前の
+-- group_id列を追加し（objective_id/kr_id/tf_idを辿ってトリガーが自動継承）、objectives
+-- 含む4テーブルのRLSを「authenticated full access」からgroup_idスコープの個別ポリシーに
+-- 差し替え済み（下部「OKRコア階層」ブロック参照。CLAUDE.md Section 1.6参照）。
 ALTER TABLE objectives ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
 -- 既存Objectiveは全てEGGへバックフィル（AID等の新しいOKRはPDF取込・手入力で入れ直す方針）
 UPDATE objectives SET group_id = 'grp-egg' WHERE group_id IS NULL;
@@ -121,6 +122,9 @@ CREATE TABLE IF NOT EXISTS key_results (
   id           text PRIMARY KEY,
   objective_id text NOT NULL REFERENCES objectives(id),
   title        text NOT NULL,
+  -- 所属部署（migration 20260724_scope_okr_core_tables.sql）。親Objectiveから
+  -- トリガー（sync_kr_group_id）が自動注入する。フロントはこの列を一切送らない。
+  group_id     text REFERENCES groups(id),
   is_deleted   boolean NOT NULL DEFAULT false,
   deleted_at   timestamptz,
   deleted_by   text,
@@ -128,6 +132,10 @@ CREATE TABLE IF NOT EXISTS key_results (
   updated_at   timestamptz NOT NULL DEFAULT now(),
   updated_by   text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収）
+ALTER TABLE key_results ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
+UPDATE key_results kr SET group_id = o.group_id
+  FROM objectives o WHERE o.id = kr.objective_id AND kr.group_id IS NULL;
 
 -- ===== Quarterly Objectives =====
 CREATE TABLE IF NOT EXISTS quarterly_objectives (
@@ -158,6 +166,9 @@ CREATE TABLE IF NOT EXISTS task_forces (
   background       text,
   quarter          text CONSTRAINT task_forces_quarter_check CHECK (quarter IS NULL OR quarter IN ('1Q','2Q','3Q','4Q')),
   leader_member_id text REFERENCES members(id),
+  -- 所属部署（migration 20260724_scope_okr_core_tables.sql）。親KeyResult(=Objective経由)
+  -- からトリガー（sync_tf_group_id）が自動注入する。フロントはこの列を一切送らない。
+  group_id         text REFERENCES groups(id),
   is_deleted       boolean NOT NULL DEFAULT false,
   deleted_at       timestamptz,
   deleted_by       text,
@@ -165,6 +176,11 @@ CREATE TABLE IF NOT EXISTS task_forces (
   updated_at       timestamptz NOT NULL DEFAULT now(),
   updated_by       text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収。key_resultsの
+-- バックフィル後に実行する必要があるため、このブロックはkey_resultsの定義より後）
+ALTER TABLE task_forces ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
+UPDATE task_forces tf SET group_id = kr.group_id
+  FROM key_results kr WHERE kr.id = tf.kr_id AND tf.group_id IS NULL;
 
 -- ===== Quarterly KR ↔ Task Force（多対多） =====
 -- 通期 KR と TF を四半期ごとに紐づける
@@ -183,6 +199,9 @@ CREATE TABLE IF NOT EXISTS todos (
   title      text NOT NULL,
   due_date   date,
   memo       text NOT NULL DEFAULT '',
+  -- 所属部署（migration 20260724_scope_okr_core_tables.sql）。親TaskForceから
+  -- トリガー（sync_todo_group_id）が自動注入する。フロントはこの列を一切送らない。
+  group_id   text REFERENCES groups(id),
   is_deleted boolean NOT NULL DEFAULT false,
   deleted_at timestamptz,
   deleted_by text,
@@ -190,6 +209,11 @@ CREATE TABLE IF NOT EXISTS todos (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by text NOT NULL DEFAULT ''
 );
+-- 既存環境向け：列が無ければ追加（schema.sql 再適用時の drift 吸収。task_forcesの
+-- バックフィル後に実行する必要があるため、このブロックはtask_forcesの定義より後）
+ALTER TABLE todos ADD COLUMN IF NOT EXISTS group_id text REFERENCES groups(id);
+UPDATE todos t SET group_id = tf.group_id
+  FROM task_forces tf WHERE tf.id = t.tf_id AND t.group_id IS NULL;
 
 -- ===== Projects =====
 CREATE TABLE IF NOT EXISTS projects (
@@ -560,7 +584,7 @@ ALTER TABLE kr_reports                 ENABLE ROW LEVEL SECURITY;
 -- members / projects / tasks / groups はグループ分離・権限昇格防止のため
 -- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
 -- ポリシーをそれ以外のテーブルにのみ適用する。
--- 【注意】objectives 以下の OKR 系テーブルはまだグループ分離未対応（既知の残課題）。
+-- 【注意】OKR周辺テーブル（kr_sessions等）はまだグループ分離未対応（既知の残課題）。
 DO $$
 DECLARE
   t text;
@@ -569,15 +593,15 @@ BEGIN
   -- project_task_forces/task_task_forces/task_projects/member_tag_members/
   -- admin_change_logs/ai_usage_logs）は下部で親を辿る部署スコープポリシーに
   -- 差し替えたためこのループから除外。member_tags 本体は全社共通マスタとして
-  -- 全公開のまま維持（部署概念が無いため）。残る OKR 系はマルチテナント未対応の
-  -- 既知の残課題（OKR全面刷新時にまとめて対応する）。
-  -- 【2026-07-23b】objectives は group_id 列を追加したが、RLSはこのブロックの
-  -- 「authenticated full access」のまま据え置く（表示の絞り込みはUI側のみ・
-  -- lib/okr/deptScope.ts参照）。KR/TFはgroup_id列を持たないため引き続きここに含める。
+  -- 全公開のまま維持（部署概念が無いため）。
+  -- 【2026-07-24】OKRコア階層（objectives/key_results/task_forces/todos）は
+  -- migration 20260724_scope_okr_core_tables.sql で個別のgroup_idスコープポリシーに
+  -- 差し替えたためこのループから除外（下部の「OKRコア階層」ブロック参照）。
+  -- 残るOKR周辺テーブル（quarterly_*/kr_sessions/kr_declarations/kr_meeting_notes/
+  -- kr_note_tf_entries/okr_analyses/kr_reports）はマルチテナント未対応の既知の残課題
+  -- （第2弾でまとめて対応する方針。CLAUDE.md Section 1.6・Section 9のG参照）。
   FOR t IN VALUES
-    ('objectives'), ('key_results'),
     ('quarterly_objectives'), ('quarterly_kr_task_forces'),
-    ('task_forces'), ('todos'),
     ('kr_sessions'), ('kr_declarations'),
     ('member_tags'),
     ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses'), ('kr_reports')
@@ -669,6 +693,171 @@ DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
 DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
 CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
   USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+
+-- ============================================================
+-- OKRコア階層（objectives/key_results/task_forces/todos）の部署スコープ
+-- （migration 20260724_scope_okr_core_tables.sql 参照）。
+--
+-- 各テーブルが自前のgroup_id列を持つ（親を辿るJOINではなく単純な列比較）。
+-- BEFORE INSERT/UPDATEトリガーが常に親からgroup_idを自動注入するため、フロントは
+-- group_idを一切送らずに済む（saveKeyResult/saveTaskForce/saveTodoは無改修）。
+-- NULL許可の猶予句は入れない（20260702bの教訓）。
+-- ============================================================
+
+-- key_results：親=objectivesからBEFORE INSERT/UPDATEで自動注入
+CREATE OR REPLACE FUNCTION sync_kr_group_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_sync_kr_group_id$
+BEGIN
+  SELECT o.group_id INTO NEW.group_id
+  FROM public.objectives o
+  WHERE o.id = NEW.objective_id;
+  RETURN NEW;
+END;
+$fn_sync_kr_group_id$;
+
+DROP TRIGGER IF EXISTS trg_key_results_sync_group_id ON key_results;
+CREATE TRIGGER trg_key_results_sync_group_id
+  BEFORE INSERT OR UPDATE ON key_results
+  FOR EACH ROW EXECUTE FUNCTION sync_kr_group_id();
+
+-- task_forces：親=key_results（＝Objective経由）からBEFORE INSERT/UPDATEで自動注入
+CREATE OR REPLACE FUNCTION sync_tf_group_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_sync_tf_group_id$
+BEGIN
+  SELECT kr.group_id INTO NEW.group_id
+  FROM public.key_results kr
+  WHERE kr.id = NEW.kr_id;
+  RETURN NEW;
+END;
+$fn_sync_tf_group_id$;
+
+DROP TRIGGER IF EXISTS trg_task_forces_sync_group_id ON task_forces;
+CREATE TRIGGER trg_task_forces_sync_group_id
+  BEFORE INSERT OR UPDATE ON task_forces
+  FOR EACH ROW EXECUTE FUNCTION sync_tf_group_id();
+
+-- todos：親=task_forcesからBEFORE INSERT/UPDATEで自動注入
+CREATE OR REPLACE FUNCTION sync_todo_group_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_sync_todo_group_id$
+BEGIN
+  SELECT tf.group_id INTO NEW.group_id
+  FROM public.task_forces tf
+  WHERE tf.id = NEW.tf_id;
+  RETURN NEW;
+END;
+$fn_sync_todo_group_id$;
+
+DROP TRIGGER IF EXISTS trg_todos_sync_group_id ON todos;
+CREATE TRIGGER trg_todos_sync_group_id
+  BEFORE INSERT OR UPDATE ON todos
+  FOR EACH ROW EXECUTE FUNCTION sync_todo_group_id();
+
+-- 親のgroup_id変更時、子・孫へカスケード（cascade_project_group_ids_to_tasksと同型）。
+-- 親のUPDATEだけでは子は保存されないため自動注入トリガーが働かない。このAFTER UPDATEが
+-- 子を明示的に更新し、子のBEFORE INSERT/UPDATEトリガーで値が確定＝冪等。子の値が実際に
+-- 変化すればさらに孫へ連鎖する（Objective変更→KR→TF→ToDoまで自動的に波及）。
+CREATE OR REPLACE FUNCTION cascade_objective_group_id_to_krs()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cascade_obj_to_kr$
+BEGIN
+  IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    UPDATE public.key_results
+    SET group_id = NEW.group_id
+    WHERE objective_id = NEW.id
+      AND group_id IS DISTINCT FROM NEW.group_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_cascade_obj_to_kr$;
+
+DROP TRIGGER IF EXISTS trg_objectives_cascade_group_id ON objectives;
+CREATE TRIGGER trg_objectives_cascade_group_id
+  AFTER UPDATE ON objectives
+  FOR EACH ROW EXECUTE FUNCTION cascade_objective_group_id_to_krs();
+
+CREATE OR REPLACE FUNCTION cascade_kr_group_id_to_tfs()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cascade_kr_to_tf$
+BEGIN
+  IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    UPDATE public.task_forces
+    SET group_id = NEW.group_id
+    WHERE kr_id = NEW.id
+      AND group_id IS DISTINCT FROM NEW.group_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_cascade_kr_to_tf$;
+
+DROP TRIGGER IF EXISTS trg_key_results_cascade_group_id ON key_results;
+CREATE TRIGGER trg_key_results_cascade_group_id
+  AFTER UPDATE ON key_results
+  FOR EACH ROW EXECUTE FUNCTION cascade_kr_group_id_to_tfs();
+
+CREATE OR REPLACE FUNCTION cascade_tf_group_id_to_todos()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cascade_tf_to_todo$
+BEGIN
+  IF NEW.group_id IS DISTINCT FROM OLD.group_id THEN
+    UPDATE public.todos
+    SET group_id = NEW.group_id
+    WHERE tf_id = NEW.id
+      AND group_id IS DISTINCT FROM NEW.group_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_cascade_tf_to_todo$;
+
+DROP TRIGGER IF EXISTS trg_task_forces_cascade_group_id ON task_forces;
+CREATE TRIGGER trg_task_forces_cascade_group_id
+  AFTER UPDATE ON task_forces
+  FOR EACH ROW EXECUTE FUNCTION cascade_tf_group_id_to_todos();
+
+-- RLSポリシー本体（単一group_id列なので配列オーバーラップではなく = ANY を使う）
+DROP POLICY IF EXISTS "authenticated full access" ON objectives;
+DROP POLICY IF EXISTS "objectives_group" ON objectives;
+CREATE POLICY "objectives_group" ON objectives FOR ALL TO authenticated
+  USING (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin())
+  WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
+
+DROP POLICY IF EXISTS "authenticated full access" ON key_results;
+DROP POLICY IF EXISTS "key_results_group" ON key_results;
+CREATE POLICY "key_results_group" ON key_results FOR ALL TO authenticated
+  USING (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin())
+  WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
+
+DROP POLICY IF EXISTS "authenticated full access" ON task_forces;
+DROP POLICY IF EXISTS "task_forces_group" ON task_forces;
+CREATE POLICY "task_forces_group" ON task_forces FOR ALL TO authenticated
+  USING (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin())
+  WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
+
+DROP POLICY IF EXISTS "authenticated full access" ON todos;
+DROP POLICY IF EXISTS "todos_group" ON todos;
+CREATE POLICY "todos_group" ON todos FOR ALL TO authenticated
+  USING (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin())
+  WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
 
 -- ============================================================
 -- PJ・タスク周辺（子）テーブルの部署スコープ（migration 20260723 参照）。
