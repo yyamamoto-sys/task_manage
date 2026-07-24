@@ -9,8 +9,6 @@ import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { todayStr, addDaysFromToday } from "../../lib/date";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { showToast } from "../common/Toast";
-import { formatErrorForUser } from "../../lib/errorMessage";
 import { childrenOf, isParentTask, buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -21,6 +19,8 @@ import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
+import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
+import { computeDropZoneFromRatio, type DropZone } from "../../lib/dragReorder";
 
 interface Props {
   currentUser: Member;
@@ -35,19 +35,17 @@ interface Props {
 type GroupBy = "project" | "assignee" | "status" | "tag";
 type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
 type SortDir = "asc" | "desc";
-/** ドラッグ中タスクをドロップ先の行のどこに落としたか。before/after=並び替え、nest=ドロップ先の子にする */
-type DropZone = "before" | "nest" | "after";
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, on_hold: 2, done: 3, cancelled: 4 };
 
 /** 行のうち上30%/下30%＝before/after（並び替え）、中央40%＝nest（子にする）。
- *  ドロップ先が既に子タスクの場合は「孫禁止」のため中央帯を作らず上下半分でbefore/afterのみにする。 */
+ *  ドロップ先が既に子タスクの場合は「孫禁止」のため中央帯を作らず上下半分でbefore/afterのみにする。
+ *  判定そのものは src/lib/dragReorder.ts の computeDropZoneFromRatio（純粋関数・GanttViewと共有）。 */
 function computeDropZone(e: React.DragEvent, target: Task): DropZone {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
-  if (target.parent_task_id) return ratio < 0.5 ? "before" : "after";
-  return ratio < 0.3 ? "before" : ratio > 0.7 ? "after" : "nest";
+  return computeDropZoneFromRatio(ratio, !target.parent_task_id);
 }
 
 function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
@@ -180,9 +178,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
 
   // タスクのドラッグ並べ替え・親子変更（PJ別表示時）。display_order / parent_task_id を更新して全員に共有。
+  // 実処理は useTaskDragReorder（GanttViewと共有。CLAUDE.md v3.01）に委譲し、ここでは
+  // 「並べ替え成功時に手動ソートモードへ切り替える」という ListView 固有の副作用だけを渡す。
   // dropZone：ドラッグ中のタスクがホバー中の行のどこに居るか（before=上端/nest=中央=子にする/after=下端）
-  const [draggingId, setDraggingId] = useState<string | null>(null);
-  const [dropZone, setDropZone] = useState<{ id: string; zone: "before" | "nest" | "after" } | null>(null);
+  const handleReordered = useCallback(() => {
+    if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+  }, [sortKey]);
+  const {
+    draggingId, setDraggingId, dropZone, setDropZone,
+    handleTaskDrop: dragReorderTaskDrop, handleUnparentDrop,
+  } = useTaskDragReorder(allTasks, currentUser.id, handleReordered);
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -296,80 +301,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     allTasks, members, selectedIds, currentUser.id, clearSelection,
   );
 
-  // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける：
-  // - 上端/下端（before/after）：ドロップ先と同じ階層（同じ親、または両方最上位）の並びに挿入
-  //   ドロップ先が最上位で dragged が子だった場合はここで最上位に昇格する（＝子→親）
-  //   ドロップ先が子で dragged が最上位だった場合はここでその子の兄弟になる（＝親→子）
-  // - 中央（nest）：ドロップ先の子にする（最上位タスクへの nest のみ・孫禁止のため子への nest は前段で before/after に丸める）
-  // 親→子の変更（子持ちタスクを子にする）は2階層固定と矛盾するため拒否する。
-  const handleTaskDrop = useCallback(async (draggedId: string, targetId: string, zone: DropZone) => {
-    if (draggedId === targetId) return;
-    const dragged = allTasks.find(t => t.id === draggedId);
-    const target  = allTasks.find(t => t.id === targetId);
-    if (!dragged || !target) return;
-
-    if (zone === "nest") {
-      if (target.parent_task_id === dragged.id) return; // 自分の子には入れない（循環防止）
-      if (dragged.parent_task_id === target.id) return; // 既に子
-      if (isParentTask(dragged, allTasks)) {
-        showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
-        return;
-      }
-      try {
-        await saveTask({ ...dragged, parent_task_id: target.id, project_id: target.project_id, updated_by: currentUser.id });
-        if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
-      } catch (err) {
-        showToast(formatErrorForUser("親子変更に失敗しました", err), "error");
-      }
-      return;
-    }
-
-    // before/after：ドロップ先と同じ階層・同じPJに合わせて挿入（見えている順を起点に、隠れた分は末尾に補完）
-    const newParentId = target.parent_task_id ?? null;
-    const newProjectId = target.project_id ?? null;
-    if (newParentId && isParentTask(dragged, allTasks)) {
-      showToast("子タスクを持つタスクは子にできません（先に子タスクを別の親に移動するか、解除してください）", "error");
-      return;
-    }
-    const isSibling = (t: Task) => (t.parent_task_id ?? null) === newParentId && (t.project_id ?? null) === newProjectId;
-    const visible = filteredTasks.filter(isSibling);
-    const visibleSet = new Set(visible.map(t => t.id));
-    const hidden = allTasks.filter(t => isSibling(t) && !visibleSet.has(t.id))
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
-    const ids = [...visible, ...hidden].map(t => t.id).filter(id => id !== draggedId);
-    const targetIdx = ids.indexOf(targetId);
-    if (targetIdx < 0) return;
-    ids.splice(zone === "before" ? targetIdx : targetIdx + 1, 0, draggedId);
-    try {
-      await Promise.all(ids.map((id, idx) => {
-        if (id === draggedId) {
-          if ((dragged.display_order ?? 0) === idx && (dragged.parent_task_id ?? null) === newParentId && (dragged.project_id ?? null) === newProjectId) return Promise.resolve();
-          return saveTask({ ...dragged, parent_task_id: newParentId, project_id: newProjectId, display_order: idx, updated_by: currentUser.id });
-        }
-        const t = allTasks.find(x => x.id === id);
-        if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
-        return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
-      }));
-      if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
-    } catch (err) {
-      showToast(formatErrorForUser("並べ替えに失敗しました", err), "error");
-    }
-  }, [allTasks, filteredTasks, saveTask, currentUser.id, sortKey]);
-
-  // PJ見出しへのドロップ＝親を解除して指定PJの最上位タスクの末尾に追加する（子→親）。
-  const handleUnparentDrop = useCallback(async (draggedId: string, projectId: string) => {
-    const dragged = allTasks.find(t => t.id === draggedId);
-    if (!dragged) return;
-    if (!dragged.parent_task_id && (dragged.project_id ?? null) === projectId) return; // 変化なし
-    const isTop = (t: Task) => !t.parent_task_id && (t.project_id ?? null) === projectId;
-    const maxOrder = allTasks.filter(isTop).reduce((m, t) => Math.max(m, t.display_order ?? 0), -1);
-    try {
-      await saveTask({ ...dragged, parent_task_id: null, project_id: projectId, display_order: maxOrder + 1, updated_by: currentUser.id });
-      if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
-    } catch (err) {
-      showToast(formatErrorForUser("親の解除に失敗しました", err), "error");
-    }
-  }, [allTasks, saveTask, currentUser.id, sortKey]);
+  // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける（before/after=並び替え・
+  // nest=ドロップ先の子にする）。実処理は useTaskDragReorder（上部）に集約済み。ここでは
+  // ListView固有の「今画面に見えている兄弟＝filteredTasks」を渡す薄いラッパーのみ持つ。
+  const handleTaskDrop = useCallback((draggedId: string, targetId: string, zone: DropZone) => {
+    dragReorderTaskDrop(draggedId, targetId, zone, filteredTasks);
+  }, [dragReorderTaskDrop, filteredTasks]);
 
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は

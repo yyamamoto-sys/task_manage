@@ -6,9 +6,12 @@ interface Props {
   onSave: (v: string | null) => void;
   /** 完了タスクは期限超過でも赤字強調しない（モバイルカード行と同じ判定に揃える） */
   isDone?: boolean;
+  /** 値が未設定のときに表示するプレースホルダ文言。既定＝期日入力での従来文言（後方互換）。
+   *  ガントの開始日入力（GanttParts.tsx）では「開始日未設定」を渡す */
+  placeholder?: string;
 }
 
-export function InlineEditDate({ value, onSave, isDone }: Props) {
+export function InlineEditDate({ value, onSave, isDone, placeholder = "期日未設定" }: Props) {
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -43,7 +46,7 @@ export function InlineEditDate({ value, onSave, isDone }: Props) {
         />
         <button
           onMouseDown={e => { e.preventDefault(); onSave(null); setEditing(false); }}
-          title="期日をクリア"
+          title={`${placeholder.replace(/未設定$/, "") || "日付"}をクリア`}
           style={{
             padding: "0 3px", fontSize: "10px",
             background: "transparent", border: "none",
@@ -59,7 +62,7 @@ export function InlineEditDate({ value, onSave, isDone }: Props) {
       onClick={e => { e.stopPropagation(); setEditing(true); }}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); } }}
-      title="クリックして期日を編集"
+      title={`クリックして${placeholder.replace(/未設定$/, "") || "日付"}を編集`}
       style={{
         cursor: "text",
         fontSize: "inherit",
@@ -73,7 +76,7 @@ export function InlineEditDate({ value, onSave, isDone }: Props) {
       onMouseEnter={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "var(--color-border-primary)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "transparent"; }}
     >
-      {value ? value.slice(5).replace("-", "/") : "期日未設定"}
+      {value ? value.slice(5).replace("-", "/") : placeholder}
     </span>
   );
 }

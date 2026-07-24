@@ -5,8 +5,47 @@ import { memo } from "react";
 import type { Task, Member, Project } from "../../lib/localData/types";
 import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
+import { InlineEditText } from "../common/InlineEditText";
+import { InlineEditDate } from "../common/InlineEditDate";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
 import { CRITICAL_COLOR } from "./ganttUtils";
+
+// ===== GanttRowDateEdit（タスク名の行にホバー時だけ出す開始日・期日の直接入力） =====
+//
+// 【設計意図】バー本体（TaskBarRow）は既にリサイズ/移動/結線のハンドルで当たり判定が
+// ぎっしりのため、日付の直接入力はラベル列側に置く（CLAUDE.md v3.01）。常時表示すると
+// ラベル列が煩雑になるため、行ホバー時のみ表示する（既存の hoveredTaskId 由来の
+// 「ホバーで見える系」UIと同じ流儀）。
+function GanttRowDateEdit({
+  task, isHovered, onSaveStartDate, onSaveDueDate,
+}: {
+  task: Task;
+  isHovered: boolean;
+  onSaveStartDate: (task: Task, date: string | null) => void;
+  onSaveDueDate: (task: Task, date: string | null) => void;
+}) {
+  if (!isHovered) return null;
+  return (
+    // 行クリックでタスク編集モーダルが開くため、日付編集はそちらに伝播させない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+    <span
+      onClick={e => e.stopPropagation()}
+      style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "2px" }}
+    >
+      <InlineEditDate
+        value={task.start_date ?? null}
+        placeholder="開始日未設定"
+        onSave={date => onSaveStartDate(task, date)}
+      />
+      <span>〜</span>
+      <InlineEditDate
+        value={task.due_date}
+        placeholder="期日未設定"
+        onSave={date => onSaveDueDate(task, date)}
+      />
+    </span>
+  );
+}
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -378,16 +417,45 @@ export interface GanttPjLabelRowProps {
   onHoverLeave: () => void;
   onToggleCollapse: (taskId: string) => void;
   onSaveAssignees: (task: Task, ids: string[]) => void;
+  /** タスク名インライン編集（choke pointのsaveTask経由） */
+  onSaveName: (task: Task, name: string) => void;
+  /** 開始日・期日インライン編集（行ホバー時のみ表示。saveTask経由でB3自動リスケ連鎖・
+      B4ベースライン凍結が自動的に効く） */
+  onSaveStartDate: (task: Task, date: string | null) => void;
+  onSaveDueDate: (task: Task, date: string | null) => void;
+  /** ドラッグ並べ替え（依存の無い兄弟同士のみ有効。依存で縛られたペアは再描画で依存順に
+      戻る＝v2.39の仕様どおり。CLAUDE.md v3.01） */
+  draggingId: string | null;
+  dropZone: "before" | "after" | null;
+  onDragHandleStart: (taskId: string) => void;
+  onDragHandleEnd: () => void;
+  onRowDragOver: (e: React.DragEvent, taskId: string) => void;
+  onRowDragLeave: (taskId: string) => void;
+  onRowDrop: (e: React.DragEvent, taskId: string) => void;
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   task, isChild, childCount, isHovered, isCollapsed, members,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
+  onSaveName, onSaveStartDate, onSaveDueDate,
+  draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
+  const isDraggingSelf = draggingId === task.id;
+  // 【重要】ドロップ位置の強調は box-shadow の inset で表現し、border/paddingは変えない
+  // （ListTaskRowと同じ理由：レイアウト自体が動くとドラッグ中のdragover/dragleaveが
+  // 高頻度で往復し、カクつき・フリーズの原因になる）
+  const shadowLayers: string[] = [];
+  if (!isChild && childCount > 0) shadowLayers.push("inset 3px 0 0 var(--color-brand)");
+  else if (isChild) shadowLayers.push("inset 2px 0 0 var(--color-brand-border)");
+  if (dropZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
+  if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => onHoverEnter(task.id)}
       onMouseLeave={onHoverLeave}
+      onDragOver={e => { if (draggingId && draggingId !== task.id) onRowDragOver(e, task.id); }}
+      onDragLeave={() => onRowDragLeave(task.id)}
+      onDrop={e => onRowDrop(e, task.id)}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") onEdit(task.id); }}
       style={{
@@ -400,13 +468,21 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         : isChild ? "var(--color-bg-primary)"
         : childCount > 0 ? "var(--color-bg-secondary)"
         : "var(--color-bg-primary)",
-      boxShadow: !isChild && childCount > 0
-        ? "inset 3px 0 0 var(--color-brand)"
-        : isChild
-        ? "inset 2px 0 0 var(--color-brand-border)"
-        : "none",
+      boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
+      opacity: isDraggingSelf ? 0.4 : 1,
       cursor: "pointer", transition: "background 0.1s",
     }}>
+      {/* ドラッグハンドル（並べ替え専用。依存の無い兄弟同士のみ実際に反映される）。
+          マウスのドラッグ操作専用でキーボード代替手段はない（B5結線ハンドル等と同じ扱い） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+      <span
+        draggable
+        onClick={e => e.stopPropagation()}
+        onDragStart={e => { e.stopPropagation(); onDragHandleStart(task.id); e.dataTransfer.effectAllowed = "move"; }}
+        onDragEnd={e => { e.stopPropagation(); onDragHandleEnd(); }}
+        title="ドラッグして並べ替え"
+        style={{ width: 10, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "11px", lineHeight: 1, userSelect: "none" }}
+      >⠿</span>
       {isChild ? (
         <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
       ) : childCount > 0 ? (
@@ -427,17 +503,26 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         <span style={{ flexShrink: 0, width: 14 }} />
       )}
       <StatusDot status={task.status} />
-      <span style={{
-        fontSize: "11px",
-        fontWeight: (!isChild && childCount > 0) ? "600" : "400",
-        color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        flex: 1,
-        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
-      }}>
-        {task.name}
-      </span>
+      {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          flex: 1, minWidth: 0,
+          fontSize: "11px",
+          fontWeight: (!isChild && childCount > 0) ? "600" : "400",
+          color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
+          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+        }}
+      >
+        <InlineEditText
+          value={task.name}
+          onSave={name => onSaveName(task, name)}
+          style={{ fontWeight: "inherit", color: "inherit" }}
+        />
+      </div>
+      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
       {childCount > 0 && (
         <span style={{
           fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
@@ -470,10 +555,14 @@ export interface GanttTodoLabelRowProps {
   onHoverEnter: (taskId: string) => void;
   onHoverLeave: () => void;
   onSaveAssignees: (task: Task, ids: string[]) => void;
+  onSaveName: (task: Task, name: string) => void;
+  onSaveStartDate: (task: Task, date: string | null) => void;
+  onSaveDueDate: (task: Task, date: string | null) => void;
 }
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
   task, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
+  onSaveName, onSaveStartDate, onSaveDueDate,
 }: GanttTodoLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -489,14 +578,19 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       cursor: "pointer", transition: "background 0.1s",
     }}>
       <StatusDot status={task.status} />
-      <span style={{
-        fontSize: "11px", color: "var(--color-text-secondary)",
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1,
-        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
-      }}>
-        {task.name}
-      </span>
+      {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          flex: 1, minWidth: 0, fontSize: "11px", color: "var(--color-text-secondary)",
+          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+        }}
+      >
+        <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
+      </div>
+      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
       {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
@@ -520,10 +614,14 @@ export interface GanttPersonLabelRowProps {
   onEdit: (taskId: string) => void;
   onHoverEnter: (taskId: string) => void;
   onHoverLeave: () => void;
+  onSaveName: (task: Task, name: string) => void;
+  onSaveStartDate: (task: Task, date: string | null) => void;
+  onSaveDueDate: (task: Task, date: string | null) => void;
 }
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   task, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
+  onSaveName, onSaveStartDate, onSaveDueDate,
 }: GanttPersonLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -545,16 +643,21 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
           background: pj.color_tag, flexShrink: 0,
         }} />
       )}
-      <span style={{
-        fontSize: "11px",
-        color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-        flex: 1,
-        textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-        opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
-      }}>
-        {task.parent_task_id ? "↳ " : ""}{task.name}
-      </span>
+      {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+      <div
+        onClick={e => e.stopPropagation()}
+        style={{
+          flex: 1, minWidth: 0, fontSize: "11px",
+          color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
+          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
+          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+        }}
+      >
+        {task.parent_task_id ? "↳ " : ""}
+        <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
+      </div>
+      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
     </div>
   );
 });

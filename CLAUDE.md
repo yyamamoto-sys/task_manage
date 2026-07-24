@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.00
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.01
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2444,7 +2444,86 @@
 #      DBマイグレ要：20260723c_add_quarterly_objective_group_id.sql（dev→prod手動適用）。
 #      検証：tsc 0/vitest 519件全通過/eslint 新規0/build成功
 #
-# 最終更新：2026-07-23（v3.00）
+# v3.01 feat: ガントビューに「タスク名インライン編集」「開始日・期日の直接入力」
+#      「D&D並べ替え（ラベル列）」を追加（2026-07-24）
+#      背景：山本さんから「ガントチャート内に直接タスク・日付を入力する方法はあるか」
+#             「子タスクを子タスク間・親タスク間で前後・上下入れ替えることがチャート内操作で
+#             可能か」の質問。既存はどちらも未対応（タスク名・日付はバークリック→サイドパネル/
+#             モーダル経由のみ・子タスクの並び順は依存関係が無い場合に手動並べ替え手段が無い）。
+#             3点セットで実装。
+#      追加1（タスク名インライン編集）：GanttParts.tsx の GanttPjLabelRow / GanttTodoLabelRow /
+#             GanttPersonLabelRow の3行コンポーネント全てで、タスク名テキストを既存の
+#             common/InlineEditText（ListView/KanbanViewで使用中の汎用コンポーネント。変更なしで
+#             そのまま再利用）に置き換え。行クリック（詳細を開く）と競合しないよう、名前を包む
+#             div に onClick=stopPropagation（既存のPJ名インライン編集・InlineEditAssignee
+#             ラッパーと同じ流儀）。保存は各行が新設の onSaveName プロップ経由で
+#             GanttView.tsx の handleSaveRowName（＝saveTask choke point）を呼ぶ。
+#      追加2（開始日・期日の直接入力）：GanttParts.tsx に GanttRowDateEdit（内部専用コンポーネント）
+#             を新設。開始日・期日それぞれに common/InlineEditDate を使う。InlineEditDate に
+#             placeholder プロップを追加（既定"期日未設定"＝後方互換。開始日用に"開始日未設定"を
+#             渡す軽微な拡張。ListView/KanbanViewの既存呼び出しは無変更で従来どおり動作）。
+#             **設計判断**：バー本体（TaskBarRow）は既にリサイズ/移動/B5結線ハンドルで当たり判定が
+#             ぎっしりのため、日付編集UIはラベル列側に置き、バー本体には一切手を入れない。
+#             常時表示すると煩雑になるため、行ホバー時のみ表示（既存の hoveredTaskId 由来の
+#             「ホバーで見える系」UIと同じ流儀。GanttPjLabelRow/GanttTodoLabelRow/
+#             GanttPersonLabelRowの3行全てに追加）。保存は onSaveStartDate/onSaveDueDate 経由で
+#             saveTask choke point を通るため、B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結が
+#             自動的に効く。手入力の開始日>期日のクロスフィールド検証は行わない（TaskEditModal/
+#             TaskSidePanelの既存の手動日付入力と同じ、現状無検証の挙動に揃えた。新規に導入した
+#             制約ではない）。
+#      追加3（D&D並べ替え。最重要・最大工数）：兄弟タスクの並び順は既存どおり
+#             「依存関係（先行→後続）があれば常にそれが優先される安定トポロジカルソート」
+#             （taskHierarchy.ts の orderSiblingsWithDependencies。v2.39の仕様を変更しない＝
+#             依存で縛られたペアをドラッグで入れ替えても再描画で依存順に戻るのは意図した挙動）。
+#             依存の無い兄弟同士だけ display_order を書き換えられるようにする。
+#             ListView.tsx（182〜372行目にあった handleTaskDrop/handleUnparentDrop/
+#             computeDropZone のロジック）を、重複実装を避けるため純粋関数＋フックへ抽出：
+#             - src/lib/dragReorder.ts（新規）：DOM非依存の純粋関数のみ。
+#               computeDropZoneFromRatio(ratio, allowNest)＝行内のドロップ位置比率から
+#               DropZone（before/after/nest）を判定（ListViewの旧computeDropZoneの分岐を
+#               そのまま抽出。allowNest=falseなら常に50%でbefore/afterのみ＝GanttViewは
+#               常にこちらを使う）。computeSiblingReorderIds(allTasks, visibleTasks,
+#               draggedId, targetId, zone)＝ドロップ先と同じ階層（parent_task_id・
+#               project_id一致）に挿入した場合の新しいid配列を計算（隠れた兄弟は
+#               display_order順で末尾維持）。ユニットテスト8件
+#               （src/lib/__tests__/dragReorder.test.ts）。
+#             - src/hooks/useTaskDragReorder.ts（新規。useBulkTaskActions.tsと同じ抽出
+#               パターン）：draggingId/dropZoneのstateを一元管理し、handleTaskDrop
+#               （nest=親子変更／before・after=computeSiblingReorderIdsを使った並べ替え。
+#               子を持つタスクを子にしようとするとエラートースト等、ListViewの検証ロジックを
+#               完全温存）・handleUnparentDrop（PJ見出しへのドロップで親解除）を提供。
+#               「並べ替え成功時の呼び出し側固有の副作用」は onReordered コールバックに
+#               委譲する設計（ListViewは「手動ソートモードへの切替」を渡す。GanttViewには
+#               手動ソートという概念が無いため渡さない）。
+#             - ListView.tsx：ローカルの draggingId/dropZone state・handleTaskDrop/
+#               handleUnparentDrop の実装（旧・約75行）を削除し、上記フック＋薄いラッパー
+#               （filteredTasksをvisibleTasksとして渡すだけ）に置き換え。挙動は完全に同一
+#               （回帰なし。既存の手動テストシナリオはコード変更前後で差が無いことをロジック
+#               レベルで確認済み）。
+#             - GanttView.tsx（PJ別ビュー＝viewMode==="pj"のラベル列のみ対象）：
+#               useTaskDragReorder を呼び、taskIdToPjVisibleTasks（taskId→そのPJの
+#               「今表示されている順」タスク配列のMap。pjOrderedTasksMapから1回だけ構築する
+#               O(1)ルックアップ）を新設。GanttPjLabelRowに⠿ドラッグハンドル（既存のListView
+#               ハンドル列と同じ見た目・挙動）を追加し、行のonDragOver/onDragLeave/onDropで
+#               受け止める。ドロップ位置の強調は box-shadow の inset のみで表現し border/padding
+#               を変えない（ListTaskRowのコメントにある「レイアウトが動くとdragover/dragleaveが
+#               高頻度往復してカクつく」教訓をそのまま踏襲）。
+#             **スコープ判断（今回やらないこと）**：①nest（ドロップ先の子にする＝親子付け替え）は
+#             GanttViewでは提供しない。GanttViewのゾーン判定は常にallowNest=falseで固定し、
+#             before/afterの並べ替えのみに限定（要望が「並べ替え」であったこと、ラベル列の
+#             当たり判定を増やしすぎないことを優先）。②「PJ見出しへドロップして親を解除する」
+#             （ListViewのhandleUnparentDrop相当）もGanttViewでは未提供：ラベル列の幅が狭く
+#             PJ名表示自体が14文字省略という制約下で、ドロップ可能を示すヒント文言を置く余白が
+#             無いため。親子付け替えが必要な場合はListViewを使う想定。③人別ビュー・ToDo別ビューの
+#             D&D並べ替えは対象外（要望どおりPJ別ビューに限定。名前インライン編集・日付直接入力の
+#             2機能は3ビュー全てに対応済み）。④GanttMobileViewは既存の多くのガント新機能と同じ
+#             慣例で対象外（触っていない）。
+#      DBマイグレ不要（既存の display_order / parent_task_id / name / start_date / due_date
+#             列のみ使用。新規列・新規テーブルなし）。
+#      検証：tsc 0/vitest 527件全通過（519件+新規8件）/eslint 35件で完全一致（baseline比較。
+#             24 error + 11 warning）/build成功
+#
+# 最終更新：2026-07-24（v3.01）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3477,6 +3556,8 @@ src/
 │   │   ├── gate.ts               # getIncompletePredecessors / formatBlockerNames（完了ゲート・着手警告）
 │   │   ├── reschedule.ts         # B3：computeCascadeShifts（制約充足プッシュの自動リスケ連鎖・純粋関数）
 │   │   └── linkDirection.ts      # B5：resolveLinkDirection（ガント上のドラッグ結線の先行/後続解決・純粋関数）
+│   ├── dragReorder.ts             # タスクD&D並べ替えの純粋ロジック（computeDropZoneFromRatio /
+│   │                              # computeSiblingReorderIds。ListView/GanttView共有。v3.01）
 │   └── supabase/
 │       ├── client.ts             # Supabaseクライアント初期化
 │       ├── auth.ts               # セッション取得（getSession）
@@ -3485,7 +3566,10 @@ src/
 ├── context/
 │   └── AppDataContext.tsx        # 初回 load + Supabase realtime 購読の lifecycle 管理（薄い Wrapper）
 ├── hooks/
-│   └── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
+│   ├── useAIConsultation.ts      # AI相談機能のReact Hook（唯一の呼び出し口）
+│   ├── useBulkTaskActions.ts     # 一括操作（ステータス/優先度/担当者変更・削除）。ListView/KanbanView共有
+│   └── useTaskDragReorder.ts     # タスクD&D並べ替え（並び替え・親子付け替え・親解除）。
+│                                  # ListView/GanttView（PJ別ビューのラベル列）共有（v3.01）
 └── components/
     ├── common/
     │   ├── ErrorBoundary.tsx     # ルート ErrorBoundary（main.tsx で配置）

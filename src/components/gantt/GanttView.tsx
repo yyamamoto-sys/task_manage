@@ -42,6 +42,8 @@ import { orderSiblingsWithDependencies, applyDependencyOrderWithinSiblings, filt
 import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
+import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
+import { computeDropZoneFromRatio } from "../../lib/dragReorder";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -415,6 +417,17 @@ export function GanttView({
     return map;
   }, [visibleProjects, allTasks, orderTasksHierarchically]);
 
+  // taskId → そのタスクが属するPJの「今表示されている順」のタスク配列（D&D並べ替えの基準。
+  // useTaskDragReorder に渡す visibleTasks を、ドロップ先のtaskIdからO(1)で引けるようにする）
+  const taskIdToPjVisibleTasks = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const pj of visibleProjects) {
+      const list = (pjOrderedTasksMap.get(pj.id) ?? []).map(r => r.task);
+      for (const t of list) map.set(t.id, list);
+    }
+    return map;
+  }, [visibleProjects, pjOrderedTasksMap]);
+
   // ToDoグループごとのソート済みタスク（ラベル列・バー列の両方で共有。pjOrderedTasksMapと同じ理由で
   // 二重計算を避ける）。同じ親を共有するタスク同士は依存関係順を優先する
   // （applyDependencyOrderWithinSiblings＝親を持たないタスクの位置は変えない）
@@ -646,6 +659,55 @@ export function GanttView({
   const handleSaveRowAssignees = useCallback((task: Task, ids: string[]) => {
     saveTask({ ...task, assignee_member_ids: ids });
   }, [saveTask]);
+  // ラベル列のインライン編集（タスク名・開始日・期日）。保存は必ず saveTask 経由
+  // （B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結がこの1箇所で自動的に効く）
+  const handleSaveRowName = useCallback((task: Task, name: string) => {
+    saveTask({ ...task, name });
+  }, [saveTask]);
+  const handleSaveRowStartDate = useCallback((task: Task, start_date: string | null) => {
+    saveTask({ ...task, start_date });
+  }, [saveTask]);
+  const handleSaveRowDueDate = useCallback((task: Task, due_date: string | null) => {
+    saveTask({ ...task, due_date });
+  }, [saveTask]);
+
+  // ===== D&D並べ替え（PJ別ビューのラベル列。依存の無い兄弟同士のみ display_order を書き換える。
+  // 依存で縛られたペアは常に依存順が勝つ＝v2.39の仕様どおり、ここでは触らない） =====
+  // ListViewと同じ useTaskDragReorder を共有（CLAUDE.md v3.01）。GanttViewには「手動ソート
+  // モード」という概念が無いため onReordered は渡さない（並べ替え自体はorderSiblingsWithDependencies
+  // が再描画のたびに効くため、切り替えるモードが存在しない）。
+  // 【スコープ判断】ListViewにある「PJ見出しへドロップして親を解除する」（handleUnparentDrop）は
+  // ガントでは提供しない：ラベル列の幅が狭くPJ名の表示すら14文字で省略している状態のため、
+  // ドロップ可能であることを示すヒント文言を置く余白が無い。今回の要望（兄弟の並べ替え）の
+  // スコープ外でもあるため、意図的に見送る（親子付け替えが必要な場合はListViewを使う）。
+  const {
+    draggingId: ganttDraggingId, setDraggingId: setGanttDraggingId,
+    dropZone: ganttDropZone, setDropZone: setGanttDropZone,
+    handleTaskDrop: ganttHandleTaskDrop,
+  } = useTaskDragReorder(allTasks, currentUser.id);
+  const handleDragHandleStart = useCallback((taskId: string) => setGanttDraggingId(taskId), [setGanttDraggingId]);
+  const handleDragHandleEnd = useCallback(() => { setGanttDraggingId(null); setGanttDropZone(null); }, [setGanttDraggingId, setGanttDropZone]);
+  const handleRowDragOver = useCallback((e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const ratio = rect.height > 0 ? (e.clientY - rect.top) / rect.height : 0.5;
+    // GanttViewのラベル列は常に allowNest=false（before/afterのみ）。ドロップ先の子にする
+    // 操作はGanttでは提供しない（2階層の親子付け替えはListViewに限定するスコープ判断。CLAUDE.md v3.01）
+    const zone = computeDropZoneFromRatio(ratio, false) as "before" | "after";
+    setGanttDropZone(z => (z && z.id === taskId && z.zone === zone) ? z : { id: taskId, zone });
+  }, [setGanttDropZone]);
+  const handleRowDragLeave = useCallback((taskId: string) => {
+    setGanttDropZone(z => (z?.id === taskId ? null : z));
+  }, [setGanttDropZone]);
+  const handleRowDrop = useCallback((e: React.DragEvent, taskId: string) => {
+    e.preventDefault();
+    const zone = ganttDropZone?.id === taskId ? ganttDropZone.zone : null;
+    // ドロップ先タスクが属するPJの「今表示されている順」を並べ替えの基準にする
+    // （taskIdToPjVisibleTasksはpjOrderedTasksMapから1回だけ構築するO(1)ルックアップ）
+    const visibleTasks = taskIdToPjVisibleTasks.get(taskId) ?? allTasks;
+    if (ganttDraggingId && zone) ganttHandleTaskDrop(ganttDraggingId, taskId, zone, visibleTasks);
+    setGanttDraggingId(null); setGanttDropZone(null);
+  }, [ganttDraggingId, ganttDropZone, ganttHandleTaskDrop, setGanttDraggingId, setGanttDropZone, taskIdToPjVisibleTasks, allTasks]);
 
   // バー端ドラッグによる日付変更（右端＝期日／左端＝開始日）。既存の右端リサイズと対称に実装。
   // 確定は必ず saveTask 経由（B3自動リスケ連鎖・B4ベースライン凍結がこの1箇所で自動的に効く）
@@ -1627,6 +1689,16 @@ export function GanttView({
                             onHoverLeave={handleRowHoverLeave}
                             onToggleCollapse={togglePJ}
                             onSaveAssignees={handleSaveRowAssignees}
+                            onSaveName={handleSaveRowName}
+                            onSaveStartDate={handleSaveRowStartDate}
+                            onSaveDueDate={handleSaveRowDueDate}
+                            draggingId={ganttDraggingId}
+                            dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
+                            onDragHandleStart={handleDragHandleStart}
+                            onDragHandleEnd={handleDragHandleEnd}
+                            onRowDragOver={handleRowDragOver}
+                            onRowDragLeave={handleRowDragLeave}
+                            onRowDrop={handleRowDrop}
                           />
                         );
                       })}
@@ -1667,6 +1739,9 @@ export function GanttView({
                           onHoverEnter={handleRowHoverEnter}
                           onHoverLeave={handleRowHoverLeave}
                           onSaveAssignees={handleSaveRowAssignees}
+                          onSaveName={handleSaveRowName}
+                          onSaveStartDate={handleSaveRowStartDate}
+                          onSaveDueDate={handleSaveRowDueDate}
                         />
                       ))}
                     </div>
@@ -1756,6 +1831,9 @@ export function GanttView({
                             onEdit={guardedHandleRowEdit}
                             onHoverEnter={handleRowHoverEnter}
                             onHoverLeave={handleRowHoverLeave}
+                            onSaveName={handleSaveRowName}
+                            onSaveStartDate={handleSaveRowStartDate}
+                            onSaveDueDate={handleSaveRowDueDate}
                           />
                         );
                       })}
