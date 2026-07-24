@@ -13,6 +13,7 @@ import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "..
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday, formatMDWithWeekday } from "../../lib/date";
+import { isHoliday } from "../../lib/date/holidays";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -28,6 +29,7 @@ import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
+  computeDayTicks, dayTickColor,
   clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection,
   xToDate, computeDragCreateRange,
 } from "./ganttUtils";
@@ -305,6 +307,8 @@ export function GanttView({
   const weekBlocks = useMemo(() => computeWeekBlocks(days, dayWidth), [days, dayWidth]);
   // 週コラムの淡いグリッド線のx座標（月初＝W1はborderDays側の太い境界線と重複するため対象外）
   const weekGridLines = useMemo(() => computeWeekGridLines(weekBlocks), [weekBlocks]);
+  // ものさし目盛り行（週ラベルの直下・1日ごと）。days/dayWidthが変わらない限り再計算しない
+  const dayTicks = useMemo(() => computeDayTicks(days, dayWidth, isHoliday), [days, dayWidth]);
 
   // タスク編集モーダル
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
@@ -2020,6 +2024,34 @@ export function GanttView({
                     {wb.label}
                   </div>
                 ))}
+              </div>
+              {/* ものさし目盛り行（1日ごと。週ラベルのすぐ下に表示。土=青／日・祝=赤／平日=控えめ色。
+                  祝日はホバーで祝日名を表示。dayTicksはuseMemo済みのためズームや折りたたみでの
+                  再レンダーでは再計算されない） */}
+              <div style={{ height: 16, position: "relative", borderTop: "1px solid var(--color-border-secondary)" }}>
+                {dayTicks.map(tick => {
+                  const color = dayTickColor(tick.colorKind);
+                  return (
+                    <div
+                      key={tick.x}
+                      title={tick.holidayName ?? undefined}
+                      style={{
+                        position: "absolute",
+                        left: tick.x, width: dayWidth,
+                        height: "100%",
+                        boxSizing: "border-box",
+                        borderLeft: `1px solid ${color}`,
+                        display: "flex", alignItems: "flex-end", justifyContent: "center",
+                        paddingBottom: 1,
+                        fontSize: "8px", lineHeight: 1,
+                        color,
+                        overflow: "hidden",
+                      }}
+                    >
+                      {tick.day}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

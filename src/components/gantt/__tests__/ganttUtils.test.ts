@@ -3,12 +3,14 @@ import {
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
+  dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
   computeMoveShift, computeBulkMoveShifts,
   clampZoom, computeVisibleOrderedTaskIds, ZOOM_LEVELS,
   xToDate, computeDragCreateRange,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange, toDateStr } from "../../../lib/date";
+import { isHoliday } from "../../../lib/date/holidays";
 
 function makeTask(overrides: Partial<Task> & { id: string }): Task {
   return {
@@ -174,6 +176,53 @@ describe("computeWeekGridLines", () => {
     const days = getDaysInRange(new Date(2026, 7, 10), new Date(2026, 7, 16));
     const blocks = computeWeekBlocks(days, 28);
     expect(computeWeekGridLines(blocks)).toEqual([0, 5 * 28]);
+  });
+});
+
+describe("dayTickColorKind", () => {
+  it("祝日は holiday（曜日に関わらず優先）", () => {
+    expect(dayTickColorKind(new Date(2026, 0, 1), "元日")).toBe("holiday"); // 2026-01-01は木曜
+  });
+  it("日曜は祝日名がなければ sunday", () => {
+    expect(dayTickColorKind(new Date(2026, 6, 26), null)).toBe("sunday"); // 2026-07-26は日曜
+  });
+  it("土曜は祝日名がなければ saturday", () => {
+    expect(dayTickColorKind(new Date(2026, 6, 25), null)).toBe("saturday"); // 2026-07-25は土曜
+  });
+  it("平日は weekday", () => {
+    expect(dayTickColorKind(new Date(2026, 6, 21), null)).toBe("weekday"); // 2026-07-21は火曜
+  });
+});
+
+describe("dayTickColor", () => {
+  it("holiday/sundayは赤、saturdayは青、weekdayはテキスト系トークン", () => {
+    expect(dayTickColor("holiday")).toBe(HOLIDAY_TICK_COLOR);
+    expect(dayTickColor("sunday")).toBe(HOLIDAY_TICK_COLOR);
+    expect(dayTickColor("saturday")).toBe(SATURDAY_TICK_COLOR);
+    expect(dayTickColor("weekday")).toBe("var(--color-text-tertiary)");
+  });
+});
+
+describe("computeDayTicks", () => {
+  it("days配列と同じ長さで、x座標がdayWidth比例・dayが日付の日部分になる", () => {
+    const days = getDaysInRange(new Date(2026, 6, 18), new Date(2026, 6, 26)); // 7/18(土)〜7/26(日)
+    const ticks = computeDayTicks(days, 28, isHoliday);
+    expect(ticks).toHaveLength(9);
+    expect(ticks[0]).toMatchObject({ x: 0, day: 18, colorKind: "saturday" });
+    expect(ticks[8]).toMatchObject({ x: 8 * 28, day: 26, colorKind: "sunday" });
+  });
+
+  it("祝日を含む範囲では colorKind='holiday'・holidayNameに祝日名が入る", () => {
+    const days = getDaysInRange(new Date(2026, 6, 19), new Date(2026, 6, 21)); // 7/19(日)〜7/21(火)、7/20は海の日
+    const ticks = computeDayTicks(days, 28, isHoliday);
+    expect(ticks[1]).toMatchObject({ day: 20, colorKind: "holiday", holidayName: "海の日" });
+    expect(ticks[2]).toMatchObject({ day: 21, colorKind: "weekday", holidayName: null });
+  });
+
+  it("祝日判定は引数のisHolidayFnに委譲する（ganttUtils.tsは祝日ライブラリに直接依存しない）", () => {
+    const days = getDaysInRange(new Date(2026, 6, 21), new Date(2026, 6, 21)); // 平日1日だけ
+    const ticks = computeDayTicks(days, 28, () => "テスト祝日");
+    expect(ticks[0]).toMatchObject({ colorKind: "holiday", holidayName: "テスト祝日" });
   });
 });
 

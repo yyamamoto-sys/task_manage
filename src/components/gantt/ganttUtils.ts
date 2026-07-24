@@ -133,6 +133,72 @@ export function computeWeekGridLines(weekBlocks: WeekBlock[]): number[] {
   return weekBlocks.filter(wb => !wb.isMonthStart).map(wb => wb.startX);
 }
 
+// ===== ものさし目盛り行（週ラベルの直下・1日ごとの目盛り。CLAUDE.md v3.05） =====
+
+export type DayTickColorKind = "holiday" | "sunday" | "saturday" | "weekday";
+
+/** 目盛り線・数字の色（赤=日曜/祝日、青=土曜）。祝日・critical path 等の他の赤系配色とは
+ * 用途が異なる（ヘッダー行専用）ため、専用の定数として分ける。 */
+export const HOLIDAY_TICK_COLOR = "#dc2626";
+export const SATURDAY_TICK_COLOR = "#2563eb";
+
+/**
+ * 曜日＋祝日名 → 目盛りの色分類。優先順位は 祝日 > 日曜 > 土曜 > 平日（祝日が日曜と重なる
+ * ケースでも祝日側を優先するが、どちらも赤なので見た目上は同じ）。
+ */
+export function dayTickColorKind(date: Date, holidayName: string | null): DayTickColorKind {
+  if (holidayName) return "holiday";
+  const dow = date.getDay();
+  if (dow === 0) return "sunday";
+  if (dow === 6) return "saturday";
+  return "weekday";
+}
+
+/** colorKind → 実際に描画する色（CSS color値）。平日はテーマの控えめなトークンを使う。 */
+export function dayTickColor(colorKind: DayTickColorKind): string {
+  switch (colorKind) {
+    case "holiday":
+    case "sunday":
+      return HOLIDAY_TICK_COLOR;
+    case "saturday":
+      return SATURDAY_TICK_COLOR;
+    default:
+      return "var(--color-text-tertiary)";
+  }
+}
+
+export interface DayTick {
+  x: number;
+  /** 日のみ（1〜31）。月は上の月ラベル行で分かるため日だけ表示する */
+  day: number;
+  colorKind: DayTickColorKind;
+  /** 祝日名（ホバーツールチップ用）。祝日でなければ null */
+  holidayName: string | null;
+}
+
+/**
+ * ものさし目盛り行（1日ごと）の描画データを計算する純粋関数。days配列1件につき1目盛り
+ * （x座標・日の数字・色分類・祝日名）を返す。GanttView側はこれをuseMemoで回し、
+ * days/dayWidthが変わらない限り再計算しない（365日規模でも計算コストは1回のmapのみ）。
+ *
+ * isHolidayFn は呼び出し側（GanttView.tsx）から lib/date/holidays の isHoliday を渡す。
+ * ganttUtils.ts はどのビューからも（appStore.ts の computeBulkMoveShifts 経由も含め）
+ * 参照される共有モジュールのため、祝日ライブラリ（CJSでtree-shakeされにくい）への
+ * import をここに書くと appStore 側の即時読み込みバンドルにも祝日ライブラリが混入して
+ * しまう。関数として注入することでガントビューの遅延読み込みチャンクだけに閉じ込める。
+ */
+export function computeDayTicks(days: Date[], dayWidth: number, isHolidayFn: (dateStr: string) => string | null): DayTick[] {
+  return days.map((d, i) => {
+    const holidayName = isHolidayFn(toDateStr(d));
+    return {
+      x: i * dayWidth,
+      day: d.getDate(),
+      colorKind: dayTickColorKind(d, holidayName),
+      holidayName,
+    };
+  });
+}
+
 // ===== マイルストーン帯（PJ内・スクロールしても埋もれないようにする視認補助） =====
 
 /**

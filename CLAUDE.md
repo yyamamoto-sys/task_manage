@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.04
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.05
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2708,7 +2708,70 @@
 #      検証：tsc 0/vitest 534件全通過（527件+新規7件）/eslint 35件で完全一致
 #             （baseline比較・新規0）/build成功
 #
-# 最終更新：2026-07-24（v3.04）
+# v3.05 feat: ガントビュー週ラベルの直下に「ものさし目盛り」行（1日ごと・土=青/日祝=赤）を
+#      追加＋日本の祝日判定ライブラリを新規導入（2026-07-24・デスクトップ GanttView のみ対象。
+#      GanttMobileView は対象外・未変更）
+#      背景：v2.38で日付数字行を週ラベル（8月W1形式）に置き換えて以来、実際にタスクの
+#             日付を選ぶ際「どこが土日か」を気にしながら1日ずつ数える必要があった。
+#             週ラベルの粒度（大局）と1日単位の粒度（実際の日付選び）を両立させたいという
+#             要望
+#      追加1（祝日ライブラリ）：`japanese-holidays`（v1.0.10・MIT・依存ゼロ・約9KB）を
+#             `dependencies` に、型定義 `@types/japanese-holidays`（v1.0.3）を
+#             `devDependencies` に追加。選定理由：①振替休日・ハッピーマンデー・春分秋分の
+#             計算式を含み日本の祝日を実務精度でカバー、②依存ゼロで軽量、③algorithmic
+#             （祝日法改正への追従がデータ更新なしで比較的しやすい）。
+#             オフライン検証（2026-07-24）：npm registry・unpkg上のソース
+#             （index.js・lib/japanese-holidays.js）を確認し、http/https/fetch/
+#             XMLHttpRequest/net等のネットワークアクセスコードが存在しないこと・実行時
+#             依存が0件であることを確認済み（`npm view japanese-holidays` でも
+#             `deps: none` を確認）。node上で `isHoliday(date, true)` を実行し
+#             元日/建国記念の日/海の日（ハッピーマンデー）/振替休日（2024-05-06）が
+#             正しく判定されることも実地確認した。@holiday-jp/holiday_jp
+#             （データ網羅的だがバンドル重め）は不採用。
+#      追加2（薄いラッパー）：`src/lib/date/holidays.ts`（新規）に
+#             `isHoliday(dateStr: string): string | null`（祝日なら祝日名、そうでなければ
+#             null。振替休日を含めて判定）を実装。アプリ側は必ずこの関数経由で祝日判定し、
+#             `japanese-holidays` を直接あちこちで呼ばない（将来ライブラリを差し替える際の
+#             変更箇所を1箇所に閉じる）。ユニットテスト6件（元日・ハッピーマンデー・
+#             振替休日・平日・土曜・無効な日付文字列）。
+#      追加3（ものさし目盛り行）：`ganttUtils.ts` に `dayTickColorKind(date, holidayName)`
+#             （曜日＋祝日名→色分類。優先順位＝祝日>日曜>土曜>平日）・`dayTickColor(colorKind)`
+#             （色分類→実際のCSS color。赤=`HOLIDAY_TICK_COLOR`(#dc2626)、
+#             青=`SATURDAY_TICK_COLOR`(#2563eb)、平日=`var(--color-text-tertiary)`）・
+#             `computeDayTicks(days, dayWidth, isHolidayFn)`（days配列1件につき1目盛り＝
+#             x座標・日の数字（1〜31）・色分類・祝日名を返す純粋関数）を追加。
+#             GanttView.tsx はこれを `useMemo(() => computeDayTicks(days, dayWidth, isHoliday), 
+#             [days, dayWidth])` で回し、days/dayWidthが変わらない限り再計算しない。
+#             `computeDayTicks` は祝日判定を`isHolidayFn`として引数注入する設計にした
+#             （下記「バンドルサイズへの影響」参照・ganttUtils.ts自体は祝日ライブラリに
+#             依存しない）。ヘッダーに週ラベル行（既存）のすぐ下の新しい行（高さ16px・
+#             `borderTop`で週ラベル行と区切る）として、`days.map`で1 divずつ
+#             （`borderLeft`で色付きの目盛り線＋中に日の数字・フォント8px）を描画。
+#             祝日は`title`属性で祝日名をホバー表示。ボディ側の土日グラデーション
+#             （weekendGradient）・週コラムの淡いグリッド線（weekGridLines）・月初/月曜
+#             境界線（borderDays）は無変更（スコープ外＝目盛り行の追加のみ）。
+#             ユニットテスト7件（dayTickColorKind4件・dayTickColor1件・computeDayTicks2件、
+#             ganttUtils.test.ts）。
+#      バンドルサイズへの影響：`ganttUtils.ts` は `appStore.ts`（`computeBulkMoveShifts`
+#             経由）からも参照される共有モジュールのため、当初 `isHoliday` を
+#             `ganttUtils.ts` の先頭でモジュールレベルimportしたところ、CJSモジュール
+#             （`japanese-holidays`）がtree-shakeされずappStoreチャンク（毎回即時読み込み
+#             ＝全ユーザーが影響を受ける）にも約4.5KB混入することが判明（build出力で
+#             appStoreチャンクの前後比較で発覚）。`computeDayTicks`の引数に
+#             `isHolidayFn`として注入する設計に変更し、`isHoliday`の実import自体は
+#             `GanttView.tsx`（既存の遅延読み込みチャンク）側だけに置くことで解消。
+#             最終的なバンドル影響：GanttViewチャンクのみ +4.61KB（gzip +1.83KB。
+#             72.90KB→77.51KB、gzip 19.79KB→21.62KB）。appStoreチャンクへの影響は
+#             実質ゼロ（206.49KB→206.89KB・gzip 54.53KB→54.67KBは通常のビルド差分の
+#             範囲・祝日ライブラリ起因ではない）。ガントビューを開くユーザーだけが
+#             この+4.6KBを追加ダウンロードする
+#      スコープ：デスクトップ GanttView のみ。GanttMobileView・ボディ側の土日
+#             シェーディング/既存グリッド線（祝日をボディにも塗る等）は対象外
+#      DBマイグレ不要（表示のみ・保存操作なし）
+#      検証：tsc 0/vitest 548件全通過（534件+新規13件＝holidays 6件・ganttUtils 7件）/
+#             eslint 35件で完全一致（baseline比較・新規0）/build成功
+#
+# 最終更新：2026-07-24（v3.05）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3741,6 +3804,9 @@ src/
 │   │   ├── sessionManager.ts     # 会話セッション管理（DBに保存しない）
 │   │   ├── krQuarterPlanPrompt.ts  # クォーター計画AI：クォーター計算・コンテキスト生成・システムプロンプト
 │   │   └── krQuarterPlanClient.ts  # クォーター計画AI：対話・計画書生成・JSONパーサー
+│   ├── date/
+│   │   └── holidays.ts           # 日本の祝日判定の薄いラッパー（isHoliday）。japanese-holidays
+│   │                              # を直接あちこちで呼ばず必ずここ経由（v3.05）
 │   ├── localData/
 │   │   └── localStore.ts         # localStorage キー一元化（KEYS / LS_KEY / migrateLocalStorage / active()）
 │   ├── dependencies/              # タスク依存関係（B1/B3/B5）の純粋ロジック
