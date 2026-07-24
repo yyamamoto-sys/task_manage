@@ -64,3 +64,31 @@ export function computeSiblingReorderIds(
   ids.splice(zone === "before" ? targetIdx : targetIdx + 1, 0, draggedId);
   return ids;
 }
+
+/**
+ * 新規タスク(newTaskId)を、アンカータスク(anchorId)と同じ階層（同じ parent_task_id・同じ project_id）の
+ * 直後に挿入した場合の新しい並び順（idの配列。0番目からindex順にdisplay_orderを振り直す）を計算する
+ * 純粋関数。ガントのタスク行間「＋」挿入UI専用（CLAUDE.md v3.06）。
+ *
+ * newTaskId は allTasks に含まれている前提（呼び出し側が先にstoreへ作成済み。作成直後の
+ * display_order は任意の値でよく、ここで正しい位置へ振り直す）。anchorId が見つからない場合は null。
+ */
+export function computeInsertAfterOrder(
+  allTasks: Task[],
+  anchorId: string,
+  newTaskId: string,
+): string[] | null {
+  const anchor = allTasks.find(t => t.id === anchorId);
+  if (!anchor) return null;
+  const parentId = anchor.parent_task_id ?? null;
+  const projectId = anchor.project_id ?? null;
+  const isSibling = (t: Task) => (t.parent_task_id ?? null) === parentId && (t.project_id ?? null) === projectId;
+  const siblings = allTasks
+    .filter(t => isSibling(t) && t.id !== newTaskId)
+    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
+  const anchorIdx = siblings.findIndex(t => t.id === anchorId);
+  if (anchorIdx < 0) return null;
+  const ids = siblings.map(t => t.id);
+  ids.splice(anchorIdx + 1, 0, newTaskId);
+  return ids;
+}

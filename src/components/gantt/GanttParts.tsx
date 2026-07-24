@@ -7,7 +7,7 @@ import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
-import { CRITICAL_COLOR } from "./ganttUtils";
+import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT } from "./ganttUtils";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -404,6 +404,12 @@ export interface GanttPjLabelRowProps {
   onSaveAssignees: (task: Task, ids: string[]) => void;
   /** タスク名インライン編集（choke pointのsaveTask経由） */
   onSaveName: (task: Task, name: string) => void;
+  /** マウント時から名前をautoEdit状態で開く（行間挿入UIで新規作成した直後の1回のみ。
+      CLAUDE.md v3.06。呼び出し側がkey=task.idで新規マウントさせる前提） */
+  autoEditName?: boolean;
+  /** 行の下端の「＋」オーバーレイ（この行と下の行の「間」に新タスクを挿入。CLAUDE.md v3.06）。
+      undefinedなら「＋」自体を描画しない（PJ別ビューのみで配線する想定のスコープ制御はGanttView側） */
+  onInsertAfter?: (task: Task) => void;
   /** ドラッグ並べ替え（依存の無い兄弟同士のみ有効。依存で縛られたペアは再描画で依存順に
       戻る＝v2.39の仕様どおり。CLAUDE.md v3.01） */
   draggingId: string | null;
@@ -418,7 +424,7 @@ export interface GanttPjLabelRowProps {
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   task, isChild, childCount, isHovered, isCollapsed, members,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
-  onSaveName,
+  onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
   const isDraggingSelf = draggingId === task.id;
@@ -452,6 +458,10 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
       opacity: isDraggingSelf ? 0.4 : 1,
       cursor: "pointer", transition: "background 0.1s",
+      // 【重要】「＋」オーバーレイ（行間挿入UI）はこのposition:relativeを基準にposition:absoluteで
+      // 配置する。相対配置自体はflowに影響せず高さ30pxを一切変えない（①の行ズレ再発防止が
+      // 最優先制約。CLAUDE.md v3.06）
+      position: "relative",
     }}>
       {/* ドラッグハンドル（並べ替え専用。依存の無い兄弟同士のみ実際に反映される）。
           マウスのドラッグ操作専用でキーボード代替手段はない（B5結線ハンドル等と同じ扱い） */}
@@ -501,6 +511,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           value={task.name}
           onSave={name => onSaveName(task, name)}
           style={{ fontWeight: "inherit", color: "inherit" }}
+          autoEdit={autoEditName}
         />
       </div>
       {childCount > 0 && (
@@ -521,6 +532,28 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           onSave={ids => onSaveAssignees(task, ids)}
         />
       </div>
+      {/* 行間挿入「＋」オーバーレイ（この行と下の行の「間」に新タスクを挿入。CLAUDE.md v3.06）。
+          ホバー時のみ表示。position:absoluteのため行の高さ30pxには一切影響しない
+          （①行ズレ修正の再発防止が最優先制約）。stopPropagationで行クリック（詳細を開く）・
+          D&Dハンドル・InlineEditTextと競合しないようにする */}
+      {onInsertAfter && isHovered && (
+        <button
+          onClick={e => { e.stopPropagation(); onInsertAfter(task); }}
+          onMouseDown={e => e.stopPropagation()}
+          title="この下に新しいタスクを追加"
+          aria-label="この下に新しいタスクを追加"
+          style={{
+            position: "absolute", left: "50%", bottom: -8,
+            transform: "translateX(-50%)",
+            width: 16, height: 16, borderRadius: "50%",
+            background: "var(--color-brand)", color: "#fff",
+            border: "1.5px solid var(--color-bg-primary)",
+            fontSize: "11px", lineHeight: "12px", padding: 0,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            cursor: "pointer", zIndex: 5,
+          }}
+        >＋</button>
+      )}
     </div>
   );
 });
@@ -669,7 +702,7 @@ export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void 
         role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
         style={{
-          height: 26, display: "flex", alignItems: "center",
+          height: QUICK_ADD_ROW_HEIGHT, display: "flex", alignItems: "center",
           padding: "0 8px 0 34px", cursor: "pointer",
           borderBottom: "1px solid var(--color-border-primary)",
           color: "var(--color-text-tertiary)", fontSize: "11px",
@@ -679,7 +712,7 @@ export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void 
   }
   return (
     <div style={{
-      height: 26, display: "flex", alignItems: "center",
+      height: QUICK_ADD_ROW_HEIGHT, display: "flex", alignItems: "center",
       padding: "0 8px 0 34px",
       borderBottom: "1px solid var(--color-border-primary)",
     }}>

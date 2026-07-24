@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Task } from "../localData/types";
-import { computeDropZoneFromRatio, computeSiblingReorderIds } from "../dragReorder";
+import { computeDropZoneFromRatio, computeSiblingReorderIds, computeInsertAfterOrder } from "../dragReorder";
 
 // テスト用の最小 Task ファクトリ（taskHierarchy.test.ts と同じパターン）
 function mk(partial: Partial<Task> & { id: string }): Task {
@@ -107,5 +107,58 @@ describe("computeSiblingReorderIds", () => {
     // （呼び出し側=hookが返されたidsに従いproject_id/parent_task_idをtarget基準へ更新する）
     const ids = computeSiblingReorderIds(tasks, tasks, "c2", "c1", "after");
     expect(ids).toEqual(["c1", "c2"]);
+  });
+});
+
+describe("computeInsertAfterOrder", () => {
+  it("最上位タスクの直後に挿入される", () => {
+    const tasks = [
+      mk({ id: "a", display_order: 0 }),
+      mk({ id: "b", display_order: 1 }),
+      mk({ id: "c", display_order: 2 }),
+      mk({ id: "new", display_order: 999 }), // 呼び出し側が任意の値で作成済みの想定
+    ];
+    const ids = computeInsertAfterOrder(tasks, "a", "new");
+    expect(ids).toEqual(["a", "new", "b", "c"]);
+  });
+
+  it("末尾のタスクの直後に挿入すると最後尾になる", () => {
+    const tasks = [
+      mk({ id: "a", display_order: 0 }),
+      mk({ id: "b", display_order: 1 }),
+      mk({ id: "new", display_order: 999 }),
+    ];
+    const ids = computeInsertAfterOrder(tasks, "b", "new");
+    expect(ids).toEqual(["a", "b", "new"]);
+  });
+
+  it("同じ親を共有する子同士だけを対象にし、他の親の子・最上位タスクは無視する", () => {
+    const tasks = [
+      mk({ id: "p1" }),
+      mk({ id: "p2" }),
+      mk({ id: "c1", parent_task_id: "p1", display_order: 0 }),
+      mk({ id: "c2", parent_task_id: "p1", display_order: 1 }),
+      mk({ id: "c3", parent_task_id: "p2", display_order: 0 }),
+      mk({ id: "new", parent_task_id: "p1", display_order: 999 }),
+    ];
+    const ids = computeInsertAfterOrder(tasks, "c1", "new");
+    expect(ids).toEqual(["c1", "new", "c2"]);
+  });
+
+  it("anchorIdが見つからない場合はnullを返す", () => {
+    const tasks = [mk({ id: "a", display_order: 0 })];
+    const ids = computeInsertAfterOrder(tasks, "does-not-exist", "new");
+    expect(ids).toBeNull();
+  });
+
+  it("display_order が未整列でも並べ替えてから挿入する", () => {
+    const tasks = [
+      mk({ id: "a", display_order: 5 }),
+      mk({ id: "b", display_order: 1 }),
+      mk({ id: "c", display_order: 3 }),
+      mk({ id: "new", display_order: 999 }),
+    ];
+    const ids = computeInsertAfterOrder(tasks, "c", "new");
+    expect(ids).toEqual(["b", "c", "new", "a"]);
   });
 });

@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.05
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.06
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2771,7 +2771,79 @@
 #      検証：tsc 0/vitest 548件全通過（534件+新規13件＝holidays 6件・ganttUtils 7件）/
 #             eslint 35件で完全一致（baseline比較・新規0）/build成功
 #
-# 最終更新：2026-07-24（v3.05）
+# v3.06 fix: ガントビュー左右行ズレの2原因を修正／feat: タスク行の「間」への挿入UI
+#      （2026-07-24・デスクトップ GanttView のみ対象。GanttMobileView は対象外・未変更）
+#      背景：左ラベル列（labelBodyRef）と右バー列（scrollRef）は別スクロールコンテナで
+#             scrollTopを同期しているだけの設計のため、両列の「行順・各行高さ・ヘッダー高さ」
+#             が完全一致していないと縦にズレる。v3.04/v3.05のリグレッションで2つの不一致が
+#             生じていたのを両方修正。加えて、PJ末尾（v3.04のGanttQuickAddTaskRow）でしか
+#             タスク追加できず不便との指摘を受け、タスク行の「間」に挿入できるUIを追加した。
+#      ①-A（fix・リグレッション）ヘッダー高さ不一致（定常16pxズレ）：v3.05で右バー列の
+#             ヘッダーに「ものさし目盛り」16pxを追加した際、左ラベル列のヘッダー（52px固定）を
+#             揃え忘れていた（右＝月24+週28+目盛り16＝68px、左＝52pxのまま）。左右のヘッダー
+#             高さを`ganttUtils.ts`の新規定数`GANTT_HEADER_MONTH_HEIGHT`(24)/
+#             `GANTT_HEADER_WEEK_HEIGHT`(28)/`GANTT_HEADER_DAY_TICK_HEIGHT`(16)と、
+#             その合計`GANTT_LABEL_HEADER_HEIGHT`(68)に定数化。左ラベルヘッダーは
+#             `GANTT_LABEL_HEADER_HEIGHT`を直接使い、右バー列の3段（月/週/目盛り）も
+#             同じ定数を参照するようにした＝以後どちらかの段の高さを変えても両列が自動的に
+#             一致し続ける（今回のリグレッションの再発防止）。
+#      ①-B（fix・リグレッション）簡易追加行の非対称（累積ズレ）：v3.04でPJ別ビューの
+#             左ラベル列にPJブロック末尾の簡易タスク追加行（`GanttQuickAddTaskRow`。
+#             高さ26px+borderBottom 1px）を追加したが、右バー列側の対応するPJブロックには
+#             スペーサーを足し忘れていた（バーを持たない見出し専用行のため右列に「行」自体が
+#             存在しない）。右バー列のPJブロック（タスク行map直後・`</div>`で閉じる直前）に、
+#             左と同じ条件（`!isCollapsed && !isPreview`）・同じstyle
+#             （`height: QUICK_ADD_ROW_HEIGHT(26), borderBottom: "1px solid var(--color-border-primary)"`）
+#             の空divを追加。`QUICK_ADD_ROW_HEIGHT`は`ganttUtils.ts`の新規定数で
+#             `GanttQuickAddTaskRow`本体（GanttParts.tsx）とスペーサー側の両方が参照する
+#             ＝pxが乖離しようがない設計にした。
+#      ①検証：PJ複数・折りたたみ有無・タスク多数・人別ビュー・ToDo別グループで左ラベル行と
+#             右バー行が最下部まで縦にピタリ一致することを目視確認する想定（実機確認は
+#             山本さんが実施）。①-Aは全ビュー共通で効き、①-Bは対称化のためPJ別ビューのみ対象
+#             （元々PJ別ビュー限定の機能への対症のため）。
+#      ②（feat）タスク行の「間」への挿入UI：`GanttPjLabelRow`（GanttParts.tsx）のホバー時、
+#             行の下端に小さな「＋」を絶対配置オーバーレイで表示する（`position: relative`を
+#             行コンテナに追加した上で`position: absolute; bottom: -8px`。行の高さ30pxは
+#             一切変えない＝①の行ズレ再発防止が最優先制約）。「＋」クリックは
+#             `stopPropagation`し、行のonClick（詳細を開く）・D&Dハンドル・InlineEditText
+#             と競合しない。新規プロップ`onInsertAfter?: (task: Task) => void`
+#             （undefinedなら「＋」自体を描画しない＝PJ別ビューのみで配線するスコープ制御は
+#             GanttView側が担う）。
+#      挿入動作：「＋」クリックで`GanttView.tsx`の新ハンドラ`handleInsertTaskAfter`が、
+#             ホバー中タスク（アンカー）と同じ階層（同じ`parent_task_id`・同じ`project_id`）に
+#             新タスクを作成し、display_orderをアンカーの直後に配置する。既存の兄弟は
+#             新規純粋関数`computeInsertAfterOrder(allTasks, anchorId, newTaskId)`
+#             （`src/lib/dragReorder.ts`。ドラッグ並べ替えの`computeSiblingReorderIds`と
+#             対になる関数＝兄弟をdisplay_order順に並べてアンカー直後に新タスクを挿入し
+#             0..nで振り直したidの配列を返す）で計算し、変わった分だけ`saveTask`する
+#             （choke point経由＝B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結が
+#             自動的に効く）。ユニットテスト5件追加（dragReorder.test.ts）。タスク生成自体は
+#             既存`handleQuickAddTask`（v3.04）と同じ形（uuidv4・status:"todo"・日付null等）を
+#             雛形にした。日付は無し（②のドラッグで期間設定する、という既存v3.04/v3.05の
+#             流れにそのまま乗る）。
+#      名前の即編集：`InlineEditText`（common）に後方互換の`autoEdit?: boolean`プロップを
+#             追加（`useState(!!autoEdit)`で初期editing・マウント時のみ全選択）。
+#             `GanttView.tsx`は`autoEditTaskId` stateを持ち、新タスク作成直後にセットして
+#             `GanttPjLabelRow`へ`autoEditName={autoEditTaskId === task.id}`として配線
+#             （新タスクは新規マウント＝key=task.idのため初期editingで入る）。名前確定
+#             （onSave）は既存`handleSaveRowName`（saveTask経由）をそのまま使う。
+#             【設計判断】新タスクを空名（""）で作ると、既存`InlineEditText`のcommitが
+#             空文字を弾いて元の値（＝空のまま）に戻す仕様のため、何も入力せず確定した場合に
+#             名前が可視化されない行が残るリスクがある。これを避けるため新タスクは
+#             「新しいタスク」という初期値で作成し、autoEdit時にinput全体を選択状態にする
+#             ことで最初の文字入力でまるごと上書きできるようにした（空名で作る案は不採用）。
+#      スコープ判断（今回やらないこと）：PJ別ビュー（`viewMode==="pj"`）のみ。人別・ToDo別
+#             ビューは対象外（既存の簡易追加・D&D並べ替えと同じスコープ方針）。子タスク行間
+#             への挿入は`computeInsertAfterOrder`が`parent_task_id`ベースで階層を判定するため
+#             実装上は親子どちらの階層でも動作する（子タスク同士の間にも「＋」を出している。
+#             「無理なら最上位優先」という当初想定より広く倒せたため制限しなかった）。
+#             空PJ（0件）でも最初の1件を足す導線はPJ末尾の既存`GanttQuickAddTaskRow`が
+#             引き続き担う（①-Bのスペーサー対応込みで担保）。
+#      DBマイグレ不要（既存の name/project_id/parent_task_id/display_order 列のみ使用）。
+#      検証：tsc 0/vitest 553件全通過（548件+新規5件＝dragReorder computeInsertAfterOrder）/
+#             eslint 35件で完全一致（baseline比較・新規0）/build成功
+#
+# 最終更新：2026-07-24（v3.06）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3769,7 +3841,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-24（v3.04）
+- 最終更新：2026-07-24（v3.06）
 
 ---
 

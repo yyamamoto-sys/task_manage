@@ -30,6 +30,27 @@ export const CRITICAL_COLOR = "#dc2626";
  */
 export const OVERLOAD_COLOR = "#f97316";
 
+// ===== ヘッダー高さ（左ラベル列・右バー列で必ず一致させる。CLAUDE.md v3.06） =====
+//
+// 【設計意図】左ラベル列（labelBodyRef）と右バー列（scrollRef）は別スクロールコンテナで
+// scrollTopを同期しているだけなので、両列のヘッダー高さが1pxでもずれると全行が同じ量だけ
+// 縦にずれる（v3.05で右列だけにものさし目盛り16pxを足したのが実例のリグレッション）。
+// 右列は月ラベル・週ラベル・ものさし目盛りの3段に分かれているため個別定数を残しつつ、
+// 左ラベル列のヘッダーはこの合計値を直接使うことで、今後どちらかの段を変更しても
+// 両列が自動的に一致し続けるようにする。
+export const GANTT_HEADER_MONTH_HEIGHT = 24;
+export const GANTT_HEADER_WEEK_HEIGHT = 28;
+export const GANTT_HEADER_DAY_TICK_HEIGHT = 16;
+export const GANTT_LABEL_HEADER_HEIGHT = GANTT_HEADER_MONTH_HEIGHT + GANTT_HEADER_WEEK_HEIGHT + GANTT_HEADER_DAY_TICK_HEIGHT;
+
+/**
+ * PJ別ビュー・ラベル列末尾の簡易タスク追加行（GanttQuickAddTaskRow）の高さ。
+ * 右バー列側は対応するタスク行が無い（バーを持たない見出し専用行のため）ので、
+ * GanttViewが同じ値の空スペーサーをPJブロック末尾に描画して左右のPJブロック高さを一致させる
+ * （CLAUDE.md v3.06。v3.04でこの行を追加した際に右列側のスペーサーが漏れていた累積ズレの修正）。
+ */
+export const QUICK_ADD_ROW_HEIGHT = 26;
+
 export type GanttSortOrder = "date" | "name";
 
 export function isTaskStagnant(task: Task, now = Date.now()): boolean {

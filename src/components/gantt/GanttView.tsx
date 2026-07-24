@@ -25,6 +25,8 @@ import { showToast } from "../common/Toast";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
+  GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
+  QUICK_ADD_ROW_HEIGHT,
   type GanttSortOrder, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
@@ -47,7 +49,7 @@ import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
-import { computeDropZoneFromRatio } from "../../lib/dragReorder";
+import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -702,6 +704,51 @@ export function GanttView({
       updated_by: currentUser.id,
     };
     await saveTask(task);
+  }, [allTasks, saveTask, currentUser.id]);
+
+  // ===== タスク行間への挿入（＋オーバーレイ。CLAUDE.md v3.06。PJ別ビューのみ） =====
+  // ホバー中タスク（アンカー）と同じ階層（同じparent_task_id・同じproject_id）に新タスクを
+  // 作成し、display_orderをアンカーの直後に配置する。既存の兄弟はcomputeInsertAfterOrder
+  // （src/lib/dragReorder.ts。ドラッグ並べ替えのcomputeSiblingReorderIdsと対になる純粋関数）で
+  // 0..nに振り直し、変わった分だけsaveTaskする。名前は空だとInlineEditTextの仕様上
+  // 保存できず行が空白のまま可視性が消えるリスクがあるため「新しいタスク」で作成し、直後に
+  // autoEditTaskIdをセットしてInlineEditTextをautoEdit（マウント時に全選択）状態で開く
+  // ＝そのまま上書き入力できるようにする。
+  const [autoEditTaskId, setAutoEditTaskId] = useState<string | null>(null);
+  const handleInsertTaskAfter = useCallback(async (anchor: Task) => {
+    const now = new Date().toISOString();
+    const newTask: Task = {
+      id: uuidv4(),
+      name: "新しいタスク",
+      project_id: anchor.project_id ?? null,
+      parent_task_id: anchor.parent_task_id ?? null,
+      display_order: 0,
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    const ids = computeInsertAfterOrder(allTasks, anchor.id, newTask.id);
+    if (!ids) {
+      await saveTask(newTask);
+    } else {
+      await Promise.all(ids.map((id, idx) => {
+        if (id === newTask.id) return saveTask({ ...newTask, display_order: idx });
+        const t = allTasks.find(x => x.id === id);
+        if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
+        return saveTask({ ...t, display_order: idx, updated_by: currentUser.id });
+      }));
+    }
+    setAutoEditTaskId(newTask.id);
   }, [allTasks, saveTask, currentUser.id]);
 
   // ===== D&D並べ替え（PJ別ビューのラベル列。依存の無い兄弟同士のみ display_order を書き換える。
@@ -1663,9 +1710,11 @@ export function GanttView({
           display: "flex", flexDirection: "column",
           minHeight: 0,
         }}>
-          {/* ラベルヘッダー */}
+          {/* ラベルヘッダー（右バー列ヘッダーと高さを一致させる。月24+週28+ものさし目盛り16=68。
+              CLAUDE.md v3.06：v3.05でものさし目盛り16pxを右列だけに足したため52のまま据え置かれ
+              定常16pxズレが生じていたリグレッションを修正） */}
           <div style={{
-            height: 52, flexShrink: 0,
+            height: GANTT_LABEL_HEADER_HEIGHT, flexShrink: 0,
             borderBottom: "1px solid var(--color-border-primary)",
             background: "var(--color-bg-secondary)",
             display: "flex", alignItems: "flex-end", padding: "0 10px 6px",
@@ -1807,6 +1856,8 @@ export function GanttView({
                             onToggleCollapse={togglePJ}
                             onSaveAssignees={handleSaveRowAssignees}
                             onSaveName={handleSaveRowName}
+                            autoEditName={autoEditTaskId === task.id}
+                            onInsertAfter={handleInsertTaskAfter}
                             draggingId={ganttDraggingId}
                             dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
                             onDragHandleStart={handleDragHandleStart}
@@ -1992,7 +2043,7 @@ export function GanttView({
               borderBottom: "1px solid var(--color-border-primary)",
             }}>
               {/* 月ラベル行 */}
-              <div style={{ height: 24, position: "relative", borderBottom: "1px solid var(--color-border-primary)" }}>
+              <div style={{ height: GANTT_HEADER_MONTH_HEIGHT, position: "relative", borderBottom: "1px solid var(--color-border-primary)" }}>
                 {monthGroups.map((mg, i) => (
                   <div key={i} style={{
                     position: "absolute", left: mg.startX, width: mg.width,
@@ -2007,7 +2058,7 @@ export function GanttView({
               </div>
               {/* 週ラベル行（月内日数ブロック：W1=1-7/W2=8-14/W3=15-21/W4=22-28/W5=29〜月末。
                   各週は必ずその月に属す＝月をまたいだ瞬間に翌月のW1から数え直す） */}
-              <div style={{ height: 28, position: "relative" }}>
+              <div style={{ height: GANTT_HEADER_WEEK_HEIGHT, position: "relative" }}>
                 {weekBlocks.map((wb, i) => (
                   <div key={i} title={formatDateRangeWithWeekday(wb.startDate, wb.endDate)} style={{
                     position: "absolute",
@@ -2028,7 +2079,7 @@ export function GanttView({
               {/* ものさし目盛り行（1日ごと。週ラベルのすぐ下に表示。土=青／日・祝=赤／平日=控えめ色。
                   祝日はホバーで祝日名を表示。dayTicksはuseMemo済みのためズームや折りたたみでの
                   再レンダーでは再計算されない） */}
-              <div style={{ height: 16, position: "relative", borderTop: "1px solid var(--color-border-secondary)" }}>
+              <div style={{ height: GANTT_HEADER_DAY_TICK_HEIGHT, position: "relative", borderTop: "1px solid var(--color-border-secondary)" }}>
                 {dayTicks.map(tick => {
                   const color = dayTickColor(tick.colorKind);
                   return (
@@ -2445,6 +2496,14 @@ export function GanttView({
                         />
                       );
                     })}
+                    {/* 簡易タスク追加行スペーサー（CLAUDE.md v3.06）。左ラベル列は
+                        GanttQuickAddTaskRow（高さ26px＋borderBottom 1px）をPJブロック末尾に
+                        描画するが、右バー列には対応するタスク行が無い（バーを持たない見出し専用行の
+                        ため）。styleを完全一致させることでbox-sizingに関係なく左右のPJブロック高さを
+                        揃える（左右スクロールコンテナのscrollTop同期がズレる根本原因を断つ） */}
+                    {!isCollapsed && !isPreview && (
+                      <div style={{ height: QUICK_ADD_ROW_HEIGHT, borderBottom: "1px solid var(--color-border-primary)" }} />
+                    )}
                   </div>
                 );
               })}
