@@ -9,6 +9,7 @@ import {
   xToDate, computeDragCreateRange,
   buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges, computeGanttRowsTotalHeight,
   GANTT_GROUP_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT, QUICK_ADD_ROW_HEIGHT,
+  sortGanttTasks,
   type GanttRow,
 } from "../ganttUtils";
 import type { Task, Milestone, Project, Member, ToDo } from "../../../lib/localData/types";
@@ -753,5 +754,58 @@ describe("computeGanttBlockRanges / computeGanttRowsTotalHeight", () => {
     const totalB = computeGanttRowsTotalHeight(rows);
     expect(totalA).toBe(totalB);
     expect(totalA).toBe(GANTT_GROUP_ROW_HEIGHT * 1 + GANTT_TASK_ROW_HEIGHT * 2 + QUICK_ADD_ROW_HEIGHT);
+  });
+});
+
+describe("sortGanttTasks", () => {
+  it("date順：日付が異なるタスク同士は従来通り日付順（display_orderは見ない）", () => {
+    const tasks = [
+      makeTask({ id: "b", start_date: "2026-07-10", display_order: 5 }),
+      makeTask({ id: "a", start_date: "2026-07-01", display_order: 9 }),
+    ];
+    expect(sortGanttTasks(tasks, "date").map(t => t.id)).toEqual(["a", "b"]);
+  });
+
+  it("date順：日付なし同士はdisplay_order順にタイブレークする（挿入UIのバグ修正・CLAUDE.md v3.10）", () => {
+    const tasks = [
+      makeTask({ id: "c", start_date: null, due_date: null, display_order: 2 }),
+      makeTask({ id: "a", start_date: null, due_date: null, display_order: 0 }),
+      makeTask({ id: "new", start_date: null, due_date: null, display_order: 1 }), // ①(a)と②(c)の間に挿入
+    ];
+    expect(sortGanttTasks(tasks, "date").map(t => t.id)).toEqual(["a", "new", "c"]);
+  });
+
+  it("date順：同日タスク同士もdisplay_order順にタイブレークする", () => {
+    const tasks = [
+      makeTask({ id: "c", start_date: "2026-07-10", display_order: 2 }),
+      makeTask({ id: "a", start_date: "2026-07-10", display_order: 0 }),
+      makeTask({ id: "new", start_date: "2026-07-10", display_order: 1 }),
+    ];
+    expect(sortGanttTasks(tasks, "date").map(t => t.id)).toEqual(["a", "new", "c"]);
+  });
+
+  it("date順：日付ありは常に日付なしより前に来る（従来仕様のまま）", () => {
+    const tasks = [
+      makeTask({ id: "nodate", start_date: null, due_date: null, display_order: 0 }),
+      makeTask({ id: "dated", start_date: "2026-07-01", display_order: 99 }),
+    ];
+    expect(sortGanttTasks(tasks, "date").map(t => t.id)).toEqual(["dated", "nodate"]);
+  });
+
+  it("name順：名前が異なれば従来通り名前順（display_orderは見ない）", () => {
+    const tasks = [
+      makeTask({ id: "b", name: "い", display_order: 9 }),
+      makeTask({ id: "a", name: "あ", display_order: 0 }),
+    ];
+    expect(sortGanttTasks(tasks, "name").map(t => t.id)).toEqual(["a", "b"]);
+  });
+
+  it("name順：同名同士はdisplay_order順にタイブレークする", () => {
+    const tasks = [
+      makeTask({ id: "c", name: "同名", display_order: 2 }),
+      makeTask({ id: "a", name: "同名", display_order: 0 }),
+      makeTask({ id: "new", name: "同名", display_order: 1 }),
+    ];
+    expect(sortGanttTasks(tasks, "name").map(t => t.id)).toEqual(["a", "new", "c"]);
   });
 });

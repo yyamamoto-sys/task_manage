@@ -436,6 +436,12 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
   const isDraggingSelf = draggingId === task.id;
+  // 【バグ修正・CLAUDE.md v3.10】「＋」の表示はこのラベル行自身のローカルホバーだけに連動させる
+  // （共有hoveredTaskId＝isHoveredはバー列側のホバーでも立つため、それに連動していると
+  // ガントチャート（バー）領域をホバーしただけで左の「＋」が出てしまうバグになっていた）。
+  // 背景・バーとの相互ハイライトや依存矢印のハイライトは既存の共有hoveredTaskIdのまま維持する
+  // （onMouseEnterで従来通りonHoverEnterも呼ぶ＝isHoveredを使う他の見た目は変えない）。
+  const [isRowHovered, setIsRowHovered] = useState(false);
   // 【重要】ドロップ位置の強調は box-shadow の inset で表現し、border/paddingは変えない
   // （ListTaskRowと同じ理由：レイアウト自体が動くとドラッグ中のdragover/dragleaveが
   // 高頻度で往復し、カクつき・フリーズの原因になる）
@@ -446,8 +452,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
-      onMouseEnter={() => onHoverEnter(task.id)}
-      onMouseLeave={onHoverLeave}
+      onMouseEnter={() => { onHoverEnter(task.id); setIsRowHovered(true); }}
+      onMouseLeave={() => { onHoverLeave(); setIsRowHovered(false); }}
       onDragOver={e => { if (draggingId && draggingId !== task.id) onRowDragOver(e, task.id); }}
       onDragLeave={() => onRowDragLeave(task.id)}
       onDrop={e => onRowDrop(e, task.id)}
@@ -541,10 +547,12 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         />
       </div>
       {/* 行間挿入「＋」オーバーレイ（この行と下の行の「間」に新タスクを挿入。CLAUDE.md v3.06）。
-          ホバー時のみ表示。position:absoluteのため行の高さ30pxには一切影響しない
+          このラベル行自身のローカルホバー（isRowHovered）時のみ表示（CLAUDE.md v3.10。共有の
+          isHoveredで判定するとバー列側のホバーでも出てしまうバグだったため、ローカルhoverに
+          切り替えた）。position:absoluteのため行の高さ30pxには一切影響しない
           （①行ズレ修正の再発防止が最優先制約）。stopPropagationで行クリック（詳細を開く）・
           D&Dハンドル・InlineEditTextと競合しないようにする */}
-      {onInsertAfter && isHovered && (
+      {onInsertAfter && isRowHovered && (
         <button
           onClick={e => { e.stopPropagation(); onInsertAfter(task); }}
           onMouseDown={e => e.stopPropagation()}

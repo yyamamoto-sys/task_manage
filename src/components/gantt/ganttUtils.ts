@@ -53,6 +53,42 @@ export const QUICK_ADD_ROW_HEIGHT = 26;
 
 export type GanttSortOrder = "date" | "name";
 
+/**
+ * ガントのタスク並び替え（純粋関数。CLAUDE.md v3.10）。
+ *
+ * 【背景】旧実装（GanttView.tsx内のuseCallback）は日付キー（date順）・名前キー（name順）が
+ * 等しい要素同士の順序を「入力配列の順のまま（return 0）」にしていた。これ自体はArray.sortの
+ * 安定ソートに乗るため通常は問題ないが、行間「＋」挿入UI（v3.06）はdisplay_orderだけを
+ * アンカー直後に振り直す設計のため、日付キーが同値（=どちらもnullの日付なしタスク同士、または
+ * 同日タスク同士）の場合にdisplay_orderが一切ソートへ反映されず、挿入位置が表示に効かなかった
+ * （新タスクは常に日付なしで作られるため、実質「常に末尾に見える」バグになっていた）。
+ *
+ * 【修正】日付キー（date順）・名前キー（name順）が同値のときのタイブレーカーとして
+ * display_orderを追加する。日付が異なるタスク同士の順序は従来通り日付順のまま変えない
+ * （タイブレーカーは「同値のときだけ」効く＝日付順ソート自体の意味は変えない）。
+ * 依存順（orderSiblingsWithDependencies・v2.39）はこの関数の外側で上書きする既存仕様のまま。
+ */
+export function sortGanttTasks(tasks: Task[], sortOrder: GanttSortOrder): Task[] {
+  if (sortOrder === "name") {
+    return [...tasks].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name, "ja");
+      if (cmp !== 0) return cmp;
+      return (a.display_order ?? 0) - (b.display_order ?? 0);
+    });
+  }
+  // 期日順：start_date → due_date の早い方を基準。日付なしは末尾
+  return [...tasks].sort((a, b) => {
+    const da = toDate(a.start_date ?? null) ?? toDate(a.due_date);
+    const db = toDate(b.start_date ?? null) ?? toDate(b.due_date);
+    if (!da && !db) return (a.display_order ?? 0) - (b.display_order ?? 0);
+    if (!da) return 1;
+    if (!db) return -1;
+    const diff = da.getTime() - db.getTime();
+    if (diff !== 0) return diff;
+    return (a.display_order ?? 0) - (b.display_order ?? 0);
+  });
+}
+
 export function isTaskStagnant(task: Task, now = Date.now()): boolean {
   if (task.status !== "in_progress" || !task.updated_at) return false;
   const diffMs = now - new Date(task.updated_at).getTime();

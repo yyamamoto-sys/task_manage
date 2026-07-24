@@ -26,7 +26,7 @@ import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
-  type GanttSortOrder, isTaskStagnant, calcTaskBar,
+  type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
@@ -339,20 +339,9 @@ export function GanttView({
     localStorage.setItem(KEYS.GANTT_SORT, s);
     setSortOrder(s);
   }, []);
-  const sortTasks = useCallback((tasks: Task[]): Task[] => {
-    if (sortOrder === "name") {
-      return [...tasks].sort((a, b) => a.name.localeCompare(b.name, "ja"));
-    }
-    // 期日順：start_date → due_date の早い方を基準。日付なしは末尾
-    return [...tasks].sort((a, b) => {
-      const da = toDate(a.start_date ?? null) ?? toDate(a.due_date);
-      const db = toDate(b.start_date ?? null) ?? toDate(b.due_date);
-      if (!da && !db) return 0;
-      if (!da) return 1;
-      if (!db) return -1;
-      return da.getTime() - db.getTime();
-    });
-  }, [sortOrder]);
+  // 純粋関数本体は ganttUtils.ts の sortGanttTasks（CLAUDE.md v3.10・タイブレーカーに
+  // display_order追加。行間「＋」挿入UIの挿入位置が反映されるようにするための修正）
+  const sortTasks = useCallback((tasks: Task[]): Task[] => sortGanttTasks(tasks, sortOrder), [sortOrder]);
 
   // 親子（PJ>大>小）を「親→その子」の順に並べ、各行の depth と子件数を付与する。
   // ラベル列とバー列の両方でこれを使うことで、子タスクを親の直下にインデント表示しつつ
@@ -760,6 +749,13 @@ export function GanttView({
   // 保存できず行が空白のまま可視性が消えるリスクがあるため「新しいタスク」で作成し、直後に
   // autoEditTaskIdをセットしてInlineEditTextをautoEdit（マウント時に全選択）状態で開く
   // ＝そのまま上書き入力できるようにする。
+  // 【仕様変更・CLAUDE.md v3.10】新タスクの start_date/due_date はアンカーと同じ値を継承する
+  // （従来はnull固定）。sortTasks（ganttUtils.sortGanttTasks）は日付順ソートのため、日付を
+  // 持つタスク列の間に「＋」で挿入した場合、新タスクが日付なし＝末尾扱いのままだと
+  // display_orderを直しても表示順に反映されない。アンカーの期間を継承することで同じ日付位置に
+  // ソートされ、display_orderタイブレーカーによりアンカーの直後に確実に並ぶ（＝クリックした
+  // 「①と②の間」に入る）。アンカーが日付なしの場合は新タスクもnullのままで、従来通り
+  // 「日付なしで作ってドラッグで期間設定する」流れを維持する。
   const [autoEditTaskId, setAutoEditTaskId] = useState<string | null>(null);
   const handleInsertTaskAfter = useCallback(async (anchor: Task) => {
     const now = new Date().toISOString();
@@ -774,8 +770,8 @@ export function GanttView({
       assignee_member_ids: [],
       status: "todo",
       priority: null,
-      start_date: null,
-      due_date: null,
+      start_date: anchor.start_date ?? null,
+      due_date: anchor.due_date ?? null,
       estimated_hours: null,
       comment: "",
       is_deleted: false,

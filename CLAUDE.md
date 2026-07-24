@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.09
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.10
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3030,7 +3030,58 @@
 #             （baseline比較・新規0）・build成功
 #      DBマイグレ不要（表示ロジックのみ）
 #
-# 最終更新：2026-07-24（v3.09）
+# v3.10 fix: タスク行間「＋」挿入UI（v3.06）の2バグを修正（2026-07-24・デスクトップ
+#      GanttView のみ対象。GanttMobileView は対象外・未変更）
+#      バグ①「＋」で挿入したタスクが「①と②の間」でなく何行か下に入る：
+#      原因：`handleInsertTaskAfter`（GanttView.tsx）は`computeInsertAfterOrder`
+#             （dragReorder.ts）でdisplay_orderを正しく「アンカー直後」に振り直していたが、
+#             ガントの並び順を決める`sortTasks`（旧・GanttView.tsx内useCallback）は
+#             日付順（sortOrder="date"）または名前順でソートするだけでdisplay_orderを
+#             一切見ていなかった（日付キー・名前キーが同値の要素同士は入力順のまま＝
+#             `return 0`、日付なしは常に末尾＝`if (!da) return 1`）。新タスクは
+#             v3.06時点では日付なしで作られるため、display_orderを直しても表示順に
+#             反映されず末尾に流れていた。
+#      修正1（sortTasksにdisplay_orderをタイブレーカーとして追加）：`sortTasks`の実体を
+#             `ganttUtils.ts`の新規純粋関数`sortGanttTasks(tasks, sortOrder)`に切り出し、
+#             日付キー・名前キーが同値のとき（両方日付なし、同日、同名）のみ
+#             `(a.display_order ?? 0) - (b.display_order ?? 0)`でタイブレークするようにした。
+#             日付・名前が異なるタスク同士の並びは従来どおり変えていない（タイブレーカーは
+#             「同値のときだけ」効く）。依存順（`orderSiblingsWithDependencies`・v2.39）が
+#             最優先で上書きする既存仕様はそのまま。GanttView.tsx側の`sortTasks`は
+#             `useCallback((tasks) => sortGanttTasks(tasks, sortOrder), [sortOrder])`という
+#             薄いラッパーになった（純粋関数化によりユニットテストが可能になった）。
+#      修正2（挿入する新タスクにアンカーの日付を継承・仕様変更）：`handleInsertTaskAfter`で、
+#             新タスクの`start_date`/`due_date`を**アンカー（クリックした行のタスク）と
+#             同じ値**にした（従来は常にnull固定）。日付を持つタスク列の間に挿入しても
+#             新タスクがアンカーと同じ日付位置にソートされ、修正1のタイブレーカーにより
+#             アンカーの直後に確実に並ぶ＝「①と②の間」に入る。【仕様変更】アンカーが
+#             日付なしなら新タスクもnullのままで、従来の「日付なしで作ってドラッグで
+#             期間設定する」流れは維持される。
+#      バグ②「＋」がガントチャート（バー）領域のホバーでも表示される：
+#      原因：`GanttPjLabelRow`（GanttParts.tsx）の「＋」表示条件が、ラベル列とバー列の
+#             両方が更新する**共有ホバー状態`hoveredTaskId`**（propの`isHovered`＝
+#             `hoveredTaskId === task.id`）に連動していたため、同じタスクのバーをホバー
+#             しても左ラベルの「＋」が出てしまっていた。
+#      修正：`GanttPjLabelRow`内にローカルなhover state（`useState<boolean>`
+#             `isRowHovered`）を追加し、行自身の`onMouseEnter`/`onMouseLeave`で切り替える
+#             （`onMouseEnter`では従来通り共有状態用の`onHoverEnter(task.id)`も引き続き
+#             呼ぶ＝バーとの相互ハイライト・依存矢印のハイライトは共有`hoveredTaskId`の
+#             ままで壊していない）。「＋」の表示条件を`isHovered`→`isRowHovered`に変更。
+#             これで「＋」はタスクリスト（ラベル列）の当該行にカーソルがあるときだけ出る。
+#      テスト：`ganttUtils.test.ts`に`sortGanttTasks`のテスト6件追加（date順で日付が
+#             異なる場合は従来通り／date順で日付なし同士はdisplay_orderでタイブレーク
+#             （挿入UIのバグ再現ケース）／date順で同日同士もタイブレーク／date順で
+#             日付ありは常に日付なしより前／name順で名前が異なる場合は従来通り／
+#             name順で同名同士はタイブレーク）。既存`dragReorder.test.ts`の
+#             `computeInsertAfterOrder`テストは挙動変更なし（display_order振り直し自体は
+#             元から正しかったため）。バグ②はDOM依存（hover）のため実機確認のみ
+#             （山本さんが実施）。
+#      検証：tsc 0・vitest 583件全通過（577件+新規6件）・eslint 35件で完全一致
+#             （baseline比較・新規0）・build成功。
+#      DBマイグレ不要（既存の name/project_id/parent_task_id/display_order/start_date/
+#             due_date 列のみ使用）。
+#
+# 最終更新：2026-07-24（v3.10）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
