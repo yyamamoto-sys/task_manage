@@ -1,51 +1,13 @@
 // src/components/gantt/GanttParts.tsx
 // ガントビューで使う小コンポーネント群
 
-import { memo } from "react";
+import { memo, useState, useRef, useEffect } from "react";
 import type { Task, Member, Project } from "../../lib/localData/types";
 import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
-import { InlineEditDate } from "../common/InlineEditDate";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
 import { CRITICAL_COLOR } from "./ganttUtils";
-
-// ===== GanttRowDateEdit（タスク名の行にホバー時だけ出す開始日・期日の直接入力） =====
-//
-// 【設計意図】バー本体（TaskBarRow）は既にリサイズ/移動/結線のハンドルで当たり判定が
-// ぎっしりのため、日付の直接入力はラベル列側に置く（CLAUDE.md v3.01）。常時表示すると
-// ラベル列が煩雑になるため、行ホバー時のみ表示する（既存の hoveredTaskId 由来の
-// 「ホバーで見える系」UIと同じ流儀）。
-function GanttRowDateEdit({
-  task, isHovered, onSaveStartDate, onSaveDueDate,
-}: {
-  task: Task;
-  isHovered: boolean;
-  onSaveStartDate: (task: Task, date: string | null) => void;
-  onSaveDueDate: (task: Task, date: string | null) => void;
-}) {
-  if (!isHovered) return null;
-  return (
-    // 行クリックでタスク編集モーダルが開くため、日付編集はそちらに伝播させない
-    // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
-    <span
-      onClick={e => e.stopPropagation()}
-      style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: "2px" }}
-    >
-      <InlineEditDate
-        value={task.start_date ?? null}
-        placeholder="開始日未設定"
-        onSave={date => onSaveStartDate(task, date)}
-      />
-      <span>〜</span>
-      <InlineEditDate
-        value={task.due_date}
-        placeholder="期日未設定"
-        onSave={date => onSaveDueDate(task, date)}
-      />
-    </span>
-  );
-}
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -126,6 +88,10 @@ export interface TaskBarRowProps {
   onMoveStart: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
   onMouseEnter: (taskId: string) => void;
   onMouseLeave: () => void;
+  /** 期日未登録タスク（bar===null）の空行をドラッグして開始日〜期日を新規作成する（CLAUDE.md v3.04）。
+      bar が存在する行では出番が無いため、TaskBarRowImpl 側で bar===null のときだけ mousedown を
+      この行コンテナ自身にバインドする（既存のバー操作との当たり判定は競合しない） */
+  onEmptyDragStart?: (e: React.MouseEvent<HTMLDivElement>, taskId: string) => void;
 }
 
 function TaskBarRowImpl({
@@ -135,8 +101,10 @@ function TaskBarRowImpl({
   dateLabel, tooltip, depBadgeLeftTitle, depBadgeRightTitle,
   ghostBar, delayLabel, isDelayed = false, linkUi, isMoving = false, isSelected = false,
   isCritical = false, progressFraction,
-  onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave,
+  onEdit, onResize, onResizeStart, onMoveStart, onMouseEnter, onMouseLeave, onEmptyDragStart,
 }: TaskBarRowProps) {
+  // 期日未登録タスク（bar===null）の空行ドラッグで期間を新規作成できるかどうか
+  const canDragEmptyRow = !bar && !isPreview && !isDone && !!onEmptyDragStart;
   // 進捗フィル：0〜1にクランプ。0以下（未着手）は何も描画しない＝既存のバー表現を一切変えない
   const clampedProgress = progressFraction == null ? 0 : Math.max(0, Math.min(1, progressFraction));
   // ハンドルを出すかどうか：トグルONの上で「今ホバー中」「自分がドラッグ元」「自分が今のドロップ候補」のいずれか
@@ -154,20 +122,36 @@ function TaskBarRowImpl({
     ? `0 0 0 2px ${linkUi.isValid === false ? "var(--color-text-danger)" : "var(--color-brand)"}`
     : null;
   return (
-    // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）
+    // ホバーによる背景ハイライトのみ（クリック操作は内側のバー要素が担う）。
+    // bar===null（期日未登録）の行だけ、この行自身への mousedown で「ドラッグして期間を新規作成」
+    // （CLAUDE.md v3.04）を開始する。bar があるときは内側のバー要素が mousedown を担うため
+    // ここでは無効（bar の有無で排他的に切り替わり、二重発火しない）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       onMouseEnter={() => onMouseEnter(taskId)}
       onMouseLeave={onMouseLeave}
+      onMouseDown={canDragEmptyRow ? e => onEmptyDragStart!(e, taskId) : undefined}
       style={{
         height: 30, position: "relative",
         borderBottom: "1px solid var(--color-border-primary)",
         background: isChanged
           ? "rgba(127,119,221,0.06)"
           : isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
+        cursor: canDragEmptyRow ? "crosshair" : undefined,
         transition: "background 0.1s",
       }}
     >
+      {/* 期日未登録タスクの空行ヒント（ホバー時のみ。ドラッグ操作の当たり判定は行自身が担うため
+          pointer-events:none で見た目だけ添える） */}
+      {canDragEmptyRow && isHovered && (
+        <div aria-hidden="true" style={{
+          position: "absolute", inset: "4px 8px",
+          border: "1px dashed var(--color-border-primary)", borderRadius: "6px",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: "9px", color: "var(--color-text-tertiary)",
+          pointerEvents: "none",
+        }}>ドラッグして期間を設定</div>
+      )}
       {/* B4：ベースライン（当初計画）のゴーストバー。実バーより下の層（zIndex 1）に描く */}
       {ghostBar && (
         <div
@@ -397,7 +381,8 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
     prev.onResizeStart === next.onResizeStart &&
     prev.onMoveStart === next.onMoveStart &&
     prev.onMouseEnter === next.onMouseEnter &&
-    prev.onMouseLeave === next.onMouseLeave
+    prev.onMouseLeave === next.onMouseLeave &&
+    (prev.onEmptyDragStart ?? null) === (next.onEmptyDragStart ?? null)
   );
 }
 
@@ -419,10 +404,6 @@ export interface GanttPjLabelRowProps {
   onSaveAssignees: (task: Task, ids: string[]) => void;
   /** タスク名インライン編集（choke pointのsaveTask経由） */
   onSaveName: (task: Task, name: string) => void;
-  /** 開始日・期日インライン編集（行ホバー時のみ表示。saveTask経由でB3自動リスケ連鎖・
-      B4ベースライン凍結が自動的に効く） */
-  onSaveStartDate: (task: Task, date: string | null) => void;
-  onSaveDueDate: (task: Task, date: string | null) => void;
   /** ドラッグ並べ替え（依存の無い兄弟同士のみ有効。依存で縛られたペアは再描画で依存順に
       戻る＝v2.39の仕様どおり。CLAUDE.md v3.01） */
   draggingId: string | null;
@@ -437,7 +418,7 @@ export interface GanttPjLabelRowProps {
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   task, isChild, childCount, isHovered, isCollapsed, members,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
-  onSaveName, onSaveStartDate, onSaveDueDate,
+  onSaveName,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
 }: GanttPjLabelRowProps) {
   const isDraggingSelf = draggingId === task.id;
@@ -522,7 +503,6 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           style={{ fontWeight: "inherit", color: "inherit" }}
         />
       </div>
-      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
       {childCount > 0 && (
         <span style={{
           fontSize: "8px", fontWeight: "600", color: "var(--color-text-purple)",
@@ -556,13 +536,11 @@ export interface GanttTodoLabelRowProps {
   onHoverLeave: () => void;
   onSaveAssignees: (task: Task, ids: string[]) => void;
   onSaveName: (task: Task, name: string) => void;
-  onSaveStartDate: (task: Task, date: string | null) => void;
-  onSaveDueDate: (task: Task, date: string | null) => void;
 }
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
   task, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
-  onSaveName, onSaveStartDate, onSaveDueDate,
+  onSaveName,
 }: GanttTodoLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -590,7 +568,6 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       >
         <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
       </div>
-      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
       {/* 行クリックでタスク編集モーダルが開くため、アイコンクリックはそちらに伝播させない（クリックしても何も起きないラッパー） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
@@ -615,13 +592,11 @@ export interface GanttPersonLabelRowProps {
   onHoverEnter: (taskId: string) => void;
   onHoverLeave: () => void;
   onSaveName: (task: Task, name: string) => void;
-  onSaveStartDate: (task: Task, date: string | null) => void;
-  onSaveDueDate: (task: Task, date: string | null) => void;
 }
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   task, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
-  onSaveName, onSaveStartDate, onSaveDueDate,
+  onSaveName,
 }: GanttPersonLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -657,10 +632,78 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
         {task.parent_task_id ? "↳ " : ""}
         <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
       </div>
-      <GanttRowDateEdit task={task} isHovered={isHovered} onSaveStartDate={onSaveStartDate} onSaveDueDate={onSaveDueDate} />
     </div>
   );
 });
+
+// ===== GanttQuickAddTaskRow（PJ別ビュー・ラベル列末尾の簡易タスク追加。CLAUDE.md v3.04） =====
+//
+// 【設計意図】名前だけの最速追加（日付・担当者・親子等は追ってTaskEditModal/TaskSidePanelで設定する
+// 想定＝日付未設定で作成されたタスクは、続けてバー側の「ドラッグして期間を設定」機能で期間を付ける
+// 一連の流れになる）。既定は「＋ タスクを追加」の折りたたみ表示、クリックで入力欄に切り替わる。
+// Enterで作成し、続けて追加できるよう入力欄を開いたまま維持する（InlineEditTextとは異なり
+// 「保存後も編集状態を保つ」点が固有の要件のため、既存コンポーネントを流用せず専用実装にした）。
+// 空のままEscapeまたはフォーカスアウトで折りたたみに戻る。スコープはPJ別ビューのみ
+// （D&D並べ替えと同じスコープ方針。人別・ToDo別ビューは対象外）。
+export function GanttQuickAddTaskRow({ onAdd }: { onAdd: (name: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus();
+  }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (!trimmed) return;
+    onAdd(trimmed);
+    setDraft("");
+    inputRef.current?.focus();
+  };
+
+  if (!editing) {
+    return (
+      <div
+        onClick={() => setEditing(true)}
+        role="button" tabIndex={0}
+        onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setEditing(true); } }}
+        style={{
+          height: 26, display: "flex", alignItems: "center",
+          padding: "0 8px 0 34px", cursor: "pointer",
+          borderBottom: "1px solid var(--color-border-primary)",
+          color: "var(--color-text-tertiary)", fontSize: "11px",
+        }}
+      >＋ タスクを追加</div>
+    );
+  }
+  return (
+    <div style={{
+      height: 26, display: "flex", alignItems: "center",
+      padding: "0 8px 0 34px",
+      borderBottom: "1px solid var(--color-border-primary)",
+    }}>
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onKeyDown={e => {
+          if (e.key === "Enter") { e.preventDefault(); commit(); }
+          if (e.key === "Escape") { setDraft(""); setEditing(false); }
+        }}
+        onBlur={() => { if (!draft.trim()) setEditing(false); }}
+        placeholder="タスク名を入力してEnter"
+        style={{
+          flex: 1, minWidth: 0, fontSize: "11px",
+          padding: "2px 4px", border: "1px solid var(--color-brand)",
+          borderRadius: "var(--radius-sm)",
+          background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
+          outline: "none",
+        }}
+      />
+    </div>
+  );
+}
 
 // ===== StatusDot =====
 

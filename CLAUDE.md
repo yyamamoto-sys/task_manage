@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.03
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.04
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2632,7 +2632,83 @@
 #      検証：tsc 0/vitest 527件全通過（フロント無改修のため新規テスト追加なし）/
 #             eslint 35件で完全一致（baseline比較・新規0）/build成功
 #
-# 最終更新：2026-07-24（v3.03）
+# v3.04 feat: ガントのタスクリスト内で「名前だけ簡易追加」「空行ドラッグで期間を新規作成
+#      （ドラッグ中の日付ツールチップ）」／fix: ラベル列の日付インライン表示を撤去
+#      （2026-07-24・デスクトップ GanttView のみ対象。GanttMobileView は既存の多くの
+#      ガント新機能と同じ慣例で対象外）
+#      背景：現状タスク追加は画面右下FABのモーダル（QuickAddTaskModal）経由のみ。
+#             山本さんから「ガントのタスクリスト内で、名前だけサクサク追加し、期間は
+#             ガント上で横にドラッグして作れるようにしたい。名前と期限が最重要で、他は
+#             追ってまとめて追加したい」との要望。加えてv3.01で追加した「ラベル列の
+#             日付インライン表示」が、タスク名にホバーするたびに名前に被って読めず不便
+#             との指摘（確定方針＝撤去）。3点セットで対応。
+#      ①（fix・最優先）ラベル列の日付インライン表示を撤去：GanttParts.tsx の
+#             GanttRowDateEdit（v3.01で追加した内部専用コンポーネント。行ホバー時に
+#             開始日〜期日のInlineEditDate 2つを表示）を削除し、GanttPjLabelRow/
+#             GanttTodoLabelRow/GanttPersonLabelRowの3行コンポーネント全ての描画・
+#             Props型・GanttView.tsxのonSaveStartDate/onSaveDueDate配線
+#             （handleSaveRowStartDate/handleSaveRowDueDate）を撤去。タスク名の
+#             インライン編集（InlineEditText。v3.01のもう一方の機能）は名前を覆わない
+#             ため存置。日付編集は②のバードラッグ（新規期間作成・既存のリサイズ/移動）
+#             ＋タスク詳細パネル（TaskEditModal/TaskSidePanel）に一本化する
+#             （v3.01時点の「ラベル列に日付編集UIを置く」設計判断はここで撤回）。
+#      ②（feat）期日未登録タスクの空行ドラッグで期間を新規作成：calcTaskBar
+#             （ganttUtils.ts）はdue_date未設定だとnullを返し、該当タスク行は
+#             TaskBarRowの空の外枠（高さ30px・position:relative）だけが存在する。
+#             この空行への mousedown→ドラッグ→mouseup で開始日〜期日を作成できるように
+#             した。TaskBarRowPropsに`onEmptyDragStart`を追加し、TaskBarRowImpl側で
+#             `bar===null && !isPreview && !isDone`のときだけ行コンテナ自身に
+#             mousedownをバインドする（bar があるときは内側のバー要素側が担うため排他的
+#             に切り替わり二重発火しない）。ホバー時のみ「ドラッグして期間を設定」の
+#             薄いヒント（pointer-events:none）を表示し発見しやすくした。
+#             座標→日付変換はB2矢印描画と同じ基準（ganttBodyRefのgetBoundingClientRect()
+#             起点）を使う純粋関数`xToDate(x, rangeStart, dayWidth)`
+#             （ganttUtils.ts。`addDays(rangeStart, Math.round(x/dayWidth))`）と、
+#             ドラッグの始点・終点（順不同）からstart=min/due=maxを正規化する
+#             `computeDragCreateRange(dateA, dateB)`の2つの新規純粋関数で構成（同日
+#             ドラッグ＝単日タスクとして許容）。GanttView.tsxの`creatingRangeTask`
+#             state はtaskId/anchorDateのみを持つ「ドラッグセッションの識別子」として
+#             不変に保つ設計（バー移動ドラッグのdraggingMoveTaskと同じ流儀。フレーム
+#             ごとに変化する現在日はプレビュー側のstateだけに書き込むことで、
+#             mousemoveのたびにuseEffectのlistenerを貼り直さずに済む）。ドラッグ中の
+#             プレビューバーは新規コード無しで実現：既存の`resizePreviewDates`
+#             （リサイズ/移動ドラッグと共有）にstart/dueを書き込むだけで、既存の
+#             `applyResizePreview`→`calcTaskBar`の流れがそのまま効き、bar===nullの
+#             行が一時的に実際のバーとして描画される（3箇所のバー描画＝人別/PJ別/
+#             ToDo別ビュー全てで自動的に効く。用意した`onEmptyDragStart`もこの3箇所
+#             全てに配線した＝スコープ制限なし）。確定はsaveTask経由（choke point。
+#             B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結が自動的に効く）。
+#      ③（feat）ガントのタスクリスト内での簡易タスク追加（名前のみ）：PJ別ビュー
+#             （viewMode==="pj"）のラベル列で、各PJのタスク行の末尾に
+#             `GanttQuickAddTaskRow`（GanttParts.tsx新規）を追加。既定は
+#             「＋ タスクを追加」の折りたたみ表示、クリックで入力欄に切り替わりEnterで
+#             `saveTask({ name, project_id: pj.id, start_date: null, due_date: null, ... })`
+#             （日付なし）を呼ぶ。作成後も入力欄を開いたまま・フォーカス維持し続けて
+#             追加できるようにした（空のままEscape/フォーカスアウトで折りたたみに戻る）。
+#             InlineEditTextを流用しなかった理由＝「保存後も編集状態を保つ」がその
+#             コンポーネントの想定外の挙動のため専用実装にした。group_idは
+#             saveTask/appStore側が現在の部署から自動注入するため明示不要。
+#             日付なしで作成されたタスクは②のドラッグで期間を付ける、という一連の
+#             流れになる。
+#      共通（ドラッグ中の日付ツールチップ）：②を最優先に、既存のバー端リサイズ・
+#             バー中央移動ドラッグにも同じツールチップを追加（「狙った日付で的確に
+#             操作したい」という一貫した要望のため、低リスクな範囲で横展開）。
+#             GanttView.tsxに`dragDateTooltip`（x/y/label の1 state）を新設し、
+#             3種のドラッグそれぞれのonMove/onUpで更新・クリアするだけに留め、表示は
+#             1箇所のposition:fixed要素に集約。日付ラベルは`formatMDWithWeekday`
+#             （src/lib/date.ts。既存関数）をそのまま使用（例："7/24(木)"、範囲は
+#             "7/24(木) 〜 7/26(土)"）。
+#      スコープ判断（今回やらないこと）：①③はPJ別ビューのみ（簡易追加はD&D並べ替え
+#             ＝v3.01と同じスコープ方針。人別・ToDo別ビューは対象外）。②は3ビュー
+#             全てに配線済み（ビュー限定なし）。GanttMobileViewは①②③とも対象外
+#             （既存の多くのガント新機能と同じ慣例）。
+#      DBマイグレ不要（既存の name/start_date/due_date/project_id 列のみ使用）。
+#      新規純粋関数：`xToDate`/`computeDragCreateRange`（ganttUtils.ts）。ユニット
+#             テスト7件追加（ganttUtils.test.ts）。
+#      検証：tsc 0/vitest 534件全通過（527件+新規7件）/eslint 35件で完全一致
+#             （baseline比較・新規0）/build成功
+#
+# 最終更新：2026-07-24（v3.04）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -3630,7 +3706,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-24（v3.03）
+- 最終更新：2026-07-24（v3.04）
 
 ---
 

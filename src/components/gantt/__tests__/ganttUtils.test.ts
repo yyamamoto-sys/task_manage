@@ -5,6 +5,7 @@ import {
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   computeMoveShift, computeBulkMoveShifts,
   clampZoom, computeVisibleOrderedTaskIds, ZOOM_LEVELS,
+  xToDate, computeDragCreateRange,
 } from "../ganttUtils";
 import type { Task, Milestone } from "../../../lib/localData/types";
 import { getDaysInRange, toDateStr } from "../../../lib/date";
@@ -428,3 +429,38 @@ describe("computeVisibleOrderedTaskIds", () => {
 
 // computeRangeSelection のテストは src/lib/__tests__/selectionRange.test.ts に移動
 // （実体を src/lib/selectionRange.ts に集約し、ListView と共有するため）。
+
+describe("xToDate", () => {
+  it("x=0はrangeStartそのもの", () => {
+    expect(toDateStr(xToDate(0, rangeStart, dayWidth))).toBe("2026-07-01");
+  });
+
+  it("dayWidthの整数倍ぶん右なら、その日数だけ後ろの日付", () => {
+    expect(toDateStr(xToDate(dayWidth * 5, rangeStart, dayWidth))).toBe("2026-07-06");
+  });
+
+  it("端数のxは最も近い日に丸める（四捨五入）", () => {
+    // 2.4日分 → 2日に丸める
+    expect(toDateStr(xToDate(dayWidth * 2.4, rangeStart, dayWidth))).toBe("2026-07-03");
+    // 2.6日分 → 3日に丸める
+    expect(toDateStr(xToDate(dayWidth * 2.6, rangeStart, dayWidth))).toBe("2026-07-04");
+  });
+
+  it("負のxはrangeStartより前の日付になる", () => {
+    expect(toDateStr(xToDate(-dayWidth * 3, rangeStart, dayWidth))).toBe("2026-06-28");
+  });
+});
+
+describe("computeDragCreateRange", () => {
+  it("始点<終点ならそのままstart/dueになる", () => {
+    expect(computeDragCreateRange("2026-07-01", "2026-07-05")).toEqual({ start: "2026-07-01", due: "2026-07-05" });
+  });
+
+  it("始点>終点（逆方向にドラッグ）でもstart=min, due=maxに正規化される", () => {
+    expect(computeDragCreateRange("2026-07-05", "2026-07-01")).toEqual({ start: "2026-07-01", due: "2026-07-05" });
+  });
+
+  it("同日ドラッグはstart=dueの単日タスクとして許容される", () => {
+    expect(computeDragCreateRange("2026-07-03", "2026-07-03")).toEqual({ start: "2026-07-03", due: "2026-07-03" });
+  });
+});

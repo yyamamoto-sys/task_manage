@@ -318,3 +318,25 @@ export function computeVisibleOrderedTaskIds(input: VisibleOrderInput): string[]
 }
 
 // computeRangeSelection 本体は src/lib/selectionRange.ts に移動（上部で re-export 済み）。
+
+// ===== ドラッグで期間を新規作成（期日未登録タスクの空行ドラッグ。CLAUDE.md v3.04） =====
+
+/**
+ * バー列コンテナ基準のx座標 → 日付。calcTaskBar が使う座標系（0 = rangeStart、1日 = dayWidth px）
+ * の逆変換。期日未登録タスクの空行をドラッグして期間を新規作成する機能で、カーソル位置から
+ * 「今指している日付」を求めるのに使う（GanttView側は ganttBodyRef.getBoundingClientRect() を
+ * 基準にした `clientX - bodyRect.left` を x として渡す想定。既存の B2 矢印描画の座標変換と同じ基準）。
+ */
+export function xToDate(x: number, rangeStart: Date, dayWidth: number): Date {
+  const dayIndex = Math.round(x / dayWidth);
+  return addDays(rangeStart, dayIndex);
+}
+
+/**
+ * ドラッグの始点・終点（順不同の日付文字列 YYYY-MM-DD）→ start/due（min/max）。
+ * 同日ドラッグ（またはドラッグなしの単純クリック）は start=due の単日タスクとして許容する
+ * （呼び出し側で特別扱いする必要はない）。
+ */
+export function computeDragCreateRange(dateA: string, dateB: string): { start: string; due: string } {
+  return dateA <= dateB ? { start: dateA, due: dateB } : { start: dateB, due: dateA };
+}

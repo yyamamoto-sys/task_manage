@@ -12,7 +12,8 @@ import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } fr
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
-import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday } from "../../lib/date";
+import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday, formatMDWithWeekday } from "../../lib/date";
+import { v4 as uuidv4 } from "uuid";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
@@ -28,8 +29,9 @@ import {
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
   clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection,
+  xToDate, computeDragCreateRange,
 } from "./ganttUtils";
-import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
+import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import {
@@ -659,17 +661,44 @@ export function GanttView({
   const handleSaveRowAssignees = useCallback((task: Task, ids: string[]) => {
     saveTask({ ...task, assignee_member_ids: ids });
   }, [saveTask]);
-  // ラベル列のインライン編集（タスク名・開始日・期日）。保存は必ず saveTask 経由
-  // （B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結がこの1箇所で自動的に効く）
+  // ラベル列のインライン編集（タスク名）。保存は必ず saveTask 経由
+  // （B1依存ゲート・B3自動リスケ連鎖・B4ベースライン凍結がこの1箇所で自動的に効く）。
+  // 【v3.04】開始日・期日のラベル列インライン入力（v3.01）は撤去した（タスク名がホバーのたびに
+  // 隠れて読めなくなるとの指摘）。日付編集はバーのドラッグ（リサイズ／移動／新規期間作成）と
+  // タスク詳細パネルに一本化する（CLAUDE.md v3.04 changelog参照）
   const handleSaveRowName = useCallback((task: Task, name: string) => {
     saveTask({ ...task, name });
   }, [saveTask]);
-  const handleSaveRowStartDate = useCallback((task: Task, start_date: string | null) => {
-    saveTask({ ...task, start_date });
-  }, [saveTask]);
-  const handleSaveRowDueDate = useCallback((task: Task, due_date: string | null) => {
-    saveTask({ ...task, due_date });
-  }, [saveTask]);
+
+  // ===== PJ別ビュー・ラベル列末尾の簡易タスク追加（名前のみ。CLAUDE.md v3.04） =====
+  // 日付・担当者等はここでは設定しない（追ってドラッグでの期間設定・詳細パネルで追加する想定）。
+  // group_id は saveTask 側が現在の部署から自動注入するため、ここでは渡さない。
+  const handleQuickAddTask = useCallback(async (projectId: string, name: string) => {
+    const now = new Date().toISOString();
+    const siblings = allTasks.filter(t => (t.project_id ?? null) === projectId && !t.parent_task_id);
+    const nextOrder = siblings.length === 0 ? 0 : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
+    const task: Task = {
+      id: uuidv4(),
+      name,
+      project_id: projectId,
+      parent_task_id: null,
+      display_order: nextOrder,
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    await saveTask(task);
+  }, [allTasks, saveTask, currentUser.id]);
 
   // ===== D&D並べ替え（PJ別ビューのラベル列。依存の無い兄弟同士のみ display_order を書き換える。
   // 依存で縛られたペアは常に依存順が勝つ＝v2.39の仕様どおり、ここでは触らない） =====
@@ -728,6 +757,22 @@ export function GanttView({
       return n;
     });
   }, []);
+
+  const clearPreviewAll = useCallback((taskId: string) => {
+    setResizePreviewDates(prev => {
+      if (!prev[taskId]) return prev;
+      const n = { ...prev };
+      delete n[taskId];
+      return n;
+    });
+  }, []);
+
+  // ===== ドラッグ中の日付ツールチップ（CLAUDE.md v3.04） =====
+  // 【設計意図】新規期間作成ドラッグ（②）を最優先に、既存のリサイズ／移動ドラッグにも同じ
+  // ツールチップを一貫して出す（狙った日付で的確に操作できるようにする要望）。カーソル位置
+  // （clientX/clientY）＋今指している日付ラベルの1状態に集約し、各ドラッグのonMove/onUpで
+  // 更新・クリアするだけにする（表示自体は1箇所のfixed要素で担う）。
+  const [dragDateTooltip, setDragDateTooltip] = useState<{ x: number; y: number; label: string } | null>(null);
 
   const scrollToToday = useCallback(() => {
     if (!scrollRef.current) return;
@@ -815,14 +860,15 @@ export function GanttView({
       if (!draggingResizeTask) return;
       const { taskId, edge, startX, originalDate, clampAgainst } = draggingResizeTask;
       const deltaDays = Math.round((e.clientX - startX) / dayWidth);
-      if (deltaDays === 0) {
-        clearPreviewEdge(taskId, edge);
-        return;
-      }
       const orig = toDate(originalDate);
       if (!orig) return;
       let newDate = toDateStr(addDays(orig, deltaDays));
       if (edge === "start" && clampAgainst) newDate = clampStartDate(newDate, clampAgainst);
+      setDragDateTooltip({ x: e.clientX, y: e.clientY, label: formatMDWithWeekday(toDate(newDate)!) });
+      if (deltaDays === 0) {
+        clearPreviewEdge(taskId, edge);
+        return;
+      }
       setResizePreviewDates(prev => ({ ...prev, [taskId]: { ...prev[taskId], [edge]: newDate } }));
     };
     const onUp = async (e: MouseEvent) => {
@@ -830,6 +876,7 @@ export function GanttView({
       const { taskId, edge, startX, originalDate, clampAgainst } = draggingResizeTask;
       const deltaDays = Math.round((e.clientX - startX) / dayWidth);
       setDraggingResizeTask(null);
+      setDragDateTooltip(null);
       clearPreviewEdge(taskId, edge);
       if (deltaDays !== 0) {
         const task = allTasks.find(t => t.id === taskId);
@@ -931,10 +978,20 @@ export function GanttView({
         }
         return n;
       });
+      // ドラッグ中の日付ツールチップ（ドラッグ元＝taskId のシフト後日付を表示。複数選択の一括移動でも
+      // 代表としてドラッグ元1件だけ表示する＝要望の「狙った日付」はドラッグ操作している当人の基準で十分）
+      const primaryShift = computeMoveShift(origStart, origDue, deltaDays);
+      if (Object.keys(primaryShift).length > 0) {
+        const label = primaryShift.start
+          ? `${formatMDWithWeekday(toDate(primaryShift.start)!)} 〜 ${formatMDWithWeekday(toDate(primaryShift.due!)!)}`
+          : formatMDWithWeekday(toDate(primaryShift.due!)!);
+        setDragDateTooltip({ x: e.clientX, y: e.clientY, label });
+      }
     };
     const onUp = async (e: MouseEvent) => {
       const wasMoved = moveHasShiftedRef.current;
       setDraggingMoveTask(null);
+      setDragDateTooltip(null);
       clearPreview();
       if (!wasMoved) return;
       // クリックとして解釈されないよう、直後に発火する onClick 側（guardedHandleRowEdit）で消費させる
@@ -1201,16 +1258,72 @@ export function GanttView({
     };
   }, [linkDrag, addTaskDependency, currentUser.id]);
 
+  // ===== 期日未登録タスクの空行ドラッグで期間を新規作成（②。CLAUDE.md v3.04） =====
+  //
+  // 【設計意図】バーが存在しない（due_date未設定）タスク行の空エリアをドラッグして開始日〜期日を
+  // 作る。座標→日付の変換はB2矢印描画と同じ基準（ganttBodyRef.getBoundingClientRect() 起点）を使う。
+  // creatingRangeTask 自体は taskId/anchorDate のみを持つ「ドラッグセッションの識別子」として不変に保ち
+  // （バー移動ドラッグの draggingMoveTask と同じ設計）、フレームごとに変化する現在日はプレビュー
+  // （resizePreviewDates を流用。既存の calcTaskBar/applyResizePreview がそのまま効くため、ドラッグ中の
+  // プレビューバーは追加コード無しでリアルタイム描画される）とツールチップ側のstateにだけ書き込む。
+  // これにより mousemove のたびに useEffect の listener を貼り直さずに済む（resize/move ドラッグと
+  // 同じ設計判断）。1日も動かさなかった（同日クリック）場合も start=due の単日タスクとして許容する。
+  const [creatingRangeTask, setCreatingRangeTask] = useState<{ taskId: string; anchorDate: string } | null>(null);
+
+  const handleEmptyRowDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
+    if (isPreview || linkDrag || draggingResizeTask || draggingMoveTask) return;
+    const bodyEl = ganttBodyRef.current;
+    if (!bodyEl) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const bodyRect = bodyEl.getBoundingClientRect();
+    const anchorDate = toDateStr(xToDate(e.clientX - bodyRect.left, rangeStart, dayWidth));
+    setCreatingRangeTask({ taskId, anchorDate });
+  }, [isPreview, linkDrag, draggingResizeTask, draggingMoveTask, rangeStart, dayWidth]);
+
+  useEffect(() => {
+    if (!creatingRangeTask) return;
+    const { taskId, anchorDate } = creatingRangeTask;
+    const dateAtClientX = (clientX: number): string => {
+      const bodyRect = ganttBodyRef.current?.getBoundingClientRect();
+      const x = bodyRect ? clientX - bodyRect.left : 0;
+      return toDateStr(xToDate(x, rangeStart, dayWidth));
+    };
+    const onMove = (e: MouseEvent) => {
+      const currentDate = dateAtClientX(e.clientX);
+      const range = computeDragCreateRange(anchorDate, currentDate);
+      setResizePreviewDates(prev => ({ ...prev, [taskId]: { start: range.start, due: range.due } }));
+      const label = range.start === range.due
+        ? formatMDWithWeekday(toDate(range.start)!)
+        : `${formatMDWithWeekday(toDate(range.start)!)} 〜 ${formatMDWithWeekday(toDate(range.due)!)}`;
+      setDragDateTooltip({ x: e.clientX, y: e.clientY, label });
+    };
+    const onUp = async (e: MouseEvent) => {
+      const currentDate = dateAtClientX(e.clientX);
+      setCreatingRangeTask(null);
+      setDragDateTooltip(null);
+      clearPreviewAll(taskId);
+      const range = computeDragCreateRange(anchorDate, currentDate);
+      const task = allTasks.find(t => t.id === taskId);
+      if (!task) return;
+      await saveTask({ ...task, start_date: range.start, due_date: range.due });
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [creatingRangeTask, rangeStart, dayWidth, allTasks, saveTask, clearPreviewAll]);
+
   useEffect(() => {
     const resizeActive = isResizing || !!draggingResizeTask;
-    const active = resizeActive || !!draggingMoveTask || !!linkDrag;
+    const active = resizeActive || !!draggingMoveTask || !!linkDrag || !!creatingRangeTask;
     document.body.style.cursor = linkDrag
       ? "crosshair"
       : draggingMoveTask ? "grabbing"
+      : creatingRangeTask ? "crosshair"
       : resizeActive ? "col-resize" : "";
     document.body.style.userSelect = active ? "none" : "";
     return () => { document.body.style.cursor = ""; document.body.style.userSelect = ""; };
-  }, [isResizing, draggingResizeTask, draggingMoveTask, linkDrag]);
+  }, [isResizing, draggingResizeTask, draggingMoveTask, linkDrag, creatingRangeTask]);
 
   // ドラッグ中のドロップ候補の可否をリアルタイム判定する（store の addTaskDependency が実際に見るのと
   // 同じ taskDependencies（is_deleted除外も含めて同一のフィルタ）を使い、プレビューと実際の結果を
@@ -1690,8 +1803,6 @@ export function GanttView({
                             onToggleCollapse={togglePJ}
                             onSaveAssignees={handleSaveRowAssignees}
                             onSaveName={handleSaveRowName}
-                            onSaveStartDate={handleSaveRowStartDate}
-                            onSaveDueDate={handleSaveRowDueDate}
                             draggingId={ganttDraggingId}
                             dropZone={ganttDropZone?.id === task.id ? (ganttDropZone.zone as "before" | "after") : null}
                             onDragHandleStart={handleDragHandleStart}
@@ -1702,6 +1813,10 @@ export function GanttView({
                           />
                         );
                       })}
+                      {/* 簡易タスク追加（名前のみ。CLAUDE.md v3.04・PJ別ビューのみ） */}
+                      {!isCollapsed && !isPreview && (
+                        <GanttQuickAddTaskRow onAdd={name => handleQuickAddTask(pj.id, name)} />
+                      )}
                     </div>
                   );
                 })}
@@ -1740,8 +1855,6 @@ export function GanttView({
                           onHoverLeave={handleRowHoverLeave}
                           onSaveAssignees={handleSaveRowAssignees}
                           onSaveName={handleSaveRowName}
-                          onSaveStartDate={handleSaveRowStartDate}
-                          onSaveDueDate={handleSaveRowDueDate}
                         />
                       ))}
                     </div>
@@ -1832,8 +1945,6 @@ export function GanttView({
                             onHoverEnter={handleRowHoverEnter}
                             onHoverLeave={handleRowHoverLeave}
                             onSaveName={handleSaveRowName}
-                            onSaveStartDate={handleSaveRowStartDate}
-                            onSaveDueDate={handleSaveRowDueDate}
                           />
                         );
                       })}
@@ -2131,6 +2242,7 @@ export function GanttView({
                               onMoveStart={guardedHandleMoveDragStart}
                               onMouseEnter={handleRowHoverEnter}
                               onMouseLeave={handleRowHoverLeave}
+                              onEmptyDragStart={handleEmptyRowDragStart}
                             />
                           );
                         })}
@@ -2297,6 +2409,7 @@ export function GanttView({
                           onMoveStart={guardedHandleMoveDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
+                          onEmptyDragStart={handleEmptyRowDragStart}
                         />
                       );
                     })}
@@ -2373,6 +2486,7 @@ export function GanttView({
                           onMoveStart={guardedHandleMoveDragStart}
                           onMouseEnter={handleRowHoverEnter}
                           onMouseLeave={handleRowHoverLeave}
+                          onEmptyDragStart={handleEmptyRowDragStart}
                         />
                       );
                     })}
@@ -2467,6 +2581,20 @@ export function GanttView({
           </div>
         );
       })()}
+
+      {/* ドラッグ中の日付ツールチップ（新規期間作成／リサイズ／移動の3ドラッグ共通。CLAUDE.md v3.04） */}
+      {dragDateTooltip && (
+        <div style={{
+          position: "fixed", left: dragDateTooltip.x + 14, top: dragDateTooltip.y + 14,
+          zIndex: 10000, pointerEvents: "none",
+          background: "var(--color-text-primary)", color: "var(--color-bg-primary)",
+          fontSize: "11px", fontWeight: 600, padding: "3px 8px",
+          borderRadius: "var(--radius-md)", boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+          whiteSpace: "nowrap",
+        }}>
+          {dragDateTooltip.label}
+        </div>
+      )}
 
       {/* 凡例 */}
       <div style={{
