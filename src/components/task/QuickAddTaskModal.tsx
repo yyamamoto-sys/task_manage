@@ -8,6 +8,7 @@ import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from 
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
+import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { parentTaskCandidates } from "../../lib/taskHierarchy";
 import { v4 as uuidv4 } from "uuid";
@@ -47,6 +48,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);
   const rawKrs                  = useAppStore(s => s.keyResults);
+  const rawObjectives           = useAppStore(s => s.objectives);
+  const currentGroupId          = useAppStore(s => s.currentGroupId);
   const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
@@ -113,9 +116,15 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   }, [rawTasks, projectId, projects]);
 
   // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
-  // ToDoパネルからの既定KRが他クォーターのTFしか持たない場合も選択肢が消えないよう強制的に含める
+  // 表示中の部署（currentGroupId）のKRだけに絞る（v3.02。クォーター絞り込みと併用）。
+  // ToDoパネルからの既定KRが他クォーター／他部署のTFしか持たない場合も選択肢が消えないよう強制的に含める
+  const krsInGroup = useMemo(
+    () => new Set(keyResultsInGroup(krs, rawObjectives, currentGroupId).map(kr => kr.id)),
+    [krs, rawObjectives, currentGroupId],
+  );
   const filteredKrs = useMemo(() => {
     const base = krs.filter(kr => {
+      if (!krsInGroup.has(kr.id)) return false;
       const krTfs = tfs.filter(tf => tf.kr_id === kr.id && effectiveTfQuarter(tf) === currentQ);
       return krTfs.length > 0;
     });
@@ -124,21 +133,25 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       if (forced) return [forced, ...base];
     }
     return base;
-  }, [krs, tfs, currentQ, defaultKrId]);
+  }, [krs, tfs, currentQ, defaultKrId, krsInGroup]);
 
-  // 選択中KRのTF一覧（今期のみ・TF番号順）
-  // ToDoパネルからの既定TFが他クォーターのものでも、選択肢が消えないよう強制的に含める
+  // 選択中KRのTF一覧（今期のみ・TF番号順）。表示中の部署のTFだけに絞る（v3.02）。
+  // ToDoパネルからの既定TFが他クォーター／他部署のものでも、選択肢が消えないよう強制的に含める
+  const tfsInGroup = useMemo(
+    () => new Set(taskForcesInGroup(tfs, krs, rawObjectives, currentGroupId).map(tf => tf.id)),
+    [tfs, krs, rawObjectives, currentGroupId],
+  );
   const filteredTfs = useMemo(() => {
     if (!krId) return [];
     const base = tfs
-      .filter(tf => tf.kr_id === krId && effectiveTfQuarter(tf) === currentQ)
+      .filter(tf => tf.kr_id === krId && effectiveTfQuarter(tf) === currentQ && tfsInGroup.has(tf.id))
       .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0));
     if (resolvedDefaultTfId && krId === defaultKrId && !base.some(tf => tf.id === resolvedDefaultTfId)) {
       const forced = tfs.find(tf => tf.id === resolvedDefaultTfId);
       if (forced) return [forced, ...base];
     }
     return base;
-  }, [krId, tfs, currentQ, resolvedDefaultTfId, defaultKrId]);
+  }, [krId, tfs, currentQ, resolvedDefaultTfId, defaultKrId, tfsInGroup]);
 
   // 選択中TFに属するToDo一覧
   const filteredTodos = useMemo(

@@ -13,6 +13,7 @@ import {
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
 import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
+import { taskForcesInGroup } from "../../lib/okr/deptScope";
 import { parentTaskCandidates, childrenOf, eligibleChildTasks } from "../../lib/taskHierarchy";
 import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -38,6 +39,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allProjects         = useAppStore(selectScopedProjects);
   const allTaskForces       = useAppStore(s => s.taskForces);
   const allKeyResults       = useAppStore(s => s.keyResults);
+  const allObjectives       = useAppStore(s => s.objectives);
+  const currentGroupId      = useAppStore(s => s.currentGroupId);
   const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
   const allTaskProjects     = useAppStore(s => s.taskProjects);
   const allTaskDependencies = useAppStore(selectScopedTaskDependencies);
@@ -52,8 +55,15 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   const members    = useMemo(() => active(allMembers), [allMembers]);
   const projects   = useMemo(() => active(allProjects), [allProjects]);
+  // 既に紐づいているTFのラベル表示（linkedTfs/tfLabelById）は部署絞り込み前の全件を使う
+  // （他部署TFが誤って紐づいていた既存データでも表示を消さないため）。
+  // 「追加で選べる選択肢」だけを部署絞り込みする＝taskForcesForPicker（v3.02）。
   const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
   const keyResults = useMemo(() => active(allKeyResults), [allKeyResults]);
+  const taskForcesForPicker = useMemo(
+    () => taskForcesInGroup(taskForces, keyResults, allObjectives, currentGroupId),
+    [taskForces, keyResults, allObjectives, currentGroupId],
+  );
 
   const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
 
@@ -771,7 +781,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未設定</span>
           )}
         </div>
-        {taskForces.length > 0 ? (
+        {taskForcesForPicker.length > 0 ? (
           <CustomSelect
             value=""
             onChange={value => {
@@ -780,7 +790,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
             }}
             options={[
               { value: "", label: "＋ タスクフォースを追加..." },
-              ...taskForces
+              ...taskForcesForPicker
                 .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
                 .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
                 .slice()

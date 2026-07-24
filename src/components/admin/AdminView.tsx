@@ -1522,6 +1522,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   const deleteMilestone         = useAppStore(s => s.deleteMilestone);
   const rawTaskForces           = useAppStore(s => s.taskForces);
   const rawKeyResults           = useAppStore(s => s.keyResults);
+  const rawObjectives           = useAppStore(s => s.objectives);
   const rawProjectTaskForces    = useAppStore(s => s.projectTaskForces);
   const addProjectTaskForce     = useAppStore(s => s.addProjectTaskForce);
   const removeProjectTaskForce  = useAppStore(s => s.removeProjectTaskForce);
@@ -1535,8 +1536,18 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
     [rawMembers, selectedGroupId],
   );
   const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
-  const taskForces = useMemo(() => active(rawTaskForces), [rawTaskForces]);
-  const keyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
+  const activeKeyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
+  const activeTaskForces = useMemo(() => active(rawTaskForces), [rawTaskForces]);
+  // 「紐づける TF」ピッカーは、このセクションの他の絞り込み（projects/members）と同じく
+  // 設定画面ローカルのselectedGroupIdでスコープする（v3.02。v2.94時点では未対応だった穴を埋める）。
+  const keyResults = useMemo(
+    () => keyResultsInGroup(activeKeyResults, rawObjectives, selectedGroupId),
+    [activeKeyResults, rawObjectives, selectedGroupId],
+  );
+  const taskForces = useMemo(
+    () => taskForcesInGroup(activeTaskForces, activeKeyResults, rawObjectives, selectedGroupId),
+    [activeTaskForces, activeKeyResults, rawObjectives, selectedGroupId],
+  );
 
   // マイルストーン管理：開閉のみ（フォーム状態は子コンポーネントが管理）
   const [msOpenPjId, setMsOpenPjId] = useState<string | null>(null);
@@ -1556,6 +1567,22 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
     color_tag: "#7F77DD", start_date: "", end_date: "",
     tf_ids: [] as string[],
   });
+
+  // 既に紐づいているTFが選択中部署（selectedGroupId）の外にある場合でも、チェックボックス表示
+  // からは消さない（絞り込むのは新規に選べる選択肢のみという方針。TaskEditModal等と同じ考え方）。
+  // form.tf_ids に含まれるが taskForces（部署絞り込み済み）に無いTF・その所属KRを補って含める。
+  const taskForcesForPicker = useMemo(() => {
+    const missingIds = form.tf_ids.filter(id => !taskForces.some(tf => tf.id === id));
+    if (missingIds.length === 0) return taskForces;
+    return [...taskForces, ...activeTaskForces.filter(tf => missingIds.includes(tf.id))];
+  }, [taskForces, activeTaskForces, form.tf_ids]);
+  const keyResultsForPicker = useMemo(() => {
+    const missingKrIds = new Set(
+      taskForcesForPicker.filter(tf => !keyResults.some(kr => kr.id === tf.kr_id)).map(tf => tf.kr_id),
+    );
+    if (missingKrIds.size === 0) return keyResults;
+    return [...keyResults, ...activeKeyResults.filter(kr => missingKrIds.has(kr.id))];
+  }, [keyResults, activeKeyResults, taskForcesForPicker]);
 
   // 未保存変更を親に通知
   useEffect(() => {
@@ -1788,7 +1815,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "12px", color: "var(--color-text-primary)" }}>
             プロジェクトを編集
           </div>
-          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResults} taskForces={taskForces} isMobile={isMobile} />
+          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} style={primaryBtnStyle}
               disabled={!form.name.trim() || !form.purpose.trim()}>
@@ -1815,7 +1842,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           onClose={() => setEditId(null)}
           maxWidth="640px"
         >
-          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResults} taskForces={taskForces} isMobile={isMobile} />
+          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} style={primaryBtnStyle}
               disabled={!form.name.trim() || !form.purpose.trim()}>

@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.01
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.02
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -2326,6 +2326,9 @@
 #      未対応（今回のスコープ外）：PJセクションの「紐づけるKR/TF」ピッカー（PJ編集
 #             フォーム内）は部署絞り込みをまだ入れていない（全社共通表示のまま）。
 #             OKR系テーブルのRLS部署分離もOKR全面刷新時にまとめて対応する方針のまま
+#             【2026-07-24追記】この「PJ編集フォームのピッカー未対応」およびタスク側の
+#             同種ピッカー（TaskEditModal等）はv3.02で対応済み（詳細はv3.02 changelog参照）。
+#             OKR系テーブルのRLS部署分離は引き続き未対応・別フェーズのまま
 #
 # v2.95 feat: メンバー編集に「アクセス可能な部署（複数可）」group_ids欄を追加（2026-07-23）
 #      背景：山本さんが自分を2部署目（AID＋EGG）に入れようとして同じメールでもう1メンバーを
@@ -2523,7 +2526,59 @@
 #      検証：tsc 0/vitest 527件全通過（519件+新規8件）/eslint 35件で完全一致（baseline比較。
 #             24 error + 11 warning）/build成功
 #
-# 最終更新：2026-07-24（v3.01）
+# v3.02 fix: タスク/PJのTF・KRピッカーを部署絞り込み（currentGroupId）に統一（2026-07-24）
+#      🔴 症状（由々しき事態・山本さんからの報告）：タスク詳細（TaskEditModal）でTF追加の
+#             プルダウンを開くと、EGGを表示中なのにAID部署のTFが選択肢に出ていた。
+#      原因：タスク/PJをTF・KRに紐づける（＝選択肢を出す）ピッカーが、部署絞り込み用の純粋関数
+#             （`lib/okr/deptScope.ts`のtaskForcesInGroup/keyResultsInGroup。v2.94で新設済み）を
+#             一切使わず、全部署分のTF・KRをそのまま選択肢に出していた。v2.94 changelogで
+#             「PJ編集フォームの『紐づけKR/TF』ピッカーは部署絞り込み未対応」と名指しで既知の
+#             宿題にしていた箇所を含め、**タスク/PJ文脈のOKRピッカー全て**が未対応のままだった。
+#      🟢 今回のスコープ＝UI（表示絞り込み）の修正のみ。OKR系テーブル（objectives/key_results/
+#             task_forces）のRLS部署分離（DB側のアクセス制御）は引き続き別フェーズ（Section 1.6・
+#             Section 9のG参照）。DBマイグレ・新規テーブル/列・保存挙動の変更は無し。
+#      修正1（TaskEditModal.tsx）：TF追加プルダウンの選択肢を`taskForcesForPicker`
+#             （`taskForcesInGroup(taskForces, keyResults, objectives, currentGroupId)`）に限定。
+#             `currentGroupId`は`s.currentGroupId`（表示中の部署）、`objectives`は`s.objectives`
+#             （v2.94で新設の全部署・全期分の生配列）から取得。**既に紐づいているTFのラベル表示
+#             （linkedTfsのチップ・tfLabelByIdのラベル解決）は部署絞り込み前の`taskForces`
+#             （active()のみ）のまま**にし、他部署TFが誤って紐づいていた既存データでも表示は
+#             消さない（絞り込むのは「追加で選べる選択肢」だけ、という設計方針）。
+#             `getEligibleTfIds`（日付適格性フィルタ）は`taskForcesForPicker`に対してこれまで
+#             どおり併用（部署フィルタ→日付フィルタの両方を選択肢に適用）。
+#      修正2（TaskSidePanel.tsx）：TaskEditModal.tsxと全く同型の修正（`taskForcesForPicker`新設・
+#             linkedTfs/tfLabelByIdは無改造）。
+#      修正3（QuickAddTaskModal.tsx）：KR・TFピッカーに部署絞り込み（`krsInGroup`/`tfsInGroup`。
+#             `keyResultsInGroup`/`taskForcesInGroup`使用）を、v2.66の既存クォーター絞り込み
+#             （`effectiveTfQuarter(tf) === currentQ`）と**併用**する形で追加（どちらか一方だけ
+#             満たしても選択肢に出ない＝AND条件）。v2.66の「ToDoパネルからの既定KR/TFは絞り込み
+#             条件を満たさなくても選択肢の先頭に強制的に含める」フォールバックはそのまま温存
+#             （defaultKrId/resolvedDefaultTfIdの強制包含ロジックは無変更）。
+#      修正4（AdminView.tsx・PJSection内のProjectFormFields＝「紐づける TF」ピッカー）：
+#             v2.94で名指しされていた未対応箇所。このセクションは既にprojects/membersを
+#             設定画面ローカルの`selectedGroupId`（super-adminが設定画面で見比べる部署。
+#             MainLayout等の`currentGroupId`とは別概念）でスコープする方針（v2.94・v2.99）の
+#             ため、`keyResults`/`taskForces`もこれに揃えて`selectedGroupId`基準で
+#             `keyResultsInGroup`/`taskForcesInGroup`により絞り込んだ（`currentGroupId`は
+#             使わない＝このファイル内の既存の使い分けに揃えた判断）。
+#             **チェックボックス形式特有の追加対応**：このピッカーはチップ＋ドロップダウンでは
+#             なくKRごとのチェックボックス一覧そのものが表示兼操作面のため、単純に絞り込むと
+#             「既に紐づいているが他部署扱いになったTF」のチェックボックス自体が消えて見えなくなる
+#             （TaskEditModal等の「チップは残す」に相当する対処ができない構造）。これを防ぐため
+#             `taskForcesForPicker`/`keyResultsForPicker`を新設し、`form.tf_ids`に含まれるが
+#             部署絞り込み後の一覧に無いTF・その所属KRを、active()済みの生配列から補って含める
+#             （選択肢を狭めるのは新規に選べる分だけ、というTaskEditModal等と同じ考え方をこの
+#             コンポーネントの構造に合わせて実装）。
+#      横断確認：`addTaskTaskForce`/`addProjectTaskForce`/`tf_ids:`/`tf_id: value`でgrep検索し、
+#             TF紐づきUIがAdminView.tsx・TaskSidePanel.tsx・TaskEditModal.tsxの3ファイルに限定
+#             されることを確認済み（`ProjectCreateModal.tsx`はTF/KRピッカーを持たない・
+#             `payloadBuilder.ts`のTF参照はAI投入用ペイロード生成でピッカーUIではないため対象外）。
+#      DBマイグレ不要（フロントの表示絞り込みのみ）。
+#      検証：tsc 0/vitest 527件全通過（新規純粋関数を追加していないため既存テストの追加なし。
+#             taskForcesInGroup/keyResultsInGroup自体のテストはdeptScope.test.tsで既存カバー済み）/
+#             eslint 35件で完全一致（baseline比較。24 error + 11 warning・新規0）/build成功
+#
+# 最終更新：2026-07-24（v3.02）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -2611,7 +2666,7 @@ CREATE TABLE groups (
 ### 対象テーブルと分離範囲
 
 - `members` / `projects` / `tasks` に `group_id` 列を追加。RLSで自部署のみ参照・操作可能。
-- **【RLSは対象外・表示の絞り込みのみ】OKR系テーブル（objectives / key_results / task_forces / todos 等）はRLS分離されていない**（`authenticated full access`のまま・全ユーザーが全部署分を受け取る）。**ただし2026-07-23（v2.94）で`objectives.group_id`を追加し、UI側の表示絞り込みは部署別に対応済み。** KR/TFはgroup_id列を持たず、KR→objective_id、TF→kr_id→KRを辿ってObjectiveの部署を継承する（`src/lib/okr/deptScope.ts`）。RLS自体の部署分離はOKR全面刷新時にまとめて対応する方針（Section 9のG参照）。
+- **【RLSは対象外・表示の絞り込みのみ】OKR系テーブル（objectives / key_results / task_forces / todos 等）はRLS分離されていない**（`authenticated full access`のまま・全ユーザーが全部署分を受け取る）。**ただし2026-07-23（v2.94）で`objectives.group_id`を追加し、UI側の表示絞り込みは部署別に対応済み。** KR/TFはgroup_id列を持たず、KR→objective_id、TF→kr_id→KRを辿ってObjectiveの部署を継承する（`src/lib/okr/deptScope.ts`）。**2026-07-24（v3.02）でタスク/PJのTF・KR「紐づけ」ピッカー（TaskEditModal・TaskSidePanel・QuickAddTaskModal・PJ編集フォーム）も同じ`deptScope.ts`のヘルパーで部署絞り込みに対応し、UI側の絞り込みは網羅済み。** RLS自体の部署分離はOKR全面刷新時にまとめて対応する方針（Section 9のG参照）。
 - **`quarterly_objectives.group_id`（v3.00・2026-07-23）**：objectivesと同型でgroup_id列を追加（`src/lib/okr/deptScope.ts`の`quarterlyObjectivesInGroup`等）。**ただしQuarterlyObjective / QuarterlyKrTaskForceは2026-05-26のTF四半期判定モデル移行（→`task_forces.quarter`列）以降どの画面からも表示されない死蔵データ**（`docs/REFACTORING.md` M24）。OKR PDF取込の「四半期OKR」選択時にQuarterlyObjectiveを1件作成するが、これは取込元の記録目的の骨組みのみで、四半期の実体は引き続きTF.quarterで表現される（KR/TFをQuarterlyObjective配下に紐づける処理はしていない）。
 
 ### ロール（2階層・直交）
@@ -3463,7 +3518,7 @@ interface TaskChangeLog {
 | D | Teamsへの埋め込みに伴うウィンドウサイズ対応 | 中 | — |
 | E | マイルストーン実装（設計完了・帰宅後に実施） | 中 | 下記Section 3-5参照。4ファイル変更が必要 |
 | F | PDF出力の実装方法（サーバーサイド vs Print API） | 低 | 将来検討 |
-| G | OKR系テーブル（objectives/key_results/task_forces/todos等）のRLSが部署分離未対応 | 中 | Section 1.6参照。v2.94でobjectives.group_idを追加しUI側の表示絞り込みは対応済み（残るのはRLS＝DB側のアクセス制御）。OKR全面刷新時にまとめて対応する方針 |
+| G | OKR系テーブル（objectives/key_results/task_forces/todos等）のRLSが部署分離未対応 | 中 | Section 1.6参照。v2.94でobjectives.group_idを追加しUI側の表示絞り込みは対応済み。**v3.02でタスク/PJ文脈のTF・KRピッカー（TaskEditModal/TaskSidePanel/QuickAddTaskModal/PJ編集フォーム）も部署絞り込みに対応し、UI側の絞り込みは網羅完了**（残るのはRLS＝DB側のアクセス制御）。OKR全面刷新時にまとめて対応する方針 |
 
 ---
 
