@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.10
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.11
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3081,7 +3081,32 @@
 #      DBマイグレ不要（既存の name/project_id/parent_task_id/display_order/start_date/
 #             due_date 列のみ使用）。
 #
-# 最終更新：2026-07-24（v3.10）
+# v3.11 refactor: ガント系クラスタ（v3.01〜v3.10の変更分）の品質リファクタ（挙動不変・2026-07-24）
+#      背景：本日v3.01〜v3.10で段階的に大量変更したガント系クラスタ（GanttView.tsx/
+#             GanttParts.tsx/ganttUtils.ts）を対象に、山本さんの指名で品質のみのリファクタを
+#             実施。新機能・挙動変更・バグ修正は一切行っていない（既存テスト全通過が担保）
+#      変更：PJ別/ToDo別/人別の3ビューでタスクバー1行の描画のたびに繰り返されていた4種の
+#             重複計算を、ganttUtils.tsの純粋関数に集約した：
+#             ①isDone判定（インライン重複式）→既存の`isCompletedForProgress`（taskMeta.ts）
+#             経由に統一（GanttView.tsx 3箇所・GanttParts.tsx 3箇所・ganttUtils.tsの
+#             computeBulkMoveShifts 1箇所）②hasRange/dateLabel計算の完全同一実装→
+#             `formatBarDateLabel`として新規抽出③ツールチップ末尾（滞留/クリティカルパス
+#             バッジ）の同一実装→`formatBarTooltipSuffix`として新規抽出④バー基本色
+#             （完了=成功色／期限超過=危険色／それ以外=ビュー固有fallback色）の同一優先順位
+#             判定→`resolveGanttBarColor`として新規抽出
+#      確認：v3.01→v3.04で撤去済みの「ラベル列日付インライン編集」の残置props/import等は
+#             無く健全（grep確認済み）。dragReorder.ts/useTaskDragReorder.ts/holidays.ts/
+#             InlineEditText.tsxは重複・死蔵とも見つからず変更なし
+#      スコープ外（意図的に見送り）：3種のラベル行コンポーネント（GanttPjLabelRow/
+#             GanttTodoLabelRow/GanttPersonLabelRow）自体の構造的統合は、ビュー固有の機能差
+#             （PJ別のみドラッグハンドル・行間挿入UI等）が大きく無理な統合は大規模構造変更に
+#             なりかねないため見送った（v3.08の共有行モデルでデータ構造レベルの重複は既に解消済み）
+#      テスト：ganttUtils.test.tsに10件追加（formatBarDateLabel4件・formatBarTooltipSuffix4件・
+#             resolveGanttBarColor3件、一部重複整理の上で純増10件）。既存583件も全通過
+#             （合計594件）。tsc 0・eslint 35件で完全一致（baseline比較・新規0）・build成功
+#      詳細：docs/REFACTORING.md「ガント系クラスタ品質リファクタ（2026-07-24）」節参照
+#
+# 最終更新：2026-07-24（v3.11）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4079,7 +4104,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-24（v3.06）
+- 最終更新：2026-07-24（v3.11）
 
 ---
 
