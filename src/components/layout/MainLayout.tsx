@@ -46,6 +46,7 @@ const ListView           = lazyWithRetry(() => import("../list/ListView").then(m
 const WorkloadView       = lazyWithRetry(() => import("../workload/WorkloadView").then(m => ({ default: m.WorkloadView })), "WorkloadView");
 const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
 const CalendarLabView    = lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView");
+const MyPageView         = lazyWithRetry(() => import("../lab/MyPageView").then(m => ({ default: m.MyPageView })), "MyPageView");
 const ProjectStructureView = lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView");
 const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
 const KrJointSessionFlow = lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow");
@@ -241,6 +242,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [calendarEditTaskId, setCalendarEditTaskId] = useState<string | null>(null);
   // ③ カレンダーの日付セルから開くQuickAddTaskModal（zIndex 300 で calendarEditTaskId と同じ流儀）
   const [calendarQuickAddDate, setCalendarQuickAddDate] = useState<string | null>(null);
+  // マイページ（ラボ機能）：CalendarLabView と全く同じ流儀（zIndex 250のオーバーレイ＋
+  // タスク編集はzIndex 300のラッパーで重ねる）
+  const [isMyPageOpen, setIsMyPageOpen] = useState(false);
+  const [myPageEditTaskId, setMyPageEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
@@ -774,6 +779,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 { icon: "🏢", label: "体制図", desc: "PJの役割・担当体制を図示", onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🕸️", label: "関係グラフ", desc: "PJ・タスクの関係を可視化", onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: "カレンダー", desc: "タスクの期日を月カレンダーで表示", onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🧩", label: "マイページ", desc: "自分専用のウィジェット画面（ラボ）", onClick: () => { setIsMyPageOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: "KRセッション記録", desc: "文字起こしからチェックイン・ウィン記録", onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "📊", label: "KRレポート生成", desc: "議事メモからKRレポートをAI生成", onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
                 { icon: "🔍", label: "KRなぜなぜ分析", desc: "AIとの対話で根本原因を5Whys形式で掘り下げ", onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
@@ -1212,6 +1218,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenGraph={() => setIsGraphOpen(true)}
         onOpenCalendar={() => setIsCalendarOpen(true)}
         onOpenStructure={() => setIsStructureOpen(true)}
+        onOpenMyPage={() => setIsMyPageOpen(true)}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
         onCreateProject={() => setIsPjCreateOpen(true)}
@@ -1249,6 +1256,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <ProjectStructureView
             onClose={() => setIsStructureOpen(false)}
             currentUser={currentUser}
+          />
+        </Suspense>
+      )}
+      {isMyPageOpen && (
+        <Suspense fallback={<ViewLoading />}>
+          <MyPageView
+            onClose={() => setIsMyPageOpen(false)}
+            currentUser={currentUser}
+            onOpenTask={taskId => setMyPageEditTaskId(taskId)}
+            onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
           />
         </Suspense>
       )}
@@ -1301,6 +1318,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             projects={projects}
             defaultDueDate={calendarQuickAddDate}
             onClose={() => setCalendarQuickAddDate(null)}
+          />
+        </div>
+      )}
+      {/* マイページからのタスク編集：zIndex:300 でマイページ(250)の上に出す（カレンダーと同じ流儀） */}
+      {myPageEditTaskId && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 300 }}>
+          <TaskEditModal
+            taskId={myPageEditTaskId}
+            currentUser={currentUser}
+            onClose={() => setMyPageEditTaskId(null)}
           />
         </div>
       )}
@@ -1376,6 +1403,7 @@ interface SidebarProps {
   onOpenGraph: () => void;
   onOpenCalendar: () => void;
   onOpenStructure: () => void;
+  onOpenMyPage: () => void;
   onOpenAdmin: () => void;
   onOpenGuide: () => void;
   onCreateProject: () => void;
@@ -1397,7 +1425,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure,
+  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
@@ -1688,6 +1716,7 @@ function Sidebar({
             <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label="体制図" tooltip="PJの役割・担当体制を図示" onClick={onOpenStructure} collapsed={c} />
             <NavItem active={false} icon={<GraphIcon />} label="関係グラフ" tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化" onClick={onOpenGraph} collapsed={c} />
             <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="カレンダー" tooltip="タスクの期日を月カレンダーで表示（ラボ）" onClick={onOpenCalendar} collapsed={c} />
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label="マイページ" tooltip="自分専用のウィジェット画面（ラボ）" onClick={onOpenMyPage} collapsed={c} />
           </div>
         )}
       </>) : (<>

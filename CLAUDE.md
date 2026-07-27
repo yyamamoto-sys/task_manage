@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.14
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.15
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3222,7 +3222,140 @@
 #             tsc 0・eslint 35件（24 error + 11 warning）で完全一致（baseline比較・新規0）・
 #             build成功
 #
-# 最終更新：2026-07-27（v3.14）
+# v3.15 feat: ラボ機能「マイページ（ウィジェット）」Phase 1（MVP）を追加（2026-07-27）
+#      背景：`docs/dev/mypage-widgets-design.md`（統括Claude作成の設計書）に基づく実装。
+#             山本さんの最終目標＝「将来、仕様に従って自分でウィジェットを作り、取り込める
+#             ようにする」ための土台として、Phase 1から「ウィジェットがどうやってデータを
+#             受け取るか」の契約だけは正しく切る（設計書§0参照）
+#      🔴 最重要の契約（ウィジェットは useAppStore を直接触らない）：ウィジェットの
+#             コンポーネント（`src/components/lab/widgets/*.tsx`）は `useAppStore` を一切
+#             importしない。部署スコープ済み・論理削除除外済みのデータ（tasks/projects/
+#             members）と、書き込みの唯一の経路（`actions.openTask`/`actions.navigateTo`・
+#             `setConfig`）は、ホスト（`MyPageView.tsx`）が`WidgetContext`という単一の入口に
+#             まとめて渡す。理由は3つ：①部署スコープの担保をホスト1箇所に集約できる
+#             （`selectScopedTasks`等を購読するのは`MyPageView`だけ。ウィジェットごとに
+#             書かせると将来誰かが素の`s.tasks`を読んで他部署のデータを表示する事故を防ぐ。
+#             Section 1.6参照）②将来の権限制御（外部ウィジェット受け入れ時に「何を渡すか」
+#             をホストが決められる）③書き込みの制御（`saveTask`を直接呼ばせず、B1依存ゲート・
+#             B3自動リスケ等の choke point を迂回させない）
+#      追加（型・純粋関数。DOM/store/コンポーネント非依存）：`src/lib/widgets/types.ts`
+#             （`WidgetSize`/`WidgetContext`/`WidgetDefinition`/`WidgetConfigField`
+#             〈Phase2用に型だけ〉/`WidgetInstance`/`MyPageLayout`）・`src/lib/widgets/layout.ts`
+#             （`createDefaultLayout`/`addWidget`/`removeWidget`/`moveWidget`/`setWidgetSize`/
+#             `setWidgetConfig`/`normalizeLayout`。全てイミュータブル・引数のlayoutを破壊しない）。
+#             このファイルはレジストリ（コンポーネント層）をimportしない層構造を守るため、
+#             既定5ウィジェットのid・サイズを`DEFAULT_WIDGET_ENTRIES`として自前で保持する
+#             （registry.ts側の同じ5件のdefaultSizeと値を一致させる運用。ずれても致命傷には
+#             ならないが初回表示サイズだけ食い違って見える）
+#      **`normalizeLayout`の前方互換方針（重要）**：パース失敗・version不一致・widgetsが
+#             配列でない→既定レイアウトへフォールバック。壊れたエントリ（instance_id/
+#             widget_idが非空文字列でない等）はその要素だけ捨てる。**未知のwidget_idは
+#             ここでは捨てず残す**（ホスト側で「このウィジェットは現在利用できません」の
+#             プレースホルダを出し、編集モードで削除可能にする。ウィジェットを一時的に
+#             外した／リネームした時にユーザーの並び・サイズ設定ごとレイアウトを破壊しない
+#             ための設計。設計書§2-3）
+#      追加（レジストリ・コンポーネント層）：`src/components/lab/widgets/registry.ts`
+#             （`WIDGET_REGISTRY`/`getWidgetDefinition`）。型はlib、レジストリはコンポーネント
+#             側という層構造（libからコンポーネントをimportしない）。ウィジェット7個
+#             （📌自分の今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／
+#             📈完了ペース／📝メモ／⭐ピン留めプロジェクト）は**新しい集計ロジックを一切
+#             作らず**、既存の純粋関数・既存チャートをそのまま再利用（`getAssigneeIds`/
+#             `isAssignedTo`/`suppressOverdue`/`isTaskStagnant`〈ganttUtils〉/
+#             `computeMemberWorkloadRows`/`DueForecastChart`・`VelocityChart`〈内部で
+#             `computeDueForecast`/`computeWeeklyVelocity`を呼ぶ〉/`isCompletedForProgress`/
+#             `isParentTask`。真実の源の二重化を避ける）。タスク行クリックは
+#             `actions.openTask(taskId)`を呼ぶだけ。メモウィジェット（📝）は「設定を持つ
+#             ウィジェット」の最初の実例として`config`往復（`setConfig`で書き込み→次回
+#             `config`から読み戻す）を実証（600msローカルデバウンス）。ピン留めPJ（⭐）は
+#             Phase1簡易実装として⚙アイコンは持たず、未選択時にウィジェット内へ直接PJの
+#             チェックリストを表示する（設計書§5の「簡易実装で可」に従う）
+#      追加（エラー隔離）：`src/components/lab/widgets/WidgetErrorBoundary.tsx`（新設・
+#             ウィジェット専用の小さなErrorBoundary）。既存`src/components/common/
+#             ErrorBoundary.tsx`（アプリ全体用・全画面フォールバック固定）はfallbackを
+#             差し替えられない設計のため、**既存ファイルには一切手を加えず**専用の境界を
+#             新設する方を選んだ（グローバルの挙動を変えない）。`MyPageView`が各ウィジェット
+#             インスタンスをこれで個別に包むため、1個のウィジェットが落ちてもマイページ全体は
+#             生き続ける
+#      追加（ホスト画面）：`src/components/lab/MyPageView.tsx`。CalendarLabViewと全く同じ
+#             流儀の全画面オーバーレイ（`position:fixed inset:0`・zIndex 250・
+#             `animate-overlay`＋本体`animate-fadeIn`・✕で閉じる）。`selectScopedTasks`/
+#             `selectScopedProjects`/`selectScopedMembers`を**ホストで1回だけ**購読し
+#             （`active()`で論理削除除外も1箇所で担う）、`WidgetContext.data`として読み取り
+#             専用で渡す。レイアウトはCSS Grid（PC 3カラム／タブレット 2／モバイル 1。
+#             `window.innerWidth`のresizeリスナーで判定。s=1・m=2・l=3カラム分、
+#             `Math.min(size, totalCols)`でモバイルは常に1カラムに収まる）。編集モード
+#             （既定OFF）で✕削除・S/M/Lサイズ切替・⠿ドラッグハンドルを表示、閲覧時は一切
+#             出さない（誤操作防止）。並べ替えはHTML5 drag events、ドロップ位置ハイライトは
+#             box-shadowのinsetのみ（border幅の変更によるdragover/dragleave高頻度往復＝
+#             CLAUDE.md v2.25の教訓を踏襲）。ゾーン判定（before/after）は既存の
+#             `computeDropZoneFromRatio`（`src/lib/dragReorder.ts`。ListView/GanttViewと
+#             共有する純粋関数。`allowNest=false`で呼ぶ）を流用。「＋ウィジェットを追加」は
+#             `AdminFormModal`を使わず（管理画面専用のため）、同じ演出（`animate-overlay`＋
+#             `panel-slide-up`・zIndex 260）の簡易モーダルを自前で用意しレジストリ一覧を表示
+#      追加（タスク編集の重ね方）：`MainLayout.tsx`に`myPageEditTaskId` state を新設し、
+#             `calendarEditTaskId`と全く同じパターン（zIndex 300のラッパーでTaskEditModalを
+#             マイページ〈250〉の上に重ねる）で配線。`actions.navigateTo`は`onNavigate`
+#             （ビュー切替）を呼んだ後`onClose()`でマイページ自体を閉じる（Phase1では
+#             navigateToを使うウィジェットは無いが、契約として提供済み）
+#      追加（永続化）：`src/lib/supabase/store.ts`に`fetchMyWidgetLayout`/
+#             `upsertMyWidgetLayout`。**`saveWithLock`は使わない**（id列PK前提の楽観ロック
+#             ヘルパーのため。このテーブルのPKは`member_id`で所有者が1人しかいない行のため
+#             楽観ロックも不要。`supabase.from("member_widget_layouts").upsert({...},
+#             { onConflict: "member_id" })`で素直に書く）。`src/hooks/useMyPageLayout.ts`
+#             （新設）が`currentUser`のマウント時に1回フェッチし、以後の変更は800msデバウンスで
+#             保存する。**appStoreには足さない**（アプリ全体で常時必要なデータではなく、
+#             マイページを開いた時だけ読む個人設定のため）
+#      **レイアウトをDB＋`current_member_id()` RLSで持つ理由（localStorage・members列を
+#             却下した経緯）**：設計書§3で3案を比較。A＝localStorageは端末・ブラウザごとに
+#             別物になる（PCブラウザとTeams埋め込みの両方で使うアプリのため「設定したのに
+#             消えた」が日常的に起きる）。C＝`members`にjsonb列を追加する案は、`members`の
+#             RLSは同部署の他メンバーも更新できる設計のため**他人にレイアウトを上書き
+#             されうる**ため却下。B（採用）＝新テーブル`member_widget_layouts`
+#             （`member_id`主キー＋`layout jsonb`）＋RLSで自分の行だけ読み書き。
+#             `current_member_group_id()`等（Section 1.6）と完全に同じ流儀で
+#             `current_member_id()`（`auth.email()`から自分のmember idを返すSECURITY
+#             DEFINER関数）を新設し、RLSを`member_id = current_member_id()`のみにする
+#             （NULL猶予条項は入れない。20260702bの教訓＝`current_member_id()`がNULL
+#             〈未登録ユーザー等〉なら何も見えないのが正しい挙動）。group_id（部署スコープ）は
+#             持たせない（個人所有データ・所有者本人しかアクセスしないため）
+#      **ゲストは閲覧のみ（重要）**：`isGuestMember`（`lib/guestMode.ts`）のゲストユーザーは
+#             `members`に行が無いためFK違反・RLS拒否になる。`useMyPageLayout`はゲストの間
+#             DB読み書きを一切行わず`createDefaultLayout()`をそのまま返し続ける
+#             （`isGuest`分岐で`fetchMyWidgetLayout`/`upsertMyWidgetLayout`ともスキップ）。
+#             `MyPageView`もゲストには編集トグル自体を出さない（「ゲストは閲覧のみです」の
+#             注記のみ表示）
+#      取得・保存失敗時：`formatErrorForUser`＋`showToast`で通知し、画面は既定レイアウトの
+#             まま動き続ける（マイグレ未適用でもアプリの起動・利用を妨げない。ローディング
+#             ヒント機能・v3.13と同じ方針）
+#      配線（MainLayout.tsx）：PCサイドバー「🧪 ラボ」サブメニューに「🧩 マイページ」を
+#             既存の体制図・関係グラフ・カレンダーと同じ`NavItem`で追加。モバイルのラボ
+#             ボトムシート配列にも同項目を追加（icon "🧩"・label "マイページ"）。
+#             `MyPageView`自体は**CalendarLabViewと同じくPC returnブロック側に1箇所だけ**
+#             配置（既存コードのコメント「ここに置くとPCでは2つ同時にDOMに存在してしまい
+#             印刷2ページ・マイルストーン重複が起きる」という確立済みの流儀に合わせた設計
+#             判断。モバイルのボトムシートからは項目を選べる〈state自体はセットされる〉が、
+#             実際の描画はCalendarLabViewと全く同じ制約を踏襲する）。`ViewMode`型には
+#             追加していない（ラボ機能はオーバーレイ方式のため。既存のラボ機能群と統一）
+#      ⚠️ マイグレ要（山本さんが手動でSupabase SQL Editorに適用・dev→prodの順）：
+#             `supabase/migrations/20260727b_add_member_widget_layouts.sql`
+#             （`current_member_id()`ヘルパー＋`member_widget_layouts`テーブル＋RLS）。
+#             `supabase/schema.sql`にも同内容を反映済み（drift防止）。未適用の環境でも
+#             起動・利用は妨げない（フェッチ失敗を握りつぶして既定レイアウトで動作継続）
+#      テスト：`src/lib/widgets/__tests__/layout.test.ts`（新規31件。`createDefaultLayout`
+#             4件・`addWidget`2件・`removeWidget`3件・`moveWidget`7件・`setWidgetSize`2件・
+#             `setWidgetConfig`2件・`normalizeLayout`11件〈正常系・JSON壊れ4パターン・
+#             version不一致・配列でない・壊れたエントリを個別に捨てる4パターン・不正size
+#             フォールバック・config欠落フォールバック・**未知のwidget_idは残す**・未知の
+#             設定キーは無視〉）。既存611件も全通過（合計642件）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 642件全通過（新規31件）／
+#             `npx eslint src`は変更前と同じ35件（24 error + 11 warning、baseline比較で
+#             完全一致・新規0件。MyPageView.tsxのドラッグ受け皿divに
+#             `jsx-a11y/no-static-element-interactions`のeslint-disableを付与＝ListView/
+#             GanttParts/KanbanViewの既存ドラッグ&ドロップ実装と同じ確立済みパターンを踏襲）／
+#             `npm run build`成功（`MyPageView`が21.48KB・gzip 6.28KBの独立チャンクに分離
+#             されていることを確認済み）
+#
+# 最終更新：2026-07-27（v3.15）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4148,6 +4281,7 @@ interface TaskChangeLog {
 | OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
 | KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
+| マイページ（ラボ機能） | ✅ Phase 1（MVP）実装済み（v3.15） | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクトの7種）を追加・削除・並べ替え・サイズ変更できる。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。詳細は`docs/dev/mypage-widgets-design.md` |
 
 ### UI/UX仕様（2026年4月確定）
 

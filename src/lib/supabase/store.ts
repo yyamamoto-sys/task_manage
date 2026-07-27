@@ -17,6 +17,7 @@ import type {
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
 } from "../localData/types";
+import type { MyPageLayout } from "../widgets/types";
 
 // ===== 競合エラー =====
 
@@ -168,6 +169,30 @@ export async function softDeleteLoadingTip(id: string, deletedBy: string) {
   const { error } = await supabase.from("loading_tips")
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
+  if (error) throw error;
+}
+
+// ===== MyPageLayout（マイページ・ウィジェットレイアウト）=====
+//
+// 個人所有データ（member_id が主キー・所有者本人しかアクセスしない。RLSは
+// member_id = current_member_id()。migrations/20260727b_add_member_widget_layouts.sql）。
+// PKが id ではなく member_id のため saveWithLock（id列PK前提・楽観ロック）は使わない
+// （所有者が1人しかいない行のため楽観ロックも不要）。素直に upsert する。
+
+export async function fetchMyWidgetLayout(memberId: string): Promise<MyPageLayout | null> {
+  const { data, error } = await supabase
+    .from("member_widget_layouts")
+    .select("layout")
+    .eq("member_id", memberId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data?.layout as MyPageLayout | undefined) ?? null;
+}
+
+export async function upsertMyWidgetLayout(memberId: string, layout: MyPageLayout, updatedBy: string): Promise<void> {
+  const { error } = await supabase
+    .from("member_widget_layouts")
+    .upsert({ member_id: memberId, layout, updated_by: updatedBy }, { onConflict: "member_id" });
   if (error) throw error;
 }
 

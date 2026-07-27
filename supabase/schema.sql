@@ -1,6 +1,6 @@
 -- ============================================================
 -- グループ計画管理アプリ スキーマ定義（統合版）
--- 最終更新: 2026-07-23
+-- 最終更新: 2026-07-27
 -- Supabase SQL エディタで上から順に実行してください
 -- ============================================================
 --
@@ -541,6 +541,18 @@ CREATE TABLE IF NOT EXISTS loading_tips (
   deleted_by  text
 );
 
+-- ===== マイページ（ウィジェット）レイアウト（migrations/20260727b_add_member_widget_layouts.sql 参照）=====
+-- 個人所有データ（member_id が主キー）。所有者本人しかアクセスしないため group_id
+-- （部署スコープ）は持たない。RLSは current_member_id() ヘルパー（下部で定義）で
+-- 本人のみに限定する。
+CREATE TABLE IF NOT EXISTS member_widget_layouts (
+  member_id   text PRIMARY KEY REFERENCES members(id),
+  layout      jsonb NOT NULL DEFAULT '{"version":1,"widgets":[]}'::jsonb,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text NOT NULL DEFAULT ''
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -556,7 +568,7 @@ BEGIN
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
     ('okr_analyses'), ('kr_reports'), ('task_dependencies'),
-    ('loading_tips')
+    ('loading_tips'), ('member_widget_layouts')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -601,6 +613,9 @@ ALTER TABLE kr_reports                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE loading_tips               ENABLE ROW LEVEL SECURITY;
 -- ※ loading_tips の個別ポリシーは current_member_is_super_admin() を参照するため、
 --   ヘルパー関数の定義より後（下部の「ローディング画面のヒント」ブロック）で作成する。
+ALTER TABLE member_widget_layouts      ENABLE ROW LEVEL SECURITY;
+-- ※ member_widget_layouts の個別ポリシーは current_member_id() を参照するため、
+--   ヘルパー関数の定義より後（下部の「マイページ（ウィジェット）レイアウト」ブロック）で作成する。
 
 -- members / projects / tasks / groups はグループ分離・権限昇格防止のため
 -- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
@@ -727,6 +742,33 @@ CREATE POLICY "loading_tips_write" ON loading_tips
   FOR ALL TO authenticated
   USING (current_member_is_super_admin())
   WITH CHECK (current_member_is_super_admin());
+
+-- ============================================================
+-- マイページ（ウィジェット）レイアウト：本人のみ読み書き可
+-- （migrations/20260727b_add_member_widget_layouts.sql 参照）
+-- ============================================================
+
+-- current_member_group_id() 等（本ファイル上部）と完全に同じ流儀のヘルパー関数
+CREATE OR REPLACE FUNCTION current_member_id()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_member_id$
+  SELECT id FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$fn_member_id$;
+
+-- 個人所有データのため group_id によるスコープはしない。NULL猶予条項は入れない
+-- （20260702bの教訓＝current_member_id()がNULLなら何も見えないのが正しい挙動）。
+DROP POLICY IF EXISTS "authenticated full access" ON member_widget_layouts;
+DROP POLICY IF EXISTS "member_widget_layouts_own" ON member_widget_layouts;
+CREATE POLICY "member_widget_layouts_own" ON member_widget_layouts
+  FOR ALL TO authenticated
+  USING (member_id = current_member_id())
+  WITH CHECK (member_id = current_member_id());
 
 -- ============================================================
 -- OKRコア階層（objectives/key_results/task_forces/todos）の部署スコープ
