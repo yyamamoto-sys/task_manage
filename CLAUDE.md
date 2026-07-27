@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.15
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.16
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3355,7 +3355,100 @@
 #             `npm run build`成功（`MyPageView`が21.48KB・gzip 6.28KBの独立チャンクに分離
 #             されていることを確認済み）
 #
-# 最終更新：2026-07-27（v3.15）
+# v3.16 feat: ラボ機能「マイページ（ウィジェット）」Phase 2（configSchema駆動フォーム＋
+#      新規ウィジェット3個）を追加（2026-07-27）
+#      背景：`docs/dev/mypage-widgets-design.md`§7フェーズ計画のPhase 2。Phase 1（v3.15）で
+#             「設定を持つウィジェット」の最初の実例（メモ）は入れたが、設定UIはウィジェットごとの
+#             ベタ書きJSXのままだった。Phase 2はこれを「configSchemaから自動生成」に一般化し、
+#             書き込みアクション（タスク作成）の最初の実例を追加する
+#      ①configSchema駆動の設定フォーム：`src/lib/widgets/types.ts`の`WidgetConfigField`に
+#             `type: "number"|"memberMultiSelect"`と`description`/`placeholder`/`defaultValue`/
+#             `min`/`max`を追加。`src/lib/widgets/config.ts`（新規・純粋関数）に
+#             `resolveConfig(schema, raw)`（型検証＋既定値埋め。text/textarea=""・number=0
+#             〈min/maxクランプ〉・boolean=false・select=options[0]??""・
+#             projectMultiSelect/memberMultiSelect=[]）と`applyConfigChange(current, key, value)`
+#             （**未知のキーを保持したまま**1項目だけ更新。schemaから一時的に外した項目の値を
+#             消さないため。前方互換方針＝設計書§2-3と同じ思想）を新設。
+#             `src/components/lab/widgets/WidgetConfigModal.tsx`（新規）がconfigSchemaから
+#             フォームを自動生成する。**個別ウィジェット用の分岐は持たない**（typeごとの
+#             switchのみ）。text/textareaは600msのローカルデバウンス経由でsetConfig、
+#             number/boolean/select/multiSelectは即時。projectMultiSelect/memberMultiSelectは
+#             常にWidgetContext.data.projects/membersから選択肢を組み立てる（field.optionsは
+#             使わない）。selectはfield.optionsが明示されていればそれを使い、未指定
+#             （動的な選択肢が必要なケース＝QuickAddTaskWidget.projectIdのみ）なら
+#             data.projectsから組み立てる、という唯一の一般化ルールで対応（特定ウィジェットの
+#             keyで分岐しているわけではない）。createPortalは使わない（MyPageView自体が
+#             portal無しの通常フローで描画されるため、v2.33のpointer-events罠は非該当）
+#      ①-4：MyPageView.tsxの編集モードで、`configSchema`を持つウィジェットのヘッダにだけ
+#             ⚙ボタンを表示（S/M/Lサイズボタンと✕削除ボタンの間）。押すとWidgetConfigModalが
+#             開く。ウィジェット本体・設定モーダルの両方が同じ`buildContext(w)`（新設の
+#             ローカルヘルパー）でWidgetContextを構築し、構築ロジックを二重化していない
+#      ①-5：既存2ウィジェットをconfigSchema駆動に移行。**PinnedProjectsWidget**は独自実装の
+#             PJ選択チェックリストUIを削除し、`configSchema: [{key:"projectIds",
+#             type:"projectMultiSelect", ...}]`を宣言する形に変更（configSchema駆動の最初の
+#             実例。未選択時は「編集モードの⚙から選んでください」の空状態案内）。
+#             **MemoWidget**は本文（テキストエリア）は今まで通りウィジェット内で直接編集した
+#             まま、`configSchema: [{key:"title", type:"text", label:"見出し", ...}]`を追加し
+#             複数枚置いたときに見分けられるようにした（見出しが空なら従来通り無表示）。
+#             両ウィジェットとも`○○_CONFIG_SCHEMA`をウィジェット自身のファイルからexportし、
+#             registry.tsがそれをimportする設計にした（registry.tsが個別ウィジェットの
+#             configをハードコードするとregistry.ts→widget→registry.tsの循環importになるため）
+#      ②既定レイアウトの重複解消：`createDefaultLayout`のシグネチャを
+#             `createDefaultLayout(resolveDefaultSize: (widgetId: string) => WidgetSize |
+#             undefined, generateId?: () => string)`に変更。`DEFAULT_WIDGET_ENTRIES`は
+#             widget_idの並びだけを持つ配列に変更し、サイズはレジストリから解決するように
+#             した（layout.tsは引き続きレジストリをimportしない＝呼び出し側の
+#             `useMyPageLayout.ts`が`(id) => getWidgetDefinition(id)?.defaultSize`を注入する。
+#             hooks層はコンポーネント層に依存してよいためregistry.tsをimport可）。
+#             `normalizeLayout`も同じ`resolveDefaultSize`を受け取りフォールバック時に
+#             `createDefaultLayout`へ渡すようシグネチャ変更。解決できない場合は"m"に
+#             フォールバック
+#      ③新規ウィジェット3個（いずれも既存の純粋関数を再利用し新しい集計ロジックは作らない）：
+#             **🕒RecentlyUpdatedWidget**（最近更新されたタスク）＝`updated_at`降順。
+#             configSchemaに`limit`（number・既定10・min1・max30）・`mineOnly`
+#             （boolean・既定true）。**⏳BlockedTasksWidget**（先行待ちのタスク）＝
+#             自分が担当し未完了の先行タスクがあるタスクを一覧表示。判定は既存の
+#             `getIncompletePredecessors`（`src/lib/dependencies/gate.ts`）をそのまま使用
+#             （自前で依存を辿らない）。ブロック元タスク名は`formatBlockerNames`を流用。
+#             このためWidgetContext.dataに`taskDependencies: readonly TaskDependency[]`を
+#             追加（MyPageViewが`selectScopedTaskDependencies`を購読し`is_deleted`除外して
+#             渡す）、`WidgetDefinition.dataNeeds`の型に`"dependencies"`を追加。
+#             **➕QuickAddTaskWidget**（クイックタスク追加。**書き込みアクションの最初の
+#             実例**）＝タスク名を入力しEnterで作成。configSchemaに`projectId`
+#             （select・既定は未選択＝PJなし）・`defaultDueInDays`（number・既定0＝期日なし。
+#             1以上なら今日+N日を期日に）
+#      ③最重要ルール（choke point迂回防止）：`WidgetContext.actions`に
+#             `createTask: (draft: {name, projectId?, dueDate?}) => Promise<void>`を追加。
+#             QuickAddTaskWidgetはこれを呼ぶだけで**saveTaskを直接呼ばない**。
+#             実装は**ホスト側でのみ**：`MyPageView`が受け取った`onCreateTask` propをそのまま
+#             `actions.createTask`として渡し、実際の`useAppStore.getState().saveTask(...)`呼び
+#             出しは`MainLayout.tsx`の`handleMyPageCreateTask`（新設）が担う。これにより
+#             B1依存ゲート・B4ベースライン捕捉・v2.75親自動完了などのchoke pointを必ず通る
+#             （ウィジェット側がstore・supabaseを直接触る例外は作らない）。タスク生成の形は
+#             既存の`handleQuickAddTask`（GanttView.tsx・v3.04）を雛形にした（uuidv4／
+#             status "todo"／assignee未設定／`updated_by`はcurrentUser.id／group_idは
+#             appStoreが自動注入）。成功時は`showToast`で通知し入力欄をクリア・フォーカス維持、
+#             失敗時は`formatErrorForUser`でトースト。**ゲスト（`isGuestMember`）は入力欄
+#             自体を無効化**し「ゲストは閲覧のみです」を表示（Phase 1と同じ方針）
+#      設計書への追記：`docs/dev/mypage-widgets-design.md`§2に「2-4. `actions`の拡張ポリシー」
+#             節を追加（(a)ウィジェットが要求できる副作用はactionsに列挙されたものだけ
+#             (b)新しい副作用を足すときは必ずホスト側でappStoreのchoke pointを経由して実装する
+#             (c)ウィジェット側にstore・supabaseを触らせる例外は作らない）。§7フェーズ計画の
+#             Phase 2行に実装済み注記を追加
+#      DBマイグレ不要（ウィジェット設定は既存のlayout jsonbに入る。新規列・新規テーブルなし）
+#      テスト：`src/lib/widgets/__tests__/config.test.ts`（新規30件・①1-2の網羅：各type既定値・
+#             型不一致の矯正・min-maxクランプ・options無い値のフォールバック・動的select・
+#             未知キー保持等）。`src/lib/widgets/__tests__/layout.test.ts`に2件追加
+#             （`resolveDefaultSize`が解決したサイズがそのまま使われる・undefinedを返したら
+#             "m"にフォールバック。既存テストは新シグネチャに追従）。新規ウィジェット3個は
+#             表示中心のため専用テストなし（流用元の`getIncompletePredecessors`等は既存テスト
+#             済み）。既存642件＋新規32件＝**674件全通過**
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 674件全通過／`npx eslint src`は
+#             変更前と同じ35件（24 error + 11 warning、baseline比較で完全一致・新規0件）／
+#             `npm run build`成功（`MyPageView`チャンクが21.48KB→32.31KB・gzip 6.28KB→8.63KBに
+#             増加。ウィジェット3個＋設定モーダルの追加分として想定内）
+#
+# 最終更新：2026-07-27（v3.16）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4281,7 +4374,7 @@ interface TaskChangeLog {
 | OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
 | KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
-| マイページ（ラボ機能） | ✅ Phase 1（MVP）実装済み（v3.15） | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクトの7種）を追加・削除・並べ替え・サイズ変更できる。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。詳細は`docs/dev/mypage-widgets-design.md` |
+| マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。詳細は`docs/dev/mypage-widgets-design.md` |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -4355,7 +4448,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-27（v3.14）
+- 最終更新：2026-07-27（v3.16）
 
 ---
 

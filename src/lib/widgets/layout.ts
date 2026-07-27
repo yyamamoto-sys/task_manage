@@ -6,27 +6,28 @@
 // いずれの関数も引数の layout を破壊せず新しいオブジェクトを返す（イミュータブル）。
 //
 // 【層構造の注意】このファイルはレジストリ（src/components/lab/widgets/registry.ts。
-// コンポーネント層）を import しない。createDefaultLayout/normalizeLayout が既定サイズを
-// 知る必要があるため、5つの既定ウィジェットの id と defaultSize はこのファイル自身が
-// DEFAULT_WIDGET_ENTRIES として保持する（registry.ts 側の該当ウィジェットの defaultSize は
-// これと必ず一致させること。ずれていても致命的な破損は起きないが、初回表示のサイズだけが
-// 食い違って見える）。
+// コンポーネント層）を import しない。既定サイズは呼び出し側（MyPageView/useMyPageLayout）が
+// resolveDefaultSize（= (id) => getWidgetDefinition(id)?.defaultSize）として注入する
+// （Phase 2 で registry.ts の defaultSize との二重管理を解消。旧版はこのファイルが
+// DEFAULT_WIDGET_ENTRIES に size も保持していたが、サイズの真実源はレジストリ1箇所に統一した）。
 
 import type { MyPageLayout, WidgetInstance, WidgetSize } from "./types";
 
 export const MYPAGE_LAYOUT_VERSION = 1 as const;
 
+/** 解決できない場合のフォールバックサイズ */
+const FALLBACK_SIZE: WidgetSize = "m";
+
 /**
- * 初回ユーザー向けの既定配置（この順で固定）。
- * widget_id は安定ID（レジストリの WidgetDefinition.id と一致させる。公開後に変えない）。
- * size はレジストリ側の各定義の defaultSize と一致させること（上部コメント参照）。
+ * 初回ユーザー向けの既定配置（この順で固定）。widget_id のみを保持する（安定ID。
+ * レジストリの WidgetDefinition.id と一致させる。公開後に変えない）。
  */
-const DEFAULT_WIDGET_ENTRIES: { widget_id: string; size: WidgetSize }[] = [
-  { widget_id: "my-week-tasks", size: "m" },
-  { widget_id: "alert-tasks", size: "m" },
-  { widget_id: "my-workload", size: "s" },
-  { widget_id: "due-forecast", size: "l" },
-  { widget_id: "velocity", size: "l" },
+const DEFAULT_WIDGET_ENTRIES: string[] = [
+  "my-week-tasks",
+  "alert-tasks",
+  "my-workload",
+  "due-forecast",
+  "velocity",
 ];
 
 function defaultGenerateId(): string {
@@ -39,17 +40,22 @@ function defaultGenerateId(): string {
 
 /**
  * 初回ユーザー向けの既定レイアウトを作る。
+ * @param resolveDefaultSize widget_id からレジストリの defaultSize を引く関数。解決できない
+ *   （undefined を返す）場合は "m" にフォールバックする。
  * @param generateId instance_id の採番関数（省略時は crypto.randomUUID）。テストでは
  *   決定的な採番関数を注入できるようにする（CLAUDE.md v2.83 と同じ「テストしやすくするための
  *   ID採番注入」の流儀）。
  */
-export function createDefaultLayout(generateId: () => string = defaultGenerateId): MyPageLayout {
+export function createDefaultLayout(
+  resolveDefaultSize: (widgetId: string) => WidgetSize | undefined,
+  generateId: () => string = defaultGenerateId,
+): MyPageLayout {
   return {
     version: MYPAGE_LAYOUT_VERSION,
-    widgets: DEFAULT_WIDGET_ENTRIES.map(entry => ({
+    widgets: DEFAULT_WIDGET_ENTRIES.map(widgetId => ({
       instance_id: generateId(),
-      widget_id: entry.widget_id,
-      size: entry.size,
+      widget_id: widgetId,
+      size: resolveDefaultSize(widgetId) ?? FALLBACK_SIZE,
       config: {},
     })),
   };
@@ -113,13 +119,17 @@ const VALID_SIZES: readonly WidgetSize[] = ["s", "m", "l"];
  * ・未知の widget_id はここでは捨てず残す（描画時にプレースホルダを出す。ウィジェットを
  *   一時的に外した／リネームした時にユーザーのレイアウトを破壊しないため。
  *   docs/dev/mypage-widgets-design.md §2-3）。
+ * @param resolveDefaultSize createDefaultLayout にそのまま渡す（フォールバック時に使用）。
  */
-export function normalizeLayout(raw: unknown): MyPageLayout {
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return createDefaultLayout();
+export function normalizeLayout(
+  raw: unknown,
+  resolveDefaultSize: (widgetId: string) => WidgetSize | undefined,
+): MyPageLayout {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return createDefaultLayout(resolveDefaultSize);
 
   const obj = raw as Record<string, unknown>;
-  if (obj.version !== MYPAGE_LAYOUT_VERSION) return createDefaultLayout();
-  if (!Array.isArray(obj.widgets)) return createDefaultLayout();
+  if (obj.version !== MYPAGE_LAYOUT_VERSION) return createDefaultLayout(resolveDefaultSize);
+  if (!Array.isArray(obj.widgets)) return createDefaultLayout(resolveDefaultSize);
 
   const widgets: WidgetInstance[] = [];
   for (const entry of obj.widgets) {

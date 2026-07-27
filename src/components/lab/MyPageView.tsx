@@ -17,7 +17,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
+import {
+  useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers, selectScopedTaskDependencies,
+} from "../../stores/appStore";
 import type { Member, ViewMode } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { isGuestMember } from "../../lib/guestMode";
@@ -27,6 +29,7 @@ import { addWidget, removeWidget, moveWidget, setWidgetSize, setWidgetConfig } f
 import { useMyPageLayout } from "../../hooks/useMyPageLayout";
 import { WIDGET_REGISTRY, getWidgetDefinition } from "./widgets/registry";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
+import { WidgetConfigModal } from "./widgets/WidgetConfigModal";
 
 interface Props {
   onClose: () => void;
@@ -34,6 +37,12 @@ interface Props {
   onOpenTask: (taskId: string) => void;
   /** ビューを切り替える。MyPageView 側でマイページ自体を閉じるところまで面倒を見る */
   onNavigate: (view: ViewMode) => void;
+  /**
+   * タスクを1件作成する（QuickAddTaskWidget向け）。実装はホスト（MainLayout）側で
+   * appStore.saveTask を呼ぶ（choke point迂回防止。lib/widgets/types.ts の
+   * WidgetContext.actions.createTask のコメント参照）。
+   */
+  onCreateTask: (draft: { name: string; projectId?: string | null; dueDate?: string | null }) => Promise<void>;
 }
 
 const SIZE_TO_COLS: Record<WidgetSize, number> = { s: 1, m: 2, l: 3 };
@@ -63,20 +72,23 @@ const ICON_BTN: React.CSSProperties = {
   borderRadius: "var(--radius-sm)",
 };
 
-export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate }: Props) {
+export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate, onCreateTask }: Props) {
   const isGuest = isGuestMember(currentUser);
 
   const rawTasks = useAppStore(selectScopedTasks);
   const rawProjects = useAppStore(selectScopedProjects);
   const rawMembers = useAppStore(selectScopedMembers);
+  const rawTaskDependencies = useAppStore(selectScopedTaskDependencies);
   const tasks = useMemo(() => active(rawTasks), [rawTasks]);
   const projects = useMemo(() => active(rawProjects), [rawProjects]);
   const members = useMemo(() => active(rawMembers), [rawMembers]);
+  const taskDependencies = useMemo(() => rawTaskDependencies.filter(d => !d.is_deleted), [rawTaskDependencies]);
 
   const { layout, setLayout, loading } = useMyPageLayout(currentUser);
 
   const [editMode, setEditMode] = useState(false);
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [configInstanceId, setConfigInstanceId] = useState<string | null>(null);
   const [totalCols, setTotalCols] = useState(() => computeTotalCols(window.innerWidth));
 
   useEffect(() => {
@@ -136,6 +148,19 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate }: Pro
     onClose();
   };
 
+  // ウィジェット本体・設定モーダルの両方で同じ WidgetContext を使う（構築ロジックの二重化を避ける）
+  const buildContext = (w: WidgetInstance): WidgetContext => ({
+    currentUser,
+    data: { tasks, projects, members, taskDependencies },
+    actions: {
+      openTask: onOpenTask,
+      navigateTo: handleNavigate,
+      createTask: onCreateTask,
+    },
+    config: w.config,
+    setConfig: (next) => setLayout(prev => setWidgetConfig(prev, w.instance_id, next)),
+  });
+
   const renderWidgetInstance = (w: WidgetInstance) => {
     const def = getWidgetDefinition(w.widget_id);
     const spanCols = Math.min(SIZE_TO_COLS[w.size], totalCols);
@@ -192,16 +217,7 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate }: Pro
       );
     }
 
-    const context: WidgetContext = {
-      currentUser,
-      data: { tasks, projects, members },
-      actions: {
-        openTask: onOpenTask,
-        navigateTo: handleNavigate,
-      },
-      config: w.config,
-      setConfig: (next) => setLayout(prev => setWidgetConfig(prev, w.instance_id, next)),
-    };
+    const context = buildContext(w);
 
     return (
       // eslint-disable-next-line jsx-a11y/no-static-element-interactions
@@ -245,6 +261,12 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate }: Pro
                   );
                 })}
               </div>
+              {def.configSchema && def.configSchema.length > 0 && (
+                <button
+                  onClick={() => setConfigInstanceId(w.instance_id)}
+                  style={ICON_BTN} aria-label={`${def.title}の設定`} title="設定"
+                >⚙</button>
+              )}
               <button
                 onClick={() => setLayout(prev => removeWidget(prev, w.instance_id))}
                 style={ICON_BTN} aria-label={`${def.title}を削除`} title="削除"
@@ -343,6 +365,21 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate }: Pro
       {isAddOpen && (
         <AddWidgetModal onAdd={handleAddWidget} onClose={() => setIsAddOpen(false)} />
       )}
+
+      {configInstanceId && (() => {
+        const instance = layout.widgets.find(w => w.instance_id === configInstanceId);
+        const def = instance ? getWidgetDefinition(instance.widget_id) : undefined;
+        if (!instance || !def || !def.configSchema) return null;
+        return (
+          <WidgetConfigModal
+            title={def.title}
+            icon={def.icon}
+            schema={def.configSchema}
+            context={buildContext(instance)}
+            onClose={() => setConfigInstanceId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }

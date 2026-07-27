@@ -14,18 +14,25 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Member } from "../lib/localData/types";
-import type { MyPageLayout } from "../lib/widgets/types";
+import type { MyPageLayout, WidgetSize } from "../lib/widgets/types";
 import { createDefaultLayout, normalizeLayout } from "../lib/widgets/layout";
 import { fetchMyWidgetLayout, upsertMyWidgetLayout } from "../lib/supabase/store";
 import { isGuestMember } from "../lib/guestMode";
 import { formatErrorForUser } from "../lib/errorMessage";
 import { showToast } from "../components/common/Toast";
+import { getWidgetDefinition } from "../components/lab/widgets/registry";
 
 const SAVE_DEBOUNCE_MS = 800;
 
+// layout.ts（lib層）はレジストリ（コンポーネント層）を import しないため、既定サイズの
+// 解決はここ（hooks層。コンポーネント層への依存を持ってよい）が担う。
+function resolveDefaultSize(widgetId: string): WidgetSize | undefined {
+  return getWidgetDefinition(widgetId)?.defaultSize;
+}
+
 export function useMyPageLayout(currentUser: Member) {
   const isGuest = isGuestMember(currentUser);
-  const [layout, setLayoutState] = useState<MyPageLayout>(() => createDefaultLayout());
+  const [layout, setLayoutState] = useState<MyPageLayout>(() => createDefaultLayout(resolveDefaultSize));
   const [loading, setLoading] = useState(!isGuest);
 
   // フェッチが完了するまでは setLayout 経由の変更でも保存を発火させない
@@ -37,7 +44,7 @@ export function useMyPageLayout(currentUser: Member) {
   useEffect(() => {
     initializedRef.current = false;
     if (isGuest) {
-      setLayoutState(createDefaultLayout());
+      setLayoutState(createDefaultLayout(resolveDefaultSize));
       setLoading(false);
       return;
     }
@@ -46,7 +53,7 @@ export function useMyPageLayout(currentUser: Member) {
     fetchMyWidgetLayout(currentUser.id)
       .then(raw => {
         if (cancelled) return;
-        setLayoutState(normalizeLayout(raw));
+        setLayoutState(normalizeLayout(raw, resolveDefaultSize));
       })
       .catch((e: unknown) => {
         if (cancelled) return;

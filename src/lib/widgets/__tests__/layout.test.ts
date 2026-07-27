@@ -8,7 +8,7 @@ import {
   setWidgetConfig,
   normalizeLayout,
 } from "../layout";
-import type { MyPageLayout, WidgetInstance } from "../types";
+import type { MyPageLayout, WidgetInstance, WidgetSize } from "../types";
 
 function idGen(prefix = "id"): () => string {
   let n = 0;
@@ -19,9 +19,22 @@ function makeLayout(widgets: WidgetInstance[]): MyPageLayout {
   return { version: 1, widgets };
 }
 
+// registry.ts の5既定ウィジェット分の defaultSize と一致させたテスト用リゾルバ
+// （実際の呼び出し側＝useMyPageLayout.ts は registry.ts の getWidgetDefinition を使う）
+const DEFAULT_SIZES: Record<string, WidgetSize> = {
+  "my-week-tasks": "m",
+  "alert-tasks": "m",
+  "my-workload": "s",
+  "due-forecast": "l",
+  "velocity": "l",
+};
+function resolveDefaultSize(widgetId: string): WidgetSize | undefined {
+  return DEFAULT_SIZES[widgetId];
+}
+
 describe("createDefaultLayout", () => {
   it("既定の5ウィジェットをこの順で作る", () => {
-    const layout = createDefaultLayout(idGen());
+    const layout = createDefaultLayout(resolveDefaultSize, idGen());
     expect(layout.version).toBe(1);
     expect(layout.widgets.map(w => w.widget_id)).toEqual([
       "my-week-tasks",
@@ -33,17 +46,27 @@ describe("createDefaultLayout", () => {
   });
 
   it("採番関数を注入でき、決定的なinstance_idが振られる", () => {
-    const layout = createDefaultLayout(idGen("x"));
+    const layout = createDefaultLayout(resolveDefaultSize, idGen("x"));
     expect(layout.widgets.map(w => w.instance_id)).toEqual(["x-1", "x-2", "x-3", "x-4", "x-5"]);
   });
 
   it("各ウィジェットのconfigは空オブジェクト", () => {
-    const layout = createDefaultLayout(idGen());
+    const layout = createDefaultLayout(resolveDefaultSize, idGen());
     for (const w of layout.widgets) expect(w.config).toEqual({});
   });
 
-  it("既定の呼び出し（引数省略）でも例外を投げず動作する", () => {
-    expect(() => createDefaultLayout()).not.toThrow();
+  it("resolveDefaultSize から解決したサイズがそのまま使われる", () => {
+    const layout = createDefaultLayout(resolveDefaultSize, idGen());
+    expect(layout.widgets.map(w => w.size)).toEqual(["m", "m", "s", "l", "l"]);
+  });
+
+  it("resolveDefaultSize が undefined を返したら m にフォールバックする", () => {
+    const layout = createDefaultLayout(() => undefined, idGen());
+    for (const w of layout.widgets) expect(w.size).toBe("m");
+  });
+
+  it("generateId省略（第2引数省略）でも例外を投げず動作する", () => {
+    expect(() => createDefaultLayout(resolveDefaultSize)).not.toThrow();
   });
 });
 
@@ -168,19 +191,19 @@ describe("setWidgetConfig", () => {
 describe("normalizeLayout", () => {
   it("正常なレイアウトはそのまま（同じ内容で）返す", () => {
     const raw = { version: 1, widgets: [{ instance_id: "a", widget_id: "memo", size: "m", config: { text: "hi" } }] };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result).toEqual(raw);
   });
 
   it("JSONとして壊れている（objectでない）場合は既定レイアウトにフォールバックする", () => {
-    expect(normalizeLayout("not an object").widgets.length).toBe(5);
-    expect(normalizeLayout(123).widgets.length).toBe(5);
-    expect(normalizeLayout(null).widgets.length).toBe(5);
-    expect(normalizeLayout(undefined).widgets.length).toBe(5);
+    expect(normalizeLayout("not an object", resolveDefaultSize).widgets.length).toBe(5);
+    expect(normalizeLayout(123, resolveDefaultSize).widgets.length).toBe(5);
+    expect(normalizeLayout(null, resolveDefaultSize).widgets.length).toBe(5);
+    expect(normalizeLayout(undefined, resolveDefaultSize).widgets.length).toBe(5);
   });
 
   it("versionが一致しない場合は既定レイアウトにフォールバックする", () => {
-    const result = normalizeLayout({ version: 2, widgets: [] });
+    const result = normalizeLayout({ version: 2, widgets: [] }, resolveDefaultSize);
     expect(result.version).toBe(1);
     expect(result.widgets.map(w => w.widget_id)).toEqual([
       "my-week-tasks", "alert-tasks", "my-workload", "due-forecast", "velocity",
@@ -188,7 +211,7 @@ describe("normalizeLayout", () => {
   });
 
   it("widgetsが配列でない場合は既定レイアウトにフォールバックする", () => {
-    const result = normalizeLayout({ version: 1, widgets: "not-an-array" });
+    const result = normalizeLayout({ version: 1, widgets: "not-an-array" }, resolveDefaultSize);
     expect(result.widgets.length).toBe(5);
   });
 
@@ -200,7 +223,7 @@ describe("normalizeLayout", () => {
         { instance_id: "ok", widget_id: "memo", size: "m", config: {} },
       ],
     };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets.map(w => w.instance_id)).toEqual(["ok"]);
   });
 
@@ -212,7 +235,7 @@ describe("normalizeLayout", () => {
         { instance_id: "b", widget_id: "memo", size: "m", config: {} },
       ],
     };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets.map(w => w.instance_id)).toEqual(["b"]);
   });
 
@@ -225,19 +248,19 @@ describe("normalizeLayout", () => {
         { instance_id: "b", widget_id: "memo", size: "m", config: {} },
       ],
     };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets.map(w => w.instance_id)).toEqual(["b"]);
   });
 
   it("エントリ自体がオブジェクトでない場合はその要素だけ捨てる", () => {
     const raw = { version: 1, widgets: [null, "string", 42, { instance_id: "a", widget_id: "memo", size: "m", config: {} }] };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets.map(w => w.instance_id)).toEqual(["a"]);
   });
 
   it("不正なsizeは既定値mにフォールバックする", () => {
     const raw = { version: 1, widgets: [{ instance_id: "a", widget_id: "memo", size: "huge", config: {} }] };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets[0].size).toBe("m");
   });
 
@@ -250,19 +273,19 @@ describe("normalizeLayout", () => {
         { instance_id: "c", widget_id: "memo", size: "m", config: [1, 2] },
       ],
     };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets.map(w => w.config)).toEqual([{}, {}, {}]);
   });
 
   it("未知のwidget_idは捨てずに残す（プレースホルダ表示のため）", () => {
     const raw = { version: 1, widgets: [{ instance_id: "a", widget_id: "no-longer-exists", size: "m", config: {} }] };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets).toEqual([{ instance_id: "a", widget_id: "no-longer-exists", size: "m", config: {} }]);
   });
 
   it("未知の設定キーが混ざっていてもエラーにならない（無視される）", () => {
     const raw = { version: 1, widgets: [], someFutureField: "ignored" };
-    const result = normalizeLayout(raw);
+    const result = normalizeLayout(raw, resolveDefaultSize);
     expect(result.widgets).toEqual([]);
   });
 });

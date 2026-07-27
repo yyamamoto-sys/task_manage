@@ -15,8 +15,11 @@ import { AlertTasksWidget } from "./AlertTasksWidget";
 import { MyWorkloadWidget } from "./MyWorkloadWidget";
 import { DueForecastWidget } from "./DueForecastWidget";
 import { VelocityWidget } from "./VelocityWidget";
-import { MemoWidget } from "./MemoWidget";
-import { PinnedProjectsWidget } from "./PinnedProjectsWidget";
+import { MemoWidget, MEMO_CONFIG_SCHEMA } from "./MemoWidget";
+import { PinnedProjectsWidget, PINNED_PROJECTS_CONFIG_SCHEMA } from "./PinnedProjectsWidget";
+import { RecentlyUpdatedWidget, RECENTLY_UPDATED_CONFIG_SCHEMA } from "./RecentlyUpdatedWidget";
+import { BlockedTasksWidget } from "./BlockedTasksWidget";
+import { QuickAddTaskWidget, QUICK_ADD_TASK_CONFIG_SCHEMA } from "./QuickAddTaskWidget";
 
 export const WIDGET_REGISTRY: WidgetDefinition[] = [
   {
@@ -77,6 +80,7 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     defaultSize: "s",
     allowedSizes: ["s", "m", "l"],
     dataNeeds: [],
+    configSchema: MEMO_CONFIG_SCHEMA,
     render: MemoWidget,
   },
   {
@@ -87,7 +91,40 @@ export const WIDGET_REGISTRY: WidgetDefinition[] = [
     defaultSize: "m",
     allowedSizes: ["s", "m", "l"],
     dataNeeds: ["tasks", "projects"],
+    configSchema: PINNED_PROJECTS_CONFIG_SCHEMA,
     render: PinnedProjectsWidget,
+  },
+  {
+    id: "recently-updated",
+    title: "最近更新されたタスク",
+    description: "updated_at の新しい順にタスクを表示",
+    icon: "🕒",
+    defaultSize: "m",
+    allowedSizes: ["s", "m", "l"],
+    dataNeeds: ["tasks"],
+    configSchema: RECENTLY_UPDATED_CONFIG_SCHEMA,
+    render: RecentlyUpdatedWidget,
+  },
+  {
+    id: "blocked-tasks",
+    title: "先行待ちのタスク",
+    description: "先行タスクが未完了のため完了できない、自分の担当タスク",
+    icon: "⏳",
+    defaultSize: "m",
+    allowedSizes: ["s", "m", "l"],
+    dataNeeds: ["tasks", "dependencies"],
+    render: BlockedTasksWidget,
+  },
+  {
+    id: "quick-add-task",
+    title: "クイックタスク追加",
+    description: "タスク名を入力してEnterで作成",
+    icon: "➕",
+    defaultSize: "s",
+    allowedSizes: ["s", "m", "l"],
+    dataNeeds: ["tasks", "projects"],
+    configSchema: QUICK_ADD_TASK_CONFIG_SCHEMA,
+    render: QuickAddTaskWidget,
   },
 ];
 

@@ -1,5 +1,6 @@
 // src/components/layout/MainLayout.tsx
-import { useState, useMemo, useRef, useEffect, Suspense } from "react";
+import { useState, useMemo, useRef, useEffect, useCallback, Suspense } from "react";
+import { v4 as uuidv4 } from "uuid";
 import { useTheme } from "../../hooks/useTheme";
 import { useLangStore } from "../../stores/langStore";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
@@ -261,6 +262,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const rawTfs      = useAppStore(s => s.taskForces);
   const rawTtfs     = useAppStore(s => s.taskTaskForces);
   const rawTasks    = useAppStore(selectScopedTasks);
+  const saveTask    = useAppStore(s => s.saveTask);
   // 部署切替UI（サイドバー）用。CLAUDE.md Section 1.6参照。
   const rawGroups              = useAppStore(s => s.groups);
   const currentGroupId         = useAppStore(s => s.currentGroupId);
@@ -329,6 +331,39 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setSelectedKrId(id);
     setSelectedProjectId(null);
   };
+
+  // マイページ（ウィジェット）のQuickAddTaskWidget向け。ウィジェットからsaveTaskを直接呼ばせず、
+  // 必ずこのホスト側から appStore.saveTask を呼ぶ（B1依存ゲート・B4ベースライン・v2.75親自動完了
+  // などの choke point を通すため。CLAUDE.md「actions の拡張ポリシー」参照）。
+  // フィールドの形はGanttViewのhandleQuickAddTask（v3.04）を雛形にした（uuidv4／status "todo"／
+  // updated_byはcurrentUser.id／group_idはappStoreが自動注入）。
+  const handleMyPageCreateTask = useCallback(async (draft: { name: string; projectId?: string | null; dueDate?: string | null }) => {
+    const now = new Date().toISOString();
+    const projectId = draft.projectId ?? null;
+    const siblings = paletteTasks.filter(t => (t.project_id ?? null) === projectId && !t.parent_task_id);
+    const nextOrder = siblings.length === 0 ? 0 : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
+    const task: Task = {
+      id: uuidv4(),
+      name: draft.name,
+      project_id: projectId,
+      parent_task_id: null,
+      display_order: nextOrder,
+      todo_ids: [],
+      assignee_member_id: "",
+      assignee_member_ids: [],
+      status: "todo",
+      priority: null,
+      start_date: null,
+      due_date: draft.dueDate ?? null,
+      estimated_hours: null,
+      comment: "",
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: currentUser.id,
+    };
+    await saveTask(task);
+  }, [paletteTasks, saveTask, currentUser.id]);
 
   // 設定/ガイドはメインコンテンツ領域の独立パネルとして表示する。
   // ビュー・モード・PJ・KR・OKRツールなどナビ操作で切り替えたら自動的に閉じる
@@ -1266,6 +1301,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             currentUser={currentUser}
             onOpenTask={taskId => setMyPageEditTaskId(taskId)}
             onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
+            onCreateTask={handleMyPageCreateTask}
           />
         </Suspense>
       )}

@@ -123,6 +123,14 @@ export interface MyPageLayout {
 
 **前方・後方互換のルール（重要）**：レイアウトに知らない `widget_id` が入っていたら、**エラーにせず読み飛ばして「このウィジェットは現在利用できません（削除/名称変更）」のプレースホルダを出す**。これがないと、ウィジェットを1つ廃止しただけで、それを置いていた人のマイページが丸ごと壊れる。逆に未知の設定キーも無視する。
 
+### 2-4. `actions` の拡張ポリシー（Phase 2で追記）
+
+`WidgetContext.actions`（2-2の型定義）は、ウィジェットが要求できる副作用の唯一の一覧である。Phase 2 で `createTask`（QuickAddTaskWidget向け）を追加した際に確定した拡張ルールを明文化する。
+
+- (a) **ウィジェットが要求できる副作用は `actions` に列挙されたものだけ**。列挙されていない操作（削除・一括変更・他人のデータの書き換え等）をウィジェットが必要とする場合は、まず `actions` に新しい関数を1つ追加するところから始める。ウィジェットが独自に代替手段（イベント発火・グローバル変数・DOM操作等）で回避することは禁止。
+- (b) **新しい副作用を足すときは、必ずホスト側（`MyPageView` → `MainLayout`）で appStore の choke point を経由して実装する。** 例：`createTask` は `MyPageView` が受け取った `onCreateTask` prop をそのまま `actions.createTask` として渡すだけで、実装（`saveTask` の呼び出し）は `MainLayout` 側にある。これにより B1依存ゲート・B3自動リスケ連鎖・B4ベースライン捕捉・v2.75親自動完了などの choke point を必ず通る。
+- (c) **ウィジェット側に store・supabase を直接触らせる例外は作らない。** 「このウィジェットだけは特別に…」という例外を1つ許すと、2-1で防ごうとした事故（部署スコープの取りこぼし・choke point 迂回）が起きる経路が復活する。書き込みが必要な機能を思いついたら、必ず `actions` の拡張として設計する。
+
 ---
 
 ## 3. レイアウトの保存先
@@ -204,6 +212,7 @@ export interface MyPageLayout {
 | 1 | MVP：ホスト画面＋レジストリ＋レイアウト永続化＋ウィジェット5〜7個。追加・削除・並べ替え・サイズ変更 | ラボに「🧩 マイページ」 | 案B採用時に1本 |
 | → | **実装済み（2026-07-27）**。`supabase/migrations/20260727b_add_member_widget_layouts.sql`（`current_member_id()`ヘルパー＋`member_widget_layouts`テーブル）・`src/lib/widgets/{types,layout}.ts`・`src/components/lab/widgets/*`（レジストリ＋ウィジェット7個＋WidgetErrorBoundary）・`src/components/lab/MyPageView.tsx`・`src/hooks/useMyPageLayout.ts`。詳細はCLAUDE.md v3.15参照 | | |
 | 2 | `configSchema` 駆動の設定フォーム、ウィジェット追加、既定レイアウト（初回だけ自動配置） | — | 不要 |
+| → | **実装済み（2026-07-27）**。`src/lib/widgets/config.ts`（`resolveConfig`/`applyConfigChange`）・`src/components/lab/widgets/WidgetConfigModal.tsx`（configSchema駆動の設定フォーム）・既存2ウィジェット（メモ／ピン留めプロジェクト）のconfigSchema移行・新規ウィジェット3個（🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加。うちクイックタスク追加は`actions.createTask`による最初の書き込みアクション実例）・`createDefaultLayout`のサイズ二重管理解消（レジストリの`defaultSize`に一本化）。詳細はCLAUDE.md v3.16参照 | | |
 | 3 | **ウィジェット作成仕様書＋テンプレート**（デプロイ型の自作を解禁） | `docs/dev/widget-authoring.md` | 不要 |
 | 4 | ランタイム取り込み（案2 → 必要なら案3）。着手前にセキュリティ判断 | — | 未定 |
 
