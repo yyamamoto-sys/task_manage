@@ -19,6 +19,7 @@ import type { ConsultationType, ResponseVolume } from "../lib/ai/types";
 import { buildPayload } from "../lib/ai/payloadBuilder";
 import { AIError } from "../lib/ai/apiClient";
 import { runAIConsultation } from "../lib/ai/consultationRunner";
+import type { AIUsage } from "../lib/ai/consultationRunner";
 import { mapProposalsToUI } from "../lib/ai/proposalMapper";
 import type { UIProposal } from "../lib/ai/proposalMapper";
 import {
@@ -167,24 +168,18 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
 
         // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
         // リトライが発生した場合は実際に消費した2回分をそれぞれ記録する
-        insertAiUsageLog({
-          member_id: currentMemberId,
-          consultation_type: consultationType,
-          input_tokens: result.usage.input_tokens,
-          output_tokens: result.usage.output_tokens,
-        }).catch((err: unknown) => {
-          console.warn("AI使用量ログの記録に失敗（相談は継続）:", err);
-        });
-        if (result.retryUsage) {
+        const logUsage = (usage: AIUsage, label: string) => {
           insertAiUsageLog({
             member_id: currentMemberId,
             consultation_type: consultationType,
-            input_tokens: result.retryUsage.input_tokens,
-            output_tokens: result.retryUsage.output_tokens,
+            input_tokens: usage.input_tokens,
+            output_tokens: usage.output_tokens,
           }).catch((err: unknown) => {
-            console.warn("AI使用量ログ（リトライ分）の記録に失敗（相談は継続）:", err);
+            console.warn(`AI使用量ログ${label}の記録に失敗（相談は継続）:`, err);
           });
-        }
+        };
+        logUsage(result.usage, "");
+        if (result.retryUsage) logUsage(result.retryUsage, "（リトライ分）");
 
         const uiProposals = mapProposalsToUI(result.proposals);
 

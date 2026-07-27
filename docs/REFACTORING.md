@@ -28,7 +28,7 @@
 | App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
 | 認証・入口 | 2026-07-21 | 2026-07-22（M25対応：`is_system_bootstrapped()`/`bootstrap_first_group_and_member()`新設。`AccessDeniedScreen.tsx`新設・`SetupWizard.tsx`に部署名入力＋ブートストラップ経路を追加）／2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約1,020行（LoginScreen/SetupWizard/UserSelectScreen/guestMode/AccessDeniedScreen計） | ~~M25~~（**完了（2026-07-22 / CLAUDE.md v2.84）**。詳細は下記「低優先度」表参照）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま。departments-and-members.md新設で一部是正済み・first-day.md等は未対応） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果発見したM25は2026-07-22に別セッションで対応済み |
 | A 計画ビュー | 2026-07-24 | 2026-07-24（本日v3.01〜v3.10で大量追加されたガント系クラスタ＝`GanttView.tsx`/`GanttParts.tsx`/`ganttUtils.ts`の品質リファクタ。3ビュー（PJ別/ToDo別/人別）で繰り返されていたバー行描画の重複3件を純粋関数に集約：①`isDone`判定の重複インライン式→`isCompletedForProgress`（taskMeta.ts）経由に統一②`hasRange`/`dateLabel`計算の完全同一実装→`formatBarDateLabel`として抽出③ツールチップ末尾（滞留/クリティカルパスバッジ）の同一実装→`formatBarTooltipSuffix`として抽出④バー基本色（完了=成功色／期限超過=危険色／それ以外=ビュー固有fallback）の同一優先順位判定→`resolveGanttBarColor`として抽出。挙動不変（新規ユニットテスト10件追加のみ・既存テスト全通過）。死蔵コード（v3.01→v3.04で撤去されたラベル列日付インライン編集の残置props等）は無く健全と確認。詳細は下記「ガント系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-22（31回目：⑦リスト＋リストlib（`ListView.tsx`+`groupSummary.ts`+`selectionRange.ts`・約1,613行）を点検しA計画ビュー全9サブ領域が点検完了。`ListView.tsx`のドラッグ操作系3箇所（親子変更・並べ替え・親の解除の各catchブロック）がSection15禁止パターン（`err.message`のみ表示）のままだったのを`formatErrorForUser`経由に修正＝`eccc159`。`groupSummary.ts`（グループ見出しの完了率集計）にM33と同型の課題（`doneCount`はstatus==="done"限定・`total`にはon_hold/cancelledも含む）を確認し対象ファイルとしてM33へ追記。他の観点（STATUS_ORDER・sortの完了/中止沈め・状態フィルタ選択肢・isOverdue判定・PC/モバイルの表示ロジック）は5値とも網羅済みで健全と確認）／2026-07-07〜2026-07-22の23〜30回目（8セッション）でサブ領域①②③④⑤⑥⑧⑨を分割点検し、v2.74/v2.75追従漏れの実バグを多数発見・修正（`WorkloadView.tsx`・`GanttView.tsx`・`ganttUtils.ts`・`TaskSidePanel.tsx`・`ProjectKarte.tsx`・`DashboardView.tsx`等）。詳細は下記「31回目の巡回」節および各回の節を参照 | **約13,173行**（23回目に実測。内訳は下記「30回目の巡回」節参照。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断）／~~M33~~（`GanttView.tsx`のPJ別/ToDo別グループ進捗%・`DashboardView.tsx`の`pjProgress`/`krProgress`/`tfTaskStats`/`todoProgress`・`groupSummary.ts`＝ListView/Kanban共有。**2026-07-22に解消済み**：山本さんの方針確定を受け共有ヘルパー`isCompletedForProgress`（`src/lib/taskMeta.ts`）で4箇所を統一。詳細はCLAUDE.md v2.76）／M34は25回目で解消済み（`ganttUtils.ts`の`computeBulkMoveShifts`のcancelled除外漏れ。`b587fd0`）／M35（`TaskSidePanel.tsx`に@メンション機能が無い。26回目発見・要設計判断）／M36（`TaskSidePanel.tsx`にタグ編集UIが無い。26回目発見・要設計判断） | **A計画ビューユニット全体（約13,173行）を23〜31回目の巡回（9セッション）で点検完了。** サブ領域①Dashboard核（30回目）②Dashboard PJ系（29回目）③GanttView.tsx単体（24回目）④Gantt周辺（25回目）⑤タスク編集系（26回目）⑥タスク追加+カンバン（27回目）⑦リスト+リストlib（31回目）⑧マイルストーン+ワークロード（23回目）⑨依存関係+ベースライン+小物（28回目）の全9つに分割し、v2.74（保留/中止ステータス追加）・v2.75（親タスク自動完了）への追従状況を軸に点検。cancelled/on_hold追従漏れの実バグをのべ10件前後発見・修正（`unassignedCount`・ガント一括シフト対象・依存矢印判定・`computeBulkMoveShifts`・`ProjectKarte`の進捗チップ/負荷集計・`DashboardView`の`mentionedTasks`等）。TaskSidePanelの編集直後クローズでのデータロスバグ（26回目）・依存の重複循環判定の亡霊バグ（28回目）等、ステータス追従とは別の実データ不整合バグも複数発見。これで他の全12ユニット（D OKRは作り直し方針のため除外扱い）と合わせ13ユニット全体の初回巡回が一巡した |
-| B AI相談 | 2026-07-21 | 2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照 |
+| B AI相談 | 2026-07-24（本日v3.07変更分のみ対象の指名セッション。20回目巡回時点の他ファイルは2026-07-21のまま） | 2026-07-24（本日v3.07で新設・変更されたAI相談系クラスタ＝`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`の品質リファクタ。指名セッション・通常の巡回ローテーション対象外。`useAIConsultation.ts`のAI使用量ログ記録処理〈通常時／リトライ時で計2箇所ほぼ同一実装〉を`logUsage`ヘルパーに集約し重複解消。新設`consultationRunner.ts`の循環import回避目的の分離は妥当と確認・`retryContext`/`stopReason`まわりに未使用の引数・死蔵分岐は無く健全。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検。本日追加分＝`consultationRunner.ts`約75行はこの実測に含まれない） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照。**2026-07-24追記**：本日v3.07で追加された5ファイル（`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`）のみを対象にした品質リファクタを山本さんの指名で実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節）。20回目時点で点検済みの他ファイル（`ConsultationPanel.tsx`等）は今回対象外のまま |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手）。**🔴 2026-07-22 山本さん方針：OKRモードは全面的にゼロから作り直す予定（見切り発車で試験導入したところニーズが確認できたため、実用化に向けた根本的な再設計が必要と判断）。再設計に着手するまで、本ユニットへの追加リファクタ点検・巡回対象からの選定は行わない（作り直し前提のコードを磨くのは無駄になるため）。再設計時は現行の情報構造（Objective>KR>TF>ToDo>Task・週次循環ワークフロー①〜④等）を前提とせず、一から考え直すこと。** |
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
@@ -37,7 +37,7 @@
 | H グラフ・ラボビュー | 2026-07-21（`GraphView.tsx`のみ）／`CalendarLabView.tsx`・`ProjectStructureView.tsx`は未点検（2026-07-22新規登録） | 2026-07-21（凡例クリックの再レンダー漏れを修正） | 約790行（GraphView.tsx）＋約384行（CalendarLabView.tsx）＋約1,231行（ProjectStructureView.tsx）＝計約2,405行 | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因。両ファイルはまだ本台帳の観点での初回巡回が済んでいないため、次回このユニットが選ばれた際は`GraphView.tsx`の再点検よりもこの2ファイルの初回点検を優先すること** |
 | I 通知 | 2026-07-21 | 2026-07-21（未使用select列`status`を削除） | 約390行（フロントhook+Edge Function） | M18（`notify_pref="teams"`が実質dead。次回候補へ記録） | 3回目巡回で点検。小さい実害の薄い1件を修正。Edge Function側（`supabase/functions/notify-deadlines`）はgit push対象外・個別デプロイ運用の点に注意（今回の修正も要手動デプロイ） |
 | データ基盤 | 2026-07-22 | 2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。22回目に`appStore.ts`側の`applyRemoteChange`実装・`App.tsx`の`subscribeToRealtime`呼び出しを直接確認し、`realtime.ts`の`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースが完全一致していることを再確認。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。22回目にM31を深掘りする過程で発見。低頻度更新のマスタ系データのため実害は小さいと見られるが、`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補) | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約2,578行）を21〜22回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正 |
-| AI基盤 | 2026-07-21 | 2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠） |
+| AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
 | 共通UI | 2026-07-17 | 2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | 約3,120行 | 既存表になし | 新規追加のCard/DangerZone/ShortcutsPanel/CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施 |
 | ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
 
@@ -47,6 +47,90 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-07-24）AI相談系クラスタ品質リファクタ（本日v3.07の変更分・巡回外の指名セッション）
+
+山本さんの指名により、本日（2026-07-24）v3.07で新設・変更したAI相談系クラスタ
+（`src/lib/ai/apiClient.ts`・`src/lib/ai/responseParser.ts`・`src/lib/ai/consultationRunner.ts`
+〈新設〉・`src/lib/ai/systemPrompt.ts`・`src/hooks/useAIConsultation.ts`）を対象に、
+挙動を一切変えない品質のみのリファクタを行った（新機能追加・挙動変更・バグ修正はしない）。
+ガント系クラスタ（本ファイル上部「完了済み（2026-07-24）ガント系クラスタ品質リファクタ」節）と
+同様、通常の巡回ローテーション（最終点検日が最古のユニット優先）とは別に、変更直後のクラスタを
+ピンポイントで指名されたセッション。**Edge Function（`supabase/functions/ai-consult/index.ts`）は
+git push非対象・手動デプロイ運用のため今回のリファクタ対象外**（改善余地は下記「観察のみ」に記録）。
+
+### 点検①：新設`consultationRunner.ts`の妥当性（結果：健全）
+
+`apiClient.callAIConsultation`→`responseParser.parseAIResponse`を束ね、パース失敗時に1回だけ
+自己修正リトライする新設オーケストレーション層。ヘッダーコメントに明記されている「循環import回避の
+ため独立モジュール化した」という設計理由を実際のimportグラフで確認：`apiClient.ts`は
+`responseParser.ts`をimportしない・`responseParser.ts`も`apiClient.ts`の`AIError`のみをimportする
+一方向の依存であり、もし`callAIConsultation`と`parseAIResponse`を束ねる関数をどちらかのファイルに
+直接追加すると、そのファイルがもう一方に依存する形になり循環importが生じる（`apiClient.ts`に置けば
+`responseParser`への依存が新たに発生・`responseParser.ts`に置けば`apiClient`への依存が二重方向に
+なる）ため、独立モジュールとして分離する判断は妥当と確認した。リトライ経路（`retry`変数）と通常経路
+（`first`変数）は、後続の`parseAIResponse`呼び出し・戻り値の組み立てロジックが同型で完全な重複では
+なく（リトライ経路のみ`retryContext`引数と`retryUsage`フィールドを追加で持つ）、これ以上の共通化は
+早期リターンの可読性を落とすため見送りが妥当と判断（コードは変更していない）。命名・責務は
+「apiClient=API呼び出しの1回分」「responseParser=パースの1回分」「consultationRunner=リトライを
+含めた1相談分のオーケストレーション」で明瞭に分離されており健全。
+
+### 点検②：v3.07で追加した`retryContext`/`stopReason`まわりの重複・死蔵チェック（結果：健全）
+
+`AIRetryContext`型・`retryContext`引数（`apiClient.ts`）、`stopReason`引数（`responseParser.ts`の
+`parseAIResponse`）はいずれも`consultationRunner.ts`からのみ呼ばれ、呼び出し元0件の死蔵exportは
+無かった。`AICallResult.stopReason`は`consultationRunner.ts`の分岐判定（`max_tokens`ならリトライ
+せず即エラー）に使われるほか、`responseParser.parseAIResponse`へそのまま転送されて
+`TRUNCATED_RESPONSE_MESSAGE`の出し分けにも使われており、二重の意味を持つ配線ではなく1つの値が
+2箇所で正しく参照される設計と確認。
+
+### 是正①：`useAIConsultation.ts`のAI使用量ログ記録の重複を解消
+
+`submit`内でAI使用量を記録する処理が、通常呼び出し分（`result.usage`）とリトライ発生時の追加呼び出し分
+（`result.retryUsage`）とでほぼ同一の`insertAiUsageLog(...).catch(...)`ブロックとして2箇所に
+展開されていた（`console.warn`の文言のみ「AI使用量ログの記録に失敗」「AI使用量ログ（リトライ分）の
+記録に失敗」で異なる）。ローカル関数`logUsage(usage, label)`に集約し、`logUsage(result.usage, "")`・
+`if (result.retryUsage) logUsage(result.retryUsage, "（リトライ分）")`の2行に整理した（挙動不変：
+記録される内容・失敗時のconsole.warn文言・catchでも相談処理を止めない性質はすべて維持）。
+
+### 点検③：コメント/命名の実態合わせ（結果：健全・古い値への言及なし）
+
+`apiClient.ts`のmax_tokens定数コメント・Edge Function側`MAX_TOKENS_CAP`コメントを含め、
+`grep -rn "4096\|8192\|16384"`でAI相談系クラスタ全体を確認したところ、旧値（4096・8192）への
+言及は「かつて4096だった／8192だったが引き上げた」という経緯コメント・テスト名（意図的に残す
+再発防止コメント）としてのみ存在し、現在の実値と矛盾する古いコメントは見つからなかった。
+
+### 点検④：エラーメッセージ経路（Section 15）の確認（結果：現状維持が妥当と判断）
+
+`useAIConsultation.ts`の`submit`のcatchブロック（`AIError`/`Error`から`message`を直接
+`setErrorMessage`に渡す）はSection 15の`formatErrorForUser`経由ではないが、これは本日（v3.07）の
+変更範囲外（`git log`でこの部分の最終変更コミットが2026-07-21以前と確認済み）であり、かつ
+`AIError`が持つメッセージ自体が既に「認証エラーです」「レート制限」「応答が長くなりすぎて
+途中で切れました」等ユーザー向けに整形済みの文言のため、`formatErrorForUser`を通すと
+`[AUTH_REQUIRED]`等のコード接頭辞が付き表示テキストが変わってしまう（挙動不変の制約に反する）。
+今回は変更せず現状維持とした（他の一般的なDBエラー等とは異なり、AIErrorは意図的にコード非依存の
+整形済みメッセージを持つ設計であるため）。
+
+### 観察のみに留めた項目（コードは変更していない）
+
+- Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`（8192→16384への
+  引き上げ）は山本さんの手動再デプロイが必要（CLAUDE.md v3.07 changelog記載どおり）。git push
+  対象外のためリファクタ対象外とした。
+- 同Edge Functionのエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重`JSON.parse`等）は今回
+  未点検のまま（M37として台帳「AI基盤」行に記録）。
+- v2.93（`okrImportExtractor.ts`）とv3.07（`consultationRunner.ts`）で「パース失敗時に1回だけ
+  自己修正リトライする」という同型のロジックが2箇所に存在する（今回のスコープ外である
+  `okrImportExtractor.ts`を含む横断的な共通化）。両者は呼び出し元（OKR取込 vs メイン相談）・
+  リトライ判定条件（OKR取込は常にリトライ／メイン相談はmax_tokens時はリトライしない）が
+  異なるため、無理に共通化すると条件分岐が複雑化するリスクがあり、今回は見送り次回候補として
+  観察のみに留めた。
+
+### 検証・コミット
+
+`npx tsc --noEmit`（0）・`npx vitest run`（既存594件が全通過のまま。挙動不変のためテスト追加なし）・
+`npx eslint src`（新規0・baseline=35件で完全一致）・`npm run build`（成功）の4点セットを確認。
 
 ---
 

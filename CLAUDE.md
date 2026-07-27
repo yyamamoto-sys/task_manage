@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.11
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.12
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3106,7 +3106,33 @@
 #             （合計594件）。tsc 0・eslint 35件で完全一致（baseline比較・新規0）・build成功
 #      詳細：docs/REFACTORING.md「ガント系クラスタ品質リファクタ（2026-07-24）」節参照
 #
-# 最終更新：2026-07-24（v3.11）
+# v3.12 refactor: AI相談系クラスタ（v3.07の変更分）の品質リファクタ（挙動不変・2026-07-24）
+#      背景：本日v3.07で新設・変更したAI相談系クラスタ（apiClient.ts/responseParser.ts/
+#             consultationRunner.ts〈新設〉/systemPrompt.ts/useAIConsultation.ts）を対象に、
+#             山本さんの指名で品質のみのリファクタを実施。新機能・挙動変更・バグ修正は一切
+#             行っていない（既存テスト全通過が担保）。Edge Function（supabase/functions/
+#             ai-consult/index.ts）はgit push非対象・手動デプロイ運用のため対象外（改善余地は
+#             観察のみ記録）
+#      変更：`useAIConsultation.ts`のAI使用量ログ記録（通常呼び出し分・リトライ発生時の
+#             追加呼び出し分でほぼ同一実装が2箇所に展開されていた）を、ローカル関数
+#             `logUsage(usage, label)`に集約し重複を解消（記録内容・失敗時のconsole.warn文言・
+#             catchで相談処理を止めない性質はすべて維持）
+#      確認：新設`consultationRunner.ts`の循環import回避目的の分離は、実際のimportグラフ
+#             （apiClient.ts↔responseParser.tsの一方向依存）を確認した上で妥当と判断。
+#             `retryContext`/`stopReason`まわりに呼び出し元0件の死蔵exportは無し。古い
+#             max_tokens値（4096/8192）への言及は経緯コメント・再発防止テスト名としてのみ残存し、
+#             現在の実値と矛盾するコメントは無し
+#      スコープ外（意図的に見送り）：`useAIConsultation.ts`のcatchブロック（Section 15の
+#             formatErrorForUser非経由）は本日の変更範囲外かつ、AIErrorが既にユーザー向けに
+#             整形済みのメッセージを持つ設計のため、formatErrorForUnserを通すとコード接頭辞が
+#             付き表示テキストが変わる（挙動不変の制約に反する）ため現状維持。v2.93
+#             （okrImportExtractor.ts）とv3.07（consultationRunner.ts）の自己修正リトライの
+#             同型ロジックの共通化も、リトライ判定条件が異なるため見送り
+#      テスト：既存594件（今回の重複解消はテスト対象外の内部実装のみのため新規テスト追加なし）。
+#             tsc 0・eslint 35件で完全一致（baseline比較・新規0）・build成功
+#      詳細：docs/REFACTORING.md「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照
+#
+# 最終更新：2026-07-24（v3.12）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4104,7 +4130,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-24（v3.11）
+- 最終更新：2026-07-24（v3.12）
 
 ---
 
