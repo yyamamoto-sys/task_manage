@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.13
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.14
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3177,7 +3177,52 @@
 #             手動適用（dev→prod の順）。未適用の環境ではローディング画面は組み込みの
 #             既定値10件で動作する（appStore側でfetch失敗を握りつぶす設計のため起動はブロックしない）
 #
-# 最終更新：2026-07-27（v3.13）
+# v3.14 fix: 起動シーケンスの4つの全画面ローディングを1枚の画面に見せる（2026-07-27）
+#      背景：App.tsx の起動シーケンスは①認証セッション確認→②システム空判定→③ログイン
+#             ユーザー自動マッチング→④データ読み込み、の4段階に分かれ、それぞれ独立した
+#             早期returnを持つ（＝画面としては都度アンマウント／再マウントされる）。
+#             v3.13時点では①〜③が小さいスピナーのみ、④だけがアイコン＋プログレスバー＋
+#             ヒントカードという別デザインだったため、実際には一連の起動処理でも
+#             「別々のローディングが2回起きた」ように見え、ヒント（7秒間隔で回転）も
+#             ④の間しか出ないうえ画面が切り替わるたびに再マウントで最初の1件目に戻り、
+#             結果としてどちらの画面でもヒントを読み切れなかった（山本さん指摘）
+#      追加：`src/components/common/FullScreenLoading.tsx`。④の見た目（40pxのSVGスピナー・
+#             幅200pxのテキストブロック・決定的プログレスバー・補足行・ヒントカード）を
+#             正としてコンポーネント化し、①〜④すべてがこれ1つを描画するように統一
+#             （①②③は`<FullScreenLoading message="準備しています..." />`のみ、④は
+#             `message="データを読み込み中..." progress={loadProgress} hint={loadingHint}`）。
+#             props省略時でも高さが変わらないよう、プログレスバーのトラックは常に描画し
+#             （塗りだけ progress の有無で出し分け）、補足行も空文字ではなく半角スペースで
+#             埋める。スピナー・テキスト・バー・ヒントカードのY座標が①→②→③→④で
+#             1pxも動かないことが目的（動くと「別画面に切り替わった」ように見えてしまう）
+#      変更：ヒント回転を state ベース → 経過時間ベースに変更（`src/lib/tips/loadingTips.ts`）。
+#             `computeTipIndex(elapsedMs, tipCount, offset, intervalMs)` の純粋関数と、
+#             モジュールレベルで1回だけ生成する `getTipRotationSession()`（開始時刻＋
+#             ランダムoffset）・`getSessionTips()`（表示するヒント配列も1回だけ解決し
+#             キャッシュ、読み込み中に localStorage キャッシュが書き換わっても表示中の
+#             配列を揺らさない）を追加。`ROTATE_INTERVAL_MS`（7000ms）も
+#             LoadingTips.tsx からこちらへ移動。理由：state
+#             （useState+setInterval）だと画面のアンマウント／再マウントでindexも
+#             tips配列もリセットされ、①〜④のどこで切り替わってもヒントが最初から
+#             流れ直していた。開始時刻・ヒント配列をモジュールレベル（ページを開いている
+#             間ずっと同一）に持たせることで、画面が切り替わってもヒントは「続きから」流れる
+#      変更：`LoadingTips.tsx` は index を state で持たず、`computeTipIndex(Date.now() -
+#             session.startedAt, ...)` を毎レンダー算出（マウント時に即計算される）。
+#             再レンダーのためだけの1秒tickの setInterval のみ残す。インジケータ
+#             （丸のドット列）は同じ index をそのまま使うため無変更
+#      対象外：`MainLayout.tsx` の ViewSkeleton／Suspense fallback（ビュー切替時の
+#             スケルトン）・`backgroundLoading` の3px上部バー（Phase 2のOKR取得）・
+#             LoginScreen／UserSelectScreen／SetupWizard／AccessDeniedScreen・認証フロー／
+#             autoMatch／bootstrapStatus の判定ロジック（表示の器だけを差し替え、判定条件は
+#             一切変更していない）・loading_tips のDB／RLS／appStore／設定画面
+#             （LoadingTipsSection）
+#      テスト：`computeTipIndex` に7件追加（elapsed 0でoffsetそのもの、interval未満で
+#             index不変、interval経過ごとに+1、tipCountで巡回、tipCount=0で0、負の
+#             elapsedMsでも範囲内・NaNにならない）。既存604件＋7件＝611件、全通過。
+#             tsc 0・eslint 35件（24 error + 11 warning）で完全一致（baseline比較・新規0）・
+#             build成功
+#
+# 最終更新：2026-07-27（v3.14）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4176,7 +4221,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-27（v3.13）
+- 最終更新：2026-07-27（v3.14）
 
 ---
 

@@ -122,3 +122,62 @@ export function writeCachedTips(tips: DisplayTip[]): void {
     /* quota超過等。次回起動で既定値が出るだけなので無視 */
   }
 }
+
+/** ヒントの切り替え間隔（ms）。読み切れる程度に長めを取る */
+export const ROTATE_INTERVAL_MS = 7000;
+
+/**
+ * 表示するヒント配列。App.tsx の起動シーケンス（認証確認→システム判定→自動マッチング
+ * →データ読み込み）をまたいでも同じ配列を使い続けるよう、モジュール単位で1回だけ解決して
+ * キャッシュする（読み込み中に localStorage のキャッシュが書き換わっても表示中の配列は
+ * 途中で入れ替えない）。
+ */
+let sessionTipsCache: DisplayTip[] | null = null;
+
+/** 表示するヒント配列をセッション単位で1回だけ決めて返す */
+export function getSessionTips(): DisplayTip[] {
+  if (!sessionTipsCache) {
+    sessionTipsCache = pickTipsForDisplay(readCachedTips());
+  }
+  return sessionTipsCache;
+}
+
+/** ヒント回転の基準時刻とランダム開始位置。モジュール初期化時に1回だけ決まる */
+interface TipRotationSession {
+  startedAt: number;
+  offset: number;
+}
+
+let tipRotationSession: TipRotationSession | null = null;
+
+/**
+ * ヒント回転の基準（開始時刻＋開始オフセット）を返す。初回呼び出し時に1回だけ生成し、
+ * 以後はページを開いている間ずっと同じ値を返す。
+ *
+ * App.tsx の1〜4のローディング画面はそれぞれ独立した return（＝アンマウント／再マウント）
+ * だが、ここをモジュールレベルの値にしておくことで、画面が切り替わってもヒントの回転が
+ * リセットされず「続きから」流れる（state で持つと再マウントのたびに最初へ戻ってしまう）。
+ */
+export function getTipRotationSession(): TipRotationSession {
+  if (!tipRotationSession) {
+    tipRotationSession = {
+      startedAt: Date.now(),
+      // 毎回同じヒントから始まらないよう開始位置をランダムにする
+      offset: Math.floor(Math.random() * 1000),
+    };
+  }
+  return tipRotationSession;
+}
+
+/**
+ * 経過時間から表示すべきヒントの index を求める純粋関数。
+ * ・tipCount<=0 は 0 除算・NaN を避けるため 0 を返す
+ * ・負の elapsedMs（タイマー精度のズレ等で発生しうる）でも例外を投げず、
+ *   0以上tipCount未満の値を返す（two's-complementではなく二重剰余で正規化）
+ */
+export function computeTipIndex(elapsedMs: number, tipCount: number, offset: number, intervalMs: number): number {
+  if (tipCount <= 0) return 0;
+  const steps = Math.floor(elapsedMs / intervalMs);
+  const raw = offset + steps;
+  return ((raw % tipCount) + tipCount) % tipCount;
+}

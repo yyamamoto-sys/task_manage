@@ -9,31 +9,36 @@
 //   前回起動時にキャッシュした DB の内容 → 無ければ組み込みの既定値
 // （このコンポーネント自身は DB を読まない。読んでいる最中に表示される画面のため）
 //
+// index は state で持たず、モジュールレベルのセッション開始時刻からの経過時間で
+// 毎レンダー算出する（src/lib/tips/loadingTips.ts の computeTipIndex/getTipRotationSession）。
+// App.tsx の起動シーケンスはローディング画面が複数回アンマウント／再マウントされるため、
+// state だと画面が切り替わるたびにヒントが最初から流れ直してしまう
+// （どのヒントも短すぎて読み切れないという指摘への対応、2026-07-27）。
+//
 // アニメーションは globals.css の animate-fadeIn を流用する（prefers-reduced-motion の
 // ガード対象に既に入っているため、個別に動きを止める実装を足さなくてよい）。
 
-import { useEffect, useMemo, useState } from "react";
-import { pickTipsForDisplay, readCachedTips } from "../../lib/tips/loadingTips";
+import { useEffect, useState } from "react";
+import { computeTipIndex, getSessionTips, getTipRotationSession, ROTATE_INTERVAL_MS } from "../../lib/tips/loadingTips";
 
-/** ヒントの切り替え間隔（ms）。読み切れる程度に長めを取る */
-const ROTATE_INTERVAL_MS = 7000;
+/** 再レンダーのためだけのtick間隔。indexそのものはcomputeTipIndexが経過時間から都度算出する */
+const TICK_MS = 1000;
 
 export function LoadingTips() {
-  // マウント時に1回だけ決定する（読み込み中にキャッシュが書き換わっても表示は揺らさない）
-  const tips = useMemo(() => pickTipsForDisplay(readCachedTips()), []);
-  // 毎回同じヒントから始まらないよう開始位置をランダムにする
-  const [index, setIndex] = useState(() => Math.floor(Math.random() * Math.max(1, tips.length)));
+  const tips = getSessionTips();
+  const session = getTipRotationSession();
+  // このstateは再レンダーのトリガーとしてのみ使う（値そのものは使わない）
+  const [, tick] = useState(0);
 
   useEffect(() => {
     if (tips.length <= 1) return;
-    const timer = setInterval(() => {
-      setIndex(i => (i + 1) % tips.length);
-    }, ROTATE_INTERVAL_MS);
+    const timer = setInterval(() => tick(t => t + 1), TICK_MS);
     return () => clearInterval(timer);
   }, [tips.length]);
 
   if (tips.length === 0) return null;
-  const tip = tips[index % tips.length];
+  const index = computeTipIndex(Date.now() - session.startedAt, tips.length, session.offset, ROTATE_INTERVAL_MS);
+  const tip = tips[index];
 
   return (
     <div

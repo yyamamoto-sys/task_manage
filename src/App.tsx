@@ -11,7 +11,7 @@ import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
-import { LoadingTips } from "./components/common/LoadingTips";
+import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
@@ -98,11 +98,7 @@ export default function App() {
   };
 
   if (loading) {
-    return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: "20px", height: "20px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
-      </div>
-    );
+    return <FullScreenLoading message="準備しています..." />;
   }
 
   // 未ログイン → ログイン画面（AppDataProvider不要）
@@ -233,11 +229,7 @@ function AuthenticatedApp({
       return <SetupWizard onComplete={onWizardComplete} />;
     }
     if (bootstrapStatus === "checking") {
-      return (
-        <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <div style={{ width: "20px", height: "20px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
-        </div>
-      );
+      return <FullScreenLoading message="準備しています..." />;
     }
     // "populated"（既に他のメンバーがいる＝自分に権限が無いだけ）または
     // "error"（is_system_bootstrapped() 呼び出し失敗。マイグレ未適用の環境など）は
@@ -252,11 +244,7 @@ function AuthenticatedApp({
   // メンバー未選択かつ自動マッチング判定中 → ローディング表示
   // （email 一致/localStorage 復元の判定が終わるまで選択画面を出さない）
   if (!currentUser && !loading && matchState === "matching") {
-    return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ width: "20px", height: "20px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
-      </div>
-    );
+    return <FullScreenLoading message="準備しています..." />;
   }
 
   // メンバー未選択かつ自動マッチング不成立確定 → 選択画面（復元できなかった場合のフォールバック）
@@ -268,46 +256,11 @@ function AuthenticatedApp({
   // ※ currentUser は loading=false になってから自動復元されるため、loading 中は必ず null
   if (!currentUser) {
     return (
-      <div style={{
-        height: "100vh", display: "flex", flexDirection: "column",
-        alignItems: "center", justifyContent: "center", gap: "24px",
-        background: "var(--color-bg-primary)",
-      }}>
-        {/* アイコン */}
-        <svg width="40" height="40" viewBox="0 0 40 40" style={{ animation: "spin 1s linear infinite", flexShrink: 0 }}>
-          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--color-bg-tertiary)" strokeWidth="3" />
-          <circle cx="20" cy="20" r="17" fill="none" stroke="var(--color-brand)" strokeWidth="3"
-            strokeLinecap="round" strokeDasharray="68 38" />
-        </svg>
-
-        {/* テキスト＋プログレスバー */}
-        <div style={{ textAlign: "center", lineHeight: 1.6, width: "200px" }}>
-          <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "6px" }}>
-            データを読み込み中...
-          </div>
-
-          {/* 決定的プログレスバー */}
-          <div style={{
-            height: "5px", borderRadius: "3px",
-            background: "var(--color-bg-tertiary)", overflow: "hidden",
-          }}>
-            <div style={{
-              height: "100%",
-              width: `${loadProgress}%`,
-              background: "var(--color-brand)",
-              borderRadius: "3px",
-              transition: "width 0.25s ease",
-            }} />
-          </div>
-
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
-            {loadingHint || `${loadProgress}%`}
-          </div>
-        </div>
-
-        {/* 待ち時間に操作テクニックのヒントを表示（ガイドツアーでは扱っていない内容） */}
-        <LoadingTips />
-      </div>
+      <FullScreenLoading
+        message="データを読み込み中..."
+        progress={loadProgress}
+        hint={loadingHint}
+      />
     );
   }
 
