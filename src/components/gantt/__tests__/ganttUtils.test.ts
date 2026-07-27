@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  calcGhostBar, computeDelayDays, formatDelayLabel,
+  calcGhostBar, computeDelayDays, formatDelayLabel, formatBarDateLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
@@ -76,6 +76,39 @@ function makeToDo(overrides: Partial<ToDo> & { id: string }): ToDo {
 
 const rangeStart = new Date(2026, 6, 1); // 2026-07-01
 const dayWidth = 28;
+
+describe("formatBarDateLabel", () => {
+  it("開始日〜期日が両方あり順序が正しければ範囲ラベル(hasRange=true)", () => {
+    const task = makeTask({ id: "t1", start_date: "2026-07-05", due_date: "2026-07-10" });
+    const due = new Date(2026, 6, 10);
+    const { hasRange, dateLabel } = formatBarDateLabel(task, due);
+    expect(hasRange).toBe(true);
+    expect(dateLabel).toBe("7/5〜7/10");
+  });
+
+  it("期日のみ（開始日なし）なら単日ラベル(hasRange=false)", () => {
+    const task = makeTask({ id: "t1", start_date: null, due_date: "2026-07-10" });
+    const due = new Date(2026, 6, 10);
+    const { hasRange, dateLabel } = formatBarDateLabel(task, due);
+    expect(hasRange).toBe(false);
+    expect(dateLabel).toBe("7/10");
+  });
+
+  it("開始日が期日より後（不正な順序）ならhasRange=falseで単日ラベル", () => {
+    const task = makeTask({ id: "t1", start_date: "2026-07-15", due_date: "2026-07-10" });
+    const due = new Date(2026, 6, 10);
+    const { hasRange, dateLabel } = formatBarDateLabel(task, due);
+    expect(hasRange).toBe(false);
+    expect(dateLabel).toBe("7/10");
+  });
+
+  it("due自体がnullなら空文字", () => {
+    const task = makeTask({ id: "t1", start_date: "2026-07-05", due_date: null });
+    const { hasRange, dateLabel } = formatBarDateLabel(task, null);
+    expect(hasRange).toBe(false);
+    expect(dateLabel).toBe("");
+  });
+});
 
 describe("calcGhostBar", () => {
   it("ベースラインが両方揃っていれば座標を返す", () => {

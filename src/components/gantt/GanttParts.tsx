@@ -3,7 +3,7 @@
 
 import { memo, useState, useRef, useEffect } from "react";
 import type { Task, Member, Project } from "../../lib/localData/types";
-import { getAssigneeIds, TASK_STATUS_STYLE } from "../../lib/taskMeta";
+import { getAssigneeIds, TASK_STATUS_STYLE, isCompletedForProgress } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
@@ -517,8 +517,8 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
           fontSize: "11px",
           fontWeight: (!isChild && childCount > 0) ? "600" : "400",
           color: isChild ? "var(--color-text-tertiary)" : childCount > 0 ? "var(--color-text-primary)" : "var(--color-text-secondary)",
-          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+          textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
+          opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
       >
         <InlineEditText
@@ -613,8 +613,8 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
         onClick={e => e.stopPropagation()}
         style={{
           flex: 1, minWidth: 0, fontSize: "11px", color: "var(--color-text-secondary)",
-          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+          textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
+          opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
       >
         <InlineEditText value={task.name} onSave={name => onSaveName(task, name)} style={{ color: "inherit" }} />
@@ -678,8 +678,8 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
         style={{
           flex: 1, minWidth: 0, fontSize: "11px",
           color: isOverdue ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-          textDecoration: task.status === "done" || task.status === "cancelled" ? "line-through" : "none",
-          opacity: task.status === "done" || task.status === "cancelled" ? 0.6 : 1,
+          textDecoration: isCompletedForProgress(task.status) ? "line-through" : "none",
+          opacity: isCompletedForProgress(task.status) ? 0.6 : 1,
         }}
       >
         {task.parent_task_id ? "↳ " : ""}

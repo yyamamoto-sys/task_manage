@@ -5,6 +5,7 @@ import type { Task, Milestone, Project, Member, ToDo } from "../../lib/localData
 import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
+import { isCompletedForProgress } from "../../lib/taskMeta";
 
 // computeRangeSelection は src/lib/selectionRange.ts に集約（ListView と共有するため）。
 // 既存の呼び出し元（本ファイル内・ganttUtils.test.ts）を壊さないよう再エクスポートする。
@@ -105,6 +106,20 @@ export function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { b
     return { barX, barWidth };
   }
   return { barX: diffDays(rangeStart, due) * dayWidth, barWidth: dayWidth - 4 };
+}
+
+/**
+ * バーの日付ラベル（例："7/1〜7/5" または "7/5"）を計算する（純粋関数）。
+ * PJ別/ToDo別/人別の3ビューで同一のロジック（hasRange判定＋ラベル整形）が繰り返されていたのを
+ * 1箇所に集約（CLAUDE.md リファクタ・挙動不変）。due が無ければ空文字を返す。
+ */
+export function formatBarDateLabel(effectiveTask: Task, due: Date | null): { hasRange: boolean; dateLabel: string } {
+  const startDate = toDate(effectiveTask.start_date ?? null);
+  const hasRange = !!(effectiveTask.start_date && due && startDate && startDate <= due);
+  const dateLabel = due ? (hasRange
+    ? `${startDate!.getMonth() + 1}/${startDate!.getDate()}〜${due.getMonth() + 1}/${due.getDate()}`
+    : `${due.getMonth() + 1}/${due.getDate()}`) : "";
+  return { hasRange, dateLabel };
 }
 
 // ===== B4：ベースライン（当初計画）差分 =====
@@ -385,7 +400,7 @@ export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMov
   if (deltaDays === 0) return [];
   const result: BulkMoveShift[] = [];
   for (const task of tasks) {
-    if (task.status === "done" || task.status === "cancelled" || task.is_deleted || !task.due_date) continue;
+    if (isCompletedForProgress(task.status) || task.is_deleted || !task.due_date) continue;
     const shift = computeMoveShift(task.start_date ?? null, task.due_date, deltaDays);
     if (Object.keys(shift).length === 0) continue;
     result.push({
