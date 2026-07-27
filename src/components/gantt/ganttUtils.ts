@@ -113,6 +113,15 @@ export function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { b
  * PJ別/ToDo別/人別の3ビューで同一のロジック（hasRange判定＋ラベル整形）が繰り返されていたのを
  * 1箇所に集約（CLAUDE.md リファクタ・挙動不変）。due が無ければ空文字を返す。
  */
+/**
+ * バーツールチップ末尾の共通バッジ部分（滞留・クリティカルパス）を組み立てる（純粋関数）。
+ * PJ別/ToDo別/人別の3ビューでツールチップの前半は異なるが、この末尾2行は完全に同一だった
+ * （CLAUDE.md リファクタ・挙動不変）。
+ */
+export function formatBarTooltipSuffix(isStagnant: boolean, isCritical: boolean): string {
+  return `${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${isCritical ? "\n🎯 クリティカルパス" : ""}`;
+}
+
 export function formatBarDateLabel(effectiveTask: Task, due: Date | null): { hasRange: boolean; dateLabel: string } {
   const startDate = toDate(effectiveTask.start_date ?? null);
   const hasRange = !!(effectiveTask.start_date && due && startDate && startDate <= due);

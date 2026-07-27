@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  calcGhostBar, computeDelayDays, formatDelayLabel, formatBarDateLabel,
+  calcGhostBar, computeDelayDays, formatDelayLabel, formatBarDateLabel, formatBarTooltipSuffix,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
@@ -107,6 +107,24 @@ describe("formatBarDateLabel", () => {
     const { hasRange, dateLabel } = formatBarDateLabel(task, null);
     expect(hasRange).toBe(false);
     expect(dateLabel).toBe("");
+  });
+});
+
+describe("formatBarTooltipSuffix", () => {
+  it("両方falseなら空文字", () => {
+    expect(formatBarTooltipSuffix(false, false)).toBe("");
+  });
+
+  it("滞留のみtrueなら滞留の行のみ", () => {
+    expect(formatBarTooltipSuffix(true, false)).toBe("\n⚠ 5日以上滞留");
+  });
+
+  it("クリティカルのみtrueならクリティカルの行のみ", () => {
+    expect(formatBarTooltipSuffix(false, true)).toBe("\n🎯 クリティカルパス");
+  });
+
+  it("両方trueなら両方の行を連結", () => {
+    expect(formatBarTooltipSuffix(true, true)).toBe("\n⚠ 5日以上滞留\n🎯 クリティカルパス");
   });
 });
 

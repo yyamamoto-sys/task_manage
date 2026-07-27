@@ -23,10 +23,10 @@ import { isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib
 import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
-  DAY_WIDTH_DEFAULT, ZOOM_LEVELS, STAGNANT_THRESHOLD_DAYS,
+  DAY_WIDTH_DEFAULT, ZOOM_LEVELS,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
-  type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel,
+  type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
@@ -1837,7 +1837,7 @@ export function GanttView({
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
         const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
-        const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
         return (
@@ -1915,7 +1915,7 @@ export function GanttView({
         const isStagnant = isTaskStagnant(task);
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
-        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
         return (
@@ -1992,7 +1992,7 @@ export function GanttView({
         const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
-        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${isStagnant ? `\n⚠ ${STAGNANT_THRESHOLD_DAYS}日以上滞留` : ""}${criticalTaskIds.has(task.id) ? "\n🎯 クリティカルパス" : ""}`;
+        const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
         return (
