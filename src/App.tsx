@@ -11,6 +11,7 @@ import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
+import { LoadingTips } from "./components/common/LoadingTips";
 import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
@@ -303,6 +304,9 @@ function AuthenticatedApp({
             {loadingHint || `${loadProgress}%`}
           </div>
         </div>
+
+        {/* 待ち時間に操作テクニックのヒントを表示（ガイドツアーでは扱っていない内容） */}
+        <LoadingTips />
       </div>
     );
   }

@@ -69,6 +69,13 @@ const KEYS = {
   CAL_VIEW_MODE:       "cal_view_mode",
   /** 週末（土日）セルを淡くするトグル（刷新第2弾⑥・既定OFF） */
   CAL_DIM_WEEKENDS:    "cal_dim_weekends",
+  // ローディング画面のヒント
+  /**
+   * DB（loading_tips）から取得したヒントのキャッシュ。
+   * ローディング画面は「DBを読んでいる最中」に出るためDBの値が間に合わない。
+   * 前回起動時にキャッシュした内容を表示に使う（無ければ組み込みの既定値）。
+   */
+  LOADING_TIPS_CACHE:  "loading_tips_cache",
   // エラー履歴
   ERROR_HISTORY:       "app:error_history",
   // スキーマバージョン管理（内部用）

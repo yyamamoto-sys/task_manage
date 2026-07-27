@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.12
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.13
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3132,7 +3132,52 @@
 #             tsc 0・eslint 35件で完全一致（baseline比較・新規0）・build成功
 #      詳細：docs/REFACTORING.md「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照
 #
-# 最終更新：2026-07-24（v3.12）
+# v3.13 feat: ローディング画面に操作テクニックのヒントを表示（2026-07-27）
+#      目的：初回データ読み込み中（App.tsx のプログレスバー画面）の待ち時間に、初回ガイドツアー
+#             （tour/tours/first-time.ts）では扱っていない操作テクニックを1つずつ表示する
+#             （ガントのドラッグ操作・依存関係の作り方・複数選択・コマンドパレット等、
+#             覚えると便利だがツアーでは説明しきれていない内容）
+#      追加：`loading_tips` テーブル（migrations/20260727_add_loading_tips.sql）。全社共通の
+#             1テーブル（group_id を持たない）。読み取りはauthenticated全員、書き込みは
+#             current_member_is_super_admin() のみ（RLS）。論理削除（is_deleted）。既定10件を
+#             「テーブルが空のときだけ」初期投入（再適用しても増殖しない）
+#      設計：ローディング画面はまさにその loading_tips を読んでいる最中に表示されるため、
+#             DB から取得した値をその場の初回表示には使えない。そこで2段構えにした：
+#             ①起動のたびに loading_tips を fire-and-forget で取得し、取得できたら
+#             localStorage（KEYS.LOADING_TIPS_CACHE）にキャッシュする、②ローディング画面の
+#             表示はそのキャッシュ（無ければ組み込みの DEFAULT_LOADING_TIPS）だけを見る。
+#             このため、設定画面での変更は保存した本人を含め各ユーザーの**次回の読み込みから**
+#             反映される（今回のセッション中は変わらない）。src/lib/tips/loadingTips.ts の
+#             ヘッダコメント参照
+#      追加：`src/lib/tips/loadingTips.ts`（DisplayTip型・DEFAULT_LOADING_TIPS10件・
+#             toDisplayTips/pickTipsForDisplay/readCachedTips/writeCachedTips の純粋関数群）・
+#             `src/components/common/LoadingTips.tsx`（7秒ごとに切り替わるヒントカード。
+#             App.tsx のローディング画面に追加。スピナー・プログレスバー・loadingHintの
+#             再試行メッセージ自体は無変更）
+#      追加：`LoadingTip`型（localData/types.ts）・fetchLoadingTips/upsertLoadingTip/
+#             softDeleteLoadingTip（lib/supabase/store.ts）・appStore に loadingTips state と
+#             saveLoadingTip/deleteLoadingTip アクション（load() 内で fire-and-forget 取得し
+#             キャッシュを書く。保存・削除のたびにもキャッシュを更新）
+#      追加：設定画面に新カテゴリ「アプリ設定」→「ローディングのヒント」タブ
+#             （`src/components/admin/LoadingTipsSection.tsx`）。一覧＋↑↓並べ替え＋インライン
+#             編集＋DangerZoneでの削除＋モーダルでの新規追加。**全社スーパー管理者のみ**左ナビに
+#             表示（部署管理者には見せない。UIとDB RLSの二重ガード）。localStorage の
+#             ADMIN_LAST_TAB に "tips" が残ったまま super admin でないユーザーが開いた場合の
+#             フォールバックも実装
+#      refactor：`AdminView.tsx` のモジュール定数だった inputStyle/primaryBtnStyle/
+#             ghostBtnStyle/addBtnStyle を `src/components/admin/adminStyles.ts` に切り出し
+#             （セクションを別ファイルに分けるたびに再定義・循環importを避けるため。挙動不変）
+#      テスト：`src/lib/tips/__tests__/loadingTips.test.ts` 新規10件（toDisplayTips の
+#             is_deleted/is_active=false/本文空白の除外・sort_order順・安定ソート、
+#             pickTipsForDisplay のフォールバック、DEFAULT_LOADING_TIPS の件数・非空検証）。
+#             readCachedTips/writeCachedTips はlocalStorage依存かつvitest環境がenvironment:
+#             "node"のため未検証（既存方針どおり省略）。既存604件（594+10）全通過。
+#             tsc 0・eslint 35件で完全一致（baseline比較・新規0）・build成功
+#      ⚠ マイグレ要：`supabase/migrations/20260727_add_loading_tips.sql` を山本さんが
+#             手動適用（dev→prod の順）。未適用の環境ではローディング画面は組み込みの
+#             既定値10件で動作する（appStore側でfetch失敗を握りつぶす設計のため起動はブロックしない）
+#
+# 最終更新：2026-07-27（v3.13）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4057,6 +4102,7 @@ interface TaskChangeLog {
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
 | OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
 | KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
+| ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -4130,7 +4176,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-24（v3.12）
+- 最終更新：2026-07-27（v3.13）
 
 ---
 

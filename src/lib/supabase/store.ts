@@ -15,7 +15,7 @@ import type {
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject, TaskDependency,
-  MemberTag, MemberTagMember,
+  MemberTag, MemberTagMember, LoadingTip,
 } from "../localData/types";
 
 // ===== 競合エラー =====
@@ -139,6 +139,33 @@ export async function upsertGroup(group: Group, expectedUpdatedAt?: string): Pro
 export async function softDeleteGroup(id: string, deletedBy: string) {
   const now = new Date().toISOString();
   const { error } = await supabase.from("groups")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+// ===== LoadingTip（ローディング画面のヒント）=====
+//
+// 全社共通マスタ（部署スコープなし）。読み取りは全員、書き込みは全社スーパー管理者のみ
+// （DB側のRLSで強制。migrations/20260727_add_loading_tips.sql）。
+
+export async function fetchLoadingTips(): Promise<LoadingTip[]> {
+  const { data, error } = await supabase
+    .from("loading_tips")
+    .select("*")
+    .eq("is_deleted", false)
+    .order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as LoadingTip[];
+}
+
+export async function upsertLoadingTip(tip: LoadingTip, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("loading_tips", tip, expectedUpdatedAt);
+}
+
+export async function softDeleteLoadingTip(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("loading_tips")
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
   if (error) throw error;

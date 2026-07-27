@@ -233,6 +233,28 @@ export interface Milestone {
   deleted_by?: string;
 }
 
+/**
+ * ローディング画面のヒント（migrations/20260727_add_loading_tips.sql）。
+ *
+ * 【設計意図】
+ * 初回データ読み込み中の待ち時間に、ガイドツアーでは扱っていない操作テクニックを
+ * 1つずつ表示する。全社共通のマスタ（部署概念なし・group_id を持たない）で、
+ * 編集できるのは全社スーパー管理者のみ（DB側のRLSで強制）。
+ */
+export interface LoadingTip {
+  id: string;
+  title: string;      // 見出し（絵文字1個＋短い一文）。空文字も可
+  body: string;       // 本文
+  sort_order: number; // 表示順（小さいほど先）
+  is_active: boolean; // false なら表示しない（消さずに一時的に伏せる用）
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 export interface ProjectTaskForce {
   project_id: string;
   tf_id: string;

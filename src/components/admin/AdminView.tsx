@@ -38,8 +38,10 @@ import { Card, SummaryTile, SummaryRow } from "../common/Card";
 import { DangerZone, DangerAction } from "../common/DangerZone";
 import { AdminFormModal } from "./AdminFormModal";
 import { OkrImportModal } from "./OkrImportModal";
+import { LoadingTipsSection } from "./LoadingTipsSection";
+import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "tips";
 
 interface Props { currentUser: Member; }
 
@@ -148,11 +150,14 @@ export function AdminView({ currentUser }: Props) {
   );
 
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
-  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups"];
+  // "tips" は全社スーパー管理者のみに見せるタブのため、保存値がtipsでもsuper adminでない
+  // ユーザーには無効な選択肢として扱う（選択肢に無いタブが選ばれたままになる事故を防ぐ）。
+  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "tips"];
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
     if (krCount === 0) return "okr";
     if (pjCount === 0) return "pj";
+    if (saved === "tips" && !isCurrentUserSuperAdmin) return "pj";
     return (saved && validTabs.includes(saved)) ? saved : "pj";
   });
   const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
@@ -199,7 +204,8 @@ export function AdminView({ currentUser }: Props) {
     localStorage.setItem(KEYS.ADMIN_FONT_SIZE, String(level));
   };
 
-  // 左ナビ：カテゴリ分け（作業設定 / 人 / 組織 / レポート）
+  // 左ナビ：カテゴリ分け（作業設定 / 人 / 組織 / レポート / アプリ設定）
+  // 「アプリ設定」は全社スーパー管理者のみに見せる（部署管理者には出さない）。
   const categories: { label: string; items: { key: AdminTab; label: string; count?: number }[] }[] = [
     { label: "作業設定", items: [
         { key: "pj",  label: "プロジェクト",     count: pjCount },
@@ -216,6 +222,9 @@ export function AdminView({ currentUser }: Props) {
     { label: "レポート", items: [
         { key: "ai_usage", label: "AI使用量" },
     ] },
+    ...(isCurrentUserSuperAdmin ? [{ label: "アプリ設定", items: [
+        { key: "tips" as AdminTab, label: "ローディングのヒント" },
+    ] }] : []),
   ];
   const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
 
@@ -391,6 +400,7 @@ export function AdminView({ currentUser }: Props) {
           {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
           {tab === "ai_usage" && <AIUsageSection selectedGroupId={selectedGroupId} />}
           {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>
     </div>
@@ -2971,32 +2981,7 @@ function EditInline({ value, onSave, onCancel }: {
   );
 }
 
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "6px 9px",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", fontSize: "12px",
-  color: "var(--color-text-primary)", background: "var(--color-bg-primary)",
-  outline: "none",
-};
-const primaryBtnStyle: React.CSSProperties = {
-  padding: "5px 14px", fontSize: "11px", fontWeight: "500",
-  background: "var(--color-bg-info)", color: "var(--color-text-info)",
-  border: "1px solid var(--color-border-info)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-};
-const ghostBtnStyle: React.CSSProperties = {
-  padding: "5px 12px", fontSize: "11px",
-  color: "var(--color-text-secondary)",
-  border: "1px solid var(--color-border-primary)",
-  borderRadius: "var(--radius-md)", cursor: "pointer",
-  background: "transparent",
-};
-/** 各セクションヘッダーの「＋ 追加」系ボタン（ブランド色の塗りつぶし・モックのトーン） */
-const addBtnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: "12px", fontWeight: "500",
-  background: "var(--color-brand)", color: "#fff",
-  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-};
+// スタイル定数は admin/adminStyles.ts に集約（別ファイルのセクションからも同じ見た目を使うため）。
 
 // ===== AI使用量セクション =====
 

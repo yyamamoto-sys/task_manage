@@ -25,7 +25,7 @@ import type {
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective, QuarterlyKrTaskForce,
   TaskTaskForce, TaskProject, TaskDependency,
-  MemberTag, MemberTagMember,
+  MemberTag, MemberTagMember, LoadingTip,
 } from "../lib/localData/types";
 import {
   fetchCriticalData,
@@ -33,6 +33,7 @@ import {
   fetchGroups,
   ConflictError,
   upsertGroup, softDeleteGroup,
+  fetchLoadingTips, upsertLoadingTip, softDeleteLoadingTip,
   upsertMember, softDeleteMember,
   upsertObjective,
   upsertKeyResult, softDeleteKeyResult,
@@ -56,6 +57,7 @@ import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependen
 import { computeParentAutoStatus } from "../lib/taskHierarchy";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
+import { toDisplayTips, writeCachedTips } from "../lib/tips/loadingTips";
 
 export interface AppState {
   // ===== データ =====
@@ -89,6 +91,10 @@ export interface AppState {
   milestones: Milestone[];
   memberTags: MemberTag[];
   memberTagMembers: MemberTagMember[];
+  // ローディング画面のヒント（全社共通マスタ）。編集は全社スーパー管理者のみ（DB側のRLSで強制）。
+  // 表示自体はこの state ではなく localStorage キャッシュ経由で行う（ローディング画面は
+  // このデータを取得している最中に出るため。src/lib/tips/loadingTips.ts のコメント参照）。
+  loadingTips: LoadingTip[];
   loading: boolean;
   backgroundLoading: boolean;   // Phase-2（OKRデータ）取得中。メイン UI はブロックしない
   loadProgress: number;         // 現フェーズの進捗 0-100（フェーズ切替で 0 にリセット）
@@ -104,6 +110,10 @@ export interface AppState {
   setCurrentUserIsSuperAdmin: (v: boolean) => void;
   saveGroup: (group: Group) => Promise<void>;
   deleteGroup: (id: string, deletedBy: string) => Promise<void>;
+
+  // ===== LoadingTip（ローディング画面のヒント）=====
+  saveLoadingTip: (tip: LoadingTip) => Promise<void>;
+  deleteLoadingTip: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== Member =====
   saveMember: (member: Member) => Promise<void>;
@@ -468,6 +478,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   milestones: [],
   memberTags: [],
   memberTagMembers: [],
+  loadingTips: [],
   loading: true,
   backgroundLoading: false,
   loadProgress: 0,
@@ -530,6 +541,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
           loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
           loadingHint:      "",             // ← ヒントをクリア
         });
+
+        // ローディング画面のヒント（loading_tips）は fire-and-forget で取得する。
+        // ・Phase 1 をこれ以上遅らせない（ローディング画面の表示自体は前回起動時の
+        //   localStorage キャッシュ／組み込みの既定値で既に成立しているため急がない）
+        // ・取得できたらキャッシュを更新し、次回起動のローディング画面に反映する
+        // ・テーブル未適用（マイグレ前）の環境でも起動をブロックしないよう握りつぶす
+        void (async () => {
+          try {
+            const tips = await fetchLoadingTips();
+            set({ loadingTips: tips });
+            writeCachedTips(toDisplayTips(tips));
+          } catch {
+            /* loading_tips 未適用環境など。既定値で表示されるだけなので無視 */
+          }
+        })();
 
         // Phase 2: OKR系（8テーブル）→ バックグラウンド取得
         // 失敗してもメイン UI はブロックしない（サイレントエラー）
@@ -614,6 +640,46 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     try {
       await softDeleteGroup(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  // ===== LoadingTip（ローディング画面のヒント）=====
+  //
+  // 保存・削除のたびに localStorage キャッシュも更新する。ローディング画面は
+  // このデータの取得完了前に表示されるため、次回起動時に最新が出るようにするには
+  // キャッシュの更新が必須（state だけ直しても表示には反映されない）。
+  saveLoadingTip: async (tip) => {
+    set(state => ({
+      loadingTips: state.loadingTips.findIndex(t => t.id === tip.id) >= 0
+        ? state.loadingTips.map(t => t.id === tip.id ? tip : t)
+        : [...state.loadingTips, tip],
+    }));
+    await runSerializedByKey(`loading_tips:${tip.id}`, async () => {
+      const expectedUpdatedAt = get().loadingTips.find(t => t.id === tip.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertLoadingTip(tip, expectedUpdatedAt);
+        set(state => ({ loadingTips: syncUpdatedAt(state.loadingTips, tip.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
+    writeCachedTips(toDisplayTips(get().loadingTips));
+  },
+
+  deleteLoadingTip: async (id, deletedBy) => {
+    const now = new Date().toISOString();
+    set(state => ({
+      loadingTips: state.loadingTips.map(t =>
+        t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
+      ),
+    }));
+    try {
+      await softDeleteLoadingTip(id, deletedBy);
+      writeCachedTips(toDisplayTips(get().loadingTips));
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

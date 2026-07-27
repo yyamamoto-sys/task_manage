@@ -524,6 +524,23 @@ CREATE TABLE IF NOT EXISTS kr_reports (
   is_deleted   boolean NOT NULL DEFAULT false
 );
 
+-- ===== ローディング画面のヒント（migrations/20260727_add_loading_tips.sql 参照）=====
+-- 全社共通の1テーブル（group_id を持たない）。読み取りは authenticated 全員、
+-- 書き込みは全社スーパー管理者のみ（下部のRLSブロック参照）。
+CREATE TABLE IF NOT EXISTS loading_tips (
+  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  title       text NOT NULL DEFAULT '',
+  body        text NOT NULL,
+  sort_order  integer NOT NULL DEFAULT 0,
+  is_active   boolean NOT NULL DEFAULT true,
+  is_deleted  boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text NOT NULL DEFAULT '',
+  deleted_at  timestamptz,
+  deleted_by  text
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -538,7 +555,8 @@ BEGIN
     ('quarterly_objectives'),
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
-    ('okr_analyses'), ('kr_reports'), ('task_dependencies')
+    ('okr_analyses'), ('kr_reports'), ('task_dependencies'),
+    ('loading_tips')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -580,6 +598,9 @@ ALTER TABLE kr_meeting_notes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_note_tf_entries         ENABLE ROW LEVEL SECURITY;
 ALTER TABLE okr_analyses               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kr_reports                 ENABLE ROW LEVEL SECURITY;
+ALTER TABLE loading_tips               ENABLE ROW LEVEL SECURITY;
+-- ※ loading_tips の個別ポリシーは current_member_is_super_admin() を参照するため、
+--   ヘルパー関数の定義より後（下部の「ローディング画面のヒント」ブロック）で作成する。
 
 -- members / projects / tasks / groups はグループ分離・権限昇格防止のため
 -- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
@@ -693,6 +714,19 @@ DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
 DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
 CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
   USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+
+-- ローディング画面のヒント：読み取りは authenticated 全員（機密情報ではない）、
+-- 書き込みは全社スーパー管理者のみ。部署概念を持たない全社共通マスタのため
+-- group_id によるスコープはしない（migrations/20260727_add_loading_tips.sql）。
+DROP POLICY IF EXISTS "authenticated full access" ON loading_tips;
+DROP POLICY IF EXISTS "loading_tips_read"  ON loading_tips;
+DROP POLICY IF EXISTS "loading_tips_write" ON loading_tips;
+CREATE POLICY "loading_tips_read" ON loading_tips
+  FOR SELECT TO authenticated USING (true);
+CREATE POLICY "loading_tips_write" ON loading_tips
+  FOR ALL TO authenticated
+  USING (current_member_is_super_admin())
+  WITH CHECK (current_member_is_super_admin());
 
 -- ============================================================
 -- OKRコア階層（objectives/key_results/task_forces/todos）の部署スコープ
@@ -1348,3 +1382,7 @@ CREATE INDEX IF NOT EXISTS idx_task_dependencies_successor
   ON task_dependencies(successor_task_id) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_task_dependencies_predecessor
   ON task_dependencies(predecessor_task_id) WHERE is_deleted = false;
+
+-- loading_tips：表示順で引く（migrations/20260727_add_loading_tips.sql）
+CREATE INDEX IF NOT EXISTS idx_loading_tips_sort_order
+  ON loading_tips(sort_order) WHERE is_deleted = false;
