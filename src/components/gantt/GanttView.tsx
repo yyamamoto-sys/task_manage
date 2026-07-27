@@ -26,7 +26,7 @@ import {
   DAY_WIDTH_DEFAULT, ZOOM_LEVELS,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
-  type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix,
+  type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
@@ -1836,7 +1836,7 @@ export function GanttView({
         const isStagnant = isTaskStagnant(task);
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
-        const barColor = isChanged ? "var(--color-brand)" : isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj.color_tag;
+        const barColor = isChanged ? "var(--color-brand)" : resolveGanttBarColor(isDone, !!isOverdue, pj.color_tag);
         const tooltip = `${depth > 0 ? "↳ 子タスク\n" : ""}${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}\n担当：${memberById.get(task.assignee_member_id)?.short_name}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;
         const { left: depBadgeLeft, right: depBadgeRight } = getDepBadgeTitles(task.id);
         const { ghostBar, delayLabel, isDelayed } = getBaselineRender(task, bar);
@@ -1924,7 +1924,7 @@ export function GanttView({
             rowHeight={row.height}
             taskId={task.id}
             bar={bar}
-            barColor={isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : TODO_COLOR}
+            barColor={resolveGanttBarColor(isDone, !!isOverdue, TODO_COLOR)}
             borderRadius={hasRange ? "4px" : "9px"}
             isDone={isDone}
             isStagnant={isStagnant}
@@ -1989,7 +1989,7 @@ export function GanttView({
         const isOverdue = due && due < today && !suppressOverdue(task.status);
         const isStagnant = isTaskStagnant(task);
         const pj = task.project_id ? projectById.get(task.project_id) : undefined;
-        const barColor = isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : pj?.color_tag ?? m.color_text;
+        const barColor = resolveGanttBarColor(isDone, !!isOverdue, pj?.color_tag ?? m.color_text);
         const { hasRange, dateLabel } = formatBarDateLabel(effectiveTask, due);
         const isHovered = hoveredTaskId === task.id;
         const tooltip = `${task.name}${task.start_date ? `\n開始：${task.start_date}` : ""}\n期日：${task.due_date}${pj ? `\nPJ：${pj.name}` : ""}${formatBarTooltipSuffix(isStagnant, criticalTaskIds.has(task.id))}`;

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  calcGhostBar, computeDelayDays, formatDelayLabel, formatBarDateLabel, formatBarTooltipSuffix,
+  calcGhostBar, computeDelayDays, formatDelayLabel, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
   computeWeekBlocks, applyResizePreview, clampStartDate,
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
@@ -125,6 +125,20 @@ describe("formatBarTooltipSuffix", () => {
 
   it("両方trueなら両方の行を連結", () => {
     expect(formatBarTooltipSuffix(true, true)).toBe("\n⚠ 5日以上滞留\n🎯 クリティカルパス");
+  });
+});
+
+describe("resolveGanttBarColor", () => {
+  it("完了なら成功色（期限超過・fallbackより優先）", () => {
+    expect(resolveGanttBarColor(true, true, "#123456")).toBe("var(--color-border-success)");
+  });
+
+  it("未完了かつ期限超過なら危険色", () => {
+    expect(resolveGanttBarColor(false, true, "#123456")).toBe("var(--color-border-danger)");
+  });
+
+  it("未完了かつ期限内ならfallback色", () => {
+    expect(resolveGanttBarColor(false, false, "#123456")).toBe("#123456");
   });
 });
 

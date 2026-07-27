@@ -109,6 +109,17 @@ export function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { b
 }
 
 /**
+ * バーの基本色（完了/期限超過/通常）を決める共通ロジック（純粋関数）。PJ別/ToDo別/人別の
+ * 3ビューで「完了なら成功色、期限超過なら危険色、それ以外はビューごとのfallback色」という
+ * 同一の優先順位が繰り返されていたのを1箇所に集約（CLAUDE.md リファクタ・挙動不変）。
+ * PJ別ビューのisChanged（AI提案プレビューの変更ハイライト）はこの関数の外側で別途上書きする
+ * （3ビュー中PJ別のみ持つ固有の分岐のため）。
+ */
+export function resolveGanttBarColor(isDone: boolean, isOverdue: boolean, fallbackColor: string): string {
+  return isDone ? "var(--color-border-success)" : isOverdue ? "var(--color-border-danger)" : fallbackColor;
+}
+
+/**
  * バーの日付ラベル（例："7/1〜7/5" または "7/5"）を計算する（純粋関数）。
  * PJ別/ToDo別/人別の3ビューで同一のロジック（hasRange判定＋ラベル整形）が繰り返されていたのを
  * 1箇所に集約（CLAUDE.md リファクタ・挙動不変）。due が無ければ空文字を返す。
