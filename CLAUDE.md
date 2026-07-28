@@ -1,4 +1,4 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.16
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.17
 #
 # 変更履歴：
 # v1.0 Phase 1〜3の設計を反映（データモデル・削除設計・競合制御・画面一覧）
@@ -3448,7 +3448,64 @@
 #             `npm run build`成功（`MyPageView`チャンクが21.48KB→32.31KB・gzip 6.28KB→8.63KBに
 #             増加。ウィジェット3個＋設定モーダルの追加分として想定内）
 #
-# 最終更新：2026-07-27（v3.16）
+# v3.17 feat: ラボ機能「マイページ（ウィジェット）」Phase 3（ウィジェット作成仕様書＋テンプレート＋
+#      契約の機械チェック。デプロイ型の自作を解禁）を追加（2026-07-28）
+#      背景：`docs/dev/mypage-widgets-design.md`§7フェーズ計画のPhase 3。山本さんの最終目標
+#             （「将来、仕様に従って自分でウィジェットを作り、取り込めるようにする」）のうち、
+#             §6で選定済みの案1（デプロイ型）を実際に使える状態にする。新しいウィジェット機能
+#             そのものは増やしていない（Phase 1〜2で実装済みの10種のまま）
+#      **なぜランタイム取り込みではなくデプロイ型を先に用意したか**：このアプリのオリジンの
+#             `localStorage`にはSupabaseの認証セッショントークンがある。アプリ本体が任意JSを
+#             その場で実行できる仕組み（eval/new Function/動的import等）を持つと、そのコードは
+#             全社のPJ・タスク・メンバー情報を読み外部へ送信できる状態を作ってしまう（悪意が
+#             無くても生成コードのバグや第三者スニペットの混入だけで成立する）。ブランドコア
+#             §0・§4に真正面から抵触するため、デプロイ型（コードとして書く→ビルドを通す→
+#             差分レビューできる状態で配布する。実行時の動的コード読み込みがゼロ）を先に用意した
+#             （`mypage-widgets-design.md`§6の案1〜3比較を参照。案2〈宣言的ウィジェット〉・
+#             案3〈サンドボックスiframe〉は「それでも足りない」となった時点で検討する）
+#      **契約を文章だけでなくテストで強制したこと**：将来この契約に引っかかるのは山本さん自身
+#             ではなくClaude Codeが生成したウィジェットである可能性が高いため、レビュー頼みに
+#             せず`widgetContract.test.ts`で機械的に落とす設計にした。禁止import
+#             （useAppStore/stores/appStore/supabase）・外部通信（fetch/XMLHttpRequest/
+#             WebSocket）・レジストリの6つの不変条件（id一意性・allowedSizesがdefaultSizeを
+#             含む・dataNeedsが配列・configSchemaのkey一意性・title/description/iconが空でない・
+#             _template.tsxが未登録）を検査し、失敗時は「何が・どのファイルで・なぜダメか・
+#             どう直すか」まで含めたメッセージを出す
+#      追加：`docs/dev/widget-authoring.md`（新規・本Phaseの主成果物）。実装済みのコードを正として
+#             書いた仕様書。①これは何か・配布のしかた（ランタイム取り込みを提供しない理由を含む）
+#             ②5分で1個作る手順（実際のコマンド・コード片付き）③WidgetContextの完全リファレンス
+#             （型定義をそのまま転記）④WidgetDefinitionの各フィールドの書き方（表形式。id不変の
+#             重要性等）⑤configSchemaの全type一覧（表形式。text/textarea/number/boolean/select/
+#             projectMultiSelect/memberMultiSelect）⑥禁止事項⑦副作用を増やしたいときの手順と
+#             choke pointを通す理由⑧見た目の作法⑨提出前チェックリスト⑩Claude Codeに貼る
+#             プロンプト雛形（コピペ即使用可能な実用ブロック）の10節構成
+#      追加：`src/components/lab/widgets/_template.tsx`（新規）。コピーして使う最小のウィジェット
+#             雛形。WidgetContextを受け取りresolveConfigで設定を正規化し、データを1つ絞り込んで
+#             一覧表示・空状態も出す「よくある形」を一通り含む。穴埋め箇所は`// 👉 ここを変える：`
+#             コメントで明示。ビルド対象には入るがレジストリには未登録のため画面には出ない。
+#             全ての宣言（configSchema定数・コンポーネント）を実際に使う形にし、新規eslint
+#             エラー0を担保
+#      追加：`src/components/lab/widgets/__tests__/widgetContract.test.ts`（新規・60テスト）。
+#             `fs`で`src/components/lab/widgets/*.tsx`（直下ファイルのみ・非再帰）を読み、
+#             禁止import・外部通信をファイルごとに検査（`it.each`）。`WIDGET_REGISTRY`を
+#             importしレジストリの6不変条件を検査。パス解決は`process.cwd()`に依存せず
+#             `fileURLToPath(import.meta.url)`基準（vitest実行ディレクトリに依存しない）
+#      是正（Phase 2の申し送り）：`src/components/lab/widgets/registry.ts`冒頭コメントの
+#             「defaultSize は layout.ts の DEFAULT_WIDGET_ENTRIES と値を一致させること」という
+#             記述（Phase 2でこの二重管理は解消済みだったにもかかわらず残っていた）を、実装に
+#             合わせて「defaultSize の真実源はここ（レジストリ）1箇所のみ。layout.tsはレジストリを
+#             importしない層構造のため、useMyPageLayout.tsのresolveDefaultSizeが解決して注入する」
+#             に修正。`layout.ts`側は既にPhase 2時点で正しい記述だったため変更なし（確認のみ）
+#      更新：`docs/dev/mypage-widgets-design.md`§7フェーズ計画のPhase 3行に実装済み（2026-07-28）
+#             を追記（他の記述は書き換えていない）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 734件全通過（既存674件＋新規60件）／
+#             `npx eslint src`は変更前と同じ35件（24 error + 11 warning、baseline比較で完全一致・
+#             新規0件。`_template.tsx`自身も新規エラー0）／`npm run build`成功（`_template.tsx`は
+#             どこからもimportされないため、いずれのチャンクサイズにも影響なし）
+#      DBマイグレ不要（ドキュメント・テンプレート・テストの追加のみ。フロントの表示・保存ロジックは
+#             無改造）
+#
+# 最終更新：2026-07-28（v3.17）
 
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
 > 設計意図・制約・禁止事項を正確に把握するための最重要ドキュメントです。
@@ -4374,7 +4431,7 @@ interface TaskChangeLog {
 | OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
 | KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
-| マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。詳細は`docs/dev/mypage-widgets-design.md` |
+| マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -4448,7 +4505,7 @@ const { submit } = useAIConsultation(projectIds);
 - 設計変更があった場合は必ずこのファイルを更新すること
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
-- 最終更新：2026-07-27（v3.16）
+- 最終更新：2026-07-28（v3.17）
 
 ---
 
@@ -4582,6 +4639,27 @@ docs/dev/tour-guidelines.md  ← 背景の明度・モーション・トンマ�
 
 **セッション中の合言葉**：「ツアーを直したい／ツアーを追加したい」と言われたら、まず
 `docs/dev/tour-guidelines.md` を読んでから着手・提案すること。
+
+---
+
+## 14.6. マイページ用ウィジェット改修の必読ルール（必須）
+
+ラボ機能「マイページ」のウィジェット（`src/components/lab/widgets/` 配下）には、契約・作法・
+禁止事項をまとめた専用の仕様書があります。
+
+```
+docs/dev/widget-authoring.md  ← WidgetContextの完全リファレンス・configSchemaの全type一覧・
+                                  禁止事項・choke pointを通す理由・提出前チェックリスト
+```
+
+**マイページ用ウィジェットを追加・変更する前に、必ず `docs/dev/widget-authoring.md` を読み、
+その契約（`useAppStore`/`supabase` の直接使用禁止・`WidgetContext` だけを唯一の入口とする・
+`configSchema` 駆動の設定フォーム等）に従うこと。** この契約は
+`src/components/lab/widgets/__tests__/widgetContract.test.ts` で機械的にも強制されている
+（違反すると `npx vitest run` が落ちる）。
+
+**セッション中の合言葉**：「ウィジェットを作りたい／マイページに機能を足したい」と言われたら、
+まず `docs/dev/widget-authoring.md` を読んでから着手・提案すること。
 
 ---
 

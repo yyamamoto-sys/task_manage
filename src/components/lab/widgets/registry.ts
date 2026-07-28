@@ -4,10 +4,13 @@
 // 「どんなウィジェットが存在するか」の一覧を1箇所で保持する（レジストリ）。型
 // （WidgetDefinition 等）は lib 側（src/lib/widgets/types.ts）に置き、レジストリ自体は
 // コンポーネント層に置く（lib からコンポーネントを import しない層構造を守るため）。
-// ウィジェットを1個足すときは、③に1ファイル追加＋ここに1行登録するだけで済む。
+// ウィジェットを1個足すときは、widgets/ に1ファイル追加＋ここに1行登録するだけで済む。
 //
-// defaultSize は src/lib/widgets/layout.ts の DEFAULT_WIDGET_ENTRIES（既定レイアウトが
-// 使う5ウィジェット分）と値を一致させること（layout.ts 側のコメント参照）。
+// defaultSize の真実源はここ（各 WidgetDefinition の defaultSize）1箇所のみ。
+// src/lib/widgets/layout.ts はレジストリ（コンポーネント層）を import しない層構造のため、
+// 既定レイアウト作成（createDefaultLayout）・復元（normalizeLayout）はサイズを直接持たず、
+// 呼び出し側（src/hooks/useMyPageLayout.ts の resolveDefaultSize）がこのレジストリから
+// defaultSize を解決して注入する（Phase 2 で二重管理を解消済み。layout.ts 側のコメント参照）。
 
 import type { WidgetDefinition } from "../../../lib/widgets/types";
 import { MyWeekTasksWidget } from "./MyWeekTasksWidget";

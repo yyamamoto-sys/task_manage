@@ -214,6 +214,7 @@ export interface MyPageLayout {
 | 2 | `configSchema` 駆動の設定フォーム、ウィジェット追加、既定レイアウト（初回だけ自動配置） | — | 不要 |
 | → | **実装済み（2026-07-27）**。`src/lib/widgets/config.ts`（`resolveConfig`/`applyConfigChange`）・`src/components/lab/widgets/WidgetConfigModal.tsx`（configSchema駆動の設定フォーム）・既存2ウィジェット（メモ／ピン留めプロジェクト）のconfigSchema移行・新規ウィジェット3個（🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加。うちクイックタスク追加は`actions.createTask`による最初の書き込みアクション実例）・`createDefaultLayout`のサイズ二重管理解消（レジストリの`defaultSize`に一本化）。詳細はCLAUDE.md v3.16参照 | | |
 | 3 | **ウィジェット作成仕様書＋テンプレート**（デプロイ型の自作を解禁） | `docs/dev/widget-authoring.md` | 不要 |
+| → | **実装済み（2026-07-28）**。`docs/dev/widget-authoring.md`（仕様書本体）・`src/components/lab/widgets/_template.tsx`（コピー用テンプレート・レジストリ未登録）・`src/components/lab/widgets/__tests__/widgetContract.test.ts`（禁止import・外部通信・レジストリ不変条件を機械チェック）。詳細はCLAUDE.md v3.17参照 | | |
 | 4 | ランタイム取り込み（案2 → 必要なら案3）。着手前にセキュリティ判断 | — | 未定 |
 
 Phase 1 は「ラボの実験機能」として出し、実際に使ってみてから正式ビュー（サイドバー上部の NAV_ITEMS）への格上げを判断する（カレンダーと同じ扱い）。
