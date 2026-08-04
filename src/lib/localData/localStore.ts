@@ -97,6 +97,11 @@ export const LS_KEY = {
   quarterPlan:         (krId: string, quarter: string) => `okr_qplan_${krId}_${quarter}`,
   /** 期限のブラウザ通知：当日に通知済みのタスクID（ユーザーごと・二重通知防止） */
   deadlineNotified:    (userId: string) => `deadline_notified_v1_${userId}`,
+  /**
+   * 閾値超えチャンクのダウンロード確認「承認して記憶」フラグ（チャンク名ごと）。
+   * 保存するのは真偽値のみ（データ本体は保存しない）。lib/chunkSizeGate.ts 参照（v3.19）。
+   */
+  chunkDownloadApproved: (chunkName: string) => `chunk_dl_approved_${chunkName}`,
 } as const;
 
 export { KEYS };

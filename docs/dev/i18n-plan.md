@@ -3,6 +3,8 @@
 > **目的**：アプリ全体を日本語／英語で切り替えられるようにする。
 > **進め方**：[`module-map.md`](./module-map.md) のモジュール単位で**段階的**に。土台→骨格→機能を1つずつ。
 > **状態**：🟢 **Phase 0（土台）・Phase 1（アプリ骨格＋共通UI）完了**（2026-08-04）。次は Phase 2（計画ビュー）から着手する。
+> 🟢 **v3.19（同日）でダウンロード量最小化を追加**：en辞書を動的import化（`<module>.ja.ts`/`<module>.en.ts`分割）。
+> Phase 2以降も新しい辞書ファイルはこの2ファイル分割を踏襲すること（詳細はSection 2冒頭の注記）。
 
 ---
 
@@ -39,19 +41,31 @@
 **`src/lib/i18n.ts`（仕組み）**
 ```ts
 export type Lang = "ja" | "en";
-// 辞書はモジュールごとに分割し、ここで束ねる（高凝集・モジュール化）
-import { commonJa, commonEn } from "../i18n/common";
-import { authJa, authEn } from "../i18n/auth";
+// jaは静的import・enは動的import（loadEnDict()）。ja/enのキー集合一致テストは維持しつつ、
+// 英語を使わないユーザーには一切ダウンロードさせない設計（v3.19・ダウンロード量最小化）
+import { commonJa } from "../i18n/common.ja";
+import { authJa } from "../i18n/auth.ja";
 // ...
-const DICT: Record<Lang, Record<string, string>> = {
-  ja: { ...commonJa, ...authJa, /* ... */ },
-  en: { ...commonEn, ...authEn, /* ... */ },
-};
+const DICT_JA: Record<string, string> = { ...commonJa, ...authJa, /* ... */ };
+// dictEn はメモリ内にのみ保持（localStorageに辞書データ本体を保存しない）。
+// loadEnDict() が Promise.all で common.en/auth.en/layout.en をまとめて動的importし、
+// 一度成功したら再ロードしない
+export function loadEnDict(): Promise<Record<string, string>> { /* ... */ }
 // translate(lang, "auth.tab.login") → 現在言語の文字列
 //   1) 現在言語に無ければ ja にフォールバック＋console.warn
 //   2) ja にも無ければ key 自体を返す＋console.warn（画面を壊さない）
 // {name} 形式のプレースホルダの差し込みに対応（例：t("auth.signup.done.sentTo", { email })）
 ```
+
+> ⚠️ **【重要・v3.19以降のPhaseに必須】辞書ファイルは `<module>.ja.ts` と `<module>.en.ts` に
+> 分割すること（例：`src/i18n/common.ja.ts` / `src/i18n/common.en.ts`）。**
+> Phase 2以降で新しいモジュール辞書を作るときも、この2ファイル分割を必ず踏襲する
+> （1ファイルに `xxxJa`/`xxxEn` を両方書く旧方式に戻さないこと）。理由：バンドラの
+> チャンク分割は「モジュール（ファイル）」単位で行われるため、ja/enを同一ファイルに
+> 置くとバンドラが分離できず、静的importしているja側の graph に沿って en側のコードも
+> 一緒に初回バンドルへ含まれてしまう。en側ファイルは `import type` でja側の型（キー集合の
+> 完全一致をTypeScriptで強制するため）だけを参照し、実行時の値は一切importしない。
+> 詳細設計・理由は `src/i18n/common.ja.ts` の設計意図コメント参照。
 **言語state＋フック**：`src/stores/langStore.ts`（zustand。`useTheme` と同じ要領で localStorage
 キー `KEYS.LANG` に同期）＋ `src/hooks/useT.ts` の `useT()` フック
 （`lang` を selector で subscribe するため、言語切替で `useT()` を使うコンポーネントは自動再レンダーされる）。
@@ -67,9 +81,11 @@ title に「🌐 日本語 | English」を表示（この文言は意図的に t
 表示言語に関わらず「これが言語切替ボタンだ」と分かることが目的のため）。
 
 **キー命名規約**：`<module>.<area>.<name>`（例：`auth.tab.login` / `auth.signup.done.sentTo`）。
-辞書ファイルは **モジュールごと**に持つ（`src/i18n/<module>.ts`）＝英語化もモジュール単位で進む。
-Phase 0 では `src/i18n/common.ts`（アプリ名・汎用ボタン等）と、Phase 1 パイロット用に
-`src/i18n/auth.ts`（ログイン画面）を作成した。
+辞書ファイルは **モジュールごと**に持つ（`src/i18n/<module>.ja.ts` / `src/i18n/<module>.en.ts`。
+v3.19でja/en別ファイルに分割。Section 2冒頭の注記参照）＝英語化もモジュール単位で進む。
+Phase 0 では `src/i18n/common.ja.ts`（アプリ名・汎用ボタン等）と、Phase 1 パイロット用に
+`src/i18n/auth.ja.ts`（ログイン画面）を作成した（当時のファイル名は `common.ts`/`auth.ts` だったが
+v3.19でja/en分割に伴いリネームした）。
 
 **日付/曜日**：`lib/date.ts` には現状 曜日名を出すロジックが無い（各画面が個別に日本語ハードコードしている）ため、
 今回はスキップ（plan記載の「無ければスキップしてよい」に従った）。曜日名の英語化は該当モジュールの

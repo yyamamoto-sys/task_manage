@@ -1,8 +1,19 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
-import { translate } from "../i18n";
-import { commonJa, commonEn } from "../../i18n/common";
-import { authJa, authEn } from "../../i18n/auth";
-import { layoutJa, layoutEn } from "../../i18n/layout";
+import { describe, it, expect, vi, afterEach, beforeAll } from "vitest";
+import { translate, loadEnDict } from "../i18n";
+import { commonJa } from "../../i18n/common.ja";
+import { commonEn } from "../../i18n/common.en";
+import { authJa } from "../../i18n/auth.ja";
+import { authEn } from "../../i18n/auth.en";
+import { layoutJa } from "../../i18n/layout.ja";
+import { layoutEn } from "../../i18n/layout.en";
+
+// 【設計意図】en辞書は動的import（src/lib/i18n.ts の loadEnDict()）に変わったため、
+// translate(lang, ...) を "en" で呼ぶテストは事前に await loadEnDict() しておく必要がある。
+// これを忘れると en辞書が未ロードのまま扱われ、全キーが ja フォールバックになる
+// （テストを削除・スキップして通すのは禁止。ここで正しくawaitする）。
+beforeAll(async () => {
+  await loadEnDict();
+});
 
 describe("translate", () => {
   afterEach(() => {

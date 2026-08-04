@@ -9,6 +9,9 @@
 // title文言はあえて t() を通さず日英併記のまま固定する（「🌐 日本語 | English」）。
 // このボタンは「現在の表示言語が何であっても、これが言語切替ボタンだと分かる」ことが
 // 目的のため、現在言語だけで文言を訳すと本来の役割（言語を跨いだ道しるべ）を損なう。
+//
+// 【en辞書の動的import対応（v3.19）】 isLoadingEn が true の間（en辞書を初めて
+// ダウンロード中）はクリック不可にし、小さい回転スピナーに差し替える。
 
 import { useLangStore } from "../../stores/langStore";
 
@@ -19,25 +22,46 @@ interface Props {
   style?: React.CSSProperties;
 }
 
+function Spinner({ size }: { size: number }) {
+  return (
+    <span
+      style={{
+        width: size, height: size, borderRadius: "50%",
+        border: "2px solid currentColor", borderTopColor: "transparent",
+        display: "inline-block", animation: "lang-toggle-spin 0.7s linear infinite",
+      }}
+    />
+  );
+}
+
 export function LangToggle({ variant = "icon", style }: Props) {
   const lang = useLangStore(s => s.lang);
+  const isLoadingEn = useLangStore(s => s.isLoadingEn);
   const toggleLang = useLangStore(s => s.toggleLang);
-  const title = lang === "ja"
-    ? "🌐 日本語 | English（クリックで English に切替）"
-    : "🌐 日本語 | English（click to switch to 日本語）";
+  const title = isLoadingEn
+    ? "English データを読み込み中…"
+    : lang === "ja"
+      ? "🌐 日本語 | English（クリックで English に切替）"
+      : "🌐 日本語 | English（click to switch to 日本語）";
+
+  // keyframesはグローバルCSSに定義がないため、このコンポーネント内で一度だけ注入する
+  const keyframes = "@keyframes lang-toggle-spin { to { transform: rotate(360deg); } }";
 
   if (variant === "text") {
     return (
       <button
         onClick={toggleLang}
         title={title}
+        disabled={isLoadingEn}
         style={{
           fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)",
-          background: "transparent", border: "none", cursor: "pointer", padding: "2px",
+          background: "transparent", border: "none", cursor: isLoadingEn ? "wait" : "pointer", padding: "2px",
+          display: "inline-flex", alignItems: "center", justifyContent: "center",
           ...style,
         }}
       >
-        {lang === "ja" ? "EN" : "JA"}
+        <style>{keyframes}</style>
+        {isLoadingEn ? <Spinner size={11} /> : (lang === "ja" ? "EN" : "JA")}
       </button>
     );
   }
@@ -46,17 +70,19 @@ export function LangToggle({ variant = "icon", style }: Props) {
     <button
       onClick={toggleLang}
       title={title}
+      disabled={isLoadingEn}
       style={{
         width: "32px", height: "32px", borderRadius: "var(--radius-md)",
         background: "var(--color-bg-secondary)",
         border: "1px solid var(--color-border-primary)",
-        cursor: "pointer", fontSize: "11px", fontWeight: 600,
+        cursor: isLoadingEn ? "wait" : "pointer", fontSize: "11px", fontWeight: 600,
         display: "flex", alignItems: "center", justifyContent: "center",
         flexShrink: 0, color: "var(--color-text-secondary)",
         ...style,
       }}
     >
-      {lang === "ja" ? "EN" : "JA"}
+      <style>{keyframes}</style>
+      {isLoadingEn ? <Spinner size={14} /> : (lang === "ja" ? "EN" : "JA")}
     </button>
   );
 }

@@ -17,6 +17,10 @@ import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
+// GuideModeViewは全props省略可能な既定値付きコンポーネントのため、withChunkDownloadGate<P>への
+// P推論がTS上うまくいかず object に落ちてしまう。型のみをimportして明示的に指定する（実行時の
+// importは発生しない＝バンドルサイズに影響しない）
+import type { GuideModeView as GuideModeViewComponent } from "../guide/GuideModeView";
 import { ErrorBar } from "../common/ErrorBar";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import { dismissUndoToasts } from "../common/Toast";
@@ -28,6 +32,7 @@ import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
 import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
+import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
@@ -38,23 +43,30 @@ import { isGuestMember } from "../../lib/guestMode";
  * 重量級ビューとラボ機能を React.lazy で分割し初回バンドルを縮小する。
  * 名前付き export を default export 形に変換するブリッジを噛ませている。
  * 切替頻度の低い管理画面・ラボ機能は別チャンクに分離されることで初回 LCP に寄与する。
+ *
+ * 【グランドルール（v3.19・CLAUDE.md参照）】使用者が限られる重量級機能はReact.lazyで
+ * 分割し、withChunkDownloadGate() で閾値超えチャンクのダウンロード確認を通す。
+ * 第2引数の name はそのまま vite.config.ts の chunk-size-manifest が書き出すチャンク名
+ * （＝ファイル名）と一致させること。現時点では200KB(gzip)を超えるチャンクは無いため
+ * 実際には確認ダイアログは発火しないが、将来チャンクが育った時に自動で効く。
  */
-const KanbanView         = lazyWithRetry(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })), "KanbanView");
-const AdminView          = lazyWithRetry(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })), "AdminView");
-const GanttView          = lazyWithRetry(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })), "GanttView");
-const DashboardView      = lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView");
-const OnboardingHome     = lazyWithRetry(() => import("../dashboard/OnboardingHome").then(m => ({ default: m.OnboardingHome })), "OnboardingHome");
-const ListView           = lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView");
-const WorkloadView       = lazyWithRetry(() => import("../workload/WorkloadView").then(m => ({ default: m.WorkloadView })), "WorkloadView");
-const GraphView          = lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView");
-const CalendarLabView    = lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView");
-const MyPageView         = lazyWithRetry(() => import("../lab/MyPageView").then(m => ({ default: m.MyPageView })), "MyPageView");
-const ProjectStructureView = lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView");
-const KrReportPanel      = lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel");
-const KrJointSessionFlow = lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow");
-const KrWhyPanel         = lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel");
-const OkrDashboardView   = lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView");
-const GuideModeView      = lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView");
+const KanbanView         = withChunkDownloadGate(lazyWithRetry(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })), "KanbanView"), "KanbanView");
+const AdminView          = withChunkDownloadGate(lazyWithRetry(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })), "AdminView"), "AdminView");
+const GanttView          = withChunkDownloadGate(lazyWithRetry(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })), "GanttView"), "GanttView");
+const DashboardView      = withChunkDownloadGate(lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView"), "DashboardView");
+const OnboardingHome     = withChunkDownloadGate(lazyWithRetry(() => import("../dashboard/OnboardingHome").then(m => ({ default: m.OnboardingHome })), "OnboardingHome"), "OnboardingHome");
+const ListView           = withChunkDownloadGate(lazyWithRetry(() => import("../list/ListView").then(m => ({ default: m.ListView })), "ListView"), "ListView");
+const WorkloadView       = withChunkDownloadGate(lazyWithRetry(() => import("../workload/WorkloadView").then(m => ({ default: m.WorkloadView })), "WorkloadView"), "WorkloadView");
+const GraphView          = withChunkDownloadGate(lazyWithRetry(() => import("../graph/GraphView").then(m => ({ default: m.GraphView })), "GraphView"), "GraphView");
+const CalendarLabView    = withChunkDownloadGate(lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView"), "CalendarLabView");
+const MyPageView         = withChunkDownloadGate(lazyWithRetry(() => import("../lab/MyPageView").then(m => ({ default: m.MyPageView })), "MyPageView"), "MyPageView");
+const ProjectStructureView = withChunkDownloadGate(lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView"), "ProjectStructureView");
+const KrReportPanel      = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel"), "KrReportPanel");
+const KrJointSessionFlow = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow"), "KrJointSessionFlow");
+const KrWhyPanel         = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel"), "KrWhyPanel");
+const OkrDashboardView   = withChunkDownloadGate(lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView"), "OkrDashboardView");
+type GuideModeViewProps = NonNullable<Parameters<typeof GuideModeViewComponent>[0]>;
+const GuideModeView      = withChunkDownloadGate<GuideModeViewProps>(lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView"), "GuideModeView");
 
 function ViewLoading() {
   // スピナー単体よりレイアウトの骨格を見せた方が体感が速い（スケルトンUI）
@@ -214,6 +226,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const projectsRef = useRef<Project[]>([]);
   // ツアーの "demo-ai-consult" アクションで、実データの有無を判定するため最新の tasks を ref で持つ
   const tasksRef = useRef<Task[]>([]);
+  // 【バグ修正・v3.19】t はマウント時にクロージャで固定される（下のuseEffectのdeps=[]）ため、
+  // マウント後に言語を切り替えてからツアーデモを発火すると切替前の言語の文言が入っていた。
+  // リスナーの張り替え（deps に t を足す）ではなく、ref で最新の t を参照する形で直す。
+  const tRef = useRef(t);
+  tRef.current = t;
   useEffect(() => {
     const onTourAction = (e: Event) => {
       const action = (e as CustomEvent).detail as string;
@@ -228,8 +245,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         const hasData = projectsRef.current.length > 0 || tasksRef.current.length > 0;
         setConsultDemoRequest({
           text: hasData
-            ? t("layout.tourDemo.withData")
-            : t("layout.tourDemo.noData"),
+            ? tRef.current("layout.tourDemo.withData")
+            : tRef.current("layout.tourDemo.noData"),
           nonce: Date.now(),
         });
       }

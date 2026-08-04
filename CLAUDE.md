@@ -1,8 +1,8 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.18
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.19
 #
-最終更新：2026-08-04（v3.18）
+最終更新：2026-08-04（v3.19）
 
-**変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.18）。**
+**変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
 このファイルは「現在の設計の正本」であり、履歴の置き場ではありません。
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
@@ -1004,7 +1004,7 @@ const { submit } = useAIConsultation(projectIds);
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
-- 最終更新：2026-08-04（v3.18）
+- 最終更新：2026-08-04（v3.19）
 
 ---
 
@@ -1045,6 +1045,10 @@ src/
 │   │                              # を直接あちこちで呼ばず必ずここ経由（v3.05）
 │   ├── localData/
 │   │   └── localStore.ts         # localStorage キー一元化（KEYS / LS_KEY / migrateLocalStorage / active()）
+│   ├── i18n.ts                    # 軽量自前i18n（translate()・ja静的import/en動的import＝loadEnDict()。v3.19）
+│   ├── chunkSizeGate.ts           # 閾値超えReact.lazyチャンクのDL確認ゲート判定（resolveChunkGateStatus・
+│   │                              # dist/chunk-sizes.json実測を読む。v3.19。Section 19参照）
+│   ├── lazyWithRetry.ts           # React.lazyの動的import失敗時に1回だけリロードして復旧させるラッパー
 │   ├── dependencies/              # タスク依存関係（B1/B3/B5）の純粋ロジック
 │   │   ├── cycleCheck.ts         # wouldCreateCycle / canAddDependency（自己依存・重複・循環のDFSチェック）
 │   │   ├── gate.ts               # getIncompletePredecessors / formatBlockerNames（完了ゲート・着手警告）
@@ -1069,6 +1073,9 @@ src/
     │   ├── ErrorBoundary.tsx     # ルート ErrorBoundary（main.tsx で配置）
     │   ├── Card.tsx              # 共通Card/SummaryTile/SummaryRow（DashboardViewのCard/KpiTile表現を
     │   │                         # 他画面向けに抽出。現状はAdminView.tsxが利用）
+    │   ├── LangToggle.tsx        # EN/JA切替トグル（isLoadingEn中はスピナー表示。v3.19）
+    │   ├── ChunkDownloadGate.tsx # withChunkDownloadGate()：閾値超えReact.lazyチャンクのDL確認UI（v3.19。
+    │   │                         # Section 19参照。MainLayout.tsxの全lazyコンポーネントに適用）
     │   └── ShortcutsPanel.tsx    # 全ビュー共通ショートカット一覧パネル（旧gantt/GanttShortcutsPanelを汎用化）。
     │                             # MainLayoutが唯一の描画元・画面右下の常設「⌨ショートカット」ボタンとガント凡例の
     │                             # リンク両方から同じstateで開く
@@ -1353,6 +1360,48 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 - [ ] CORS が `*` になっていないか？ → `ALLOWED_ORIGINS` 環境変数方式に変える
 - [ ] レート制限があるか？ → ユーザーID別・1分N回の in-memory チェックを入れる
 - [ ] クライアント側に `RATE_LIMIT_EXCEEDED` ハンドラがあるか？ → ユーザーへの日本語メッセージまで通すこと
+
+---
+
+## 19. グランドルール：ダウンロード量の最小化（必須・v3.19）
+
+**使用者が限られる重量級機能は `React.lazy` で分割し、閾値超えチャンクは確認ダイアログを通す。**
+「全員が毎回使うわけではない機能を、全員に黙って毎回ダウンロードさせない」がこのルールの目的。
+
+### ① まず `React.lazy` で分割する
+
+新しい重量級ビュー・ラボ機能・管理画面タブを追加するときは、`MainLayout.tsx` の
+既存パターン（`lazyWithRetry(factory, name)`）に必ず乗せる。切替頻度の低い機能を
+初回バンドルに混ぜない。
+
+### ② 言語辞書のように「使う人が限られるデータ」は静的importにしない
+
+日本語（既定言語）は静的import・英語は動的import（`src/lib/i18n.ts` の `loadEnDict()` パターン）。
+「全員が使うとは限らないデータ」を静的importで束ねると、使わない人にも必ずダウンロードさせて
+しまう。en辞書のようにモジュールを `<name>.ja.ts` / `<name>.en.ts` に分割し、`import type` で
+型だけを参照させることで、使わない側の実行時コードを一切バンドルに含めない設計にする。
+
+### ③ 閾値を超えるチャンクは「承認して記憶」で確認する
+
+`src/lib/chunkSizeGate.ts` の `CHUNK_DL_CONFIRM_THRESHOLD_GZIP_BYTES`（暫定200KB・gzip後）を
+超えるチャンクを初めて要求するときは、`src/components/common/ChunkDownloadGate.tsx` の
+`withChunkDownloadGate()` でラップし「◯KBのデータをダウンロードします。よろしいですか」の
+確認を挟む。一度承認したら `localStorage` にチャンク名ごとの真偽フラグのみを記録し、次回から
+聞かない（Human in the loop パターン③「承認して記憶」。`ClaudeCodeForWork/CLAUDE.md` 参照）。
+**localStorageにはフラグだけを保存し、データ本体を保存しない。**
+
+### ④ チャンクサイズは必ずビルド出力から実測する（ハードコード禁止）
+
+`vite.config.ts` の `chunk-size-manifest` プラグインが `generateBundle` フックで実際の
+チャンクコードからraw/gzipサイズを実測し `dist/chunk-sizes.json` を書き出す。閾値判定は
+必ずこの実測値を使うこと。コード中にサイズをハードコードすると、ビルド内容とズレて嘘の
+数字になる（＝「ビルドすれば自動で正しい数字になる」ことを満たす設計にする）。
+
+### このルールは新機能を実装するとき必ず確認する
+
+- [ ] 全員が毎回使うわけではない画面・パネルか？ → `lazyWithRetry` + `withChunkDownloadGate` に乗せる
+- [ ] 使う人が限られるデータ（言語辞書・大きな静的データ等）を静的importしていないか？
+- [ ] サイズ判定はハードコードでなく `dist/chunk-sizes.json`（ビルド実測）から取っているか？
 
 ---
 

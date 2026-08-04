@@ -1,0 +1,125 @@
+// src/i18n/layout.en.ts
+//
+// 【設計意図】
+// layout.ja.ts の英語版。動的import専用モジュール（理由はsrc/i18n/common.ja.tsのコメント参照）。
+
+import type { layoutJa } from "./layout.ja";
+
+export const layoutEn: Record<keyof typeof layoutJa, string> = {
+  "layout.app.configError.title": "⚠️ Configuration error",
+  "layout.app.configError.body": "Please set the following in Vercel's Environment Variables",
+  "layout.app.loading.preparing": "Preparing...",
+  "layout.app.loading.dataLoading": "Loading data...",
+  "layout.app.error.retry": "Retry",
+
+  "layout.nav.dashboard.label": "Dashboard",
+  "layout.nav.dashboard.tooltip": "See OKR progress, this week's tasks, and deadline alerts at a glance",
+  "layout.nav.kanban.label": "Kanban",
+  "layout.nav.kanban.tooltip": "Manage tasks by dragging & dropping between To Do / In Progress / Done columns",
+  "layout.nav.gantt.label": "Gantt",
+  "layout.nav.gantt.tooltip": "View project timelines and task due dates in a calendar layout",
+  "layout.nav.list.label": "List",
+  "layout.nav.list.tooltip": "View, filter, and export tasks as a list (CSV)",
+  "layout.nav.workload.label": "Workload",
+  "layout.nav.workload.tooltip": "See task counts and workload per member at a glance",
+  "layout.nav.admin.label": "Settings",
+
+  "layout.admin.title": "Settings",
+  "layout.admin.helpTitle": "Open help for the settings panel",
+  "layout.guide.title": "Guide",
+  "layout.guide.buttonTitle": "Open the guide for how to use this app",
+
+  "layout.tourInvite.title": "Welcome. Would you like a tour (about 90 seconds)?",
+  "layout.tourInvite.body1": "We'll walk you through the 4 views, AI features, and OKR management mode with on-screen callouts.",
+  "layout.tourInvite.body2": "You can replay it anytime later from the \"👋 Replay onboarding\" button inside \"📖 Guide\".",
+  "layout.tourInvite.skip": "Skip",
+  "layout.tourInvite.start": "Start tour →",
+
+  "layout.onboarding.title": "👋 Onboarding (3 steps to get started)",
+
+  "layout.shortcuts.buttonTitle": "Show shortcut list (common to all views, bottom right)",
+  "layout.shortcuts.buttonLabel": "Shortcuts",
+
+  "layout.guestBanner": "👁 Guest mode (view only) — editing is disabled",
+
+  "layout.lab.sheetTitle": "🧪 Lab features",
+  "layout.lab.structure.label": "Structure diagram",
+  "layout.lab.structure.desc": "Diagram of project roles and responsibilities",
+  "layout.lab.graph.label": "Relationship graph",
+  "layout.lab.graph.desc": "Visualize relationships between projects and tasks",
+  "layout.lab.graph.tooltip": "Visualize the relationships between projects, task forces, and tasks as a graph",
+  "layout.lab.calendar.label": "Calendar",
+  "layout.lab.calendar.desc": "Show task due dates on a monthly calendar",
+  "layout.lab.calendar.tooltip": "Show task due dates on a monthly calendar (Lab)",
+  "layout.lab.mypage.label": "My Page",
+  "layout.lab.mypage.desc": "Your own widget screen (Lab)",
+  "layout.lab.krSession.label": "KR session log",
+  "layout.lab.krSession.desc": "Extract check-ins and wins from a transcript",
+  "layout.lab.krReport.label": "KR report generation",
+  "layout.lab.krReport.desc": "Generate a KR report from meeting notes with AI",
+  "layout.lab.krWhy.label": "KR 5-whys analysis",
+  "layout.lab.krWhy.desc": "Dig into root causes with AI in a 5-whys style dialogue",
+  "layout.lab.toggleTitle": "Lab (experimental features)",
+
+  "layout.mobile.myPj": "My projects",
+  "layout.mobile.allPj": "All projects",
+  "layout.mobile.searchTitle": "Search tasks & projects",
+  "layout.mobile.consultTitle": "Consult AI about changes",
+  "layout.mobile.settingsTitle": "Settings",
+  "layout.mobile.labTitle": "Lab features",
+
+  "layout.theme.toLight": "Switch to light mode",
+  "layout.theme.toDark": "Switch to dark mode",
+  "layout.calendar.title": "Calendar (monthly view of task due dates)",
+  "layout.logout.title": "Log out",
+
+  "layout.fab.consult": "Ask AI",
+  "layout.fab.milestone": "Add milestone",
+  "layout.fab.task": "Add task",
+  "layout.fab.menuTitle": "Open menu",
+
+  "layout.okrMobileNav.manage": "OKR management",
+  "layout.okrMobileNav.why": "5 Whys",
+  "layout.okrMobileNav.plan": "Plan",
+
+  "layout.tourDemo.withData": "Among the tasks currently registered, tell me which ones I should prioritize and which ones look like they might slip. Also suggest the next action.",
+  "layout.tourDemo.noData": "I'm about to start managing plans here. What unit of projects and tasks would make this easiest to manage going forward?",
+  "layout.aiProjectCreate.prefill": "I want to start a new project. Please propose a draft goal and initial tasks. (If you already know the purpose, deadline, or owner, please add them to this message.)",
+
+  "layout.sidebar.appName": "Group Plan Manager",
+  "layout.sidebar.expand": "Open menu",
+  "layout.sidebar.collapse": "Collapse menu",
+  "layout.sidebar.groupLabel": "Viewing department",
+  "layout.sidebar.groupPlaceholder": "Select a department",
+  "layout.sidebar.searchPlaceholder": "Search...",
+  "layout.sidebar.searchTitle": "Search tasks & projects (Ctrl+K)",
+  "layout.sidebar.aiToolTitle": "AI consultation, project/task registration, and meeting import all in one place",
+  "layout.sidebar.aiToolLabel": "Open AI tools",
+  "layout.sidebar.aiToolSub": "Consult · Register PJ/task · Import meeting",
+  "layout.sidebar.menuLabel": "Menu",
+  "layout.sidebar.pjSectionCollapse": "Collapse project list",
+  "layout.sidebar.pjSectionExpand": "Expand project list",
+  "layout.sidebar.pjSectionLabel": "Projects",
+  "layout.sidebar.pjCreateTitle": "Create a new project",
+  "layout.sidebar.mineOnlyToAll": "Click to show all tasks",
+  "layout.sidebar.mineOnlyToMine": "Click to filter to tasks assigned to me",
+  "layout.sidebar.mineLabel": "Mine",
+  "layout.sidebar.allLabel": "All",
+  "layout.sidebar.allPjLabel": "Show all projects",
+  "layout.sidebar.noMineProjects1": "You don't have any projects with tasks assigned to you yet.",
+  "layout.sidebar.noMineProjects2": "Switch to \"All\" to see every project.",
+  "layout.sidebar.okrSectionCollapse": "Collapse OKR tasks",
+  "layout.sidebar.okrSectionExpand": "Expand OKR tasks",
+  "layout.sidebar.okrSectionLabel": "OKR tasks",
+  "layout.sidebar.allKrLabel": "All KRs",
+  "layout.sidebar.allKrTooltip": "Show all KRs",
+  "layout.sidebar.noKr": "No KRs registered",
+
+  "layout.appModeToggle.toOkr": "Switch to OKR management mode",
+  "layout.appModeToggle.toPlan": "Switch to plan management mode",
+  "layout.appModeToggle.planFull": "📋 Plan",
+  "layout.appModeToggle.okrFull": "🎯 OKR",
+
+  "layout.comingSoon.viewSuffix": " view",
+  "layout.comingSoon.planned": "Coming soon",
+};

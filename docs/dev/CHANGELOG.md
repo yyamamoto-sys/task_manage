@@ -3548,5 +3548,53 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             日付・曜日名のロケール対応も引き続きスキップ
 #      DBマイグレ不要（localStorageの言語設定のみ。UI文言とテストの追加）
 #
-# 最終更新：2026-08-04（v3.18）
+# v3.19 feat: ダウンロード量最小化（en辞書の動的import＋閾値超えチャンクのDL確認）を追加（2026-08-04）
+#      背景：v3.18時点でen辞書はja辞書と同じファイルに静的importされており、日本語しか使わない
+#             ユーザーも英語文言を必ずダウンロードしていた（`useT`チャンクが46.50kB/gzip12.77kB
+#             まで肥大化）。「英語を普段使わないユーザーに英語データを持たせたくない」
+#             「使用者が限られる機能は初めて使う時にだけDLしてほしい」という要望に対応
+#      変更：`src/i18n/{common,auth,layout}.ts`を`<module>.ja.ts`（静的import・既定言語）と
+#             `<module>.en.ts`（動的import専用・`import type`でja側の型のみ参照し実行時の
+#             依存を持たない）に分割。`src/lib/i18n.ts`に`loadEnDict()`を新設（3モジュールを
+#             `Promise.all`でまとめて読み込み、メモリ内にのみ保持・再ロードしない。
+#             localStorageには辞書データ本体を保存しない＝ブラウザのHTTPキャッシュに任せる）
+#      変更：`src/stores/langStore.ts`に`isLoadingEn`フラグを追加。`lang`を"en"にする処理は
+#             `loadEnDict()`解決後にしか行わない（未ロードのenをtranslate()に渡すと全キーが
+#             jaフォールバック＋大量console.warnになるため）。前回enを選んでいた場合は起動直後に
+#             黙って読み込みだけ開始し、完了次第自動でenに切り替える。読み込み失敗時はjaのまま
+#             Toastでエラー通知
+#      変更：`src/components/common/LangToggle.tsx`に`isLoadingEn`中の小さい回転スピナー表示を追加
+#             （クリック不可・カーソルwait）
+#      新規：`vite.config.ts`に`chunk-size-manifest`プラグイン。rollupの`generateBundle`フックで
+#             全チャンクの実コードからraw/gzipサイズを実測し`dist/chunk-sizes.json`を生成
+#             （gzip計算は既存依存の`fflate`を再利用・新規パッケージ追加なし）。ハードコードした
+#             推測値だとビルドとズレるため、必ずビルド出力から実測する設計
+#      新規：`src/lib/chunkSizeGate.ts`。`CHUNK_DL_CONFIRM_THRESHOLD_GZIP_BYTES`（暫定200KB・
+#             gzip後）を超える`React.lazy`チャンクを初めて要求する時だけダウンロード確認を
+#             要求する判定ロジック（`resolveChunkGateStatus`は純粋関数）。承認したかどうかは
+#             localStorageに**フラグのみ**保存（`LS_KEY.chunkDownloadApproved`）＝
+#             Human in the loopパターン③「承認して記憶」。マニフェストのfetchはアプリ起動直後に
+#             前倒しで開始し、ゲート判定自体は同期（未取得時は確認なしで許可に倒し、初回表示の
+#             体感速度を犠牲にしない）
+#      新規：`src/components/common/ChunkDownloadGate.tsx`の`withChunkDownloadGate()`。
+#             `lazyWithRetry()`の戻り値をラップし、承認されるまで実体（LazyExoticComponent）を
+#             レンダーしない＝dynamic import()の発火自体を防ぐ。`MainLayout.tsx`の全18個の
+#             lazyコンポーネントに適用（現時点で200KBを超えるチャンクは無いため実際には確認
+#             ダイアログは発火しない＝仕組みのみ導入。将来チャンクが育った時に自動で効く）
+#      修正：`MainLayout.tsx`の`tour:action`リスナー（`useEffect`のdeps=[]）が`t()`をマウント時に
+#             クロージャで固定していたバグ（マウント後に言語切替してからツアーデモを発火すると
+#             切替前の言語の文言が入る）。リスナーの張り替え（deps に t を追加）ではなく、
+#             `useRef`で最新の`t`を保持しリスナーから参照する形で修正（Phase 1の申し送り事項）
+#      グランドルール追加：CLAUDE.md Section 18.5「使用者が限られる重量級機能は`React.lazy`で
+#             分割し、閾値超えは確認ダイアログを通す」
+#      実測（ビルド出力・v3.18→v3.19）：`useT`チャンク 46.50kB→27.40kB raw（gzip 12.77kB→8.87kB）。
+#             新設の`common.en`(10.69kB/gzip2.79kB)・`auth.en`(4.89kB/gzip1.80kB)・
+#             `layout.en`(5.99kB/gzip2.16kB)は英語未使用ユーザーは一切ダウンロードしない
+#             （日本語のみのユーザーの初回ダウンロード量：約19.1kB raw／約3.9kB gzip 削減）。
+#             200KB(gzip)を超えるチャンクは現時点で1つも無い（最大は`index`エントリの64.34kB gzip）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過（既存737件＋新規4件）／
+#             `npm run build`成功
+#      DBマイグレ不要（localStorage・vite設定・辞書ファイル構成の変更のみ）
+#
+# 最終更新：2026-08-04（v3.19）
 
