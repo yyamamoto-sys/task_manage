@@ -12,6 +12,7 @@ import { useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import type { AppError } from "../../lib/errorReporter";
 import { KEYS } from "../../lib/localData/localStore";
+import { useT } from "../../hooks/useT";
 
 const MAX_HISTORY = 20;
 
@@ -34,12 +35,14 @@ function saveToHistory(err: AppError) {
   }
 }
 
-function formatEntry(err: AppError) {
+type TFn = ReturnType<typeof useT>;
+
+function formatEntry(err: AppError, t: TFn) {
   return [
-    `[エラー] ${err.timestamp}`,
-    err.context  ? `操作: ${err.context}` : null,
-    err.code     ? `コード: ${err.code}`  : null,
-    `内容: ${err.message}`,
+    `${t("common.errorBar.entryPrefix")} ${err.timestamp}`,
+    err.context  ? t("common.errorBar.entryContext", { context: err.context }) : null,
+    err.code     ? t("common.errorBar.entryCode", { code: err.code })  : null,
+    t("common.errorBar.entryMessage", { message: err.message }),
   ].filter(Boolean).join("\n");
 }
 
@@ -76,23 +79,24 @@ interface HistoryPanelProps {
 }
 
 function HistoryPanel({ onClose }: HistoryPanelProps) {
+  const t = useT();
   const [history, setHistory] = useState<AppError[]>(() => loadHistory().slice().reverse());
   const [copyStatus, setCopyStatus] = useState<CopyStatus>(null);
 
   const copyAll = useCallback(async () => {
     const text = loadHistory().slice().reverse()
-      .map((e, i) => `--- ${i + 1} ---\n${formatEntry(e)}`)
+      .map((e, i) => `--- ${i + 1} ---\n${formatEntry(e, t)}`)
       .join("\n\n");
     const ok = await copyText(text);
     setCopyStatus({ id: "all", ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, []);
+  }, [t]);
 
   const copyOne = useCallback(async (err: AppError) => {
-    const ok = await copyText(formatEntry(err));
+    const ok = await copyText(formatEntry(err, t));
     setCopyStatus({ id: err.timestamp, ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, []);
+  }, [t]);
 
   const clearAll = useCallback(() => {
     localStorage.removeItem(KEYS.ERROR_HISTORY);
@@ -135,7 +139,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
         }}>
           <span style={{ color: "rgba(255,100,100,0.8)", fontSize: "12px" }}>⚠</span>
           <span style={{ flex: 1, fontSize: "12px", fontWeight: "600", color: "rgba(255,200,200,0.9)" }}>
-            エラー履歴（最大{MAX_HISTORY}件）
+            {t("common.errorBar.historyPanelTitle", { max: MAX_HISTORY })}
           </span>
           {history.length > 0 && (
             <button
@@ -151,7 +155,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
                 cursor: "pointer",
               }}
             >
-              {copyStatus?.id === "all" ? (copyStatus.ok ? "コピー済" : "コピー失敗") : "全コピー"}
+              {copyStatus?.id === "all" ? (copyStatus.ok ? t("common.errorBar.copied") : t("common.errorBar.copyFailed")) : t("common.errorBar.copyAll")}
             </button>
           )}
           {history.length > 0 && (
@@ -166,7 +170,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
                 cursor: "pointer",
               }}
             >
-              クリア
+              {t("common.errorBar.clear")}
             </button>
           )}
           <button
@@ -187,7 +191,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
               padding: "24px", textAlign: "center",
               fontSize: "12px", color: "rgba(255,255,255,0.3)",
             }}>
-              保存されたエラーはありません
+              {t("common.errorBar.noHistory")}
             </div>
           ) : (
             history.map((err, idx) => (
@@ -233,7 +237,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
                       cursor: "pointer",
                     }}
                   >
-                    {copyStatus?.id === err.timestamp ? (copyStatus.ok ? "済" : "失敗") : "コピー"}
+                    {copyStatus?.id === err.timestamp ? (copyStatus.ok ? t("common.errorBar.copiedShort") : t("common.errorBar.failedShort")) : t("common.errorBar.copy")}
                   </button>
                 </div>
                 <div style={{
@@ -255,6 +259,7 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
 // ===== メインの ErrorBar =====
 
 export function ErrorBar() {
+  const t = useT();
   const [errors, setErrors] = useState<AppError[]>([]);
   const [historyCount, setHistoryCount] = useState(() => loadHistory().length);
   const [showHistory, setShowHistory] = useState(false);
@@ -287,10 +292,10 @@ export function ErrorBar() {
   }, []);
 
   const copyError = useCallback(async (err: AppError) => {
-    const ok = await copyText(formatEntry(err));
+    const ok = await copyText(formatEntry(err, t));
     setCopyStatus({ id: err.timestamp, ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, []);
+  }, [t]);
 
   // 履歴パネルを閉じたとき件数を再取得
   const handleCloseHistory = useCallback(() => {
@@ -313,7 +318,7 @@ export function ErrorBar() {
           <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 8px 2px", pointerEvents: "auto" }}>
             <button
               onClick={() => setShowHistory(prev => !prev)}
-              title="エラー履歴を表示"
+              title={t("common.errorBar.historyButtonTitle")}
               style={{
                 padding: "2px 10px", fontSize: "10px",
                 background: "rgba(30,20,20,0.75)",
@@ -324,7 +329,7 @@ export function ErrorBar() {
                 cursor: "pointer",
               }}
             >
-              履歴 {historyCount}件
+              {t("common.errorBar.historyButton", { count: historyCount })}
             </button>
           </div>
         )}
@@ -371,7 +376,7 @@ export function ErrorBar() {
 
             <button
               onClick={() => void copyError(err)}
-              title="エラー情報をコピー"
+              title={t("common.errorBar.copyTitle")}
               style={{
                 flexShrink: 0,
                 padding: "2px 8px", fontSize: "10px",
@@ -384,12 +389,12 @@ export function ErrorBar() {
                 cursor: "pointer",
               }}
             >
-              {copyStatus?.id === err.timestamp ? (copyStatus.ok ? "コピーしました" : "コピー失敗") : "コピー"}
+              {copyStatus?.id === err.timestamp ? (copyStatus.ok ? t("common.errorBar.copiedFull") : t("common.errorBar.copyFailed")) : t("common.errorBar.copy")}
             </button>
 
             <button
               onClick={() => dismiss(idx)}
-              title="閉じる"
+              title={t("common.button.close")}
               style={{
                 flexShrink: 0,
                 padding: "2px 6px", fontSize: "11px",

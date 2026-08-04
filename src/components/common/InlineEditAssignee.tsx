@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import type { Member } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   assigneeIds: string[];
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
+  const t = useT();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -36,7 +38,7 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
         onClick={e => { e.stopPropagation(); setOpen(v => !v); }}
         role="button" tabIndex={0}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setOpen(v => !v); } }}
-        title="クリックして担当者を変更"
+        title={t("common.assignee.editTitle")}
         style={{
           display: "inline-flex", alignItems: "center", gap: "2px",
           cursor: "pointer",
@@ -55,7 +57,7 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
             )}
           </>
         ) : (
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>未担当</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{t("common.assignee.unassigned")}</span>
         )}
       </div>
 

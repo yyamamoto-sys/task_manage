@@ -10,14 +10,15 @@
 
 import { commonJa, commonEn } from "../i18n/common";
 import { authJa, authEn } from "../i18n/auth";
+import { layoutJa, layoutEn } from "../i18n/layout";
 
 export type Lang = "ja" | "en";
 
 // 辞書はモジュールごとに分割し、ここで束ねる（高凝集・モジュール化）。
 // 新しいモジュールの辞書を追加するときはここに1行足すだけでよい。
 const DICT: Record<Lang, Record<string, string>> = {
-  ja: { ...commonJa, ...authJa },
-  en: { ...commonEn, ...authEn },
+  ja: { ...commonJa, ...authJa, ...layoutJa },
+  en: { ...commonEn, ...authEn, ...layoutEn },
 };
 
 // 同じ警告を連呼しないための既出キー記録（開発中のコンソール汚染防止）

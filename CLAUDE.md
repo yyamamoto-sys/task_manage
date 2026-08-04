@@ -1,8 +1,8 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.17
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.18
 #
-最終更新：2026-07-28（v3.17）
+最終更新：2026-08-04（v3.18）
 
-**変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.17）。**
+**変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.18）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
 このファイルは「現在の設計の正本」であり、履歴の置き場ではありません。
 > このファイルはAIエージェント（Claude Code / Cursor等）がコードを読み書きする際に
@@ -1004,7 +1004,7 @@ const { submit } = useAIConsultation(projectIds);
 - Phase 5（実装）で判明した設計変更は Section 9（未解決論点）に追記してから対応する
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
-- 最終更新：2026-07-28（v3.17）
+- 最終更新：2026-08-04（v3.18）
 
 ---
 

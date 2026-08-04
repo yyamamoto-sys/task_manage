@@ -9,6 +9,7 @@
 // （例：KRセッション保存 = セッション本体 + N件の宣言）でのみ使う。
 
 import { useEffect, useState } from "react";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   /** 現在のステップ番号（1-indexed・0 なら開始前） */
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function SaveProgressLoader({ current, total, label, title }: Props) {
+  const t = useT();
   const safeTotal = Math.max(1, total);
   const safeCurrent = Math.max(0, Math.min(current, safeTotal));
   const pct = Math.round((safeCurrent / safeTotal) * 100);
@@ -86,13 +88,13 @@ export function SaveProgressLoader({ current, total, label, title }: Props) {
           color: "var(--color-text-primary)",
           marginBottom: "4px",
         }}>
-          {title ?? "データベースに保存しています"}
+          {title ?? t("common.saveProgress.title")}
         </div>
         <div key={`${safeCurrent}-${label ?? ""}`} className="animate-fadeIn" style={{
           fontSize: "11px", color: "var(--color-text-tertiary)",
           minHeight: "1.2em",
         }}>
-          {label ?? "しばらくお待ちください…"}
+          {label ?? t("common.saveProgress.waiting")}
         </div>
       </div>
 
@@ -118,7 +120,7 @@ export function SaveProgressLoader({ current, total, label, title }: Props) {
           fontSize: "10px", color: "var(--color-text-tertiary)",
         }}>
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "180px" }}>
-            ステップ {safeCurrent} / {safeTotal}
+            {t("common.saveProgress.step", { current: safeCurrent, total: safeTotal })}
           </span>
           <span style={{ fontWeight: "600", color: "#0ea5e9", flexShrink: 0, marginLeft: "8px" }}>
             {pct}%

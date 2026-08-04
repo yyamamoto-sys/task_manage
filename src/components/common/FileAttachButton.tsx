@@ -8,6 +8,17 @@ import { useRef, useState } from "react";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
+import { useT } from "../../hooks/useT";
+import { useLangStore } from "../../stores/langStore";
+import { translate } from "../../lib/i18n";
+
+// 【設計意図】processFileAttachment/resolveMediaType/isSupportedはコンポーネント外の
+// 素の関数（drag&dropハンドラからも呼ぶため）でuseT()フックが使えない。
+// alert()文言のみ useLangStore.getState().lang + translate() を直接呼ぶ
+// （ErrorBoundary.tsxと同じ考え方）。
+function tOutside(key: string): string {
+  return translate(useLangStore.getState().lang, key);
+}
 
 export type { FileAttachment };
 
@@ -21,19 +32,19 @@ function processFileAttachment(file: File, onAttach: (att: FileAttachment) => vo
   if (isDocxFile(file)) {
     extractDocxText(file)
       .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
-      .catch((e: unknown) => alert(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : tOutside("common.fileAttach.docxFailed")));
     return;
   }
   // HTML(.html/.htm)：raw HTML ではなく本文テキストを抽出し、text/plain のテキスト添付として渡す
   if (isHtmlFile(file)) {
     extractHtmlText(file)
       .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
-      .catch((e: unknown) => alert(e instanceof Error ? e.message : "HTMLファイルの読み込みに失敗しました。"));
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : tOutside("common.fileAttach.htmlFailed")));
     return;
   }
   const mediaType = resolveMediaType(file);
   if (!isSupported(mediaType)) {
-    alert(`非対応の形式です。\n対応: PDF / Word(.docx) / 画像(PNG・JPG・WebP・GIF) / テキスト(TXT・MD・CSV・HTML)`);
+    alert(tOutside("common.fileAttach.unsupported"));
     return;
   }
   const isText = TEXT_MEDIA_TYPES.includes(mediaType);
@@ -81,6 +92,7 @@ interface Props {
 }
 
 export function FileAttachButton({ attachment, onAttach, onRemove }: Props) {
+  const t = useT();
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -121,7 +133,7 @@ export function FileAttachButton({ attachment, onAttach, onRemove }: Props) {
           </span>
           <button
             onClick={onRemove}
-            title="添付を解除"
+            title={t("common.fileAttach.removeTitle")}
             style={{
               background: "transparent", border: "none", cursor: "pointer",
               color: "var(--color-text-tertiary)", fontSize: "12px",
@@ -132,7 +144,7 @@ export function FileAttachButton({ attachment, onAttach, onRemove }: Props) {
       ) : (
         <button
           onClick={() => inputRef.current?.click()}
-          title="PDF・Word(.docx)・画像・テキストを添付"
+          title={t("common.fileAttach.attachTitle")}
           style={{
             display: "flex", alignItems: "center", gap: "4px",
             padding: "4px 8px",
@@ -144,7 +156,7 @@ export function FileAttachButton({ attachment, onAttach, onRemove }: Props) {
           }}
         >
           <span>📎</span>
-          <span>添付</span>
+          <span>{t("common.fileAttach.attach")}</span>
         </button>
       )}
     </div>
@@ -162,6 +174,7 @@ export function FileDropZone({
   onAttach: (att: FileAttachment) => void;
   style?: React.CSSProperties;
 }) {
+  const t = useT();
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
@@ -215,7 +228,7 @@ export function FileDropZone({
             background: "rgba(99,102,241,0.1)", padding: "6px 14px",
             borderRadius: "var(--radius-full)",
           }}>
-            📎 ファイルをドロップして添付
+            {t("common.fileAttach.dropHint")}
           </div>
         </div>
       )}

@@ -2,13 +2,14 @@
 import { useState, useMemo, useRef, useEffect, useCallback, Suspense } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useTheme } from "../../hooks/useTheme";
-import { useLangStore } from "../../stores/langStore";
+import { useT } from "../../hooks/useT";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
 import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
+import { LangToggle } from "../common/LangToggle";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { keyResultsInGroup } from "../../lib/okr/deptScope";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -67,13 +68,19 @@ interface Props {
   onLogout: () => void;
 }
 
-const NAV_ITEMS: { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode; tooltip: string }[] = [
-  { view: "dashboard", label: "ダッシュボード", shortLabel: "DB", icon: <DashIcon />,   tooltip: "OKRの進捗・今週のタスク・期限アラートをまとめて確認できます" },
-  { view: "kanban",    label: "カンバン",       shortLabel: "KB", icon: <KanbanIcon />, tooltip: "タスクを「未着手／進行中／完了」の列でドラッグ&ドロップ管理できます" },
-  { view: "gantt",     label: "ガント",         shortLabel: "GT", icon: <GanttIcon />,  tooltip: "プロジェクトの期間とタスクの期日をカレンダー形式で一覧できます" },
-  { view: "list",      label: "リスト",         shortLabel: "LT", icon: <ListIcon />,   tooltip: "タスクを一覧形式で表示・絞り込み・CSV出力できます" },
-  { view: "workload",  label: "ワークロード",   shortLabel: "WL", icon: <WorkloadIcon />, tooltip: "メンバー別のタスク件数・負荷を一目で確認できます" },
-];
+/**
+ * 【i18n（Phase 1）】元は module 定数だったが、label/tooltipが t() 経由になったため
+ * 現在言語(t)を受け取って組み立てる関数にした（ShortcutsPanel.tsxのbuildSectionsと同じ方針）。
+ */
+function buildNavItems(t: ReturnType<typeof useT>): { view: ViewMode; label: string; shortLabel: string; icon: React.ReactNode; tooltip: string }[] {
+  return [
+    { view: "dashboard", label: t("layout.nav.dashboard.label"), shortLabel: "DB", icon: <DashIcon />,   tooltip: t("layout.nav.dashboard.tooltip") },
+    { view: "kanban",    label: t("layout.nav.kanban.label"),    shortLabel: "KB", icon: <KanbanIcon />, tooltip: t("layout.nav.kanban.tooltip") },
+    { view: "gantt",     label: t("layout.nav.gantt.label"),     shortLabel: "GT", icon: <GanttIcon />,  tooltip: t("layout.nav.gantt.tooltip") },
+    { view: "list",      label: t("layout.nav.list.label"),      shortLabel: "LT", icon: <ListIcon />,   tooltip: t("layout.nav.list.tooltip") },
+    { view: "workload",  label: t("layout.nav.workload.label"),  shortLabel: "WL", icon: <WorkloadIcon />, tooltip: t("layout.nav.workload.tooltip") },
+  ];
+}
 
 export function MainLayout(props: Props) {
   // ツアー機能を全体で使えるように。useTour() は MainLayoutInner で呼ぶ
@@ -90,8 +97,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 上部に閲覧専用バナーを出す。AI機能は表示する（反映だけブロックされる）。
   const isGuest = isGuestMember(currentUser);
   const { theme, toggle: toggleTheme } = useTheme();
-  const lang = useLangStore(s => s.lang);
-  const toggleLang = useLangStore(s => s.toggleLang);
+  const t = useT();
+  const NAV_ITEMS = useMemo(() => buildNavItems(t), [t]);
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(KEYS.VIEW_MODE) as ViewMode | null;
     // "admin" は設定パネルに移行したため、ダッシュボードにフォールバック
@@ -221,8 +228,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         const hasData = projectsRef.current.length > 0 || tasksRef.current.length > 0;
         setConsultDemoRequest({
           text: hasData
-            ? "今登録されているタスクの中で、優先的に進めるべきものと、遅れそうなものを教えて。次の一手も教えてください。"
-            : "これから計画管理を始めます。最初にどんな単位でプロジェクトやタスクを作ると、後で管理しやすいですか？",
+            ? t("layout.tourDemo.withData")
+            : t("layout.tourDemo.noData"),
           nonce: Date.now(),
         });
       }
@@ -382,7 +389,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setConsultDefaultMode("consult");
     setIsConsultOpen(true);
     setConsultPrefill({
-      text: "新しいプロジェクトを立ち上げたいです。目的・ゴールの案と初期タスクのたたき台を提案してください。（決まっている目的・期限・担当があればこの文に書き足してください）",
+      text: t("layout.aiProjectCreate.prefill"),
       nonce: Date.now(),
     });
   };
@@ -415,8 +422,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         background: "var(--color-bg-secondary)",
       }}>
         <span style={{ fontSize: "15px" }}>⚙️</span>
-        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>設定</span>
-        <HelpButton modeKey="admin.settings" title="設定パネルの使い方を開く" />
+        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>{t("layout.admin.title")}</span>
+        <HelpButton modeKey="admin.settings" title={t("layout.admin.helpTitle")} />
         <button
           onClick={() => setIsAdminOpen(false)}
           style={{
@@ -454,11 +461,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       }}>
         <div style={{ fontSize: "20px", marginBottom: "6px" }}>👋</div>
         <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>
-          ようこそ。ツアー（約90秒）を見ますか？
+          {t("layout.tourInvite.title")}
         </div>
         <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
-          4つのビュー・AI機能・OKR管理モードの場所と使い方を、画面上の吹き出しでご案内します。<br />
-          後から「📖 ガイド」内の「👋 オンボーディングを見直す」ボタンでいつでも再生できます。
+          {t("layout.tourInvite.body1")}<br />
+          {t("layout.tourInvite.body2")}
         </div>
         <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button
@@ -470,7 +477,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               borderRadius: "var(--radius-md)", cursor: "pointer",
             }}
           >
-            スキップ
+            {t("layout.tourInvite.skip")}
           </button>
           <button
             onClick={() => { setShowTourInvite(false); tour.start(FIRST_TIME_TOUR_ID); }}
@@ -480,7 +487,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
             }}
           >
-            ツアーを開始 →
+            {t("layout.tourInvite.start")}
           </button>
         </div>
       </div>
@@ -520,7 +527,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           background: "var(--color-bg-secondary)",
         }}>
           <span style={{ fontSize: "13px", fontWeight: 700, flex: 1, color: "var(--color-text-primary)" }}>
-            👋 オンボーディング（運用開始の3ステップ）
+            {t("layout.onboarding.title")}
           </span>
           <button
             onClick={() => setIsOnboardingOverlayOpen(false)}
@@ -559,7 +566,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         background: "var(--color-bg-secondary)",
       }}>
         <span style={{ fontSize: "15px" }}>📖</span>
-        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>ガイド</span>
+        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>{t("layout.guide.title")}</span>
         <button
           onClick={() => setIsGuideOpen(false)}
           style={{
@@ -601,7 +608,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const shortcutsButton = (
     <button
       onClick={toggleShortcuts}
-      title="ショートカット一覧を表示（全ビュー共通・画面右下）"
+      title={t("layout.shortcuts.buttonTitle")}
       aria-pressed={isShortcutsOpen}
       style={{
         position: "fixed",
@@ -624,7 +631,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       }}
     >
       <span style={{ fontSize: "12px", lineHeight: 1 }}>⌨</span>
-      <span>ショートカット</span>
+      <span>{t("layout.shortcuts.buttonLabel")}</span>
     </button>
   );
 
@@ -644,7 +651,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           background: "linear-gradient(135deg,#f59e0b,#d97706)",
           color: "#fff", fontSize: "11px", fontWeight: 600,
         }}>
-          <span>👁 ゲストモード（閲覧のみ）— 編集はできません</span>
+          <span>{t("layout.guestBanner")}</span>
         </div>
       )}
       {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : appMode === "okr" ? (
@@ -808,16 +815,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             >
               <div style={{ width: "40px", height: "4px", background: "var(--color-border-primary)", borderRadius: "2px", margin: "0 auto 16px" }} />
               <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", padding: "0 20px 10px", letterSpacing: "0.05em" }}>
-                🧪 ラボ機能
+                {t("layout.lab.sheetTitle")}
               </div>
               {[
-                { icon: "🏢", label: "体制図", desc: "PJの役割・担当体制を図示", onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🕸️", label: "関係グラフ", desc: "PJ・タスクの関係を可視化", onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: "カレンダー", desc: "タスクの期日を月カレンダーで表示", onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🧩", label: "マイページ", desc: "自分専用のウィジェット画面（ラボ）", onClick: () => { setIsMyPageOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: "KRセッション記録", desc: "文字起こしからチェックイン・ウィン記録", onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "📊", label: "KRレポート生成", desc: "議事メモからKRレポートをAI生成", onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🔍", label: "KRなぜなぜ分析", desc: "AIとの対話で根本原因を5Whys形式で掘り下げ", onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { setIsMyPageOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
               ].map(item => (
                 <button
                   key={item.label}
@@ -863,7 +870,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 maxWidth: "80px",
               }}
             >
-              <option value="">{mineOnly ? "自分のPJ" : "全PJ"}</option>
+              <option value="">{mineOnly ? t("layout.mobile.myPj") : t("layout.mobile.allPj")}</option>
               {visibleProjects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           )}
@@ -871,7 +878,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {/* 検索（コマンドパレット。モバイルはCtrl+Kが使えないためボタンが唯一の起動手段） */}
           <button
             onClick={() => setIsPaletteOpen(true)}
-            title="タスク・プロジェクトを検索"
+            title={t("layout.mobile.searchTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
@@ -885,7 +892,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
           <button
             onClick={() => setIsConsultOpen(prev => !prev)}
-            title="AIに変更を相談"
+            title={t("layout.mobile.consultTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: isConsultOpen ? "var(--gradient-ai-deep)" : "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
@@ -900,7 +907,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {!isGuest && (
           <button
             onClick={() => setIsAdminOpen(true)}
-            title="設定"
+            title={t("layout.mobile.settingsTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
@@ -916,7 +923,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {/* テーマ切り替え */}
           <button
             onClick={toggleTheme}
-            title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+            title={theme === "dark" ? t("layout.theme.toLight") : t("layout.theme.toDark")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
@@ -929,24 +936,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             {theme === "dark" ? "☀" : "☾"}
           </button>
           {/* 言語切り替え（🌐 日本語 | English） */}
-          <button
-            onClick={toggleLang}
-            title={lang === "ja" ? "🌐 日本語 | English（クリックで English に切替）" : "🌐 日本語 | English（click to switch to 日本語）"}
-            style={{
-              width: "32px", height: "32px", borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-secondary)",
-              border: "1px solid var(--color-border-primary)",
-              cursor: "pointer", fontSize: "11px", fontWeight: 600,
-              display: "flex", alignItems: "center", justifyContent: "center",
-              flexShrink: 0, color: "var(--color-text-secondary)",
-            }}
-          >
-            {lang === "ja" ? "EN" : "JA"}
-          </button>
+          <LangToggle variant="icon" />
           {/* ラボボタン */}
           <button
             onClick={() => setIsMobileLabOpen(true)}
-            title="ラボ機能"
+            title={t("layout.mobile.labTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
@@ -961,7 +955,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {/* カレンダー（ラボ） */}
           <button
             onClick={() => setIsCalendarOpen(true)}
-            title="カレンダー（タスクの期日を月表示）"
+            title={t("layout.calendar.title")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
               background: "var(--color-bg-secondary)",
@@ -974,7 +968,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <button
             onClick={onLogout}
             style={{ background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
-            title="ログアウト"
+            title={t("layout.logout.title")}
           >
             <Avatar member={currentUser} size={28} />
           </button>
@@ -1019,7 +1013,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                   boxShadow: "var(--shadow-lg)", cursor: "pointer",
                   whiteSpace: "nowrap", animationDelay: "0.12s",
                 }}
-              >💬 AIに相談する</button>
+              >💬 {t("layout.fab.consult")}</button>
               <button
                 className="fab-item-in"
                 onClick={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
@@ -1032,7 +1026,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                   boxShadow: "var(--shadow-lg)", cursor: "pointer",
                   whiteSpace: "nowrap", animationDelay: "0.06s",
                 }}
-              >◆ マイルストーン追加</button>
+              >◆ {t("layout.fab.milestone")}</button>
               <button
                 className="fab-item-in"
                 onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
@@ -1045,7 +1039,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                   boxShadow: "var(--shadow-lg)", cursor: "pointer",
                   whiteSpace: "nowrap", animationDelay: "0s",
                 }}
-              >＋ タスクを追加</button>
+              >＋ {t("layout.fab.task")}</button>
             </div>
           )}
           <button
@@ -1060,7 +1054,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               transition: "background 0.2s, transform 0.2s",
               transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
             }}
-            title="メニューを開く"
+            title={t("layout.fab.menuTitle")}
           >＋</button>
         </>)}
 
@@ -1096,10 +1090,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               </button>
             );
           }) : ([
-            { label: "OKR管理", icon: "🎯", onClick: () => setOkrActiveTool("overview") },
-            { label: "なぜなぜ", icon: "🔍", onClick: () => setOkrActiveTool("why") },
-            { label: "計画", icon: "📅", onClick: () => setOkrActiveTool("plan") },
-          ] as const).map(item => (
+            { label: t("layout.okrMobileNav.manage"), icon: "🎯", onClick: () => setOkrActiveTool("overview") },
+            { label: t("layout.okrMobileNav.why"), icon: "🔍", onClick: () => setOkrActiveTool("why") },
+            { label: t("layout.okrMobileNav.plan"), icon: "📅", onClick: () => setOkrActiveTool("plan") },
+          ]).map(item => (
             <button
               key={item.label}
               onClick={item.onClick}
@@ -1174,7 +1168,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               animationDelay: "0.12s",
             }}
           >
-            <span>💬</span> AIに相談する
+            <span>💬</span> {t("layout.fab.consult")}
           </button>
           <button
             className="fab-item-in"
@@ -1190,7 +1184,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               animationDelay: "0.06s",
             }}
           >
-            <span>◆</span> マイルストーン追加
+            <span>◆</span> {t("layout.fab.milestone")}
           </button>
           <button
             className="fab-item-in"
@@ -1206,7 +1200,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               animationDelay: "0s",
             }}
           >
-            <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> タスクを追加
+            <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> {t("layout.fab.task")}
           </button>
         </div>
       )}
@@ -1228,7 +1222,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             display: "flex", alignItems: "center", justifyContent: "center",
             transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
           }}
-          title="メニューを開く"
+          title={t("layout.fab.menuTitle")}
         >＋</button>
       )}
       <Sidebar
@@ -1468,8 +1462,8 @@ function Sidebar({
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
-  const lang = useLangStore(s => s.lang);
-  const toggleLang = useLangStore(s => s.toggleLang);
+  const t = useT();
+  const NAV_ITEMS = useMemo(() => buildNavItems(t), [t]);
   // サイドバーのセクション開閉（PJが増えても省略できるように）。localStorage で記憶。
   const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_PJ_OPEN) !== "0"; } catch { return true; } });
   const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_OKR_OPEN) !== "0"; } catch { return true; } });
@@ -1498,13 +1492,13 @@ function Sidebar({
         {!c && (
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              グループ計画管理
+              {t("layout.sidebar.appName")}
             </div>
           </div>
         )}
         <button
           onClick={onToggleCollapsed}
-          title={c ? "メニューを開く" : "メニューを閉じる"}
+          title={c ? t("layout.sidebar.expand") : t("layout.sidebar.collapse")}
           style={{
             background: "transparent", border: "none", cursor: "pointer",
             color: "var(--color-text-tertiary)", padding: "4px",
@@ -1541,13 +1535,13 @@ function Sidebar({
       {!c && accessibleGroups.length >= 2 && (
         <div style={{ padding: "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
           <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "4px", letterSpacing: "0.03em" }}>
-            表示部署
+            {t("layout.sidebar.groupLabel")}
           </div>
           <CustomSelect
             value={currentGroupId ?? ""}
             onChange={onSelectGroup}
             options={accessibleGroups.map(g => ({ value: g.id, label: g.name }))}
-            placeholder="部署を選択"
+            placeholder={t("layout.sidebar.groupPlaceholder")}
           />
         </div>
       )}
@@ -1556,7 +1550,7 @@ function Sidebar({
       <div style={{ padding: c ? "6px 4px 0" : "8px 8px 0", flexShrink: 0 }}>
         <button
           onClick={onOpenPalette}
-          title="タスク・プロジェクトを横断検索（Ctrl+K）"
+          title={t("layout.sidebar.searchTitle")}
           style={{
             display: "flex", alignItems: "center", gap: c ? 0 : "8px",
             padding: c ? "8px 0" : "7px 10px",
@@ -1572,7 +1566,7 @@ function Sidebar({
           <span style={{ fontSize: c ? "14px" : "12px", flexShrink: 0, lineHeight: 1 }}>🔍</span>
           {!c && (
             <>
-              <span style={{ flex: 1, textAlign: "left", fontSize: "11px" }}>検索...</span>
+              <span style={{ flex: 1, textAlign: "left", fontSize: "11px" }}>{t("layout.sidebar.searchPlaceholder")}</span>
               <kbd style={{
                 fontSize: "9px", padding: "1px 5px",
                 border: "1px solid var(--color-border-primary)", borderRadius: "3px",
@@ -1588,7 +1582,7 @@ function Sidebar({
         <button
           data-tour-id="ai-tool-btn"
           onClick={onOpenConsult}
-          title="AI相談・PJ/タスク登録・会議読み込みをまとめて使えます"
+          title={t("layout.sidebar.aiToolTitle")}
           style={{
             display: "flex", alignItems: "center", gap: c ? 0 : "10px",
             padding: c ? "10px 0" : "10px 12px",
@@ -1607,10 +1601,10 @@ function Sidebar({
           {!c && (
             <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
               <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "var(--color-ai-from)", lineHeight: 1.3 }}>
-                AIツールを開く
+                {t("layout.sidebar.aiToolLabel")}
               </div>
               <div style={{ fontSize: "10px", color: isConsultOpen ? "rgba(255,255,255,0.8)" : "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                相談 · PJ/タスク登録 · 会議読み込み
+                {t("layout.sidebar.aiToolSub")}
               </div>
             </div>
           )}
@@ -1625,7 +1619,7 @@ function Sidebar({
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
         <div data-tour-id="nav-items" style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
-          {!c && <SectionLabel>メニュー</SectionLabel>}
+          {!c && <SectionLabel>{t("layout.sidebar.menuLabel")}</SectionLabel>}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem
               key={view}
@@ -1650,7 +1644,7 @@ function Sidebar({
                 <button
                   onClick={togglePjOpen}
                   aria-expanded={pjOpen}
-                  title={pjOpen ? "プロジェクト一覧を省略" : "プロジェクト一覧を展開"}
+                  title={pjOpen ? t("layout.sidebar.pjSectionCollapse") : t("layout.sidebar.pjSectionExpand")}
                   style={{
                     display: "flex", alignItems: "center", gap: "4px",
                     background: "transparent", border: "none", cursor: "pointer", padding: 0,
@@ -1659,11 +1653,11 @@ function Sidebar({
                   }}
                 >
                   <span style={{ fontSize: "8px", display: "inline-block", transform: pjOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-                  プロジェクト
+                  {t("layout.sidebar.pjSectionLabel")}
                 </button>
                 <button
                   onClick={onCreateProject}
-                  title="新規プロジェクトを作成"
+                  title={t("layout.sidebar.pjCreateTitle")}
                   style={{
                     display: "flex", alignItems: "center", justifyContent: "center",
                     width: 16, height: 16, flexShrink: 0,
@@ -1678,7 +1672,7 @@ function Sidebar({
               </div>
               <button
                 onClick={onToggleMineOnly}
-                title={mineOnly ? "クリックで全タスクを表示" : "クリックで自分が担当のタスクのみに絞り込み"}
+                title={mineOnly ? t("layout.sidebar.mineOnlyToAll") : t("layout.sidebar.mineOnlyToMine")}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
                   padding: "2px 7px",
@@ -1691,7 +1685,7 @@ function Sidebar({
                 }}
               >
                 <span style={{ fontSize: "9px" }}>{mineOnly ? "👤" : "🌐"}</span>
-                {mineOnly ? "自分" : "全件"}
+                {mineOnly ? t("layout.sidebar.mineLabel") : t("layout.sidebar.allLabel")}
               </button>
             </div>
           )}
@@ -1699,7 +1693,7 @@ function Sidebar({
           <NavItem
             active={selectedProjectId === null && selectedKrId === null}
             icon={<span style={{ width: 8, height: 8, borderRadius: "50%", background: "#888780", display: "inline-block" }} />}
-            label="全PJ表示" tooltip="全PJ表示"
+            label={t("layout.sidebar.allPjLabel")} tooltip={t("layout.sidebar.allPjLabel")}
             onClick={() => onSelectProject(null)} collapsed={c}
           />
           {projects.map(pj => (
@@ -1714,8 +1708,8 @@ function Sidebar({
               padding: "12px 14px", fontSize: "11px",
               color: "var(--color-text-tertiary)", lineHeight: 1.5,
             }}>
-              自分が担当するタスクを持つPJはまだありません。<br />
-              「全件」に切り替えると全PJが表示されます。
+              {t("layout.sidebar.noMineProjects1")}<br />
+              {t("layout.sidebar.noMineProjects2")}
             </div>
           )}
           </>)}
@@ -1724,7 +1718,7 @@ function Sidebar({
               <button
                 onClick={toggleOkrOpen}
                 aria-expanded={okrOpen}
-                title={okrOpen ? "OKRタスクを省略" : "OKRタスクを展開"}
+                title={okrOpen ? t("layout.sidebar.okrSectionCollapse") : t("layout.sidebar.okrSectionExpand")}
                 style={{
                   display: "flex", alignItems: "center", gap: "4px", width: "100%",
                   background: "transparent", border: "none", cursor: "pointer",
@@ -1734,7 +1728,7 @@ function Sidebar({
                 }}
               >
                 <span style={{ fontSize: "8px", display: "inline-block", transform: okrOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-                OKRタスク
+                {t("layout.sidebar.okrSectionLabel")}
               </button>
             )}
             {(c || okrOpen) && keyResults.map(kr => (
@@ -1749,10 +1743,10 @@ function Sidebar({
         {/* ラボ サブメニュー（🧪ボタンで開閉） */}
         {labOpen && (
           <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label="体制図" tooltip="PJの役割・担当体制を図示" onClick={onOpenStructure} collapsed={c} />
-            <NavItem active={false} icon={<GraphIcon />} label="関係グラフ" tooltip="プロジェクト・タスクフォース・タスクの関係をグラフで可視化" onClick={onOpenGraph} collapsed={c} />
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label="カレンダー" tooltip="タスクの期日を月カレンダーで表示（ラボ）" onClick={onOpenCalendar} collapsed={c} />
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label="マイページ" tooltip="自分専用のウィジェット画面（ラボ）" onClick={onOpenMyPage} collapsed={c} />
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label={t("layout.lab.structure.label")} tooltip={t("layout.lab.structure.desc")} onClick={onOpenStructure} collapsed={c} />
+            <NavItem active={false} icon={<GraphIcon />} label={t("layout.lab.graph.label")} tooltip={t("layout.lab.graph.tooltip")} onClick={onOpenGraph} collapsed={c} />
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label={t("layout.lab.calendar.label")} tooltip={t("layout.lab.calendar.tooltip")} onClick={onOpenCalendar} collapsed={c} />
+            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label={t("layout.lab.mypage.label")} tooltip={t("layout.lab.mypage.desc")} onClick={onOpenMyPage} collapsed={c} />
           </div>
         )}
       </>) : (<>
@@ -1762,7 +1756,7 @@ function Sidebar({
           <NavItem
             active={selectedKrId === null}
             icon={<span style={{ fontSize: "13px" }}>🎯</span>}
-            label="全KR" tooltip="全KRを表示"
+            label={t("layout.sidebar.allKrLabel")} tooltip={t("layout.sidebar.allKrTooltip")}
             onClick={() => onSelectKr(null)} collapsed={c}
           />
           {keyResults.map(kr => (
@@ -1773,7 +1767,7 @@ function Sidebar({
           ))}
           {keyResults.length === 0 && !c && (
             <div style={{ padding: "8px 12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              KRが登録されていません
+              {t("layout.sidebar.noKr")}
             </div>
           )}
         </div>
@@ -1789,7 +1783,7 @@ function Sidebar({
         <button
           data-tour-id="guide-btn"
           onClick={onOpenGuide}
-          title="このアプリの使い方ガイドを開きます"
+          title={t("layout.guide.buttonTitle")}
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
@@ -1805,13 +1799,13 @@ function Sidebar({
           }}
         >
           <span style={{ fontSize: "13px", lineHeight: 1 }}>📖</span>
-          {!c && <span>ガイド</span>}
+          {!c && <span>{t("layout.guide.title")}</span>}
         </button>
         {/* 設定（歯車）ボタン（ゲストは非表示） */}
         {!isGuest && (
         <button
           onClick={onOpenAdmin}
-          title="設定"
+          title={t("layout.admin.title")}
           style={{
             width: "100%",
             display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
@@ -1827,7 +1821,7 @@ function Sidebar({
           }}
         >
           <GearIcon />
-          {!c && <span>設定</span>}
+          {!c && <span>{t("layout.admin.title")}</span>}
         </button>
         )}
         <div style={{
@@ -1850,37 +1844,29 @@ function Sidebar({
             <button
               onClick={onToggleTheme}
               style={{ fontSize: "13px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
-              title={theme === "dark" ? "ライトモードに切替" : "ダークモードに切替"}
+              title={theme === "dark" ? t("layout.theme.toLight") : t("layout.theme.toDark")}
             >
               {theme === "dark" ? "☀" : "☾"}
             </button>
           )}
           {/* 言語切り替え（🌐 日本語 | English） */}
-          {!c && (
-            <button
-              onClick={toggleLang}
-              style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
-              title={lang === "ja" ? "🌐 日本語 | English（クリックで English に切替）" : "🌐 日本語 | English（click to switch to 日本語）"}
-            >
-              {lang === "ja" ? "EN" : "JA"}
-            </button>
-          )}
+          {!c && <LangToggle variant="text" />}
           <button
             onClick={() => setLabOpen(o => !o)}
             style={{ fontSize: "13px", color: labOpen ? "var(--color-text-primary)" : "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
-            title="ラボ（実験的機能）"
+            title={t("layout.lab.toggleTitle")}
           >🧪</button>
           {/* カレンダー（サイドバー：折りたたみ時もアイコンで表示） */}
           <button
             onClick={onOpenCalendar}
             style={{ fontSize: "14px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
-            title="カレンダー（タスクの期日を月表示）"
+            title={t("layout.calendar.title")}
           >🗓️</button>
           {!c && (
             <button
               onClick={onLogout}
               style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
-              title="ログアウト"
+              title={t("layout.logout.title")}
             >
               ⏏
             </button>
@@ -2023,11 +2009,12 @@ function NavItem({
 }
 
 function AppModeToggle({ mode, onToggle, compact = false }: { mode: AppMode; onToggle: () => void; compact?: boolean }) {
+  const t = useT();
   if (compact) {
     return (
       <button
         onClick={onToggle}
-        title={mode === "plan" ? "OKR管理モードに切り替え" : "計画管理モードに切り替え"}
+        title={mode === "plan" ? t("layout.appModeToggle.toOkr") : t("layout.appModeToggle.toPlan")}
         style={{
           width: "100%", display: "flex", alignItems: "center", justifyContent: "center",
           padding: "4px 0", background: "transparent", border: "none", cursor: "pointer",
@@ -2056,7 +2043,7 @@ function AppModeToggle({ mode, onToggle, compact = false }: { mode: AppMode; onT
             whiteSpace: "nowrap",
           }}
         >
-          {m === "plan" ? "📋 計画" : "🎯 OKR"}
+          {m === "plan" ? t("layout.appModeToggle.planFull") : t("layout.appModeToggle.okrFull")}
         </button>
       ))}
     </div>
@@ -2064,13 +2051,14 @@ function AppModeToggle({ mode, onToggle, compact = false }: { mode: AppMode; onT
 }
 
 function ComingSoon({ view }: { view: ViewMode }) {
+  const t = useT();
   const labels: Record<ViewMode, string> = {
-    dashboard: "ダッシュボード",
-    kanban: "カンバン",
-    gantt: "ガント",
-    list: "リスト",
-    admin: "管理画面",
-    workload: "ワークロード",
+    dashboard: t("layout.nav.dashboard.label"),
+    kanban: t("layout.nav.kanban.label"),
+    gantt: t("layout.nav.gantt.label"),
+    list: t("layout.nav.list.label"),
+    admin: t("layout.nav.admin.label"),
+    workload: t("layout.nav.workload.label"),
   };
   return (
     <div style={{
@@ -2079,9 +2067,9 @@ function ComingSoon({ view }: { view: ViewMode }) {
     }}>
       <div style={{ fontSize: "24px" }}>🚧</div>
       <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-secondary)" }}>
-        {labels[view]}ビュー
+        {labels[view]}{t("layout.comingSoon.viewSuffix")}
       </div>
-      <div style={{ fontSize: "12px" }}>実装予定</div>
+      <div style={{ fontSize: "12px" }}>{t("layout.comingSoon.planned")}</div>
     </div>
   );
 }

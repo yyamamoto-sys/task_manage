@@ -3512,5 +3512,41 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      DBマイグレ不要（ドキュメント・テンプレート・テストの追加のみ。フロントの表示・保存ロジックは
 #             無改造）
 #
-# 最終更新：2026-07-28（v3.17）
+# v3.18 feat: 英語化（i18n）Phase 1（アプリ骨格＋共通UI＋認証その他画面）を追加（2026-08-04）
+#      背景：`docs/dev/i18n-plan.md`のPhase 1。Phase 0（土台）＋LoginScreenのみだった状態から、
+#             App.tsx／MainLayout.tsx本体／components/common/全ファイル／auth/残り3画面を
+#             t()化した。Phase 0時点で「言語トグルはMainLayout（ログイン後）にあるのに、
+#             翻訳済み画面はLoginScreen（ログイン前）だけ」という構造的な不整合があり、
+#             トグルを押しても切替を体感できなかった問題も本Phaseで解消
+#      新設：`src/i18n/layout.ts`（`layoutJa`/`layoutEn`）。App Shell・MainLayout本体の文言
+#      拡張：`src/i18n/common.ts`（ConfirmModal/DangerZone/CustomSelect/ErrorBoundary/ErrorBar/
+#             FileAttachButton/InlineEditAssignee・Date・Text/LoadingTips/MentionTextarea/
+#             SaveProgressLoader/AIProgressLoader/CommandPalette/ShortcutsPanelの自前固定文言）
+#      拡張：`src/i18n/auth.ts`（UserSelectScreen/SetupWizard/AccessDeniedScreenの文言。既存の
+#             auth.*キーは変更なし）
+#      新規：`src/components/common/LangToggle.tsx`。MainLayoutのモバイルヘッダー／サイドバー
+#             フッターに個別実装（コピペ）されていたEN/JAトグルを部品化し、`variant="icon"|"text"`
+#             の2種を提供。ログイン前の4画面（LoginScreen/UserSelectScreen/SetupWizard/
+#             AccessDeniedScreen）にも同じ部品を右上固定で配置し、「トグルはあるのに翻訳画面が
+#             無い／翻訳画面はあるのにトグルが無い」の構造的不整合を解消
+#      設計判断：①共通UI部品はToast/EmptyStateのように呼び出し元がprops経由で渡す文言は対象外
+#             （呼び出し側はPhase 2以降。ここで訳すと二重管理になるため）。②ErrorBoundary.tsxは
+#             クラスコンポーネントでuseT()が使えないため`useLangStore.getState().lang`+
+#             `translate()`を直接呼ぶ方式を採用（FileAttachButton.tsxの素の関数からのalert()文言も
+#             同じ方式）。③ShortcutsPanel.tsx/CommandPalette.tsxのモジュール定数だったデータ
+#             （SECTIONS/VIEW_ACTIONS）はt()を受け取るbuildXxx(t)関数に変換しコンポーネント内で
+#             useMemoして使う形にした。④InlineEditDateのプレースホルダから「期日」「開始日」を
+#             正規表現で抜き出して文言に埋め込んでいた実装は英語で成立しないため、汎用的な
+#             「日付」表現に簡略化（既存の`placeholder`propそのものは維持・後方互換）
+#      テスト：`src/lib/__tests__/i18n.test.ts`に「ja/enのキー集合が完全一致すること」を検証する
+#             テストを追加（common/auth/layoutの3辞書。片側にしかないキーがあれば失敗しキー名を
+#             メッセージに出す＝追加漏れの回帰防止）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 737件全通過（既存730件＋新規7件）／
+#             `npm run build`成功
+#      未対応（Phase 2以降）：dashboard/gantt/kanban/list/task/milestone/consultation/okr/lab/
+#             admin/meeting/tour/graph/guideの各モジュールは意図的にスコープ外（計画通り）。
+#             日付・曜日名のロケール対応も引き続きスキップ
+#      DBマイグレ不要（localStorageの言語設定のみ。UI文言とテストの追加）
+#
+# 最終更新：2026-08-04（v3.18）
 

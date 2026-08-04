@@ -8,6 +8,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import type { Task, Project, ViewMode } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   isOpen: boolean;
@@ -27,18 +28,21 @@ type PaletteItem =
   | { kind: "project"; id: string; label: string; color: string }
   | { kind: "action"; id: string; label: string; icon: string; run: () => void };
 
-const VIEW_ACTIONS: { view: ViewMode; label: string; icon: string }[] = [
-  { view: "dashboard", label: "ダッシュボードを開く", icon: "📊" },
-  { view: "kanban",    label: "カンバンを開く",       icon: "📋" },
-  { view: "gantt",     label: "ガントを開く",         icon: "📅" },
-  { view: "list",      label: "リストを開く",         icon: "📝" },
-  { view: "workload",  label: "ワークロードを開く",   icon: "🧑‍🤝‍🧑" },
-];
+function buildViewActions(t: ReturnType<typeof useT>): { view: ViewMode; label: string; icon: string }[] {
+  return [
+    { view: "dashboard", label: t("common.commandPalette.viewDashboard"), icon: "📊" },
+    { view: "kanban",    label: t("common.commandPalette.viewKanban"),    icon: "📋" },
+    { view: "gantt",     label: t("common.commandPalette.viewGantt"),     icon: "📅" },
+    { view: "list",      label: t("common.commandPalette.viewList"),      icon: "📝" },
+    { view: "workload",  label: t("common.commandPalette.viewWorkload"),  icon: "🧑‍🤝‍🧑" },
+  ];
+}
 
 export function CommandPalette({
   isOpen, onClose, tasks, projects, canCreate,
   onOpenTask, onSelectProject, onSwitchView, onQuickAdd, onOpenConsult,
 }: Props) {
+  const t = useT();
   const [query, setQuery] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -66,16 +70,16 @@ export function CommandPalette({
 
     // クイックアクション：クエリが空 or ラベルに部分一致
     const actions: PaletteItem[] = [
-      ...VIEW_ACTIONS.map(v => ({
+      ...buildViewActions(t).map(v => ({
         kind: "action" as const, id: `view_${v.view}`, label: v.label, icon: v.icon,
         run: () => onSwitchView(v.view),
       })),
       ...(canCreate ? [{
-        kind: "action" as const, id: "quick_add", label: "新規タスクを追加", icon: "＋",
+        kind: "action" as const, id: "quick_add", label: t("common.commandPalette.quickAddTask"), icon: "＋",
         run: onQuickAdd,
       }] : []),
       {
-        kind: "action" as const, id: "consult", label: "AIに相談する", icon: "✨",
+        kind: "action" as const, id: "consult", label: t("common.commandPalette.consult"), icon: "✨",
         run: onOpenConsult,
       },
     ];
@@ -95,18 +99,18 @@ export function CommandPalette({
         const bd = b.status === "done" || b.status === "cancelled" ? 1 : 0;
         return ad - bd;
       });
-      matched.slice(0, 8).forEach(t => result.push({
-        kind: "task", id: t.id, label: t.name,
+      matched.slice(0, 8).forEach(task => result.push({
+        kind: "task", id: task.id, label: task.name,
         sub: [
-          t.project_id ? projectNameById.get(t.project_id) : null,
-          TASK_STATUS_LABEL[t.status],
-          t.due_date ? `期日 ${t.due_date.slice(5).replace("-", "/")}` : null,
+          task.project_id ? projectNameById.get(task.project_id) : null,
+          TASK_STATUS_LABEL[task.status],
+          task.due_date ? t("common.commandPalette.taskDueDate", { date: task.due_date.slice(5).replace("-", "/") }) : null,
         ].filter(Boolean).join(" ・ "),
-        task: t,
+        task,
       }));
     }
     return result;
-  }, [query, tasks, projects, projectNameById, canCreate, onSwitchView, onQuickAdd, onOpenConsult]);
+  }, [query, tasks, projects, projectNameById, canCreate, onSwitchView, onQuickAdd, onOpenConsult, t]);
 
   // 結果が変わったら選択位置を先頭へ
   useEffect(() => { setSelectedIndex(0); }, [items.length, query]);
@@ -135,7 +139,9 @@ export function CommandPalette({
 
   // グループ見出し：直前のitemとkindが変わる位置にだけ出す
   const groupLabel = (kind: PaletteItem["kind"]) =>
-    kind === "action" ? "アクション" : kind === "project" ? "プロジェクト" : "タスク";
+    kind === "action" ? t("common.commandPalette.groupAction")
+      : kind === "project" ? t("common.commandPalette.groupProject")
+      : t("common.commandPalette.groupTask");
 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。Escキーでキーボードからも閉じられる
@@ -170,7 +176,7 @@ export function CommandPalette({
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="タスク・プロジェクトを検索、またはアクションを選択..."
+            placeholder={t("common.commandPalette.placeholder")}
             style={{
               flex: 1, border: "none", outline: "none", background: "transparent",
               fontSize: "14px", color: "var(--color-text-primary)",
@@ -187,7 +193,7 @@ export function CommandPalette({
         <div ref={listRef} style={{ overflowY: "auto", padding: "6px 0" }}>
           {items.length === 0 && (
             <div style={{ padding: "24px 16px", textAlign: "center", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-              「{query}」に一致するものが見つかりません
+              {t("common.commandPalette.noMatch", { query })}
             </div>
           )}
           {items.map((item, i) => {
@@ -262,9 +268,9 @@ export function CommandPalette({
           display: "flex", gap: "14px", fontSize: "10px", color: "var(--color-text-tertiary)",
           background: "var(--color-bg-secondary)",
         }}>
-          <span>↑↓ 移動</span>
-          <span>Enter 開く</span>
-          <span>Esc 閉じる</span>
+          <span>{t("common.commandPalette.hintMove")}</span>
+          <span>{t("common.commandPalette.hintOpen")}</span>
+          <span>{t("common.commandPalette.hintClose")}</span>
         </div>
       </div>
     </div>

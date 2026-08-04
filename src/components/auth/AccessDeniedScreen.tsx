@@ -6,12 +6,15 @@
 // App.tsx から表示される。ここには絶対に SetupWizard へ進ませない（M25対応）。
 import { useEffect, useState } from "react";
 import { getAuthEmail, signOut } from "../../lib/supabase/auth";
+import { useT } from "../../hooks/useT";
+import { LangToggle } from "../common/LangToggle";
 
 interface Props {
   onLogout: () => void;
 }
 
 export function AccessDeniedScreen({ onLogout }: Props) {
+  const t = useT();
   const [email, setEmail] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,7 +27,10 @@ export function AccessDeniedScreen({ onLogout }: Props) {
   };
 
   return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)" }}>
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+      <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+        <LangToggle variant="icon" />
+      </div>
       <div style={{
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
@@ -36,10 +42,10 @@ export function AccessDeniedScreen({ onLogout }: Props) {
       }}>
         <div style={{ fontSize: "32px", marginBottom: "12px" }}>🔒</div>
         <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>
-          アクセス権がありません
+          {t("auth.accessDenied.title")}
         </h1>
         <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "16px" }}>
-          このメールアドレスはまだメンバーとして登録されていません。
+          {t("auth.accessDenied.body1")}
         </p>
         {email && (
           <div style={{
@@ -56,7 +62,7 @@ export function AccessDeniedScreen({ onLogout }: Props) {
           </div>
         )}
         <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.7, marginBottom: "24px" }}>
-          管理者に連絡して、上記のメールアドレスでメンバー登録を依頼してください。登録が完了すれば、次回ログイン時に自動的にアクセスできるようになります。
+          {t("auth.accessDenied.body2")}
         </p>
         <button
           onClick={() => void handleLogout()}
@@ -67,7 +73,7 @@ export function AccessDeniedScreen({ onLogout }: Props) {
             fontSize: "14px", fontWeight: 600, cursor: "pointer",
           }}
         >
-          ログアウトして別のアカウントで入り直す
+          {t("auth.accessDenied.logoutButton")}
         </button>
       </div>
     </div>

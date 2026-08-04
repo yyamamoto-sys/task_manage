@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
 import { todayStr } from "../../lib/date";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   value: string | null;
@@ -11,7 +12,9 @@ interface Props {
   placeholder?: string;
 }
 
-export function InlineEditDate({ value, onSave, isDone, placeholder = "期日未設定" }: Props) {
+export function InlineEditDate({ value, onSave, isDone, placeholder }: Props) {
+  const t = useT();
+  const effectivePlaceholder = placeholder ?? t("common.date.dueUnset");
   const [editing, setEditing] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -46,7 +49,7 @@ export function InlineEditDate({ value, onSave, isDone, placeholder = "期日未
         />
         <button
           onMouseDown={e => { e.preventDefault(); onSave(null); setEditing(false); }}
-          title={`${placeholder.replace(/未設定$/, "") || "日付"}をクリア`}
+          title={t("common.date.clearTitle")}
           style={{
             padding: "0 3px", fontSize: "10px",
             background: "transparent", border: "none",
@@ -62,7 +65,7 @@ export function InlineEditDate({ value, onSave, isDone, placeholder = "期日未
       onClick={e => { e.stopPropagation(); setEditing(true); }}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setEditing(true); } }}
-      title={`クリックして${placeholder.replace(/未設定$/, "") || "日付"}を編集`}
+      title={t("common.date.editTitle")}
       style={{
         cursor: "text",
         fontSize: "inherit",
@@ -76,7 +79,7 @@ export function InlineEditDate({ value, onSave, isDone, placeholder = "期日未
       onMouseEnter={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "var(--color-border-primary)"; }}
       onMouseLeave={e => { (e.currentTarget as HTMLSpanElement).style.borderBottomColor = "transparent"; }}
     >
-      {value ? value.slice(5).replace("-", "/") : placeholder}
+      {value ? value.slice(5).replace("-", "/") : effectivePlaceholder}
     </span>
   );
 }

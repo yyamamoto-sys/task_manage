@@ -31,6 +31,8 @@ import { supabase } from "../../lib/supabase/client";
 import { getAuthEmail } from "../../lib/supabase/auth";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import type { Member } from "../../lib/localData/types";
+import { useT } from "../../hooks/useT";
+import { LangToggle } from "../common/LangToggle";
 
 interface Props {
   onComplete: () => void;
@@ -65,6 +67,7 @@ function getInitials(name: string): string {
 }
 
 export function SetupWizard({ onComplete }: Props) {
+  const t = useT();
   const saveMember = useAppStore(s => s.saveMember);
   const setCurrentGroupId = useAppStore(s => s.setCurrentGroupId);
   const reload = useAppStore(s => s.reload);
@@ -130,7 +133,7 @@ export function SetupWizard({ onComplete }: Props) {
 
     const [you, ...rest] = validMembers;
     if (!you) {
-      setSaveError("メンバーを1名以上入力してください");
+      setSaveError(t("auth.setup.error.noMembers"));
       return;
     }
 
@@ -139,7 +142,7 @@ export function SetupWizard({ onComplete }: Props) {
     try {
       const authEmail = await getAuthEmail();
       if (!authEmail) {
-        throw new Error("ログイン中のメールアドレスが取得できませんでした。一度ログインし直してください");
+        throw new Error(t("auth.setup.error.noAuthEmail"));
       }
 
       // ブートストラップ専用のSECURITY DEFINER関数を1回だけ呼ぶ。
@@ -155,7 +158,7 @@ export function SetupWizard({ onComplete }: Props) {
       if (error) throw error;
       const row = Array.isArray(data) ? data[0] : data;
       const newGroupId = row?.group_id as string | undefined;
-      if (!newGroupId) throw new Error("部署の作成に失敗しました");
+      if (!newGroupId) throw new Error(t("auth.setup.error.groupCreateFailed"));
 
       // これ以降のcurrentGroupId注入（saveMember等）が新しい部署を向くようにする。
       setCurrentGroupId(newGroupId);
@@ -174,7 +177,7 @@ export function SetupWizard({ onComplete }: Props) {
       localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
       onComplete();
     } catch (e) {
-      setSaveError(formatErrorForUser("保存に失敗しました", e));
+      setSaveError(formatErrorForUser(t("auth.setup.error.saveFailed"), e));
       setSaving(false);
     }
   };
@@ -184,7 +187,11 @@ export function SetupWizard({ onComplete }: Props) {
       minHeight: "100vh", display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
       background: "var(--color-bg-secondary)", padding: "24px",
+      position: "relative",
     }}>
+      <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+        <LangToggle variant="icon" />
+      </div>
       <div style={{
         background: "var(--color-bg-primary)",
         border: "1px solid var(--color-border-primary)",
@@ -199,9 +206,9 @@ export function SetupWizard({ onComplete }: Props) {
           background: "var(--color-bg-secondary)",
         }}>
           {[
-            { n: 1, label: "ようこそ" },
-            { n: 2, label: "部署・メンバー登録" },
-            { n: 3, label: "完了" },
+            { n: 1, label: t("auth.setup.step1.tabLabel") },
+            { n: 2, label: t("auth.setup.step2.tabLabel") },
+            { n: 3, label: t("auth.setup.step3.tabLabel") },
           ].map(({ n, label }) => (
             <div key={n} style={{
               flex: 1, padding: "10px 8px", textAlign: "center",
@@ -240,11 +247,11 @@ export function SetupWizard({ onComplete }: Props) {
                 </svg>
               </div>
               <div style={{ fontSize: "18px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "8px" }}>
-                グループ計画管理へようこそ
+                {t("auth.setup.step1.title")}
               </div>
               <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
-                チーム全員で<br />
-                プロジェクトとタスクを一元管理するツールです。
+                {t("auth.setup.step1.subtitle1")}<br />
+                {t("auth.setup.step1.subtitle2")}
               </div>
             </div>
 
@@ -254,14 +261,14 @@ export function SetupWizard({ onComplete }: Props) {
               fontSize: "11px", color: "var(--color-text-info)", lineHeight: 1.6,
               marginBottom: "24px",
             }}>
-              ℹ ここで登録したメンバーはSupabaseに保存され、チーム全員でリアルタイムに共有されます。
+              {t("auth.setup.step1.infoBox")}
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "24px" }}>
               {[
-                { icon: "📋", text: "カンバン・ガント・リストで進捗管理" },
-                { icon: "🎯", text: "OKRと連動したプロジェクト設計" },
-                { icon: "🤖", text: "AIへの相談で変更の影響を即座に把握" },
+                { icon: "📋", text: t("auth.setup.step1.feature1") },
+                { icon: "🎯", text: t("auth.setup.step1.feature2") },
+                { icon: "🤖", text: t("auth.setup.step1.feature3") },
               ].map(({ icon, text }) => (
                 <div key={text} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
                   <span style={{ fontSize: "16px" }}>{icon}</span>
@@ -279,7 +286,7 @@ export function SetupWizard({ onComplete }: Props) {
                 fontSize: "13px", fontWeight: "500", cursor: "pointer",
               }}
             >
-              セットアップを始める →
+              {t("auth.setup.step1.startButton")}
             </button>
           </div>
         )}
@@ -289,10 +296,10 @@ export function SetupWizard({ onComplete }: Props) {
           <div style={{ padding: "20px 24px" }}>
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "15px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "4px" }}>
-                部署とチームメンバーを登録
+                {t("auth.setup.step2.title")}
               </div>
               <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                部署名は後から管理画面で変更できます。メンバーも後からいつでも追加・変更できます
+                {t("auth.setup.step2.subtitle")}
               </div>
             </div>
 
@@ -300,7 +307,7 @@ export function SetupWizard({ onComplete }: Props) {
               <input
                 value={groupName}
                 onChange={e => setGroupName(e.target.value)}
-                placeholder="部署名 ※必須（例：EGG、AID など）"
+                placeholder={t("auth.setup.step2.groupNamePlaceholder")}
                 aria-required="true"
                 style={{
                   width: "100%", padding: "7px 10px", fontSize: "12px",
@@ -321,7 +328,7 @@ export function SetupWizard({ onComplete }: Props) {
                 <div key={m.id}>
                   {m.id === firstValidId && (
                     <div style={{ fontSize: "10px", color: "var(--color-text-info)", marginBottom: "4px", fontWeight: 600 }}>
-                      👑 あなた（この部署の最初のメンバー・自動的に管理者になります）
+                      {t("auth.setup.step2.youBadge")}
                     </div>
                   )}
                   <div style={{
@@ -345,7 +352,7 @@ export function SetupWizard({ onComplete }: Props) {
                     <input
                       value={m.display_name}
                       onChange={e => updateMember(m.id, "display_name", e.target.value)}
-                      placeholder="表示名 ※必須（例：田中 一郎）"
+                      placeholder={t("auth.setup.step2.displayNamePlaceholder")}
                       aria-required="true"
                       style={{
                         flex: 2, padding: "5px 8px", fontSize: "11px",
@@ -358,7 +365,7 @@ export function SetupWizard({ onComplete }: Props) {
                     <input
                       value={m.short_name}
                       onChange={e => updateMember(m.id, "short_name", e.target.value)}
-                      placeholder="略称 ※必須（例：田中）"
+                      placeholder={t("auth.setup.step2.shortNamePlaceholder")}
                       aria-required="true"
                       style={{
                         flex: 1, padding: "5px 8px", fontSize: "11px",
@@ -400,7 +407,7 @@ export function SetupWizard({ onComplete }: Props) {
                 borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
             >
-              ＋ メンバーを追加
+              {t("auth.setup.step2.addMemberButton")}
             </button>
 
             {(() => {
@@ -416,7 +423,7 @@ export function SetupWizard({ onComplete }: Props) {
                       background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
                       borderRadius: "var(--radius-sm)", fontSize: "11px", lineHeight: 1.5,
                     }}>
-                      部署名を入力してください。
+                      {t("auth.setup.step2.groupNameRequired")}
                     </div>
                   )}
                   {incompleteCount > 0 && (
@@ -425,7 +432,7 @@ export function SetupWizard({ onComplete }: Props) {
                       background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
                       borderRadius: "var(--radius-sm)", fontSize: "11px", lineHeight: 1.5,
                     }}>
-                      未入力のメンバーが {incompleteCount} 件あります。空欄のままだと保存されません。
+                      {t("auth.setup.step2.incompleteWarning", { count: incompleteCount })}
                     </div>
                   )}
                   <div style={{ display: "flex", gap: "8px", marginTop: "20px" }}>
@@ -439,12 +446,12 @@ export function SetupWizard({ onComplete }: Props) {
                         borderRadius: "var(--radius-md)", cursor: "pointer",
                       }}
                     >
-                      ← 戻る
+                      {t("auth.setup.step2.back")}
                     </button>
                     <button
                       onClick={() => setStep(3)}
                       disabled={!canProceed}
-                      title={canProceed ? "次のステップへ進む" : "部署名の入力、および表示名と略称を1名以上入力してください"}
+                      title={canProceed ? t("auth.setup.step2.nextTitleReady") : t("auth.setup.step2.nextTitleBlocked")}
                       style={{
                         flex: 2, padding: "9px", fontSize: "12px", fontWeight: "500",
                         background: canProceed ? "var(--color-brand)" : "var(--color-bg-tertiary)",
@@ -453,7 +460,7 @@ export function SetupWizard({ onComplete }: Props) {
                         cursor: canProceed ? "pointer" : "not-allowed",
                       }}
                     >
-                      次へ →
+                      {t("auth.setup.step2.next")}
                     </button>
                   </div>
                 </>
@@ -467,10 +474,10 @@ export function SetupWizard({ onComplete }: Props) {
           <div style={{ padding: "32px 28px", textAlign: "center" }}>
             <div style={{ fontSize: "40px", marginBottom: "14px" }}>🎉</div>
             <div style={{ fontSize: "17px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "8px" }}>
-              セットアップ完了！
+              {t("auth.setup.step3.title")}
             </div>
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "8px", lineHeight: 1.7 }}>
-              部署「{groupName.trim()}」を作成し、{members.filter(m => m.display_name.trim()).length}名のメンバーを登録します。
+              {t("auth.setup.step3.summary", { group: groupName.trim(), count: members.filter(m => m.display_name.trim()).length })}
             </div>
             <div style={{
               fontSize: "11px", color: "var(--color-text-tertiary)",
@@ -478,7 +485,7 @@ export function SetupWizard({ onComplete }: Props) {
               borderRadius: "var(--radius-md)", padding: "10px 12px",
               marginBottom: "24px", lineHeight: 1.6,
             }}>
-              最初のメンバーはこの部署の管理者・全社スーパー管理者になります。管理画面からOKR・タスクフォース・プロジェクトを設定してください。
+              {t("auth.setup.step3.note")}
             </div>
             {saveError && (
               <div style={{
@@ -502,7 +509,7 @@ export function SetupWizard({ onComplete }: Props) {
                 cursor: saving ? "not-allowed" : "pointer",
               }}
             >
-              {saving ? "保存中..." : "アプリを開始する"}
+              {saving ? t("auth.setup.step3.saving") : t("auth.setup.step3.startAppButton")}
             </button>
           </div>
         )}

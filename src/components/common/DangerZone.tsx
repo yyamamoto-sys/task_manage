@@ -8,6 +8,7 @@
 
 import { useState, type ReactNode, type CSSProperties } from "react";
 import { isNameConfirmed } from "../../lib/dangerZoneConfirm";
+import { useT } from "../../hooks/useT";
 
 interface DangerZoneProps {
   children: ReactNode;
@@ -16,6 +17,7 @@ interface DangerZoneProps {
 
 /** 赤枠の「⚠ 危険な操作」ブロック。中に DangerAction を1つ以上並べて使う。 */
 export function DangerZone({ children, style }: DangerZoneProps) {
+  const t = useT();
   return (
     <div style={{
       border: "1px solid var(--color-border-danger)",
@@ -29,7 +31,7 @@ export function DangerZone({ children, style }: DangerZoneProps) {
         borderBottom: "1px solid var(--color-border-danger)",
         fontSize: "11px", fontWeight: 600, color: "var(--color-text-danger)",
       }}>
-        ⚠ 危険な操作
+        {t("common.dangerZone.title")}
       </div>
       <div style={{ padding: "12px 14px", display: "flex", flexDirection: "column", gap: "14px" }}>
         {children}
@@ -53,8 +55,10 @@ interface DangerActionProps {
 
 /** DangerZone の中に置く個々の削除アクション。 */
 export function DangerAction({
-  label, description, buttonLabel = "削除する", onConfirm, requireNameMatch, disabled,
+  label, description, buttonLabel, onConfirm, requireNameMatch, disabled,
 }: DangerActionProps) {
+  const t = useT();
+  const effectiveButtonLabel = buttonLabel ?? t("common.confirm.delete");
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const nameOk = requireNameMatch == null || isNameConfirmed(typed, requireNameMatch);
@@ -80,7 +84,7 @@ export function DangerAction({
       {requireNameMatch != null && (
         <div>
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>
-            続行するには「{requireNameMatch}」と入力してください
+            {t("common.dangerZone.typeToConfirm", { name: requireNameMatch })}
           </div>
           <input
             value={typed}
@@ -110,7 +114,7 @@ export function DangerAction({
             opacity: canClick ? 1 : 0.5,
           }}
         >
-          {busy ? "処理中…" : buttonLabel}
+          {busy ? t("common.dangerZone.processing") : effectiveButtonLabel}
         </button>
       </div>
     </div>

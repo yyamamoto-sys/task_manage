@@ -3,6 +3,7 @@
 // フェーズ文字列の配列を受け取り、時間ベースで自動的に進捗を演出する。
 
 import { useState, useEffect } from "react";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   phases: string[];
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
+  const t = useT();
   const [phaseIndex, setPhaseIndex] = useState(0);
   const [subProgress, setSubProgress] = useState(0);
 
@@ -79,7 +81,7 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
           {phases[phaseIndex]}
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          AIが処理中です。しばらくお待ちください…
+          {t("common.aiProgress.waiting")}
         </div>
       </div>
 

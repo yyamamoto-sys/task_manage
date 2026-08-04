@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { signIn, signUp } from "../../lib/supabase/auth";
 import { useT } from "../../hooks/useT";
+import { LangToggle } from "../common/LangToggle";
 
 interface Props {
   onLogin: () => void;
@@ -97,7 +98,10 @@ export function LoginScreen({ onLogin }: Props) {
   // ===== 登録完了（メール確認待ち）=====
   if (mode === "signup_done") {
     return (
-      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)" }}>
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+        <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+          <LangToggle variant="icon" />
+        </div>
         <div style={cardStyle}>
           <div style={{ textAlign: "center", marginBottom: "20px" }}>
             <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
@@ -139,7 +143,10 @@ export function LoginScreen({ onLogin }: Props) {
 
   // ===== ログイン / 新規登録フォーム =====
   return (
-    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)" }}>
+    <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+      <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+        <LangToggle variant="icon" />
+      </div>
       <div style={cardStyle}>
         {/* ロゴ＆タイトル */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>

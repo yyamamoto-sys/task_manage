@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { translate } from "../i18n";
+import { commonJa, commonEn } from "../../i18n/common";
+import { authJa, authEn } from "../../i18n/auth";
+import { layoutJa, layoutEn } from "../../i18n/layout";
 
 describe("translate", () => {
   afterEach(() => {
@@ -28,4 +31,30 @@ describe("translate", () => {
     expect(translate("en", "does.not.exist")).toBe("does.not.exist");
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("does.not.exist"));
   });
+});
+
+/**
+ * 【設計意図】
+ * ja/en の辞書に片側にしかないキーがあると、実行時にフォールバック＋console.warnで
+ * 気づけるだけで「追加漏れ」自体は機械的に検出できない。モジュール単位で辞書を追加する
+ * たびにキー集合が完全一致することをここで強制する（差分キー名をエラーメッセージに出す）。
+ */
+describe("辞書のキー集合（ja/en 完全一致）", () => {
+  function diffKeys(a: Record<string, string>, b: Record<string, string>): string[] {
+    return Object.keys(a).filter(k => !(k in b));
+  }
+
+  const modules: { name: string; ja: Record<string, string>; en: Record<string, string> }[] = [
+    { name: "common", ja: commonJa, en: commonEn },
+    { name: "auth", ja: authJa, en: authEn },
+    { name: "layout", ja: layoutJa, en: layoutEn },
+  ];
+
+  for (const { name, ja, en } of modules) {
+    it(`${name}: ja/en のキー集合が完全に一致する`, () => {
+      const jaOnly = diffKeys(ja, en);
+      const enOnly = diffKeys(en, ja);
+      expect({ jaOnly, enOnly }).toEqual({ jaOnly: [], enOnly: [] });
+    });
+  }
 });

@@ -20,9 +20,10 @@
 //   ・text/バー/補足行を包む幅200pxのブロックは常に同じ子要素構成にする
 
 import { LoadingTips } from "./LoadingTips";
+import { useT } from "../../hooks/useT";
 
 interface FullScreenLoadingProps {
-  /** 見出しテキスト。既定は "読み込み中..."（App.tsx の④は "データを読み込み中..." を渡す） */
+  /** 見出しテキスト。既定は t("common.loading")（App.tsx の④は「データを読み込み中...」を渡す） */
   message?: string;
   /** 0〜100。省略時はプログレスバーの塗りを出さない（トラックは常に描画） */
   progress?: number;
@@ -31,10 +32,12 @@ interface FullScreenLoadingProps {
 }
 
 export function FullScreenLoading({
-  message = "読み込み中...",
+  message,
   progress,
   hint,
 }: FullScreenLoadingProps) {
+  const t = useT();
+  const effectiveMessage = message ?? t("common.loading");
   const subText = hint || (progress !== undefined ? `${progress}%` : " ");
 
   return (
@@ -53,7 +56,7 @@ export function FullScreenLoading({
       {/* テキスト＋プログレスバー。progress/hintの有無で高さが変わらないよう固定する */}
       <div style={{ textAlign: "center", lineHeight: 1.6, width: "200px" }}>
         <div style={{ fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "6px" }}>
-          {message}
+          {effectiveMessage}
         </div>
 
         {/* 決定的プログレスバー：トラックは常に描画し、塗りは progress がある時だけ */}

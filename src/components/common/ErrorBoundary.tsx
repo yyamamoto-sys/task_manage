@@ -6,6 +6,18 @@
 
 import { Component, type ReactNode } from "react";
 import { reportError } from "../../lib/errorReporter";
+import { useLangStore } from "../../stores/langStore";
+import { translate } from "../../lib/i18n";
+
+// 【設計意図】ErrorBoundaryはgetDerivedStateFromErrorが要るためクラスコンポーネントでしか
+// 実装できず、useT()（フック）が使えない。fallback UIを別の関数コンポーネントに切り出す
+// ほどの複雑さでもないため、ここでは useLangStore.getState().lang + translate() を
+// render() の中で直接呼ぶ方式を選んだ（クラス内では言語切替時の再レンダーは保証されないが、
+// このUIは例外発生後にのみ一時的に表示される画面であり、表示中に言語を切り替える操作導線も
+// 無いため実害はない）。
+function t(key: string, vars?: Record<string, string | number>): string {
+  return translate(useLangStore.getState().lang, key, vars);
+}
 
 interface Props {
   children: ReactNode;
@@ -62,22 +74,21 @@ export class ErrorBoundary extends Component<Props, State> {
               letterSpacing: "0.05em", textTransform: "uppercase",
               marginBottom: "10px",
             }}>
-              予期しないエラー
+              {t("common.errorBoundary.badge")}
             </div>
             <h1 style={{
               fontSize: "20px", fontWeight: 700,
               color: "var(--color-text-primary)",
               marginBottom: "12px", lineHeight: 1.4,
             }}>
-              画面の表示中に問題が発生しました
+              {t("common.errorBoundary.title")}
             </h1>
             <p style={{
               fontSize: "13px", lineHeight: 1.7,
               color: "var(--color-text-secondary)",
               marginBottom: "20px",
             }}>
-              下のボタンから再読み込みすると復旧することが多いです。
-              繰り返す場合は、開いていたタブと操作内容を控えて山本さんに連絡してください。
+              {t("common.errorBoundary.body")}
             </p>
             <details style={{
               fontSize: "11px",
@@ -89,7 +100,7 @@ export class ErrorBoundary extends Component<Props, State> {
               marginBottom: "20px",
             }}>
               <summary style={{ cursor: "pointer", userSelect: "none" }}>
-                エラー詳細
+                {t("common.errorBoundary.detailsSummary")}
               </summary>
               <pre style={{
                 marginTop: "8px", whiteSpace: "pre-wrap", wordBreak: "break-word",
@@ -111,7 +122,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   borderRadius: "var(--radius-md)", cursor: "pointer",
                 }}
               >
-                閉じて続ける
+                {t("common.errorBoundary.dismiss")}
               </button>
               <button
                 onClick={this.handleReload}
@@ -123,7 +134,7 @@ export class ErrorBoundary extends Component<Props, State> {
                   borderRadius: "var(--radius-md)", cursor: "pointer",
                 }}
               >
-                再読み込み
+                {t("common.errorBoundary.reload")}
               </button>
             </div>
           </div>

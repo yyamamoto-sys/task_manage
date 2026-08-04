@@ -20,11 +20,13 @@
 
 import { useEffect, useState } from "react";
 import { computeTipIndex, getSessionTips, getTipRotationSession, ROTATE_INTERVAL_MS } from "../../lib/tips/loadingTips";
+import { useT } from "../../hooks/useT";
 
 /** 再レンダーのためだけのtick間隔。indexそのものはcomputeTipIndexが経過時間から都度算出する */
 const TICK_MS = 1000;
 
 export function LoadingTips() {
+  const t = useT();
   const tips = getSessionTips();
   const session = getTipRotationSession();
   // このstateは再レンダーのトリガーとしてのみ使う（値そのものは使わない）
@@ -60,7 +62,7 @@ export function LoadingTips() {
         fontSize: "10px", fontWeight: 600, letterSpacing: "0.08em",
         color: "var(--color-text-tertiary)",
       }}>
-        💡 知っていると便利
+        {t("common.loadingTips.heading")}
       </div>
       {/* key を変えて切り替えのたびに fadeIn を再生させる */}
       <div key={index} className="animate-fadeIn">

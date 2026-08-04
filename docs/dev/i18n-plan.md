@@ -2,7 +2,7 @@
 
 > **目的**：アプリ全体を日本語／英語で切り替えられるようにする。
 > **進め方**：[`module-map.md`](./module-map.md) のモジュール単位で**段階的**に。土台→骨格→機能を1つずつ。
-> **状態**：🟢 **Phase 0（土台）完了／Phase 1 は `LoginScreen` のみ完了**（Phase 1 の残り＝`App.tsx`/`MainLayout` 本体/共通UI/認証その他画面は未着手）。最終更新 2026-07-02。
+> **状態**：🟢 **Phase 0（土台）・Phase 1（アプリ骨格＋共通UI）完了**（2026-08-04）。次は Phase 2（計画ビュー）から着手する。
 
 ---
 
@@ -56,8 +56,15 @@ const DICT: Record<Lang, Record<string, string>> = {
 キー `KEYS.LANG` に同期）＋ `src/hooks/useT.ts` の `useT()` フック
 （`lang` を selector で subscribe するため、言語切替で `useT()` を使うコンポーネントは自動再レンダーされる）。
 
-**言語切替トグル**：実装済み。`MainLayout` のテーマ切替の隣（モバイルヘッダー／デスクトップサイドバー下部の
-2箇所）に「EN」⇄「JA」ボタン（title に「🌐 日本語 | English」を表示）。
+**言語切替トグル**：実装済み。2026-08-04（Phase 1）で `src/components/common/LangToggle.tsx` として
+部品化した（`variant="icon"`＝32x32の正方形ボタン／`variant="text"`＝テキストのみの小さいボタン）。
+配置は `MainLayout` のテーマ切替の隣（モバイルヘッダー＝icon／デスクトップサイドバー下部＝text の
+2箇所）に加えて、ログイン前の4画面（`LoginScreen`／`UserSelectScreen`／`SetupWizard`／
+`AccessDeniedScreen`）の右上固定にも配置し、「トグルはあるのに翻訳画面が無い／翻訳画面はあるのに
+トグルが無い」というPhase 0時点の構造的不整合（トグルは常にログイン後のMainLayoutにあったのに、
+翻訳済みだったのはログイン前のLoginScreenだけだったため、切替を体感できなかった）を解消した。
+title に「🌐 日本語 | English」を表示（この文言は意図的に t() を通さず日英併記のまま固定——現在の
+表示言語に関わらず「これが言語切替ボタンだ」と分かることが目的のため）。
 
 **キー命名規約**：`<module>.<area>.<name>`（例：`auth.tab.login` / `auth.signup.done.sentTo`）。
 辞書ファイルは **モジュールごと**に持つ（`src/i18n/<module>.ts`）＝英語化もモジュール単位で進む。
@@ -80,12 +87,13 @@ Phase で個別対応する。
 - `lib/date.ts` のロケール対応は対象ロジックが無いためスキップ（上記 Section 2 参照）。
 - テスト：`src/lib/__tests__/i18n.test.ts`（`translate()` のフォールバック・プレースホルダ差し込みを検証）。
 
-### 🟦 Phase 1：アプリ骨格＋共通UI（みんなが見る枠）— 🟡 一部着手（`LoginScreen` のみ完了）
+### 🟦 Phase 1：アプリ骨格＋共通UI（みんなが見る枠）— ✅ 完了（2026-08-04）
 | 対象 | 主ファイル | 規模 | 状態 |
 |---|---|---|---|
-| App Shell / レイアウト | `App.tsx` / `layout/MainLayout.tsx` | M | 未着手（言語トグルの土台のみ追加済み。画面文言は未英語化） |
-| 認証・ゲスト・初期設定 | `auth/{LoginScreen,UserSelectScreen,SetupWizard}` | S | `LoginScreen` ✅完了（2026-07-02）／`UserSelectScreen`・`SetupWizard` は未着手 |
-| 共通UI | `components/common/*`（Toast/Confirm/EmptyState/ErrorBoundary 等） | S〜M | 未着手 |
+| App Shell / レイアウト | `App.tsx` / `layout/MainLayout.tsx` | M | ✅完了。画面文言・ナビ・FAB・サイドバー・表示部署切替UI等をすべて t() 化 |
+| 認証・ゲスト・初期設定 | `auth/{LoginScreen,UserSelectScreen,SetupWizard,AccessDeniedScreen}` | S | ✅全4画面完了（`LoginScreen` は2026-07-02完了済み・残り3画面を今回追加） |
+| 共通UI | `components/common/*`（Toast/Confirm/EmptyState/ErrorBoundary/CustomSelect/ErrorBar/FileAttachButton/InlineEdit系/LoadingTips/MentionTextarea/SaveProgressLoader/AIProgressLoader/CommandPalette/ShortcutsPanel 等） | S〜M | ✅完了。呼び出し元がpropsで渡す文言（Toastのメッセージ本文等）は対象外の方針を維持 |
+| 言語切替トグルの部品化・再配置 | `components/common/LangToggle.tsx`（新規） | S | ✅完了。ログイン後のMainLayoutに加え、ログイン前の4画面にも配置 |
 
 ### 🟩 Phase 2：計画ビュー（A・最も使う画面）
 | 対象 | 主ファイル | 規模 |
@@ -136,4 +144,10 @@ Phase で個別対応する。
 `tsc`・vitest（152件）・build 通過済み。動作確認は `translate()` の単体テスト＋コードレビュー（`LoginScreen` の
 日本語ハードコードが全て `t("auth.*")` に置換済み・`useT()` が `langStore` を subscribe して再レンダーされる配線）
 で実施（このセッションではブラウザでの目視クリック確認は未実施）。
-次は Phase 1 の残り（`App.tsx`／`MainLayout` 本体の文言／共通UI／`UserSelectScreen`・`SetupWizard`）から着手する。
+
+✅ **2026-08-04 完了**：Phase 1 の残り（`App.tsx`／`MainLayout` 本体／`components/common/*` 全ファイル／
+`auth/{UserSelectScreen,SetupWizard,AccessDeniedScreen}`）を実装。言語切替トグルを `LangToggle.tsx` として
+部品化し、ログイン前の4画面にも配置（Section 2参照）。辞書に `src/i18n/layout.ts` を新設し、
+`common.ts`・`auth.ts` を拡張。`ja`/`en` のキー集合が完全一致することを検証する回帰テストを追加。
+`tsc`・vitest（737件）・build 通過済み。次は Phase 2（計画ビュー：ダッシュボード／ガント・カンバン・
+リスト／タスク編集／マイルストーン）から着手する。

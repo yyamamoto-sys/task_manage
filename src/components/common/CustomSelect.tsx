@@ -14,6 +14,7 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
+import { useT } from "../../hooks/useT";
 
 export interface SelectOption {
   value: string;
@@ -53,10 +54,13 @@ interface Props {
 }
 
 export function CustomSelect({
-  value, onChange, options, placeholder = "選択...", disabled, style,
-  searchable = false, searchPlaceholder = "名前で検索...",
+  value, onChange, options, placeholder, disabled, style,
+  searchable = false, searchPlaceholder,
   multi = false, selectedValues, onToggle,
 }: Props) {
+  const t = useT();
+  const effectivePlaceholder = placeholder ?? t("common.select.placeholder");
+  const effectiveSearchPlaceholder = searchPlaceholder ?? t("common.select.searchPlaceholder");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
@@ -176,8 +180,8 @@ export function CustomSelect({
           )}
           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {multi
-              ? (selectedCount > 0 ? `${selectedCount}件選択中` : placeholder)
-              : (selected ? selected.label : placeholder)}
+              ? (selectedCount > 0 ? t("common.select.selectedCount", { count: selectedCount }) : effectivePlaceholder)
+              : (selected ? selected.label : effectivePlaceholder)}
           </span>
         </span>
         <ChevronIcon open={open} />
@@ -216,7 +220,7 @@ export function CustomSelect({
                   else { onChange(first.value); setOpen(false); }
                 }
               }}
-              placeholder={searchPlaceholder}
+              placeholder={effectiveSearchPlaceholder}
               style={{
                 width: "100%", boxSizing: "border-box",
                 padding: "7px 10px", marginBottom: "4px", fontSize: "12px",
@@ -231,7 +235,7 @@ export function CustomSelect({
           <div style={{ overflowY: "auto", minHeight: 0, flex: 1 }}>
           {filteredOptions.length === 0 && (
             <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-              該当する候補がありません
+              {t("common.select.noMatch")}
             </div>
           )}
           {filteredOptions.map((opt, i) => {

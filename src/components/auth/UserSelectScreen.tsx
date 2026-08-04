@@ -4,12 +4,15 @@ import { getCurrentUser, KEYS, active } from "../../lib/localData/localStore";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { GUEST_MEMBER } from "../../lib/guestMode";
+import { useT } from "../../hooks/useT";
+import { LangToggle } from "../common/LangToggle";
 
 interface Props {
   onLogin: (member: Member) => void;
 }
 
 export function UserSelectScreen({ onLogin }: Props) {
+  const t = useT();
   const allMembers = useAppStore(s => s.members);
   const loading    = useAppStore(s => s.loading);
   const members = active(allMembers);
@@ -22,7 +25,11 @@ export function UserSelectScreen({ onLogin }: Props) {
       minHeight: "100vh", display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center",
       background: "var(--color-bg-secondary)", padding: "24px",
+      position: "relative",
     }}>
+      <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+        <LangToggle variant="icon" />
+      </div>
       <div style={{
         background: "var(--color-bg-primary)",
         border: "1px solid var(--color-border-primary)",
@@ -47,11 +54,11 @@ export function UserSelectScreen({ onLogin }: Props) {
               </svg>
             </div>
             <span style={{ fontSize: "15px", fontWeight: "600", color: "var(--color-text-primary)" }}>
-              グループ計画管理
+              {t("common.app.name")}
             </span>
           </div>
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", paddingLeft: "36px" }}>
-            チーム計画管理ツール
+            {t("auth.userSelect.tagline")}
           </div>
         </div>
 
@@ -59,7 +66,7 @@ export function UserSelectScreen({ onLogin }: Props) {
         {lastUserFromContext && (
           <div style={{ marginBottom: "14px", flexShrink: 0 }}>
             <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>
-              前回のユーザーで続ける
+              {t("auth.userSelect.lastUserHeading")}
             </div>
             <button
               onClick={() => onLogin(lastUserFromContext)}
@@ -78,7 +85,7 @@ export function UserSelectScreen({ onLogin }: Props) {
                   {lastUserFromContext.display_name}
                 </div>
                 <div style={{ fontSize: "10px", color: "var(--color-text-purple)", opacity: 0.7 }}>
-                  クリックしてログイン
+                  {t("auth.userSelect.clickToLogin")}
                 </div>
               </div>
               <span style={{ fontSize: "16px", color: "var(--color-text-purple)" }}>→</span>
@@ -90,7 +97,7 @@ export function UserSelectScreen({ onLogin }: Props) {
                 margin: "12px 0", color: "var(--color-text-tertiary)", fontSize: "11px",
               }}>
                 <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }}/>
-                <span>または別のメンバーを選択</span>
+                <span>{t("auth.userSelect.orSelectOther")}</span>
                 <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }}/>
               </div>
             )}
@@ -101,7 +108,7 @@ export function UserSelectScreen({ onLogin }: Props) {
         {loading && (
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", gap: "8px", flexShrink: 0 }}>
             <div style={{ width: "16px", height: "16px", border: "2px solid #e5e7eb", borderTopColor: "#7F77DD", borderRadius: "50%" }} className="animate-spin" />
-            <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中...</span>
+            <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("common.loading")}</span>
           </div>
         )}
 
@@ -110,7 +117,7 @@ export function UserSelectScreen({ onLogin }: Props) {
           <>
             {!lastUserFromContext && members.length > 0 && (
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "8px", flexShrink: 0 }}>
-                あなたはどなたですか？
+                {t("auth.userSelect.whoAreYou")}
               </div>
             )}
             {/* 一覧が画面に収まりきらない場合はこの領域だけスクロールする
@@ -132,8 +139,8 @@ export function UserSelectScreen({ onLogin }: Props) {
                 borderRadius: "var(--radius-md)", textAlign: "center", flexShrink: 0,
               }}>
                 <div style={{ fontSize: "12px", color: "var(--color-text-warning)", marginBottom: "10px", lineHeight: 1.6 }}>
-                  メンバーが見つかりません。<br />
-                  セットアップをやり直してメンバーを登録してください。
+                  {t("auth.userSelect.noMembersLine1")}<br />
+                  {t("auth.userSelect.noMembersLine2")}
                 </div>
                 <button
                   onClick={() => {
@@ -146,7 +153,7 @@ export function UserSelectScreen({ onLogin }: Props) {
                     border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
                   }}
                 >
-                  セットアップをやり直す
+                  {t("auth.userSelect.restartSetup")}
                 </button>
               </div>
             )}
@@ -162,7 +169,7 @@ export function UserSelectScreen({ onLogin }: Props) {
               flexShrink: 0,
             }}>
               <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
-              <span>見学の方</span>
+              <span>{t("auth.userSelect.visitorHeading")}</span>
               <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
             </div>
             <button
@@ -180,10 +187,10 @@ export function UserSelectScreen({ onLogin }: Props) {
               <span style={{ fontSize: "16px", flexShrink: 0 }}>👁</span>
               <div style={{ flex: 1, textAlign: "left" }}>
                 <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-secondary)" }}>
-                  ゲスト（閲覧のみ）
+                  {t("auth.userSelect.guestLabel")}
                 </div>
                 <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                  編集はできません。中身を見て回れます
+                  {t("auth.userSelect.guestDesc")}
                 </div>
               </div>
             </button>
@@ -198,7 +205,7 @@ export function UserSelectScreen({ onLogin }: Props) {
             fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.6,
             flexShrink: 0,
           }}>
-            選択したユーザーは次回も自動で維持されます。
+            {t("auth.userSelect.persistNote")}
           </div>
         )}
       </div>

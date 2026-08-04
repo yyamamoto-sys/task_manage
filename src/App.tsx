@@ -16,8 +16,10 @@ import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import type { Member } from "./lib/localData/types";
+import { useT } from "./hooks/useT";
 
 export default function App() {
+  const t = useT();
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUserState] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
@@ -51,8 +53,8 @@ export default function App() {
   if (isMisconfigured) {
     return (
       <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: "12px", fontFamily: "sans-serif" }}>
-        <div style={{ fontSize: "20px" }}>⚠️ 設定エラー</div>
-        <div style={{ fontSize: "14px", color: "#666" }}>Vercel の Environment Variables に以下を設定してください</div>
+        <div style={{ fontSize: "20px" }}>{t("layout.app.configError.title")}</div>
+        <div style={{ fontSize: "14px", color: "#666" }}>{t("layout.app.configError.body")}</div>
         <code style={{ background: "#f3f4f6", padding: "12px 20px", borderRadius: "8px", fontSize: "12px", lineHeight: 2 }}>
           VITE_SUPABASE_URL<br />
           VITE_SUPABASE_ANON_KEY
@@ -98,7 +100,7 @@ export default function App() {
   };
 
   if (loading) {
-    return <FullScreenLoading message="準備しています..." />;
+    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
   }
 
   // 未ログイン → ログイン画面（AppDataProvider不要）
@@ -133,6 +135,7 @@ interface AuthenticatedAppProps {
 function AuthenticatedApp({
   wizardCompleted, currentUser, onWizardComplete, onLogin, onLogout,
 }: AuthenticatedAppProps) {
+  const t = useT();
   const members            = useAppStore(s => s.members);
   const loading            = useAppStore(s => s.loading);
   const backgroundLoading  = useAppStore(s => s.backgroundLoading);
@@ -229,7 +232,7 @@ function AuthenticatedApp({
       return <SetupWizard onComplete={onWizardComplete} />;
     }
     if (bootstrapStatus === "checking") {
-      return <FullScreenLoading message="準備しています..." />;
+      return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
     }
     // "populated"（既に他のメンバーがいる＝自分に権限が無いだけ）または
     // "error"（is_system_bootstrapped() 呼び出し失敗。マイグレ未適用の環境など）は
@@ -244,7 +247,7 @@ function AuthenticatedApp({
   // メンバー未選択かつ自動マッチング判定中 → ローディング表示
   // （email 一致/localStorage 復元の判定が終わるまで選択画面を出さない）
   if (!currentUser && !loading && matchState === "matching") {
-    return <FullScreenLoading message="準備しています..." />;
+    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
   }
 
   // メンバー未選択かつ自動マッチング不成立確定 → 選択画面（復元できなかった場合のフォールバック）
@@ -257,7 +260,7 @@ function AuthenticatedApp({
   if (!currentUser) {
     return (
       <FullScreenLoading
-        message="データを読み込み中..."
+        message={t("layout.app.loading.dataLoading")}
         progress={loadProgress}
         hint={loadingHint}
       />
@@ -298,7 +301,7 @@ function AuthenticatedApp({
               border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer",
             }}
           >
-            再試行
+            {t("layout.app.error.retry")}
           </button>
         </div>
       )}

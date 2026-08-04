@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, type CSSProperties } from "react";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   value: string;
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export function InlineEditText({ value, onSave, placeholder, style, autoEdit }: Props) {
+  const t = useT();
   const [editing, setEditing] = useState(!!autoEdit);
   const [draft, setDraft] = useState(value);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -73,7 +75,7 @@ export function InlineEditText({ value, onSave, placeholder, style, autoEdit }: 
       onClick={e => { e.stopPropagation(); setDraft(value); setEditing(true); }}
       role="button" tabIndex={0}
       onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); setDraft(value); setEditing(true); } }}
-      title="クリックして編集"
+      title={t("common.text.editTitle")}
       style={{
         cursor: "text",
         borderBottom: "1px dashed transparent",

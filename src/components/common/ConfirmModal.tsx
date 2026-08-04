@@ -10,6 +10,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { _registerModal } from "../../lib/dialog";
+import { useT } from "../../hooks/useT";
 
 interface DialogState {
   open: boolean;
@@ -21,6 +22,7 @@ interface DialogState {
 const CLOSED: DialogState = { open: false, message: "", type: "confirm", resolve: null };
 
 export function ConfirmModal() {
+  const t = useT();
   const [state, setState] = useState<DialogState>(CLOSED);
 
   useEffect(() => {
@@ -100,7 +102,7 @@ export function ConfirmModal() {
                 borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
             >
-              キャンセル
+              {t("common.button.cancel")}
             </button>
           )}
           <button
@@ -114,7 +116,7 @@ export function ConfirmModal() {
               borderRadius: "var(--radius-md)", cursor: "pointer",
             }}
           >
-            {state.type === "alert" ? "OK" : "削除する"}
+            {state.type === "alert" ? t("common.confirm.ok") : t("common.confirm.delete")}
           </button>
         </div>
       </div>

@@ -11,6 +11,7 @@
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Member } from "../../lib/localData/types";
+import { useT } from "../../hooks/useT";
 
 interface Props {
   value: string;
@@ -22,6 +23,7 @@ interface Props {
 }
 
 export function MentionTextarea({ value, onChange, members, rows = 4, placeholder, style }: Props) {
+  const t = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState("");
@@ -120,7 +122,7 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
             fontSize: "10px", color: "var(--color-text-secondary)",
             padding: "4px 10px 2px", userSelect: "none",
           }}>
-            @ メンション
+            {t("common.mention.heading")}
           </div>
           {filtered.map(m => (
             <button
