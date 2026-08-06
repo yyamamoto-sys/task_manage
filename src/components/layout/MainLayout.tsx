@@ -10,6 +10,7 @@ import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { LangToggle } from "../common/LangToggle";
+import { VersionBadge } from "../common/VersionBadge";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { keyResultsInGroup } from "../../lib/okr/deptScope";
 import { TaskEditModal } from "../task/TaskEditModal";
@@ -868,8 +869,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               onClick={e => e.stopPropagation()}
             >
               <div style={{ width: "40px", height: "4px", background: "var(--color-border-primary)", borderRadius: "2px", margin: "0 auto 16px" }} />
-              <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", padding: "0 20px 10px", letterSpacing: "0.05em" }}>
-                {t("layout.lab.sheetTitle")}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 10px" }}>
+                <span style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-tertiary)", letterSpacing: "0.05em" }}>
+                  {t("layout.lab.sheetTitle")}
+                </span>
+                {/* バージョン表示（控えめ・自然に置ける場所としてこのシートのタイトル行に添える） */}
+                <VersionBadge />
               </div>
               {[
                 { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
@@ -1931,6 +1936,13 @@ function Sidebar({
             </button>
           )}
         </div>
+        {/* バージョン表示（控えめ・折りたたみ時は非表示。既存フッター行とは別の細い1行に
+            分けている＝196px幅が既に詰まっているため。CLAUDE.md参照） */}
+        {!c && (
+          <div style={{ padding: "1px 10px 4px", textAlign: "right" }}>
+            <VersionBadge />
+          </div>
+        )}
       </div>
     </div>
   );

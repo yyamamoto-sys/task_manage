@@ -39,4 +39,9 @@ function chunkSizeManifestPlugin(): Plugin {
 export default defineConfig({
   plugins: [react(), chunkSizeManifestPlugin()],
   server: { port: 5173, host: true },
+  // ビルド日時（UTC ISO文字列）をコードに焼き込む。表示側（src/lib/version.ts）で
+  // Asia/Tokyoへ変換する。dev サーバーではこの値＝dev起動時刻になる（それで構わない）。
+  define: {
+    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+  },
 });

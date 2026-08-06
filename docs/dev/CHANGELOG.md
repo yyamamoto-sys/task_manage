@@ -3772,5 +3772,41 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             （既存の`jsx-a11y/no-autofocus`等は変更前から存在）／`npm run build`成功
 #      DBマイグレ不要（フロントエンドのレイアウト・状態管理のみ）
 #
-# 最終更新：2026-08-06（v3.24）
+# v3.25 feat: 画面隅に控えめなバージョン表示を追加（2026-08-06）
+#      要望：山本さんから「アプリの隅に、目立たないようにバージョン情報も置いてほしい」
+#      仕様：画面上の文字は`v{APP_VERSION}`のみ。ホバー時のtooltipにビルド日時
+#             （Asia/Tokyo変換済み）も表示。10px・`var(--color-text-tertiary)`・右寄せ
+#      配置：①PCサイドバー最下部＝既存のフッター行（アバター/テーマ/EN・JA/🧪/🗓️/⏏）は
+#             一切変更せず、その下に独立した細い1行を追加（196px幅が既に詰まっているため
+#             行を分ける判断）。折りたたみ時（48px）は非表示。②`LoginScreen`（ログイン/
+#             新規登録フォーム・登録完了両方の画面）に`position:fixed`で控えめに表示
+#             （`UserSelectScreen`/`SetupWizard`/`AccessDeniedScreen`は対象外）。
+#             ③モバイルは対象外の方針だが、ラボ機能ボトムシートのタイトル行
+#             （🧪 ラボ機能）に自然に置ける場所があったため、タイトルと同じ行の右端に追加
+#      正本の持ち方（ドリフト防止）：新規`src/lib/version.ts`に`APP_VERSION`を1箇所で
+#             定義（"3.25"のようにvを含めない）。ビルド日時は`vite.config.ts`の`define`で
+#             `__BUILD_TIME__`（UTC ISO文字列）として埋め込み、表示直前に
+#             `formatBuildTime()`でAsia/Tokyoの"YYYY-MM-DD HH:mm"へ変換（`hourCycle:"h23"`
+#             明示＝`hour12:false`が一部ICU実装で深夜0時を"24:00"にする既知の不具合を回避）。
+#             新規`src/components/common/VersionBadge.tsx`（表示・tooltipの薄いラッパー）を
+#             サイドバー・ログイン画面・モバイルラボシートの3箇所で共有
+#      機械チェック：新規`src/lib/__tests__/version.test.ts`。①`APP_VERSION`が
+#             CLAUDE.md冒頭の`v数字.数字`表記と一致するかを実際にファイルを読んで検証
+#             （modalStyles.test.ts等と同じ「ソースを読んで検査する」方式。片方だけ
+#             バージョンを上げるとテストが落ちて気づける）②`formatBuildTime()`のUTC→JST
+#             変換（日付が繰り上がる境界ケース含む）
+#      i18n：tooltip文言`common.version.tooltip`（`{version}`/`{buildTime}`変数）を
+#             `common.ja.ts`/`common.en.ts`の両方に追加。ja/enキー集合完全一致テストで
+#             片方だけの追加漏れを検知
+#      やらないこと：`package.json`の`version`との同期はスコープ外（`0.1.0`のまま）／
+#             コミットハッシュの埋め込みはしない（gitへの依存をビルドに持ち込まないため）
+#      実物確認：`npm run build`後、`dist/assets/index-*.js`に`__BUILD_TIME__`という
+#             識別子が残っていない（`define`で実際の値に置換済み）ことと、実際のISO
+#             タイムスタンプ・バージョン文字列"3.25"が埋め込まれていることをgrepで確認
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 755件全通過（既存752件から
+#             新規テスト3件増）／`npm run lint`は変更ファイルに新規エラー・新規警告なし
+#             （既存の`jsx-a11y/no-autofocus`は変更前から存在）／`npm run build`成功
+#      DBマイグレ不要（フロントエンドの表示のみ）
+#
+# 最終更新：2026-08-06（v3.25）
 

@@ -191,4 +191,6 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.chunkGate.declinedNotice": "Download cancelled.",
 
   "common.lang.partialNotice": "English UI is partially available — only the app frame and common UI are translated for now.",
+
+  "common.version.tooltip": "v{version} (build {buildTime})",
 };

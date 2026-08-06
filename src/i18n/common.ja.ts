@@ -211,4 +211,7 @@ export const commonJa = {
 
   // ----- LangToggle（v3.21・Phase 2凍結中の部分対応注記） -----
   "common.lang.partialNotice": "英語表示は現在アプリの枠組みと共通UIのみ対応しています（各画面の中身は日本語のままです）",
+
+  // ----- VersionBadge（v3.25） -----
+  "common.version.tooltip": "v{version}（ビルド {buildTime}）",
 } as const;

@@ -3,6 +3,7 @@ import { useState } from "react";
 import { signIn, signUp } from "../../lib/supabase/auth";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
+import { VersionBadge } from "../common/VersionBadge";
 
 interface Props {
   onLogin: () => void;
@@ -102,6 +103,10 @@ export function LoginScreen({ onLogin }: Props) {
         <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
           <LangToggle variant="icon" />
         </div>
+        {/* バージョン表示（控えめ・ログイン前でも分かるように） */}
+        <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
+          <VersionBadge />
+        </div>
         <div style={cardStyle}>
           <div style={{ textAlign: "center", marginBottom: "20px" }}>
             <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
@@ -146,6 +151,10 @@ export function LoginScreen({ onLogin }: Props) {
     <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
       <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
         <LangToggle variant="icon" />
+      </div>
+      {/* バージョン表示（控えめ・ログイン前でも分かるように） */}
+      <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
+        <VersionBadge />
       </div>
       <div style={cardStyle}>
         {/* ロゴ＆タイトル */}
