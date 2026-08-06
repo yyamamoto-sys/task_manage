@@ -11,6 +11,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { _registerModal } from "../../lib/dialog";
 import { useT } from "../../hooks/useT";
+import { modalOverlayStyle } from "./modalStyles";
 
 interface DialogState {
   open: boolean;
@@ -49,12 +50,7 @@ export function ConfirmModal() {
       aria-modal="true"
       onClick={() => handleClose(false)}
       className="animate-overlay"
-      style={{
-        position: "fixed", inset: 0, zIndex: 9999,
-        background: "rgba(0,0,0,0.35)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "16px",
-      }}
+      style={{ ...modalOverlayStyle(9999), background: "rgba(0,0,0,0.35)", padding: "16px" }}
     >
       {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
@@ -67,6 +63,7 @@ export function ConfirmModal() {
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
           width: "100%", maxWidth: "340px",
+          maxHeight: "100%", overflowY: "auto",
           padding: "24px 20px 18px",
         }}
       >

@@ -12,6 +12,7 @@ import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { parentTaskCandidates } from "../../lib/taskHierarchy";
 import { v4 as uuidv4 } from "uuid";
+import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE } from "../common/modalStyles";
 
 interface Props {
   currentUser: Member;
@@ -274,21 +275,19 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         className="animate-overlay"
-        onClick={onClose}
-        style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }}
-      />
-      {/* モーダル本体 */}
-      <div
-        className="animate-modalEnter"
-        style={{
-          position: "fixed", top: "50%", left: "50%", zIndex: 201,
-          transform: "translate(-50%, -50%)",
-          width: "min(480px, calc(100vw - 32px))",
-          background: "var(--color-bg-primary)",
-          borderRadius: "var(--radius-lg)",
-          boxShadow: "var(--shadow-lg)",
-          padding: "20px",
-        }}>
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+        style={{ ...modalOverlayStyle(200), background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)" }}
+      >
+        {/* モーダル本体 */}
+        <div
+          className="animate-modalEnter"
+          style={{
+            ...modalBoxStyle("min(480px, calc(100vw - 32px))"),
+            background: "var(--color-bg-primary)",
+            borderRadius: "var(--radius-lg)",
+            boxShadow: "var(--shadow-lg)",
+          }}>
+          <div style={{ ...MODAL_BODY_STYLE, padding: "20px" }}>
         <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "16px" }}>
           タスクを追加
         </div>
@@ -565,6 +564,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           >
             {saving ? "追加中..." : "追加"}
           </button>
+        </div>
+          </div>
         </div>
       </div>
     </>

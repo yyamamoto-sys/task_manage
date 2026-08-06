@@ -36,6 +36,7 @@ import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
+import { modalOverlayStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 
 /**
@@ -502,17 +503,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 初回起動時の「ツアーを見ますか？」招待ダイアログ
   const tourInviteDialog = showTourInvite ? (
     <div
-      style={{
-        position: "fixed", inset: 0, zIndex: 270,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "16px",
-      }}
+      style={{ ...modalOverlayStyle(270), background: "rgba(0,0,0,0.4)", padding: "16px" }}
     >
       <div style={{
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
         maxWidth: "460px", width: "100%",
+        maxHeight: "100%", overflowY: "auto",
         boxShadow: "var(--shadow-lg)",
         padding: "24px 26px",
       }}>

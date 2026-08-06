@@ -3721,5 +3721,56 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run build`成功
 #      DBマイグレ不要（フロントエンドのレイアウト・状態管理のみ）
 #
-# 最終更新：2026-08-06（v3.23）
+# v3.24 fix: 中央寄せモーダルが画面の上下を突き抜けて操作できなくなる不具合を修正（2026-08-06）
+#      背景：山本さんの実機報告「『過去のPJから新規PJを作る』でProjectCreateModalを開くと、
+#             モーダルが画面の上下を突き抜けて保存ボタンに到達できず、PJを作成できない」。
+#             引き継ぎ元PJのタスク一覧（実測145件）が伸びるとモーダル本体が画面外まで伸び、
+#             オーバーレイにも`overflow`が無いためはみ出した部分に到達できなかった。
+#      根本原因：箱（モーダル本体）に`maxHeight`が無く、コンテンツの高さまで無制限に伸びて
+#             いた。オーバーレイの`overflow`未指定も重なり、はみ出し分に到達する手段が
+#             無かった。本文の`overflowY:"auto"`は箱に高さ上限が無いと機能しない（親が
+#             伸びるだけでスクロールが発生しない）
+#      設計：新規`src/components/common/modalStyles.ts`に契約を集約。
+#             `modalOverlayStyle(zIndex)`＝`position:fixed;inset:0`＋中央寄せ＋保険の
+#             `overflow:"auto"`。`modalBoxStyle(width)`＝`maxHeight:"100%"`（オーバーレイの
+#             paddingを除いた内側＝ビューポート内に必ず収まる）＋縦フレックス＋
+#             `overflow:"hidden"`。`MODAL_BODY_STYLE`＝`flex:1;minHeight:0;overflowY:"auto"`
+#             （`minHeight:0`必須＝フレックス子要素の既定`min-height:auto`でスクロールし
+#             なくなる罠を防ぐ）。`MODAL_FOOTER_STYLE`＝`flexShrink:0`（操作ボタンが常に
+#             見える）。既存のJSX構造（オーバーレイdiv＞箱div＞ヘッダー/本文/フッター）は
+#             変更せず、styleをspreadで差し替えるだけに留めた
+#      修正した3件：`ProjectCreateModal.tsx`（今回の報告事象。オーバーレイ・箱・本文・
+#             フッターの4箇所を共有スタイルに置き換え）／`QuickAddTaskModal.tsx`（タスク
+#             追加ポップアップ。従来はbackdrop divとtop:50%/left:50%/transformで中央寄せする
+#             別構造で、箱に高さ上限が一切無かったため同種の不具合リスクがあった。overlay>box
+#             のネスト構造に変更し、タイトル・全フィールド・ボタンをMODAL_BODY_STYLEの
+#             スクロール領域にまとめた）／`ConfirmModal.tsx`・`MainLayout.tsx`の
+#             `tourInviteDialog`（window.confirm代替・初回ツアー招待。ヘッダー/本文/フッター
+#             分割の無い単一ブロック構造のため、箱に直接`maxHeight:"100%"`+`overflowY:"auto"`
+#             の保険を追加。念のための修正で実害の報告は無い）
+#      調査した上で変更不要と判断：`TaskEditModal`／`AdminFormModal`／`TodoDecomposeModal`／
+#             `MilestoneAddModal`／`MilestoneEditModal`／`ProjectKarte`／`DashboardView`（AI
+#             分析モーダル）／`CommandPalette`／`ConfirmationDialogModal`／
+#             `ChangeHistoryModal`／`ShortcutsPanel`／`WidgetConfigModal`／`MyPageView`の
+#             ウィジェット追加モーダル／`ErrorBar`＝いずれも既に`maxHeight`＋
+#             フレックス構造で画面内に収まっていた。`GuideOverlay`／`HelpButton`／
+#             `OkrImportModal`／`MeetingImportPanel`／`OkrDashboardView`の履歴・概要
+#             オーバーレイ＝右からのドロワー型（`alignItems:"stretch"`で高さが常に画面
+#             いっぱいに固定され、伸びる余地が無い）のため対象外
+#      機械チェック：`src/components/common/__tests__/modalStyles.test.ts`を新設
+#             （`widgetContract.test.ts`と同じソース走査方式）。`position:"fixed"`かつ
+#             `inset:0`で中央寄せ（`alignItems:"center"`+`justifyContent:"center"`）して
+#             いるオーバーレイを検出し、`modalStyles.ts`のimportか自前の`maxHeight`が
+#             あるかを検査。実装前の事前検証で、src/全体（`position:fixed`使用39ファイル）
+#             に対し誤検知ゼロ（ドロワー・全画面ラボビュー・ツールチップは検出パターンに
+#             一致しない）と確認済み。ドロワー等は明示的な除外配列`EXCLUDED_FILES`に理由
+#             付きで列挙（将来の検出強化に備えた保険）
+#      CLAUDE.mdにSection 21（グランドルール：中央寄せモーダルは必ず画面内に収まる高さ
+#             上限を持つ）を新設
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 752件全通過（既存741件から
+#             新規テスト11件増）／`npm run lint`は変更ファイルに新規エラー・新規警告なし
+#             （既存の`jsx-a11y/no-autofocus`等は変更前から存在）／`npm run build`成功
+#      DBマイグレ不要（フロントエンドのレイアウト・状態管理のみ）
+#
+# 最終更新：2026-08-06（v3.24）
 

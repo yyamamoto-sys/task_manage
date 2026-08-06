@@ -30,6 +30,7 @@ import { todayStr } from "../../lib/date";
 import { childrenOf } from "../../lib/taskHierarchy";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE } from "../../lib/taskMeta";
 import { defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies } from "../../lib/project/taskInheritance";
+import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../common/modalStyles";
 
 const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
   active: "進行中", completed: "完了", archived: "アーカイブ",
@@ -236,11 +237,11 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className="animate-overlay"
-      style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.45)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+      style={{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.45)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
       onKeyDown={handleKeyDown}
     >
-      <div className="animate-fadeIn" style={{ width: "min(480px, 100%)", background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)", display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      <div className="animate-fadeIn" style={{ ...modalBoxStyle("min(480px, 100%)"), background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)" }}>
         {/* ヘッダー */}
         <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--color-border-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
           <span style={{ fontSize: "16px" }}>📁</span>
@@ -249,7 +250,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
         </div>
 
         {/* フォーム */}
-        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto" }}>
+        <div style={{ ...MODAL_BODY_STYLE, padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
           {/* 作成方法 */}
           <div>
@@ -431,7 +432,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
         </div>
 
         {/* フッター */}
-        <div style={{ padding: "12px 16px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+        <div style={{ ...MODAL_FOOTER_STYLE, padding: "12px 16px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{ fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
             キャンセル
           </button>
