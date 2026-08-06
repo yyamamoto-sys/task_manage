@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { setGuestMode, isGuestMember } from "./lib/guestMode";
-import { getSession, onAuthStateChange, getAuthEmail } from "./lib/supabase/auth";
+import { getSession, onAuthStateChange, getAuthEmail, signOut } from "./lib/supabase/auth";
 import { isMisconfigured, supabase } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
@@ -10,7 +10,8 @@ import { SetupWizard } from "./components/auth/SetupWizard";
 import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
-import { ToastContainer } from "./components/common/Toast";
+import { ToastContainer, showToast } from "./components/common/Toast";
+import { formatErrorForUser } from "./lib/errorMessage";
 import { SchemaHealthBanner } from "./components/common/SchemaHealthBanner";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
@@ -90,10 +91,27 @@ export default function App() {
     }
   };
 
-  const handleLogout = () => {
+  // 【設計意図】signOut() を待たずにローカル状態だけクリアすると、currentUser が null に
+  // なった瞬間に AuthenticatedApp の autoMatch()（認証セッションがまだ生きている）が
+  // 再実行され、Auth email 一致で同じユーザーへ即座に自動ログインし直してしまう
+  // （＝「ログアウトを押しても何も起きない」不具合の原因）。signOut() の完了を待ってから
+  // ローカル状態をクリアする順序を必ず守ること。
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (e) {
+      // ネットワーク断等でサーバー側セッションの失効に失敗した場合。ここでローカル状態を
+      // クリアしてしまうと、サーバー側セッションは生きたままなのに見た目だけログアウトした
+      // ように見え、次の autoMatch() で結局同じユーザーに戻ってしまう（＝本質的には未解決）。
+      // 無言で何も起きないと事故に見えるため、エラーを明示して再試行を促すだけに留める。
+      showToast(formatErrorForUser("ログアウトに失敗しました", e), "error");
+      return;
+    }
     setGuestMode(false);
     clearCurrentUser();
-    setCurrentUserState(null);
+    // appStore（zustand）に残った前ユーザーのタスク・PJ等をメモリ上から確実に消すため、
+    // ストアの個別リセットではなくページ全体をリロードする（迷ったらリロードを選ぶ方針）。
+    window.location.reload();
   };
 
   const handleWizardComplete = () => {

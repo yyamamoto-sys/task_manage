@@ -3847,5 +3847,47 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             SQL Editorに全文適用（dev→prod）。適用後、管理者としてログインしバナーが
 #             出ないこと（正しく検知できること）を実機で確認
 #
-# 最終更新：2026-08-06（v3.26）
+# v3.27 fix: ログアウトを押しても効かない不具合を修正（2026-08-06）
+#      背景：山本さんの実機報告「ログアウトを押してもログアウトできないようになっている」
+#      根本原因：`src/App.tsx`の`handleLogout`がSupabaseの`signOut()`を呼ばず、ローカルの
+#             選択状態（`clearCurrentUser`/`setCurrentUserState(null)`）だけを消していた。
+#             認証セッションは生きたままのため、`currentUser`がnullになった瞬間に
+#             `AuthenticatedApp`の`autoMatch()`（deps に`currentUser`を含む）が再実行され、
+#             Auth emailと`members.email`の一致で同じユーザーを即座に再特定し`onLogin()`
+#             してしまい、押しても何も起きないように見えていた。`autoMatch()`自体は正しく
+#             動作しているため変更していない
+#      修正：`handleLogout`を非同期化し、`signOut()`の完了を待ってから
+#             `setGuestMode(false)`→`clearCurrentUser()`の順でローカル状態をクリアする
+#             （順序を逆にすると、クリア直後に`autoMatch()`が走る隙ができるため固定）。
+#             `appStore`（zustand）に残る前ユーザーのタスク・PJ等のメモリ残留を断つため、
+#             ストアの個別リセットではなく`window.location.reload()`で画面全体を再構築する
+#             （迷ったらリロードを選ぶ方針）
+#      失敗時の扱い：`signOut()`がネットワーク断等で失敗した場合、ローカル状態は
+#             クリアしない（クリアしてもサーバー側セッションは生きたままで、結局
+#             `autoMatch()`が同じユーザーに戻してしまい本質的には未解決なため）。
+#             `formatErrorForUser`＋`showToast`でエラーを明示し、再試行を促すだけに留める
+#             （無言で何も起きないことを避ける・CLAUDE.md Section 15準拠）
+#      二重signOutの確認：`onLogout()`を直接呼んでいる箇所は`AccessDeniedScreen.tsx`の
+#             1箇所のみ（`MainLayout.tsx`のサイドバー・モバイルヘッダーは`onClick={onLogout}`
+#             という参照渡しで、実体は`App.tsx`の`handleLogout`）。同ファイルは既に自前で
+#             `await signOut()`→`onLogout()`の順で呼んでおり、今回の修正後は
+#             `signOut()`が2回呼ばれる経路になる。`@supabase/auth-js`
+#             （`GoTrueClient._signOut`）の実装を確認：セッションが無い（＝1回目で既に
+#             ログアウト済み）場合はサーバーへの呼び出し自体を行わず`{ error: null }`を
+#             返して正常終了するため、例外は発生しない
+#      機械チェック：新規`src/__tests__/logout.test.ts`（`modalStyles.test.ts`と同じ
+#             ソース走査方式。React Testing Library等の実マウント前例が本リポジトリに
+#             無いため）。`App.tsx`の`handleLogout`が`signOut()`をimportし、
+#             `clearCurrentUser()`より前に呼んでいること／`catch`＋`showToast`を持つこと／
+#             `window.location.reload()`を持つことを検証。加えて`onLogout()`の直接呼び出し
+#             箇所が`AccessDeniedScreen.tsx`の1件のみであること・同ファイルが
+#             `signOut()`→`onLogout()`の順で呼んでいることも固定（新しい直接呼び出し箇所が
+#             増えたら気づけるようにするため）
+#      やらないこと：`autoMatch()`のロジック変更・ゲストモード関連の改修（別途計画予定）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 790件全通過（既存783件から
+#             新規テスト7件増）／`npm run lint`は変更ファイルに新規エラー0／
+#             `npm run build`成功
+#      DBマイグレ不要（フロントエンドの認証フローのみ）
+#
+# 最終更新：2026-08-06（v3.27）
 
