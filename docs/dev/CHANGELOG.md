@@ -3596,5 +3596,33 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run build`成功
 #      DBマイグレ不要（localStorage・vite設定・辞書ファイル構成の変更のみ）
 #
-# 最終更新：2026-08-04（v3.19）
+# v3.20 fix: ヘルプガイド（manifestチャンク）を遅延読み込み化（2026-08-06）
+#      背景：`manifest`チャンク（`docs/guides/**/*.md?raw`24ファイルの全文・raw80.13kB/
+#             gzip26.74kB）が、「？」ボタンを一度も押さないユーザーにも常時ダウンロード
+#             されていた。原因は`HelpButton.tsx`が`GuideOverlay.tsx`を同期importし、
+#             その先の`src/lib/docs/manifest.ts`が全ガイドMarkdownを`import.meta.glob(...,
+#             { eager: true })`で静的importしていたため。`HelpButton`自体は`MainLayout.tsx`
+#             （アプリ本体）と`ConsultationPanel.tsx`（`MainLayout.tsx`から静的import）の
+#             2箇所から常時ロード経路に載っていた
+#      事前検証：`manifest.ts`の静的import経路を全て洗い出し（詳細は本文参照）。
+#             `GuideModeView.tsx`（manifest.tsを直接静的import）と`AdminView.tsx`
+#             （GuideOverlay.tsxを静的import）は両方とも既にMainLayout側でlazyWithRetryに
+#             乗っていたため対応不要。常時ロード経路は`HelpButton.tsx`の1箇所のみと確定
+#      変更：`HelpButton.tsx`内で`GuideOverlay`を`lazyWithRetry` + `withChunkDownloadGate`で
+#             動的import化。呼び出し元8箇所は無変更（HelpButton内で完結）。Suspense
+#             fallbackはGuideOverlayと同じ外枠（背景オーバーレイ＋右パネル）にSkeleton3本を
+#             敷いた軽量版を新設し、読込中の一瞬が「何も出ない」ように見えないようにした
+#      確認：`lazyWithRetry`は既に`src/lib/lazyWithRetry.ts`に共有モジュール化済みだった
+#             （MainLayout.tsx側のローカル定義ではなかった）ため、切り出し作業は不要
+#      実測（ビルド出力・v3.19→v3.20・index.htmlのmodulepreload対象＝常時ロード分の合計）：
+#             raw 792,633B→710,439B（約82.2kB減）／gzip 232,128B→204,799B（約26.7kB減）。
+#             `manifest`チャンクは`dist/index.html`のmodulepreloadから消えた（＝GuideOverlay/
+#             GuideModeViewいずれかのlazyチャンクを要求した時にだけ動的fetchされる）
+#      注記追加：CLAUDE.md Section 19に、`CustomSelect`チャンク（gzip46kB）の97.5%が
+#             react-dom本体であり削減不可能なこと、`appStore`チャンク（gzip60kB）の大半が
+#             Supabase SDK本体であることを追記（次の調査時間の節約のため）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過／`npm run build`成功
+#      DBマイグレ不要（コンポーネント分割のみ）
+#
+# 最終更新：2026-08-06（v3.20）
 
