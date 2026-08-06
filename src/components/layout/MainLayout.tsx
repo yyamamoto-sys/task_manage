@@ -75,6 +75,14 @@ function ViewLoading() {
 
 type AppMode = "plan" | "okr";
 
+/**
+ * サイドバー幅（折りたたみ／展開）。Sidebar自身の width と、CSSカスタムプロパティ
+ * --app-sidebar-w（ラボ系オーバーレイがサイドバーを避けて左端位置を決めるために参照する。
+ * CLAUDE.md Section 20）の二重管理を避けるため、ここに1箇所だけ定義する。
+ */
+const SIDEBAR_WIDTH_COLLAPSED = "48px";
+const SIDEBAR_WIDTH_EXPANDED = "196px";
+
 interface Props {
   currentUser: Member;
   onLogout: () => void;
@@ -272,12 +280,36 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [myPageEditTaskId, setMyPageEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
+
+  /**
+   * 開いていると全画面（PC）を覆う「ラボ系ビュー」を全て閉じる。
+   * サイドバーからのナビ操作（ビュー切替・モード切替・PJ/KR/部署選択）で呼ぶことで、
+   * 「ラボ系ビューを開いたままメインエリアの表示だけが裏で切り替わる」混乱を防ぐ
+   * （CLAUDE.md Section 20・2026-08-06）。
+   */
+  const closeLabViews = () => {
+    setIsGraphOpen(false);
+    setIsCalendarOpen(false);
+    setIsStructureOpen(false);
+    setIsKrReportOpen(false);
+    setIsKrWhyOpen(false);
+    setIsMyPageOpen(false);
+  };
+
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
   );
   const setAppMode = (m: AppMode) => {
+    closeLabViews();
     localStorage.setItem(KEYS.APP_MODE, m);
     setAppModeState(m);
+  };
+  // サイドバーのビュー切替ナビ専用（PC）。ツアーの内部遷移（"tour:action" ハンドラ）は
+  // 素の setViewMode を使い続ける（closeLabViewsを挟むと、その効果のexhaustive-depsで
+  // setViewModeが不安定と判定され警告が出るため、ナビ経由の呼び出しだけをここで分離する）。
+  const navSetViewMode = (v: ViewMode) => {
+    closeLabViews();
+    setViewMode(v);
   };
 
   const allProjects = useAppStore(selectScopedProjects);
@@ -348,12 +380,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
 
   const handleSelectProject = (id: string | null) => {
+    closeLabViews();
     setSelectedProjectId(id);
     setSelectedKrId(null);
   };
   const handleSelectKr = (id: string | null) => {
+    closeLabViews();
     setSelectedKrId(id);
     setSelectedProjectId(null);
+  };
+  // サイドバーの部署切替（CLAUDE.md Section 1.6）：表示データの範囲が変わるナビ操作のため
+  // ビュー切替等と同様にラボ系ビューを閉じる
+  const handleSelectGroupNav = (id: string) => {
+    closeLabViews();
+    setCurrentGroupId(id);
   };
 
   // マイページ（ウィジェット）のQuickAddTaskWidget向け。ウィジェットからsaveTaskを直接呼ばせず、
@@ -1134,8 +1174,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   }
 
   // PC レイアウト（height: 100% = #root に追従。100vh だと body padding 分だけ下部がはみ出てクリップされる）
+  // --app-sidebar-w：ラボ系オーバーレイ（GraphView等）がサイドバーを覆わないよう左端に使う
+  // CSSカスタムプロパティ。折りたたみ／展開で自動追従する（CLAUDE.md Section 20）。
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+    <div style={{
+      display: "flex", height: "100%", overflow: "hidden",
+      "--app-sidebar-w": isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
+    } as React.CSSProperties}>
       {onboardingOverlay}
       {tourInviteDialog}
 
@@ -1244,7 +1289,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       )}
       <Sidebar
         viewMode={viewMode}
-        setViewMode={setViewMode}
+        setViewMode={navSetViewMode}
         projects={visibleProjects}
         mineOnly={mineOnly}
         onToggleMineOnly={toggleMineOnly}
@@ -1275,7 +1320,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenPalette={() => setIsPaletteOpen(true)}
         accessibleGroups={accessibleGroups}
         currentGroupId={currentGroupId}
-        onSelectGroup={setCurrentGroupId}
+        onSelectGroup={handleSelectGroupNav}
       />
       {mainContent}
       {isGraphOpen && (
@@ -1490,7 +1535,7 @@ function Sidebar({
 
   return (
     <div data-tour-id="sidebar" style={{
-      width: c ? "48px" : "196px",
+      width: c ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
       flexShrink: 0,
       background: "var(--color-bg-secondary)",
       borderRight: "1px solid var(--color-border-primary)",

@@ -3675,5 +3675,51 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run build`成功
 #      DBマイグレ不要（コンポーネント内の分岐修正のみ）
 #
-# 最終更新：2026-08-06（v3.22）
+# v3.23 feat: ラボ系ビューがサイドバーを覆っていた問題を修正（2026-08-06）
+#      背景：山本さんの要望「どの機能を触っている時も、基本的にサイドバーは見えるように
+#             したい」。体制図・カレンダー・マイページ・関係性グラフ・OKRレポート／
+#             クォーター計画／なぜなぜ分析（右ドロワー）は`position: fixed; inset: 0`で
+#             サイドバーごと画面全体を覆っていた。設定画面（`adminOverlay`）だけが
+#             `flex: 1`でメインエリア内に収まる理想形だった
+#      設計：`MainLayout.tsx`のPCレイアウトroot要素にCSSカスタムプロパティ
+#             `--app-sidebar-w`（サイドバー展開時196px／折りたたみ時48px）を設定し、各
+#             オーバーレイの`inset: 0`を`top:0; right:0; bottom:0;
+#             left: var(--app-sidebar-w, 0px)`に変更（`transition: "left 0.2s ease"`も
+#             付与。Sidebar自身の`transition: "width 0.2s ease"`と揃えてガタつきを防止）。
+#             幅の値は`SIDEBAR_WIDTH_EXPANDED`/`SIDEBAR_WIDTH_COLLAPSED`定数に集約し
+#             Sidebar自身の幅指定と二重管理にしていない。モバイルレイアウトのroot要素には
+#             変数を設定していない（各オーバーレイ側の`var(--app-sidebar-w, 0px)`フォール
+#             バックにより自動的に従来どおり全画面のまま）
+#      対象：`ProjectStructureView.tsx`（体制図）／`CalendarLabView.tsx`（カレンダー）／
+#             `MyPageView.tsx`（マイページ本体＋ウィジェット追加モーダル）／
+#             `GraphView.tsx`（関係性グラフ）／`KrReportPanel.tsx`・
+#             `KrQuarterPlanPanel.tsx`・`KrWhyPanel.tsx`（右ドロワー系の暗幕div。ドロワー
+#             本体の幅・右寄せ位置は変更なし）
+#      `KrJointSessionFlow.tsx`は調査の結果、`position: fixed`のrootが元から存在せず
+#             （`flex:1`で埋め込まれる前提の実装）、そもそもサイドバーを覆っていないため
+#             対象外とした（MainLayout側での呼び出し方に既存の別課題がある可能性は別途
+#             記録。今回は対象外につき未修正）
+#      GraphViewのCanvasリサイズ対応：サイドバーの折りたたみ／展開はwindowのresizeイベント
+#             を発生させないため、canvas要素自体をResizeObserverで監視するよう追加
+#             （`GanttView.tsx`/`ProjectStructureView.tsx`と同じ流儀）。既存の
+#             `window.addEventListener("resize", resize)`はそのまま維持し、
+#             ResizeObserverを併用する形にした
+#      サイドバーのナビ操作（ビュー切替・モード切替・PJ/KR/部署選択）をしたら開いている
+#             ラボ系ビューを閉じる`closeLabViews()`を追加。`setAppMode`・
+#             `handleSelectProject`・`handleSelectKr`・新設の`handleSelectGroupNav`・
+#             Sidebarへ渡す新設の`navSetViewMode`（PCサイドバーのビュー切替専用）から呼ぶ。
+#             ツアー機能内部の`setViewMode`呼び出し（"tour:action"ハンドラ）は素のままとし
+#             `navSetViewMode`とは分離した（`closeLabViews`を挟むとそのuseEffectの
+#             exhaustive-depsが警告を出すため）。`MyPageView`の`onNavigate`は既存のまま
+#             `setAppMode`→`setViewMode`を呼ぶ経路のため、`setAppMode`が`closeLabViews`を
+#             呼ぶようになったことで自動的にマイページも閉じるようになった
+#      CLAUDE.mdにSection 20（グランドルール：全画面ビューでもサイドバーを覆わない）を新設。
+#             「サイドバー」「メインエリア」の用語定義もここに明記
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過（既存件数から減少なし）／
+#             `npm run lint`は変更ファイルに新規エラー・新規警告なし（既存の
+#             `jsx-a11y/label-has-associated-control`等11件は変更前から存在する既存分）／
+#             `npm run build`成功
+#      DBマイグレ不要（フロントエンドのレイアウト・状態管理のみ）
+#
+# 最終更新：2026-08-06（v3.23）
 

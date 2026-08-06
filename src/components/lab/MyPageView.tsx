@@ -285,7 +285,8 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate, onCre
 
   return (
     <div className="animate-overlay" style={{
-      position: "fixed", inset: 0, zIndex: 250,
+      position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 250,
+      transition: "left 0.2s ease",
       background: "rgba(0,0,0,0.45)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "24px 32px",
@@ -391,7 +392,8 @@ function AddWidgetModal({ onAdd, onClose }: { onAdd: (widgetId: string) => void;
     <div
       className="animate-overlay"
       style={{
-        position: "fixed", inset: 0, zIndex: 260,
+        position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 260,
+        transition: "left 0.2s ease",
         background: "rgba(0,0,0,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
         padding: "20px",

@@ -1057,7 +1057,8 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
     <div
       className="animate-fadeIn"
       style={{
-        position: "fixed", inset: 0, zIndex: 250,
+        position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 250,
+        transition: "left 0.2s ease",
         background: "var(--color-bg-primary)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}

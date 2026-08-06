@@ -596,9 +596,19 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
     resize();
     stateRef.current.animId = requestAnimationFrame(loopRef.current);
     window.addEventListener("resize", resize);
+    // サイドバーの折りたたみ／展開でメインエリアの幅だけが変わるケースは window の resize
+    // イベントが発生しないため、canvas要素自体のボックスサイズをResizeObserverで監視する
+    // （CLAUDE.md Section 20。GanttView/ProjectStructureViewと同じ流儀）。
+    const canvasEl = canvasRef.current;
+    let ro: ResizeObserver | null = null;
+    if (canvasEl && typeof ResizeObserver !== "undefined") {
+      ro = new ResizeObserver(() => resize());
+      ro.observe(canvasEl);
+    }
     return () => {
       if (stateRef.current) cancelAnimationFrame(stateRef.current.animId);
       window.removeEventListener("resize", resize);
+      ro?.disconnect();
     };
   }, [nodes, edges, resize]);
 
@@ -636,7 +646,7 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   const today = todayStr();
 
   return (
-    <div className="animate-fadeIn" style={{ position: "fixed", inset: 0, zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
+    <div className="animate-fadeIn" style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", transition: "left 0.2s ease", zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
       <canvas
         ref={canvasRef}
         style={{ width: "100%", height: "100%", display: "block", cursor: "crosshair" }}
