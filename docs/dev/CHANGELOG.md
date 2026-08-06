@@ -3654,5 +3654,26 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run build`成功
 #      DBマイグレ不要（localStorage・辞書ファイルの変更のみ）
 #
-# 最終更新：2026-08-06（v3.21）
+# v3.22 fix: PCサイドバーのENトグルで注記が誰にも見えない穴を修正（2026-08-06）
+#      背景：v3.21のレビューで発覚。`variant="text"`（PCサイドバーフッター。PCブラウザで
+#             ログイン後に使える唯一のEN/JAトグル）は、サイドバー外枠のoverflow:hiddenで
+#             吹き出しが枠外に切れるためtooltipのみに倒していたが、tooltipはホバーしないと
+#             出ないため「PCでログイン後にENへ切り替えたユーザーには何も見えない」状態に
+#             なっていた。山本さんが選んだ仕様（EN選択時に注記を出す）を満たしていなかった
+#      変更：`variant="text"`のときは吹き出しの代わりに既存の`showToast(message, "info")`
+#             （`src/components/common/Toast.tsx`）を使うよう`LangToggle.tsx`を修正。
+#             fixed配置のためサイドバーのoverflow:hiddenの影響を受けず、`ToastContainer`
+#             （`App.tsx`）はログイン後の画面に必ずマウントされている（`variant="text"`
+#             自体もログイン後のサイドバーでしか使われないため前提を満たす）。localStorage
+#             フラグ（`KEYS.LANG_PARTIAL_NOTICE_SEEN`）は吹き出し（`variant="icon"`）と
+#             共用し、「注記は生涯1回だけ」を両経路をまたいで維持する
+#             （`consumeFirstTimePartialNotice()`ヘルパーに集約）
+#      `variant="icon"`側（モバイルヘッダー・ログイン前4画面）の吹き出し・8秒フェード・
+#             ✕閉じは無変更。辞書キーも既存の`common.lang.partialNotice`を再利用（新規キー
+#             は追加していない）。Toast自体の表示時間・スタイルも変更していない
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過（既存件数から減少なし）／
+#             `npm run build`成功
+#      DBマイグレ不要（コンポーネント内の分岐修正のみ）
+#
+# 最終更新：2026-08-06（v3.22）
 

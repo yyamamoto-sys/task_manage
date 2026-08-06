@@ -13,27 +13,56 @@
 // 【en辞書の動的import対応（v3.19）】 isLoadingEn が true の間（en辞書を初めて
 // ダウンロード中）はクリック不可にし、小さい回転スピナーに差し替える。
 //
-// 【i18nはPhase 2以降凍結中の部分対応注記（v3.21）】
+// 【i18nはPhase 2以降凍結中の部分対応注記（v3.21・v3.22で表示経路を修正）】
 // i18nはPhase 0（土台）＋Phase 1（アプリ骨格・共通UI・認証画面）までで凍結中。
 // Phase 2以降（ダッシュボード/ガント/カンバン/リスト/タスク編集/OKR/管理画面等の各画面本体）は
 // 未着手のため、ENに切り替えても画面の中身は日本語のままになる。これを不具合と誤解されない
-// ようにするための注記を2段構えで出す：
+// ようにするための注記を出す：
 //   (a) title属性末尾に注記（常設・tooltipなのでレイアウト影響ゼロ）
-//   (b) 初回のみ吹き出し（8秒で自動フェードアウト。localStorageで一度だけ）
-// Phase 2に着手し各画面がENに追従したら、この注記（title追記・吹き出し・辞書キー
+//   (b) 初回のみ、lang="en"になった時点で1回だけ「見える」形で知らせる
+//         - variant="icon"（モバイルヘッダー・ログイン前4画面）：吹き出し表示（8秒で
+//           自動フェードアウト・✕で即閉じ可）
+//         - variant="text"（PCサイドバーフッター）：吹き出しの代わりに showToast() を使う
+//           （下記コメント参照。PCブラウザでログイン後にENへ切り替える主要経路が
+//           tooltipのみでは何も見えなくなる実用上の穴があったため、v3.22でToastに変更）
+// (a)(b)いずれも localStorage（KEYS.LANG_PARTIAL_NOTICE_SEEN）で「一度見せたら以後出さない」
+// を管理する。吹き出し・Toastどちらの経路で見せても同じフラグを使うため「注記は生涯1回だけ」
+// が両経路をまたいで成立する。
+// Phase 2に着手し各画面がENに追従したら、この注記（title追記・吹き出し・Toast・辞書キー
 // common.lang.partialNotice・KEYS.LANG_PARTIAL_NOTICE_SEEN）は不要になるため撤去すること。
 //
-// 【吹き出しをvariant="text"（サイドバーフッター）では出さない理由】
+// 【variant="text"（PCサイドバーフッター）でToastを使う理由】
 // サイドバーの外枠（MainLayout.tsx の Sidebar 直下 div）は幅48/196pxで overflow:hidden。
 // 読める幅を持つ吹き出し（最低150px前後）をこの枠内に収めようとすると、アンカー
 // （EN/JAボタン）の位置によって左右どちらに出しても枠の外に出て切れてしまう。
-// tooltip（title属性）はブラウザネイティブ表示でこのoverflow:hiddenの影響を受けないため、
-// variant="text" では tooltip のみで注記を伝える。
+// tooltip（title属性）だけに頼ると「ホバーしないと見えない」ため、PCブラウザでログイン後に
+// 使える唯一のトグル（このvariant）でENに切り替えたユーザーに何も見えない穴になっていた
+// （v3.21のレビューで発覚）。`showToast()`（`src/components/common/Toast.tsx`）はfixed配置
+// でありサイドバーのoverflow:hiddenの影響を受けず、かつ`ToastContainer`は`App.tsx`の
+// ログイン後の画面に必ずマウントされている（`variant="text"`自体もログイン後のサイドバー
+// でしか使われないため前提を満たす）。この経路だけの特別対応であり、Toast自体の表示時間・
+// スタイルは変更しない。
 
 import { useEffect, useState } from "react";
 import { useLangStore } from "../../stores/langStore";
 import { useT } from "../../hooks/useT";
+import { translate } from "../../lib/i18n";
 import { KEYS } from "../../lib/localData/localStore";
+import { showToast } from "./Toast";
+
+/**
+ * 「英語UIは一部対応」注記を生涯1回だけ見せるためのフラグ管理。
+ * 未読（false）なら既読フラグを立てて true を返す。既読ならフラグは変更せず false を返す。
+ * variant="icon"の吹き出し・variant="text"のToast、どちらの経路で呼ばれても同じフラグを
+ * 共有するため、どちらか一方で見せたらもう一方では二度と出さない。
+ */
+function consumeFirstTimePartialNotice(): boolean {
+  let seen = false;
+  try { seen = localStorage.getItem(KEYS.LANG_PARTIAL_NOTICE_SEEN) === "1"; } catch { /* 利用不可は無視 */ }
+  if (seen) return false;
+  try { localStorage.setItem(KEYS.LANG_PARTIAL_NOTICE_SEEN, "1"); } catch { /* 利用不可・容量不足は無視 */ }
+  return true;
+}
 
 interface Props {
   /** "icon": 32x32の正方形ボタン（モバイルヘッダー・ログイン前画面等）／
@@ -106,15 +135,19 @@ export function LangToggle({ variant = "icon", style }: Props) {
 
   const [notice, setNotice] = useState<"hidden" | "visible" | "fading">("hidden");
 
-  // variant="text"（サイドバーフッター）では出さない（上部コメント参照）。
+  // variant="text"（PCサイドバーフッター）はToastで、variant="icon"は吹き出しで出す（上部コメント参照）。
   useEffect(() => {
-    if (variant !== "icon" || lang !== "en") return;
-    let seen = false;
-    try { seen = localStorage.getItem(KEYS.LANG_PARTIAL_NOTICE_SEEN) === "1"; } catch { /* 利用不可は無視 */ }
-    if (seen) return;
+    if (lang !== "en") return;
 
+    if (variant === "text") {
+      if (consumeFirstTimePartialNotice()) {
+        showToast(translate("en", "common.lang.partialNotice"), "info");
+      }
+      return;
+    }
+
+    if (!consumeFirstTimePartialNotice()) return;
     setNotice("visible");
-    try { localStorage.setItem(KEYS.LANG_PARTIAL_NOTICE_SEEN, "1"); } catch { /* 利用不可・容量不足は無視 */ }
     const fadeTimer = setTimeout(() => setNotice("fading"), 8000);
     const removeTimer = setTimeout(() => setNotice("hidden"), 8300);
     return () => { clearTimeout(fadeTimer); clearTimeout(removeTimer); };
