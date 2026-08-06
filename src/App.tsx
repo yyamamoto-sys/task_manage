@@ -11,6 +11,7 @@ import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer } from "./components/common/Toast";
+import { SchemaHealthBanner } from "./components/common/SchemaHealthBanner";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
@@ -306,6 +307,7 @@ function AuthenticatedApp({
         </div>
       )}
       <MainLayout currentUser={currentUser} onLogout={onLogout} />
+      <SchemaHealthBanner currentUser={currentUser} />
       <ConfirmModal />
       <ToastContainer />
     </>

@@ -3808,5 +3808,44 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             （既存の`jsx-a11y/no-autofocus`は変更前から存在）／`npm run build`成功
 #      DBマイグレ不要（フロントエンドの表示のみ）
 #
-# 最終更新：2026-08-06（v3.25）
+# v3.26 feat: マイグレーション適用漏れを起動時に検知する仕組みを追加（2026-08-06）
+#      背景：20260721_add_task_status_hold_cancelled.sql（v2.74）が本番に未適用のまま
+#             約2週間気づかれず、タスクのステータス「保留」「中止」の保存が
+#             タスク編集モーダル・カンバン・リスト・ガント・AI提案の反映の全経路で
+#             失敗し続けていた事故を受けて実装（CLAUDE.md Section 22参照）
+#      仕組み：起動時（管理者のみ・1回）→ RPC（check_schema_health）でスキーマ検査 →
+#             欠けていたら管理者にだけ控えめな警告バナー。Human in the loopに従い
+#             スキーマは自動修正しない（検知して知らせるだけ）
+#      検査項目の正本：新規`src/lib/schema/schemaChecks.ts`に宣言的な配列として持つ
+#             （SQL側にハードコードしない。新しいマイグレを足したらここに1行足すだけで
+#             済む設計）。初期投入14項目（task_dependencies/baseline列/on_hold・cancelled
+#             CHECK/onboarding bootstrap関数2件/group_ids列3件/objectives・key_results
+#             のgroup_id列/loading_tips/member_widget_layouts）
+#      RPC：新規`supabase/migrations/20260806_add_schema_health_check.sql`の
+#             `check_schema_health(p_checks jsonb)`。動的SQL（EXECUTE）は使わず
+#             pg_catalog/information_schemaへのパラメータ化された参照のみで判定。
+#             SECURITY DEFINER＋`SET search_path = ''`。呼び出せるのは部署管理者・
+#             全社スーパー管理者のみ（それ以外は例外ではなく静かに空配列を返す）
+#      クライアント：新規`src/lib/schema/checkSchemaHealth.ts`（RPC呼び出し＋判定を
+#             純粋関数`resolveSchemaHealthResult`に分離しテスト容易化）・新規
+#             `src/components/common/SchemaHealthBanner.tsx`（`src/App.tsx`から
+#             管理者にのみマウント。起動時1回・非ブロッキング・warningトーン・
+#             閉じても次回読み込み時にはまた表示＝localStorageで永久に黙らせない）。
+#             RPC自体が未適用（PGRST202）のときは黙って無効化せず「検査を実行できません」
+#             を明示（v3.19のDL確認ゲートと同じ轍を踏まないため）
+#      i18n：`common.schemaHealth.title`/`body`/`rpcUnavailable`を`common.ja.ts`/
+#             `common.en.ts`の両方に追加
+#      機械チェック：新規`src/lib/schema/__tests__/schemaChecks.test.ts`（各項目の
+#             `migration`ファイルが`supabase/migrations/`に実在するかを検証。存在しない
+#             ファイル名を書いた時点で落ちる）・新規`checkSchemaHealth.test.ts`
+#             （`toCheckPayload`/`isRpcMissingError`/`resolveSchemaHealthResult`の純粋関数
+#             を直接検証。supabaseクライアントはモックしない）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 783件全通過（既存755件から
+#             新規テスト28件増）／`npm run lint`は変更ファイルに新規エラー0／
+#             `npm run build`成功
+#      山本さんの作業：新規マイグレ`20260806_add_schema_health_check.sql`をSupabase
+#             SQL Editorに全文適用（dev→prod）。適用後、管理者としてログインしバナーが
+#             出ないこと（正しく検知できること）を実機で確認
+#
+# 最終更新：2026-08-06（v3.26）
 

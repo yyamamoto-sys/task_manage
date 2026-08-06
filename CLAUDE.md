@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.25
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.26
 #
-最終更新：2026-08-06（v3.25）
+最終更新：2026-08-06（v3.26）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1005,7 +1005,8 @@ const { submit } = useAIConsultation(projectIds);
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
-- 最終更新：2026-08-06（v3.25）
+- **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
+- 最終更新：2026-08-06（v3.26）
 
 ---
 
@@ -1476,6 +1477,33 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 ### 機械チェック
 
 `src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル・全画面ラボビュー等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある。
+
+---
+
+## 22. グランドルール：マイグレーション追加時は検査項目も1行足す（必須・v3.26）
+
+### 2026-08-06に実際に起きた事故
+
+`20260721_add_task_status_hold_cancelled.sql`（v2.74・2026-07-21適用予定だったマイグレ）が本番に未適用のまま**約2週間気づかれず**、タスクのステータスに「保留」「中止」を選ぶと保存に失敗する不具合が、タスク編集モーダル・カンバン・リスト・ガント・AI提案の反映の**全経路**で発生し続けた。コード側は正しく `on_hold` を送っていたが、DB側の `tasks.status` CHECK 制約が3値のままだったために起きた。マイグレの適用が手作業でコードだけ先に本番へ出るため、適用漏れが「機能が静かに壊れたまま」残る構造になっている。
+
+### 仕組み（起動時に管理者だけが検知する）
+
+```
+起動時（管理者のみ・1回）→ RPC（check_schema_health）でスキーマ検査 → 欠けていたら管理者にだけ控えめな警告バナー
+```
+
+- **検査項目は `src/lib/schema/schemaChecks.ts` に宣言的な配列として持つ**（SQL側にハードコードしない）。理由：SQL側に埋め込むと項目を追加するたびに新しいマイグレーションが必要になり、この仕組み自体が必ず形骸化する。TS側の配列に1行足すだけで済むようにしてある。
+- 各項目は `{ kind, table/column/needle/name, label, migration }` の形（`kind` は `"table"` / `"column"` / `"check_contains"` / `"function"`）。`migration` は該当マイグレファイル名で、実在することを `src/lib/schema/__tests__/schemaChecks.test.ts` が機械的に検査する（存在しないファイル名を書くとテストが落ちる）。
+- 実際の問い合わせは汎用RPC `check_schema_health(p_checks jsonb)`（`supabase/migrations/20260806_add_schema_health_check.sql`）。**動的SQL（EXECUTE）は使わず**、`pg_catalog`/`information_schema` へのパラメータ化された参照だけで判定する。呼び出せるのは部署管理者・全社スーパー管理者のみ（それ以外は例外ではなく静かに空配列を返す）。
+- クライアント側（`src/components/common/SchemaHealthBanner.tsx`、`src/App.tsx` から admin にのみマウント）は起動時に1回だけ非ブロッキングで呼び、欠落があれば控えめな警告バナー（赤一色ではない warning トーン）を出す。**閉じても次回読み込み時にはまた表示される**（localStorageで永久に黙らせない。今回のように2週間放置されるのを防ぐため）。
+- **スキーマを自動修正しない**（検知して知らせるだけ。Human in the loop）。
+- RPC自体が未適用（この仕組み自体のマイグレが未適用）のときは、黙って無効化せず「検査を実行できません」を出す（Section 19 のDL確認ゲートが黙って無効化されうる件と同じ轍を踏まないため）。
+
+### このルールは新しいマイグレーションを追加するとき必ず確認する
+
+- [ ] スキーマを変える新しいマイグレ（テーブル・列・CHECK制約・関数の追加）を書いたか？ → `src/lib/schema/schemaChecks.ts` に検査項目を1行足したか？
+- [ ] 追加した項目の `migration` は実際のファイル名と一致しているか？（`schemaChecks.test.ts` が機械的に検証する）
+- [ ] 適用直後、管理者としてログインしてバナーが出ないこと（＝正しく適用された）を確認したか？
 
 ---
 

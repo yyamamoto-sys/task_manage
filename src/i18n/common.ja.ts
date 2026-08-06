@@ -214,4 +214,9 @@ export const commonJa = {
 
   // ----- VersionBadge（v3.25） -----
   "common.version.tooltip": "v{version}（ビルド {buildTime}）",
+
+  // ----- SchemaHealthBanner（v3.26） -----
+  "common.schemaHealth.title": "DBに未適用のマイグレーションがある可能性があります",
+  "common.schemaHealth.body": "以下の項目が見つかりませんでした。該当のマイグレーションファイルをSupabaseに適用してください。",
+  "common.schemaHealth.rpcUnavailable": "スキーマ検査を実行できません（検査用の関数が未適用の可能性があります）",
 } as const;
