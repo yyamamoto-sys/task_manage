@@ -33,6 +33,8 @@ const KEYS = {
   THEME:               "theme",
   // 言語（i18n）
   LANG:                "lang",
+  /** EN切替時の「英語UIは一部の画面のみ対応」吹き出しを表示済みか（一度見せたら以後出さない） */
+  LANG_PARTIAL_NOTICE_SEEN: "lang_partial_notice_seen",
   // メインレイアウト
   VIEW_MODE:           "plan_app_view",
   APP_MODE:            "plan_app_mode",

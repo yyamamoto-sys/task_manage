@@ -3624,5 +3624,35 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過／`npm run build`成功
 #      DBマイグレ不要（コンポーネント分割のみ）
 #
-# 最終更新：2026-08-06（v3.20）
+# v3.21 feat: EN/JA切替トグルに「英語UIは一部の画面のみ対応」注記を追加（2026-08-06）
+#      背景：i18nはPhase 0（土台）＋Phase 1（アプリ骨格・共通UI・認証画面）まで完了・
+#             Phase 2以降（ダッシュボード/ガント/カンバン/リスト/タスク編集/OKR/管理画面等
+#             の各画面本体）は未着手のまま凍結することが決定（海外事業部展開の具体化時に
+#             再開）。この状態でENに切り替えると「枠組みは英語／画面の中身は日本語」という
+#             中途半端な見え方になり、不具合と誤解されるおそれがあるため明示する
+#      変更：`LangToggle.tsx`に2段構えの注記を追加。
+#             (a) tooltip：`lang==="en"`のとき既存title文言（あえてt()を通さず日英併記の
+#                 まま固定・既存の設計意図は不変）の末尾に注記(en)を改行追加。レイアウト
+#                 影響ゼロ
+#             (b) 吹き出し：`lang`が`"en"`になった時（読込時点で既にenの場合も含む）に
+#                 一度だけ表示。8秒でフェードアウト・✕で即閉じ可。`localStorage`
+#                 （`KEYS.LANG_PARTIAL_NOTICE_SEEN`）で「一度見せたら以後出さない」を管理。
+#                 `position:absolute`＋`position:relative`のinline-flexアンカーで実装し
+#                 呼び出し元5箇所のレイアウトは無変更
+#             辞書キー`common.lang.partialNotice`をja/en両方に追加
+#      呼び出し元5箇所の親要素チェーンを確認した結果、`variant="text"`（サイドバー
+#             フッター・幅48/196pxでoverflow:hidden）は読める幅の吹き出しがどちら向きに
+#             出しても枠外に出て切れるため、この箇所のみ吹き出しを出さずtooltipのみで
+#             注記する（安全側の判断）。`variant="icon"`（モバイルヘッダー・LoginScreen/
+#             UserSelectScreen/SetupWizard/AccessDeniedScreen）はいずれもoverflow:hiddenの
+#             狭い祖先を持たないため吹き出しを表示。位置は全箇所共通でアンカー右下（右端
+#             揃え・下方向に展開）に統一し、既存のz-index（ショートカットボタン140・
+#             カレンダー編集300等）と衝突しない値（50）を使用
+#      色は`var(--color-bg-info)`/`var(--color-border-info)`/`var(--color-text-info)`
+#             （警告色・赤は使わない情報トーン）。角丸`var(--radius-md)`
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run` 741件全通過（既存件数から減少なし）／
+#             `npm run build`成功
+#      DBマイグレ不要（localStorage・辞書ファイルの変更のみ）
+#
+# 最終更新：2026-08-06（v3.21）
 

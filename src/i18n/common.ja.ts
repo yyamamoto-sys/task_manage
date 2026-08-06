@@ -208,4 +208,7 @@ export const commonJa = {
   "common.chunkGate.approve": "ダウンロードする",
   "common.chunkGate.decline": "キャンセル",
   "common.chunkGate.declinedNotice": "ダウンロードをキャンセルしました。",
+
+  // ----- LangToggle（v3.21・Phase 2凍結中の部分対応注記） -----
+  "common.lang.partialNotice": "英語表示は現在アプリの枠組みと共通UIのみ対応しています（各画面の中身は日本語のままです）",
 } as const;
