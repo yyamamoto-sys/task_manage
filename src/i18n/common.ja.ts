@@ -219,4 +219,7 @@ export const commonJa = {
   "common.schemaHealth.title": "DBに未適用のマイグレーションがある可能性があります",
   "common.schemaHealth.body": "以下の項目が見つかりませんでした。該当のマイグレーションファイルをSupabaseに適用してください。",
   "common.schemaHealth.rpcUnavailable": "スキーマ検査を実行できません（検査用の関数が未適用の可能性があります）",
+
+  // ----- ゲスト（サンプル閲覧）モード（v3.28） -----
+  "common.guest.aiBlocked": "サンプルではAI機能はご利用いただけません（閲覧のみです）",
 } as const;

@@ -43,10 +43,13 @@ export const authEn: Record<keyof typeof authJa, string> = {
   "auth.userSelect.noMembersLine1": "No members found.",
   "auth.userSelect.noMembersLine2": "Please redo the setup to register members.",
   "auth.userSelect.restartSetup": "Redo setup",
-  "auth.userSelect.visitorHeading": "Visiting?",
-  "auth.userSelect.guestLabel": "Guest (view only)",
-  "auth.userSelect.guestDesc": "You can browse the app, but editing is disabled",
   "auth.userSelect.persistNote": "The user you select will be remembered automatically next time.",
+
+  // ----- LoginScreen: view sample (guest, 2026-08-06) -----
+  "auth.guest.divider": "or",
+  "auth.guest.cta": "View sample (no account needed)",
+  "auth.guest.loading": "Loading sample...",
+  "auth.guest.desc": "See what the app looks like with fictional data. Editing is disabled.",
 
   "auth.accessDenied.title": "Access denied",
   "auth.accessDenied.body1": "This email address is not yet registered as a member.",

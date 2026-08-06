@@ -1,7 +1,8 @@
 // src/App.tsx
 import { useState, useEffect } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
-import { setGuestMode, isGuestMember } from "./lib/guestMode";
+import { setGuestMode, GUEST_MEMBER } from "./lib/guestMode";
+import { loadDemoDataset } from "./lib/demo/loadDemoDataset";
 import { getSession, onAuthStateChange, getAuthEmail, signOut } from "./lib/supabase/auth";
 import { isMisconfigured, supabase } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
@@ -25,6 +26,11 @@ export default function App() {
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUserState] = useState<Member | null>(null);
   const [loading, setLoading] = useState(true);
+  // ゲスト（サンプル閲覧）：Supabase Authのサインインを一切行わず、サンプルデータで
+  // appStoreを満たしてMainLayoutへ直接遷移する。authenticated とは独立のフラグにし、
+  // AppDataProvider（Supabase load()・realtime購読）の配下に一切置かないことで、
+  // ゲストがSupabaseへアクセスする経路そのものを無くす（CLAUDE.md Section 23）。
+  const [guestActive, setGuestActive] = useState(false);
   // ウィザード完了フラグはlocalStorageで管理（デバイスごとの設定）
   const [wizardCompleted, setWizardCompleted] = useState(
     () => !!localStorage.getItem(KEYS.WIZARD_COMPLETED)
@@ -65,14 +71,10 @@ export default function App() {
     );
   }
 
+  // 【設計意図】ゲスト（サンプル閲覧）はここを通らない。ログイン画面の「サンプルを見る」
+  // から handleGuestEnter で直接 guestActive に入るため、handleLogin は実ユーザーの
+  // ログインのみを扱う（Section 23）。
   const handleLogin = (member: Member) => {
-    if (isGuestMember(member)) {
-      // ゲストは閲覧専用。書き込みブロックを有効化し、localStorage には保存しない
-      // （次回起動時にゲストへ自動復元されないように）。
-      setGuestMode(true);
-      setCurrentUserState(member);
-      return;
-    }
     setGuestMode(false);
     setCurrentUser(member.id);
     setCurrentUserState(member);
@@ -118,13 +120,44 @@ export default function App() {
     setWizardCompleted(true);
   };
 
+  // 【設計意図】ログイン画面の「サンプルを見る」から呼ばれる。Supabase Authのサインインは
+  // 一切行わず、appStoreにサンプルデータ（src/lib/demo/）を直接注入するだけで完結する
+  // （Supabaseへの接続そのものが発生しない。CLAUDE.md Section 23）。
+  const handleGuestEnter = async () => {
+    setGuestMode(true);
+    try {
+      const dataset = await loadDemoDataset();
+      useAppStore.getState().loadDemoData(dataset);
+      setCurrentUserState(GUEST_MEMBER);
+      setGuestActive(true);
+    } catch (e) {
+      setGuestMode(false);
+      showToast(formatErrorForUser("サンプルデータの読み込みに失敗しました", e), "error");
+    }
+  };
+
   if (loading) {
     return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
   }
 
+  // ゲスト（サンプル閲覧）：authenticated の判定より前段で分岐する。AppDataProvider配下には
+  // 一切置かないため、Supabaseのload()・realtime購読が発生しない（Section 23）。
+  // ログアウト経路（onLogout=handleLogout）はそのまま流用する。ゲストは認証セッションを
+  // 持たないため signOut() は実質no-opになり、window.location.reload() で
+  // ログイン画面に戻る（handleLogout自体に変更は不要）。
+  if (guestActive) {
+    return (
+      <>
+        <MainLayout currentUser={GUEST_MEMBER} onLogout={handleLogout} />
+        <ConfirmModal />
+        <ToastContainer />
+      </>
+    );
+  }
+
   // 未ログイン → ログイン画面（AppDataProvider不要）
   if (!authenticated) {
-    return <LoginScreen onLogin={() => setAuthenticated(true)} />;
+    return <LoginScreen onLogin={() => setAuthenticated(true)} onGuest={handleGuestEnter} />;
   }
 
   // 認証済み → AppDataProviderでSupabaseデータをロード

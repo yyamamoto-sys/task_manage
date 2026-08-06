@@ -3889,5 +3889,62 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run build`成功
 #      DBマイグレ不要（フロントエンドの認証フローのみ）
 #
-# 最終更新：2026-08-06（v3.27）
+# v3.28 feat: ゲスト用サンプルデータビュー（Phase 2）を実装（2026-08-06）
+#      背景：「アプリの内容や見栄えだけを見てみたい」人向けに、架空のサンプルデータで
+#             アプリを見てもらう入口を作る。既存のゲストモード（`guestMode.ts`）は
+#             入口の表示条件（`members.length>0`）と到達条件（`autoMatch`不成立）が
+#             どちらも「RLSがメンバーと認識するか」に依存する同一条件のため構造的に
+#             両立せず、事実上到達不能だった。仮に到達できても、ゲストは独立した権限
+#             主体ではなくログイン済み実ユーザーのセッションに被せた見た目だけの
+#             ペルソナで、書き込みブロックは`from(table)`のinsert/update/upsert/delete
+#             だけが対象＝select（読み取り）・rpc・functions.invoke・storageは素通り
+#             していたため、実部署の業務データが全部見えてしまう構造だった
+#      方針の反転：「特定の経路を塞ぐ」から「原則全部止める」へ。ゲストはSupabaseに
+#             一切接続しない設計にした
+#      choke point：`src/lib/supabase/client.ts`の`supabase`Proxyに`assertGuestBlocked()`
+#             を追加し、`from()`（読み書き両方）・`rpc()`・`functions.invoke()`・
+#             `storage.from()`の全経路を単一の関数でブロックする。Phase 3でAI機能を
+#             限定開放する際の例外はここに1つ足す形にする（コメントで明示済み）
+#      入口：`LoginScreen.tsx`に「サンプルを見る」ボタンを追加（Supabase Authの
+#             サインインは行わない＝アカウント不要）。押すと`App.tsx`の
+#             `handleGuestEnter`が`setGuestMode(true)`→サンプルデータを動的import
+#             （`src/lib/demo/loadDemoDataset()`）→`appStore.loadDemoData()`で
+#             ストアへ直接注入→`guestActive`フラグをtrueにして`MainLayout`を直接表示。
+#             `AppDataProvider`（Supabase `load()`・realtime購読）の配下には一切置かない
+#             （`authenticated`判定より前に`guestActive`を分岐）。`AppDataContext.tsx`側にも
+#             `isGuestMode()`ガードを二重防衛として追加
+#      削除：到達不能だった旧ゲスト導線（`UserSelectScreen.tsx`の「見学の方」ブロック）と
+#             不要になったi18nキー（`auth.userSelect.visitorHeading`/`guestLabel`/
+#             `guestDesc`）を削除
+#      サンプルデータ：`src/lib/demo/`配下（`dataset.ts`本体・`constants.ts`・`types.ts`・
+#             `guestPersona.ts`・`loadDemoDataset.ts`）。架空事業部・架空メンバー5名・
+#             PJ6件・タスク約62件・OKR1セット（Objective1→KR3→TF4→ToDo5）。全idは
+#             `demo-`接頭辞、group_idは`grp-demo`に統一（`__tests__/dataset.test.ts`が
+#             機械的に検証）。日付は`addDaysFromToday()`基準の相対オフセットで生成（固定
+#             日付だと時間経過で不自然になるため）。依存関係チェーン4本・ベースライン
+#             差分1件・マイルストーン3件・5ステータス全種・過負荷帯（鈴木陸に展示会
+#             タスクを集中）・親子タスクを含む。マイページ既定ウィジェットが空表示に
+#             ならないよう、`guestPersona.ts`がランタイム専用の後処理でゲスト自身
+#             （`GUEST_MEMBER`）をmembersに追加し、3件のタスクの担当者を付け替える
+#             （`dataset.ts`自体の出力は"demo-接頭辞のみ"を保ったまま不変）
+#      AI機能：`invokeAI.ts`/`apiClient.ts`（`callAIConsultation`）の先頭でゲストなら
+#             明示的なエラー（`common.guest.aiBlocked`＝「サンプルではAI機能はご利用
+#             いただけません」）を投げる。`client.ts`のブロックが二重の防衛線
+#      i18n：`auth.guest.*`（LoginScreenの文言）・`common.guest.aiBlocked`をja/en両方に追加
+#      ドキュメント：CLAUDE.md Section 23を新設（ゲストモードの設計・Supabase非接触の
+#             安全性根拠・Phase 3の拡張ポイントを明記）
+#      テスト：`src/lib/demo/__tests__/dataset.test.ts`（id/group_id接頭辞・参照整合性・
+#             5ステータス網羅・依存関係循環無し・ベースライン/マイルストーン存在・静的
+#             import禁止のソース走査）・`src/lib/supabase/__tests__/client.test.ts`
+#             （guest時にfrom/rpc/functions.invoke/storage.fromの全経路がブロックされる
+#             ことを実行時に検証）・`invokeAI.test.ts`/`apiClient.test.ts`にゲストガードの
+#             テストを追加
+#      やらないこと：ゲストへの編集許可（閲覧のみ）・匿名認証・AI回数制限（いずれも
+#             Phase 3）・実データを参照したサンプル作成
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過／`npm run lint`変更ファイル
+#             新規エラー0／`npm run build`成功・サンプルデータが別チャンクに分離され
+#             初回ロードに含まれないことを`dist/`実物で確認
+#      DBマイグレ不要（フロントエンドのみ・Supabaseアクセスを増やさない変更）
+#
+# 最終更新：2026-08-06（v3.28）
 

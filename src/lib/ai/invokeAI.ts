@@ -33,6 +33,15 @@
 
 import { supabase } from "../supabase/client";
 import { logAIUsage } from "./usageLog";
+import { isGuestMode } from "../guestMode";
+import { useLangStore } from "../../stores/langStore";
+import { translate } from "../i18n";
+
+// invokeAI/callAIConsultationはReactコンポーネント外の素の関数のためuseT()が使えない。
+// ErrorBoundary.tsx / FileAttachButton.tsxと同じ流儀でuseLangStore.getState()+translate()を直接呼ぶ。
+function tOutside(key: string): string {
+  return translate(useLangStore.getState().lang, key);
+}
 
 export type AIIntent =
   | "task-management"      // payloadBuilder 経由・通常のタスク管理相談（PJ/Task のみ）
@@ -132,6 +141,12 @@ export async function invokeAI(
   maxTokens: number,
   intent: AIIntent,
 ): Promise<AIRawResponse> {
+  // ゲスト（サンプル閲覧）はAI機能を利用できない（Phase 3で限定開放予定。CLAUDE.md Section 23）。
+  // supabase/client.ts の choke point でも functions.invoke() 自体はブロックされるが、
+  // ここで先に明示的な案内を返すことで「無言の失敗」ではなくユーザーに理由が伝わる。
+  if (isGuestMode()) {
+    throw new Error(tOutside("common.guest.aiBlocked"));
+  }
   if (!messages || messages.length === 0) {
     throw new Error("送信するメッセージが空です。操作をやり直してください。");
   }

@@ -58,6 +58,8 @@ import { computeParentAutoStatus } from "../lib/taskHierarchy";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
 import { toDisplayTips, writeCachedTips } from "../lib/tips/loadingTips";
+import { DEMO_GROUP_ID } from "../lib/demo/constants";
+import type { DemoDataset } from "../lib/demo/types";
 
 export interface AppState {
   // ===== データ =====
@@ -104,6 +106,11 @@ export interface AppState {
   // ===== 取得 =====
   load: () => Promise<void>;
   reload: () => Promise<void>;
+  /**
+   * ゲスト（サンプル閲覧）モード専用：Supabaseへは一切アクセスせず、サンプルデータ
+   * （src/lib/demo/）でストアを満たす。App.tsx の「サンプルを見る」からのみ呼ぶ。
+   */
+  loadDemoData: (dataset: DemoDataset) => void;
 
   // ===== Group =====
   setCurrentGroupId: (id: string | null) => void;
@@ -603,6 +610,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   reload: async () => { await get().load(); },
+
+  // ゲスト（サンプル閲覧）モード専用。Supabaseへは一切アクセスしない（App.tsx参照）。
+  loadDemoData: (dataset) => {
+    set({
+      currentGroupId: DEMO_GROUP_ID,
+      currentUserIsSuperAdmin: false,
+      members: dataset.members,
+      projects: dataset.projects,
+      tasks: dataset.tasks,
+      objectives: dataset.objectives,
+      objective: pickCurrentObjectiveForGroup(dataset.objectives, DEMO_GROUP_ID),
+      keyResults: dataset.keyResults,
+      taskForces: dataset.taskForces,
+      todos: dataset.todos,
+      taskDependencies: dataset.taskDependencies,
+      milestones: dataset.milestones,
+      loading: false,
+      backgroundLoading: false,
+      loadProgress: 100,
+      loadingHint: "",
+      error: null,
+    });
+  },
 
   // ===== Group =====
   setCurrentGroupId: (id) => set(state => ({

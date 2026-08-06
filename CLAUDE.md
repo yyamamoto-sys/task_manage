@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.27
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.28
 #
-最終更新：2026-08-06（v3.27）
+最終更新：2026-08-06（v3.28）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1006,7 +1006,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-06（v3.27）
+- 最終更新：2026-08-06（v3.28）
 
 ---
 
@@ -1504,6 +1504,32 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 - [ ] スキーマを変える新しいマイグレ（テーブル・列・CHECK制約・関数の追加）を書いたか？ → `src/lib/schema/schemaChecks.ts` に検査項目を1行足したか？
 - [ ] 追加した項目の `migration` は実際のファイル名と一致しているか？（`schemaChecks.test.ts` が機械的に検証する）
 - [ ] 適用直後、管理者としてログインしてバナーが出ないこと（＝正しく適用された）を確認したか？
+
+---
+
+## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28）
+
+### 2026-08-06に判明した旧実装の欠陥
+
+Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には**到達不能な死んだコード**だった上、仮に到達できても**ゲストに実部署の業務データが全部見えてしまう**構造だった。理由：
+- 入口（`UserSelectScreen.tsx`）の表示条件（`members.length > 0`）と到達条件（Auth email 一致の `autoMatch()` が不成立）が、どちらも「RLSがメンバーとして認識するか」に依存する同一条件のため構造的に両立しなかった。
+- ゲストは独立した権限主体ではなく、ログイン済み実ユーザーのセッションに被せた見た目だけのペルソナ。書き込みブロックは `from(table)` の insert/update/upsert/delete だけを対象にしており、**select（読み取り）・rpc・functions.invoke・storage は素通り**していた。RLSは自部署の実データをそのまま返すため、読み取りを許すとゲストに実業務データが全部見えてしまう。
+
+### 現在の設計（この前提を崩す変更を入れないこと）
+
+**ゲストはSupabaseに一切接続しない。** これが「実部署のデータをゲストに見せない」ことの唯一の安全性の根拠。読み取りだけを許して「必要なテーブルだけ絞る」といった中間案は取らない（絞り漏れが必ず起きる。原則全部止める方が構造的に安全）。
+
+- **入口**：`LoginScreen.tsx` の「サンプルを見る」ボタン。Supabase Authのサインインは行わない（アカウント不要）。押すと `App.tsx` の `handleGuestEnter` が `setGuestMode(true)` → `src/lib/demo/loadDemoDataset()`（動的import）でサンプルデータを取得 → `appStore.loadDemoData()` でストアへ直接注入 → `guestActive` フラグをtrueにして `MainLayout` を直接表示する。**`AppDataProvider`（Supabase `load()`・realtime購読）の配下には一切置かない**（`App.tsx` の分岐が `authenticated` 判定より前に `guestActive` を見る）。
+- **choke point**：`src/lib/supabase/client.ts` の `supabase` Proxy が `assertGuestBlocked()` という単一の関数で `from()`（読み書き両方）・`rpc()`・`functions.invoke()`・`storage.from()` の全経路をブロックする。新しい経路を追加してもこのProxyの `get` トラップを通る限り自動的に塞がれる。
+- **サンプルデータ**：`src/lib/demo/dataset.ts`。全エンティティの id は `demo-` 接頭辞、`group_id` は `DEMO_GROUP_ID`（`grp-demo`）で統一（`__tests__/dataset.test.ts` が機械的に検証）。実在の顧客名・PJ名・人名は使わない。動的importでのみ読み込む（Section 19：通常利用者はダウンロードしない）。
+- **ゲスト自身の担当タスク**：マイページ既定ウィジェット（今週のタスク／自分のワークロード）を空にしないため、`src/lib/demo/guestPersona.ts` がランタイム専用の後処理として `GUEST_MEMBER`（`id: "__guest__"`。既存の `guestMode.ts` の定数）を members に追加し、`GUEST_ASSIGNED_TASK_IDS`（`constants.ts`）に該当するタスクの担当者をゲストへ付け替える。`dataset.ts` 自体の出力（`buildDemoDataset()`）は「全id demo-接頭辞」を保ったまま不変。
+- **AI機能は今回は使わせない**：`invokeAI.ts` / `apiClient.ts`（`callAIConsultation`）の先頭でゲストなら明示的なエラー（`common.guest.aiBlocked`）を投げる。`client.ts` の `functions.invoke` ブロックが二重の防衛線になる。
+- **UI側の編集制限**（従来どおり）：`isGuestMember(currentUser)` で `MainLayout.tsx` 等が設定・FAB・作成ボタンを非表示にする。この判定は `currentUser.id === "__guest__"` を見るだけなので、ゲストの currentUser は必ず `GUEST_MEMBER` そのものを使うこと（サンプルの実メンバーに currentUser を差し替えない。差し替えるとこのUI制限が効かなくなる）。
+- **退出**：既存のログアウト経路（`onLogout` → `App.tsx` の `handleLogout`）をそのまま使う。ゲストは認証セッションを持たないため `signOut()` は実質no-op（`auth-js` はローカルにアクセストークンが無ければネットワーク呼び出し自体をスキップする）。`window.location.reload()` でログイン画面に戻る。
+
+### Phase 3（次のリリース・未着手）
+
+ゲストにAI機能を限定開放する予定がある。実装するときは `client.ts` の `functions.invoke` ブロック分岐（`assertGuestBlocked()` 呼び出し箇所にコメントで示した場所）に、許可する呼び出しだけを通す例外を1つ足す形にする。`invokeAI.ts`/`apiClient.ts` 側の早期ガードも同様に、許可する `AIIntent`/呼び出し種別だけ通す分岐に変える。**匿名認証・AI回数制限もPhase 3で導入する（今回は未実装）。**
 
 ---
 

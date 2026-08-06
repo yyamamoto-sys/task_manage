@@ -44,10 +44,13 @@ export const authJa = {
   "auth.userSelect.noMembersLine1": "メンバーが見つかりません。",
   "auth.userSelect.noMembersLine2": "セットアップをやり直してメンバーを登録してください。",
   "auth.userSelect.restartSetup": "セットアップをやり直す",
-  "auth.userSelect.visitorHeading": "見学の方",
-  "auth.userSelect.guestLabel": "ゲスト（閲覧のみ）",
-  "auth.userSelect.guestDesc": "編集はできません。中身を見て回れます",
   "auth.userSelect.persistNote": "選択したユーザーは次回も自動で維持されます。",
+
+  // ----- LoginScreen：サンプルを見る（ゲスト・2026-08-06） -----
+  "auth.guest.divider": "または",
+  "auth.guest.cta": "サンプルを見る（アカウント不要）",
+  "auth.guest.loading": "サンプルを読み込み中...",
+  "auth.guest.desc": "架空のデータでアプリの見た目だけ確認できます。編集はできません。",
 
   // ----- AccessDeniedScreen -----
   "auth.accessDenied.title": "アクセス権がありません",

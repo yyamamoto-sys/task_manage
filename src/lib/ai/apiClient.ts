@@ -15,6 +15,15 @@ import type { ConsultationType, ResponseVolume } from "./types";
 import type { AIConsultationPayload } from "./payloadBuilder";
 import { buildSystemPrompt } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";
+import { isGuestMode } from "../guestMode";
+import { useLangStore } from "../../stores/langStore";
+import { translate } from "../i18n";
+
+// callAIConsultationはReactコンポーネント外の素の関数のためuseT()が使えない
+// （invokeAI.tsと同じ流儀）。
+function tOutside(key: string): string {
+  return translate(useLangStore.getState().lang, key);
+}
 
 // ===== エラー型定義 =====
 
@@ -23,6 +32,7 @@ export type AIErrorCode =
   | "NETWORK_ERROR"
   | "RATE_LIMIT"
   | "INVALID_RESPONSE"
+  | "GUEST_BLOCKED"
   | "UNKNOWN";
 
 export class AIError extends Error {
@@ -94,6 +104,12 @@ export async function callAIConsultation(
   /** 直前の応答がJSONパースに失敗した場合の自己修正リトライ用コンテキスト */
   retryContext?: AIRetryContext,
 ): Promise<AICallResult> {
+  // ゲスト（サンプル閲覧）はAI機能を利用できない（Phase 3で限定開放予定。CLAUDE.md Section 23）。
+  // supabase/client.ts の choke point でも functions.invoke() 自体はブロックされるが、
+  // ここで先に明示的な案内を返すことで「無言の失敗」ではなくユーザーに理由が伝わる。
+  if (isGuestMode()) {
+    throw new AIError("GUEST_BLOCKED", tOutside("common.guest.aiBlocked"));
+  }
   const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal");
 
   // 会話履歴をAnthropic形式に変換

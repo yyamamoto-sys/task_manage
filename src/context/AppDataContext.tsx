@@ -13,10 +13,17 @@
 // 【Thundering herd 対策（2026-06-23）】
 // realtime イベントを 400ms デバウンスして複数ユーザーの同時接続時でも
 // load() が殺到しないようにする。store 側の並列ガードと二重防衛。
+//
+// 【ゲスト（サンプル閲覧）モードのガード（2026-08-06）】
+// App.tsx はゲストモード時にこの Provider 自体を配下に置かない（appStore にはサンプル
+// データを直接注入し、Supabase load() / realtime 購読を経由させない設計）。ここでの
+// isGuestMode() チェックは、万一将来 AppDataProvider がゲスト配下にも置かれるように
+// なった場合の二重防衛（実データが読み込まれてしまう事故を構造的に防ぐ）。
 
 import { useEffect, type ReactNode } from "react";
 import { supabase } from "../lib/supabase/client";
 import { useAppStore } from "../stores/appStore";
+import { isGuestMode } from "../lib/guestMode";
 
 export { ConflictError } from "../lib/supabase/store";
 
@@ -27,14 +34,16 @@ export { ConflictError } from "../lib/supabase/store";
 export function AppDataProvider({ children }: { children: ReactNode }) {
   const load = useAppStore(s => s.load);
 
-  // 初回マウント時に全データを読み込む
+  // 初回マウント時に全データを読み込む（ゲストモードは Supabase に一切アクセスしない）
   useEffect(() => {
+    if (isGuestMode()) return;
     load();
   }, [load]);
 
   // Supabase realtime: tasks / projects テーブルへの外部書き込みを検知して再取得
   // デバウンス 400ms: 複数ユーザーが同時接続しても load() が一度に大量発行されないよう集約する
   useEffect(() => {
+    if (isGuestMode()) return;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const debouncedLoad = () => {
       if (timer) clearTimeout(timer);

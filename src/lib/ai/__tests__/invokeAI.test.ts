@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // supabase クライアントをモック（functions.invoke と from をどちらも使う）
 const mockInvoke = vi.fn();
@@ -17,6 +17,7 @@ vi.mock("../../localData/localStore", () => ({
 }));
 
 import { invokeAI } from "../invokeAI";
+import { setGuestMode } from "../../guestMode";
 
 beforeEach(() => {
   mockInvoke.mockReset();
@@ -57,5 +58,17 @@ describe("invokeAI", () => {
     await expect(invokeAI("system", [], 1000, "kr-report")).rejects.toThrow(
       "送信するメッセージが空です",
     );
+  });
+});
+
+describe("invokeAI：ゲスト（サンプル閲覧）モードのガード", () => {
+  afterEach(() => setGuestMode(false));
+
+  it("ゲストモードなら functions.invoke を呼ばず、明示的なエラーを投げる", async () => {
+    setGuestMode(true);
+    await expect(
+      invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
+    ).rejects.toThrow("サンプルではAI機能はご利用いただけません");
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

@@ -7,11 +7,13 @@ import { VersionBadge } from "../common/VersionBadge";
 
 interface Props {
   onLogin: () => void;
+  /** 「サンプルを見る」を押したときに呼ぶ。Supabase Authのサインインは行わない。 */
+  onGuest: () => Promise<void>;
 }
 
 type Mode = "login" | "signup" | "signup_done";
 
-export function LoginScreen({ onLogin }: Props) {
+export function LoginScreen({ onLogin, onGuest }: Props) {
   const t = useT();
   const [mode, setMode] = useState<Mode>("login");
   const [email, setEmail] = useState("");
@@ -19,6 +21,17 @@ export function LoginScreen({ onLogin }: Props) {
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [guestLoading, setGuestLoading] = useState(false);
+
+  const handleGuestClick = async () => {
+    setGuestLoading(true);
+    try {
+      await onGuest();
+    } finally {
+      // 成功時はApp.tsx側でこの画面自体が消えるため、finallyでのリセットは失敗時のみ意味を持つ
+      setGuestLoading(false);
+    }
+  };
 
   const switchMode = (next: Mode) => {
     setMode(next);
@@ -263,6 +276,36 @@ export function LoginScreen({ onLogin }: Props) {
             {t("auth.note.forgotPassword")}
           </p>
         )}
+
+        {/* サンプルを見る：アカウント不要でアプリの見た目を確認できる閲覧専用モード */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: "8px",
+          margin: "20px 0 12px", color: "var(--color-text-tertiary)", fontSize: "11px",
+        }}>
+          <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
+          <span>{t("auth.guest.divider")}</span>
+          <div style={{ flex: 1, height: "1px", background: "var(--color-border-primary)" }} />
+        </div>
+        <button
+          type="button"
+          onClick={handleGuestClick}
+          disabled={guestLoading}
+          style={{
+            width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: "8px",
+            padding: "10px 12px",
+            background: "var(--color-bg-secondary)",
+            border: "1px dashed var(--color-border-secondary)",
+            borderRadius: "var(--radius-md)",
+            cursor: guestLoading ? "not-allowed" : "pointer",
+            fontSize: "12px", fontWeight: 500, color: "var(--color-text-secondary)",
+          }}
+        >
+          <span style={{ fontSize: "15px" }}>👁</span>
+          <span>{guestLoading ? t("auth.guest.loading") : t("auth.guest.cta")}</span>
+        </button>
+        <p style={{ marginTop: "8px", textAlign: "center", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+          {t("auth.guest.desc")}
+        </p>
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 const mockInvoke = vi.fn();
 
@@ -8,8 +8,9 @@ vi.mock("../../supabase/client", () => ({
   },
 }));
 
-import { callAIConsultation } from "../apiClient";
+import { callAIConsultation, AIError } from "../apiClient";
 import type { AIConsultationPayload } from "../payloadBuilder";
+import { setGuestMode } from "../../guestMode";
 
 const PAYLOAD = { consultation: "テスト相談" } as unknown as AIConsultationPayload;
 
@@ -74,5 +75,16 @@ describe("callAIConsultation", () => {
     expect(last3[2].role).toBe("user");
     expect(last3[2].content).toContain("Unexpected end of JSON input");
     expect(last3[2].content).toContain("厳密に正しいJSONオブジェクト");
+  });
+});
+
+describe("callAIConsultation：ゲスト（サンプル閲覧）モードのガード", () => {
+  afterEach(() => setGuestMode(false));
+
+  it("ゲストモードなら functions.invoke を呼ばず、明示的なエラーを投げる", async () => {
+    setGuestMode(true);
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(AIError);
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow("サンプルではAI機能はご利用いただけません");
+    expect(mockInvoke).not.toHaveBeenCalled();
   });
 });
