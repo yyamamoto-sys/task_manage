@@ -2,7 +2,10 @@
 //
 // 【設計意図】
 // ラボ機能「マイページ」のホスト画面。CalendarLabView と全く同じ流儀の全画面オーバーレイ
-// （position:fixed inset:0・zIndex 250・animate-overlay＋本体アニメーション・✕で閉じる）。
+// （メインエリア内に flex:1 で収まる・animate-overlay＋本体アニメーション・✕で閉じる。
+// CLAUDE.md Section 20・v3.33でposition:fixedをやめてメインエリア内に収める方式に変更）。
+// ただし内部の「＋ウィジェットを追加」モーダル（AddWidgetModal）は一時的な中央寄せ
+// ポップアップのため対象外＝Section 21の契約どおり modalStyles.ts を使い position:fixed のまま。
 //
 // 【最重要の契約（CLAUDE.md参照）】
 // ウィジェットのコンポーネントから useAppStore を直接呼ばせない。部署スコープ済みデータの
@@ -30,6 +33,7 @@ import { useMyPageLayout } from "../../hooks/useMyPageLayout";
 import { WIDGET_REGISTRY, getWidgetDefinition } from "./widgets/registry";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
 import { WidgetConfigModal } from "./widgets/WidgetConfigModal";
+import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE } from "../common/modalStyles";
 
 interface Props {
   onClose: () => void;
@@ -284,9 +288,10 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate, onCre
   };
 
   return (
+    // 【CLAUDE.md Section 20（v3.33）】position指定をfixedにしない。メインエリア内に収まる
+    // flex子要素にする（#root の角丸クリップが効くのはpositionを持たない通常の子要素だけのため）
     <div className="animate-overlay" style={{
-      position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 250,
-      transition: "left 0.2s ease",
+      flex: 1, minWidth: 0, minHeight: 0,
       background: "rgba(0,0,0,0.45)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "24px 32px",
@@ -388,24 +393,20 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate, onCre
 function AddWidgetModal({ onAdd, onClose }: { onAdd: (widgetId: string) => void; onClose: () => void }) {
   return (
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は✕ボタンでキーボードから可能
+    // 【CLAUDE.md Section 21】一時的な中央寄せポップアップのため対象外＝modalStyles.ts の契約に
+    // 従い position:fixed のまま（Section 20 はメインエリア内に常設される全画面ラボビューが対象で、
+    // このポップアップは一時的な操作のため該当しない）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 260,
-        transition: "left 0.2s ease",
-        background: "rgba(0,0,0,0.5)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px",
-      }}
+      style={{ ...modalOverlayStyle(260), background: "rgba(0,0,0,0.5)", padding: "20px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="panel-slide-up" style={{
-        width: "min(480px, 100%)", maxHeight: "80vh",
+        ...modalBoxStyle("min(480px, 100%)"),
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
         boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         <div style={{
           padding: "14px 18px", borderBottom: "1px solid var(--color-border-primary)",
@@ -419,7 +420,7 @@ function AddWidgetModal({ onAdd, onClose }: { onAdd: (widgetId: string) => void;
             style={{ background: "transparent", border: "none", fontSize: "16px", cursor: "pointer", color: "var(--color-text-tertiary)" }}
           >✕</button>
         </div>
-        <div style={{ padding: "12px 18px", overflow: "auto", display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div style={{ ...MODAL_BODY_STYLE, padding: "12px 18px", display: "flex", flexDirection: "column", gap: "8px" }}>
           {WIDGET_REGISTRY.map(def => (
             <button
               key={def.id}

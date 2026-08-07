@@ -237,9 +237,11 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
 
   return (
     // #2: <style>タグを削除。印刷 CSS は globals.css の @media print に移動済み
+    // 【CLAUDE.md Section 20（v3.33）】position指定をfixedにしない。メインエリア内に収まる
+    // flex子要素にする（印刷時は globals.css の @media print が .cal-root を
+    // position:absolute!important で強制するため、通常表示時のここでの指定とは独立）
     <div className="cal-root animate-overlay" style={{
-      position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 250,
-      transition: "left 0.2s ease",
+      flex: 1, minWidth: 0, minHeight: 0,
       background: "rgba(0,0,0,0.45)",
       display: "flex", alignItems: "center", justifyContent: "center",
       padding: "24px 32px",

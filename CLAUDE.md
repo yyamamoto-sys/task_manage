@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.32
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.33
 #
-最終更新：2026-08-07（v3.32）
+最終更新：2026-08-07（v3.33）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1424,24 +1424,38 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 20. グランドルール：全画面ビューでもサイドバーを覆わない（必須・v3.23）
+## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更）
 
 ### 用語（今後この2語で呼び分ける）
 
-- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時196px／折りたたみ時48px／モバイルでは非表示）。幅は `SIDEBAR_WIDTH_EXPANDED`/`SIDEBAR_WIDTH_COLLAPSED` 定数で一元管理し、CSSカスタムプロパティ `--app-sidebar-w`（`MainLayout.tsx` のPCレイアウトroot要素に設定）としてラボ系オーバーレイに公開している。
+- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時196px／折りたたみ時48px／モバイルでは非表示）。幅は `SIDEBAR_WIDTH_EXPANDED`/`SIDEBAR_WIDTH_COLLAPSED` 定数で一元管理する（Sidebar自身の width にのみ使う）。
 - **メインエリア**：サイドバーの右側の作業領域（`MainLayout.tsx` の `mainContent` 変数が描画している領域）。
 
-### ルール
+### 【v3.23〜v3.32の旧方式（廃止）とその欠陥】
 
-体制図・カレンダー・マイページ・関係性グラフ・OKRレポート／クォーター計画／なぜなぜ分析（右ドロワー）などの**全画面で作業するビューを新規追加するときは、`position: fixed; inset: 0` にしない**。代わりに `top: 0; right: 0; bottom: 0; left: var(--app-sidebar-w, 0px)` を使い、サイドバーを覆わないようにする（`transition: "left 0.2s ease"` も付け、サイドバーの折りたたみ／展開に滑らかに追従させる）。
+体制図・カレンダー・マイページ・関係性グラフ・OKRレポート／クォーター計画／なぜなぜ分析（右ドロワー）などの全画面ラボ系ビューは、当初「`position: fixed; top:0; right:0; bottom:0; left: var(--app-sidebar-w, 0px)`（サイドバー幅ぶんだけ左端をずらす）」という方式でサイドバーを覆わないようにしていた。
 
-**理由**：どの機能を触っていてもサイドバーからいつでも他の機能に移動できる状態を保つため（山本さんの要望・2026-08-06）。ラボ系ビューが `position: fixed; inset: 0` で画面全体を覆うと、サイドバーが隠れてナビゲーションできなくなる。
+これは2026-08-06時点では正しく機能していたが、v3.23〜v3.24で導入された「アプリ外枠（`body { padding: 8px }` ＋ `#root { border-radius: var(--radius-lg); overflow: hidden; }` で作る角丸カード。`src/styles/globals.css`）」と根本的に相性が悪いことが判明した。
 
-**既に理想形の実例**：設定画面（`adminOverlay`。`MainLayout.tsx` 427行〜）。`position: fixed` を使わず `flex: 1` でメインエリア内に収めているため、最初からサイドバーが見えたままになっている。
+- `position: fixed` は**ビューポート基準**で描画される。`#root` の `overflow: hidden` は通常のDOM子要素（position指定を持たない要素）しかクリップできず、`position: fixed` な要素は `#root` の存在ごと無視して描画される。
+- その結果、ラボ系ビューは外周8pxの余白まで塗りつぶし、角丸カードの外へはみ出していた。角も直角のままで丸縁が消えていた。
+- さらに `left: var(--app-sidebar-w, 0px)` の基準もビューポートそのものであり、角丸カード自体が `body` の8px paddingぶん右にずれて浮いているため、**サイドバーを避けているつもりが、実際はサイドバー右端8pxに重なっていた**。
 
-**例外（対象外）**：
-- 一時的なモーダル・ダイアログ（タスク編集・クイック追加・ガイド・確認ダイアログ・コマンドパレット・OKR取込・PJカルテ・AdminFormModal等）は画面中央に出してよい。一時的な操作であり、サイドバーが隠れても混乱を招かない。
-- モバイルレイアウトはサイドバー自体が存在しないため、全画面表示のままでよい。`var(--app-sidebar-w, 0px)` はPCレイアウトのroot要素にしか設定していないため、モバイルでは自動的にフォールバック値の0pxになる。
+山本さんの指摘（2026-08-07）：「メニューバーに被らないように上からレイヤーをかぶせているみたいで、元々の丸縁の枠に収まっていないのが嫌。すべてアプリの丸縁エリアに収まるようにしてほしい」。
+
+### 新しい契約（v3.33〜）
+
+**全画面ラボ系ビューは `position: fixed` を使わず、メインエリア内に `flex: 1` で収める。**
+
+- ビュー本体（GraphView・CalendarLabView・ProjectStructureView・MyPageView・KrReportPanel・KrQuarterPlanPanel・KrWhyPanelの非inline時）の root は、`position`/`top`/`right`/`bottom`/`left`/`zIndex` を一切持たない「位置指定のない flex 子要素」にする（`{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", ... }`。内部の `display`/`flexDirection`/`alignItems`/`justifyContent`（中央寄せカード型・右ドロワー型などビューごとの内部構成）はそのまま維持する）。**どこに置くかは親（呼び出し側）が決める**——これが今回の設計の要。
+- **PC**：`MainLayout.tsx` の `labOverlay`（`mainContent` 内、`isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : labOverlay ? labOverlay : appMode === "okr" ? ... : ...` の優先順位＝**ガイド＞設定＞ラボ系7ビュー＞通常のOKR/計画ビュー**）に埋め込む。`#root` の `overflow: hidden` が効くのは「position指定を持たない通常のDOM子孫」だけなので、これでようやく丸縁の内側に正しくクリップされる。ラボ系ビュー同士は `closeLabViews()` により通常同時に開かないが、万一同時にtrueでも `labOverlay` の分岐順（Graph→Calendar→Structure→MyPage→KrReport→KrWhy）で一意に決まる。
+- **モバイル**：`body { padding: 0 }` で角丸カード自体が存在しないため、従来どおり全画面表示を維持する。呼び出し側（`MainLayout.tsx` のモバイル分岐）が薄い `MobileFullscreenOverlay`（`position: "fixed", inset: 0`）でビュー本体を包む。zIndexは各ビューが旧方式で持っていた値をそのまま踏襲する。
+- **既に理想形の実例**：設定画面（`adminOverlay`。`MainLayout.tsx`）。`position: fixed` を使わず `flex: 1` でメインエリア内に収めているため、最初から丸縁の内側・サイドバーが見えたままになっている。今回の変更は他の全画面ラボ系ビューをこの形に揃えたもの。
+- **例外（対象外）**：一時的なモーダル・ダイアログ（タスク編集・クイック追加・ガイド・確認ダイアログ・コマンドパレット・OKR取込・PJカルテ・AdminFormModal・MyPageViewの「＋ウィジェットを追加」等）は、Section 21の契約（`modalStyles.ts`）に従う限り引き続き `position: fixed` のままでよい。一時的な操作であり、丸縁の外にはみ出す・サイドバーが隠れる、のどちらも実害が小さい（Section 21はそもそも角丸カードの内外を問題にしていない）。
+
+### 機械チェック
+
+`src/components/__tests__/labViewContainment.test.ts` が、①`src/` 配下のどのファイルにも `var(--app-sidebar-w` という文字列が現れないこと（旧方式の手法自体が廃止されたことの固定）、②対象7ビューのファイルが、そのビュー本体（`export function <ファイル名と同じ名前>` の関数本体。中央寄せモーダル等の別関数は対象外）の中で `position:"fixed"` を使っていないこと、を機械的に検査する（`modalStyles.test.ts`/`widgetContract.test.ts` と同じソース走査方式）。
 
 ### サイドバーのナビ操作をしたら、開いているラボ系ビューを閉じる
 
@@ -1471,12 +1485,12 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 ### 対象外
 
 - **横からのドロワー・サイドパネル**（AI相談・`TaskSidePanel`・`MemberDetailPanel`・OKRラボの右ドロワー3つ等）。画面の高さいっぱいに出るのが正しい設計で、この契約の対象ではない。
-- Section 20 の全画面ラボビュー（体制図・カレンダー・マイページ・関係性グラフ）も対象外（別の契約＝サイドバーを覆わない、に従う）。
+- Section 20 の全画面ラボビュー（体制図・カレンダー・マイページ・関係性グラフ）も対象外（別の契約＝position:fixedを使わずメインエリア内にflexで収める、に従う）。
 - **モーダルはサイドバーを避けない**（Section 20 とは別の話。モーダルは画面中央のままでよい）。
 
 ### 機械チェック
 
-`src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル・全画面ラボビュー等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある。
+`src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある（v3.33：全画面ラボビュー4ファイルは `position:fixed` を一切使わなくなり検出パターンにそもそも一致しなくなったため除外リストから外した。将来の逆行を見逃さないための対応）。
 
 ---
 

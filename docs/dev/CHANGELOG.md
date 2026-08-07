@@ -4087,5 +4087,48 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`変更ファイル新規エラー0／`npm run build`成功
 #      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
 #
-# 最終更新：2026-08-07（v3.32）
+#
+# v3.33 全画面ラボ系ビューをposition:fixedから角丸カード内flexへ全面変更（2026-08-07）
+#      背景：v3.23〜v3.24で導入した「アプリ外枠（`body{padding:8px}`＋`#root{border-radius;
+#             overflow:hidden}`で作る角丸カード）」と、v3.23で導入したラボ系ビューの
+#             `position:fixed; left:var(--app-sidebar-w,0px)`方式が根本的に相性が悪かった。
+#             `position:fixed`はビューポート基準で描画されるため`#root`のoverflow:hiddenの
+#             対象外になり、①外周8pxの余白まで塗りつぶし丸縁の外へはみ出す、②角が直角のまま
+#             丸縁が消える、③leftの基準もビューポートのため実際はサイドバー右端8pxに重なる、
+#             という3つの不具合が常に発生していた（山本さんの指摘：「メニューバーに被らない
+#             ように上からレイヤーをかぶせているみたいで、元々の丸縁の枠に収まっていないのが
+#             嫌」）
+#      変更：対象7ビュー（GraphView・CalendarLabView・ProjectStructureView・MyPageView・
+#             KrReportPanel・KrQuarterPlanPanel・KrWhyPanelの非inline時）のroot styleから
+#             position/top/right/bottom/left/zIndex/transitionを削除し、
+#             `{flex:1,minWidth:0,minHeight:0,overflow:"hidden",...}`（内部のdisplay/
+#             flexDirection/alignItems/justifyContent等ビューごとの構成は維持）に変更。
+#             GraphViewのみ、直下の凡例パネル等position:absoluteな子要素の基準を保つため
+#             `position:"relative"`を追加（fixedの禁止対象ではない）
+#      追加：`MainLayout.tsx`に`labOverlay`（PCのみ対象。`isGuideOpen ? guideOverlay :
+#             (isAdminOpen&&!isGuest) ? adminOverlay : labOverlay ? labOverlay : appMode==="okr"
+#             ? ... : ...`の優先順位でmainContent内に埋め込む。分岐順はGraph→Calendar→
+#             Structure→MyPage→KrReport→KrWhyで一意に決まる）と、モバイル専用の薄い全画面
+#             ラッパー`MobileFullscreenOverlay`（position:fixed;inset:0はここだけに残す）を追加
+#      変更：MyPageView.tsx内の「＋ウィジェットを追加」モーダル（AddWidgetModal）はビュー本体
+#             とは別（一時的な中央寄せポップアップ・Section21対象）のため、`modalStyles.ts`の
+#             `modalOverlayStyle()`/`modalBoxStyle()`/`MODAL_BODY_STYLE`を使う形に変更
+#             （position:fixedのまま・Section20の対象外）
+#      削除：CSSカスタムプロパティ`--app-sidebar-w`（`MainLayout.tsx`のPCレイアウトroot要素の
+#             設定と関連コメント）。src/全体で利用箇所が無いことを確認済み
+#      対象外：モバイルは`body{padding:0}`で角丸カード自体が存在しないため、従来どおり全画面
+#             表示のまま（呼び出し側のMobileFullscreenOverlayで対応）。ゲストバナー・AI相談
+#             パネルとの共存挙動・ガント/カレンダー印刷CSS・GraphViewのcanvasリサイズは無変更
+#      ドキュメント：CLAUDE.md Section 20を新方式に全面書き換え（旧方式の欠陥を明記）。
+#             Section 21の「Section20対象外」表現も新方式に追従
+#      テスト：`src/components/__tests__/labViewContainment.test.ts`を新規追加
+#             （①src/のどのファイルにも`var(--app-sidebar-w`が無いこと、②対象7ビューの
+#             ビュー本体rootがposition:"fixed"を使っていないこと、をソース走査方式で検査）。
+#             `modalStyles.test.ts`のEXCLUDED_FILESから、position:fixedを使わなくなった
+#             全画面ラボビュー4ファイルを削除（除外が不要になったため。将来の逆行を見逃さない）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1183件全通過（880件から303件増）／
+#             `npm run lint`変更ファイル新規エラー0（既存35件のみ・内訳不変）／`npm run build`成功
+#      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
+#
+# 最終更新：2026-08-07（v3.33）
 

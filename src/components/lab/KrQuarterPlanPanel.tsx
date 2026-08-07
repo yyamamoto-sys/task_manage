@@ -1221,12 +1221,13 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
     // 背景要素をフォーカス可能にする必要はない
+    // 【CLAUDE.md Section 20（v3.33）】position指定をfixedにしない。メインエリア内に収まる
+    // flex子要素にする（#root の角丸クリップが効くのはpositionを持たない通常の子要素だけのため）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
       style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 200,
-        transition: "left 0.2s ease",
+        flex: 1, minWidth: 0, minHeight: 0,
         background: "rgba(0,0,0,0.55)",
         display: "flex", alignItems: "stretch", justifyContent: "flex-end",
       }}

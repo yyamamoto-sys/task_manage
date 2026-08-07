@@ -76,12 +76,27 @@ function ViewLoading() {
   return <ViewSkeleton />;
 }
 
+/**
+ * モバイル専用：全画面ラボビュー（GraphView 等）を全画面表示にする薄いラッパー。
+ * 【CLAUDE.md Section 20（v3.33）】ビュー本体は position:"fixed" を持たない
+ * 「メインエリアに収まる flex 子要素」になったため、PC では mainContent 内に
+ * そのまま埋め込めば #root の角丸クリップの内側に収まる。一方モバイルは #root の
+ * 角丸カード自体が存在せず（body { padding: 0 }）常に全画面表示が正しいため、
+ * 呼び出し側のこのラッパーだけが position:fixed; inset:0 を持つ。
+ * zIndex は各ビューがPC非埋め込み時代に持っていた値をそのまま踏襲する。
+ */
+function MobileFullscreenOverlay({ zIndex, children }: { zIndex: number; children: React.ReactNode }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex, display: "flex" }}>
+      {children}
+    </div>
+  );
+}
+
 type AppMode = "plan" | "okr";
 
 /**
- * サイドバー幅（折りたたみ／展開）。Sidebar自身の width と、CSSカスタムプロパティ
- * --app-sidebar-w（ラボ系オーバーレイがサイドバーを避けて左端位置を決めるために参照する。
- * CLAUDE.md Section 20）の二重管理を避けるため、ここに1箇所だけ定義する。
+ * サイドバー幅（折りたたみ／展開）。Sidebar自身の width が参照する。
  */
 const SIDEBAR_WIDTH_COLLAPSED = "48px";
 const SIDEBAR_WIDTH_EXPANDED = "196px";
@@ -698,6 +713,57 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     </button>
   );
 
+  /**
+   * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／なぜなぜ分析）を
+   * メインエリア内（mainContent）に描画するための束ね。PCのみが対象（モバイルは呼び出し側の
+   * MobileFullscreenOverlay で全画面表示する。CLAUDE.md Section 20・v3.33）。
+   * closeLabViews() により通常はこの中の2つ以上が同時にtrueにはならないが、念のため
+   * 宣言順で一意に優先順位が決まるようにしてある（同時にtrueでも表示が1つに定まる）。
+   */
+  const labOverlay = isMobile ? null
+    : isGraphOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+      </Suspense>
+    )
+    : isCalendarOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <CalendarLabView
+          onClose={() => setIsCalendarOpen(false)}
+          currentUser={currentUser}
+          onOpenTask={taskId => setCalendarEditTaskId(taskId)}
+          onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
+        />
+      </Suspense>
+    )
+    : isStructureOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
+      </Suspense>
+    )
+    : isMyPageOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <MyPageView
+          onClose={() => setIsMyPageOpen(false)}
+          currentUser={currentUser}
+          onOpenTask={taskId => setMyPageEditTaskId(taskId)}
+          onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
+          onCreateTask={handleMyPageCreateTask}
+        />
+      </Suspense>
+    )
+    : isKrReportOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+      </Suspense>
+    )
+    : isKrWhyOpen ? (
+      <Suspense fallback={<ViewLoading />}>
+        <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+      </Suspense>
+    )
+    : null;
+
   const mainContent = (
     <div style={{
       flex: 1,
@@ -718,7 +784,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <GuestAiQuotaNotice variant="banner" />
         </div>
       )}
-      {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : appMode === "okr" ? (
+      {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : labOverlay ? labOverlay : appMode === "okr" ? (
         <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
             <OkrDashboardView
@@ -804,16 +870,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
         )}
         {isGraphOpen && (
-          <Suspense fallback={<ViewLoading />}>
-            <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
-          </Suspense>
+          <MobileFullscreenOverlay zIndex={200}>
+            <Suspense fallback={<ViewLoading />}>
+              <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+            </Suspense>
+          </MobileFullscreenOverlay>
         )}
-        {/* CalendarLabView はモバイル・PC 共通で PC return ブロック側に1つだけ置く
-            ここに置くと PC では2つ同時にDOMに存在してしまい印刷2ページ・マイルストーン重複が起きる */}
+        {/* CalendarLabView・MyPageView・KrQuarterPlanPanel はモバイル・PC 共通で PC return
+            ブロック側（mainContent 内）に1つだけ置く。ここに置くと PC では2つ同時にDOMに
+            存在してしまい印刷2ページ・マイルストーン重複が起きる */}
         {isKrReportOpen && (
-          <Suspense fallback={<ViewLoading />}>
-            <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
-          </Suspense>
+          <MobileFullscreenOverlay zIndex={200}>
+            <Suspense fallback={<ViewLoading />}>
+              <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+            </Suspense>
+          </MobileFullscreenOverlay>
         )}
         {isKrSessionOpen && (
           <Suspense fallback={<ViewLoading />}>
@@ -821,14 +892,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </Suspense>
         )}
         {isKrWhyOpen && (
-          <Suspense fallback={<ViewLoading />}>
-            <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
-          </Suspense>
+          <MobileFullscreenOverlay zIndex={200}>
+            <Suspense fallback={<ViewLoading />}>
+              <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+            </Suspense>
+          </MobileFullscreenOverlay>
         )}
         {isStructureOpen && (
-          <Suspense fallback={<ViewLoading />}>
-            <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
-          </Suspense>
+          <MobileFullscreenOverlay zIndex={250}>
+            <Suspense fallback={<ViewLoading />}>
+              <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
+            </Suspense>
+          </MobileFullscreenOverlay>
         )}
         {graphEditTaskId && (
           <TaskEditModal taskId={graphEditTaskId} currentUser={currentUser} onClose={() => setGraphEditTaskId(null)} />
@@ -1185,13 +1260,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   }
 
   // PC レイアウト（height: 100% = #root に追従。100vh だと body padding 分だけ下部がはみ出てクリップされる）
-  // --app-sidebar-w：ラボ系オーバーレイ（GraphView等）がサイドバーを覆わないよう左端に使う
-  // CSSカスタムプロパティ。折りたたみ／展開で自動追従する（CLAUDE.md Section 20）。
   return (
-    <div style={{
-      display: "flex", height: "100%", overflow: "hidden",
-      "--app-sidebar-w": isSidebarCollapsed ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
-    } as React.CSSProperties}>
+    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
       {onboardingOverlay}
       {tourInviteDialog}
 
@@ -1334,65 +1404,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onSelectGroup={handleSelectGroupNav}
       />
       {mainContent}
-      {isGraphOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <GraphView
-            onClose={() => setIsGraphOpen(false)}
-            currentUser={currentUser}
-            onOpenTask={taskId => setGraphEditTaskId(taskId)}
-          />
-        </Suspense>
-      )}
-      {isCalendarOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <CalendarLabView
-            onClose={() => setIsCalendarOpen(false)}
-            currentUser={currentUser}
-            onOpenTask={taskId => setCalendarEditTaskId(taskId)}
-            onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
-          />
-        </Suspense>
-      )}
-      {isStructureOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <ProjectStructureView
-            onClose={() => setIsStructureOpen(false)}
-            currentUser={currentUser}
-          />
-        </Suspense>
-      )}
-      {isMyPageOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <MyPageView
-            onClose={() => setIsMyPageOpen(false)}
-            currentUser={currentUser}
-            onOpenTask={taskId => setMyPageEditTaskId(taskId)}
-            onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
-            onCreateTask={handleMyPageCreateTask}
-          />
-        </Suspense>
-      )}
-      {isKrReportOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <KrReportPanel
-            onClose={() => setIsKrReportOpen(false)}
-            currentUser={currentUser}
-          />
-        </Suspense>
-      )}
+      {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView・KrReportPanel・KrWhyPanel は
+          mainContent 内（labOverlay）に埋め込み済み（CLAUDE.md Section 20・v3.33）。
+          KrJointSessionFlow は元々 position:fixed を使わない設計のため対象外・従来どおりここに置く。 */}
       {isKrSessionOpen && (
         <Suspense fallback={<ViewLoading />}>
           <KrJointSessionFlow
             currentUser={currentUser}
             onClose={() => setIsKrSessionOpen(false)}
-          />
-        </Suspense>
-      )}
-      {isKrWhyOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <KrWhyPanel
-            onClose={() => setIsKrWhyOpen(false)}
-            currentUser={currentUser}
           />
         </Suspense>
       )}

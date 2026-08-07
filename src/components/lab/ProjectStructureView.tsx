@@ -1053,12 +1053,13 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
 
   return (
     // ドラッグ中の要素がどこにドロップされてもクリーンアップするためのハンドラのみ。マウス操作専用でキーボード代替手段はない
+    // 【CLAUDE.md Section 20（v3.33）】position指定をfixedにしない。メインエリア内に収まる
+    // flex子要素にする（#root の角丸クリップが効くのはpositionを持たない通常の子要素だけのため）
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions
     <div
       className="animate-fadeIn"
       style={{
-        position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", zIndex: 250,
-        transition: "left 0.2s ease",
+        flex: 1, minWidth: 0, minHeight: 0,
         background: "var(--color-bg-primary)",
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}

@@ -646,7 +646,11 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
   const today = todayStr();
 
   return (
-    <div className="animate-fadeIn" style={{ position: "fixed", top: 0, right: 0, bottom: 0, left: "var(--app-sidebar-w, 0px)", transition: "left 0.2s ease", zIndex: 200, background: dark ? "#111827" : "#F9FAFB" }}>
+    // 【CLAUDE.md Section 20（v3.33）】position指定をfixedにしない。メインエリア内に収まる
+    // flex子要素にする（#root の角丸クリップが効くのはpositionを持たない通常の子要素だけのため）。
+    // position:"relative" は fixed の禁止対象ではなく、直下の凡例パネル等の position:"absolute"
+    // な子要素の基準（containing block）を保つために必要。
+    <div className="animate-fadeIn" style={{ position: "relative", flex: 1, minWidth: 0, minHeight: 0, background: dark ? "#111827" : "#F9FAFB" }}>
       <canvas
         ref={canvasRef}
         style={{ width: "100%", height: "100%", display: "block", cursor: "crosshair" }}

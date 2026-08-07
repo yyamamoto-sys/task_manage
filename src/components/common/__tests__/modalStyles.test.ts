@@ -45,11 +45,12 @@ const EXCLUDED_FILES = new Set<string>([
   "components/admin/OkrImportModal.tsx",
   "components/meeting/MeetingImportPanel.tsx",
   "components/okr/OkrDashboardView.tsx",
-  // 全画面で作業するラボビュー（CLAUDE.md Section 20の対象。サイドバーを覆わない別の契約に従う）
-  "components/lab/ProjectStructureView.tsx",
-  "components/lab/MyPageView.tsx",
-  "components/lab/CalendarLabView.tsx",
-  "components/graph/GraphView.tsx",
+  // 【v3.33で削除】ProjectStructureView.tsx / MyPageView.tsx / CalendarLabView.tsx / GraphView.tsx は
+  // CLAUDE.md Section 20の書き換えにより position:"fixed" を一切使わなくなったため、
+  // このテストのパターン（position:"fixed"...inset:0）にそもそも一致しなくなった。除外リストに
+  // 残すと「本来キャッチすべき将来の逆行（誰かがまた生の position:fixed を書いてしまう等）」を
+  // 見逃す側の穴になるため、除外を外して素通しでテスト対象に戻す（labViewContainment.test.ts が
+  // 別途 position:fixed の再発防止を検査する）。
   // 全画面プレビューシート（inset:0で高さ自体が画面ぴったりに固定され、箱が伸びる余地が無い）
   "components/consultation/GanttPreviewPanel.tsx",
   // 全画面の認証系スクリーン（ダイアログではなく画面そのもの。背後に隠すべきコンテンツが無い）
