@@ -151,6 +151,14 @@ export function PersonalKrPanel({
   // ===== 週の目標状態 =====
   const segments = useMemo(() => computeMonthWeekSegments(slot.monthStart), [slot.monthStart]);
   const weekCards = useMemo(() => buildWeekCards(segments, weeks.filter(w => w.month === monthStr && !w.is_deleted)), [segments, weeks, monthStr]);
+
+  // 既存の週レコードに紐づくタスクを、リンクモーダルを開かなくても週カードに表示できるよう
+  // 事前に読み込む（1KRあたり最大6週分・件数は小さいのでまとめて発火してよい）
+  useEffect(() => {
+    for (const card of weekCards) {
+      if (card.existing) ensureWeekTasksLoaded(card.existing.id);
+    }
+  }, [weekCards, ensureWeekTasksLoaded]);
   const currentWeekIndex = useMemo(() => {
     if (monthStatus !== "current") return null;
     const found = segments.find(s => today >= s.weekStart && today <= new Date(s.weekEnd.getFullYear(), s.weekEnd.getMonth(), s.weekEnd.getDate(), 23, 59, 59));
