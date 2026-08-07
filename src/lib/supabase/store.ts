@@ -51,8 +51,12 @@ export class ConflictError extends Error {
  *
  * - id で既存行を確認 → 存在しなければ insert、存在すれば lockValue 一致条件で update
  * - update が 0 件 → ConflictError（フォーム時点とは違う値が DB にある＝他者が先行更新）
+ *
+ * 【export】個人OKRストア（personalOkrStore.ts）等、store.ts 以外の低レベルCRUDファイルからも
+ * 同じ楽観ロックを使えるよう export する（CLAUDE.md Section 5）。呼び出し側の契約は不変：
+ * クライアント側で updated_at を上書きしない・expectedUpdatedAt はフォーム時点の値を渡す。
  */
-async function saveWithLock<T extends { id: string }>(
+export async function saveWithLock<T extends { id: string }>(
   table: string,
   row: T,
   expectedUpdatedAt?: string,

@@ -574,6 +574,112 @@ CREATE TABLE IF NOT EXISTS member_widget_layouts (
   updated_by  text NOT NULL DEFAULT ''
 );
 
+-- ===== 個人OKR層（OKRモード再設計 Phase 1 Step A・migrations/20260807b_add_personal_okr.sql 参照）=====
+-- Kintoneが正本・このアプリはKintoneに存在しない「週の層」を埋める実行層（docs/dev/okr-redesign-plan.md）。
+-- 本人のみRLS（member_id/親を辿るpersonal_kr_owner_member_id等。下部のRLSブロック参照）。
+CREATE TABLE IF NOT EXISTS personal_krs (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id        text NOT NULL REFERENCES members(id),
+  group_id         text NOT NULL REFERENCES groups(id),
+  fiscal_year      integer NOT NULL,
+  quarter          text NOT NULL CHECK (quarter IN ('1Q','2Q','3Q','4Q')),
+  kr_kind          text NOT NULL CHECK (kr_kind IN ('group_kr','general','company_common','om_common','agm_common','leader_common')),
+  key_result_id    text REFERENCES key_results(id),
+  task_force_id    text REFERENCES task_forces(id),
+  label            text NOT NULL,
+  weight_pct       numeric NOT NULL DEFAULT 0,
+  category         text,
+  activity         text,
+  strength_role    text,
+  weakness_role    text,
+  criteria         text,
+  supplement       text,
+  display_order    integer NOT NULL DEFAULT 0,
+  imported_at      timestamptz,
+  source_label     text,
+  is_deleted       boolean NOT NULL DEFAULT false,
+  deleted_at       timestamptz,
+  deleted_by       text,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  updated_by       text NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS personal_kr_months (
+  id                     uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  personal_kr_id         uuid NOT NULL REFERENCES personal_krs(id),
+  month                  date NOT NULL,
+  month_index            integer NOT NULL CHECK (month_index IN (1,2,3)),
+  positioning            text,
+  activities             text,
+  target_and_evidence    text,
+  risks                  text,
+  band_target            integer CHECK (band_target IS NULL OR band_target IN (60,70,80,90,100)),
+  band_override          integer CHECK (band_override IS NULL OR band_override IN (60,70,80,90,100)),
+  band_override_by       text REFERENCES members(id),
+  band_override_at       timestamptz,
+  weight_override_pct    numeric,
+  review_text            text,
+  self_eval_pct          numeric,
+  gm_eval_pct            numeric,
+  gm_comment             text,
+  imported_at            timestamptz,
+  source_label           text,
+  is_deleted             boolean NOT NULL DEFAULT false,
+  deleted_at             timestamptz,
+  deleted_by             text,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now(),
+  updated_by             text NOT NULL DEFAULT '',
+  UNIQUE (personal_kr_id, month)
+);
+
+-- ★週の目標状態。week_indexの上限は6（1〜5ではない）：既存カレンダー週アルゴリズム
+-- （src/lib/date/monthWeeks.ts）は月初の曜日次第で6週になる月が実在する（例：2026年8月）。
+-- 詳細はmigrations/20260807b_add_personal_okr.sqlの冒頭コメント参照。
+CREATE TABLE IF NOT EXISTS personal_kr_weeks (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  personal_kr_id   uuid NOT NULL REFERENCES personal_krs(id),
+  month            date NOT NULL,
+  week_index       integer NOT NULL CHECK (week_index BETWEEN 1 AND 6),
+  week_start       date NOT NULL,
+  week_end         date NOT NULL,
+  goal_state       text,
+  self_rating      text CHECK (self_rating IS NULL OR self_rating IN ('o','t','x')),
+  rated_at         timestamptz,
+  note             text,
+  is_deleted       boolean NOT NULL DEFAULT false,
+  deleted_at       timestamptz,
+  deleted_by       text,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  updated_by       text NOT NULL DEFAULT '',
+  UNIQUE (personal_kr_id, month, week_index),
+  CONSTRAINT personal_kr_weeks_date_range_check CHECK (week_end >= week_start)
+);
+
+-- 週とタスクの紐づけ（多対多・物理削除でよい中間テーブル。task_task_forces等と同型）
+CREATE TABLE IF NOT EXISTS personal_kr_week_tasks (
+  week_id    uuid NOT NULL REFERENCES personal_kr_weeks(id),
+  task_id    text NOT NULL REFERENCES tasks(id),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (week_id, task_id)
+);
+
+-- KRごとのメモ（追記型）。member_idは著者列（監査用）。RLSの根拠にはしない（下部参照）
+CREATE TABLE IF NOT EXISTS personal_kr_memos (
+  id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  personal_kr_id   uuid NOT NULL REFERENCES personal_krs(id),
+  member_id        text NOT NULL REFERENCES members(id),
+  body             text NOT NULL,
+  is_deleted       boolean NOT NULL DEFAULT false,
+  deleted_at       timestamptz,
+  deleted_by       text,
+  created_at       timestamptz NOT NULL DEFAULT now(),
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  updated_by       text NOT NULL DEFAULT ''
+);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -589,7 +695,8 @@ BEGIN
     ('milestones'), ('kr_sessions'), ('kr_declarations'),
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
     ('okr_analyses'), ('kr_reports'), ('task_dependencies'),
-    ('loading_tips'), ('member_widget_layouts')
+    ('loading_tips'), ('member_widget_layouts'),
+    ('personal_krs'), ('personal_kr_months'), ('personal_kr_weeks'), ('personal_kr_memos')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -637,6 +744,13 @@ ALTER TABLE loading_tips               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_widget_layouts      ENABLE ROW LEVEL SECURITY;
 -- ※ member_widget_layouts の個別ポリシーは current_member_id() を参照するため、
 --   ヘルパー関数の定義より後（下部の「マイページ（ウィジェット）レイアウト」ブロック）で作成する。
+ALTER TABLE personal_krs               ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personal_kr_months         ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personal_kr_weeks          ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personal_kr_week_tasks     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE personal_kr_memos          ENABLE ROW LEVEL SECURITY;
+-- ※ 個人OKR層5テーブルの個別ポリシーは current_member_id() 等を参照するため、
+--   ヘルパー関数の定義より後（下部の「個人OKR層」ブロック）で作成する。
 ALTER TABLE guest_ai_usage_daily        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guest_ai_usage_global_daily ENABLE ROW LEVEL SECURITY;
 -- ※ guest_ai_usage_daily / guest_ai_usage_global_daily は個別ポリシーを一切作らない
@@ -795,6 +909,72 @@ CREATE POLICY "member_widget_layouts_own" ON member_widget_layouts
   FOR ALL TO authenticated
   USING (member_id = current_member_id())
   WITH CHECK (member_id = current_member_id());
+
+-- ============================================================
+-- 個人OKR層：本人のみ読み書き可（migrations/20260807b_add_personal_okr.sql 参照）
+-- RLSの実装方式（member_id冗長列 vs 親を辿るポリシー）の判断理由は同マイグレーション
+-- 冒頭コメントを参照。NULL猶予条項は一切書かない。
+-- ============================================================
+
+-- personal_kr_id → その personal_krs 行の所有者 member_id（1ホップ）
+CREATE OR REPLACE FUNCTION personal_kr_owner_member_id(p_personal_kr_id uuid)
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_personal_kr_owner$
+  SELECT member_id FROM public.personal_krs WHERE id = p_personal_kr_id
+$fn_personal_kr_owner$;
+
+GRANT EXECUTE ON FUNCTION personal_kr_owner_member_id(uuid) TO authenticated;
+
+-- week_id → personal_kr_weeks → personal_krs の所有者 member_id（2ホップ）
+CREATE OR REPLACE FUNCTION personal_kr_week_owner_member_id(p_week_id uuid)
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_personal_kr_week_owner$
+  SELECT pk.member_id
+  FROM public.personal_kr_weeks w
+  JOIN public.personal_krs pk ON pk.id = w.personal_kr_id
+  WHERE w.id = p_week_id
+$fn_personal_kr_week_owner$;
+
+GRANT EXECUTE ON FUNCTION personal_kr_week_owner_member_id(uuid) TO authenticated;
+
+DROP POLICY IF EXISTS "personal_krs_own" ON personal_krs;
+CREATE POLICY "personal_krs_own" ON personal_krs
+  FOR ALL TO authenticated
+  USING (member_id = current_member_id())
+  WITH CHECK (member_id = current_member_id());
+
+DROP POLICY IF EXISTS "personal_kr_months_own" ON personal_kr_months;
+CREATE POLICY "personal_kr_months_own" ON personal_kr_months
+  FOR ALL TO authenticated
+  USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
+  WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
+
+DROP POLICY IF EXISTS "personal_kr_weeks_own" ON personal_kr_weeks;
+CREATE POLICY "personal_kr_weeks_own" ON personal_kr_weeks
+  FOR ALL TO authenticated
+  USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
+  WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
+
+DROP POLICY IF EXISTS "personal_kr_week_tasks_own" ON personal_kr_week_tasks;
+CREATE POLICY "personal_kr_week_tasks_own" ON personal_kr_week_tasks
+  FOR ALL TO authenticated
+  USING (personal_kr_week_owner_member_id(week_id) = current_member_id())
+  WITH CHECK (personal_kr_week_owner_member_id(week_id) = current_member_id());
+
+DROP POLICY IF EXISTS "personal_kr_memos_own" ON personal_kr_memos;
+CREATE POLICY "personal_kr_memos_own" ON personal_kr_memos
+  FOR ALL TO authenticated
+  USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
+  WITH CHECK (
+    personal_kr_owner_member_id(personal_kr_id) = current_member_id()
+    AND member_id = current_member_id()
+  );
 
 -- ============================================================
 -- ゲストAI利用回数の条件付きカウントアップ関数（Phase 3・v3.29／v3.30で条件付き加算に修正）
@@ -1522,6 +1702,13 @@ CREATE INDEX IF NOT EXISTS idx_okr_analyses_kr_id_created          ON okr_analys
 CREATE INDEX IF NOT EXISTS idx_okr_analyses_objective_id_created   ON okr_analyses(objective_id, created_at DESC) WHERE is_deleted = false;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_kr_reports_kr_week_mode        ON kr_reports(kr_id, week_start, mode) WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_kr_reports_kr_id_week               ON kr_reports(kr_id, week_start DESC) WHERE is_deleted = false;
+
+-- 個人OKR層（migrations/20260807b_add_personal_okr.sql）
+CREATE INDEX IF NOT EXISTS idx_personal_krs_member_id            ON personal_krs(member_id)           WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_personal_kr_months_personal_kr_id ON personal_kr_months(personal_kr_id) WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_personal_kr_weeks_personal_kr_id  ON personal_kr_weeks(personal_kr_id)  WHERE is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_personal_kr_week_tasks_task_id    ON personal_kr_week_tasks(task_id);
+CREATE INDEX IF NOT EXISTS idx_personal_kr_memos_personal_kr_id  ON personal_kr_memos(personal_kr_id) WHERE is_deleted = false;
 
 -- task_dependencies（B1）：同一ペアの重複防止（論理削除は除外し、削除後の再追加を許す）
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_dependencies_pair

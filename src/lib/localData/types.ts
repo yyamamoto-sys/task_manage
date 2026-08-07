@@ -348,6 +348,130 @@ export interface TaskChangeLog {
   updated_by: string;     // member_id
 }
 
+// ===== 個人OKR層（OKRモード再設計 Phase 1 Step A・docs/dev/okr-redesign-plan.md §3）=====
+// Kintoneが正本・このアプリはKintoneに存在しない「週の層」を埋める実行層。
+// RLSは本人のみ（migrations/20260807b_add_personal_okr.sql）。
+
+/** 個人四半期KRの種別。'group_kr'のときだけ key_result_id を使う */
+export type PersonalKrKind =
+  | "group_kr"
+  | "general"
+  | "company_common"
+  | "om_common"
+  | "agm_common"
+  | "leader_common";
+
+/** 達成度バンド（60=介入なしでも到達／70=明確な前進／80=第三者にも成果が明らか／
+ *  90=誰が見ても成功が明らか／100=既存の発想では達成できない＝要革新） */
+export type PersonalKrBand = 60 | 70 | 80 | 90 | 100;
+
+/** 週の自己評価。'o'=達成／'t'=一部／'x'=未達／null=未評価 */
+export type WeekSelfRating = "o" | "t" | "x" | null;
+
+/** 個人四半期KR（Kintone「個人KR_1〜8」の行化） */
+export interface PersonalKr {
+  id: string;
+  member_id: string;   // 本人（RLSの主体）
+  group_id: string;    // 部署の集計・将来の公開範囲拡張用（RLSはmember_idのみで判定）
+  fiscal_year: number;
+  quarter: Quarter;
+  kr_kind: PersonalKrKind;
+  key_result_id?: string | null;  // kr_kind='group_kr' のときのみ使用
+  task_force_id?: string | null;
+  label: string;
+  weight_pct: number;  // 合計100%は警告のみ・DB制約では強制しない
+  category?: string | null;
+  activity?: string | null;
+  strength_role?: string | null;
+  weakness_role?: string | null;
+  criteria?: string | null;
+  supplement?: string | null;
+  display_order: number;
+  imported_at?: string | null;
+  source_label?: string | null;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
+/** 個人月次計画（Kintone取込＋人の決定） */
+export interface PersonalKrMonth {
+  id: string;
+  personal_kr_id: string;
+  month: string;        // 月初 YYYY-MM-01
+  month_index: 1 | 2 | 3;
+  positioning?: string | null;
+  activities?: string | null;
+  target_and_evidence?: string | null;
+  risks?: string | null;
+  band_target?: PersonalKrBand | null;     // Kintoneに書いた当月の狙い
+  band_override?: PersonalKrBand | null;   // 人が決めた値。入っていれば以後AIは上書きしない
+  band_override_by?: string | null;
+  band_override_at?: string | null;
+  weight_override_pct?: number | null;
+  review_text?: string | null;
+  self_eval_pct?: number | null;
+  gm_eval_pct?: number | null;
+  gm_comment?: string | null;
+  imported_at?: string | null;
+  source_label?: string | null;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
+/**
+ * ★週の目標状態（アプリだけが持つ層・Kintoneに存在しない）。
+ * week_index の上限は6（1〜5ではない）。既存カレンダー週アルゴリズム
+ * （src/lib/date/monthWeeks.ts）は月初の曜日次第で6週になる月が実在する
+ * （例：2026年8月）。migrations/20260807b_add_personal_okr.sql参照。
+ */
+export interface PersonalKrWeek {
+  id: string;
+  personal_kr_id: string;
+  month: string;         // 月次計画と突き合わせるための冗長保持
+  week_index: number;    // 1〜6
+  week_start: string;
+  week_end: string;
+  goal_state?: string | null;
+  self_rating: WeekSelfRating;
+  rated_at?: string | null;
+  note?: string | null;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
+/** 週とタスクの紐づけ（多対多）。方式は「自動候補＋明示リンク」（人が選んで紐づける） */
+export interface PersonalKrWeekTask {
+  week_id: string;
+  task_id: string;
+  created_at?: string;
+}
+
+/** KRごとのメモ（追記型・1件＝1エントリ）。member_idは著者（本人）。RLSの根拠は親personal_kr側 */
+export interface PersonalKrMemo {
+  id: string;
+  personal_kr_id: string;
+  member_id: string;
+  body: string;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 // AI連携専用の型は src/lib/ai/types.ts に移動しました。
 // 後方互換のため re-export します。
 export type {

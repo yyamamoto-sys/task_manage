@@ -3,6 +3,7 @@
 
 import type { Task, Milestone, Project, Member, ToDo } from "../../lib/localData/types";
 import { toDate, toDateStr, diffDays, addDays } from "../../lib/date";
+import { calendarWeekNumber } from "../../lib/date/monthWeeks";
 import type { OverloadRange } from "../../lib/gantt/overload";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { isCompletedForProgress } from "../../lib/taskMeta";
@@ -190,19 +191,8 @@ export interface WeekBlock {
   endDate: Date;
 }
 
-/**
- * 日付 → その月内でのカレンダー週番号（1始まり・月曜始まり週で数える）。
- * 月の1日の曜日から「月頭の半端な週（W1）の長さ」を求め（1日が日曜なら1日、それ以外は
- * 次の日曜までの日数）、以降は7日ずつのMon-Sun週として数える。days配列がどの日から
- * 始まっていても（月の途中スタートでも）その日単体から正しい週番号を求められる純粋関数。
- */
-function calendarWeekNumber(d: Date): number {
-  const day = d.getDate();
-  const firstDow = new Date(d.getFullYear(), d.getMonth(), 1).getDay(); // 0=日〜6=土
-  const firstWeekLen = firstDow === 0 ? 1 : 8 - firstDow;
-  if (day <= firstWeekLen) return 1;
-  return 2 + Math.floor((day - firstWeekLen - 1) / 7);
-}
+// calendarWeekNumber（日付→月内カレンダー週番号）は src/lib/date/monthWeeks.ts に抽出済み
+// （個人OKRの週レーンと共有するため。CLAUDE.md okr-redesign-plan.md §3-3）。挙動は不変。
 
 export function computeWeekBlocks(days: Date[], dayWidth: number): WeekBlock[] {
   const blocks: WeekBlock[] = [];

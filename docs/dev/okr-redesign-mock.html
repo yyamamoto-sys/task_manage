@@ -1,0 +1,822 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>OKRモード 再設計案 — グループOKR / 個人OKR</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@400;500;700&family=Noto+Serif+JP:wght@500;600&display=swap" rel="stylesheet" />
+
+<style>
+/* ===========================================================
+   OKRモード再設計案（モック）
+   既存トークン（src/styles/globals.css「Refined Stationery Aesthetic」）を流用。
+   パレット・角丸・書体は発明していない。変えているのは情報設計と余白のみ。
+   =========================================================== */
+:root {
+  --color-bg-primary:#fbfaf7; --color-bg-secondary:#f4f2ec; --color-bg-tertiary:#ebe8e0;
+  --color-bg-canvas:#b8b2a5;
+  --color-bg-info:#ecf0f9; --color-bg-success:#eef5ec; --color-bg-warning:#faf5e2;
+  --color-bg-danger:#f7eae7; --color-bg-purple:#f0eef8;
+  --color-text-primary:#221f1a; --color-text-secondary:#56524a; --color-text-tertiary:#6e6860;
+  --color-text-info:#2c4f8f; --color-text-success:#2f6b3c; --color-text-warning:#8a5d10;
+  --color-text-danger:#a54338; --color-text-purple:#4d4690;
+  --color-border-primary:#e3ddcf; --color-border-secondary:#c7c0ad;
+  --color-brand:#3d4f8a; --color-brand-light:#e7eaf3; --color-brand-border:#8993b8;
+  --color-signal-green:#22c55e; --color-signal-yellow:#eab308; --color-signal-red:#ef4444;
+  --color-ai-from:#6366f1; --color-ai-to:#8b5cf6;
+  --gradient-ai:linear-gradient(135deg,var(--color-ai-from) 0%,var(--color-ai-to) 100%);
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-full:9999px;
+  --font-sans:"M PLUS Rounded 1c",system-ui,sans-serif;
+  --font-serif:"Noto Serif JP",serif;
+}
+@media (prefers-color-scheme: dark) { :root { color-scheme: dark;
+  --color-bg-primary:#1c1a16; --color-bg-secondary:#221f1a; --color-bg-tertiary:#2c2922;
+  --color-bg-canvas:#0e0d0b;
+  --color-bg-info:#1a2540; --color-bg-success:#1a2820; --color-bg-warning:#2a2010;
+  --color-bg-danger:#2a1814; --color-bg-purple:#211f38;
+  --color-text-primary:#ebe6dc; --color-text-secondary:#a5a094; --color-text-tertiary:#938d80;
+  --color-text-info:#7a9ad8; --color-text-success:#84c08a; --color-text-warning:#d4ad60;
+  --color-text-danger:#d88c80; --color-text-purple:#aaa3da;
+  --color-border-primary:#332f27; --color-border-secondary:#423d33;
+  --color-brand:#8895c4; --color-brand-light:#232844; --color-brand-border:#5e6790;
+} }
+:root[data-theme="dark"] { color-scheme: dark;
+  --color-bg-primary:#1c1a16; --color-bg-secondary:#221f1a; --color-bg-tertiary:#2c2922;
+  --color-bg-canvas:#0e0d0b;
+  --color-bg-info:#1a2540; --color-bg-success:#1a2820; --color-bg-warning:#2a2010;
+  --color-bg-danger:#2a1814; --color-bg-purple:#211f38;
+  --color-text-primary:#ebe6dc; --color-text-secondary:#a5a094; --color-text-tertiary:#938d80;
+  --color-text-info:#7a9ad8; --color-text-success:#84c08a; --color-text-warning:#d4ad60;
+  --color-text-danger:#d88c80; --color-text-purple:#aaa3da;
+  --color-border-primary:#332f27; --color-border-secondary:#423d33;
+  --color-brand:#8895c4; --color-brand-light:#232844; --color-brand-border:#5e6790;
+}
+:root[data-theme="light"] { color-scheme: light;
+  --color-bg-primary:#fbfaf7; --color-bg-secondary:#f4f2ec; --color-bg-tertiary:#ebe8e0;
+  --color-bg-canvas:#b8b2a5;
+  --color-bg-info:#ecf0f9; --color-bg-success:#eef5ec; --color-bg-warning:#faf5e2;
+  --color-bg-danger:#f7eae7; --color-bg-purple:#f0eef8;
+  --color-text-primary:#221f1a; --color-text-secondary:#56524a; --color-text-tertiary:#6e6860;
+  --color-text-info:#2c4f8f; --color-text-success:#2f6b3c; --color-text-warning:#8a5d10;
+  --color-text-danger:#a54338; --color-text-purple:#4d4690;
+  --color-border-primary:#e3ddcf; --color-border-secondary:#c7c0ad;
+  --color-brand:#3d4f8a; --color-brand-light:#e7eaf3; --color-brand-border:#8993b8;
+}
+
+* { box-sizing:border-box; }
+body {
+  margin:0; padding:12px; background:var(--color-bg-canvas);
+  font-family:var(--font-sans); color:var(--color-text-primary);
+  font-size:14px; line-height:1.6; font-feature-settings:"palt" 1,"kern" 1;
+  -webkit-font-smoothing:antialiased;
+}
+.shell {
+  max-width:1180px; margin:0 auto; background:var(--color-bg-primary);
+  border-radius:var(--radius-lg); overflow:hidden;
+  box-shadow:0 18px 48px rgba(34,31,26,.28);
+  display:grid; grid-template-columns:188px 1fr; min-height:96vh;
+  transition:grid-template-columns .22s ease;
+}
+.shell.with-ai { grid-template-columns:188px 1fr 380px; }
+@media (max-width:1080px){ .shell.with-ai{grid-template-columns:188px 1fr 320px} }
+@media (max-width:860px){ .shell,.shell.with-ai{grid-template-columns:1fr} .rail{display:none} }
+
+/* ---------- AIチャットドロワー（計画モードと同じ型） ---------- */
+.aipanel { display:none; flex-direction:column; border-left:1px solid var(--color-border-primary); background:var(--color-bg-secondary); min-width:0; }
+.shell.with-ai .aipanel { display:flex; }
+.ai-head { display:flex; align-items:center; gap:9px; padding:13px 16px; border-bottom:1px solid var(--color-border-primary); background:var(--gradient-ai); color:#fff; }
+.ai-head strong { font-size:12.5px; }
+.ai-head .sub { font-size:10px; opacity:.85; }
+.ai-x { margin-left:auto; background:transparent; border:none; color:#fff; font-size:16px; cursor:pointer; line-height:1; padding:2px 4px; }
+.ai-body { flex:1; overflow-y:auto; padding:14px 16px; display:flex; flex-direction:column; gap:11px; }
+.ai-guide { background:var(--color-bg-purple); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); padding:12px 14px; }
+.ai-guide h4 { margin:0 0 6px; font-size:11.5px; font-weight:700; color:var(--color-text-purple); }
+.ai-guide p { margin:0; font-size:11.5px; color:var(--color-text-secondary); }
+.ai-ctx { margin-top:9px; display:flex; flex-wrap:wrap; gap:4px; }
+.ai-ctx span { font-size:10px; padding:2px 8px; border-radius:var(--radius-full); background:var(--color-bg-primary); border:1px solid var(--color-border-primary); color:var(--color-text-tertiary); }
+.starters { display:flex; flex-direction:column; gap:5px; }
+.starter { font-family:inherit; text-align:left; cursor:pointer; font-size:11.5px; line-height:1.5; padding:9px 12px; border-radius:var(--radius-md); border:1px solid var(--color-border-primary); background:var(--color-bg-primary); color:var(--color-text-secondary); }
+.msg { border-radius:var(--radius-md); padding:11px 13px; font-size:12px; line-height:1.7; }
+.msg.me { background:var(--color-brand-light); color:var(--color-text-primary); align-self:flex-end; max-width:88%; }
+.msg.ai { background:var(--color-bg-primary); border:1px solid var(--color-border-primary); color:var(--color-text-secondary); }
+.msg.ai b { color:var(--color-text-primary); }
+.ai-foot { border-top:1px solid var(--color-border-primary); padding:11px 14px; display:flex; gap:7px; }
+.ai-foot input { flex:1; min-width:0; font-family:inherit; font-size:12px; padding:9px 12px; border-radius:var(--radius-full); border:1px solid var(--color-border-secondary); background:var(--color-bg-primary); color:var(--color-text-primary); }
+.ai-send { font-family:inherit; font-size:11.5px; font-weight:700; cursor:pointer; border:none; border-radius:var(--radius-full); padding:8px 15px; background:var(--gradient-ai); color:#fff; }
+
+/* ---------- 解析の状態 ---------- */
+.anz { display:flex; align-items:center; gap:9px; flex-wrap:wrap; font-size:11px; color:var(--color-text-tertiary); }
+.dotp { width:7px; height:7px; border-radius:50%; background:var(--color-signal-green); flex-shrink:0; }
+.dotp.run { background:var(--color-ai-from); animation:pulse 1.1s ease-in-out infinite; }
+@keyframes pulse { 0%,100%{opacity:.35} 50%{opacity:1} }
+.reanalyze { font-family:inherit; font-size:10px; cursor:pointer; padding:3px 9px; border-radius:var(--radius-full); border:1px solid var(--color-border-secondary); background:transparent; color:var(--color-text-tertiary); }
+.skel { background:linear-gradient(90deg,var(--color-bg-tertiary) 25%,var(--color-bg-secondary) 50%,var(--color-bg-tertiary) 75%); background-size:200% 100%; animation:sh 1.3s linear infinite; border-radius:var(--radius-sm); height:12px; }
+@keyframes sh { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+.ai-mark { display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:var(--radius-full); background:var(--color-bg-purple); color:var(--color-text-purple); border:1px solid var(--color-border-primary); }
+.by-me { display:inline-flex; align-items:center; gap:4px; font-size:9.5px; font-weight:700; padding:2px 7px; border-radius:var(--radius-full); background:var(--color-brand-light); color:var(--color-brand); border:1px solid var(--color-brand-border); }
+.band button { font-family:inherit; cursor:pointer; }
+
+.rail { background:var(--color-bg-secondary); border-right:1px solid var(--color-border-primary); padding:14px 12px; display:flex; flex-direction:column; }
+.rail-title { font-size:12.5px; font-weight:700; }
+.rail-sub { font-size:10px; color:var(--color-text-tertiary); margin-bottom:16px; }
+.rail-group { font-size:9.5px; text-transform:uppercase; letter-spacing:.12em; color:var(--color-text-tertiary); margin:16px 0 6px; }
+.rail-item { display:flex; align-items:center; gap:7px; padding:6px 9px; border-radius:var(--radius-sm); font-size:12px; color:var(--color-text-secondary); }
+.rail-item.on { background:var(--color-brand-light); color:var(--color-brand); font-weight:700; }
+.rail-note { margin-top:auto; font-size:9.5px; color:var(--color-text-tertiary); }
+
+.main { display:flex; flex-direction:column; min-width:0; }
+.topbar { display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:14px 26px; border-bottom:1px solid var(--color-border-primary); background:var(--color-bg-secondary); }
+.seg { display:flex; background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-full); padding:2px; }
+.seg button { font-family:inherit; font-size:12.5px; font-weight:700; border:none; cursor:pointer; padding:6px 18px; border-radius:var(--radius-full); background:transparent; color:var(--color-text-tertiary); }
+.seg button[aria-selected="true"] { background:var(--color-brand); color:#fff; }
+.spacer { flex:1; }
+.btn { font-family:inherit; font-size:12px; font-weight:700; cursor:pointer; padding:7px 14px; border-radius:var(--radius-full); border:1px solid var(--color-border-secondary); background:var(--color-bg-primary); color:var(--color-text-secondary); display:inline-flex; align-items:center; gap:6px; }
+.btn.ai { background:var(--gradient-ai); color:#fff; border-color:transparent; }
+.theme { font-family:inherit; font-size:11px; cursor:pointer; background:transparent; border:1px solid var(--color-border-primary); color:var(--color-text-tertiary); border-radius:var(--radius-full); padding:5px 11px; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus-visible { outline:2px solid var(--color-brand-border); outline-offset:2px; }
+
+.page { padding:26px 26px 44px; }
+.view[hidden] { display:none; }
+
+/* ---------- 期のヘッダ（グループ側） ---------- */
+.period { display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; }
+.period-eyebrow { font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--color-text-tertiary); }
+h1 { font-family:var(--font-serif); font-weight:600; font-size:25px; line-height:1.35; margin:2px 0 0; text-wrap:balance; }
+.purpose { margin:14px 0 0; padding-left:14px; border-left:2px solid var(--color-brand-border); font-size:13.5px; color:var(--color-text-secondary); max-width:64ch; }
+.purpose b { color:var(--color-text-primary); font-weight:700; }
+
+.sec-head { display:flex; align-items:center; gap:10px; margin:34px 0 12px; }
+.sec-head h2 { font-size:12px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--color-text-tertiary); margin:0; }
+.sec-head .rule { flex:1; height:1px; background:var(--color-border-primary); }
+.sec-head .count { font-size:11px; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; }
+
+/* ---------- KRカード（グループ側） ---------- */
+.krs { display:flex; flex-direction:column; gap:9px; }
+details.kr { background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); overflow:hidden; border-left:3px solid var(--stripe,var(--color-border-secondary)); }
+details.kr[open] { background:var(--color-bg-secondary); }
+.kr > summary { list-style:none; cursor:pointer; padding:13px 16px; display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:center; }
+.kr > summary::-webkit-details-marker { display:none; }
+.kr-no { font-family:var(--font-serif); font-size:12px; font-weight:600; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; }
+.kr-name { font-size:14px; font-weight:700; }
+.kr-line { font-size:11.5px; color:var(--color-text-tertiary); margin-top:2px; }
+.pill { font-size:10.5px; font-weight:700; padding:3px 10px; border-radius:var(--radius-full); border:1px solid transparent; white-space:nowrap; }
+.pill.ok { background:var(--color-bg-success); color:var(--color-text-success); border-color:var(--color-signal-green); }
+.pill.warn { background:var(--color-bg-warning); color:var(--color-text-warning); border-color:var(--color-signal-yellow); }
+.pill.bad { background:var(--color-bg-danger); color:var(--color-text-danger); border-color:var(--color-signal-red); }
+.pill.flat { background:var(--color-bg-tertiary); color:var(--color-text-tertiary); border-color:var(--color-border-secondary); }
+.kr-body { padding:0 16px 15px; border-top:1px solid var(--color-border-primary); }
+.layer { display:grid; grid-template-columns:104px 1fr; gap:10px; padding:11px 0; border-bottom:1px dotted var(--color-border-primary); }
+.layer:last-of-type { border-bottom:none; }
+.layer dt { font-size:10.5px; font-weight:700; letter-spacing:.06em; color:var(--color-text-tertiary); padding-top:2px; }
+.layer dd { margin:0; font-size:13px; color:var(--color-text-secondary); max-width:60ch; }
+.tfs { margin-top:10px; display:flex; flex-direction:column; gap:1px; }
+.tf { display:grid; grid-template-columns:1fr auto auto; gap:12px; align-items:center; padding:8px 10px; border-radius:var(--radius-sm); background:var(--color-bg-primary); }
+.tf-name { font-size:12.5px; font-weight:500; }
+.tf-meta, .tf-owner { font-size:10.5px; color:var(--color-text-tertiary); }
+
+.dep { display:flex; gap:13px; padding:14px 16px; border-radius:var(--radius-md); background:var(--color-bg-warning); border:1px solid var(--color-signal-yellow); }
+.dep-mark { font-family:var(--font-serif); font-size:13px; font-weight:600; color:var(--color-text-warning); white-space:nowrap; }
+.dep p { margin:0; font-size:12.5px; color:var(--color-text-warning); max-width:64ch; }
+.dep code { font-family:inherit; font-weight:700; }
+
+.match { display:flex; flex-direction:column; gap:7px; }
+.row { display:grid; grid-template-columns:20px 1fr auto; gap:12px; align-items:start; padding:12px 14px; background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); }
+.row.n2 { grid-template-columns:1fr auto; }
+.row .mk { font-size:12px; line-height:1.5; font-weight:700; }
+.row.is-ok .mk { color:var(--color-text-success); }
+.row.is-gap .mk { color:var(--color-text-warning); }
+.row.is-bad .mk { color:var(--color-text-danger); }
+.said { font-size:13px; }
+.found { font-size:11.5px; color:var(--color-text-tertiary); margin-top:3px; }
+.found .em { color:var(--color-text-primary); font-weight:500; }
+.mini { font-family:inherit; font-size:10.5px; font-weight:700; cursor:pointer; white-space:nowrap; padding:5px 11px; border-radius:var(--radius-full); border:1px solid var(--color-brand-border); background:var(--color-brand-light); color:var(--color-brand); }
+.src { margin-top:10px; font-size:11px; color:var(--color-text-tertiary); }
+.kb { display:grid; grid-template-columns:repeat(auto-fill,minmax(224px,1fr)); gap:9px; }
+.doc { padding:12px 14px; background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); }
+.doc-t { font-size:12.5px; font-weight:700; }
+.doc-m { font-size:10.5px; color:var(--color-text-tertiary); margin-top:3px; font-variant-numeric:tabular-nums; }
+.doc-s { font-size:11.5px; color:var(--color-text-secondary); margin-top:7px; }
+.note { margin-top:36px; padding-top:16px; border-top:1px solid var(--color-border-primary); font-size:11.5px; color:var(--color-text-tertiary); max-width:76ch; }
+.note b { color:var(--color-text-secondary); }
+
+/* ================= 個人ビュー ================= */
+/* KRタブ（最上部） */
+.krtabs { display:flex; gap:2px; overflow-x:auto; border-bottom:1px solid var(--color-border-primary); }
+.krtab { font-family:inherit; cursor:pointer; white-space:nowrap; text-align:left; border:1px solid transparent; border-bottom:none; background:transparent; padding:10px 15px 9px; border-radius:var(--radius-sm) var(--radius-sm) 0 0; color:var(--color-text-tertiary); margin-bottom:-1px; }
+.krtab .kt-n { display:block; font-size:12.5px; font-weight:700; }
+.krtab .kt-s { display:block; font-size:10px; margin-top:1px; font-variant-numeric:tabular-nums; }
+.krtab[aria-selected="true"] { background:var(--color-bg-secondary); border-color:var(--color-border-primary); color:var(--color-text-primary); }
+.krpanel { background:var(--color-bg-secondary); border:1px solid var(--color-border-primary); border-top:none; border-radius:0 0 var(--radius-md) var(--radius-md); padding:16px 20px 22px; }
+.krpanel[hidden] { display:none; }
+
+/* 期・月の切替バー */
+.mbar { display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-bottom:14px; border-bottom:1px dotted var(--color-border-primary); }
+.qsel { font-family:inherit; font-size:11.5px; font-weight:700; padding:5px 11px; border-radius:var(--radius-sm); border:1px solid var(--color-border-secondary); background:var(--color-bg-primary); color:var(--color-text-secondary); }
+.months { display:flex; gap:2px; }
+.mtab { font-family:inherit; font-size:11.5px; cursor:pointer; padding:5px 13px; border-radius:var(--radius-full); border:1px solid transparent; background:transparent; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; }
+.mtab[aria-selected="true"] { background:var(--color-brand); color:#fff; font-weight:700; }
+.mtab.past { color:var(--color-text-secondary); border-color:var(--color-border-primary); }
+.origin { display:inline-flex; align-items:center; gap:6px; font-size:10.5px; color:var(--color-text-tertiary); border:1px dashed var(--color-border-secondary); border-radius:var(--radius-full); padding:3px 11px; }
+.origin b { color:var(--color-text-secondary); font-weight:700; }
+
+details.folded { border:1px solid var(--color-border-primary); border-radius:var(--radius-md); background:var(--color-bg-primary); margin-top:16px; }
+details.folded > summary { cursor:pointer; list-style:none; padding:10px 14px; font-size:11.5px; font-weight:700; color:var(--color-text-secondary); display:flex; gap:8px; align-items:center; }
+details.folded > summary::-webkit-details-marker { display:none; }
+details.folded > summary::before { content:"▸"; color:var(--color-text-tertiary); font-size:10px; }
+details.folded[open] > summary::before { content:"▾"; }
+.folded-body { padding:0 14px 14px; }
+.kv { display:grid; grid-template-columns:140px 1fr; gap:9px 12px; font-size:12.5px; }
+.kv dt { font-weight:700; color:var(--color-text-tertiary); font-size:10.5px; padding-top:2px; }
+.kv dd { margin:0; color:var(--color-text-secondary); max-width:60ch; }
+
+.blk { margin-top:20px; }
+.blk-h { display:flex; align-items:center; gap:9px; margin-bottom:9px; }
+.blk-h h3 { margin:0; font-size:11.5px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--color-text-tertiary); }
+.blk-h .rule { flex:1; height:1px; background:var(--color-border-primary); }
+.blk-h .tail { font-size:10.5px; color:var(--color-text-tertiary); }
+.card { background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); padding:14px 16px; }
+
+.band { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+.band span { font-size:10.5px; padding:3px 9px; border-radius:var(--radius-sm); background:var(--color-bg-tertiary); color:var(--color-text-tertiary); border:1px solid var(--color-border-primary); }
+.band span.on { background:var(--color-brand-light); color:var(--color-brand); border-color:var(--color-brand-border); font-weight:700; }
+.band span.off { opacity:.45; text-decoration:line-through; }
+
+/* ---------- 週レーン（自己評価つき） ---------- */
+.weeks { display:grid; grid-template-columns:repeat(5,1fr); gap:7px; }
+@media (max-width:820px){ .weeks{grid-template-columns:repeat(2,1fr)} }
+.wk {
+  background:var(--color-bg-primary); border:1px solid var(--color-border-primary);
+  border-radius:var(--radius-md); padding:11px 12px;
+  border-top:3px solid var(--color-border-primary);
+  display:flex; flex-direction:column; gap:7px; min-height:146px;
+  transition:background .15s ease, border-color .15s ease;
+}
+.wk[data-res="o"] { border-top-color:var(--color-signal-green); background:var(--color-bg-success); }
+.wk[data-res="t"] { border-top-color:var(--color-signal-yellow); background:var(--color-bg-warning); }
+.wk[data-res="x"] { border-top-color:var(--color-signal-red); background:var(--color-bg-danger); }
+.wk.now { box-shadow:0 0 0 2px var(--color-brand-light); border-color:var(--color-brand-border); }
+.wk.future { border-style:dashed; }
+.wk-h { display:flex; align-items:baseline; justify-content:space-between; gap:6px; }
+.wk-n { font-family:var(--font-serif); font-size:12px; font-weight:600; font-variant-numeric:tabular-nums; }
+.wk-d { font-size:9.5px; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; }
+.wk-goal { font-size:11.5px; line-height:1.5; }
+.wk-goal.empty { color:var(--color-text-tertiary); font-style:italic; }
+.wk-t { font-size:10px; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; }
+.wk-f { margin-top:auto; display:flex; align-items:center; gap:4px; }
+.rate { font-family:var(--font-serif); font-size:13px; line-height:1; cursor:pointer; width:26px; height:24px; border-radius:var(--radius-sm); border:1px solid var(--color-border-primary); background:var(--color-bg-primary); color:var(--color-text-tertiary); }
+.rate[aria-pressed="true"][data-v="o"] { background:var(--color-signal-green); border-color:var(--color-signal-green); color:#fff; }
+.rate[aria-pressed="true"][data-v="t"] { background:var(--color-signal-yellow); border-color:var(--color-signal-yellow); color:#3a2c05; }
+.rate[aria-pressed="true"][data-v="x"] { background:var(--color-signal-red); border-color:var(--color-signal-red); color:#fff; }
+.wk-set { font-family:inherit; font-size:10px; cursor:pointer; background:transparent; border:1px dashed var(--color-border-secondary); color:var(--color-text-tertiary); border-radius:var(--radius-sm); padding:3px 8px; }
+.legend { font-size:10.5px; color:var(--color-text-tertiary); margin-top:8px; }
+
+/* ---------- これから ---------- */
+.ahead { background:var(--color-bg-primary); border:1px solid var(--color-brand-border); border-radius:var(--radius-md); overflow:hidden; }
+.ahead-top { display:grid; grid-template-columns:auto 1fr; gap:16px; align-items:center; padding:15px 17px; background:var(--color-brand-light); }
+.ahead-num { font-family:var(--font-serif); font-size:27px; font-weight:600; line-height:1; color:var(--color-brand); font-variant-numeric:tabular-nums; }
+.ahead-num small { font-size:12px; margin-left:2px; }
+.ahead-lead { font-size:13px; color:var(--color-text-primary); max-width:60ch; }
+.ahead-lead b { font-weight:700; }
+.moves { padding:6px 17px 15px; }
+.move { display:grid; grid-template-columns:auto 1fr auto; gap:12px; align-items:start; padding:12px 0; border-bottom:1px dotted var(--color-border-primary); }
+.move:last-child { border-bottom:none; }
+.move-w { font-family:var(--font-serif); font-size:11px; font-weight:600; color:var(--color-text-tertiary); padding-top:2px; white-space:nowrap; }
+.move-t { font-size:12.5px; font-weight:700; }
+.move-d { font-size:11.5px; color:var(--color-text-tertiary); margin-top:2px; max-width:58ch; }
+.trade { margin-top:12px; padding:13px 15px; border-radius:var(--radius-md); background:var(--color-bg-warning); border:1px solid var(--color-border-secondary); font-size:12px; color:var(--color-text-warning); }
+.trade b { font-weight:700; }
+
+/* ---------- メモ ---------- */
+.memo textarea { width:100%; font-family:inherit; font-size:12.5px; line-height:1.7; color:var(--color-text-primary); background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); padding:13px 15px; resize:vertical; min-height:96px; }
+.memo-f { display:flex; align-items:center; gap:10px; margin-top:7px; }
+.memo-f span { font-size:10.5px; color:var(--color-text-tertiary); }
+.memo-log { margin-top:10px; display:flex; flex-direction:column; gap:1px; }
+.memo-i { display:grid; grid-template-columns:78px 1fr; gap:12px; padding:9px 12px; background:var(--color-bg-primary); border-radius:var(--radius-sm); font-size:12px; }
+.memo-i .d { font-size:10.5px; color:var(--color-text-tertiary); font-variant-numeric:tabular-nums; padding-top:2px; }
+
+/* ---------- 過去月 ---------- */
+.past-sum { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:9px; }
+.ps { background:var(--color-bg-primary); border:1px solid var(--color-border-primary); border-radius:var(--radius-md); padding:12px 14px; }
+.ps-l { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--color-text-tertiary); }
+.ps-v { font-family:var(--font-serif); font-size:20px; font-weight:600; margin-top:3px; font-variant-numeric:tabular-nums; }
+.ps-n { font-size:10.5px; color:var(--color-text-tertiary); margin-top:2px; }
+.wstrip { display:flex; gap:5px; flex-wrap:wrap; margin-top:10px; }
+.wsi { display:flex; align-items:center; gap:5px; font-size:11px; padding:4px 10px; border-radius:var(--radius-full); border:1px solid var(--color-border-primary); background:var(--color-bg-primary); }
+.wsi .g { color:var(--color-text-tertiary); }
+.wsi[data-res="o"] { background:var(--color-bg-success); border-color:var(--color-signal-green); }
+.wsi[data-res="t"] { background:var(--color-bg-warning); border-color:var(--color-signal-yellow); }
+.wsi[data-res="x"] { background:var(--color-bg-danger); border-color:var(--color-signal-red); }
+
+.ask { margin-top:20px; padding:16px 18px; border-radius:var(--radius-md); background:var(--color-bg-purple); border:1px solid var(--color-text-purple); }
+.ask h3 { margin:0 0 4px; font-size:13px; font-weight:700; color:var(--color-text-purple); }
+.ask p { margin:0 0 12px; font-size:11.5px; color:var(--color-text-secondary); max-width:62ch; }
+.ask-field { display:flex; gap:8px; flex-wrap:wrap; }
+.ask-field input { flex:1; min-width:220px; font-family:inherit; font-size:12.5px; padding:9px 13px; border-radius:var(--radius-full); border:1px solid var(--color-border-secondary); background:var(--color-bg-primary); color:var(--color-text-primary); }
+.chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:11px; }
+.chip { font-size:11px; padding:5px 11px; border-radius:var(--radius-full); background:var(--color-bg-primary); border:1px solid var(--color-border-primary); color:var(--color-text-secondary); }
+@media (prefers-reduced-motion:reduce){ *{transition:none!important;animation:none!important} }
+</style>
+
+<div class="shell">
+  <nav class="rail">
+    <div class="rail-title">グループ計画管理</div>
+    <div class="rail-sub">情報戦略本部（AID）</div>
+    <div class="rail-group">モード</div>
+    <div class="rail-item">計画</div>
+    <div class="rail-item on">OKR</div>
+    <div class="rail-group">OKR</div>
+    <div class="rail-item on">ダッシュボード</div>
+    <div class="rail-item">取込・記録</div>
+    <div class="rail-item">ナレッジ</div>
+    <div class="rail-note">※ 左レールは現行のまま。<br />本案の対象はメインエリア。</div>
+  </nav>
+
+  <div class="main">
+    <div class="topbar">
+      <div class="seg" role="tablist" aria-label="表示の切替">
+        <button type="button" role="tab" aria-selected="false" data-go="group">グループ</button>
+        <button type="button" role="tab" aria-selected="true" data-go="me">自分</button>
+      </div>
+      <span class="spacer"></span>
+      <button type="button" class="btn ai">＋ 資料・記録を取り込む</button>
+      <button type="button" class="theme" data-theme-toggle>ライト / ダーク</button>
+    </div>
+
+    <!-- ============ グループOKRビュー ============ -->
+    <div class="page view" id="view-group" hidden>
+      <div class="period">
+        <div>
+          <div class="period-eyebrow">2026年 下期 ／ 7月–12月</div>
+          <h1>統合営業を名人芸から組織能力へ編み直す</h1>
+        </div>
+      </div>
+      <p class="purpose"><b>判断はAI、決断は人間。</b>評価は3層記述（ロジックモデル／Checkpoint／達成度）。達成度は 60＝この取り組みがなくても到達していた水準／70＝介入による明確な改善／80＝第三者にも成果が明らか／90＝革新的要素を含む／100＝要革新。<b>3Qは90・100を置かない。</b></p>
+
+      <div class="sec-head"><h2>Key Result</h2><span class="rule"></span><span class="count">4件 ／ TF 8件</span></div>
+      <div class="krs">
+        <details class="kr" style="--stripe:var(--color-signal-yellow)" open>
+          <summary>
+            <span class="kr-no">KR1</span>
+            <span><span class="kr-name">価値生産 — 統合営業を第一の適用先とする</span>
+            <span class="kr-line">TF 3件 ／ 中村（主）・山本・木村 ／ 測定点 M4ゲート 8月末</span></span>
+            <span class="pill warn">要注意</span>
+          </summary>
+          <div class="kr-body">
+            <dl style="margin:0">
+              <div class="layer"><dt>ロジックモデル</dt><dd>エースが仮説立てを担えれば、非名人でも一定水準の商談設計に到達でき、統合営業が組織能力になる。</dd></div>
+              <div class="layer"><dt>Checkpoint</dt><dd>M4ゲート（8月末）で非名人の提案が「一定水準」の判定を通ること。判定者と基準は経営確認事項として未決。</dd></div>
+              <div class="layer"><dt>達成度</dt><dd>TF2は設計どおり進行。ただしM4の判定基準が未確定のため通過可否を測れない。</dd></div>
+            </dl>
+            <div class="tfs">
+              <div class="tf"><span class="tf-name">TF1 — AIIC／MCM 無償版の検証</span><span class="tf-meta">タスク 12 ／ 遅延 1</span><span class="tf-owner">中村</span></div>
+              <div class="tf"><span class="tf-name">TF2 — エース仮説立てメソッド実証</span><span class="tf-meta">タスク 21 ／ 停滞 3</span><span class="tf-owner">山本</span></div>
+              <div class="tf"><span class="tf-name">TF3 — AMIDAS 要件定義</span><span class="tf-meta">タスク 5 ／ 未着手</span><span class="tf-owner">木村</span></div>
+            </div>
+          </div>
+        </details>
+        <details class="kr" style="--stripe:var(--color-signal-red)">
+          <summary>
+            <span class="kr-no">KR2</span>
+            <span><span class="kr-name">情報統合基盤・IT統制</span>
+            <span class="kr-line">TF 2件 ／ 田中（主） ／ <b>他3件のKRがこの基盤に接続</b></span></span>
+            <span class="pill bad">滞留</span>
+          </summary>
+          <div class="kr-body">
+            <dl style="margin:0">
+              <div class="layer"><dt>ロジックモデル</dt><dd>最小接続を先に立てれば各KRのデータが1箇所に集まり、生産の材料になる。</dd></div>
+              <div class="layer"><dt>Checkpoint</dt><dd>最小構成で2系統以上が実接続され、データが流れていること。</dd></div>
+              <div class="layer"><dt>達成度</dt><dd>接続先の選定で止まっている。3週間ステータスが動いていない。</dd></div>
+            </dl>
+            <div class="tfs">
+              <div class="tf"><span class="tf-name">TF1 — 情報統合基盤の最小接続構築</span><span class="tf-meta">タスク 9 ／ 停滞 6</span><span class="tf-owner">田中</span></div>
+              <div class="tf"><span class="tf-name">TF2 — IT統制・インフラ維持</span><span class="tf-meta">タスク 14 ／ 順調</span><span class="tf-owner">山本（順）</span></div>
+            </div>
+          </div>
+        </details>
+        <details class="kr" style="--stripe:var(--color-border-secondary)">
+          <summary>
+            <span class="kr-no">KR3</span>
+            <span><span class="kr-name">DX／人材接続 — 「決断＝人間」の知性を言語化する</span>
+            <span class="kr-line">TF 2件 ／ 高瀬（主） ／ 期後半に本格化</span></span>
+            <span class="pill flat">期後半</span>
+          </summary>
+          <div class="kr-body"><dl style="margin:0"><div class="layer"><dt>Checkpoint</dt><dd>KR1-TF2の成果が出てから着手する設計。現時点で遅れではない。</dd></div></dl></div>
+        </details>
+        <details class="kr" style="--stripe:var(--color-signal-green)">
+          <summary>
+            <span class="kr-no">KR4</span>
+            <span><span class="kr-name">Smart MEGURU（亀岡センシング）</span>
+            <span class="kr-line">TF 1件 ／ 2028年以降のMEGURU STYLE接続への種まき</span></span>
+            <span class="pill ok">順調</span>
+          </summary>
+          <div class="kr-body"><dl style="margin:0"><div class="layer"><dt>達成度</dt><dd>予定どおり。ベースラインからのずれなし。</dd></div></dl></div>
+        </details>
+      </div>
+
+      <div class="sec-head"><h2>波及の注意</h2><span class="rule"></span></div>
+      <div class="dep">
+        <span class="dep-mark">単一障害点</span>
+        <p><code>KR2-TF1（情報統合基盤）</code>が3週間停滞しています。この基盤には <code>KR1-TF1</code>・<code>KR1-TF2</code>・<code>KR4</code> が接続する設計のため、遅れは3つのKRへ波及します。依存の直列：エースM4ゲート（8月末）→ KR1-TF2 → KR3-TF2（期後半）。</p>
+      </div>
+
+      <div class="sec-head"><h2>言われたこと と 動いているもの</h2><span class="rule"></span><span class="count">要対応 2件</span></div>
+      <div class="match">
+        <div class="row is-ok"><span class="mk">✓</span>
+          <span><span class="said"><b>中村</b>「AIIC無償版のフィードバックを8月12日までにまとめる」</span>
+          <span class="found">タスク <span class="em">AIIC無償版FBまとめ</span>／担当 中村／期日 8月12日 — 合意と一致</span></span><span></span></div>
+        <div class="row is-gap"><span class="mk">!</span>
+          <span><span class="said"><b>田中</b>「接続先を2つに絞って今週中に決める」</span>
+          <span class="found">対応するタスクが見つかりません</span></span>
+          <button type="button" class="mini">タスクにする</button></div>
+        <div class="row is-bad"><span class="mk">×</span>
+          <span><span class="said"><b>山本</b>「M4向けの評価基準ドラフトを出す」</span>
+          <span class="found">タスク <span class="em">M4評価基準ドラフト</span> は<span class="em">完了済み</span>（7月30日）。会議での前提と食い違っています</span></span>
+          <button type="button" class="mini">確認する</button></div>
+        <p class="src">出典：8月5日 取込「下期チェックイン議事録.docx」＋「下期方針_配布資料.pdf」（種別は判定せず、OKR・グループ全体に関わる情報として抽出）</p>
+      </div>
+
+      <div class="sec-head"><h2>部署のナレッジ</h2><span class="rule"></span><span class="count">7件 ／ 情報戦略本部のみ閲覧可</span></div>
+      <div class="kb">
+        <div class="doc"><div class="doc-t">下期方針_配布資料</div><div class="doc-m">PDF ／ 上長配布 ／ 7月13日</div><div class="doc-s">5戦略の主語をアミタ（事業ごと）に転換。AIDは②仕入・③生産に注力する。</div></div>
+        <div class="doc"><div class="doc-t">AID_5戦略_統合営業OS v8.2</div><div class="doc-m">Word ／ 正本 ／ 7月10日</div><div class="doc-s">確度表記【確定】【仮説】【未確定】の運用。齟齬時は新しい一次情報を優先。</div></div>
+        <div class="doc"><div class="doc-t">下期OKR 全文マスター v3.0</div><div class="doc-m">テキスト ／ 期のOKR ／ 7月21日</div><div class="doc-s">達成度バンドの定義（60〜100）。3Qは90・100を置かない。</div></div>
+      </div>
+
+      <p class="note"><b>この画面が畳んだもの。</b>「OKR管理 ＞ 概要／①会議ノート／②セッション記録／③分析／④レポート」というタブの入れ子をやめ、儀式の名前を画面の骨格から外しました。取込は右上の1つのボタンに集約し、チェックインかウィンセッションかは判定しません。</p>
+    </div>
+
+    <!-- ============ 個人OKRビュー ============ -->
+    <div class="page view" id="view-me">
+      <div class="krtabs" role="tablist" aria-label="個人KRの切替">
+        <button type="button" class="krtab" role="tab" aria-selected="false" data-kr="k1"><span class="kt-n">個人KR1 自己研鑽</span><span class="kt-s">ウェイト 5%</span></button>
+        <button type="button" class="krtab" role="tab" aria-selected="true" data-kr="k2"><span class="kt-n">個人KR2 エース（AAS）</span><span class="kt-s">グループKR1 / TF2 ・ 40%</span></button>
+        <button type="button" class="krtab" role="tab" aria-selected="false" data-kr="k3"><span class="kt-n">個人KR3 AIIC/MCM</span><span class="kt-s">グループKR1 / TF1 ・ 25%</span></button>
+        <button type="button" class="krtab" role="tab" aria-selected="false" data-kr="k4"><span class="kt-n">個人KR4 計画管理アプリ</span><span class="kt-s">全般 ・ 20%</span></button>
+        <button type="button" class="krtab" role="tab" aria-selected="false" data-kr="k5"><span class="kt-n">全社共通 勤怠</span><span class="kt-s">10%</span></button>
+      </div>
+
+      <!-- ===== 個人KR2 ===== -->
+      <div class="krpanel" id="p-k2">
+        <div class="mbar">
+          <select class="qsel" aria-label="対象期"><option>3Q（7–9月）</option><option>2Q（4–6月）</option></select>
+          <div class="months" role="tablist" aria-label="月の切替">
+            <button type="button" class="mtab past" role="tab" aria-selected="false" data-m="jul">7月</button>
+            <button type="button" class="mtab" role="tab" aria-selected="true" data-m="aug">8月</button>
+            <button type="button" class="mtab" role="tab" aria-selected="false" data-m="sep">9月</button>
+          </div>
+          <span class="spacer"></span>
+          <span class="origin">Kintone <b>個人OKR設定フォーム / 月次振返り記録</b> から取込（8月1日）</span>
+        </div>
+
+        <!-- ---- 8月（今月） ---- -->
+        <div data-month="aug">
+          <details class="folded">
+            <summary>このKRの内容（3Q 通期・Kintone 個人OKR設定フォーム）</summary>
+            <div class="folded-body">
+              <dl class="kv">
+                <dt>対象業務カテゴリ</dt><dd>グループKR1 / KR1-TF2 AAS（エース仮説立てメソッド実証）</dd>
+                <dt>実施内容</dt><dd>提案書作成AIから「疑いを深める共創パートナー」への転換を、非名人が使える手順として成立させる。</dd>
+                <dt>得意領域の強化<br /><span style="font-weight:400">（役割）</span></dt><dd>抽象的な構想を具体的な選択肢へ変換する存在として、モード設計の案を出し切る。</dd>
+                <dt>苦手領域の克服<br /><span style="font-weight:400">（役割）</span></dt><dd>合意形成を後回しにする癖。判定基準の擦り合わせを先に置く。</dd>
+                <dt>達成基準</dt><dd>M4ゲート（8月末）で非名人が作った提案が「一定水準」の判定を通る。判定者と基準の合意を含む。</dd>
+                <dt>補足（目指す存在）</dt><dd>仮説立てを先導する存在。停滞している「非名人の到達可否の判断」を解消する。</dd>
+              </dl>
+            </div>
+          </details>
+
+          <div class="blk">
+            <div class="blk-h"><h3>今月の計画</h3><span class="rule"></span><span class="tail">Kintone 月次振返り記録 2か月目 ・ 編集はKintone側</span></div>
+            <dl class="kv card">
+              <dt>位置づけ</dt><dd>M4ゲート直前の月。判定基準の合意と提出物の統合を同時に終える。</dd>
+              <dt>当月に取り組む内容</dt><dd>仮説立てメソッドのテンプレ検証／判定基準の擦り合わせ／M4提出物の統合。</dd>
+              <dt>当月末の達成目標<br /><span style="font-weight:400">と、その証拠</span></dt><dd>非名人2名がテンプレのみで提案を作れている（成果物2本と判定者のコメントが証拠）。</dd>
+              <dt>当月末 達成度バンド</dt><dd>
+                <div class="band" id="bandRow">
+                  <span data-b="60">60 基準の議論に着手</span>
+                  <span data-b="70" class="on">70 基準に合意し提出物が揃う</span>
+                  <span data-b="80">80 判定を通り第三者に明らか</span>
+                  <span class="off">90</span><span class="off">100</span>
+                </div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:7px;flex-wrap:wrap">
+                  <span class="ai-mark" id="bandOwner">✦ AI判定</span>
+                  <span style="font-size:10.5px;color:var(--color-text-tertiary)" id="bandNote">W1◯・W2△と提出物の状況から70と判定。<b>クリックで変更できます。</b></span>
+                </div>
+              </dd>
+              <dt>リスクと依存関係</dt><dd><b>KR2-TF1（情報統合基盤）の停滞。</b>先行タスク2件がここで止まっており、自分の努力では動きません。</dd>
+            </dl>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h"><h3>週の目標状態</h3><span class="rule"></span><span class="tail">★アプリで設定（Kintoneに無い層）</span></div>
+            <div class="weeks">
+              <div class="wk" data-res="o">
+                <div class="wk-h"><span class="wk-n">W1</span><span class="wk-d">8/1–8/2</span></div>
+                <div class="wk-goal">検証ログの形式が決まっている</div>
+                <div class="wk-t">タスク 2 ／ 完了 2</div>
+                <div class="wk-f"><button type="button" class="rate" data-v="o" aria-pressed="true" title="達成">◯</button><button type="button" class="rate" data-v="t" aria-pressed="false" title="一部">△</button><button type="button" class="rate" data-v="x" aria-pressed="false" title="未達">✕</button></div>
+              </div>
+              <div class="wk now" data-res="t">
+                <div class="wk-h"><span class="wk-n">W2</span><span class="wk-d">8/3–8/9</span></div>
+                <div class="wk-goal">判定基準の合意が取れている</div>
+                <div class="wk-t">タスク 4 ／ 完了 1 ／ 遅延 1</div>
+                <div class="wk-f"><button type="button" class="rate" data-v="o" aria-pressed="false" title="達成">◯</button><button type="button" class="rate" data-v="t" aria-pressed="true" title="一部">△</button><button type="button" class="rate" data-v="x" aria-pressed="false" title="未達">✕</button></div>
+              </div>
+              <div class="wk future">
+                <div class="wk-h"><span class="wk-n">W3</span><span class="wk-d">8/10–8/16</span></div>
+                <div class="wk-goal">非名人1名が試作を1本出せている</div>
+                <div class="wk-t">タスク 3</div>
+                <div class="wk-f"><span class="wk-t">これから</span></div>
+              </div>
+              <div class="wk future">
+                <div class="wk-h"><span class="wk-n">W4</span><span class="wk-d">8/17–8/23</span></div>
+                <div class="wk-goal empty">未設定</div>
+                <div class="wk-f"><button type="button" class="wk-set">目標状態を書く</button></div>
+              </div>
+              <div class="wk future">
+                <div class="wk-h"><span class="wk-n">W5</span><span class="wk-d">8/24–8/31</span></div>
+                <div class="wk-goal empty">未設定</div>
+                <div class="wk-f"><button type="button" class="wk-set">目標状態を書く</button></div>
+              </div>
+            </div>
+            <p class="legend">◯達成／△一部／✕未達 を自分で付けます。評価すると週の色が変わります。付けた評価が月末の下書きの材料になります。</p>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h"><h3>これから</h3><span class="rule"></span>
+              <span class="anz"><span class="dotp" id="anzDot"></span><span id="anzTxt">解析済み（8月7日 12:58）</span><button type="button" class="reanalyze" id="reBtn">再解析</button></span>
+            </div>
+            <div class="ahead">
+              <div class="ahead-top">
+                <span class="ahead-num">70<small>%</small></span>
+                <span class="ahead-lead">当月末の狙いは<b>バンド70（基準に合意し提出物が揃う）</b>。W1◯・W2△の積み上げから見て、<b>今のままではバンド60に着地します。</b>70に乗せるには、合意されていない判定基準を今週中に閉じ、残り3週で試作2本を通す必要があります。</span>
+              </div>
+              <div class="moves">
+                <div class="move">
+                  <span class="move-w">今週 W2</span>
+                  <span><span class="move-t">判定基準を閉じる</span><span class="move-d">△の原因はここ1点。高瀬さんとの合意が取れれば W3以降が動き出します。逆に閉じないと残り全週が同じ理由で止まります。</span></span>
+                  <button type="button" class="mini">タスクを開く</button>
+                </div>
+                <div class="move">
+                  <span class="move-w">W3</span>
+                  <span><span class="move-t">1名目の試作を出す</span><span class="move-d">目標状態は設定済み。ただし先行タスク「基盤側の接続先前提」が KR2-TF1 待ちで、そこが解けないと着手できません。</span></span>
+                  <button type="button" class="mini">待ちを見る</button>
+                </div>
+                <div class="move">
+                  <span class="move-w">W4・W5</span>
+                  <span><span class="move-t">目標状態が未設定です</span><span class="move-d">当月末の達成目標から逆算すると、W4で2名目の試作、W5で判定と提出物の統合が必要になります。この2週を空けたままだと、月末に「何が足りなかったか」しか分かりません。</span></span>
+                  <button type="button" class="mini">2週分を書く</button>
+                </div>
+              </div>
+              <div style="padding:0 17px 16px">
+                <div class="trade"><b>間に合わせるなら、捨てる候補。</b>KR2-TF1 待ちが今週中に解けない場合、試作2本のうち1本を「テンプレのみ・判定なし」に落とすと、バンド70の条件（提出物が揃う）は満たせます。判定は9月（3か月目）に回す案です。</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="blk memo">
+            <div class="blk-h"><h3>メモ</h3><span class="rule"></span><span class="tail">このKR専用 ・ 自分だけが見えます</span></div>
+            <textarea placeholder="気づいたこと、迷っていること、次に確かめたいこと。Kintoneに書く前の下書きにも使えます。">判定基準の話、高瀬さんは「非名人の定義」から詰めたい様子だった。こちらが基準表を先に出すと議論が早い気がする。次回はたたき台を持って行く。</textarea>
+            <div class="memo-f"><button type="button" class="btn">保存</button><span>最後の保存：8月6日 18:42</span></div>
+            <div class="memo-log">
+              <div class="memo-i"><span class="d">8月4日</span><span>検証ログの形式、Excelではなくアプリのタスクコメントに寄せた方が後で拾いやすい。</span></div>
+              <div class="memo-i"><span class="d">7月28日</span><span>M4の「一定水準」は結局誰が決めるのか、宮原さんの線も確認が必要。</span></div>
+            </div>
+          </div>
+
+          <div class="blk">
+            <div class="blk-h"><h3>月末にやること</h3><span class="rule"></span></div>
+            <div class="row n2">
+              <span><span class="said"><b>Kintoneに貼れる振り返りの下書きを作る</b></span>
+              <span class="found">W1〜W5の目標状態と自己評価（◯△✕）、タスクの実績、メモから、「月次振返り記録」の<span class="em">振り返り行</span>に貼れる文章を組み立てます。自己評価%とバンドの該当理由まで下書きし、<span class="em">確定は人が行います</span>。</span></span>
+              <button type="button" class="mini">下書きを作る</button>
+            </div>
+          </div>
+
+          <div class="blk">
+            <div class="row n2" style="border-color:var(--color-text-purple);background:var(--color-bg-purple)">
+              <span><span class="said"><b>迷ったらAIに聞く</b></span>
+              <span class="found">計画モードと同じ右のAIパネルが開きます。<span class="em">このKRの内容・今月の計画・週の目標状態と自己評価・タスクの実績・メモ・部署のナレッジ</span>を文脈として持った状態で始まるので、前提の説明は要りません。</span></span>
+              <button type="button" class="btn ai" data-open-ai>AIパネルを開く</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ---- 7月（過去月・読み取り専用） ---- -->
+        <div data-month="jul" hidden>
+          <div class="blk" style="margin-top:16px">
+            <div class="blk-h"><h3>7月（1か月目）</h3><span class="rule"></span><span class="tail">確定済み ・ 読み取り専用</span></div>
+            <div class="past-sum">
+              <div class="ps"><div class="ps-l">自己評価</div><div class="ps-v">65<span style="font-size:12px">%</span></div><div class="ps-n">バンド60〜70の間</div></div>
+              <div class="ps"><div class="ps-l">GM評価</div><div class="ps-v">60<span style="font-size:12px">%</span></div><div class="ps-n">高瀬さん・7月31日面談</div></div>
+              <div class="ps"><div class="ps-l">週の達成</div><div class="ps-v">2 / 4</div><div class="ps-n">◯2 △1 ✕1</div></div>
+            </div>
+            <div class="wstrip">
+              <span class="wsi" data-res="o">W1 <span class="g">前提の棚卸しが終わっている</span> ◯</span>
+              <span class="wsi" data-res="o">W2 <span class="g">3モード案を出し切る</span> ◯</span>
+              <span class="wsi" data-res="t">W3 <span class="g">モード遷移の案を絞る</span> △</span>
+              <span class="wsi" data-res="x">W4 <span class="g">判定基準のたたき台を出す</span> ✕</span>
+            </div>
+            <details class="folded" open>
+              <summary>Kintoneに提出した振り返り（7月分）</summary>
+              <div class="folded-body">
+                <dl class="kv">
+                  <dt>自己評価</dt><dd>65%（本KR40% × 係数 → 26%）</dd>
+                  <dt>振り返り</dt><dd>3モード案までは出せたが、判定基準に手が付かなかった。理由は関係者合意を後回しにしたこと。8月は基準を先に置く。</dd>
+                  <dt>GMコメント</dt><dd>案の量は十分。次は決めに行く段の速度を見たい。</dd>
+                </dl>
+              </div>
+            </details>
+            <div class="trade" style="background:var(--color-bg-info);border-color:var(--color-border-primary);color:var(--color-text-info)"><b>8月と同じ理由でつまずいています。</b>7月W4の未達理由は「判定基準に手が付かなかった」、8月W2の△理由も「判定基準の合意が取れていない」。2か月連続で同じ1点が律速になっています。</div>
+          </div>
+        </div>
+
+        <!-- ---- 9月（未来） ---- -->
+        <div data-month="sep" hidden>
+          <div class="blk" style="margin-top:16px">
+            <div class="blk-h"><h3>9月（3か月目）</h3><span class="rule"></span><span class="tail">Kintoneの月次計画がまだ未記入です</span></div>
+            <div class="card" style="font-size:12.5px;color:var(--color-text-secondary)">3か月目の計画はKintone側で月初に立てます。取り込まれたら、ここに「当月末の達成目標」と週の目標状態の枠（W1〜W5）が並びます。<br /><br />なお9月は四半期末のため、<b>四半期評価（3Q全体の自己評価とGM評価）</b>も同月に入ります。</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ===== 個人KR1 自己研鑽 ===== -->
+      <div class="krpanel" id="p-k1" hidden>
+        <div class="mbar">
+          <select class="qsel" aria-label="対象期"><option>3Q（7–9月）</option></select>
+          <div class="months"><button type="button" class="mtab past">7月</button><button type="button" class="mtab" aria-selected="true">8月</button><button type="button" class="mtab">9月</button></div>
+          <span class="spacer"></span>
+          <span class="origin">自己研鑽KRは<b>独立した1本</b>として設計する運用（設計手順書 §2-6）</span>
+        </div>
+        <details class="folded" open>
+          <summary>このKRの内容</summary>
+          <div class="folded-body">
+            <dl class="kv">
+              <dt>実施内容</dt><dd>なぜ必要か／何が理解できるようになるか／どの業務・仮説・成果物で試すか／結果をどうチームへ還元するか。</dd>
+              <dt>当月末の達成目標</dt><dd>学んだ評価設計の型を、M4の判定基準づくりに1回適用している。</dd>
+            </dl>
+          </div>
+        </details>
+        <div class="blk">
+          <div class="blk-h"><h3>週の目標状態</h3><span class="rule"></span></div>
+          <div class="weeks">
+            <div class="wk" data-res="o"><div class="wk-h"><span class="wk-n">W1</span><span class="wk-d">8/1–8/2</span></div><div class="wk-goal">対象文献を2本に絞れている</div><div class="wk-f"><button type="button" class="rate" data-v="o" aria-pressed="true">◯</button><button type="button" class="rate" data-v="t" aria-pressed="false">△</button><button type="button" class="rate" data-v="x" aria-pressed="false">✕</button></div></div>
+            <div class="wk now"><div class="wk-h"><span class="wk-n">W2</span><span class="wk-d">8/3–8/9</span></div><div class="wk-goal">1本目を読み切り要点を1枚にしている</div><div class="wk-f"><button type="button" class="rate" data-v="o" aria-pressed="false">◯</button><button type="button" class="rate" data-v="t" aria-pressed="false">△</button><button type="button" class="rate" data-v="x" aria-pressed="false">✕</button></div></div>
+            <div class="wk future"><div class="wk-h"><span class="wk-n">W3</span><span class="wk-d">8/10–8/16</span></div><div class="wk-goal empty">未設定</div><div class="wk-f"><button type="button" class="wk-set">目標状態を書く</button></div></div>
+            <div class="wk future"><div class="wk-h"><span class="wk-n">W4</span><span class="wk-d">8/17–8/23</span></div><div class="wk-goal empty">未設定</div><div class="wk-f"><button type="button" class="wk-set">目標状態を書く</button></div></div>
+            <div class="wk future"><div class="wk-h"><span class="wk-n">W5</span><span class="wk-d">8/24–8/31</span></div><div class="wk-goal empty">未設定</div><div class="wk-f"><button type="button" class="wk-set">目標状態を書く</button></div></div>
+          </div>
+        </div>
+        <div class="blk">
+          <div class="blk-h"><h3>これから</h3><span class="rule"></span></div>
+          <div class="ahead"><div class="ahead-top"><span class="ahead-num">1<small>回</small></span><span class="ahead-lead">当月末の達成目標は「型を<b>M4の判定基準づくりに1回適用</b>している」。適用先は個人KR2の今週の詰めです。<b>KR2側で基準を閉じる場と、このKRの適用機会が同じ1回</b>なので、今週を逃すと両方が落ちます。</span></div></div>
+        </div>
+        <div class="blk memo">
+          <div class="blk-h"><h3>メモ</h3><span class="rule"></span></div>
+          <textarea placeholder="このKR専用のメモ"></textarea>
+        </div>
+      </div>
+
+      <div class="krpanel" id="p-k3" hidden><div class="card" style="font-size:12.5px;color:var(--color-text-secondary)">個人KR3（AIIC/MCM 無償版・グループKR1/TF1・25%）も同じ構成です。今月の計画はKintoneから取り込み、週の目標状態と自己評価・メモはアプリ側で持ちます。</div></div>
+      <div class="krpanel" id="p-k4" hidden><div class="card" style="font-size:12.5px;color:var(--color-text-secondary)">個人KR4（計画管理アプリ・KR種別＝<b>全般</b>・20%）。グループKRに紐づかない業務もこの形で扱えます。</div></div>
+      <div class="krpanel" id="p-k5" hidden><div class="card" style="font-size:12.5px;color:var(--color-text-secondary)">全社共通KR（勤怠管理のセルフマネジメント）。月別の達成度のみで、週の目標状態は設けません。<b>ウェイト10%は全社員固定・GM評価は不要</b>という運用です。</div></div>
+
+      <p class="note"><b>この画面の性格。</b>Kintoneを置き換えません。四半期の個人KRと月次計画はKintoneから取り込むだけで、編集はKintone側。アプリが持つのは <b>Kintoneに存在しない「週の目標状態」と、その自己評価（◯△✕）、KRごとのメモ</b> です。月末には週次の積み上げから振り返りの下書きを作ってKintoneへ返します。二重入力は発生しません。<br /><br />中心に置いたのは<b>「これから」</b>です。過去の事実は、これからの判断を変えるときにだけ出します（7月と同じ理由でつまずいている、など）。過去月は月タブから読み取り専用で遡れます。</p>
+    </div>
+  </div>
+
+  <!-- ============ AIチャットパネル（計画モードと同じ型・OKR用にカスタム） ============ -->
+  <aside class="aipanel" aria-label="AI相談">
+    <div class="ai-head">
+      <span>✦</span>
+      <span><strong>OKR相談</strong><br /><span class="sub">個人KR2 エース（AAS）／2026年8月</span></span>
+      <button type="button" class="ai-x" data-close-ai aria-label="閉じる">✕</button>
+    </div>
+    <div class="ai-body">
+      <div class="ai-guide">
+        <h4>このパネルが見ているもの</h4>
+        <p>OKRモード用にガイドと返し方を差し替えています。達成度バンドの定義に沿って「今どの水準か、上げるには何が必要か」で答えます。</p>
+        <div class="ai-ctx">
+          <span>個人KR2 の内容</span><span>今月の計画</span><span>W1〜W5の目標状態</span><span>自己評価 ◯△✕</span><span>タスク21件の実績</span><span>メモ 3件</span><span>7月の振り返り</span><span>部署ナレッジ 7件</span>
+        </div>
+      </div>
+      <div class="starters">
+        <button type="button" class="starter">W2が△になった本当の原因はどこ？</button>
+        <button type="button" class="starter">KR2-TF1待ちが解けない前提で、残り3週を組み替えて</button>
+        <button type="button" class="starter">7月と同じ理由でつまずいていない？</button>
+        <button type="button" class="starter">バンド70に乗せるために、今週何を優先すべき？</button>
+      </div>
+      <div class="msg me">バンド70に乗せるために、今週何を優先すべき？</div>
+      <div class="msg ai"><b>判定基準の合意、1点だけです。</b><br />W2を△にしている原因も、W3の試作が着手できない理由も、たどると同じ「一定水準の判定者と基準が未決」に行き着きます。ここが閉じれば残り3週は連鎖して動きます。<br /><br />逆に今週閉じないと、W3・W4・W5も同じ理由で止まるため、月末の到達は<b>バンド60（基準の議論に着手）</b>で確定します。<br /><br />なお7月W4の未達理由も同じ1点でした。2か月続いているので、「詰める場を作れていない」ことが本当のボトルネックかもしれません。基準表のたたき台を先に出す、というメモの方針は理にかなっています。</div>
+    </div>
+    <div class="ai-foot">
+      <input type="text" placeholder="聞きたいことを書く" aria-label="質問" />
+      <button type="button" class="ai-send">送る</button>
+    </div>
+  </aside>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  document.querySelector("[data-theme-toggle]").addEventListener("click", function () {
+    var now = root.getAttribute("data-theme");
+    if (!now) now = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    root.setAttribute("data-theme", now === "dark" ? "light" : "dark");
+  });
+
+  // グループ / 自分
+  var tabs = document.querySelectorAll("[data-go]");
+  tabs.forEach(function (b) {
+    b.addEventListener("click", function () {
+      tabs.forEach(function (x) { x.setAttribute("aria-selected", String(x === b)); });
+      document.getElementById("view-group").hidden = b.dataset.go !== "group";
+      document.getElementById("view-me").hidden = b.dataset.go !== "me";
+    });
+  });
+
+  // KRタブ
+  var krTabs = document.querySelectorAll("[data-kr]");
+  krTabs.forEach(function (t) {
+    t.addEventListener("click", function () {
+      krTabs.forEach(function (x) {
+        x.setAttribute("aria-selected", String(x === t));
+        var p = document.getElementById("p-" + x.dataset.kr);
+        if (p) p.hidden = x !== t;
+      });
+    });
+  });
+
+  // 月タブ
+  document.querySelectorAll("[data-m]").forEach(function (m) {
+    m.addEventListener("click", function () {
+      var scope = m.closest(".krpanel");
+      scope.querySelectorAll("[data-m]").forEach(function (x) { x.setAttribute("aria-selected", String(x === m)); });
+      scope.querySelectorAll("[data-month]").forEach(function (s) { s.hidden = s.dataset.month !== m.dataset.m; });
+    });
+  });
+
+  // AIパネルの開閉（計画モードと同じ＝メインエリアが縮んで共存）
+  var shell = document.querySelector(".shell");
+  document.querySelectorAll("[data-open-ai]").forEach(function (b) {
+    b.addEventListener("click", function () { shell.classList.add("with-ai"); });
+  });
+  document.querySelectorAll("[data-close-ai]").forEach(function (b) {
+    b.addEventListener("click", function () { shell.classList.remove("with-ai"); });
+  });
+
+  // 達成度バンド：AI判定を人が上書きできる
+  var bandRow = document.getElementById("bandRow");
+  if (bandRow) {
+    bandRow.querySelectorAll("[data-b]").forEach(function (s) {
+      s.style.cursor = "pointer";
+      s.addEventListener("click", function () {
+        bandRow.querySelectorAll("[data-b]").forEach(function (x) { x.classList.remove("on"); });
+        s.classList.add("on");
+        var owner = document.getElementById("bandOwner");
+        var note = document.getElementById("bandNote");
+        owner.className = "by-me";
+        owner.textContent = "● 自分で決定";
+        note.innerHTML = "AI判定は <b>70</b> でした。自分で " + s.dataset.b + " に変更したため、<b>以後AIは上書きしません。</b>";
+      });
+    });
+  }
+
+  // 再解析：機械計算の部分は残り、AIが書く部分だけが後から入る
+  var reBtn = document.getElementById("reBtn");
+  if (reBtn) {
+    reBtn.addEventListener("click", function () {
+      var panel = document.getElementById("p-k2");
+      var targets = panel.querySelectorAll(".ahead-lead, .move-d, .trade");
+      var dot = document.getElementById("anzDot");
+      var txt = document.getElementById("anzTxt");
+      var saved = [];
+      targets.forEach(function (t, i) {
+        saved[i] = t.innerHTML;
+        t.innerHTML = '<div class="skel" style="width:96%"></div><div class="skel" style="width:78%;margin-top:5px"></div>';
+      });
+      dot.classList.add("run");
+      txt.textContent = "解析中… 数字と週の状態はもう出ています";
+      reBtn.disabled = true;
+      setTimeout(function () {
+        targets.forEach(function (t, i) { t.innerHTML = saved[i]; });
+        dot.classList.remove("run");
+        txt.textContent = "解析済み（たったいま）";
+        reBtn.disabled = false;
+      }, 2200);
+    });
+  }
+
+  // 週の自己評価（◯△✕）→ 週の色が変わる
+  document.querySelectorAll(".wk").forEach(function (wk) {
+    var rates = wk.querySelectorAll(".rate");
+    rates.forEach(function (r) {
+      r.addEventListener("click", function () {
+        var already = r.getAttribute("aria-pressed") === "true";
+        rates.forEach(function (x) { x.setAttribute("aria-pressed", "false"); });
+        if (already) { wk.removeAttribute("data-res"); return; }
+        r.setAttribute("aria-pressed", "true");
+        wk.setAttribute("data-res", r.dataset.v);
+      });
+    });
+  });
+})();
+</script>

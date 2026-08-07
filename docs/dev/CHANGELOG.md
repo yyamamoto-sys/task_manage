@@ -4214,4 +4214,45 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      要手動作業：無し
 #
 # 最終更新：2026-08-07（v3.35）
+#
+# v3.36 OKRモード再設計 Phase 1 Step A：個人OKR層のDB・型・ストア層を追加（2026-08-07）
+#      背景：docs/dev/okr-redesign-plan.md（統括Claude／山本さんとの設計セッション）で
+#             確定した「Kintoneが正本・アプリはKintoneに存在しない『週の層』を埋める実行層」
+#             という再設計方針のうち、Step A（DB・型・ストア層のみ。画面は作らない）を実装
+#      変更：新規マイグレーション `supabase/migrations/20260807b_add_personal_okr.sql`
+#             （personal_krs/personal_kr_months/personal_kr_weeks/personal_kr_week_tasks/
+#             personal_kr_memosの5テーブル。⚠️山本さんの手動適用が必要・未適用）／
+#             `supabase/schema.sql`に同期／`src/lib/schema/schemaChecks.ts`に検査項目5件追加／
+#             `src/lib/localData/types.ts`にPersonalKr等5型を追加／
+#             `src/lib/supabase/personalOkrStore.ts`を新規追加（低レベルCRUD・flat関数群。
+#             appStore.tsには組み込まない＝OKRモードを開かない人にクエリを発生させない）／
+#             `src/lib/supabase/store.ts`のsaveWithLockをexport化（personalOkrStoreから再利用）
+#      設計判断：RLSは本人のみ。personal_krs以外の4テーブルは列にmember_idを冗長保持せず、
+#             SECURITY DEFINERヘルパー関数（personal_kr_owner_member_id/
+#             personal_kr_week_owner_member_id）で親を辿って判定する方式を採用（理由は
+#             マイグレーションファイル冒頭コメント参照）。week_indexの上限は計画書の「1〜5」
+#             から「1〜6」に広げた（既存カレンダー週アルゴリズムでは月初の曜日次第で6週になる
+#             月が実在し、2026年8月自身がそのケースだったため。CHECK制約を1〜5のままにすると
+#             今月の週データ登録自体が失敗する事故になる）
+#      リファクタ：ganttUtils.ts（v3.09のカレンダー週計算）から純粋な「月→週セグメント」部分
+#             （calendarWeekNumber）を`src/lib/date/monthWeeks.ts`へ抽出し、
+#             `computeMonthWeekSegments`を新設（個人OKRの週レーンと共有するため。週の計算を
+#             二度書かない）。ganttUtils.tsはそこからimportするだけに変更・ガントの座標計算・
+#             挙動は一切変えていない（既存のganttUtils.test.ts 99件が無改修で全通過することで確認）
+#      ドキュメント：CLAUDE.mdにSection 24（個人OKR層）を新設。正本はdocs/dev/okr-redesign-plan.md
+#             であることを明記しCLAUDE.md本体は要点のみに留めた（Section 11のルール）
+#      テスト：`src/lib/date/__tests__/monthWeeks.test.ts`（7件・月初が日曜/月曜/土曜の
+#             各ケース・W1が1日だけになるケース・5週/6週になる月・月末が週の途中で終わる
+#             ケースを2026年の実カレンダーで検証）／
+#             `src/lib/supabase/__tests__/personalOkrStore.test.ts`（14件・null送信の
+#             回帰テスト＝self_rating/band_overrideをクリアする保存でundefinedではなくnullを
+#             送ることをJSON.stringifyの往復まで含めて検証、他fetch/upsert/softDelete/
+#             物理delete系）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`917件全通過（891件から26件増）／
+#             `npm run lint`変更ファイル新規エラー0（既存の24件のエラー・11件の警告は
+#             今回変更していないファイルの既存分）／`npm run build`成功
+#      要手動作業：山本さんが `supabase/migrations/20260807b_add_personal_okr.sql` を
+#             Supabase SQL Editorへdev→prodの順で適用すること（エージェントは未適用）
+#
+# 最終更新：2026-08-07（v3.36）
 
