@@ -96,6 +96,14 @@ function MobileFullscreenOverlay({ zIndex, children }: { zIndex: number; childre
 type AppMode = "plan" | "okr";
 
 /**
+ * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／
+ * セッション記録／なぜなぜ分析）の識別子。同時に開けるのは常にこのうち1つだけ
+ * （CLAUDE.md Section 20・v3.34）。新しいラボ機能を足すときはここに1つ id を足し、
+ * labOverlay の switch と（必要ならモバイル分岐に）1本分岐を足すだけでよい。
+ */
+type LabViewId = "graph" | "calendar" | "structure" | "mypage" | "kr-report" | "kr-why" | "kr-session";
+
+/**
  * サイドバー幅（折りたたみ／展開）。Sidebar自身の width が参照する。
  */
 const SIDEBAR_WIDTH_COLLAPSED = "48px";
@@ -171,12 +179,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   });
   // AIパネルをドラッグでリサイズ中はwidth/rightの遷移アニメを切る（カーソル追従の遅延を防ぐ）
   const [isConsultResizing, setIsConsultResizing] = useState(false);
-  const [isGraphOpen,   setIsGraphOpen]   = useState(false);
-  const [isCalendarOpen, setIsCalendarOpen] = useState(false);
-  const [isStructureOpen, setIsStructureOpen] = useState(false);
-  const [isKrReportOpen, setIsKrReportOpen] = useState(false);
-  const [isKrSessionOpen, setIsKrSessionOpen] = useState(false);
-  const [isKrWhyOpen, setIsKrWhyOpen] = useState(false);
+  // ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／セッション記録／
+  // なぜなぜ分析）は同時に1つだけ開く。真偽値を機能ごとに並べる旧方式は2つ同時にtrueになり得て、
+  // 「押したのに切り替わらない」「押し直しても戻れない」の原因になっていた（山本さん指摘・
+  // 2026-08-07。CLAUDE.md Section 20参照）。単一stateにすることで、2つ同時に開くこと自体が
+  // 型レベルで不可能になる。
+  const [activeLabView, setActiveLabView] = useState<LabViewId | null>(null);
   const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
     const saved = localStorage.getItem(KEYS.OKR_ACTIVE_TOOL) as OkrActiveTool | null;
     const validTools: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report", "why", "plan", null];
@@ -302,7 +310,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [calendarQuickAddDate, setCalendarQuickAddDate] = useState<string | null>(null);
   // マイページ（ラボ機能）：CalendarLabView と全く同じ流儀（zIndex 250のオーバーレイ＋
   // タスク編集はzIndex 300のラッパーで重ねる）
-  const [isMyPageOpen, setIsMyPageOpen] = useState(false);
   const [myPageEditTaskId, setMyPageEditTaskId] = useState<string | null>(null);
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
 
@@ -312,14 +319,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
    * 「ラボ系ビューを開いたままメインエリアの表示だけが裏で切り替わる」混乱を防ぐ
    * （CLAUDE.md Section 20・2026-08-06）。
    */
-  const closeLabViews = () => {
-    setIsGraphOpen(false);
-    setIsCalendarOpen(false);
-    setIsStructureOpen(false);
-    setIsKrReportOpen(false);
-    setIsKrWhyOpen(false);
-    setIsMyPageOpen(false);
-  };
+  const closeLabViews = () => setActiveLabView(null);
 
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
@@ -714,55 +714,83 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   );
 
   /**
-   * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／なぜなぜ分析）を
-   * メインエリア内（mainContent）に描画するための束ね。PCのみが対象（モバイルは呼び出し側の
-   * MobileFullscreenOverlay で全画面表示する。CLAUDE.md Section 20・v3.33）。
-   * closeLabViews() により通常はこの中の2つ以上が同時にtrueにはならないが、念のため
-   * 宣言順で一意に優先順位が決まるようにしてある（同時にtrueでも表示が1つに定まる）。
+   * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／セッション記録／
+   * なぜなぜ分析）をメインエリア内（mainContent）に描画するための束ね。PCのみが対象（モバイルは
+   * 呼び出し側の MobileFullscreenOverlay で全画面表示する。CLAUDE.md Section 20・v3.33）。
+   * activeLabView は常に1つの id しか持てないため、旧方式にあった「宣言順で先勝ち」という
+   * 概念自体が無くなった（CLAUDE.md Section 20・v3.34）。switch の default で LabViewId を
+   * never に代入させており、id を追加したのに分岐を書き忘れると型エラーで気づける。
    */
-  const labOverlay = isMobile ? null
-    : isGraphOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
-      </Suspense>
-    )
-    : isCalendarOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <CalendarLabView
-          onClose={() => setIsCalendarOpen(false)}
-          currentUser={currentUser}
-          onOpenTask={taskId => setCalendarEditTaskId(taskId)}
-          onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
-        />
-      </Suspense>
-    )
-    : isStructureOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
-      </Suspense>
-    )
-    : isMyPageOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <MyPageView
-          onClose={() => setIsMyPageOpen(false)}
-          currentUser={currentUser}
-          onOpenTask={taskId => setMyPageEditTaskId(taskId)}
-          onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
-          onCreateTask={handleMyPageCreateTask}
-        />
-      </Suspense>
-    )
-    : isKrReportOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
-      </Suspense>
-    )
-    : isKrWhyOpen ? (
-      <Suspense fallback={<ViewLoading />}>
-        <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
-      </Suspense>
-    )
-    : null;
+  const labOverlay = isMobile ? null : (() => {
+    switch (activeLabView) {
+      case "graph":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <GraphView onClose={() => setActiveLabView(null)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+          </Suspense>
+        );
+      case "calendar":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <CalendarLabView
+              onClose={() => setActiveLabView(null)}
+              currentUser={currentUser}
+              onOpenTask={taskId => setCalendarEditTaskId(taskId)}
+              onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
+            />
+          </Suspense>
+        );
+      case "structure":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <ProjectStructureView onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+          </Suspense>
+        );
+      case "mypage":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <MyPageView
+              onClose={() => setActiveLabView(null)}
+              currentUser={currentUser}
+              onOpenTask={taskId => setMyPageEditTaskId(taskId)}
+              onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
+              onCreateTask={handleMyPageCreateTask}
+            />
+          </Suspense>
+        );
+      case "kr-report":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <KrReportPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+          </Suspense>
+        );
+      case "kr-why":
+        return (
+          <Suspense fallback={<ViewLoading />}>
+            <KrWhyPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+          </Suspense>
+        );
+      case "kr-session":
+        // KrJointSessionFlow は元々 flex:1 の縦積みレイアウトを前提にした埋め込み設計だが、
+        // 自身のrootに minHeight:0 を持たない（GraphView/CalendarLabView/ProjectStructureView/
+        // MyPageView は持つ）。mainContent（flexDirection:"column"）に直接置くとコンテンツの
+        // 高さぶんだけ縦に伸びて overflow:hidden で下側が見切れる恐れがあるため、他ビューと
+        // 同じ「位置指定のない flex 子要素」契約になるラッパーで包む（v3.34）。
+        return (
+          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+            <Suspense fallback={<ViewLoading />}>
+              <KrJointSessionFlow currentUser={currentUser} onClose={() => setActiveLabView(null)} />
+            </Suspense>
+          </div>
+        );
+      case null:
+        return null;
+      default: {
+        const _exhaustive: never = activeLabView;
+        return _exhaustive;
+      }
+    }
+  })();
 
   const mainContent = (
     <div style={{
@@ -869,39 +897,40 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {isMilestoneAddOpen && (
           <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
         )}
-        {isGraphOpen && (
+        {activeLabView === "graph" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <GraphView onClose={() => setIsGraphOpen(false)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+              <GraphView onClose={() => setActiveLabView(null)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
         {/* CalendarLabView・MyPageView・KrQuarterPlanPanel はモバイル・PC 共通で PC return
             ブロック側（mainContent 内）に1つだけ置く。ここに置くと PC では2つ同時にDOMに
-            存在してしまい印刷2ページ・マイルストーン重複が起きる */}
-        {isKrReportOpen && (
+            存在してしまい印刷2ページ・マイルストーン重複が起きる（＝この2つはモバイルの
+            全画面表示に入口が無い。activeLabView がこの2値になっても何も描画しない） */}
+        {activeLabView === "kr-report" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <KrReportPanel onClose={() => setIsKrReportOpen(false)} currentUser={currentUser} />
+              <KrReportPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
-        {isKrSessionOpen && (
+        {activeLabView === "kr-session" && (
           <Suspense fallback={<ViewLoading />}>
-            <KrJointSessionFlow currentUser={currentUser} onClose={() => setIsKrSessionOpen(false)} />
+            <KrJointSessionFlow currentUser={currentUser} onClose={() => setActiveLabView(null)} />
           </Suspense>
         )}
-        {isKrWhyOpen && (
+        {activeLabView === "kr-why" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <KrWhyPanel onClose={() => setIsKrWhyOpen(false)} currentUser={currentUser} />
+              <KrWhyPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
-        {isStructureOpen && (
+        {activeLabView === "structure" && (
           <MobileFullscreenOverlay zIndex={250}>
             <Suspense fallback={<ViewLoading />}>
-              <ProjectStructureView onClose={() => setIsStructureOpen(false)} currentUser={currentUser} />
+              <ProjectStructureView onClose={() => setActiveLabView(null)} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
@@ -961,13 +990,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 <VersionBadge />
               </div>
               {[
-                { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { setIsStructureOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { setIsGraphOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { setIsCalendarOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { setIsMyPageOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { setIsKrSessionOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { setIsKrReportOpen(true); setIsMobileLabOpen(false); } },
-                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { setIsKrWhyOpen(true); setIsMobileLabOpen(false); } },
+                { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { setActiveLabView("structure"); setIsMobileLabOpen(false); } },
+                { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { setActiveLabView("graph"); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { setActiveLabView("calendar"); setIsMobileLabOpen(false); } },
+                { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { setActiveLabView("mypage"); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { setActiveLabView("kr-session"); setIsMobileLabOpen(false); } },
+                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { setActiveLabView("kr-report"); setIsMobileLabOpen(false); } },
+                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { setActiveLabView("kr-why"); setIsMobileLabOpen(false); } },
               ].map(item => (
                 <button
                   key={item.label}
@@ -1097,7 +1126,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
           {/* カレンダー（ラボ） */}
           <button
-            onClick={() => setIsCalendarOpen(true)}
+            onClick={() => setActiveLabView("calendar")}
             title={t("layout.calendar.title")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
@@ -1387,10 +1416,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(prev => !prev); }}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onOpenGraph={() => setIsGraphOpen(true)}
-        onOpenCalendar={() => setIsCalendarOpen(true)}
-        onOpenStructure={() => setIsStructureOpen(true)}
-        onOpenMyPage={() => setIsMyPageOpen(true)}
+        onOpenGraph={() => setActiveLabView("graph")}
+        onOpenCalendar={() => setActiveLabView("calendar")}
+        onOpenStructure={() => setActiveLabView("structure")}
+        onOpenMyPage={() => setActiveLabView("mypage")}
+        activeLabView={activeLabView}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
         onCreateProject={() => setIsPjCreateOpen(true)}
@@ -1404,17 +1434,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onSelectGroup={handleSelectGroupNav}
       />
       {mainContent}
-      {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView・KrReportPanel・KrWhyPanel は
-          mainContent 内（labOverlay）に埋め込み済み（CLAUDE.md Section 20・v3.33）。
-          KrJointSessionFlow は元々 position:fixed を使わない設計のため対象外・従来どおりここに置く。 */}
-      {isKrSessionOpen && (
-        <Suspense fallback={<ViewLoading />}>
-          <KrJointSessionFlow
-            currentUser={currentUser}
-            onClose={() => setIsKrSessionOpen(false)}
-          />
-        </Suspense>
-      )}
+      {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView・KrReportPanel・KrWhyPanel・
+          KrJointSessionFlow はすべて mainContent 内（labOverlay）に埋め込み済み
+          （CLAUDE.md Section 20・v3.33、v3.34でKrJointSessionFlowも統合）。 */}
       {graphEditTaskId && (
         <TaskEditModal
           taskId={graphEditTaskId}
@@ -1526,6 +1548,9 @@ interface SidebarProps {
   onOpenCalendar: () => void;
   onOpenStructure: () => void;
   onOpenMyPage: () => void;
+  /** 現在開いているラボ系ビュー（同時に1つだけ）。ラボサブメニューのアクティブ表示に使う
+   *  （CLAUDE.md Section 20・v3.34）。 */
+  activeLabView: LabViewId | null;
   onOpenAdmin: () => void;
   onOpenGuide: () => void;
   onCreateProject: () => void;
@@ -1547,7 +1572,7 @@ function Sidebar({
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
-  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage,
+  theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage, activeLabView,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
@@ -1832,13 +1857,14 @@ function Sidebar({
           </>)}
         </div>
 
-        {/* ラボ サブメニュー（🧪ボタンで開閉） */}
+        {/* ラボ サブメニュー（🧪ボタンで開閉）。activeプロップはNAV_ITEMSと同じNavItemを使い、
+            現在開いているラボビューを強調表示する（CLAUDE.md Section 20・v3.34）。 */}
         {labOpen && (
           <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "4px 0" : "4px 6px" }}>
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label={t("layout.lab.structure.label")} tooltip={t("layout.lab.structure.desc")} onClick={onOpenStructure} collapsed={c} />
-            <NavItem active={false} icon={<GraphIcon />} label={t("layout.lab.graph.label")} tooltip={t("layout.lab.graph.tooltip")} onClick={onOpenGraph} collapsed={c} />
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label={t("layout.lab.calendar.label")} tooltip={t("layout.lab.calendar.tooltip")} onClick={onOpenCalendar} collapsed={c} />
-            <NavItem active={false} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label={t("layout.lab.mypage.label")} tooltip={t("layout.lab.mypage.desc")} onClick={onOpenMyPage} collapsed={c} />
+            <NavItem active={activeLabView === "structure"} icon={<span style={{ fontSize: "13px" }}>🏢</span>} label={t("layout.lab.structure.label")} tooltip={t("layout.lab.structure.desc")} onClick={onOpenStructure} collapsed={c} />
+            <NavItem active={activeLabView === "graph"} icon={<GraphIcon />} label={t("layout.lab.graph.label")} tooltip={t("layout.lab.graph.tooltip")} onClick={onOpenGraph} collapsed={c} />
+            <NavItem active={activeLabView === "calendar"} icon={<span style={{ fontSize: "13px" }}>🗓️</span>} label={t("layout.lab.calendar.label")} tooltip={t("layout.lab.calendar.tooltip")} onClick={onOpenCalendar} collapsed={c} />
+            <NavItem active={activeLabView === "mypage"} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label={t("layout.lab.mypage.label")} tooltip={t("layout.lab.mypage.desc")} onClick={onOpenMyPage} collapsed={c} />
           </div>
         )}
       </>) : (<>

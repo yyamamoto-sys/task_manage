@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.33
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.34
 #
-最終更新：2026-08-07（v3.33）
+最終更新：2026-08-07（v3.34）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1424,7 +1424,7 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更）
+## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化）
 
 ### 用語（今後この2語で呼び分ける）
 
@@ -1460,6 +1460,22 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 ### サイドバーのナビ操作をしたら、開いているラボ系ビューを閉じる
 
 サイドバーが常に見える設計になったことで、ラボ系ビューを開いたままサイドバーのナビ（ビュー切替・モード切替・PJ/KR/部署選択）を操作できてしまう。これを許すと「見えないメインエリアの表示だけが裏で切り替わる」混乱が起きるため、`MainLayout.tsx` の `closeLabViews()` を対象操作の入口（`setAppMode` / `handleSelectProject` / `handleSelectKr` / `handleSelectGroupNav` / Sidebarへ渡す `navSetViewMode`）で必ず呼ぶ。ツアー機能の内部遷移など、ユーザーのナビ操作ではない `setViewMode` 呼び出しには通さない（`closeLabViews` を挟むとその呼び出し元のuseEffectのexhaustive-depsで警告が出るため。原因は本文の実装コミット参照）。
+
+### ラボ系ビューは同時に1つだけ開く（重ねるのではなく切り替える。v3.34）
+
+**山本さんの指摘（2026-08-07）**：「ラボの各種機能を押すと、レイヤーが上から重なるように挙動する。Aを押した後にBを押して、その後またAを見ようとAを押しても、Bの下に隠れてAが見えない。重ねるのではなく画面が切り替わるようにしてほしい」。
+
+**原因**：v3.33までは `MainLayout.tsx` がラボ機能ごとに独立した真偽値 state（`isGraphOpen` / `isCalendarOpen` / `isStructureOpen` / `isMyPageOpen` / `isKrReportOpen` / `isKrWhyOpen`）を持っていた。Bを開いてもAが閉じないため両方 `true` になり得て、`labOverlay` の分岐が**宣言順で先勝ち**（Graph→Calendar→Structure→MyPage→KrReport→KrWhy）に1つ選んでいた。押した機能が宣言順で後ろだと画面が変わらず、さらに押し直しても既に `true` なので何も起きない、という不具合だった。
+
+**対策**：真偽値を並べる方式をやめ、`LabViewId`（`"graph" | "calendar" | "structure" | "mypage" | "kr-report" | "kr-why" | "kr-session"`）1つを保持する単一state `activeLabView: LabViewId | null` に一本化した。ラボ機能を開く操作は必ず `setActiveLabView("<id>")` の1行で、前に開いていたものは自動的に閉じる——**2つ同時に開くこと自体が型レベルで不可能**になるのがこの設計の要。`closeLabViews()` は `setActiveLabView(null)` の1行になった。
+
+`labOverlay`（`MainLayout.tsx`）は `activeLabView` に対する `switch` で分岐し、`default` 節で `LabViewId` を `never` 型の変数に代入することで、**新しいラボ機能を追加するときに `LabViewId` へ id を1つ足したのに分岐を書き忘れると型エラーで気づける**（テストを書く必要がない・型レベルの網羅性チェック）。新しいラボ機能を足すときは「`LabViewId` に1つ足す」「`labOverlay` の switch に1本分岐を足す」の2箇所で完結する。
+
+**仕様として意図的な点**：同じ機能のボタンをもう一度押しても閉じない（開いたまま）。サイドバーのビュー切替ナビ（NAV_ITEMS）と同じ挙動に揃えるための意図的な仕様。
+
+**KrJointSessionFlow（OKRの「セッション記録」）もこの対象に含めた**。旧方式では `position:fixed` を使わない設計のため Section 20 の v3.33 対応（position:fixed撤去）の対象外だったが、`isKrSessionOpen` 単独の真偽値でPCでは `mainContent` の**兄弟**として描画されており、開くとメインエリアの横に並んで表示され他のラボ機能と挙動が揃っていなかった。`activeLabView === "kr-session"` として統合し、他と同じく `labOverlay` 経由でメインエリア内に描画するようにした。ただしこのコンポーネント自身のrootは `minHeight:0` を持たない（他のラボビューは持つ）ため、`labOverlay` 側で `{flex:1, minWidth:0, minHeight:0, overflow:"hidden", ...}` のラッパーで包み、契約に合わせている。
+
+サイドバーのラボサブメニュー（`Sidebar` コンポーネント）は `activeLabView` を props で受け取り、現在開いている項目を既存の `NavItem` の `active` プロップ（NAV_ITEMSと同じスタイルトークン）でハイライトする。「画面が切り替わる」ことをユーザーが視覚的に確認できるようにするため。
 
 ---
 

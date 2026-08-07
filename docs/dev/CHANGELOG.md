@@ -4135,5 +4135,52 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`変更ファイル新規エラー0（既存35件のみ・内訳不変）／`npm run build`成功
 #      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
 #
-# 最終更新：2026-08-07（v3.33）
+# v3.34 ラボ系ビューの開閉を「重ねる」から「切り替える」構造へ変更（2026-08-07）
+#      背景：v3.33までラボ機能（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／
+#             なぜなぜ分析）ごとに独立した真偽値state（isGraphOpen/isCalendarOpen/
+#             isStructureOpen/isMyPageOpen/isKrReportOpen/isKrWhyOpen）を持っていたため、
+#             Bを開いてもAが閉じず両方trueになり得て、`labOverlay`の分岐が宣言順で先勝ち
+#             （Graph→Calendar→Structure→MyPage→KrReport→KrWhy）に1つ選んでいた。押した
+#             機能が宣言順で後ろだと画面が変わらず、押し直しても既にtrueなので何も起きない、
+#             という不具合だった（山本さんの指摘：「Aを押した後にBを押して、その後また
+#             Aを見ようとAを押しても、Bの下に隠れてAが見えない。重ねるのではなく画面が
+#             切り替わるようにしてほしい」）
+#      変更：`MainLayout.tsx`の6つの真偽値stateを、単一state
+#             `activeLabView: LabViewId | null`（`LabViewId`は"graph"/"calendar"/
+#             "structure"/"mypage"/"kr-report"/"kr-why"/"kr-session"の7値）に置き換え。
+#             `closeLabViews()`は`setActiveLabView(null)`の1行に。`labOverlay`は
+#             `activeLabView`に対する`switch`に置き換え、`default`節で`LabViewId`を
+#             `never`型変数に代入することで、id追加時に分岐を書き忘れると型エラーで
+#             気づけるようにした（テスト追加は不要と判断）。同じ機能のボタンを押し直しても
+#             閉じない（開いたまま）仕様は維持——サイドバーのビュー切替ナビと同じ挙動に揃える
+#             ための意図的な仕様
+#      変更：`KrJointSessionFlow`（OKRの「セッション記録」）を`activeLabView`の対象に統合。
+#             旧方式ではposition:fixedを使わない設計のためv3.33の対象外だったが、
+#             `isKrSessionOpen`単独の真偽値でPCでは`mainContent`の兄弟として描画されており
+#             メインエリアの横に並んで表示され他のラボ機能と挙動が揃っていなかった。
+#             `activeLabView === "kr-session"`として統合し、他と同じく`labOverlay`経由で
+#             メインエリア内に描画。このコンポーネント自身のrootは`minHeight:0`を持たない
+#             （他のラボビューは持つ）ため、`labOverlay`側で
+#             `{flex:1,minWidth:0,minHeight:0,overflow:"hidden",...}`のラッパーで包み契約に
+#             合わせた（コンポーネント自体は変更していない）
+#      変更：モバイル分岐（`isMobile`のreturnブロック）も同じ`activeLabView`を参照する形に統一。
+#             モバイルに入口が無いビュー（calendar/mypage。旧方式でも`isMobile ? null`の
+#             labOverlayガードにより描画されていなかった）は今回も新たな入口を追加していない
+#      変更：`Sidebar`に`activeLabView`をpropsで追加し、ラボサブメニューの4項目
+#             （体制図・関係性グラフ・カレンダー・マイページ）に既存の`NavItem`の`active`
+#             プロップ（NAV_ITEMSと同じスタイルトークン）を渡し、現在開いているビューを
+#             ハイライト表示するようにした
+#      付随state：`graphEditTaskId`/`calendarEditTaskId`/`calendarQuickAddDate`/
+#             `myPageEditTaskId`はクリアしない（現状維持）。既存の`closeLabViews()`呼び出し元
+#             （`setAppMode`/`handleSelectProject`/`handleSelectKr`/`handleSelectGroupNav`/
+#             `navSetViewMode`）も元々これらをクリアしておらず、ラボビューの✕ボタンで閉じても
+#             同様にクリアされない設計だった（TaskEditModal等は独立して閉じられる）。今回の
+#             単一state化はこの既存の設計判断を変更するものではないため、踏襲した
+#      ドキュメント：CLAUDE.md Section 20に新設計の背景・契約を追記（v3.34）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`889件全通過（件数不変。switchの
+#             `default: never`による型レベルの網羅性チェックで代替し、機械テストは追加しな
+#             かった）／`npm run lint`変更ファイル新規エラー0／`npm run build`成功
+#      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
+#
+# 最終更新：2026-08-07（v3.34）
 
