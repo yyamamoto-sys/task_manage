@@ -4254,5 +4254,38 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      要手動作業：山本さんが `supabase/migrations/20260807b_add_personal_okr.sql` を
 #             Supabase SQL Editorへdev→prodの順で適用すること（エージェントは未適用）
 #
-# 最終更新：2026-08-07（v3.36）
+# v3.37 OKRモード再設計 Phase 1 Step B：個人OKRビュー（画面）を追加（2026-08-07）
+#      背景：Step A（v3.36・DB/型/ストア層のみ）に続き、docs/dev/okr-redesign-plan.md §7・§8の
+#             受け入れ条件を満たす画面を実装。マイグレーション20260807b_add_personal_okr.sqlは
+#             本番へ適用済みの前提（山本さんが適用完了）
+#      変更：OKRモードのメインエリアに「グループ／自分」の切替を追加（`OkrDashboardView.tsx`。
+#             グループ側の既存タブ構成は無改修）／新規ディレクトリ`src/components/okr/personal/`
+#             （PersonalOkrView.tsx・PersonalKrPanel.tsx・PersonalKrFormModal.tsx・
+#             WeekCard.tsx・WeekTaskLinkModal.tsx）／専用zustandストア
+#             `src/stores/personalOkrUiStore.ts`（appStore.tsには足さない）／
+#             純粋関数`src/lib/personalOkr/`（quarterMonths.ts・weightCheck.ts・
+#             bandOptions.ts・weekTaskCandidates.ts・weekLayout.ts）
+#      設計判断：「自分」タブはlazyWithRetry+withChunkDownloadGateで分割（実測gzip約10.7KB・
+#             閾値未満のため確認ダイアログは出ない）。状態管理は素のuseStateではなくzustandを
+#             新設（KRタブ/月切替/週カード/メモ欄が同じデータを読み書きするため、krIdごとの
+#             キャッシュ管理を1箇所に集約）。i18nは新規辞書キーを追加せず既存OKR系コンポーネント
+#             と同じ日本語直書きに合わせた（英語化はPhase 2以降凍結中）。週の紐づけタスクの
+#             遅延・先行待ち表示は既存ロジック（B4：computeDelayDays/formatDelayLabel・
+#             B1：getIncompletePredecessors/formatBlockerNames）を再利用し再実装していない。
+#             Phase 3（これから・AIパネル）・Phase 4（月末のKintone下書きボタン）はこの画面には
+#             作っていない（未実装の空ボタンを出さない方針）
+#      🔴週の列数：computeMonthWeekSegments()が返すセグメント数（5〜6件）をそのまま使い、
+#             grid-template-columns: repeat(auto-fit, minmax(150px,1fr))で可変列にした。
+#             5列固定・6列打ち切りにしていないことをweekLayout.test.tsで回帰テスト
+#      ドキュメント：CLAUDE.md Section 24にStep Bの画面設計を追記／
+#             docs/dev/okr-redesign-mock.htmlの週レーン（.weeks{grid-template-columns:repeat(5,1fr)}）
+#             が5列固定で誤っている点に注記コメントを追加（実装は6週になる月にも対応済み）
+#      テスト：`src/lib/personalOkr/__tests__/`4本・23件新規
+#             （quarterMonths.test.ts 7件・weightCheck.test.ts 6件・
+#             weekTaskCandidates.test.ts 6件・weekLayout.test.ts 4件）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`940件全通過（917件から23件増）／
+#             `npm run lint`新規エラー0（既存の24件のエラー・11件の警告のみ・変更前と同数）／
+#             `npm run build`成功（PersonalOkrViewチャンクgzip約10.7KB）
+#
+# 最終更新：2026-08-07（v3.37）
 

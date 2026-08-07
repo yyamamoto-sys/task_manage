@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.36
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.37
 #
-最終更新：2026-08-07（v3.36）
+最終更新：2026-08-07（v3.37）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1615,16 +1615,28 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ---
 
-## 24. 個人OKR層（OKRモード再設計 Phase 1 Step A・v3.36で新設）
+## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37）
 
 **正本は [docs/dev/okr-redesign-plan.md](docs/dev/okr-redesign-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。詳細（列定義・段階計画・未決事項）は必ず計画書を読むこと。
 
 - **一行で言うと**：Kintoneが正本。このアプリはKintoneに存在しない「週の層」を埋める実行層。個人四半期KR・月次計画の**編集・評価確定**はKintone側のまま変えない。
-- **今回（Step A）追加した5テーブル**：`personal_krs`（個人四半期KR）／`personal_kr_months`（個人月次計画）／`personal_kr_weeks`（★週の目標状態。アプリだけが持つ層）／`personal_kr_week_tasks`（週とタスクの紐づけ）／`personal_kr_memos`（KRごとのメモ）。`migrations/20260807b_add_personal_okr.sql` 参照（**山本さんの手動適用が必要。未適用**）。
+- **Step Aで追加した5テーブル**：`personal_krs`（個人四半期KR）／`personal_kr_months`（個人月次計画）／`personal_kr_weeks`（★週の目標状態。アプリだけが持つ層）／`personal_kr_week_tasks`（週とタスクの紐づけ）／`personal_kr_memos`（KRごとのメモ）。`migrations/20260807b_add_personal_okr.sql` 参照（**山本さんの手動適用が必要。未適用**。Step Bの画面は本番適用済みの前提で実装している）。
 - **RLSは本人のみ**（`member_widget_layouts` と同じ流儀）。`personal_krs`/`personal_kr_memos` 以外の3テーブルは列にmember_idを持たせず、`personal_kr_owner_member_id()`/`personal_kr_week_owner_member_id()`（SECURITY DEFINER・親を辿るヘルパー関数）で判定する。判断理由はマイグレーションファイル冒頭コメント参照（20260723の「親を辿るポリシー」先例に近い＝単一所有者・低ホップ数・少量データのため）。
 - **週の区切りは既存のカレンダー週ロジックを共有する**（二度書かない）。`src/components/gantt/ganttUtils.ts`（v3.09）から純粋な「月→週セグメント」部分を `src/lib/date/monthWeeks.ts`（`calendarWeekNumber`/`computeMonthWeekSegments`）へ抽出し、ganttUtils.ts はそこから import する。ガントの座標計算・挙動は一切変えていない。
-- **状態管理**：`src/lib/supabase/personalOkrStore.ts`（低レベルCRUD・flat関数群）を新設したが、`appStore.ts`（zustand・全アプリデータの単一真実）には一切組み込んでいない。OKRモードを開かない人にこのテーブル群へのクエリを発生させないため（Section 19）。個人OKRビュー（Step B以降）は専用の読み込み経路から呼ぶこと。
-- **画面は未実装**（Step B以降）。Kintone取込・AI解析・`personal_kr_outlooks`・`okr_knowledge_docs` は対象外（Phase 2・3・5）。
+
+### Step B：個人OKRビュー（v3.37）
+
+- **配置**：OKRモードのメインエリアに「グループ／自分」の切替（`OkrDashboardView.tsx` 冒頭のseg）を足した。**グループ側の既存タブ構成（OKR管理/なぜなぜ/計画）は無改修**。`activeLabView`（Section 20の単一state）には足していない——ラボ系の全画面ビューではなく、OKRモードのコンテンツの一部だから。
+- **重量級のためReact.lazy分割**：`src/components/okr/personal/PersonalOkrView.tsx` を `lazyWithRetry` + `withChunkDownloadGate` で読み込む（Section 19）。「グループ」タブしか使わない人はこのチャンク（gzip約10.7KB・閾値200KB未満のため確認ダイアログは出ない）を一切ダウンロードしない。
+- **状態管理は専用の zustand ストアを新設**：`src/stores/personalOkrUiStore.ts`。**`appStore.ts` には足さない**（Section 19。OKRモードの「自分」タブを開かない人にpersonal_kr系テーブルへのクエリを一切発生させないため）。このストア自体も `PersonalOkrView.tsx` からのみimportされるため、`create()` の実行タイミングも「自分」タブを実際に開いた瞬間まで遅延する。KRタブ・月切替・週カード・メモ欄など複数コンポーネントが同じデータを読み書きするため、krIdごとのキャッシュ管理（月/週/メモの取得済み判定・楽観更新）を1箇所に集約する目的でzustandを選んだ（データ量自体は極小＝1人あたり四半期KR最大十数本・週は最大でもKR×6週間）。
+- **🔴 週の列数は可変（5列固定にしない）**：`src/lib/personalOkr/weekLayout.ts` の `buildWeekCards()` が `computeMonthWeekSegments()` の返す件数（5〜6件）をそのまま使い、UI側（`PersonalKrPanel.tsx`）は `grid-template-columns: repeat(auto-fit, minmax(150px, 1fr))` で可変列にする。**1〜6週のいずれでも破綻しないことを `weekLayout.test.ts` で回帰テスト済み**（2026年8月＝6週・2026年2月＝5週・W1が1日だけになるケース）。
+- **空の週レコードを事前に一括作成しない**：週カードはセグメントの計算結果だけで描画し、`personal_kr_weeks` の行は `goal_state` を書いた時点・自己評価を付けた時点に初めて `ensureWeek()`（`PersonalKrPanel.tsx`）が作る。
+- **週とタスクの紐づけ（自動候補＋明示リンク）**：候補抽出は純粋関数 `src/lib/personalOkr/weekTaskCandidates.ts`（`computeWeekTaskCandidates`）に一元化。本人担当・期日が週内のタスクを基本に、個人KRに `task_force_id` が紐づく場合はそのTF配下（`todos.tf_id` 経由）を優先表示する。**紐づけたタスクの遅延・先行待ちの表示は既存ロジック（B4：`computeDelayDays`/`formatDelayLabel`・B1：`getIncompletePredecessors`/`formatBlockerNames`）をそのまま再利用**し、再実装していない。
+- **達成度バンド**：Phase 1はAI判定（`band_ai`）が無いため `personal_kr_months.band_target`（Kintoneに書く「狙い」の手入力）のみを扱う。選択肢は`src/lib/personalOkr/bandOptions.ts`の`BAND_VALUES`（60/70/80/90/100）で、**90・100は常に取り消し線＋非活性**（3Qは基本的に置かない運用）。
+- **月の可変**：`src/lib/personalOkr/quarterMonths.ts` の `classifyMonth()` が対象月を today との比較で past/current/future に分類する。past＝読み取り専用、current＝編集可、future＝「計画がまだありません」のみ（Kintone取込が無いPhase 1では未来月の手入力を許可しない）。
+- **Phase 3以降は今回作らない**：「これから」（AI見立て）・AIパネル（`ConsultationPanel` 型のOKR版）・月末のKintone下書き生成ボタンはこの画面には無い（未実装の空ボタンを出さない方針。計画書§8）。
+- **i18nの扱い**：新規辞書キーは追加していない。既存のOKR系コンポーネント（`OkrDashboardView.tsx`・`KrQuarterPlanPanel.tsx`等）と同じく日本語を直書きしている（英語化はPhase 2以降凍結中・`docs/dev/i18n-plan.md`）。
+- **画面未実装**（Step Bのスコープ外）：Kintone取込・AI解析・`personal_kr_outlooks`・`okr_knowledge_docs` は対象外（Phase 2・3・5）。
 
 ---
 

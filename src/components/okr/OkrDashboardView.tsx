@@ -2,7 +2,7 @@
 // OKR管理モードのメインビュー。タブ型UI：会議ノート/セッション記録(分析)/レポート作成/なぜなぜ/計画。
 // 概要は「OKR」ボタン（履歴の隣）からオーバーレイで開く（作業画面と分離）。
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -21,6 +21,16 @@ import { fetchKrReport, type KrReport } from "../../lib/supabase/krReportStore";
 import { HelpButton } from "../guide/HelpButton";
 import { CustomSelect } from "../common/CustomSelect";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { lazyWithRetry } from "../../lib/lazyWithRetry";
+import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
+
+// 「自分」タブ（個人OKRビュー）は重量級のためReact.lazyで分割し、閾値超えチャンクの
+// ダウンロード確認ゲートを通す（CLAUDE.md Section 19）。「グループ」タブしか使わない人は
+// このチャンクを一切ダウンロードしない。
+const PersonalOkrView = withChunkDownloadGate(
+  lazyWithRetry(() => import("./personal/PersonalOkrView").then(m => ({ default: m.PersonalOkrView })), "PersonalOkrView"),
+  "PersonalOkrView",
+);
 
 // 上位タブ「OKR管理」配下のサブツール（①会議ノート→②セッション記録&分析→③レポート作成）
 // 概要は OKR ボタン（右上）からオーバーレイで開く。
@@ -103,6 +113,11 @@ export function OkrDashboardView({
       return { krId: kr.id, tfs, done, total: krTasks.length };
     });
   }, [activeKrs, activeTfs, todos, tasks]);
+
+  // 「グループ／自分」の切替（OKRモード再設計 Phase 1 Step B・docs/dev/okr-redesign-plan.md §7）。
+  // グループ側（既存のOKR管理/なぜなぜ/計画タブ）は今回一切変更しない。「自分」を選んだときだけ
+  // 個人OKRビュー（PersonalOkrView）に描画を切り替える。
+  const [okrScope, setOkrScope] = useState<"group" | "me">("group");
 
   const [historyOpen, setHistoryOpen] = useState(false);
   // 概要オーバーレイ（履歴と同じパターン）
@@ -231,8 +246,31 @@ export function OkrDashboardView({
             Objective・KR の進捗を週次で記録・振り返るモードです
           </div>
         </div>
+        {/* 「グループ／自分」の切替（Phase 1 Step B）。グループ側の下のタブ構成は変更しない */}
+        <div role="tablist" aria-label="表示の切替" style={{ display: "flex", background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-full)", padding: "2px", flexShrink: 0 }}>
+          {(["group", "me"] as const).map(scope => (
+            <button
+              key={scope}
+              role="tab"
+              aria-selected={okrScope === scope}
+              onClick={() => setOkrScope(scope)}
+              style={{
+                fontFamily: "inherit", fontSize: "12px", fontWeight: 700, border: "none", cursor: "pointer",
+                padding: "5px 16px", borderRadius: "var(--radius-full)",
+                background: okrScope === scope ? "var(--color-brand)" : "transparent",
+                color: okrScope === scope ? "#fff" : "var(--color-text-tertiary)",
+              }}
+            >{scope === "group" ? "グループ" : "自分"}</button>
+          ))}
+        </div>
         <HelpButton modeKey="okr.cycle" title="OKR週次サイクル全体像のガイドを開く" />
       </div>
+
+      {okrScope === "me" ? (
+        <Suspense fallback={<div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>読み込み中…</div>}>
+          <PersonalOkrView currentUser={currentUser} />
+        </Suspense>
+      ) : (<>
 
       {/* 上位タブバー（OKR管理 / なぜなぜ / 計画） */}
       <div style={{
@@ -429,6 +467,7 @@ export function OkrDashboardView({
         )}
 
       </div>
+      </>)}
 
       {/* ─── 概要オーバーレイ（右上「🎯 OKR」ボタンから開く） ─── */}
       {overviewOpen && (
