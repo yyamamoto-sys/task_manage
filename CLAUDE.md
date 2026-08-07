@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.30
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.31
 #
-最終更新：2026-08-07（v3.30）
+最終更新：2026-08-07（v3.31）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1507,7 +1507,7 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28、v3.29でAI限定開放を追加、v3.30で回数制限の可用性バグを修正）
+## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28、v3.29でAI限定開放を追加、v3.30で回数制限の可用性バグを修正、v3.31で回数の明示UIを追加）
 
 ### 2026-08-06に判明した旧実装の欠陥
 
@@ -1544,6 +1544,16 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **既存の認証ユーザー向けレート制限は無変更**：Edge Function内メモリの「認証ユーザーごと20回/分」はそのまま残っており、匿名ユーザーにも同様に適用される（ゲスト回数制限とは独立の別レイヤー）。
 - **ゲストのAI利用の管理者への可視化**：`ai_usage_logs` に `is_guest` 列を追加し、Edge FunctionがサービスロールでAnthropic応答成功後に `member_id="__guest__"`・`is_guest=true` の1行をINSERTする（クライアントからのINSERTは`from()`ブロックで常に失敗するため、この経路が唯一の記録手段）。管理画面「AI使用量」タブ（`AdminView.tsx` の `AIUsageSection`）に「🧪 ゲスト（サンプル利用）」の全期間合計行を表示する（部署の絞り込みは適用しない。ゲストはどの部署にも属さないため）。
 - **併せて是正した既存ドリフト**：`ai_usage_logs` にはINSERT用ポリシーが本番に存在するが一度もマイグレーション化・`schema.sql`化されていなかった。同マイグレーションで明文化した（本番への実害は無し。参照用DDLの是正）。
+
+### 回数の明示UI（v3.31・使う前に上限を伝える）
+
+上限到達後にエラーで初めて知る状態を避けるため、AIを**使う前に**「1日◯回まで」を明示する。
+
+- **表示は参考値・強制は今までどおりサーバー側だけ**という関係は崩さない。`src/lib/guestAiQuotaCounter.ts`（localStorageベースの利用回数カウンタ）は表示専用で、DBへの問い合わせ・RPC・`functions.invoke`は一切行わない（ゲストがSupabaseに接続しない設計を崩さないため）。実際の制限判定は引き続き `consume_guest_ai_quota()`（SQL）が行う。
+- **加算ポイントは2箇所**：`src/lib/ai/invokeAI.ts` と `src/lib/ai/apiClient.ts`。どちらも AI 呼び出しが**成功したときだけ** `recordGuestAiUse()` を呼ぶ。429（`GUEST_DAILY_LIMIT_EXCEEDED`/`GUEST_GLOBAL_LIMIT_EXCEEDED`）や他のエラー時は加算しない。
+- **表示コンポーネントは `src/components/common/GuestAiQuotaNotice.tsx` 1つ**（banner/inlineの2バリアント）。ゲストでないときは常に null を返すため、呼び出し側は分岐を書かずに置くだけでよい。設置箇所は4つ：`MainLayout.tsx`（既存ゲストバナー内）・`ConsultationPanel.tsx`（相談パネルのタブ説明バー内）・`ProjectKarte.tsx`／`DashboardView.tsx`（PJ分析実行ボタン付近）。加えて `LoginScreen.tsx`（`auth.guest.desc`）で入る前にも回数を明示する。**ボタンの無効化はしない**（クライアント側の参考値だけで誤って締め出すと、サーバー側ではまだ枠が残っているのに使えなくなる事故が起きるため）。
+- **上限値の二重管理に注意**：`GUEST_AI_DAILY_LIMIT`（`guestAiQuotaCounter.ts`）は `supabase/functions/ai-consult/index.ts` の `GUEST_AI_PER_BROWSER_DAILY_LIMIT`（環境変数で上書き可）と別々の場所にハードコードされている。環境変数で上限を変更した場合、この表示用の定数を直さないと表示だけがズレる（強制自体は正しく動き続ける）。上限を変えるときは両方直すこと。
+- **テスト容易性**：`vitest.config.ts` が `environment: "node"` のため localStorage が無い（`chunkSizeGate.ts` と同じ制約）。`guestAiQuotaCounter.ts` は日付跨ぎ・加算・下限クランプの判定を `resolveGuestAiUsedCount`/`resolveGuestAiRemaining` という純粋関数に分離してテストする。`GuestAiQuotaNotice` も同じ理由で `useT()` フックを使わず、`useLangStore.getState()` + `translate()` の「素の関数」方式（`invokeAI.ts` の `tOutside` と同じ流儀）にしている（Reactレンダラー無しで直接呼び出してテストするため）。
 
 ---
 

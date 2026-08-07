@@ -199,4 +199,7 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.schemaHealth.rpcUnavailable": "Unable to run the schema check (the check function may not be applied yet)",
 
   "common.guest.aiBlocked": "Couldn't start AI in the sample. Please try again later.",
+
+  "common.guest.quota.remaining": "You can try AI features up to {limit} times a day. Remaining today: {remaining}",
+  "common.guest.quota.exhausted": "You've used today's AI quota ({limit} times).",
 };

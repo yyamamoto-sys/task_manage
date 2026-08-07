@@ -24,6 +24,13 @@ vi.mock("../../supabase/guestAiAuth", () => ({
   ensureGuestAiSession: (...args: unknown[]) => mockEnsureGuestAiSession(...args),
 }));
 
+// ゲスト回数表示（参考値）の加算（v3.31）。実際の加算ロジックはguestAiQuotaCounter.test.tsで
+// 個別に検証済み。ここでは「成功時だけ呼ばれ、エラー時は呼ばれない」ことだけを見る。
+const mockRecordGuestAiUse = vi.fn();
+vi.mock("../../guestAiQuotaCounter", () => ({
+  recordGuestAiUse: (...args: unknown[]) => mockRecordGuestAiUse(...args),
+}));
+
 import { invokeAI } from "../invokeAI";
 import { setGuestMode } from "../../guestMode";
 
@@ -31,6 +38,7 @@ beforeEach(() => {
   mockInvoke.mockReset();
   mockInsert.mockClear();
   mockEnsureGuestAiSession.mockReset().mockResolvedValue(undefined);
+  mockRecordGuestAiUse.mockReset();
 });
 
 describe("invokeAI", () => {
@@ -108,5 +116,47 @@ describe("invokeAI：ゲスト（サンプル閲覧）モードでのAI利用（
       invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
     ).rejects.toThrow("サンプルでのAI利用を開始できませんでした");
     expect(mockInvoke).not.toHaveBeenCalled();
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
+  });
+
+  it("ゲストが非ゲストのときは成功してもrecordGuestAiUseを呼ばない", async () => {
+    setGuestMode(false);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report");
+
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
+  });
+});
+
+describe("invokeAI：ゲストのAI利用回数表示（参考値）の加算（v3.31）", () => {
+  afterEach(() => setGuestMode(false));
+
+  it("成功時のみrecordGuestAiUseを呼ぶ", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report");
+
+    expect(mockRecordGuestAiUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("Edge Functionがエラーを返したときはrecordGuestAiUseを呼ばない（GUEST_DAILY_LIMIT_EXCEEDED）", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { error: "GUEST_DAILY_LIMIT_EXCEEDED", message: "サンプルでのAI利用は1日3回までです。" },
+      error: { message: "Edge Function returned a non-2xx status code" },
+    });
+
+    await expect(
+      invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
+    ).rejects.toThrow();
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
   });
 });

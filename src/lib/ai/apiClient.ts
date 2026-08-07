@@ -17,6 +17,7 @@ import { buildSystemPrompt } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";
 import { isGuestMode } from "../guestMode";
 import { ensureGuestAiSession } from "../supabase/guestAiAuth";
+import { recordGuestAiUse } from "../guestAiQuotaCounter";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
 
@@ -223,6 +224,11 @@ export async function callAIConsultation(
   if (!data || !data.content || !data.content[0]?.text) {
     throw new AIError("INVALID_RESPONSE", "AIからの応答が不正な形式です。");
   }
+
+  // ゲスト（サンプル閲覧）の回数表示（参考値）を、成功時だけ加算する（v3.31・
+  // CLAUDE.md Section 23）。ここに到達するのは上記のエラー分岐を全て通過した後なので、
+  // 429（GUEST_DAILY_LIMIT_EXCEEDED等）や他のエラー時は加算されない。
+  if (isGuestMode()) recordGuestAiUse();
 
   return {
     text: data.content[0].text,

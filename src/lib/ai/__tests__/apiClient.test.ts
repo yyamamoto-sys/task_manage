@@ -15,6 +15,13 @@ vi.mock("../../supabase/guestAiAuth", () => ({
   ensureGuestAiSession: (...args: unknown[]) => mockEnsureGuestAiSession(...args),
 }));
 
+// ゲスト回数表示（参考値）の加算（v3.31）。実際の加算ロジックはguestAiQuotaCounter.test.tsで
+// 個別に検証済み。ここでは「成功時だけ呼ばれ、エラー時は呼ばれない」ことだけを見る。
+const mockRecordGuestAiUse = vi.fn();
+vi.mock("../../guestAiQuotaCounter", () => ({
+  recordGuestAiUse: (...args: unknown[]) => mockRecordGuestAiUse(...args),
+}));
+
 import { callAIConsultation, AIError } from "../apiClient";
 import type { AIConsultationPayload } from "../payloadBuilder";
 import { setGuestMode } from "../../guestMode";
@@ -24,6 +31,7 @@ const PAYLOAD = { consultation: "テスト相談" } as unknown as AIConsultation
 beforeEach(() => {
   mockInvoke.mockReset();
   mockEnsureGuestAiSession.mockReset().mockResolvedValue(undefined);
+  mockRecordGuestAiUse.mockReset();
 });
 
 describe("callAIConsultation", () => {
@@ -155,5 +163,43 @@ describe("callAIConsultation：ゲスト（サンプル閲覧）モードでのA
       expect((e as InstanceType<typeof AIError>).code).toBe("GUEST_GLOBAL_LIMIT");
       expect((e as Error).message).toContain("本日のサンプルAI利用枠が上限に達しました");
     }
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
+  });
+});
+
+describe("callAIConsultation：ゲストのAI利用回数表示（参考値）の加算（v3.31）", () => {
+  afterEach(() => setGuestMode(false));
+
+  it("成功時のみrecordGuestAiUseを呼ぶ", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await callAIConsultation(PAYLOAD, "change", []);
+
+    expect(mockRecordGuestAiUse).toHaveBeenCalledTimes(1);
+  });
+
+  it("非ゲストのときは成功してもrecordGuestAiUseを呼ばない", async () => {
+    setGuestMode(false);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await callAIConsultation(PAYLOAD, "change", []);
+
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
+  });
+
+  it("匿名セッション確立に失敗したときはrecordGuestAiUseを呼ばない", async () => {
+    setGuestMode(true);
+    mockEnsureGuestAiSession.mockRejectedValueOnce(new Error("Anonymous sign-ins are disabled"));
+
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(AIError);
+
+    expect(mockRecordGuestAiUse).not.toHaveBeenCalled();
   });
 });

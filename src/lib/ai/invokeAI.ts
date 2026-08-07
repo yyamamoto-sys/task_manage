@@ -35,6 +35,7 @@ import { supabase } from "../supabase/client";
 import { logAIUsage } from "./usageLog";
 import { isGuestMode } from "../guestMode";
 import { ensureGuestAiSession } from "../supabase/guestAiAuth";
+import { recordGuestAiUse } from "../guestAiQuotaCounter";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
 
@@ -189,6 +190,11 @@ export async function invokeAI(
   // intent をそのまま consultation_type 列に保存することで、AdminView の
   // 「AI使用量」タブで全機能の使用量が反映される（CLAUDE.md Section 6-1b 参照）
   logAIUsage(intent, response.usage);
+
+  // ゲスト（サンプル閲覧）の回数表示（参考値）を、成功時だけ加算する（v3.31・
+  // CLAUDE.md Section 23）。ここに到達するのは非2xxエラーを通過した後なので、
+  // 429（GUEST_DAILY_LIMIT_EXCEEDED等）や他のエラー時は加算されない。
+  if (isGuestMode()) recordGuestAiUse();
 
   return response;
 }

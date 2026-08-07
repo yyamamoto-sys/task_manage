@@ -20,6 +20,7 @@ import type { UIProposal } from "../../lib/ai/proposalMapper";
 import { inferConsultationType } from "../../lib/ai/inferConsultationType";
 import { HelpButton } from "../guide/HelpButton";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
+import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 
 /**
  * 【設計意図】
@@ -452,7 +453,11 @@ export function ConsultationPanel({
         </div>
 
         {/* ===== タブ説明バー ===== */}
+        {/* display:flex + gap にしているのは、ゲスト回数表示（GuestAiQuotaNotice）を
+            ゲスト以外ではnullとして描画自体させず、余分な余白を生まない（gapは実際に
+            描画された子要素間にしか効かない）ため */}
         <div style={{
+          display: "flex", flexDirection: "column", gap: "6px",
           padding: "6px 14px",
           background: "rgba(99,102,241,0.06)",
           borderBottom: "1px solid rgba(99,102,241,0.12)",
@@ -464,6 +469,7 @@ export function ConsultationPanel({
         }}>
           {panelMode === "consult" && "変更の影響確認・What-if・現状診断など、プロジェクトの課題をAIと一緒に考えます。タスクの追加や新規プロジェクトの作成もここから依頼できます"}
           {panelMode === "meeting" && "議事録・資料などを読み込み、新規タスクとステータス変更を自動で提案・登録します"}
+          <GuestAiQuotaNotice variant="inline" />
         </div>
 
         {/* ===== 会議読み込みモード ===== */}

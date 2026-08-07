@@ -222,4 +222,8 @@ export const commonJa = {
 
   // ----- ゲスト（サンプル閲覧）モード（v3.28・v3.29でAI利用開始失敗時の文言に変更） -----
   "common.guest.aiBlocked": "サンプルでのAI利用を開始できませんでした。しばらくしてから再度お試しください。",
+
+  // ----- GuestAiQuotaNotice（v3.31・使う前に回数を明示） -----
+  "common.guest.quota.remaining": "AI機能は1日{limit}回まで試せます。本日の残り：{remaining}回",
+  "common.guest.quota.exhausted": "本日のAI利用（{limit}回）を使い切りました。",
 } as const;

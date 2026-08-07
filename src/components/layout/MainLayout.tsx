@@ -39,6 +39,7 @@ import { TourProvider, useTour } from "../tour/TourProvider";
 import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
+import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 
 /**
  * 【設計意図】
@@ -707,6 +708,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           color: "#fff", fontSize: "11px", fontWeight: 600,
         }}>
           <span>{t("layout.guestBanner")}</span>
+          <GuestAiQuotaNotice variant="banner" />
         </div>
       )}
       {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : appMode === "okr" ? (

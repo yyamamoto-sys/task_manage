@@ -4,6 +4,7 @@ import { signIn, signUp } from "../../lib/supabase/auth";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
 import { VersionBadge } from "../common/VersionBadge";
+import { GUEST_AI_DAILY_LIMIT } from "../../lib/guestAiQuotaCounter";
 
 interface Props {
   onLogin: () => void;
@@ -304,7 +305,7 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
           <span>{guestLoading ? t("auth.guest.loading") : t("auth.guest.cta")}</span>
         </button>
         <p style={{ marginTop: "8px", textAlign: "center", fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-          {t("auth.guest.desc")}
+          {t("auth.guest.desc", { limit: GUEST_AI_DAILY_LIMIT })}
         </p>
       </div>
     </div>

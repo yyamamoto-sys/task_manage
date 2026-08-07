@@ -40,6 +40,7 @@ import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allP
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 
 interface Props {
   currentUser: Member;
@@ -531,6 +532,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 <span>✨</span>
                 {allAnalyzing ? "分析中…" : allAnalysisResult ? "分析結果を見る" : "全PJをAI分析"}
               </button>
+              {/* ゲスト（サンプル閲覧）のAI利用回数の明示（v3.31）。ゲスト以外はnullを返す */}
+              <GuestAiQuotaNotice variant="inline" />
             </>
           )}
           <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />

@@ -4019,5 +4019,43 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`変更ファイル新規エラー0／`npm run build`成功
 #      Edge Function再デプロイ：引き続き必要（index.tsのRPC呼び出し引数・戻り値の扱いを変更）
 #
-# 最終更新：2026-08-07（v3.30）
+# v3.31 ゲストAI利用回数の明示UI（使う前に上限を伝える。2026-08-07）
+#      背景：v3.29〜v3.30でゲストにAI機能を回数制限つき（既定：ブラウザ別3回/日・全体10回/日）で
+#             開放したが、上限に達して初めてエラーで知る状態だった。「PJ分析で使い切られたら
+#             もったいない」との指摘を受け、使う前に「1日3回まで」を明示するUIを追加
+#      追加：`src/lib/guestAiQuotaCounter.ts`（localStorageベースの表示専用カウンタ）。
+#             `{date, count}`をKEYS経由の1キーに保存し、日付が変わっていれば0として扱う
+#             （明示的なクリア処理は持たない）。表示は参考値であり、回数制限の強制は
+#             引き続きEdge Function→`consume_guest_ai_quota()`（SQL）だけが行う。
+#             上限値`GUEST_AI_DAILY_LIMIT`（=3）は`ai-consult/index.ts`の
+#             `GUEST_AI_PER_BROWSER_DAILY_LIMIT`と二重管理（環境変数で上限を変えたら
+#             両方直すこと）。日付跨ぎ・加算・下限クランプの判定は`resolveGuestAiUsedCount`/
+#             `resolveGuestAiRemaining`という純粋関数に分離（vitestが`environment:"node"`で
+#             localStorage非対応のため。`chunkSizeGate.ts`と同じ方針）
+#      追加：`src/components/common/GuestAiQuotaNotice.tsx`（banner/inlineの2バリアント）。
+#             ゲスト以外は常にnullを返すため呼び出し側は分岐不要。`useT()`フックではなく
+#             `useLangStore.getState()+translate()`の「素の関数」方式（`invokeAI.ts`の
+#             `tOutside`と同じ流儀）にして、Reactレンダラー無しでも直接呼び出してテストできる
+#             ようにした
+#      加算ポイント：`invokeAI.ts`/`apiClient.ts`の2箇所。AI呼び出しが成功したときだけ
+#             `recordGuestAiUse()`を呼ぶ。429（GUEST_DAILY_LIMIT_EXCEEDED等）や他のエラー時は
+#             加算しない
+#      表示箇所：`MainLayout.tsx`（既存ゲストバナー内）・`LoginScreen.tsx`
+#             （`auth.guest.desc`に追記）・`ConsultationPanel.tsx`（タブ説明バー内）・
+#             `ProjectKarte.tsx`／`DashboardView.tsx`（PJ分析実行ボタン付近）。
+#             いずれもflexの`gap`に乗せる形で設置し、ゲストでない時（nullを返す時）に
+#             余分な空白が生まれないようにした。ボタンの無効化はしない（クライアント側の
+#             参考値だけで誤って締め出さないため）
+#      i18n：`common.guest.quota.remaining`/`common.guest.quota.exhausted`をja/en追加。
+#             `auth.guest.desc`にAI利用回数の案内を追記（{limit}で補間）
+#      ドキュメント：CLAUDE.md Section 23に「回数の明示UI」の項を追記
+#      テスト：`guestAiQuotaCounter.test.ts`（純粋関数の境界値・localStorage非対応時の
+#             安全性）・`GuestAiQuotaNotice.test.tsx`（ゲスト以外でnull）を新規追加。
+#             `invokeAI.test.ts`/`apiClient.test.ts`に「成功時のみ加算・エラー時は
+#             加算しない・非ゲストでは呼ばない」を追加
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`873件全通過（852件から21件増）／
+#             `npm run lint`変更ファイル新規エラー0（既存warning4件のみ）／`npm run build`成功
+#      要手動作業：無し（マイグレーション・Edge Function変更は今回のスコープ外）
+#
+# 最終更新：2026-08-07（v3.31）
 

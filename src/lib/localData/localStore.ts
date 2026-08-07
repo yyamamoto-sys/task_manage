@@ -80,6 +80,8 @@ const KEYS = {
   LOADING_TIPS_CACHE:  "loading_tips_cache",
   // エラー履歴
   ERROR_HISTORY:       "app:error_history",
+  // ゲスト（サンプル閲覧）のAI利用回数の表示専用カウンタ（v3.31・詳細はguestAiQuotaCounter.ts）
+  GUEST_AI_USAGE_TODAY: "guest_ai_usage_today",
   // スキーマバージョン管理（内部用）
   SCHEMA_VERSION:      "app:ls_schema_version",
 } as const;

@@ -28,6 +28,7 @@ import { getAssigneeIds, isActiveTaskStatus, suppressOverdue } from "../../lib/t
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { confirmDialog } from "../../lib/dialog";
+import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 
 const ANALYSIS_PHASES = [
   "タスクの状況を読み込んでいます",
@@ -438,6 +439,8 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           >
             <span>✨</span> {analyzing ? "分析中…" : latest ? "AI分析を更新" : "このPJをAI分析"}
           </button>
+          {/* ゲスト（サンプル閲覧）のAI利用回数の明示（v3.31）。ゲスト以外はnullを返す */}
+          <GuestAiQuotaNotice variant="inline" />
           {latest && !analyzing && (
             <button
               onClick={() => { setViewIndex(0); setShowAnalysis(true); }}
