@@ -4057,5 +4057,35 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`変更ファイル新規エラー0（既存warning4件のみ）／`npm run build`成功
 #      要手動作業：無し（マイグレーション・Edge Function変更は今回のスコープ外）
 #
-# 最終更新：2026-08-07（v3.31）
+#
+# v3.32 ゲストのオンボーディングツアーが破綻しないよう修正（2026-08-07）
+#      背景：`TourProvider`はMainLayoutの内側にありゲストの描画経路も通るため、ツアー機能
+#             自体はゲストでも生きていた。しかしツアー定義（first-time.ts）は実ユーザー前提の
+#             ままで、ゲストで実行すると2つの実害があった。①`fab`ステップ（右下＋ボタンの
+#             説明）はtargetを持たない中央表示ステップのためskipIfMissingが効かず、ゲストでは
+#             非表示のFABの説明がそのまま出てしまう。②`ai-consult-demo`ステップは
+#             `action:"demo-ai-consult"`で実際にAI相談を1回送信する実演のため、ツアーを見る
+#             だけでゲストのAI利用枠（1日3回）を1回消費してしまう
+#      追加：`src/components/tour/tours/index.ts`に純粋関数`buildTours({isGuest})`を追加。
+#             `isGuest=false`は既存の`ALL_TOURS`をそのまま返す（通常ユーザーは無影響）。
+#             `isGuest=true`は`firstTimeTour`の複製を作り直し、fabステップを除去・
+#             ai-consult-demoステップをaction/target無しの説明のみ（placement:"center"）に
+#             差し替え・welcomeステップの本文に「表示されているのは架空のサンプルデータ」の
+#             1行を追加する。`firstTimeTour`（モジュールレベル定数）自体は書き換えない
+#      変更：`src/components/layout/MainLayout.tsx`の`TourProvider`への`tours`props を
+#             `ALL_TOURS`固定から`useMemo(() => buildTours({isGuest: isGuestMember(currentUser)}),
+#             [currentUser])`に変更。毎レンダーで新しいオブジェクトを作らないことで
+#             `TourProvider`内の`useCallback`の作り直し（不要な再レンダー）を避けた
+#      対象外：`TourProvider.tsx`本体・`skipIfMissing`の仕組みは変更していない
+#             （ツアー定義側だけで解決できたため）
+#      ドキュメント：CLAUDE.md Section 23に「ゲストのオンボーディングツアー」の項を追記
+#      テスト：`src/components/tour/tours/__tests__/buildTours.test.ts`を新規追加
+#             （demo-ai-consultアクションが1つも無い・fabステップが無い・非ゲスト版は
+#             ALL_TOURSと同一・呼び出し後もALL_TOURSが変化しない・target有りステップは
+#             skipIfMissing必須、の7件）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`880件全通過（873件から7件増）／
+#             `npm run lint`変更ファイル新規エラー0／`npm run build`成功
+#      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
+#
+# 最終更新：2026-08-07（v3.32）
 

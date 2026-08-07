@@ -36,7 +36,7 @@ import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
-import { ALL_TOURS, FIRST_TIME_TOUR_ID } from "../tour/tours";
+import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
@@ -107,8 +107,15 @@ function buildNavItems(t: ReturnType<typeof useT>): { view: ViewMode; label: str
 
 export function MainLayout(props: Props) {
   // ツアー機能を全体で使えるように。useTour() は MainLayoutInner で呼ぶ
+  // ゲスト（サンプル閲覧）ではAI実演ステップ等を差し替えた版を使う（CLAUDE.md Section 23）。
+  // useMemo で props.currentUser にのみ依存させ、毎レンダーで新しいオブジェクトを作らない
+  // （tours が毎回別参照だと TourProvider 内の useCallback が作り直され不要な再レンダーを誘発する）。
+  const tours = useMemo(
+    () => buildTours({ isGuest: isGuestMember(props.currentUser) }),
+    [props.currentUser]
+  );
   return (
-    <TourProvider tours={ALL_TOURS}>
+    <TourProvider tours={tours}>
       <MainLayoutInner {...props} />
     </TourProvider>
   );

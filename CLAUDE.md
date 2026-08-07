@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.31
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.32
 #
-最終更新：2026-08-07（v3.31）
+最終更新：2026-08-07（v3.32）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1006,7 +1006,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-07（v3.30）
+- 最終更新：2026-08-07（v3.32）
 
 ---
 
@@ -1507,7 +1507,7 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28、v3.29でAI限定開放を追加、v3.30で回数制限の可用性バグを修正、v3.31で回数の明示UIを追加）
+## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28、v3.29でAI限定開放を追加、v3.30で回数制限の可用性バグを修正、v3.31で回数の明示UIを追加、v3.32でオンボーディングツアーの破綻を解消）
 
 ### 2026-08-06に判明した旧実装の欠陥
 
@@ -1554,6 +1554,22 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **表示コンポーネントは `src/components/common/GuestAiQuotaNotice.tsx` 1つ**（banner/inlineの2バリアント）。ゲストでないときは常に null を返すため、呼び出し側は分岐を書かずに置くだけでよい。設置箇所は4つ：`MainLayout.tsx`（既存ゲストバナー内）・`ConsultationPanel.tsx`（相談パネルのタブ説明バー内）・`ProjectKarte.tsx`／`DashboardView.tsx`（PJ分析実行ボタン付近）。加えて `LoginScreen.tsx`（`auth.guest.desc`）で入る前にも回数を明示する。**ボタンの無効化はしない**（クライアント側の参考値だけで誤って締め出すと、サーバー側ではまだ枠が残っているのに使えなくなる事故が起きるため）。
 - **上限値の二重管理に注意**：`GUEST_AI_DAILY_LIMIT`（`guestAiQuotaCounter.ts`）は `supabase/functions/ai-consult/index.ts` の `GUEST_AI_PER_BROWSER_DAILY_LIMIT`（環境変数で上書き可）と別々の場所にハードコードされている。環境変数で上限を変更した場合、この表示用の定数を直さないと表示だけがズレる（強制自体は正しく動き続ける）。上限を変えるときは両方直すこと。
 - **テスト容易性**：`vitest.config.ts` が `environment: "node"` のため localStorage が無い（`chunkSizeGate.ts` と同じ制約）。`guestAiQuotaCounter.ts` は日付跨ぎ・加算・下限クランプの判定を `resolveGuestAiUsedCount`/`resolveGuestAiRemaining` という純粋関数に分離してテストする。`GuestAiQuotaNotice` も同じ理由で `useT()` フックを使わず、`useLangStore.getState()` + `translate()` の「素の関数」方式（`invokeAI.ts` の `tOutside` と同じ流儀）にしている（Reactレンダラー無しで直接呼び出してテストするため）。
+
+### ゲストのオンボーディングツアー（v3.32・破綻を解消）
+
+`TourProvider` は `MainLayout` の内側にあり、ゲストの描画経路（`App.tsx` の `guestActive` 分岐 → `MainLayout`）も通るため、ツアー機能自体はゲストでも動く。完了フラグは `localStorage`（`tour_completed_v1`）のためSupabase非接触の設計とも衝突しない。一方、ツアー定義（`first-time.ts`）はログイン済みの実ユーザーを前提に書かれており、そのままゲストに出すと2つの実害があった。
+
+- **`fab` ステップ**：右下＋ボタン（FAB）の説明だが、ゲストではFABが非表示。`target` を持たない中央表示ステップのため `skipIfMissing` が効かず（`TourProvider.tsx` の `findTarget` は `target` 未指定なら常に `null` を返す＝`skipIfMissing` はターゲット付きステップにしか意味を持たない）、「存在しないボタン」の説明がそのまま出てしまっていた。
+- **`ai-consult-demo` ステップ**：`action: "demo-ai-consult"` で実際にAI相談を1回送信する実演。ゲストのAI利用は1日3回（Section 23上部参照）のため、ツアーを最後まで見るだけで枠を1回消費してしまっていた。
+
+**解決方針**：`src/components/tour/tours/index.ts` の `buildTours({ isGuest })`（純粋関数）が、`isGuest=true` のときだけ `firstTimeTour` の複製を作り直す。
+
+- `fab` ステップを配列から除去する。
+- `ai-consult-demo` ステップは `action`・`target` を持たせず `placement: "center"` の説明のみステップに差し替える（実演を無くすと `target: "ai-panel"` が開かれないため見つからず消えてしまう＝`skipIfMissing` に任せると何も表示されなくなる。中央表示にして必ず出す設計にした）。内容は「AIには自分で相談できること」「サンプルのAI利用は1日3回まで」の2点。
+- `welcome` ステップの本文に「表示されているのは架空のサンプルデータである」旨を1行加える。
+- `firstTimeTour`（モジュールレベル定数）自体は書き換えない。新しい配列・新しいオブジェクトを都度組み立てて返すため、通常ログインユーザー（`isGuest=false`。`ALL_TOURS` をそのまま返す）には一切影響しない。
+
+`MainLayout.tsx` は `useMemo(() => buildTours({ isGuest: isGuestMember(props.currentUser) }), [props.currentUser])` で `tours` を組み立てて `TourProvider` に渡す（毎レンダーで新しいオブジェクトを作らないことで `TourProvider` 内の `useCallback` の作り直し＝不要な再レンダーを避ける）。`TourProvider.tsx` 本体・`skipIfMissing` の仕組みは変更していない（ツアー定義側だけで解決できたため）。回帰防止テストは `src/components/tour/tours/__tests__/buildTours.test.ts`。
 
 ---
 
