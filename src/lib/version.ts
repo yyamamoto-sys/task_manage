@@ -10,7 +10,7 @@
 // テストが落ちて気づける）。
 //
 // v は含めない（"3.25" のように）。表示側で `v{APP_VERSION}` と組み立てる。
-export const APP_VERSION = "3.29";
+export const APP_VERSION = "3.30";
 
 /**
  * 【設計意図】

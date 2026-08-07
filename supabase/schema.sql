@@ -797,47 +797,76 @@ CREATE POLICY "member_widget_layouts_own" ON member_widget_layouts
   WITH CHECK (member_id = current_member_id());
 
 -- ============================================================
--- ゲストAI利用回数の原子的カウントアップ関数（Phase 3・v3.29）
+-- ゲストAI利用回数の条件付きカウントアップ関数（Phase 3・v3.29／v3.30で条件付き加算に修正）
 -- （migrations/20260807_add_guest_ai_quota.sql 参照）
 -- ============================================================
--- 「インクリメント後のブラウザ別件数・全体件数」を返すだけの関数（しきい値判定はしない。
--- 判定は呼び出し元のEdge Function側・supabase/functions/ai-consult/guestQuota.ts の
--- decideGuestAiQuota() が行う）。authenticated/anon にはEXECUTEを渡さず、service_role
--- （Edge Functionから）だけが呼べる。
+-- 「上限未満のときだけ加算し、拒否ならどちらのカウンタも進めない」判定＋加算を1関数に閉じる
+-- （v3.29の「無条件加算→呼び出し元で事後判定」は、拒否された試行も全体枠を消費してしまう
+-- 可用性バグがあったため修正した）。しきい値はSQL側に持たず、呼び出し元のEdge Function側の
+-- 定数1箇所（GUEST_AI_PER_BROWSER_DAILY_LIMIT / GUEST_AI_GLOBAL_DAILY_LIMIT）から
+-- 毎回引数で渡す。authenticated/anon にはEXECUTEを渡さず、service_role（Edge Functionから）
+-- だけが呼べる。
 
-CREATE OR REPLACE FUNCTION public.consume_guest_ai_quota(p_anon_user_id uuid)
-RETURNS TABLE(browser_count integer, global_count integer)
+DROP FUNCTION IF EXISTS public.consume_guest_ai_quota(uuid);
+
+CREATE OR REPLACE FUNCTION public.consume_guest_ai_quota(
+  p_anon_user_id uuid,
+  p_browser_limit integer,
+  p_global_limit integer
+)
+RETURNS TABLE(allowed boolean, reason text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path = ''
 AS $fn_consume_guest_ai_quota$
 DECLARE
   v_today date := (now() AT TIME ZONE 'Asia/Tokyo')::date;
-  v_browser_count integer;
   v_global_count integer;
+  v_browser_count integer;
 BEGIN
+  -- ① 全体枠（コストの天井）を先に条件付きで加算する。上限に達していればUPDATEが起きず
+  --    RETURNINGは0行（=NULL）になる。
   INSERT INTO public.guest_ai_usage_global_daily (usage_date, call_count)
   VALUES (v_today, 1)
   ON CONFLICT (usage_date) DO UPDATE
     SET call_count = public.guest_ai_usage_global_daily.call_count + 1,
         updated_at = now()
+    WHERE public.guest_ai_usage_global_daily.call_count < p_global_limit
   RETURNING call_count INTO v_global_count;
 
+  IF v_global_count IS NULL THEN
+    -- 全体枠が尽きている。ブラウザ別カウンタには一切触れていないため補償は不要。
+    RETURN QUERY SELECT false, 'global'::text;
+    RETURN;
+  END IF;
+
+  -- ② ブラウザ別（匿名Authユーザー別）の上限を条件付きで加算する。
   INSERT INTO public.guest_ai_usage_daily (usage_date, anon_user_id, call_count)
   VALUES (v_today, p_anon_user_id, 1)
   ON CONFLICT (usage_date, anon_user_id) DO UPDATE
     SET call_count = public.guest_ai_usage_daily.call_count + 1,
         updated_at = now()
+    WHERE public.guest_ai_usage_daily.call_count < p_browser_limit
   RETURNING call_count INTO v_browser_count;
 
-  RETURN QUERY SELECT v_browser_count, v_global_count;
+  IF v_browser_count IS NULL THEN
+    -- ブラウザ別の上限に達している。①で加算した全体枠を同一トランザクション内で
+    -- 必ず1減算して取り消す（拒否されたリクエストがどちらのカウンタも消費しないための補償）。
+    UPDATE public.guest_ai_usage_global_daily
+      SET call_count = call_count - 1, updated_at = now()
+      WHERE usage_date = v_today;
+    RETURN QUERY SELECT false, 'per_browser'::text;
+    RETURN;
+  END IF;
+
+  RETURN QUERY SELECT true, 'ok'::text;
 END;
 $fn_consume_guest_ai_quota$;
 
-REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM PUBLIC;
-REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM authenticated;
-REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM anon;
-GRANT EXECUTE ON FUNCTION public.consume_guest_ai_quota(uuid) TO service_role;
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid, integer, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid, integer, integer) FROM authenticated;
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid, integer, integer) FROM anon;
+GRANT EXECUTE ON FUNCTION public.consume_guest_ai_quota(uuid, integer, integer) TO service_role;
 
 -- ============================================================
 -- OKRコア階層（objectives/key_results/task_forces/todos）の部署スコープ

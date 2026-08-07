@@ -1,44 +1,66 @@
 // supabase/functions/ai-consult/guestQuota.ts
 //
-// 【設計意図】
-// ゲスト（サンプル閲覧）のAI利用回数制限のうち「しきい値を超えたかどうかの判定」だけを
-// 切り出した純粋関数。カウント自体（原子的なインクリメント）は
-// supabase/migrations/20260807_add_guest_ai_quota.sql の consume_guest_ai_quota()
-// が担い、「常に無条件でインクリメントしてインクリメント後の件数を返す」だけをする。
-// 判定と加算を別々のクエリ（SELECTで確認→UPDATEで加算）に分けると、その間に別リクエストが
-// 割り込んで上限を超えてしまう（TOCTOUレース）。consume_guest_ai_quota() の加算は
-// Postgresの一意インデックスの行ロックで直列化されるため、「呼び出しごとに一意で単調増加する
-// 件数」を必ず受け取れる。この関数はその結果に対して「しきい値（3/日/ブラウザ・10/日/全体）を
-// 超えたか」を判定するだけなので、TOCTOUレースの影響を受けない。
+// 【設計意図・v3.30で役割変更】
+// ゲスト（サンプル閲覧）のAI利用回数制限の「判定＋条件付き加算」は、v3.30以降
+// consume_guest_ai_quota()（supabase/migrations/20260807_add_guest_ai_quota.sql）の中で
+// 完結している（上限未満のときだけ加算し、拒否ならどちらのカウンタも進めない。TOCTOUレース
+// 防止のため判定と加算を同一SQL文に閉じる必要があるため）。index.ts は RPC の戻り値
+// （allowed / reason）をそのまま使うだけで、この関数を呼ばない。
 //
-// しきい値の数字はこのファイルにも持たない。呼び出し元（index.ts）の定数
-// GUEST_AI_PER_BROWSER_DAILY_LIMIT / GUEST_AI_GLOBAL_DAILY_LIMIT が唯一の管理場所。
+// 【この関数が存在する理由（本番の判定経路ではない）】
+// SQL側の状態遷移ロジック（条件付き加算・拒否時の全体枠の補償）は、このリポジトリの
+// テスト環境（Vitest/Node）から実際のPostgresを起動して検証する手段が無いため、直接は
+// テストできない。そのため、SQL関数と**手順を1対1で対応させた**参照実装をここに用意し、
+// 境界値（3回目/4回目・10回目/11回目）・「拒否がどちらのカウンタも進めないこと」・
+// 「片方が拒否されたときにもう片方の補償が効くこと」をVitestで固定する
+// （src/lib/ai/__tests__/guestQuota.test.ts）。
 //
-// Deno依存・Supabase依存が無い純粋関数のため、Vitestからこのファイルをそのまま
-// import してテストできる（src/lib/ai/__tests__/guestQuota.test.ts 参照）。
+// **SQL側（consume_guest_ai_quota）を変更したら、この関数とコメントの対応も必ず
+// 一緒に見直すこと。** ズレるとテストが「安全である」と言い続けたまま実体だけ壊れる。
 
-export interface GuestQuotaDecision {
+export interface GuestQuotaState {
+  /** そのブラウザ（匿名Authユーザー）の当日の呼び出し成功回数 */
+  browserCount: number;
+  /** 全ゲスト共通・当日の呼び出し成功回数 */
+  globalCount: number;
+}
+
+export interface GuestQuotaConsumeResult {
   allowed: boolean;
   reason: "ok" | "per_browser" | "global";
+  /** 加算後の状態。拒否時は補償済み（=呼び出し前と全く同じ値）を返す。 */
+  nextState: GuestQuotaState;
 }
 
 /**
- * @param browserCountAfterIncrement consume_guest_ai_quota() が返す、今回の呼び出しを
- *   含めた「このブラウザ（匿名Authユーザー）の本日の件数」
- * @param globalCountAfterIncrement 同じく「全ゲスト共通・本日の件数」
- * @param perBrowserLimit 1ブラウザあたりの1日の上限
- * @param globalLimit 全ゲスト共通の1日の上限
+ * consume_guest_ai_quota() のSQLロジックをTypeScriptで再現した参照実装。
+ * 手順は完全に対応させている：
+ *   ① 全体枠を条件付きで加算 → 上限到達なら reason="global"（ブラウザ別枠には触れない）
+ *   ② ブラウザ別枠を条件付きで加算 → 上限到達なら①の加算を取り消して reason="per_browser"
+ *   ③ 両方通れば allowed=true
  */
-export function decideGuestAiQuota(
-  browserCountAfterIncrement: number,
-  globalCountAfterIncrement: number,
+export function simulateConsumeGuestAiQuota(
+  state: GuestQuotaState,
   perBrowserLimit: number,
   globalLimit: number,
-): GuestQuotaDecision {
-  // 全体枠の判定を優先する：このブラウザ自身は個人枠内でも、共有枠（コストの天井）が
-  // 尽きていれば「全体が埋まっている」ことを正しく伝える（逆の優先順位だと、実際は
-  // 全体枠切れなのに「あなたが使い切った」という誤った案内になってしまう）。
-  if (globalCountAfterIncrement > globalLimit) return { allowed: false, reason: "global" };
-  if (browserCountAfterIncrement > perBrowserLimit) return { allowed: false, reason: "per_browser" };
-  return { allowed: true, reason: "ok" };
+): GuestQuotaConsumeResult {
+  // ① 全体枠（コストの天井）を先に条件付きで加算する。
+  if (state.globalCount >= globalLimit) {
+    // 尽きている。ブラウザ別カウンタには一切触れない＝状態は不変。
+    return { allowed: false, reason: "global", nextState: { ...state } };
+  }
+  const globalCountAfter = state.globalCount + 1;
+
+  // ② ブラウザ別（匿名Authユーザー別）の上限を条件付きで加算する。
+  if (state.browserCount >= perBrowserLimit) {
+    // 拒否。①で加算した全体枠を取り消す（補償）→ 呼び出し前と全く同じ状態に戻す。
+    return { allowed: false, reason: "per_browser", nextState: { ...state } };
+  }
+  const browserCountAfter = state.browserCount + 1;
+
+  return {
+    allowed: true,
+    reason: "ok",
+    nextState: { browserCount: browserCountAfter, globalCount: globalCountAfter },
+  };
 }

@@ -8,16 +8,19 @@
 // - CORS: ALLOWED_ORIGINS 環境変数で許可ドメインを管理（カンマ区切り）
 // - リクエストボディのpayloadをAnthropic APIに転送
 //
-// 【ゲスト（サンプル閲覧）のAI利用回数制限・Phase 3・2026-08-07】
+// 【ゲスト（サンプル閲覧）のAI利用回数制限・Phase 3・2026-08-07／v3.30で判定をSQL側に統一】
 // ゲストはJWTの is_anonymous クレームで判定する（クライアント送信のフラグは偽装できるため
-// 信用しない。CLAUDE.md Section 23）。回数の記録・判定はDBで原子的に行う
+// 信用しない。CLAUDE.md Section 23）。回数の判定・条件付き加算はDBで原子的に行う
 // （consume_guest_ai_quota()。supabase/migrations/20260807_add_guest_ai_quota.sql）。
+// 「上限未満のときだけ加算し、拒否ならどちらのカウンタも進めない」という判定そのものが
+// SQL関数の中で完結しており、このEdge Functionは戻り値（allowed/reason）をそのまま使うだけ
+// （v3.29時点では無条件加算→ここで事後判定していたが、拒否された試行も全体枠を消費してしまう
+// 可用性バグがあったため修正した）。
 // しきい値は下記 GUEST_AI_PER_BROWSER_DAILY_LIMIT / GUEST_AI_GLOBAL_DAILY_LIMIT の
-// 1箇所だけで管理する（環境変数で上書き可・再デプロイなしで変更したい場合はSupabase
-// ダッシュボードのEdge Function Secretsを更新するだけでよい）。
+// 1箇所だけで管理し、RPC呼び出し時にSQL側へ引数で渡す（環境変数で上書き可・再デプロイ
+// なしで変更したい場合はSupabaseダッシュボードのEdge Function Secretsを更新するだけでよい）。
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { decideGuestAiQuota } from "./guestQuota.ts";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 // 既定モデル（後方互換：model 指定が無い古いクライアントはこれを使う）
@@ -33,7 +36,8 @@ const MAX_TOKENS_CAP = 16384;
 
 // ===== ゲスト（サンプル閲覧）のAI利用回数制限（1箇所の定数。CLAUDE.md Section 23） =====
 // 「1ブラウザ=1匿名Authユーザー」とみなし、匿名ユーザーのuuid（=JWTのsub）をブラウザの
-// 識別子として使う。しきい値はここだけで管理する（decideGuestAiQuota()は数字を持たない）。
+// 識別子として使う。しきい値はここだけで管理し、consume_guest_ai_quota()へ引数で渡す
+// （SQL側は数字を一切持たない）。
 const GUEST_AI_PER_BROWSER_DAILY_LIMIT = Number(Deno.env.get("GUEST_AI_PER_BROWSER_DAILY_LIMIT") ?? "3");
 const GUEST_AI_GLOBAL_DAILY_LIMIT = Number(Deno.env.get("GUEST_AI_GLOBAL_DAILY_LIMIT") ?? "10");
 // ゲストのAI利用ログを記録するmember_id。src/lib/guestMode.ts の GUEST_MEMBER_ID と
@@ -164,8 +168,15 @@ Deno.serve(async (req: Request) => {
     }
     guestAdminClient = createClient(supabaseUrl, serviceRoleKey);
 
+    // 判定（上限未満かどうか）と加算はconsume_guest_ai_quota()の中で完結している
+    // （拒否ならどちらのカウンタも進めない。TOCTOUレース防止のため判定と加算を別クエリに
+    // 分けない設計。supabase/migrations/20260807_add_guest_ai_quota.sql参照）。
     const { data: quotaRows, error: quotaErr } = await guestAdminClient
-      .rpc("consume_guest_ai_quota", { p_anon_user_id: user.id });
+      .rpc("consume_guest_ai_quota", {
+        p_anon_user_id: user.id,
+        p_browser_limit: GUEST_AI_PER_BROWSER_DAILY_LIMIT,
+        p_global_limit: GUEST_AI_GLOBAL_DAILY_LIMIT,
+      });
     const quotaRow = Array.isArray(quotaRows) ? quotaRows[0] : quotaRows;
     if (quotaErr || !quotaRow) {
       console.error("[ai-consult] guest quota RPC failed:", quotaErr);
@@ -178,15 +189,9 @@ Deno.serve(async (req: Request) => {
       );
     }
 
-    const decision = decideGuestAiQuota(
-      quotaRow.browser_count,
-      quotaRow.global_count,
-      GUEST_AI_PER_BROWSER_DAILY_LIMIT,
-      GUEST_AI_GLOBAL_DAILY_LIMIT,
-    );
-    if (!decision.allowed) {
-      console.warn(`[ai-consult] guest quota exceeded: reason=${decision.reason} user=${user.id}`);
-      const isGlobal = decision.reason === "global";
+    if (!quotaRow.allowed) {
+      console.warn(`[ai-consult] guest quota exceeded: reason=${quotaRow.reason} user=${user.id}`);
+      const isGlobal = quotaRow.reason === "global";
       return new Response(
         JSON.stringify({
           error: isGlobal ? "GUEST_GLOBAL_LIMIT_EXCEEDED" : "GUEST_DAILY_LIMIT_EXCEEDED",
