@@ -10,6 +10,12 @@
 // この CSS カスタムプロパティは「ラボ系ビューが position:fixed の左端をサイドバー分ずらして
 // 避ける」という旧方式のためだけに存在していた。新方式（position:fixedをやめてメインエリア内に
 // 収める）ではこの手法自体が不要になったため、使用箇所ゼロを固定する。
+// 【テストの粒度について】全ソースファイルを走査するが、it.each で1ファイル1テストには
+// 展開しない（1件のテストに集約し、違反ファイルの配列を expect(offenders).toEqual([]) で
+// 比較する）。このリポジトリはCHANGELOG.mdにテスト件数の増減を「変更規模のシグナル」として
+// 記録しており、ソース走査1本をit.eachで展開すると数百件単位でテスト件数が水増しされ、
+// 本来のシグナル（何をどれだけ変更したか）が埋もれてしまうため。失敗時は offenders 配列の
+// 中身（違反ファイルのパス）がそのままvitestの差分に出るため、診断能力は落ちない。
 //
 // 【検査2】対象7ビューのファイルが、そのビュー本体の「root」で position:"fixed" を使っていない
 // こと。ここでいう「root」とは、そのファイルがexportしているビュー本体コンポーネント
@@ -90,24 +96,18 @@ function extractComponentBody(content: string, componentName: string): string {
 describe("全画面ラボ系ビュー契約：--app-sidebar-w を使う実装が残っていない（CLAUDE.md Section 20）", () => {
   const NEEDLE = "var(--app-sidebar-w";
 
-  it.each(
-    listAllSourceFiles(SRC_DIR)
+  it("src/ 配下のどのファイルにも \"var(--app-sidebar-w\" が含まれていない", () => {
+    const offenders = listAllSourceFiles(SRC_DIR)
       .map(f => path.relative(SRC_DIR, f).replace(/\\/g, "/"))
-      .filter(relPath => relPath !== SELF_FILE),
-  )(
-    "%s に \"var(--app-sidebar-w\" が含まれていない",
-    relPath => {
-      const content = fs.readFileSync(path.join(SRC_DIR, relPath), "utf-8");
-      if (content.includes(NEEDLE)) {
-        throw new Error(
-          `[labViewContainment] ${relPath} に "${NEEDLE}" が見つかりました。\n` +
-          `理由：この手法（position:fixedの左端をサイドバー分ずらして避ける）はCLAUDE.md ` +
-          `Section 20（v3.33）で廃止されました。全画面ラボ系ビューは position:"fixed" を使わず、` +
-          `メインエリア内に flex:1 で収める新方式に統一してください。`,
-        );
-      }
-    },
-  );
+      .filter(relPath => relPath !== SELF_FILE)
+      .filter(relPath => fs.readFileSync(path.join(SRC_DIR, relPath), "utf-8").includes(NEEDLE));
+
+    // 違反ファイルのパスをそのまま配列で比較する。失敗時はvitestが配列の差分（=違反ファイル一覧）を
+    // そのままエラーメッセージに出すため、it.eachで1ファイル1テストに展開しなくても
+    // 「どのファイルが違反しているか」の診断能力は落ちない（CHANGELOGのテスト件数記録が
+    // ソース走査1本の展開数で埋もれるのを避けるため、2026-08-07に it.each から集約に変更）。
+    expect(offenders).toEqual([]);
+  });
 });
 
 describe("全画面ラボ系ビュー契約：ビュー本体のrootが position:\"fixed\" を使っていない（CLAUDE.md Section 20）", () => {
