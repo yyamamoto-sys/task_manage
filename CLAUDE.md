@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.34
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.35
 #
-最終更新：2026-08-07（v3.34）
+最終更新：2026-08-07（v3.35）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1424,7 +1424,7 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化）
+## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化、v3.35でchoke point化）
 
 ### 用語（今後この2語で呼び分ける）
 
@@ -1476,6 +1476,18 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 **KrJointSessionFlow（OKRの「セッション記録」）もこの対象に含めた**。旧方式では `position:fixed` を使わない設計のため Section 20 の v3.33 対応（position:fixed撤去）の対象外だったが、`isKrSessionOpen` 単独の真偽値でPCでは `mainContent` の**兄弟**として描画されており、開くとメインエリアの横に並んで表示され他のラボ機能と挙動が揃っていなかった。`activeLabView === "kr-session"` として統合し、他と同じく `labOverlay` 経由でメインエリア内に描画するようにした。ただしこのコンポーネント自身のrootは `minHeight:0` を持たない（他のラボビューは持つ）ため、`labOverlay` 側で `{flex:1, minWidth:0, minHeight:0, overflow:"hidden", ...}` のラッパーで包み、契約に合わせている。
 
 サイドバーのラボサブメニュー（`Sidebar` コンポーネント）は `activeLabView` を props で受け取り、現在開いている項目を既存の `NavItem` の `active` プロップ（NAV_ITEMSと同じスタイルトークン）でハイライトする。「画面が切り替わる」ことをユーザーが視覚的に確認できるようにするため。
+
+**ラボビューの開閉は必ず choke point のヘルパー（`openLabView(id)` / `closeLabViews()`）を通し、そのビューに紐づく一時state（編集モーダル等）を切替時にクリアする（v3.35）。** `setActiveLabView` を直接呼ぶ箇所を増やさないこと。理由は次の項目を参照。
+
+### ビューを跨いだ「浮遊モーダル」を防ぐ（v3.35）
+
+v3.34で単一state化した直後は、`activeLabView` が切り替わっても `graphEditTaskId`/`calendarEditTaskId`/`calendarQuickAddDate`/`myPageEditTaskId`（各ビューの「タスク編集モーダルを開く」ための一時state）をクリアしていなかった。これはv3.33までは実害が無かった（2つのラボビューを同時に開けなかったため「ビューAからビューBへ切り替える」操作自体が存在せず、この経路で一時stateが取り残される事象も起こり得なかった）が、**v3.34の単一state化によって切り替えが可能になったことで、初めて到達可能になった不具合**だった（例：GraphViewでタスクを開いて`graphEditTaskId`をセット→閉じずにCalendarへ切り替える→GraphViewは閉じたのに、そこから開いたタスク編集モーダルだけがCalendarの上に残る）。
+
+対策として `MainLayout.tsx` に `openLabView(id: LabViewId)` を新設し、`setActiveLabView` を直接呼ぶ箇所を `openLabView` と `closeLabViews` の2つだけに限定した（choke point化）。`openLabView` は「前と違うidに変わるときだけ」上記4つの一時stateをまとめてクリアする（同じビューを開いたまま行う通常操作——例：MyPage表示中に`onOpenTask`で`myPageEditTaskId`をセットする操作——まで巻き込まないため）。`closeLabViews`はビューを閉じるときに常に4つともクリアする。**新しいラボビューを追加し、そのビューが独自の「編集モーダルを開く一時state」を持つ場合は、この2つのヘルパーに同様のクリア処理を足すこと。**
+
+### 機械チェック（choke point）
+
+`src/components/__tests__/labViewChokePoint.test.ts` が、`MainLayout.tsx` 内の `setActiveLabView(` 呼び出しが `openLabView`/`closeLabViews` の関数本体の外に無いことをソース走査で検査する（`labViewContainment.test.ts` と同じ方式）。
 
 ---
 

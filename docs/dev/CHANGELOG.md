@@ -4182,5 +4182,36 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             かった）／`npm run lint`変更ファイル新規エラー0／`npm run build`成功
 #      要手動作業：無し（DBマイグレーション・Edge Function変更は今回のスコープ外）
 #
-# 最終更新：2026-08-07（v3.34）
+# v3.35 ラボビュー切替時の付随state（編集モーダル等）クリア漏れを修正・choke point化（2026-08-07）
+#      背景：v3.34で「付随state（graphEditTaskId/calendarEditTaskId/calendarQuickAddDate/
+#             myPageEditTaskId）はクリアしない（現状維持）」と判断したが、これは誤りだった
+#             （統括レビュー指摘）。根拠にした「既存のcloseLabViews()呼び出し元も元々クリア
+#             していなかった」は、v3.33までラボビューを2つ同時に開けなかったため「ビューAから
+#             ビューBへ切り替える」操作自体が存在せず、その経路での取り残しが起こり得なかった
+#             ことに当てはまる。v3.34の単一state化で切り替えが可能になったことで、実害が
+#             新規に発生する：GraphViewでタスクをクリックしてTaskEditModalを開いた
+#             （graphEditTaskIdがセットされる）状態のまま、サイドバーでCalendarに切り替える
+#             と、GraphViewは閉じたのに、そこから開いたタスク編集モーダルだけがCalendarの上に
+#             残る（どのビューから開いたか分からない浮遊モーダルになる）。calendarQuickAddDate
+#             （カレンダーの日付セルから開くクイック追加）も同様
+#      変更：`MainLayout.tsx`に`openLabView(id: LabViewId)`を新設し、`setActiveLabView`を
+#             直接呼ぶ箇所を`openLabView`と`closeLabViews`の2つだけに限定（choke point化）。
+#             `openLabView`は「前と違うidに変わるときだけ」上記4つの一時stateをまとめて
+#             クリアする（同じビューを開いたまま行う通常操作——例：MyPage表示中に
+#             onOpenTaskでmyPageEditTaskIdをセットする操作——まで巻き込まないよう、
+#             「前と同じidなら何もしない」を先に判定）。`closeLabViews`はビューを閉じる
+#             ときに常に4つともクリアするよう変更（サイドバーのナビ操作・各ビューの✕ボタンの
+#             両方から効く）
+#      ドキュメント：CLAUDE.md Section 20に「choke pointを通し付随stateをクリアする」契約を
+#             追記（v3.35）。新しいラボビューを追加する際に同じ穴を作らないための明記
+#      テスト：`src/components/__tests__/labViewChokePoint.test.ts`を新規追加（2件）。
+#             `MainLayout.tsx`内の`setActiveLabView(`呼び出しの総出現数と、`openLabView`/
+#             `closeLabViews`の関数本体内の出現数を突き合わせ、choke pointの外で直接呼んで
+#             いる箇所があれば検出する（ソース走査方式。`labViewContainment.test.ts`と同じ
+#             流儀）。実装前に意図的に違反コードを注入して検出できることを確認済み
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`891件全通過（889件から2件増）／
+#             `npm run lint`変更ファイル新規エラー0／`npm run build`成功
+#      要手動作業：無し
+#
+# 最終更新：2026-08-07（v3.35）
 

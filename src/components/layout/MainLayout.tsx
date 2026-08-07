@@ -314,12 +314,45 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [aiEditTaskId, setAiEditTaskId] = useState<string | null>(null);
 
   /**
-   * 開いていると全画面（PC）を覆う「ラボ系ビュー」を全て閉じる。
-   * サイドバーからのナビ操作（ビュー切替・モード切替・PJ/KR/部署選択）で呼ぶことで、
-   * 「ラボ系ビューを開いたままメインエリアの表示だけが裏で切り替わる」混乱を防ぐ
-   * （CLAUDE.md Section 20・2026-08-06）。
+   * ラボ系ビューを開く／切り替える唯一の入口（choke point）。`setActiveLabView` を直接
+   * 呼ぶ箇所はこのヘルパーと `closeLabViews` の中だけに限定すること
+   * （`src/components/__tests__/labViewChokePoint.test.ts` が機械的に検査する）。
+   *
+   * GraphView・CalendarLabView・MyPageView が持つ「タスク編集モーダルを開く」ための一時state
+   * （`graphEditTaskId`/`calendarEditTaskId`/`calendarQuickAddDate`/`myPageEditTaskId`）は
+   * 開いているビューに紐づくものであり、ビューが実際に切り替わった後まで残っていると
+   * 「どのビューから開いたか分からない浮遊モーダル」になる（2026-08-07・統括レビュー指摘。
+   * v3.33まではラボビューを2つ同時に開けなかったため「ビューAからビューBへ切り替える」操作
+   * 自体が存在せず、この不具合は起こり得なかった。v3.34の単一state化で切り替えが可能になり、
+   * 初めて到達可能になった経路）。そのため「前と違うidに変わる」ときだけ、この4つをまとめて
+   * クリアする。**同じビューをもう一度開く操作（例：MyPage表示中にonOpenTaskで
+   * myPageEditTaskIdをセットする通常操作）まで巻き込まないよう、「前と同じidなら何もしない」
+   * を先に判定する**（クリアするのは「切り替わったとき」「閉じたとき」だけ）。
    */
-  const closeLabViews = () => setActiveLabView(null);
+  const openLabView = (id: LabViewId) => {
+    if (activeLabView !== id) {
+      setGraphEditTaskId(null);
+      setCalendarEditTaskId(null);
+      setCalendarQuickAddDate(null);
+      setMyPageEditTaskId(null);
+    }
+    setActiveLabView(id);
+  };
+
+  /**
+   * 開いていると全画面（PC）を覆う「ラボ系ビュー」を全て閉じる。付随する一時state
+   * （タスク編集モーダル等。理由は openLabView のコメント参照）も同時にクリアする。
+   * サイドバーからのナビ操作（ビュー切替・モード切替・PJ/KR/部署選択）や、各ビューの✕ボタン
+   * から呼ぶことで、「ラボ系ビューを開いたままメインエリアの表示だけが裏で切り替わる」混乱と、
+   * 「閉じたビューの編集モーダルだけが浮遊する」混乱の両方を防ぐ（CLAUDE.md Section 20）。
+   */
+  const closeLabViews = () => {
+    setGraphEditTaskId(null);
+    setCalendarEditTaskId(null);
+    setCalendarQuickAddDate(null);
+    setMyPageEditTaskId(null);
+    setActiveLabView(null);
+  };
 
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
@@ -726,14 +759,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       case "graph":
         return (
           <Suspense fallback={<ViewLoading />}>
-            <GraphView onClose={() => setActiveLabView(null)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+            <GraphView onClose={closeLabViews} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
           </Suspense>
         );
       case "calendar":
         return (
           <Suspense fallback={<ViewLoading />}>
             <CalendarLabView
-              onClose={() => setActiveLabView(null)}
+              onClose={closeLabViews}
               currentUser={currentUser}
               onOpenTask={taskId => setCalendarEditTaskId(taskId)}
               onRequestQuickAdd={dateStr => setCalendarQuickAddDate(dateStr)}
@@ -743,14 +776,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       case "structure":
         return (
           <Suspense fallback={<ViewLoading />}>
-            <ProjectStructureView onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+            <ProjectStructureView onClose={closeLabViews} currentUser={currentUser} />
           </Suspense>
         );
       case "mypage":
         return (
           <Suspense fallback={<ViewLoading />}>
             <MyPageView
-              onClose={() => setActiveLabView(null)}
+              onClose={closeLabViews}
               currentUser={currentUser}
               onOpenTask={taskId => setMyPageEditTaskId(taskId)}
               onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
@@ -761,13 +794,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       case "kr-report":
         return (
           <Suspense fallback={<ViewLoading />}>
-            <KrReportPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+            <KrReportPanel onClose={closeLabViews} currentUser={currentUser} />
           </Suspense>
         );
       case "kr-why":
         return (
           <Suspense fallback={<ViewLoading />}>
-            <KrWhyPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+            <KrWhyPanel onClose={closeLabViews} currentUser={currentUser} />
           </Suspense>
         );
       case "kr-session":
@@ -779,7 +812,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         return (
           <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
             <Suspense fallback={<ViewLoading />}>
-              <KrJointSessionFlow currentUser={currentUser} onClose={() => setActiveLabView(null)} />
+              <KrJointSessionFlow currentUser={currentUser} onClose={closeLabViews} />
             </Suspense>
           </div>
         );
@@ -900,7 +933,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {activeLabView === "graph" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <GraphView onClose={() => setActiveLabView(null)} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
+              <GraphView onClose={closeLabViews} currentUser={currentUser} onOpenTask={taskId => setGraphEditTaskId(taskId)} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
@@ -911,26 +944,26 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {activeLabView === "kr-report" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <KrReportPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+              <KrReportPanel onClose={closeLabViews} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
         {activeLabView === "kr-session" && (
           <Suspense fallback={<ViewLoading />}>
-            <KrJointSessionFlow currentUser={currentUser} onClose={() => setActiveLabView(null)} />
+            <KrJointSessionFlow currentUser={currentUser} onClose={closeLabViews} />
           </Suspense>
         )}
         {activeLabView === "kr-why" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
-              <KrWhyPanel onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+              <KrWhyPanel onClose={closeLabViews} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
         {activeLabView === "structure" && (
           <MobileFullscreenOverlay zIndex={250}>
             <Suspense fallback={<ViewLoading />}>
-              <ProjectStructureView onClose={() => setActiveLabView(null)} currentUser={currentUser} />
+              <ProjectStructureView onClose={closeLabViews} currentUser={currentUser} />
             </Suspense>
           </MobileFullscreenOverlay>
         )}
@@ -990,13 +1023,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 <VersionBadge />
               </div>
               {[
-                { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { setActiveLabView("structure"); setIsMobileLabOpen(false); } },
-                { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { setActiveLabView("graph"); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { setActiveLabView("calendar"); setIsMobileLabOpen(false); } },
-                { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { setActiveLabView("mypage"); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { setActiveLabView("kr-session"); setIsMobileLabOpen(false); } },
-                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { setActiveLabView("kr-report"); setIsMobileLabOpen(false); } },
-                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { setActiveLabView("kr-why"); setIsMobileLabOpen(false); } },
+                { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { openLabView("structure"); setIsMobileLabOpen(false); } },
+                { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { openLabView("graph"); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { openLabView("calendar"); setIsMobileLabOpen(false); } },
+                { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { openLabView("mypage"); setIsMobileLabOpen(false); } },
+                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { openLabView("kr-session"); setIsMobileLabOpen(false); } },
+                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { openLabView("kr-report"); setIsMobileLabOpen(false); } },
+                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { openLabView("kr-why"); setIsMobileLabOpen(false); } },
               ].map(item => (
                 <button
                   key={item.label}
@@ -1126,7 +1159,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
           {/* カレンダー（ラボ） */}
           <button
-            onClick={() => setActiveLabView("calendar")}
+            onClick={() => openLabView("calendar")}
             title={t("layout.calendar.title")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
@@ -1416,10 +1449,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(prev => !prev); }}
         theme={theme}
         onToggleTheme={toggleTheme}
-        onOpenGraph={() => setActiveLabView("graph")}
-        onOpenCalendar={() => setActiveLabView("calendar")}
-        onOpenStructure={() => setActiveLabView("structure")}
-        onOpenMyPage={() => setActiveLabView("mypage")}
+        onOpenGraph={() => openLabView("graph")}
+        onOpenCalendar={() => openLabView("calendar")}
+        onOpenStructure={() => openLabView("structure")}
+        onOpenMyPage={() => openLabView("mypage")}
         activeLabView={activeLabView}
         onOpenAdmin={() => setIsAdminOpen(true)}
         onOpenGuide={() => setIsGuideOpen(true)}
