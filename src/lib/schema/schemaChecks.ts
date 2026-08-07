@@ -146,4 +146,33 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "マイページのウィジェットレイアウトテーブル（member_widget_layouts）が見つかりません",
     migration: "20260727b_add_member_widget_layouts.sql",
   },
+  {
+    id: "ai_usage_logs_is_guest_column",
+    kind: "column",
+    table: "ai_usage_logs",
+    column: "is_guest",
+    label: "AI使用量ログのゲスト印列（is_guest）が見つかりません",
+    migration: "20260807_add_guest_ai_quota.sql",
+  },
+  {
+    id: "guest_ai_usage_daily_table",
+    kind: "table",
+    table: "guest_ai_usage_daily",
+    label: "ゲストAI利用回数（ブラウザ別）テーブルが見つかりません",
+    migration: "20260807_add_guest_ai_quota.sql",
+  },
+  {
+    id: "guest_ai_usage_global_daily_table",
+    kind: "table",
+    table: "guest_ai_usage_global_daily",
+    label: "ゲストAI利用回数（全体）テーブルが見つかりません",
+    migration: "20260807_add_guest_ai_quota.sql",
+  },
+  {
+    id: "fn_consume_guest_ai_quota",
+    kind: "function",
+    name: "consume_guest_ai_quota",
+    label: "ゲストAI利用回数の原子的カウントアップ関数（consume_guest_ai_quota）が見つかりません",
+    migration: "20260807_add_guest_ai_quota.sql",
+  },
 ];

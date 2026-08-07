@@ -220,6 +220,6 @@ export const commonJa = {
   "common.schemaHealth.body": "以下の項目が見つかりませんでした。該当のマイグレーションファイルをSupabaseに適用してください。",
   "common.schemaHealth.rpcUnavailable": "スキーマ検査を実行できません（検査用の関数が未適用の可能性があります）",
 
-  // ----- ゲスト（サンプル閲覧）モード（v3.28） -----
-  "common.guest.aiBlocked": "サンプルではAI機能はご利用いただけません（閲覧のみです）",
+  // ----- ゲスト（サンプル閲覧）モード（v3.28・v3.29でAI利用開始失敗時の文言に変更） -----
+  "common.guest.aiBlocked": "サンプルでのAI利用を開始できませんでした。しばらくしてから再度お試しください。",
 } as const;

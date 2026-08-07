@@ -560,6 +560,10 @@ export interface AiUsageLog {
   consultation_type: string;
   input_tokens: number;
   output_tokens: number;
+  // ゲスト（サンプル閲覧）のAI利用かどうか（v3.29・migrations/20260807_add_guest_ai_quota.sql）。
+  // ゲスト分は member_id="__guest__" で Edge Function がサービスロールで記録する
+  // （クライアントからのINSERTはassertGuestBlocked()で常に遮断されるため）。
+  is_guest?: boolean;
 }
 
 export async function insertAiUsageLog(log: Omit<AiUsageLog, "id" | "called_at">) {

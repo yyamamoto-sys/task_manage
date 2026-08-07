@@ -16,12 +16,21 @@ vi.mock("../../localData/localStore", () => ({
   getCurrentUser: () => ({ id: "m-1" }),
 }));
 
+// ゲスト（サンプル閲覧）のAI用匿名セッション確立（Phase 3・v3.29）。
+// invokeAI.test.ts 側では「呼ばれたかどうか」だけを見る（実際のsupabase.auth呼び出しは
+// guestAiAuth.test.ts で個別に検証済み）。
+const mockEnsureGuestAiSession = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../supabase/guestAiAuth", () => ({
+  ensureGuestAiSession: (...args: unknown[]) => mockEnsureGuestAiSession(...args),
+}));
+
 import { invokeAI } from "../invokeAI";
 import { setGuestMode } from "../../guestMode";
 
 beforeEach(() => {
   mockInvoke.mockReset();
   mockInsert.mockClear();
+  mockEnsureGuestAiSession.mockReset().mockResolvedValue(undefined);
 });
 
 describe("invokeAI", () => {
@@ -61,14 +70,43 @@ describe("invokeAI", () => {
   });
 });
 
-describe("invokeAI：ゲスト（サンプル閲覧）モードのガード", () => {
+describe("invokeAI：ゲスト（サンプル閲覧）モードでのAI利用（Phase 3・v3.29）", () => {
   afterEach(() => setGuestMode(false));
 
-  it("ゲストモードなら functions.invoke を呼ばず、明示的なエラーを投げる", async () => {
+  it("ゲストモードでも匿名セッションを確立してから functions.invoke を呼ぶ", async () => {
     setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    const res = await invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report");
+
+    expect(res.content[0].text).toBe("ok");
+    expect(mockEnsureGuestAiSession).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("functions.invoke の body に intent（AIIntent）を含める（ゲスト分の利用ログ記録に使う）", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "ok" }], usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report");
+
+    const body = mockInvoke.mock.calls[0][1].body as { intent: string };
+    expect(body.intent).toBe("kr-report");
+  });
+
+  it("匿名セッションの確立に失敗したら分かりやすいエラーを投げ、functions.invoke は呼ばない", async () => {
+    setGuestMode(true);
+    mockEnsureGuestAiSession.mockRejectedValueOnce(new Error("Anonymous sign-ins are disabled"));
+
     await expect(
       invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
-    ).rejects.toThrow("サンプルではAI機能はご利用いただけません");
+    ).rejects.toThrow("サンプルでのAI利用を開始できませんでした");
     expect(mockInvoke).not.toHaveBeenCalled();
   });
 });

@@ -6,9 +6,15 @@
 // rpc・functions.invoke・storage は素通りしていた（実部署データの漏洩経路）。
 // ここでは実際に supabase（Proxy）を経由して、ゲストモード時に全経路がネットワークへ
 // 一切届かずブロックされることを検証する。
+//
+// 2026-08-07（v3.29・Phase 3）：ゲストにAI機能を限定開放したため、
+// functions.invoke("ai-consult") だけが例外的に実クライアントへ通るようになった。
+// 「例外はai-consultだけ」であることは isGuestInvokeBlocked() を直接呼んで検証する
+// （実際にfetchする実クライアントを経由すると、テスト環境の.env.local設定次第で
+// 本物のSupabaseプロジェクトへネットワークが飛んでしまうため、ここでは避ける）。
 
 import { describe, it, expect, afterEach } from "vitest";
-import { supabase } from "../client";
+import { supabase, isGuestInvokeBlocked } from "../client";
 import { setGuestMode, isGuestMode } from "../../guestMode";
 
 describe("ゲストモード時のSupabase遮断（choke point：assertGuestBlocked）", () => {
@@ -42,9 +48,9 @@ describe("ゲストモード時のSupabase遮断（choke point：assertGuestBloc
     expect(error).toBeTruthy();
   });
 
-  it("functions.invoke() はブロックされる", async () => {
+  it("functions.invoke() は ai-consult 以外の関数名ならブロックされる", async () => {
     setGuestMode(true);
-    const { data, error } = await supabase.functions.invoke("ai-consult", { body: {} });
+    const { data, error } = await supabase.functions.invoke("some-other-function", { body: {} });
     expect(data).toBeNull();
     expect(error).toBeTruthy();
   });
@@ -63,5 +69,26 @@ describe("ゲストモード時のSupabase遮断（choke point：assertGuestBloc
     // ネットワークを叩くメソッド（select等）は呼ばず、存在確認のみに留める。
     expect(builder).toBeTruthy();
     expect(typeof (builder as { select?: unknown }).select).toBe("function");
+  });
+});
+
+describe("isGuestInvokeBlocked：functions.invoke の例外は ai-consult だけ（Phase 3・v3.29）", () => {
+  afterEach(() => setGuestMode(false));
+
+  it("ゲストモードなら ai-consult は通す（=ブロックしない）", () => {
+    setGuestMode(true);
+    expect(isGuestInvokeBlocked("ai-consult")).toBe(false);
+  });
+
+  it("ゲストモードなら ai-consult 以外はブロックする", () => {
+    setGuestMode(true);
+    expect(isGuestInvokeBlocked("notify-deadlines")).toBe(true);
+    expect(isGuestInvokeBlocked("some-future-function")).toBe(true);
+  });
+
+  it("ゲストモードでなければ何もブロックしない（ai-consultも他の関数名も）", () => {
+    expect(isGuestMode()).toBe(false);
+    expect(isGuestInvokeBlocked("ai-consult")).toBe(false);
+    expect(isGuestInvokeBlocked("notify-deadlines")).toBe(false);
   });
 });

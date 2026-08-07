@@ -375,7 +375,28 @@ CREATE TABLE IF NOT EXISTS ai_usage_logs (
   member_id         text NOT NULL,
   consultation_type text NOT NULL,
   input_tokens      integer NOT NULL DEFAULT 0,
-  output_tokens     integer NOT NULL DEFAULT 0
+  output_tokens     integer NOT NULL DEFAULT 0,
+  -- ゲスト（サンプル閲覧）のAI利用かどうか（migrations/20260807_add_guest_ai_quota.sql）。
+  -- ゲスト分は member_id='__guest__'（src/lib/guestMode.ts の GUEST_MEMBER_ID）で
+  -- Edge Function がサービスロールで記録する。管理画面「AI使用量」タブの表示分けに使う。
+  is_guest          boolean NOT NULL DEFAULT false
+);
+
+-- ===== ゲストAI利用回数の日次カウンタ（migrations/20260807_add_guest_ai_quota.sql）=====
+-- ブラウザ別（＝匿名Authユーザー別）と全体（コストの天井）の2本。しきい値の数字は
+-- ここには持たない（Edge Function側の定数1箇所で管理。consume_guest_ai_quota()参照）。
+CREATE TABLE IF NOT EXISTS guest_ai_usage_daily (
+  usage_date    date NOT NULL,
+  anon_user_id  uuid NOT NULL,
+  call_count    integer NOT NULL DEFAULT 0,
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (usage_date, anon_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS guest_ai_usage_global_daily (
+  usage_date  date PRIMARY KEY,
+  call_count  integer NOT NULL DEFAULT 0,
+  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 -- ===== KR セッション記録（ラボ機能） =====
@@ -616,6 +637,11 @@ ALTER TABLE loading_tips               ENABLE ROW LEVEL SECURITY;
 ALTER TABLE member_widget_layouts      ENABLE ROW LEVEL SECURITY;
 -- ※ member_widget_layouts の個別ポリシーは current_member_id() を参照するため、
 --   ヘルパー関数の定義より後（下部の「マイページ（ウィジェット）レイアウト」ブロック）で作成する。
+ALTER TABLE guest_ai_usage_daily        ENABLE ROW LEVEL SECURITY;
+ALTER TABLE guest_ai_usage_global_daily ENABLE ROW LEVEL SECURITY;
+-- ※ guest_ai_usage_daily / guest_ai_usage_global_daily は個別ポリシーを一切作らない
+--   （=authenticated/anonからは常にアクセス不可。service_role/postgresはRLSを迂回するため
+--   consume_guest_ai_quota()からは問題なく読み書きできる。migrations/20260807_add_guest_ai_quota.sql）。
 
 -- members / projects / tasks / groups はグループ分離・権限昇格防止のため
 -- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
@@ -769,6 +795,49 @@ CREATE POLICY "member_widget_layouts_own" ON member_widget_layouts
   FOR ALL TO authenticated
   USING (member_id = current_member_id())
   WITH CHECK (member_id = current_member_id());
+
+-- ============================================================
+-- ゲストAI利用回数の原子的カウントアップ関数（Phase 3・v3.29）
+-- （migrations/20260807_add_guest_ai_quota.sql 参照）
+-- ============================================================
+-- 「インクリメント後のブラウザ別件数・全体件数」を返すだけの関数（しきい値判定はしない。
+-- 判定は呼び出し元のEdge Function側・supabase/functions/ai-consult/guestQuota.ts の
+-- decideGuestAiQuota() が行う）。authenticated/anon にはEXECUTEを渡さず、service_role
+-- （Edge Functionから）だけが呼べる。
+
+CREATE OR REPLACE FUNCTION public.consume_guest_ai_quota(p_anon_user_id uuid)
+RETURNS TABLE(browser_count integer, global_count integer)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_consume_guest_ai_quota$
+DECLARE
+  v_today date := (now() AT TIME ZONE 'Asia/Tokyo')::date;
+  v_browser_count integer;
+  v_global_count integer;
+BEGIN
+  INSERT INTO public.guest_ai_usage_global_daily (usage_date, call_count)
+  VALUES (v_today, 1)
+  ON CONFLICT (usage_date) DO UPDATE
+    SET call_count = public.guest_ai_usage_global_daily.call_count + 1,
+        updated_at = now()
+  RETURNING call_count INTO v_global_count;
+
+  INSERT INTO public.guest_ai_usage_daily (usage_date, anon_user_id, call_count)
+  VALUES (v_today, p_anon_user_id, 1)
+  ON CONFLICT (usage_date, anon_user_id) DO UPDATE
+    SET call_count = public.guest_ai_usage_daily.call_count + 1,
+        updated_at = now()
+  RETURNING call_count INTO v_browser_count;
+
+  RETURN QUERY SELECT v_browser_count, v_global_count;
+END;
+$fn_consume_guest_ai_quota$;
+
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM authenticated;
+REVOKE ALL ON FUNCTION public.consume_guest_ai_quota(uuid) FROM anon;
+GRANT EXECUTE ON FUNCTION public.consume_guest_ai_quota(uuid) TO service_role;
 
 -- ============================================================
 -- OKRコア階層（objectives/key_results/task_forces/todos）の部署スコープ
@@ -1010,6 +1079,14 @@ DROP POLICY IF EXISTS "authenticated users can select" ON ai_usage_logs;
 DROP POLICY IF EXISTS "ai_usage_logs_select_group" ON ai_usage_logs;
 CREATE POLICY "ai_usage_logs_select_group" ON ai_usage_logs FOR SELECT TO authenticated
   USING (public.can_access_group_ids(public.member_group_ids(member_id)));
+
+-- INSERT用ポリシー（本番には元々存在するが、一度もマイグレーション化・schema.sql化されず
+-- ドリフトしていた項目。migrations/20260807_add_guest_ai_quota.sqlで是正）。
+DROP POLICY IF EXISTS "authenticated users can insert" ON ai_usage_logs;
+DROP POLICY IF EXISTS "ai_usage_logs_insert_authenticated" ON ai_usage_logs;
+CREATE POLICY "ai_usage_logs_insert_authenticated" ON ai_usage_logs
+  FOR INSERT TO authenticated
+  WITH CHECK (true);
 
 -- 複数部署アクセス：不変条件をCHECK制約で強制（members / projects のみ。tasksはDBトリガーが
 -- 唯一の真実のため対象外）。migration 20260722b 参照。

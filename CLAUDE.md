@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.28
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.29
 #
-最終更新：2026-08-06（v3.28）
+最終更新：2026-08-07（v3.29）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1006,7 +1006,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-06（v3.28）
+- 最終更新：2026-08-07（v3.29）
 
 ---
 
@@ -1507,7 +1507,7 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 
 ---
 
-## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28）
+## 23. ゲスト（サンプル閲覧）モードの設計（必須・v3.28、v3.29でAI限定開放を追加）
 
 ### 2026-08-06に判明した旧実装の欠陥
 
@@ -1527,9 +1527,22 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **UI側の編集制限**（従来どおり）：`isGuestMember(currentUser)` で `MainLayout.tsx` 等が設定・FAB・作成ボタンを非表示にする。この判定は `currentUser.id === "__guest__"` を見るだけなので、ゲストの currentUser は必ず `GUEST_MEMBER` そのものを使うこと（サンプルの実メンバーに currentUser を差し替えない。差し替えるとこのUI制限が効かなくなる）。
 - **退出**：既存のログアウト経路（`onLogout` → `App.tsx` の `handleLogout`）をそのまま使う。ゲストは認証セッションを持たないため `signOut()` は実質no-op（`auth-js` はローカルにアクセストークンが無ければネットワーク呼び出し自体をスキップする）。`window.location.reload()` でログイン画面に戻る。
 
-### Phase 3（次のリリース・未着手）
+### Phase 3（実装済み・v3.29）：ゲストへのAI機能限定開放
 
-ゲストにAI機能を限定開放する予定がある。実装するときは `client.ts` の `functions.invoke` ブロック分岐（`assertGuestBlocked()` 呼び出し箇所にコメントで示した場所）に、許可する呼び出しだけを通す例外を1つ足す形にする。`invokeAI.ts`/`apiClient.ts` 側の早期ガードも同様に、許可する `AIIntent`/呼び出し種別だけ通す分岐に変える。**匿名認証・AI回数制限もPhase 3で導入する（今回は未実装）。**
+ゲストにAI機能（相談・分析・レポート生成など既存機能）を、回数制限つきで開放した。**「原則全部止める」という設計の骨格は崩していない**（例外は `functions.invoke("ai-consult")` だけ）。
+
+- **匿名認証は遅延生成**：ゲストの通常操作（サンプル閲覧）は今までどおりSupabaseに一切接続しない。AIを初めて使うときだけ `src/lib/supabase/guestAiAuth.ts` の `ensureGuestAiSession()` が `supabase.auth.signInAnonymously()` でセッションを作る（Edge Functionが有効なJWTを要求するため）。`supabase/client.ts` のProxyは `"auth"` プロパティを一切インターセプトしないため、この呼び出し自体はゲストモードでもブロックされない。
+- **choke pointの例外は1つだけ**：`client.ts` の `isGuestInvokeBlocked(functionName)` が `functionName === "ai-consult"` のときだけ `false`（=ブロックしない）を返す。他の関数名・`from()`/`rpc()`/`storage` は Phase 3 でも一切緩めていない。
+- **ゲスト判定はJWTの `is_anonymous` クレームだけで行う（サーバー側・クライアントを信用しない）**：`supabase/functions/ai-consult/index.ts` が `auth.getUser()` の戻り値の `user.is_anonymous` を見る。クライアントから送られたフラグは一切見ない（偽装できるため）。
+- **回数制限はDBで原子的に強制**：
+  - `guest_ai_usage_daily`（ブラウザ別＝匿名Authユーザー別・日次）／`guest_ai_usage_global_daily`（全ゲスト共通・日次）の2テーブル（`supabase/migrations/20260807_add_guest_ai_quota.sql`）。
+  - `consume_guest_ai_quota(p_anon_user_id)` は「無条件でインクリメントし、インクリメント後の件数を返す」だけを担う SECURITY DEFINER 関数。`authenticated`/`anon` にはEXECUTEを渡さず `service_role` だけが呼べる（ゲストが直接叩いて全体枠を食い潰す経路を作らないため）。
+  - 「しきい値を超えたか」の判定は `supabase/functions/ai-consult/guestQuota.ts` の `decideGuestAiQuota()`（Deno/ブラウザ依存の無い純粋関数）が行う。判定と加算を別クエリに分けるとTOCTOUレースで上限を超えられるため、加算自体は `consume_guest_ai_quota()` 内の `INSERT ... ON CONFLICT DO UPDATE`（Postgresの行ロックで直列化）に閉じている。
+  - **しきい値の数字は `supabase/functions/ai-consult/index.ts` の定数1箇所**（`GUEST_AI_PER_BROWSER_DAILY_LIMIT`＝既定3・`GUEST_AI_GLOBAL_DAILY_LIMIT`＝既定10。環境変数で上書き可）で管理する。SQL側には数字を一切埋め込まない。
+  - 個人上限超過は `GUEST_DAILY_LIMIT_EXCEEDED`（「サンプルでのAI利用は1日◯回までです」）、全体上限超過は `GUEST_GLOBAL_LIMIT_EXCEEDED`（「本日のサンプルAI利用枠が上限に達しました」）と、別のエラーコード・別の文言で区別する（`apiClient.ts`/`invokeAI.ts` がそれぞれ `AIError`/`Error` に変換して日本語メッセージまで通す）。上限到達時はAIのみ停止し、サンプルの閲覧は継続できる。
+- **既存の認証ユーザー向けレート制限は無変更**：Edge Function内メモリの「認証ユーザーごと20回/分」はそのまま残っており、匿名ユーザーにも同様に適用される（ゲスト回数制限とは独立の別レイヤー）。
+- **ゲストのAI利用の管理者への可視化**：`ai_usage_logs` に `is_guest` 列を追加し、Edge FunctionがサービスロールでAnthropic応答成功後に `member_id="__guest__"`・`is_guest=true` の1行をINSERTする（クライアントからのINSERTは`from()`ブロックで常に失敗するため、この経路が唯一の記録手段）。管理画面「AI使用量」タブ（`AdminView.tsx` の `AIUsageSection`）に「🧪 ゲスト（サンプル利用）」の全期間合計行を表示する（部署の絞り込みは適用しない。ゲストはどの部署にも属さないため）。
+- **併せて是正した既存ドリフト**：`ai_usage_logs` にはINSERT用ポリシーが本番に存在するが一度もマイグレーション化・`schema.sql`化されていなかった。同マイグレーションで明文化した（本番への実害は無し。参照用DDLの是正）。
 
 ---
 

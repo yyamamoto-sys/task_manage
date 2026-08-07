@@ -198,5 +198,5 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.schemaHealth.body": "The following items were not found. Please apply the corresponding migration file in Supabase.",
   "common.schemaHealth.rpcUnavailable": "Unable to run the schema check (the check function may not be applied yet)",
 
-  "common.guest.aiBlocked": "AI features aren't available in the sample (view only).",
+  "common.guest.aiBlocked": "Couldn't start AI in the sample. Please try again later.",
 };

@@ -16,6 +16,7 @@ import type { AIConsultationPayload } from "./payloadBuilder";
 import { buildSystemPrompt } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";
 import { isGuestMode } from "../guestMode";
+import { ensureGuestAiSession } from "../supabase/guestAiAuth";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
 
@@ -33,6 +34,8 @@ export type AIErrorCode =
   | "RATE_LIMIT"
   | "INVALID_RESPONSE"
   | "GUEST_BLOCKED"
+  | "GUEST_DAILY_LIMIT"
+  | "GUEST_GLOBAL_LIMIT"
   | "UNKNOWN";
 
 export class AIError extends Error {
@@ -104,11 +107,16 @@ export async function callAIConsultation(
   /** 直前の応答がJSONパースに失敗した場合の自己修正リトライ用コンテキスト */
   retryContext?: AIRetryContext,
 ): Promise<AICallResult> {
-  // ゲスト（サンプル閲覧）はAI機能を利用できない（Phase 3で限定開放予定。CLAUDE.md Section 23）。
-  // supabase/client.ts の choke point でも functions.invoke() 自体はブロックされるが、
-  // ここで先に明示的な案内を返すことで「無言の失敗」ではなくユーザーに理由が伝わる。
+  // ゲスト（サンプル閲覧）は初めてAIを使うときだけ匿名セッションを遅延生成する（Phase 3・
+  // CLAUDE.md Section 23）。回数制限・実際のゲスト判定はEdge Function側（JWTの
+  // is_anonymousクレーム）で行う。ここでの失敗（匿名サインイン自体が使えない等）だけ
+  // 分かりやすいエラーに変換する。
   if (isGuestMode()) {
-    throw new AIError("GUEST_BLOCKED", tOutside("common.guest.aiBlocked"));
+    try {
+      await ensureGuestAiSession();
+    } catch {
+      throw new AIError("GUEST_BLOCKED", tOutside("common.guest.aiBlocked"));
+    }
   }
   const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal");
 
@@ -146,11 +154,14 @@ export async function callAIConsultation(
   let error: Error | null = null;
 
   try {
+    // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
+    // 認証済みユーザーは既存どおり useAIConsultation 側で insertAiUsageLog が記録するため未使用。
     const result = await supabase.functions.invoke("ai-consult", {
       body: {
         system: systemPrompt,
         messages,
         max_tokens: MAX_TOKENS,
+        intent: consultationType,
         ...(model ? { model } : {}),
       },
     });
@@ -173,6 +184,21 @@ export async function callAIConsultation(
     if (errData && errData.error === "RATE_LIMIT_EXCEEDED") {
       const detail = typeof errData.message === "string" ? errData.message : "しばらく待ってから再試行してください。";
       throw new AIError("RATE_LIMIT", detail);
+    }
+
+    // ゲスト（サンプル閲覧）のAI利用回数制限（Phase 3・CLAUDE.md Section 23）。
+    // 個人（ブラウザ）別上限と全体（コストの天井）上限を区別して案内する。
+    if (errData && errData.error === "GUEST_DAILY_LIMIT_EXCEEDED") {
+      const detail = typeof errData.message === "string" ? errData.message : "サンプルでのAI利用は1日3回までです。";
+      throw new AIError("GUEST_DAILY_LIMIT", detail);
+    }
+    if (errData && errData.error === "GUEST_GLOBAL_LIMIT_EXCEEDED") {
+      const detail = typeof errData.message === "string" ? errData.message : "本日のサンプルAI利用枠が上限に達しました。";
+      throw new AIError("GUEST_GLOBAL_LIMIT", detail);
+    }
+    if (errData && errData.error === "GUEST_QUOTA_UNAVAILABLE") {
+      const detail = typeof errData.message === "string" ? errData.message : "サンプルのAI利用を確認できませんでした。しばらくしてから再度お試しください。";
+      throw new AIError("GUEST_BLOCKED", detail);
     }
 
     if (errData && errData.error === "ANTHROPIC_ERROR") {

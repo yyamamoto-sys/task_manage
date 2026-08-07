@@ -37,15 +37,33 @@ export default function App() {
   );
 
   // Supabaseセッション確認
+  //
+  // 【ゲスト（サンプル閲覧）のAI用匿名セッションを認証フローに混ぜない・Phase 3】
+  // ゲストがAI機能を使うと ensureGuestAiSession()（src/lib/supabase/guestAiAuth.ts）が
+  // signInAnonymously() で匿名セッションを作る。この匿名セッションは通常の認証フロー
+  // （AuthenticatedApp・membersとのAuto Match）を通す対象ではない。もし通してしまうと、
+  // ページ再読み込み時に「ゲストなのに認証済み扱いになり、membersに存在しないため
+  // AccessDeniedScreenに飛ぶ」という混乱が起きる（guestActiveはページ内stateのため
+  // リロードで必ず失われるが、匿名セッション自体はlocalStorageに残るため）。
   useEffect(() => {
     getSession().then(session => {
+      if (session?.user?.is_anonymous) {
+        // 起動時に残っていた匿名セッションは確実に切ってから未ログイン扱いにする
+        // （ネットワーク断等でsignOutが失敗しても、次回起動時に再試行されるだけで安全側）。
+        void signOut().catch(() => { /* 失敗しても致命的ではない。次回起動時に再試行される */ });
+        setAuthenticated(false);
+        setLoading(false);
+        return;
+      }
       setAuthenticated(!!session);
       // currentUser は UserSelectScreen で復元するため、ここでは設定しない
       setLoading(false);
     });
 
-    // セッション変化を監視
+    // セッション変化を監視（ゲストのAI用匿名セッションのSIGNED_INイベントは無視する。
+    // guestActiveの見た目（MainLayout+GUEST_MEMBER）に影響させないため）
     const subscription = onAuthStateChange(session => {
+      if (session?.user?.is_anonymous) return;
       setAuthenticated(!!session);
       if (!session) {
         setCurrentUserState(null);

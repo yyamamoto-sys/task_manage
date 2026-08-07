@@ -3524,6 +3524,18 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
     return { targetMonth, rows };
   }, [scopedLogs, monthlyData, members]);
 
+  // ゲスト（サンプル閲覧）のAI利用（v3.29）：ゲストはどの部署にも属さないため、
+  // 選択中の部署による絞り込み（scopedLogs）の対象外として常に全期間・全件を集計する。
+  // is_guest=true はEdge Function（ai-consult）がサービスロールで記録する
+  // （クライアントからのINSERTはassertGuestBlocked()で常に遮断されるため）。
+  const guestSummary = useMemo(() => {
+    const guestLogs = logs.filter(l => l.is_guest);
+    const count = guestLogs.length;
+    const input = guestLogs.reduce((s, l) => s + l.input_tokens, 0);
+    const output = guestLogs.reduce((s, l) => s + l.output_tokens, 0);
+    return { count, input, output };
+  }, [logs]);
+
   const toggleMonth = (month: string) => {
     setExpandedMonths(prev => {
       const next = new Set(prev);
@@ -3609,6 +3621,27 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
           padding: "8px 12px", marginBottom: "12px",
         }}>
           ⚠ {fetchError}
+        </div>
+      )}
+
+      {/* ゲスト（サンプル閲覧）のAI利用（v3.29）：部署の絞り込みは適用されない全期間合計 */}
+      {guestSummary.count > 0 && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
+          fontSize: "11px", color: "var(--color-text-secondary)",
+          background: "var(--color-bg-secondary)",
+          border: "1px solid var(--color-border-primary)",
+          borderRadius: "var(--radius-md)",
+          padding: "8px 12px", marginBottom: "12px",
+        }}>
+          <span style={{ fontWeight: "500", color: "var(--color-text-primary)" }}>🧪 ゲスト（サンプル利用）</span>
+          <span>全期間 {guestSummary.count}回</span>
+          <span>入力 {guestSummary.input.toLocaleString()}tok</span>
+          <span>出力 {guestSummary.output.toLocaleString()}tok</span>
+          <span style={{ color: "var(--color-text-info)", fontWeight: "600" }}>
+            費用目安 ¥{Math.round(calcCostJpy(guestSummary.input, guestSummary.output))}
+          </span>
+          <span style={{ color: "var(--color-text-tertiary)" }}>（部署の絞り込みは適用されません）</span>
         </div>
       )}
 

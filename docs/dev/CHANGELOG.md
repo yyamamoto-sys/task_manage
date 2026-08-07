@@ -3946,5 +3946,48 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             初回ロードに含まれないことを`dist/`実物で確認
 #      DBマイグレ不要（フロントエンドのみ・Supabaseアクセスを増やさない変更）
 #
-# 最終更新：2026-08-06（v3.28）
+# v3.29 ゲスト（サンプル閲覧）へのAI機能限定開放（Phase 3。2026-08-07）
+#      背景：v3.28（Phase 2）で「ゲストはSupabaseに一切接続しない」設計にした後、この
+#             遮断に`functions.invoke("ai-consult")`だけの例外を1つ開けてAI機能を開放する
+#      匿名認証：ゲストがAIを初めて使うときだけ`src/lib/supabase/guestAiAuth.ts`の
+#             `ensureGuestAiSession()`が`signInAnonymously()`でセッションを遅延生成
+#             （Edge Functionが有効なJWTを要求するため）。ゲストの通常操作（サンプル閲覧）
+#             は引き続きSupabaseに一切接続しない
+#      choke pointの例外：`client.ts`に`isGuestInvokeBlocked(functionName)`を追加し、
+#             `functionName === "ai-consult"`のときだけブロックしない。他の関数名・
+#             `from()`/`rpc()`/`storage`は一切緩めていない
+#      ゲスト判定：`supabase/functions/ai-consult/index.ts`がJWTの`is_anonymous`クレーム
+#             （`user.is_anonymous`）だけで判定する。クライアント送信のフラグは見ない
+#      回数制限（DBで原子的に強制）：`guest_ai_usage_daily`（ブラウザ別）・
+#             `guest_ai_usage_global_daily`（全体）の2テーブルと、無条件で加算して
+#             件数を返すだけのSECURITY DEFINER関数`consume_guest_ai_quota()`
+#             （`service_role`限定・`authenticated`/`anon`にはEXECUTE権限を渡さない）を
+#             `supabase/migrations/20260807_add_guest_ai_quota.sql`で追加。しきい値超過
+#             判定は`supabase/functions/ai-consult/guestQuota.ts`の`decideGuestAiQuota()`
+#             （Deno/ブラウザ依存の無い純粋関数）が行う。しきい値の数字はEdge Function側の
+#             定数1箇所（既定：ブラウザ別1日3回・全体1日10回）だけで管理
+#      エラー分離：個人上限超過は`GUEST_DAILY_LIMIT_EXCEEDED`（「サンプルでのAI利用は
+#             1日3回までです」）、全体上限超過は`GUEST_GLOBAL_LIMIT_EXCEEDED`（「本日の
+#             サンプルAI利用枠が上限に達しました」）と別コード・別文言で区別。
+#             `apiClient.ts`/`invokeAI.ts`が日本語メッセージまで通す
+#      管理画面への反映：`ai_usage_logs`に`is_guest`列を追加。Edge FunctionがAnthropic
+#             応答成功後にサービスロールで`member_id="__guest__"`・`is_guest=true`の
+#             ログを記録（クライアントからのINSERTは`from()`ブロックで常に失敗するため
+#             唯一の記録経路）。`AdminView.tsx`のAI使用量タブに「🧪 ゲスト（サンプル利用）」
+#             の全期間合計行を追加（部署の絞り込みは適用しない）
+#      併せて是正した既存ドリフト：`ai_usage_logs`のINSERT用ポリシーが本番には存在するが
+#             一度もマイグレーション化・`schema.sql`化されていなかった点を明文化（本番への
+#             実害は無し。参照用DDLの是正）
+#      ドキュメント：CLAUDE.md Section 23にPhase 3の実装内容を追記
+#      テスト：`decideGuestAiQuota()`の境界値（ブラウザ別3回目/4回目・全体10回目/11回目・
+#             両方超過時の優先順位）・`ensureGuestAiSession()`の単体テスト・
+#             `isGuestInvokeBlocked()`（例外はai-consultだけ）・ゲスト判定が
+#             `user.is_anonymous`のみに基づくことのソース走査・`invokeAI.ts`/`apiClient.ts`
+#             のゲスト経路（intentをbodyに含めること含む）を追加
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`849件全通過（823件から26件増）／
+#             `npm run lint`変更ファイル新規エラー0／`npm run build`成功
+#      要手動作業：Supabaseダッシュボードでの匿名認証の有効化・マイグレーション適用・
+#             Edge Function（ai-consult）の再デプロイ（詳細は報告参照）
+#
+# 最終更新：2026-08-07（v3.29）
 

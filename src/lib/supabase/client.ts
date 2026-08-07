@@ -47,6 +47,22 @@ function assertGuestBlocked(): boolean {
   return isGuestMode();
 }
 
+// ===== Phase 3（v3.29）：functions.invoke("ai-consult") だけの例外 =====
+//
+// ゲストにAI機能を限定開放する（CLAUDE.md Section 23）。例外はここ1つだけ。
+// from()（読み書き両方）・rpc()・storage は Phase 3 でも一切緩めない
+// （ゲストが実部署データを読める経路を増やさない。回数制限はサーバー側で強制する）。
+const GUEST_ALLOWED_FUNCTIONS = new Set<string>(["ai-consult"]);
+
+/**
+ * functions.invoke(functionName) がゲストモード時にブロックされるべきかを判定する。
+ * 単体テストから直接呼べるよう export する（実際に fetch する supabase-js を介さずに
+ * 「例外は ai-consult だけ」であることを検証するため）。
+ */
+export function isGuestInvokeBlocked(functionName: string): boolean {
+  return assertGuestBlocked() && !GUEST_ALLOWED_FUNCTIONS.has(functionName);
+}
+
 /** どのメソッドを繋いでも {data:null, error} を resolve する、チェーン可能な thenable。 */
 function blockedQuery(): unknown {
   const chain: Record<string, unknown> = {
@@ -101,10 +117,10 @@ export const supabase = new Proxy(rawClient, {
         get(fTarget, fProp, fReceiver) {
           if (fProp === "invoke") {
             return (functionName: string, options?: unknown) => {
-              // ⚠️ Phase 3（次のリリース）でゲストにAI機能を限定開放する予定がある。
-              // その際はここで functionName や options 側の intent を見て、許可リストの
-              // 呼び出しだけ target.invoke() へ通す例外を1つ足す形にする。今回は全面ブロック。
-              if (assertGuestBlocked()) return Promise.resolve(GUEST_BLOCKED_RESULT);
+              // Phase 3（v3.29）：ゲストでも "ai-consult" だけは実クライアントへ通す。
+              // 回数制限・ゲスト判定はEdge Function側（JWTのis_anonymousクレーム）で行う
+              // （CLAUDE.md Section 23）。他の関数名はゲストなら引き続き全面ブロック。
+              if (isGuestInvokeBlocked(functionName)) return Promise.resolve(GUEST_BLOCKED_RESULT);
               return (fTarget.invoke as (fn: string, o?: unknown) => unknown)(functionName, options);
             };
           }

@@ -8,6 +8,13 @@ vi.mock("../../supabase/client", () => ({
   },
 }));
 
+// ゲスト（サンプル閲覧）のAI用匿名セッション確立（Phase 3・v3.29）。実際のsupabase.auth
+// 呼び出しは guestAiAuth.test.ts で個別に検証済み。ここでは「呼ばれたかどうか」だけを見る。
+const mockEnsureGuestAiSession = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../supabase/guestAiAuth", () => ({
+  ensureGuestAiSession: (...args: unknown[]) => mockEnsureGuestAiSession(...args),
+}));
+
 import { callAIConsultation, AIError } from "../apiClient";
 import type { AIConsultationPayload } from "../payloadBuilder";
 import { setGuestMode } from "../../guestMode";
@@ -16,6 +23,7 @@ const PAYLOAD = { consultation: "テスト相談" } as unknown as AIConsultation
 
 beforeEach(() => {
   mockInvoke.mockReset();
+  mockEnsureGuestAiSession.mockReset().mockResolvedValue(undefined);
 });
 
 describe("callAIConsultation", () => {
@@ -78,13 +86,74 @@ describe("callAIConsultation", () => {
   });
 });
 
-describe("callAIConsultation：ゲスト（サンプル閲覧）モードのガード", () => {
+describe("callAIConsultation：ゲスト（サンプル閲覧）モードでのAI利用（Phase 3・v3.29）", () => {
   afterEach(() => setGuestMode(false));
 
-  it("ゲストモードなら functions.invoke を呼ばず、明示的なエラーを投げる", async () => {
+  it("ゲストモードでも匿名セッションを確立してから functions.invoke を呼ぶ", async () => {
     setGuestMode(true);
-    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(AIError);
-    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow("サンプルではAI機能はご利用いただけません");
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    const result = await callAIConsultation(PAYLOAD, "change", []);
+
+    expect(result.text).toBe("{}");
+    expect(mockEnsureGuestAiSession).toHaveBeenCalledTimes(1);
+    expect(mockInvoke).toHaveBeenCalledTimes(1);
+  });
+
+  it("functions.invoke の body に intent（consultationType）を含める（ゲスト分の利用ログ記録に使う）", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { content: [{ type: "text", text: "{}" }], stop_reason: "end_turn", usage: { input_tokens: 1, output_tokens: 1 } },
+      error: null,
+    });
+
+    await callAIConsultation(PAYLOAD, "diagnose", []);
+
+    const body = mockInvoke.mock.calls[0][1].body as { intent: string };
+    expect(body.intent).toBe("diagnose");
+  });
+
+  it("匿名セッションの確立に失敗したら分かりやすいエラーを投げ、functions.invoke は呼ばない", async () => {
+    setGuestMode(true);
+    mockEnsureGuestAiSession.mockRejectedValue(new Error("Anonymous sign-ins are disabled"));
+
+    try {
+      await callAIConsultation(PAYLOAD, "change", []);
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AIError);
+      expect((e as Error).message).toContain("サンプルでのAI利用を開始できませんでした");
+    }
     expect(mockInvoke).not.toHaveBeenCalled();
+  });
+
+  it("GUEST_DAILY_LIMIT_EXCEEDED を GUEST_DAILY_LIMIT エラーに変換する（個人上限）", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { error: "GUEST_DAILY_LIMIT_EXCEEDED", message: "サンプルでのAI利用は1日3回までです。" },
+      error: { message: "Edge Function returned a non-2xx status code" },
+    });
+
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow("サンプルでのAI利用は1日3回までです");
+  });
+
+  it("GUEST_GLOBAL_LIMIT_EXCEEDED を GUEST_GLOBAL_LIMIT エラーに変換する（全体上限。個人上限と別コード・別文言）", async () => {
+    setGuestMode(true);
+    mockInvoke.mockResolvedValue({
+      data: { error: "GUEST_GLOBAL_LIMIT_EXCEEDED", message: "本日のサンプルAI利用枠が上限に達しました。" },
+      error: { message: "Edge Function returned a non-2xx status code" },
+    });
+
+    try {
+      await callAIConsultation(PAYLOAD, "change", []);
+      throw new Error("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(AIError);
+      expect((e as InstanceType<typeof AIError>).code).toBe("GUEST_GLOBAL_LIMIT");
+      expect((e as Error).message).toContain("本日のサンプルAI利用枠が上限に達しました");
+    }
   });
 });

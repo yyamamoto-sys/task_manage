@@ -34,6 +34,7 @@
 import { supabase } from "../supabase/client";
 import { logAIUsage } from "./usageLog";
 import { isGuestMode } from "../guestMode";
+import { ensureGuestAiSession } from "../supabase/guestAiAuth";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
 
@@ -93,6 +94,14 @@ function extractEdgeError(data: unknown, fallback: string): string {
   if (d.error === "RATE_LIMIT_EXCEEDED") {
     return d.message ?? "1分あたりの利用上限に達しました。しばらくお待ちください。";
   }
+  // ゲスト（サンプル閲覧）のAI利用回数制限（Phase 3・CLAUDE.md Section 23）。
+  // 個人（ブラウザ）別上限と全体（コストの天井）上限を区別して案内する。
+  if (d.error === "GUEST_DAILY_LIMIT_EXCEEDED" || d.error === "GUEST_GLOBAL_LIMIT_EXCEEDED") {
+    return d.message ?? fallback;
+  }
+  if (d.error === "GUEST_QUOTA_UNAVAILABLE") {
+    return d.message ?? "サンプルのAI利用を確認できませんでした。しばらくしてから再度お試しください。";
+  }
   if (d.error === "API key not configured") return "Edge FunctionにAPIキーが設定されていません。Supabaseの環境変数を確認してください。";
   if (d.error === "Unauthorized") return "認証エラー：ログインし直してください。";
   if (d.error) return d.error;
@@ -141,11 +150,16 @@ export async function invokeAI(
   maxTokens: number,
   intent: AIIntent,
 ): Promise<AIRawResponse> {
-  // ゲスト（サンプル閲覧）はAI機能を利用できない（Phase 3で限定開放予定。CLAUDE.md Section 23）。
-  // supabase/client.ts の choke point でも functions.invoke() 自体はブロックされるが、
-  // ここで先に明示的な案内を返すことで「無言の失敗」ではなくユーザーに理由が伝わる。
+  // ゲスト（サンプル閲覧）は初めてAIを使うときだけ匿名セッションを遅延生成する（Phase 3・
+  // CLAUDE.md Section 23）。回数制限・実際のゲスト判定はEdge Function側（JWTの
+  // is_anonymousクレーム）で行う。ここでの失敗（匿名サインイン自体が使えない等）だけ
+  // 分かりやすいエラーに変換する。
   if (isGuestMode()) {
-    throw new Error(tOutside("common.guest.aiBlocked"));
+    try {
+      await ensureGuestAiSession();
+    } catch {
+      throw new Error(tOutside("common.guest.aiBlocked"));
+    }
   }
   if (!messages || messages.length === 0) {
     throw new Error("送信するメッセージが空です。操作をやり直してください。");
@@ -157,8 +171,10 @@ export async function invokeAI(
     // TS で intent: AIIntent 必須にしているが防御的に runtime でも検査
     throw new Error("invokeAI には AIIntent を指定する必要があります（AI境界ルール）。");
   }
+  // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
+  // 認証済みユーザーは既存どおりクライアント側でlogAIUsage()が記録するため未使用。
   const { data, error } = await supabase.functions.invoke("ai-consult", {
-    body: { system, messages, max_tokens: maxTokens },
+    body: { system, messages, max_tokens: maxTokens, intent },
   });
 
   if (error) {

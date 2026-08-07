@@ -7,8 +7,17 @@
 // - ユーザーごとのレート制限（1分あたりRATELIMIT_PER_MIN回まで、デフォルト20）
 // - CORS: ALLOWED_ORIGINS 環境変数で許可ドメインを管理（カンマ区切り）
 // - リクエストボディのpayloadをAnthropic APIに転送
+//
+// 【ゲスト（サンプル閲覧）のAI利用回数制限・Phase 3・2026-08-07】
+// ゲストはJWTの is_anonymous クレームで判定する（クライアント送信のフラグは偽装できるため
+// 信用しない。CLAUDE.md Section 23）。回数の記録・判定はDBで原子的に行う
+// （consume_guest_ai_quota()。supabase/migrations/20260807_add_guest_ai_quota.sql）。
+// しきい値は下記 GUEST_AI_PER_BROWSER_DAILY_LIMIT / GUEST_AI_GLOBAL_DAILY_LIMIT の
+// 1箇所だけで管理する（環境変数で上書き可・再デプロイなしで変更したい場合はSupabase
+// ダッシュボードのEdge Function Secretsを更新するだけでよい）。
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { decideGuestAiQuota } from "./guestQuota.ts";
 
 const ANTHROPIC_API_URL = "https://api.anthropic.com/v1/messages";
 // 既定モデル（後方互換：model 指定が無い古いクライアントはこれを使う）
@@ -21,6 +30,15 @@ const ALLOWED_MODELS = ["claude-sonnet-4-6", "claude-haiku-4-5"];
 // 4096を超えて途中で切れる不具合があったため、16384に引き上げ（v2.93の
 // okrImportExtractor.ts同様8192に上げていたが、それでも上限に達していたため再拡大）
 const MAX_TOKENS_CAP = 16384;
+
+// ===== ゲスト（サンプル閲覧）のAI利用回数制限（1箇所の定数。CLAUDE.md Section 23） =====
+// 「1ブラウザ=1匿名Authユーザー」とみなし、匿名ユーザーのuuid（=JWTのsub）をブラウザの
+// 識別子として使う。しきい値はここだけで管理する（decideGuestAiQuota()は数字を持たない）。
+const GUEST_AI_PER_BROWSER_DAILY_LIMIT = Number(Deno.env.get("GUEST_AI_PER_BROWSER_DAILY_LIMIT") ?? "3");
+const GUEST_AI_GLOBAL_DAILY_LIMIT = Number(Deno.env.get("GUEST_AI_GLOBAL_DAILY_LIMIT") ?? "10");
+// ゲストのAI利用ログを記録するmember_id。src/lib/guestMode.ts の GUEST_MEMBER_ID と
+// 同一の値にすること（クライアント側の合成メンバーIDと突き合わせられるように）。
+const GUEST_LOG_MEMBER_ID = "__guest__";
 
 // ===== CORS =====
 // ALLOWED_ORIGINS 環境変数にカンマ区切りで本番ドメインを設定する。
@@ -127,12 +145,70 @@ Deno.serve(async (req: Request) => {
     );
   }
 
+  // ===== ゲスト（サンプル閲覧）のAI利用回数制限 =====
+  // is_anonymous はJWTのクレームであり auth.getUser() の戻り値に含まれる（クライアント側の
+  // signInAnonymously()で作られたセッションのみtrueになる）。クライアントから送られてくる
+  // フラグは一切見ない（偽装できるため）。
+  let guestAdminClient: ReturnType<typeof createClient> | null = null;
+  if (user.is_anonymous) {
+    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!serviceRoleKey) {
+      console.error("[ai-consult] SUPABASE_SERVICE_ROLE_KEY not configured; cannot enforce guest quota");
+      return new Response(
+        JSON.stringify({
+          error: "GUEST_QUOTA_UNAVAILABLE",
+          message: "サンプルのAI利用を確認できませんでした。しばらくしてから再度お試しください。",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+    guestAdminClient = createClient(supabaseUrl, serviceRoleKey);
+
+    const { data: quotaRows, error: quotaErr } = await guestAdminClient
+      .rpc("consume_guest_ai_quota", { p_anon_user_id: user.id });
+    const quotaRow = Array.isArray(quotaRows) ? quotaRows[0] : quotaRows;
+    if (quotaErr || !quotaRow) {
+      console.error("[ai-consult] guest quota RPC failed:", quotaErr);
+      return new Response(
+        JSON.stringify({
+          error: "GUEST_QUOTA_UNAVAILABLE",
+          message: "サンプルのAI利用を確認できませんでした。しばらくしてから再度お試しください。",
+        }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+
+    const decision = decideGuestAiQuota(
+      quotaRow.browser_count,
+      quotaRow.global_count,
+      GUEST_AI_PER_BROWSER_DAILY_LIMIT,
+      GUEST_AI_GLOBAL_DAILY_LIMIT,
+    );
+    if (!decision.allowed) {
+      console.warn(`[ai-consult] guest quota exceeded: reason=${decision.reason} user=${user.id}`);
+      const isGlobal = decision.reason === "global";
+      return new Response(
+        JSON.stringify({
+          error: isGlobal ? "GUEST_GLOBAL_LIMIT_EXCEEDED" : "GUEST_DAILY_LIMIT_EXCEEDED",
+          message: isGlobal
+            ? "本日のサンプルAI利用枠が上限に達しました。"
+            : `サンプルでのAI利用は1日${GUEST_AI_PER_BROWSER_DAILY_LIMIT}回までです。`,
+        }),
+        { status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
+  }
+
   // リクエストボディのパース
   let body: {
     system: string;
     messages: { role: string; content: string }[];
     max_tokens?: number;
     model?: string;
+    // 呼び出し元のAIIntent/ConsultationType（invokeAI.ts/apiClient.ts）。認証済みユーザーの
+    // 使用量記録には使わない（既存どおりクライアント側でai_usage_logsにINSERTする）が、
+    // ゲスト分の記録（このEdge FunctionがサービスロールでINSERTする唯一の経路）には必要。
+    intent?: string;
   };
   try {
     body = await req.json();
@@ -193,6 +269,29 @@ Deno.serve(async (req: Request) => {
       JSON.stringify({ error: "ANTHROPIC_ERROR", status: anthropicRes.status, detail: responseText }),
       { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
+  }
+
+  // ゲスト分の使用量を記録する（クライアントからのINSERTはassertGuestBlocked()で常に
+  // 遮断されるため、この経路がゲスト分を管理画面「AI使用量」タブに反映する唯一の手段）。
+  // 失敗してもレスポンス自体は返す（記録の失敗でAI機能そのものを止めない）。
+  if (user.is_anonymous && guestAdminClient) {
+    try {
+      const parsedForLog = JSON.parse(responseText) as {
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const { error: logErr } = await guestAdminClient.from("ai_usage_logs").insert({
+        member_id: GUEST_LOG_MEMBER_ID,
+        consultation_type: typeof body.intent === "string" && body.intent.trim()
+          ? body.intent.trim().slice(0, 100)
+          : "guest-ai",
+        input_tokens: parsedForLog.usage?.input_tokens ?? 0,
+        output_tokens: parsedForLog.usage?.output_tokens ?? 0,
+        is_guest: true,
+      });
+      if (logErr) console.warn("[ai-consult] guest usage log insert failed:", logErr);
+    } catch (logErr) {
+      console.warn("[ai-consult] guest usage log insert failed:", logErr);
+    }
   }
 
   return new Response(responseText, {
