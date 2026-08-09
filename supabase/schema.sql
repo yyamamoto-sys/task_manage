@@ -138,6 +138,11 @@ UPDATE key_results kr SET group_id = o.group_id
   FROM objectives o WHERE o.id = kr.objective_id AND kr.group_id IS NULL;
 
 -- ===== Quarterly Objectives =====
+-- 【死蔵ぎみ・2026-08-07追記】2026-05-26のTF四半期判定モデル移行（→task_forces.quarter列）
+-- 以降、この行を画面が読み取って表示することは無い。OKR PDF取込（OkrImportModal）が
+-- 「四半期OKR」を選択したときに記録目的の骨組みとして1件だけ作成する“書き込みのみ”の
+-- 経路が唯一残っている（読み取りは無し。docs/REFACTORING.md M24・CLAUDE.md Section 1.6）。
+-- 取込機能を壊すため物理削除・書き込み経路の撤去はしない。新規に参照を追加しないこと。
 CREATE TABLE IF NOT EXISTS quarterly_objectives (
   id           text PRIMARY KEY,
   objective_id text NOT NULL REFERENCES objectives(id),
@@ -184,6 +189,10 @@ UPDATE task_forces tf SET group_id = kr.group_id
 
 -- ===== Quarterly KR ↔ Task Force（多対多） =====
 -- 通期 KR と TF を四半期ごとに紐づける
+-- 【死蔵・2026-08-07追記】2026-05-26のTF四半期判定モデル移行（→task_forces.quarter列）
+-- 以降、読み書きとも参照されない（appStore.ts/store.ts側の未使用state・アクション・
+-- fetchは2026-08-07に削除済み。docs/REFACTORING.md M24）。テーブル自体は物理削除しない
+-- （Section 4・過去データが残っている可能性があるため）。新規に参照を追加しないこと。
 CREATE TABLE IF NOT EXISTS quarterly_kr_task_forces (
   quarterly_objective_id text NOT NULL REFERENCES quarterly_objectives(id),
   kr_id                  text NOT NULL REFERENCES key_results(id),
@@ -573,6 +582,39 @@ CREATE TABLE IF NOT EXISTS member_widget_layouts (
   updated_at  timestamptz NOT NULL DEFAULT now(),
   updated_by  text NOT NULL DEFAULT ''
 );
+
+-- ===== クォーター計画（KrQuarterPlanPanel。OKRモード再設計 Phase 1 Step C・
+--        migrations/20260807c_add_kr_quarter_plans.sql 参照）=====
+-- 元はlocalStorageのみ（quarterPlanStore.ts）だったものを2026-08-07にSupabase移行。
+-- KRに紐づくチーム（マネージャー）の資産のため、personal_kr系（本人のみ）とは異なり
+-- 部署スコープ（group_id列。key_results経由でトリガーが自動注入）でRLSする。判断理由・
+-- 「1つの(kr_id,quarter)につきアクティブな計画は最大1件」制約の理由はmigrationファイル
+-- 冒頭コメント参照。
+CREATE TABLE IF NOT EXISTS kr_quarter_plans (
+  id            uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kr_id         text NOT NULL REFERENCES key_results(id),
+  group_id      text REFERENCES groups(id),  -- key_results経由でトリガーが自動注入。フロントは送らない
+  quarter       text NOT NULL,                -- 例: "2026-3Q"（krQuarterPlanPrompt.tsの表現をそのまま）
+  status        text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'finalized')),
+  summary       text NOT NULL DEFAULT '',
+  tfs           jsonb NOT NULL DEFAULT '[]'::jsonb,  -- ProposedTF[]をそのまま丸ごと保存（正規化しない）
+  overall_risk  text,
+  is_deleted    boolean NOT NULL DEFAULT false,
+  deleted_at    timestamptz,
+  deleted_by    text,
+  created_at    timestamptz NOT NULL DEFAULT now(),
+  updated_at    timestamptz NOT NULL DEFAULT now(),
+  updated_by    text NOT NULL DEFAULT ''
+);
+-- 「1つの(kr_id, quarter)につきアクティブな計画は最大1件」（localStorageの単一キー上書きと同じ制約）
+CREATE UNIQUE INDEX IF NOT EXISTS kr_quarter_plans_active_unique
+  ON kr_quarter_plans (kr_id, quarter)
+  WHERE is_deleted = false;
+
+DROP TRIGGER IF EXISTS trg_kr_quarter_plans_updated_at ON kr_quarter_plans;
+CREATE TRIGGER trg_kr_quarter_plans_updated_at
+  BEFORE UPDATE ON kr_quarter_plans
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at();
 
 -- ===== 個人OKR層（OKRモード再設計 Phase 1 Step A・migrations/20260807b_add_personal_okr.sql 参照）=====
 -- Kintoneが正本・このアプリはKintoneに存在しない「週の層」を埋める実行層（docs/dev/okr-redesign-plan.md）。
@@ -1214,6 +1256,35 @@ CREATE POLICY "todos_group" ON todos FOR ALL TO authenticated
   WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
 
 -- ============================================================
+-- クォーター計画（kr_quarter_plans）の部署スコープ（migration 20260807c_add_kr_quarter_plans.sql）。
+-- key_results と同じ「自前のgroup_id列＋トリガーで親から自動注入」の流儀（OKRコア階層と同型）。
+-- ============================================================
+CREATE OR REPLACE FUNCTION sync_kr_quarter_plan_group_id()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_sync_kr_quarter_plan_group_id$
+BEGIN
+  SELECT kr.group_id INTO NEW.group_id
+  FROM public.key_results kr
+  WHERE kr.id = NEW.kr_id;
+  RETURN NEW;
+END;
+$fn_sync_kr_quarter_plan_group_id$;
+
+DROP TRIGGER IF EXISTS trg_kr_quarter_plans_sync_group_id ON kr_quarter_plans;
+CREATE TRIGGER trg_kr_quarter_plans_sync_group_id
+  BEFORE INSERT OR UPDATE ON kr_quarter_plans
+  FOR EACH ROW EXECUTE FUNCTION sync_kr_quarter_plan_group_id();
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_quarter_plans;
+DROP POLICY IF EXISTS "kr_quarter_plans_group" ON kr_quarter_plans;
+CREATE POLICY "kr_quarter_plans_group" ON kr_quarter_plans FOR ALL TO authenticated
+  USING (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin())
+  WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
+
+-- ============================================================
 -- PJ・タスク周辺（子）テーブルの部署スコープ（migration 20260723 参照）。
 -- これらは group_id 列を持たないため、親（projects/tasks/members）を辿って判定する。
 -- ポリシーのUSING内から親を直接SELECTするとRLSが二重適用されるため、
@@ -1709,6 +1780,9 @@ CREATE INDEX IF NOT EXISTS idx_personal_kr_months_personal_kr_id ON personal_kr_
 CREATE INDEX IF NOT EXISTS idx_personal_kr_weeks_personal_kr_id  ON personal_kr_weeks(personal_kr_id)  WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_personal_kr_week_tasks_task_id    ON personal_kr_week_tasks(task_id);
 CREATE INDEX IF NOT EXISTS idx_personal_kr_memos_personal_kr_id  ON personal_kr_memos(personal_kr_id) WHERE is_deleted = false;
+
+-- クォーター計画（migrations/20260807c_add_kr_quarter_plans.sql）
+CREATE INDEX IF NOT EXISTS idx_kr_quarter_plans_kr_id ON kr_quarter_plans(kr_id) WHERE is_deleted = false;
 
 -- task_dependencies（B1）：同一ペアの重複防止（論理削除は除外し、削除後の再追加を許す）
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_dependencies_pair

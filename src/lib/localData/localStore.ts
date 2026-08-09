@@ -97,7 +97,11 @@ export const LS_KEY = {
   consultationHistory: (userId: string) => `consultation_history_v1_${userId}`,
   /** KR なぜなぜサマリ（KR ごとに保存） */
   krWhySummary:        (krId: string) => `okr_why_${krId}`,
-  /** クォーター計画（KR × クォーター ごとに保存。Phase 1 用 localStorage） */
+  /** クォーター計画（KR × クォーター ごとに保存）。
+   *  【2026-08-07】Supabase（kr_quarter_plans）へ移行済み（v3.38）。このキーは
+   *  Phase 1時代の旧データをこのブラウザから一度だけ読み取り・移行するためだけに残す
+   *  （quarterPlanStore.ts の loadLegacyLocalQuarterPlan/clearLegacyLocalQuarterPlan）。
+   *  新しい保存はこのキーに対して行わない。 */
   quarterPlan:         (krId: string, quarter: string) => `okr_qplan_${krId}_${quarter}`,
   /** 期限のブラウザ通知：当日に通知済みのタスクID（ユーザーごと・二重通知防止） */
   deadlineNotified:    (userId: string) => `deadline_notified_v1_${userId}`,

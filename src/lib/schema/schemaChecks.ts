@@ -210,4 +210,11 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "個人OKR：KRごとのメモテーブル（personal_kr_memos）が見つかりません",
     migration: "20260807b_add_personal_okr.sql",
   },
+  {
+    id: "kr_quarter_plans_table",
+    kind: "table",
+    table: "kr_quarter_plans",
+    label: "クォーター計画テーブル（kr_quarter_plans）が見つかりません",
+    migration: "20260807c_add_kr_quarter_plans.sql",
+  },
 ];

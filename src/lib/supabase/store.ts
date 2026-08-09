@@ -13,7 +13,7 @@ import { getAssigneeIds } from "../taskMeta";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
-  QuarterlyObjective, QuarterlyKrTaskForce,
+  QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
 } from "../localData/types";
@@ -209,7 +209,7 @@ export async function upsertMyWidgetLayout(memberId: string, layout: MyPageLayou
  * Phase 1（fetchCriticalData）: 7テーブル — メンバー・PJ・タスク・マイルストーン等。
  *   load() がここだけ終えると loading=false になり、ユーザー自動復元と画面描画が走る。
  *
- * Phase 2（fetchOkrData）: 8テーブル — OKR関連。バックグラウンドで取得し、
+ * Phase 2（fetchOkrData）: 7テーブル — OKR関連。バックグラウンドで取得し、
  *   backgroundLoading フラグで細いトップバーを表示する（メイン UI はブロックしない）。
  */
 
@@ -269,16 +269,16 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
 }
 
 /**
- * Phase-2: OKR関連8テーブルをバックグラウンドで取得。
+ * Phase-2: OKR関連7テーブルをバックグラウンドで取得。
  * 失敗してもメイン UI には影響しない。
  * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
  */
 export async function fetchOkrData(onProgress?: (done: number, total: number) => void) {
-  const TOTAL = 8;
+  const TOTAL = 7;
   let done = 0;
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
 
-  const [objectives, keyResults, taskForces, todos, ptf, qObjs, qKrTfs, ttfs] =
+  const [objectives, keyResults, taskForces, todos, ptf, qObjs, ttfs] =
     await Promise.all([
       supabase.from("objectives").select("*").then(tick),
       supabase.from("key_results").select("*").eq("is_deleted", false).then(tick),
@@ -286,7 +286,6 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
       supabase.from("todos").select("*").eq("is_deleted", false).then(tick),
       supabase.from("project_task_forces").select("*").then(tick),
       supabase.from("quarterly_objectives").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("quarterly_kr_task_forces").select("*").then(tick),
       supabase.from("task_task_forces").select("*").then(tick),
     ]);
 
@@ -297,7 +296,6 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
     todos:                 (todos.data      ?? []) as ToDo[],
     projectTaskForces:     (ptf.data        ?? []) as ProjectTaskForce[],
     quarterlyObjectives:   (qObjs.data      ?? []) as QuarterlyObjective[],
-    quarterlyKrTaskForces: (qKrTfs.data     ?? []) as QuarterlyKrTaskForce[],
     taskTaskForces:        (ttfs.data       ?? []) as TaskTaskForce[],
   };
 }
@@ -434,21 +432,9 @@ export async function softDeleteQuarterlyObjective(id: string, deletedBy: string
   if (error) throw error;
 }
 
-// ===== QuarterlyKrTaskForce =====
-
-export async function insertQuarterlyKrTaskForce(qKrTf: QuarterlyKrTaskForce) {
-  const { error } = await supabase.from("quarterly_kr_task_forces").insert(qKrTf);
-  if (error) throw error;
-}
-
-export async function deleteQuarterlyKrTaskForce(quarterlyObjId: string, krId: string, tfId: string) {
-  const { error } = await supabase.from("quarterly_kr_task_forces")
-    .delete()
-    .eq("quarterly_objective_id", quarterlyObjId)
-    .eq("kr_id", krId)
-    .eq("tf_id", tfId);
-  if (error) throw error;
-}
+// 【2026-08-07削除】QuarterlyKrTaskForce（quarterly_kr_task_forces）へのinsert/delete関数は
+// 2026-05-26のTF四半期判定モデル移行後、呼び出し元0件のまま残置されていた死蔵コードだった
+// （docs/REFACTORING.md M24）。テーブル自体は物理削除せず残す（Section 4）。
 
 // ===== TaskTaskForce =====
 

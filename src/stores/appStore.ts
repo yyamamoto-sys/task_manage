@@ -23,7 +23,7 @@ import { formatErrorForUser } from "../lib/errorMessage";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
-  QuarterlyObjective, QuarterlyKrTaskForce,
+  QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
 } from "../lib/localData/types";
@@ -44,7 +44,6 @@ import {
   upsertMilestone, softDeleteMilestone,
   insertProjectTaskForce, deleteProjectTaskForce,
   upsertQuarterlyObjective, softDeleteQuarterlyObjective,
-  insertQuarterlyKrTaskForce, deleteQuarterlyKrTaskForce,
   insertTaskTaskForce, deleteTaskTaskForce,
   insertTaskProject, deleteTaskProject,
   insertTaskDependency, softDeleteTaskDependency,
@@ -86,7 +85,6 @@ export interface AppState {
   tasks: Task[];
   projectTaskForces: ProjectTaskForce[];
   quarterlyObjectives: QuarterlyObjective[];
-  quarterlyKrTaskForces: QuarterlyKrTaskForce[];
   taskTaskForces: TaskTaskForce[];
   taskProjects: TaskProject[];
   taskDependencies: TaskDependency[];
@@ -163,10 +161,6 @@ export interface AppState {
   // ===== QuarterlyObjective =====
   saveQuarterlyObjective: (qObj: QuarterlyObjective) => Promise<void>;
   deleteQuarterlyObjective: (id: string, deletedBy: string) => Promise<void>;
-
-  // ===== QuarterlyKrTaskForce =====
-  addQuarterlyKrTaskForce: (qKrTf: QuarterlyKrTaskForce) => Promise<void>;
-  removeQuarterlyKrTaskForce: (quarterlyObjId: string, krId: string, tfId: string) => Promise<void>;
 
   // ===== TaskTaskForce =====
   addTaskTaskForce: (ttf: TaskTaskForce) => Promise<void>;
@@ -478,7 +472,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   tasks: [],
   projectTaskForces: [],
   quarterlyObjectives: [],
-  quarterlyKrTaskForces: [],
   taskTaskForces: [],
   taskProjects: [],
   taskDependencies: [],
@@ -496,7 +489,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   //
   // 【2フェーズロード — 2026-06-23】
   // Phase 1: 重要7テーブル（members/projects/tasks/milestones 等）を取得 → loading=false でUI解放
-  // Phase 2: OKR系8テーブルをバックグラウンド取得 → backgroundLoading=false でトップバーを消す
+  // Phase 2: OKR系7テーブルをバックグラウンド取得 → backgroundLoading=false でトップバーを消す
   //
   // これにより「15テーブル全部揃うまで真っ白」ではなく
   // 「主要データが揃い次第すぐ表示、OKRは後から反映」になる。
@@ -564,7 +557,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         })();
 
-        // Phase 2: OKR系（8テーブル）→ バックグラウンド取得
+        // Phase 2: OKR系（7テーブル）→ バックグラウンド取得
         // 失敗してもメイン UI はブロックしない（サイレントエラー）
         try {
           const okr = await fetchOkrData((done, total) => {
@@ -582,7 +575,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
             todos:                 okr.todos,
             projectTaskForces:     okr.projectTaskForces,
             quarterlyObjectives:   okr.quarterlyObjectives,
-            quarterlyKrTaskForces: okr.quarterlyKrTaskForces,
             taskTaskForces:        okr.taskTaskForces,
             backgroundLoading:     false,
             loadProgress:          100,
@@ -1116,31 +1108,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     try {
       await softDeleteQuarterlyObjective(id, deletedBy);
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
-  },
-
-  // ===== QuarterlyKrTaskForce =====
-  addQuarterlyKrTaskForce: async (qKrTf) => {
-    set(state => ({ quarterlyKrTaskForces: [...state.quarterlyKrTaskForces, qKrTf] }));
-    try {
-      await insertQuarterlyKrTaskForce(qKrTf);
-    } catch (e) {
-      await handleSaveError(e, get().load);
-      throw e;
-    }
-  },
-
-  removeQuarterlyKrTaskForce: async (quarterlyObjId, krId, tfId) => {
-    set(state => ({
-      quarterlyKrTaskForces: state.quarterlyKrTaskForces.filter(
-        q => !(q.quarterly_objective_id === quarterlyObjId && q.kr_id === krId && q.tf_id === tfId)
-      ),
-    }));
-    try {
-      await deleteQuarterlyKrTaskForce(quarterlyObjId, krId, tfId);
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

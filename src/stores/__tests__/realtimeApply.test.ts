@@ -16,7 +16,6 @@ function reset() {
     tasks: [],
     projectTaskForces: [],
     quarterlyObjectives: [],
-    quarterlyKrTaskForces: [],
     taskTaskForces: [],
     taskProjects: [],
     taskDependencies: [],

@@ -292,10 +292,13 @@ PK(`week_id`,`task_id`)。**方式は「自動候補＋明示リンク」**（�
 
 ## 9. 既存の整理（Phase 1と同時に実施・決定事項）
 
-- **`quarterly_objectives` / `quarterly_kr_task_forces` を畳む。** どの画面からも参照されない死蔵（`docs/REFACTORING.md` M24）。物理削除はせず、参照コードの撤去と `schema.sql` へのコメント明記、`schemaChecks.ts` の扱いを整理する。
-- **`quarterPlanStore.ts` の localStorage → Supabase 移行。** ファイル冒頭の「IT部門のSupabase承認後にDB移行予定」は解消済み（2026-08-07・山本さん確認：**Supabase保存は問題ない**）。
-- **`CLAUDE.md` Section 1 の「⚠ 確認が必要な事項（未解決）：Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要」を是正する。** この古い記述が残っているせいでクォーター計画が localStorage に取り残されていた。
-- マイグレを追加したら **`src/lib/schema/schemaChecks.ts` に検査項目を1行足す**（Section 22）。
+- ✅ **完了（2026-08-10・v3.38・Step C）** `quarterly_objectives` / `quarterly_kr_task_forces` を畳む。どの画面からも参照されない死蔵（`docs/REFACTORING.md` M24）。物理削除はせず、参照コードの撤去と `schema.sql` へのコメント明記、`schemaChecks.ts` の扱いを整理する。
+  → `quarterly_kr_task_forces` はappStore.ts/store.tsの死蔵state・アクション・fetch/insert/deleteを削除（読み書きとも参照ゼロに）。`quarterly_objectives` はOKR PDF取込（`OkrImportModal`）が今も書き込むため経路は残した（取込機能を壊すリスク回避）。テーブル自体はDropしていない（Section 4）。
+- ✅ **完了（2026-08-10・v3.38・Step C）** `quarterPlanStore.ts` の localStorage → Supabase 移行。ファイル冒頭の「IT部門のSupabase承認後にDB移行予定」は解消済み（2026-08-07・山本さん確認：**Supabase保存は問題ない**）。
+  → `kr_quarter_plans` テーブル（部署スコープRLS）へ移行。`migrations/20260807c_add_kr_quarter_plans.sql`（**未適用・山本さんの手動適用が必要**）。
+- ✅ **完了（2026-08-10・v3.38・Step C）** `CLAUDE.md` Section 1 の「⚠ 確認が必要な事項（未解決）：Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要」を是正する。この古い記述が残っているせいでクォーター計画が localStorage に取り残されていた。
+  → 「2026-08-07に確認済み（社内的にクリア）」と決着を明記。他2項目（Claude API送信／Teams埋め込み申請）は今回の確認範囲外のため未解決のまま残した。
+- マイグレを追加したら **`src/lib/schema/schemaChecks.ts` に検査項目を1行足す**（Section 22）。→ `kr_quarter_plans_table` を追加済み。
 
 ---
 

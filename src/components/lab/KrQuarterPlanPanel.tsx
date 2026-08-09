@@ -42,6 +42,8 @@ import {
   loadQuarterPlan,
   saveQuarterPlan,
   deleteQuarterPlan,
+  loadLegacyLocalQuarterPlan,
+  clearLegacyLocalQuarterPlan,
   type ProposedTF,
   type QuarterPlan,
 } from "../../lib/supabase/quarterPlanStore";
@@ -289,7 +291,7 @@ interface Props {
   initialKrId?: string;
 }
 
-export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline = false, initialKrId }: Props) {
+export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initialKrId }: Props) {
   const keyResults = useAppStore(s => s.keyResults);
   const taskForces = useAppStore(s => s.taskForces);
   const todos      = useAppStore(s => s.todos);
@@ -345,6 +347,10 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   const [planSummary, setPlanSummary] = useState("");
   const [planRisk, setPlanRisk] = useState<string | null>(null);
   const [savedPlan, setSavedPlan] = useState<QuarterPlan | null>(null);
+  // Phase 1（localStorage）時代の下書きがこのブラウザに残っている場合のみ入る。
+  // Supabase移行後も自動では消えない・自動では移行しない（本ファイル下部の移行UI参照）。
+  const [legacyLocalPlan, setLegacyLocalPlan] = useState<QuarterPlan | null>(null);
+  const [migratingLegacy, setMigratingLegacy] = useState(false);
 
   const chatBottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -356,10 +362,20 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
     return Array.from({ length: count }, (_, i) => y - 1 + i);
   }, []);
 
-  // KR・クォーター変更時に保存済み計画を確認
+  // KR・クォーター変更時に保存済み計画を確認（Supabase）。テーブル未適用（マイグレ未適用）
+  // 等のエラーは黙って無効化せず、setupフェーズのエラー欄に表示する（CLAUDE.md Section 22）。
   useEffect(() => {
-    if (!selectedKrId || !targetQuarter) return;
-    setSavedPlan(loadQuarterPlan(selectedKrId, targetQuarter));
+    if (!selectedKrId || !targetQuarter) { setSavedPlan(null); return; }
+    let cancelled = false;
+    loadQuarterPlan(selectedKrId, targetQuarter)
+      .then(plan => { if (!cancelled) setSavedPlan(plan); })
+      .catch(e => {
+        if (cancelled) return;
+        setSavedPlan(null);
+        setError(formatErrorForUser("保存済み計画の確認に失敗しました", e));
+      });
+    setLegacyLocalPlan(loadLegacyLocalQuarterPlan(selectedKrId, targetQuarter));
+    return () => { cancelled = true; };
   }, [selectedKrId, targetQuarter]);
 
   useEffect(() => {
@@ -605,18 +621,52 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
   };
 
   // ─── 保存 ───
-  const handleSave = (status: "draft" | "finalized") => {
+  const handleSave = async (status: "draft" | "finalized") => {
     if (!generatedPlan) return;
-    const saved = saveQuarterPlan({
-      kr_id: selectedKrId,
-      quarter: targetQuarter,
-      status,
-      summary: planSummary,
-      tfs: planTfs,
-      overall_risk: planRisk,
-    });
-    setSavedPlan(saved);
-    showToast(status === "finalized" ? "計画書を確定しました" : "下書きを保存しました");
+    try {
+      const saved = await saveQuarterPlan({
+        kr_id: selectedKrId,
+        quarter: targetQuarter,
+        status,
+        summary: planSummary,
+        tfs: planTfs,
+        overall_risk: planRisk,
+      }, currentUser.id);
+      setSavedPlan(saved);
+      showToast(status === "finalized" ? "計画書を確定しました" : "下書きを保存しました");
+    } catch (e) {
+      showToast(formatErrorForUser("保存に失敗しました", e), "error");
+    }
+  };
+
+  // ─── ローカル（このブラウザ）に残っている旧下書きをSupabaseへ移行 ───
+  const handleMigrateLegacy = async () => {
+    if (!legacyLocalPlan) return;
+    setMigratingLegacy(true);
+    try {
+      const saved = await saveQuarterPlan({
+        kr_id: selectedKrId,
+        quarter: targetQuarter,
+        status: legacyLocalPlan.status,
+        summary: legacyLocalPlan.summary,
+        tfs: legacyLocalPlan.tfs,
+        overall_risk: legacyLocalPlan.overall_risk,
+      }, currentUser.id);
+      clearLegacyLocalQuarterPlan(selectedKrId, targetQuarter);
+      setLegacyLocalPlan(null);
+      setSavedPlan(saved);
+      showToast("このブラウザに残っていた下書きをSupabaseへ移行しました");
+    } catch (e) {
+      showToast(formatErrorForUser("移行に失敗しました", e), "error");
+    } finally {
+      setMigratingLegacy(false);
+    }
+  };
+
+  const handleDiscardLegacy = () => {
+    clearLegacyLocalQuarterPlan(selectedKrId, targetQuarter);
+    setLegacyLocalPlan(null);
+    showToast("このブラウザに残っていた下書きを削除しました", "info");
   };
 
   // ─── ダウンロード ───
@@ -880,9 +930,52 @@ export function KrQuarterPlanPanel({ onClose, currentUser: _currentUser, inline 
                   style={{ padding: "5px 12px", fontSize: "11px", fontWeight: "600", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}
                 >復元する</button>
                 <button
-                  onClick={() => { deleteQuarterPlan(selectedKrId, targetQuarter); setSavedPlan(null); showToast("削除しました", "info"); }}
+                  onClick={async () => {
+                    try {
+                      await deleteQuarterPlan(selectedKrId, targetQuarter, currentUser.id);
+                      setSavedPlan(null);
+                      showToast("削除しました", "info");
+                    } catch (e) {
+                      showToast(formatErrorForUser("削除に失敗しました", e), "error");
+                    }
+                  }}
                   style={{ padding: "5px 10px", fontSize: "11px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-tertiary)", cursor: "pointer" }}
                 >削除</button>
+              </div>
+            )}
+
+            {/* ローカル（このブラウザ）に残っている旧下書き（Phase 1・移行未完了） */}
+            {legacyLocalPlan && (
+              <div style={{
+                display: "flex", alignItems: "center", gap: "10px",
+                background: "var(--color-bg-tertiary)",
+                border: "1px dashed var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                padding: "10px 14px",
+                marginBottom: "14px",
+                fontSize: "12px",
+              }}>
+                <span style={{ fontSize: "16px" }}>💻</span>
+                <div style={{ flex: 1 }}>
+                  <span style={{ fontWeight: "600", color: "var(--color-text-primary)" }}>
+                    このブラウザだけに残っている旧下書きがあります（Supabaseへ未移行）
+                  </span>
+                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                    {new Date(legacyLocalPlan.saved_at).toLocaleString("ja-JP", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}保存
+                    ・TF {legacyLocalPlan.tfs.length}件
+                    {savedPlan && "（移行するとSupabase側の保存済み計画は上書きされます）"}
+                  </div>
+                </div>
+                <button
+                  onClick={handleMigrateLegacy}
+                  disabled={migratingLegacy}
+                  style={{ padding: "5px 12px", fontSize: "11px", fontWeight: "600", background: migratingLegacy ? "var(--color-bg-tertiary)" : "var(--color-brand)", color: migratingLegacy ? "var(--color-text-tertiary)" : "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: migratingLegacy ? "not-allowed" : "pointer" }}
+                >{migratingLegacy ? "移行中..." : "Supabaseへ移行"}</button>
+                <button
+                  onClick={handleDiscardLegacy}
+                  disabled={migratingLegacy}
+                  style={{ padding: "5px 10px", fontSize: "11px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-tertiary)", cursor: "pointer" }}
+                >このブラウザから削除</button>
               </div>
             )}
 

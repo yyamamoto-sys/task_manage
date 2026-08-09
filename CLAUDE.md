@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.37
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.38
 #
-最終更新：2026-08-07（v3.37）
+最終更新：2026-08-10（v3.38）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -34,9 +34,10 @@
 | ホスティング | Vercel | GitHubへのpushで自動デプロイ（main branch） |
 
 **⚠ 確認が必要な事項（未解決）**
-- Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要
-- Claude APIへのデータ送信について社内ポリシーとの整合性確認が必要
-- Teams埋め込みアプリとしての申請手続き確認が必要
+- ~~Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要~~
+  → **2026-08-07に確認済み（社内的にクリア）。** 山本さんが「Supabase保存はすでに問題ない」と確認した。この記述が残っていたために `quarterPlanStore.ts` が localStorage 実装のまま取り残されていた（2026-08-07にSupabase移行・v3.38。`docs/dev/okr-redesign-plan.md` §9参照）。**この決着が付いたことは記録として残す（放置するとまた誰かが同じ判断をやり直すため）。**
+- Claude APIへのデータ送信について社内ポリシーとの整合性確認が必要（今回の確認範囲外・未解決のまま）
+- Teams埋め込みアプリとしての申請手続き確認が必要（今回の確認範囲外・未解決のまま）
 
 ---
 
@@ -926,7 +927,7 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
-| OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。localStorage保存（Phase 1）。OkrDashboardView「📅 計画」タブ |
+| OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。Supabase（kr_quarter_plans・部署スコープ）保存（v3.38）。OkrDashboardView「📅 計画」タブ |
 | KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
@@ -1006,7 +1007,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-07（v3.32）
+- 最終更新：2026-08-10（v3.38）
 
 ---
 
@@ -1062,7 +1063,7 @@ src/
 │       ├── client.ts             # Supabaseクライアント初期化
 │       ├── auth.ts               # セッション取得（getSession）
 │       ├── store.ts              # 低レベル CRUD + saveWithLock（楽観ロック）+ ConflictError
-│       └── quarterPlanStore.ts   # クォーター計画保存（Phase 1: localStorage、Supabase移行準備済み）
+│       └── quarterPlanStore.ts   # クォーター計画保存（kr_quarter_plansテーブル・部署スコープRLS。v3.38でSupabase移行済み）
 ├── context/
 │   └── AppDataContext.tsx        # 初回 load + Supabase realtime 購読の lifecycle 管理（薄い Wrapper）
 ├── hooks/
@@ -1615,7 +1616,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ---
 
-## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37）
+## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37／Step C=v3.38）
 
 **正本は [docs/dev/okr-redesign-plan.md](docs/dev/okr-redesign-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。詳細（列定義・段階計画・未決事項）は必ず計画書を読むこと。
 
@@ -1637,6 +1638,13 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **Phase 3以降は今回作らない**：「これから」（AI見立て）・AIパネル（`ConsultationPanel` 型のOKR版）・月末のKintone下書き生成ボタンはこの画面には無い（未実装の空ボタンを出さない方針。計画書§8）。
 - **i18nの扱い**：新規辞書キーは追加していない。既存のOKR系コンポーネント（`OkrDashboardView.tsx`・`KrQuarterPlanPanel.tsx`等）と同じく日本語を直書きしている（英語化はPhase 2以降凍結中・`docs/dev/i18n-plan.md`）。
 - **画面未実装**（Step Bのスコープ外）：Kintone取込・AI解析・`personal_kr_outlooks`・`okr_knowledge_docs` は対象外（Phase 2・3・5）。
+
+### Step C：既存の整理（v3.38・計画書§9）
+
+- **`quarterPlanStore.ts` を Supabase（`kr_quarter_plans`）へ移行。** 個人OKR（本人のみRLS）とは異なり、クォーター計画はKRに紐づくチーム（マネージャー）の資産のため**部署スコープ**（`group_id = ANY(current_member_group_ids())`。OKRコア階層と同じ流儀）にした。`migrations/20260807c_add_kr_quarter_plans.sql` 参照（**山本さんの手動適用が必要。未適用**）。
+- **「1つの(kr_id, quarter)につきアクティブな計画は最大1件」** という元のlocalStorage実装の制約を部分UNIQUE索引（`WHERE is_deleted = false`）で保つ。保存は既存アクティブ行のid再利用＋`saveWithLock`（無ければ新規INSERT）。削除は論理削除（元は`localStorage.removeItem`という物理削除だったが変更）。
+- **localStorageの旧データは黙って捨てない。** `loadLegacyLocalQuarterPlan`/`clearLegacyLocalQuarterPlan`（`quarterPlanStore.ts`）でこのブラウザに残っている旧下書きを検知し、`KrQuarterPlanPanel.tsx`のセットアップ画面に「Supabaseへ移行」／「このブラウザから削除」の選択を出す（自動移行はしない＝他端末が既にSupabase側へ保存済みの可能性があるため）。
+- **`quarterly_objectives`/`quarterly_kr_task_forces`（死蔵テーブル。Section 1.6・`docs/REFACTORING.md` M24）**：`quarterly_kr_task_forces`はappStore.ts/store.tsの未使用state・アクション・fetch/insert/deleteを削除（読み書きとも参照ゼロになった）。`quarterly_objectives`はOKR PDF取込（`OkrImportModal`が「四半期OKR」選択時に記録用の骨組みを1件作成する）が今も書き込むため、この経路は**残した**（撤去すると取込機能が壊れるため）。どちらもテーブル自体は物理削除しない（Section 4）。`schema.sql`に「死蔵」の明記コメントを追加。
 
 ---
 

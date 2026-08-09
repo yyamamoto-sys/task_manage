@@ -4287,5 +4287,49 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`新規エラー0（既存の24件のエラー・11件の警告のみ・変更前と同数）／
 #             `npm run build`成功（PersonalOkrViewチャンクgzip約10.7KB）
 #
-# 最終更新：2026-08-07（v3.37）
+# v3.38 OKRモード再設計 Phase 1 Step C：既存の整理（3項目）（2026-08-10）
+#      背景：docs/dev/okr-redesign-plan.md §9の3項目。CLAUDE.md Section 1の古い「Supabase
+#             保存は要確認」記述が残っていたため、クォーター計画（KrQuarterPlanPanel）だけが
+#             localStorage実装のまま取り残されていた。2026-08-07に山本さんが
+#             「Supabase保存はすでに問題ない」と確認し、決着を明記した
+#      変更①：CLAUDE.md Section 1の⚠リストを是正（Supabase項目のみ「2026-08-07に確認済み
+#             （社内的にクリア）」と決着を明記。Claude API送信／Teams埋め込み申請の2項目は
+#             今回の確認範囲外のため未解決のまま残した）
+#      変更②：`quarterPlanStore.ts`をlocalStorage→Supabase（新規`kr_quarter_plans`テーブル）
+#             へ移行。個人OKR（本人のみRLS）とは異なり、クォーター計画はKRに紐づくチーム
+#             （マネージャー）の資産のため部署スコープ（`group_id = ANY(current_member_group_ids())`。
+#             OKRコア階層と同じ流儀＝自前のgroup_id列＋トリガーで親〈key_results〉から自動注入）
+#             にした。「1つの(kr_id,quarter)につきアクティブな計画は最大1件」という元の
+#             localStorage実装の制約を部分UNIQUE索引で保ちつつ、保存はsaveWithLock（楽観ロック）
+#             経由に変更（チーム内の同時編集を検出できるようになった）。削除は論理削除に変更
+#             （元はlocalStorage.removeItemという物理削除）。マイグレーション：
+#             `supabase/migrations/20260807c_add_kr_quarter_plans.sql`（**未適用・山本さんの
+#             手動適用が必要**）。schema.sql・schemaChecks.tsに同期
+#      🔴localStorageの旧データ：黙って捨てない。`loadLegacyLocalQuarterPlan`/
+#             `clearLegacyLocalQuarterPlan`（quarterPlanStore.ts）でこのブラウザに残っている
+#             Phase 1時代の下書きを検知し、`KrQuarterPlanPanel.tsx`のセットアップ画面に
+#             「Supabaseへ移行」／「このブラウザから削除」を選ばせるバナーを追加（自動移行は
+#             しない＝他端末が既にSupabase側に保存済みの可能性があるため。Human in the loop）
+#      変更③：死蔵テーブル`quarterly_objectives`/`quarterly_kr_task_forces`の整理
+#             （`docs/REFACTORING.md` M24→解消）。`quarterly_kr_task_forces`はappStore.ts/
+#             store.tsの死蔵state（`quarterlyKrTaskForces`）・2アクション
+#             （`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`）・fetch/insert/delete
+#             関数を削除（読み書きとも参照ゼロに）。`quarterly_objectives`はOKR PDF取込
+#             （`OkrImportModal`が「四半期OKR」選択時に記録用の骨組みを1件作成する）が今も
+#             書き込むため**この経路は撤去していない**（撤去すると取込機能が壊れるため）。
+#             どちらのテーブルもDropしていない（物理削除禁止・Section 4）。schema.sqlに
+#             「死蔵」の明記コメントを追加。`QuarterlyKrTaskForce`型定義（types.ts）も
+#             死蔵注記を追加して残置（DBテーブルが残るため型も残す）
+#      テスト：新規テストファイルは追加していない（既存のschemaChecks.test.tsがSCHEMA_HEALTH_
+#             CHECKSの項目数に応じて動的にテストを生成するため、検査項目1行追加だけで
+#             940件→941件に自動で1件増える）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`941件全通過（940件から1件増）／
+#             `npm run lint`新規エラー0（既存の24件のエラー・11件の警告のみ・変更前と同数）／
+#             `npm run build`成功
+#      要手動作業：山本さんが `supabase/migrations/20260807c_add_kr_quarter_plans.sql` を
+#             Supabase SQL Editorへdev→prodの順で適用すること（エージェントは未適用）。
+#             適用前はクォーター計画の保存・読込がエラー表示になる（黙って無効化しない設計。
+#             Section 22参照）
+#
+# 最終更新：2026-08-10（v3.38）
 

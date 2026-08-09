@@ -260,6 +260,12 @@ export interface ProjectTaskForce {
   tf_id: string;
 }
 
+/**
+ * 【死蔵・2026-08-07追記】2026-05-26のTF四半期判定モデル移行（→TaskForce.quarter列）
+ * 以降、読み書きとも参照されない（appStore.ts/store.tsの未使用state・アクション・
+ * fetch/insert/deleteは2026-08-07に削除済み。docs/REFACTORING.md M24）。DBテーブル自体は
+ * 残っている（物理削除禁止・Section 4）ため型定義だけ残す。新規に参照を追加しないこと。
+ */
 export interface QuarterlyKrTaskForce {
   quarterly_objective_id: string; // どの四半期か
   kr_id: string;                  // 通期KRのID
