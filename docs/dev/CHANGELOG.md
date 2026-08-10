@@ -4461,5 +4461,55 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             のみのため本文サイズは変わらず、増分はfrontmatterの数行のみ）
 #      要手動作業：無し（新規マイグレーションは追加していない）
 #
-# 最終更新：2026-08-10（v3.40）
+# v3.41 OKRモード再設計 Phase 2：Kintone個人OKR取込（2026-08-10）
+#      内容：個人OKRビュー（`PersonalOkrView`）に「📥 Kintoneから取込」を追加。Kintoneの
+#            「個人OKR設定フォーム」（個人四半期KR）／「個人OKR_月次振返り記録」（個人月次
+#            計画・振り返り）のPDF・テキストをAIが解析し、個人KR・月次計画・振り返りを
+#            抽出→人が確認・対応づけ・編集→登録する（`OkrImportModal.tsx`と同じ
+#            Human-in-the-loopの型を踏襲）。
+#      新規ファイル：
+#      - `src/components/okr/personal/PersonalOkrImportModal.tsx`：取込モーダル本体
+#        （入力→解析→確認→登録→完了の5ステップ）
+#      - `src/lib/ai/personalOkrImportExtractor.ts`：AI抽出（`AIIntent`に
+#        `"okr-personal-import"`を追加。`invokeAI()`経由・max_tokens=16000）
+#      - `src/lib/personalOkr/importFieldParse.ts`：`mapKrKindHint`/`parseBandValue`/
+#        `parseWeightPct`/`parsePercentValue`（kr_kind・バンド・ウェイトの決定的な正規化。
+#        AIには変換させない）
+#      - `src/lib/personalOkr/importMatch.ts`：`rankExistingPersonalKrMatches`/
+#        `pickDefaultMapping`/`rankGroupTfMatches`（既存personal_kr・グループKR/TFへの
+#        対応づけ候補のランキング。自動確定はせず初期選択のヒントのみ）
+#      - `src/lib/personalOkr/importApplyPlan.ts`：`buildImportApplyPlan`（確認画面で人が
+#        確定した内容から実際にupsertする行を組み立てる純粋関数。既存KRに対応づけた場合は
+#        新しいuuidを発行せず既存の`personal_krs.id`をそのまま使う——これが週の目標状態・
+#        メモが孤立しないことの本体保証）
+#      🔴最重要：既存の`personal_krs`（同じ四半期）への対応づけを必ず人が確認する。
+#            `personal_kr_weeks`/`personal_kr_memos`は`personal_kr_id`にしか紐づいていない
+#            ため、既存KRを取込で作り直すとそれまでの週の目標状態・メモが画面から孤立する。
+#            確認画面の「対応づけ」ドロップダウン（新規作成／既存KRから選択）を必ず経由させ、
+#            初期選択は`importMatch.ts`のスコアリング（スコア0.5未満なら安全側で「新規作成」
+#            を既定にする）に留め、最終決定は人に委ねる。
+#      種別判定：四半期OKRか月次振返りかはAIに判定させ（`detected_doc_type`）、確認画面の
+#            セグメントボタンで人が切り替えられる。グループKR/TFの実リンク候補
+#            （`kr_kind='group_kr'`のとき）は表示中の部署に絞る（`deptScope.ts`。v3.02の
+#            他部署TF選択事故の再発防止）。
+#      機密への配慮：月次振返りPDFにはGM評価・面談コメントが含まれるため、入力ステップに
+#            「🔒 AIに送信される内容」を明示してから解析を実行させる。
+#      DBスキーマ変更：無し（Step Aの5テーブルで足りるため新規マイグレーションは追加していない）。
+#      テスト：新規4ファイル・38件追加（`importFieldParse.test.ts`11件・`importMatch.test.ts`
+#            9件・`importApplyPlan.test.ts`7件＝🔴既存の週・メモが失われないことの回帰テスト・
+#            `personalOkrImportExtractor.test.ts`11件）。既存の`labViewContainment`/
+#            `labViewChokePoint`/`modalStyles`/`version`/`schemaChecks`も全通過を確認。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`985件全通過（947件→985件・+38件）／
+#            `npm run lint`35件（23エラー12警告。v3.40と同数・新規エラー0）／`npm run build`
+#            成功。**チャンクサイズ実測（同一node_modulesでのstash比較）**：
+#            `PersonalOkrView`チャンクは41.13KB→85.67KB（gzip10.90KB→24.12KB。
+#            +44.54KB/+13.22KB。取込UI・AI抽出・マッチングロジック一式の追加分）。
+#            `index`・`appStore`等の常時ロード経路のチャンクは無変化（取込機能はOKRモードの
+#            「自分」タブを開いた人だけがダウンロードするReact.lazyチャンクの中に収まって
+#            いるため）。gzip24.12KBはSection 19のDL確認ゲート閾値（200KB）を大きく下回り、
+#            新たな確認ダイアログは不要。**全チャンク合計は1,440,053B→1,484,664B
+#            （+44,611B・約+3.1%）**。
+#      要手動作業：無し（新規マイグレーションは追加していない）
+#
+# 最終更新：2026-08-10（v3.41）
 

@@ -19,6 +19,7 @@ import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/wei
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
+import { PersonalOkrImportModal } from "./PersonalOkrImportModal";
 
 const QUARTER_OPTIONS: { value: Quarter; label: string }[] = [
   { value: "1Q", label: "1Q（1〜3月）" },
@@ -82,6 +83,7 @@ export function PersonalOkrView({ currentUser }: Props) {
   useEffect(() => { if (selectedKrId) ensureKrDetailLoaded(selectedKrId); }, [selectedKrId, ensureKrDetailLoaded]);
 
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; initial: PersonalKr | null } | null>(null);
+  const [importModalOpen, setImportModalOpen] = useState(false);
   const weightTotal = useMemo(() => sumWeightPct(activeKrs), [activeKrs]);
   const selectedKr = activeKrs.find(k => k.id === selectedKrId) ?? null;
 
@@ -127,6 +129,10 @@ export function PersonalOkrView({ currentUser }: Props) {
           onClick={() => setFormModal({ mode: "create", initial: null })}
           style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-brand)", alignSelf: "center" }}
         >＋ KRを追加</button>
+        <button
+          onClick={() => setImportModalOpen(true)}
+          style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-text-secondary)", alignSelf: "center", whiteSpace: "nowrap" }}
+        >📥 Kintoneから取込</button>
       </div>
 
       {krsLoading && !krsLoaded && (
@@ -186,6 +192,24 @@ export function PersonalOkrView({ currentUser }: Props) {
               : undefined
           }
           onClose={() => setFormModal(null)}
+        />
+      )}
+
+      {importModalOpen && (
+        <PersonalOkrImportModal
+          currentUser={currentUser}
+          currentGroupId={currentGroupId}
+          allPersonalKrs={krs}
+          monthsByKr={monthsByKr}
+          ensureKrDetailLoaded={ensureKrDetailLoaded}
+          saveKr={saveKr}
+          saveMonth={saveMonth}
+          keyResults={keyResults}
+          taskForces={taskForces}
+          objectives={objectives}
+          defaultFiscalYear={fiscalYear}
+          defaultQuarter={quarter}
+          onClose={() => setImportModalOpen(false)}
         />
       )}
     </div>

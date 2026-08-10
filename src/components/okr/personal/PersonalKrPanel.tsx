@@ -218,6 +218,12 @@ export function PersonalKrPanel({
           })}
         </div>
         <span style={{ flex: 1 }} />
+        {kr.source_label && (
+          <span
+            title={`Kintoneが正本です。この内容はアプリ上でも編集できますが、評価の確定はKintone側で行います。${kr.imported_at ? `（${kr.imported_at.slice(0, 10)}取込）` : ""}`}
+            style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", padding: "3px 9px", whiteSpace: "nowrap" }}
+          >📥 {kr.source_label}</span>
+        )}
         <button onClick={onEditKr} style={{ fontFamily: "inherit", fontSize: "11px", cursor: "pointer", padding: "4px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)" }}>
           ✏️ このKRを編集
         </button>
@@ -254,7 +260,10 @@ export function PersonalKrPanel({
 
           {/* 今月の計画 */}
           <div style={{ marginTop: "20px" }}>
-            <div style={sectionHeadStyle}><span>今月の計画</span><span style={ruleStyle} /><span>{monthStatus === "past" ? "確定済み・読み取り専用" : "手入力（Phase 2でKintone取込に置き換え予定）"}</span></div>
+            <div style={sectionHeadStyle}>
+              <span>今月の計画</span><span style={ruleStyle} />
+              <span>{monthStatus === "past" ? "確定済み・読み取り専用" : monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
+            </div>
             {monthError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{monthError}</div>}
             <div style={cardStyle}>
               {(["positioning", "activities", "targetAndEvidence", "risks"] as const).map(field => {

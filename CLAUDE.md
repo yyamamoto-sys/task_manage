@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.40
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.41
 #
-最終更新：2026-08-10（v3.40）
+最終更新：2026-08-10（v3.41）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -697,7 +697,8 @@ export type AIIntent =
   | "project-analysis"     // 単一PJの健全性分析
   | "all-projects-analysis" // 全PJ横断ポートフォリオ分析
   | "todo-decompose"       // ToDo 分解
-  | "okr-import";          // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
+  | "okr-import"           // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
+  | "okr-personal-import"; // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
 ```
 
 新しい AI 機能を追加するときは、この型に新タグを追加し、当該 prompt builder に
@@ -927,7 +928,7 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
-| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（読み取り専用または手入力）→週の目標状態（◯△✕自己評価）→メモを記録する。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
+| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39／Phase 2取込・v3.41） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（Kintone取込または手入力）→週の目標状態（◯△✕自己評価）→メモを記録する。「📥 Kintoneから取込」（`PersonalOkrImportModal`）でKintoneの個人四半期OKR・月次振返り記録のPDF/テキストをAI解析→人が確認・対応づけ→登録できる。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
 | OKRモード：グループ側機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ） | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 山本さんの判断で一旦白紙化。OKRモードは個人OKRのみになり、サイドバーのラボからも撤去した。コードは削除せず保管（`src/components/okr/ARCHIVED.md`参照）。旧クォーター計画タブは`kr_quarter_plans`（部署スコープ・Supabase）保存だった |
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
@@ -1008,7 +1009,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.40）
+- 最終更新：2026-08-10（v3.41）
 
 ---
 
@@ -1677,6 +1678,21 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **ガイド記事の除外方式**：`docs/guides/`はファイルを消さず、frontmatterに`archived: true`を立てて`src/lib/docs/manifest.ts`の`ALL_ENTRIES`構築時に除外する新方式を導入（`deprecated: true`とは異なり一覧に一切出ない）。対象：`02_modes/okr/00_cycle.md`〜`03_report.md`・`03_roles/kr-rep.md`・`03_roles/facilitator.md`・`04_workflows/weekly-rhythm.md`。`docs/guides/_meta/conventions.md` Section 5.1に方式を追記。`admin.objective-kr-tf`（Objective/KR/TF登録）と`meeting.import`（会議読み込み）はOKR管理データ構造・別機能のため対象外。
 - **AIの機能認識（Section 17）**：`src/lib/ai/uiGuide.ts`の`FEATURE_LIST_SECTION`からグループ側の記述（3階層管理・KRセッション記録・KRレポート自動生成）を削除し、個人OKRの実装済み機能に差し替えた。
 - **やらないこと（変更対象外）**：`fetchOkrData`の6テーブル（objectives/key_results/task_forces/todos/project_task_forces/task_task_forces）は起動時フェッチのまま維持（計画モードのTF/ToDoピッカー・ガント・ダッシュボードが使用）。DBテーブル（`kr_sessions`/`kr_meeting_notes`/`okr_analyses`/`kr_reports`/`kr_quarter_plans`等）・ストア層のファイルは削除しない。
+
+### Step F：Kintone取込（Phase 2・v3.41・2026-08-10）
+
+`PersonalOkrView`に「📥 Kintoneから取込」を追加（`PersonalOkrImportModal.tsx`）。`OkrImportModal.tsx`（グループOKR取込）と同じHuman-in-the-loopの型（PDF/テキスト→AI抽出→人が確認・編集→登録）を踏襲した。
+
+- **入口**：既存の`FileAttachButton`/`FileDropZone`（PDF・Word・画像・テキスト対応）とテキスト貼り付け欄の両方を受ける。
+- **種別判定はAIに任せる**：Kintoneの「個人OKR設定フォーム」（四半期KR）か「個人OKR_月次振返り記録」（月次計画・振り返り）かをAIが判定し`detected_doc_type`として返す（`src/lib/ai/personalOkrImportExtractor.ts`のSYSTEM_PROMPT）。確認画面には「🤖 個人四半期OKRとして読み取りました」等を明示し、誤判定時は人がセグメントボタンで切り替えられる。`AIIntent`に`"okr-personal-import"`を追加（Section 6-1b）。
+- **🔴既存の`personal_krs`への対応づけが最重要**：`personal_kr_weeks`/`personal_kr_memos`は`personal_kr_id`（＝`personal_krs.id`そのもの）にしか紐づいていない。既存の同じ四半期のKRを取込で作り直すと、それまでの週の目標状態・メモが孤立して画面から消える。そのため確認画面で「対応づけ」ドロップダウン（新規作成／既存KRのどれかを選択）を必ず経由させ、**最終決定は人**にする。初期選択のヒントは`src/lib/personalOkr/importMatch.ts`の`rankExistingPersonalKrMatches()`（label・kr_kindの一致度スコアリング）が提示するが、スコアが閾値未満（`AUTO_SELECT_THRESHOLD`）なら「新規作成」を既定にする（曖昧な自動選択をしない）。実際の書き込み行（既存idの再利用or新規uuid発行）は`src/lib/personalOkr/importApplyPlan.ts`の`buildImportApplyPlan()`に一本化し、この判断をモーダル側のUIコードに分散させない。
+- **グループKR/TFの候補も部署スコープ**：`kr_kind='group_kr'`のときの実リンク先（`key_result_id`/`task_force_id`）は、表示中の部署（`currentGroupId`）に絞った`keyResultsInGroup`/`taskForcesInGroup`（既存の`deptScope.ts`）から選ぶ（v3.02の「他部署のTFが選べた」事故の再発防止）。KintoneのKR番号（"KR1"）はアプリのKeyResultに対応する列を持たないため数値マッチングはできず、`rankGroupTfMatches()`はTF名・KRタイトルとヒント文字列（`group_kr_hint`）の重なりだけで候補を提示する（自動確定はしない）。
+- **`kr_kind`・`band_target`・`weight_pct`の数値/enum変換はAIにやらせない**：AIには元のKintone表記（"グループKR1"等）や数値をそのまま返させ、`src/lib/personalOkr/importFieldParse.ts`の`mapKrKindHint()`/`parseBandValue()`/`parseWeightPct()`（決定的な純粋関数）で確定させる。`band_target`はKintoneの月次バンド欄が複数基準のルーブリック（説明文）であることが大半で単一目標が明記されていることは稀なため、AIには「単一の値が明記されている場合のみ数値・それ以外はnull」と指示し、null（未設定）のまま返すことを許容する。
+- **既存の週・メモが失われないことをテストで固定**：`src/lib/personalOkr/__tests__/importApplyPlan.test.ts`が「既存KRに対応づけた場合は新しいuuidを発行せず既存の`personal_krs.id`をそのまま使う」「既存にあって抽出結果に無いKR・月は一切触れない」ことを回帰テストする。
+- **月次計画の重複作成防止**：`personal_kr_months`は`UNIQUE(personal_kr_id, month)`制約があるため、対応づけ先の既存KRについては`ensureKrDetailLoaded()`で月次計画を確実に先読みしてから計画を組む（`PersonalOkrImportModal.tsx`の`handleApply`）。既存の月次計画が見つかればそのidを再利用して更新し、人が既に決めた`band_override`は取込で上書き・消去しない。
+- **機密への配慮**：月次振返りPDFにはGM評価・面談コメントが含まれるため、入力ステップに「🔒 AIに送信される内容」を明示（送るファイル・テキストの範囲と、送らないもの＝アプリ内の既存データ）。
+- **取込後も編集可能**：`personal_krs`/`personal_kr_months`の`source_label`/`imported_at`列を必ず埋め、`PersonalKrPanel.tsx`に「📥 {source_label}」バッジ（Kintoneが正本である旨のツールチップ付き）を表示する。取込後もアプリ上でこれらの列を編集できる（読み取り専用にしない）。
+- **DBスキーマ変更なし**：Step Aの5テーブルで足りるため、新規マイグレーションは追加していない（`schemaChecks.ts`への追記も不要）。
 
 ---
 
