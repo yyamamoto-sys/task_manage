@@ -216,7 +216,7 @@ export const commonJa = {
   "common.okrModeGate.feature2": "KRごとの週次サイクル：① 会議ノート → ② セッション記録＆分析 → ③ レポート作成",
   "common.okrModeGate.feature3": "なぜなぜ分析、クォーター計画（マネージャー向け）",
   "common.okrModeGate.feature4": "「自分」タブ：個人OKR（KRごとの月次計画・週の目標状態と自己評価◯△✕・メモ）",
-  "common.okrModeGate.dataNotice": "「開く」を押すとOKRモードに切り替わり、このモードで使うデータを読み込みます。",
+  "common.okrModeGate.dataNotice": "この案内は初回のみ表示されます。各機能のデータは、実際に開いたときに読み込まれます。",
   "common.okrModeGate.approve": "開く",
   "common.okrModeGate.decline": "やめる",
 

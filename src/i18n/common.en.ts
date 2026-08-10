@@ -196,7 +196,7 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.okrModeGate.feature2": "Weekly cycle per KR: ① meeting notes → ② session record & analysis → ③ report writing",
   "common.okrModeGate.feature3": "Why-why analysis, quarter plan (for managers)",
   "common.okrModeGate.feature4": "\"Me\" tab: personal OKR (monthly plan per KR, weekly goal state with self-rating ◯/△/✕, memos)",
-  "common.okrModeGate.dataNotice": "Opening this will switch to OKR mode and load the data this mode uses.",
+  "common.okrModeGate.dataNotice": "This notice appears only the first time. Each feature loads its data when you actually open it.",
   "common.okrModeGate.approve": "Open",
   "common.okrModeGate.decline": "Cancel",
 
