@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.41
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.42
 #
-最終更新：2026-08-10（v3.41）
+最終更新：2026-08-10（v3.42）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1009,7 +1009,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.41）
+- 最終更新：2026-08-10（v3.42）
 
 ---
 
@@ -1693,6 +1693,27 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **機密への配慮**：月次振返りPDFにはGM評価・面談コメントが含まれるため、入力ステップに「🔒 AIに送信される内容」を明示（送るファイル・テキストの範囲と、送らないもの＝アプリ内の既存データ）。
 - **取込後も編集可能**：`personal_krs`/`personal_kr_months`の`source_label`/`imported_at`列を必ず埋め、`PersonalKrPanel.tsx`に「📥 {source_label}」バッジ（Kintoneが正本である旨のツールチップ付き）を表示する。取込後もアプリ上でこれらの列を編集できる（読み取り専用にしない）。
 - **DBスキーマ変更なし**：Step Aの5テーブルで足りるため、新規マイグレーションは追加していない（`schemaChecks.ts`への追記も不要）。
+
+---
+
+## 25. プロジェクト招待（部署外メンバーの受け入れ）Phase 1：DB・SECURITY DEFINER関数のみ（v3.42・2026-08-10）
+
+**正本は [docs/dev/project-invite-plan.md](docs/dev/project-invite-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。マイグレーションSQL全文・検証条件の詳細はそちらを読むこと。
+
+- **一行で言うと**：新しいアクセス制御の軸を作らない。PJごとに1つ「招待用の部署」（`groups.is_invite_group=true`）を作り、既存の複数部署アクセス機構（`group_ids`配列）に乗せる。**既存テーブルのRLSは1行も変えない。**
+- **今回作った範囲（Phase 1）**：`project_invites`テーブル・`groups.is_invite_group`列・SECURITY DEFINER関数2本（`create_project_invite`/`accept_project_invite`）・型（`ProjectInvite`）・ストア層（`src/lib/supabase/projectInviteStore.ts`）のみ。**発行UI・管理画面の招待一覧/取り消し・ログイン画面の導線はPhase 2/3（未実装）。**
+- **決定事項（2026-08-10・山本さん）**：招待先は社内の別部署／発行権限は全メンバー／許可メールドメインは`amita-net.co.jp`（複数指定できる形）／招待された人のAI機能は無制限（回数制限なし）。
+- **「発行権限は全メンバー」の代償として入れた安全弁（`create_project_invite`）**：
+  1. 🔴 呼び出し者が対象PJにアクセスできるかを検証する（`can_access_group_ids(projects.group_ids)`）。この関数はSECURITY DEFINERのためRLSを迂回するので、この検証が無いと誰でも任意のPJへのアクセスを配れてしまう。
+  2. 🔴 招待先メールアドレスのドメイン許可リスト検証。「@より後ろ（最後の@以降）」を取り出し配列の要素と**完全一致**するかだけを見る（部分一致・前方一致・後方一致は使わない。"user@amita-net.co.jp.evil.com" のような偽装ドメインを弾くため）。
+  3. 招待で配れるアクセスは**そのPJ1件のみ**（部署全体のアクセスは配れない）。
+  4. 監査：`project_invites`は発行者と同じ部署のメンバーがSELECTできる（RLSはSELECTのみ・INSERT/UPDATE/DELETEのポリシーは意図的に作らない＝書き込みはSECURITY DEFINER関数経由のみ）。
+- **招待コードは平文で保存しない**：`code_hash`列にのみ保存し、平文は`create_project_invite`の戻り値で1度だけ返す。生成・ハッシュ化どちらもpgcryptoに依存せず、PostgreSQLコア組み込み関数（`gen_random_uuid()`を2連結／`sha256()`）だけで実現した（pgcryptoが有効かどうかを事前確認する必要が無い設計）。
+- **受諾（`accept_project_invite`）は4条件を全て検証**：①存在・未使用・未取消 ②発行から24時間以内 ③入力メールが招待時のメールと完全一致、かつ`auth.email()`とも一致（なりすまし防止） ④コードのハッシュ照合。🔴 作成する`members`行は`is_admin`/`is_super_admin`を必ず`false`にする（権限昇格の穴を作らないため）。同時受諾のTOCTOUは`pg_advisory_xact_lock`で直列化する。
+- **`guard_member_privilege_columns()`トリガーを拡張した理由**：発行者本人とPJオーナーに招待用部署への兼務を`create_project_invite`内のUPDATEで付与するが、これも通常のmembers UPDATEとして既存の「非super-adminのgroup_ids直接変更は差し戻す」ルールにぶつかり静かに差し戻されてしまう。そこで、トランザクションローカルのセッション変数（`app.allow_invite_group_grant`。PostgREST経由のクライアントは直接設定できない）を立てた場合に限り、「既存の所属を1件も失わず」「追加分が全て`is_invite_group=true`のグループである」ときだけ例外的に許可する分岐を追加した。
+- **招待用部署の命名規則**：`id`は対象PJから決定的に導出（`'grp-invite-' || project_id`）。同じPJに複数回招待しても同じ部署を再利用する（`ON CONFLICT DO NOTHING`で idempotent）。
+- **appStoreには足さない**：招待は管理系機能で全員が起動時に読む必要が無い（個人OKRと同じ判断。Section 19）。
+- **Phase 2/3（未実装）**：発行UI（PJから招待）・管理画面の招待一覧・取り消し・ログイン画面の導線・`AccessDeniedScreen`からの導線。
 
 ---
 

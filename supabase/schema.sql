@@ -52,6 +52,10 @@ CREATE TABLE IF NOT EXISTS groups (
 );
 -- migrations/20260703_add_group_teams_webhook.sql 参照
 ALTER TABLE groups ADD COLUMN IF NOT EXISTS teams_webhook_url text;
+-- プロジェクト招待用の部署かどうか（migrations/20260810_add_project_invites.sql）。
+-- true の部署はcreate_project_invite()が対象PJごとに1つ作る「招待用の部署」で、
+-- 通常の部署（is_admin/is_super_admin付与の対象になる通常運用の組織）とは区別する。
+ALTER TABLE groups ADD COLUMN IF NOT EXISTS is_invite_group boolean NOT NULL DEFAULT false;
 
 INSERT INTO groups (id, name, updated_by)
 VALUES ('grp-egg', 'EGG', 'system')
@@ -724,6 +728,27 @@ CREATE TABLE IF NOT EXISTS personal_kr_memos (
   updated_by       text NOT NULL DEFAULT ''
 );
 
+-- ===== プロジェクト招待（部署外メンバーの受け入れ。migrations/20260810_add_project_invites.sql）=====
+-- 正本：docs/dev/project-invite-plan.md。RLSはSELECTのみ（CLAUDE.md新セクション参照）。
+-- 書き込みはcreate_project_invite()/accept_project_invite()（SECURITY DEFINER）経由のみ。
+CREATE TABLE IF NOT EXISTS project_invites (
+  id                  uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  project_id          text NOT NULL REFERENCES projects(id),
+  invite_group_id     text NOT NULL REFERENCES groups(id),
+  invited_email       text NOT NULL,  -- 正規化済み（lower/trim）。検証条件3の照合先
+  code_hash           text NOT NULL,  -- 平文コードは保存しない。sha256(コード)のhex表現
+  invited_by          text NOT NULL REFERENCES members(id),
+  expires_at          timestamptz NOT NULL,
+  accepted_at         timestamptz,
+  accepted_member_id  text REFERENCES members(id),
+  revoked_at          timestamptz,   -- Phase 2で取り消し機能を実装する（今回は列のみ）
+  revoked_by          text REFERENCES members(id),
+  created_at          timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_invites_code_hash ON project_invites(code_hash);
+CREATE INDEX IF NOT EXISTS idx_project_invites_project_id ON project_invites(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_invites_invited_by ON project_invites(invited_by);
+
 -- ============================================================
 -- updated_at トリガー（テーブル定義後に作成）
 -- ============================================================
@@ -795,6 +820,10 @@ ALTER TABLE personal_kr_week_tasks     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE personal_kr_memos          ENABLE ROW LEVEL SECURITY;
 -- ※ 個人OKR層5テーブルの個別ポリシーは current_member_id() 等を参照するため、
 --   ヘルパー関数の定義より後（下部の「個人OKR層」ブロック）で作成する。
+ALTER TABLE project_invites             ENABLE ROW LEVEL SECURITY;
+-- ※ project_invites の個別ポリシー（SELECTのみ）は can_access_group_ids()/member_group_ids()
+--   を参照するため、ヘルパー関数の定義より後（下部の「PJ・タスク周辺（子）テーブル」ブロック）
+--   で作成する（migrations/20260810_add_project_invites.sql）。
 ALTER TABLE guest_ai_usage_daily        ENABLE ROW LEVEL SECURITY;
 ALTER TABLE guest_ai_usage_global_daily ENABLE ROW LEVEL SECURITY;
 -- ※ guest_ai_usage_daily / guest_ai_usage_global_daily は個別ポリシーを一切作らない
@@ -1357,6 +1386,17 @@ DROP POLICY IF EXISTS "admin_change_logs_group" ON admin_change_logs;
 CREATE POLICY "admin_change_logs_group" ON admin_change_logs FOR ALL TO authenticated
   USING (public.can_access_group_ids(public.member_group_ids(performed_by)));
 
+-- project_invites（migrations/20260810_add_project_invites.sql）：🔴 SELECTのみポリシー。
+-- INSERT/UPDATE/DELETEのポリシーは意図的に作らない（RLSはポリシーが無いコマンドを全否定
+-- する＝authenticatedからの直接書き込みは常に拒否。書き込みはcreate_project_invite()/
+-- accept_project_invite()というSECURITY DEFINER関数経由のみ）。可視範囲は発行者（invited_by）
+-- と同じ部署のメンバー（監査のため）。code_hashは列単位で隠せないため、クライアント側の
+-- SELECTで明示的に列を絞ることで守る（src/lib/supabase/projectInviteStore.ts参照）。
+DROP POLICY IF EXISTS "project_invites_select_same_dept" ON project_invites;
+CREATE POLICY "project_invites_select_same_dept" ON project_invites
+  FOR SELECT TO authenticated
+  USING (public.can_access_group_ids(public.member_group_ids(invited_by)));
+
 DROP POLICY IF EXISTS "authenticated users can select" ON ai_usage_logs;
 DROP POLICY IF EXISTS "ai_usage_logs_select_group" ON ai_usage_logs;
 CREATE POLICY "ai_usage_logs_select_group" ON ai_usage_logs FOR SELECT TO authenticated
@@ -1574,10 +1614,34 @@ BEGIN
   -- （部署ブートストラップ含む）・新規作成時は、group_idsを新ホーム部署のみにリセットする
   -- （追記のまま残すと部署admin経由で複数部署アクセスを迂回的に付与できる抜け穴になるため）。
   -- NEW.group_id はフェーズ2で既に最終確定済み（差し戻された場合は old_group_id と一致）。
+  --
+  -- 【2026-08-10・migration 20260810_add_project_invites.sql で追加】プロジェクト招待機能の
+  -- 「発行権限は全メンバー」（決定事項）により、create_project_invite() が発行者本人と
+  -- PJオーナーに招待用部署（is_invite_group=true）への兼務をこのトリガー経由のUPDATEで
+  -- 付与する。既存ルールのままだと非super-adminによるこのUPDATEは静かに差し戻されてしまう
+  -- ため、以下の3条件を全て満たす場合に限り例外的に許可する：
+  --   ① create_project_invite() がトランザクションローカルで明示的に立てたセッション変数
+  --      （app.allow_invite_group_grant='on'）が立っている（PostgREST経由のクライアントは
+  --      生SQL実行手段が無いため直接この変数を立てられない＝この関数の内部でしか到達しない）
+  --   ② 既存の所属を1件も失っていない（NEW.group_ids @> old_group_ids）
+  --   ③ 追加された要素が全て is_invite_group=true のグループである
+  -- coalesce(...,'')='on' は「NULL（未設定）なら安全側＝許可しない」に倒すためのもので、
+  -- 認可チェックをNULLで素通りさせる猶予条項ではない（Section 1.6の教訓とは別種の判定）。
   IF acting_super_admin OR will_be_super_admin THEN
     NULL; -- super-adminは自由に付与・剥奪可（末尾の正規化で group_id 包含だけ保証する）
   ELSIF TG_OP = 'INSERT' OR NEW.group_id IS DISTINCT FROM old_group_id THEN
     NEW.group_ids := CASE WHEN NEW.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[NEW.group_id] END;
+  ELSIF coalesce(current_setting('app.allow_invite_group_grant', true), '') = 'on'
+        AND NEW.group_ids @> old_group_ids
+        AND NOT EXISTS (
+          SELECT 1 FROM unnest(NEW.group_ids) AS gid
+          WHERE gid <> ALL(old_group_ids)
+            AND NOT EXISTS (
+              SELECT 1 FROM public.groups g WHERE g.id = gid AND g.is_invite_group = true
+            )
+        )
+  THEN
+    NULL; -- 招待用部署への兼務追加のみを許可（追加分が全てis_invite_group=trueであることを検証済み）
   ELSE
     NEW.group_ids := old_group_ids; -- 非super-adminによるgroup_ids自体の直接変更は差し戻す
   END IF;
@@ -1728,6 +1792,228 @@ $fn_bootstrap$;
 GRANT EXECUTE ON FUNCTION public.bootstrap_first_group_and_member(text, text, text, text, text, text) TO authenticated;
 
 -- ============================================================
+-- プロジェクト招待（部署外メンバーの受け入れ。migrations/20260810_add_project_invites.sql）
+-- 正本：docs/dev/project-invite-plan.md。CLAUDE.md新セクション参照。
+-- ============================================================
+
+-- 招待を発行する。🔴 全メンバーが呼べるため、関数内部の検証が実質の権限制御になる
+-- （呼び出し者が対象PJにアクセスできるかの検証＋メールドメイン許可リスト）。
+CREATE OR REPLACE FUNCTION public.create_project_invite(
+  p_project_id text,
+  p_email text
+)
+RETURNS TABLE(invite_id uuid, code text, expires_at timestamptz)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_create_project_invite$
+DECLARE
+  -- 🔒 許可メールドメイン。追加・変更する場合はこの配列に列挙するだけでよい（複数指定可）。
+  -- 変更時はマイグレーションの再適用が必要（値がSQL内にハードコードされているため）。
+  v_allowed_domains   text[] := ARRAY['amita-net.co.jp'];
+  v_caller_id         text;
+  v_project_name      text;
+  v_project_group_ids text[];
+  v_owner_member_id   text;
+  v_invite_group_id   text;
+  v_email_norm        text;
+  v_domain            text;
+  v_code              text;
+  v_code_hash         text;
+  v_invite_id         uuid;
+  v_expires_at        timestamptz;
+BEGIN
+  v_caller_id := public.current_member_id();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION '招待の発行にはメンバー登録が必要です' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT p.name, p.group_ids, p.owner_member_id
+    INTO v_project_name, v_project_group_ids, v_owner_member_id
+  FROM public.projects p
+  WHERE p.id = p_project_id AND p.is_deleted = false;
+
+  IF v_project_name IS NULL THEN
+    RAISE EXCEPTION '対象のプロジェクトが見つかりません' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  -- 🔴🔴🔴 最重要：呼び出し者が対象PJにアクセスできるかを検証する。
+  -- この関数はSECURITY DEFINERのためRLSを迂回する。この検証を欠くと、
+  -- ログインしている全メンバーが任意のPJへのアクセスを誰にでも配れてしまう
+  -- （設計書§4-4・「発行権限は全メンバー」の代償として必ず入れる安全弁の1点目）。
+  IF NOT public.can_access_group_ids(v_project_group_ids) THEN
+    RAISE EXCEPTION 'このプロジェクトを招待する権限がありません' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- 🔴 メールドメインの許可リスト検証。「@より後ろ（最後の@以降）」を取り出し、
+  -- 許可リストの要素と完全一致するかだけを見る（部分一致・前方一致・後方一致は使わない。
+  -- 例："user@amita-net.co.jp.evil.com" は末尾一致だと通ってしまうため完全一致にする）。
+  v_email_norm := lower(trim(coalesce(p_email, '')));
+  v_domain := substring(v_email_norm from '@([^@]+)$');
+  IF v_domain IS NULL OR v_domain = '' THEN
+    RAISE EXCEPTION 'メールアドレスの形式が正しくありません' USING ERRCODE = 'check_violation';
+  END IF;
+  IF NOT (v_domain = ANY(v_allowed_domains)) THEN
+    RAISE EXCEPTION '許可されていないメールドメインです（%）', v_domain USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- 招待用部署：PJごとに1つ。idをPJから決定的に導出することで、同じPJに何度招待しても
+  -- 同じ部署を再利用する（設計書§4-1）。
+  v_invite_group_id := 'grp-invite-' || p_project_id;
+
+  INSERT INTO public.groups (id, name, is_invite_group, updated_by)
+  VALUES (v_invite_group_id, '招待用部署: ' || v_project_name, true, v_caller_id)
+  ON CONFLICT (id) DO NOTHING;
+
+  -- 対象PJのgroup_idsに招待用部署を追加（既に含まれていれば何もしない）
+  UPDATE public.projects
+  SET group_ids = array_append(group_ids, v_invite_group_id)
+  WHERE id = p_project_id AND NOT (v_invite_group_id = ANY(group_ids));
+
+  -- 発行者本人・PJオーナーに招待用部署を兼務付与（担当者の氏名を招待者から見せるため。
+  -- 設計書§4-2）。guard_member_privilege_columns()のフェーズ3拡張参照。
+  PERFORM set_config('app.allow_invite_group_grant', 'on', true); -- トランザクションローカル
+
+  UPDATE public.members
+  SET group_ids = array_append(group_ids, v_invite_group_id)
+  WHERE id = v_caller_id
+    AND is_deleted = false
+    AND NOT (v_invite_group_id = ANY(group_ids));
+
+  IF v_owner_member_id IS NOT NULL AND v_owner_member_id <> v_caller_id THEN
+    UPDATE public.members
+    SET group_ids = array_append(group_ids, v_invite_group_id)
+    WHERE id = v_owner_member_id
+      AND is_deleted = false
+      AND NOT (v_invite_group_id = ANY(group_ids));
+  END IF;
+
+  -- コード生成：pgcryptoに依存せず、コア組み込みのgen_random_uuid()を2回連結して
+  -- 64桁の16進文字列（推測不能な値）を作る。
+  v_code := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  -- ハッシュ化：pgcryptoのdigest()ではなく、pg_catalogに組み込みのsha256()を使う。
+  -- 平文コードはDBに一切保存しない（戻り値として1度だけ返す）。
+  v_code_hash := encode(sha256(convert_to(v_code, 'UTF8')), 'hex');
+  v_expires_at := now() + interval '24 hours';
+
+  INSERT INTO public.project_invites (
+    project_id, invite_group_id, invited_email, code_hash, invited_by, expires_at
+  ) VALUES (
+    p_project_id, v_invite_group_id, v_email_norm, v_code_hash, v_caller_id, v_expires_at
+  )
+  RETURNING id INTO v_invite_id;
+
+  RETURN QUERY SELECT v_invite_id, v_code, v_expires_at;
+END;
+$fn_create_project_invite$;
+
+GRANT EXECUTE ON FUNCTION public.create_project_invite(text, text) TO authenticated;
+
+-- 招待を受諾してmembersを作成する。🔴 検証条件は必ず全て満たす（存在/未使用/未取消・
+-- 24時間以内・メール完全一致(入力値とauth.email()の両方)・コードのハッシュ照合）。
+CREATE OR REPLACE FUNCTION public.accept_project_invite(
+  p_code text,
+  p_email text,
+  p_display_name text,
+  p_short_name text,
+  p_initials text,
+  p_color_bg text,
+  p_color_text text
+)
+RETURNS TABLE(member_id text, group_id text)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_accept_project_invite$
+DECLARE
+  v_code_hash  text;
+  v_email_norm text;
+  v_auth_email text;
+  v_invite     record;
+  v_member_id  text;
+BEGIN
+  v_code_hash  := encode(sha256(convert_to(coalesce(p_code, ''), 'UTF8')), 'hex');
+  v_email_norm := lower(trim(coalesce(p_email, '')));
+  v_auth_email := lower(trim(coalesce(auth.email(), '')));
+
+  IF v_auth_email = '' THEN
+    RAISE EXCEPTION '認証されたメールアドレスが取得できません' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  -- 同時実行のTOCTOU対策：同じ招待コードに対する同時受諾を直列化する
+  -- （bootstrap_first_group_and_member()と同じ pg_advisory_xact_lock の流儀）。
+  PERFORM pg_advisory_xact_lock(hashtext(v_code_hash));
+
+  SELECT * INTO v_invite
+  FROM public.project_invites
+  WHERE code_hash = v_code_hash;
+
+  -- 🔴 検証条件1：コードが存在し、未使用・未取消であること
+  IF v_invite.id IS NULL THEN
+    RAISE EXCEPTION '招待コードが無効です' USING ERRCODE = 'no_data_found';
+  END IF;
+  IF v_invite.revoked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'この招待は取り消されています' USING ERRCODE = 'check_violation';
+  END IF;
+  IF v_invite.accepted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'この招待は既に使用されています' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- 🔴 検証条件2：発行から24時間以内であること
+  IF v_invite.expires_at <= now() THEN
+    RAISE EXCEPTION '招待の有効期限が切れています' USING ERRCODE = 'check_violation';
+  END IF;
+
+  -- 🔴 検証条件3：入力メールが招待時のメールと完全一致、かつauth.email()とも一致する
+  -- （なりすまし防止。bootstrap_first_group_and_member()がauth.email()を使う先例に倣う）。
+  IF v_invite.invited_email IS DISTINCT FROM v_email_norm
+     OR v_invite.invited_email IS DISTINCT FROM v_auth_email THEN
+    RAISE EXCEPTION 'メールアドレスが招待時の宛先と一致しません' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  -- （検証条件4：コードのハッシュ照合は、上のSELECTのWHERE code_hash = v_code_hashに
+  --  折り込まれている。ハッシュが一致しなければv_invite.idがNULLになり条件1で弾かれる）
+
+  IF coalesce(trim(p_display_name), '') = '' OR coalesce(trim(p_short_name), '') = '' THEN
+    RAISE EXCEPTION '表示名・略称を入力してください' USING ERRCODE = 'check_violation';
+  END IF;
+
+  v_member_id := gen_random_uuid()::text;
+
+  -- 🔴 is_admin / is_super_admin は必ずfalse（ここを間違えると権限昇格の穴になる）。
+  -- ホーム部署は招待用部署。フェーズ3（group_ids）はINSERTのため無条件でgroup_id込みに
+  -- 正規化される（guard_member_privilege_columns()参照。招待固有のセッション変数は不要）。
+  INSERT INTO public.members (
+    id, display_name, short_name, initials, teams_account, email,
+    is_admin, is_super_admin, group_id, color_bg, color_text,
+    is_deleted, updated_by
+  ) VALUES (
+    v_member_id, trim(p_display_name), trim(p_short_name), coalesce(p_initials, ''), '', v_auth_email,
+    false, false, v_invite.invite_group_id, coalesce(p_color_bg, '#7F77DD'), coalesce(p_color_text, '#FFFFFF'),
+    false, v_member_id
+  );
+
+  -- 使用済みへの確定はWHERE句で「まだ未使用・未取消・期限内」を再確認しながら行う
+  -- （advisory lockに加えた二重の安全網。ここで0行なら例外を投げ、直前のmembers INSERTも
+  -- 含めてこの関数呼び出し全体がロールバックされる＝孤立行は残らない）。
+  UPDATE public.project_invites
+  SET accepted_at = now(), accepted_member_id = v_member_id
+  WHERE id = v_invite.id
+    AND accepted_at IS NULL
+    AND revoked_at IS NULL
+    AND expires_at > now();
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'この招待は他の操作により使用済みになりました。もう一度お試しください'
+      USING ERRCODE = 'check_violation';
+  END IF;
+
+  RETURN QUERY SELECT v_member_id, v_invite.invite_group_id;
+END;
+$fn_accept_project_invite$;
+
+GRANT EXECUTE ON FUNCTION public.accept_project_invite(text, text, text, text, text, text, text) TO authenticated;
+
+-- ============================================================
 -- インデックス
 -- 詳細は migrations/20260501_add_indexes.sql 参照
 -- ここでは新環境構築時に最低限必要なものを再掲する
@@ -1785,6 +2071,12 @@ CREATE INDEX IF NOT EXISTS idx_personal_kr_memos_personal_kr_id  ON personal_kr_
 
 -- クォーター計画（migrations/20260807c_add_kr_quarter_plans.sql）
 CREATE INDEX IF NOT EXISTS idx_kr_quarter_plans_kr_id ON kr_quarter_plans(kr_id) WHERE is_deleted = false;
+
+-- プロジェクト招待（migrations/20260810_add_project_invites.sql。テーブル定義側でも作成済みだが
+-- 新規環境構築時にこのブロックの一覧性のためここにも明記する）
+CREATE UNIQUE INDEX IF NOT EXISTS uq_project_invites_code_hash ON project_invites(code_hash);
+CREATE INDEX IF NOT EXISTS idx_project_invites_project_id ON project_invites(project_id);
+CREATE INDEX IF NOT EXISTS idx_project_invites_invited_by ON project_invites(invited_by);
 
 -- task_dependencies（B1）：同一ペアの重複防止（論理削除は除外し、削除後の再追加を許す）
 CREATE UNIQUE INDEX IF NOT EXISTS uq_task_dependencies_pair

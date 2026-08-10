@@ -4511,5 +4511,48 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #            （+44,611B・約+3.1%）**。
 #      要手動作業：無し（新規マイグレーションは追加していない）
 #
-# 最終更新：2026-08-10（v3.41）
+# v3.42 プロジェクト招待（部署外メンバーの受け入れ）Phase 1：DB・SECURITY DEFINER関数のみ（2026-08-10）
+#      正本：docs/dev/project-invite-plan.md（CLAUDE.md Section 25に要点を記載）。
+#      内容：社内の別部署の人を特定のPJ1件に招待する機能のDB層。新しいアクセス制御の軸は
+#            作らず、PJごとに1つ「招待用の部署」（groups.is_invite_group=true）を作って
+#            既存のgroup_ids配列に乗せる（RLSは既存テーブルを1行も変えない）。今回は画面を
+#            作らない（発行UI・管理画面・ログイン導線はPhase 2/3）。
+#      新規マイグレーション：supabase/migrations/20260810_add_project_invites.sql
+#            （⚠️山本さんが手動適用。dev→prod）
+#      - groups.is_invite_group列を追加
+#      - project_invitesテーブル（SELECTのみRLS。書き込みはSECURITY DEFINER関数経由のみ）
+#      - create_project_invite(p_project_id, p_email)：呼び出し者が対象PJにアクセスできる
+#        かをcan_access_group_ids()で検証（🔴最重要の安全弁）→メールドメイン許可リスト検証
+#        （@以降の完全一致。部分一致にしない）→招待用部署を作成/再利用→発行者本人と
+#        projects.owner_member_idに招待用部署を兼務付与→コード生成（pgcrypto不使用。
+#        gen_random_uuid()2連結）→ハッシュ化（sha256()。pgcrypto不使用）して保存し
+#        平文は戻り値で1度だけ返す
+#      - accept_project_invite(p_code, p_email, p_display_name, ...)：4条件（存在/未使用/
+#        未取消・24時間以内・メール完全一致(入力値とauth.email()の両方)・コードのハッシュ
+#        照合）を検証してmembersを作成（is_admin/is_super_adminは必ずfalse）。同時受諾の
+#        TOCTOUはpg_advisory_xact_lockで直列化
+#      - guard_member_privilege_columns()を拡張：発行者・PJオーナーへの招待用部署の兼務
+#        付与が既存の「非super-adminのgroup_ids直接変更は差し戻す」ルールに素通りせず
+#        ぶつかってしまう問題を、トランザクションローカルのセッション変数
+#        （app.allow_invite_group_grant。クライアントから直接設定不可）で明示許可した場合
+#        に限り例外的に許可する分岐で解決
+#      新規ファイル：
+#      - src/lib/projectInvite/inviteRules.ts：メールドメイン許可判定・有効期限判定・
+#        コード生成の参照実装（本番の判定経路ではない。SQL側と1対1対応させた参照実装。
+#        supabase/functions/ai-consult/guestQuota.tsと同じ位置づけ）
+#      - src/lib/supabase/projectInviteStore.ts：RPCラッパー＋一覧取得。code_hashは
+#        select列から明示的に除外（RLSは行単位のため列は隠せない）。appStoreには足さない
+#        （招待は管理系機能で全員が起動時に読む必要が無い。個人OKRと同じ判断）
+#      型：ProjectInvite（src/lib/localData/types.ts）・Group.is_invite_group
+#      schemaChecks.ts：groups.is_invite_group列／project_invitesテーブル／
+#            create_project_invite・accept_project_invite関数の4項目を追加
+#      テスト：新規1ファイル・25件追加（inviteRules.test.ts。メールドメイン判定を特に厳しく
+#            テスト＝許可/拒否/偽装ドメイン(前方一致・後方一致・複数@)/サブドメイン/大文字
+#            小文字/前後空白/複数ドメイン指定）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1014件全通過（985件→1014件・+29件＝
+#            inviteRules 25件＋schemaChecks 4件）／`npm run lint`35件（23エラー12警告。
+#            v3.41と同数・新規エラー0）／`npm run build`成功
+#      要手動作業：supabase/migrations/20260810_add_project_invites.sqlの手動適用（dev→prod）
+#
+# 最終更新：2026-08-10（v3.42）
 

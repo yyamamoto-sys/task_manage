@@ -217,4 +217,33 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "クォーター計画テーブル（kr_quarter_plans）が見つかりません",
     migration: "20260807c_add_kr_quarter_plans.sql",
   },
+  {
+    id: "groups_is_invite_group_column",
+    kind: "column",
+    table: "groups",
+    column: "is_invite_group",
+    label: "プロジェクト招待：部署の招待用フラグ列（groups.is_invite_group）が見つかりません",
+    migration: "20260810_add_project_invites.sql",
+  },
+  {
+    id: "project_invites_table",
+    kind: "table",
+    table: "project_invites",
+    label: "プロジェクト招待テーブル（project_invites）が見つかりません",
+    migration: "20260810_add_project_invites.sql",
+  },
+  {
+    id: "fn_create_project_invite",
+    kind: "function",
+    name: "create_project_invite",
+    label: "プロジェクト招待：発行関数（create_project_invite）が見つかりません",
+    migration: "20260810_add_project_invites.sql",
+  },
+  {
+    id: "fn_accept_project_invite",
+    kind: "function",
+    name: "accept_project_invite",
+    label: "プロジェクト招待：受諾関数（accept_project_invite）が見つかりません",
+    migration: "20260810_add_project_invites.sql",
+  },
 ];

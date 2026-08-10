@@ -10,6 +10,9 @@ export interface Group {
   name: string;
   /** この部署専用のTeams Webhook URL（週次期限通知の投稿先）。未設定なら全社共通のTEAMS_WEBHOOK_URLにフォールバック */
   teams_webhook_url?: string | null;
+  /** プロジェクト招待用の部署か（migrations/20260810_add_project_invites.sql）。
+   *  true はcreate_project_invite()がPJごとに1つ作る招待専用の部署で、通常の組織部署とは区別する。 */
+  is_invite_group?: boolean;
   is_deleted: boolean;
   deleted_at?: string;
   deleted_by?: string;
@@ -476,6 +479,26 @@ export interface PersonalKrMemo {
   updated_by?: string;
   deleted_at?: string;
   deleted_by?: string;
+}
+
+/**
+ * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
+ * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列
+ * （src/lib/supabase/projectInviteStore.ts が select で明示的に除外する）。
+ * revoked_at/revoked_by はPhase 2（取り消し機能）で使う列で、Phase 1では書き込まない。
+ */
+export interface ProjectInvite {
+  id: string;
+  project_id: string;
+  invite_group_id: string;
+  invited_email: string;
+  invited_by: string;
+  expires_at: string;
+  accepted_at?: string | null;
+  accepted_member_id?: string | null;
+  revoked_at?: string | null;
+  revoked_by?: string | null;
+  created_at?: string;
 }
 
 // AI連携専用の型は src/lib/ai/types.ts に移動しました。
