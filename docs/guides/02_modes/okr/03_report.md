@@ -3,9 +3,10 @@ title: ③ レポート作成
 audience: [kr-rep]
 mode: okr.report
 order: 3
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, okr.note, okr.session]
+archived: true
 ---
 
 # ③ レポート作成

@@ -3,9 +3,10 @@ title: ① 会議ノート
 audience: [kr-rep, member]
 mode: okr.note
 order: 1
-last_updated: 2026-05-13
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, okr.session, okr.report]
+archived: true
 ---
 
 # ① 会議ノート

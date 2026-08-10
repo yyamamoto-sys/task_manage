@@ -23,8 +23,15 @@ export interface DocFrontmatter {
   owner: string;
   /** 関連ページの mode キー配列。 */
   related?: string[];
-  /** 旧仕様の場合 true。 */
+  /** 旧仕様の場合 true（一覧には出るが「⚠ 旧仕様」タグが付く）。 */
   deprecated?: boolean;
+  /**
+   * true の場合、ガイドの目次・`?`ボタン（getDocByMode）・slug直参照（getDocBySlug）の
+   * どこからも到達できなくなる（deprecated と違い、一覧に出ることすらない）。
+   * ファイル自体は削除しない（2026-08-10・OKRモードのグループ側アーカイブで導入。
+   * docs/guides/_meta/conventions.md Section 5参照）。
+   */
+  archived?: boolean;
 }
 
 export interface DocEntry extends DocFrontmatter {

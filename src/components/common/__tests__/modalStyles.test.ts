@@ -44,7 +44,12 @@ const EXCLUDED_FILES = new Set<string>([
   "components/guide/HelpButton.tsx",
   "components/admin/OkrImportModal.tsx",
   "components/meeting/MeetingImportPanel.tsx",
-  "components/okr/OkrDashboardView.tsx",
+  // 【2026-08-10で削除】components/okr/OkrDashboardView.tsx はOKRモードのグループ側
+  // アーカイブに伴い右ドロワー（概要・履歴オーバーレイ）を持たなくなり、position:"fixed"
+  // 自体を一切使わなくなったため除外の意味が無くなった（旧グループ側の実装は
+  // components/okr/GroupOkrDashboardArchived.tsx に保管。旧実装は justifyContent:"flex-end"
+  // の右ドロワーで alignItems:"center" では中央寄せしていないため、このテストの検出パターン
+  // にそもそも一致せず EXCLUDED_FILES への追加は不要）。
   // 【v3.33で削除】ProjectStructureView.tsx / MyPageView.tsx / CalendarLabView.tsx / GraphView.tsx は
   // CLAUDE.md Section 20の書き換えにより position:"fixed" を一切使わなくなったため、
   // このテストのパターン（position:"fixed"...inset:0）にそもそも一致しなくなった。除外リストに

@@ -99,6 +99,7 @@ function buildEntry(absPath: string, raw: string): DocEntry | null {
     owner,
     related: toStringArr(fm.related),
     deprecated: fm.deprecated === true,
+    archived: fm.archived === true,
     path: rel,
     slug,
     body: body.trim(),
@@ -108,9 +109,15 @@ function buildEntry(absPath: string, raw: string): DocEntry | null {
   return entry;
 }
 
+// 【設計意図】archived: true の記事は deprecated と異なり「一覧に出ない」ことが目的
+// （CLAUDE.md該当なし・docs/dev/okr-redesign-plan.md参照。OKRモードのグループ側アーカイブに
+// 伴い導入。2026-08-10）。ここで除外することで listDocs/groupedDocs/getDocByMode/getDocBySlug
+// のどこにも現れなくなる。ファイル自体は import.meta.glob が取り込んでいるが、
+// このフィルタで最終出力からだけ落とす（＝ファイルは消さない。最小の手段）。
 const ALL_ENTRIES: DocEntry[] = Object.entries(FILES)
   .map(([p, raw]) => buildEntry(p, raw))
   .filter((e): e is DocEntry => !!e)
+  .filter(e => !e.archived)
   .sort((a, b) => {
     // セクション → order → slug
     const sa = a.section.join("/");

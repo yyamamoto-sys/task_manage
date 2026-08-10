@@ -3,9 +3,10 @@ title: 週次運用リズム
 audience: [all, kr-rep, facilitator, member]
 mode: workflow.weekly
 order: 1
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, role.kr-rep, role.facilitator]
+archived: true
 ---
 
 # 週次運用リズム

@@ -3,9 +3,10 @@ title: ② セッション記録 & 分析
 audience: [facilitator, kr-rep]
 mode: okr.session
 order: 2
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, okr.note, okr.report]
+archived: true
 ---
 
 # ② セッション記録 & 分析

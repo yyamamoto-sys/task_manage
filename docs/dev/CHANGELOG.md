@@ -4387,5 +4387,79 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             ChunkDownloadGate.tsxと同様に遅延分割できずメインバンドルに入る）
 #      要手動作業：無し（新規マイグレーションは追加していない）
 #
-# 最終更新：2026-08-10（v3.39）
+# v3.40 OKRモードのグループ側を白紙化・個人OKR専用モードへ（2026-08-10）
+#      背景：山本さんの指示（2026-08-10）。「元々あったグループモードの機能は一旦白紙にしたい。
+#             個人のモードだけにしたい。グループ側の機能は、一旦アーカイブとしてコードのみ保管
+#             する形にしましょう」。CLAUDE.md Section 24 Step E参照
+#      変更①：`OkrDashboardView.tsx`を`PersonalOkrView`のみを描画する薄いラッパーに縮小。
+#             旧内容（上位タブ／サブタブ①〜③・サイクル進捗バー・OKR概要オーバーレイ・
+#             セッション履歴オーバーレイ・「グループ／自分」切替seg）は丸ごと新規ファイル
+#             `src/components/okr/GroupOkrDashboardArchived.tsx`へ退避（エクスポート名のみ
+#             `GroupOkrDashboardArchived`に変更、内容は無改変。中の`no-irregular-whitespace`
+#             lint既存エラー1件は全角スペース→半角に直して解消）。撤去した
+#             component-local フェッチ：`fetchKrSessions`／`fetchKrMeetingNote`／
+#             `fetchLatestOkrAnalysis`／`fetchKrReport`（選択中KR×今週のサイクル状態表示用）
+#      変更②：サイドバーのラボからKR系3機能（KRレポート生成／KRなぜなぜ分析／KRセッション
+#             記録）を撤去。`MainLayout.tsx`の`LabViewId`を`"graph"|"calendar"|"structure"|
+#             "mypage"`の4値に縮小（`"kr-report"`/`"kr-why"`/`"kr-session"`を削除）。
+#             `labOverlay`のswitch・モバイルの`MobileFullscreenOverlay`分岐・モバイルの
+#             ラボボトムシート項目（3項目）から該当ケースを削除。`KrReportPanel`/
+#             `KrJointSessionFlow`/`KrWhyPanel`の`lazyWithRetry`宣言を削除。調査の結果、
+#             **クォーター計画（`KrQuarterPlanPanel`）はサイドバーのラボからの独立導線
+#             （standalone）が元から存在しなかった**（inline＝OKRモードの「計画」タブの
+#             1経路のみ。想定と異なっていたため`ARCHIVED.md`に注記）。同様に**KR系3機能への
+#             PC側の導線もそもそも配線されていなかった**（`labOpen`サブメニューにKR系項目が
+#             無く、モバイルのラボボトムシートにしか入口が無かった）
+#      変更③：`OkrDashboardView`呼び出し箇所（`MainLayout.tsx`）から`selectedKrId`/
+#             `onSelectKr`/`activeTool`/`onSetActiveTool`の4propsを撤去（`currentUser`のみに）。
+#             `okrActiveTool`/`setOkrActiveToolPersisted`state・`OkrActiveTool`型import・
+#             モバイルのOKRモード用ボトムナビ（管理／なぜなぜ／計画の3ボタン）を撤去（OKR
+#             モードでは`appMode==="plan"`の時だけボトムナビを表示し、OKRモードの分は
+#             mainContentのpaddingBottomも0にして詰める）。サイドバーの「OKR管理：KR一覧」
+#             （OKRモード中に表示していたKR選択リスト。選択の受け手が無くなったため）を撤去
+#      変更④：ガイド記事の新しい除外方式を導入。`docs/guides/`のfrontmatterに`archived: true`
+#             を立てると、`src/lib/docs/manifest.ts`の`ALL_ENTRIES`構築時に除外され、ガイド
+#             目次・`?`ボタン（`getDocByMode`）・slug直参照（`getDocBySlug`）のどこからも
+#             到達できなくなる（既存の`deprecated: true`は一覧に出続けるため今回の目的に
+#             合わず、ファイルも移動・削除しない最小の手段として新設）。対象：
+#             `docs/guides/02_modes/okr/00_cycle.md`〜`03_report.md`・`03_roles/kr-rep.md`・
+#             `03_roles/facilitator.md`・`04_workflows/weekly-rhythm.md`の7本。
+#             `admin.objective-kr-tf`（Objective/KR/TF登録。データ構造自体は今回無改修）と
+#             `meeting.import`（会議読み込み。別機能）は対象外。`docs/guides/_meta/
+#             conventions.md`Section 5.1に方式を追記。除外した記事へのHelpButton参照が
+#             残っていないことを確認済み（`HelpButton modeKey="okr.cycle"`は撤去済み）
+#      変更⑤：`src/lib/ai/uiGuide.ts`の`FEATURE_LIST_SECTION`をグループ側の記述（3階層管理・
+#             KRセッション記録・KRレポート自動生成）から個人OKRの実装済み機能に差し替え
+#             （CLAUDE.md Section 17）。`common.okrModeGate.feature1〜4`（初回ゲートの紹介文・
+#             ja/en）も同様に個人OKRのみの内容へ差し替え
+#      アーカイブの形：ファイルは移動・削除せず、描画経路（import・呼び出し・ラボの導線・
+#             ガイド目次）だけを切る。対象ファイル一覧・復帰手順は
+#             `src/components/okr/ARCHIVED.md`が正本。DBテーブル・ストア層
+#             （`krSessionStore`/`krMeetingNoteStore`/`okrAnalysisStore`/`krReportStore`/
+#             `quarterPlanStore`）は無改修（データは保全）。`fetchOkrData`の6テーブル
+#             （起動時Phase 2）も無改修
+#      テスト：新規テストなし（既存の`labViewContainment`/`labViewChokePoint`/`modalStyles`/
+#             `version`/`schemaChecks`が全通過することを確認）。`modalStyles.test.ts`の
+#             `EXCLUDED_FILES`から`components/okr/OkrDashboardView.tsx`を削除（右ドロワーを
+#             持たなくなり除外の意味が無くなったため。理由をコメントに明記）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`947件全通過（件数変化なし）／
+#             `npm run lint`35件（23エラー12警告。変更前36件＝24エラー12警告から**エラー1件
+#             減**＝GroupOkrDashboardArchived.tsx作成時に全角スペースを修正した分。新規エラー
+#             0）／`npm run build`成功。**チャンクサイズ実測（同一node_modulesでのstash比較。
+#             worktreeでの別npm installは依存解決差でチャンク分割が変わり比較に使えないと
+#             判明したため採用しない）**：
+#             メイン`index`チャンクは269.19KB→266.33KB（gzip67.64KB→67.15KB。-2.86KB/-0.49KB）。
+#             `appStore`チャンクは213.97KB→209.44KB（gzip57.91KB→55.72KB。-4.53KB/-2.19KB）。
+#             `OkrDashboardView`チャンクは127.28KB→1.83KB（gzip33.71KB→1.01KB。-125.45KB/
+#             -32.70KB）。`KrReportPanel`（31.92KB/gzip10.16KB）・`KrWhyPanel`（22.22KB/
+#             gzip7.41KB）・`KrJointSessionFlow`（50.55KB/gzip12.96KB）の3チャンクは**完全に
+#             消滅**（誰からもimportされなくなりビルドに含まれない）。**全チャンク合計は
+#             1,682,702B→1,443,071B（-239,631B・約-14%）**——OKRモードを開かない/使わない人が
+#             一切ダウンロードしなくなる分がそのまま総量減。`manifest`チャンク（ガイド記事の
+#             全文取込）は78.15KB→79.44KB（+1.29KB。frontmatter追記分。archived記事の本文
+#             テキスト自体は変更前から常にeager glob importされており除外はJS側のフィルタ
+#             のみのため本文サイズは変わらず、増分はfrontmatterの数行のみ）
+#      要手動作業：無し（新規マイグレーションは追加していない）
+#
+# 最終更新：2026-08-10（v3.40）
 

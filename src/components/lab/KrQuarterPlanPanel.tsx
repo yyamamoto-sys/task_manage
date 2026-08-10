@@ -1,5 +1,8 @@
 // src/components/lab/KrQuarterPlanPanel.tsx
 //
+// 【アーカイブ・2026-08-10】OKRモードのグループ側を白紙にする方針により、現在どこからも
+// 描画されない。コードは将来の再設計のため保管。復帰手順は src/components/okr/ARCHIVED.md 参照。
+//
 // 【設計意図】
 // OKRモードの「計画」タブ。クォーター末にマネージャー（GM/AGM/OM）が
 // 翌クォーターのTask Force計画をAIとの対話で立案する機能。

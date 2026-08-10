@@ -3,9 +3,10 @@ title: OKR週次サイクル全体像
 audience: [all, kr-rep, facilitator]
 mode: okr.cycle
 order: 0
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.note, okr.session, okr.report, okr.quarter-plan]
+archived: true
 ---
 
 # OKR週次サイクル全体像

@@ -53,12 +53,6 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.lab.calendar.tooltip": "Show task due dates on a monthly calendar (Lab)",
   "layout.lab.mypage.label": "My Page",
   "layout.lab.mypage.desc": "Your own widget screen (Lab)",
-  "layout.lab.krSession.label": "KR session log",
-  "layout.lab.krSession.desc": "Extract check-ins and wins from a transcript",
-  "layout.lab.krReport.label": "KR report generation",
-  "layout.lab.krReport.desc": "Generate a KR report from meeting notes with AI",
-  "layout.lab.krWhy.label": "KR 5-whys analysis",
-  "layout.lab.krWhy.desc": "Dig into root causes with AI in a 5-whys style dialogue",
   "layout.lab.toggleTitle": "Lab (experimental features)",
 
   "layout.mobile.myPj": "My projects",
@@ -78,9 +72,6 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.fab.task": "Add task",
   "layout.fab.menuTitle": "Open menu",
 
-  "layout.okrMobileNav.manage": "OKR management",
-  "layout.okrMobileNav.why": "5 Whys",
-  "layout.okrMobileNav.plan": "Plan",
 
   "layout.tourDemo.withData": "Among the tasks currently registered, tell me which ones I should prioritize and which ones look like they might slip. Also suggest the next action.",
   "layout.tourDemo.noData": "I'm about to start managing plans here. What unit of projects and tasks would make this easiest to manage going forward?",
@@ -111,11 +102,8 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.sidebar.okrSectionCollapse": "Collapse OKR tasks",
   "layout.sidebar.okrSectionExpand": "Expand OKR tasks",
   "layout.sidebar.okrSectionLabel": "OKR tasks",
-  "layout.sidebar.allKrLabel": "All KRs",
-  "layout.sidebar.allKrTooltip": "Show all KRs",
-  "layout.sidebar.noKr": "No KRs registered",
 
-  "layout.appModeToggle.toOkr": "Switch to OKR management mode",
+  "layout.appModeToggle.toOkr": "Switch to personal OKR mode",
   "layout.appModeToggle.toPlan": "Switch to plan management mode",
   "layout.appModeToggle.planFull": "📋 Plan",
   "layout.appModeToggle.okrFull": "🎯 OKR",

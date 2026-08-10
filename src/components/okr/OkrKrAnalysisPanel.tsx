@@ -1,5 +1,8 @@
 // src/components/okr/OkrKrAnalysisPanel.tsx
 //
+// 【アーカイブ・2026-08-10】OKRモードのグループ側を白紙にする方針により、現在どこからも
+// 描画されない。コードは将来の再設計のため保管。復帰手順は src/components/okr/ARCHIVED.md 参照。
+//
 // 【設計意図】
 // OKR循環ワークフローの ③ 分析。対象を「Objective 全体」または「KR 単位」から選んで AI 分析する。
 // - KR単位：そのKRに紐づく全TFの会議ノート履歴＋KRのセッション・宣言＋各TFのタスクを束ねて分析

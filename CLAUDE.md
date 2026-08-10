@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.39
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.40
 #
-最終更新：2026-08-10（v3.39）
+最終更新：2026-08-10（v3.40）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -927,8 +927,9 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
-| OKRモード クォーター計画タブ（ラボ機能） | ✅ 実装済み | 翌クォーターのTF計画をAI対話で立案。Supabase（kr_quarter_plans・部署スコープ）保存（v3.38）。OkrDashboardView「📅 計画」タブ |
-| KRセッション freeform モード | ✅ 実装済み（v2.4） | 戦略会議・四半期計画など OKR/TF が議題中心の自由形式会議用。AI が「議論サマリ・決定事項・言及KR・フォローアップ」を抽出して対象 KR にぶら下げ保存。`kr_sessions.session_type='freeform'` + `summary`/`decisions`/`kr_mentions` 列 |
+| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（読み取り専用または手入力）→週の目標状態（◯△✕自己評価）→メモを記録する。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
+| OKRモード：グループ側機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ） | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 山本さんの判断で一旦白紙化。OKRモードは個人OKRのみになり、サイドバーのラボからも撤去した。コードは削除せず保管（`src/components/okr/ARCHIVED.md`参照）。旧クォーター計画タブは`kr_quarter_plans`（部署スコープ・Supabase）保存だった |
+| KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
 
@@ -1007,7 +1008,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.38）
+- 最終更新：2026-08-10（v3.40）
 
 ---
 
@@ -1483,7 +1484,7 @@ Supabaseに一切接続しない設計（Section 23）のため対象外——�
 
 **原因**：v3.33までは `MainLayout.tsx` がラボ機能ごとに独立した真偽値 state（`isGraphOpen` / `isCalendarOpen` / `isStructureOpen` / `isMyPageOpen` / `isKrReportOpen` / `isKrWhyOpen`）を持っていた。Bを開いてもAが閉じないため両方 `true` になり得て、`labOverlay` の分岐が**宣言順で先勝ち**（Graph→Calendar→Structure→MyPage→KrReport→KrWhy）に1つ選んでいた。押した機能が宣言順で後ろだと画面が変わらず、さらに押し直しても既に `true` なので何も起きない、という不具合だった。
 
-**対策**：真偽値を並べる方式をやめ、`LabViewId`（`"graph" | "calendar" | "structure" | "mypage" | "kr-report" | "kr-why" | "kr-session"`）1つを保持する単一state `activeLabView: LabViewId | null` に一本化した。ラボ機能を開く操作は必ず `setActiveLabView("<id>")` の1行で、前に開いていたものは自動的に閉じる——**2つ同時に開くこと自体が型レベルで不可能**になるのがこの設計の要。`closeLabViews()` は `setActiveLabView(null)` の1行になった。
+**対策**：真偽値を並べる方式をやめ、`LabViewId`（v3.34時点は `"graph" | "calendar" | "structure" | "mypage" | "kr-report" | "kr-why" | "kr-session"`。**2026-08-10のOKRモード グループ側アーカイブに伴い `"kr-report"` / `"kr-why"` / `"kr-session"` を撤去し、現在は `"graph" | "calendar" | "structure" | "mypage"` の4値**（`src/components/okr/ARCHIVED.md`参照。以下の記述はv3.34〜v3.35当時の設計判断の記録として残す）1つを保持する単一state `activeLabView: LabViewId | null` に一本化した。ラボ機能を開く操作は必ず `setActiveLabView("<id>")` の1行で、前に開いていたものは自動的に閉じる——**2つ同時に開くこと自体が型レベルで不可能**になるのがこの設計の要。`closeLabViews()` は `setActiveLabView(null)` の1行になった。
 
 `labOverlay`（`MainLayout.tsx`）は `activeLabView` に対する `switch` で分岐し、`default` 節で `LabViewId` を `never` 型の変数に代入することで、**新しいラボ機能を追加するときに `LabViewId` へ id を1つ足したのに分岐を書き忘れると型エラーで気づける**（テストを書く必要がない・型レベルの網羅性チェック）。新しいラボ機能を足すときは「`LabViewId` に1つ足す」「`labOverlay` の switch に1本分岐を足す」の2箇所で完結する。
 
@@ -1631,7 +1632,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ---
 
-## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37／Step C=v3.38／Step D=v3.39）
+## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37／Step C=v3.38／Step D=v3.39／Step E=v3.40）
 
 **正本は [docs/dev/okr-redesign-plan.md](docs/dev/okr-redesign-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。詳細（列定義・段階計画・未決事項）は必ず計画書を読むこと。
 
@@ -1665,6 +1666,17 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 - **`quarterly_objectives`を`fetchOkrData`（起動時Phase 2）から除外**（7→6テーブル）。appStore.ts側の読み取り用state（`quarterlyObjectives`）も参照ゼロ（グレップ確認済み）だったため撤去し、`saveQuarterlyObjective`（OkrImportModalの書き込み専用経路）だけを残した。詳細はSection 19 ⑥。
 - **OKRモード（plan→okr）に初回ゲートを追加**：Section 19 ⑥参照。「起動時に全員が読むOKRコア6テーブル」とは別レイヤーで、モードそのものへの入室に承認を求める。個人OKR層の週の目標状態・自己評価（◯△✕）等の紹介文もこのゲートのポップアップに含む。
+
+### Step E：OKRモードのグループ側を白紙化・個人OKR専用モードへ（v3.40・2026-08-10・山本さん指示）
+
+- **一行で言うと**：「元々あったグループモードの機能は一旦白紙にしたい。個人のモードだけにしたい」（山本さん指示）。OKRモードは`PersonalOkrView`のみを表示するようになり、グループ側の機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ／OKR概要・セッション履歴オーバーレイ）は全て描画経路を切ってアーカイブした。
+- **サイドバーのラボからもKR系4機能を撤去**：`LabViewId`から`"kr-report"`/`"kr-why"`/`"kr-session"`を削除（4値に縮小）。クォーター計画（`KrQuarterPlanPanel`）はOKRモード内タブ（inline）のみで、サイドバーのラボからの独立導線（standalone）は元から無かった（調査済み・PC側の`labOpen`サブメニューには元々KR系項目自体が無く、モバイルのラボボトムシートにのみ`kr-report`/`kr-why`/`kr-session`の3項目があった）。
+- **アーカイブの形は「描画経路を切るだけ」**：ファイルは移動・削除しない。対象ファイルの一覧・復帰手順は `src/components/okr/ARCHIVED.md` が正本。旧`OkrDashboardView.tsx`本体（タブ構成・サイクル進捗バー・概要/履歴オーバーレイ・「グループ／自分」切替seg）は丸ごと`src/components/okr/GroupOkrDashboardArchived.tsx`へ保管し、`OkrDashboardView.tsx`自体は`PersonalOkrView`だけを描画する薄いラッパーに縮小した。
+- **撤去した component-local フェッチ**（旧`OkrDashboardView.tsx`にあったもの。撤去によりOKRモードで発生するクエリが実際に減った）：`fetchKrSessions`（KRごとのセッション一覧）／`fetchKrMeetingNote`／`fetchLatestOkrAnalysis`／`fetchKrReport`（選択中KR×今週のサイクル状態表示用）。ストア層（`krSessionStore`等）自体は削除していない。
+- **`HelpButton modeKey="okr.cycle"`は撤去した**（案内先の`docs/guides/02_modes/okr/00_cycle.md`をガイド目次から除外したため）。
+- **ガイド記事の除外方式**：`docs/guides/`はファイルを消さず、frontmatterに`archived: true`を立てて`src/lib/docs/manifest.ts`の`ALL_ENTRIES`構築時に除外する新方式を導入（`deprecated: true`とは異なり一覧に一切出ない）。対象：`02_modes/okr/00_cycle.md`〜`03_report.md`・`03_roles/kr-rep.md`・`03_roles/facilitator.md`・`04_workflows/weekly-rhythm.md`。`docs/guides/_meta/conventions.md` Section 5.1に方式を追記。`admin.objective-kr-tf`（Objective/KR/TF登録）と`meeting.import`（会議読み込み）はOKR管理データ構造・別機能のため対象外。
+- **AIの機能認識（Section 17）**：`src/lib/ai/uiGuide.ts`の`FEATURE_LIST_SECTION`からグループ側の記述（3階層管理・KRセッション記録・KRレポート自動生成）を削除し、個人OKRの実装済み機能に差し替えた。
+- **やらないこと（変更対象外）**：`fetchOkrData`の6テーブル（objectives/key_results/task_forces/todos/project_task_forces/task_task_forces）は起動時フェッチのまま維持（計画モードのTF/ToDoピッカー・ガント・ダッシュボードが使用）。DBテーブル（`kr_sessions`/`kr_meeting_notes`/`okr_analyses`/`kr_reports`/`kr_quarter_plans`等）・ストア層のファイルは削除しない。
 
 ---
 

@@ -3,9 +3,10 @@ title: ファシリテーター・ガイド
 audience: [facilitator]
 mode: role.facilitator
 order: 2
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, okr.session]
+archived: true
 ---
 
 # ファシリテーター・ガイド

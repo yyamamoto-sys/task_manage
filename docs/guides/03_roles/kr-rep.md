@@ -3,9 +3,10 @@ title: KR代表ガイド
 audience: [kr-rep]
 mode: role.kr-rep
 order: 1
-last_updated: 2026-05-15
+last_updated: 2026-08-10
 owner: yamamoto
 related: [okr.cycle, okr.note, okr.report]
+archived: true
 ---
 
 # KR代表ガイド

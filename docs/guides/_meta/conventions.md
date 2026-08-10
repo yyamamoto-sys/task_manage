@@ -40,7 +40,8 @@ order: 1                           # 任意・同階層内の並び順（小さ�
 last_updated: 2026-05-13           # 必須・ISO日付
 owner: yamamoto                    # 必須・更新責任者
 related: [okr.cycle, okr.session]  # 任意・関連ページの mode キー
-deprecated: false                  # 任意・true で「⚠ 旧仕様」表示
+deprecated: false                  # 任意・true で「⚠ 旧仕様」表示（一覧には出続ける）
+archived: false                    # 任意・true で目次・?ボタンから完全除外（Section 5.1参照）
 ---
 ```
 
@@ -96,7 +97,18 @@ deprecated: false                  # 任意・true で「⚠ 旧仕様」表示
 
 - **削除しない**：参照が残っている可能性があるため
 - `_archive/2026-05/` のような月単位フォルダに移動
-- frontmatter の `deprecated: true` を立てる
+- frontmatter の `deprecated: true` を立てる（一覧には出るが「⚠ 旧仕様」タグが付く）
+
+### 5.1 `archived: true`（2026-08-10追加・目次からの完全除外）
+
+機能そのものがアプリのUIから撤去され、記事が指す画面がもう存在しない場合は
+`deprecated: true` では足りない（一覧に出続けてしまう）。この場合は frontmatter に
+`archived: true` を立てる。`src/lib/docs/manifest.ts` がビルド時にこのフラグを見て、
+ガイド目次・`?` ボタン（`getDocByMode`）・slug直参照（`getDocBySlug`）の**どこからも
+到達できなくする**（一覧に出ることすらない）。ファイルは移動・削除しない（コード側の
+アーカイブ方針と同じ「描画経路を切るだけ」）。実例：OKRモードのグループ側アーカイブ
+（`docs/guides/02_modes/okr/00_cycle.md`〜`03_report.md`・`03_roles/kr-rep.md`・
+`03_roles/facilitator.md`・`04_workflows/weekly-rhythm.md`）。
 
 ## 6. レビュー
 

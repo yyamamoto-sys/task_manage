@@ -62,12 +62,6 @@ export const layoutJa = {
   "layout.lab.calendar.tooltip": "タスクの期日を月カレンダーで表示（ラボ）",
   "layout.lab.mypage.label": "マイページ",
   "layout.lab.mypage.desc": "自分専用のウィジェット画面（ラボ）",
-  "layout.lab.krSession.label": "KRセッション記録",
-  "layout.lab.krSession.desc": "文字起こしからチェックイン・ウィン記録",
-  "layout.lab.krReport.label": "KRレポート生成",
-  "layout.lab.krReport.desc": "議事メモからKRレポートをAI生成",
-  "layout.lab.krWhy.label": "KRなぜなぜ分析",
-  "layout.lab.krWhy.desc": "AIとの対話で根本原因を5Whys形式で掘り下げ",
   "layout.lab.toggleTitle": "ラボ（実験的機能）",
 
   // ----- モバイルヘッダー -----
@@ -91,9 +85,6 @@ export const layoutJa = {
   "layout.fab.menuTitle": "メニューを開く",
 
   // ----- OKRモード：モバイルボトムナビ -----
-  "layout.okrMobileNav.manage": "OKR管理",
-  "layout.okrMobileNav.why": "なぜなぜ",
-  "layout.okrMobileNav.plan": "計画",
 
   // ----- AIチャット下書きプレフィル -----
   "layout.tourDemo.withData": "今登録されているタスクの中で、優先的に進めるべきものと、遅れそうなものを教えて。次の一手も教えてください。",
@@ -126,12 +117,9 @@ export const layoutJa = {
   "layout.sidebar.okrSectionCollapse": "OKRタスクを省略",
   "layout.sidebar.okrSectionExpand": "OKRタスクを展開",
   "layout.sidebar.okrSectionLabel": "OKRタスク",
-  "layout.sidebar.allKrLabel": "全KR",
-  "layout.sidebar.allKrTooltip": "全KRを表示",
-  "layout.sidebar.noKr": "KRが登録されていません",
 
   // ----- AppModeToggle -----
-  "layout.appModeToggle.toOkr": "OKR管理モードに切り替え",
+  "layout.appModeToggle.toOkr": "個人OKRモードに切り替え",
   "layout.appModeToggle.toPlan": "計画管理モードに切り替え",
   "layout.appModeToggle.planFull": "📋 計画",
   "layout.appModeToggle.okrFull": "🎯 OKR",

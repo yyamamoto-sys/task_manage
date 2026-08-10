@@ -17,7 +17,6 @@ import { TaskEditModal } from "../task/TaskEditModal";
 import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
-import type { OkrActiveTool } from "../okr/OkrDashboardView";
 import { OkrModeIntroModal } from "../okr/OkrModeIntroModal";
 import { shouldShowOkrModeIntro, hasApprovedOkrModeIntro, markOkrModeIntroApproved } from "../../lib/okr/okrModeGate";
 // GuideModeViewは全props省略可能な既定値付きコンポーネントのため、withChunkDownloadGate<P>への
@@ -66,9 +65,6 @@ const GraphView          = withChunkDownloadGate(lazyWithRetry(() => import("../
 const CalendarLabView    = withChunkDownloadGate(lazyWithRetry(() => import("../lab/CalendarLabView").then(m => ({ default: m.CalendarLabView })), "CalendarLabView"), "CalendarLabView");
 const MyPageView         = withChunkDownloadGate(lazyWithRetry(() => import("../lab/MyPageView").then(m => ({ default: m.MyPageView })), "MyPageView"), "MyPageView");
 const ProjectStructureView = withChunkDownloadGate(lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView"), "ProjectStructureView");
-const KrReportPanel      = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrReportPanel").then(m => ({ default: m.KrReportPanel })), "KrReportPanel"), "KrReportPanel");
-const KrJointSessionFlow = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrJointSessionFlow").then(m => ({ default: m.KrJointSessionFlow })), "KrJointSessionFlow"), "KrJointSessionFlow");
-const KrWhyPanel         = withChunkDownloadGate(lazyWithRetry(() => import("../lab/KrWhyPanel").then(m => ({ default: m.KrWhyPanel })), "KrWhyPanel"), "KrWhyPanel");
 const OkrDashboardView   = withChunkDownloadGate(lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView"), "OkrDashboardView");
 type GuideModeViewProps = NonNullable<Parameters<typeof GuideModeViewComponent>[0]>;
 const GuideModeView      = withChunkDownloadGate<GuideModeViewProps>(lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView"), "GuideModeView");
@@ -98,12 +94,15 @@ function MobileFullscreenOverlay({ zIndex, children }: { zIndex: number; childre
 type AppMode = "plan" | "okr";
 
 /**
- * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／
- * セッション記録／なぜなぜ分析）の識別子。同時に開けるのは常にこのうち1つだけ
- * （CLAUDE.md Section 20・v3.34）。新しいラボ機能を足すときはここに1つ id を足し、
- * labOverlay の switch と（必要ならモバイル分岐に）1本分岐を足すだけでよい。
+ * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ）の識別子。
+ * 同時に開けるのは常にこのうち1つだけ（CLAUDE.md Section 20・v3.34）。新しいラボ機能を
+ * 足すときはここに1つ id を足し、labOverlay の switch と（必要ならモバイル分岐に）
+ * 1本分岐を足すだけでよい。
+ * 【2026-08-10】OKRレポート／なぜなぜ分析／セッション記録（"kr-report" / "kr-why" /
+ * "kr-session"）は、OKRモードのグループ側アーカイブに伴いここから撤去した
+ * （src/components/okr/ARCHIVED.md 参照。ファイル自体は削除していない）。
  */
-type LabViewId = "graph" | "calendar" | "structure" | "mypage" | "kr-report" | "kr-why" | "kr-session";
+type LabViewId = "graph" | "calendar" | "structure" | "mypage";
 
 /**
  * サイドバー幅（折りたたみ／展開）。Sidebar自身の width が参照する。
@@ -181,21 +180,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   });
   // AIパネルをドラッグでリサイズ中はwidth/rightの遷移アニメを切る（カーソル追従の遅延を防ぐ）
   const [isConsultResizing, setIsConsultResizing] = useState(false);
-  // ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／セッション記録／
-  // なぜなぜ分析）は同時に1つだけ開く。真偽値を機能ごとに並べる旧方式は2つ同時にtrueになり得て、
-  // 「押したのに切り替わらない」「押し直しても戻れない」の原因になっていた（山本さん指摘・
-  // 2026-08-07。CLAUDE.md Section 20参照）。単一stateにすることで、2つ同時に開くこと自体が
-  // 型レベルで不可能になる。
+  // ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ）は同時に1つだけ開く。
+  // 真偽値を機能ごとに並べる旧方式は2つ同時にtrueになり得て、「押したのに切り替わらない」
+  // 「押し直しても戻れない」の原因になっていた（山本さん指摘・2026-08-07。CLAUDE.md Section 20
+  // 参照）。単一stateにすることで、2つ同時に開くこと自体が型レベルで不可能になる。
+  // 【2026-08-10】OKRレポート／セッション記録／なぜなぜ分析はOKRモードのグループ側アーカイブに
+  // 伴い LabViewId から撤去した（src/components/okr/ARCHIVED.md 参照）。
   const [activeLabView, setActiveLabView] = useState<LabViewId | null>(null);
-  const [okrActiveTool, setOkrActiveTool] = useState<OkrActiveTool>(() => {
-    const saved = localStorage.getItem(KEYS.OKR_ACTIVE_TOOL) as OkrActiveTool | null;
-    const validTools: OkrActiveTool[] = ["overview", "note", "session", "analysis", "report", "why", "plan", null];
-    return (saved !== undefined && validTools.includes(saved)) ? saved : "overview";
-  });
-  const setOkrActiveToolPersisted = (tool: OkrActiveTool) => {
-    if (tool) localStorage.setItem(KEYS.OKR_ACTIVE_TOOL, tool);
-    setOkrActiveTool(tool);
-  };
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
   const [isMilestoneAddOpen, setIsMilestoneAddOpen] = useState(false);
   const [isPjCreateOpen, setIsPjCreateOpen] = useState(false);
@@ -508,7 +499,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   useEffect(() => {
     setIsAdminOpen(false);
     setIsGuideOpen(false);
-  }, [viewMode, appMode, selectedProjectId, selectedKrId, okrActiveTool]);
+  }, [viewMode, appMode, selectedProjectId, selectedKrId]);
 
   /**
    * 「AIでPJを作る」導線。新規PJ作成は AI相談（consult）チャットの add_project 提案で行う前提に
@@ -771,9 +762,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   );
 
   /**
-   * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ・OKRレポート／セッション記録／
-   * なぜなぜ分析）をメインエリア内（mainContent）に描画するための束ね。PCのみが対象（モバイルは
-   * 呼び出し側の MobileFullscreenOverlay で全画面表示する。CLAUDE.md Section 20・v3.33）。
+   * 全画面ラボ系ビュー（体制図・関係性グラフ・カレンダー・マイページ）をメインエリア内
+   * （mainContent）に描画するための束ね。PCのみが対象（モバイルは呼び出し側の
+   * MobileFullscreenOverlay で全画面表示する。CLAUDE.md Section 20・v3.33）。
    * activeLabView は常に1つの id しか持てないため、旧方式にあった「宣言順で先勝ち」という
    * 概念自体が無くなった（CLAUDE.md Section 20・v3.34）。switch の default で LabViewId を
    * never に代入させており、id を追加したのに分岐を書き忘れると型エラーで気づける。
@@ -815,31 +806,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             />
           </Suspense>
         );
-      case "kr-report":
-        return (
-          <Suspense fallback={<ViewLoading />}>
-            <KrReportPanel onClose={closeLabViews} currentUser={currentUser} />
-          </Suspense>
-        );
-      case "kr-why":
-        return (
-          <Suspense fallback={<ViewLoading />}>
-            <KrWhyPanel onClose={closeLabViews} currentUser={currentUser} />
-          </Suspense>
-        );
-      case "kr-session":
-        // KrJointSessionFlow は元々 flex:1 の縦積みレイアウトを前提にした埋め込み設計だが、
-        // 自身のrootに minHeight:0 を持たない（GraphView/CalendarLabView/ProjectStructureView/
-        // MyPageView は持つ）。mainContent（flexDirection:"column"）に直接置くとコンテンツの
-        // 高さぶんだけ縦に伸びて overflow:hidden で下側が見切れる恐れがあるため、他ビューと
-        // 同じ「位置指定のない flex 子要素」契約になるラッパーで包む（v3.34）。
-        return (
-          <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-            <Suspense fallback={<ViewLoading />}>
-              <KrJointSessionFlow currentUser={currentUser} onClose={closeLabViews} />
-            </Suspense>
-          </div>
-        );
       case null:
         return null;
       default: {
@@ -855,7 +821,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       display: "flex",
       flexDirection: "column",
       overflow: "hidden",
-      paddingBottom: isMobile ? "56px" : 0,
+      // モバイルのボトムナビはappMode==="plan"の時だけ出す（OKRモードは個人OKR1画面のみで
+      // 切り替える先が無いため。上の「モバイル：ボトムナビ」参照）。
+      paddingBottom: isMobile && appMode === "plan" ? "56px" : 0,
     }}>
       {isGuest && (
         <div style={{
@@ -872,13 +840,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       {isGuideOpen ? guideOverlay : (isAdminOpen && !isGuest) ? adminOverlay : labOverlay ? labOverlay : appMode === "okr" ? (
         <div key="okr" className="animate-fadeIn" style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <Suspense fallback={<ViewLoading />}>
-            <OkrDashboardView
-              currentUser={currentUser}
-              selectedKrId={selectedKrId}
-              onSelectKr={handleSelectKr}
-              activeTool={okrActiveTool}
-              onSetActiveTool={setOkrActiveToolPersisted}
-            />
+            <OkrDashboardView currentUser={currentUser} />
           </Suspense>
         </div>
       ) : (
@@ -962,29 +924,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             </Suspense>
           </MobileFullscreenOverlay>
         )}
-        {/* CalendarLabView・MyPageView・KrQuarterPlanPanel はモバイル・PC 共通で PC return
-            ブロック側（mainContent 内）に1つだけ置く。ここに置くと PC では2つ同時にDOMに
+        {/* CalendarLabView・MyPageView はモバイル・PC 共通で PC return ブロック側
+            （mainContent 内）に1つだけ置く。ここに置くと PC では2つ同時にDOMに
             存在してしまい印刷2ページ・マイルストーン重複が起きる（＝この2つはモバイルの
             全画面表示に入口が無い。activeLabView がこの2値になっても何も描画しない） */}
-        {activeLabView === "kr-report" && (
-          <MobileFullscreenOverlay zIndex={200}>
-            <Suspense fallback={<ViewLoading />}>
-              <KrReportPanel onClose={closeLabViews} currentUser={currentUser} />
-            </Suspense>
-          </MobileFullscreenOverlay>
-        )}
-        {activeLabView === "kr-session" && (
-          <Suspense fallback={<ViewLoading />}>
-            <KrJointSessionFlow currentUser={currentUser} onClose={closeLabViews} />
-          </Suspense>
-        )}
-        {activeLabView === "kr-why" && (
-          <MobileFullscreenOverlay zIndex={200}>
-            <Suspense fallback={<ViewLoading />}>
-              <KrWhyPanel onClose={closeLabViews} currentUser={currentUser} />
-            </Suspense>
-          </MobileFullscreenOverlay>
-        )}
         {activeLabView === "structure" && (
           <MobileFullscreenOverlay zIndex={250}>
             <Suspense fallback={<ViewLoading />}>
@@ -1052,9 +995,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { openLabView("graph"); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { openLabView("calendar"); setIsMobileLabOpen(false); } },
                 { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { openLabView("mypage"); setIsMobileLabOpen(false); } },
-                { icon: "🗓️", label: t("layout.lab.krSession.label"), desc: t("layout.lab.krSession.desc"), onClick: () => { openLabView("kr-session"); setIsMobileLabOpen(false); } },
-                { icon: "📊", label: t("layout.lab.krReport.label"), desc: t("layout.lab.krReport.desc"), onClick: () => { openLabView("kr-report"); setIsMobileLabOpen(false); } },
-                { icon: "🔍", label: t("layout.lab.krWhy.label"), desc: t("layout.lab.krWhy.desc"), onClick: () => { openLabView("kr-why"); setIsMobileLabOpen(false); } },
               ].map(item => (
                 <button
                   key={item.label}
@@ -1288,57 +1228,44 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >＋</button>
         </>)}
 
-        {/* モバイル：ボトムナビ */}
-        <div
-          className="bottom-nav-safe"
-          style={{
-            position: "fixed", bottom: 0, left: 0, right: 0,
-            height: "56px",
-            background: "var(--color-bg-primary)",
-            borderTop: "1px solid var(--color-border-primary)",
-            display: "flex",
-            zIndex: 50,
-          }}
-        >
-          {appMode === "plan" ? NAV_ITEMS.map(({ view, shortLabel, icon }) => {
-            const active = viewMode === view;
-            return (
-              <button
-                key={view}
-                onClick={() => setViewMode(view)}
-                style={{
-                  flex: 1, display: "flex", flexDirection: "column",
-                  alignItems: "center", justifyContent: "center", gap: "3px",
-                  background: "transparent", border: "none", cursor: "pointer",
-                  color: active ? "var(--color-brand)" : "var(--color-text-tertiary)",
-                  fontSize: "9px", fontWeight: active ? "600" : "400",
-                  transition: "color 0.1s",
-                }}
-              >
-                <span style={{ opacity: active ? 1 : 0.6 }}>{icon}</span>
-                <span>{shortLabel}</span>
-              </button>
-            );
-          }) : ([
-            { label: t("layout.okrMobileNav.manage"), icon: "🎯", onClick: () => setOkrActiveTool("overview") },
-            { label: t("layout.okrMobileNav.why"), icon: "🔍", onClick: () => setOkrActiveTool("why") },
-            { label: t("layout.okrMobileNav.plan"), icon: "📅", onClick: () => setOkrActiveTool("plan") },
-          ]).map(item => (
-            <button
-              key={item.label}
-              onClick={item.onClick}
-              style={{
-                flex: 1, display: "flex", flexDirection: "column",
-                alignItems: "center", justifyContent: "center", gap: "3px",
-                background: "transparent", border: "none", cursor: "pointer",
-                color: "var(--color-text-tertiary)", fontSize: "9px",
-              }}
-            >
-              <span style={{ fontSize: "16px" }}>{item.icon}</span>
-              <span>{item.label}</span>
-            </button>
-          ))}
-        </div>
+        {/* モバイル：ボトムナビ。OKRモードは個人OKR1画面のみになり、切り替える先が
+            無くなったため、このバー自体を出さない（2026-08-10。旧「管理／なぜなぜ／計画」
+            の3ボタンはOKRモードのグループ側アーカイブに伴い撤去。mainContentの
+            paddingBottomも appMode==="plan" の時だけ確保する） */}
+        {appMode === "plan" && (
+          <div
+            className="bottom-nav-safe"
+            style={{
+              position: "fixed", bottom: 0, left: 0, right: 0,
+              height: "56px",
+              background: "var(--color-bg-primary)",
+              borderTop: "1px solid var(--color-border-primary)",
+              display: "flex",
+              zIndex: 50,
+            }}
+          >
+            {NAV_ITEMS.map(({ view, shortLabel, icon }) => {
+              const active = viewMode === view;
+              return (
+                <button
+                  key={view}
+                  onClick={() => setViewMode(view)}
+                  style={{
+                    flex: 1, display: "flex", flexDirection: "column",
+                    alignItems: "center", justifyContent: "center", gap: "3px",
+                    background: "transparent", border: "none", cursor: "pointer",
+                    color: active ? "var(--color-brand)" : "var(--color-text-tertiary)",
+                    fontSize: "9px", fontWeight: active ? "600" : "400",
+                    transition: "color 0.1s",
+                  }}
+                >
+                  <span style={{ opacity: active ? 1 : 0.6 }}>{icon}</span>
+                  <span>{shortLabel}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
         {shortcutsButton}
         {isShortcutsOpen && <ShortcutsPanel currentView={shortcutsCurrentView} onClose={closeShortcuts} />}
         <ErrorBar />
@@ -1493,9 +1420,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onSelectGroup={handleSelectGroupNav}
       />
       {mainContent}
-      {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView・KrReportPanel・KrWhyPanel・
-          KrJointSessionFlow はすべて mainContent 内（labOverlay）に埋め込み済み
-          （CLAUDE.md Section 20・v3.33、v3.34でKrJointSessionFlowも統合）。 */}
+      {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView はすべて mainContent 内
+          （labOverlay）に埋め込み済み（CLAUDE.md Section 20・v3.33）。KrReportPanel・KrWhyPanel・
+          KrJointSessionFlowは2026-08-10にOKRモードのグループ側アーカイブに伴い撤去した。 */}
       {graphEditTaskId && (
         <TaskEditModal
           taskId={graphEditTaskId}
@@ -1926,30 +1853,10 @@ function Sidebar({
             <NavItem active={activeLabView === "mypage"} icon={<span style={{ fontSize: "13px" }}>🧩</span>} label={t("layout.lab.mypage.label")} tooltip={t("layout.lab.mypage.desc")} onClick={onOpenMyPage} collapsed={c} />
           </div>
         )}
-      </>) : (<>
-        {/* OKR管理：KR一覧（フィルター用、スクロールは親の flex:1 ラッパーが担う） */}
-        <div style={{ padding: c ? "6px 0" : "4px 0" }}>
-          {!c && <SectionLabel>Key Results</SectionLabel>}
-          <NavItem
-            active={selectedKrId === null}
-            icon={<span style={{ fontSize: "13px" }}>🎯</span>}
-            label={t("layout.sidebar.allKrLabel")} tooltip={t("layout.sidebar.allKrTooltip")}
-            onClick={() => onSelectKr(null)} collapsed={c}
-          />
-          {keyResults.map(kr => (
-            <NavItem key={kr.id} active={selectedKrId === kr.id}
-              icon={<KrIcon />} label={kr.title} tooltip={kr.title}
-              onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)} collapsed={c}
-            />
-          ))}
-          {keyResults.length === 0 && !c && (
-            <div style={{ padding: "8px 12px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-              {t("layout.sidebar.noKr")}
-            </div>
-          )}
-        </div>
-
-      </>)}
+      </>) : null}
+      {/* 【2026-08-10】OKRモードの「OKR管理：KR一覧」（フィルター用）は、OKRモードが個人OKR
+          1画面だけになりKR選択の受け手が無くなったため撤去した。sidebar上はappMode==="okr"の
+          間、このスクロール領域には何も表示しない（下のラボ/AI相談/設定ボタン列は常時表示のまま）。 */}
 
       </div>
       {/* ↑ モードトグル〜ラボサブメニューまでのスクロール領域はここまで */}

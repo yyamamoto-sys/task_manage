@@ -9,8 +9,12 @@
 // 【chunkSizeGate.ts との違い】
 // chunkSizeGate.ts はReact.lazyで分割した「コードチャンクのダウンロード」を対象にする
 // のに対し、このゲートは「OKRモードで使うデータのフェッチ」（appStore.load()のPhase 2＝
-// fetchOkrDataの6テーブル・OkrDashboardView自身のマウント時フェッチ等）を対象にする、
-// 別のゲート。判定対象が違うため、承認フラグ（localStorageキー）も別に持つ。
+// fetchOkrDataの6テーブル・個人OKRビュー（PersonalOkrView／usePersonalOkrUiStore）の
+// personal_krs等マウント時フェッチ等）を対象にする、別のゲート。判定対象が違うため、
+// 承認フラグ（localStorageキー）も別に持つ。
+// 【2026-08-10】OKRモードのグループ側（会議ノート・セッション記録・レポート作成・
+// なぜなぜ分析・クォーター計画）はアーカイブしたため、現在このゲートが対象にする
+// フェッチは個人OKR層のみ（src/components/okr/ARCHIVED.md参照）。
 //
 // 【ゲストは対象外】ゲスト（サンプル閲覧）モードはSupabaseに一切接続しない設計
 // （CLAUDE.md Section 23）。ゲストにはappStoreへ注入済みのサンプルデータしか見せないため、
