@@ -5,6 +5,10 @@ import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
 import { VersionBadge } from "../common/VersionBadge";
 import { GUEST_AI_DAILY_LIMIT } from "../../lib/guestAiQuotaCounter";
+import { extractInviteCodeFromSearch } from "../../lib/projectInvite/inviteUrl";
+import { savePendingProjectInvite } from "../../lib/projectInvite/pendingInvite";
+import { initialsFromDisplayName, shortNameFromDisplayName, DEFAULT_INVITE_AVATAR_COLOR } from "../../lib/projectInvite/memberDefaults";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   onLogin: () => void;
@@ -12,17 +16,96 @@ interface Props {
   onGuest: () => Promise<void>;
 }
 
-type Mode = "login" | "signup" | "signup_done";
+type Mode = "login" | "signup" | "signup_done" | "invite" | "invite_awaiting";
 
 export function LoginScreen({ onLogin, onGuest }: Props) {
   const t = useT();
-  const [mode, setMode] = useState<Mode>("login");
+  // 招待リンク（?invite=<code>）から開かれた場合は、招待コード欄を事前入力した状態で
+  // 直接「招待コードをお持ちの方」モードに入る（設計書§7・3-2）。
+  const [initialInviteCode] = useState(() => extractInviteCodeFromSearch(window.location.search));
+  const [mode, setMode] = useState<Mode>(() => (initialInviteCode ? "invite" : "login"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
+
+  // ----- プロジェクト招待（部署外メンバーの受け入れ・2026-08-10） -----
+  const [inviteCode, setInviteCode] = useState(initialInviteCode ?? "");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [invitePassword, setInvitePassword] = useState("");
+  const [invitePasswordConfirm, setInvitePasswordConfirm] = useState("");
+  const [inviteDisplayName, setInviteDisplayName] = useState("");
+  const [inviteShortName, setInviteShortName] = useState("");
+  const [inviteError, setInviteError] = useState("");
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [inviteSentToEmail, setInviteSentToEmail] = useState("");
+
+  const enterInviteMode = () => {
+    setMode("invite");
+    setInviteError("");
+  };
+
+  const backToLoginFromInvite = () => {
+    setMode("login");
+    setInviteError("");
+  };
+
+  const handleInviteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setInviteError("");
+
+    if (!inviteCode.trim() || !inviteEmail.trim() || !inviteDisplayName.trim() || !inviteShortName.trim()) {
+      setInviteError(t("auth.invite.error.missingFields"));
+      return;
+    }
+    if (invitePassword !== invitePasswordConfirm) {
+      setInviteError(t("auth.error.passwordMismatch"));
+      return;
+    }
+    if (invitePassword.length < 6) {
+      setInviteError(t("auth.error.passwordTooShort"));
+      return;
+    }
+
+    setInviteLoading(true);
+    try {
+      const normalizedEmail = inviteEmail.trim().toLowerCase();
+      const { needsConfirmation, alreadyRegistered } = await signUp(normalizedEmail, invitePassword);
+      if (alreadyRegistered) {
+        setInviteError(t("auth.invite.error.alreadyRegistered"));
+        return;
+      }
+
+      // 🔴 needsConfirmation の値に関わらず必ず保存する（理由は
+      // src/lib/projectInvite/pendingInvite.ts 冒頭コメント参照。needsConfirmation=falseの
+      // 場合はApp.tsx側のonAuthStateChangeがこのsignUp成功と同時にauthenticated=trueを
+      // 検知し、この先の処理を待たずに本コンポーネントがunmountされるレースが起こり得る
+      // ため、accept_project_invite()の呼び出し自体はここでは行わず、常にApp.tsxの
+      // AuthenticatedApp側の単一の受け口に委ねる）。
+      savePendingProjectInvite({
+        code: inviteCode.trim(),
+        email: normalizedEmail,
+        displayName: inviteDisplayName.trim(),
+        shortName: inviteShortName.trim(),
+        initials: initialsFromDisplayName(inviteDisplayName),
+        colorBg: DEFAULT_INVITE_AVATAR_COLOR.bg,
+        colorText: DEFAULT_INVITE_AVATAR_COLOR.text,
+        savedAt: new Date().toISOString(),
+      });
+
+      if (needsConfirmation) {
+        setInviteSentToEmail(normalizedEmail);
+        setMode("invite_awaiting");
+      }
+      // needsConfirmation=false の場合はここで何もしない。App.tsx側が続きを処理する。
+    } catch (err) {
+      setInviteError(formatErrorForUser(t("auth.invite.error.submitFailed"), err));
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   const handleGuestClick = async () => {
     setGuestLoading(true);
@@ -160,6 +243,200 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
     );
   }
 
+  // ===== プロジェクト招待：登録完了（メール確認待ち）=====
+  // 🔴 招待の有効期限（24時間）に注意を促す（メール確認が遅れると招待コードが失効する）。
+  if (mode === "invite_awaiting") {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+        <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+          <LangToggle variant="icon" />
+        </div>
+        <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
+          <VersionBadge />
+        </div>
+        <div style={cardStyle}>
+          <div style={{ textAlign: "center", marginBottom: "20px" }}>
+            <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
+            <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "8px" }}>
+              {t("auth.signup.done.title")}
+            </h1>
+            <p style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+              {t("auth.signup.done.sentTo", { email: inviteSentToEmail })}<br />
+              {t("auth.signup.done.instruction")}
+            </p>
+          </div>
+          <div style={{
+            padding: "12px 14px",
+            background: "var(--color-bg-warning)",
+            border: "1px solid var(--color-border-warning)",
+            borderRadius: "var(--radius-md)",
+            fontSize: "12px",
+            color: "var(--color-text-warning)",
+            lineHeight: 1.7,
+            marginBottom: "20px",
+          }}>
+            ⚠ {t("auth.invite.awaiting.deadlineWarning")}
+          </div>
+          <div style={{
+            padding: "12px 14px",
+            background: "var(--color-bg-secondary)",
+            borderRadius: "var(--radius-md)",
+            fontSize: "12px",
+            color: "var(--color-text-tertiary)",
+            lineHeight: 1.7,
+            marginBottom: "20px",
+          }}>
+            {t("auth.signup.done.afterConfirm")}<br />
+            {t("auth.signup.done.noEmail")}
+          </div>
+          <button
+            onClick={backToLoginFromInvite}
+            style={{
+              width: "100%", padding: "11px",
+              background: "var(--color-brand)", color: "#fff",
+              border: "none", borderRadius: "var(--radius-md)",
+              fontSize: "14px", fontWeight: 600, cursor: "pointer",
+            }}
+          >
+            {t("auth.signup.done.backToLogin")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ===== プロジェクト招待：登録フォーム =====
+  if (mode === "invite") {
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+        <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+          <LangToggle variant="icon" />
+        </div>
+        <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
+          <VersionBadge />
+        </div>
+        <div style={{ ...cardStyle, width: "380px" }}>
+          <h1 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>
+            {t("auth.invite.title")}
+          </h1>
+          <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.6, marginBottom: "18px" }}>
+            {t("auth.invite.subtitle")}
+          </p>
+
+          <form onSubmit={e => void handleInviteSubmit(e)}>
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelStyle}>{t("auth.invite.form.code")}</label>
+              <input
+                type="text"
+                value={inviteCode}
+                onChange={e => setInviteCode(e.target.value)}
+                required
+                autoFocus={!initialInviteCode}
+                style={inputStyle}
+              />
+              <p style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+                {t("auth.invite.form.codeHint")}
+              </p>
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelStyle}>{t("auth.form.email")}</label>
+              <input
+                type="email"
+                value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)}
+                required
+                placeholder={t("auth.form.emailPlaceholder")}
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelStyle}>{t("auth.form.password")}<span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>{t("auth.form.passwordHint")}</span></label>
+              <input
+                type="password"
+                value={invitePassword}
+                onChange={e => setInvitePassword(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelStyle}>{t("auth.form.passwordConfirm")}</label>
+              <input
+                type="password"
+                value={invitePasswordConfirm}
+                onChange={e => setInvitePasswordConfirm(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: "14px" }}>
+              <label style={labelStyle}>{t("auth.invite.form.displayName")}</label>
+              <input
+                type="text"
+                value={inviteDisplayName}
+                onChange={e => {
+                  const v = e.target.value;
+                  setInviteDisplayName(v);
+                  // 略称が未入力のときだけ、表示名から既定値を自動生成する（SetupWizardと同様のUX）。
+                  if (!inviteShortName) setInviteShortName(shortNameFromDisplayName(v));
+                }}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            <div style={{ marginBottom: "18px" }}>
+              <label style={labelStyle}>{t("auth.invite.form.shortName")}</label>
+              <input
+                type="text"
+                value={inviteShortName}
+                onChange={e => setInviteShortName(e.target.value)}
+                required
+                style={inputStyle}
+              />
+            </div>
+
+            {inviteError && (
+              <p style={{ fontSize: "13px", color: "var(--color-text-danger)", marginBottom: "16px" }}>
+                {inviteError}
+              </p>
+            )}
+
+            <button
+              type="submit"
+              disabled={inviteLoading}
+              style={{
+                width: "100%", padding: "11px",
+                background: inviteLoading ? "var(--color-text-tertiary)" : "var(--color-brand)",
+                color: "#fff", border: "none", borderRadius: "var(--radius-md)",
+                fontSize: "14px", fontWeight: 600,
+                cursor: inviteLoading ? "not-allowed" : "pointer",
+              }}
+            >
+              {inviteLoading ? t("auth.invite.submitting") : t("auth.invite.submit")}
+            </button>
+          </form>
+
+          <button
+            type="button"
+            onClick={backToLoginFromInvite}
+            style={{
+              width: "100%", marginTop: "12px", padding: "6px",
+              background: "transparent", border: "none",
+              color: "var(--color-text-tertiary)", fontSize: "12px", cursor: "pointer",
+            }}
+          >
+            {t("auth.invite.backToLogin")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ===== ログイン / 新規登録フォーム =====
   return (
     <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
@@ -277,6 +554,23 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
             {t("auth.note.forgotPassword")}
           </p>
         )}
+
+        {/* プロジェクトの招待コードをお持ちの方（部署外メンバーの受け入れ・2026-08-10）
+            設計書§7・山本さんの当初案1(a)：既存のログインフォームとゲストの「サンプルを
+            見る」ボタンの間に置く。 */}
+        <div style={{ textAlign: "center", marginTop: "16px" }}>
+          <button
+            type="button"
+            onClick={enterInviteMode}
+            style={{
+              background: "none", border: "none", padding: 0,
+              color: "var(--color-text-tertiary)", fontSize: "11px",
+              cursor: "pointer", textDecoration: "underline",
+            }}
+          >
+            {t("auth.invite.cta")}
+          </button>
+        </div>
 
         {/* サンプルを見る：アカウント不要でアプリの見た目を確認できる閲覧専用モード */}
         <div style={{

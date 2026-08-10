@@ -20,6 +20,8 @@ import { useAppStore } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import type { Member } from "./lib/localData/types";
 import { useT } from "./hooks/useT";
+import { loadPendingProjectInvite, clearPendingProjectInvite } from "./lib/projectInvite/pendingInvite";
+import { acceptProjectInvite } from "./lib/supabase/projectInviteStore";
 
 export default function App() {
   const t = useT();
@@ -242,6 +244,62 @@ function AuthenticatedApp({
     return () => { cancelled = true; };
   }, [loading, isWizardDone]);
 
+  // ②プロジェクト招待：メール確認後の初回ログイン時に保留中の招待を自動受諾する
+  // （3-2の🔴要件・設計判断(a)。CLAUDE.md Section 25・src/lib/projectInvite/pendingInvite.ts
+  // 冒頭コメント参照）。
+  //
+  // 【なぜここ（isWizardDone/matchStateより前）に置くか】
+  // LoginScreenの招待登録フォーム（mode="invite"）でsignUp()した直後は、needsConfirmation
+  // の値に関わらずpendingProjectInviteをlocalStorageに保存するだけで、
+  // accept_project_invite()の呼び出し自体はここに一本化してある（App.tsxのトップレベルの
+  // onAuthStateChangeがsignUp成功と同時にauthenticated=trueへ切り替えるレースを避けるため。
+  // needsConfirmation=trueの場合も、確認メールのリンクをクリックしてこの端末に戻ってきた
+  // ときに必ずここを通る）。この時点ではまだmembersにこのユーザーの行が無いため、
+  // isWizardDone判定・matchStateのどちらに転んでもAccessDeniedScreen/UserSelectScreenの
+  // どちらかが表示されてしまう（wizardCompletedフラグの状態に依存し、どちらが出るかは
+  // 環境依存＝Section 1.6 M25の設計を参照）。どちらが出るにせよ「保留中の招待をまず
+  // 自動で試す」ことを優先させたいため、両方の判定より前段でチェックする。
+  const [inviteAutoAcceptChecked, setInviteAutoAcceptChecked] = useState(false);
+  useEffect(() => {
+    if (loading || currentUser) return;
+    const pending = loadPendingProjectInvite();
+    if (!pending) { setInviteAutoAcceptChecked(true); return; }
+    let cancelled = false;
+    (async () => {
+      const authEmail = await getAuthEmail();
+      if (cancelled) return;
+      if (!authEmail || authEmail.toLowerCase() !== pending.email.toLowerCase()) {
+        // 別ユーザーのセッション・別メールでの再ログイン等。この端末にこの保留データを
+        // 残し続けると別人に誤って適用されるリスクになるため消す。
+        clearPendingProjectInvite();
+        setInviteAutoAcceptChecked(true);
+        return;
+      }
+      try {
+        await acceptProjectInvite({
+          code: pending.code,
+          email: pending.email,
+          displayName: pending.displayName,
+          shortName: pending.shortName,
+          initials: pending.initials,
+          colorBg: pending.colorBg,
+          colorText: pending.colorText,
+        });
+        clearPendingProjectInvite();
+        // 迷ったらリロードを選ぶ方針（handleLogoutと同じ判断）。新しく作られたmembers行を
+        // RLS越しに確実に反映させるため、zustandの部分更新ではなくページ全体を再読み込みする。
+        window.location.reload();
+      } catch (e) {
+        if (cancelled) return;
+        // 失敗したら消す（無限リトライループの防止。期限切れ等は再試行しても直らない）。
+        clearPendingProjectInvite();
+        showToast(formatErrorForUser("招待の受諾に失敗しました", e), "error");
+        setInviteAutoAcceptChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, currentUser]);
+
   // メンバー読み込み完了後、ログインユーザーを自動マッチング
   // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー
   //
@@ -295,6 +353,12 @@ function AuthenticatedApp({
     if (loading) return;
     return subscribeToRealtime(applyRemoteChange);
   }, [loading, applyRemoteChange]);
+
+  // プロジェクト招待：保留中の招待の自動受諾チェックが終わるまで、
+  // SetupWizard/AccessDeniedScreen/UserSelectScreenのどれも出さない（上のuseEffect参照）。
+  if (!loading && !currentUser && !inviteAutoAcceptChecked) {
+    return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+  }
 
   // 初回起動時はセットアップウィザードを表示（本当にシステムが空の場合のみ）
   if (!loading && !isWizardDone) {

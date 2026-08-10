@@ -16,8 +16,10 @@ import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stor
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
-  Quarter, MemberTag,
+  Quarter, MemberTag, ProjectInvite,
 } from "../../lib/localData/types";
+import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/projectInviteStore";
+import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -41,7 +43,7 @@ import { OkrImportModal } from "./OkrImportModal";
 import { LoadingTipsSection } from "./LoadingTipsSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "tips";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips";
 
 interface Props { currentUser: Member; }
 
@@ -152,7 +154,7 @@ export function AdminView({ currentUser }: Props) {
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   // "tips" は全社スーパー管理者のみに見せるタブのため、保存値がtipsでもsuper adminでない
   // ユーザーには無効な選択肢として扱う（選択肢に無いタブが選ばれたままになる事故を防ぐ）。
-  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "tips"];
+  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips"];
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
     if (krCount === 0) return "okr";
@@ -218,6 +220,7 @@ export function AdminView({ currentUser }: Props) {
     ] },
     { label: "組織", items: [
         { key: "groups", label: "グループ・部署", count: groupCount },
+        { key: "invites", label: "プロジェクト招待" },
     ] },
     { label: "レポート", items: [
         { key: "ai_usage", label: "AI使用量" },
@@ -400,6 +403,7 @@ export function AdminView({ currentUser }: Props) {
           {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
           {tab === "ai_usage" && <AIUsageSection selectedGroupId={selectedGroupId} />}
           {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "invites"  && <InvitesSection selectedGroupId={selectedGroupId} />}
           {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>
@@ -3414,6 +3418,154 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
         </div>
       </div>
     </>
+  );
+}
+
+// ===================================================
+// セクション：プロジェクト招待（部署外メンバーの受け入れ・Phase 2-2）
+// ===================================================
+//
+// 【設計意図】
+// docs/dev/project-invite-plan.md §7・CLAUDE.md Section 25参照。RLS
+// （project_invites_select_same_dept）が「発行者と同じ部署のメンバーが参照できる」に
+// 既に絞っているため、ここでは選択中の部署（selectedGroupId）に紐づくPJの招待だけに
+// さらに絞り込む（他のAdminViewセクションと同じ「設定画面ローカルの部署絞り込み」の
+// 流儀に揃える）。
+//
+// 🔴 code_hash は取得しない（fetchProjectInvitesが列を明示的に絞っている。本ファイルからは
+// 一切参照しない）。
+
+function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
+  const rawProjects = useAppStore(s => s.projects);
+  const members = useAppStore(s => s.members);
+  const projectById = useMemo(() => new Map(rawProjects.map(p => [p.id, p])), [rawProjects]);
+  const memberById = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
+
+  const [invites, setInvites] = useState<ProjectInvite[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [revokingId, setRevokingId] = useState<string | null>(null);
+
+  const reload = useCallback(async () => {
+    try {
+      const data = await fetchProjectInvites();
+      setInvites(data);
+      setFetchError(null);
+    } catch (e: unknown) {
+      setFetchError(formatErrorForUser("招待一覧の取得に失敗しました", e));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void reload(); }, [reload]);
+
+  // 選択中の部署に紐づくPJの招待だけに絞る（projectInGroupは本ファイル冒頭のヘルパー）。
+  // 紐づくPJが見つからない（削除済み等）行は、絞り込みの対象外にせず常に表示する
+  // （監査の見落としを避けるための安全側の判断）。
+  const scopedInvites = useMemo(
+    () => invites.filter(inv => {
+      const p = projectById.get(inv.project_id);
+      return !p || projectInGroup(p, selectedGroupId);
+    }),
+    [invites, projectById, selectedGroupId],
+  );
+
+  const handleRevoke = async (invite: ProjectInvite) => {
+    const projectName = projectById.get(invite.project_id)?.name ?? invite.project_id;
+    const ok = await confirmDialog(`「${projectName}」への招待（${invite.invited_email}）を取り消しますか？`);
+    if (!ok) return;
+    setRevokingId(invite.id);
+    try {
+      await revokeProjectInvite(invite.id);
+      await reload();
+    } catch (e: unknown) {
+      await alertDialog(formatErrorForUser("招待の取り消しに失敗しました", e));
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const statusStyle: Record<ProjectInviteStatus, React.CSSProperties> = {
+    unused:  { color: "var(--color-text-info)",    background: "var(--color-bg-info)",    border: "1px solid var(--color-border-info)" },
+    used:    { color: "var(--color-text-secondary)", background: "var(--color-bg-tertiary)", border: "1px solid var(--color-border-primary)" },
+    expired: { color: "var(--color-text-warning)", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)" },
+    revoked: { color: "var(--color-text-danger)",  background: "var(--color-bg-danger)",  border: "1px solid var(--color-border-danger)" },
+  };
+
+  if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
+
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "10px" }}>
+        <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>プロジェクト招待</h2>
+        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+          社内の別部署の人をプロジェクト単位で招待した履歴（発行・取り消しはPJ画面から）
+        </span>
+      </div>
+
+      {fetchError && (
+        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
+          {fetchError}
+        </div>
+      )}
+
+      {scopedInvites.length === 0 ? (
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "20px 0" }}>
+          まだ招待はありません。プロジェクトの画面（プロジェクトカルテ）の「🔗 このPJに招待する」から発行できます。
+        </div>
+      ) : (
+        <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+          <div style={{
+            display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr 1fr 0.8fr 0.7fr",
+            gap: "8px", padding: "6px 10px", fontSize: "10px", color: "var(--color-text-tertiary)",
+            borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)",
+          }}>
+            <div>対象PJ</div><div>招待先メール</div><div>発行者</div><div>発行日時</div><div>有効期限</div><div>状態</div><div></div>
+          </div>
+          {scopedInvites.map(inv => {
+            const status = resolveInviteStatus(inv);
+            const projectName = projectById.get(inv.project_id)?.name ?? `（削除済み：${inv.project_id.slice(0, 8)}）`;
+            const inviterName = memberById.get(inv.invited_by)?.display_name ?? inv.invited_by;
+            return (
+              <div key={inv.id} style={{
+                display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr 1fr 0.8fr 0.7fr",
+                gap: "8px", padding: "8px 10px", fontSize: "11px", alignItems: "center",
+                borderBottom: "1px solid var(--color-border-primary)",
+              }}>
+                <div style={{ color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName}</div>
+                <div style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inv.invited_email}</div>
+                <div style={{ color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inviterName}</div>
+                <div style={{ color: "var(--color-text-tertiary)" }}>{inv.created_at ? new Date(inv.created_at).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) : "—"}</div>
+                <div style={{ color: "var(--color-text-tertiary)" }}>{new Date(inv.expires_at).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" })}</div>
+                <div>
+                  <span style={{ ...statusStyle[status], fontSize: "10px", padding: "2px 8px", borderRadius: "99px", whiteSpace: "nowrap" }}>
+                    {PROJECT_INVITE_STATUS_LABEL[status]}
+                  </span>
+                </div>
+                <div>
+                  {status === "unused" && (
+                    <button
+                      type="button"
+                      onClick={() => void handleRevoke(inv)}
+                      disabled={revokingId === inv.id}
+                      style={{
+                        fontSize: "10px", padding: "3px 8px",
+                        border: "1px solid var(--color-border-danger)", borderRadius: "var(--radius-md)",
+                        background: "transparent", color: "var(--color-text-danger)",
+                        cursor: revokingId === inv.id ? "not-allowed" : "pointer",
+                      }}
+                    >
+                      {revokingId === inv.id ? "処理中..." : "取り消し"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

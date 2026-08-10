@@ -91,6 +91,17 @@ export async function acceptProjectInvite(
 }
 
 /**
+ * 招待を取り消す（revoke_project_invite RPC。Phase 2）。
+ * 呼び出し者が対象招待のPJにアクセスできるか・既に使用済みでないかは関数側（SQL）で
+ * 検証される。使用済みの招待に対して呼ぶと例外になる（呼び出し元はUIで取り消しボタン
+ * 自体を出さないことに加え、この関数側でも明示的にエラーにする二重の安全網）。
+ */
+export async function revokeProjectInvite(inviteId: string): Promise<void> {
+  const { error } = await supabase.rpc("revoke_project_invite", { p_invite_id: inviteId });
+  if (error) throw error;
+}
+
+/**
  * 招待の一覧を取得する（監査用途。Phase 2の管理画面から使う想定）。
  * RLS（project_invites_select_same_dept）が発行者と同じ部署のメンバーに絞るため、
  * ここでは追加のフィルタは行わない。projectId を渡すと対象PJの招待だけに絞る。

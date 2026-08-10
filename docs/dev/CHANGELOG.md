@@ -4588,5 +4588,69 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #            `npm run build`成功
 #      マイグレーション追加なし
 #
-# 最終更新：2026-08-10（v3.43）
+# v3.44 プロジェクト招待（部署外メンバーの受け入れ）Phase 2：発行側＋Phase 3：受け入れ側（2026-08-10）
+#      正本：docs/dev/project-invite-plan.md（CLAUDE.md Section 25参照）。Phase 1（DB・v3.42）で
+#            作った関数を実際に使う画面をまとめて実装した。
+#      🔴 追加マイグレーション：supabase/migrations/20260810b_add_revoke_project_invite.sql
+#            （⚠️山本さんが手動適用。Phase 1のマイグレには取り消し用RPCが含まれていなかった）
+#            revoke_project_invite(p_invite_id)：呼び出し者がcurrent_member_id()を持つ／対象招待の
+#            project_idのPJにcan_access_group_idsでアクセスできる（他部署の招待を取り消せてしまう
+#            事故を防ぐ）／accepted_atが入っている招待は明示的なエラーで拒否、を検証してrevoked_at/
+#            revoked_byを設定。NULL猶予条項なし・ドル引用タグは$fn_revoke_project_invite$。
+#            schema.sql同期・schemaChecks.tsに検査項目1件追加。
+#      Phase 2（発行側）：
+#      - ProjectKarte.tsx（PJカルテ）に「🔗 このPJに招待する」を追加（ゲストには非表示）→
+#        新規src/components/project/ProjectInviteModal.tsxがcreate_project_invite()を呼ぶ。
+#        コード・招待リンク（アプリURL+?invite=<code>）は戻り値でのみ得られるため「1度だけ表示」を
+#        明記しコピーボタンを設置。エラーはformatErrorForUser経由でSQL側の日本語メッセージそのまま。
+#      - AdminView.tsxに新カテゴリ「組織」内「プロジェクト招待」タブ（InvitesSection）を追加。
+#        fetchProjectInvites()で一覧取得・選択中の部署に紐づくPJの招待に絞り込み・状態
+#        （未使用/使用済み/期限切れ/取り消し済み）を表示・取り消しボタン（unusedのみ表示）。
+#        code_hashは今回もselectしない。
+#      Phase 3（受け入れ側）：
+#      - LoginScreen.tsxに「プロジェクトの招待コードをお持ちの方はこちら」を追加（既存フォームと
+#        ゲストボタンの間）。押すと招待コード／メール／パスワード／表示名／略称の登録フォームに
+#        切り替わる（イニシャル・色は入力欄を出さず自動生成）。URLの?invite=<code>があれば
+#        コード欄に事前入力してこの画面から起動する。
+#      - 🔴メール確認への対応＝設計判断(a)「自動受諾」を採用：signUp()直後、needsConfirmationの
+#        値に関わらず入力内容（パスワードは除く）をlocalStorageに一時保持（新規
+#        src/lib/projectInvite/pendingInvite.ts）。実際のaccept_project_invite()呼び出しは
+#        フォーム自身ではなくApp.tsxのAuthenticatedAppに一本化した（needsConfirmation=falseの
+#        場合、App.tsxトップレベルのonAuthStateChangeがsignUp成功と同時にauthenticated=trueを
+#        検知しフォームが受諾処理を終える前にunmountされるレースがあるため）。判定はSetupWizard/
+#        AccessDeniedScreen/UserSelectScreenのどれが出るかより前段に置いた。成功したら
+#        window.location.reload()（新しいmembers行をRLS越しに反映）。失敗（期限切れ等）したら
+#        保留データを消してトースト表示し通常画面へフォールバック。既に登録済みのメールでの
+#        signUpはauth.ts の signUp() が alreadyRegistered（Supabase Authのidentities空配列）を
+#        検出し専用メッセージを表示・保留データも保存しない。
+#      - AccessDeniedScreen.tsxに同名の招待コード導線を追加。この経路は既にAuthセッションがある
+#        ためaccept_project_invite()を直接呼べる（signUp不要・メール確認の問題が発生しない最も
+#        素直な経路。手動フォールバックとしても機能）。
+#      - 受諾後に通常画面へ入れることの確認：accept_project_invite()がmembers.emailにauth.email()
+#        をそのまま書き込むため、既存のautoMatch()（Auth emailとmembers.emailの一致で自動ログイン）
+#        がreload後にそのまま働く。コードを読んで確認済み（実機確認は山本さんが行う）。
+#      新規ファイル：src/lib/projectInvite/{inviteStatus,inviteUrl,pendingInvite,memberDefaults}.ts
+#            （招待の状態判定・URLからのコード抽出・保留招待の一時保持・表示名からの既定値生成、
+#            いずれも純粋関数）／src/components/project/ProjectInviteModal.tsx。
+#      auth.ts：signUp()の戻り値にalreadyRegistered追加（既存呼び出し元は無変更で動作）。
+#      types.ts：ProjectInvite.revoked_at/revoked_byのコメント更新（Phase 2で実際に書き込まれる
+#            列になったため）。
+#      i18n：auth.ja.ts/auth.en.tsに招待関連の新規キーを追加（LoginScreen/AccessDeniedScreenは
+#            既存の対象モジュールのため追加。AdminView/ProjectInviteModalは他の管理系画面と同じく
+#            日本語ハードコード＝対象外のまま）。
+#      テスト：新規4ファイル・39件追加（inviteStatus 9件・inviteUrl 11件・pendingInvite 11件・
+#            memberDefaults 8件）。期限の境界値（ちょうど期限・1ms前）・URLの?invite=抽出
+#            （不正値・空・複数パラメータ・?無し）・保留データの検証（壊れたJSON・必須欠落）を
+#            重点的にテスト。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1083件全通過（1043件→1083件・+40件）／
+#            `npm run lint`38件（23エラー・v3.43と同数＝新規エラー0／15警告・v3.43から+3＝
+#            ProjectInviteModal・LoginScreen・AccessDeniedScreenの各1件がautoFocus警告。既存
+#            コード全体で既に使われている警告付きパターンと同種で新規のリスクではない）／
+#            `npm run build`成功（AdminViewチャンク146.85kB→152.02kB・gzip33.42→34.48kB＝+1.06kB。
+#            メインバンドルgzip67.47→69.16kB＝+1.69kB。いずれも閾値200KB gzipのDL確認ゲートに
+#            はほど遠く新規のゲート対応は不要）
+#      要手動作業：supabase/migrations/20260810b_add_revoke_project_invite.sqlの手動適用
+#            （Phase 1本体=20260810_add_project_invites.sqlは既に適用済み）
+#
+# 最終更新：2026-08-10（v3.44）
 

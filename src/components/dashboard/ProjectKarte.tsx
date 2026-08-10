@@ -29,6 +29,8 @@ import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
 import { MilestoneEditModal } from "../milestone/MilestoneEditModal";
 import { confirmDialog } from "../../lib/dialog";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
+import { isGuestMember } from "../../lib/guestMode";
+import { ProjectInviteModal } from "../project/ProjectInviteModal";
 
 const ANALYSIS_PHASES = [
   "タスクの状況を読み込んでいます",
@@ -51,6 +53,11 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const saveProject     = useAppStore(s => s.saveProject);
   const [showAddMs, setShowAddMs] = useState(false);
   const [editingMs, setEditingMs] = useState<Milestone | null>(null);
+  // プロジェクト招待（部署外メンバーの受け入れ・2026-08-10）：PJ選択時の自然な導線として
+  // このカルテに置く（設計書§7・Phase 2-1）。ゲスト（サンプル閲覧）には出さない
+  // （招待は実データ・実運用の機能であり、サンプルの見た目確認には無関係のため）。
+  const [showInviteModal, setShowInviteModal] = useState(false);
+  const isGuest = isGuestMember(currentUser);
   const [purposeExpanded, setPurposeExpanded] = useState(false);
   const [detailExpanded, setDetailExpanded] = useState(false);
 
@@ -423,6 +430,22 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
 
         {/* AI分析ボタン */}
         <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "4px", flexShrink: 0 }}>
+          {/* プロジェクト招待（部署外メンバーの受け入れ）：PJを選んだ状態からの発行導線 */}
+          {!isGuest && (
+            <button
+              type="button"
+              onClick={() => setShowInviteModal(true)}
+              title="このプロジェクトに社内の別部署の人を招待する"
+              style={{
+                display: "flex", alignItems: "center", gap: "4px",
+                padding: "4px 10px", fontSize: "11px", fontWeight: 500,
+                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-full)",
+                background: "transparent", color: "var(--color-text-secondary)", cursor: "pointer",
+              }}
+            >
+              🔗 このPJに招待する
+            </button>
+          )}
           <button
             data-tour-id="pj-ai-analyze-btn"
             onClick={analyzing ? undefined : runAnalysis}
@@ -612,6 +635,14 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           error={analysisError}
           onClose={() => setShowAnalysis(false)}
           onRerun={runAnalysis}
+        />
+      )}
+
+      {showInviteModal && (
+        <ProjectInviteModal
+          projectId={project.id}
+          projectName={project.name}
+          onClose={() => setShowInviteModal(false)}
         />
       )}
     </div>

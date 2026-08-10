@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.43
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.44
 #
-最終更新：2026-08-10（v3.43）
+最終更新：2026-08-10（v3.44）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -933,6 +933,7 @@ interface TaskChangeLog {
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
+| プロジェクト招待（`ProjectInviteModal`／管理画面「プロジェクト招待」タブ／ログイン画面・`AccessDeniedScreen`の招待コード導線） | ✅ Phase 1〜3実装済み（v3.42〜v3.44） | 社内の別部署の人を特定のPJ1件に招待する。発行：プロジェクトカルテの「🔗 このPJに招待する」→コード・リンクを1度だけ表示。管理：設定画面「組織」カテゴリ「プロジェクト招待」タブで一覧・状態表示・取り消し。受諾：ログイン画面の「招待コードをお持ちの方」（新規登録）または`AccessDeniedScreen`の同導線（既にセッションがある場合）。詳細はSection 25・`docs/dev/project-invite-plan.md` |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -1009,7 +1010,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.43）
+- 最終更新：2026-08-10（v3.44）
 
 ---
 
@@ -1714,7 +1715,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ---
 
-## 25. プロジェクト招待（部署外メンバーの受け入れ）Phase 1：DB・SECURITY DEFINER関数のみ（v3.42・2026-08-10）
+## 25. プロジェクト招待（部署外メンバーの受け入れ）Phase 1〜3（v3.42〜v3.44・2026-08-10）
 
 **正本は [docs/dev/project-invite-plan.md](docs/dev/project-invite-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。マイグレーションSQL全文・検証条件の詳細はそちらを読むこと。
 
@@ -1731,7 +1732,23 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **`guard_member_privilege_columns()`トリガーを拡張した理由**：発行者本人とPJオーナーに招待用部署への兼務を`create_project_invite`内のUPDATEで付与するが、これも通常のmembers UPDATEとして既存の「非super-adminのgroup_ids直接変更は差し戻す」ルールにぶつかり静かに差し戻されてしまう。そこで、トランザクションローカルのセッション変数（`app.allow_invite_group_grant`。PostgREST経由のクライアントは直接設定できない）を立てた場合に限り、「既存の所属を1件も失わず」「追加分が全て`is_invite_group=true`のグループである」ときだけ例外的に許可する分岐を追加した。
 - **招待用部署の命名規則**：`id`は対象PJから決定的に導出（`'grp-invite-' || project_id`）。同じPJに複数回招待しても同じ部署を再利用する（`ON CONFLICT DO NOTHING`で idempotent）。
 - **appStoreには足さない**：招待は管理系機能で全員が起動時に読む必要が無い（個人OKRと同じ判断。Section 19）。
-- **Phase 2/3（未実装）**：発行UI（PJから招待）・管理画面の招待一覧・取り消し・ログイン画面の導線・`AccessDeniedScreen`からの導線。
+
+### Phase 2：発行側（v3.44・2026-08-10・実装済み）
+
+- **2-1. PJから招待する**：プロジェクトカルテ（`src/components/dashboard/ProjectKarte.tsx`。ダッシュボードでPJを選んだときに出るPJ詳細パネル）のAI分析ボタンの上に「🔗 このPJに招待する」を追加した（ゲストには非表示）。`ProjectInviteModal.tsx`（`src/components/project/`）が`create_project_invite`を呼び、**コード・招待リンクは戻り値でのみ得られるため画面に一度だけ表示する**（再表示不可を明記・コピー用ボタン付き）。招待リンクの形式は「アプリのURL（`window.location.origin + pathname`。現在のクエリ・ハッシュは引き継がない）に`?invite=<code>`を付けたもの」。エラーは`formatErrorForUser`経由で、関数が投げる日本語メッセージ（「このプロジェクトを招待する権限がありません」等）がそのまま出る。モーダルは`modalStyles.ts`の契約に従う。
+- **2-2. 管理画面「プロジェクト招待」タブ**（`AdminView.tsx`の`InvitesSection`。カテゴリ「組織」に追加）：`fetchProjectInvites()`で一覧取得し、選択中の部署（`selectedGroupId`）に紐づくPJの招待だけに絞る（既存の部署絞り込みセレクタの流儀に合わせる。RLS自体は発行者と同じ部署に既に絞っている）。列＝対象PJ／招待先メール／発行者／発行日時／有効期限／状態（`src/lib/projectInvite/inviteStatus.ts`の`resolveInviteStatus()`が`accepted_at`/`revoked_at`/`expires_at`から導出）。**取り消し**ボタンは状態が`unused`のときだけ表示し、`revoke_project_invite` RPC（下記マイグレーション）を呼ぶ。🔴 `code_hash`は今回も一切selectしていない（`fetchProjectInvites`が列を明示的に絞る設計を継続）。
+
+### 🔴 追加マイグレーション：取り消し機能（`revoke_project_invite`）
+
+Phase 1のマイグレーションには取り消し用のRPCが含まれていなかった（`revoked_at`/`revoked_by`列だけ用意）。`supabase/migrations/20260810b_add_revoke_project_invite.sql`で追加した。`create_project_invite`と同じ考え方で、**呼び出し者が対象招待のPJにアクセスできるかを`can_access_group_ids`で検証する**（これが無いと他部署の招待を取り消せてしまう）。既に`accepted_at`が入っている招待は明示的なエラーで拒否する（使われた後の取り消しは無意味）。NULL猶予条項は書かず、ドル引用タグは`$fn_revoke_project_invite$`で関数固有にした。⚠️山本さんが手動適用（このマイグレーションのみ未適用。Phase 1本体は適用済み）。`schema.sql`に同期し、`schemaChecks.ts`に検査項目（`fn_revoke_project_invite`）を追加した。
+
+### Phase 3：受け入れ側（v3.44・2026-08-10・実装済み）
+
+- **3-1. ログイン画面の導線**：`LoginScreen.tsx`に、既存のログインフォームとゲストの「サンプルを見る」ボタンの間に「プロジェクトの招待コードをお持ちの方はこちら」リンクを追加した（設計書§7・山本さんの当初案1(a)）。押すと同じ画面内で`mode="invite"`の登録フォーム（招待コード／メールアドレス／パスワード／表示名／略称）に切り替わる。URLに`?invite=<code>`があれば（`src/lib/projectInvite/inviteUrl.ts`の`extractInviteCodeFromSearch()`）コード欄に事前入力し、この画面を直接開いた状態で起動する。**イニシャルと色は入力欄を出さず常に自動生成する**（`src/lib/projectInvite/memberDefaults.ts`。「任意・既定値を用意する」という要件を、入力欄自体を作らない形で満たした。取込後も管理画面から編集できるため実害はない）。
+- **3-2. メール確認への対応＝設計判断(a)（自動受諾）を採用**：登録フォームは`signUp(email, password)`を呼んだ直後、**`needsConfirmation`の値に関わらず**入力内容（コード・メール・表示名・略称・イニシャル・色。パスワードは含めない）を`localStorage`に一時保持する（`src/lib/projectInvite/pendingInvite.ts`）。実際の`accept_project_invite()`呼び出しはこの登録フォーム自身ではなく、**`App.tsx`の`AuthenticatedApp`に一本化した**（理由は次項）。メール確認が必要な環境では「確認メールを送信しました」画面に「招待の有効期限は24時間です。確認が遅れると招待コードが失効します」という警告を明記する。既に登録済みのメールで`signUp`した場合（Supabase Authがメール列挙対策で`identities`を空配列にして返す挙動）は`auth.ts`の`signUp()`が`alreadyRegistered`を検出し、「このメールアドレスは既に登録されています。ログインしてから...」と案内して保留データも保存しない。
+- **3-3. `AccessDeniedScreen`からの導線**：認証済みだが`members`未登録のユーザーに出るこの画面に「プロジェクトの招待コードをお持ちの方はこちら」を追加した。**この経路では既にAuthセッションがあるため`accept_project_invite`を直接呼べる**（signUp不要・3-2のメール確認問題が発生しない、最も素直な経路）。手動フォールバック（別ブラウザ・localStorage消失・新しい招待を試す等）としても機能する。
+- **自動受諾の実装場所となぜここか**：`App.tsx`の`AuthenticatedApp`内に新設したuseEffectが、`currentUser`が未確定かつ保留中の招待（`loadPendingProjectInvite()`）があり、かつ現在のAuth email（`getAuthEmail()`）が保留データのメールと一致する場合にのみ`accept_project_invite()`を呼ぶ。**この判定をSetupWizard/AccessDeniedScreen/UserSelectScreenのどれが表示されるかの判定より前段に置いた**——`needsConfirmation=false`（メール確認不要な環境）の場合、`App.tsx`トップレベルの`onAuthStateChange`リスナーが`signUp`成功と同時に`authenticated=true`を検知し、登録フォームが受諾処理を終える前にunmountされるレースが起こり得るため、受諾の呼び出し自体をフォームの責務にせず単一の受け口に統一した（`needsConfirmation`の真偽どちらでも同じコードパスを通る）。成功したら`window.location.reload()`する（迷ったらリロードを選ぶ方針。`handleLogout`と同じ判断）——新しく作られた`members`行をRLS越しに反映させるため。失敗（期限切れ等）したら保留データを消して（無限リトライ防止）トースト表示し、通常のAccessDeniedScreen/UserSelectScreenへフォールバックする。
+- **招待受諾後に通常画面へ入れることの確認方法**：`accept_project_invite()`は`members.email`に`auth.email()`をそのまま書き込む。`App.tsx`の`autoMatch()`（既存のログイン自動マッチング）は「Auth emailと`members.email`が一致するメンバーを探す」処理であり、受諾後のreloadで`members`が再取得されればこの既存経路がそのまま働き、追加のコード変更は不要だった（コードを読んで確認済み。実機確認は山本さんが行う）。
 
 ---
 

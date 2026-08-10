@@ -2013,6 +2013,69 @@ $fn_accept_project_invite$;
 
 GRANT EXECUTE ON FUNCTION public.accept_project_invite(text, text, text, text, text, text, text) TO authenticated;
 
+-- プロジェクト招待：取り消し（migrations/20260810b_add_revoke_project_invite.sql）。
+-- create_project_invite()と同じ考え方で、呼び出し者が対象PJにアクセスできるかを検証する。
+-- 既にaccepted_atが入っている招待は取り消せない（明示的なエラー）。
+CREATE OR REPLACE FUNCTION public.revoke_project_invite(
+  p_invite_id uuid
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_revoke_project_invite$
+DECLARE
+  v_caller_id         text;
+  v_project_id        text;
+  v_project_group_ids text[];
+  v_accepted_at       timestamptz;
+  v_revoked_at        timestamptz;
+BEGIN
+  v_caller_id := public.current_member_id();
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION '招待の取り消しにはメンバー登録が必要です' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  SELECT pi.project_id, pi.accepted_at, pi.revoked_at
+    INTO v_project_id, v_accepted_at, v_revoked_at
+  FROM public.project_invites pi
+  WHERE pi.id = p_invite_id;
+
+  IF v_project_id IS NULL THEN
+    RAISE EXCEPTION '対象の招待が見つかりません' USING ERRCODE = 'no_data_found';
+  END IF;
+
+  SELECT p.group_ids INTO v_project_group_ids
+  FROM public.projects p
+  WHERE p.id = v_project_id;
+
+  IF v_project_group_ids IS NULL OR NOT public.can_access_group_ids(v_project_group_ids) THEN
+    RAISE EXCEPTION 'この招待を取り消す権限がありません' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+
+  IF v_accepted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'この招待は既に使用されているため取り消せません' USING ERRCODE = 'check_violation';
+  END IF;
+
+  IF v_revoked_at IS NOT NULL THEN
+    RAISE EXCEPTION 'この招待は既に取り消されています' USING ERRCODE = 'check_violation';
+  END IF;
+
+  UPDATE public.project_invites
+  SET revoked_at = now(), revoked_by = v_caller_id
+  WHERE id = p_invite_id
+    AND accepted_at IS NULL
+    AND revoked_at IS NULL;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'この招待は他の操作により状態が変わりました。もう一度お試しください'
+      USING ERRCODE = 'check_violation';
+  END IF;
+END;
+$fn_revoke_project_invite$;
+
+GRANT EXECUTE ON FUNCTION public.revoke_project_invite(uuid) TO authenticated;
+
 -- ============================================================
 -- インデックス
 -- 詳細は migrations/20260501_add_indexes.sql 参照

@@ -91,6 +91,12 @@ const KEYS = {
   GUEST_AI_USAGE_TODAY: "guest_ai_usage_today",
   // スキーマバージョン管理（内部用）
   SCHEMA_VERSION:      "app:ls_schema_version",
+  /**
+   * プロジェクト招待：メール確認が完了するまでの間、この端末に一時保持する保留中の招待
+   * （src/lib/projectInvite/pendingInvite.ts）。signUp()直後（メール確認要否に関わらず）に
+   * 保存し、accept_project_invite()の呼び出しに成功したら必ず消す。パスワードは含めない。
+   */
+  PENDING_PROJECT_INVITE: "pending_project_invite",
 } as const;
 
 // ===== エンティティ ID 毎の動的キービルダー =====

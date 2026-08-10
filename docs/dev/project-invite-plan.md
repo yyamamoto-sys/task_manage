@@ -114,7 +114,7 @@ RLS：発行者と同じ部署のメンバーが参照できる（監査のた�
 
 `is_invite_group boolean NOT NULL DEFAULT false`
 
-## 6. SECURITY DEFINER 関数（2本）
+## 6. SECURITY DEFINER 関数（3本）
 
 - **`create_project_invite(p_project_id, p_email)`**
   1. 呼び出し者が対象PJにアクセスできるか検証（4-4の1点目）
@@ -128,8 +128,15 @@ RLS：発行者と同じ部署のメンバーが参照できる（監査のた�
   2. `members` 行を作成（招待用部署所属・管理者フラグは必ず false）
   3. `accepted_at` / `accepted_member_id` を記録
 
-🔴 **どちらも `SET search_path = ''` を付ける**（関数ハイジャック対策。既存の `current_member_*` 関数と同じ流儀）。
+- **`revoke_project_invite(p_invite_id)`**（Phase 2で追加。`migrations/20260810b_add_revoke_project_invite.sql`）
+  1. 呼び出し者が `current_member_id()` を持つことを検証
+  2. 呼び出し者が対象招待の `project_id` のPJにアクセスできることを `can_access_group_ids` で検証（`create_project_invite()` と同じ考え方。これが無いと他部署の招待を取り消せてしまう）
+  3. 既に `accepted_at` が入っている招待は明示的なエラーで拒否（使われた後の取り消しは無意味）
+  4. `revoked_at = now()` / `revoked_by = 呼び出し者` を設定
+
+🔴 **いずれも `SET search_path = ''` を付ける**（関数ハイジャック対策。既存の `current_member_*` 関数と同じ流儀）。
 🔴 **NULL猶予条項を書かない**（2026-06-26の事故の教訓。Section 1.6）。
+🔴 **ドル引用タグは関数ごとに区別する**（`$fn_create_project_invite$`/`$fn_accept_project_invite$`/`$fn_revoke_project_invite$`）。
 
 ## 7. 画面
 
@@ -141,11 +148,11 @@ RLS：発行者と同じ部署のメンバーが参照できる（監査のた�
 
 ## 8. 段階
 
-| Phase | 内容 |
-|---|---|
-| 1 | DB（`project_invites`・`groups.is_invite_group`）＋ SECURITY DEFINER 関数2本 ＋ 監査クエリ |
-| 2 | 発行UI（PJから招待）＋ 管理画面の招待一覧・取り消し |
-| 3 | ログイン画面の導線 ＋ 登録フロー ＋ `AccessDeniedScreen` からの導線 |
+| Phase | 内容 | 状態 |
+|---|---|---|
+| 1 | DB（`project_invites`・`groups.is_invite_group`）＋ SECURITY DEFINER 関数2本 ＋ 監査クエリ | ✅ 完了（v3.42・本番適用済み） |
+| 2 | 発行UI（PJから招待）＋ 管理画面の招待一覧・取り消し | ✅ 完了（v3.44）。取り消し用RPC（`revoke_project_invite`）はPhase 1に含まれていなかったため追加マイグレーションで対応（§6参照。⚠️未適用） |
+| 3 | ログイン画面の導線 ＋ 登録フロー ＋ `AccessDeniedScreen` からの導線 | ✅ 完了（v3.44）。メール確認への対応は設計判断(a)＝自動受諾を採用（詳細はCLAUDE.md Section 25） |
 
 ## 9. 決定済み・未確認
 

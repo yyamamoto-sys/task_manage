@@ -246,4 +246,11 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "プロジェクト招待：受諾関数（accept_project_invite）が見つかりません",
     migration: "20260810_add_project_invites.sql",
   },
+  {
+    id: "fn_revoke_project_invite",
+    kind: "function",
+    name: "revoke_project_invite",
+    label: "プロジェクト招待：取り消し関数（revoke_project_invite）が見つかりません",
+    migration: "20260810b_add_revoke_project_invite.sql",
+  },
 ];

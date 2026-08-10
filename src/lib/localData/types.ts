@@ -485,7 +485,7 @@ export interface PersonalKrMemo {
  * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
  * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列
  * （src/lib/supabase/projectInviteStore.ts が select で明示的に除外する）。
- * revoked_at/revoked_by はPhase 2（取り消し機能）で使う列で、Phase 1では書き込まない。
+ * revoked_at/revoked_by はPhase 2（revoke_project_invite。取り消し機能）で書き込まれる。
  */
 export interface ProjectInvite {
   id: string;
