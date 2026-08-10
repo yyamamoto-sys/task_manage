@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.38
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.39
 #
-最終更新：2026-08-10（v3.38）
+最終更新：2026-08-10（v3.39）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1423,6 +1423,21 @@ RLS（認証チェック）は「ログインしていない人」を弾く。CO
 チャンクが大きいこと自体が問題なのではなく、「使う人が限られる機能が常時ロード経路に
 混ざっていないか」が本ルールの本質。上記2つはどちらも起動時必須の依存であり対象外。
 
+### ⑥ モード単位の初回ゲート（v3.39・チャンク単位のゲートとの違い）
+
+③のチャンクDLゲート（`ChunkDownloadGate.tsx`）は「**コードチャンクのダウンロード**」を
+対象にするのに対し、OKRモードには別の対象を持つ初回ゲートがある：`src/lib/okr/okrModeGate.ts`
+（判定の純粋関数）＋`src/components/okr/OkrModeIntroModal.tsx`（紹介ポップアップ）が、
+「**OKRモードで使うデータのフェッチ**」を承認対象にする。「plan」→「okr」への切替（`MainLayout.tsx`
+の `handleToggleAppMode`。choke point）を初めて行うときだけ、OKRモードでできることの紹介と
+「データを読み込みます」の一言を挟み、承認したら `localStorage`（`KEYS.OKR_MODE_INTRO_APPROVED`）
+に真偽値だけを記録して次回から聞かない（Human in the loop パターン③）。ゲスト（サンプル閲覧）は
+Supabaseに一切接続しない設計（Section 23）のため対象外——承認を求める意味が無く、常に
+ポップアップを出さず直接入る（承認フラグ自体も書かない）。
+新しくモード単位・画面単位でデータフェッチのボリュームが増える機能を作るときは、
+「コードのダウンロード」と「データのフェッチ」のどちらが重いのかを見極め、対応するゲート
+（③のチャンクゲート／このモードゲート／両方）を検討すること。
+
 ---
 
 ## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化、v3.35でchoke point化）
@@ -1616,7 +1631,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ---
 
-## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37／Step C=v3.38）
+## 24. 個人OKR層（OKRモード再設計 Phase 1・Step A=v3.36／Step B=v3.37／Step C=v3.38／Step D=v3.39）
 
 **正本は [docs/dev/okr-redesign-plan.md](docs/dev/okr-redesign-plan.md)。** このセクションは要点だけを薄く残す（Section 11のルール）。詳細（列定義・段階計画・未決事項）は必ず計画書を読むこと。
 
@@ -1645,6 +1660,11 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **「1つの(kr_id, quarter)につきアクティブな計画は最大1件」** という元のlocalStorage実装の制約を部分UNIQUE索引（`WHERE is_deleted = false`）で保つ。保存は既存アクティブ行のid再利用＋`saveWithLock`（無ければ新規INSERT）。削除は論理削除（元は`localStorage.removeItem`という物理削除だったが変更）。
 - **localStorageの旧データは黙って捨てない。** `loadLegacyLocalQuarterPlan`/`clearLegacyLocalQuarterPlan`（`quarterPlanStore.ts`）でこのブラウザに残っている旧下書きを検知し、`KrQuarterPlanPanel.tsx`のセットアップ画面に「Supabaseへ移行」／「このブラウザから削除」の選択を出す（自動移行はしない＝他端末が既にSupabase側へ保存済みの可能性があるため）。
 - **`quarterly_objectives`/`quarterly_kr_task_forces`（死蔵テーブル。Section 1.6・`docs/REFACTORING.md` M24）**：`quarterly_kr_task_forces`はappStore.ts/store.tsの未使用state・アクション・fetch/insert/deleteを削除（読み書きとも参照ゼロになった）。`quarterly_objectives`はOKR PDF取込（`OkrImportModal`が「四半期OKR」選択時に記録用の骨組みを1件作成する）が今も書き込むため、この経路は**残した**（撤去すると取込機能が壊れるため）。どちらもテーブル自体は物理削除しない（Section 4）。`schema.sql`に「死蔵」の明記コメントを追加。
+
+### Step D：OKRモードの初回ゲート＋`quarterly_objectives`の起動時フェッチ除外（v3.39）
+
+- **`quarterly_objectives`を`fetchOkrData`（起動時Phase 2）から除外**（7→6テーブル）。appStore.ts側の読み取り用state（`quarterlyObjectives`）も参照ゼロ（グレップ確認済み）だったため撤去し、`saveQuarterlyObjective`（OkrImportModalの書き込み専用経路）だけを残した。詳細はSection 19 ⑥。
+- **OKRモード（plan→okr）に初回ゲートを追加**：Section 19 ⑥参照。「起動時に全員が読むOKRコア6テーブル」とは別レイヤーで、モードそのものへの入室に承認を求める。個人OKR層の週の目標状態・自己評価（◯△✕）等の紹介文もこのゲートのポップアップに含む。
 
 ---
 

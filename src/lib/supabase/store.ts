@@ -209,7 +209,7 @@ export async function upsertMyWidgetLayout(memberId: string, layout: MyPageLayou
  * Phase 1（fetchCriticalData）: 7テーブル — メンバー・PJ・タスク・マイルストーン等。
  *   load() がここだけ終えると loading=false になり、ユーザー自動復元と画面描画が走る。
  *
- * Phase 2（fetchOkrData）: 7テーブル — OKR関連。バックグラウンドで取得し、
+ * Phase 2（fetchOkrData）: 6テーブル — OKR関連。バックグラウンドで取得し、
  *   backgroundLoading フラグで細いトップバーを表示する（メイン UI はブロックしない）。
  */
 
@@ -269,23 +269,26 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
 }
 
 /**
- * Phase-2: OKR関連7テーブルをバックグラウンドで取得。
+ * Phase-2: OKR関連6テーブルをバックグラウンドで取得。
  * 失敗してもメイン UI には影響しない。
  * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
  */
 export async function fetchOkrData(onProgress?: (done: number, total: number) => void) {
-  const TOTAL = 7;
+  // 【v3.39】quarterly_objectives を除外（7→6テーブル）。死蔵テーブルで起動時に全員へ
+  // ダウンロードさせる価値が無いため（CLAUDE.md Section 19・Section 24 Step C）。
+  // 書き込み経路（OkrImportModal→saveQuarterlyObjective→upsertQuarterlyObjective）は
+  // このフェッチと独立しているため影響しない。
+  const TOTAL = 6;
   let done = 0;
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
 
-  const [objectives, keyResults, taskForces, todos, ptf, qObjs, ttfs] =
+  const [objectives, keyResults, taskForces, todos, ptf, ttfs] =
     await Promise.all([
       supabase.from("objectives").select("*").then(tick),
       supabase.from("key_results").select("*").eq("is_deleted", false).then(tick),
       supabase.from("task_forces").select("*").eq("is_deleted", false).then(tick),
       supabase.from("todos").select("*").eq("is_deleted", false).then(tick),
       supabase.from("project_task_forces").select("*").then(tick),
-      supabase.from("quarterly_objectives").select("*").eq("is_deleted", false).then(tick),
       supabase.from("task_task_forces").select("*").then(tick),
     ]);
 
@@ -295,7 +298,6 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
     taskForces:            (taskForces.data ?? []) as TaskForce[],
     todos:                 (todos.data      ?? []) as ToDo[],
     projectTaskForces:     (ptf.data        ?? []) as ProjectTaskForce[],
-    quarterlyObjectives:   (qObjs.data      ?? []) as QuarterlyObjective[],
     taskTaskForces:        (ttfs.data       ?? []) as TaskTaskForce[],
   };
 }
@@ -419,17 +421,13 @@ export async function restoreTask(id: string) {
 }
 
 // ===== QuarterlyObjective =====
+// 【死蔵テーブル・v3.39で起動時フェッチから除外】OkrImportModalが「四半期OKR」取込時に
+// 記録用の骨組みを1件作成する経路（upsert）だけ残す。読み取り・削除の経路は呼び出し元
+// 0件のため撤去済み（softDeleteQuarterlyObjective・appStore.ts の deleteQuarterlyObjective
+// アクション。CLAUDE.md Section 24 Step C／Section 19）。
 
 export async function upsertQuarterlyObjective(qObj: QuarterlyObjective, expectedUpdatedAt?: string): Promise<string> {
   return await saveWithLock("quarterly_objectives", qObj, expectedUpdatedAt);
-}
-
-export async function softDeleteQuarterlyObjective(id: string, deletedBy: string) {
-  const now = new Date().toISOString();
-  const { error } = await supabase.from("quarterly_objectives")
-    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
-    .eq("id", id);
-  if (error) throw error;
 }
 
 // 【2026-08-07削除】QuarterlyKrTaskForce（quarterly_kr_task_forces）へのinsert/delete関数は

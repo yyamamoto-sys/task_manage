@@ -18,6 +18,8 @@ import { isAssignedTo } from "../../lib/taskMeta";
 import { Avatar } from "../auth/UserSelectScreen";
 import { ConsultationPanel } from "../consultation/ConsultationPanel";
 import type { OkrActiveTool } from "../okr/OkrDashboardView";
+import { OkrModeIntroModal } from "../okr/OkrModeIntroModal";
+import { shouldShowOkrModeIntro, hasApprovedOkrModeIntro, markOkrModeIntroApproved } from "../../lib/okr/okrModeGate";
 // GuideModeViewは全props省略可能な既定値付きコンポーネントのため、withChunkDownloadGate<P>への
 // P推論がTS上うまくいかず object に落ちてしまう。型のみをimportして明示的に指定する（実行時の
 // importは発生しない＝バンドルサイズに影響しない）
@@ -362,6 +364,19 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.APP_MODE, m);
     setAppModeState(m);
   };
+  // OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39・
+  // src/lib/okr/okrModeGate.ts・CLAUDE.md Section 19）。plan→okr の切替だけを対象にする
+  // （okr→plan に戻る操作にゲートは不要）。「OKR」トグルの呼び出し口はPC/モバイル共通で
+  // この1関数に集約する（setActiveLabView と同じ choke point の考え方）。
+  const [okrIntroOpen, setOkrIntroOpen] = useState(false);
+  const handleToggleAppMode = () => {
+    if (appMode !== "plan") { setAppMode("plan"); return; }
+    if (shouldShowOkrModeIntro(hasApprovedOkrModeIntro(), isGuest)) {
+      setOkrIntroOpen(true);
+      return;
+    }
+    setAppMode("okr");
+  };
   // サイドバーのビュー切替ナビ専用（PC）。ツアーの内部遷移（"tour:action" ハンドラ）は
   // 素の setViewMode を使い続ける（closeLabViewsを挟むと、その効果のexhaustive-depsで
   // setViewModeが不安定と判定され警告が出るため、ナビ経由の呼び出しだけをここで分離する）。
@@ -603,6 +618,15 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         </div>
       </div>
     </div>
+  ) : null;
+
+  // OKRモードの初回ゲート（v3.39）。PC・モバイル両方の return ブロックで参照するため
+  // onboardingOverlay/tourInviteDialog と同じく1つの変数として組み立てる。
+  const okrIntroModal = okrIntroOpen ? (
+    <OkrModeIntroModal
+      onApprove={() => { markOkrModeIntroApproved(); setOkrIntroOpen(false); setAppMode("okr"); }}
+      onCancel={() => setOkrIntroOpen(false)}
+    />
   ) : null;
 
   const onboardingOverlay = isOnboardingOverlayOpen ? (
@@ -924,6 +948,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", overflow: "hidden" }}>
         {onboardingOverlay}
         {tourInviteDialog}
+        {okrIntroModal}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -1060,7 +1085,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           flexShrink: 0,
         }}>
           {/* モードトグル */}
-          <AppModeToggle mode={appMode} onToggle={() => setAppMode(appMode === "plan" ? "okr" : "plan")} compact />
+          <AppModeToggle mode={appMode} onToggle={handleToggleAppMode} compact />
           {/* プロジェクト選択（計画モードのみ） */}
           {appMode === "plan" && (
             <select
@@ -1326,6 +1351,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
       {onboardingOverlay}
       {tourInviteDialog}
+      {okrIntroModal}
 
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
@@ -1460,7 +1486,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
         appMode={appMode}
-        onToggleMode={() => setAppMode(appMode === "plan" ? "okr" : "plan")}
+        onToggleMode={handleToggleAppMode}
         onOpenPalette={() => setIsPaletteOpen(true)}
         accessibleGroups={accessibleGroups}
         currentGroupId={currentGroupId}

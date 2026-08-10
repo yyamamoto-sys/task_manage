@@ -143,6 +143,8 @@ UPDATE key_results kr SET group_id = o.group_id
 -- 「四半期OKR」を選択したときに記録目的の骨組みとして1件だけ作成する“書き込みのみ”の
 -- 経路が唯一残っている（読み取りは無し。docs/REFACTORING.md M24・CLAUDE.md Section 1.6）。
 -- 取込機能を壊すため物理削除・書き込み経路の撤去はしない。新規に参照を追加しないこと。
+-- 【v3.39追記】起動時フェッチ（fetchOkrData/Phase 2）からも除外済み（appStore.tsに
+-- 読み取り用stateも持たない。CLAUDE.md Section 19）。全員に黙ってダウンロードさせない。
 CREATE TABLE IF NOT EXISTS quarterly_objectives (
   id           text PRIMARY KEY,
   objective_id text NOT NULL REFERENCES objectives(id),

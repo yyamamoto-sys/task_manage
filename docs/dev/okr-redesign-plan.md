@@ -299,6 +299,7 @@ PK(`week_id`,`task_id`)。**方式は「自動候補＋明示リンク」**（�
 - ✅ **完了（2026-08-10・v3.38・Step C）** `CLAUDE.md` Section 1 の「⚠ 確認が必要な事項（未解決）：Supabaseへのデータ保存について社内情報セキュリティポリシーの確認が必要」を是正する。この古い記述が残っているせいでクォーター計画が localStorage に取り残されていた。
   → 「2026-08-07に確認済み（社内的にクリア）」と決着を明記。他2項目（Claude API送信／Teams埋め込み申請）は今回の確認範囲外のため未解決のまま残した。
 - マイグレを追加したら **`src/lib/schema/schemaChecks.ts` に検査項目を1行足す**（Section 22）。→ `kr_quarter_plans_table` を追加済み。
+- ✅ **完了（2026-08-10・v3.39・Step D）** `quarterly_objectives` を起動時フェッチ（`fetchOkrData`／Phase 2）から除外。Step Cで「参照は残す」と決めた書き込み経路（OkrImportModal）はそのまま維持し、appStore.tsの読み取り用state（`quarterlyObjectives`）だけを撤去した（読み取り側の参照がゼロだったため）。CLAUDE.md Section 19「ダウンロード量の最小化」の対象。
 
 ---
 

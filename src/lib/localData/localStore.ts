@@ -43,6 +43,13 @@ const KEYS = {
   /** AI相談パネルの「次の相談候補」折りたたみ開閉状態 */
   CONSULT_FOLLOWUP_OPEN: "consult_followup_open",
   OKR_ACTIVE_TOOL:     "okr_active_tool",
+  /**
+   * OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39）を
+   * 承認済みか（"1"）。承認して記憶＝Human in the loop パターン③。
+   * chunkSizeGate.ts の「承認して記憶」はコードチャンクのDLを対象にするのに対し、
+   * このキーはOKRモード専用データのフェッチを対象にする（別のゲート・別のキー）。
+   */
+  OKR_MODE_INTRO_APPROVED: "okr_mode_intro_approved",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
   /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態 */

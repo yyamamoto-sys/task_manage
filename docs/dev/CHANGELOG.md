@@ -4331,5 +4331,61 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             適用前はクォーター計画の保存・読込がエラー表示になる（黙って無効化しない設計。
 #             Section 22参照）
 #
-# 最終更新：2026-08-10（v3.38）
+# v3.39 OKRモードの初回ゲート＋死蔵`quarterly_objectives`の起動時フェッチ除外（2026-08-10）
+#      背景：CLAUDE.md Section 19「ダウンロード量の最小化」の対象を、③のチャンクDLゲート
+#             （コードのダウンロード）に加えて「モードで使うデータのフェッチ」にも広げた。
+#             OKRモードを使わない人にOKR系データを黙って読み込ませない
+#      変更①：`fetchOkrData`（起動時Phase 2）から`quarterly_objectives`を除外（7→6テーブル）。
+#             appStore.tsの読み取り用state（`quarterlyObjectives`）を撤去（grep確認：参照は
+#             自分自身の保守コードのみ・0件の外部参照）。書き込み専用アクション
+#             `saveQuarterlyObjective`（OkrImportModalが「四半期OKR」取込時に記録用の骨組みを
+#             1件作成する経路）だけ残す（ローカル配列の楽観反映・楽観ロック追跡は撤去。
+#             常に新規idでの1件作成のみのため不要）。未使用だった`deleteQuarterlyObjective`
+#             アクション・`softDeleteQuarterlyObjective`（store.ts）も削除（呼び出し元0件）。
+#             `applyRemoteChange`（realtime）は元々`quarterly_objectives`のケースが無く無関係。
+#             schema.sqlの死蔵コメントに起動時フェッチ除外を追記
+#      変更②：OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認）を追加
+#             （Human in the loop パターン③「承認して記憶」。CLAUDE.md Section 19 ⑥）。
+#             `src/lib/okr/okrModeGate.ts`（判定の純粋関数`shouldShowOkrModeIntro`＋
+#             localStorage読み書き）＋`src/components/okr/OkrModeIntroModal.tsx`
+#             （modalStyles.ts契約に従うモーダル）。「plan」→「okr」の切替choke point
+#             （`MainLayout.tsx`の`handleToggleAppMode`。既存の2つの呼び出し口＝PC compact
+#             トグル・Sidebarの`onToggleMode`を1関数に集約）で、未承認なら直接切り替えず
+#             ポップアップを出す。承認したら`KEYS.OKR_MODE_INTRO_APPROVED`に真偽値を記録して
+#             次回から聞かない。紹介文は実装済み機能のみ（グループOKR確認／①会議ノート→
+#             ②セッション記録＆分析→③レポート作成／なぜなぜ／クォーター計画／「自分」タブの
+#             個人OKR＝月次計画・週の目標状態と自己評価◯△✕・メモ）
+#      🔴ゲストは対象外：Supabaseに一切接続しない設計（Section 23）のため、
+#             `shouldShowOkrModeIntro`はゲストなら常にfalse（ポップアップを出さず直接入る。
+#             承認フラグも書かない＝実ユーザーが同じブラウザを使うときに正しく初回表示される）
+#      作業3の判断（過剰プリフェッチにしない）：承認時・承認済みでの再入場時に**新規のSupabase
+#             フェッチは追加していない**。理由：①OKRモードのトップ表示（グループのOKR/KR/TF
+#             一覧）が必要とする6テーブルは、このゲートに関係なく起動時Phase 2で全ユーザーに
+#             既に読み込まれている（Section 19の「やらないこと」で外せないと確定済み）。
+#             ②KRごとのセッション履歴・latestシグナル表示は`OkrDashboardView`自身の既存の
+#             マウント時`useEffect`（`krSessionsMap`）が引き続き担う（このコンポーネントは
+#             component-localなstateのため、ゲート側で同じクエリを重ねて呼んでも共有できる
+#             キャッシュが無く、単純な二重フェッチにしかならない＝過剰プリフェッチの逆効果）。
+#             ③会議ノート本文・分析結果・レポート本文はKR選択後のみ必要なため対象外（従来
+#             どおり遅延）。④`kr_quarter_plans`は`20260807c_add_kr_quarter_plans.sql`が
+#             未適用のため対象外（対象に入れるとマイグレ未適用環境で全員にエラーが出る）。
+#             ⑤個人OKR（`personal_krs`等）は「自分」タブを開いたときだけ読む既存の遅延設計
+#             （Section 24 Step B）を維持——OKRモードのトップ表示（既定は「グループ」タブ）
+#             には不要。以上の理由で、このゲートの役割は現時点では「データフェッチへの
+#             承認UI」に純化した（将来、真にOKRモードのトップ表示専用で新規に増えるデータが
+#             出たときの拡張点として`okrModeGate.ts`/`handleToggleAppMode`を使う）
+#      テスト：`src/lib/okr/__tests__/okrModeGate.test.ts`6件新規（表示判定4件＋
+#             localStorage例外時に落ちない2件）。`src/stores/__tests__/realtimeApply.test.ts`の
+#             reset用stateから`quarterlyObjectives`を削除（AppStateから型が消えたため）
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`947件全通過（941件から6件増）／
+#             `npm run lint`新規エラー0（既存の24件のエラーは変更前と同数。警告は11→12件、
+#             新規モーダルの`autoFocus`1件のみ増加＝`ConfirmModal.tsx`等既存4ファイルと
+#             同じ許容済みパターン）／`npm run build`成功。チャンクサイズ実測（v3.38比）：
+#             `appStore`チャンクは213.97KB/gzip57.91KB（-0.89KB/-0.08KB。quarterly_objectives
+#             撤去分）、メイン`index`チャンクは269.19KB/gzip67.64KB（+2.43KB/+0.53KB。
+#             ゲートUI自体はOKRモードへの切替前に描画する必要があるため、既存の
+#             ChunkDownloadGate.tsxと同様に遅延分割できずメインバンドルに入る）
+#      要手動作業：無し（新規マイグレーションは追加していない）
+#
+# 最終更新：2026-08-10（v3.39）
 

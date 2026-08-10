@@ -43,7 +43,7 @@ import {
   upsertTask, softDeleteTask, restoreTask as restoreTaskDb,
   upsertMilestone, softDeleteMilestone,
   insertProjectTaskForce, deleteProjectTaskForce,
-  upsertQuarterlyObjective, softDeleteQuarterlyObjective,
+  upsertQuarterlyObjective,
   insertTaskTaskForce, deleteTaskTaskForce,
   insertTaskProject, deleteTaskProject,
   insertTaskDependency, softDeleteTaskDependency,
@@ -84,7 +84,6 @@ export interface AppState {
   projects: Project[];
   tasks: Task[];
   projectTaskForces: ProjectTaskForce[];
-  quarterlyObjectives: QuarterlyObjective[];
   taskTaskForces: TaskTaskForce[];
   taskProjects: TaskProject[];
   taskDependencies: TaskDependency[];
@@ -159,8 +158,11 @@ export interface AppState {
   removeProjectTaskForce: (projectId: string, tfId: string) => Promise<void>;
 
   // ===== QuarterlyObjective =====
+  // 【死蔵テーブル・v3.39でstate/deleteアクションを撤去】objectives表示画面はこの型を
+  // 一切参照しない（2026-05-26のTF四半期判定モデル移行以降・CLAUDE.md Section 24 Step C）。
+  // OkrImportModal（PDF取込で「四半期OKR」を選んだ場合の記録用の骨組み1件作成）だけが
+  // 書き込むため、write専用アクションだけを残す（読み取り用のstateは持たない）。
   saveQuarterlyObjective: (qObj: QuarterlyObjective) => Promise<void>;
-  deleteQuarterlyObjective: (id: string, deletedBy: string) => Promise<void>;
 
   // ===== TaskTaskForce =====
   addTaskTaskForce: (ttf: TaskTaskForce) => Promise<void>;
@@ -471,7 +473,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
   projects: [],
   tasks: [],
   projectTaskForces: [],
-  quarterlyObjectives: [],
   taskTaskForces: [],
   taskProjects: [],
   taskDependencies: [],
@@ -489,7 +490,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   //
   // 【2フェーズロード — 2026-06-23】
   // Phase 1: 重要7テーブル（members/projects/tasks/milestones 等）を取得 → loading=false でUI解放
-  // Phase 2: OKR系7テーブルをバックグラウンド取得 → backgroundLoading=false でトップバーを消す
+  // Phase 2: OKR系6テーブルをバックグラウンド取得 → backgroundLoading=false でトップバーを消す
   //
   // これにより「15テーブル全部揃うまで真っ白」ではなく
   // 「主要データが揃い次第すぐ表示、OKRは後から反映」になる。
@@ -557,8 +558,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
           }
         })();
 
-        // Phase 2: OKR系（7テーブル）→ バックグラウンド取得
+        // Phase 2: OKR系（6テーブル）→ バックグラウンド取得
         // 失敗してもメイン UI はブロックしない（サイレントエラー）
+        // 【v3.39】quarterly_objectives はここから除外した（死蔵。CLAUDE.md Section 19）。
         try {
           const okr = await fetchOkrData((done, total) => {
             set({ loadProgress: Math.round((done / total) * 100) });
@@ -574,7 +576,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
             taskForces:            okr.taskForces,
             todos:                 okr.todos,
             projectTaskForces:     okr.projectTaskForces,
-            quarterlyObjectives:   okr.quarterlyObjectives,
             taskTaskForces:        okr.taskTaskForces,
             backgroundLoading:     false,
             loadProgress:          100,
@@ -1079,35 +1080,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== QuarterlyObjective =====
+  // 【v3.39】読み取り用のローカルstateを持たない書き込み専用アクション（起動時フェッチから
+  // 除外したため。上のコメント参照）。呼び出し元（OkrImportModal）は常に新規id（uuidv4）で
+  // 1件作成するだけなので、他アクションのような楽観的ローカル反映・楽観ロックの
+  // expectedUpdatedAt 追跡は不要（衝突しうる既存行が手元に無い）。
   saveQuarterlyObjective: async (qObj) => {
-    set(state => ({
-      quarterlyObjectives: state.quarterlyObjectives.findIndex(q => q.id === qObj.id) >= 0
-        ? state.quarterlyObjectives.map(q => q.id === qObj.id ? qObj : q)
-        : [...state.quarterlyObjectives, qObj],
-    }));
-    await runSerializedByKey(`quarterly_objectives:${qObj.id}`, async () => {
-      const expectedUpdatedAt = get().quarterlyObjectives.find(q => q.id === qObj.id)?.updated_at;
-      try {
-        const newUpdatedAt = await upsertQuarterlyObjective(qObj, expectedUpdatedAt);
-        set(state => ({
-          quarterlyObjectives: syncUpdatedAt(state.quarterlyObjectives, qObj.id, newUpdatedAt),
-        }));
-      } catch (e) {
-        await handleSaveError(e, get().load);
-        throw e;
-      }
-    });
-  },
-
-  deleteQuarterlyObjective: async (id, deletedBy) => {
-    const now = new Date().toISOString();
-    set(state => ({
-      quarterlyObjectives: state.quarterlyObjectives.map(q =>
-        q.id === id ? { ...q, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : q
-      ),
-    }));
     try {
-      await softDeleteQuarterlyObjective(id, deletedBy);
+      await upsertQuarterlyObjective(qObj);
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

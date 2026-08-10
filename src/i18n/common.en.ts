@@ -190,6 +190,16 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.chunkGate.decline": "Cancel",
   "common.chunkGate.declinedNotice": "Download cancelled.",
 
+  "common.okrModeGate.title": "About OKR mode",
+  "common.okrModeGate.featuresIntro": "What you can do in OKR mode",
+  "common.okrModeGate.feature1": "Check the group's OKR (Objective / KR / Task Force)",
+  "common.okrModeGate.feature2": "Weekly cycle per KR: ① meeting notes → ② session record & analysis → ③ report writing",
+  "common.okrModeGate.feature3": "Why-why analysis, quarter plan (for managers)",
+  "common.okrModeGate.feature4": "\"Me\" tab: personal OKR (monthly plan per KR, weekly goal state with self-rating ◯/△/✕, memos)",
+  "common.okrModeGate.dataNotice": "Opening this will switch to OKR mode and load the data this mode uses.",
+  "common.okrModeGate.approve": "Open",
+  "common.okrModeGate.decline": "Cancel",
+
   "common.lang.partialNotice": "English UI is partially available — only the app frame and common UI are translated for now.",
 
   "common.version.tooltip": "v{version} (build {buildTime})",

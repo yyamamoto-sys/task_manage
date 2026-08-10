@@ -209,6 +209,17 @@ export const commonJa = {
   "common.chunkGate.decline": "キャンセル",
   "common.chunkGate.declinedNotice": "ダウンロードをキャンセルしました。",
 
+  // ----- OkrModeIntroModal（v3.39・OKRモードの初回ゲート） -----
+  "common.okrModeGate.title": "OKRモードについて",
+  "common.okrModeGate.featuresIntro": "OKRモードでできること",
+  "common.okrModeGate.feature1": "グループのOKR（Objective・KR・TF）の確認",
+  "common.okrModeGate.feature2": "KRごとの週次サイクル：① 会議ノート → ② セッション記録＆分析 → ③ レポート作成",
+  "common.okrModeGate.feature3": "なぜなぜ分析、クォーター計画（マネージャー向け）",
+  "common.okrModeGate.feature4": "「自分」タブ：個人OKR（KRごとの月次計画・週の目標状態と自己評価◯△✕・メモ）",
+  "common.okrModeGate.dataNotice": "「開く」を押すとOKRモードに切り替わり、このモードで使うデータを読み込みます。",
+  "common.okrModeGate.approve": "開く",
+  "common.okrModeGate.decline": "やめる",
+
   // ----- LangToggle（v3.21・Phase 2凍結中の部分対応注記） -----
   "common.lang.partialNotice": "英語表示は現在アプリの枠組みと共通UIのみ対応しています（各画面の中身は日本語のままです）",
 
