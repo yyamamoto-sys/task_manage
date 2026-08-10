@@ -78,6 +78,45 @@ describe("invokeAI", () => {
   });
 });
 
+describe("invokeAI：実際のsupabase-js非2xx挙動（data=null・response本文を読む。2026-08-10バグ修正）", () => {
+  it("dataがnullでもresponseからANTHROPIC_ERRORの詳細を読み取ってスローする", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: {
+        status: 502,
+        text: async () =>
+          JSON.stringify({ error: "ANTHROPIC_ERROR", status: 529, detail: JSON.stringify({ error: { message: "overloaded_error" } }) }),
+      },
+    });
+    await expect(
+      invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
+    ).rejects.toThrow(/Anthropic APIエラー \(529\).*overloaded_error/);
+  });
+
+  it("responseの本文がJSONでない（ゲートウェイの413等）ときもステータス＋本文の断片を投げる", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: { status: 413, text: async () => "Payload Too Large" },
+    });
+    await expect(
+      invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
+    ).rejects.toThrow(/添付ファイルが大きすぎます \(413\)/);
+  });
+
+  it("response本文の読み取り自体が失敗しても例外を投げず、既定のエラーで終わる", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: { status: 500, text: async () => { throw new Error("body used"); } },
+    });
+    await expect(
+      invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report"),
+    ).rejects.toThrow(/Edge Function returned a non-2xx status code \(500\)/);
+  });
+});
+
 describe("invokeAI：ゲスト（サンプル閲覧）モードでのAI利用（Phase 3・v3.29）", () => {
   afterEach(() => setGuestMode(false));
 

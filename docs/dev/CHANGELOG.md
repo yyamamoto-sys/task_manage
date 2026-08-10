@@ -4554,5 +4554,39 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #            v3.41と同数・新規エラー0）／`npm run build`成功
 #      要手動作業：supabase/migrations/20260810_add_project_invites.sqlの手動適用（dev→prod）
 #
-# 最終更新：2026-08-10（v3.42）
+# v3.43 AI呼び出しの非2xxエラーの内容が捨てられていたバグを修正（2026-08-10）
+#      症状：OKRモード「Kintoneから取込」でPDF解析に失敗すると「AI解析に失敗しました
+#            Edge Function returned a non-2xx status code」しか出ず原因不明（CLAUDE.md
+#            Section 26に詳細）。
+#      原因：supabase.functions.invoke()は非2xx時にdataを必ずnullにし、Edge Functionが
+#            返した本文（{error,message,detail,status}）は戻り値のresponse（Response
+#            オブジェクト）にしか入らない。invokeAI.ts/apiClient.tsはどちらもdataだけを
+#            見ていたため、ANTHROPIC_ERROR/RATE_LIMIT_EXCEEDED/ゲスト回数制限等の分岐が
+#            実際には一度も実行されず常に汎用文言に落ちていた。
+#      新規ファイル：src/lib/ai/edgeFunctionError.ts（readEdgeErrorPayload/extractEdgeError/
+#            buildInvokeErrorMessageに集約）。invokeAI.ts/apiClient.tsの両方から利用し
+#            data不在時はresponseの本文を読む経路に統一（apiClient.tsもSection16の例外
+#            経路だが同じバグを持っていたため同じ直し方で揃えた）。
+#      改善点：①HTTPステータスをメッセージに含める（例「Anthropic APIエラー (529):
+#            overloaded_error」）②本文がJSONでない・空でも汎用文言だけで終わらせず
+#            ステータス＋生テキスト先頭300文字を必ず添える③413（添付が大きすぎる）は
+#            専用の案内文に変換。
+#      添付サイズの送信前チェックは追加しなかった：Supabase Edge Functionsの受信ペイロード
+#            サイズ上限は2026-08-10時点で公式ドキュメントに明記が無く、GitHub上の
+#            「10MB」という回答も関数バンドル自体の上限であり受信ペイロードの上限では
+#            ないと確認した。根拠のある数値が調べきれなかったため、推測の厳しい閾値で
+#            機能を狭めることはせず、エラー時のメッセージ改善（413対応）のみに留めた。
+#      personalOkrImportExtractor.tsのmax_tokens=16000は確認のみ（Edge Function側の
+#            MAX_TOKENS_CAP=16384の範囲内で原因ではないと判断・変更なし）。
+#      CLAUDE.md：Section 15末尾に「dataだけを見るとEdge Functionの理由を捨てる」旨を
+#            追記。新規Section 26に本修正の詳細を記載。
+#      テスト：新規1ファイル・23件追加（edgeFunctionError.test.ts）＋invokeAI.test.ts/
+#            apiClient.test.tsに実際の非2xx挙動（data=null・response読み取り）のテストを
+#            各3件追加（既存テストは変更せず全通過）。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1043件全通過（1014件→1043件・
+#            +29件）／`npm run lint`35件（23エラー12警告。v3.42と同数・新規エラー0）／
+#            `npm run build`成功
+#      マイグレーション追加なし
+#
+# 最終更新：2026-08-10（v3.43）
 

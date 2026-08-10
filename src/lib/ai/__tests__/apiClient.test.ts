@@ -167,6 +167,39 @@ describe("callAIConsultation：ゲスト（サンプル閲覧）モードでのA
   });
 });
 
+describe("callAIConsultation：実際のsupabase-js非2xx挙動（data=null・response本文を読む。2026-08-10バグ修正）", () => {
+  it("dataがnullでもresponseからANTHROPIC_ERRORの詳細を読み取ってAIErrorにする", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: {
+        status: 502,
+        text: async () =>
+          JSON.stringify({ error: "ANTHROPIC_ERROR", status: 529, detail: JSON.stringify({ error: { message: "overloaded_error" } }) }),
+      },
+    });
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(/Anthropic APIエラー \(529\).*overloaded_error/);
+  });
+
+  it("responseの本文がJSONでない（413等）ときもステータス＋添付サイズ案内で投げる", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: { status: 413, text: async () => "Payload Too Large" },
+    });
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(/添付ファイルが大きすぎます \(413\)/);
+  });
+
+  it("response本文の読み取り自体が失敗しても例外を投げず、ステータス付きの汎用エラーで終わる", async () => {
+    mockInvoke.mockResolvedValue({
+      data: null,
+      error: { message: "Edge Function returned a non-2xx status code" },
+      response: { status: 500, text: async () => { throw new Error("body used"); } },
+    });
+    await expect(callAIConsultation(PAYLOAD, "change", [])).rejects.toThrow(/通信エラー \(500\)/);
+  });
+});
+
 describe("callAIConsultation：ゲストのAI利用回数表示（参考値）の加算（v3.31）", () => {
   afterEach(() => setGuestMode(false));
 

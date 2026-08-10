@@ -9,6 +9,12 @@
 //   直接呼ぶため、AI 使用量ログ（ai_usage_logs）の自動記録が効かない。
 //   呼び出し元の useAIConsultation 側で insertAiUsageLog を別途呼んで補っている。
 //   新しい AI 機能を実装するときは invokeAI を経由すること（CLAUDE.md Section 16）。
+//
+// 【非2xxエラーの本文の読み取り】非2xx時、supabase-jsは data を null にし、Edge Function
+// が返した本文は invoke() の戻り値の response（Response）にしか入らない。data だけを見ると
+// 原因を全て捨てることになるため、data が無いときは readEdgeErrorPayload() でresponseの
+// 本文を読む（invokeAI.ts と同じ理由。詳細は edgeFunctionError.ts 冒頭コメント参照。
+// CLAUDE.md Section 15）。
 
 import { supabase } from "../supabase/client";
 import type { ConsultationType, ResponseVolume } from "./types";
@@ -20,6 +26,7 @@ import { ensureGuestAiSession } from "../supabase/guestAiAuth";
 import { recordGuestAiUse } from "../guestAiQuotaCounter";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
+import { readEdgeErrorPayload, type EdgeErrorBody } from "./edgeFunctionError";
 
 // callAIConsultationはReactコンポーネント外の素の関数のためuseT()が使えない
 // （invokeAI.tsと同じ流儀）。
@@ -153,6 +160,7 @@ export async function callAIConsultation(
 
   let data: AnthropicResponse | null = null;
   let error: Error | null = null;
+  let response: Response | undefined;
 
   try {
     // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
@@ -168,6 +176,7 @@ export async function callAIConsultation(
     });
     data = result.data as AnthropicResponse | null;
     error = result.error as Error | null;
+    response = result.response;
   } catch {
     throw new AIError(
       "NETWORK_ERROR",
@@ -178,8 +187,12 @@ export async function callAIConsultation(
   if (error) {
     const msg = error.message ?? "";
 
-    // Edge Function が返したエラー本文を取り出す
-    const errData = (data as Record<string, unknown> | null);
+    // Edge Function が返したエラー本文を取り出す。data が既にある（テスト等での後方互換
+    // ケース）ときはそれを使い、無いとき（＝実際の非2xx応答）は response の本文を読む
+    // （invokeAI.ts の buildInvokeErrorMessage と同じ判断）。
+    const { status: httpStatus, body: errData, rawText } = data
+      ? { status: undefined as number | undefined, body: data as unknown as EdgeErrorBody, rawText: undefined as string | undefined }
+      : await readEdgeErrorPayload(response);
 
     // Edge Function 自身のレート制限（1分あたり上限超過）
     if (errData && errData.error === "RATE_LIMIT_EXCEEDED") {
@@ -218,7 +231,20 @@ export async function callAIConsultation(
     if (msg.includes("429") || msg.includes("rate")) {
       throw new AIError("RATE_LIMIT", "リクエストが多すぎます。しばらく待ってから再試行してください。");
     }
-    throw new AIError("NETWORK_ERROR", `通信エラー: ${msg}`);
+
+    // 添付ファイルが大きすぎてゲートウェイ等に弾かれたケース（413）。ANTHROPIC_ERROR等の
+    // 既知の形にも401/429の文言にも一致しない残りをここでステータス・生テキストで拾う
+    // （汎用文言だけで終わらせない。CLAUDE.md Section 15）。
+    if (httpStatus === 413) {
+      throw new AIError(
+        "NETWORK_ERROR",
+        `添付ファイルが大きすぎます (${httpStatus})。ページ数を絞るか、テキストを貼り付けてお試しください。`,
+      );
+    }
+
+    const statusSuffix = httpStatus ? ` (${httpStatus})` : "";
+    const snippet = rawText && rawText.trim() ? `: ${rawText.trim().slice(0, 300)}` : "";
+    throw new AIError("NETWORK_ERROR", `通信エラー${statusSuffix}${msg ? `: ${msg}` : ""}${snippet}`);
   }
 
   if (!data || !data.content || !data.content[0]?.text) {

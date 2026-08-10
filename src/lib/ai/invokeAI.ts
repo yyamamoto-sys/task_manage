@@ -2,7 +2,10 @@
 //
 // 【設計意図】
 // supabase.functions.invoke("ai-consult") の共通ラッパー。AI 呼び出しの唯一のゲート。
-// non-2xx時に data に格納されたEdge Function側の詳細エラーを取り出してスローする。
+// non-2xx時はEdge Function側が返した詳細エラー（{error,message,detail,status}）を
+// 取り出してスローする。本文の読み取り・組み立てロジックは edgeFunctionError.ts に
+// 集約している（data が null になる非2xx時にresponseの本文を読む必要があるため。詳細は
+// そのファイル冒頭コメント参照。CLAUDE.md Section 15）。
 //
 // 【AI連携（CLAUDE.md Section 6）】
 // 全ての AI 呼び出しはこの invokeAI() を経由する（直叩き禁止／APIキーは Edge Function 側のみ）。
@@ -39,6 +42,7 @@ import { ensureGuestAiSession } from "../supabase/guestAiAuth";
 import { recordGuestAiUse } from "../guestAiQuotaCounter";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../i18n";
+import { buildInvokeErrorMessage } from "./edgeFunctionError";
 
 // invokeAI/callAIConsultationはReactコンポーネント外の素の関数のためuseT()が使えない。
 // ErrorBoundary.tsx / FileAttachButton.tsxと同じ流儀でuseLangStore.getState()+translate()を直接呼ぶ。
@@ -76,40 +80,6 @@ export type AIMessageInput = {
   role: "user" | "assistant";
   content: string | ContentBlock[];
 };
-
-type EdgeErrorBody = {
-  error?: string;
-  status?: number;
-  detail?: string;
-  message?: string;
-};
-
-function extractEdgeError(data: unknown, fallback: string): string {
-  const d = data as EdgeErrorBody | null;
-  if (!d) return fallback;
-  if (d.error === "ANTHROPIC_ERROR") {
-    let msg = d.detail ?? "";
-    try { msg = JSON.parse(d.detail ?? "")?.error?.message ?? d.detail ?? ""; } catch { /* ignore */ }
-    const statusStr = d.status ? ` (${d.status})` : "";
-    return `Anthropic APIエラー${statusStr}: ${msg}`;
-  }
-  // Edge Function 側のユーザーごとのレート制限（apiClient.ts と同じ扱い。CLAUDE.md Section 18）
-  if (d.error === "RATE_LIMIT_EXCEEDED") {
-    return d.message ?? "1分あたりの利用上限に達しました。しばらくお待ちください。";
-  }
-  // ゲスト（サンプル閲覧）のAI利用回数制限（Phase 3・CLAUDE.md Section 23）。
-  // 個人（ブラウザ）別上限と全体（コストの天井）上限を区別して案内する。
-  if (d.error === "GUEST_DAILY_LIMIT_EXCEEDED" || d.error === "GUEST_GLOBAL_LIMIT_EXCEEDED") {
-    return d.message ?? fallback;
-  }
-  if (d.error === "GUEST_QUOTA_UNAVAILABLE") {
-    return d.message ?? "サンプルのAI利用を確認できませんでした。しばらくしてから再度お試しください。";
-  }
-  if (d.error === "API key not configured") return "Edge FunctionにAPIキーが設定されていません。Supabaseの環境変数を確認してください。";
-  if (d.error === "Unauthorized") return "認証エラー：ログインし直してください。";
-  if (d.error) return d.error;
-  return fallback;
-}
 
 export interface FileAttachment {
   fileName: string;
@@ -176,12 +146,15 @@ export async function invokeAI(
   }
   // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
   // 認証済みユーザーは既存どおりクライアント側でlogAIUsage()が記録するため未使用。
-  const { data, error } = await supabase.functions.invoke("ai-consult", {
+  const { data, error, response: httpResponse } = await supabase.functions.invoke("ai-consult", {
     body: { system, messages, max_tokens: maxTokens, intent },
   });
 
   if (error) {
-    throw new Error(extractEdgeError(data, error.message));
+    // 非2xx時、supabase-jsは data を null にし、Edge Functionが返した本文は response
+    // （Response）にしか入らない。data だけを見ると原因を全て捨てることになる
+    // （edgeFunctionError.ts 冒頭コメント参照）。
+    throw new Error(await buildInvokeErrorMessage(data, error, httpResponse));
   }
 
   const response = data as AIRawResponse;

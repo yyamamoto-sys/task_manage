@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.42
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.43
 #
-最終更新：2026-08-10（v3.42）
+最終更新：2026-08-10（v3.43）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1009,7 +1009,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.42）
+- 最終更新：2026-08-10（v3.43）
 
 ---
 
@@ -1218,6 +1218,24 @@ catch (e) {
 ### このルールは新規コードに必ず適用する
 
 既存コードもユーザー操作の起点（保存・削除・AI呼び出し等の catch）から順次 `formatErrorForUser` に置き換える。新規コードで `"エラーが発生しました"` 文字列を直接 setError しているのを見つけたら指摘・修正すること。
+
+### 【要注意】`supabase.functions.invoke()` の非2xxは `data` を見るだけでは原因が全部消える（2026-08-10発覚・v3.43で修正）
+
+`supabase.functions.invoke("ai-consult", ...)` が非2xxを返したとき、supabase-js は**`data` を必ず `null` にし**、Edge Function が返したレスポンス本文（`{ error, message, detail, status }`）は戻り値の **`response`**（`FunctionsHttpError` の場合は `Response` オブジェクト）にしか入らない。
+
+```typescript
+// ❌ 禁止：非2xx時は data が null になるため、Edge Function側の丁寧な分岐
+//   （ANTHROPIC_ERROR / RATE_LIMIT_EXCEEDED 等）に一切到達せず、常に汎用フォールバック
+//   文言に落ちる（実際にこれで数日ぶん原因が見えなくなった）。
+const { data, error } = await supabase.functions.invoke("ai-consult", { body });
+if (error) throw new Error(extractEdgeError(data, error.message)); // data は常にnull
+
+// ✅ 必須：response（Response）の本文を読む。data はテスト等での後方互換のときだけ使う
+const { data, error, response } = await supabase.functions.invoke("ai-consult", { body });
+if (error) throw new Error(await buildInvokeErrorMessage(data, error, response));
+```
+
+実装は `src/lib/ai/edgeFunctionError.ts`（`readEdgeErrorPayload` / `extractEdgeError` / `buildInvokeErrorMessage`）に集約されており、`invokeAI.ts` と `callAIConsultation`（`apiClient.ts`）の両方がこれを経由する。新しく `supabase.functions.invoke()` を直接呼ぶコードを書くときは、必ずこのモジュール（または同じ判断）を経由し、`data` だけでエラー本文を組み立てないこと。
 
 ---
 
@@ -1714,6 +1732,22 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **招待用部署の命名規則**：`id`は対象PJから決定的に導出（`'grp-invite-' || project_id`）。同じPJに複数回招待しても同じ部署を再利用する（`ON CONFLICT DO NOTHING`で idempotent）。
 - **appStoreには足さない**：招待は管理系機能で全員が起動時に読む必要が無い（個人OKRと同じ判断。Section 19）。
 - **Phase 2/3（未実装）**：発行UI（PJから招待）・管理画面の招待一覧・取り消し・ログイン画面の導線・`AccessDeniedScreen`からの導線。
+
+---
+
+## 26. AI呼び出しの非2xxエラーの原因が捨てられていたバグの修正（v3.43・2026-08-10）
+
+**症状**：OKRモード「Kintoneから取込」でPDFを解析しようとすると「AI解析に失敗しました Edge Function returned a non-2xx status code」しか出ず、Anthropic側の実際の理由（レート制限・過負荷・ゲートウェイのサイズ超過等）が一切見えなかった。
+
+**原因（Section 15末尾に要点を明記済み）**：`supabase.functions.invoke()` は非2xx時に `data` を必ず `null` にし、Edge Functionが返した本文（`{error, message, detail, status}`）は戻り値の `response`（`Response`オブジェクト）にしか入らない。`invokeAI.ts`/`apiClient.ts`はどちらも`data`だけを見ていたため、`ANTHROPIC_ERROR`/`RATE_LIMIT_EXCEEDED`/ゲスト回数制限等の丁寧な分岐が実際には一度も実行されず、常に汎用フォールバック文言に落ちていた。
+
+- **共通ロジックを`src/lib/ai/edgeFunctionError.ts`に集約**：`readEdgeErrorPayload()`（`response`から本文を読む。JSON化できなければ生テキストのまま保持。読み取り自体の失敗も例外を投げない）・`extractEdgeError()`（body/status/rawTextからユーザー向けメッセージを組み立てる純粋関数）・`buildInvokeErrorMessage()`（`invokeAI.ts`用の結合ヘルパー。`data`が既にある後方互換ケースはそれを使い、無いときだけ`response`を読む）。`apiClient.ts`（`callAIConsultation`）は`AIError`のコード分岐を保つため`readEdgeErrorPayload()`を直接使う形に揃えた（Section 16の例外経路だがこのバグは共通していたため同じ直し方にした）。
+- **HTTPステータスコードをメッセージに含める**（例「Anthropic APIエラー (529): overloaded_error」「(502): upstream connect error」）。原因の切り分けに直結する。
+- **本文がJSONでない・空でも汎用文言だけで終わらせない**：ステータスコードと生テキストの先頭300文字を必ず添える（Section 15の趣旨）。
+- **413（添付が大きすぎる）は専用の案内文**：「添付ファイルが大きすぎます (413)。ページ数を絞るか、テキストを貼り付けてお試しください。」
+- **送信前のサイズチェックは入れなかった**：Supabase Edge Functionsのリクエストボディサイズ上限は2026-08-10時点で公式ドキュメントに明記されておらず（`supabase.com/docs/guides/functions/limits`はメモリ・実行時間・関数バンドルサイズ等のみを記載）、GitHub上のSupabase側回答も「10MB」は関数バンドル自体の上限であり受信ペイロードの上限ではないことを確認した。根拠のある数値が調べきれなかったため、推測の厳しい閾値で機能を狭めることはせず、エラー時のメッセージ改善（413対応）のみに留めた。将来413が実際に観測されたら、その時点のステータスコード・レスポンス本文を根拠に閾値を検討する。
+- **`personalOkrImportExtractor.ts`の`max_tokens=16000`は確認のみ**：Edge Function側の`MAX_TOKENS_CAP`（16384）の範囲内であり原因ではないと判断し、変更していない。
+- **テスト**：`src/lib/ai/__tests__/edgeFunctionError.test.ts`（新規・23件）に加え、`invokeAI.test.ts`/`apiClient.test.ts`に実際のsupabase-js非2xx挙動（`data=null`＋`response`から読む経路）のテストを追加。既存テスト（`data`を直接モックする後方互換ケース）は変更せず全通過。
 
 ---
 
