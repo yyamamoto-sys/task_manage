@@ -4713,5 +4713,65 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #            WORKER_RESOURCE_LIMITに落ちる可能性が残る）。
 #      マイグレーション追加なし
 #
-# 最終更新：2026-08-10（v3.45）
+# v3.46 個人OKR取込のAI呼び出しを2回に分割（実行時間起因の546再発対策・2026-08-10）
+#      症状（v3.45の続き）：PDFのクライアント側テキスト抽出とmax_tokens=8192への引き下げの後
+#            も、山本さんが実データで取込を試したところ「テキストだけで抽出は行われた」
+#            （テキスト抽出自体は成功）が、しばらく時間が経った後に同じ546 WORKER_RESOURCE_
+#            LIMITになった。ペイロードのサイズではなく、個人四半期KR（最大8本×6本文欄）と
+#            月次計画・振り返り（最大8本×3か月×計画/振り返り両方）を1回の呼び出しで抽出して
+#            いたことによる生成時間の積み重ねが原因。546はペイロードサイズだけでなく1回の
+#            呼び出しの実行時間でも起きることが判明した（CLAUDE.md Section 19 ⑧新設）。
+#      対応：src/lib/ai/personalOkrImportExtractor.ts の抽出を2回の呼び出しに分割した。
+#            呼び出し1（extractPersonalOkrQuarterlyData）：資料の種類の判定
+#            （detected_doc_type）＋KR単位の基本情報（KR種別・ラベル・ウェイト・6本文欄）。
+#            常に実行する（月次振返り記録でも6本文欄は「KR_四半期OKRから転記」列に同じ内容が
+#            転記されているため、この呼び出しだけで拾える）。
+#            呼び出し2（extractPersonalOkrMonthlyData）：月次の計画・振り返り。呼び出し1が
+#            "monthly_review"と判定したときだけ実行する（四半期OKRのみの資料には月次情報が
+#            無いため呼ぶ意味が無く、呼び出しを1回減らせる）。呼び出し1自体が失敗したときは
+#            種別が分からないため保険的に実行する。
+#            マージは純粋関数 mergePersonalOkrImportResults(quarterly, monthly) に分離。
+#            source_label→label→同一インデックスの順で対応づける（両呼び出しは同じKintone
+#            画面を同じ順序で読むため、ラベル不一致でも位置で対応づく可能性が高い）。対応の
+#            見つからないmonthly側グループはデータを失わないよう末尾に追加する。
+#            片方の呼び出しが失敗しても、成功した方をそのまま確認画面に出す（全部やり直しに
+#            しない）。extractPersonalOkrImportData()のオーケストレーターが呼び出しごとに
+#            try/catchし、失敗した方はwarnings: string[]に理由を積んで返す（両方失敗した
+#            ときだけ例外を投げる）。PersonalOkrImportModal.tsxのレビュー画面に⚠️の警告
+#            ボックスとして表示する。
+#            max_tokensは8192のまま（分割で1回あたりの生成量が減るため足りる見込み）。
+#            進捗表示：onProgressコールバックで{current,total,label}
+#            （"1/2 個人KRを抽出中"→"2/2 月次計画を抽出中"→完了）を呼び出し元へ伝える。
+#            従来の時間ベースの演出（AIProgressLoader）から、実際の呼び出し完了状況を表す
+#            もの（SaveProgressLoaderを流用）に差し替えた（無言で長時間待たせないため）。
+#            モデル切替の余地を残した（既定は変えない）：invokeAI()にmodel引数（省略可）を
+#            追加し、Edge Function側のALLOWED_MODELS（claude-sonnet-4-6/claude-haiku-4-5）
+#            から指定できるようにした。personalOkrImportExtractor.tsのPERSONAL_OKR_IMPORT_
+#            MODEL定数（1箇所）が既定値（claude-sonnet-4-6）を持つ。呼び出し分割でも546が
+#            続く場合は、この定数をclaude-haiku-4-5に変えると生成が速くなる。
+#      新規ファイル：src/lib/personalOkr/importCharWarning.ts
+#            （isPersonalOkrImportTextTooLong・PERSONAL_OKR_IMPORT_CHAR_WARNING_
+#            THRESHOLD=20000の純粋関数）。添付から抽出した文字数（MAX_TEXT_CHARS=40000で
+#            切り詰めた後の実際に送信する文字数）が閾値を超えるかを判定する。20000字は
+#            「40000字の上限内でも546が再発した」という事実から安全側に倒した値（既存上限の
+#            半分）。PersonalOkrImportModal.tsxの解析実行前（入力欄）・解析成功後（レビュー
+#            画面）の両方に表示し続ける（今後の切り分けに使うため、コンソールログではなく
+#            画面に出す）。閾値超えは「量が多いため、四半期OKRと月次振返りを別々に取り込む
+#            ことをお勧めします」という行動が分かる警告文を添える。
+#      CLAUDE.md：Section 19 ⑧新設（546は実行時間でも起きる）・Section 28新設
+#            （本修正の詳細）。
+#      テスト：personalOkrImportExtractor.test.ts を分割後の構成に合わせて再構成（呼び出し
+#            1・2をそれぞれ独立にテスト＋mergePersonalOkrImportResultsの純粋関数テスト
+#            ＋オーケストレーターの呼び出し省略・進捗・部分失敗・全滅を検証）。新規
+#            importCharWarning.test.ts（閾値の境界値）。
+#            検証：`npx tsc --noEmit`エラー0／`npx vitest run`1133件全通過（1112件→1133件・
+#            +21件）／`npm run lint`変更ファイルに新規エラー0／`npm run build`成功
+#            （常時ロード経路のindexチャンクはgzip69.17→69.21kB。ほぼ変化なし）。
+#      既知の未解消リスク：呼び出し2（月次）自体がKR件数・月数の多い資料で単独でも546の
+#            リスクを持ち続ける（さらなる分割はしていない・今回の依頼範囲外）。
+#            OkrImportModal.tsx（グループOKR取込）・MeetingImportPanel.tsx（会議文字起こし
+#            取込）のPDF独自送信経路は引き続き対応範囲外（v3.45から継続）。
+#      マイグレーション追加なし
+#
+# 最終更新：2026-08-10（v3.46）
 

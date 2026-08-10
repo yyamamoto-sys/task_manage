@@ -25,26 +25,19 @@ import type {
 import { active } from "../../../lib/localData/localStore";
 import {
   extractPersonalOkrImportData, type PersonalOkrDocType, type PersonalOkrImportAnalysis,
+  type PersonalOkrImportProgress,
 } from "../../../lib/ai/personalOkrImportExtractor";
 import { mapKrKindHint, parseBandValue, parseWeightPct, parsePercentValue } from "../../../lib/personalOkr/importFieldParse";
 import { rankExistingPersonalKrMatches, rankGroupTfMatches, pickDefaultMapping } from "../../../lib/personalOkr/importMatch";
 import { buildImportApplyPlan, type ImportKrDraftInput, type ImportMonthDraftInput } from "../../../lib/personalOkr/importApplyPlan";
 import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
+import { isPersonalOkrImportTextTooLong } from "../../../lib/personalOkr/importCharWarning";
 import { FileAttachButton, FileDropZone } from "../../common/FileAttachButton";
 import { CustomSelect } from "../../common/CustomSelect";
-import { AIProgressLoader } from "../../common/AIProgressLoader";
 import { SaveProgressLoader } from "../../common/SaveProgressLoader";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import type { FileAttachment } from "../../../lib/ai/invokeAI";
-
-const IMPORT_PHASES = [
-  "PDF/テキストを読み込んでいます",
-  "資料の種類を判定しています",
-  "個人KRの構造を読み取っています",
-  "月次計画・振り返りを読み取っています",
-  "結果をまとめています",
-];
 
 const MAX_TEXT_CHARS = 40000;
 const NEW_KR_VALUE = "__new__";
@@ -154,6 +147,15 @@ export function PersonalOkrImportModal({
   const [quarter, setQuarter] = useState<Quarter>(defaultQuarter);
   const [krDrafts, setKrDrafts] = useState<KrDraft[]>([]);
 
+  // 呼び出しを2回に分けたことに伴う実進度（1/2 個人KRを抽出中／2/2 月次計画を抽出中）。
+  // 無言で長時間待たせないため、時間ベースの演出ではなく実際の呼び出し完了状況を表示する。
+  const [analyzeProgress, setAnalyzeProgress] = useState<PersonalOkrImportProgress>({ current: 0, total: 2, label: "解析を開始しています…" });
+  // 診断用：実際にAIへ送信したテキストの文字数（成功後もレビュー画面に出し続ける。今後の
+  // 546切り分けに使うため）。
+  const [analyzedCharCount, setAnalyzedCharCount] = useState<number | null>(null);
+  // 呼び出し1・2のどちらかが失敗したときの警告（両方成功時は空配列。全部やり直しにはしない）。
+  const [importWarnings, setImportWarnings] = useState<string[]>([]);
+
   const [saveProgress, setSaveProgress] = useState<{ current: number; total: number; label: string }>({ current: 0, total: 1, label: "" });
   const [applyResults, setApplyResults] = useState<{ krCount: number; monthCount: number } | null>(null);
 
@@ -198,12 +200,17 @@ export function PersonalOkrImportModal({
     const text = rawText.trim();
     if (!text && !attachment) return;
     setError(null);
+    setImportWarnings([]);
     setStep("analyzing");
+    const sentText = text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text;
+    setAnalyzedCharCount(sentText.length);
+    setAnalyzeProgress({ current: 0, total: 2, label: "解析を開始しています…" });
     try {
-      const result = await extractPersonalOkrImportData({
-        transcript: text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text,
-        attachment,
-      });
+      const result = await extractPersonalOkrImportData(
+        { transcript: sentText, attachment },
+        progress => setAnalyzeProgress(progress),
+      );
+      setImportWarnings(result.warnings);
       setDocType(result.detected_doc_type);
       if (result.fiscal_year) setFiscalYear(result.fiscal_year);
       if (result.quarter) setQuarter(result.quarter);
@@ -354,7 +361,7 @@ export function PersonalOkrImportModal({
 
   const handleReset = () => {
     setStep("input"); setRawText(""); setAttachment(null); setFileError(null); setError(null);
-    setKrDrafts([]); setApplyResults(null);
+    setKrDrafts([]); setApplyResults(null); setAnalyzedCharCount(null); setImportWarnings([]);
   };
 
   const charCount = rawText.trim().length;
@@ -413,6 +420,7 @@ export function PersonalOkrImportModal({
                   rows={10}
                   style={{ width: "100%", padding: "10px 12px", fontSize: "12px", fontFamily: "monospace", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)", resize: "vertical", lineHeight: 1.6, boxSizing: "border-box" }}
                 />
+                {charCount > 0 && <CharCountNotice charCount={charCount} />}
               </div>
 
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "10px 12px", lineHeight: 1.7 }}>
@@ -425,7 +433,12 @@ export function PersonalOkrImportModal({
             </div>
           )}
 
-          {step === "analyzing" && <AIProgressLoader phases={IMPORT_PHASES} intervalMs={4200} />}
+          {step === "analyzing" && (
+            <SaveProgressLoader
+              current={analyzeProgress.current} total={analyzeProgress.total} label={analyzeProgress.label}
+              title="個人OKRを解析しています"
+            />
+          )}
 
           {step === "review" && (
             <ReviewStep
@@ -437,6 +450,7 @@ export function PersonalOkrImportModal({
               krsInGroup={krsInGroup} tfsInGroup={tfsInGroup}
               error={error} checkedKrCount={checkedKrCount} checkedMonthCount={checkedMonthCount}
               hasAnything={hasAnything} onApply={handleApply}
+              analyzedCharCount={analyzedCharCount} warnings={importWarnings}
             />
           )}
 
@@ -468,6 +482,7 @@ function ReviewStep({
   docType, setDocType, fiscalYear, setFiscalYear, quarter, setQuarter,
   krDrafts, updateKr, updateMonth, existingKrsInPeriod, krsInGroup, tfsInGroup,
   error, checkedKrCount, checkedMonthCount, hasAnything, onApply,
+  analyzedCharCount, warnings,
 }: {
   docType: PersonalOkrDocType; setDocType: (t: PersonalOkrDocType) => void;
   fiscalYear: number; setFiscalYear: (n: number) => void;
@@ -479,9 +494,12 @@ function ReviewStep({
   krsInGroup: KeyResult[]; tfsInGroup: TaskForce[];
   error: string | null; checkedKrCount: number; checkedMonthCount: number; hasAnything: boolean;
   onApply: () => void;
+  analyzedCharCount: number | null; warnings: string[];
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+      {analyzedCharCount != null && <CharCountNotice charCount={analyzedCharCount} />}
+      {warnings.map((w, i) => <WarningBox key={i} message={w} />)}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "10px 12px" }}>
         <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
           {docType === "quarterly" ? "🤖 個人四半期OKRとして読み取りました" : "🤖 個人月次振返り（計画・振り返り）として読み取りました"}
@@ -794,6 +812,26 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 function ErrorBox({ message }: { message: string }) {
   return <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{message}</div>;
+}
+
+/** 診断用：抽出文字数の表示（解析実行前・成功後の両方で使う）。閾値超えは行動が分かる警告文を添える。 */
+function CharCountNotice({ charCount }: { charCount: number }) {
+  const tooLong = isPersonalOkrImportTextTooLong(charCount);
+  return (
+    <div style={{ fontSize: "10.5px", color: tooLong ? "var(--color-text-danger)" : "var(--color-text-tertiary)", marginTop: "6px" }}>
+      抽出できた文字数：{charCount.toLocaleString("ja-JP")}字
+      {tooLong && "　⚠️ 量が多いため、四半期OKRと月次振返りを別々に取り込むことをお勧めします"}
+    </div>
+  );
+}
+
+/** 呼び出し1・2のどちらかが失敗したときの非致命的な警告（赤いErrorBoxとは区別する）。 */
+function WarningBox({ message }: { message: string }) {
+  return (
+    <div style={{ fontSize: "12px", color: "#92400e", background: "#fef3c7", border: "1px solid #fde68a", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+      ⚠️ {message}
+    </div>
+  );
 }
 
 const inputStyle: React.CSSProperties = {

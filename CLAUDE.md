@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.45
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.46
 #
-最終更新：2026-08-10（v3.45）
+最終更新：2026-08-10（v3.46）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1022,7 +1022,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.45）
+- 最終更新：2026-08-10（v3.46）
 
 ---
 
@@ -1496,6 +1496,17 @@ OKRモード「Kintoneから取込」で670KBのPDFを解析すると、Supabase
 
 **新しいAI機能で大きな添付を扱うときの`max_tokens`の目安はSection 6-1c参照。**
 
+### ⑧ 546はペイロードのサイズだけでなく「1回の呼び出しの実行時間」でも起きる（v3.46・2026-08-10）
+
+⑦の対応（PDFのクライアント側テキスト抽出・v3.45）でペイロードサイズの問題を解消した後も、
+`personalOkrImportExtractor.ts`で同じ`546 WORKER_RESOURCE_LIMIT`が再発した（テキスト抽出自体は
+成功していた）。**Supabase Edge Functionのワーカーは、送信データが軽くても、1回の呼び出しの
+生成（Anthropic APIからの応答待ち＋処理）に時間がかかりすぎるとリソース上限で落ちる。**
+「ペイロードを軽くすれば直る」という⑦の理解だけでは不十分で、**大きな抽出を複数回の呼び出しに
+分割するのが唯一の解**（Section 28参照。個人四半期KRと月次計画・振り返りを別呼び出しにした）。
+新しく大きな構造化抽出を実装するときは、添付の軽量化（⑦）と呼び出しの分割（本項）の両方を
+検討すること。
+
 ---
 
 ## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化、v3.35でchoke point化）
@@ -1825,6 +1836,25 @@ Phase 1のマイグレーションには取り消し用のRPCが含まれてい�
 - **DLゲート（Section 19 ③）は今回のPDFチャンクには自動適用されない**：`withChunkDownloadGate()`は`MainLayout.tsx`が登録するReact.lazyビュー専用の仕組みで、`FileAttachButton.tsx`内の素の`import("../../lib/pdfText")`（イベントハンドラ内の動的import）はこの仕組みの対象外。今回は実測gzip 127.38KB（閾値200KB未満）のため実害は無いが、将来pdfjs-distが育って閾値を超えた場合は、この動的import経路に個別のゲート対応を追加検討すること。
 
 ⚠️ **既知の未解消リスク（Section 19 ⑦にも記載）**：`OkrImportModal.tsx`（グループOKR取込）と`MeetingImportPanel.tsx`（会議文字起こし取込）は、`FileAttachButton.tsx`を使わずPDFをbase64のdocumentブロックとして直接送る独自実装を持っており、今回の対応範囲外。十分大きなPDFで同じ`WORKER_RESOURCE_LIMIT`に落ちる可能性が残っている。
+
+---
+
+## 28. 個人OKR取込のAI呼び出しを2回に分割（実行時間起因の546再発対策・v3.46・2026-08-10）
+
+**症状（Section 27の続き）**：v3.45でPDFのクライアント側テキスト抽出とmax_tokens=8192への引き下げを行った後も、山本さんが実データで取込を試したところ「テキストだけで抽出は行われた」（テキスト抽出自体は成功）が、**しばらく時間が経った後に同じ546 WORKER_RESOURCE_LIMIT**になった。ペイロードのサイズではなく、個人四半期KR（最大8本×6本文欄）と月次計画・振り返り（最大8本×3か月×計画/振り返り両方）を**1回の呼び出しで抽出していたことによる生成時間の積み重ね**が原因（Section 19 ⑧）。
+
+**対応：抽出を2回の呼び出しに分割した**（`src/lib/ai/personalOkrImportExtractor.ts`）。
+
+- **呼び出し1（`extractPersonalOkrQuarterlyData`）**：資料の種類の判定（`detected_doc_type`）＋KR単位の基本情報（KR種別・ラベル・ウェイト・6本文欄）。**常に実行する**（月次振返り記録でも6本文欄は「KR_四半期OKRから転記」列に同じ内容が転記されているため、この呼び出しだけで拾える）。
+- **呼び出し2（`extractPersonalOkrMonthlyData`）**：月次の計画・振り返り。呼び出し1の`detected_doc_type`が`"monthly_review"`のときだけ実行する（四半期OKRのみの資料には月次情報が無いため呼ぶ意味が無く、呼び出しを1回減らせる）。呼び出し1自体が失敗したときは種別が分からないため保険的に実行する。
+- **マージは純粋関数に分離**：`mergePersonalOkrImportResults(quarterly, monthly)`が、`source_label`→`label`→同一インデックスの順でKRと月次データを対応づける（両呼び出しは同じKintone画面を同じ順序で読むため、ラベルが一致しなくても位置で対応づけられる可能性が高い）。対応が見つからないmonthly側のグループはデータを失わないよう末尾に追加する。
+- **片方が失敗しても、成功した方をそのまま確認画面に出す**（全部やり直しにしない）。`extractPersonalOkrImportData()`のオーケストレーターが呼び出しごとにtry/catchし、失敗した方は`warnings: string[]`に理由を積んで返す（両方失敗したときだけ例外を投げる）。`PersonalOkrImportModal.tsx`のレビュー画面に⚠️の警告ボックスとして表示する。
+- **max_tokensは8192のまま**（分割で1回あたりの生成量が減るため足りる見込み。Section 6-1c）。
+- **進捗表示**：`onProgress`コールバックで`{current, total, label}`（"1/2 個人KRを抽出中"→"2/2 月次計画を抽出中"→完了）を呼び出し元へ伝える。従来の時間ベースの演出（`AIProgressLoader`）から、実際の呼び出し完了状況を表すもの（`SaveProgressLoader`を流用）に差し替えた（無言で長時間待たせないため）。
+- **モデル切替の余地を残した（既定は変えない）**：`invokeAI()`に`model`引数（省略可）を追加し、Edge Function側の`ALLOWED_MODELS`（`claude-sonnet-4-6`/`claude-haiku-4-5`）から指定できるようにした。`personalOkrImportExtractor.ts`の`PERSONAL_OKR_IMPORT_MODEL`定数（1箇所）が既定値（`claude-sonnet-4-6`）を持つ。呼び出し分割でも546が続く場合は、この定数を`"claude-haiku-4-5"`に変えると生成が速くなる（コメントに明記済み）。
+- **抽出文字数を画面に出す（診断・事前警告）**：`src/lib/personalOkr/importCharWarning.ts`の`isPersonalOkrImportTextTooLong()`（純粋関数）が、入力欄・添付から抽出した文字数（`MAX_TEXT_CHARS=40000`で切り詰めた後の実際に送信する文字数）が20000字を超えるかを判定する。20000字は「40000字の上限内でも546が再発した」という事実から安全側に倒した値（既存上限の半分。根拠は同ファイル冒頭コメント）。解析実行前（入力欄）・解析成功後（レビュー画面）の両方に表示し続ける（今後の切り分けに使うため、コンソールログではなく画面に出す）。閾値超えは「量が多いため、四半期OKRと月次振返りを別々に取り込むことをお勧めします」という行動が分かる警告文を添える。
+- **テスト**：`personalOkrImportExtractor.test.ts`を分割後の構成に合わせて再構成（呼び出し1・2をそれぞれ独立にテスト＋`mergePersonalOkrImportResults`の純粋関数テスト＋オーケストレーターの呼び出し省略・進捗・部分失敗・全滅を検証）。新規`importCharWarning.test.ts`（閾値の境界値）。
+- **やらないこと**：Edge Function自体のストリーミング化（対象外）。`OkrImportModal.tsx`／`MeetingImportPanel.tsx`の独自PDF送信経路（Section 19 ⑦の既知リスクのまま・別途）。
 
 ---
 

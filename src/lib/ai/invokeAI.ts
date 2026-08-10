@@ -123,12 +123,18 @@ export function getContentText(content: string | ContentBlock[]): string {
 /**
  * AI を呼び出す唯一のゲート。intent パラメータで呼び出し元が
  * AI 境界ルールを意識していることを表明する（CLAUDE.md Section 6）。
+ *
+ * model は省略可（未指定はEdge Function側の既定=DEFAULT_MODEL="claude-sonnet-4-6"）。
+ * Edge Function の ALLOWED_MODELS に含まれるモデルIDのみ有効（それ以外は無視されて既定に
+ * フォールバックする）。546 WORKER_RESOURCE_LIMIT対策等で個別機能だけ軽いモデルに切り替える
+ * ための引数（personalOkrImportExtractor.ts参照。CLAUDE.md Section 6-1c）。
  */
 export async function invokeAI(
   system: string,
   messages: AIMessageInput[],
   maxTokens: number,
   intent: AIIntent,
+  model?: string,
 ): Promise<AIRawResponse> {
   // ゲスト（サンプル閲覧）は初めてAIを使うときだけ匿名セッションを遅延生成する（Phase 3・
   // CLAUDE.md Section 23）。回数制限・実際のゲスト判定はEdge Function側（JWTの
@@ -154,7 +160,7 @@ export async function invokeAI(
   // intent はゲスト分の利用ログ記録にEdge Function側で使う（Section 23）。
   // 認証済みユーザーは既存どおりクライアント側でlogAIUsage()が記録するため未使用。
   const { data, error, response: httpResponse } = await supabase.functions.invoke("ai-consult", {
-    body: { system, messages, max_tokens: maxTokens, intent },
+    body: { system, messages, max_tokens: maxTokens, intent, ...(model ? { model } : {}) },
   });
 
   if (error) {
