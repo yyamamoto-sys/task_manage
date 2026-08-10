@@ -68,6 +68,13 @@ export type AIIntent =
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];
   usage?: { input_tokens: number; output_tokens: number };
+  /**
+   * Anthropicの終了理由（"end_turn"|"max_tokens"等）。Edge Functionは成功時のレスポンス本文を
+   * そのまま素通ししているため、data には元から含まれている（apiClient.ts の
+   * AnthropicResponse.stop_reason と同じフィールド）。出力切れの検知に使う
+   * （CLAUDE.md Section 6-1b・personalOkrImportExtractor.ts参照）。
+   */
+  stop_reason?: string;
 }
 
 // マルチモーダルコンテンツブロック（PDF・画像・テキストファイル添付用）

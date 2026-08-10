@@ -4652,5 +4652,66 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      要手動作業：supabase/migrations/20260810b_add_revoke_project_invite.sqlの手動適用
 #            （Phase 1本体=20260810_add_project_invites.sqlは既に適用済み）
 #
-# 最終更新：2026-08-10（v3.44）
+# v3.45 PDF添付でEdge Functionが落ちる問題の修正・PDFのクライアント側テキスト抽出（2026-08-10）
+#      症状：OKRモード「Kintoneから取込」で670KBのPDFを解析すると、Edge Functionが
+#            546 WORKER_RESOURCE_LIMIT（Function failed due to not having enough
+#            compute resources）で落ちる（v3.43でエラー本文が読めるようになって判明）。
+#      原因1：personalOkrImportExtractor.tsのmax_tokensが16000（実績のある
+#            okrImportExtractor.tsは8192）。v3.43時点では「Cap16384の範囲内で原因では
+#            ない」と判断していたが、実際にはこの値とPDF添付の合算が原因だった。
+#      原因2：PDFをbase64（670KB→約894KB）でEdge Functionへ送っていた。req.json()での
+#            パース＋JSON.stringifyでの再構築で複数コピーがメモリに載る。Supabaseは
+#            関数ごとにメモリ/CPU上限を上げられないため、送る側を軽くするのが唯一の解。
+#      対応1：personalOkrImportExtractor.tsのmax_tokensを16000→8192に変更（初回・自己修正
+#            リトライ両方）。invokeAI.tsのAIRawResponseにstop_reasonを追加し、
+#            stop_reason==="max_tokens"のときはJSONパースを試みる前に「抽出結果が長すぎて
+#            途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。」という
+#            明示的なエラーにした（consultationRunner.tsの先例と同じ方針。リトライしない）。
+#      対応2：pdfjs-dist(6.2.108・キャレット無し固定)を新規導入し、PDFをクライアント側で
+#            テキスト抽出してからテキスト添付として渡す（docxText.tsと同じ形）。
+#            新規ファイル：src/lib/pdfTextFormat.ts（pdfjs-dist非依存の純粋関数。
+#            isPdfFile/normalizePdfText/pageItemsToText/isBlankExtractedText/
+#            PDF_EMPTY_TEXT_MESSAGE）・src/lib/pdfText.ts（pdfjs-distを使うextractPdfText。
+#            前者を再export）・src/lib/fileAttachMediaType.ts（FileAttachButton.tsxの
+#            resolveMediaType/isSupportedMediaTypeを切り出し）。
+#      セキュリティ対処（承認条件）：①isEvalSupported:falseを明示（6.2.108では型・実装
+#            ともにこのオプション自体が削除済み・evalコード自体が無いことをgrep確認済みで、
+#            フラグより強い形で解決済み。将来の巻き戻しに備え型を拡張して防御的に指定は残す）
+#            ②worker(?url明示importで同一origin配信)・cmap・標準フォント(vite.config.tsの
+#            ensurePdfjsAssets()がnode_modulesからpublic/pdfjs/へコピー)を全てローカルに
+#            バンドルし外部URLへのリクエストを無くす(dist全体をunpkg/jsdelivr/cdn./
+#            mozilla.github/cdnjsでgrepし0件・pdfTextチャンクのコードを直接読んで
+#            /pdfjs/...・assets/pdf.worker-*.mjsという相対パスであることを確認済み)
+#            ③package.jsonでバージョン固定。
+#      @napi-rs/canvas対策：pdfjs-distのoptionalDependency（Node用画像化バイナリ12種）。
+#            npm install --omit=optionalで一度除外したところ、Rollupの必須ネイティブ
+#            バイナリまで一緒に除外されvite buildが壊れる副作用があったため、package.jsonに
+#            overrides: {"@napi-rs/canvas": "npm:@napi-rs/canvas-do-not-install@0.0.0"}を
+#            追加し存在しない偽パッケージへ解決させることで@napi-rs/canvasだけを除外した。
+#      FileAttachButton.tsx：PDFを.docx/.htmlと同じ専用抽出→テキスト添付（isText:true）に
+#            統一。DOC_MEDIA_TYPES（application/pdfのみ）を削除。lib/pdfText.tsは
+#            FileAttachButton.tsx側からのみ動的import（PDFを添付しない人はDLしない）。
+#      personalOkrImportExtractor.tsのシステムプロンプトに「入力はPDFそのものではなく
+#            レイアウト情報を失ったテキスト」の注記を追加（既存の角括弧表記優先の設計は
+#            大きな変更不要）。
+#      CLAUDE.md：Section 6-1c（max_tokensの目安）新設・Section19⑦（base64添付とワーカー
+#            上限の関係）新設・新規Section 27に本修正の詳細を記載。
+#      テスト：新規2ファイル・24件追加（pdfTextFormat.test.ts 16件・fileAttachMediaType.
+#            test.ts 8件）＋personalOkrImportExtractor.test.tsにmax_tokens/stop_reason関連
+#            5件追加。PDF本体のパース自体はライブラリ依存・vitestがenvironment:"node"の
+#            ため実PDFを読むテストは作らず、pdfjs-dist非依存の純粋関数のみをテストした。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1112件全通過（1083件→1112件・
+#            +29件）／`npm run lint`変更ファイルに新規エラー0／`npm run build`成功。
+#            常時ロード経路（メインindexチャンク）はgzip69.16→69.17kB（+0.01kB。実質
+#            変化なし）。新規pdfTextチャンクはgzip127.38kB（閾値200KB未満のためDL確認
+#            ゲート未発火）。ただしSection19③のDLゲートはMainLayout.tsxのReact.lazy
+#            ビュー専用の仕組みで、FileAttachButton.tsx内の素の動的importは元々この
+#            仕組みの対象外（将来育った場合は個別対応を検討）。
+#      既知の未解消リスク：OkrImportModal.tsx（グループOKR取込）・MeetingImportPanel.tsx
+#            （会議文字起こし取込）はFileAttachButton.tsxを使わずPDFをbase64のdocument
+#            ブロックとして直接送る独自実装を持ち、今回の対応範囲外（十分大きなPDFで同じ
+#            WORKER_RESOURCE_LIMITに落ちる可能性が残る）。
+#      マイグレーション追加なし
+#
+# 最終更新：2026-08-10（v3.45）
 

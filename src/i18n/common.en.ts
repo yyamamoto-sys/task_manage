@@ -59,6 +59,7 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.fileAttach.removeTitle": "Remove attachment",
   "common.fileAttach.docxFailed": "Failed to read the Word file.",
   "common.fileAttach.htmlFailed": "Failed to read the HTML file.",
+  "common.fileAttach.pdfFailed": "Failed to read the PDF file.",
   "common.fileAttach.unsupported": "Unsupported file type.\nSupported: PDF / Word (.docx) / Images (PNG, JPG, WebP, GIF) / Text (TXT, MD, CSV, HTML)",
   "common.fileAttach.dropHint": "📎 Drop file to attach",
 

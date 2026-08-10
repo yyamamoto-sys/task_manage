@@ -70,6 +70,7 @@ export const commonJa = {
   "common.fileAttach.removeTitle": "添付を解除",
   "common.fileAttach.docxFailed": "Wordファイルの読み込みに失敗しました。",
   "common.fileAttach.htmlFailed": "HTMLファイルの読み込みに失敗しました。",
+  "common.fileAttach.pdfFailed": "PDFファイルの読み込みに失敗しました。",
   "common.fileAttach.unsupported": "非対応の形式です。\n対応: PDF / Word(.docx) / 画像(PNG・JPG・WebP・GIF) / テキスト(TXT・MD・CSV・HTML)",
   "common.fileAttach.dropHint": "📎 ファイルをドロップして添付",
 

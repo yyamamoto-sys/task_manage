@@ -8,14 +8,15 @@ import { useRef, useState } from "react";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { extractDocxText, isDocxFile } from "../../lib/docxText";
 import { extractHtmlText, isHtmlFile } from "../../lib/htmlText";
+import { isPdfFile } from "../../lib/pdfTextFormat";
+import { resolveMediaType, isSupportedMediaType, TEXT_MEDIA_TYPES } from "../../lib/fileAttachMediaType";
 import { useT } from "../../hooks/useT";
 import { useLangStore } from "../../stores/langStore";
 import { translate } from "../../lib/i18n";
 
-// 【設計意図】processFileAttachment/resolveMediaType/isSupportedはコンポーネント外の
-// 素の関数（drag&dropハンドラからも呼ぶため）でuseT()フックが使えない。
-// alert()文言のみ useLangStore.getState().lang + translate() を直接呼ぶ
-// （ErrorBoundary.tsxと同じ考え方）。
+// 【設計意図】processFileAttachmentはコンポーネント外の素の関数（drag&dropハンドラからも
+// 呼ぶため）でuseT()フックが使えない。alert()文言のみ useLangStore.getState().lang +
+// translate() を直接呼ぶ（ErrorBoundary.tsxと同じ考え方）。
 function tOutside(key: string): string {
   return translate(useLangStore.getState().lang, key);
 }
@@ -23,9 +24,6 @@ function tOutside(key: string): string {
 export type { FileAttachment };
 
 const ACCEPT_TYPES = ".pdf,.docx,.png,.jpg,.jpeg,.webp,.gif,.txt,.md,.csv,.html,.htm";
-const TEXT_MEDIA_TYPES = ["text/plain", "text/markdown", "text/csv", "text/html"];
-const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"];
-const DOC_MEDIA_TYPES = ["application/pdf"];
 
 function processFileAttachment(file: File, onAttach: (att: FileAttachment) => void) {
   // Word(.docx)：Anthropic API は直接読めないのでクライアント側で本文テキストを抽出し、テキスト添付として渡す
@@ -42,8 +40,21 @@ function processFileAttachment(file: File, onAttach: (att: FileAttachment) => vo
       .catch((e: unknown) => alert(e instanceof Error ? e.message : tOutside("common.fileAttach.htmlFailed")));
     return;
   }
+  // PDF：base64のdocumentブロックとしてAI（Edge Function）に送ると、大きなPDFでワーカーが
+  // リソース上限で落ちる事故が起きたため（CLAUDE.md Section 19）、.docx/.htmlと同じく
+  // クライアント側でテキスト抽出してからテキスト添付として渡す。isPdfFile自体は
+  // pdfTextFormat.tsの純粋関数（pdfjs-dist非依存）で判定し、実際の抽出処理（pdfjs-distを
+  // 抱えるlib/pdfText.ts）はPDFと判定できたときだけ動的importする（Section 19。PDFを
+  // 一度も添付しない人がこのチャンクをダウンロードしないようにするのが肝）。
+  if (isPdfFile(file)) {
+    import("../../lib/pdfText")
+      .then(({ extractPdfText }) => extractPdfText(file))
+      .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
+      .catch((e: unknown) => alert(e instanceof Error ? e.message : tOutside("common.fileAttach.pdfFailed")));
+    return;
+  }
   const mediaType = resolveMediaType(file);
-  if (!isSupported(mediaType)) {
+  if (!isSupportedMediaType(mediaType)) {
     alert(tOutside("common.fileAttach.unsupported"));
     return;
   }
@@ -63,26 +74,6 @@ function processFileAttachment(file: File, onAttach: (att: FileAttachment) => vo
     };
     reader.readAsDataURL(file);
   }
-}
-
-function resolveMediaType(file: File): string {
-  if (file.type) return file.type;
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  const map: Record<string, string> = {
-    md: "text/markdown", csv: "text/csv", txt: "text/plain", html: "text/html",
-    pdf: "application/pdf",
-    png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
-    webp: "image/webp", gif: "image/gif",
-  };
-  return map[ext] ?? "";
-}
-
-function isSupported(mediaType: string): boolean {
-  return (
-    TEXT_MEDIA_TYPES.includes(mediaType) ||
-    IMAGE_MEDIA_TYPES.includes(mediaType) ||
-    DOC_MEDIA_TYPES.includes(mediaType)
-  );
 }
 
 interface Props {

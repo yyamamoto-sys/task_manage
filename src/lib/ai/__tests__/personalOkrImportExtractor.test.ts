@@ -106,6 +106,59 @@ describe("extractPersonalOkrImportData — 四半期OKR（quarterly）", () => {
     expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
     expect(result.krs[0].label).toBe("AAS");
   });
+
+  it("max_tokensは8192で送る（okrImportExtractor.tsと同じ値。16000だとPDF併用時にワーカーが落ちる実例あり）", async () => {
+    mockedInvokeAI.mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
+    await extractPersonalOkrImportData({ transcript: "x" });
+    expect(mockedInvokeAI.mock.calls[0][2]).toBe(8192);
+  });
+
+  it("リトライ時もmax_tokensは8192のまま（初回と変えない）", async () => {
+    mockedInvokeAI
+      .mockResolvedValueOnce({ content: [{ type: "text" as const, text: '{ "krs": [ { "label": "壊れた' }] })
+      .mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
+    await extractPersonalOkrImportData({ transcript: "x" });
+    expect(mockedInvokeAI.mock.calls[1][2]).toBe(8192);
+  });
+});
+
+describe("extractPersonalOkrImportData — stop_reason=max_tokens（出力の途中切れ）", () => {
+  it("初回呼び出しでstop_reason=max_tokensならJSONパースを試みずに分かりやすいエラーを投げる", async () => {
+    mockedInvokeAI.mockResolvedValueOnce({
+      content: [{ type: "text" as const, text: '{ "krs": [ { "label": "途中で切れ' }],
+      stop_reason: "max_tokens",
+    });
+    await expect(extractPersonalOkrImportData({ transcript: "x" })).rejects.toThrow(
+      "抽出結果が長すぎて途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。",
+    );
+    // リトライは行わない（同じ長さの壁にぶつかるだけなので1回のみで諦める）
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(1);
+  });
+
+  it("stop_reason=max_tokensでもパースに成功する場合は誤検知しない", async () => {
+    mockedInvokeAI.mockResolvedValueOnce({
+      ...aiText(QUARTERLY_PAYLOAD),
+      stop_reason: "end_turn",
+    });
+    const result = await extractPersonalOkrImportData({ transcript: "x" });
+    expect(result.krs[0].label).toBe("AAS");
+  });
+
+  it("リトライ（自己修正）2回目でstop_reason=max_tokensになった場合もエラーにする", async () => {
+    mockedInvokeAI
+      .mockResolvedValueOnce({
+        content: [{ type: "text" as const, text: '{ "krs": [ { "label": "壊れた' }],
+        stop_reason: "end_turn",
+      })
+      .mockResolvedValueOnce({
+        content: [{ type: "text" as const, text: '{ "krs": [ { "label": "リトライも切れ' }],
+        stop_reason: "max_tokens",
+      });
+    await expect(extractPersonalOkrImportData({ transcript: "x" })).rejects.toThrow(
+      "抽出結果が長すぎて途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。",
+    );
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
+  });
 });
 
 describe("extractPersonalOkrImportData — 月次振返り（monthly_review）", () => {

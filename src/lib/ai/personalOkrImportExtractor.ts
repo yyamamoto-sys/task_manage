@@ -75,8 +75,14 @@ export interface PersonalOkrImportAnalysis {
 // ===== システムプロンプト =====
 
 const SYSTEM_PROMPT = `あなたはKintoneの「個人OKR設定フォーム」（個人四半期KR）または
-「個人OKR_月次振返り記録」（個人月次計画・振り返り）の画面PDF・テキストを解析し、
+「個人OKR_月次振返り記録」（個人月次計画・振り返り）の画面をテキストとして解析し、
 タスク管理アプリの個人OKR構造に変換するAIです。
+
+【⚠️入力はPDFそのものではなく、レイアウト情報を失ったテキストです】
+PDFが添付されている場合も、実際に渡されるのはクライアント側で抽出した本文テキストです
+（画像・色・表の線・厳密な行列位置は失われており、行の順序や列の対応がずれて渡ってくることが
+あります）。位置関係（「この位置にあるから計画欄」等）ではなく、見出し語・ラベル文言
+（「1か月目」「振り返り」「[自己評価：]」等）を根拠に判断してください。
 
 【最初にやること：資料の種類を判定する】
 - タイトルが「個人OKR設定フォーム」で「個人KR_1」「個人KR_1_ウェイト」等の欄が中心 → "quarterly"
@@ -296,6 +302,16 @@ export function validatePersonalOkrImportAnalysis(data: unknown): PersonalOkrImp
   return { detected_doc_type: docType, fiscal_year: fiscalYear, quarter, krs };
 }
 
+// max_tokens=8192（okrImportExtractor.tsと同じ値）。以前は16000だったが、PDFを添付した
+// リクエストでEdge Functionのワーカーがリソース上限（546 WORKER_RESOURCE_LIMIT）で落ちる
+// 事故が起きたため引き下げた（2026-08-10。CLAUDE.md Section 19参照。原因はmax_tokensの
+// 大きさそのものではなくPDF添付との合算だが、実績のあるokrImportExtractor.tsに揃えておく）。
+const MAX_TOKENS_PERSONAL_OKR_IMPORT = 8192;
+
+/** stop_reason==="max_tokens"（出力上限で途中切れ）のときにユーザーへ示す案内。 */
+const TRUNCATED_PERSONAL_OKR_IMPORT_MESSAGE =
+  "抽出結果が長すぎて途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。";
+
 export async function extractPersonalOkrImportData(
   params: ExtractPersonalOkrImportParams,
 ): Promise<PersonalOkrImportAnalysis> {
@@ -303,9 +319,13 @@ export async function extractPersonalOkrImportData(
     || (params.attachment ? `（添付ファイル「${params.attachment.fileName}」をKintoneの個人OKR画面PDFとして参照してください）` : "");
 
   const content = buildMessageContent(userMessage, params.attachment ?? null);
-  // 月次振返り記録は最大8KR×3か月×計画/振り返りと情報量が多いため、出力切れを避けるため
-  // max_tokensを広めに取る（Edge Function側の上限は16384。CLAUDE.md Section 18）。
-  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 16000, "okr-personal-import");
+  const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], MAX_TOKENS_PERSONAL_OKR_IMPORT, "okr-personal-import");
+  // 出力切れ（max_tokens）はリトライしても同じ長さの壁にぶつかるだけなので、JSONパースを
+  // 試みる前に明示的なエラーにする（consultationRunner.tsと同じ方針。黙って壊れたJSONの
+  // パース失敗として扱わない）。
+  if (res.stop_reason === "max_tokens") {
+    throw new Error(TRUNCATED_PERSONAL_OKR_IMPORT_MESSAGE);
+  }
   const text = res.content[0].text;
 
   try {
@@ -324,7 +344,10 @@ export async function extractPersonalOkrImportData(
           `コードブロックや説明文は一切付けないこと。`,
       },
     ];
-    const retry = await invokeAI(SYSTEM_PROMPT, repairMessages, 16000, "okr-personal-import");
+    const retry = await invokeAI(SYSTEM_PROMPT, repairMessages, MAX_TOKENS_PERSONAL_OKR_IMPORT, "okr-personal-import");
+    if (retry.stop_reason === "max_tokens") {
+      throw new Error(TRUNCATED_PERSONAL_OKR_IMPORT_MESSAGE);
+    }
     return validatePersonalOkrImportAnalysis(parseJsonSafe<unknown>(retry.content[0].text));
   }
 }

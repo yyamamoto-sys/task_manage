@@ -1,6 +1,40 @@
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { gzipSync, strToU8 } from "fflate";
+import { existsSync, mkdirSync, cpSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/**
+ * 【設計意図】
+ * pdfjs-dist の cmaps・standard_fonts（CJKの文字コード解決・代替フォント表示に使う補助
+ * データ）は pdfjs-dist 自体にCDNフォールバックが無く（未設定時は例外を投げるだけ。
+ * src/lib/pdfText.ts 参照）、外部への接続を一切発生させないためにローカルで配信する必要がある。
+ * node_modules/pdfjs-dist から public/pdfjs/ へコピーし、Vite開発サーバー・本番ビルドの
+ * 両方で same-origin の静的ファイルとして配信させる（src/lib/pdfText.ts の cMapUrl /
+ * standardFontDataUrl が参照するパスと対応）。
+ * バイナリ（cmap/フォント計約2.3MB）をリポジトリにコミットしたくないため public/pdfjs/ は
+ * .gitignore 対象にし、package.json記載のpdfjs-distバージョンと突き合わせたマーカーファイルで
+ * 再コピーが要らないときは何もしない（開発サーバー起動のたびにコピーし直さない）。
+ */
+function ensurePdfjsAssets(): void {
+  const pdfjsDir = join(__dirname, "node_modules/pdfjs-dist");
+  if (!existsSync(pdfjsDir)) return; // npm install前の一時的な状態を落とさない
+  const pkgVersion: string = JSON.parse(
+    readFileSync(join(pdfjsDir, "package.json"), "utf-8"),
+  ).version;
+  const destRoot = join(__dirname, "public/pdfjs");
+  const marker = join(destRoot, ".version");
+  if (existsSync(marker) && readFileSync(marker, "utf-8") === pkgVersion) return;
+  mkdirSync(destRoot, { recursive: true });
+  for (const name of ["cmaps", "standard_fonts"]) {
+    cpSync(join(pdfjsDir, name), join(destRoot, name), { recursive: true });
+  }
+  writeFileSync(marker, pkgVersion, "utf-8");
+}
+ensurePdfjsAssets();
 
 /**
  * 【設計意図】

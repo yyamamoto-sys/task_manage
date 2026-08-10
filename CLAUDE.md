@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.44
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.45
 #
-最終更新：2026-08-10（v3.44）
+最終更新：2026-08-10（v3.45）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -705,6 +705,18 @@ export type AIIntent =
 「何のデータを渡しているか」をコメントで明示すること（漏洩防止というより可読性・記録のため）。
 タグなしの呼び出しはコンパイルエラー。
 
+### 6-1c. max_tokensの目安（v3.45・2026-08-10）
+
+JSON構造の抽出（OKR取込・会議抽出等）は **8192で足りる**（`okrImportExtractor.ts`・
+`personalOkrImportExtractor.ts`が実績値）。**16000（や16384のCap近辺）に上げると、PDF等の
+大きな添付を併用した際にEdge Functionのワーカーがリソース上限で落ちる
+（546 WORKER_RESOURCE_LIMIT。2026-08-10の実例。Section 19 ⑦参照）。** 出力が長くなりがちな
+複数タスクの構造化提案（`apiClient.ts`のメイン相談）のように添付ファイルを伴わない用途は
+16384（Edge Function側`MAX_TOKENS_CAP`）まで上げてよいが、**添付ファイルを伴うAI機能は
+8192を既定にする**こと。安易にmax_tokensだけを上げて出力切れを解消しようとしない
+（`stop_reason==="max_tokens"`を検知して分かりやすいエラーにする方が安全。
+`personalOkrImportExtractor.ts`の実装・`consultationRunner.ts`の先例参照）。
+
 ### 6-2. APIキーの管理
 
 - APIキーは Supabase の環境変数（ANTHROPIC_API_KEY）にのみ保持する
@@ -1010,7 +1022,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.44）
+- 最終更新：2026-08-10（v3.45）
 
 ---
 
@@ -1459,6 +1471,31 @@ Supabaseに一切接続しない設計（Section 23）のため対象外——�
 「コードのダウンロード」と「データのフェッチ」のどちらが重いのかを見極め、対応するゲート
 （③のチャンクゲート／このモードゲート／両方）を検討すること。
 
+### ⑦ Edge Functionに大きな添付をbase64で送るとワーカーのリソース上限で落ちる（v3.45・2026-08-10）
+
+OKRモード「Kintoneから取込」で670KBのPDFを解析すると、Supabase Edge Functionが
+`546 WORKER_RESOURCE_LIMIT`（`Function failed due to not having enough compute resources`）で
+落ちる事故が起きた。原因はPDFをbase64エンコードしてEdge Functionへ送っていたこと
+（670KB→約894KB。Edge Functionが`req.json()`でパースし、Anthropicへ転送する際に
+`JSON.stringify`で再構築するため、複数コピーが同時にメモリへ載る）。
+
+**Supabaseは関数ごとにメモリ/CPUの上限を上げる設定を持たない。送る側（クライアント）を
+軽くするのが唯一の解。** PDF・Word(.docx)は、Anthropic APIがdocumentブロックで直接読める
+としても、クライアント側でテキスト抽出してから軽量なテキスト添付として渡す
+（`src/lib/docxText.ts`・`src/lib/pdfText.ts`。`FileAttachButton.tsx`がPDF/Word/HTML判定→
+専用抽出→テキスト添付、という経路に一元化している）。新しく大きなファイル種別の添付に
+対応するときも、base64のdocumentブロックで送る前にこの制約を必ず思い出すこと。
+
+⚠️ **既知の未解消リスク**：`src/components/admin/OkrImportModal.tsx`（グループOKR取込）と
+`src/components/meeting/MeetingImportPanel.tsx`（会議文字起こし取込）は、この
+`FileAttachButton.tsx`の共通経路を使わず、PDFをbase64のdocumentブロックとして直接構築する
+独自実装を持っている（`setPdfAttachment({ mediaType: "application/pdf", ..., isText: false })`）。
+これらは今回のPDFテキスト抽出化の対象外（依頼範囲外）だが、十分大きなPDFを添付すれば
+同じ`WORKER_RESOURCE_LIMIT`に落ちる可能性が残っている。次にこの2画面のPDF機能を触るときは
+`pdfText.ts`経由のテキスト抽出に揃えることを検討すること。
+
+**新しいAI機能で大きな添付を扱うときの`max_tokens`の目安はSection 6-1c参照。**
+
 ---
 
 ## 20. グランドルール：全画面ラボ系ビューは position:fixed を使わずメインエリア内に収める（必須・v3.23、v3.33で方式を全面変更、v3.34で単一state化、v3.35でchoke point化）
@@ -1765,6 +1802,29 @@ Phase 1のマイグレーションには取り消し用のRPCが含まれてい�
 - **送信前のサイズチェックは入れなかった**：Supabase Edge Functionsのリクエストボディサイズ上限は2026-08-10時点で公式ドキュメントに明記されておらず（`supabase.com/docs/guides/functions/limits`はメモリ・実行時間・関数バンドルサイズ等のみを記載）、GitHub上のSupabase側回答も「10MB」は関数バンドル自体の上限であり受信ペイロードの上限ではないことを確認した。根拠のある数値が調べきれなかったため、推測の厳しい閾値で機能を狭めることはせず、エラー時のメッセージ改善（413対応）のみに留めた。将来413が実際に観測されたら、その時点のステータスコード・レスポンス本文を根拠に閾値を検討する。
 - **`personalOkrImportExtractor.ts`の`max_tokens=16000`は確認のみ**：Edge Function側の`MAX_TOKENS_CAP`（16384）の範囲内であり原因ではないと判断し、変更していない。
 - **テスト**：`src/lib/ai/__tests__/edgeFunctionError.test.ts`（新規・23件）に加え、`invokeAI.test.ts`/`apiClient.test.ts`に実際のsupabase-js非2xx挙動（`data=null`＋`response`から読む経路）のテストを追加。既存テスト（`data`を直接モックする後方互換ケース）は変更せず全通過。
+
+---
+
+## 27. PDF添付でEdge Functionが落ちる問題の修正・PDFのクライアント側テキスト抽出（v3.45・2026-08-10）
+
+**症状（Section 26の続き）**：v3.43でエラー本文が読めるようになった結果、OKRモード「Kintoneから取込」で670KBのPDFを解析すると実際には `Edge Function returned a non-2xx status code (546): {"code":"WORKER_RESOURCE_LIMIT","message":"Function failed due to not having enough compute resources"}` が原因だったと判明した。Section 26（v3.43）時点では「`personalOkrImportExtractor.ts`の`max_tokens=16000`はCap（16384）の範囲内であり原因ではない」と判断していたが、**実際には16000という値そのものと、PDFをbase64で送っていたことの合算が原因**だった（Section 19 ⑦参照）。
+
+**対応1：`max_tokens`を8192に引き下げ**（`src/lib/ai/personalOkrImportExtractor.ts`の初回・自己修正リトライ両方）。実績のある`okrImportExtractor.ts`と同じ値に揃えた（Section 6-1c）。加えて`invokeAI.ts`の`AIRawResponse`に`stop_reason`を追加し（Edge Functionは成功時のレスポンス本文をそのまま素通ししているため元々`data`には含まれていたが、型が持っていなかった）、`stop_reason==="max_tokens"`（出力の途中切れ）のときはJSONパースを試みる前に「抽出結果が長すぎて途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。」という明示的なエラーにした（`consultationRunner.ts`の先例と同じ方針。リトライしても同じ長さの壁にぶつかるだけなのでリトライしない）。
+
+**対応2：PDFのクライアント側テキスト抽出**（`docxText.ts`と同じ形に統一）。
+
+- **`pdfjs-dist`を新規導入**（`package.json`にキャレット無しで`"6.2.108"`固定）。`src/lib/pdfTextFormat.ts`（pdfjs-dist非依存の純粋関数：`isPdfFile`/`normalizePdfText`/`pageItemsToText`/`isBlankExtractedText`/`PDF_EMPTY_TEXT_MESSAGE`）と`src/lib/pdfText.ts`（pdfjs-distを使う`extractPdfText`。前者を再export）に分離した。**理由**：`pdfjs-dist`はブラウザ専用ビルドで、vitestの`environment:"node"`でトップレベルimportするだけで`DOMMatrix is not defined`になる（`chunkSizeGate.ts`と同種の制約）。純粋関数だけを分離することでpdfjs-dist本体を読み込まずにテストできる。
+- **`FileAttachButton.tsx`を変更**：PDFは`.docx`/`.html`と同じく専用抽出→テキスト添付（`isText:true`）に統一した。判定ロジック（`resolveMediaType`/`isSupportedMediaType`）は`src/lib/fileAttachMediaType.ts`に切り出し、`DOC_MEDIA_TYPES`（`application/pdf`のみだった）は削除した。**PDFの判定・抽出（`lib/pdfTextFormat.ts`／`lib/pdfText.ts`）は`FileAttachButton.tsx`側からのみ動的import**する設計にし、PDFを一度も添付しない人がこのチャンクをダウンロードしないようにした（Section 19）。
+- **セキュリティ対処（山本さんの承認条件）**：
+  1. **isEvalSupported:false**：型・実装ともに明示的に渡している（`GetDocumentParamsWithEvalFlag`型で拡張）。**検証結果として付記**：固定した6.2.108では、このオプション自体が`DocumentInitParameters`の型定義から既に削除されており、`pdf.mjs`/`pdf.worker.mjs`をgrepしても`eval(`/`new Function(`が1件も出現しない（＝CVE-2024-4367の原因だった危険なeval経路自体がライブラリから撤去済み。フラグより強い「経路の撤去」で解決している）。将来アップグレードでこの経路が復活した場合に備え、型を拡張してfalseを渡す防御的なコードは残した。
+  2. **worker・cmap・標準フォントを全てローカルにバンドル**：workerは`pdfjs-dist/build/pdf.worker.mjs?url`（Viteの明示URLインポート）で同一origin・ハッシュ付き静的アセットとして解決（ビルド出力で`assets/pdf.worker-*.mjs`という相対パスに実際に解決されることを確認済み）。cmap・標準フォント（計約2.3MB）は`vite.config.ts`の`ensurePdfjsAssets()`が`node_modules/pdfjs-dist`から`public/pdfjs/`へコピーし（`.gitignore`対象・pdfjs-distのバージョンとマーカーファイルで突き合わせて重複コピーを避ける）、`cMapUrl`/`standardFontDataUrl`は`/pdfjs/cmaps/`・`/pdfjs/standard_fonts/`（同一origin）を渡す。**外部URLへのリクエストが無いことの確認方法**：ビルド後の`dist/assets/*.js`・`*.mjs`全体を`unpkg`/`jsdelivr`/`cdn.`/`mozilla.github`/`cdnjs`でgrepし0件、`pdfText`チャンクの実際のコードを直接読んで`cMapUrl`/`standardFontDataUrl`/workerSrcが`/pdfjs/...`・`assets/pdf.worker-*.mjs`という相対パス文字列そのものであることを目視確認した（2026-08-10）。
+  3. **バージョン固定**：`package.json`の`"pdfjs-dist": "6.2.108"`（キャレット無し）。
+- **`@napi-rs/canvas`を入れない**：`pdfjs-dist`の`optionalDependencies`（Node.jsでPDFを画像化する用途のOS別バイナリ12種）。`npm install --omit=optional`で一度入れたところ、その副作用でRollupの必須ネイティブバイナリ（`@rollup/rollup-win32-x64-msvc`。これもnpmの仕組み上optionalDependencyとして配布されている）まで一緒に除外されてしまい`vite build`自体が壊れた（`--omit=optional`はpdfjs-dist以外の全パッケージのoptionalDependenciesにも及ぶグローバルなフラグのため）。そこで`package.json`に`"overrides": { "@napi-rs/canvas": "npm:@napi-rs/canvas-do-not-install@0.0.0" }`を追加し、存在しない偽パッケージへ解決させることで**`@napi-rs/canvas`だけ**を狙って除外した（optionalDependencyの解決失敗はnpm installを失敗させない仕様を利用）。これにより通常の`npm install`（`--omit=optional`無し）でRollup等の正当なネイティブバイナリは正しく入り、`@napi-rs/canvas`だけが入らない。**確認方法**：`find node_modules -iname "*canvas*"`で0件、`npm audit`の脆弱性一覧に`pdfjs-dist`が含まれないこと、を都度確認する。
+- **テキスト抽出はレイアウト情報を失う**：`personalOkrImportExtractor.ts`のシステムプロンプト冒頭に「入力はPDFそのものではなくレイアウト情報を失ったテキストである」旨の注記を追加し、位置関係よりも見出し語・ラベル文言（「[自己評価：]」等の角括弧表記）を根拠に判断するよう明示した（既存の角括弧表記優先の設計を大きく変える必要は無かった）。
+- **抽出結果が空（スキャン画像のみのPDF等）の場合**：`PDF_EMPTY_TEXT_MESSAGE`（「このPDFからは文字を読み取れませんでした。テキストを貼り付けてお試しください。」）を例外として投げ、`FileAttachButton.tsx`の既存の`.catch(alert(...))`経路にそのまま乗る。
+- **DLゲート（Section 19 ③）は今回のPDFチャンクには自動適用されない**：`withChunkDownloadGate()`は`MainLayout.tsx`が登録するReact.lazyビュー専用の仕組みで、`FileAttachButton.tsx`内の素の`import("../../lib/pdfText")`（イベントハンドラ内の動的import）はこの仕組みの対象外。今回は実測gzip 127.38KB（閾値200KB未満）のため実害は無いが、将来pdfjs-distが育って閾値を超えた場合は、この動的import経路に個別のゲート対応を追加検討すること。
+
+⚠️ **既知の未解消リスク（Section 19 ⑦にも記載）**：`OkrImportModal.tsx`（グループOKR取込）と`MeetingImportPanel.tsx`（会議文字起こし取込）は、`FileAttachButton.tsx`を使わずPDFをbase64のdocumentブロックとして直接送る独自実装を持っており、今回の対応範囲外。十分大きなPDFで同じ`WORKER_RESOURCE_LIMIT`に落ちる可能性が残っている。
 
 ---
 

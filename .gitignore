@@ -10,5 +10,9 @@ src/lib/localData/seed.ts
 # Supabase CLI ローカル状態
 supabase/.temp/
 
+# pdfjs-dist の cmaps/standard_fonts をnode_modulesからコピーしたもの（vite.config.ts参照）。
+# バイナリのためコミットしない。npm install後、vite起動/ビルド時に自動再生成される。
+public/pdfjs/
+
 # Skills lock（個別環境用）
 skills-lock.json
