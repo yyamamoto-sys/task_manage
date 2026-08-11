@@ -48,13 +48,17 @@
 - 対象PJの `projects.group_ids` に招待用部署を追加する
 - 招待者は `members.group_id` ＝招待用部署、`is_admin=false` / `is_super_admin=false`
 
-### 4-2. 担当者の氏名を見せるための兼務
+### 4-2. 担当者の氏名を見せるための兼務（v3.47で非対称を明記・是正）
 
 招待用部署に入れただけでは、招待者から**社内メンバーが見えない**（`members` も部署スコープのため担当者欄が「未担当」になる）。
 
 → **招待を発行した本人**と **`projects.owner_member_id`** に、招待用部署を `group_ids` の兼務として自動付与する。それ以外の社内担当者は管理画面から手動で追加する。
 
-副作用：兼務した社内メンバーのサイドバーに「表示部署」の切替が出る（アクセス可能な部署が2件以上のときに表示される既存仕様）。実害なし。
+**副作用（2026-08-11発覚・是正済み）**：兼務した社内メンバーのサイドバーに「表示部署」の切替が出てしまっていた（アクセス可能な部署が2件以上のときに表示される既存仕様）。これは「既存部署の人のビューは変わらない」という要望に反するため、`filterInviteGroupsForSidebar()`（`src/lib/projectInvite/sidebarGroupVisibility.ts`）が `accessibleGroups`（`MainLayout.tsx`）から `is_invite_group=true` の部署を除外するようにした（v3.47）。招待された本人（招待用部署しか持たない）はフィルタすると選択肢が空になるため除外しない——「フィルタ結果が空なら除外前のリストを返す」という一般則で両ケースを処理する。CLAUDE.md Section 25参照。
+
+**もう1つの問題（逆方向の可視性・v3.47で是正）**：兼務を持たない他の部署メンバーからは、招待された人の `group_ids`（招待用部署のみ）が自分の `group_ids` と一切重ならないため見えず、招待された人を担当者に指定しても担当者欄が「未担当」のままになっていた。§4-4末尾・§6参照。
+
+**残った非対称（今回は許容し運用でカバー）**：「部署の人→招待者」の可視性は§4-4の是正で解決したが、「招待者→部署の社内メンバー」の可視性は本項の兼務付与（発行者本人と`owner_member_id`の2人だけ）に依存したまま。招待者から見える社内メンバーはこの2人に限られる。他の社内担当者を見せたい場合は、管理画面から招待用部署をその人の `group_ids` に手動で兼務追加する運用でカバーする。
 
 ### 4-3. 招待の検証（4条件すべてを満たすときだけ登録できる）
 
@@ -73,6 +77,8 @@
 - 🔴 **招待先メールアドレスのドメイン許可リスト。** 社内限定の運用なので、許可ドメイン以外への招待を弾く。設定可能にする（社内に複数ドメインがありうるため）。**社外への誤招待を構造的に防ぐ最も効く安全弁**
 - **監査**：誰が・誰を・どのPJに・いつ招待し、いつ使われたかを記録する。管理画面に招待一覧を出し、**取り消し**できるようにする
 - 招待で配れるのは**そのPJ1件のみ**（部署全体のアクセスは配れない）
+
+**🔴 当初方針の唯一の例外（v3.47・§4-2参照）**：本ドキュメント冒頭「0. 一行」の方針は「既存テーブルのRLSは1行も変えない」だったが、招待された人が兼務を持たない部署メンバーから見えない問題（§4-2）を解消するため、`members` テーブル1つだけ例外的にRLSへ1条項（`OR group_ids && visible_invite_group_ids()`）を追加した（`migrations/20260810c_extend_members_visibility_for_invites.sql`）。既存条項は1文字も変えていない。「新しいアクセス制御の軸を作らない」（既存の `group_ids` 配列の枠組みに乗せる）という設計思想自体は維持している。広げた範囲は「招待用部署に属する人の可視性」のみで、部署間の可視性（部署Aの人が部署Bの人を見る）は変えていない。詳細はCLAUDE.md Section 25参照。
 
 ### 4-5. 招待された人に見えるもの
 
@@ -134,9 +140,14 @@ RLS：発行者と同じ部署のメンバーが参照できる（監査のた�
   3. 既に `accepted_at` が入っている招待は明示的なエラーで拒否（使われた後の取り消しは無意味）
   4. `revoked_at = now()` / `revoked_by = 呼び出し者` を設定
 
+- **`visible_invite_group_ids()`**（Phase 4で追加。`migrations/20260810c_extend_members_visibility_for_invites.sql`。⚠️未適用）
+  - 引数なし。**自分がアクセスできるPJに紐づく招待用部署（`is_invite_group=true`）のidの配列**を返す（`groups` と `projects` を直接SELECTする。SECURITY DEFINERのためRLSを迂回する。`current_member_group_ids()`/`can_access_group_ids()` と同じ流儀）
+  - `members` のRLSポリシー（`members_group`）に `OR group_ids && visible_invite_group_ids()` を追加するためだけに使う。既存2条項（`group_ids && current_member_group_ids()` / `current_member_is_super_admin()`）は変更しない
+  - 書き込み関数ではなくSELECT専用のヘルパー関数（前述2本・`create_project_invite`/`accept_project_invite`/`revoke_project_invite`とは役割が異なる）
+
 🔴 **いずれも `SET search_path = ''` を付ける**（関数ハイジャック対策。既存の `current_member_*` 関数と同じ流儀）。
 🔴 **NULL猶予条項を書かない**（2026-06-26の事故の教訓。Section 1.6）。
-🔴 **ドル引用タグは関数ごとに区別する**（`$fn_create_project_invite$`/`$fn_accept_project_invite$`/`$fn_revoke_project_invite$`）。
+🔴 **ドル引用タグは関数ごとに区別する**（`$fn_create_project_invite$`/`$fn_accept_project_invite$`/`$fn_revoke_project_invite$`/`$fn_visible_invite_groups$`）。
 
 ## 7. 画面
 
@@ -153,6 +164,7 @@ RLS：発行者と同じ部署のメンバーが参照できる（監査のた�
 | 1 | DB（`project_invites`・`groups.is_invite_group`）＋ SECURITY DEFINER 関数2本 ＋ 監査クエリ | ✅ 完了（v3.42・本番適用済み） |
 | 2 | 発行UI（PJから招待）＋ 管理画面の招待一覧・取り消し | ✅ 完了（v3.44）。取り消し用RPC（`revoke_project_invite`）はPhase 1に含まれていなかったため追加マイグレーションで対応（§6参照。⚠️未適用） |
 | 3 | ログイン画面の導線 ＋ 登録フロー ＋ `AccessDeniedScreen` からの導線 | ✅ 完了（v3.44）。メール確認への対応は設計判断(a)＝自動受諾を採用（詳細はCLAUDE.md Section 25） |
+| 4 | (a) サイドバー「表示部署」切替から招待用部署を除外 ＋ (b) `members` RLSに招待用部署の可視性を1条項だけ追加 | ✅ UI（a）は完了・push済み（v3.47）。RLS（b）はマイグレーション作成済みだが**⚠️未適用**（`migrations/20260810c_extend_members_visibility_for_invites.sql`。山本さんが手動適用） |
 
 ## 9. 決定済み・未確認
 

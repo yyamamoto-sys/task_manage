@@ -41,6 +41,7 @@ import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
+import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 
 /**
  * 【設計意図】
@@ -388,12 +389,15 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const currentGroupId         = useAppStore(s => s.currentGroupId);
   const setCurrentGroupId      = useAppStore(s => s.setCurrentGroupId);
   const currentUserIsSuperAdmin = useAppStore(s => s.currentUserIsSuperAdmin);
+  // プロジェクト招待の兼務（is_invite_group=true）は「表示部署」切替の選択肢から除く。
+  // 招待された本人（招待用部署しか持たない）の場合は除外すると選べる部署が無くなるため、
+  // 除外しない（filterInviteGroupsForSidebar内部で自動的に判定。CLAUDE.md Section 25参照）。
   const accessibleGroups = useMemo(() => {
     const groupsActive = rawGroups.filter(g => !g.is_deleted);
-    if (currentUserIsSuperAdmin) return groupsActive;
+    if (currentUserIsSuperAdmin) return filterInviteGroupsForSidebar(groupsActive);
     const ids = currentUser.group_ids?.length ? currentUser.group_ids
       : (currentUser.group_id ? [currentUser.group_id] : []);
-    return groupsActive.filter(g => ids.includes(g.id));
+    return filterInviteGroupsForSidebar(groupsActive.filter(g => ids.includes(g.id)));
   }, [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id]);
   const projects = useMemo(
     () => allProjects.filter(p => !p.is_deleted && p.status === "active"),

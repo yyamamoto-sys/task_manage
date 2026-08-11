@@ -918,13 +918,41 @@ AS $fn_group_ids$
   LIMIT 1
 $fn_group_ids$;
 
+-- プロジェクト招待（migration 20260810c_extend_members_visibility_for_invites.sql）：
+-- 自分がアクセスできるPJに紐づく「招待用部署（is_invite_group=true）」のidの配列を返す。
+-- current_member_group_ids()・can_access_group_ids()と同じSECURITY DEFINERの流儀。
+-- groups/projectsを直接SELECTするのはproject_group_ids()等（下部）と同じ先例に倣う
+-- （SECURITY DEFINERなのでRLSを迂回して判定材料を集める。意図的）。
+CREATE OR REPLACE FUNCTION public.visible_invite_group_ids()
+RETURNS text[]
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_visible_invite_groups$
+  SELECT coalesce(array_agg(DISTINCT g.id), ARRAY[]::text[])
+  FROM public.groups g
+  JOIN public.projects p ON g.id = ANY(p.group_ids)
+  WHERE g.is_invite_group = true
+    AND p.group_ids && public.current_member_group_ids()
+$fn_visible_invite_groups$;
+GRANT EXECUTE ON FUNCTION public.visible_invite_group_ids() TO authenticated;
+
 -- members / projects / tasks：group_ids（アクセス可能な部署の全リスト）が自分の
 -- group_ids と1つでも重なるか、またはsuper-adminなら部署をまたいで許可
 -- （migration 20260722b で group_id 単一値比較 → 配列オーバーラップに置き換え）
+--
+-- 🔴 members のみ、20260810cで3つ目のOR条項（招待用部署の可視性）を追加した。
+-- 既存2条項（group_ids && current_member_group_ids() / current_member_is_super_admin()）は
+-- 1文字も変更していない。projects/tasksのgroup_ids比較には広げない
+-- （広げるのは「招待用部署に属する人」の可視性だけ。CLAUDE.md Section 25参照）。
 DROP POLICY IF EXISTS "authenticated full access" ON members;
 DROP POLICY IF EXISTS "members_group" ON members;
 CREATE POLICY "members_group" ON members FOR ALL TO authenticated
-  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
+  USING (
+    group_ids && current_member_group_ids()
+    OR current_member_is_super_admin()
+    OR group_ids && public.visible_invite_group_ids()
+  );
 
 DROP POLICY IF EXISTS "authenticated full access" ON projects;
 DROP POLICY IF EXISTS "projects_group" ON projects;

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.46
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.47
 #
-最終更新：2026-08-10（v3.46）
+最終更新：2026-08-11（v3.47）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1022,7 +1022,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-10（v3.46）
+- 最終更新：2026-08-11（v3.47）
 
 ---
 
@@ -1797,6 +1797,16 @@ Phase 1のマイグレーションには取り消し用のRPCが含まれてい�
 - **3-3. `AccessDeniedScreen`からの導線**：認証済みだが`members`未登録のユーザーに出るこの画面に「プロジェクトの招待コードをお持ちの方はこちら」を追加した。**この経路では既にAuthセッションがあるため`accept_project_invite`を直接呼べる**（signUp不要・3-2のメール確認問題が発生しない、最も素直な経路）。手動フォールバック（別ブラウザ・localStorage消失・新しい招待を試す等）としても機能する。
 - **自動受諾の実装場所となぜここか**：`App.tsx`の`AuthenticatedApp`内に新設したuseEffectが、`currentUser`が未確定かつ保留中の招待（`loadPendingProjectInvite()`）があり、かつ現在のAuth email（`getAuthEmail()`）が保留データのメールと一致する場合にのみ`accept_project_invite()`を呼ぶ。**この判定をSetupWizard/AccessDeniedScreen/UserSelectScreenのどれが表示されるかの判定より前段に置いた**——`needsConfirmation=false`（メール確認不要な環境）の場合、`App.tsx`トップレベルの`onAuthStateChange`リスナーが`signUp`成功と同時に`authenticated=true`を検知し、登録フォームが受諾処理を終える前にunmountされるレースが起こり得るため、受諾の呼び出し自体をフォームの責務にせず単一の受け口に統一した（`needsConfirmation`の真偽どちらでも同じコードパスを通る）。成功したら`window.location.reload()`する（迷ったらリロードを選ぶ方針。`handleLogout`と同じ判断）——新しく作られた`members`行をRLS越しに反映させるため。失敗（期限切れ等）したら保留データを消して（無限リトライ防止）トースト表示し、通常のAccessDeniedScreen/UserSelectScreenへフォールバックする。
 - **招待受諾後に通常画面へ入れることの確認方法**：`accept_project_invite()`は`members.email`に`auth.email()`をそのまま書き込む。`App.tsx`の`autoMatch()`（既存のログイン自動マッチング）は「Auth emailと`members.email`が一致するメンバーを探す」処理であり、受諾後のreloadで`members`が再取得されればこの既存経路がそのまま働き、追加のコード変更は不要だった（コードを読んで確認済み。実機確認は山本さんが行う）。
+
+### Phase 4：ビューを不変にする調整＋招待された人の可視性の是正（v3.47・2026-08-11）
+
+Phase 1〜3実装後に山本さんから「既存部署の人のビューは変わらず、そのPJだけメンバーが増えている状態にしたい」という要望が入り、2点のズレを是正した。
+
+- **(a) 発行者・PJオーナーのサイドバーに「表示部署」切替が出てしまう問題**：`create_project_invite()`が発行者本人と`projects.owner_member_id`に招待用部署を`group_ids`の兼務として付与するため、`accessibleGroups.length >= 2`になり切替UI（本セクション上部・`MainLayout.tsx`）が表示されてしまっていた。これは「ビューが変わる」ため要望に反する。**対応**：`src/lib/projectInvite/sidebarGroupVisibility.ts`の`filterInviteGroupsForSidebar()`（純粋関数）が、`MainLayout.tsx`の`accessibleGroups`から`is_invite_group=true`のグループを除外する。🔴 **招待された本人（招待用部署しか持たない）はフィルタすると選択肢が空になってしまうため、除外しない**——`filterInviteGroupsForSidebar()`は「フィルタした結果が1件も残らない場合は、除外前のリストをそのまま返す」という一般則だけで両ケースを安全に処理する（本人かどうかを個別に判定するコードを書いていない）。回帰テストは`sidebarGroupVisibility.test.ts`（通常部署1件／2件・招待用部署のみ・ホーム+招待用の兼務・招待用複数件のみ、の各ケース）。
+- **(b) 招待用部署に属する人が、兼務を持たない他の部署メンバーから見えない問題**：`members`のRLS（`group_ids && current_member_group_ids() OR current_member_is_super_admin()`）は部署単位のみで判定するため、招待された人の`group_ids`（招待用部署のみ）は、兼務を持たない部署メンバーの`current_member_group_ids()`と一切重ならず見えなかった。担当者に指定しても担当者欄が「未担当」のままになる実害があった。**対応**：`supabase/migrations/20260810c_extend_members_visibility_for_invites.sql`（⚠️未適用・山本さんが手動適用）で、`members`のポリシーに**追加のみ**の1条項を足した：「相手が招待用部署に属しており、かつその招待用部署が、自分がアクセスできるPJの`group_ids`に含まれているなら見える」。実装は新設のSECURITY DEFINERヘルパー`visible_invite_group_ids()`（自分がアクセスできるPJに紐づく招待用部署のidの配列を返す。`current_member_group_ids()`/`can_access_group_ids()`と同じ流儀）＋`OR group_ids && visible_invite_group_ids()`。既存2条項は1文字も変えていない。`schema.sql`に同期・`schemaChecks.ts`に検査項目（`fn_visible_invite_group_ids`）を追加した。
+- **🔴 広げた範囲はここだけ**：「招待用部署に属する人」の可視性のみを広げた。部署間の可視性（部署Aの人が部署Bの人を見る）は一切変えていない。`projects`/`tasks`のRLSにも広げていない（`members`テーブル1つだけの変更）。マイグレーションの監査クエリに「部署Aの一般メンバーから、招待用部署に属さない部署Bのメンバーが見えないこと」の確認クエリを含めた。
+- **「RLSは1行も変えない」という当初方針（本セクション冒頭）からの変更点**：Phase 1着手時の方針は「新しいアクセス制御の軸を作らない・既存テーブルのRLSは1行も変えない」だったが、(b)はこの方針の唯一の例外。**`members`テーブル1つだけ**、既存2条項を変更せずORで1条項を追加する形にとどめ、「新しい軸を作らない」（既存の`group_ids`配列の枠組みに乗せる）という設計思想自体は維持している。
+- **🔴 可視性の非対称（残った制約・運用でカバー）**：(b)で「部署の人→招待者」の可視性は解決したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人と`projects.owner_member_id`の2人だけ）に依存したままである。招待者の`visible_invite_group_ids()`は自分の招待用部署だけを返すため、招待者から見える社内メンバーは発行者とPJオーナーの2人に限られる（他の社内担当者は見えない）。**今回は兼務付与を残す**（この2人だけは招待者から見える必要があるため）。(a)の修正で切替UIは出なくなったため、兼務の副作用は解消済み。他の社内担当者を招待者に見せたい場合は、管理画面から招待用部署をその人の`group_ids`に手動で兼務追加する運用でカバーする（自動化していない）。
 
 ---
 

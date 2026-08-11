@@ -253,4 +253,11 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "プロジェクト招待：取り消し関数（revoke_project_invite）が見つかりません",
     migration: "20260810b_add_revoke_project_invite.sql",
   },
+  {
+    id: "fn_visible_invite_group_ids",
+    kind: "function",
+    name: "visible_invite_group_ids",
+    label: "プロジェクト招待：招待された人の可視性拡張関数（visible_invite_group_ids）が見つかりません",
+    migration: "20260810c_extend_members_visibility_for_invites.sql",
+  },
 ];

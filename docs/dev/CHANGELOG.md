@@ -4773,5 +4773,59 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #            取込）のPDF独自送信経路は引き続き対応範囲外（v3.45から継続）。
 #      マイグレーション追加なし
 #
-# 最終更新：2026-08-10（v3.46）
+# v3.47 プロジェクト招待：既存部署のビューを不変にする調整＋招待された人の可視性の是正（2026-08-11）
+#      正本：docs/dev/project-invite-plan.md §4-2・§4-4・§6・§8（CLAUDE.md Section 25 Phase 4）。
+#      山本さんの要望「既存の部署の既存のPJに招待することで、既存の部署にいる人は特にビューは
+#      変わらず、そのPJだけメンバーが増えている状態を実現したい」を受け、統括が特定した2点の
+#      ズレを是正した。
+#      (a) 発行者・PJオーナーのサイドバーに「表示部署」切替が出てしまう問題：
+#      create_project_invite()が発行者本人とprojects.owner_member_idに招待用部署を
+#      group_idsの兼務として付与するため、accessibleGroups.length >= 2になり切替UIが
+#      表示されていた（ビューが変わるため要望に反する）。
+#      対応：新規src/lib/projectInvite/sidebarGroupVisibility.tsのfilterInviteGroupsForSidebar()
+#      （純粋関数）がMainLayout.tsxのaccessibleGroupsからis_invite_group=trueの部署を除外する。
+#      🔴招待された本人（招待用部署しか持たない）はフィルタすると選択肢が空になるため除外
+#      しない——「フィルタ結果が1件も残らない場合は除外前のリストをそのまま返す」という
+#      一般則だけで両ケースを安全に処理する（本人かどうかを個別判定するコードは書いていない）。
+#      (b) 招待用部署に属する人が、兼務を持たない他部署メンバーから見えない問題：
+#      membersのRLS（group_ids && current_member_group_ids() OR current_member_is_super_admin()）
+#      は部署単位のみで判定するため、招待された人のgroup_ids（招待用部署のみ）は兼務を
+#      持たない部署メンバーのcurrent_member_group_ids()と一切重ならず見えなかった
+#      （担当者に指定しても担当者欄が「未担当」のままになる実害）。
+#      🔴追加マイグレーション：supabase/migrations/20260810c_extend_members_visibility_for_
+#      invites.sql（⚠️山本さんが手動適用・未適用）。新設のSECURITY DEFINERヘルパー
+#      visible_invite_group_ids()（自分がアクセスできるPJに紐づく招待用部署のidの配列を返す。
+#      current_member_group_ids()/can_access_group_ids()と同じ流儀）＋membersのRLSポリシーに
+#      「OR group_ids && visible_invite_group_ids()」を追加のみで足した。既存2条項は1文字も
+#      変更していない。NULL猶予条項なし・SET search_path=''・ドル引用タグは
+#      $fn_visible_invite_groups$で関数固有。schema.sql同期・schemaChecks.tsに検査項目
+#      （fn_visible_invite_group_ids）を1件追加。監査クエリに「部署Aの一般メンバーから、
+#      招待用部署に属さない部署Bのメンバーが見えないこと」の確認クエリを含めた。
+#      🔴広げた範囲はmembersテーブル1つ・「招待用部署に属する人」の可視性のみ。部署間の
+#      可視性（部署Aの人が部署Bの人を見る）・projects/tasksのRLSは一切変えていない。
+#      当初方針「RLSは1行も変えない」（project-invite-plan.md冒頭）の唯一の例外として
+#      明記した。
+#      残った非対称（今回は許容・運用でカバー）：(b)で「部署の人→招待者」の可視性は解決
+#      したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人とPJオーナーの
+#      2人だけ）に依存したまま。他の社内担当者を招待者に見せたい場合は管理画面から
+#      招待用部署を手動で兼務追加する運用。CLAUDE.mdと設計書の両方に明記した。
+#      新規ファイル：src/lib/projectInvite/sidebarGroupVisibility.ts（純粋関数）。
+#      変更ファイル：src/components/layout/MainLayout.tsx（accessibleGroups構築時に
+#      filterInviteGroupsForSidebar()を適用）／supabase/schema.sql（visible_invite_group_ids()
+#      追加・members_groupポリシーにOR条項追加）／src/lib/schema/schemaChecks.ts（検査項目
+#      1件追加）。
+#      テスト：新規sidebarGroupVisibility.test.ts（7件。通常部署1件／2件・招待用部署のみ
+#      （招待された本人）・ホーム+招待用の兼務（発行者・PJオーナー）・ホーム+複数招待用の
+#      兼務・招待用部署が複数件だけの異常系・空配列、の各ケース）＋schemaChecks.test.tsが
+#      配列走査方式のため検査項目追加で自動+1件。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1141件全通過（1133件→1141件・+8件）／
+#      `npm run lint`38件（23エラー・15警告・v3.46と同数＝変更ファイルに新規エラー0）／
+#      `npm run build`成功（indexチャンクgzip69.21→69.33kB。ほぼ変化なし。新規チャンクの
+#      追加は無し＝sidebarGroupVisibility.tsはMainLayout.tsxの常時ロード経路に静的import
+#      されるが極小のためチャンク分割の対象外）。
+#      要手動作業：supabase/migrations/20260810c_extend_members_visibility_for_invites.sqlの
+#      手動適用（適用するまでは(b)は未解消のまま。(a)はコード側の変更のみのためpush済みで
+#      即座に有効）。
+#
+# 最終更新：2026-08-11（v3.47）
 
