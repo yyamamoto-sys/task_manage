@@ -42,6 +42,7 @@ import { modalOverlayStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
+import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
 
 /**
  * 【設計意図】
@@ -74,6 +75,10 @@ function ViewLoading() {
   // スピナー単体よりレイアウトの骨格を見せた方が体感が速い（スケルトンUI）
   return <ViewSkeleton />;
 }
+
+// mineOnly=false のときに filterSidebarProjects へ渡す空集合（毎回 new Set() を作らないための
+// 安定参照。mineOnly=false 分岐では参照されないため中身は常に空でよい）
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 /**
  * モバイル専用：全画面ラボビュー（GraphView 等）を全画面表示にする薄いラッパー。
@@ -399,9 +404,22 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       : (currentUser.group_id ? [currentUser.group_id] : []);
     return filterInviteGroupsForSidebar(groupsActive.filter(g => ids.includes(g.id)));
   }, [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id]);
+  // 「アーカイブを表示」トグル（既定OFF）。CLAUDE.md参照：active/completedは常に表示、
+  // archivedのみこのトグルで表示/非表示を切り替える（山本さんの要望・2026-08-11）。
+  const [showArchivedProjects, setShowArchivedProjectsState] = useState<boolean>(
+    () => localStorage.getItem(KEYS.SIDEBAR_SHOW_ARCHIVED) === "1", // デフォルト OFF
+  );
+  const toggleShowArchivedProjects = () => setShowArchivedProjectsState(prev => {
+    const next = !prev;
+    localStorage.setItem(KEYS.SIDEBAR_SHOW_ARCHIVED, next ? "1" : "0");
+    return next;
+  });
   const projects = useMemo(
-    () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
-    [allProjects]
+    () => filterSidebarProjects(allProjects, {
+      showArchived: showArchivedProjects, mineOnly: false, myProjectIds: EMPTY_ID_SET,
+      pinnedProjectId: selectedProjectId,
+    }),
+    [allProjects, showArchivedProjects, selectedProjectId]
   );
   // ツアーのアクションハンドラが最新のprojectsを参照できるよう同期
   useEffect(() => { projectsRef.current = projects; }, [projects]);
@@ -1393,6 +1411,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         projects={visibleProjects}
         mineOnly={mineOnly}
         onToggleMineOnly={toggleMineOnly}
+        showArchivedProjects={showArchivedProjects}
+        onToggleShowArchivedProjects={toggleShowArchivedProjects}
         mineOnlyProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
         projectsCount={projects.length}
         selectedProjectId={selectedProjectId}
@@ -1523,6 +1543,9 @@ interface SidebarProps {
   /** フィルタ切替ボタンのバッジ表示用 */
   mineOnlyProjectsCount: number;
   projectsCount: number;
+  /** 「アーカイブを表示」トグル（既定OFF）。CLAUDE.md参照：archivedのみ既定で隠す */
+  showArchivedProjects: boolean;
+  onToggleShowArchivedProjects: () => void;
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   keyResults: KeyResult[];
@@ -1559,6 +1582,7 @@ interface SidebarProps {
 function Sidebar({
   viewMode, setViewMode, projects,
   mineOnly, onToggleMineOnly,
+  showArchivedProjects, onToggleShowArchivedProjects,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
@@ -1796,6 +1820,27 @@ function Sidebar({
               </button>
             </div>
           )}
+          {!c && pjOpen && (
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 14px 4px" }}>
+              <button
+                onClick={onToggleShowArchivedProjects}
+                title={showArchivedProjects ? t("layout.sidebar.showArchivedOff") : t("layout.sidebar.showArchivedOn")}
+                style={{
+                  display: "flex", alignItems: "center", gap: "3px",
+                  padding: "2px 7px",
+                  fontSize: "10px", fontWeight: 500,
+                  background: showArchivedProjects ? "var(--color-bg-tertiary)" : "transparent",
+                  color: showArchivedProjects ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                  border: `1px solid ${showArchivedProjects ? "var(--color-border-primary)" : "var(--color-border-primary)"}`,
+                  borderRadius: "var(--radius-full)",
+                  cursor: "pointer", lineHeight: 1.4,
+                }}
+              >
+                <span style={{ fontSize: "9px" }}>🗄</span>
+                {t("layout.sidebar.showArchivedLabel")}
+              </button>
+            </div>
+          )}
           {(c || pjOpen) && (<>
           <NavItem
             active={selectedProjectId === null && selectedKrId === null}
@@ -1803,13 +1848,23 @@ function Sidebar({
             label={t("layout.sidebar.allPjLabel")} tooltip={t("layout.sidebar.allPjLabel")}
             onClick={() => onSelectProject(null)} collapsed={c}
           />
-          {projects.map(pj => (
-            <NavItem key={pj.id} active={selectedProjectId === pj.id}
-              icon={<span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />}
-              label={pj.name} tooltip={pj.name}
-              onClick={() => onSelectProject(pj.id)} collapsed={c}
-            />
-          ))}
+          {projects.map(pj => {
+            const isArchived = pj.status === "archived";
+            return (
+              <NavItem key={pj.id} active={selectedProjectId === pj.id}
+                icon={
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block", opacity: isArchived ? 0.5 : 1 }} />
+                    {isArchived && <span style={{ fontSize: "8px" }}>🗄</span>}
+                  </span>
+                }
+                label={pj.name}
+                tooltip={isArchived ? `${pj.name}（アーカイブ済み）` : pj.name}
+                color={isArchived ? "var(--color-text-tertiary)" : undefined}
+                onClick={() => onSelectProject(pj.id)} collapsed={c}
+              />
+            );
+          })}
           {projects.length === 0 && !c && mineOnly && (
             <div style={{
               padding: "12px 14px", fontSize: "11px",

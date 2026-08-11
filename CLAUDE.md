@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.48
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.49
 #
-最終更新：2026-08-11（v3.48）
+最終更新：2026-08-11（v3.49）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -542,6 +542,45 @@ await supabase.from('tasks')
 | Task | 論理削除 | 一覧から非表示 | あり | 変更履歴から可 |
 | Member | 論理削除 | 非表示。担当タスクの assignee_member_id を null に変更 | あり（件数表示） | 変更履歴から可 |
 
+### PJのライフサイクル状態（`status`）とサイドバー表示（v3.49・2026-08-11）
+
+`projects.status`（`active` / `completed` / `archived`）は上表の論理削除（`is_deleted`）とは別軸。
+削除ではなく「今どのフェーズか」を表す。山本さんの要望（「完了してもサイドバーに残り続けて
+不便」）を受けて、サイドバー・ダッシュボード・カンバン・ガント・リスト・稼働状況・コマンド
+パレット・タスク追加系モーダルが共有する `MainLayout.tsx` の `projects`（`filterSidebarProjects`。
+`src/lib/project/sidebarProjectFilter.ts`・純粋関数）を次のルールに揃えた：
+
+- **active・completed は常に表示する**（完了直後も参照したいため。元々の実装は `status==="active"`
+  のみを通しており、completed も archived と同じく一律で消えていた——今回これを是正した）。
+- **archived は既定で隠す。** サイドバーの「アーカイブを表示」トグル（`KEYS.SIDEBAR_SHOW_ARCHIVED`。
+  既定OFF・localStorageに記憶）でON にすると表示される。
+- **選択中のPJが隠れて宙に浮く問題への対応**：トグルOFFのままアーカイブ済みPJを選択していると、
+  一覧からそのPJだけが消えてハイライトが行方不明になる。`filterSidebarProjects` は
+  `pinnedProjectId`（＝選択中のPJ id）を渡すとアーカイブ判定だけを免除し、選択中のPJは常に
+  一覧に残す（トグルを勝手にON にする案・選択を強制解除する案も検討し、「見ているものが
+  急に消えない」を優先してこちらを採用した）。**mineOnly（自分のPJのみ）の絞り込みまでは
+  免除しない**（既存の「mineOnly中に担当外のactive PJを選んでも一覧からは消える」挙動と
+  一貫させるため）。
+- **揃えた範囲**：`MainLayout.tsx` の `projects` を共有するダッシュボード・カンバン・ガント・
+  リスト・稼働状況ビュー・コマンドパレット・タスク追加/マイルストーン追加モーダルは全て
+  自動的にこのルールに揃った（単一の変数を共有しているため）。体制図（`ProjectStructureView`）
+  は元々`status !== "archived"`で運用済みで、今回の方針と一致している。
+- **意図的に揃えなかった範囲**：`TaskEditModal`のPJピッカー（`active(allProjects)`＝status不問で
+  is_deletedのみ除外）と`ProjectCreateModal`の「他PJから引き継ぐ」元PJ選択（`selectScopedProjects`
+  そのまま）は、既存タスクの現在の紐づき先を選択肢から消さない／過去の完了・アーカイブ済みPJから
+  でも引き継げるようにする、という別の目的があるため変更していない。`AdminView`のPJ一覧・編集は
+  部署横断の棚卸し用途のため全ステータス表示のまま（次項参照）。
+
+### PJ設定画面（Section 8参照）とAdminViewのPJ編集の使い分け（v3.49）
+
+PJの基本情報を編集できる画面は2つある。役割が違うため両方残す：
+
+- **AdminView「作業設定→PJ」タブ**：部署管理者・全社スーパー管理者向け。部署横断で全PJ・
+  全ステータスを一覧編集する棚卸し画面。PJの削除（論理削除）もここだけ。
+- **PJ設定画面（`ProjectSettingsModal`）**：PJカルテの「⚙ このPJの設定」から開く。
+  今見ているPJ1件に絞った日常操作の入口（基本情報・招待・関わるメンバー）。
+  基本情報タブの編集権限はAdminViewと同じ条件（既存の権限モデルを広げていない）。
+
 ### Objectiveの期切替フロー
 
 ```
@@ -945,7 +984,8 @@ interface TaskChangeLog {
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
-| プロジェクト招待（`ProjectInviteModal`／管理画面「プロジェクト招待」タブ／ログイン画面・`AccessDeniedScreen`の招待コード導線） | ✅ Phase 1〜3実装済み（v3.42〜v3.44） | 社内の別部署の人を特定のPJ1件に招待する。発行：プロジェクトカルテの「🔗 このPJに招待する」→コード・リンクを1度だけ表示。管理：設定画面「組織」カテゴリ「プロジェクト招待」タブで一覧・状態表示・取り消し。受諾：ログイン画面の「招待コードをお持ちの方」（新規登録）または`AccessDeniedScreen`の同導線（既にセッションがある場合）。詳細はSection 25・`docs/dev/project-invite-plan.md` |
+| プロジェクト招待（PJ設定画面「招待」タブ／管理画面「プロジェクト招待」タブ／ログイン画面・`AccessDeniedScreen`の招待コード導線） | ✅ Phase 1〜3実装済み（v3.42〜v3.44）。**v3.49で発行UIをPJ設定画面へ統合**（旧`ProjectInviteModal.tsx`は撤去） | 社内の別部署の人を特定のPJ1件に招待する。発行・一覧・取り消し：PJ設定画面（下記）の「招待」タブ。管理：設定画面「組織」カテゴリ「プロジェクト招待」タブは部署横断の一覧表示として引き続き残す。受諾：ログイン画面の「招待コードをお持ちの方」（新規登録）または`AccessDeniedScreen`の同導線（既にセッションがある場合）。詳細はSection 25・`docs/dev/project-invite-plan.md` |
+| PJ設定画面（`ProjectSettingsModal`。PJカルテの「⚙ このPJの設定」から開く） | ✅ 実装済み（v3.49） | 今見ているPJ1件に絞った日常操作の入口。「基本情報」（名前・目的・貢献メモ・オーナー・期間・color_tag・ステータス。**クイック操作で1クリックの完了/アーカイブ/差し戻し**）／「招待」（発行・このPJの一覧・取り消し）／「関わるメンバー」（オーナー・タスク担当者・招待で参加した人の読み取り専用一覧。新しい紐づけテーブルは作らず既存データから`lib/project/projectMembers.ts`が組み立てる）の3タブ。**AdminViewの「作業設定→PJ」タブとの使い分け**：AdminViewは部署横断で全PJ・全ステータスを一覧編集する管理者向けの棚卸し画面として残す（削除もそちらのみ）。この設定画面はPJオーナー・関係者が自分の見ているPJだけを日常的に触るための入口。**基本情報の編集権限はAdminViewのPJ編集と同じ**（部署管理者/全社スーパー管理者。部署内にis_adminが1人もいなければ全員編集可のブートストラップ含む）で、権限が無い場合は読み取り表示になる。招待の発行は権限に関わらず全メンバー可（Section 25の決定を維持）。「関わるメンバー」タブは常に読み取り専用 |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -1022,7 +1062,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-11（v3.48）
+- 最終更新：2026-08-11（v3.49）
 
 ---
 
@@ -1784,6 +1824,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 ### Phase 2：発行側（v3.44・2026-08-10・実装済み）
 
 - **2-1. PJから招待する**：プロジェクトカルテ（`src/components/dashboard/ProjectKarte.tsx`。ダッシュボードでPJを選んだときに出るPJ詳細パネル）のAI分析ボタンの上に「🔗 このPJに招待する」を追加した（ゲストには非表示）。`ProjectInviteModal.tsx`（`src/components/project/`）が`create_project_invite`を呼び、**コード・招待リンクは戻り値でのみ得られるため画面に一度だけ表示する**（再表示不可を明記・コピー用ボタン付き）。招待リンクの形式は「アプリのURL（`window.location.origin + pathname`。現在のクエリ・ハッシュは引き継がない）に`?invite=<code>`を付けたもの」。エラーは`formatErrorForUser`経由で、関数が投げる日本語メッセージ（「このプロジェクトを招待する権限がありません」等）がそのまま出る。モーダルは`modalStyles.ts`の契約に従う。
+  **【v3.49で移設】** PJごとの管理項目が増えたため、この発行UI（＋招待の一覧・取り消し）は`ProjectSettingsModal.tsx`（PJカルテの「⚙ このPJの設定」→「招待」タブ）に統合し、`ProjectInviteModal.tsx`単体は撤去した。呼び出す`create_project_invite`/`fetchProjectInvites`/`revokeProjectInvite`自体は変更していない（呼び出し元が変わっただけ）。詳細はSection 4「PJ設定画面とAdminViewのPJ編集の使い分け」参照。
 - **2-2. 管理画面「プロジェクト招待」タブ**（`AdminView.tsx`の`InvitesSection`。カテゴリ「組織」に追加）：`fetchProjectInvites()`で一覧取得し、選択中の部署（`selectedGroupId`）に紐づくPJの招待だけに絞る（既存の部署絞り込みセレクタの流儀に合わせる。RLS自体は発行者と同じ部署に既に絞っている）。列＝対象PJ／招待先メール／発行者／発行日時／有効期限／状態（`src/lib/projectInvite/inviteStatus.ts`の`resolveInviteStatus()`が`accepted_at`/`revoked_at`/`expires_at`から導出）。**取り消し**ボタンは状態が`unused`のときだけ表示し、`revoke_project_invite` RPC（下記マイグレーション）を呼ぶ。🔴 `code_hash`は今回も一切selectしていない（`fetchProjectInvites`が列を明示的に絞る設計を継続）。
 
 ### 🔴 追加マイグレーション：取り消し機能（`revoke_project_invite`）

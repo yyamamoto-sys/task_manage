@@ -4838,5 +4838,81 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             （月ごとに分ける等）方向で546を回避すること。
 #      DBマイグレ不要・UI変更なし。
 #
-# 最終更新：2026-08-11（v3.48）
+# v3.49 完了PJのアーカイブ導線とPJ設定画面の新設（2026-08-11）
+#      山本さんの2つの要望に対応。
+#
+#      【要望1】完了したPJを完了しても左メニューバー（サイドバー）に残り続けるのが不便
+#             だったので、アーカイブできるようにしてほしい。
+#      調査で判明した実態：`projects.status`の`archived`自体は既に存在し、AdminViewの
+#             PJ編集セレクタで変更でき、ProjectStructureView（体制図）は既に
+#             `status !== "archived"`で運用済みだった。しかしMainLayout.tsxの`projects`
+#             （サイドバー含む主要ビューが共有する変数）は元から`status === "active"`
+#             のみを通す実装で、これは初回実装から変更が無かった——つまり`completed`も
+#             `archived`と同じく一律で消えており、「完了してもactiveのまま放置され続ける
+#             （非adminには完了させる手段自体が乏しい）」ことが不便の実態だった。
+#      対応：`src/lib/project/sidebarProjectFilter.ts`の`filterSidebarProjects()`（純粋関数）
+#             を新設し、MainLayout.tsxの`projects`をこれに置き換えた。ルールは
+#             「active・completedは常に表示／archivedのみ既定で隠す」。サイドバーに
+#             「アーカイブを表示」トグル（`KEYS.SIDEBAR_SHOW_ARCHIVED`・既定OFF・
+#             localStorage記憶）を新設。**選択中のPJがarchivedになって一覧から消えて
+#             宙に浮く問題**には、`pinnedProjectId`（選択中PJ id）を渡すとアーカイブ
+#             判定だけを免除する方式で対応（トグル強制ONや選択解除ではなく「見ている
+#             ものが急に消えない」を優先）。mineOnly（自分のPJのみ）の絞り込みは
+#             pinでも免除しない（既存の同種の割り切りと挙動を揃えるため）。
+#      揃えた範囲：MainLayout.tsxの`projects`を共有するダッシュボード・カンバン・ガント・
+#             リスト・稼働状況・コマンドパレット・タスク追加/マイルストーン追加モーダルは
+#             単一変数の共有により自動的に同じルールへ揃った。TaskEditModalのPJピッカー
+#             （status不問でis_deletedのみ除外）とProjectCreateModalの「他PJから引き継ぐ」
+#             元PJ選択は、既存タスクの現在の紐づき先・過去PJからの引き継ぎを妨げない
+#             ためのそれぞれ別の設計判断があり、意図的に変更していない。AdminViewは
+#             部署横断の棚卸し用途のため全ステータス表示のまま。
+#
+#      【要望2】PJごとの管理項目（メンバー招待等）が増えてきたので、各PJダッシュボードに
+#             設定画面を置いて集約したい。
+#      対応：`ProjectSettingsModal.tsx`（新規）をPJカルテの「⚙ このPJの設定」から開く
+#             モーダルとして新設。3タブ構成：
+#              - 基本情報（名前・目的・貢献メモ・オーナー・期間・color_tag・ステータス。
+#                クイック操作で「完了にする」「アーカイブする」「進行中に戻す」を1クリック
+#                実行可。フォームの未保存下書きを巻き込まず、常に正本の`project`から
+#                status1列だけを更新する設計）
+#              - 招待（発行・このPJの一覧・取り消し。旧`ProjectInviteModal.tsx`が担って
+#                いた発行UIをここへ統合し、`ProjectInviteModal.tsx`は撤去）
+#              - 関わるメンバー（オーナー・タスク担当者・招待用部署に属する人、の読み取り
+#                専用一覧。**新しい紐づけテーブルは作らず**、`src/lib/project/
+#                projectMembers.ts`の`computeProjectMembers()`（純粋関数）が既存3種の
+#                データから組み立てる。招待用部署idは`'grp-invite-'+projectId`の文字列を
+#                フロントで再構築せず、`fetchProjectInvites()`が返す実データの
+#                `invite_group_id`から読む）
+#      権限：既存モデルを広げていない。基本情報タブの編集可否はAdminViewのPJ編集と同じ
+#             条件（部署管理者/全社スーパー管理者。部署内にis_adminが1人もいなければ
+#             全員編集可のブートストラップも同じく踏襲）。編集不可の場合は入力欄ではなく
+#             読み取り表示になる。招待の発行は権限に関わらず全メンバー可（Section 25の
+#             既存決定を維持）。関わるメンバータブは常に読み取り専用。
+#      AdminViewとの役割分担：AdminView「作業設定→PJ」タブ（部署横断・全ステータス一覧
+#             編集・PJ削除）は残す。この設定画面は「今見ているPJ1件」に絞った日常操作の
+#             入口。CLAUDE.md Section 4に使い分けを明記。
+#      新規ファイル：src/lib/project/sidebarProjectFilter.ts／src/lib/project/
+#             projectMembers.ts／src/components/project/ProjectSettingsModal.tsx。
+#      削除ファイル：src/components/project/ProjectInviteModal.tsx（機能はProjectSettings
+#             Modalの「招待」タブへ統合）。
+#      変更ファイル：src/components/layout/MainLayout.tsx（`projects`の絞り込みを
+#             filterSidebarProjects()に置換・「アーカイブを表示」トグル新設・PJ一覧に
+#             アーカイブ済みの視覚区別を追加）／src/components/dashboard/ProjectKarte.tsx
+#             （招待ボタンを設定ボタンに置換）／src/lib/localData/localStore.ts
+#             （KEYS.SIDEBAR_SHOW_ARCHIVED追加）／src/i18n/layout.ja.ts・layout.en.ts
+#             （サイドバーのアーカイブトグル文言）。
+#      DBマイグレ不要（既存の`projects.status`・`project_invites`・`members.group_ids`
+#             のみで完結）。
+#      テスト：新規sidebarProjectFilter.test.ts（10件）・projectMembers.test.ts（8件）。
+#             既存の機械チェック（modalStyles.test.ts／labViewContainment.test.ts／
+#             labViewChokePoint.test.ts／version.test.ts／schemaChecks.test.ts）は
+#             全通過。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1159件全通過（1141件→1159件・
+#             +18件）／`npm run lint`変更ファイルに新規エラー0／`npm run build`成功
+#             （DashboardViewチャンクgzip18.55→21.19kB・+2.64kB＝ProjectSettingsModal
+#             が静的importで追加された分。indexチャンクgzip69.33→69.66kB・+0.33kB＝
+#             MainLayout.tsxの追加分。どちらも200KB(gzip)の閾値には遠く及ばず、
+#             Section 19のダウンロード確認ゲートは対象外のまま）。
+#
+# 最終更新：2026-08-11（v3.49）
 

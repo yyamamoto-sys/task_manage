@@ -52,6 +52,8 @@ const KEYS = {
   OKR_MODE_INTRO_APPROVED: "okr_mode_intro_approved",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
+  /** サイドバーで「アーカイブ済みPJも表示」の状態（既定OFF。2026-08-11） */
+  SIDEBAR_SHOW_ARCHIVED: "sidebar_show_archived_projects",
   /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態 */
   SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
   SIDEBAR_OKR_OPEN:    "sidebar_okr_open",
