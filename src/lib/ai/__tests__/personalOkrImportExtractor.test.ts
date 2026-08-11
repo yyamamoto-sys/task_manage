@@ -103,11 +103,11 @@ describe("extractPersonalOkrQuarterlyData", () => {
     expect(result.krs[0].months).toEqual([]); // 呼び出し1はmonthsを抽出しない
   });
 
-  it("AIIntent 'okr-personal-import' で、既定モデル(claude-sonnet-4-6)を指定してinvokeAIを呼び出す", async () => {
+  it("AIIntent 'okr-personal-import' で、取込専用モデル(claude-haiku-4-5)を指定してinvokeAIを呼び出す", async () => {
     mockedInvokeAI.mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
     await extractPersonalOkrQuarterlyData({ transcript: "x" });
     expect(mockedInvokeAI.mock.calls[0][3]).toBe("okr-personal-import");
-    expect(mockedInvokeAI.mock.calls[0][4]).toBe("claude-sonnet-4-6");
+    expect(mockedInvokeAI.mock.calls[0][4]).toBe("claude-haiku-4-5"); // 546対策で haiku 固定（2026-08-11）
   });
 
   it("max_tokensは8192で送る", async () => {

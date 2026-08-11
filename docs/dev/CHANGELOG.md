@@ -4827,5 +4827,16 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      手動適用（適用するまでは(b)は未解消のまま。(a)はコード側の変更のみのためpush済みで
 #      即座に有効）。
 #
-# 最終更新：2026-08-11（v3.47）
+# v3.48 個人OKR取込のモデルを haiku に切り替え（2026-08-11）
+#      背景：v3.45（PDFのクライアント側テキスト化でペイロード削減）・v3.46（AI呼び出しの
+#             2分割）を入れてもなお 546 WORKER_RESOURCE_LIMIT が続いたため、山本さんの
+#             指示で個人OKR取込に限り生成の速い claude-haiku-4-5 に切り替えた。
+#      変更：src/lib/ai/personalOkrImportExtractor.ts の PERSONAL_OKR_IMPORT_MODEL 定数のみ。
+#      影響範囲：AIIntent="okr-personal-import" の取込だけ。他のAI機能は Edge Function 側の
+#             既定（claude-sonnet-4-6）のまま変わらない。
+#      戻し方：同定数を "claude-sonnet-4-6" に戻す。その場合は分割の粒度をさらに細かくする
+#             （月ごとに分ける等）方向で546を回避すること。
+#      DBマイグレ不要・UI変更なし。
+#
+# 最終更新：2026-08-11（v3.48）
 

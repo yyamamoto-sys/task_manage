@@ -485,12 +485,21 @@ export function mergePersonalOkrImportResults(
   return { ...quarterly, krs: [...mergedKrs, ...leftover] };
 }
 
-// ===== モデル選択（546対策の切替口） =====
-// 既定はEdge Function側の既定（DEFAULT_MODEL="claude-sonnet-4-6"）と同じ値を明示している。
-// 呼び出し分割（本ファイル）でも546 WORKER_RESOURCE_LIMITが続く場合は、ここを
-// "claude-haiku-4-5" に変えると生成が速くなる（Edge FunctionのALLOWED_MODELSに含まれている
-// ため、この1箇所を変えるだけで動く。既定は変えない・山本さんの決定：2026-08-10）。
-const PERSONAL_OKR_IMPORT_MODEL = "claude-sonnet-4-6";
+// ===== モデル選択（546対策） =====
+// 【2026-08-11・山本さんの指示で haiku に切り替えた】
+// v3.45（PDFのテキスト化でペイロード削減）・v3.46（呼び出しの2分割）を入れてもなお
+// 546 WORKER_RESOURCE_LIMIT が続いたため、この取込に限って生成の速い haiku を使う。
+// Supabase Edge Function は関数ごとに実行時間の上限を上げられないため、1回の呼び出しを
+// 短くするしかなく、モデルの変更がその最後の手段になる（CLAUDE.md Section 19・28参照）。
+//
+// 🔴 影響範囲はこの取込（AIIntent="okr-personal-import"）だけ。他のAI機能は
+// Edge Function側の既定（DEFAULT_MODEL="claude-sonnet-4-6"）のまま変わらない。
+// "claude-haiku-4-5" は Edge Function の ALLOWED_MODELS に含まれるため、この1箇所の
+// 変更だけで動く（ホワイトリスト外の値にすると既定へ黙ってフォールバックする点に注意）。
+//
+// 抽出の品質が落ちた場合は "claude-sonnet-4-6" に戻す。その場合は分割の粒度を
+// さらに細かくする（月ごとに分ける等）方向で546を回避すること。
+const PERSONAL_OKR_IMPORT_MODEL = "claude-haiku-4-5";
 
 // max_tokens=8192（okrImportExtractor.tsと同じ値）。以前は16000だったが、PDFを添付した
 // リクエストでEdge Functionのワーカーがリソース上限（546 WORKER_RESOURCE_LIMIT）で落ちる
