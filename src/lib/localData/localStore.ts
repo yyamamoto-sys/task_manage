@@ -52,8 +52,11 @@ const KEYS = {
   OKR_MODE_INTRO_APPROVED: "okr_mode_intro_approved",
   /** サイドバーで「自分が参加しているPJのみ表示」の状態 */
   SIDEBAR_MY_PROJECTS_ONLY: "sidebar_my_projects_only",
-  /** サイドバーで「アーカイブ済みPJも表示」の状態（既定OFF。2026-08-11） */
-  SIDEBAR_SHOW_ARCHIVED: "sidebar_show_archived_projects",
+  /** サイドバーで「完了・アーカイブ済みPJも表示」の状態（既定OFF。v3.50・2026-08-11）。
+   *  v3.49の「アーカイブ済みPJも表示」（sidebar_show_archived_projects）を置き換え。
+   *  v3.49はリリース当日中の是正のため実使用者はいない想定で、旧キーからの値の引き継ぎは
+   *  行わない（新キー名で改めて既定OFFから始まる。CLAUDE.md Section 4参照）。 */
+  SIDEBAR_SHOW_COMPLETED_ARCHIVED: "sidebar_show_completed_archived_projects",
   /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態 */
   SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
   SIDEBAR_OKR_OPEN:    "sidebar_okr_open",

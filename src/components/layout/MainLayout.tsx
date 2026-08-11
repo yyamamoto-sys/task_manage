@@ -404,22 +404,22 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       : (currentUser.group_id ? [currentUser.group_id] : []);
     return filterInviteGroupsForSidebar(groupsActive.filter(g => ids.includes(g.id)));
   }, [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id]);
-  // 「アーカイブを表示」トグル（既定OFF）。CLAUDE.md参照：active/completedは常に表示、
-  // archivedのみこのトグルで表示/非表示を切り替える（山本さんの要望・2026-08-11）。
-  const [showArchivedProjects, setShowArchivedProjectsState] = useState<boolean>(
-    () => localStorage.getItem(KEYS.SIDEBAR_SHOW_ARCHIVED) === "1", // デフォルト OFF
+  // 「完了・アーカイブも表示」トグル（既定OFF）。CLAUDE.md参照：既定ではactiveのみ表示、
+  // completed/archivedはこのトグルで表示/非表示を切り替える（v3.50。山本さんの要望・2026-08-11）。
+  const [showCompletedAndArchived, setShowCompletedAndArchivedState] = useState<boolean>(
+    () => localStorage.getItem(KEYS.SIDEBAR_SHOW_COMPLETED_ARCHIVED) === "1", // デフォルト OFF
   );
-  const toggleShowArchivedProjects = () => setShowArchivedProjectsState(prev => {
+  const toggleShowCompletedAndArchived = () => setShowCompletedAndArchivedState(prev => {
     const next = !prev;
-    localStorage.setItem(KEYS.SIDEBAR_SHOW_ARCHIVED, next ? "1" : "0");
+    localStorage.setItem(KEYS.SIDEBAR_SHOW_COMPLETED_ARCHIVED, next ? "1" : "0");
     return next;
   });
   const projects = useMemo(
     () => filterSidebarProjects(allProjects, {
-      showArchived: showArchivedProjects, mineOnly: false, myProjectIds: EMPTY_ID_SET,
+      showCompletedAndArchived, mineOnly: false, myProjectIds: EMPTY_ID_SET,
       pinnedProjectId: selectedProjectId,
     }),
-    [allProjects, showArchivedProjects, selectedProjectId]
+    [allProjects, showCompletedAndArchived, selectedProjectId]
   );
   // ツアーのアクションハンドラが最新のprojectsを参照できるよう同期
   useEffect(() => { projectsRef.current = projects; }, [projects]);
@@ -1411,8 +1411,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         projects={visibleProjects}
         mineOnly={mineOnly}
         onToggleMineOnly={toggleMineOnly}
-        showArchivedProjects={showArchivedProjects}
-        onToggleShowArchivedProjects={toggleShowArchivedProjects}
+        showCompletedAndArchived={showCompletedAndArchived}
+        onToggleShowCompletedAndArchived={toggleShowCompletedAndArchived}
         mineOnlyProjectsCount={projects.filter(p => myProjectIds.has(p.id)).length}
         projectsCount={projects.length}
         selectedProjectId={selectedProjectId}
@@ -1543,9 +1543,9 @@ interface SidebarProps {
   /** フィルタ切替ボタンのバッジ表示用 */
   mineOnlyProjectsCount: number;
   projectsCount: number;
-  /** 「アーカイブを表示」トグル（既定OFF）。CLAUDE.md参照：archivedのみ既定で隠す */
-  showArchivedProjects: boolean;
-  onToggleShowArchivedProjects: () => void;
+  /** 「完了・アーカイブも表示」トグル（既定OFF）。CLAUDE.md参照：completed/archivedを既定で隠す */
+  showCompletedAndArchived: boolean;
+  onToggleShowCompletedAndArchived: () => void;
   selectedProjectId: string | null;
   onSelectProject: (id: string | null) => void;
   keyResults: KeyResult[];
@@ -1582,7 +1582,7 @@ interface SidebarProps {
 function Sidebar({
   viewMode, setViewMode, projects,
   mineOnly, onToggleMineOnly,
-  showArchivedProjects, onToggleShowArchivedProjects,
+  showCompletedAndArchived, onToggleShowCompletedAndArchived,
   selectedProjectId, onSelectProject,
   keyResults, selectedKrId, onSelectKr,
   currentUser, onLogout, isConsultOpen, onOpenConsult,
@@ -1823,15 +1823,15 @@ function Sidebar({
           {!c && pjOpen && (
             <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 14px 4px" }}>
               <button
-                onClick={onToggleShowArchivedProjects}
-                title={showArchivedProjects ? t("layout.sidebar.showArchivedOff") : t("layout.sidebar.showArchivedOn")}
+                onClick={onToggleShowCompletedAndArchived}
+                title={showCompletedAndArchived ? t("layout.sidebar.showArchivedOff") : t("layout.sidebar.showArchivedOn")}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
                   padding: "2px 7px",
                   fontSize: "10px", fontWeight: 500,
-                  background: showArchivedProjects ? "var(--color-bg-tertiary)" : "transparent",
-                  color: showArchivedProjects ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
-                  border: `1px solid ${showArchivedProjects ? "var(--color-border-primary)" : "var(--color-border-primary)"}`,
+                  background: showCompletedAndArchived ? "var(--color-bg-tertiary)" : "transparent",
+                  color: showCompletedAndArchived ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                  border: `1px solid ${showCompletedAndArchived ? "var(--color-border-primary)" : "var(--color-border-primary)"}`,
                   borderRadius: "var(--radius-full)",
                   cursor: "pointer", lineHeight: 1.4,
                 }}
@@ -1850,17 +1850,20 @@ function Sidebar({
           />
           {projects.map(pj => {
             const isArchived = pj.status === "archived";
+            const isCompleted = pj.status === "completed";
+            const isDimmed = isArchived || isCompleted;
             return (
               <NavItem key={pj.id} active={selectedProjectId === pj.id}
                 icon={
                   <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block", opacity: isArchived ? 0.5 : 1 }} />
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block", opacity: isDimmed ? 0.5 : 1 }} />
                     {isArchived && <span style={{ fontSize: "8px" }}>🗄</span>}
+                    {isCompleted && <span style={{ fontSize: "8px" }}>✅</span>}
                   </span>
                 }
                 label={pj.name}
-                tooltip={isArchived ? `${pj.name}（アーカイブ済み）` : pj.name}
-                color={isArchived ? "var(--color-text-tertiary)" : undefined}
+                tooltip={isArchived ? `${pj.name}（アーカイブ済み）` : isCompleted ? `${pj.name}（完了）` : pj.name}
+                color={isDimmed ? "var(--color-text-tertiary)" : undefined}
                 onClick={() => onSelectProject(pj.id)} collapsed={c}
               />
             );

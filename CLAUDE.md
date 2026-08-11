@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.49
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.50
 #
-最終更新：2026-08-11（v3.49）
+最終更新：2026-08-11（v3.50）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -542,34 +542,45 @@ await supabase.from('tasks')
 | Task | 論理削除 | 一覧から非表示 | あり | 変更履歴から可 |
 | Member | 論理削除 | 非表示。担当タスクの assignee_member_id を null に変更 | あり（件数表示） | 変更履歴から可 |
 
-### PJのライフサイクル状態（`status`）とサイドバー表示（v3.49・2026-08-11）
+### PJのライフサイクル状態（`status`）とサイドバー表示（v3.49・2026-08-11／v3.50で是正・2026-08-11）
 
 `projects.status`（`active` / `completed` / `archived`）は上表の論理削除（`is_deleted`）とは別軸。
-削除ではなく「今どのフェーズか」を表す。山本さんの要望（「完了してもサイドバーに残り続けて
-不便」）を受けて、サイドバー・ダッシュボード・カンバン・ガント・リスト・稼働状況・コマンド
-パレット・タスク追加系モーダルが共有する `MainLayout.tsx` の `projects`（`filterSidebarProjects`。
-`src/lib/project/sidebarProjectFilter.ts`・純粋関数）を次のルールに揃えた：
+削除ではなく「今どのフェーズか」を表す。サイドバー・ダッシュボード・カンバン・ガント・リスト・
+稼働状況・コマンドパレット・タスク追加系モーダルが共有する `MainLayout.tsx` の
+`projects`（`filterSidebarProjects`。`src/lib/project/sidebarProjectFilter.ts`・純粋関数）は
+次のルール：
 
-- **active・completed は常に表示する**（完了直後も参照したいため。元々の実装は `status==="active"`
-  のみを通しており、completed も archived と同じく一律で消えていた——今回これを是正した）。
-- **archived は既定で隠す。** サイドバーの「アーカイブを表示」トグル（`KEYS.SIDEBAR_SHOW_ARCHIVED`。
-  既定OFF・localStorageに記憶）でON にすると表示される。
-- **選択中のPJが隠れて宙に浮く問題への対応**：トグルOFFのままアーカイブ済みPJを選択していると、
-  一覧からそのPJだけが消えてハイライトが行方不明になる。`filterSidebarProjects` は
-  `pinnedProjectId`（＝選択中のPJ id）を渡すとアーカイブ判定だけを免除し、選択中のPJは常に
-  一覧に残す（トグルを勝手にON にする案・選択を強制解除する案も検討し、「見ているものが
+- **既定では active のみ表示する。** completed・archived はどちらも既定で隠す。
+- **「完了・アーカイブも表示」トグル**（`KEYS.SIDEBAR_SHOW_COMPLETED_ARCHIVED`。既定OFF・
+  localStorageに記憶）でON にすると、completed・archived の両方がまとめて表示される。
+- **選択中のPJが隠れて宙に浮く問題への対応**：トグルOFFのままcompleted/archived済みPJを選択して
+  いると、一覧からそのPJだけが消えてハイライトが行方不明になる。`filterSidebarProjects` は
+  `pinnedProjectId`（＝選択中のPJ id）を渡すとcompleted/archived判定だけを免除し、選択中のPJは
+  常に一覧に残す（トグルを勝手にON にする案・選択を強制解除する案も検討し、「見ているものが
   急に消えない」を優先してこちらを採用した）。**mineOnly（自分のPJのみ）の絞り込みまでは
   免除しない**（既存の「mineOnly中に担当外のactive PJを選んでも一覧からは消える」挙動と
   一貫させるため）。
+- **視覚的な区別**：一覧上でcompleted・archivedはどちらも鈍色（`--color-text-tertiary`）で
+  表示するが、マークは archived=🗄・completed=✅ で区別する（同じ見た目にしない）。
 - **揃えた範囲**：`MainLayout.tsx` の `projects` を共有するダッシュボード・カンバン・ガント・
   リスト・稼働状況ビュー・コマンドパレット・タスク追加/マイルストーン追加モーダルは全て
   自動的にこのルールに揃った（単一の変数を共有しているため）。体制図（`ProjectStructureView`）
-  は元々`status !== "archived"`で運用済みで、今回の方針と一致している。
+  は元々`status !== "archived"`で運用済み（completedは出す）だが、これはこのSectionのルールと
+  別の運用として維持している（次項の「意図的に揃えなかった範囲」参照）。
 - **意図的に揃えなかった範囲**：`TaskEditModal`のPJピッカー（`active(allProjects)`＝status不問で
   is_deletedのみ除外）と`ProjectCreateModal`の「他PJから引き継ぐ」元PJ選択（`selectScopedProjects`
   そのまま）は、既存タスクの現在の紐づき先を選択肢から消さない／過去の完了・アーカイブ済みPJから
   でも引き継げるようにする、という別の目的があるため変更していない。`AdminView`のPJ一覧・編集は
   部署横断の棚卸し用途のため全ステータス表示のまま（次項参照）。
+
+**🔴 v3.49→v3.50の訂正（経緯の記録）**：v3.49では「active・completedは常に表示・archivedのみ
+トグルで隠す」という設計にしたが、これは統括の事前診断ミスに基づく誤った指示によるもので、
+山本さんの要望（「完了してもサイドバーに残り続けて不便。片付けたい」）と逆方向の変更だった。
+v3.49導入前の実態は`status==="active"`のみを通す＝completedもarchivedも一律で隠れる、が正しい
+挙動だった。v3.50で「既定ではactiveのみ表示」に戻し、「アーカイブを表示」トグルを
+「完了・アーカイブも表示」に統合してcompleted/archivedの両方をこの1トグルで扱うようにした。
+**同じ判断を繰り返さないための記録**：機能追加の前提を「元の実装がこうだったから」で決め打ちせず、
+コードを実際に読んで確認すること。
 
 ### PJ設定画面（Section 8参照）とAdminViewのPJ編集の使い分け（v3.49）
 
@@ -1062,7 +1073,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-11（v3.49）
+- 最終更新：2026-08-11（v3.50）
 
 ---
 

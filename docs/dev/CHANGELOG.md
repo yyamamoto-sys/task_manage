@@ -4914,5 +4914,36 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             MainLayout.tsxの追加分。どちらも200KB(gzip)の閾値には遠く及ばず、
 #             Section 19のダウンロード確認ゲートは対象外のまま）。
 #
-# 最終更新：2026-08-11（v3.49）
+# v3.50 サイドバーの絞り込みルールを是正：v3.49の逆行を修正（2026-08-11）
+#      背景：v3.49は統括の事前診断ミスに基づく誤った指示で実装していた。実際の変更前の
+#             挙動は`status==="active"`のみを通す＝completedもarchivedも一律で隠れる、
+#             が正しかったが、v3.49は誤って「completedは常に表示」に変えてしまい、
+#             山本さんの要望（「完了PJがサイドバーに残り続けて散らかる。片付けたい」）と
+#             逆方向になっていた（完了済みにしたPJがサイドバーに再出現する）。
+#      対応：`filterSidebarProjects()`（`src/lib/project/sidebarProjectFilter.ts`）を
+#             「既定ではactiveのみ表示」に戻し、「アーカイブを表示」トグルを
+#             「完了・アーカイブも表示」の1トグルに統合してcompleted/archivedの両方を
+#             まとめて扱うようにした。pinnedProjectId（選択中PJ）の免除は維持しつつ、
+#             免除対象をarchivedだけでなくcompletedにも拡張。mineOnlyの絞り込みは
+#             従来どおり免除しない。
+#      視覚的区別：completed/archivedはどちらも鈍色表示のままだが、マークをarchived=🗄・
+#             completed=✅に分けて見分けられるようにした（同じ見た目にしない）。
+#      localStorageキー：`KEYS.SIDEBAR_SHOW_ARCHIVED`（sidebar_show_archived_projects）
+#             を`KEYS.SIDEBAR_SHOW_COMPLETED_ARCHIVED`（sidebar_show_completed_archived_
+#             projects）へ改名。v3.49がリリース当日中の是正のため実使用者はいない想定で、
+#             旧キーからの値の引き継ぎ処理は行わず、新キー名で改めて既定OFFから始まる
+#             （実害は無い判断。CLAUDE.md Section 4に記録）。
+#      変更ファイル：src/lib/project/sidebarProjectFilter.ts／src/lib/project/__tests__/
+#             sidebarProjectFilter.test.ts／src/components/layout/MainLayout.tsx／
+#             src/lib/localData/localStore.ts／src/i18n/layout.ja.ts・layout.en.ts／
+#             src/components/project/ProjectSettingsModal.tsx（クイック操作の説明文を
+#             実態に合わせて修正）。
+#      DBマイグレ不要・UI操作そのものは変わらない（トグルの意味と既定挙動のみ変更）。
+#      テスト：sidebarProjectFilter.test.ts を新ルールに合わせて更新（10件→11件・
+#             pinnedProjectIdのcompletedケースを1件追加・既存の期待値は全て新ルールに
+#             書き換え）。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1160件全通過（1159件→1160件）／
+#             `npm run lint`変更ファイルに新規エラー0／`npm run build`成功。
+#
+# 最終更新：2026-08-11（v3.50）
 

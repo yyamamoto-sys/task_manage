@@ -414,7 +414,7 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
                       )}
                     </div>
                     <p style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px", lineHeight: 1.6 }}>
-                      アーカイブすると、サイドバーの一覧から既定で隠れます（「アーカイブを表示」トグルでいつでも再表示できます）。完了はサイドバーに残ります。
+                      完了・アーカイブのどちらも、サイドバーの一覧から既定で隠れます（「完了・アーカイブも表示」トグルでいつでも再表示できます）。
                     </p>
                   </div>
                 </div>

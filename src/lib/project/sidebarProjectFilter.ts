@@ -4,19 +4,19 @@
 // サイドバーの「プロジェクト」一覧に何を出すかを決める純粋関数。
 // 元々 MainLayout.tsx は `status === "active"` のPJしか通していなかった（初回実装から
 // 変更なし）ため、`completed` にしたPJも `archived` にしたPJも一律で見えなくなっていた。
-// ProjectStructureView（体制図）は既に `status !== "archived"` で運用済み（= completed は
-// 出す）だったため、サイドバーもこれに合わせる。
 //
-// 山本さんの要望（2026-08-11）：「完了したPJをアーカイブできるようにしたい。完了しても
-// 消えないのが不便」に対応する形は、
-//   - active / completed は常に表示する（完了直後も参照したいため）
-//   - archived は既定で隠す。「アーカイブを表示」トグルで見えるようにする
-// という設計にした。
+// 【v3.49→v3.50の訂正】
+// v3.49では「completedは常に表示・archivedのみトグルで隠す」という設計に変更したが、
+// これは山本さんの要望（「完了したPJがサイドバーに残り続けて散らかる。片付けたい」）と
+// 逆方向の変更だった。v3.49以前の実態（=completedもarchivedも一律で隠れていた）の方が
+// 要望に合っていたため、v3.50で「既定では active のみ表示」に戻し、
+// 「完了・アーカイブも表示」という単一のトグルで completed と archived の両方を
+// まとめて表示できるようにした（v3.49までの「アーカイブを表示」トグルを置き換え）。
 //
 // 【選択中PJが隠れて宙に浮く問題への対応】
-// トグルOFFのままアーカイブ済みPJを選択中にすると、サイドバーからその項目が消えて
+// トグルOFFのまま completed/archived 済みPJを選択中にすると、サイドバーからその項目が消えて
 // ハイライトが宙に浮く（どのPJを見ているか分からなくなる）。ここでは
-// `pinnedProjectId`（＝現在選択中のPJ id）を渡すと、アーカイブ判定だけを免除して
+// `pinnedProjectId`（＝現在選択中のPJ id）を渡すと、completed/archived判定だけを免除して
 // 常に一覧に残す方式にした（トグルを勝手にONにする／選択を強制解除する、の2案を検討し、
 // 「今見ているものが急に消えない」を優先してこちらを採用）。
 // 🔴 mineOnly の絞り込みは pinnedProjectId でも免除しない。既存挙動（mineOnly中に
@@ -24,13 +24,13 @@
 export type SidebarProjectStatus = "active" | "completed" | "archived";
 
 export interface SidebarProjectFilterOptions {
-  /** 「アーカイブを表示」トグルの状態 */
-  showArchived: boolean;
+  /** 「完了・アーカイブも表示」トグルの状態（v3.50。旧「アーカイブを表示」を置き換え） */
+  showCompletedAndArchived: boolean;
   /** 「自分が参加しているPJのみ」トグルの状態 */
   mineOnly: boolean;
   /** mineOnly=true のときに残す対象PJ id */
   myProjectIds: ReadonlySet<string>;
-  /** 現在選択中のPJ id（アーカイブ判定のみ免除して常に表示する） */
+  /** 現在選択中のPJ id（completed/archived判定のみ免除して常に表示する） */
   pinnedProjectId?: string | null;
 }
 
@@ -40,7 +40,8 @@ export function filterSidebarProjects<
   return projects.filter(p => {
     if (p.is_deleted) return false;
     const isPinned = opts.pinnedProjectId != null && p.id === opts.pinnedProjectId;
-    if (p.status === "archived" && !opts.showArchived && !isPinned) return false;
+    const isHiddenByDefault = p.status === "completed" || p.status === "archived";
+    if (isHiddenByDefault && !opts.showCompletedAndArchived && !isPinned) return false;
     if (opts.mineOnly && !opts.myProjectIds.has(p.id)) return false;
     return true;
   });
