@@ -4945,5 +4945,39 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1160件全通過（1159件→1160件）／
 #             `npm run lint`変更ファイルに新規エラー0／`npm run build`成功。
 #
-# 最終更新：2026-08-11（v3.50）
+# v3.51 OKRモード再設計 Phase 3前半：「これから」ブロックの機械計算（2026-08-11）
+#      背景：docs/dev/okr-redesign-plan.md §5-1の方針どおり「AIが要るものと要らないものを
+#             分ける」。今回は要らない側（機械計算・ゼロトークン・即時描画）だけを実装した。
+#             AI呼び出し（見立て・捨てる候補・原因の推定・バンドのAI判定）はPhase 3後半で
+#             実装する。
+#      DB：`personal_kr_outlooks`テーブルを追加（`migrations/20260811_add_personal_kr_
+#             outlooks.sql`。⚠️山本さんが手動適用・未適用）。AI解析結果を履歴として積む
+#             （UPDATEしない）。RLSは既存の`personal_kr_owner_member_id()`を再利用し新しい
+#             ヘルパー関数は増やしていない。今回はテーブルを作るだけで書き込みは無い。
+#      新規：`src/lib/personalOkr/outlookFingerprint.ts`（`computeOutlookInputFingerprint()`。
+#             Phase 3後半の「前回と一致したら再解析しない」判定用の純粋関数。FNV-1a・外部
+#             ライブラリ不使用・週配列の順序に依存しない。今回はまだどこからも呼ばれない）。
+#      新規：`src/lib/personalOkr/aheadCompute.ts`（`computeAheadFacts()`＝残り週数・月末
+#             までの日数・週の自己評価の積み上げ・未設定/評価待ちの週一覧、`isTargetAndEvidence
+#             Set()`）。`src/lib/personalOkr/aheadTaskStats.ts`（`summarizeLinkedTaskStatus()`＝
+#             紐づくタスクの遅延/停滞/先行待ちの集計。既存ロジック＝computeDelayDays（B4）・
+#             isTaskStagnant・getIncompletePredecessors（B1）を再実装せずそのままimport）。
+#      新規：`src/lib/personalOkr/bandDisplay.ts`（`resolveBandDisplay()`＝バンドの3値
+#             （band_target/band_ai/band_override）を混ぜず、override優先→target、を1箇所に
+#             集約。band_aiはまだ無いため常に対象外）。
+#      新規：`src/components/okr/personal/AheadBlock.tsx`（「これから」ブロックのUI。機械計算の
+#             事実を表示し、AIが書く部分は「AIによる見立ては次の更新で入ります。」という控えめな
+#             プレースホルダのみ・解析状態は固定文言「AI解析：未実施」のみで再解析ボタンは無し。
+#             band_overrideをクリックで即保存・トグルで解除。解除時はnullを送る＝undefinedにしない）。
+#      変更：`PersonalKrPanel.tsx`に「これから」を当月（monthStatus==="current"）のみ追加。
+#             `src/lib/localData/types.ts`（`PersonalKrOutlook`型を追加）。`supabase/schema.sql`
+#             （テーブル・RLS・インデックスを同期）。`src/lib/schema/schemaChecks.ts`
+#             （`personal_kr_outlooks_table`検査項目を追加）。
+#      テスト：新規`outlookFingerprint.test.ts`(14件)・`aheadCompute.test.ts`(10件)・
+#             `aheadTaskStats.test.ts`(9件)・`bandDisplay.test.ts`(3件)。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1197件全通過（1160件→1197件・+37件）／
+#             `npm run lint`変更ファイルに新規エラー0／`npm run build`成功（PersonalOkrView
+#             チャンクgzip24.12kB→27.38kB・+3.26kB）。
+#
+# 最終更新：2026-08-11（v3.51）
 

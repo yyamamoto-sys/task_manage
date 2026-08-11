@@ -2,9 +2,10 @@
 //
 // 【設計意図】
 // 個人OKRビュー・選択中の個人KR1本の中身。上から
-// 「月の切替バー → このKRの内容（折りたたみ） → 今月の計画 → ★週の目標状態 → メモ」の順
-// （docs/dev/okr-redesign-plan.md §7）。Phase 3の「これから」「AIパネル」・Phase 4の
-// 「月末にやること（下書き生成ボタン）」はここでは作らない（未実装の空ボタンを出さない）。
+// 「月の切替バー → このKRの内容（折りたたみ） → 今月の計画 → ★週の目標状態 → これから → メモ」
+// の順（docs/dev/okr-redesign-plan.md §7）。「これから」は当月（monthStatus==="current"）のみ
+// 表示する（Phase 3前半・機械計算のみ。AIパネル・Phase 4の「月末にやること」下書き生成ボタンは
+// ここでは作らない＝未実装の空ボタンを出さない）。
 //
 // 週は computeMonthWeekSegments が返すセグメント数をそのまま使う（5列固定にしない。
 // CLAUDE.md Section 24）。空の週レコードは事前に一括作成せず、goal_state/self_ratingを
@@ -19,10 +20,13 @@ import type {
 import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
 import { buildWeekCards } from "../../../lib/personalOkr/weekLayout";
+import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personalOkr/aheadCompute";
+import { summarizeLinkedTaskStatus } from "../../../lib/personalOkr/aheadTaskStats";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
+import { AheadBlock } from "./AheadBlock";
 
 const KR_KIND_LABEL: Record<string, string> = {
   group_kr: "グループKR紐づけ", general: "全般", company_common: "全社共通",
@@ -150,7 +154,8 @@ export function PersonalKrPanel({
 
   // ===== 週の目標状態 =====
   const segments = useMemo(() => computeMonthWeekSegments(slot.monthStart), [slot.monthStart]);
-  const weekCards = useMemo(() => buildWeekCards(segments, weeks.filter(w => w.month === monthStr && !w.is_deleted)), [segments, weeks, monthStr]);
+  const monthWeeks = useMemo(() => weeks.filter(w => w.month === monthStr && !w.is_deleted), [weeks, monthStr]);
+  const weekCards = useMemo(() => buildWeekCards(segments, monthWeeks), [segments, monthWeeks]);
 
   // 既存の週レコードに紐づくタスクを、リンクモーダルを開かなくても週カードに表示できるよう
   // 事前に読み込む（1KRあたり最大6週分・件数は小さいのでまとめて発火してよい）
@@ -164,6 +169,38 @@ export function PersonalKrPanel({
     const found = segments.find(s => today >= s.weekStart && today <= new Date(s.weekEnd.getFullYear(), s.weekEnd.getMonth(), s.weekEnd.getDate(), 23, 59, 59));
     return found?.weekIndex ?? null;
   }, [segments, monthStatus, today]);
+
+  // ===== これから（機械計算のみ。AIは使わない。Phase 3前半） =====
+  const aheadFacts = useMemo(() => computeAheadFacts(segments, monthWeeks, today), [segments, monthWeeks, today]);
+  // 週をまたいだ紐づけタスクをユニーク化（同じタスクが複数週に紐づいていても二重計上しない）
+  const monthLinkedTasks = useMemo(() => {
+    const ids = new Set<string>();
+    for (const card of weekCards) {
+      if (!card.existing) continue;
+      for (const link of weekTasksByWeek[card.existing.id] ?? []) ids.add(link.task_id);
+    }
+    return Array.from(ids).map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
+  }, [weekCards, weekTasksByWeek, tasks]);
+  const aheadTaskStats = useMemo(
+    () => summarizeLinkedTaskStatus(monthLinkedTasks, tasks, taskDependencies),
+    [monthLinkedTasks, tasks, taskDependencies],
+  );
+  const targetAndEvidenceSet = isTargetAndEvidenceSet(monthRecord?.target_and_evidence);
+
+  // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
+  const handleSetBandOverride = async (value: PersonalKrBand | null) => {
+    const now = new Date().toISOString();
+    const month: PersonalKrMonth = monthRecord
+      ? { ...monthRecord, band_override: value, band_override_by: value ? currentUser.id : null, band_override_at: value ? now : null }
+      : {
+          id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
+          positioning: null, activities: null, target_and_evidence: null, risks: null,
+          band_target: null, band_override: value, band_override_by: value ? currentUser.id : null,
+          band_override_at: value ? now : null,
+          is_deleted: false, created_at: now, updated_by: currentUser.id,
+        };
+    await onSaveMonth(month, monthRecord?.updated_at);
+  };
 
   const ensureWeek = useCallback(async (weekIndex: number, weekStartStr: string, weekEndStr: string): Promise<PersonalKrWeek> => {
     const found = weeks.find(w => w.week_index === weekIndex && w.month === monthStr && !w.is_deleted);
@@ -355,6 +392,19 @@ export function PersonalKrPanel({
               ◯達成／△一部／✕未達を自分で付けます。評価すると週の色が変わります。もう一度押すと未評価に戻せます。
             </p>
           </div>
+
+          {/* これから（当月のみ・機械計算パート。Phase 3前半） */}
+          {monthStatus === "current" && (
+            <AheadBlock
+              facts={aheadFacts}
+              taskStats={aheadTaskStats}
+              targetAndEvidenceSet={targetAndEvidenceSet}
+              bandTarget={monthRecord?.band_target ?? null}
+              bandOverride={monthRecord?.band_override ?? null}
+              editable={monthEditable}
+              onSetOverride={handleSetBandOverride}
+            />
+          )}
         </>
       )}
 

@@ -211,6 +211,13 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     migration: "20260807b_add_personal_okr.sql",
   },
   {
+    id: "personal_kr_outlooks_table",
+    kind: "table",
+    table: "personal_kr_outlooks",
+    label: "個人OKR：AI解析の結果とキャッシュテーブル（personal_kr_outlooks）が見つかりません",
+    migration: "20260811_add_personal_kr_outlooks.sql",
+  },
+  {
     id: "kr_quarter_plans_table",
     kind: "table",
     table: "kr_quarter_plans",

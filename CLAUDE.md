@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.50
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.51
 #
-最終更新：2026-08-11（v3.50）
+最終更新：2026-08-11（v3.51）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -990,7 +990,7 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
-| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39／Phase 2取込・v3.41） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（Kintone取込または手入力）→週の目標状態（◯△✕自己評価）→メモを記録する。「📥 Kintoneから取込」（`PersonalOkrImportModal`）でKintoneの個人四半期OKR・月次振返り記録のPDF/テキストをAI解析→人が確認・対応づけ→登録できる。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
+| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39／Phase 2取込・v3.41／Phase 3前半「これから」機械計算・v3.51） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（Kintone取込または手入力）→週の目標状態（◯△✕自己評価）→**これから（当月のみ・機械計算。残り週数・自己評価の積み上げ・未設定週・紐づくタスクの遅延/停滞/先行待ち・バンドの決定）**→メモを記録する。「📥 Kintoneから取込」（`PersonalOkrImportModal`）でKintoneの個人四半期OKR・月次振返り記録のPDF/テキストをAI解析→人が確認・対応づけ→登録できる。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
 | OKRモード：グループ側機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ） | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 山本さんの判断で一旦白紙化。OKRモードは個人OKRのみになり、サイドバーのラボからも撤去した。コードは削除せず保管（`src/components/okr/ARCHIVED.md`参照）。旧クォーター計画タブは`kr_quarter_plans`（部署スコープ・Supabase）保存だった |
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
@@ -1073,7 +1073,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-11（v3.50）
+- 最終更新：2026-08-11（v3.51）
 
 ---
 
@@ -1811,6 +1811,54 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **機密への配慮**：月次振返りPDFにはGM評価・面談コメントが含まれるため、入力ステップに「🔒 AIに送信される内容」を明示（送るファイル・テキストの範囲と、送らないもの＝アプリ内の既存データ）。
 - **取込後も編集可能**：`personal_krs`/`personal_kr_months`の`source_label`/`imported_at`列を必ず埋め、`PersonalKrPanel.tsx`に「📥 {source_label}」バッジ（Kintoneが正本である旨のツールチップ付き）を表示する。取込後もアプリ上でこれらの列を編集できる（読み取り専用にしない）。
 - **DBスキーマ変更なし**：Step Aの5テーブルで足りるため、新規マイグレーションは追加していない（`schemaChecks.ts`への追記も不要）。
+
+### Step G：「これから」ブロック（Phase 3前半・機械計算のみ・v3.51・2026-08-11）
+
+**AIが要るものと要らないものを分ける**（`docs/dev/okr-redesign-plan.md` §5-1）。今回作ったのは
+**要らない側だけ**：既存データから即時に計算できる事実を「これから」ブロックとして描画する。
+AI呼び出し（見立て・捨てる候補・原因の推定・バンドのAI判定）はPhase 3後半で実装する。
+
+**分ける理由（2点）**：①更新中に茫然と待たせない——機械計算分は起動と同時に描画でき、AI分は
+後から差し込む設計にすれば、AIの応答を待つ間も週の目標状態やメモは編集できる。②トークンを
+使わない——モードを開いただけで発生する処理をゼロトークンに保ち、AI呼び出しは「開いているKR
+タブ1本・入力が前回と変わったときだけ」に限定する設計（§5-2）の前提を崩さない。
+
+- **`personal_kr_outlooks`テーブルを追加**（`migrations/20260811_add_personal_kr_outlooks.sql`。
+  ⚠️山本さんが手動適用・未適用）。AI解析の結果を履歴として積む（UPDATEしない）。RLSは既存の
+  `personal_kr_owner_member_id()`をそのまま再利用（新しいヘルパー関数を増やさない）。今回は
+  テーブルを作るだけで、書き込みは無い（Phase 3後半でAI呼び出しを実装したときに初めて発生する）。
+- **入力フィンガープリント**（`src/lib/personalOkr/outlookFingerprint.ts`の
+  `computeOutlookInputFingerprint()`）：Phase 3後半の「前回と一致したら再解析しない」判定に使う
+  純粋関数を先に用意した（今回はまだどこからも呼ばれない）。FNV-1a（32bit）による軽量ハッシュ
+  （暗号強度は不要・外部ライブラリを足さない）。週配列はweekIndex昇順にソートしてから文字列化
+  するため、要素の順序に依存しない。
+- **「これから」の機械計算**：`src/lib/personalOkr/aheadCompute.ts`の`computeAheadFacts()`
+  （残り週数・月末までの日数・週の自己評価の積み上げ＝◯△✕の件数・目標状態が未設定の週／
+  評価待ちの週の一覧）と`isTargetAndEvidenceSet()`（当月末の達成目標が実質的に設定されているか）。
+  紐づくタスクの状況は`src/lib/personalOkr/aheadTaskStats.ts`の`summarizeLinkedTaskStatus()`が
+  集計するが、🔴 判定ロジック自体は再実装していない——ベースライン差分は既存の
+  `computeDelayDays`（B4）、停滞は既存の`isTaskStagnant`（`AlertTasksWidget.tsx`と同じ判定
+  関数）、先行待ちは既存の`getIncompletePredecessors`（B1）をそのままimportして使う。
+- **バンドは3値を混ぜない**（`src/lib/personalOkr/bandDisplay.ts`の`resolveBandDisplay()`）：
+  `band_ai`（AIの見通し）がまだ無いため、表示は`band_override`（人の決定）があればそれ、
+  無ければ`band_target`（Kintoneの狙い）。バッジは「● 自分で決定」／「🎯 Kintoneの狙い」を
+  明確に区別して出す。「✦ AI判定」バッジは常に無効表示の空き枠として置き、Phase 3後半で
+  `band_ai`が入ったら差し替える（今は偽の判定結果を出さない）。
+- **`band_override`は人が選んで保存できる**（`AheadBlock.tsx`）：バンドのボタンをクリックすると
+  `personal_kr_months.band_override`/`band_override_by`/`band_override_at`を即保存する（トグルで
+  解除も可）。解除時は`undefined`ではなく`null`を送る（Section 5・`personalOkrStore.ts`冒頭の
+  null値送信ルール）。
+- **AIが書く部分は控えめなプレースホルダのみ**（モックの`.ahead-lead`/`.trade`に相当する位置）：
+  「AIによる見立ては次の更新で入ります。」とだけ表示し、偽の内容は一切出さない。
+- **解析状態は「器」だけ**：「AI解析：未実施（次の更新で追加予定）」という固定文言のみを表示し、
+  「解析中」「解析済み」の動的状態・再解析ボタンは置かない（今回はAI呼び出しが無いため、押せない
+  ボタンを置かない方針。CLAUDE.md全体の「未実装の空ボタンを出さない」方針と同じ）。
+- **表示対象は当月（`monthStatus==="current"`）のみ**：「これから」は前向きの計画ブロックのため、
+  過去月・未来月には出さない（過去月の読み取り専用サマリー・未来月の「計画がまだありません」は
+  既存のまま変更していない）。
+- **やらないこと（Phase 3後半で実施）**：AI呼び出し（`AIIntent`への新タグ追加・
+  `personal_kr_outlooks`への書き込み・`band_ai`の判定）・AIパネルのOKR版・月末の振り返り下書き
+  （Phase 4）は今回作っていない。
 
 ---
 

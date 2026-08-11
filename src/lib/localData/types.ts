@@ -482,6 +482,23 @@ export interface PersonalKrMemo {
 }
 
 /**
+ * AI解析の結果とキャッシュ（Phase 3後半で書き込み開始。migrations/20260811_add_personal_kr_outlooks.sql）。
+ * 履歴として積む（上書きしない）ため updated_at を持たない。Phase 3前半（本ファイル追加時点）では
+ * このテーブルへの書き込みは無く、型だけを先に用意する。
+ */
+export interface PersonalKrOutlook {
+  id: string;
+  personal_kr_id: string;
+  month: string;              // 月初 YYYY-MM-01
+  input_fingerprint: string;  // 一致したら再解析しない（src/lib/personalOkr/outlookFingerprint.ts）
+  outlook_json: unknown;      // 見立て・週ごとの一手・捨てる候補（Phase 3後半で構造確定）
+  band_ai?: PersonalKrBand | null;  // 月の途中でも出す「見通し」
+  band_ai_reason?: string | null;
+  model?: string | null;
+  created_at?: string;
+}
+
+/**
  * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
  * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列
  * （src/lib/supabase/projectInviteStore.ts が select で明示的に除外する）。

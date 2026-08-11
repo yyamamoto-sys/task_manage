@@ -728,6 +728,22 @@ CREATE TABLE IF NOT EXISTS personal_kr_memos (
   updated_by       text NOT NULL DEFAULT ''
 );
 
+-- AI解析の結果とキャッシュ（migrations/20260811_add_personal_kr_outlooks.sql）。履歴として積む
+-- （UPDATEしない・updated_at列を持たない）。personal_kr_id→personal_krsの所有者判定は既存の
+-- personal_kr_owner_member_id()を再利用する（新しいヘルパー関数は増やさない）。Phase 3前半時点
+-- ではこのテーブルへの書き込みは無い（AI呼び出しはPhase 3後半で実装）。
+CREATE TABLE IF NOT EXISTS personal_kr_outlooks (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  personal_kr_id     uuid NOT NULL REFERENCES personal_krs(id),
+  month              date NOT NULL,
+  input_fingerprint  text NOT NULL,
+  outlook_json       jsonb NOT NULL,
+  band_ai            integer CHECK (band_ai IS NULL OR band_ai IN (60,70,80,90,100)),
+  band_ai_reason     text,
+  model              text,
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+
 -- ===== プロジェクト招待（部署外メンバーの受け入れ。migrations/20260810_add_project_invites.sql）=====
 -- 正本：docs/dev/project-invite-plan.md。RLSはSELECTのみ（CLAUDE.md新セクション参照）。
 -- 書き込みはcreate_project_invite()/accept_project_invite()（SECURITY DEFINER）経由のみ。
@@ -820,6 +836,9 @@ ALTER TABLE personal_kr_week_tasks     ENABLE ROW LEVEL SECURITY;
 ALTER TABLE personal_kr_memos          ENABLE ROW LEVEL SECURITY;
 -- ※ 個人OKR層5テーブルの個別ポリシーは current_member_id() 等を参照するため、
 --   ヘルパー関数の定義より後（下部の「個人OKR層」ブロック）で作成する。
+ALTER TABLE personal_kr_outlooks       ENABLE ROW LEVEL SECURITY;
+-- ※ personal_kr_outlooks の個別ポリシーも同様に、ヘルパー関数（personal_kr_owner_member_id）の
+--   定義より後（下部の「個人OKR層」ブロック）で作成する（migrations/20260811_add_personal_kr_outlooks.sql）。
 ALTER TABLE project_invites             ENABLE ROW LEVEL SECURITY;
 -- ※ project_invites の個別ポリシー（SELECTのみ）は can_access_group_ids()/member_group_ids()
 --   を参照するため、ヘルパー関数の定義より後（下部の「PJ・タスク周辺（子）テーブル」ブロック）
@@ -1076,6 +1095,14 @@ CREATE POLICY "personal_kr_memos_own" ON personal_kr_memos
     personal_kr_owner_member_id(personal_kr_id) = current_member_id()
     AND member_id = current_member_id()
   );
+
+-- personal_kr_outlooks（migrations/20260811_add_personal_kr_outlooks.sql）。既存の
+-- personal_kr_owner_member_id() をそのまま再利用する（新しいヘルパー関数は増やさない）。
+DROP POLICY IF EXISTS "personal_kr_outlooks_own" ON personal_kr_outlooks;
+CREATE POLICY "personal_kr_outlooks_own" ON personal_kr_outlooks
+  FOR ALL TO authenticated
+  USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
+  WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
 
 -- ============================================================
 -- ゲストAI利用回数の条件付きカウントアップ関数（Phase 3・v3.29／v3.30で条件付き加算に修正）
@@ -2159,6 +2186,10 @@ CREATE INDEX IF NOT EXISTS idx_personal_kr_months_personal_kr_id ON personal_kr_
 CREATE INDEX IF NOT EXISTS idx_personal_kr_weeks_personal_kr_id  ON personal_kr_weeks(personal_kr_id)  WHERE is_deleted = false;
 CREATE INDEX IF NOT EXISTS idx_personal_kr_week_tasks_task_id    ON personal_kr_week_tasks(task_id);
 CREATE INDEX IF NOT EXISTS idx_personal_kr_memos_personal_kr_id  ON personal_kr_memos(personal_kr_id) WHERE is_deleted = false;
+
+-- AI解析の結果とキャッシュ（migrations/20260811_add_personal_kr_outlooks.sql）
+CREATE INDEX IF NOT EXISTS idx_personal_kr_outlooks_kr_month_created
+  ON personal_kr_outlooks(personal_kr_id, month, created_at DESC);
 
 -- クォーター計画（migrations/20260807c_add_kr_quarter_plans.sql）
 CREATE INDEX IF NOT EXISTS idx_kr_quarter_plans_kr_id ON kr_quarter_plans(kr_id) WHERE is_deleted = false;
