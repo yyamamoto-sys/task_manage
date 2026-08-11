@@ -1,24 +1,24 @@
 // src/components/okr/personal/AheadBlock.tsx
 //
 // 【設計意図】
-// 個人OKRビュー「これから」ブロック（Phase 3前半・docs/dev/okr-redesign-plan.md §5-1・§7・§8）。
-// ここに置くのは機械計算（ゼロトークン・即時描画）だけ。AIが必要な部分（見立て・捨てる候補・
-// 原因の推定）はPhase 3後半で実装するため、今回は控えめなプレースホルダのみを出す
-// （モックの .ahead-lead / .trade に相当する位置。偽の内容を出さない）。
+// 個人OKRビュー「これから」ブロック（Phase 3・docs/dev/okr-redesign-plan.md §5-1・§7・§8）。
+// 機械計算（ゼロトークン・即時描画）は起動と同時に出す。AIが書く部分（見立て・週ごとの
+// 一手・捨てる候補・バンドのAI判定）はPhase 3後半（v3.52）で実装済み——解析中は
+// この部分だけをスケルイト表示にし、数字と週の状態は最初から出ている（親コンポーネントが
+// 機械計算部分を先に描画し、outlookRow/analyzingを別のstate源から後で差し込む設計）。
 //
-// 解析状態は「器」だけを用意する：今回はAI呼び出しが無いため「解析中」「解析済み」の動的な
-// 状態は表示せず、押せない再解析ボタンも置かない（未実装の空ボタンを出さない方針）。
-//
-// バンドは3値を混ぜない（§6）。表示は band_override（決定）があればそれ、無ければ
-// band_target（狙い）。「✦ AI判定」バッジは常に無効状態のプレースホルダとして位置だけ空ける。
-// band_override 自体はここで人が選んで保存できる（クリックで即保存・toggleで解除）。
+// バンドは3値を混ぜない（§6）。表示はband_override（決定）> band_ai（見通し）>
+// band_target（狙い）の優先順位。🔴 band_overrideが入っていればband_aiの値は表示に
+// 使わない（resolveBandDisplayが判定する。band_ai自体は常にAPIから受け取るが、
+// この関数を通さない限り画面には出さない）。
 
 import { useState } from "react";
-import type { PersonalKrBand } from "../../../lib/localData/types";
+import type { PersonalKrBand, PersonalKrOutlook } from "../../../lib/localData/types";
 import type { AheadFacts } from "../../../lib/personalOkr/aheadCompute";
 import type { LinkedTaskStatusSummary } from "../../../lib/personalOkr/aheadTaskStats";
 import { resolveBandDisplay } from "../../../lib/personalOkr/bandDisplay";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
+import { readStoredOutlookPayload } from "../../../lib/ai/personalOkrOutlookExtractor";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 
 const sectionHeadStyle: React.CSSProperties = {
@@ -36,13 +36,34 @@ interface Props {
   bandOverride: PersonalKrBand | null;
   editable: boolean;
   onSetOverride: (value: PersonalKrBand | null) => Promise<void>;
+  /** undefined=DBから未取得（初回のensureOutlookLoaded完了前）／null=解析結果がまだ無い */
+  outlookRow: PersonalKrOutlook | null | undefined;
+  analyzing: boolean;
+  outlookError: string | null;
+  /** 文脈（PersonalOkrAiContextInput）が組み立てられているか。falseなら再解析ボタンを無効化する */
+  canReanalyze: boolean;
+  onReanalyze: () => void;
 }
 
-export function AheadBlock({ facts, taskStats, targetAndEvidenceSet, bandTarget, bandOverride, editable, onSetOverride }: Props) {
+function formatAnalyzedAt(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+export function AheadBlock({
+  facts, taskStats, targetAndEvidenceSet, bandTarget, bandOverride, editable, onSetOverride,
+  outlookRow, analyzing, outlookError, canReanalyze, onReanalyze,
+}: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const display = resolveBandDisplay(bandOverride, bandTarget);
+  const bandAi = outlookRow?.band_ai ?? null;
+  const display = resolveBandDisplay(bandOverride, bandAi, bandTarget);
   const hasTaskAlerts = taskStats.delayedCount > 0 || taskStats.stagnantCount > 0 || taskStats.blockedCount > 0;
+  const outlookPayload = outlookRow ? readStoredOutlookPayload(outlookRow.outlook_json) : null;
+  // loading（スケルトン）: 解析中、またはDBの直近結果をまだ一度も取得していない（初回のensureOutlookLoaded完了前）
+  const isLoadingOutlook = analyzing || outlookRow === undefined;
 
   const handlePick = async (value: PersonalKrBand) => {
     setError(null);
@@ -61,9 +82,28 @@ export function AheadBlock({ facts, taskStats, targetAndEvidenceSet, bandTarget,
       <div style={sectionHeadStyle}>
         <span>これから</span>
         <span style={ruleStyle} />
-        {/* 解析状態の「器」だけ用意する。今回はAI呼び出しが無いため動的な状態・再解析ボタンは出さない */}
-        <span style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
-          AI解析：未実施（次の更新で追加予定）
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "7px", fontSize: "10.5px", color: "var(--color-text-tertiary)", fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>
+          {analyzing ? (
+            <>解析中…</>
+          ) : outlookError ? (
+            <span style={{ color: "var(--color-text-danger)" }} title={outlookError}>解析に失敗しました</span>
+          ) : outlookRow ? (
+            <>解析済み（{formatAnalyzedAt(outlookRow.created_at)}）</>
+          ) : outlookRow === null ? (
+            <>AI解析：未実施</>
+          ) : (
+            <>読み込み中…</>
+          )}
+          <button
+            onClick={onReanalyze}
+            disabled={!canReanalyze || analyzing}
+            style={{
+              fontFamily: "inherit", fontSize: "10px", padding: "2px 9px", borderRadius: "var(--radius-full)",
+              border: "1px solid var(--color-border-primary)", background: "transparent",
+              color: !canReanalyze || analyzing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+              cursor: !canReanalyze || analyzing ? "default" : "pointer", opacity: !canReanalyze || analyzing ? 0.5 : 1,
+            }}
+          >再解析</button>
         </span>
       </div>
 
@@ -86,10 +126,12 @@ export function AheadBlock({ facts, taskStats, targetAndEvidenceSet, bandTarget,
                   🎯 Kintoneの狙い
                 </span>
               )}
-              {/* AI判定バッジは空き枠（Phase 3後半でband_aiが入ったら差し替える）。今は常に無効表示 */}
-              <span title="AIによる見通し判定はPhase 3後半で実装予定です" style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "9.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)", border: "1px dashed var(--color-border-secondary)", opacity: 0.6 }}>
-                ✦ AI判定（未実装）
-              </span>
+              {/* 🔴 band_overrideが入っている間はAI判定バッジを出さない（band_aiの値を表示に使わない） */}
+              {display.source === "ai" && (
+                <span title={outlookRow?.band_ai_reason ?? undefined} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "9.5px", fontWeight: 700, padding: "2px 7px", borderRadius: "var(--radius-full)", background: "var(--color-bg-purple, var(--color-brand-light))", color: "var(--color-text-purple, var(--color-brand))", border: "1px solid var(--color-brand-border)" }}>
+                  ✦ AI判定
+                </span>
+              )}
             </div>
             <span style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)" }}>
               「狙い」「見通し（AI）」「決定」は別の値です。決定を入れると以後この値を表示します。
@@ -117,9 +159,41 @@ export function AheadBlock({ facts, taskStats, targetAndEvidenceSet, bandTarget,
           )}
         </div>
 
-        {/* AIが書く部分の空き枠（今回は控えめなプレースホルダのみ・偽の内容を出さない） */}
-        <div style={{ margin: "0 17px 15px", padding: "10px 13px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px dashed var(--color-border-secondary)", fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-          AIによる見立ては次の更新で入ります。
+        {/* AIが書く部分（解析中はスケルトン。数字と週の状態は既に上で描画済み） */}
+        <div style={{ margin: "0 17px 15px" }}>
+          {isLoadingOutlook ? (
+            <div aria-label="AIによる見立てを解析中" style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+              {[1, 0.85, 0.6].map((w, i) => (
+                <div key={i} style={{ height: "10px", width: `${w * 100}%`, borderRadius: "var(--radius-sm)", background: "var(--color-bg-tertiary)", opacity: 0.7 }} />
+              ))}
+            </div>
+          ) : outlookPayload ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              <p style={{ margin: 0, fontSize: "13px", color: "var(--color-text-primary)", lineHeight: 1.7 }}>{outlookPayload.lead}</p>
+              {outlookPayload.moves.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                  {outlookPayload.moves.map((move, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 1fr", gap: "10px", padding: "8px 10px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)" }}>
+                      <span style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)" }}>{move.week_label}</span>
+                      <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
+                        <b>{move.action}</b>
+                        {move.reason && <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>{move.reason}</span>}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {outlookPayload.trade && (
+                <div style={{ padding: "10px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-secondary)", fontSize: "12px", color: "var(--color-text-warning)" }}>
+                  <b>間に合わせるなら、捨てる候補。</b>{outlookPayload.trade}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ padding: "10px 13px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px dashed var(--color-border-secondary)", fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
+              {outlookError ? "AIによる見立てを取得できませんでした。「再解析」をお試しください。" : "AIによる見立てを準備しています。"}
+            </div>
+          )}
         </div>
 
         {/* band_override：人が決める（任意） */}

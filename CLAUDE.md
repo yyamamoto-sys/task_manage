@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.51
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.52
 #
-最終更新：2026-08-11（v3.51）
+最終更新：2026-08-11（v3.52）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -748,7 +748,9 @@ export type AIIntent =
   | "all-projects-analysis" // 全PJ横断ポートフォリオ分析
   | "todo-decompose"       // ToDo 分解
   | "okr-import"           // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
-  | "okr-personal-import"; // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
+  | "okr-personal-import"  // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
+  | "okr-personal-outlook" // 個人OKR「これから」の見立て・週ごとの一手・バンドのAI判定（自動トリガー・キャッシュあり）
+  | "okr-personal-chat";   // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
 ```
 
 新しい AI 機能を追加するときは、この型に新タグを追加し、当該 prompt builder に
@@ -990,7 +992,7 @@ interface TaskChangeLog {
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |
 | ツアー機能 | ✅ 実装済み | ⚠ 位置指定をpx固定→要素基準に修正が必要（技術的負債） |
 | グラフビュー（ラボ機能） | ✅ 実装済み | Canvas+カスタム物理シミュレーション。サイドバーのラボセクションから起動 |
-| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39／Phase 2取込・v3.41／Phase 3前半「これから」機械計算・v3.51） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（Kintone取込または手入力）→週の目標状態（◯△✕自己評価）→**これから（当月のみ・機械計算。残り週数・自己評価の積み上げ・未設定週・紐づくタスクの遅延/停滞/先行待ち・バンドの決定）**→メモを記録する。「📥 Kintoneから取込」（`PersonalOkrImportModal`）でKintoneの個人四半期OKR・月次振返り記録のPDF/テキストをAI解析→人が確認・対応づけ→登録できる。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
+| OKRモード（個人OKR） | ✅ 実装済み（Phase 1・v3.36〜v3.39／Phase 2取込・v3.41／Phase 3前半「これから」機械計算・v3.51／Phase 3後半AI解析＋AIパネル・v3.52） | サイドバー「🎯 OKR」で切替。個人の四半期KRをタブ管理し、KRごとに月切替→今月の計画（Kintone取込または手入力）→週の目標状態（◯△✕自己評価）→**これから（当月のみ。機械計算＝残り週数・自己評価の積み上げ・未設定週・紐づくタスクの遅延/停滞/先行待ち ＋ AI解析＝見立て・週ごとの一手・捨てる候補・バンドのAI判定。対象KRタブを開いたときのみ発火・入力が前回と同じなら再解析しない）**→メモを記録する。「迷ったらAIに聞く」から計画モードと同じ型のAIパネル（`PersonalOkrAiPanel`）を開ける。「📥 Kintoneから取込」（`PersonalOkrImportModal`）でKintoneの個人四半期OKR・月次振返り記録のPDF/テキストをAI解析→人が確認・対応づけ→登録できる。詳細はSection 24・`docs/dev/okr-redesign-plan.md` |
 | OKRモード：グループ側機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ） | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 山本さんの判断で一旦白紙化。OKRモードは個人OKRのみになり、サイドバーのラボからも撤去した。コードは削除せず保管（`src/components/okr/ARCHIVED.md`参照）。旧クォーター計画タブは`kr_quarter_plans`（部署スコープ・Supabase）保存だった |
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
@@ -1073,7 +1075,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-11（v3.51）
+- 最終更新：2026-08-11（v3.52）
 
 ---
 
@@ -1859,6 +1861,96 @@ AI呼び出し（見立て・捨てる候補・原因の推定・バンドのAI�
 - **やらないこと（Phase 3後半で実施）**：AI呼び出し（`AIIntent`への新タグ追加・
   `personal_kr_outlooks`への書き込み・`band_ai`の判定）・AIパネルのOKR版・月末の振り返り下書き
   （Phase 4）は今回作っていない。
+
+### Step H：AI解析（見立て・バンドのAI判定）＋AIパネル（Phase 3後半・v3.52・2026-08-11）
+
+Step Gで空けておいた「AIが必要な部分」を実装した。`personal_kr_outlooks`テーブル
+（Step Gで追加・山本さんが適用済みの前提）への書き込みが今回初めて発生する。
+
+**トリガーと抑制（§5-2のとおり）**：
+- **発火はOKRモードで対象KRタブを開いたとき（＝そのKRの当月タブを表示したとき）のみ**。
+  cron・全員一律のバッチは実装していない。`PersonalKrPanel.tsx`のuseEffectが
+  `monthStatus==="current"`のときだけ`fingerprint`を計算し、ストアの`runOutlookAnalysis()`を
+  呼ぶ（`personalOkrUiStore.ts`）。
+- 🔴 **`input_fingerprint`が直近の保存値と一致していれば呼ばない**：`runOutlookAnalysis()`は
+  まずDBの直近結果を1回だけ取得（`ensureOutlookLoaded()`。別端末・別セッションでも
+  再解析されない前提を作る）し、`src/lib/personalOkr/outlookRunner.ts`の
+  `runPersonalKrOutlookAnalysis()`（純粋関数）が「fingerprintが一致かつforceでなければ
+  `analyzePersonalKrOutlook()`（＝AI呼び出し）を呼ばずcachedをそのまま使う」を判定する。
+  AI呼び出しをテスト対象から分離してあるため、フィンガープリント一致時に呼ばれない／不一致
+  なら呼ばれることをinvokeAI・Supabaseどちらもモックせずに検証できる
+  （`outlookRunner.test.ts`）。
+- **粒度は開いているKRタブ1本だけ**：`fingerprint`・`context`は選択中KR・当月に限定して
+  組み立てる（他のKR・他の月はこの効果の対象外）。
+- **「再解析」ボタン**（`AheadBlock.tsx`）：`force:true`でfingerprintが一致していても必ず呼ぶ。
+- 🔴 **機械計算分は即時描画、AIが書く部分だけを後から差し込む**：`AheadBlock.tsx`は
+  機械計算セクション（残り週数・自己評価の積み上げ等）を常に即時描画し、AIパートのみ
+  `analyzing || outlookRow===undefined`のときスケルトン（3本のバー）にする。週の目標状態や
+  メモは解析中でも編集できる（Step Bから変更していない）。
+
+**入力を絞る理由と実際の内容**：`src/lib/personalOkr/personalOkrAiContext.ts`の
+`buildPersonalOkrAiContextText()`が「作業1（AI解析）」「作業3（AIパネル）」共通の文脈テキストを
+組み立てる。渡すのは①このKRの内容（6本文欄）②今月の計画（4欄＋狙いのバンド）③週の目標状態と
+自己評価（◯△✕）④紐づくタスクの**機械計算済みの要約**（`summarizeLinkedTaskStatus()`の
+件数のみ。Task[]の生データは一切渡さない）⑤メモの直近3件（各300字まで）。過去月の詳細・
+部署ナレッジ（Phase 5未実装）は渡さない。546（Section 19・28）の教訓を踏まえ、渡す量を
+機械的に絞ることで「1回の呼び出しを短く保つ」設計要件を満たす。
+
+**AI呼び出し本体（`src/lib/ai/personalOkrOutlookExtractor.ts`の`analyzePersonalKrOutlook()`）**：
+- 🔴 **max_tokens=4096**（見立て＋週ごとの一手＋捨てる候補1件＋バンド判定のJSONに
+  8192/16000は不要。Section 6-1c）。
+- **見立てとバンド判定は1回の呼び出しにまとめる**（`lead`／`moves`／`trade`／`band_ai`／
+  `band_ai_reason`を同じレスポンスで返す）。
+- **`stop_reason==="max_tokens"`を検知して明示的なエラーにする**（`personalOkrImportExtractor.ts`
+  と同じ方針。リトライしても同じ壁にぶつかるだけなのでリトライしない）。
+- 出力は`validatePersonalOkrOutlookPayload()`で構造検証する（`lead`欠落は例外・`moves`要素の
+  必須項目欠落はその要素だけ弾く・`band_ai`は60/70/80/90/100以外は`null`に落とす・余剰
+  プロパティは無視）。想定外の形は「弾く」——既存の抽出系クライアント
+  （`personalOkrImportExtractor.ts`）と同じ検証の流儀。
+- JSONパース失敗時は1回だけ自己修正リトライする（既存の抽出系と同じ作法）。
+- Edge Functionは関数ごとに実行時間・メモリの上限を上げられない。落ちたら分割か入力削減
+  しかない（本機能はそもそも入力が小さいため、まず1回にまとめたうえで入力を絞ることを優先し、
+  分割が必要な事態を避けた設計）。
+
+**バンドは見通しであって評価ではない**（§6）：`src/lib/personalOkr/bandDisplay.ts`の
+`resolveBandDisplay()`を3引数（`bandOverride, bandAi, bandTarget`）に拡張し、優先順位は
+`band_override`（決定）＞`band_ai`（見通し）＞`band_target`（狙い）。🔴 **`band_override`が
+入っていれば`band_ai`の値は表示に一切使わない**——`AheadBlock.tsx`は`display.source==="ai"`の
+ときだけ「✦ AI判定」バッジを出す（overrideがある間はこのバッジ自体を出さない。値をミュート
+表示することもしない）。`band_ai`は月の途中でも出す「現時点の見通し」であり、人が決めた
+「決定」を上書きする力を持たない（AI解析のシステムプロンプトにも明記した）。
+
+**AIパネル（`src/components/okr/personal/PersonalOkrAiPanel.tsx`）**：
+- 🔴 **計画モードと同じ右パネルの型を流用**（`ConsultationPanel.tsx`のヘッダーグラデーション・
+  左端ドラッグでリサイズ可能なinline幅遷移・タブ説明バー・スクロール領域・下部固定フッターの
+  構造をそのままコピー）。新しいパネルの仕組みは発明していない。提案の適用・Undo・
+  Gantt/会議読み込みプレビュー等は持たない（相談・助言止まりで、DB操作は行わない）。
+  `PersonalOkrView.tsx`が`ConsultationPanel`と同じ「width遷移でメインエリアが縮んで
+  共存する」ラッパーで包む（`MainLayout.tsx`のインライン配置パターンと同じ）。
+- 冒頭に「このパネルが見ているもの」として文脈チップ（`buildPersonalOkrAiContextChips()`）を
+  明示する。スターター（質問候補。`buildPersonalOkrAiStarters()`）は当月のバンドの狙いに
+  言及する4つの質問。
+- **答え方**：`src/lib/ai/personalOkrChatPrompt.ts`の`buildPersonalOkrChatSystemPrompt()`が
+  達成度バンドの定義に沿って「今どの水準か・上げるには何が必要か」で答えるよう指示する。
+- 🔴 **入力を絞る**：文脈は作業1（AI解析）と同じ`buildPersonalOkrAiContextText()`を使う
+  （同じ材料）。会話履歴は`sessionManager.ts`（既存・タスク管理AI相談と共有）で管理し、
+  **DBに保存しない**（Section 6-7）。localStorageにも書かない（計画モードのAI相談パネルより
+  保守的な扱い。個人の評価に関わる文脈を含むため）。
+- max_tokens=2048（`src/lib/ai/personalOkrChatClient.ts`）。添付ファイルを伴わないコーチ役の
+  短い回答を想定し、タスク管理の主相談（16384）より小さく絞った。`stop_reason==="max_tokens"`
+  も同様に明示的なエラーにする。
+- 当月タブを開いていない（`context===null`）ときはパネルを開けても「当月のタブを開いている
+  ときだけAIに相談できます」と表示し、送信不可にする（AI解析と対象を揃えるため）。
+
+**`AIIntent`は2つに分けた**（`src/lib/ai/invokeAI.ts`）：`"okr-personal-outlook"`（AI解析・
+自動トリガー・キャッシュにより実際の呼び出し頻度は低い）と`"okr-personal-chat"`
+（AIパネルの対話・明示操作でターンごとに発生する）。理由：使用量の集計単位として
+意味のある切り方にするため——自動解析とユーザー主導の対話は発生頻度・コスト特性が
+全く異なり、1つのタグにまとめると管理画面「AI使用量」タブでどちらが使用量を占めているか
+分からなくなる（振り返り下書き=Phase 4の`"okr-personal-review-draft"`案とも同じ考え方）。
+
+**やらないこと（Phase 4・5で実施）**：月末の振り返り下書き生成・部署ナレッジ
+（`okr_knowledge_docs`）・グループビューは今回作っていない。
 
 ---
 

@@ -42,6 +42,8 @@ const KEYS = {
   CONSULT_PANEL_WIDTH: "consultation_panel_width",
   /** AI相談パネルの「次の相談候補」折りたたみ開閉状態 */
   CONSULT_FOLLOWUP_OPEN: "consult_followup_open",
+  /** OKR個人ビューのAIパネル（PersonalOkrAiPanel。ConsultationPanelと同じ型）の幅（v3.52） */
+  OKR_AI_PANEL_WIDTH: "okr_ai_panel_width",
   OKR_ACTIVE_TOOL:     "okr_active_tool",
   /**
    * OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39）を

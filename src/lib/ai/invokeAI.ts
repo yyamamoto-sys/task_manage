@@ -30,6 +30,8 @@
 // │   "todo-decompose"   — ToDo 分解                                │
 // │   "okr-import"       — Kintone OKR(PDF/テキスト)からO/KR/TF抽出 │
 // │   "okr-personal-import" — Kintone個人OKR(PDF/テキスト)から個人KR/月次計画抽出 │
+// │   "okr-personal-outlook" — 個人OKR「これから」の見立て・バンドのAI判定 │
+// │   "okr-personal-chat"   — 個人OKR用AIパネルの対話（相談） │
 // │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
 // │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
 // │  コンパイルエラー。                                              │
@@ -63,7 +65,9 @@ export type AIIntent =
   | "all-projects-analysis"     // 全PJ横断ポートフォリオ分析（全PJの概要＋タスク統計を渡す）
   | "todo-decompose"            // ToDo 分解
   | "okr-import"                // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
-  | "okr-personal-import";      // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
+  | "okr-personal-import"       // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
+  | "okr-personal-outlook"      // 個人OKR「これから」の見立て・週ごとの一手・バンドのAI判定（自動トリガー・キャッシュあり）
+  | "okr-personal-chat";        // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];

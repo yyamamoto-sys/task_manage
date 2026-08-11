@@ -15,13 +15,15 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Member, Objective, PersonalKr, PersonalKrBand, PersonalKrMemo, PersonalKrMonth,
-  PersonalKrWeek, PersonalKrWeekTask, Task, TaskDependency, TaskForce, ToDo, WeekSelfRating,
+  PersonalKrOutlook, PersonalKrWeek, PersonalKrWeekTask, Task, TaskDependency, TaskForce, ToDo, WeekSelfRating,
 } from "../../../lib/localData/types";
 import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
 import { buildWeekCards } from "../../../lib/personalOkr/weekLayout";
 import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personalOkr/aheadCompute";
 import { summarizeLinkedTaskStatus } from "../../../lib/personalOkr/aheadTaskStats";
+import { computeOutlookInputFingerprint, resolveMonthPlanTimestamp } from "../../../lib/personalOkr/outlookFingerprint";
+import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { WeekCard } from "./WeekCard";
@@ -73,6 +75,16 @@ interface Props {
   onLinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onUnlinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onEditKr: () => void;
+  /** Phase 3後半：AI解析の結果とキャッシュ（personal_kr_outlooks）。キーは`${krId}::${month}` */
+  outlookByKrMonth: Record<string, PersonalKrOutlook | null>;
+  outlookAnalyzingKeys: Set<string>;
+  outlookErrorByKey: Record<string, string | null>;
+  onRunOutlookAnalysis: (params: {
+    personalKrId: string; month: string; fingerprint: string; context: PersonalOkrAiContextInput; force?: boolean;
+  }) => Promise<void>;
+  /** 当月のAI文脈が変わるたびに親（AIパネルを持つ側）へ報告する。当月以外ではnullを報告する */
+  onAiContext?: (ctx: PersonalOkrAiContextInput | null) => void;
+  onOpenAiPanel?: () => void;
 }
 
 export function PersonalKrPanel({
@@ -80,6 +92,8 @@ export function PersonalKrPanel({
   keyResults, taskForces, objectives, tasks, todos, taskDependencies,
   weekTasksByWeek, ensureWeekTasksLoaded,
   onSaveMonth, onSaveWeek, onSaveMemo, onLinkWeekTask, onUnlinkWeekTask, onEditKr,
+  outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, onRunOutlookAnalysis,
+  onAiContext, onOpenAiPanel,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const slots = useMemo(() => quarterMonthSlots(kr.fiscal_year, kr.quarter), [kr.fiscal_year, kr.quarter]);
@@ -186,6 +200,87 @@ export function PersonalKrPanel({
     [monthLinkedTasks, tasks, taskDependencies],
   );
   const targetAndEvidenceSet = isTargetAndEvidenceSet(monthRecord?.target_and_evidence);
+
+  // ===== Phase 3後半：AI解析（見立て・週ごとの一手・捨てる候補・バンドのAI判定） =====
+  // 発火はOKRモードで対象KRタブを開いたとき（＝当月のとき）のみ。粒度は開いているKR
+  // タブ1本だけ（docs/dev/okr-redesign-plan.md §5-2）。
+  const monthLabel = `${slot.monthStart.getMonth() + 1}月（${monthIndex}か月目）`;
+
+  const okrAiContext: PersonalOkrAiContextInput | null = useMemo(() => {
+    if (monthStatus !== "current") return null;
+    return {
+      krLabel: kr.label,
+      krKindLabel: groupKrTitle,
+      category: kr.category ?? null,
+      activity: kr.activity ?? null,
+      strengthRole: kr.strength_role ?? null,
+      weaknessRole: kr.weakness_role ?? null,
+      criteria: kr.criteria ?? null,
+      supplement: kr.supplement ?? null,
+      monthLabel,
+      positioning: monthRecord?.positioning ?? null,
+      activities: monthRecord?.activities ?? null,
+      targetAndEvidence: monthRecord?.target_and_evidence ?? null,
+      risks: monthRecord?.risks ?? null,
+      bandTarget: monthRecord?.band_target ?? null,
+      weeks: weekCards.map(c => ({
+        label: `W${c.weekIndex}`,
+        goalState: c.existing?.goal_state ?? null,
+        selfRating: c.existing?.self_rating ?? null,
+      })),
+      taskSummary: { linkedTaskCount: monthLinkedTasks.length, ...aheadTaskStats },
+      // 直近3件・各300字まで（🔴入力を絞る。生データを大量に渡さない）
+      recentMemos: memos.slice(0, 3).map(m => m.body.slice(0, 300)),
+    };
+  }, [monthStatus, kr, groupKrTitle, monthLabel, monthRecord, weekCards, monthLinkedTasks, aheadTaskStats, memos]);
+
+  useEffect(() => { onAiContext?.(okrAiContext); }, [okrAiContext, onAiContext]);
+
+  // フィンガープリント：対象KRに紐づくタスクのupdated_atの最大値／週の目標状態とself_rating／
+  // 月次計画のimported_at（無ければupdated_at）／メモの最終updated_at／現在の週番号（§5-2）
+  const fingerprint = useMemo(() => {
+    if (monthStatus !== "current") return null;
+    const maxLinkedTaskUpdatedAt = monthLinkedTasks.reduce<string | null>((max, t) => {
+      const u = t.updated_at ? String(t.updated_at) : null;
+      if (!u) return max;
+      return !max || u > max ? u : max;
+    }, null);
+    const lastMemoUpdatedAt = memos.reduce<string | null>((max, m) => {
+      const u = m.updated_at ?? m.created_at ?? null;
+      if (!u) return max;
+      return !max || u > max ? u : max;
+    }, null);
+    return computeOutlookInputFingerprint({
+      maxLinkedTaskUpdatedAt,
+      weeks: weekCards.map(c => ({
+        weekIndex: c.weekIndex,
+        goalState: c.existing?.goal_state ?? null,
+        selfRating: c.existing?.self_rating ?? null,
+      })),
+      monthPlanTimestamp: resolveMonthPlanTimestamp(monthRecord?.imported_at, monthRecord?.updated_at),
+      lastMemoUpdatedAt,
+      currentWeekNumber: currentWeekIndex ?? 1,
+    });
+  }, [monthStatus, monthLinkedTasks, memos, weekCards, monthRecord, currentWeekIndex]);
+
+  const outlookKeyStr = `${kr.id}::${monthStr}`;
+  const outlookRow = outlookByKrMonth[outlookKeyStr];
+  const outlookAnalyzing = outlookAnalyzingKeys.has(outlookKeyStr);
+  const outlookError = outlookErrorByKey[outlookKeyStr] ?? null;
+
+  // 🔴 機械計算分は即時描画済み（このコンポーネントの他の部分）。AIが書く部分だけを
+  // 後から差し込む——起動時（または入力が変わったとき）に自動発火し、input_fingerprintが
+  // 前回と一致していればAIを呼ばない（runOutlookAnalysis内部で判定。ここでは常に呼ぶだけでよい）。
+  useEffect(() => {
+    if (monthStatus !== "current" || !okrAiContext || fingerprint == null) return;
+    onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [monthStatus, kr.id, monthStr, fingerprint, okrAiContext]);
+
+  const handleReanalyze = () => {
+    if (!okrAiContext || fingerprint == null) return;
+    onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext, force: true });
+  };
 
   // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
   const handleSetBandOverride = async (value: PersonalKrBand | null) => {
@@ -393,7 +488,7 @@ export function PersonalKrPanel({
             </p>
           </div>
 
-          {/* これから（当月のみ・機械計算パート。Phase 3前半） */}
+          {/* これから（当月のみ・機械計算＋AI解析。Phase 3後半） */}
           {monthStatus === "current" && (
             <AheadBlock
               facts={aheadFacts}
@@ -403,7 +498,28 @@ export function PersonalKrPanel({
               bandOverride={monthRecord?.band_override ?? null}
               editable={monthEditable}
               onSetOverride={handleSetBandOverride}
+              outlookRow={outlookRow}
+              analyzing={outlookAnalyzing}
+              outlookError={outlookError}
+              canReanalyze={!!okrAiContext}
+              onReanalyze={handleReanalyze}
             />
+          )}
+
+          {/* 迷ったらAIに聞く（当月のみ・AI解析と同じ文脈を使う） */}
+          {monthStatus === "current" && onOpenAiPanel && (
+            <div style={{ marginTop: "14px", padding: "13px 15px", borderRadius: "var(--radius-md)", background: "var(--color-bg-purple, var(--color-brand-light))", border: "1px solid var(--color-brand-border)", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+              <div style={{ flex: 1, minWidth: "180px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>迷ったらAIに聞く</div>
+                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                  このKRの内容・今月の計画・週の目標状態と自己評価・タスクの実績・メモを文脈として持った状態で始まります。
+                </div>
+              </div>
+              <button
+                onClick={onOpenAiPanel}
+                style={{ fontFamily: "inherit", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", whiteSpace: "nowrap" }}
+              >AIパネルを開く</button>
+            </div>
           )}
         </>
       )}

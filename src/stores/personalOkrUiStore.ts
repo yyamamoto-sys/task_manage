@@ -27,10 +27,19 @@ import {
   fetchPersonalKrWeeks, upsertPersonalKrWeek,
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos, upsertPersonalKrMemo, softDeletePersonalKrMemo,
+  fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
 } from "../lib/supabase/personalOkrStore";
+import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
+import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
+import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAiContext";
 import type {
-  PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo,
+  PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
 } from "../lib/localData/types";
+
+/** outlookByKrMonth等のキー形式（personalKrId・monthの組で一意）。Phase 3後半で追加 */
+function outlookKey(personalKrId: string, month: string): string {
+  return `${personalKrId}::${month}`;
+}
 
 interface PersonalOkrUiState {
   krs: PersonalKr[];
@@ -61,6 +70,27 @@ interface PersonalOkrUiState {
 
   linkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   unlinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
+
+  // ===== Phase 3後半：AI解析の結果とキャッシュ（personal_kr_outlooks） =====
+  /** `${personalKrId}::${month}` キー。undefined=未フェッチ／null=フェッチ済みだが該当行なし */
+  outlookByKrMonth: Record<string, PersonalKrOutlook | null>;
+  outlookFetchedKeys: Set<string>;
+  outlookAnalyzingKeys: Set<string>;
+  outlookErrorByKey: Record<string, string | null>;
+
+  /** DBから直近の解析結果を1回だけ取得する（別端末・別セッションでも再解析されないための前提） */
+  ensureOutlookLoaded: (personalKrId: string, month: string) => Promise<void>;
+  /**
+   * fingerprintが直近の保存値と一致していればAIを呼ばずキャッシュを使う（§5-2）。
+   * force=trueなら一致していても必ず呼ぶ（「再解析」ボタン用）。
+   */
+  runOutlookAnalysis: (params: {
+    personalKrId: string;
+    month: string;
+    fingerprint: string;
+    context: PersonalOkrAiContextInput;
+    force?: boolean;
+  }) => Promise<void>;
 }
 
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
@@ -76,6 +106,11 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   detailLoadedKrIds: new Set(),
   detailLoadingKrId: null,
   detailError: null,
+
+  outlookByKrMonth: {},
+  outlookFetchedKeys: new Set(),
+  outlookAnalyzingKeys: new Set(),
+  outlookErrorByKey: {},
 
   loadKrs: async () => {
     if (get().krsLoading) return;
@@ -192,5 +227,59 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         [weekId]: (state.weekTasksByWeek[weekId] ?? []).filter(l => l.task_id !== taskId),
       },
     }));
+  },
+
+  ensureOutlookLoaded: async (personalKrId, month) => {
+    const key = outlookKey(personalKrId, month);
+    if (get().outlookFetchedKeys.has(key)) return;
+    try {
+      const row = await fetchLatestPersonalKrOutlook(personalKrId, month);
+      set(state => ({
+        outlookByKrMonth: { ...state.outlookByKrMonth, [key]: row },
+        outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
+      }));
+    } catch (e) {
+      set(state => ({
+        outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析結果の取得に失敗しました" },
+      }));
+    }
+  },
+
+  runOutlookAnalysis: async ({ personalKrId, month, fingerprint, context, force }) => {
+    const key = outlookKey(personalKrId, month);
+    if (get().outlookAnalyzingKeys.has(key)) return; // 二重発火防止（連続effect・連打対策）
+
+    // 別端末・別セッションでも再解析されないための前提：まずDBの直近結果を確認する
+    await get().ensureOutlookLoaded(personalKrId, month);
+    const cached = get().outlookByKrMonth[key] ?? null;
+
+    set(state => ({
+      outlookAnalyzingKeys: new Set(state.outlookAnalyzingKeys).add(key),
+      outlookErrorByKey: { ...state.outlookErrorByKey, [key]: null },
+    }));
+    try {
+      const { ranAnalysis, outlook } = await runPersonalKrOutlookAnalysis({
+        personalKrId, month, fingerprint, cached, force: !!force,
+        analyze: () => analyzePersonalKrOutlook(context),
+      });
+      if (ranAnalysis) await insertPersonalKrOutlook(outlook); // 履歴として積む（UPDATEしない）
+      set(state => {
+        const analyzing = new Set(state.outlookAnalyzingKeys);
+        analyzing.delete(key);
+        return {
+          outlookByKrMonth: { ...state.outlookByKrMonth, [key]: outlook },
+          outlookAnalyzingKeys: analyzing,
+        };
+      });
+    } catch (e) {
+      set(state => {
+        const analyzing = new Set(state.outlookAnalyzingKeys);
+        analyzing.delete(key);
+        return {
+          outlookAnalyzingKeys: analyzing,
+          outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析に失敗しました" },
+        };
+      });
+    }
   },
 }));

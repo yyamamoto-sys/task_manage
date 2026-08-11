@@ -61,6 +61,10 @@ vi.mock("../client", () => {
       call.filters.push({ method: "order", args });
       return builder;
     };
+    builder.limit = (...args: unknown[]) => {
+      call.filters.push({ method: "limit", args });
+      return builder;
+    };
     builder.select = (..._cols: unknown[]) => builder;
     builder.maybeSingle = () => Promise.resolve(popResult(table, op));
     builder.single = () => Promise.resolve(popResult(table, op));
@@ -87,8 +91,9 @@ import {
   fetchPersonalKrWeeks, upsertPersonalKrWeek,
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos,
+  fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
 } from "../personalOkrStore";
-import type { PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrMemo } from "../../localData/types";
+import type { PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrMemo, PersonalKrOutlook } from "../../localData/types";
 
 beforeEach(() => {
   resetMock();
@@ -251,6 +256,58 @@ describe("upsert・softDelete：saveWithLock/updateを正しく呼ぶ", () => {
     expect(payload.deleted_by).toBe("m1");
     expect(payload.deleted_at).toBeTruthy();
     expect(call!.filters).toContainEqual({ method: "eq", args: ["id", "pkr-1"] });
+  });
+});
+
+describe("personal_kr_outlooks：履歴として積む（INSERT専用・UPDATEしない）", () => {
+  function makeOutlook(over: Partial<PersonalKrOutlook> = {}): PersonalKrOutlook {
+    return {
+      id: "outlook-1",
+      personal_kr_id: "pkr-1",
+      month: "2026-08-01",
+      input_fingerprint: "abc123",
+      outlook_json: { lead: "見立て", moves: [], trade: null },
+      band_ai: 70,
+      band_ai_reason: "根拠",
+      model: "claude-sonnet-4-6",
+      ...over,
+    };
+  }
+
+  it("fetchLatestPersonalKrOutlook：personal_kr_id・monthで絞り込み、created_at降順1件をmaybeSingleで取得する", async () => {
+    queueResult("personal_kr_outlooks", "select", { data: makeOutlook(), error: null });
+    const row = await fetchLatestPersonalKrOutlook("pkr-1", "2026-08-01");
+    expect(row?.id).toBe("outlook-1");
+    const call = mockState.calls.find(c => c.table === "personal_kr_outlooks" && c.op === "select");
+    expect(call?.filters).toContainEqual({ method: "eq", args: ["personal_kr_id", "pkr-1"] });
+    expect(call?.filters).toContainEqual({ method: "eq", args: ["month", "2026-08-01"] });
+    expect(call?.filters).toContainEqual({ method: "order", args: ["created_at", { ascending: false }] });
+    expect(call?.filters).toContainEqual({ method: "limit", args: [1] });
+  });
+
+  it("fetchLatestPersonalKrOutlook：該当が無ければnullを返す", async () => {
+    queueResult("personal_kr_outlooks", "select", { data: null, error: null });
+    const row = await fetchLatestPersonalKrOutlook("pkr-1", "2026-08-01");
+    expect(row).toBeNull();
+  });
+
+  it("fetchLatestPersonalKrOutlook：エラーがあればthrowする", async () => {
+    queueResult("personal_kr_outlooks", "select", { data: null, error: { message: "boom" } });
+    await expect(fetchLatestPersonalKrOutlook("pkr-1", "2026-08-01")).rejects.toBeTruthy();
+  });
+
+  it("insertPersonalKrOutlook：受け取った行をそのままinsertする（update系メソッドは呼ばない）", async () => {
+    queueResult("personal_kr_outlooks", "insert", { data: null, error: null });
+    const outlook = makeOutlook();
+    await insertPersonalKrOutlook(outlook);
+    const insertCall = mockState.calls.find(c => c.table === "personal_kr_outlooks" && c.op === "insert");
+    expect(insertCall?.payload).toEqual(outlook);
+    expect(mockState.calls.some(c => c.table === "personal_kr_outlooks" && c.op === "update")).toBe(false);
+  });
+
+  it("insertPersonalKrOutlook：エラーがあればthrowする", async () => {
+    queueResult("personal_kr_outlooks", "insert", { data: null, error: { message: "fail" } });
+    await expect(insertPersonalKrOutlook(makeOutlook())).rejects.toBeTruthy();
   });
 });
 

@@ -4979,5 +4979,50 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #             `npm run lint`変更ファイルに新規エラー0／`npm run build`成功（PersonalOkrView
 #             チャンクgzip24.12kB→27.38kB・+3.26kB）。
 #
-# 最終更新：2026-08-11（v3.51）
+# v3.52 OKRモード再設計 Phase 3後半：AI解析（見立て・バンド判定）＋AIパネル（2026-08-11）
+#      背景：Phase 3前半（v3.51）で空けておいた「AIが必要な部分」を実装した。
+#             docs/dev/okr-redesign-plan.md §5-2のトリガー設計・§6のバンド3値ルールを
+#             機械的に守る（546の教訓＝max_tokens・入力量・1回にまとめる呼び出し設計を最優先）。
+#      新規：`src/lib/ai/personalOkrOutlookExtractor.ts`（`analyzePersonalKrOutlook()`＝見立て・
+#             週ごとの一手・捨てる候補・バンドのAI判定を1回の呼び出しにまとめる。max_tokens=4096・
+#             `AIIntent="okr-personal-outlook"`。JSON検証・自己修正リトライ1回・
+#             stop_reason==="max_tokens"の明示エラーは既存の抽出系クライアントと同じ作法）。
+#      新規：`src/lib/personalOkr/personalOkrAiContext.ts`（`buildPersonalOkrAiContextText/Chips/
+#             Starters()`＝作業1・作業3共通の「入力を絞った文脈」組み立て。紐づくタスクは
+#             件数の要約のみで生データは渡さない）。
+#      新規：`src/lib/personalOkr/outlookRunner.ts`（`runPersonalKrOutlookAnalysis()`＝
+#             fingerprintが一致していればAI呼び出しをスキップしcachedをそのまま返す純粋関数。
+#             invokeAI・Supabaseをモックせずにこの抑制ロジックを検証できるよう分離した）。
+#      新規：`src/lib/ai/personalOkrChatPrompt.ts`（AIパネルのシステムプロンプト。達成度バンドの
+#             定義に沿って「今どの水準か・上げるには何が必要か」で答える）・
+#             `src/lib/ai/personalOkrChatClient.ts`（1ターン分のAI呼び出し。max_tokens=2048・
+#             `AIIntent="okr-personal-chat"`）・`src/hooks/usePersonalOkrAiConsultation.ts`
+#             （会話状態管理。既存sessionManager.tsを再利用・DBに保存しない）・
+#             `src/components/okr/personal/PersonalOkrAiPanel.tsx`（計画モードのConsultationPanel
+#             と同じ右パネルの型を流用。新しいパネルの仕組みは発明していない）。
+#      変更：`src/stores/personalOkrUiStore.ts`（`outlookByKrMonth`/`ensureOutlookLoaded()`/
+#             `runOutlookAnalysis()`を追加。DB取得→fingerprint比較→AI呼び出し→INSERTの一連を
+#             ここに集約）。`src/lib/supabase/personalOkrStore.ts`
+#             （`fetchLatestPersonalKrOutlook()`/`insertPersonalKrOutlook()`を追加。UPDATEしない）。
+#             `src/lib/personalOkr/bandDisplay.ts`（`resolveBandDisplay()`を3引数化。優先順位は
+#             override＞ai＞target。🔴 overrideがあればaiの値は表示に使わない）。
+#             `src/components/okr/personal/AheadBlock.tsx`（AI解析中はスケルトン表示・
+#             解析済みならlead/moves/tradeとバンドのAI判定を描画・「再解析」ボタンを追加）。
+#             `src/components/okr/personal/PersonalKrPanel.tsx`（当月タブでのfingerprint計算＋
+#             自動トリガーのuseEffect・AI文脈を親へ報告・「迷ったらAIに聞く」ブロック追加）。
+#             `src/components/okr/personal/PersonalOkrView.tsx`（AIパネルをinline幅遷移で
+#             メインエリアの横に配置。ConsultationPanelのMainLayout配置と同じパターン）。
+#             `src/lib/ai/invokeAI.ts`（`AIIntent`に`"okr-personal-outlook"`/`"okr-personal-chat"`
+#             を追加。集計単位として意味のある切り方にするため2つに分けた）。
+#      テスト：新規`personalOkrOutlookExtractor.test.ts`(13件)・`personalOkrAiContext.test.ts`
+#             (10件)・`outlookRunner.test.ts`(5件)・`personalOkrChatClient.test.ts`(3件)・
+#             `personalOkrChatPrompt.test.ts`(3件)。既存`bandDisplay.test.ts`(3→5件)・
+#             `personalOkrStore.test.ts`(13→19件)を拡張。
+#      検証：`npx tsc --noEmit`エラー0／`npx vitest run`1238件全通過（1197件→1238件・+41件）／
+#             `npm run lint`変更ファイルに新規エラー0（既存の未使用eslint-disable 2件を除去）／
+#             `npm run build`成功（PersonalOkrViewチャンクgzip27.38kB→35.79kB・+8.41kB）。
+#      マイグレーション：追加なし（`personal_kr_outlooks`テーブルはPhase 3前半で作成済み・
+#             適用済みの前提で実装）。
+#
+# 最終更新：2026-08-11（v3.52）
 

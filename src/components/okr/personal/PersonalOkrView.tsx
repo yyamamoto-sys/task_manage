@@ -14,12 +14,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../../stores/appStore";
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
 import type { Member, PersonalKr, Quarter } from "../../../lib/localData/types";
+import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { currentQuarter } from "../../../lib/date";
 import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
 import { PersonalOkrImportModal } from "./PersonalOkrImportModal";
+import { PersonalOkrAiPanel } from "./PersonalOkrAiPanel";
 
 const QUARTER_OPTIONS: { value: Quarter; label: string }[] = [
   { value: "1Q", label: "1Q（1〜3月）" },
@@ -60,6 +62,16 @@ export function PersonalOkrView({ currentUser }: Props) {
   const saveMemo = usePersonalOkrUiStore(s => s.saveMemo);
   const linkWeekTask = usePersonalOkrUiStore(s => s.linkWeekTask);
   const unlinkWeekTask = usePersonalOkrUiStore(s => s.unlinkWeekTask);
+  const outlookByKrMonth = usePersonalOkrUiStore(s => s.outlookByKrMonth);
+  const outlookAnalyzingKeys = usePersonalOkrUiStore(s => s.outlookAnalyzingKeys);
+  const outlookErrorByKey = usePersonalOkrUiStore(s => s.outlookErrorByKey);
+  const runOutlookAnalysis = usePersonalOkrUiStore(s => s.runOutlookAnalysis);
+
+  // ===== AIパネル（Phase 3後半・計画モードと同じ右パネルの型を流用） =====
+  const [aiPanelOpen, setAiPanelOpen] = useState(false);
+  const [aiPanelWidth, setAiPanelWidth] = useState(380);
+  const [aiPanelResizing, setAiPanelResizing] = useState(false);
+  const [aiContext, setAiContext] = useState<PersonalOkrAiContextInput | null>(null);
 
   useEffect(() => { if (!krsLoaded) loadKrs(); }, [krsLoaded, loadKrs]);
 
@@ -98,6 +110,7 @@ export function PersonalOkrView({ currentUser }: Props) {
   });
 
   return (
+    <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto", padding: "14px 20px 26px" }}>
       {/* 期の選択 */}
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
@@ -162,6 +175,12 @@ export function PersonalOkrView({ currentUser }: Props) {
           onLinkWeekTask={linkWeekTask}
           onUnlinkWeekTask={unlinkWeekTask}
           onEditKr={() => setFormModal({ mode: "edit", initial: selectedKr })}
+          outlookByKrMonth={outlookByKrMonth}
+          outlookAnalyzingKeys={outlookAnalyzingKeys}
+          outlookErrorByKey={outlookErrorByKey}
+          onRunOutlookAnalysis={runOutlookAnalysis}
+          onAiContext={setAiContext}
+          onOpenAiPanel={() => setAiPanelOpen(true)}
         />
       ) : (
         !krsLoading && (
@@ -212,6 +231,26 @@ export function PersonalOkrView({ currentUser }: Props) {
           onClose={() => setImportModalOpen(false)}
         />
       )}
+    </div>
+
+    {/* AIパネル：計画モードのConsultationPanelと同じ「inline幅遷移でメインエリアが縮んで
+        共存する」型。widthはPersonalOkrAiPanel側で管理し、ここは幅ぶんの枠だけ持つ
+        （MainLayout.tsxのConsultationPanel配置と同じパターン）。 */}
+    <div style={{
+      width: aiPanelOpen ? `${aiPanelWidth}px` : "0", flexShrink: 0, overflow: "hidden",
+      transition: aiPanelResizing ? "none" : "width 0.3s ease",
+    }}>
+      <PersonalOkrAiPanel
+        isOpen={aiPanelOpen}
+        onClose={() => setAiPanelOpen(false)}
+        krLabel={selectedKr?.label ?? ""}
+        monthLabel={aiContext?.monthLabel ?? ""}
+        context={aiContext}
+        inline
+        onWidthChange={setAiPanelWidth}
+        onResizingChange={setAiPanelResizing}
+      />
+    </div>
     </div>
   );
 }

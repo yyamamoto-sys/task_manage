@@ -35,7 +35,7 @@
 import { supabase } from "./client";
 import { saveWithLock } from "./store";
 import type {
-  PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo,
+  PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
 } from "../localData/types";
 
 // ===== PersonalKr（個人四半期KR） =====
@@ -159,5 +159,33 @@ export async function softDeletePersonalKrMemo(id: string, deletedBy: string) {
   const { error } = await supabase.from("personal_kr_memos")
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
+  if (error) throw error;
+}
+
+// ===== PersonalKrOutlook（AI解析の結果とキャッシュ・履歴として積む。Phase 3後半） =====
+// 🔴 UPDATEしない・upsertしない（migrations/20260811_add_personal_kr_outlooks.sql冒頭コメント
+// 参照。updated_atトリガーも貼られていないテーブルのため、saveWithLockは使わずINSERT専用にする）。
+
+/** このKR・この月の最新の解析結果を1件だけ取得する（無ければnull）。
+ *  §5-2「input_fingerprintが前回と一致したら再解析しない」判定の比較対象になる。 */
+export async function fetchLatestPersonalKrOutlook(
+  personalKrId: string,
+  month: string,
+): Promise<PersonalKrOutlook | null> {
+  const { data, error } = await supabase
+    .from("personal_kr_outlooks")
+    .select("*")
+    .eq("personal_kr_id", personalKrId)
+    .eq("month", month)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as PersonalKrOutlook | null;
+}
+
+/** 新しい解析結果を履歴として1件追加する（UPDATEは行わない）。 */
+export async function insertPersonalKrOutlook(outlook: PersonalKrOutlook): Promise<void> {
+  const { error } = await supabase.from("personal_kr_outlooks").insert(outlook);
   if (error) throw error;
 }
