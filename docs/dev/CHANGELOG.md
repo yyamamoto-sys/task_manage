@@ -5189,5 +5189,43 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     `npx eslint`変更ファイルに新規エラー0。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.55）
+# v3.56 個人OKR Kintone取込：決定的パーサを主経路にしてAIトークンを削減（2026-08-12）
+#   山本さんの指摘：「Kintone画面は皆同じなので、インポートさせるPDFの型もほぼ似たようなもの
+#   になる。AIに構造を推測させる必要が本来無い」。この前提でAI依存度を段階的に下げた。
+#
+#   ①決定的パーサ（新規`src/lib/personalOkr/kintoneTextParse.ts`・純粋関数のみ）：
+#     personalOkrImportExtractor.tsのSYSTEM_PROMPTのラベル規則をルールベースの正規表現に
+#     落とし、AI抽出結果と同じ型（PersonalOkrImportAnalysis/PersonalOkrImportMonthlyAnalysis）
+#     を返す。数値正規化は既存のimportFieldParse.tsを再利用（二重実装しない）。実データが
+#     無いためテストはSYSTEM_PROMPTの記述から組み立てた合成フィクスチャで行っている。
+#   ②信頼度ゲート：KintoneParseConfidence（ok/krCount/reasons）。四半期は「KR見出し1件
+#     以上・番号が1から連番・本文6欄の充足率50%以上・見出し括弧内から名称抽出」、月次は
+#     「月次フィールド1件以上・充足率35%以上」を満たさなければok=falseでAIにフォールバック
+#     する（Kintone画面が変わっても壊れない設計の要）。四半期は決定的に読めたが月次は読めない
+#     等の部分適用も可（読めた方だけ採用し、AIには残りだけを投げる）。
+#   ③経路の可視化：describeKintoneImportSource()が「⚙画面の構造から読み取りました（AI未
+#     使用）」／「🤖AIで読み取りました」等を返す。確認画面（PersonalOkrImportModal.tsxの
+#     ImportSourceNotice）に必ず表示し「元◯◯字→AIへの送信◯◯字」も併記する。
+#   ④送信前トリム（新規`src/lib/personalOkr/importTextTrim.ts`）：AIにフォールバックする
+#     場合でも、SYSTEM_PROMPTが「抽出しないもの」と明示する領域（月次/四半期評価サマリー・
+#     【N月限定KR】・役割等級要件や面談参考資料の付録）を送信前に機械的に削る。境界は既知の
+#     見出しから次の既知見出し／文末までに限定し、本文中の「●」「▼」は境界にしない（安全側）。
+#   ⑤1回/2回の自動切替：extractPersonalOkrCombinedData()を追加（既存のvalidatePersonalOkr
+#     ImportAnalysis()をそのまま再利用）。決定的パーサが両方失敗し、削減後の送信本文が
+#     PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS（10000字）以下なら1回にまとめ、それを
+#     超える場合は実績のある2回分割（v3.46の546対策）を維持する。まとめ呼び出し自体が
+#     失敗したら2回分割へフォールバックする。
+#   モデル切替（haiku）はv3.52で既に対応済みだったため今回は変更していない。
+#   PersonalOkrImportResultにquarterlySource/monthlySource/aiSentCharCount/
+#   originalCharCountを追加。CLAUDE.md Section 24にStep Kを追記。
+#   テスト：kintoneTextParse.test.ts（18件）・importTextTrim.test.ts（7件）を新設。
+#     personalOkrImportExtractor.test.tsに新規シナリオ（まとめ呼び出し・フォールバック・
+#     閾値超えは2回分割維持・決定的パーサのみでAI呼び出しゼロ・四半期のみ決定的の部分適用）
+#     を追加。既存の分割呼び出しテストはLARGE_NON_KINTONE_TRANSCRIPT（閾値超の長さ）を使う
+#     よう更新（ダミーtranscriptが閾値以下だと新設のまとめ呼び出しに切り替わってしまうため）。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`1290件全通過（1258件→1290件・+32件）／
+#     `npx eslint`変更ファイルに新規エラー0／`npm run build`成功。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.56）
 

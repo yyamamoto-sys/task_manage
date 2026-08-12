@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.55
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.56
 #
-最終更新：2026-08-12（v3.55）
+最終更新：2026-08-12（v3.56）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -2084,6 +2084,19 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
   style自体を変更していないため無修正で通過。
 - **やらないこと**：AI呼び出し本体（`analyzePersonalKrOutlook`）・`input_fingerprint`の
   計算方法・`AIIntent="okr-personal-outlook"`は変更していない。
+
+### Step K：Kintone取込のトークン削減・決定的パーサを主経路にする（v3.56・2026-08-12）
+
+**山本さんの指摘**：「Kintone画面は皆同じなので、インポートさせるPDFの型もほぼ似たようなものになる。AIに構造を推測させる必要が本来無い」。この前提で、Kintone取込（Step F）のAI依存度を段階的に下げた。取込の確認画面（既存KRへの対応づけドロップダウン等・Section 24 Step F 🔴）は一切変更していない。
+
+- **① 決定的パーサを主経路にする**：新規`src/lib/personalOkr/kintoneTextParse.ts`（純粋関数のみ・pdfjs等に依存しない）。`personalOkrImportExtractor.ts`のSYSTEM_PROMPTに書かれたラベル規則（「●対象業務カテゴリ」「▼◯月に取り組む内容（計画）」「[自己評価：]」等の角括弧・記号表記）をそのままルールベースの正規表現に落とし、`PersonalOkrImportAnalysis`/`PersonalOkrImportMonthlyAnalysis`（AI抽出結果と同じ型）を返す。ウェイト・達成度バンド・自己評価％の数値正規化は既存の`importFieldParse.ts`の`parseWeightPct`/`parseBandValue`/`parsePercentValue`をそのまま再利用する（二重実装しない）。**山本さんは実際のKintone帳票のテキストを持っていないため、テストはSYSTEM_PROMPTの記述から組み立てた合成フィクスチャで行っている**（`kintoneTextParse.test.ts`冒頭に明記）。
+- **② 信頼度ゲート（安全弁）**：`KintoneParseConfidence`（`ok`/`krCount`/`reasons`）。四半期側は「KR見出しが1件以上」「見出し番号が1から連番」「本文6欄の充足率50%以上」「見出しの括弧内から名称を抽出できている」を満たさなければ`ok=false`。月次側は「月次フィールドが1件以上検出できている」「充足率35%以上」を満たさなければ`ok=false`。`ok=false`のときは黙って従来のAI経路にフォールバックする（Kintone側の画面が変わっても壊れない設計の要）。**四半期は決定的に読めたが月次は読めない、のような部分適用も可**（読めた方だけ決定的パーサの結果を使い、AIには残りだけを投げる。丸ごとAIに投げ直さない）。
+- **③ 経路の可視化**：`describeKintoneImportSource()`（同ファイル）が「⚙ 画面の構造から読み取りました（AI未使用）」／「🤖 AIで読み取りました」／混在時の表現を返す。`PersonalOkrImportModal.tsx`の確認画面に`ImportSourceNotice`として必ず表示し、「元◯◯字→AIへの送信◯◯字（0字ならAI未使用）」も併記する（山本さんが実機でどちらが動いたか報告するための唯一の手がかりのため省略しない）。
+- **④ AIに渡す前に本文を削る**：新規`src/lib/personalOkr/importTextTrim.ts`（純粋関数）。AIにフォールバックする場合でも、SYSTEM_PROMPTが「抽出しないもの」と明示している領域（個人単位の月次/四半期評価サマリー・【N月限定KR】のような一時的なKR・役割等級要件や面談参考資料の付録セクション）を送信前に機械的に削る。境界が曖昧な削り方（本文中の「●」「▼」を境界にする等）はしない＝見出し文字列から次の既知セクション見出し、または文末までだけを削る（削りすぎない）。
+- **⑤ AI呼び出しの1回／2回の自動切替**：`personalOkrImportExtractor.ts`に`extractPersonalOkrCombinedData()`（呼び出し1・2を1つの呼び出しに統合。既存の`validatePersonalOkrImportAnalysis()`をそのまま再利用できる形＝新設のバリデータ不要）を追加。決定的パーサの結果、四半期・月次の両方がAI必須になった場合のみ、削減後の送信本文が`PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS`（10000字。既存の警告閾値20000字の半分＝1回にまとめる判断はより慎重に取る）以下なら1回にまとめ、それを超える場合は実績のある2回分割（Section 19 ⑧・28）を維持する。**まとめ呼び出し自体が失敗した場合は2回分割へフォールバックする**（1回にまとめたことが原因の失敗を安全な経路でリトライする安全弁）。
+- **モデル切替（④）は対応済みだった**：`PERSONAL_OKR_IMPORT_MODEL`は2026-08-11（v3.52・Step Hと同時期）に山本さんの指示で既に`claude-haiku-4-5`へ切替済み（Edge Functionの`ALLOWED_MODELS`に含まれる）。今回の変更対象外。決定的パーサが主経路になったことで、AIがフォールバック用途に後退し、haiku化による多少の精度差は許容できるという判断の裏付けが強まった。
+- **`extractPersonalOkrImportData()`の型拡張**：`PersonalOkrImportResult`に`quarterlySource`/`monthlySource`（`"deterministic"|"ai"|"none"`）・`aiSentCharCount`・`originalCharCount`を追加した。既存の`warnings`は「まとめ呼び出し失敗→分割リトライ」のメッセージも積む。
+- **テスト**：`kintoneTextParse.test.ts`（18件）・`importTextTrim.test.ts`（7件）を新設。`personalOkrImportExtractor.test.ts`にオーケストレーターの新規シナリオ（1回にまとめる／まとめ失敗時のフォールバック／閾値超えは2回分割のまま／決定的パーサのみで完結・AI呼び出しゼロ／四半期は決定的・月次だけAIの部分適用）を追加。既存のオーケストレーターテスト（分割呼び出しの検証）はダミーtranscriptが閾値以下だと新設のまとめ呼び出しに切り替わってしまうため、`LARGE_NON_KINTONE_TRANSCRIPT`（閾値超の長さ）を使うよう更新した。
 
 ---
 

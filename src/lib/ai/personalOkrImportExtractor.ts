@@ -41,6 +41,11 @@
 
 import { invokeAI, buildMessageContent, type ContentBlock, type FileAttachment } from "./invokeAI";
 import type { Quarter } from "../localData/types";
+import {
+  parseKintoneQuarterlyText, parseKintoneMonthlyText, detectKintoneDocType,
+  type KintoneImportEngineSource,
+} from "../personalOkr/kintoneTextParse";
+import { trimKintoneImportText } from "../personalOkr/importTextTrim";
 
 // ===== 型定義 =====
 
@@ -111,6 +116,17 @@ export interface PersonalOkrImportResult extends PersonalOkrImportAnalysis {
   /** 呼び出し1・2のどちらかが失敗した場合の警告文（両方成功時は空配列）。
    * 全滅ではないので処理は続行し、確認画面で人に見せる（全部やり直しにしない）。 */
   warnings: string[];
+  /** 個人KRの基本情報（呼び出し1相当）を決定的パーサ（kintoneTextParse.ts）で読めたか、
+   * AIにフォールバックしたか。確認画面に必ず表示する（v3.56・山本さんの依頼の安全弁）。
+   * "none"は無い（四半期側は必ずどちらかの経路を通る）。 */
+  quarterlySource: "deterministic" | "ai";
+  /** 月次計画・振り返り（呼び出し2相当）の経路。"none"は月次情報自体が不要だった
+   * （四半期OKRのみの資料と判定された）場合。 */
+  monthlySource: "deterministic" | "ai" | "none";
+  /** 実際にAIへ送信した文字数の合計（同じ本文を複数回送った場合は合算）。0=AIを一切使わなかった。 */
+  aiSentCharCount: number;
+  /** 添付・貼り付けから得られた元の文字数（トリム前）。画面の「元◯◯字→送信◯◯字」表示に使う。 */
+  originalCharCount: number;
 }
 
 // ===== システムプロンプトの共通断片 =====
@@ -290,6 +306,150 @@ ${JSON_STRICTNESS_RULES}
     }
   ]
 }`;
+
+// ===== システムプロンプト：1回にまとめる場合（v3.56・入力が小さいときだけ使う） =====
+// SYSTEM_PROMPT_QUARTERLY・SYSTEM_PROMPT_MONTHLYの指示を1つに合体し、krs[]の各要素に
+// months[]を内包させたJSONを1回で返させる。validatePersonalOkrImportAnalysis()は
+// 元々krs[].months[]まで検証する実装のため、専用のバリデータは新設不要（そのまま再利用）。
+
+const SYSTEM_PROMPT_COMBINED = `あなたはKintoneの「個人OKR設定フォーム」（個人四半期KR）または
+「個人OKR_月次振返り記録」（個人月次計画・振り返り）の画面をテキストとして解析し、
+タスク管理アプリの個人四半期KR構造（personal_krs相当）と月次計画・振り返り構造
+（personal_kr_months相当）の両方に変換するAIです。通常はこれを2回の呼び出しに分けて
+実行しますが、今回は入力が小さいため1回にまとめて実行します。
+
+${PDF_CAVEAT}
+
+【最初にやること：資料の種類を判定する】
+- タイトルが「個人OKR設定フォーム」で「個人KR_1」「個人KR_1_ウェイト」等の欄が中心 → "quarterly"
+- タイトルが「個人OKR_月次振返り記録」で「1か月目」「2か月目」「3か月目」の列・「振り返り」
+  「自己評価」の語が中心 → "monthly_review"
+判定結果を detected_doc_type に入れる。"quarterly" と判定した場合、各KRの months は
+空配列（[]）でよい（四半期OKRのみの資料には月次の計画・振り返りが無いため）。
+
+【年度・四半期】
+「年度」「対象Q」「Q」等の欄から fiscal_year（西暦の数値のみ。例2026）・quarter（"1Q"〜"4Q"）を
+抽出する。不明はnull。
+
+【KRの単位】
+資料は「個人KR_1」「個人KR_2」…のブロック（最大8本＋備考欄）で構成される。各ブロックを
+krs配列の1要素として抽出する。ブロックの項目名（例："個人KR_1"）は source_label に入れる。
+
+【kr_kind_hint】
+各KRブロックの直前にある「KR種別」または「KR種別_N」欄の値をそのまま転記する（変換しない）：
+"グループKR1"〜"グループKR9" / "全般" / "全社共通" / "OM共通" / "AGM共通" / "リーダー共通"。
+不明・空欄はnull。
+
+【group_kr_hint】
+KRタイトル行（例："個人KR_1（グループKR1｜AAS）"）の括弧内の全文をそのまま転記する。
+本文中に「KR1-TF2」等のTF番号付きの記載があれば、それも含めて転記する。要約せず原文のまま返す。
+
+【label】
+タブに出す短い名前。KRタイトル行の括弧内の末尾の名称を優先し、無ければsource_labelをそのまま使う。
+
+【weight_pct】
+「個人KR_N_ウェイト」欄、または月次振返り記録の「ウェイト」列の数値（%記号は除く）。不明はnull。
+
+【本文6欄】category / activity / strength_role / weakness_role / criteria / supplement
+- category ← ●対象業務カテゴリ
+- activity ← ●実施内容（●対象業務内容も同義）
+- strength_role ← ●得意領域の強化：（役割）
+- weakness_role ← ●苦手領域の克服：（役割）
+- criteria ← ●達成基準
+- supplement ← ●補足（心持ちの変化／目指す存在等）
+月次振返り記録では「KR_四半期OKRから転記」列に同じ内容が転記されているので、そこから
+抽出してよい。「全社共通」のKR（勤怠管理）は10段階評価表がそのまま達成基準になっており
+6欄には分かれていない。その場合はcriteriaに評価表の要点を入れ、他5欄はnullでよい。
+
+【月次計画・振り返り（"monthly_review"のときだけpopulateする。"quarterly"なら空配列）】
+同じKRについて「分類＝計画」の行と「分類＝振り返り」の行が対になっている。列見出し
+「1か月目」「2か月目」「3か月目」がそれぞれmonth_index 1/2/3に対応する。
+
+計画欄（分類＝計画の列内）から：
+- positioning ← 【位置づけ】の文章
+- activities ← ▼◯月に取り組む内容（計画）
+- target_and_evidence ← ▼◯月末の達成目標と、その証拠（計画値）
+- risks ← ▼リスクと依存関係
+- weight_override_pct ← ウェイト欄の「※◯カ月目のみX%」の注記のXの値。無ければnull。
+- band_target ← ▼◯月末 達成度バンド（計画）の欄。単一の目標値が本文中に明記されている
+  場合だけ数値を入れ、複数基準の説明文しか無い場合は必ずnullを返す（推測して埋めない）。
+  60/70/80/90/100以外の数値は使わない。
+
+振り返り欄（分類＝振り返り の列内）から：
+- review_text ← 「振り返り」の直後にある地の文（自由記述の段落）のみ。末尾の
+  「[自己評価：…]」の角括弧表記やその後の✔✖□のチェック済みバンド一覧・
+  【〇〇コメント】は含めない。
+- self_eval_pct ← 「[自己評価：XX%（本KR%）…]」の最初のXX%（本KR%そのもの）。
+- gm_eval_pct ← 「→（人名）評価：YY%」のYY。無ければnull。
+- gm_comment ← 【（人名）コメント】として書かれた地の文。無ければnull。
+
+${EXCLUDE_NOTES}
+
+${JSON_STRICTNESS_RULES}
+
+{
+  "detected_doc_type": "quarterly" | "monthly_review",
+  "fiscal_year": 2026 | null,
+  "quarter": "3Q" | null,
+  "krs": [
+    {
+      "source_label": "個人KR_1" | null,
+      "kr_kind_hint": "グループKR1" | null,
+      "group_kr_hint": "グループKR1／KR1-TF2 AAS" | null,
+      "label": "AAS",
+      "weight_pct": 35 | null,
+      "category": "..." | null,
+      "activity": "..." | null,
+      "strength_role": "..." | null,
+      "weakness_role": "..." | null,
+      "criteria": "..." | null,
+      "supplement": "..." | null,
+      "months": [
+        {
+          "month_index": 1 | null,
+          "positioning": "..." | null,
+          "activities": "..." | null,
+          "target_and_evidence": "..." | null,
+          "risks": "..." | null,
+          "band_target": 70 | null,
+          "weight_override_pct": 25 | null,
+          "review_text": "..." | null,
+          "self_eval_pct": 80 | null,
+          "gm_eval_pct": 75 | null,
+          "gm_comment": "..." | null
+        }
+      ]
+    }
+  ]
+}`;
+
+const TRUNCATED_COMBINED_MESSAGE =
+  "抽出結果が長すぎて途中で切れました。四半期OKRと月次振返りを分けて取り込んでください。";
+
+/**
+ * 【1回にまとめる／2回に分割するの自動切替の閾値（v3.56）】
+ * Section 19 ⑧・28の教訓：546 WORKER_RESOURCE_LIMITはペイロードのサイズだけでなく
+ * 「1回の呼び出しの実行時間」でも起きる。実行時間は主に「入力の複雑さ×出力の生成量」に
+ * 比例するため、入力が十分小さければ1回にまとめても安全と判断できる。
+ * 既存の警告閾値（importCharWarning.ts の PERSONAL_OKR_IMPORT_CHAR_WARNING_THRESHOLD=
+ * 20000字。「40000字の上限内でも546が起きた」事実から安全側に倒した値）はあくまで
+ * 「分割した呼び出しでも危険域に入り始める」というシグナルであり、1回にまとめる判断は
+ * それよりさらに慎重であるべきなので、その半分（10000字）にする。
+ * 🔴 この閾値を超える場合は必ず従来どおりの2回呼び出し（実行時間・入力トークンともに
+ * 実績のある分割）に倒す。まとめ呼び出し自体が失敗した場合も同様に2回呼び出しへ
+ * フォールバックする（extractPersonalOkrImportData参照）。
+ */
+export const PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS = 10000;
+
+/** 1回にまとめて呼ぶ版（呼び出し1・2を統合）。needQuarterlyAi && needMonthlyAi かつ
+ * 入力が PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS 以下のときだけ使う。単独でもテストできる。 */
+export async function extractPersonalOkrCombinedData(
+  params: ExtractPersonalOkrImportParams,
+): Promise<PersonalOkrImportAnalysis> {
+  const content = buildMessageContent(buildUserMessage(params), params.attachment ?? null);
+  const raw = await invokeExtraction(SYSTEM_PROMPT_COMBINED, content, TRUNCATED_COMBINED_MESSAGE);
+  return validatePersonalOkrImportAnalysis(raw);
+}
 
 // ===== AI 抽出 =====
 
@@ -585,39 +745,126 @@ export async function extractPersonalOkrMonthlyData(
 }
 
 /**
- * 個人OKR取込のAI抽出のエントリーポイント（呼び出し元UI・PersonalOkrImportModal.tsxはこれだけを
- * 呼ぶ）。呼び出し1（quarterly）を常に実行し、その結果（detected_doc_type）に応じて呼び出し2
- * （monthly）を実行するかどうかを決める。onProgressで進捗（1/2・2/2）を呼び出し元に伝える
- * （無言で長時間待たせないため）。
+ * 個人OKR取込のエントリーポイント（呼び出し元UI・PersonalOkrImportModal.tsxはこれだけを呼ぶ）。
+ *
+ * 【v3.56・決定的パーサを主経路にする】
+ * Kintoneの帳票は全員同じ構造のため、AIに構造を推測させる必要が本来無い（山本さんの指摘）。
+ * まず kintoneTextParse.ts の決定的パーサ（ルールベース・トークン消費ゼロ）を試し、
+ * confidence.ok=true の部分だけAI呼び出しを省略する。四半期・月次のどちらか一方だけ決定的に
+ * 読めた場合は、その部分だけAIをスキップする（部分適用。全部やり直しにしない）。
+ * 両方とも決定的に読めた場合はAIを一切呼ばない（aiSentCharCount=0）。
+ *
+ * 決定的パーサが確信を持てなかった部分だけ、従来のAI呼び出し（呼び出し1・2の分割。
+ * Section 19 ⑧・28の546対策）にフォールバックする。このとき、送信直前に
+ * importTextTrim.ts でAIが使わない領域（付録・サマリー・一時的なKR）を削って送信量を
+ * さらに減らす。両方がAI必須で、かつ削減後の本文が十分小さい場合だけ、1回にまとめた
+ * 呼び出し（extractPersonalOkrCombinedData）に切り替える（Section 19 ⑧の再発を避けるため
+ * 閾値を保守的に取る。PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS参照）。まとめ呼び出し
+ * 自体が失敗した場合は、実績のある2回呼び出しへフォールバックする。
  */
 export async function extractPersonalOkrImportData(
   params: ExtractPersonalOkrImportParams,
   onProgress?: (progress: PersonalOkrImportProgress) => void,
 ): Promise<PersonalOkrImportResult> {
-  onProgress?.({ current: 0, total: 2, label: "1/2 個人KRを抽出中" });
+  const originalCharCount = params.transcript?.length ?? 0;
+  const hasTranscript = !!params.transcript && params.transcript.trim().length > 0;
+  const warnings: string[] = [];
+  let aiSentCharCount = 0;
+
+  // ===== Step 1：決定的パーサを試す（純粋関数・トークン消費ゼロ） =====
+  const detQuarterly = hasTranscript ? parseKintoneQuarterlyText(params.transcript) : null;
+  const detMonthly = hasTranscript ? parseKintoneMonthlyText(params.transcript) : null;
+  const detDocTypeHint = hasTranscript ? detectKintoneDocType(params.transcript) : null;
+
   let quarterly: PersonalOkrImportAnalysis | null = null;
-  let quarterlyError: string | null = null;
-  try {
-    quarterly = await extractPersonalOkrQuarterlyData(params);
-  } catch (e) {
-    quarterlyError = e instanceof Error ? e.message : String(e);
+  let quarterlySource: KintoneImportEngineSource = "ai";
+  if (detQuarterly?.confidence.ok) {
+    quarterly = detQuarterly.analysis;
+    quarterlySource = "deterministic";
   }
 
-  // 呼び出し2は「月次振返り記録と判定された場合」だけ行う（四半期OKRのみの資料には月次情報が
-  // 無いため呼ぶ意味が無い＝呼び出しを1回減らせる）。呼び出し1自体が失敗したときは種別が
-  // 分からないため保険的に実行する（片方成功すれば見せられる状態にするため）。
-  const needsMonthly = quarterly === null || quarterly.detected_doc_type === "monthly_review";
+  // 文書種別が分かっているか（決定的パーサが成功していればその判定結果、失敗時はタイトル検出の
+  // ヒント）。"quarterly"と確定していれば月次は最初から不要（既存の最適化と同じ考え方）。
+  const knownDocType: PersonalOkrDocType | null =
+    quarterlySource === "deterministic" ? quarterly!.detected_doc_type : detDocTypeHint;
+  const monthlyMightBeNeeded = knownDocType !== "quarterly";
 
   let monthly: PersonalOkrImportMonthlyAnalysis | null = null;
-  let monthlyError: string | null = null;
-  if (needsMonthly) {
-    onProgress?.({ current: 1, total: 2, label: "2/2 月次計画を抽出中" });
+  let monthlySource: KintoneImportEngineSource = "none";
+  if (monthlyMightBeNeeded && detMonthly?.confidence.ok) {
+    monthly = detMonthly.analysis;
+    monthlySource = "deterministic";
+  }
+
+  const needQuarterlyAi = quarterlySource === "ai";
+  const needMonthlyAi = monthlyMightBeNeeded && monthlySource === "none";
+
+  // ===== Step 2：両方とも決定的パーサで完了した場合はAIを一切呼ばない ===== //
+  if (!needQuarterlyAi && !needMonthlyAi) {
+    onProgress?.({ current: 1, total: 1, label: "抽出結果をまとめています" });
+    return {
+      ...mergePersonalOkrImportResults(quarterly, monthly),
+      warnings, quarterlySource, monthlySource, aiSentCharCount, originalCharCount,
+    };
+  }
+
+  // ===== Step 3：AIに渡す本文を削る（決定的パーサの成否とは無関係。送信量だけを減らす） ===== //
+  const trimmed = hasTranscript ? trimKintoneImportText(params.transcript) : null;
+  const textForAi = trimmed ? trimmed.trimmedText : params.transcript;
+  const aiParams: ExtractPersonalOkrImportParams = { transcript: textForAi, attachment: params.attachment };
+
+  // ===== Step 4：両方AIが必要で、かつ十分小さければ1回にまとめる ===== //
+  if (needQuarterlyAi && needMonthlyAi && hasTranscript && textForAi.length <= PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS) {
+    onProgress?.({ current: 0, total: 1, label: "個人KR・月次計画をまとめて抽出中" });
     try {
-      monthly = await extractPersonalOkrMonthlyData(params);
+      const combined = await extractPersonalOkrCombinedData(aiParams);
+      aiSentCharCount += textForAi.length;
+      onProgress?.({ current: 1, total: 1, label: "抽出結果をまとめています" });
+      return {
+        ...combined,
+        warnings, quarterlySource: "ai", monthlySource: "ai", aiSentCharCount, originalCharCount,
+      };
+    } catch (e) {
+      // まとめ呼び出しが失敗した場合は、実績のある分割呼び出し（Step 5）へ確実にフォールバック
+      // する（1回にまとめたこと自体が原因の失敗〔546等〕を、安全な経路でリトライする安全弁）。
+      warnings.push(`まとめて抽出する呼び出しに失敗したため分割して再試行しました：${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  // ===== Step 5：従来どおりの分割呼び出し（片方は決定的パーサ済みならスキップする） ===== //
+  let quarterlyError: string | null = null;
+  if (needQuarterlyAi) {
+    onProgress?.({ current: 0, total: 2, label: "1/2 個人KRを抽出中" });
+    try {
+      quarterly = await extractPersonalOkrQuarterlyData(aiParams);
+      aiSentCharCount += textForAi?.length ?? 0;
+      quarterlySource = "ai";
+    } catch (e) {
+      quarterlyError = e instanceof Error ? e.message : String(e);
+    }
+  }
+
+  // 呼び出し1(AI)がquarterlyと判定したら月次は不要（既存の最適化）。呼び出し1自体が失敗
+  // した場合や決定的パーサ・タイトル検出のいずれからも種別が分からなかった場合は、
+  // 保険的に月次も試みる（元の実装の「片方成功すれば見せられる状態にする」方針と同じ）。
+  const stillNeedMonthlyAi =
+    monthlySource === "none" && (quarterly === null || quarterly.detected_doc_type === "monthly_review");
+
+  let monthlyError: string | null = null;
+  if (stillNeedMonthlyAi) {
+    onProgress?.({
+      current: needQuarterlyAi ? 1 : 0,
+      total: needQuarterlyAi ? 2 : 1,
+      label: needQuarterlyAi ? "2/2 月次計画を抽出中" : "月次計画を抽出中",
+    });
+    try {
+      monthly = await extractPersonalOkrMonthlyData(aiParams);
+      aiSentCharCount += textForAi?.length ?? 0;
+      monthlySource = "ai";
     } catch (e) {
       monthlyError = e instanceof Error ? e.message : String(e);
     }
-    onProgress?.({ current: 2, total: 2, label: "抽出結果をまとめています" });
+    onProgress?.({ current: needQuarterlyAi ? 2 : 1, total: needQuarterlyAi ? 2 : 1, label: "抽出結果をまとめています" });
   } else {
     onProgress?.({ current: 1, total: 1, label: "抽出結果をまとめています" });
   }
@@ -626,9 +873,11 @@ export async function extractPersonalOkrImportData(
     throw new Error(quarterlyError ?? monthlyError ?? "AI解析に失敗しました。");
   }
 
-  const warnings: string[] = [];
   if (quarterlyError) warnings.push(`個人KRの抽出に失敗しました：${quarterlyError}`);
-  if (needsMonthly && monthlyError) warnings.push(`月次計画・振り返りの抽出に失敗しました：${monthlyError}`);
+  if (stillNeedMonthlyAi && monthlyError) warnings.push(`月次計画・振り返りの抽出に失敗しました：${monthlyError}`);
 
-  return { ...mergePersonalOkrImportResults(quarterly, monthly), warnings };
+  return {
+    ...mergePersonalOkrImportResults(quarterly, monthly),
+    warnings, quarterlySource, monthlySource, aiSentCharCount, originalCharCount,
+  };
 }

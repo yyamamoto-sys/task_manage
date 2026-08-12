@@ -9,15 +9,28 @@ import { invokeAI } from "../invokeAI";
 import {
   extractPersonalOkrQuarterlyData,
   extractPersonalOkrMonthlyData,
+  extractPersonalOkrCombinedData,
   extractPersonalOkrImportData,
   validatePersonalOkrImportAnalysis,
   validatePersonalOkrImportMonthlyAnalysis,
   mergePersonalOkrImportResults,
+  PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS,
   type PersonalOkrImportAnalysis,
   type PersonalOkrImportMonthlyAnalysis,
 } from "../personalOkrImportExtractor";
 
 const mockedInvokeAI = vi.mocked(invokeAI);
+
+// ===== オーケストレーター（extractPersonalOkrImportData）のAI呼び出しテスト用 =====
+// 決定的パーサ（kintoneTextParse.ts）はテキストに「個人KR_N」等のラベルが無ければ
+// confidence.ok=falseになりAIへフォールバックする。ここでのダミーtranscriptはKintone
+// 帳票の体裁を持たないため常にAIフォールバックする（決定的パーサ自体のテストは
+// kintoneTextParse.test.ts側で行う）。
+//
+// 1回にまとめる／2回に分割するの自動切替（PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS）が
+// あるため、「分割2回呼び出し」を検証したいテストは閾値を超える長さのtranscriptを使う。
+const LARGE_NON_KINTONE_TRANSCRIPT = "x".repeat(PERSONAL_OKR_IMPORT_COMBINED_CALL_MAX_CHARS + 1);
+const SMALL_NON_KINTONE_TRANSCRIPT = "x";
 
 function aiText(payload: object): { content: { type: "text"; text: string }[] } {
   return { content: [{ type: "text" as const, text: JSON.stringify(payload) }] };
@@ -197,12 +210,32 @@ describe("extractPersonalOkrMonthlyData", () => {
   });
 });
 
+// ===== extractPersonalOkrCombinedData（1回にまとめる版・単独） =====
+
+describe("extractPersonalOkrCombinedData", () => {
+  it("KRの基本情報とmonthsを1回の呼び出しで抽出する", async () => {
+    mockedInvokeAI.mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART));
+    const result = await extractPersonalOkrCombinedData({ transcript: "x" });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(1);
+    expect(result.detected_doc_type).toBe("monthly_review");
+    expect(result.krs[0].label).toBe("AAS");
+  });
+
+  it("max_tokensは8192・AIIntentは'okr-personal-import'で送る", async () => {
+    mockedInvokeAI.mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
+    await extractPersonalOkrCombinedData({ transcript: "x" });
+    expect(mockedInvokeAI.mock.calls[0][2]).toBe(8192);
+    expect(mockedInvokeAI.mock.calls[0][3]).toBe("okr-personal-import");
+    expect(mockedInvokeAI.mock.calls[0][4]).toBe("claude-haiku-4-5");
+  });
+});
+
 // ===== extractPersonalOkrImportData（オーケストレーター：分割呼び出し＋マージ） =====
 
 describe("extractPersonalOkrImportData — 四半期OKR資料（月次呼び出しをスキップする）", () => {
   it("呼び出し1がquarterlyと判定したら呼び出し2は実行しない（invokeAIは1回だけ）", async () => {
     mockedInvokeAI.mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
-    const result = await extractPersonalOkrImportData({ transcript: "x" });
+    const result = await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT });
     expect(mockedInvokeAI).toHaveBeenCalledTimes(1);
     expect(result.detected_doc_type).toBe("quarterly");
     expect(result.krs[0].months).toEqual([]);
@@ -212,7 +245,7 @@ describe("extractPersonalOkrImportData — 四半期OKR資料（月次呼び出�
   it("progressは{1,1}の完了報告のみ（総数2回を約束しない）", async () => {
     mockedInvokeAI.mockResolvedValueOnce(aiText(QUARTERLY_PAYLOAD));
     const progressCalls: { current: number; total: number; label: string }[] = [];
-    await extractPersonalOkrImportData({ transcript: "x" }, p => progressCalls.push(p));
+    await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT }, p => progressCalls.push(p));
     expect(progressCalls[0]).toEqual({ current: 0, total: 2, label: "1/2 個人KRを抽出中" });
     expect(progressCalls[progressCalls.length - 1]).toEqual({ current: 1, total: 1, label: "抽出結果をまとめています" });
   });
@@ -223,7 +256,7 @@ describe("extractPersonalOkrImportData — 月次振返り資料（両方の呼�
     mockedInvokeAI
       .mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART))
       .mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
-    const result = await extractPersonalOkrImportData({ transcript: "x" });
+    const result = await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT });
     expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
     expect(result.detected_doc_type).toBe("monthly_review");
     expect(result.krs).toHaveLength(1);
@@ -238,7 +271,7 @@ describe("extractPersonalOkrImportData — 月次振返り資料（両方の呼�
       .mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART))
       .mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
     const progressCalls: { current: number; total: number; label: string }[] = [];
-    await extractPersonalOkrImportData({ transcript: "x" }, p => progressCalls.push(p));
+    await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT }, p => progressCalls.push(p));
     expect(progressCalls).toEqual([
       { current: 0, total: 2, label: "1/2 個人KRを抽出中" },
       { current: 1, total: 2, label: "2/2 月次計画を抽出中" },
@@ -252,7 +285,7 @@ describe("extractPersonalOkrImportData — 片方の呼び出しが失敗して�
     mockedInvokeAI
       .mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART))
       .mockRejectedValueOnce(new Error("ネットワークエラー"));
-    const result = await extractPersonalOkrImportData({ transcript: "x" });
+    const result = await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT });
     expect(result.krs[0].label).toBe("AAS");
     expect(result.krs[0].months).toEqual([]); // 月次は取れなかった
     expect(result.warnings).toEqual(["月次計画・振り返りの抽出に失敗しました：ネットワークエラー"]);
@@ -262,7 +295,7 @@ describe("extractPersonalOkrImportData — 片方の呼び出しが失敗して�
     mockedInvokeAI
       .mockRejectedValueOnce(new Error("解析エラー"))
       .mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
-    const result = await extractPersonalOkrImportData({ transcript: "x" });
+    const result = await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT });
     expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
     expect(result.detected_doc_type).toBe("monthly_review");
     expect(result.krs[0].source_label).toBe("個人KR_1");
@@ -274,7 +307,125 @@ describe("extractPersonalOkrImportData — 片方の呼び出しが失敗して�
     mockedInvokeAI
       .mockRejectedValueOnce(new Error("エラー1"))
       .mockRejectedValueOnce(new Error("エラー2"));
-    await expect(extractPersonalOkrImportData({ transcript: "x" })).rejects.toThrow("エラー1");
+    await expect(extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT })).rejects.toThrow("エラー1");
+  });
+});
+
+// ===== extractPersonalOkrImportData — 1回にまとめる呼び出し（v3.56・入力が小さいとき） =====
+
+describe("extractPersonalOkrImportData — 1回にまとめる呼び出し（入力が閾値以下のとき）", () => {
+  it("両方AIが必要で入力が閾値以下なら、invokeAIは1回だけ（まとめ呼び出し）", async () => {
+    const combinedPayload = {
+      detected_doc_type: "monthly_review",
+      fiscal_year: 2026, quarter: "3Q",
+      krs: [{
+        source_label: "個人KR_1", kr_kind_hint: "グループKR1", group_kr_hint: "グループKR1｜AAS",
+        label: "AAS", weight_pct: 35, category: "c", activity: "a", strength_role: "s",
+        weakness_role: "w", criteria: "cr", supplement: "sup",
+        months: [{
+          month_index: 1, positioning: null, activities: null, target_and_evidence: null, risks: null,
+          band_target: null, weight_override_pct: null, review_text: "まとめ呼び出しの振り返り",
+          self_eval_pct: 80, gm_eval_pct: null, gm_comment: null,
+        }],
+      }],
+    };
+    mockedInvokeAI.mockResolvedValueOnce(aiText(combinedPayload));
+    const result = await extractPersonalOkrImportData({ transcript: SMALL_NON_KINTONE_TRANSCRIPT });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(1);
+    expect(result.detected_doc_type).toBe("monthly_review");
+    expect(result.krs[0].months[0].review_text).toBe("まとめ呼び出しの振り返り");
+    expect(result.quarterlySource).toBe("ai");
+    expect(result.monthlySource).toBe("ai");
+    expect(result.aiSentCharCount).toBe(SMALL_NON_KINTONE_TRANSCRIPT.length);
+    expect(result.originalCharCount).toBe(SMALL_NON_KINTONE_TRANSCRIPT.length);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("まとめ呼び出しが失敗したら、分割呼び出し（従来の2回）にフォールバックする", async () => {
+    mockedInvokeAI
+      .mockRejectedValueOnce(new Error("まとめ呼び出しの失敗"))
+      .mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART))
+      .mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
+    const result = await extractPersonalOkrImportData({ transcript: SMALL_NON_KINTONE_TRANSCRIPT });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(3);
+    expect(result.detected_doc_type).toBe("monthly_review");
+    expect(result.krs[0].label).toBe("AAS");
+    expect(result.krs[0].months[0].review_text).toBe("振り返りの本文");
+    expect(result.warnings).toEqual([expect.stringContaining("まとめて抽出する呼び出しに失敗したため分割して再試行しました")]);
+  });
+
+  it("入力が閾値を超えていれば、まとめ呼び出しを使わず分割呼び出しになる（既存の546対策を崩さない）", async () => {
+    mockedInvokeAI
+      .mockResolvedValueOnce(aiText(MONTHLY_REVIEW_QUARTERLY_PART))
+      .mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
+    const result = await extractPersonalOkrImportData({ transcript: LARGE_NON_KINTONE_TRANSCRIPT });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(2);
+    expect(result.quarterlySource).toBe("ai");
+    expect(result.monthlySource).toBe("ai");
+    expect(result.aiSentCharCount).toBe(LARGE_NON_KINTONE_TRANSCRIPT.length * 2);
+  });
+});
+
+// ===== extractPersonalOkrImportData — 決定的パーサが主経路になる（v3.56） =====
+// 実データは無いためkintoneTextParse.test.tsと同じ合成フィクスチャを使う（ファイル冒頭コメント参照）。
+
+const DETERMINISTIC_QUARTERLY_ONLY_TEXT = `個人OKR設定フォーム
+個人KR_1（グループKR1｜AAS）
+●対象業務カテゴリ
+対象業務カテゴリの本文
+●実施内容
+実施内容の本文
+●得意領域の強化：（役割）
+得意領域の本文
+●苦手領域の克服：（役割）
+苦手領域の本文
+●達成基準
+達成基準の本文
+●補足
+補足の本文
+`;
+
+// 四半期側（KRの基本情報）は決定的に読めるが、月次フィールド（▼◯月に取り組む内容等）が
+// 無いため月次側は決定的パーサがconfidence.ok=falseになり、AIにフォールバックする想定。
+const DETERMINISTIC_QUARTERLY_BUT_AI_MONTHLY_TEXT = `個人OKR_月次振返り記録
+個人KR_1（グループKR1｜AAS）
+●対象業務カテゴリ
+対象業務カテゴリの本文
+●実施内容
+実施内容の本文
+●得意領域の強化：（役割）
+得意領域の本文
+●苦手領域の克服：（役割）
+苦手領域の本文
+●達成基準
+達成基準の本文
+●補足
+補足の本文
+（月次の計画・振り返りは別紙のスプレッドシートで管理しており、この画面には出ていません）
+`;
+
+describe("extractPersonalOkrImportData — 決定的パーサが主経路になる", () => {
+  it("四半期OKRのみの資料が決定的に読めれば、invokeAIは一度も呼ばれない", async () => {
+    const result = await extractPersonalOkrImportData({ transcript: DETERMINISTIC_QUARTERLY_ONLY_TEXT });
+    expect(mockedInvokeAI).not.toHaveBeenCalled();
+    expect(result.detected_doc_type).toBe("quarterly");
+    expect(result.krs[0].label).toBe("AAS");
+    expect(result.quarterlySource).toBe("deterministic");
+    expect(result.monthlySource).toBe("none");
+    expect(result.aiSentCharCount).toBe(0);
+    expect(result.warnings).toEqual([]);
+  });
+
+  it("四半期は決定的に読めるが月次が読めない場合は、月次だけAIにフォールバックする（部分適用）", async () => {
+    mockedInvokeAI.mockResolvedValueOnce(aiText(MONTHLY_PART_PAYLOAD));
+    const result = await extractPersonalOkrImportData({ transcript: DETERMINISTIC_QUARTERLY_BUT_AI_MONTHLY_TEXT });
+    expect(mockedInvokeAI).toHaveBeenCalledTimes(1);
+    expect(result.quarterlySource).toBe("deterministic");
+    expect(result.monthlySource).toBe("ai");
+    expect(result.krs[0].label).toBe("AAS"); // 決定的パーサの結果
+    expect(result.krs[0].category).toBe("対象業務カテゴリの本文"); // 決定的パーサの結果
+    expect(result.krs[0].months[0].review_text).toBe("振り返りの本文"); // AIフォールバックの結果
+    expect(result.aiSentCharCount).toBeGreaterThan(0);
   });
 });
 

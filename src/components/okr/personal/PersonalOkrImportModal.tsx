@@ -33,6 +33,7 @@ import { buildImportApplyPlan, type ImportKrDraftInput, type ImportMonthDraftInp
 import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { isPersonalOkrImportTextTooLong } from "../../../lib/personalOkr/importCharWarning";
+import { describeKintoneImportSource, type KintoneImportEngineSource } from "../../../lib/personalOkr/kintoneTextParse";
 import { FileAttachButton, FileDropZone } from "../../common/FileAttachButton";
 import { CustomSelect } from "../../common/CustomSelect";
 import { SaveProgressLoader } from "../../common/SaveProgressLoader";
@@ -150,9 +151,15 @@ export function PersonalOkrImportModal({
   // 呼び出しを2回に分けたことに伴う実進度（1/2 個人KRを抽出中／2/2 月次計画を抽出中）。
   // 無言で長時間待たせないため、時間ベースの演出ではなく実際の呼び出し完了状況を表示する。
   const [analyzeProgress, setAnalyzeProgress] = useState<PersonalOkrImportProgress>({ current: 0, total: 2, label: "解析を開始しています…" });
-  // 診断用：実際にAIへ送信したテキストの文字数（成功後もレビュー画面に出し続ける。今後の
-  // 546切り分けに使うため）。
-  const [analyzedCharCount, setAnalyzedCharCount] = useState<number | null>(null);
+  // 診断用：決定的パーサ／AIどちらの経路で読み取ったか＋実際にAIへ送信した文字数
+  // （成功後もレビュー画面に出し続ける。山本さんが実機でどちらが動いたか報告するための
+  // 唯一の手がかりのため必ず表示する。v3.56）。
+  const [importSourceInfo, setImportSourceInfo] = useState<{
+    quarterlySource: KintoneImportEngineSource;
+    monthlySource: KintoneImportEngineSource;
+    originalCharCount: number;
+    aiSentCharCount: number;
+  } | null>(null);
   // 呼び出し1・2のどちらかが失敗したときの警告（両方成功時は空配列。全部やり直しにはしない）。
   const [importWarnings, setImportWarnings] = useState<string[]>([]);
 
@@ -203,13 +210,18 @@ export function PersonalOkrImportModal({
     setImportWarnings([]);
     setStep("analyzing");
     const sentText = text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text;
-    setAnalyzedCharCount(sentText.length);
     setAnalyzeProgress({ current: 0, total: 2, label: "解析を開始しています…" });
     try {
       const result = await extractPersonalOkrImportData(
         { transcript: sentText, attachment },
         progress => setAnalyzeProgress(progress),
       );
+      setImportSourceInfo({
+        quarterlySource: result.quarterlySource,
+        monthlySource: result.monthlySource,
+        originalCharCount: result.originalCharCount,
+        aiSentCharCount: result.aiSentCharCount,
+      });
       setImportWarnings(result.warnings);
       setDocType(result.detected_doc_type);
       if (result.fiscal_year) setFiscalYear(result.fiscal_year);
@@ -361,7 +373,7 @@ export function PersonalOkrImportModal({
 
   const handleReset = () => {
     setStep("input"); setRawText(""); setAttachment(null); setFileError(null); setError(null);
-    setKrDrafts([]); setApplyResults(null); setAnalyzedCharCount(null); setImportWarnings([]);
+    setKrDrafts([]); setApplyResults(null); setImportSourceInfo(null); setImportWarnings([]);
   };
 
   const charCount = rawText.trim().length;
@@ -450,7 +462,7 @@ export function PersonalOkrImportModal({
               krsInGroup={krsInGroup} tfsInGroup={tfsInGroup}
               error={error} checkedKrCount={checkedKrCount} checkedMonthCount={checkedMonthCount}
               hasAnything={hasAnything} onApply={handleApply}
-              analyzedCharCount={analyzedCharCount} warnings={importWarnings}
+              sourceInfo={importSourceInfo} warnings={importWarnings}
             />
           )}
 
@@ -482,7 +494,7 @@ function ReviewStep({
   docType, setDocType, fiscalYear, setFiscalYear, quarter, setQuarter,
   krDrafts, updateKr, updateMonth, existingKrsInPeriod, krsInGroup, tfsInGroup,
   error, checkedKrCount, checkedMonthCount, hasAnything, onApply,
-  analyzedCharCount, warnings,
+  sourceInfo, warnings,
 }: {
   docType: PersonalOkrDocType; setDocType: (t: PersonalOkrDocType) => void;
   fiscalYear: number; setFiscalYear: (n: number) => void;
@@ -494,15 +506,19 @@ function ReviewStep({
   krsInGroup: KeyResult[]; tfsInGroup: TaskForce[];
   error: string | null; checkedKrCount: number; checkedMonthCount: number; hasAnything: boolean;
   onApply: () => void;
-  analyzedCharCount: number | null; warnings: string[];
+  sourceInfo: {
+    quarterlySource: KintoneImportEngineSource; monthlySource: KintoneImportEngineSource;
+    originalCharCount: number; aiSentCharCount: number;
+  } | null;
+  warnings: string[];
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
-      {analyzedCharCount != null && <CharCountNotice charCount={analyzedCharCount} />}
+      {sourceInfo && <ImportSourceNotice info={sourceInfo} />}
       {warnings.map((w, i) => <WarningBox key={i} message={w} />)}
       <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "10px 12px" }}>
         <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
-          {docType === "quarterly" ? "🤖 個人四半期OKRとして読み取りました" : "🤖 個人月次振返り（計画・振り返り）として読み取りました"}
+          {docType === "quarterly" ? "個人四半期OKRとして読み取りました" : "個人月次振返り（計画・振り返り）として読み取りました"}
         </span>
         <span style={{ flex: 1 }} />
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>違っていたら切り替え：</span>
@@ -814,13 +830,36 @@ function ErrorBox({ message }: { message: string }) {
   return <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{message}</div>;
 }
 
-/** 診断用：抽出文字数の表示（解析実行前・成功後の両方で使う）。閾値超えは行動が分かる警告文を添える。 */
+/** 診断用：抽出文字数の表示（解析実行前のみ・入力欄からの推定量）。閾値超えは行動が分かる警告文を添える。 */
 function CharCountNotice({ charCount }: { charCount: number }) {
   const tooLong = isPersonalOkrImportTextTooLong(charCount);
   return (
     <div style={{ fontSize: "10.5px", color: tooLong ? "var(--color-text-danger)" : "var(--color-text-tertiary)", marginTop: "6px" }}>
       抽出できた文字数：{charCount.toLocaleString("ja-JP")}字
       {tooLong && "　⚠️ 量が多いため、四半期OKRと月次振返りを別々に取り込むことをお勧めします"}
+    </div>
+  );
+}
+
+/**
+ * 🔴 決定的パーサ（画面の構造から読み取り）／AIどちらの経路で読み取ったかを確認画面に必ず
+ * 表示する（山本さんが実機で報告できるようにするための唯一の手がかり。v3.56）。
+ * あわせて「元◯◯字→送信◯◯字」を表示し、削減の実感を出す（AI未使用なら送信0字）。
+ */
+function ImportSourceNotice({ info }: {
+  info: { quarterlySource: KintoneImportEngineSource; monthlySource: KintoneImportEngineSource; originalCharCount: number; aiSentCharCount: number };
+}) {
+  const tooLong = isPersonalOkrImportTextTooLong(info.aiSentCharCount);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "4px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "8px 12px" }}>
+      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+        {describeKintoneImportSource(info.quarterlySource, info.monthlySource)}
+      </div>
+      <div style={{ fontSize: "10.5px", color: tooLong ? "var(--color-text-danger)" : "var(--color-text-tertiary)" }}>
+        {"元の文字数：" + info.originalCharCount.toLocaleString("ja-JP") + "字　→　AIへの送信：" +
+          (info.aiSentCharCount === 0 ? "0字（AI未使用）" : info.aiSentCharCount.toLocaleString("ja-JP") + "字")}
+        {tooLong && "　⚠️ 量が多いため、四半期OKRと月次振返りを別々に取り込むことをお勧めします"}
+      </div>
     </div>
   );
 }
