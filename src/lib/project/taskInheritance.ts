@@ -142,9 +142,7 @@ export interface BuildInheritedMilestonesParams {
   checkedMilestoneIds: Set<string>;
   /** 新規作成するPJのID */
   newProjectId: string;
-  /** 日付移動のオフセット（暦日）。null は「日付を引き継がない」選択時。
-   *  マイルストーンの date は NOT NULL のため、この場合は元の日付をそのまま
-   *  （シフトせず）コピーする（computeInheritedMilestoneDate 参照） */
+  /** 日付移動のオフセット（暦日）。null は「日付を引き継がない」選択時。 */
   dateOffsetDays: number | null;
   createdBy: string;
   now: string;
@@ -153,12 +151,21 @@ export interface BuildInheritedMilestonesParams {
 
 /**
  * チェックされた元マイルストーンから、新PJに複製する新規 Milestone オブジェクト一式を組み立てる。
+ *
+ * 【v3.58の判断】マイルストーンの date は DB上 NOT NULL のため、日付が決まらない
+ * （dateOffsetDays===null＝「日付を引き継がない」を選んだ）ときは、チェックの有無に関わらず
+ * 何も作らない（空配列を返す）。UI側（ProjectCreateModal）もこの状態ではマイルストーンの
+ * チェックボックス自体を選べなくする（利用者から見て「チェックしたのに前年の日付のまま
+ * 作られる」という不自然な挙動を避けるため。他の選択肢＝「元の日付のままコピー」は
+ * 前年の日付が新PJに紛れ込み、より紛らわしいと判断した）。
+ *
  * 基準（アンカー）に指定した1件も他のマイルストーンと同じ関数・同じオフセットで計算する
  * （アンカー自身の元日付にオフセットを加算すると、定義上ちょうど新しい基準日と一致するため
  * 特別扱いは不要）。
  */
 export function buildInheritedMilestones(params: BuildInheritedMilestonesParams): Milestone[] {
   const { originMilestones, checkedMilestoneIds, newProjectId, dateOffsetDays, createdBy, now, generateId } = params;
+  if (dateOffsetDays === null) return [];
   return originMilestones
     .filter(m => checkedMilestoneIds.has(m.id))
     .map(m => ({

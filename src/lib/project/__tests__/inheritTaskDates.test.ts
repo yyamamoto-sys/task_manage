@@ -157,3 +157,47 @@ describe("computeInheritedMilestoneDate", () => {
     expect(computeInheritedMilestoneDate({ offsetDays: null, date: "2026-06-06" })).toBe("2026-06-06");
   });
 });
+
+// 旧 dateSlide.ts（computeSlidedDate。v3.56以前・撤去済み）が返していた結果と、
+// 「(b)元PJの開始日を基準にする」を既定にした新実装（computeInheritOffsetDays→
+// computeInheritedTaskDates）が返す結果が一致することを固定する回帰テスト。
+// v3.57で既定を誤って「引き継がない」にしてしまい（山本さんの2026-08-12指摘・v3.58で訂正）、
+// 旧テストファイル（dateSlide.test.ts）も削除してしまっていたため、同等のケースをここに
+// 書き直した（元テストの入力・期待値をそのまま移植）。
+describe("旧 dateSlide.ts(computeSlidedDate) との互換性（v3.58回帰テスト・既定=project_start）", () => {
+  /** 旧 computeSlidedDate(originStartDate, newStartDate, originalDate) と同じ計算を、
+   *  新しい「オフセット計算→適用」の2段階で再現するテスト用ヘルパー */
+  function slideViaOffset(originStartDate: string, newStartDate: string, originalDate: string): string | null {
+    const offsetDays = computeInheritOffsetDays(originStartDate, newStartDate);
+    return computeInheritedTaskDates({ offsetDays, startDate: originalDate, dueDate: null }).start_date;
+  }
+
+  it("元PJ開始日からの相対日数を保ったまま新PJ開始日にスライドする（正のオフセット）", () => {
+    expect(slideViaOffset("2026-01-01", "2026-03-01", "2026-01-04")).toBe("2026-03-04"); // 元PJ開始日の3日後→新PJ開始日の3日後
+  });
+
+  it("タスクの日付がPJ開始日より前でも同じオフセットで平行移動する（負のオフセット）", () => {
+    expect(slideViaOffset("2026-01-10", "2026-03-01", "2026-01-05")).toBe("2026-02-24"); // 元PJ開始日の5日前→新PJ開始日の5日前
+  });
+
+  it("同日（オフセット0）はそのまま新PJ開始日になる", () => {
+    expect(slideViaOffset("2026-01-01", "2026-03-01", "2026-01-01")).toBe("2026-03-01");
+  });
+
+  it("元タスクに日付が無ければ null のまま", () => {
+    const offsetDays = computeInheritOffsetDays("2026-01-01", "2026-03-01");
+    const result = computeInheritedTaskDates({ offsetDays, startDate: null, dueDate: null });
+    expect(result).toEqual({ start_date: null, due_date: null });
+  });
+
+  it("開始日・期日の両方をスライドすると作業期間（日数差）が保持される", () => {
+    const offsetDays = computeInheritOffsetDays("2026-01-01", "2026-05-10");
+    const result = computeInheritedTaskDates({ offsetDays, startDate: "2026-01-06", dueDate: "2026-01-10" });
+    expect(result).toEqual({ start_date: "2026-05-15", due_date: "2026-05-19" });
+    // 元の作業期間は 10-06=4日。新しい日付でも 19-15=4日で一致する
+  });
+
+  it("月をまたぐオフセットでも正しく計算できる", () => {
+    expect(slideViaOffset("2026-01-28", "2026-06-25", "2026-02-03")).toBe("2026-07-01"); // 元PJ開始日の6日後（月またぎ）→新PJ開始日の6日後
+  });
+});

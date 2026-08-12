@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.57
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.58
 #
-最終更新：2026-08-12（v3.57）
+最終更新：2026-08-12（v3.58）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1045,7 +1045,7 @@ interface TaskChangeLog {
 | ガントビュー | ✅ 実装済み | PJ別・人別の2ビューモード。PJバー・マイルストーン・今日線・トグル開閉 |
 | リストビュー | ✅ 実装済み | 列カスタマイズ・サイドパネル・エクスポート |
 | タスク追加FAB | ✅ 実装済み | 全画面共通・右下固定。TF・ToDo・PJ・担当者・開始日・期日・メモを設定可。最上位作成時は子タスクを一括追加可 |
-| PJ作成モーダル | ✅ 実装済み | 単一ステップフォーム。作成方法トグル（まっさらな新規作成／他PJから引き継ぐ）で、過去含む他PJのタスク・マイルストーン・メンバーをチェックボックス選択して新PJに引き継ぐことも可能（v2.83／v3.57で日付基準・マイルストーン・メンバー引き継ぎを追加）。**日付の引き継ぎ（v3.57）**：既定は「日付を引き継がない」（現状維持・事故防止）。マイルストーン一覧の各行に「基準」ラジオがあり、基準に選んだマイルストーン（または元PJ開始日）の元日付→新PJ側で入力した日付の差分（暦日オフセット）を、チェック中の全タスク・全マイルストーンの日付に同じだけ加算する。純粋関数は`lib/project/inheritTaskDates.ts`（`computeInheritOffsetDays`/`shiftDateByOffset`/`computeInheritedTaskDates`/`computeInheritedMilestoneDate`）。マイルストーンの date はNOT NULLのため「引き継がない」選択時は元の日付をそのままコピー（タスクは null に落とす）。タスク・マイルストーン複製本体は`lib/project/taskInheritance.ts`（`buildInheritedTasks`/`buildInheritedMilestones`/`buildInheritedDependencies`）。メンバー引き継ぎの候補は元PJの`member_ids`∪全タスク担当者（`lib/project/inheritMembers.ts`）で、独立の`project_members`テーブルは存在しないため`lib/project/projectMembers.ts`（PJ設定画面「関わるメンバー」表示用の別目的の集約関数）は流用しない。選んだメンバーは新PJの`member_ids`としてプロジェクト作成の1回のupsertに含めるため、追加の書き込み・順序問題は発生しない |
+| PJ作成モーダル | ✅ 実装済み | 単一ステップフォーム。作成方法トグル（まっさらな新規作成／他PJから引き継ぐ）で、過去含む他PJのタスク・マイルストーン・メンバーをチェックボックス選択して新PJに引き継ぐことも可能（v2.83／v3.57で日付基準・マイルストーン・メンバー引き継ぎを追加／v3.58で既定を訂正）。**日付の引き継ぎ（v3.58）**：**既定は「元PJの開始日を基準にする」**（v3.56以前と同じ挙動＝元PJ開始日→新PJ開始日の相対日数を保った平行移動。新PJの開始日欄をそのまま基準の新日付として使うため別入力は不要）。もう1つの選択肢「マイルストーンを基準にする」はマイルストーン一覧の各行の「基準」ラジオで選ぶ（選ぶと新PJ側の基準日を別途入力させる）。「日付を引き継がない」も選べる（この場合はタスクの日付を全てnullに落とす。マイルストーンはNOT NULL列のため作成自体をスキップし、チェックボックスも無効化する＝前年の日付のままマイルストーンが作られる不自然さを避けた・v3.58の判断）。純粋関数は`lib/project/inheritTaskDates.ts`（`computeInheritOffsetDays`/`shiftDateByOffset`/`computeInheritedTaskDates`/`computeInheritedMilestoneDate`）。タスク・マイルストーン複製本体は`lib/project/taskInheritance.ts`（`buildInheritedTasks`/`buildInheritedMilestones`/`buildInheritedDependencies`）。メンバー引き継ぎの候補は元PJの`member_ids`∪全タスク担当者（`lib/project/inheritMembers.ts`）で、独立の`project_members`テーブルは存在しないため`lib/project/projectMembers.ts`（PJ設定画面「関わるメンバー」表示用の別目的の集約関数）は流用しない。選んだメンバーは新PJの`member_ids`としてプロジェクト作成の1回のupsertに含めるため、追加の書き込み・順序問題は発生しない。**🔴 v3.57→v3.58の訂正（経緯の記録）**：v3.57では日付基準の既定を「引き継がない」にしたが、これは統括が「旧実装（〜v3.56）は元PJ開始日を基準に常に日付を引き継いでいた（オプトアウト不可）」という事実を把握しないまま出した誤った指示によるもので、結果的にv3.56以前の便利な既定挙動を退行させていた。山本さんの指摘を受け、v3.58で既定を「元PJの開始日を基準にする」に戻した（Section 4のv3.49→v3.50の訂正と同種の事故）。**同じ判断を繰り返さないための記録**：既存機能の挙動を変える指示を出す前に、必ずコードを実際に読んで「今何が起きているか」を確認すること |
 | タスク編集モーダル | ✅ 実装済み | ToDo紐づけフィールド含む |
 | AIに変更を相談パネル | ✅ 実装済み | マルチターン・5モード・確認ダイアログ |
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |

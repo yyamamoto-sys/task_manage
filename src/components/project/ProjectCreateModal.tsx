@@ -101,9 +101,14 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const [checkedTaskIds, setCheckedTaskIds] = useState<Set<string>>(new Set());
   const [checkedMilestoneIds, setCheckedMilestoneIds] = useState<Set<string>>(new Set());
   const [checkedMemberIds, setCheckedMemberIds] = useState<Set<string>>(new Set());
-  // 日付の基準（アンカー）："none"（既定）／"project_start"／マイルストーンID
-  const [anchorSelection, setAnchorSelection] = useState<AnchorSelection>("none");
-  // 新PJ側の対応する日付（(a)(b)選択時のみ使う）
+  // 日付の基準（アンカー）："project_start"（既定＝v3.56以前と同じ挙動）／"none"／マイルストーンID。
+  // 【v3.57→v3.58の訂正】v3.57では既定を"none"（引き継がない）にしたが、これは統括が
+  // 「旧実装は常にPJ開始日基準で日付を引き継いでいた（オプトアウト不可）」という事実を
+  // 把握しないまま出した誤った指示に基づくもので、結果的にv3.56以前の便利な既定挙動を
+  // 退行させてしまった。v3.58で"project_start"に戻す。
+  const [anchorSelection, setAnchorSelection] = useState<AnchorSelection>("project_start");
+  // 新PJ側の対応する日付（マイルストーンを基準にしたときのみ使う。"project_start"は
+  // resolvedNewStartDate＝新PJの開始日欄（期間セクション）をそのまま使うため、この状態は不要）
   const [newAnchorDate, setNewAnchorDate] = useState("");
 
   const nameRef = useRef<HTMLInputElement>(null);
@@ -171,7 +176,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
       setCheckedTaskIds(new Set());
       setCheckedMilestoneIds(new Set());
       setCheckedMemberIds(new Set());
-      setAnchorSelection("none");
+      setAnchorSelection("project_start");
       setNewAnchorDate("");
       return;
     }
@@ -191,7 +196,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     const candidateIdSet = new Set(liveCandidates.map(m => m.id));
     setCheckedMemberIds(new Set([...liveDefaultMemberIds].filter(id => candidateIdSet.has(id))));
 
-    setAnchorSelection("none");
+    setAnchorSelection("project_start"); // 既定はv3.56以前と同じ「元PJ開始日を基準にする」
     setNewAnchorDate("");
   }, [mode, originProjectId]);
 
@@ -216,8 +221,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
       const next = new Set(prev);
       if (next.has(id)) {
         next.delete(id);
-        // 基準にしていたマイルストーンのチェックを外したら基準指定も解除する（矛盾防止）
-        setAnchorSelection(sel => (sel === id ? "none" : sel));
+        // 基準にしていたマイルストーンのチェックを外したら基準指定も解除する（矛盾防止）。
+        // 「引き継がない」ではなく既定の"project_start"へ戻す（v3.58）。
+        setAnchorSelection(sel => (sel === id ? "project_start" : sel));
       } else {
         next.add(id);
       }
@@ -233,6 +239,12 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     }
   }, []);
 
+  // 新PJの開始日欄（期間セクション）の解決値。未入力なら今日（v3.56以前のinheritTasksFromOrigin
+  // と同じフォールバック＝resolvedStartDateと同じ式をここでも使う）。"project_start"アンカーは
+  // 別の入力欄を持たず、必ずこの値を新しい基準日として使う（新PJ自身の開始日と、日付移動の
+  // 基準日を別々に入力させると食い違いが起きるため、単一の入力欄に統一する）。
+  const resolvedNewStartDate = startDate || todayStr();
+
   // 基準の元日付（マイルストーンの日付／元PJ開始日／未選択ならnull）
   const originAnchorDate = useMemo(() => {
     if (anchorSelection === "none") return null;
@@ -240,11 +252,15 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     return originMilestones.find(m => m.id === anchorSelection)?.date ?? null;
   }, [anchorSelection, originProject, originMilestones]);
 
+  // 基準の新日付："project_start"はresolvedNewStartDate（新PJの開始日欄）・マイルストーン
+  // 基準はnewAnchorDate（専用のdate input）・"none"は使わない
+  const newAnchorDateForOffset = anchorSelection === "project_start" ? resolvedNewStartDate : newAnchorDate;
+
   // 日付移動のオフセット（暦日）。null＝「日付を引き継がない」（タスクは日付無し・
-  // マイルストーンは元の日付をそのままコピー。lib/project/inheritTaskDates.ts参照）
+  // マイルストーンは基準が無いため作成自体をしない。lib/project/inheritTaskDates.ts参照）
   const dateOffsetDays = useMemo(
-    () => (anchorSelection === "none" ? null : computeInheritOffsetDays(originAnchorDate, newAnchorDate || null)),
-    [anchorSelection, originAnchorDate, newAnchorDate],
+    () => (anchorSelection === "none" ? null : computeInheritOffsetDays(originAnchorDate, newAnchorDateForOffset || null)),
+    [anchorSelection, originAnchorDate, newAnchorDateForOffset],
   );
 
   /**
@@ -329,8 +345,11 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     }
   }, [originProjectId, checkedTaskIds, checkedMilestoneIds, dateOffsetDays, currentUser.id]);
 
+  // マイルストーン基準（anchorSelectionが"none"/"project_start"以外）だけがnewAnchorDateの
+  // 入力を要求する。"project_start"はresolvedNewStartDateで自動的に確定するため必須としない。
+  const anchorNeedsManualDate = anchorSelection !== "none" && anchorSelection !== "project_start";
   const canSave = !!(name.trim() && purpose.trim() && ownerIds.length > 0
-    && (mode === "blank" || (!!originProjectId && (anchorSelection === "none" || !!newAnchorDate))));
+    && (mode === "blank" || (!!originProjectId && (!anchorNeedsManualDate || !!newAnchorDate))));
 
   const handleSave = useCallback(async () => {
     if (!canSave) return;
@@ -343,7 +362,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     try {
       const id = uuidv4();
       const now = new Date().toISOString();
-      const resolvedStartDate = startDate || todayStr();
+      // resolvedNewStartDateと同じ式（startDate || todayStr()）。日付移動の基準（"project_start"）
+      // と新PJ自身のstart_dateを必ず同じ値にするため、ここで作り直さずレンダー中に確定した値を使う。
+      const resolvedStartDate = resolvedNewStartDate;
       const newProject: Project = {
         id,
         name: name.trim(),
@@ -372,7 +393,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     } finally {
       setSaving(false);
     }
-  }, [canSave, name, purpose, ownerIds, checkedMemberIds, colorTag, startDate, endDate, mode, originProjectId, inheritFromOrigin, saveProject, currentUser.id, onCreated, onClose]);
+  }, [canSave, name, purpose, ownerIds, checkedMemberIds, colorTag, startDate, endDate, resolvedNewStartDate, mode, originProjectId, inheritFromOrigin, saveProject, currentUser.id, onCreated, onClose]);
 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。Escapeキー（handleKeyDown）と
@@ -445,16 +466,16 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                     <Label>マイルストーン（{checkedMilestoneIds.size}/{originMilestones.length}件）・日付の基準</Label>
                     <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginBottom: "8px" }}>
                       <label style={anchorRadioRowStyle}>
-                        <input type="radio" name="dateAnchor" checked={anchorSelection === "none"} onChange={() => selectAnchor("none")} />
-                        日付を引き継がない（既定）
+                        <input type="radio" name="dateAnchor" checked={anchorSelection === "project_start"} onChange={() => selectAnchor("project_start")} />
+                        元PJの開始日を基準にする（既定。元:{originProject?.start_date ?? "-"} → 新:{resolvedNewStartDate}）
                       </label>
                       <label style={anchorRadioRowStyle}>
-                        <input type="radio" name="dateAnchor" checked={anchorSelection === "project_start"} onChange={() => selectAnchor("project_start")} />
-                        元PJの開始日を基準にする（{originProject?.start_date ?? "-"}）
+                        <input type="radio" name="dateAnchor" checked={anchorSelection === "none"} onChange={() => selectAnchor("none")} />
+                        日付を引き継がない
                       </label>
                     </div>
 
-                    {anchorSelection !== "none" && (
+                    {anchorNeedsManualDate && (
                       <div style={{ marginBottom: "8px" }}>
                         <Label>新PJでの基準日 *</Label>
                         <input
@@ -472,9 +493,14 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                       </div>
                     ) : (
                       <>
+                        {anchorSelection === "none" && (
+                          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "2px 0 6px" }}>
+                            「日付を引き継がない」を選んでいる間はマイルストーンを引き継げません（マイルストーンには日付が必須のため）。基準を選ぶと引き継げます。
+                          </div>
+                        )}
                         <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
-                          <button type="button" onClick={() => setCheckedMilestoneIds(new Set(originMilestones.map(m => m.id)))} style={miniBtnStyle}>全選択</button>
-                          <button type="button" onClick={() => setCheckedMilestoneIds(new Set())} style={miniBtnStyle}>全解除</button>
+                          <button type="button" disabled={anchorSelection === "none"} onClick={() => setCheckedMilestoneIds(new Set(originMilestones.map(m => m.id)))} style={miniBtnStyle}>全選択</button>
+                          <button type="button" disabled={anchorSelection === "none"} onClick={() => setCheckedMilestoneIds(new Set())} style={miniBtnStyle}>全解除</button>
                         </div>
                         <div style={checklistBoxStyle}>
                           {originMilestones.map(m => (
@@ -483,6 +509,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                               milestone={m}
                               checked={checkedMilestoneIds.has(m.id)}
                               isAnchor={anchorSelection === m.id}
+                              disabled={anchorSelection === "none"}
                               onToggle={toggleMilestone}
                               onSelectAnchor={selectAnchor}
                               offsetDays={dateOffsetDays}
@@ -519,7 +546,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                       </div>
                     )}
                     <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                      ステータスは全て「ToDo」にリセットされます。日付は上で選んだ基準に従って移動します（既定は「引き継がない」）。
+                      ステータスは全て「ToDo」にリセットされます。日付は上で選んだ基準に従って移動します（既定は「元PJの開始日を基準にする」＝v3.56以前と同じ挙動）。
                     </div>
                   </div>
 
@@ -744,10 +771,14 @@ function TaskCheckRow({ task, checked, onToggle, members, indent, offsetDays }: 
  * （このマイルストーンを日付の基準にするか。1つだけ選べる＝name="dateAnchor"で他の
  * 基準ラジオと同じグループにする）を持つ。
  */
-function MilestoneCheckRow({ milestone, checked, isAnchor, onToggle, onSelectAnchor, offsetDays }: {
+function MilestoneCheckRow({ milestone, checked, isAnchor, disabled, onToggle, onSelectAnchor, offsetDays }: {
   milestone: Milestone;
   checked: boolean;
   isAnchor: boolean;
+  /** true＝「日付を引き継がない」を選んでいる間。引き継ぐか否かのチェックボックスは無効化する
+   *  （NOT NULL列のため日付が決まらないマイルストーンは作れない）。「基準」ラジオは無効化しない
+   *  （これを押すこと自体が"none"から脱出する唯一の手段のため） */
+  disabled: boolean;
   onToggle: (id: string) => void;
   onSelectAnchor: (id: string) => void;
   offsetDays: number | null;
@@ -759,11 +790,13 @@ function MilestoneCheckRow({ milestone, checked, isAnchor, onToggle, onSelectAnc
       style={{
         display: "flex", alignItems: "center", gap: "7px", padding: "4px 0",
         fontSize: "12px", color: "var(--color-text-primary)", borderBottom: "1px solid var(--color-border-primary)",
+        opacity: disabled ? 0.5 : 1,
       }}
     >
       <input
         type="checkbox"
-        checked={checked}
+        checked={checked && !disabled}
+        disabled={disabled}
         onChange={() => onToggle(milestone.id)}
         style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
       />

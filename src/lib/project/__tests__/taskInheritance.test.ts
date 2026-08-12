@@ -303,7 +303,7 @@ describe("buildInheritedMilestones", () => {
     expect(result[0].date).toBe("2026-07-06");
   });
 
-  it("dateOffsetDaysがnull（『日付を引き継がない』選択時）は元の日付をそのままコピーする（NOT NULL列のため）", () => {
+  it("dateOffsetDaysがnull（『日付を引き継がない』選択時）はチェックの有無に関わらず何も作らない（NOT NULL列のため・v3.58）", () => {
     const originMilestones = [mkMilestone({ id: "m1", date: "2026-06-06" })];
     const result = buildInheritedMilestones({
       ...baseParams,
@@ -312,6 +312,6 @@ describe("buildInheritedMilestones", () => {
       dateOffsetDays: null,
       generateId: makeIdGenerator(),
     });
-    expect(result[0].date).toBe("2026-06-06");
+    expect(result).toEqual([]);
   });
 });
