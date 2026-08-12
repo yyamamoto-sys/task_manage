@@ -159,12 +159,14 @@ describe("computeInheritedMilestoneDate", () => {
 });
 
 // 旧 dateSlide.ts（computeSlidedDate。v3.56以前・撤去済み）が返していた結果と、
-// 「(b)元PJの開始日を基準にする」を既定にした新実装（computeInheritOffsetDays→
-// computeInheritedTaskDates）が返す結果が一致することを固定する回帰テスト。
-// v3.57で既定を誤って「引き継がない」にしてしまい（山本さんの2026-08-12指摘・v3.58で訂正）、
-// 旧テストファイル（dateSlide.test.ts）も削除してしまっていたため、同等のケースをここに
-// 書き直した（元テストの入力・期待値をそのまま移植）。
-describe("旧 dateSlide.ts(computeSlidedDate) との互換性（v3.58回帰テスト・既定=project_start）", () => {
+// 「元PJ開始日→新PJ開始日」の相対日数を保つ計算を、汎用の基準（アンカー）オフセット計算
+// （computeInheritOffsetDays→computeInheritedTaskDates）で再現した結果が一致することを
+// 固定する回帰テスト。この関数自体は「基準が何か（マイルストーンかPJ開始日か）」を
+// 意識しない汎用計算のため、UI側の選択肢（v3.58で「元PJの開始日を基準にする」を既定化→
+// v3.59で山本さんの指示によりUIの選択肢としては撤去・選択肢は「スケジュール間隔を引き継ぐ」
+// 「日付を引き継がない」の2つに整理）が変わっても、この関数レベルの回帰テストとしては
+// 引き続き有効なため残す（CLAUDE.md Section 8参照）。
+describe("旧 dateSlide.ts(computeSlidedDate) との互換性（関数レベルの回帰テスト。UI選択肢としてはv3.59で撤去済み）", () => {
   /** 旧 computeSlidedDate(originStartDate, newStartDate, originalDate) と同じ計算を、
    *  新しい「オフセット計算→適用」の2段階で再現するテスト用ヘルパー */
   function slideViaOffset(originStartDate: string, newStartDate: string, originalDate: string): string | null {

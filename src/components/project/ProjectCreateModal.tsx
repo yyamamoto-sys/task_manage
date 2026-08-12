@@ -8,42 +8,52 @@
 // 【他PJからのタスク引き継ぎ（山本さん確定仕様・2026-07-22／日付基準・マイルストーン・
 // メンバー引き継ぎを2026-08-12・v3.57で追加）】
 // 「まっさらな新規作成」に加え、過去含む他PJを選んでタスク・マイルストーン・メンバーを
-// チェックボックスで引き継ぎながら新PJを作る導線。同じ段取りで回す案件（フォーラム運営・
-// 定例調査等）を毎回ゼロから作らずに済むようにするため。
+// 引き継ぎながら新PJを作る導線。同じ段取りで回す案件（フォーラム運営・定例調査等）を
+// 毎回ゼロから作らずに済むようにするため。
 //
-// 【日付の引き継ぎ（v3.57）】旧実装（〜v3.56）は元PJ開始日→新PJ開始日の相対日数を必ず保つ
-// 設計だったが、次の3通りから選べるようにした：
-//   (a) 元PJのマイルストーンの1つを基準にする（下のマイルストーン一覧の各行にある
-//       「基準」ラジオで選ぶ。基準に選んだ行は自動でチェックON＝矛盾防止）
-//   (b) 元PJの開始日を基準にする
-//   (c) 日付を引き継がない（既定。既存利用者が意図せず日付付きタスクを大量に作る事故を防ぐ）
-// (a)(b)を選んだ場合、新PJ側の対応する日付（newAnchorDate）を入力してもらい、
-// 「基準の元日付→新日付」の差分（暦日オフセット）を全タスク・全マイルストーンの日付に
-// 同じだけ加算する（lib/project/inheritTaskDates.ts）。ステータスは全てtodoにリセット・
-// 担当者は引き継ぐ・依存関係は先行/後続の両方がチェックされている組だけ引き継ぐ
-// （詳細は lib/project/taskInheritance.ts）。
+// 【v3.59：ステップ式UIへの作り直し＋選択肢の整理（山本さん指示・2026-08-12）】
+// v3.57〜58は「作成方法／引き継ぎ元PJ／日付の基準／マイルストーン／タスク／メンバー／
+// PJ基本情報」を単一画面に一気に出していたが、初見の利用者には何を求められているか
+// 分からない、との指摘を受け、5ステップ（まっさらな新規作成時は2ステップ）に分割した。
+// ステップの並び順・「次へ」に進めるかの判定は `lib/project/projectCreateSteps.ts` の
+// `resolveSteps`/`canGoNext` に切り出し、純粋関数としてテストする。
 //
-// 【メンバーの引き継ぎ（v3.57）】CLAUDE.md Section 3-2の「PJ↔Member多対多」は本実装では
-// 独立テーブルではなく projects.member_ids（配列列）。候補は元PJのmember_ids∪全タスクの
-// 担当者、既定チェックはチェック中タスクの担当者のみ（lib/project/inheritMembers.ts）。
-// 選んだメンバーはnewProjectのmember_idsとしてプロジェクト作成時に1回のupsertで書き込む
-// （タスク・マイルストーンのような追加の保存呼び出しは不要＝順序問題が発生しない）。
+// 【日付の選択肢を2つに整理（v3.59）】v3.58まで3択（マイルストーン基準／元PJ開始日基準／
+// 引き継がない）だった日付の基準を、「スケジュール間隔を引き継ぐ」（＝マイルストーン基準。
+// 元PJ開始日を基準にする選択肢は撤去）と「日付を引き継がない」の2択に整理した。
+// 「スケジュール間隔を引き継ぐ」を選ぶと、元PJのマイルストーンを1つ「基準」として選び、
+// そのマイルストーンを新PJではいつに置くかを入力する。基準以外のマイルストーンは
+// 「他のマイルストーンも引き継ぐ」という単純なチェックボックス1つで一括on/offする
+// （旧実装の「行ごとのチェックボックス＋基準ラジオ」という二重構造は解体した。1行に
+// 2種類の選択を同居させると、片方の選択が他方を殺すため何を求められているか判別できない
+// という指摘だったため）。引き継ぎ元PJにマイルストーンが1件も無い場合は「スケジュール間隔を
+// 引き継ぐ」自体を選べなくし、理由を明記する（NOT NULL列のため基準が無いと日付が決まらない）。
+// 旧「元PJの開始日を基準にする」用の回帰テスト（`inheritTaskDates.test.ts`）は、UI選択肢が
+// 撤去されても計算そのものは変わらないため関数レベルのテストとして残す。
+//
+// 日付移動の計算（`lib/project/inheritTaskDates.ts`）・タスク／マイルストーンの複製本体
+// （`lib/project/taskInheritance.ts`）・メンバー候補（`lib/project/inheritMembers.ts`）は
+// v3.57〜58から変更していない。ステータスは全てtodoにリセット・担当者は引き継ぐ・
+// 依存関係は先行/後続の両方がチェックされている組だけ引き継ぐ。
+//
+// 【メンバーの引き継ぎ】CLAUDE.md Section 3-2の「PJ↔Member多対多」は本実装では独立テーブル
+// ではなく projects.member_ids（配列列）。候補は元PJのmember_ids∪全タスクの担当者、
+// 既定チェックはチェック中タスクの担当者のみ。選んだメンバーはnewProjectのmember_idsとして
+// プロジェクト作成時に1回のupsertで書き込む（追加の保存呼び出しは不要＝順序問題が発生しない）。
 //
 // タスク・マイルストーン作成は既存の appStore.saveTask/saveMilestone/addTaskDependency
 // 経由で行う（B1/B3/B4/v2.75の choke pointをそのまま活かすため）。新規作成する大量タスクで
-// B3自動リスケ連鎖を誤発火させないよう { skipCascade: true } を必ず付ける（依存関係は
-// タスク作成後にまとめて張るため、作成時点では対象タスクに依存の相手がまだ存在せず
-// cascadeは元々no-opだが、安全側かつ無駄な計算を避けるため明示的にskipする）。
+// B3自動リスケ連鎖を誤発火させないよう { skipCascade: true } を必ず付ける。
 //
 // 【トランザクションではない】saveProjectが成功した後にmilestone/task/依存関係の保存が
-// 一部失敗しても、プロジェクト自体のロールバックはしない（既存のB3の割り切りと同じ考え方）。
-// 失敗した分はトーストで件数を知らせ、利用者が編集画面から手動で追加する想定。
+// 一部失敗しても、プロジェクト自体のロールバックはしない。失敗した分はトーストで件数を
+// 知らせ、利用者が編集画面から手動で追加する想定。
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
-import type { Member, Milestone, Project, Task } from "../../lib/localData/types";
+import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
@@ -55,11 +65,12 @@ import {
   defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies, buildInheritedMilestones,
 } from "../../lib/project/taskInheritance";
 import { candidateInheritMembers, defaultCheckedMemberIds } from "../../lib/project/inheritMembers";
-import { computeInheritOffsetDays, computeInheritedTaskDates, computeInheritedMilestoneDate } from "../../lib/project/inheritTaskDates";
+import { computeInheritOffsetDays, computeInheritedTaskDates } from "../../lib/project/inheritTaskDates";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../common/modalStyles";
-
-/** アンカー選択の値："none"＝引き継がない／"project_start"＝元PJ開始日／それ以外＝マイルストーンID */
-type AnchorSelection = "none" | "project_start" | string;
+import {
+  resolveSteps, canGoNext, defaultDateStrategy, stepLabel,
+  type CreateMode, type DateStrategy, type StepId, type CanGoNextState,
+} from "../../lib/project/projectCreateSteps";
 
 const PROJECT_STATUS_LABEL: Record<Project["status"], string> = {
   active: "進行中", completed: "完了", archived: "アーカイブ",
@@ -86,6 +97,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const saveProject = useAppStore(s => s.saveProject);
   const members = active(rawMembers);
 
+  // ===== PJ基本情報（最終ステップで入力） =====
   const [name, setName] = useState("");
   const [purpose, setPurpose] = useState("");
   const [ownerIds, setOwnerIds] = useState<string[]>([currentUser.id]);
@@ -95,28 +107,35 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ===== ステップ =====
+  const [mode, setMode] = useState<CreateMode>("blank");
+  const [stepIndex, setStepIndex] = useState(0);
+
   // ===== 他PJからの引き継ぎ（タスク／マイルストーン／メンバー） =====
-  const [mode, setMode] = useState<"blank" | "inherit">("blank");
   const [originProjectId, setOriginProjectId] = useState("");
   const [checkedTaskIds, setCheckedTaskIds] = useState<Set<string>>(new Set());
-  const [checkedMilestoneIds, setCheckedMilestoneIds] = useState<Set<string>>(new Set());
   const [checkedMemberIds, setCheckedMemberIds] = useState<Set<string>>(new Set());
-  // 日付の基準（アンカー）："project_start"（既定＝v3.56以前と同じ挙動）／"none"／マイルストーンID。
-  // 【v3.57→v3.58の訂正】v3.57では既定を"none"（引き継がない）にしたが、これは統括が
-  // 「旧実装は常にPJ開始日基準で日付を引き継いでいた（オプトアウト不可）」という事実を
-  // 把握しないまま出した誤った指示に基づくもので、結果的にv3.56以前の便利な既定挙動を
-  // 退行させてしまった。v3.58で"project_start"に戻す。
-  const [anchorSelection, setAnchorSelection] = useState<AnchorSelection>("project_start");
-  // 新PJ側の対応する日付（マイルストーンを基準にしたときのみ使う。"project_start"は
-  // resolvedNewStartDate＝新PJの開始日欄（期間セクション）をそのまま使うため、この状態は不要）
+  // 日程の引き継ぎ方（v3.59：2択のみ。旧「元PJの開始日を基準にする」は撤去）
+  const [dateStrategy, setDateStrategy] = useState<DateStrategy>("no_dates");
+  // 基準にするマイルストーンID（dateStrategy==="keep_interval" のときのみ使う）
+  const [anchorMilestoneId, setAnchorMilestoneId] = useState<string | null>(null);
+  // 新PJでは基準マイルストーンをいつに置くか
   const [newAnchorDate, setNewAnchorDate] = useState("");
+  // 基準以外のマイルストーンも一括で引き継ぐか
+  const [inheritOtherMilestones, setInheritOtherMilestones] = useState(true);
 
   const nameRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { nameRef.current?.focus(); }, []);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") onClose();
   };
+
+  const steps = useMemo<StepId[]>(() => resolveSteps(mode), [mode]);
+  const currentStep = steps[Math.min(stepIndex, steps.length - 1)];
+
+  useEffect(() => {
+    if (currentStep === "finalize") nameRef.current?.focus();
+  }, [currentStep]);
 
   // 引き継ぎ元候補：過去（完了・アーカイブ・終了日超過）も含む非削除PJ。過去のものは一覧上で分かるよう dim + meta 表示
   const originOptions = useMemo<SelectOption[]>(() => {
@@ -157,6 +176,11 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     [mode, originProjectId, rawMilestonesAll],
   );
 
+  const milestoneOptions = useMemo<SelectOption[]>(
+    () => originMilestones.map(m => ({ value: m.id, label: `◆ ${m.name}（${formatMD(m.date)}）` })),
+    [originMilestones],
+  );
+
   // 候補＝元PJのmember_ids ∪ 全タスクの担当者（非削除メンバーのみ）。projectMembers.ts の
   // computeProjectMembers（オーナー・担当者・招待者まで広げる別目的の集約）は流用しない
   // （lib/project/inheritMembers.ts のコメント参照）。
@@ -167,17 +191,19 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     [mode, originProjectId, rawMembers, originProject, originTasks],
   );
 
-  // 引き継ぎ元PJを切り替えた時だけチェック状態を既定値に初期化する。
-  // originTasks（rawTasksAllから派生）を依存に含めると、他人の無関係なタスク編集で
-  // rawTasksAll の参照が変わるたびにユーザーが手で外したチェックがリセットされてしまうため、
-  // 依存は mode/originProjectId のみにし、既定値の算出はここで最新スナップショットを直接読む。
+  // 引き継ぎ元PJを切り替えた時（またはモードを切り替えた時）だけチェック状態・日程の
+  // 引き継ぎ方を既定値に初期化する。originTasks（rawTasksAllから派生）を依存に含めると、
+  // 他人の無関係なタスク編集でrawTasksAllの参照が変わるたびにユーザーが手で外したチェックが
+  // リセットされてしまうため、依存は mode/originProjectId のみにし、既定値の算出はここで
+  // 最新スナップショットを直接読む。
   useEffect(() => {
     if (mode !== "inherit" || !originProjectId) {
       setCheckedTaskIds(new Set());
-      setCheckedMilestoneIds(new Set());
       setCheckedMemberIds(new Set());
-      setAnchorSelection("project_start");
+      setDateStrategy("no_dates");
+      setAnchorMilestoneId(null);
       setNewAnchorDate("");
+      setInheritOtherMilestones(true);
       return;
     }
     const state = useAppStore.getState();
@@ -185,8 +211,14 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     const defaultTaskIds = defaultCheckedTaskIds(liveTasks);
     setCheckedTaskIds(defaultTaskIds);
 
-    const liveMilestones = active(state.milestones).filter(m => m.project_id === originProjectId);
-    setCheckedMilestoneIds(new Set(liveMilestones.map(m => m.id))); // マイルストーンは既定で全チェック
+    const liveMilestones = active(state.milestones)
+      .filter(m => m.project_id === originProjectId)
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const hasMilestones = liveMilestones.length > 0;
+    setDateStrategy(defaultDateStrategy(hasMilestones));
+    setAnchorMilestoneId(hasMilestones ? liveMilestones[0].id : null);
+    setNewAnchorDate("");
+    setInheritOtherMilestones(true);
 
     const liveOriginProject = selectScopedProjects(state).find(p => p.id === originProjectId);
     const liveCandidates = candidateInheritMembers(state.members, liveOriginProject?.member_ids, liveTasks);
@@ -195,9 +227,6 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     // candidate外（is_deleted等）のIDが紛れないよう候補集合との積を取る
     const candidateIdSet = new Set(liveCandidates.map(m => m.id));
     setCheckedMemberIds(new Set([...liveDefaultMemberIds].filter(id => candidateIdSet.has(id))));
-
-    setAnchorSelection("project_start"); // 既定はv3.56以前と同じ「元PJ開始日を基準にする」
-    setNewAnchorDate("");
   }, [mode, originProjectId]);
 
   const toggleTask = useCallback((id: string) => {
@@ -216,52 +245,31 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     });
   }, []);
 
-  const toggleMilestone = useCallback((id: string) => {
-    setCheckedMilestoneIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) {
-        next.delete(id);
-        // 基準にしていたマイルストーンのチェックを外したら基準指定も解除する（矛盾防止）。
-        // 「引き継がない」ではなく既定の"project_start"へ戻す（v3.58）。
-        setAnchorSelection(sel => (sel === id ? "project_start" : sel));
-      } else {
-        next.add(id);
-      }
-      return next;
-    });
-  }, []);
-
-  /** 基準（アンカー）を選ぶ。マイルストーンを基準にした場合はそのマイルストーンを自動でチェックONにする。 */
-  const selectAnchor = useCallback((value: AnchorSelection) => {
-    setAnchorSelection(value);
-    if (value !== "none" && value !== "project_start") {
-      setCheckedMilestoneIds(prev => new Set(prev).add(value));
-    }
-  }, []);
-
-  // 新PJの開始日欄（期間セクション）の解決値。未入力なら今日（v3.56以前のinheritTasksFromOrigin
-  // と同じフォールバック＝resolvedStartDateと同じ式をここでも使う）。"project_start"アンカーは
-  // 別の入力欄を持たず、必ずこの値を新しい基準日として使う（新PJ自身の開始日と、日付移動の
-  // 基準日を別々に入力させると食い違いが起きるため、単一の入力欄に統一する）。
-  const resolvedNewStartDate = startDate || todayStr();
-
-  // 基準の元日付（マイルストーンの日付／元PJ開始日／未選択ならnull）
+  // 基準の元日付（マイルストーンの日付／基準未選択・「引き継がない」選択時はnull）
   const originAnchorDate = useMemo(() => {
-    if (anchorSelection === "none") return null;
-    if (anchorSelection === "project_start") return originProject?.start_date ?? null;
-    return originMilestones.find(m => m.id === anchorSelection)?.date ?? null;
-  }, [anchorSelection, originProject, originMilestones]);
-
-  // 基準の新日付："project_start"はresolvedNewStartDate（新PJの開始日欄）・マイルストーン
-  // 基準はnewAnchorDate（専用のdate input）・"none"は使わない
-  const newAnchorDateForOffset = anchorSelection === "project_start" ? resolvedNewStartDate : newAnchorDate;
+    if (dateStrategy !== "keep_interval" || !anchorMilestoneId) return null;
+    return originMilestones.find(m => m.id === anchorMilestoneId)?.date ?? null;
+  }, [dateStrategy, anchorMilestoneId, originMilestones]);
 
   // 日付移動のオフセット（暦日）。null＝「日付を引き継がない」（タスクは日付無し・
   // マイルストーンは基準が無いため作成自体をしない。lib/project/inheritTaskDates.ts参照）
   const dateOffsetDays = useMemo(
-    () => (anchorSelection === "none" ? null : computeInheritOffsetDays(originAnchorDate, newAnchorDateForOffset || null)),
-    [anchorSelection, originAnchorDate, newAnchorDateForOffset],
+    () => (dateStrategy === "no_dates" ? null : computeInheritOffsetDays(originAnchorDate, newAnchorDate || null)),
+    [dateStrategy, originAnchorDate, newAnchorDate],
   );
+
+  // 引き継ぐマイルストーンID集合。「スケジュール間隔を引き継ぐ」を選んでいなければ空
+  // （マイルストーンのdateはNOT NULL列のため、基準の無い状態では作成自体をしない）。
+  const checkedMilestoneIds = useMemo(() => {
+    if (dateStrategy !== "keep_interval" || !anchorMilestoneId) return new Set<string>();
+    const set = new Set<string>([anchorMilestoneId]);
+    if (inheritOtherMilestones) {
+      for (const m of originMilestones) set.add(m.id);
+    }
+    return set;
+  }, [dateStrategy, anchorMilestoneId, inheritOtherMilestones, originMilestones]);
+
+  const otherMilestonesCount = Math.max(0, originMilestones.length - (anchorMilestoneId ? 1 : 0));
 
   /**
    * チェックされたタスク（＋両端がチェック済みの依存関係）・マイルストーンを新PJに複製する。
@@ -345,11 +353,24 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     }
   }, [originProjectId, checkedTaskIds, checkedMilestoneIds, dateOffsetDays, currentUser.id]);
 
-  // マイルストーン基準（anchorSelectionが"none"/"project_start"以外）だけがnewAnchorDateの
-  // 入力を要求する。"project_start"はresolvedNewStartDateで自動的に確定するため必須としない。
-  const anchorNeedsManualDate = anchorSelection !== "none" && anchorSelection !== "project_start";
+  // 新PJの開始日欄（期間セクション）の解決値。未入力なら今日。
+  const resolvedNewStartDate = startDate || todayStr();
+
+  const scheduleState: CanGoNextState = {
+    mode, originProjectId, dateStrategy, anchorMilestoneId, newAnchorDate,
+  };
+  const scheduleReady = mode === "blank" || canGoNext("schedule", scheduleState);
+  const nextDisabled = !canGoNext(currentStep, scheduleState);
   const canSave = !!(name.trim() && purpose.trim() && ownerIds.length > 0
-    && (mode === "blank" || (!!originProjectId && (!anchorNeedsManualDate || !!newAnchorDate))));
+    && (mode === "blank" || !!originProjectId) && scheduleReady);
+
+  const goNext = useCallback(() => {
+    setStepIndex(i => Math.min(i + 1, steps.length - 1));
+  }, [steps.length]);
+
+  const goBack = useCallback(() => {
+    setStepIndex(i => Math.max(i - 1, 0));
+  }, []);
 
   const handleSave = useCallback(async () => {
     if (!canSave) return;
@@ -362,9 +383,6 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     try {
       const id = uuidv4();
       const now = new Date().toISOString();
-      // resolvedNewStartDateと同じ式（startDate || todayStr()）。日付移動の基準（"project_start"）
-      // と新PJ自身のstart_dateを必ず同じ値にするため、ここで作り直さずレンダー中に確定した値を使う。
-      const resolvedStartDate = resolvedNewStartDate;
       const newProject: Project = {
         id,
         name: name.trim(),
@@ -375,7 +393,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
         member_ids: mode === "inherit" ? [...checkedMemberIds] : [],
         status: "active",
         color_tag: colorTag,
-        start_date: resolvedStartDate,
+        start_date: resolvedNewStartDate,
         end_date: endDate || `${new Date().getFullYear()}-12-31`,
         is_deleted: false,
         created_at: now,
@@ -406,300 +424,369 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
       onKeyDown={handleKeyDown}
     >
       <div className="animate-fadeIn" style={{ ...modalBoxStyle("min(560px, 100%)"), background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)" }}>
-        {/* ヘッダー */}
-        <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--color-border-primary)", display: "flex", alignItems: "center", gap: "8px" }}>
-          <span style={{ fontSize: "16px" }}>📁</span>
-          <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>新規プロジェクト</span>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "18px", color: "var(--color-text-tertiary)", padding: "2px 6px", lineHeight: 1 }}>✕</button>
+        {/* ヘッダー＋進捗表示 */}
+        <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid var(--color-border-primary)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "16px" }}>📁</span>
+            <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>新規プロジェクト</span>
+            <button onClick={onClose} style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "18px", color: "var(--color-text-tertiary)", padding: "2px 6px", lineHeight: 1 }}>✕</button>
+          </div>
+          <div style={{ marginTop: "9px", display: "flex", alignItems: "center", gap: "8px" }}>
+            <div style={progressTrackStyle}>
+              <div style={{ ...progressFillStyle, width: `${((stepIndex + 1) / steps.length) * 100}%` }} />
+            </div>
+            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+              {stepIndex + 1} / {steps.length}{"　"}{stepLabel(currentStep)}
+            </span>
+          </div>
         </div>
 
-        {/* フォーム */}
-        <div style={{ ...MODAL_BODY_STYLE, padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+        {/* 本文（ステップごとに切り替え） */}
+        <div style={{ ...MODAL_BODY_STYLE, padding: "16px" }}>
+          <div style={{ minHeight: "300px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
-          {/* 作成方法 */}
-          <div>
-            <Label>作成方法</Label>
-            <div style={{ display: "flex", gap: "4px" }}>
-              {([
-                { value: "blank" as const, label: "まっさらな新規作成" },
-                { value: "inherit" as const, label: "他のPJから引き継ぐ" },
-              ]).map(seg => {
-                const isActive = mode === seg.value;
-                return (
-                  <button
-                    key={seg.value}
-                    type="button"
-                    onClick={() => setMode(seg.value)}
-                    style={{
-                      flex: 1, padding: "7px 4px", fontSize: "12px", fontWeight: isActive ? 600 : 400,
-                      border: `1px solid ${isActive ? "var(--color-brand)" : "var(--color-border-primary)"}`,
-                      borderRadius: "var(--radius-md)",
-                      background: isActive ? "var(--color-brand-light)" : "var(--color-bg-primary)",
-                      color: isActive ? "var(--color-brand)" : "var(--color-text-secondary)",
-                      cursor: "pointer",
-                    }}
-                  >
-                    {seg.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+            {currentStep === "method" && (
+              <div>
+                <Label>作成方法</Label>
+                <div style={explanationBoxStyle}>
+                  同じ段取りを繰り返すプロジェクト（フォーラム運営や定例調査など）は、過去のプロジェクトから引き継いで作成できます。タスクやマイルストーンの間隔を保ったまま、日付だけを今回分に置き直せます。引き継ぎが要らない場合はそのまま「まっさらな新規作成」で進められます。
+                </div>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  {([
+                    { value: "blank" as const, label: "まっさらな新規作成" },
+                    { value: "inherit" as const, label: "他のPJから引き継ぐ" },
+                  ]).map(seg => {
+                    const isActive = mode === seg.value;
+                    return (
+                      <button
+                        key={seg.value}
+                        type="button"
+                        onClick={() => setMode(seg.value)}
+                        style={{
+                          flex: 1, padding: "7px 4px", fontSize: "12px", fontWeight: isActive ? 600 : 400,
+                          border: `1px solid ${isActive ? "var(--color-brand)" : "var(--color-border-primary)"}`,
+                          borderRadius: "var(--radius-md)",
+                          background: isActive ? "var(--color-brand-light)" : "var(--color-bg-primary)",
+                          color: isActive ? "var(--color-brand)" : "var(--color-text-secondary)",
+                          cursor: "pointer",
+                        }}
+                      >
+                        {seg.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {mode === "inherit" && (
+                  <div className="animate-slideDown" style={{ marginTop: "10px" }}>
+                    <Label>引き継ぎ元プロジェクト *</Label>
+                    <CustomSelect
+                      value={originProjectId}
+                      onChange={setOriginProjectId}
+                      options={originOptions}
+                      placeholder="プロジェクトを選択..."
+                      searchable
+                      searchPlaceholder="プロジェクト名で検索..."
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* 引き継ぎ元PJ選択＋タスクチェックリスト（他PJから引き継ぐ選択時のみ） */}
-          {mode === "inherit" && (
-            <div className="animate-slideDown">
-              <Label>引き継ぎ元プロジェクト *</Label>
-              <CustomSelect
-                value={originProjectId}
-                onChange={setOriginProjectId}
-                options={originOptions}
-                placeholder="プロジェクトを選択..."
-                searchable
-                searchPlaceholder="プロジェクト名で検索..."
-              />
-              {originProjectId && (
-                <div style={{ marginTop: "10px", display: "flex", flexDirection: "column", gap: "14px" }}>
-
-                  {/* 日付の基準＋マイルストーン */}
-                  <div>
-                    <Label>マイルストーン（{checkedMilestoneIds.size}/{originMilestones.length}件）・日付の基準</Label>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "3px", marginBottom: "8px" }}>
-                      <label style={anchorRadioRowStyle}>
-                        <input type="radio" name="dateAnchor" checked={anchorSelection === "project_start"} onChange={() => selectAnchor("project_start")} />
-                        元PJの開始日を基準にする（既定。元:{originProject?.start_date ?? "-"} → 新:{resolvedNewStartDate}）
-                      </label>
-                      <label style={anchorRadioRowStyle}>
-                        <input type="radio" name="dateAnchor" checked={anchorSelection === "none"} onChange={() => selectAnchor("none")} />
-                        日付を引き継がない
-                      </label>
+            {currentStep === "schedule" && (
+              <div>
+                <Label>日程の引き継ぎ方</Label>
+                <div style={explanationBoxStyle}>
+                  「スケジュール間隔を引き継ぐ」を選ぶと、基準に指定したマイルストーンを新しい日付に置き直し、他のタスク・マイルストーンもその間隔を保ったまま移動します。例：本番の5日前に設定されていたタスクは、新しい本番日の5日前に置かれます。
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  <label style={{ ...dateStrategyRadioRowStyle, opacity: originMilestones.length === 0 ? 0.5 : 1 }}>
+                    <input
+                      type="radio"
+                      name="dateStrategy"
+                      checked={dateStrategy === "keep_interval"}
+                      disabled={originMilestones.length === 0}
+                      onChange={() => setDateStrategy("keep_interval")}
+                    />
+                    スケジュール間隔を引き継ぐ
+                  </label>
+                  {originMilestones.length === 0 && (
+                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginLeft: "22px" }}>
+                      引き継ぎ元のプロジェクトにマイルストーンがないため選べません。
                     </div>
+                  )}
 
-                    {anchorNeedsManualDate && (
-                      <div style={{ marginBottom: "8px" }}>
-                        <Label>新PJでの基準日 *</Label>
+                  {dateStrategy === "keep_interval" && originMilestones.length > 0 && (
+                    <div style={{ marginLeft: "22px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                      <div>
+                        <Label>基準にするマイルストーン *</Label>
+                        <CustomSelect
+                          value={anchorMilestoneId ?? ""}
+                          onChange={setAnchorMilestoneId}
+                          options={milestoneOptions}
+                          placeholder="マイルストーンを選択..."
+                        />
+                      </div>
+                      <div>
+                        <Label>新PJではいつに置きますか *</Label>
                         <input
                           type="date"
                           value={newAnchorDate}
                           onChange={e => setNewAnchorDate(e.target.value)}
                           style={{ ...inputStyle, maxWidth: "200px" }}
                         />
-                      </div>
-                    )}
-
-                    {originMilestones.length === 0 ? (
-                      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
-                        このプロジェクトにはマイルストーンがありません。
-                      </div>
-                    ) : (
-                      <>
-                        {anchorSelection === "none" && (
-                          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "2px 0 6px" }}>
-                            「日付を引き継がない」を選んでいる間はマイルストーンを引き継げません（マイルストーンには日付が必須のため）。基準を選ぶと引き継げます。
+                        {anchorMilestoneId && (
+                          <div style={{ marginTop: "4px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                            元：{originAnchorDate ? formatMD(originAnchorDate) : "-"} → 新：{newAnchorDate ? formatMD(newAnchorDate) : "未入力"}
                           </div>
                         )}
-                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "6px", marginBottom: "4px" }}>
-                          <button type="button" disabled={anchorSelection === "none"} onClick={() => setCheckedMilestoneIds(new Set(originMilestones.map(m => m.id)))} style={miniBtnStyle}>全選択</button>
-                          <button type="button" disabled={anchorSelection === "none"} onClick={() => setCheckedMilestoneIds(new Set())} style={miniBtnStyle}>全解除</button>
-                        </div>
-                        <div style={checklistBoxStyle}>
-                          {originMilestones.map(m => (
-                            <MilestoneCheckRow
-                              key={m.id}
-                              milestone={m}
-                              checked={checkedMilestoneIds.has(m.id)}
-                              isAnchor={anchorSelection === m.id}
-                              disabled={anchorSelection === "none"}
-                              onToggle={toggleMilestone}
-                              onSelectAnchor={selectAnchor}
-                              offsetDays={dateOffsetDays}
-                            />
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </div>
+                      </div>
+                      {otherMilestonesCount > 0 && (
+                        <label style={memberRowStyle}>
+                          <input
+                            type="checkbox"
+                            checked={inheritOtherMilestones}
+                            onChange={e => setInheritOtherMilestones(e.target.checked)}
+                            style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
+                          />
+                          他のマイルストーンも引き継ぐ（{otherMilestonesCount}件）
+                        </label>
+                      )}
+                    </div>
+                  )}
 
-                  {/* タスク */}
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                      <Label>タスク（{checkedTaskIds.size}/{originTasks.length}件選択中）</Label>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button type="button" onClick={() => setCheckedTaskIds(new Set(originTasks.map(t => t.id)))} style={miniBtnStyle}>全選択</button>
-                        <button type="button" onClick={() => setCheckedTaskIds(new Set())} style={miniBtnStyle}>全解除</button>
-                      </div>
-                    </div>
-                    {originTasks.length === 0 ? (
-                      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
-                        このプロジェクトにはタスクがありません。
-                      </div>
-                    ) : (
-                      <div style={checklistBoxStyle}>
-                        {topLevelOriginTasks.map(t => (
-                          <div key={t.id}>
-                            <TaskCheckRow task={t} checked={checkedTaskIds.has(t.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} />
-                            {childrenOf(originTasks, t.id).map(c => (
-                              <TaskCheckRow key={c.id} task={c} checked={checkedTaskIds.has(c.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} indent />
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                      ステータスは全て「ToDo」にリセットされます。日付は上で選んだ基準に従って移動します（既定は「元PJの開始日を基準にする」＝v3.56以前と同じ挙動）。
-                    </div>
-                  </div>
+                  <label style={dateStrategyRadioRowStyle}>
+                    <input
+                      type="radio"
+                      name="dateStrategy"
+                      checked={dateStrategy === "no_dates"}
+                      onChange={() => setDateStrategy("no_dates")}
+                    />
+                    日付を引き継がない
+                  </label>
+                </div>
+              </div>
+            )}
 
-                  {/* メンバー */}
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
-                      <Label>メンバー（{checkedMemberIds.size}/{candidateMembers.length}件）</Label>
-                      <div style={{ display: "flex", gap: "6px" }}>
-                        <button type="button" onClick={() => setCheckedMemberIds(new Set(candidateMembers.map(m => m.id)))} style={miniBtnStyle}>全選択</button>
-                        <button type="button" onClick={() => setCheckedMemberIds(new Set())} style={miniBtnStyle}>全解除</button>
-                      </div>
-                    </div>
-                    {candidateMembers.length === 0 ? (
-                      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
-                        候補となるメンバーがいません。
-                      </div>
-                    ) : (
-                      <div style={checklistBoxStyle}>
-                        {candidateMembers.map(m => (
-                          <label key={m.id} style={memberRowStyle}>
-                            <input type="checkbox" checked={checkedMemberIds.has(m.id)} onChange={() => toggleMember(m.id)} style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }} />
-                            <Avatar member={m} size={18} />
-                            <span style={{ flex: 1 }}>{m.short_name}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                    <div style={{ marginTop: "6px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                      選択したメンバーが新PJのメンバーとして登録されます（タスクの担当者は既定でチェック済み）。
-                    </div>
+            {currentStep === "tasks" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <Label>タスク（{checkedTaskIds.size}/{originTasks.length}件選択中）</Label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button type="button" onClick={() => setCheckedTaskIds(new Set(originTasks.map(t => t.id)))} style={miniBtnStyle}>全選択</button>
+                    <button type="button" onClick={() => setCheckedTaskIds(new Set())} style={miniBtnStyle}>全解除</button>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-
-          {/* カラー＋PJ名 */}
-          <div>
-            <Label>プロジェクト名 *</Label>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {/* カラードット（クリックでカラーピッカー） */}
-              <div style={{ position: "relative", flexShrink: 0 }}>
-                <input
-                  type="color"
-                  value={colorTag}
-                  onChange={e => setColorTag(e.target.value)}
-                  title="カラーを変更"
-                  style={{ position: "absolute", opacity: 0, width: "24px", height: "24px", cursor: "pointer", border: "none", padding: 0 }}
-                />
-                <span style={{ width: 24, height: 24, borderRadius: "50%", background: colorTag, display: "block", cursor: "pointer", border: "2px solid var(--color-border-primary)", flexShrink: 0 }} />
+                <div style={explanationBoxStyle}>
+                  チェックしたタスクが新PJに複製されます。ステータスは全て「ToDo」にリセットされ、日付は前のステップで選んだ基準に従って移動します。
+                </div>
+                {originTasks.length === 0 ? (
+                  <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+                    このプロジェクトにはタスクがありません。
+                  </div>
+                ) : (
+                  <div style={checklistBoxStyle}>
+                    {topLevelOriginTasks.map(t => (
+                      <div key={t.id}>
+                        <TaskCheckRow task={t} checked={checkedTaskIds.has(t.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} />
+                        {childrenOf(originTasks, t.id).map(c => (
+                          <TaskCheckRow key={c.id} task={c} checked={checkedTaskIds.has(c.id)} onToggle={toggleTask} members={members} offsetDays={dateOffsetDays} indent />
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <input
-                ref={nameRef}
-                value={name}
-                onChange={e => setName(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); } }}
-                placeholder="例：動画生成AI活用プロジェクト"
-                maxLength={80}
-                style={inputStyle}
-              />
-            </div>
-            {/* カラープリセット */}
-            <div style={{ display: "flex", gap: "5px", marginTop: "8px", flexWrap: "wrap" }}>
-              {COLOR_PRESETS.map(c => (
-                <button
-                  key={c}
-                  onClick={() => setColorTag(c)}
-                  title={c}
-                  style={{
-                    width: 18, height: 18, borderRadius: "50%", background: c, border: "none", cursor: "pointer", flexShrink: 0,
-                    outline: colorTag === c ? `2px solid ${c}` : "none",
-                    outlineOffset: "2px",
-                  }}
-                />
-              ))}
-            </div>
-          </div>
+            )}
 
-          {/* 目的 */}
-          <div>
-            <Label>目的 * （何のためのPJか一行で）</Label>
-            <textarea
-              value={purpose}
-              onChange={e => setPurpose(e.target.value)}
-              placeholder="例：全員が動画を作れる体制を構築する"
-              maxLength={200}
-              rows={2}
-              style={{ ...inputStyle, resize: "vertical" }}
-            />
-          </div>
+            {currentStep === "members" && (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "6px" }}>
+                  <Label>メンバー（{checkedMemberIds.size}/{candidateMembers.length}件）</Label>
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <button type="button" onClick={() => setCheckedMemberIds(new Set(candidateMembers.map(m => m.id)))} style={miniBtnStyle}>全選択</button>
+                    <button type="button" onClick={() => setCheckedMemberIds(new Set())} style={miniBtnStyle}>全解除</button>
+                  </div>
+                </div>
+                <div style={explanationBoxStyle}>
+                  選択したメンバーが新PJのメンバーとして登録されます。タスクの担当者は既定でチェック済みです。
+                </div>
+                {candidateMembers.length === 0 ? (
+                  <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+                    候補となるメンバーがいません。
+                  </div>
+                ) : (
+                  <div style={checklistBoxStyle}>
+                    {candidateMembers.map(m => (
+                      <label key={m.id} style={memberRowStyle}>
+                        <input type="checkbox" checked={checkedMemberIds.has(m.id)} onChange={() => toggleMember(m.id)} style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }} />
+                        <Avatar member={m} size={18} />
+                        <span style={{ flex: 1 }}>{m.short_name}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
-          {/* オーナー */}
-          <div>
-            <Label>オーナー *</Label>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "6px" }}>
-              {ownerIds.map(id => {
-                const m = members.find(m => m.id === id);
-                if (!m) return null;
-                return (
-                  <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", padding: "3px 8px 3px 5px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)" }}>
-                    <Avatar member={m} size={16} />
-                    {m.short_name}
-                    {ownerIds.length > 1 && (
-                      <button onClick={() => setOwnerIds(ids => ids.filter(i => i !== id))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "var(--color-text-tertiary)", fontSize: "12px" }}>×</button>
-                    )}
-                  </span>
-                );
-              })}
-              <select
-                value=""
-                onChange={e => { const v = e.target.value; if (v && !ownerIds.includes(v)) setOwnerIds(ids => [...ids, v]); }}
-                style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
-              >
-                <option value="">＋ 追加</option>
-                {members.filter(m => !ownerIds.includes(m.id)).map(m => (
-                  <option key={m.id} value={m.id}>{m.short_name}</option>
-                ))}
-              </select>
-            </div>
-          </div>
+            {currentStep === "finalize" && (
+              <>
+                {mode === "inherit" && originProject && (
+                  <div style={summaryBoxStyle}>
+                    <div style={{ fontWeight: 600, marginBottom: "4px" }}>引き継ぐ内容</div>
+                    <div>引き継ぎ元：{originProject.name}</div>
+                    <div>タスク：{checkedTaskIds.size} / {originTasks.length} 件</div>
+                    <div>マイルストーン：{checkedMilestoneIds.size} / {originMilestones.length} 件</div>
+                    <div>メンバー：{checkedMemberIds.size} / {candidateMembers.length} 名</div>
+                    <div>
+                      {dateStrategy === "keep_interval"
+                        ? `基準日：${originAnchorDate ? formatMD(originAnchorDate) : "-"} → ${newAnchorDate ? formatMD(newAnchorDate) : "未入力"}`
+                        : "日付は引き継ぎません"}
+                    </div>
+                  </div>
+                )}
 
-          {/* 期間（任意） */}
-          <div>
-            <Label>期間（任意）</Label>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-              <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>〜</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-            </div>
-          </div>
+                {/* カラー＋PJ名 */}
+                <div>
+                  <Label>プロジェクト名 *</Label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    {/* カラードット（クリックでカラーピッカー） */}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <input
+                        type="color"
+                        value={colorTag}
+                        onChange={e => setColorTag(e.target.value)}
+                        title="カラーを変更"
+                        style={{ position: "absolute", opacity: 0, width: "24px", height: "24px", cursor: "pointer", border: "none", padding: 0 }}
+                      />
+                      <span style={{ width: 24, height: 24, borderRadius: "50%", background: colorTag, display: "block", cursor: "pointer", border: "2px solid var(--color-border-primary)", flexShrink: 0 }} />
+                    </div>
+                    <input
+                      ref={nameRef}
+                      value={name}
+                      onChange={e => setName(e.target.value)}
+                      onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); } }}
+                      placeholder="例：動画生成AI活用プロジェクト"
+                      maxLength={80}
+                      style={inputStyle}
+                    />
+                  </div>
+                  {/* カラープリセット */}
+                  <div style={{ display: "flex", gap: "5px", marginTop: "8px", flexWrap: "wrap" }}>
+                    {COLOR_PRESETS.map(c => (
+                      <button
+                        key={c}
+                        onClick={() => setColorTag(c)}
+                        title={c}
+                        style={{
+                          width: 18, height: 18, borderRadius: "50%", background: c, border: "none", cursor: "pointer", flexShrink: 0,
+                          outline: colorTag === c ? `2px solid ${c}` : "none",
+                          outlineOffset: "2px",
+                        }}
+                      />
+                    ))}
+                  </div>
+                </div>
 
-          {error && (
-            <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{error}</div>
-          )}
+                {/* 目的 */}
+                <div>
+                  <Label>目的 * （何のためのPJか一行で）</Label>
+                  <textarea
+                    value={purpose}
+                    onChange={e => setPurpose(e.target.value)}
+                    placeholder="例：全員が動画を作れる体制を構築する"
+                    maxLength={200}
+                    rows={2}
+                    style={{ ...inputStyle, resize: "vertical" }}
+                  />
+                </div>
+
+                {/* オーナー */}
+                <div>
+                  <Label>オーナー *</Label>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "5px", marginBottom: "6px" }}>
+                    {ownerIds.map(id => {
+                      const m = members.find(m => m.id === id);
+                      if (!m) return null;
+                      return (
+                        <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", padding: "3px 8px 3px 5px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)" }}>
+                          <Avatar member={m} size={16} />
+                          {m.short_name}
+                          {ownerIds.length > 1 && (
+                            <button onClick={() => setOwnerIds(ids => ids.filter(i => i !== id))} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: "var(--color-text-tertiary)", fontSize: "12px" }}>×</button>
+                          )}
+                        </span>
+                      );
+                    })}
+                    <select
+                      value=""
+                      onChange={e => { const v = e.target.value; if (v && !ownerIds.includes(v)) setOwnerIds(ids => [...ids, v]); }}
+                      style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
+                    >
+                      <option value="">＋ 追加</option>
+                      {members.filter(m => !ownerIds.includes(m.id)).map(m => (
+                        <option key={m.id} value={m.id}>{m.short_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 期間（任意） */}
+                <div>
+                  <Label>期間（任意）</Label>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                    <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>〜</span>
+                    <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                  </div>
+                </div>
+
+                {error && (
+                  <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>{error}</div>
+                )}
+              </>
+            )}
+
+          </div>
         </div>
 
         {/* フッター */}
-        <div style={{ ...MODAL_FOOTER_STYLE, padding: "12px 16px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+        <div style={{ ...MODAL_FOOTER_STYLE, padding: "12px 16px", borderTop: "1px solid var(--color-border-primary)", display: "flex", gap: "8px" }}>
           <button onClick={onClose} style={{ fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
             キャンセル
           </button>
-          <button
-            onClick={handleSave}
-            disabled={!canSave || saving}
-            style={{
-              fontSize: "12px", padding: "7px 20px", border: "none", borderRadius: "var(--radius-md)", fontWeight: 600,
-              background: canSave && !saving ? "var(--color-brand)" : "var(--color-bg-tertiary)",
-              color: canSave && !saving ? "#fff" : "var(--color-text-tertiary)",
-              cursor: canSave && !saving ? "pointer" : "default",
-            }}
-          >
-            {saving ? "作成中…" : "作成"}
-          </button>
+          <div style={{ flex: 1 }} />
+          {stepIndex > 0 && (
+            <button onClick={goBack} style={{ fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+              戻る
+            </button>
+          )}
+          {currentStep !== "finalize" ? (
+            <button
+              onClick={goNext}
+              disabled={nextDisabled}
+              style={{
+                fontSize: "12px", padding: "7px 20px", border: "none", borderRadius: "var(--radius-md)", fontWeight: 600,
+                background: !nextDisabled ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                color: !nextDisabled ? "#fff" : "var(--color-text-tertiary)",
+                cursor: !nextDisabled ? "pointer" : "default",
+              }}
+            >
+              次へ
+            </button>
+          ) : (
+            <button
+              onClick={handleSave}
+              disabled={!canSave || saving}
+              style={{
+                fontSize: "12px", padding: "7px 20px", border: "none", borderRadius: "var(--radius-md)", fontWeight: 600,
+                background: canSave && !saving ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                color: canSave && !saving ? "#fff" : "var(--color-text-tertiary)",
+                cursor: canSave && !saving ? "pointer" : "default",
+              }}
+            >
+              {saving ? "作成中…" : "作成"}
+            </button>
+          )}
         </div>
       </div>
     </div>
@@ -766,52 +853,6 @@ function TaskCheckRow({ task, checked, onToggle, members, indent, offsetDays }: 
   );
 }
 
-/**
- * マイルストーンチェックリストの1行。チェックボックス（引き継ぐか）＋「基準」ラジオ
- * （このマイルストーンを日付の基準にするか。1つだけ選べる＝name="dateAnchor"で他の
- * 基準ラジオと同じグループにする）を持つ。
- */
-function MilestoneCheckRow({ milestone, checked, isAnchor, disabled, onToggle, onSelectAnchor, offsetDays }: {
-  milestone: Milestone;
-  checked: boolean;
-  isAnchor: boolean;
-  /** true＝「日付を引き継がない」を選んでいる間。引き継ぐか否かのチェックボックスは無効化する
-   *  （NOT NULL列のため日付が決まらないマイルストーンは作れない）。「基準」ラジオは無効化しない
-   *  （これを押すこと自体が"none"から脱出する唯一の手段のため） */
-  disabled: boolean;
-  onToggle: (id: string) => void;
-  onSelectAnchor: (id: string) => void;
-  offsetDays: number | null;
-}) {
-  const newDate = offsetDays === null ? null : computeInheritedMilestoneDate({ offsetDays, date: milestone.date });
-  const showPreview = newDate !== null && newDate !== milestone.date;
-  return (
-    <div
-      style={{
-        display: "flex", alignItems: "center", gap: "7px", padding: "4px 0",
-        fontSize: "12px", color: "var(--color-text-primary)", borderBottom: "1px solid var(--color-border-primary)",
-        opacity: disabled ? 0.5 : 1,
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={checked && !disabled}
-        disabled={disabled}
-        onChange={() => onToggle(milestone.id)}
-        style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-      />
-      <label style={{ display: "flex", alignItems: "center", gap: "3px", flexShrink: 0, fontSize: "10px", color: "var(--color-text-tertiary)", cursor: "pointer" }}>
-        <input type="radio" name="dateAnchor" checked={isAnchor} onChange={() => onSelectAnchor(milestone.id)} />
-        基準
-      </label>
-      <span style={{ flex: 1 }}>◆ {milestone.name}</span>
-      <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, whiteSpace: "nowrap" }}>
-        {formatMD(milestone.date)}{showPreview && ` → ${formatMD(newDate as string)}`}
-      </span>
-    </div>
-  );
-}
-
 const inputStyle: React.CSSProperties = {
   width: "100%",
   padding: "7px 10px",
@@ -834,14 +875,14 @@ const miniBtnStyle: React.CSSProperties = {
   cursor: "pointer",
 };
 
-/** 引き継ぎブロック（タスク／マイルストーン／メンバー）共通のチェックリスト箱 */
+/** 引き継ぎブロック（タスク／メンバー）共通のチェックリスト箱 */
 const checklistBoxStyle: React.CSSProperties = {
   border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
   maxHeight: "180px", overflowY: "auto", padding: "2px 10px",
   background: "var(--color-bg-secondary)",
 };
 
-const anchorRadioRowStyle: React.CSSProperties = {
+const dateStrategyRadioRowStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: "6px", fontSize: "12px",
   color: "var(--color-text-primary)", cursor: "pointer",
 };
@@ -850,4 +891,26 @@ const memberRowStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: "7px", padding: "4px 0",
   cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)",
   borderBottom: "1px solid var(--color-border-primary)",
+};
+
+/** ステップ1・2・3・4の冒頭に置く、初見の利用者向けの短い案内文 */
+const explanationBoxStyle: React.CSSProperties = {
+  fontSize: "11px", lineHeight: 1.6, color: "var(--color-text-secondary)",
+  background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)",
+  padding: "8px 10px", marginBottom: "10px",
+};
+
+const summaryBoxStyle: React.CSSProperties = {
+  fontSize: "12px", lineHeight: 1.7, color: "var(--color-text-secondary)",
+  background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)",
+  padding: "10px 12px",
+};
+
+const progressTrackStyle: React.CSSProperties = {
+  flex: 1, height: "4px", borderRadius: "var(--radius-full)",
+  background: "var(--color-bg-tertiary)", overflow: "hidden",
+};
+
+const progressFillStyle: React.CSSProperties = {
+  height: "100%", background: "var(--color-brand)", transition: "width 0.2s ease",
 };
