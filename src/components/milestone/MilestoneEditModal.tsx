@@ -13,6 +13,7 @@ import type { Member, Project, Milestone } from "../../lib/localData/types";
 import { showToast } from "../common/Toast";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 
 interface Props {
   milestone: Milestone;
@@ -82,20 +83,14 @@ export function MilestoneEditModal({ milestone, currentUser, project, onClose }:
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed", inset: 0, zIndex: 300,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px",
-      }}
+      style={{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.5)", padding: "20px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="panel-slide-up" style={{
-        width: "min(460px, 100%)", maxHeight: "90vh",
+        ...modalBoxStyle("min(460px, 100%)"),
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
         boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         {/* ヘッダー（ガントの◆と同系のアンバー） */}
         <div style={{

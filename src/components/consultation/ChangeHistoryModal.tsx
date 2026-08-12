@@ -7,6 +7,7 @@
 // MAX_STACK(5)を超えた変更履歴からでも任意の時点に戻せる。
 
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 
 interface Props {
   stack: UndoSnapshot[];
@@ -44,16 +45,7 @@ export function ChangeHistoryModal({ stack, onClose, onUndoUntil }: Props) {
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        zIndex: 300,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px",
-      }}
+      style={{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.4)", padding: "16px" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -61,15 +53,10 @@ export function ChangeHistoryModal({ stack, onClose, onUndoUntil }: Props) {
       <div
         className="animate-fadeIn"
         style={{
+          ...modalBoxStyle("min(400px, 100%)"),
           background: "var(--color-bg-primary)",
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
-          width: "100%",
-          maxWidth: "400px",
-          maxHeight: "70vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
         }}
       >
         {/* ヘッダー */}

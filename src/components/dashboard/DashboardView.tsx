@@ -41,6 +41,7 @@ import { AIProgressLoader } from "../common/AIProgressLoader";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 
 interface Props {
   currentUser: Member;
@@ -593,10 +594,10 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
           className="animate-overlay"
-          style={{ position: "fixed", inset: 0, zIndex: 210, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px" }}
+          style={{ ...modalOverlayStyle(210), background: "rgba(0,0,0,0.5)", padding: "24px" }}
           onClick={e => { if (e.target === e.currentTarget) setShowAllAnalysis(false); }}
         >
-          <div className="animate-fadeIn" style={{ width: "min(740px, 100%)", maxHeight: "calc(100vh - 48px)", background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "var(--shadow-lg)" }}>
+          <div className="animate-fadeIn" style={{ ...modalBoxStyle("min(740px, 100%)"), background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-lg)" }}>
             <div className="ai-shimmer" style={{ background: "var(--gradient-ai)", padding: "12px 16px", display: "flex", alignItems: "center", gap: "8px", flexShrink: 0 }}>
               <span style={{ fontSize: "16px" }}>✨</span>
               <div style={{ flex: 1 }}>

@@ -14,6 +14,7 @@ import { active } from "../../lib/localData/localStore";
 import { CustomSelect } from "../common/CustomSelect";
 import { BTN_APPLY_CONFIRMED, btnShift } from "../../lib/ai/uiGuide";
 import { toDate, addDays, toDateStr } from "../../lib/date";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 
 interface Props {
   dialog: ConfirmationDialog;
@@ -274,16 +275,7 @@ export function ConfirmationDialogModal({
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.4)",
-        zIndex: 200,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: "16px",
-      }}
+      style={{ ...modalOverlayStyle(200), background: "rgba(0,0,0,0.4)", padding: "16px" }}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -291,15 +283,10 @@ export function ConfirmationDialogModal({
       <div
         className="animate-fadeIn"
         style={{
+          ...modalBoxStyle("min(480px, 100%)"),
           background: "var(--color-bg-primary)",
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
-          width: "100%",
-          maxWidth: "480px",
-          maxHeight: "80vh",
-          display: "flex",
-          flexDirection: "column",
-          overflow: "hidden",
         }}
       >
         {/* ヘッダー */}

@@ -38,7 +38,7 @@ import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { HelpButton } from "../guide/HelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
-import { modalOverlayStyle } from "../common/modalStyles";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
@@ -601,10 +601,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       style={{ ...modalOverlayStyle(270), background: "rgba(0,0,0,0.4)", padding: "16px" }}
     >
       <div style={{
+        ...modalBoxStyle("min(460px, 100%)"),
+        overflow: "auto",
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
-        maxWidth: "460px", width: "100%",
-        maxHeight: "100%", overflowY: "auto",
         boxShadow: "var(--shadow-lg)",
         padding: "24px 26px",
       }}>
@@ -659,12 +659,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     <div
       className="animate-overlay"
       onClick={() => setIsOnboardingOverlayOpen(false)}
-      style={{
-        position: "fixed", inset: 0, zIndex: 260,
-        background: "rgba(0,0,0,0.4)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "16px",
-      }}
+      style={{ ...modalOverlayStyle(260), background: "rgba(0,0,0,0.4)", padding: "16px" }}
     >
       {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
@@ -672,11 +667,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         className="animate-fadeIn"
         onClick={e => e.stopPropagation()}
         style={{
+          ...modalBoxStyle("min(780px, 100%)"),
+          overflow: "auto",
           background: "var(--color-bg-primary)",
           borderRadius: "var(--radius-lg)",
-          maxWidth: "780px", width: "100%", maxHeight: "92vh", overflow: "auto",
           boxShadow: "var(--shadow-lg)",
-          display: "flex", flexDirection: "column",
         }}
       >
         <div style={{

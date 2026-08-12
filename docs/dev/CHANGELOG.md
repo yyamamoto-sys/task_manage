@@ -5487,5 +5487,68 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     新規エラー0／`npm run build`成功。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.63）
+# v3.64 タスク追加モーダルの上端が画面外に切れて入力できない不具合を修正（2026-08-12）
+#   【並行作業との調整】着手時点でv3.63は空いている前提で作業していたが、完了直前に別担当の
+#   「利用者向けバージョン履歴モーダル」（上記v3.63エントリ）がv3.63として先にpushされたため、
+#   originにrebaseしてバージョンをv3.64に差し替えた（`src/lib/releaseNotes.ts`にも本エントリを
+#   追記）。
+#   【症状】田中さんからの報告：「ガントチャートアプリ、ウィンドウのサイズを変更しないと、
+#   タスク名の記入ができない」。実機確認（Chrome拡大率100%超＋ブックマークバー2段表示＝
+#   縦の可視領域が狭い環境）で、`QuickAddTaskModal`（FABから開くタスク追加モーダル）の上端が
+#   画面外に切れ、一番上のタスク名入力欄に到達できないことを確認した（ウィンドウを大きくすると
+#   直る）。
+#   【原因】2026-08-06導入のSection 21契約（`maxHeight:"100%"`で箱の高さを制約）は健在だったが、
+#   縦方向の中央寄せに`alignItems:"center"`を使っていたため、箱がコンテナよりわずかでも
+#   大きくなった瞬間、上側にはみ出した分だけスクロールで到達不能になる非対称なCSSの既知の
+#   挙動が起きていた（下側は`overflow:"auto"`で到達できるのに上側だけ到達不能）。ブラウザの
+#   拡大率・ズームの丸め誤差で境界付近になった箱がこの非対称性の影響を受けていた。
+#   【調査の過程で判明した追加の欠陥】`modalStyles.ts`を使わず同じ「position:fixed＋
+#   alignItems:center＋justifyContent:center＋自前のmaxHeight（90vh等）」を独自実装していた
+#   ファイルが9件見つかった（`AdminFormModal.tsx`／`MilestoneAddModal.tsx`／
+#   `MilestoneEditModal.tsx`／`TodoDecomposeModal.tsx`／`WidgetConfigModal.tsx`／
+#   `DashboardView.tsx`（全PJ分析）／`ProjectKarte.tsx`（PJ分析）／`ChangeHistoryModal.tsx`／
+#   `ConfirmationDialogModal.tsx`）。既存の`modalStyles.test.ts`はこれらを「箱にmaxHeightが
+#   ある」という理由だけで通過させていた（承認条件が中央寄せの手段を見ていなかった）ため
+#   検出漏れではなく承認条件の見落としだった。加えて`modalOverlayStyle()`は使うが箱側は
+#   自前実装のまま（margin:autoが無い）だった`ConfirmModal.tsx`（window.confirm代替の
+#   全社共通モーダル）と`MainLayout.tsx`の2箇所（tourInviteDialog／onboardingOverlay）も、
+#   今回の`modalOverlayStyle()`の仕様変更（中央寄せを行わなくなった）によって「中央寄せされ
+#   ない」という別の不具合を生む寸前だったため、同時に修正した。
+#   【変更内容】
+#   ①`modalStyles.ts`：`modalOverlayStyle()`から`alignItems:"center"`/`justifyContent:"center"`
+#     を削除し、`modalBoxStyle()`に`margin:"auto"`を追加した。auto marginは空きがある間は中央に
+#     配置し、空きが無くなった瞬間に0へ縮退して箱をコンテナ先頭（上端）に揃えるため、
+#     `overflow:"auto"`で上から下まで普通にスクロールして到達できる（`align-items:safe center`
+#     は対応ブラウザのばらつきを避けて不採用）。
+#   ②上記9ファイル＋`ConfirmModal.tsx`＋`MainLayout.tsx`（2箇所）＝計12箇所を`modalStyles.ts`の
+#     共有関数（`modalOverlayStyle`/`modalBoxStyle`）へ移行し、独自実装を解消した。
+#   ③`modalStyles.test.ts`に3つの機械チェックを追加：(a)`modalStyles.ts`自身のソースを検査し
+#     `modalOverlayStyle()`がalignItems/justifyContentを使っていないこと・`modalBoxStyle()`が
+#     margin:"auto"を持つことを確認、(b)アンチパターン（position:fixed+alignItems:center+
+#     justifyContent:center の自前実装）がsrc/全体に0件であることを確認する回帰テスト
+#     （健全性チェック自体は実ファイル依存をやめ合成フィクスチャに変更）、(c)`modalOverlayStyle()`
+#     の利用者（20ファイル）全てが箱側で`modalBoxStyle()`または`margin:"auto"`を併用している
+#     ことを確認。既存の承認条件（usesSharedStyles || hasMaxHeight）も
+#     `usesSharedStyles || (hasMaxHeight && hasMarginAuto)`に強化した。
+#   ④`CLAUDE.md`Section 21を実態に合わせて書き換え（「overflow:autoは保険」の記述が不正確
+#     だった点を訂正し、2026-08-12の不具合を根拠に「なぜmargin:autoか」を明記）。
+#   変更ファイル：`src/components/common/modalStyles.ts`／
+#     `src/components/common/__tests__/modalStyles.test.ts`／`src/components/common/ConfirmModal.tsx`／
+#     `src/components/admin/AdminFormModal.tsx`／`src/components/admin/TodoDecomposeModal.tsx`／
+#     `src/components/milestone/MilestoneAddModal.tsx`／`src/components/milestone/MilestoneEditModal.tsx`／
+#     `src/components/lab/widgets/WidgetConfigModal.tsx`／`src/components/dashboard/DashboardView.tsx`／
+#     `src/components/dashboard/ProjectKarte.tsx`／`src/components/consultation/ChangeHistoryModal.tsx`／
+#     `src/components/consultation/ConfirmationDialogModal.tsx`／`src/components/layout/MainLayout.tsx`／
+#     `CLAUDE.md`（Section 21更新・バージョン表記）／`src/lib/version.ts`（3.63→3.64）／
+#     `src/lib/releaseNotes.ts`（利用者向けエントリを追記）。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（新規12件含む）／
+#     `npx eslint`新規エラー0（既存警告7件は今回の変更と無関係）／`npm run build`成功。
+#   マイグレーション：追加なし。
+#   対象外（調査済み・修正不要と判断）：`TaskEditModal.tsx`は`alignItems:"flex-start"`（PC）/
+#     `"flex-end"`（モバイル）で上端固定のアンカー方式のため、この不具合のクラスに該当しない
+#     （数式上、現実的な画面高さでは常に収まる設計。alignItems:centerを使っていない）。
+#     `CommandPalette.tsx`（flex-start）・`OkrImportModal.tsx`/`MeetingImportPanel.tsx`/
+#     `PersonalOkrImportModal.tsx`（右ドロワー・flex-end）も同様に対象外。
+#
+# 最終更新：2026-08-12（v3.64）
 

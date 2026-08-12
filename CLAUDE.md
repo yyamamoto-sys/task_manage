@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.63
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.64
 #
-最終更新：2026-08-12（v3.63）
+最終更新：2026-08-12（v3.64）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1136,7 +1136,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-12（v3.62）
+- 最終更新：2026-08-12（v3.64）
 
 ---
 
@@ -1690,22 +1690,25 @@ v3.34で単一state化した直後は、`activeLabView` が切り替わっても
 
 ---
 
-## 21. グランドルール：中央寄せモーダルは必ず画面内に収まる高さ上限を持つ（必須・v3.24）
+## 21. グランドルール：中央寄せモーダルは必ず画面内に収まる高さ上限を持つ（必須・v3.24、v3.64で中央寄せの手段を修正）
 
 **2026-08-06に発生した実際の不具合**：`ProjectCreateModal`（「過去のPJから新規PJを作る」）で、引き継ぎ元PJのタスク一覧が伸びるとモーダルが画面の上下を突き抜け、保存ボタンに到達できずPJを作成できなくなった。原因は「箱（モーダル本体）に `maxHeight` が無く、コンテンツの高さまで無制限に伸びていた」こと。オーバーレイにも `overflow` の指定が無かったため、はみ出した部分に到達する手段が無かった。
 
+**🔴 2026-08-12に発生した2つ目の実際の不具合（田中さんからの業務停止報告）**：`maxHeight` 対策を入れた後も、縦の可視領域が狭い環境（Chrome拡大率100%超＋ブックマークバー2段表示で作業領域の縦が削られた状態）で、`QuickAddTaskModal`（FABから開くタスク追加モーダル）の**上端が画面外に切れ、一番上にあるタスク名の入力欄に到達できず、タスクを登録できない**という不具合が発生した（ウィンドウを大きくすると直る）。原因は `maxHeight` の有無ではなく、**中央寄せの手段そのもの**だった：`alignItems:"center"` で縦方向を中央寄せすると、箱がコンテナよりわずかでも大きくなった瞬間、**上側にはみ出した分だけスクロールで絶対に到達できない領域になる**（下側のはみ出しは `overflow:"auto"` で普通にスクロールして到達できるのに、上側だけ到達不能という非対称なCSSの既知の挙動）。つまり「`overflow:"auto"` を保険として持つ」という当初の記述は不正確で、**実際には下方向にしか効いていなかった**。ブラウザの拡大率・ズームの丸め誤差で `maxHeight:100%` の境界付近になった箱は、この非対称性の影響を受け続ける。**対策は `alignItems:"center"` をやめ、箱側の `margin:"auto"`（flexboxのautoマージンによる中央寄せ）に変更したこと。** auto マージンは空きがある間は中央に配置するが、空きが無くなった（箱がコンテナより大きい）瞬間に0へ縮退し、箱はコンテナの先頭（上端）にぴったり揃う——この状態は通常のブロック要素のオーバーフローと同じ扱いになり、`overflow:"auto"` で上から下まで普通にスクロールして到達できる。（`align-items: safe center` という代替もあるが、対応ブラウザにばらつきがあるため採用しなかった。`margin:"auto"` は全ブラウザで安定して同じ挙動になる。）**次に「中央寄せなら `alignItems:center` でよい」と戻さないこと**——今回のように、縦の可視領域が狭い環境でだけ再現し、通常の開発環境（大きなウィンドウ・100%ズーム）では気づけない不具合だったため、同じ判断が繰り返されやすい。
+
 ### 契約（`src/components/common/modalStyles.ts` に集約）
 
-- **オーバーレイ**（背景の暗幕）：`modalOverlayStyle(zIndex)` を使う。`position:fixed; inset:0` で画面いっぱいに広げ、`display:flex; alignItems:center; justifyContent:center` で中央寄せし、`overflow:"auto"` を保険として持つ（箱が想定外に大きくなっても背景側をスクロールして到達できるようにするため）。
-- **箱**（モーダル本体）：`modalBoxStyle(width)` を使う。**`maxHeight:"100%"`** で、オーバーレイの padding を除いた内側＝ビューポート内に必ず収まるようにする。`display:flex; flexDirection:column; overflow:"hidden"` で、内側の本文だけにスクロールを担わせる。
+- **オーバーレイ**（背景の暗幕）：`modalOverlayStyle(zIndex)` を使う。`position:fixed; inset:0` で画面いっぱいに広げ、`overflow:"auto"` を持つ（箱が想定外に大きくなっても背景側をスクロールして到達できるようにするため）。**中央寄せはオーバーレイ側では行わない**（`alignItems:"center"` / `justifyContent:"center"` は使わない。上記の不具合の原因のため）。
+- **箱**（モーダル本体）：`modalBoxStyle(width)` を使う。**`maxHeight:"100%"`** で、オーバーレイの padding を除いた内側＝ビューポート内に必ず収まるようにする。**`margin:"auto"`** で中央寄せする（`alignItems:"center"` の代わり）。`display:flex; flexDirection:column; overflow:"hidden"` で、内側の本文だけにスクロールを担わせる。
 - **本文**（ヘッダー・フッターに挟まれるスクロール領域）：`MODAL_BODY_STYLE`（`flex:1; minHeight:0; overflowY:"auto"`）を使う。**`minHeight:0` は必須。** フレックス子要素の既定 `min-height:auto` のせいで、箱の高さが制約されても本文が縮まずスクロールが発生しない、という典型的な罠がある。
 - **フッター**（保存・キャンセル等の操作ボタン行）：`MODAL_FOOTER_STYLE`（`flexShrink:0`）を使う。コンテンツがどれだけ長くても、操作ボタンが押し縮められず常に見える状態を保つ。
-- 背景の濃さ・角丸・padding・幅などの個別事情は、これらの spread の**後**に上書きしてよい（例：`{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.45)" }`）。
+- 背景の濃さ・角丸・padding・幅などの個別事情は、これらの spread の**後**に上書きしてよい（例：`{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.45)" }`）。**オーバーレイ側で `alignItems:"center"` / `justifyContent:"center"` を上書きしないこと**（2026-08-12の不具合が再発する）。
 
 ### このルールは新しいモーダル・ポップアップを追加するとき必ず確認する
 
 - [ ] `modalStyles.ts` の共有スタイルを使っているか？（新規実装で毎回コピペし直すと必ずどこかで漏れる）
 - [ ] 箱に `maxHeight` が付いているか？（無いとコンテンツの高さまで無制限に伸びて画面外に突き抜ける）
+- [ ] 中央寄せは箱側の `margin:"auto"` で行っているか？（オーバーレイ側の `alignItems:"center"` だと、縦の可視領域が狭い環境で上端が到達不能になる）
 - [ ] 本文に `minHeight:0` が付いているか？（無いとフレックスの既定 `min-height:auto` でスクロールしなくなる）
 - [ ] 保存・キャンセル等の操作ボタンはフッターに置き `flexShrink:0` にしているか？
 
@@ -1717,7 +1720,8 @@ v3.34で単一state化した直後は、`activeLabView` が切り替わっても
 
 ### 機械チェック
 
-`src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある（v3.33：全画面ラボビュー4ファイルは `position:fixed` を一切使わなくなり検出パターンにそもそも一致しなくなったため除外リストから外した。将来の逆行を見逃さないための対応）。
+- `src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある（v3.33：全画面ラボビュー4ファイルは `position:fixed` を一切使わなくなり検出パターンにそもそも一致しなくなったため除外リストから外した。将来の逆行を見逃さないための対応）。
+- **（v3.64で追加）** 同じテストファイル内に、`modalStyles.ts` 自身のソースを読み、`modalOverlayStyle()` が `alignItems`/`justifyContent` を一切使っていないこと・`modalBoxStyle()` が `margin:"auto"` を持っていることを検査するテストを追加した。共有関数側で `alignItems:"center"` に戻されると、20箇所全ての利用先（`ConfirmModal`／`AdminFormModal`／`TodoDecomposeModal`／`MilestoneAddModal`／`MilestoneEditModal`／`WidgetConfigModal`／`DashboardView`／`ProjectKarte`／`ChangeHistoryModal`／`ConfirmationDialogModal`／`MyPageView`／`MainLayout`（2箇所）／`OkrModeIntroModal`／`PersonalKrFormModal`／`WeekTaskLinkModal`／`ProjectCreateModal`／`ProjectSettingsModal`／`QuickAddTaskModal`）に一括で再発するため、利用先ではなく共有関数側を直接検査する。加えて、`modalStyles.ts` を使わず同型のパターンを自前実装していた9ファイル（`AdminFormModal`／`MilestoneAddModal`／`MilestoneEditModal`／`TodoDecomposeModal`／`WidgetConfigModal`／`DashboardView`／`ProjectKarte`／`ChangeHistoryModal`／`ConfirmationDialogModal`）を共有関数へ移行し、`modalOverlayStyle()` の利用者全員が箱側で `margin:"auto"`（`modalBoxStyle()` 経由または手書き）を併用していることを検査するテストも追加した（`ConfirmModal.tsx`・`MainLayout.tsx`の2箇所は箱側の中央寄せが欠けていたため同時に修正）。
 
 ---
 

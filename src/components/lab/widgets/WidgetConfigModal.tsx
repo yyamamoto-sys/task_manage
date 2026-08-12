@@ -21,6 +21,7 @@ import { useEffect, useRef, useState } from "react";
 import type { WidgetConfigField, WidgetContext } from "../../../lib/widgets/types";
 import { resolveConfig, applyConfigChange } from "../../../lib/widgets/config";
 import { CustomSelect } from "../../common/CustomSelect";
+import { modalOverlayStyle, modalBoxStyle } from "../../common/modalStyles";
 
 interface Props {
   title: string;
@@ -70,20 +71,14 @@ export function WidgetConfigModal({ title, icon, schema, context, onClose }: Pro
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed", inset: 0, zIndex: 260,
-        background: "rgba(0,0,0,0.5)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px",
-      }}
+      style={{ ...modalOverlayStyle(260), background: "rgba(0,0,0,0.5)", padding: "20px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="panel-slide-up" style={{
-        width: "min(420px, 100%)", maxHeight: "80vh",
+        ...modalBoxStyle("min(420px, 100%)"),
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
         boxShadow: "0 24px 64px rgba(0,0,0,0.3)",
-        display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         <div style={{
           padding: "14px 18px", borderBottom: "1px solid var(--color-border-primary)",

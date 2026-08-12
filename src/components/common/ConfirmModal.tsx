@@ -11,7 +11,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { _registerModal } from "../../lib/dialog";
 import { useT } from "../../hooks/useT";
-import { modalOverlayStyle } from "./modalStyles";
+import { modalOverlayStyle, modalBoxStyle } from "./modalStyles";
 
 interface DialogState {
   open: boolean;
@@ -58,12 +58,12 @@ export function ConfirmModal() {
         onClick={e => e.stopPropagation()}
         className="animate-fadeIn"
         style={{
+          ...modalBoxStyle("min(340px, 100%)"),
+          overflow: "auto",
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-lg)",
           boxShadow: "var(--shadow-lg)",
-          width: "100%", maxWidth: "340px",
-          maxHeight: "100%", overflowY: "auto",
           padding: "24px 20px 18px",
         }}
       >

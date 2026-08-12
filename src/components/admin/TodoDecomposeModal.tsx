@@ -13,6 +13,7 @@ import { callTodoDecomposeAI, type DecomposedTask } from "../../lib/ai/todoDecom
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { SaveProgressLoader } from "../common/SaveProgressLoader";
 import { CustomSelect } from "../common/CustomSelect";
+import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 
 interface Props {
   todo: ToDo;
@@ -129,22 +130,14 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
-      style={{
-        position: "fixed", inset: 0, zIndex: 300,
-        background: "rgba(0,0,0,0.45)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        padding: "20px",
-      }}
+      style={{ ...modalOverlayStyle(300), background: "rgba(0,0,0,0.45)", padding: "20px" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="animate-fadeIn" style={{
-        width: "min(640px, 100%)",
-        maxHeight: "90vh",
+        ...modalBoxStyle("min(640px, 100%)"),
         background: "var(--color-bg-primary)",
         borderRadius: "var(--radius-lg)",
         boxShadow: "var(--shadow-xl, 0 20px 60px rgba(0,0,0,0.25))",
-        display: "flex", flexDirection: "column",
-        overflow: "hidden",
       }}>
         {/* ヘッダー */}
         <div style={{
