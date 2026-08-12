@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.53
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.54
 #
-最終更新：2026-08-12（v3.53）
+最終更新：2026-08-12（v3.54）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -592,6 +592,65 @@ PJの基本情報を編集できる画面は2つある。役割が違うため�
   今見ているPJ1件に絞った日常操作の入口（基本情報・招待・関わるメンバー）。
   基本情報タブの編集権限はAdminViewと同じ条件（既存の権限モデルを広げていない）。
 
+### サイドバーPJ行の「⋮」メニュー（v3.54）
+
+山本さんの指摘（2026-08-12）：「PJの設定などの場所がわかりにくい」。サイドバーの各PJ行に
+「⋮」（縦三点）を追加し、そこから設定画面を開く／状態を変えられるようにした。
+
+- **表示**：行ホバー時・フォーカス時・選択中のPJのときのみ表示する（`globals.css`の
+  `.pj-row-menu-trigger`。常時表示すると行が賑やかになりすぎるため）。折りたたみ時（幅48px）・
+  ゲスト・「全PJ表示」行には出さない。
+- **構造**：`NavItem`は行全体が1個の`<button>`のため「⋮」を内側に置けない（buttonの入れ子は
+  不可）。PJ行だけ`NavItem`をやめ、`[選択ボタン][⋮トリガー]`を並べたラッパー`<div className="pj-row">`
+  に変えた（`MainLayout.tsx`の`Sidebar`。折りたたみ時は従来通り`NavItem`のまま）。
+- **メニュー項目**（`src/lib/project/projectRowMenu.ts`の`buildProjectRowMenuItems()`・純粋関数）：
+  「⚙ このPJの設定」は常に出す。状態変更ボタンは編集権限がある人だけに出し、
+  `active`なら「✅ 完了にする」「🗄 アーカイブ」の2つ、`completed`/`archived`なら
+  代わりに「↩ activeに戻す」1つだけを出す（complete/archiveを同時に出さない）。
+  ゲストには空配列（呼び出し側でも`⋮`自体を描画しないため二重の防御）。
+- **🔴 権限判定は新しく発明していない**：`ProjectSettingsModal`の基本情報編集権限
+  （部署管理者・全社スーパー管理者。部署内にis_adminが1人もいなければ全員可のブートストラップ）を
+  `src/lib/project/projectEditPermission.ts`の`canEditProjectBasicInfo()`に切り出し、
+  `ProjectSettingsModal.tsx`とサイドバーの両方から呼ぶ（判定ロジックの複製をやめた）。
+- **「⚙ このPJの設定」は既存の`ProjectSettingsModal`をそのまま開く**（新しい設定画面は
+  作っていない）。`Sidebar`が`settingsModalProjectId`を持ち、未絞り込みの
+  `useAppStore(s => s.projects)`から対象PJを探す（sidebarの表示用`projects`prop＝
+  `filterSidebarProjects`済みのリストから探すと、モーダルを開いた後に別の操作でstatusが
+  変わり一覧から消えた瞬間にモーダルまで閉じてしまうため、意図的に別ソースを使っている）。
+- **保存・Undo**：状態変更は既存の`appStore.saveProject`（choke point・楽観ロック込み）を
+  経由する。確認ダイアログは挟まず、実行後にトースト＋「元に戻す」を出す
+  （`useBulkTaskActions.ts`の一括操作トーストと同じ流儀。Undoで戻せるため確認ダイアログは
+  不要と判断した）。選択中のPJを完了・アーカイブした場合は`pinnedProjectId`の仕組み
+  （本Section前項）にそのまま乗るため、一覧から消えずに残る。
+- **ポップオーバーの実装**：`src/components/project/ProjectRowMenu.tsx`。`CustomSelect.tsx`と
+  同じ「トリガーの`getBoundingClientRect()`からfixed座標を算出し`createPortal`で`body`直下に
+  描画する」方式。画面外にはみ出さないよう右端・下端をクランプする。Escape・外側クリック・
+  スクロール/リサイズで閉じる。**Section 21（中央寄せモーダルの高さ上限契約）の対象外**：
+  `alignItems:center + justifyContent:center`で中央寄せする全画面オーバーレイではなく、
+  `CustomSelect.tsx`のドロップダウンパネルと同種の「トリガーに追従する小さいポップオーバー」
+  のため、そもそも対象のパターンに一致しない（`CustomSelect.tsx`がSection 21の除外リストに
+  入っていないのと同じ理由）。
+
+### サイドバーの「OKRタスク」セクションを描画停止（v3.54）
+
+山本さんの指示（2026-08-12）：「メニューバーの『OKRタスク』はあまり使われないので、
+一旦非表示にしましょう。PJがTFと紐づけられる仕様になっていれば十分」。
+
+- 計画モードのサイドバーにあった「OKRタスク」セクション（KR一覧。クリックすると
+  Gantt/Kanban/Listを`selectedKrId`（`krTaskIds`）で絞り込む）の**描画だけ**を止めた
+  （v3.40のOKRモード グループ側白紙化と同じ「描画経路を切るだけ」方式。ファイルは
+  削除・移動していない）。
+- **絞り込みロジック（`selectedKrId`/`krTaskIds`）・`keyResultsInGroup`・DBテーブル・
+  `project_task_forces`（PJ↔TF紐づけ）は一切触っていない。** 入口（サイドバーのKRクリック）が
+  無くなったため`selectedKrId`は常に`null`のままになるが、絞り込み自体のコードは壊れていない。
+- 復帰手順は`src/components/layout/ARCHIVED.md`（新設）に記録した。`src/components/okr/
+  ARCHIVED.md`は対象がOKRモードのグループ側コンポーネント（`okr/`/`lab/`配下のファイル）で
+  ドメインが異なるため、混同を避けて`layout/`配下に別ファイルを作った。
+- `KEYS.SIDEBAR_OKR_OPEN`・i18nキー（`layout.sidebar.okrSection*`）は削除していない
+  （`localStore.ts`のコメントに「v3.54で描画停止」を追記）。トグルstate自体
+  （`okrOpen`/`toggleOkrOpen`）はJSXが無くなり本当に使われなくなったため削除した
+  （復帰時の書き戻し方は`layout/ARCHIVED.md`参照）。
+
 ### Objectiveの期切替フロー
 
 ```
@@ -1075,7 +1134,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-11（v3.52）
+- 最終更新：2026-08-12（v3.54）
 
 ---
 
@@ -2001,7 +2060,7 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 
 ### 🔴 追加マイグレーション：取り消し機能（`revoke_project_invite`）
 
-Phase 1のマイグレーションには取り消し用のRPCが含まれていなかった（`revoked_at`/`revoked_by`列だけ用意）。`supabase/migrations/20260810b_add_revoke_project_invite.sql`で追加した。`create_project_invite`と同じ考え方で、**呼び出し者が対象招待のPJにアクセスできるかを`can_access_group_ids`で検証する**（これが無いと他部署の招待を取り消せてしまう）。既に`accepted_at`が入っている招待は明示的なエラーで拒否する（使われた後の取り消しは無意味）。NULL猶予条項は書かず、ドル引用タグは`$fn_revoke_project_invite$`で関数固有にした。⚠️山本さんが手動適用（このマイグレーションのみ未適用。Phase 1本体は適用済み）。`schema.sql`に同期し、`schemaChecks.ts`に検査項目（`fn_revoke_project_invite`）を追加した。
+Phase 1のマイグレーションには取り消し用のRPCが含まれていなかった（`revoked_at`/`revoked_by`列だけ用意）。`supabase/migrations/20260810b_add_revoke_project_invite.sql`で追加した。`create_project_invite`と同じ考え方で、**呼び出し者が対象招待のPJにアクセスできるかを`can_access_group_ids`で検証する**（これが無いと他部署の招待を取り消せてしまう）。既に`accepted_at`が入っている招待は明示的なエラーで拒否する（使われた後の取り消しは無意味）。NULL猶予条項は書かず、ドル引用タグは`$fn_revoke_project_invite$`で関数固有にした。**2026-08-12に本番適用済み**＝`pg_proc`に`revoke_project_invite`が存在することを確認。`schema.sql`に同期し、`schemaChecks.ts`に検査項目（`fn_revoke_project_invite`）を追加した。
 
 ### Phase 3：受け入れ側（v3.44・2026-08-10・実装済み）
 
@@ -2016,7 +2075,7 @@ Phase 1のマイグレーションには取り消し用のRPCが含まれてい�
 Phase 1〜3実装後に山本さんから「既存部署の人のビューは変わらず、そのPJだけメンバーが増えている状態にしたい」という要望が入り、2点のズレを是正した。
 
 - **(a) 発行者・PJオーナーのサイドバーに「表示部署」切替が出てしまう問題**：`create_project_invite()`が発行者本人と`projects.owner_member_id`に招待用部署を`group_ids`の兼務として付与するため、`accessibleGroups.length >= 2`になり切替UI（本セクション上部・`MainLayout.tsx`）が表示されてしまっていた。これは「ビューが変わる」ため要望に反する。**対応**：`src/lib/projectInvite/sidebarGroupVisibility.ts`の`filterInviteGroupsForSidebar()`（純粋関数）が、`MainLayout.tsx`の`accessibleGroups`から`is_invite_group=true`のグループを除外する。🔴 **招待された本人（招待用部署しか持たない）はフィルタすると選択肢が空になってしまうため、除外しない**——`filterInviteGroupsForSidebar()`は「フィルタした結果が1件も残らない場合は、除外前のリストをそのまま返す」という一般則だけで両ケースを安全に処理する（本人かどうかを個別に判定するコードを書いていない）。回帰テストは`sidebarGroupVisibility.test.ts`（通常部署1件／2件・招待用部署のみ・ホーム+招待用の兼務・招待用複数件のみ、の各ケース）。
-- **(b) 招待用部署に属する人が、兼務を持たない他の部署メンバーから見えない問題**：`members`のRLS（`group_ids && current_member_group_ids() OR current_member_is_super_admin()`）は部署単位のみで判定するため、招待された人の`group_ids`（招待用部署のみ）は、兼務を持たない部署メンバーの`current_member_group_ids()`と一切重ならず見えなかった。担当者に指定しても担当者欄が「未担当」のままになる実害があった。**対応**：`supabase/migrations/20260810c_extend_members_visibility_for_invites.sql`（⚠️未適用・山本さんが手動適用）で、`members`のポリシーに**追加のみ**の1条項を足した：「相手が招待用部署に属しており、かつその招待用部署が、自分がアクセスできるPJの`group_ids`に含まれているなら見える」。実装は新設のSECURITY DEFINERヘルパー`visible_invite_group_ids()`（自分がアクセスできるPJに紐づく招待用部署のidの配列を返す。`current_member_group_ids()`/`can_access_group_ids()`と同じ流儀）＋`OR group_ids && visible_invite_group_ids()`。既存2条項は1文字も変えていない。`schema.sql`に同期・`schemaChecks.ts`に検査項目（`fn_visible_invite_group_ids`）を追加した。
+- **(b) 招待用部署に属する人が、兼務を持たない他の部署メンバーから見えない問題**：`members`のRLS（`group_ids && current_member_group_ids() OR current_member_is_super_admin()`）は部署単位のみで判定するため、招待された人の`group_ids`（招待用部署のみ）は、兼務を持たない部署メンバーの`current_member_group_ids()`と一切重ならず見えなかった。担当者に指定しても担当者欄が「未担当」のままになる実害があった。**対応**：`supabase/migrations/20260810c_extend_members_visibility_for_invites.sql`（**2026-08-12に本番適用済み**＝`pg_policies`で`members_group`の`qual`が3条項（`current_member_group_ids` / `current_member_is_super_admin` / `visible_invite_group_ids`）になっていることを確認）で、`members`のポリシーに**追加のみ**の1条項を足した：「相手が招待用部署に属しており、かつその招待用部署が、自分がアクセスできるPJの`group_ids`に含まれているなら見える」。実装は新設のSECURITY DEFINERヘルパー`visible_invite_group_ids()`（自分がアクセスできるPJに紐づく招待用部署のidの配列を返す。`current_member_group_ids()`/`can_access_group_ids()`と同じ流儀）＋`OR group_ids && visible_invite_group_ids()`。既存2条項は1文字も変えていない。`schema.sql`に同期・`schemaChecks.ts`に検査項目（`fn_visible_invite_group_ids`）を追加した。
 - **🔴 広げた範囲はここだけ**：「招待用部署に属する人」の可視性のみを広げた。部署間の可視性（部署Aの人が部署Bの人を見る）は一切変えていない。`projects`/`tasks`のRLSにも広げていない（`members`テーブル1つだけの変更）。マイグレーションの監査クエリに「部署Aの一般メンバーから、招待用部署に属さない部署Bのメンバーが見えないこと」の確認クエリを含めた。
 - **「RLSは1行も変えない」という当初方針（本セクション冒頭）からの変更点**：Phase 1着手時の方針は「新しいアクセス制御の軸を作らない・既存テーブルのRLSは1行も変えない」だったが、(b)はこの方針の唯一の例外。**`members`テーブル1つだけ**、既存2条項を変更せずORで1条項を追加する形にとどめ、「新しい軸を作らない」（既存の`group_ids`配列の枠組みに乗せる）という設計思想自体は維持している。
 - **🔴 可視性の非対称（残った制約・運用でカバー）**：(b)で「部署の人→招待者」の可視性は解決したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人と`projects.owner_member_id`の2人だけ）に依存したままである。招待者の`visible_invite_group_ids()`は自分の招待用部署だけを返すため、招待者から見える社内メンバーは発行者とPJオーナーの2人に限られる（他の社内担当者は見えない）。**今回は兼務付与を残す**（この2人だけは招待者から見える必要があるため）。(a)の修正で切替UIは出なくなったため、兼務の副作用は解消済み。他の社内担当者を招待者に見せたい場合は、管理画面から招待用部署をその人の`group_ids`に手動で兼務追加する運用でカバーする（自動化していない）。

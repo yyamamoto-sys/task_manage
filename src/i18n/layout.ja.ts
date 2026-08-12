@@ -120,6 +120,15 @@ export const layoutJa = {
   "layout.sidebar.okrSectionCollapse": "OKRタスクを省略",
   "layout.sidebar.okrSectionExpand": "OKRタスクを展開",
   "layout.sidebar.okrSectionLabel": "OKRタスク",
+  "layout.sidebar.pjRowMenu.ariaLabel": "{name}の操作",
+  "layout.sidebar.pjRowMenu.settings": "⚙ このPJの設定",
+  "layout.sidebar.pjRowMenu.complete": "✅ 完了にする",
+  "layout.sidebar.pjRowMenu.archive": "🗄 アーカイブ",
+  "layout.sidebar.pjRowMenu.restore": "↩ activeに戻す",
+  "layout.sidebar.pjRowMenu.undo": "元に戻す",
+  "layout.sidebar.pjRowMenu.toastComplete": "「{name}」を完了にしました",
+  "layout.sidebar.pjRowMenu.toastArchive": "「{name}」をアーカイブしました",
+  "layout.sidebar.pjRowMenu.toastRestore": "「{name}」をactiveに戻しました",
 
   // ----- AppModeToggle -----
   "layout.appModeToggle.toOkr": "個人OKRモードに切り替え",

@@ -5088,5 +5088,52 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #          `npx eslint`変更ファイルに新規エラー0。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.53）
+# v3.54 サイドバーPJ行の「⋮」操作メニュー追加・「OKRタスク」セクションの描画停止（2026-08-12）
+#   山本さんの依頼：「PJの設定などの場所がわかりにくい。メニューバーの各PJに縦三点の記号を
+#   つけ、そこからアーカイブ・設定を開けるようにしたい。また『OKRタスク』はあまり使われない
+#   ので一旦非表示にしましょう。PJがTFと紐づけられる仕様になっていれば十分」。
+#   課題1（PJ行の「⋮」メニュー）：
+#     - `src/lib/project/projectEditPermission.ts`（新規）：`canEditProjectBasicInfo()`。
+#       元々`ProjectSettingsModal.tsx`にだけ実装されていた権限判定（部署管理者・全社スーパー
+#       管理者。部署内にis_adminが1人もいなければ全員可のブートストラップ）をそのまま切り出し、
+#       `ProjectSettingsModal.tsx`とサイドバーの両方から呼ぶ形にした（判定ロジックの複製をやめた）。
+#     - `src/lib/project/projectRowMenu.ts`（新規）：`buildProjectRowMenuItems()`。何を出すか
+#       （設定は常に・状態変更ボタンは編集権限がある人だけ・completed/archivedなら
+#       「↩ activeに戻す」1つだけ・ゲストには空配列）を決める純粋関数。
+#     - `src/components/project/ProjectRowMenu.tsx`（新規）：「⋮」トリガー＋ドロップダウン
+#       パネルのUI。`CustomSelect.tsx`と同じ「getBoundingClientRect()からfixed座標を算出し
+#       Portalでbody直下に描画する」方式（画面外にはみ出さないようクランプ。Escape・外側
+#       クリック・スクロール/リサイズで閉じる）。Section 21（中央寄せモーダルの高さ上限契約）
+#       の対象外と判断（理由はCLAUDE.md Section 4に明記）。
+#     - `src/components/layout/MainLayout.tsx`：`Sidebar`のPJ行を、`NavItem`（行全体1個の
+#       button）から`[選択ボタン][⋮トリガー]`のラッパーdivに変更（折りたたみ時は従来通り
+#       `NavItem`のまま）。状態変更は`saveProject`（choke point・楽観ロック込み）経由、確認
+#       ダイアログは挟まずトースト＋「元に戻す」（`useBulkTaskActions.ts`と同じ流儀）。
+#       「⚙ このPJの設定」は既存の`ProjectSettingsModal`をそのまま開く（新しい設定画面は
+#       作っていない）。開く対象PJは未絞り込みの`store.projects`から探す（sidebarの表示用
+#       filteredリストから探すと、モーダルを開いた後の状態変更で一覧から消えた瞬間にモーダルも
+#       閉じてしまうため）。
+#     - `src/components/project/ProjectSettingsModal.tsx`：権限判定を上記の共通関数呼び出しに
+#       置き換え（`activeAdmins`のインライン計算を削除）。
+#     - `src/styles/globals.css`：`.pj-row-menu-trigger`（行ホバー・フォーカス・選択中のみ表示）。
+#   課題2（「OKRタスク」セクションの描画停止）：
+#     - `MainLayout.tsx`の`Sidebar`から、計画モードの「OKRタスク」セクション（KR一覧→
+#       selectedKrIdでGantt/Kanban/List絞り込み）のJSXブロックを削除（v3.40のOKRモード
+#       グループ側白紙化と同じ「描画経路を切るだけ」方式）。`selectedKrId`/`krTaskIds`/
+#       `keyResultsInGroup`/DBテーブル/`project_task_forces`（PJ↔TF紐づけ）は一切変更していない。
+#       使われなくなった`okrOpen`/`toggleOkrOpen`stateは削除、`KEYS.SIDEBAR_OKR_OPEN`・
+#       i18nキーは削除していない（`localStore.ts`にコメント追記）。
+#     - `src/components/layout/ARCHIVED.md`（新規）：復帰手順の台帳。`src/components/okr/
+#       ARCHIVED.md`（OKRモードのグループ側コンポーネント台帳）とはドメインが異なるため、
+#       混同を避けて`layout/`配下に別ファイルを作った（判断理由をファイル内に明記）。
+#   i18n：`src/i18n/layout.ja.ts`/`layout.en.ts`に`layout.sidebar.pjRowMenu.*`（8キー）を追加。
+#   テスト：新規`projectEditPermission.test.ts`(5件)・`projectRowMenu.test.ts`(5件)。
+#          既存テストへの影響なし。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`1254件全通過（1244件→1254件・+10件）／
+#          `npx eslint src`変更ファイルに新規エラー0（新規warning3件：`MainLayout.tsx`の
+#          `keyResults`/`onSelectKr`/`KrIcon`が「OKRタスク」セクション削除により未使用化。
+#          復帰時にそのまま使えるよう削除せず残した意図的なもの）。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.54）
 

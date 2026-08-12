@@ -481,6 +481,17 @@ button:not(:disabled):active::after { background: rgba(58, 48, 30, 0.12); }
   color: var(--color-brand);
 }
 
+/* サイドバーPJ行の「⋮」操作メニュー（ProjectRowMenu.tsx）：常時表示すると行が賑やかに
+   なりすぎるため、行ホバー時・選択中のPJ（force-visible）・フォーカス時のみ表示する。
+   フォーカス表示はキーボード/タッチ利用者がホバーできない環境でも到達できるようにするため
+   （CLAUDE.md v3.54）。 */
+.pj-row-menu-trigger { opacity: 0; }
+.pj-row:hover .pj-row-menu-trigger,
+.pj-row-menu-trigger:focus-visible,
+.pj-row-menu-trigger.force-visible {
+  opacity: 1;
+}
+
 /* ===== チェックボックス付きラベル ===== */
 label.check-row {
   transition: background var(--transition-fast);

@@ -25,7 +25,7 @@ import { shouldShowOkrModeIntro, hasApprovedOkrModeIntro, markOkrModeIntroApprov
 import type { GuideModeView as GuideModeViewComponent } from "../guide/GuideModeView";
 import { ErrorBar } from "../common/ErrorBar";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
-import { dismissUndoToasts } from "../common/Toast";
+import { dismissUndoToasts, showToast } from "../common/Toast";
 import { consumeLastUndoAction } from "../../lib/lastUndoStore";
 import { ViewSkeleton } from "../common/Skeleton";
 import { CommandPalette } from "../common/CommandPalette";
@@ -43,6 +43,11 @@ import { isGuestMember } from "../../lib/guestMode";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
+import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
+import type { ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
+import { ProjectRowMenu } from "../project/ProjectRowMenu";
+import { ProjectSettingsModal } from "../project/ProjectSettingsModal";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 /**
  * 【設計意図】
@@ -1597,12 +1602,52 @@ function Sidebar({
   const NAV_ITEMS = useMemo(() => buildNavItems(t), [t]);
   // サイドバーのセクション開閉（PJが増えても省略できるように）。localStorage で記憶。
   const [pjOpen, setPjOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_PJ_OPEN) !== "0"; } catch { return true; } });
-  const [okrOpen, setOkrOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_OKR_OPEN) !== "0"; } catch { return true; } });
   const togglePjOpen  = () => setPjOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_PJ_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
-  const toggleOkrOpen = () => setOkrOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_OKR_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
   const c = collapsed; // 省略形
 
+  // ===== PJ行の「⋮」メニュー（v3.54） =====
+  // 権限判定はPJ設定画面（ProjectSettingsModal）の基本情報編集と同じ条件
+  // （lib/project/projectEditPermission.ts に切り出し済み・判定ロジックの複製はしない）。
+  const allMembers = useAppStore(s => s.members);
+  const allProjectsRaw = useAppStore(s => s.projects);
+  const saveProject = useAppStore(s => s.saveProject);
+  const canEditProjects = useMemo(() => canEditProjectBasicInfo(allMembers, currentUser), [allMembers, currentUser]);
+  const [settingsModalProjectId, setSettingsModalProjectId] = useState<string | null>(null);
+  // sidebarに出ているprojects（既定でcompleted/archivedを隠すフィルタ済み）からではなく、
+  // 未絞り込みのstoreから直接探す。モーダルを開いた後にPJ設定画面内の別のクイック操作で
+  // status（completed/archived）を変えても、pinnedProjectId（=selectedProjectId）と無関係に
+  // モーダル自体が閉じてしまわないようにするため。
+  const settingsModalProject = settingsModalProjectId != null
+    ? allProjectsRaw.find(p => p.id === settingsModalProjectId) ?? null
+    : null;
+
+  // 完了・アーカイブ・活性化はトーストで即フィードバック＋Undo（B3自動リスケ等と同じ流儀。
+  // CLAUDE.md参照）。確認ダイアログは挟まない（Undoで戻せるため、bulkUpdateStatus等の
+  // 一括操作トーストと同じ考え方）。
+  const handleProjectRowMenuAction = async (pj: Project, actionId: ProjectRowMenuActionId) => {
+    if (actionId === "settings") { setSettingsModalProjectId(pj.id); return; }
+    const nextStatus: Project["status"] = actionId === "complete" ? "completed" : actionId === "archive" ? "archived" : "active";
+    const prevStatus = pj.status;
+    const toastKey = actionId === "complete" ? "layout.sidebar.pjRowMenu.toastComplete"
+      : actionId === "archive" ? "layout.sidebar.pjRowMenu.toastArchive"
+      : "layout.sidebar.pjRowMenu.toastRestore";
+    try {
+      await saveProject({ ...pj, status: nextStatus, updated_by: currentUser.id });
+      showToast(t(toastKey, { name: pj.name }), "success", {
+        label: t("layout.sidebar.pjRowMenu.undo"),
+        isUndo: true,
+        onClick: () => {
+          const latest = useAppStore.getState().projects.find(p => p.id === pj.id);
+          if (latest) saveProject({ ...latest, status: prevStatus, updated_by: currentUser.id });
+        },
+      });
+    } catch (e) {
+      showToast(formatErrorForUser("更新に失敗しました", e), "error");
+    }
+  };
+
   return (
+    <>
     <div data-tour-id="sidebar" style={{
       width: c ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
       flexShrink: 0,
@@ -1852,20 +1897,61 @@ function Sidebar({
             const isArchived = pj.status === "archived";
             const isCompleted = pj.status === "completed";
             const isDimmed = isArchived || isCompleted;
+            const isSelected = selectedProjectId === pj.id;
+            const icon = (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block", opacity: isDimmed ? 0.5 : 1 }} />
+                {isArchived && <span style={{ fontSize: "8px" }}>🗄</span>}
+                {isCompleted && <span style={{ fontSize: "8px" }}>✅</span>}
+              </span>
+            );
+            const tooltip = isArchived ? `${pj.name}（アーカイブ済み）` : isCompleted ? `${pj.name}（完了）` : pj.name;
+            // 折りたたみ時は「⋮」の表示領域が無いため既存のNavItem（単体ボタンの行）を使う。
+            // 展開時は「⋮」を右端に置くため、NavItemが持つ「行全体=1個の<button>」構造をやめ、
+            // [選択ボタン][⋮トリガー]の2つを並べたラッパーdivに変える（<button>の中に<button>は
+            // 置けない・置くとクリックイベントが競合するため）。
+            if (c) {
+              return (
+                <NavItem key={pj.id} active={isSelected}
+                  icon={icon} label={pj.name} tooltip={tooltip}
+                  color={isDimmed ? "var(--color-text-tertiary)" : undefined}
+                  onClick={() => onSelectProject(pj.id)} collapsed={c}
+                />
+              );
+            }
             return (
-              <NavItem key={pj.id} active={selectedProjectId === pj.id}
-                icon={
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: "3px" }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: pj.color_tag, display: "inline-block", opacity: isDimmed ? 0.5 : 1 }} />
-                    {isArchived && <span style={{ fontSize: "8px" }}>🗄</span>}
-                    {isCompleted && <span style={{ fontSize: "8px" }}>✅</span>}
-                  </span>
-                }
-                label={pj.name}
-                tooltip={isArchived ? `${pj.name}（アーカイブ済み）` : isCompleted ? `${pj.name}（完了）` : pj.name}
-                color={isDimmed ? "var(--color-text-tertiary)" : undefined}
-                onClick={() => onSelectProject(pj.id)} collapsed={c}
-              />
+              <div key={pj.id} className="pj-row" style={{
+                display: "flex", alignItems: "center",
+                margin: "1px 4px", overflow: "hidden",
+                borderRadius: "var(--radius-md)",
+                background: isSelected ? "var(--color-bg-primary)" : "transparent",
+              }}>
+                <button
+                  onClick={() => onSelectProject(pj.id)}
+                  title={tooltip}
+                  style={{
+                    flex: 1, minWidth: 0,
+                    display: "flex", alignItems: "center", gap: "8px",
+                    padding: "6px 4px 6px 10px",
+                    background: "transparent", border: "none",
+                    borderRadius: "var(--radius-md) 0 0 var(--radius-md)",
+                    fontSize: "11px", fontWeight: isSelected ? 500 : 400,
+                    color: isDimmed ? "var(--color-text-tertiary)" : (isSelected ? "var(--color-text-primary)" : "var(--color-text-secondary)"),
+                    cursor: "pointer", textAlign: "left",
+                  }}
+                >
+                  <span style={{ flexShrink: 0, opacity: isSelected ? 1 : 0.6 }}>{icon}</span>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pj.name}</span>
+                </button>
+                <ProjectRowMenu
+                  projectName={pj.name}
+                  projectStatus={pj.status}
+                  canEdit={canEditProjects}
+                  isGuest={isGuest}
+                  forceVisible={isSelected}
+                  onSelectAction={id => void handleProjectRowMenuAction(pj, id)}
+                />
+              </div>
             );
           })}
           {projects.length === 0 && !c && mineOnly && (
@@ -1878,31 +1964,12 @@ function Sidebar({
             </div>
           )}
           </>)}
-          {keyResults.length > 0 && (<>
-            {!c && (
-              <button
-                onClick={toggleOkrOpen}
-                aria-expanded={okrOpen}
-                title={okrOpen ? t("layout.sidebar.okrSectionCollapse") : t("layout.sidebar.okrSectionExpand")}
-                style={{
-                  display: "flex", alignItems: "center", gap: "4px", width: "100%",
-                  background: "transparent", border: "none", cursor: "pointer",
-                  padding: "8px 14px 4px",
-                  fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
-                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
-                }}
-              >
-                <span style={{ fontSize: "8px", display: "inline-block", transform: okrOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-                {t("layout.sidebar.okrSectionLabel")}
-              </button>
-            )}
-            {(c || okrOpen) && keyResults.map(kr => (
-              <NavItem key={kr.id} active={selectedKrId === kr.id}
-                icon={<KrIcon />} label={kr.title} tooltip={kr.title}
-                onClick={() => onSelectKr(selectedKrId === kr.id ? null : kr.id)} collapsed={c}
-              />
-            ))}
-          </>)}
+          {/* 【2026-08-12・v3.54】計画モードの「OKRタスク」セクション（KR一覧でGantt/Kanban/List
+              をselectedKrId絞り込みする入口）は、山本さんの指示（「あまり使われないので一旦非表示。
+              PJがTFと紐づけられる仕様になっていれば十分」）により描画を停止した。
+              絞り込みロジック（selectedKrId/krTaskIds）・DBテーブル・project_task_forces
+              （PJ↔TF紐づけ）には一切触れていない。復帰手順は src/components/layout/ARCHIVED.md
+              参照（okr/ARCHIVED.mdとは対象ドメインが異なるため別ファイルにした）。 */}
         </div>
 
         {/* ラボ サブメニュー（🧪ボタンで開閉）。activeプロップはNAV_ITEMSと同じNavItemを使い、
@@ -2027,6 +2094,16 @@ function Sidebar({
         )}
       </div>
     </div>
+    {/* PJ行「⋮」→「⚙ このPJの設定」。PJカルテの「⚙ このPJの設定」と同じ
+        ProjectSettingsModalをそのまま開く（新しい設定画面は作らない）。 */}
+    {settingsModalProject && (
+      <ProjectSettingsModal
+        project={settingsModalProject}
+        currentUser={currentUser}
+        onClose={() => setSettingsModalProjectId(null)}
+      />
+    )}
+    </>
   );
 }
 
@@ -2227,6 +2304,8 @@ function ComingSoon({ view }: { view: ViewMode }) {
   );
 }
 
+// 【v3.54】サイドバーの「OKRタスク」セクション描画停止（ARCHIVED.md参照）により現在どこからも
+// 呼ばれていないが、復帰時にそのまま使えるよう削除していない。
 function KrIcon() {
   return (
     <svg width="13" height="13" viewBox="0 0 14 14" fill="none">

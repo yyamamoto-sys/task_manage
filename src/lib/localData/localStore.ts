@@ -59,7 +59,10 @@ const KEYS = {
    *  v3.49はリリース当日中の是正のため実使用者はいない想定で、旧キーからの値の引き継ぎは
    *  行わない（新キー名で改めて既定OFFから始まる。CLAUDE.md Section 4参照）。 */
   SIDEBAR_SHOW_COMPLETED_ARCHIVED: "sidebar_show_completed_archived_projects",
-  /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態 */
+  /** サイドバーの「プロジェクト」「OKRタスク」セクションの開閉状態。
+   *  SIDEBAR_OKR_OPEN：v3.54で「OKRタスク」セクション自体の描画を停止した（山本さんの指示。
+   *  復帰手順は src/components/layout/ARCHIVED.md 参照）。キー自体・保存値は削除しない
+   *  （描画経路を切るだけの方式のため）。 */
   SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
   SIDEBAR_OKR_OPEN:    "sidebar_okr_open",
   // 管理画面

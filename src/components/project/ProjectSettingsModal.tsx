@@ -26,6 +26,7 @@ import type { Member, Project, ProjectInvite } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { getAssigneeIds } from "../../lib/taskMeta";
 import { computeProjectMembers, type ProjectMemberRole } from "../../lib/project/projectMembers";
+import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
 import { CustomSelect } from "../common/CustomSelect";
 import { Avatar } from "../auth/UserSelectScreen";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../common/modalStyles";
@@ -112,9 +113,9 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
 
   const [tab, setTab] = useState<SettingsTab>("basic");
 
-  // ===== 権限：AdminViewのPJ編集と同じ条件（Section 8参照） =====
-  const activeAdmins = useMemo(() => active(rawMembers).filter(m => m.is_admin === true), [rawMembers]);
-  const canEditBasicInfo = currentUser.is_admin === true || currentUser.is_super_admin === true || activeAdmins.length === 0;
+  // ===== 権限：AdminViewのPJ編集・サイドバーPJ行の「⋮」メニューと同じ条件 =====
+  // （lib/project/projectEditPermission.ts に切り出し済み。判定ロジックの複製はしない）
+  const canEditBasicInfo = useMemo(() => canEditProjectBasicInfo(rawMembers, currentUser), [rawMembers, currentUser]);
 
   // ===== 基本情報フォーム =====
   const [form, setForm] = useState({
