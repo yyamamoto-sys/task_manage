@@ -31,14 +31,31 @@ import {
 } from "../lib/supabase/personalOkrStore";
 import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
 import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
+import { isGuestMode } from "../lib/guestMode";
 import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAiContext";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
 } from "../lib/localData/types";
 
+// 【ゲスト（サンプル閲覧）分岐・2026-08-12】
+// 🔴 ゲストはSupabaseに一切接続しない（CLAUDE.md Section 23の絶対原則）。client.ts の
+// Proxyを緩めるのではなく、ここ（呼び出し元）で「そもそも呼ばない」形にする——各アクションの
+// 先頭で isGuestMode() を見て、Supabaseを呼ばずにサンプルデータ（src/lib/demo/
+// personalOkrDataset.ts。動的importのみ）をstateに直接注入する。書き込み系アクション
+// （saveKr/saveMonth/saveWeek/saveMemo/linkWeekTask/unlinkWeekTask/deleteKr/deleteMemo）は
+// isGuestMode()のときDB呼び出しをスキップし、state更新だけを行う（メモリ上でのみ成立し、
+// リロードで消える）。AI呼び出し（runOutlookAnalysis内のanalyze()）はinvokeAI.tsが既に
+// ゲストを開放しているため素通しするが、その結果のDB書き込み（insertPersonalKrOutlook）は
+// スキップする（🔴 personal_kr_outlooksには書けない。メモリ保持のみ）。
+
 /** outlookByKrMonth等のキー形式（personalKrId・monthの組で一意）。Phase 3後半で追加 */
 function outlookKey(personalKrId: string, month: string): string {
   return `${personalKrId}::${month}`;
+}
+
+/** id一致するものを置き換え・無ければ末尾に追加する（guest/実データ両方の保存アクションで共有する） */
+function upsertById<T extends { id: string }>(list: T[], next: T): T[] {
+  return list.some(x => x.id === next.id) ? list.map(x => (x.id === next.id ? next : x)) : [...list, next];
 }
 
 interface PersonalOkrUiState {
@@ -113,8 +130,30 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   outlookErrorByKey: {},
 
   loadKrs: async () => {
-    if (get().krsLoading) return;
+    if (get().krsLoading || get().krsLoaded) return;
     set({ krsLoading: true, krsError: null });
+    // 🔴 ゲストはSupabaseに一切接続しない（冒頭コメント参照）。demo/personalOkrDataset.ts
+    // （動的importのみ）からサンプルデータを直接stateへ注入し、全KRを「詳細読み込み済み」
+    // として扱う（データ量が極小のため遅延読み込みにする必要が無い）。
+    if (isGuestMode()) {
+      try {
+        const { buildDemoPersonalOkrDataset } = await import("../lib/demo/personalOkrDataset");
+        const demo = buildDemoPersonalOkrDataset();
+        set({
+          krs: demo.krs,
+          monthsByKr: demo.monthsByKr,
+          weeksByKr: demo.weeksByKr,
+          memosByKr: demo.memosByKr,
+          weekTasksByWeek: demo.weekTasksByWeek,
+          detailLoadedKrIds: new Set(demo.krs.map(k => k.id)),
+          krsLoaded: true,
+          krsLoading: false,
+        });
+      } catch (e) {
+        set({ krsLoading: false, krsError: e instanceof Error ? e.message : "サンプルデータの読み込みに失敗しました" });
+      }
+      return;
+    }
     try {
       const krs = await fetchPersonalKrs();
       set({ krs, krsLoaded: true, krsLoading: false });
@@ -125,6 +164,18 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
 
   ensureKrDetailLoaded: async (krId) => {
     if (get().detailLoadedKrIds.has(krId) || get().detailLoadingKrId === krId) return;
+    // 🔴 ゲスト分岐：loadKrs()が最初のKR群をまとめて注入済みのため、通常はこのガードに
+    // 到達しない。新規作成KR（「＋KRを追加」）等、loadKrs後に増えたKRのために保険で用意する
+    // （空配列で確定させるだけ・Supabaseへは一切問い合わせない）。
+    if (isGuestMode()) {
+      set(state => ({
+        monthsByKr: { ...state.monthsByKr, [krId]: state.monthsByKr[krId] ?? [] },
+        weeksByKr: { ...state.weeksByKr, [krId]: state.weeksByKr[krId] ?? [] },
+        memosByKr: { ...state.memosByKr, [krId]: state.memosByKr[krId] ?? [] },
+        detailLoadedKrIds: new Set(state.detailLoadedKrIds).add(krId),
+      }));
+      return;
+    }
     set({ detailLoadingKrId: krId, detailError: null });
     try {
       const [months, weeks, memos] = await Promise.all([
@@ -146,6 +197,12 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
 
   ensureWeekTasksLoaded: async (weekId) => {
     if (get().weekTasksByWeek[weekId]) return;
+    // 🔴 ゲスト分岐：loadKrs()が既存週の紐づけをweekTasksByWeekへ注入済み。新規作成週
+    // （ensureWeek）のために空配列で確定させる（Supabaseへは問い合わせない）。
+    if (isGuestMode()) {
+      set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: [] } }));
+      return;
+    }
     try {
       const links = await fetchPersonalKrWeekTasks(weekId);
       set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: links } }));
@@ -156,43 +213,39 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   },
 
   saveKr: async (kr, expectedUpdatedAt) => {
-    const updatedAt = await upsertPersonalKr(kr, expectedUpdatedAt);
-    set(state => {
-      const next = { ...kr, updated_at: updatedAt };
-      const exists = state.krs.some(k => k.id === kr.id);
-      return { krs: exists ? state.krs.map(k => (k.id === kr.id ? next : k)) : [...state.krs, next] };
-    });
+    // 🔴 ゲストはDB呼び出しをスキップし、ローカルで生成したupdated_atでstateだけ更新する
+    // （メモリ上でのみ成立・リロードで消える）。以後のupsertById呼び出しは実データと共通。
+    const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalKr(kr, expectedUpdatedAt);
+    set(state => ({ krs: upsertById(state.krs, { ...kr, updated_at: updatedAt }) }));
   },
 
   deleteKr: async (id, deletedBy) => {
-    await softDeletePersonalKr(id, deletedBy);
+    if (!isGuestMode()) await softDeletePersonalKr(id, deletedBy);
     set(state => ({ krs: state.krs.filter(k => k.id !== id) }));
   },
 
   saveMonth: async (month, expectedUpdatedAt) => {
-    const updatedAt = await upsertPersonalKrMonth(month, expectedUpdatedAt);
-    set(state => {
-      const list = state.monthsByKr[month.personal_kr_id] ?? [];
-      const next = { ...month, updated_at: updatedAt };
-      const exists = list.some(m => m.id === month.id);
-      const nextList = exists ? list.map(m => (m.id === month.id ? next : m)) : [...list, next];
-      return { monthsByKr: { ...state.monthsByKr, [month.personal_kr_id]: nextList } };
-    });
+    const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalKrMonth(month, expectedUpdatedAt);
+    set(state => ({
+      monthsByKr: {
+        ...state.monthsByKr,
+        [month.personal_kr_id]: upsertById(state.monthsByKr[month.personal_kr_id] ?? [], { ...month, updated_at: updatedAt }),
+      },
+    }));
   },
 
   saveWeek: async (week, expectedUpdatedAt) => {
-    const updatedAt = await upsertPersonalKrWeek(week, expectedUpdatedAt);
-    set(state => {
-      const list = state.weeksByKr[week.personal_kr_id] ?? [];
-      const next = { ...week, updated_at: updatedAt };
-      const exists = list.some(w => w.id === week.id);
-      const nextList = exists ? list.map(w => (w.id === week.id ? next : w)) : [...list, next];
-      return { weeksByKr: { ...state.weeksByKr, [week.personal_kr_id]: nextList } };
-    });
+    const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalKrWeek(week, expectedUpdatedAt);
+    set(state => ({
+      weeksByKr: {
+        ...state.weeksByKr,
+        [week.personal_kr_id]: upsertById(state.weeksByKr[week.personal_kr_id] ?? [], { ...week, updated_at: updatedAt }),
+      },
+    }));
   },
 
   saveMemo: async (memo, expectedUpdatedAt) => {
-    const updatedAt = await upsertPersonalKrMemo(memo, expectedUpdatedAt);
+    const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalKrMemo(memo, expectedUpdatedAt);
     set(state => {
       const list = state.memosByKr[memo.personal_kr_id] ?? [];
       const next = { ...memo, updated_at: updatedAt };
@@ -203,14 +256,14 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   },
 
   deleteMemo: async (id, personalKrId, deletedBy) => {
-    await softDeletePersonalKrMemo(id, deletedBy);
+    if (!isGuestMode()) await softDeletePersonalKrMemo(id, deletedBy);
     set(state => ({
       memosByKr: { ...state.memosByKr, [personalKrId]: (state.memosByKr[personalKrId] ?? []).filter(m => m.id !== id) },
     }));
   },
 
   linkWeekTask: async (weekId, taskId) => {
-    await insertPersonalKrWeekTask({ week_id: weekId, task_id: taskId });
+    if (!isGuestMode()) await insertPersonalKrWeekTask({ week_id: weekId, task_id: taskId });
     set(state => ({
       weekTasksByWeek: {
         ...state.weekTasksByWeek,
@@ -220,7 +273,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   },
 
   unlinkWeekTask: async (weekId, taskId) => {
-    await deletePersonalKrWeekTask(weekId, taskId);
+    if (!isGuestMode()) await deletePersonalKrWeekTask(weekId, taskId);
     set(state => ({
       weekTasksByWeek: {
         ...state.weekTasksByWeek,
@@ -232,6 +285,15 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   ensureOutlookLoaded: async (personalKrId, month) => {
     const key = outlookKey(personalKrId, month);
     if (get().outlookFetchedKeys.has(key)) return;
+    // 🔴 ゲストはpersonal_kr_outlooksに一切問い合わせない。メモリ上に既にある値
+    // （runOutlookAnalysisが解析済みならそれ・無ければnull）で確定させるだけ。
+    if (isGuestMode()) {
+      set(state => ({
+        outlookByKrMonth: { ...state.outlookByKrMonth, [key]: state.outlookByKrMonth[key] ?? null },
+        outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
+      }));
+      return;
+    }
     try {
       const row = await fetchLatestPersonalKrOutlook(personalKrId, month);
       set(state => ({
@@ -258,6 +320,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     if (get().outlookAnalyzingKeys.has(key)) return; // 二重発火防止（連続effect・連打対策）
 
     // 別端末・別セッションでも再解析されないための前提：まずDBの直近結果を確認する
+    // （ゲストはensureOutlookLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
     await get().ensureOutlookLoaded(personalKrId, month);
     const cached = get().outlookByKrMonth[key] ?? null;
 
@@ -266,11 +329,14 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       outlookErrorByKey: { ...state.outlookErrorByKey, [key]: null },
     }));
     try {
+      // 🔴 AI呼び出し（analyze）自体はゲストでも素通しする（invokeAI.tsが既に開放済み・
+      // CLAUDE.md Section 23 Phase 3）。ただし解析結果は personal_kr_outlooks に書けない
+      // ため、ゲストのときは insertPersonalKrOutlook をスキップしメモリ保持のみにする。
       const { ranAnalysis, outlook } = await runPersonalKrOutlookAnalysis({
         personalKrId, month, fingerprint, cached, force: !!force,
         analyze: () => analyzePersonalKrOutlook(context),
       });
-      if (ranAnalysis) await insertPersonalKrOutlook(outlook); // 履歴として積む（UPDATEしない）
+      if (ranAnalysis && !isGuestMode()) await insertPersonalKrOutlook(outlook); // 履歴として積む（UPDATEしない）
       set(state => {
         const analyzing = new Set(state.outlookAnalyzingKeys);
         analyzing.delete(key);

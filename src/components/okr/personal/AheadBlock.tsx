@@ -26,6 +26,7 @@ import { resolveBandDisplay } from "../../../lib/personalOkr/bandDisplay";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { readStoredOutlookPayload } from "../../../lib/ai/personalOkrOutlookExtractor";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 
 const sectionHeadStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
@@ -110,6 +111,7 @@ export function AheadBlock({
               cursor: !canReanalyze || analyzing ? "default" : "pointer", opacity: !canReanalyze || analyzing ? 0.5 : 1,
             }}
           >{outlookRow ? "再解析" : "✦ 見立てを出す"}</button>
+          <GuestAiQuotaNotice variant="inline" />
         </span>
       </div>
 

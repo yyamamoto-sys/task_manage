@@ -18,6 +18,7 @@ import { usePersonalOkrAiConsultation } from "../../../hooks/usePersonalOkrAiCon
 import { buildPersonalOkrChatSystemPrompt } from "../../../lib/ai/personalOkrChatPrompt";
 import { buildPersonalOkrAiContextText, buildPersonalOkrAiContextChips, buildPersonalOkrAiStarters, type PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { KEYS } from "../../../lib/localData/localStore";
+import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 
 interface Props {
   isOpen: boolean;
@@ -148,12 +149,18 @@ export function PersonalOkrAiPanel({
         </div>
       </div>
 
+      {/* display:flex + gap にしているのは、ゲスト回数表示（GuestAiQuotaNotice）を
+          ゲスト以外ではnullとして描画自体させず、余分な余白を生まない（gapは実際に
+          描画された子要素間にしか効かない）ため。ConsultationPanel.tsxのタブ説明バーと
+          同じ流儀（CLAUDE.md Section 23） */}
       <div style={{
+        display: "flex", flexDirection: "column", gap: "6px",
         padding: "6px 14px", background: "rgba(99,102,241,0.06)",
         borderBottom: "1px solid rgba(99,102,241,0.12)", fontSize: "11px",
         color: "var(--color-ai-from)", fontWeight: 500, flexShrink: 0, lineHeight: 1.4,
       }}>
         達成度バンドの定義に沿って「今どの水準か・上げるには何が必要か」で答えます。
+        <GuestAiQuotaNotice variant="inline" />
       </div>
 
       <div ref={scrollAreaRef} style={{ flex: 1, overflow: "auto", padding: "12px 14px", display: "flex", flexDirection: "column", gap: "10px" }}>

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.66
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.67
 #
-最終更新：2026-08-12（v3.66）
+最終更新：2026-08-12（v3.67）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1815,6 +1815,21 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - `firstTimeTour`（モジュールレベル定数）自体は書き換えない。新しい配列・新しいオブジェクトを都度組み立てて返すため、通常ログインユーザー（`isGuest=false`。`ALL_TOURS` をそのまま返す）には一切影響しない。
 
 `MainLayout.tsx` は `useMemo(() => buildTours({ isGuest: isGuestMember(props.currentUser) }), [props.currentUser])` で `tours` を組み立てて `TourProvider` に渡す（毎レンダーで新しいオブジェクトを作らないことで `TourProvider` 内の `useCallback` の作り直し＝不要な再レンダーを避ける）。`TourProvider.tsx` 本体・`skipIfMissing` の仕組みは変更していない（ツアー定義側だけで解決できたため）。回帰防止テストは `src/components/tour/tours/__tests__/buildTours.test.ts`。
+
+### ゲストのOKRモード体験（v3.67・2026-08-12）
+
+山本さんの依頼：「ゲストモードから、OKRモードを体験できるようにもしてください」。個人OKR（Section 24）の全機能（KRタブ・今月の計画・週の目標状態・これから・AIパネル）をゲストにも開放した。**AI機能まで含めて全部体験できるようにする、という山本さんの決定**に基づく。
+
+- **導線**：サイドバー／モバイルヘッダーの「計画／OKR」切替（`AppModeToggle`）は元々 `isGuest` で分岐していなかった（ゲストでも常に表示済み）。OKRモードの初回ゲート（`okrModeGate.ts`・Section 19 ⑥）もゲストは元々対象外（Supabase非接触のため承認を求める意味が無く直接入る）。**この2点はどちらも変更不要**（既存の設計で既に正しく動いていた）。
+- **🔴 実装方針＝ストア側にゲスト分岐。`client.ts` のProxyは1文字も緩めていない。** `personalOkrUiStore.ts` の各アクション（`loadKrs`/`ensureKrDetailLoaded`/`ensureWeekTasksLoaded`/`saveKr`/`deleteKr`/`saveMonth`/`saveWeek`/`saveMemo`/`deleteMemo`/`linkWeekTask`/`unlinkWeekTask`/`ensureOutlookLoaded`）が先頭で `isGuestMode()` を見て、ゲストなら低レベルCRUD（`lib/supabase/personalOkrStore.ts`）を一切呼ばずstateだけを更新する（メモリ上でのみ成立・リロードで消える）。`loadKrs`はゲストのとき`src/lib/demo/personalOkrDataset.ts`（動的importのみ・Section 19）からサンプルデータを注入する。
+- **サンプルデータ**：個人KR3本（KR1はグループOKR側サンプル（Section 8のdataset.ts）のTF「基幹システム更新TF」に紐づく`kr_kind="group_kr"`・KR2/KR3は`general`/`company_common`）・ウェイト合計100%。当月＋前月（今日の日付から動的計算。今日が四半期の1か月目のときは当月のみ）の月次計画。週の目標状態は「現在の週より前は評価済み（◯△✕混在）・現在以降は未評価」で機械計算（残り週数・評価待ちの週）が意味を持つデータにした。メモ計4件。週とタスクの紐づけは`dataset.ts`の実在タスク（ベースライン遅延1件・先行待ち1件）を参照し、AheadBlockの「紐づくタスク：遅延・先行待ち」表示も空にならないようにした。実在の顧客名・PJ名・人名は使わない（既存`dataset.ts`と同じ規約。id接頭辞`demo-`）。機械チェックは`src/lib/demo/__tests__/personalOkrDataset.test.ts`（規模・id接頭辞・静的import禁止・dataset.ts側タスクidとの整合性）。
+- **AI機能はそのまま開放されていた**：`invokeAI.ts`は`AIIntent`の値を一切見ず、ゲストなら匿名セッションを遅延生成して`ai-consult`を素通しする汎用実装（Phase 3・v3.29から変更なし）。そのため「✦ 見立てを出す」（`runOutlookAnalysis`・intent=`okr-personal-outlook`）とAIパネル（`PersonalOkrAiPanel`・intent=`okr-personal-chat`）は**コード変更なしでゲストでも動く**。🔴 唯一の追加対応は解析結果の保存先：`personal_kr_outlooks`にはゲストは書けないため、`runOutlookAnalysis`は`insertPersonalKrOutlook`の呼び出しだけをゲスト分岐でスキップし、結果はstateへメモリ保持する（AI呼び出し自体・`ensureOutlookLoaded`のfingerprint比較ロジックは非ゲストと共通）。
+- **ゲストのAI使用量は既に計上される**：`ai-consult`Edge Functionの`user.is_anonymous`分岐は`body.intent`をそのまま`consultation_type`に使う汎用実装のため、`okr-personal-outlook`/`okr-personal-chat`も追加コード無しで管理画面「AI使用量」タブの「🧪 ゲスト（サンプル利用）」に計上される（Section 23参照）。
+- **回数表示（`GuestAiQuotaNotice`）**：`AheadBlock.tsx`（「✦ 見立てを出す」ボタンの隣）と`PersonalOkrAiPanel.tsx`（タブ説明バー内）に`variant="inline"`で設置。ゲストでなければnullを返す既存コンポーネントのため呼び出し側に分岐は書いていない。
+- **「保存されません」の明示**：全画面共通のゲストバナー（`layout.guestBanner`＝「編集はできません」）は他画面では今も正しい（編集UI自体を隠しているため）が、OKRモードの「自分」タブだけは唯一の例外で入力・保存操作が見える。`MainLayout.tsx`のゲストバナーは`appMode==="okr"`のときだけ文言を`layout.guestBannerOkr`（「この画面の入力は保存されません（画面を閉じると消えます）」）に切り替える。新しいダイアログは追加していない（Human in the loopの原則どおり、常設の一言で足りると判断）。
+- **機械チェック（`client.ts`のProxyを緩めていないことの固定）**：`src/lib/supabase/__tests__/client.test.ts`に、`GUEST_ALLOWED_FUNCTIONS`のSetリテラルを`client.ts`から直接ソース走査し`["ai-consult"]`以外を許さないテストを追加した（`modalStyles.test.ts`と同じ「ソースを読んで検査する」方式）。次に誰かが安易に例外を増やせないようにする固定。
+- **ゲスト分岐の回帰テスト**：`src/stores/__tests__/personalOkrUiStore.test.ts`が、ゲストのとき低レベルCRUD（`personalOkrStore.ts`）が一切呼ばれないこと・AI呼び出し（`analyzePersonalKrOutlook`）は素通しされること・`insertPersonalKrOutlook`は呼ばれないこと・非ゲストの既存経路が変わっていないことを検証する。
+- **Kintone取込（`PersonalOkrImportModal`）もコード変更なしでゲストで動く**：`saveKr`/`saveMonth`を経由するため、上記のストア分岐にそのまま乗る（AI抽出＝intent`okr-personal-import`も`invokeAI.ts`が汎用開放しているため素通しする）。今回の依頼範囲外だが、副次的に動作する（Supabase非接触の原則は崩していない）。
 
 ---
 

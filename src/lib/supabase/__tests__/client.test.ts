@@ -14,6 +14,9 @@
 // 本物のSupabaseプロジェクトへネットワークが飛んでしまうため、ここでは避ける）。
 
 import { describe, it, expect, afterEach } from "vitest";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { supabase, isGuestInvokeBlocked } from "../client";
 import { setGuestMode, isGuestMode } from "../../guestMode";
 
@@ -90,5 +93,26 @@ describe("isGuestInvokeBlocked：functions.invoke の例外は ai-consult だけ
     expect(isGuestMode()).toBe(false);
     expect(isGuestInvokeBlocked("ai-consult")).toBe(false);
     expect(isGuestInvokeBlocked("notify-deadlines")).toBe(false);
+  });
+});
+
+// ===== GUEST_ALLOWED_FUNCTIONSの例外は "ai-consult" の1つだけ（ソース走査で固定） =====
+//
+// 【設計意図・2026-08-12】
+// isGuestInvokeBlocked()のロジックはテスト（上のdescribe）で個別の関数名について検証
+// できるが、「Setの中身がai-consultだけである」ことは個別の関数名テストだけでは
+// 保証できない（誰かが例外を1つ増やしても、既存テストは通り続けてしまう）。
+// client.ts自身のソースを読み、GUEST_ALLOWED_FUNCTIONSのSetリテラルに"ai-consult"以外の
+// 文字列が含まれていないことを機械的に検査する（modalStyles.test.ts と同じソース走査方式）。
+// 次に誰かが安易に例外を増やせないようにするための固定。
+describe("GUEST_ALLOWED_FUNCTIONSの例外はai-consultの1つだけ（ソース走査）", () => {
+  it("client.tsのGUEST_ALLOWED_FUNCTIONS定義にai-consult以外の文字列が無い", () => {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const clientTsPath = path.resolve(__dirname, "../client.ts");
+    const content = fs.readFileSync(clientTsPath, "utf-8");
+    const match = content.match(/GUEST_ALLOWED_FUNCTIONS\s*=\s*new Set<string>\(\[([^\]]*)\]\)/);
+    expect(match, "GUEST_ALLOWED_FUNCTIONSの定義が見つからない（client.tsの実装が変わった可能性）").toBeTruthy();
+    const literals = [...(match![1].matchAll(/["']([^"']+)["']/g))].map(m => m[1]);
+    expect(literals).toEqual(["ai-consult"]);
   });
 });

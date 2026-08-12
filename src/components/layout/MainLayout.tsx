@@ -927,7 +927,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           background: "linear-gradient(135deg,#f59e0b,#d97706)",
           color: "#fff", fontSize: "11px", fontWeight: 600,
         }}>
-          <span>{t("layout.guestBanner")}</span>
+          {/* OKRモードの「自分」タブは唯一の例外で入力・保存操作が可能に見えるため
+              （実際はメモリ上のみ・リロードで消える。personalOkrUiStore.tsのゲスト分岐。
+              CLAUDE.md Section 23・24）、appModeに応じて文言を切り替える。他の画面は
+              従来どおり「編集はできません」（実際に編集UI自体を隠している）。 */}
+          <span>{appMode === "okr" ? t("layout.guestBannerOkr") : t("layout.guestBanner")}</span>
           <GuestAiQuotaNotice variant="banner" />
         </div>
       )}

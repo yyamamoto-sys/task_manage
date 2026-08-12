@@ -41,6 +41,7 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.shortcuts.buttonLabel": "Shortcuts",
 
   "layout.guestBanner": "👁 Guest mode (view only) — editing is disabled",
+  "layout.guestBannerOkr": "👁 Guest mode (sample experience) — input on this screen is not saved (it disappears when you close it)",
 
   "layout.lab.sheetTitle": "🧪 Lab features",
   "layout.lab.structure.label": "Structure diagram",

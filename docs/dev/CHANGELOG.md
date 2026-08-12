@@ -5612,5 +5612,62 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     `npm run build`成功。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.66）
+# v3.67（2026-08-12）：ゲスト（サンプル閲覧）モードからOKRモード（個人OKR・Section 24）を
+#   AI機能まで含めて体験できるように開放。山本さんの依頼「ゲストモードから、OKRモードを
+#   体験できるようにもしてください」（AI機能まで含めて全部体験できるようにする、という
+#   山本さんの決定）。CLAUDE.md Section 23「ゲストのOKRモード体験」参照。
+#   🔴 実装方針＝ストア側にゲスト分岐。`client.ts`のProxy（`assertGuestBlocked`/
+#     `GUEST_ALLOWED_FUNCTIONS`）は1文字も緩めていない。
+#   変更：`src/stores/personalOkrUiStore.ts`：全アクション（loadKrs/ensureKrDetailLoaded/
+#     ensureWeekTasksLoaded/saveKr/deleteKr/saveMonth/saveWeek/saveMemo/deleteMemo/
+#     linkWeekTask/unlinkWeekTask/ensureOutlookLoaded/runOutlookAnalysis）の先頭で
+#     `isGuestMode()`を見て、ゲストなら低レベルCRUD（`lib/supabase/personalOkrStore.ts`）を
+#     一切呼ばずstateだけを更新する（メモリ上でのみ成立・リロードで消える）。
+#     `runOutlookAnalysis`はAI呼び出し（`analyzePersonalKrOutlook`）自体は素通しし、
+#     `insertPersonalKrOutlook`（personal_kr_outlooksへの書き込み）だけをスキップする。
+#     保存アクション共通の`upsertById()`ヘルパーを新設し、guest/実データ両方の
+#     state更新コードを重複させないようにした。
+#   追加：`src/lib/demo/personalOkrDataset.ts`（動的importのみ・Section 19）：
+#     個人KR3本（KR1はグループOKR側サンプルのTF「基幹システム更新TF」に紐づく
+#     group_kr・KR2/3はgeneral/company_common）・ウェイト合計100%・当月＋前月
+#     （今日の日付から動的計算）の月次計画・週の目標状態（現在の週より前は評価済み
+#     ◯△✕混在・現在以降は未評価）・メモ計4件・週とタスクの紐づけ（dataset.tsの
+#     実在タスク＝ベースライン遅延1件・先行待ち1件を参照）。
+#     ＋`__tests__/personalOkrDataset.test.ts`（規模・id接頭辞・静的import禁止・
+#     dataset.ts側タスクidとの整合性を検証）。
+#   追加：`src/stores/__tests__/personalOkrUiStore.test.ts`：ゲストのとき低レベルCRUDが
+#     一切呼ばれないこと・AI呼び出しは素通しされること・insertPersonalKrOutlookは
+#     呼ばれないこと・非ゲストの既存経路が変わっていないことを検証。
+#   追加：`src/lib/supabase/__tests__/client.test.ts`：`GUEST_ALLOWED_FUNCTIONS`の
+#     Setリテラルをソース走査し`["ai-consult"]`以外を許さないテストを追加
+#     （次に誰かが安易に例外を増やせないようにする固定）。
+#   変更：`src/components/okr/personal/AheadBlock.tsx`：「✦ 見立てを出す」ボタンの隣に
+#     `<GuestAiQuotaNotice variant="inline" />`を設置。
+#   変更：`src/components/okr/personal/PersonalOkrAiPanel.tsx`：タブ説明バーを
+#     `ConsultationPanel.tsx`と同じ`flexDirection:"column"+gap`に変更し
+#     `<GuestAiQuotaNotice variant="inline" />`を設置。
+#   変更：`src/components/layout/MainLayout.tsx`：ゲストバナーの文言を`appMode==="okr"`の
+#     ときだけ`layout.guestBannerOkr`（「この画面の入力は保存されません（画面を閉じると
+#     消えます）」）に切り替える。他画面は従来どおり`layout.guestBanner`（「編集は
+#     できません」）のまま（編集UI自体を隠しているため今も正しい）。
+#   追加：i18nキー`layout.guestBannerOkr`をja/en両辞書に追加。
+#   確認：サイドバー／モバイルヘッダーの「計画／OKR」切替（`AppModeToggle`）は元々
+#     `isGuest`で分岐しておらずゲストでも表示済み・OKRモードの初回ゲート
+#     （`okrModeGate.ts`）もゲストは元々対象外——どちらも変更不要だった（コード読解で確認）。
+#   確認：`invokeAI.ts`は`AIIntent`の値を一切見ず、ゲストなら匿名セッションを遅延生成して
+#     `ai-consult`を素通しする汎用実装（Phase 3・v3.29から変更なし）。そのため
+#     「✦ 見立てを出す」（intent=okr-personal-outlook）とAIパネル（intent=okr-personal-chat）
+#     はコード変更なしでゲストでも動く。`ai-consult`Edge Functionの`user.is_anonymous`分岐も
+#     `body.intent`を汎用的に`consultation_type`へ保存するため、ゲストのAI使用量は
+#     追加コード無しで管理画面「AI使用量」タブに計上される（コード読解で確認）。
+#   確認：Kintone取込（`PersonalOkrImportModal`）も`saveKr`/`saveMonth`経由でゲスト分岐に
+#     そのまま乗るため、依頼範囲外だが副次的に動作する（Supabase非接触の原則は崩していない）。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（1426テスト。新規18件含む）／
+#     `npx eslint`新規エラー0・新規warning0（既存の警告3件・既存のエラー23件・警告17件は
+#     今回変更したファイル以外の既存分。git stashで変更前と同数であることを確認済み）／
+#     `npm run build`成功（`personalOkrDataset`は独立チャンク・gzip約3.03KBとして
+#     分離されることをビルド出力で確認＝動的importのみで読み込まれる設計が機能している）。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.67）
 
