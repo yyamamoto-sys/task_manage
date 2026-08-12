@@ -16,9 +16,10 @@
 // ゲストにも見せてよい（社内情報ではなくアプリの更新内容のため。isGuestMember等の
 // ガードはこのモーダルには不要）。
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RELEASE_NOTES, type ReleaseNoteEntry } from "../../lib/releaseNotes";
 import { filterReleaseNotesByPeriod, buildReleaseNotesText } from "../../lib/releaseNotes/filterByPeriod";
+import { groupReleaseNotesByMonth, defaultOpenMonthKeys } from "../../lib/releaseNotes/groupByMonth";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "./modalStyles";
 import { showToast } from "./Toast";
 
@@ -35,13 +36,6 @@ const inputStyle: React.CSSProperties = {
   background: "var(--color-bg-primary)",
   color: "var(--color-text-primary)",
 };
-
-/** "2026-08-12" → "2026年8月" のグループ見出しキー */
-function monthKeyOf(dateStr: string): string {
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月`;
-}
 
 /** クリップボードへのコピー。navigator.clipboard → execCommand → 失敗の3段フォールバック */
 async function copyTextToClipboard(text: string): Promise<boolean> {
@@ -79,19 +73,35 @@ export function VersionHistoryModal({ onClose }: Props) {
 
   const hasPeriodFilter = startDate !== "" || endDate !== "";
 
-  // 月ごとの見出しで区切る（表示は常に新しい順のまま。グループ化は表示専用の軽い処理のため
-  // 純粋関数への切り出し・単体テストは行っていない＝期間絞り込み・コピー用組み立てとは異なり
-  // 「ロジック」ではなく「見せ方」の整形）
-  const grouped = useMemo(() => {
-    const groups: { month: string; entries: ReleaseNoteEntry[] }[] = [];
-    for (const entry of filtered) {
-      const month = monthKeyOf(entry.date);
-      const last = groups[groups.length - 1];
-      if (last && last.month === month) last.entries.push(entry);
-      else groups.push({ month, entries: [entry] });
-    }
-    return groups;
-  }, [filtered]);
+  // 月ごとの見出しで区切る（純粋関数はsrc/lib/releaseNotes/groupByMonth.tsに切り出し済み）
+  const grouped = useMemo(() => groupReleaseNotesByMonth(filtered), [filtered]);
+
+  const monthKeys = useMemo(() => grouped.map(g => g.monthKey), [grouped]);
+
+  // 開いている月の集合。既定は「当月・前月だけ開く」（絞り込み中は該当月をすべて開く）。
+  // 期間の指定（startDate/endDate）が変わるたびに既定状態へ再計算し直す。手動での開閉トグルは
+  // 次に期間が変わるまで保持する。
+  const [openMonths, setOpenMonths] = useState<Set<string>>(() =>
+    defaultOpenMonthKeys(monthKeys, new Date(), hasPeriodFilter),
+  );
+  useEffect(() => {
+    setOpenMonths(defaultOpenMonthKeys(monthKeys, new Date(), hasPeriodFilter));
+    // monthKeys/hasPeriodFilterは依存に含めない：どちらもstartDate/endDateから毎レンダー
+    // 導出される値（filtered→grouped→monthKeys、startDate/endDate→hasPeriodFilter）で、
+    // 依存に含めると新しい配列/真偽値参照のたびにeffectが再実行され続けてしまう。
+    // 実質のトリガーであるstartDate/endDateだけを依存にすれば、期間変更時には必ず
+    // 最新のmonthKeys/hasPeriodFilterがこのeffect内で参照される。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startDate, endDate]);
+
+  const toggleMonth = (monthKey: string) => {
+    setOpenMonths(prev => {
+      const next = new Set(prev);
+      if (next.has(monthKey)) next.delete(monthKey);
+      else next.add(monthKey);
+      return next;
+    });
+  };
 
   const handleCopy = async () => {
     const text = buildReleaseNotesText(filtered);
@@ -201,43 +211,58 @@ export function VersionHistoryModal({ onClose }: Props) {
               指定した期間に該当する更新はありません。
             </div>
           ) : (
-            grouped.map(group => (
-              <div key={group.month} style={{ marginBottom: "18px" }}>
-                <div style={{
-                  fontSize: "11px", fontWeight: 700, color: "var(--color-text-tertiary)",
-                  letterSpacing: "0.03em", marginBottom: "8px",
-                  paddingBottom: "4px", borderBottom: "1px solid var(--color-border-primary)",
-                }}>
-                  {group.month}
-                </div>
-                {group.entries.map(entry => (
-                  <div key={`${entry.version}-${entry.date}`} style={{ marginBottom: "12px" }}>
-                    <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "4px" }}>
-                      <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
-                        {entry.date}
-                      </span>
-                      <span style={{
-                        fontSize: "10px", fontWeight: 700, color: "var(--color-text-secondary)",
-                        background: "var(--color-bg-secondary)", padding: "1px 6px", borderRadius: "var(--radius-sm)",
-                        whiteSpace: "nowrap",
-                      }}>
-                        {entry.version}
-                      </span>
-                      <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>
-                        {entry.title}
-                      </span>
+            grouped.map(group => {
+              const isOpen = openMonths.has(group.monthKey);
+              return (
+                <div key={group.monthKey} style={{ marginBottom: "18px" }}>
+                  <button
+                    onClick={() => toggleMonth(group.monthKey)}
+                    aria-expanded={isOpen}
+                    style={{
+                      display: "flex", alignItems: "center", gap: "6px", width: "100%",
+                      fontSize: "11px", fontWeight: 700, color: "var(--color-text-tertiary)",
+                      letterSpacing: "0.03em", marginBottom: "8px",
+                      padding: "0 0 4px", borderBottom: "1px solid var(--color-border-primary)",
+                      background: "transparent", border: "none", borderRadius: 0,
+                      cursor: "pointer", textAlign: "left",
+                    }}
+                  >
+                    <span style={{
+                      display: "inline-block", transition: "transform 0.15s",
+                      transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", fontSize: "9px",
+                    }}>▶</span>
+                    {group.label}
+                    <span style={{ fontWeight: 400 }}>（{group.entries.length}件）</span>
+                  </button>
+                  {isOpen && group.entries.map(entry => (
+                    <div key={`${entry.version}-${entry.date}`} style={{ marginBottom: "12px" }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginBottom: "4px" }}>
+                        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
+                          {entry.date}
+                        </span>
+                        <span style={{
+                          fontSize: "10px", fontWeight: 700, color: "var(--color-text-secondary)",
+                          background: "var(--color-bg-secondary)", padding: "1px 6px", borderRadius: "var(--radius-sm)",
+                          whiteSpace: "nowrap",
+                        }}>
+                          {entry.version}
+                        </span>
+                        <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+                          {entry.title}
+                        </span>
+                      </div>
+                      <ul style={{ margin: 0, paddingLeft: "18px" }}>
+                        {entry.highlights.map((h, i) => (
+                          <li key={i} style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
+                            {h}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                    <ul style={{ margin: 0, paddingLeft: "18px" }}>
-                      {entry.highlights.map((h, i) => (
-                        <li key={i} style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>
-                          {h}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                ))}
-              </div>
-            ))
+                  ))}
+                </div>
+              );
+            })
           )}
 
           {fallbackText !== null && (
