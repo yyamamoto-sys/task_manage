@@ -492,6 +492,13 @@ button:not(:disabled):active::after { background: rgba(58, 48, 30, 0.12); }
   opacity: 1;
 }
 
+/* ===== バージョン表示（押せる版。v3.61） ===== */
+.version-badge-clickable:hover,
+.version-badge-clickable:focus-visible {
+  text-decoration: underline;
+  color: var(--color-text-primary);
+}
+
 /* ===== チェックボックス付きラベル ===== */
 label.check-row {
   transition: background var(--transition-fast);

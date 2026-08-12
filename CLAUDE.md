@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.62
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.63
 #
-最終更新：2026-08-12（v3.62）
+最終更新：2026-08-12（v3.63）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1134,6 +1134,7 @@ const { submit } = useAIConsultation(projectIds);
 - 未解決の論点が解決したら Section 9 から削除して該当Sectionに追記する
 - **バージョンアップ時の変更履歴は、CLAUDE.md本体には書かず [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) の末尾に追記すること**（2026-07-31：冒頭に履歴を積み上げる旧方式が肥大化の原因になったため分離した。CLAUDE.mdは「現在の設計の正本」に専念する）
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
+- **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - 最終更新：2026-08-12（v3.62）
 
@@ -2205,6 +2206,25 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 - **抽出文字数を画面に出す（診断・事前警告）**：`src/lib/personalOkr/importCharWarning.ts`の`isPersonalOkrImportTextTooLong()`（純粋関数）が、入力欄・添付から抽出した文字数（`MAX_TEXT_CHARS=40000`で切り詰めた後の実際に送信する文字数）が20000字を超えるかを判定する。20000字は「40000字の上限内でも546が再発した」という事実から安全側に倒した値（既存上限の半分。根拠は同ファイル冒頭コメント）。解析実行前（入力欄）・解析成功後（レビュー画面）の両方に表示し続ける（今後の切り分けに使うため、コンソールログではなく画面に出す）。閾値超えは「量が多いため、四半期OKRと月次振返りを別々に取り込むことをお勧めします」という行動が分かる警告文を添える。
 - **テスト**：`personalOkrImportExtractor.test.ts`を分割後の構成に合わせて再構成（呼び出し1・2をそれぞれ独立にテスト＋`mergePersonalOkrImportResults`の純粋関数テスト＋オーケストレーターの呼び出し省略・進捗・部分失敗・全滅を検証）。新規`importCharWarning.test.ts`（閾値の境界値）。
 - **やらないこと**：Edge Function自体のストリーミング化（対象外）。`OkrImportModal.tsx`／`MeetingImportPanel.tsx`の独自PDF送信経路（Section 19 ⑦の既知リスクのまま・別途）。
+
+---
+
+## 29. 利用者向けバージョン履歴（v3.63・2026-08-12）
+
+**目的は2つ**（山本さんの依頼）：①利用者が「何が変わったか」を自分で確認できること ②OKRの実績として「この期間に何を更新したか」を期間指定でコピーできること。②があるため、単なる一覧では足りない設計にした。
+
+- **データは `src/lib/releaseNotes.ts`（`RELEASE_NOTES: ReleaseNoteEntry[]`。新しい順）に持つ。** 開発者向けの `docs/dev/CHANGELOG.md` とは別物として維持する（読み手が違う＝開発者 vs 利用者のため統合しない）。CHANGELOG.mdの技術的な記述をそのまま転記せず、利用者が読んで「何ができるようになったか」が分かる粒度に書き直す。内部実装のみの変更（リファクタ・テスト追加・型修正等、利用者の操作や見た目が変わらないもの）は載せない。
+- **粒度はCHANGELOG.mdの1バージョン＝1エントリという対応にしていない。** 同じ日・同じ話題で複数回のバージョンアップがあった場合は1エントリにまとめ、`version`にはその範囲の最後のバージョンを記す。`date`（YYYY-MM-DD）が期間フィルタの判定に使う唯一のフィールドで、`version`は表示ラベルにすぎない。
+- **範囲は2026年7月以降のみ**（下期OKRの期間に合わせる。山本さんの指示）。それより前の履歴はCHANGELOG.md側にのみ残す。
+- **文体は です・ます調で統一する**（UI文言の文体方針。本節上部「UI/UX仕様」参照）。着手時点では「だ・である調で淡々と」の指示だったが、実装中にv3.62で「だ・である調は配布資料限定・UIはです・ます調を維持」という方針が確定したため、この確定に合わせて書いた。問いかけ・詩的表現は使わない（この禁止事項はUI文言にも等しく適用される）。
+- **書き忘れの機械防止**：`src/lib/__tests__/releaseNotes.test.ts`が「`RELEASE_NOTES[0].version`が`` `v${APP_VERSION}` ``と一致するか」を検査する（`version.test.ts`と同じ「ソースを読んで検査する」方式）。バージョンだけ上げてリリースノートを書き忘れると`npx vitest run`が落ちる。バージョンを上げるときの4点セットはSection 11参照。
+- **ダウンロード量の最小化**：`VersionHistoryModal.tsx`は`lazyWithRetry`で遅延読込する（CLAUDE.md Section 19）。`releaseNotes.ts`はこのモーダルからのみ静的importするため、バージョン履歴を開かない利用者はこのデータ・モーダルのコードともにダウンロードしない。gzip実測は閾値（200KB）を大きく下回るため`withChunkDownloadGate`は付けていない。
+- **画面：押せる箇所はVersionBadgeを使う6箇所全て**（サイドバー最下部・ログイン画面4状態・モバイルラボシート）。`VersionBadge`（`src/components/common/VersionBadge.tsx`）に`onClick`を渡すと`<span>`から`<button>`に変わり、ホバーで下線・`aria-label`が付く。onClick省略時は従来の`<span>`表示のまま（後方互換）。**6箇所全てをクリック可能にした**（判断理由：全て同一の共有コンポーネントであり、ログイン前でも自分で更新内容を確認できる方が一貫性があり実装コストも増えないため。個別に一部だけ対応する理由が無かった）。
+- **モーダルの契約**：Section 21（`modalStyles.ts`）を使用。本文（`MODAL_BODY_STYLE`）だけがスクロールし、期間指定・コピー行とフッターは常に見える。ゲスト（`isGuestMember`）にもガード無しで見せる（社内情報ではなくアプリの更新内容のため）。
+- **期間で絞り込んでコピー（②の目的）**：モーダル内の開始日・終了日（`<input type="date">`）で絞り込んだ内容が、そのまま表示とコピーの両方に反映される（表示とコピー対象を分離すると「見えているものと違う内容がコピーされる」混乱を招くため、単一の`filtered`を両方に使う設計にした）。既定は両方空＝全件表示。
+- **純粋関数への切り出し**：`src/lib/releaseNotes/filterByPeriod.ts`の`filterReleaseNotesByPeriod()`（期間の両端を含む・不正な日付文字列の境界は無視してもう一方だけで判定・エントリ自身のdateが不正なら除外）と`buildReleaseNotesText()`（日付・バージョン・タイトル・箇条書きだけの装飾なしプレーンテキスト。該当0件は空文字列）。テストは`src/lib/releaseNotes/__tests__/filterByPeriod.test.ts`。月ごとの見出し区切りはロジックではなく見せ方の整形のため`VersionHistoryModal.tsx`内に留め、切り出し・単体テストの対象にしていない。
+- **コピーの3段フォールバック**：`navigator.clipboard.writeText()` → 失敗時は非表示`<textarea>`＋`execCommand("copy")` → それも失敗したら画面上に選択済みの`<textarea>`を表示して手動コピーを促す（`ErrorBar.tsx`の`copyText()`と同じ考え方だが、`ErrorBar.tsx`は非export・別ドメインのためこのモーダル内に同型のヘルパーを個別に持つ。共通化は今回のスコープ外）。成功・失敗は`showToast()`で通知する。
+- **DBスキーマ変更なし**（`schemaChecks.ts`への追記も不要）。
 
 ---
 

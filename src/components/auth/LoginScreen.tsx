@@ -1,5 +1,5 @@
 // src/components/auth/LoginScreen.tsx
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { signIn, signUp } from "../../lib/supabase/auth";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
@@ -9,6 +9,11 @@ import { extractInviteCodeFromSearch } from "../../lib/projectInvite/inviteUrl";
 import { savePendingProjectInvite } from "../../lib/projectInvite/pendingInvite";
 import { initialsFromDisplayName, shortNameFromDisplayName, DEFAULT_INVITE_AVATAR_COLOR } from "../../lib/projectInvite/memberDefaults";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { lazyWithRetry } from "../../lib/lazyWithRetry";
+
+// バージョン履歴（v3.61）：ログイン前でも確認できるようにする。ログイン画面を開くだけの
+// 利用者にダウンロードさせないようlazy化する（CLAUDE.md Section 19）。
+const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 
 interface Props {
   onLogin: () => void;
@@ -30,6 +35,12 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [guestLoading, setGuestLoading] = useState(false);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  const versionHistoryModal = isVersionHistoryOpen ? (
+    <Suspense fallback={null}>
+      <VersionHistoryModal onClose={() => setIsVersionHistoryOpen(false)} />
+    </Suspense>
+  ) : null;
 
   // ----- プロジェクト招待（部署外メンバーの受け入れ・2026-08-10） -----
   const [inviteCode, setInviteCode] = useState(initialInviteCode ?? "");
@@ -202,8 +213,9 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
         </div>
         {/* バージョン表示（控えめ・ログイン前でも分かるように） */}
         <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
-          <VersionBadge />
+          <VersionBadge onClick={() => setIsVersionHistoryOpen(true)} />
         </div>
+        {versionHistoryModal}
         <div style={cardStyle}>
           <div style={{ textAlign: "center", marginBottom: "20px" }}>
             <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
@@ -252,8 +264,9 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
           <LangToggle variant="icon" />
         </div>
         <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
-          <VersionBadge />
+          <VersionBadge onClick={() => setIsVersionHistoryOpen(true)} />
         </div>
+        {versionHistoryModal}
         <div style={cardStyle}>
           <div style={{ textAlign: "center", marginBottom: "20px" }}>
             <div style={{ fontSize: "32px", marginBottom: "12px" }}>📧</div>
@@ -313,8 +326,9 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
           <LangToggle variant="icon" />
         </div>
         <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
-          <VersionBadge />
+          <VersionBadge onClick={() => setIsVersionHistoryOpen(true)} />
         </div>
+        {versionHistoryModal}
         <div style={{ ...cardStyle, width: "380px" }}>
           <h1 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>
             {t("auth.invite.title")}
@@ -445,8 +459,9 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
       </div>
       {/* バージョン表示（控えめ・ログイン前でも分かるように） */}
       <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
-        <VersionBadge />
+        <VersionBadge onClick={() => setIsVersionHistoryOpen(true)} />
       </div>
+      {versionHistoryModal}
       <div style={cardStyle}>
         {/* ロゴ＆タイトル */}
         <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>

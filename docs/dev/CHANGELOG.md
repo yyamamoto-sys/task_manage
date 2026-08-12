@@ -5415,8 +5415,6 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     （既存の無関係な7件はv3.59以前から不変）／`npm run build`成功。
 #   マイグレーション：追加なし（DBスキーマ変更無し）。
 #
-# v3.61 （別担当がバージョン履歴機能で使用中のため本ファイルへの記載は別担当側で行う）
-#
 # v3.62 UI文言の文体方針を確定：「だ・である調」は配布資料限定、UIは です・ます調を維持（2026-08-12）
 #   【経緯】v3.60でMembersSectionに新設した「ゲストメンバー（プロジェクト招待で参加）」
 #   カードの説明文を、統括が「配布物・画面表示はだ・である調で淡々と」という2026-08-06の
@@ -5434,11 +5432,60 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     だ・である調ルールは適用しない・問いかけと詩的表現は禁止）を1行追記した。既存の
 #     です・ます文言の一斉書き直しは行わない（山本さんの判断）。
 #   【変更ファイル】`AdminView.tsx`（テキスト1箇所のみ）。`CLAUDE.md`（UI/UX仕様節への
-#     追記・バージョン表記の更新）。`src/lib/version.ts`（3.60→3.62。v3.61は別担当が
-#     バージョン履歴機能で使用中のため欠番）。
+#     追記・バージョン表記の更新）。`src/lib/version.ts`（3.60→3.62）。
 #   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（1352件）／`npx eslint`
 #     新規エラー0／`npm run build`成功。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.62）
+# v3.63 利用者向けバージョン履歴モーダルを追加（山本さんの依頼。2026-08-12）
+#   【背景】目的は2つ：①利用者が「何が変わったか」を自分で確認できること ②山本さんが
+#   OKRの実績として「この期間に何を更新したか」を取り出せること。②があるため単なる
+#   一覧では足りず、期間絞り込み＋コピーが必須要件だった。
+#   【並行作業との調整】着手時点でv3.60（別担当）を想定し「v3.61を使う」という指示だった。
+#   実装中にv3.60・v3.62（UI文言の文体方針確定）の2本が先にpushされたため、リベースして
+#   バージョンをv3.63に差し替えた（CHANGELOG.mdのv3.61欄に残っていた「別担当が使用中」の
+#   プレースホルダ行は本エントリに置き換えて削除）。
+#   【v3.62の方針決定を反映】v3.62で「UI文言はです・ます調・だ・である調は配布資料限定」
+#   と確定したため、当初の指示（バージョン履歴の文言をだ・である調で書く）を上書きし、
+#   `releaseNotes.ts`の全エントリ・`VersionHistoryModal.tsx`の文言をです・ます調で書いた
+#   （元の指示との相違点として作業報告に明記）。
+#   【変更内容】
+#   ①新規`src/lib/releaseNotes.ts`（`RELEASE_NOTES: ReleaseNoteEntry[]`。新しい順）に、
+#     2026年7月以降のCHANGELOG.mdの内容を利用者向けに書き直したデータを持つ。1バージョン＝
+#     1エントリの対応にはせず、同日・同話題の複数バージョンは1エントリにまとめた（18件）。
+#     内部実装のみの変更（リファクタ・テスト追加等）は載せていない。開発者向けの
+#     CHANGELOG.mdとは別物として維持（統合しない）。
+#   ②`VersionBadge.tsx`に`onClick`プロップを追加（渡すと`<span>`→`<button>`化。ホバー下線・
+#     `aria-label`付き）。省略時は従来の`<span>`のまま（後方互換）。このコンポーネントを使う
+#     6箇所全て（サイドバー最下部・ログイン画面4状態・モバイルラボシート）をクリック可能にした。
+#   ③新規`src/components/common/VersionHistoryModal.tsx`。`modalStyles.ts`の契約
+#     （Section 21）を使用。開始日・終了日（`<input type="date">`）で絞り込んだ内容を
+#     そのまま表示とコピー両方に使う単一の`filtered`設計。「この期間の内容をコピー」は
+#     `navigator.clipboard.writeText()`→`execCommand("copy")`→画面上に選択済み`<textarea>`
+#     を出す3段フォールバック。`lazyWithRetry`で遅延読込（`releaseNotes.ts`もこのモーダル
+#     からのみ静的importするため未使用者はダウンロードしない。gzip実測は閾値200KB未満のため
+#     `withChunkDownloadGate`は付けていない）。ゲスト（`isGuestMember`）にもガード無しで表示。
+#   ④純粋関数への切り出し：新規`src/lib/releaseNotes/filterByPeriod.ts`の
+#     `filterReleaseNotesByPeriod()`（期間の両端を含む・不正な日付文字列の境界は無視・
+#     エントリ自身のdateが不正なら除外）と`buildReleaseNotesText()`（装飾なしプレーンテキスト。
+#     0件は空文字列）。テストは`__tests__/filterByPeriod.test.ts`（15件）。
+#   ⑤書き忘れ防止：新規`src/lib/__tests__/releaseNotes.test.ts`が
+#     `RELEASE_NOTES[0].version === \`v${APP_VERSION}\`` を検査する（version.test.tsと同じ
+#     「ソースを読んで検査する」方式）。CLAUDE.md Section 11に「バージョンを上げるときの
+#     4点セット（version.ts・CLAUDE.md冒頭・CHANGELOG.md・releaseNotes.ts）」を明記した。
+#   変更ファイル：新規`src/lib/releaseNotes.ts`・`src/lib/releaseNotes/filterByPeriod.ts`・
+#     `src/lib/releaseNotes/__tests__/filterByPeriod.test.ts`・
+#     `src/lib/__tests__/releaseNotes.test.ts`・`src/components/common/VersionHistoryModal.tsx`。
+#     変更：`src/components/common/VersionBadge.tsx`（onClick対応）・
+#     `src/components/layout/MainLayout.tsx`（Sidebar props拡張・モバイルラボシート・
+#     VersionHistoryModalのlazy登録＋Suspense描画）・`src/components/auth/LoginScreen.tsx`
+#     （4状態全てにonClick＋モーダル描画を追加）・`src/styles/globals.css`
+#     （`.version-badge-clickable`のホバー装飾）・`CLAUDE.md`（Section 11・29）・
+#     `src/lib/version.ts`（3.62→3.63。当初はv3.61を指示されていたが、実装中にv3.60・v3.62が
+#     先にpushされたためリベースしてv3.63に差し替えた）。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過／`npx eslint`変更ファイルに
+#     新規エラー0／`npm run build`成功。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.63）
 

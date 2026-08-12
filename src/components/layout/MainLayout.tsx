@@ -73,6 +73,9 @@ const CalendarLabView    = withChunkDownloadGate(lazyWithRetry(() => import("../
 const MyPageView         = withChunkDownloadGate(lazyWithRetry(() => import("../lab/MyPageView").then(m => ({ default: m.MyPageView })), "MyPageView"), "MyPageView");
 const ProjectStructureView = withChunkDownloadGate(lazyWithRetry(() => import("../lab/ProjectStructureView").then(m => ({ default: m.ProjectStructureView })), "ProjectStructureView"), "ProjectStructureView");
 const OkrDashboardView   = withChunkDownloadGate(lazyWithRetry(() => import("../okr/OkrDashboardView").then(m => ({ default: m.OkrDashboardView })), "OkrDashboardView"), "OkrDashboardView");
+// バージョン履歴（v3.61）：releaseNotes.ts（利用者向けデータ）を静的importするため、開かない
+// 利用者にダウンロードさせないようlazy化する（CLAUDE.md Section 19）。小さいためDLゲート対象外。
+const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 type GuideModeViewProps = NonNullable<Parameters<typeof GuideModeViewComponent>[0]>;
 const GuideModeView      = withChunkDownloadGate<GuideModeViewProps>(lazyWithRetry(() => import("../guide/GuideModeView").then(m => ({ default: m.GuideModeView })), "GuideModeView"), "GuideModeView");
 
@@ -204,6 +207,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const [isFabMenuOpen, setIsFabMenuOpen] = useState(false);
   const [isMobileLabOpen, setIsMobileLabOpen] = useState(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+  // バージョン履歴モーダル（v3.61）。サイドバー最下部・モバイルラボシートのVersionBadgeから開く。
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   // ショートカット一覧パネル（全ビュー共通・MainLayoutが唯一の描画元）。非モーダル・✕でのみ閉じる。
   // 開閉stateはここに1つだけ持ち、ガント凡例バーのリンクにも同じstateを渡して繋ぎ替える
   // （2つのパネルを作らない。CLAUDE.md 参照）。
@@ -1015,7 +1020,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                   {t("layout.lab.sheetTitle")}
                 </span>
                 {/* バージョン表示（控えめ・自然に置ける場所としてこのシートのタイトル行に添える） */}
-                <VersionBadge />
+                <VersionBadge onClick={() => { setIsMobileLabOpen(false); setIsVersionHistoryOpen(true); }} />
               </div>
               {[
                 { icon: "🏢", label: t("layout.lab.structure.label"), desc: t("layout.lab.structure.desc"), onClick: () => { openLabView("structure"); setIsMobileLabOpen(false); } },
@@ -1447,7 +1452,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         accessibleGroups={accessibleGroups}
         currentGroupId={currentGroupId}
         onSelectGroup={handleSelectGroupNav}
+        onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
       />
+      {isVersionHistoryOpen && (
+        <Suspense fallback={null}>
+          <VersionHistoryModal onClose={() => setIsVersionHistoryOpen(false)} />
+        </Suspense>
+      )}
       {mainContent}
       {/* GraphView・CalendarLabView・ProjectStructureView・MyPageView はすべて mainContent 内
           （labOverlay）に埋め込み済み（CLAUDE.md Section 20・v3.33）。KrReportPanel・KrWhyPanel・
@@ -1582,6 +1593,8 @@ interface SidebarProps {
   accessibleGroups: Group[];
   currentGroupId: string | null;
   onSelectGroup: (id: string) => void;
+  /** バージョン履歴モーダルを開く（v3.61。VersionBadgeクリック時） */
+  onOpenVersionHistory: () => void;
 }
 
 function Sidebar({
@@ -1595,6 +1608,7 @@ function Sidebar({
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
+  onOpenVersionHistory,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -2089,7 +2103,7 @@ function Sidebar({
             分けている＝196px幅が既に詰まっているため。CLAUDE.md参照） */}
         {!c && (
           <div style={{ padding: "1px 10px 4px", textAlign: "right" }}>
-            <VersionBadge />
+            <VersionBadge onClick={onOpenVersionHistory} />
           </div>
         )}
       </div>
