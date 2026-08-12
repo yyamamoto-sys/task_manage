@@ -5358,5 +5358,62 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     projectCreateStepsのテスト分）／`npx eslint`変更ファイルに新規エラー0／`npm run build`成功。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.59）
+# v3.60 設定画面の部署絞り込みをサイドバーの「表示部署」に一本化（2026-08-12）
+#   【経緯】山本さんから「設定画面はサイドメニューの『表示部署』に従うようにしてください」
+#   との指示。従来、設定画面（AdminView）は独自のローカル部署セレクタ（`selectedGroupId`。
+#   初期値は`currentUser.group_id`）を持ち、サイドバーの「表示部署」（`appStore.currentGroupId`）
+#   とは無関係に独立して動いていた。同じ部署のはずなのに画面ごとに違う部署を指したまま
+#   操作できてしまう状態だった。
+#   【着手前の確認（3点）】
+#   ①`currentGroupId`が未確定（null）になりうる経路の有無：`members.group_id`はDBの
+#     CHECK制約上NULLを許容し、`App.tsx`の`autoMatch()`も`member.group_id ?? null`を
+#     そのまま`currentGroupId`に渡すため、理論上null化しうる。「NULLなら全部見せる」は
+#     絶対にしない方針（2026-06-26のマルチテナンシー事故と同じ轍を踏まないため）で対応した
+#     （後述）。
+#   ②サイドバーの表示部署切替がプロジェクト招待用の部署（`is_invite_group=true`）を選択肢
+#     から除外する（`filterInviteGroupsForSidebar`）ことの影響を`InvitesSection`・
+#     `MembersSection`で確認。`InvitesSection`は元々PJ自体のホーム部署（招待用部署ではない）
+#     で絞り込んでいるため影響無し。`MembersSection`は影響有り＝招待用部署のみに属する
+#     「ゲストメンバー（招待受諾者）」が部署絞り込みリストに一切現れなくなり、編集・削除
+#     できなくなる実害を確認（データ自体はRLS＝`visible_invite_group_ids()`で既に見えている。
+#     UI側フィルタが不要に隠すだけ）。是正として③で対応。
+#   ③全社スーパー管理者への影響：サイドバーの部署切替は全部署（招待用部署を除く）を
+#     選べるため、部署横断の棚卸し導線は失われない。影響無し。
+#   【変更内容】
+#   ①`src/lib/admin/resolveAdminGroupId.ts`（新規・純粋関数・テスト有）：
+#     `currentGroupId`とアクセス可能な部署一覧から編集対象の部署を1つ確定する。
+#     `currentGroupId`がアクセス可能な部署の中にあればそれを採用、無ければアクセス可能な
+#     部署が1件のときだけそれにフォールバックし、2件以上でどれかに決められない場合は
+#     nullを返す（fail closed。「全部見せる」は選ばない）。
+#   ②`AdminView.tsx`：設定画面ローカルの`selectedGroupId`状態＋フォールバック用useEffectを
+#     廃止し、`currentGroupId`（appStore）と`resolveAdminGroupId()`から導出する派生値に
+#     置き換えた。`accessibleGroups`にも`filterInviteGroupsForSidebar()`を適用し、
+#     サイドバーが選べる部署の範囲と一致させた。`selectedGroupId`がnullの場合（アクセス
+#     可能な部署が2件以上あり、どれとも判定できない場合）は、管理者ガードと同じ位置に
+#     新設したガード画面（「表示する部署を判定できません。サイドバーの『表示部署』から
+#     部署を選択してください」）で止める。`memberInGroup`/`projectInGroup`ヘルパーは
+#     `groupId`がnull/空文字のときに`true`（全部署表示）を返していたのを`false`
+#     （何も表示しない＝fail closed）に変更した。
+#   ③部署セレクタUI（`CustomSelect`）を撤去し、アクセス可能な部署が2件以上のときだけ
+#     「編集対象の部署：◯◯（サイドバーの『表示部署』に従います。切り替えるにはサイドバーを
+#     使用してください）」という読み取り専用の表示に置き換えた。1部署しか無い利用者には
+#     この表示自体を出さない。
+#   ④`src/lib/admin/guestMembers.ts`（新規・純粋関数・テスト有）：`isGuestOnlyMember()`が
+#     「アクセス可能な部署が全て招待用部署である」メンバーを判定する。`MembersSection`に
+#     この判定に該当する人だけを集めた「ゲストメンバー（プロジェクト招待で参加）」カードを
+#     追加し、部署絞り込みとは別枠で常時表示するようにした（該当者がいない部署ではカード
+#     自体を出さない）。行の描画は既存の部署絞り込みリストと共通の`MemberRow`コンポーネント
+#     に切り出して重複を無くした。
+#   【変更ファイル】新規`src/lib/admin/resolveAdminGroupId.ts`＋
+#     `__tests__/resolveAdminGroupId.test.ts`、新規`src/lib/admin/guestMembers.ts`＋
+#     `__tests__/guestMembers.test.ts`。`AdminView.tsx`（部署絞り込みロジックの一本化・
+#     ガード画面追加・`MemberRow`抽出・ゲストメンバーカード追加・関連コメント更新）。
+#     `CLAUDE.md`Section 8（管理画面の行を実態に合わせて更新）。
+#     `src/lib/version.ts`（3.59→3.60）。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（既存1352件＋新設
+#     resolveAdminGroupId・guestMembers分）／`npx eslint`変更ファイルに新規エラー0
+#     （既存の無関係な7件はv3.59以前から不変）／`npm run build`成功。
+#   マイグレーション：追加なし（DBスキーマ変更無し）。
+#
+# 最終更新：2026-08-12（v3.60）
 

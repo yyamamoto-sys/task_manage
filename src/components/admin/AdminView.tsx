@@ -20,6 +20,9 @@ import type {
 } from "../../lib/localData/types";
 import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/projectInviteStore";
 import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
+import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
+import { resolveAdminGroupId } from "../../lib/admin/resolveAdminGroupId";
+import { isGuestOnlyMember } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -47,20 +50,26 @@ type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups"
 
 interface Props { currentUser: Member; }
 
-// ===== 部署絞り込み（設定画面ローカル・2026-07-23） =====
+// ===== 部署絞り込み（v3.60・サイドバーの「表示部署」に追従） =====
 //
-// 【設計意図】アプリ全体のcurrentGroupId（ログイン時に自分の所属部署から設定・全画面の表示部署）
-// とは連動させない、AdminView専用のローカル選択。全社スーパー管理者・複数部署アクセスを持つ
-// メンバーが、管理画面上で「今どの部署を見て/編集しているか」を明示的に切り替えられるようにする。
+// 【設計意図】v3.59まではAdminView専用のローカル部署セレクタ（currentGroupIdとは無関係の
+// 独立選択）を持っていたが、v3.60でサイドバーの「表示部署」（appStore.currentGroupId）に
+// 一本化した（山本さん指示。編集対象の部署がサイドバーと設定画面で食い違えないようにする）。
 // group_ids（複数部署アクセス・migration 20260722b）が入っていればそれで判定し、
 // 未設定（バックフィル漏れ等）の古いデータは group_id（ホーム部署）にフォールバックする。
-function memberInGroup(m: Member, groupId: string): boolean {
-  if (!groupId) return true;
+//
+// 🔴 groupId が null/空文字（＝部署が未確定）のときは false を返す（絞り込み無し＝全部署を
+// 見せる、にはしない。2026-06-26のNULL猶予条項の事故と同じ轍を踏まないため。
+// CLAUDE.md Section 1.6参照）。呼び出し元（AdminView本体）は resolveAdminGroupId() で
+// 部署を確定できない場合に専用のガード画面を出し、この関数に null を渡す状態そのものを
+// 極力発生させない設計にしている。
+function memberInGroup(m: Member, groupId: string | null): boolean {
+  if (!groupId) return false;
   if (m.group_ids && m.group_ids.length > 0) return m.group_ids.includes(groupId);
   return m.group_id === groupId;
 }
-function projectInGroup(p: Project, groupId: string): boolean {
-  if (!groupId) return true;
+function projectInGroup(p: Project, groupId: string | null): boolean {
+  if (!groupId) return false;
   if (p.group_ids && p.group_ids.length > 0) return p.group_ids.includes(groupId);
   return p.group_id === groupId;
 }
@@ -93,9 +102,9 @@ export function AdminView({ currentUser }: Props) {
   const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
   const isMobile = useIsMobile();
   const krs        = useAppStore(s => s.keyResults);
-  // 件数バッジ用は selectedGroupId（設定画面ローカルの部署選択）で絞り込むため、
-  // アプリ全体のcurrentGroupId基準のselectScopedProjectsではなく未絞り込みのs.projectsを
-  // 素で取得する（PJSectionが実際に表示する一覧と同じ絞り込み関数=projectInGroupを使う）。
+  // 件数バッジ用は selectedGroupId（サイドバーの「表示部署」に追従）で絞り込むため、
+  // アプリ全体のselectScopedProjectsではなく未絞り込みのs.projectsを素で取得する
+  // （PJSectionが実際に表示する一覧と同じ絞り込み関数=projectInGroupを使う）。
   const rawProjects = useAppStore(s => s.projects);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawObjectives = useAppStore(s => s.objectives);
@@ -108,36 +117,42 @@ export function AdminView({ currentUser }: Props) {
   // （GroupsSectionのgroups一覧と同じ全社件数）。
   const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
 
-  // 部署絞り込みセレクタ：アクセス可能な部署が2つ以上のときだけ表示する
-  // （全社スーパー管理者は全部署、それ以外は自分のgroup_idsに含まれる部署のみ。
-  //  1部署しか持たない普通の部署管理者には選択肢が1つしか無く無意味なため出さない）。
+  // 部署の判定（v3.60・サイドバー「表示部署」に一本化）：
+  // アプリ全体のcurrentGroupId（appStore）を正とし、AdminView独自の部署セレクタは持たない。
+  // accessibleGroups は「編集対象の部署名」を表示するかどうか（2件以上のときだけ表示）の判定と、
+  // currentGroupIdが未確定な場合の唯一のフォールバック先（1件しか無ければそれに決まる）に使う。
+  // filterInviteGroupsForSidebar()でプロジェクト招待用の部署（is_invite_group=true）を除く
+  // のは、サイドバーの表示部署切替（MainLayout.tsx）と選択できる部署の範囲を一致させるため
+  // （サイドバーが選ばせない部署をここだけ選べることにしない。CLAUDE.md Section 25参照）。
   const groupsActive = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
   const accessibleGroups = useMemo(() => {
-    if (isCurrentUserSuperAdmin) return groupsActive;
-    const ids = currentUser.group_ids?.length ? currentUser.group_ids
-      : (currentUser.group_id ? [currentUser.group_id] : []);
-    return groupsActive.filter(g => ids.includes(g.id));
+    const base = isCurrentUserSuperAdmin ? groupsActive
+      : groupsActive.filter(g => {
+          const ids = currentUser.group_ids?.length ? currentUser.group_ids
+            : (currentUser.group_id ? [currentUser.group_id] : []);
+          return ids.includes(g.id);
+        });
+    return filterInviteGroupsForSidebar(base);
   }, [groupsActive, isCurrentUserSuperAdmin, currentUser.group_ids, currentUser.group_id]);
-  const showGroupSelector = accessibleGroups.length >= 2;
-  const [selectedGroupId, setSelectedGroupId] = useState<string>(currentUser.group_id ?? "");
-  // ホーム部署がアクセス可能一覧に含まれない/未設定の場合のフォールバック（初回ロード時のデータ到着待ち等）
-  useEffect(() => {
-    if (accessibleGroups.length === 0) return;
-    if (!accessibleGroups.some(g => g.id === selectedGroupId)) {
-      setSelectedGroupId(accessibleGroups[0].id);
-    }
-  }, [accessibleGroups, selectedGroupId]);
+  const showDeptLabel = accessibleGroups.length >= 2;
+  const currentGroupId = useAppStore(s => s.currentGroupId);
+  // 🔴 selectedGroupIdは「string | null」。空文字にはしない（絞り込み無し＝全部署表示という
+  // 意味を持たせないため。resolveAdminGroupId()のコメント・CLAUDE.md Section 1.6参照）。
+  const selectedGroupId = useMemo(
+    () => resolveAdminGroupId(currentGroupId, accessibleGroups.map(g => g.id)),
+    [currentGroupId, accessibleGroups],
+  );
 
-  // KR/TFの件数は selectedGroupId（設定画面のローカル部署選択）でスコープする
+  // KR/TFの件数は selectedGroupId（サイドバーの「表示部署」に追従）でスコープする
   // （Objective.group_id → KR.objective_id → TF.kr_id と部署を継承。CLAUDE.md Section 1.6参照）。
   // ナビのバッジ数・初期タブ選択・「まだ何も無い」案内が、実際にOKRSection/TFSectionで
   // 表示される件数と一致するようにする。
   const krCount = useMemo(
-    () => keyResultsInGroup(active(krs), rawObjectives, selectedGroupId || null).length,
+    () => keyResultsInGroup(active(krs), rawObjectives, selectedGroupId).length,
     [krs, rawObjectives, selectedGroupId],
   );
   const tfCount = useMemo(
-    () => taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId || null).length,
+    () => taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId).length,
     [rawTfs, krs, rawObjectives, selectedGroupId],
   );
   // プロジェクト・メンバーの件数も同じくselectedGroupIdでスコープする
@@ -185,6 +200,30 @@ export function AdminView({ currentUser }: Props) {
           textAlign: "center", lineHeight: 2,
         }}>
           🔒 管理者のみアクセスできます
+        </div>
+      </div>
+    );
+  }
+
+  // 部署ガード：サイドバーの「表示部署」（currentGroupId）から編集対象の部署を判定できない
+  // 場合（アクセス可能な部署が2つ以上あり、かつcurrentGroupIdがその中のどれとも一致しない
+  // 未確定な状態）は、絶対に「全部署を見せる」側に倒さず、ここで止めてサイドバーでの選択を
+  // 促す（CLAUDE.md Section 1.6「過去に実際に起きた事故と教訓」と同じ轍を踏まないため）。
+  // 通常のログイン済みユーザーではまず発生しない（currentGroupIdはログイン時に自分のホーム
+  // 部署から必ず設定される）が、ホーム部署が未設定の古いデータ等の保険として置く。
+  if (selectedGroupId === null) {
+    return (
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "center",
+        height: "100%",
+        flexDirection: "column", gap: "12px",
+      }}>
+        <div style={{
+          fontSize: "14px", color: "var(--color-text-secondary)",
+          textAlign: "center", lineHeight: 2,
+        }}>
+          🏢 表示する部署を判定できません<br />
+          サイドバーの「表示部署」から部署を選択してください
         </div>
       </div>
     );
@@ -289,22 +328,19 @@ export function AdminView({ currentUser }: Props) {
           </div>
         </div>
 
-        {/* 部署絞り込みセレクタ（アクセス可能な部署が2つ以上のときだけ表示） */}
-        {showGroupSelector && (
+        {/* 編集対象の部署表示（v3.60）：セレクタは廃止し、サイドバーの「表示部署」に従う。
+            アクセス可能な部署が1つしかない利用者には出さない（曖昧さが無く表示する意味が無いため）。 */}
+        {showDeptLabel && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
-              🏢 表示する部署
+              🏢 編集対象の部署
             </span>
-            <div style={{ width: isMobile ? "100%" : "220px" }}>
-              <CustomSelect
-                value={selectedGroupId}
-                onChange={setSelectedGroupId}
-                options={accessibleGroups.map(g => ({ value: g.id, label: g.name }))}
-              />
-            </div>
+            <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+              {accessibleGroups.find(g => g.id === selectedGroupId)?.name ?? selectedGroupId}
+            </span>
             {!isMobile && (
               <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                この選択は設定画面内だけで有効です（他の画面の表示部署には影響しません）
+                サイドバーの「表示部署」に従います。切り替えるにはサイドバーを使用してください
               </span>
             )}
           </div>
@@ -423,7 +459,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
   const saveObjective   = useAppStore(s => s.saveObjective);
   const saveKeyResult   = useAppStore(s => s.saveKeyResult);
   const deleteKeyResult = useAppStore(s => s.deleteKeyResult);
-  // selectedGroupId（設定画面のローカル部署選択）でスコープする。key={selectedGroupId}で
+  // selectedGroupId（サイドバーの「表示部署」に追従）でスコープする。key={selectedGroupId}で
   // 部署切替のたびに本コンポーネントごと再マウントされるため、下のローカル編集state
   // （objTitle等）が前の部署の内容を引きずることはない。
   const ctxObj = useMemo(
@@ -690,7 +726,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   const saveTask                    = useAppStore(s => s.saveTask);
 
   const isMobile = useIsMobile();
-  // selectedGroupId（設定画面のローカル部署選択）でスコープする。key={selectedGroupId}で
+  // selectedGroupId（サイドバーの「表示部署」に追従）でスコープする。key={selectedGroupId}で
   // 部署切替のたびに本コンポーネントごと再マウントされる。
   const ctxObj = useMemo(
     () => pickCurrentObjectiveForGroup(rawObjectives, selectedGroupId || null),
@@ -1524,9 +1560,9 @@ function ToDoForm({
 // ===================================================
 
 function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
-  // 【2026-07-23】以前はアプリ全体のcurrentGroupId基準のselectScopedProjectsを使っていたが、
-  // 設定画面はローカルの部署セレクタ（selectedGroupId）で独立に絞り込む方針に変更したため、
-  // 未絞り込みの s.projects を素で取得し、下の useMemo で selectedGroupId により絞り込む。
+  // 【v3.60】selectedGroupIdはサイドバーの「表示部署」（currentGroupId）に追従するため、
+  // selectScopedProjects（appStore側のスコープ）とは別に、未絞り込みの s.projects を
+  // 素で取得し、下の useMemo で selectedGroupId により絞り込む。
   const rawProjects             = useAppStore(s => s.projects);
   const rawMembers              = useAppStore(s => s.members);
   const saveProject             = useAppStore(s => s.saveProject);
@@ -1553,7 +1589,8 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   const activeKeyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
   const activeTaskForces = useMemo(() => active(rawTaskForces), [rawTaskForces]);
   // 「紐づける TF」ピッカーは、このセクションの他の絞り込み（projects/members）と同じく
-  // 設定画面ローカルのselectedGroupIdでスコープする（v3.02。v2.94時点では未対応だった穴を埋める）。
+  // サイドバーの「表示部署」に追従するselectedGroupIdでスコープする（v3.02からの継続。
+  // v2.94時点では未対応だった穴を埋める）。
   const keyResults = useMemo(
     () => keyResultsInGroup(activeKeyResults, rawObjectives, selectedGroupId),
     [activeKeyResults, rawObjectives, selectedGroupId],
@@ -2083,6 +2120,60 @@ function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isM
 // セクション④：メンバー
 // ===================================================
 
+// メンバー一覧の1行（メインの部署絞り込みリスト・ゲストメンバー別枠リストの両方から使う共通部品）。
+function MemberRow({ m, groups, currentUser, onEdit }: {
+  m: Member; groups: Group[]; currentUser: Member; onEdit: (m: Member) => void;
+}) {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", gap: "10px",
+      padding: "8px 12px",
+      background: "var(--color-bg-primary)",
+      border: `1px solid ${m.id === currentUser.id ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
+      borderRadius: "var(--radius-md)",
+    }}>
+      <Avatar member={m} size={28} />
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+          {m.display_name}
+          {m.id === currentUser.id && (
+            <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-purple)", background: "var(--color-brand-light)", padding: "1px 6px", borderRadius: "3px" }}>
+              あなた
+            </span>
+          )}
+          {m.is_admin && (
+            <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-brand)", padding: "1px 6px", borderRadius: "3px" }}>
+              管理者
+            </span>
+          )}
+          {m.is_super_admin && (
+            <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
+              全社スーパー管理者
+            </span>
+          )}
+          {(m.group_ids?.length ?? 0) > 1 && (
+            <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-info)", background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px" }}>
+              兼務（{m.group_ids!.length}部署）
+            </span>
+          )}
+        </div>
+        {groups.length > 1 && (
+          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            {groups.find(g => g.id === m.group_id)?.name ?? "（部署未設定）"}
+          </div>
+        )}
+        {m.email && (
+          <div style={{ fontSize: "10px", color: "var(--color-brand)" }}>{m.email}</div>
+        )}
+        {m.teams_account && (
+          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
+        )}
+      </div>
+      <IconBtn onClick={() => onEdit(m)}>✏</IconBtn>
+    </div>
+  );
+}
+
 function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
   const rawMembers   = useAppStore(s => s.members);
   const rawGroups    = useAppStore(s => s.groups);
@@ -2091,13 +2182,28 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
   const isMobile = useIsMobile();
   // members：組織全体のアクティブメンバー（「最後の管理者」保護などの判定はグループを問わず
   // 組織全体で行う必要があるため、こちらは絞り込まない）。
-  // scopedMembers：一覧表示だけを選択中の部署に絞り込んだもの（設定画面の部署絞り込み・2026-07-23）。
+  // scopedMembers：一覧表示だけを選択中の部署（サイドバーの表示部署に追従）に絞り込んだもの。
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const scopedMembers = useMemo(
     () => members.filter(m => memberInGroup(m, selectedGroupId)),
     [members, selectedGroupId],
   );
   const groups  = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
+  // 🔴 ゲストメンバー（プロジェクト招待で受け入れた人）：ホーム部署が招待用部署
+  // （is_invite_group=true）そのものになるため、部署絞り込み（scopedMembers）には
+  // 決して現れない。サイドバーが招待用部署を選択肢から除外する（filterInviteGroupsForSidebar・
+  // CLAUDE.md Section 25）ため、部署絞り込みだけに頼るとこの人たちが編集・削除できなくなる
+  // （v3.60・部署絞り込みのサイドバー一本化に伴う是正。src/lib/admin/guestMembers.ts参照）。
+  // タグ・グループ数と同じく「部署概念に馴染まない」区分として、部署絞り込みとは別枠で
+  // 常時表示する（表示できるのは元々RLS＝visible_invite_group_ids()で見えている人だけ）。
+  const inviteGroupIds = useMemo(
+    () => new Set(rawGroups.filter(g => g.is_invite_group).map(g => g.id)),
+    [rawGroups],
+  );
+  const guestMembers = useMemo(
+    () => members.filter(m => isGuestOnlyMember(m.group_ids?.length ? m.group_ids : (m.group_id ? [m.group_id] : []), inviteGroupIds)),
+    [members, inviteGroupIds],
+  );
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -2211,55 +2317,30 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
       >
       <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
         {scopedMembers.map(m => (
-          <div key={m.id} style={{
-            display: "flex", alignItems: "center", gap: "10px",
-            padding: "8px 12px",
-            background: "var(--color-bg-primary)",
-            border: `1px solid ${m.id === currentUser.id ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
-            borderRadius: "var(--radius-md)",
-          }}>
-            <Avatar member={m} size={28} />
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
-                {m.display_name}
-                {m.id === currentUser.id && (
-                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-purple)", background: "var(--color-brand-light)", padding: "1px 6px", borderRadius: "3px" }}>
-                    あなた
-                  </span>
-                )}
-                {m.is_admin && (
-                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-brand)", padding: "1px 6px", borderRadius: "3px" }}>
-                    管理者
-                  </span>
-                )}
-                {m.is_super_admin && (
-                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
-                    全社スーパー管理者
-                  </span>
-                )}
-                {(m.group_ids?.length ?? 0) > 1 && (
-                  <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-info)", background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px" }}>
-                    兼務（{m.group_ids!.length}部署）
-                  </span>
-                )}
-              </div>
-              {groups.length > 1 && (
-                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                  {groups.find(g => g.id === m.group_id)?.name ?? "（部署未設定）"}
-                </div>
-              )}
-              {m.email && (
-                <div style={{ fontSize: "10px", color: "var(--color-brand)" }}>{m.email}</div>
-              )}
-              {m.teams_account && (
-                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
-              )}
-            </div>
-            <IconBtn onClick={() => openEdit(m)}>✏</IconBtn>
-          </div>
+          <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} />
         ))}
       </div>
       </Card>
+
+      {/* ゲストメンバー（プロジェクト招待で受け入れた人）：部署絞り込みの対象外として
+          別枠に常時表示する（本セクション冒頭のコメント・src/lib/admin/guestMembers.ts参照）。
+          該当者がいないほとんどの部署ではこのカード自体を出さない。 */}
+      {guestMembers.length > 0 && (
+        <Card
+          title="ゲストメンバー（プロジェクト招待で参加）"
+          badge={`${guestMembers.length}名`}
+          style={{ marginTop: "12px" }}
+        >
+          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+            特定のプロジェクトのみ招待された部署外のメンバー。部署絞り込みの対象外のため、常に表示する。
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+            {guestMembers.map(m => (
+              <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} />
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* 編集フォーム（既存メンバーをクリック→インライン表示。従来どおり） */}
       {editId && editId !== "new" && (
@@ -3428,9 +3509,13 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
 // 【設計意図】
 // docs/dev/project-invite-plan.md §7・CLAUDE.md Section 25参照。RLS
 // （project_invites_select_same_dept）が「発行者と同じ部署のメンバーが参照できる」に
-// 既に絞っているため、ここでは選択中の部署（selectedGroupId）に紐づくPJの招待だけに
-// さらに絞り込む（他のAdminViewセクションと同じ「設定画面ローカルの部署絞り込み」の
-// 流儀に揃える）。
+// 既に絞っているため、ここでは選択中の部署（selectedGroupId＝サイドバーの表示部署）に
+// 紐づくPJの招待だけにさらに絞り込む（他のAdminViewセクションと同じ絞り込みの流儀に揃える）。
+// 🔴 selectedGroupIdが指すのはPJ自体のホーム部署（projectInGroup）であり、招待用部署
+// （is_invite_group=true）ではない。招待用部署はサイドバーの表示部署の選択肢から除かれて
+// いる（filterInviteGroupsForSidebar・CLAUDE.md Section 25）が、この絞り込みが見るのは
+// 招待先PJが元々属している通常の部署なので、サイドバーへの一本化による影響は無い
+// （v3.60実装時に確認済み）。
 //
 // 🔴 code_hash は取得しない（fetchProjectInvitesが列を明示的に絞っている。本ファイルからは
 // 一切参照しない）。
