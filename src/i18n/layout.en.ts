@@ -29,6 +29,10 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.guide.title": "Guide",
   "layout.guide.buttonTitle": "Open the guide for how to use this app",
 
+  // ----- Project invite: enter invite code (Phase 4 · 2026-08-12) -----
+  "layout.acceptInvite.title": "Enter invite code",
+  "layout.acceptInvite.desc": "If you have a project invite code, use this",
+
   "layout.tourInvite.title": "Welcome. Would you like a tour (about 90 seconds)?",
   "layout.tourInvite.body1": "We'll walk you through the 4 views, AI features, and OKR management mode with on-screen callouts.",
   "layout.tourInvite.body2": "You can replay it anytime later from the \"👋 Replay onboarding\" button inside \"📖 Guide\".",

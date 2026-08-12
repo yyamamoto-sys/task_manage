@@ -83,6 +83,19 @@ export const authJa = {
   "auth.invite.backToLogin": "← ログインへ戻る",
   "auth.invite.awaiting.deadlineWarning": "招待の有効期限は24時間です。確認メールの確認が遅れると招待コードが失効します。失効した場合は招待した相手に再発行を依頼してください。",
 
+  // ----- プロジェクト招待：既にログイン済みのメンバーが受け入れる（Phase 4・2026-08-12） -----
+  "auth.invite.urlPrompt.confirm": "招待を受け入れて、このプロジェクトに参加しますか？",
+  "auth.invite.urlPrompt.failed": "招待の受諾に失敗しました",
+  "auth.invite.member.title": "招待コードを入力",
+  "auth.invite.member.subtitle": "プロジェクトの招待コードを受け取っている場合は、こちらから参加できます。",
+  "auth.invite.member.form.code": "招待コード",
+  "auth.invite.member.form.codePlaceholder": "招待コードを貼り付けてください",
+  "auth.invite.member.submit": "参加する",
+  "auth.invite.member.submitting": "処理中...",
+  "auth.invite.member.error.missingCode": "招待コードを入力してください。",
+  "auth.invite.member.error.noAuthEmail": "認証されたメールアドレスが取得できません。",
+  "auth.invite.member.error.submitFailed": "招待の受諾に失敗しました",
+
   // ----- SetupWizard -----
   "auth.setup.step1.tabLabel": "ようこそ",
   "auth.setup.step2.tabLabel": "部署・メンバー登録",

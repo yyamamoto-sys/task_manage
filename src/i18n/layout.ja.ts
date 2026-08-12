@@ -33,6 +33,10 @@ export const layoutJa = {
   "layout.guide.title": "ガイド",
   "layout.guide.buttonTitle": "このアプリの使い方ガイドを開きます",
 
+  // ----- プロジェクト招待：招待コードを入力（Phase 4・2026-08-12） -----
+  "layout.acceptInvite.title": "招待コードを入力",
+  "layout.acceptInvite.desc": "プロジェクトの招待コードを持っている場合はこちら",
+
   // ----- ツアー招待ダイアログ -----
   "layout.tourInvite.title": "ようこそ。ツアー（約90秒）を見ますか？",
   "layout.tourInvite.body1": "4つのビュー・AI機能・OKR管理モードの場所と使い方を、画面上の吹き出しでご案内します。",

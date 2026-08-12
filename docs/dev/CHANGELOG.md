@@ -5669,5 +5669,68 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     分離されることをビルド出力で確認＝動的importのみで読み込まれる設計が機能している）。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.67）
+# v3.68（2026-08-12）：プロジェクト招待：既にアプリを使っている人が招待された場合に対応。
+#   山本さんの指摘「他部署で既にこのアプリを使っている人が招待された場合には対応して
+#   いますか？」への対応（CLAUDE.md Section 25参照）。従来は`accept_project_invite()`が
+#   無条件でmembersに新規行をINSERTしており、既存メンバー（auth.email()と一致する有効な
+#   members行を既に持つ人）が招待を受諾すると`members_email_unique`に阻まれ23505エラーに
+#   なる上、そもそも入口が無かった（ログイン済みだと`AccessDeniedScreen`にすら到達しない）。
+#   追加：`supabase/migrations/20260812_accept_invite_for_existing_member.sql`（⚠️山本さんが
+#     手動適用）：`accept_project_invite()`に既存メンバー分岐を追加。検証条件1〜4
+#     （存在・未使用・未取消／24時間以内／メール完全一致・auth.email()一致／ハッシュ照合）は
+#     1つも省略せず全て通過した後、auth.email()と一致する有効な（is_deleted=false）members
+#     行があるかで分岐する。無ければ従来どおり新規INSERT。あればINSERTせず、その行の
+#     group_idsに招待用部署を追加する（兼務）。display_name/short_name/initials/color_bg/
+#     color_textの引数は無視し、is_admin/is_super_admin/group_id（ホーム部署）は
+#     UPDATE文のSET句に含めないことで変更不可能にする（分岐を書く必要すらない）。
+#     group_ids追加は`create_project_invite()`と同じ`app.allow_invite_group_grant`
+#     セッション変数の仕組みにそのまま乗せる（新しい抜け道は作らない）。既に招待用部署を
+#     持っている場合は何もせず冪等に成功させる。ドル引用タグは`$fn_accept_project_invite$`
+#     のまま（関数名を変えないため）。
+#   ⚠️ スキーマ検査（`schemaChecks.ts`）で検知できない変更：`kind:"function"`は
+#     `pg_proc`に同名関数が存在するかしか見ないため、名前・引数を変えず本文だけを
+#     差し替える今回の変更は、未適用でも「存在する」と判定され続け適用漏れを検知できない
+#     （マイグレーションファイル内・CLAUDE.md Section 25に明記）。
+#   追加：`src/lib/projectInvite/loggedInInviteFlow.ts`（純粋関数・新規）：
+#     `shouldPromptLoggedInInviteAccept()`（URLの招待コード×currentUserの確定状態から
+#     自動受諾フローの対象にするかを判定）・`buildAcceptPayloadForExistingMember()`
+#     （既存メンバーの現在の表示名・略称・イニシャル・色をそのまま使ってRPCペイロードを
+#     組み立てる。渡された値はSQL側の既存メンバー分岐で無視される）・
+#     `stripInviteParamFromUrl()`（URLからinviteパラメータだけを除く。他のクエリ・ハッシュは
+#     維持）。テストは`__tests__/loggedInInviteFlow.test.ts`（12件）。
+#   追加：`src/components/project/AcceptInviteModal.tsx`：招待コードを手入力して参加する
+#     モーダル（ログイン済み既存メンバー向け）。表示名・略称の入力欄は出さない（サーバー側が
+#     上書きしないため無意味）。`modalStyles.ts`の契約に従う。
+#   変更：`src/App.tsx`（`AuthenticatedApp`）：currentUserが確定した後にURLの招待コード
+#     （`?invite=<code>`）を拾い直すuseEffectを追加。`confirmDialog()`
+#     （`window.confirm`ではない）で「招待を受け入れて、このプロジェクトに参加しますか？」を
+#     確認し、承諾なら`acceptProjectInvite()`を呼んで`window.location.reload()`する。
+#     結果（承諾・キャンセル・失敗）に関わらず`history.replaceState`でURLからinviteパラメータ
+#     を外し、再訪問・再読み込みで同じ確認が繰り返されないようにする。既存の②自動受諾
+#     （`pendingProjectInvite`・未ログイン→signUp経路専用）とは独立した③の経路。
+#   変更：`src/components/layout/MainLayout.tsx`：手入力の入口を追加。
+#     ①デスクトップ：サイドバー footer の「設定（歯車）」ボタンの直下に「🎫 招待コードを
+#     入力」ボタンを追加（ゲストは非表示）。②モバイル：ヘッダーは既にアイコンが密集して
+#     いるため、既存の「🧪 ラボ」ボトムシート（縦に余裕がある）の項目として追加（ゲストは
+#     除く）。**AdminView（`src/components/admin/AdminView.tsx`）の「プロジェクト招待」タブ
+#     には置かなかった**（判断理由）：AdminView全体が部署管理者（`is_admin`/
+#     `is_super_admin`）限定のガード（`canAccessAdmin`）を持ち、通常は非管理者から
+#     到達できない。招待コードを持つ人なら管理者かどうかに関わらず受け入れられる必要が
+#     あるため、この入口はAdminViewの外に置いた。
+#   追加：i18nキー`auth.invite.urlPrompt.*`／`auth.invite.member.*`／
+#     `layout.acceptInvite.*`をja/en両辞書に追加。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（1439テスト。新規12件含む）／
+#     `npx eslint`新規エラー0・新規warning+1（`AcceptInviteModal.tsx`の`autoFocus`。
+#     `AccessDeniedScreen.tsx`/`LoginScreen.tsx`にも既存の同種警告があり許容されている
+#     パターン。git stash -uで変更前23エラー/17警告→変更後23エラー/18警告と確認済み）／
+#     `npm run build`成功。
+#   マイグレーション未適用時の後方互換：`accept_project_invite()`のシグネチャ（引数・戻り値）
+#     は変更していないため、マイグレ未適用のままフロントだけ先にデプロイされても、
+#     新規の人は従来どおり成功し、既存メンバーは従来どおり`members_email_unique`の23505
+#     エラー（`formatErrorForUser`経由の表示）になるだけで、新しい機能が壊れて見えることは
+#     無い（コード読解で確認。詳細はCLAUDE.md Section 25参照）。
+#   マイグレーション：`supabase/migrations/20260812_accept_invite_for_existing_member.sql`
+#     （⚠️山本さんが手動適用・dev→prodの順）。
+#
+# 最終更新：2026-08-12（v3.68）
 

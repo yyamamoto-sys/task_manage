@@ -22,6 +22,9 @@ import type { Member } from "./lib/localData/types";
 import { useT } from "./hooks/useT";
 import { loadPendingProjectInvite, clearPendingProjectInvite } from "./lib/projectInvite/pendingInvite";
 import { acceptProjectInvite } from "./lib/supabase/projectInviteStore";
+import { extractInviteCodeFromSearch } from "./lib/projectInvite/inviteUrl";
+import { shouldPromptLoggedInInviteAccept, buildAcceptPayloadForExistingMember, stripInviteParamFromUrl } from "./lib/projectInvite/loggedInInviteFlow";
+import { confirmDialog } from "./lib/dialog";
 
 export default function App() {
   const t = useT();
@@ -299,6 +302,51 @@ function AuthenticatedApp({
     })();
     return () => { cancelled = true; };
   }, [loading, currentUser]);
+
+  // ③プロジェクト招待：ログイン済みの既存メンバーがURLの招待コード（?invite=<code>）を
+  // 開いた場合の受け入れ（Phase 4・山本さんの指摘対応）。②の自動受諾（保留中の招待）は
+  // currentUserが未確定の間だけ動く経路であり、既にmembersに登録済みの人がこのURLを
+  // 開いてもautoMatch()が成功して通常画面に入るだけで、招待コードはURLに残ったまま
+  // 無視されてしまっていた（行き止まり）。ここでcurrentUserが確定した後に拾い直す。
+  //
+  // 判定（shouldPromptLoggedInInviteAccept）・受諾ペイロードの組み立て
+  // （buildAcceptPayloadForExistingMember）・URLからコードを除く処理
+  // （stripInviteParamFromUrl）は src/lib/projectInvite/loggedInInviteFlow.ts の純粋関数。
+  //
+  // 結果（承諾・キャンセル・失敗）に関わらずURLからinviteパラメータを外す
+  // （history.replaceState。ページ遷移は起こさない）：再訪問・再読み込みで同じ確認・
+  // 同じRPC呼び出しが繰り返されないようにするため。
+  const [inviteUrlPromptChecked, setInviteUrlPromptChecked] = useState(false);
+  useEffect(() => {
+    if (!currentUser || inviteUrlPromptChecked) return;
+    const inviteCode = extractInviteCodeFromSearch(window.location.search);
+    if (!shouldPromptLoggedInInviteAccept(inviteCode, currentUser) || !inviteCode) {
+      setInviteUrlPromptChecked(true);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const accept = await confirmDialog(t("auth.invite.urlPrompt.confirm"));
+      if (cancelled) return;
+      window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
+      if (!accept) {
+        setInviteUrlPromptChecked(true);
+        return;
+      }
+      try {
+        const authEmail = await getAuthEmail();
+        if (!authEmail) throw new Error("認証されたメールアドレスが取得できません");
+        await acceptProjectInvite(buildAcceptPayloadForExistingMember(inviteCode, authEmail, currentUser));
+        // 迷ったらリロードを選ぶ方針。新しく追加されたgroup_idsをRLS越しに確実に反映するため。
+        window.location.reload();
+      } catch (e) {
+        if (cancelled) return;
+        showToast(formatErrorForUser(t("auth.invite.urlPrompt.failed"), e), "error");
+        setInviteUrlPromptChecked(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [currentUser, inviteUrlPromptChecked, t]);
 
   // メンバー読み込み完了後、ログインユーザーを自動マッチング
   // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー

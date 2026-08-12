@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.67
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.68
 #
-最終更新：2026-08-12（v3.67）
+最終更新：2026-08-12（v3.68）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -2167,6 +2167,22 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 - **「RLSは1行も変えない」という当初方針（本セクション冒頭）からの変更点**：Phase 1着手時の方針は「新しいアクセス制御の軸を作らない・既存テーブルのRLSは1行も変えない」だったが、(b)はこの方針の唯一の例外。**`members`テーブル1つだけ**、既存2条項を変更せずORで1条項を追加する形にとどめ、「新しい軸を作らない」（既存の`group_ids`配列の枠組みに乗せる）という設計思想自体は維持している。
 - **🔴 可視性の非対称（残った制約・運用でカバー）**：(b)で「部署の人→招待者」の可視性は解決したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人と`projects.owner_member_id`の2人だけ）に依存したままである。招待者の`visible_invite_group_ids()`は自分の招待用部署だけを返すため、招待者から見える社内メンバーは発行者とPJオーナーの2人に限られる（他の社内担当者は見えない）。**今回は兼務付与を残す**（この2人だけは招待者から見える必要があるため）。(a)の修正で切替UIは出なくなったため、兼務の副作用は解消済み。他の社内担当者を招待者に見せたい場合は、管理画面から招待用部署をその人の`group_ids`に手動で兼務追加する運用でカバーする（自動化していない）。
 - **🔴 部署でスコープする画面を新設するたびに再発しうる構造（v3.60で発見・カードで回避）**：招待用部署（`is_invite_group=true`）は(a)の`filterInviteGroupsForSidebar()`により「部署で絞り込む系のUI」の選択肢から原則除外される設計のため、**招待用部署のみに属するメンバー（招待受諾者）は、部署を条件に絞り込む画面には決して現れない**。AdminViewの設定画面をサイドバーの「表示部署」に一本化した際（v3.60・Section 8参照）にこの構造が実際に踏まれ、`MembersSection`から招待受諾者が編集不能になる実害が発生した（データ自体は`visible_invite_group_ids()`のRLS拡張で見えている。UI側フィルタが不要に隠していただけ）。今回は部署絞り込みとは別枠の常時表示カード（`isGuestOnlyMember()`。`src/lib/admin/guestMembers.ts`）で回避したが、**次に「部署で絞り込む」という設計のUIを新設するときは、同じ理由で招待受諾者が漏れないかを都度確認すること**（自動で防げる仕組みは無い）。
+
+### Phase 5：既存利用者が招待された場合の対応＋ログイン済みの受諾入口（v3.68・2026-08-12）
+
+山本さんの指摘「PJ招待は、アプリ未使用者を対象に設計されたものだと思いますが、他部署で既にこのアプリを使っている人が招待された場合には対応していますか？」への対応。**対応していなかった**：`accept_project_invite()`は無条件で`members`に新規行をINSERTしていたため、既存メンバー（`auth.email()`と一致する有効なmembers行を既に持つ人）が受諾すると`members_email_unique`（部分一意インデックス）に阻まれ23505エラーになる上、**そもそも入口が無かった**（ログイン済みだと`autoMatch()`が成功して通常画面に入るため`AccessDeniedScreen`にすら到達せず、招待コードはURLに残ったまま無視される）。
+
+- **既存メンバー分岐（`supabase/migrations/20260812_accept_invite_for_existing_member.sql`）**：`accept_project_invite()`内で、検証条件1〜4（存在・未使用・未取消／24時間以内／メール完全一致・`auth.email()`一致／ハッシュ照合）を1つも省略せず全て通過した後に、`auth.email()`と一致する有効な（`is_deleted=false`）members行があるかで分岐する。
+  - **無ければ**：従来どおり新規INSERT（挙動を変えない）。
+  - **あれば**：INSERTせず、その行の`group_ids`に招待用部署を追加する（兼務）。`display_name`/`short_name`/`initials`/`color_bg`/`color_text`の引数は無視する（既存の表示名・色を上書きしない）。`is_admin`/`is_super_admin`/`group_id`（ホーム部署）は変更しない——**UPDATE文のSET句を`group_ids`のみにすることで物理的に変更不可能にしている**（個別に「変更しない」分岐を書く必要が無い。書かれていない列は触れない）。
+  - **`group_ids`追加は新しい抜け道を作らない**：`create_project_invite()`が発行者本人・PJオーナーに兼務を付与するときと全く同じ`app.allow_invite_group_grant`セッション変数の仕組み（migrations/20260810_add_project_invites.sql ブロック3）にそのまま乗せる。
+  - 既に招待用部署を持っている場合は何もせず冪等に成功させる（同じPJへの2回目の招待受諾でも重複しない）。
+  - ドル引用タグは`$fn_accept_project_invite$`のまま（関数名・シグネチャを変えないため）。
+- **🔴 スキーマ検査（`schemaChecks.ts`）で検知できない変更**：`kind:"function"`は`pg_proc`に同名関数が存在するかしか見ない（`check_schema_health` RPC・`20260806_add_schema_health_check.sql`参照）。今回は`accept_project_invite()`の名前・引数を変えず**本文だけ**を差し替えるため、このマイグレーションが未適用でも既存の検査項目（`fn_accept_project_invite`）は「存在する」と判定され続け、適用漏れを検知できない。**関数の本文差し替え系マイグレーションは、この仕組みでは原理的に検知不能**（新しい検査手段が無い限り、適用状況は山本さんの手動確認に依存する）。
+- **ログイン済みの受諾入口を2つ追加**：
+  1. **招待リンク（`?invite=<code>`）をログイン済みでも拾う**：`App.tsx`の`AuthenticatedApp`に、`currentUser`が確定した後にURLの招待コードを拾い直すuseEffectを追加した（既存の②自動受諾＝`pendingProjectInvite`はcurrentUserが未確定の間だけ動く経路で、既存メンバーには届かない）。`confirmDialog()`（`window.confirm`ではない。`src/lib/dialog.ts`）で「招待を受け入れて、このプロジェクトに参加しますか？」を確認し、承諾なら`acceptProjectInvite()`を呼んで`window.location.reload()`する。結果（承諾・キャンセル・失敗）に関わらず`history.replaceState`でURLからinviteパラメータを外し、再訪問・再読み込みで同じ確認が繰り返されないようにする。判定・ペイロード組み立て・URL加工は`src/lib/projectInvite/loggedInInviteFlow.ts`の純粋関数（`shouldPromptLoggedInInviteAccept`/`buildAcceptPayloadForExistingMember`/`stripInviteParamFromUrl`）に切り出しテストした。
+  2. **手入力の入口（`src/components/project/AcceptInviteModal.tsx`）**：サイドバー（デスクトップ：設定＝歯車ボタンの直下に「🎫 招待コードを入力」。モバイル：ヘッダーが密集しているため「🧪 ラボ」ボトムシートの項目として追加）から開く。表示名・略称の入力欄は出さない（サーバー側の既存メンバー分岐が上書きしないため無意味）。**AdminViewの「プロジェクト招待」タブには置かなかった**：AdminView全体が部署管理者限定のガード（`canAccessAdmin`）を持ち、招待コードを持つ人は管理者かどうかに関わらず受け入れられる必要があるため、この入口はAdminViewの外に置いた。
+- **マイグレーション未適用時の後方互換**：`accept_project_invite()`のシグネチャ（引数・戻り値）は変更していないため、マイグレ未適用のままフロントだけ先にデプロイされても、新規の人は従来どおり成功し、既存メンバーは従来どおり`members_email_unique`の23505エラー（`formatErrorForUser`経由の表示）になるだけで、既存機能が壊れることは無い。
 
 ---
 

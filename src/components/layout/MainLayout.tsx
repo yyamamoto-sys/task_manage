@@ -47,6 +47,7 @@ import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission
 import type { ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
 import { ProjectRowMenu } from "../project/ProjectRowMenu";
 import { ProjectSettingsModal } from "../project/ProjectSettingsModal";
+import { AcceptInviteModal } from "../project/AcceptInviteModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
 
@@ -323,6 +324,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // @メンション通知（コメントに @自分 が新たに現れたらブラウザ通知）
   useMentionNotifications(currentUser.id);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  // プロジェクト招待：招待コードを手入力して参加する入口（Phase 4・山本さんの指摘対応）。
+  // AdminViewの「プロジェクト招待」タブは部署管理者限定（管理者が1人もいない部署は
+  // ブートストラップモードで全員アクセス可だが、通常は非管理者から到達できない）のため、
+  // 「招待コードを持つ人なら誰でも受け入れられる」べきこの入口はAdminViewの外に置く
+  // （CLAUDE.md Section 25参照）。
+  const [isAcceptInviteOpen, setIsAcceptInviteOpen] = useState(false);
   const [isGuideOpen, setIsGuideOpen] = useState(false);
   const [isOnboardingOverlayOpen, setIsOnboardingOverlayOpen] = useState(false);
   // ツアーの実演（AI相談）で相談パネルに渡す自動入力リクエスト
@@ -1015,6 +1022,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {isMilestoneAddOpen && (
           <MilestoneAddModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsMilestoneAddOpen(false)} />
         )}
+        {isAcceptInviteOpen && (
+          <AcceptInviteModal currentUser={currentUser} onClose={() => setIsAcceptInviteOpen(false)} />
+        )}
         {activeLabView === "graph" && (
           <MobileFullscreenOverlay zIndex={200}>
             <Suspense fallback={<ViewLoading />}>
@@ -1093,6 +1103,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 { icon: "🕸️", label: t("layout.lab.graph.label"), desc: t("layout.lab.graph.desc"), onClick: () => { openLabView("graph"); setIsMobileLabOpen(false); } },
                 { icon: "🗓️", label: t("layout.lab.calendar.label"), desc: t("layout.lab.calendar.desc"), onClick: () => { openLabView("calendar"); setIsMobileLabOpen(false); } },
                 { icon: "🧩", label: t("layout.lab.mypage.label"), desc: t("layout.lab.mypage.desc"), onClick: () => { openLabView("mypage"); setIsMobileLabOpen(false); } },
+                // 招待コードを入力（Phase 4・v3.68）：モバイルヘッダーは既にアイコンが
+                // 密集しているため、既存のラボシート（縦に余裕がある）に置く（ゲストは除く）。
+                ...(!isGuest ? [{ icon: "🎫", label: t("layout.acceptInvite.title"), desc: t("layout.acceptInvite.desc"), onClick: () => { setIsMobileLabOpen(false); setIsAcceptInviteOpen(true); } }] : []),
               ].map(item => (
                 <button
                   key={item.label}
@@ -1524,7 +1537,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         currentGroupId={currentGroupId}
         onSelectGroup={handleSelectGroupNav}
         onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
+        onOpenAcceptInvite={() => setIsAcceptInviteOpen(true)}
       />
+      {isAcceptInviteOpen && (
+        <AcceptInviteModal currentUser={currentUser} onClose={() => setIsAcceptInviteOpen(false)} />
+      )}
       {isVersionHistoryOpen && (
         <Suspense fallback={null}>
           <VersionHistoryModal onClose={() => setIsVersionHistoryOpen(false)} />
@@ -1674,6 +1691,9 @@ interface SidebarProps {
   onSelectGroup: (id: string) => void;
   /** バージョン履歴モーダルを開く（v3.61。VersionBadgeクリック時） */
   onOpenVersionHistory: () => void;
+  /** プロジェクト招待：招待コードを手入力して参加するモーダルを開く（Phase 4・v3.68）。
+   *  AdminView（部署管理者限定）の外に置くため、Sidebar自身がボタンを持つ。 */
+  onOpenAcceptInvite: () => void;
 }
 
 function Sidebar({
@@ -1688,7 +1708,7 @@ function Sidebar({
   width, isResizing, onResizeMouseDown, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
-  onOpenVersionHistory,
+  onOpenVersionHistory, onOpenAcceptInvite,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -2161,6 +2181,30 @@ function Sidebar({
         >
           <GearIcon />
           {!c && <span>{t("layout.admin.title")}</span>}
+        </button>
+        )}
+        {/* 招待コードを入力（Phase 4・v3.68）：部署管理者かどうかに関わらず全メンバーが
+            開けるよう、AdminView（管理者限定）とは別にここに置く（ゲストは非表示）。 */}
+        {!isGuest && (
+        <button
+          onClick={onOpenAcceptInvite}
+          title={t("layout.acceptInvite.title")}
+          style={{
+            width: "100%",
+            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
+            gap: "8px",
+            padding: c ? "6px 0" : "6px 12px",
+            background: "transparent",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            cursor: "pointer",
+            color: "var(--color-text-secondary)",
+            fontSize: "11px",
+            marginBottom: "4px",
+          }}
+        >
+          <span style={{ fontSize: "13px", lineHeight: 1 }}>🎫</span>
+          {!c && <span>{t("layout.acceptInvite.title")}</span>}
         </button>
         )}
         <div style={{

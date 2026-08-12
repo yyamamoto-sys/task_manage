@@ -81,6 +81,19 @@ export const authEn: Record<keyof typeof authJa, string> = {
   "auth.invite.backToLogin": "← Back to login",
   "auth.invite.awaiting.deadlineWarning": "This invite expires in 24 hours. If confirmation is delayed, the invite code will expire. If it does, ask the person who invited you to issue a new one.",
 
+  // ----- Project invite: accepted by an already logged-in member (Phase 4 · 2026-08-12) -----
+  "auth.invite.urlPrompt.confirm": "Accept the invite and join this project?",
+  "auth.invite.urlPrompt.failed": "Failed to accept the invite",
+  "auth.invite.member.title": "Enter invite code",
+  "auth.invite.member.subtitle": "If you have a project invite code, you can join here.",
+  "auth.invite.member.form.code": "Invite code",
+  "auth.invite.member.form.codePlaceholder": "Paste the invite code",
+  "auth.invite.member.submit": "Join",
+  "auth.invite.member.submitting": "Processing...",
+  "auth.invite.member.error.missingCode": "Please enter the invite code.",
+  "auth.invite.member.error.noAuthEmail": "Could not get your authenticated email address.",
+  "auth.invite.member.error.submitFailed": "Failed to accept the invite",
+
   "auth.setup.step1.tabLabel": "Welcome",
   "auth.setup.step2.tabLabel": "Register department & members",
   "auth.setup.step3.tabLabel": "Done",
