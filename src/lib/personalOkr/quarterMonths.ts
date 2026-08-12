@@ -43,3 +43,15 @@ export function classifyMonth(monthStart: Date, today: Date = new Date()): Month
   if (t > todayMonthStart) return "future";
   return "current";
 }
+
+/**
+ * 対象期（fiscalYear・quarter）における既定の月インデックスを返す。
+ * 当月がこの四半期に含まれていればその月、含まれていなければ（過去・未来の四半期を見ている
+ * とき）先頭の月（monthIndex=1）にする。「対象期」で月を選ぶUI（PersonalOkrView.tsx。
+ * 2026-08-12・月の選択をKRをまたいで共有するようにした際に追加）の既定値決定に使う。
+ */
+export function resolveDefaultMonthIndex(fiscalYear: number, quarter: Quarter, today: Date = new Date()): 1 | 2 | 3 {
+  const slots = quarterMonthSlots(fiscalYear, quarter);
+  const current = slots.find(s => classifyMonth(s.monthStart, today) === "current");
+  return current?.monthIndex ?? slots[0].monthIndex;
+}

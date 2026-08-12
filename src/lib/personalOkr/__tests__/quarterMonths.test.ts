@@ -1,6 +1,6 @@
 // src/lib/personalOkr/__tests__/quarterMonths.test.ts
 import { describe, expect, it } from "vitest";
-import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../quarterMonths";
+import { quarterMonthSlots, monthToDateStr, classifyMonth, resolveDefaultMonthIndex } from "../quarterMonths";
 
 describe("quarterMonthSlots", () => {
   it("3Q（7〜9月）は7月/8月/9月をmonth_index 1/2/3で返す", () => {
@@ -41,5 +41,25 @@ describe("classifyMonth", () => {
   });
   it("今日より後の月はfuture", () => {
     expect(classifyMonth(new Date(2026, 8, 1), today)).toBe("future");
+  });
+});
+
+describe("resolveDefaultMonthIndex", () => {
+  const today = new Date(2026, 7, 7); // 2026-08-07（3Q・2か月目）
+
+  it("当月を含む四半期を見ているときは当月のmonthIndexを返す", () => {
+    expect(resolveDefaultMonthIndex(2026, "3Q", today)).toBe(2);
+  });
+
+  it("当月を含まない過去の四半期を見ているときは先頭の月（1）を返す", () => {
+    expect(resolveDefaultMonthIndex(2026, "2Q", today)).toBe(1);
+  });
+
+  it("当月を含まない未来の四半期を見ているときは先頭の月（1）を返す", () => {
+    expect(resolveDefaultMonthIndex(2026, "4Q", today)).toBe(1);
+  });
+
+  it("当月を含まない別年度を見ているときは先頭の月（1）を返す", () => {
+    expect(resolveDefaultMonthIndex(2027, "3Q", today)).toBe(1);
   });
 });

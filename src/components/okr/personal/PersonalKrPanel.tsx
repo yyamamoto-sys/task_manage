@@ -10,6 +10,22 @@
 // 週は computeMonthWeekSegments が返すセグメント数をそのまま使う（5列固定にしない。
 // CLAUDE.md Section 24）。空の週レコードは事前に一括作成せず、goal_state/self_ratingを
 // 書いた時点で初めて行を作る（ensureWeek）。
+//
+// 🔴 月（monthIndex）は v3.55 から props で受け取る（PersonalOkrView.tsx の「対象期」行が
+// 一元管理し、KRタブをまたいで共有する）。以前はこのコンポーネントのローカルstateで、
+// 親が `key={selectedKr.id}` を渡していたためKR切替のたびに当月へリセットされていた
+// （山本さんの報告・2026-08-12「7月を見ていたのに他のKRに切り替えると8月に戻る」）。
+// `key` を外した副作用として、KRを切り替えてもこのコンポーネント自体は作り直されない
+// ため、下書きstate（今月の計画の4欄・bandTarget・週リンクモーダル等）が前のKRの内容を
+// 引きずらないよう、各useEffectのリセット条件に必ず `kr.id` を含める（下記コメント参照）。
+//
+// 🔴 AI解析（見立て・バンドのAI判定）は v3.55 から自動発火しない（山本さんの決定・
+// 2026-08-12：KR切替のたびにAI呼び出しが走り実用に耐えなかったため）。タブを開いた・
+// 月を切り替えただけでは呼ばない。保存済みの解析結果（personal_kr_outlooks）の読み込み
+// （ensureOutlookLoaded・DBを1回読むだけでゼロトークン）は自動のまま。AI呼び出し自体は
+// 明示ボタン（AheadBlock.tsx。未解析なら「✦ 見立てを出す」・解析済みなら「再解析」に
+// 文言が切り替わる1つのボタン）を押したときだけ呼ぶ。CLAUDE.md Section 24 Step J・
+// docs/dev/okr-redesign-plan.md §5-2参照。
 
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
@@ -57,6 +73,8 @@ interface LinkerTarget { weekIndex: number; weekStartStr: string; weekEndStr: st
 interface Props {
   kr: PersonalKr;
   currentUser: Member;
+  /** 対象期の月（PersonalOkrView.tsx「対象期」行が一元管理。KRをまたいで共有する） */
+  monthIndex: 1 | 2 | 3;
   months: PersonalKrMonth[];
   weeks: PersonalKrWeek[];
   memos: PersonalKrMemo[];
@@ -79,6 +97,8 @@ interface Props {
   outlookByKrMonth: Record<string, PersonalKrOutlook | null>;
   outlookAnalyzingKeys: Set<string>;
   outlookErrorByKey: Record<string, string | null>;
+  /** 保存済みの解析結果をDBから1回だけ読む（自動・ゼロトークン）。AI呼び出し自体は行わない */
+  ensureOutlookLoaded: (personalKrId: string, month: string) => Promise<void>;
   onRunOutlookAnalysis: (params: {
     personalKrId: string; month: string; fingerprint: string; context: PersonalOkrAiContextInput; force?: boolean;
   }) => Promise<void>;
@@ -88,22 +108,15 @@ interface Props {
 }
 
 export function PersonalKrPanel({
-  kr, currentUser, months, weeks, memos, loadingDetail,
+  kr, currentUser, monthIndex, months, weeks, memos, loadingDetail,
   keyResults, taskForces, objectives, tasks, todos, taskDependencies,
   weekTasksByWeek, ensureWeekTasksLoaded,
   onSaveMonth, onSaveWeek, onSaveMemo, onLinkWeekTask, onUnlinkWeekTask, onEditKr,
-  outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, onRunOutlookAnalysis,
+  outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, ensureOutlookLoaded, onRunOutlookAnalysis,
   onAiContext, onOpenAiPanel,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const slots = useMemo(() => quarterMonthSlots(kr.fiscal_year, kr.quarter), [kr.fiscal_year, kr.quarter]);
-  const defaultMonthIndex = useMemo(() => {
-    const cur = slots.find(s => classifyMonth(s.monthStart, today) === "current");
-    return cur?.monthIndex ?? slots[0].monthIndex;
-  }, [slots, today]);
-  const [monthIndex, setMonthIndex] = useState<1 | 2 | 3>(defaultMonthIndex);
-  useEffect(() => setMonthIndex(defaultMonthIndex), [kr.id, defaultMonthIndex]);
-
   const slot = slots.find(s => s.monthIndex === monthIndex) ?? slots[0];
   const monthStr = monthToDateStr(slot.monthStart);
   const monthStatus = classifyMonth(slot.monthStart, today);
@@ -136,8 +149,11 @@ export function PersonalKrPanel({
     setRisks(monthRecord?.risks ?? "");
     setBandTarget(monthRecord?.band_target ?? null);
     setMonthError(null);
+    // 🔴 kr.idを依存に含める（keyによる全体remountを外したため）：新旧どちらのKRにも
+    // monthRecordが無い（両方undefined）場合、monthRecord?.idとmonthStrだけでは依存配列が
+    // 変化せずリセットされない＝前のKRの下書きが新しいKRに引きずられてしまう事故になる。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthRecord?.id, monthStr]);
+  }, [kr.id, monthRecord?.id, monthStr]);
 
   const handleSaveMonthPlan = async () => {
     setSavingMonth(true);
@@ -216,8 +232,10 @@ export function PersonalKrPanel({
   const targetAndEvidenceSet = isTargetAndEvidenceSet(monthRecord?.target_and_evidence);
 
   // ===== Phase 3後半：AI解析（見立て・週ごとの一手・捨てる候補・バンドのAI判定） =====
-  // 発火はOKRモードで対象KRタブを開いたとき（＝当月のとき）のみ。粒度は開いているKR
-  // タブ1本だけ（docs/dev/okr-redesign-plan.md §5-2）。
+  // 文脈（okrAiContext）・フィンガープリントは当月タブ表示中は常に組み立てておく
+  // （AIパネルの「迷ったらAIに聞く」機能にも使うため）。粒度は開いているKRタブ1本だけ
+  // （docs/dev/okr-redesign-plan.md §5-2）。🔴 AI呼び出し自体を自動発火する箇所ではない
+  // （下のhandleRunOutlookが明示ボタンから呼ばれたときだけAIを呼ぶ。v3.55）。
   const monthLabel = `${slot.monthStart.getMonth() + 1}月（${monthIndex}か月目）`;
 
   const okrAiContext: PersonalOkrAiContextInput | null = useMemo(() => {
@@ -282,18 +300,23 @@ export function PersonalKrPanel({
   const outlookAnalyzing = outlookAnalyzingKeys.has(outlookKeyStr);
   const outlookError = outlookErrorByKey[outlookKeyStr] ?? null;
 
-  // 🔴 機械計算分は即時描画済み（このコンポーネントの他の部分）。AIが書く部分だけを
-  // 後から差し込む——起動時（または入力が変わったとき）に自動発火し、input_fingerprintが
-  // 前回と一致していればAIを呼ばない（runOutlookAnalysis内部で判定。ここでは常に呼ぶだけでよい）。
+  // 🔴 AI呼び出し自体はここでは発火しない（v3.55・山本さんの決定。KR切替のたびにAI呼び出しが
+  // 走り実用に耐えなかったため）。保存済みの解析結果（personal_kr_outlooks）の読み込みだけを
+  // 自動で行う（ensureOutlookLoaded＝DBを1回読むだけでゼロトークン。前回の見立てが消えて
+  // 見えるのは困るため、これは自動のまま）。機械計算分はこのコンポーネントの他の部分が
+  // 即時描画済み。
   useEffect(() => {
-    if (monthStatus !== "current" || !okrAiContext || fingerprint == null) return;
-    onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [monthStatus, kr.id, monthStr, fingerprint, okrAiContext]);
+    if (monthStatus !== "current") return;
+    ensureOutlookLoaded(kr.id, monthStr);
+  }, [monthStatus, kr.id, monthStr, ensureOutlookLoaded]);
 
-  const handleReanalyze = () => {
+  // 明示ボタン（AheadBlock.tsx）1つで「未解析なら見立てを出す／解析済みなら再解析する」の
+  // 両方を担う。既存の解析結果が無い（outlookRow が null/undefined）ときはforceを付けない
+  // （キャッシュが無いのでどのみちAIを呼ぶ）。既にある場合はforce:trueで、fingerprintが
+  // 一致していても必ず呼ぶ（＝これまでの「再解析」ボタンと同じ挙動）。
+  const handleRunOutlook = () => {
     if (!okrAiContext || fingerprint == null) return;
-    onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext, force: true });
+    onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext, force: outlookRow != null });
   };
 
   // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
@@ -326,6 +349,9 @@ export function PersonalKrPanel({
 
   const [linker, setLinker] = useState<LinkerTarget | null>(null);
   const [weekActionError, setWeekActionError] = useState<string | null>(null);
+  // 🔴 KR切替時にkeyremountが無くなったため、開いていた週リンクモーダル・エラー表示が
+  // 前のKRのものとして残らないよう明示的に閉じる。
+  useEffect(() => { setLinker(null); setWeekActionError(null); }, [kr.id]);
 
   const handleOpenLinker = async (card: { weekIndex: number; weekStartStr: string; weekEndStr: string; existing: PersonalKrWeek | null }, label: string) => {
     setWeekActionError(null);
@@ -340,29 +366,15 @@ export function PersonalKrPanel({
 
   return (
     <div style={{ background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)", padding: "16px 20px 22px" }}>
-      {/* 月の切替バー */}
+      {/* 月の切替バー：月の選択自体は「対象期」行（PersonalOkrView.tsx）に一元化した。
+          ここは選択中の期・月と、その月の状態（確定済み／未来）だけを表示する
+          （二重に月タブを持たない。CLAUDE.md Section 24 Step J・2026-08-12）。 */}
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", paddingBottom: "14px", borderBottom: "1px dotted var(--color-border-primary)" }}>
-        <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>{kr.fiscal_year}年 {kr.quarter}</span>
-        <div style={{ display: "flex", gap: "2px" }}>
-          {slots.map(s => {
-            const status = classifyMonth(s.monthStart, today);
-            const active = s.monthIndex === monthIndex;
-            return (
-              <button
-                key={s.monthIndex}
-                onClick={() => setMonthIndex(s.monthIndex)}
-                style={{
-                  fontFamily: "inherit", fontSize: "11.5px", cursor: "pointer", padding: "5px 13px",
-                  borderRadius: "var(--radius-full)",
-                  border: `1px solid ${active ? "transparent" : status === "past" ? "var(--color-border-primary)" : "transparent"}`,
-                  background: active ? "var(--color-brand)" : "transparent",
-                  color: active ? "#fff" : status === "past" ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
-                  fontWeight: active ? 700 : 400,
-                }}
-              >{s.monthStart.getMonth() + 1}月</button>
-            );
-          })}
-        </div>
+        <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>
+          {kr.fiscal_year}年 {kr.quarter}・{slot.monthStart.getMonth() + 1}月
+          {monthStatus === "past" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（確定済み・読み取り専用）</span>}
+          {monthStatus === "future" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（未来月）</span>}
+        </span>
         <span style={{ flex: 1 }} />
         {kr.source_label && (
           <span
@@ -520,7 +532,7 @@ export function PersonalKrPanel({
               analyzing={outlookAnalyzing}
               outlookError={outlookError}
               canReanalyze={!!okrAiContext}
-              onReanalyze={handleReanalyze}
+              onReanalyze={handleRunOutlook}
             />
           )}
 
@@ -571,6 +583,9 @@ function MemoSection({ kr, currentUser, memos, onSaveMemo }: {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 🔴 PersonalKrPanelがkey={selectedKr.id}で丸ごと作り直されなくなったため（v3.55）、
+  // このKR専用の下書き（未送信のメモ本文）がKR切替後も残らないよう明示的にクリアする。
+  useEffect(() => { setDraft(""); setError(null); }, [kr.id]);
 
   const handleAdd = async () => {
     if (!draft.trim()) return;

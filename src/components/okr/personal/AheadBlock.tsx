@@ -3,9 +3,15 @@
 // 【設計意図】
 // 個人OKRビュー「これから」ブロック（Phase 3・docs/dev/okr-redesign-plan.md §5-1・§7・§8）。
 // 機械計算（ゼロトークン・即時描画）は起動と同時に出す。AIが書く部分（見立て・週ごとの
-// 一手・捨てる候補・バンドのAI判定）はPhase 3後半（v3.52）で実装済み——解析中は
-// この部分だけをスケルイト表示にし、数字と週の状態は最初から出ている（親コンポーネントが
+// 一手・捨てる候補・バンドのAI判定）は明示ボタンを押したときだけ呼ぶ（v3.55・山本さんの
+// 決定。以前はKRタブを開くたびに自動発火していたが実用に耐えなかった）——解析中は
+// この部分だけをスケルトン表示にし、数字と週の状態は最初から出ている（親コンポーネントが
 // 機械計算部分を先に描画し、outlookRow/analyzingを別のstate源から後で差し込む設計）。
+//
+// 🔴 ボタンは1つ（未解析なら「✦ 見立てを出す」・解析済みなら「再解析」に文言が切り替わる）。
+// 同じことをする2つのボタンを並べない。押し先（onReanalyze）はどちらの文言でも同じ
+// コールバック——force判定（既存の解析結果があるかどうか）は呼び出し元
+// （PersonalKrPanel.tsx の handleRunOutlook）が行う。
 //
 // バンドは3値を混ぜない（§6）。表示はband_override（決定）> band_ai（見通し）>
 // band_target（狙い）の優先順位。🔴 band_overrideが入っていればband_aiの値は表示に
@@ -90,7 +96,7 @@ export function AheadBlock({
           ) : outlookRow ? (
             <>解析済み（{formatAnalyzedAt(outlookRow.created_at)}）</>
           ) : outlookRow === null ? (
-            <>AI解析：未実施</>
+            <>AI解析：未実施（ボタンを押すと実行されます）</>
           ) : (
             <>読み込み中…</>
           )}
@@ -103,7 +109,7 @@ export function AheadBlock({
               color: !canReanalyze || analyzing ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
               cursor: !canReanalyze || analyzing ? "default" : "pointer", opacity: !canReanalyze || analyzing ? 0.5 : 1,
             }}
-          >再解析</button>
+          >{outlookRow ? "再解析" : "✦ 見立てを出す"}</button>
         </span>
       </div>
 
@@ -191,7 +197,8 @@ export function AheadBlock({
             </div>
           ) : (
             <div style={{ padding: "10px 13px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px dashed var(--color-border-secondary)", fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>
-              {outlookError ? "AIによる見立てを取得できませんでした。「再解析」をお試しください。" : "AIによる見立てを準備しています。"}
+              {/* 🔴 自動で走るという誤解を与えない。押せば出る、と分かる表示にする（v3.55） */}
+              {outlookError ? "AIによる見立ての取得に失敗しました。もう一度「✦ 見立てを出す」をお試しください。" : "上の「✦ 見立てを出す」を押すと、AIが見立てを出します。"}
             </div>
           )}
         </div>

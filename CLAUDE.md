@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.54
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.55
 #
-最終更新：2026-08-12（v3.54）
+最終更新：2026-08-12（v3.55）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -2031,6 +2031,59 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
   （`PersonalKrPanel.tsx`で`linkedTasks`を参照安定化・`WeekCard.tsx`で計算結果を`useMemo`化）。
 - **対象期にKRが0件のとき、実際にKRが存在する期を候補ボタンで提示する安全網を追加**
   （`src/lib/personalOkr/availablePeriods.ts`。取込先の年度・四半期がずれた場合の再発防止）。
+
+### Step J：月の選択を「対象期」へ一元化・AI解析を明示ボタン起動に変更（v3.55・2026-08-12）
+
+山本さんが実際に使ってみて出た3つの不満への対応。
+
+- **課題1（月がKR切替のたびに当月へ戻る）の原因**：`PersonalOkrView.tsx`が
+  `<PersonalKrPanel key={selectedKr.id} .../>` と`key`を渡していたため、KRを切り替えるたびに
+  コンポーネントごと作り直され、月選択（`PersonalKrPanel.tsx`内のローカルstate）が
+  `defaultMonthIndex`（＝当月）にリセットされていた。
+  **対応**：月の選択を`PersonalOkrView.tsx`側へ持ち上げ、「対象期」行（年input・四半期
+  セレクトの隣）にセレクタを追加した。選択肢は選択中の年・四半期から`quarterMonthSlots()`
+  が導く3つ。既定値は`src/lib/personalOkr/quarterMonths.ts`の新規`resolveDefaultMonthIndex()`
+  （当月がその四半期に含まれていればその月、含まれていなければ先頭の月）が決める。年・
+  四半期を変えるたびにこの既定値へ追従させる（`useEffect`）。`PersonalKrPanel`は
+  `monthIndex`をpropsで受け取るだけになり、内部の月タブUI（ボタン群）は撤去し、
+  選択中の期・月と状態（確定済み／未来）だけを表示する静的な行に縮小した（月選択を
+  二重に持たない）。
+- **🔴 `key={selectedKr.id}`は外した。** KRを切り替えてもコンポーネントが作り直されなくなった
+  副作用として、下書きstate（今月の計画の`positioning`/`activities`/`targetAndEvidence`/
+  `risks`/`bandTarget`・メモの未送信ドラフト・週タスクリンクモーダル）が前のKRの内容を
+  引きずらないことを担保する必要があった。`positioning`等を初期化するuseEffectの依存配列に
+  `kr.id`を追加（以前は`monthRecord?.id`と`monthStr`だけだったため、新旧どちらのKRにも
+  月次計画が無いケースで依存配列が変化せずリセットされない事故が起きうる設計だった）。
+  メモの下書き（`MemoSection`内部state）・週リンクモーダル（`linker`/`weekActionError`）にも
+  `kr.id`変化で明示的にクリアするuseEffectを追加した。
+- **課題2（KR切替のたびに何十秒も待たされる）の確定原因**：`PersonalKrPanel.tsx`の
+  useEffectが、当月のKRタブを開くたびに`runOutlookAnalysis()`（＝Anthropic API呼び出し）を
+  自動発火していたこと（Step H・v3.52で実装した「発火はOKRモードで対象KRタブを開いたときの
+  み」という当初設計そのもの）。KRが複数本あれば切替ごとにAI呼び出しが走り、その応答待ち
+  （実測で「何十秒」）がそのままタブ切替の遅さとして体感されていた。ensureKrDetailLoaded・
+  ensureWeekTasksLoadedは既にキャッシュ判定があり同じKR・同じ週への再クエリは発生しない
+  ことをコード上確認済み（N+1や直列待ちの追加要因ではなかった）。
+- **対応（山本さんの決定）**：AI解析は明示ボタンを押したときだけ発火する。
+  `PersonalKrPanel.tsx`から自動発火のuseEffectを削除し、代わりに`ensureOutlookLoaded()`
+  （保存済みの解析結果をDBから1回読むだけ・ゼロトークン）だけを当月タブ表示中に自動で呼ぶ。
+  機械計算分（残り週数・積み上げ等）は元から即時描画でトークンを使わない。
+  **ボタンは1つ**（`AheadBlock.tsx`）：未解析（`outlookRow`が無い）なら「✦ 見立てを出す」、
+  解析済みなら「再解析」に文言が切り替わる。押し先は同じ`onReanalyze`で、force判定
+  （既存の解析結果があるかどうか）は呼び出し元（`PersonalKrPanel.tsx`の
+  `handleRunOutlook`）が行う——未解析なら`force`無し（キャッシュが無いのでどのみち呼ぶ）、
+  解析済みなら`force:true`（fingerprintが一致していても必ず呼ぶ＝以前の「再解析」ボタンと
+  同じ挙動）。`input_fingerprint`による再解析抑止のロジック（`outlookRunner.ts`）自体は
+  変更していない。
+- **自動で走ると誤解させる文言を排除**：`AheadBlock.tsx`の空き状態プレースホルダを
+  「AIによる見立てを準備しています。」→「上の「✦ 見立てを出す」を押すと、AIが見立てを出します。」
+  に変更。「AI解析：未実施」の表示にも「（ボタンを押すと実行されます）」を添えた。
+- **docs/dev/okr-redesign-plan.md §5-2を実態に合わせて書き換えた**（変更理由と変更日を明記）。
+- **テスト**：`quarterMonths.test.ts`に`resolveDefaultMonthIndex`のケース4件を追加（当月を
+  含む四半期／含まない過去・未来の四半期／含まない別年度）。既存の
+  `personalOkrViewLayout.test.ts`（flexShrink:0のソース走査）は対象期行・KRタブの帯の
+  style自体を変更していないため無修正で通過。
+- **やらないこと**：AI呼び出し本体（`analyzePersonalKrOutlook`）・`input_fingerprint`の
+  計算方法・`AIIntent="okr-personal-outlook"`は変更していない。
 
 ---
 

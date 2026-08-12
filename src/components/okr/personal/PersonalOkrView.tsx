@@ -18,6 +18,7 @@ import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/persona
 import { currentQuarter } from "../../../lib/date";
 import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
+import { quarterMonthSlots, resolveDefaultMonthIndex } from "../../../lib/personalOkr/quarterMonths";
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
@@ -66,6 +67,7 @@ export function PersonalOkrView({ currentUser }: Props) {
   const outlookByKrMonth = usePersonalOkrUiStore(s => s.outlookByKrMonth);
   const outlookAnalyzingKeys = usePersonalOkrUiStore(s => s.outlookAnalyzingKeys);
   const outlookErrorByKey = usePersonalOkrUiStore(s => s.outlookErrorByKey);
+  const ensureOutlookLoaded = usePersonalOkrUiStore(s => s.ensureOutlookLoaded);
   const runOutlookAnalysis = usePersonalOkrUiStore(s => s.runOutlookAnalysis);
 
   // ===== AIパネル（Phase 3後半・計画モードと同じ右パネルの型を流用） =====
@@ -78,6 +80,22 @@ export function PersonalOkrView({ currentUser }: Props) {
 
   const [fiscalYear, setFiscalYear] = useState(() => new Date().getFullYear());
   const [quarter, setQuarter] = useState<Quarter>(() => currentQuarter());
+
+  // 🔴 月の選択は「対象期」行に置き、KRタブをまたいで共有する（2026-08-12・山本さんの報告：
+  // 「7月にチェックを入れた後に他のKRに切り替えるとすべて8月に戻される」への対応。以前は
+  // PersonalKrPanel側のローカルstateで、KR切替時にkey={selectedKr.id}でコンポーネントごと
+  // 作り直されるたびに当月へリセットされていた）。年・四半期を変えたときは、その四半期の
+  // 既定月（当月が含まれていればそれ・無ければ先頭の月）に追従させる。
+  const today = useMemo(() => new Date(), []);
+  const monthSlots = useMemo(() => quarterMonthSlots(fiscalYear, quarter), [fiscalYear, quarter]);
+  const [monthIndex, setMonthIndex] = useState<1 | 2 | 3>(() => resolveDefaultMonthIndex(fiscalYear, quarter, today));
+  useEffect(() => {
+    setMonthIndex(resolveDefaultMonthIndex(fiscalYear, quarter, today));
+  }, [fiscalYear, quarter, today]);
+  const monthOptions = useMemo(
+    () => monthSlots.map(s => ({ value: String(s.monthIndex), label: `${s.monthStart.getMonth() + 1}月` })),
+    [monthSlots],
+  );
 
   const activeKrs = useMemo(
     () => krs
@@ -131,6 +149,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           style={{ width: "84px", fontSize: "12px", padding: "5px 8px", border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
         />
         <CustomSelect value={quarter} onChange={v => setQuarter(v as Quarter)} options={QUARTER_OPTIONS} style={{ width: "150px" }} />
+        <CustomSelect value={String(monthIndex)} onChange={v => setMonthIndex(Number(v) as 1 | 2 | 3)} options={monthOptions} style={{ width: "88px" }} />
         <span style={{ flex: 1 }} />
         {activeKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
           <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>
@@ -169,9 +188,14 @@ export function PersonalOkrView({ currentUser }: Props) {
 
       {selectedKr ? (
         <PersonalKrPanel
-          key={selectedKr.id}
+          // 🔴 key={selectedKr.id}は外した（v3.55）。以前はKR切替のたびにコンポーネントごと
+          // 作り直され、月選択（旧・ローカルstate）が当月にリセットされていた。月は上の
+          // 「対象期」行のstateに一元化したためpropsで渡す。下書きstate（今月の計画の4欄・
+          // バンド）がKR切替時に前のKRの内容を引きずらないことは、PersonalKrPanel内の
+          // useEffectがkr.idを依存配列に含めることで担保している（同ファイルのコメント参照）。
           kr={selectedKr}
           currentUser={currentUser}
+          monthIndex={monthIndex}
           months={monthsByKr[selectedKr.id] ?? []}
           weeks={weeksByKr[selectedKr.id] ?? []}
           memos={memosByKr[selectedKr.id] ?? []}
@@ -193,6 +217,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           outlookByKrMonth={outlookByKrMonth}
           outlookAnalyzingKeys={outlookAnalyzingKeys}
           outlookErrorByKey={outlookErrorByKey}
+          ensureOutlookLoaded={ensureOutlookLoaded}
           onRunOutlookAnalysis={runOutlookAnalysis}
           onAiContext={setAiContext}
           onOpenAiPanel={() => setAiPanelOpen(true)}
