@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.65
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.66
 #
-最終更新：2026-08-12（v3.65）
+最終更新：2026-08-12（v3.66）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1136,7 +1136,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-12（v3.65）
+- 最終更新：2026-08-12（v3.66）
 
 ---
 
@@ -1627,7 +1627,7 @@ OKRモード「Kintoneから取込」で670KBのPDFを解析すると、Supabase
 
 ### 用語（今後この2語で呼び分ける）
 
-- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時196px／折りたたみ時48px／モバイルでは非表示）。幅は `SIDEBAR_WIDTH_EXPANDED`/`SIDEBAR_WIDTH_COLLAPSED` 定数で一元管理する（Sidebar自身の width にのみ使う）。
+- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時は既定196px・160〜420pxの範囲でドラッグ可変／折りたたみ時48px固定／モバイルでは非表示）。折りたたみ時の幅は`SIDEBAR_WIDTH_COLLAPSED`定数（Sidebar自身の width にのみ使う）。展開時の幅は可変のため定数ではなくstate（`sidebarWidth`）で持つ（v3.66・Section 30参照）。
 - **メインエリア**：サイドバーの右側の作業領域（`MainLayout.tsx` の `mainContent` 変数が描画している領域）。
 
 ### 【v3.23〜v3.32の旧方式（廃止）とその欠陥】
@@ -2234,6 +2234,25 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 
 - **コピーの3段フォールバック**：`navigator.clipboard.writeText()` → 失敗時は非表示`<textarea>`＋`execCommand("copy")` → それも失敗したら画面上に選択済みの`<textarea>`を表示して手動コピーを促す（`ErrorBar.tsx`の`copyText()`と同じ考え方だが、`ErrorBar.tsx`は非export・別ドメインのためこのモーダル内に同型のヘルパーを個別に持つ。共通化は今回のスコープ外）。成功・失敗は`showToast()`で通知する。
 - **DBスキーマ変更なし**（`schemaChecks.ts`への追記も不要）。
+
+---
+
+## 30. サイドバーの境界をドラッグで幅変更（v3.66・2026-08-12）
+
+山本さんの依頼「サイドメニューとメインエリアの境界をドラッグで移動できるようにしてください」への対応。
+
+- **範囲は160px〜420px**（`src/lib/layout/sidebarWidth.ts` の `SIDEBAR_MIN_WIDTH`/`SIDEBAR_MAX_WIDTH`。根拠はファイル内コメント参照：最小はナビ項目のラベル文字が折り返さず収まる下限、最大はメインエリアが極端に狭くならない上限）。既定幅は`SIDEBAR_DEFAULT_WIDTH`（196px。旧`SIDEBAR_WIDTH_EXPANDED`定数の値を継承）。
+- **localStorageに記憶**：`KEYS.SIDEBAR_WIDTH`（`src/lib/localData/localStore.ts`）。折りたたみ時の48pxとは別に「展開時の幅」だけを記憶するため、折りたたみ→展開で必ず記憶した幅に戻る（折りたたみ中は`isSidebarCollapsed`で48px固定表示になるだけで、`sidebarWidth`のstate自体は変わらない）。
+- **ダブルクリックで既定幅（196px）に復帰**。
+- **折りたたみ中（48px）はドラッグ不可**：ハンドル自体を`!collapsed`のときだけ描画する（`MainLayout.tsx`の`Sidebar`コンポーネント内）。
+- **キーボード操作**：ハンドルに`role="separator"` `aria-orientation="vertical"` `aria-label` `aria-valuemin/max/now`を付与し、`tabIndex={0}`でフォーカス可能にする。左右矢印キーで`SIDEBAR_WIDTH_KEY_STEP`（12px）ずつ変更する。jsx-a11yの既定ルールは`role="separator"`を「非インタラクティブロール」として扱うため`no-noninteractive-element-interactions`/`no-noninteractive-tabindex`の警告が出るが、ARIAの仕様上separator（window-splitter相当）はfocusable＋キー操作可能にしてよいため、理由コメント付きで`eslint-disable-next-line`している。
+- **純粋関数への切り出し**：`src/lib/layout/sidebarWidth.ts`の`clampSidebarWidth(width)`（最小・最大への丸め。NaN/Infinityは既定幅にフォールバック）と`parseStoredSidebarWidth(raw)`（localStorageの生文字列を検証・復元。null・空文字列・数値変換不能な文字列は既定幅、範囲外の数値は範囲内にクランプ）。テストは`__tests__/sidebarWidth.test.ts`。
+- **ドラッグの実装はConsultationPanel.tsx / PersonalOkrAiPanel.tsxの「左端ドラッグでリサイズ」と同じ流儀**（`position:absolute`の細い帯・`window`の`mousemove`/`mouseup`・refで最新値を保持し`mouseup`時にlocalStorageへ確定保存・ドラッグ中は`document.body.style.cursor`/`userSelect`を変更してテキスト選択を防ぐ）だが、**共通化はしていない**（判断理由）：
+  1. 既存2箇所はキーボード操作に対応していない（マウス専用・`no-static-element-interactions`をdisableして済ませている）。サイドバーは要件上キーボード対応が必須で、実装が構造的に異なる。
+  2. ドラッグの方向が逆（AIパネルは左端を掴んで左に伸ばすと幅が増える＝画面右側に固定された パネル。サイドバーは右端を掴んで右に伸ばすと幅が増える＝画面左側に固定されたパネル）。
+  3. 既存2箇所は安定稼働中でテスト済みのため、今回のスコープ外の理由で触ってリグレッションを増やすリスクを取らない判断をした。
+  重複しているのは「mousemove/mouseup配線・クランプ・localStorage確定保存」という短い手続きのみで、共通化してもコード量の削減効果は小さい。将来3箇所目の要件が増えたときに改めてhook化を検討する。
+- **既存の全画面ラボビュー（Section 20）・ガント（Section 3-6 B2）との整合**：サイドバー幅は`var(--app-sidebar-w)`のようなCSS変数配布ではなく通常のflexboxレイアウト（Sidebarとメインエリアが`display:flex`の兄弟要素）で決まるため、サイドバー幅が変わるとメインエリアは自動的に追従する（Section 20のcontainmentテストが検査する「CSS変数配布方式に戻っていないこと」は今回も保たれている）。ガントのタスクバーは`ganttBodyRef`を`ResizeObserver`で監視し要素サイズが変わるたびに`remeasureDeps()`（依存関係の矢印・バッジの再計算）を呼ぶ設計になっており、サイドバーの幅変更（＝ガントのコンテナ幅の変化）でも自動的に再測定される。ドラッグ中の連続的な幅変更でも同じ経路で追従する（コード読解により確認。ブラウザでの実機確認は山本さんに依頼）。
 
 ---
 

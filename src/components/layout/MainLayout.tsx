@@ -48,6 +48,7 @@ import type { ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
 import { ProjectRowMenu } from "../project/ProjectRowMenu";
 import { ProjectSettingsModal } from "../project/ProjectSettingsModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
 
 /**
  * 【設計意図】
@@ -119,10 +120,11 @@ type AppMode = "plan" | "okr";
 type LabViewId = "graph" | "calendar" | "structure" | "mypage";
 
 /**
- * サイドバー幅（折りたたみ／展開）。Sidebar自身の width が参照する。
+ * サイドバー幅（折りたたみ時）。Sidebar自身の width が参照する。展開時の幅は可変
+ * （v3.66・境界のドラッグでリサイズ可能）のため、`src/lib/layout/sidebarWidth.ts` の
+ * `SIDEBAR_DEFAULT_WIDTH`（196px）が既定値として使われる。
  */
 const SIDEBAR_WIDTH_COLLAPSED = "48px";
-const SIDEBAR_WIDTH_EXPANDED = "196px";
 
 interface Props {
   currentUser: Member;
@@ -189,6 +191,71 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.SIDEBAR_COLLAPSED, next ? "1" : "0");
     return next;
   });
+  // サイドバー幅（境界のドラッグ／キーボードでの変更。v3.66。折りたたみ時の48pxとは別に、
+  // 展開時の幅だけを記憶する＝折りたたみ→展開で必ず記憶した幅に戻る）。
+  // ConsultationPanel.tsx / PersonalOkrAiPanel.tsx の「左端ドラッグでリサイズ」と同じ流儀
+  // （window の mousemove/mouseup・refで最新値を持つ・mouseup時にlocalStorageへ確定保存）だが、
+  // 3箇所目にして初めてキーボード操作（矢印キー）とdblclickでの既定幅復帰が要件に入ったため、
+  // 既存2箇所の共通化はしていない（判断理由はCLAUDE.md Section 20参照）。
+  const [sidebarWidth, setSidebarWidth] = useState<number>(
+    () => parseStoredSidebarWidth(localStorage.getItem(KEYS.SIDEBAR_WIDTH))
+  );
+  const sidebarWidthRef = useRef(sidebarWidth);
+  const isDraggingSidebar = useRef(false);
+  const sidebarDragStartX = useRef(0);
+  const sidebarDragStartW = useRef(0);
+  const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+
+  const handleSidebarResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    if (isSidebarCollapsed) return; // 折りたたみ中はドラッグ不可
+    e.preventDefault();
+    isDraggingSidebar.current = true;
+    sidebarDragStartX.current = e.clientX;
+    sidebarDragStartW.current = sidebarWidthRef.current;
+    setIsSidebarResizing(true);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+  }, [isSidebarCollapsed]);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!isDraggingSidebar.current) return;
+      // 右端ドラッグ：右に動かすと幅が増える
+      const delta = e.clientX - sidebarDragStartX.current;
+      const w = clampSidebarWidth(sidebarDragStartW.current + delta);
+      sidebarWidthRef.current = w;
+      setSidebarWidth(w);
+    };
+    const onUp = () => {
+      if (!isDraggingSidebar.current) return;
+      isDraggingSidebar.current = false;
+      setIsSidebarResizing(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(sidebarWidthRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, []);
+
+  const handleSidebarResizeDoubleClick = useCallback(() => {
+    if (isSidebarCollapsed) return;
+    sidebarWidthRef.current = SIDEBAR_DEFAULT_WIDTH;
+    setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(SIDEBAR_DEFAULT_WIDTH)); } catch { /* ignore */ }
+  }, [isSidebarCollapsed]);
+
+  const handleSidebarResizeKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (isSidebarCollapsed) return;
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    const delta = e.key === "ArrowRight" ? SIDEBAR_WIDTH_KEY_STEP : -SIDEBAR_WIDTH_KEY_STEP;
+    const w = clampSidebarWidth(sidebarWidthRef.current + delta);
+    sidebarWidthRef.current = w;
+    setSidebarWidth(w);
+    try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(w)); } catch { /* ignore */ }
+  }, [isSidebarCollapsed]);
   const [consultPanelWidth, setConsultPanelWidth] = useState(() => {
     try { return Math.min(800, Math.max(300, parseInt(localStorage.getItem(KEYS.CONSULT_PANEL_WIDTH) ?? "400", 10) || 400)); } catch { return 400; }
   });
@@ -1441,6 +1508,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onCreateProject={() => setIsPjCreateOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}
+        width={sidebarWidth}
+        isResizing={isSidebarResizing}
+        onResizeMouseDown={handleSidebarResizeMouseDown}
+        onResizeDoubleClick={handleSidebarResizeDoubleClick}
+        onResizeKeyDown={handleSidebarResizeKeyDown}
         appMode={appMode}
         onToggleMode={handleToggleAppMode}
         onOpenPalette={() => setIsPaletteOpen(true)}
@@ -1580,6 +1652,14 @@ interface SidebarProps {
   onCreateProject: () => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** サイドバー展開時の幅（px）。v3.66・境界のドラッグ／キーボードで変更できる */
+  width: number;
+  /** ドラッグ中：trueの間はwidthのtransitionを止める（カーソル追従の遅延を防ぐ。
+   *  ConsultationPanelのisConsultResizingと同じ考え方） */
+  isResizing: boolean;
+  onResizeMouseDown: (e: React.MouseEvent) => void;
+  onResizeDoubleClick: () => void;
+  onResizeKeyDown: (e: React.KeyboardEvent) => void;
   appMode: AppMode;
   onToggleMode: () => void;
   onOpenPalette: () => void;
@@ -1601,6 +1681,7 @@ function Sidebar({
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage, activeLabView,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
+  width, isResizing, onResizeMouseDown, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
   onOpenVersionHistory,
@@ -1658,14 +1739,46 @@ function Sidebar({
   return (
     <>
     <div data-tour-id="sidebar" style={{
-      width: c ? SIDEBAR_WIDTH_COLLAPSED : SIDEBAR_WIDTH_EXPANDED,
+      position: "relative",
+      width: c ? SIDEBAR_WIDTH_COLLAPSED : `${width}px`,
       flexShrink: 0,
       background: "var(--color-bg-secondary)",
       borderRight: "1px solid var(--color-border-primary)",
       display: "flex", flexDirection: "column",
       overflow: "hidden",
-      transition: "width 0.2s ease",
+      transition: isResizing ? "none" : "width 0.2s ease",
     }}>
+      {/* 境界のドラッグでサイドバー幅を変更（v3.66）。折りたたみ中（48px）は非表示＝ドラッグ不可。
+          キーボード操作：フォーカスして左右矢印キーで変更。ダブルクリックで既定幅(196px)に戻す。
+          ConsultationPanel.tsx / PersonalOkrAiPanel.tsx の左端ドラッグハンドルと同じ流儀
+          （position:absoluteの細い帯・window mousemove/mouseup）だが、キーボード操作対応の
+          ためこのハンドルだけ role="separator" + tabIndex を持つ（判断理由はCLAUDE.md
+          Section 20参照）。 */}
+      {!c && (
+        // role="separator"はjsx-a11yの既定「インタラクティブロール」一覧に無いため警告が出るが、ARIAの仕様上separatorはfocusable+キー操作可能にしてよい（window-splitter相当）。矢印キーでの幅変更に必須のためtabIndexを付ける
+        // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={t("layout.sidebar.resizeHandle.label")}
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={width}
+          // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- role="separator"に矢印キー操作を持たせるため必須
+          tabIndex={0}
+          onMouseDown={onResizeMouseDown}
+          onDoubleClick={onResizeDoubleClick}
+          onKeyDown={onResizeKeyDown}
+          title={t("layout.sidebar.resizeHandle.title")}
+          style={{
+            position: "absolute", right: 0, top: 0, bottom: 0, width: "6px",
+            cursor: "col-resize", zIndex: 5,
+            background: "transparent",
+          }}
+          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
+          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
+        />
+      )}
 
       {/* ロゴ・折りたたみボタン行 */}
       <div style={{

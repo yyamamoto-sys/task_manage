@@ -80,6 +80,8 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.sidebar.appName": "Group Plan Manager",
   "layout.sidebar.expand": "Open menu",
   "layout.sidebar.collapse": "Collapse menu",
+  "layout.sidebar.resizeHandle.label": "Resize sidebar",
+  "layout.sidebar.resizeHandle.title": "Drag to resize (double-click to reset, or use the left/right arrow keys)",
   "layout.sidebar.groupLabel": "Viewing department",
   "layout.sidebar.groupPlaceholder": "Select a department",
   "layout.sidebar.searchPlaceholder": "Search...",

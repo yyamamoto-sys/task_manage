@@ -39,6 +39,8 @@ const KEYS = {
   VIEW_MODE:           "plan_app_view",
   APP_MODE:            "plan_app_mode",
   SIDEBAR_COLLAPSED:   "sidebar_collapsed",
+  /** サイドバー幅（展開時。境界のドラッグ／キーボードでの変更を記憶。v3.66） */
+  SIDEBAR_WIDTH:       "sidebar_width",
   CONSULT_PANEL_WIDTH: "consultation_panel_width",
   /** AI相談パネルの「次の相談候補」折りたたみ開閉状態 */
   CONSULT_FOLLOWUP_OPEN: "consult_followup_open",

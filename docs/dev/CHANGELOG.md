@@ -5580,5 +5580,37 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     `npm run build`成功。`VersionHistoryModal`チャンクの実測gzipは7.76KB（閾値200KBの4%程度）。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.65）
+# v3.66 サイドバーとメインエリアの境界をドラッグで幅変更できるように（2026-08-12）
+#   背景：山本さんの依頼「サイドメニューとメインエリアの境界をドラッグで移動できるようにして
+#     ください」。範囲・localStorage記憶・ダブルクリック既定復帰・折りたたみ中は不可・
+#     キーボード操作対応は統括が仕様として決定。
+#   追加：`src/lib/layout/sidebarWidth.ts`（`SIDEBAR_MIN_WIDTH`=160／`SIDEBAR_MAX_WIDTH`=420／
+#     `SIDEBAR_DEFAULT_WIDTH`=196／`SIDEBAR_WIDTH_KEY_STEP`=12／`clampSidebarWidth()`／
+#     `parseStoredSidebarWidth()`）＋`__tests__/sidebarWidth.test.ts`（11テスト）。
+#   変更：`src/lib/localData/localStore.ts`に`KEYS.SIDEBAR_WIDTH`を追加。
+#   変更：`MainLayout.tsx`：旧`SIDEBAR_WIDTH_EXPANDED`定数（196px固定）を撤去し、
+#     `sidebarWidth`（state。既定値は`parseStoredSidebarWidth(localStorage.getItem(KEYS.SIDEBAR_WIDTH))`）
+#     に置き換えた。`ConsultationPanel.tsx`/`PersonalOkrAiPanel.tsx`と同じ流儀（`window`の
+#     `mousemove`/`mouseup`・ref保持・mouseup時にlocalStorageへ確定保存・ドラッグ中は
+#     `document.body.style.cursor`/`userSelect`を変更）でドラッグリサイズを実装（共通化は
+#     していない。判断理由はCLAUDE.md Section 30参照：既存2箇所はキーボード非対応・ドラッグ
+#     方向が逆・安定稼働中のファイルを触るリスクを避けた）。ハンドルは`Sidebar`コンポーネント内、
+#     サイドバー右端に`position:absolute`の6px幅の帯として実装（`role="separator"`
+#     `aria-orientation="vertical"` `aria-label` `aria-valuemin/max/now` `tabIndex={0}`。
+#     左右矢印キーで`SIDEBAR_WIDTH_KEY_STEP`(12px)ずつ変更。ダブルクリックで既定幅に復帰）。
+#     折りたたみ中（`collapsed`）はハンドル自体を描画しない＝ドラッグ不可。
+#   追加：i18nキー`layout.sidebar.resizeHandle.label`/`.title`をja/en両辞書に追加。
+#   確認：Section 20（全画面ラボビュー）・ガント（`ganttBodyRef`の`ResizeObserver`が
+#     コンテナのサイズ変化で`remeasureDeps()`を呼ぶ設計）は、サイドバー幅がCSS変数配布
+#     ではなく通常のflexboxで決まるため、幅変更に自動追従することをコード読解で確認した
+#     （ブラウザでの実機確認は依頼）。`labViewContainment.test.ts`（`var(--app-sidebar-w`
+#     文字列が`src/`に出現しないことの検査）は今回も通過。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過（1407テスト。新規11件含む）／
+#     `npx eslint`新規エラー0（新規warning2件はjsx-a11yの既定ルールがrole="separator"を
+#     非インタラクティブロールと見なすことによるもので、理由コメント付きで
+#     eslint-disable-next-lineした。既存warning3件は今回変更したファイル以外の既存分）／
+#     `npm run build`成功。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.66）
 

@@ -95,6 +95,8 @@ export const layoutJa = {
   "layout.sidebar.appName": "グループ計画管理",
   "layout.sidebar.expand": "メニューを開く",
   "layout.sidebar.collapse": "メニューを閉じる",
+  "layout.sidebar.resizeHandle.label": "サイドバーの幅を変更",
+  "layout.sidebar.resizeHandle.title": "ドラッグで幅を変更（ダブルクリックで既定幅に戻す・左右矢印キーでも変更できます）",
   "layout.sidebar.groupLabel": "表示部署",
   "layout.sidebar.groupPlaceholder": "部署を選択",
   "layout.sidebar.searchPlaceholder": "検索...",
