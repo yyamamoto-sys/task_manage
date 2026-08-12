@@ -5884,5 +5884,26 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     まま残っていたため訂正（表示文言自体はv3.69で既に更新済みで問題なし）。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-12（v3.71）
+# v3.72（2026-08-12）：選択したタスクをまとめて複製
+#   背景：セミナーシリーズ企画のように「第1回の工程をそのままPJ内で複製して第2回を作る」
+#   ニーズ。investigatorの調査（7製品の公式ドキュメント）で「期間で切り取って複製」方式は
+#   存在しないと判明し、山本さんの判断で「明示選択」方式（Primavera P6のCopy Activity
+#   Optionsに近い）を採用（CLAUDE.md Section 3-7参照）。
+#   追加：`src/lib/project/duplicateSelectedTasks.ts`（`replaceInName`/`buildDuplicatedTasks`/
+#     `buildDuplicatedTaskForceLinks`/`buildDuplicatedTaskProjectLinks`）。日付移動は
+#     `inheritTaskDates.ts`の既存関数をそのまま再利用（新規実装なし）。
+#   追加：`src/components/task/DuplicateTasksModal.tsx`：複製対象の確認・日付の基準
+#     （選択したタスクの開始日/期日、または単一PJに閉じている場合はそのPJのマイルストーン）・
+#     名前の一括置換（任意）・プレビューの4ブロックを1画面に収めたモーダル。Section 21の
+#     モーダル契約（`modalStyles.ts`）に準拠。
+#   変更：`src/hooks/useBulkTaskActions.ts`が使う既存の一括操作バー（ListView/KanbanView）に
+#     「📋 複製」ボタンを追加。
+#   変更：`src/lib/project/taskInheritance.ts`の`buildInheritedDependencies`はproject_idを
+#     参照しない汎用実装だったため無改修で再利用できた。
+#   テスト：`src/lib/project/__tests__/duplicateSelectedTasks.test.ts`（新規28件。日付移動の
+#     境界値・月/年跨ぎ・うるう年・親子関係が選択範囲をまたぐ場合・依存の片側のみ選択・
+#     名前置換の対象が無い場合を固定）。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-12（v3.72）
 

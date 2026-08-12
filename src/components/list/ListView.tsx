@@ -15,6 +15,7 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
 import { computeRangeSelection } from "../../lib/selectionRange";
@@ -191,6 +192,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 選択したタスクを複製（v3.72）。モーダルを開くかどうかだけをここで持つ（本体はDuplicateTasksModal）
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックした行）。
   // レンダーを介す必要が無いため ref で持つ（GanttViewの selectionAnchorRef と同じ流儀）。
   // 選択が丸ごとクリアされる操作（Esc・チェックボックスでの全解除等）では必ずアンカーも一緒に
@@ -834,6 +837,21 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
             <span style={{ flex: 1 }} />
 
+            {/* 選択したタスクを複製 */}
+            <button
+              onClick={() => setShowDuplicateModal(true)}
+              style={{
+                padding: "4px 12px", fontSize: "11px", fontWeight: 500,
+                color: "var(--color-text-secondary)",
+                background: "var(--color-bg-primary)",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                cursor: "pointer", whiteSpace: "nowrap",
+              }}
+            >
+              📋 複製
+            </button>
+
             {/* 一括削除 */}
             <button
               onClick={bulkDelete}
@@ -1108,6 +1126,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           defaultParentId={quickAddParentId}
           defaultProjectId={allTasks.find(t => t.id === quickAddParentId)?.project_id ?? undefined}
           onClose={() => setQuickAddParentId(null)}
+        />
+      )}
+
+      {/* 選択したタスクを複製（v3.72） */}
+      {showDuplicateModal && (
+        <DuplicateTasksModal
+          selectedTasks={allTasks.filter(t => selectedIds.has(t.id))}
+          allTasks={allTasks}
+          currentUser={currentUser}
+          onClose={() => setShowDuplicateModal(false)}
+          onDuplicated={clearSelection}
         />
       )}
     </div>

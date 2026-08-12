@@ -17,6 +17,7 @@ import { todayStr } from "../../lib/date";
 import { TaskEditModal } from "../task/TaskEditModal";
 import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
+import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
@@ -82,6 +83,8 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // 一括操作用：複数選択（リストビューと同じ流儀）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 選択したタスクを複製（v3.72）。モーダルを開くかどうかだけをここで持つ（本体はDuplicateTasksModal）
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたカード）。
   // レンダーを介す必要が無いため ref で持つ（ガント/リストの selectionAnchorRef と同じ流儀）
   const selectionAnchorRef = useRef<string | null>(null);
@@ -359,6 +362,21 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             style={{ width: "160px" }} />
 
           <span style={{ flex: 1 }} />
+
+          {/* 選択したタスクを複製 */}
+          <button
+            onClick={() => setShowDuplicateModal(true)}
+            style={{
+              padding: "4px 12px", fontSize: "11px", fontWeight: 500,
+              color: "var(--color-text-secondary)",
+              background: "var(--color-bg-primary)",
+              border: "1px solid var(--color-border-primary)",
+              borderRadius: "var(--radius-md)",
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            📋 複製
+          </button>
 
           {/* 一括削除 */}
           <button
@@ -673,6 +691,17 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
           onDeleted={() => setEditingTaskId(null)}
+        />
+      )}
+
+      {/* 選択したタスクを複製（v3.72） */}
+      {showDuplicateModal && (
+        <DuplicateTasksModal
+          selectedTasks={tasks.filter(t => selectedIds.has(t.id))}
+          allTasks={tasks}
+          currentUser={currentUser}
+          onClose={() => setShowDuplicateModal(false)}
+          onDuplicated={clearSelection}
         />
       )}
       </div>

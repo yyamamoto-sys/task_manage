@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.71
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.72
 #
-最終更新：2026-08-12（v3.71）
+最終更新：2026-08-12（v3.72）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -525,6 +525,49 @@ window mousemove/mouseup流儀で追従し、`document.elementFromPoint`でド�
 
 **B1/B2/B3/B4/B5のスコープ外（次フェーズ以降）**：SS/FF/SF等の依存種別・ラグ・クリティカルパス自動計算・
 営業日カレンダー（土日祝考慮）は未実装。
+
+### 3-7. 選択したタスクを複製（v3.72）
+
+山本さんの依頼：セミナーシリーズ企画のように「第1回の工程をそのままPJ内で複製して第2回を作る」。
+investigatorの調査（7製品の公式ドキュメント）で「期間（日付範囲）で切り取って複製する」方式は
+どの製品にも存在せず、束ねる単位は「階層」「明示選択」「フォルダ／PJ全体」の3つと判明。
+山本さんの判断で「明示選択」方式（Primavera P6のCopy Activity Optionsに近い）を採用した。
+
+- **起動口**：`src/hooks/useBulkTaskActions.ts`が使う既存の複数選択（ListView/KanbanView共有）
+  に「📋 複製」ボタンを追加。新しい選択方式は発明していない。
+- **計算ロジックの再利用**：日付移動は`src/lib/project/inheritTaskDates.ts`の純粋関数
+  （`computeInheritOffsetDays`/`computeInheritedTaskDates`）をv3.57から無改修で再利用。
+  依存関係の複製（先行・後続の両方が対象内の組だけ）は`src/lib/project/taskInheritance.ts`の
+  `buildInheritedDependencies`をそのまま再利用（project_idを一切参照しない汎用実装のため
+  変更不要だった）。タスク本体の複製は新設の`src/lib/project/duplicateSelectedTasks.ts`
+  （`buildDuplicatedTasks`/`buildDuplicatedTaskForceLinks`/`buildDuplicatedTaskProjectLinks`）
+  ——`taskInheritance.ts`の`buildInheritedTasks`は1つの新規PJ（newProjectId固定）への複製を
+  前提にしているため使えず（この機能は**同じPJ内**で複製する＝project_idは複製元のまま保つ）、
+  専用に用意した。
+- **引き継ぐ／リセットする**：タスク名（名前の一括置換を任意で適用）・担当者・優先度・
+  見積工数・コメント・PJ紐づけ（project_idそのまま）・TF紐づけ（`task_task_forces`）・
+  追加PJ紐づけ（`task_projects`）・ToDo紐づけ（`todo_ids`）・タグは引き継ぐ。ステータスは
+  `todo`にリセット・完了関連は`appStore.saveTask`の choke point が自動でクリアする。
+  ベースライン（B4）・`finalized_mentions`は意図的に複製せず、複製後のタスクとして
+  改めて捕捉・空の状態にする。
+- **親子関係が選択範囲をまたぐ場合**：子だけ選択・親は未選択なら、複製後は親を持たない
+  独立したトップレベルタスクになる（`buildInheritedTasks`と同じ既存の判断を踏襲）。
+  親だけ選択・子は未選択なら、その子は複製されない（「選択していないものは増えない」を
+  一貫させ、利用者が驚かない動作にした）。どちらの場合もモーダルの「複製対象の確認」に
+  件数を明示する。
+- **マイルストーンは複製対象にしない**：選択の起点がタスク選択のみで、マイルストーンを
+  選ぶ既存UIが無いため（追加すると主要ユースケースから外れる）。一方、日付の基準
+  （アンカー）の選択肢には、選択したタスクが単一PJに閉じている場合のみ、そのPJの
+  マイルストーンも含める。
+- **保存順序とB3対策**：`ProjectCreateModal`の「他PJから引き継ぐ」と同じ順序（親を先に
+  `saveTask({skipCascade:true})`→成功したIDだけで子を保存→両端が保存成功したタスクだけを
+  `addTaskDependency`→最後にTF/PJ紐づけを`addTaskTaskForce`/`addTaskProject`で追加）。
+  `skipCascade:true`は、複製直後の新タスクはまだ依存関係を持たずB3は本来空振りするが、
+  一括作成系（`ProjectCreateModal`・`runBulkShift`）と同じ防御的な付与として揃えた。
+  トランザクションではないため個々の保存の失敗は他を止めず、成功件数・失敗件数をトーストで
+  知らせる（`alertDialog`／`window.alert`は使わない）。
+- **UI**：`src/components/task/DuplicateTasksModal.tsx`。Section 21の契約
+  （`modalStyles.ts`）に従う。プレビュー・名前置換は任意入力欄で、確定前に必ず表示する。
 
 ---
 
