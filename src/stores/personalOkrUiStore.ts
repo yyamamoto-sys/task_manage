@@ -239,7 +239,15 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
       }));
     } catch (e) {
+      // 🔴 outlookByKrMonth[key]をundefinedのまま残さない（AheadBlockのisLoadingOutlookは
+      // outlookRow===undefinedでスケルトンを出し続けるため、取得失敗時にnullで確定させないと
+      // 「これから」のAI部分が永久にスケルトン表示のまま止まる。personal_kr_outlooksテーブル
+      // 未適用のような構造的エラーで実際に発生した事故（2026-08-12）。
+      // outlookFetchedKeysも立てて、同じ失敗に対する無駄なSELECTの再発火を防ぐ（「再解析」ボタンは
+      // force:trueでrunOutlookAnalysisを直接呼ぶため、この早期returnの影響は受けない）。
       set(state => ({
+        outlookByKrMonth: { ...state.outlookByKrMonth, [key]: state.outlookByKrMonth[key] ?? null },
+        outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
         outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析結果の取得に失敗しました" },
       }));
     }

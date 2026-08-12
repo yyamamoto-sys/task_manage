@@ -171,6 +171,20 @@ export function PersonalKrPanel({
   const monthWeeks = useMemo(() => weeks.filter(w => w.month === monthStr && !w.is_deleted), [weeks, monthStr]);
   const weekCards = useMemo(() => buildWeekCards(segments, monthWeeks), [segments, monthWeeks]);
 
+  // 🔴 週カードごとのlinkedTasksをここで1回だけ計算する（以前は下のJSXのweekCards.map内で
+  // 毎レンダー計算していたため、月次計画の欄に1文字打つだけでも週カード全件分のtasks.find()が
+  // 再実行されていた。WeekCard側のgetIncompletePredecessors（allTasks×taskDependenciesの
+  // フルスキャン）はこのlinkedTasksの参照安定性に依存してメモ化するため、ここが不安定だと
+  // 下流のメモ化が効かない＝重さの本体はここではなくWeekCard側だが、参照安定化はここが起点）。
+  const linkedTasksByWeekIndex = useMemo(() => {
+    const map: Record<number, Task[]> = {};
+    for (const card of weekCards) {
+      const linkedIds = (weekTasksByWeek[card.existing?.id ?? ""] ?? []).map(l => l.task_id);
+      map[card.weekIndex] = linkedIds.map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
+    }
+    return map;
+  }, [weekCards, weekTasksByWeek, tasks]);
+
   // 既存の週レコードに紐づくタスクを、リンクモーダルを開かなくても週カードに表示できるよう
   // 事前に読み込む（1KRあたり最大6週分・件数は小さいのでまとめて発火してよい）
   useEffect(() => {
@@ -396,6 +410,11 @@ export function PersonalKrPanel({
               <span>今月の計画</span><span style={ruleStyle} />
               <span>{monthStatus === "past" ? "確定済み・読み取り専用" : monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
             </div>
+            {monthEditable && !monthRecord && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: "8px", lineHeight: 1.6 }}>
+                {slot.monthStart.getMonth() + 1}月の計画はKintoneにまだ無いようです。Kintone側の入力を待たず、ここに直接入力して保存できます（後でKintoneから取込むと上書きされます）。
+              </div>
+            )}
             {monthError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{monthError}</div>}
             <div style={cardStyle}>
               {(["positioning", "activities", "targetAndEvidence", "risks"] as const).map(field => {
@@ -454,8 +473,7 @@ export function PersonalKrPanel({
             {weekActionError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{weekActionError}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
               {weekCards.map(card => {
-                const linkedIds = (weekTasksByWeek[card.existing?.id ?? ""] ?? []).map(l => l.task_id);
-                const linkedTasks = linkedIds.map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
+                const linkedTasks = linkedTasksByWeekIndex[card.weekIndex] ?? [];
                 return (
                   <WeekCard
                     key={card.weekIndex}

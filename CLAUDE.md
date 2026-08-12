@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.52
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.53
 #
-最終更新：2026-08-11（v3.52）
+最終更新：2026-08-12（v3.53）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1826,7 +1826,9 @@ AI呼び出し（見立て・捨てる候補・原因の推定・バンドのAI�
 タブ1本・入力が前回と変わったときだけ」に限定する設計（§5-2）の前提を崩さない。
 
 - **`personal_kr_outlooks`テーブルを追加**（`migrations/20260811_add_personal_kr_outlooks.sql`。
-  ⚠️山本さんが手動適用・未適用）。AI解析の結果を履歴として積む（UPDATEしない）。RLSは既存の
+  **2026-08-12に適用済み**＝テーブル作成・RLS有効化を確認。適用漏れは`SchemaHealthBanner`
+  （Section 22）が「個人OKR：AI解析の結果とキャッシュテーブルが見つかりません」として検知した）。
+  AI解析の結果を履歴として積む（UPDATEしない）。RLSは既存の
   `personal_kr_owner_member_id()`をそのまま再利用（新しいヘルパー関数を増やさない）。今回は
   テーブルを作るだけで、書き込みは無い（Phase 3後半でAI呼び出しを実装したときに初めて発生する）。
 - **入力フィンガープリント**（`src/lib/personalOkr/outlookFingerprint.ts`の
@@ -1951,6 +1953,25 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 
 **やらないこと（Phase 4・5で実施）**：月末の振り返り下書き生成・部署ナレッジ
 （`okr_knowledge_docs`）・グループビューは今回作っていない。
+
+### Step I：バグ修正（v3.53・2026-08-12）
+
+- 🔴 **KRタブの帯には`flexShrink:0`が必須。** `PersonalOkrView.tsx`のKRタブの帯は
+  `overflowX:"auto"`を持つflexアイテムで、明示的な`flexShrink`が無いと自動最小サイズが0になる
+  （Section 21が本文に`minHeight:0`を要求するのと対になるCSSの規則）。選択中KRの中身
+  （`PersonalKrPanel`）は縦に非常に長いため、親の高さが不足するとこの帯だけが真っ先に高さ0まで
+  潰れ「KRタブが1つも表示されない」ように見えていた（実機で発生・山本さんの報告）。KRタブの帯・
+  「対象期」の行の両方に`flexShrink:0`を付けて固定した。再発防止テストは
+  `personal/__tests__/personalOkrViewLayout.test.ts`（この2箇所をソース走査でピン止め。
+  一般ルール化は誤検知が多いため見送った）。
+- **「これから」のAI解析取得が失敗すると`isLoadingOutlook`が永久にtrueのままになるバグを修正**
+  （`personalOkrUiStore.ts`の`ensureOutlookLoaded()`。取得失敗時も`outlookByKrMonth[key]`を
+  `null`で確定させる）。`personal_kr_outlooks`未適用時にこの状態で実際に発生した。
+- **週カードの`getIncompletePredecessors`（部署全体のtasks×taskDependenciesのフルスキャン）が
+  「今月の計画」への1文字入力ごとに週カード全件×紐づけタスク全件ぶん再実行されていた重さを修正**
+  （`PersonalKrPanel.tsx`で`linkedTasks`を参照安定化・`WeekCard.tsx`で計算結果を`useMemo`化）。
+- **対象期にKRが0件のとき、実際にKRが存在する期を候補ボタンで提示する安全網を追加**
+  （`src/lib/personalOkr/availablePeriods.ts`。取込先の年度・四半期がずれた場合の再発防止）。
 
 ---
 

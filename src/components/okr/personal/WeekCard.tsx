@@ -10,7 +10,7 @@
 // B1：getIncompletePredecessors/formatBlockerNames）をそのまま再利用する
 // （CLAUDE.md Section 3-6。再実装しない）。
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { Task, TaskDependency, WeekSelfRating } from "../../../lib/localData/types";
 import { computeDelayDays, formatDelayLabel } from "../../gantt/ganttUtils";
 import { getIncompletePredecessors, formatBlockerNames } from "../../../lib/dependencies/gate";
@@ -56,6 +56,21 @@ export function WeekCard({
 
   const bg = selfRating ? RATING_BG[selfRating] : "var(--color-bg-primary)";
   const borderTop = selfRating ? RATING_BORDER[selfRating] : "var(--color-border-primary)";
+
+  // 🔴 getIncompletePredecessors（allTasks×taskDependenciesのフルスキャン）は月次計画の
+  // 欄への1文字入力ごとに週カード全件×紐づけタスク全件ぶん再実行されていた（親
+  // PersonalKrPanelの再レンダーで毎回計算し直していたため）。allTasks・taskDependenciesは
+  // 部署全体の全タスク・全依存関係（数百〜数千件になり得る）で、linkedTasksが参照安定化
+  // された今も、この計算自体はメモ化しないと親の再レンダーのたびに走る（CLAUDE.md課題B調査
+  // 2026-08-12・カクつきの実測原因）。
+  const taskAnnotations = useMemo(
+    () => linkedTasks.map(t => ({
+      task: t,
+      delay: formatDelayLabel(computeDelayDays(t)),
+      blockers: getIncompletePredecessors(t.id, allTasks, taskDependencies),
+    })),
+    [linkedTasks, allTasks, taskDependencies],
+  );
 
   const handleRate = async (v: "o" | "t" | "x") => {
     await onSetRating(selfRating === v ? null : v);
@@ -127,20 +142,16 @@ export function WeekCard({
       )}
 
       {/* 紐づけタスク */}
-      {linkedTasks.length > 0 && (
+      {taskAnnotations.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
-          {linkedTasks.map(t => {
-            const delay = formatDelayLabel(computeDelayDays(t));
-            const blockers = getIncompletePredecessors(t.id, allTasks, taskDependencies);
-            return (
-              <div key={t.id} title={blockers.length > 0 ? `先行待ち：${formatBlockerNames(blockers)}` : undefined} style={{ fontSize: "10px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "4px" }}>
-                <span style={{ flexShrink: 0 }}>{t.status === "done" ? "✅" : "・"}</span>
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
-                {delay && <span style={{ color: "var(--color-text-danger)", flexShrink: 0 }}>{delay}</span>}
-                {blockers.length > 0 && <span style={{ color: "var(--color-text-warning)", flexShrink: 0 }}>⏱待ち</span>}
-              </div>
-            );
-          })}
+          {taskAnnotations.map(({ task: t, delay, blockers }) => (
+            <div key={t.id} title={blockers.length > 0 ? `先行待ち：${formatBlockerNames(blockers)}` : undefined} style={{ fontSize: "10px", color: "var(--color-text-secondary)", display: "flex", alignItems: "center", gap: "4px" }}>
+              <span style={{ flexShrink: 0 }}>{t.status === "done" ? "✅" : "・"}</span>
+              <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
+              {delay && <span style={{ color: "var(--color-text-danger)", flexShrink: 0 }}>{delay}</span>}
+              {blockers.length > 0 && <span style={{ color: "var(--color-text-warning)", flexShrink: 0 }}>⏱待ち</span>}
+            </div>
+          ))}
         </div>
       )}
       {editable && (

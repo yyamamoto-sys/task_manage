@@ -5024,5 +5024,69 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #      マイグレーション：追加なし（`personal_kr_outlooks`テーブルはPhase 3前半で作成済み・
 #             適用済みの前提で実装）。
 #
-# 最終更新：2026-08-11（v3.52）
+# ============================================================
+# v3.53（2026-08-12）個人OKR画面の不具合修正：KRタブの帯がflexShrinkでの潰れにより
+#   高さ0で消える・「これから」AI解析の無限ローディング化・週カードの重い再計算（カクつき）
+# ============================================================
+#   【背景・課題A（KRごとに選択できない）の確定原因】山本さんの実機スクリーンショットにより、
+#   データ側の不整合ではなくCSSのレイアウト崩れであることが確定した。
+#     - `personal_krs.fiscal_year`は2026、`quarter`は全KR"3Q"で一致しており対象期のズレは
+#       無かった（当初の仮説は否定された）。
+#     - `PersonalOkrView.tsx`のKRタブの帯（`overflowX:"auto"`を持つflexアイテム）に
+#       `flexShrink`の指定が無かった。overflowが`visible`以外の値を持つflexアイテムは
+#       自動最小サイズが0になる（CLAUDE.md Section 21が本文に`minHeight:0`を要求するのと
+#       対になるCSSの規則）。選択中KRの中身（`PersonalKrPanel`。折りたたみ・月次計画・
+#       週カード・「これから」・メモまで含め縦に非常に長い）に対して親コンテナの高さが
+#       不足すると、flex-shrinkの綱引きで「自由に0まで縮んでいい」判定になっているこの帯
+#       だけが真っ先に高さ0まで潰れ、「KRタブが1つも表示されない」ように見えていた
+#       （同じ帯の中の「＋KRを追加」「📥 Kintoneから取込」ボタンも一緒に消えていたことから
+#       特定。他の行（「対象期」の行等）はoverflow指定を持たないため元から潰れていなかった）。
+#       修正：`PersonalOkrView.tsx`のKRタブの帯・対象期の行の両方に`flexShrink:0`を追加。
+#       再発防止テスト：新規`personalOkrViewLayout.test.ts`（この2箇所にflexShrink:0が
+#       残っていることをソース走査で検査。一般ルール化は誤検知リスクが高いため見送った
+#       理由をファイル冒頭に明記）。
+#     - `personal_kr_months`は6KRとも7月分（month_index=1）のみ存在し8月分の行が無い状態
+#       だった。Kintone側の月次振返り記録に8月欄がまだ入力されていない（8月半ばで未記入）
+#       ことに起因する取込結果であり、取込・抽出コード側の不具合ではないと判断した。当月
+#       （`monthStatus==="current"`）でKintone取込レコードが無い場合の手入力・保存は元から
+#       正しく動作していた（コードのバグではない）。山本さんが「8月が表示できない」と言って
+#       いたのは、上記のKRタブの帯が消えていたため「どのKRの8月を編集しているのか選べない・
+#       分からない」状態を指していたと確定した。
+#     - `personal_kr_outlooks`テーブルが2026-08-12にprod適用されるまでの間、当月タブを開くと
+#       `ensureOutlookLoaded()`のSELECTが42P01相当で失敗し、`outlookByKrMonth[key]`が
+#       `undefined`のまま放置されていた。KRタブ・月タブ・週の目標状態・メモへの影響は無かった
+#       （失敗はtry/catchで握りつぶされ他のstateには伝播しない）が、「これから」ブロックのAI
+#       部分だけが永久にスケルトン表示のまま止まっていた。
+#   修正1（課題A・本丸）：`src/components/okr/personal/PersonalOkrView.tsx`のKRタブの帯・
+#          「対象期」の行に`flexShrink:0`を追加。
+#   修正2：`src/stores/personalOkrUiStore.ts`の`ensureOutlookLoaded()`。取得失敗時も
+#          `outlookByKrMonth[key]`を`null`で確定させ`outlookFetchedKeys`に加える（＝
+#          `AheadBlock`の`isLoadingOutlook`が永久にtrueにならず、エラー表示に切り替わる。
+#          「再解析」ボタンは`force:true`で直接`runOutlookAnalysis`を呼ぶため影響を受けない）。
+#   修正3（課題B・本丸）：`src/components/okr/personal/PersonalKrPanel.tsx`に
+#          `linkedTasksByWeekIndex`（週カードごとの紐づけタスクを1回のuseMemoで計算）を
+#          追加し、以前は`weekCards.map()`内で毎レンダー計算していた`linkedTasks`を
+#          参照安定化した。`src/components/okr/personal/WeekCard.tsx`は
+#          `getIncompletePredecessors`（部署全体のtasks×taskDependenciesのフルスキャン）と
+#          `computeDelayDays`の結果を`useMemo`でキャッシュ。以前は「今月の計画」欄に1文字
+#          打つだけで週カード全件×紐づけタスク全件ぶんこのフルスキャンが毎キーストロークで
+#          再実行されていた（カクつきの実測原因。既存判定ロジック自体は変更していない）。
+#   修正4：`src/components/okr/personal/PersonalKrPanel.tsx`の「今月の計画」に、当月かつ
+#          Kintone取込のレコードが無い場合の案内文（Kintoneの入力を待たずアプリ側に直接
+#          入力・保存できる旨）を追加。既存の「current＝編集可・textareaが最初から出る」設計
+#          自体は元から正しく動いていた（コードのバグではない）が、入口の分かりにくさへの
+#          対策として明示した。
+#   修正5（安全網）：`src/lib/personalOkr/availablePeriods.ts`（新規・純粋関数
+#          `listAvailablePersonalKrPeriods()`）を追加し、`PersonalOkrView.tsx`の
+#          「対象期にKRが0件」の空表示に、実際にKRが存在する（年度・四半期）を件数付きの
+#          候補ボタンとして出す（クリックで即切替）。今回の事象そのものの原因ではなかったが、
+#          将来Kintone取込のAI抽出が別の年度・四半期を返した場合に利用者が詰まないための
+#          再発防止として実装した（依頼元：CLAUDE.md Section 24）。
+#   テスト：新規`availablePeriods.test.ts`(4件)・`personalOkrViewLayout.test.ts`(2件)。
+#          既存テストへの影響なし。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`1244件全通過（1238件→1244件・+6件）／
+#          `npx eslint`変更ファイルに新規エラー0。
+#   マイグレーション：追加なし。
+#
+# 最終更新：2026-08-12（v3.53）
 

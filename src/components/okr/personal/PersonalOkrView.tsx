@@ -17,6 +17,7 @@ import type { Member, PersonalKr, Quarter } from "../../../lib/localData/types";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { currentQuarter } from "../../../lib/date";
 import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
+import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
@@ -98,6 +99,9 @@ export function PersonalOkrView({ currentUser }: Props) {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const weightTotal = useMemo(() => sumWeightPct(activeKrs), [activeKrs]);
   const selectedKr = activeKrs.find(k => k.id === selectedKrId) ?? null;
+  // 🔴 対象期にKRが0件のとき、実際にKRが存在する期を候補として出す（取込が別の年度・
+  // 四半期に書き込まれていた場合に利用者が詰まないための安全網。CLAUDE.md Section 24）
+  const availablePeriods = useMemo(() => listAvailablePersonalKrPeriods(krs), [krs]);
 
   const tabStyle = (active: boolean): React.CSSProperties => ({
     fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap", textAlign: "left",
@@ -113,7 +117,12 @@ export function PersonalOkrView({ currentUser }: Props) {
     <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "auto", padding: "14px 20px 26px" }}>
       {/* 期の選択 */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
+      {/* 🔴 flexShrink:0が必須（CLAUDE.md Section 21と同種の罠の裏返し）：この行はoverflow指定を
+          持たないため元から潰れていなかったが、将来overflow系のスタイルを足す変更が入っても
+          安全なように明示しておく。下のKRタブの帯（overflowX:autoを持つため自動最小サイズが0に
+          なり、選択中KRの中身が縦に長いとタブの帯自体が高さ0まで潰れてタブが見えなくなる事故が
+          実機で発生した。2026-08-12・v3.53で修正）と対称にする。 */}
+      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap", flexShrink: 0 }}>
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>対象期</span>
         <input
           type="number"
@@ -131,7 +140,13 @@ export function PersonalOkrView({ currentUser }: Props) {
       </div>
 
       {/* KRタブ */}
-      <div style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)" }}>
+      {/* 🔴 flexShrink:0が必須。overflowX:"auto"を持つフレックスアイテムは自動最小サイズが0になる
+          （CLAUDE.md Section 21が本文にminHeight:0を要求するのと同じCSSの規則の裏返し）ため、
+          親の高さが選択中KRの中身（PersonalKrPanel。縦に長い）に対して不足すると、flex-shrinkの
+          対象としてこの帯だけが真っ先に高さ0まで潰れ、「KRタブが1つも表示されない」ように見える
+          （実機で発生・2026-08-12。「＋KRを追加」「📥 Kintoneから取込」ボタンも同じ帯の中にあり
+          一緒に消えていたことから特定した）。 */}
+      <div style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
         {activeKrs.map(kr => (
           <button key={kr.id} onClick={() => setSelectedKrId(kr.id)} style={tabStyle(kr.id === selectedKrId)}>
             <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
@@ -185,7 +200,21 @@ export function PersonalOkrView({ currentUser }: Props) {
       ) : (
         !krsLoading && (
           <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
-            {fiscalYear}年{quarter}の個人KRがまだありません。「＋ KRを追加」から登録してください。
+            <div>{fiscalYear}年{quarter}の個人KRがまだありません。「＋ KRを追加」から登録してください。</div>
+            {availablePeriods.length > 0 && (
+              <div style={{ marginTop: "14px" }}>
+                <div style={{ fontSize: "11px", marginBottom: "8px" }}>実際にKRがある期はこちらです（取込先の期がずれている可能性があります）：</div>
+                <div style={{ display: "flex", gap: "6px", justifyContent: "center", flexWrap: "wrap" }}>
+                  {availablePeriods.map(p => (
+                    <button
+                      key={`${p.fiscalYear}::${p.quarter}`}
+                      onClick={() => { setFiscalYear(p.fiscalYear); setQuarter(p.quarter); }}
+                      style={{ fontFamily: "inherit", fontSize: "11.5px", cursor: "pointer", padding: "5px 12px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)", background: "var(--color-brand-light)", color: "var(--color-brand)", fontWeight: 700 }}
+                    >{p.fiscalYear}年{p.quarter}（{p.count}件）</button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )
       )}
