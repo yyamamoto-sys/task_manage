@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.68
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.69
 #
-最終更新：2026-08-12（v3.68）
+最終更新：2026-08-12（v3.69）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1826,10 +1826,21 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 - **AI機能はそのまま開放されていた**：`invokeAI.ts`は`AIIntent`の値を一切見ず、ゲストなら匿名セッションを遅延生成して`ai-consult`を素通しする汎用実装（Phase 3・v3.29から変更なし）。そのため「✦ 見立てを出す」（`runOutlookAnalysis`・intent=`okr-personal-outlook`）とAIパネル（`PersonalOkrAiPanel`・intent=`okr-personal-chat`）は**コード変更なしでゲストでも動く**。🔴 唯一の追加対応は解析結果の保存先：`personal_kr_outlooks`にはゲストは書けないため、`runOutlookAnalysis`は`insertPersonalKrOutlook`の呼び出しだけをゲスト分岐でスキップし、結果はstateへメモリ保持する（AI呼び出し自体・`ensureOutlookLoaded`のfingerprint比較ロジックは非ゲストと共通）。
 - **ゲストのAI使用量は既に計上される**：`ai-consult`Edge Functionの`user.is_anonymous`分岐は`body.intent`をそのまま`consultation_type`に使う汎用実装のため、`okr-personal-outlook`/`okr-personal-chat`も追加コード無しで管理画面「AI使用量」タブの「🧪 ゲスト（サンプル利用）」に計上される（Section 23参照）。
 - **回数表示（`GuestAiQuotaNotice`）**：`AheadBlock.tsx`（「✦ 見立てを出す」ボタンの隣）と`PersonalOkrAiPanel.tsx`（タブ説明バー内）に`variant="inline"`で設置。ゲストでなければnullを返す既存コンポーネントのため呼び出し側に分岐は書いていない。
-- **「保存されません」の明示**：全画面共通のゲストバナー（`layout.guestBanner`＝「編集はできません」）は他画面では今も正しい（編集UI自体を隠しているため）が、OKRモードの「自分」タブだけは唯一の例外で入力・保存操作が見える。`MainLayout.tsx`のゲストバナーは`appMode==="okr"`のときだけ文言を`layout.guestBannerOkr`（「この画面の入力は保存されません（画面を閉じると消えます）」）に切り替える。新しいダイアログは追加していない（Human in the loopの原則どおり、常設の一言で足りると判断）。
+- **「保存されません」の明示**：全画面共通のゲストバナー（`layout.guestBanner`）は、v3.69で日常編集を開放したことに合わせて文言を「編集はできません」から「編集した内容はこのブラウザでのみ有効です。再読み込みすると元に戻ります。」に変更した。OKRモードの「自分」タブだけは今も別文言（`layout.guestBannerOkr`＝「この画面の入力は保存されません（画面を閉じると消えます）」）に切り替える（`appMode==="okr"`のときだけ）。新しいダイアログは追加していない（Human in the loopの原則どおり、常設の一言で足りると判断）。
 - **機械チェック（`client.ts`のProxyを緩めていないことの固定）**：`src/lib/supabase/__tests__/client.test.ts`に、`GUEST_ALLOWED_FUNCTIONS`のSetリテラルを`client.ts`から直接ソース走査し`["ai-consult"]`以外を許さないテストを追加した（`modalStyles.test.ts`と同じ「ソースを読んで検査する」方式）。次に誰かが安易に例外を増やせないようにする固定。
 - **ゲスト分岐の回帰テスト**：`src/stores/__tests__/personalOkrUiStore.test.ts`が、ゲストのとき低レベルCRUD（`personalOkrStore.ts`）が一切呼ばれないこと・AI呼び出し（`analyzePersonalKrOutlook`）は素通しされること・`insertPersonalKrOutlook`は呼ばれないこと・非ゲストの既存経路が変わっていないことを検証する。
 - **Kintone取込（`PersonalOkrImportModal`）もコード変更なしでゲストで動く**：`saveKr`/`saveMonth`を経由するため、上記のストア分岐にそのまま乗る（AI抽出＝intent`okr-personal-import`も`invokeAI.ts`が汎用開放しているため素通しする）。今回の依頼範囲外だが、副次的に動作する（Supabase非接触の原則は崩していない）。
+
+### ゲストの日常編集の開放（v3.69・2026-08-12）
+
+山本さんの依頼：「編集もできるようにしてほしい。編集結果はその接続セッションでしか保存されず、リロード後はリセットされるようにしてほしい。編集の使い勝手を見てもらいたい」。対象は日常編集（タスクの追加・編集・削除・ステータス変更／カンバンD&D／ガントのバー操作／PJの作成・編集／マイルストーンの追加・編集・削除／AI提案の反映）。設定画面（`AdminView`）配下は対象外のまま。
+
+- **🔴 `client.ts`のProxyは1文字も緩めていない。** 方針はv3.67の`personalOkrUiStore.ts`と同じ：保存処理の入口（`appStore`の各アクション・`applyProposal.ts`・`undoApply.ts`）に`isGuestMode()`分岐を入れ、Supabaseを呼ばずメモリ上のstateだけを更新する。
+- **appStoreの書き込み系アクション**：`saveTask`（choke point本体は無改修。B1依存ゲート・B4ベースライン捕捉・親自動完了・B3自動リスケ連鎖の判定・実行はDB呼び出しより前後にあるため、DB呼び出しだけを分岐してもゲストにそのまま効く）・`deleteTask`・`restoreTask`・`saveProject`・`deleteProject`・`saveMilestone`・`deleteMilestone`・`addTaskDependency`（B1循環チェック等は分岐の前段にあるため無改修で効く）・`removeTaskDependency`・`addTaskTaskForce`/`removeTaskTaskForce`・`addTaskProject`/`removeTaskProject`（タスク編集モーダル／サイドパネルのTF・PJ関連付け欄）が、DB呼び出し（`upsertX`/`softDeleteX`/`insertX`/`deleteX`）をスキップしローカル生成の`updated_at`でstateだけ同期する。`addProjectTaskForce`/`removeProjectTaskForce`はAdminView専用（開放範囲外）だが型を揃えるため防御的に同様の分岐を追加した（実際には到達しない）。
+- **楽観ロック**：`saveWithLock`が返すDB側の実`updated_at`（Section 5・トリガー適用後の値）の代わりに、ゲストはクライアント生成の`new Date().toISOString()`をstore同期に使う。ゲストは単独利用のため他者との競合は起きず、`ConflictError`が誤って投げられる心配は無い。
+- **AI提案の反映（`applyProposal.ts`）・Undo（`undoApply.ts`）**：この2ファイルは元々`appStore`のchoke pointを経由せず`supabase.from(...)`を直接呼ぶ実装（実ユーザーでも同じ・Section 6-10）。ゲストのときは`src/lib/ai/guestApplyStore.ts`（新規）の直接state操作（`guestGetTask`/`guestGetProject`/`guestPatchTask`/`guestPatchProject`/`guestPatchProjectTasks`/`guestInsertTask`/`guestInsertProject`/`guestActiveMembers`/`guestMemberShortName`）に分岐する。`appStore`のアクションは呼ばない（実ユーザーの直接UPDATE/INSERTと完全に同じ「対象フィールドだけの更新」に揃えるため。B1/B4等は元々AI提案の反映では実ユーザーも通っていない）。
+- **UI開放の判定を集約**：`src/lib/guest/guestCapability.ts`の`canGuestEdit(isGuest, target)`（`GuestEditTarget`＝`task`/`kanban`/`gantt`/`project`/`milestone`/`aiApply`/`adminSettings`）。ゲストに何を出すかの判定を1箇所にまとめた純粋関数（非ゲストは常にtrue・ゲストは許可Setのtargetだけtrue）。`MainLayout.tsx`のFAB・`CommandPalette`の`canCreate`・`src/lib/project/projectRowMenu.ts`（サイドバーPJ行の「⋮」）がこれ経由に変わった。タスク編集モーダル・サイドパネル・カンバン・ガント・マイルストーンモーダルは元々`isGuest`のUI側ガードを持たず`appStore`のアクションを呼ぶだけだったため、appStore側の分岐だけで動くようになった（UI側の変更は不要と確認済み）。
+- **バナーとリセット**：ゲストバナー（計画モード）は「編集した内容はこのブラウザでのみ有効です。再読み込みすると元に戻ります。」に変更（です・ます調）。バナー内に「↺ サンプルを初期状態に戻す」ボタンを追加：`confirmDialog()`（`window.confirm`ではない）で確認後、`loadDemoDataset()`を再実行して`appStore.loadDemoData()`に注入する（デモデータのidは固定なので、開いたままのモーダル等が壊れることはない）。OKRモード「自分」タブのゲストデータ（`personalOkrUiStore`）は今回の対象外のため、ボタンは`appMode==="plan"`のときだけ表示する。
 
 ---
 

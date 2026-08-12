@@ -40,6 +40,7 @@ import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
+import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
@@ -50,6 +51,8 @@ import { ProjectSettingsModal } from "../project/ProjectSettingsModal";
 import { AcceptInviteModal } from "../project/AcceptInviteModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
+import { confirmDialog } from "../../lib/dialog";
+import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 
 /**
  * 【設計意図】
@@ -457,6 +460,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       return;
     }
     setAppMode("okr");
+  };
+  // ゲストバナーの「サンプルを初期状態に戻す」（2026-08-12）。appStore（タスク・PJ・
+  // マイルストーン等）を dataset.ts の初期値で再注入するだけ。デモデータのidは固定
+  // （"demo-"接頭辞・毎回同じ）なので、リセット後も開いたままのモーダル等が指すidが
+  // ずれて壊れることはない。OKRモード「自分」タブのゲストデータ（personalOkrUiStore）は
+  // 今回の対象範囲外のため、このボタンはappMode==="plan"のときだけ表示する。
+  const handleGuestReset = async () => {
+    if (!await confirmDialog(t("layout.guestReset.confirm"))) return;
+    // loadDemoDataset自体は薄いラッパー（App.tsxも静的import済み・上のコメント参照）で
+    // データ本体（dataset.ts/guestPersona.ts）はその内部で動的importするため、ここで
+    // 静的importしてもSection 19のダウンロード量最小化は崩れない。
+    const dataset = await loadDemoDataset();
+    useAppStore.getState().loadDemoData(dataset);
+    showToast(t("layout.guestReset.done"), "success");
   };
   // サイドバーのビュー切替ナビ専用（PC）。ツアーの内部遷移（"tour:action" ハンドラ）は
   // 素の setViewMode を使い続ける（closeLabViewsを挟むと、その効果のexhaustive-depsで
@@ -939,6 +956,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               CLAUDE.md Section 23・24）、appModeに応じて文言を切り替える。他の画面は
               従来どおり「編集はできません」（実際に編集UI自体を隠している）。 */}
           <span>{appMode === "okr" ? t("layout.guestBannerOkr") : t("layout.guestBanner")}</span>
+          {appMode === "plan" && (
+            <button
+              onClick={() => void handleGuestReset()}
+              style={{
+                flexShrink: 0,
+                padding: "2px 9px",
+                fontSize: "11px", fontWeight: 600,
+                background: "rgba(255,255,255,0.18)",
+                border: "1px solid rgba(255,255,255,0.4)",
+                borderRadius: "var(--radius-full)",
+                color: "#fff", cursor: "pointer",
+              }}
+            >{t("layout.guestReset.button")}</button>
+          )}
           <GuestAiQuotaNotice variant="banner" />
         </div>
       )}
@@ -1060,7 +1091,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onClose={() => setIsPaletteOpen(false)}
           tasks={paletteTasks}
           projects={projects}
-          canCreate={!isGuest}
+          canCreate={canGuestEdit(isGuest, "task")}
           onOpenTask={setAiEditTaskId}
           onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
           onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}
@@ -1266,8 +1297,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
         {mainContent}
 
-        {/* モバイル：FAB（計画モードのみ） */}
-        {appMode === "plan" && !isGuest && (<>
+        {/* モバイル：FAB（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
+        {appMode === "plan" && canGuestEdit(isGuest, "task") && (<>
           {isFabMenuOpen && (
             // 背景クリックで閉じる（マウス操作の補助）。FABボタン自体がキーボードで開閉トグル
             // 可能なため、背景要素をフォーカス可能にする必要はない
@@ -1473,8 +1504,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           </button>
         </div>
       )}
-      {/* PC FABボタン本体（計画モードのみ・ゲストは非表示） */}
-      {appMode === "plan" && !isGuest && (
+      {/* PC FABボタン本体（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
+      {appMode === "plan" && canGuestEdit(isGuest, "task") && (
         <button
           data-tour-id="fab"
           onClick={() => setIsFabMenuOpen(prev => !prev)}
@@ -1601,7 +1632,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onClose={() => setIsPaletteOpen(false)}
         tasks={paletteTasks}
         projects={projects}
-        canCreate={!isGuest}
+        canCreate={canGuestEdit(isGuest, "task")}
         onOpenTask={setAiEditTaskId}
         onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
         onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}

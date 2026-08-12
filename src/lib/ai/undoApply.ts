@@ -12,6 +12,8 @@
 // 物理削除は絶対に行わない（CLAUDE.md Section 4参照）
 
 import { supabase } from "../supabase/client";
+import { isGuestMode } from "../guestMode";
+import { guestPatchTask, guestPatchProject, guestPatchProjectTasks } from "./guestApplyStore";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
 
@@ -41,8 +43,14 @@ export async function applyUndo(
     // operationsを逆順に適用
     const reversedOps = [...snapshot.operations].reverse();
 
+    const guest = isGuestMode();
+
     for (const op of reversedOps) {
       if (op.type === "task_field") {
+        if (guest) {
+          guestPatchTask(op.taskId, { [op.field]: op.oldValue }, currentUserId);
+          continue;
+        }
         const { error } = await supabase
           .from("tasks")
           .update({
@@ -56,6 +64,10 @@ export async function applyUndo(
           throw new Error(`フィールド復元エラー (${op.field}): ${error.message}`);
         }
       } else if (op.type === "task_restore") {
+        if (guest) {
+          guestPatchTask(op.taskId, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
+          continue;
+        }
         const { error } = await supabase
           .from("tasks")
           .update({
@@ -72,6 +84,10 @@ export async function applyUndo(
         }
       } else if (op.type === "task_delete") {
         // add_task で新規作成したタスクの Undo = 論理削除
+        if (guest) {
+          guestPatchTask(op.taskId, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
+          continue;
+        }
         const { error } = await supabase
           .from("tasks")
           .update({
@@ -88,6 +104,11 @@ export async function applyUndo(
         }
       } else if (op.type === "pj_delete") {
         // add_project で新規作成したPJの Undo = PJと配下タスクを論理削除
+        if (guest) {
+          guestPatchProjectTasks(op.pjId, false, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
+          guestPatchProject(op.pjId, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
+          continue;
+        }
         const { error: tasksError } = await supabase
           .from("tasks")
           .update({
@@ -119,6 +140,10 @@ export async function applyUndo(
           throw new Error(`PJ削除（Undo）エラー: ${pjError.message}`);
         }
       } else if (op.type === "pj_field") {
+        if (guest) {
+          guestPatchProject(op.pjId, { [op.field]: op.oldValue }, currentUserId);
+          continue;
+        }
         const { error } = await supabase
           .from("projects")
           .update({
@@ -132,6 +157,11 @@ export async function applyUndo(
           throw new Error(`PJフィールド復元エラー (${op.field}): ${error.message}`);
         }
       } else if (op.type === "pj_restore") {
+        if (guest) {
+          guestPatchProjectTasks(op.pjId, true, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
+          guestPatchProject(op.pjId, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
+          continue;
+        }
         // PJ配下の全タスクを復元
         const { error: tasksError } = await supabase
           .from("tasks")

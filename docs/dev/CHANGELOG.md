@@ -5732,5 +5732,74 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   マイグレーション：`supabase/migrations/20260812_accept_invite_for_existing_member.sql`
 #     （⚠️山本さんが手動適用・dev→prodの順）。
 #
-# 最終更新：2026-08-12（v3.68）
+# v3.69（2026-08-12）：ゲスト（サンプル閲覧）モードで日常の編集操作を開放（山本さんの依頼）。
+#   「編集もできるようにしてほしい。編集結果はその接続セッションでしか保存されず、リロード後は
+#   リセットされるようにしてほしい」への対応（CLAUDE.md Section 23参照）。対象は日常編集
+#   （タスクの追加・編集・削除・ステータス変更／カンバンD&D／ガントのバー操作／PJの作成・編集／
+#   マイルストーンの追加・編集・削除／AI提案の反映する）。設定画面（AdminView）配下は対象外。
+#   🔴 `src/lib/supabase/client.ts` のProxy（Section 23の絶対原則）は1文字も緩めていない。
+#     方針は「保存処理の入口（appStore・applyProposal.ts・undoApply.ts）にゲスト分岐を入れ、
+#     メモリ上のstateだけ更新する」（v3.67の`personalOkrUiStore.ts`と同じ流儀）。
+#   変更：`src/stores/appStore.ts`：書き込み系アクションの先頭〜DB呼び出し直前に
+#     `isGuestMode()`分岐を追加し、ゲストならDB呼び出し（`upsertX`/`softDeleteX`/`insertX`/
+#     `deleteX`）をスキップしてローカル生成の`updated_at`でstateだけ同期する：
+#     `saveTask`（choke point本体はそのまま。B1依存ゲート・B4ベースライン捕捉・親自動完了・
+#     B3自動リスケ連鎖の判定・実行はDB分岐の外側にあるため無改修でゲストにも効く）・
+#     `deleteTask`・`restoreTask`・`saveProject`・`deleteProject`・`saveMilestone`・
+#     `deleteMilestone`・`addTaskDependency`・`removeTaskDependency`（B1循環チェック等は
+#     DB呼び出しより前にあるため無改修で効く）・`addTaskTaskForce`・`removeTaskTaskForce`・
+#     `addTaskProject`・`removeTaskProject`（タスク編集モーダル／サイドパネルの「TFのToDoに
+#     紐づける」「他PJにも関連付ける」欄）。`addProjectTaskForce`／`removeProjectTaskForce`は
+#     AdminView専用（今回の開放範囲外）だが、他アクションと同じ型を保つため防御的に同様の
+#     分岐を追加した（実際には到達しない）。`bulkShiftTasks`はレイヤーの薄い集約関数
+#     （内部で`get().saveTask`を呼ぶだけ）のため無改修で継承する。
+#   　【楽観ロックの扱い】`saveWithLock`が返すDB側の`updated_at`（トリガー適用後の実値。
+#     Section 5）の代わりに、ゲストはクライアントで生成した`new Date().toISOString()`を
+#     store同期に使う。ゲストは単独利用のため他者との競合は原理的に発生せず、
+#     `ConflictError`が誤って投げられる心配は無い（次の保存時に読む`expectedUpdatedAt`は
+#     常に直前の自分の書き込み結果になるため）。
+#   変更：`src/lib/ai/applyProposal.ts`・`src/lib/ai/undoApply.ts`：AI提案の「反映する」・
+#     Undoは元々`appStore`のchoke pointを経由せず`supabase.from(...)`を直接呼ぶ実装
+#     （実ユーザーでも同じ。Section 6-10）。ゲストのときは同じ関数が
+#     `src/lib/ai/guestApplyStore.ts`（新規）の直接state操作に分岐する：
+#     `guestGetTask`/`guestGetProject`（読み取り）・`guestPatchTask`/`guestPatchProject`/
+#     `guestPatchProjectTasks`（フィールド更新・PJ配下タスクの一括フラグ更新）・
+#     `guestInsertTask`/`guestInsertProject`（新規作成）・`guestActiveMembers`/
+#     `guestMemberShortName`（担当者名解決）。`appStore`のアクション（`saveTask`等）は
+#     呼ばない（実ユーザーの直接UPDATE/INSERTと完全に同じ「対象フィールドだけの更新」に
+#     揃えるため。B1/B4等のchoke pointは元々AI提案の反映では実ユーザーも通っていない）。
+#     `applyProposal.ts`は読み取り専用のプレビュー取得（確認ダイアログの表示内容）も
+#     `fetchTaskPreview`/`fetchProjectPreview`/`fetchActiveMembersForNameResolution`
+#     ヘルパーに統合し、ゲスト分岐を1箇所に閉じた。
+#   追加：`src/lib/guest/guestCapability.ts`：`canGuestEdit(isGuest, target)`
+#     （`GuestEditTarget`＝`task`/`kanban`/`gantt`/`project`/`milestone`/`aiApply`/
+#     `adminSettings`）。ゲストに何を出すかの判定を1箇所に集約する純粋関数。非ゲストは
+#     常にtrue、ゲストは許可Setに載っているtargetだけtrue（`adminSettings`は常にfalse）。
+#     テスト：`src/lib/guest/__tests__/guestCapability.test.ts`。
+#   変更：`src/components/layout/MainLayout.tsx`：FAB（PC/モバイル両方の開閉トリガー）・
+#     `CommandPalette`の`canCreate`を、`!isGuest`から`canGuestEdit(isGuest, "task")`に置換。
+#     `src/lib/project/projectRowMenu.ts`（サイドバーPJ行の「⋮」）は`isGuest`の生チェックを
+#     `canGuestEdit(isGuest, "project")`に置換し、ゲストにも設定/完了/アーカイブ等の
+#     項目を出すようにした（`ProjectSettingsModal.tsx`・`ProjectCreateModal.tsx`・
+#     `TaskEditModal.tsx`・`TaskSidePanel.tsx`・`MilestoneAddModal.tsx`・
+#     `MilestoneEditModal.tsx`・`GanttView.tsx`・`KanbanView.tsx`はいずれも元々`isGuest`の
+#     UI側ガードを持たず`appStore`のアクションを呼ぶだけだったため、appStore側の
+#     ゲスト分岐だけで動くようになった＝コード変更不要と確認済み）。
+#   変更：ゲストバナーの文言・機能。日常編集を開放したため「編集はできません」から
+#     「編集した内容はこのブラウザでのみ有効です。再読み込みすると元に戻ります。」に変更
+#     （です・ます調・2026-08-12確定）。保存のたびのダイアログは出さない（常設の一言で足りる
+#     というHuman in the loopの判断・Section「23」参照）。バナー内（計画モードのみ）に
+#     「↺ サンプルを初期状態に戻す」ボタンを追加：`confirmDialog()`
+#     （`window.confirm`ではない）で確認後、`loadDemoDataset()`（動的import）を再実行して
+#     `appStore.loadDemoData()`に注入する（デモデータのidは固定なので、開いたままの
+#     モーダル等が指すidがずれて壊れることはない）。OKRモード「自分」タブのゲストデータ
+#     （`personalOkrUiStore`）は今回の対象外のため、ボタンは`appMode==="plan"`のときだけ表示。
+#   i18n：`layout.guestBanner`（文言変更）・`layout.guestReset.button`/`.confirm`/`.done`
+#     をja/en両辞書に追加。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`全通過／`npx eslint`新規エラー0／
+#     `npm run build`成功。`src/lib/supabase/__tests__/client.test.ts`
+#     （`GUEST_ALLOWED_FUNCTIONS`固定テスト）は無改修で通過（Proxyを一切変更していない証跡）。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-12（v3.69）
 

@@ -2,9 +2,9 @@ import { describe, it, expect } from "vitest";
 import { buildProjectRowMenuItems } from "../projectRowMenu";
 
 describe("buildProjectRowMenuItems", () => {
-  it("ゲストには何も出さない（canEditに関わらず空配列）", () => {
-    expect(buildProjectRowMenuItems({ project: { status: "active" }, canEdit: true, isGuest: true })).toEqual([]);
-    expect(buildProjectRowMenuItems({ project: { status: "archived" }, canEdit: true, isGuest: true })).toEqual([]);
+  it("ゲストでもPJ編集は開放済み（canGuestEdit経由・非ゲストと同じ項目になる）", () => {
+    const guestItems = buildProjectRowMenuItems({ project: { status: "active" }, canEdit: true, isGuest: true });
+    expect(guestItems.map(i => i.id)).toEqual(["settings", "complete", "archive"]);
   });
 
   it("編集権限が無い場合：設定のみ", () => {

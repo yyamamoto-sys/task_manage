@@ -59,6 +59,7 @@ import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
 import { toDisplayTips, writeCachedTips } from "../lib/tips/loadingTips";
 import { DEMO_GROUP_ID } from "../lib/demo/constants";
 import type { DemoDataset } from "../lib/demo/types";
+import { isGuestMode } from "../lib/guestMode";
 
 export interface AppState {
   // ===== データ =====
@@ -884,6 +885,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? state.projects.map(p => p.id === projectToSave.id ? projectToSave : p)
         : [...state.projects, projectToSave],
     }));
+    // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。
+    // DB書き込みをスキップし、ローカルで生成したupdated_atでstateだけ同期する
+    // （メモリ上でのみ成立・リロードで消える）。
+    if (isGuestMode()) {
+      set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, new Date().toISOString()) }));
+      return;
+    }
     await runSerializedByKey(`projects:${projectToSave.id}`, async () => {
       const expectedUpdatedAt = get().projects.find(p => p.id === projectToSave.id)?.updated_at;
       try {
@@ -903,6 +911,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         p.id === id ? { ...p, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : p
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await softDeleteProject(id, deletedBy);
     } catch (e) {
@@ -971,19 +980,28 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? state.tasks.map(t => t.id === taskToSave.id ? taskToSave : t)
         : [...state.tasks, taskToSave],
     }));
-    // 同じ task id への DB 書き込みは直列化（自己衝突防止）
-    await runSerializedByKey(`tasks:${taskToSave.id}`, async () => {
-      // 直前の保存の syncUpdatedAt 後に expectedUpdatedAt を読む
-      const current = get().tasks.find(t => t.id === taskToSave.id);
-      const expectedUpdatedAt = current?.updated_at;
-      try {
-        const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
-        set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
-      } catch (e) {
-        await handleSaveError(e, get().load);
-        throw e;
-      }
-    });
+    // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。DB書き込み
+    // をスキップし、ローカルで生成したupdated_atでstateだけ同期する（メモリ上でのみ成立・
+    // リロードで消える）。ゲストは単独利用のため楽観ロック競合は元々起きない
+    // （ConflictErrorが誤発生する心配は無い）。B1/B3/B4・親自動完了は上下の処理に
+    // 既に組み込まれているため、このDB書き込みだけを分岐しても全て変わらず機能する。
+    if (isGuestMode()) {
+      set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, new Date().toISOString()) }));
+    } else {
+      // 同じ task id への DB 書き込みは直列化（自己衝突防止）
+      await runSerializedByKey(`tasks:${taskToSave.id}`, async () => {
+        // 直前の保存の syncUpdatedAt 後に expectedUpdatedAt を読む
+        const current = get().tasks.find(t => t.id === taskToSave.id);
+        const expectedUpdatedAt = current?.updated_at;
+        try {
+          const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
+          set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
+        } catch (e) {
+          await handleSaveError(e, get().load);
+          throw e;
+        }
+      });
+    }
 
     // ===== 親タスクの自動完了／自動差し戻し（子から算出）=====
     // 子タスクの status が変化するたびに、兄弟（同じ parent_task_id を持つ他の子）を
@@ -1028,6 +1046,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
       ),
     }));
+    if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
     try {
       await softDeleteTask(id, deletedBy);
     } catch (e) {
@@ -1042,6 +1061,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         t.id === id ? { ...t, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : t
       ),
     }));
+    if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
     try {
       await restoreTaskDb(id);
     } catch (e) {
@@ -1055,8 +1075,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== ProjectTaskForce =====
+  // 【ゲスト分岐】AdminView（設定画面）のPJ×TF紐付け専用（Section 23の開放範囲外）。
+  // 対象UIはゲストに出さないため実際には到達しないが、appStoreの他アクションと同じ
+  // choke pointの型を保つため一貫してガードしておく。
   addProjectTaskForce: async (ptf) => {
     set(state => ({ projectTaskForces: [...state.projectTaskForces, ptf] }));
+    if (isGuestMode()) return;
     try {
       await insertProjectTaskForce(ptf);
     } catch (e) {
@@ -1071,6 +1095,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         p => !(p.project_id === projectId && p.tf_id === tfId)
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await deleteProjectTaskForce(projectId, tfId);
     } catch (e) {
@@ -1094,8 +1119,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== TaskTaskForce =====
+  // 【ゲスト分岐】タスク編集モーダル／サイドパネルの「TFのToDoに紐づける」欄が対象
+  // （Section 23の開放範囲内）。DB非接触・state更新のみで完結させる。
   addTaskTaskForce: async (ttf) => {
     set(state => ({ taskTaskForces: [...state.taskTaskForces, ttf] }));
+    if (isGuestMode()) return;
     try {
       await insertTaskTaskForce(ttf);
     } catch (e) {
@@ -1110,6 +1138,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         t => !(t.task_id === taskId && t.tf_id === tfId)
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await deleteTaskTaskForce(taskId, tfId);
     } catch (e) {
@@ -1119,8 +1148,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
   },
 
   // ===== TaskProject =====
+  // 【ゲスト分岐】タスク編集モーダル／サイドパネルの「他PJにも関連付ける」欄が対象
+  // （Section 23の開放範囲内）。
   addTaskProject: async (tp) => {
     set(state => ({ taskProjects: [...state.taskProjects, tp] }));
+    if (isGuestMode()) return;
     try {
       await insertTaskProject(tp);
     } catch (e) {
@@ -1135,6 +1167,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         t => !(t.task_id === taskId && t.project_id === projectId)
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await deleteTaskProject(taskId, projectId);
     } catch (e) {
@@ -1165,6 +1198,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       created_by: createdBy,
     };
     set(state => ({ taskDependencies: [...state.taskDependencies, dep] }));
+    if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。B1循環チェック等は上で既に実施済み
     try {
       await insertTaskDependency(dep);
     } catch (e) {
@@ -1180,6 +1214,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         d.id === id ? { ...d, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : d
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await softDeleteTaskDependency(id, deletedBy);
     } catch (e) {
@@ -1195,6 +1230,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? state.milestones.map(m => m.id === milestone.id ? milestone : m)
         : [...state.milestones, milestone],
     }));
+    // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。ローカル生成のupdated_atでstateだけ同期する。
+    if (isGuestMode()) {
+      set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, new Date().toISOString()) }));
+      return;
+    }
     await runSerializedByKey(`milestones:${milestone.id}`, async () => {
       const expectedUpdatedAt = get().milestones.find(m => m.id === milestone.id)?.updated_at;
       try {
@@ -1214,6 +1254,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         m.id === id ? { ...m, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : m
       ),
     }));
+    if (isGuestMode()) return;
     try {
       await softDeleteMilestone(id, deletedBy);
     } catch (e) {

@@ -44,8 +44,11 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.shortcuts.buttonTitle": "Show shortcut list (common to all views, bottom right)",
   "layout.shortcuts.buttonLabel": "Shortcuts",
 
-  "layout.guestBanner": "👁 Guest mode (view only) — editing is disabled",
+  "layout.guestBanner": "👁 Guest mode (sample experience) — edits are only kept in this browser. Reloading resets them.",
   "layout.guestBannerOkr": "👁 Guest mode (sample experience) — input on this screen is not saved (it disappears when you close it)",
+  "layout.guestReset.button": "↺ Reset sample to initial state",
+  "layout.guestReset.confirm": "This resets the sample data to its initial state. Your edits so far will be lost. Continue?",
+  "layout.guestReset.done": "Sample data has been reset to its initial state.",
 
   "layout.lab.sheetTitle": "🧪 Lab features",
   "layout.lab.structure.label": "Structure diagram",
