@@ -49,7 +49,10 @@ export function buildTours(opts: { isGuest: boolean }): Record<string, Tour> {
       if (step.id === "welcome") {
         return {
           ...step,
-          body: `${step.body}\n\n表示されているのは架空のサンプルデータです。`,
+          // 【v3.71で更新】v3.69でゲストの編集を開放したのに合わせ、「架空データである」旨に加えて
+          // 「編集して構わない・保存されない」ことも伝える（編集できるようになったことが
+          // ツアーで伝わらないと、せっかくの開放が体験されない）。
+          body: `${step.body}\n\n表示されているのは架空のサンプルデータです。自由に編集して構いません（内容は保存されず、再読み込みで元に戻ります）。`,
         };
       }
       if (step.id === "ai-consult-demo") {

@@ -10,10 +10,14 @@
 // - pj_delete: PJとその配下の全タスクをis_deleted=trueにする（add_project の取り消し）
 //
 // 物理削除は絶対に行わない（CLAUDE.md Section 4参照）
+//
+// 【v3.71で choke point 統一】applyProposal.ts と同じ理由で、appStore のアクション
+// （saveTask/saveProject/deleteTask/restoreTask/deleteProject/restoreProject）経由に統一した。
+// これによりB1/B3/B4がUndoにも一貫して効く（Undoで完了状態に戻すような操作は現状無いが、
+// 将来の拡張でも choke point を経由する設計を保つ）。
 
-import { supabase } from "../supabase/client";
-import { isGuestMode } from "../guestMode";
-import { guestPatchTask, guestPatchProject, guestPatchProjectTasks } from "./guestApplyStore";
+import { useAppStore } from "../../stores/appStore";
+import type { Task, Project } from "../localData/types";
 import type { UndoSnapshot } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
 
@@ -38,161 +42,72 @@ export async function applyUndo(
   currentUserId: string,
 ): Promise<UndoResult> {
   try {
-    const now = new Date().toISOString();
-
     // operationsを逆順に適用
     const reversedOps = [...snapshot.operations].reverse();
 
-    const guest = isGuestMode();
-
     for (const op of reversedOps) {
       if (op.type === "task_field") {
-        if (guest) {
-          guestPatchTask(op.taskId, { [op.field]: op.oldValue }, currentUserId);
-          continue;
-        }
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            [op.field]: op.oldValue,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.taskId);
-
-        if (error) {
-          throw new Error(`フィールド復元エラー (${op.field}): ${error.message}`);
+        const task = useAppStore.getState().tasks.find(t => t.id === op.taskId);
+        if (!task) continue;
+        // 【動的キー】op.fieldは実在の列名であることを呼び出し元（applyProposal.ts）が
+        // 保証する契約（comment/due_date/assignee_member_id等、様々な型のフィールドを1つの
+        // Union型で表現しているため、Task型に対する厳密なキー別の型チェックはできない）。
+        try {
+          await useAppStore.getState().saveTask({ ...task, [op.field]: op.oldValue, updated_by: currentUserId } as Task);
+        } catch (e) {
+          throw new Error(`フィールド復元エラー (${op.field}): ${formatErrorForUser("", e)}`);
         }
       } else if (op.type === "task_restore") {
-        if (guest) {
-          guestPatchTask(op.taskId, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
-          continue;
-        }
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: false,
-            deleted_at: null,
-            deleted_by: null,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.taskId);
-
-        if (error) {
-          throw new Error(`タスク復元エラー: ${error.message}`);
+        try {
+          await useAppStore.getState().restoreTask(op.taskId);
+        } catch (e) {
+          throw new Error(`タスク復元エラー: ${formatErrorForUser("", e)}`);
         }
       } else if (op.type === "task_delete") {
         // add_task で新規作成したタスクの Undo = 論理削除
-        if (guest) {
-          guestPatchTask(op.taskId, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          continue;
-        }
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.taskId);
-
-        if (error) {
-          throw new Error(`タスク削除（Undo）エラー: ${error.message}`);
+        try {
+          await useAppStore.getState().deleteTask(op.taskId, currentUserId);
+        } catch (e) {
+          throw new Error(`タスク削除（Undo）エラー: ${formatErrorForUser("", e)}`);
         }
       } else if (op.type === "pj_delete") {
         // add_project で新規作成したPJの Undo = PJと配下タスクを論理削除
-        if (guest) {
-          guestPatchProjectTasks(op.pjId, false, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          guestPatchProject(op.pjId, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          continue;
+        const childTasks = useAppStore.getState().tasks.filter(t => t.project_id === op.pjId && !t.is_deleted);
+        for (const t of childTasks) {
+          try {
+            await useAppStore.getState().deleteTask(t.id, currentUserId);
+          } catch (e) {
+            throw new Error(`タスク一括削除（Undo）エラー: ${formatErrorForUser("", e)}`);
+          }
         }
-        const { error: tasksError } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("project_id", op.pjId)
-          .eq("is_deleted", false);
-
-        if (tasksError) {
-          throw new Error(`タスク一括削除（Undo）エラー: ${tasksError.message}`);
-        }
-
-        const { error: pjError } = await supabase
-          .from("projects")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.pjId);
-
-        if (pjError) {
-          throw new Error(`PJ削除（Undo）エラー: ${pjError.message}`);
+        try {
+          await useAppStore.getState().deleteProject(op.pjId, currentUserId);
+        } catch (e) {
+          throw new Error(`PJ削除（Undo）エラー: ${formatErrorForUser("", e)}`);
         }
       } else if (op.type === "pj_field") {
-        if (guest) {
-          guestPatchProject(op.pjId, { [op.field]: op.oldValue }, currentUserId);
-          continue;
-        }
-        const { error } = await supabase
-          .from("projects")
-          .update({
-            [op.field]: op.oldValue,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.pjId);
-
-        if (error) {
-          throw new Error(`PJフィールド復元エラー (${op.field}): ${error.message}`);
+        const project = useAppStore.getState().projects.find(p => p.id === op.pjId);
+        if (!project) continue;
+        try {
+          await useAppStore.getState().saveProject({ ...project, [op.field]: op.oldValue, updated_by: currentUserId } as Project);
+        } catch (e) {
+          throw new Error(`PJフィールド復元エラー (${op.field}): ${formatErrorForUser("", e)}`);
         }
       } else if (op.type === "pj_restore") {
-        if (guest) {
-          guestPatchProjectTasks(op.pjId, true, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
-          guestPatchProject(op.pjId, { is_deleted: false, deleted_at: null, deleted_by: null }, currentUserId);
-          continue;
-        }
         // PJ配下の全タスクを復元
-        const { error: tasksError } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: false,
-            deleted_at: null,
-            deleted_by: null,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("project_id", op.pjId)
-          .eq("is_deleted", true);
-
-        if (tasksError) {
-          throw new Error(`タスク一括復元エラー: ${tasksError.message}`);
+        const deletedChildTasks = useAppStore.getState().tasks.filter(t => t.project_id === op.pjId && t.is_deleted);
+        for (const t of deletedChildTasks) {
+          try {
+            await useAppStore.getState().restoreTask(t.id);
+          } catch (e) {
+            throw new Error(`タスク一括復元エラー: ${formatErrorForUser("", e)}`);
+          }
         }
-
         // PJ自体を復元
-        const { error: pjError } = await supabase
-          .from("projects")
-          .update({
-            is_deleted: false,
-            deleted_at: null,
-            deleted_by: null,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", op.pjId);
-
-        if (pjError) {
-          throw new Error(`PJ復元エラー: ${pjError.message}`);
+        try {
+          await useAppStore.getState().restoreProject(op.pjId);
+        } catch (e) {
+          throw new Error(`PJ復元エラー: ${formatErrorForUser("", e)}`);
         }
       }
     }

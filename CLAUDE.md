@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.70
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.71
 #
-最終更新：2026-08-12（v3.70）
+最終更新：2026-08-12（v3.71）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -453,6 +453,19 @@ interface TaskDependency {
   トースト表示＋例外を投げ、楽観更新・DB書き込みは一切行わない。
 - **着手（todo→"in_progress"）**：未完了の先行タスクがあっても非ブロッキングのソフト警告トーストのみ。
   着手自体は止めない（Human-in-the-loop：完了は硬く、着手は柔らかく）。
+
+**🔴 v3.71より前はAI提案の反映（`src/lib/ai/applyProposal.ts`・`undoApply.ts`）だけがこの
+choke pointを経由していなかった**（`supabase.from(...)`を直接呼ぶ独自実装。実ユーザーでも
+ゲストでも同じ）。そのためB1（本節）・B3（自動リスケ連鎖）・B4（ベースライン捕捉）がAI提案
+経由の変更にだけ効かないという食い違いがあった。v3.71で`useAppStore.getState()`の
+アクション（`saveTask`/`saveProject`/`deleteTask`/`restoreTask`/`deleteProject`/`restoreProject`）
+経由に統一し、ゲスト分岐も appStore 側の既存の `isGuestMode()` 分岐にそのまま乗るようにした
+（専用の `guestApplyStore.ts` は不要になり撤去）。複数タスク・複数PJを対象にする提案は
+1件ずつ choke point を通すため、書き込みはトランザクションではなく、一部だけがB1ゲート等で
+弾かれても他の項目は反映を続ける（成功分はUndo対象に積み、失敗分は`ApplyResult.warning`で
+利用者に知らせる。全滅時のみ`type:"error"`）。日付変更でB3の自動リスケ連鎖が発生した場合は
+既存のトースト（「N件のタスクの日付を自動調整しました」＋Undo）がそのまま出る（B3専用の
+通知をAI提案側に追加する必要はない）。
 
 **循環防止**：DB制約では「A→B→…→A」を表現できないため、追加操作は必ず
 `lib/dependencies/cycleCheck.ts` の `canAddDependency`（DFS）を通す。自己依存・重複も同時に弾く。
@@ -942,14 +955,22 @@ setShortIdMap(new Map());
 // date_change・assignee → needs_confirmationを返す
 //   確認ダイアログでユーザーが値を確認・入力後にapplyProposalWithConfirmationを呼ぶ
 //
-// risk・no_tasks・deadline_risk → appendTaskComment（2ステップSELECT+UPDATE）
-//   supabase.rpc()は使わない。アプリ側で追記ロジックを実装する。
+// risk・no_tasks・deadline_risk → appStore.saveTask経由でcommentに追記
+//   supabase.rpc()は使わない（v3.71より前は2ステップSELECT+UPDATEを自前実装していたが、
+//   saveTaskのchoke point自体が同種の楽観ロックを持つため今は委譲している）。
 //
-// scope_reduce・pause → 論理削除（is_deleted=true）
+// scope_reduce・pause → appStore.deleteTask/deleteProject経由の論理削除（is_deleted=true）
 //
 // milestone → 現在未対応。errorを返す。
 //   マイルストーンテーブルの設計完了後にneeds_confirmationに変更する。
 ```
+
+**🔴 v3.71でchoke point統一**：上記いずれも`supabase.from(...)`を直接呼ばず、
+`useAppStore.getState()`のアクション経由でDBに反映する（Section 3-6参照）。読み取り
+（確認ダイアログ表示用のプレビュー）も常に`useAppStore.getState()`のstateを見る
+（実ユーザー・ゲストで分岐しない。以前は実ユーザーのみ`supabase.from(...).select()`で
+都度フレッシュな値を取っていたが、store状態は他の画面もこれを信頼して動いているため
+統一した）。
 
 ### 6-11. applyProposalWithConfirmationの引数
 

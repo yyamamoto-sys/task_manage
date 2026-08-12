@@ -39,7 +39,7 @@ import {
   upsertKeyResult, softDeleteKeyResult,
   upsertTaskForce, softDeleteTaskForce,
   upsertToDo, softDeleteToDo,
-  upsertProject, softDeleteProject,
+  upsertProject, softDeleteProject, restoreProject as restoreProjectDb,
   upsertTask, softDeleteTask, restoreTask as restoreTaskDb,
   upsertMilestone, softDeleteMilestone,
   insertProjectTaskForce, deleteProjectTaskForce,
@@ -142,6 +142,8 @@ export interface AppState {
   // ===== Project =====
   saveProject: (project: Project) => Promise<void>;
   deleteProject: (id: string, deletedBy: string) => Promise<void>;
+  /** ソフト削除の取り消し（restoreTaskと対。v3.71でAI提案Undoのpj_restoreがchoke point経由になったため追加） */
+  restoreProject: (id: string) => Promise<void>;
 
   // ===== Task =====
   // options.skipCascade: 自動リスケジュール連鎖（B3）が計算済みのシフトを適用する内部呼び出し、
@@ -914,6 +916,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (isGuestMode()) return;
     try {
       await softDeleteProject(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  restoreProject: async (id) => {
+    set(state => ({
+      projects: state.projects.map(p =>
+        p.id === id ? { ...p, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : p
+      ),
+    }));
+    if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
+    try {
+      await restoreProjectDb(id);
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

@@ -22,7 +22,7 @@ const storeMock = vi.hoisted(() => ({
   upsertKeyResult: vi.fn(), softDeleteKeyResult: vi.fn(),
   upsertTaskForce: vi.fn(), softDeleteTaskForce: vi.fn(),
   upsertToDo: vi.fn(), softDeleteToDo: vi.fn(),
-  upsertProject: vi.fn(), softDeleteProject: vi.fn(),
+  upsertProject: vi.fn(), softDeleteProject: vi.fn(), restoreProject: vi.fn(),
   upsertTask: vi.fn(), softDeleteTask: vi.fn(), restoreTask: vi.fn(),
   upsertMilestone: vi.fn(), softDeleteMilestone: vi.fn(),
   insertProjectTaskForce: vi.fn(), deleteProjectTaskForce: vi.fn(),
@@ -92,12 +92,17 @@ describe("appStore：ゲスト分岐（日常編集の開放・v3.69）", () => 
     expect(useAppStore.getState().tasks.find(t => t.id === dummyTask.id)?.is_deleted).toBe(false);
   });
 
-  it("saveProject/deleteProject：ゲストは低レベルCRUDを呼ばない", async () => {
+  it("saveProject/deleteProject/restoreProject：ゲストは低レベルCRUDを呼ばない", async () => {
     setGuestMode(true);
     await useAppStore.getState().saveProject(dummyProject);
     expect(storeMock.upsertProject).not.toHaveBeenCalled();
     await useAppStore.getState().deleteProject(dummyProject.id, "__guest__");
     expect(storeMock.softDeleteProject).not.toHaveBeenCalled();
+    expect(useAppStore.getState().projects.find(p => p.id === dummyProject.id)?.is_deleted).toBe(true);
+
+    await useAppStore.getState().restoreProject(dummyProject.id);
+    expect(storeMock.restoreProject).not.toHaveBeenCalled();
+    expect(useAppStore.getState().projects.find(p => p.id === dummyProject.id)?.is_deleted).toBe(false);
   });
 
   it("saveMilestone/deleteMilestone：ゲストは低レベルCRUDを呼ばない", async () => {

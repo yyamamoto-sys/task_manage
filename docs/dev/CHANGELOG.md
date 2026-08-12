@@ -5850,5 +5850,39 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     `data-tour-id`属性の追加を許容するよう更新。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-12（v3.70）
+# v3.71（2026-08-12）：AI提案の反映をappStoreのchoke pointに統一
+#   背景：v3.69の調査で、`src/lib/ai/applyProposal.ts`/`undoApply.ts`が実ユーザーでも
+#   ゲストでも`appStore.saveTask`等のchoke pointを経由せず`supabase.from(...)`を直接
+#   呼んでいたと判明。AI提案から反映したタスクにはB1（依存ゲート）・B3（自動リスケ連鎖）・
+#   B4（ベースライン捕捉）が一切効いていなかった（CLAUDE.md Section 3-6・6-10参照）。
+#   変更：`src/lib/ai/applyProposal.ts`：全てのDB書き込みを`useAppStore.getState()`の
+#     アクション（`saveTask`/`saveProject`/`deleteTask`/`deleteProject`）経由に変更。
+#     読み取り（確認ダイアログ用プレビュー）も`useAppStore.getState()`のstateを直接見る
+#     方式に変更（実ユーザー用のフレッシュSELECTを撤去・ゲストと同じ経路に統一）。
+#     複数タスク・複数PJを対象にする提案（date_change/assignee/scope_reduce/pause/
+#     add_task/add_project）は1件ずつtry/catchで包み、成功分はUndoSnapshotに積み、
+#     失敗分は`ApplyResult`の新規`warning`フィールドに集約する（全滅時のみtype:"error"）。
+#   変更：`src/lib/ai/undoApply.ts`：同様に`saveTask`/`saveProject`/`deleteTask`/
+#     `restoreTask`/`deleteProject`/`restoreProject`経由に変更。
+#   追加：`src/stores/appStore.ts`の`restoreProject`アクション・`src/lib/supabase/store.ts`
+#     の`restoreProject`関数（`restoreTask`と対。pj_restoreのUndoで使う）。
+#   削除：`src/lib/ai/guestApplyStore.ts`（choke point統一によりゲスト専用の直接state操作
+#     レイヤーが不要になったため撤去）。
+#   変更：`src/components/consultation/ProposalCard.tsx`：`ApplyResult.warning`があれば
+#     成功メッセージに括弧書きで併記する（3箇所）。
+#   テスト：`src/lib/ai/__tests__/applyProposal.test.ts`・`undoApply.test.ts`を、
+#     supabaseの呼び出し詳細を検査する方式から、`lib/supabase/store.ts`をモックして
+#     appStoreのstate・choke point関数呼び出しを検査する方式に全面書き換え（部分失敗の
+#     警告メッセージのテストを新規追加）。`applyProposalGuestBranch.test.ts`はロジック不変
+#     （ヘッダーコメントのみ更新）。`guestWriteBranches.test.ts`に`restoreProject`の
+#     ゲスト分岐テストを追加。
+#   ついでの修正（山本さんの追加指摘）：ゲストの編集開放（v3.69）後もログイン画面の
+#     説明文（`auth.guest.desc`）が「編集はできません」のままだった実態不一致を修正
+#     （ja/en両方）。同時に確認したゲスト関連表示の食い違い：オンボーディングツアーの
+#     `welcome`ステップ（`src/components/tour/tours/index.ts`）に編集可能・非保存の
+#     一言を追加。`MainLayout.tsx`のゲストバナー周辺の設計コメントがv3.69以前の記述の
+#     まま残っていたため訂正（表示文言自体はv3.69で既に更新済みで問題なし）。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-12（v3.71）
 

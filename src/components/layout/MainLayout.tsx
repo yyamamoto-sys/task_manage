@@ -951,10 +951,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           background: "linear-gradient(135deg,#f59e0b,#d97706)",
           color: "#fff", fontSize: "11px", fontWeight: 600,
         }}>
-          {/* OKRモードの「自分」タブは唯一の例外で入力・保存操作が可能に見えるため
-              （実際はメモリ上のみ・リロードで消える。personalOkrUiStore.tsのゲスト分岐。
-              CLAUDE.md Section 23・24）、appModeに応じて文言を切り替える。他の画面は
-              従来どおり「編集はできません」（実際に編集UI自体を隠している）。 */}
+          {/* 【v3.71で訂正】このコメントはv3.69（日常編集の開放）より前の状態を書いたまま
+              取り残されていた。現在はplanモード（タスク・カンバン・ガント・PJ・マイルストーン・
+              AI提案の反映）もOKRモードの「自分」タブと同様に編集可能（実際はメモリ上のみ・
+              リロードで消える）。appModeに応じてバナー文言を切り替えるのは、リセット
+              ボタン（↺ サンプルを初期状態に戻す）がplanモードのデータしか対象にしないため
+              （personalOkrUiStoreのゲストデータは対象外。CLAUDE.md Section 23）。
+              編集不可のまま残る画面はAdminView（設定画面）配下のみ。 */}
           <span>{appMode === "okr" ? t("layout.guestBannerOkr") : t("layout.guestBanner")}</span>
           {appMode === "plan" && (
             <button

@@ -1,92 +1,87 @@
+// src/lib/ai/__tests__/undoApply.test.ts
+//
+// 【v3.71で書き換え】undoApply.ts が appStore の choke point（saveTask/saveProject/deleteTask/
+// restoreTask/deleteProject/restoreProject）経由に統一されたため、`supabase.from(...)` の
+// 呼び出し順・payload形をそのまま検査する旧テストは実装の詳細に依存しすぎていた。
+// applyProposal.test.ts と同じ方式（低レベルCRUDをモックし、appStoreのstateと choke point
+// 関数呼び出しを検査する）に書き換える。
+
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { UndoSnapshot } from "../../../hooks/useUndoStack";
+import type { Task, Project } from "../../localData/types";
 
-// ===== Supabase クライアントモック（applyProposal.test.ts と同じキュー方式） =====
+const storeMock = vi.hoisted(() => ({
+  fetchCriticalData: vi.fn(),
+  fetchOkrData: vi.fn(),
+  fetchGroups: vi.fn(),
+  ConflictError: class ConflictError extends Error {},
+  upsertGroup: vi.fn(), softDeleteGroup: vi.fn(),
+  fetchLoadingTips: vi.fn(), upsertLoadingTip: vi.fn(), softDeleteLoadingTip: vi.fn(),
+  upsertMember: vi.fn(), softDeleteMember: vi.fn(),
+  upsertObjective: vi.fn(),
+  upsertKeyResult: vi.fn(), softDeleteKeyResult: vi.fn(),
+  upsertTaskForce: vi.fn(), softDeleteTaskForce: vi.fn(),
+  upsertToDo: vi.fn(), softDeleteToDo: vi.fn(),
+  upsertProject: vi.fn(), softDeleteProject: vi.fn(), restoreProject: vi.fn(),
+  upsertTask: vi.fn(), softDeleteTask: vi.fn(), restoreTask: vi.fn(),
+  upsertMilestone: vi.fn(), softDeleteMilestone: vi.fn(),
+  insertProjectTaskForce: vi.fn(), deleteProjectTaskForce: vi.fn(),
+  upsertQuarterlyObjective: vi.fn(),
+  insertTaskTaskForce: vi.fn(), deleteTaskTaskForce: vi.fn(),
+  insertTaskProject: vi.fn(), deleteTaskProject: vi.fn(),
+  insertTaskDependency: vi.fn(), softDeleteTaskDependency: vi.fn(),
+  upsertMemberTag: vi.fn(), softDeleteMemberTag: vi.fn(), replaceMemberTagMembers: vi.fn(),
+}));
 
-interface MockResult {
-  data?: unknown;
-  error?: { message: string } | null;
-}
-interface MockCall {
-  table: string;
-  op: "select" | "update" | "insert" | "delete";
-  payload?: unknown;
-  filters: Array<{ method: string; args: unknown[] }>;
-}
+vi.mock("../../supabase/store", () => storeMock);
+// handleSaveError内のreportErrorがwindow.dispatchEventを呼ぶブラウザ専用実装のため、
+// vitest（environment:"node"）では元の失敗理由をReferenceErrorで揉み消してしまう。no-op化する。
+vi.mock("../../errorReporter", () => ({ reportError: vi.fn() }));
 
-const mockState = {
-  queue: new Map<string, MockResult[]>(),
-  calls: [] as MockCall[],
-  physicalDeleteAttempts: 0,
-};
-
-function queueResult(table: string, op: "update", result: MockResult) {
-  const key = `${table}:${op}`;
-  if (!mockState.queue.has(key)) mockState.queue.set(key, []);
-  mockState.queue.get(key)!.push(result);
-}
-
-function popResult(table: string, op: string): MockResult {
-  const key = `${table}:${op}`;
-  const q = mockState.queue.get(key);
-  return q?.shift() ?? { data: null, error: null };
-}
-
-function resetMock() {
-  mockState.queue.clear();
-  mockState.calls = [];
-  mockState.physicalDeleteAttempts = 0;
-}
-
-vi.mock("../../supabase/client", () => {
-  function makeBuilder(table: string, op: "select" | "update" | "insert" | "delete", payload?: unknown) {
-    const call: MockCall = { table, op, payload, filters: [] };
-    mockState.calls.push(call);
-
-    if (op === "delete") {
-      mockState.physicalDeleteAttempts++;
-    }
-
-    const builder: Record<string, unknown> = {};
-    builder.eq = (...args: unknown[]) => {
-      call.filters.push({ method: "eq", args });
-      return builder;
-    };
-    builder.single = () => Promise.resolve(popResult(table, op));
-    // thenable: await で resolve できるようにする
-    builder.then = (onResolve: (v: MockResult) => unknown, onReject?: (e: unknown) => unknown) =>
-      Promise.resolve(popResult(table, op)).then(onResolve, onReject);
-    return builder;
-  }
-
-  const supabase = {
-    from: (table: string) => ({
-      select: (..._cols: unknown[]) => makeBuilder(table, "select"),
-      update: (payload: unknown) => makeBuilder(table, "update", payload),
-      insert: (payload: unknown) => makeBuilder(table, "insert", payload),
-      delete: () => makeBuilder(table, "delete"),
-    }),
-  };
-  return { supabase, isMisconfigured: false };
-});
-
+import { useAppStore } from "../../../stores/appStore";
 import { applyUndo } from "../undoApply";
 
-beforeEach(() => {
-  resetMock();
-});
+const INITIAL_STATE = useAppStore.getState();
+function resetStore() {
+  useAppStore.setState(INITIAL_STATE, true);
+}
 
-function makeSnapshot(operations: UndoSnapshot["operations"]): UndoSnapshot {
+function makeTask(over: Partial<Task>): Task {
   return {
-    id: "snap-1",
-    label: "テスト",
-    appliedAt: "2026-07-21T00:00:00Z",
-    operations,
+    id: "t-1", name: "タスク", project_id: null, todo_ids: [],
+    assignee_member_id: "", assignee_member_ids: [], status: "todo", priority: null,
+    start_date: null, due_date: null, estimated_hours: null, comment: "", is_deleted: false,
+    ...over,
   };
 }
 
-describe("applyUndo — 物理削除しないこと（最重要）", () => {
-  it("いずれの operation タイプでも .delete() は呼ばれない", async () => {
+function makeProject(over: Partial<Project>): Project {
+  return {
+    id: "pj-1", name: "PJ", purpose: "目的", contribution_memo: "",
+    owner_member_id: "m1", owner_member_ids: ["m1"], status: "active", color_tag: "#000",
+    start_date: "2026-01-01", end_date: "2026-12-31", is_deleted: false,
+    ...over,
+  };
+}
+
+function makeSnapshot(operations: UndoSnapshot["operations"]): UndoSnapshot {
+  return { id: "snap-1", label: "テスト", appliedAt: "2026-07-21T00:00:00Z", operations };
+}
+
+beforeEach(() => {
+  resetStore();
+  vi.clearAllMocks();
+  Object.values(storeMock).forEach(v => { if (typeof v === "function" && "mockReset" in v) (v as { mockReset: () => void }).mockReset(); });
+  storeMock.upsertTask.mockResolvedValue("2026-08-12T00:00:00.000Z");
+  storeMock.upsertProject.mockResolvedValue("2026-08-12T00:00:00.000Z");
+});
+
+describe("applyUndo — 物理削除しないこと（最重要・choke pointはis_deletedフラグのみを操作）", () => {
+  it("いずれの operation タイプでも softDelete系/restore系/upsert系しか呼ばれない", async () => {
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1" }), makeTask({ id: "t-2", is_deleted: true }), makeTask({ id: "t-3" })],
+      projects: [makeProject({ id: "pj-1" }), makeProject({ id: "pj-2", is_deleted: true }), makeProject({ id: "pj-3" })],
+    });
     const snapshot = makeSnapshot([
       { type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" },
       { type: "task_restore", taskId: "t-2" },
@@ -97,100 +92,108 @@ describe("applyUndo — 物理削除しないこと（最重要）", () => {
     ]);
     const result = await applyUndo(snapshot, "user-1");
     expect(result.type).toBe("success");
-    expect(mockState.physicalDeleteAttempts).toBe(0);
   });
 });
 
-describe("applyUndo — 各operationタイプの実処理", () => {
-  it("task_field: 指定フィールドをoldValueに戻すUPDATEを発行する", async () => {
-    const snapshot = makeSnapshot([
-      { type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" },
-    ]);
+describe("applyUndo — 各operationタイプの実処理（appStoreのchoke point経由）", () => {
+  it("task_field: 指定フィールドをoldValueに戻すsaveTaskを呼ぶ", async () => {
+    useAppStore.setState({ tasks: [makeTask({ id: "t-1", due_date: "2026-05-20" })] });
+    const snapshot = makeSnapshot([{ type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" }]);
     await applyUndo(snapshot, "user-1");
 
-    const call = mockState.calls.find(c => c.table === "tasks" && c.op === "update");
-    expect(call).toBeDefined();
-    const payload = call!.payload as Record<string, unknown>;
-    expect(payload.due_date).toBe("2026-05-01");
-    expect(payload.updated_by).toBe("user-1");
-    expect(call!.filters.some(f => f.args[0] === "id" && f.args[1] === "t-1")).toBe(true);
+    expect(storeMock.upsertTask).toHaveBeenCalledTimes(1);
+    const saved = useAppStore.getState().tasks.find(t => t.id === "t-1");
+    expect(saved?.due_date).toBe("2026-05-01");
+    expect(saved?.updated_by).toBe("user-1");
   });
 
-  it("task_restore: is_deleted=falseに戻す", async () => {
+  it("task_restore: appStore.restoreTask経由でis_deleted=falseに戻す", async () => {
+    useAppStore.setState({ tasks: [makeTask({ id: "t-2", is_deleted: true })] });
     const snapshot = makeSnapshot([{ type: "task_restore", taskId: "t-2" }]);
     await applyUndo(snapshot, "user-1");
 
-    const call = mockState.calls.find(c => c.table === "tasks" && c.op === "update");
-    const payload = call!.payload as Record<string, unknown>;
-    expect(payload.is_deleted).toBe(false);
-    expect(payload.deleted_at).toBeNull();
+    expect(storeMock.restoreTask).toHaveBeenCalledWith("t-2");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-2")?.is_deleted).toBe(false);
   });
 
-  it("task_delete: is_deleted=trueにする（add_taskのUndo）", async () => {
+  it("task_delete: appStore.deleteTask経由でis_deleted=trueにする（add_taskのUndo）", async () => {
+    useAppStore.setState({ tasks: [makeTask({ id: "t-3" })] });
     const snapshot = makeSnapshot([{ type: "task_delete", taskId: "t-3" }]);
     await applyUndo(snapshot, "user-1");
 
-    const call = mockState.calls.find(c => c.table === "tasks" && c.op === "update");
-    const payload = call!.payload as Record<string, unknown>;
-    expect(payload.is_deleted).toBe(true);
-    expect(payload.deleted_by).toBe("user-1");
+    expect(storeMock.softDeleteTask).toHaveBeenCalledWith("t-3", "user-1");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-3")?.is_deleted).toBe(true);
   });
 
-  it("pj_field: PJの指定フィールドをoldValueに戻すUPDATEをprojectsテーブルへ発行する（バグ修正の回帰テスト）", async () => {
-    const snapshot = makeSnapshot([
-      { type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" },
-    ]);
+  it("pj_field: appStore.saveProject経由でPJの指定フィールドをoldValueに戻す（バグ修正の回帰テスト）", async () => {
+    useAppStore.setState({ projects: [makeProject({ id: "pj-1", end_date: "2026-09-01" })] });
+    const snapshot = makeSnapshot([{ type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" }]);
     await applyUndo(snapshot, "user-1");
 
-    const call = mockState.calls.find(c => c.table === "projects" && c.op === "update");
-    expect(call).toBeDefined();
-    const payload = call!.payload as Record<string, unknown>;
-    expect(payload.end_date).toBe("2026-06-01");
-    expect(payload.updated_by).toBe("user-1");
-    expect(call!.filters.some(f => f.args[0] === "id" && f.args[1] === "pj-1")).toBe(true);
+    expect(storeMock.upsertProject).toHaveBeenCalledTimes(1);
+    const saved = useAppStore.getState().projects.find(p => p.id === "pj-1");
+    expect(saved?.end_date).toBe("2026-06-01");
+    expect(saved?.updated_by).toBe("user-1");
   });
 
-  it("pj_restore: PJ配下の全タスク→PJ本体の順にis_deleted=falseへ復元する", async () => {
+  it("pj_restore: PJ配下の削除済みタスク（is_deleted=trueのみ）→PJ本体の順にrestoreTask/restoreProjectが呼ばれる", async () => {
+    useAppStore.setState({
+      projects: [makeProject({ id: "pj-2", is_deleted: true })],
+      tasks: [
+        makeTask({ id: "t-a", project_id: "pj-2", is_deleted: true }),
+        makeTask({ id: "t-b", project_id: "pj-2", is_deleted: false }), // 元々削除されていない→対象外
+      ],
+    });
     const snapshot = makeSnapshot([{ type: "pj_restore", pjId: "pj-2" }]);
     await applyUndo(snapshot, "user-1");
 
-    const tasksCall = mockState.calls.find(c => c.table === "tasks" && c.op === "update");
-    const pjCall = mockState.calls.find(c => c.table === "projects" && c.op === "update");
-    expect((tasksCall!.payload as Record<string, unknown>).is_deleted).toBe(false);
-    expect((pjCall!.payload as Record<string, unknown>).is_deleted).toBe(false);
-    expect(tasksCall!.filters.some(f => f.args[0] === "project_id" && f.args[1] === "pj-2")).toBe(true);
+    expect(storeMock.restoreTask).toHaveBeenCalledTimes(1);
+    expect(storeMock.restoreTask).toHaveBeenCalledWith("t-a");
+    expect(storeMock.restoreProject).toHaveBeenCalledWith("pj-2");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-a")?.is_deleted).toBe(false);
+    expect(useAppStore.getState().projects.find(p => p.id === "pj-2")?.is_deleted).toBe(false);
   });
 
-  it("pj_delete: PJ配下の全タスク→PJ本体の順にis_deleted=trueにする（add_projectのUndo）", async () => {
+  it("pj_delete: PJ配下の非削除タスク→PJ本体の順にdeleteTask/deleteProjectが呼ばれる（add_projectのUndo）", async () => {
+    useAppStore.setState({
+      projects: [makeProject({ id: "pj-3" })],
+      tasks: [makeTask({ id: "t-c", project_id: "pj-3", is_deleted: false })],
+    });
     const snapshot = makeSnapshot([{ type: "pj_delete", pjId: "pj-3" }]);
     await applyUndo(snapshot, "user-1");
 
-    const tasksCall = mockState.calls.find(c => c.table === "tasks" && c.op === "update");
-    const pjCall = mockState.calls.find(c => c.table === "projects" && c.op === "update");
-    expect((tasksCall!.payload as Record<string, unknown>).is_deleted).toBe(true);
-    expect((pjCall!.payload as Record<string, unknown>).is_deleted).toBe(true);
+    expect(storeMock.softDeleteTask).toHaveBeenCalledWith("t-c", "user-1");
+    expect(storeMock.softDeleteProject).toHaveBeenCalledWith("pj-3", "user-1");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-c")?.is_deleted).toBe(true);
+    expect(useAppStore.getState().projects.find(p => p.id === "pj-3")?.is_deleted).toBe(true);
   });
 
   it("operations配列は逆順（後に実行した操作から）に適用する", async () => {
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", due_date: "2026-05-20" })],
+      projects: [makeProject({ id: "pj-1", end_date: "2026-09-01" })],
+    });
+    const callOrder: string[] = [];
+    storeMock.upsertTask.mockImplementation(async () => { callOrder.push("tasks"); return "2026-08-12T00:00:00.000Z"; });
+    storeMock.upsertProject.mockImplementation(async () => { callOrder.push("projects"); return "2026-08-12T00:00:00.000Z"; });
+
     const snapshot = makeSnapshot([
       { type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" },
       { type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" },
     ]);
     await applyUndo(snapshot, "user-1");
 
-    const updateCalls = mockState.calls.filter(c => c.op === "update");
-    expect(updateCalls[0].table).toBe("projects"); // pj_field（配列2番目）が先に適用される
-    expect(updateCalls[1].table).toBe("tasks");    // task_field（配列1番目）が後に適用される
+    expect(callOrder[0]).toBe("projects"); // pj_field（配列2番目）が先に適用される
+    expect(callOrder[1]).toBe("tasks");    // task_field（配列1番目）が後に適用される
   });
 });
 
 describe("applyUndo — エラー処理", () => {
-  it("UPDATEがerrorを返した場合、formatErrorForUser経由のメッセージでtype:errorを返す", async () => {
-    queueResult("tasks", "update", { data: null, error: { message: "boom" } });
+  it("saveTaskが失敗した場合、formatErrorForUser経由のメッセージでtype:errorを返す", async () => {
+    useAppStore.setState({ tasks: [makeTask({ id: "t-1" })] });
+    storeMock.upsertTask.mockRejectedValueOnce(new Error("boom"));
 
-    const snapshot = makeSnapshot([
-      { type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" },
-    ]);
+    const snapshot = makeSnapshot([{ type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" }]);
     const result = await applyUndo(snapshot, "user-1");
 
     expect(result.type).toBe("error");
@@ -199,12 +202,11 @@ describe("applyUndo — エラー処理", () => {
     expect(result.message).toContain("boom");
   });
 
-  it("pj_fieldのUPDATEがerrorを返した場合もtype:errorを返す", async () => {
-    queueResult("projects", "update", { data: null, error: { message: "pj boom" } });
+  it("saveProjectが失敗した場合もtype:errorを返す", async () => {
+    useAppStore.setState({ projects: [makeProject({ id: "pj-1" })] });
+    storeMock.upsertProject.mockRejectedValueOnce(new Error("pj boom"));
 
-    const snapshot = makeSnapshot([
-      { type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" },
-    ]);
+    const snapshot = makeSnapshot([{ type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" }]);
     const result = await applyUndo(snapshot, "user-1");
 
     expect(result.type).toBe("error");

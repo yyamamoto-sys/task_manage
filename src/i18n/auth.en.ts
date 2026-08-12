@@ -49,7 +49,7 @@ export const authEn: Record<keyof typeof authJa, string> = {
   "auth.guest.divider": "or",
   "auth.guest.cta": "View sample (no account needed)",
   "auth.guest.loading": "Loading sample...",
-  "auth.guest.desc": "See what the app looks like with fictional data. Editing is disabled. You can try AI features up to {limit} times a day.",
+  "auth.guest.desc": "Try it out with fictional data, including editing. Edits are not saved and reset when you reload. You can try AI features up to {limit} times a day.",
 
   "auth.accessDenied.title": "Access denied",
   "auth.accessDenied.body1": "This email address is not yet registered as a member.",

@@ -4,15 +4,32 @@
 // UIProposalをDBに反映する関数群。
 // CLAUDE.md Section 6-10のDB操作ルールに従う：
 // - date_change / assignee → needs_confirmationを返す（DBは触らない）
-// - risk / no_tasks / deadline_risk → タスクのcommentに追記（SELECT+UPDATE、rpcは使わない）
+// - risk / no_tasks / deadline_risk → タスクのcommentに追記
 // - scope_reduce / pause → 論理削除（is_deleted=true）
 // - milestone → errorを返す
 //
 // ❌ 物理削除は絶対に行わない（CLAUDE.md Section 4参照）
+//
+// 【v3.71で choke point 統一】以前はこのファイルが `supabase.from(...)` を直接呼んでおり、
+// `appStore.saveTask`/`saveProject` を経由しなかった（実ユーザーでもゲストでも同じ）。その結果
+// B1（依存ゲート）・B3（自動リスケ連鎖）・B4（ベースライン捕捉）がAI提案の反映にだけ効かない
+// という食い違いがあった（CLAUDE.md Section 3-6参照）。v3.71で `useAppStore.getState()` の
+// アクション（saveTask/saveProject/deleteTask/restoreTask/deleteProject/restoreProject）経由に
+// 統一し、ゲスト分岐も appStore 側の既存の isGuestMode() 分岐にそのまま乗るようにした
+// （旧 guestApplyStore.ts は撤去。読み取りも常に store state を見るため、実ユーザー/ゲストの
+// 分岐が完全に無くなった）。
+//
+// 【部分失敗の方針（v3.71で決定）】複数タスク・複数PJを対象にする提案（date_change/assignee/
+// scope_reduce/pause/add_task/add_project）は、1件ずつ choke point を通すため、B1ゲートや
+// 楽観ロック競合で一部だけ弾かれる可能性がある。書き込み自体がトランザクションではない
+// （元々そうだった。DBに複数UPDATEを順番に投げる設計）ため、「1件失敗したら全体をエラー
+// 扱いにする」と、実際には他のN件は既にDBに書き込まれているのに利用者には「失敗した」
+// としか伝わらない・Undo手段も残らない、という食い違いが起きる。そのため各項目を
+// try/catchで包み、成功した分はUndoSnapshotに積み、失敗した分は理由（formatErrorForUser経由）
+// を集めて `warning` として success 結果に添える（全滅時のみ type:"error"）。
 
-import { supabase } from "../supabase/client";
-import { isGuestMode } from "../guestMode";
-import { guestGetTask, guestGetProject, guestPatchTask, guestPatchProject, guestPatchProjectTasks, guestInsertTask, guestInsertProject, guestActiveMembers, guestMemberShortName } from "./guestApplyStore";
+import { useAppStore } from "../../stores/appStore";
+import type { Task, Project } from "../localData/types";
 import type { UIProposal } from "./proposalMapper";
 import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
@@ -21,7 +38,7 @@ import { toDate, addDays, toDateStr } from "../date";
 // ===== 型定義 =====
 
 export type ApplyResult =
-  | { type: "success"; snapshot: UndoSnapshot }
+  | { type: "success"; snapshot: UndoSnapshot; warning?: string }
   | { type: "needs_confirmation"; dialog: ConfirmationDialog }
   | { type: "error"; message: string };
 
@@ -64,6 +81,12 @@ function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: nu
     case "add_task":        return `タスク追加 ${suffix}`;
     default:                return `変更 ${suffix}`;
   }
+}
+
+/** 失敗リストを「N件は反映できませんでした：理由1; 理由2」の警告文にまとめる。0件ならundefined。 */
+function buildWarning(failures: string[]): string | undefined {
+  if (failures.length === 0) return undefined;
+  return `${failures.length}件は反映できませんでした：${failures.join("; ")}`;
 }
 
 export interface ConfirmationDialog {
@@ -114,16 +137,35 @@ export interface PjEndDateItem {
   suggested_end_date: string;
 }
 
-// ===== 内部ヘルパー =====
+// ===== 内部ヘルパー（読み取りは常に appStore の state を見る。実ユーザー/ゲストで分岐しない）=====
+
+function getTaskPreview(uuid: string): { name: string; due_date: string | null; assignee_member_id: string } | null {
+  const t = useAppStore.getState().tasks.find(x => x.id === uuid);
+  if (!t) return null;
+  return { name: t.name, due_date: t.due_date ?? null, assignee_member_id: t.assignee_member_id ?? "" };
+}
+
+function getProjectPreview(uuid: string): { name: string; end_date: string | null } | null {
+  const p = useAppStore.getState().projects.find(x => x.id === uuid);
+  if (!p) return null;
+  return { name: p.name, end_date: p.end_date ?? null };
+}
+
+/** 有効メンバー一覧（short_name→id解決用。add_task/add_projectの担当者名マッチに使う）。 */
+function getActiveMembersForNameResolution(): { id: string; short_name: string }[] {
+  return useAppStore.getState().members
+    .filter(m => !m.is_deleted)
+    .map(m => ({ id: m.id, short_name: m.short_name }));
+}
+
+function getMemberShortName(memberId: string): string | null {
+  const m = useAppStore.getState().members.find(x => x.id === memberId);
+  return m ? m.short_name : null;
+}
 
 /**
- * タスクのcommentに追記する（2ステップSELECT+UPDATE）。
- * rpcは使わない（CLAUDE.md Section 6-10参照）。
+ * タスクのcommentに追記し、appStore.saveTask（choke point）で保存する。
  * 戻り値：更新前のcomment文字列（Undo用）
- *
- * 【ゲスト分岐】client.ts のProxyがfrom()を丸ごと止めるため、ゲストのときは
- * guestGetTask/guestPatchTask（メモリ上の直接操作）に切り替える。楽観ロック
- * （updated_at一致チェック）はゲストは単独利用のため元々競合が起きず、意味を持たない。
  */
 async function appendTaskComment(
   taskId: string,
@@ -131,59 +173,15 @@ async function appendTaskComment(
   currentUserId: string,
 ): Promise<string> {
   const timestamp = new Date().toLocaleDateString("ja-JP");
+  const task = useAppStore.getState().tasks.find(t => t.id === taskId);
+  if (!task) throw new Error("タスクが見つかりません");
 
-  if (isGuestMode()) {
-    const task = guestGetTask(taskId);
-    if (!task) throw new Error("タスクが見つかりません");
-    const currentComment = task.comment ?? "";
-    const newComment = currentComment
-      ? `${currentComment}\n\n[AIアドバイス ${timestamp}]\n${appendText}`
-      : `[AIアドバイス ${timestamp}]\n${appendText}`;
-    guestPatchTask(taskId, { comment: newComment }, currentUserId);
-    return currentComment;
-  }
-
-  // Step 1: 現在のcommentを取得
-  const { data: taskData, error: fetchError } = await supabase
-    .from("tasks")
-    .select("comment, updated_at")
-    .eq("id", taskId)
-    .single();
-
-  if (fetchError) {
-    throw new Error(`タスク取得エラー: ${fetchError.message}`);
-  }
-
-  const currentComment = (taskData?.comment as string) ?? "";
-  const originalUpdatedAt = taskData?.updated_at as string;
+  const currentComment = task.comment ?? "";
   const newComment = currentComment
     ? `${currentComment}\n\n[AIアドバイス ${timestamp}]\n${appendText}`
     : `[AIアドバイス ${timestamp}]\n${appendText}`;
 
-  // Step 2: 競合制御付きでコメントを更新（CLAUDE.md Section 5）
-  // Step 1 取得時の updated_at と一致する場合のみ更新する
-  const now = new Date().toISOString();
-  const { data: updated, error: updateError } = await supabase
-    .from("tasks")
-    .update({
-      comment: newComment,
-      updated_at: now,
-      updated_by: currentUserId,
-    })
-    .eq("id", taskId)
-    .eq("updated_at", originalUpdatedAt)
-    .select("id");
-
-  if (updateError) {
-    throw new Error(`タスク更新エラー: ${updateError.message}`);
-  }
-
-  // 0件更新 = 他のユーザーが先に更新した（競合）
-  if (!updated || updated.length === 0) {
-    throw new Error(`タスクが他のユーザーによって更新されています。最新の内容を確認してから再度お試しください。`);
-  }
-
-  // Undo用に更新前のcommentを返す
+  await useAppStore.getState().saveTask({ ...task, comment: newComment, updated_by: currentUserId });
   return currentComment;
 }
 
@@ -194,48 +192,7 @@ function resolveUUID(shortId: string, shortIdMap: Map<string, string>): string |
   return shortIdMap.get(shortId) ?? null;
 }
 
-// ===== ゲスト分岐用のプレビュー取得ヘルパー（確認ダイアログの表示内容を組み立てるだけの
-// 読み取り専用。実際の反映はapplyProposalWithConfirmation側のguestPatchXで行う） =====
-
-/** 確認ダイアログ表示用の最小プレビュー（複数箇所の異なるSELECT列を1つの superset に統合）。 */
-async function fetchTaskPreview(
-  uuid: string,
-): Promise<{ name: string; due_date: string | null; assignee_member_id: string } | null> {
-  if (isGuestMode()) {
-    const t = guestGetTask(uuid);
-    return t ? { name: t.name, due_date: t.due_date, assignee_member_id: t.assignee_member_id } : null;
-  }
-  const { data } = await supabase
-    .from("tasks")
-    .select("name, due_date, assignee_member_id")
-    .eq("id", uuid)
-    .single();
-  if (!data) return null;
-  return {
-    name: data.name as string,
-    due_date: (data.due_date as string) ?? null,
-    assignee_member_id: (data.assignee_member_id as string) ?? "",
-  };
-}
-
-async function fetchProjectPreview(uuid: string): Promise<{ name: string; end_date: string | null } | null> {
-  if (isGuestMode()) {
-    const p = guestGetProject(uuid);
-    return p ? { name: p.name, end_date: p.end_date ?? null } : null;
-  }
-  const { data } = await supabase.from("projects").select("name, end_date").eq("id", uuid).single();
-  if (!data) return null;
-  return { name: data.name as string, end_date: (data.end_date as string) ?? null };
-}
-
-/** 有効メンバー一覧（short_name→id解決用。add_task/add_projectの担当者名マッチに使う）。 */
-async function fetchActiveMembersForNameResolution(): Promise<{ id: string; short_name: string }[]> {
-  if (isGuestMode()) return guestActiveMembers();
-  const { data } = await supabase.from("members").select("id, short_name").eq("is_deleted", false);
-  return (data ?? []) as { id: string; short_name: string }[];
-}
-
-// ===== add_task / add_project の新規作成ヘルパー（ゲスト分岐込み） =====
+// ===== add_task / add_project の新規作成ヘルパー =====
 
 interface NewTaskRowFields {
   id: string;
@@ -257,50 +214,32 @@ async function createTaskRow(
   now: string,
   errorLabel: string,
 ): Promise<void> {
-  if (isGuestMode()) {
-    guestInsertTask({
-      id: fields.id,
-      name: fields.name,
-      project_id: fields.project_id,
-      parent_task_id: fields.parent_task_id ?? null,
-      display_order: fields.display_order,
-      todo_ids: [],
-      assignee_member_id: fields.assignee_member_id ?? "",
-      assignee_member_ids: fields.assignee_member_ids,
-      status: "todo",
-      priority: null,
-      start_date: fields.start_date,
-      due_date: fields.due_date,
-      estimated_hours: null,
-      comment: fields.comment ?? "",
-      is_deleted: false,
-      group_id: currentGroupId ?? null,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUserId,
-    });
-    return;
-  }
-  const { error } = await supabase.from("tasks").insert({
+  const task: Task = {
     id: fields.id,
     name: fields.name,
     project_id: fields.project_id,
-    parent_task_id: fields.parent_task_id,
+    parent_task_id: fields.parent_task_id ?? null,
     display_order: fields.display_order,
-    todo_id: null,
-    assignee_member_id: fields.assignee_member_id,
+    todo_ids: [],
+    assignee_member_id: fields.assignee_member_id ?? "",
     assignee_member_ids: fields.assignee_member_ids,
     status: "todo",
-    is_deleted: false,
+    priority: null,
     start_date: fields.start_date,
     due_date: fields.due_date,
-    comment: fields.comment,
-    group_id: currentGroupId ?? null,
+    estimated_hours: null,
+    comment: fields.comment ?? "",
+    is_deleted: false,
+    group_id: currentGroupId ?? undefined,
     created_at: now,
     updated_at: now,
     updated_by: currentUserId,
-  });
-  if (error) throw new Error(`${errorLabel}: ${error.message}`);
+  };
+  try {
+    await useAppStore.getState().saveTask(task);
+  } catch (e) {
+    throw new Error(`${errorLabel}: ${formatErrorForUser("", e)}`);
+  }
 }
 
 async function createProjectRow(
@@ -309,27 +248,7 @@ async function createProjectRow(
   currentUserId: string,
   now: string,
 ): Promise<void> {
-  if (isGuestMode()) {
-    guestInsertProject({
-      id: fields.id,
-      name: fields.name,
-      purpose: fields.purpose,
-      contribution_memo: "",
-      owner_member_id: fields.owner_member_id,
-      owner_member_ids: [fields.owner_member_id],
-      status: "active",
-      color_tag: DEFAULT_PROJECT_COLOR,
-      start_date: "",
-      end_date: "",
-      is_deleted: false,
-      group_id: currentGroupId ?? null,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUserId,
-    });
-    return;
-  }
-  const { error } = await supabase.from("projects").insert({
+  const project: Project = {
     id: fields.id,
     name: fields.name,
     purpose: fields.purpose,
@@ -338,15 +257,19 @@ async function createProjectRow(
     owner_member_ids: [fields.owner_member_id],
     status: "active",
     color_tag: DEFAULT_PROJECT_COLOR,
-    start_date: null,
-    end_date: null,
+    start_date: "",
+    end_date: "",
     is_deleted: false,
-    group_id: currentGroupId ?? null,
+    group_id: currentGroupId ?? undefined,
     created_at: now,
     updated_at: now,
     updated_by: currentUserId,
-  });
-  if (error) throw new Error(`プロジェクト作成エラー: ${error.message}`);
+  };
+  try {
+    await useAppStore.getState().saveProject(project);
+  } catch (e) {
+    throw new Error(`プロジェクト作成エラー: ${formatErrorForUser("", e)}`);
+  }
 }
 
 // ===== メイン関数 =====
@@ -390,7 +313,7 @@ export async function applyProposal(
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
 
-      const task = await fetchTaskPreview(uuid);
+      const task = getTaskPreview(uuid);
 
       if (!task) continue;
 
@@ -415,7 +338,7 @@ export async function applyProposal(
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
 
-      const pj = await fetchProjectPreview(uuid);
+      const pj = getProjectPreview(uuid);
 
       if (!pj) continue;
 
@@ -461,16 +384,14 @@ export async function applyProposal(
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
 
-      const task = await fetchTaskPreview(uuid);
+      const task = getTaskPreview(uuid);
 
       if (!task) continue;
 
       // 現在の担当者名を取得
       let currentAssigneeName = "未担当";
       if (task.assignee_member_id) {
-        const shortName = isGuestMode()
-          ? guestMemberShortName(task.assignee_member_id)
-          : (await supabase.from("members").select("short_name").eq("id", task.assignee_member_id).single()).data?.short_name as string | undefined;
+        const shortName = getMemberShortName(task.assignee_member_id);
         if (shortName) currentAssigneeName = shortName;
       }
 
@@ -502,27 +423,29 @@ export async function applyProposal(
     action_type === "no_tasks" ||
     action_type === "deadline_risk"
   ) {
-    try {
-      const operations: UndoOperation[] = [];
-      for (const shortId of proposal.target_task_ids) {
-        const uuid = resolveUUID(shortId, shortIdMap);
-        if (!uuid) continue;
+    const operations: UndoOperation[] = [];
+    const failures: string[] = [];
+    for (const shortId of proposal.target_task_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
+      const taskName = getTaskPreview(uuid)?.name ?? shortId;
+      try {
         const oldComment = await appendTaskComment(uuid, proposal.description, currentUserId);
         operations.push({ type: "task_field", taskId: uuid, field: "comment", oldValue: oldComment || null });
+      } catch (e) {
+        failures.push(formatErrorForUser(taskName, e));
       }
-      const snapshot: UndoSnapshot = {
-        id: generateId(),
-        label: buildSnapshotLabel(action_type, operations.length, 0),
-        appliedAt: new Date().toISOString(),
-        operations,
-      };
-      return { type: "success", snapshot };
-    } catch (e) {
-      return {
-        type: "error",
-        message: formatErrorForUser("コメント追記に失敗しました", e),
-      };
     }
+    if (operations.length === 0 && failures.length > 0) {
+      return { type: "error", message: formatWithLabel("コメント追記に失敗しました", failures) };
+    }
+    const snapshot: UndoSnapshot = {
+      id: generateId(),
+      label: buildSnapshotLabel(action_type, operations.length, 0),
+      appliedAt: new Date().toISOString(),
+      operations,
+    };
+    return { type: "success", snapshot, warning: buildWarning(failures) };
   }
 
   // ===== scope_reduce / pause: 確認ダイアログを返す（CLAUDE.md Section 6-9参照）=====
@@ -537,7 +460,7 @@ export async function applyProposal(
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
 
-      const task = await fetchTaskPreview(uuid);
+      const task = getTaskPreview(uuid);
 
       if (!task) continue;
       taskUuids.push(uuid);
@@ -553,7 +476,7 @@ export async function applyProposal(
       const uuid = resolveUUID(shortId, shortIdMap);
       if (!uuid) continue;
 
-      const pj = await fetchProjectPreview(uuid);
+      const pj = getProjectPreview(uuid);
 
       if (!pj) continue;
       pjUuids.push(uuid);
@@ -588,13 +511,13 @@ export async function applyProposal(
     if (proposal.target_pj_ids.length > 0) {
       const pjUuid = resolveUUID(proposal.target_pj_ids[0], shortIdMap);
       if (pjUuid) {
-        const pj = await fetchProjectPreview(pjUuid);
+        const pj = getProjectPreview(pjUuid);
         if (pj) { projectId = pjUuid; projectName = pj.name; }
       }
     }
 
     // 担当者解決用に有効メンバーを一括取得（親タスク＋子タスクの short_name→id 変換に使う）
-    const memberRows = await fetchActiveMembersForNameResolution();
+    const memberRows = getActiveMembersForNameResolution();
     const memberByShortName = new Map<string, { id: string; short_name: string }>();
     for (const m of memberRows) {
       memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
@@ -648,7 +571,7 @@ export async function applyProposal(
   // ===== add_project: 新規PJ作成の確認ダイアログを返す =====
   if (action_type === "add_project") {
     // members を short_name → id で解決するため一括取得（new_project_tasks の担当者解決用）
-    const memberRows = await fetchActiveMembersForNameResolution();
+    const memberRows = getActiveMembersForNameResolution();
     const memberByShortName = new Map<string, { id: string; short_name: string }>();
     for (const m of memberRows) {
       memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
@@ -688,6 +611,11 @@ export async function applyProposal(
   return { type: "error", message: "未対応のアクションタイプです" };
 }
 
+/** 全滅時のエラーメッセージ組み立て（prefix + 個々の失敗理由） */
+function formatWithLabel(prefix: string, failures: string[]): string {
+  return `${prefix}：${failures.join("; ")}`;
+}
+
 /**
  * 確認ダイアログでユーザーが内容を確認・調整した後にDBへ反映する。
  * CLAUDE.md Section 6-11に従い、shortIdMapは引数に含めない（confirmedValuesのキーはUUID）。
@@ -708,32 +636,29 @@ export async function applyProposalWithConfirmation(
 
     if (dialog.action_type === "date_change") {
       const operations: UndoOperation[] = [];
+      const failures: string[] = [];
 
       // タスクの期日更新
       for (const item of dialog.items) {
         const newDate = confirmedValues[item.task_id];
         if (!newDate) continue;
 
-        if (isGuestMode()) {
-          const oldDueDate = guestGetTask(item.task_id)?.due_date ?? null;
-          guestPatchTask(item.task_id, { due_date: newDate }, currentUserId);
-          operations.push({ type: "task_field", taskId: item.task_id, field: "due_date", oldValue: oldDueDate });
+        const task = useAppStore.getState().tasks.find(t => t.id === item.task_id);
+        if (!task) continue;
+        const oldDueDate = task.due_date ?? null;
+
+        try {
+          // saveTask（choke point）を通すため、due_date変更を受けてB3（自動リスケ連鎖）が
+          // 自動的に発火する（後続タスクを押した場合は既存の「N件のタスクの日付を自動調整
+          // しました」トースト＋Undoがそのまま出る。CLAUDE.md Section 3-6参照）。
+          await useAppStore.getState().saveTask({ ...task, due_date: newDate, updated_by: currentUserId });
+        } catch (e) {
+          // B1ゲート（先行タスク未完了で完了にできない等）や楽観ロック競合はここで弾かれる。
+          // 書き込みはトランザクションではないため、他の項目には影響させず続行する
+          // （ファイル冒頭コメントの「部分失敗の方針」参照）。
+          failures.push(formatErrorForUser(item.task_name, e));
           continue;
         }
-
-        const { data: taskData } = await supabase
-          .from("tasks")
-          .select("due_date")
-          .eq("id", item.task_id)
-          .single();
-        const oldDueDate = (taskData?.due_date as string) ?? null;
-
-        const { error } = await supabase
-          .from("tasks")
-          .update({ due_date: newDate, updated_at: now, updated_by: currentUserId })
-          .eq("id", item.task_id);
-
-        if (error) throw new Error(`日程更新エラー (${item.task_name}): ${error.message}`);
         operations.push({ type: "task_field", taskId: item.task_id, field: "due_date", oldValue: oldDueDate });
       }
 
@@ -742,27 +667,21 @@ export async function applyProposalWithConfirmation(
         const newEndDate = confirmedValues[pjItem.pj_id];
         if (!newEndDate) continue;
 
-        if (isGuestMode()) {
-          const oldEndDate = guestGetProject(pjItem.pj_id)?.end_date ?? null;
-          guestPatchProject(pjItem.pj_id, { end_date: newEndDate }, currentUserId);
-          operations.push({ type: "pj_field", pjId: pjItem.pj_id, field: "end_date", oldValue: oldEndDate });
+        const pj = useAppStore.getState().projects.find(p => p.id === pjItem.pj_id);
+        if (!pj) continue;
+        const oldEndDate = pj.end_date ?? null;
+
+        try {
+          await useAppStore.getState().saveProject({ ...pj, end_date: newEndDate, updated_by: currentUserId });
+        } catch (e) {
+          failures.push(formatErrorForUser(pjItem.pj_name, e));
           continue;
         }
-
-        const { data: pjData } = await supabase
-          .from("projects")
-          .select("end_date")
-          .eq("id", pjItem.pj_id)
-          .single();
-        const oldEndDate = (pjData?.end_date as string) ?? null;
-
-        const { error } = await supabase
-          .from("projects")
-          .update({ end_date: newEndDate, updated_at: now, updated_by: currentUserId })
-          .eq("id", pjItem.pj_id);
-
-        if (error) throw new Error(`PJ終了日更新エラー (${pjItem.pj_name}): ${error.message}`);
         operations.push({ type: "pj_field", pjId: pjItem.pj_id, field: "end_date", oldValue: oldEndDate });
+      }
+
+      if (operations.length === 0 && failures.length > 0) {
+        return { type: "error", message: formatWithLabel("日程変更に失敗しました", failures) };
       }
 
       const taskCount = operations.filter(o => o.type === "task_field").length;
@@ -773,55 +692,47 @@ export async function applyProposalWithConfirmation(
         appliedAt: now,
         operations,
       };
-      return { type: "success", snapshot };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
     }
 
     if (dialog.action_type === "assignee") {
       const operations: UndoOperation[] = [];
+      const failures: string[] = [];
       for (const item of dialog.items) {
         const newAssigneeId = confirmedValues[item.task_id];
         if (!newAssigneeId) continue;
 
-        // Undo用に現在の担当者フィールドを両方取得
-        if (isGuestMode()) {
-          const existing = guestGetTask(item.task_id);
-          const oldAssigneeId = existing?.assignee_member_id ?? null;
-          const oldAssigneeIds = existing?.assignee_member_ids ?? [];
-          guestPatchTask(item.task_id, { assignee_member_id: newAssigneeId, assignee_member_ids: [newAssigneeId] }, currentUserId);
-          operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_id", oldValue: oldAssigneeId });
-          operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_ids", oldValue: oldAssigneeIds });
-          continue;
-        }
+        const task = useAppStore.getState().tasks.find(t => t.id === item.task_id);
+        if (!task) continue;
+        const oldAssigneeId = task.assignee_member_id ?? null;
+        const oldAssigneeIds = task.assignee_member_ids ?? [];
 
-        const { data: taskData } = await supabase
-          .from("tasks")
-          .select("assignee_member_id, assignee_member_ids")
-          .eq("id", item.task_id)
-          .single();
-        const oldAssigneeId = (taskData?.assignee_member_id as string) ?? null;
-        const oldAssigneeIds = (taskData?.assignee_member_ids as string[]) ?? [];
-
-        const { error } = await supabase
-          .from("tasks")
-          .update({
+        try {
+          await useAppStore.getState().saveTask({
+            ...task,
             assignee_member_id: newAssigneeId,
             assignee_member_ids: [newAssigneeId],
-            updated_at: now,
             updated_by: currentUserId,
-          })
-          .eq("id", item.task_id);
-
-        if (error) throw new Error(`担当者更新エラー (${item.task_name}): ${error.message}`);
+          });
+        } catch (e) {
+          failures.push(formatErrorForUser(item.task_name, e));
+          continue;
+        }
         operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_id", oldValue: oldAssigneeId });
         operations.push({ type: "task_field", taskId: item.task_id, field: "assignee_member_ids", oldValue: oldAssigneeIds });
       }
+      if (operations.length === 0 && failures.length > 0) {
+        return { type: "error", message: formatWithLabel("担当者変更に失敗しました", failures) };
+      }
       const snapshot: UndoSnapshot = {
         id: generateId(),
+        // 【既存挙動を維持】assigneeは1タスクにつき2件のoperationを積む（assignee_member_id/
+        // assignee_member_ids）ため、operations.lengthはタスク数の2倍になる（移行前から同じ）。
         label: buildSnapshotLabel("assignee", operations.length, 0),
         appliedAt: now,
         operations,
       };
-      return { type: "success", snapshot };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
     }
 
     // ===== scope_reduce / pause: 論理削除 =====
@@ -830,66 +741,49 @@ export async function applyProposalWithConfirmation(
       dialog.action_type === "pause"
     ) {
       const operations: UndoOperation[] = [];
+      const failures: string[] = [];
 
       // 個別タスクの論理削除
       for (const taskUuid of dialog.target_task_uuids ?? []) {
-        if (isGuestMode()) {
-          guestPatchTask(taskUuid, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          operations.push({ type: "task_restore", taskId: taskUuid });
+        const taskName = useAppStore.getState().tasks.find(t => t.id === taskUuid)?.name ?? taskUuid;
+        try {
+          await useAppStore.getState().deleteTask(taskUuid, currentUserId);
+        } catch (e) {
+          failures.push(formatErrorForUser(taskName, e));
           continue;
         }
-
-        const { error } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", taskUuid);
-
-        if (error) throw new Error(`タスク削除エラー: ${error.message}`);
         operations.push({ type: "task_restore", taskId: taskUuid });
       }
 
-      // PJおよび配下タスクの論理削除
+      // PJおよび配下タスクの論理削除（配下タスク→PJ本体の順。既存の直接UPDATE版と同じ順序）
       for (const pjUuid of dialog.target_pj_uuids ?? []) {
-        if (isGuestMode()) {
-          guestPatchProjectTasks(pjUuid, false, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          guestPatchProject(pjUuid, { is_deleted: true, deleted_at: now, deleted_by: currentUserId }, currentUserId);
-          operations.push({ type: "pj_restore", pjId: pjUuid });
+        const pjName = useAppStore.getState().projects.find(p => p.id === pjUuid)?.name ?? pjUuid;
+        const childTasks = useAppStore.getState().tasks.filter(t => t.project_id === pjUuid && !t.is_deleted);
+        let childFailed = false;
+        for (const t of childTasks) {
+          try {
+            await useAppStore.getState().deleteTask(t.id, currentUserId);
+          } catch (e) {
+            failures.push(formatErrorForUser(`${pjName} / ${t.name}`, e));
+            childFailed = true;
+          }
+        }
+        try {
+          await useAppStore.getState().deleteProject(pjUuid, currentUserId);
+        } catch (e) {
+          failures.push(formatErrorForUser(pjName, e));
           continue;
         }
-
-        const { error: tasksError } = await supabase
-          .from("tasks")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("project_id", pjUuid)
-          .eq("is_deleted", false);
-
-        if (tasksError) throw new Error(`タスク一括削除エラー: ${tasksError.message}`);
-
-        const { error: pjError } = await supabase
-          .from("projects")
-          .update({
-            is_deleted: true,
-            deleted_at: now,
-            deleted_by: currentUserId,
-            updated_at: now,
-            updated_by: currentUserId,
-          })
-          .eq("id", pjUuid);
-
-        if (pjError) throw new Error(`PJ削除エラー: ${pjError.message}`);
+        // 配下タスクの一部が弾かれていても、PJ本体の削除自体は成功しているため
+        // pj_restore を積む（Undoで復元すればタスクも一緒に戻る。restoreTaskは
+        // is_deleted=trueの行だけを対象にするため、弾かれて元々is_deleted=falseの
+        // タスクには影響しない）。
+        void childFailed;
         operations.push({ type: "pj_restore", pjId: pjUuid });
+      }
+
+      if (operations.length === 0 && failures.length > 0) {
+        return { type: "error", message: formatWithLabel("削除に失敗しました", failures) };
       }
 
       const snapshot: UndoSnapshot = {
@@ -902,12 +796,13 @@ export async function applyProposalWithConfirmation(
         appliedAt: now,
         operations,
       };
-      return { type: "success", snapshot };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
     }
 
     // ===== add_task: タスク新規作成（new_subtask_items があれば 親＋子の階層作成）=====
     if (dialog.action_type === "add_task") {
       const operations: UndoOperation[] = [];
+      const failures: string[] = [];
       const subtaskItems = dialog.new_subtask_items ?? [];
       const hasHierarchy = subtaskItems.length > 0;
 
@@ -916,6 +811,7 @@ export async function applyProposalWithConfirmation(
       let parentProjectId: string | null = null;
 
       // 親（または単体）タスクを作成。new_task_items[0] を親として扱う。
+      // 親の作成に失敗したら子はぶら下げる先が無いため全体を中断する。
       for (const item of dialog.new_task_items ?? []) {
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
         if (!name) continue;
@@ -926,25 +822,30 @@ export async function applyProposalWithConfirmation(
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
         const newId = generateId();
-        await createTaskRow(
-          {
-            id: newId,
-            name,
-            project_id: item.project_id ?? null,
-            assignee_member_id: assigneeId,
-            assignee_member_ids: assigneeIdList,
-            start_date: startDate,
-            due_date: dueDate,
-            comment: confirmedValues[`${item.temp_id}_description`] || null,
-          },
-          currentGroupId, currentUserId, now, "タスク作成エラー",
-        );
+        try {
+          await createTaskRow(
+            {
+              id: newId,
+              name,
+              project_id: item.project_id ?? null,
+              assignee_member_id: assigneeId,
+              assignee_member_ids: assigneeIdList,
+              start_date: startDate,
+              due_date: dueDate,
+              comment: confirmedValues[`${item.temp_id}_description`] || null,
+            },
+            currentGroupId, currentUserId, now, "タスク作成エラー",
+          );
+        } catch (e) {
+          return { type: "error", message: formatErrorForUser("", e) };
+        }
         operations.push({ type: "task_delete", taskId: newId });
         addedCount++;
         if (parentId === null) { parentId = newId; parentProjectId = item.project_id ?? null; }
       }
 
-      // 子タスクを作成（親に parent_task_id でぶら下げ・project_id は親に揃える）
+      // 子タスクを作成（親に parent_task_id でぶら下げ・project_id は親に揃える）。
+      // 個々の子の作成失敗は他の子の作成を止めない（部分失敗の方針）。
       if (hasHierarchy && parentId) {
         let order = 0;
         for (const sub of subtaskItems) {
@@ -957,21 +858,27 @@ export async function applyProposalWithConfirmation(
           const dueDate = confirmedValues[`${sub.temp_id}_due_date`] || null;
 
           const childId = generateId();
-          await createTaskRow(
-            {
-              id: childId,
-              name,
-              project_id: parentProjectId,
-              parent_task_id: parentId,
-              display_order: order,
-              assignee_member_id: assigneeId,
-              assignee_member_ids: subIdList,
-              start_date: startDate,
-              due_date: dueDate,
-              comment: confirmedValues[`${sub.temp_id}_description`] || null,
-            },
-            currentGroupId, currentUserId, now, `子タスク作成エラー (${name})`,
-          );
+          try {
+            await createTaskRow(
+              {
+                id: childId,
+                name,
+                project_id: parentProjectId,
+                parent_task_id: parentId,
+                display_order: order,
+                assignee_member_id: assigneeId,
+                assignee_member_ids: subIdList,
+                start_date: startDate,
+                due_date: dueDate,
+                comment: confirmedValues[`${sub.temp_id}_description`] || null,
+              },
+              currentGroupId, currentUserId, now, `子タスク作成エラー (${name})`,
+            );
+          } catch (e) {
+            failures.push(formatErrorForUser(name, e));
+            order++;
+            continue;
+          }
           operations.push({ type: "task_delete", taskId: childId });
           addedCount++;
           order++;
@@ -984,13 +891,14 @@ export async function applyProposalWithConfirmation(
         appliedAt: now,
         operations,
       };
-      return { type: "success", snapshot };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
     }
 
     // ===== add_project: 新規PJ作成（PJ insert → 初期タスク insert） =====
     // ConsultationPanel.handleCreateSave の projects insert 項目に合わせて必要列を網羅する。
     if (dialog.action_type === "add_project") {
       const operations: UndoOperation[] = [];
+      const failures: string[] = [];
 
       const projectId = generateId();
       const projectName = (confirmedValues["project_name"] ?? dialog.new_project?.name ?? "").trim();
@@ -999,13 +907,19 @@ export async function applyProposalWithConfirmation(
       }
       const projectPurpose = (confirmedValues["project_purpose"] ?? dialog.new_project?.purpose ?? "").trim();
 
-      await createProjectRow(
-        { id: projectId, name: projectName, purpose: projectPurpose, owner_member_id: currentUserId },
-        currentGroupId, currentUserId, now,
-      );
+      // PJ本体の作成に失敗したら初期タスクの紐づけ先が無いため全体を中断する。
+      try {
+        await createProjectRow(
+          { id: projectId, name: projectName, purpose: projectPurpose, owner_member_id: currentUserId },
+          currentGroupId, currentUserId, now,
+        );
+      } catch (e) {
+        return { type: "error", message: formatErrorForUser("", e) };
+      }
       operations.push({ type: "pj_delete", pjId: projectId });
 
-      // 初期タスクを作成（add_task と同じ命名規則で confirmedValues から取得）
+      // 初期タスクを作成（add_task と同じ命名規則で confirmedValues から取得）。
+      // 個々のタスクの作成失敗は他の初期タスクの作成を止めない（部分失敗の方針）。
       let taskCount = 0;
       for (const item of dialog.new_project_task_items ?? []) {
         const name = (confirmedValues[`${item.temp_id}_name`] ?? item.task_name).trim();
@@ -1017,19 +931,24 @@ export async function applyProposalWithConfirmation(
         const dueDate = confirmedValues[`${item.temp_id}_due_date`] || null;
 
         const newTaskId = generateId();
-        await createTaskRow(
-          {
-            id: newTaskId,
-            name,
-            project_id: projectId,
-            assignee_member_id: assigneeId,
-            assignee_member_ids: pjTaskIdList,
-            start_date: startDate,
-            due_date: dueDate,
-            comment: confirmedValues[`${item.temp_id}_description`] || null,
-          },
-          currentGroupId, currentUserId, now, `初期タスク作成エラー (${name})`,
-        );
+        try {
+          await createTaskRow(
+            {
+              id: newTaskId,
+              name,
+              project_id: projectId,
+              assignee_member_id: assigneeId,
+              assignee_member_ids: pjTaskIdList,
+              start_date: startDate,
+              due_date: dueDate,
+              comment: confirmedValues[`${item.temp_id}_description`] || null,
+            },
+            currentGroupId, currentUserId, now, `初期タスク作成エラー (${name})`,
+          );
+        } catch (e) {
+          failures.push(formatErrorForUser(name, e));
+          continue;
+        }
         taskCount++;
       }
 
@@ -1039,7 +958,7 @@ export async function applyProposalWithConfirmation(
         appliedAt: now,
         operations,
       };
-      return { type: "success", snapshot };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
     }
 
     return { type: "error", message: "未対応のアクションタイプです" };

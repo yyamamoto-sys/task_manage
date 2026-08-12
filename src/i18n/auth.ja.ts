@@ -50,7 +50,7 @@ export const authJa = {
   "auth.guest.divider": "または",
   "auth.guest.cta": "サンプルを見る（アカウント不要）",
   "auth.guest.loading": "サンプルを読み込み中...",
-  "auth.guest.desc": "架空のデータでアプリの見た目だけ確認できます。編集はできません。AI機能は1日{limit}回まで試せます。",
+  "auth.guest.desc": "架空のデータで、編集も含めて試せます。編集した内容は保存されず、再読み込みで元に戻ります。AI機能は1日{limit}回まで試せます。",
 
   // ----- AccessDeniedScreen -----
   "auth.accessDenied.title": "アクセス権がありません",

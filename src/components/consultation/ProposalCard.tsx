@@ -66,7 +66,7 @@ export function ProposalCard({
     setApplying(false);
 
     if (result.type === "success") {
-      setResultMessage({ type: "success", text: "反映しました" });
+      setResultMessage({ type: "success", text: result.warning ? `反映しました（${result.warning}）` : "反映しました" });
       onApplied?.(result.snapshot);
     } else if (result.type === "needs_confirmation") {
       setConfirmDialog(result.dialog);
@@ -180,7 +180,7 @@ export function ProposalCard({
             onApplied={(result) => {
               setConfirmDialog(null);
               if (result.type === "success") {
-                setResultMessage({ type: "success", text: "プロジェクトを作成しました" });
+                setResultMessage({ type: "success", text: result.warning ? `プロジェクトを作成しました（${result.warning}）` : "プロジェクトを作成しました" });
                 onApplied?.(result.snapshot);
               } else if (result.type === "error") {
                 setResultMessage({ type: "error", text: result.message });
@@ -517,7 +517,7 @@ export function ProposalCard({
           onApplied={(result) => {
             setConfirmDialog(null);
             if (result.type === "success") {
-              setResultMessage({ type: "success", text: "反映しました" });
+              setResultMessage({ type: "success", text: result.warning ? `反映しました（${result.warning}）` : "反映しました" });
               onApplied?.(result.snapshot);
             } else if (result.type === "error") {
               setResultMessage({ type: "error", text: result.message });

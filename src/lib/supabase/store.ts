@@ -386,6 +386,15 @@ export async function softDeleteProject(id: string, deletedBy: string) {
   if (error) throw error;
 }
 
+/** ソフト削除の取り消し（restoreTaskと対の関数。v3.71でAI提案Undoのpj_restoreがchoke point経由になったため追加）。 */
+export async function restoreProject(id: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("projects")
+    .update({ is_deleted: false, deleted_at: null, deleted_by: null, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ===== Task =====
 
 export async function upsertTask(task: Task, expectedUpdatedAt?: string): Promise<string> {

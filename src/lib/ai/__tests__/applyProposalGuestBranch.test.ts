@@ -2,10 +2,12 @@
 //
 // 【設計意図】
 // ゲスト（サンプル閲覧）の「AI提案の反映」開放（CLAUDE.md Section 23・v3.69）の再発防止テスト。
-// applyProposal.ts / undoApply.ts は元々 appStore の choke point を経由せず supabase.from(...)
-// を直接呼ぶ実装（実ユーザーでも同じ）。ゲストのときは client.ts の Proxy がこの経路を
-// 丸ごとブロックするため、代わりに guestApplyStore.ts（useAppStore を直接読み書き）へ
-// 分岐していることを検証する：
+// 【v3.71で更新】applyProposal.ts / undoApply.ts は choke point 統一により
+// `appStore`（saveTask/saveProject/deleteTask/restoreTask/deleteProject/restoreProject）経由に
+// なった。ゲスト分岐は appStore 側の既存の isGuestMode() 分岐にそのまま乗るため、
+// このファイル専用の guestApplyStore.ts は不要になり撤去した。本テストの検証内容自体は
+// 変わらない（choke point がどこにあっても、ゲストではsupabaseに一切到達しないことが
+// 変わらず成り立つべきため）：
 //   - ゲストのときは supabase.from(...) が一度も呼ばれない（Proxyに到達させない）
 //   - 反映結果が useAppStore のstateに正しく反映される
 //   - Undo（applyUndo）も同様にゲストではsupabaseを呼ばない
