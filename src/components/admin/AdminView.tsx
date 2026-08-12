@@ -2332,7 +2332,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           style={{ marginTop: "12px" }}
         >
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
-            特定のプロジェクトのみ招待された部署外のメンバー。部署絞り込みの対象外のため、常に表示する。
+            特定のプロジェクトのみ招待された部署外のメンバーです。部署絞り込みの対象外のため、ここに常に表示します。
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
             {guestMembers.map(m => (
