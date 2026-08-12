@@ -8,17 +8,21 @@
 
 import type { Tour, TourStep } from "./types";
 import { firstTimeTour } from "./first-time";
+import { okrIntroTour } from "./okr-intro";
 
 export const ALL_TOURS: Record<string, Tour> = {
   [firstTimeTour.id]: firstTimeTour,
+  [okrIntroTour.id]: okrIntroTour,
 };
 
 /** ガイドのツアー一覧に表示する順序（重要度の高い順） */
 export const TOUR_LIST: Tour[] = [
   firstTimeTour,
+  okrIntroTour,
 ];
 
 export const FIRST_TIME_TOUR_ID = firstTimeTour.id;
+export const OKR_TOUR_ID = okrIntroTour.id;
 
 /**
  * 【設計意図】ゲスト（サンプル閲覧）向けにツアー定義を差し替える純粋関数。
@@ -30,6 +34,11 @@ export const FIRST_TIME_TOUR_ID = firstTimeTour.id;
  * `firstTimeTour`（モジュールレベル定数）は一切書き換えない。新しい配列・
  * 新しいオブジェクトを組み立てて返すことで、通常ユーザーの ALL_TOURS には
  * 影響しない。
+ *
+ * 🔴 okrIntroTour（OKRモードのガイドツアー）はゲスト向けの改変が不要
+ * （FABの参照も実演アクションも持たない）。ゲスト分岐でも ALL_TOURS の一部だけを
+ * 差し替えるのではなく必ず両方のツアーを返すこと（片方だけ返すとゲストのガイドから
+ * OKRツアーが再生できなくなる）。
  */
 export function buildTours(opts: { isGuest: boolean }): Record<string, Tour> {
   if (!opts.isGuest) return ALL_TOURS;
@@ -58,5 +67,5 @@ export function buildTours(opts: { isGuest: boolean }): Record<string, Tour> {
 
   const guestFirstTimeTour: Tour = { ...firstTimeTour, steps: guestSteps };
 
-  return { [guestFirstTimeTour.id]: guestFirstTimeTour };
+  return { [guestFirstTimeTour.id]: guestFirstTimeTour, [okrIntroTour.id]: okrIntroTour };
 }

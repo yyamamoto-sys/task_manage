@@ -29,13 +29,15 @@ const content = fs.readFileSync(SOURCE_PATH, "utf-8");
 
 describe("PersonalOkrView：対象期行・KRタブの帯はflexShrink:0で潰れないよう固定する", () => {
   it("「対象期」行のstyleにflexShrink:0がある", () => {
-    const periodRowMatch = content.match(/\{\/\* 期の選択 \*\/\}[\s\S]{0,600}?<div style=\{\{([\s\S]*?)\}\}>/);
+    // 🔴 v3.70でdata-tour-id属性（OKRツアーのターゲット）を追加したため、
+    // `<div ... style={{` の間に任意の属性が挟まっていてもマッチするようにしてある。
+    const periodRowMatch = content.match(/\{\/\* 期の選択 \*\/\}[\s\S]{0,600}?<div(?:\s+[\w-]+=(?:"[^"]*"|\{[^}]*\}))*\s+style=\{\{([\s\S]*?)\}\}>/);
     expect(periodRowMatch, "「期の選択」コメントの直後のdivが見つからない（構造が変わった場合はこのテストの正規表現も更新すること）").not.toBeNull();
     expect(periodRowMatch![1]).toMatch(/flexShrink:\s*0/);
   });
 
   it("「KRタブ」の帯のstyleにflexShrink:0がある（overflowX:autoを持つため必須）", () => {
-    const tabRowMatch = content.match(/\{\/\* KRタブ \*\/\}[\s\S]{0,900}?<div style=\{\{([\s\S]*?)\}\}>/);
+    const tabRowMatch = content.match(/\{\/\* KRタブ \*\/\}[\s\S]{0,900}?<div(?:\s+[\w-]+=(?:"[^"]*"|\{[^}]*\}))*\s+style=\{\{([\s\S]*?)\}\}>/);
     expect(tabRowMatch, "「KRタブ」コメントの直後のdivが見つからない（構造が変わった場合はこのテストの正規表現も更新すること）").not.toBeNull();
     const style = tabRowMatch![1];
     expect(style).toMatch(/overflowX:\s*"auto"/);

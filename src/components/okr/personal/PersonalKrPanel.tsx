@@ -93,6 +93,11 @@ interface Props {
   onLinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onUnlinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onEditKr: () => void;
+  /** 🔴🔴 OKRツアーのサンプル表示中はtrue。今月の計画・週の目標状態・バンド決定・メモ・
+   *  AI解析の起動を全て無効化し、「これはサンプル表示です」の意図を明示する
+   *  （CLAUDE.md Section 24。保存経路自体は呼び出し元＝PersonalOkrView.tsxがno-opに
+   *  差し替えているため、このフラグはUI側の二重の防御＋案内表示を担う）。 */
+  readOnly?: boolean;
   /** Phase 3後半：AI解析の結果とキャッシュ（personal_kr_outlooks）。キーは`${krId}::${month}` */
   outlookByKrMonth: Record<string, PersonalKrOutlook | null>;
   outlookAnalyzingKeys: Set<string>;
@@ -112,6 +117,7 @@ export function PersonalKrPanel({
   keyResults, taskForces, objectives, tasks, todos, taskDependencies,
   weekTasksByWeek, ensureWeekTasksLoaded,
   onSaveMonth, onSaveWeek, onSaveMemo, onLinkWeekTask, onUnlinkWeekTask, onEditKr,
+  readOnly = false,
   outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, ensureOutlookLoaded, onRunOutlookAnalysis,
   onAiContext, onOpenAiPanel,
 }: Props) {
@@ -120,7 +126,11 @@ export function PersonalKrPanel({
   const slot = slots.find(s => s.monthIndex === monthIndex) ?? slots[0];
   const monthStr = monthToDateStr(slot.monthStart);
   const monthStatus = classifyMonth(slot.monthStart, today);
-  const monthEditable = monthStatus === "current";
+  // 🔴🔴 readOnly（サンプル表示中）はmonthStatusに関わらず編集不可にする。WeekCardの
+  // editable・AheadBlockのeditable（バンド決定）・今月の計画のテキストエリア／保存ボタンは
+  // すべてこの1変数で制御されているため、ここを塞ぐだけで大部分の書き込み経路が塞がれる
+  // （CLAUDE.md Section 24）。
+  const monthEditable = !readOnly && monthStatus === "current";
   const monthRecord = months.find(m => m.month === monthStr && !m.is_deleted) ?? null;
 
   const groupKrTitle = useMemo(() => {
@@ -156,6 +166,7 @@ export function PersonalKrPanel({
   }, [kr.id, monthRecord?.id, monthStr]);
 
   const handleSaveMonthPlan = async () => {
+    if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない（UI側は既にボタン非表示だが二重の防御）
     setSavingMonth(true);
     setMonthError(null);
     const now = new Date().toISOString();
@@ -306,21 +317,22 @@ export function PersonalKrPanel({
   // 見えるのは困るため、これは自動のまま）。機械計算分はこのコンポーネントの他の部分が
   // 即時描画済み。
   useEffect(() => {
-    if (monthStatus !== "current") return;
+    if (readOnly || monthStatus !== "current") return; // 🔴🔴 サンプルKRのidは実DBに存在しないため問い合わせない
     ensureOutlookLoaded(kr.id, monthStr);
-  }, [monthStatus, kr.id, monthStr, ensureOutlookLoaded]);
+  }, [readOnly, monthStatus, kr.id, monthStr, ensureOutlookLoaded]);
 
   // 明示ボタン（AheadBlock.tsx）1つで「未解析なら見立てを出す／解析済みなら再解析する」の
   // 両方を担う。既存の解析結果が無い（outlookRow が null/undefined）ときはforceを付けない
   // （キャッシュが無いのでどのみちAIを呼ぶ）。既にある場合はforce:trueで、fingerprintが
   // 一致していても必ず呼ぶ（＝これまでの「再解析」ボタンと同じ挙動）。
   const handleRunOutlook = () => {
-    if (!okrAiContext || fingerprint == null) return;
+    if (readOnly || !okrAiContext || fingerprint == null) return; // 🔴🔴 サンプルKRのidは実DBに存在しないため呼ばせない
     onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext, force: outlookRow != null });
   };
 
   // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
   const handleSetBandOverride = async (value: PersonalKrBand | null) => {
+    if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
     const now = new Date().toISOString();
     const month: PersonalKrMonth = monthRecord
       ? { ...monthRecord, band_override: value, band_override_by: value ? currentUser.id : null, band_override_at: value ? now : null }
@@ -337,6 +349,11 @@ export function PersonalKrPanel({
   const ensureWeek = useCallback(async (weekIndex: number, weekStartStr: string, weekEndStr: string): Promise<PersonalKrWeek> => {
     const found = weeks.find(w => w.week_index === weekIndex && w.month === monthStr && !w.is_deleted);
     if (found) return found;
+    if (readOnly) {
+      // 🔴🔴 サンプル表示中は新しい週レコードを作らせない（UI側はeditable:falseで既に
+      // 到達不能だが、二重の防御として例外を投げて呼び出し元のcatchでエラー表示に留める）。
+      throw new Error("サンプル表示中は週の目標状態を編集できません。");
+    }
     const now = new Date().toISOString();
     const week: PersonalKrWeek = {
       id: uuidv4(), personal_kr_id: kr.id, month: monthStr, week_index: weekIndex,
@@ -345,7 +362,7 @@ export function PersonalKrPanel({
     };
     await onSaveWeek(week);
     return week;
-  }, [weeks, monthStr, kr.id, currentUser.id, onSaveWeek]);
+  }, [weeks, monthStr, kr.id, currentUser.id, onSaveWeek, readOnly]);
 
   const [linker, setLinker] = useState<LinkerTarget | null>(null);
   const [weekActionError, setWeekActionError] = useState<string | null>(null);
@@ -366,6 +383,13 @@ export function PersonalKrPanel({
 
   return (
     <div style={{ background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)", padding: "16px 20px 22px" }}>
+      {/* 🔴🔴 サンプル表示中の明示（CLAUDE.md Section 24）。保存経路は呼び出し元
+          （PersonalOkrView.tsx）がno-opに差し替えているため、これは案内表示のみの役割。 */}
+      {readOnly && (
+        <div style={{ marginBottom: "12px", fontSize: "11.5px", color: "var(--color-brand)", background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)", borderRadius: "var(--radius-md)", padding: "8px 12px", lineHeight: 1.6 }}>
+          🔍 これはツアー用のサンプル表示です。内容は保存されません。ツアーを終えると元の画面に戻ります。
+        </div>
+      )}
       {/* 月の切替バー：月の選択自体は「対象期」行（PersonalOkrView.tsx）に一元化した。
           ここは選択中の期・月と、その月の状態（確定済み／未来）だけを表示する
           （二重に月タブを持たない。CLAUDE.md Section 24 Step J・2026-08-12）。 */}
@@ -382,7 +406,12 @@ export function PersonalKrPanel({
             style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", padding: "3px 9px", whiteSpace: "nowrap" }}
           >📥 {kr.source_label}</span>
         )}
-        <button onClick={onEditKr} style={{ fontFamily: "inherit", fontSize: "11px", cursor: "pointer", padding: "4px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)" }}>
+        <button
+          onClick={readOnly ? undefined : onEditKr}
+          disabled={readOnly}
+          title={readOnly ? "サンプル表示中は編集できません" : undefined}
+          style={{ fontFamily: "inherit", fontSize: "11px", cursor: readOnly ? "default" : "pointer", padding: "4px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)", opacity: readOnly ? 0.5 : 1 }}
+        >
           ✏️ このKRを編集
         </button>
       </div>
@@ -417,7 +446,7 @@ export function PersonalKrPanel({
           </details>
 
           {/* 今月の計画 */}
-          <div style={{ marginTop: "20px" }}>
+          <div data-tour-id="okr-month-plan" style={{ marginTop: "20px" }}>
             <div style={sectionHeadStyle}>
               <span>今月の計画</span><span style={ruleStyle} />
               <span>{monthStatus === "past" ? "確定済み・読み取り専用" : monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
@@ -480,7 +509,7 @@ export function PersonalKrPanel({
           </div>
 
           {/* 週の目標状態 */}
-          <div style={{ marginTop: "20px" }}>
+          <div data-tour-id="okr-week-cards" style={{ marginTop: "20px" }}>
             <div style={sectionHeadStyle}><span>週の目標状態</span><span style={ruleStyle} /><span>★アプリで設定（Kintoneに無い層）</span></div>
             {weekActionError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{weekActionError}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
@@ -531,13 +560,15 @@ export function PersonalKrPanel({
               outlookRow={outlookRow}
               analyzing={outlookAnalyzing}
               outlookError={outlookError}
-              canReanalyze={!!okrAiContext}
+              canReanalyze={!readOnly && !!okrAiContext}
               onReanalyze={handleRunOutlook}
             />
           )}
 
           {/* 迷ったらAIに聞く（当月のみ・AI解析と同じ文脈を使う） */}
-          {monthStatus === "current" && onOpenAiPanel && (
+          {/* 🔴🔴 サンプル表示中は呼び出し元がonOpenAiPanelをundefinedにするため通常は
+              到達しないが、!readOnlyでも明示的にガードする（二重の防御）。 */}
+          {!readOnly && monthStatus === "current" && onOpenAiPanel && (
             <div style={{ marginTop: "14px", padding: "13px 15px", borderRadius: "var(--radius-md)", background: "var(--color-bg-purple, var(--color-brand-light))", border: "1px solid var(--color-brand-border)", display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
               <div style={{ flex: 1, minWidth: "180px" }}>
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>迷ったらAIに聞く</div>
@@ -555,7 +586,7 @@ export function PersonalKrPanel({
       )}
 
       {/* メモ（KR単位・追記型。月に関係なく常時表示） */}
-      <MemoSection kr={kr} currentUser={currentUser} memos={memos} onSaveMemo={onSaveMemo} />
+      <MemoSection kr={kr} currentUser={currentUser} memos={memos} onSaveMemo={onSaveMemo} readOnly={readOnly} />
 
       {linker && (
         <WeekTaskLinkModal
@@ -576,9 +607,10 @@ export function PersonalKrPanel({
   );
 }
 
-function MemoSection({ kr, currentUser, memos, onSaveMemo }: {
+function MemoSection({ kr, currentUser, memos, onSaveMemo, readOnly = false }: {
   kr: PersonalKr; currentUser: Member; memos: PersonalKrMemo[];
   onSaveMemo: (memo: PersonalKrMemo, expectedUpdatedAt?: string) => Promise<void>;
+  readOnly?: boolean;
 }) {
   const [draft, setDraft] = useState("");
   const [saving, setSaving] = useState(false);
@@ -588,7 +620,7 @@ function MemoSection({ kr, currentUser, memos, onSaveMemo }: {
   useEffect(() => { setDraft(""); setError(null); }, [kr.id]);
 
   const handleAdd = async () => {
-    if (!draft.trim()) return;
+    if (readOnly || !draft.trim()) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
     setSaving(true);
     setError(null);
     const now = new Date().toISOString();
@@ -612,11 +644,12 @@ function MemoSection({ kr, currentUser, memos, onSaveMemo }: {
       <textarea
         value={draft}
         onChange={e => setDraft(e.target.value)}
-        placeholder="気づいたこと、迷っていること、次に確かめたいこと。Kintoneに書く前の下書きにも使えます。"
-        style={{ ...textareaStyle, minHeight: "72px" }}
+        placeholder={readOnly ? "サンプル表示中はメモを追加できません" : "気づいたこと、迷っていること、次に確かめたいこと。Kintoneに書く前の下書きにも使えます。"}
+        readOnly={readOnly}
+        style={{ ...textareaStyle, minHeight: "72px", opacity: readOnly ? 0.6 : 1 }}
       />
       <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "7px" }}>
-        <button onClick={handleAdd} disabled={saving || !draft.trim()} style={{ fontSize: "12px", fontWeight: 700, padding: "6px 14px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
+        <button onClick={handleAdd} disabled={readOnly || saving || !draft.trim()} style={{ fontSize: "12px", fontWeight: 700, padding: "6px 14px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: readOnly ? "default" : "pointer", opacity: readOnly ? 0.6 : 1 }}>
           {saving ? "保存中…" : "追加"}
         </button>
       </div>

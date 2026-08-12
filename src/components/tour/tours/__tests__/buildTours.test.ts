@@ -7,7 +7,7 @@
 // - buildTours({isGuest:true}) 呼び出し後も元の firstTimeTour が書き換わっていないこと
 
 import { describe, it, expect } from "vitest";
-import { buildTours, ALL_TOURS, FIRST_TIME_TOUR_ID } from "..";
+import { buildTours, ALL_TOURS, FIRST_TIME_TOUR_ID, OKR_TOUR_ID } from "..";
 
 describe("buildTours", () => {
   it("非ゲストではALL_TOURSをそのまま返す", () => {
@@ -68,5 +68,16 @@ describe("buildTours", () => {
         expect(step.skipIfMissing).toBe(true);
       }
     }
+  });
+
+  it("非ゲストでもゲストでも okrIntroTour（OKRモードのガイドツアー）が含まれる", () => {
+    expect(buildTours({ isGuest: false })[OKR_TOUR_ID]).toBeDefined();
+    expect(buildTours({ isGuest: true })[OKR_TOUR_ID]).toBeDefined();
+  });
+
+  it("ゲスト版のokrIntroTourはfirstTimeTourと違い改変されない（FAB参照・実演アクションを持たないため）", () => {
+    const nonGuest = buildTours({ isGuest: false })[OKR_TOUR_ID];
+    const guest = buildTours({ isGuest: true })[OKR_TOUR_ID];
+    expect(guest).toBe(nonGuest);
   });
 });

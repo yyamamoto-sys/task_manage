@@ -189,6 +189,11 @@ interface GuideHomeProps {
 
 function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHomeProps) {
   const mainTour = TOUR_LIST[0];
+  // 【設計意図】主要ツアー（mainTour）は大きな導線のまま維持し、それ以外のツアー
+  // （例：OKRモードのガイドツアー）は「ほかのツアー」として小さめのカードで並べる。
+  // OKRモードのツアーは初回は自動で始まるため、ここは「あとから見直せる導線」
+  // （CLAUDE.md Section 24）として機能する。
+  const otherTours = TOUR_LIST.slice(1);
   const totalArticles = groups.reduce((n, g) => n + g.entries.length, 0);
 
   return (
@@ -233,6 +238,40 @@ function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHo
           </span>
           <span style={{ fontSize: "13px", fontWeight: 700, opacity: 0.9, flexShrink: 0 }}>開始 →</span>
         </button>
+      )}
+
+      {/* ほかのツアー（例：OKRモードのガイドツアー）。初回は自動で始まるため、
+          ここは見直したいときの再生導線として置く。 */}
+      {onStartTour && otherTours.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {otherTours.map(tour => (
+            <button
+              key={tour.id}
+              onClick={() => onStartTour(tour.id)}
+              style={{
+                display: "flex", alignItems: "center", gap: "12px", textAlign: "left",
+                width: "100%", padding: "13px 16px",
+                background: "var(--color-bg-secondary)",
+                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                cursor: "pointer", color: "var(--color-text-primary)",
+              }}
+            >
+              <span style={{
+                fontSize: "16px", flexShrink: 0,
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: "var(--color-brand-light)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+              }}>▶</span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontSize: "13px", fontWeight: 700 }}>{tour.title}</span>
+                <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                  約 {Math.round((tour.estimatedSeconds ?? 90) / 60) || 1} 分で再生します。
+                </span>
+              </span>
+              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-brand)", flexShrink: 0 }}>再生 →</span>
+            </button>
+          ))}
+        </div>
       )}
 
       {/* オンボーディング（3ステップ）導線 */}

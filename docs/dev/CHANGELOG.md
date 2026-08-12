@@ -5801,5 +5801,54 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     （`GUEST_ALLOWED_FUNCTIONS`固定テスト）は無改修で通過（Proxyを一切変更していない証跡）。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-12（v3.69）
+# v3.70（2026-08-12）：OKRモードのガイドツアーを追加（山本さんの依頼）。
+#   「OKRモードを初めて選択した人にはガイドツアーを開始したい。KRは基本的にOKRモードから
+#   登録する導線にしたいので未設定の人に見せる前提で組んでほしい。ただし未設定の画面では
+#   説明しようにも表示されない項目があるため、サンプルデータでイメージを実感してもらいたい」
+#   への対応（CLAUDE.md Section 24 Step L参照）。
+#   追加：`src/components/tour/tours/okr-intro.ts`：新規ツアー`okr-intro`（8ステップ）。
+#     `src/components/tour/tours/index.ts`のALL_TOURS/TOUR_LIST/OKR_TOUR_IDに登録。
+#     `buildTours({isGuest})`のゲスト分岐も両ツアーを返すよう修正（旧実装はfirstTimeTourの
+#     改変版だけを返し、okr-introがゲストのガイドから再生できなくなっていた）。
+#   変更：`src/components/tour/TourProvider.tsx`：`TourContextValue`に
+#     `activeTourId: string | null`を追加（「今動いているのはこのツアーか」の判定用）。
+#   変更：`src/components/okr/personal/PersonalOkrView.tsx`：マウント時useEffectで
+#     `!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)`なら`tour.start(OKR_TOUR_ID)`する
+#     （既存の初回ゲート承認直後・ゲストの直接入室、どちらもこの合流点で1回だけ発火する）。
+#   🔴🔴 サンプル差し込みは読み取り専用（保存経路を完全に塞ぐ）：
+#     追加：`src/lib/personalOkr/tourPreviewSample.ts`：`shouldInjectOkrTourPreviewSample(
+#     isOkrTourRunning, activeKrCountInPeriod)`（純粋関数）。「ツアー実行中か」×「対象期の
+#     KRが0本か」の2点だけで判定。既にKRがある人（ゲスト含む）は実データのまま案内する。
+#   変更：`PersonalOkrView.tsx`：`shouldInjectOkrTourPreviewSample`がtrueのとき、
+#     `src/lib/demo/personalOkrDataset.ts`（v3.67と同一。新規サンプルは作らない）と
+#     `src/lib/demo/dataset.ts`（週カードの遅延・先行待ちバッジ再現用のtasks/
+#     taskDependencies）を動的importし、`displayKrs`/`displayMonthsByKr`/`displayWeeksByKr`/
+#     `displayMemosByKr`/`displayWeekTasksByWeek`/`displayTasks`/`displayTaskDependencies`
+#     に差し込む。`PersonalKrPanel`へは実データのstoreアクションを渡さず、共有no-op
+#     （`PREVIEW_NOOP_ASYNC`/`PREVIEW_NOOP`）を渡す。`readOnly={!!previewSample}`を渡す。
+#     AI解析結果は`buildPreviewOutlookMap()`で全サンプルKR×月を`null`固定にし、
+#     `outlookRow===undefined`による無限スケルトン表示を回避。「＋KRを追加」「📥Kintoneから
+#     取込」は常に実際の登録操作のまま（`PersonalKrFormModal`/`PersonalOkrImportModal`の
+#     ウェイト集計には実データ`activeKrs`/`krs`をそのまま使う）。
+#   変更：`src/components/okr/personal/PersonalKrPanel.tsx`：`readOnly?: boolean`prop追加。
+#     `monthEditable = !readOnly && monthStatus === "current"`に変更。
+#     `handleSaveMonthPlan`/`handleSetBandOverride`/`ensureWeek`/`handleRunOutlook`/
+#     `ensureOutlookLoaded`のuseEffectの先頭に`if (readOnly) return`ガードを追加（二重の
+#     防御）。`canReanalyze={!readOnly && !!okrAiContext}`。「✏️ このKRを編集」ボタンを
+#     `disabled`化。読み取り専用時のバナー表示を追加。`MemoSection`にも`readOnly`propを
+#     追加し`handleAdd`をガード。
+#   変更：`src/components/okr/personal/AheadBlock.tsx`：`data-tour-id="okr-ahead"`を追加。
+#   変更：`src/components/guide/GuideModeView.tsx`：`TOUR_LIST[0]`（主要ツアー）は大きな
+#     導線のまま、`TOUR_LIST.slice(1)`（OKRツアー等）を「ほかのツアー」の小さめカードで
+#     並べる（あとから見直せる再生導線）。
+#   変更：`PersonalOkrView.tsx`の未設定時の空状態文言：「Kintoneに個人OKRが既にある場合は
+#     「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。」を
+#     追加し、取込と手入力のどちらから始めればよいかを案内する。
+#   テスト：`src/lib/personalOkr/__tests__/tourPreviewSample.test.ts`（新規4件）・
+#     `src/components/tour/tours/__tests__/okrIntroTour.test.ts`（新規4件）・
+#     `buildTours.test.ts`に2件追加。`personalOkrViewLayout.test.ts`の正規表現を
+#     `data-tour-id`属性の追加を許容するよう更新。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-12（v3.70）
 

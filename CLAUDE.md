@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.69
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.70
 #
-最終更新：2026-08-12（v3.69）
+最終更新：2026-08-12（v3.70）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -2129,6 +2129,24 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **モデル切替（④）は対応済みだった**：`PERSONAL_OKR_IMPORT_MODEL`は2026-08-11（v3.52・Step Hと同時期）に山本さんの指示で既に`claude-haiku-4-5`へ切替済み（Edge Functionの`ALLOWED_MODELS`に含まれる）。今回の変更対象外。決定的パーサが主経路になったことで、AIがフォールバック用途に後退し、haiku化による多少の精度差は許容できるという判断の裏付けが強まった。
 - **`extractPersonalOkrImportData()`の型拡張**：`PersonalOkrImportResult`に`quarterlySource`/`monthlySource`（`"deterministic"|"ai"|"none"`）・`aiSentCharCount`・`originalCharCount`を追加した。既存の`warnings`は「まとめ呼び出し失敗→分割リトライ」のメッセージも積む。
 - **テスト**：`kintoneTextParse.test.ts`（18件）・`importTextTrim.test.ts`（7件）を新設。`personalOkrImportExtractor.test.ts`にオーケストレーターの新規シナリオ（1回にまとめる／まとめ失敗時のフォールバック／閾値超えは2回分割のまま／決定的パーサのみで完結・AI呼び出しゼロ／四半期は決定的・月次だけAIの部分適用）を追加。既存のオーケストレーターテスト（分割呼び出しの検証）はダミーtranscriptが閾値以下だと新設のまとめ呼び出しに切り替わってしまうため、`LARGE_NON_KINTONE_TRANSCRIPT`（閾値超の長さ）を使うよう更新した。
+
+### Step L：OKRモードのガイドツアー（v3.70・2026-08-12）
+
+山本さんの依頼：「OKRモードを初めて選択した人には、OKRのガイドツアーを開始するようにしたい」「KRは基本的にOKRモードから登録する導線にしたいので、未設定の人に見せる前提で組んでほしい。ただし何も設定されていない画面では説明しようにも表示されないパラメータがあるため、サンプルデータを表示してイメージを実感してもらいたい」。
+
+- **一行で言うと**：新しいツアー`okr-intro`（`src/components/tour/tours/okr-intro.ts`）を追加した。OKRモードを初めて開いたときに自動で始まり、対象期にKRが0本なら実データの代わりにv3.67のサンプル（`src/lib/demo/personalOkrDataset.ts`）を読み取り専用で差し込んで案内する。
+- **起動口は1箇所（`PersonalOkrView.tsx`のマウント時useEffect）**：既存の初回ゲート（`OkrModeIntroModal`の承認・Section 19 ⑥）とゲストの直接入室（Section 23）は、どちらも最終的に`appMode`が`"okr"`になり`PersonalOkrView`がマウントされる点で合流する。この合流点に`if (!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)) tour.start(OKR_TOUR_ID)`を1つ置くだけで、「ゲートの承認直後」「ゲストの直接入室」の両方を1つのコードパスで満たせる（`MainLayout.tsx`側の2つの入口それぞれにツアー開始コードを重複させない）。完了・スキップは`firstTimeTour`と同じ`localStorage`（`tour_completed_v1`）で管理され、一度でも終了/スキップすれば以後は自動再生されない。
+- **再生導線**：`TourProvider`の`TourContextValue`に`activeTourId: string | null`を追加した（「今動いているのはOKRツアーか」をコンポーネント側が区別するために必要）。ガイド（`GuideModeView.tsx`の`GuideHome`）は`TOUR_LIST[0]`（主要ツアー）を大きな導線のまま維持し、`TOUR_LIST.slice(1)`（OKRツアー等）を「ほかのツアー」として小さめのカードで並べ、いつでも見直せるようにした。
+- **🔴🔴 サンプル差し込みは読み取り専用（保存経路を完全に塞ぐ）**：判定は`src/lib/personalOkr/tourPreviewSample.ts`の`shouldInjectOkrTourPreviewSample(isOkrTourRunning, activeKrCountInPeriod)`（純粋関数・テスト有）1点＝「OKRツアー実行中か」×「対象期のKRが0本か」だけで行う。既にKRがある人（ゲスト含む。ゲストはv3.67で既にサンプルKRが実データとして注入済みのため、この条件だけで自然に「二重差し込みしない」が成立する）はその人の実データで案内する。
+  - サンプル本体は`buildDemoPersonalOkrDataset()`（v3.67と同一・新規サンプルは作らない）を`PersonalOkrView.tsx`から**動的importでのみ**読み込む（`personalOkrDataset.test.ts`が静的import禁止を機械検査するため）。週カードの遅延・先行待ちバッジを再現するため、`dataset.ts`（グループOKR側サンプル）の`tasks`/`taskDependencies`も同時に動的importし、`tasks`/`taskDependencies`propとして実データの代わりに渡す。
+  - `PersonalKrPanel.tsx`に`readOnly?: boolean`propを追加。`monthEditable = !readOnly && monthStatus === "current"`の1変数で、WeekCardの`editable`・AheadBlockの`editable`（バンド決定）・今月の計画のテキストエリア/保存ボタンの大部分が連動して無効化される。加えて`handleSaveMonthPlan`/`handleSetBandOverride`/`ensureWeek`/`handleRunOutlook`/`ensureOutlookLoaded`の自動effect/`MemoSection.handleAdd`の各先頭に`if (readOnly) return`を明示し、UI側のガードが将来崩れても実データの保存アクションへは到達できないようにしている（二重の防御）。
+  - **呼び出し元（`PersonalOkrView.tsx`）でも保存経路そのものを差し替える**：`previewSample`が真のとき、`onSaveMonth`/`onSaveWeek`/`onSaveMemo`/`onLinkWeekTask`/`onUnlinkWeekTask`/`ensureWeekTasksLoaded`/`ensureOutlookLoaded`/`onRunOutlookAnalysis`は実データのstoreアクション（`usePersonalOkrUiStore`）を一切渡さず、共有のno-op（`PREVIEW_NOOP_ASYNC`/`PREVIEW_NOOP`）を渡す。`onEditKr`もno-opにする（サンプルKRの編集フォームを開かせない＝そのままsaveKrされてもサンプルidは実DBに存在せず失敗するため、経路自体を断つ）。`onOpenAiPanel`も`undefined`にして「迷ったらAIに聞く」ブロックを非表示にする。
+  - **AI解析結果は「未実施」に固定**：サンプルKRのidは`personal_krs`に実在しないため、実データの`ensureOutlookLoaded`を呼ぶと無意味な問い合わせになる。代わりに`buildPreviewOutlookMap()`が全サンプルKR×対象月の組を`null`で埋めた`outlookByKrMonth`を作り、`outlookRow===undefined`による無限スケルトン表示（Section 24 Step Iで踏んだ罠と同種）を避けている。
+  - **画面上の明示**：「対象期」行に🔍バッジ「これはサンプル表示です（保存されません）」、`PersonalKrPanel`本体にも同内容のバナーを表示する。「✏️ このKRを編集」ボタンは`disabled`＋ツールチップ「サンプル表示中は編集できません」。
+  - **「＋ KRを追加」「📥 Kintoneから取込」は常に実際の登録操作のまま**：サンプル表示中でもここから作るKRは実データとして保存される（ツアーの着地点＝Step 8のターゲット`data-tour-id="okr-registration-actions"`。`PersonalKrFormModal`の`existingKrsInPeriod`・`PersonalOkrImportModal`の`allPersonalKrs`は意図的に実データ（`activeKrs`/`krs`）のままにし、サンプルの重み40/35/25%を実KR作成のウェイト集計に混ぜない）。実際に新しいKRが保存されると、次の描画で`activeKrs.length`が0でなくなり`shouldInjectOkrTourPreviewSample`がfalseに変わるため、サンプル表示は自動的に終了して実データへ切り替わる。
+- **8ステップの構成**：①モードの目的（Kintoneが正本・週の層を埋める）②対象期の選び方③KRタブ④今月の計画⑤★週の目標状態（このアプリだけの層と明示）⑥タスクとの紐づけ（遅延・先行待ちの表示）⑦これから（AIは「✦ 見立てを出す」を押したときだけ動く旨を明記）⑧登録して始める（Kintone取込／KR追加への着地＋今後の拡張予定を一言添える）。ターゲットは`okr-period`/`okr-kr-tabs`/`okr-month-plan`/`okr-week-cards`（⑤⑥で共有）/`okr-ahead`/`okr-registration-actions`（`data-tour-id`属性。全てskipIfMissing:trueでUI変更耐性を確保）。
+- **未設定時の空状態文言も改善**（ツアーを見ずに来た人が最初に見る画面でもあるため）：「{年}年{Q}の個人KRがまだありません。」の一文だけだったのを、「Kintoneに個人OKRが既にある場合は「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。」を追加し、取込と手入力どちらから始めればよいかを案内するようにした。
+- **回帰テスト**：`tourPreviewSample.test.ts`（判定4パターン）・`okrIntroTour.test.ts`（ステップ数7〜9・id重複無し・target持ちは必ずskipIfMissing・タイトル/本文の体裁）・`buildTours.test.ts`に追加（非ゲスト/ゲストどちらも`okr-intro`を含むこと・ゲスト版は改変されないこと）。`personalOkrViewLayout.test.ts`の正規表現は`data-tour-id`属性の追加を許容するよう更新した（属性が増えても「対象期」「KRタブ」の帯の`flexShrink:0`検査自体は変わらない）。
 
 ---
 

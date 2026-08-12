@@ -26,6 +26,9 @@ interface TourContextValue {
   isCompleted: (tourId: string) => boolean;
   /** ツアーが進行中か */
   isRunning: boolean;
+  /** 現在実行中のツアーid（無ければ null）。「今動いているのはこのツアーか」を
+   *  呼び出し側（例：OKRツアーのサンプル差し込み判定）が区別するために必要。 */
+  activeTourId: string | null;
 }
 
 const TourContext = createContext<TourContextValue | null>(null);
@@ -151,8 +154,8 @@ export function TourProvider({ tours, children }: Props) {
   const isCompleted = useCallback((tourId: string) => !!loadCompleted()[tourId], []);
 
   const value = useMemo<TourContextValue>(() => ({
-    start, end, markCompleted, isCompleted, isRunning: !!activeTour,
-  }), [start, end, markCompleted, isCompleted, activeTour]);
+    start, end, markCompleted, isCompleted, isRunning: !!activeTour, activeTourId: activeTourId,
+  }), [start, end, markCompleted, isCompleted, activeTour, activeTourId]);
 
   return (
     <TourContext.Provider value={value}>

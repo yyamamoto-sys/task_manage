@@ -13,17 +13,51 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../../stores/appStore";
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
-import type { Member, PersonalKr, Quarter } from "../../../lib/localData/types";
+import type { Member, PersonalKr, PersonalKrOutlook, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { currentQuarter } from "../../../lib/date";
 import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
-import { quarterMonthSlots, resolveDefaultMonthIndex } from "../../../lib/personalOkr/quarterMonths";
+import { quarterMonthSlots, resolveDefaultMonthIndex, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
+import { shouldInjectOkrTourPreviewSample } from "../../../lib/personalOkr/tourPreviewSample";
+import { useTour } from "../../tour/TourProvider";
+import { OKR_TOUR_ID } from "../../tour/tours";
 import { CustomSelect } from "../../common/CustomSelect";
 import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
 import { PersonalOkrImportModal } from "./PersonalOkrImportModal";
 import { PersonalOkrAiPanel } from "./PersonalOkrAiPanel";
+
+/** ツアー用サンプル：個人OKRサンプル本体＋週に紐づく実演用タスク（dataset.ts側）。
+ *  どちらも動的importでのみ読み込む（Section 19。personalOkrDataset.test.ts／
+ *  dataset.test.ts が静的import禁止を機械検査する）。型だけは`import("...")`型構文で
+ *  参照する（`import type ... from "..."`は静的import検査の正規表現にひっかかるため）。 */
+type DemoPersonalOkrData = import("../../../lib/demo/personalOkrDataset").DemoPersonalOkrData;
+interface OkrTourPreviewData {
+  personal: DemoPersonalOkrData;
+  tasks: Task[];
+  taskDependencies: TaskDependency[];
+}
+
+/** 何のキーで問い合わせても null を返すダミーの解析結果マップ。ツアーのサンプルKRの
+ *  personal_kr_id は実DBに存在しないため、実データのensureOutlookLoadedを呼ばせず
+ *  「AI解析：未実施」を即時に出すための差し込み値（PersonalKrPanel.tsx参照）。 */
+function buildPreviewOutlookMap(krs: PersonalKr[], monthStrs: string[]): Record<string, PersonalKrOutlook | null> {
+  const map: Record<string, PersonalKrOutlook | null> = {};
+  for (const kr of krs) for (const m of monthStrs) map[`${kr.id}::${m}`] = null;
+  return map;
+}
+
+// 🔴🔴 サンプル表示中に PersonalKrPanel へ渡す「保存経路そのものを塞ぐ」ための共有no-op。
+// 実データのstoreアクション（saveMonth/saveWeek/saveMemo/linkWeekTask/unlinkWeekTask/
+// ensureOutlookLoaded/onRunOutlookAnalysis/ensureWeekTasksLoaded）を一切呼ばない
+// （呼び出し経路自体が実データのアクションへ到達しない＝「保存経路を完全に塞ぐ」の実装）。
+// 引数の型はハンドラごとに違うため `any[]` で受けるが、戻り値の型（Promise<void> / void）は
+// 呼び出し先のPropsの型にそのまま代入可能。モジュールスコープの単一インスタンスにして
+// レンダーごとに新しい関数を作らない。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const PREVIEW_NOOP_ASYNC = async (..._args: any[]): Promise<void> => { /* サンプル表示中は保存しない */ };
+const PREVIEW_NOOP = (): void => { /* サンプル表示中は編集しない */ };
 
 const QUARTER_OPTIONS: { value: Quarter; label: string }[] = [
   { value: "1Q", label: "1Q（1〜3月）" },
@@ -70,6 +104,18 @@ export function PersonalOkrView({ currentUser }: Props) {
   const ensureOutlookLoaded = usePersonalOkrUiStore(s => s.ensureOutlookLoaded);
   const runOutlookAnalysis = usePersonalOkrUiStore(s => s.runOutlookAnalysis);
 
+  // ===== OKRモードのガイドツアー（CLAUDE.md Section 24） =====
+  // 🔴 このコンポーネントが実際にマウントされた時点で「OKRモードへ初めて入った」と
+  // みなし、未完了なら自動で開始する（既存の初回ゲート＝OkrModeIntroModalの承認直後・
+  // ゲストの直接入室のどちらでも、appModeが"okr"になった結果としてここへ到達するため、
+  // 起動口を1箇所に集約できる）。他のツアーが進行中のときは横取りしない。
+  const tour = useTour();
+  useEffect(() => {
+    if (!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)) tour.start(OKR_TOUR_ID);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const isOkrTourRunning = tour.activeTourId === OKR_TOUR_ID;
+
   // ===== AIパネル（Phase 3後半・計画モードと同じ右パネルの型を流用） =====
   const [aiPanelOpen, setAiPanelOpen] = useState(false);
   const [aiPanelWidth, setAiPanelWidth] = useState(380);
@@ -104,19 +150,68 @@ export function PersonalOkrView({ currentUser }: Props) {
     [krs, fiscalYear, quarter],
   );
 
+  // ===== OKRツアーのサンプル差し込み（CLAUDE.md Section 24。実データへの書き込み厳禁） =====
+  // 🔴 判定は「ツアー実行中か」×「対象期のKRが0本か」の2点だけ（純粋関数に切り出し・テスト済み）。
+  // krsLoaded を条件に足しているのは「実データの取得（Supabaseフェッチ）が終わる前の
+  // 一瞬だけ0本に見える」誤検出を避けるため（実際にKRがある人が再生した場合の一瞬の
+  // ちらつき防止。判定基準自体は変えていない）。
+  const shouldPreview = krsLoaded && shouldInjectOkrTourPreviewSample(isOkrTourRunning, activeKrs.length);
+  const [previewSample, setPreviewSample] = useState<OkrTourPreviewData | null>(null);
+  useEffect(() => {
+    if (!shouldPreview) { setPreviewSample(null); return; }
+    let cancelled = false;
+    Promise.all([
+      import("../../../lib/demo/personalOkrDataset"),
+      import("../../../lib/demo/dataset"),
+    ]).then(([personalMod, datasetMod]) => {
+      if (cancelled) return;
+      const personal = personalMod.buildDemoPersonalOkrDataset();
+      const demo = datasetMod.buildDemoDataset();
+      setPreviewSample({ personal, tasks: demo.tasks, taskDependencies: demo.taskDependencies });
+    });
+    return () => { cancelled = true; };
+  }, [shouldPreview]);
+
+  // 差し込み中はこの2つの変数だけを「サンプルか実データか」の切替点にする（以降のJSX・
+  // PersonalKrPanelへの受け渡しは displayKrs／displayTasks 経由に統一し、activeKrs（実データ）を
+  // 直接参照し続ける箇所を増やさない）。ただし PersonalKrFormModal の existingKrsInPeriod・
+  // PersonalOkrImportModal の allPersonalKrs は「新しく作る実KRのウェイト集計」に使うため、
+  // 意図的に activeKrs（実データ）のままにする（サンプルの重み40/35/25を実KR作成の判断材料に
+  // 混ぜないため）。
+  const displayKrs = previewSample ? previewSample.personal.krs : activeKrs;
+  const displayMonthsByKr = previewSample ? previewSample.personal.monthsByKr : monthsByKr;
+  const displayWeeksByKr = previewSample ? previewSample.personal.weeksByKr : weeksByKr;
+  const displayMemosByKr = previewSample ? previewSample.personal.memosByKr : memosByKr;
+  const displayWeekTasksByWeek = previewSample ? previewSample.personal.weekTasksByWeek : weekTasksByWeek;
+  const displayTasks = previewSample ? previewSample.tasks : tasks;
+  const displayTaskDependencies = previewSample ? previewSample.taskDependencies : taskDependencies;
+  // AI解析：サンプルKRのidは実DBに存在しないため、常に「未実施」で確定させる（実データの
+  // ensureOutlookLoadedを呼ばせず、outlookRow===undefinedによる無限スケルトン表示を避ける）。
+  const previewOutlookByKrMonth = useMemo(
+    () => previewSample
+      ? buildPreviewOutlookMap(previewSample.personal.krs, monthSlots.map(s => monthToDateStr(s.monthStart)))
+      : null,
+    [previewSample, monthSlots],
+  );
+
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
   useEffect(() => {
-    if (activeKrs.length === 0) { setSelectedKrId(null); return; }
-    if (!activeKrs.some(k => k.id === selectedKrId)) setSelectedKrId(activeKrs[0].id);
+    if (displayKrs.length === 0) { setSelectedKrId(null); return; }
+    if (!displayKrs.some(k => k.id === selectedKrId)) setSelectedKrId(displayKrs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeKrs]);
+  }, [displayKrs]);
 
-  useEffect(() => { if (selectedKrId) ensureKrDetailLoaded(selectedKrId); }, [selectedKrId, ensureKrDetailLoaded]);
+  // 🔴 サンプル表示中はensureKrDetailLoaded（実データのSupabaseフェッチ）を呼ばない
+  // （サンプルidは実DBに存在せず、無駄な問い合わせ＋storeへの空データ書き込みになるため）。
+  useEffect(() => {
+    if (previewSample) return;
+    if (selectedKrId) ensureKrDetailLoaded(selectedKrId);
+  }, [selectedKrId, ensureKrDetailLoaded, previewSample]);
 
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; initial: PersonalKr | null } | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const weightTotal = useMemo(() => sumWeightPct(activeKrs), [activeKrs]);
-  const selectedKr = activeKrs.find(k => k.id === selectedKrId) ?? null;
+  const weightTotal = useMemo(() => sumWeightPct(displayKrs), [displayKrs]);
+  const selectedKr = displayKrs.find(k => k.id === selectedKrId) ?? null;
   // 🔴 対象期にKRが0件のとき、実際にKRが存在する期を候補として出す（取込が別の年度・
   // 四半期に書き込まれていた場合に利用者が詰まないための安全網。CLAUDE.md Section 24）
   const availablePeriods = useMemo(() => listAvailablePersonalKrPeriods(krs), [krs]);
@@ -140,7 +235,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           安全なように明示しておく。下のKRタブの帯（overflowX:autoを持つため自動最小サイズが0に
           なり、選択中KRの中身が縦に長いとタブの帯自体が高さ0まで潰れてタブが見えなくなる事故が
           実機で発生した。2026-08-12・v3.53で修正）と対称にする。 */}
-      <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap", flexShrink: 0 }}>
+      <div data-tour-id="okr-period" style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "10px", flexWrap: "wrap", flexShrink: 0 }}>
         <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>対象期</span>
         <input
           type="number"
@@ -151,7 +246,12 @@ export function PersonalOkrView({ currentUser }: Props) {
         <CustomSelect value={quarter} onChange={v => setQuarter(v as Quarter)} options={QUARTER_OPTIONS} style={{ width: "150px" }} />
         <CustomSelect value={String(monthIndex)} onChange={v => setMonthIndex(Number(v) as 1 | 2 | 3)} options={monthOptions} style={{ width: "88px" }} />
         <span style={{ flex: 1 }} />
-        {activeKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
+        {previewSample && (
+          <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-brand)", background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)", borderRadius: "var(--radius-full)", padding: "3px 10px" }}>
+            🔍 これはサンプル表示です（保存されません）
+          </span>
+        )}
+        {!previewSample && displayKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
           <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>
             ⚠ ウェイト合計 {weightTotal}%（100%ではありません。Kintoneが正本のため警告のみです）
           </span>
@@ -165,21 +265,25 @@ export function PersonalOkrView({ currentUser }: Props) {
           対象としてこの帯だけが真っ先に高さ0まで潰れ、「KRタブが1つも表示されない」ように見える
           （実機で発生・2026-08-12。「＋KRを追加」「📥 Kintoneから取込」ボタンも同じ帯の中にあり
           一緒に消えていたことから特定した）。 */}
-      <div style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
-        {activeKrs.map(kr => (
+      <div data-tour-id="okr-kr-tabs" style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+        {displayKrs.map(kr => (
           <button key={kr.id} onClick={() => setSelectedKrId(kr.id)} style={tabStyle(kr.id === selectedKrId)}>
             <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
             <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>{kr.weight_pct}%</span>
           </button>
         ))}
-        <button
-          onClick={() => setFormModal({ mode: "create", initial: null })}
-          style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-brand)", alignSelf: "center" }}
-        >＋ KRを追加</button>
-        <button
-          onClick={() => setImportModalOpen(true)}
-          style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-text-secondary)", alignSelf: "center", whiteSpace: "nowrap" }}
-        >📥 Kintoneから取込</button>
+        {/* 🔴 ツアー最後の着地点（Section 24）。ここは常に実際の登録操作のまま
+            （サンプル表示中でも、ここから作る新しいKRは実データとして保存される）。 */}
+        <div data-tour-id="okr-registration-actions" style={{ display: "flex", alignItems: "center" }}>
+          <button
+            onClick={() => setFormModal({ mode: "create", initial: null })}
+            style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-brand)", alignSelf: "center" }}
+          >＋ KRを追加</button>
+          <button
+            onClick={() => setImportModalOpen(true)}
+            style={{ fontFamily: "inherit", cursor: "pointer", fontSize: "12px", padding: "10px 14px", background: "transparent", border: "none", color: "var(--color-text-secondary)", alignSelf: "center", whiteSpace: "nowrap" }}
+          >📥 Kintoneから取込</button>
+        </div>
       </div>
 
       {krsLoading && !krsLoaded && (
@@ -196,36 +300,42 @@ export function PersonalOkrView({ currentUser }: Props) {
           kr={selectedKr}
           currentUser={currentUser}
           monthIndex={monthIndex}
-          months={monthsByKr[selectedKr.id] ?? []}
-          weeks={weeksByKr[selectedKr.id] ?? []}
-          memos={memosByKr[selectedKr.id] ?? []}
-          loadingDetail={detailLoadingKrId === selectedKr.id}
+          months={displayMonthsByKr[selectedKr.id] ?? []}
+          weeks={displayWeeksByKr[selectedKr.id] ?? []}
+          memos={displayMemosByKr[selectedKr.id] ?? []}
+          loadingDetail={!previewSample && detailLoadingKrId === selectedKr.id}
           keyResults={keyResults}
           taskForces={taskForces}
           objectives={objectives}
-          tasks={tasks}
+          tasks={displayTasks}
           todos={todos}
-          taskDependencies={taskDependencies}
-          weekTasksByWeek={weekTasksByWeek}
-          ensureWeekTasksLoaded={ensureWeekTasksLoaded}
-          onSaveMonth={saveMonth}
-          onSaveWeek={saveWeek}
-          onSaveMemo={saveMemo}
-          onLinkWeekTask={linkWeekTask}
-          onUnlinkWeekTask={unlinkWeekTask}
-          onEditKr={() => setFormModal({ mode: "edit", initial: selectedKr })}
-          outlookByKrMonth={outlookByKrMonth}
+          taskDependencies={displayTaskDependencies}
+          weekTasksByWeek={displayWeekTasksByWeek}
+          ensureWeekTasksLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureWeekTasksLoaded}
+          // 🔴🔴 サンプル表示中は保存経路そのものを差し替える（実データのstoreアクションを
+          // 渡さない）。UI側の無効化（readOnly）と二重の防御になる（CLAUDE.md Section 24）。
+          onSaveMonth={previewSample ? PREVIEW_NOOP_ASYNC : saveMonth}
+          onSaveWeek={previewSample ? PREVIEW_NOOP_ASYNC : saveWeek}
+          onSaveMemo={previewSample ? PREVIEW_NOOP_ASYNC : saveMemo}
+          onLinkWeekTask={previewSample ? PREVIEW_NOOP_ASYNC : linkWeekTask}
+          onUnlinkWeekTask={previewSample ? PREVIEW_NOOP_ASYNC : unlinkWeekTask}
+          onEditKr={previewSample ? PREVIEW_NOOP : () => setFormModal({ mode: "edit", initial: selectedKr })}
+          outlookByKrMonth={previewOutlookByKrMonth ?? outlookByKrMonth}
           outlookAnalyzingKeys={outlookAnalyzingKeys}
           outlookErrorByKey={outlookErrorByKey}
-          ensureOutlookLoaded={ensureOutlookLoaded}
-          onRunOutlookAnalysis={runOutlookAnalysis}
+          ensureOutlookLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureOutlookLoaded}
+          onRunOutlookAnalysis={previewSample ? PREVIEW_NOOP_ASYNC : runOutlookAnalysis}
           onAiContext={setAiContext}
-          onOpenAiPanel={() => setAiPanelOpen(true)}
+          onOpenAiPanel={previewSample ? undefined : () => setAiPanelOpen(true)}
+          readOnly={!!previewSample}
         />
       ) : (
         !krsLoading && (
           <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
-            <div>{fiscalYear}年{quarter}の個人KRがまだありません。「＋ KRを追加」から登録してください。</div>
+            <div>{fiscalYear}年{quarter}の個人KRがまだありません。</div>
+            <div style={{ marginTop: "6px" }}>
+              Kintoneに個人OKRが既にある場合は「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。
+            </div>
             {availablePeriods.length > 0 && (
               <div style={{ marginTop: "14px" }}>
                 <div style={{ fontSize: "11px", marginBottom: "8px" }}>実際にKRがある期はこちらです（取込先の期がずれている可能性があります）：</div>

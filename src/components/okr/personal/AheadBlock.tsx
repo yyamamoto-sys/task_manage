@@ -85,7 +85,7 @@ export function AheadBlock({
   };
 
   return (
-    <div style={{ marginTop: "20px" }}>
+    <div data-tour-id="okr-ahead" style={{ marginTop: "20px" }}>
       <div style={sectionHeadStyle}>
         <span>これから</span>
         <span style={ruleStyle} />
