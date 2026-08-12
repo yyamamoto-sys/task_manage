@@ -12,13 +12,20 @@
 //   全面刷新予定のため引き継がない）は意図的にコピーしない（フィールドを省略するだけでよい。
 //   baseline は saveTask の choke point が新PJの日付から自動的に凍結する）
 //
+// 【日付の移動（2026-08-12・v3.57）】
+// 旧実装は「元PJ開始日→新PJ開始日」の相対日数を必ず保つ設計（dateSlide.ts）だったが、
+// 新仕様では基準（アンカー：マイルストーン／元PJ開始日／引き継がない）を選べるようにした。
+// このファイルは「基準の元日付→新日付の差分（暦日オフセット）」を呼び出し側
+// （ProjectCreateModal）から受け取るだけで、アンカーの種類そのものは意識しない
+// （inheritTaskDates.ts の computeInheritOffsetDays が担う）。
+//
 // 【IDの生成】ID を乱数で生成する処理自体は呼び出し側に委ね、この関数は
 // generateId: () => string を受け取るだけにする。テストで決定的なIDジェネレータを注入できる
 // ようにするため（純粋関数としてテストしやすくする設計）。
 
-import type { Task, TaskDependency } from "../localData/types";
+import type { Milestone, Task, TaskDependency } from "../localData/types";
 import { isCompletedForProgress } from "../taskMeta";
-import { computeSlidedDate } from "./dateSlide";
+import { computeInheritedTaskDates, computeInheritedMilestoneDate } from "./inheritTaskDates";
 
 /**
  * 元PJのタスク一覧から、既定でチェックONにするタスクID集合を返す。
@@ -37,10 +44,9 @@ export interface BuildInheritedTasksParams {
   checkedTaskIds: Set<string>;
   /** 新規作成するPJのID */
   newProjectId: string;
-  /** 新PJの開始日（YYYY-MM-DD） */
-  newProjectStartDate: string;
-  /** 元PJの開始日（無ければ日付スライドの基準が取れないため無変更で引き継ぐ） */
-  originProjectStartDate: string | null;
+  /** 日付移動のオフセット（暦日）。null は「日付を引き継がない」選択時
+   *  （taskの日付はnullable なので、両方のフィールドを null にする） */
+  dateOffsetDays: number | null;
   /** 新規タスクの updated_by に使う値 */
   createdBy: string;
   /** 新規タスクの created_at/updated_at に使う値（ISO8601） */
@@ -60,8 +66,8 @@ export interface BuildInheritedTasksResult {
  */
 export function buildInheritedTasks(params: BuildInheritedTasksParams): BuildInheritedTasksResult {
   const {
-    originTasks, checkedTaskIds, newProjectId, newProjectStartDate,
-    originProjectStartDate, createdBy, now, generateId,
+    originTasks, checkedTaskIds, newProjectId,
+    dateOffsetDays, createdBy, now, generateId,
   } = params;
 
   const checked = originTasks.filter(t => checkedTaskIds.has(t.id));
@@ -69,15 +75,10 @@ export function buildInheritedTasks(params: BuildInheritedTasksParams): BuildInh
   for (const t of checked) idMap.set(t.id, generateId());
 
   const tasks: Task[] = checked.map(t => {
-    const newStart = computeSlidedDate({
-      originStartDate: originProjectStartDate,
-      newStartDate: newProjectStartDate,
-      originalDate: t.start_date,
-    });
-    const newDue = computeSlidedDate({
-      originStartDate: originProjectStartDate,
-      newStartDate: newProjectStartDate,
-      originalDate: t.due_date,
+    const { start_date: newStart, due_date: newDue } = computeInheritedTaskDates({
+      offsetDays: dateOffsetDays,
+      startDate: t.start_date,
+      dueDate: t.due_date,
     });
     const originParentId = t.parent_task_id ?? null;
     // 親が未チェック、または引き継ぎ元PJの範囲外（他PJの親）なら idMap に無いため null になる
@@ -132,4 +133,43 @@ export function buildInheritedDependencies(
     if (newPred && newSucc) pairs.push({ predecessorTaskId: newPred, successorTaskId: newSucc });
   }
   return pairs;
+}
+
+export interface BuildInheritedMilestonesParams {
+  /** 引き継ぎ元PJの非削除マイルストーン全件 */
+  originMilestones: Milestone[];
+  /** チェックが入っている（＝引き継ぐ）マイルストーンID */
+  checkedMilestoneIds: Set<string>;
+  /** 新規作成するPJのID */
+  newProjectId: string;
+  /** 日付移動のオフセット（暦日）。null は「日付を引き継がない」選択時。
+   *  マイルストーンの date は NOT NULL のため、この場合は元の日付をそのまま
+   *  （シフトせず）コピーする（computeInheritedMilestoneDate 参照） */
+  dateOffsetDays: number | null;
+  createdBy: string;
+  now: string;
+  generateId: () => string;
+}
+
+/**
+ * チェックされた元マイルストーンから、新PJに複製する新規 Milestone オブジェクト一式を組み立てる。
+ * 基準（アンカー）に指定した1件も他のマイルストーンと同じ関数・同じオフセットで計算する
+ * （アンカー自身の元日付にオフセットを加算すると、定義上ちょうど新しい基準日と一致するため
+ * 特別扱いは不要）。
+ */
+export function buildInheritedMilestones(params: BuildInheritedMilestonesParams): Milestone[] {
+  const { originMilestones, checkedMilestoneIds, newProjectId, dateOffsetDays, createdBy, now, generateId } = params;
+  return originMilestones
+    .filter(m => checkedMilestoneIds.has(m.id))
+    .map(m => ({
+      id: generateId(),
+      project_id: newProjectId,
+      name: m.name,
+      date: computeInheritedMilestoneDate({ offsetDays: dateOffsetDays, date: m.date }),
+      description: m.description,
+      is_deleted: false,
+      created_at: now,
+      updated_at: now,
+      updated_by: createdBy,
+    }));
 }

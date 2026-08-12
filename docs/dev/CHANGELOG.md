@@ -5227,5 +5227,53 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     `npx eslint`変更ファイルに新規エラー0／`npm run build`成功。
 #   マイグレーション：追加なし。
 #
-# 最終更新：2026-08-12（v3.56）
+# v3.57 「他PJから引き継ぐ」に日付基準・マイルストーン・メンバーの引き継ぎを追加（2026-08-12）
+#   山本さん確定仕様。旧実装（〜v3.56）は「元PJ開始日→新PJ開始日」の相対日数を必ず保つ
+#   設計（dateSlide.ts）で、タスクの依存関係は既に両端チェック済みの組だけ引き継いでいたが、
+#   マイルストーン・メンバーの引き継ぎは無かった（マイルストーンは選択肢自体が存在せず、
+#   メンバーはowner以外は引き継がれなかった）。
+#   【日付】3通りから選べるようにした：(a)元PJのマイルストーンの1つを基準にする
+#     （マイルストーン一覧の各行の「基準」ラジオで選ぶ。基準に選んだ行は自動でチェックON）
+#     (b)元PJの開始日を基準にする (c)日付を引き継がない（既定・現状維持で事故防止）。
+#     (a)(b)選択時は新PJ側の対応する日付（date input）を入力させ、「基準の元日付→新日付」の
+#     差分（暦日オフセット。土日祝は飛ばさない・既存のB3/B4と同じ流儀）を、チェック中の
+#     全タスク・全マイルストーンの日付に同じだけ加算する。開始日か期日の片方しか無いタスクは
+#     設定されている方だけ移動、両方無いタスクは日付無しのまま。マイルストーンのdateはDB上
+#     NOT NULLのため「引き継がない」時はタスクは日付をnullに落とすが、マイルストーンは元の
+#     日付をそのままコピーする（消せないため。dateSlide.ts旧実装の「基準が無ければ動かさず
+#     そのまま」という判断を引き継ぐ）。純粋関数は新規`lib/project/inheritTaskDates.ts`
+#     （`computeInheritOffsetDays`/`shiftDateByOffset`/`computeInheritedTaskDates`/
+#     `computeInheritedMilestoneDate`）。旧`dateSlide.ts`（`computeSlidedDate`）と
+#     そのテストは撤去（利用箇所がtaskInheritance.tsのみだったため影響なし）。
+#   【マイルストーン】元PJの非削除マイルストーンをチェックボックス一覧にし、基準ラジオも
+#     同じ行に統合（別々に2つの選択UIを並べない）。基準のチェックを外したら基準指定も
+#     解除する（矛盾防止）。チェックしたマイルストーンはタスクと同じオフセットで日付移動して
+#     新PJに作成（`buildInheritedMilestones`・`taskInheritance.ts`）。作成は既存の
+#     `appStore.saveMilestone`choke point経由。
+#   【メンバー】CLAUDE.md Section 3-2の「PJ↔Member多対多」は本実装では独立テーブルでは
+#     なく`projects.member_ids`（配列列）。候補は元PJのmember_ids∪全タスクの担当者、
+#     既定チェックはチェック中タスクの担当者のみ（新規`lib/project/inheritMembers.ts`の
+#     `candidateInheritMembers`/`defaultCheckedMemberIds`）。`lib/project/projectMembers.ts`
+#     の`computeProjectMembers`はPJ設定画面「関わるメンバー」表示用の別目的の集約
+#     （オーナー・担当者・招待者まで広げる）のため流用しなかった（流用すると引き継ぎ候補が
+#     意図せず広がる）。選んだメンバーは新PJのmember_idsとしてプロジェクト作成の1回の
+#     upsertに含めるため、追加の保存呼び出し・書き込み順序の問題は発生しない。
+#   【プレビュー】既存のタスク選択リストの各行に「→ 新しい日付」を併記する形で実装（新しい
+#     UIは作らない）。マイルストーン一覧の各行にも同様のプレビューを表示。
+#   【トランザクションではない】saveProjectが成功した後、milestone/task/依存関係の保存が
+#     一部失敗してもプロジェクト自体のロールバックはしない（既存のB3の割り切りと同じ）。
+#     失敗件数はトーストで通知し、不足分は編集画面から手動追加を促す。
+#   変更ファイル：新規`lib/project/inheritTaskDates.ts`・`lib/project/inheritMembers.ts`と
+#     各テスト。`lib/project/taskInheritance.ts`（`buildInheritedTasks`の日付計算を
+#     オフセット方式に変更・`buildInheritedMilestones`追加）。`dateSlide.ts`と
+#     `dateSlide.test.ts`を削除。`ProjectCreateModal.tsx`（UI全面拡張：日付基準＋
+#     マイルストーン一覧＋タスク一覧のプレビュー＋メンバー一覧の3ブロック。モーダル幅を
+#     480px→560pxに拡大）。CLAUDE.md Section 8（PJ作成モーダルの行）を更新。
+#   テスト：inheritTaskDates.test.ts（24件）・inheritMembers.test.ts（8件）を新設。
+#     taskInheritance.test.tsを新シグネチャに追従＋buildInheritedMilestonesのテストを追加。
+#   検証：`npx tsc --noEmit`エラー0／`npx vitest run`1319件全通過（1290件→1319件・+29件）／
+#     `npx eslint`変更ファイルに新規エラー0／`npm run build`成功。
+#   マイグレーション：追加なし（milestones・projects.member_idsとも既存列を使う）。
+#
+# 最終更新：2026-08-12（v3.57）
 

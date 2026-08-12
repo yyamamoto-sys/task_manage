@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.56
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.57
 #
-最終更新：2026-08-12（v3.56）
+最終更新：2026-08-12（v3.57）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1045,7 +1045,7 @@ interface TaskChangeLog {
 | ガントビュー | ✅ 実装済み | PJ別・人別の2ビューモード。PJバー・マイルストーン・今日線・トグル開閉 |
 | リストビュー | ✅ 実装済み | 列カスタマイズ・サイドパネル・エクスポート |
 | タスク追加FAB | ✅ 実装済み | 全画面共通・右下固定。TF・ToDo・PJ・担当者・開始日・期日・メモを設定可。最上位作成時は子タスクを一括追加可 |
-| PJ作成モーダル | ✅ 実装済み | 単一ステップフォーム。作成方法トグル（まっさらな新規作成／他PJから引き継ぐ）で、過去含む他PJのタスクをチェックボックス選択して新PJに引き継ぐことも可能（v2.83） |
+| PJ作成モーダル | ✅ 実装済み | 単一ステップフォーム。作成方法トグル（まっさらな新規作成／他PJから引き継ぐ）で、過去含む他PJのタスク・マイルストーン・メンバーをチェックボックス選択して新PJに引き継ぐことも可能（v2.83／v3.57で日付基準・マイルストーン・メンバー引き継ぎを追加）。**日付の引き継ぎ（v3.57）**：既定は「日付を引き継がない」（現状維持・事故防止）。マイルストーン一覧の各行に「基準」ラジオがあり、基準に選んだマイルストーン（または元PJ開始日）の元日付→新PJ側で入力した日付の差分（暦日オフセット）を、チェック中の全タスク・全マイルストーンの日付に同じだけ加算する。純粋関数は`lib/project/inheritTaskDates.ts`（`computeInheritOffsetDays`/`shiftDateByOffset`/`computeInheritedTaskDates`/`computeInheritedMilestoneDate`）。マイルストーンの date はNOT NULLのため「引き継がない」選択時は元の日付をそのままコピー（タスクは null に落とす）。タスク・マイルストーン複製本体は`lib/project/taskInheritance.ts`（`buildInheritedTasks`/`buildInheritedMilestones`/`buildInheritedDependencies`）。メンバー引き継ぎの候補は元PJの`member_ids`∪全タスク担当者（`lib/project/inheritMembers.ts`）で、独立の`project_members`テーブルは存在しないため`lib/project/projectMembers.ts`（PJ設定画面「関わるメンバー」表示用の別目的の集約関数）は流用しない。選んだメンバーは新PJの`member_ids`としてプロジェクト作成の1回のupsertに含めるため、追加の書き込み・順序問題は発生しない |
 | タスク編集モーダル | ✅ 実装済み | ToDo紐づけフィールド含む |
 | AIに変更を相談パネル | ✅ 実装済み | マルチターン・5モード・確認ダイアログ |
 | ConfirmationDialogModal | ✅ 実装済み | date_change/assignee確認用 |

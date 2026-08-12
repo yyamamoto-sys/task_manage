@@ -1,6 +1,8 @@
 import { describe, it, expect } from "vitest";
-import type { Task, TaskDependency } from "../../localData/types";
-import { defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies } from "../taskInheritance";
+import type { Milestone, Task, TaskDependency } from "../../localData/types";
+import {
+  defaultCheckedTaskIds, buildInheritedTasks, buildInheritedDependencies, buildInheritedMilestones,
+} from "../taskInheritance";
 
 // テスト用の最小 Task ファクトリ（src/lib/__tests__/taskHierarchy.test.ts の mk と同型）
 function mk(partial: Partial<Task> & { id: string }): Task {
@@ -63,8 +65,7 @@ describe("defaultCheckedTaskIds", () => {
 describe("buildInheritedTasks", () => {
   const baseParams = {
     newProjectId: "new-pj",
-    newProjectStartDate: "2026-03-01",
-    originProjectStartDate: "2026-01-01" as string | null,
+    dateOffsetDays: 59 as number | null, // 2026-01-01 -> 2026-03-01 と同じオフセット（旧テストの互換用）
     createdBy: "member-1",
     now: "2026-03-01T00:00:00.000Z",
   };
@@ -174,17 +175,17 @@ describe("buildInheritedTasks", () => {
     expect(tasks[0].due_date).toBeNull();
   });
 
-  it("元PJに開始日が無ければ日付はスライドせずそのまま引き継がれる", () => {
+  it("dateOffsetDaysがnull（『日付を引き継がない』選択時）は日付があっても両方nullになる", () => {
     const originTasks = [mk({ id: "t1", start_date: "2026-01-04", due_date: "2026-01-08" })];
     const { tasks } = buildInheritedTasks({
       ...baseParams,
-      originProjectStartDate: null,
+      dateOffsetDays: null,
       originTasks,
       checkedTaskIds: new Set(["t1"]),
       generateId: makeIdGenerator(),
     });
-    expect(tasks[0].start_date).toBe("2026-01-04");
-    expect(tasks[0].due_date).toBe("2026-01-08");
+    expect(tasks[0].start_date).toBeNull();
+    expect(tasks[0].due_date).toBeNull();
   });
 
   it("tags は元の配列とは別の配列インスタンスとしてコピーされる", () => {
@@ -235,5 +236,82 @@ describe("buildInheritedDependencies", () => {
       { predecessorTaskId: "new-a", successorTaskId: "new-b" },
       { predecessorTaskId: "new-b", successorTaskId: "new-c" },
     ]);
+  });
+});
+
+function mkMilestone(partial: Partial<Milestone> & { id: string }): Milestone {
+  return {
+    id: partial.id,
+    project_id: partial.project_id ?? "origin-pj",
+    name: partial.name ?? partial.id,
+    date: partial.date ?? "2026-06-06",
+    is_deleted: partial.is_deleted ?? false,
+  };
+}
+
+describe("buildInheritedMilestones", () => {
+  const baseParams = {
+    newProjectId: "new-pj",
+    createdBy: "member-1",
+    now: "2026-03-01T00:00:00.000Z",
+  };
+
+  it("チェックされたマイルストーンだけを、同じオフセットで日付移動して複製する", () => {
+    const originMilestones = [
+      mkMilestone({ id: "m1", name: "フォーラム実施日", date: "2026-06-06" }),
+      mkMilestone({ id: "m2", name: "会場予約完了", date: "2026-05-01" }),
+    ];
+    const result = buildInheritedMilestones({
+      ...baseParams,
+      originMilestones,
+      checkedMilestoneIds: new Set(["m1", "m2"]),
+      dateOffsetDays: 30,
+      generateId: makeIdGenerator(),
+    });
+    expect(result).toHaveLength(2);
+    expect(result.find(m => m.name === "フォーラム実施日")?.date).toBe("2026-07-06");
+    expect(result.find(m => m.name === "会場予約完了")?.date).toBe("2026-05-31");
+    expect(result.every(m => m.project_id === "new-pj")).toBe(true);
+  });
+
+  it("チェックされていないマイルストーンは複製結果に含まれない", () => {
+    const originMilestones = [
+      mkMilestone({ id: "m1" }),
+      mkMilestone({ id: "m2" }),
+    ];
+    const result = buildInheritedMilestones({
+      ...baseParams,
+      originMilestones,
+      checkedMilestoneIds: new Set(["m1"]),
+      dateOffsetDays: 0,
+      generateId: makeIdGenerator(),
+    });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("new-1");
+  });
+
+  it("基準に指定したマイルストーン自身も同じ関数で計算すると、ちょうど新しい基準日になる", () => {
+    // アンカー＝m1（元日付2026-06-06）を新PJでは2026-07-06にする、というオフセット(30日)を想定
+    const originMilestones = [mkMilestone({ id: "m1", date: "2026-06-06" })];
+    const result = buildInheritedMilestones({
+      ...baseParams,
+      originMilestones,
+      checkedMilestoneIds: new Set(["m1"]),
+      dateOffsetDays: 30,
+      generateId: makeIdGenerator(),
+    });
+    expect(result[0].date).toBe("2026-07-06");
+  });
+
+  it("dateOffsetDaysがnull（『日付を引き継がない』選択時）は元の日付をそのままコピーする（NOT NULL列のため）", () => {
+    const originMilestones = [mkMilestone({ id: "m1", date: "2026-06-06" })];
+    const result = buildInheritedMilestones({
+      ...baseParams,
+      originMilestones,
+      checkedMilestoneIds: new Set(["m1"]),
+      dateOffsetDays: null,
+      generateId: makeIdGenerator(),
+    });
+    expect(result[0].date).toBe("2026-06-06");
   });
 });
