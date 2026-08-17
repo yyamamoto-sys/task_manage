@@ -242,14 +242,24 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        {/* ヘッダー */}
+        {/* ヘッダー
+            flexWrap:"wrap" + タイトルdivのflexShrink:0（DashboardView.tsxと同じパターン。
+            幅が足りない場合はトグルボタン群が2行目に折り返す。タイトルdiv自体をflex:1のまま
+            縮められると「全プロジェクト」の文字が1文字ずつ縦に折り返される不具合があった） */}
       <div style={{
         padding: "10px 18px", borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center", gap: "10px",
         background: "var(--color-bg-primary)", flexShrink: 0,
+        flexWrap: "wrap",
       }}>
-        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-          {selectedProject ? selectedProject.name : krTaskIds ? "OKRタスク" : "全プロジェクト"}
+        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flexShrink: 0 }}>
+          {selectedProject ? (
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "240px", display: "inline-block", verticalAlign: "bottom" }}>
+              {selectedProject.name}
+            </span>
+          ) : (
+            <span style={{ whiteSpace: "nowrap" }}>{krTaskIds ? "OKRタスク" : "全プロジェクト"}</span>
+          )}
         </div>
         {selectedProject?.purpose && (
           <div style={{
@@ -257,6 +267,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
             border: "1px solid var(--color-border-warning)",
             maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            flexShrink: 0,
           }}>
             {selectedProject.purpose}
           </div>
@@ -269,6 +280,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           color: hideDone ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
           border: hideDone ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
           transition: "all 0.1s",
+          whiteSpace: "nowrap", flexShrink: 0,
         }}>完了を隠す</button>
         {/* 保留・中止を表示トグル（既定OFF＝隠す。🙈完了を隠すの逆＝既定で見せない列を出す） */}
         <button onClick={() => setShowPaused(v => !v)} title="保留・中止のタスクを列として表示する" style={{
@@ -278,6 +290,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
           color: showPaused ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
           border: showPaused ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
           transition: "all 0.1s",
+          whiteSpace: "nowrap", flexShrink: 0,
         }}>{showPaused ? "👁" : "🙈"} 保留・中止を表示</button>
       </div>
 

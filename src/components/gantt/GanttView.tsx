@@ -57,6 +57,7 @@ const headerBtnStyle: React.CSSProperties = {
   border: "1px solid var(--color-border-primary)",
   borderRadius: "var(--radius-md)", cursor: "pointer",
   background: "transparent",
+  whiteSpace: "nowrap", flexShrink: 0,
 };
 
 interface Props {
@@ -2108,12 +2109,16 @@ export function GanttView({
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
 
-      {/* ヘッダー */}
+      {/* ヘッダー
+          flexWrap:"wrap" + タイトルdivのflexShrink:0（DashboardView.tsxと同じパターン。CLAUDE.md
+          Section参照）。幅が足りない場合はツールバーのボタン群が2行目に折り返す。タイトルdiv自体を
+          flex:1のまま縮められると「全プロジェクト」の文字が1文字ずつ縦に折り返される不具合があった。 */}
       <div style={{
         display: "flex", alignItems: "center", gap: "8px",
         padding: "10px 16px",
         borderBottom: "1px solid var(--color-border-primary)",
         background: isPreview ? "var(--color-bg-info)" : "var(--color-bg-primary)", flexShrink: 0,
+        flexWrap: "wrap",
       }}>
         {isPreview && (
           <span style={{
@@ -2128,11 +2133,17 @@ export function GanttView({
             変更後（仮）
           </span>
         )}
-        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-          {selectedProject ? selectedProject.name : krTaskIds ? "OKRタスク" : "全プロジェクト"}
+        <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flexShrink: 0 }}>
+          {selectedProject ? (
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "240px", display: "inline-block", verticalAlign: "bottom" }}>
+              {selectedProject.name}
+            </span>
+          ) : (
+            <span style={{ whiteSpace: "nowrap" }}>{krTaskIds ? "OKRタスク" : "全プロジェクト"}</span>
+          )}
         </div>
         {!isPreview && (
-          <div style={{ display: "flex", gap: "3px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>
+          <div style={{ display: "flex", gap: "3px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>
             {(["pj", "person"] as const).map(mode => (
               <button
                 key={mode}
@@ -2156,7 +2167,7 @@ export function GanttView({
         {!isPreview && viewMode === "pj" && <button onClick={collapseAll} title="PJをすべて折りたたむ" aria-label="PJをすべて折りたたむ" style={headerBtnStyle}>⊟</button>}
         {/* タスク並び順トグル */}
         {!isPreview && (
-          <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)" }}>
+          <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>
             {(["date", "name"] as const).map(s => (
               <button
                 key={s}
@@ -2260,6 +2271,7 @@ export function GanttView({
             borderRadius: "var(--radius-md)",
             color: "var(--color-brand)", fontSize: "11px", fontWeight: "600",
             background: "var(--color-brand-light)",
+            flexShrink: 0, whiteSpace: "nowrap",
           }}>
             {selectedTaskIds.size}件選択中
             <button
@@ -2284,7 +2296,7 @@ export function GanttView({
         )}
         {/* ズームボタン */}
         {!isPreview && (
-          <div style={{ display: "flex", alignItems: "center", gap: "2px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "2px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden", flexShrink: 0 }}>
             <button
               onClick={zoomOut}
               disabled={(ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) <= 0}

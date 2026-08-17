@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.73",
+    date: "2026-08-17",
+    title: "画面幅を狭めたときのヘッダー崩れとメニューの表示崩れを修正",
+    highlights: [
+      "ガント・カンバン画面で、ブラウザの幅を狭めるとタイトルの文字が縦にバラバラに折り返されてしまう不具合を修正しました",
+      "サイドバーのプロジェクト行の「⋮」メニューで、アイコンが二重に表示されていた不具合を修正しました（「このPJの設定」「完了にする」「アーカイブ」「activeに戻す」）",
+    ],
+  },
+  {
     version: "v3.72",
     date: "2026-08-12",
     title: "選択したタスクをまとめて複製できるように",

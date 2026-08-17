@@ -5905,5 +5905,33 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     名前置換の対象が無い場合を固定）。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-12（v3.72）
+# v3.73（2026-08-17）：ビューヘッダーの折り返し崩れを修正＋サイドバーPJ行メニューの絵文字二重表示を修正
+#   背景1：山本さんが実機で発見。ブラウザ幅を狭めるとガントビュー上部のヘッダーで
+#   「全プロジェクト」の文字が1文字ずつ縦に折り返され、ヘッダーだけで縦200px以上を
+#   占めてしまう不具合（ツールバーのボタンラベルも2行に割れていた）。
+#   原因：ヘッダー外側divに`flexWrap`が無く、タイトルdivが`flex:1`のため、幅不足時に
+#   0近くまで縮んでテキストが1文字ごとに改行される（`DashboardView.tsx`が既に解決済み
+#   だった不具合と同型）。CLAUDE.md Section 31に原因と対策を新設。
+#   変更：`src/components/gantt/GanttView.tsx`（2112行目〜のヘッダー）・
+#     `src/components/kanban/KanbanView.tsx`（246行目〜のヘッダー）：外側divに
+#     `flexWrap:"wrap"`を追加、タイトルdivを`flex:1`から`flexShrink:0`に変更（PJ名は
+#     `overflow:hidden/textOverflow:"ellipsis"/whiteSpace:"nowrap"/maxWidth:"240px"`で
+#     省略表示、固定文言は`whiteSpace:"nowrap"`のみ）。`headerBtnStyle`（GanttView共有
+#     スタイル）・ツールバーのボタン/グループdivに`whiteSpace:"nowrap"`+`flexShrink:0`を追加。
+#   横展開の調査結果：`GanttMobileView.tsx`（タイトルに元から`whiteSpace:"nowrap"`があり
+#     該当なし）・`WorkloadView.tsx`（元から`flexWrap:"wrap"`＋タイトル`flexShrink:0`が
+#     入っており該当なし）・`ListView.tsx`（「左タイトル＋右ツールバー」構造自体が無く対象外）
+#     はいずれも問題なし・無改修。
+#   背景2：サイドバーPJ行「⋮」メニューで絵文字が二重表示される不具合（山本さんのスクリー
+#   ンショットで確認。「⚙ ⚙ このPJの設定」等）。原因：`ProjectRowMenu.tsx`が
+#   `projectRowMenu.ts`の`item.icon`を独立した`<span>`で描画する一方、i18nラベル文字列
+#   自身にも同じ絵文字が先頭に入っていた（絵文字の正本は`projectRowMenu.ts`側という設計
+#   コメントからの逸脱）。
+#   変更：`src/i18n/layout.ja.ts`・`src/i18n/layout.en.ts`の
+#     `layout.sidebar.pjRowMenu.settings`/`complete`/`archive`/`restore`の4キーから
+#     先頭の絵文字＋スペースを除去（`ProjectRowMenu.tsx`・`projectRowMenu.ts`は無改修）。
+#     他のlayout.*キーも全件確認したが同様の二重表示は他に無かった。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-17（v3.73）
 
