@@ -5933,5 +5933,26 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     他のlayout.*キーも全件確認したが同様の二重表示は他に無かった。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-17（v3.73）
+# v3.74（2026-08-17）：サイドバー下部「その他」（ガイド／設定／招待コードを入力）を折りたたみ式に
+#   背景：山本さんの依頼。「📖 ガイド」「⚙ 設定」「🎫 招待コードを入力」の3ボタンが縦に並んで
+#   サイドバーの面積を占領していた（見せたいのは「メニュー」と「プロジェクト」）。
+#   変更：`src/components/layout/MainLayout.tsx`の`Sidebar`コンポーネントに`miscOpen`/
+#     `toggleMiscOpen`（`KEYS.SIDEBAR_MISC_OPEN`）を新設。既存の`pjOpen`/`togglePjOpen`
+#     （`KEYS.SIDEBAR_PJ_OPEN`）と同型だが向きが逆＝既定は閉じる（"1"のときだけ開く）。
+#     折りたたみ時は`▸ その他`の1行、展開時は`▾ その他`＋3ボタン。見出しのスタイルは
+#     「プロジェクト」セクション見出しと同じトークンを流用（新しい見た目は作っていない）。
+#   項目数の判定：`src/lib/layout/sidebarMiscSection.ts`の`shouldGroupSidebarMiscButtons()`
+#     （純粋関数。表示対象が2件以上のときだけ見出し＋折りたたみにする。ゲストは「ガイド」1件
+#     のみのため対象外＝そのまま並べる）。テストは`__tests__/sidebarMiscSection.test.ts`。
+#   サイドバー自体が折りたたまれている（`c===true`・幅48px）ときは見出しを出さず、従来どおり
+#     3つのアイコンボタンをそのまま並べる（面積を圧迫していないため）。
+#   初回ツアー対応：`first-time.ts`の「guide」ステップ（`target:"guide-btn"`）は「その他」が
+#     折りたたまれているとDOM上に無くskipIfMissingで飛ばされてしまうため、ツアー冒頭の
+#     `welcome`ステップに`action:"open-sidebar-misc"`を追加し、`Sidebar`側で既存の
+#     `"tour:action"`配線（`demo-ai-consult`と同じ方式）を使って「その他」を強制展開する
+#     （localStorageは書き換えない一時展開）。`okr-intro.ts`は`guide-btn`を参照していないため
+#     無改修（確認済み）。
+#   DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-17（v3.74）
 

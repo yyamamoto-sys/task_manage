@@ -16,6 +16,10 @@ export const firstTimeTour: Tour = {
     {
       id: "welcome",
       placement: "center",
+      // サイドバー下部の「その他」（ガイド／設定／招待コードを入力）は既定で折りたたまれて
+      // おり、guide-btn が DOM に存在しないと後段の「guide」ステップが skipIfMissing で
+      // 黙って飛ばされてしまう。ツアー開始時点で先に開いておく（v3.74）。
+      action: "open-sidebar-misc",
       title: "👋 ようこそ",
       body: "このアプリは OKR（目標）× プロジェクト × タスク を 1 箇所で運用するためのツールです。\n\nこのツアーでは、主要画面と AI 機能を順にご案内します。AI には実際に相談を実演してもらいます。\n\n所要 2 分ほど。いつでも ✕ で終了でき、左下「📖 ガイド」からまた再生できます。",
     },

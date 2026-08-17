@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.73
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.74
 #
-最終更新：2026-08-12（v3.73）
+最終更新：2026-08-17（v3.74）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1200,7 +1200,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-12（v3.73）
+- 最終更新：2026-08-17（v3.74）
 
 ---
 
@@ -2394,6 +2394,22 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 **🔴 次に「タイトルを`flex:1`にすれば右寄せツールバーとの間が均等に空く」と直したくなっても戻さないこと**：見た目上は広いウィンドウで問題なく動くため気づきにくいが、ウィンドウ幅を狭める・Teams埋め込み等で幅が制約される環境で必ず再発する。「左タイトル＋右ツールバー」のヘッダー構造を新設・変更するときは、必ずこの3点（外側`flexWrap`・タイトル`flexShrink:0`・ボタン`whiteSpace:"nowrap"`+`flexShrink:0`）を確認すること。
 
 **対象範囲の調査結果**：`GanttView.tsx`（2112行目〜）・`KanbanView.tsx`（246行目〜）はこの不具合があり本項の方針で修正した。`GanttMobileView.tsx`（161行目〜）はタイトルに元から`whiteSpace:"nowrap"`が付いており該当しない（横は省略表示になるだけで縦には潰れない）。`WorkloadView.tsx`（70行目〜）は元から`flexWrap:"wrap"`＋タイトル`flexShrink:0`が入っており該当しない。`ListView.tsx`（586行目〜）は「左タイトル＋右ツールバー」という構造自体を持たない（PJ名を表示する専用のタイトル要素が無い）ため対象外。
+
+---
+
+## 32. サイドバー下部「その他」（ガイド／設定／招待コードを入力）の折りたたみ（v3.74・2026-08-17）
+
+山本さんの依頼：「📖 ガイド」「⚙ 設定」「🎫 招待コードを入力」の3ボタンが縦に並んでサイドバーの面積を占領しているため、折りたたみ式にして必要なときだけ展開したい（見せたいのは「メニュー」と「プロジェクト」）。
+
+- **既存の確立済みパターンをそのまま踏襲**：`Sidebar`コンポーネント（`MainLayout.tsx`）の`pjOpen`/`togglePjOpen`（`KEYS.SIDEBAR_PJ_OPEN`）と同じ形で`miscOpen`/`toggleMiscOpen`（`KEYS.SIDEBAR_MISC_OPEN`）を新設した。**向きが逆**：`SIDEBAR_PJ_OPEN`は既定ON（`!== "0"`）だが、`SIDEBAR_MISC_OPEN`は既定OFF（起動時は折りたたみ。`=== "1"`のときだけ開く）。
+- **見出し行**：折りたたみ時は`▸ その他`の1行のみ（クリックで`▾ その他`に変わり展開）。スタイルは「プロジェクト」セクション見出し（`togglePjOpen`のボタン）と同じトークン（font-size 10px・font-weight 600・letter-spacing 0.05em・color `var(--color-text-tertiary)`・text-transform uppercase・矢印`▶`の回転アニメ）を流用した（新しい見た目は作っていない）。
+- **項目数が2件以上のときだけ見出し＋折りたたみにする**：「設定」「招待コードを入力」は`!isGuest`条件付きのため、ゲストは「ガイド」1つだけになる。1件以下のときに見出しで包むと、見出し行が増える分だけかえって縦の占有面積が増えて逆効果になるため、判定を`src/lib/layout/sidebarMiscSection.ts`の`shouldGroupSidebarMiscButtons(visibleItemCount)`（純粋関数・`visibleItemCount >= 2`）に切り出した（テストは`__tests__/sidebarMiscSection.test.ts`）。JSX側は`showMiscGroup = !c && shouldGroupSidebarMiscButtons(miscItemCount)`の1箇所で判定し、条件式を散らさない。
+- **サイドバー自体が折りたたまれている（`c === true`・幅48px）ときは見出しを出さない**：`showMiscGroup`が`!c`を含むため自動的にfalseになり、従来どおり3つのアイコンボタンをそのまま並べる（アイコン1個ぶんの高さしか無くそもそも面積を圧迫していないため。ここで見出しを足すと逆に1行増える）。
+- **既存の3ボタンの`onClick`／`title`／`data-tour-id`は無改修**。位置が見出しの内側に入れ子になるだけ。
+- **初回ツアーの`guide-btn`参照が壊れる問題への対応**：`first-time.ts`の「guide」ステップ（`target: "guide-btn"`・`skipIfMissing: true`）は、「その他」が折りたたまれているとDOM上に存在せず黙って飛ばされてしまう。対応は**(a) ツアー開始時に自動的に「その他」を開く**を採用した。具体的には、同ツアーの最初のステップ（`id: "welcome"`。ターゲット無し＝毎回必ず表示される）に`action: "open-sidebar-misc"`を追加し、`Sidebar`コンポーネント側で`"tour:action"`イベント（既存の`demo-ai-consult`/`open-dashboard-pj-analysis`と同じ配線方式。`TourProvider.tsx`が`window.dispatchEvent`する）をリッスンして`setMiscOpen(true)`する。**localStorageは書き換えない**（一時的な展開に留め、ユーザーが選んだ既定の開閉状態を変えない）。
+  - **タイミングの注意**：`TourProvider.tsx`はステップ変更時に「ターゲット測位（`skipIfMissing`判定を含む）」と「action発火」を同じ`activeStep`変更に対する別々の`useEffect`で行う。もし`action`を「guide」ステップ自身に付けても、ターゲット測位の効果（宣言順で先）がその場でターゲット不在と判定し即座に次のステップへ進めてしまい、action発火（宣言順で後）が「その他」を開いた頃には既に手遅れ（該当ステップの表示自体がスキップ済み）になる。そのため**「guide」より前のステップ（このツアーでは冒頭の`welcome`）でアクションを発火させ、猶予（`guide`到達までの間の複数ステップ分）を確保する**設計にした。
+  - `okr-intro.ts`（OKRモードのツアー）は`guide-btn`を参照していないため対象外（確認済み）。
+- **DBスキーマ変更なし**（`schemaChecks.ts`への追記も不要）。
 
 ---
 

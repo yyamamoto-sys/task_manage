@@ -51,6 +51,7 @@ import { ProjectSettingsModal } from "../project/ProjectSettingsModal";
 import { AcceptInviteModal } from "../project/AcceptInviteModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
+import { shouldGroupSidebarMiscButtons } from "../../lib/layout/sidebarMiscSection";
 import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 
@@ -1753,6 +1754,27 @@ function Sidebar({
   const togglePjOpen  = () => setPjOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_PJ_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
   const c = collapsed; // 省略形
 
+  // サイドバー下部「その他」（ガイド／設定／招待コードを入力）の折りたたみ（v3.74）。
+  // SIDEBAR_PJ_OPENとは向きが逆＝既定は閉じる（"1"のときだけ開く）。
+  const [miscOpen, setMiscOpen] = useState<boolean>(() => { try { return localStorage.getItem(KEYS.SIDEBAR_MISC_OPEN) === "1"; } catch { return false; } });
+  const toggleMiscOpen = () => setMiscOpen(v => { const n = !v; try { localStorage.setItem(KEYS.SIDEBAR_MISC_OPEN, n ? "1" : "0"); } catch { /* ignore */ } return n; });
+  // 初回ツアーの「guide」ステップは data-tour-id="guide-btn" を狙うが、折りたたまれていると
+  // DOM上に存在せずskipIfMissingで黙って飛ばされてしまう。ツアー開始時（"welcome"ステップの
+  // action）に「その他」を強制的に開く（localStorageは書き換えない＝ユーザーの既定選択は
+  // 変えない一時的な展開。CLAUDE.md参照）。
+  useEffect(() => {
+    const onTourAction = (e: Event) => {
+      const action = (e as CustomEvent).detail as string;
+      if (action === "open-sidebar-misc") setMiscOpen(true);
+    };
+    window.addEventListener("tour:action", onTourAction);
+    return () => window.removeEventListener("tour:action", onTourAction);
+  }, []);
+  // ゲストは「ガイド」のみ（設定・招待コードは!isGuest限定）。1件以下のときに見出しで包むと
+  // かえって行数が増えるため、2件以上のときだけ見出し＋折りたたみにする（sidebarMiscSection.ts）。
+  const miscItemCount = 1 + (isGuest ? 0 : 2);
+  const showMiscGroup = !c && shouldGroupSidebarMiscButtons(miscItemCount);
+
   // ===== PJ行の「⋮」メニュー（v3.54） =====
   // 権限判定はPJ設定画面（ProjectSettingsModal）の基本情報編集と同じ条件
   // （lib/project/projectEditPermission.ts に切り出し済み・判定ロジックの複製はしない）。
@@ -2172,6 +2194,29 @@ function Sidebar({
 
       {/* AI相談・設定・ユーザー情報（常にクリック可能な位置に固定表示） */}
       <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
+        {/* 「その他」見出し（ガイド／設定／招待コードを折りたたむ。v3.74）。
+            サイドバー自体が折りたたまれている（c===true）ときはアイコン1個ぶんの高さ
+            しか無く面積を圧迫しないため、見出しを出さず従来どおり3つのアイコンボタンを
+            並べたままにする（showMiscGroupが!cを含むため自動的にfalseになる）。 */}
+        {showMiscGroup && (
+          <button
+            onClick={toggleMiscOpen}
+            aria-expanded={miscOpen}
+            title={miscOpen ? t("layout.sidebar.miscSectionCollapse") : t("layout.sidebar.miscSectionExpand")}
+            style={{
+              display: "flex", alignItems: "center", gap: "4px",
+              width: "100%",
+              background: "transparent", border: "none", cursor: "pointer",
+              padding: "4px 6px 6px",
+              fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
+              color: "var(--color-text-tertiary)", textTransform: "uppercase",
+            }}
+          >
+            <span style={{ fontSize: "8px", display: "inline-block", transform: miscOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
+            {t("layout.sidebar.miscSectionLabel")}
+          </button>
+        )}
+        {(!showMiscGroup || miscOpen) && (<>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
           data-tour-id="guide-btn"
@@ -2241,6 +2286,7 @@ function Sidebar({
           {!c && <span>{t("layout.acceptInvite.title")}</span>}
         </button>
         )}
+        </>)}
         <div style={{
           display: "flex", alignItems: "center",
           justifyContent: c ? "center" : "flex-start",

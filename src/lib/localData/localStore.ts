@@ -67,6 +67,10 @@ const KEYS = {
    *  （描画経路を切るだけの方式のため）。 */
   SIDEBAR_PJ_OPEN:     "sidebar_pj_open",
   SIDEBAR_OKR_OPEN:    "sidebar_okr_open",
+  /** サイドバー下部「その他」（ガイド／設定／招待コードを入力）の折りたたみ開閉状態。
+   *  SIDEBAR_PJ_OPENとは向きが逆＝既定は閉じる（"1"のときだけ開く）。v3.74・面積を
+   *  占領していた3ボタンを折りたたみ式にした（山本さんの指示）。 */
+  SIDEBAR_MISC_OPEN:   "sidebar_misc_open",
   // 管理画面
   ADMIN_LAST_TAB:      "admin_last_tab",
   ADMIN_FONT_SIZE:     "admin_font_size",
