@@ -370,6 +370,41 @@ describe("applyProposalWithConfirmation — date_change の確定", () => {
     const result = await applyProposalWithConfirmation(dialog, { "task-uuid-1": "2026-05-25" }, "user-1");
     expect(result.type).toBe("error");
   });
+
+  it("dialog.itemsが後続→先行の順（依存関係のトポロジカル順になっていない）でも、" +
+     "先行タスクを先に反映するため、後続タスクの確定値がB3自動リスケ連鎖で上書きされない" +
+     "（v3.77バグ修正の回帰テスト）", async () => {
+    // A（先行）→B（後続）の依存があるデータ。dialog.itemsはAIの返した順のまま
+    // 「B（後続）が先、A（先行）が後」という、意図的にトポロジカル順ではない並びにする。
+    useAppStore.setState({
+      tasks: [
+        makeTask({ id: "task-a", name: "A", due_date: "2026-05-01" }),
+        makeTask({ id: "task-b", name: "B", start_date: "2026-05-02", due_date: "2026-05-10" }),
+      ],
+      taskDependencies: [
+        { id: "dep-1", predecessor_task_id: "task-a", successor_task_id: "task-b", is_deleted: false },
+      ],
+    });
+    const dialog: ConfirmationDialog = {
+      proposal_id: "p1", action_type: "date_change",
+      items: [
+        { task_id: "task-b", task_name: "B", current_value: "2026-05-10", suggested_value: "2026-05-12" },
+        { task_id: "task-a", task_name: "A", current_value: "2026-05-01", suggested_value: "2026-05-20" },
+      ],
+    };
+    const result = await applyProposalWithConfirmation(
+      dialog,
+      { "task-b": "2026-05-12", "task-a": "2026-05-20" },
+      "user-1",
+    );
+
+    expect(result.type).toBe("success");
+    // Aの確定値（先行タスク）はそのまま反映される
+    expect(useAppStore.getState().tasks.find(t => t.id === "task-a")?.due_date).toBe("2026-05-20");
+    // Bの確定値（後続タスク）が、Aの反映で発火するB3自動リスケ連鎖に上書きされず、
+    // 利用者が確認画面で確定した日付のまま残ること
+    expect(useAppStore.getState().tasks.find(t => t.id === "task-b")?.due_date).toBe("2026-05-12");
+  });
 });
 
 describe("applyProposalWithConfirmation — assignee の確定", () => {

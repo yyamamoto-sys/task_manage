@@ -34,6 +34,7 @@ import type { UIProposal } from "./proposalMapper";
 import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
 import { toDate, addDays, toDateStr } from "../date";
+import { sortTaskIdsByDependencyOrder } from "../dependencies/topoSort";
 
 // ===== 型定義 =====
 
@@ -638,8 +639,20 @@ export async function applyProposalWithConfirmation(
       const operations: UndoOperation[] = [];
       const failures: string[] = [];
 
+      // 【v3.77】dialog.itemsはAIの返した順のままで、依存関係のトポロジカル順になっていない
+      // ことがある。この順のまま反映すると、後続タスクの確定値を先に書き込んだ後で先行タスクを
+      // 反映した際にB3自動リスケ連鎖が発火し、既に書き込み済みの後続タスクの確定値を黙って
+      // 上書きしてしまう（先行を先に反映すれば、各タスク自身の確定値の書き込みが必ずそのタスク
+      // への最後の書き込みになる）。反映前に先行タスクが先に来るよう並べ替える。
+      const itemByTaskId = new Map(dialog.items.map(item => [item.task_id, item]));
+      const orderedTaskIds = sortTaskIdsByDependencyOrder(
+        dialog.items.map(item => item.task_id),
+        useAppStore.getState().taskDependencies,
+      );
+      const orderedItems = orderedTaskIds.map(id => itemByTaskId.get(id)!);
+
       // タスクの期日更新
-      for (const item of dialog.items) {
+      for (const item of orderedItems) {
         const newDate = confirmedValues[item.task_id];
         if (!newDate) continue;
 

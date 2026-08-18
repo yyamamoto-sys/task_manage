@@ -15,6 +15,13 @@
 // （saveTask/saveProject/deleteTask/restoreTask/deleteProject/restoreProject）経由に統一した。
 // これによりB1/B3/B4がUndoにも一貫して効く（Undoで完了状態に戻すような操作は現状無いが、
 // 将来の拡張でも choke point を経由する設計を保つ）。
+//
+// 【v3.77・部分失敗の明示】1つのsnapshotが複数operationを持つ場合（例：date_changeで複数
+// タスクの期日を変更した反映のUndo）、途中のoperationで失敗すると、それより前のoperationは
+// 既にDBへ反映済みのまま処理が中断する（ここもトランザクションではない・applyProposal.tsの
+// 「部分失敗の方針」と同じ割り切り）。呼び出し元（useAIConsultation.ts）が「一部だけ元に戻った
+// 状態で通知もリトライ手段も無い」まま握りつぶさないよう、1件でも既に適用済みなら
+// message に「一部のみ元に戻りました」を明示する。
 
 import { useAppStore } from "../../stores/appStore";
 import type { Task, Project } from "../localData/types";
@@ -25,7 +32,7 @@ import { formatErrorForUser } from "../errorMessage";
 
 export type UndoResult =
   | { type: "success" }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string; partial: boolean };
 
 // ===== メイン関数 =====
 
@@ -41,6 +48,9 @@ export async function applyUndo(
   snapshot: UndoSnapshot,
   currentUserId: string,
 ): Promise<UndoResult> {
+  // 完全に適用し終えたoperationの件数（失敗したoperation自体はカウントしない）。
+  // 1件以上あれば「途中まで反映されている」＝partialな失敗としてメッセージを変える。
+  let appliedCount = 0;
   try {
     // operationsを逆順に適用
     const reversedOps = [...snapshot.operations].reverse();
@@ -52,8 +62,18 @@ export async function applyUndo(
         // 【動的キー】op.fieldは実在の列名であることを呼び出し元（applyProposal.ts）が
         // 保証する契約（comment/due_date/assignee_member_id等、様々な型のフィールドを1つの
         // Union型で表現しているため、Task型に対する厳密なキー別の型チェックはできない）。
+        // 【v3.77・skipCascade漏れの是正】op.fieldがdue_dateのとき（date_change提案のUndo）、
+        // skipCascadeを付けずにsaveTaskへ渡すと、Undoで戻した古い日付を起点にB3自動リスケが
+        // 再発火してしまう。B3のUndoパターン（appStore.ts runCascade/runBulkShiftのUndo。
+        // CLAUDE.md Section 3-6）は例外なくskipCascade:trueを渡しており、ここだけ抜けていた
+        // （v3.71のchoke point統一でB3が新たに効くようになったことによる回帰）。
+        // 他のフィールド（comment/assignee等）はdue_dateが変化しない限りB3は元々発火しない
+        // ため、常時付けても副作用はない。
         try {
-          await useAppStore.getState().saveTask({ ...task, [op.field]: op.oldValue, updated_by: currentUserId } as Task);
+          await useAppStore.getState().saveTask(
+            { ...task, [op.field]: op.oldValue, updated_by: currentUserId } as Task,
+            { skipCascade: true },
+          );
         } catch (e) {
           throw new Error(`フィールド復元エラー (${op.field}): ${formatErrorForUser("", e)}`);
         }
@@ -110,13 +130,15 @@ export async function applyUndo(
           throw new Error(`PJ復元エラー: ${formatErrorForUser("", e)}`);
         }
       }
+      appliedCount++;
     }
 
     return { type: "success" };
   } catch (e) {
-    return {
-      type: "error",
-      message: formatErrorForUser("元に戻す処理に失敗しました", e),
-    };
+    const partial = appliedCount > 0;
+    const message = partial
+      ? `一部のみ元に戻りました。画面を再読み込みしてご確認ください（${formatErrorForUser("", e)}）`
+      : formatErrorForUser("元に戻す処理に失敗しました", e);
+    return { type: "error", message, partial };
   }
 }

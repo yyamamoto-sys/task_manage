@@ -23,6 +23,8 @@ import { MarkdownLite } from "../common/MarkdownLite";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { analyzeProject } from "../../lib/ai/projectAnalysisClient";
 import { fetchProjectAnalyses, insertProjectAnalysis, type ProjectAnalysisRecord } from "../../lib/supabase/projectAnalysisStore";
+import { getGuestProjectAnalyses, addGuestProjectAnalysis } from "../../lib/ai/guestProjectAnalysisStore";
+import { isGuestMode } from "../../lib/guestMode";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { getAssigneeIds, isActiveTaskStatus, suppressOverdue } from "../../lib/taskMeta";
 import { MilestoneAddForm } from "../milestone/MilestoneAddForm";
@@ -219,10 +221,18 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
   const [viewIndex, setViewIndex] = useState(0); // 0=最新, 1=前回
 
   // PJが変わったら最新2件を取り直す（取得失敗はカルテ表示を止めない）
+  //
+  // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。
+  // project_analysesへのアクセスは常にclient.tsのProxyでブロックされるため、
+  // fetchProjectAnalysesを呼ばずguestProjectAnalysisStore（このブラウザのメモリ）から読む。
   useEffect(() => {
     let cancelled = false;
     setAnalysisError(null);
     setViewIndex(0);
+    if (isGuestMode()) {
+      setAnalyses(getGuestProjectAnalyses(project.id));
+      return;
+    }
     fetchProjectAnalyses(project.id)
       .then(rows => { if (!cancelled) setAnalyses(rows); })
       .catch((e: unknown) => {
@@ -263,9 +273,18 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
         members_short_names: pjAllMembers.map(m => m.short_name),
         today,
       });
-      await insertProjectAnalysis(project.id, text, currentUser.id);
-      const rows = await fetchProjectAnalyses(project.id);
-      setAnalyses(rows);
+      // 🔴 ゲストはproject_analysesに書けない（client.tsのProxyでブロックされる）ため、
+      // AI呼び出し自体が成功したのに結果を一度も見られないまま全体のAI利用枠だけを消費して
+      // しまっていた（v3.77で修正）。ゲストのときはguestProjectAnalysisStore（このブラウザの
+      // メモリ）に保持し、必ず結果を表示する。
+      if (isGuestMode()) {
+        addGuestProjectAnalysis(project.id, text, currentUser.id);
+        setAnalyses(getGuestProjectAnalyses(project.id));
+      } else {
+        await insertProjectAnalysis(project.id, text, currentUser.id);
+        const rows = await fetchProjectAnalyses(project.id);
+        setAnalyses(rows);
+      }
       setViewIndex(0);
     } catch (e) {
       setAnalysisError(formatErrorForUser("AI分析に失敗しました", e));

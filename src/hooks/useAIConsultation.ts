@@ -32,6 +32,7 @@ import type { ConsultationSession } from "../lib/ai/sessionManager";
 import { useUndoStack } from "./useUndoStack";
 import { applyUndo } from "../lib/ai/undoApply";
 import { insertAiUsageLog } from "../lib/supabase/store";
+import { showToast } from "../components/common/Toast";
 
 // ===== 型定義 =====
 
@@ -88,7 +89,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
   }, [session, shortIdMap, proposals, followUpSuggestions]);
 
   // Undo
-  const { stack: undoStack, push: pushUndo, pop: popUndo, popUntil: popUndoUntil, canUndo } = useUndoStack();
+  const { stack: undoStack, push: pushUndo, peek: peekUndo, remove: removeUndo, peekUntil, removeMany, canUndo } = useUndoStack();
 
   const tokenStatus: TokenStatus =
     session.turns.length > MAX_TURNS_WARNING ? "warning" : "ok";
@@ -234,25 +235,47 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
   // applyProposal / applyProposalWithConfirmation の成功時にsnapshotをスタックに積む
 
   // ===== undo: 最新のsnapshotを1件取り消す =====
-
+  //
+  // 【v3.77・成功してから捨てる順序に修正】以前はpopUndo()で先にスタックから取り除いてから
+  // applyUndoを呼んでおり、戻り値のtype:"error"を見ていなかった。楽観ロック競合等で
+  // applyUndoが失敗すると、一部だけ元に戻った状態のまま通知もリトライ手段も無く消えていた
+  // （スタックから既に消えているため）。peekUndo（取り除かない）→成功を確認→remove
+  // （取り除く）の順に変え、失敗時はスタックに残して再試行できるようにし、必ずトーストで
+  // 利用者に知らせる（formatErrorForUserの流儀・undoApply.tsが部分失敗の旨を message に含める）。
   const undo = useCallback(async (userId: string) => {
-    const snapshot = popUndo();
+    const snapshot = peekUndo();
     if (!snapshot) return;
-    await applyUndo(snapshot, userId);
+    const result = await applyUndo(snapshot, userId);
+    if (result.type === "error") {
+      showToast(result.message, "error");
+      // DB復元後にAppDataContextのstateを最新に同期する（部分的に反映された分も画面に出す）
+      await reload();
+      return;
+    }
+    removeUndo(snapshot.id);
     // DB復元後にAppDataContextのstateを最新に同期する（画面が古いデータのままにならないよう）
     await reload();
-  }, [popUndo, reload]);
+  }, [peekUndo, removeUndo, reload]);
 
   // ===== undoUntil: 指定snapshotまでまとめて取り消す（変更履歴モーダルから呼ばれる） =====
-
+  //
+  // 【v3.77・同様に修正】途中のsnapshotで失敗したら、そこで打ち切り、成功した分だけスタックから
+  // 取り除く（失敗したsnapshot自体・それより古い未処理分はスタックに残し再試行できるようにする）。
   const undoUntil = useCallback(async (snapshotId: string, userId: string) => {
-    const snapshots = popUndoUntil(snapshotId);
+    const snapshots = peekUntil(snapshotId);
+    const appliedIds: string[] = [];
     for (const snapshot of snapshots) {
-      await applyUndo(snapshot, userId);
+      const result = await applyUndo(snapshot, userId);
+      if (result.type === "error") {
+        showToast(result.message, "error");
+        break;
+      }
+      appliedIds.push(snapshot.id);
     }
+    if (appliedIds.length > 0) removeMany(appliedIds);
     // DB復元後にAppDataContextのstateを最新に同期する（複数undo後も画面に反映されるよう）
     await reload();
-  }, [popUndoUntil, reload]);
+  }, [peekUntil, removeMany, reload]);
 
   return {
     callState,

@@ -54,6 +54,12 @@ export function useUndoStack() {
   };
 
   /**
+   * 【v3.77追加】先頭のsnapshotを取り除かずに読むだけ（DB反映の成否を確認してから
+   * 取り除くための「先に実行→成功したら捨てる」パターンで使う。CLAUDE.md参照）。
+   */
+  const peek = (): UndoSnapshot | null => stackRef.current[0] ?? null;
+
+  /**
    * 指定したidのsnapshotより新しいもの（先頭側）も含めて、
    * targetId以前（targetId込み）を全て削除する。
    * 複数undo（3つ前に戻すなど）に使用する。
@@ -72,8 +78,28 @@ export function useUndoStack() {
     return toUndo;
   };
 
+  /**
+   * 【v3.77追加】popUntilの「取り除かない」版。targetId以前（込み）を新しい順の配列で返すだけで
+   * スタックは変更しない。DB反映を1件ずつ試し、成功した分だけ後から removeMany で取り除く用途。
+   */
+  const peekUntil = (targetId: string): UndoSnapshot[] => {
+    const current = stackRef.current;
+    const targetIdx = current.findIndex(s => s.id === targetId);
+    if (targetIdx < 0) return [];
+    return current.slice(0, targetIdx + 1);
+  };
+
   const remove = (id: string) => {
     const next = stackRef.current.filter(s => s.id !== id);
+    stackRef.current = next;
+    setStack(next);
+  };
+
+  /** 【v3.77追加】複数idをまとめて取り除く（undoUntilの部分成功時、成功した分だけ取り除く用途）。 */
+  const removeMany = (ids: string[]) => {
+    if (ids.length === 0) return;
+    const idSet = new Set(ids);
+    const next = stackRef.current.filter(s => !idSet.has(s.id));
     stackRef.current = next;
     setStack(next);
   };
@@ -82,8 +108,11 @@ export function useUndoStack() {
     stack,
     push,
     pop,
+    peek,
     popUntil,
+    peekUntil,
     remove,
+    removeMany,
     // stackRef.currentはmutableなrefでありReactが変化を追跡しないため、
     // renderサイクルと同期されているstate(stack)を使う。
     canUndo: stack.length > 0,

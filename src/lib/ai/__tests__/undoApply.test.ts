@@ -125,6 +125,31 @@ describe("applyUndo — 各operationタイプの実処理（appStoreのchoke poi
     expect(useAppStore.getState().tasks.find(t => t.id === "t-3")?.is_deleted).toBe(true);
   });
 
+  it("task_field(due_date): skipCascadeを付けて呼ぶため、Undoで戻した日付を起点にB3自動リスケが再発火しない（v3.77バグ修正の回帰テスト）", async () => {
+    // t-1（先行）→t-2（後続）のFS依存があるデータで、AIのdate_change提案がt-1のdue_dateを
+    // 前倒し（2026-05-20→2026-05-01）した状態からUndoする（=oldValueの2026-05-20へ戻す）。
+    // 戻す先の日付(05-20)はt-2のstart_date(05-02)より後ろのため、skipCascadeが漏れていると
+    // この復元を起点にcomputeCascadeShiftsが再計算され、Undo操作に無関係なt-2まで
+    // 押し出されてしまう（余計なsaveTask＝upsertTask呼び出しが発生する）。
+    useAppStore.setState({
+      tasks: [
+        makeTask({ id: "t-1", due_date: "2026-05-01", start_date: "2026-04-25" }),
+        makeTask({ id: "t-2", due_date: "2026-05-10", start_date: "2026-05-02" }),
+      ],
+      taskDependencies: [
+        { id: "dep-1", predecessor_task_id: "t-1", successor_task_id: "t-2", is_deleted: false },
+      ],
+    });
+    const snapshot = makeSnapshot([{ type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-20" }]);
+    const result = await applyUndo(snapshot, "user-1");
+
+    expect(result.type).toBe("success");
+    // t-1自身の復元1回だけで、t-2側への連鎖保存は起きない
+    expect(storeMock.upsertTask).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-2")?.due_date).toBe("2026-05-10");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-2")?.start_date).toBe("2026-05-02");
+  });
+
   it("pj_field: appStore.saveProject経由でPJの指定フィールドをoldValueに戻す（バグ修正の回帰テスト）", async () => {
     useAppStore.setState({ projects: [makeProject({ id: "pj-1", end_date: "2026-09-01" })] });
     const snapshot = makeSnapshot([{ type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" }]);
@@ -189,7 +214,7 @@ describe("applyUndo — 各operationタイプの実処理（appStoreのchoke poi
 });
 
 describe("applyUndo — エラー処理", () => {
-  it("saveTaskが失敗した場合、formatErrorForUser経由のメッセージでtype:errorを返す", async () => {
+  it("saveTaskが失敗した場合、formatErrorForUser経由のメッセージでtype:errorを返す（partial:falseの回帰テスト・1件目から失敗＝何も反映されていない）", async () => {
     useAppStore.setState({ tasks: [makeTask({ id: "t-1" })] });
     storeMock.upsertTask.mockRejectedValueOnce(new Error("boom"));
 
@@ -200,6 +225,7 @@ describe("applyUndo — エラー処理", () => {
     if (result.type !== "error") return;
     expect(result.message).toContain("元に戻す処理に失敗しました");
     expect(result.message).toContain("boom");
+    expect(result.partial).toBe(false);
   });
 
   it("saveProjectが失敗した場合もtype:errorを返す", async () => {
@@ -212,5 +238,29 @@ describe("applyUndo — エラー処理", () => {
     expect(result.type).toBe("error");
     if (result.type !== "error") return;
     expect(result.message).toContain("PJフィールド復元エラー");
+  });
+
+  it("複数operationのうち途中で失敗した場合、partial:trueと「一部のみ元に戻りました」を含むmessageを返す（v3.77バグ修正の回帰テスト）", async () => {
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", due_date: "2026-05-20" })],
+      projects: [makeProject({ id: "pj-1", end_date: "2026-09-01" })],
+    });
+    // 1件目（pj_field、逆順適用のため配列の後ろ側から先に処理される）は成功、
+    // 2件目（task_field）で失敗させる
+    storeMock.upsertProject.mockResolvedValueOnce("2026-08-12T00:00:00.000Z");
+    storeMock.upsertTask.mockRejectedValueOnce(new Error("conflict"));
+
+    const snapshot = makeSnapshot([
+      { type: "task_field", taskId: "t-1", field: "due_date", oldValue: "2026-05-01" },
+      { type: "pj_field", pjId: "pj-1", field: "end_date", oldValue: "2026-06-01" },
+    ]);
+    const result = await applyUndo(snapshot, "user-1");
+
+    expect(result.type).toBe("error");
+    if (result.type !== "error") return;
+    expect(result.partial).toBe(true);
+    expect(result.message).toContain("一部のみ元に戻りました");
+    // pj_field側は既にDBへ反映済み（stateにも反映されている）
+    expect(useAppStore.getState().projects.find(p => p.id === "pj-1")?.end_date).toBe("2026-06-01");
   });
 });

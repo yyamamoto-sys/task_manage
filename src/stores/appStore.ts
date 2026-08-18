@@ -722,6 +722,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
         ? state.members.map(m => m.id === memberToSave.id ? memberToSave : m)
         : [...state.members, memberToSave],
     }));
+    // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。
+    // DB書き込みをスキップし、ローカルで生成したupdated_atでstateだけ同期する
+    // （メモリ上でのみ成立・リロードで消える）。v3.77・この分岐が漏れており、
+    // ゲストが通知設定を変更すると必ずDB書き込みに失敗し「保存に失敗しました」と
+    // 誤ったトーストが出ていた（saveProject等の既存分岐と同型に揃えた）。
+    if (isGuestMode()) {
+      set(state => ({ members: syncUpdatedAt(state.members, memberToSave.id, new Date().toISOString()) }));
+      return;
+    }
     await runSerializedByKey(`members:${memberToSave.id}`, async () => {
       const expectedUpdatedAt = get().members.find(m => m.id === memberToSave.id)?.updated_at;
       try {

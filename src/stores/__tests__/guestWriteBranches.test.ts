@@ -8,7 +8,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { setGuestMode } from "../../lib/guestMode";
-import type { Task, Project, Milestone } from "../../lib/localData/types";
+import type { Task, Project, Milestone, Member } from "../../lib/localData/types";
 
 const storeMock = vi.hoisted(() => ({
   fetchCriticalData: vi.fn(),
@@ -57,6 +57,11 @@ const dummyProject: Project = {
 
 const dummyMilestone: Milestone = {
   id: "test-ms-1", project_id: "test-pj-1", name: "テストMS", date: "2026-08-15", is_deleted: false,
+};
+
+const dummyMember: Member = {
+  id: "__guest__", display_name: "ゲスト（閲覧のみ）", short_name: "ゲスト", initials: "G",
+  teams_account: "", color_bg: "#9ca3af", color_text: "#ffffff", is_deleted: false,
 };
 
 describe("appStore：ゲスト分岐（日常編集の開放・v3.69）", () => {
@@ -111,6 +116,21 @@ describe("appStore：ゲスト分岐（日常編集の開放・v3.69）", () => 
     expect(storeMock.upsertMilestone).not.toHaveBeenCalled();
     await useAppStore.getState().deleteMilestone(dummyMilestone.id, "__guest__");
     expect(storeMock.softDeleteMilestone).not.toHaveBeenCalled();
+  });
+
+  it("saveMember：ゲストは低レベルCRUDを呼ばずstateだけ更新する（v3.77バグ修正の回帰テスト。通知設定変更で誤った失敗トーストが出ていた）", async () => {
+    setGuestMode(true);
+    useAppStore.setState({ members: [dummyMember] });
+    await useAppStore.getState().saveMember({ ...dummyMember, display_name: "ゲスト（通知設定変更後）" });
+    expect(storeMock.upsertMember).not.toHaveBeenCalled();
+    expect(useAppStore.getState().members.find(m => m.id === dummyMember.id)?.display_name).toBe("ゲスト（通知設定変更後）");
+  });
+
+  it("saveMember：非ゲストはupsertMemberを呼ぶ（既存経路は不変）", async () => {
+    storeMock.upsertMember.mockResolvedValue("2026-08-12T00:00:00.000Z");
+    useAppStore.setState({ members: [dummyMember] });
+    await useAppStore.getState().saveMember({ ...dummyMember, display_name: "変更後" });
+    expect(storeMock.upsertMember).toHaveBeenCalledTimes(1);
   });
 
   it("addTaskDependency/removeTaskDependency：ゲストは低レベルCRUDを呼ばない", async () => {
