@@ -22,7 +22,7 @@ import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/pro
 import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { resolveAdminGroupId } from "../../lib/admin/resolveAdminGroupId";
-import { isGuestOnlyMember } from "../../lib/admin/guestMembers";
+import { isGuestOnlyMember, withGuestOnlyMembers, isGuestMemberOf, withGuestLabel, inviteGroupIdsInScope } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -1567,6 +1567,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   // 素で取得し、下の useMemo で selectedGroupId により絞り込む。
   const rawProjects             = useAppStore(s => s.projects);
   const rawMembers              = useAppStore(s => s.members);
+  const rawGroups               = useAppStore(s => s.groups);
   const saveProject             = useAppStore(s => s.saveProject);
   const deleteProject           = useAppStore(s => s.deleteProject);
   const rawMilestones           = useAppStore(s => s.milestones);
@@ -1583,9 +1584,30 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
     () => active(rawProjects).filter(p => projectInGroup(p, selectedGroupId)),
     [rawProjects, selectedGroupId],
   );
+  // 招待用部署（is_invite_group=true）のidを事前に集めておく（本セクション末尾の
+  // guestMemberIds・オーナー/メンバー選択の両方から使う。CLAUDE.md Section 25 Phase 4末尾）。
+  const allInviteGroupIds = useMemo(
+    () => new Set(rawGroups.filter(g => g.is_invite_group).map(g => g.id)),
+    [rawGroups],
+  );
+  // 🔴 v3.78：オーナー／メンバー選択の候補一覧（members）は memberInGroup による部署絞り込み
+  // のみだと、招待受諾者（isGuestOnlyMember）が一切選べなかった（CLAUDE.md Section 25
+  // Phase 4末尾「部署でスコープする画面を新設するたびに再発しうる構造」）。
+  // withGuestOnlyMembers() で招待受諾者を候補に混ぜるが、混ぜる対象は「選択中の部署のPJに
+  // 紐づく招待用部署」だけに絞る（inviteGroupIdsInScope()。v3.75でmembersの可視性が部署を
+  // またいで広がったため、絞り込まずに混ぜると他部署の招待受諾者まで候補に出てしまう）。
+  // 識別のため表示名に「（招待）」を付ける（ProjectFormFields側でwithGuestLabelを適用）。
+  const inviteGroupIds = useMemo(
+    () => inviteGroupIdsInScope(rawProjects, selectedGroupId, allInviteGroupIds),
+    [rawProjects, selectedGroupId, allInviteGroupIds],
+  );
   const members    = useMemo(
-    () => active(rawMembers).filter(m => memberInGroup(m, selectedGroupId)),
-    [rawMembers, selectedGroupId],
+    () => withGuestOnlyMembers(
+      active(rawMembers).filter(m => memberInGroup(m, selectedGroupId)),
+      active(rawMembers),
+      inviteGroupIds,
+    ),
+    [rawMembers, selectedGroupId, inviteGroupIds],
   );
   const milestones = useMemo(() => (rawMilestones ?? []).filter((ms: Milestone) => !ms.is_deleted), [rawMilestones]);
   const activeKeyResults = useMemo(() => active(rawKeyResults), [rawKeyResults]);
@@ -1868,7 +1890,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "12px", color: "var(--color-text-primary)" }}>
             プロジェクトを編集
           </div>
-          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
+          <ProjectFormFields form={form} setForm={setForm} members={members} inviteGroupIds={inviteGroupIds} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} style={primaryBtnStyle}
               disabled={!form.name.trim() || !form.purpose.trim()}>
@@ -1895,7 +1917,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           onClose={() => setEditId(null)}
           maxWidth="640px"
         >
-          <ProjectFormFields form={form} setForm={setForm} members={members} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
+          <ProjectFormFields form={form} setForm={setForm} members={members} inviteGroupIds={inviteGroupIds} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
             <button onClick={save} style={primaryBtnStyle}
               disabled={!form.name.trim() || !form.purpose.trim()}>
@@ -1918,10 +1940,12 @@ interface ProjectFormState {
   status: Project["status"]; color_tag: string; start_date: string; end_date: string;
   tf_ids: string[];
 }
-function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isMobile }: {
+function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults, taskForces, isMobile }: {
   form: ProjectFormState;
   setForm: React.Dispatch<React.SetStateAction<ProjectFormState>>;
   members: Member[];
+  // 招待受諾者（招待用部署のみに属するメンバー）の識別ラベル付けに使う。CLAUDE.md Section 25。
+  inviteGroupIds: ReadonlySet<string>;
   keyResults: KeyResult[];
   taskForces: TaskForce[];
   isMobile: boolean;
@@ -1960,7 +1984,7 @@ function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isM
                   border: "1px solid var(--color-border-primary)",
                   borderRadius: "var(--radius-full)",
                 }}>
-                  {m.short_name}
+                  {withGuestLabel(m.short_name, isGuestMemberOf(m, inviteGroupIds))}
                   <button onClick={() => setForm(f => ({ ...f, owner_member_ids: f.owner_member_ids.filter(i => i !== id) }))}
                     style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
                 </span>
@@ -1975,7 +1999,7 @@ function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isM
             }}
             options={[
               { value: "", label: "＋ オーナーを追加" },
-              ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+              ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: withGuestLabel(m.display_name, isGuestMemberOf(m, inviteGroupIds)) })),
             ]}
             searchable searchPlaceholder="メンバーで検索..."
           />
@@ -2012,7 +2036,7 @@ function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isM
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-full)",
               }}>
-                {m.short_name}
+                {withGuestLabel(m.short_name, isGuestMemberOf(m, inviteGroupIds))}
                 <button onClick={() => setForm(f => ({ ...f, member_ids: f.member_ids.filter(i => i !== id) }))}
                   style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
               </span>
@@ -2027,7 +2051,7 @@ function ProjectFormFields({ form, setForm, members, keyResults, taskForces, isM
           }}
           options={[
             { value: "", label: "＋ メンバーを追加" },
-            ...members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+            ...members.filter(m => !form.member_ids.includes(m.id) && !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: withGuestLabel(m.display_name, isGuestMemberOf(m, inviteGroupIds)) })),
           ]}
           searchable searchPlaceholder="メンバーで検索..."
         />
@@ -3093,6 +3117,8 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
   const memberTags         = useAppStore(s => s.memberTags);
   const memberTagMembers   = useAppStore(s => s.memberTagMembers);
   const allMembers         = useAppStore(s => s.members);
+  const rawGroups          = useAppStore(s => s.groups);
+  const rawProjects        = useAppStore(s => s.projects);
   const saveMemberTag      = useAppStore(s => s.saveMemberTag);
   const deleteMemberTag    = useAppStore(s => s.deleteMemberTag);
 
@@ -3102,9 +3128,28 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
   // 一覧が探しやすくなるため scopedMembers を用意する。
   const activeTags    = useMemo(() => active(memberTags), [memberTags]);
   const activeMembers = useMemo(() => active(allMembers), [allMembers]);
+  // 招待用部署（is_invite_group=true）のid集合（メンバー選択チェックボックスの識別ラベル・
+  // 混ぜ込みの両方に使う。CLAUDE.md Section 25 Phase 4末尾）。
+  const allInviteGroupIds = useMemo(
+    () => new Set(rawGroups.filter(g => g.is_invite_group).map(g => g.id)),
+    [rawGroups],
+  );
+  // 🔴 v3.78：招待受諾者は memberInGroup では選択中の部署に一致せず、タグ付与の
+  // チェックボックス一覧に一切現れなかった。withGuestOnlyMembers() で招待受諾者を混ぜるが、
+  // 混ぜる対象は「選択中の部署のPJに紐づく招待用部署」だけに絞る（inviteGroupIdsInScope()。
+  // v3.75でmembersの可視性が部署をまたいで広がったため、絞り込まずに混ぜると他部署の
+  // 招待受諾者まで候補に出てしまう）。
+  const inviteGroupIds = useMemo(
+    () => inviteGroupIdsInScope(rawProjects, selectedGroupId, allInviteGroupIds),
+    [rawProjects, selectedGroupId, allInviteGroupIds],
+  );
   const scopedMembers = useMemo(
-    () => activeMembers.filter(m => memberInGroup(m, selectedGroupId)),
-    [activeMembers, selectedGroupId],
+    () => withGuestOnlyMembers(
+      activeMembers.filter(m => memberInGroup(m, selectedGroupId)),
+      activeMembers,
+      inviteGroupIds,
+    ),
+    [activeMembers, selectedGroupId, inviteGroupIds],
   );
 
   // タグごとのメンバーIDマップ
@@ -3238,7 +3283,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
             タグを編集
           </div>
           <TagFormFields draftName={draftName} setDraftName={setDraftName} draftDesc={draftDesc} setDraftDesc={setDraftDesc}
-            draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} />
+            draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} inviteGroupIds={inviteGroupIds} />
           <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
             <button
               onClick={cancel}
@@ -3282,7 +3327,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
         <AdminFormModal title="タグを追加" subtitle="メンバーをまとめるタグを作成します" onClose={cancel}>
           <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
             <TagFormFields draftName={draftName} setDraftName={setDraftName} draftDesc={draftDesc} setDraftDesc={setDraftDesc}
-              draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} />
+              draftMemberIds={draftMemberIds} toggleMember={toggleMember} setDraftMemberIds={setDraftMemberIds} members={scopedMembers} inviteGroupIds={inviteGroupIds} />
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
               <button
                 onClick={cancel}
@@ -3396,11 +3441,13 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
 // タグ追加・編集フォームのフィールド一式（TagsSectionの編集用インラインパネル／追加用モーダルの
 // 両方から呼ばれる共通部品。バリデーション・保存は呼び出し元のTagsSectionに一元化したまま、
 // 見た目の器だけを分けるための抽出）
-function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draftMemberIds, toggleMember, setDraftMemberIds, members }: {
+function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draftMemberIds, toggleMember, setDraftMemberIds, members, inviteGroupIds }: {
   draftName: string; setDraftName: (v: string) => void;
   draftDesc: string; setDraftDesc: (v: string) => void;
   draftMemberIds: string[]; toggleMember: (id: string) => void; setDraftMemberIds: (ids: string[]) => void;
   members: Member[];
+  // 招待受諾者（招待用部署のみに属するメンバー）の識別ラベル付けに使う。CLAUDE.md Section 25。
+  inviteGroupIds: ReadonlySet<string>;
 }) {
   return (
     <>
@@ -3470,7 +3517,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
                   checked={checked}
                   onChange={() => toggleMember(m.id)}
                 />
-                <span>{m.short_name}</span>
+                <span>{withGuestLabel(m.short_name, isGuestMemberOf(m, inviteGroupIds))}</span>
               </label>
             );
           })}
@@ -3658,12 +3705,29 @@ function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
 
 function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
   const members = useAppStore(s => s.members);
+  const rawGroups = useAppStore(s => s.groups);
+  const rawProjects = useAppStore(s => s.projects);
+  // 招待用部署（is_invite_group=true）のid集合。招待受諾者の識別・集計への混ぜ込みに使う。
+  const allInviteGroupIds = useMemo(
+    () => new Set(rawGroups.filter(g => g.is_invite_group).map(g => g.id)),
+    [rawGroups],
+  );
   // ログ自体は部署を持たない（ai_usage_logsはmember_id経由でRLSが部署判定する）ため、
   // クライアント側で「そのログを打ったメンバーが選択中の部署に属するか」でフィルタする。
-  const scopedMemberIds = useMemo(
-    () => new Set(members.filter(m => memberInGroup(m, selectedGroupId)).map(m => m.id)),
-    [members, selectedGroupId],
+  // 🔴 v3.78：招待受諾者（isGuestOnlyMember）はホーム部署が招待用部署のため memberInGroup
+  // では一致せず、AI使用量の集計から丸ごと漏れていた（招待された人はAI無制限という運用と
+  // 噛み合い、いちばん見たいコストが不可視になっていた。CLAUDE.md Section 25 Phase 4末尾）。
+  // withGuestOnlyMembers() で招待受諾者を集計に混ぜるが、混ぜる対象は「選択中の部署のPJに
+  // 紐づく招待用部署」だけに絞る（inviteGroupIdsInScope()。v3.75でmembersの可視性が部署を
+  // またいで広がったため、絞り込まずに混ぜると他部署の招待受諾者のコストが混入する）。
+  const inviteGroupIds = useMemo(
+    () => inviteGroupIdsInScope(rawProjects, selectedGroupId, allInviteGroupIds),
+    [rawProjects, selectedGroupId, allInviteGroupIds],
   );
+  const scopedMemberIds = useMemo(() => {
+    const deptMembers = members.filter(m => memberInGroup(m, selectedGroupId));
+    return new Set(withGuestOnlyMembers(deptMembers, members, inviteGroupIds).map(m => m.id));
+  }, [members, selectedGroupId, inviteGroupIds]);
 
   const [logs, setLogs] = useState<AiUsageLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -3755,13 +3819,15 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
     const rows = Array.from(map.entries())
       .map(([memberId, agg]) => {
         const m = members.find(mm => mm.id === memberId);
-        const name = m?.display_name || m?.short_name
+        const baseName = m?.display_name || m?.short_name
           || (memberId ? `不明（${memberId.slice(0, 8)}）` : "不明");
+        // 招待受諾者は「（招待）」を付けて識別できるようにする（v3.78。CLAUDE.md Section 25）。
+        const name = m ? withGuestLabel(baseName, isGuestMemberOf(m, inviteGroupIds)) : baseName;
         return { memberId, name, ...agg };
       })
       .sort((a, b) => b.count - a.count);
     return { targetMonth, rows };
-  }, [scopedLogs, monthlyData, members]);
+  }, [scopedLogs, monthlyData, members, inviteGroupIds]);
 
   // ゲスト（サンプル閲覧）のAI利用（v3.29）：ゲストはどの部署にも属さないため、
   // 選択中の部署による絞り込み（scopedLogs）の対象外として常に全期間・全件を集計する。
@@ -3844,7 +3910,7 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
         </button>
       </div>
       <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
-        設定画面で選択中の部署のメンバーの使用量です。約30秒ごとに自動更新します。
+        設定画面で選択中の部署のメンバーの使用量です（プロジェクト招待で参加した方の利用も含みます）。約30秒ごとに自動更新します。
       </div>
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
         料金目安：入力 $3/100万トークン・出力 $15/100万トークン（1ドル=150円換算）
