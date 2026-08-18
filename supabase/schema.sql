@@ -259,6 +259,12 @@ UPDATE projects SET group_id = 'grp-egg' WHERE group_id IS NULL;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS group_ids text[] NOT NULL DEFAULT '{}';
 UPDATE projects SET group_ids = array_append(group_ids, group_id)
   WHERE group_id IS NOT NULL AND NOT (group_id = ANY(group_ids));
+-- 【drift是正・2026-08-18】PJに参加するメンバーID配列（オーナーとは別の「関与者」）。
+-- migrations/20260515_add_project_member_ids.sql で本番に適用済みだったが、このファイル
+-- （参照用の統合スキーマ）への反映が漏れていた（CLAUDE.md記載の「CLIで管理されていない
+-- 手動適用マイグレーションがある」ドリフトの一例）。20260818_harden_invite_related_rls.sql の
+-- visible_project_member_ids() がこの列を参照するために今回気づいて追記した。
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS member_ids text[] NOT NULL DEFAULT '{}';
 
 -- ===== Project ↔ TaskForce（多対多） =====
 CREATE TABLE IF NOT EXISTS project_task_forces (
@@ -964,31 +970,170 @@ GRANT EXECUTE ON FUNCTION public.visible_invite_group_ids() TO authenticated;
 -- 既存2条項（group_ids && current_member_group_ids() / current_member_is_super_admin()）は
 -- 1文字も変更していない。projects/tasksのgroup_ids比較には広げない
 -- （広げるのは「招待用部署に属する人」の可視性だけ。CLAUDE.md Section 25参照）。
+--
+-- 【2026-08-18・v3.75・migration 20260818_harden_invite_related_rls.sql で全面差し替え】
+-- FOR ALL かつ WITH CHECK 省略のポリシー（このUSING一本）は、USING式が書き込み
+-- （INSERT/UPDATE）の認可にも流用されてしまっていた（PostgreSQLの仕様。CLAUDE.md
+-- Section 33参照）。SELECT用（members_select）と書き込み用（members_write_insert/
+-- update/delete）の4本に分割する。可視性（SELECT）は既存3条項に加え、招待受諾者から
+-- PJ参加者全員が見えるようにする4条項目（visible_project_member_ids()）を新設した
+-- （山本さんの追加要望・本番の羅針盤フォーラムPJで実害発生）。書き込み側には
+-- 4条項目を一切足さない（可視性の拡張が書き込み権限も兼ねてしまう、という今回の
+-- 事故と同型の誤りを繰り返さないため）。書き込み側は3条項目（招待用部署ごしに
+-- 見えているだけの行）に限り「部署管理者 or 全社スーパー管理者」を課す
+-- （v3.60の「部署管理者が招待受諾者を編集できる」はこれで維持される）。
+--
+-- 【visible_project_member_ids()：can_access_group_ids()を使わずインライン展開する理由】
+-- 意味はcan_access_group_ids()と同一（group_ids && current_member_group_ids() OR
+-- current_member_is_super_admin()）だが、can_access_group_ids()自体の定義は
+-- このファイルの後方（「PJ・タスク周辺（子）テーブルの部署スコープ」節）にあるため、
+-- ここで呼ぶと前方参照エラーになる。visible_invite_group_ids()と同じ理由で
+-- インライン展開している。
+--
+-- 【「参加しているメンバー」の定義】src/lib/project/projectMembers.ts の
+-- computeProjectMembers()の実際の呼び出し（ProjectSettingsModal.tsx）と
+-- ProjectKarte.tsx の pjAllMembers（"AI分析に渡す「このPJに関わる全員」＝オーナー＋
+-- メンバー＋タスク担当者の和集合"）で共通する集合：owner_member_id／owner_member_ids／
+-- projects.member_ids／そのPJに紐づくタスクの assignee_member_id・assignee_member_ids
+-- （project_id直接紐づき ＋ task_projects経由の追加PJ紐づけの両方）。is_deleted=falseの
+-- PJ・タスクのみを対象にする。
+--
+-- 【意図的に受け入れる副作用】部署をまたぐPJでは、他部署のメンバー同士も相互に
+-- 見えるようになる（同じPJの参加者に限る）。「部署間の素の可視性は広げない」という
+-- 既存の設計原則からの意図的な緩和（山本さん承認済み）。PJを共有しない他部署の
+-- メンバーは引き続き見えない。
 DROP POLICY IF EXISTS "authenticated full access" ON members;
 DROP POLICY IF EXISTS "members_group" ON members;
-CREATE POLICY "members_group" ON members FOR ALL TO authenticated
+DROP POLICY IF EXISTS "members_select" ON members;
+DROP POLICY IF EXISTS "members_write_insert" ON members;
+DROP POLICY IF EXISTS "members_write_update" ON members;
+DROP POLICY IF EXISTS "members_write_delete" ON members;
+
+CREATE OR REPLACE FUNCTION public.visible_project_member_ids()
+RETURNS text[]
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_visible_pj_members$
+  SELECT coalesce(array_agg(DISTINCT mid), ARRAY[]::text[])
+  FROM (
+    SELECT p.owner_member_id::text AS mid
+      FROM public.projects p
+      WHERE p.is_deleted = false
+        AND p.owner_member_id IS NOT NULL
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT unnest(p.owner_member_ids)::text
+      FROM public.projects p
+      WHERE p.is_deleted = false
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT unnest(p.member_ids)::text
+      FROM public.projects p
+      WHERE p.is_deleted = false
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT t.assignee_member_id::text
+      FROM public.tasks t
+      JOIN public.projects p ON p.id = t.project_id
+      WHERE t.is_deleted = false
+        AND p.is_deleted = false
+        AND t.assignee_member_id IS NOT NULL
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT unnest(t.assignee_member_ids)::text
+      FROM public.tasks t
+      JOIN public.projects p ON p.id = t.project_id
+      WHERE t.is_deleted = false
+        AND p.is_deleted = false
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT t.assignee_member_id::text
+      FROM public.tasks t
+      JOIN public.task_projects tp ON tp.task_id = t.id
+      JOIN public.projects p ON p.id = tp.project_id
+      WHERE t.is_deleted = false
+        AND p.is_deleted = false
+        AND t.assignee_member_id IS NOT NULL
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    UNION
+    SELECT unnest(t.assignee_member_ids)::text
+      FROM public.tasks t
+      JOIN public.task_projects tp ON tp.task_id = t.id
+      JOIN public.projects p ON p.id = tp.project_id
+      WHERE t.is_deleted = false
+        AND p.is_deleted = false
+        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+  ) x
+  WHERE mid IS NOT NULL
+$fn_visible_pj_members$;
+GRANT EXECUTE ON FUNCTION public.visible_project_member_ids() TO authenticated;
+
+CREATE POLICY "members_select" ON members
+  FOR SELECT TO authenticated
   USING (
     group_ids && current_member_group_ids()
     OR current_member_is_super_admin()
     OR group_ids && public.visible_invite_group_ids()
+    OR id::text = ANY(public.visible_project_member_ids())
+  );
+
+CREATE POLICY "members_write_insert" ON members
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    group_ids && current_member_group_ids()
+    OR current_member_is_super_admin()
+    OR (
+      group_ids && public.visible_invite_group_ids()
+      AND (current_member_is_admin() OR current_member_is_super_admin())
+    )
+  );
+
+CREATE POLICY "members_write_update" ON members
+  FOR UPDATE TO authenticated
+  USING (
+    group_ids && current_member_group_ids()
+    OR current_member_is_super_admin()
+    OR (
+      group_ids && public.visible_invite_group_ids()
+      AND (current_member_is_admin() OR current_member_is_super_admin())
+    )
+  )
+  WITH CHECK (
+    group_ids && current_member_group_ids()
+    OR current_member_is_super_admin()
+    OR (
+      group_ids && public.visible_invite_group_ids()
+      AND (current_member_is_admin() OR current_member_is_super_admin())
+    )
+  );
+
+CREATE POLICY "members_write_delete" ON members
+  FOR DELETE TO authenticated
+  USING (
+    group_ids && current_member_group_ids()
+    OR current_member_is_super_admin()
+    OR (
+      group_ids && public.visible_invite_group_ids()
+      AND (current_member_is_admin() OR current_member_is_super_admin())
+    )
   );
 
 DROP POLICY IF EXISTS "authenticated full access" ON projects;
 DROP POLICY IF EXISTS "projects_group" ON projects;
 CREATE POLICY "projects_group" ON projects FOR ALL TO authenticated
-  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
+  USING (group_ids && current_member_group_ids() OR current_member_is_super_admin())
+  WITH CHECK (group_ids && current_member_group_ids() OR current_member_is_super_admin());
 
 DROP POLICY IF EXISTS "authenticated full access" ON tasks;
 DROP POLICY IF EXISTS "tasks_group" ON tasks;
 CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
   USING (group_ids && current_member_group_ids() OR current_member_is_super_admin());
 
--- task_dependencies（B1）：tasks と同じ group_id スコープ。NULL猶予条項は入れない
--- （20260702b の教訓＝NULLを許すとRLSの穴になる。このテーブルはgroup_idがNOT NULLなので該当なし）
-DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
-DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
-CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
-  USING (group_id = current_member_group_id() OR current_member_is_super_admin());
+-- task_dependencies（B1）のRLSは、tasks/projects同様「PJ・タスク周辺（子）テーブルの
+-- 部署スコープ」節（本ファイル下部・task_group_ids()定義の直後）でtask_group_ids()を
+-- 使う形に統一して定義する（2026-08-18・v3.75・Section 33参照。旧group_id単数比較は
+-- そちらで置き換える）。
 
 -- ローディング画面のヒント：読み取りは authenticated 全員（機密情報ではない）、
 -- 書き込みは全社スーパー管理者のみ。部署概念を持たない全社共通マスタのため
@@ -1431,6 +1576,35 @@ DROP POLICY IF EXISTS "task_task_forces_group" ON task_task_forces;
 CREATE POLICY "task_task_forces_group" ON task_task_forces FOR ALL TO authenticated
   USING (public.can_access_group_ids(public.task_group_ids(task_id)));
 
+-- 【2026-08-18・v3.75・migration 20260818_harden_invite_related_rls.sql で修正】
+-- task_dependencies（B1）だけが 20260722b の配列化（group_ids && ...）に追従しておらず、
+-- group_id（単数・ホーム部署）比較のまま残っていた。招待受諾者（ホーム部署＝招待用
+-- 部署）にはPJのタスク依存関係が1本も見えず、ガントの矢印・依存ゲート・
+-- BlockedTasksWidgetが機能しない実害があった（第2部署を兼務するメンバーも同様に
+-- 見えない既存バグ）。tasks.group_ids は sync_task_group_ids/
+-- cascade_project_group_ids_to_tasks によりPJのgroup_ids（招待用部署を含む）が
+-- 既に伝播済みのため、group_id列の値ではなく、依存関係が結ぶ両端のタスクへの
+-- アクセス可否で判定する形に切り替える。task_projects_group/task_task_forces_group
+-- と同じ can_access_group_ids(task_group_ids(...)) の流儀に揃え、新しいヘルパー
+-- 関数は作らない（predecessor/successorの2回の呼び出しはどちらも主キー1件参照の
+-- STABLE関数で、既存2ポリシーと同じコストの範囲内）。
+-- 🔴 両端ともアクセスできることを要求する（AND。ORにすると見えないタスクの存在が
+-- 依存線から漏れる）。あわせてFOR ALLでWITH CHECKを省略していた問題
+-- （今回のv3.75で塞いでいるのと同型＝USINGが書き込み認可を兼ねる）も解消する。
+-- group_id列自体は残す（NOT NULL・アプリが書いている）が、RLSの判定材料としては
+-- 使わない。
+DROP POLICY IF EXISTS "authenticated full access" ON task_dependencies;
+DROP POLICY IF EXISTS "task_dependencies_group" ON task_dependencies;
+CREATE POLICY "task_dependencies_group" ON task_dependencies FOR ALL TO authenticated
+  USING (
+    public.can_access_group_ids(public.task_group_ids(predecessor_task_id))
+    AND public.can_access_group_ids(public.task_group_ids(successor_task_id))
+  )
+  WITH CHECK (
+    public.can_access_group_ids(public.task_group_ids(predecessor_task_id))
+    AND public.can_access_group_ids(public.task_group_ids(successor_task_id))
+  );
+
 DROP POLICY IF EXISTS "authenticated full access" ON member_tag_members;
 DROP POLICY IF EXISTS "member_tag_members_group" ON member_tag_members;
 CREATE POLICY "member_tag_members_group" ON member_tag_members FOR ALL TO authenticated
@@ -1444,13 +1618,36 @@ CREATE POLICY "admin_change_logs_group" ON admin_change_logs FOR ALL TO authenti
 -- project_invites（migrations/20260810_add_project_invites.sql）：🔴 SELECTのみポリシー。
 -- INSERT/UPDATE/DELETEのポリシーは意図的に作らない（RLSはポリシーが無いコマンドを全否定
 -- する＝authenticatedからの直接書き込みは常に拒否。書き込みはcreate_project_invite()/
--- accept_project_invite()というSECURITY DEFINER関数経由のみ）。可視範囲は発行者（invited_by）
--- と同じ部署のメンバー（監査のため）。code_hashは列単位で隠せないため、クライアント側の
--- SELECTで明示的に列を絞ることで守る（src/lib/supabase/projectInviteStore.ts参照）。
+-- accept_project_invite()というSECURITY DEFINER関数経由のみ）。code_hashは列単位で隠せない
+-- ため、クライアント側のSELECTで明示的に列を絞ることで守る
+-- （src/lib/supabase/projectInviteStore.ts参照）。
+--
+-- 【2026-08-18・v3.75・migration 20260818_harden_invite_related_rls.sql で基準を変更】
+-- 旧来は「発行者（invited_by）の所属部署」基準だった。招待を受諾した人は発行者と
+-- 招待用部署を共有するため、発行者が発行した全ての招待行（他人のメールアドレス・
+-- 他PJ宛を含む）が読めてしまっていた。監査に必要なのは「そのPJの関係者が、その
+-- PJの招待を見られること」なので、対象PJが属する通常部署（招待用部署を除く）
+-- 基準に変える。招待用部署を除く理由：除かないと、そのPJの招待用部署に属する人＝
+-- 受諾者が引き続き全招待行を読めてしまい、変更した意味が無くなる。
+CREATE OR REPLACE FUNCTION public.project_normal_group_ids(p_project_id text)
+RETURNS text[] LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_pj_normal_gids$
+  SELECT coalesce(array_agg(gid), ARRAY[]::text[])
+  FROM public.projects p
+  CROSS JOIN LATERAL unnest(p.group_ids) AS gid
+  WHERE p.id = p_project_id
+    AND NOT EXISTS (
+      SELECT 1 FROM public.groups g
+      WHERE g.id = gid AND g.is_invite_group = true
+    )
+$fn_pj_normal_gids$;
+GRANT EXECUTE ON FUNCTION public.project_normal_group_ids(text) TO authenticated;
+
 DROP POLICY IF EXISTS "project_invites_select_same_dept" ON project_invites;
-CREATE POLICY "project_invites_select_same_dept" ON project_invites
+DROP POLICY IF EXISTS "project_invites_select_project_dept" ON project_invites;
+CREATE POLICY "project_invites_select_project_dept" ON project_invites
   FOR SELECT TO authenticated
-  USING (public.can_access_group_ids(public.member_group_ids(invited_by)));
+  USING (public.can_access_group_ids(public.project_normal_group_ids(project_id)));
 
 DROP POLICY IF EXISTS "authenticated users can select" ON ai_usage_logs;
 DROP POLICY IF EXISTS "ai_usage_logs_select_group" ON ai_usage_logs;
@@ -1565,6 +1762,89 @@ CREATE TRIGGER trg_projects_normalize_group_ids
   BEFORE INSERT OR UPDATE ON projects
   FOR EACH ROW EXECUTE FUNCTION normalize_project_group_ids();
 
+-- 【2026-08-18・v3.75・migration 20260818_harden_invite_related_rls.sql】
+-- projects.group_ids のガードトリガー。projects のRLSはgroup_idsが自分のアクセス部署と
+-- 1つでも重なれば通るため、自部署のPJに他PJの招待用部署を後から足すことができ、
+-- visible_invite_group_ids()の戻り値を任意に膨らませられた（groups_selectがUSING(true)
+-- のため招待用部署のidは全員が列挙できる）。非super-adminのみ、group_idsに置ける
+-- 招待用部署を「そのPJ自身の招待用部署／変更前から入っていたもの／実行者が既に
+-- アクセス権を持っているもの」に限り、それ以外は静かに取り除く（既存要素の削除も
+-- 静かに元へ戻す）。ホーム部署(group_id)にも同じ判定をかける。エラーを投げず静かに
+-- 戻す理由はguard_member_privilege_columnsと同じ（クライアントは全列まとめてupsertする
+-- ため、例外にすると悪意のない普通の保存まで失敗しうる）。
+-- トリガー実行順序（重要）：同じタイミング（BEFORE INSERT OR UPDATE）のトリガーは
+-- 名前の昇順に実行される。normalize（trg_projects_normalize_group_ids）が先、verify
+-- （trg_projects_verify_group_ids）が後（v > n）に走る必要がある（先に走ると、normalize
+-- が後から不正なgroup_idをgroup_idsへ書き戻すため）。
+CREATE OR REPLACE FUNCTION public.verify_project_group_ids()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_verify_pj_group_ids$
+DECLARE
+  own_invite_group text;
+  old_ids          text[];
+  actor_ids        text[];
+BEGIN
+  IF public.current_member_is_super_admin() THEN
+    RETURN NEW;
+  END IF;
+
+  own_invite_group := 'grp-invite-' || NEW.id;
+  old_ids   := CASE WHEN TG_OP = 'UPDATE' THEN coalesce(OLD.group_ids, '{}'::text[]) ELSE '{}'::text[] END;
+  actor_ids := coalesce(public.current_member_group_ids(), '{}'::text[]);
+
+  -- ③（先に判定する）ホーム部署が「許されない招待用部署」なら元に戻す。
+  -- INSERTの場合は戻す先が無いのでNULLにする（結果として group_ids が空になれば
+  -- projects のRLS WITH CHECK が拒否する＝素通りしない）。
+  IF NEW.group_id IS NOT NULL
+     AND NEW.group_id <> own_invite_group
+     AND NOT (NEW.group_id = ANY(old_ids))
+     AND NOT (NEW.group_id = ANY(actor_ids))
+     AND EXISTS (
+       SELECT 1 FROM public.groups g
+       WHERE g.id = NEW.group_id AND g.is_invite_group = true
+     ) THEN
+    NEW.group_id := CASE WHEN TG_OP = 'UPDATE' THEN OLD.group_id ELSE NULL END;
+  END IF;
+
+  -- ① 許されない招待用部署を取り除く（通常部署には触れない）
+  NEW.group_ids := ARRAY(
+    SELECT gid
+    FROM unnest(coalesce(NEW.group_ids, '{}'::text[])) AS gid
+    WHERE gid = own_invite_group
+       OR gid = ANY(old_ids)
+       OR gid = ANY(actor_ids)
+       OR NOT EXISTS (
+            SELECT 1 FROM public.groups g
+            WHERE g.id = gid AND g.is_invite_group = true
+          )
+  );
+
+  -- ② 既存要素の削除を元に戻す
+  IF TG_OP = 'UPDATE' THEN
+    NEW.group_ids := NEW.group_ids || ARRAY(
+      SELECT gid FROM unnest(old_ids) AS gid
+      WHERE NOT (gid = ANY(NEW.group_ids))
+    );
+  END IF;
+
+  -- CHECK制約 projects_group_id_in_group_ids を満たすための最終正規化
+  -- （ここで復活しうる group_id は上の③で既に妥当性を確認済み）
+  IF NEW.group_id IS NOT NULL AND NOT (NEW.group_id = ANY(NEW.group_ids)) THEN
+    NEW.group_ids := array_append(NEW.group_ids, NEW.group_id);
+  END IF;
+
+  RETURN NEW;
+END;
+$fn_verify_pj_group_ids$;
+
+DROP TRIGGER IF EXISTS trg_projects_verify_group_ids ON projects;
+CREATE TRIGGER trg_projects_verify_group_ids
+  BEFORE INSERT OR UPDATE ON projects
+  FOR EACH ROW EXECUTE FUNCTION public.verify_project_group_ids();
+
 -- groups：参照は全員可。新規部署の作成はsuper-admin限定、改名・編集はsuper-admin
 -- または自分の部署のadminのみ、物理DELETE（アプリは未使用）はsuper-admin限定。
 DROP POLICY IF EXISTS "authenticated full access" ON groups;
@@ -1584,10 +1864,22 @@ DROP POLICY IF EXISTS "groups_delete_admin" ON groups;
 CREATE POLICY "groups_delete_admin" ON groups FOR DELETE TO authenticated
   USING (current_member_is_super_admin());
 
--- members：is_admin / group_id / is_super_admin の自己昇格防止
--- （列単位のガードは RLS では書けないためトリガーで実装。INSERT/UPDATE 両方に適用
---  ＝INSERT時に他人のメールアドレスで先回りis_admin/is_super_admin行を作られる
---  穴を防ぐ。migration 20260702c で INSERT にも拡張）
+-- members：is_admin / group_id / is_super_admin / group_ids / email / is_deleted の
+-- 自己昇格・成り代わり防止（列単位のガードは RLS では書けないためトリガーで実装。
+-- INSERT/UPDATE 両方に適用＝INSERT時に他人のメールアドレスで先回りis_admin/
+-- is_super_admin行を作られる穴を防ぐ。migration 20260702c で INSERT にも拡張）
+--
+-- 【2026-08-18・v3.75・migration 20260818_harden_invite_related_rls.sql で拡張】
+-- 変更点は4つ：(a) 部署ブートストラップ猶予から招待用部署を除外（招待用部署には
+-- adminを作る経路が無く、この猶予が恒久的に開いた窓になっていた） (b) email
+-- （ログイン中の人とmembers行を結びつける同一性判定キー）の保護を新設
+-- (c) is_deleted の false→true（論理削除）の保護を新設（有効な管理者を消せると
+-- ブートストラップ猶予を人為的に開けられるため） (d) will_be_super_admin
+-- （NEW.is_super_adminが真でありさえすれば真になり、「対象行が元々super-adminで
+-- 今回は無変更」でも誰でもis_admin/group_id/group_ids/email/is_deletedを書き換え
+-- られてしまっていた＝認可を操作される側の属性で判定していた誤り）を
+-- self_bootstrap_super_admin（フェーズ1の自己ブートストラップ分岐を実際に通った
+-- 時だけtrueになるdefault falseの変数）に置き換えて正す。詳細はCLAUDE.md Section 33参照。
 CREATE OR REPLACE FUNCTION guard_member_privilege_columns()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -1598,12 +1890,14 @@ DECLARE
   dept_admin_count    integer;
   super_admin_count   integer;
   acting_super_admin  boolean;
-  will_be_super_admin boolean;
+  self_bootstrap_super_admin boolean := false;
   old_is_admin        boolean;
   old_is_super_admin  boolean;
   old_group_id        text;
   check_group_id      text;
   old_group_ids       text[];
+  old_email           text;
+  old_is_deleted      boolean;
 BEGIN
   IF TG_OP = 'INSERT' THEN
     old_is_admin       := false;
@@ -1611,12 +1905,16 @@ BEGIN
     old_group_id       := NEW.group_id;
     check_group_id     := NEW.group_id;
     old_group_ids      := NULL; -- INSERTには「以前の行」が存在しない
+    old_email          := NEW.email;
+    old_is_deleted     := NEW.is_deleted;
   ELSE
     old_is_admin       := OLD.is_admin;
     old_is_super_admin := OLD.is_super_admin;
     old_group_id       := OLD.group_id;
     check_group_id     := OLD.group_id;
     old_group_ids      := OLD.group_ids;
+    old_email          := OLD.email;
+    old_is_deleted     := OLD.is_deleted;
   END IF;
 
   acting_super_admin := public.current_member_is_super_admin();
@@ -1631,20 +1929,18 @@ BEGIN
       WHERE is_super_admin = true AND is_deleted = false;
 
       IF super_admin_count = 0 AND NEW.email = auth.email() THEN
-        NULL;
+        self_bootstrap_super_admin := true;
       ELSE
         NEW.is_super_admin := old_is_super_admin;
       END IF;
     END IF;
   END IF;
 
-  will_be_super_admin := NEW.is_super_admin;
-
   -- フェーズ2: is_admin / group_id（部署内権限・所属）
   IF NEW.is_admin IS DISTINCT FROM old_is_admin
      OR NEW.group_id IS DISTINCT FROM old_group_id THEN
 
-    IF acting_super_admin OR will_be_super_admin THEN
+    IF acting_super_admin OR self_bootstrap_super_admin THEN
       NULL; -- super-admin（既存 or フェーズ1で自己昇格した本人）は自由に変更可
     ELSIF public.current_member_is_admin() THEN
       NULL; -- 部署管理者は変更可（部署越境はRLSが別途ブロック）
@@ -1655,7 +1951,15 @@ BEGIN
         AND is_admin = true
         AND is_deleted = false;
 
-      IF dept_admin_count = 0 THEN
+      -- 【2026-08-18・v3.75】部署ブートストラップ猶予から招待用部署を除外する。
+      -- 招待用部署（is_invite_group=true）には admin を作る経路が設計上存在せず、
+      -- dept_admin_count が永久に0のままになるため、この猶予が恒久的に開いた
+      -- 窓になっていた（招待受諾者が自分の行を is_admin=true にできた）。
+      IF dept_admin_count = 0
+         AND NOT EXISTS (
+           SELECT 1 FROM public.groups g
+           WHERE g.id = check_group_id AND g.is_invite_group = true
+         ) THEN
         NULL; -- 部署ブートストラップ：その部署にis_admin=trueが1人もいなければ許可
       ELSE
         NEW.is_admin  := old_is_admin;
@@ -1682,7 +1986,7 @@ BEGIN
   --   ③ 追加された要素が全て is_invite_group=true のグループである
   -- coalesce(...,'')='on' は「NULL（未設定）なら安全側＝許可しない」に倒すためのもので、
   -- 認可チェックをNULLで素通りさせる猶予条項ではない（Section 1.6の教訓とは別種の判定）。
-  IF acting_super_admin OR will_be_super_admin THEN
+  IF acting_super_admin OR self_bootstrap_super_admin THEN
     NULL; -- super-adminは自由に付与・剥奪可（末尾の正規化で group_id 包含だけ保証する）
   ELSIF TG_OP = 'INSERT' OR NEW.group_id IS DISTINCT FROM old_group_id THEN
     NEW.group_ids := CASE WHEN NEW.group_id IS NULL THEN '{}'::text[] ELSE ARRAY[NEW.group_id] END;
@@ -1699,6 +2003,46 @@ BEGIN
     NULL; -- 招待用部署への兼務追加のみを許可（追加分が全てis_invite_group=trueであることを検証済み）
   ELSE
     NEW.group_ids := old_group_ids; -- 非super-adminによるgroup_ids自体の直接変更は差し戻す
+  END IF;
+
+  -- 【2026-08-18・v3.75】フェーズ4: email（同一性判定キー）
+  -- email は「ログイン中の人がどの members 行か」を決める唯一のキーであり
+  -- （App.tsx の autoMatch() / current_member_is_admin() / current_member_id() 等）、
+  -- 他人の行の email を自分のアドレスに書き換えられると、その人の権限で
+  -- ログインしたのと同じ状態になる。他の特権列と同じく静かに差し戻す
+  -- （表示名など他フィールドの保存は妨げない）。
+  -- 許可するのは次の3つだけ：実行者がsuper-admin／実行者が部署管理者
+  -- （部署越境はRLSが別途ブロック）／対象が実行者自身の行。
+  -- 自分自身の行の判定は IS NOT DISTINCT FROM（email が NULL の行を
+  -- 「誰の行でもある」と誤判定しないため）。
+  IF TG_OP = 'UPDATE' AND NEW.email IS DISTINCT FROM old_email THEN
+    IF acting_super_admin
+       OR self_bootstrap_super_admin
+       OR public.current_member_is_admin()
+       OR old_email IS NOT DISTINCT FROM auth.email() THEN
+      NULL;
+    ELSE
+      NEW.email := old_email;
+    END IF;
+  END IF;
+
+  -- 【2026-08-18・v3.75】フェーズ5: is_deleted の false→true（論理削除）
+  -- 有効な管理者を論理削除できると、フェーズ1（全社super-adminが0人なら自己昇格可）
+  -- ・フェーズ2（部署adminが0人なら自己昇格可）のブートストラップ猶予を
+  -- 人為的に開けられる。削除はadmin以上に限る。復元（true→false）は
+  -- 誰かの権限が増える操作ではないため対象にしない。
+  IF TG_OP = 'UPDATE'
+     AND coalesce(NEW.is_deleted, false) = true
+     AND coalesce(old_is_deleted, false) = false THEN
+    IF acting_super_admin
+       OR self_bootstrap_super_admin
+       OR public.current_member_is_admin() THEN
+      NULL;
+    ELSE
+      NEW.is_deleted := old_is_deleted;
+      NEW.deleted_at := OLD.deleted_at;
+      NEW.deleted_by := OLD.deleted_by;
+    END IF;
   END IF;
 
   -- 常に NEW.group_id が NEW.group_ids に含まれるよう最終正規化する（安全網）

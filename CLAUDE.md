@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.74
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.75
 #
-最終更新：2026-08-17（v3.74）
+最終更新：2026-08-18（v3.75）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1200,7 +1200,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-17（v3.74）
+- 最終更新：2026-08-18（v3.75）
 
 ---
 
@@ -2258,7 +2258,7 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 - **(b) 招待用部署に属する人が、兼務を持たない他の部署メンバーから見えない問題**：`members`のRLS（`group_ids && current_member_group_ids() OR current_member_is_super_admin()`）は部署単位のみで判定するため、招待された人の`group_ids`（招待用部署のみ）は、兼務を持たない部署メンバーの`current_member_group_ids()`と一切重ならず見えなかった。担当者に指定しても担当者欄が「未担当」のままになる実害があった。**対応**：`supabase/migrations/20260810c_extend_members_visibility_for_invites.sql`（**2026-08-12に本番適用済み**＝`pg_policies`で`members_group`の`qual`が3条項（`current_member_group_ids` / `current_member_is_super_admin` / `visible_invite_group_ids`）になっていることを確認）で、`members`のポリシーに**追加のみ**の1条項を足した：「相手が招待用部署に属しており、かつその招待用部署が、自分がアクセスできるPJの`group_ids`に含まれているなら見える」。実装は新設のSECURITY DEFINERヘルパー`visible_invite_group_ids()`（自分がアクセスできるPJに紐づく招待用部署のidの配列を返す。`current_member_group_ids()`/`can_access_group_ids()`と同じ流儀）＋`OR group_ids && visible_invite_group_ids()`。既存2条項は1文字も変えていない。`schema.sql`に同期・`schemaChecks.ts`に検査項目（`fn_visible_invite_group_ids`）を追加した。
 - **🔴 広げた範囲はここだけ**：「招待用部署に属する人」の可視性のみを広げた。部署間の可視性（部署Aの人が部署Bの人を見る）は一切変えていない。`projects`/`tasks`のRLSにも広げていない（`members`テーブル1つだけの変更）。マイグレーションの監査クエリに「部署Aの一般メンバーから、招待用部署に属さない部署Bのメンバーが見えないこと」の確認クエリを含めた。
 - **「RLSは1行も変えない」という当初方針（本セクション冒頭）からの変更点**：Phase 1着手時の方針は「新しいアクセス制御の軸を作らない・既存テーブルのRLSは1行も変えない」だったが、(b)はこの方針の唯一の例外。**`members`テーブル1つだけ**、既存2条項を変更せずORで1条項を追加する形にとどめ、「新しい軸を作らない」（既存の`group_ids`配列の枠組みに乗せる）という設計思想自体は維持している。
-- **🔴 可視性の非対称（残った制約・運用でカバー）**：(b)で「部署の人→招待者」の可視性は解決したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人と`projects.owner_member_id`の2人だけ）に依存したままである。招待者の`visible_invite_group_ids()`は自分の招待用部署だけを返すため、招待者から見える社内メンバーは発行者とPJオーナーの2人に限られる（他の社内担当者は見えない）。**今回は兼務付与を残す**（この2人だけは招待者から見える必要があるため）。(a)の修正で切替UIは出なくなったため、兼務の副作用は解消済み。他の社内担当者を招待者に見せたい場合は、管理画面から招待用部署をその人の`group_ids`に手動で兼務追加する運用でカバーする（自動化していない）。
+- **✅ 可視性の非対称は v3.75（2026-08-18）で解消済み（旧・残った制約の記録）**：(b)で「部署の人→招待者」の可視性は解決したが、「招待者→部署の社内メンバー」の可視性は兼務付与（発行者本人と`projects.owner_member_id`の2人だけ）に依存したままだった。招待者の`visible_invite_group_ids()`は自分の招待用部署だけを返すため、招待者から見える社内メンバーは発行者とPJオーナーの2人に限られていた（他の社内担当者は見えない。本番の羅針盤フォーラムPJで実害発生）。**v3.75で`members`のSELECTポリシーに4条項目（新設の`visible_project_member_ids()`。「自分がアクセスできるPJに参加しているメンバー全員」を返す）を追加し、招待受諾者からもPJ参加者全員が見えるようになった**（詳細はSection 33）。**兼務付与（発行者本人・PJオーナーへの招待用部署の付与）自体はv3.75でも変更していない**——(a)の切替UI抑制の対象として引き続き必要なため残っている。ただしメンバー可視性という意味では、この兼務が無くても4条項目だけでPJ参加者全員が見えるようになったため、「発行者とPJオーナーだけ特別に見える」という非対称自体は解消された。
 - **🔴 部署でスコープする画面を新設するたびに再発しうる構造（v3.60で発見・カードで回避）**：招待用部署（`is_invite_group=true`）は(a)の`filterInviteGroupsForSidebar()`により「部署で絞り込む系のUI」の選択肢から原則除外される設計のため、**招待用部署のみに属するメンバー（招待受諾者）は、部署を条件に絞り込む画面には決して現れない**。AdminViewの設定画面をサイドバーの「表示部署」に一本化した際（v3.60・Section 8参照）にこの構造が実際に踏まれ、`MembersSection`から招待受諾者が編集不能になる実害が発生した（データ自体は`visible_invite_group_ids()`のRLS拡張で見えている。UI側フィルタが不要に隠していただけ）。今回は部署絞り込みとは別枠の常時表示カード（`isGuestOnlyMember()`。`src/lib/admin/guestMembers.ts`）で回避したが、**次に「部署で絞り込む」という設計のUIを新設するときは、同じ理由で招待受諾者が漏れないかを都度確認すること**（自動で防げる仕組みは無い）。
 
 ### Phase 5：既存利用者が招待された場合の対応＋ログイン済みの受諾入口（v3.68・2026-08-12）
@@ -2410,6 +2410,57 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
   - **タイミングの注意**：`TourProvider.tsx`はステップ変更時に「ターゲット測位（`skipIfMissing`判定を含む）」と「action発火」を同じ`activeStep`変更に対する別々の`useEffect`で行う。もし`action`を「guide」ステップ自身に付けても、ターゲット測位の効果（宣言順で先）がその場でターゲット不在と判定し即座に次のステップへ進めてしまい、action発火（宣言順で後）が「その他」を開いた頃には既に手遅れ（該当ステップの表示自体がスキップ済み）になる。そのため**「guide」より前のステップ（このツアーでは冒頭の`welcome`）でアクションを発火させ、猶予（`guide`到達までの間の複数ステップ分）を確保する**設計にした。
   - `okr-intro.ts`（OKRモードのツアー）は`guide-btn`を参照していないため対象外（確認済み）。
 - **DBスキーマ変更なし**（`schemaChecks.ts`への追記も不要）。
+
+---
+
+## 33. プロジェクト招待まわりの権限境界を締める＋招待受諾者からPJ参加者全員が見えるように（v3.75・2026-08-18）
+
+`supabase/migrations/20260818_harden_invite_related_rls.sql` 参照（**2026-08-18にdev/prod両方へ山本さんが手動適用済み**）。
+
+### 何が起きたか（事故の芽・実害には至っていない）
+
+v3.47（2026-08-11・`20260810c_extend_members_visibility_for_invites.sql`）で`members`のRLSポリシーに3つ目のOR条項（`OR group_ids && visible_invite_group_ids()`）を追加した。当時の意図は「可視性だけを広げる」ことだったが、このポリシーは`FOR ALL`でありながら`WITH CHECK`を省略していた。**PostgreSQLは`FOR ALL`で`WITH CHECK`が無い場合、USING式をINSERT/UPDATEの認可としても使う。** つまり追加した条項は可視性だけでなく書き込み権限も同時に広げていた——招待用部署を介して見えているだけの行（発行者・PJオーナー）に対して、招待受諾者が書き込みできてしまう余地があった。
+
+あわせて、`guard_member_privilege_columns`（権限昇格ガードトリガー）が守っていた列は`is_super_admin`/`is_admin`/`group_id`/`group_ids`の4つだけで、`email`（ログイン中の利用者とmembers行を結びつける同一性判定キー）と`is_deleted`（有効な管理者の人数＝ブートストラップ猶予の判定材料）が無防備だった。
+
+**🔴 引継ぎ時に発見・修正した二次バグ**：前任（クラッシュ前）が書いたこのマイグレーションの下書きは、コメントで「`will_be_super_admin`（NEW.is_super_adminが真でありさえすれば真になる、対象の属性で判定していた誤り）を`self_bootstrap_super_admin`（フェーズ1の自己ブートストラップ分岐を実際に通った時だけ真になる変数）に置き換えて正す」と明記していたが、**実際の関数本体は旧ロジックのまま未修正**だった（コメントと実装の食い違い）。つまり「対象行が元々super-adminで今回は無変更」というケースでも、同じ部署の非管理者がそのsuper-adminの行のis_admin/group_id/group_ids/email/is_deletedを書き換えられる穴が実装上まだ残っていた。本セッションでコメントどおりに実装を修正した。**教訓：レビュー（generator/evaluatorの分離）が無いと、コメントで「直した」と書いてあるだけで実際には直っていないコードがそのまま出て行きうる。**
+
+### 塞いだこと（5点）
+
+1. **members のRLSをSELECT用（`members_select`）と書き込み用（`members_write_insert`/`update`/`delete`）に分割**。可視性（SELECT）は既存3条項を1文字も変えず維持しつつ後述の4条項目を追加、書き込みは3条項目（招待用部署ごしに見えているだけの行）にのみ「部署管理者または全社スーパー管理者であること」を課した。`WITH CHECK`を省略せず明示的に書く（省略が今回の原因そのもの）。
+2. **`guard_member_privilege_columns`に`email`／`is_deleted`の保護を追加**。`email`は実行者がsuper-admin／部署管理者／対象が自分自身の行、のいずれかでなければ静かに差し戻す。`is_deleted`のfalse→true（論理削除）は実行者がsuper-admin／部署管理者でなければ差し戻す。
+3. **部署ブートストラップ猶予から招待用部署を除外**。招待用部署（`is_invite_group=true`）にはadminを作る経路が設計上存在せず、`dept_admin_count`が永久に0のままになるため、この猶予が恒久的に開いた窓になっていた（招待受諾者が自分の行を`is_admin=true`にできた）。
+4. **`will_be_super_admin`を`self_bootstrap_super_admin`に置き換え**（上記「引継ぎ時に発見・修正した二次バグ」参照）。
+5. **`projects.group_ids`のガードトリガー（`verify_project_group_ids`）を新設**。自部署のPJに他PJの招待用部署を後から足すことができ、`visible_invite_group_ids()`の戻り値を任意に膨らませられる穴を塞いだ（非super-adminは、そのPJ自身の招待用部署／変更前から入っていたもの／実行者が既にアクセス権を持っているもの、以外の招待用部署を静かに取り除く）。
+6. **`project_invites`のSELECTポリシーを「発行者の所属部署」基準から「対象PJが属する通常部署」基準に変更**（新設`project_normal_group_ids()`）。旧基準では招待受諾者が発行者の発行した全招待行（他人のメールアドレス・他PJ宛を含む）を読めてしまっていた。
+7. **task_dependencies のRLSをPJ範囲（group_ids配列）に追従させる**（統括の追加指示。下記「task_dependenciesの取り残し」参照）。
+
+### 追加要望：招待受諾者からPJ参加者全員が見えるように（4条項目）
+
+山本さんの追加要望（本番の羅針盤フォーラムPJで実害発生：招待された方からPJの他の参加者が1人も見えず、担当者欄が「未担当」になる）。従来、招待受諾者から見える社内メンバーは3条項目（`group_ids && visible_invite_group_ids()`）により発行者本人とPJオーナーの2名だけに限られていた（Section 25 Phase 4末尾に記録済みの制約）。
+
+- **方針**：兼務（`group_ids`）を増やす方式は採らない（書き込みスコープが広がる・「表示部署」切替の副作用が出る・既存メンバーの`group_ids`を大量に書き換えることになるため）。代わりに**`members`のSELECTポリシーにだけ**4条項目を追加した：`OR id = ANY(public.visible_project_member_ids())`。**書き込み側には一切追加していない**（可視性の緩和が書き込み認可も兼ねる、という今回の事故と同型の誤りを繰り返さないため）。
+- **新設ヘルパー`visible_project_member_ids()`**（引数無し・SECURITY DEFINER・STABLE。`current_member_group_ids()`等の既存3ヘルパーと同じ流儀）：「自分がアクセスできるPJ」に参加しているメンバーidの配列を返す。「参加しているメンバー」の定義は`src/lib/project/projectMembers.ts`の`computeProjectMembers()`の実際の呼び出し元（`ProjectSettingsModal.tsx`）と`ProjectKarte.tsx`の`pjAllMembers`（"AI分析に渡す「このPJに関わる全員」＝オーナー＋メンバー＋タスク担当者の和集合"というコメントがそのまま定義）で共通する集合に揃えた：owner_member_id（互換目的の単数）／owner_member_ids（複数オーナー）／`projects.member_ids`（PJの関与者列。**この列自体は`supabase/schema.sql`への反映が漏れていたドリフトだったため今回追記した**）／そのPJに紐づくタスクの`assignee_member_id`・`assignee_member_ids`（project_id直接紐づき＋task_projects経由の追加PJ紐づけの両方）。`is_deleted=false`のPJ・タスクのみ対象。
+- **性能**：引数を取らない関数にしたため、PostgreSQLはクエリ全体で1回だけ評価するuncorrelated subplanとして実行できる（members行数分ではなく1回だけprojects×tasksを辿る）。仮に「メンバーidを引数に取りEXISTSで判定する」形にすると、members行ごとに相関実行され不利になる。関数内部はUNIONで集合を作り（EXISTSではない）、JOINは必要な2経路（project_id直接／task_projects経由）だけにとどめた。`can_access_group_ids()`は呼ばず`(p.group_ids && current_member_group_ids() OR current_member_is_super_admin())`をインライン展開している（`schema.sql`では`can_access_group_ids()`自体の定義がmembersのRLS群より後方にあるため前方参照エラーになる。`visible_invite_group_ids()`の先例に倣った）。
+- **意図的に受け入れる副作用**：部署をまたぐPJでは、他部署のメンバー同士も相互に見えるようになる（同じPJの参加者に限る）。「部署間の素の可視性は広げない」という既存の設計原則からの意図的な緩和（山本さん承認済み）。PJを共有しない他部署のメンバーは引き続き見えない。
+- **Section 25 Phase 4「可視性の非対称」は本changeで解消**（該当箇所を書き換え済み）。発行者・PJオーナーへの兼務付与自体（(a)の切替UI抑制のため）は残るが、メンバー可視性としての非対称は解消された。
+- **フロント側の追加変更は不要と確認済み**：`ProjectSettingsModal`の「関わるメンバー」タブ・サイドバーPJ行「⋮」メニューの「⚙ このPJの設定」は、どちらも権限ガード（`isGuest`以外）を持たず、招待受諾者（実アカウント）は元々到達できる。`members`が見えるようになったことで`computeProjectMembers()`・担当者アイコンは自動的に正しく動く。
+
+### task_dependenciesの取り残し（統括の追加指示・同一マイグレーションに追記）
+
+`task_dependencies`（B1：タスク依存関係）だけが20260722b の配列化（`group_id`単数比較→`group_ids`配列オーバーラップ）に追従しておらず、旧来の`group_id = current_member_group_id()`のまま残っていた。実害は2つ：①招待受諾者にはPJのタスク依存関係が1本も見えず、ガントの矢印（B2）・依存ゲート（B1）・BlockedTasksWidgetが機能しない、②複数部署を兼務しているメンバーも兼務先PJでは依存関係が見えない既存バグ（招待とは無関係）。あわせて`FOR ALL`で`WITH CHECK`を省略していた（今回の事故と同型）。
+
+**対応**：`group_id`列の値ではなく、依存関係が結ぶ2つのタスク（predecessor/successor）それぞれへのアクセス可否で判定する形に切り替えた。`tasks.group_ids`は`sync_task_group_ids`/`cascade_project_group_ids_to_tasks`によりPJのgroup_ids（招待用部署を含む）が既に伝播済みのため、これに乗るだけで招待受諾者にも兼務メンバーにも正しく効く。既存の`task_projects_group`/`task_task_forces_group`と同じ`can_access_group_ids(task_group_ids(...))`の流儀に揃え、新しいヘルパー関数は作らなかった（`task_group_ids()`は主キー1件参照のSTABLE関数で既存2ポリシーと同じコスト）。**両端とも（AND）アクセスできることを要求する**（ORにすると見えない方のタスクの存在が依存線から漏れるため）。`group_id`列自体は残す（NOT NULL・アプリが書いている）が、RLSの判定材料としては使わない。
+
+### 検知できないこと（schemaChecksの既知の限界）
+
+`guard_member_privilege_columns`は本文だけを差し替える関数のため、`src/lib/schema/schemaChecks.ts`の`kind:"function"`では適用漏れを検知できない（`pg_proc`に同名関数が存在するかしか見ないため。Section 22・25 Phase 5参照）。`task_dependencies`のRLSポリシー変更も同様に、schemaChecksには「ポリシーの中身」を検査する種類（kind）が無いため検知できない。新設した3関数（`verify_project_group_ids`／`project_normal_group_ids`／`visible_project_member_ids`）は`kind:"function"`で追加済み。
+
+### 変えていないこと
+
+- `create_project_invite()`／`accept_project_invite()`の本文（メール検証・24時間有効期限・既存メンバー分岐等）は変更していない。
+- v3.60の要件「部署管理者が招待受諾者を編集できる」は維持（書き込みポリシーの3条項目に残した）。
+- `sync_task_group_ids`／`cascade_project_group_ids_to_tasks`／`task_forces`の可視性（v3.76以降で別途対応予定）は変更していない。
 
 ---
 

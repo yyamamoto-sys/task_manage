@@ -267,4 +267,29 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "プロジェクト招待：招待された人の可視性拡張関数（visible_invite_group_ids）が見つかりません",
     migration: "20260810c_extend_members_visibility_for_invites.sql",
   },
+  // 【2026-08-18・v3.75】20260818_harden_invite_related_rls.sql で新設した3関数。
+  // 🔴 guard_member_privilege_columns（本文だけ差し替え）はここに追加しない
+  // （kind:"function"はpg_procに同名関数が存在するかしか見ないため、本文差し替え系の
+  // 適用漏れは検知できない。CLAUDE.md Section 33参照）。
+  {
+    id: "fn_verify_project_group_ids",
+    kind: "function",
+    name: "verify_project_group_ids",
+    label: "プロジェクト招待：projects.group_idsのガードトリガー関数（verify_project_group_ids）が見つかりません",
+    migration: "20260818_harden_invite_related_rls.sql",
+  },
+  {
+    id: "fn_project_normal_group_ids",
+    kind: "function",
+    name: "project_normal_group_ids",
+    label: "プロジェクト招待：招待用部署を除いたPJの通常部署を返す関数（project_normal_group_ids）が見つかりません",
+    migration: "20260818_harden_invite_related_rls.sql",
+  },
+  {
+    id: "fn_visible_project_member_ids",
+    kind: "function",
+    name: "visible_project_member_ids",
+    label: "プロジェクト招待：招待受諾者からPJ参加者全員を見せる可視性拡張関数（visible_project_member_ids）が見つかりません",
+    migration: "20260818_harden_invite_related_rls.sql",
+  },
 ];
