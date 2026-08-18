@@ -128,6 +128,7 @@ export const layoutJa = {
   "layout.sidebar.allPjLabel": "全PJ表示",
   "layout.sidebar.noMineProjects1": "自分が担当するタスクを持つPJはまだありません。",
   "layout.sidebar.noMineProjects2": "「全件」に切り替えると全PJが表示されます。",
+  "layout.sidebar.switchToAllProjects": "「全件」に切り替える",
   "layout.sidebar.showArchivedLabel": "完了・アーカイブも表示",
   "layout.sidebar.showArchivedOn": "クリックで完了・アーカイブ済みPJも表示",
   "layout.sidebar.showArchivedOff": "クリックで完了・アーカイブ済みPJを非表示",

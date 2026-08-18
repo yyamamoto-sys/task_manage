@@ -186,7 +186,9 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
   const quickSetStatus = useCallback(async (nextStatus: Project["status"]) => {
     if (!canEditBasicInfo || archiving) return;
     const label = STATUS_LABELS[nextStatus];
-    if (!await confirmDialog(`「${project.name}」を${label}にしますか？`)) return;
+    // 状態変更（完了・アーカイブ・差し戻し）はデータを消さない非破壊操作のため neutral にする
+    // （v3.76。既定はdanger据え置き＝src/lib/dialog.ts冒頭コメント参照）。
+    if (!await confirmDialog(`「${project.name}」を${label}にしますか？`, { tone: "neutral", confirmLabel: `${label}にする` })) return;
     setArchiving(true);
     try {
       await saveProject({ ...project, status: nextStatus, updated_by: currentUser.id });

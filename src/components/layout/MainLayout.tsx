@@ -52,6 +52,7 @@ import { AcceptInviteModal } from "../project/AcceptInviteModal";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { clampSidebarWidth, parseStoredSidebarWidth, SIDEBAR_DEFAULT_WIDTH, SIDEBAR_WIDTH_KEY_STEP, SIDEBAR_MIN_WIDTH, SIDEBAR_MAX_WIDTH } from "../../lib/layout/sidebarWidth";
 import { shouldGroupSidebarMiscButtons } from "../../lib/layout/sidebarMiscSection";
+import { resolveInitialSidebarMineOnly } from "../../lib/layout/sidebarMineOnlyDefault";
 import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 
@@ -545,8 +546,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     return ids;
   }, [rawTasks, currentUser.id]);
 
+  // 初期値の決定はsrc/lib/layout/sidebarMineOnlyDefault.tsの一般則に従う（v3.76）。
+  // 「自分」で0件・「全件」で1件以上なら初期値を「全件」にする（招待受諾者・新入社員の救済。
+  // 「招待受諾者かどうか」を判定する分岐は書かない）。useStateの初期化関数は初回マウント時
+  // にしか呼ばれないため、以後ユーザーが明示的に切り替えた選択を再判定で上書きすることはない。
   const [mineOnly, setMineOnlyState] = useState<boolean>(
-    () => localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY) !== "0", // デフォルト ON
+    () => resolveInitialSidebarMineOnly(
+      localStorage.getItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY),
+      projects.filter(p => myProjectIds.has(p.id)).length,
+      projects.length,
+    ),
   );
   const toggleMineOnly = () => setMineOnlyState(prev => {
     const next = !prev;
@@ -2163,6 +2172,24 @@ function Sidebar({
             }}>
               {t("layout.sidebar.noMineProjects1")}<br />
               {t("layout.sidebar.noMineProjects2")}
+              <br />
+              {/* 0件の理由と次の操作を同じ場所に置く（v3.76・招待受諾者の実機報告対応）。
+                  1タップで「全件」に切り替えられる導線。 */}
+              <button
+                onClick={onToggleMineOnly}
+                style={{
+                  marginTop: "6px",
+                  padding: 0,
+                  background: "transparent",
+                  border: "none",
+                  color: "var(--color-brand)",
+                  fontSize: "11px",
+                  textDecoration: "underline",
+                  cursor: "pointer",
+                }}
+              >
+                {t("layout.sidebar.switchToAllProjects")}
+              </button>
             </div>
           )}
           </>)}

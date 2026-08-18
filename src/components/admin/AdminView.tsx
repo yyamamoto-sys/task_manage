@@ -770,7 +770,8 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   }, [editId, newTfFormKrId, onDirtyChange]);
 
   const handleUnlinkTf = async (_krId: string, tfId: string) => {
-    if (!await confirmDialog("このTFのクォーター割り当てを解除しますか？（TF自体は削除されません。未割当のTFは現在のクォーターに表示されます）")) return;
+    // TF自体は削除されない非破壊操作のため neutral にする（v3.76。既定はdanger据え置き）。
+    if (!await confirmDialog("このTFのクォーター割り当てを解除しますか？（TF自体は削除されません。未割当のTFは現在のクォーターに表示されます）", { tone: "neutral", confirmLabel: "解除する" })) return;
     try {
       // 新モデル：QKTFではなく TaskForce.quarter を未設定に戻す（未割当＝effectiveTfQuarterで今期扱い）
       // quarterはundefinedではなくnullで送る（undefinedはJSON.stringifyで消え、更新から
@@ -785,7 +786,8 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   };
 
   const handleMoveTf = async (_krId: string, tfId: string, targetQuarter: Quarter) => {
-    if (!await confirmDialog(`このTFを ${targetQuarter} に移動しますか？\n現在の ${selectedQuarter} からは外れます。`)) return;
+    // TFの削除ではなく所属クォーターの付け替えのため neutral にする（v3.76。既定はdanger据え置き）。
+    if (!await confirmDialog(`このTFを ${targetQuarter} に移動しますか？\n現在の ${selectedQuarter} からは外れます。`, { tone: "neutral", confirmLabel: "移動する" })) return;
     try {
       // 新モデル：QKTFではなく TaskForce.quarter 列を更新する（単一の真実）
       const existing = tfs.find(t => t.id === tfId);

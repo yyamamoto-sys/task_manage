@@ -109,6 +109,7 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.sidebar.allPjLabel": "Show all projects",
   "layout.sidebar.noMineProjects1": "You don't have any projects with tasks assigned to you yet.",
   "layout.sidebar.noMineProjects2": "Switch to \"All\" to see every project.",
+  "layout.sidebar.switchToAllProjects": "Switch to \"All\"",
   "layout.sidebar.showArchivedLabel": "Show completed/archived",
   "layout.sidebar.showArchivedOn": "Click to also show completed/archived projects",
   "layout.sidebar.showArchivedOff": "Click to hide completed/archived projects",

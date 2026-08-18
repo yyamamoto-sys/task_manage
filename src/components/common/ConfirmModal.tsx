@@ -9,7 +9,7 @@
 // confirmDialog() / alertDialog() 呼び出しをここで受け取る。
 
 import { useState, useEffect, useCallback } from "react";
-import { _registerModal } from "../../lib/dialog";
+import { _registerModal, type ConfirmDialogOptions } from "../../lib/dialog";
 import { useT } from "../../hooks/useT";
 import { modalOverlayStyle, modalBoxStyle } from "./modalStyles";
 
@@ -17,19 +17,37 @@ interface DialogState {
   open: boolean;
   message: string;
   type: "confirm" | "alert";
+  tone: "danger" | "neutral";
+  confirmLabel?: string;
   resolve: ((value: boolean) => void) | null;
 }
 
-const CLOSED: DialogState = { open: false, message: "", type: "confirm", resolve: null };
+const CLOSED: DialogState = { open: false, message: "", type: "confirm", tone: "danger", confirmLabel: undefined, resolve: null };
+
+/**
+ * type/tone から見た目（アイコン・色）を決める。alertDialog の見た目（warning）は
+ * Section 21・v3.76時点の既存仕様のまま変更しない。confirm の tone="neutral" は
+ * 「削除ではない確認」であることが一目で分かるよう、破壊的操作用の赤・ゴミ箱とは
+ * 別の配色（info・チェックマーク）にする。
+ */
+function resolveDialogVisual(type: "confirm" | "alert", tone: "danger" | "neutral") {
+  if (type === "alert") {
+    return { bg: "var(--color-bg-warning)", text: "var(--color-text-warning)", border: "var(--color-border-warning)", icon: "⚠" };
+  }
+  if (tone === "neutral") {
+    return { bg: "var(--color-bg-info)", text: "var(--color-text-info)", border: "var(--color-border-info)", icon: "✓" };
+  }
+  return { bg: "var(--color-bg-danger)", text: "var(--color-text-danger)", border: "var(--color-border-danger)", icon: "🗑" };
+}
 
 export function ConfirmModal() {
   const t = useT();
   const [state, setState] = useState<DialogState>(CLOSED);
 
   useEffect(() => {
-    _registerModal((message, type) =>
+    _registerModal((message, type, opts?: ConfirmDialogOptions) =>
       new Promise<boolean>(resolve => {
-        setState({ open: true, message, type, resolve });
+        setState({ open: true, message, type, tone: opts?.tone ?? "danger", confirmLabel: opts?.confirmLabel, resolve });
       })
     );
   }, []);
@@ -40,6 +58,10 @@ export function ConfirmModal() {
   }, [state]);
 
   if (!state.open) return null;
+
+  const visual = resolveDialogVisual(state.type, state.tone);
+  const confirmLabel = state.confirmLabel
+    ?? (state.type === "alert" || state.tone === "neutral" ? t("common.confirm.ok") : t("common.confirm.delete"));
 
   return (
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
@@ -70,11 +92,11 @@ export function ConfirmModal() {
         {/* アイコン */}
         <div style={{
           width: 36, height: 36, borderRadius: "50%",
-          background: state.type === "alert" ? "var(--color-bg-warning)" : "var(--color-bg-danger)",
+          background: visual.bg,
           display: "flex", alignItems: "center", justifyContent: "center",
           fontSize: "16px", marginBottom: "12px",
         }}>
-          {state.type === "alert" ? "⚠" : "🗑"}
+          {visual.icon}
         </div>
 
         {/* メッセージ */}
@@ -107,13 +129,13 @@ export function ConfirmModal() {
             onClick={() => handleClose(state.type === "confirm" ? true : false)}
             style={{
               padding: "7px 20px", fontSize: "12px", fontWeight: "500",
-              background: state.type === "alert" ? "var(--color-bg-warning)" : "var(--color-bg-danger)",
-              color: state.type === "alert" ? "var(--color-text-warning)" : "var(--color-text-danger)",
-              border: `1px solid ${state.type === "alert" ? "var(--color-border-warning)" : "var(--color-border-danger)"}`,
+              background: visual.bg,
+              color: visual.text,
+              border: `1px solid ${visual.border}`,
               borderRadius: "var(--radius-md)", cursor: "pointer",
             }}
           >
-            {state.type === "alert" ? t("common.confirm.ok") : t("common.confirm.delete")}
+            {confirmLabel}
           </button>
         </div>
       </div>

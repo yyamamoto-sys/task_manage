@@ -275,6 +275,11 @@ function AuthenticatedApp({
         // 別ユーザーのセッション・別メールでの再ログイン等。この端末にこの保留データを
         // 残し続けると別人に誤って適用されるリスクになるため消す。
         clearPendingProjectInvite();
+        // このURLの招待コードはこのセッションでは処理できなかった。残したままにすると、
+        // このあと別の経路（③のログイン済み受諾フロー等）が同じコードを何度も拾い直す
+        // ことになるため、ここで一緒に外す（stripInviteParamFromUrlはPhase 5で③のために
+        // 作られた既存の純粋関数を再利用）。
+        window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
         setInviteAutoAcceptChecked(true);
         return;
       }
@@ -289,6 +294,12 @@ function AuthenticatedApp({
           colorText: pending.colorText,
         });
         clearPendingProjectInvite();
+        // 🔴 受諾直後のURLには?invite=<code>がまだ残っている。ここで外さずにreload()すると、
+        // reload後にcurrentUserが確定した瞬間、今度は③（ログイン済み既存メンバー向けの
+        // URL拾い直し）が同じコードを拾って再度confirmDialogを出し、accept_project_invite()を
+        // もう一度呼んで「既に使用されています」エラーになる（2026-08-18・山本さんの実機報告）。
+        // reload前に必ず外す（reload後はURLから読み直すため、reload前に書き換えれば消える）。
+        window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
         // 迷ったらリロードを選ぶ方針（handleLogoutと同じ判断）。新しく作られたmembers行を
         // RLS越しに確実に反映させるため、zustandの部分更新ではなくページ全体を再読み込みする。
         window.location.reload();
@@ -296,6 +307,8 @@ function AuthenticatedApp({
         if (cancelled) return;
         // 失敗したら消す（無限リトライループの防止。期限切れ等は再試行しても直らない）。
         clearPendingProjectInvite();
+        // 失敗時もURLに残したままにしない（再読み込みのたびに同じエラーを踏み続けるため）。
+        window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
         showToast(formatErrorForUser("招待の受諾に失敗しました", e), "error");
         setInviteAutoAcceptChecked(true);
       }
@@ -326,7 +339,13 @@ function AuthenticatedApp({
     }
     let cancelled = false;
     (async () => {
-      const accept = await confirmDialog(t("auth.invite.urlPrompt.confirm"));
+      // 🔴 参加の確認であって削除ではない（2026-08-18・山本さんの実機報告：ボタンが赤・
+      // ゴミ箱アイコン・ラベル「削除する」になっていた）。tone:"neutral"を明示する
+      // （既定はdanger据え置き。src/lib/dialog.ts冒頭コメント参照）。
+      const accept = await confirmDialog(t("auth.invite.urlPrompt.confirm"), {
+        tone: "neutral",
+        confirmLabel: t("auth.invite.member.submit"),
+      });
       if (cancelled) return;
       window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
       if (!accept) {
