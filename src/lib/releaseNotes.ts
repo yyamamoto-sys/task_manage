@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.81",
+    date: "2026-08-19",
+    title: "一覧の表示が速くなりました",
+    highlights: [
+      "メンバー一覧など、プロジェクトの参加者を表示する画面の読み込みが速くなりました",
+    ],
+  },
+  {
     version: "v3.80",
     date: "2026-08-19",
     title: "プロジェクト招待された方の表示速度を改善・管理者向けの検知精度を改善",

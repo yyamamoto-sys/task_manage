@@ -1005,6 +1005,25 @@ GRANT EXECUTE ON FUNCTION public.visible_invite_group_ids() TO authenticated;
 -- 見えるようになる（同じPJの参加者に限る）。「部署間の素の可視性は広げない」という
 -- 既存の設計原則からの意図的な緩和（山本さん承認済み）。PJを共有しない他部署の
 -- メンバーは引き続き見えない。
+--
+-- 【2026-08-19・v3.81・migration 20260819d_optimize_visible_project_member_ids.sql で
+-- 本文差し替え】旧実装は8ブランチ（実際に数えると7ブランチ）のUNIONで構成され、
+-- 各ブランチが独立にprojects（一部はtasksとのJOIN）を走査し、各ブランチのWHERE句の
+-- 中でcurrent_member_group_ids()/current_member_is_super_admin()を呼んでいた。
+-- 実測（本番）でこの関数自体がInitPlanとして1回しか呼ばれていないのに53.9ms・
+-- shared hit=730かかっており、呼び出し回数ではなく中身が重いことが分かった。
+-- ctx CTE（自分の所属情報を1回だけ評価）・accessible_projects CTE（MATERIALIZED・
+-- アクセス可能な削除されていないPJを1回だけ作る）を新設し、オーナー系3ブランチは
+-- そこから取る。tasksの走査は「project_id直接」「task_projects経由」の2系統に絞り、
+-- 各系統内の単数/複数担当者を配列結合してから1回unnestする形に統合した
+-- （旧4ブランチ→新2ブランチ）。返る集合は1要素も変えていない（詳細な対応表・
+-- 走査回数の変化はmigrationファイルのコメント参照）。
+--
+-- 🔴 【統括レビューで訂正】ctx にも AS MATERIALIZED が必須。PostgreSQL 12以降は
+-- 「参照が1回だけ」かつ「volatile関数を含まない」非再帰CTEを既定でインライン展開
+-- する。ctx は accessible_projects からしか参照されず、中の関数もSTABLE（volatile
+-- ではない）ため、MATERIALIZEDが無いと既定でインライン展開され、展開後はprojectsの
+-- 行ごとに関数が再評価される（v3.80で実測・確定した挙動そのもの。Section 39）。
 DROP POLICY IF EXISTS "authenticated full access" ON members;
 DROP POLICY IF EXISTS "members_group" ON members;
 DROP POLICY IF EXISTS "members_select" ON members;
@@ -1018,55 +1037,57 @@ LANGUAGE sql
 SECURITY DEFINER STABLE
 SET search_path = ''
 AS $fn_visible_pj_members$
+  WITH ctx AS MATERIALIZED (
+    SELECT
+      public.current_member_group_ids() AS gids,
+      public.current_member_is_super_admin() AS is_super
+  ),
+  accessible_projects AS MATERIALIZED (
+    SELECT p.id, p.owner_member_id, p.owner_member_ids, p.member_ids
+    FROM public.projects p
+    CROSS JOIN ctx
+    WHERE p.is_deleted = false
+      AND (p.group_ids && ctx.gids OR ctx.is_super)
+  )
   SELECT coalesce(array_agg(DISTINCT mid), ARRAY[]::text[])
   FROM (
-    SELECT p.owner_member_id::text AS mid
-      FROM public.projects p
-      WHERE p.is_deleted = false
-        AND p.owner_member_id IS NOT NULL
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    -- 旧ブランチ1: owner_member_id（単数オーナー・互換目的のFK）
+    SELECT ap.owner_member_id::text AS mid
+      FROM accessible_projects ap
+      WHERE ap.owner_member_id IS NOT NULL
     UNION
-    SELECT unnest(p.owner_member_ids)::text
-      FROM public.projects p
-      WHERE p.is_deleted = false
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    -- 旧ブランチ2: owner_member_ids（複数オーナー対応）
+    SELECT unnest(ap.owner_member_ids)::text
+      FROM accessible_projects ap
     UNION
-    SELECT unnest(p.member_ids)::text
-      FROM public.projects p
-      WHERE p.is_deleted = false
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
+    -- 旧ブランチ3: member_ids（PJ関与者列）
+    SELECT unnest(ap.member_ids)::text
+      FROM accessible_projects ap
     UNION
-    SELECT t.assignee_member_id::text
+    -- 旧ブランチ4+5統合: project_id直接紐づきタスクの担当者（単数・複数を1回の走査で）
+    SELECT unnest(
+             t.assignee_member_ids::text[]
+             || CASE WHEN t.assignee_member_id IS NOT NULL
+                       THEN ARRAY[t.assignee_member_id::text]
+                       ELSE ARRAY[]::text[]
+                  END
+           ) AS mid
       FROM public.tasks t
-      JOIN public.projects p ON p.id = t.project_id
+      JOIN accessible_projects ap ON ap.id = t.project_id
       WHERE t.is_deleted = false
-        AND p.is_deleted = false
-        AND t.assignee_member_id IS NOT NULL
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
     UNION
-    SELECT unnest(t.assignee_member_ids)::text
-      FROM public.tasks t
-      JOIN public.projects p ON p.id = t.project_id
-      WHERE t.is_deleted = false
-        AND p.is_deleted = false
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
-    UNION
-    SELECT t.assignee_member_id::text
-      FROM public.tasks t
-      JOIN public.task_projects tp ON tp.task_id = t.id
-      JOIN public.projects p ON p.id = tp.project_id
-      WHERE t.is_deleted = false
-        AND p.is_deleted = false
-        AND t.assignee_member_id IS NOT NULL
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
-    UNION
-    SELECT unnest(t.assignee_member_ids)::text
+    -- 旧ブランチ6+7統合: task_projects経由タスクの担当者（単数・複数を1回の走査で）
+    SELECT unnest(
+             t.assignee_member_ids::text[]
+             || CASE WHEN t.assignee_member_id IS NOT NULL
+                       THEN ARRAY[t.assignee_member_id::text]
+                       ELSE ARRAY[]::text[]
+                  END
+           ) AS mid
       FROM public.tasks t
       JOIN public.task_projects tp ON tp.task_id = t.id
-      JOIN public.projects p ON p.id = tp.project_id
+      JOIN accessible_projects ap ON ap.id = tp.project_id
       WHERE t.is_deleted = false
-        AND p.is_deleted = false
-        AND (p.group_ids && public.current_member_group_ids() OR public.current_member_is_super_admin())
   ) x
   WHERE mid IS NOT NULL
 $fn_visible_pj_members$;

@@ -6045,5 +6045,44 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     CLAUDE.md Section 38・39参照）。
 #   詳細はCLAUDE.md Section 22・38・39参照。
 #
-# 最終更新：2026-08-19（v3.80）
+# v3.81（2026-08-19）：visible_project_member_ids() の中身を軽くする
+#   背景：v3.80でmembersのRLS内の関数呼び出しを(SELECT ...)で包みInitPlan化した後、
+#     本番・招待受諾者アカウントのEXPLAIN (ANALYZE, BUFFERS)で、
+#     visible_project_member_ids()自体が「クエリ全体で1回しか呼ばれていない」のに
+#     53.9ms・shared hit=730かかっていることが判明した（呼び出し回数ではなく
+#     関数の中身が重い）。旧実装は8ブランチ（実際に数えると7ブランチ）のUNIONで、
+#     各ブランチが独立にprojects（一部はtasksとのJOIN）を走査し、各ブランチの
+#     WHERE句の中でcurrent_member_group_ids()/current_member_is_super_admin()を
+#     呼んでいた（7ブランチ×2関数＝14回の呼び出し）。
+#   対応：`supabase/migrations/20260819d_optimize_visible_project_member_ids.sql`
+#     （新規。山本さんが手動適用）でvisible_project_member_ids()の本文を差し替えた。
+#     current_member_group_ids()/current_member_is_super_admin()をCTE（ctx）で
+#     1回だけ評価し、「自分がアクセスできる、削除されていないPJ」をCTE
+#     （accessible_projects。AS MATERIALIZEDを明示）で1回だけ作った。オーナー系
+#     3ブランチ（owner_member_id/owner_member_ids/member_ids）はそのCTEから取り、
+#     tasksの走査は「project_id直接」「task_projects経由」の2系統に絞って、各系統内の
+#     単数・複数担当者は配列結合してから1回unnestする形に統合した（旧4ブランチ→
+#     新2ブランチ）。返る集合は1要素も変えていない（旧7ブランチ→新実装の対応表を
+#     migrationファイルのコメントに明示）。関数名・シグネチャ・RLSポリシー
+#     （members_select）は無変更。`schema.sql`の同関数を同期した。
+#     走査回数：projectsの物理スキャン7回→1回、tasksの物理スキャン4回→2回、
+#     current_member_group_ids()/current_member_is_super_admin()の呼び出し
+#     14回→各1回。
+#   スキーマ検査：`src/lib/schema/schemaChecks.ts`に`kind:"function_body_contains"`の
+#     検査項目を1件追加（visible_project_member_ids_optimized_body。needleは新CTE
+#     経由のJOIN句`JOIN accessible_projects ap ON ap.id = t.project_id`）。
+#     `src/lib/schema/__tests__/functionBodyContainsNeedles.test.ts`にneedleの
+#     固定テストを追加（登録件数2件→3件）。
+#   検証：このリポジトリのテスト環境では実Postgresを起動できずSQL関数の集合演算
+#     そのものは単体テスト化できないため（consume_guest_ai_quotaと同型の制約）、
+#     無理な形だけのテストは書かず、migrationファイル内の対応表コメント＋
+#     山本さんが適用前後に同一クエリ（ソート済み配列で比較）を実行する監査手順で
+#     結果不変性を担保する方針にした。
+#   やらないこと：projects.group_idsへのGINインデックス追加（存在しないことは確認
+#     済み・効きうる見立てだが今回は追加しない）。task_dependenciesのRLS・
+#     projects_group/tasks_group/task_dependencies_groupのInitPlan化（Section 39で
+#     対応しないと記録済みの範囲）。マイグレーションの適用は山本さんが手動で行う。
+#   詳細はCLAUDE.md Section 40参照。
+#
+# 最終更新：2026-08-19（v3.81）
 

@@ -34,8 +34,8 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
     (c): c is Extract<typeof c, { kind: "function_body_contains" }> => c.kind === "function_body_contains",
   );
 
-  it("SCHEMA_HEALTH_CHECKSに2件登録されている（2026-08-17の棚卸し結果と一致）", () => {
-    expect(functionBodyChecks).toHaveLength(2);
+  it("SCHEMA_HEALTH_CHECKSに3件登録されている（2026-08-17の棚卸し結果2件＋v3.81で追加した1件）", () => {
+    expect(functionBodyChecks).toHaveLength(3);
   });
 
   it("accept_project_invite: needleは20260812（差し替え後）にのみ存在し、20260810（差し替え前）には存在しない", () => {
@@ -56,13 +56,30 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
     expect(after.includes(check!.needle)).toBe(true);
   });
 
-  it("needleは変数名・コメント文言だけの断片ではなく、実行される式そのものである（先頭が識別子+代入/比較演算子）", () => {
+  it("visible_project_member_ids: needleは20260819d（性能改善後）にのみ存在し、20260818（改善前の初出時点）には存在しない", () => {
+    const check = functionBodyChecks.find(c => c.name === "visible_project_member_ids");
+    expect(check).toBeDefined();
+    const before = readMigration("20260818_harden_invite_related_rls.sql");
+    const after = readMigration(check!.migration);
+    expect(before.includes(check!.needle)).toBe(false);
+    expect(after.includes(check!.needle)).toBe(true);
+  });
+
+  it("needleは変数名・コメント文言だけの断片ではなく、実行される式・SQL構文そのものである", () => {
     // 「変数名やコメント文言のような消えやすいものを目印にしない」（本タスクの要件）ことの
     // 最低限の機械的な裏付け。needleが `--` で始まるコメント行そのものでないこと・
-    // 代入(:=)または比較(=)演算子を含む実行文であることを確認する。
+    // 代入(:=)/比較(=)演算子を含む実行文、または実際に構文として解釈される
+    // SQLディレクティブ（例：`AS MATERIALIZED`。CTEのインライン展開を禁止する
+    // 実行時の挙動を左右する構文そのもの）のどちらかであることを確認する
+    // （2026-08-19・v3.81でMATERIALIZED系needleを追加した際に許容条件を拡張した。
+    // 単なる識別子・命名の一部だけを見ているわけではないことの担保として、
+    // 「MATERIALIZED」1語だけの一致は許さず、実際にCTE定義の一部として現れる
+    // 形（`<CTE名> AS MATERIALIZED`）を要求する）。
     for (const check of functionBodyChecks) {
       expect(check.needle.trim().startsWith("--")).toBe(false);
-      expect(/:=|=/.test(check.needle)).toBe(true);
+      const isAssignmentOrComparison = /:=|=/.test(check.needle);
+      const isMaterializedDirective = /\S+\s+AS\s+MATERIALIZED\b/.test(check.needle);
+      expect(isAssignmentOrComparison || isMaterializedDirective).toBe(true);
     }
   });
 });

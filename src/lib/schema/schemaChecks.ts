@@ -373,4 +373,25 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "タスクの複数担当者列（tasks.assignee_member_ids）の型がtext[]ではありません",
     migration: "20260420_add_task_assignee_member_ids.sql",
   },
+  // 【2026-08-19・v3.81】visible_project_member_ids()の本文差し替え（性能改善。
+  // CLAUDE.md Section 33のfn_visible_project_member_ids（kind:"function"）は関数の
+  // 存在有無しか見ないため、20260818時点の重い実装のまま残っていても検知できない。
+  // 【needle選定・統括レビューで訂正】当初は`JOIN accessible_projects ap ON ap.id = t.project_id`
+  // を選んでいたが、統括の指摘どおりエイリアス名（ap）を変えるだけのリファクタで
+  // 検知が壊れる脆さがあった。`accessible_projects AS MATERIALIZED`に選び直した。
+  // 単なる命名ではなく、この最適化の**性能特性そのもの**を担う構文
+  // （PostgreSQLの「非再帰CTEは参照が1回だけかつvolatile関数を含まなければ既定で
+  // インライン展開する」という挙動を明示的に禁止するディレクティブ。これが無いと
+  // ctx/accessible_projectsが展開され、v3.80で実測・確定した「行ごとに関数が
+  // 再評価される」問題が関数内部で再発する）であり、これが消える＝再検証が必要な
+  // 変更、という対応が取れる。旧実装（20260818時点）にはCTE自体が存在しないため
+  // この文字列は登場しない。
+  {
+    id: "visible_project_member_ids_optimized_body",
+    kind: "function_body_contains",
+    name: "visible_project_member_ids",
+    needle: "accessible_projects AS MATERIALIZED",
+    label: "プロジェクト招待：visible_project_member_ids()の性能改善（走査回数の削減）が適用されていません",
+    migration: "20260819d_optimize_visible_project_member_ids.sql",
+  },
 ];
