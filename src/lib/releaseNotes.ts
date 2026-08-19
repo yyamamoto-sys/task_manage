@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.79",
+    date: "2026-08-19",
+    title: "PDFを添付したときに失敗しにくくなりました",
+    highlights: [
+      "OKR取込・会議取込の画面でPDFを添付したときに、まれに失敗していた不具合を修正しました",
+      "PDFの内容がうまく読み取れなかった場合は、自動的に別の方法で読み込み直すようにしました（操作は不要です）",
+    ],
+  },
+  {
     version: "v3.78",
     date: "2026-08-18",
     title: "招待を受けた方が取りこぼされていた3箇所を修正",

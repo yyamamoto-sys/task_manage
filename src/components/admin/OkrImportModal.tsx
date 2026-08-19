@@ -3,8 +3,11 @@
 // 【設計意図】
 // Kintoneで記録したOKR（Objective/KR/TF）のPDF・テキストをAIに読み込ませ、
 // 構造抽出→人が確認・編集→登録する取込フロー。
-// meeting/MeetingImportPanel.tsx と同じ作法（PDFはdocumentブロックで添付・
-// 抽出→プレビュー→確認登録のHuman-in-the-loop）を踏襲する。
+// 抽出→プレビュー→確認登録のHuman-in-the-loopを踏襲する。
+// 【v3.79】PDFはFileAttachButton.tsxと同じくクライアント側でテキスト抽出してから軽量な
+// テキスト添付として渡す（lib/pdfAttachment.ts経由。CLAUDE.md Section 19 ⑦・27・28）。
+// 抽出結果が空・抽出自体が失敗した場合は自動でbase64直送（documentブロック）に
+// フォールバックする（Section 27・28の教訓を踏まえた安全網）。
 //
 // 既存OKRとの二重登録を避けるため、登録先を
 // 「新しい期のObjectiveとして作成」（既定）／「既存のObjectiveに追記」から選ばせる。
@@ -138,17 +141,17 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
   const handleFile = useCallback((file: File) => {
     setFileError(null);
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    // PDF：クライアント側でテキスト抽出してから軽量なテキスト添付として渡す（CLAUDE.md
+    // Section 19 ⑦・27・v3.79）。抽出結果が空・抽出自体が失敗した場合は
+    // buildPdfAttachment内で自動的に従来のbase64直送へフォールバックする（Section 28）。
+    // ただしテキスト層が無く、かつ PDF_BASE64_FALLBACK_MAX_BYTES を超える場合は例外を投げる
+    // （546を踏ませず、次にすべきことが分かる文言を出すため。v3.79・Section 37）。
+    // したがってfileErrorになるのは「サイズ超過」と「base64の読み込み自体の失敗」の2通り。
     if (ext === "pdf" || file.type === "application/pdf") {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const dataUrl = (e.target?.result as string) ?? "";
-        const base64 = dataUrl.split(",")[1] ?? "";
-        if (!base64) { setFileError("PDFの読み込みに失敗しました。"); return; }
-        setPdfAttachment({ fileName: file.name, mediaType: "application/pdf", data: base64, isText: false });
-        setRawText("");
-      };
-      reader.onerror = () => setFileError("PDFの読み込みに失敗しました。");
-      reader.readAsDataURL(file);
+      import("../../lib/pdfAttachment")
+        .then(({ buildPdfAttachment }) => buildPdfAttachment(file))
+        .then(att => { setPdfAttachment(att); setRawText(""); })
+        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました。"));
       return;
     }
     if (isDocxFile(file)) {
@@ -499,7 +502,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "var(--color-bg-purple, #ede9fe)", border: "1px solid var(--color-border-purple, #ddd6fe)", borderRadius: "var(--radius-md)", fontSize: "12px" }}>
                   <span>📑</span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }}>{pdfAttachment.fileName}</span>
-                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFをそのままAIに渡します</span>
+                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFを読み込みました</span>
                   <button onClick={() => setPdfAttachment(null)} title="添付を解除" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: "13px", padding: 0, lineHeight: 1 }}>✕</button>
                 </div>
               )}

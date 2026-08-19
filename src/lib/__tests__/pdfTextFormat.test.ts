@@ -11,6 +11,9 @@ import {
   normalizePdfText,
   pageItemsToText,
   PDF_EMPTY_TEXT_MESSAGE,
+  PDF_TOO_LARGE_MESSAGE,
+  PDF_BASE64_FALLBACK_MAX_BYTES,
+  resolvePdfFallbackSource,
 } from "../pdfTextFormat";
 
 describe("isPdfFile", () => {
@@ -105,5 +108,44 @@ describe("PDF_EMPTY_TEXT_MESSAGE", () => {
   it("次に何をすればよいかが分かる文言になっている", () => {
     expect(PDF_EMPTY_TEXT_MESSAGE).toContain("読み取れませんでした");
     expect(PDF_EMPTY_TEXT_MESSAGE).toContain("貼り付けて");
+  });
+});
+
+describe("resolvePdfFallbackSource（v3.79：PDF取込のフォールバック判定・サイズの歯止め込み）", () => {
+  const SMALL = 1024; // 1KB。閾値を大きく下回る
+  const OVER = PDF_BASE64_FALLBACK_MAX_BYTES + 1;
+  const EXACT = PDF_BASE64_FALLBACK_MAX_BYTES;
+
+  it("抽出成功（通常のテキストが取れた）場合は、ファイルサイズを問わず text", () => {
+    expect(resolvePdfFallbackSource("個人KR_1 ウェイト35%", SMALL)).toBe("text");
+    expect(resolvePdfFallbackSource("個人KR_1 ウェイト35%", OVER)).toBe("text");
+  });
+
+  it("抽出失敗（空文字）かつ小さいファイルは base64（フォールバック）", () => {
+    expect(resolvePdfFallbackSource("", SMALL)).toBe("base64");
+  });
+
+  it("抽出失敗（空白と改行だけ）かつ小さいファイルは base64（フォールバック。スキャン画像PDF等）", () => {
+    expect(resolvePdfFallbackSource("   \n\n\t  ", SMALL)).toBe("base64");
+  });
+
+  it("抽出自体が例外を投げた場合（呼び出し側がnullを渡す）かつ小さいファイルは base64（フォールバック）", () => {
+    expect(resolvePdfFallbackSource(null, SMALL)).toBe("base64");
+  });
+
+  it("抽出失敗かつ閾値ちょうどは base64（境界は超過側だけをtoo-largeにする）", () => {
+    expect(resolvePdfFallbackSource(null, EXACT)).toBe("base64");
+  });
+
+  it("抽出失敗かつ閾値超過は too-large（base64直送しない）", () => {
+    expect(resolvePdfFallbackSource(null, OVER)).toBe("too-large");
+    expect(resolvePdfFallbackSource("", OVER)).toBe("too-large");
+  });
+});
+
+describe("PDF_TOO_LARGE_MESSAGE", () => {
+  it("次に何をすればよいかが分かる文言になっている", () => {
+    expect(PDF_TOO_LARGE_MESSAGE).toContain("読み込めませんでした");
+    expect(PDF_TOO_LARGE_MESSAGE).toContain("貼り付けて");
   });
 });

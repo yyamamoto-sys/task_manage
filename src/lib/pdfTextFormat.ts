@@ -23,6 +23,57 @@ export function isBlankExtractedText(text: string): boolean {
 export const PDF_EMPTY_TEXT_MESSAGE =
   "このPDFからは文字を読み取れませんでした。テキストを貼り付けてお試しください。";
 
+/**
+ * 【v3.79・base64フォールバックのサイズ上限（統括レビューで追加）】
+ * base64直送そのものが546 WORKER_RESOURCE_LIMITの原因だった実績（670KBのPDF→約894KB。
+ * CLAUDE.md Section 19 ⑦）があるため、フォールバック先のbase64直送にも歯止めが要る。
+ * 歯止めが無いと「テキスト層の無いPDFを添付→抽出失敗→大きいままbase64直送→546で原因不明の
+ * 失敗」という、直しているはずが後退した状態になる（旧FileAttachButton.tsxのalertは
+ * 「読み取れませんでした」という分かりやすい失敗だった。それを分かりにくい546に置き換えては
+ * いけない）。
+ *
+ * 【閾値の根拠】670KBは「実際に落ちた値」であり「安全な上限」ではないため、その値自体を
+ * 閾値にはしない。670KBの実に3割弱（十分な安全マージン）にあたる200KB（204800バイト）を
+ * 閾値とする。670KBはPDF単体のサイズで、base64化すると約1.34倍（894KB）に膨らむ実績と、
+ * Edge Function側にはこの他にもプロンプト本文・システムプロンプト等が同時に載ることを踏まえ、
+ * 余裕を持って低めに倒した。
+ */
+export const PDF_BASE64_FALLBACK_MAX_BYTES = 200 * 1024; // 200KB
+
+/** サイズの歯止めに引っかかったときにユーザーへ示す案内文（次に何をすればよいかが分かる形）。 */
+export const PDF_TOO_LARGE_MESSAGE =
+  "このPDFは文字を読み取れず、かつサイズが大きいため読み込めませんでした。" +
+  "文字を選択できる状態で保存し直すか、内容をコピーしてテキスト欄に貼り付けてお試しください。";
+
+/**
+ * 【v3.79・PDF取込のクライアント側テキスト抽出フォールバック判定（純粋関数）】
+ * PDFのテキスト抽出結果を実際にAIへ送るテキスト添付として使うか、従来のbase64直送
+ * （PDFをdocumentブロックとしてそのままAIに読ませる経路）にフォールバックするか、
+ * それとも（base64直送すら546の危険域に入るほど大きいため）読み込みを諦めるかを判定する。
+ *
+ * 抽出結果を使わずbase64にフォールバックする条件（CLAUDE.md Section 27・28・v3.79）：
+ * - 抽出自体が例外を投げた場合（呼び出し側が catch した結果を `null` として渡す）
+ * - 抽出はできたが結果が空文字・空白/改行のみの場合（スキャン画像のみのPDF等。テキスト層が
+ *   無い将来のキャプチャ由来PDFを想定した安全網。isBlankExtractedTextをそのまま再利用する）
+ *
+ * ただし上記に該当してもファイルサイズが`PDF_BASE64_FALLBACK_MAX_BYTES`を超える場合は
+ * `"too-large"`を返し、base64直送はしない（546を「分かりにくい失敗」として踏むより、
+ * 「次に何をすればよいか」が分かる明示的な失敗にする）。抽出に成功した（テキストが使える）
+ * 場合はサイズを問わず`"text"`——base64を一切送らないため546のリスク自体が無い。
+ *
+ * 山本さんに確認済みの前提は「取り込むPDFはブラウザの印刷機能で作られるためテキスト層が残る」
+ * だが、将来キャプチャ由来のPDF（テキスト層なし）が混ざる可能性を潰すため、後退リスクを
+ * ゼロにする安全網としてこの判定を挟む（Kintone取込の「決定的パーサ→AIフォールバック」
+ * ＝Section 24 Step Kと同じ考え方）。
+ */
+export function resolvePdfFallbackSource(
+  extractedText: string | null,
+  fileSizeBytes: number,
+): "text" | "base64" | "too-large" {
+  if (extractedText !== null && !isBlankExtractedText(extractedText)) return "text";
+  return fileSizeBytes > PDF_BASE64_FALLBACK_MAX_BYTES ? "too-large" : "base64";
+}
+
 interface PdfTextItemLike {
   str: string;
   hasEOL: boolean;

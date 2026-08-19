@@ -5954,5 +5954,34 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     無改修（確認済み）。
 #   DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-17（v3.74）
+# v3.79（2026-08-19）：PDF取込をクライアント側テキスト抽出に統一
+#   背景：Section 19 ⑦・27で「既知の未解消リスク」として記録していた、PDFをbase64の
+#   documentブロックとして直接Edge Functionへ送る経路（546 WORKER_RESOURCE_LIMITを踏む
+#   可能性を抱えたまま）が実際に何画面残っているかを調査し、他画面と同じ「クライアント側
+#   テキスト抽出→テキストを送る」方式に統一した。
+#   調査結果：診断どおり2画面（`OkrImportModal.tsx`＝グループOKR取込・
+#     `MeetingImportPanel.tsx`＝会議文字起こし取込）がbase64直送のまま残っていた。
+#     既に移行済みだったのは`FileAttachButton.tsx`（v3.45）経由の5画面
+#     （KrJointSessionFlow/KrQuarterPlanPanel/KrReportPanel/KrWhyPanel/
+#     PersonalOkrImportModal）。
+#   変更：`src/lib/pdfTextFormat.ts`に純粋関数`resolvePdfFallbackSource()`を追加（抽出結果を
+#     使うか従来のbase64直送にフォールバックするかの判定。既存の`isBlankExtractedText`を
+#     再利用）。新規`src/lib/pdfAttachment.ts`の`buildPdfAttachment()`が、抽出（動的import・
+#     Section 19）→判定→base64読み直し、を1つの入口にまとめた。`FileAttachButton.tsx`・
+#     `OkrImportModal.tsx`・`MeetingImportPanel.tsx`の3箇所をこの入口経由に統一した
+#     （前者2つはbase64直送コードを置き換え、`FileAttachButton.tsx`も抽出失敗時の挙動を
+#     「アラートで終わる」から「自動フォールバック」に底上げした）。
+#   フォールバックを残す理由：取り込むPDFはブラウザの印刷機能で作られる想定でテキスト層が
+#     残るが、将来キャプチャ由来のPDF（テキスト層なし）が混ざる可能性があるための安全網
+#     （Section 24 Step Kの「決定的パーサ→AIフォールバック」と同じ考え方）。
+#   AIに渡る情報の意味は経路によらず不変：`buildMessageContent()`（invokeAI.ts）が
+#     `attachment.isText`の真偽だけでテキスト追記／documentブロックを自動判定するため、
+#     呼び出し元のプロンプト組み立てコードは無改修。
+#   意味が変わるため実装を見送った経路：無し（調査の結果、図表そのものをAIに見せる必要が
+#     ある経路は見つからなかった）。
+#   max_tokensは変更なし（`okrImportExtractor.ts`は既に8192・`meetingExtractor.ts`は4096で
+#     どちらもSection 6-1cの基準内）。
+#   詳細はCLAUDE.md Section 37参照。DBスキーマ変更：なし。
+#
+# 最終更新：2026-08-19（v3.79）
 

@@ -43,13 +43,19 @@ function processFileAttachment(file: File, onAttach: (att: FileAttachment) => vo
   // PDF：base64のdocumentブロックとしてAI（Edge Function）に送ると、大きなPDFでワーカーが
   // リソース上限で落ちる事故が起きたため（CLAUDE.md Section 19）、.docx/.htmlと同じく
   // クライアント側でテキスト抽出してからテキスト添付として渡す。isPdfFile自体は
-  // pdfTextFormat.tsの純粋関数（pdfjs-dist非依存）で判定し、実際の抽出処理（pdfjs-distを
-  // 抱えるlib/pdfText.ts）はPDFと判定できたときだけ動的importする（Section 19。PDFを
-  // 一度も添付しない人がこのチャンクをダウンロードしないようにするのが肝）。
+  // pdfTextFormat.tsの純粋関数（pdfjs-dist非依存）で判定し、実際の抽出処理・フォールバック
+  // 判定（v3.79・pdfjs-distを抱えるlib/pdfAttachment.ts経由）はPDFと判定できたときだけ
+  // 動的importする（Section 19。PDFを一度も添付しない人がこのチャンクをダウンロードしない
+  // ようにするのが肝）。抽出結果が空・抽出自体が失敗した場合は自動でbase64直送に
+  // フォールバックする（buildPdfAttachment内で判定。Section 27・28参照）。
+  // ただしテキスト層が無く、かつ PDF_BASE64_FALLBACK_MAX_BYTES を超える場合は
+  // base64へ落とさず例外を投げる（546を踏ませず、次にすべきことが分かる文言を出すため。
+  // v3.79・Section 37）。したがってここでalertが出るのは「サイズ超過」と
+  // 「base64の読み込み自体の失敗」の2通り。どちらも e.message をそのまま見せる。
   if (isPdfFile(file)) {
-    import("../../lib/pdfText")
-      .then(({ extractPdfText }) => extractPdfText(file))
-      .then(text => onAttach({ fileName: file.name, mediaType: "text/plain", data: text, isText: true }))
+    import("../../lib/pdfAttachment")
+      .then(({ buildPdfAttachment }) => buildPdfAttachment(file))
+      .then(onAttach)
       .catch((e: unknown) => alert(e instanceof Error ? e.message : tOutside("common.fileAttach.pdfFailed")));
     return;
   }

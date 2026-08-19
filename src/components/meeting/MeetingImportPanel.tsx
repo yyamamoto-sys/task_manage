@@ -114,7 +114,9 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const fileInputRef = useRef<HTMLInputElement>(null) as React.RefObject<HTMLInputElement>;
   const dropAreaRef = useRef<HTMLDivElement>(null) as React.RefObject<HTMLDivElement>;
   const [isDragging, setIsDragging] = useState(false);
-  // PDF はテキスト化せずそのまま AI に添付して渡す（Claude が読める）。Word(.docx) はテキスト抽出して rawText に入れる。
+  // PDF はクライアント側でテキスト抽出してから軽量なテキスト添付として渡す（v3.79。
+  // 抽出できない場合はbuildPdfAttachment内で自動的にbase64直送へフォールバックする。
+  // CLAUDE.md Section 19 ⑦・27・28参照）。Word(.docx) はテキスト抽出して rawText に入れる。
   const [pdfAttachment, setPdfAttachment] = useState<FileAttachment | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -123,18 +125,17 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const handleFile = useCallback((file: File) => {
     setFileError(null);
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    // PDF：添付として保持（テキスト化しない）
+    // PDF：クライアント側でテキスト抽出してから軽量なテキスト添付として渡す（v3.79。
+    // 抽出結果が空・抽出自体が失敗した場合はbuildPdfAttachment内で自動的にbase64直送へ
+    // フォールバックする。ただしテキスト層が無く、かつ PDF_BASE64_FALLBACK_MAX_BYTES を
+    // 超える場合は例外を投げる（546を踏ませず、次にすべきことが分かる文言を出すため。
+    // v3.79・Section 37）。したがってfileErrorになるのは「サイズ超過」と「base64の
+    // 読み込み自体の失敗」の2通り。CLAUDE.md Section 19 ⑦・27・28・37参照）
     if (ext === "pdf" || file.type === "application/pdf") {
-      const reader = new FileReader();
-      reader.onload = e => {
-        const dataUrl = (e.target?.result as string) ?? "";
-        const base64 = dataUrl.split(",")[1] ?? "";
-        if (!base64) { setFileError("PDFの読み込みに失敗しました。"); return; }
-        setPdfAttachment({ fileName: file.name, mediaType: "application/pdf", data: base64, isText: false });
-        setRawText("");
-      };
-      reader.onerror = () => setFileError("PDFの読み込みに失敗しました。");
-      reader.readAsDataURL(file);
+      import("../../lib/pdfAttachment")
+        .then(({ buildPdfAttachment }) => buildPdfAttachment(file))
+        .then(att => { setPdfAttachment(att); setRawText(""); })
+        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました。"));
       return;
     }
     // Word(.docx)：本文テキストを抽出
@@ -610,7 +611,7 @@ function InputStep({
         <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "var(--color-bg-purple, #ede9fe)", border: "1px solid var(--color-border-purple, #ddd6fe)", borderRadius: "var(--radius-md)", fontSize: "12px" }}>
           <span>📑</span>
           <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }}>{pdfAttachment.fileName}</span>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFをそのままAIに渡します</span>
+          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFを読み込みました</span>
           <button onClick={onRemovePdf} title="添付を解除" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: "13px", padding: 0, lineHeight: 1 }}>✕</button>
         </div>
       )}
