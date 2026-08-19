@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.79
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.80
 #
-最終更新：2026-08-19（v3.79）
+最終更新：2026-08-19（v3.80）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1200,7 +1200,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-19（v3.79）
+- 最終更新：2026-08-19（v3.80）
 
 ---
 
@@ -1796,8 +1796,10 @@ v3.34で単一state化した直後は、`activeLabView` が切り替わっても
 ```
 
 - **検査項目は `src/lib/schema/schemaChecks.ts` に宣言的な配列として持つ**（SQL側にハードコードしない）。理由：SQL側に埋め込むと項目を追加するたびに新しいマイグレーションが必要になり、この仕組み自体が必ず形骸化する。TS側の配列に1行足すだけで済むようにしてある。
-- 各項目は `{ kind, table/column/needle/name, label, migration }` の形（`kind` は `"table"` / `"column"` / `"check_contains"` / `"function"`）。`migration` は該当マイグレファイル名で、実在することを `src/lib/schema/__tests__/schemaChecks.test.ts` が機械的に検査する（存在しないファイル名を書くとテストが落ちる）。
-- 実際の問い合わせは汎用RPC `check_schema_health(p_checks jsonb)`（`supabase/migrations/20260806_add_schema_health_check.sql`）。**動的SQL（EXECUTE）は使わず**、`pg_catalog`/`information_schema` へのパラメータ化された参照だけで判定する。呼び出せるのは部署管理者・全社スーパー管理者のみ（それ以外は例外ではなく静かに空配列を返す）。
+- 各項目は `{ kind, table/column/needle/name/udt, label, migration }` の形（`kind` は `"table"` / `"column"` / `"check_contains"` / `"function"` / `"function_body_contains"` / `"column_type"`）。`migration` は該当マイグレファイル名で、実在することを `src/lib/schema/__tests__/schemaChecks.test.ts` が機械的に検査する（存在しないファイル名を書くとテストが落ちる）。
+- 実際の問い合わせは汎用RPC `check_schema_health(p_checks jsonb)`（`supabase/migrations/20260806_add_schema_health_check.sql`。`function_body_contains`／`column_type`はv3.80・`20260819_add_schema_health_function_body_and_column_type_check.sql`で追加）。**動的SQL（EXECUTE）は使わず**、`pg_catalog`/`information_schema` へのパラメータ化された参照だけで判定する。呼び出せるのは部署管理者・全社スーパー管理者のみ（それ以外は例外ではなく静かに空配列を返す）。
+- **`kind:"function_body_contains"`（v3.80）**：関数の名前・引数を変えず本文（中身）だけを差し替えるマイグレーションは、`kind:"function"`（`pg_proc`に同名関数が存在するかしか見ない）では適用漏れを検知できない（Section 25 Phase 5・33で発見された既知の限界。v3.80で解消）。この場合は`pg_get_functiondef()`で関数定義全文を取得し、`position()`でneedle（そのマイグレーションでしか登場しない実行文の断片）を含むか判定する`kind:"function_body_contains"`を使う。**needleは変数名・コメント文言のような消えやすいものを選ばない**（将来のリファクタで名前だけ変わって検知が壊れるため）。そのマイグレーションの核心的な振る舞い（消せば機能が壊れる実行文）を選ぶこと。Section 38参照。
+- **`kind:"column_type"`（v3.80）**：列は存在するが宣言と実際の型がずれる事故（2026-08-18、`projects.owner_member_ids`の実DBが`uuid[]`のまま宣言の`text[]`からドリフトしていた。v3.75の適用が「UNION types text and uuid cannot be matched」で2回失敗した実際の原因）は、`kind:"column"`（列の存在有無しか見ない）では検知できない。`information_schema.columns.udt_name`（配列型は`"_text"`/`"_uuid"`のように先頭にアンダースコアが付く内部表記）で判定する。Section 38参照。
 - クライアント側（`src/components/common/SchemaHealthBanner.tsx`、`src/App.tsx` から admin にのみマウント）は起動時に1回だけ非ブロッキングで呼び、欠落があれば控えめな警告バナー（赤一色ではない warning トーン）を出す。**閉じても次回読み込み時にはまた表示される**（localStorageで永久に黙らせない。今回のように2週間放置されるのを防ぐため）。
 - **スキーマを自動修正しない**（検知して知らせるだけ。Human in the loop）。
 - RPC自体が未適用（この仕組み自体のマイグレが未適用）のときは、黙って無効化せず「検査を実行できません」を出す（Section 19 のDL確認ゲートが黙って無効化されうる件と同じ轍を踏まないため）。
@@ -2265,7 +2267,7 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
   - **`group_ids`追加は新しい抜け道を作らない**：`create_project_invite()`が発行者本人・PJオーナーに兼務を付与するときと全く同じ`app.allow_invite_group_grant`セッション変数の仕組み（migrations/20260810_add_project_invites.sql ブロック3）にそのまま乗せる。
   - 既に招待用部署を持っている場合は何もせず冪等に成功させる（同じPJへの2回目の招待受諾でも重複しない）。
   - ドル引用タグは`$fn_accept_project_invite$`のまま（関数名・シグネチャを変えないため）。
-- **🔴 スキーマ検査（`schemaChecks.ts`）で検知できない変更**：`kind:"function"`は`pg_proc`に同名関数が存在するかしか見ない（`check_schema_health` RPC・`20260806_add_schema_health_check.sql`参照）。今回は`accept_project_invite()`の名前・引数を変えず**本文だけ**を差し替えるため、このマイグレーションが未適用でも既存の検査項目（`fn_accept_project_invite`）は「存在する」と判定され続け、適用漏れを検知できない。**関数の本文差し替え系マイグレーションは、この仕組みでは原理的に検知不能**（新しい検査手段が無い限り、適用状況は山本さんの手動確認に依存する）。
+- **✅ スキーマ検査（`schemaChecks.ts`）の既知の限界はv3.80で解消済み（旧記録）**：`kind:"function"`は`pg_proc`に同名関数が存在するかしか見ない（`check_schema_health` RPC・`20260806_add_schema_health_check.sql`参照）。ここでは`accept_project_invite()`の名前・引数を変えず**本文だけ**を差し替えるため、当時はこのマイグレーションが未適用でも既存の検査項目（`fn_accept_project_invite`）が「存在する」と判定され続け、適用漏れを検知できなかった。**v3.80で`kind:"function_body_contains"`（関数定義全文にneedleを含むかで判定）を新設し、この経路も検知できるようになった**（詳細はSection 22・38）。
 - **ログイン済みの受諾入口を2つ追加**：
   1. **招待リンク（`?invite=<code>`）をログイン済みでも拾う**：`App.tsx`の`AuthenticatedApp`に、`currentUser`が確定した後にURLの招待コードを拾い直すuseEffectを追加した（既存の②自動受諾＝`pendingProjectInvite`はcurrentUserが未確定の間だけ動く経路で、既存メンバーには届かない）。`confirmDialog()`（`window.confirm`ではない。`src/lib/dialog.ts`）で「招待を受け入れて、このプロジェクトに参加しますか？」を確認し、承諾なら`acceptProjectInvite()`を呼んで`window.location.reload()`する。結果（承諾・キャンセル・失敗）に関わらず`history.replaceState`でURLからinviteパラメータを外し、再訪問・再読み込みで同じ確認が繰り返されないようにする。判定・ペイロード組み立て・URL加工は`src/lib/projectInvite/loggedInInviteFlow.ts`の純粋関数（`shouldPromptLoggedInInviteAccept`/`buildAcceptPayloadForExistingMember`/`stripInviteParamFromUrl`）に切り出しテストした。
   2. **手入力の入口（`src/components/project/AcceptInviteModal.tsx`）**：サイドバー（デスクトップ：設定＝歯車ボタンの直下に「🎫 招待コードを入力」。モバイル：ヘッダーが密集しているため「🧪 ラボ」ボトムシートの項目として追加）から開く。表示名・略称の入力欄は出さない（サーバー側の既存メンバー分岐が上書きしないため無意味）。**AdminViewの「プロジェクト招待」タブには置かなかった**：AdminView全体が部署管理者限定のガード（`canAccessAdmin`）を持ち、招待コードを持つ人は管理者かどうかに関わらず受け入れられる必要があるため、この入口はAdminViewの外に置いた。
@@ -2436,6 +2438,7 @@ v3.47（2026-08-11・`20260810c_extend_members_visibility_for_invites.sql`）で
 - **方針**：兼務（`group_ids`）を増やす方式は採らない（書き込みスコープが広がる・「表示部署」切替の副作用が出る・既存メンバーの`group_ids`を大量に書き換えることになるため）。代わりに**`members`のSELECTポリシーにだけ**4条項目を追加した：`OR id = ANY(public.visible_project_member_ids())`。**書き込み側には一切追加していない**（可視性の緩和が書き込み認可も兼ねる、という今回の事故と同型の誤りを繰り返さないため）。
 - **新設ヘルパー`visible_project_member_ids()`**（引数無し・SECURITY DEFINER・STABLE。`current_member_group_ids()`等の既存3ヘルパーと同じ流儀）：「自分がアクセスできるPJ」に参加しているメンバーidの配列を返す。「参加しているメンバー」の定義は`src/lib/project/projectMembers.ts`の`computeProjectMembers()`の実際の呼び出し元（`ProjectSettingsModal.tsx`）と`ProjectKarte.tsx`の`pjAllMembers`（"AI分析に渡す「このPJに関わる全員」＝オーナー＋メンバー＋タスク担当者の和集合"というコメントがそのまま定義）で共通する集合に揃えた：owner_member_id（互換目的の単数）／owner_member_ids（複数オーナー）／`projects.member_ids`（PJの関与者列。**この列自体は`supabase/schema.sql`への反映が漏れていたドリフトだったため今回追記した**）／そのPJに紐づくタスクの`assignee_member_id`・`assignee_member_ids`（project_id直接紐づき＋task_projects経由の追加PJ紐づけの両方）。`is_deleted=false`のPJ・タスクのみ対象。
 - **性能**：引数を取らない関数にしたため、PostgreSQLはクエリ全体で1回だけ評価するuncorrelated subplanとして実行できる（members行数分ではなく1回だけprojects×tasksを辿る）。仮に「メンバーidを引数に取りEXISTSで判定する」形にすると、members行ごとに相関実行され不利になる。関数内部はUNIONで集合を作り（EXISTSではない）、JOINは必要な2経路（project_id直接／task_projects経由）だけにとどめた。`can_access_group_ids()`は呼ばず`(p.group_ids && current_member_group_ids() OR current_member_is_super_admin())`をインライン展開している（`schema.sql`では`can_access_group_ids()`自体の定義がmembersのRLS群より後方にあるため前方参照エラーになる。`visible_invite_group_ids()`の先例に倣った）。
+  - 🔴 **【2026-08-19・v3.80で訂正】上記の「クエリ全体で1回だけ評価するuncorrelated subplanとして実行できる」という記述は誤りだった。** 実測（本番・招待受諾者アカウント）で`EXPLAIN (ANALYZE, BUFFERS)`を取ったところ、`members`（21行）へのSELECTが`shared hit=6504`・`Execution Time 76.085ms`という異常値になっており、引数無しのSTABLE/SECURITY DEFINER関数であってもRLSのWHERE句に直接書くとPostgreSQLは行ごとに評価することが判明した。**関数呼び出しを`(SELECT ...)`で包まない限りInitPlan化されない。** 是正版はv3.80・`20260819c_optimize_members_rls_initplan.sql`。詳細・グランドルール化はSection 39参照。
 - **意図的に受け入れる副作用**：部署をまたぐPJでは、他部署のメンバー同士も相互に見えるようになる（同じPJの参加者に限る）。「部署間の素の可視性は広げない」という既存の設計原則からの意図的な緩和（山本さん承認済み）。PJを共有しない他部署のメンバーは引き続き見えない。
 - **Section 25 Phase 4「可視性の非対称」は本changeで解消**（該当箇所を書き換え済み）。発行者・PJオーナーへの兼務付与自体（(a)の切替UI抑制のため）は残るが、メンバー可視性としての非対称は解消された。
 - **フロント側の追加変更は不要と確認済み**：`ProjectSettingsModal`の「関わるメンバー」タブ・サイドバーPJ行「⋮」メニューの「⚙ このPJの設定」は、どちらも権限ガード（`isGuest`以外）を持たず、招待受諾者（実アカウント）は元々到達できる。`members`が見えるようになったことで`computeProjectMembers()`・担当者アイコンは自動的に正しく動く。
@@ -2448,7 +2451,7 @@ v3.47（2026-08-11・`20260810c_extend_members_visibility_for_invites.sql`）で
 
 ### 検知できないこと（schemaChecksの既知の限界）
 
-`guard_member_privilege_columns`は本文だけを差し替える関数のため、`src/lib/schema/schemaChecks.ts`の`kind:"function"`では適用漏れを検知できない（`pg_proc`に同名関数が存在するかしか見ないため。Section 22・25 Phase 5参照）。`task_dependencies`のRLSポリシー変更も同様に、schemaChecksには「ポリシーの中身」を検査する種類（kind）が無いため検知できない。新設した3関数（`verify_project_group_ids`／`project_normal_group_ids`／`visible_project_member_ids`）は`kind:"function"`で追加済み。
+**✅ `guard_member_privilege_columns`の本文差し替えはv3.80で検知可能になった**（`src/lib/schema/schemaChecks.ts`の新kind`function_body_contains`。Section 22・38参照）。当時（v3.75時点）は本文だけを差し替える関数のため`kind:"function"`（`pg_proc`に同名関数が存在するかしか見ない）では適用漏れを検知できなかった（旧記録）。**`task_dependencies`のRLSポリシー変更は今もschemaChecksでは検知できない**（「ポリシーの中身」を検査する種類（kind）が無いため。v3.80のスコープ外）。新設した3関数（`verify_project_group_ids`／`project_normal_group_ids`／`visible_project_member_ids`）は`kind:"function"`で追加済み。
 
 ### 変えていないこと
 
@@ -2763,6 +2766,84 @@ Section 19 ⑦・27で「既知の未解消リスク」として記録してい�
 - `OkrImportModal.tsx`・`MeetingImportPanel.tsx`の他の機能（Word/テキスト読み込み・登録フロー等）は変更していない。
 - Edge Function側（`supabase/functions/ai-consult/index.ts`）は変更していない（クライアント側の送信データを軽くするだけで解決する設計のため。Section 19 ⑦参照）。
 - `max_tokens`の見直しは行っていない（上記のとおり既に基準内）。
+
+---
+
+## 38. スキーマ検査：関数の「本文差し替え型」＋列の「型のずれ」の検知（v3.80・2026-08-19）
+
+Section 22・25 Phase 5・33で繰り返し既知の限界として記録していた穴（`kind:"function"`が`pg_proc`に同名関数が存在するかしか見ないため、関数の名前・引数を変えず本文だけを差し替えるマイグレーションの適用漏れを検知できない）を解消した。あわせて、2026-08-18に実際に踏んだ「列は存在するが宣言と実DBの型がずれていた」事故（`projects.owner_member_ids`）の再発防止として`kind:"column_type"`も追加した。
+
+### 棚卸し結果：診断の「1件」から2件へ（本文差し替え型）
+
+2026-08-17の診断は本文差し替え型を`accept_project_invite()`（`20260812_accept_invite_for_existing_member.sql`）の1件と確定していたが、今回`CREATE (OR REPLACE) FUNCTION`の再定義箇所を全マイグレーションから機械的に洗い出したところ、`guard_member_privilege_columns()`（v3.75・`20260818_harden_invite_related_rls.sql`）も同型（名前・引数不変・本文のみ差し替え）と判明し、**合計2件**が対象と確定した。他に複数回再定義されている関数（`guard_group_deletion`／`current_member_group_id`）もあったが、いずれも同じマイグレーション内でテーブル列追加等の既存kindで検知可能な変更を伴っており、対象から除外した（本文差し替えだけが唯一の変更点になっているのは上記2件のみ）。
+
+### 追加事故：`projects.owner_member_ids`の型ドリフト
+
+山本さんが実DBの型を確認した結果、`projects.owner_member_ids`の実DBが`uuid[]`（宣言は`20260331_add_missing_columns.sql`・`schema.sql`ともに一貫して`text[]`）のままドリフトしていたことが確定した。`projects.member_ids`／`tasks.assignee_member_ids`は宣言と実DBが一致していた（食い違いは1列のみ）。この型ずれが、2026-08-18のv3.75適用が「UNION types text and uuid cannot be matched」で2回失敗した原因だった。`supabase/migrations/20260819b_fix_owner_member_ids_type.sql`（新規・山本さんが手動適用）で`ALTER COLUMN owner_member_ids TYPE text[]`により是正した（NOT NULL・DEFAULT '{}'は明示的に再宣言。`20260818_harden_invite_related_rls.sql`の`unnest(...)::text`キャストはそのまま残す＝将来また型がずれても壊れない安全網として機能する）。`schema.sql`の該当列にドリフトと是正日のコメントを追記した。
+
+### 実装
+
+- **SQL側**：新規マイグレーション`supabase/migrations/20260819_add_schema_health_function_body_and_column_type_check.sql`（既存の`20260806_add_schema_health_check.sql`は書き換えず、`check_schema_health()`を`CREATE OR REPLACE`で拡張）。新kind`"function_body_contains"`は`pg_get_functiondef(p.oid)`で関数定義全文（本文含む）を取得し`position(needle IN ...)`で部分一致を判定する。新kind`"column_type"`は`information_schema.columns.udt_name`が期待値（配列は`"_text"`/`"_uuid"`等の内部表記）と一致するかを判定する。動的SQL（EXECUTE）は使わない。呼び出し権限（部署管理者・全社スーパー管理者のみ、それ以外は空配列）・`SET search_path=''`・既存kindの判定ロジックは1文字も変えていない。**適用回数を増やさないため2つのkindを1ファイルにまとめた**（山本さんの手動適用の手間を優先）。
+- **TS側**：`src/lib/schema/schemaChecks.ts`に`SchemaCheckDescriptor`の新バリアント2つ（`kind:"function_body_contains"; name; needle` / `kind:"column_type"; table; column; udt`）と検査項目5件（本文差し替え型2件＋列の型3件＝`projects.owner_member_ids`／`projects.member_ids`／`tasks.assignee_member_ids`。**visible_project_member_ids()がUNIONする3列全てを登録**——1列だけ守っても次に別の列が同じ理由でずれたら同じ事故が起きるため）を追加。`src/lib/schema/checkSchemaHealth.ts`の`toCheckPayload`に対応するcaseを追加。`SchemaHealthBanner.tsx`はlabel/migrationを汎用的に表示するだけの実装のため無改修で両kindに対応済み。
+- **`function_body_contains`のneedle選定方針**：変数名・コメント文言（消えやすい）ではなく、そのマイグレーションの核心的な振る舞いを表す実行文そのものを選んだ。
+  - `accept_project_invite`：`v_invite.invite_group_id = ANY(COALESCE(v_existing_group_ids, '{}'::text[]))`（既存メンバーへの冪等な兼務付与判定。この式が無いとSection 25 Phase 5の冪等性要件が壊れる）。
+  - `guard_member_privilege_columns`：`NEW.email := old_email;`（v3.75フェーズ4のemail保護の差し戻し文そのもの。これが無いと同一性判定キーの保護という主目的が成立しない）。
+- **検証**：`src/lib/schema/__tests__/functionBodyContainsNeedles.test.ts`・`columnTypeChecks.test.ts`（いずれも新規）が、各needle/udtが「差し替え・是正前のマイグレーションファイルには存在せず、差し替え・是正後にのみ存在する」ことを実際のマイグレーションSQLテキストに対して固定する。作成時にそれぞれ一度、値を意図的に間違ったものへ差し替えてテストがredになることを確認し、正しい値に戻してgreenになることを確認した（Section 22の「わざと壊して赤くなることを確認する」記録）。
+
+### やらないこと
+
+- `supabase/schema.sql`は`check_schema_health`自体が元々未反映（既存ドリフト。Section 1の設計と無関係に長期間放置されている）のため、今回のスコープでは同期しない（`projects.owner_member_ids`列自体のコメント追記は別途実施済み。上記参照）。
+- `task_dependencies`のRLSポリシー変更（Section 33参照）は今回のkind追加でも検知できない（「関数」ではなく「ポリシー」の中身を見る検査手段が無いため。将来別のkindが必要）。
+- マイグレーションの適用は行っていない。山本さんがdev→prodの順でSupabase SQL Editorに手動適用する（3ファイルの適用順はSection 39参照）。
+
+---
+
+## 39. グランドルール：RLSポリシー内でSECURITY DEFINER関数を呼ぶときは`(SELECT ...)`で包む（必須・v3.80・2026-08-19）
+
+### 実測で判明した誤り
+
+v3.75（`20260818_harden_invite_related_rls.sql`）の「性能：`id = ANY(...)`を選んだ理由」というコメントには「membersの各行と相関を持たないため、PostgreSQLはクエリ全体で1回だけ評価するuncorrelated subplanとして実行できる」と書いたが、**これは誤りだった**。2026-08-19、山本さんが本番で招待受諾者アカウント・RLSを効かせた状態で`EXPLAIN (ANALYZE, BUFFERS)`を実測したところ：
+
+```
+Seq Scan on members  (cost=0.00..34.88 rows=21 width=279) (actual time=8.093..76.053 rows=16 loops=1)
+  Filter: ((group_ids && current_member_group_ids()) OR current_member_is_super_admin()
+           OR (group_ids && visible_invite_group_ids()) OR (id = ANY (visible_project_member_ids())))
+  Rows Removed by Filter: 5
+  Buffers: shared hit=6504
+Planning Time: 48.270 ms
+Execution Time: 76.085 ms
+```
+
+`members`は21行＝実体は1ページで足りるはずが、`shared hit=6504`という異常値が出た。引数無しのSTABLE/SECURITY DEFINER関数であっても、RLSポリシーのWHERE句に直接書くとPostgreSQLは**行ごとに評価する**（uncorrelated subplanにはならない）ことが実測で確定した。`20260818_harden_invite_related_rls.sql`の該当コメントは、誤りだったことと実測値・是正した版（v3.80）を追記する形で訂正した（消していない）。
+
+### ルール
+
+**RLSポリシーのUSING/WITH CHECK句でSECURITY DEFINER関数（引数の有無を問わない）を呼ぶときは、必ず`(SELECT 関数呼び出し())`の形で包むこと。** PostgreSQLはこの形をInitPlanとして認識し、クエリ全体で1回だけ評価してキャッシュする。Supabaseが公式にRLSの性能改善として推奨している定石（`auth.uid()`を`(SELECT auth.uid())`と書く）と同じ手法。
+
+```sql
+-- ❌ 行ごとに再評価される
+USING (group_ids && current_member_group_ids() OR current_member_is_super_admin())
+
+-- ✅ InitPlanとして1回だけ評価される（式の意味は同じ）
+USING (group_ids && (SELECT current_member_group_ids()) OR (SELECT current_member_is_super_admin()))
+```
+
+### v3.80で対応した範囲（`members`のみ）
+
+`supabase/migrations/20260819c_optimize_members_rls_initplan.sql`で`members_select`/`members_write_insert`/`members_write_update`/`members_write_delete`の4ポリシー全ての関数呼び出しを`(SELECT ...)`で包んだ（**式の意味・条項の順序・キャストは一切変えていない**）。`schema.sql`のmembersポリシー4本も同期済み。
+
+- **v3.75で塞いだ穴は再度開けていない**：`FOR ALL`に戻していない・`WITH CHECK`を省略していない・SELECT用と書き込み用のポリシー分割を維持している。
+- **書き込み系に`visible_project_member_ids()`は足していない**（元々存在しない。書き込みスコープを広げる変更はしていない）。
+
+### 同型の問題を抱える他のポリシー（v3.80では対応しない・調査結果の記録）
+
+`projects_group`／`tasks_group`／`task_dependencies_group`は、いずれも`current_member_group_ids()`/`current_member_is_super_admin()`をSECURITY DEFINER関数として`(SELECT ...)`で包まずに直接呼んでおり、**同型の性能問題を抱えている可能性が高い**。ただしv3.80で実測により問題を確認できたのは`members`のみのため、今回はこの3ポリシーには手を入れていない（一度に触る範囲を広げない）。実際に性能問題が顕在化した場合は、同じ`(SELECT ...)`で包む対応を個別に検討すること。
+
+### このルールは新しいRLSポリシーを書くとき必ず確認する
+
+- [ ] USING/WITH CHECK句でSECURITY DEFINER関数を呼んでいるか？ → `(SELECT ...)`で包んだか？
+- [ ] 式の意味・条項の順序・キャストを変えていないか？（包むだけで、ロジックは1文字も変えない）
+- [ ] `schema.sql`の該当ポリシーも同期したか？
 
 ---
 

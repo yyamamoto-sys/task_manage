@@ -118,6 +118,16 @@
 -- 「アクセス可能なPJか」の絞り込みを先に効かせて無駄なJOINを広げない
 -- （idx_tasks_project_id・idx_task_projects(task_id,project_id)複合PKが効く）。
 --
+-- 【2026-08-19・v3.80で追記：上記「uncorrelated subplanとして1回だけ評価できる」は誤りだった】
+-- 山本さんが本番で招待受諾者アカウント・RLSを効かせた状態でEXPLAIN (ANALYZE, BUFFERS)を
+-- 実測したところ、members（21行）へのSELECTがshared hit=6504・Execution Time 76.085ms
+-- という異常値になっていた。引数無しのSTABLE/SECURITY DEFINER関数であっても、RLSポリシー
+-- のWHERE句に直接書くとPostgreSQLは行ごとに評価する（uncorrelated subplanにはならない）。
+-- 関数呼び出しを(SELECT ...)で包んで初めてInitPlanとして1回だけ評価されるようになる。
+-- 是正版はv3.80・20260819c_optimize_members_rls_initplan.sql（members_select/
+-- members_write_insert/update/deleteの4ポリシーを(SELECT ...)で包み直した。式の意味・
+-- 条項の順序・キャストは変えていない）。グランドルール化はCLAUDE.md Section 39参照。
+--
 -- 【can_access_group_ids()を呼ばずインライン展開した理由】意味はcan_access_group_ids()と
 -- 同一（group_ids && current_member_group_ids() OR current_member_is_super_admin()）だが、
 -- schema.sql（統合スキーマ・上から順に再実行する参照ファイル）ではmembersのRLS群が

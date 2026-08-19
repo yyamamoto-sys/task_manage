@@ -28,6 +28,7 @@ interface CheckPayload {
   column?: string;
   needle?: string;
   name?: string;
+  udt?: string;
 }
 
 interface RpcRow {
@@ -59,6 +60,10 @@ export function toCheckPayload(d: SchemaCheckDescriptor): CheckPayload {
       return { id: d.id, kind: d.kind, table: d.table, needle: d.needle };
     case "function":
       return { id: d.id, kind: d.kind, name: d.name };
+    case "function_body_contains":
+      return { id: d.id, kind: d.kind, name: d.name, needle: d.needle };
+    case "column_type":
+      return { id: d.id, kind: d.kind, table: d.table, column: d.column, udt: d.udt };
   }
 }
 

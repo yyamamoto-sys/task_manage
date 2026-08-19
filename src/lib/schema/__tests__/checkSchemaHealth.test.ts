@@ -34,6 +34,10 @@ describe("toCheckPayload", () => {
       .toEqual({ id: "c", kind: "check_contains", table: "t", needle: "n" });
     expect(toCheckPayload({ id: "d", kind: "function", name: "f", label: "", migration: "" }))
       .toEqual({ id: "d", kind: "function", name: "f" });
+    expect(toCheckPayload({ id: "e", kind: "function_body_contains", name: "f", needle: "n", label: "", migration: "" }))
+      .toEqual({ id: "e", kind: "function_body_contains", name: "f", needle: "n" });
+    expect(toCheckPayload({ id: "f", kind: "column_type", table: "t", column: "c", udt: "_text", label: "", migration: "" }))
+      .toEqual({ id: "f", kind: "column_type", table: "t", column: "c", udt: "_text" });
   });
 });
 

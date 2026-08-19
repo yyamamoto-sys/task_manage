@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.80",
+    date: "2026-08-19",
+    title: "プロジェクト招待された方の表示速度を改善・管理者向けの検知精度を改善",
+    highlights: [
+      "プロジェクトに招待されて参加している方が、メンバー一覧などを開いたときの表示が速くなりました",
+      "管理者にだけ表示される「スキーマの警告バナー」が、より細かい種類の更新漏れも検知できるようになりました",
+    ],
+  },
+  {
     version: "v3.79",
     date: "2026-08-19",
     title: "PDFを添付したときに失敗しにくくなりました",

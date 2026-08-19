@@ -16,7 +16,13 @@
 // （CLAUDE.md Section 22のグランドルール）。「静かに壊れると困るもの」を優先して入れる
 // ——これは全マイグレーションの網羅を目的にしていない。
 
-export type SchemaCheckKind = "table" | "column" | "check_contains" | "function";
+export type SchemaCheckKind =
+  | "table"
+  | "column"
+  | "check_contains"
+  | "function"
+  | "function_body_contains"
+  | "column_type";
 
 interface SchemaCheckCommon {
   /** RPC往復でこの項目を一意に識別するID。SCHEMA_HEALTH_CHECKS内で重複禁止。 */
@@ -32,7 +38,19 @@ export type SchemaCheckDescriptor =
   | (SchemaCheckCommon & { kind: "table"; table: string })
   | (SchemaCheckCommon & { kind: "column"; table: string; column: string })
   | (SchemaCheckCommon & { kind: "check_contains"; table: string; needle: string })
-  | (SchemaCheckCommon & { kind: "function"; name: string });
+  | (SchemaCheckCommon & { kind: "function"; name: string })
+  // 【2026-08-19・v3.80で追加】関数の名前・引数を変えず本文（中身）だけを差し替える
+  // マイグレーション向け。kind:"function" は pg_proc に同名関数が存在するかしか見ないため、
+  // この種のマイグレーションは未適用でも「存在する」と判定され続けてしまう（CLAUDE.md
+  // Section 22・25 Phase 5・33参照）。needle には pg_get_functiondef() で取得する関数定義
+  // 全文（本文を含む）に対して position() で部分一致検査を行う（LIKEではないため
+  // needle内の"_"等はワイルドカードとして解釈されない）。
+  | (SchemaCheckCommon & { kind: "function_body_contains"; name: string; needle: string })
+  // 【2026-08-19・v3.80で追加】列は存在するが宣言と実際の型がずれている事故
+  // （2026-08-18、projects.owner_member_idsの実DBがuuid[]のまま宣言のtext[]からずれて
+  // いたためv3.75の適用が2回失敗した）向け。udtには`information_schema.columns.udt_name`
+  // の内部表記（配列型は"_text"／"_uuid"のように先頭にアンダースコアが付く）を渡す。
+  | (SchemaCheckCommon & { kind: "column_type"; table: string; column: string; udt: string });
 
 /**
  * 【初期投入】2026-08-06の監査対象になった項目。これで全マイグレーションを網羅する
@@ -291,5 +309,68 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     name: "visible_project_member_ids",
     label: "プロジェクト招待：招待受諾者からPJ参加者全員を見せる可視性拡張関数（visible_project_member_ids）が見つかりません",
     migration: "20260818_harden_invite_related_rls.sql",
+  },
+  // 【2026-08-19・v3.80】本文差し替え型マイグレーションの検知（kind:"function_body_contains"）。
+  // 20260806_add_schema_health_check.sql（check_schema_health本体）は
+  // 20260819_add_schema_health_function_body_check.sql で新kindに対応済み。
+  {
+    // accept_project_invite() の既存メンバー分岐（Section 25 Phase 5）で新設された
+    // 冪等性ガード。「既にこの招待用部署をgroup_idsに持っていれば何もしない」という
+    // このマイグレーションの核心（招待の2回目受諾を安全にする）そのものであり、
+    // 挙動を変えずにリファクタしても消えない（消せばSection 25 Phase 5の冪等性要件が
+    // 壊れる）。変数名・コメント文言は使わず、実行される式そのものを目印にした。
+    id: "accept_project_invite_existing_member_branch",
+    kind: "function_body_contains",
+    name: "accept_project_invite",
+    needle: "v_invite.invite_group_id = ANY(COALESCE(v_existing_group_ids, '{}'::text[]))",
+    label: "プロジェクト招待：既存メンバーが招待を受諾したときの兼務付与（accept_project_invite内）が適用されていません",
+    migration: "20260812_accept_invite_for_existing_member.sql",
+  },
+  {
+    // guard_member_privilege_columns() のフェーズ4（email＝ログイン中の利用者とmembers行を
+    // 結びつける同一性判定キーの保護。Section 33）。「NEW.email := old_email」という差し戻し
+    // 自体がこの保護の実効部分で、これが無いと他人の行のemailを書き換えてなりすませる穴が
+    // 残る。同名の代入式は関数内の他の場所には出現しない（is_admin/group_id等は別の変数名）
+    // ため、将来この関数がリファクタされても、この保護ロジック自体を消さない限り生き残る。
+    id: "guard_member_privilege_columns_email_protection",
+    kind: "function_body_contains",
+    name: "guard_member_privilege_columns",
+    needle: "NEW.email := old_email;",
+    label: "権限昇格ガード：members.emailの保護（guard_member_privilege_columns内）が適用されていません",
+    migration: "20260818_harden_invite_related_rls.sql",
+  },
+  // 【2026-08-19・v3.80】列の型そのものが宣言とずれる事故の再発防止（kind:"column_type"）。
+  // 2026-08-18、projects.owner_member_idsの実DBがuuid[]のままだった（宣言は最初から
+  // text[]）ことが原因でv3.75の適用が「UNION types text and uuid cannot be matched」で
+  // 2回失敗した。kind:"column"（列の存在有無）ではこの種の「列はあるが型が違う」を
+  // 検知できないため、visible_project_member_ids()がUNIONする3列全てをtext[]（udt_name
+  // では配列の内部表記"_text"）で登録する（1列だけ守っても次に別の列が同じ理由で
+  // ずれたら同じ事故が起きるため）。
+  {
+    id: "projects_owner_member_ids_type_text_array",
+    kind: "column_type",
+    table: "projects",
+    column: "owner_member_ids",
+    udt: "_text",
+    label: "プロジェクトの複数オーナー列（projects.owner_member_ids）の型がtext[]ではありません",
+    migration: "20260819b_fix_owner_member_ids_type.sql",
+  },
+  {
+    id: "projects_member_ids_type_text_array",
+    kind: "column_type",
+    table: "projects",
+    column: "member_ids",
+    udt: "_text",
+    label: "プロジェクトの関与者列（projects.member_ids）の型がtext[]ではありません",
+    migration: "20260515_add_project_member_ids.sql",
+  },
+  {
+    id: "tasks_assignee_member_ids_type_text_array",
+    kind: "column_type",
+    table: "tasks",
+    column: "assignee_member_ids",
+    udt: "_text",
+    label: "タスクの複数担当者列（tasks.assignee_member_ids）の型がtext[]ではありません",
+    migration: "20260420_add_task_assignee_member_ids.sql",
   },
 ];

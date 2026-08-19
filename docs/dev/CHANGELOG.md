@@ -5983,5 +5983,67 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     どちらもSection 6-1cの基準内）。
 #   詳細はCLAUDE.md Section 37参照。DBスキーマ変更：なし。
 #
-# 最終更新：2026-08-19（v3.79）
+# v3.80（2026-08-19）：スキーマ検査に「関数の本文差し替え型」＋「列の型ずれ」の検知を追加・
+#   projects.owner_member_idsの型ドリフトを是正・membersのRLS性能を改善
+#   背景1：CLAUDE.md Section 22の`check_schema_health`の`kind:"function"`は`pg_proc`に
+#   同名関数が存在するかしか見ないため、「関数の名前・引数を変えず本文だけを差し替える」
+#   マイグレーションは未適用でも「存在する」と判定され続け、適用漏れを検知できなかった
+#   （Section 25 Phase 5・33に既知の限界として明記済み）。
+#   棚卸し結果：2026-08-17の診断では1件（accept_project_invite）とされていたが、実際に
+#   全マイグレーションを機械的に棚卸しした結果、v3.75（20260818_harden_invite_related_rls.sql）
+#   のguard_member_privilege_columnsも本文差し替え型と確定し、合計2件だった。
+#   背景2：2026-08-18、v3.75の適用が「UNION types text and uuid cannot be matched」で
+#   2回失敗した。原因はprojects.owner_member_idsの実DBの型がuuid[]のままドリフトしていた
+#   こと（宣言は最初から一貫してtext[]）。山本さんが実DBの型を確認した結果、食い違って
+#   いたのはこの1列のみ（member_ids・assignee_member_idsは宣言と一致）と確定した。
+#   背景3：v3.75のRLSポリシー「id = ANY(visible_project_member_ids())」のコメントに
+#   「クエリ全体で1回だけ評価されるuncorrelated subplanとして実行できる」と書いたが、
+#   2026-08-19の本番実測（招待受諾者アカウント）でこれが誤りと判明した。EXPLAIN
+#   (ANALYZE, BUFFERS)で members（21行）へのSELECTがshared hit=6504・Execution Time
+#   76.085msという異常値になっており、引数無しのSTABLE/SECURITY DEFINER関数であっても
+#   RLSのWHERE句に直接書くとPostgreSQLは行ごとに評価することが分かった。
+#   変更1（本文差し替え型＋列の型ずれの検知）：
+#     `supabase/migrations/20260819_add_schema_health_function_body_and_column_type_check.sql`
+#     （新規マイグレーション。既存ファイルは書き換えない。2つのkindを1ファイルにまとめ
+#     適用回数を増やさない）で`check_schema_health`に新kind`"function_body_contains"`
+#     （`pg_get_functiondef()`で関数定義全文を取得しneedleの部分一致を判定）と
+#     `"column_type"`（`information_schema.columns.udt_name`で型の一致を判定）を追加。
+#     動的SQL・EXECUTE不使用、既存方針を踏襲。`src/lib/schema/schemaChecks.ts`に
+#     `SchemaCheckDescriptor`の新バリアント2つと検査項目5件（本文差し替え型2件＝
+#     accept_project_invite・guard_member_privilege_columns、列の型3件＝
+#     projects.owner_member_ids・projects.member_ids・tasks.assignee_member_ids）を追加。
+#     needleは変数名・コメント文言ではなく、そのマイグレーションの核心となる実行文
+#     そのものを選んだ（理由はコメントに明記）。`checkSchemaHealth.ts`の`toCheckPayload`
+#     に対応するcaseを追加。`SchemaHealthBanner.tsx`は無改修で両kindに対応済み。
+#   変更2（owner_member_idsの型是正）：`supabase/migrations/20260819b_fix_owner_member_ids_type.sql`
+#     （新規。山本さんが手動適用）で`ALTER COLUMN owner_member_ids TYPE text[]`。NOT NULL・
+#     DEFAULT '{}'を明示的に再宣言。`20260818_harden_invite_related_rls.sql`の
+#     `unnest(...)::text`キャストはそのまま残す（将来また型がずれても壊れない安全網）。
+#     `schema.sql`の該当列にドリフトと是正日のコメントを追記。
+#   変更3（membersのRLS性能改善）：`supabase/migrations/20260819c_optimize_members_rls_initplan.sql`
+#     （新規。山本さんが手動適用）で`members_select`/`members_write_insert`/`update`/`delete`
+#     の4ポリシー全ての関数呼び出しを`(SELECT ...)`で包み、InitPlanとしてクエリ全体で
+#     1回だけ評価されるようにした（Supabase公式のRLS性能改善の定石と同じ手法。式の意味・
+#     条項の順序・キャストは一切変えていない）。`schema.sql`のmembersポリシー4本も同期。
+#     v3.75で塞いだ穴（FOR ALL・WITH CHECK省略）は再度開けていない。書き込み系に
+#     `visible_project_member_ids()`は足していない。同型の問題（`projects_group`／
+#     `tasks_group`／`task_dependencies_group`）は実測で確認できていないため今回は
+#     未対応（調査結果としてCLAUDE.md Section 39に記録）。CLAUDE.md Section 39に
+#     グランドルール（RLSでSECURITY DEFINER関数を呼ぶときは`(SELECT ...)`で包む）として
+#     記録した。`20260818_harden_invite_related_rls.sql`の誤ったコメントは訂正記録を
+#     追記する形で残した（削除していない）。
+#   検証：`src/lib/schema/__tests__/functionBodyContainsNeedles.test.ts`・
+#     `columnTypeChecks.test.ts`（いずれも新規）で、各needle/udtが「差し替え・是正前の
+#     マイグレーションファイルには存在せず、差し替え・是正後にのみ存在する」ことを固定した。
+#     作成時にそれぞれ一度、値を意図的に間違ったものへ差し替えてテストが red になることを
+#     確認してから、正しい値に戻して green を確認した（CLAUDE.md Section 22の
+#     「わざと壊して赤くなることを確認する」記録）。
+#   やらないこと：schema.sqlはcheck_schema_health自体が未反映（既存ドリフト）のため
+#     今回のスコープでは同期しない。task_dependenciesのRLSポリシー変更・
+#     projects_group/tasks_group/task_dependencies_groupのRLS性能改善は対象外。
+#     マイグレーションの適用は山本さんが手動で行う（dev→prodの順。3ファイルの適用順は
+#     CLAUDE.md Section 38・39参照）。
+#   詳細はCLAUDE.md Section 22・38・39参照。
+#
+# 最終更新：2026-08-19（v3.80）
 

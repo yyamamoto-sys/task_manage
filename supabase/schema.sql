@@ -238,6 +238,9 @@ CREATE TABLE IF NOT EXISTS projects (
   contribution_memo text NOT NULL DEFAULT '',
   owner_member_id   text REFERENCES members(id),       -- 互換目的の単数 FK
   owner_member_ids  text[] NOT NULL DEFAULT '{}',      -- 複数オーナー対応
+  -- 【2026-08-19・v3.80で判明・是正】この宣言は最初からtext[]だったが、実DBは
+  -- uuid[]のままドリフトしていた（2026-08-18のv3.75適用失敗の原因。
+  -- 20260819b_fix_owner_member_ids_type.sqlで実DBをtext[]に是正済み）。
   member_roles      jsonb NOT NULL DEFAULT '{}',       -- メンバー別役割マップ（migration 20260612）
   group_id          text REFERENCES groups(id),        -- migration 20260626_add_multitenancy.sql
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active','completed','archived')),
@@ -1069,53 +1072,65 @@ AS $fn_visible_pj_members$
 $fn_visible_pj_members$;
 GRANT EXECUTE ON FUNCTION public.visible_project_member_ids() TO authenticated;
 
+-- 【2026-08-19・v3.80】SECURITY DEFINER関数呼び出しを (SELECT ...) で包み、InitPlanとして
+-- クエリ全体で1回だけ評価されるようにした（20260819c_optimize_members_rls_initplan.sql）。
+-- 実測（本番・招待受諾者アカウント）でmembers（21行）へのSELECTがshared hit=6504・
+-- Execution Time 76.085msという異常値になっており、フィルタ内の関数が行ごとに
+-- 再実行されていたことが原因だった。式の意味・条項の順序・キャストは変えていない。
 CREATE POLICY "members_select" ON members
   FOR SELECT TO authenticated
   USING (
-    group_ids && current_member_group_ids()
-    OR current_member_is_super_admin()
-    OR group_ids && public.visible_invite_group_ids()
-    OR id::text = ANY(public.visible_project_member_ids())
+    group_ids && (SELECT public.current_member_group_ids())
+    OR (SELECT public.current_member_is_super_admin())
+    OR group_ids && (SELECT public.visible_invite_group_ids())
+    -- 🔴 ここは (SELECT ...) を裸で ANY() に渡さないこと。PostgreSQLは
+    --    `x = ANY (副問い合わせ)` と `x = ANY (配列式)` を別の構文として解釈するため、
+    --    裸で渡すと副問い合わせ形式になり text と text[] の比較になって
+    --    `operator does not exist: text = text[]` で落ちる（2026-08-19に実際に踏んだ）。
+    --    ::text[] のキャストを付けて「配列式」であることを明示する。キャスト自体は
+    --    型を変えないが、これがあることで配列形式として解釈され、かつ副問い合わせは
+    --    引き続き相関を持たないためInitPlanとして1回だけ評価される。
+    OR id::text = ANY ((SELECT public.visible_project_member_ids())::text[])
   );
 
 CREATE POLICY "members_write_insert" ON members
   FOR INSERT TO authenticated
   WITH CHECK (
-    group_ids && current_member_group_ids()
-    OR current_member_is_super_admin()
+    group_ids && (SELECT public.current_member_group_ids())
+    OR (SELECT public.current_member_is_super_admin())
     OR (
-      group_ids && public.visible_invite_group_ids()
-      AND (current_member_is_admin() OR current_member_is_super_admin())
+      group_ids && (SELECT public.visible_invite_group_ids())
+      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
     )
   );
 
 CREATE POLICY "members_write_update" ON members
   FOR UPDATE TO authenticated
   USING (
-    group_ids && current_member_group_ids()
-    OR current_member_is_super_admin()
+    group_ids && (SELECT public.current_member_group_ids())
+    OR (SELECT public.current_member_is_super_admin())
     OR (
-      group_ids && public.visible_invite_group_ids()
-      AND (current_member_is_admin() OR current_member_is_super_admin())
+      group_ids && (SELECT public.visible_invite_group_ids())
+      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
     )
   )
   WITH CHECK (
-    group_ids && current_member_group_ids()
-    OR current_member_is_super_admin()
+    group_ids && (SELECT public.current_member_group_ids())
+    OR (SELECT public.current_member_is_super_admin())
     OR (
-      group_ids && public.visible_invite_group_ids()
-      AND (current_member_is_admin() OR current_member_is_super_admin())
+      group_ids && (SELECT public.visible_invite_group_ids())
+      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
     )
   );
 
 CREATE POLICY "members_write_delete" ON members
   FOR DELETE TO authenticated
   USING (
-    group_ids && current_member_group_ids()
-    OR current_member_is_super_admin()
+    group_ids && (SELECT public.current_member_group_ids())
+    OR (SELECT public.current_member_is_super_admin())
     OR (
-      group_ids && public.visible_invite_group_ids()
-      AND (current_member_is_admin() OR current_member_is_super_admin())
+      group_ids && (SELECT public.visible_invite_group_ids())
+      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
     )
   );
 
