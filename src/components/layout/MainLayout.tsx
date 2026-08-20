@@ -42,7 +42,8 @@ import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
-import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
+import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
+import { saveSidebarGroupId } from "../../lib/layout/sidebarCurrentGroupRestore";
 import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
 import type { ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
@@ -499,14 +500,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const currentUserIsSuperAdmin = useAppStore(s => s.currentUserIsSuperAdmin);
   // プロジェクト招待の兼務（is_invite_group=true）は「表示部署」切替の選択肢から除く。
   // 招待された本人（招待用部署しか持たない）の場合は除外すると選べる部署が無くなるため、
-  // 除外しない（filterInviteGroupsForSidebar内部で自動的に判定。CLAUDE.md Section 25参照）。
-  const accessibleGroups = useMemo(() => {
-    const groupsActive = rawGroups.filter(g => !g.is_deleted);
-    if (currentUserIsSuperAdmin) return filterInviteGroupsForSidebar(groupsActive);
-    const ids = currentUser.group_ids?.length ? currentUser.group_ids
-      : (currentUser.group_id ? [currentUser.group_id] : []);
-    return filterInviteGroupsForSidebar(groupsActive.filter(g => ids.includes(g.id)));
-  }, [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id]);
+  // 除外しない（computeAccessibleGroupsForSidebar内部で自動的に判定。CLAUDE.md Section 25参照）。
+  // 【v3.82】「表示部署をリロード後も維持する」機能（App.tsxのautoMatch）が復元してよい
+  // 部署かどうかをこのリストと同じ基準で判定するため、ロジック自体を共有関数に切り出した
+  // （src/lib/projectInvite/sidebarGroupVisibility.ts）。
+  const accessibleGroups = useMemo(
+    () => computeAccessibleGroupsForSidebar(
+      rawGroups,
+      { group_id: currentUser.group_id, group_ids: currentUser.group_ids },
+      currentUserIsSuperAdmin,
+    ),
+    [rawGroups, currentUserIsSuperAdmin, currentUser.group_ids, currentUser.group_id],
+  );
   // 「完了・アーカイブも表示」トグル（既定OFF）。CLAUDE.md参照：既定ではactiveのみ表示、
   // completed/archivedはこのトグルで表示/非表示を切り替える（v3.50。山本さんの要望・2026-08-11）。
   const [showCompletedAndArchived, setShowCompletedAndArchivedState] = useState<boolean>(
@@ -588,9 +593,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   };
   // サイドバーの部署切替（CLAUDE.md Section 1.6）：表示データの範囲が変わるナビ操作のため
   // ビュー切替等と同様にラボ系ビューを閉じる
+  // 【v3.82】選択をメンバーごとにlocalStorageへ保存し、リロード後も維持する（App.tsxの
+  // autoMatchが復元する）。ゲストはこの切替UI自体が出ない設計（accessibleGroups.length<2。
+  // src/lib/projectInvite/sidebarGroupVisibility.ts参照）だが、念のため明示的にガードする
+  // （CLAUDE.md Section 23：ゲストの選択を保存しない・実ユーザーへ復元しない）。
   const handleSelectGroupNav = (id: string) => {
     closeLabViews();
     setCurrentGroupId(id);
+    if (!isGuest) saveSidebarGroupId(currentUser.id, id);
   };
 
   // マイページ（ウィジェット）のQuickAddTaskWidget向け。ウィジェットからsaveTaskを直接呼ばせず、

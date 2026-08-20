@@ -1,10 +1,11 @@
 // src/lib/projectInvite/__tests__/sidebarGroupVisibility.test.ts
 import { describe, expect, it } from "vitest";
-import { filterInviteGroupsForSidebar } from "../sidebarGroupVisibility";
+import { computeAccessibleGroupsForSidebar, filterInviteGroupsForSidebar } from "../sidebarGroupVisibility";
 
 interface FakeGroup {
   id: string;
   is_invite_group?: boolean;
+  is_deleted?: boolean;
 }
 
 describe("filterInviteGroupsForSidebar", () => {
@@ -52,5 +53,42 @@ describe("filterInviteGroupsForSidebar", () => {
 
   it("空配列を渡された場合は空配列のまま返す", () => {
     expect(filterInviteGroupsForSidebar([])).toEqual([]);
+  });
+});
+
+describe("computeAccessibleGroupsForSidebar（MainLayout.tsxの切替UI選択肢と同一の判定基準）", () => {
+  const groups: FakeGroup[] = [
+    { id: "grp-egg" },
+    { id: "grp-aid" },
+    { id: "grp-deleted", is_deleted: true },
+    { id: "grp-invite-proj1", is_invite_group: true },
+  ];
+
+  it("非super-adminはgroup_idsに含まれる部署だけに絞る（削除済み・招待用部署は除外）", () => {
+    const member = { group_id: "grp-egg", group_ids: ["grp-egg", "grp-aid", "grp-invite-proj1"] };
+    expect(computeAccessibleGroupsForSidebar(groups, member, false)).toEqual([
+      { id: "grp-egg" },
+      { id: "grp-aid" },
+    ]);
+  });
+
+  it("非super-adminでgroup_idsが空ならgroup_id（ホーム部署）1件にフォールバックする", () => {
+    const member = { group_id: "grp-egg", group_ids: [] };
+    expect(computeAccessibleGroupsForSidebar(groups, member, false)).toEqual([{ id: "grp-egg" }]);
+  });
+
+  it("招待用部署のみ（招待された本人）は除外せずそのまま返す", () => {
+    const member = { group_id: "grp-invite-proj1", group_ids: ["grp-invite-proj1"] };
+    expect(computeAccessibleGroupsForSidebar(groups, member, false)).toEqual([
+      { id: "grp-invite-proj1", is_invite_group: true },
+    ]);
+  });
+
+  it("super-adminは削除済みを除いた全部署から招待用部署だけを除く（本人のgroup_idsは見ない）", () => {
+    const member = { group_id: "grp-egg", group_ids: [] };
+    expect(computeAccessibleGroupsForSidebar(groups, member, true)).toEqual([
+      { id: "grp-egg" },
+      { id: "grp-aid" },
+    ]);
   });
 });

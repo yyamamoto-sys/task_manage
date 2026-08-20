@@ -27,3 +27,24 @@ export function filterInviteGroupsForSidebar<T extends { is_invite_group?: boole
   const filtered = groups.filter(g => !g.is_invite_group);
   return filtered.length > 0 ? filtered : groups;
 }
+
+// 【設計意図（v3.82追加）】
+// サイドバー「表示部署」切替の選択肢一覧を組み立てる、MainLayout.tsxの`accessibleGroups`と
+// 同一のロジック。「表示部署をリロード後も維持する」機能（src/lib/layout/
+// sidebarCurrentGroupRestore.ts）が、復元してよい部署かどうかをこのリストと同じ基準で
+// 判定する必要があるため、ロジックをここへ1本化した（MainLayout.tsx側のuseMemoもこの関数を
+// 呼ぶ）。判定基準がずれると、切替UIには出ない部署をリロード後に復元してしまい、UIから
+// 戻す手段が無い状態になる。
+export function computeAccessibleGroupsForSidebar<
+  G extends { id: string; is_deleted?: boolean; is_invite_group?: boolean },
+>(
+  groups: G[],
+  member: { group_id?: string | null; group_ids?: string[] | null },
+  isSuperAdmin: boolean,
+): G[] {
+  const groupsActive = groups.filter(g => !g.is_deleted);
+  if (isSuperAdmin) return filterInviteGroupsForSidebar(groupsActive);
+  const ids = member.group_ids?.length ? member.group_ids
+    : (member.group_id ? [member.group_id] : []);
+  return filterInviteGroupsForSidebar(groupsActive.filter(g => ids.includes(g.id)));
+}

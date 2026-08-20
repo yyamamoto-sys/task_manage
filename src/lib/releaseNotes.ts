@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.82",
+    date: "2026-08-19",
+    title: "サイドバーの「表示部署」が、再読み込み後も維持されるようになりました",
+    highlights: [
+      "サイドバーで切り替えた「表示部署」が、画面を再読み込みしても切り替え前の状態のまま表示されるようになりました",
+      "兼務が外れた・部署が削除された等でその部署を表示できなくなっている場合は、自動的にホーム部署の表示に戻ります",
+    ],
+  },
+  {
     version: "v3.81",
     date: "2026-08-19",
     title: "一覧の表示が速くなりました",

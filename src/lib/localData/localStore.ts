@@ -139,6 +139,12 @@ export const LS_KEY = {
    * 保存するのは真偽値のみ（データ本体は保存しない）。lib/chunkSizeGate.ts 参照（v3.19）。
    */
   chunkDownloadApproved: (chunkName: string) => `chunk_dl_approved_${chunkName}`,
+  /**
+   * サイドバー「表示部署」の選択（メンバーごとに保存。v3.82）。
+   * 同じブラウザを別アカウントで使ったときに前の人の選択を引き継がないよう、
+   * メンバーIDをキーに含める（consultationHistory等と同じ流儀）。
+   */
+  sidebarCurrentGroup: (memberId: string) => `sidebar_current_group_${memberId}`,
 } as const;
 
 export { KEYS };

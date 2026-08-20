@@ -25,6 +25,8 @@ import { acceptProjectInvite } from "./lib/supabase/projectInviteStore";
 import { extractInviteCodeFromSearch } from "./lib/projectInvite/inviteUrl";
 import { shouldPromptLoggedInInviteAccept, buildAcceptPayloadForExistingMember, stripInviteParamFromUrl } from "./lib/projectInvite/loggedInInviteFlow";
 import { confirmDialog } from "./lib/dialog";
+import { computeAccessibleGroupsForSidebar } from "./lib/projectInvite/sidebarGroupVisibility";
+import { loadStoredSidebarGroupId, resolveRestoredCurrentGroupId } from "./lib/layout/sidebarCurrentGroupRestore";
 
 export default function App() {
   const t = useT();
@@ -212,6 +214,7 @@ function AuthenticatedApp({
 }: AuthenticatedAppProps) {
   const t = useT();
   const members            = useAppStore(s => s.members);
+  const groups             = useAppStore(s => s.groups);
   const loading            = useAppStore(s => s.loading);
   const backgroundLoading  = useAppStore(s => s.backgroundLoading);
   const loadProgress       = useAppStore(s => s.loadProgress);
@@ -381,6 +384,23 @@ function AuthenticatedApp({
     let cancelled = false;
     const activeMembers = active(members);
 
+    // 【v3.82】サイドバー「表示部署」をリロード後も維持する。保存されている部署に今も
+    // アクセスできる場合だけ復元し、そうでなければホーム部署（member.group_id）へ
+    // フォールバックする（兼務が外れた・部署が削除された後にその部署を復元しようとすると、
+    // currentGroupIdの対応先が無くなり何も見えない画面になるため）。
+    // 判定基準はサイドバーの切替UI（MainLayout.tsxのaccessibleGroups）と完全に一致させる
+    // （computeAccessibleGroupsForSidebar。全社スーパー管理者・招待受諾者もこの1関数で
+    // 個別分岐なしに扱える）。①②どちらの経路でログインが確定した場合も同じ判定を適用する
+    // （リロード時にどちらの経路でマッチするかは環境依存＝email設定の有無で変わるため）。
+    function resolveGroupIdForLogin(member: Member): string | null {
+      const homeGroupId = member.group_id ?? null;
+      const isSuperAdmin = member.is_super_admin === true;
+      const accessibleGroupIds = computeAccessibleGroupsForSidebar(groups, member, isSuperAdmin)
+        .map(g => g.id);
+      const stored = loadStoredSidebarGroupId(member.id);
+      return resolveRestoredCurrentGroupId(stored, homeGroupId, accessibleGroupIds);
+    }
+
     async function autoMatch() {
       // ① Auth email が members.email と一致するメンバーを優先（セキュアな自動同定）
       const authEmail = await getAuthEmail();
@@ -390,7 +410,7 @@ function AuthenticatedApp({
           m => m.email && m.email.toLowerCase() === authEmail.toLowerCase(),
         );
         if (matched) {
-          setCurrentGroupId(matched.group_id ?? null);
+          setCurrentGroupId(resolveGroupIdForLogin(matched));
           setCurrentUserIsSuperAdmin(matched.is_super_admin === true);
           setMatchState("matched");
           onLogin(matched);
@@ -401,7 +421,7 @@ function AuthenticatedApp({
       const saved = getCurrentUser();
       const member = saved ? activeMembers.find(m => m.id === saved.id) : undefined;
       if (member) {
-        setCurrentGroupId(member.group_id ?? null);
+        setCurrentGroupId(resolveGroupIdForLogin(member));
         setCurrentUserIsSuperAdmin(member.is_super_admin === true);
         setMatchState("matched");
         onLogin(member);
@@ -412,7 +432,7 @@ function AuthenticatedApp({
 
     void autoMatch();
     return () => { cancelled = true; };
-  }, [loading, members, currentUser, onLogin, setCurrentGroupId, setCurrentUserIsSuperAdmin]);
+  }, [loading, members, groups, currentUser, onLogin, setCurrentGroupId, setCurrentUserIsSuperAdmin]);
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
   // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
