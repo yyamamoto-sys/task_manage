@@ -236,9 +236,15 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
 
   const TOOLTIP_W = 280;
   const TOOLTIP_GAP = 10;
-  const tooltipLeft = tooltipPos.x + TOOLTIP_GAP + TOOLTIP_W <= window.innerWidth
-    ? tooltipPos.x + TOOLTIP_GAP
-    : tooltipPos.left - TOOLTIP_W - TOOLTIP_GAP;
+  // 右に出す余白が無ければカーソルの左側へ反転させるが（既存ロジック）、反転先が画面左端を
+  // はみ出す場合の下限クランプが無かった（2026-08-20の横断監査で発覚。pointerEvents:"none"
+  // のため実害は見た目のみ）。Math.maxで左端8pxを保証する。
+  const tooltipLeft = Math.max(
+    8,
+    tooltipPos.x + TOOLTIP_GAP + TOOLTIP_W <= window.innerWidth
+      ? tooltipPos.x + TOOLTIP_GAP
+      : tooltipPos.left - TOOLTIP_W - TOOLTIP_GAP,
+  );
   const tooltipTop = Math.min(tooltipPos.y, window.innerHeight - 180);
 
   return (

@@ -36,6 +36,16 @@
 // `modalOverlayStyle()`経由になったため、リテラルな `alignItems:"center"` がファイル内に残って
 // いない）。0件は「不具合が直った」ことの証拠であり「検出が壊れた」わけではないため、健全性
 // チェック（下記）は実ファイルではなく合成フィクスチャで検出ロジック自体を検証する形に変更した。
+//
+// 【2026-08-20・v3.85で追記】上記の検出（`alignItems:"center"`のリテラル一致）は、
+// `TaskEditModal.tsx`（`alignItems: isMobile ? "flex-end" : "flex-start"` という三項演算子の
+// アンカー方式）を素通りさせていた（横断監査で発覚。中央寄せではないため「対象外」なのは
+// 正しいが、その場合でもオーバーレイに`overflow:"auto"`という最低限の保険が無いのは別問題）。
+// このファイル末尾に、検出対象を「`position:"fixed"` かつ `inset:0` の全画面オーバーレイ全般」
+// （中央寄せに限らない）へ広げた別のdescribeブロックを追加し、`modalOverlayStyle()`を
+// 使っているか、自前なら`overflow:"auto"`（保険のスクロール手段）を持っているかを検査する。
+// 中央寄せの厳密な契約（本ファイル前半・maxHeight+margin:auto必須）はそのまま維持し、
+// 新しいブロックはそれとは別の「最低限の安全網」として追加する（既存の厳密さを弱めない）。
 
 import { describe, expect, it } from "vitest";
 import fs from "node:fs";
@@ -57,19 +67,30 @@ const EXCLUDED_FILES = new Set<string>([
   "components/consultation/ConsultationPanel.tsx",
   "components/task/TaskSidePanel.tsx",
   "components/workload/MemberDetailPanel.tsx",
-  "components/lab/KrReportPanel.tsx",
-  "components/lab/KrQuarterPlanPanel.tsx",
-  "components/lab/KrWhyPanel.tsx",
   "components/guide/GuideOverlay.tsx",
   "components/guide/HelpButton.tsx",
   "components/admin/OkrImportModal.tsx",
   "components/meeting/MeetingImportPanel.tsx",
+  // 【2026-08-20・v3.85で追加】OkrImportModal.tsx/MeetingImportPanel.tsxと同型の右ドロワー
+  // （alignItems:"stretch", justifyContent:"flex-end", height:"100%"）。中央寄せではない。
+  "components/okr/personal/PersonalOkrImportModal.tsx",
+  // 【2026-08-20・v3.85で削除】lab/KrReportPanel.tsx / KrQuarterPlanPanel.tsx / KrWhyPanel.tsx は
+  // CLAUDE.md Section 20（v3.33）の書き換えにより position:"fixed" を一切使わなくなり、
+  // GraphView等4ファイルと同じ理由で除外の意味が無くなっていた（この3ファイルだけ除外リストに
+  // 古い理由のまま残っていたのを2026-08-20の横断監査で発見し是正。素通しに戻しても実際には
+  // 一致しないため回帰リスクは無い）。
   // 【2026-08-10で削除】components/okr/OkrDashboardView.tsx はOKRモードのグループ側
   // アーカイブに伴い右ドロワー（概要・履歴オーバーレイ）を持たなくなり、position:"fixed"
   // 自体を一切使わなくなったため除外の意味が無くなった（旧グループ側の実装は
   // components/okr/GroupOkrDashboardArchived.tsx に保管。旧実装は justifyContent:"flex-end"
   // の右ドロワーで alignItems:"center" では中央寄せしていないため、このテストの検出パターン
   // にそもそも一致せず EXCLUDED_FILES への追加は不要）。
+  // 【2026-08-20・v3.85で追加】上記コメントの「GroupOkrDashboardArchived.tsx」自体は、より
+  // 検出範囲の広い後述の「全画面オーバーレイ全般」チェック（本ファイル末尾）には一致する
+  // （position:"fixed"; inset:0 のリテラルを持つため）。アーカイブ済み・描画経路が切られた
+  // 死蔵コード（CLAUDE.md Section 24 Step E・`src/components/okr/ARCHIVED.md`参照）であり、
+  // 実際にユーザーに表示されることが無いため対象外とする。
+  "components/okr/GroupOkrDashboardArchived.tsx",
   // 【v3.33で削除】ProjectStructureView.tsx / MyPageView.tsx / CalendarLabView.tsx / GraphView.tsx は
   // CLAUDE.md Section 20の書き換えにより position:"fixed" を一切使わなくなったため、
   // このテストのパターン（position:"fixed"...inset:0）にそもそも一致しなくなった。除外リストに
@@ -83,6 +104,18 @@ const EXCLUDED_FILES = new Set<string>([
   "components/auth/LoginScreen.tsx",
   "components/auth/AccessDeniedScreen.tsx",
   "components/auth/UserSelectScreen.tsx",
+  // 【2026-08-20・v3.85で追加】CLAUDE.md Section 20のモバイル全画面ラップ用ヘルパー
+  // （MobileFullscreenOverlay。`{ position:"fixed", inset:0, display:"flex" }`で children を
+  // そのまま描画するだけ）。中身（GraphView等）が自身のスクロール管理を持つため、この外側
+  // ラッパーにoverflow:"auto"を追加すると二重スクロール等の見た目の変化を生む懸念があり
+  // 対象外とした。MainLayout.tsx内の他のモーダル（modalOverlayStyle()経由）はリテラルな
+  // `position:"fixed"; inset:0`を持たない（関数呼び出しのため）ため、この除外の影響を受けない。
+  "components/layout/MainLayout.tsx",
+  // 【2026-08-20・v3.85で追加】背景クリックで閉じるための透明な「スクリム」専用div
+  // （子要素を持たない自己終端タグ`/>`）。実際のパネルは`bottom:"40px", right:"16px"`の
+  // コーナーアンカー型（inset:0を使わない別の要素）で自前のmaxHeight:"60vh"を持つ。
+  // スクリム自体にはクリップされうるコンテンツが無いため対象外。
+  "components/common/ErrorBar.tsx",
 ]);
 
 /** src/ 配下の .tsx ファイル一覧（__tests__ ディレクトリ自身は除く）を再帰的に集める */
@@ -236,6 +269,80 @@ describe("モーダル契約：modalOverlayStyle() の利用者は箱を margin:
           `modalOverlayStyle() は中央寄せを一切行わないため（CLAUDE.md Section 21・v3.64）、\n` +
           `箱側で中央寄せしないと画面左上に張り付いた見た目になります` +
           `（2026-08-12にConfirmModal.tsx/MainLayout.tsxで実際に発生し修正済み）。`,
+        );
+      }
+    },
+  );
+});
+
+/**
+ * 【設計意図・v3.85追記】上記の中央寄せ専用チェック（`hasCenteredFixedOverlay`）は
+ * `alignItems:"center"`のリテラル一致を要求するため、`TaskEditModal.tsx`のような
+ * アンカー方式（`alignItems: isMobile ? "flex-end" : "flex-start"`）のオーバーレイを
+ * 素通りさせていた。中央寄せでない設計自体は問題ない（Section 21の対象外）が、
+ * その場合でも「オーバーレイに`overflow:"auto"`という保険のスクロール手段」が無いのは
+ * 別の問題であり、2026-08-20の横断監査で`TaskEditModal.tsx`が実際にこの穴を持っていた
+ * ことが発覚した（箱に`overflow:"auto"`が無いままだと、想定外に箱が大きくなった場合に
+ * 背景側からスクロールして到達する手段が無い）。
+ *
+ * 検出対象を「`position:"fixed"` かつ `inset:0` の全画面オーバーレイ全般」（中央寄せに
+ * 限らない）へ広げ、`modalOverlayStyle()`を使っているか、自前なら`overflow:"auto"`
+ * （または`"scroll"`）を持っているかを検査する。EXCLUDED_FILES（本ファイル冒頭）は
+ * この検査にも共通で適用する（ドロワー・全画面スクリーン・アーカイブ済みコード等、
+ * 中央寄せチェックと同じ理由でそもそも対象外のものが多いため）。
+ */
+const OVERLAY_OVERFLOW_WINDOW = 400;
+
+function hasAnyFixedInsetOverlay(content: string): boolean {
+  OVERLAY_INSET_PATTERN.lastIndex = 0;
+  return OVERLAY_INSET_PATTERN.test(content);
+}
+
+function hasOverflowNearFixedInsetOverlay(content: string): boolean {
+  let match: RegExpExecArray | null;
+  OVERLAY_INSET_PATTERN.lastIndex = 0;
+  while ((match = OVERLAY_INSET_PATTERN.exec(content))) {
+    const windowText = content.slice(match.index, match.index + OVERLAY_OVERFLOW_WINDOW);
+    if (/overflow:\s*"(auto|scroll)"/.test(windowText)) return true;
+  }
+  return false;
+}
+
+const anyOverlayCandidateFiles = allFiles
+  .map(f => ({ full: f, rel: path.relative(SRC_DIR, f).replace(/\\/g, "/") }))
+  .filter(({ rel }) => !EXCLUDED_FILES.has(rel))
+  .filter(({ full }) => hasAnyFixedInsetOverlay(fs.readFileSync(full, "utf-8")));
+
+describe("モーダル契約（広域版）：中央寄せに限らず全画面オーバーレイは保険のスクロール手段を持つ（CLAUDE.md Section 21・v3.85）", () => {
+  it("検出ロジック自体の健全性チェック：合成フィクスチャで中央寄せでないオーバーレイも検出できる", () => {
+    const buggy = 'style={{ position: "fixed", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "center" }}';
+    const safeWithOverflow = 'style={{ position: "fixed", inset: 0, display: "flex", alignItems: "flex-start", justifyContent: "center", overflow: "auto" }}';
+    const safeSharedStyles = 'style={{ ...modalOverlayStyle(300) }}';
+    expect(hasAnyFixedInsetOverlay(buggy)).toBe(true);
+    expect(hasOverflowNearFixedInsetOverlay(buggy)).toBe(false);
+    expect(hasOverflowNearFixedInsetOverlay(safeWithOverflow)).toBe(true);
+    expect(hasAnyFixedInsetOverlay(safeSharedStyles)).toBe(false); // 関数呼び出しのためリテラル一致しない
+  });
+
+  it.each(anyOverlayCandidateFiles.map(f => f.rel))(
+    "%s の全画面オーバーレイは modalOverlayStyle() を使っているか、自前で overflow:auto（保険のスクロール）を持っている",
+    relPath => {
+      const content = fs.readFileSync(path.join(SRC_DIR, relPath), "utf-8");
+      const usesSharedStyles = /from\s+["'][^"']*modalStyles["']/.test(content);
+      const hasOverflow = hasOverflowNearFixedInsetOverlay(content);
+      if (!usesSharedStyles && !hasOverflow) {
+        throw new Error(
+          `[modalStyles] ${relPath} は position:fixed; inset:0 の全画面オーバーレイを持ちますが、\n` +
+          `共有スタイル（modalStyles.ts）を使っておらず、overflow:"auto"（保険のスクロール手段）も\n` +
+          `持っていません。\n` +
+          `理由：中央寄せでないアンカー方式（上寄せ・下シート等）自体はSection 21の対象外ですが、\n` +
+          `箱が想定より大きくなった場合に背景側からスクロールして到達する手段が無いと、\n` +
+          `2026-08-06のProjectCreateModal・2026-08-12のQuickAddTaskModalと同種の「操作不能」に\n` +
+          `なりえます（2026-08-20にTaskEditModal.tsxで実際にこの欠落が見つかりました）。\n` +
+          `直し方：オーバーレイのstyleに overflow: "auto" を1行足してください（中央寄せの手段・\n` +
+          `アンカー自体は変えなくて構いません）。\n` +
+          `本当に到達不能になり得ない（子を持たないスクリム・アーカイブ済みコード等）なら、\n` +
+          `このテストファイルの EXCLUDED_FILES に理由付きで追加してください。`,
         );
       }
     },

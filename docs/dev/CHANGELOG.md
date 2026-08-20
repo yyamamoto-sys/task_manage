@@ -6226,5 +6226,52 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。
 #   詳細はCLAUDE.md Section 21参照。
 #
-# 最終更新：2026-08-20（v3.84）
+# v3.85（2026-08-20）：画面外に切れて操作不能になる不具合を複数まとめて修正（横断監査）
+#   背景：v3.84の修正と並行して走らせた読み取り専用の横断監査で、同じ「画面外に出て操作
+#   不能になる」系統のバグが他に確証3件・保険欠落2件見つかった。
+#   A-1（確証）：`InlineEditAssignee.tsx`（一覧・カンバン・ガント・ダッシュボードの担当者
+#   ドロップダウン）が`position:"absolute"`＋祖先の`overflow:"auto"`スクロール容器の内側に
+#   あり、可視範囲の下端に近い行で開くと候補の下側がクリップされ選べなかった。
+#   A-2（確証）：`CustomSelect.tsx`（担当者・PJ・TF選択等で最頻出）の`calcPanelStyle`が
+#   `window.innerWidth`/`innerHeight`との比較を1つも持たず、はみ出しクランプが皆無だった。
+#   A-3（確証）：`MentionTextarea.tsx`（コメント・メモ欄の`@`メンション候補）も同型でクランプ
+#   皆無だった。
+#   対応：`ProjectRowMenu.tsx`（サイドバーPJ行の「⋮」メニュー）が既に持っていた完成済みの
+#   クランプ・反転ロジックを共通ユーティリティ`computeFloatingPanelPosition()`
+#   （`src/lib/layout/floatingPanelPosition.ts`。新規）に切り出し、`ProjectRowMenu.tsx`
+#   自身を含む4箇所全てがこれを使うように揃えた（重複コピペが再発の温床だったため）。
+#   `InlineEditAssignee.tsx`は`position:"absolute"`から`createPortal(document.body)`＋
+#   `position:"fixed"`へ構造ごと変更した。
+#   B-1（保険欠落）：`TaskEditModal.tsx`はPC＝上寄せ・モバイル＝下シートという意図的な
+#   アンカー方式（Section 21の中央寄せ契約の対象外）だが、オーバーレイに`overflow:"auto"`が
+#   無く保険のスクロール手段が無かった。アンカー自体・maxHeightは変更せず`overflow:"auto"`
+#   のみ追加した。同型のリスクがあった`CommandPalette.tsx`にも同じ保険を追加した。
+#   B-2（保険欠落）：`GuideOverlay.tsx`（「？」ボタンのガイド表示）が`createPortal`を使わず
+#   `position:"fixed";inset:0`を直接描画しており、`ConsultationPanel.tsx`の非inline時の
+#   `transform`祖先がcontaining blockをすり替えてしまう問題があった（実際の視覚破綻は未検証だが
+#   CSS仕様上確実なため先んじて対応）。`GuideOverlay.tsx`本体・チャンク読込中フォールバック
+#   （`HelpButton.tsx`内`GuideOverlayLoading`）の両方を`createPortal(document.body)`に変更した。
+#   D（機械チェック）：`src/components/common/__tests__/modalStyles.test.ts`に、検出対象を
+#   「position:fixed かつ inset:0 の全画面オーバーレイ全般」（中央寄せに限らない）へ広げた
+#   describeブロックを追加し、`modalOverlayStyle()`を使っているか自前で`overflow:"auto"`を
+#   持っているかを検査するようにした（既存の厳密な中央寄せ契約はそのまま維持）。EXCLUDED_FILES
+#   に`ErrorBar.tsx`（子を持たない透明スクリムのみ）／`MainLayout.tsx`（Section 20の
+#   MobileFullscreenOverlay）／`GroupOkrDashboardArchived.tsx`（アーカイブ済み・実際には
+#   描画されない）／`PersonalOkrImportModal.tsx`（右ドロワー型）を理由付きで追加し、
+#   `KrReportPanel.tsx`／`KrQuarterPlanPanel.tsx`／`KrWhyPanel.tsx`（position:fixedを
+#   既に使わなくなっていたのに除外リストに古い理由のまま残っていた）を除外リストから外した。
+#   `src/lib/layout/__tests__/floatingPanelPosition.test.ts`（新規8件）が
+#   `computeFloatingPanelPosition()`のクランプ・反転ロジックを固定する。
+#   E（低優先度・あわせて対応）：`QuickAddTaskModal.tsx`のToDoツールチップ（反転後の左端
+#   クランプ漏れ）・`MainLayout.tsx`の`NavItem`ツールチップ（左右クランプ自体が無い）は
+#   どちらも`pointerEvents:"none"`で実害は見た目のみだが、軽微な一行修正のためあわせて直した。
+#   検証：修正前の（旧）`TaskEditModal.tsx`・`QuickAddTaskModal.tsx`（v3.84直前の
+#   `globals.css`）に対して新設の検出ロジックを単体で走らせ、実際にバグを検出できることを
+#   確認した。
+#   テスト：`floatingPanelPosition.test.ts`（新規8件）・`modalStyles.test.ts`に3件追加。
+#   既存1620件を壊さず、合計1631件が全通過。
+#   やらないこと：DBスキーマ変更なし。
+#   詳細はCLAUDE.md Section 21・Section 42参照。
+#
+# 最終更新：2026-08-20（v3.85）
 

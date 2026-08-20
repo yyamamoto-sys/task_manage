@@ -153,6 +153,12 @@ export function CommandPalette({
         background: "rgba(0,0,0,0.35)",
         display: "flex", alignItems: "flex-start", justifyContent: "center",
         paddingTop: "12vh",
+        // 【2026-08-20追記】箱の maxHeight は min(480px, 70vh) で通常は画面内に収まるが、
+        // 縦の可視領域が極端に狭い環境（Section 21・2026-08-12の教訓と同種）でも到達手段を
+        // 保険として持たせる（overflow:"auto"）。CommandPalette.tsx はSection 21の
+        // modalStyles.ts（画面中央寄せ）ではなく上寄せアンカー方式のため対象外だが、
+        // 保険のスクロールだけは同じ理由で必要と判断した。
+        overflow: "auto",
       }}
     >
       <div

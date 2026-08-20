@@ -13,6 +13,7 @@
 // lazyWithRetry + withChunkDownloadGate で「押したときだけ」読み込む。
 
 import { Suspense, useState } from "react";
+import { createPortal } from "react-dom";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { Skeleton } from "../common/Skeleton";
@@ -22,9 +23,13 @@ const GuideOverlay = withChunkDownloadGate(
   "GuideOverlay",
 );
 
-/** GuideOverlay のチャンク読込中に表示する軽量フォールバック。骨格をGuideOverlayに合わせて違和感を無くす。 */
+/**
+ * GuideOverlay のチャンク読込中に表示する軽量フォールバック。骨格をGuideOverlayに合わせて違和感を無くす。
+ * 【2026-08-20追記】GuideOverlay.tsx本体と同じ理由でcreatePortal(document.body)にする
+ * （チャンク読込中の一瞬だけ本体と挙動が食い違わないようにするため）。
+ */
 function GuideOverlayLoading({ onClose }: { onClose: () => void }) {
-  return (
+  return createPortal(
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       style={{
@@ -49,7 +54,8 @@ function GuideOverlayLoading({ onClose }: { onClose: () => void }) {
         <Skeleton width="80%" height={12} />
         <Skeleton width="60%" height={12} />
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

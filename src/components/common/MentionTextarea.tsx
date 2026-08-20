@@ -7,11 +7,23 @@
 // 注意: onChange / value を useCallback の依存に入れると TaskEditModal 側でインライン関数が
 // 毎レンダー再生成され handleChange が常に古い onChange を参照する stale closure が発生する。
 // そのため onChange は ref で保持し、select は ta.value (DOM値) を直接参照する。
+//
+// 【2026-08-20追記】画面外へのはみ出しクランプ・反転を追加した。コメント・メモ欄の下端に
+// 近い場所で「@」を打つと候補パネルが画面外に切れ、クリックして選ぶ操作ができなくなる
+// 不具合があった（2026-08-20の横断監査で発覚）。クランプ・反転は
+// `src/lib/layout/floatingPanelPosition.ts` の共通関数（CustomSelect.tsx/
+// InlineEditAssignee.tsx/ProjectRowMenu.tsxと同じ）を使う。
 
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Member } from "../../lib/localData/types";
 import { useT } from "../../hooks/useT";
+import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+
+/** パネルの `maxHeight`（下記style参照）と一致させる高さの見積もり値 */
+const PANEL_MAX_HEIGHT = 220;
+/** パネルの最小幅（下記 Math.max(pos.width, 200) と一致させる） */
+const PANEL_MIN_WIDTH = 200;
 
 interface Props {
   value: string;
@@ -51,7 +63,15 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
     if (match) {
       setQuery(match[1]);
       const rect = e.target.getBoundingClientRect();
-      setPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+      const panelWidth = Math.max(rect.width, PANEL_MIN_WIDTH);
+      const { top, left } = computeFloatingPanelPosition({
+        triggerRect: rect,
+        panelWidth,
+        estimatedPanelHeight: PANEL_MAX_HEIGHT,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+      });
+      setPos({ top, left, width: panelWidth });
       setOpen(true);
     } else {
       setOpen(false);
@@ -107,13 +127,13 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
           position: "fixed",
           top: pos.top,
           left: pos.left,
-          width: Math.max(pos.width, 200),
+          width: pos.width,
           zIndex: 9999,
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
           boxShadow: "var(--shadow-md)",
-          maxHeight: "220px",
+          maxHeight: `${PANEL_MAX_HEIGHT}px`,
           overflowY: "auto",
           padding: "4px",
           pointerEvents: "auto",

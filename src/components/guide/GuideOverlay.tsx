@@ -3,8 +3,18 @@
 // 【設計意図】
 // アプリ内ガイド表示用の汎用オーバーレイ。OkrDashboardView の履歴・概要オーバーレイと同パターン。
 // HelpButton（？ボタン）と、GuideModeView の記事表示の両方から使う。
+//
+// 【2026-08-20追記】createPortal(document.body) で描画する。この`position:"fixed"`要素は、
+// 呼び出し元（例：ConsultationPanel.tsx の非inline時。`transform: translateX(...)`を持つ）の
+// DOM子孫としてそのまま描画すると、CSSの仕様上 transform を持つ祖先が containing block を
+// すり替えてしまい、`position:"fixed"`が「ビューポート基準」ではなく「その祖先基準」になる
+// （2026-08-20の横断監査で発覚。実際の視覚的な破綻は未検証だが、原因はCSS仕様上確実なため
+// 先んじて塞いだ）。Portalでbody直下に描画すれば、呼び出し元がどんなstyleを持っていても
+// 常にビューポート基準で正しく全画面表示される。呼び出し先は本ファイルとAdminView.tsx
+// （直接呼び出し）・HelpButton.tsx（lazy）の2箇所のみであることを確認済み。
 
 import { useMemo } from "react";
+import { createPortal } from "react-dom";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { getDocByMode, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
@@ -27,7 +37,7 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
     return undefined;
   }, [entry, modeKey, slug]);
 
-  return (
+  return createPortal(
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
     // 背景要素をフォーカス可能にする必要はない
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
@@ -108,6 +118,7 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

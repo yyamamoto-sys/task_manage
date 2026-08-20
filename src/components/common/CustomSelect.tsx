@@ -11,10 +11,21 @@
 // モーダルの transform がスタッキングコンテキストを作るため、absolute 配置だと
 // 後続要素に隠れてしまう問題を根本解決するため。
 // パネル位置はトリガーの getBoundingClientRect() を使って fixed で算出する。
+//
+// 【2026-08-20追記】画面外へのはみ出しクランプ・反転を追加した。担当者・PJ・TF選択等で
+// 最頻出のコンポーネントであるにもかかわらず、可視範囲の下端に近い場所で開くと候補パネルの
+// 下側が画面外に切れ、position:fixedのためスクロールしても絶対に到達できない不具合が
+// あった（2026-08-20の横断監査で発覚）。クランプ・反転のロジックは
+// `src/lib/layout/floatingPanelPosition.ts` の共通関数に集約し、`ProjectRowMenu.tsx`
+// （元々完成していた実装）と同じものを使う。
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
+import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+
+/** パネルの `maxHeight`（下記style参照）と一致させる高さの見積もり値 */
+const PANEL_MAX_HEIGHT = 260;
 
 export interface SelectOption {
   value: string;
@@ -68,14 +79,22 @@ export function CustomSelect({
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // トリガー位置からパネルの fixed 座標を計算
+  // トリガー位置からパネルの fixed 座標を計算（画面外へのはみ出しをクランプ・反転する。
+  // 上記コメント参照）
   const calcPanelStyle = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const { top, left } = computeFloatingPanelPosition({
+      triggerRect: rect,
+      panelWidth: rect.width,
+      estimatedPanelHeight: PANEL_MAX_HEIGHT,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+    });
     setPanelStyle({
       position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
+      top,
+      left,
       width: rect.width,
       zIndex: 9999,
     });

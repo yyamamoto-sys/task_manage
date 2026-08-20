@@ -285,6 +285,17 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   return (
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
     // 背景要素をフォーカス可能にする必要はない
+    //
+    // 【2026-08-20追記・なぜこのモーダルだけ modalStyles.ts（CLAUDE.md Section 21）を使わないか】
+    // Section 21の契約は「箱を画面中央に margin:auto で中央寄せする」ことが前提だが、この
+    // モーダルは意図的にアンカー方式（PC：上寄せ・paddingTop 60px／モバイル：画面下端に
+    // 張り付く下シート＝alignItems:"flex-end"）を取っている。これはタスク詳細を開いたときに
+    // 呼び出し元（一覧・カンバン・ガント）のコンテキストが見えたまま操作できるようにする
+    // デザイン意図であり、Section 21の「中央寄せ」契約とは異なる（変更しない）。
+    // 現状の数値（isMobile ? "92vh" : "80vh"）では計算上まだ破綻していないが、横断監査
+    // （2026-08-20）で「オーバーレイに overflow:"auto" が無い」点だけは保険として直した
+    // （箱が万一想定より大きくなっても、背景側をスクロールして到達できるようにする。
+    // Section 21のオーバーレイ契約と同じ考え方で、アンカー自体は変えない）。
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
     <div
       className="animate-overlay"
@@ -295,6 +306,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
         alignItems: isMobile ? "flex-end" : "flex-start",
         justifyContent: "center",
         paddingTop: isMobile ? 0 : "60px",
+        overflow: "auto",
       }}
       onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
     >

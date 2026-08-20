@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.84
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.85
 #
-最終更新：2026-08-20（v3.84）
+最終更新：2026-08-20（v3.85）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -680,12 +680,17 @@ PJの基本情報を編集できる画面は2つある。役割が違うため�
   （本Section前項）にそのまま乗るため、一覧から消えずに残る。
 - **ポップオーバーの実装**：`src/components/project/ProjectRowMenu.tsx`。`CustomSelect.tsx`と
   同じ「トリガーの`getBoundingClientRect()`からfixed座標を算出し`createPortal`で`body`直下に
-  描画する」方式。画面外にはみ出さないよう右端・下端をクランプする。Escape・外側クリック・
-  スクロール/リサイズで閉じる。**Section 21（中央寄せモーダルの高さ上限契約）の対象外**：
-  `alignItems:center + justifyContent:center`で中央寄せする全画面オーバーレイではなく、
-  `CustomSelect.tsx`のドロップダウンパネルと同種の「トリガーに追従する小さいポップオーバー」
-  のため、そもそも対象のパターンに一致しない（`CustomSelect.tsx`がSection 21の除外リストに
-  入っていないのと同じ理由）。
+  描画する」方式。画面外にはみ出さないよう、共通ユーティリティ`computeFloatingPanelPosition`
+  （`src/lib/layout/floatingPanelPosition.ts`）で右端・下端をクランプ・反転する（🔴
+  2026-08-20訂正：このユーティリティに切り出すまで、実は`CustomSelect.tsx`自身はクランプを
+  一切持っておらず、この記述は誤りだった。`ProjectRowMenu.tsx`が元々持っていた完成済みの
+  クランプ・反転ロジックを共通関数に切り出し、`CustomSelect.tsx`／`InlineEditAssignee.tsx`／
+  `MentionTextarea.tsx`の4箇所全てがこれを使う形に揃えて記述を実態に合わせた）。Escape・
+  外側クリック・スクロール/リサイズで閉じる。**Section 21（中央寄せモーダルの高さ上限契約）の
+  対象外**：`alignItems:center + justifyContent:center`で中央寄せする全画面オーバーレイでは
+  なく、`CustomSelect.tsx`のドロップダウンパネルと同種の「トリガーに追従する小さい
+  ポップオーバー」のため、そもそも対象のパターンに一致しない（`CustomSelect.tsx`がSection 21の
+  除外リストに入っていないのと同じ理由）。
 
 ### サイドバーの「OKRタスク」セクションを描画停止（v3.54）
 
@@ -1200,7 +1205,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-20（v3.84）
+- 最終更新：2026-08-20（v3.85）
 
 ---
 
@@ -1748,7 +1753,7 @@ v3.34で単一state化した直後は、`activeLabView` が切り替わっても
 
 ---
 
-## 21. グランドルール：中央寄せモーダルは必ず画面内に収まる高さ上限を持つ（必須・v3.24、v3.64で中央寄せの手段を修正、v3.84でCSSアニメーション由来のtransform残留の再発防止を追加）
+## 21. グランドルール：中央寄せモーダルは必ず画面内に収まる高さ上限を持つ（必須・v3.24、v3.64で中央寄せの手段を修正、v3.84でCSSアニメーション由来のtransform残留の再発防止を追加、v3.85で検出範囲を中央寄せ以外へ拡張）
 
 **2026-08-06に発生した実際の不具合**：`ProjectCreateModal`（「過去のPJから新規PJを作る」）で、引き継ぎ元PJのタスク一覧が伸びるとモーダルが画面の上下を突き抜け、保存ボタンに到達できずPJを作成できなくなった。原因は「箱（モーダル本体）に `maxHeight` が無く、コンテンツの高さまで無制限に伸びていた」こと。オーバーレイにも `overflow` の指定が無かったため、はみ出した部分に到達する手段が無かった。
 
@@ -1783,11 +1788,16 @@ v3.34で単一state化した直後は、`activeLabView` が切り替わっても
 - Section 20 の全画面ラボビュー（体制図・カレンダー・マイページ・関係性グラフ）も対象外（別の契約＝position:fixedを使わずメインエリア内にflexで収める、に従う）。
 - **モーダルはサイドバーを避けない**（Section 20 とは別の話。モーダルは画面中央のままでよい）。
 
+**🔴🔴 2026-08-20に発生した4つ目の実際の不具合（中央寄せではないモーダルの保険漏れ）**：`TaskEditModal.tsx`（タスク詳細・編集モーダル）はPC＝上寄せ・モバイル＝下シートという意図的なアンカー方式（`alignItems: isMobile ? "flex-end" : "flex-start"`）を採っており、中央寄せではないためSection 21の主契約（`modalStyles.ts`）の対象外自体は正しい判断だった。しかしオーバーレイに `overflow:"auto"` が無く、箱が想定より大きくなった場合に背景側からスクロールして到達する保険が無いまま残っていた（2026-08-20の横断監査で発覚。現状の数値では計算上まだ破綻していないため実際の操作不能は未確認だが、保険としてoverflow:"auto"を1行追加した。アンカー自体・`maxHeight`の数値は変更していない）。
+
+なぜ既存の機械チェックをすり抜けたか：`modalStyles.test.ts` の検出（`hasCenteredFixedOverlay`）は `alignItems:"center"` のリテラル一致を要求しており、三項演算子で `"flex-start"`/`"flex-end"` になりうるアンカー方式はそもそも「対象外」と判定されて検査自体が走っていなかった（対象外の判断は正しいが、対象外でも最低限の保険は必要という論点自体が検査に入っていなかった）。
+
 ### 機械チェック
 
 - `src/components/common/__tests__/modalStyles.test.ts` が、`position:"fixed"` かつ `inset:0` で中央寄せ（`alignItems:"center"` + `justifyContent:"center"`）しているオーバーレイを持つ全 `.tsx` ファイルを検出し、`modalStyles.ts` を import しているか自前で `maxHeight` を持っているかを機械的に検査する（widgetContract.test.ts と同じソース走査方式）。ドロワー・サイドパネル等は明示的な除外リスト（`EXCLUDED_FILES`）に理由付きで列挙してある（v3.33：全画面ラボビュー4ファイルは `position:fixed` を一切使わなくなり検出パターンにそもそも一致しなくなったため除外リストから外した。将来の逆行を見逃さないための対応）。
 - **（v3.64で追加）** 同じテストファイル内に、`modalStyles.ts` 自身のソースを読み、`modalOverlayStyle()` が `alignItems`/`justifyContent` を一切使っていないこと・`modalBoxStyle()` が `margin:"auto"` を持っていることを検査するテストを追加した。共有関数側で `alignItems:"center"` に戻されると、20箇所全ての利用先（`ConfirmModal`／`AdminFormModal`／`TodoDecomposeModal`／`MilestoneAddModal`／`MilestoneEditModal`／`WidgetConfigModal`／`DashboardView`／`ProjectKarte`／`ChangeHistoryModal`／`ConfirmationDialogModal`／`MyPageView`／`MainLayout`（2箇所）／`OkrModeIntroModal`／`PersonalKrFormModal`／`WeekTaskLinkModal`／`ProjectCreateModal`／`ProjectSettingsModal`／`QuickAddTaskModal`）に一括で再発するため、利用先ではなく共有関数側を直接検査する。加えて、`modalStyles.ts` を使わず同型のパターンを自前実装していた9ファイル（`AdminFormModal`／`MilestoneAddModal`／`MilestoneEditModal`／`TodoDecomposeModal`／`WidgetConfigModal`／`DashboardView`／`ProjectKarte`／`ChangeHistoryModal`／`ConfirmationDialogModal`）を共有関数へ移行し、`modalOverlayStyle()` の利用者全員が箱側で `margin:"auto"`（`modalBoxStyle()` 経由または手書き）を併用していることを検査するテストも追加した（`ConfirmModal.tsx`・`MainLayout.tsx`の2箇所は箱側の中央寄せが欠けていたため同時に修正）。
 - **（v3.84で追加）** `modalStyles.test.ts` はインラインstyleの中央寄せ手段しか見ておらず、CSSアニメーション由来のtransform残留（2026-08-20の3つ目の実際の不具合）を検出できなかった穴を、新規 `src/components/common/__tests__/modalKeyframeTransform.test.ts` で塞いだ。①`globals.css` を読み、`@keyframes` の中で `translate(-50%` を含む宣言を持つアニメーション名を洗い出し、そのアニメーション名を使う `.animate-*` クラスが、`.tsx` 側で `modalBoxStyle()` を使うモーダルの箱に適用されていないことを検査する（許可リスト方式。許可する場合は「このアニメーションは top:50%/left:50% 方式専用」等の理由コメントを `ALLOWED_CENTERING_RESIDUE_USAGE` に書く）。②`modalBoxStyle()` を使っている箱の要素に `transform` が直接指定されていないことも検査する。`modalStyles.test.ts`／`widgetContract.test.ts` と同じソース走査方式。実装時に、修正前の（旧）`globals.css` と実際の `QuickAddTaskModal.tsx` に対して検出ロジックを単体で走らせ、`animate-modalEnter` が `modalBoxStyle()` の箱に適用されていることを実際に検出できることを確認した（修正後は残骸ゼロで通過する）。
+- **（v3.85で追加）** `modalStyles.test.ts` の中央寄せ専用チェックは`alignItems:"center"`のリテラル一致しか見ておらず、`TaskEditModal.tsx`のようなアンカー方式（中央寄せでない、Section 21の主契約の対象外）のオーバーレイに`overflow:"auto"`が無いことを検出できなかった。同じテストファイル末尾に、検出対象を「`position:"fixed"`かつ`inset:0`の全画面オーバーレイ全般」（中央寄せに限らない）へ広げた別のdescribeブロックを追加し、`modalOverlayStyle()`を使っているか、自前なら`overflow:"auto"`（保険のスクロール手段）を持っているかを検査するようにした（既存の厳密な中央寄せ契約は変更せず維持したまま、別の安全網として追加）。`EXCLUDED_FILES`は両方のテストで共有し、ドロワー・全画面認証画面に加えて「子を持たない透明スクリムのみの要素」（`ErrorBar.tsx`）・「Section 20のモバイル全画面ラップ用ヘルパー」（`MainLayout.tsx`のMobileFullscreenOverlay）・「アーカイブ済みで実際には描画されない旧コード」（`GroupOkrDashboardArchived.tsx`）・「右ドロワー型の取込パネル」（`PersonalOkrImportModal.tsx`）を理由付きで追加した。あわせて、Section 20（v3.33）の変更で`position:"fixed"`を一切使わなくなっていた`KrReportPanel.tsx`／`KrQuarterPlanPanel.tsx`／`KrWhyPanel.tsx`が除外リストに古い理由のまま残っていたのを発見し、素通しに戻した（GraphView等4ファイルは既に同じ理由で除外リストから外れていたのにこの3ファイルだけ取り残されていた）。修正前の`TaskEditModal.tsx`に対して検出ロジックを単体で走らせ、実際に検出できる（`overflow:"auto"`追加後は検出されない）ことを確認した。
 
 ---
 
@@ -2955,6 +2965,77 @@ localStorage。`src/lib/localData/localStore.ts`の`LS_KEY.sidebarCurrentGroup(m
 ### DBスキーマ変更なし
 
 localStorageのみの変更のため、マイグレーション・`schemaChecks.ts`への追記は不要。
+
+---
+
+## 42. グランドルール：トリガー追従のポップオーバー（ドロップダウン・候補パネル）は画面外へのはみ出しをクランプする（必須・v3.85）
+
+Section 21（中央寄せモーダル）とは別系統の不具合。`getBoundingClientRect()` → `position:"fixed"`
+座標算出 → `createPortal(document.body)` という手法自体はSection 21対象外の正しい設計（`CustomSelect.tsx`
+のコメント・`ProjectRowMenu.tsx`のコメント参照）だが、**画面外へのはみ出しクランプ・反転が無いと、
+可視範囲の下端に近い場所でパネルを開いた瞬間、`position:"fixed"`のため下側が画面外に切れ、
+スクロールしても絶対に到達できなくなる**（下方向は`overflow:"auto"`という保険が効くSection 21の
+モーダルと異なり、これらのポップオーバーは背景側のスクロールという概念自体が無い）。
+
+**2026-08-20に発生した実際の不具合（3件・横断監査で確定）**：
+- `CustomSelect.tsx`（担当者・PJ・TF選択等で最頻出）：`calcPanelStyle`が`window.innerWidth`/
+  `innerHeight`との比較を1つも持たず、はみ出しクランプが皆無だった。
+- `InlineEditAssignee.tsx`（一覧・カンバン・ガント・ダッシュボードの担当者ドロップダウン）：
+  そもそも`position:"absolute"`＋祖先の`overflow:"auto"`スクロール容器の内側にあり、可視範囲の
+  下端から候補リストの高さ未満しか余白が無い行で開くと候補の下側がクリップされて選べなかった。
+- `MentionTextarea.tsx`（コメント・メモ欄の`@`メンション候補）：`CustomSelect.tsx`と同型でクランプ皆無。
+
+**対策**：`src/components/project/ProjectRowMenu.tsx`（サイドバーPJ行の「⋮」メニュー）が既に持って
+いた「トリガーの`getBoundingClientRect()`→左右端クランプ→下に入らなければ上へ反転」という完成
+済みの実装を、共通ユーティリティ`computeFloatingPanelPosition()`（`src/lib/layout/
+floatingPanelPosition.ts`）に切り出した。`align:"left"`（パネル左端をトリガー左端に揃える。
+`CustomSelect.tsx`／`MentionTextarea.tsx`／`InlineEditAssignee.tsx`向け）と`align:"right"`
+（パネル右端をトリガー右端に揃える。`ProjectRowMenu.tsx`向け）の2方式を持つ。高さは実測不要で
+呼び出し側が既知の`maxHeight`や行数から見積もる（`ProjectRowMenu.tsx`の既存方式を踏襲）。
+
+- `InlineEditAssignee.tsx`は`position:"absolute"`から`createPortal(document.body)`＋
+  `position:"fixed"`へ構造ごと変更した（`ProjectRowMenu.tsx`と同じ「外側クリック判定は
+  トリガー・パネル両方のrefを個別に見る／Escapeで閉じる／スクロール・リサイズで閉じる」の
+  一式も揃えた）。パネル幅が内容依存（メンバー名・アバターで可変）のため、クランプ計算は
+  見積もり幅（220px）を使う（実際の描画幅がこれより大きい場合はクランプ精度が幾分下がるが、
+  クランプが皆無だった旧実装からの改善であることに変わりはない）。
+- `CustomSelect.tsx`／`MentionTextarea.tsx`は既存の`position:"fixed"`＋`createPortal`構造は
+  変えず、座標計算だけを共通関数に置き換えた。
+
+**重複コピペが今回の再発の温床だったため、共通ユーティリティへの集約自体が再発防止の本体**
+（4箇所がそれぞれ似て非なるクランプ実装を持つと、次に同じ穴が1箇所だけ塞がれ他が残る、という
+ことが起きる）。
+
+### 併せて対応：`transform`祖先が`position:fixed`要素のcontaining blockをすり替える問題
+
+`src/components/guide/GuideOverlay.tsx`（「？」ボタンから開くガイド表示。`ConsultationPanel.tsx`
+のヘッダー等から`HelpButton.tsx`経由で呼ばれる）は`createPortal`を使わず`position:"fixed";
+inset:0`のdivを直接描画していた。`ConsultationPanel.tsx`の非inline（モバイル）時のパネルは
+`transform: isOpen ? "translateX(0)" : "translateX(100%)"`を持つため、CSSの仕様上この`transform`
+がcontaining blockをすり替え、内側の`GuideOverlay`の`position:"fixed"`が「ビューポート基準」では
+なく「`ConsultationPanel`のパネル基準」になってしまう（2026-08-20の横断監査で発覚。実際の視覚的な
+破綻は未検証だが、原因はCSS仕様上確実なため先んじて塞いだ）。対策として`GuideOverlay.tsx`本体・
+そのチャンク読込中フォールバック（`HelpButton.tsx`内の`GuideOverlayLoading`）の両方を
+`createPortal(document.body)`に変更した（呼び出し先は本ファイル自身と`AdminView.tsx`（直接呼び出し）・
+`HelpButton.tsx`（lazy）の2箇所のみであることを確認済み）。
+
+### 機械チェック・テスト
+
+`src/lib/layout/__tests__/floatingPanelPosition.test.ts`が`computeFloatingPanelPosition()`の
+クランプ・反転ロジックを固定する（左右端クランプ・上下反転・`align`両方・`margin`カスタマイズ・
+パネルがビューポートより広い極端なケース）。`align:"right"`のテストケースは`ProjectRowMenu.tsx`の
+旧実装（切り出し前）と同じ入力で同じ出力になることを確認し、切り出しで挙動が変わっていないことを
+担保した。
+
+### 対象外（低優先度・見送り）
+
+`QuickAddTaskModal.tsx`のToDoホバーツールチップ・`MainLayout.tsx`の`NavItem`ツールチップは、どちらも
+`pointerEvents:"none"`（クリックできない純粋な表示専用）のため実害は見た目のみ。2026-08-20の横断
+監査で見つかったクランプ漏れ（前者は反転後の左端クランプ漏れ、後者は左右クランプ自体が無い）は
+どちらも軽微な一行修正のため今回あわせて直した（`Math.max(8, ...)`／`Math.min(...)`によるクランプ。
+NavItemの見積もり幅は`NAV_TOOLTIP_WIDTH_ESTIMATE`/`NAV_TOOLTIP_EXPANDED_WIDTH`定数）。専用のテストは
+追加していない（`pointerEvents:"none"`の装飾要素であり、Section 21・本Sectionの「操作不能」という
+実害の定義には該当しないため）。
 
 ---
 

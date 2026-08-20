@@ -6,6 +6,15 @@
 // 座標を算出し、Portal で document.body 直下に描画する」方式を流用する（サイドバーは幅196px
 // しかなくパネルの表示領域が収まらないため、absolute配置ではなく fixed + Portal が必要）。
 //
+// 【2026-08-20訂正】このコメント・CLAUDE.md Section 8には元々「CustomSelect.tsxと同じ…
+// 画面外にはみ出さないよう右端・下端をクランプする」と書かれていたが、実際にはCustomSelect.tsx
+// 自身はクランプを一切持っておらず記述が誤りだった（横断監査で発覚。CustomSelect.tsx/
+// InlineEditAssignee.tsx/MentionTextarea.tsxが画面外へのはみ出しで操作不能になる不具合が
+// 実際にあった）。2026-08-20に、このファイルが元々持っていたクランプ・反転ロジックを
+// 共通ユーティリティ `computeFloatingPanelPosition`（src/lib/layout/floatingPanelPosition.ts）
+// に切り出し、CustomSelect.tsx/InlineEditAssignee.tsx/MentionTextarea.tsxの4箇所全てが
+// これを使うように揃えた（このファイルもcalcPanelStyle内でこの関数を呼ぶ形に変更済み）。
+//
 // 【CLAUDE.md Section 21（中央寄せモーダルの高さ上限契約）の対象外】
 // このパネルは alignItems:center + justifyContent:center で画面中央に固定表示する「モーダル」
 // ではなく、CustomSelect.tsx のドロップダウンパネルと同種の「トリガーに追従する一時的な
@@ -22,6 +31,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
 import { buildProjectRowMenuItems, type ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
+import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
 
 const ITEM_LABEL_KEY: Record<ProjectRowMenuActionId, string> = {
   settings: "layout.sidebar.pjRowMenu.settings",
@@ -52,20 +62,23 @@ export function ProjectRowMenu({ projectName, projectStatus, canEdit, isGuest, f
 
   const items = buildProjectRowMenuItems({ project: { status: projectStatus }, canEdit, isGuest });
 
-  // トリガー位置からパネルの fixed 座標を計算（CustomSelect.tsx の calcPanelStyle と同じ方式）。
+  // トリガー位置からパネルの fixed 座標を計算（共通クランプ関数 computeFloatingPanelPosition
+  // を使う。2026-08-20よりCustomSelect.tsx/InlineEditAssignee.tsx/MentionTextarea.tsxも同じ
+  // 関数を使うよう揃えた。src/lib/layout/floatingPanelPosition.ts 参照）。
   // 右寄せ＋画面外にはみ出さないようクランプする。
   const calcPanelStyle = useCallback(() => {
     if (!triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const estimatedHeight = items.length * 34 + 8;
-    let left = rect.right - PANEL_WIDTH;
-    if (left < VIEWPORT_MARGIN) left = VIEWPORT_MARGIN;
-    if (left + PANEL_WIDTH > window.innerWidth - VIEWPORT_MARGIN) left = window.innerWidth - PANEL_WIDTH - VIEWPORT_MARGIN;
-    let top = rect.bottom + 4;
-    if (top + estimatedHeight > window.innerHeight - VIEWPORT_MARGIN) {
-      top = rect.top - estimatedHeight - 4;
-      if (top < VIEWPORT_MARGIN) top = VIEWPORT_MARGIN;
-    }
+    const { top, left } = computeFloatingPanelPosition({
+      triggerRect: rect,
+      panelWidth: PANEL_WIDTH,
+      estimatedPanelHeight: estimatedHeight,
+      viewportWidth: window.innerWidth,
+      viewportHeight: window.innerHeight,
+      margin: VIEWPORT_MARGIN,
+      align: "right",
+    });
     setPanelStyle({ position: "fixed", top, left, width: PANEL_WIDTH, zIndex: 9999 });
   }, [items.length]);
 

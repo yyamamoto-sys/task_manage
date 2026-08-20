@@ -2408,6 +2408,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// NavItemツールチップの画面外クランプ用の幅見積もり（2026-08-20追記）。
+// 折りたたみ時は短いラベルのみのため控えめに、展開時はmaxWidth:"220px"に合わせる。
+const NAV_TOOLTIP_WIDTH_ESTIMATE = 160;
+const NAV_TOOLTIP_EXPANDED_WIDTH = 220;
+
 function NavItem({
   active, icon, label, onClick, color, tooltip, collapsed = false,
 }: {
@@ -2461,7 +2466,11 @@ function NavItem({
         {tipPos && effectiveTooltip && (
           <div style={{
             position: "fixed",
-            left: tipPos.x + 12, top: tipPos.y - 10,
+            // 折りたたみサイドバーは画面左端にあるため実害はほぼ無いが、画面外へのはみ出し
+            // クランプが無かった（2026-08-20の横断監査。pointerEvents:"none"のため見た目のみ）。
+            // NAV_TOOLTIP_WIDTH_ESTIMATE分の余白を保証する保険。
+            left: Math.min(tipPos.x + 12, window.innerWidth - NAV_TOOLTIP_WIDTH_ESTIMATE - 8),
+            top: Math.max(8, tipPos.y - 10),
             zIndex: 9999,
             background: "var(--color-bg-primary)",
             border: "1px solid var(--color-border-primary)",
@@ -2507,7 +2516,9 @@ function NavItem({
       {tipPos && tooltip && (
         <div style={{
           position: "fixed",
-          left: tipPos.x + 12, top: tipPos.y - 10,
+          // 画面外へのはみ出しクランプ（2026-08-20追記。上のcollapsed分岐と同じ理由）。
+          left: Math.min(tipPos.x + 12, window.innerWidth - NAV_TOOLTIP_EXPANDED_WIDTH - 8),
+          top: Math.max(8, tipPos.y - 10),
           zIndex: 9999,
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
