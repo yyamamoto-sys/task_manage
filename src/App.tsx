@@ -27,6 +27,7 @@ import { shouldPromptLoggedInInviteAccept, buildAcceptPayloadForExistingMember, 
 import { confirmDialog } from "./lib/dialog";
 import { computeAccessibleGroupsForSidebar } from "./lib/projectInvite/sidebarGroupVisibility";
 import { loadStoredSidebarGroupId, resolveRestoredCurrentGroupId } from "./lib/layout/sidebarCurrentGroupRestore";
+import { confirmDiscardUnsavedEdits } from "./lib/editing/unsavedEditorRegistry";
 
 export default function App() {
   const t = useT();
@@ -124,6 +125,11 @@ export default function App() {
   // （＝「ログアウトを押しても何も起きない」不具合の原因）。signOut() の完了を待ってから
   // ローカル状態をクリアする順序を必ず守ること。
   const handleLogout = async () => {
+    // v3.89：未保存の編集（TaskEditModal/TaskSidePanel）がある状態でログアウト（ゲスト終了も
+    // 同じ経路）すると、この後のwindow.location.reload()で無言のまま失われる。
+    // signOut()より前に確認することで、ネットワーク断等でsignOut自体が失敗した場合に
+    // 無駄な確認をさせない（先に確認→ユーザーが進むと決めてから実際のログアウト処理に入る）。
+    if (!(await confirmDiscardUnsavedEdits())) return;
     try {
       await signOut();
     } catch (e) {

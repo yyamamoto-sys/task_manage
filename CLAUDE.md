@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.88
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.89
 #
-最終更新：2026-08-20（v3.88）
+最終更新：2026-08-20（v3.89）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1205,7 +1205,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-20（v3.88）
+- 最終更新：2026-08-20（v3.89）
 
 ---
 
@@ -3137,11 +3137,59 @@ v3.87のリリース確認で発覚：`TaskSidePanel.tsx`のタスク切替useEf
 - **タスクの削除（`handleDelete`。両ファイル）は対象外。** 削除は編集中のフォーム内容ごとタスク自体を消す操作のため、未保存の編集が残っていても「削除で消える」ことは仕様上の前提であり、今回の対象（保存を試みて失敗したのに黙って進む）には該当しない。
 - **ゲストモードは対象外。** `TaskEditModal.tsx`/`TaskSidePanel.tsx`はいずれも`isGuest`判定を持たず、保存は常に`appStore.saveTask`を経由する。ゲストの場合`saveTask`はDB書き込みをスキップしメモリ上の状態だけを即時更新する設計（CLAUDE.md該当箇所参照）で、例外を投げる経路が無いため、今回の「保存失敗」分岐がゲストで発生することはない。
 - **PJの切替（フォーム内の`project_id`変更）は対象外。** これは`sidebarForm`/`form`内の1フィールド変更であり、保存ボタン／Enter/Ctrl+Enterで保存されるまでは他の変更と同様にdirty追跡の対象になるだけで、独立した「切替」動作ではない。
-- **見つかった別の潜在リスク（今回は対応しない・報告のみ）：`viewMode`（一覧／カンバン／ガント）を切り替えると、`MainLayout.tsx`が`{viewMode === "list" && <ListView/>}`のような条件レンダーで前のビューを丸ごとアンマウントする。** `TaskSidePanel`はunmount時に何も保存・警告しないため、`viewMode`切替時に未保存の編集があると無警告で失われる。これは明示保存化（v3.87）以前の600msデバウンス自動保存の時代から存在した経路（デバウンス発火前にアンマウントされれば同様に失われていた）だが、当時は「編集を止めてから600ms以内」という短い窓でしか起きなかったのに対し、明示保存化によって編集してから保存ボタンを押すまでの間ずっと窓が開いたままになり、実際に踏む確率が上がっている。対応には`viewMode`切替のトリガー元（`MainLayout.tsx`のナビゲーション）まで含めた設計判断が要るため、v3.88の対応範囲には含めず、次回の課題として記録するにとどめる。
+- **見つかった別の潜在リスク（v3.88時点では未対応・報告のみ。→v3.89で対応した。Section 46参照）：`viewMode`（一覧／カンバン／ガント）を切り替えると、`MainLayout.tsx`が`key={viewMode}`の条件レンダーで前のビューを丸ごとアンマウントする。** `TaskSidePanel`はunmount時に何も保存・警告しないため、`viewMode`切替時に未保存の編集があると無警告で失われる。これは明示保存化（v3.87）以前の600msデバウンス自動保存の時代から存在した経路（デバウンス発火前にアンマウントされれば同様に失われていた）だが、当時は「編集を止めてから600ms以内」という短い窓でしか起きなかったのに対し、明示保存化によって編集してから保存ボタンを押すまでの間ずっと窓が開いたままになり、実際に踏む確率が上がっている。対応には`viewMode`切替のトリガー元（`MainLayout.tsx`のナビゲーション）まで含めた設計判断が要るため、v3.88の対応範囲には含めなかった。
 
 ### 機械チェックへの影響
 
 既存の`src/components/task/__tests__/explicitSaveNoDebounce.test.ts`はデバウンス自動保存の再発検知が目的であり、今回の修正（保存失敗時の切替中止）は別種の不具合のため対象外。新規の機械チェックは追加していない（今回の修正はコンポーネント間のコールバック配線が主体で、ソース走査による固定に馴染む単純な文字列パターンが無いため）。
+
+---
+
+## 46. グランドルール：明示保存の画面は、自分がアンマウントされうる経路すべてに対して未保存の警告を持つ（必須・v3.89・2026-08-20）
+
+v3.88のリリース確認で「`viewMode`切替時に`TaskSidePanel`が無警告でアンマウントされ、未保存の編集が消える」経路が見つかった（Section 45参照）。これはv3.87の明示保存化によって「編集してから保存ボタンを押すまで」の無防備な時間が実質無制限に延びたことで、発生確率が跳ね上がった経路であり、「保存されたか分からず不安」というクレームへの対応が**別経路で無言の編集消失を増やしている**状態だった。次回の課題として先送りにせず、v3.89で対応した。
+
+### 仕組み：未保存編集レジストリ（`src/lib/editing/unsavedEditorRegistry.ts`）
+
+アンマウントの瞬間に非同期の確認ダイアログを出すのは構造的に無理（Reactのアンマウントは同期的で、確認を待って中断できない）なため、「未保存の編集を持っている編集画面が今あるか」を**アンマウントされる前に**問い合わせられる仕組みを新設した。
+
+- **zustandではなく独立モジュールにした。** zustandストア（`appStore.ts`）はSupabaseと同期する「アプリの業務データ」を持つ場所であり、ここで扱うのは「今この瞬間dirtyな編集フォームが画面上に存在するか」という一過性のUI信号（Reactの再レンダリングを一切必要としない）。`src/lib/lastUndoStore.ts`（Undoの直前アクション）・`src/lib/errorReporter.ts`（CustomEventベースのエラー通知）と同じ「モジュール変数＋登録／解除関数」の流儀に合わせた。
+- **id→dirty判定関数（getter）のMapとして持つ、pull型の設計。** MainLayoutは`graphEditTaskId`/`calendarEditTaskId`/`myPageEditTaskId`/`aiEditTaskId`の4つの`TaskEditModal`インスタンスを同時に持ちうるため、単一のboolean値では表現できない。「変更のたびにregistryへpushする」のではなく、登録時に渡した関数を問い合わせ時に毎回呼び出して評価するpull型にすることで、値の同期漏れ（更新し忘れ）が起きない。
+- **`TaskEditModal.tsx`/`TaskSidePanel.tsx`は`useId()`で払い出した安定なidをマウント時に`registerUnsavedEditor(id, getter)`で登録し、アンマウント時（`useEffect`のクリーンアップ）に必ず`unregisterUnsavedEditor(id)`で解除する。** getterは`isDirtyRef.current`を読むだけの薄い関数にし、`isDirtyRef.current = isDirty;`をレンダーのたびに更新することで、effectをisDirty変化のたびに再実行せずに常に最新の値を反映する（このファイル既存の「refをレンダーのたびに更新する」パターンを踏襲）。
+- **`confirmDiscardUnsavedEdits()`（レジストリと同じファイルからexport）が「未保存の編集があるか確認し、あれば確認ダイアログを出す」を1箇所に集約する。** 無ければ何もせず`true`（＝進んでよい）。安全側のデフォルト＝背景クリック（`ConfirmModal`は背景クリックで必ず`cancel`扱いになる。Section 45参照）が「このまま編集を続ける」（＝切り替えない）になるよう、`tone="danger"`・`confirmLabel`="破棄して切り替える"・`cancelLabel`="このまま編集を続ける"にしている（v3.88のタスク切替確認と同じ考え方）。
+
+### `MainLayout.tsx`：画面遷移の前に確認するガード（`guardedNavigate`）
+
+`viewMode`/`appMode`/部署（`currentGroupId`）の切替は「`closeLabViews()` → 状態を変える」という複数ステップの複合操作であり、それぞれの呼び出し元（`navSetViewMode`・`setAppMode`・`handleSelectGroupNav`・JSX内の複数の`onClick`/`onNavigate`等）が独立に確認を挟むと、1回のクリックで確認ダイアログが2回以上出てしまう（`closeLabViews`分＋`viewMode`/`appMode`変更分）。そのため「未保存かどうかの確認」は`guardedNavigate`という1つの関数だけに集約し、`closeLabViews`・`setViewMode`・`setAppMode`・`handleSelectGroupNav`自体は一切確認を挟まない「素」の関数のままにしてある。JSX側の実際の画面遷移の起点（下記10箇所）だけを`void guardedNavigate(() => { ...元の処理... })`で包む。
+
+- 複合操作の内側でさらに別の複合操作を呼ぶ場合（例：`navSetViewMode`が`closeLabViews`と`setViewMode`の両方を呼ぶ）の二重確認は、「今まさにユーザーの確認を得て実行中である」ことを示す簡易フラグ（`navigationConfirmedRef`）で防ぐ。JSは単一スレッドでこれらの呼び出しは全て同期的にネストするため、単純なbooleanで十分安全に機能する。
+- ガードを適用した10箇所：`navSetViewMode`・`handleToggleAppMode`（2分岐）・`handleSelectGroupNav`・OKRモード紹介の`onApprove`・`onNavigate`・`onSelectProject`+`setAppMode`の組み合わせ（モバイル/PC各1）・`onSwitchView`+`setAppMode`の組み合わせ（モバイル/PC各1）・NAV_ITEMSの直接`onClick`（モバイル1箇所。`Sidebar`コンポーネント内の同名の`onClick`は`guardedNavigate`のスコープ外のため対象外＝そちらは`setViewMode`propが既に`navSetViewMode`＝ガード済みの関数を指しているため二重に包む必要が無い）。
+- `handleSelectGroupNav`・`navSetViewMode`は「実質的な切替が無いなら確認しない」判定を持つ（`id === currentGroupId`等）。ただし`navSetViewMode`は`v === viewMode`のときも確認を省略しない（`closeLabViews()`が「ラボ系ビューを閉じて元の一覧へ戻る」役割も兼ねているため、安全に無視してよい条件を精密に見極めるより、多少の余分な確認ダイアログを許容する方が、ラボ系ビューを閉じる操作を誤って無効化するリスクより安全と判断した）。
+
+### `App.tsx`：ログアウト（ゲストモードの終了と同じ経路）
+
+`handleLogout`は`window.location.reload()`で全状態を破棄する。ここに未保存の編集があると無警告で失われるため、`signOut()`を呼ぶ前に`confirmDiscardUnsavedEdits()`で確認するようにした（`signOut()`より前に確認することで、ネットワーク断等で`signOut`自体が失敗した場合に無駄な確認をさせない）。ゲストモードの終了も同じ`handleLogout`を経由するため、追加の分岐は不要だった。
+
+### 確認した経路・対象外にした経路（理由込み）
+
+- **表示プロジェクトの切替（`handleSelectProject`/`selectedProjectId`）：対象外（安全と確認済み）。** `selectScopedTasks`/`selectScopedProjects`は`selectedProjectId`ではなく`currentGroupId`でしかフィルタしない。`ListView`/`GanttView`/`KanbanView`側にも「`selectedProject`が変わったら選択中タスクをクリアする」処理は無い。よってプロジェクト表示を切り替えても`TaskSidePanel`は開いたままのタスクを表示し続け、アンマウントされない（コードを読んで確認済み。推測ではない）。
+- **サイドバーの表示部署の切替（`currentGroupId`）：対象。ガード追加。** super-adminユーザーの`selectScopedTasks`は`t.group_id === s.currentGroupId`でフィルタする（非super-adminは無条件で全件返す）。編集中のタスクが別部署に属する場合、部署切替で`allTasks`から消え`selectedTask`が`undefined`になり、`TaskSidePanel`がレンダーされなくなる＝実質アンマウント。super-admin以外には本来起こらないが、レジストリは「誰のどのタスクが引っかかるか」までは判定しない単純な設計のため、全ユーザー一律にガードする（非super-adminには理論上不要な確認が出うるが、見逃すより安全側）。
+- **計画モード⇄OKRモードの切替（`appMode`）：対象。ガード追加。** `appMode==="okr"`は`OkrDashboardView`のみを描画し、`viewMode`系のビュー（`key={viewMode}`）を完全にアンマウントする。
+- **ログアウト・ゲストモードの終了：対象。ガード追加。** 上記参照。
+- **管理画面・ガイド・ラボ系ビュー（カレンダー／グラフ／マイページ／体制図）をツールバーから開く操作：今回は対象外（報告のみ）。** これらも`isGuideOpen`/`isAdminOpen`/`activeLabView`によって`key={viewMode}`のビューを丸ごと差し替えるため、理屈上は同じ無警告アンマウントのリスクを持つ。ただし今回の依頼チェックリスト（`viewMode`・PJ切替・部署切替・appMode・ログアウト・ゲスト終了）には含まれておらず、対応するには`isGuideOpen`/`isAdminOpen`/`activeLabView`それぞれの開閉トリガー（ツールバーの複数のボタン）を洗い出して同様にガードする追加作業が要るため、今回は見送り、次の課題として記録する。
+
+### 再発防止：新しいグランドルール
+
+**明示保存の画面（CLAUDE.md Section 44）を新設・変更するときは、以下を必ず確認すること：**
+
+- [ ] この編集画面は、呼び出し元の都合で予告なくアンマウントされうるか？（`key`変更・条件レンダーの分岐変更・親の状態リセット等）
+- [ ] されうるなら、マウント時に`registerUnsavedEditor()`・アンマウント時に`unregisterUnsavedEditor()`を対で呼んでいるか？（`src/lib/editing/unsavedEditorRegistry.ts`）
+- [ ] このアンマウントを引き起こす操作（画面遷移・ナビゲーション）は、実行前に`confirmDiscardUnsavedEdits()`（またはそれを内包する`guardedNavigate`等の1箇所の choke point）を経由しているか？
+- [ ] 二重確認（同じ操作で確認ダイアログが2回以上出る）が起きないか？　複合操作（複数の状態変更をまとめて行う関数）を作るときは、確認は最も外側の呼び出し1箇所だけに集約し、内側の個別関数は確認を持たない「素」の関数のままにすること。
+
+### テスト
+
+`src/lib/editing/__tests__/unsavedEditorRegistry.test.ts`（新規12件）：登録/解除の対称性（解除漏れがあると誤検知し続けることの確認）・pull型（getterが呼び出し時に評価されること）・`confirmDiscardUnsavedEdits`の安全側デフォルト（`confirmDialog`をモックして検証。vitest.config.tsの test環境は`node`のため`window`に触れない設計にした）を固定している。機械チェック（ソース走査によるテスト）は新設していない：今回の修正はコンポーネント間の配線（どの画面遷移がガードを経由するか）が主体で、ソース走査で固定できる単純な文字列パターンが無いと判断した。
 
 ---
 

@@ -13,7 +13,7 @@
 // 即時実行のままにする（保存ボタンの対象に含めると「押さないと反映されない」という
 // 別の混乱を生むため）。
 
-import { useState, useCallback, useMemo, useRef } from "react";
+import { useState, useCallback, useMemo, useRef, useEffect, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
@@ -32,6 +32,7 @@ import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { extractMentions } from "../../lib/mentions";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
+import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { showToast } from "../common/Toast";
@@ -203,6 +204,20 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     && !!originalTask.updated_at
     && !!baselineUpdatedAtRef.current
     && originalTask.updated_at !== baselineUpdatedAtRef.current;
+
+  // 【v3.89：未保存の編集を「予告なくアンマウントされる経路」から守るレジストリ登録】
+  // MainLayoutのviewMode/appMode切替・部署切替・ログアウト等、このモーダルを含む画面が
+  // 丸ごとアンマウントされうる操作の前に、呼び出し元が「今dirtyな編集画面があるか」を
+  // 同期的に問い合わせられるようにする（CLAUDE.md Section 46参照）。
+  // isDirtyRefは毎レンダー最新値に更新し、登録するgetterは常にこのrefを読むことで、
+  // effectをisDirty変化のたびに再登録せずに済む（このファイル既存のref更新パターンを踏襲）。
+  const registryId = useId();
+  const isDirtyRef = useRef(isDirty);
+  isDirtyRef.current = isDirty;
+  useEffect(() => {
+    registerUnsavedEditor(registryId, () => isDirtyRef.current);
+    return () => unregisterUnsavedEditor(registryId);
+  }, [registryId]);
 
   const handleSave = useCallback(async () => {
     if (!originalTask) return;

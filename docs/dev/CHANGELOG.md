@@ -6379,5 +6379,43 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。saveTask（choke point）は無改修。
 #   詳細はCLAUDE.md Section 45参照。
 #
-# 最終更新：2026-08-20（v3.88）
+# v3.89（2026-08-20）：viewMode等の画面切替でTaskSidePanel/TaskEditModalの未保存編集が
+#   無警告で消える経路を塞ぐ
+#   v3.88のSection 45で「対応しない」と報告した潜在リスク（viewMode切替時にTaskSidePanelが
+#   無警告でアンマウントされ編集が消える）を、先送りせず本バージョンで対応した。明示保存化
+#   （v3.87）で編集してから保存ボタンを押すまでの無防備な時間が実質無制限に延び、発生確率が
+#   跳ね上がっていたため。
+#   A（未保存編集レジストリを新設）：src/lib/editing/unsavedEditorRegistry.ts。
+#   zustandではなく独立モジュール（lastUndoStore.ts/errorReporter.tsと同じ流儀）。
+#   id→dirty判定関数（getter）のMapで持つpull型設計。registerUnsavedEditor/
+#   unregisterUnsavedEditor/hasUnsavedEditors/confirmDiscardUnsavedEditsをexport。
+#   B（TaskEditModal.tsx/TaskSidePanel.tsxの登録配線）：useId()で払い出した安定なidで
+#   マウント時に登録、アンマウント時（useEffectクリーンアップ）に必ず解除。getterは
+#   isDirtyRef.current参照のみの薄い関数にし、isDirtyRefを毎レンダー更新することで
+#   effect再実行なしに常に最新値を反映。
+#   C（MainLayout.tsx：guardedNavigate）：viewMode/appMode/部署切替の10箇所の遷移起点を
+#   1つの共有ガード関数で包む。複合操作（closeLabViews+状態変更）の内側での二重確認を
+#   navigationConfirmedRefの簡易フラグで防止。closeLabViews/setViewMode/setAppMode/
+#   handleSelectGroupNav自体には確認を持たせず「素」のままにし、確認は呼び出し元の
+#   1点だけに集約した。
+#   D（App.tsx：ログアウト）：handleLogoutにconfirmDiscardUnsavedEditsを追加
+#   （signOut()より前に確認。ゲストモードの終了も同じ経路のため追加分岐は不要）。
+#   E（確認した経路・対象外にした経路）：表示プロジェクトの切替はコードで安全と確認済み
+#   （selectScopedTasksがcurrentGroupIdでしかフィルタしないため）で対象外。部署切替は
+#   super-adminのみ実害があるが全ユーザー一律にガード。管理画面・ガイド・ラボ系ビューを
+#   開く操作は同種のリスクを持つが今回のチェックリスト外のため対象外・報告のみ。
+#   F（安全側デフォルト）：全ての新規confirmDialogは背景クリック（cancel）が
+#   「このまま編集を続ける／切り替えない」になるようtone="danger"・confirmLabel=
+#   「破棄して切り替える」で統一（v3.88と同じ考え方）。
+#   G（新グランドルール）：CLAUDE.md Section 46に「明示保存の画面は自分がアンマウント
+#   されうる経路すべてに対して未保存の警告を持つ」をチェックリスト形式で追加。
+#   テスト：src/lib/editing/__tests__/unsavedEditorRegistry.test.ts（新規12件）で
+#   登録/解除の対称性・pull型・confirmDiscardUnsavedEditsの安全側デフォルトを固定
+#   （vitest.config.tsのtest環境がnodeのためconfirmDialogはvi.mockで検証）。
+#   既存1639件を壊さず、合計1651件が全通過。機械チェック（ソース走査）は新設していない
+#   （配線が主体でソース走査に馴染む単純パターンが無いため）。
+#   やらないこと：DBスキーマ変更なし。saveTask（choke point）は無改修。
+#   詳細はCLAUDE.md Section 46参照。
+#
+# 最終更新：2026-08-20（v3.89）
 

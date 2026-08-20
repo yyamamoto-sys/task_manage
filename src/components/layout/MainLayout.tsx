@@ -43,6 +43,7 @@ import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
+import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
 import { saveSidebarGroupId } from "../../lib/layout/sidebarCurrentGroupRestore";
 import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
@@ -444,6 +445,38 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setActiveLabView(null);
   };
 
+  // ===== v3.89：画面遷移前に未保存の編集を確認するガード =====
+  //
+  // viewMode/appMode切替・部署切替は「closeLabViews() → 状態を変える」という複数ステップの
+  // 複合操作であり、それぞれの呼び出し元（navSetViewMode・setAppMode・handleSelectGroupNav・
+  // JSX内の複数のonClick/onNavigate等）が独立にconfirmを挟むと、1回のクリックで確認
+  // ダイアログが2回以上出てしまう（closeLabViews分＋viewMode/appMode変更分）。
+  // そのため「未保存かどうかの確認」はguardedNavigate 1箇所だけに集約し、closeLabViews・
+  // setViewMode・setAppMode・handleSelectGroupNav自体は一切confirmを挟まない「素」の関数の
+  // ままにしておく。呼び出し側（JSXのonClick等・下記の各ラッパー）が、実際に画面が
+  // 切り替わる直前の1点でだけ guardedNavigate() に包む。
+  //
+  // 複合操作の内側でさらに別の複合操作を呼ぶ場合（例：navSetViewModeがcloseLabViewsと
+  // setViewModeの両方を呼ぶ）に二重確認を避けるため、「今まさにユーザーの確認を得て
+  // 実行中である」ことを示す簡易フラグ（navigationConfirmedRef）を使う。JSは単一スレッドで
+  // これらの呼び出しは全て同期的にネストするため、単純なbooleanで十分安全に機能する。
+  const navigationConfirmedRef = useRef(false);
+  const guardedNavigate = useCallback(async (action: () => void): Promise<void> => {
+    if (navigationConfirmedRef.current) {
+      // 既に外側のguardedNavigateで確認済み（入れ子呼び出し）。再確認しない。
+      action();
+      return;
+    }
+    const proceed = await confirmDiscardUnsavedEdits();
+    if (!proceed) return; // 「このまま編集を続ける」：何もしない
+    navigationConfirmedRef.current = true;
+    try {
+      action();
+    } finally {
+      navigationConfirmedRef.current = false;
+    }
+  }, []);
+
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
   );
@@ -458,12 +491,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // この1関数に集約する（setActiveLabView と同じ choke point の考え方）。
   const [okrIntroOpen, setOkrIntroOpen] = useState(false);
   const handleToggleAppMode = () => {
-    if (appMode !== "plan") { setAppMode("plan"); return; }
+    if (appMode !== "plan") { void guardedNavigate(() => setAppMode("plan")); return; }
     if (shouldShowOkrModeIntro(hasApprovedOkrModeIntro(), isGuest)) {
       setOkrIntroOpen(true);
       return;
     }
-    setAppMode("okr");
+    void guardedNavigate(() => setAppMode("okr"));
   };
   // ゲストバナーの「サンプルを初期状態に戻す」（2026-08-12）。appStore（タスク・PJ・
   // マイルストーン等）を dataset.ts の初期値で再注入するだけ。デモデータのidは固定
@@ -483,8 +516,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 素の setViewMode を使い続ける（closeLabViewsを挟むと、その効果のexhaustive-depsで
   // setViewModeが不安定と判定され警告が出るため、ナビ経由の呼び出しだけをここで分離する）。
   const navSetViewMode = (v: ViewMode) => {
-    closeLabViews();
-    setViewMode(v);
+    // 【あえて「同じviewModeなら確認をスキップ」を入れていない】closeLabViews()は
+    // ラボ系ビュー（カレンダー等）を閉じて元のリスト等へ戻る役割も兼ねており、
+    // 「同じviewModeへのクリック」でもラボ系ビューが開いていれば実際に画面が変わる。
+    // 安全に無視してよい条件（appMode・labOverlayの状態）を正確に見極めるより、
+    // 多少の余分な確認ダイアログ（dirtyな編集が無ければ即座に何も聞かれない）を許容する
+    // 方が、ラボ系ビューを閉じる操作を誤って無効化するリスクより安全と判断した。
+    void guardedNavigate(() => {
+      closeLabViews();
+      setViewMode(v);
+    });
   };
 
   const allProjects = useAppStore(selectScopedProjects);
@@ -599,9 +640,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // src/lib/projectInvite/sidebarGroupVisibility.ts参照）だが、念のため明示的にガードする
   // （CLAUDE.md Section 23：ゲストの選択を保存しない・実ユーザーへ復元しない）。
   const handleSelectGroupNav = (id: string) => {
-    closeLabViews();
-    setCurrentGroupId(id);
-    if (!isGuest) saveSidebarGroupId(currentUser.id, id);
+    if (id === currentGroupId) return; // 実質的な切替なし
+    void guardedNavigate(() => {
+      closeLabViews();
+      setCurrentGroupId(id);
+      if (!isGuest) saveSidebarGroupId(currentUser.id, id);
+    });
   };
 
   // マイページ（ウィジェット）のQuickAddTaskWidget向け。ウィジェットからsaveTaskを直接呼ばせず、
@@ -759,7 +803,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // onboardingOverlay/tourInviteDialog と同じく1つの変数として組み立てる。
   const okrIntroModal = okrIntroOpen ? (
     <OkrModeIntroModal
-      onApprove={() => { markOkrModeIntroApproved(); setOkrIntroOpen(false); setAppMode("okr"); }}
+      onApprove={() => { markOkrModeIntroApproved(); setOkrIntroOpen(false); void guardedNavigate(() => setAppMode("okr")); }}
       onCancel={() => setOkrIntroOpen(false)}
     />
   ) : null;
@@ -940,7 +984,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               onClose={closeLabViews}
               currentUser={currentUser}
               onOpenTask={taskId => setMyPageEditTaskId(taskId)}
-              onNavigate={v => { setAppMode("plan"); setViewMode(v); }}
+              onNavigate={v => void guardedNavigate(() => { setAppMode("plan"); setViewMode(v); })}
               onCreateTask={handleMyPageCreateTask}
             />
           </Suspense>
@@ -1117,8 +1161,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           projects={projects}
           canCreate={canGuestEdit(isGuest, "task")}
           onOpenTask={setAiEditTaskId}
-          onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
-          onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}
+          onSelectProject={id => void guardedNavigate(() => { setAppMode("plan"); handleSelectProject(id); })}
+          onSwitchView={v => void guardedNavigate(() => { setAppMode("plan"); setViewMode(v); })}
           onQuickAdd={() => setIsQuickAddOpen(true)}
           onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
         />
@@ -1357,7 +1401,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
               return (
                 <button
                   key={view}
-                  onClick={() => setViewMode(view)}
+                  onClick={() => void guardedNavigate(() => setViewMode(view))}
                   style={{
                     flex: 1, display: "flex", flexDirection: "column",
                     alignItems: "center", justifyContent: "center", gap: "3px",
@@ -1525,8 +1569,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         projects={projects}
         canCreate={canGuestEdit(isGuest, "task")}
         onOpenTask={setAiEditTaskId}
-        onSelectProject={id => { setAppMode("plan"); handleSelectProject(id); }}
-        onSwitchView={v => { setAppMode("plan"); setViewMode(v); }}
+        onSelectProject={id => void guardedNavigate(() => { setAppMode("plan"); handleSelectProject(id); })}
+        onSwitchView={v => void guardedNavigate(() => { setAppMode("plan"); setViewMode(v); })}
         onQuickAdd={() => setIsQuickAddOpen(true)}
         onOpenConsult={() => { setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
       />

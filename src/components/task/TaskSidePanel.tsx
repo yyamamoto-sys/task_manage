@@ -13,7 +13,7 @@
 // 他タスクのparent_task_id変更で、操作した瞬間に結果が見える別種の操作のため、従来どおり
 // 即時実行のままにする。
 
-import { useState, useEffect, useMemo, useRef, useCallback } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
@@ -32,6 +32,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
+import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 
 interface Props {
   taskId: string;
@@ -325,6 +326,25 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
+
+  // 【v3.89：未保存の編集を「予告なくアンマウントされる経路」から守るレジストリ登録】
+  // MainLayoutのviewMode/appMode切替・部署切替・ログアウト等、このパネルを含む画面が
+  // 丸ごとアンマウントされうる操作の前に、呼び出し元が「今dirtyな編集画面があるか」を
+  // 同期的に問い合わせられるようにする（CLAUDE.md Section 46参照）。
+  // sidebarForm/baselineFormRefがまだ無い（初期化前・タスク切替中）場合はdirtyではない
+  // として扱う。isDirtyForRegistryRefは毎レンダー最新値に更新し、登録するgetterは常に
+  // このrefを読む（このファイル既存のref更新パターンを踏襲。early returnより前でHooksを
+  // 呼び終える必要があるため、ここでは早期returnせずnull安全な式で計算する）。
+  const isDirtyForRegistry = sidebarForm && baselineFormRef.current
+    ? computeFormDirty(sidebarForm, baselineFormRef.current)
+    : false;
+  const registryId = useId();
+  const isDirtyForRegistryRef = useRef(isDirtyForRegistry);
+  isDirtyForRegistryRef.current = isDirtyForRegistry;
+  useEffect(() => {
+    registerUnsavedEditor(registryId, () => isDirtyForRegistryRef.current);
+    return () => unregisterUnsavedEditor(registryId);
+  }, [registryId]);
 
   if (!selectedTask || !sidebarForm) return null;
 
