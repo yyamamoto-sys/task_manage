@@ -56,6 +56,7 @@ import { shouldGroupSidebarMiscButtons } from "../../lib/layout/sidebarMiscSecti
 import { resolveInitialSidebarMineOnly } from "../../lib/layout/sidebarMineOnlyDefault";
 import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
+import { QuickAddFab } from "./QuickAddFab";
 
 /**
  * 【設計意図】
@@ -1321,77 +1322,19 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {mainContent}
 
         {/* モバイル：FAB（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
-        {appMode === "plan" && canGuestEdit(isGuest, "task") && (<>
-          {isFabMenuOpen && (
-            // 背景クリックで閉じる（マウス操作の補助）。FABボタン自体がキーボードで開閉トグル
-            // 可能なため、背景要素をフォーカス可能にする必要はない
-            // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
-            <div
-              style={{ position: "fixed", inset: 0, zIndex: 58 }}
-              onClick={() => setIsFabMenuOpen(false)}
-            />
-          )}
-          {isFabMenuOpen && (
-            <div style={{
-              position: "fixed", bottom: "122px", right: "16px", zIndex: 59,
-              display: "flex", flexDirection: "column", gap: "8px", alignItems: "flex-end",
-            }}>
-              <button
-                className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "10px 16px",
-                  background: "linear-gradient(135deg,#8b5cf6,#a78bfa)",
-                  border: "none", borderRadius: "var(--radius-full)",
-                  color: "#fff", fontSize: "13px", fontWeight: "600",
-                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
-                  whiteSpace: "nowrap", animationDelay: "0.12s",
-                }}
-              >💬 {t("layout.fab.consult")}</button>
-              <button
-                className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: "8px",
-                  padding: "10px 16px",
-                  background: "linear-gradient(135deg,#f59e0b,#d97706)",
-                  border: "none", borderRadius: "var(--radius-full)",
-                  color: "#fff", fontSize: "13px", fontWeight: "600",
-                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
-                  whiteSpace: "nowrap", animationDelay: "0.06s",
-                }}
-              >◆ {t("layout.fab.milestone")}</button>
-              <button
-                className="fab-item-in"
-                onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: "6px",
-                  padding: "10px 16px",
-                  background: "var(--color-brand)",
-                  border: "none", borderRadius: "var(--radius-full)",
-                  color: "#fff", fontSize: "13px", fontWeight: "600",
-                  boxShadow: "var(--shadow-lg)", cursor: "pointer",
-                  whiteSpace: "nowrap", animationDelay: "0s",
-                }}
-              >＋ {t("layout.fab.task")}</button>
-            </div>
-          )}
-          <button
-            onClick={() => setIsFabMenuOpen(prev => !prev)}
-            style={{
-              position: "fixed", bottom: "68px", right: "16px", zIndex: 60,
-              width: "48px", height: "48px", borderRadius: "50%",
-              background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
-              color: "#fff", border: "none", fontSize: "22px", lineHeight: 1,
-              boxShadow: "var(--shadow-lg)", cursor: "pointer",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              transition: "background 0.2s, transform 0.2s",
-              transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
-            }}
-            title={t("layout.fab.menuTitle")}
-          >＋</button>
-        </>)}
+        {appMode === "plan" && canGuestEdit(isGuest, "task") && (
+          <QuickAddFab
+            isMobile
+            isFabMenuOpen={isFabMenuOpen}
+            onToggleMenu={() => setIsFabMenuOpen(prev => !prev)}
+            onSelectConsult={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+            onSelectMilestone={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
+            onSelectTask={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+            isConsultOpen={isConsultOpen}
+            consultPanelWidth={consultPanelWidth}
+            isConsultResizing={isConsultResizing}
+          />
+        )}
 
         {/* モバイル：ボトムナビ。OKRモードは個人OKR1画面のみになり、切り替える先が
             無くなったため、このバー自体を出さない（2026-08-10。旧「管理／なぜなぜ／計画」
@@ -1458,95 +1401,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onCreated={id => { handleSelectProject(id); }}
         />
       )}
-      {/* PC FAB（計画モードのみ） */}
-      {appMode === "plan" && isFabMenuOpen && (
-        // 背景クリックで閉じる（マウス操作の補助）。FABボタン自体がキーボードで開閉トグル
-        // 可能なため、背景要素をフォーカス可能にする必要はない
-        // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
-        <div
-          style={{ position: "fixed", inset: 0, zIndex: 58 }}
-          onClick={() => setIsFabMenuOpen(false)}
-        />
-      )}
-      {appMode === "plan" && isFabMenuOpen && (
-        <div style={{
-          position: "fixed",
-          bottom: "74px",
-          right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-          transition: isConsultResizing ? "none" : "right 0.3s ease",
-          zIndex: 59,
-          display: "flex", flexDirection: "column", gap: "6px", alignItems: "flex-end",
-        }}>
-          <button
-            className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "9px 16px", height: "38px",
-              background: "linear-gradient(135deg,#8b5cf6,#a78bfa)",
-              border: "none", borderRadius: "var(--radius-full)",
-              color: "#fff", fontSize: "13px", fontWeight: "600",
-              boxShadow: "var(--shadow-lg)", cursor: "pointer",
-              whiteSpace: "nowrap",
-              animationDelay: "0.12s",
-            }}
-          >
-            <span>💬</span> {t("layout.fab.consult")}
-          </button>
-          <button
-            className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
-            style={{
-              display: "flex", alignItems: "center", gap: "8px",
-              padding: "9px 16px", height: "38px",
-              background: "linear-gradient(135deg,#f59e0b,#d97706)",
-              border: "none", borderRadius: "var(--radius-full)",
-              color: "#fff", fontSize: "13px", fontWeight: "600",
-              boxShadow: "var(--shadow-lg)", cursor: "pointer",
-              whiteSpace: "nowrap",
-              animationDelay: "0.06s",
-            }}
-          >
-            <span>◆</span> {t("layout.fab.milestone")}
-          </button>
-          <button
-            className="fab-item-in"
-            onClick={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
-            style={{
-              display: "flex", alignItems: "center", gap: "6px",
-              padding: "9px 16px", height: "38px",
-              background: "var(--color-brand)",
-              border: "none", borderRadius: "var(--radius-full)",
-              color: "#fff", fontSize: "13px", fontWeight: "600",
-              boxShadow: "var(--shadow-lg)", cursor: "pointer",
-              whiteSpace: "nowrap",
-              animationDelay: "0s",
-            }}
-          >
-            <span style={{ fontSize: "16px", lineHeight: 1 }}>＋</span> {t("layout.fab.task")}
-          </button>
-        </div>
-      )}
-      {/* PC FABボタン本体（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
+      {/* PC FAB（計画モードのみ。タスク・マイルストーンの追加はゲストにも開放済み） */}
       {appMode === "plan" && canGuestEdit(isGuest, "task") && (
-        <button
-          data-tour-id="fab"
-          onClick={() => setIsFabMenuOpen(prev => !prev)}
-          style={{
-            position: "fixed", bottom: "24px",
-            right: isConsultOpen ? `${consultPanelWidth + 24}px` : "24px",
-            transition: isConsultResizing ? "background 0.2s, transform 0.2s" : "right 0.3s ease, background 0.2s, transform 0.2s",
-            zIndex: 60,
-            width: "48px", height: "48px", borderRadius: "50%",
-            background: isFabMenuOpen ? "var(--color-text-secondary)" : "var(--color-brand)",
-            color: "#fff",
-            border: "none", fontSize: "22px",
-            boxShadow: "var(--shadow-lg)", cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            transform: isFabMenuOpen ? "rotate(45deg)" : "rotate(0deg)",
-          }}
-          title={t("layout.fab.menuTitle")}
-        >＋</button>
+        <QuickAddFab
+          isMobile={false}
+          isFabMenuOpen={isFabMenuOpen}
+          onToggleMenu={() => setIsFabMenuOpen(prev => !prev)}
+          onSelectConsult={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
+          onSelectMilestone={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
+          onSelectTask={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+          isConsultOpen={isConsultOpen}
+          consultPanelWidth={consultPanelWidth}
+          isConsultResizing={isConsultResizing}
+          dataTourId="fab"
+        />
       )}
       <Sidebar
         viewMode={viewMode}

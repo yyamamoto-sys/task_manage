@@ -116,6 +116,11 @@ const EXCLUDED_FILES = new Set<string>([
   // コーナーアンカー型（inset:0を使わない別の要素）で自前のmaxHeight:"60vh"を持つ。
   // スクリム自体にはクリップされうるコンテンツが無いため対象外。
   "components/common/ErrorBar.tsx",
+  // 【2026-08-20・v3.86で追加】ErrorBar.tsxと同型の「背景クリックで閉じるための透明スクリム」
+  // 専用div（FABの展開メニューを閉じるためだけの、子要素を持たない自己終端タグ`/>`）。
+  // 実際のFABボタン・展開メニューはコーナーアンカー型（bottom/right指定）で、position:fixed;
+  // inset:0のスクリムとは別要素。スクリム自体にクリップされうるコンテンツが無いため対象外。
+  "components/layout/QuickAddFab.tsx",
 ]);
 
 /** src/ 配下の .tsx ファイル一覧（__tests__ ディレクトリ自身は除く）を再帰的に集める */

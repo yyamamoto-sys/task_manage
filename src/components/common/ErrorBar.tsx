@@ -307,6 +307,12 @@ export function ErrorBar() {
     <>
       {showHistory && <HistoryPanel onClose={handleCloseHistory} />}
 
+      {/* 【v3.86：FABとの重なり確認】この帯はbottom:0からコンテンツの高さぶんだけ上に伸びる。
+          「履歴N件」バッジ単体（エラー表示が無い状態）は高さ約20px程度で、FAB（PC版bottom:24px）
+          とは数px〜十数pxの隙間があり重ならない。ただしエラー行が複数（最大5件）積み上がると
+          帯の高さが100px超まで伸び、FAB・展開メニューと重なりうる（エラーは15秒で自動消去される
+          一過性の表示のため、常時の重なりではない）。FAB側の待機収納・半透明化は「履歴N件」バッジ
+          との定常的な重なりを解消するものではない（バッジは元々ほぼ重ならないため対象外とした）*/}
       <div style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
         zIndex: 9000,

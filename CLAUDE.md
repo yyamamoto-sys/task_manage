@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.85
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.86
 #
-最終更新：2026-08-20（v3.85）
+最終更新：2026-08-20（v3.86）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1205,7 +1205,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-20（v3.85）
+- 最終更新：2026-08-20（v3.86）
 
 ---
 
@@ -3036,6 +3036,35 @@ inset:0`のdivを直接描画していた。`ConsultationPanel.tsx`の非inline�
 NavItemの見積もり幅は`NAV_TOOLTIP_WIDTH_ESTIMATE`/`NAV_TOOLTIP_EXPANDED_WIDTH`定数）。専用のテストは
 追加していない（`pointerEvents:"none"`の装飾要素であり、Section 21・本Sectionの「操作不能」という
 実害の定義には該当しないため）。
+
+---
+
+## 43. タスク追加「＋」FABの共通化＋待機中の収納・半透明（v3.86・2026-08-20）
+
+クレーム「タスク追加のプラスボタンが、メニュー表示などで何らかのテキストと被り、プラスマークより下のレイヤーの表示が見えない」への対応。
+
+### 共通コンポーネント化
+
+PC版・モバイル版で完全に別のJSXとして重複実装されていたFAB本体・展開メニュー（旧`MainLayout.tsx`）を`src/components/layout/QuickAddFab.tsx`に切り出した。座標・展開メニューの起点（PC＝AI相談パネル幅ぶん動く／モバイル＝固定）は`isMobile`propと`isConsultOpen`/`consultPanelWidth`/`isConsultResizing`propで受ける。切り出し前後で座標・サイズ・色・アニメ遅延・メニュー項目のpadding/heightの差異（PC版は`height:"38px"`固定、モバイル版はpaddingのみ）を1つずつ突き合わせて一致させた。`data-tour-id="fab"`（将来のツアーが参照する可能性がある予約属性）はPC側のみ維持している（元々モバイル側には無かった）。
+
+### 座標・サイズの共有定数（`src/lib/layout/fabLayout.ts`）
+
+FAB本体の座標・サイズ（`FAB_SIZE_PX`=48・`FAB_BOTTOM_PC_PX`=24・`FAB_BOTTOM_MOBILE_PX`=68・`FAB_RIGHT_PC_PX`=24・`FAB_RIGHT_MOBILE_PX`=16）と、そこから算出した「FABの真上を避けたい要素が使うbottom値」（`ABOVE_FAB_BOTTOM_PC_PX`=84・`ABOVE_FAB_BOTTOM_MOBILE_PX`=128）を1ファイルに集約した。**理由**：`Toast.tsx`のトースト通知が旧実装で`bottom:24px/right:24px`固定であり、PC版FABと完全に同一座標だった（トーストが出るたびFABの真上に重なっていた）。マジックナンバーを2箇所に手書きすると片方だけ直し忘れてまたズレるため、Toast側もこの共有定数から算出する。
+
+### 待機中は右端へ半分収納＋半透明にする
+
+- **待機中**：FABを右へ`translateX(50%)`（48pxの半分＝24pxぶん）ずらし、不透明度を`FAB_IDLE_OPACITY`（0.4）に下げる。下にあるテキストが読める状態になることがゴール。
+- **完全表示に戻る条件**：カーソル接近・展開メニュー表示中（`isFabMenuOpen`）・キーボードフォーカス中・タッチ端末（`(hover:hover)`が成立しない環境）のいずれか。
+- **ホバー検知はpointermove方式を採用**（FAB自身のhoverだけに頼らない）：FABの周囲に一回り大きい透明なDOM要素を重ねる案ではなく、window全体の`pointermove`を購読しFAB本来（収納前）の中心座標からの距離（半径`FAB_NEAR_RADIUS_PX`=64px）で判定する。理由は3点（詳細は`QuickAddFab.tsx`冒頭コメント参照）：①FABの位置は`consultPanelWidth`等で動的に変わるため、透明要素を別途置くと同じ位置計算を2箇所に持つことになりズレやすい、②DOM要素を増やさずに済む、③検知円の中心を「本来の位置」に固定するため収納後の縮んだ当たり判定へ正確にカーソルを置く必要がない。FAB自身の`onMouseEnter`/`onMouseLeave`も保険として併用する（矛盾しない・どちらか一方がtrueならisNearはtrue）。
+- **`prefers-reduced-motion:reduce`への対応はJS側の判定で行う**（globals.cssの`@media`ブロックに頼らない）：この収納アニメの`transition`文字列は「resizing中か」「モバイルか」等の複数条件で動的に組み立てているため、CSSクラス1つに固定できない。`usePrefersReducedMotion()`（`(prefers-reduced-motion:reduce)`のmatchMedia判定。`useIsMobile`と同じ作法）がtrueのときはtransition文字列から`transform`/`opacity`の項目を省く（背景色のホバー変化は既存globals.cssの方針どおり止めない）。
+
+### ErrorBarとの関係（確認結果）
+
+「履歴N件」バッジ単体（エラー表示が無い状態）はFAB（PC版bottom:24px）と数px〜十数pxの隙間があり、通常は重ならない。エラー行が複数（最大5件）積み上がると帯の高さが伸びFAB・展開メニューと重なりうるが、エラーは15秒で自動消去される一過性の表示のため、今回のFAB側の対策（待機中の収納・半透明）の対象外と判断した（`ErrorBar.tsx`のコメントに理由を明記）。
+
+### 機械チェックへの影響
+
+FABの背景クリック用スクリム（`position:fixed;inset:0`の透明div。展開メニューを閉じるためだけの要素）が、`modalStyles.test.ts`の「全画面オーバーレイ全般は保険のスクロールを持つ」チェック（Section 21・v3.85）の新たな検出対象になったため、`ErrorBar.tsx`と同型の理由（子を持たない透明スクリムのみ・クリップされうるコンテンツが無い）でEXCLUDED_FILESに`components/layout/QuickAddFab.tsx`を追加した。
 
 ---
 

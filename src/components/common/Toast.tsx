@@ -9,6 +9,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { setLastUndoAction, clearLastUndoAction } from "../../lib/lastUndoStore";
+import { useIsMobile } from "../../hooks/useIsMobile";
+import { ABOVE_FAB_BOTTOM_PC_PX, ABOVE_FAB_BOTTOM_MOBILE_PX } from "../../lib/layout/fabLayout";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -54,6 +56,11 @@ const DURATION_WITH_ACTION_MS = 6000;
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  // v3.86：PC版FAB（bottom:24px/right:24px）と完全に同一座標だったため、FABの高さぶん
+  // 持ち上げる。モバイルFAB（bottom:68px）にも合わせて別値を使う。マジックナンバーの
+  // 二重管理を避けるためfabLayout.tsの共有定数から算出する
+  const isMobile = useIsMobile();
+  const toastBottomPx = isMobile ? ABOVE_FAB_BOTTOM_MOBILE_PX : ABOVE_FAB_BOTTOM_PC_PX;
 
   useEffect(() => {
     const timers = timersRef.current;
@@ -94,7 +101,7 @@ export function ToastContainer() {
 
   return (
     <div style={{
-      position: "fixed", bottom: "24px", right: "24px",
+      position: "fixed", bottom: `${toastBottomPx}px`, right: "24px",
       zIndex: 10000, display: "flex", flexDirection: "column-reverse", gap: "8px",
       pointerEvents: "none",
     }}>
