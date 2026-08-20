@@ -6417,5 +6417,43 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。saveTask（choke point）は無改修。
 #   詳細はCLAUDE.md Section 46参照。
 #
-# 最終更新：2026-08-20（v3.89）
+# v3.90（2026-08-20）：guardedNavigateを全ての遷移起点へ網羅し、機械チェックで固定
+#   v3.89で対応した範囲（viewMode/appMode/部署切替・ログアウト）を、統括の指摘を受けて
+#   本バージョンで完全に網羅した。次の課題に先送りしない対応。
+#   A（監査で新たに発覚した3つの穴）：①管理画面・ガイド・ラボ系ビューをツールバーから
+#   開く操作（setIsAdminOpen(true)×4・setIsGuideOpen(true)×1・openLabView）が未ガード
+#   だった。②handleSelectProject/handleSelectKr（PJ/KR選択）が内部でcloseLabViews()を
+#   呼んでおり、v3.89時点で「PJ切替は安全」と確認していたのはTaskSidePanelの視点だけで、
+#   graph/calendar/mypage/aiのTaskEditModalを巻き込む経路を見落としていた。③ツアーの
+#   tour:actionイベント（open-dashboard-pj-analysis）がsetViewMode("dashboard")を直接
+#   呼んでいた。
+#   B（自己ガード化という設計判断）：openLabViewは自分の定義内でguardedNavigateを呼ぶ
+#   「自己ガード関数」にし、呼び出し側を個別に包む必要を無くした。setAppMode/
+#   handleSelectProject/handleSelectKrも同様に自己ガード化（多層防御。将来誰かが未ガードで
+#   直接呼んでも安全側で機能する）。
+#   C（機械チェックを新設・(a)を採用）：src/components/layout/__tests__/
+#   guardedNavigateCoverage.test.tsを新設。既存labViewChokePoint.test.tsと同じ
+#   ソース走査方式を一般化し、5つの危険な生の状態変更（setViewMode(/setAppMode(/
+#   closeLabViews(/setIsAdminOpen(true)/setIsGuideOpen(true)）の全出現がguardedNavigate(
+#   の中にあることを検証する。実装時に実際に不具合を検出した（setAppMode自身が
+#   closeLabViewsを未ガードで呼んでいた）。v3.89時点のコード（commit f587541）に対して
+#   実際に走らせ、4パターンで不一致（赤）になることを確認済み。
+#   D（文言の見直し）：confirmDiscardUnsavedEditsは性質の異なる多数の画面遷移から共通で
+#   呼ばれ、遷移によっては実際には編集画面が閉じないケース（super-admin以外の部署切替）
+#   がある。「破棄されます」と断定する旧文言は嘘の警告になりうるため、「今のままでは
+#   保存されません。このまま切り替えますか？」という、常に真である事実だけを述べる
+#   文言に変更した（confirmLabel「切り替える」・cancelLabel「編集に戻る」）。他5箇所の
+#   確認ダイアログ（100%確実に起きる結果を述べているもの）は変更していない。
+#   E（対応しなかった経路・理由込み）：App.tsxのonAuthStateChangeによるセッション喪失は
+#   確認ダイアログで守れない（ユーザーが選べる余地が無い involuntary なイベント）ため対象外。
+#   ブラウザのbeforeunloadは意図的に未使用（既存の設計判断）で対象外。招待URL自動受諾
+#   （currentUser未確定時のみ動く経路）はコードで確認済みで対象外。
+#   F（併せて対応）：App.tsxのログイン済み招待URL受諾フロー（稀にcurrentUser確定後も動く）
+#   のreload前にもconfirmDiscardUnsavedEditsを追加した。
+#   テスト：src/components/layout/__tests__/guardedNavigateCoverage.test.ts（新規7件）。
+#   既存1651件を壊さず、合計1658件が全通過。
+#   やらないこと：DBスキーマ変更なし。
+#   詳細はCLAUDE.md Section 47参照。
+#
+# 最終更新：2026-08-20（v3.90）
 

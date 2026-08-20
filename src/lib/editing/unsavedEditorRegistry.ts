@@ -53,20 +53,27 @@ export function hasUnsavedEditors(): boolean {
 
 /**
  * 未保存の編集があるか確認し、あれば確認ダイアログを出す。無ければ何もせず true を返す
- * （＝そのまま進んでよい）。ダイアログで「破棄して切り替える」を選んだら true、
- * 「このまま編集を続ける」を選んだら false を返す。呼び出し側は true の場合のみ
- * 実際の画面遷移（state変更）を行うこと。
+ * （＝そのまま進んでよい）。ダイアログで「切り替える」を選んだら true、「編集に戻る」を
+ * 選んだら false を返す。呼び出し側は true の場合のみ実際の画面遷移（state変更）を行うこと。
  *
  * 【安全側のデフォルト】ConfirmModalは背景クリックで必ずcancel（false）扱いになるため
- * （CLAUDE.md Section 45参照）、tone="danger"・confirmLabel=「破棄して切り替える」・
- * cancelLabel=「このまま編集を続ける」とし、背景クリックが常に安全側（切り替えない）に
+ * （CLAUDE.md Section 45参照）、tone="danger"・confirmLabel=「切り替える」・
+ * cancelLabel=「編集に戻る」とし、背景クリックが常に安全側（切り替えない）に
  * 倒れるようにしている（v3.88のタスク切替確認と同じ考え方）。
+ *
+ * 【v3.90：文言は「必ず起きること」だけを述べる】
+ * この関数はviewMode/appMode/部署/PJ/KR切替・ラボ系ビューの開閉・管理画面/ガイドの
+ * 開閉など、性質の異なる多数の画面遷移から共通で呼ばれる。遷移の種類によっては
+ * （例：super-admin以外の部署切替）実際には編集画面が閉じず、下書きが消えない場合もある。
+ * 「破棄されます」「消えます」のように断定すると、消えないケースでは嘘の警告になる。
+ * そのため文言は「今のままでは保存されていない」という常に真である事実と、
+ * 「切り替えるか・編集に戻るか」という選択だけを述べ、その先に何が起きるかは断定しない。
  */
 export async function confirmDiscardUnsavedEdits(): Promise<boolean> {
   if (!hasUnsavedEditors()) return true;
   return confirmDialog(
-    "保存していない変更が残っています。破棄して切り替えますか？",
-    { tone: "danger", confirmLabel: "破棄して切り替える", cancelLabel: "このまま編集を続ける" },
+    "保存していない変更があります。今のままでは保存されません。このまま切り替えますか？",
+    { tone: "danger", confirmLabel: "切り替える", cancelLabel: "編集に戻る" },
   );
 }
 

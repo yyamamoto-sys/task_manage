@@ -177,6 +177,45 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const isGuest = isGuestMember(currentUser);
   const { theme, toggle: toggleTheme } = useTheme();
   const t = useT();
+
+  // ===== v3.89：画面遷移前に未保存の編集を確認するガード =====
+  //
+  // viewMode/appMode切替・部署切替は「closeLabViews() → 状態を変える」という複数ステップの
+  // 複合操作であり、それぞれの呼び出し元（navSetViewMode・setAppMode・handleSelectGroupNav・
+  // JSX内の複数のonClick/onNavigate等）が独立にconfirmを挟むと、1回のクリックで確認
+  // ダイアログが2回以上出てしまう（closeLabViews分＋viewMode/appMode変更分）。
+  // そのため「未保存かどうかの確認」はguardedNavigate 1箇所だけに集約し、closeLabViews・
+  // setViewMode・setAppMode・handleSelectGroupNav自体は一切confirmを挟まない「素」の関数の
+  // ままにしておく。呼び出し側（JSXのonClick等・下記の各ラッパー）が、実際に画面が
+  // 切り替わる直前の1点でだけ guardedNavigate() に包む。
+  //
+  // 複合操作の内側でさらに別の複合操作を呼ぶ場合（例：navSetViewModeがcloseLabViewsと
+  // setViewModeの両方を呼ぶ）に二重確認を避けるため、「今まさにユーザーの確認を得て
+  // 実行中である」ことを示す簡易フラグ（navigationConfirmedRef）を使う。JSは単一スレッドで
+  // これらの呼び出しは全て同期的にネストするため、単純なbooleanで十分安全に機能する。
+  //
+  // 【v3.90：MainLayoutInnerの先頭近くに定義する理由】tour:actionのuseEffect（下記）を
+  // 含め、コンポーネント本体の各所からguardedNavigateを参照する。JSのクロージャは
+  // 「呼ばれる時点」で変数を解決するため通常は定義順に関係なく動くが、useEffectの
+  // 依存配列（deps）は毎レンダー同期的に評価されるため、depsに含める場合は
+  // guardedNavigateの宣言より後で参照するとTDZエラーになる。そのため関数本体の
+  // できるだけ早い位置（他の全ての利用箇所より前）に定義する。
+  const navigationConfirmedRef = useRef(false);
+  const guardedNavigate = useCallback(async (action: () => void): Promise<void> => {
+    if (navigationConfirmedRef.current) {
+      // 既に外側のguardedNavigateで確認済み（入れ子呼び出し）。再確認しない。
+      action();
+      return;
+    }
+    const proceed = await confirmDiscardUnsavedEdits();
+    if (!proceed) return; // 「編集に戻る」：何もしない
+    navigationConfirmedRef.current = true;
+    try {
+      action();
+    } finally {
+      navigationConfirmedRef.current = false;
+    }
+  }, []);
   const NAV_ITEMS = useMemo(() => buildNavItems(t), [t]);
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(KEYS.VIEW_MODE) as ViewMode | null;
@@ -382,16 +421,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           nonce: Date.now(),
         });
       }
-      // ダッシュボードへ移動して最初のアクティブPJを選択（pj-karteツアーステップ用）
+      // ダッシュボードへ移動して最初のアクティブPJを選択（pj-karteツアーステップ用）。
+      // v3.90：ツアーによる自動遷移もviewModeを変える以上、未保存編集の確認対象にする。
       if (action === "open-dashboard-pj-analysis") {
-        setViewMode("dashboard");
-        const firstPj = projectsRef.current[0];
-        if (firstPj) setSelectedProjectId(firstPj.id);
+        void guardedNavigate(() => {
+          setViewMode("dashboard");
+          const firstPj = projectsRef.current[0];
+          if (firstPj) setSelectedProjectId(firstPj.id);
+        });
       }
     };
     window.addEventListener("tour:action", onTourAction);
     return () => window.removeEventListener("tour:action", onTourAction);
-  }, []);
+    // guardedNavigateはuseCallback(..., [])で参照が不変のため、depsに加えてもリスナーの
+    // 張り替え（deps=[]の本来の意図）は起きない
+  }, [guardedNavigate]);
   const [graphEditTaskId, setGraphEditTaskId] = useState<string | null>(null);
   // カレンダー/グラフなど zIndex が高いオーバーレイ上でタスク編集を開く専用 state。
   // TaskEditModal の zIndex(200) < CalendarLabView(250) のため、カレンダーの上に
@@ -421,13 +465,17 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
    * を先に判定する**（クリアするのは「切り替わったとき」「閉じたとき」だけ）。
    */
   const openLabView = (id: LabViewId) => {
-    if (activeLabView !== id) {
+    if (activeLabView === id) return; // 実質的な切替なし
+    // v3.90：ラボ系ビューを開く操作自体が、viewMode系のビュー（list/gantt/kanban。
+    // TaskSidePanelを含みうる）または別のラボ系ビュー（graphEditTaskId等のTaskEditModal
+    // を含みうる）を丸ごとアンマウントする。CLAUDE.md Section 46参照。
+    void guardedNavigate(() => {
       setGraphEditTaskId(null);
       setCalendarEditTaskId(null);
       setCalendarQuickAddDate(null);
       setMyPageEditTaskId(null);
-    }
-    setActiveLabView(id);
+      setActiveLabView(id);
+    });
   };
 
   /**
@@ -445,45 +493,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setActiveLabView(null);
   };
 
-  // ===== v3.89：画面遷移前に未保存の編集を確認するガード =====
-  //
-  // viewMode/appMode切替・部署切替は「closeLabViews() → 状態を変える」という複数ステップの
-  // 複合操作であり、それぞれの呼び出し元（navSetViewMode・setAppMode・handleSelectGroupNav・
-  // JSX内の複数のonClick/onNavigate等）が独立にconfirmを挟むと、1回のクリックで確認
-  // ダイアログが2回以上出てしまう（closeLabViews分＋viewMode/appMode変更分）。
-  // そのため「未保存かどうかの確認」はguardedNavigate 1箇所だけに集約し、closeLabViews・
-  // setViewMode・setAppMode・handleSelectGroupNav自体は一切confirmを挟まない「素」の関数の
-  // ままにしておく。呼び出し側（JSXのonClick等・下記の各ラッパー）が、実際に画面が
-  // 切り替わる直前の1点でだけ guardedNavigate() に包む。
-  //
-  // 複合操作の内側でさらに別の複合操作を呼ぶ場合（例：navSetViewModeがcloseLabViewsと
-  // setViewModeの両方を呼ぶ）に二重確認を避けるため、「今まさにユーザーの確認を得て
-  // 実行中である」ことを示す簡易フラグ（navigationConfirmedRef）を使う。JSは単一スレッドで
-  // これらの呼び出しは全て同期的にネストするため、単純なbooleanで十分安全に機能する。
-  const navigationConfirmedRef = useRef(false);
-  const guardedNavigate = useCallback(async (action: () => void): Promise<void> => {
-    if (navigationConfirmedRef.current) {
-      // 既に外側のguardedNavigateで確認済み（入れ子呼び出し）。再確認しない。
-      action();
-      return;
-    }
-    const proceed = await confirmDiscardUnsavedEdits();
-    if (!proceed) return; // 「このまま編集を続ける」：何もしない
-    navigationConfirmedRef.current = true;
-    try {
-      action();
-    } finally {
-      navigationConfirmedRef.current = false;
-    }
-  }, []);
-
   const [appMode, setAppModeState] = useState<AppMode>(() =>
     (localStorage.getItem(KEYS.APP_MODE) as AppMode | null) ?? "plan"
   );
+  // v3.90：setAppMode自身もguardedNavigateで自己ガードする（closeLabViews()を内部で
+  // 呼ぶため）。呼び出し側（handleToggleAppMode等）は既にguardedNavigateで包んでいるが、
+  // 入れ子呼び出しはnavigationConfirmedRefのバイパスにより二重確認にならない。将来
+  // 誰かがsetAppMode(...)を未ガードのまま新しく呼んでしまっても、この自己ガードにより
+  // 安全側で機能する（多層防御）。
   const setAppMode = (m: AppMode) => {
-    closeLabViews();
-    localStorage.setItem(KEYS.APP_MODE, m);
-    setAppModeState(m);
+    void guardedNavigate(() => {
+      closeLabViews();
+      localStorage.setItem(KEYS.APP_MODE, m);
+      setAppModeState(m);
+    });
   };
   // OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39・
   // src/lib/okr/okrModeGate.ts・CLAUDE.md Section 19）。plan→okr の切替だけを対象にする
@@ -623,15 +646,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
 
+  // v3.90：closeLabViews()を呼ぶため、ラボ系ビュー（カレンダー等）のTaskEditModalが
+  // 開いていると無警告でアンマウントする経路になっていた（監査で発覚。CLAUDE.md Section 46）。
   const handleSelectProject = (id: string | null) => {
-    closeLabViews();
-    setSelectedProjectId(id);
-    setSelectedKrId(null);
+    void guardedNavigate(() => {
+      closeLabViews();
+      setSelectedProjectId(id);
+      setSelectedKrId(null);
+    });
   };
   const handleSelectKr = (id: string | null) => {
-    closeLabViews();
-    setSelectedKrId(id);
-    setSelectedProjectId(null);
+    void guardedNavigate(() => {
+      closeLabViews();
+      setSelectedKrId(id);
+      setSelectedProjectId(null);
+    });
   };
   // サイドバーの部署切替（CLAUDE.md Section 1.6）：表示データの範囲が変わるナビ操作のため
   // ビュー切替等と同様にラボ系ビューを閉じる
@@ -851,7 +880,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             krCount={active(keyResults).length}
             pjCount={projects.length}
             taskCount={(rawTasks ?? []).filter((t: Task) => !t.is_deleted).length}
-            onOpenAdmin={() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); }}
+            onOpenAdmin={() => void guardedNavigate(() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); })}
             onOpenAiProject={() => { setIsOnboardingOverlayOpen(false); openAiProjectCreate(); }}
             onOpenQuickAdd={() => { setIsOnboardingOverlayOpen(false); setIsQuickAddOpen(true); }}
           />
@@ -1058,7 +1087,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
                 onOpenAiProject={openAiProjectCreate}
-                onOpenAdmin={() => setIsAdminOpen(true)}
+                onOpenAdmin={() => void guardedNavigate(() => setIsAdminOpen(true))}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
                 onToggleMineOnly={toggleMineOnly}
@@ -1286,7 +1315,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
           <button
-            onClick={() => setIsAdminOpen(true)}
+            onClick={() => void guardedNavigate(() => setIsAdminOpen(true))}
             title={t("layout.mobile.settingsTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
@@ -1486,8 +1515,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenStructure={() => openLabView("structure")}
         onOpenMyPage={() => openLabView("mypage")}
         activeLabView={activeLabView}
-        onOpenAdmin={() => setIsAdminOpen(true)}
-        onOpenGuide={() => setIsGuideOpen(true)}
+        onOpenAdmin={() => void guardedNavigate(() => setIsAdminOpen(true))}
+        onOpenGuide={() => void guardedNavigate(() => setIsGuideOpen(true))}
         onCreateProject={() => setIsPjCreateOpen(true)}
         collapsed={isSidebarCollapsed}
         onToggleCollapsed={toggleSidebar}

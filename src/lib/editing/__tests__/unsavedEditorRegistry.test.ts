@@ -106,15 +106,15 @@ describe("unsavedEditorRegistry", () => {
     expect(result).toBe(true);
     expect(confirmDialog).toHaveBeenCalledTimes(1);
     const [, opts] = vi.mocked(confirmDialog).mock.calls[0];
-    // 安全側のデフォルト：背景クリック（cancel）が「このまま編集を続ける」＝切り替えない側になること
+    // 安全側のデフォルト：背景クリック（cancel）が「編集に戻る」＝切り替えない側になること
     expect(opts).toMatchObject({
       tone: "danger",
-      confirmLabel: "破棄して切り替える",
-      cancelLabel: "このまま編集を続ける",
+      confirmLabel: "切り替える",
+      cancelLabel: "編集に戻る",
     });
   });
 
-  it("confirmDiscardUnsavedEdits：ユーザーが「このまま編集を続ける」を選んだらfalseを返す", async () => {
+  it("confirmDiscardUnsavedEdits：ユーザーが「編集に戻る」を選んだらfalseを返す", async () => {
     const { confirmDialog } = await import("../../dialog");
     vi.mocked(confirmDialog).mockResolvedValueOnce(false);
     registerUnsavedEditor("editor-1", () => true);

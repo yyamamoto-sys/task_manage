@@ -361,6 +361,11 @@ function AuthenticatedApp({
         setInviteUrlPromptChecked(true);
         return;
       }
+      // v3.90：このeffectはcurrentUserが確定済み（MainLayoutが既に表示中）の状態でも走る。
+      // この先のreload()で、開いているTaskEditModal/TaskSidePanelの未保存編集が無警告で
+      // 失われないよう、他のreload系（handleLogout等）と同じくここでも確認する
+      // （招待URLがログイン中に踏まれる稀なケースへの防御。CLAUDE.md Section 46）。
+      if (!(await confirmDiscardUnsavedEdits())) { setInviteUrlPromptChecked(true); return; }
       try {
         const authEmail = await getAuthEmail();
         if (!authEmail) throw new Error("認証されたメールアドレスが取得できません");
