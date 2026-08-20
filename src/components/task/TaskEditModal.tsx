@@ -1,9 +1,19 @@
 // src/components/task/TaskEditModal.tsx
 //
 // タスク詳細・編集モーダル（モバイル時のフォールバック・各ビューから共通利用）。
-// 全フィールドを 600ms デバウンス自動保存。削除は確認ダイアログ付き論理削除。
+// 削除は確認ダイアログ付き論理削除。
+//
+// 【v3.87：明示保存への変更】
+// 以前は全フィールドを600msデバウンスで自動保存していたが、「自動保存されているか分からず
+// 不安」というクレームを受け、保存ボタン／Enter／Ctrl(Cmd)+Enterで明示的に保存する方式へ
+// 変更した（CLAUDE.md 新設グランドルール参照）。
+// 対象は `form`（このタスク自身のフィールド）のみ。タスクフォース・追加プロジェクト・
+// 先行タスクの紐づけ（add/removeTaskTaskForce・add/removeTaskProject・add/removeTaskDependency）
+// は別テーブルへのjoin/unjoinで、操作した瞬間に結果が見える別種の操作のため、従来どおり
+// 即時実行のままにする（保存ボタンの対象に含めると「押さないと反映されない」という
+// 別の混乱を生むため）。
 
-import { useState, useCallback, useMemo, useEffect, useRef } from "react";
+import { useState, useCallback, useMemo, useRef } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Task } from "../../lib/localData/types";
@@ -20,8 +30,8 @@ import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { extractMentions, mentionsEqual } from "../../lib/mentions";
-import { buildTaskUpdatePayload, type TaskEditFormState } from "../../lib/taskEditPayload";
+import { extractMentions } from "../../lib/mentions";
+import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { showToast } from "../common/Toast";
@@ -31,6 +41,24 @@ interface Props {
   currentUser: Member;
   onClose: () => void;
   onDeleted?: (taskId: string) => void;
+}
+
+/** originalTask から form の初期値（＝保存済みベースライン）を組み立てる。
+ *  マウント時の初期state・baseline両方から呼ぶ単一の真実源。 */
+function buildFormFromTask(task: Task | undefined): TaskEditFormState & { tags: string[] } {
+  return {
+    name:                task?.name ?? "",
+    status:              task?.status ?? "todo",
+    priority:            task?.priority ?? "",
+    assignee_member_ids: task ? getAssigneeIds(task) : [],
+    project_id:          task?.project_id ?? null,
+    parent_task_id:      task?.parent_task_id ?? null,
+    start_date:          task?.start_date ?? "",
+    due_date:            task?.due_date ?? "",
+    estimated_hours:     task?.estimated_hours?.toString() ?? "",
+    comment:             task?.comment ?? "",
+    tags:                task?.tags ?? [],
+  };
 }
 
 export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props) {
@@ -156,110 +184,84 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   }, [allTasks, currentProjectId, originalTask?.id, projects]);
 
   // このモーダルはタグ編集UIを持つため、tags は常に配列で保持する（TaskSidePanel と違い省略しない）
-  const [form, setForm] = useState<TaskEditFormState & { tags: string[] }>({
-    name:                 originalTask?.name ?? "",
-    status:               originalTask?.status ?? "todo" as Task["status"],
-    priority:             originalTask?.priority ?? "",
-    assignee_member_ids:  originalTask ? getAssigneeIds(originalTask) : [] as string[],
-    project_id:           originalTask?.project_id ?? null as string | null,
-    parent_task_id:       originalTask?.parent_task_id ?? null as string | null,
-    start_date:           originalTask?.start_date ?? "",
-    due_date:             originalTask?.due_date ?? "",
-    estimated_hours:      originalTask?.estimated_hours?.toString() ?? "",
-    comment:              originalTask?.comment ?? "",
-    tags:                 originalTask?.tags ?? [] as string[],
-  });
+  const [form, setForm] = useState<TaskEditFormState & { tags: string[] }>(() => buildFormFromTask(originalTask));
   const [tagDraft, setTagDraft] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
-  const isInitialMount = useRef(true);
-  // dirty: form が最後に成功した保存以降に変更されている（＝デバウンス未発火の保留編集がある）
-  // inFlight: デバウンスは発火済みで saveTask の Promise がまだ解決していない
-  // （閉じる操作でこの2つを見て「保留編集があれば1回だけフラッシュ」を判定する）
-  const formDirtyRef = useRef(false);
-  const saveInFlightRef = useRef(false);
 
-  // 自動保存ハンドラを ref に保持し、useEffect の依存配列を form のみに絞る
-  // （originalTask の realtime 更新などで saveTask が再発火しないようにする）
-  const handleAutoSaveRef = useRef<() => Promise<void>>(async () => {});
-  handleAutoSaveRef.current = async () => {
+  // ===== v3.87：明示保存のためのbaseline管理 =====
+  // baselineFormRef：「最後に保存した内容（未保存なら開いた時点の内容）」。isDirty判定の基準。
+  // baselineUpdatedAtRef：「最後に保存した時点（未保存なら開いた時点）のupdated_at」。
+  // 2-5（競合防御）の基準値として使う。saveTask（choke point）自体には手を入れず、
+  // この画面の中だけで「フォームを開いてから他の人が更新していないか」を検知する。
+  const baselineFormRef = useRef(buildFormFromTask(originalTask));
+  const baselineUpdatedAtRef = useRef<string | undefined>(originalTask?.updated_at);
+  const isDirty = computeFormDirty(form, baselineFormRef.current);
+  // フォームを開いている間に他の人がこのタスクを更新したか（控えめなバナー表示用）。
+  // 保存すると2-5の確認ダイアログを経てbaselineが更新され、この通知は自動的に消える。
+  const remoteUpdateNotice = !!originalTask
+    && !!originalTask.updated_at
+    && !!baselineUpdatedAtRef.current
+    && originalTask.updated_at !== baselineUpdatedAtRef.current;
+
+  const handleSave = useCallback(async () => {
     if (!originalTask) return;
+    if (saveStatus === "saving") return; // 二重送信防止
+    if (!computeFormDirty(form, baselineFormRef.current)) return; // 未変更（ボタンはdisabledのはずだが念のため）
+
+    // 2-5：競合防御（saveTask自体の楽観ロックには手を入れない。画面内だけで検知する）
+    if (
+      originalTask.updated_at
+      && baselineUpdatedAtRef.current
+      && originalTask.updated_at !== baselineUpdatedAtRef.current
+    ) {
+      const overwrite = await confirmDialog(
+        "このタスクは他の人が更新しました。あなたの内容で上書きしますか？",
+        { tone: "neutral", confirmLabel: "上書きして保存する", cancelLabel: "保存しない" },
+      );
+      if (!overwrite) return;
+    }
+
+    const formAtSaveTime = form;
     const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
-    const updated = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
+    const basePayload = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
+    // finalized_mentions（@メンション通知）は「閉じた時だけ確定」だった旧仕様をやめ、
+    // 明示保存のたびに常にペイロードへ含める（保存操作自体が明示的になったため、
+    // 都度含めても「知らないうちに通知が飛ぶ」不安には当たらない）
+    const payload = { ...basePayload, finalized_mentions: extractMentions(form.comment) };
+
+    setSaveStatus("saving");
+    setSaveError(null);
     try {
-      await saveTask(updated);
-      formDirtyRef.current = false;
+      await saveTask(payload);
+      baselineFormRef.current = formAtSaveTime;
+      // saveTask内部のBEFORE UPDATEトリガーで実際にDBへ書き込まれたupdated_atを取り直す
+      // （Section 5参照。この場面のoriginalTaskは再レンダー前のクロージャのため古い値のまま）
+      baselineUpdatedAtRef.current = useAppStore.getState().tasks.find(t => t.id === taskId)?.updated_at;
       setSaveStatus("saved");
-      // 自動保存ではモーダルを閉じない。親側は zustand 経由で自動的に
-      // 再レンダーされるので、明示的な「保存後のフック」呼び出しは不要。
       setTimeout(() => {
         setSaveStatus(s => (s === "saved" ? "idle" : s));
       }, 1500);
     } catch (e) {
       setSaveStatus("error");
       setSaveError(formatErrorForUser("保存に失敗しました", e));
-      // dirty は落とさない（保存できていないため）。失敗は store 側の
-      // handleSaveError が別途トースト＋load()で拾う（appStore.saveTask 参照）。
-    } finally {
-      saveInFlightRef.current = false;
     }
-  };
+  }, [originalTask, form, allTasks, currentUser.id, saveTask, saveStatus, taskId]);
 
-  // 自動保存：form 変更後 600ms のデバウンスで保存
-  // 自己衝突防止のシリアライズは zustand saveTask 側に集約されているため、
-  // ここでは単純にデバウンスで saveTask を呼ぶだけで OK（同一 task id への
-  // 連続保存は zustand が直列化して expectedUpdatedAt を正しく読み直す）。
-  useEffect(() => {
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-    formDirtyRef.current = true;
-    setSaveStatus("saving");
-    setSaveError(null);
-    const timer = setTimeout(() => {
-      saveInFlightRef.current = true;
-      void handleAutoSaveRef.current();
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [form]);
-
-  // モーダルを閉じるときの保存フラッシュ＋ finalized_mentions 確定保存。
-  //
-  // ①保留編集（デバウンス600ms待ち中でまだ saveTask が発火していない変更）がある場合、
-  //   ✕を押した瞬間にその場でフォーム全項目を保存発火する（await はしない＝閉じる操作を
-  //   ブロックしない。saveTask は store 層で直列化されバックグラウンドで完走する）。
-  //   これにより「✕を押すと直前の編集が失われる」バグを防ぐ（デバウンス発火前にモーダルが
-  //   アンマウントされ useEffect のクリーンアップが setTimeout を握り潰していたのが原因）。
-  // ②既に保存発火済み（saveInFlightRef=true）の場合は二重発火しない
-  //   （そのままバックグラウンドで完走するため何もしなくてよい）。
-  // ③finalized_mentions（@メンション通知は「閉じた時だけ確定」の既存仕様）は①の保存に
-  //   まとめて1回で送る。①を発火しない場合（フォームは保存済み・mentionsだけ変化）は
-  //   finalized_mentions 単体の保存を1回だけ行う。
-  //   → いずれの分岐でも close 時の saveTask 呼び出しは最大1回。
-  const handleClose = useCallback(() => {
-    if (originalTask) {
-      const currentMentions = extractMentions(form.comment);
-      const mentionsChanged = !mentionsEqual(currentMentions, originalTask.finalized_mentions ?? []);
-
-      if (formDirtyRef.current && !saveInFlightRef.current) {
-        const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
-        const payload = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
-        formDirtyRef.current = false;
-        // fire-and-forget: 保存完了を待たずに閉じる（Supabase 呼び出しは非同期で継続）
-        void saveTask(mentionsChanged ? { ...payload, finalized_mentions: currentMentions } : payload);
-      } else if (mentionsChanged) {
-        // フォームは既に保存済み／発火済み。finalized_mentions のみ確定保存する。
-        void saveTask({
-          ...originalTask,
-          comment:             form.comment,
-          finalized_mentions:  currentMentions,
-          updated_by:          currentUser.id,
-        });
-      }
+  // 未保存のまま閉じようとしたときの警告（v3.87）。
+  // 2択（「破棄して閉じる」／「編集に戻る」）で足りると判断した：保存したいだけなら
+  // 既に常時表示の保存ボタンがあり、そちらを押せばよいため、この確認に「保存して閉じる」
+  // 選択肢まで持たせる必要は薄いと判断した（3択にすると実装・文言とも複雑になる）。
+  const handleClose = useCallback(async () => {
+    if (isDirty) {
+      const discard = await confirmDialog(
+        "保存していない変更があります。破棄して閉じますか？",
+        { tone: "neutral", confirmLabel: "破棄して閉じる", cancelLabel: "編集に戻る" },
+      );
+      if (!discard) return; // 編集に戻る：モーダルを開いたまま何もしない
     }
     onClose();
-  }, [originalTask, form, allTasks, currentUser.id, saveTask, onClose]);
+  }, [isDirty, onClose]);
 
   const handleDelete = useCallback(async () => {
     if (!originalTask) return;
@@ -310,8 +312,33 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
       }}
       onClick={e => { if (e.target === e.currentTarget) handleClose(); }}
     >
+      {/* v3.87：Enter・Ctrl(Cmd)+Enterでの明示保存。
+          【二段構え】Ctrl/Cmd+Enterはcaptureフェーズ（子要素より先）で拾い「どこからでも保存」
+          を保証する。単純Enterはbubbleフェーズ（子要素の処理が先に走った後）で拾い、タグ入力欄・
+          CustomSelectの検索input等が既にe.preventDefault()した場合はそちらを優先して何もしない
+          （個別に対象を除外するより、defaultPreventedの有無だけを見る方が壊れにくい）。
+          日本語入力の変換確定時のEnter（e.nativeEvent.isComposing）は両方とも必ず無視する
+          （変換確定のたびに保存が走るのは日本語入力では致命的なため）。キーボード操作自体は
+          モーダル内の各フォーム要素が担うため、この箱自身をフォーカス可能にする必要はない */}
+      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
         className="animate-fadeIn"
+        onKeyDownCapture={e => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault();
+            void handleSave();
+          }
+        }}
+        onKeyDown={e => {
+          if (e.nativeEvent.isComposing) return;
+          if (e.key !== "Enter" || e.ctrlKey || e.metaKey) return; // Ctrl/Cmd+Enterは上のcaptureで処理済み
+          if (e.defaultPrevented) return; // 子要素（タグ入力・CustomSelect検索等）が既に処理済み
+          // 単一行のinputのみ対象。textarea（コメント・メモ）はEnterで改行のままにする
+          if ((e.target as HTMLElement).tagName !== "INPUT") return;
+          e.preventDefault();
+          void handleSave();
+        }}
         style={{
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-secondary)",
@@ -361,11 +388,24 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
           {/* 保存状態インジケータ */}
           <SaveIndicator status={saveStatus} />
 
-          <button onClick={handleClose} aria-label="閉じる" title="閉じる" style={{
+          <button onClick={() => void handleClose()} aria-label="閉じる" title="閉じる" style={{
             background: "none", border: "none", cursor: "pointer",
             fontSize: "16px", color: "var(--color-text-tertiary)", flexShrink: 0,
           }}>✕</button>
         </div>
+
+        {/* 2-5：他の人がこのタスクを更新したことの控えめな通知（保存時にあらためて確認する） */}
+        {remoteUpdateNotice && (
+          <div style={{
+            padding: "6px 16px",
+            background: "var(--color-bg-warning)",
+            color: "var(--color-text-warning)",
+            fontSize: "11px",
+            borderBottom: "1px solid var(--color-border-warning)",
+          }}>
+            ⚠ 他のメンバーがこのタスクを更新しました。保存すると上書きの確認が表示されます。
+          </div>
+        )}
 
         {/* 保存エラー表示 */}
         {saveStatus === "error" && saveError && (
@@ -505,7 +545,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
           </FieldSection>
 
           {/* 先行タスク（B1：依存ゲート）。親子関係とは別概念のため、枠で囲んで視覚的に分離する。
-              完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない） */}
+              完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない）。
+              v3.87：追加・解除はここも即時反映（保存ボタンの対象外。join系の線引きは冒頭コメント参照） */}
           <div style={{
             marginBottom: "14px", padding: "10px 10px 9px",
             border: "1px solid var(--color-border-primary)",
@@ -562,7 +603,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             )}
           </div>
 
-          {/* 追加プロジェクト */}
+          {/* 追加プロジェクト。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
           <FieldSection label="追加プロジェクト">
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {linkedExtraProjects.map(p => (
@@ -595,7 +636,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             />
           </FieldSection>
 
-          {/* タスクフォース */}
+          {/* タスクフォース。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
           <FieldSection label="タスクフォース">
             <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
               {linkedTfs.map(tf => (
@@ -774,9 +815,26 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
           >
             🗑 削除
           </button>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-            変更は自動で保存されます
-          </span>
+          {/* 保存ボタン：常時表示。役割の整理＝このボタンは「押せるか（dirty）」「保存中か」の
+              状態のみを担い、「保存しました／失敗しました」の結果表示はヘッダーのSaveIndicator
+              に任せる（両方が別々に結果を語ると混乱するため）。未変更時はdisabled＋明度を
+              下げて「押せない＝変更が無い」ことを視覚的に伝える */}
+          <button
+            onClick={() => void handleSave()}
+            disabled={!isDirty || saveStatus === "saving"}
+            title={!isDirty ? "変更はありません" : undefined}
+            style={{
+              padding: "6px 18px", fontSize: "12px", fontWeight: "600",
+              border: "none", borderRadius: "var(--radius-md)",
+              background: (!isDirty || saveStatus === "saving") ? "var(--color-bg-tertiary)" : "var(--color-brand)",
+              color: (!isDirty || saveStatus === "saving") ? "var(--color-text-tertiary)" : "#fff",
+              cursor: (!isDirty || saveStatus === "saving") ? "not-allowed" : "pointer",
+              opacity: (!isDirty || saveStatus === "saving") ? 0.55 : 1,
+              transition: "opacity 0.1s",
+            }}
+          >
+            {saveStatus === "saving" ? "保存中…" : "保存"}
+          </button>
         </div>
       </div>
     </div>
@@ -785,10 +843,12 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
 
 // ===== 小コンポーネント =====
 
+// v3.87：役割の整理。「保存中」はフッターの保存ボタン自身のラベル（「保存中…」）＋disabledが
+// 担うため、ここでは重複表示しない（idle・savingは何も出さない）。このインジケータは
+// 「保存しました」「保存に失敗しました」という“結果”の伝達だけに専念する。
 function SaveIndicator({ status }: { status: "idle" | "saving" | "saved" | "error" }) {
-  if (status === "idle") return null;
-  const styles: Record<"saving" | "saved" | "error", { bg: string; color: string; label: string }> = {
-    saving: { bg: "transparent", color: "var(--color-text-tertiary)", label: "保存中…" },
+  if (status === "idle" || status === "saving") return null;
+  const styles: Record<"saved" | "error", { bg: string; color: string; label: string }> = {
     saved:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)", label: "✓ 保存しました" },
     error:  { bg: "var(--color-bg-danger)", color: "var(--color-text-danger)", label: "保存失敗" },
   };

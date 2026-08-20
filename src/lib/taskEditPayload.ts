@@ -29,6 +29,36 @@ export interface TaskEditFormState {
  * - display_order・updated_at 等は originalTask の値を引き継ぎ、ここでは触らない
  *   （updated_at は呼び出し側の saveTask/saveWithLock が expectedUpdatedAt として扱う）。
  */
+/**
+ * 現在のフォーム内容が baseline（最後に保存した内容、またはフォームを開いた時点の内容）と
+ * 異なるか＝dirty判定（v3.87・明示保存への変更に伴い新設）。
+ * 参照の同一性ではなく値そのものを比較する（オブジェクトを毎回作り直すReact stateの都合上、
+ * 参照比較だと常にdirty扱いになってしまう罠を避けるため）。
+ * 配列（担当者・タグ）は順序を無視した集合比較にする（並び替え自体は保存内容の意味を
+ * 変えないため、順序差だけで「変更あり」と誤検知しない）。
+ */
+export function computeFormDirty(current: TaskEditFormState, baseline: TaskEditFormState): boolean {
+  if (current.name !== baseline.name) return true;
+  if (current.status !== baseline.status) return true;
+  if (current.priority !== baseline.priority) return true;
+  if (current.project_id !== baseline.project_id) return true;
+  if (current.parent_task_id !== baseline.parent_task_id) return true;
+  if (current.start_date !== baseline.start_date) return true;
+  if (current.due_date !== baseline.due_date) return true;
+  if (current.estimated_hours !== baseline.estimated_hours) return true;
+  if (current.comment !== baseline.comment) return true;
+  if (!sameStringSet(current.assignee_member_ids, baseline.assignee_member_ids)) return true;
+  if (!sameStringSet(current.tags ?? [], baseline.tags ?? [])) return true;
+  return false;
+}
+
+function sameStringSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const setB = new Set(b);
+  for (const x of a) if (!setB.has(x)) return false;
+  return true;
+}
+
 export function buildTaskUpdatePayload(
   originalTask: Task,
   form: TaskEditFormState,

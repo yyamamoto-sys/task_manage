@@ -25,6 +25,9 @@ export interface ConfirmDialogOptions {
   tone?: "danger" | "neutral";
   /** 確定ボタンのラベル（省略時は type/tone から既定値を出す） */
   confirmLabel?: string;
+  /** キャンセルボタンのラベル（省略時は「キャンセル」。v3.87：「編集に戻る」等、何が起きるかが
+   *  分かる語に差し替えたい呼び出し側のために追加。既存呼び出しは省略のままで挙動不変） */
+  cancelLabel?: string;
 }
 
 type ShowFn = (message: string, type: "confirm" | "alert", opts?: ConfirmDialogOptions) => Promise<boolean>;

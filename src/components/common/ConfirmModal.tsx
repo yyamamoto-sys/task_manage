@@ -19,10 +19,11 @@ interface DialogState {
   type: "confirm" | "alert";
   tone: "danger" | "neutral";
   confirmLabel?: string;
+  cancelLabel?: string;
   resolve: ((value: boolean) => void) | null;
 }
 
-const CLOSED: DialogState = { open: false, message: "", type: "confirm", tone: "danger", confirmLabel: undefined, resolve: null };
+const CLOSED: DialogState = { open: false, message: "", type: "confirm", tone: "danger", confirmLabel: undefined, cancelLabel: undefined, resolve: null };
 
 /**
  * type/tone から見た目（アイコン・色）を決める。alertDialog の見た目（warning）は
@@ -47,7 +48,7 @@ export function ConfirmModal() {
   useEffect(() => {
     _registerModal((message, type, opts?: ConfirmDialogOptions) =>
       new Promise<boolean>(resolve => {
-        setState({ open: true, message, type, tone: opts?.tone ?? "danger", confirmLabel: opts?.confirmLabel, resolve });
+        setState({ open: true, message, type, tone: opts?.tone ?? "danger", confirmLabel: opts?.confirmLabel, cancelLabel: opts?.cancelLabel, resolve });
       })
     );
   }, []);
@@ -121,7 +122,7 @@ export function ConfirmModal() {
                 borderRadius: "var(--radius-md)", cursor: "pointer",
               }}
             >
-              {t("common.button.cancel")}
+              {state.cancelLabel ?? t("common.button.cancel")}
             </button>
           )}
           <button

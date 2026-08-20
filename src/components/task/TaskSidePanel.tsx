@@ -2,6 +2,16 @@
 //
 // タスククリックで右側に出る 320px サイドパネル。List/Gantt/Kanban で共通利用。
 // モバイルは呼び出し側で TaskEditModal を出す（このコンポーネントは PC・タブレット向け）。
+//
+// 【v3.87：明示保存への変更】
+// 以前は全フィールドを600msデバウンスで自動保存していたが、「自動保存されているか分からず
+// 不安」というクレームを受け、保存ボタン／Enter／Ctrl(Cmd)+Enterで明示的に保存する方式へ
+// 変更した（TaskEditModal.tsxと同じ設計。CLAUDE.md 新設グランドルール参照）。
+// 対象は `sidebarForm`（このタスク自身のフィールド）のみ。タスクフォース・追加プロジェクト・
+// 先行タスクの紐づけ・子タスクの付け外し（add/removeTaskTaskForce・add/removeTaskProject・
+// add/removeTaskDependency・applyChildren・detachChild）は別テーブルへのjoin/unjoinや
+// 他タスクのparent_task_id変更で、操作した瞬間に結果が見える別種の操作のため、従来どおり
+// 即時実行のままにする。
 
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
@@ -21,7 +31,7 @@ import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
-import { buildTaskUpdatePayload, type TaskEditFormState } from "../../lib/taskEditPayload";
+import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 
 interface Props {
   taskId: string;
@@ -32,6 +42,22 @@ interface Props {
 // タグ編集UIが無いため tags を除いた TaskEditFormState のサブセット。
 // buildTaskUpdatePayload は tags 省略時に originalTask.tags を維持する。
 type SidebarForm = Omit<TaskEditFormState, "tags">;
+
+/** selectedTask から sidebarForm の初期値（＝保存済みベースライン）を組み立てる。 */
+function buildSidebarFormFromTask(task: Task): SidebarForm {
+  return {
+    name:                task.name,
+    status:              task.status,
+    priority:            task.priority ?? "",
+    assignee_member_ids: getAssigneeIds(task),
+    project_id:          task.project_id ?? null,
+    parent_task_id:      task.parent_task_id ?? null,
+    start_date:          task.start_date ?? "",
+    due_date:            task.due_date ?? "",
+    estimated_hours:     task.estimated_hours?.toString() ?? "",
+    comment:             task.comment,
+  };
+}
 
 export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const allTasks            = useAppStore(selectScopedTasks);
@@ -160,97 +186,70 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const [childPickerOpen, setChildPickerOpen] = useState(false);
   const [childPickerChecked, setChildPickerChecked] = useState<Set<string>>(new Set());
   const [childSearch, setChildSearch] = useState("");
-  const initialMount = useRef(true);
-  // dirty: sidebarForm が最後に成功した保存以降に変更されている（＝デバウンス未発火の保留編集がある）
-  // inFlight: デバウンスは発火済みで saveTask の Promise がまだ解決していない
-  // （閉じる操作・別タスクへの切替でこの2つを見て「保留編集があれば1回だけフラッシュ」を判定する。
-  // TaskEditModal.tsx の handleClose と同じ設計。以前はこのフラッシュが無く、編集直後に✕や
-  // 別タスク行クリックで閉じる/切り替えると600ms未満の保留編集が消える実データロスバグがあった）
-  const formDirtyRef = useRef(false);
-  const saveInFlightRef = useRef(false);
-  // sidebarForm が今どのタスクのものかを保持する（taskId 切替時、旧タスクの保留編集を
-  // 正しい originalTask に対してフラッシュするために必要）
+  // ===== v3.87：明示保存のためのbaseline管理（TaskEditModal.tsxと同じ設計） =====
+  // baselineFormRef：「最後に保存した内容（未保存なら開いた時点の内容）」。isDirty判定の基準。
+  // baselineUpdatedAtRef：「最後に保存した時点（未保存なら開いた時点）のupdated_at」。
+  // 2-5（競合防御）の基準値として使う。saveTask（choke point）自体には手を入れない。
+  const baselineFormRef = useRef<SidebarForm | null>(null);
+  const baselineUpdatedAtRef = useRef<string | undefined>(undefined);
+  // sidebarForm が今どのタスクのものかを保持する（taskId 切替時、旧タスクの未保存の変更を
+  // 正しい旧タスクに対して扱うために必要）
   const formTaskRef = useRef<Task | null>(null);
 
-  // taskId 切替で sidebarForm を初期化
+  // taskId 切替：旧タスクに未保存の変更があれば、切り替える前に確認する
+  // （黙って破棄しない・黙って保存しない）。保存する場合はここで確定してから新タスクへ進む。
   useEffect(() => {
-    // 旧タスクに保留編集（デバウンス未発火）が残っていれば、新タスクへ切り替える前にフラッシュする
-    if (formDirtyRef.current && !saveInFlightRef.current && formTaskRef.current && sidebarForm) {
+    let cancelled = false;
+
+    async function run() {
       const prevTask = formTaskRef.current;
       const prevForm = sidebarForm;
-      formDirtyRef.current = false;
-      void saveTask(buildTaskUpdatePayload(prevTask, prevForm, prevForm.parent_task_id ? allTasks.find(t => t.id === prevForm.parent_task_id) : null, currentUser.id))
-        .catch(e => showToast(formatErrorForUser("保存に失敗しました", e), "error"));
+      const prevBaseline = baselineFormRef.current;
+      if (prevTask && prevForm && prevBaseline && computeFormDirty(prevForm, prevBaseline)) {
+        const shouldSave = await confirmDialog(
+          `「${prevTask.name}」に保存していない変更があります。保存してから次のタスクへ移動しますか？`,
+          { tone: "neutral", confirmLabel: "保存して移動する", cancelLabel: "破棄して移動する" },
+        );
+        if (cancelled) return;
+        if (shouldSave) {
+          const parent = prevForm.parent_task_id ? allTasks.find(t => t.id === prevForm.parent_task_id) : null;
+          try {
+            await saveTask(buildTaskUpdatePayload(prevTask, prevForm, parent, currentUser.id));
+          } catch (e) {
+            showToast(formatErrorForUser("保存に失敗しました", e), "error");
+          }
+        }
+      }
+      if (cancelled) return;
+
+      if (!selectedTask) {
+        setSidebarForm(null);
+        formTaskRef.current = null;
+        baselineFormRef.current = null;
+        baselineUpdatedAtRef.current = undefined;
+        return;
+      }
+      const nextForm = buildSidebarFormFromTask(selectedTask);
+      setSidebarForm(nextForm);
+      baselineFormRef.current = nextForm;
+      baselineUpdatedAtRef.current = selectedTask.updated_at;
+      formTaskRef.current = selectedTask;
+      // 現在の親子状態から階層モードを導出
+      setHierarchyMode(
+        selectedTask.parent_task_id ? "child"
+        : childrenOf(allTasks, selectedTask.id).length > 0 ? "parent"
+        : "none"
+      );
+      setChildPickerOpen(false);
+      setChildPickerChecked(new Set());
+      setChildSearch("");
+      setSaveStatus("idle");
+      setSaveError(null);
     }
 
-    if (!selectedTask) {
-      setSidebarForm(null);
-      formTaskRef.current = null;
-      return;
-    }
-    setSidebarForm({
-      name:                selectedTask.name,
-      status:              selectedTask.status,
-      priority:            selectedTask.priority ?? "",
-      assignee_member_ids: getAssigneeIds(selectedTask),
-      project_id:          selectedTask.project_id ?? null,
-      parent_task_id:      selectedTask.parent_task_id ?? null,
-      start_date:          selectedTask.start_date ?? "",
-      due_date:            selectedTask.due_date ?? "",
-      estimated_hours:     selectedTask.estimated_hours?.toString() ?? "",
-      comment:             selectedTask.comment,
-    });
-    formTaskRef.current = selectedTask;
-    // 現在の親子状態から階層モードを導出
-    setHierarchyMode(
-      selectedTask.parent_task_id ? "child"
-      : childrenOf(allTasks, selectedTask.id).length > 0 ? "parent"
-      : "none"
-    );
-    setChildPickerOpen(false);
-    setChildPickerChecked(new Set());
-    setChildSearch("");
-    setSaveStatus("idle");
-    setSaveError(null);
-    initialMount.current = true;
+    void run();
+    return () => { cancelled = true; };
   }, [taskId]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 自動保存：600ms デバウンス
-  const saveRef = useRef<() => Promise<void>>(async () => {});
-  saveRef.current = async () => {
-    if (!selectedTask || !sidebarForm) return;
-    // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
-    const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
-    const updated = buildTaskUpdatePayload(selectedTask, sidebarForm, parent, currentUser.id);
-    try {
-      await saveTask(updated);
-      formDirtyRef.current = false;
-      setSaveStatus("saved");
-      setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
-    } catch (e) {
-      setSaveStatus("error");
-      setSaveError(formatErrorForUser("保存に失敗しました", e));
-      // dirty は落とさない（保存できていないため）
-    } finally {
-      saveInFlightRef.current = false;
-    }
-  };
-
-  useEffect(() => {
-    if (initialMount.current) {
-      initialMount.current = false;
-      return;
-    }
-    if (!sidebarForm) return;
-    formDirtyRef.current = true;
-    setSaveStatus("saving");
-    setSaveError(null);
-    const timer = setTimeout(() => {
-      saveInFlightRef.current = true;
-      void saveRef.current();
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [sidebarForm]);
 
   // パネル幅（左端ハンドルをドラッグして調整。min 240px / max 680px）
   const [panelWidth, setPanelWidth] = useState<number>(() => {
@@ -292,6 +291,47 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   if (!selectedTask || !sidebarForm) return null;
 
+  const isDirty = baselineFormRef.current ? computeFormDirty(sidebarForm, baselineFormRef.current) : false;
+  // 2-5：他の人がこのタスクを更新したことの控えめな通知（保存時にあらためて確認する）
+  const remoteUpdateNotice = !!selectedTask.updated_at
+    && !!baselineUpdatedAtRef.current
+    && selectedTask.updated_at !== baselineUpdatedAtRef.current;
+
+  const handleSave = async () => {
+    if (saveStatus === "saving") return; // 二重送信防止
+    if (!baselineFormRef.current || !computeFormDirty(sidebarForm, baselineFormRef.current)) return;
+
+    // 2-5：競合防御（saveTask自体の楽観ロックには手を入れない。画面内だけで検知する）
+    if (
+      selectedTask.updated_at
+      && baselineUpdatedAtRef.current
+      && selectedTask.updated_at !== baselineUpdatedAtRef.current
+    ) {
+      const overwrite = await confirmDialog(
+        "このタスクは他の人が更新しました。あなたの内容で上書きしますか？",
+        { tone: "neutral", confirmLabel: "上書きして保存する", cancelLabel: "保存しない" },
+      );
+      if (!overwrite) return;
+    }
+
+    const formAtSaveTime = sidebarForm;
+    // 親を設定したら project_id は親のPJに合わせる（不一致防止）。親を外したらフォームのPJ。
+    const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
+    const updated = buildTaskUpdatePayload(selectedTask, sidebarForm, parent, currentUser.id);
+    setSaveStatus("saving");
+    setSaveError(null);
+    try {
+      await saveTask(updated);
+      baselineFormRef.current = formAtSaveTime;
+      baselineUpdatedAtRef.current = useAppStore.getState().tasks.find(t => t.id === taskId)?.updated_at;
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(s => s === "saved" ? "idle" : s), 1500);
+    } catch (e) {
+      setSaveStatus("error");
+      setSaveError(formatErrorForUser("保存に失敗しました", e));
+    }
+  };
+
   const pj = projects.find(p => p.id === selectedTask.project_id);
   const isOverdue = !!sidebarForm.due_date
     && sidebarForm.due_date < todayStr()
@@ -302,7 +342,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
   const hasChildren = children.length > 0;
 
   // モード切替。子が付いている間は「親タスク」以外に切り替えられない（先に子を外す）。
-  // 「子タスク」以外に切り替えたら親設定はクリアする（自動保存が拾う）。
+  // 「子タスク」以外に切り替えたら親設定はクリアする（sidebarFormの一部のため、保存ボタン／
+  // Enter／Ctrl+Enterで明示保存されるまでDBには反映されない＝v3.87）。
   const switchHierarchyMode = (mode: "none" | "child" | "parent") => {
     if (mode === hierarchyMode) return;
     if (hasChildren && mode !== "parent") return;
@@ -330,6 +371,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     return n;
   });
 
+  // v3.87：applyChildren/detachChildは「別のタスク（子）」のparent_task_idを変更する操作で、
+  // 選択中タスク自身のsidebarFormではない。従来どおり即時保存のままにする（保存ボタンの対象外）。
   const applyChildren = async () => {
     const ids = [...childPickerChecked];
     if (ids.length === 0) return;
@@ -372,27 +415,53 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
     onClose();
   };
 
-  // 閉じるときの保存フラッシュ（TaskEditModal.tsx の handleClose と同じ設計）。
-  // 保留編集（デバウンス600ms待ち中）があれば、閉じる瞬間にその場で発火する。
-  // 既に発火済み（saveInFlightRef）ならバックグラウンドで完走するため何もしない。
-  const handleClose = () => {
-    if (formDirtyRef.current && !saveInFlightRef.current) {
-      const parent = sidebarForm.parent_task_id ? allTasks.find(t => t.id === sidebarForm.parent_task_id) : null;
-      const payload = buildTaskUpdatePayload(selectedTask, sidebarForm, parent, currentUser.id);
-      formDirtyRef.current = false;
-      void saveTask(payload).catch(e => showToast(formatErrorForUser("保存に失敗しました", e), "error"));
+  // 未保存のまま閉じようとしたときの警告（v3.87・TaskEditModal.tsx の handleClose と同じ設計）。
+  // 2択（「破棄して閉じる」／「編集に戻る」）で足りると判断した：保存したいだけなら常時表示の
+  // 保存ボタンがあるため、この確認に「保存して閉じる」選択肢まで持たせる必要は薄い。
+  const handleClose = async () => {
+    if (isDirty) {
+      const discard = await confirmDialog(
+        "保存していない変更があります。破棄して閉じますか？",
+        { tone: "neutral", confirmLabel: "破棄して閉じる", cancelLabel: "編集に戻る" },
+      );
+      if (!discard) return; // 編集に戻る：パネルを開いたまま何もしない
     }
     onClose();
   };
 
   return (
-    <div className="animate-side-panel-in" style={{
-      width: `${panelWidth}px`, flexShrink: 0,
-      borderLeft: "1px solid var(--color-border-primary)",
-      background: "var(--color-bg-primary)",
-      display: "flex", flexDirection: "column", overflow: "hidden",
-      position: "relative",
-    }}>
+    // v3.87：Enter・Ctrl(Cmd)+Enterでの明示保存（TaskEditModal.tsxと同じ二段構え）。
+    // Ctrl/Cmd+Enterはcaptureフェーズ（子要素より先）で拾い「どこからでも保存」を保証する。
+    // 単純Enterはbubbleフェーズで拾い、タグ入力欄・CustomSelectの検索input等が既に
+    // e.preventDefault()した場合はそちらを優先して何もしない。日本語入力の変換確定時の
+    // Enter（e.nativeEvent.isComposing）は両方とも必ず無視する。キーボード操作自体は
+    // パネル内の各フォーム要素が担うため、この箱自身をフォーカス可能にする必要はない
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      className="animate-side-panel-in"
+      onKeyDownCapture={e => {
+        if (e.nativeEvent.isComposing) return;
+        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          e.preventDefault();
+          void handleSave();
+        }
+      }}
+      onKeyDown={e => {
+        if (e.nativeEvent.isComposing) return;
+        if (e.key !== "Enter" || e.ctrlKey || e.metaKey) return; // Ctrl/Cmd+Enterは上のcaptureで処理済み
+        if (e.defaultPrevented) return; // 子要素（CustomSelectの検索input等）が既に処理済み
+        // 単一行のinputのみ対象。textarea（メモ・コメント）はEnterで改行のままにする
+        if ((e.target as HTMLElement).tagName !== "INPUT") return;
+        e.preventDefault();
+        void handleSave();
+      }}
+      style={{
+        width: `${panelWidth}px`, flexShrink: 0,
+        borderLeft: "1px solid var(--color-border-primary)",
+        background: "var(--color-bg-primary)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+        position: "relative",
+      }}>
       {/* リサイズハンドル（左端をドラッグして幅を調整）。マウスのドラッグ操作専用でキーボード代替手段はない */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
       <div
@@ -432,11 +501,24 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           onBlur={e => (e.currentTarget.style.borderBottomColor = "transparent")}
         />
         <SaveIndicator status={saveStatus} />
-        <button onClick={handleClose} aria-label="閉じる" title="閉じる" style={{
+        <button onClick={() => void handleClose()} aria-label="閉じる" title="閉じる" style={{
           background: "none", border: "none", cursor: "pointer", fontSize: "14px",
           color: "var(--color-text-tertiary)", flexShrink: 0,
         }}>✕</button>
       </div>
+
+      {/* 2-5：他の人がこのタスクを更新したことの控えめな通知（保存時にあらためて確認する） */}
+      {remoteUpdateNotice && (
+        <div style={{
+          padding: "5px 12px",
+          background: "var(--color-bg-warning)",
+          color: "var(--color-text-warning)",
+          fontSize: "10px",
+          borderBottom: "1px solid var(--color-border-warning)",
+        }}>
+          ⚠ 他のメンバーがこのタスクを更新しました。保存すると上書きの確認が表示されます。
+        </div>
+      )}
 
       {saveStatus === "error" && saveError && (
         <div style={{
@@ -672,7 +754,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
         )}
 
         {/* 先行タスク（B1：依存ゲート）。階層（親子関係）とは別概念のため、枠で囲んで視覚的に分離する。
-            完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない） */}
+            完了は先行が全部doneになるまでハードブロック・着手はソフト警告のみ（止めない）。
+            v3.87：追加・解除はここも即時反映（保存ボタンの対象外。join系の線引きは冒頭コメント参照） */}
         <div style={{
           marginBottom: "12px", padding: "8px 8px 7px",
           border: "1px solid var(--color-border-primary)",
@@ -729,7 +812,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           )}
         </div>
 
-        {/* 追加プロジェクト */}
+        {/* 追加プロジェクト。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
         <SideLabel>追加プロジェクト</SideLabel>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
           {linkedExtraProjects.map(p => (
@@ -762,7 +845,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           searchable searchPlaceholder="プロジェクトで検索..."
           style={{ marginBottom: "12px" }} />
 
-        {/* タスクフォース */}
+        {/* タスクフォース。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
         <SideLabel>タスクフォース</SideLabel>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "5px" }}>
           {linkedTfs.map(tf => (
@@ -881,7 +964,24 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
           borderRadius: "var(--radius-md)", cursor: "pointer",
           background: "transparent",
         }}>🗑 削除</button>
-        <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)" }}>自動保存</span>
+        {/* 保存ボタン：常時表示。役割の整理＝このボタンは「押せるか（dirty）」「保存中か」の
+            状態のみを担い、「保存しました／失敗しました」の結果表示はヘッダーのSaveIndicator
+            に任せる。未変更時はdisabled＋明度を下げて「押せない＝変更が無い」ことを伝える */}
+        <button
+          onClick={() => void handleSave()}
+          disabled={!isDirty || saveStatus === "saving"}
+          title={!isDirty ? "変更はありません" : undefined}
+          style={{
+            padding: "4px 14px", fontSize: "10px", fontWeight: "600",
+            border: "none", borderRadius: "var(--radius-md)",
+            background: (!isDirty || saveStatus === "saving") ? "var(--color-bg-tertiary)" : "var(--color-brand)",
+            color: (!isDirty || saveStatus === "saving") ? "var(--color-text-tertiary)" : "#fff",
+            cursor: (!isDirty || saveStatus === "saving") ? "not-allowed" : "pointer",
+            opacity: (!isDirty || saveStatus === "saving") ? 0.55 : 1,
+          }}
+        >
+          {saveStatus === "saving" ? "保存中…" : "保存"}
+        </button>
       </div>
     </div>
   );
@@ -898,10 +998,12 @@ function SideLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
+// v3.87：役割の整理。「保存中」はフッターの保存ボタン自身のラベル（「保存中…」）＋disabledが
+// 担うため、ここでは重複表示しない（idle・savingは何も出さない）。このインジケータは
+// 「保存しました」「保存に失敗しました」という“結果”の伝達だけに専念する。
 function SaveIndicator({ status }: { status: "idle" | "saving" | "saved" | "error" }) {
-  if (status === "idle") return null;
-  const styles: Record<"saving" | "saved" | "error", { bg: string; color: string; label: string }> = {
-    saving: { bg: "transparent", color: "var(--color-text-tertiary)", label: "保存中…" },
+  if (status === "idle" || status === "saving") return null;
+  const styles: Record<"saved" | "error", { bg: string; color: string; label: string }> = {
     saved:  { bg: "var(--color-bg-success)", color: "var(--color-text-success)", label: "✓" },
     error:  { bg: "var(--color-bg-danger)", color: "var(--color-text-danger)", label: "失敗" },
   };

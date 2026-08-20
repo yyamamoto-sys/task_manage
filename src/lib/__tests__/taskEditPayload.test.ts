@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Task } from "../localData/types";
-import { buildTaskUpdatePayload, type TaskEditFormState } from "../taskEditPayload";
+import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../taskEditPayload";
 
 // テスト用の最小 Task ファクトリ（taskHierarchy.test.ts と同じ流儀）
 function mk(partial: Partial<Task> & { id: string }): Task {
@@ -123,5 +123,42 @@ describe("buildTaskUpdatePayload", () => {
     const { tags: _omit, ...formWithoutTags } = mkForm();
     const result = buildTaskUpdatePayload(original, formWithoutTags, null, "me");
     expect(result.tags).toEqual(["既存タグ"]);
+  });
+});
+
+describe("computeFormDirty", () => {
+  it("全フィールドが同一ならdirtyではない", () => {
+    const baseline = mkForm();
+    expect(computeFormDirty(mkForm(), baseline)).toBe(false);
+  });
+
+  it("スカラーフィールド（name/status/priority/project_id/parent_task_id/start_date/due_date/estimated_hours/comment）の差分をそれぞれ検出する", () => {
+    const baseline = mkForm();
+    expect(computeFormDirty(mkForm({ name: "別の名前" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ status: "done" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ priority: "high" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ project_id: "pj2" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ parent_task_id: "parent1" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ start_date: "2026-07-01" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ due_date: "2026-07-10" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ estimated_hours: "3" }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ comment: "変更後" }), baseline)).toBe(true);
+  });
+
+  it("assignee_member_ids は順序を無視した集合比較（並び替えだけではdirtyにならない）", () => {
+    const baseline = mkForm({ assignee_member_ids: ["m1", "m2"] });
+    expect(computeFormDirty(mkForm({ assignee_member_ids: ["m2", "m1"] }), baseline)).toBe(false);
+    expect(computeFormDirty(mkForm({ assignee_member_ids: ["m1", "m2", "m3"] }), baseline)).toBe(true);
+    expect(computeFormDirty(mkForm({ assignee_member_ids: ["m1"] }), baseline)).toBe(true);
+  });
+
+  it("tags も順序を無視した集合比較。省略時は空配列として扱う（TaskSidePanel対応）", () => {
+    const baseline = mkForm({ tags: ["a", "b"] });
+    expect(computeFormDirty(mkForm({ tags: ["b", "a"] }), baseline)).toBe(false);
+    expect(computeFormDirty(mkForm({ tags: ["a"] }), baseline)).toBe(true);
+
+    const { tags: _omit1, ...baselineNoTags } = mkForm();
+    const { tags: _omit2, ...currentNoTags } = mkForm();
+    expect(computeFormDirty(currentNoTags, baselineNoTags)).toBe(false);
   });
 });

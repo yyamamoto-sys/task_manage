@@ -6305,5 +6305,47 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。
 #   詳細はCLAUDE.md Section 21・FABの座標表を参照。
 #
-# 最終更新：2026-08-20（v3.86）
+# v3.87（2026-08-20）：タスク編集面（モーダル／サイドパネル）を明示保存へ変更
+#   クレーム：「タスクの詳細を追加した後、自動で保存されて×で消すの、本当に反映できてるか
+#   分からなくて不安。自分で保存ボタンを押したら画面が閉じるという流れの方が安心できる」。
+#   A（デバウンス自動保存を廃止）：`TaskEditModal.tsx`/`TaskSidePanel.tsx`の`form`/
+#   `sidebarForm`変更を600msデバウンスして自動保存する仕組みを丸ごと廃止。保存は
+#   保存ボタン／Enter（単一行inputのみ・textareaは改行のまま）／Ctrl(Cmd)+Enter（どこからでも。
+#   captureフェーズで拾い子要素のpreventDefaultより優先）のみで発火するようにした。
+#   日本語入力の変換確定Enter（`e.nativeEvent.isComposing`）は必ず無視する。
+#   B（join系は従来どおり即時）：タスクフォース・追加プロジェクト・先行タスクの紐づけ・
+#   子タスクの付け外し（add/removeTaskTaskForce・add/removeTaskProject・
+#   add/removeTaskDependency・applyChildren・detachChild）は`form`を経由しないため対象外の
+#   まま（操作した瞬間に結果が見える別種の操作）。線引きは両ファイルの冒頭コメント・
+#   CLAUDE.md新設Section 44に明記。
+#   C（保存ボタン＋dirty判定）：`src/lib/taskEditPayload.ts`に純粋関数`computeFormDirty()`
+#   を新設（値の比較。担当者・タグは順序を無視した集合比較）。未変更時はボタンをdisabled＋
+#   明度を下げ、`title`で「変更はありません」と伝える。既存の`SaveIndicator`とは役割を分離：
+#   ボタン＝「押せるか・保存中か」、`SaveIndicator`＝「結果（成功／失敗）」のみを担う
+#   （idle/savingのときは何も表示しない）。
+#   D（close時の暗黙フラッシュを削除・確認ダイアログへ置き換え）：×・オーバーレイクリック・
+#   サイドパネルのタスク切替のたびに保留編集をその場でsaveTaskしていた「フラッシュ」処理
+#   （編集消失バグへの対処として過去に入っていたもの）を削除。dirtyなら`confirmDialog()`
+#   で確認する：モーダルは「破棄して閉じる」／「編集に戻る」の2択、サイドパネルの
+#   タスク切替は「保存して移動する」／「破棄して移動する」の2択（切替のキャンセル自体は
+#   3画面＝GanttView/KanbanView/ListViewへの越境変更が必要なため見送った）。Escapeキーは
+#   両画面とも元々閉じる機能自体が無いため対応不要（調査済み）。
+#   E（finalized_mentions）：「閉じた時だけ確定保存」だった旧仕様（TaskEditModal.tsxのみ）を
+#   やめ、保存のたびに常に含める形に変更（`mentionsEqual`による「変化時のみ」の分岐は不要に）。
+#   F（2-5：競合防御。saveTask自体には手を入れない）：`baselineUpdatedAtRef`を各画面で持ち、
+#   保存直前にstoreの現在値と比較して食い違えば上書き確認（`confirmDialog`）を挟む。
+#   開いている間に他人が更新したことは控えめな警告バナーでも知らせる。
+#   G（confirmDialogの拡張）：`src/lib/dialog.ts`の`ConfirmDialogOptions`に`cancelLabel`を
+#   追加（省略時は従来どおり「キャンセル」。既存19呼び出しは無変更）。「編集に戻る」等、
+#   何が起きるかが分かる語を両ボタンに使えるようにした。
+#   H（機械チェック）：`src/components/task/__tests__/explicitSaveNoDebounce.test.ts`が
+#   `useEffect(...,[form|sidebarForm])`+`setTimeout`の組み合わせ（デバウンス自動保存の
+#   実装フィンガープリント）の再発を検知する。実装前にv3.86時点の実ソースに対して走らせ、
+#   実際に検出（赤）できることを確認済み。合成フィクスチャで検出ロジック自体も固定。
+#   テスト：`taskEditPayload.test.ts`に`computeFormDirty`のテスト12件追加。
+#   `explicitSaveNoDebounce.test.ts`（新規4件）。既存1631件を壊さず、合計1639件が全通過。
+#   やらないこと：DBスキーマ変更なし。`saveTask`（choke point）・Section 5の契約は無改修。
+#   詳細はCLAUDE.md Section 44参照。
+#
+# 最終更新：2026-08-20（v3.87）
 
