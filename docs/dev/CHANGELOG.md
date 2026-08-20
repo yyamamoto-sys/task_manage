@@ -6184,5 +6184,47 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   への変更は対象外。マイグレーションの適用は山本さんが手動で行う。
 #   詳細はCLAUDE.md Section 24 Step M参照。
 #
-# 最終更新：2026-08-20（v3.83）
+# v3.84（2026-08-20）：QuickAddTaskModalの上端が画面外に切れる不具合を修正（別経路での再発）
+#   背景：FAB／リスト画面の「＋子タスク」から開くQuickAddTaskModalが、環境によって上端が
+#   画面外へ切れタスク名入力欄に到達できない、という業務停止の報告があった。Section 21で
+#   2026-08-12（v3.64）に一度直した不具合の別経路での再発。
+#   原因：`globals.css`の`@keyframes modalEnter`が旧`position:fixed; top:50%; left:50%`方式
+#   （画面中央に絶対配置し自分の幅・高さの半分だけ戻す中央寄せ）の名残で
+#   `translate(-50%, -50%)`を終了状態に持っていた。`.animate-modalEnter`は
+#   `animation-fill-mode:both`のため、アニメーション終了後もこのtransformが永久に残る。
+#   現在のモーダルは`modalStyles.ts`の「overlay=flex+overflow:auto／箱=margin:auto」方式
+#   （v3.64で確立）で中央寄せしているため、このtransformは純粋な「余計なズレ」になり、
+#   表示上の上端＝V/2−H（V=可視高さ、H=箱の高さ）となって箱が可視領域の半分より高くなった
+#   瞬間に上端が画面外へ出てスクロールでも到達できなくなる。このクラスを使っていたのは
+#   `QuickAddTaskModal.tsx`の1箇所のみ（他モーダルは既にv3.64で移行済み）。
+#   対応1（keyframes修正）：`@keyframes modalEnter`から`translate(-50%,...)`を除去し、
+#   終了状態を`transform:none`にした（内側の`position:fixed`要素の containing block が箱に
+#   なってしまう別バグを防ぐため）。演出の量感は`panelSlideUp`
+#   （`translateY(14px) scale(0.98)`→`translateY(0) scale(1)`）に揃え、
+#   `translateY(14px) scale(0.96)`→`transform:none`にした。コメントに経緯（旧方式の名残・
+#   戻さないこと）を明記。
+#   対応2（globals.css全走査）：`@keyframes`全定義・`.animate-*`/`.panel-*`/`.chat-*`/`.fab-*`
+#   等のクラスを1つずつ確認したが、`translate(-50%`や`top:50%`/`left:50%`前提のtransformを
+#   最終状態に持つものは`modalEnter`以外に存在しなかった（残骸は0件）。
+#   対応3（機械チェックの穴を塞ぐ）：`modalStyles.test.ts`はインラインstyleの中央寄せ手段
+#   （`alignItems:center`/`margin:auto`）しか検査しておらず、CSSアニメーション由来の
+#   transform残留は検出できなかった（今回すり抜けた理由）。新規
+#   `src/components/common/__tests__/modalKeyframeTransform.test.ts`を追加し、
+#   ①`globals.css`の`@keyframes`のうち`translate(-50%`を最終状態に持つものを洗い出し、
+#   それを使う`.animate-*`クラスが`modalBoxStyle()`を使う箱に適用されていないことを検査
+#   （許可リスト方式。許可時は理由コメント必須）②`modalBoxStyle()`を使う箱のstyleオブジェクトに
+#   `transform`が直接指定されていないことを検査、の2点を`modalStyles.test.ts`/
+#   `widgetContract.test.ts`と同じソース走査方式で追加した。修正前のglobals.cssと実際の
+#   `QuickAddTaskModal.tsx`に対してこの検出ロジックを単体で走らせ、実際にバグを検出できる
+#   （modifiedしていない旧globals.cssでは`animate-modalEnter`が`modalBoxStyle()`の箱に適用
+#   されていると検出される）ことを確認した。
+#   バージョン4点セット（version.ts/CLAUDE.md/CHANGELOG.md/releaseNotes.ts）を更新。
+#   CLAUDE.md Section 21に「2026-08-20に発生した3つ目の実際の不具合」として追記し、
+#   チェックリストに1行追加。
+#   テスト：`modalKeyframeTransform.test.ts`（新規4件）。既存1617件を壊さず、合計1620件が
+#   全通過。
+#   やらないこと：DBスキーマ変更なし。
+#   詳細はCLAUDE.md Section 21参照。
+#
+# 最終更新：2026-08-20（v3.84）
 

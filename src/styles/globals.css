@@ -535,10 +535,20 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
   to   { opacity: 1; transform: translateY(0); }
 }
 
-/* モーダル出現（スケール + フェード） */
+/* モーダル出現（スケール + フェード）。
+   【2026-08-20】translate(-50%, -50%) は旧 top:50%/left:50% 方式（画面中央に絶対配置して
+   自分の幅・高さの半分だけ戻す中央寄せ手法）の名残。今のモーダルは margin:auto 方式
+   （CLAUDE.md Section 21・modalStyles.ts）で中央寄せしているため、animation-fill-mode:both
+   （.animate-modalEnter）でこの transform がアニメーション終了後も永久に残ると、箱が
+   margin:auto による中央寄せから自分の高さ・幅の半分だけ上・左へずれ続け、箱が可視領域の
+   半分より高くなった瞬間に上端が画面外に出てスクロールでも到達できなくなる（QuickAddTaskModal
+   で実際に発生。CLAUDE.md Section 21参照）。margin:auto 方式では translate(-50%,-50%) を
+   絶対に戻さないこと。量感は panelSlideUp と揃え、終了状態は transform:none にする
+   （transform が残ると内側の position:fixed 要素の containing block が箱になってしまう
+   別バグを生むため）。 */
 @keyframes modalEnter {
-  from { opacity: 0; transform: translate(-50%, -47%) scale(0.96); }
-  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  from { opacity: 0; transform: translateY(14px) scale(0.96); }
+  to   { opacity: 1; transform: none; }
 }
 
 /* オーバーレイ */

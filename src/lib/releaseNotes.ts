@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.84",
+    date: "2026-08-20",
+    title: "タスク追加モーダルの上端が画面外に切れる不具合を修正しました",
+    highlights: [
+      "環境によって、＋タスクを追加するモーダルの上端が画面外に隠れてタスク名を入力できないことがある不具合を修正しました",
+    ],
+  },
+  {
     version: "v3.83",
     date: "2026-08-20",
     title: "OKRモードに「月末の振り返り下書き」を追加しました",
