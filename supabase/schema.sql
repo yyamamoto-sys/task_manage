@@ -753,6 +753,23 @@ CREATE TABLE IF NOT EXISTS personal_kr_outlooks (
   created_at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- 月末の振り返り下書き（migrations/20260820_add_personal_kr_review_drafts.sql・Phase 4）。
+-- 🔴 personal_kr_outlooksと違い、AI生成（insert）は履歴として積むが、人の編集
+-- （edited_text/edited_at）だけは直近行をUPDATEする（updated_atトリガーは貼らない）。
+-- personal_kr_id→personal_krsの所有者判定は既存のpersonal_kr_owner_member_id()を
+-- 再利用する（新しいヘルパー関数は増やさない）。
+CREATE TABLE IF NOT EXISTS personal_kr_review_drafts (
+  id                 uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  personal_kr_id     uuid NOT NULL REFERENCES personal_krs(id),
+  month              date NOT NULL,
+  input_fingerprint  text NOT NULL,
+  draft_json         jsonb NOT NULL,
+  edited_text        text,
+  edited_at          timestamptz,
+  model              text,
+  created_at         timestamptz NOT NULL DEFAULT now()
+);
+
 -- ===== プロジェクト招待（部署外メンバーの受け入れ。migrations/20260810_add_project_invites.sql）=====
 -- 正本：docs/dev/project-invite-plan.md。RLSはSELECTのみ（CLAUDE.md新セクション参照）。
 -- 書き込みはcreate_project_invite()/accept_project_invite()（SECURITY DEFINER）経由のみ。
@@ -848,6 +865,9 @@ ALTER TABLE personal_kr_memos          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE personal_kr_outlooks       ENABLE ROW LEVEL SECURITY;
 -- ※ personal_kr_outlooks の個別ポリシーも同様に、ヘルパー関数（personal_kr_owner_member_id）の
 --   定義より後（下部の「個人OKR層」ブロック）で作成する（migrations/20260811_add_personal_kr_outlooks.sql）。
+ALTER TABLE personal_kr_review_drafts  ENABLE ROW LEVEL SECURITY;
+-- ※ personal_kr_review_drafts の個別ポリシーも同様に、ヘルパー関数の定義より後
+--   （下部の「個人OKR層」ブロック）で作成する（migrations/20260820_add_personal_kr_review_drafts.sql）。
 ALTER TABLE project_invites             ENABLE ROW LEVEL SECURITY;
 -- ※ project_invites の個別ポリシー（SELECTのみ）は can_access_group_ids()/member_group_ids()
 --   を参照するため、ヘルパー関数の定義より後（下部の「PJ・タスク周辺（子）テーブル」ブロック）
@@ -1281,6 +1301,15 @@ CREATE POLICY "personal_kr_memos_own" ON personal_kr_memos
 -- personal_kr_owner_member_id() をそのまま再利用する（新しいヘルパー関数は増やさない）。
 DROP POLICY IF EXISTS "personal_kr_outlooks_own" ON personal_kr_outlooks;
 CREATE POLICY "personal_kr_outlooks_own" ON personal_kr_outlooks
+  FOR ALL TO authenticated
+  USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
+  WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
+
+-- personal_kr_review_drafts（migrations/20260820_add_personal_kr_review_drafts.sql）。
+-- personal_kr_outlooks_own と同型（FOR ALLでUPDATEも許可されるため、人の編集はこの
+-- ポリシー1本でそのまま通る）。既存のpersonal_kr_owner_member_id()をそのまま再利用する。
+DROP POLICY IF EXISTS "personal_kr_review_drafts_own" ON personal_kr_review_drafts;
+CREATE POLICY "personal_kr_review_drafts_own" ON personal_kr_review_drafts
   FOR ALL TO authenticated
   USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
   WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
@@ -2570,6 +2599,10 @@ CREATE INDEX IF NOT EXISTS idx_personal_kr_memos_personal_kr_id  ON personal_kr_
 -- AI解析の結果とキャッシュ（migrations/20260811_add_personal_kr_outlooks.sql）
 CREATE INDEX IF NOT EXISTS idx_personal_kr_outlooks_kr_month_created
   ON personal_kr_outlooks(personal_kr_id, month, created_at DESC);
+
+-- 月末の振り返り下書き（migrations/20260820_add_personal_kr_review_drafts.sql）
+CREATE INDEX IF NOT EXISTS idx_personal_kr_review_drafts_kr_month_created
+  ON personal_kr_review_drafts(personal_kr_id, month, created_at DESC);
 
 -- クォーター計画（migrations/20260807c_add_kr_quarter_plans.sql）
 CREATE INDEX IF NOT EXISTS idx_kr_quarter_plans_kr_id ON kr_quarter_plans(kr_id) WHERE is_deleted = false;

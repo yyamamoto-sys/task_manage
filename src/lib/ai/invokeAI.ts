@@ -32,6 +32,7 @@
 // │   "okr-personal-import" — Kintone個人OKR(PDF/テキスト)から個人KR/月次計画抽出 │
 // │   "okr-personal-outlook" — 個人OKR「これから」の見立て・バンドのAI判定 │
 // │   "okr-personal-chat"   — 個人OKR用AIパネルの対話（相談） │
+// │   "okr-personal-review-draft" — 個人OKR月末の振り返り下書き生成（明示ボタン） │
 // │  新機能を追加するときは AIIntent に新タグを追加し、prompt builder │
 // │  に「何のデータを渡しているか」をコメントで明示する。タグ無しは   │
 // │  コンパイルエラー。                                              │
@@ -67,7 +68,8 @@ export type AIIntent =
   | "okr-import"                // Kintone OKR(PDF/テキスト)からObjective/KR/TF構造を抽出
   | "okr-personal-import"       // Kintone個人OKR(PDF/テキスト)から個人KR/月次計画/振り返りを抽出
   | "okr-personal-outlook"      // 個人OKR「これから」の見立て・週ごとの一手・バンドのAI判定（自動トリガー・キャッシュあり）
-  | "okr-personal-chat";        // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
+  | "okr-personal-chat"         // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
+  | "okr-personal-review-draft"; // 個人OKR月末の振り返り下書き生成（明示ボタン・月に1回程度）
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];

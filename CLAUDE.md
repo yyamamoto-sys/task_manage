@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.82
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.83
 #
-最終更新：2026-08-19（v3.82）
+最終更新：2026-08-20（v3.83）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1200,7 +1200,7 @@ const { submit } = useAIConsultation(projectIds);
 - **バージョンを上げるときは `src/lib/version.ts` の `APP_VERSION` も必ず一緒に更新すること**（2026-08-06・v3.25で追加）。画面隅のバージョン表示（サイドバー最下部・ログイン画面・モバイルラボシート）が参照する唯一の正本であり、このファイル冒頭のバージョン表記と一致することを `src/lib/__tests__/version.test.ts` が機械的に検査する。片方だけ上げるとこのテストが落ちるので気づける（modalStyles.test.ts と同じ「ソースを読んで検査する」方式）
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
-- 最終更新：2026-08-19（v3.82）
+- 最終更新：2026-08-20（v3.83）
 
 ---
 
@@ -2207,6 +2207,24 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **8ステップの構成**：①モードの目的（Kintoneが正本・週の層を埋める）②対象期の選び方③KRタブ④今月の計画⑤★週の目標状態（このアプリだけの層と明示）⑥タスクとの紐づけ（遅延・先行待ちの表示）⑦これから（AIは「✦ 見立てを出す」を押したときだけ動く旨を明記）⑧登録して始める（Kintone取込／KR追加への着地＋今後の拡張予定を一言添える）。ターゲットは`okr-period`/`okr-kr-tabs`/`okr-month-plan`/`okr-week-cards`（⑤⑥で共有）/`okr-ahead`/`okr-registration-actions`（`data-tour-id`属性。全てskipIfMissing:trueでUI変更耐性を確保）。
 - **未設定時の空状態文言も改善**（ツアーを見ずに来た人が最初に見る画面でもあるため）：「{年}年{Q}の個人KRがまだありません。」の一文だけだったのを、「Kintoneに個人OKRが既にある場合は「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。」を追加し、取込と手入力どちらから始めればよいかを案内するようにした。
 - **回帰テスト**：`tourPreviewSample.test.ts`（判定4パターン）・`okrIntroTour.test.ts`（ステップ数7〜9・id重複無し・target持ちは必ずskipIfMissing・タイトル/本文の体裁）・`buildTours.test.ts`に追加（非ゲスト/ゲストどちらも`okr-intro`を含むこと・ゲスト版は改変されないこと）。`personalOkrViewLayout.test.ts`の正規表現は`data-tour-id`属性の追加を許容するよう更新した（属性が増えても「対象期」「KRタブ」の帯の`flexShrink:0`検査自体は変わらない）。
+
+### Step M：月末の振り返り下書き（Phase 4・v3.83・2026-08-20）
+
+`docs/dev/okr-redesign-plan.md`§8 Phase 4「月末の振り返り下書き（明示ボタン・別`AIIntent`）」の実装。行き先はKintone「個人OKR_月次振返り記録」の「振り返り」欄の地の文（貼り付け運用。Kintoneへの自動書き込みはしない）。
+
+- **下書きはDBに残す（山本さんの判断）**：新テーブル`personal_kr_review_drafts`（`supabase/migrations/20260820_add_personal_kr_review_drafts.sql`。⚠️山本さんが手動適用）。RLSは既存の`personal_kr_owner_member_id(uuid)`/`current_member_id()`を再利用し`personal_kr_outlooks_own`と同型のポリシー（新しいヘルパー関数は作らない）。
+  🔴 **`personal_kr_outlooks`との違い（同じ「AI生成の履歴テーブル」でも書き込み方が違う理由）**：outlooksはAI生成のたびに毎回INSERTして履歴として積む（UPDATEしない）が、このテーブルは**人の編集（`edited_text`/`edited_at`）だけは直近行をUPDATEする**。理由＝下書きは「AIが発行して終わり」ではなく、人がKintoneに貼る前に文章を仕上げる（言い回しを直す・具体を足す）ものだから。編集のたびに新しい行を積むと「今どれが最新の下書きか」が行の乱立で分からなくなる。再生成（force:true）のときは新しい行をINSERTし編集内容は自然に上書きされる（引き継がない。意図的な割り切り）。`updated_at`列・トリガーは持たせない。`src/lib/schema/schemaChecks.ts`に検査項目`personal_kr_review_drafts_table`を1件追加。
+- **🔴 自己評価（%）・達成度バンドの数値をAIに書かせない理由（山本さんの判断）**：AIが出すのは文章の下書きだけ。`src/lib/ai/personalOkrReviewDraftExtractor.ts`のシステムプロンプトに「自己評価の割合・達成度バンドの数値を書いてはならない。角括弧表記も出力しない。数値の評価は人が決める」と明記し、出力の型（`review_text`/`evidence`/`carryover`）自体にも数値評価用のフィールドを持たせていない（計画書§6「バンドは見通しであって評価ではない」の延長）。代わりに機械計算の「材料」（`src/lib/personalOkr/reviewMaterial.ts`）を画面に出す。
+- **🔴 過去月でも生成できる理由（実務上の必須要件）**：8月の振り返りは9月に書くのが実態のため、対象月が`classifyMonth()`で`past`でも下書きを生成できるようにした。`past`＝読み取り専用の制約は「月次計画欄の編集」に対する制約であり、下書き生成はその対象外。`PersonalKrPanel.tsx`の`personalOkrContext`/`fingerprint`の算出条件を「`monthStatus==="future"`でなければ計算する」に広げた（既存の「これから」AI解析・AIパネルは`okrAiContext`という当月限定の派生変数でゲートし続けるため、既存挙動は一切変えていない）。未来月は材料が無いため対象外。生成ボタンは、その月の週の目標状態が0本かつ自己評価が全て未評価なら非活性にし「材料がありません（週の目標状態を書いてから生成してください）」と出す（`isReviewMaterialEmpty()`）。
+- **トリガーは明示ボタンのみ（自動発火しない）**：`src/lib/personalOkr/reviewDraftRunner.ts`の`runPersonalKrReviewDraft()`（`outlookRunner.ts`と同型の純粋関数。invokeAI・Supabaseをモックせず「一致なら呼ばない／不一致なら呼ぶ」をテストできる構造）が`input_fingerprint`一致時はAIを呼ばず保存済みを返す。「再生成」ボタンは`force:true`。
+- **材料（機械計算・ゼロトークン）**：`src/lib/personalOkr/reviewMaterial.ts`の`computeReviewMaterial()`が対象月の週の◯／△／✕の内訳件数・未評価の週数・紐づくタスクの完了/未完了件数を組む。🔴 既存の`aheadCompute.ts`（週の内訳・未評価週数）・`aheadTaskStats.ts`（遅延・停滞・先行待ち）を再利用し、同じ計算を書き直していない。新規に足したのは紐づくタスクの完了/未完了件数の集計のみ。この材料は①画面に即時描画②AIへ渡す文脈にも含める、の両方で使う。
+- **AI呼び出し**：`src/lib/ai/personalOkrReviewDraftExtractor.ts`の`generatePersonalKrReviewDraft()`。`AIIntent`に`"okr-personal-review-draft"`を追加（Section 6-1b）。max_tokens=2048（段落1つ＋短い箇条書きに4096以上は不要。Section 6-1c）。モデルは`personalOkrOutlookExtractor.ts`と同じ選定（claude-sonnet-4-6）に倣う。出力JSON＝`{review_text, evidence, carryover}`。`validatePersonalOkrReviewDraftPayload()`で構造検証（`review_text`欠落は例外・`evidence`/`carryover`の非文字列要素はその要素だけ弾く・余剰プロパティは無視）。`stop_reason==="max_tokens"`は明示エラーにしてリトライしない。JSONパース失敗時は1回だけ自己修正リトライ。
+- **文脈は既存の組み立てを再利用し、渡す量を絞る**：`personalOkrAiContext.ts`の`buildPersonalOkrAiContextText()`はそのまま使う（共通関数自体は無改修）。`personalOkrReviewDraftExtractor.ts`内の`buildReviewDraftContextText()`がこれに材料（自己評価内訳・完了/未完了件数）を追記して渡す。渡す上限はStep Hと同じ（メモは直近3件×各300字まで／タスクは機械計算済みの要約のみ）。
+- **UI**：`src/components/okr/personal/PersonalOkrReviewDraftModal.tsx`（新規）。入口は`PersonalKrPanel.tsx`の「📝 振り返りの下書き」ボタン（`monthStatus!=="future"`かつ`!readOnly`のときのみ表示。サンプル表示中は`onEditKr`と同じ扱いで出さない）。Section 21準拠（`modalStyles.ts`。中央寄せは箱側の`margin:"auto"`）。構成：①材料（即時描画）②AIの下書き（編集可能なtextarea）③evidence（折りたたみ）④carryover⑤コピー⑥「Kintoneの『振り返り』欄に貼り付けてください」の注記⑦編集を保存⑧再生成。🔴 機械計算分は即時描画し、AIが書く部分（textarea・evidence・carryover）だけをスケルトンにする（Step H・AheadBlock.tsxと同じ）。`draftRow===undefined`（未取得）と`null`（未生成）を区別する（Step Iの「永久スケルトン」の罠を踏まない）。エラー表示はSection 15準拠。生成中はボタンを非活性にして二重発火を防ぐ。
+- **ストア**：`src/stores/personalOkrUiStore.ts`に`reviewDraftByKrMonth`キャッシュ・`ensureReviewDraftLoaded()`・`runReviewDraft()`・`saveReviewDraftEdit()`を追加。ゲスト分岐（`isGuestMode()`）を必ず入れる（既存の流儀＝AI呼び出し自体は素通しするが、DB書き込み＝insert/updateはスキップしメモリ上のみで成立させる。リロードで消える）。`client.ts`のProxyと`GUEST_ALLOWED_FUNCTIONS`は1文字も緩めていない。
+- **付随更新**：`uiGuide.ts`の`FEATURE_LIST_SECTION`に「これから」表示・「振り返りの下書き」を追記（Section 17）。バージョン4点セット（version.ts/CLAUDE.md/CHANGELOG.md/releaseNotes.ts）を更新。CHANGELOG.mdのv3.82記載漏れ（直近commit 37720bfがCHANGELOG.mdを更新していなかった）を本Sectionの実装と同時に補った。
+- **テスト**：`reviewMaterial.test.ts`（週0本・全未評価・混在のケース）・`reviewDraftRunner.test.ts`（fingerprint一致/不一致/force）・`personalOkrReviewDraftExtractor.test.ts`（`validatePersonalOkrReviewDraftPayload`の検証・stop_reason・自己修正リトライ）を新規追加（合計25件）。既存1592件を壊さず、合計1617件が全通過。
+- **やらないこと**：Phase 5（`okr_knowledge_docs`）・Kintoneへの自動書き込み・グループOKR側への変更は対象外。i18n辞書キーは追加していない（既存OKR系と同じく日本語直書き）。マイグレーションの適用は山本さんが手動で行う。
 
 ---
 

@@ -499,6 +499,25 @@ export interface PersonalKrOutlook {
 }
 
 /**
+ * 月末の振り返り下書き（Phase 4。migrations/20260820_add_personal_kr_review_drafts.sql）。
+ * 🔴 personal_kr_outlooksと違い、AI生成はINSERTで履歴として積むが、人の編集
+ * （edited_text/edited_at）だけは直近行をUPDATEする（CLAUDE.md Section 24 Step M）。
+ * draft_jsonの中身は { review_text: string; evidence: string[]; carryover: string[] }
+ * （src/lib/ai/personalOkrReviewDraftExtractor.ts の PersonalOkrReviewDraftPayload）。
+ */
+export interface PersonalKrReviewDraft {
+  id: string;
+  personal_kr_id: string;
+  month: string;              // 月初 YYYY-MM-01。過去月でも生成可（未来月は不可）
+  input_fingerprint: string;  // 一致したら再生成しない（src/lib/personalOkr/reviewDraftRunner.ts）
+  draft_json: unknown;        // { review_text, evidence, carryover }
+  edited_text?: string | null;  // 人が編集して保存した本文（UPDATE対象）
+  edited_at?: string | null;    // 編集保存日時（UPDATE対象）
+  model?: string | null;
+  created_at?: string;
+}
+
+/**
  * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
  * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列
  * （src/lib/supabase/projectInviteStore.ts が select で明示的に除外する）。

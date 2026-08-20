@@ -28,13 +28,18 @@ import {
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos, upsertPersonalKrMemo, softDeletePersonalKrMemo,
   fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
+  fetchLatestPersonalKrReviewDraft, insertPersonalKrReviewDraft, updatePersonalKrReviewDraftEdit,
 } from "../lib/supabase/personalOkrStore";
 import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
+import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftExtractor";
 import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
+import { runPersonalKrReviewDraft } from "../lib/personalOkr/reviewDraftRunner";
 import { isGuestMode } from "../lib/guestMode";
 import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAiContext";
+import type { ReviewMaterial } from "../lib/personalOkr/reviewMaterial";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
+  PersonalKrReviewDraft,
 } from "../lib/localData/types";
 
 // 【ゲスト（サンプル閲覧）分岐・2026-08-12】
@@ -47,9 +52,16 @@ import type {
 // リロードで消える）。AI呼び出し（runOutlookAnalysis内のanalyze()）はinvokeAI.tsが既に
 // ゲストを開放しているため素通しするが、その結果のDB書き込み（insertPersonalKrOutlook）は
 // スキップする（🔴 personal_kr_outlooksには書けない。メモリ保持のみ）。
+// Phase 4（runReviewDraft/saveReviewDraftEdit）も同じ方針：AI生成はゲストでも素通しするが
+// personal_kr_review_draftsへのinsert/updateはスキップし、メモリ上でのみ成立させる。
 
 /** outlookByKrMonth等のキー形式（personalKrId・monthの組で一意）。Phase 3後半で追加 */
 function outlookKey(personalKrId: string, month: string): string {
+  return `${personalKrId}::${month}`;
+}
+
+/** reviewDraftByKrMonth等のキー形式（personalKrId・monthの組で一意）。Phase 4で追加 */
+function reviewDraftKey(personalKrId: string, month: string): string {
   return `${personalKrId}::${month}`;
 }
 
@@ -108,6 +120,36 @@ interface PersonalOkrUiState {
     context: PersonalOkrAiContextInput;
     force?: boolean;
   }) => Promise<void>;
+
+  // ===== Phase 4：月末の振り返り下書き（personal_kr_review_drafts） =====
+  /** `${personalKrId}::${month}` キー。undefined=未フェッチ／null=フェッチ済みだが該当行なし */
+  reviewDraftByKrMonth: Record<string, PersonalKrReviewDraft | null>;
+  reviewDraftFetchedKeys: Set<string>;
+  reviewDraftAnalyzingKeys: Set<string>;
+  reviewDraftErrorByKey: Record<string, string | null>;
+  reviewDraftSavingKeys: Set<string>;
+
+  /** DBから直近の下書きを1回だけ取得する（過去月でも生成できるため月の状態は問わない） */
+  ensureReviewDraftLoaded: (personalKrId: string, month: string) => Promise<void>;
+  /**
+   * fingerprintが直近の保存値と一致していればAIを呼ばずキャッシュを使う（D4）。
+   * force=trueなら一致していても必ず呼ぶ（「再生成」ボタン用）。
+   */
+  runReviewDraft: (params: {
+    personalKrId: string;
+    month: string;
+    fingerprint: string;
+    context: PersonalOkrAiContextInput;
+    material: ReviewMaterial;
+    force?: boolean;
+  }) => Promise<void>;
+  /** 🔴 人が編集した本文を保存する。直近の下書き行のedited_text/edited_atをUPDATEする
+   *  （outlooksと違いこの操作だけはUPDATE。CLAUDE.md Section 24 Step M参照）。 */
+  saveReviewDraftEdit: (params: {
+    personalKrId: string;
+    month: string;
+    editedText: string;
+  }) => Promise<void>;
 }
 
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
@@ -128,6 +170,12 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   outlookFetchedKeys: new Set(),
   outlookAnalyzingKeys: new Set(),
   outlookErrorByKey: {},
+
+  reviewDraftByKrMonth: {},
+  reviewDraftFetchedKeys: new Set(),
+  reviewDraftAnalyzingKeys: new Set(),
+  reviewDraftErrorByKey: {},
+  reviewDraftSavingKeys: new Set(),
 
   loadKrs: async () => {
     if (get().krsLoading || get().krsLoaded) return;
@@ -354,6 +402,104 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
           outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析に失敗しました" },
         };
       });
+    }
+  },
+
+  ensureReviewDraftLoaded: async (personalKrId, month) => {
+    const key = reviewDraftKey(personalKrId, month);
+    if (get().reviewDraftFetchedKeys.has(key)) return;
+    // 🔴 ゲストはpersonal_kr_review_draftsに一切問い合わせない。メモリ上に既にある値
+    // （runReviewDraftが生成済みならそれ・無ければnull）で確定させるだけ。
+    if (isGuestMode()) {
+      set(state => ({
+        reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: state.reviewDraftByKrMonth[key] ?? null },
+        reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
+      }));
+      return;
+    }
+    try {
+      const row = await fetchLatestPersonalKrReviewDraft(personalKrId, month);
+      set(state => ({
+        reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: row },
+        reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
+      }));
+    } catch (e) {
+      // 🔴 outlookのensureOutlookLoadedと同じ理由でnullで確定させる（undefinedのまま残すと
+      // モーダル側が永久に読み込み中のまま止まる。personal_kr_review_drafts未適用時の事故を防ぐ）。
+      set(state => ({
+        reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: state.reviewDraftByKrMonth[key] ?? null },
+        reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
+        reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: e instanceof Error ? e.message : "振り返り下書きの取得に失敗しました" },
+      }));
+    }
+  },
+
+  runReviewDraft: async ({ personalKrId, month, fingerprint, context, material, force }) => {
+    const key = reviewDraftKey(personalKrId, month);
+    if (get().reviewDraftAnalyzingKeys.has(key)) return; // 二重発火防止（連打対策）
+
+    // 別端末・別セッションでも再生成されないための前提：まずDBの直近下書きを確認する
+    // （ゲストはensureReviewDraftLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
+    await get().ensureReviewDraftLoaded(personalKrId, month);
+    const cached = get().reviewDraftByKrMonth[key] ?? null;
+
+    set(state => ({
+      reviewDraftAnalyzingKeys: new Set(state.reviewDraftAnalyzingKeys).add(key),
+      reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: null },
+    }));
+    try {
+      // 🔴 AI呼び出し（analyze）自体はゲストでも素通しする（invokeAI.tsが既に開放済み・
+      // CLAUDE.md Section 23 Phase 3）。ただし下書きはpersonal_kr_review_draftsに書けない
+      // ため、ゲストのときは insertPersonalKrReviewDraft をスキップしメモリ保持のみにする。
+      const { ranAnalysis, draft } = await runPersonalKrReviewDraft({
+        personalKrId, month, fingerprint, cached, force: !!force,
+        analyze: () => generatePersonalKrReviewDraft(context, material),
+      });
+      if (ranAnalysis && !isGuestMode()) await insertPersonalKrReviewDraft(draft); // 履歴として積む（人の編集以外はUPDATEしない）
+      set(state => {
+        const analyzing = new Set(state.reviewDraftAnalyzingKeys);
+        analyzing.delete(key);
+        return {
+          reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: draft },
+          reviewDraftAnalyzingKeys: analyzing,
+        };
+      });
+    } catch (e) {
+      set(state => {
+        const analyzing = new Set(state.reviewDraftAnalyzingKeys);
+        analyzing.delete(key);
+        return {
+          reviewDraftAnalyzingKeys: analyzing,
+          reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: e instanceof Error ? e.message : "振り返り下書きの生成に失敗しました" },
+        };
+      });
+    }
+  },
+
+  saveReviewDraftEdit: async ({ personalKrId, month, editedText }) => {
+    const key = reviewDraftKey(personalKrId, month);
+    const current = get().reviewDraftByKrMonth[key];
+    if (!current) throw new Error("下書きがまだ生成されていません。先に下書きを生成してください。");
+    set(state => ({ reviewDraftSavingKeys: new Set(state.reviewDraftSavingKeys).add(key) }));
+    try {
+      const editedAt = new Date().toISOString();
+      // 🔴 ゲストはDB更新をスキップし、メモリ上の状態だけを更新する（リロードで消える）。
+      if (!isGuestMode()) await updatePersonalKrReviewDraftEdit(current.id, editedText, editedAt);
+      set(state => {
+        const saving = new Set(state.reviewDraftSavingKeys);
+        saving.delete(key);
+        return {
+          reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: { ...current, edited_text: editedText, edited_at: editedAt } },
+          reviewDraftSavingKeys: saving,
+        };
+      });
+    } catch (e) {
+      set(state => {
+        const saving = new Set(state.reviewDraftSavingKeys);
+        saving.delete(key);
+        return { reviewDraftSavingKeys: saving };
+      });
+      throw e;
     }
   },
 }));

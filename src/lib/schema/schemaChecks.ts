@@ -236,6 +236,13 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     migration: "20260811_add_personal_kr_outlooks.sql",
   },
   {
+    id: "personal_kr_review_drafts_table",
+    kind: "table",
+    table: "personal_kr_review_drafts",
+    label: "個人OKR：月末の振り返り下書きテーブル（personal_kr_review_drafts）が見つかりません",
+    migration: "20260820_add_personal_kr_review_drafts.sql",
+  },
+  {
     id: "kr_quarter_plans_table",
     kind: "table",
     table: "kr_quarter_plans",

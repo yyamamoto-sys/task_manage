@@ -36,6 +36,7 @@ import { supabase } from "./client";
 import { saveWithLock } from "./store";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
+  PersonalKrReviewDraft,
 } from "../localData/types";
 
 // ===== PersonalKr（個人四半期KR） =====
@@ -187,5 +188,47 @@ export async function fetchLatestPersonalKrOutlook(
 /** 新しい解析結果を履歴として1件追加する（UPDATEは行わない）。 */
 export async function insertPersonalKrOutlook(outlook: PersonalKrOutlook): Promise<void> {
   const { error } = await supabase.from("personal_kr_outlooks").insert(outlook);
+  if (error) throw error;
+}
+
+// ===== PersonalKrReviewDraft（月末の振り返り下書き・Phase 4） =====
+// 🔴 personal_kr_outlooksと違い、AI生成（insert）とは別に「人の編集」だけを直近行に対して
+// UPDATEする経路を持つ（migrations/20260820_add_personal_kr_review_drafts.sql冒頭コメント
+// 参照。updated_atトリガーは貼られていないため、edited_atはコードから明示的に書く）。
+
+/** このKR・この月の最新の下書きを1件だけ取得する（無ければnull）。
+ *  reviewDraftRunner.tsの「input_fingerprintが前回と一致したら再生成しない」判定の
+ *  比較対象になる。 */
+export async function fetchLatestPersonalKrReviewDraft(
+  personalKrId: string,
+  month: string,
+): Promise<PersonalKrReviewDraft | null> {
+  const { data, error } = await supabase
+    .from("personal_kr_review_drafts")
+    .select("*")
+    .eq("personal_kr_id", personalKrId)
+    .eq("month", month)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as PersonalKrReviewDraft | null;
+}
+
+/** AI生成の新しい下書きを履歴として1件追加する（UPDATEは行わない）。 */
+export async function insertPersonalKrReviewDraft(draft: PersonalKrReviewDraft): Promise<void> {
+  const { error } = await supabase.from("personal_kr_review_drafts").insert(draft);
+  if (error) throw error;
+}
+
+/** 🔴 人の編集だけは直近行のedited_text/edited_atをUPDATEする（AI生成のinsertとは別経路）。 */
+export async function updatePersonalKrReviewDraftEdit(
+  id: string,
+  editedText: string,
+  editedAt: string,
+): Promise<void> {
+  const { error } = await supabase.from("personal_kr_review_drafts")
+    .update({ edited_text: editedText, edited_at: editedAt })
+    .eq("id", id);
   if (error) throw error;
 }

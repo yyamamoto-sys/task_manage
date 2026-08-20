@@ -31,13 +31,15 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Member, Objective, PersonalKr, PersonalKrBand, PersonalKrMemo, PersonalKrMonth,
-  PersonalKrOutlook, PersonalKrWeek, PersonalKrWeekTask, Task, TaskDependency, TaskForce, ToDo, WeekSelfRating,
+  PersonalKrOutlook, PersonalKrReviewDraft, PersonalKrWeek, PersonalKrWeekTask, Task, TaskDependency,
+  TaskForce, ToDo, WeekSelfRating,
 } from "../../../lib/localData/types";
 import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
 import { buildWeekCards } from "../../../lib/personalOkr/weekLayout";
 import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personalOkr/aheadCompute";
 import { summarizeLinkedTaskStatus } from "../../../lib/personalOkr/aheadTaskStats";
+import { computeReviewMaterial, type ReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
 import { computeOutlookInputFingerprint, resolveMonthPlanTimestamp } from "../../../lib/personalOkr/outlookFingerprint";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
@@ -45,6 +47,7 @@ import { formatErrorForUser } from "../../../lib/errorMessage";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
 import { AheadBlock } from "./AheadBlock";
+import { PersonalOkrReviewDraftModal } from "./PersonalOkrReviewDraftModal";
 
 const KR_KIND_LABEL: Record<string, string> = {
   group_kr: "グループKR紐づけ", general: "全般", company_common: "全社共通",
@@ -110,6 +113,18 @@ interface Props {
   /** 当月のAI文脈が変わるたびに親（AIパネルを持つ側）へ報告する。当月以外ではnullを報告する */
   onAiContext?: (ctx: PersonalOkrAiContextInput | null) => void;
   onOpenAiPanel?: () => void;
+
+  /** Phase 4：月末の振り返り下書き（personal_kr_review_drafts）。キーは`${krId}::${month}` */
+  reviewDraftByKrMonth: Record<string, PersonalKrReviewDraft | null>;
+  reviewDraftAnalyzingKeys: Set<string>;
+  reviewDraftErrorByKey: Record<string, string | null>;
+  /** 保存済みの下書きをDBから1回だけ読む（自動・ゼロトークン） */
+  ensureReviewDraftLoaded: (personalKrId: string, month: string) => Promise<void>;
+  onRunReviewDraft: (params: {
+    personalKrId: string; month: string; fingerprint: string;
+    context: PersonalOkrAiContextInput; material: ReviewMaterial; force?: boolean;
+  }) => Promise<void>;
+  onSaveReviewDraftEdit: (params: { personalKrId: string; month: string; editedText: string }) => Promise<void>;
 }
 
 export function PersonalKrPanel({
@@ -120,6 +135,8 @@ export function PersonalKrPanel({
   readOnly = false,
   outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, ensureOutlookLoaded, onRunOutlookAnalysis,
   onAiContext, onOpenAiPanel,
+  reviewDraftByKrMonth, reviewDraftAnalyzingKeys, reviewDraftErrorByKey,
+  ensureReviewDraftLoaded, onRunReviewDraft, onSaveReviewDraftEdit,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const slots = useMemo(() => quarterMonthSlots(kr.fiscal_year, kr.quarter), [kr.fiscal_year, kr.quarter]);
@@ -242,15 +259,24 @@ export function PersonalKrPanel({
   );
   const targetAndEvidenceSet = isTargetAndEvidenceSet(monthRecord?.target_and_evidence);
 
+  // ===== Phase 4：月末の振り返り下書きの材料（機械計算のみ。過去月でも計算する＝D3） =====
+  const reviewMaterial: ReviewMaterial | null = useMemo(() => {
+    if (monthStatus === "future") return null; // 未来月は材料が無いため対象外
+    return computeReviewMaterial(segments, monthWeeks, monthLinkedTasks, tasks, taskDependencies, today);
+  }, [monthStatus, segments, monthWeeks, monthLinkedTasks, tasks, taskDependencies, today]);
+
   // ===== Phase 3後半：AI解析（見立て・週ごとの一手・捨てる候補・バンドのAI判定） =====
-  // 文脈（okrAiContext）・フィンガープリントは当月タブ表示中は常に組み立てておく
-  // （AIパネルの「迷ったらAIに聞く」機能にも使うため）。粒度は開いているKRタブ1本だけ
-  // （docs/dev/okr-redesign-plan.md §5-2）。🔴 AI呼び出し自体を自動発火する箇所ではない
-  // （下のhandleRunOutlookが明示ボタンから呼ばれたときだけAIを呼ぶ。v3.55）。
+  // 文脈（personalOkrContext）・フィンガープリントは、当月タブ表示中に加えて過去月でも
+  // 組み立てておく（🔴 D3：振り返りの下書きは過去月でも生成できる必要があるため）。
+  // ただし「これから」のAI解析・AIパネルは引き続き当月限定にする（okrAiContext = 当月のみ。
+  // handleRunOutlookのゲート＝okrAiContext必須はそのまま維持し、既存の挙動を変えない）。
+  // 粒度は開いているKRタブ1本だけ（docs/dev/okr-redesign-plan.md §5-2）。
+  // 🔴 AI呼び出し自体を自動発火する箇所ではない（下のhandleRunOutlook/handleGenerateReviewDraftが
+  // 明示ボタンから呼ばれたときだけAIを呼ぶ。v3.55・Section 24 Step M）。
   const monthLabel = `${slot.monthStart.getMonth() + 1}月（${monthIndex}か月目）`;
 
-  const okrAiContext: PersonalOkrAiContextInput | null = useMemo(() => {
-    if (monthStatus !== "current") return null;
+  const personalOkrContext: PersonalOkrAiContextInput | null = useMemo(() => {
+    if (monthStatus === "future") return null;
     return {
       krLabel: kr.label,
       krKindLabel: groupKrTitle,
@@ -277,12 +303,19 @@ export function PersonalKrPanel({
     };
   }, [monthStatus, kr, groupKrTitle, monthLabel, monthRecord, weekCards, monthLinkedTasks, aheadTaskStats, memos]);
 
+  // 🔴「これから」のAI解析・AIパネルは当月限定のまま（既存の挙動を変えない）。
+  // 振り返りの下書き（過去月も対象）は personalOkrContext を直接使う（下記JSX参照）。
+  const okrAiContext = monthStatus === "current" ? personalOkrContext : null;
+
   useEffect(() => { onAiContext?.(okrAiContext); }, [okrAiContext, onAiContext]);
 
   // フィンガープリント：対象KRに紐づくタスクのupdated_atの最大値／週の目標状態とself_rating／
-  // 月次計画のimported_at（無ければupdated_at）／メモの最終updated_at／現在の週番号（§5-2）
+  // 月次計画のimported_at（無ければupdated_at）／メモの最終updated_at／現在の週番号（§5-2）。
+  // 🔴 monthStatus==="future"以外（過去月も含む）で計算する：振り返りの下書き（D3）が過去月でも
+  // fingerprintを必要とするため。「これから」のAI解析はokrAiContext（当月限定）でゲートされて
+  // いるため、この変更による既存挙動への影響は無い（過去月ではokrAiContextがnullのまま）。
   const fingerprint = useMemo(() => {
-    if (monthStatus !== "current") return null;
+    if (monthStatus === "future") return null;
     const maxLinkedTaskUpdatedAt = monthLinkedTasks.reduce<string | null>((max, t) => {
       const u = t.updated_at ? String(t.updated_at) : null;
       if (!u) return max;
@@ -330,6 +363,26 @@ export function PersonalKrPanel({
     onRunOutlookAnalysis({ personalKrId: kr.id, month: monthStr, fingerprint, context: okrAiContext, force: outlookRow != null });
   };
 
+  // ===== Phase 4：月末の振り返り下書き（過去月でも生成できる。D3） =====
+  const [reviewDraftModalOpen, setReviewDraftModalOpen] = useState(false);
+  const reviewDraftKeyStr = `${kr.id}::${monthStr}`;
+  const reviewDraftRow = reviewDraftByKrMonth[reviewDraftKeyStr];
+  const reviewDraftAnalyzing = reviewDraftAnalyzingKeys.has(reviewDraftKeyStr);
+  const reviewDraftError = reviewDraftErrorByKey[reviewDraftKeyStr] ?? null;
+
+  const handleEnsureReviewDraftLoaded = useCallback(() => {
+    if (readOnly) return; // 🔴🔴 サンプルKRのidは実DBに存在しないため問い合わせない
+    ensureReviewDraftLoaded(kr.id, monthStr);
+  }, [readOnly, kr.id, monthStr, ensureReviewDraftLoaded]);
+
+  const handleGenerateReviewDraft = (force: boolean) => {
+    if (readOnly || !personalOkrContext || !reviewMaterial || fingerprint == null) return; // 🔴🔴 未来月・サンプルでは呼ばせない
+    onRunReviewDraft({ personalKrId: kr.id, month: monthStr, fingerprint, context: personalOkrContext, material: reviewMaterial, force });
+  };
+
+  const handleSaveReviewDraftEdit = (editedText: string) =>
+    onSaveReviewDraftEdit({ personalKrId: kr.id, month: monthStr, editedText });
+
   // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
   const handleSetBandOverride = async (value: PersonalKrBand | null) => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
@@ -368,7 +421,7 @@ export function PersonalKrPanel({
   const [weekActionError, setWeekActionError] = useState<string | null>(null);
   // 🔴 KR切替時にkeyremountが無くなったため、開いていた週リンクモーダル・エラー表示が
   // 前のKRのものとして残らないよう明示的に閉じる。
-  useEffect(() => { setLinker(null); setWeekActionError(null); }, [kr.id]);
+  useEffect(() => { setLinker(null); setWeekActionError(null); setReviewDraftModalOpen(false); }, [kr.id]);
 
   const handleOpenLinker = async (card: { weekIndex: number; weekStartStr: string; weekEndStr: string; existing: PersonalKrWeek | null }, label: string) => {
     setWeekActionError(null);
@@ -406,6 +459,16 @@ export function PersonalKrPanel({
             style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", padding: "3px 9px", whiteSpace: "nowrap" }}
           >📥 {kr.source_label}</span>
         )}
+        {/* 🔴 過去月でも生成できる（D3）。未来月には材料が無いため出さない。サンプル表示中は
+            サンプルKRのidが実DBに存在しないため出さない（onEditKrと同じ扱い）。 */}
+        {!readOnly && monthStatus !== "future" && (
+          <button
+            onClick={() => setReviewDraftModalOpen(true)}
+            style={{ fontFamily: "inherit", fontSize: "11px", cursor: "pointer", padding: "4px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)" }}
+          >
+            📝 振り返りの下書き
+          </button>
+        )}
         <button
           onClick={readOnly ? undefined : onEditKr}
           disabled={readOnly}
@@ -415,6 +478,21 @@ export function PersonalKrPanel({
           ✏️ このKRを編集
         </button>
       </div>
+
+      {!readOnly && reviewDraftModalOpen && reviewMaterial && (
+        <PersonalOkrReviewDraftModal
+          krLabel={kr.label}
+          monthLabel={`${kr.fiscal_year}年${slot.monthStart.getMonth() + 1}月`}
+          material={reviewMaterial}
+          draftRow={reviewDraftRow}
+          analyzing={reviewDraftAnalyzing}
+          error={reviewDraftError}
+          onEnsureLoaded={handleEnsureReviewDraftLoaded}
+          onGenerate={handleGenerateReviewDraft}
+          onSaveEdit={handleSaveReviewDraftEdit}
+          onClose={() => setReviewDraftModalOpen(false)}
+        />
+      )}
 
       {loadingDetail ? (
         <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>読み込み中…</div>

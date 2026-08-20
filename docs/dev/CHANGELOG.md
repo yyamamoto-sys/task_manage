@@ -6084,5 +6084,105 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #     対応しないと記録済みの範囲）。マイグレーションの適用は山本さんが手動で行う。
 #   詳細はCLAUDE.md Section 40参照。
 #
-# 最終更新：2026-08-19（v3.81）
+# v3.82（2026-08-19）：サイドバーの「表示部署」をリロード後も維持する
+#   背景：`App.tsx`の`autoMatch()`が無条件に`setCurrentGroupId(member.group_id ?? null)`
+#   （ホーム部署）を設定し、`MainLayout.tsx`の切替UI（`handleSelectGroupNav`）は
+#   `setCurrentGroupId(id)`を呼ぶだけでどこにも保存していなかったため、サイドバーで
+#   「表示部署」を切り替えてもリロードすると必ずホーム部署に戻っていた（山本さんの要望）。
+#   対応：切り替えた「表示部署」の選択をメンバーごとにlocalStorageへ保存し
+#   （`src/lib/localData/localStore.ts`の`LS_KEY.sidebarCurrentGroup(memberId)`。メンバーID
+#   ごとに保存する＝同じブラウザを別アカウントで使ったときに前の人の選択を引き継がないため）、
+#   リロード後も復元する。🔴 復元前に必ず妥当性を検証する：保存されている部署に今も
+#   アクセスできる場合だけ復元し、そうでなければホーム部署へフォールバックする（兼務が
+#   外れた・部署が削除された後にそのまま復元すると、選択肢に無い部署がセットされたまま
+#   何も見えない画面になるため）。
+#   🔴「アクセスできる」の判定基準は切替UIと完全に一致させる：全社スーパー管理者・招待
+#   受諾者を個別に分岐するのではなく、サイドバーの切替UIが実際に選択肢として出している
+#   リストの組み立てロジックそのものを`computeAccessibleGroupsForSidebar(groups, member,
+#   isSuperAdmin)`（`src/lib/projectInvite/sidebarGroupVisibility.ts`）に共通化し、
+#   `MainLayout.tsx`の`accessibleGroups`useMemoと`App.tsx`の復元ロジックの両方がこの1関数を
+#   呼ぶ（この切り出し自体はロジックを一切変えていない＝元のuseMemoと行単位で同一・依存配列も
+#   同じ）。判定基準がずれると、切替UIには出ない部署をリロード後に復元してしまい、UIから
+#   戻す手段が無い状態になる。
+#   `App.tsx`の2つの経路（①Auth email一致・②localStorageの前回ユーザー）には同じ復元
+#   ロジック（`resolveGroupIdForLogin(member)`という同一の内部関数）を適用した。ゲスト
+#   （サンプル閲覧）は`AuthenticatedApp`/`autoMatch()`を経由しない別経路のため対象外
+#   （保存側の`handleSelectGroupNav`も`isGuest`で明示的にガードし、ゲストの選択を
+#   保存しない・保存された値をゲストへ復元しない）。
+#   テスト：`src/lib/layout/__tests__/sidebarCurrentGroupRestore.test.ts`（新規。保存値なし／
+#   有効／無効＝アクセス不可・削除済み／ホーム部署がnullのケース）、
+#   `src/lib/projectInvite/__tests__/sidebarGroupVisibility.test.ts`に
+#   `computeAccessibleGroupsForSidebar`のテストを追加（非super-admin・招待受諾者・
+#   super-adminの3パターン）。
+#   やらないこと：DBスキーマ変更なし（localStorageのみの変更のため`schemaChecks.ts`への
+#   追記も不要）。
+#   詳細はCLAUDE.md Section 41参照。
+#
+# v3.83（2026-08-20）：OKRモード再設計 Phase 4「月末の振り返り下書き」を実装
+#   背景：docs/dev/okr-redesign-plan.md §8 Phase 4（月末の振り返り下書き・明示ボタン・
+#   別`AIIntent`）を実装した。行き先はKintone「個人OKR_月次振返り記録」の「振り返り」欄の
+#   地の文（貼り付け運用。Kintoneへの自動書き込みはしない）。
+#   D1（下書きはDBに残す・山本さんの判断）：新テーブル`personal_kr_review_drafts`
+#   （`supabase/migrations/20260820_add_personal_kr_review_drafts.sql`。⚠️山本さんが手動
+#   適用）。RLSは既存の`personal_kr_owner_member_id(uuid)`/`current_member_id()`を再利用し
+#   `personal_kr_outlooks_own`と同型のポリシー（新しいヘルパー関数は作らない）。
+#   🔴 `personal_kr_outlooks`との違い：AI生成は毎回INSERTして履歴として積む（UPDATEしない）
+#   が、人の編集（`edited_text`/`edited_at`）だけは直近行をUPDATEする（下書きは「発行して
+#   終わり」ではなく人が仕上げるものだから）。`updated_at`列・トリガーは持たせない。
+#   `src/lib/schema/schemaChecks.ts`に検査項目`personal_kr_review_drafts_table`を1件追加。
+#   `supabase/schema.sql`にも同テーブル・RLSポリシー・インデックスを追記。
+#   D2（自己評価％・達成度バンドの数値をAIに書かせない・山本さんの判断）：
+#   `src/lib/ai/personalOkrReviewDraftExtractor.ts`のSYSTEM_PROMPTに「自己評価の割合・
+#   達成度バンドの数値を書いてはならない。角括弧表記も出力しない。数値の評価は人が決める」と
+#   明記。出力の型自体も`review_text`/`evidence`/`carryover`の3項目のみで、数値評価用の
+#   フィールドを持たない（計画書§6「バンドは見通しであって評価ではない」の延長）。
+#   D3（過去月でも生成できる・実務上の必須要件）：8月の振り返りは9月に書くのが実態のため、
+#   `classifyMonth()`で`past`の月でも下書きを生成できるようにした。`PersonalKrPanel.tsx`の
+#   `personalOkrContext`/`fingerprint`の算出条件を「`monthStatus==="future"`でなければ計算
+#   する」に広げた（既存の「これから」AI解析・AIパネルは`okrAiContext`（当月限定の派生
+#   変数）でゲートし続けるため既存挙動は変えていない）。生成ボタンは、その月の週の目標状態が
+#   0本かつ自己評価が全て未評価なら非活性にし「材料がありません」と表示する
+#   （`isReviewMaterialEmpty()`）。
+#   D4（トリガーは明示ボタンのみ）：`src/lib/personalOkr/reviewDraftRunner.ts`
+#   （`runPersonalKrReviewDraft`。`outlookRunner.ts`と同型の純粋関数）が
+#   `input_fingerprint`一致時はAIを呼ばず保存済みを返す。「再生成」ボタンは`force:true`。
+#   D5（材料・機械計算・ゼロトークン）：`src/lib/personalOkr/reviewMaterial.ts`
+#   （`computeReviewMaterial`/`isReviewMaterialEmpty`）。🔴 既存の`aheadCompute.ts`
+#   （週の◯／△／✕の内訳・未評価週数）・`aheadTaskStats.ts`（遅延・停滞・先行待ち）を
+#   再利用し、同じ計算を書き直していない。新規に足したのは紐づくタスクの完了/未完了件数の
+#   集計のみ。この材料は①画面に即時描画②AIへ渡す文脈にも含める、の両方で使う。
+#   D6（AI呼び出し）：`generatePersonalKrReviewDraft()`（`AIIntent`に`"okr-personal-review-
+#   draft"`を追加）。max_tokens=2048。モデルは`personalOkrOutlookExtractor.ts`と同じ選定
+#   （claude-sonnet-4-6）に倣う。出力は`{review_text, evidence, carryover}`のJSON。
+#   `validatePersonalOkrReviewDraftPayload()`で構造検証（review_text欠落は例外・evidence/
+#   carryoverの非文字列要素はその要素だけ弾く・余剰プロパティは無視）。
+#   `stop_reason==="max_tokens"`は明示エラーでリトライしない。JSONパース失敗時は1回だけ
+#   自己修正リトライ。
+#   D7（文脈は既存の組み立てを再利用）：`buildPersonalOkrAiContextText()`（共通関数自体は
+#   無改修）に、`personalOkrReviewDraftExtractor.ts`内の`buildReviewDraftContextText()`が
+#   D5の材料（自己評価内訳・完了/未完了件数）を追記して渡す。
+#   D8（UI）：`src/components/okr/personal/PersonalOkrReviewDraftModal.tsx`（新規）。入口は
+#   `PersonalKrPanel.tsx`の「📝 振り返りの下書き」ボタン（`monthStatus!=="future"`かつ
+#   `!readOnly`のときのみ表示）。Section 21準拠（`modalStyles.ts`）。①材料（即時描画）
+#   ②AIの下書き（編集可能なtextarea。解析中・未取得（undefined）はスケルトン）③evidence
+#   （折りたたみ）④carryover⑤コピー⑥Kintone貼り付け注記⑦編集を保存⑧再生成、の構成。
+#   D9（ストア）：`src/stores/personalOkrUiStore.ts`に`reviewDraftByKrMonth`キャッシュ・
+#   `ensureReviewDraftLoaded()`・`runReviewDraft()`・`saveReviewDraftEdit()`を追加。ゲスト
+#   分岐（`isGuestMode()`）を追加：AI呼び出し自体は素通しするが、DB書き込み
+#   （insert/update）はスキップしメモリ上のみで成立させる（既存12箇所と同じ流儀）。
+#   D10（付随更新）：`src/lib/ai/uiGuide.ts`の`FEATURE_LIST_SECTION`に「これから」表示と
+#   「振り返りの下書き」を追記。バージョン4点セット（version.ts/CLAUDE.md/CHANGELOG.md/
+#   releaseNotes.ts）を更新。CHANGELOG.mdのv3.82記載漏れ（直近commit 37720bfがCHANGELOG.md
+#   を更新していなかった）も本エントリの直前に追記して補った。CLAUDE.md Section 24に
+#   「Step M：月末の振り返り下書き」を追記。docs/dev/okr-redesign-plan.md §8のPhase 4行を
+#   完了に更新。
+#   テスト：`reviewMaterial.test.ts`（週0本・全未評価・混在のケース）・
+#   `reviewDraftRunner.test.ts`（fingerprint一致/不一致/force）・
+#   `personalOkrReviewDraftExtractor.test.ts`（バリデーション・stop_reason・自己修正
+#   リトライ）を新規追加（合計25件）。既存1592件を壊さず、合計1617件が全通過。
+#   やらないこと：Phase 5（`okr_knowledge_docs`）・Kintoneへの自動書き込み・グループOKR側
+#   への変更は対象外。マイグレーションの適用は山本さんが手動で行う。
+#   詳細はCLAUDE.md Section 24 Step M参照。
+#
+# 最終更新：2026-08-20（v3.83）
 

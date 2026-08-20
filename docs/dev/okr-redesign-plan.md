@@ -289,7 +289,7 @@ PK(`week_id`,`task_id`)。**方式は「自動候補＋明示リンク」**（�
 **1** | `personal_krs` / `personal_kr_months` / `personal_kr_weeks` / `personal_kr_week_tasks` / `personal_kr_memos` ＋ 個人ビューの骨格（KRタブ・月切替・週レーン・◯△✕・メモ・週とタスクの紐づけ）。**手入力で完結** ＋ 既存の整理（§9） | **なし** |
 **2** | ✅ **完了（2026-08-10・v3.41）** Kintone取込（PDF／貼り付け → 抽出 → 人が確認 → 登録）。既存の取込基盤（`FileAttachButton` / `docxText` / `invokeAI`）を流用。`PersonalOkrImportModal.tsx`。種別（四半期／月次振返り）はAIが判定・人が確認画面で切替可。🔴既存`personal_kr`への対応づけを必ず人が確認するフロー（`importMatch.ts`の候補提示・`importApplyPlan.ts`の書き込み）で、週の目標状態・メモの孤立を防止。詳細はCLAUDE.md Section 24 Step F | 抽出のみ |
 **3** | ✅ **完了（2026-08-11・前半v3.51／後半v3.52）** 前半：`personal_kr_outlooks`テーブル＋「これから」の機械計算パート＋フィンガープリント（純粋関数）＋バンドの3値表示分離の骨格。後半：AI呼び出し（見立て・週ごとの一手・捨てる候補・バンドのAI判定を1回にまとめる。`AIIntent="okr-personal-outlook"`）＋`personal_kr_outlooks`への書き込み（トリガーはKRタブを開いたときのみ・fingerprint一致で再解析しない・「再解析」ボタン）＋AIパネルのOKR版（`ConsultationPanel`と同じ型を流用。`AIIntent="okr-personal-chat"`）。詳細はCLAUDE.md Section 24 Step G・Step H | 前半：なし／後半：中核 |
-**4** | 月末の振り返り下書き（明示ボタン・別 `AIIntent`） | あり |
+**4** | ✅ **完了（2026-08-20・v3.83）** 月末の振り返り下書き（明示ボタン・別 `AIIntent="okr-personal-review-draft"`）。新テーブル`personal_kr_review_drafts`（AI生成はINSERT・人の編集だけUPDATE）。過去月でも生成可、自己評価％・バンド数値はAIに書かせない設計。詳細はCLAUDE.md Section 24 Step M | あり |
 **5** | `okr_knowledge_docs`（要点インデックス方式）＋ ナレッジ閲覧 ＋ 個人KR設計支援（既存の10ステップ対話フローを内蔵） | あり |
 **6** | ~~グループビュー刷新 ＋ 照合（言 vs 実）＋ 取込の統合~~ **【2026-08-10更新】グループ側はアーカイブ済み。再設計はゼロベースで別途。** 山本さんの判断で「元々あったグループモードの機能は一旦白紙にしたい」となったため、Phase 6として旧グループUIを刷新する計画は取り下げた。旧実装（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ）はコードのみ保管（`src/components/okr/ARCHIVED.md`参照）。グループ側を再び作る場合は、この保管コードを土台にするのではなく、その時点のニーズから**ゼロベースで再設計する**（旧実装をそのまま復帰させることを前提にしない） | — |
 
