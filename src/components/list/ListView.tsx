@@ -1106,6 +1106,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           taskId={selectedTask.id}
           currentUser={currentUser}
           onClose={() => setSelectedTaskId(null)}
+          onSwitchFailed={id => setSelectedTaskId(id)}
         />
       )}
 

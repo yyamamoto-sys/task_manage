@@ -2629,6 +2629,7 @@ export function GanttView({
             taskId={editingTaskId}
             currentUser={currentUser}
             onClose={() => setEditingTaskId(null)}
+            onSwitchFailed={id => setEditingTaskId(id)}
           />
         )}
       </div>

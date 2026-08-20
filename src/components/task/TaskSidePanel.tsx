@@ -37,6 +37,11 @@ interface Props {
   taskId: string;
   currentUser: Member;
   onClose: () => void;
+  /** v3.88：タスク切替時、旧タスクの保存が失敗して切替を中止した場合に、呼び出し元の選択状態
+   *  を旧タスクへ戻してもらうためのコールバック。呼び出し元がこれを実装しないと、
+   *  「パネルは旧タスクを表示し続けるのに、呼び出し元の選択状態は新タスクのまま」という
+   *  表示の食い違いが起きるため必須にしている。 */
+  onSwitchFailed: (previousTaskId: string) => void;
 }
 
 // タグ編集UIが無いため tags を除いた TaskEditFormState のサブセット。
@@ -59,7 +64,7 @@ function buildSidebarFormFromTask(task: Task): SidebarForm {
   };
 }
 
-export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
+export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: Props) {
   const allTasks            = useAppStore(selectScopedTasks);
   const allMembers          = useAppStore(s => s.members);
   const allProjects         = useAppStore(selectScopedProjects);
@@ -198,7 +203,28 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
 
   // taskId 切替：旧タスクに未保存の変更があれば、切り替える前に確認する
   // （黙って破棄しない・黙って保存しない）。保存する場合はここで確定してから新タスクへ進む。
+  //
+  // 【v3.88：保存失敗時は切替を中止する】
+  // 「保存して移動する」を選んだのにsaveTaskが失敗した場合、以前はtoastを出すだけで
+  // そのまま新タスクへ切り替えてしまい、旧タスクの編集内容（sidebarForm/baseline）を
+  // 失っていた。今回の改修の趣旨（編集が失われないと確信できること）と正面から矛盾するため、
+  // 失敗時はここでreturnして新タスクへの切替（setSidebarForm等）を一切実行しない。
+  // 旧タスクのsidebarForm/baseline/formTaskRefはそのまま保持され、エラーは
+  // saveStatus/saveErrorを通じて永続的なエラー帯（下記JSX）に表示される。
+  //
+  // 【選択状態のずれ対策】呼び出し元（GanttView/KanbanView/ListView）は行クリック時に
+  // 自分の選択state（editingTaskId/selectedTaskId）を即座に新タスクへ進めるため、
+  // taskId propは既に新タスクを指している。このコンポーネント内部だけ旧タスクの
+  // 表示を保持しても、selectedTask（taskId propから導出）は新タスクのままになり、
+  // ヘッダーのプロジェクトカラーバー・タスクフォース欄・先行タスク欄など「sidebarFormを
+  // 経由しない」表示だけが新タスクにズレる。これを避けるため、切替失敗時は
+  // onSwitchFailed(prevTask.id) で呼び出し元に選択を旧タスクへ戻してもらう
+  // （必須propとして全呼び出し元に実装を強制している）。
   useEffect(() => {
+    // 直前の切替失敗でonSwitchFailedにより選択が旧タスクへ戻ったことで発火した再実行は、
+    // 実質「切替なし」の自己ループのため何もしない（旧タスクのform/baselineはそのまま）
+    if (taskId === formTaskRef.current?.id) return;
+
     let cancelled = false;
 
     async function run() {
@@ -206,17 +232,28 @@ export function TaskSidePanel({ taskId, currentUser, onClose }: Props) {
       const prevForm = sidebarForm;
       const prevBaseline = baselineFormRef.current;
       if (prevTask && prevForm && prevBaseline && computeFormDirty(prevForm, prevBaseline)) {
-        const shouldSave = await confirmDialog(
-          `「${prevTask.name}」に保存していない変更があります。保存してから次のタスクへ移動しますか？`,
-          { tone: "neutral", confirmLabel: "保存して移動する", cancelLabel: "破棄して移動する" },
+        // 【v3.88：背景クリックの安全側デフォルトをsaveにする】ConfirmModalはEscapeでは
+        // 閉じないが、背景クリックは必ずcancel（false）扱いで閉じる。2択の意味を
+        // 「confirm=破棄」「cancel=保存」に割り当てることで、うっかり背景をクリックしても
+        // 編集内容が破棄されず保存される側に倒れるようにする（tone="danger"で「破棄」の
+        // ボタンだけを赤く・押しにくく見せる。ConfirmModal 19箇所の削除確認と同じ配色規約）。
+        const discardWithoutSaving = await confirmDialog(
+          `「${prevTask.name}」に保存していない変更があります。破棄して次のタスクへ移動しますか？`,
+          { tone: "danger", confirmLabel: "破棄して移動する", cancelLabel: "保存してから移動する" },
         );
         if (cancelled) return;
-        if (shouldSave) {
+        if (!discardWithoutSaving) {
           const parent = prevForm.parent_task_id ? allTasks.find(t => t.id === prevForm.parent_task_id) : null;
           try {
             await saveTask(buildTaskUpdatePayload(prevTask, prevForm, parent, currentUser.id));
           } catch (e) {
-            showToast(formatErrorForUser("保存に失敗しました", e), "error");
+            if (cancelled) return;
+            // 切替を中止する。旧タスクのsidebarForm/baseline/formTaskRefは一切変更しない
+            // （保持したまま。dirtyな内容は消えない）。
+            setSaveStatus("error");
+            setSaveError(formatErrorForUser("保存に失敗しました。移動を中止しました", e));
+            onSwitchFailed(prevTask.id);
+            return;
           }
         }
       }

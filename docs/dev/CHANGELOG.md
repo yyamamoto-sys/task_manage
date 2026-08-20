@@ -6347,5 +6347,37 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。`saveTask`（choke point）・Section 5の契約は無改修。
 #   詳細はCLAUDE.md Section 44参照。
 #
-# 最終更新：2026-08-20（v3.87）
+# v3.88（2026-08-20）：TaskSidePanelのタスク切替で保存失敗時に編集内容が消える不具合を修正
+#   リリース確認で発覚：v3.87の「タスク切替：保存して移動する」で、実際にsaveTaskが失敗した
+#   場合、toastを出すだけでそのまま新タスクへの切替まで進んでしまい、旧タスクの編集内容
+#   （sidebarForm・baseline）を失っていた。明示保存化の趣旨（編集が失われないと確信できる
+#   こと）と正面から矛盾するため修正。
+#   A（切替を中止）：保存失敗時はcatchでonSwitchFailed(prevTask.id)を呼んだ上でreturnし、
+#   setSidebarForm等の新タスクへの切替処理を一切実行しない。sidebarForm/baselineFormRef/
+#   formTaskRefは旧タスクの値のまま保持され、dirtyな内容は消えない。
+#   B（永続的なエラー表示）：setSaveStatus("error")/setSaveErrorで既存のエラー帯
+#   （Section 15の流儀）を表示。トーストのように消えない。
+#   C（選択状態のずれ対策）：TaskSidePanelのPropsに`onSwitchFailed: (previousTaskId: string) =>
+#   void`を必須で新設。GanttView/KanbanView/ListViewの3呼び出し元すべてで
+#   `id => set(Editing|Selected)TaskId(id)`（選択を旧タスクへ戻す）を実装し、「パネルは旧
+#   タスクを表示し続けるのに呼び出し元の選択状態は新タスクのまま」というズレを解消した。
+#   D（自己ループ防止）：onSwitchFailedで選択が旧タスクへ戻るとuseEffectの依存配列
+#   [taskId]が再度変化し同じ処理が再発火するため、`if (taskId === formTaskRef.current?.id)
+#   return;`を先頭に追加し無意味な再ダイアログ・再設定を防いだ。
+#   E（confirm/cancelの安全側入れ替え）：タスク切替の確認ダイアログはConfirmModalの背景
+#   クリックが必ずcancel（false）扱いになる仕様のため、旧割り当て（confirm=保存/cancel=
+#   破棄）だと誤クリックで編集が破棄されうる危険な組み合わせだった。tone="danger"・
+#   confirmLabel="破棄して移動する"・cancelLabel="保存してから移動する"に入れ替え、背景
+#   クリックが常に安全側（保存してから移動する）に倒れるようにした。他の4箇所の
+#   confirmDialog（Section 44）はcancel側が元々安全（何もしない）だったため対象外。
+#   F（監査）：TaskEditModal.tsxに同種の経路は無いことを確認（handleCloseは暗黙の保存を
+#   試みない設計）。削除・ゲストモード・PJ切替（フォーム内フィールド）も対象外と判断した
+#   理由をCLAUDE.md Section 45に記録。viewMode切替でのアンマウント時消失リスクは発見済みだが
+#   本バージョンでは対応せず記録のみ（v3.89で対応予定）。
+#   テスト：既存1639件を壊さず全通過（コンポーネント間の配線が主体のため新規機械チェックは
+#   追加していない）。
+#   やらないこと：DBスキーマ変更なし。saveTask（choke point）は無改修。
+#   詳細はCLAUDE.md Section 45参照。
+#
+# 最終更新：2026-08-20（v3.88）
 
