@@ -390,6 +390,27 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
     }
   };
 
+  // ===== v3.93：即時保存（join系）操作にヘッダーの保存インジケータを反映する =====
+  // タスクフォース・追加プロジェクト・先行タスク・子タスクの付け外しはform（sidebarForm）を
+  // 経由しない即時保存のため、保存ボタンのdirty状態には一切反映されない（v3.87の設計どおり）。
+  // しかし成功しても画面上は「チップが増減した」以外に一切フィードバックが無く、利用者からは
+  // 「何か変更したのに保存ボタンが反応しない＝壊れている」としか見えなかった（クレーム対応・
+  // v3.93）。既存のSaveIndicator（✓）をそのまま流用し、即時保存が成功した合図として一瞬表示する。
+  // メイン保存（handleSave）が進行中（"saving"）ならそちらを優先し、上書きしない。
+  const flashImmediateSaved = () => {
+    setSaveStatus(s => (s === "saving" ? s : "saved"));
+    setTimeout(() => setSaveStatus(s => (s === "saved" ? "idle" : s)), 1500);
+  };
+
+  const runImmediateSave = async (action: () => Promise<void>) => {
+    try {
+      await action();
+      flashImmediateSaved();
+    } catch {
+      // エラーは呼び出し先（store）が既にshowToastで通知済み（appStore.ts参照）。ここでは何もしない
+    }
+  };
+
   const pj = projects.find(p => p.id === selectedTask.project_id);
   const isOverdue = !!sidebarForm.due_date
     && sidebarForm.due_date < todayStr()
@@ -450,6 +471,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
         });
       }
       showToast(`${ids.length}件を「${selectedTask.name}」の子タスクにしました`);
+      flashImmediateSaved();
       setChildPickerChecked(new Set());
       setChildPickerOpen(false);
     } catch (e) {
@@ -462,6 +484,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
     if (!t) return;
     try {
       await saveTask({ ...t, parent_task_id: null, updated_by: currentUser.id });
+      flashImmediateSaved();
     } catch (e) {
       showToast(formatErrorForUser("子タスクの解除に失敗しました", e), "error");
     }
@@ -834,7 +857,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
                   <span aria-hidden>{t.status === "done" ? "✅" : t.status === "cancelled" ? "🚫" : t.status === "on_hold" ? "⏸" : "⏳"}</span>
                   {t.name}
                   <button
-                    onClick={() => dep && removeTaskDependency(dep.id, currentUser.id)}
+                    onClick={() => dep && void runImmediateSave(() => removeTaskDependency(dep.id, currentUser.id))}
                     aria-label={`${t.name} を先行タスクから外す`}
                     style={chipRemoveBtn}>×</button>
                 </span>
@@ -848,7 +871,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
             value=""
             onChange={value => {
               if (!value) return;
-              addTaskDependency(value, selectedTask.id, currentUser.id);
+              void runImmediateSave(() => addTaskDependency(value, selectedTask.id, currentUser.id));
             }}
             options={[
               { value: "", label: "＋ 先行タスクを追加..." },
@@ -878,7 +901,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color_tag, flexShrink: 0 }} />
               {p.name}
               <button
-                onClick={() => removeTaskProject(selectedTask.id, p.id)}
+                onClick={() => void runImmediateSave(() => removeTaskProject(selectedTask.id, p.id))}
                 aria-label={`${p.name} を解除`}
                 style={chipRemoveBtn}>×</button>
             </span>
@@ -891,7 +914,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           value=""
           onChange={value => {
             if (!value) return;
-            addTaskProject({ task_id: selectedTask.id, project_id: value });
+            void runImmediateSave(() => addTaskProject({ task_id: selectedTask.id, project_id: value }));
           }}
           options={[
             { value: "", label: "＋ プロジェクトを追加..." },
@@ -913,7 +936,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
               </span>
               {tf.name}
               <button
-                onClick={() => removeTaskTaskForce(selectedTask.id, tf.id)}
+                onClick={() => void runImmediateSave(() => removeTaskTaskForce(selectedTask.id, tf.id))}
                 aria-label={`${tf.name} を解除`}
                 style={chipRemoveBtn}>×</button>
             </span>
@@ -927,7 +950,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
             value=""
             onChange={value => {
               if (!value) return;
-              addTaskTaskForce({ task_id: selectedTask.id, tf_id: value });
+              void runImmediateSave(() => addTaskTaskForce({ task_id: selectedTask.id, tf_id: value }));
             }}
             options={[
               { value: "", label: "＋ タスクフォースを追加..." },
@@ -1028,21 +1051,30 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
         }}>🗑 削除</button>
         {/* 保存ボタン：常時表示。役割の整理＝このボタンは「押せるか（dirty）」「保存中か」の
             状態のみを担い、「保存しました／失敗しました」の結果表示はヘッダーのSaveIndicator
-            に任せる。未変更時はdisabled＋明度を下げて「押せない＝変更が無い」ことを伝える */}
+            に任せる。
+            【v3.93：未変更時の見せ方を「押せない禁止ボタン」から「保存済み」に変更】
+            以前は cursor:"not-allowed" ＋ title「変更はありません」で表現していたが、これが
+            クレーム「内容を変更したのに保存ボタンに🚫が出て押せない」＝壊れている、という
+            誤解の一因だった（実際は「変更が無いので押す必要が無い」だけの正常な状態）。
+            禁止の意味を持つ🚫カーソルをやめ、「今は保存済みです」という現在状態の表示に変える。 */}
         <button
           onClick={() => void handleSave()}
           disabled={!isDirty || saveStatus === "saving"}
-          title={!isDirty ? "変更はありません" : undefined}
+          title={
+            saveStatus === "saving" ? undefined
+            : !isDirty ? "保存済みです。変更するとこのボタンが押せるようになります。"
+            : undefined
+          }
           style={{
             padding: "4px 14px", fontSize: "10px", fontWeight: "600",
             border: "none", borderRadius: "var(--radius-md)",
             background: (!isDirty || saveStatus === "saving") ? "var(--color-bg-tertiary)" : "var(--color-brand)",
             color: (!isDirty || saveStatus === "saving") ? "var(--color-text-tertiary)" : "#fff",
-            cursor: (!isDirty || saveStatus === "saving") ? "not-allowed" : "pointer",
+            cursor: saveStatus === "saving" ? "wait" : !isDirty ? "default" : "pointer",
             opacity: (!isDirty || saveStatus === "saving") ? 0.55 : 1,
           }}
         >
-          {saveStatus === "saving" ? "保存中…" : "保存"}
+          {saveStatus === "saving" ? "保存中…" : !isDirty ? "✓ 保存済み" : "保存"}
         </button>
       </div>
     </div>
