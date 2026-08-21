@@ -34,6 +34,7 @@ import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import { SIDE_PANEL_FOOTER_HEIGHT_PX } from "../../lib/layout/bottomStack";
+import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 
 interface Props {
   taskId: string;
@@ -85,6 +86,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
   const removeTaskProject   = useAppStore(s => s.removeTaskProject);
   const addTaskDependency    = useAppStore(s => s.addTaskDependency);
   const removeTaskDependency = useAppStore(s => s.removeTaskDependency);
+  const setTaskSidePanelOpen        = useUiLayoutStore(s => s.setTaskSidePanelOpen);
+  const setTaskSidePanelWidthInStore = useUiLayoutStore(s => s.setTaskSidePanelWidth);
 
   const members    = useMemo(() => active(allMembers), [allMembers]);
   const projects   = useMemo(() => active(allProjects), [allProjects]);
@@ -327,6 +330,18 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
     window.addEventListener("mouseup", onUp);
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
+
+  // 【v3.94：FABをこのパネルの横へ退避させるため、開閉状態と実際の幅をuiLayoutStoreへ報告する】
+  // MainLayout（FABを描画する場所）はこのコンポーネントの存在を直接知らない
+  // （ListView/GanttView/KanbanViewがそれぞれレンダーするため）。CLAUDE.md Section 49参照。
+  useEffect(() => {
+    setTaskSidePanelOpen(true);
+    return () => setTaskSidePanelOpen(false);
+  }, [setTaskSidePanelOpen]);
+
+  useEffect(() => {
+    setTaskSidePanelWidthInStore(panelWidth);
+  }, [panelWidth, setTaskSidePanelWidthInStore]);
 
   // 【v3.89：未保存の編集を「予告なくアンマウントされる経路」から守るレジストリ登録】
   // MainLayoutのviewMode/appMode切替・部署切替・ログアウト等、このパネルを含む画面が
@@ -1034,14 +1049,17 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
 
       {/* フッター：削除
           【v3.91】高さを明示heightで固定する（src/lib/layout/bottomStack.tsのSIDE_PANEL_FOOTER_HEIGHT_PX）。
-          FABの通常位置（同モジュールのFAB_BOTTOM_PC_PX）はこの高さを避けるように算出されているため、
-          padding・ボタンサイズを変える場合はこの定数も一緒に見直すこと。 */}
-      <div style={{
-        height: `${SIDE_PANEL_FOOTER_HEIGHT_PX}px`,
-        padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)",
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        flexShrink: 0, background: "var(--color-bg-secondary)",
-      }}>
+          【v3.94】FABはこのフッターとの縦の衝突を「横への退避」で避けるようになったため
+          （bottomStack.ts冒頭コメント参照）、FAB位置の計算はこの高さに依存していない。
+          data-bottom-stack属性はdevOverlapCheck.tsの開発ビルド限定ランタイム実測チェック用。 */}
+      <div
+        data-bottom-stack="side-panel-footer"
+        style={{
+          height: `${SIDE_PANEL_FOOTER_HEIGHT_PX}px`,
+          padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          flexShrink: 0, background: "var(--color-bg-secondary)",
+        }}>
         <button onClick={handleDelete} style={{
           padding: "4px 10px", fontSize: "10px",
           color: "var(--color-text-danger)",

@@ -19,11 +19,18 @@
 // 補助的なaffordance）の重なりは実害が無いため、ALLOWED_OVERLAPS に理由付きで登録し、
 // この重なりだけを許容する。理由の説明が無いペアは登録できない（allowOverlap()が例外を
 // 投げる）——将来ここが無条件の抜け穴にならないようにするため。
+//
+// 【v3.94：TaskSidePanelフッターをこの1次元モデルから外した】
+// このテストは bottom座標と高さだけを見る1次元の検査であり、「横方向にどれだけ離れているか」
+// を表現できない。v3.94でFABはTaskSidePanelが開いている間、パネル幅ぶん横へ完全に退避する
+// 方式に変えた（uiLayoutStore.ts・QuickAddFab.tsx）ため、フッターとFABはもはや同じ縦列を
+// 共有せず、この1次元モデルで「重ならないこと」を検査する対象ではなくなった。実際に重ならない
+// ことの検証は src/lib/layout/devOverlapCheck.ts の開発ビルド限定ランタイム実測チェックに
+// 委ねている（CLAUDE.md Section 49参照）。
 
 import { describe, it, expect } from "vitest";
 import {
   STACK_CLEARANCE_PX,
-  SIDE_PANEL_FOOTER_HEIGHT_PX,
   BOTTOM_NAV_HEIGHT_MOBILE_PX,
   FAB_SIZE_PX,
   FAB_BOTTOM_PC_PX,
@@ -123,10 +130,10 @@ function findViolations(intervals: StackInterval[]): string[] {
   return found;
 }
 
-/** PC・非展開時のスタック（下から：TaskSidePanelフッター／FAB／ショートカット／Toast） */
+/** PC・非展開時のスタック（下から：FAB／ショートカット／Toast。TaskSidePanelフッターは
+ *  v3.94でこの1次元モデルの対象外にした＝ファイル冒頭コメント参照） */
 function buildPcClosedStack(): StackInterval[] {
   return [
-    { name: "sidePanelFooter", bottom: 0, height: SIDE_PANEL_FOOTER_HEIGHT_PX },
     { name: "fab", bottom: FAB_BOTTOM_PC_PX, height: FAB_SIZE_PX },
     { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_PC_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
     { name: "toast", bottom: TOAST_BOTTOM_PC_PX, height: TOAST_ITEM_HEIGHT_PX },
@@ -137,7 +144,6 @@ function buildPcClosedStack(): StackInterval[] {
  *  ショートカットはさらにその上へ退避する。Toastは開閉によらず静的な位置のまま） */
 function buildPcOpenStack(): StackInterval[] {
   return [
-    { name: "sidePanelFooter", bottom: 0, height: SIDE_PANEL_FOOTER_HEIGHT_PX },
     { name: "fab", bottom: FAB_BOTTOM_PC_PX, height: FAB_SIZE_PX },
     { name: "fabMenu", bottom: FAB_MENU_BOTTOM_PC_PX, height: FAB_MENU_TOP_PC_PX - FAB_MENU_BOTTOM_PC_PX },
     { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
@@ -212,7 +218,6 @@ describe("右下スタック（bottomStack.ts）の重なり検査", () => {
       const upper = byName(upperName);
       return upper.bottom - (lower.bottom + lower.height);
     };
-    expect(gap("sidePanelFooter", "fab")).toBeGreaterThanOrEqual(STACK_CLEARANCE_PX);
     expect(gap("fab", "shortcuts")).toBeGreaterThanOrEqual(STACK_CLEARANCE_PX);
     expect(gap("fab", "toast")).toBeGreaterThanOrEqual(STACK_CLEARANCE_PX);
   });

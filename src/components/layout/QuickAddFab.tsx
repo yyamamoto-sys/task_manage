@@ -40,6 +40,13 @@ interface QuickAddFabProps {
   consultPanelWidth: number;
   /** パネルのドラッグリサイズ中はright方向のtransitionを切る（既存の挙動を踏襲） */
   isConsultResizing: boolean;
+  /**
+   * 【v3.94】PCのみ：AI相談パネルとは別に、さらに追加で避けたい幅（px）。TaskSidePanelが
+   * 開いている間、その実際の幅（uiLayoutStore経由）をMainLayoutが渡す。AI相談パネルと
+   * TaskSidePanelは画面右に横並びで同時に開きうるため、consultPanelWidthとは単純加算する
+   * （両方開いている場合は両方の幅を避ける）。CLAUDE.md Section 49参照。
+   */
+  extraAvoidWidthPx?: number;
   /** ツアー等が将来targetとして参照する可能性がある予約属性（現状PCのみに付与） */
   dataTourId?: string;
 }
@@ -54,6 +61,7 @@ export function QuickAddFab({
   isConsultOpen,
   consultPanelWidth,
   isConsultResizing,
+  extraAvoidWidthPx = 0,
   dataTourId,
 }: QuickAddFabProps) {
   const t = useT();
@@ -61,7 +69,7 @@ export function QuickAddFab({
   const bottomPx = isMobile ? FAB_BOTTOM_MOBILE_PX : FAB_BOTTOM_PC_PX;
   const rightPx = isMobile
     ? FAB_RIGHT_MOBILE_PX
-    : (isConsultOpen ? consultPanelWidth + FAB_RIGHT_PC_PX : FAB_RIGHT_PC_PX);
+    : FAB_RIGHT_PC_PX + (isConsultOpen ? consultPanelWidth : 0) + extraAvoidWidthPx;
 
   const rightTransitionPart = isMobile
     ? ""
@@ -80,7 +88,7 @@ export function QuickAddFab({
         />
       )}
       {isFabMenuOpen && (
-        <div style={{
+        <div data-bottom-stack="fab-menu" style={{
           position: "fixed",
           bottom: `${isMobile ? FAB_MENU_BOTTOM_MOBILE_PX : FAB_MENU_BOTTOM_PC_PX}px`,
           right: `${rightPx}px`,
@@ -140,6 +148,7 @@ export function QuickAddFab({
       )}
       <button
         {...(dataTourId ? { "data-tour-id": dataTourId } : {})}
+        data-bottom-stack="fab"
         onClick={onToggleMenu}
         style={{
           position: "fixed",

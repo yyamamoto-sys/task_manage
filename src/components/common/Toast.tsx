@@ -100,7 +100,7 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div style={{
+    <div data-bottom-stack="toast" style={{
       position: "fixed", bottom: `${toastBottomPx}px`, right: "24px",
       zIndex: 10000, display: "flex", flexDirection: "column-reverse", gap: "8px",
       pointerEvents: "none",

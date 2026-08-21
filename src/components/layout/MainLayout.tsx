@@ -61,8 +61,10 @@ import { QuickAddFab } from "./QuickAddFab";
 import {
   SHORTCUTS_BOTTOM_PC_PX, SHORTCUTS_BOTTOM_MOBILE_PX,
   SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX, SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX,
-  SHORTCUTS_BUTTON_HEIGHT_PX,
+  SHORTCUTS_BUTTON_HEIGHT_PX, BOTTOM_NAV_HEIGHT_MOBILE_PX,
 } from "../../lib/layout/bottomStack";
+import { useUiLayoutStore } from "../../stores/uiLayoutStore";
+import { startDevBottomStackOverlapCheck } from "../../lib/layout/devOverlapCheck";
 
 /**
  * 【設計意図】
@@ -232,6 +234,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setViewModeState(v);
   };
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  // 【v3.94】TaskSidePanelはListView/GanttView/KanbanViewがレンダーするため、MainLayoutは
+  // その開閉・幅をuiLayoutStore経由で購読する（FABを横へ退避させるため。CLAUDE.md Section 49）
+  const isTaskSidePanelOpen = useUiLayoutStore(s => s.isTaskSidePanelOpen);
+  const taskSidePanelWidth = useUiLayoutStore(s => s.taskSidePanelWidth);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "meeting">("consult");
   // PJ作成導線などから AI相談チャットの入力欄に下書きをプレフィルするためのリクエスト
@@ -347,6 +353,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  // 【v3.94】右下スタックの開発ビルド限定ランタイム重なりチェック（CLAUDE.md Section 49）。
+  // 本番ビルドでは import.meta.env.DEV が false のため何もしない。
+  useEffect(() => startDevBottomStackOverlapCheck(), []);
 
   // Ctrl+Z / Cmd+Z で「直前のUndo」を発火する軽量版Undo（アプリ全体）。
   // 本格的な多段Undo履歴は作らず、直前に出たUndoトースト1件だけを対象にする。
@@ -951,6 +961,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       onClick={toggleShortcuts}
       title={t("layout.shortcuts.buttonTitle")}
       aria-pressed={isShortcutsOpen}
+      data-bottom-stack="shortcuts"
       style={{
         position: "fixed",
         height: `${SHORTCUTS_BUTTON_HEIGHT_PX}px`,
@@ -1420,9 +1431,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {appMode === "plan" && (
           <div
             className="bottom-nav-safe"
+            data-bottom-stack="bottom-nav"
             style={{
               position: "fixed", bottom: 0, left: 0, right: 0,
-              height: "56px",
+              // v3.94：ハードコードのリテラルから bottomStack.ts の共有定数へ揃えた
+              // （FAB_BOTTOM_MOBILE_PX 等がこの値からの積算のため、実体と見積もりを同じ
+              // 定数から取るようにする。CLAUDE.md Section 49参照）
+              height: `${BOTTOM_NAV_HEIGHT_MOBILE_PX}px`,
               background: "var(--color-bg-primary)",
               borderTop: "1px solid var(--color-border-primary)",
               display: "flex",
@@ -1490,6 +1505,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           isConsultOpen={isConsultOpen}
           consultPanelWidth={consultPanelWidth}
           isConsultResizing={isConsultResizing}
+          extraAvoidWidthPx={isTaskSidePanelOpen ? taskSidePanelWidth : 0}
           dataTourId="fab"
         />
       )}
