@@ -15,17 +15,31 @@
 // 座標（bottom/right）は src/lib/layout/bottomStack.ts（右下に積み上がる要素のスタックを
 // 一元管理するモジュール）から取る。FABの位置を変えるときはこのファイルではなくbottomStack.ts
 // を直すこと。
+//
+// 【v3.95：モバイルのFAB本体bottomと、展開メニューの実測高さ】
+// - FAB本体（モバイル）のbottomは、ボトムナビの実測高さ（useUiLayoutStoreの
+//   mobileBottomNavHeightPx。MainLayout.tsxがResizeObserverで反映）から算出する
+//   （残る2つの実依存の1つ目。CLAUDE.md Section 49参照）。
+// - 展開メニュー（3項目の列）は、このコンポーネント自身がResizeObserverで実測し、
+//   useUiLayoutStoreのfabMenuHeightPxへ反映する（残る2つの実依存の2つ目。MainLayout.tsxの
+//   ショートカットボタンの退避先計算がこの値を読む）。
+// - メニュー項目・FAB本体（モバイルのみ相当するボトムナビ）は文字を含むため固定heightを
+//   やめ minHeight にした（拡大率・最小フォントサイズ設定で中身が切れないように）。
+//   FAB本体自体（＋アイコンのみの正円）は文字を含まないため引き続き固定サイズ。
 
+import { useEffect, useRef } from "react";
 import { useT } from "../../hooks/useT";
+import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 import {
   FAB_SIZE_PX,
   FAB_BOTTOM_PC_PX,
-  FAB_BOTTOM_MOBILE_PX,
   FAB_RIGHT_PC_PX,
   FAB_RIGHT_MOBILE_PX,
   FAB_MENU_BOTTOM_PC_PX,
-  FAB_MENU_BOTTOM_MOBILE_PX,
-  FAB_MENU_ITEM_HEIGHT_MOBILE_PX,
+  FAB_MENU_ITEM_MIN_HEIGHT_PC_PX,
+  FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX,
+  computeFabBottomMobile,
+  computeFabMenuBottom,
 } from "../../lib/layout/bottomStack";
 
 interface QuickAddFabProps {
@@ -65,11 +79,28 @@ export function QuickAddFab({
   dataTourId,
 }: QuickAddFabProps) {
   const t = useT();
+  const mobileBottomNavHeightPx = useUiLayoutStore(s => s.mobileBottomNavHeightPx);
+  const setFabMenuHeightPx = useUiLayoutStore(s => s.setFabMenuHeightPx);
 
-  const bottomPx = isMobile ? FAB_BOTTOM_MOBILE_PX : FAB_BOTTOM_PC_PX;
+  const bottomPx = isMobile ? computeFabBottomMobile(mobileBottomNavHeightPx) : FAB_BOTTOM_PC_PX;
   const rightPx = isMobile
     ? FAB_RIGHT_MOBILE_PX
     : FAB_RIGHT_PC_PX + (isConsultOpen ? consultPanelWidth : 0) + extraAvoidWidthPx;
+  const menuBottomPx = isMobile ? computeFabMenuBottom(bottomPx) : FAB_MENU_BOTTOM_PC_PX;
+
+  // 【v3.95】展開メニューの実測高さをuiLayoutStoreへ反映する（残る2つの実依存の2つ目。
+  // MainLayout.tsxのショートカットボタンの退避先計算がこの値を読む）。メニューは開いている
+  // 間しかDOMに存在しないため、isFabMenuOpenが変わるたびにobserve/disconnectし直す。
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = menuRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setFabMenuHeightPx(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isFabMenuOpen, setFabMenuHeightPx]);
 
   const rightTransitionPart = isMobile
     ? ""
@@ -88,9 +119,9 @@ export function QuickAddFab({
         />
       )}
       {isFabMenuOpen && (
-        <div data-bottom-stack="fab-menu" style={{
+        <div ref={menuRef} data-bottom-stack="fab-menu" style={{
           position: "fixed",
-          bottom: `${isMobile ? FAB_MENU_BOTTOM_MOBILE_PX : FAB_MENU_BOTTOM_PC_PX}px`,
+          bottom: `${menuBottomPx}px`,
           right: `${rightPx}px`,
           transition: isMobile ? undefined : (isConsultResizing ? "none" : "right 0.3s ease"),
           zIndex: 59,
@@ -102,7 +133,7 @@ export function QuickAddFab({
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: isMobile ? "10px 16px" : "9px 16px",
-              height: isMobile ? `${FAB_MENU_ITEM_HEIGHT_MOBILE_PX}px` : "38px",
+              minHeight: isMobile ? `${FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX}px` : `${FAB_MENU_ITEM_MIN_HEIGHT_PC_PX}px`,
               background: "linear-gradient(135deg,#8b5cf6,#a78bfa)",
               border: "none", borderRadius: "var(--radius-full)",
               color: "#fff", fontSize: "13px", fontWeight: "600",
@@ -118,7 +149,7 @@ export function QuickAddFab({
             style={{
               display: "flex", alignItems: "center", gap: "8px",
               padding: isMobile ? "10px 16px" : "9px 16px",
-              height: isMobile ? `${FAB_MENU_ITEM_HEIGHT_MOBILE_PX}px` : "38px",
+              minHeight: isMobile ? `${FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX}px` : `${FAB_MENU_ITEM_MIN_HEIGHT_PC_PX}px`,
               background: "linear-gradient(135deg,#f59e0b,#d97706)",
               border: "none", borderRadius: "var(--radius-full)",
               color: "#fff", fontSize: "13px", fontWeight: "600",
@@ -134,7 +165,7 @@ export function QuickAddFab({
             style={{
               display: "flex", alignItems: "center", gap: "6px",
               padding: isMobile ? "10px 16px" : "9px 16px",
-              height: isMobile ? `${FAB_MENU_ITEM_HEIGHT_MOBILE_PX}px` : "38px",
+              minHeight: isMobile ? `${FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX}px` : `${FAB_MENU_ITEM_MIN_HEIGHT_PC_PX}px`,
               background: "var(--color-brand)",
               border: "none", borderRadius: "var(--radius-full)",
               color: "#fff", fontSize: "13px", fontWeight: "600",

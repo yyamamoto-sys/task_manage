@@ -59,9 +59,10 @@ import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 import { QuickAddFab } from "./QuickAddFab";
 import {
-  SHORTCUTS_BOTTOM_PC_PX, SHORTCUTS_BOTTOM_MOBILE_PX,
-  SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX, SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX,
-  SHORTCUTS_BUTTON_HEIGHT_PX, BOTTOM_NAV_HEIGHT_MOBILE_PX,
+  SHORTCUTS_BOTTOM_PC_PX, SHORTCUTS_BUTTON_MIN_HEIGHT_PX, BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX,
+  FAB_BOTTOM_PC_PX,
+  computeFabBottomMobile, computeAboveFabBottom,
+  computeFabMenuBottom, computeFabMenuTop, computeShortcutsBottomFabOpen,
 } from "../../lib/layout/bottomStack";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 import { startDevBottomStackOverlapCheck } from "../../lib/layout/devOverlapCheck";
@@ -238,6 +239,15 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // その開閉・幅をuiLayoutStore経由で購読する（FABを横へ退避させるため。CLAUDE.md Section 49）
   const isTaskSidePanelOpen = useUiLayoutStore(s => s.isTaskSidePanelOpen);
   const taskSidePanelWidth = useUiLayoutStore(s => s.taskSidePanelWidth);
+  // 【v3.95】右下スタックの残る2つの実依存のうち「モバイルのボトムナビ→FAB」を通すための値。
+  // ボトムナビ自身はこのファイルがレンダーするため、ResizeObserverでの実測もここで行う
+  // （下のuseEffect参照）。fabMenuHeightPx（もう1つの実依存）はQuickAddFab.tsx側が
+  // 実測するが、ショートカットボタンの退避先計算にはここでも必要なため合わせて購読する。
+  const mobileBottomNavHeightPx = useUiLayoutStore(s => s.mobileBottomNavHeightPx);
+  const setMobileBottomNavHeightPx = useUiLayoutStore(s => s.setMobileBottomNavHeightPx);
+  const fabMenuHeightPx = useUiLayoutStore(s => s.fabMenuHeightPx);
+  // 【v3.95】モバイルのボトムナビの実測用ref（下のuseEffectでResizeObserverが使う）
+  const bottomNavRef = useRef<HTMLDivElement | null>(null);
   const [isConsultOpen, setIsConsultOpen] = useState(false);
   const [consultDefaultMode, setConsultDefaultMode] = useState<"consult" | "meeting">("consult");
   // PJ作成導線などから AI相談チャットの入力欄に下書きをプレフィルするためのリクエスト
@@ -523,6 +533,20 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       setAppModeState(m);
     });
   };
+
+  // 【v3.95】モバイルのボトムナビの実測高さをuiLayoutStoreへ反映する（残る2つの実依存の
+  // 1つ目・「ボトムナビ→FAB」。CLAUDE.md Section 49参照）。ボトムナビはappMode==="plan"の
+  // ときだけレンダーされる（下のJSX参照）ため、appModeが変わるたびにobserve/disconnectし直す。
+  useEffect(() => {
+    const el = bottomNavRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) setMobileBottomNavHeightPx(entry.contentRect.height);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [appMode, setMobileBottomNavHeightPx]);
+
   // OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39・
   // src/lib/okr/okrModeGate.ts・CLAUDE.md Section 19）。plan→okr の切替だけを対象にする
   // （okr→plan に戻る操作にゲートは不要）。「OKR」トグルの呼び出し口はPC/モバイル共通で
@@ -954,8 +978,17 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 【FAB展開時の重なり対策】FABを開くと展開項目（3つ）がFABボタンの上に積み上がる。この
   // ショートカットボタンのz-index(140)はFAB展開項目(59)より高いため、通常位置のままだと
   // 展開項目の上に覆い被さって視認性を損なう＝これが「＋ボタンを押すとショートカットボタンと
-  // 被る」の実体。isFabMenuOpen中だけ展開項目の積み上げ範囲より上（bottomStack.tsの
-  // SHORTCUTS_BOTTOM_FAB_OPEN_*）へ退避させ、閉じたら元の位置（SHORTCUTS_BOTTOM_*）に戻す。
+  // 被る」の実体。isFabMenuOpen中だけ展開項目の積み上げ範囲より上へ退避させ、閉じたら
+  // 元の位置に戻す。
+  // 【v3.95】残る2つの実依存（CLAUDE.md Section 49）を反映してbottomを算出する：
+  // モバイルはボトムナビの実測高さ（mobileBottomNavHeightPx）からFABのbottomを求め、
+  // FABメニュー展開時はさらにその展開メニューの実測高さ（fabMenuHeightPx）から退避先を
+  // 求める。PC側はFAB本体のbottomが静的なため、静的なSHORTCUTS_BOTTOM_PC_PXのままで良い。
+  const shortcutsFabBottomPx = isMobile ? computeFabBottomMobile(mobileBottomNavHeightPx) : FAB_BOTTOM_PC_PX;
+  const shortcutsFabMenuTopPx = computeFabMenuTop(computeFabMenuBottom(shortcutsFabBottomPx), fabMenuHeightPx);
+  const shortcutsBottomPx = isFabMenuOpen
+    ? computeShortcutsBottomFabOpen(shortcutsFabMenuTopPx)
+    : (isMobile ? computeAboveFabBottom(shortcutsFabBottomPx) : SHORTCUTS_BOTTOM_PC_PX);
   const shortcutsButton = (
     <button
       onClick={toggleShortcuts}
@@ -964,10 +997,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       data-bottom-stack="shortcuts"
       style={{
         position: "fixed",
-        height: `${SHORTCUTS_BUTTON_HEIGHT_PX}px`,
-        bottom: isFabMenuOpen
-          ? `${isMobile ? SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX : SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX}px`
-          : `${isMobile ? SHORTCUTS_BOTTOM_MOBILE_PX : SHORTCUTS_BOTTOM_PC_PX}px`,
+        // 【v3.95】固定heightからminHeightへ変更した。「⌨ ショートカット」の文字が
+        // 拡大率・最小フォントサイズ設定で大きくなっても切れないように、箱自体が
+        // 中身に応じて伸びるようにする（SHORTCUTS_BUTTON_MIN_HEIGHT_PXは最低保証の高さ）。
+        minHeight: `${SHORTCUTS_BUTTON_MIN_HEIGHT_PX}px`,
+        bottom: `${shortcutsBottomPx}px`,
         right: (!isMobile && isConsultOpen) ? `${consultPanelWidth + 16}px` : "16px",
         transition: isConsultResizing ? "bottom 0.2s ease" : "right 0.3s ease, bottom 0.2s ease",
         zIndex: 140,
@@ -1050,7 +1084,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       // モバイルのボトムナビはappMode==="plan"の時だけ出す（OKRモードは個人OKR1画面のみで
       // 切り替える先が無いため。上の「モバイル：ボトムナビ」参照）。
-      paddingBottom: isMobile && appMode === "plan" ? "56px" : 0,
+      // 【v3.95】固定"56px"の直書きをやめ、ボトムナビの実測高さ（mobileBottomNavHeightPx）に
+      // 揃えた。ボトムナビをminHeightにしたことで実際の高さが伸びうる以上、ここも追随させないと
+      // 本文の一部がナビの下に隠れてしまう（横断監査で発覚。CLAUDE.md Section 49参照）。
+      paddingBottom: isMobile && appMode === "plan" ? `${mobileBottomNavHeightPx}px` : 0,
     }}>
       {isGuest && (
         <div style={{
@@ -1430,14 +1467,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             paddingBottomも appMode==="plan" の時だけ確保する） */}
         {appMode === "plan" && (
           <div
+            ref={bottomNavRef}
             className="bottom-nav-safe"
             data-bottom-stack="bottom-nav"
             style={{
               position: "fixed", bottom: 0, left: 0, right: 0,
-              // v3.94：ハードコードのリテラルから bottomStack.ts の共有定数へ揃えた
-              // （FAB_BOTTOM_MOBILE_PX 等がこの値からの積算のため、実体と見積もりを同じ
-              // 定数から取るようにする。CLAUDE.md Section 49参照）
-              height: `${BOTTOM_NAV_HEIGHT_MOBILE_PX}px`,
+              // 【v3.95】固定heightからminHeightへ変更した。文字（各タブのラベル）が
+              // 拡大率・最小フォントサイズ設定で大きくなっても切れないように、箱自体が
+              // 中身に応じて伸びるようにする（BOTTOM_NAV_MIN_HEIGHT_MOBILE_PXは
+              // 「最低保証の高さ」で、実際の描画高さは上のuseEffectがResizeObserverで
+              // 実測しuiLayoutStoreへ反映する。FABの縦位置・mainContentのpaddingBottomは
+              // その実測値を使う。CLAUDE.md Section 49参照）
+              minHeight: `${BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX}px`,
               background: "var(--color-bg-primary)",
               borderTop: "1px solid var(--color-border-primary)",
               display: "flex",

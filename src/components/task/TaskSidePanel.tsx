@@ -33,7 +33,7 @@ import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
-import { SIDE_PANEL_FOOTER_HEIGHT_PX } from "../../lib/layout/bottomStack";
+import { SIDE_PANEL_FOOTER_MIN_HEIGHT_PX } from "../../lib/layout/bottomStack";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 
 interface Props {
@@ -1048,14 +1048,19 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
       </div>
 
       {/* フッター：削除
-          【v3.91】高さを明示heightで固定する（src/lib/layout/bottomStack.tsのSIDE_PANEL_FOOTER_HEIGHT_PX）。
           【v3.94】FABはこのフッターとの縦の衝突を「横への退避」で避けるようになったため
           （bottomStack.ts冒頭コメント参照）、FAB位置の計算はこの高さに依存していない。
+          【v3.95】固定heightからminHeightへ変更した。拡大率・最小フォントサイズ設定で
+          「🗑削除」「保存」ボタンの文字が大きくなっても、40pxの箱に収まらず切れることが
+          無いように、箱自体が中身に応じて伸びるようにする（SIDE_PANEL_FOOTER_MIN_HEIGHT_PX
+          は「最低保証の高さ」）。上のスクロール領域（flex:1）はflexboxが残りの高さを
+          自動で割り当てるため、フッターが伸びてもレイアウトが壊れない（flexShrink:0は
+          フッター自身を圧縮させないためのもので、上の領域を圧迫する側の計算とは無関係）。
           data-bottom-stack属性はdevOverlapCheck.tsの開発ビルド限定ランタイム実測チェック用。 */}
       <div
         data-bottom-stack="side-panel-footer"
         style={{
-          height: `${SIDE_PANEL_FOOTER_HEIGHT_PX}px`,
+          minHeight: `${SIDE_PANEL_FOOTER_MIN_HEIGHT_PX}px`,
           padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)",
           display: "flex", alignItems: "center", justifyContent: "space-between",
           flexShrink: 0, background: "var(--color-bg-secondary)",

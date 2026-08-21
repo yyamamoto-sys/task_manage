@@ -19,117 +19,164 @@
 // 避けていたが、この「上げ幅」は拡大率・最小フォントサイズ設定・OSの表示スケール次第で
 // 実際のフッター高さが変わりうる前提の上に成り立つ見積もりで、値を足しても別の環境の
 // 利用者ではまた重なりうるという構造的な弱さを抱えていた（実際に「人によっては依然として
-// 被る」というクレームが再発した）。v3.94でこの依存自体を無くした（下記参照）。
+// 被る」というクレームが再発した）。v3.94でこの依存自体を無くした。
 //
 // 【v3.94：TaskSidePanelとの関係は「横へ退避」に変更し、この1次元スタックから外した】
-// TaskSidePanelが開いている間は、FAB（と展開メニュー・ショートカットボタン等の右下スタック
-// 全体ではなくFAB自体）をパネル幅ぶん右へ（＝画面上は左へ）退避させる方式にした
-// （src/stores/uiLayoutStore.ts・QuickAddFab.tsxのextraAvoidWidthPx参照。CLAUDE.md Section 49）。
-// これによりFABとTaskSidePanelフッターは横方向で常に分離され、縦方向の衝突が構造的に
-// 起きなくなったため、FABの縦位置（bottom）を「フッターを避けるために上げる」必要が
-// 無くなった。v3.86以前と同じ自然な位置（24px）に戻し、SIDE_PANEL_FOOTER_HEIGHT_PXへの
-// 依存も削除した。この1次元（bottom座標のみを見る）スタックはあくまで「同じ右下の縦列を
-// 共有する要素」を対象にしたモデルであり、横に退避したTaskSidePanelフッターはもはや
-// この縦列を共有しないため対象外にした（実際に重ならないことの検証は
-// src/lib/layout/devOverlapCheck.ts の開発ビルド限定ランタイム実測チェックに委ねる）。
+// TaskSidePanelが開いている間は、FAB自体をパネル幅ぶん右へ（＝画面上は左へ）退避させる
+// 方式にした（src/stores/uiLayoutStore.ts・QuickAddFab.tsxのextraAvoidWidthPx参照。
+// CLAUDE.md Section 49）。これによりFABとTaskSidePanelフッターは横方向で常に分離され、
+// 縦方向の衝突が構造的に起きなくなったため、FABの縦位置（bottom）を「フッターを避けるために
+// 上げる」必要が無くなった。v3.86以前と同じ自然な位置（24px）に戻した。
 //
-// 【積み順（下から上）】
-//   PC     ：FAB（→展開時はFAB展開メニュー） → ショートカットボタン → Toast
-//   モバイル：ボトムナビ → FAB（→展開時はFAB展開メニュー） → ショートカットボタン → Toast
-// （TaskSidePanelはPC・タブレット専用でモバイルには出ない。TaskSidePanel.tsx冒頭コメント参照。
-//   モバイルの編集はTaskEditModal＝中央寄せの全画面モーダルで、この右下スタックには参加しない）
+// 【v3.95：固定heightをやめ、実測が必要な依存だけResizeObserverで組む】
+// v3.91→v3.94の3回にわたって「見積もりと実物のズレ」を直しきれずにいた。理由は3つ重なって
+// いた：①見積もり値をハードコードして少し足すだけの対応（v3.91）②bottomStack.test.tsが
+// 定数どうしの整合性しか検査せず、実物とのズレを検知できない（v3.91〜v3.94）③固定height
+// そのものが「人による設定で中身が切れる」原因だと認識しながら、検出できないとだけ書いて
+// 直していなかった（v3.94の2-2）。
 //
-// 各要素の bottom は「1つ下の要素の bottom + 高さ + クリアランス」の式で算出し、
-// 手書きの数値を並べない。高さが必要な箇所は、その要素の実際のスタイル（padding・
-// フォントサイズ等）から見積もった定数をここに集約し、対応するコンポーネント側も
-// 同じ定数を明示 height として使う（Toast本体・ショートカットボタン・FAB展開メニュー項目）。
-// こうすることで「見積もりが実物とズレる」余地を無くし、高さを変えたら bottom 側も自動で
-// 追随する。ただし「実際の描画サイズが定数どおりであること」自体は拡大率・フォント設定に
-// 左右されうるため保証できない（CLAUDE.md Section 49）。この関係は明示height（最小保証）＋
-// devOverlapCheck.ts（実測での再発検知）の組み合わせで守っている。
+// v3.95で以下のとおり整理した：
+// - 文字を含む要素（TaskSidePanelフッター・ショートカットボタン・Toast・ボトムナビ・
+//   FAB展開メニュー項目）は、固定heightをやめてminHeightにした。ここに並ぶ定数は
+//   「最低保証の高さ」であり、拡大率・最小フォントサイズ設定で中身が大きくなれば箱ごと
+//   伸びる（＝切れない）。FAB本体だけはアイコンのみの48x48固定正円のため、文字の
+//   拡大に影響されず引き続き固定サイズで良い。
+// - 残る「本当の縦の依存」は2つだけ（他は下から積むだけの静的な式で足りる）：
+//   1. モバイルのボトムナビ→FAB：ボトムナビが実際に高くなると、その分FABも押し上げないと
+//      ナビに埋もれる。useUiLayoutStoreのmobileBottomNavHeightPxにResizeObserver（
+//      MainLayout.tsx）で実測値を反映し、computeFabBottomMobile()で使う。
+//   2. FAB展開メニュー→退避したショートカットボタン：メニュー項目が実際に高くなると、
+//      退避後のショートカットの位置も合わせて上げないとメニューに埋もれる。
+//      useUiLayoutStoreのfabMenuHeightPxにResizeObserver（QuickAddFab.tsx）で
+//      実測値を反映し、computeFabMenuTop()で使う。
+//   ショートカットボタン・Toastの「通常時（FABメニュー非表示）」の位置は、この2つの
+//   実測値から computeAboveFabBottom() で機械的に導出する（FAB本体の高さは固定のため、
+//   ここは新たな実測を要らない）。
+// - 開発ビルド限定のランタイムチェック（devOverlapCheck.ts）は、重なり検査に加えて
+//   「中身が箱からあふれていないか」（scrollHeight>clientHeight）も見るようにした。
+//   固定height方式が引き起こす「切れ」は重なり検査では原理的に検出できないため。
 
 /** 隣接する要素どうしに最低限確保する隙間[px]。
  *  【v3.94：12→16へ引き上げ】これは「見積もりを少し大きくする」対応であり、クレームの構造
  *  （値を足しても別の拡大率・フォント設定の利用者ではまた起きうる）そのものへの解決には
- *  ならないと認識している。恒久対応は devOverlapCheck.ts の実測チェック（山本さんが拡大率
- *  等を変えて確認したときにコンソールで気づける仕組み）に委ねている。CLAUDE.md Section 49参照。 */
+ *  ならないと認識している。実質的な再発防止は v3.95 の「固定heightをやめる」「実依存だけ
+ *  実測する」対応（このファイル冒頭コメント参照）と devOverlapCheck.ts に委ねている。 */
 export const STACK_CLEARANCE_PX = 16;
 
 // ===== 土台（各プラットフォームの最下段） =====
 
-/** TaskSidePanelのフッター（🗑削除／保存ボタン）の高さ。PCのみ（モバイルはTaskSidePanel非表示）。
- *  padding "8px 12px"（上下16px）＋ボタン実高さ(padding4px×2+10px文字=約20px)＋border-top 1px
- *  ＝約37px の実測見積りに、視認性のため少し余裕を持たせた丸め値。TaskSidePanel.tsx側の
- *  フッターdivがこの値をそのまま明示heightとして使う。
- *  【v3.94】FABの位置計算からはこの定数への依存を外した（横へ退避する方式に変更したため）。
- *  TaskSidePanel自身の見た目の高さとしてのみ引き続き使う。 */
-export const SIDE_PANEL_FOOTER_HEIGHT_PX = 40;
+/** TaskSidePanelのフッター（🗑削除／保存ボタン）の最低保証の高さ。PCのみ（モバイルは
+ *  TaskSidePanel非表示）。padding "8px 12px"（上下16px）＋ボタン実高さ(約20px)＋
+ *  border-top 1px＝約37pxの実測見積りに、視認性のため少し余裕を持たせた丸め値。
+ *  【v3.95】TaskSidePanel.tsx側は height ではなく minHeight としてこの値を使う（中身
+ *  （ボタンの文字）が拡大率・最小フォントサイズ設定で大きくなっても切れないようにするため）。
+ *  FABの位置計算はv3.94時点で既にこの定数への依存を外している（横へ退避する方式のため）。 */
+export const SIDE_PANEL_FOOTER_MIN_HEIGHT_PX = 40;
 
-/** モバイルのボトムナビ（MainLayout.tsx）の高さ。56px固定（既存実装のheight:"56px"のまま）。 */
-export const BOTTOM_NAV_HEIGHT_MOBILE_PX = 56;
+/** モバイルのボトムナビ（MainLayout.tsx）の最低保証の高さ。
+ *  【v3.95】固定heightをやめ minHeight にした。実際の描画高さはMainLayout.tsxが
+ *  ResizeObserverで実測し、useUiLayoutStoreのmobileBottomNavHeightPxへ反映する
+ *  （初期値・未測定時のフォールバックとしてこの定数を使う）。FABの縦位置（モバイル）は
+ *  この実測値から computeFabBottomMobile() で算出する＝残る2つの実依存の1つ。 */
+export const BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX = 56;
 
 // ===== FAB本体 =====
+// アイコン（＋）のみの48x48固定正円。文字を含まないため拡大率・最小フォントサイズ設定の
+// 影響を受けない＝固定サイズのままで良い（v3.95でも変更していない）。
 
 export const FAB_SIZE_PX = 48;
 export const FAB_RIGHT_PC_PX = 24;
 export const FAB_RIGHT_MOBILE_PX = 16;
 
-/** FAB本体のbottom。
- *  【v3.94】PC：TaskSidePanelとは横方向の退避（uiLayoutStore経由）で分離するようにしたため、
- *  縦位置をフッター回避のために上げる必要が無くなった。v3.86以前と同じ自然な位置（24px）に
- *  戻した（詳細はファイル冒頭コメント・CLAUDE.md Section 49参照）。
- *  モバイル：ボトムナビの上端+クリアランス（TaskSidePanelはモバイルに出ないため変更なし。
- *  クリアランスを12→16へ引き上げた分だけ68→72pxへ変わる）。 */
+/** FAB本体のbottom（PC）。TaskSidePanelとは横方向の退避（uiLayoutStore経由）で分離する
+ *  ため、縦位置をフッター回避のために上げる必要が無い（v3.94で24pxへ戻した。詳細はファイル
+ *  冒頭コメント・CLAUDE.md Section 49参照）。PCにはモバイルのボトムナビに相当する可変要素が
+ *  無いため、静的な値のままで良い。 */
 export const FAB_BOTTOM_PC_PX = 24;
-export const FAB_BOTTOM_MOBILE_PX = BOTTOM_NAV_HEIGHT_MOBILE_PX + STACK_CLEARANCE_PX; // 56+16=72
+
+/**
+ * FAB本体のbottom（モバイル）。【v3.95】ボトムナビの実測高さ（useUiLayoutStoreの
+ * mobileBottomNavHeightPx）から算出する（残る2つの実依存の1つ目）。ボトムナビが実際に
+ * 高くなった分だけFABも押し上げないと、ナビに埋もれてしまうため。
+ */
+export function computeFabBottomMobile(measuredBottomNavHeightPx: number): number {
+  return measuredBottomNavHeightPx + STACK_CLEARANCE_PX;
+}
 
 // ===== FAB展開メニュー（3項目：AI相談／マイルストーン／タスク）：FAB本体の直上に積み上がる =====
 
-/** メニュー項目の高さ。PCは既存実装のheight:"38px"固定をそのまま踏襲（実測そのもの）。
- *  モバイルは明示heightを新設し、この値をQuickAddFab.tsx側にも使わせる（padding "10px 16px"+
- *  fontSize13pxの自然な高さ＝約35pxに近い丸め値）。 */
-const FAB_MENU_ITEM_HEIGHT_PC_PX = 38;
-export const FAB_MENU_ITEM_HEIGHT_MOBILE_PX = 40;
+/** メニュー項目の最低保証の高さ。【v3.95】固定heightをやめ minHeight にした（中身の文字が
+ *  拡大率・最小フォントサイズ設定で大きくなっても切れないように）。PC/モバイルとも
+ *  QuickAddFab.tsx側がこの定数をminHeightとして使う（PCは従来「38px」を直書きしていたが、
+ *  この定数の直接インポートに揃えた）。 */
+export const FAB_MENU_ITEM_MIN_HEIGHT_PC_PX = 38;
+export const FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX = 40;
 
-const FAB_MENU_ITEM_GAP_PC_PX = 6;
-const FAB_MENU_ITEM_GAP_MOBILE_PX = 8;
-const FAB_MENU_ITEM_COUNT = 3;
+export const FAB_MENU_ITEM_GAP_PC_PX = 6;
+export const FAB_MENU_ITEM_GAP_MOBILE_PX = 8;
+export const FAB_MENU_ITEM_COUNT = 3;
 
 /** FAB本体の直上に密着させる隙間（旧実装＝FAB上端の2px上からメニューが始まる、を踏襲） */
-const FAB_TO_MENU_GAP_PX = 2;
+export const FAB_TO_MENU_GAP_PX = 2;
 
 function menuStackHeight(itemHeight: number, gap: number): number {
   return FAB_MENU_ITEM_COUNT * itemHeight + (FAB_MENU_ITEM_COUNT - 1) * gap;
 }
 
-/** FAB展開メニュー（3項目の列）自体のbottom。QuickAddFab.tsxが使う。 */
-export const FAB_MENU_BOTTOM_PC_PX = FAB_BOTTOM_PC_PX + FAB_SIZE_PX + FAB_TO_MENU_GAP_PX; // 24+48+2=74
-export const FAB_MENU_BOTTOM_MOBILE_PX = FAB_BOTTOM_MOBILE_PX + FAB_SIZE_PX + FAB_TO_MENU_GAP_PX; // 72+48+2=122
+/** メニュー全体の高さの「最低保証」見積もり（未測定時のフォールバック用）。実際の高さは
+ *  QuickAddFab.tsxがResizeObserverで実測し、useUiLayoutStoreのfabMenuHeightPxへ
+ *  反映する（残る2つの実依存の2つ目）。 */
+export const FAB_MENU_STACK_HEIGHT_ESTIMATE_PC_PX = menuStackHeight(FAB_MENU_ITEM_MIN_HEIGHT_PC_PX, FAB_MENU_ITEM_GAP_PC_PX);
+export const FAB_MENU_STACK_HEIGHT_ESTIMATE_MOBILE_PX = menuStackHeight(FAB_MENU_ITEM_MIN_HEIGHT_MOBILE_PX, FAB_MENU_ITEM_GAP_MOBILE_PX);
 
-/** FAB展開メニューの上端（3項目+gap分の高さを足した値）。ショートカットボタンの退避先計算・
- *  機械チェック（重なり検査）の両方で使うため export する。 */
-export const FAB_MENU_TOP_PC_PX = FAB_MENU_BOTTOM_PC_PX + menuStackHeight(FAB_MENU_ITEM_HEIGHT_PC_PX, FAB_MENU_ITEM_GAP_PC_PX);
-export const FAB_MENU_TOP_MOBILE_PX = FAB_MENU_BOTTOM_MOBILE_PX + menuStackHeight(FAB_MENU_ITEM_HEIGHT_MOBILE_PX, FAB_MENU_ITEM_GAP_MOBILE_PX);
+/** FAB展開メニュー（3項目の列）自体のbottom。QuickAddFab.tsxが使う。FAB本体のbottomから
+ *  常に一定の式で求まる（FAB本体の高さは固定のため実測は不要）。 */
+export function computeFabMenuBottom(fabBottomPx: number): number {
+  return fabBottomPx + FAB_SIZE_PX + FAB_TO_MENU_GAP_PX;
+}
+
+/**
+ * FAB展開メニューの上端。ショートカットボタンの退避先計算に使う（残る2つの実依存の2つ目）。
+ * measuredMenuStackHeightPxにはQuickAddFab.tsxが実測した値（未測定時は
+ * FAB_MENU_STACK_HEIGHT_ESTIMATE_*_PXにフォールバック）を渡すこと。
+ */
+export function computeFabMenuTop(fabMenuBottomPx: number, measuredMenuStackHeightPx: number): number {
+  return fabMenuBottomPx + measuredMenuStackHeightPx;
+}
+
+/** FABメニュー展開時：展開メニューの上端+クリアランスへショートカットボタンを退避させる。 */
+export function computeShortcutsBottomFabOpen(fabMenuTopPx: number): number {
+  return fabMenuTopPx + STACK_CLEARANCE_PX;
+}
 
 // ===== ショートカットボタン =====
 
-/** ショートカットボタンの高さ。padding "6px 10px"（上下12px）+アイコン・文字(fontSize11-12px)
- *  の実測見積り。MainLayout.tsx側がこの値を明示heightとして使う。 */
-export const SHORTCUTS_BUTTON_HEIGHT_PX = 28;
+/** ショートカットボタンの最低保証の高さ。【v3.95】固定heightをやめ minHeight にした
+ *  （中身の文字「⌨ ショートカット」が拡大率・最小フォントサイズ設定で大きくなっても
+ *  切れないように）。MainLayout.tsx側がこの値をminHeightとして使う。 */
+export const SHORTCUTS_BUTTON_MIN_HEIGHT_PX = 28;
 
-/** 通常時（FABメニュー閉時）：FAB本体の上端+クリアランス */
-export const SHORTCUTS_BOTTOM_PC_PX = FAB_BOTTOM_PC_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 24+48+16=88
-export const SHORTCUTS_BOTTOM_MOBILE_PX = FAB_BOTTOM_MOBILE_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 72+48+16=136
+/**
+ * ショートカットボタン・Toastの「通常時（FABメニュー非表示）」のbottom。FAB本体の上端+
+ * クリアランス。FAB本体は48x48の固定正円（アイコンのみ・文字を含まない）なので高さは
+ * 常にFAB_SIZE_PXで確定してよく、追加の実測は不要。
+ */
+export function computeAboveFabBottom(fabBottomPx: number): number {
+  return fabBottomPx + FAB_SIZE_PX + STACK_CLEARANCE_PX;
+}
 
-/** FABメニュー展開時：展開メニューの上端+クリアランスへ退避 */
-export const SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX = FAB_MENU_TOP_PC_PX + STACK_CLEARANCE_PX;
-export const SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX = FAB_MENU_TOP_MOBILE_PX + STACK_CLEARANCE_PX;
+/** PC：FAB本体のbottomが静的なため、通常時のショートカット/Toastのbottomも静的に確定できる。 */
+export const SHORTCUTS_BOTTOM_PC_PX = computeAboveFabBottom(FAB_BOTTOM_PC_PX);
+
+/** FAB展開メニューのbottom（PC）。FAB本体のbottomが静的なため静的に確定できる。 */
+export const FAB_MENU_BOTTOM_PC_PX = computeFabMenuBottom(FAB_BOTTOM_PC_PX);
 
 // ===== Toast =====
 
-/** Toast1件の高さ。padding "10px 16px"（上下20px）+アイコン・文字(fontSize12px)の実測見積り。
- *  Toast.tsx側がこの値を明示heightとして使う。 */
-export const TOAST_ITEM_HEIGHT_PX = 40;
+/** Toast1件の最低保証の高さ。【v3.95】固定heightをやめ minHeight にした（通知メッセージが
+ *  拡大率・最小フォントサイズ設定で複数行に伸びても切れないように）。Toast.tsx側がこの値を
+ *  minHeightとして使う。 */
+export const TOAST_ITEM_MIN_HEIGHT_PX = 40;
 
 /**
  * 【v3.92：Toastは「FABの真上まで」に留める（v3.91からの修正）】
@@ -144,14 +191,12 @@ export const TOAST_ITEM_HEIGHT_PX = 40;
  *   - ショートカットボタン：常設だが補助的なaffordance。数秒間Toastに隠れても実害が無い
  *     （通知が消えれば元に戻る）。
  * Toastはz-index最前面に出るうえ数秒で自動消去される一過性の表示であるため、「FABを隠さない」
- * ことだけを守り、「ショートカットボタンと重ならない」ことまでは要求しない。
+ * ことだけを守り、「ショートカットボタンと重ならない」ことまでは要求しない。Toastの位置は
+ * FABメニューの開閉によらず常に静的（computeAboveFabBottomのみに依存し、
+ * computeShortcutsBottomFabOpenは使わない）。
  *
- * そのためToastの位置は「FAB本体の上端+クリアランス」＝ショートカットボタンの通常位置
- * （SHORTCUTS_BOTTOM_PC_PX/MOBILE_PX）と同じ高さになる（数値が一致するのは偶然ではなく、
- * どちらも「FABの直上に一段だけ載る」という同じ設計だから）。Toast⇔ショートカットボタンの
- * 重なりは意図した許容であり、bottomStack.test.tsのALLOWED_OVERLAPSに理由付きで登録している
- * （FABメニュー展開時にもToastとメニューが重なりうるが、これも同じ理由で許容している。
- * 詳細はテストファイルのコメント参照）。
+ * Toast⇔ショートカットボタンの重なりは意図した許容であり、bottomStack.test.tsの
+ * ALLOWED_OVERLAPSに理由付きで登録している（FABメニュー展開時にもToastとメニューが
+ * 重なりうるが、これも同じ理由で許容している。詳細はテストファイルのコメント参照）。
  */
-export const TOAST_BOTTOM_PC_PX = FAB_BOTTOM_PC_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 24+48+16=88
-export const TOAST_BOTTOM_MOBILE_PX = FAB_BOTTOM_MOBILE_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 72+48+16=136
+export const TOAST_BOTTOM_PC_PX = computeAboveFabBottom(FAB_BOTTOM_PC_PX);

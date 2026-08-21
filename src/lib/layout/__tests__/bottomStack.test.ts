@@ -1,7 +1,7 @@
 // src/lib/layout/__tests__/bottomStack.test.ts
 //
 // 【設計意図】
-// src/lib/layout/bottomStack.ts（右下に積み上がる要素のスタックの一元管理）の各定数から、
+// src/lib/layout/bottomStack.ts（右下に積み上がる要素のスタックの一元管理）の各定数・関数から、
 // 実際にDOM上で占有する区間 [bottom, bottom+height) を計算し、意図せず重なっている要素が
 // 無いことを機械的に検査する。PC・モバイル、FABメニュー展開中・非展開中の4通り全てを検査する。
 //
@@ -27,26 +27,36 @@
 // 共有せず、この1次元モデルで「重ならないこと」を検査する対象ではなくなった。実際に重ならない
 // ことの検証は src/lib/layout/devOverlapCheck.ts の開発ビルド限定ランタイム実測チェックに
 // 委ねている（CLAUDE.md Section 49参照）。
+//
+// 【v3.95：固定heightをやめ、実測が必要な依存だけ関数化した】
+// 文字を含む要素（ショートカットボタン・Toast・ボトムナビ・FAB展開メニュー項目）は固定height
+// からminHeightへ変更し、実際の描画高さは拡大率・フォント設定次第で伸びうる前提にした。
+// 残る「本当の縦の依存」は2つだけ（他はFAB本体の固定サイズからの静的な式で足りる）：
+//   1. モバイルのボトムナビ→FAB（computeFabBottomMobile）
+//   2. FAB展開メニュー→退避したショートカットボタン（computeFabMenuTop→computeShortcutsBottomFabOpen）
+// このテストは、①未測定時のフォールバック見積もり値（旧来の定数どうしの整合性に相当）と、
+// ②意図的に大きく育てた実測値（拡大率・最小フォントサイズ設定を模したシナリオ）の両方で
+// 重なりが無いことを検査する。②が無いと「関数は書いたが、実測値を差し込んでも本当に
+// 破綻しないか」までは固定できない。
 
 import { describe, it, expect } from "vitest";
 import {
   STACK_CLEARANCE_PX,
-  BOTTOM_NAV_HEIGHT_MOBILE_PX,
+  BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX,
   FAB_SIZE_PX,
   FAB_BOTTOM_PC_PX,
-  FAB_BOTTOM_MOBILE_PX,
   FAB_MENU_BOTTOM_PC_PX,
-  FAB_MENU_BOTTOM_MOBILE_PX,
-  FAB_MENU_TOP_PC_PX,
-  FAB_MENU_TOP_MOBILE_PX,
-  SHORTCUTS_BUTTON_HEIGHT_PX,
+  FAB_MENU_STACK_HEIGHT_ESTIMATE_PC_PX,
+  FAB_MENU_STACK_HEIGHT_ESTIMATE_MOBILE_PX,
+  SHORTCUTS_BUTTON_MIN_HEIGHT_PX,
   SHORTCUTS_BOTTOM_PC_PX,
-  SHORTCUTS_BOTTOM_MOBILE_PX,
-  SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX,
-  SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX,
-  TOAST_ITEM_HEIGHT_PX,
+  TOAST_ITEM_MIN_HEIGHT_PX,
   TOAST_BOTTOM_PC_PX,
-  TOAST_BOTTOM_MOBILE_PX,
+  computeFabBottomMobile,
+  computeFabMenuBottom,
+  computeFabMenuTop,
+  computeShortcutsBottomFabOpen,
+  computeAboveFabBottom,
 } from "../bottomStack";
 
 interface StackInterval {
@@ -131,57 +141,68 @@ function findViolations(intervals: StackInterval[]): string[] {
 }
 
 /** PC・非展開時のスタック（下から：FAB／ショートカット／Toast。TaskSidePanelフッターは
- *  v3.94でこの1次元モデルの対象外にした＝ファイル冒頭コメント参照） */
+ *  v3.94でこの1次元モデルの対象外にした＝ファイル冒頭コメント参照）。PCはFAB本体のbottomが
+ *  静的なため、実測値は不要（メニュー展開時のみfabMenuHeightPxが要る＝下のbuildPcOpenStack）。 */
 function buildPcClosedStack(): StackInterval[] {
   return [
     { name: "fab", bottom: FAB_BOTTOM_PC_PX, height: FAB_SIZE_PX },
-    { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_PC_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
-    { name: "toast", bottom: TOAST_BOTTOM_PC_PX, height: TOAST_ITEM_HEIGHT_PX },
+    { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_PC_PX, height: SHORTCUTS_BUTTON_MIN_HEIGHT_PX },
+    { name: "toast", bottom: TOAST_BOTTOM_PC_PX, height: TOAST_ITEM_MIN_HEIGHT_PX },
   ];
 }
 
 /** PC・FABメニュー展開時のスタック（FAB本体の上にメニュー3項目の列が乗り、
- *  ショートカットはさらにその上へ退避する。Toastは開閉によらず静的な位置のまま） */
-function buildPcOpenStack(): StackInterval[] {
+ *  ショートカットはさらにその上へ退避する。Toastは開閉によらず静的な位置のまま）。
+ *  measuredFabMenuHeightPxは実測値（未測定時のフォールバックはFAB_MENU_STACK_HEIGHT_ESTIMATE_PC_PX）。 */
+function buildPcOpenStack(measuredFabMenuHeightPx: number = FAB_MENU_STACK_HEIGHT_ESTIMATE_PC_PX): StackInterval[] {
+  const fabMenuTopPx = computeFabMenuTop(FAB_MENU_BOTTOM_PC_PX, measuredFabMenuHeightPx);
   return [
     { name: "fab", bottom: FAB_BOTTOM_PC_PX, height: FAB_SIZE_PX },
-    { name: "fabMenu", bottom: FAB_MENU_BOTTOM_PC_PX, height: FAB_MENU_TOP_PC_PX - FAB_MENU_BOTTOM_PC_PX },
-    { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
-    { name: "toast", bottom: TOAST_BOTTOM_PC_PX, height: TOAST_ITEM_HEIGHT_PX },
+    { name: "fabMenu", bottom: FAB_MENU_BOTTOM_PC_PX, height: measuredFabMenuHeightPx },
+    { name: "shortcuts", bottom: computeShortcutsBottomFabOpen(fabMenuTopPx), height: SHORTCUTS_BUTTON_MIN_HEIGHT_PX },
+    { name: "toast", bottom: TOAST_BOTTOM_PC_PX, height: TOAST_ITEM_MIN_HEIGHT_PX },
   ];
 }
 
 /** モバイル・非展開時のスタック（下から：ボトムナビ／FAB／ショートカット／Toast。
  *  TaskSidePanelはモバイルには出ないため対象外＝TaskEditModalが中央寄せの全画面モーダルで
- *  この右下スタックに参加しない。TaskSidePanel.tsx冒頭コメント参照） */
-function buildMobileClosedStack(): StackInterval[] {
+ *  この右下スタックに参加しない。TaskSidePanel.tsx冒頭コメント参照）。
+ *  measuredBottomNavHeightPxは実測値（未測定時のフォールバックはBOTTOM_NAV_MIN_HEIGHT_MOBILE_PX）。 */
+function buildMobileClosedStack(measuredBottomNavHeightPx: number = BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX): StackInterval[] {
+  const fabBottomPx = computeFabBottomMobile(measuredBottomNavHeightPx);
   return [
-    { name: "bottomNav", bottom: 0, height: BOTTOM_NAV_HEIGHT_MOBILE_PX },
-    { name: "fab", bottom: FAB_BOTTOM_MOBILE_PX, height: FAB_SIZE_PX },
-    { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_MOBILE_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
-    { name: "toast", bottom: TOAST_BOTTOM_MOBILE_PX, height: TOAST_ITEM_HEIGHT_PX },
+    { name: "bottomNav", bottom: 0, height: measuredBottomNavHeightPx },
+    { name: "fab", bottom: fabBottomPx, height: FAB_SIZE_PX },
+    { name: "shortcuts", bottom: computeAboveFabBottom(fabBottomPx), height: SHORTCUTS_BUTTON_MIN_HEIGHT_PX },
+    { name: "toast", bottom: computeAboveFabBottom(fabBottomPx), height: TOAST_ITEM_MIN_HEIGHT_PX },
   ];
 }
 
 /** モバイル・FABメニュー展開時のスタック */
-function buildMobileOpenStack(): StackInterval[] {
+function buildMobileOpenStack(
+  measuredBottomNavHeightPx: number = BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX,
+  measuredFabMenuHeightPx: number = FAB_MENU_STACK_HEIGHT_ESTIMATE_MOBILE_PX,
+): StackInterval[] {
+  const fabBottomPx = computeFabBottomMobile(measuredBottomNavHeightPx);
+  const fabMenuBottomPx = computeFabMenuBottom(fabBottomPx);
+  const fabMenuTopPx = computeFabMenuTop(fabMenuBottomPx, measuredFabMenuHeightPx);
   return [
-    { name: "bottomNav", bottom: 0, height: BOTTOM_NAV_HEIGHT_MOBILE_PX },
-    { name: "fab", bottom: FAB_BOTTOM_MOBILE_PX, height: FAB_SIZE_PX },
-    { name: "fabMenu", bottom: FAB_MENU_BOTTOM_MOBILE_PX, height: FAB_MENU_TOP_MOBILE_PX - FAB_MENU_BOTTOM_MOBILE_PX },
-    { name: "shortcuts", bottom: SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX, height: SHORTCUTS_BUTTON_HEIGHT_PX },
-    { name: "toast", bottom: TOAST_BOTTOM_MOBILE_PX, height: TOAST_ITEM_HEIGHT_PX },
+    { name: "bottomNav", bottom: 0, height: measuredBottomNavHeightPx },
+    { name: "fab", bottom: fabBottomPx, height: FAB_SIZE_PX },
+    { name: "fabMenu", bottom: fabMenuBottomPx, height: measuredFabMenuHeightPx },
+    { name: "shortcuts", bottom: computeShortcutsBottomFabOpen(fabMenuTopPx), height: SHORTCUTS_BUTTON_MIN_HEIGHT_PX },
+    { name: "toast", bottom: computeAboveFabBottom(fabBottomPx), height: TOAST_ITEM_MIN_HEIGHT_PX },
   ];
 }
 
 const ALL_SCENARIOS: [string, () => StackInterval[]][] = [
   ["PC・FABメニュー非展開", buildPcClosedStack],
-  ["PC・FABメニュー展開", buildPcOpenStack],
-  ["モバイル・FABメニュー非展開", buildMobileClosedStack],
-  ["モバイル・FABメニュー展開", buildMobileOpenStack],
+  ["PC・FABメニュー展開", () => buildPcOpenStack()],
+  ["モバイル・FABメニュー非展開", () => buildMobileClosedStack()],
+  ["モバイル・FABメニュー展開", () => buildMobileOpenStack()],
 ];
 
-describe("右下スタック（bottomStack.ts）の重なり検査", () => {
+describe("右下スタック（bottomStack.ts）の重なり検査：未測定時のフォールバック見積もり", () => {
   it("PC・FABメニュー非展開時：許容リスト外の重なりが無い", () => {
     expect(findViolations(buildPcClosedStack())).toEqual([]);
   });
@@ -231,5 +252,52 @@ describe("右下スタック（bottomStack.ts）の重なり検査", () => {
       return upper.bottom - (lower.bottom + lower.height);
     };
     expect(gap("fabMenu", "shortcuts")).toBeGreaterThanOrEqual(STACK_CLEARANCE_PX);
+  });
+});
+
+describe("右下スタック（bottomStack.ts）の重なり検査：実測値が大きく育った場合（拡大率・最小フォントサイズ設定を模す）", () => {
+  // 【v3.95で新設】固定heightをやめてminHeightにしたため、実際の描画高さは
+  // フォールバック見積もりより大きくなりうる。ここでは意図的に極端な値（見積もりの3倍前後）
+  // を実測値として与え、computeFabBottomMobile/computeFabMenuTop等の関数が実際に
+  // 追随して衝突を避けられることを固定する。これが無いと「関数は作ったが、実測値が
+  // 見積もりから乖離した瞬間に壊れる」という再発を機械的に検知できない。
+
+  it("モバイル：ボトムナビが3倍高くなっても、FAB・ショートカット・Toastは追随してボトムナビと重ならない", () => {
+    const grownNavHeightPx = BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX * 3;
+    const stack = buildMobileClosedStack(grownNavHeightPx);
+    expect(findViolations(stack)).toEqual([]);
+    // FABがボトムナビの実測高さぶん、ちゃんと押し上げられていることも確認する
+    const fab = stack.find(s => s.name === "fab")!;
+    expect(fab.bottom).toBe(grownNavHeightPx + STACK_CLEARANCE_PX);
+  });
+
+  it("モバイル：ボトムナビとFABメニューの両方が育っても、展開時のショートカットは重ならない", () => {
+    const grownNavHeightPx = BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX * 3;
+    const grownMenuHeightPx = FAB_MENU_STACK_HEIGHT_ESTIMATE_MOBILE_PX * 3;
+    const stack = buildMobileOpenStack(grownNavHeightPx, grownMenuHeightPx);
+    expect(findViolations(stack)).toEqual([]);
+  });
+
+  it("PC：FABメニューが3倍高くなっても、退避後のショートカットはメニューと重ならない", () => {
+    const grownMenuHeightPx = FAB_MENU_STACK_HEIGHT_ESTIMATE_PC_PX * 3;
+    const stack = buildPcOpenStack(grownMenuHeightPx);
+    expect(findViolations(stack)).toEqual([]);
+    const fabMenu = stack.find(s => s.name === "fabMenu")!;
+    const shortcuts = stack.find(s => s.name === "shortcuts")!;
+    expect(shortcuts.bottom).toBeGreaterThanOrEqual(fabMenu.bottom + fabMenu.height + STACK_CLEARANCE_PX);
+  });
+
+  it("検出ロジックの健全性：実測値の反映を止めて意図的に古い（小さい）値のまま計算すると、育ったボトムナビとFABが重なって検出される", () => {
+    // computeFabBottomMobileへ実測値を渡さず、見積もり値のまま計算してしまった場合の
+    // 「壊れたコード」を模したフィクスチャ。このテスト自体が誤って常にfalseを返す
+    // 壊れたテストになっていないことを確認する。
+    const grownNavHeightPx = BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX * 3;
+    const brokenStack: StackInterval[] = [
+      { name: "bottomNav", bottom: 0, height: grownNavHeightPx },
+      // 本来は computeFabBottomMobile(grownNavHeightPx) を使うべきところを、
+      // 見積もり値のまま固定してしまった想定（実測を無視するバグの再現）
+      { name: "fab", bottom: computeFabBottomMobile(BOTTOM_NAV_MIN_HEIGHT_MOBILE_PX), height: FAB_SIZE_PX },
+    ];
+    expect(findViolations(brokenStack)).not.toEqual([]);
   });
 });
