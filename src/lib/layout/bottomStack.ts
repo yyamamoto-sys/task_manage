@@ -104,8 +104,27 @@ export const SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX = FAB_MENU_TOP_MOBILE_PX + STAC
  *  Toast.tsx側がこの値を明示heightとして使う。 */
 export const TOAST_ITEM_HEIGHT_PX = 40;
 
-/** ToastはFABメニューの開閉によらず出現しうる（保存完了・エラー等はいつでも起こる）ため、
- *  開閉のたびに位置を動かすとちらつく。ショートカットボタンが最も高い位置に来る
- *  「FABメニュー展開時」を基準に、常にその上へ静的に確保する（どちらの状態でも重ならない）。 */
-export const TOAST_BOTTOM_PC_PX = SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX + SHORTCUTS_BUTTON_HEIGHT_PX + STACK_CLEARANCE_PX;
-export const TOAST_BOTTOM_MOBILE_PX = SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX + SHORTCUTS_BUTTON_HEIGHT_PX + STACK_CLEARANCE_PX;
+/**
+ * 【v3.92：Toastは「FABの真上まで」に留める（v3.91からの修正）】
+ * v3.91では「ショートカットボタンが最も高い位置に来るFABメニュー展開時」を基準にToastを
+ * 静的に確保しており、通常時のToastが画面の下から1/3ほど（280px）まで押し上げられていた。
+ * これは「どの2つも重ならない」という不変条件を、重なっても実害の無いペアにまで一律に
+ * 適用したことが原因だった（統括の指摘）。
+ *
+ * このスタックが守るべき不変条件は「操作を妨げないこと」であって「一切重ならないこと」では
+ * ない。要素は次の2種に分かれる：
+ *   - FAB（と、その展開メニュー3項目）：利用者が押したい主要な操作ボタン。隠してはいけない。
+ *   - ショートカットボタン：常設だが補助的なaffordance。数秒間Toastに隠れても実害が無い
+ *     （通知が消えれば元に戻る）。
+ * Toastはz-index最前面に出るうえ数秒で自動消去される一過性の表示であるため、「FABを隠さない」
+ * ことだけを守り、「ショートカットボタンと重ならない」ことまでは要求しない。
+ *
+ * そのためToastの位置は「FAB本体の上端+クリアランス」＝ショートカットボタンの通常位置
+ * （SHORTCUTS_BOTTOM_PC_PX/MOBILE_PX）と同じ高さになる（数値が一致するのは偶然ではなく、
+ * どちらも「FABの直上に一段だけ載る」という同じ設計だから）。Toast⇔ショートカットボタンの
+ * 重なりは意図した許容であり、bottomStack.test.tsのALLOWED_OVERLAPSに理由付きで登録している
+ * （FABメニュー展開時にもToastとメニューが重なりうるが、これも同じ理由で許容している。
+ * 詳細はテストファイルのコメント参照）。
+ */
+export const TOAST_BOTTOM_PC_PX = FAB_BOTTOM_PC_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 52+48+12=112
+export const TOAST_BOTTOM_MOBILE_PX = FAB_BOTTOM_MOBILE_PX + FAB_SIZE_PX + STACK_CLEARANCE_PX; // 68+48+12=128
