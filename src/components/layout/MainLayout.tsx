@@ -58,6 +58,11 @@ import { resolveInitialSidebarMineOnly } from "../../lib/layout/sidebarMineOnlyD
 import { confirmDialog } from "../../lib/dialog";
 import { loadDemoDataset } from "../../lib/demo/loadDemoDataset";
 import { QuickAddFab } from "./QuickAddFab";
+import {
+  SHORTCUTS_BOTTOM_PC_PX, SHORTCUTS_BOTTOM_MOBILE_PX,
+  SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX, SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX,
+  SHORTCUTS_BUTTON_HEIGHT_PX,
+} from "../../lib/layout/bottomStack";
 
 /**
  * 【設計意図】
@@ -931,18 +936,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const shortcutsCurrentView = appMode === "plan" ? viewMode : null;
 
   // 全ビュー共通・画面右下付近に薄く常設する「⌨ ショートカット」affordance。
-  // 【配置の注意】Toast（bottom:24/right:24, z10000）・ErrorBar（bottom:0 全幅, z9000）と
-  // 座標が重ならないよう、Toast/FAB/ErrorBarの通常時の占有域より上（bottom:100px/128px）に置く。
+  // 【v3.91】座標は src/lib/layout/bottomStack.ts（右下スタックの一元管理）から取る。
   // z-indexはモーダル類（z200以上）より低く保つ（モーダル表示中はこのボタンが上に浮いて見えない
   // ようにするため）。Toast/ErrorBarは元々モーダルより上に出る設計のため、それらが同じ位置に
   // 一時的に重なった場合はToast/ErrorBarが上に見える＝トーストは自動で数秒で消えるため実害は小さい。
   // AI相談パネル（PC・インライン）が開いているときは、FABと同じ考え方でパネル幅ぶん左へ避ける。
-  // 【FAB展開時の重なり対策】FABを開くと展開項目（3つ）がFABボタンの上に積み上がる
-  // （PC: bottom 74px起点で高さ約126px＝top端200px付近／モバイル: bottom 122px起点で
-  // 高さ約124px＝top端246px付近）。このショートカットボタンのz-index(140)はFAB展開項目(59)
-  // より高いため、通常位置のままだと展開項目の上に覆い被さって視認性を損なう＝これが
-  // 「＋ボタンを押すとショートカットボタンと被る」の実体。isFabMenuOpen中だけ展開項目の
-  // 積み上げ範囲より上（PC:216px/モバイル:270px）へ退避させ、閉じたら元の位置に戻す。
+  // 【FAB展開時の重なり対策】FABを開くと展開項目（3つ）がFABボタンの上に積み上がる。この
+  // ショートカットボタンのz-index(140)はFAB展開項目(59)より高いため、通常位置のままだと
+  // 展開項目の上に覆い被さって視認性を損なう＝これが「＋ボタンを押すとショートカットボタンと
+  // 被る」の実体。isFabMenuOpen中だけ展開項目の積み上げ範囲より上（bottomStack.tsの
+  // SHORTCUTS_BOTTOM_FAB_OPEN_*）へ退避させ、閉じたら元の位置（SHORTCUTS_BOTTOM_*）に戻す。
   const shortcutsButton = (
     <button
       onClick={toggleShortcuts}
@@ -950,9 +953,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       aria-pressed={isShortcutsOpen}
       style={{
         position: "fixed",
+        height: `${SHORTCUTS_BUTTON_HEIGHT_PX}px`,
         bottom: isFabMenuOpen
-          ? (isMobile ? "270px" : "216px")
-          : (isMobile ? "128px" : "100px"),
+          ? `${isMobile ? SHORTCUTS_BOTTOM_FAB_OPEN_MOBILE_PX : SHORTCUTS_BOTTOM_FAB_OPEN_PC_PX}px`
+          : `${isMobile ? SHORTCUTS_BOTTOM_MOBILE_PX : SHORTCUTS_BOTTOM_PC_PX}px`,
         right: (!isMobile && isConsultOpen) ? `${consultPanelWidth + 16}px` : "16px",
         transition: isConsultResizing ? "bottom 0.2s ease" : "right 0.3s ease, bottom 0.2s ease",
         zIndex: 140,

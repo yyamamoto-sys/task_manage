@@ -33,6 +33,7 @@ import { showToast } from "../common/Toast";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
+import { SIDE_PANEL_FOOTER_HEIGHT_PX } from "../../lib/layout/bottomStack";
 
 interface Props {
   taskId: string;
@@ -1008,8 +1009,12 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
         <div style={{ height: "10px" }} />
       </div>
 
-      {/* フッター：削除 */}
+      {/* フッター：削除
+          【v3.91】高さを明示heightで固定する（src/lib/layout/bottomStack.tsのSIDE_PANEL_FOOTER_HEIGHT_PX）。
+          FABの通常位置（同モジュールのFAB_BOTTOM_PC_PX）はこの高さを避けるように算出されているため、
+          padding・ボタンサイズを変える場合はこの定数も一緒に見直すこと。 */}
       <div style={{
+        height: `${SIDE_PANEL_FOOTER_HEIGHT_PX}px`,
         padding: "8px 12px", borderTop: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center", justifyContent: "space-between",
         flexShrink: 0, background: "var(--color-bg-secondary)",

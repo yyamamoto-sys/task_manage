@@ -10,7 +10,7 @@
 import { useState, useEffect, useRef } from "react";
 import { setLastUndoAction, clearLastUndoAction } from "../../lib/lastUndoStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { ABOVE_FAB_BOTTOM_PC_PX, ABOVE_FAB_BOTTOM_MOBILE_PX } from "../../lib/layout/fabLayout";
+import { TOAST_BOTTOM_PC_PX, TOAST_BOTTOM_MOBILE_PX, TOAST_ITEM_HEIGHT_PX } from "../../lib/layout/bottomStack";
 
 export type ToastType = "success" | "error" | "info";
 
@@ -56,11 +56,11 @@ const DURATION_WITH_ACTION_MS = 6000;
 export function ToastContainer() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
-  // v3.86：PC版FAB（bottom:24px/right:24px）と完全に同一座標だったため、FABの高さぶん
-  // 持ち上げる。モバイルFAB（bottom:68px）にも合わせて別値を使う。マジックナンバーの
-  // 二重管理を避けるためfabLayout.tsの共有定数から算出する
+  // 【v3.91】右下スタック（src/lib/layout/bottomStack.ts）のToast位置を使う。FABメニュー展開中でも
+  // 開閉のたびに位置が動いてちらつかないよう、ショートカットボタンが最も高くなる「FABメニュー
+  // 展開時」の位置を基準に常に静的に確保している（bottomStack.ts冒頭コメント参照）。
   const isMobile = useIsMobile();
-  const toastBottomPx = isMobile ? ABOVE_FAB_BOTTOM_MOBILE_PX : ABOVE_FAB_BOTTOM_PC_PX;
+  const toastBottomPx = isMobile ? TOAST_BOTTOM_MOBILE_PX : TOAST_BOTTOM_PC_PX;
 
   useEffect(() => {
     const timers = timersRef.current;
@@ -113,6 +113,7 @@ export function ToastContainer() {
             className="animate-toast-in"
             style={{
               display: "flex", alignItems: "center", gap: "8px",
+              height: `${TOAST_ITEM_HEIGHT_PX}px`,
               padding: "10px 16px",
               background: s.bg, color: "#fff",
               borderRadius: "var(--radius-md)",
