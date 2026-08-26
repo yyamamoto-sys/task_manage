@@ -9,8 +9,19 @@
 // このコンポーネントがReact.lazyで分割されているため、import自体が「自分」タブを
 // 開いた瞬間まで遅延する＝OKRモードを使わない人にこのテーブル群のクエリを発生させない。
 // CLAUDE.md Section 19）を使う。
+//
+// 🔴 v3.100：KR切替（KRタブ・新規作成/編集後の自動選択）・月切替・四半期切替は、
+// MainLayoutの guardedNavigate を経由しない内部状態の変更で、PersonalKrPanel/
+// MonthReviewBlock（未保存編集を持ちうる）をこのコンポーネントは再マウントしないまま
+// 中身だけ差し替える（v3.55でkey={selectedKr.id}を外した設計）。そのため、これらの
+// 切替自体をguardedSwitch()でガードし、未保存の変更があれば確認する
+// （CLAUDE.md Section 46）。四半期・年の切替でKR一覧が丸ごと変わり選択中KRが
+// 自動的に補正される（下のuseEffect）ため、四半期の切替もガード対象に含める。
+// 年（fiscalYear）の入力欄は1文字入力ごとにonChangeが発火する自由入力のため、
+// キー入力のたびに確認ダイアログを出すのは現実的でなくガード対象から意図的に外した
+// （実際に年を変えて別の期のKRへ切り替える操作は稀）。
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../../stores/appStore";
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
 import type { Member, PersonalKr, PersonalKrOutlook, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
@@ -20,6 +31,7 @@ import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/wei
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
 import { quarterMonthSlots, resolveDefaultMonthIndex, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
 import { shouldInjectOkrTourPreviewSample } from "../../../lib/personalOkr/tourPreviewSample";
+import { confirmDiscardUnsavedEdits } from "../../../lib/editing/unsavedEditorRegistry";
 import { useTour } from "../../tour/TourProvider";
 import { OKR_TOUR_ID } from "../../tour/tours";
 import { CustomSelect } from "../../common/CustomSelect";
@@ -128,6 +140,16 @@ export function PersonalOkrView({ currentUser }: Props) {
   const [aiContext, setAiContext] = useState<PersonalOkrAiContextInput | null>(null);
 
   useEffect(() => { if (!krsLoaded) loadKrs(); }, [krsLoaded, loadKrs]);
+
+  // ===== KR切替・月切替・四半期切替のガード（CLAUDE.md Section 46・v3.100） =====
+  // MainLayout.tsxのguardedNavigateと同じ考え方（未保存の編集があれば確認してから
+  // 実際の状態変更を行う）だが、このコンポーネント固有の遷移のみを対象にするため
+  // 独立した薄い関数として持つ（入れ子呼び出しが無いため navigationConfirmedRef の
+  // ような再入防止は不要）。
+  const guardedSwitch = useCallback(async (action: () => void): Promise<void> => {
+    const proceed = await confirmDiscardUnsavedEdits();
+    if (proceed) action();
+  }, []);
 
   const [fiscalYear, setFiscalYear] = useState(() => new Date().getFullYear());
   const [quarter, setQuarter] = useState<Quarter>(() => currentQuarter());
@@ -248,8 +270,8 @@ export function PersonalOkrView({ currentUser }: Props) {
           onChange={e => setFiscalYear(Number(e.target.value) || fiscalYear)}
           style={{ width: "84px", fontSize: "12px", padding: "5px 8px", border: "1px solid var(--color-border-secondary)", borderRadius: "var(--radius-sm)", background: "var(--color-bg-primary)", color: "var(--color-text-primary)" }}
         />
-        <CustomSelect value={quarter} onChange={v => setQuarter(v as Quarter)} options={QUARTER_OPTIONS} style={{ width: "150px" }} />
-        <CustomSelect value={String(monthIndex)} onChange={v => setMonthIndex(Number(v) as 1 | 2 | 3)} options={monthOptions} style={{ width: "88px" }} />
+        <CustomSelect value={quarter} onChange={v => void guardedSwitch(() => setQuarter(v as Quarter))} options={QUARTER_OPTIONS} style={{ width: "150px" }} />
+        <CustomSelect value={String(monthIndex)} onChange={v => void guardedSwitch(() => setMonthIndex(Number(v) as 1 | 2 | 3))} options={monthOptions} style={{ width: "88px" }} />
         <span style={{ flex: 1 }} />
         {previewSample && (
           <span style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-brand)", background: "var(--color-brand-light)", border: "1px solid var(--color-brand-border)", borderRadius: "var(--radius-full)", padding: "3px 10px" }}>
@@ -272,7 +294,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           一緒に消えていたことから特定した）。 */}
       <div data-tour-id="okr-kr-tabs" style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
         {displayKrs.map(kr => (
-          <button key={kr.id} onClick={() => setSelectedKrId(kr.id)} style={tabStyle(kr.id === selectedKrId)}>
+          <button key={kr.id} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} style={tabStyle(kr.id === selectedKrId)}>
             <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
             <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>{kr.weight_pct}%</span>
           </button>
@@ -378,7 +400,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           objectives={objectives}
           defaultFiscalYear={fiscalYear}
           defaultQuarter={quarter}
-          onSave={async kr => { await saveKr(kr); setSelectedKrId(kr.id); }}
+          onSave={async kr => { await saveKr(kr); void guardedSwitch(() => setSelectedKrId(kr.id)); }}
           onDelete={
             formModal.mode === "edit" && formModal.initial
               ? async () => { await deleteKr(formModal.initial!.id, currentUser.id); setSelectedKrId(null); }

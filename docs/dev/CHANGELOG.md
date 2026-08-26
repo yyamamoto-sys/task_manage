@@ -6774,5 +6774,40 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：新しいテーブル・新しい列の追加なし。生成結果のDB自動保存なし。
 #   前四半期のKRを材料にすることなし。未来月での生成なし。Kintoneへの書き込みなし。
 #
-# 最終更新：2026-08-26（v3.99）
+# v3.100（2026-08-26）：個人OKR「今月の計画」欄・「振り返り」欄をunsavedEditorRegistryの対象に追加＋KR/月/四半期切替のガード（CLAUDE.md Section 52）
+#   背景：v3.89/v3.90（Section 46/47）で作った未保存編集レジストリ・guardedNavigateは
+#   TaskEditModal/TaskSidePanelとMainLayoutが起こす画面遷移だけを対象にしており、個人OKR
+#   ビュー（PersonalKrPanel.tsxの「今月の計画」欄・MonthReviewBlock.tsxの「振り返り」欄）は
+#   対象外だった（v3.99実装時に判明した既知の穴。Section 24 Step P参照）。v3.96で過去月が
+#   編集可になり、v3.99でAI下書きの一括流し込みが入ったことで実害が出やすくなっていた。
+#   Step 0で確認：guardedNavigateの呼び出しはMainLayout.tsx内のみ・PersonalOkrView.tsxの
+#   KR切替（setSelectedKrId）・月切替（setMonthIndex）・四半期切替（setQuarter）は未ガード
+#   だった（MainLayoutを経由しない内部状態の変更のため）。KR切替はv3.55でkey={selectedKr.id}
+#   を外した設計のため、PersonalKrPanelは再マウントされず中身だけ差し替わる＝切替前に
+#   未保存確認を挟まない限り無警告で消える。
+#   対応：①新規`src/lib/personalOkr/monthPlanForm.ts`の`computeMonthPlanDirty()`（今月の
+#   計画欄5フィールドのdirty判定・純粋関数。monthReviewForm.tsと同じ方針）。
+#   ②`PersonalKrPanel.tsx`：computeMonthPlanDirty()の結果をuseId()で払い出したidで
+#   registerUnsavedEditor/unregisterUnsavedEditorに登録（TaskEditModal.tsxと同じ
+#   isDirtyRefパターン）。③`MonthReviewBlock.tsx`：既存のcomputeMonthReviewDirty()
+#   （v3.96で保存ボタンの活性判定に既に使われているdirty変数）をそのままgetterに渡す
+#   （判定ロジックを二重化しない）。④`PersonalOkrView.tsx`：MainLayoutのguardedNavigateと
+#   同じ考え方のguardedSwitch(action)を新設し、KRタブのクリック・
+#   PersonalKrFormModal保存完了後の自動選択・月セレクト・四半期セレクトの4箇所を包んだ。
+#   年（fiscalYear）の入力欄は自由入力（1文字ごとにonChange発火）のため対象外。
+#   KR一覧の自動補正useEffect・削除後の選択解除はガード対象外（既にガードされた操作の
+#   派生的な状態同期／削除という破壊的操作のため）。
+#   ⑤`guardedNavigateCoverage.test.ts`をTARGETS配列で複数ファイル対応へ一般化し、
+#   PersonalOkrView.tsx（ガード関数名guardedSwitch）を2つ目のターゲットとして追加。
+#   リスクパターンは関数名ではなく「呼び出し＋実引数」の具体的な文字列
+#   （setSelectedKrId(kr.id)等）にし、自動補正useEffectからの呼び出しと区別した。
+#   新規テスト：`monthPlanForm.test.ts`（8件）・`personalOkrRegistryWiring.test.ts`
+#   （4件・修正前に3件が赤くなることを確認済み）・`personalOkrUnsavedEditors.test.ts`
+#   （5件）。`guardedNavigateCoverage.test.ts`は修正前に4件が赤くなることを確認済み。
+#   既存1799件全通過。
+#   `npx tsc --noEmit`0・`npx vitest run`全1799件通過・`npm run build`成功。
+#   やらないこと：計画欄の保存ボタンをdirty状態で活性/非活性にするUI改善（v3.93の
+#   MonthReviewBlockと同様の改修）は今回のスコープ外（無言消失を塞ぐことが目的のため）。
+#
+# 最終更新：2026-08-26（v3.100）
 

@@ -16,12 +16,13 @@
 // 🔴 過去月のみ、達成度バンドの「決定」UIをここに置く（当月はAheadBlock側にある。
 // 両方に出すと同じ操作の入口が2つになるため、当月ではここに出さない）。
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { Member, PersonalKr, PersonalKrBand, PersonalKrMonth } from "../../../lib/localData/types";
 import type { MonthTemporalStatus } from "../../../lib/personalOkr/quarterMonths";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
+import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { BandOverridePicker } from "./BandOverridePicker";
 
@@ -88,6 +89,16 @@ export function MonthReviewBlock({
       gmEvalPct: monthRecord?.gm_eval_pct, gmComment: monthRecord?.gm_comment,
     },
   );
+
+  // 🔴🔴 未保存編集レジストリへの登録（CLAUDE.md Section 46・v3.100）。既存の`dirty`
+  // （保存ボタンの活性・非活性にも使っている値）をそのままgetterに渡す＝判定を二重化しない。
+  const reviewRegistryId = useId();
+  const isReviewDirtyRef = useRef(dirty);
+  isReviewDirtyRef.current = dirty;
+  useEffect(() => {
+    registerUnsavedEditor(reviewRegistryId, () => isReviewDirtyRef.current);
+    return () => unregisterUnsavedEditor(reviewRegistryId);
+  }, [reviewRegistryId]);
 
   const handleSave = async () => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない

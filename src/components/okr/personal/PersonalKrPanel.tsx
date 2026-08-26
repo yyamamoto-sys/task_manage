@@ -31,7 +31,7 @@
 // 文言が切り替わる1つのボタン）を押したときだけ呼ぶ。CLAUDE.md Section 24 Step J・
 // docs/dev/okr-redesign-plan.md §5-2参照。
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useId, useMemo, useRef, useState, useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Member, Objective, PersonalKr, PersonalKrBand, PersonalKrMemo, PersonalKrMonth,
@@ -52,6 +52,8 @@ import {
 } from "../../../lib/personalOkr/planDraftContext";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
+import { computeMonthPlanDirty } from "../../../lib/personalOkr/monthPlanForm";
+import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
@@ -193,6 +195,30 @@ export function PersonalKrPanel({
     // 変化せずリセットされない＝前のKRの下書きが新しいKRに引きずられてしまう事故になる。
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [kr.id, monthRecord?.id, monthStr]);
+
+  // 🔴🔴 未保存編集レジストリへの登録（CLAUDE.md Section 46・v3.100）。「今月の計画」欄は
+  // v3.87/v3.93のTaskEditModal/TaskSidePanelと同じ明示保存の画面だが、これまでこの
+  // 仕組みの対象外だった（v3.99実装時に判明した既存の穴）。v3.96で過去月が編集可になり、
+  // v3.99でAI下書きの一括流し込みが入ったことで実害が出やすくなったため、ここで塞ぐ。
+  // dirty判定は保存ハンドラ（handleSaveMonthPlan）が組み立てるpatchと同じフィールドを
+  // computeMonthPlanDirtyで比較する（判定ロジックを二重化しない）。KR・月を切り替えると
+  // 上のuseEffectがpositioning等をmonthRecordへ同期し直すため、切替直後は自然にdirty=false
+  // になる（切替前に呼ばれるguardedSwitch経由の確認が先に走る前提。PersonalOkrView.tsx参照）。
+  const isPlanDirty = computeMonthPlanDirty(
+    { positioning, activities, targetAndEvidence, risks, bandTarget },
+    {
+      positioning: monthRecord?.positioning, activities: monthRecord?.activities,
+      targetAndEvidence: monthRecord?.target_and_evidence, risks: monthRecord?.risks,
+      bandTarget: monthRecord?.band_target,
+    },
+  );
+  const planRegistryId = useId();
+  const isPlanDirtyRef = useRef(isPlanDirty);
+  isPlanDirtyRef.current = isPlanDirty;
+  useEffect(() => {
+    registerUnsavedEditor(planRegistryId, () => isPlanDirtyRef.current);
+    return () => unregisterUnsavedEditor(planRegistryId);
+  }, [planRegistryId]);
 
   const handleSaveMonthPlan = async () => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない（UI側は既にボタン非表示だが二重の防御）
