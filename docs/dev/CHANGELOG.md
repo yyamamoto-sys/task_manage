@@ -6894,5 +6894,33 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   マイグレーションの適用は行っていない。山本さんが手動適用する（未適用のまま是正版へ
 #   差し替え済みのため、旧v3.101版を既に適用していない前提）。
 #
-# 最終更新：2026-08-26（v3.102）
+#
+# v3.103（2026-08-26）：個人OKRの計画・振り返りをKintoneへ「全文をコピー」できるようにした（山本さんの依頼）
+#   計画欄・振り返り欄の内容をKintoneへコピーする際、「位置づけ」「当月に取り組む内容」等を
+#   1つずつコピーしなければならず手間、という依頼への対応。
+#   🔴 新規src/lib/personalOkr/kintoneFormat.tsを見出し文字列の唯一の正本にした。①コピー生成
+#   （buildKintonePlanCopyText/buildKintoneReviewCopyText）②AI取込プロンプト
+#   （personalOkrImportExtractor.tsのSYSTEM_PROMPT_MONTHLY/COMBINED。プロンプトの意味は
+#   変えずハードコードを定数参照に置き換えた）③決定的パーサ（kintoneTextParse.tsの
+#   ACTIVITIES_RE等を正規表現リテラル直書きからkintoneFormat.ts由来の関数構築に変更。
+#   生成される.sourceは変更前と完全に同一）の3箇所全てがここを経由する。テンプレート文字列
+#   （{M}を月番号プレースホルダとして持つ）から実文字列と正規表現ソースの両方を導出し、
+#   半角スペースを\s*に緩める既存の緩さも1文字も変えずに温存した。
+#   コピー生成：記入が無い項目は見出しごと省略・全項目空なら空文字列（呼び出し側で非活性化）。
+#   月番号は実際の月番号（8月なら8。month_indexではない）。
+#   UI：①計画ブロック（PersonalKrPanel.tsx「◯月の計画」ヘッダ。画面に見えている値＝
+#   フォームの現在値）②計画ドラフトのモーダル（PersonalOkrPlanDraftModal.tsx。編集中の
+#   4欄＋バンド提案。保存しなくてもコピー可。monthNumber propを新設）③振り返りブロック
+#   （MonthReviewBlock.tsx。画面に見えている値）の3箇所。「全体」タブには付けない
+#   （山本さんが選んだ設計判断）。ラベルは3箇所とも「📋 全文をコピー（Kintone用）」
+#   （既存のPersonalOkrReviewDraftModal.tsxの「コピー」ボタン＝本文のみ、とは区別）。
+#   ラウンドトリップの機械検証：kintoneFormat.test.tsで、buildKintonePlanCopyText()の
+#   出力をparseKintoneMonthlyText()に実際に通して読み戻せることを検証。加えて見出しが
+#   プロンプト側・パーサ側で直書きに戻っていないことをソース走査で固定した。実装検証として
+#   パーサ側を意図的に直書きへ戻し、ラウンドトリップテスト・ソース走査テストの両方が
+#   実際に赤くなることを確認した上で元に戻した。
+#   新規テスト：kintoneFormat.test.ts（20件）。DBスキーマ変更なし。
+#   `npx tsc --noEmit`0・`npx eslint`0・`npx vitest run`全1875件通過・`npm run build`成功。
+#
+# 最終更新：2026-08-26（v3.103）
 

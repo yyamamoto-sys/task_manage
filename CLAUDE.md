@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.102
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.103
 #
-最終更新：2026-08-26（v3.102）
+最終更新：2026-08-26（v3.103）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.102）
+- 最終更新：2026-08-26（v3.103）
 
 ---
 
@@ -2318,6 +2318,25 @@ v3.101のマイグレーション（未適用のまま）に2件の欠陥があ�
 - 🔴 **欠陥1（Section 39のグランドルール違反）**：新設ポリシー`personal_period_reviews_own`が`current_member_id()`（SECURITY DEFINER STABLE関数）を裸で呼んでいた。Section 39は「RLSポリシー内でSECURITY DEFINER関数を呼ぶときは`(SELECT ...)`で包む」を必須のグランドルールとしている（v3.80・実測で`shared hit=6504`・`Execution Time 76.085ms`という異常値が確定済み）。仕様書§W1にもこの指示を明記していたが実装で抜けていた。`20260819c_optimize_members_rls_initplan.sql`と同じ書き方（`(SELECT public.current_member_id())`）に揃えた。**`personal_krs`以下の既存7ポリシーは今回のスコープ外**（Section 39制定前のもので、一斉是正が必要かは統括が別途判断する）。
 - 🔴 **欠陥2（正本スキーマの同期漏れ）**：`supabase/schema.sql`に`personal_period_reviews`のテーブル定義・部分ユニークインデックス2本・RLS有効化・ポリシーが未反映だった（`personal_kr_review_drafts`等の前例は反映済みなのに本テーブルだけ漏れていた）。テーブル定義（`personal_kr_review_drafts`ブロックの直後）・`updated_at`トリガーのDOループのテーブル名リスト（`~825行目`）・RLS有効化コメント（`~900行目`）・ポリシー（`personal_kr_review_drafts_own`の直後）・インデックス（同テーブルの索引ブロックの直後）の5箇所に追記し、`schema.sql`側も新設ポリシーを`(SELECT ...)`で包んだ形にした（マイグレーションファイルと1文字も食い違わないよう揃えた）。
 - **ユニーク制約違反時のUIの振る舞い（山本さんの依頼で確認）**：`PersonalPeriodReviewBlock.tsx`の保存は元々try/catchで包まれ`formatErrorForUser`（コード・詳細を含む）を表示する設計だったため、白画面・無言の失敗にはならないことを確認済み。ただし生のPostgrestメッセージ（`duplicate key value violates unique constraint "idx_personal_period_reviews_month_unique"`）は技術的すぎるため、新規`src/lib/personalOkr/periodReviewSaveError.ts`の`isPeriodReviewUniqueViolation()`（`AdminView.tsx`の`isMemberEmailUniqueViolation()`と同型：codeが23505かつ制約名を含むかを判定）で検知し、「この期間の全体の振り返りは、既に他の操作（別のタブ・別の端末等）で作成されています。画面を再読み込みしてから、あらためて保存してください。」という行動が分かる案内に差し替えた。想定される発生条件：periodReviewsのロード完了前に保存した／複数タブ・別端末で同じ月・四半期の行を同時に新規作成した場合（クライアント側stateが既存行のidを掴めておらず新しいuuidでINSERTしてしまう）。
+
+### Step R：個人OKRの計画・振り返りをKintoneへ「全文をコピー」できるようにする（v3.103・2026-08-26）
+
+山本さんの依頼：計画欄・振り返り欄の内容をKintoneへコピーする際、「位置づけ」「当月に取り組む内容」等を1つずつコピーしなければならず手間。一括で全文コピーできるようにしてほしい。
+
+- 🔴 **見出し文字列の唯一の正本＝`src/lib/personalOkr/kintoneFormat.ts`（新規）**。この見出しに触れる箇所（①コピー生成②AI取込プロンプト③決定的パーサ`kintoneTextParse.ts`）を全てここ経由にした。文字列を2箇所以上に持つと片方だけ直されて取り残される事故がこのリポジトリで繰り返し起きている（v3.85の4箇所コピペ・v3.98の`pointerEvents`欠落）ため、構造的にズレようがなくした。
+  - テンプレート文字列（`{M}`を月番号のプレースホルダとして持つ）から、①コピー生成用の実文字列（`headingActivities(8)`→`"▼8月に取り組む内容（計画）"`）と③決定的パーサ用の正規表現ソース（`activitiesHeadingRegexSource()`→`"▼(\\d{1,2})月に取り組む内容（計画）"`）の両方を導出する。半角スペースだけは正規表現化の際`\s*`に緩める規則（`headingBandTarget`の「月末 達成度バンド」間の空白）を1箇所に持たせ、`kintoneTextParse.ts`の既存の緩さ（`\s*`）を1文字も変えずに温存した。
+  - ②AI取込プロンプト（`personalOkrImportExtractor.ts`のSYSTEM_PROMPT_MONTHLY・SYSTEM_PROMPT_COMBINED）は、見出し説明の直書き文字列を`${headingActivities("◯")}`等の定数参照に置き換えた（「◯」は月番号の一般的なプレースホルダとして使う。プロンプトの意味は変えていない＝生成される文言は変更前とバイト単位で同一）。
+  - ③決定的パーサ（`kintoneTextParse.ts`）の`ACTIVITIES_RE`/`TARGET_RE`/`BAND_RE`/`POSITIONING_RE`/`RISKS_RE`は、`new RegExp(activitiesHeadingRegexSource(), "g")`等、kintoneFormat.ts由来の関数で構築する形に変更した（正規表現リテラルの直書きをやめた）。生成される`.source`は変更前と完全に同一であることを確認済み（既存テスト18件・オーケストレーターのテスト40件が無改修で全通過）。
+- **コピー生成の純粋関数**（同ファイル）：`buildKintonePlanCopyText()`（positioning/activities/target_and_evidence/risks/band_targetの5項目。記入が無い項目は見出しごと省略・全項目空なら空文字列）と`buildKintoneReviewCopyText()`（review_text＋`[自己評価：XX%]`。片方だけでも破綻しない）。月番号は`month_index`ではなく実際の月番号（8月なら`8`）を引数で渡す。
+- **UI（3箇所。「全体」タブには付けない＝山本さんが選んだ設計判断）**：
+  1. **計画ブロック**（`PersonalKrPanel.tsx`「◯月の計画」ヘッダ）：画面に見えている値＝フォームの現在値（保存済みかどうかは問わない）を対象にする。
+  2. **計画ドラフトのモーダル**（`PersonalOkrPlanDraftModal.tsx`）：モーダル内で編集中の4欄＋バンド提案（AIの生成結果）を対象にする。計画欄へ反映・保存しなくてもコピーできる。実際の月番号を渡すため`monthNumber: number`propを新設した（既存の`targetMonthLabel`は表示用の文字列のみで数値を持っていなかったため）。
+  3. **振り返りブロック**（`MonthReviewBlock.tsx`）：画面に見えている値（フォームの現在値）を対象にする。自己評価%の入力が無効（範囲外・非数値）でもコピー自体は妨げない（`parseEvalPctInput().value`がnullになるだけ）。
+  - いずれも内容が空のときはボタンを非活性にし、`title`で「記入がまだありません」と伝える（記入が無いことを咎める書き方にしない。CLAUDE.md Section 24グランドルール「週次は任意」と同じ配慮）。
+  - クリップボード書き込みは`PersonalOkrReviewDraftModal.tsx`の`handleCopy`と同型（`navigator.clipboard.writeText().then(showToast成功, showToast失敗)`）。トーストは「計画の全文をコピーしました」「振り返りの全文をコピーしました」。
+  - **ラベルは新旧で区別**：新しいボタンは3箇所とも「📋 全文をコピー（Kintone用）」。既存の`PersonalOkrReviewDraftModal.tsx`の「コピー」ボタン（本文のみ・振り返り下書きの编集内容用）はそのまま残した（統括の依頼どおり、山本さんへ判断を報告する形で決定）。
+- **ラウンドトリップの機械検証**（`src/lib/personalOkr/__tests__/kintoneFormat.test.ts`）：`buildKintonePlanCopyText()`で生成した文字列を`parseKintoneMonthlyText()`（決定的パーサ）に実際に通し、元の入力どおり読み戻せることを検証する。加えて、見出しがプロンプト側・パーサ側で直書きに戻っていないことをソース走査で固定する（`modalStyles.test.ts`と同じ「ソースを読んで検査する」方式）。**実装検証として、パーサ側の正規表現を意図的に定数から切り離して直書きに戻し、ラウンドトリップテスト・ソース走査テストの両方が実際に赤くなることを確認した上で元に戻した**（本セクション執筆時点の実施記録）。
+- **DBスキーマ変更なし**（クリップボードへの書き出しのみ。マイグレーション・`schemaChecks.ts`への追記は不要）。
 
 ---
 

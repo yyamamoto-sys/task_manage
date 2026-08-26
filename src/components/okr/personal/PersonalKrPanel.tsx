@@ -53,8 +53,10 @@ import {
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { computeMonthPlanDirty } from "../../../lib/personalOkr/monthPlanForm";
+import { buildKintonePlanCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { showToast } from "../../common/Toast";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
 import { AheadBlock } from "./AheadBlock";
@@ -247,6 +249,20 @@ export function PersonalKrPanel({
     } finally {
       setSavingMonth(false);
     }
+  };
+
+  // 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）：画面に見えている値
+  // （フォームの現在値。保存済みかどうかは問わない）を対象にする。見出し・組み立ては
+  // kintoneFormat.ts（コピー生成・AI取込プロンプト・決定的パーサの唯一の正本）に一元化。
+  const planCopyText = buildKintonePlanCopyText({
+    positioning, activities, targetAndEvidence, risks, bandTarget,
+    monthNumber: slot.monthStart.getMonth() + 1,
+  });
+  const handleCopyPlanText = () => {
+    navigator.clipboard.writeText(planCopyText).then(
+      () => showToast("計画の全文をコピーしました"),
+      () => showToast("コピーに失敗しました。手動で選択してコピーしてください。", "error"),
+    );
   };
 
   // ===== 週の目標状態 =====
@@ -639,6 +655,7 @@ export function PersonalKrPanel({
         <PersonalOkrPlanDraftModal
           krLabel={kr.label}
           targetMonthLabel={`${slot.monthStart.getMonth() + 1}月`}
+          monthNumber={slot.monthStart.getMonth() + 1}
           materialSummaryLines={planDraftMaterialSummaryLines}
           contextText={planDraftContextResult.text}
           existingPlanFields={{ positioning, activities, targetAndEvidence, risks }}
@@ -683,6 +700,21 @@ export function PersonalKrPanel({
             <div style={sectionHeadStyle}>
               <span>{slot.monthStart.getMonth() + 1}月の計画</span><span style={ruleStyle} />
               <span>{monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
+              {/* 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）。画面に見えている
+                  値（フォームの現在値）を対象にする。記入が無ければ空文字列になり非活性にする。 */}
+              <button
+                onClick={handleCopyPlanText}
+                disabled={!planCopyText}
+                title={!planCopyText ? "記入がまだありません" : "Kintoneの見出し形式で計画欄の全文をコピーします"}
+                style={{
+                  fontFamily: "inherit", fontSize: "10.5px", fontWeight: 700, textTransform: "none",
+                  letterSpacing: "normal", padding: "4px 10px", borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--color-border-primary)",
+                  background: planCopyText ? "transparent" : "var(--color-bg-tertiary)",
+                  color: planCopyText ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                  cursor: planCopyText ? "pointer" : "default", whiteSpace: "nowrap",
+                }}
+              >📋 全文をコピー（Kintone用）</button>
               {/* 🔴 明示ボタンでのみ起動する（タブを開いた・月を切り替えただけでは走らせない。
                   CLAUDE.md Section 24 Step P・v3.99）。非活性は「材料が無い」ときだけ（§2-4）。
                   この分岐はmonthStatus==="future"の外側（monthStatusは既にcurrent|pastに絞られている）。 */}

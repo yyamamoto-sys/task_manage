@@ -46,6 +46,13 @@ import {
   type KintoneImportEngineSource,
 } from "../personalOkr/kintoneTextParse";
 import { trimKintoneImportText } from "../personalOkr/importTextTrim";
+// 🔴 見出し文字列はkintoneFormat.tsが唯一の正本（「全文をコピー」機能・v3.103）。プロンプト内の
+// 見出し説明はこの定数を埋め込む形にする（文面の意味は変えない・定数へ切り出すだけ）。
+// プロンプト中では実際の月番号の代わりに「◯」を使う（AIが読み取るKintone側の文書には
+// 具体的な月番号が入っているという一般則を説明する箇所のため）。
+import {
+  HEADING_POSITIONING, HEADING_RISKS, headingActivities, headingTargetAndEvidence, headingBandTarget,
+} from "../personalOkr/kintoneFormat";
 
 // ===== 型定義 =====
 
@@ -254,13 +261,13 @@ KRタイトル行の括弧内の末尾の名称（例："AAS"）を label に入
 同じ月・同じKRの「計画」欄と「振り返り」欄の内容を1つの months[] 要素にまとめる。
 
 計画欄（分類＝計画の列内）から：
-- positioning ← 【位置づけ】の文章
-- activities ← ▼◯月に取り組む内容（計画）
-- target_and_evidence ← ▼◯月末の達成目標と、その証拠（計画値）
-- risks ← ▼リスクと依存関係
+- positioning ← ${HEADING_POSITIONING}の文章
+- activities ← ${headingActivities("◯")}
+- target_and_evidence ← ${headingTargetAndEvidence("◯")}
+- risks ← ${HEADING_RISKS}
 - weight_override_pct ← ウェイト欄の「※◯カ月目のみX%」の注記のXの数値（例："※1カ月目のみ25%"→25）。
   注記が無ければnull（＝四半期の基本ウェイトのまま）。
-- band_target ← ▼◯月末 達成度バンド（計画）の欄。
+- band_target ← ${headingBandTarget("◯")}の欄。
   🔴重要：この欄は通常、60%/70%/80%（時に「90/100は設定しない」の注記付き）の複数の基準を
   並べたルーブリック（説明文）であり、「今月はこれを狙う」という単一の値が明記されていることは
   稀である。単一の目標値が本文中に明記されている場合だけ band_target に数値を入れ、複数基準の
@@ -366,12 +373,12 @@ KRタイトル行（例："個人KR_1（グループKR1｜AAS）"）の括弧内
 「1か月目」「2か月目」「3か月目」がそれぞれmonth_index 1/2/3に対応する。
 
 計画欄（分類＝計画の列内）から：
-- positioning ← 【位置づけ】の文章
-- activities ← ▼◯月に取り組む内容（計画）
-- target_and_evidence ← ▼◯月末の達成目標と、その証拠（計画値）
-- risks ← ▼リスクと依存関係
+- positioning ← ${HEADING_POSITIONING}の文章
+- activities ← ${headingActivities("◯")}
+- target_and_evidence ← ${headingTargetAndEvidence("◯")}
+- risks ← ${HEADING_RISKS}
 - weight_override_pct ← ウェイト欄の「※◯カ月目のみX%」の注記のXの値。無ければnull。
-- band_target ← ▼◯月末 達成度バンド（計画）の欄。単一の目標値が本文中に明記されている
+- band_target ← ${headingBandTarget("◯")}の欄。単一の目標値が本文中に明記されている
   場合だけ数値を入れ、複数基準の説明文しか無い場合は必ずnullを返す（推測して埋めない）。
   60/70/80/90/100以外の数値は使わない。
 

@@ -39,6 +39,10 @@ import type {
 } from "../ai/personalOkrImportExtractor";
 import type { Quarter } from "../localData/types";
 import { parseBandValue, parseWeightPct, parsePercentValue } from "./importFieldParse";
+import {
+  activitiesHeadingRegexSource, targetHeadingRegexSource, bandHeadingRegexSource,
+  positioningHeadingRegexSource, risksHeadingRegexSource,
+} from "./kintoneFormat";
 
 // ===== 信頼度 =====
 
@@ -334,11 +338,16 @@ interface MonthlyHit {
   inlineValue: string | null;
 }
 
-const ACTIVITIES_RE = /▼(\d{1,2})月に取り組む内容（計画）/g;
-const TARGET_RE = /▼(\d{1,2})月末の達成目標と、その証拠（計画値）/g;
-const BAND_RE = /▼(\d{1,2})月末\s*達成度バンド（計画）/g;
-const POSITIONING_RE = /【位置づけ】/g;
-const RISKS_RE = /▼リスクと依存関係/g;
+// 🔴 見出し文字列はkintoneFormat.tsが唯一の正本（CLAUDE.md「全文をコピー」機能・v3.103）。
+// ここで正規表現ソースを直書きすると、コピー生成側の見出しと決定的パーサの読み取り基準が
+// 別々に変更されてズレる事故が起きる。activitiesHeadingRegexSource()等はテンプレート文字列
+// から正規表現ソースを機械的に導出するため、生成した文字列は元の`/▼(\d{1,2})月に取り組む内容
+// （計画）/`等と完全に同じパターンになる（半角スペースだけ`\s*`に緩めるルールも含めて同一）。
+const ACTIVITIES_RE = new RegExp(activitiesHeadingRegexSource(), "g");
+const TARGET_RE = new RegExp(targetHeadingRegexSource(), "g");
+const BAND_RE = new RegExp(bandHeadingRegexSource(), "g");
+const POSITIONING_RE = new RegExp(positioningHeadingRegexSource(), "g");
+const RISKS_RE = new RegExp(risksHeadingRegexSource(), "g");
 // 「振返り」（りが無い）は月次振返り記録のタイトル表記のため対象外。「振り返り」（りが2つ）
 // は分類欄・振り返り本文欄のラベルとして使われる表記でタイトルとは重複しない。
 // 🔴 単語自体は自由記述の本文中に現れ得る（例："今月の振り返りとして…"）ため、行全体が

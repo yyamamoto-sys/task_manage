@@ -27,6 +27,7 @@ import {
 } from "../../../lib/ai/personalOkrPlanDraftExtractor";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 import { BAND_LABELS } from "../../../lib/personalOkr/bandOptions";
+import { buildKintonePlanCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { type PlanDraftFields, resolveOverwrittenPlanFieldLabels } from "../../../lib/personalOkr/planDraftContext";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
@@ -39,6 +40,8 @@ interface Props {
   krLabel: string;
   /** 例："8月" */
   targetMonthLabel: string;
+  /** 実際の月番号（1〜12）。「全文をコピー」の見出しに使う（month_indexではない） */
+  monthNumber: number;
   /** ①材料の要約（過去月ごとに1行。過去月が無ければ空配列） */
   materialSummaryLines: string[];
   /** AIへ渡す文脈（546対策の文字数調整済み。src/lib/personalOkr/planDraftContext.tsが組み立て済み） */
@@ -71,7 +74,7 @@ const FIELD_DEFS: { key: keyof PlanDraftFields; label: string }[] = [
 const EMPTY_FIELDS: PlanDraftFields = { positioning: "", activities: "", targetAndEvidence: "", risks: "" };
 
 export function PersonalOkrPlanDraftModal({
-  krLabel, targetMonthLabel, materialSummaryLines, contextText, existingPlanFields,
+  krLabel, targetMonthLabel, monthNumber, materialSummaryLines, contextText, existingPlanFields,
   onApply, onSetBandTarget, onClose,
 }: Props) {
   const [generating, setGenerating] = useState(false);
@@ -117,6 +120,22 @@ export function PersonalOkrPlanDraftModal({
     if (result?.band_target == null) return;
     onSetBandTarget(result.band_target);
     showToast(`狙いのバンドに${result.band_target}を反映しました（保存するには「${targetMonthLabel}の計画を保存」を押してください）`);
+  };
+
+  // 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）：モーダル内で編集中の
+  // 4欄＋バンド提案を対象にする（計画欄へ反映・保存しなくてもコピーできる）。
+  const planCopyText = hasDraft
+    ? buildKintonePlanCopyText({
+        positioning: fields.positioning, activities: fields.activities,
+        targetAndEvidence: fields.targetAndEvidence, risks: fields.risks,
+        bandTarget: result?.band_target ?? null, monthNumber,
+      })
+    : "";
+  const handleCopyPlanText = () => {
+    navigator.clipboard.writeText(planCopyText).then(
+      () => showToast("計画の全文をコピーしました"),
+      () => showToast("コピーに失敗しました。手動で選択してコピーしてください。", "error"),
+    );
   };
 
   return (
@@ -167,7 +186,23 @@ export function PersonalOkrPlanDraftModal({
 
           {/* ③生成結果（4欄。編集可能） */}
           <div style={{ marginBottom: "16px" }}>
-            <div style={labelStyle}>計画の下書き（編集できます）</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+              <div style={labelStyle}>計画の下書き（編集できます）</div>
+              {hasDraft && (
+                <button
+                  onClick={handleCopyPlanText}
+                  disabled={!planCopyText}
+                  title={!planCopyText ? "記入がまだありません" : "Kintoneの見出し形式で計画欄の全文をコピーします"}
+                  style={{
+                    fontFamily: "inherit", fontSize: "10.5px", fontWeight: 700, padding: "4px 10px",
+                    background: "transparent", border: "1px solid var(--color-border-primary)",
+                    borderRadius: "var(--radius-sm)",
+                    color: planCopyText ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+                    cursor: planCopyText ? "pointer" : "default", whiteSpace: "nowrap",
+                  }}
+                >📋 全文をコピー（Kintone用）</button>
+              )}
+            </div>
             {generating ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                 {[1, 0.9, 0.75, 0.85].map((w, i) => (

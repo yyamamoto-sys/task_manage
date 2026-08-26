@@ -22,8 +22,10 @@ import type { Member, PersonalKr, PersonalKrBand, PersonalKrMonth } from "../../
 import type { MonthTemporalStatus } from "../../../lib/personalOkr/quarterMonths";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
+import { buildKintoneReviewCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { showToast } from "../../common/Toast";
 import { BandOverridePicker } from "./BandOverridePicker";
 
 const sectionHeadStyle: React.CSSProperties = {
@@ -100,6 +102,18 @@ export function MonthReviewBlock({
     return () => unregisterUnsavedEditor(reviewRegistryId);
   }, [reviewRegistryId]);
 
+  // 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）：画面に見えている値
+  // （フォームの現在値）を対象にする。自己評価%は無効な入力ならnull扱い（コピーを妨げない）。
+  const reviewCopyText = buildKintoneReviewCopyText({
+    reviewText, selfEvalPct: parseEvalPctInput(selfEvalRaw).value,
+  });
+  const handleCopyReviewText = () => {
+    navigator.clipboard.writeText(reviewCopyText).then(
+      () => showToast("振り返りの全文をコピーしました"),
+      () => showToast("コピーに失敗しました。手動で選択してコピーしてください。", "error"),
+    );
+  };
+
   const handleSave = async () => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
     const selfEval = parseEvalPctInput(selfEvalRaw);
@@ -135,6 +149,21 @@ export function MonthReviewBlock({
       <div style={sectionHeadStyle}>
         <span>📝 振り返り</span><span style={ruleStyle} />
         <span>{monthStatus === "past" ? "過去月・編集可" : "今月の振り返り"}</span>
+        {/* 🔴 Kintoneへ貼るための「全文をコピー」（山本さんの依頼・v3.103）。画面に見えている
+            値（フォームの現在値）を対象にする。記入が無ければ空文字列になり非活性にする。 */}
+        <button
+          onClick={handleCopyReviewText}
+          disabled={!reviewCopyText}
+          title={!reviewCopyText ? "記入がまだありません" : "Kintoneの見出し形式で振り返りの全文をコピーします"}
+          style={{
+            fontFamily: "inherit", fontSize: "10.5px", fontWeight: 700, textTransform: "none",
+            letterSpacing: "normal", padding: "4px 10px", borderRadius: "var(--radius-sm)",
+            border: "1px solid var(--color-border-primary)",
+            background: reviewCopyText ? "transparent" : "var(--color-bg-tertiary)",
+            color: reviewCopyText ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
+            cursor: reviewCopyText ? "pointer" : "default", whiteSpace: "nowrap",
+          }}
+        >📋 全文をコピー（Kintone用）</button>
       </div>
       <div style={cardStyle}>
         <div style={{ marginBottom: "14px" }}>
