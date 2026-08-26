@@ -1,6 +1,6 @@
 // src/lib/personalOkr/__tests__/quarterMonths.test.ts
 import { describe, expect, it } from "vitest";
-import { quarterMonthSlots, monthToDateStr, classifyMonth, resolveDefaultMonthIndex } from "../quarterMonths";
+import { quarterMonthSlots, monthToDateStr, classifyMonth, resolveDefaultMonthIndex, isMonthEditable } from "../quarterMonths";
 
 describe("quarterMonthSlots", () => {
   it("3Q（7〜9月）は7月/8月/9月をmonth_index 1/2/3で返す", () => {
@@ -61,5 +61,22 @@ describe("resolveDefaultMonthIndex", () => {
 
   it("当月を含まない別年度を見ているときは先頭の月（1）を返す", () => {
     expect(resolveDefaultMonthIndex(2027, "3Q", today)).toBe(1);
+  });
+});
+
+describe("isMonthEditable", () => {
+  it("past=編集可", () => {
+    expect(isMonthEditable("past", false)).toBe(true);
+  });
+  it("current=編集可", () => {
+    expect(isMonthEditable("current", false)).toBe(true);
+  });
+  it("future=編集不可", () => {
+    expect(isMonthEditable("future", false)).toBe(false);
+  });
+  it("readOnly=常に編集不可（monthStatusに関わらず）", () => {
+    expect(isMonthEditable("past", true)).toBe(false);
+    expect(isMonthEditable("current", true)).toBe(false);
+    expect(isMonthEditable("future", true)).toBe(false);
   });
 });

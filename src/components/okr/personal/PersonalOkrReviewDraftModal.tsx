@@ -12,27 +12,44 @@
 // 🔴 過去月でも生成できる（D3）：monthStatusによる非活性化はこのモーダルでは行わない
 // （呼び出し元＝PersonalKrPanel.tsxが「未来月ではこのボタン自体を出さない」ことで対処する）。
 // 生成ボタンの非活性判定は「材料が無いか」（isReviewMaterialEmpty）だけで行う。
+//
+// 🔴 W2（2026-08-26・下書き→振り返り本文の1本化）：
+// - 初期値の優先順位は「①月のreview_text ②旧draftRow.edited_text（救済） ③draft_json.review_text」。
+//   これは「モーダルを開いた最初の1回」だけに適用し、その後「再生成」で新しいdraftRowが来た
+//   ときは常に新しい生成結果を表示する（再生成しても月のreview_textは自動上書きしないため、
+//   優先順位のまま出すと古い保存値に戻ってしまう）。initializedRefで両者を区別する。
+// - 「編集を保存」は月の review_text に保存する（personal_kr_review_drafts へは書かない）。
+// - 既に review_text に本文がある状態で「再生成」を押すとConfirmModalで確認する
+//   （cancel側＝安全側＝再生成しない。CLAUDE.md Section 21・v3.88の教訓）。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { PersonalKrReviewDraft } from "../../../lib/localData/types";
 import type { ReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
-import { isReviewMaterialEmpty } from "../../../lib/personalOkr/reviewMaterial";
+import { isGenerationMaterialEmpty } from "../../../lib/personalOkr/reviewMaterial";
 import { readStoredReviewDraftPayload } from "../../../lib/ai/personalOkrReviewDraftExtractor";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
+import { confirmDialog } from "../../../lib/dialog";
 
 interface Props {
   krLabel: string;
   monthLabel: string;
   material: ReviewMaterial;
+  /** 月の計画欄（positioning/activities/target_and_evidence/risks）のいずれかに記入があるか */
+  hasPlanContent: boolean;
+  /** その月のメモ件数 */
+  memoCount: number;
+  /** 月の振り返り本文（personal_kr_months.review_text）。初期値の第1優先。 */
+  monthReviewText: string | null;
   /** undefined=DBから未取得（初回のensureReviewDraftLoaded完了前）／null=まだ生成していない */
   draftRow: PersonalKrReviewDraft | null | undefined;
   analyzing: boolean;
   error: string | null;
   onEnsureLoaded: () => void;
   onGenerate: (force: boolean) => void;
+  /** 🔴 月のreview_textへ保存する（personal_kr_review_drafts.edited_textへは書かない） */
   onSaveEdit: (editedText: string) => Promise<void>;
   onClose: () => void;
 }
@@ -43,33 +60,63 @@ const labelStyle: React.CSSProperties = {
 };
 
 export function PersonalOkrReviewDraftModal({
-  krLabel, monthLabel, material, draftRow, analyzing, error,
+  krLabel, monthLabel, material, hasPlanContent, memoCount, monthReviewText, draftRow, analyzing, error,
   onEnsureLoaded, onGenerate, onSaveEdit, onClose,
 }: Props) {
   useEffect(() => { onEnsureLoaded(); }, [onEnsureLoaded]);
 
   const draftPayload = draftRow ? readStoredReviewDraftPayload(draftRow.draft_json) : null;
-  const savedText = draftRow?.edited_text ?? draftPayload?.review_text ?? "";
-  const [editedText, setEditedText] = useState(savedText);
+  const hasDraft = !!draftRow;
+  const hasEditableContent = hasDraft || !!(monthReviewText && monthReviewText.trim());
+
+  // 初期値：①月のreview_text ②旧draftRow.edited_text（救済） ③draft_json.review_text
+  const initialText = monthReviewText ?? draftRow?.edited_text ?? draftPayload?.review_text ?? "";
+  const [editedText, setEditedText] = useState(initialText);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // 「初回の同期（優先順位で決める）」と「再生成による同期（常に新しい生成結果で上書き）」を
+  // 区別するためのフラグ（draftRowが未取得＝undefinedの間は初期化しない）。
+  const initializedRef = useRef(false);
 
-  // 新しい下書き行が来たら（初回生成・再生成）テキストエリアの内容を追従させる
-  // （draftRow.idが変わったときだけ＝人がまだ編集していない生成直後の状態に揃える）。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(() => { setEditedText(savedText); }, [draftRow?.id]);
+  useEffect(() => {
+    if (draftRow === undefined) return; // まだensureReviewDraftLoaded完了前
+    if (!initializedRef.current) {
+      initializedRef.current = true;
+      setEditedText(initialText);
+      return;
+    }
+    // 🔴 再生成時：review_textは自動上書きしないため、優先順位のままだと古い保存値に
+    // 戻ってしまう。ここでは常に新しい生成結果をテキストエリアへ差し替える（保存は人が押す）。
+    setEditedText(draftPayload?.review_text ?? draftRow?.edited_text ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draftRow]);
 
-  const materialEmpty = isReviewMaterialEmpty(material);
+  const materialEmpty = isGenerationMaterialEmpty(material, hasPlanContent, memoCount);
   const isLoading = analyzing || draftRow === undefined;
-  const hasDraft = !!draftRow;
-  const dirty = hasDraft && editedText !== savedText;
+  // 🔴 dirtyの基準は「実際に保存済みの月のreview_text」。旧draftRow.edited_text等の救済値が
+  // 表示されているだけで review_text 自体は未保存、というケースでも保存ボタンを押せるようにする。
+  const dirty = editedText !== (monthReviewText ?? "");
+
+  const handleGenerateClick = async () => {
+    // 🔴 既に振り返り本文がある状態で再生成すると、確認なしにテキストエリアの表示が
+    // 新しい生成結果に置き換わってしまう。保存側の安全（cancel＝再生成しない）を優先する
+    // （CLAUDE.md Section 21・v3.88の教訓＝ConfirmModalは背景クリックで必ずcancel扱い）。
+    if (hasDraft && monthReviewText && monthReviewText.trim()) {
+      const proceed = await confirmDialog(
+        "既に振り返り本文があります。再生成すると、この画面の下書き表示が新しい内容に置き換わります（保存を押すまで本文は変わりません）。再生成しますか？",
+        { tone: "neutral", confirmLabel: "再生成する", cancelLabel: "このままにする" },
+      );
+      if (!proceed) return;
+    }
+    onGenerate(hasDraft);
+  };
 
   const handleSaveEdit = async () => {
     setSaving(true);
     setSaveError(null);
     try {
       await onSaveEdit(editedText);
-      showToast("編集内容を保存しました");
+      showToast("振り返り本文に保存しました");
     } catch (e) {
       setSaveError(formatErrorForUser("編集の保存に失敗しました", e));
     } finally {
@@ -101,10 +148,11 @@ export function PersonalOkrReviewDraftModal({
               color: "var(--color-text-primary)", background: "var(--color-bg-secondary)",
               border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "11px 13px",
             }}>
-              <div>
-                週の自己評価：◯{material.ratingCounts.o}／△{material.ratingCounts.t}／✕{material.ratingCounts.x}
-                （全{material.weeksTotal}週中・目標状態設定済み{material.weeksWithGoalSet}週・未評価{material.unratedWeekCount}週）
-              </div>
+              {/* 🔴 週の自己評価は任意の補助機能。◯△✕が全て0なら週の行ごと出さない
+                  （週数の内訳＝全N週中・設定済みN週・未評価N週、は削除した。CLAUDE.md Section 24） */}
+              {(material.ratingCounts.o > 0 || material.ratingCounts.t > 0 || material.ratingCounts.x > 0) && (
+                <div>週の自己評価：◯{material.ratingCounts.o}／△{material.ratingCounts.t}／✕{material.ratingCounts.x}</div>
+              )}
               <div>紐づくタスク：完了{material.completedTaskCount}件・未完了{material.incompleteTaskCount}件（計{material.linkedTaskCount}件）</div>
               {(material.taskStats.delayedCount > 0 || material.taskStats.stagnantCount > 0 || material.taskStats.blockedCount > 0) && (
                 <div style={{ color: "var(--color-text-warning)" }}>
@@ -117,7 +165,7 @@ export function PersonalOkrReviewDraftModal({
           {/* 生成／再生成ボタン */}
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", marginBottom: "16px" }}>
             <button
-              onClick={() => onGenerate(hasDraft)}
+              onClick={handleGenerateClick}
               disabled={analyzing || materialEmpty}
               style={{
                 fontFamily: "inherit", fontSize: "12px", fontWeight: 700, padding: "7px 16px",
@@ -130,7 +178,7 @@ export function PersonalOkrReviewDraftModal({
             <GuestAiQuotaNotice variant="inline" />
             {materialEmpty && (
               <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                材料がありません（週の目標状態を書いてから生成してください）
+                まだ材料がありません（計画・週の記録・タスク・メモのいずれかを書いてから生成してください）
               </span>
             )}
             {error && !analyzing && (
@@ -147,7 +195,7 @@ export function PersonalOkrReviewDraftModal({
                   <div key={i} style={{ height: "11px", width: `${w * 100}%`, borderRadius: "var(--radius-sm)", background: "var(--color-bg-tertiary)", opacity: 0.7 }} />
                 ))}
               </div>
-            ) : hasDraft ? (
+            ) : hasEditableContent ? (
               <>
                 <textarea
                   value={editedText}
@@ -160,6 +208,7 @@ export function PersonalOkrReviewDraftModal({
                 />
                 <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
                   Kintoneの「個人OKR_月次振返り記録」の「振り返り」欄に貼り付けてください。自己評価の割合・達成度バンドの数値は含まれていません（人が決めてください）。
+                  保存すると、この画面の「振り返り」にも記録されます。
                 </div>
                 {saveError && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginTop: "6px" }}>{saveError}</div>}
                 <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>

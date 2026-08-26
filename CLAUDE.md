@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.95
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.96
 #
-最終更新：2026-08-21（v3.95）
+最終更新：2026-08-26（v3.96）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-21（v3.92）
+- 最終更新：2026-08-26（v3.96）
 
 ---
 
@@ -2240,10 +2240,24 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **AI呼び出し**：`src/lib/ai/personalOkrReviewDraftExtractor.ts`の`generatePersonalKrReviewDraft()`。`AIIntent`に`"okr-personal-review-draft"`を追加（Section 6-1b）。max_tokens=2048（段落1つ＋短い箇条書きに4096以上は不要。Section 6-1c）。モデルは`personalOkrOutlookExtractor.ts`と同じ選定（claude-sonnet-4-6）に倣う。出力JSON＝`{review_text, evidence, carryover}`。`validatePersonalOkrReviewDraftPayload()`で構造検証（`review_text`欠落は例外・`evidence`/`carryover`の非文字列要素はその要素だけ弾く・余剰プロパティは無視）。`stop_reason==="max_tokens"`は明示エラーにしてリトライしない。JSONパース失敗時は1回だけ自己修正リトライ。
 - **文脈は既存の組み立てを再利用し、渡す量を絞る**：`personalOkrAiContext.ts`の`buildPersonalOkrAiContextText()`はそのまま使う（共通関数自体は無改修）。`personalOkrReviewDraftExtractor.ts`内の`buildReviewDraftContextText()`がこれに材料（自己評価内訳・完了/未完了件数）を追記して渡す。渡す上限はStep Hと同じ（メモは直近3件×各300字まで／タスクは機械計算済みの要約のみ）。
 - **UI**：`src/components/okr/personal/PersonalOkrReviewDraftModal.tsx`（新規）。入口は`PersonalKrPanel.tsx`の「📝 振り返りの下書き」ボタン（`monthStatus!=="future"`かつ`!readOnly`のときのみ表示。サンプル表示中は`onEditKr`と同じ扱いで出さない）。Section 21準拠（`modalStyles.ts`。中央寄せは箱側の`margin:"auto"`）。構成：①材料（即時描画）②AIの下書き（編集可能なtextarea）③evidence（折りたたみ）④carryover⑤コピー⑥「Kintoneの『振り返り』欄に貼り付けてください」の注記⑦編集を保存⑧再生成。🔴 機械計算分は即時描画し、AIが書く部分（textarea・evidence・carryover）だけをスケルトンにする（Step H・AheadBlock.tsxと同じ）。`draftRow===undefined`（未取得）と`null`（未生成）を区別する（Step Iの「永久スケルトン」の罠を踏まない）。エラー表示はSection 15準拠。生成中はボタンを非活性にして二重発火を防ぐ。
-- **ストア**：`src/stores/personalOkrUiStore.ts`に`reviewDraftByKrMonth`キャッシュ・`ensureReviewDraftLoaded()`・`runReviewDraft()`・`saveReviewDraftEdit()`を追加。ゲスト分岐（`isGuestMode()`）を必ず入れる（既存の流儀＝AI呼び出し自体は素通しするが、DB書き込み＝insert/updateはスキップしメモリ上のみで成立させる。リロードで消える）。`client.ts`のProxyと`GUEST_ALLOWED_FUNCTIONS`は1文字も緩めていない。
+- **ストア**：`src/stores/personalOkrUiStore.ts`に`reviewDraftByKrMonth`キャッシュ・`ensureReviewDraftLoaded()`・`runReviewDraft()`・~~`saveReviewDraftEdit()`~~を追加。ゲスト分岐（`isGuestMode()`）を必ず入れる（既存の流儀＝AI呼び出し自体は素通しするが、DB書き込み＝insert/updateはスキップしメモリ上のみで成立させる。リロードで消える）。`client.ts`のProxyと`GUEST_ALLOWED_FUNCTIONS`は1文字も緩めていない。**🔴 `saveReviewDraftEdit()`はStep N（v3.96）で廃止した**（下書きの保存先が月の`review_text`へ一本化されたため）。
 - **付随更新**：`uiGuide.ts`の`FEATURE_LIST_SECTION`に「これから」表示・「振り返りの下書き」を追記（Section 17）。バージョン4点セット（version.ts/CLAUDE.md/CHANGELOG.md/releaseNotes.ts）を更新。CHANGELOG.mdのv3.82記載漏れ（直近commit 37720bfがCHANGELOG.mdを更新していなかった）を本Sectionの実装と同時に補った。
 - **テスト**：`reviewMaterial.test.ts`（週0本・全未評価・混在のケース）・`reviewDraftRunner.test.ts`（fingerprint一致/不一致/force）・`personalOkrReviewDraftExtractor.test.ts`（`validatePersonalOkrReviewDraftPayload`の検証・stop_reason・自己修正リトライ）を新規追加（合計25件）。既存1592件を壊さず、合計1617件が全通過。
 - **やらないこと**：Phase 5（`okr_knowledge_docs`）・Kintoneへの自動書き込み・グループOKR側への変更は対象外。i18n辞書キーは追加していない（既存OKR系と同じく日本語直書き）。マイグレーションの適用は山本さんが手動で行う。
+
+### Step N：月次「振り返り」の記録・AI下書きの1本化・過去月の編集解放（v3.96・2026-08-26）
+
+山本さんの依頼：①計画だけでなく振り返り結果も記入・記録できるようにしてほしい ②AIが出した下書きを直接編集して保存できるようにしてほしい（Step Mの下書きは保存先が下書きテーブル専用で月の記録と繋がっていなかった）。
+
+- **設計判断（山本さんが選択済み）**：記録項目は`review_text`＋`self_eval_pct`＋`gm_eval_pct`＋`gm_comment`の4つとも画面編集可。下書きの保存先は1本化（AI下書きを編集して保存すると月の`review_text`になる）。過去月は計画欄・週カード・バンド決定・振り返り欄すべて編集可。
+- **新規「振り返り」ブロック**：`src/components/okr/personal/MonthReviewBlock.tsx`。配置は「これから」→「迷ったらAIに聞く」→「振り返り」→「メモ」。当月・過去月で表示（未来月では出さない）。既存列（マイグレーション不要）を保存ボタン方式（自動保存にしない）で編集する。数値入力の検証・dirty判定は`src/lib/personalOkr/monthReviewForm.ts`（`parseEvalPctInput`／`computeMonthReviewDirty`）に切り出した——`self_eval_pct`は文字列⇔数値の往復で誤判定しやすいため正規化してから比較する。
+- **🔴 保存が互いのフィールドを消す不具合の修正（Step 0で発見）**：`PersonalKrPanel.handleSaveMonthPlan`は`PersonalKrMonth`を新規に組み立てて`onSaveMonth`へ渡しており、`review_text`等を含めていなかった。`personalOkrUiStore.saveMonth`は`upsertById`（渡されたオブジェクトで既存行を丸ごと**置換**）でローカルstateを更新するため、DB側は`saveWithLock`が`undefined`のキーを送らず列を保持するが、**ローカルstate側では画面から振り返り欄・バンド決定が消えて見える**。新規`src/lib/personalOkr/monthRecordMerge.ts`の`mergeMonthRecord(monthRecord, fallback, patch)`（純粋関数）に切り出し、`handleSaveMonthPlan`・`handleSetBandOverride`・新設`handleSaveReviewText`の3箇所すべてを「既存レコード＋自分の担当フィールドだけ上書き」の形に統一した。
+- **AI下書き→振り返り本文の1本化**：`PersonalOkrReviewDraftModal.tsx`の初期値は「①月の`review_text` ②旧`draftRow.edited_text`（救済）③`draft_json.review_text`」の優先順位（`initializedRef`で「初回同期」と「再生成による同期」を区別——再生成時は優先順位を無視し常に新しい生成結果を表示する。月の`review_text`は自動上書きしないため）。「編集を保存」は`onSaveMonth`経由で月の`review_text`へ保存する。**`personal_kr_review_drafts.edited_text`への書き込み経路（store関数`saveReviewDraftEdit`・低レベルCRUD`updatePersonalKrReviewDraftEdit`）は廃止**（`edited_text`列と既存データは読み取りフォールバックとして残す。DBのDROP COLUMNはしない）。再生成時、既に振り返り本文がある場合はConfirmModalで確認する（`tone:"neutral"`・cancel側＝安全側＝再生成しない。Section 21・v3.88の教訓）。
+- **過去月の編集解放**：`src/lib/personalOkr/quarterMonths.ts`に純粋関数`isMonthEditable(monthStatus, readOnly)`（`!readOnly && monthStatus !== "future"`）を切り出し、`PersonalKrPanel.tsx`の`monthEditable`をこれに差し替えた。`grep -rn "monthStatus|classifyMonth" src`で全箇所を洗い出し、「これから」のAI解析・AIパネル（`okrAiContext`）は当月限定のまま**維持**（過去月では意味を成さないため）。
+- **バンド決定UIの共通化**：`AheadBlock.tsx`内の「バンドを決定する」ボタン群を`src/components/okr/personal/BandOverridePicker.tsx`へ切り出し、`AheadBlock`（当月）と`MonthReviewBlock`（過去月のみ。当月はAheadBlock側にあるため二重にしない）の両方から使う。
+- **過去月の文言修正**：「今月の計画」見出し・保存ボタンを`${月}月の計画`のように月番号を使う文言へ変更（過去月で見ると嘘になるため）。「（確定済み・読み取り専用）」バッジを「（過去月）」に変更し、計画欄の説明文を過去月・当月で統一した。
+- **テスト**：`monthRecordMerge.test.ts`（4件）・`monthReviewForm.test.ts`（10件）・`quarterMonths.test.ts`に`isMonthEditable`（4件）を追加。
+- **やらないこと（v3.97で対応）**：週次の任意化（AI側・画面表示側）はこのバージョンでは行っていない。
 
 ---
 

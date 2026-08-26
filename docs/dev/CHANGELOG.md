@@ -6535,5 +6535,55 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。FAB本体・フッター・ショートカットボタンの位置計算式は
 #   v3.91のまま変更していない（Toastのみ是正）。
 #
-# 最終更新：2026-08-21（v3.92）
+# 【注記】v3.93〜v3.95（実装済み。CLAUDE.md Section 48〜50参照）はこのファイルへの追記が
+#   漏れていた（既知のリスク＝Section 11「CHANGELOGは機械検査されていないので抜けても
+#   赤くならない」が実際に再発した記録）。今回は範囲外のため遡って追記していない。
+#
+# v3.96（2026-08-26）：個人OKRに月次「振り返り」の記録・AI下書きの1本化・過去月の編集解放
+#   山本さんの依頼：①OKRモードで月次振り返りをしているが、計画だけでなく振り返り結果も
+#   記入・記録できるようにしてほしい ②AIが出した下書きを直接編集して保存できるようにして
+#   ほしい（Step Mの下書きモーダルは既に編集できたが、保存先が下書きテーブル専用で月の
+#   記録と繋がっていなかった）。
+#   A（振り返りブロック新設）：新規`src/components/okr/personal/MonthReviewBlock.tsx`。
+#   `personal_kr_months`の`review_text`/`self_eval_pct`/`gm_eval_pct`/`gm_comment`
+#   （既存列。マイグレーション不要）を画面から編集・保存できるようにした。配置は
+#   「これから」→「迷ったらAIに聞く」→「振り返り」→「メモ」の順。当月・過去月で表示
+#   （未来月では出さない）。数値入力は`src/lib/personalOkr/monthReviewForm.ts`の
+#   `parseEvalPctInput`（0〜100・小数可・空欄はnull）で検証し、範囲外・非数値は保存させず
+#   その場でエラー表示する。dirty判定は`computeMonthReviewDirty`（文字列⇔数値の往復による
+#   誤判定を避けるため正規化してから比較）。保存は明示ボタンのみ（自動保存にしない）。
+#   B（AI下書き→振り返り本文の1本化）：`PersonalOkrReviewDraftModal.tsx`の初期値を
+#   「①月のreview_text ②旧draftRow.edited_text（救済）③draft_json.review_text」の優先順位に
+#   変更。「編集を保存」は月のreview_textへ保存するようにし（`personal_kr_review_drafts`への
+#   書き込み経路＝store関数`saveReviewDraftEdit`・低レベルCRUD`updatePersonalKrReviewDraftEdit`
+#   は廃止。`edited_text`列と既存データは読み取りフォールバックとして残す。DBのDROP COLUMNは
+#   していない）。再生成時、既に振り返り本文がある場合はConfirmModalで確認する
+#   （cancel側＝安全側＝再生成しない。CLAUDE.md Section 21・v3.88の教訓を踏襲）。
+#   C（保存が互いのフィールドを消す不具合の修正）：Step 0で実際に確認した不具合の芽——
+#   `PersonalKrPanel.handleSaveMonthPlan`が`PersonalKrMonth`を新規に組み立てて`onSaveMonth`へ
+#   渡しており、`review_text`等を含めていなかった。`personalOkrUiStore.saveMonth`は
+#   `upsertById`（渡されたオブジェクトで既存行を丸ごと置換）でローカルstateを更新するため、
+#   DB側は列が保持されるが、画面上では振り返り欄・バンド決定が消えて見える状態だった。
+#   新規`src/lib/personalOkr/monthRecordMerge.ts`の`mergeMonthRecord()`（純粋関数）に切り出し、
+#   `handleSaveMonthPlan`・`handleSetBandOverride`・新設`handleSaveReviewText`の3箇所すべてを
+#   `{ ...(monthRecord ?? fallback), ...patch }`の形に統一した。
+#   D（過去月の編集解放）：`src/lib/personalOkr/quarterMonths.ts`に純粋関数`isMonthEditable
+#   (monthStatus, readOnly)`を切り出し（`!readOnly && monthStatus !== "future"`）、
+#   `PersonalKrPanel.tsx`の`monthEditable`をこれに差し替えた。計画欄4つ・週カードの目標状態・
+#   自己評価・達成度バンドの「決定」・振り返り欄が過去月でも編集可になる。「これから」の
+#   AI解析・AIパネル（`okrAiContext`）は引き続き当月限定（変更なし）。
+#   E（バンド決定UIの共通化）：`AheadBlock.tsx`内にあった「バンドを決定する」ボタン群を
+#   `src/components/okr/personal/BandOverridePicker.tsx`へ切り出し、`AheadBlock`（当月）と
+#   `MonthReviewBlock`（過去月のみ。当月はAheadBlock側にあるため二重にしない）の両方から使う。
+#   F（過去月の文言修正）：「今月の計画」見出し・「今月の計画を保存」ボタンを
+#   `${月}月の計画`のように月番号を使う文言へ変更（過去月で見ると嘘になるため）。
+#   「（確定済み・読み取り専用）」バッジを「（過去月）」に変更（過去月も編集可になったため）。
+#   計画欄の説明文は過去月・当月で同じ文言に統一した（従来は`past`だけ別文言だった）。
+#   新規テスト：`monthRecordMerge.test.ts`（4件）・`monthReviewForm.test.ts`（10件）・
+#   `quarterMonths.test.ts`に`isMonthEditable`を4件追加。既存1701件から増加。
+#   `npx tsc --noEmit`0・`npx vitest run`全通過・`npm run build`成功。
+#   やらないこと：新しいテーブル・新しい列の追加なし（既存列で足りる）。週次の任意化は
+#   v3.97で対応する。
+#
+# 最終更新：2026-08-26（v3.96）
 

@@ -221,14 +221,7 @@ export async function insertPersonalKrReviewDraft(draft: PersonalKrReviewDraft):
   if (error) throw error;
 }
 
-/** 🔴 人の編集だけは直近行のedited_text/edited_atをUPDATEする（AI生成のinsertとは別経路）。 */
-export async function updatePersonalKrReviewDraftEdit(
-  id: string,
-  editedText: string,
-  editedAt: string,
-): Promise<void> {
-  const { error } = await supabase.from("personal_kr_review_drafts")
-    .update({ edited_text: editedText, edited_at: editedAt })
-    .eq("id", id);
-  if (error) throw error;
-}
+// 🔴 W2（2026-08-26）：人の編集の保存先が月のreview_text（personal_kr_months）に一本化された
+// ため、edited_text列へUPDATEする書き込み経路（旧updatePersonalKrReviewDraftEdit）は廃止した。
+// 列・既存データ自体は読み取りフォールバック（旧方式で保存した人の救済）として残す
+// （fetchLatestPersonalKrReviewDraftが返す行のedited_textはそのまま読める）。

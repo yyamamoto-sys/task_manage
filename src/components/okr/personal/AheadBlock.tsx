@@ -18,15 +18,13 @@
 // 使わない（resolveBandDisplayが判定する。band_ai自体は常にAPIから受け取るが、
 // この関数を通さない限り画面には出さない）。
 
-import { useState } from "react";
 import type { PersonalKrBand, PersonalKrOutlook } from "../../../lib/localData/types";
 import type { AheadFacts } from "../../../lib/personalOkr/aheadCompute";
 import type { LinkedTaskStatusSummary } from "../../../lib/personalOkr/aheadTaskStats";
 import { resolveBandDisplay } from "../../../lib/personalOkr/bandDisplay";
-import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { readStoredOutlookPayload } from "../../../lib/ai/personalOkrOutlookExtractor";
-import { formatErrorForUser } from "../../../lib/errorMessage";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
+import { BandOverridePicker } from "./BandOverridePicker";
 
 const sectionHeadStyle: React.CSSProperties = {
   display: "flex", alignItems: "center", gap: "9px", margin: "20px 0 9px",
@@ -63,26 +61,12 @@ export function AheadBlock({
   facts, taskStats, targetAndEvidenceSet, bandTarget, bandOverride, editable, onSetOverride,
   outlookRow, analyzing, outlookError, canReanalyze, onReanalyze,
 }: Props) {
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const bandAi = outlookRow?.band_ai ?? null;
   const display = resolveBandDisplay(bandOverride, bandAi, bandTarget);
   const hasTaskAlerts = taskStats.delayedCount > 0 || taskStats.stagnantCount > 0 || taskStats.blockedCount > 0;
   const outlookPayload = outlookRow ? readStoredOutlookPayload(outlookRow.outlook_json) : null;
   // loading（スケルトン）: 解析中、またはDBの直近結果をまだ一度も取得していない（初回のensureOutlookLoaded完了前）
   const isLoadingOutlook = analyzing || outlookRow === undefined;
-
-  const handlePick = async (value: PersonalKrBand) => {
-    setError(null);
-    setSaving(true);
-    try {
-      await onSetOverride(bandOverride === value ? null : value);
-    } catch (e) {
-      setError(formatErrorForUser("バンドの決定の保存に失敗しました", e));
-    } finally {
-      setSaving(false);
-    }
-  };
 
   return (
     <div data-tour-id="okr-ahead" style={{ marginTop: "20px" }}>
@@ -205,36 +189,9 @@ export function AheadBlock({
           )}
         </div>
 
-        {/* band_override：人が決める（任意） */}
+        {/* band_override：人が決める（任意）。共通コンポーネントへ切り出し済み（BandOverridePicker） */}
         <div style={{ margin: "0 17px 16px" }}>
-          <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: "5px" }}>
-            バンドを決定する（任意）
-          </div>
-          <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-            {BAND_VALUES.map(b => {
-              const disabled = isBandDisabled(b) || !editable || saving;
-              const on = bandOverride === b;
-              return (
-                <button
-                  key={b}
-                  onClick={() => handlePick(b)}
-                  disabled={disabled}
-                  title={BAND_LABELS[b]}
-                  style={{
-                    fontFamily: "inherit", fontSize: "10.5px", padding: "3px 9px", borderRadius: "var(--radius-sm)",
-                    border: `1px solid ${on ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
-                    background: on ? "var(--color-brand-light)" : "var(--color-bg-tertiary)",
-                    color: on ? "var(--color-brand)" : "var(--color-text-tertiary)",
-                    fontWeight: on ? 700 : 400,
-                    textDecoration: isBandDisabled(b) ? "line-through" : "none",
-                    opacity: isBandDisabled(b) ? 0.45 : 1,
-                    cursor: disabled ? "default" : "pointer",
-                  }}
-                >{b} {BAND_LABELS[b]}</button>
-              );
-            })}
-          </div>
-          {error && <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginTop: "6px" }}>{error}</div>}
+          <BandOverridePicker bandOverride={bandOverride} editable={editable} onSetOverride={onSetOverride} />
         </div>
       </div>
     </div>

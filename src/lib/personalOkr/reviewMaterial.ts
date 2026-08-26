@@ -21,10 +21,6 @@ export interface ReviewMaterial {
   weeksTotal: number;
   /** 週の自己評価の内訳（◯／△／✕の件数） */
   ratingCounts: WeekRatingCounts;
-  /** 目標状態(goal_state)が設定済みの週数 */
-  weeksWithGoalSet: number;
-  /** 自己評価が未評価の週数（weeksTotal - (o+t+x)の件数） */
-  unratedWeekCount: number;
   /** 紐づくタスクの総数（ユニーク・週をまたいだ重複は除く） */
   linkedTaskCount: number;
   /** 紐づくタスクのうちstatus==="done"の件数 */
@@ -50,9 +46,6 @@ export function computeReviewMaterial(
 ): ReviewMaterial {
   const facts = computeAheadFacts(segments, existingWeeks, today);
   const weeksTotal = segments.length;
-  const ratedCount = facts.ratingCounts.o + facts.ratingCounts.t + facts.ratingCounts.x;
-  const weeksWithGoalSet = Math.max(0, weeksTotal - facts.unsetGoalWeekLabels.length);
-  const unratedWeekCount = Math.max(0, weeksTotal - ratedCount);
   const taskStats = summarizeLinkedTaskStatus(linkedTasks, allTasks, taskDependencies);
   const completedTaskCount = linkedTasks.filter(t => t.status === "done").length;
   const incompleteTaskCount = linkedTasks.length - completedTaskCount;
@@ -60,8 +53,6 @@ export function computeReviewMaterial(
   return {
     weeksTotal,
     ratingCounts: facts.ratingCounts,
-    weeksWithGoalSet,
-    unratedWeekCount,
     linkedTaskCount: linkedTasks.length,
     completedTaskCount,
     incompleteTaskCount,
@@ -70,11 +61,17 @@ export function computeReviewMaterial(
 }
 
 /**
- * 生成ボタンの非活性判定（D3）：「その月の週の目標状態が0本」かつ「自己評価が全て未評価」
- * なら材料が無いとみなす。どちらか一方でも材料があれば下書きは生成できる
- * （目標状態だけ書いてあれば「計画はしたが未達だった」という振り返りが書けるため）。
+ * 生成ボタンの非活性判定（週次の任意化・2026-08-26。旧isReviewMaterialEmptyから改名）。
+ * 週の記入がゼロでも、月の計画欄（positioning/activities/target_and_evidence/risks）に
+ * 記入があるか、紐づくタスクが1件以上あるか、その月のメモが1件以上あるなら生成できる
+ * （週次の記入が無いこと自体を生成不可の理由にしない＝週次は任意の補助機能のため）。
  */
-export function isReviewMaterialEmpty(material: ReviewMaterial): boolean {
+export function isGenerationMaterialEmpty(
+  material: ReviewMaterial,
+  hasPlanContent: boolean,
+  memoCount: number,
+): boolean {
   const ratedCount = material.ratingCounts.o + material.ratingCounts.t + material.ratingCounts.x;
-  return material.weeksWithGoalSet === 0 && ratedCount === 0;
+  const hasWeekData = ratedCount > 0;
+  return !hasWeekData && !hasPlanContent && material.linkedTaskCount === 0 && memoCount === 0;
 }

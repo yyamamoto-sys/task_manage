@@ -28,7 +28,7 @@ import {
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos, upsertPersonalKrMemo, softDeletePersonalKrMemo,
   fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
-  fetchLatestPersonalKrReviewDraft, insertPersonalKrReviewDraft, updatePersonalKrReviewDraftEdit,
+  fetchLatestPersonalKrReviewDraft, insertPersonalKrReviewDraft,
 } from "../lib/supabase/personalOkrStore";
 import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
 import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftExtractor";
@@ -52,8 +52,10 @@ import type {
 // リロードで消える）。AI呼び出し（runOutlookAnalysis内のanalyze()）はinvokeAI.tsが既に
 // ゲストを開放しているため素通しするが、その結果のDB書き込み（insertPersonalKrOutlook）は
 // スキップする（🔴 personal_kr_outlooksには書けない。メモリ保持のみ）。
-// Phase 4（runReviewDraft/saveReviewDraftEdit）も同じ方針：AI生成はゲストでも素通しするが
-// personal_kr_review_draftsへのinsert/updateはスキップし、メモリ上でのみ成立させる。
+// Phase 4（runReviewDraft）も同じ方針：AI生成はゲストでも素通しするが
+// personal_kr_review_draftsへのinsertはスキップし、メモリ上でのみ成立させる。
+// 🔴 「編集を保存」はW2（2026-08-26）でsaveMonth（月のreview_text）経由に変わったため、
+// ここでのゲスト分岐は不要（saveMonth自体が既にゲスト分岐を持つ）。
 
 /** outlookByKrMonth等のキー形式（personalKrId・monthの組で一意）。Phase 3後半で追加 */
 function outlookKey(personalKrId: string, month: string): string {
@@ -127,7 +129,6 @@ interface PersonalOkrUiState {
   reviewDraftFetchedKeys: Set<string>;
   reviewDraftAnalyzingKeys: Set<string>;
   reviewDraftErrorByKey: Record<string, string | null>;
-  reviewDraftSavingKeys: Set<string>;
 
   /** DBから直近の下書きを1回だけ取得する（過去月でも生成できるため月の状態は問わない） */
   ensureReviewDraftLoaded: (personalKrId: string, month: string) => Promise<void>;
@@ -143,13 +144,10 @@ interface PersonalOkrUiState {
     material: ReviewMaterial;
     force?: boolean;
   }) => Promise<void>;
-  /** 🔴 人が編集した本文を保存する。直近の下書き行のedited_text/edited_atをUPDATEする
-   *  （outlooksと違いこの操作だけはUPDATE。CLAUDE.md Section 24 Step M参照）。 */
-  saveReviewDraftEdit: (params: {
-    personalKrId: string;
-    month: string;
-    editedText: string;
-  }) => Promise<void>;
+  // 🔴 W2（2026-08-26）：saveReviewDraftEditは廃止した。「編集を保存」は月のreview_text
+  // （personal_kr_months）へ保存するようになり、personalOkrUiStore.saveMonthをそのまま使う
+  // （PersonalKrPanel.tsxのhandleSaveReviewText参照）。edited_text列と既存データは
+  // 読み取りフォールバック（旧方式で保存した人の救済）として残す。
 }
 
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
@@ -175,7 +173,6 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   reviewDraftFetchedKeys: new Set(),
   reviewDraftAnalyzingKeys: new Set(),
   reviewDraftErrorByKey: {},
-  reviewDraftSavingKeys: new Set(),
 
   loadKrs: async () => {
     if (get().krsLoading || get().krsLoaded) return;
@@ -476,30 +473,4 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     }
   },
 
-  saveReviewDraftEdit: async ({ personalKrId, month, editedText }) => {
-    const key = reviewDraftKey(personalKrId, month);
-    const current = get().reviewDraftByKrMonth[key];
-    if (!current) throw new Error("下書きがまだ生成されていません。先に下書きを生成してください。");
-    set(state => ({ reviewDraftSavingKeys: new Set(state.reviewDraftSavingKeys).add(key) }));
-    try {
-      const editedAt = new Date().toISOString();
-      // 🔴 ゲストはDB更新をスキップし、メモリ上の状態だけを更新する（リロードで消える）。
-      if (!isGuestMode()) await updatePersonalKrReviewDraftEdit(current.id, editedText, editedAt);
-      set(state => {
-        const saving = new Set(state.reviewDraftSavingKeys);
-        saving.delete(key);
-        return {
-          reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: { ...current, edited_text: editedText, edited_at: editedAt } },
-          reviewDraftSavingKeys: saving,
-        };
-      });
-    } catch (e) {
-      set(state => {
-        const saving = new Set(state.reviewDraftSavingKeys);
-        saving.delete(key);
-        return { reviewDraftSavingKeys: saving };
-      });
-      throw e;
-    }
-  },
 }));

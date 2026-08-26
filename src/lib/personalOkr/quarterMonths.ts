@@ -34,7 +34,8 @@ export type MonthTemporalStatus = "past" | "current" | "future";
 
 /**
  * 対象月（月初Date）が「今日」から見て過去・今月・未来のどれかを判定する。
- * 過去月＝読み取り専用、今月＝編集可、未来月＝「計画がまだありません」の表示（Phase 1方針）。
+ * 🔴 2026-08-26以降：過去月＝編集可（計画欄・週カード・バンド決定・振り返り欄すべて）、
+ * 今月＝編集可、未来月のみ「計画がまだありません」の表示（isMonthEditable参照）。
  */
 export function classifyMonth(monthStart: Date, today: Date = new Date()): MonthTemporalStatus {
   const todayMonthStart = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
@@ -42,6 +43,15 @@ export function classifyMonth(monthStart: Date, today: Date = new Date()): Month
   if (t < todayMonthStart) return "past";
   if (t > todayMonthStart) return "future";
   return "current";
+}
+
+/**
+ * 月の編集可否を判定する（Section 24・2026-08-26）。過去月も含めて編集可にする。
+ * readOnly（ツアーのサンプル表示中）は monthStatus に関わらず常に編集不可。
+ * 未来月は「計画がまだありません」の表示のため常に編集不可。
+ */
+export function isMonthEditable(monthStatus: MonthTemporalStatus, readOnly: boolean): boolean {
+  return !readOnly && monthStatus !== "future";
 }
 
 /**

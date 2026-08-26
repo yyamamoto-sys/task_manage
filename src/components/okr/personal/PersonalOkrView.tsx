@@ -108,7 +108,6 @@ export function PersonalOkrView({ currentUser }: Props) {
   const reviewDraftErrorByKey = usePersonalOkrUiStore(s => s.reviewDraftErrorByKey);
   const ensureReviewDraftLoaded = usePersonalOkrUiStore(s => s.ensureReviewDraftLoaded);
   const runReviewDraft = usePersonalOkrUiStore(s => s.runReviewDraft);
-  const saveReviewDraftEdit = usePersonalOkrUiStore(s => s.saveReviewDraftEdit);
 
   // ===== OKRモードのガイドツアー（CLAUDE.md Section 24） =====
   // 🔴 このコンポーネントが実際にマウントされた時点で「OKRモードへ初めて入った」と
@@ -338,7 +337,6 @@ export function PersonalOkrView({ currentUser }: Props) {
           reviewDraftErrorByKey={reviewDraftErrorByKey}
           ensureReviewDraftLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureReviewDraftLoaded}
           onRunReviewDraft={previewSample ? PREVIEW_NOOP_ASYNC : runReviewDraft}
-          onSaveReviewDraftEdit={previewSample ? PREVIEW_NOOP_ASYNC : saveReviewDraftEdit}
           readOnly={!!previewSample}
         />
       ) : (

@@ -2,10 +2,14 @@
 //
 // 【設計意図】
 // 個人OKRビュー・選択中の個人KR1本の中身。上から
-// 「月の切替バー → このKRの内容（折りたたみ） → 今月の計画 → ★週の目標状態 → これから → メモ」
-// の順（docs/dev/okr-redesign-plan.md §7）。「これから」は当月（monthStatus==="current"）のみ
-// 表示する（Phase 3前半・機械計算のみ。AIパネル・Phase 4の「月末にやること」下書き生成ボタンは
-// ここでは作らない＝未実装の空ボタンを出さない）。
+// 「月の切替バー → このKRの内容（折りたたみ） → 今月の計画 → ★週の目標状態 → これから →
+// 迷ったらAIに聞く → 振り返り → メモ」の順（docs/dev/okr-redesign-plan.md §7・
+// CLAUDE.md Section 24・2026-08-26で振り返りブロックを追加）。「これから」・AIパネルは
+// 当月（monthStatus==="current"）のみ表示する（Phase 3前半・機械計算のみ）。
+// 振り返りブロック（MonthReviewBlock.tsx）は当月・過去月で表示する（未来月では出さない）。
+//
+// 🔴 過去月も編集可（isMonthEditable）：計画欄・週カード・バンド決定・振り返り欄すべて
+// （2026-08-26・山本さんの依頼）。「これから」のAI解析・AIパネルは引き続き当月限定。
 //
 // 週は computeMonthWeekSegments が返すセグメント数をそのまま使う（5列固定にしない。
 // CLAUDE.md Section 24）。空の週レコードは事前に一括作成せず、goal_state/self_ratingを
@@ -34,7 +38,7 @@ import type {
   PersonalKrOutlook, PersonalKrReviewDraft, PersonalKrWeek, PersonalKrWeekTask, Task, TaskDependency,
   TaskForce, ToDo, WeekSelfRating,
 } from "../../../lib/localData/types";
-import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../../../lib/personalOkr/quarterMonths";
+import { quarterMonthSlots, monthToDateStr, classifyMonth, isMonthEditable } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
 import { buildWeekCards } from "../../../lib/personalOkr/weekLayout";
 import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personalOkr/aheadCompute";
@@ -43,10 +47,12 @@ import { computeReviewMaterial, type ReviewMaterial } from "../../../lib/persona
 import { computeOutlookInputFingerprint, resolveMonthPlanTimestamp } from "../../../lib/personalOkr/outlookFingerprint";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
+import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
 import { AheadBlock } from "./AheadBlock";
+import { MonthReviewBlock } from "./MonthReviewBlock";
 import { PersonalOkrReviewDraftModal } from "./PersonalOkrReviewDraftModal";
 
 const KR_KIND_LABEL: Record<string, string> = {
@@ -96,8 +102,8 @@ interface Props {
   onLinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onUnlinkWeekTask: (weekId: string, taskId: string) => Promise<void>;
   onEditKr: () => void;
-  /** 🔴🔴 OKRツアーのサンプル表示中はtrue。今月の計画・週の目標状態・バンド決定・メモ・
-   *  AI解析の起動を全て無効化し、「これはサンプル表示です」の意図を明示する
+  /** 🔴🔴 OKRツアーのサンプル表示中はtrue。今月の計画・週の目標状態・バンド決定・振り返り・
+   *  メモ・AI解析の起動を全て無効化し、「これはサンプル表示です」の意図を明示する
    *  （CLAUDE.md Section 24。保存経路自体は呼び出し元＝PersonalOkrView.tsxがno-opに
    *  差し替えているため、このフラグはUI側の二重の防御＋案内表示を担う）。 */
   readOnly?: boolean;
@@ -124,7 +130,6 @@ interface Props {
     personalKrId: string; month: string; fingerprint: string;
     context: PersonalOkrAiContextInput; material: ReviewMaterial; force?: boolean;
   }) => Promise<void>;
-  onSaveReviewDraftEdit: (params: { personalKrId: string; month: string; editedText: string }) => Promise<void>;
 }
 
 export function PersonalKrPanel({
@@ -136,7 +141,7 @@ export function PersonalKrPanel({
   outlookByKrMonth, outlookAnalyzingKeys, outlookErrorByKey, ensureOutlookLoaded, onRunOutlookAnalysis,
   onAiContext, onOpenAiPanel,
   reviewDraftByKrMonth, reviewDraftAnalyzingKeys, reviewDraftErrorByKey,
-  ensureReviewDraftLoaded, onRunReviewDraft, onSaveReviewDraftEdit,
+  ensureReviewDraftLoaded, onRunReviewDraft,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const slots = useMemo(() => quarterMonthSlots(kr.fiscal_year, kr.quarter), [kr.fiscal_year, kr.quarter]);
@@ -144,10 +149,12 @@ export function PersonalKrPanel({
   const monthStr = monthToDateStr(slot.monthStart);
   const monthStatus = classifyMonth(slot.monthStart, today);
   // 🔴🔴 readOnly（サンプル表示中）はmonthStatusに関わらず編集不可にする。WeekCardの
-  // editable・AheadBlockのeditable（バンド決定）・今月の計画のテキストエリア／保存ボタンは
-  // すべてこの1変数で制御されているため、ここを塞ぐだけで大部分の書き込み経路が塞がれる
-  // （CLAUDE.md Section 24）。
-  const monthEditable = !readOnly && monthStatus === "current";
+  // editable・AheadBlock/MonthReviewBlockのeditable（バンド決定）・今月の計画・振り返りの
+  // テキストエリア／保存ボタンはすべてこの1変数で制御されているため、ここを塞ぐだけで
+  // 大部分の書き込み経路が塞がれる（CLAUDE.md Section 24）。
+  // 🔴 2026-08-26：過去月も編集可にした（isMonthEditable。計画欄・週カード・バンド決定・
+  // 振り返り欄すべて）。「これから」のAI解析・AIパネルは引き続き当月限定（okrAiContext参照）。
+  const monthEditable = isMonthEditable(monthStatus, readOnly);
   const monthRecord = months.find(m => m.month === monthStr && !m.is_deleted) ?? null;
 
   const groupKrTitle = useMemo(() => {
@@ -187,20 +194,21 @@ export function PersonalKrPanel({
     setSavingMonth(true);
     setMonthError(null);
     const now = new Date().toISOString();
-    const month: PersonalKrMonth = {
-      id: monthRecord?.id ?? uuidv4(),
-      personal_kr_id: kr.id,
-      month: monthStr,
-      month_index: monthIndex,
+    // 🔴 mergeMonthRecordを経由し、振り返り欄・バンド決定・Kintone取込情報等の
+    // 他フィールドを消さないようにする（Step 0で確認した実際の不具合の芽。
+    // CLAUDE.md Section 24参照）。
+    const fallback: PersonalKrMonth = {
+      id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
+      is_deleted: false, created_at: now,
+    };
+    const month = mergeMonthRecord(monthRecord, fallback, {
       positioning: positioning || null,
       activities: activities || null,
       target_and_evidence: targetAndEvidence || null,
       risks: risks || null,
       band_target: bandTarget,
-      is_deleted: false,
-      created_at: monthRecord?.created_at ?? now,
       updated_by: currentUser.id,
-    };
+    });
     try {
       await onSaveMonth(month, monthRecord?.updated_at);
     } catch (e) {
@@ -380,22 +388,32 @@ export function PersonalKrPanel({
     onRunReviewDraft({ personalKrId: kr.id, month: monthStr, fingerprint, context: personalOkrContext, material: reviewMaterial, force });
   };
 
-  const handleSaveReviewDraftEdit = (editedText: string) =>
-    onSaveReviewDraftEdit({ personalKrId: kr.id, month: monthStr, editedText });
+  // 🔴 W2（下書き→振り返り本文の1本化）：モーダルの「編集を保存」は月のreview_textへ保存する
+  // （personal_kr_review_draftsへは書かない）。mergeMonthRecordで他フィールドを消さない。
+  const handleSaveReviewText = async (editedText: string) => {
+    if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
+    const now = new Date().toISOString();
+    const fallback: PersonalKrMonth = {
+      id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
+      is_deleted: false, created_at: now,
+    };
+    const month = mergeMonthRecord(monthRecord, fallback, { review_text: editedText || null, updated_by: currentUser.id });
+    await onSaveMonth(month, monthRecord?.updated_at);
+  };
 
-  // band_override（人が決めた値）の保存。エラー表示はAheadBlock側で行う（呼び出し元でthrowをそのまま伝える）。
+  // band_override（人が決めた値）の保存。エラー表示はAheadBlock/MonthReviewBlock側で行う
+  // （呼び出し元でthrowをそのまま伝える）。mergeMonthRecordで他フィールドを消さない。
   const handleSetBandOverride = async (value: PersonalKrBand | null) => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
     const now = new Date().toISOString();
-    const month: PersonalKrMonth = monthRecord
-      ? { ...monthRecord, band_override: value, band_override_by: value ? currentUser.id : null, band_override_at: value ? now : null }
-      : {
-          id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
-          positioning: null, activities: null, target_and_evidence: null, risks: null,
-          band_target: null, band_override: value, band_override_by: value ? currentUser.id : null,
-          band_override_at: value ? now : null,
-          is_deleted: false, created_at: now, updated_by: currentUser.id,
-        };
+    const fallback: PersonalKrMonth = {
+      id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
+      is_deleted: false, created_at: now,
+    };
+    const month = mergeMonthRecord(monthRecord, fallback, {
+      band_override: value, band_override_by: value ? currentUser.id : null, band_override_at: value ? now : null,
+      updated_by: currentUser.id,
+    });
     await onSaveMonth(month, monthRecord?.updated_at);
   };
 
@@ -449,7 +467,8 @@ export function PersonalKrPanel({
       <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", paddingBottom: "14px", borderBottom: "1px dotted var(--color-border-primary)" }}>
         <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)" }}>
           {kr.fiscal_year}年 {kr.quarter}・{slot.monthStart.getMonth() + 1}月
-          {monthStatus === "past" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（確定済み・読み取り専用）</span>}
+          {/* 🔴 2026-08-26：過去月も編集可になったため「読み取り専用」とは言わない（isMonthEditable参照） */}
+          {monthStatus === "past" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（過去月）</span>}
           {monthStatus === "future" && <span style={{ fontWeight: 400, color: "var(--color-text-tertiary)" }}>（未来月）</span>}
         </span>
         <span style={{ flex: 1 }} />
@@ -458,16 +477,6 @@ export function PersonalKrPanel({
             title={`Kintoneが正本です。この内容はアプリ上でも編集できますが、評価の確定はKintone側で行います。${kr.imported_at ? `（${kr.imported_at.slice(0, 10)}取込）` : ""}`}
             style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", padding: "3px 9px", whiteSpace: "nowrap" }}
           >📥 {kr.source_label}</span>
-        )}
-        {/* 🔴 過去月でも生成できる（D3）。未来月には材料が無いため出さない。サンプル表示中は
-            サンプルKRのidが実DBに存在しないため出さない（onEditKrと同じ扱い）。 */}
-        {!readOnly && monthStatus !== "future" && (
-          <button
-            onClick={() => setReviewDraftModalOpen(true)}
-            style={{ fontFamily: "inherit", fontSize: "11px", cursor: "pointer", padding: "4px 10px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-sm)", color: "var(--color-text-secondary)" }}
-          >
-            📝 振り返りの下書き
-          </button>
         )}
         <button
           onClick={readOnly ? undefined : onEditKr}
@@ -484,12 +493,15 @@ export function PersonalKrPanel({
           krLabel={kr.label}
           monthLabel={`${kr.fiscal_year}年${slot.monthStart.getMonth() + 1}月`}
           material={reviewMaterial}
+          hasPlanContent={!!(monthRecord?.positioning || monthRecord?.activities || monthRecord?.target_and_evidence || monthRecord?.risks)}
+          memoCount={memos.length}
+          monthReviewText={monthRecord?.review_text ?? null}
           draftRow={reviewDraftRow}
           analyzing={reviewDraftAnalyzing}
           error={reviewDraftError}
           onEnsureLoaded={handleEnsureReviewDraftLoaded}
           onGenerate={handleGenerateReviewDraft}
-          onSaveEdit={handleSaveReviewDraftEdit}
+          onSaveEdit={handleSaveReviewText}
           onClose={() => setReviewDraftModalOpen(false)}
         />
       )}
@@ -523,11 +535,12 @@ export function PersonalKrPanel({
             </div>
           </details>
 
-          {/* 今月の計画 */}
+          {/* 今月の計画。🔴 見出しはmonthLabelを使う（2026-08-26：過去月も編集可になったため
+              「今月の計画」という固定文言だと過去月で嘘になる。CLAUDE.md Section 24） */}
           <div data-tour-id="okr-month-plan" style={{ marginTop: "20px" }}>
             <div style={sectionHeadStyle}>
-              <span>今月の計画</span><span style={ruleStyle} />
-              <span>{monthStatus === "past" ? "確定済み・読み取り専用" : monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
+              <span>{slot.monthStart.getMonth() + 1}月の計画</span><span style={ruleStyle} />
+              <span>{monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
             </div>
             {monthEditable && !monthRecord && (
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: "8px", lineHeight: 1.6 }}>
@@ -580,7 +593,7 @@ export function PersonalKrPanel({
               </div>
               {monthEditable && (
                 <button onClick={handleSaveMonthPlan} disabled={savingMonth} style={{ marginTop: "12px", fontSize: "12px", fontWeight: 700, padding: "7px 16px", background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
-                  {savingMonth ? "保存中…" : "今月の計画を保存"}
+                  {savingMonth ? "保存中…" : `${slot.monthStart.getMonth() + 1}月の計画を保存`}
                 </button>
               )}
             </div>
@@ -660,6 +673,20 @@ export function PersonalKrPanel({
               >AIパネルを開く</button>
             </div>
           )}
+
+          {/* 振り返り（当月・過去月。山本さんの依頼・2026-08-26。CLAUDE.md Section 24） */}
+          <MonthReviewBlock
+            kr={kr}
+            currentUser={currentUser}
+            monthStr={monthStr}
+            monthIndex={monthIndex}
+            monthRecord={monthRecord}
+            monthStatus={monthStatus}
+            readOnly={readOnly}
+            onSaveMonth={onSaveMonth}
+            onSetBandOverride={handleSetBandOverride}
+            onOpenDraftModal={() => setReviewDraftModalOpen(true)}
+          />
         </>
       )}
 

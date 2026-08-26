@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { computeReviewMaterial, isReviewMaterialEmpty } from "../reviewMaterial";
+import { computeReviewMaterial, isGenerationMaterialEmpty } from "../reviewMaterial";
 import type { MonthWeekSegment } from "../../date/monthWeeks";
 import type { PersonalKrWeek, Task } from "../../localData/types";
 
@@ -52,34 +52,13 @@ describe("computeReviewMaterial", () => {
     const material = computeReviewMaterial(AUG_SEGMENTS, [], [], [], [], TODAY);
     expect(material.weeksTotal).toBe(6);
     expect(material.ratingCounts).toEqual({ o: 0, t: 0, x: 0 });
-    expect(material.weeksWithGoalSet).toBe(0);
-    expect(material.unratedWeekCount).toBe(6);
     expect(material.linkedTaskCount).toBe(0);
     expect(material.completedTaskCount).toBe(0);
     expect(material.incompleteTaskCount).toBe(0);
-    expect(isReviewMaterialEmpty(material)).toBe(true);
+    expect(isGenerationMaterialEmpty(material, false, 0)).toBe(true);
   });
 
-  it("週の目標状態は書いたが自己評価が全て未評価（材料あり＝目標状態だけでも空扱いにしない）", () => {
-    const weeks: PersonalKrWeek[] = [
-      makeWeek({ week_index: 1, goal_state: "検証ログの形式を決める", self_rating: null }),
-      makeWeek({ week_index: 2, goal_state: "判定基準の合意を取る", self_rating: null }),
-    ];
-    const material = computeReviewMaterial(AUG_SEGMENTS, weeks, [], [], [], TODAY);
-    expect(material.weeksWithGoalSet).toBe(2);
-    expect(material.unratedWeekCount).toBe(6);
-    expect(isReviewMaterialEmpty(material)).toBe(false);
-  });
-
-  it("週の目標状態は0本だが自己評価は入っている（目標状態なしで評価だけ付いた特異ケースでも材料ありとみなす）", () => {
-    const weeks: PersonalKrWeek[] = [makeWeek({ week_index: 1, goal_state: null, self_rating: "x" })];
-    const material = computeReviewMaterial(AUG_SEGMENTS, weeks, [], [], [], TODAY);
-    expect(material.weeksWithGoalSet).toBe(0);
-    expect(material.ratingCounts.x).toBe(1);
-    expect(isReviewMaterialEmpty(material)).toBe(false);
-  });
-
-  it("週の◯／△／✕の内訳・未評価週数・紐づくタスクの完了/未完了件数を混在で正しく集計する", () => {
+  it("週の◯／△／✕の内訳・紐づくタスクの完了/未完了件数を混在で正しく集計する", () => {
     const weeks: PersonalKrWeek[] = [
       makeWeek({ week_index: 1, goal_state: "目標1", self_rating: "o" }),
       makeWeek({ week_index: 2, goal_state: "目標2", self_rating: "t" }),
@@ -95,12 +74,10 @@ describe("computeReviewMaterial", () => {
     const material = computeReviewMaterial(AUG_SEGMENTS, weeks, linkedTasks, linkedTasks, [], TODAY);
 
     expect(material.ratingCounts).toEqual({ o: 1, t: 1, x: 1 });
-    expect(material.weeksWithGoalSet).toBe(4);
-    expect(material.unratedWeekCount).toBe(3); // 6週中、評価済みはo/t/xの3件のみ
     expect(material.linkedTaskCount).toBe(3);
     expect(material.completedTaskCount).toBe(1);
     expect(material.incompleteTaskCount).toBe(2);
-    expect(isReviewMaterialEmpty(material)).toBe(false);
+    expect(isGenerationMaterialEmpty(material, false, 0)).toBe(false);
   });
 
   it("taskStatsは既存のsummarizeLinkedTaskStatusをそのまま再利用する（遅延・停滞・先行待ちの再実装をしない）", () => {
@@ -114,6 +91,36 @@ describe("computeReviewMaterial", () => {
   it("segmentsが空でも例外を投げない", () => {
     const material = computeReviewMaterial([], [], [], [], [], TODAY);
     expect(material.weeksTotal).toBe(0);
-    expect(isReviewMaterialEmpty(material)).toBe(true);
+    expect(isGenerationMaterialEmpty(material, false, 0)).toBe(true);
+  });
+});
+
+describe("isGenerationMaterialEmpty（週次任意化・2026-08-26）", () => {
+  function emptyWeekMaterial() {
+    return computeReviewMaterial(AUG_SEGMENTS, [], [], [], [], TODAY);
+  }
+
+  it("週データ0＋計画欄あり → 生成可（false）", () => {
+    expect(isGenerationMaterialEmpty(emptyWeekMaterial(), true, 0)).toBe(false);
+  });
+
+  it("週データ0＋タスクあり → 生成可（false）", () => {
+    const linkedTask = makeTask({ id: "t1" });
+    const material = computeReviewMaterial(AUG_SEGMENTS, [], [linkedTask], [linkedTask], [], TODAY);
+    expect(isGenerationMaterialEmpty(material, false, 0)).toBe(false);
+  });
+
+  it("週データ0＋メモあり → 生成可（false）", () => {
+    expect(isGenerationMaterialEmpty(emptyWeekMaterial(), false, 1)).toBe(false);
+  });
+
+  it("週0＋計画0＋タスク0＋メモ0 → 生成不可（true）", () => {
+    expect(isGenerationMaterialEmpty(emptyWeekMaterial(), false, 0)).toBe(true);
+  });
+
+  it("週の自己評価があれば計画・タスク・メモが無くても生成可", () => {
+    const weeks: PersonalKrWeek[] = [makeWeek({ week_index: 1, self_rating: "o" })];
+    const material = computeReviewMaterial(AUG_SEGMENTS, weeks, [], [], [], TODAY);
+    expect(isGenerationMaterialEmpty(material, false, 0)).toBe(false);
   });
 });
