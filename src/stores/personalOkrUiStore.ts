@@ -29,6 +29,7 @@ import {
   fetchPersonalKrMemos, upsertPersonalKrMemo, softDeletePersonalKrMemo,
   fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
   fetchLatestPersonalKrReviewDraft, insertPersonalKrReviewDraft,
+  fetchPersonalPeriodReviews, upsertPersonalPeriodReview,
 } from "../lib/supabase/personalOkrStore";
 import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
 import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftExtractor";
@@ -39,7 +40,7 @@ import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAi
 import type { ReviewMaterial } from "../lib/personalOkr/reviewMaterial";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
-  PersonalKrReviewDraft,
+  PersonalKrReviewDraft, PersonalPeriodReview,
 } from "../lib/localData/types";
 
 // 【ゲスト（サンプル閲覧）分岐・2026-08-12】
@@ -148,6 +149,20 @@ interface PersonalOkrUiState {
   // （personal_kr_months）へ保存するようになり、personalOkrUiStore.saveMonthをそのまま使う
   // （PersonalKrPanel.tsxのhandleSaveReviewText参照）。edited_text列と既存データは
   // 読み取りフォールバック（旧方式で保存した人の救済）として残す。
+
+  // ===== 「全体」タブ：月全体・四半期全体の振り返り（personal_period_reviews・v3.101） =====
+  // 🔴 このテーブルはマイグレーション未適用の窓が生じうる（CLAUDE.md Section 24 Step Q・
+  // 仕様書§W2）。loadPeriodReviewsが失敗してもperiodReviewsLoaded=trueで確定させ、
+  // periodReviewsErrorにメッセージを積むだけに留める（krs等の既存stateには一切触れない
+  // ＝この失敗がKRタブ側の動作に影響することはない）。
+  periodReviews: PersonalPeriodReview[];
+  periodReviewsLoaded: boolean;
+  periodReviewsLoading: boolean;
+  periodReviewsError: string | null;
+
+  /** 自分の全期間ぶんの月全体・四半期全体の振り返りを1回だけ取得する（「全体」タブを開いたときに呼ぶ）。 */
+  loadPeriodReviews: () => Promise<void>;
+  savePeriodReview: (review: PersonalPeriodReview, expectedUpdatedAt?: string) => Promise<void>;
 }
 
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
@@ -173,6 +188,11 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   reviewDraftFetchedKeys: new Set(),
   reviewDraftAnalyzingKeys: new Set(),
   reviewDraftErrorByKey: {},
+
+  periodReviews: [],
+  periodReviewsLoaded: false,
+  periodReviewsLoading: false,
+  periodReviewsError: null,
 
   loadKrs: async () => {
     if (get().krsLoading || get().krsLoaded) return;
@@ -473,4 +493,34 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     }
   },
 
+  loadPeriodReviews: async () => {
+    if (get().periodReviewsLoading || get().periodReviewsLoaded) return;
+    set({ periodReviewsLoading: true, periodReviewsError: null });
+    // 🔴 ゲストはSupabaseに一切接続しない（冒頭コメント参照）。「全体」タブのサンプルデータは
+    // 用意していない（v3.67のKRサンプルのような専用データセットが無い）ため、空のまま
+    // 確定させる（保存操作自体はsavePeriodReview側のゲスト分岐でメモリ上にのみ成立する）。
+    if (isGuestMode()) {
+      set({ periodReviews: [], periodReviewsLoaded: true, periodReviewsLoading: false });
+      return;
+    }
+    try {
+      const rows = await fetchPersonalPeriodReviews();
+      set({ periodReviews: rows, periodReviewsLoaded: true, periodReviewsLoading: false });
+    } catch (e) {
+      // 🔴🔴 W2（最重要）：ここで例外を投げ直さない。テーブル未適用（マイグレーション未適用の
+      // 窓）でも「全体」タブだけが案内を出せるよう、periodReviewsLoaded=trueで確定させ
+      // エラーメッセージだけをstateに積む。krs等の既存stateには一切触れていないため、
+      // KRタブ側の動作はこの失敗の影響を受けない。
+      set({
+        periodReviewsLoading: false,
+        periodReviewsLoaded: true,
+        periodReviewsError: e instanceof Error ? e.message : "月全体・四半期全体の振り返りの取得に失敗しました",
+      });
+    }
+  },
+
+  savePeriodReview: async (review, expectedUpdatedAt) => {
+    const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalPeriodReview(review, expectedUpdatedAt);
+    set(state => ({ periodReviews: upsertById(state.periodReviews, { ...review, updated_at: updatedAt }) }));
+  },
 }));

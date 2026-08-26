@@ -243,6 +243,13 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     migration: "20260820_add_personal_kr_review_drafts.sql",
   },
   {
+    id: "personal_period_reviews_table",
+    kind: "table",
+    table: "personal_period_reviews",
+    label: "個人OKR：月全体・四半期全体の振り返りテーブル（personal_period_reviews）が見つかりません",
+    migration: "20260826_add_personal_period_reviews.sql",
+  },
+  {
     id: "kr_quarter_plans_table",
     kind: "table",
     table: "kr_quarter_plans",

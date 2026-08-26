@@ -39,6 +39,10 @@ import { PersonalKrFormModal } from "./PersonalKrFormModal";
 import { PersonalKrPanel } from "./PersonalKrPanel";
 import { PersonalOkrImportModal } from "./PersonalOkrImportModal";
 import { PersonalOkrAiPanel } from "./PersonalOkrAiPanel";
+import { PersonalOverallView } from "./PersonalOverallView";
+
+/** 「全体」タブの選択を表す sentinel（KRのidと衝突しない固定文字列）。v3.101・Section 24 Step Q。 */
+const OVERALL_TAB_ID = "__overall__";
 
 /** ツアー用サンプル：個人OKRサンプル本体＋週に紐づく実演用タスク（dataset.ts側）。
  *  どちらも動的importでのみ読み込む（Section 19。personalOkrDataset.test.ts／
@@ -120,6 +124,12 @@ export function PersonalOkrView({ currentUser }: Props) {
   const reviewDraftErrorByKey = usePersonalOkrUiStore(s => s.reviewDraftErrorByKey);
   const ensureReviewDraftLoaded = usePersonalOkrUiStore(s => s.ensureReviewDraftLoaded);
   const runReviewDraft = usePersonalOkrUiStore(s => s.runReviewDraft);
+  const periodReviews = usePersonalOkrUiStore(s => s.periodReviews);
+  const periodReviewsLoaded = usePersonalOkrUiStore(s => s.periodReviewsLoaded);
+  const periodReviewsLoading = usePersonalOkrUiStore(s => s.periodReviewsLoading);
+  const periodReviewsError = usePersonalOkrUiStore(s => s.periodReviewsError);
+  const loadPeriodReviews = usePersonalOkrUiStore(s => s.loadPeriodReviews);
+  const savePeriodReview = usePersonalOkrUiStore(s => s.savePeriodReview);
 
   // ===== OKRモードのガイドツアー（CLAUDE.md Section 24） =====
   // 🔴 このコンポーネントが実際にマウントされた時点で「OKRモードへ初めて入った」と
@@ -223,6 +233,9 @@ export function PersonalOkrView({ currentUser }: Props) {
 
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
   useEffect(() => {
+    // 🔴 v3.101：「全体」タブ選択中はKRの自動選択の対象外にする（対象期のKRが増減しても
+    // 「全体」タブから勝手にKRタブへ切り替わらないようにするため）。
+    if (selectedKrId === OVERALL_TAB_ID) return;
     if (displayKrs.length === 0) { setSelectedKrId(null); return; }
     if (!displayKrs.some(k => k.id === selectedKrId)) setSelectedKrId(displayKrs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -230,9 +243,11 @@ export function PersonalOkrView({ currentUser }: Props) {
 
   // 🔴 サンプル表示中はensureKrDetailLoaded（実データのSupabaseフェッチ）を呼ばない
   // （サンプルidは実DBに存在せず、無駄な問い合わせ＋storeへの空データ書き込みになるため）。
+  // 「全体」タブ選択中もここでは呼ばない（PersonalOverallView.tsx自身が対象期の全KR分を
+  // まとめて呼ぶため、選択中KR1件だけを対象にするこのeffectとは責務が異なる）。
   useEffect(() => {
     if (previewSample) return;
-    if (selectedKrId) ensureKrDetailLoaded(selectedKrId);
+    if (selectedKrId && selectedKrId !== OVERALL_TAB_ID) ensureKrDetailLoaded(selectedKrId);
   }, [selectedKrId, ensureKrDetailLoaded, previewSample]);
 
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; initial: PersonalKr | null } | null>(null);
@@ -293,6 +308,11 @@ export function PersonalOkrView({ currentUser }: Props) {
           （実機で発生・2026-08-12。「＋KRを追加」「📥 Kintoneから取込」ボタンも同じ帯の中にあり
           一緒に消えていたことから特定した）。 */}
       <div data-tour-id="okr-kr-tabs" style={{ display: "flex", gap: "2px", overflowX: "auto", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+        {/* 🔴 v3.101：「全体」タブ。KRタブの並びは変えず、先頭に固定で追加する（仕様書§W3）。 */}
+        <button onClick={() => void guardedSwitch(() => setSelectedKrId(OVERALL_TAB_ID))} style={tabStyle(selectedKrId === OVERALL_TAB_ID)}>
+          <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>全体</span>
+          <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>&nbsp;</span>
+        </button>
         {displayKrs.map(kr => (
           <button key={kr.id} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} style={tabStyle(kr.id === selectedKrId)}>
             <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
@@ -317,7 +337,30 @@ export function PersonalOkrView({ currentUser }: Props) {
         <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>読み込み中…</div>
       )}
 
-      {selectedKr ? (
+      {selectedKrId === OVERALL_TAB_ID ? (
+        // 🔴 v3.101：「全体」タブは常に実データ（activeKrs等）を見る。ツアーのサンプル
+        // 差し込み（previewSample）はKRタブ側だけの仕組みのため、ここでは使わない。
+        <PersonalOverallView
+          currentUser={currentUser}
+          fiscalYear={fiscalYear}
+          quarter={quarter}
+          monthIndex={monthIndex}
+          krs={activeKrs}
+          monthsByKr={monthsByKr}
+          weeksByKr={weeksByKr}
+          weekTasksByWeek={weekTasksByWeek}
+          ensureKrDetailLoaded={ensureKrDetailLoaded}
+          ensureWeekTasksLoaded={ensureWeekTasksLoaded}
+          tasks={tasks}
+          taskDependencies={taskDependencies}
+          periodReviews={periodReviews}
+          periodReviewsLoaded={periodReviewsLoaded}
+          periodReviewsLoading={periodReviewsLoading}
+          periodReviewsError={periodReviewsError}
+          loadPeriodReviews={loadPeriodReviews}
+          savePeriodReview={savePeriodReview}
+        />
+      ) : selectedKr ? (
         <PersonalKrPanel
           // 🔴 key={selectedKr.id}は外した（v3.55）。以前はKR切替のたびにコンポーネントごと
           // 作り直され、月選択（旧・ローカルstate）が当月にリセットされていた。月は上の

@@ -36,7 +36,7 @@ import { supabase } from "./client";
 import { saveWithLock } from "./store";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
-  PersonalKrReviewDraft,
+  PersonalKrReviewDraft, PersonalPeriodReview,
 } from "../localData/types";
 
 // ===== PersonalKr（個人四半期KR） =====
@@ -225,3 +225,31 @@ export async function insertPersonalKrReviewDraft(draft: PersonalKrReviewDraft):
 // ため、edited_text列へUPDATEする書き込み経路（旧updatePersonalKrReviewDraftEdit）は廃止した。
 // 列・既存データ自体は読み取りフォールバック（旧方式で保存した人の救済）として残す
 // （fetchLatestPersonalKrReviewDraftが返す行のedited_textはそのまま読める）。
+
+// ===== PersonalPeriodReview（月全体・四半期全体の振り返り。「全体」タブ・v3.101） =====
+// 🔴 personal_krsと同じくmember_idを直接持つため、他のpersonal_kr_*関数と違い
+// personal_kr_idでの絞り込みは無い。RLSが本人の行しか返さないため、fetchは
+// is_deletedだけで絞る（fetchPersonalKrsと同じ流儀＝member_idをクエリに明示しない）。
+//
+// 🔴 このテーブルはマイグレーション未適用の窓が生じうる（CLAUDE.md Section 24 Step Q）。
+// fetch失敗時にここで握りつぶさず、呼び出し元（personalOkrUiStore.loadPeriodReviews）が
+// 例外を捕捉してエラー状態に変換する（KRタブ側の状態には一切触れないため、この失敗が
+// KRタブの動作に影響することはない）。
+
+/** 自分の全期間ぶんの月全体・四半期全体の振り返りを1回で取得する（データ量が極小のため）。 */
+export async function fetchPersonalPeriodReviews(): Promise<PersonalPeriodReview[]> {
+  const { data, error } = await supabase
+    .from("personal_period_reviews")
+    .select("*")
+    .eq("is_deleted", false)
+    .order("fiscal_year", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PersonalPeriodReview[];
+}
+
+export async function upsertPersonalPeriodReview(
+  review: PersonalPeriodReview,
+  expectedUpdatedAt?: string,
+): Promise<string> {
+  return await saveWithLock("personal_period_reviews", review, expectedUpdatedAt);
+}

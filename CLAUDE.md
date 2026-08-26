@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.100
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.101
 #
-最終更新：2026-08-26（v3.100）
+最終更新：2026-08-26（v3.101）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.100）
+- 最終更新：2026-08-26（v3.101）
 
 ---
 
@@ -2289,6 +2289,27 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **既存の穴の確認（Step 0）**：`PersonalKrPanel`の計画欄は`unsavedEditorRegistry`（v3.89・Section 46）に登録されていない（TaskEditModal/TaskSidePanel専用の仕組みで、個人OKRの計画欄は元々対象外）。本機能はこの既存の設計をそのまま踏襲する（新たな穴を作ったわけではなく、修正も本機能のスコープ外）。
 - **テスト**：`planDraftContext.test.ts`（27件）・`personalOkrPlanDraftExtractor.test.ts`（14件）・`weekLayout.test.ts`に`computeWeekCardsLinkedTasks`を2件追加。
 - **やらないこと**：新しいテーブル・新しい列・マイグレーション。生成結果のDB自動保存。前四半期のKRを材料にすること。未来月での生成。Kintoneへの書き込み。部署ナレッジ（Phase 5）。
+
+### Step Q：月全体・四半期全体の振り返りを記録する「全体」タブ（v3.101・2026-08-26）
+
+山本さんの依頼：「我々は月末に月次面談をGMと行い、一緒に振返りとコメントをいただくので、その月全体の自己評価とGM評価も受取ります。個別KRに加え、全体のことも記録できるタブがあると嬉しい」。個別KR（`personal_kr_months`）とは独立に、月全体・四半期全体の自己評価%・GM評価%・振り返り本文・GMコメントを記録する場所を作った。
+
+- 🔴 **設計判断（山本さんが選択済み・変更禁止）**：記録項目は全体の自己評価%／GM評価%／全体の振り返り本文（本人）／GMコメントの4つのみ（面談日・来月への申し送りは選ばれなかったため作らない）。全体%の算出は参考値として機械計算を提示し、確定は手入力（「この値を入れる」ボタン方式）。AI下書きを用意する。単位は月単位と四半期単位の両方。
+- 🔴 **本機能は唯一マイグレーションが1本発生する**：`supabase/migrations/20260826_add_personal_period_reviews.sql`（新テーブル`personal_period_reviews`。山本さんが手動適用）。**一意制約は部分ユニークインデックス2本**（`WHERE period_kind='month'`／`WHERE period_kind='quarter'`）で張る。`UNIQUE(...,month)`は使わない（Postgresでは`period_kind='quarter'`のときmonthが常にNULLのため、NULL同士は相異なると扱われ重複を検出できない）。RLSは`personal_krs`と同じ「member_idを直接持つため親を辿らない」流儀（新しいヘルパー関数は作っていない）。
+- 🔴🔴 **W2（最重要）：テーブル未適用の窓でも「全体」タブだけが案内を出し、KRタブ側は完全に従来どおり動く**。`usePersonalOkrUiStore`に`periodReviews`/`periodReviewsLoaded`/`periodReviewsLoading`/`periodReviewsError`という**KRタブ側のstateとは完全に独立したstate群**を新設し、`loadPeriodReviews()`はfetch失敗を`periodReviewsError`にメッセージとして積むだけで例外を投げ直さない（`krs`等には一切触れない）。`PersonalOverallView.tsx`は`periodReviewsError`が真なら「この機能はデータベースへの適用がまだです（管理者に連絡してください）」を表示するだけに留める。回帰テストは`src/stores/__tests__/personalOkrUiStore.test.ts`（fetch失敗を模擬し、`krs`が無傷であることまで確認。**実装前にtry/catchを外した状態で実際にテストが赤くなることを確認済み**）。`src/lib/schema/schemaChecks.ts`に`personal_period_reviews_table`を追加。
+- **UI**：`PersonalOkrView.tsx`のKRタブ列の**先頭**に「全体」タブを追加（sentinel `OVERALL_TAB_ID`。KR一覧の自動選択effect・`ensureKrDetailLoaded`effectの対象外にする分岐を追加）。選択すると`PersonalOverallView.tsx`が縦2ブロック（月全体・四半期全体）を`PersonalPeriodReviewBlock.tsx`（同じコンポーネントを`periodKind`違いで2回使う。コピペしない）で描画する。
+  - **参考値**：`src/lib/personalOkr/periodReviewReference.ts`の`computeWeightedAverage`/`computeMonthlyAverage`/`computePeriodReference`（純粋関数）。月ブロック＝`Σ(KRの自己評価%×weight_pct)÷Σ(weight_pct)`、四半期ブロック＝各KRの3か月平均（`computeMonthlyAverage`）を求めてから同じ加重平均に使う（`Σ(KRの自己評価%の3か月平均×weight_pct)÷Σ(weight_pct)`）。算出式は画面にそのまま明記する。**`weight_pct`が全て0、または記入済みKRが0件のときは`null`を返し、「参考値を出せません（KRのウェイトまたは自己評価が未記入です）」と表示する**（0除算・誤解を招く0%表示を避ける。記入が無いことを咎める書き方にしない）。GM評価%も独立に同じ式で算出する。KRごとの内訳（KR名・ウェイト・自己評価%・GM評価%）は`<details>`で折りたたむ。
+  - **「この値を入れる」ボタン**：参考値を自己評価%・GM評価%の入力欄へセットするだけ（保存はしない）。片方だけ算出できる場合はその欄だけセットする。
+  - **入力欄4つ＋明示保存**：v3.87/v3.93/v3.96の作法（自動保存にしない・未変更時は🚫にせず「✓ 保存済み」）。dirty判定・数値バリデーションは既存の`monthReviewForm.ts`（`computeMonthReviewDirty`/`parseEvalPctInput`）を**そのまま再利用**（`personal_kr_months`と同じ4フィールド構成のため判定ロジックを二重化していない）。空欄は`undefined`ではなく`null`を送る。
+  - **編集可否**：`isMonthEditable`と同じ思想＝未来のみ不可。四半期側は新設の`isQuarterEditable(fiscalYear, quarter, readOnly, today)`（`quarterMonths.ts`。四半期の1か月目が未来でなければ編集可）。
+  - 🔴 **`unsavedEditorRegistry`への登録を実装済み**：`PersonalPeriodReviewBlock.tsx`が月・四半期の各ブロックインスタンスごとに`useId()`＋`registerUnsavedEditor`/`unregisterUnsavedEditor`を呼ぶ（`MonthReviewBlock.tsx`と同型）。KRタブ・月・四半期の切替（`PersonalOkrView.tsx`の`guardedSwitch`。v3.100で導入済み）が既にこのレジストリを参照するため、「全体」タブを離れる操作も自動的にガードされる（新しいガード経路を増やしていない）。
+- **AI下書き**：新規`src/lib/ai/personalOkrPeriodReviewDraftExtractor.ts`（`AIIntent="okr-personal-period-review-draft"`・model=`claude-sonnet-4-6`・max_tokens=3072）＋文脈組み立て`src/lib/personalOkr/periodReviewDraftContext.ts`。入力は対象期間の全KRについて、KR名・ウェイト・当月（四半期なら各月）のreview_text/self_eval_pct/gm_eval_pct/gm_comment/計画4欄の要点、および紐づくタスクの機械集計（既存の`computeMonthWeekSegments`/`buildWeekCards`/`computeWeekCardsLinkedTasks`/`computeReviewMaterial`をそのまま再利用）。記入が無い項目は行ごと出さない。`WEEKLY_IS_OPTIONAL_NOTICE`をシステムプロンプトに埋め込んだ。自己評価%・GM評価%・達成度バンドの数値は書かせない（出力の型自体が`review_text`/`basis`のみでこれらのフィールドを持たない）。
+  - **546対策**：`review_text`/`gm_comment`は各800字でクリップ、組み立て後の総文字数が上限（目安10000字）を超えたら`buildPeriodReviewDraftContext()`が**①全エントリの計画4欄の要点→②タスク内訳（遅延/停滞/先行待ち。完了/未完了の件数自体は残す）→③GMコメント→④振り返り本文、の順にフィールド種別ごと一括で削る**（決定的な順序。テストで固定）。
+  - **UI（生成→提示→反映の3段階）**：新規`src/components/okr/personal/PersonalOkrPeriodReviewDraftModal.tsx`（`PersonalOkrPlanDraftModal.tsx`と同型）。①材料の要約（機械計算・即時描画）②生成／再生成ボタン③生成結果を編集可能なtextareaで表示④「本文欄に反映」→ 親（`PersonalPeriodReviewBlock`）のstateへセットするだけ（**DBへは書かない。人が「保存」を押して初めて保存される**）。既に本文がある場合は`ConfirmModal`で確認する（`tone="danger"`・cancel側＝安全側＝反映しない）。
+  - 🔴 **AI生成履歴のテーブルは作っていない**（山本さんの依頼どおり）。生成結果はモーダルのローカルstateのみで保持し、閉じれば消える。
+- **Step 0で確認した4点**：①既存マイグレーション（`20260820_add_personal_kr_review_drafts.sql`）の作法（`update_updated_at()`共有トリガー・ドル引用タグ・確認クエリの書式）をそのまま踏襲した。②`personalOkrUiStore`の各アクションは`upsertById`（idが一致すれば置換・無ければ追加）による**マージ型**の更新で、丸ごと置換ではない。③`PersonalOkrView.tsx`のKRタブ描画は`displayKrs.map`のフラットな帯で、v3.100の`unsavedEditorRegistry`登録はコンポーネント単位（`PersonalKrPanel`/`MonthReviewBlock`）で行われている（同じ作法をそのまま踏襲）。④`schemaChecks.ts`へのテーブル追加は`kind:"table"`の1エントリで足りる（本機能は本文差し替え型の関数変更を伴わない）。
+- **テスト**：`periodReviewReference.test.ts`（13件）・`periodReviewDraftContext.test.ts`（16件・546対策の削減順序が決定的であることを含む）・`personalOkrPeriodReviewDraftExtractor.test.ts`（9件）・`quarterMonths.test.ts`に`isQuarterEditable`を5件追加・`personalOkrUiStore.test.ts`に「全体」タブ用のゲスト分岐・テーブル未適用時の回帰テストを6件追加・`guardedNavigateCoverage.test.ts`に「全体」タブへの切替パターンを追加（**実装前に未ガード状態で実際に赤くなることを確認済み**）。
+- **やらないこと（スコープ外）**：面談日・来月への申し送りの欄。Kintone取込側を「全体合計値も拾う」ように広げること（`personalOkrImportExtractor.ts`の既存コメントはそのまま）。GM（上長）が本アプリから直接書き込む機能。部署・全社での集計ビュー。AI生成履歴テーブル。
 
 ---
 

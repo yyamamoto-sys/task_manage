@@ -71,7 +71,8 @@ export type AIIntent =
   | "okr-personal-outlook"      // 個人OKR「これから」の見立て・週ごとの一手・バンドのAI判定（自動トリガー・キャッシュあり）
   | "okr-personal-chat"         // 個人OKR用AIパネルの対話形式の相談（明示操作・ターンごとに発生）
   | "okr-personal-review-draft" // 個人OKR月末の振り返り下書き生成（明示ボタン・月に1回程度）
-  | "okr-personal-plan-draft";  // 個人OKR翌月の計画ドラフト生成（明示ボタン・月に1回程度）
+  | "okr-personal-plan-draft"   // 個人OKR翌月の計画ドラフト生成（明示ボタン・月に1回程度）
+  | "okr-personal-period-review-draft"; // 個人OKR「全体」タブ：月全体・四半期全体の振り返り本文の下書き生成（明示ボタン）
 
 export interface AIRawResponse {
   content: { type: "text"; text: string }[];

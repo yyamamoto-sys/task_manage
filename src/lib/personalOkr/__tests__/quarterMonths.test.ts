@@ -1,6 +1,6 @@
 // src/lib/personalOkr/__tests__/quarterMonths.test.ts
 import { describe, expect, it } from "vitest";
-import { quarterMonthSlots, monthToDateStr, classifyMonth, resolveDefaultMonthIndex, isMonthEditable } from "../quarterMonths";
+import { quarterMonthSlots, monthToDateStr, classifyMonth, resolveDefaultMonthIndex, isMonthEditable, isQuarterEditable } from "../quarterMonths";
 
 describe("quarterMonthSlots", () => {
   it("3Q（7〜9月）は7月/8月/9月をmonth_index 1/2/3で返す", () => {
@@ -78,5 +78,25 @@ describe("isMonthEditable", () => {
     expect(isMonthEditable("past", true)).toBe(false);
     expect(isMonthEditable("current", true)).toBe(false);
     expect(isMonthEditable("future", true)).toBe(false);
+  });
+});
+
+describe("isQuarterEditable", () => {
+  const today = new Date(2026, 7, 7); // 2026-08-07（3Qの2か月目）
+
+  it("進行中の四半期（1か月目がpast）は編集可", () => {
+    expect(isQuarterEditable(2026, "3Q", false, today)).toBe(true);
+  });
+  it("過去の四半期（1か月目がpast）は編集可", () => {
+    expect(isQuarterEditable(2026, "2Q", false, today)).toBe(true);
+  });
+  it("未来の四半期（1か月目がfuture）は編集不可", () => {
+    expect(isQuarterEditable(2026, "4Q", false, today)).toBe(false);
+  });
+  it("1か月目が今日ちょうど（current）の四半期は編集可", () => {
+    expect(isQuarterEditable(2026, "3Q", false, new Date(2026, 6, 1))).toBe(true);
+  });
+  it("readOnly=常に編集不可", () => {
+    expect(isQuarterEditable(2026, "3Q", true, today)).toBe(false);
   });
 });

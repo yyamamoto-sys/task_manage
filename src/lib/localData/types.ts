@@ -517,6 +517,34 @@ export interface PersonalKrReviewDraft {
   created_at?: string;
 }
 
+export type PersonalPeriodKind = "month" | "quarter";
+
+/**
+ * 月全体・四半期全体の振り返り（「全体」タブ・v3.101・
+ * migrations/20260826_add_personal_period_reviews.sql）。個人四半期KR（personal_krs）とは
+ * 独立の1テーブルで、member_id を直接持つ（親を辿らない・personal_krsと同じ流儀）。
+ * period_kind='quarter' のときは month は必ず null（DB側のCHECK制約と一致させる）。
+ * 面談日・来月への申し送りの欄は山本さんが選ばなかったため列を持たない。
+ */
+export interface PersonalPeriodReview {
+  id: string;
+  member_id: string;
+  period_kind: PersonalPeriodKind;
+  fiscal_year: number;
+  quarter: Quarter;
+  month: string | null;   // 月初 YYYY-MM-01。period_kind='quarter' のときは null
+  self_eval_pct?: number | null;
+  gm_eval_pct?: number | null;
+  review_text?: string | null;
+  gm_comment?: string | null;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
+}
+
 /**
  * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
  * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列

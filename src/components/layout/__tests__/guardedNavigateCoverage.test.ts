@@ -111,6 +111,7 @@ const TARGETS: CoverageTarget[] = [
     guardMarker: "guardedSwitch",
     riskyPatterns: [
       "setSelectedKrId(kr.id)",
+      "setSelectedKrId(OVERALL_TAB_ID)",
       "setMonthIndex(Number(v) as 1 | 2 | 3)",
       "setQuarter(v as Quarter)",
     ],

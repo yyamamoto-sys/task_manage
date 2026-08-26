@@ -320,6 +320,18 @@ Phase 4（月末の振り返り下書き）で`review_text`/`gm_comment`が画�
   `src/components/okr/personal/PersonalOkrPlanDraftModal.tsx`（UI）。
 - Phase 5（部署ナレッジ）・グループOKR再設計（Phase 6）とは独立。今回の対象外。
 
+### Phase 4の延長：月全体・四半期全体の振り返り「全体」タブ（v3.101・2026-08-26）
+
+個別KR（`personal_kr_months`）とは独立に、月末の面談で受け取る「その月全体の自己評価とGM評価・
+コメント」を記録する場所を追加した（山本さんの依頼）。新テーブル`personal_period_reviews`
+（マイグレーション1本・山本さんが手動適用）。詳細はCLAUDE.md Section 24 Step Q参照。
+`src/lib/personalOkr/periodReviewReference.ts`（参考値の加重平均）・
+`src/lib/personalOkr/periodReviewDraftContext.ts`（AI下書きの文脈組み立て）・
+`src/lib/ai/personalOkrPeriodReviewDraftExtractor.ts`（AI呼び出し・
+`AIIntent="okr-personal-period-review-draft"`）・
+`src/components/okr/personal/PersonalOverallView.tsx`／`PersonalPeriodReviewBlock.tsx`／
+`PersonalOkrPeriodReviewDraftModal.tsx`（UI）。Phase 5（部署ナレッジ）とは独立。今回の対象外。
+
 ---
 
 ## 9. 既存の整理（Phase 1と同時に実施・決定事項）

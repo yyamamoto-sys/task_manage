@@ -65,3 +65,15 @@ export function resolveDefaultMonthIndex(fiscalYear: number, quarter: Quarter, t
   const current = slots.find(s => classifyMonth(s.monthStart, today) === "current");
   return current?.monthIndex ?? slots[0].monthIndex;
 }
+
+/**
+ * 四半期全体の編集可否を判定する（「全体」タブ・v3.101）。isMonthEditableと同じ思想＝
+ * 未来のみ不可。四半期の1か月目（month_index=1）が「未来」でなければ、その四半期は
+ * 既に始まっている（過去または進行中）とみなし編集可にする。1か月目が未来＝四半期
+ * そのものがまだ始まっていないときのみ不可にする（2・3か月目の状態は見ない）。
+ */
+export function isQuarterEditable(fiscalYear: number, quarter: Quarter, readOnly: boolean, today: Date = new Date()): boolean {
+  if (readOnly) return false;
+  const firstMonth = quarterMonthSlots(fiscalYear, quarter)[0].monthStart;
+  return classifyMonth(firstMonth, today) !== "future";
+}

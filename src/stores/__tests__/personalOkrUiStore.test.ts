@@ -31,6 +31,10 @@ const personalOkrStoreMock = vi.hoisted(() => ({
   softDeletePersonalKrMemo: vi.fn(),
   fetchLatestPersonalKrOutlook: vi.fn(),
   insertPersonalKrOutlook: vi.fn(),
+  fetchLatestPersonalKrReviewDraft: vi.fn(),
+  insertPersonalKrReviewDraft: vi.fn(),
+  fetchPersonalPeriodReviews: vi.fn(),
+  upsertPersonalPeriodReview: vi.fn(),
 }));
 
 vi.mock("../../lib/supabase/personalOkrStore", () => personalOkrStoreMock);
@@ -154,5 +158,79 @@ describe("personalOkrUiStore：ゲスト分岐", () => {
       personalKrId: "kr1", month: "2026-08-01", fingerprint: "fp1", context: dummyContext,
     });
     expect(personalOkrStoreMock.insertPersonalKrOutlook).toHaveBeenCalledTimes(1);
+  });
+});
+
+// 🔴🔴 W2（最重要・CLAUDE.md Section 24 Step Q・v3.101）：personal_period_reviews が
+// マイグレーション未適用（テーブル不在）でも、「全体」タブだけが案内を出せるよう
+// periodReviewsError にメッセージを積むだけに留め、krs 等の既存stateには一切触れない
+// ことを固定する回帰テスト。
+describe("personalOkrUiStore：「全体」タブ（personal_period_reviews）", () => {
+  beforeEach(() => {
+    resetStore();
+    vi.clearAllMocks();
+    Object.values(personalOkrStoreMock).forEach(fn => fn.mockReset());
+  });
+  afterEach(() => setGuestMode(false));
+
+  it("loadPeriodReviews：正常系はfetchPersonalPeriodReviewsを呼び、periodReviewsに反映する", async () => {
+    const row = {
+      id: "pr1", member_id: "m1", period_kind: "month" as const, fiscal_year: 2026, quarter: "3Q" as const,
+      month: "2026-08-01", is_deleted: false,
+    };
+    personalOkrStoreMock.fetchPersonalPeriodReviews.mockResolvedValue([row]);
+    await usePersonalOkrUiStore.getState().loadPeriodReviews();
+    const state = usePersonalOkrUiStore.getState();
+    expect(state.periodReviews).toEqual([row]);
+    expect(state.periodReviewsLoaded).toBe(true);
+    expect(state.periodReviewsError).toBeNull();
+  });
+
+  it("🔴 loadPeriodReviews：テーブル未適用（fetch失敗）でも例外を投げず、periodReviewsErrorにメッセージを積むだけでkrs等の既存stateには一切触れない", async () => {
+    personalOkrStoreMock.fetchPersonalKrs.mockResolvedValue([dummyKr]);
+    await usePersonalOkrUiStore.getState().loadKrs(); // 先にKRタブ側のstateを正常に読み込んでおく
+    personalOkrStoreMock.fetchPersonalPeriodReviews.mockRejectedValue(
+      Object.assign(new Error('relation "personal_period_reviews" does not exist'), { code: "42P01" }),
+    );
+    await expect(usePersonalOkrUiStore.getState().loadPeriodReviews()).resolves.toBeUndefined();
+    const state = usePersonalOkrUiStore.getState();
+    expect(state.periodReviewsLoaded).toBe(true);
+    expect(state.periodReviewsLoading).toBe(false);
+    expect(state.periodReviewsError).toContain("personal_period_reviews");
+    // 🔴 KRタブ側のstateはこの失敗の影響を一切受けない
+    expect(state.krs).toEqual([dummyKr]);
+    expect(state.krsLoaded).toBe(true);
+    expect(state.krsError).toBeNull();
+  });
+
+  it("loadPeriodReviews：ゲストはfetchPersonalPeriodReviewsを呼ばず空配列で確定させる", async () => {
+    setGuestMode(true);
+    await usePersonalOkrUiStore.getState().loadPeriodReviews();
+    expect(personalOkrStoreMock.fetchPersonalPeriodReviews).not.toHaveBeenCalled();
+    const state = usePersonalOkrUiStore.getState();
+    expect(state.periodReviews).toEqual([]);
+    expect(state.periodReviewsLoaded).toBe(true);
+  });
+
+  it("savePeriodReview：ゲストはupsertPersonalPeriodReviewを呼ばずstateだけ更新する", async () => {
+    setGuestMode(true);
+    const review = {
+      id: "pr1", member_id: "__guest__", period_kind: "quarter" as const, fiscal_year: 2026, quarter: "3Q" as const,
+      month: null, is_deleted: false,
+    };
+    await usePersonalOkrUiStore.getState().savePeriodReview(review);
+    expect(personalOkrStoreMock.upsertPersonalPeriodReview).not.toHaveBeenCalled();
+    expect(usePersonalOkrUiStore.getState().periodReviews.find(r => r.id === "pr1")).toBeTruthy();
+  });
+
+  it("savePeriodReview：非ゲストはupsertPersonalPeriodReviewを呼ぶ（既存経路は不変）", async () => {
+    personalOkrStoreMock.upsertPersonalPeriodReview.mockResolvedValue("2026-08-26T00:00:00.000Z");
+    const review = {
+      id: "pr2", member_id: "m1", period_kind: "month" as const, fiscal_year: 2026, quarter: "3Q" as const,
+      month: "2026-08-01", is_deleted: false,
+    };
+    await usePersonalOkrUiStore.getState().savePeriodReview(review);
+    expect(personalOkrStoreMock.upsertPersonalPeriodReview).toHaveBeenCalledTimes(1);
+    expect(usePersonalOkrUiStore.getState().periodReviews.find(r => r.id === "pr2")?.updated_at).toBe("2026-08-26T00:00:00.000Z");
   });
 });
