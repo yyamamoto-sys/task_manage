@@ -4,9 +4,9 @@
 // docs/dev/okr-redesign-plan.md §3-3）。2026年8月は実際に6週になる月。
 
 import { describe, expect, it } from "vitest";
-import { buildWeekCards } from "../weekLayout";
+import { buildWeekCards, computeWeekCardsLinkedTasks } from "../weekLayout";
 import { computeMonthWeekSegments } from "../../date/monthWeeks";
-import type { PersonalKrWeek } from "../../localData/types";
+import type { PersonalKrWeek, PersonalKrWeekTask, Task } from "../../localData/types";
 
 function makeWeek(overrides: Partial<PersonalKrWeek>): PersonalKrWeek {
   return {
@@ -51,5 +51,38 @@ describe("buildWeekCards", () => {
     expect(cards.find(c => c.weekIndex === 2)?.existing?.id).toBe("w-2");
     expect(cards.find(c => c.weekIndex === 1)?.existing).toBeNull();
     expect(cards.find(c => c.weekIndex === 6)?.existing).toBeNull();
+  });
+});
+
+function makeTask(overrides: Partial<Task> & { id: string }): Task {
+  return {
+    name: "task", project_id: null, todo_ids: [], assignee_member_id: "", assignee_member_ids: [],
+    status: "todo", priority: null, start_date: null, due_date: null, estimated_hours: null,
+    comment: "", is_deleted: false,
+    ...overrides,
+  };
+}
+
+describe("computeWeekCardsLinkedTasks", () => {
+  it("週をまたいだ紐づけタスクをユニーク化する（同じタスクが複数週に紐づいていても二重計上しない）", () => {
+    const segments = computeMonthWeekSegments(new Date(2026, 7, 1));
+    const w1 = makeWeek({ id: "w-1", week_index: 1 });
+    const w2 = makeWeek({ id: "w-2", week_index: 2 });
+    const cards = buildWeekCards(segments, [w1, w2]);
+    const weekTasksByWeek: Record<string, PersonalKrWeekTask[]> = {
+      "w-1": [{ week_id: "w-1", task_id: "t1" }, { week_id: "w-1", task_id: "t2" }],
+      "w-2": [{ week_id: "w-2", task_id: "t1" }],
+    };
+    const tasks = [makeTask({ id: "t1" }), makeTask({ id: "t2" }), makeTask({ id: "t3" })];
+    const linked = computeWeekCardsLinkedTasks(cards, weekTasksByWeek, tasks);
+    expect(linked.map(t => t.id).sort()).toEqual(["t1", "t2"]);
+  });
+
+  it("existingが無い週・リンクが無い週は無視する。存在しないtask_idも弾く", () => {
+    const segments = computeMonthWeekSegments(new Date(2026, 7, 1));
+    const cards = buildWeekCards(segments, []);
+    const weekTasksByWeek: Record<string, PersonalKrWeekTask[]> = { "w-1": [{ week_id: "w-1", task_id: "ghost" }] };
+    const linked = computeWeekCardsLinkedTasks(cards, weekTasksByWeek, []);
+    expect(linked).toEqual([]);
   });
 });

@@ -304,6 +304,22 @@ PK(`week_id`,`task_id`)。**方式は「自動候補＋明示リンク」**（�
 - 本人以外にはRLSで見えない（**非super-adminアカウントで実地検証すること**。山本さんはsuper-adminなので自分のアカウントでは検証にならない）
 - `npx tsc --noEmit` 0／`npx vitest run` 全通過／`npm run lint` 新規エラー0／`npm run build` 成功
 
+### Phase 4の延長：前月をふまえた計画ドラフト（v3.99・2026-08-26）
+
+Phase 4（月末の振り返り下書き）で`review_text`/`gm_comment`が画面から記入できるようになったことで、
+「7月の振り返りと上司FBが揃えば8月の計画を引ける」の材料が初めて実用的に揃った。この材料の上に
+「翌月の計画」をドラフトする機能を追加した（山本さんの依頼：「四半期OKRにある目標を達成するために、
+8月の計画のドラフトも生成できるはず」）。
+
+- **置き場所は計画欄に直接流し込む（新テーブル・新列は作らない＝マイグレーション不要）。** 狙いのバンドは
+  AIに提案させ、確定は人が別操作で行う。入力範囲は当四半期の過去月すべて。上司FBもAIに渡してよい
+  （2026-08-26・山本さんがAskUserQuestionで確定した設計判断）。
+- 生成→提示→反映の3段階（いきなり計画欄を書き換えない・DBへは書かない）。詳細はCLAUDE.md Section 24
+  Step P参照。`src/lib/personalOkr/planDraftContext.ts`（文脈組み立て）・
+  `src/lib/ai/personalOkrPlanDraftExtractor.ts`（AI呼び出し・`AIIntent="okr-personal-plan-draft"`）・
+  `src/components/okr/personal/PersonalOkrPlanDraftModal.tsx`（UI）。
+- Phase 5（部署ナレッジ）・グループOKR再設計（Phase 6）とは独立。今回の対象外。
+
 ---
 
 ## 9. 既存の整理（Phase 1と同時に実施・決定事項）

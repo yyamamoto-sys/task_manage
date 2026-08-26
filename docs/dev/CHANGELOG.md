@@ -6719,5 +6719,60 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   `npx tsc --noEmit`0・`npx vitest run`全通過・`npm run build`成功。
 #   やらないこと：DBスキーマ変更なし。新機能の追加なし（不具合修正・共通化のみ）。
 #
-# 最終更新：2026-08-26（v3.98）
+# v3.99（2026-08-26）：個人OKR「前月をふまえて下書き」機能を追加（CLAUDE.md Section 24 Step P）
+#   山本さんの依頼：四半期OKRの目標と月次振り返りが揃えば、翌月の計画のドラフトも生成できる
+#   はず。前月の実績・振り返り・上司FBから月次計画をドラフトする機能を実装してほしい。
+#   設計判断（AskUserQuestionで確定済み）：ドラフトは計画欄に直接流し込む（新テーブル・
+#   新列は作らない＝マイグレーション不要）。狙いのバンドはAIに提案させ確定は人が別操作で
+#   行う。入力範囲は当四半期の過去月すべて。上司FB（gm_eval_pct/gm_comment）はAIに渡してよい。
+#   Step 0（実装前確認）：①`AIIntent`はEdge Function側に許可リスト・分岐が無い自由文字列
+#   （`consultation_type`列への記録のみに使う）ため、新タグ追加にEdge Function再デプロイは
+#   不要。②`PersonalKrPanel`の計画欄（positioning等）はv3.87/v3.88のdirty判定・
+#   `baselineUpdatedAtRef`（TaskEditModal/TaskSidePanel専用の楽観ロック衝突検知）を持たない
+#   （保存ボタンは常時活性）。本機能のstateセットはこの既存挙動と衝突しない。③週の行の
+#   組み立て（personalOkrAiContext.ts）は関数として切り出されていなかったため、
+#   `buildFilledWeekLines()`として抽出し両ファイルから共有した。
+#   A（文脈組み立て）：新規`src/lib/personalOkr/planDraftContext.ts`。KRの6本文欄・四半期の
+#   進み方（残り◯か月）・当四半期の過去月すべて（古い月から順。計画4欄・狙いのバンド・
+#   振り返り本文・自己評価%・GM評価%・GMコメント・週の記録・タスク機械集計）・当月に
+#   既に書かれている計画・直近のメモを組み立てる。既存の`buildFilledWeekLines`・
+#   `summarizeLinkedTaskStatus`・`computeReviewMaterial`をそのまま再利用（再実装しない）。
+#   `computeWeekCardsLinkedTasks()`（新規・`weekLayout.ts`）に「週カード群に紐づくタスクの
+#   ユニーク化」を切り出し、当月（PersonalKrPanel.tsxの`monthLinkedTasks`）・過去月（本機能）
+#   の両方から使う。review_text/gm_commentは1200字でクリップ。総文字数が上限（目安8000字）を
+#   超えたら、古い月から順に「週の記録→メモ→計画4欄」の順で決定的に削る
+#   （`buildPlanDraftContext()`。546対策・CLAUDE.md Section 19・28）。
+#   B（AI呼び出し）：新規`src/lib/ai/personalOkrPlanDraftExtractor.ts`。
+#   `AIIntent="okr-personal-plan-draft"`を追加。model=claude-sonnet-4-6・max_tokens=3072。
+#   出力は`{positioning, activities, target_and_evidence, risks, band_target,
+#   band_target_reason, basis}`の厳密なJSON。band_targetは60/70/80/90/100以外はnullに落とす
+#   （例外にしない）。4欄すべて空なら例外（1〜3欄が空なのは許容）。
+#   `WEEKLY_IS_OPTIONAL_NOTICE`（v3.97）をシステムプロンプトに埋め込んだ（Section 24の
+#   グランドルールの最初の適用例）。stop_reason==="max_tokens"は明示エラー・JSONパース失敗時
+#   は1回だけ自己修正リトライ（既存の抽出系と同じ作法）。
+#   C（UI）：新規`src/components/okr/personal/PersonalOkrPlanDraftModal.tsx`。生成→提示→
+#   反映の3段階。①材料の要約（過去月ごとに1行。機械計算・即時描画）②生成／再生成ボタン
+#   ③4欄＋バンド提案を編集可能なtextareaで表示④「計画欄に反映」→ 親（PersonalKrPanel）の
+#   positioning等のstateへセットするだけ（DBへは書かない）。既に記入がある欄が1つでも
+#   あればConfirmModalで確認する（tone="danger"・confirmLabel="上書きして反映する"・
+#   cancelLabel="反映しない"。cancel側＝安全側＝反映しない。背景クリックは必ずcancel扱いに
+#   なるため。CLAUDE.md Section 21・v3.88の教訓）。⑤バンド提案は「この値を狙いに入れる」を
+#   別ボタンにし、4欄の反映と同時には入れない。入口は`PersonalKrPanel.tsx`の「◯月の計画」
+#   見出し右の「✦ 前月をふまえて下書き」ボタン（明示ボタンでのみ起動。表示条件は
+#   `monthStatus!=="future" && !readOnly`。非活性は`isPlanDraftMaterialEmpty()`＝KR定義6欄が
+#   全て空かつ過去月に計画・振り返り・自己評価・GMコメントの記入が無いときだけ。1か月目
+#   （過去月ゼロ）でもKR定義があれば生成できる）。モーダルは`kr.id`・`monthStr`のどちらかが
+#   変わったら閉じる（トラップ③対策。別の月への反映事故を防ぐ）。
+#   D（既存の穴の確認）：`PersonalKrPanel`の計画欄は`unsavedEditorRegistry`（v3.89）に
+#   登録されていない（TaskEditModal/TaskSidePanel専用の仕組みで、個人OKRの計画欄は元々
+#   対象外。本機能で新たな穴を作ったわけではなく、既存の設計をそのまま踏襲した）。
+#   新規テスト：`planDraftContext.test.ts`（27件）・`personalOkrPlanDraftExtractor.test.ts`
+#   （14件）・`weekLayout.test.ts`に`computeWeekCardsLinkedTasks`を2件追加。既存1778件から
+#   増加（合計1778件通過を確認）。
+#   `npx tsc --noEmit`0・`npx vitest run`全1778件通過・`npm run build`成功
+#   （`PersonalOkrView`チャンクgzip52.93KB・閾値200KB未満）。
+#   やらないこと：新しいテーブル・新しい列の追加なし。生成結果のDB自動保存なし。
+#   前四半期のKRを材料にすることなし。未来月での生成なし。Kintoneへの書き込みなし。
+#
+# 最終更新：2026-08-26（v3.99）
 

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.98
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.99
 #
-最終更新：2026-08-26（v3.97）
+最終更新：2026-08-26（v3.99）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.98）
+- 最終更新：2026-08-26（v3.99）
 
 ---
 
@@ -2272,6 +2272,23 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **画面表示側**：`AheadBlock.tsx`から「評価待ちの週：W3・W4」「W4・W5の目標状態が未設定です」／「残り週の目標状態はすべて設定済みです」の行を削除。「週の自己評価：◯N／△N／✕N」は◯△✕が全て0なら行ごと出さない。`moves`の週ラベルが空なら列自体を出さない（`BandOverridePicker.tsx`への分離自体はv3.96実施済み）。`PersonalOkrReviewDraftModal.tsx`の材料表示から「（全N週中・目標状態設定済みN週・未評価N週）」を削除し、◯△✕が全て0なら週の行ごと出さない（この対応もv3.96のモーダル改修と同時に先行実施済み）。「材料がありません（週の目標状態を書いてから生成してください）」→「まだ材料がありません（計画・週の記録・タスク・メモのいずれかを書いてから生成してください）」に変更（v3.96で先行実施済み）。`PersonalKrPanel.tsx`の週カード見出しに「週ごとの目標状態と自己評価は任意です。使う場合のみ記入してください。」を追記した。
 - **テスト**：`personalOkrAiContext.test.ts`（週が全て空／一部だけ埋まっている／bandTarget未設定のケースを追加。修正前のソースに対して実際に走らせ8/16件が赤くなることを確認済み）・`personalOkrOutlookExtractor.test.ts`（`week_label`無しでも`action`があれば通ることを追加）・`personalOkrReviewDraftExtractor.test.ts`（週の行が0件時に出ないこと・共通ノーティスの検証を追加）・`personalOkrChatPrompt.test.ts`（共通ノーティスの検証を追加）。
 - **やらないこと**：週次機能そのものの削除はしていない（任意化するだけ。機能は残す）。DBスキーマ変更なし。
+
+### Step P：前月をふまえて下書き（翌月の計画ドラフト。v3.99・2026-08-26）
+
+山本さんの依頼：「このアプリには四半期OKRの情報と月次OKR振返りが登録されるので、例えば7月の振返りと上司からのFBが揃えば、四半期OKRにある目標を達成するために、8月の計画のドラフトも生成できるはず」。v3.96で`review_text`/`gm_comment`が画面から記入できるようになったことで初めて実用的に揃う材料の上に載る機能。
+
+- 🔴 **設計判断（山本さんが選択済み・変更禁止）**：ドラフトの置き場所は計画欄に直接流し込む（**新テーブル・新列は作らない＝マイグレーション不要**）。狙いのバンド（`band_target`）はAIに提案させ、確定は人が別操作で行う。入力範囲は当四半期の過去月すべて（3か月目なら1・2か月目の両方）。上司FB（`gm_eval_pct`/`gm_comment`）はAIに渡してよい。
+- **Step 0で確認した3点**：①`AIIntent`はEdge Function側（`supabase/functions/ai-consult/index.ts`）に許可リスト・分岐を持たない自由文字列で、`consultation_type`列への記録にのみ使う。新タグ追加に**Edge Functionの再デプロイは不要**。②`PersonalKrPanel`の計画欄（`positioning`等）はv3.87/v3.88のdirty判定・`baselineUpdatedAtRef`（楽観ロック衝突検知）を持たない（TaskEditModal/TaskSidePanel専用の仕組みで、個人OKRの計画欄は対象外。保存ボタンは常に活性）。本機能のstateセットはこの既存挙動と衝突しない。③週の行の組み立て（`personalOkrAiContext.ts`）は関数として切り出されていなかったため、`buildFilledWeekLines()`として抽出し、当月のAI文脈とこの機能の両方から共有する。
+- **文脈の組み立て**：新規`src/lib/personalOkr/planDraftContext.ts`（純粋関数）。`personalOkrAiContext.ts`（当月の実行支援用）は改造せず新設した。KRの6本文欄（記入がある欄だけ）・四半期の進み方（残り◯か月）・当四半期の過去月すべて（古い月から順。計画4欄・狙いのバンド・振り返り本文・自己評価%・GM評価%・GMコメント・週の記録・タスクの機械集計）・当月に既に書かれている計画・直近のメモ、の順で組み立てる。記入が無い項目・記入が無い週は行ごと出さない（週次任意化＝Step Oと同じ思想を全項目に適用）。
+  - 🔴 既存関数の再利用：週の行は`buildFilledWeekLines`、タスクの機械集計は`summarizeLinkedTaskStatus`/`computeReviewMaterial`をそのまま使う。新規`computeWeekCardsLinkedTasks()`（`weekLayout.ts`）を「週カード群に紐づくタスクをユニーク化する」処理として切り出し、当月（`PersonalKrPanel.tsx`の`monthLinkedTasks`）・過去月（本機能）の両方から使う（同じ計算を書き直さない）。
+  - **546対策（Section 19・28）**：`review_text`/`gm_comment`は各1200字でクリップ（`buildPlanDraftPastMonthEntry`）。組み立て後の総文字数が上限（`PLAN_DRAFT_CONTEXT_CHAR_LIMIT`＝8000字目安）を超えたら、`buildPlanDraftContext()`が**古い月から順に「週の記録→メモ→計画4欄」の順で決定的に削る**。
+- **AI呼び出し**：新規`src/lib/ai/personalOkrPlanDraftExtractor.ts`。`AIIntent="okr-personal-plan-draft"`を追加。model=`claude-sonnet-4-6`・max_tokens=3072（Section 6-1c）。出力は`{positioning, activities, target_and_evidence, risks, band_target, band_target_reason, basis}`の厳密なJSON。`band_target`は60/70/80/90/100以外の値（65や"70"等）は`null`に落とす（弾いて例外にしない）。4欄すべて空なら例外（生成失敗）・1〜3欄が空なのは許容する。`WEEKLY_IS_OPTIONAL_NOTICE`をシステムプロンプトに埋め込んだ（**Section 24グランドルールの最初の適用例**）。`stop_reason==="max_tokens"`は明示エラーにしてリトライしない・JSONパース失敗時は1回だけ自己修正リトライ（既存の抽出系と同じ作法）。非2xxのエラー処理は`invokeAI()`をそのまま経由し独自実装しない。
+- **UI（生成→提示→反映の3段階。いきなり計画欄を書き換えない）**：新規`src/components/okr/personal/PersonalOkrPlanDraftModal.tsx`。①材料の要約（過去月ごとに1行。機械計算・即時描画）②生成／再生成ボタン③生成結果を4欄＋バンド提案で表示（各欄はその場で編集できるtextarea）④「計画欄に反映」→ 親（`PersonalKrPanel`）の`positioning`/`activities`/`target_and_evidence`/`risks`のstateへセットするだけ（**DBへは書かない。人が計画欄の「保存」を押して初めて保存される**）。既に記入がある欄が1つでもあれば`ConfirmModal`で確認する（`tone="danger"`・confirmLabel="上書きして反映する"・cancelLabel="反映しない"。**cancel側＝安全側＝反映しない**。背景クリックは必ずcancel扱いになるため。CLAUDE.md Section 21・v3.88の教訓）。⑤バンド提案は「この値を狙いに入れる」ボタンを4欄の反映とは別に置き、同時には入れない（数値は人が明示的に選ぶ、という既存方針を維持）。
+  - **入口**：`PersonalKrPanel.tsx`の「◯月の計画」見出し右の「✦ 前月をふまえて下書き」ボタン。表示条件は`monthStatus !== "future" && !readOnly`。非活性は`isPlanDraftMaterialEmpty()`（KR定義6欄が全て空・かつ当四半期の過去月に計画4欄・振り返り本文・自己評価%・上司コメントのいずれの記入も無いとき）のみ。🔴 **1か月目（過去月が無い）でもKR定義があれば生成できる**（四半期の達成基準から初月の計画を引くのは正当な使い方）。
+  - 🔴 **トラップ③対策**：モーダルは`kr.id`・`monthStr`のどちらかが変わったら閉じる（別の月への反映事故を防ぐ）。
+- **既存の穴の確認（Step 0）**：`PersonalKrPanel`の計画欄は`unsavedEditorRegistry`（v3.89・Section 46）に登録されていない（TaskEditModal/TaskSidePanel専用の仕組みで、個人OKRの計画欄は元々対象外）。本機能はこの既存の設計をそのまま踏襲する（新たな穴を作ったわけではなく、修正も本機能のスコープ外）。
+- **テスト**：`planDraftContext.test.ts`（27件）・`personalOkrPlanDraftExtractor.test.ts`（14件）・`weekLayout.test.ts`に`computeWeekCardsLinkedTasks`を2件追加。
+- **やらないこと**：新しいテーブル・新しい列・マイグレーション。生成結果のDB自動保存。前四半期のKRを材料にすること。未来月での生成。Kintoneへの書き込み。部署ナレッジ（Phase 5）。
 
 ---
 

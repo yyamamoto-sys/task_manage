@@ -10,7 +10,7 @@
 // goal_state/self_ratingを書いた時点で初めて行を作る）。
 
 import type { MonthWeekSegment } from "../date/monthWeeks";
-import type { PersonalKrWeek } from "../localData/types";
+import type { PersonalKrWeek, PersonalKrWeekTask, Task } from "../localData/types";
 import { toDateStr } from "../date";
 
 export interface WeekCardData {
@@ -29,4 +29,23 @@ export function buildWeekCards(segments: MonthWeekSegment[], existingWeeks: Pers
     weekEndStr: toDateStr(seg.weekEnd),
     existing: byIndex.get(seg.weekIndex) ?? null,
   }));
+}
+
+/**
+ * 週カード群に紐づくタスクを、週をまたいだ重複を除いてユニーク化して返す。
+ * 🔴 PersonalKrPanel.tsxの`monthLinkedTasks`（当月）と
+ * planDraftContext.ts（過去月・v3.99）の両方が同じ計算を必要とするため、
+ * ここに1つだけ置いて両方から使う（同じ計算を書き直さない）。
+ */
+export function computeWeekCardsLinkedTasks(
+  weekCards: WeekCardData[],
+  weekTasksByWeek: Record<string, PersonalKrWeekTask[]>,
+  tasks: Task[],
+): Task[] {
+  const ids = new Set<string>();
+  for (const card of weekCards) {
+    if (!card.existing) continue;
+    for (const link of weekTasksByWeek[card.existing.id] ?? []) ids.add(link.task_id);
+  }
+  return Array.from(ids).map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
 }

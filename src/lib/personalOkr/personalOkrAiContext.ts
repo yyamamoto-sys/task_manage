@@ -63,6 +63,23 @@ function hasAnyWeekData(weeks: PersonalOkrAiContextInput["weeks"]): boolean {
   return weeks.some(w => w.goalState != null || w.selfRating != null);
 }
 
+/**
+ * 埋まっている週（goal_state・self_ratingのどちらかがある週）だけを行に整形する。
+ * 🔴 personalOkrPlanDraftContext.ts（前月をふまえた計画ドラフト・過去月の週の記録）と
+ * この場（当月のAI文脈）の両方で使う共通部品。同じ整形ロジックを書き直さないこと
+ * （CLAUDE.md「コピペ実装は1つだけ改良される」の教訓）。
+ */
+export function buildFilledWeekLines(weeks: PersonalOkrAiContextWeek[]): string[] {
+  return weeks
+    .filter(w => w.goalState != null || w.selfRating != null)
+    .map(w => {
+      const parts: string[] = [];
+      if (w.goalState) parts.push(`（${w.goalState}）`);
+      if (w.selfRating) parts.push(SELF_RATING_LABEL[w.selfRating]);
+      return `- ${w.label}：${parts.join("｜")}`;
+    });
+}
+
 /** AIへ渡すユーザーメッセージ本文（テキストブロック）を組み立てる */
 export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput): string {
   const lines: string[] = [];
@@ -93,15 +110,10 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
 
   // 🔴 週ごとの目標設定・自己評価は任意の補助機能。埋まっている週の行だけ出し、
   // 出す週が0本ならセクションごと省略する（「週データなし」とも書かない）。
-  const filledWeeks = input.weeks.filter(w => w.goalState != null || w.selfRating != null);
-  if (filledWeeks.length > 0) {
+  const weekLines = buildFilledWeekLines(input.weeks);
+  if (weekLines.length > 0) {
     lines.push("【週の目標状態と自己評価】");
-    for (const w of filledWeeks) {
-      const parts: string[] = [];
-      if (w.goalState) parts.push(`（${w.goalState}）`);
-      if (w.selfRating) parts.push(SELF_RATING_LABEL[w.selfRating]);
-      lines.push(`- ${w.label}：${parts.join("｜")}`);
-    }
+    lines.push(...weekLines);
   }
 
   lines.push("【紐づくタスクの状況（機械計算済みの要約。タスクの生データは渡していない）】");

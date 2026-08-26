@@ -40,12 +40,16 @@ import type {
 } from "../../../lib/localData/types";
 import { quarterMonthSlots, monthToDateStr, classifyMonth, isMonthEditable } from "../../../lib/personalOkr/quarterMonths";
 import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
-import { buildWeekCards } from "../../../lib/personalOkr/weekLayout";
+import { buildWeekCards, computeWeekCardsLinkedTasks } from "../../../lib/personalOkr/weekLayout";
 import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personalOkr/aheadCompute";
 import { summarizeLinkedTaskStatus } from "../../../lib/personalOkr/aheadTaskStats";
 import { computeReviewMaterial, type ReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
 import { computeOutlookInputFingerprint, resolveMonthPlanTimestamp } from "../../../lib/personalOkr/outlookFingerprint";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
+import {
+  buildPlanDraftPastMonthEntry, buildPlanDraftContext, buildPlanDraftMaterialSummaryLines,
+  isPlanDraftMaterialEmpty, type PlanDraftPastMonth,
+} from "../../../lib/personalOkr/planDraftContext";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { formatErrorForUser } from "../../../lib/errorMessage";
@@ -54,6 +58,7 @@ import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
 import { AheadBlock } from "./AheadBlock";
 import { MonthReviewBlock } from "./MonthReviewBlock";
 import { PersonalOkrReviewDraftModal } from "./PersonalOkrReviewDraftModal";
+import { PersonalOkrPlanDraftModal, type PlanDraftFields } from "./PersonalOkrPlanDraftModal";
 
 const KR_KIND_LABEL: Record<string, string> = {
   group_kr: "グループKR紐づけ", general: "全般", company_common: "全社共通",
@@ -253,14 +258,10 @@ export function PersonalKrPanel({
   // ===== これから（機械計算のみ。AIは使わない。Phase 3前半） =====
   const aheadFacts = useMemo(() => computeAheadFacts(segments, monthWeeks, today), [segments, monthWeeks, today]);
   // 週をまたいだ紐づけタスクをユニーク化（同じタスクが複数週に紐づいていても二重計上しない）
-  const monthLinkedTasks = useMemo(() => {
-    const ids = new Set<string>();
-    for (const card of weekCards) {
-      if (!card.existing) continue;
-      for (const link of weekTasksByWeek[card.existing.id] ?? []) ids.add(link.task_id);
-    }
-    return Array.from(ids).map(id => tasks.find(t => t.id === id)).filter((t): t is Task => !!t);
-  }, [weekCards, weekTasksByWeek, tasks]);
+  const monthLinkedTasks = useMemo(
+    () => computeWeekCardsLinkedTasks(weekCards, weekTasksByWeek, tasks),
+    [weekCards, weekTasksByWeek, tasks],
+  );
   const aheadTaskStats = useMemo(
     () => summarizeLinkedTaskStatus(monthLinkedTasks, tasks, taskDependencies),
     [monthLinkedTasks, tasks, taskDependencies],
@@ -272,6 +273,108 @@ export function PersonalKrPanel({
     if (monthStatus === "future") return null; // 未来月は材料が無いため対象外
     return computeReviewMaterial(segments, monthWeeks, monthLinkedTasks, tasks, taskDependencies, today);
   }, [monthStatus, segments, monthWeeks, monthLinkedTasks, tasks, taskDependencies, today]);
+
+  // ===== Step P：前月をふまえた計画ドラフト（v3.99）=====
+  // 🔴 新テーブル・新列は作らない。生成結果はモーダルのローカルstateだけで保持し、
+  // DBには書かない（山本さんの設計判断）。
+  const krFieldsEmpty = !kr.category && !kr.activity && !kr.strength_role && !kr.weakness_role && !kr.criteria && !kr.supplement;
+
+  // 当四半期の過去月すべて（monthIndexより小さい月。slotsは1→3の昇順のため古い月から順）。
+  const pastMonthsPlanDraftData: PlanDraftPastMonth[] = useMemo(() => {
+    const result: PlanDraftPastMonth[] = [];
+    for (const s of slots) {
+      if (s.monthIndex >= monthIndex) continue;
+      const pastMonthStr = monthToDateStr(s.monthStart);
+      const pastRecord = months.find(m => m.month === pastMonthStr && !m.is_deleted) ?? null;
+      const pastSegments = computeMonthWeekSegments(s.monthStart);
+      const pastWeeks = weeks.filter(w => w.month === pastMonthStr && !w.is_deleted);
+      const pastWeekCards = buildWeekCards(pastSegments, pastWeeks);
+      // 🔴 既存の集計関数（computeWeekCardsLinkedTasks・computeReviewMaterial）を再利用し、
+      // 同じ計算を書き直さない（月次計画欄の即時描画・当月のAI文脈と同じ材料元）。
+      const pastLinkedTasks = computeWeekCardsLinkedTasks(pastWeekCards, weekTasksByWeek, tasks);
+      const material = computeReviewMaterial(pastSegments, pastWeeks, pastLinkedTasks, tasks, taskDependencies, today);
+      result.push(buildPlanDraftPastMonthEntry({
+        monthLabel: `${s.monthStart.getMonth() + 1}月（${s.monthIndex}か月目）`,
+        monthRecord: pastRecord,
+        weeks: pastWeekCards.map(c => ({
+          label: `W${c.weekIndex}`,
+          goalState: c.existing?.goal_state ?? null,
+          selfRating: c.existing?.self_rating ?? null,
+        })),
+        taskSummary: {
+          completedTaskCount: material.completedTaskCount,
+          incompleteTaskCount: material.incompleteTaskCount,
+          taskStats: material.taskStats,
+        },
+      }));
+    }
+    return result;
+  }, [slots, monthIndex, months, weeks, weekTasksByWeek, tasks, taskDependencies, today]);
+
+  // 過去月の週タスクリンクを事前に読み込む（当月分は既存のuseEffectが担う。これは過去月専用。
+  // ensureWeekTasksLoadedは週idごとにキャッシュ済みなら即returnするため重複コストは無い）。
+  useEffect(() => {
+    for (const s of slots) {
+      if (s.monthIndex >= monthIndex) continue;
+      const pastMonthStr = monthToDateStr(s.monthStart);
+      const pastSegments = computeMonthWeekSegments(s.monthStart);
+      const pastWeeks = weeks.filter(w => w.month === pastMonthStr && !w.is_deleted);
+      for (const card of buildWeekCards(pastSegments, pastWeeks)) {
+        if (card.existing) ensureWeekTasksLoaded(card.existing.id);
+      }
+    }
+  }, [slots, monthIndex, weeks, ensureWeekTasksLoaded]);
+
+  // 🔴「材料が無い」ときだけボタンを非活性にする（§2-4）。1か月目（過去月が無い）でも
+  // KR定義があれば生成できる。
+  const planDraftMaterialEmpty = isPlanDraftMaterialEmpty(krFieldsEmpty, pastMonthsPlanDraftData);
+  const planDraftMaterialSummaryLines = useMemo(
+    () => buildPlanDraftMaterialSummaryLines(pastMonthsPlanDraftData),
+    [pastMonthsPlanDraftData],
+  );
+
+  const [planDraftModalOpen, setPlanDraftModalOpen] = useState(false);
+  // 🔴 トラップ③：モーダルを開いたままKR・月を切り替えると別の月へ反映してしまう危険がある
+  // ため、kr.id・monthStrのどちらかが変わったら必ず閉じる。
+  useEffect(() => { setPlanDraftModalOpen(false); }, [kr.id, monthStr]);
+
+  // AIへ渡す文脈は、モーダルを開いたときだけ組み立てる（毎レンダー計算しない）。
+  const planDraftContextResult = useMemo(() => {
+    if (!planDraftModalOpen) return null;
+    const hasCurrentMonthPlan = !!(monthRecord?.positioning || monthRecord?.activities || monthRecord?.target_and_evidence || monthRecord?.risks);
+    return buildPlanDraftContext({
+      krLabel: kr.label,
+      krKindLabel: groupKrTitle,
+      fiscalYear: kr.fiscal_year,
+      quarter: kr.quarter,
+      category: kr.category ?? null,
+      activity: kr.activity ?? null,
+      strengthRole: kr.strength_role ?? null,
+      weaknessRole: kr.weakness_role ?? null,
+      criteria: kr.criteria ?? null,
+      supplement: kr.supplement ?? null,
+      targetMonthLabel: `${slot.monthStart.getMonth() + 1}月（${monthIndex}か月目／全3か月）`,
+      targetMonthIndex: monthIndex,
+      pastMonths: pastMonthsPlanDraftData,
+      currentMonthPlan: hasCurrentMonthPlan ? {
+        positioning: monthRecord?.positioning ?? null,
+        activities: monthRecord?.activities ?? null,
+        targetAndEvidence: monthRecord?.target_and_evidence ?? null,
+        risks: monthRecord?.risks ?? null,
+      } : null,
+      // 直近3件・各300字まで（既存のpersonalOkrContextと同じ絞り方）
+      recentMemos: memos.slice(0, 3).map(m => m.body.slice(0, 300)),
+    });
+  }, [planDraftModalOpen, kr, groupKrTitle, slot.monthStart, monthIndex, pastMonthsPlanDraftData, monthRecord, memos]);
+
+  // 🔴 4欄をpositioning等のstateへセットするだけ。DBへは書かない（人が保存ボタンを押すまで
+  // 保存されない）。既存の記入がある場合の確認はモーダル側（ConfirmModal）が担う。
+  const handleApplyPlanDraft = (fields: PlanDraftFields) => {
+    setPositioning(fields.positioning);
+    setActivities(fields.activities);
+    setTargetAndEvidence(fields.targetAndEvidence);
+    setRisks(fields.risks);
+  };
 
   // ===== Phase 3後半：AI解析（見立て・週ごとの一手・捨てる候補・バンドのAI判定） =====
   // 文脈（personalOkrContext）・フィンガープリントは、当月タブ表示中に加えて過去月でも
@@ -506,6 +609,19 @@ export function PersonalKrPanel({
         />
       )}
 
+      {!readOnly && planDraftModalOpen && planDraftContextResult && (
+        <PersonalOkrPlanDraftModal
+          krLabel={kr.label}
+          targetMonthLabel={`${slot.monthStart.getMonth() + 1}月`}
+          materialSummaryLines={planDraftMaterialSummaryLines}
+          contextText={planDraftContextResult.text}
+          existingPlanFields={{ positioning, activities, targetAndEvidence, risks }}
+          onApply={handleApplyPlanDraft}
+          onSetBandTarget={setBandTarget}
+          onClose={() => setPlanDraftModalOpen(false)}
+        />
+      )}
+
       {loadingDetail ? (
         <div style={{ padding: "40px 0", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "12px" }}>読み込み中…</div>
       ) : monthStatus === "future" ? (
@@ -541,6 +657,24 @@ export function PersonalKrPanel({
             <div style={sectionHeadStyle}>
               <span>{slot.monthStart.getMonth() + 1}月の計画</span><span style={ruleStyle} />
               <span>{monthRecord?.source_label ? "Kintone取込（編集可・正本はKintone）" : "手入力（KintoneからのPDF取込も可）"}</span>
+              {/* 🔴 明示ボタンでのみ起動する（タブを開いた・月を切り替えただけでは走らせない。
+                  CLAUDE.md Section 24 Step P・v3.99）。非活性は「材料が無い」ときだけ（§2-4）。
+                  この分岐はmonthStatus==="future"の外側（monthStatusは既にcurrent|pastに絞られている）。 */}
+              {!readOnly && (
+                <button
+                  onClick={() => setPlanDraftModalOpen(true)}
+                  disabled={planDraftMaterialEmpty}
+                  title={planDraftMaterialEmpty ? "まだ材料がありません（KRの内容か、過去月の計画・振り返りを書いてから生成してください）" : undefined}
+                  style={{
+                    fontFamily: "inherit", fontSize: "10.5px", fontWeight: 700, textTransform: "none",
+                    letterSpacing: "normal", padding: "4px 10px", borderRadius: "var(--radius-sm)",
+                    border: `1px solid ${planDraftMaterialEmpty ? "var(--color-border-primary)" : "var(--color-brand-border)"}`,
+                    background: planDraftMaterialEmpty ? "var(--color-bg-tertiary)" : "var(--color-brand-light)",
+                    color: planDraftMaterialEmpty ? "var(--color-text-tertiary)" : "var(--color-brand)",
+                    cursor: planDraftMaterialEmpty ? "default" : "pointer", whiteSpace: "nowrap",
+                  }}
+                >✦ 前月をふまえて下書き</button>
+              )}
             </div>
             {monthEditable && !monthRecord && (
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "8px 12px", marginBottom: "8px", lineHeight: 1.6 }}>
