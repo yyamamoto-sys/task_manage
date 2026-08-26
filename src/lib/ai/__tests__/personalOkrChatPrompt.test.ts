@@ -19,4 +19,9 @@ describe("buildPersonalOkrChatSystemPrompt", () => {
     const prompt = buildPersonalOkrChatSystemPrompt("dummy");
     expect(prompt).toContain("憶測で埋めない");
   });
+
+  it("🔴 週次任意化の共通ノーティスを含む（実際に組み立てたプロンプト文字列に対して検査）", () => {
+    const prompt = buildPersonalOkrChatSystemPrompt("dummy");
+    expect(prompt).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
+  });
 });

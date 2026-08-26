@@ -64,6 +64,7 @@ export function AheadBlock({
   const bandAi = outlookRow?.band_ai ?? null;
   const display = resolveBandDisplay(bandOverride, bandAi, bandTarget);
   const hasTaskAlerts = taskStats.delayedCount > 0 || taskStats.stagnantCount > 0 || taskStats.blockedCount > 0;
+  const hasRatings = facts.ratingCounts.o > 0 || facts.ratingCounts.t > 0 || facts.ratingCounts.x > 0;
   const outlookPayload = outlookRow ? readStoredOutlookPayload(outlookRow.outlook_json) : null;
   // loading（スケルトン）: 解析中、またはDBの直近結果をまだ一度も取得していない（初回のensureOutlookLoaded完了前）
   const isLoadingOutlook = analyzing || outlookRow === undefined;
@@ -134,15 +135,12 @@ export function AheadBlock({
         {/* 機械計算の事実（AIを使わない） */}
         <div style={{ padding: "13px 17px", display: "flex", flexDirection: "column", gap: "6px", fontSize: "12.5px", color: "var(--color-text-primary)" }}>
           <div>残り{facts.weeksRemaining}週・月末まで{facts.daysUntilMonthEnd}日</div>
-          <div>週の自己評価：◯{facts.ratingCounts.o} ／ △{facts.ratingCounts.t} ／ ✕{facts.ratingCounts.x}</div>
-          {facts.unratedWeekLabels.length > 0 && (
-            <div style={{ color: "var(--color-text-tertiary)" }}>評価待ちの週：{facts.unratedWeekLabels.join("・")}</div>
+          {/* 🔴 週の自己評価は任意の補助機能。◯△✕が全て0なら行ごと出さない（記入が無いことに
+              言及しない。CLAUDE.md Section 24・2026-08-26）。「評価待ちの週」「目標状態が未設定です」の
+              行は削除した（週次を必須手順であるかのように見せてしまうため）。 */}
+          {hasRatings && (
+            <div>週の自己評価：◯{facts.ratingCounts.o} ／ △{facts.ratingCounts.t} ／ ✕{facts.ratingCounts.x}</div>
           )}
-          <div style={facts.remainingUnsetGoalCount > 0 ? { color: "var(--color-text-warning)" } : undefined}>
-            {facts.remainingUnsetGoalWeekLabels.length > 0
-              ? `${facts.remainingUnsetGoalWeekLabels.join("・")}の目標状態が未設定です`
-              : "残り週の目標状態はすべて設定済みです"}
-          </div>
           <div>当月末の達成目標：{targetAndEvidenceSet ? "設定済み" : "未設定"}</div>
           {hasTaskAlerts && (
             <div style={{ color: "var(--color-text-warning)" }}>
@@ -165,8 +163,10 @@ export function AheadBlock({
               {outlookPayload.moves.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
                   {outlookPayload.moves.map((move, i) => (
-                    <div key={i} style={{ display: "grid", gridTemplateColumns: "70px 1fr", gap: "10px", padding: "8px 10px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)" }}>
-                      <span style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)" }}>{move.week_label}</span>
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: move.week_label ? "70px 1fr" : "1fr", gap: "10px", padding: "8px 10px", borderRadius: "var(--radius-md)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)" }}>
+                      {/* 🔴 week_labelは任意（週次を使わない人向けに「残り期間」等の時期表現、
+                          または空欄）。空ならラベル列自体を出さない（CLAUDE.md Section 24）。 */}
+                      {move.week_label && <span style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)" }}>{move.week_label}</span>}
                       <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
                         <b>{move.action}</b>
                         {move.reason && <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>{move.reason}</span>}

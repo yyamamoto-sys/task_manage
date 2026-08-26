@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.96
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.97
 #
-最終更新：2026-08-26（v3.96）
+最終更新：2026-08-26（v3.97）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.96）
+- 最終更新：2026-08-26（v3.97）
 
 ---
 
@@ -2258,6 +2258,20 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 - **過去月の文言修正**：「今月の計画」見出し・保存ボタンを`${月}月の計画`のように月番号を使う文言へ変更（過去月で見ると嘘になるため）。「（確定済み・読み取り専用）」バッジを「（過去月）」に変更し、計画欄の説明文を過去月・当月で統一した。
 - **テスト**：`monthRecordMerge.test.ts`（4件）・`monthReviewForm.test.ts`（10件）・`quarterMonths.test.ts`に`isMonthEditable`（4件）を追加。
 - **やらないこと（v3.97で対応）**：週次の任意化（AI側・画面表示側）はこのバージョンでは行っていない。
+
+### Step O：週次（週ごとの目標設定・自己評価）の任意化（v3.97・2026-08-26）
+
+山本さんの依頼：AIの分析結果に「週ごとに目標を立てて振り返れているか」への言及が多い。週次の目標設定・自己評価は、使いたい人だけが使う任意の補助機能でありAIが分析するための補助情報。必須手順ではない。週次機能を使っているかどうかで評価してはならない。大事なのは内容。記入がないものについて、記入がないこと自体に言及する必要はない。
+
+- 🔴 **新グランドルール**：週ごとの目標設定・自己評価は任意の補助機能である。AI・画面のいずれでも「記入が無いこと」を指摘・評価してはならない。プロンプトを追加・変更するときは`WEEKLY_IS_OPTIONAL_NOTICE`（`src/lib/ai/weeklyOptionalNotice.ts`）を必ず含める。
+- **共通条項の1箇所化**：新規`src/lib/ai/weeklyOptionalNotice.ts`の`WEEKLY_IS_OPTIONAL_NOTICE`定数を、3つのシステムプロンプト（`personalOkrOutlookExtractor.ts`のこれから解析・`personalOkrReviewDraftExtractor.ts`の振り返り下書き・`personalOkrChatPrompt.ts`のAIパネル）すべてに埋め込む。文言を分散させると片方だけ直されて取り残される（コピペ実装の教訓）。
+- **`personalOkrAiContext.ts`（作業1・3共通の文脈組み立て）**：`buildPersonalOkrAiContextText()`は`goal_state`／`self_rating`のどちらかが入っている週だけ行を出す（両方空の週は出さない）。出す週が0本なら【週の目標状態と自己評価】セクション自体を省略（「週データなし」とも書かない）。「（目標状態未設定）」「未評価」という文言は一切出力しない。`buildPersonalOkrAiContextChips()`は週データが0本ならW1〜Wn等のチップを出さない。`buildPersonalOkrAiStarters()`は週データが0本なら週前提の候補（「△や✕になった週の原因は…」「残り週の計画をどう組み替えるべき？」）を出さず、週に依存しない候補（「当月末の達成目標に対して、今どこまで来ている？」等）に差し替える。当月末狙いのバンドが未設定の行も同様に出さない。
+- **`reviewMaterial.ts`（v3.96で先行実施済み）**：`isReviewMaterialEmpty()`を`isGenerationMaterialEmpty(material, hasPlanContent, memoCount)`へ改名し、週データ基準から材料全般基準（計画欄・タスク・メモのいずれかがあれば生成可）へ変えた対応はv3.96で先に実施済み（Step N参照）。`weeksWithGoalSet`／`unratedWeekCount`フィールドは誰も使わなくなったため削除した。
+- **`personalOkrReviewDraftExtractor.ts`**：`buildReviewDraftContextText()`の材料行から週数の内訳（全N週中・設定済みN週・未評価N週）を削除。◯/△/✕が全て0件なら週の行そのものを出さない。SYSTEM_PROMPTの「週の積み上げの結果どうだったか」→「取り組みの結果どうだったか」、evidenceの説明「どの週・どのタスクに基づくか」→「どの記録（週・タスク・メモ・計画）に基づくか」に変更。
+- **`personalOkrOutlookExtractor.ts`**：`moves`の説明から「目標状態が未設定の週があれば、それを書くことを一手として含めてよい」を削除。`moves.week_label`を任意にし（週が設定されていない場合は「残り期間」「月末まで」等の時期の目安、または空文字でよい）、`validateMove()`は`action`のみ必須に緩めた（`week_label`が空ならUI側でラベル表示を省く）。`lead`の説明「週の積み上げから見た現在地」→「これまでの積み上げから見た現在地」。
+- **画面表示側**：`AheadBlock.tsx`から「評価待ちの週：W3・W4」「W4・W5の目標状態が未設定です」／「残り週の目標状態はすべて設定済みです」の行を削除。「週の自己評価：◯N／△N／✕N」は◯△✕が全て0なら行ごと出さない。`moves`の週ラベルが空なら列自体を出さない（`BandOverridePicker.tsx`への分離自体はv3.96実施済み）。`PersonalOkrReviewDraftModal.tsx`の材料表示から「（全N週中・目標状態設定済みN週・未評価N週）」を削除し、◯△✕が全て0なら週の行ごと出さない（この対応もv3.96のモーダル改修と同時に先行実施済み）。「材料がありません（週の目標状態を書いてから生成してください）」→「まだ材料がありません（計画・週の記録・タスク・メモのいずれかを書いてから生成してください）」に変更（v3.96で先行実施済み）。`PersonalKrPanel.tsx`の週カード見出しに「週ごとの目標状態と自己評価は任意です。使う場合のみ記入してください。」を追記した。
+- **テスト**：`personalOkrAiContext.test.ts`（週が全て空／一部だけ埋まっている／bandTarget未設定のケースを追加。修正前のソースに対して実際に走らせ8/16件が赤くなることを確認済み）・`personalOkrOutlookExtractor.test.ts`（`week_label`無しでも`action`があれば通ることを追加）・`personalOkrReviewDraftExtractor.test.ts`（週の行が0件時に出ないこと・共通ノーティスの検証を追加）・`personalOkrChatPrompt.test.ts`（共通ノーティスの検証を追加）。
+- **やらないこと**：週次機能そのものの削除はしていない（任意化するだけ。機能は残す）。DBスキーマ変更なし。
 
 ---
 

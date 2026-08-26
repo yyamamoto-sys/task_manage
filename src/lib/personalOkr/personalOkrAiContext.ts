@@ -54,6 +54,15 @@ const SELF_RATING_LABEL: Record<Exclude<WeekSelfRating, null>, string> = {
   o: "◯達成", t: "△一部", x: "✕未達",
 };
 
+/**
+ * 週ごとの目標設定・自己評価は任意の補助機能である（2026-08-26 山本さんの指示）。
+ * goal_state・self_ratingのどちらも無い週は「記入が無い」という事実そのものに言及しない
+ * （行ごと出さない）。埋まっている週だけ出す。
+ */
+function hasAnyWeekData(weeks: PersonalOkrAiContextInput["weeks"]): boolean {
+  return weeks.some(w => w.goalState != null || w.selfRating != null);
+}
+
 /** AIへ渡すユーザーメッセージ本文（テキストブロック）を組み立てる */
 export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput): string {
   const lines: string[] = [];
@@ -79,15 +88,19 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
   if (input.activities) lines.push(`- 当月に取り組む内容：${input.activities}`);
   if (input.targetAndEvidence) lines.push(`- 当月末の達成目標と証拠：${input.targetAndEvidence}`);
   if (input.risks) lines.push(`- リスクと依存関係：${input.risks}`);
-  lines.push(`- 当月末 狙いのバンド：${input.bandTarget != null ? `${input.bandTarget}%` : "未設定"}`);
+  // 🔴 未記入なら行ごと出さない（記入が無いことに言及させないため）
+  if (input.bandTarget != null) lines.push(`- 当月末 狙いのバンド：${input.bandTarget}%`);
 
-  lines.push("【週の目標状態と自己評価】");
-  if (input.weeks.length === 0) {
-    lines.push("- （週データなし）");
-  } else {
-    for (const w of input.weeks) {
-      const ratingLabel = w.selfRating ? SELF_RATING_LABEL[w.selfRating] : "未評価";
-      lines.push(`- ${w.label}：${w.goalState ?? "（目標状態未設定）"}｜${ratingLabel}`);
+  // 🔴 週ごとの目標設定・自己評価は任意の補助機能。埋まっている週の行だけ出し、
+  // 出す週が0本ならセクションごと省略する（「週データなし」とも書かない）。
+  const filledWeeks = input.weeks.filter(w => w.goalState != null || w.selfRating != null);
+  if (filledWeeks.length > 0) {
+    lines.push("【週の目標状態と自己評価】");
+    for (const w of filledWeeks) {
+      const parts: string[] = [];
+      if (w.goalState) parts.push(`（${w.goalState}）`);
+      if (w.selfRating) parts.push(SELF_RATING_LABEL[w.selfRating]);
+      lines.push(`- ${w.label}：${parts.join("｜")}`);
     }
   }
 
@@ -108,7 +121,7 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
 /** AIパネルの「このパネルが見ているもの」チップ表示用（モックのai-ctx相当） */
 export function buildPersonalOkrAiContextChips(input: PersonalOkrAiContextInput): string[] {
   const chips: string[] = [`${input.krLabel} の内容`, `${input.monthLabel}の計画`];
-  if (input.weeks.length > 0) {
+  if (hasAnyWeekData(input.weeks)) {
     chips.push(`W1〜W${input.weeks.length}の目標状態`, "自己評価 ◯△✕");
   }
   chips.push(`タスク${input.taskSummary.linkedTaskCount}件の実績`);
@@ -119,10 +132,18 @@ export function buildPersonalOkrAiContextChips(input: PersonalOkrAiContextInput)
 /** AIパネルのスターター（質問候補）。渡している材料だけで答えられる質問に絞る */
 export function buildPersonalOkrAiStarters(input: PersonalOkrAiContextInput): string[] {
   const bandText = input.bandTarget != null ? `バンド${input.bandTarget}` : "当月の狙い";
+  if (hasAnyWeekData(input.weeks)) {
+    return [
+      `${bandText}に乗せるために、今週何を優先すべき？`,
+      "△や✕になった週の原因はどこにありそう？",
+      "残り週の計画をどう組み替えるべき？",
+      "捨てる・後回しにできる候補はある？",
+    ];
+  }
+  // 🔴 週データが無い＝週次を使っていないだけなので、週前提の候補は出さない
   return [
-    `${bandText}に乗せるために、今週何を優先すべき？`,
-    "△や✕になった週の原因はどこにありそう？",
-    "残り週の計画をどう組み替えるべき？",
+    `${bandText}に乗せるために、いま優先すべきことは？`,
+    "当月末の達成目標に対して、今どこまで来ている？",
     "捨てる・後回しにできる候補はある？",
   ];
 }

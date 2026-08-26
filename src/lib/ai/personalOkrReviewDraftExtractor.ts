@@ -24,6 +24,7 @@
 
 import { invokeAI } from "./invokeAI";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
+import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import type { ReviewMaterial } from "../personalOkr/reviewMaterial";
 
 // ===== 型定義 =====
@@ -57,6 +58,8 @@ const TRUNCATED_MESSAGE =
 const SYSTEM_PROMPT = `あなたは個人OKRの月次振り返りの「下書き」を書くAIです。
 出力先はKintone「個人OKR_月次振返り記録」の「振り返り」欄に貼り付ける地の文です。
 
+${WEEKLY_IS_OPTIONAL_NOTICE}
+
 【🔴絶対に守ること】
 自己評価の割合・達成度バンドの数値を一切書いてはならない。「[自己評価：…]」のような
 角括弧表記も出力しない。数値の評価は人が決める。あなたが書くのは事実に基づく文章の
@@ -64,14 +67,14 @@ const SYSTEM_PROMPT = `あなたは個人OKRの月次振り返りの「下書き
 
 【入力について】
 渡される情報は、実際のタスクデータそのものではなく機械側で集計済みの要約（件数）と、
-週の目標状態・自己評価（◯達成／△一部／✕未達）・メモである。無い情報を憶測で補わないこと。
+週の目標状態・自己評価（◯達成／△一部／✕未達。任意記入）・メモである。無い情報を憶測で補わないこと。
 
 【出力（厳密なJSONのみ。前後に説明文・コードブロックを一切付けない）】
 - review_text: 当月の取り組みを振り返る地の文の段落（3〜6文、箇条書きにしない）。
-  何に取り組み、週の積み上げの結果どうだったか、うまくいった点・課題を、数値評価を含めずに
+  何に取り組み、取り組みの結果どうだったか、うまくいった点・課題を、数値評価を含めずに
   具体的に書くこと。
-- evidence: review_textの各主張がどの週・どのタスクに基づくかの短い箇条書き（0〜6件程度）。
-  これは貼り付け対象ではなく、人が本文の根拠を確認するためのものである。
+- evidence: review_textの各主張がどの記録（週・タスク・メモ・計画）に基づくかの短い箇条書き
+  （0〜6件程度）。これは貼り付け対象ではなく、人が本文の根拠を確認するためのものである。
 - carryover: 来月への申し送り（0〜2件。特に無ければ空配列）。
 
 {
@@ -155,10 +158,13 @@ function buildRepairMessages(content: string, failedText: string, reason: string
 function buildReviewDraftContextText(input: PersonalOkrAiContextInput, material: ReviewMaterial): string {
   const base = buildPersonalOkrAiContextText(input);
   const lines: string[] = [base, "", "【機械計算済みの材料（月次サマリー・自己評価％やバンドの数値は含まない）】"];
-  lines.push(
-    `- 週の自己評価内訳：◯${material.ratingCounts.o}／△${material.ratingCounts.t}／✕${material.ratingCounts.x}` +
-    `（全${material.weeksTotal}週中・目標状態設定済み${material.weeksWithGoalSet}週・未評価${material.unratedWeekCount}週）`,
-  );
+  // 🔴 週次の内訳（全N週中・設定済みN週・未評価N週）は削除。◯/△/✕が全て0件なら行自体を出さない
+  // （週次を必須手順であるかのように見せてしまうため。CLAUDE.md Section 24・2026-08-26）。
+  if (material.ratingCounts.o > 0 || material.ratingCounts.t > 0 || material.ratingCounts.x > 0) {
+    lines.push(
+      `- 週の自己評価内訳：◯${material.ratingCounts.o}／△${material.ratingCounts.t}／✕${material.ratingCounts.x}`,
+    );
+  }
   lines.push(
     `- 紐づくタスク：完了${material.completedTaskCount}件・未完了${material.incompleteTaskCount}件` +
     `（計${material.linkedTaskCount}件）`,

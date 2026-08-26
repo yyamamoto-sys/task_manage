@@ -42,8 +42,6 @@ function baseMaterial(overrides: Partial<ReviewMaterial> = {}): ReviewMaterial {
   return {
     weeksTotal: 4,
     ratingCounts: { o: 1, t: 1, x: 0 },
-    weeksWithGoalSet: 3,
-    unratedWeekCount: 2,
     linkedTaskCount: 3,
     completedTaskCount: 2,
     incompleteTaskCount: 1,
@@ -76,12 +74,21 @@ describe("generatePersonalKrReviewDraft", () => {
     // 渡した文脈＋材料（D5・D7）の両方がユーザーメッセージに含まれている
     expect(String(messages[0].content)).toContain("エース（AAS）");
     expect(String(messages[0].content)).toContain("紐づくタスク：完了2件・未完了1件");
-    expect(String(messages[0].content)).toContain("目標状態設定済み3週");
+    expect(String(messages[0].content)).toContain("週の自己評価内訳：◯1／△1／✕0");
+    // 🔴 週次任意化の共通ノーティスが実際に組み立てたシステムプロンプトに含まれる
+    expect(String(system)).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
 
     expect(result.review_text).toBe(VALID_PAYLOAD.review_text);
     expect(result.evidence).toEqual(VALID_PAYLOAD.evidence);
     expect(result.carryover).toEqual(VALID_PAYLOAD.carryover);
     expect(result.model).toBe("claude-sonnet-4-6");
+  });
+
+  it("🔴 週の◯/△/✕が全て0件なら週の行そのものを出さない", async () => {
+    mockedInvokeAI.mockResolvedValueOnce(aiText(VALID_PAYLOAD));
+    await generatePersonalKrReviewDraft(baseContext(), baseMaterial({ ratingCounts: { o: 0, t: 0, x: 0 } }));
+    const messages = mockedInvokeAI.mock.calls[0][1];
+    expect(String(messages[0].content)).not.toContain("週の自己評価内訳");
   });
 
   it("stop_reason=max_tokensなら明示的なエラーを投げ、JSONパースを試みない", async () => {

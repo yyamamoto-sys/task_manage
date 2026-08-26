@@ -6585,5 +6585,37 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：新しいテーブル・新しい列の追加なし（既存列で足りる）。週次の任意化は
 #   v3.97で対応する。
 #
-# 最終更新：2026-08-26（v3.96）
+# v3.97（2026-08-26）：週次（週ごとの目標設定・自己評価）の任意化
+#   山本さんの依頼：AIの分析結果に「週ごとに目標を立てて振り返れているか」への言及が多い。
+#   週次の目標設定・自己評価は使いたい人だけが使う任意の補助機能でありAIが分析するための
+#   補助情報。必須手順ではない。週次機能を使っているかどうかで評価してはならない。大事なのは
+#   内容。記入がないものについて、記入がないこと自体に言及する必要はない。
+#   A（共通ノーティスの1箇所化）：新規`src/lib/ai/weeklyOptionalNotice.ts`の
+#   `WEEKLY_IS_OPTIONAL_NOTICE`定数を、`personalOkrOutlookExtractor.ts`・
+#   `personalOkrReviewDraftExtractor.ts`・`personalOkrChatPrompt.ts`の3つの
+#   システムプロンプトすべてに埋め込んだ。
+#   B（`personalOkrAiContext.ts`）：`buildPersonalOkrAiContextText()`は
+#   goal_state/self_ratingのどちらかが入っている週だけ行を出し、0本ならセクション自体を
+#   省略（「週データなし」「未設定」「未評価」を一切出力しない）。狙いのバンドが未設定の
+#   行も同様に出さない。`buildPersonalOkrAiContextChips()`／`buildPersonalOkrAiStarters()`も
+#   週データ0本なら週前提のチップ・候補を出さず、週に依存しない候補に差し替える。
+#   C（`personalOkrReviewDraftExtractor.ts`）：材料行から週数の内訳（全N週中・設定済みN週・
+#   未評価N週）を削除。◯/△/✕が全て0件なら週の行自体を出さない。「週の積み上げの結果
+#   どうだったか」→「取り組みの結果どうだったか」等の文言修正。
+#   D（`personalOkrOutlookExtractor.ts`）：`moves`の説明から「目標状態が未設定の週があれば
+#   それを書くことを一手として含めてよい」を削除。`week_label`を任意にし
+#   （`validateMove()`は`action`のみ必須）、「残り期間」等の時期表現も許容する。
+#   E（画面表示側）：`AheadBlock.tsx`から「評価待ちの週」「目標状態が未設定です」の行を
+#   削除し、週の自己評価は◯△✕が全て0なら行ごと出さない。`week_label`が空ならラベル列を
+#   出さない。`PersonalKrPanel.tsx`の週カード見出しに「週ごとの目標状態と自己評価は任意です」
+#   の一文を追加。（材料表示・「材料がありません」文言の修正はv3.96で先行実施済み）。
+#   F（CLAUDE.md Section 24にStep O・新グランドルールを追記）：プロンプトを追加・変更する
+#   ときは`WEEKLY_IS_OPTIONAL_NOTICE`を必ず含めること、をSection 24末尾に明記。
+#   新規テスト：`personalOkrAiContext.test.ts`に7件追加（修正前のソースで8/16件が赤くなる
+#   ことを確認済み）・`personalOkrOutlookExtractor.test.ts`に2件・`personalOkrReviewDraftExtractor.test.ts`
+#   に2件・`personalOkrChatPrompt.test.ts`に1件追加。既存1701件を壊さず全通過。
+#   `npx tsc --noEmit`0・`npx vitest run`全通過・`npm run build`成功。
+#   やらないこと：週次機能そのものの削除はしていない（任意化するだけ）。DBスキーマ変更なし。
+#
+# 最終更新：2026-08-26（v3.97）
 

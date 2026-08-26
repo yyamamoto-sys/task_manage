@@ -61,6 +61,8 @@ describe("analyzePersonalKrOutlook", () => {
     // 渡した入力の内容がユーザーメッセージに含まれている（機械計算済みの要約のみ）
     expect(String(messages[0].content)).toContain("エース（AAS）");
     expect(String(messages[0].content)).toContain("紐づくタスク3件");
+    // 🔴 週次任意化の共通ノーティスが実際に組み立てたシステムプロンプトに含まれる
+    expect(String(system)).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
 
     expect(result.lead).toBe(VALID_PAYLOAD.lead);
     expect(result.moves).toEqual(VALID_PAYLOAD.moves);
@@ -115,12 +117,23 @@ describe("validatePersonalOkrOutlookPayload", () => {
     expect(validatePersonalOkrOutlookPayload({ lead: "見立て", band_ai: 65 }).band_ai).toBeNull();
   });
 
-  it("型違い：movesの要素がオブジェクトでない・必須項目を欠く場合はその要素だけ弾く", () => {
+  it("型違い：movesの要素がオブジェクトでない・必須項目（action）を欠く場合はその要素だけ弾く", () => {
     const result = validatePersonalOkrOutlookPayload({
       lead: "見立て",
       moves: ["文字列", { week_label: "W2" }, { week_label: "W3", action: "一手" }, null],
     });
     expect(result.moves).toEqual([{ week_label: "W3", action: "一手", reason: "" }]);
+  });
+
+  it("🔴 week_labelが無くてもactionがあれば通る（週次任意化。actionのみ必須）", () => {
+    const result = validatePersonalOkrOutlookPayload({
+      lead: "見立て",
+      moves: [{ action: "残り期間でここに集中する" }, { week_label: "", action: "空文字のweek_labelも許容" }],
+    });
+    expect(result.moves).toEqual([
+      { week_label: "", action: "残り期間でここに集中する", reason: "" },
+      { week_label: "", action: "空文字のweek_labelも許容", reason: "" },
+    ]);
   });
 
   it("余剰プロパティ：想定外のキーが含まれていても無視して例外を投げない", () => {

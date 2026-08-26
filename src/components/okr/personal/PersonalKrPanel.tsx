@@ -599,9 +599,12 @@ export function PersonalKrPanel({
             </div>
           </div>
 
-          {/* 週の目標状態 */}
+          {/* 週の目標状態。🔴 週次は任意の補助機能（使う場合のみ記入。CLAUDE.md Section 24・2026-08-26） */}
           <div data-tour-id="okr-week-cards" style={{ marginTop: "20px" }}>
             <div style={sectionHeadStyle}><span>週の目標状態</span><span style={ruleStyle} /><span>★アプリで設定（Kintoneに無い層）</span></div>
+            <p style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", margin: "-5px 0 8px" }}>
+              週ごとの目標状態と自己評価は任意です。使う場合のみ記入してください。
+            </p>
             {weekActionError && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{weekActionError}</div>}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "8px" }}>
               {weekCards.map(card => {

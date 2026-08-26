@@ -20,12 +20,14 @@
 
 import { invokeAI } from "./invokeAI";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
+import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import type { PersonalKrBand } from "../localData/types";
 
 // ===== 型定義 =====
 
 export interface PersonalOkrOutlookMove {
-  /** 対象の週ラベル（例"W2"、複数週のまとめ表記"W4・W5"も可） */
+  /** 対象の週ラベル（例"W2"、複数週のまとめ表記"W4・W5"も可）。🔴 週次を使わない人向けに
+   *  空文字もあり得る（「残り期間」等の時期表現をactionやreasonに含めてもらう想定）。 */
   week_label: string;
   /** 一手のタイトル */
   action: string;
@@ -34,7 +36,7 @@ export interface PersonalOkrOutlookMove {
 }
 
 export interface PersonalOkrOutlookPayload {
-  /** 当月末の狙いと週の積み上げから見た現在地のギャップの見立て */
+  /** 当月末の狙いと、これまでの積み上げから見た現在地のギャップの見立て */
   lead: string;
   /** 残り週ごとの一手 */
   moves: PersonalOkrOutlookMove[];
@@ -68,6 +70,8 @@ const TRUNCATED_MESSAGE =
 const SYSTEM_PROMPT = `あなたは個人OKRの実行状況を分析し、当月の「これから」を短く言語化するAIです。
 見立て・週ごとの一手・捨てる候補・達成度バンドの見通しを、1回の応答でまとめて返してください。
 
+${WEEKLY_IS_OPTIONAL_NOTICE}
+
 【達成度バンドの定義】
 60=この取り組みがなくても到達していた水準／70=介入による明確な改善・前進／
 80=第三者にも成果が明らか／90=誰が見ても成功が明らかで革新的要素を含む／
@@ -86,11 +90,11 @@ band_aiは月の途中でも出す「現時点の見通し」であり、評価�
 band_ai_reasonやleadの中で「材料が乏しい」旨を述べてよい。
 
 【出力（厳密なJSONのみ。前後に説明文・コードブロックを一切付けない）】
-- lead: 当月末の狙いと、週の積み上げから見た現在地のギャップを2〜3文で述べる見立て。
+- lead: 当月末の狙いと、これまでの積み上げから見た現在地のギャップを2〜3文で述べる見立て。
   可能なら「今のままではバンド◯◯に着地する」という言い切りを含めること。
-- moves: 残り週ごとの一手（配列。0〜4件程度。目標状態が未設定の週があれば、それを書く
-  ことを一手として含めてよい）。各要素：
-  - week_label: 対象の週ラベル
+- moves: 残り期間にやるべき一手（配列。0〜4件程度）。各要素：
+  - week_label: 対象の時期（週の目標状態が使われていれば"W2"等の週ラベル。使われていなければ
+    「残り期間」「月末まで」等の時期の目安、または空文字でよい）
   - action: 一手のタイトル（10〜20字程度）
   - reason: その一手が必要な理由（1〜2文）
 - trade: 間に合わせるための「捨てる候補」（1つ、無ければnull）。
@@ -117,12 +121,16 @@ function parseJsonSafe<T>(text: string): T {
 
 const VALID_BANDS: readonly number[] = [60, 70, 80, 90, 100];
 
+/**
+ * 🔴 week_labelは任意（週次を使わない人向け。CLAUDE.md Section 24・2026-08-26）。
+ * actionのみ必須に緩める。week_labelが空ならUI側（AheadBlock.tsx）でラベル表示を省く。
+ */
 function validateMove(data: unknown): PersonalOkrOutlookMove | null {
   if (!data || typeof data !== "object") return null;
   const d = data as Record<string, unknown>;
-  const weekLabel = typeof d.week_label === "string" ? d.week_label.trim() : "";
   const action = typeof d.action === "string" ? d.action.trim() : "";
-  if (!weekLabel || !action) return null; // 想定外の形（必須2項目を欠く）は弾く
+  if (!action) return null; // 想定外の形（必須項目を欠く）は弾く
+  const weekLabel = typeof d.week_label === "string" ? d.week_label.trim() : "";
   const reason = typeof d.reason === "string" ? d.reason.trim() : "";
   return { week_label: weekLabel, action, reason };
 }
