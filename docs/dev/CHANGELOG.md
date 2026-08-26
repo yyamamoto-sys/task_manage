@@ -6535,9 +6535,73 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：DBスキーマ変更なし。FAB本体・フッター・ショートカットボタンの位置計算式は
 #   v3.91のまま変更していない（Toastのみ是正）。
 #
-# 【注記】v3.93〜v3.95（実装済み。CLAUDE.md Section 48〜50参照）はこのファイルへの追記が
-#   漏れていた（既知のリスク＝Section 11「CHANGELOGは機械検査されていないので抜けても
-#   赤くならない」が実際に再発した記録）。今回は範囲外のため遡って追記していない。
+# v3.93（2026-08-21）：「変更したのに保存ボタンが押せない」という誤解を解消（CLAUDE.md Section 48）
+#   クレーム：内容を変更したのに保存ボタンに🚫が出て押せない。
+#   調査：`TaskSidePanel.tsx`/`TaskEditModal.tsx`の操作可能なコントロール全てを
+#   (A)form経由でdirty判定される／(B)formを通らず即時保存される／(C)画面上で変わるのに
+#   保存もされずdirtyにもならない、の3つに分類。(C)は0件、`computeFormDirty`と
+#   `TaskEditFormState`の全11フィールドの対応漏れも無いことを確認した（新設した機械
+#   チェックで実装前に`parent_task_id`比較行を一時削除し実際に赤くなることを確認済み）。
+#   実際の原因は(B)（タスクフォース・追加プロジェクト・先行タスク・子タスクの追加/解除）の
+#   即時保存がDB反映済みにもかかわらず画面上に一切フィードバックが無かったこと。利用者が
+#   「変更した」と感じた操作の多くがこの(B)群であり、form側は無変更のまま保存ボタンへ
+#   カーソルを合わせて🚫を見た、という体験が誤解の実体だった。
+#   対応：①(B)群すべてに既存`SaveIndicator`（✓バッジ）を流用したフィードバックを追加
+#   （`flashImmediateSaved()`/`runImmediateSave()`。メイン保存が"saving"中なら上書きしない）
+#   ②未変更時の保存ボタンを「押せない禁止ボタン（🚫・cursor:not-allowed）」から
+#   「✓ 保存済み（cursor:default）」表示へ変更（disabledであること自体は維持し、押せない
+#   理由の伝え方だけを変えた）。
+#   新規テスト：`src/lib/__tests__/computeFormDirtyFieldCoverage.test.ts`（`TaskEditFormState`
+#   のフィールド名集合と`computeFormDirty`が参照するフィールド名集合をソース走査で突き合わせ、
+#   将来のフィールド追加で比較漏れが起きたら赤くなるようにした）。
+#   やらないこと：DBスキーマ変更なし。階層モード切替ボタン単体でdirtyにならないのは正しい
+#   挙動（保存すべき差分が無いため）と確認し、変更していない。
+#
+# v3.94（2026-08-21）：拡大率・フォント設定によらずFABが保存ボタンと重ならないようにする（CLAUDE.md Section 49）
+#   クレーム：v3.91でFABを「フッター高さの見積もり分だけ上へ」ずらす対応をしたが、拡大率・
+#   最小フォントサイズ設定・OSの表示スケール次第で見積もりと実物がズレ、依然として＋ボタンと
+#   保存ボタンが重なる利用者がいた。
+#   2-1（本命）：FABをTaskSidePanelの横へ完全に退避させる方式に変更。新規
+#   `src/stores/uiLayoutStore.ts`（zustand）でTaskSidePanelの開閉状態と実際の幅（ドラッグで
+#   可変）を共有し、`MainLayout.tsx`が`QuickAddFab`へ新設の`extraAvoidWidthPx`として渡す
+#   （既存のAI相談パネル回避幅に単純加算。両パネル同時オープンにも対応）。縦方向の衝突が
+#   構造的に起きなくなったため、FABの縦位置はv3.91の52px（見積もり上げ）からv3.86以前と
+#   同じ24px固定に戻した。
+#   2-2：残る関係（FAB/ショートカット/Toast相互）は、既に高さの見積もり値を明示heightとして
+#   使っている＝見積もりと実体が既に同じ値を参照しているため、ResizeObserver実測は追加情報が
+#   無いと判断し見送り。`STACK_CLEARANCE_PX`を12→16pxへ引き上げるに留めた（暫定策。恒久対応
+#   ではないと明記）。
+#   2-3（今回の再発防止の本体）：新規`src/lib/layout/devOverlapCheck.ts`。開発ビルド限定
+#   （`import.meta.env.DEV`）で`data-bottom-stack`属性を持つ各要素の`getBoundingClientRect()`
+#   を0.5秒間隔で取得し、許容リスト（Toast×ショートカット・Toast×FABメニュー）を除く組み
+#   合わせが実際に重なっていたら要素名・重なり幅をconsole.warnする。本番ビルドでは何も実行
+#   しない。
+#   CLAUDE.md新設ルール：右下スタックの値は「見積もりを足して回避」を繰り返さず、まず
+#   位置関係そのものを構造的に無くせないか（今回の水平退避）を最優先で検討すること。
+#   やらないこと：DBスキーマ変更なし。
+#
+# v3.95（2026-08-21）：固定heightをやめ、右下スタックの文字が拡大率・フォント設定で
+#   切れないようにする（CLAUDE.md Section 50）
+#   発覚の経緯：v3.94の2-2判断（FAB/ショートカット/Toastは既に定数と一致する固定heightを
+#   持つため実測は不要）が循環していたと判明。定数と一致するheightを持つのは定数をheightと
+#   してそのまま使う設計にしたからであり、その固定height自体が「人による設定への弱さ」の
+#   原因だった。固定heightは「ズレ」ではなく「中身が切れる」という別の症状で同じ根本原因
+#   （拡大率・最小フォントサイズ設定・OSの表示スケールに弱いハードコード）を再現し、
+#   v3.91〜v3.94の重なり検査（`bottomStack.test.ts`・`devOverlapCheck.ts`）では原理的に
+#   検出できない種類の不具合だった。
+#   対応：①文字を含む右下スタックの要素（TaskSidePanelフッター・ショートカットボタン・
+#   Toast各項目・モバイルのボトムナビ・FAB展開メニュー3項目）を固定heightからminHeightへ
+#   変更（定数名に`MIN_`を付与）。FAB本体（アイコンのみの48×48固定正円）は文字を含まない
+#   ため対象外。②残る「本当の縦の依存」2つ（ボトムナビ→FAB、FAB展開メニュー→ショートカット）
+#   だけを`src/stores/uiLayoutStore.ts`に追加した`mobileBottomNavHeightPx`/`fabMenuHeightPx`
+#   でResizeObserver実測し、`bottomStack.ts`の純粋関数（`computeFabBottomMobile`・
+#   `computeFabMenuTop`・`computeAboveFabBottom`等）で導出する設計に変更。③`devOverlapCheck.ts`
+#   に「あふれ検出」を追加（`scrollHeight > clientHeight`を見て要素名・不足px数をwarn。
+#   重なり検出とは独立、警告済みキーを保持し解消されたら削除）。
+#   CLAUDE.md新設グランドルール：右下（PC）・画面下端（モバイル）に積み上がる要素で文字を
+#   含むものには固定heightを使わない。minHeightにし定数に`MIN_`を付ける。固定サイズで
+#   良いのはアイコンのみ・文字を一切含まない要素に限る。
+#   やらないこと：DBスキーマ変更なし。
 #
 # v3.96（2026-08-26）：個人OKRに月次「振り返り」の記録・AI下書きの1本化・過去月の編集解放
 #   山本さんの依頼：①OKRモードで月次振り返りをしているが、計画だけでなく振り返り結果も
@@ -6617,5 +6681,43 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   `npx tsc --noEmit`0・`npx vitest run`全通過・`npm run build`成功。
 #   やらないこと：週次機能そのものの削除はしていない（任意化するだけ）。DBスキーマ変更なし。
 #
-# 最終更新：2026-08-26（v3.97）
+# v3.98（2026-08-26）：リストモードの担当者ドロップダウンがスクロールできない不具合を修正（CLAUDE.md Section 51）
+#   クレーム：リストモードで担当者アイコンから担当者を変更しようとすると、ドロップダウンが
+#   スクロールできず目的の人を選べない。
+#   根本原因：`src/styles/globals.css`の`body { pointer-events: none }`（外周余白帯の
+#   クリックを#rootへ通過させるための指定）は継承プロパティであり、これを打ち消すのは
+#   `#root`（pointer-events:auto）だけ。`createPortal(document.body)`で#rootの外に生える
+#   パネルは`pointerEvents:"auto"`を自分自身に明示しない限りヒットテストの対象外になる。
+#   v3.85（commit aedb241）で`CustomSelect.tsx`/`ProjectRowMenu.tsx`/`MentionTextarea.tsx`/
+#   `InlineEditAssignee.tsx`の4ファイルを`position:absolute`から`createPortal(document.body)`
+#   へ移した際、前者3つには付けていた`pointerEvents:"auto"`を`InlineEditAssignee.tsx`だけ
+#   付け忘れていた。症状の連鎖：パネルがヒットテストを素通り→ホイールが背後の
+#   `ListView.tsx`のスクロール容器に当たる→リストがスクロール→captureのscrollリスナが
+#   「パネル外のスクロール」と判定してパネルを閉じる→パネルは一度もスクロールできない
+#   まま閉じる。
+#   対応：①新規`src/hooks/useFloatingPanel.ts`に4ファイルがコピペで持っていた座標計算・
+#   スクロール追従・スクロール連鎖の遮断・pointerEventsを集約。②`src/lib/layout/
+#   floatingPanelPosition.ts`に純粋関数2つを追加：`computeFloatingPanelCloseOnScroll()`
+#   （祖先スクロールでは閉じずトリガーが可視範囲から出たときだけ閉じる。旧実装は
+#   「パネル外のスクロールなら閉じる」だったため手を伸ばしている最中に閉じていた）、
+#   `computeFloatingPanelMaxHeight()`（maxHeightのハードコード200/220/260pxを廃止しトリガー
+#   上下の実余白から算出。担当者ドロップダウンの希望高さは200→340pxに拡大）。
+#   ③`overscrollBehavior:"contain"`をスクロール要素へ付与。④副次修正：`GuideOverlay.tsx`/
+#   `HelpButton.tsx`（`GuideOverlayLoading`）も同じpointerEvents欠落を横断検査で検出し追加
+#   （背景クリックでの閉じる操作も中身のボタンも効かない状態だった）。
+#   新規テスト：`src/components/common/__tests__/floatingPanelContract.test.ts`
+#   （createPortal+document.bodyを持つ全ファイルがpointerEvents:"auto"を明示していること・
+#   トリガー追従4ファイルが自前scroll購読を持たずuseFloatingPanelを使っていること）、
+#   `src/lib/layout/__tests__/floatingPanelBehavior.test.ts`（新設2純粋関数を18件で固定）。
+#   CLAUDE.md新設グランドルール（Section 51）：①document.bodyへPortalする要素は
+#   pointerEvents:"auto"を必ず明示する ②トリガー追従のポップオーバーはuseFloatingPanelに
+#   集約し、座標計算・スクロール処理を個別ファイルへコピペしない。
+#   併せて対応：`docs/dev/CHANGELOG.md`にv3.93〜v3.95の記載漏れがあったため遡って追記した
+#   （2026-08-26。抜けの発生原因はSection 11「CHANGELOGは機械検査されていないので抜けても
+#   赤くならない」。再発防止として`src/lib/__tests__/changelogVersion.test.ts`を新設し、
+#   CHANGELOG.md末尾の版番号とAPP_VERSIONの一致を機械検査するようにした）。
+#   `npx tsc --noEmit`0・`npx vitest run`全通過・`npm run build`成功。
+#   やらないこと：DBスキーマ変更なし。新機能の追加なし（不具合修正・共通化のみ）。
+#
+# 最終更新：2026-08-26（v3.98）
 

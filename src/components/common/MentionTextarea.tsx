@@ -18,11 +18,14 @@ import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Member } from "../../lib/localData/types";
 import { useT } from "../../hooks/useT";
-import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 
-/** パネルの `maxHeight`（下記style参照）と一致させる高さの見積もり値 */
-const PANEL_MAX_HEIGHT = 220;
-/** パネルの最小幅（下記 Math.max(pos.width, 200) と一致させる） */
+// 【2026-08-26】固定の maxHeight(220px) をやめ、トリガー（textarea）の上下で実際に使える
+// 余白から算出する。位置追従・スクロール連鎖の遮断も共通フックに集約した。
+/** 余白が許すなら出したい高さ */
+const PANEL_PREFERRED_HEIGHT = 340;
+const PANEL_MIN_HEIGHT = 140;
+/** パネルの最小幅（textareaが細い場合でも候補名が読める幅を確保する） */
 const PANEL_MIN_WIDTH = 200;
 
 interface Props {
@@ -37,9 +40,20 @@ interface Props {
 export function MentionTextarea({ value, onChange, members, rows = 4, placeholder, style }: Props) {
   const t = useT();
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen]   = useState(false);
   const [query, setQuery] = useState("");
-  const [pos, setPos]     = useState({ top: 0, left: 0, width: 0 });
+
+  const { panelStyle, scrollAreaStyle } = useFloatingPanel({
+    open,
+    onRequestClose: () => setOpen(false),
+    triggerRef: taRef,
+    panelRef,
+    width: "trigger",
+    minWidth: PANEL_MIN_WIDTH,
+    preferredMaxHeight: PANEL_PREFERRED_HEIGHT,
+    minMaxHeight: PANEL_MIN_HEIGHT,
+  });
 
   // onChange は毎レンダーで参照が変わりうるので ref で保持する
   const onChangeRef = useRef(onChange);
@@ -62,17 +76,7 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
     const match = before.match(/@([^\s@]*)$/);
     if (match) {
       setQuery(match[1]);
-      const rect = e.target.getBoundingClientRect();
-      const panelWidth = Math.max(rect.width, PANEL_MIN_WIDTH);
-      const { top, left } = computeFloatingPanelPosition({
-        triggerRect: rect,
-        panelWidth,
-        estimatedPanelHeight: PANEL_MAX_HEIGHT,
-        viewportWidth: window.innerWidth,
-        viewportHeight: window.innerHeight,
-      });
-      setPos({ top, left, width: panelWidth });
-      setOpen(true);
+      setOpen(true); // 位置は useFloatingPanel が描画前（useLayoutEffect）に確定させる
     } else {
       setOpen(false);
     }
@@ -123,18 +127,14 @@ export function MentionTextarea({ value, onChange, members, rows = 4, placeholde
       />
 
       {open && filtered.length > 0 && createPortal(
-        <div style={{
-          position: "fixed",
-          top: pos.top,
-          left: pos.left,
-          width: pos.width,
-          zIndex: 9999,
+        // パネル自身がスクロール要素なので panelStyle と scrollAreaStyle の両方を当てる
+        <div ref={panelRef} style={{
+          ...panelStyle,
+          ...scrollAreaStyle,
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
           boxShadow: "var(--shadow-md)",
-          maxHeight: `${PANEL_MAX_HEIGHT}px`,
-          overflowY: "auto",
           padding: "4px",
           pointerEvents: "auto",
         }}>

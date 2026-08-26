@@ -1,9 +1,31 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+// src/components/common/InlineEditAssignee.tsx
+//
+// 一覧・カンバンの担当者アイコンから担当者を付け外しするインライン編集。
+//
+// 【2026-08-26・不具合修正】リストモードでこのドロップダウンが「スクロールできない・
+// 選びたい人を選べない」状態になっていた。原因は v3.85（commit aedb241）でパネルを
+// `position:absolute`（#root の子孫）から `createPortal(document.body)` へ移したとき、
+// 同時に移した CustomSelect / ProjectRowMenu / MentionTextarea には付いていた
+// `pointerEvents:"auto"` を**このファイルだけ付け忘れた**こと。
+// `globals.css` の `body { pointer-events: none }` は継承プロパティなので、body 直下に
+// 生えた Portal 要素は打ち消さない限りヒットテストの対象外になる。結果、ホイールが
+// パネルを素通りして下のリストが動き、capture の scroll リスナが「パネル外のスクロール」
+// と判定してドロップダウンを閉じていた。
+// 位置決め・スクロール追従・スクロール連鎖の遮断は共通フック useFloatingPanel に集約した
+// （4箇所のコピペが再発の温床だったため）。
+
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import type { Member } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { useT } from "../../hooks/useT";
-import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+import { useFloatingPanel } from "../../hooks/useFloatingPanel";
+
+/** パネル幅は中身（メンバー名・アバター）なり。実測が入るまでの1フレームだけ使う見積もり値 */
+const PANEL_FALLBACK_WIDTH = 220;
+/** 余白が許すなら出したい高さ。旧実装は200px固定で、部署メンバーが7人以上いると必ずスクロールが要った */
+const PANEL_PREFERRED_HEIGHT = 340;
+const PANEL_MIN_HEIGHT = 140;
 
 interface Props {
   assigneeIds: string[];
@@ -11,41 +33,24 @@ interface Props {
   onSave: (ids: string[]) => void;
 }
 
-// パネル幅は内容（メンバー名・アバター）に応じて可変（旧実装のminWidth:150pxを維持）。
-// クランプ計算のための見積もり値。実際の描画幅がこれより大きい場合、水平方向のクランプ
-// 精度は幾分下がるが（CustomSelect/ProjectRowMenuのように固定幅を持たない設計上の割り切
-// り）、位置計算自体が無かった旧実装からの改善であることに変わりはない。
-const PANEL_WIDTH_ESTIMATE = 220;
-// パネルのmaxHeight（下記style参照）と一致させる高さの見積もり値
-const PANEL_MAX_HEIGHT = 200;
-
 export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // トリガー位置からパネルの fixed 座標を計算（画面外へのはみ出しをクランプ・反転する。
-  // 2026-08-20追記。src/lib/layout/floatingPanelPosition.ts 参照。ProjectRowMenu.tsx/
-  // CustomSelect.tsx/MentionTextarea.tsxと同じ共通関数を使う）
-  const calcPanelStyle = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const { top, left } = computeFloatingPanelPosition({
-      triggerRect: rect,
-      panelWidth: PANEL_WIDTH_ESTIMATE,
-      estimatedPanelHeight: PANEL_MAX_HEIGHT,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
-    setPanelStyle({ position: "fixed", top, left, zIndex: 9999 });
-  }, []);
+  const { panelStyle, scrollAreaStyle } = useFloatingPanel({
+    open,
+    onRequestClose: () => setOpen(false),
+    triggerRef,
+    panelRef,
+    width: "auto",
+    fallbackWidth: PANEL_FALLBACK_WIDTH,
+    preferredMaxHeight: PANEL_PREFERRED_HEIGHT,
+    minMaxHeight: PANEL_MIN_HEIGHT,
+  });
 
-  const handleToggleOpen = () => {
-    if (!open) calcPanelStyle();
-    setOpen(v => !v);
-  };
+  const handleToggleOpen = () => setOpen(v => !v);
 
   // 外側クリックで閉じる（トリガー・パネル両方は除外。パネルはPortalでbody直下に描画される
   // ため、containerRef.contains()ではなくtriggerRef/panelRefの両方を個別に見る）
@@ -66,23 +71,6 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open]);
-
-  // スクロール・リサイズで閉じる（fixedパネルがトリガーから離れるのを防ぐ。
-  // ProjectRowMenu.tsx/CustomSelect.tsxと同じ）
-  useEffect(() => {
-    if (!open) return;
-    const onScroll = (e: Event) => {
-      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onResize = () => setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onResize);
-    };
   }, [open]);
 
   const toggle = (id: string) => {
@@ -124,15 +112,16 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
       </div>
 
       {open && createPortal(
+        // パネル自身がスクロール要素なので panelStyle と scrollAreaStyle の両方を当てる
         <div ref={panelRef} style={{
           ...panelStyle,
+          ...scrollAreaStyle,
           background: "var(--color-bg-primary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
           boxShadow: "var(--shadow-lg)",
           minWidth: "150px",
-          maxHeight: `${PANEL_MAX_HEIGHT}px`,
-          overflowY: "auto",
+          pointerEvents: "auto",
         }}>
           {members.map(m => {
             const selected = assigneeIds.includes(m.id);

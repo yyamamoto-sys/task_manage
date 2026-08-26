@@ -19,13 +19,17 @@
 // `src/lib/layout/floatingPanelPosition.ts` の共通関数に集約し、`ProjectRowMenu.tsx`
 // （元々完成していた実装）と同じものを使う。
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
-import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 
-/** パネルの `maxHeight`（下記style参照）と一致させる高さの見積もり値 */
-const PANEL_MAX_HEIGHT = 260;
+// 【2026-08-26】固定の maxHeight(260px) をやめ、トリガーの上下で実際に使える余白から
+// 算出する（useFloatingPanel）。拡大率・フォント設定で実物とズレる固定値の見積もりは
+// v3.95で一斉に潰した種類の欠陥であり、ここもその一つだった。
+/** 余白が許すなら出したい高さ */
+const PANEL_PREFERRED_HEIGHT = 340;
+const PANEL_MIN_HEIGHT = 140;
 
 export interface SelectOption {
   value: string;
@@ -74,35 +78,22 @@ export function CustomSelect({
   const effectiveSearchPlaceholder = searchPlaceholder ?? t("common.select.searchPlaceholder");
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // トリガー位置からパネルの fixed 座標を計算（画面外へのはみ出しをクランプ・反転する。
-  // 上記コメント参照）
-  const calcPanelStyle = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const { top, left } = computeFloatingPanelPosition({
-      triggerRect: rect,
-      panelWidth: rect.width,
-      estimatedPanelHeight: PANEL_MAX_HEIGHT,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-    });
-    setPanelStyle({
-      position: "fixed",
-      top,
-      left,
-      width: rect.width,
-      zIndex: 9999,
-    });
-  }, []);
+  const { panelStyle, scrollAreaStyle } = useFloatingPanel({
+    open,
+    onRequestClose: () => setOpen(false),
+    triggerRef,
+    panelRef,
+    width: "trigger",
+    preferredMaxHeight: PANEL_PREFERRED_HEIGHT,
+    minMaxHeight: PANEL_MIN_HEIGHT,
+  });
 
   const handleOpen = () => {
     if (disabled) return;
-    if (!open) calcPanelStyle();
     setOpen(v => !v);
   };
 
@@ -127,24 +118,6 @@ export function CustomSelect({
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open]);
-
-  // スクロール・リサイズ時に閉じる（fixed パネルがトリガーから離れるのを防ぐ）。
-  // ただし「パネル内部のスクロール」では閉じない（下の項目までスクロールして選べるように）。
-  useEffect(() => {
-    if (!open) return;
-    const onScroll = (e: Event) => {
-      // ドロップダウン内のスクロールは無視（リスト内スクロールで閉じない）
-      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onResize = () => setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onResize);
-    };
   }, [open]);
 
   // 開いたら検索クエリをリセットし、検索ボックスにフォーカス
@@ -217,7 +190,6 @@ export function CustomSelect({
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
             boxShadow: "var(--shadow-md)",
-            maxHeight: "260px",
             overflow: "hidden",
             display: "flex",
             flexDirection: "column",
@@ -251,7 +223,7 @@ export function CustomSelect({
               }}
             />
           )}
-          <div style={{ overflowY: "auto", minHeight: 0, flex: 1 }}>
+          <div style={{ ...scrollAreaStyle, flex: 1 }}>
           {filteredOptions.length === 0 && (
             <div style={{ padding: "8px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
               {t("common.select.noMatch")}

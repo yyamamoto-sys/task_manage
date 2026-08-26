@@ -27,11 +27,11 @@
 // buildProjectRowMenuItems（純粋関数・テスト済み）に任せる。このファイルはUI（表示・
 // 位置決め・開閉・クリックの実行）だけを持つ。
 
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
 import { buildProjectRowMenuItems, type ProjectRowMenuActionId } from "../../lib/project/projectRowMenu";
-import { computeFloatingPanelPosition } from "../../lib/layout/floatingPanelPosition";
+import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 
 const ITEM_LABEL_KEY: Record<ProjectRowMenuActionId, string> = {
   settings: "layout.sidebar.pjRowMenu.settings",
@@ -52,39 +52,36 @@ interface Props {
 
 const PANEL_WIDTH = 190;
 const VIEWPORT_MARGIN = 8;
+/** 1項目あたりの高さ（padding 7px×2 + 行送り）＋パネルの padding 4px×2 */
+const ITEM_HEIGHT = 34;
+const PANEL_PADDING = 8;
+/** 余白が足りないときでもこれ以上は縮めない（項目が1つも読めない状態にしない） */
+const PANEL_MIN_HEIGHT = 76;
 
 export function ProjectRowMenu({ projectName, projectStatus, canEdit, isGuest, forceVisible, onSelectAction }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [panelStyle, setPanelStyle] = useState<React.CSSProperties>({});
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
   const items = buildProjectRowMenuItems({ project: { status: projectStatus }, canEdit, isGuest });
 
-  // トリガー位置からパネルの fixed 座標を計算（共通クランプ関数 computeFloatingPanelPosition
-  // を使う。2026-08-20よりCustomSelect.tsx/InlineEditAssignee.tsx/MentionTextarea.tsxも同じ
-  // 関数を使うよう揃えた。src/lib/layout/floatingPanelPosition.ts 参照）。
-  // 右寄せ＋画面外にはみ出さないようクランプする。
-  const calcPanelStyle = useCallback(() => {
-    if (!triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const estimatedHeight = items.length * 34 + 8;
-    const { top, left } = computeFloatingPanelPosition({
-      triggerRect: rect,
-      panelWidth: PANEL_WIDTH,
-      estimatedPanelHeight: estimatedHeight,
-      viewportWidth: window.innerWidth,
-      viewportHeight: window.innerHeight,
-      margin: VIEWPORT_MARGIN,
-      align: "right",
-    });
-    setPanelStyle({ position: "fixed", top, left, width: PANEL_WIDTH, zIndex: 9999 });
-  }, [items.length]);
+  // 位置決め・スクロール追従・スクロール連鎖の遮断は共通フックに集約（src/hooks/useFloatingPanel.ts）。
+  // 希望の高さは「全項目が入る高さ」。余白が足りなければフックが縮めてスクロールさせる。
+  const { panelStyle, scrollAreaStyle } = useFloatingPanel({
+    open,
+    onRequestClose: () => setOpen(false),
+    triggerRef,
+    panelRef,
+    align: "right",
+    width: PANEL_WIDTH,
+    margin: VIEWPORT_MARGIN,
+    preferredMaxHeight: items.length * ITEM_HEIGHT + PANEL_PADDING,
+    minMaxHeight: PANEL_MIN_HEIGHT,
+  });
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation(); // 行本体のonSelectProjectクリックへの伝播を防ぐ
-    if (!open) calcPanelStyle();
     setOpen(v => !v);
   };
 
@@ -106,22 +103,6 @@ export function ProjectRowMenu({ projectName, projectStatus, canEdit, isGuest, f
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [open]);
-
-  // スクロール・リサイズで閉じる（fixedパネルがトリガーから離れるのを防ぐ。CustomSelect.tsxと同じ）
-  useEffect(() => {
-    if (!open) return;
-    const onScroll = (e: Event) => {
-      if (e.target instanceof Node && panelRef.current?.contains(e.target)) return;
-      setOpen(false);
-    };
-    const onResize = () => setOpen(false);
-    window.addEventListener("scroll", onScroll, true);
-    window.addEventListener("resize", onResize);
-    return () => {
-      window.removeEventListener("scroll", onScroll, true);
-      window.removeEventListener("resize", onResize);
-    };
   }, [open]);
 
   if (items.length === 0) return null; // ゲスト等：⋮自体を出さない
@@ -155,6 +136,7 @@ export function ProjectRowMenu({ projectName, projectStatus, canEdit, isGuest, f
           className="animate-dropdown"
           style={{
             ...panelStyle,
+            ...scrollAreaStyle,
             background: "var(--color-bg-primary)",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",

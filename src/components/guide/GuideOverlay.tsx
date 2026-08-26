@@ -47,6 +47,10 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
         position: "fixed", inset: 0, zIndex: 300,
         background: "rgba(0,0,0,0.45)",
         display: "flex", alignItems: "stretch", justifyContent: "flex-end",
+        // body { pointer-events: none }（globals.css・継承プロパティ）を打ち消す。
+        // これが無いとbody直下のPortal要素はヒットテストの対象外になり、背景クリックでの
+        // 閉じる操作も中身のボタンも一切効かない（2026-08-26に横断検査で検出）
+        pointerEvents: "auto",
       }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >

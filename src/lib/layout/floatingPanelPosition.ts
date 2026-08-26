@@ -59,6 +59,8 @@ export interface FloatingPanelPosition {
 }
 
 const DEFAULT_MARGIN = 8;
+/** トリガーとパネルの間に空ける隙間（px）。従来のハードコード +4 を定数化したもの */
+const DEFAULT_GAP = 4;
 
 /**
  * トリガー位置からポップアップパネルの fixed 座標（クランプ済み）を算出する純粋関数。
@@ -79,11 +81,123 @@ export function computeFloatingPanelPosition(input: FloatingPanelPositionInput):
   if (left + panelWidth > viewportWidth - margin) left = viewportWidth - panelWidth - margin;
   if (left < margin) left = margin; // 右端クランプの結果として再び左にはみ出す場合も含め、最後に必ず左端を保証する
 
-  let top = triggerRect.bottom + 4;
+  let top = triggerRect.bottom + DEFAULT_GAP;
   if (top + estimatedPanelHeight > viewportHeight - margin) {
-    const flippedTop = triggerRect.top - estimatedPanelHeight - 4;
+    const flippedTop = triggerRect.top - estimatedPanelHeight - DEFAULT_GAP;
     top = flippedTop < margin ? margin : flippedTop;
   }
 
   return { top, left };
+}
+
+// ============================================================================
+// 【2026-08-26追記】v3.85（commit aedb241）でこの4箇所をPortal化したあとに残っていた
+// 3つの穴を塞ぐために追加した純粋関数群。
+//
+//  ① スクロール連鎖：パネル内スクロールが端に達すると祖先へ連鎖する。
+//     → FLOATING_PANEL_OVERSCROLL_BEHAVIOR をパネルのスクロール要素に必ず当てる。
+//  ② 祖先スクロールで即座に閉じる：「目的の項目に手を伸ばしている最中に閉じる」不具合の
+//     温床そのものだった。→ computeFloatingPanelCloseOnScroll で「トリガーが可視範囲から
+//     出たときだけ閉じる」に変え、それ以外は位置を再計算して追従させる。
+//  ③ 固定値の見積もり：maxHeight を 200/220/260 とハードコードしていたため、拡大率・
+//     フォント設定・メンバー数によって実物とズレていた（v3.95で一斉に潰したのと同じ種類の
+//     欠陥）。→ computeFloatingPanelMaxHeight で「トリガーの上下で実際に使える余白」から
+//     算出する。
+// ============================================================================
+
+/**
+ * パネル内のスクロールを祖先へ連鎖させないための overscroll-behavior 値。
+ * パネルのスクロール要素（overflowY:"auto" を持つ要素）に必ず当てる。
+ */
+export const FLOATING_PANEL_OVERSCROLL_BEHAVIOR = "contain" as const;
+
+export interface FloatingPanelCloseOnScrollInput {
+  /** スクロールイベントの発生元がパネル内部か。true なら無条件で閉じない */
+  scrolledInsidePanel: boolean;
+  /** トリガーの getBoundingClientRect()。要素が外れていれば null */
+  triggerRect: FloatingPanelTriggerRect | null;
+  /**
+   * トリガーを内包するスクロール祖先の矩形。表本体のような容器の外へトリガーが流れたら
+   * 「見えなくなった」と判定する。祖先が無い（ビューポート直下）なら null。
+   */
+  clipRect?: FloatingPanelTriggerRect | null;
+  viewportWidth: number;
+  viewportHeight: number;
+  /** トリガーがこの px 以上見えていれば「まだ可視」とみなす。既定4（境界での点滅を防ぐ） */
+  minVisiblePx?: number;
+}
+
+/**
+ * スクロールが起きたときにポップオーバーを閉じるべきかを判定する純粋関数。
+ *
+ * 旧実装は「パネル外で起きたスクロールなら閉じる」だったため、祖先の表本体が1px動いた
+ * だけで閉じていた。ここでは「トリガーが可視範囲から出たときだけ閉じる」に変える
+ * （それ以外は呼び出し側が位置を再計算してパネルを追従させる）。
+ */
+export function computeFloatingPanelCloseOnScroll(input: FloatingPanelCloseOnScrollInput): boolean {
+  const {
+    scrolledInsidePanel, triggerRect, clipRect = null,
+    viewportWidth, viewportHeight, minVisiblePx = 4,
+  } = input;
+
+  if (scrolledInsidePanel) return false;
+  if (!triggerRect) return true;
+
+  let top = Math.max(triggerRect.top, 0);
+  let bottom = Math.min(triggerRect.bottom, viewportHeight);
+  let left = Math.max(triggerRect.left, 0);
+  let right = Math.min(triggerRect.right, viewportWidth);
+
+  if (clipRect) {
+    top = Math.max(top, clipRect.top);
+    bottom = Math.min(bottom, clipRect.bottom);
+    left = Math.max(left, clipRect.left);
+    right = Math.min(right, clipRect.right);
+  }
+
+  return bottom - top < minVisiblePx || right - left < minVisiblePx;
+}
+
+export interface FloatingPanelMaxHeightInput {
+  triggerRect: FloatingPanelTriggerRect;
+  viewportHeight: number;
+  /** 出せるなら出したい高さ（px） */
+  preferredHeight: number;
+  /** 余白が足りなくてもこれ以上は縮めない下限（px） */
+  minHeight: number;
+  margin?: number;
+  gap?: number;
+}
+
+export interface FloatingPanelMaxHeight {
+  /** パネルに設定する maxHeight（px） */
+  maxHeight: number;
+  /** 広い側がどちらだったか。実際の座標は computeFloatingPanelPosition が同じ結論を出す */
+  placement: "below" | "above";
+  spaceBelow: number;
+  spaceAbove: number;
+}
+
+/**
+ * トリガーの上下で実際に使える余白から、パネルの maxHeight を算出する純粋関数。
+ * - 下に希望値が入るなら下に出す（既定の向き）
+ * - 下が足りず上に入るなら上に出す
+ * - どちらも足りなければ広い側を選び、その余白に収める（ただし minHeight は下回らない）
+ */
+export function computeFloatingPanelMaxHeight(input: FloatingPanelMaxHeightInput): FloatingPanelMaxHeight {
+  const {
+    triggerRect, viewportHeight, preferredHeight, minHeight,
+    margin = DEFAULT_MARGIN, gap = DEFAULT_GAP,
+  } = input;
+
+  const spaceBelow = Math.max(0, viewportHeight - margin - (triggerRect.bottom + gap));
+  const spaceAbove = Math.max(0, triggerRect.top - gap - margin);
+
+  if (spaceBelow >= preferredHeight) return { maxHeight: preferredHeight, placement: "below", spaceBelow, spaceAbove };
+  if (spaceAbove >= preferredHeight) return { maxHeight: preferredHeight, placement: "above", spaceBelow, spaceAbove };
+
+  const placement = spaceAbove > spaceBelow ? "above" : "below";
+  const available = placement === "above" ? spaceAbove : spaceBelow;
+  const maxHeight = Math.max(minHeight, Math.min(preferredHeight, available));
+  return { maxHeight, placement, spaceBelow, spaceAbove };
 }
