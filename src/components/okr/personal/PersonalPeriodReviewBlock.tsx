@@ -24,6 +24,7 @@ import type { Member, PersonalPeriodReview, PersonalPeriodKind, Quarter } from "
 import type { KrPeriodRow } from "../../../lib/personalOkr/periodReviewReference";
 import { computePeriodReference } from "../../../lib/personalOkr/periodReviewReference";
 import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
+import { isPeriodReviewUniqueViolation, PERIOD_REVIEW_DUPLICATE_MESSAGE } from "../../../lib/personalOkr/periodReviewSaveError";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
@@ -144,7 +145,12 @@ export function PersonalPeriodReviewBlock({
       await onSave(next, record?.updated_at);
       showToast(`${title}を保存しました`);
     } catch (e) {
-      setError(formatErrorForUser("保存に失敗しました", e));
+      // 🔴 部分ユニークインデックス（idx_personal_period_reviews_month_unique／
+      // idx_personal_period_reviews_quarter_unique）に衝突した場合（23505）は、
+      // 生のPostgrestエラーではなく「画面を再読み込みしてから保存し直す」という
+      // 正しい手順を案内する（AdminView.tsxのisMemberEmailUniqueViolationと同じ考え方。
+      // 統括のレビュー・2026-08-26で追加）。
+      setError(isPeriodReviewUniqueViolation(e) ? PERIOD_REVIEW_DUPLICATE_MESSAGE : formatErrorForUser("保存に失敗しました", e));
     } finally {
       setSaving(false);
     }

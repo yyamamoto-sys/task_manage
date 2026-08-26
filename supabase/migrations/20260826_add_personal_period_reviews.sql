@@ -27,6 +27,14 @@
 -- 🔴 NULL猶予条項（`OR ... IS NULL` での抜け穴）は一切書かない（2026-06-26の事故の教訓。
 -- CLAUDE.md Section 1.6）。
 --
+-- 🔴🔴 v3.102で追加：current_member_id()は SECURITY DEFINER STABLE 関数のため、
+-- ポリシー内では裸で呼ばず (SELECT public.current_member_id()) で包む（CLAUDE.md
+-- Section 39・v3.80のグランドルール。20260819c_optimize_members_rls_initplan.sql と
+-- 同じ書き方）。裸で書くと PostgreSQL は行ごとに関数を再評価し、21行の members に対し
+-- shared hit=6504・Execution Time 76.085ms という異常値が本番実測で確定している
+-- （包むとInitPlanとしてクエリ全体で1回だけ評価される）。当初のv3.101公開時点では
+-- この包みが抜けていた（山本さんの適用前に統括のレビューで検出・修正）。
+--
 -- 【member_id は text（groups/personal_krs と同じ）】
 -- personal_krs.member_id / current_member_id() はどちらも text を返す（members.id が text）。
 --
@@ -97,8 +105,8 @@ ALTER TABLE personal_period_reviews ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "personal_period_reviews_own" ON personal_period_reviews;
 CREATE POLICY "personal_period_reviews_own" ON personal_period_reviews
   FOR ALL TO authenticated
-  USING (member_id = current_member_id())
-  WITH CHECK (member_id = current_member_id());
+  USING (member_id = (SELECT public.current_member_id()))
+  WITH CHECK (member_id = (SELECT public.current_member_id()));
 
 -- ============================================================
 -- ブロック5: 適用後の確認クエリ（山本さんへ：以下を実行し、期待どおりであることを確認してください）
@@ -139,3 +147,11 @@ CREATE POLICY "personal_period_reviews_own" ON personal_period_reviews
 -- WHERE period_kind = 'quarter' AND is_deleted = false
 -- GROUP BY member_id, fiscal_year, quarter HAVING count(*) > 1;
 -- → 0行であること
+
+-- 7) 🔴 CLAUDE.md Section 39：current_member_id() が (SELECT ...) で包まれているか
+--    （裸呼び出しが残っていないこと）
+-- SELECT policyname, qual, with_check FROM pg_policies
+-- WHERE schemaname = 'public' AND tablename = 'personal_period_reviews';
+-- → qual・with_check のどちらも "(SELECT current_member_id())" の形になっており、
+--   "member_id = current_member_id()" のような裸呼び出しが残っていないことを目視確認する。
+

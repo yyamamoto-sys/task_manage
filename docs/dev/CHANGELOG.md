@@ -6866,5 +6866,33 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   やらないこと：面談日・来月への申し送りの欄。Kintone取込側の全体合計値対応拡張。
 #   GMが本アプリから直接書き込む機能。部署・全社での集計ビュー。AI生成履歴テーブル。
 #
-# 最終更新：2026-08-26（v3.101）
+# v3.102（2026-08-26）：Step Qのマイグレーション・schema.sqlの是正＋重複保存時の案内改善（山本さんの適用前レビューで検出）
+#   統括がv3.101のマイグレーションSQLを山本さんの適用前に検証し、2件の欠陥を検出・修正した。
+#   🔴 欠陥1（CLAUDE.md Section 39のグランドルール違反）：新設ポリシー
+#   `personal_period_reviews_own`がcurrent_member_id()（SECURITY DEFINER STABLE関数）を
+#   裸で呼んでいた。Section 39は「RLSポリシー内でSECURITY DEFINER関数を呼ぶときは
+#   (SELECT ...)で包む」を必須のグランドルールとしている（v3.80・実測でshared hit=6504・
+#   Execution Time 76.085msという異常値が確定済み）。仕様書§W1にもこの指示を明記していたが
+#   実装で抜けていた。20260819c_optimize_members_rls_initplan.sqlと同じ書き方
+#   （(SELECT public.current_member_id())）に揃えた。personal_krs以下の既存7ポリシーは
+#   Section 39制定前のもので今回のスコープ外（一斉是正が必要かは統括が別途判断する）。
+#   🔴 欠陥2（正本スキーマの同期漏れ）：supabase/schema.sqlにpersonal_period_reviewsの
+#   テーブル定義・部分ユニークインデックス2本・RLS有効化・ポリシーが未反映だった
+#   （personal_kr_review_drafts等の前例は反映済みなのに本テーブルだけ漏れていた）。
+#   テーブル定義・updated_atトリガーのDOループのテーブル名リスト・RLS有効化コメント・
+#   ポリシー・インデックスの5箇所に追記し、マイグレーションファイルと1文字も
+#   食い違わないよう揃えた。
+#   ユニーク制約違反時のUIの振る舞い（山本さんの依頼で確認）：PersonalPeriodReviewBlock.tsx
+#   の保存は元々try/catchで包まれformatErrorForUser（コード・詳細を含む）を表示する設計の
+#   ため、白画面・無言の失敗にはならないことを確認済み。ただし生のPostgrestメッセージは
+#   技術的すぎるため、新規src/lib/personalOkr/periodReviewSaveError.tsの
+#   isPeriodReviewUniqueViolation()（AdminView.tsxのisMemberEmailUniqueViolation()と同型）
+#   で検知し、「画面を再読み込みしてから、あらためて保存してください」という行動が分かる
+#   案内に差し替えた。
+#   新規テスト：periodReviewSaveError.test.ts（8件）。
+#   `npx tsc --noEmit`0・`npx vitest run`全1855件通過・`npm run build`成功。
+#   マイグレーションの適用は行っていない。山本さんが手動適用する（未適用のまま是正版へ
+#   差し替え済みのため、旧v3.101版を既に適用していない前提）。
+#
+# 最終更新：2026-08-26（v3.102）
 

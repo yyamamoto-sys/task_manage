@@ -770,6 +770,34 @@ CREATE TABLE IF NOT EXISTS personal_kr_review_drafts (
   created_at         timestamptz NOT NULL DEFAULT now()
 );
 
+-- 月全体・四半期全体の振り返り（「全体」タブ。migrations/20260826_add_personal_period_reviews.sql・
+-- v3.101）。personal_krs以下の他テーブルと違い、member_idを直接持つため親を辿らずRLS判定する
+-- （personal_krsと同じ流儀。新しいヘルパー関数は増やさない）。一意性は部分ユニークインデックス
+-- 2本（下部インデックス節）で保証する（UNIQUE(...,month)はperiod_kind='quarter'の行で
+-- monthが常にNULLになりPostgresのNULL非等価により重複を検出できないため使わない）。
+CREATE TABLE IF NOT EXISTS personal_period_reviews (
+  id             uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  member_id      text NOT NULL REFERENCES members(id),
+  period_kind    text NOT NULL CHECK (period_kind IN ('month','quarter')),
+  fiscal_year    integer NOT NULL,
+  quarter        text NOT NULL CHECK (quarter IN ('1Q','2Q','3Q','4Q')),
+  month          date,
+  self_eval_pct  numeric,
+  gm_eval_pct    numeric,
+  review_text    text,
+  gm_comment     text,
+  is_deleted     boolean NOT NULL DEFAULT false,
+  deleted_at     timestamptz,
+  deleted_by     text,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  updated_by     text NOT NULL DEFAULT '',
+  CONSTRAINT personal_period_reviews_month_shape CHECK (
+    (period_kind = 'month'   AND month IS NOT NULL) OR
+    (period_kind = 'quarter' AND month IS NULL)
+  )
+);
+
 -- ===== プロジェクト招待（部署外メンバーの受け入れ。migrations/20260810_add_project_invites.sql）=====
 -- 正本：docs/dev/project-invite-plan.md。RLSはSELECTのみ（CLAUDE.md新セクション参照）。
 -- 書き込みはcreate_project_invite()/accept_project_invite()（SECURITY DEFINER）経由のみ。
@@ -807,7 +835,8 @@ BEGIN
     ('member_tags'), ('kr_meeting_notes'), ('kr_note_tf_entries'),
     ('okr_analyses'), ('kr_reports'), ('task_dependencies'),
     ('loading_tips'), ('member_widget_layouts'),
-    ('personal_krs'), ('personal_kr_months'), ('personal_kr_weeks'), ('personal_kr_memos')
+    ('personal_krs'), ('personal_kr_months'), ('personal_kr_weeks'), ('personal_kr_memos'),
+    ('personal_period_reviews')
   LOOP
     EXECUTE format(
       'DROP TRIGGER IF EXISTS trg_%1$s_updated_at ON %1$s;
@@ -868,6 +897,10 @@ ALTER TABLE personal_kr_outlooks       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE personal_kr_review_drafts  ENABLE ROW LEVEL SECURITY;
 -- ※ personal_kr_review_drafts の個別ポリシーも同様に、ヘルパー関数の定義より後
 --   （下部の「個人OKR層」ブロック）で作成する（migrations/20260820_add_personal_kr_review_drafts.sql）。
+ALTER TABLE personal_period_reviews    ENABLE ROW LEVEL SECURITY;
+-- ※ personal_period_reviews の個別ポリシーは current_member_id() を参照するため、
+--   ヘルパー関数の定義より後（下部の「個人OKR層」ブロック）で作成する
+--   （migrations/20260826_add_personal_period_reviews.sql）。
 ALTER TABLE project_invites             ENABLE ROW LEVEL SECURITY;
 -- ※ project_invites の個別ポリシー（SELECTのみ）は can_access_group_ids()/member_group_ids()
 --   を参照するため、ヘルパー関数の定義より後（下部の「PJ・タスク周辺（子）テーブル」ブロック）
@@ -1313,6 +1346,17 @@ CREATE POLICY "personal_kr_review_drafts_own" ON personal_kr_review_drafts
   FOR ALL TO authenticated
   USING (personal_kr_owner_member_id(personal_kr_id) = current_member_id())
   WITH CHECK (personal_kr_owner_member_id(personal_kr_id) = current_member_id());
+
+-- personal_period_reviews（migrations/20260826_add_personal_period_reviews.sql）。
+-- member_idを直接持つため親を辿らず直接比較する（personal_krs_ownと同型）。
+-- 🔴 current_member_id()はSECURITY DEFINER STABLE関数のため (SELECT ...) で包む
+-- （CLAUDE.md Section 39・v3.80のグランドルール。裸呼び出しは行ごとに再評価され
+-- 性能問題を起こす。20260819c_optimize_members_rls_initplan.sqlと同じ書き方）。
+DROP POLICY IF EXISTS "personal_period_reviews_own" ON personal_period_reviews;
+CREATE POLICY "personal_period_reviews_own" ON personal_period_reviews
+  FOR ALL TO authenticated
+  USING (member_id = (SELECT public.current_member_id()))
+  WITH CHECK (member_id = (SELECT public.current_member_id()));
 
 -- ============================================================
 -- ゲストAI利用回数の条件付きカウントアップ関数（Phase 3・v3.29／v3.30で条件付き加算に修正）
@@ -2603,6 +2647,18 @@ CREATE INDEX IF NOT EXISTS idx_personal_kr_outlooks_kr_month_created
 -- 月末の振り返り下書き（migrations/20260820_add_personal_kr_review_drafts.sql）
 CREATE INDEX IF NOT EXISTS idx_personal_kr_review_drafts_kr_month_created
   ON personal_kr_review_drafts(personal_kr_id, month, created_at DESC);
+
+-- 月全体・四半期全体の振り返り（「全体」タブ。migrations/20260826_add_personal_period_reviews.sql）。
+-- 一意性は部分ユニークインデックス2本で保証する（UNIQUE(...,month)は使わない。理由は
+-- テーブル定義側のコメント参照）。
+CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_period_reviews_month_unique
+  ON personal_period_reviews(member_id, month)
+  WHERE period_kind = 'month' AND is_deleted = false;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_personal_period_reviews_quarter_unique
+  ON personal_period_reviews(member_id, fiscal_year, quarter)
+  WHERE period_kind = 'quarter' AND is_deleted = false;
+CREATE INDEX IF NOT EXISTS idx_personal_period_reviews_member_id
+  ON personal_period_reviews(member_id) WHERE is_deleted = false;
 
 -- クォーター計画（migrations/20260807c_add_kr_quarter_plans.sql）
 CREATE INDEX IF NOT EXISTS idx_kr_quarter_plans_kr_id ON kr_quarter_plans(kr_id) WHERE is_deleted = false;
