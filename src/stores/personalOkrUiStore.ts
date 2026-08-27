@@ -23,7 +23,7 @@
 import { create } from "zustand";
 import {
   fetchPersonalKrs, upsertPersonalKr, softDeletePersonalKr,
-  fetchPersonalKrMonths, upsertPersonalKrMonth,
+  fetchPersonalKrMonths, fetchPersonalKrMonthsForKrs, upsertPersonalKrMonth,
   fetchPersonalKrWeeks, upsertPersonalKrWeek,
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos, upsertPersonalKrMemo, softDeletePersonalKrMemo,
@@ -92,6 +92,16 @@ interface PersonalOkrUiState {
   loadKrs: () => Promise<void>;
   ensureKrDetailLoaded: (krId: string) => Promise<void>;
   ensureWeekTasksLoaded: (weekId: string) => Promise<void>;
+
+  // ===== 対象期の全KRの月レコード先読み（v3.106） =====
+  // 🔴 KR単位のensureKrDetailLoadedは「そのKRのタブを開いたときだけ」しか月レコードを
+  // 読まないため、未訪問のKRはウェイト合計の警告（PersonalOkrView.tsx）が四半期共通値へ
+  // フォールバックしてしまう不具合の原因になっていた。ensurePeriodMonthsLoadedは
+  // 「表示中の対象期の全KR」ぶんを1クエリでまとめて先読みする（KR一覧を読み終えた時点・
+  // 対象期を切り替えた時点で呼ぶ）。週・週タスクは先読みしない（従来どおり）。
+  /** 先読み中（fetchPersonalKrMonthsForKrs呼び出し中）のKR id集合。同時多重呼び出しの防止用。 */
+  monthsPreloadPendingKrIds: Set<string>;
+  ensurePeriodMonthsLoaded: (krIds: string[]) => Promise<void>;
 
   saveKr: (kr: PersonalKr, expectedUpdatedAt?: string) => Promise<void>;
   deleteKr: (id: string, deletedBy: string) => Promise<void>;
@@ -188,6 +198,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   detailLoadedKrIds: new Set(),
   detailLoadingKrId: null,
   detailError: null,
+  monthsPreloadPendingKrIds: new Set(),
 
   outlookByKrMonth: {},
   outlookFetchedKeys: new Set(),
@@ -287,6 +298,58 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     } catch {
       // 候補提示・紐づけ表示はベストエフォート。失敗時は空のまま扱う（週自体の表示は壊さない）
       set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: [] } }));
+    }
+  },
+
+  ensurePeriodMonthsLoaded: async (krIds) => {
+    // 🔴 ゲスト：loadKrs()がguestPersona等を含めた全データを既に注入済みのため、通常は
+    // monthsByKr[krId]が既にundefined以外になっている。新規作成KR（loadKrs後に増えたKR）の
+    // ための保険として、未確定のものだけ空配列で埋める（Supabaseへは問い合わせない）。
+    if (isGuestMode()) {
+      set(state => {
+        const missing = krIds.filter(id => state.monthsByKr[id] === undefined);
+        if (missing.length === 0) return {};
+        const next = { ...state.monthsByKr };
+        for (const id of missing) next[id] = [];
+        return { monthsByKr: next };
+      });
+      return;
+    }
+    // 既に読み込み済み（monthsByKr[krId]が確定済み）・既に先読み中のKRは対象から除外する
+    // （重複ロード防止・同時多重呼び出し防止）。
+    const { monthsByKr, monthsPreloadPendingKrIds } = get();
+    const toFetch = krIds.filter(id => monthsByKr[id] === undefined && !monthsPreloadPendingKrIds.has(id));
+    if (toFetch.length === 0) return;
+    set(state => {
+      const nextPending = new Set(state.monthsPreloadPendingKrIds);
+      for (const id of toFetch) nextPending.add(id);
+      return { monthsPreloadPendingKrIds: nextPending };
+    });
+    try {
+      const rows = await fetchPersonalKrMonthsForKrs(toFetch);
+      set(state => {
+        // 🔴 保存直後のローカル値を巻き戻さない：先読みの応答が届くまでの間に、
+        // 同じKRへ既に保存（saveMonth）が入っていれば monthsByKr[krId] は
+        // 既にundefined以外へ確定している。書き込み直前に再度undefinedかどうかを見て、
+        // 既に埋まっているKRへは先読みの結果を書き込まない（stateの現在値state.monthsByKrを
+        // 見る＝クロージャに捕まえたmonthsByKrではなく常に最新値を見るのが重要）。
+        const nextMonths = { ...state.monthsByKr };
+        for (const id of toFetch) {
+          if (nextMonths[id] === undefined) nextMonths[id] = rows.filter(m => m.personal_kr_id === id);
+        }
+        const nextPending = new Set(state.monthsPreloadPendingKrIds);
+        for (const id of toFetch) nextPending.delete(id);
+        return { monthsByKr: nextMonths, monthsPreloadPendingKrIds: nextPending };
+      });
+    } catch (e) {
+      set(state => {
+        const nextPending = new Set(state.monthsPreloadPendingKrIds);
+        for (const id of toFetch) nextPending.delete(id);
+        return {
+          monthsPreloadPendingKrIds: nextPending,
+          detailError: e instanceof Error ? e.message : "個人KR月次計画の一括取得に失敗しました",
+        };
+      });
     }
   },
 

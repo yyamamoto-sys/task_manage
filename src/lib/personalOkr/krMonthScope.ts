@@ -62,3 +62,17 @@ export function sumEffectiveWeightPct(
     return effective == null ? sum : sum + effective;
   }, 0);
 }
+
+/**
+ * krs 全件について、monthsByKr[kr.id] が読み込み済み（undefinedでない）かどうか。
+ * v3.106・仕様書のバグ修正：ウェイト合計の警告表示（PersonalOkrView.tsx）と
+ * 「全体」タブの読み込み中判定（PersonalOverallView.tsx）が同じ条件を別々に書いていたため
+ * ここへ一元化した（同じ判定ロジックを各所で書き直さない）。krsが0件なら「揃っている」扱い
+ * （空集合はvacuously true）。
+ */
+export function areAllKrMonthsLoaded(
+  krs: { id: string }[],
+  monthsByKr: Record<string, unknown[] | undefined>,
+): boolean {
+  return krs.every(kr => monthsByKr[kr.id] !== undefined);
+}

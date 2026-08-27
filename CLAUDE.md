@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.105
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.106
 #
-最終更新：2026-08-27（v3.105）
+最終更新：2026-08-27（v3.106）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.104）
+- 最終更新：2026-08-27（v3.106）
 
 ---
 
@@ -2375,6 +2375,20 @@ v3.101のマイグレーション（未適用のまま）に2件の欠陥があ�
 - **`schemaChecks.ts`に2列分の検査項目を追加**（管理者向け`SchemaHealthBanner`用。一般メンバー向けの判定は上記プローブが別途担う）。
 - **やらないこと（スコープ外）**：メモの月紐づけ改修（既存の`personal_kr_memos`にmonth列を足す改修）は山本さんが選ばなかったため行っていない。Kintone向け「全文をコピー」（v3.103）には実施記録を含めていない（Kintone側に対応する見出しが無いため）。
 - **テスト**：新規`actualActivitiesForm.test.ts`・`actualActivitiesSaveError.test.ts`・`actualActivitiesIsolation.test.ts`（既存4ハンドラの隔離をソース検査で固定＋対照確認）。既存テスト拡張：`personalOkrAiContext.test.ts`・`planDraftContext.test.ts`・`periodReviewDraftContext.test.ts`・`personalOkrStore.test.ts`・`personalOkrUiStore.test.ts`・5つのAIプロンプトテスト（生成結果に対して`ACTUAL_WORK_COUNTS_NOTICE`を検査）。
+
+### Step U：ウェイト合計の警告が未訪問KRのせいで誤って出る不具合の修正（v3.106・2026-08-27）
+
+山本さんの報告：各月でOKRの比率を設定しても、アプリ読み込み直後は正本（Kintone）の値だけが参照されているようで、実際には100%に調整されている月でも、各タブを開くまでは「⚠ この月のウェイト合計 60%（100%ではありません。Kintoneが正本のため警告のみです）」のような警告が出る。
+
+- **原因**：月レコード（`personal_kr_months`）はKR単位の遅延読み込み（`ensureKrDetailLoaded`＝そのKRのタブを選択したときだけ発火）。`resolveEffectiveWeightPct`は月レコードが無いと四半期共通値`kr.weight_pct`へフォールバックする設計自体は正しい仕様（Step S・v3.104参照）だが、未訪問のKRは常にこのフォールバックに落ちるため、8月の上書き（0%）だけが反映された1本＋残り6本の四半期共通値の合計＝60%になっていた（報告の数値と一致）。
+- **🔴 Step 0で確認：「全体」タブは実は壊れていなかった。** `PersonalOverallView.tsx`は自身のuseEffectで対象期の全KR分を`ensureKrDetailLoaded`しており、開いた瞬間に自己解決する設計だった（Step Qでこの仕組みは既に入っていた）。ただし「全体」タブを一度も開かなければKRタブ側の警告は直らないため、本命の修正はKRタブ側に必要だった。
+- **対応**：
+  1. `src/lib/supabase/personalOkrStore.ts`に`fetchPersonalKrMonthsForKrs(krIds)`を新設。`.in("personal_kr_id", krIds)`＋`.eq("is_deleted", false)`で複数KR分を1クエリでまとめて取得する（krIdsが空なら投げない）。
+  2. `personalOkrUiStore.ts`に`ensurePeriodMonthsLoaded(krIds)`アクションを新設。既に`monthsByKr[krId]`が読み込み済み・先読み中（`monthsPreloadPendingKrIds`）のKRは対象から除外する（重複ロード防止・同時多重呼び出し防止）。🔴 書き込み直前に`state.monthsByKr[krId]`を再確認し、既にundefined以外（＝先読み中に`saveMonth`が入った等）なら先読みの結果で上書きしない（保存直後のローカル値が古い先読み結果で巻き戻らないための対策）。ゲストは低レベルCRUDを呼ばず、未確定分を空配列で埋めるだけ。週（`weeksByKr`）・週タスク（`weekTasksByWeek`）は先読み対象にしない（従来どおり遅延読み込み）。
+  3. `PersonalOkrView.tsx`が対象期のKR一覧（`activeKrs`）確定時・対象期切替時にこのアクションを呼ぶ（`useEffect`の依存配列に`activeKrIds`を含めるだけで両方満たす。期を切り替えると`activeKrs`自体が変わるため自然に読み直しが発火する）。
+  4. `krMonthScope.ts`に`areAllKrMonthsLoaded(krs, monthsByKr)`を新設し、ウェイト合計警告（`PersonalOkrView.tsx`）と「全体」タブの`loadingKrData`（`PersonalOverallView.tsx`）の両方がこの1関数を共有するよう統一した（同じ条件を各所に書き直さない）。全KR分の月レコードが揃うまでは警告を出さない（誤った合計を一瞬でも見せない）。
+- **テスト**：`krMonthScope.test.ts`（`areAllKrMonthsLoaded` 3件）・`personalOkrStore.test.ts`（`fetchPersonalKrMonthsForKrs` 2件・`.in()`のモック対応を追加）・`personalOkrUiStore.test.ts`（`ensurePeriodMonthsLoaded` 8件：空krIds・未読み込み分のみ取得・既読み込み除外・全件既読でクエリなし・対象期切替で読み直す・保存直後のローカル値を巻き戻さない・同時多重呼び出しの多重発火防止・ゲスト分岐）・`personalKrMonthsPreloadWiring.test.ts`（配線のソース走査3件）。実装前に該当テスト（`ensurePeriodMonthsLoaded`関連8件）が全て赤くなることを確認済み。
+- **マイグレーション不要**（DB変更なし）。
 
 ---
 

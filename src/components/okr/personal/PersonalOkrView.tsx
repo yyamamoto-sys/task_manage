@@ -30,7 +30,7 @@ import { currentQuarter } from "../../../lib/date";
 import { isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
 import { quarterMonthSlots, resolveDefaultMonthIndex, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
-import { isKrActiveInMonth, resolveEffectiveWeightPct, sumEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
+import { isKrActiveInMonth, resolveEffectiveWeightPct, sumEffectiveWeightPct, areAllKrMonthsLoaded } from "../../../lib/personalOkr/krMonthScope";
 import { shouldInjectOkrTourPreviewSample } from "../../../lib/personalOkr/tourPreviewSample";
 import { confirmDiscardUnsavedEdits } from "../../../lib/editing/unsavedEditorRegistry";
 import { useTour } from "../../tour/TourProvider";
@@ -102,6 +102,7 @@ export function PersonalOkrView({ currentUser }: Props) {
   const krsError = usePersonalOkrUiStore(s => s.krsError);
   const loadKrs = usePersonalOkrUiStore(s => s.loadKrs);
   const ensureKrDetailLoaded = usePersonalOkrUiStore(s => s.ensureKrDetailLoaded);
+  const ensurePeriodMonthsLoaded = usePersonalOkrUiStore(s => s.ensurePeriodMonthsLoaded);
   const detailLoadingKrId = usePersonalOkrUiStore(s => s.detailLoadingKrId);
   const monthsByKr = usePersonalOkrUiStore(s => s.monthsByKr);
   const weeksByKr = usePersonalOkrUiStore(s => s.weeksByKr);
@@ -193,6 +194,20 @@ export function PersonalOkrView({ currentUser }: Props) {
       .sort((a, b) => a.display_order - b.display_order),
     [krs, fiscalYear, quarter],
   );
+
+  // ===== 対象期の全KRの月レコード先読み（v3.106） =====
+  // 🔴 KR単位のensureKrDetailLoaded（当該KRのタブを開いたときだけ月レコードを読む）だけに
+  // 任せると、未訪問のKRのウェイトがウェイト合計の警告で四半期共通値へフォールバックし、
+  // 実際には100%に調整済みでも警告が出続ける不具合になる（利用者報告そのもの）。
+  // KR一覧（activeKrs＝対象期の全KR）が確定した時点・対象期を切り替えた時点で、
+  // 1クエリでまとめて先読みする（週・週タスクは対象外＝従来どおり遅延読み込み）。
+  // サンプル表示中（previewSample）は実データのKR一覧が0件のままのため、
+  // activeKrs.length===0の分岐で自動的に何もしない（明示チェックは不要）。
+  const activeKrIds = useMemo(() => activeKrs.map(k => k.id), [activeKrs]);
+  useEffect(() => {
+    if (activeKrIds.length === 0) return;
+    void ensurePeriodMonthsLoaded(activeKrIds);
+  }, [activeKrIds, ensurePeriodMonthsLoaded]);
 
   // ===== OKRツアーのサンプル差し込み（CLAUDE.md Section 24。実データへの書き込み厳禁） =====
   // 🔴 判定は「ツアー実行中か」×「対象期のKRが0本か」の2点だけ（純粋関数に切り出し・テスト済み）。
@@ -324,7 +339,12 @@ export function PersonalOkrView({ currentUser }: Props) {
             🔍 これはサンプル表示です（保存されません）
           </span>
         )}
-        {!previewSample && monthActiveDisplayKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
+        {/* 🔴 v3.106：全KR分の月レコードが揃うまで警告を出さない（誤った合計を一瞬でも
+            見せないため。areAllKrMonthsLoadedはPersonalOverallView.tsxのloadingKrData判定と
+            共通化した1つの純粋関数）。 */}
+        {!previewSample && monthActiveDisplayKrs.length > 0
+          && areAllKrMonthsLoaded(monthActiveDisplayKrs, displayMonthsByKr)
+          && isWeightTotalWarning(weightTotal) && (
           <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>
             ⚠ この月のウェイト合計 {weightTotal}%（100%ではありません。Kintoneが正本のため警告のみです）
           </span>

@@ -29,7 +29,7 @@ import { buildWeekCards, computeWeekCardsLinkedTasks } from "../../../lib/person
 import { computeReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
 import type { KrPeriodRow } from "../../../lib/personalOkr/periodReviewReference";
 import { computeMonthlyAverage, computePeriodReference, averageMonthlyReferences } from "../../../lib/personalOkr/periodReviewReference";
-import { isKrActiveInMonth, resolveEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
+import { isKrActiveInMonth, resolveEffectiveWeightPct, areAllKrMonthsLoaded } from "../../../lib/personalOkr/krMonthScope";
 import {
   buildPeriodReviewKrMonthEntry, buildPeriodReviewDraftContext, buildPeriodReviewMaterialSummaryLines,
   type PeriodReviewKrEntry,
@@ -90,7 +90,9 @@ export function PersonalOverallView({
     }
   }, [krs, weeksByKr, weekTasksByWeek, monthStrs, ensureWeekTasksLoaded]);
 
-  const loadingKrData = krs.length > 0 && krs.some(kr => monthsByKr[kr.id] === undefined);
+  // 🔴 v3.106：PersonalOkrView.tsxのウェイト合計警告ゲートと同じ判定関数を使う
+  // （krMonthScope.tsのareAllKrMonthsLoaded。同じ条件を各所に書き直さない）。
+  const loadingKrData = krs.length > 0 && !areAllKrMonthsLoaded(krs, monthsByKr);
 
   /** 対象KR・対象月の PersonalKrMonth（無ければnull） */
   const findMonthRecord = (krId: string, monthStr: string): PersonalKrMonth | null =>

@@ -7019,5 +7019,40 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   NOTICEを検査）。
 #   マイグレーションの適用は行っていない。山本さんが手動適用する。
 #
-# 最終更新：2026-08-27（v3.105）
+# v3.106（2026-08-27）：個人OKRのウェイト合計警告バグ修正（未訪問KRが四半期共通値へ
+#   フォールバックしていた問題。CLAUDE.md該当箇所参照）
+#   症状：各月でOKRの比率（ウェイト）を設定して実際には100%に調整済みでも、アプリ読み込み
+#   直後は正本（Kintone）の値だけが参照されているように見え、各KRのタブを一度開くまで
+#   「⚠ この月のウェイト合計 60%（100%ではありません。Kintoneが正本のため警告のみです）」の
+#   ような誤った警告が出続けていた（山本さんの実機報告）。
+#   原因：personal_kr_months（月レコード）はKR単位の遅延読み込み（ensureKrDetailLoaded＝
+#   そのKRのタブを選択したときだけ発火）だった。resolveEffectiveWeightPct（krMonthScope.ts）は
+#   月レコードが無いと四半期共通値kr.weight_pctへフォールバックする設計自体は正しいが、
+#   未訪問のKRは常にこのフォールバックに落ち、8月の上書き（0%）だけが反映された1本＋残り
+#   6本の四半期共通値の合計＝60%になっていた（報告の数値と一致）。
+#   「全体」タブ（PersonalOverallView.tsx）は自身のuseEffectで対象期の全KR分を
+#   ensureKrDetailLoadedしていたため、実は開いた瞬間に自己解決していた（当初の想定と異なり
+#   壊れてはいなかった）。ただし「全体」タブを一度も開かなければKRタブ側の警告は直らないため、
+#   本命の修正はKRタブ側に必要だった。
+#   対応：①personalOkrStore.tsにfetchPersonalKrMonthsForKrs(krIds)を新設（.in()で複数KR分を
+#   1クエリでまとめて取得。krIdsが空なら投げない）。②personalOkrUiStore.tsに
+#   ensurePeriodMonthsLoaded(krIds)アクションを新設。既に読み込み済み・先読み中のKRは対象から
+#   除外（重複ロード防止）。書き込み直前にstate.monthsByKr[krId]を再確認し、既にundefined
+#   以外（＝先読み中に保存が入った等）なら上書きしない（保存直後のローカル値が古い先読み結果で
+#   巻き戻らないための対策）。ゲストは低レベルCRUDを呼ばず未確定分を空配列で埋めるだけ。
+#   ③PersonalOkrView.tsxが対象期のKR一覧（activeKrs）確定時・対象期切替時にこのアクションを
+#   呼ぶ（useEffect依存配列にactiveKrIdsを含めるだけで両方満たす）。④krMonthScope.tsに
+#   areAllKrMonthsLoaded(krs, monthsByKr)を新設し、ウェイト合計警告（PersonalOkrView.tsx）と
+#   「全体」タブのloadingKrData（PersonalOverallView.tsx）の両方がこの1関数を共有するよう
+#   統一（同じ条件を各所に書き直さない）。全KR分が揃うまでは警告を出さない。
+#   週（weeksByKr）・週タスク（weekTasksByWeek）は先読み対象にしない（従来どおり遅延読み込み）。
+#   新規テスト：krMonthScope.test.ts（areAllKrMonthsLoaded 3件）・personalOkrStore.test.ts
+#   （fetchPersonalKrMonthsForKrs 2件・.in()モック対応を追加）・personalOkrUiStore.test.ts
+#   （ensurePeriodMonthsLoaded 8件：空krIds／未読み込み分のみ取得／既読み込み除外／全件既読で
+#   クエリなし／対象期切替で読み直す／保存直後のローカル値を巻き戻さない／同時多重呼び出しの
+#   多重発火防止／ゲスト分岐）・personalKrMonthsPreloadWiring.test.ts（配線のソース走査3件）。
+#   実装前に全て赤くなることを確認済み。
+#   マイグレーション不要（DB変更なし）。
+#
+# 最終更新：2026-08-27（v3.106）
 

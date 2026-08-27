@@ -20,6 +20,7 @@ const personalOkrStoreMock = vi.hoisted(() => ({
   upsertPersonalKr: vi.fn(),
   softDeletePersonalKr: vi.fn(),
   fetchPersonalKrMonths: vi.fn(),
+  fetchPersonalKrMonthsForKrs: vi.fn(),
   upsertPersonalKrMonth: vi.fn(),
   fetchPersonalKrWeeks: vi.fn(),
   upsertPersonalKrWeek: vi.fn(),
@@ -267,6 +268,106 @@ describe("personalOkrUiStore：「全体」タブ（personal_period_reviews）",
       await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
       expect(personalOkrStoreMock.probeActualActivitiesColumn).not.toHaveBeenCalled();
       expect(usePersonalOkrUiStore.getState().actualActivitiesAvailable).toBe("available");
+    });
+  });
+
+  // ===== 対象期の全KRの月レコード先読み（v3.106・「訪問済みKRだけ」バグの修正） =====
+  describe("ensurePeriodMonthsLoaded", () => {
+    it("krIdsが空配列ならクエリを投げない", async () => {
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded([]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).not.toHaveBeenCalled();
+    });
+
+    it("未読み込みのKR分だけを1クエリでまとめて取得しmonthsByKrへ反映する", async () => {
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockResolvedValue([
+        { id: "m1", personal_kr_id: "kr-a", month: "2026-08-01", month_index: 2, is_deleted: false },
+        { id: "m2", personal_kr_id: "kr-b", month: "2026-08-01", month_index: 2, is_deleted: false },
+      ]);
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a", "kr-b"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledTimes(1);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledWith(["kr-a", "kr-b"]);
+      const state = usePersonalOkrUiStore.getState();
+      expect(state.monthsByKr["kr-a"]).toHaveLength(1);
+      expect(state.monthsByKr["kr-b"]).toHaveLength(1);
+    });
+
+    it("既にmonthsByKrへ読み込み済みのKRは対象から除外する（重複ロード防止）", async () => {
+      usePersonalOkrUiStore.setState({
+        monthsByKr: { "kr-a": [{ id: "m0", personal_kr_id: "kr-a", month: "2026-07-01", month_index: 1, is_deleted: false }] },
+      });
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockResolvedValue([
+        { id: "m2", personal_kr_id: "kr-b", month: "2026-08-01", month_index: 2, is_deleted: false },
+      ]);
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a", "kr-b"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledWith(["kr-b"]);
+    });
+
+    it("対象KRが全て既読み込みならクエリを投げない", async () => {
+      usePersonalOkrUiStore.setState({ monthsByKr: { "kr-a": [], "kr-b": [] } });
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a", "kr-b"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).not.toHaveBeenCalled();
+    });
+
+    it("🔴 対象期を切り替えたら（別のKR集合を渡したら）読み直す", async () => {
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockResolvedValueOnce([
+        { id: "m1", personal_kr_id: "kr-a", month: "2026-08-01", month_index: 2, is_deleted: false },
+      ]);
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledWith(["kr-a"]);
+
+      // 対象期を切り替えて別のKR集合（kr-c）を渡す
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockResolvedValueOnce([
+        { id: "m3", personal_kr_id: "kr-c", month: "2026-09-01", month_index: 3, is_deleted: false },
+      ]);
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-c"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledTimes(2);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenNthCalledWith(2, ["kr-c"]);
+      expect(usePersonalOkrUiStore.getState().monthsByKr["kr-c"]).toHaveLength(1);
+    });
+
+    it("🔴 保存直後のローカル値を、後から届く先読みの結果で巻き戻さない", async () => {
+      // 先読みが未解決のまま保留される状況を作る（応答が遅いふりをする）
+      let resolveFetch!: (rows: unknown[]) => void;
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockReturnValue(
+        new Promise(resolve => { resolveFetch = resolve; }),
+      );
+      const preload = usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a"]);
+
+      // 先読みが解決する前に、同じKRへ保存が入る（ローカル値が先に確定する）
+      personalOkrStoreMock.upsertPersonalKrMonth.mockResolvedValue("2026-08-27T00:00:00.000Z");
+      await usePersonalOkrUiStore.getState().saveMonth({
+        id: "saved-1", personal_kr_id: "kr-a", month: "2026-08-01", month_index: 2, is_deleted: false,
+      });
+      expect(usePersonalOkrUiStore.getState().monthsByKr["kr-a"]).toEqual([
+        expect.objectContaining({ id: "saved-1", updated_at: "2026-08-27T00:00:00.000Z" }),
+      ]);
+
+      // ここで先読み（古いデータ）が遅れて解決する
+      resolveFetch([{ id: "stale-1", personal_kr_id: "kr-a", month: "2026-08-01", month_index: 2, is_deleted: false }]);
+      await preload;
+
+      // 保存済みのローカル値が古い先読み結果で巻き戻されていないこと
+      expect(usePersonalOkrUiStore.getState().monthsByKr["kr-a"]).toEqual([
+        expect.objectContaining({ id: "saved-1" }),
+      ]);
+    });
+
+    it("同時に複数回呼んでも二重に走らせない（同一krIdの多重発火防止）", async () => {
+      let resolveFetch!: (rows: unknown[]) => void;
+      personalOkrStoreMock.fetchPersonalKrMonthsForKrs.mockReturnValue(
+        new Promise(resolve => { resolveFetch = resolve; }),
+      );
+      const p1 = usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a"]);
+      const p2 = usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["kr-a"]);
+      resolveFetch([{ id: "m1", personal_kr_id: "kr-a", month: "2026-08-01", month_index: 2, is_deleted: false }]);
+      await Promise.all([p1, p2]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).toHaveBeenCalledTimes(1);
+    });
+
+    it("🔴 ゲストはfetchPersonalKrMonthsForKrsを呼ばない", async () => {
+      setGuestMode(true);
+      await usePersonalOkrUiStore.getState().ensurePeriodMonthsLoaded(["demo-kr-1"]);
+      expect(personalOkrStoreMock.fetchPersonalKrMonthsForKrs).not.toHaveBeenCalled();
     });
   });
 });

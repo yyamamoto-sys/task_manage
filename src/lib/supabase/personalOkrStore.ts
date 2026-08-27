@@ -77,6 +77,24 @@ export async function fetchPersonalKrMonths(personalKrId: string): Promise<Perso
   return (data ?? []) as PersonalKrMonth[];
 }
 
+/**
+ * 複数KR分の月次計画を1クエリでまとめて取得する（v3.106）。
+ * CLAUDE.md該当箇所参照：ウェイト合計の警告が「訪問済みのKRだけ」を見て誤表示する
+ * バグの修正のため、対象期の全KRの月レコードを一括で先読みする用途で使う。
+ * 🔴 krIdsが空配列のときはクエリを投げない（呼び出し元でも確認するが、ここでも二重に守る）。
+ */
+export async function fetchPersonalKrMonthsForKrs(krIds: string[]): Promise<PersonalKrMonth[]> {
+  if (krIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("personal_kr_months")
+    .select("*")
+    .in("personal_kr_id", krIds)
+    .eq("is_deleted", false)
+    .order("month_index");
+  if (error) throw error;
+  return (data ?? []) as PersonalKrMonth[];
+}
+
 export async function upsertPersonalKrMonth(month: PersonalKrMonth, expectedUpdatedAt?: string): Promise<string> {
   return await saveWithLock("personal_kr_months", month, expectedUpdatedAt);
 }

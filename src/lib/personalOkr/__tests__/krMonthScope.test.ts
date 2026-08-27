@@ -1,6 +1,6 @@
 // src/lib/personalOkr/__tests__/krMonthScope.test.ts
 import { describe, expect, it } from "vitest";
-import { isKrActiveInMonth, resolveEffectiveWeightPct, sumEffectiveWeightPct } from "../krMonthScope";
+import { isKrActiveInMonth, resolveEffectiveWeightPct, sumEffectiveWeightPct, areAllKrMonthsLoaded } from "../krMonthScope";
 
 describe("isKrActiveInMonth", () => {
   it("active_month_indexesがundefined（未適用時）なら全月対象", () => {
@@ -81,5 +81,23 @@ describe("sumEffectiveWeightPct", () => {
   it("全KRが対象外のとき0を返す", () => {
     const krs = [{ id: "a", active_month_indexes: [2], weight_pct: 40 }];
     expect(sumEffectiveWeightPct(krs, {}, 1)).toBe(0);
+  });
+});
+
+describe("areAllKrMonthsLoaded", () => {
+  it("KRが0件なら揃っている扱い（true）", () => {
+    expect(areAllKrMonthsLoaded([], {})).toBe(true);
+  });
+
+  it("一部のKRの月レコードだけが読み込まれている状態ではfalse（本命バグの再現）", () => {
+    const krs = [{ id: "a" }, { id: "b" }, { id: "c" }];
+    const monthsByKr = { a: [], b: [] }; // cは未読み込み（undefined）
+    expect(areAllKrMonthsLoaded(krs, monthsByKr)).toBe(false);
+  });
+
+  it("全KRが読み込み済み（空配列も含む）ならtrue", () => {
+    const krs = [{ id: "a" }, { id: "b" }];
+    const monthsByKr = { a: [], b: [{ id: "m1" }] };
+    expect(areAllKrMonthsLoaded(krs, monthsByKr)).toBe(true);
   });
 });

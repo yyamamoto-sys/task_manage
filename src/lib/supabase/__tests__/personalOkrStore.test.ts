@@ -57,6 +57,10 @@ vi.mock("../client", () => {
       call.filters.push({ method: "eq", args });
       return builder;
     };
+    builder.in = (...args: unknown[]) => {
+      call.filters.push({ method: "in", args });
+      return builder;
+    };
     builder.order = (...args: unknown[]) => {
       call.filters.push({ method: "order", args });
       return builder;
@@ -87,7 +91,7 @@ vi.mock("../client", () => {
 // モック後に SUT を import
 import {
   fetchPersonalKrs, upsertPersonalKr, softDeletePersonalKr,
-  fetchPersonalKrMonths, upsertPersonalKrMonth,
+  fetchPersonalKrMonths, fetchPersonalKrMonthsForKrs, upsertPersonalKrMonth,
   fetchPersonalKrWeeks, upsertPersonalKrWeek,
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos,
@@ -159,6 +163,22 @@ describe("fetch系：is_deleted=falseで絞り込み、配列を返す", () => {
     expect(rows).toHaveLength(1);
     const call = mockState.calls.find(c => c.table === "personal_krs" && c.op === "select");
     expect(call?.filters).toContainEqual({ method: "eq", args: ["is_deleted", false] });
+  });
+
+  it("fetchPersonalKrMonthsForKrs：複数KR分をin()でまとめて取得する", async () => {
+    queueResult("personal_kr_months", "select", { data: [makeMonth({ id: "pm-1", personal_kr_id: "pkr-1" }), makeMonth({ id: "pm-2", personal_kr_id: "pkr-2" })], error: null });
+    const rows = await fetchPersonalKrMonthsForKrs(["pkr-1", "pkr-2"]);
+    expect(rows).toHaveLength(2);
+    const call = mockState.calls.find(c => c.table === "personal_kr_months" && c.op === "select");
+    expect(call?.filters).toContainEqual({ method: "in", args: ["personal_kr_id", ["pkr-1", "pkr-2"]] });
+    expect(call?.filters).toContainEqual({ method: "eq", args: ["is_deleted", false] });
+  });
+
+  it("fetchPersonalKrMonthsForKrs：krIdsが空配列ならクエリを投げない", async () => {
+    const rows = await fetchPersonalKrMonthsForKrs([]);
+    expect(rows).toEqual([]);
+    const call = mockState.calls.find(c => c.table === "personal_kr_months" && c.op === "select");
+    expect(call).toBeUndefined();
   });
 
   it("fetchPersonalKrMonths：personal_kr_idで絞り込む", async () => {
