@@ -4,11 +4,11 @@ import { computeMonthPlanDirty } from "../monthPlanForm";
 
 const savedClean = {
   positioning: "位置づけ", activities: "内容", targetAndEvidence: "目標", risks: "リスク",
-  bandTarget: 80 as const,
+  bandTarget: 80 as const, weightOverridePct: undefined,
 };
 const currentClean = {
   positioning: "位置づけ", activities: "内容", targetAndEvidence: "目標", risks: "リスク",
-  bandTarget: 80 as const,
+  bandTarget: 80 as const, weightOverrideRaw: "",
 };
 
 describe("computeMonthPlanDirty", () => {
@@ -41,8 +41,32 @@ describe("computeMonthPlanDirty", () => {
   });
 
   it("savedのnull/undefinedは空文字列・nullとして正規化される（新規未保存レコード相当）", () => {
-    const saved = { positioning: null, activities: undefined, targetAndEvidence: null, risks: undefined, bandTarget: null };
-    expect(computeMonthPlanDirty({ positioning: "", activities: "", targetAndEvidence: "", risks: "", bandTarget: null }, saved)).toBe(false);
-    expect(computeMonthPlanDirty({ positioning: "何か書いた", activities: "", targetAndEvidence: "", risks: "", bandTarget: null }, saved)).toBe(true);
+    const saved = { positioning: null, activities: undefined, targetAndEvidence: null, risks: undefined, bandTarget: null, weightOverridePct: undefined };
+    expect(computeMonthPlanDirty({ positioning: "", activities: "", targetAndEvidence: "", risks: "", bandTarget: null, weightOverrideRaw: "" }, saved)).toBe(false);
+    expect(computeMonthPlanDirty({ positioning: "何か書いた", activities: "", targetAndEvidence: "", risks: "", bandTarget: null, weightOverrideRaw: "" }, saved)).toBe(true);
+  });
+
+  // 【2026-08-26・v3.104】「今月のウェイト」欄（weight_override_pct）のdirty判定。
+  it("weightOverrideRawが空欄・savedもundefinedならfalse", () => {
+    expect(computeMonthPlanDirty(currentClean, savedClean)).toBe(false);
+  });
+
+  it("weightOverrideRawに数値を入れるとtrue", () => {
+    expect(computeMonthPlanDirty({ ...currentClean, weightOverrideRaw: "25" }, savedClean)).toBe(true);
+  });
+
+  it("保存済みの上書き値と同じ文字列を入れ直すとfalse", () => {
+    const saved = { ...savedClean, weightOverridePct: 25 };
+    expect(computeMonthPlanDirty({ ...currentClean, weightOverrideRaw: "25" }, saved)).toBe(false);
+  });
+
+  it("🔴 保存済みの上書き値が0のとき、空欄に戻す変更はtrue（??が0を落とさないこと）", () => {
+    const saved = { ...savedClean, weightOverridePct: 0 };
+    expect(computeMonthPlanDirty({ ...currentClean, weightOverrideRaw: "0" }, saved)).toBe(false);
+    expect(computeMonthPlanDirty({ ...currentClean, weightOverrideRaw: "" }, saved)).toBe(true);
+  });
+
+  it("weightOverrideRawが無効な入力（範囲外）ならdirty扱いにする", () => {
+    expect(computeMonthPlanDirty({ ...currentClean, weightOverrideRaw: "150" }, savedClean)).toBe(true);
   });
 });

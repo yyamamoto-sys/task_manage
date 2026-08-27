@@ -6922,5 +6922,55 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   新規テスト：kintoneFormat.test.ts（20件）。DBスキーマ変更なし。
 #   `npx tsc --noEmit`0・`npx eslint`0・`npx vitest run`全1875件通過・`npm run build`成功。
 #
-# 最終更新：2026-08-26（v3.103）
+#
+# v3.104（2026-08-26）：KRの構成とウェイトが月をまたいで変わる運用への対応（山本さんの依頼）
+#   「7月専用のKRを置いたために8月にもKRとパーセンテージが残存してしまう」現象への対応。
+#   山本さんの決定：対象外KRの見せ方＝その月のKRタブから消す／「対象月」の設定場所＝KR編集
+#   モーダルで1・2・3か月目を選ぶ／月ごとのウェイト変更＝対応する（既存のweight_override_pct
+#   を有効化）／ウェイト合計100%の判定単位＝その月の対象KRの合計。統括の判断：月ごとの
+#   ウェイトの入力場所は「その月の計画ブロック」（personal_kr_monthsを更新。KR編集モーダル
+#   からは書きに行かない）。
+#   🔴 weight_override_pctは列・型・Kintone取込処理まで既に存在するのに表示にも計算にも
+#   一度も使われていなかった。今回初めて有効化した。
+#   🔴 v3.101の「全体」タブの参考値は月ごとのウェイトを無視している実装欠陥だった
+#   （PersonalOverallView.tsxの4箇所が四半期共通のkr.weight_pctをそのまま見ていた）。
+#   今回あわせて是正した。
+#   新規src/lib/personalOkr/krMonthScope.ts（唯一の計算元）：isKrActiveInMonth／
+#   resolveEffectiveWeightPct（🔴 weight_override_pctが0のとき??は0を落とさない）／
+#   sumEffectiveWeightPct。未適用（active_month_indexesがundefined）のときは全月対象として
+#   扱う（後方互換）。
+#   マイグレーション20260826b_add_personal_krs_active_month_indexes.sql（山本さんが手動適用）：
+#   personal_krsにactive_month_indexes integer[] NOT NULL DEFAULT ARRAY[1,2,3]を追加。
+#   🔴 array_length('{}',1)はNULLを返すためCHECK制約はcoalesce(array_length(...,1),0)>=1の
+#   形にした（素のarray_length(...)>=1だとNULLが「違反ではない」として空配列を通す）。
+#   RLSは既存ポリシーがそのまま効くため新設せず。schema.sqlにも同期した（v3.101の同期漏れの
+#   反省）。
+#   🔴🔴 未適用時にKRの保存が全滅しないための3点（2026-08-12のupsertTask全滅事故と同型）：
+#   ①schemaChecks.tsに列存在チェックを追加 ②新規activeMonthIndexesSaveError.tsの
+#   isActiveMonthIndexesColumnMissing()（PGRST204かつ列名を含むかを判定。他のPGRST204と
+#   誤判定しない）をPersonalKrFormModal.tsxの保存catchへ配線 ③読み取り側（fetchPersonalKrs）
+#   はSELECT *のため列が無くても例外にならず、??フォールバックがそのまま効く。
+#   反映先：①KRタブ一覧（PersonalOkrView.tsx）：monthActiveDisplayKrsで対象外KRを除外・
+#   選択中KRが対象外になったときの自動補正（既存のv3.55自動選択effectの対象を差し替えるだけ）・
+#   対象KR0件の専用空状態（KR編集への導線付き） ②KRタブのウェイト表示：実効ウェイト＋上書き
+#   マーク（＊） ③「全体」タブ（PersonalOverallView.tsx）：月ブロックは対象外KR除外＋実効
+#   ウェイト。🔴四半期ブロックの算出式を変更＝「各KRの3か月平均×四半期ウェイト」→「月ごとに
+#   参考値を出し、それらを平均する」（新規averageMonthlyReferences()）。PersonalPeriodReviewBlock
+#   は参考値を内部計算せず呼び出し元のreference propを受け取る方式に変更 ④KR編集モーダル：
+#   「対象月」チェックボックス3つ（既定全部オン・最低1つ必須）＋月ごとの合計3行（読み取り
+#   専用・100%とずれても保存はブロックしない） ⑤計画ブロック：「今月のウェイト」入力欄。
+#   🔴空欄はundefinedではなくnullを送る。mergeMonthRecord()経由・computeMonthPlanDirty()
+#   （weightOverrideRaw/weightOverridePctを追加）経由で既存のunsavedEditorRegistry登録に
+#   そのまま乗る。
+#   やらないこと：四半期をまたぐKRの引き継ぎ・Kintoneへの書き戻し・既存データの一括補正・
+#   「対象月」を各月の画面からも切り替えられるようにすること・ウェイト合計100%未達時の
+#   保存ブロック。
+#   新規テスト：krMonthScope.test.ts（13件）・activeMonthIndexesSaveError.test.ts（8件）。
+#   既存テスト拡張：periodReviewReference.test.ts（+5件・18件に）・monthPlanForm.test.ts
+#   （+5件・13件に）。
+#   `npx tsc --noEmit`0・`npx eslint`0（変更ファイルのみ確認）・`npx vitest run`全1907件通過・
+#   `npm run build`成功。
+#   マイグレーションの適用は行っていない。山本さんが手動適用する。
+#
+# 最終更新：2026-08-26（v3.104）
 

@@ -645,6 +645,10 @@ CREATE TABLE IF NOT EXISTS personal_krs (
   task_force_id    text REFERENCES task_forces(id),
   label            text NOT NULL,
   weight_pct       numeric NOT NULL DEFAULT 0,
+  -- 【2026-08-26・v3.104】KRの構成・ウェイトが月をまたいで変わる運用への対応。
+  -- そのKRを対象とする月（1〜3のうち1個以上）。既存行はDEFAULTで{1,2,3}＝従来どおり
+  -- 全月対象になる（後方互換）。migrations/20260826b_add_personal_krs_active_month_indexes.sql参照。
+  active_month_indexes integer[] NOT NULL DEFAULT ARRAY[1,2,3],
   category         text,
   activity         text,
   strength_role    text,
@@ -659,7 +663,13 @@ CREATE TABLE IF NOT EXISTS personal_krs (
   deleted_by       text,
   created_at       timestamptz NOT NULL DEFAULT now(),
   updated_at       timestamptz NOT NULL DEFAULT now(),
-  updated_by       text NOT NULL DEFAULT ''
+  updated_by       text NOT NULL DEFAULT '',
+  -- 🔴 array_length('{}',1) はNULLを返すため coalesce(...,0)>=1 の形にする（罠。
+  -- CLAUDE.md Section 24参照）。
+  CONSTRAINT personal_krs_active_month_indexes_check CHECK (
+    coalesce(array_length(active_month_indexes, 1), 0) >= 1
+    AND active_month_indexes <@ ARRAY[1,2,3]
+  )
 );
 
 CREATE TABLE IF NOT EXISTS personal_kr_months (

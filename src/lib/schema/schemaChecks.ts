@@ -250,6 +250,14 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     migration: "20260826_add_personal_period_reviews.sql",
   },
   {
+    id: "personal_krs_active_month_indexes_column",
+    kind: "column",
+    table: "personal_krs",
+    column: "active_month_indexes",
+    label: "個人OKR：KRの対象月列（personal_krs.active_month_indexes）が見つかりません",
+    migration: "20260826b_add_personal_krs_active_month_indexes.sql",
+  },
+  {
     id: "kr_quarter_plans_table",
     kind: "table",
     table: "kr_quarter_plans",

@@ -30,8 +30,8 @@ describe("個人OKR：計画欄・振り返り欄がunsavedEditorRegistryに正�
   });
 
   it("計画欄がdirtyのときregistryが未保存ありを返す", () => {
-    const current = { positioning: "変更した", activities: "", targetAndEvidence: "", risks: "", bandTarget: null };
-    const saved = { positioning: "", activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined };
+    const current = { positioning: "変更した", activities: "", targetAndEvidence: "", risks: "", bandTarget: null, weightOverrideRaw: "" };
+    const saved = { positioning: "", activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined, weightOverridePct: undefined };
     registerUnsavedEditor("plan-1", () => computeMonthPlanDirty(current, saved));
     expect(hasUnsavedEditors()).toBe(true);
   });
@@ -44,8 +44,8 @@ describe("個人OKR：計画欄・振り返り欄がunsavedEditorRegistryに正�
   });
 
   it("計画欄・振り返り欄の両方がクリーンならregistryは未保存なしを返す", () => {
-    const planCurrent = { positioning: "", activities: "", targetAndEvidence: "", risks: "", bandTarget: null };
-    const planSaved = { positioning: undefined, activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined };
+    const planCurrent = { positioning: "", activities: "", targetAndEvidence: "", risks: "", bandTarget: null, weightOverrideRaw: "" };
+    const planSaved = { positioning: undefined, activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined, weightOverridePct: undefined };
     const reviewCurrent = { reviewText: "", selfEvalRaw: "", gmEvalRaw: "", gmComment: "" };
     const reviewSaved = { reviewText: undefined, selfEvalPct: undefined, gmEvalPct: undefined, gmComment: undefined };
     registerUnsavedEditor("plan-1", () => computeMonthPlanDirty(planCurrent, planSaved));
@@ -54,8 +54,8 @@ describe("個人OKR：計画欄・振り返り欄がunsavedEditorRegistryに正�
   });
 
   it("片方だけdirtyでも検知できる（計画のみ）", () => {
-    const planCurrent = { positioning: "書いた", activities: "", targetAndEvidence: "", risks: "", bandTarget: null };
-    const planSaved = { positioning: undefined, activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined };
+    const planCurrent = { positioning: "書いた", activities: "", targetAndEvidence: "", risks: "", bandTarget: null, weightOverrideRaw: "" };
+    const planSaved = { positioning: undefined, activities: undefined, targetAndEvidence: undefined, risks: undefined, bandTarget: undefined, weightOverridePct: undefined };
     const reviewCurrent = { reviewText: "", selfEvalRaw: "", gmEvalRaw: "", gmComment: "" };
     const reviewSaved = { reviewText: undefined, selfEvalPct: undefined, gmEvalPct: undefined, gmComment: undefined };
     registerUnsavedEditor("plan-1", () => computeMonthPlanDirty(planCurrent, planSaved));

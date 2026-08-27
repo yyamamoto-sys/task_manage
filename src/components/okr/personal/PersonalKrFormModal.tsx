@@ -11,12 +11,15 @@
 import { useMemo, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
-  KeyResult, Objective, PersonalKr, PersonalKrKind, TaskForce, Quarter,
+  KeyResult, Objective, PersonalKr, PersonalKrKind, PersonalKrMonth, TaskForce, Quarter,
 } from "../../../lib/localData/types";
 import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 import { CustomSelect } from "../../common/CustomSelect";
-import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
+import { isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
+import { quarterMonthSlots, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
+import { resolveEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
+import { isActiveMonthIndexesColumnMissing, ACTIVE_MONTH_INDEXES_MISSING_MESSAGE } from "../../../lib/personalOkr/activeMonthIndexesSaveError";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 
 const KR_KIND_OPTIONS: { value: PersonalKrKind; label: string }[] = [
@@ -50,6 +53,9 @@ interface Props {
   initial: PersonalKr | null;
   /** 保存後にdisplay_orderを自動割当するための既存件数（create時のみ使用） */
   existingKrsInPeriod: PersonalKr[];
+  /** 🔴2026-08-26・v3.104：月ごとの合計表示（他KRの実効ウェイト計算）に使う実データ。
+   *  KRごとの月次計画（weight_override_pct）を含む。プレビュー表示専用で、この画面自体は書かない。 */
+  monthsByKr: Record<string, PersonalKrMonth[]>;
   currentUserId: string;
   currentGroupId: string | null;
   keyResults: KeyResult[];
@@ -63,7 +69,7 @@ interface Props {
 }
 
 export function PersonalKrFormModal({
-  mode, initial, existingKrsInPeriod, currentUserId, currentGroupId,
+  mode, initial, existingKrsInPeriod, monthsByKr, currentUserId, currentGroupId,
   keyResults, taskForces, objectives, defaultFiscalYear, defaultQuarter,
   onSave, onDelete, onClose,
 }: Props) {
@@ -74,6 +80,10 @@ export function PersonalKrFormModal({
   const [taskForceId, setTaskForceId] = useState(initial?.task_force_id ?? "");
   const [label, setLabel] = useState(initial?.label ?? "");
   const [weightPct, setWeightPct] = useState(String(initial?.weight_pct ?? 0));
+  // 【2026-08-26・v3.104】「対象月」チェックボックス。既定は全部オン（1・2・3か月目）。
+  const [activeMonthIndexes, setActiveMonthIndexes] = useState<(1 | 2 | 3)[]>(
+    initial?.active_month_indexes ?? [1, 2, 3],
+  );
   const [category, setCategory] = useState(initial?.category ?? "");
   const [activity, setActivity] = useState(initial?.activity ?? "");
   const [strengthRole, setStrengthRole] = useState(initial?.strength_role ?? "");
@@ -94,13 +104,44 @@ export function PersonalKrFormModal({
       .filter(tf => tf.kr_id === keyResultId);
   }, [taskForces, keyResults, objectives, currentGroupId, keyResultId]);
 
-  const weightPreviewTotal = useMemo(() => {
+  // 【2026-08-26・v3.104】旧・四半期合計の単一表示を、月ごとの合計3行に置き換える
+  // （仕様書§W4-4）。読み取り専用（この画面では月ごとのウェイト自体は編集しない）。
+  // 他KRの実効ウェイトは、そのKRが対象とする月・上書き（weight_override_pct）を含めて
+  // resolveEffectiveWeightPctで解決する（krMonthScope.tsを唯一の計算元にする＝仕様書§W3）。
+  const monthSlots = useMemo(() => quarterMonthSlots(fiscalYear, quarter), [fiscalYear, quarter]);
+  const monthlyWeightTotals = useMemo(() => {
     const others = existingKrsInPeriod.filter(k => k.id !== initial?.id);
-    return sumWeightPct([...others, { weight_pct: Number(weightPct) || 0 }]);
-  }, [existingKrsInPeriod, initial?.id, weightPct]);
+    const draftWeight = Number(weightPct) || 0;
+    return monthSlots.map(slot => {
+      const monthStr = monthToDateStr(slot.monthStart);
+      let total = 0;
+      for (const k of others) {
+        const monthRecord = (monthsByKr[k.id] ?? []).find(m => m.month === monthStr && !m.is_deleted) ?? null;
+        const effective = resolveEffectiveWeightPct(k, monthRecord, slot.monthIndex);
+        if (effective != null) total += effective;
+      }
+      if (activeMonthIndexes.includes(slot.monthIndex)) {
+        // 編集中のKR自身は、既存の月次計画（初期値のみ）があればその上書きを、無ければ
+        // 今まさに入力中のweightPctを使う（このモーダルでは月ごとの上書き自体は編集しない）。
+        const selfMonthRecord = initial
+          ? ((monthsByKr[initial.id] ?? []).find(m => m.month === monthStr && !m.is_deleted) ?? null)
+          : null;
+        total += selfMonthRecord?.weight_override_pct ?? draftWeight;
+      }
+      return { monthIndex: slot.monthIndex, monthLabel: `${slot.monthStart.getMonth() + 1}月`, total };
+    });
+  }, [existingKrsInPeriod, monthsByKr, initial, monthSlots, activeMonthIndexes, weightPct]);
+
+  const toggleActiveMonth = (mi: 1 | 2 | 3) => {
+    setActiveMonthIndexes(prev =>
+      prev.includes(mi) ? prev.filter(x => x !== mi) : [...prev, mi].sort((a, b) => a - b),
+    );
+  };
 
   const handleSave = async () => {
     if (!label.trim()) { setError("KR名（タブに出す名前）を入力してください"); return; }
+    // 🔴 最低1つの対象月が必須（DBのCHECK制約と同じ条件。クライアント側でも先に弾く）。
+    if (activeMonthIndexes.length === 0) { setError("対象月を最低1つ選択してください"); return; }
     setSaving(true);
     setError(null);
     const now = new Date().toISOString();
@@ -115,6 +156,7 @@ export function PersonalKrFormModal({
       task_force_id: krKind === "group_kr" ? (taskForceId || null) : null,
       label: label.trim(),
       weight_pct: Number(weightPct) || 0,
+      active_month_indexes: activeMonthIndexes,
       category: category || null,
       activity: activity || null,
       strength_role: strengthRole || null,
@@ -130,7 +172,9 @@ export function PersonalKrFormModal({
       await onSave(kr);
       onClose();
     } catch (e) {
-      setError(formatErrorForUser("保存に失敗しました", e));
+      // 🔴🔴 仕様書§W2（最重要）：active_month_indexes列が未適用（マイグレーション未適用の窓）
+      // だとPGRST204でKRの保存が全滅する。列名まで見て他のPGRST204と誤判定しない。
+      setError(isActiveMonthIndexesColumnMissing(e) ? ACTIVE_MONTH_INDEXES_MISSING_MESSAGE : formatErrorForUser("保存に失敗しました", e));
     } finally {
       setSaving(false);
     }
@@ -221,13 +265,46 @@ export function PersonalKrFormModal({
           </div>
 
           <div style={fieldWrapStyle}>
-            <div style={labelStyle}>ウェイト（%）</div>
+            <div style={labelStyle}>ウェイト（%・四半期共通の既定値）</div>
             <input type="number" value={weightPct} onChange={e => setWeightPct(e.target.value)} style={{ ...inputStyle, width: "120px" }} />
-            {isWeightTotalWarning(weightPreviewTotal) && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-warning)", marginTop: "6px" }}>
-                ⚠ このKRを含めた{fiscalYear}年{quarter}のウェイト合計は{weightPreviewTotal}%です（100%でなくても保存できます。Kintoneが正本のためここでは警告のみです）。
+            <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
+              月ごとに変えたい場合は、対象月の「計画」タブの「今月のウェイト」欄で上書きできます。
+            </div>
+          </div>
+
+          {/* 【2026-08-26・v3.104】対象月（仕様書§0-1・§W4-4）。既定は全部オン・最低1つ必須。 */}
+          <div style={fieldWrapStyle}>
+            <div style={labelStyle}>対象月（この四半期のうち、このKRを対象とする月）</div>
+            <div style={{ display: "flex", gap: "16px" }}>
+              {([1, 2, 3] as const).map(mi => (
+                <label key={mi} style={{ display: "flex", alignItems: "center", gap: "5px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={activeMonthIndexes.includes(mi)} onChange={() => toggleActiveMonth(mi)} />
+                  {mi}か月目
+                </label>
+              ))}
+            </div>
+            {activeMonthIndexes.length === 0 && (
+              <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginTop: "6px" }}>
+                最低1つの月を選択してください。
               </div>
             )}
+          </div>
+
+          {/* 【2026-08-26・v3.104】月ごとの合計3行（読み取り専用）。仕様書§0-2＝月ごとのウェイト
+              入力場所は計画ブロック（PersonalKrPanel.tsx）で、ここは合計を見せるだけに留める。 */}
+          <div style={fieldWrapStyle}>
+            <div style={labelStyle}>月ごとのウェイト合計（参考・このKRを含む）</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              {monthlyWeightTotals.map(m => (
+                <div key={m.monthIndex} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
+                  <span style={{ width: "56px" }}>{m.monthLabel}</span>
+                  <span style={{ fontWeight: 700 }}>{m.total}%</span>
+                  {isWeightTotalWarning(m.total) && (
+                    <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>⚠ 100%とずれています（保存はブロックされません）</span>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
 
           <details style={{ marginTop: "6px" }}>

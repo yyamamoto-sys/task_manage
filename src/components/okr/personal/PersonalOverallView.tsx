@@ -28,7 +28,8 @@ import { computeMonthWeekSegments } from "../../../lib/date/monthWeeks";
 import { buildWeekCards, computeWeekCardsLinkedTasks } from "../../../lib/personalOkr/weekLayout";
 import { computeReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
 import type { KrPeriodRow } from "../../../lib/personalOkr/periodReviewReference";
-import { computeMonthlyAverage } from "../../../lib/personalOkr/periodReviewReference";
+import { computeMonthlyAverage, computePeriodReference, averageMonthlyReferences } from "../../../lib/personalOkr/periodReviewReference";
+import { isKrActiveInMonth, resolveEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
 import {
   buildPeriodReviewKrMonthEntry, buildPeriodReviewDraftContext, buildPeriodReviewMaterialSummaryLines,
   type PeriodReviewKrEntry,
@@ -107,29 +108,44 @@ export function PersonalOverallView({
   };
 
   // ===== 月ブロック =====
-  const monthKrRows: KrPeriodRow[] = useMemo(() => krs.map(kr => {
-    const m = findMonthRecord(kr.id, selectedMonthStr);
-    return { krId: kr.id, label: kr.label, weightPct: kr.weight_pct, selfEvalPct: m?.self_eval_pct ?? null, gmEvalPct: m?.gm_eval_pct ?? null };
+  // 🔴【2026-08-26・v3.104】対象外のKR（active_month_indexesにこの月を含まない）は除外し、
+  // ウェイトは実効ウェイト（月ごとの上書きがあればそれ・無ければ四半期共通値）を使う。
+  // v3.101はこの2点を欠いており（対象外KRも並び、四半期共通のkr.weight_pctをそのまま見ていた）、
+  // 実装欠陥として今回是正する（仕様書§1・§W4-3）。
+  const monthKrRows: KrPeriodRow[] = useMemo(() => krs
+    .filter(kr => isKrActiveInMonth(kr, monthIndex))
+    .map(kr => {
+      const m = findMonthRecord(kr.id, selectedMonthStr);
+      const weightPct = resolveEffectiveWeightPct(kr, m, monthIndex) ?? 0;
+      return { krId: kr.id, label: kr.label, weightPct, selfEvalPct: m?.self_eval_pct ?? null, gmEvalPct: m?.gm_eval_pct ?? null };
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [krs, monthsByKr, selectedMonthStr]);
+    [krs, monthsByKr, selectedMonthStr, monthIndex]);
+
+  const monthReference = useMemo(() => computePeriodReference(monthKrRows), [monthKrRows]);
 
   const monthRecord = periodReviews.find(r => r.period_kind === "month" && r.month === selectedMonthStr) ?? null;
   const monthEditable = isMonthEditable(classifyMonth(selectedSlot.monthStart, today), false);
 
-  const monthKrEntries: PeriodReviewKrEntry[] = useMemo(() => krs.map(kr => {
-    const m = findMonthRecord(kr.id, selectedMonthStr);
-    const taskSummary = computeTaskSummary(kr.id, selectedSlot.monthStart, selectedMonthStr);
-    return {
-      krLabel: kr.label, weightPct: kr.weight_pct,
-      months: [buildPeriodReviewKrMonthEntry({
-        monthLabel: `${selectedSlot.monthStart.getMonth() + 1}月`,
-        positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
-        reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
-        taskSummary,
-      })],
-    };
+  // 🔴 対象外のKRはこの月のAI下書き文脈・材料要約からも除外する（実効ウェイトも反映）。
+  const monthKrEntries: PeriodReviewKrEntry[] = useMemo(() => krs
+    .filter(kr => isKrActiveInMonth(kr, monthIndex))
+    .map(kr => {
+      const m = findMonthRecord(kr.id, selectedMonthStr);
+      const taskSummary = computeTaskSummary(kr.id, selectedSlot.monthStart, selectedMonthStr);
+      const weightPct = resolveEffectiveWeightPct(kr, m, monthIndex) ?? 0;
+      return {
+        krLabel: kr.label, weightPct,
+        months: [buildPeriodReviewKrMonthEntry({
+          monthLabel: `${selectedSlot.monthStart.getMonth() + 1}月`,
+          positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
+          reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
+          taskSummary,
+        })],
+      };
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, selectedMonthStr]);
+    [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, selectedMonthStr, monthIndex]);
 
   const monthDraftContext = useMemo(
     () => buildPeriodReviewDraftContext({ periodLabel: `${selectedSlot.monthStart.getMonth() + 1}月`, periodKind: "month", krEntries: monthKrEntries }),
@@ -138,31 +154,70 @@ export function PersonalOverallView({
   const monthMaterialSummaryLines = useMemo(() => buildPeriodReviewMaterialSummaryLines(monthKrEntries), [monthKrEntries]);
 
   // ===== 四半期ブロック =====
-  const quarterKrRows: KrPeriodRow[] = useMemo(() => krs.map(kr => {
-    const selfVals = monthStrs.map(ms => findMonthRecord(kr.id, ms)?.self_eval_pct ?? null);
-    const gmVals = monthStrs.map(ms => findMonthRecord(kr.id, ms)?.gm_eval_pct ?? null);
-    return { krId: kr.id, label: kr.label, weightPct: kr.weight_pct, selfEvalPct: computeMonthlyAverage(selfVals), gmEvalPct: computeMonthlyAverage(gmVals) };
+  // 🔴【2026-08-26・v3.104で算出式を変更】v3.101は「各KRの3か月平均self_eval_pct×四半期ウェイト」
+  // だったが、月ごとに対象KR・ウェイトの両方が変わる以上この式は成り立たない。「月ごとに参考値を
+  // 出し、それらを平均する」に改めた（periodReviewReference.ts の averageMonthlyReferences 参照。
+  // 画面には formulaText として明記する）。
+  //
+  // quarterKrRows（KRごとの内訳表示専用）は、四半期の3か月のうち1か月でも対象だったKRを一覧し、
+  // 参考として「対象だった月だけのself_eval_pct/gm_eval_pctの単純平均」と「四半期共通のweight_pct」
+  // を表示する。🔴 この内訳の数値は表示専用の参考情報であり、上のquarterReference（実際の参考値）
+  // の算出には使わない（月ごとに対象KR・実効ウェイトの両方が変わるため、KR単位の単一の重みで
+  // 四半期の参考値を再現することはできない）。
+  const quarterKrRows: KrPeriodRow[] = useMemo(() => krs
+    .filter(kr => monthSlots.some(slot => isKrActiveInMonth(kr, slot.monthIndex)))
+    .map(kr => {
+      const activeSlots = monthSlots.filter(slot => isKrActiveInMonth(kr, slot.monthIndex));
+      const selfVals = activeSlots.map(slot => findMonthRecord(kr.id, monthToDateStr(slot.monthStart))?.self_eval_pct ?? null);
+      const gmVals = activeSlots.map(slot => findMonthRecord(kr.id, monthToDateStr(slot.monthStart))?.gm_eval_pct ?? null);
+      return { krId: kr.id, label: kr.label, weightPct: kr.weight_pct, selfEvalPct: computeMonthlyAverage(selfVals), gmEvalPct: computeMonthlyAverage(gmVals) };
+    }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [krs, monthsByKr, monthStrs]);
+    [krs, monthsByKr, monthSlots]);
+
+  // 四半期の参考値そのもの：3か月それぞれについて、その月の対象KR・実効ウェイトで月次参考値を
+  // 求め（monthReferenceと同じ式）、3つの値を単純平均する。
+  const quarterReference = useMemo(() => {
+    const monthlyRefs = monthSlots.map(slot => {
+      const ms = monthToDateStr(slot.monthStart);
+      const rows: KrPeriodRow[] = krs
+        .filter(kr => isKrActiveInMonth(kr, slot.monthIndex))
+        .map(kr => {
+          const m = findMonthRecord(kr.id, ms);
+          const weightPct = resolveEffectiveWeightPct(kr, m, slot.monthIndex) ?? 0;
+          return { krId: kr.id, label: kr.label, weightPct, selfEvalPct: m?.self_eval_pct ?? null, gmEvalPct: m?.gm_eval_pct ?? null };
+        });
+      return computePeriodReference(rows);
+    });
+    return averageMonthlyReferences(monthlyRefs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [krs, monthsByKr, monthSlots]);
 
   const quarterRecord = periodReviews.find(r => r.period_kind === "quarter" && r.fiscal_year === fiscalYear && r.quarter === quarter) ?? null;
   const quarterEditable = isQuarterEditable(fiscalYear, quarter, false, today);
 
-  const quarterKrEntries: PeriodReviewKrEntry[] = useMemo(() => krs.map(kr => ({
-    krLabel: kr.label, weightPct: kr.weight_pct,
-    months: monthSlots.map(slot => {
-      const ms = monthToDateStr(slot.monthStart);
-      const m = findMonthRecord(kr.id, ms);
-      const taskSummary = computeTaskSummary(kr.id, slot.monthStart, ms);
-      return buildPeriodReviewKrMonthEntry({
-        monthLabel: `${slot.monthStart.getMonth() + 1}月`,
-        positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
-        reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
-        taskSummary,
-      });
-    }),
+  // 🔴 AI下書き文脈も、四半期を通じて一度も対象にならなかったKRは除外する。月ごとの実効ウェイトは
+  // 月内訳（PeriodReviewKrMonthEntry）側には持たせていないため、ここでは対象外の月の実績データ
+  // （positioning等）は引き続き含める（過去の記録として文脈から消さない。対象外＝除外するのは
+  // 「四半期を通して1度も対象にならなかったKR」のみ）。
+  const quarterKrEntries: PeriodReviewKrEntry[] = useMemo(() => krs
+    .filter(kr => monthSlots.some(slot => isKrActiveInMonth(kr, slot.monthIndex)))
+    .map(kr => ({
+      krLabel: kr.label, weightPct: kr.weight_pct,
+      months: monthSlots.map(slot => {
+        const ms = monthToDateStr(slot.monthStart);
+        const m = findMonthRecord(kr.id, ms);
+        const taskSummary = computeTaskSummary(kr.id, slot.monthStart, ms);
+        return buildPeriodReviewKrMonthEntry({
+          monthLabel: `${slot.monthStart.getMonth() + 1}月`,
+          positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
+          reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
+          taskSummary,
+        });
+      }),
+    })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  })), [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, monthSlots]);
+    [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, monthSlots]);
 
   const quarterDraftContext = useMemo(
     () => buildPeriodReviewDraftContext({ periodLabel: `${fiscalYear}年度 ${quarter}`, periodKind: "quarter", krEntries: quarterKrEntries }),
@@ -189,8 +244,9 @@ export function PersonalOverallView({
       <PersonalPeriodReviewBlock
         periodKind="month"
         title={`${selectedSlot.monthStart.getMonth() + 1}月の全体`}
-        formulaText="Σ(KRの自己評価% × ウェイト) ÷ Σ(ウェイト)"
+        formulaText="Σ(KRの自己評価% × その月の実効ウェイト) ÷ Σ(その月の実効ウェイト)（対象外のKRは含みません）"
         krRows={monthKrRows}
+        reference={monthReference}
         loadingKrData={loadingKrData}
         currentUser={currentUser}
         record={monthRecord}
@@ -205,8 +261,9 @@ export function PersonalOverallView({
       <PersonalPeriodReviewBlock
         periodKind="quarter"
         title={`${fiscalYear}年度 ${quarter} 全体`}
-        formulaText="Σ(KRの自己評価%の3か月平均 × ウェイト) ÷ Σ(ウェイト)"
+        formulaText="月ごとの参考値（Σ(KRの自己評価%×その月の実効ウェイト)÷Σ(その月の実効ウェイト)）を求め、その3か月の単純平均"
         krRows={quarterKrRows}
+        reference={quarterReference}
         loadingKrData={loadingKrData}
         currentUser={currentUser}
         record={quarterRecord}

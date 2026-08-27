@@ -12,6 +12,7 @@
 // 使い、保存ボタンのdisabled制御自体は今回のスコープ外（別の変更として扱う）。
 
 import type { PersonalKrBand } from "../localData/types";
+import { parseEvalPctInput } from "./monthReviewForm";
 
 export interface MonthPlanDraft {
   positioning: string;
@@ -19,6 +20,10 @@ export interface MonthPlanDraft {
   targetAndEvidence: string;
   risks: string;
   bandTarget: PersonalKrBand | null;
+  /** 【2026-08-26・v3.104】「今月のウェイト」欄（weight_override_pct）の文字列state。
+   *  空欄なら四半期共通値（weight_pct）を使う。0〜100の数値入力バリデーションは
+   *  monthReviewForm.tsのparseEvalPctInputを再利用する（判定ロジックを二重化しない）。 */
+  weightOverrideRaw: string;
 }
 
 export interface MonthPlanSaved {
@@ -27,6 +32,7 @@ export interface MonthPlanSaved {
   targetAndEvidence: string | null | undefined;
   risks: string | null | undefined;
   bandTarget: PersonalKrBand | null | undefined;
+  weightOverridePct: number | null | undefined;
 }
 
 /** dirty判定（値比較）。文字列はnull/undefinedを""として正規化してから比較する。 */
@@ -36,5 +42,11 @@ export function computeMonthPlanDirty(current: MonthPlanDraft, saved: MonthPlanS
   if (current.targetAndEvidence !== (saved.targetAndEvidence ?? "")) return true;
   if (current.risks !== (saved.risks ?? "")) return true;
   if (current.bandTarget !== (saved.bandTarget ?? null)) return true;
+  // 🔴 無効な入力（範囲外・数値でない）もまだ保存できない変更としてdirty=trueにする
+  // （monthReviewForm.tsのcomputeMonthReviewDirtyと同じ考え方。保存ボタンを押させて
+  // エラー表示に導く）。
+  const weightEval = parseEvalPctInput(current.weightOverrideRaw);
+  if (weightEval.error) return true;
+  if (weightEval.value !== (saved.weightOverridePct ?? null)) return true;
   return false;
 }

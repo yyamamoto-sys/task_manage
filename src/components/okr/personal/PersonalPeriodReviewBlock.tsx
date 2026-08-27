@@ -21,8 +21,7 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { Member, PersonalPeriodReview, PersonalPeriodKind, Quarter } from "../../../lib/localData/types";
-import type { KrPeriodRow } from "../../../lib/personalOkr/periodReviewReference";
-import { computePeriodReference } from "../../../lib/personalOkr/periodReviewReference";
+import type { KrPeriodRow, PeriodReference } from "../../../lib/personalOkr/periodReviewReference";
 import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
 import { isPeriodReviewUniqueViolation, PERIOD_REVIEW_DUPLICATE_MESSAGE } from "../../../lib/personalOkr/periodReviewSaveError";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
@@ -57,8 +56,12 @@ interface Props {
   title: string;
   /** 画面に明記する算出式（例："Σ(KRの自己評価% × ウェイト) ÷ Σ(ウェイト)"） */
   formulaText: string;
-  /** KRごとの行（参考値の算出・内訳表示の両方に使う） */
+  /** KRごとの行（内訳表示専用。🔴2026-08-26・v3.104：参考値そのものはreferenceで受け取る。
+   *  四半期ブロックは「月ごとの参考値の平均」になり単一のkrRowsから再現できないため、
+   *  参考値の算出をこの内部（computePeriodReference呼び出し）から呼び出し元へ移した）。 */
   krRows: KrPeriodRow[];
+  /** 参考値（機械計算・呼び出し元が算出式に応じて組み立て済み）。 */
+  reference: PeriodReference;
   /** 対象KRの月次データがまだ読み込み中のときtrue（参考値・内訳の代わりに読み込み中表示） */
   loadingKrData: boolean;
   currentUser: Member;
@@ -74,7 +77,7 @@ interface Props {
 }
 
 export function PersonalPeriodReviewBlock({
-  periodKind, title, formulaText, krRows, loadingKrData, currentUser, record, editable,
+  periodKind, title, formulaText, krRows, reference, loadingKrData, currentUser, record, editable,
   fiscalYear, quarter, month, onSave, draftMaterialSummaryLines, draftContextText,
 }: Props) {
   const [reviewText, setReviewText] = useState("");
@@ -111,7 +114,6 @@ export function PersonalPeriodReviewBlock({
     return () => unregisterUnsavedEditor(registryId);
   }, [registryId]);
 
-  const reference = computePeriodReference(krRows);
   const canComputeReference = reference.selfEvalPct != null || reference.gmEvalPct != null;
 
   const handleUseReference = () => {

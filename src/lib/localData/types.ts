@@ -389,6 +389,10 @@ export interface PersonalKr {
   task_force_id?: string | null;
   label: string;
   weight_pct: number;  // 合計100%は警告のみ・DB制約では強制しない
+  // 【2026-08-26・v3.104】そのKRを対象とする月（1〜3のうち1個以上）。undefinedは
+  // マイグレーション未適用（20260826b_add_personal_krs_active_month_indexes.sql）を意味し、
+  // 全月対象として扱う（src/lib/personalOkr/krMonthScope.ts参照）。
+  active_month_indexes?: (1 | 2 | 3)[];
   category?: string | null;
   activity?: string | null;
   strength_role?: string | null;

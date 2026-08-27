@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.103
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.104
 #
-最終更新：2026-08-26（v3.103）
+最終更新：2026-08-26（v3.104）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1206,7 +1206,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-26（v3.103）
+- 最終更新：2026-08-26（v3.104）
 
 ---
 
@@ -2337,6 +2337,29 @@ v3.101のマイグレーション（未適用のまま）に2件の欠陥があ�
   - **ラベルは新旧で区別**：新しいボタンは3箇所とも「📋 全文をコピー（Kintone用）」。既存の`PersonalOkrReviewDraftModal.tsx`の「コピー」ボタン（本文のみ・振り返り下書きの编集内容用）はそのまま残した（統括の依頼どおり、山本さんへ判断を報告する形で決定）。
 - **ラウンドトリップの機械検証**（`src/lib/personalOkr/__tests__/kintoneFormat.test.ts`）：`buildKintonePlanCopyText()`で生成した文字列を`parseKintoneMonthlyText()`（決定的パーサ）に実際に通し、元の入力どおり読み戻せることを検証する。加えて、見出しがプロンプト側・パーサ側で直書きに戻っていないことをソース走査で固定する（`modalStyles.test.ts`と同じ「ソースを読んで検査する」方式）。**実装検証として、パーサ側の正規表現を意図的に定数から切り離して直書きに戻し、ラウンドトリップテスト・ソース走査テストの両方が実際に赤くなることを確認した上で元に戻した**（本セクション執筆時点の実施記録）。
 - **DBスキーマ変更なし**（クリップボードへの書き出しのみ。マイグレーション・`schemaChecks.ts`への追記は不要）。
+
+### Step S：KRの構成とウェイトが月をまたいで変わる運用への対応（v3.104・2026-08-26）
+
+山本さんの依頼：「全社や部署の環境変化によって、個人OKRのKRそのものやパーセンテージが、月を跨ぐと変わる可能性がある。そういった場合にも対応できるようにしてほしい。例えば現在、私には、7月専用のKRを置いたために8月にもKRとパーセンテージが残存してしまう現象が起こっている」。
+
+🔴 **設計判断（山本さんが選んだ・変更禁止）**：対象外KRの見せ方＝その月のKRタブから消す／「対象月」の設定場所＝KR編集モーダルで1・2・3か月目を選ぶ／月ごとのウェイト変更＝対応する（既存の`weight_override_pct`を有効化）／ウェイト合計100%の判定単位＝その月の対象KRの合計。**統括の判断（指定が無かった箇所）**：月ごとのウェイトの入力場所は「その月の計画ブロック」（`personal_kr_months`を更新。KR編集モーダルからは書きに行かない＝1つの保存操作が2テーブルにまたがると部分失敗の経路が増えるため）。KR編集モーダルには各月の合計を読み取り専用で表示する。
+
+- 🔴 **`personal_kr_months.weight_override_pct`は列・型・Kintone取込処理まで既に存在するのに、表示にも計算にも一度も使われていなかった**（`PersonalOkrImportModal.tsx`／`importApplyPlan.ts`／`kintoneTextParse.ts`／`personalOkrImportExtractor.ts`の取込経路だけが触っていた）。本バージョンで初めて有効化した。
+- 🔴 **v3.101の「全体」タブの参考値は月ごとのウェイトを無視している実装欠陥だった**（`PersonalOverallView.tsx`の4箇所が四半期共通の`kr.weight_pct`をそのまま見ていた）。今回あわせて是正した。
+- **新規`src/lib/personalOkr/krMonthScope.ts`（唯一の計算元）**：`isKrActiveInMonth(kr, monthIndex)`（`kr.active_month_indexes ?? [1,2,3]`に含まれるか。未適用時はundefinedのため全月対象として扱う＝後方互換）／`resolveEffectiveWeightPct(kr, monthRecord, monthIndex)`（対象外ならnull、対象なら`monthRecord?.weight_override_pct ?? kr.weight_pct`。🔴 `weight_override_pct`が0のとき`??`は0を落とさない）／`sumEffectiveWeightPct(krs, monthRecordsByKrId, monthIndex)`（その月の対象KRだけの実効ウェイト合計）。KRタブ一覧・タブのウェイト表示・「全体」タブの参考値・KR編集モーダルの月ごとの合計、いずれもここを経由する。
+- **マイグレーション`20260826b_add_personal_krs_active_month_indexes.sql`（山本さんが手動適用）**：`personal_krs`に`active_month_indexes integer[] NOT NULL DEFAULT ARRAY[1,2,3]`を追加。既存行はDEFAULTで`{1,2,3}`＝従来どおり全月対象（後方互換）。CHECK制約は`coalesce(array_length(active_month_indexes,1),0) >= 1 AND active_month_indexes <@ ARRAY[1,2,3]`（🔴 `array_length('{}',1)`はNULLを返すため`coalesce(...,0)`が必須。素の`array_length(...) >= 1`だとNULLが「違反ではない」として空配列を通してしまう）。RLSは`personal_krs`の既存ポリシーがそのまま効くため新設しない。`supabase/schema.sql`にも同じ列・CHECKを反映した（v3.101で同期漏れが起きた反省）。
+- 🔴🔴 **未適用時に「KRの保存が全滅」しないための3点（最重要。2026-08-12のupsertTask全滅事故と同型）**：
+  1. `src/lib/schema/schemaChecks.ts`に`personal_krs_active_month_indexes_column`（`kind:"column"`）を追加。
+  2. 新規`src/lib/personalOkr/activeMonthIndexesSaveError.ts`の`isActiveMonthIndexesColumnMissing(e)`（`code==="PGRST204"`かつメッセージ等に`"active_month_indexes"`を含むかを判定。列名まで見て他のPGRST204と誤判定しない）を`PersonalKrFormModal.tsx`の保存catchに配線し、「データベースへの適用がまだ済んでいません（管理者に連絡してください）」を表示する。
+  3. **読み取り側は未適用でも壊れない**：`fetchPersonalKrs()`はSELECT `*`のため列が無くても単に返らないだけ（`kr.active_month_indexes`がundefinedになる）で例外にならず、`isKrActiveInMonth`等の`?? [1,2,3]`フォールバックがそのまま効く。
+- **反映先（すべてkrMonthScope.ts経由）**：
+  1. **KRタブ一覧**（`PersonalOkrView.tsx`）：`monthActiveDisplayKrs`（`displayKrs.filter(kr => isKrActiveInMonth(kr, monthIndex))`）をタブ描画・自動選択effect・ウェイト合計の対象にする。選択中KRが月切替で対象外になった場合の自動補正は既存の自動選択effect（v3.55由来）の対象を差し替えるだけで実現し、新たなguardedSwitchは追加していない（月・四半期・KRタブのクリック自体は既存の`guardedSwitch`で既にガードされており、その結果としての自動補正はv3.100と同じ考え方で未ガードのままでよい）。その月の対象KRが0件（四半期にはKRがあるがこの月は対象外）のケースは、四半期自体が空のケースと文言を分け、「この月を対象にしたKRがありません」＋各KRを直接編集できるボタン列を出す（KR編集への導線）。
+  2. **KRタブのウェイト表示**：`resolveEffectiveWeightPct(kr, monthRecord, monthIndex)`を使い、月ごとの上書きが効いている場合は控えめな印（＊・title付き）を付ける。
+  3. **「全体」タブの参考値**（`PersonalOverallView.tsx`）：月ブロックは対象外KRを除外し実効ウェイトを使う。🔴 **四半期ブロックの算出式を変更した**：v3.101は「各KRの3か月平均self_eval_pct×四半期ウェイト」だったが、月ごとに対象KR・ウェイトの両方が変わる以上この式は成り立たない。**「月ごとに参考値を出し、それらを平均する」**に改めた（新規`averageMonthlyReferences()`。`periodReviewReference.ts`）。KRごとの内訳表示（`quarterKrRows`）は「四半期を通して1度でも対象だった月だけの自己評価%平均」を参考情報として残すが、この数値自体は実際の参考値計算には使わない（月ごとに重みが変わるKR単位の単一値では四半期の参考値を再現できないため）。算出式は画面の`formulaText`にそのまま明記した。`PersonalPeriodReviewBlock.tsx`は参考値を内部で`computePeriodReference(krRows)`から計算する方式をやめ、呼び出し元が算出式に応じて組み立てた`reference`propを受け取る方式に変更した。
+  4. **KR編集モーダル**（`PersonalKrFormModal.tsx`）：「対象月」チェックボックス3つ（既定は全部オン・最低1つ必須）。旧・四半期合計の単一警告表示を、月ごとの合計3行（読み取り専用）に置き換えた（100%とずれている月は警告のみ・保存はブロックしない）。
+  5. **計画ブロック**（`PersonalKrPanel.tsx`）：「今月のウェイト」入力欄（`weight_override_pct`）を追加。空欄なら四半期共通値を使う旨を補足に明記。🔴 空欄は`undefined`ではなく`null`を送る（`parseEvalPctInput`の`value`をそのまま`weight_override_pct`に渡す）。既存の`mergeMonthRecord()`を通し、`computeMonthPlanDirty()`（`monthPlanForm.ts`。`weightOverrideRaw`/`weightOverridePct`フィールドを追加）経由で既存の`unsavedEditorRegistry`登録にそのまま乗る（新しい登録は増やしていない＝計画欄は既に1つのgetterで登録済みのため、比較対象のフィールドを増やすだけで済んだ）。
+- **やらないこと（スコープ外）**：四半期をまたぐKRの引き継ぎ・Kintone側への書き戻し・既存の`weight_override_pct`データの一括補正（既定値で従来挙動が保たれるため不要）・「対象月」を各月の画面からも切り替えられるようにすること・ウェイト合計100%未達時の保存ブロック。
+- **テスト**：`krMonthScope.test.ts`（13件）・`activeMonthIndexesSaveError.test.ts`（8件）・`periodReviewReference.test.ts`に`averageMonthlyReferences`と月ごとに構成が変わるシナリオを追加（18件に増加）・`monthPlanForm.test.ts`に`weightOverrideRaw`/`weightOverridePct`のケースを追加（13件に増加）。
 
 ---
 

@@ -53,6 +53,7 @@ import {
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
 import { computeMonthPlanDirty } from "../../../lib/personalOkr/monthPlanForm";
+import { parseEvalPctInput } from "../../../lib/personalOkr/monthReviewForm";
 import { buildKintonePlanCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
@@ -182,6 +183,10 @@ export function PersonalKrPanel({
   const [targetAndEvidence, setTargetAndEvidence] = useState("");
   const [risks, setRisks] = useState("");
   const [bandTarget, setBandTarget] = useState<PersonalKrBand | null>(null);
+  // 【2026-08-26・v3.104】「今月のウェイト」欄（weight_override_pct）。空欄なら四半期共通値
+  // （kr.weight_pct）を使う。文字列stateで持ち、parseEvalPctInput（0〜100・小数可）で検証する
+  // （monthReviewForm.tsの自己評価%入力と同じ流儀。判定ロジックを二重化しない）。
+  const [weightOverrideRaw, setWeightOverrideRaw] = useState("");
   const [savingMonth, setSavingMonth] = useState(false);
   const [monthError, setMonthError] = useState<string | null>(null);
 
@@ -191,6 +196,7 @@ export function PersonalKrPanel({
     setTargetAndEvidence(monthRecord?.target_and_evidence ?? "");
     setRisks(monthRecord?.risks ?? "");
     setBandTarget(monthRecord?.band_target ?? null);
+    setWeightOverrideRaw(monthRecord?.weight_override_pct != null ? String(monthRecord.weight_override_pct) : "");
     setMonthError(null);
     // 🔴 kr.idを依存に含める（keyによる全体remountを外したため）：新旧どちらのKRにも
     // monthRecordが無い（両方undefined）場合、monthRecord?.idとmonthStrだけでは依存配列が
@@ -207,11 +213,11 @@ export function PersonalKrPanel({
   // 上のuseEffectがpositioning等をmonthRecordへ同期し直すため、切替直後は自然にdirty=false
   // になる（切替前に呼ばれるguardedSwitch経由の確認が先に走る前提。PersonalOkrView.tsx参照）。
   const isPlanDirty = computeMonthPlanDirty(
-    { positioning, activities, targetAndEvidence, risks, bandTarget },
+    { positioning, activities, targetAndEvidence, risks, bandTarget, weightOverrideRaw },
     {
       positioning: monthRecord?.positioning, activities: monthRecord?.activities,
       targetAndEvidence: monthRecord?.target_and_evidence, risks: monthRecord?.risks,
-      bandTarget: monthRecord?.band_target,
+      bandTarget: monthRecord?.band_target, weightOverridePct: monthRecord?.weight_override_pct,
     },
   );
   const planRegistryId = useId();
@@ -224,6 +230,11 @@ export function PersonalKrPanel({
 
   const handleSaveMonthPlan = async () => {
     if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない（UI側は既にボタン非表示だが二重の防御）
+    // 🔴 空欄はundefinedではなくnullを送る（postgrest-jsの仕様。CLAUDE.md該当箇所参照）。
+    // 無効な入力（範囲外・非数値）はここでブロックする（monthReviewForm.ts側の
+    // PersonalPeriodReviewBlock.handleSaveと同じ流儀）。
+    const weightOverrideEval = parseEvalPctInput(weightOverrideRaw);
+    if (weightOverrideEval.error) { setMonthError(`今月のウェイト：${weightOverrideEval.error}`); return; }
     setSavingMonth(true);
     setMonthError(null);
     const now = new Date().toISOString();
@@ -240,6 +251,7 @@ export function PersonalKrPanel({
       target_and_evidence: targetAndEvidence || null,
       risks: risks || null,
       band_target: bandTarget,
+      weight_override_pct: weightOverrideEval.value,
       updated_by: currentUser.id,
     });
     try {
@@ -756,6 +768,22 @@ export function PersonalKrPanel({
                   </div>
                 );
               })}
+              <div style={{ marginBottom: "12px" }}>
+                <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: "4px" }}>今月のウェイト（%）</div>
+                {monthEditable ? (
+                  <input
+                    type="number" min={0} max={100} step="any"
+                    value={weightOverrideRaw}
+                    onChange={e => setWeightOverrideRaw(e.target.value)}
+                    style={{ ...textareaStyle, width: "120px", minHeight: "unset", padding: "6px 9px" }}
+                  />
+                ) : (
+                  <div style={{ fontSize: "12.5px", color: "var(--color-text-secondary)" }}>{weightOverrideRaw ? `${weightOverrideRaw}%` : "（未記入）"}</div>
+                )}
+                <div style={{ fontSize: "10.5px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+                  空欄なら四半期共通値（{kr.weight_pct}%）を使います。
+                </div>
+              </div>
               <div>
                 <div style={{ fontSize: "10.5px", fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: "4px" }}>当月末 達成度バンド</div>
                 <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>

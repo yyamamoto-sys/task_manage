@@ -24,12 +24,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../../stores/appStore";
 import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
-import type { Member, PersonalKr, PersonalKrOutlook, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
+import type { Member, PersonalKr, PersonalKrMonth, PersonalKrOutlook, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { currentQuarter } from "../../../lib/date";
-import { sumWeightPct, isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
+import { isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
 import { quarterMonthSlots, resolveDefaultMonthIndex, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
+import { isKrActiveInMonth, resolveEffectiveWeightPct, sumEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
 import { shouldInjectOkrTourPreviewSample } from "../../../lib/personalOkr/tourPreviewSample";
 import { confirmDiscardUnsavedEdits } from "../../../lib/editing/unsavedEditorRegistry";
 import { useTour } from "../../tour/TourProvider";
@@ -231,15 +232,34 @@ export function PersonalOkrView({ currentUser }: Props) {
     [previewSample, monthSlots],
   );
 
+  // 🔴【2026-08-26・v3.104】その月の対象外のKRはタブ一覧から消す（仕様書§0-1・§W4-1）。
+  // 未適用（active_month_indexesがundefined）のときは全月対象として扱う（krMonthScope.ts）。
+  const monthStrForIndex = useMemo(() => monthToDateStr(monthSlots[monthIndex - 1].monthStart), [monthSlots, monthIndex]);
+  const monthActiveDisplayKrs = useMemo(
+    () => displayKrs.filter(kr => isKrActiveInMonth(kr, monthIndex)),
+    [displayKrs, monthIndex],
+  );
+  const monthRecordByKrIdForMonth = useMemo(() => {
+    const map: Record<string, PersonalKrMonth | null | undefined> = {};
+    for (const kr of monthActiveDisplayKrs) {
+      map[kr.id] = (displayMonthsByKr[kr.id] ?? []).find(m => m.month === monthStrForIndex && !m.is_deleted) ?? null;
+    }
+    return map;
+  }, [monthActiveDisplayKrs, displayMonthsByKr, monthStrForIndex]);
+
   const [selectedKrId, setSelectedKrId] = useState<string | null>(null);
   useEffect(() => {
     // 🔴 v3.101：「全体」タブ選択中はKRの自動選択の対象外にする（対象期のKRが増減しても
     // 「全体」タブから勝手にKRタブへ切り替わらないようにするため）。
     if (selectedKrId === OVERALL_TAB_ID) return;
-    if (displayKrs.length === 0) { setSelectedKrId(null); return; }
-    if (!displayKrs.some(k => k.id === selectedKrId)) setSelectedKrId(displayKrs[0].id);
+    // 🔴 v3.104：選択候補は「その月の対象KR」に限定する（月切替で選択中KRが対象外になった
+    // 場合の自動補正もここで行う。この自動補正自体はguardedSwitchで包まない＝トリガー元の
+    // 月・四半期切替が既にguardedSwitch経由で未保存確認を済ませている前提のため
+    // ＝v3.100と同じ考え方。CLAUDE.md Section 46）。
+    if (monthActiveDisplayKrs.length === 0) { setSelectedKrId(null); return; }
+    if (!monthActiveDisplayKrs.some(k => k.id === selectedKrId)) setSelectedKrId(monthActiveDisplayKrs[0].id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayKrs]);
+  }, [monthActiveDisplayKrs]);
 
   // 🔴 サンプル表示中はensureKrDetailLoaded（実データのSupabaseフェッチ）を呼ばない
   // （サンプルidは実DBに存在せず、無駄な問い合わせ＋storeへの空データ書き込みになるため）。
@@ -252,8 +272,13 @@ export function PersonalOkrView({ currentUser }: Props) {
 
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; initial: PersonalKr | null } | null>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-  const weightTotal = useMemo(() => sumWeightPct(displayKrs), [displayKrs]);
-  const selectedKr = displayKrs.find(k => k.id === selectedKrId) ?? null;
+  // 🔴 v3.104：ウェイト合計の判定単位は「その月の対象KRの合計」（仕様書§0-1）。実効ウェイト
+  // （月ごとの上書きがあればそれ）を使う。
+  const weightTotal = useMemo(
+    () => sumEffectiveWeightPct(monthActiveDisplayKrs, monthRecordByKrIdForMonth, monthIndex),
+    [monthActiveDisplayKrs, monthRecordByKrIdForMonth, monthIndex],
+  );
+  const selectedKr = monthActiveDisplayKrs.find(k => k.id === selectedKrId) ?? null;
   // 🔴 対象期にKRが0件のとき、実際にKRが存在する期を候補として出す（取込が別の年度・
   // 四半期に書き込まれていた場合に利用者が詰まないための安全網。CLAUDE.md Section 24）
   const availablePeriods = useMemo(() => listAvailablePersonalKrPeriods(krs), [krs]);
@@ -293,9 +318,9 @@ export function PersonalOkrView({ currentUser }: Props) {
             🔍 これはサンプル表示です（保存されません）
           </span>
         )}
-        {!previewSample && displayKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
+        {!previewSample && monthActiveDisplayKrs.length > 0 && isWeightTotalWarning(weightTotal) && (
           <span style={{ fontSize: "11px", color: "var(--color-text-warning)" }}>
-            ⚠ ウェイト合計 {weightTotal}%（100%ではありません。Kintoneが正本のため警告のみです）
+            ⚠ この月のウェイト合計 {weightTotal}%（100%ではありません。Kintoneが正本のため警告のみです）
           </span>
         )}
       </div>
@@ -313,12 +338,21 @@ export function PersonalOkrView({ currentUser }: Props) {
           <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>全体</span>
           <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>&nbsp;</span>
         </button>
-        {displayKrs.map(kr => (
-          <button key={kr.id} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} style={tabStyle(kr.id === selectedKrId)}>
-            <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
-            <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>{kr.weight_pct}%</span>
-          </button>
-        ))}
+        {monthActiveDisplayKrs.map(kr => {
+          // 🔴 v3.104：タブのウェイト表示は四半期共通値ではなくその月の実効ウェイトを出す
+          // （仕様書§W4-2）。月ごとの上書きが効いている場合は控えめな印（＊）を付ける。
+          const monthRecord = monthRecordByKrIdForMonth[kr.id];
+          const effectiveWeight = resolveEffectiveWeightPct(kr, monthRecord, monthIndex) ?? kr.weight_pct;
+          const overridden = monthRecord?.weight_override_pct != null;
+          return (
+            <button key={kr.id} onClick={() => void guardedSwitch(() => setSelectedKrId(kr.id))} style={tabStyle(kr.id === selectedKrId)}>
+              <span style={{ display: "block", fontSize: "12.5px", fontWeight: 700 }}>{kr.label}</span>
+              <span style={{ display: "block", fontSize: "10px", marginTop: "1px" }}>
+                {effectiveWeight}%{overridden && <span title="この月だけの上書きウェイトです">＊</span>}
+              </span>
+            </button>
+          );
+        })}
         {/* 🔴 ツアー最後の着地点（Section 24）。ここは常に実際の登録操作のまま
             （サンプル表示中でも、ここから作る新しいKRは実データとして保存される）。 */}
         <div data-tour-id="okr-registration-actions" style={{ display: "flex", alignItems: "center" }}>
@@ -407,23 +441,48 @@ export function PersonalOkrView({ currentUser }: Props) {
       ) : (
         !krsLoading && (
           <div style={{ padding: "40px 20px", textAlign: "center", color: "var(--color-text-tertiary)", fontSize: "13px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderTop: "none", borderRadius: "0 0 var(--radius-md) var(--radius-md)" }}>
-            <div>{fiscalYear}年{quarter}の個人KRがまだありません。</div>
-            <div style={{ marginTop: "6px" }}>
-              Kintoneに個人OKRが既にある場合は「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。
-            </div>
-            {availablePeriods.length > 0 && (
-              <div style={{ marginTop: "14px" }}>
-                <div style={{ fontSize: "11px", marginBottom: "8px" }}>実際にKRがある期はこちらです（取込先の期がずれている可能性があります）：</div>
-                <div style={{ display: "flex", gap: "6px", justifyContent: "center", flexWrap: "wrap" }}>
-                  {availablePeriods.map(p => (
-                    <button
-                      key={`${p.fiscalYear}::${p.quarter}`}
-                      onClick={() => { setFiscalYear(p.fiscalYear); setQuarter(p.quarter); }}
-                      style={{ fontFamily: "inherit", fontSize: "11.5px", cursor: "pointer", padding: "5px 12px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)", background: "var(--color-brand-light)", color: "var(--color-brand)", fontWeight: 700 }}
-                    >{p.fiscalYear}年{p.quarter}（{p.count}件）</button>
-                  ))}
+            {displayKrs.length === 0 ? (
+              <>
+                <div>{fiscalYear}年{quarter}の個人KRがまだありません。</div>
+                <div style={{ marginTop: "6px" }}>
+                  Kintoneに個人OKRが既にある場合は「📥 Kintoneから取込」、まだ無い場合は「＋ KRを追加」から手入力で登録できます。
                 </div>
-              </div>
+                {availablePeriods.length > 0 && (
+                  <div style={{ marginTop: "14px" }}>
+                    <div style={{ fontSize: "11px", marginBottom: "8px" }}>実際にKRがある期はこちらです（取込先の期がずれている可能性があります）：</div>
+                    <div style={{ display: "flex", gap: "6px", justifyContent: "center", flexWrap: "wrap" }}>
+                      {availablePeriods.map(p => (
+                        <button
+                          key={`${p.fiscalYear}::${p.quarter}`}
+                          onClick={() => { setFiscalYear(p.fiscalYear); setQuarter(p.quarter); }}
+                          style={{ fontFamily: "inherit", fontSize: "11.5px", cursor: "pointer", padding: "5px 12px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)", background: "var(--color-brand-light)", color: "var(--color-brand)", fontWeight: 700 }}
+                        >{p.fiscalYear}年{p.quarter}（{p.count}件）</button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            ) : (
+              // 🔴 v3.104：四半期にはKRがあるが、この月を対象にしたKRが0件のケース
+              // （仕様書§W4-1）。「対象月」を変更できるよう、既存KRの編集への導線を出す。
+              <>
+                <div>この月を対象にしたKRがありません。</div>
+                <div style={{ marginTop: "6px" }}>
+                  KRの「対象月」を変更するか、新しいKRを追加してください。
+                </div>
+                <div style={{ marginTop: "14px" }}>
+                  <div style={{ fontSize: "11px", marginBottom: "8px" }}>この四半期のKR（対象月を変更できます）：</div>
+                  <div style={{ display: "flex", gap: "6px", justifyContent: "center", flexWrap: "wrap" }}>
+                    {displayKrs.map(kr => (
+                      <button
+                        key={kr.id}
+                        onClick={() => setFormModal({ mode: "edit", initial: kr })}
+                        style={{ fontFamily: "inherit", fontSize: "11.5px", cursor: "pointer", padding: "5px 12px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-tertiary)", color: "var(--color-text-secondary)", fontWeight: 700 }}
+                      >✏️ {kr.label}を編集</button>
+                    ))}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )
@@ -436,6 +495,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           mode={formModal.mode}
           initial={formModal.initial}
           existingKrsInPeriod={activeKrs}
+          monthsByKr={monthsByKr}
           currentUserId={currentUser.id}
           currentGroupId={currentGroupId}
           keyResults={keyResults}
