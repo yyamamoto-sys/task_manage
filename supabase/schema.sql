@@ -692,6 +692,9 @@ CREATE TABLE IF NOT EXISTS personal_kr_months (
   gm_comment             text,
   imported_at            timestamptz,
   source_label           text,
+  -- 実施記録（migrations/20260827_add_actual_activities.sql・v3.105）。計画欄の activities
+  -- （計画）と対になる列。月の途中で生じた緊急対応・方針転換・計画外の追加業務の自由記述。
+  actual_activities      text,
   is_deleted             boolean NOT NULL DEFAULT false,
   deleted_at             timestamptz,
   deleted_by             text,
@@ -796,6 +799,9 @@ CREATE TABLE IF NOT EXISTS personal_period_reviews (
   gm_eval_pct    numeric,
   review_text    text,
   gm_comment     text,
+  -- 実施記録（migrations/20260827_add_actual_activities.sql・v3.105）。どのKRにも属さない
+  -- 業務（突発の依頼・他部署応援等）を含む、月全体・四半期全体の自由記述。
+  actual_activities text,
   is_deleted     boolean NOT NULL DEFAULT false,
   deleted_at     timestamptz,
   deleted_by     text,

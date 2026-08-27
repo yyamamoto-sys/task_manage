@@ -34,6 +34,7 @@ import {
   buildPeriodReviewKrMonthEntry, buildPeriodReviewDraftContext, buildPeriodReviewMaterialSummaryLines,
   type PeriodReviewKrEntry,
 } from "../../../lib/personalOkr/periodReviewDraftContext";
+import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
 import { PersonalPeriodReviewBlock } from "./PersonalPeriodReviewBlock";
 
 interface Props {
@@ -55,13 +56,15 @@ interface Props {
   periodReviewsError: string | null;
   loadPeriodReviews: () => Promise<void>;
   savePeriodReview: (review: PersonalPeriodReview, expectedUpdatedAt?: string) => Promise<void>;
+  /** 実施記録（actual_activities列）の利用可否（仕様書§W2・2026-08-27・v3.105） */
+  actualActivitiesAvailable: ActualActivitiesAvailability;
 }
 
 export function PersonalOverallView({
   currentUser, fiscalYear, quarter, monthIndex, krs, monthsByKr, weeksByKr, weekTasksByWeek,
   ensureKrDetailLoaded, ensureWeekTasksLoaded, tasks, taskDependencies,
   periodReviews, periodReviewsLoaded, periodReviewsLoading, periodReviewsError,
-  loadPeriodReviews, savePeriodReview,
+  loadPeriodReviews, savePeriodReview, actualActivitiesAvailable,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const monthSlots = useMemo(() => quarterMonthSlots(fiscalYear, quarter), [fiscalYear, quarter]);
@@ -140,6 +143,7 @@ export function PersonalOverallView({
           monthLabel: `${selectedSlot.monthStart.getMonth() + 1}月`,
           positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
           reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
+          actualActivities: m?.actual_activities,
           taskSummary,
         })],
       };
@@ -148,8 +152,12 @@ export function PersonalOverallView({
     [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, selectedMonthStr, monthIndex]);
 
   const monthDraftContext = useMemo(
-    () => buildPeriodReviewDraftContext({ periodLabel: `${selectedSlot.monthStart.getMonth() + 1}月`, periodKind: "month", krEntries: monthKrEntries }),
-    [monthKrEntries, selectedSlot],
+    () => buildPeriodReviewDraftContext({
+      periodLabel: `${selectedSlot.monthStart.getMonth() + 1}月`, periodKind: "month", krEntries: monthKrEntries,
+      // 🔴 対象期間そのものの実施記録（どのKRにも属さない業務。仕様書§W4）
+      overallActualActivities: monthRecord?.actual_activities ?? null,
+    }),
+    [monthKrEntries, selectedSlot, monthRecord],
   );
   const monthMaterialSummaryLines = useMemo(() => buildPeriodReviewMaterialSummaryLines(monthKrEntries), [monthKrEntries]);
 
@@ -212,6 +220,7 @@ export function PersonalOverallView({
           monthLabel: `${slot.monthStart.getMonth() + 1}月`,
           positioning: m?.positioning, activities: m?.activities, targetAndEvidence: m?.target_and_evidence, risks: m?.risks,
           reviewText: m?.review_text, selfEvalPct: m?.self_eval_pct, gmEvalPct: m?.gm_eval_pct, gmComment: m?.gm_comment,
+          actualActivities: m?.actual_activities,
           taskSummary,
         });
       }),
@@ -220,8 +229,13 @@ export function PersonalOverallView({
     [krs, monthsByKr, weeksByKr, weekTasksByWeek, tasks, taskDependencies, monthSlots]);
 
   const quarterDraftContext = useMemo(
-    () => buildPeriodReviewDraftContext({ periodLabel: `${fiscalYear}年度 ${quarter}`, periodKind: "quarter", krEntries: quarterKrEntries }),
-    [quarterKrEntries, fiscalYear, quarter],
+    () => buildPeriodReviewDraftContext({
+      periodLabel: `${fiscalYear}年度 ${quarter}`, periodKind: "quarter", krEntries: quarterKrEntries,
+      // 🔴 四半期そのものの実施記録（personal_period_reviews.period_kind='quarter'の行。
+      // 各月の「全体」記録の集約はしない＝既存のquarterKrEntries同様、この四半期行自体が持つ値）
+      overallActualActivities: quarterRecord?.actual_activities ?? null,
+    }),
+    [quarterKrEntries, fiscalYear, quarter, quarterRecord],
   );
   const quarterMaterialSummaryLines = useMemo(() => buildPeriodReviewMaterialSummaryLines(quarterKrEntries), [quarterKrEntries]);
 
@@ -257,6 +271,7 @@ export function PersonalOverallView({
         onSave={savePeriodReview}
         draftMaterialSummaryLines={monthMaterialSummaryLines}
         draftContextText={monthDraftContext.text}
+        actualActivitiesAvailable={actualActivitiesAvailable}
       />
       <PersonalPeriodReviewBlock
         periodKind="quarter"
@@ -274,6 +289,7 @@ export function PersonalOverallView({
         onSave={savePeriodReview}
         draftMaterialSummaryLines={quarterMaterialSummaryLines}
         draftContextText={quarterDraftContext.text}
+        actualActivitiesAvailable={actualActivitiesAvailable}
       />
     </div>
   );

@@ -19,6 +19,7 @@
 
 import { invokeAI } from "./invokeAI";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
+import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 import type { PersonalKrBand } from "../localData/types";
 
 // ===== 型定義 =====
@@ -77,6 +78,8 @@ band_target は「その月に狙う水準」の提案であって、評価の�
 持たない。判断材料が乏しければ null を返してよい。自己評価の割合（実績%）は一切書かないこと。
 
 ${WEEKLY_IS_OPTIONAL_NOTICE}
+
+${ACTUAL_WORK_COUNTS_NOTICE}
 
 【出力（厳密なJSONのみ。前後に説明文・コードブロックを一切付けない）】
 - positioning: 位置づけ（当月このKRにどう取り組むかの位置づけ）。

@@ -92,6 +92,7 @@ import {
   fetchPersonalKrWeekTasks, insertPersonalKrWeekTask, deletePersonalKrWeekTask,
   fetchPersonalKrMemos,
   fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
+  probeActualActivitiesColumn,
 } from "../personalOkrStore";
 import type { PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrMemo, PersonalKrOutlook } from "../../localData/types";
 
@@ -332,5 +333,35 @@ describe("personal_kr_week_tasks：物理delete/insertの中間テーブル", ()
   it("エラー時はthrowする", async () => {
     queueResult("personal_kr_week_tasks", "delete", { data: null, error: { message: "fail" } });
     await expect(deletePersonalKrWeekTask("pw-1", "t1")).rejects.toBeTruthy();
+  });
+});
+
+describe("probeActualActivitiesColumn：実施記録列（actual_activities）の存在確認（仕様書§W2）", () => {
+  it("エラーが無ければtrue（列が存在する）", async () => {
+    queueResult("personal_kr_months", "select", { data: [], error: null });
+    await expect(probeActualActivitiesColumn()).resolves.toBe(true);
+    const call = mockState.calls.find(c => c.table === "personal_kr_months" && c.op === "select");
+    expect(call?.filters).toContainEqual({ method: "limit", args: [1] });
+  });
+
+  it("🔴 PGRST204でactual_activities言及ありならfalse（列が存在しないと判定できた）", async () => {
+    queueResult("personal_kr_months", "select", {
+      data: null,
+      error: { code: "PGRST204", message: "Could not find the 'actual_activities' column of 'personal_kr_months' in the schema cache" } as unknown as { message: string },
+    });
+    await expect(probeActualActivitiesColumn()).resolves.toBe(false);
+  });
+
+  it("PGRST204でも列名が無関係ならnull（判定不能。他の未適用マイグレーションと誤判定しない）", async () => {
+    queueResult("personal_kr_months", "select", {
+      data: null,
+      error: { code: "PGRST204", message: "Could not find the 'weight_override_pct' column of 'personal_kr_months' in the schema cache" } as unknown as { message: string },
+    });
+    await expect(probeActualActivitiesColumn()).resolves.toBeNull();
+  });
+
+  it("PGRST204以外のエラーはnull（判定不能・fail-openは呼び出し側の責務）", async () => {
+    queueResult("personal_kr_months", "select", { data: null, error: { message: "network error" } });
+    await expect(probeActualActivitiesColumn()).resolves.toBeNull();
   });
 });

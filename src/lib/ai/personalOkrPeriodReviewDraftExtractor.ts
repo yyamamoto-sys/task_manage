@@ -20,6 +20,7 @@
 
 import { invokeAI } from "./invokeAI";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
+import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 
 // ===== 型定義 =====
 
@@ -53,6 +54,8 @@ const SYSTEM_PROMPT = `あなたは個人OKRの「全体の振り返り」の下
 地の文です。
 
 ${WEEKLY_IS_OPTIONAL_NOTICE}
+
+${ACTUAL_WORK_COUNTS_NOTICE}
 
 【🔴絶対に守ること】
 自己評価の割合・GM評価の割合・達成度バンドの数値を一切書いてはならない。「[自己評価：…]」

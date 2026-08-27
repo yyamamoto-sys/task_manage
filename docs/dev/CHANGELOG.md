@@ -6972,5 +6972,52 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   `npm run build`成功。
 #   マイグレーションの適用は行っていない。山本さんが手動適用する。
 #
-# 最終更新：2026-08-26（v3.104）
+# v3.105（2026-08-27）個人OKRに「実施記録」欄を追加（山本さんの依頼：振り返り下書きの材料が
+#   「計画」「毎週の目標」だけで、途中で生じた緊急対応・方針転換・計画外の追加業務が
+#   反映されない、という課題への対応）。
+#   マイグレーション20260827_add_actual_activities.sql（山本さんが手動適用）：
+#   personal_kr_months.actual_activities text／personal_period_reviews.actual_activities text
+#   を追加（新テーブルは作らない）。schema.sqlにも同期した。
+#   🔴🔴 最重要（未適用でも既存の保存を壊さない設計）：actual_activitiesは、計画欄
+#   （handleSaveMonthPlan）・振り返り欄（MonthReviewBlock.handleSave/handleSaveReviewText）・
+#   バンド決定（handleSetBandOverride）・「全体」タブの自己評価%等（PersonalPeriodReviewBlock.
+#   handleSave）とは完全に別の保存関数（handleSaveActualActivities）でしか送らない設計にした。
+#   既存4ハンドラは一切変更していない（actualActivitiesIsolation.test.tsでソース検査により
+#   固定）。
+#   入力欄の表示可否：check_schema_health RPCは部署管理者・全社スーパー管理者にしか結果を
+#   返さない設計（20260806_add_schema_health_check.sql）のため、一般メンバー向けには使えない
+#   （Step 0で確認）。代わりに新規probeActualActivitiesColumn()（personalOkrStore.ts）で、
+#   personal_kr_monthsへselect("actual_activities").limit(1)する軽量プローブを実行し、
+#   PGRST204（列が見つからない）かどうかで判定する（personalOkrUiStore.ensureActualActivities
+#   Checked。判定不能な場合はfail-openで「利用可能」扱い）。"unknown"（未確認）の間は入力欄を
+#   出さず、"unavailable"（未適用と判明）のときだけ案内を出す。ActualActivitiesBlock.tsx自体の
+#   保存時PGRST204検知（isActualActivitiesColumnMissing）も二重の防御として持つ。
+#   新規ActualActivitiesBlock.tsx（KR×月・「全体」タブの両方で共有する1コンポーネント。
+#   variant="section"|"embedded"で見出し・カードの外枠有無を切替え、「全体」タブの既存カード
+#   内に入れ子カードを作らないようにした）。
+#   AI連携（4機能・実際には5つのプロンプトファイルに新設定数ACTUAL_WORK_COUNTS_NOTICEを
+#   埋め込んだ）：personalOkrAiContext.ts（当月の実施記録セクション。これから／AIパネル／
+#   KR単位振り返り下書きが共有）・planDraftContext.ts（過去月の実績として追加。1500字クリップ・
+#   削り順は①週の記録→②実施記録→③メモ→④計画4欄）・periodReviewDraftContext.ts（KR単位＋
+#   対象期間そのものの実施記録を追加。削り順は①計画4欄→②タスク内訳→③GMコメント→④実施記録→
+#   ⑤振り返り本文）・personalOkrChatPrompt.ts／personalOkrOutlookExtractor.ts／
+#   personalOkrPlanDraftExtractor.ts／personalOkrPeriodReviewDraftExtractor.tsのSYSTEM_PROMPTに
+#   ACTUAL_WORK_COUNTS_NOTICEを埋め込んだ（weeklyOptionalNotice.tsと同じ流儀。仕様書は
+#   「4つのプロンプト」としてpersonalOkrAiContext.ts等4ファイルを名指ししていたが、
+#   weeklyOptionalNotice.tsの実際の埋め込み先（SYSTEM_PROMPTを持つ5ファイル）に揃える形に
+#   変更した＝統括に報告済み）。記入が無ければセクションごと出さない。
+#   誤配線の是正（仕様書§W6）：personal_kr_memosにmonth列が無くKR単位のため、過去月の
+#   振り返り下書きにも「直近3件」が対象月と無関係なメモを渡していた。新規
+#   resolveRecentMemosForAiContext()で当月のときだけ渡すよう一元化した（「これから」・
+#   AIパネルは従来どおり当月限定のまま影響なし）。
+#   schemaChecks.tsに2列分の検査項目を追加（管理者向けSchemaHealthBanner用）。
+#   新規テスト：actualActivitiesForm.test.ts・actualActivitiesSaveError.test.ts・
+#   actualActivitiesIsolation.test.ts（既存4ハンドラがactual_activitiesを送らないことをソース
+#   検査で固定＋対照確認）。既存テスト拡張：personalOkrAiContext.test.ts・planDraftContext.
+#   test.ts・periodReviewDraftContext.test.ts・personalOkrStore.test.ts・
+#   personalOkrUiStore.test.ts・5つのAIプロンプトテスト（生成結果に対してACTUAL_WORK_COUNTS_
+#   NOTICEを検査）。
+#   マイグレーションの適用は行っていない。山本さんが手動適用する。
+#
+# 最終更新：2026-08-27（v3.105）
 

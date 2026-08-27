@@ -25,8 +25,10 @@ import type { KrPeriodRow, PeriodReference } from "../../../lib/personalOkr/peri
 import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
 import { isPeriodReviewUniqueViolation, PERIOD_REVIEW_DUPLICATE_MESSAGE } from "../../../lib/personalOkr/periodReviewSaveError";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
+import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
+import { ActualActivitiesBlock } from "./ActualActivitiesBlock";
 import { PersonalOkrPeriodReviewDraftModal } from "./PersonalOkrPeriodReviewDraftModal";
 
 const sectionHeadStyle: React.CSSProperties = {
@@ -74,11 +76,13 @@ interface Props {
   /** AI下書き：材料要約・文脈（呼び出し時点で組み立て済み） */
   draftMaterialSummaryLines: string[];
   draftContextText: string;
+  /** 実施記録（actual_activities列）の利用可否（仕様書§W2・2026-08-27・v3.105） */
+  actualActivitiesAvailable: ActualActivitiesAvailability;
 }
 
 export function PersonalPeriodReviewBlock({
   periodKind, title, formulaText, krRows, reference, loadingKrData, currentUser, record, editable,
-  fiscalYear, quarter, month, onSave, draftMaterialSummaryLines, draftContextText,
+  fiscalYear, quarter, month, onSave, draftMaterialSummaryLines, draftContextText, actualActivitiesAvailable,
 }: Props) {
   const [reviewText, setReviewText] = useState("");
   const [selfEvalRaw, setSelfEvalRaw] = useState("");
@@ -156,6 +160,21 @@ export function PersonalPeriodReviewBlock({
     } finally {
       setSaving(false);
     }
+  };
+
+  // 🔴🔴 実施記録（仕様書§W2・2026-08-27・v3.105）の保存は、自己評価%・GM評価%・
+  // 全体の振り返り本文・GMコメント（handleSave）とは完全に独立した保存関数にする。
+  // actual_activities列が未適用でも他の保存が壊れないことの根幹（このnextオブジェクトは
+  // 既存recordを丸ごと引き継ぎ、actual_activitiesとupdated_byの2フィールドだけ上書きする）。
+  const handleSaveActualActivities = async (next: string | null) => {
+    if (!editable) return;
+    const now = new Date().toISOString();
+    const fallback: PersonalPeriodReview = {
+      id: uuidv4(), member_id: currentUser.id, period_kind: periodKind,
+      fiscal_year: fiscalYear, quarter, month, is_deleted: false, created_at: now,
+    };
+    const nextRecord: PersonalPeriodReview = { ...(record ?? fallback), actual_activities: next, updated_by: currentUser.id };
+    await onSave(nextRecord, record?.updated_at);
   };
 
   return (
@@ -242,6 +261,19 @@ export function PersonalPeriodReviewBlock({
             )}
           </div>
         </div>
+
+        {/* 実施記録（仕様書§W3・2026-08-27・v3.105）。参考値・自己評価%/GM評価%の入力と、
+            全体の振り返り本文との間に配置する。 */}
+        <ActualActivitiesBlock
+          resetKey={`${periodKind}::${fiscalYear}::${quarter}::${month ?? ""}`}
+          value={record?.actual_activities ?? null}
+          editable={editable}
+          availability={actualActivitiesAvailable}
+          onSave={handleSaveActualActivities}
+          mapError={e => (isPeriodReviewUniqueViolation(e) ? PERIOD_REVIEW_DUPLICATE_MESSAGE : null)}
+          helperText="計画外の対応・方針転換・追加で実施したことなど、実際に起きたことを書いてください。AIの下書きの材料になります。どのKRにも属さない業務（突発の依頼・他部署応援など）もここに書けます。"
+          variant="embedded"
+        />
 
         {/* 全体の振り返り本文 */}
         <div style={{ marginBottom: "14px" }}>

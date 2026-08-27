@@ -34,6 +34,46 @@ describe("buildPeriodReviewKrMonthEntry", () => {
   });
 });
 
+// ===== 実施記録（仕様書§W4・2026-08-27） =====
+describe("buildPeriodReviewKrMonthEntry：実施記録", () => {
+  it("1500字でクリップする（既存reviewText/gmCommentの800字とは別枠）", () => {
+    const long = "あ".repeat(3000);
+    const entry = buildPeriodReviewKrMonthEntry({
+      monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null,
+      reviewText: null, selfEvalPct: null, gmEvalPct: null, gmComment: null, actualActivities: long, taskSummary: emptyTaskSummary,
+    });
+    expect(entry.actualActivities).toHaveLength(1500);
+  });
+
+  it("未指定はnullに正規化する", () => {
+    const entry = buildPeriodReviewKrMonthEntry({
+      monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null,
+      reviewText: null, selfEvalPct: null, gmEvalPct: null, gmComment: null, taskSummary: emptyTaskSummary,
+    });
+    expect(entry.actualActivities).toBeNull();
+  });
+});
+
+describe("buildPeriodReviewDraftContextText：対象期間そのものの実施記録（overallActualActivities）", () => {
+  it("記入があれば【対象期間の実施記録】セクションを出す", () => {
+    const input: PeriodReviewDraftContextInput = {
+      periodLabel: "8月", periodKind: "month", overallActualActivities: "他部署の応援に入った",
+      krEntries: [],
+    };
+    const text = buildPeriodReviewDraftContextText(input);
+    expect(text).toContain("【対象期間の実施記録（どのKRにも属さない業務）】");
+    expect(text).toContain("他部署の応援に入った");
+  });
+
+  it("🔴 記入が無ければセクションごと出さない", () => {
+    const input: PeriodReviewDraftContextInput = {
+      periodLabel: "8月", periodKind: "month", overallActualActivities: null, krEntries: [],
+    };
+    const text = buildPeriodReviewDraftContextText(input);
+    expect(text).not.toContain("【対象期間の実施記録");
+  });
+});
+
 describe("isPeriodReviewDraftMaterialEmpty", () => {
   it("全KR・全月が空なら true", () => {
     const krEntries: PeriodReviewKrEntry[] = [
@@ -49,6 +89,20 @@ describe("isPeriodReviewDraftMaterialEmpty", () => {
     expect(isPeriodReviewDraftMaterialEmpty(krEntries)).toBe(false);
   });
 
+  it("KR単位の実施記録だけでも false", () => {
+    const krEntries: PeriodReviewKrEntry[] = [
+      { krLabel: "KR1", weightPct: 50, months: [buildPeriodReviewKrMonthEntry({ monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null, reviewText: null, selfEvalPct: null, gmEvalPct: null, gmComment: null, actualActivities: "急遽対応した", taskSummary: emptyTaskSummary })] },
+    ];
+    expect(isPeriodReviewDraftMaterialEmpty(krEntries)).toBe(false);
+  });
+
+  it("🔴 対象期間そのものの実施記録（overallActualActivities）だけでも false", () => {
+    const krEntries: PeriodReviewKrEntry[] = [
+      { krLabel: "KR1", weightPct: 50, months: [buildPeriodReviewKrMonthEntry({ monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null, reviewText: null, selfEvalPct: null, gmEvalPct: null, gmComment: null, taskSummary: emptyTaskSummary })] },
+    ];
+    expect(isPeriodReviewDraftMaterialEmpty(krEntries, "他部署応援")).toBe(false);
+  });
+
   it("タスク完了件数だけでも false", () => {
     const krEntries: PeriodReviewKrEntry[] = [
       { krLabel: "KR1", weightPct: 50, months: [buildPeriodReviewKrMonthEntry({ monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null, reviewText: null, selfEvalPct: null, gmEvalPct: null, gmComment: null, taskSummary: { ...emptyTaskSummary, completedTaskCount: 2 } })] },
@@ -60,7 +114,7 @@ describe("isPeriodReviewDraftMaterialEmpty", () => {
 describe("buildPeriodReviewDraftContextText", () => {
   it("記入が無い項目は行ごと出さない", () => {
     const input: PeriodReviewDraftContextInput = {
-      periodLabel: "8月", periodKind: "month",
+      periodLabel: "8月", periodKind: "month", overallActualActivities: null,
       krEntries: [
         { krLabel: "KR1", weightPct: 50, months: [buildPeriodReviewKrMonthEntry({ monthLabel: "8月", positioning: null, activities: null, targetAndEvidence: null, risks: null, reviewText: null, selfEvalPct: 80, gmEvalPct: null, gmComment: null, taskSummary: emptyTaskSummary })] },
       ],
@@ -74,7 +128,7 @@ describe("buildPeriodReviewDraftContextText", () => {
 
   it("四半期ブロックは複数月をまとめて出す", () => {
     const input: PeriodReviewDraftContextInput = {
-      periodLabel: "2026年度 3Q", periodKind: "quarter",
+      periodLabel: "2026年度 3Q", periodKind: "quarter", overallActualActivities: null,
       krEntries: [
         { krLabel: "KR1", weightPct: 100, months: [
           buildPeriodReviewKrMonthEntry({ monthLabel: "7月", positioning: null, activities: null, targetAndEvidence: null, risks: null, reviewText: "7月やった", selfEvalPct: 70, gmEvalPct: null, gmComment: null, taskSummary: emptyTaskSummary }),
@@ -109,7 +163,9 @@ describe("buildPeriodReviewMaterialSummaryLines", () => {
   });
 });
 
-function buildLargeInput(krCount: number, reviewLen: number, gmCommentLen: number): PeriodReviewDraftContextInput {
+function buildLargeInput(
+  krCount: number, reviewLen: number, gmCommentLen: number, actualActivitiesLen = 0,
+): PeriodReviewDraftContextInput {
   const krEntries: PeriodReviewKrEntry[] = [];
   for (let i = 0; i < krCount; i++) {
     const months = ["7月", "8月", "9月"].map(monthLabel => buildPeriodReviewKrMonthEntry({
@@ -122,11 +178,12 @@ function buildLargeInput(krCount: number, reviewLen: number, gmCommentLen: numbe
       selfEvalPct: 80,
       gmEvalPct: 70,
       gmComment: "い".repeat(gmCommentLen),
+      actualActivities: actualActivitiesLen > 0 ? "う".repeat(actualActivitiesLen) : null,
       taskSummary: { completedTaskCount: 3, incompleteTaskCount: 2, taskStats: { delayedCount: 1, stagnantCount: 1, blockedCount: 1 } },
     }));
     krEntries.push({ krLabel: `KR${i + 1}`, weightPct: 100 / krCount, months });
   }
-  return { periodLabel: "2026年度 3Q", periodKind: "quarter", krEntries };
+  return { periodLabel: "2026年度 3Q", periodKind: "quarter", krEntries, overallActualActivities: null };
 }
 
 describe("buildPeriodReviewDraftContext（546対策・決定的な削減）", () => {
@@ -137,7 +194,7 @@ describe("buildPeriodReviewDraftContext（546対策・決定的な削減）", ()
     expect(result.text.length).toBeLessThanOrEqual(PERIOD_REVIEW_DRAFT_CONTEXT_CHAR_LIMIT);
   });
 
-  it("上限を超えたら決定的な順序で削り、①計画4欄→②タスク内訳→③GMコメント→④振り返り本文の順に消える", () => {
+  it("上限を超えたら決定的な順序で削り、①計画4欄→②タスク内訳→③GMコメント→④実施記録→⑤振り返り本文の順に消える", () => {
     // 8KR×3か月×800字クリップ後の本文でも上限を超える規模にする
     const input = buildLargeInput(8, 800, 800);
     const result = buildPeriodReviewDraftContext(input);
@@ -148,16 +205,31 @@ describe("buildPeriodReviewDraftContext（546対策・決定的な削減）", ()
     expect(result.text).toContain("完了3件・未完了2件");
   });
 
-  it("削減後も総文字数の上限に収まるよう努める（全て削っても超える極端ケースでは安全にそのまま返す）", () => {
-    const input = buildLargeInput(20, 800, 800);
+  it("🔴 実施記録（④）を削れば十分な規模では、振り返り本文（⑤）はまだ削られず残る", () => {
+    // GMコメントは無し（0字＝gmComment自体がnullになる）・振り返り本文は短く・実施記録だけを
+    // 大きくして、上限超過の主犯を実施記録側に寄せる（①②③では収まらず、④で収まる規模）。
+    const input = buildLargeInput(3, 100, 0, 3000);
+    const untrimmedLen = buildPeriodReviewDraftContextText(input).length;
+    expect(untrimmedLen).toBeGreaterThan(PERIOD_REVIEW_DRAFT_CONTEXT_CHAR_LIMIT);
+
     const result = buildPeriodReviewDraftContext(input);
     expect(result.trimmed).toBe(true);
-    // 振り返り本文（④）まで削られていれば、大幅に短くなっているはず
+    expect(result.text.length).toBeLessThanOrEqual(PERIOD_REVIEW_DRAFT_CONTEXT_CHAR_LIMIT);
+    expect(result.text).not.toContain("実施記録＞");
+    // ⑤（振り返り本文）まで削らずに収まる規模のため、振り返り本文はまだ残っている
+    expect(result.text).toContain("あ".repeat(100));
+  });
+
+  it("削減後も総文字数の上限に収まるよう努める（全て削っても超える極端ケースでは安全にそのまま返す）", () => {
+    const input = buildLargeInput(20, 800, 800, 1500);
+    const result = buildPeriodReviewDraftContext(input);
+    expect(result.trimmed).toBe(true);
+    // 振り返り本文（⑤）まで削られていれば、大幅に短くなっているはず
     expect(result.text).not.toContain("あ".repeat(800));
   });
 
   it("削り順が決定的であること（同じ入力なら同じ結果）", () => {
-    const input = buildLargeInput(6, 800, 800);
+    const input = buildLargeInput(6, 800, 800, 1500);
     const r1 = buildPeriodReviewDraftContext(input);
     const r2 = buildPeriodReviewDraftContext(input);
     expect(r1.text).toBe(r2.text);

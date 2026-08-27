@@ -431,6 +431,9 @@ export interface PersonalKrMonth {
   gm_comment?: string | null;
   imported_at?: string | null;
   source_label?: string | null;
+  /** 実施記録（2026-08-27・v3.105）。計画欄の activities（計画）と対になる列。
+   *  月の途中で生じた緊急対応・方針転換・計画外の追加業務の自由記述。 */
+  actual_activities?: string | null;
   is_deleted: boolean;
   created_at?: string;
   updated_at?: string;
@@ -541,6 +544,9 @@ export interface PersonalPeriodReview {
   gm_eval_pct?: number | null;
   review_text?: string | null;
   gm_comment?: string | null;
+  /** 実施記録（2026-08-27・v3.105）。どのKRにも属さない業務（突発の依頼・他部署応援等）を
+   *  含む、月全体・四半期全体の自由記述。 */
+  actual_activities?: string | null;
   is_deleted: boolean;
   created_at?: string;
   updated_at?: string;

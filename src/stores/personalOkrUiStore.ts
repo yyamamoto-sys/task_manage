@@ -30,7 +30,9 @@ import {
   fetchLatestPersonalKrOutlook, insertPersonalKrOutlook,
   fetchLatestPersonalKrReviewDraft, insertPersonalKrReviewDraft,
   fetchPersonalPeriodReviews, upsertPersonalPeriodReview,
+  probeActualActivitiesColumn,
 } from "../lib/supabase/personalOkrStore";
+import type { ActualActivitiesAvailability } from "../lib/personalOkr/actualActivitiesAvailability";
 import { analyzePersonalKrOutlook } from "../lib/ai/personalOkrOutlookExtractor";
 import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftExtractor";
 import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
@@ -163,6 +165,14 @@ interface PersonalOkrUiState {
   /** 自分の全期間ぶんの月全体・四半期全体の振り返りを1回だけ取得する（「全体」タブを開いたときに呼ぶ）。 */
   loadPeriodReviews: () => Promise<void>;
   savePeriodReview: (review: PersonalPeriodReview, expectedUpdatedAt?: string) => Promise<void>;
+
+  // ===== 実施記録（actual_activities列。仕様書§W2・2026-08-27・v3.105） =====
+  // 🔴 check_schema_health RPCは管理者限定のため使えない（一般メンバーには使えない代替として
+  // 実データへのプローブで判定する。src/lib/supabase/personalOkrStore.ts参照）。
+  actualActivitiesAvailable: ActualActivitiesAvailability;
+  actualActivitiesChecking: boolean;
+  /** OKRビューを開いたときに1回だけ呼ぶ（既に確定済み・確認中なら何もしない）。 */
+  ensureActualActivitiesChecked: () => Promise<void>;
 }
 
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
@@ -193,6 +203,9 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   periodReviewsLoaded: false,
   periodReviewsLoading: false,
   periodReviewsError: null,
+
+  actualActivitiesAvailable: "unknown",
+  actualActivitiesChecking: false,
 
   loadKrs: async () => {
     if (get().krsLoading || get().krsLoaded) return;
@@ -522,5 +535,21 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   savePeriodReview: async (review, expectedUpdatedAt) => {
     const updatedAt = isGuestMode() ? new Date().toISOString() : await upsertPersonalPeriodReview(review, expectedUpdatedAt);
     set(state => ({ periodReviews: upsertById(state.periodReviews, { ...review, updated_at: updatedAt }) }));
+  },
+
+  ensureActualActivitiesChecked: async () => {
+    if (get().actualActivitiesChecking || get().actualActivitiesAvailable !== "unknown") return;
+    // 🔴 ゲストはSupabaseに一切接続しない（冒頭コメント参照）。ゲストの実施記録欄は
+    // メモリ上でのみ成立するため、列の有無を問わず「利用可能」として扱ってよい。
+    if (isGuestMode()) { set({ actualActivitiesAvailable: "available" }); return; }
+    set({ actualActivitiesChecking: true });
+    try {
+      const result = await probeActualActivitiesColumn();
+      // 🔴 fail-open：判定不能（null。ネットワークエラー等）のときは「利用可能」側に倒す。
+      // 実際に列が無ければ、ActualActivitiesBlock自身の保存時PGRST204検知が最終防波堤になる。
+      set({ actualActivitiesChecking: false, actualActivitiesAvailable: result === false ? "unavailable" : "available" });
+    } catch {
+      set({ actualActivitiesChecking: false, actualActivitiesAvailable: "available" });
+    }
   },
 }));

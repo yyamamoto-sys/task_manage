@@ -48,6 +48,8 @@ describe("generatePersonalKrPlanDraft", () => {
 
     // 🔴 週次任意化の共通ノーティスが実際に組み立てたシステムプロンプトに含まれる（CLAUDE.md Section 24 Step O）
     expect(String(system)).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
+    // 🔴 実施記録の評価軸ノーティス（仕様書§W5）が実際に組み立てたシステムプロンプトに含まれる
+    expect(String(system)).toContain("計画からの逸脱ではなく、");
     // 自己評価の割合を書かないことの明記（band_targetは評価の確定ではない）
     expect(String(system)).toContain("自己評価の割合（実績%）は一切書かないこと");
 

@@ -416,4 +416,24 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "プロジェクト招待：visible_project_member_ids()の性能改善（走査回数の削減）が適用されていません",
     migration: "20260819d_optimize_visible_project_member_ids.sql",
   },
+  // 【2026-08-27・v3.105】実施記録（山本さんの依頼）。management者向けバナーの検知対象は
+  // 2列（personal_kr_months／personal_period_reviews）。一般メンバー向けの検知は
+  // check_schema_health RPCが管理者限定のため使えず、別途プローブで代替する
+  // （src/lib/supabase/personalOkrStore.ts の probeActualActivitiesColumn）。
+  {
+    id: "personal_kr_months_actual_activities_column",
+    kind: "column",
+    table: "personal_kr_months",
+    column: "actual_activities",
+    label: "個人OKR：KR×月の実施記録列（personal_kr_months.actual_activities）が見つかりません",
+    migration: "20260827_add_actual_activities.sql",
+  },
+  {
+    id: "personal_period_reviews_actual_activities_column",
+    kind: "column",
+    table: "personal_period_reviews",
+    column: "actual_activities",
+    label: "個人OKR：月全体・四半期全体の実施記録列（personal_period_reviews.actual_activities）が見つかりません",
+    migration: "20260827_add_actual_activities.sql",
+  },
 ];

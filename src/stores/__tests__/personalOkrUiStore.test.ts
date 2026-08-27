@@ -35,6 +35,7 @@ const personalOkrStoreMock = vi.hoisted(() => ({
   insertPersonalKrReviewDraft: vi.fn(),
   fetchPersonalPeriodReviews: vi.fn(),
   upsertPersonalPeriodReview: vi.fn(),
+  probeActualActivitiesColumn: vi.fn(),
 }));
 
 vi.mock("../../lib/supabase/personalOkrStore", () => personalOkrStoreMock);
@@ -62,7 +63,7 @@ const dummyContext: PersonalOkrAiContextInput = {
   weaknessRole: null, criteria: null, supplement: null, monthLabel: "8月",
   positioning: null, activities: null, targetAndEvidence: null, risks: null, bandTarget: null,
   weeks: [], taskSummary: { linkedTaskCount: 0, delayedCount: 0, stagnantCount: 0, blockedCount: 0 },
-  recentMemos: [],
+  recentMemos: [], actualActivities: null,
 };
 
 describe("personalOkrUiStore：ゲスト分岐", () => {
@@ -232,5 +233,40 @@ describe("personalOkrUiStore：「全体」タブ（personal_period_reviews）",
     await usePersonalOkrUiStore.getState().savePeriodReview(review);
     expect(personalOkrStoreMock.upsertPersonalPeriodReview).toHaveBeenCalledTimes(1);
     expect(usePersonalOkrUiStore.getState().periodReviews.find(r => r.id === "pr2")?.updated_at).toBe("2026-08-26T00:00:00.000Z");
+  });
+
+  // ===== 実施記録（actual_activities列の可否。仕様書§W2・2026-08-27・v3.105） =====
+  describe("ensureActualActivitiesChecked", () => {
+    it("列が存在すればactualActivitiesAvailableが'available'になる", async () => {
+      personalOkrStoreMock.probeActualActivitiesColumn.mockResolvedValue(true);
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      expect(usePersonalOkrUiStore.getState().actualActivitiesAvailable).toBe("available");
+    });
+
+    it("🔴 列が存在しなければ'unavailable'になる（W2の合否そのもの）", async () => {
+      personalOkrStoreMock.probeActualActivitiesColumn.mockResolvedValue(false);
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      expect(usePersonalOkrUiStore.getState().actualActivitiesAvailable).toBe("unavailable");
+    });
+
+    it("判定不能（null。ネットワークエラー等）はfail-openで'available'扱いにする", async () => {
+      personalOkrStoreMock.probeActualActivitiesColumn.mockResolvedValue(null);
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      expect(usePersonalOkrUiStore.getState().actualActivitiesAvailable).toBe("available");
+    });
+
+    it("一度確定したら再度呼んでもprobeActualActivitiesColumnを呼び直さない", async () => {
+      personalOkrStoreMock.probeActualActivitiesColumn.mockResolvedValue(true);
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      expect(personalOkrStoreMock.probeActualActivitiesColumn).toHaveBeenCalledTimes(1);
+    });
+
+    it("🔴 ゲストはSupabaseに接続せず'available'に確定させる", async () => {
+      setGuestMode(true);
+      await usePersonalOkrUiStore.getState().ensureActualActivitiesChecked();
+      expect(personalOkrStoreMock.probeActualActivitiesColumn).not.toHaveBeenCalled();
+      expect(usePersonalOkrUiStore.getState().actualActivitiesAvailable).toBe("available");
+    });
   });
 });

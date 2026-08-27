@@ -36,6 +36,11 @@ export interface PeriodReviewKrMonthEntry {
   gmEvalPct: number | null;
   /** 🔴 800字でクリップ済みの値を渡すこと（buildPeriodReviewKrMonthEntryが行う） */
   gmComment: string | null;
+  /**
+   * 実施記録（personal_kr_months.actual_activities。仕様書§W4・2026-08-27・v3.105）。
+   * 🔴 1500字でクリップ済みの値を渡すこと（buildPeriodReviewKrMonthEntryが行う）。
+   */
+  actualActivities: string | null;
   taskSummary: PeriodReviewTaskSummary;
 }
 
@@ -51,11 +56,18 @@ export interface PeriodReviewDraftContextInput {
   periodLabel: string;
   periodKind: "month" | "quarter";
   krEntries: PeriodReviewKrEntry[];
+  /**
+   * 実施記録（personal_period_reviews.actual_activities。仕様書§W4・2026-08-27・v3.105）。
+   * どのKRにも属さない業務（突発の依頼・他部署応援等）。個々のKRの記録（krEntries内の
+   * actualActivities）とは別に、対象期間そのものに紐づく1件。記入が無ければnull。
+   */
+  overallActualActivities: string | null;
 }
 
-// ===== クリップ（仕様書§W4：各800字） =====
+// ===== クリップ（仕様書§W4：各800字。実施記録は「各1500字目安」の指示に合わせ別枠） =====
 
 const CLIP_CHARS = 800;
+const ACTUAL_ACTIVITIES_CLIP_CHARS = 1500;
 
 function clip(s: string, n: number = CLIP_CHARS): string {
   return s.length > n ? s.slice(0, n) : s;
@@ -75,6 +87,7 @@ export function buildPeriodReviewKrMonthEntry(params: {
   selfEvalPct: number | null | undefined;
   gmEvalPct: number | null | undefined;
   gmComment: string | null | undefined;
+  actualActivities?: string | null | undefined;
   taskSummary: PeriodReviewTaskSummary;
 }): PeriodReviewKrMonthEntry {
   return {
@@ -87,17 +100,27 @@ export function buildPeriodReviewKrMonthEntry(params: {
     selfEvalPct: params.selfEvalPct ?? null,
     gmEvalPct: params.gmEvalPct ?? null,
     gmComment: params.gmComment ? clip(params.gmComment) : null,
+    actualActivities: params.actualActivities ? clip(params.actualActivities, ACTUAL_ACTIVITIES_CLIP_CHARS) : null,
     taskSummary: params.taskSummary,
   };
 }
 
 // ===== 生成ボタンの非活性条件 =====
 
-/** 全KR・全対象月を通して1つも材料が無ければtrue（生成ボタンを非活性にする判定に使う）。 */
-export function isPeriodReviewDraftMaterialEmpty(krEntries: PeriodReviewKrEntry[]): boolean {
+/**
+ * 全KR・全対象月・対象期間そのものの実施記録を通して1つも材料が無ければtrue
+ * （生成ボタンを非活性にする判定に使う）。overallActualActivitiesは省略可
+ * （既存呼び出し元との後方互換。仕様書§W4）。
+ */
+export function isPeriodReviewDraftMaterialEmpty(
+  krEntries: PeriodReviewKrEntry[],
+  overallActualActivities?: string | null,
+): boolean {
+  if (overallActualActivities != null) return false;
   return krEntries.every(kr => kr.months.every(m =>
     m.positioning == null && m.activities == null && m.targetAndEvidence == null && m.risks == null &&
     m.reviewText == null && m.selfEvalPct == null && m.gmEvalPct == null && m.gmComment == null &&
+    m.actualActivities == null &&
     m.taskSummary.completedTaskCount === 0 && m.taskSummary.incompleteTaskCount === 0,
   ));
 }
@@ -116,6 +139,7 @@ export function buildPeriodReviewMaterialSummaryLines(krEntries: PeriodReviewKrE
       if (m.selfEvalPct != null) parts.push(`自己評価${m.selfEvalPct}%`);
       if (m.gmEvalPct != null) parts.push(`GM評価${m.gmEvalPct}%`);
       if (m.reviewText) parts.push("振り返り記入あり");
+      if (m.actualActivities) parts.push("実施記録あり");
       const taskTotal = m.taskSummary.completedTaskCount + m.taskSummary.incompleteTaskCount;
       if (taskTotal > 0) parts.push(`タスク完了${m.taskSummary.completedTaskCount}件・未完了${m.taskSummary.incompleteTaskCount}件`);
       if (parts.length > 0) monthSegments.push(`${m.monthLabel}：${parts.join("・")}`);
@@ -145,6 +169,7 @@ function formatMonthEntry(m: PeriodReviewKrMonthEntry): string[] {
     for (const l of planFields) lines.push(`    ${l}`);
   }
 
+  if (m.actualActivities) lines.push(`    ＜実施記録＞${m.actualActivities}`);
   if (m.reviewText) lines.push(`    ＜振り返り＞${m.reviewText}`);
   if (m.selfEvalPct != null) lines.push(`    ＜自己評価＞${m.selfEvalPct}%`);
   if (m.gmEvalPct != null) lines.push(`    ＜GM評価＞${m.gmEvalPct}%`);
@@ -175,6 +200,15 @@ export function buildPeriodReviewDraftContextText(input: PeriodReviewDraftContex
   const lines: string[] = [];
   const periodNoun = input.periodKind === "month" ? "月全体" : "四半期全体";
   lines.push(`【対象期間】${input.periodLabel}の${periodNoun}の振り返り`);
+
+  // 🔴 対象期間そのものの実施記録（どのKRにも属さない業務。仕様書§W4）。記入が無ければ
+  // セクションごと省く。1500字でクリップする。
+  if (input.overallActualActivities) {
+    lines.push("");
+    lines.push("【対象期間の実施記録（どのKRにも属さない業務）】");
+    lines.push(clip(input.overallActualActivities, ACTUAL_ACTIVITIES_CLIP_CHARS));
+  }
+
   lines.push("");
   lines.push("【対象KR一覧（KRごとの記録）】");
   for (const kr of input.krEntries) lines.push(...formatKrEntry(kr));
@@ -195,15 +229,16 @@ function cloneInput(input: PeriodReviewDraftContextInput): PeriodReviewDraftCont
 
 export interface PeriodReviewDraftContextResult {
   text: string;
-  /** 上限超過により何か（計画4欄・タスク内訳・GMコメント・振り返り本文のいずれか）を削ったか */
+  /** 上限超過により何か（計画4欄・タスク内訳・GMコメント・実施記録・振り返り本文のいずれか）を削ったか */
   trimmed: boolean;
 }
 
 /**
  * 総文字数が上限を超えたら、①全エントリの計画4欄の要点 → ②全エントリのタスク内訳
  * （遅延/停滞/先行待ちの内訳のみ。完了/未完了の件数自体は最後まで残す） →
- * ③全エントリのGMコメント → ④全エントリの振り返り本文、の順にフィールド種別ごと一括で
- * 削る。全て削っても超過する場合はそれ以上削らずそのまま返す（極端な件数のときの安全弁）。
+ * ③全エントリのGMコメント → ④全エントリの実施記録（仕様書§W4で新設。KR単位・対象期間
+ * そのものの両方） → ⑤全エントリの振り返り本文、の順にフィールド種別ごと一括で削る。
+ * 全て削っても超過する場合はそれ以上削らずそのまま返す（極端な件数のときの安全弁）。
  */
 export function buildPeriodReviewDraftContext(input: PeriodReviewDraftContextInput): PeriodReviewDraftContextResult {
   let text = buildPeriodReviewDraftContextText(input);
@@ -234,7 +269,15 @@ export function buildPeriodReviewDraftContext(input: PeriodReviewDraftContextInp
     text = buildPeriodReviewDraftContextText(working);
   }
 
-  // ④ 振り返り本文を削る
+  // ④ 実施記録を削る（KR単位・対象期間そのものの両方）
+  if (text.length > PERIOD_REVIEW_DRAFT_CONTEXT_CHAR_LIMIT) {
+    for (const m of allMonths()) { m.actualActivities = null; }
+    working.overallActualActivities = null;
+    trimmed = true;
+    text = buildPeriodReviewDraftContextText(working);
+  }
+
+  // ⑤ 振り返り本文を削る
   if (text.length > PERIOD_REVIEW_DRAFT_CONTEXT_CHAR_LIMIT) {
     for (const m of allMonths()) { m.reviewText = null; }
     trimmed = true;

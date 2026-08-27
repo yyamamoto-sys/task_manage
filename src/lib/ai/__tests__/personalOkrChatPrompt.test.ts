@@ -24,4 +24,10 @@ describe("buildPersonalOkrChatSystemPrompt", () => {
     const prompt = buildPersonalOkrChatSystemPrompt("dummy");
     expect(prompt).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
   });
+
+  it("🔴 実施記録の評価軸ノーティスを含む（仕様書§W5・実際に組み立てたプロンプト文字列に対して検査）", () => {
+    const prompt = buildPersonalOkrChatSystemPrompt("dummy");
+    expect(prompt).toContain("計画からの逸脱ではなく、");
+    expect(prompt).toContain("「計画どおりに進んだか」だけを評価軸にしないこと");
+  });
 });

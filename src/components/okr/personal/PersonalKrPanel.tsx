@@ -45,7 +45,7 @@ import { computeAheadFacts, isTargetAndEvidenceSet } from "../../../lib/personal
 import { summarizeLinkedTaskStatus } from "../../../lib/personalOkr/aheadTaskStats";
 import { computeReviewMaterial, type ReviewMaterial } from "../../../lib/personalOkr/reviewMaterial";
 import { computeOutlookInputFingerprint, resolveMonthPlanTimestamp } from "../../../lib/personalOkr/outlookFingerprint";
-import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
+import { resolveRecentMemosForAiContext, type PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import {
   buildPlanDraftPastMonthEntry, buildPlanDraftContext, buildPlanDraftMaterialSummaryLines,
   isPlanDraftMaterialEmpty, type PlanDraftPastMonth,
@@ -56,11 +56,13 @@ import { computeMonthPlanDirty } from "../../../lib/personalOkr/monthPlanForm";
 import { parseEvalPctInput } from "../../../lib/personalOkr/monthReviewForm";
 import { buildKintonePlanCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
+import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { WeekCard } from "./WeekCard";
 import { WeekTaskLinkModal } from "./WeekTaskLinkModal";
 import { AheadBlock } from "./AheadBlock";
+import { ActualActivitiesBlock } from "./ActualActivitiesBlock";
 import { MonthReviewBlock } from "./MonthReviewBlock";
 import { PersonalOkrReviewDraftModal } from "./PersonalOkrReviewDraftModal";
 import { PersonalOkrPlanDraftModal, type PlanDraftFields } from "./PersonalOkrPlanDraftModal";
@@ -140,6 +142,9 @@ interface Props {
     personalKrId: string; month: string; fingerprint: string;
     context: PersonalOkrAiContextInput; material: ReviewMaterial; force?: boolean;
   }) => Promise<void>;
+
+  /** 実施記録（actual_activities列）の利用可否（仕様書§W2・2026-08-27・v3.105） */
+  actualActivitiesAvailable: ActualActivitiesAvailability;
 }
 
 export function PersonalKrPanel({
@@ -152,6 +157,7 @@ export function PersonalKrPanel({
   onAiContext, onOpenAiPanel,
   reviewDraftByKrMonth, reviewDraftAnalyzingKeys, reviewDraftErrorByKey,
   ensureReviewDraftLoaded, onRunReviewDraft,
+  actualActivitiesAvailable,
 }: Props) {
   const today = useMemo(() => new Date(), []);
   const slots = useMemo(() => quarterMonthSlots(kr.fiscal_year, kr.quarter), [kr.fiscal_year, kr.quarter]);
@@ -463,8 +469,18 @@ export function PersonalKrPanel({
         selfRating: c.existing?.self_rating ?? null,
       })),
       taskSummary: { linkedTaskCount: monthLinkedTasks.length, ...aheadTaskStats },
-      // 直近3件・各300字まで（🔴入力を絞る。生データを大量に渡さない）
-      recentMemos: memos.slice(0, 3).map(m => m.body.slice(0, 300)),
+      // 🔴 実施記録（仕様書§W4・2026-08-27・v3.105）。記入が無ければ渡さない
+      // （buildPersonalOkrAiContextText側でセクションごと省く）。
+      actualActivities: monthRecord?.actual_activities ?? null,
+      // 🔴🔴 仕様書§W6（誤配線の是正）：メモは`personal_kr_memos`にmonth列が無くKR単位のため、
+      // 「直近3件」は対象月と無関係な月のメモを拾いうる（例：9月に7月の振り返り下書きを
+      // 生成すると、AIには9月時点の直近メモが渡っていた）。当月（monthStatus==="current"）を
+      // 対象にしているときだけ渡す＝この場合だけ「直近のメモ」が実際に対象月のものとして
+      // 妥当と言える。この値は「これから」「AIパネル」（okrAiContext＝当月限定）と、
+      // 振り返り下書き（personalOkrContextを過去月でも直接使う。PersonalOkrReviewDraftModal
+      // 参照）の両方で共有される入力のため、ここで一元的に絞る（呼び出し側ごとに絞り分けない）。
+      // 判定自体はresolveRecentMemosForAiContext（personalOkrAiContext.ts）に一元化しテストする。
+      recentMemos: resolveRecentMemosForAiContext(monthStatus === "current", memos.slice(0, 3).map(m => m.body.slice(0, 300))),
     };
   }, [monthStatus, kr, groupKrTitle, monthLabel, monthRecord, weekCards, monthLinkedTasks, aheadTaskStats, memos]);
 
@@ -571,6 +587,21 @@ export function PersonalKrPanel({
       band_override: value, band_override_by: value ? currentUser.id : null, band_override_at: value ? now : null,
       updated_by: currentUser.id,
     });
+    await onSaveMonth(month, monthRecord?.updated_at);
+  };
+
+  // 🔴🔴 実施記録（仕様書§W2・2026-08-27・v3.105）の保存は、計画欄・振り返り欄・バンド決定
+  // （handleSaveMonthPlan/handleSaveReviewText/handleSetBandOverride）とは完全に独立した
+  // 保存関数にする。actual_activities列が未適用でも他の保存が壊れないことの根幹
+  // （このpatchオブジェクトはactual_activitiesとupdated_byの2キーしか持たない）。
+  const handleSaveActualActivities = async (next: string | null) => {
+    if (readOnly) return; // 🔴🔴 サンプル表示中は保存経路に入らせない
+    const now = new Date().toISOString();
+    const fallback: PersonalKrMonth = {
+      id: uuidv4(), personal_kr_id: kr.id, month: monthStr, month_index: monthIndex,
+      is_deleted: false, created_at: now,
+    };
+    const month = mergeMonthRecord(monthRecord, fallback, { actual_activities: next, updated_by: currentUser.id });
     await onSaveMonth(month, monthRecord?.updated_at);
   };
 
@@ -896,6 +927,18 @@ export function PersonalKrPanel({
               >AIパネルを開く</button>
             </div>
           )}
+
+          {/* 実施記録（仕様書§W3・2026-08-27・v3.105）。計画ブロックと振り返りブロックの間に
+              配置する（山本さんの依頼原文どおり、「計画」「毎週の目標」に加えて、実際に
+              何をやったかの事後記録を振り返りの材料に含める）。 */}
+          <ActualActivitiesBlock
+            resetKey={`${kr.id}::${monthStr}`}
+            value={monthRecord?.actual_activities ?? null}
+            editable={monthEditable}
+            availability={actualActivitiesAvailable}
+            onSave={handleSaveActualActivities}
+            helperText="計画外の対応・方針転換・追加で実施したことなど、実際に起きたことを書いてください。AIの下書きの材料になります。"
+          />
 
           {/* 振り返り（当月・過去月。山本さんの依頼・2026-08-26。CLAUDE.md Section 24） */}
           <MonthReviewBlock

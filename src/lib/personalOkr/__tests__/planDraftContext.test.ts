@@ -46,6 +46,7 @@ function emptyPastMonth(monthLabel: string, overrides: Partial<PlanDraftPastMont
     selfEvalPct: null,
     gmEvalPct: null,
     gmComment: null,
+    actualActivities: null,
     weeks: [],
     taskSummary: { completedTaskCount: 0, incompleteTaskCount: 0, taskStats: { delayedCount: 0, stagnantCount: 0, blockedCount: 0 } },
     ...overrides,
@@ -96,6 +97,15 @@ describe("buildPlanDraftContextText", () => {
     expect(text).not.toContain("＜上長評価＞");
     expect(text).not.toContain("＜上長コメント＞");
     expect(text).not.toContain("＜週の記録＞");
+    expect(text).not.toContain("＜実施記録＞");
+  });
+
+  // ===== 実施記録（仕様書§W4・2026-08-27） =====
+  it("実施記録が記入されている過去月では＜実施記録＞を出す", () => {
+    const text = buildPlanDraftContextText(baseInput({
+      pastMonths: [emptyPastMonth("7月（1か月目）", { actualActivities: "急遽A社対応で3日費やした" })],
+    }));
+    expect(text).toContain("＜実施記録＞急遽A社対応で3日費やした");
   });
 
   it("過去月の計画4欄は記入がある欄だけ出す", () => {
@@ -203,6 +213,16 @@ describe("buildPlanDraftPastMonthEntry", () => {
     expect(entry.gmComment?.length).toBe(1200);
   });
 
+  it("🔴 actual_activitiesは1500字でクリップする（review_text/gm_commentとは別枠）", () => {
+    const long = "う".repeat(3000);
+    const monthRecord = { actual_activities: long, is_deleted: false } as unknown as PersonalKrMonth;
+    const entry = buildPlanDraftPastMonthEntry({
+      monthLabel: "7月（1か月目）", monthRecord,
+      weeks: [], taskSummary: { completedTaskCount: 0, incompleteTaskCount: 0, taskStats: { delayedCount: 0, stagnantCount: 0, blockedCount: 0 } },
+    });
+    expect(entry.actualActivities?.length).toBe(1500);
+  });
+
   it("1200字以下ならそのまま（クリップしない）", () => {
     const shortReview = "短い振り返り";
     const monthRecord = { review_text: shortReview, is_deleted: false } as unknown as PersonalKrMonth;
@@ -229,6 +249,7 @@ describe("isPlanDraftMaterialEmpty", () => {
     expect(isPlanDraftMaterialEmpty(true, [emptyPastMonth("7月（1か月目）", { reviewText: "振り返り本文" })])).toBe(false);
     expect(isPlanDraftMaterialEmpty(true, [emptyPastMonth("7月（1か月目）", { selfEvalPct: 70 })])).toBe(false);
     expect(isPlanDraftMaterialEmpty(true, [emptyPastMonth("7月（1か月目）", { gmComment: "上長コメント" })])).toBe(false);
+    expect(isPlanDraftMaterialEmpty(true, [emptyPastMonth("7月（1か月目）", { actualActivities: "急遽対応した" })])).toBe(false);
   });
 });
 
@@ -255,6 +276,13 @@ describe("buildPlanDraftMaterialSummaryLines", () => {
   it("完全に記録が無い月はラベルのみ", () => {
     const lines = buildPlanDraftMaterialSummaryLines([emptyPastMonth("7月（1か月目）")]);
     expect(lines).toEqual(["7月（1か月目）"]);
+  });
+
+  it("実施記録があれば「実施記録あり」を含める", () => {
+    const lines = buildPlanDraftMaterialSummaryLines([
+      emptyPastMonth("7月（1か月目）", { actualActivities: "急遽対応した" }),
+    ]);
+    expect(lines).toEqual(["7月（1か月目）：実施記録あり"]);
   });
 });
 
@@ -302,6 +330,32 @@ describe("buildPlanDraftContext（文字数上限のトリミング）", () => {
     // 古い月（7月）の週の記録だけが削られ、新しい月（8月）の週の記録は残る
     expect(result.text).not.toContain("M1WEEK");
     expect(result.text).toContain("M2WEEK");
+  });
+
+  it("🔴 週の記録を全部削っても超過するときは、古い月から順に実施記録を削る", () => {
+    const heavyWeeks = (marker: string) => Array.from({ length: 6 }, (_, i) => (
+      { label: `W${i + 1}`, goalState: longText(marker, 700), selfRating: "o" as const }
+    ));
+    // 実施記録を週の記録より十分大きくし、週の記録を両月とも削ってもなお上限を超える規模にする
+    // （②実施記録の削除が実際に発火することを保証する）。
+    const input = baseInput({
+      targetMonthIndex: 3,
+      pastMonths: [
+        emptyPastMonth("7月（1か月目）", { weeks: heavyWeeks("M1WEEK"), actualActivities: longText("M1ACTUAL", 5000) }),
+        emptyPastMonth("8月（2か月目）", { weeks: heavyWeeks("M2WEEK"), actualActivities: longText("M2ACTUAL", 5000) }),
+      ],
+    });
+    const untrimmedLen = buildPlanDraftContextText(input).length;
+    expect(untrimmedLen).toBeGreaterThan(PLAN_DRAFT_CONTEXT_CHAR_LIMIT);
+
+    const result = buildPlanDraftContext(input);
+    expect(result.trimmed).toBe(true);
+    expect(result.text.length).toBeLessThanOrEqual(PLAN_DRAFT_CONTEXT_CHAR_LIMIT);
+    // 週の記録は両月とも①で削られている（②に到達する前提が満たされている）
+    expect(result.text).not.toContain("M1WEEK");
+    expect(result.text).not.toContain("M2WEEK");
+    // ②実施記録は古い月（7月）から削られる
+    expect(result.text).not.toContain("M1ACTUAL");
   });
 
   it("🔴 週の記録を全部削っても超過するときはメモを削る", () => {

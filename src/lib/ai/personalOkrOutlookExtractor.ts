@@ -21,6 +21,7 @@
 import { invokeAI } from "./invokeAI";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
+import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 import type { PersonalKrBand } from "../localData/types";
 
 // ===== 型定義 =====
@@ -71,6 +72,8 @@ const SYSTEM_PROMPT = `あなたは個人OKRの実行状況を分析し、当月
 見立て・週ごとの一手・捨てる候補・達成度バンドの見通しを、1回の応答でまとめて返してください。
 
 ${WEEKLY_IS_OPTIONAL_NOTICE}
+
+${ACTUAL_WORK_COUNTS_NOTICE}
 
 【達成度バンドの定義】
 60=この取り組みがなくても到達していた水準／70=介入による明確な改善・前進／

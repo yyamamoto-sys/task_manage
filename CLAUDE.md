@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.104
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.105
 #
-最終更新：2026-08-26（v3.104）
+最終更新：2026-08-27（v3.105）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -2263,8 +2263,8 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 
 山本さんの依頼：AIの分析結果に「週ごとに目標を立てて振り返れているか」への言及が多い。週次の目標設定・自己評価は、使いたい人だけが使う任意の補助機能でありAIが分析するための補助情報。必須手順ではない。週次機能を使っているかどうかで評価してはならない。大事なのは内容。記入がないものについて、記入がないこと自体に言及する必要はない。
 
-- 🔴 **新グランドルール**：週ごとの目標設定・自己評価は任意の補助機能である。AI・画面のいずれでも「記入が無いこと」を指摘・評価してはならない。プロンプトを追加・変更するときは`WEEKLY_IS_OPTIONAL_NOTICE`（`src/lib/ai/weeklyOptionalNotice.ts`）を必ず含める。
-- **共通条項の1箇所化**：新規`src/lib/ai/weeklyOptionalNotice.ts`の`WEEKLY_IS_OPTIONAL_NOTICE`定数を、3つのシステムプロンプト（`personalOkrOutlookExtractor.ts`のこれから解析・`personalOkrReviewDraftExtractor.ts`の振り返り下書き・`personalOkrChatPrompt.ts`のAIパネル）すべてに埋め込む。文言を分散させると片方だけ直されて取り残される（コピペ実装の教訓）。
+- 🔴 **新グランドルール（v3.105で更新）**：週ごとの目標設定・自己評価は任意の補助機能である。AI・画面のいずれでも「記入が無いこと」を指摘・評価してはならない。**個人OKRのAI用プロンプト（システムプロンプト）を追加・変更するときは`WEEKLY_IS_OPTIONAL_NOTICE`（`src/lib/ai/weeklyOptionalNotice.ts`）と`ACTUAL_WORK_COUNTS_NOTICE`（`src/lib/ai/actualWorkNotice.ts`。v3.105・実施記録の評価軸）の両方を必ず含める。**
+- **共通条項の1箇所化**：`WEEKLY_IS_OPTIONAL_NOTICE`・`ACTUAL_WORK_COUNTS_NOTICE`の両定数を、SYSTEM_PROMPTを持つ5つのAI呼び出しファイル（`personalOkrOutlookExtractor.ts`のこれから解析・`personalOkrReviewDraftExtractor.ts`の振り返り下書き・`personalOkrChatPrompt.ts`のAIパネル・`personalOkrPlanDraftExtractor.ts`の翌月の計画ドラフト・`personalOkrPeriodReviewDraftExtractor.ts`の全体タブの振り返り下書き）すべてに埋め込む。文言を分散させると片方だけ直されて取り残される（コピペ実装の教訓）。
 - **`personalOkrAiContext.ts`（作業1・3共通の文脈組み立て）**：`buildPersonalOkrAiContextText()`は`goal_state`／`self_rating`のどちらかが入っている週だけ行を出す（両方空の週は出さない）。出す週が0本なら【週の目標状態と自己評価】セクション自体を省略（「週データなし」とも書かない）。「（目標状態未設定）」「未評価」という文言は一切出力しない。`buildPersonalOkrAiContextChips()`は週データが0本ならW1〜Wn等のチップを出さない。`buildPersonalOkrAiStarters()`は週データが0本なら週前提の候補（「△や✕になった週の原因は…」「残り週の計画をどう組み替えるべき？」）を出さず、週に依存しない候補（「当月末の達成目標に対して、今どこまで来ている？」等）に差し替える。当月末狙いのバンドが未設定の行も同様に出さない。
 - **`reviewMaterial.ts`（v3.96で先行実施済み）**：`isReviewMaterialEmpty()`を`isGenerationMaterialEmpty(material, hasPlanContent, memoCount)`へ改名し、週データ基準から材料全般基準（計画欄・タスク・メモのいずれかがあれば生成可）へ変えた対応はv3.96で先に実施済み（Step N参照）。`weeksWithGoalSet`／`unratedWeekCount`フィールドは誰も使わなくなったため削除した。
 - **`personalOkrReviewDraftExtractor.ts`**：`buildReviewDraftContextText()`の材料行から週数の内訳（全N週中・設定済みN週・未評価N週）を削除。◯/△/✕が全て0件なら週の行そのものを出さない。SYSTEM_PROMPTの「週の積み上げの結果どうだったか」→「取り組みの結果どうだったか」、evidenceの説明「どの週・どのタスクに基づくか」→「どの記録（週・タスク・メモ・計画）に基づくか」に変更。
@@ -2360,6 +2360,21 @@ v3.101のマイグレーション（未適用のまま）に2件の欠陥があ�
   5. **計画ブロック**（`PersonalKrPanel.tsx`）：「今月のウェイト」入力欄（`weight_override_pct`）を追加。空欄なら四半期共通値を使う旨を補足に明記。🔴 空欄は`undefined`ではなく`null`を送る（`parseEvalPctInput`の`value`をそのまま`weight_override_pct`に渡す）。既存の`mergeMonthRecord()`を通し、`computeMonthPlanDirty()`（`monthPlanForm.ts`。`weightOverrideRaw`/`weightOverridePct`フィールドを追加）経由で既存の`unsavedEditorRegistry`登録にそのまま乗る（新しい登録は増やしていない＝計画欄は既に1つのgetterで登録済みのため、比較対象のフィールドを増やすだけで済んだ）。
 - **やらないこと（スコープ外）**：四半期をまたぐKRの引き継ぎ・Kintone側への書き戻し・既存の`weight_override_pct`データの一括補正（既定値で従来挙動が保たれるため不要）・「対象月」を各月の画面からも切り替えられるようにすること・ウェイト合計100%未達時の保存ブロック。
 - **テスト**：`krMonthScope.test.ts`（13件）・`activeMonthIndexesSaveError.test.ts`（8件）・`periodReviewReference.test.ts`に`averageMonthlyReferences`と月ごとに構成が変わるシナリオを追加（18件に増加）・`monthPlanForm.test.ts`に`weightOverrideRaw`/`weightOverridePct`のケースを追加（13件に増加）。
+
+### Step T：「実施記録」欄の追加（v3.105・2026-08-27）
+
+山本さんの依頼：振り返りを下書きする際に、現在はアプリに載っている「計画」と「毎週の目標」だけが参考材料になっており、実際に何をやったかという事後の記録が無い。そのため当初立てた計画を守れているかどうかは加味されるが、途中で生じた緊急対応や方針転換、プラスアルファで実施した業務が反映されない。
+
+- **マイグレーション**（`20260827_add_actual_activities.sql`。山本さんが手動適用）：`personal_kr_months.actual_activities text`／`personal_period_reviews.actual_activities text`を1列ずつ追加（新テーブルは作らない）。列名は計画欄の`activities`と対になる名前。`schema.sql`にも同期した。
+- 🔴🔴 **最重要（マイグレーション未適用でも既存の保存を壊さない設計）**：actual_activitiesは、計画欄（`handleSaveMonthPlan`）・振り返り欄（`MonthReviewBlock.handleSave`／`handleSaveReviewText`）・バンド決定（`handleSetBandOverride`）・「全体」タブの自己評価%等（`PersonalPeriodReviewBlock.handleSave`）とは**完全に別の保存関数**（`handleSaveActualActivities`）でしか送らない設計にした。既存4ハンドラは一切変更していない（`actualActivitiesIsolation.test.ts`が、各ハンドラの関数本文をソースから抽出し`actual_activities`という文字列を含まないことを機械的に固定する）。この隔離により、列の有無に関わらず既存3種の保存は影響を受けない。
+- **入力欄の表示可否（Step 0で確認した事実）**：`check_schema_health` RPC（Section 22）は部署管理者・全社スーパー管理者にしか結果を返さない設計（`20260806_add_schema_health_check.sql`）のため、一般メンバー向けのゲートには使えない。代わりに新規`probeActualActivitiesColumn()`（`personalOkrStore.ts`）が`personal_kr_months`へ`select("actual_activities").limit(1)`する軽量プローブを行い、PGRST204（列が見つからない）かどうかで判定する（`personalOkrUiStore.ensureActualActivitiesChecked`。OKRビューのマウント時に1回だけ実行）。判定不能（ネットワークエラー等）はfail-openで「利用可能」扱いにする。UI（`ActualActivitiesBlock.tsx`）は`"unknown"`（未確認）の間は入力欄を出さず、`"unavailable"`（未適用と判明）のときだけ「この機能はデータベースへの適用がまだです」と案内する。保存時のPGRST204検知（`isActualActivitiesColumnMissing`）も二重の防御として持つ。
+- **新規`ActualActivitiesBlock.tsx`**：KR×月（`PersonalKrPanel.tsx`。計画ブロックと振り返りブロックの間）と「全体」タブ（`PersonalPeriodReviewBlock.tsx`。自己評価%等の入力と全体の振り返り本文の間）の両方で共有する1コンポーネント（コピペしない）。`variant="section"`（見出し＋独立カード）／`"embedded"`（見出し・カードの外枠を出さず中身だけ。「全体」タブの既存カード内に入れ子カードを作らないため）を切り替える。保存の作法は既存のMonthReviewBlock/PersonalPeriodReviewBlockと同じ（明示保存・未変更時は「✓ 保存済み」表示。Section 48）。未保存編集レジストリ（Section 46）にも登録する。空欄は`undefined`ではなく`null`を送る（`toActualActivitiesSaveValue`）。
+- **AI連携（4機能）**：`personalOkrAiContext.ts`（【当月の実施記録】セクション。「これから」・AIパネル・KR単位振り返り下書きが共有。1500字クリップ）・`planDraftContext.ts`（過去月の実績として追加。削り順は①週の記録→②実施記録→③メモ→④計画4欄）・`periodReviewDraftContext.ts`（KR単位の実施記録＋対象期間そのものの実施記録`overallActualActivities`を追加。削り順は①計画4欄→②タスク内訳→③GMコメント→④実施記録→⑤振り返り本文）。記入が無ければセクションごと出さない（記入が無いこと自体に言及しない。Step Oと同じ思想）。
+- 🔴 **プロンプトの評価軸を変更（依頼の核心）**：新規`ACTUAL_WORK_COUNTS_NOTICE`（`src/lib/ai/actualWorkNotice.ts`）を、`WEEKLY_IS_OPTIONAL_NOTICE`と同じ流儀で5つのSYSTEM_PROMPTファイルすべてに埋め込んだ（詳細はStep O直後の本セクション冒頭グランドルール参照）。**仕様書は「4つのプロンプト」として`personalOkrAiContext.ts`等4ファイルを名指ししていたが、`WEEKLY_IS_OPTIONAL_NOTICE`の実際の埋め込み先（SYSTEM_PROMPTを持つ5ファイル：`personalOkrChatPrompt.ts`／`personalOkrOutlookExtractor.ts`／`personalOkrPeriodReviewDraftExtractor.ts`／`personalOkrPlanDraftExtractor.ts`／`personalOkrReviewDraftExtractor.ts`）に揃える形へ実装時に変更した**（全体タブの振り返り下書きが評価軸の恩恵から漏れるのを防ぐため。統括に報告済み）。
+- **誤配線の是正（W6）**：`personal_kr_memos`にmonth列が無くKR単位のため、過去月を対象にした振り返り下書き生成でも「直近3件」が対象月と無関係な月のメモを渡していた（例：9月に7月の振り返り下書きを生成すると、AIには9月時点の直近メモが渡る）。新規`resolveRecentMemosForAiContext(isCurrentMonth, clippedMemos)`（`personalOkrAiContext.ts`）で、当月を対象にしているときだけメモを渡すよう一元化した。「これから」・AIパネル（`okrAiContext`＝当月限定）は従来どおり影響なし。
+- **`schemaChecks.ts`に2列分の検査項目を追加**（管理者向け`SchemaHealthBanner`用。一般メンバー向けの判定は上記プローブが別途担う）。
+- **やらないこと（スコープ外）**：メモの月紐づけ改修（既存の`personal_kr_memos`にmonth列を足す改修）は山本さんが選ばなかったため行っていない。Kintone向け「全文をコピー」（v3.103）には実施記録を含めていない（Kintone側に対応する見出しが無いため）。
+- **テスト**：新規`actualActivitiesForm.test.ts`・`actualActivitiesSaveError.test.ts`・`actualActivitiesIsolation.test.ts`（既存4ハンドラの隔離をソース検査で固定＋対照確認）。既存テスト拡張：`personalOkrAiContext.test.ts`・`planDraftContext.test.ts`・`periodReviewDraftContext.test.ts`・`personalOkrStore.test.ts`・`personalOkrUiStore.test.ts`・5つのAIプロンプトテスト（生成結果に対して`ACTUAL_WORK_COUNTS_NOTICE`を検査）。
 
 ---
 

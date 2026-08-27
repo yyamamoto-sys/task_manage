@@ -48,6 +48,26 @@ export interface PersonalOkrAiContextInput {
   taskSummary: PersonalOkrAiTaskSummary;
   /** 呼び出し側が既に件数・文字数を絞った直近のメモ本文（新しい順） */
   recentMemos: string[];
+  /**
+   * 実施記録（personal_kr_months.actual_activities。仕様書§W4・2026-08-27・v3.105）。
+   * 計画外の対応・方針転換・追加業務の自由記述。記入が無ければnull（セクションごと省く）。
+   */
+  actualActivities: string | null;
+}
+
+/** 実施記録の文字数上限（仕様書§W4「各1500字目安」）。546対策（CLAUDE.md Section 19・28）。 */
+export const ACTUAL_ACTIVITIES_AI_CLIP_CHARS = 1500;
+
+/**
+ * 【設計意図・仕様書§W6（誤配線の是正）】personal_kr_memosにmonth列が無くKR単位のため、
+ * 「直近3件」は呼び出し時点の対象月と無関係な月のメモを拾いうる（例：9月に7月の振り返り
+ * 下書きを生成すると、AIには9月時点の直近メモが渡っていた＝対象月と無関係な材料）。
+ * 当月（isCurrentMonth=true）を対象にしているときだけメモを渡す。過去月を対象にしている
+ * ときは常に空配列を返す（PersonalKrPanel.tsx参照。この判定を一元化し、呼び出し側ごとに
+ * 別々の条件式を書かない）。
+ */
+export function resolveRecentMemosForAiContext(isCurrentMonth: boolean, clippedMemos: string[]): string[] {
+  return isCurrentMonth ? clippedMemos : [];
 }
 
 const SELF_RATING_LABEL: Record<Exclude<WeekSelfRating, null>, string> = {
@@ -107,6 +127,13 @@ export function buildPersonalOkrAiContextText(input: PersonalOkrAiContextInput):
   if (input.risks) lines.push(`- リスクと依存関係：${input.risks}`);
   // 🔴 未記入なら行ごと出さない（記入が無いことに言及させないため）
   if (input.bandTarget != null) lines.push(`- 当月末 狙いのバンド：${input.bandTarget}%`);
+
+  // 🔴 実施記録（仕様書§W4）。記入が無ければセクションごと省く（「記入が無い」とも言及しない）。
+  // 1500字でクリップする（546対策。CLAUDE.md Section 19・28）。
+  if (input.actualActivities) {
+    lines.push("【当月の実施記録（計画外の対応・方針転換・追加業務）】");
+    lines.push(input.actualActivities.slice(0, ACTUAL_ACTIVITIES_AI_CLIP_CHARS));
+  }
 
   // 🔴 週ごとの目標設定・自己評価は任意の補助機能。埋まっている週の行だけ出し、
   // 出す週が0本ならセクションごと省略する（「週データなし」とも書かない）。

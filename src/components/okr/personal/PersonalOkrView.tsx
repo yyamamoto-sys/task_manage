@@ -131,6 +131,8 @@ export function PersonalOkrView({ currentUser }: Props) {
   const periodReviewsError = usePersonalOkrUiStore(s => s.periodReviewsError);
   const loadPeriodReviews = usePersonalOkrUiStore(s => s.loadPeriodReviews);
   const savePeriodReview = usePersonalOkrUiStore(s => s.savePeriodReview);
+  const actualActivitiesAvailable = usePersonalOkrUiStore(s => s.actualActivitiesAvailable);
+  const ensureActualActivitiesChecked = usePersonalOkrUiStore(s => s.ensureActualActivitiesChecked);
 
   // ===== OKRモードのガイドツアー（CLAUDE.md Section 24） =====
   // 🔴 このコンポーネントが実際にマウントされた時点で「OKRモードへ初めて入った」と
@@ -151,6 +153,10 @@ export function PersonalOkrView({ currentUser }: Props) {
   const [aiContext, setAiContext] = useState<PersonalOkrAiContextInput | null>(null);
 
   useEffect(() => { if (!krsLoaded) loadKrs(); }, [krsLoaded, loadKrs]);
+  // 🔴 実施記録（actual_activities列）の利用可否を1回だけ確認する（仕様書§W2・v3.105）。
+  // KRタブを開くより前に確認を始めておくことで、実際に画面へたどり着く頃には解決している
+  // 想定（ensureActualActivitiesChecked自体が確定済みなら何もしない・冪等）。
+  useEffect(() => { void ensureActualActivitiesChecked(); }, [ensureActualActivitiesChecked]);
 
   // ===== KR切替・月切替・四半期切替のガード（CLAUDE.md Section 46・v3.100） =====
   // MainLayout.tsxのguardedNavigateと同じ考え方（未保存の編集があれば確認してから
@@ -393,6 +399,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           periodReviewsError={periodReviewsError}
           loadPeriodReviews={loadPeriodReviews}
           savePeriodReview={savePeriodReview}
+          actualActivitiesAvailable={actualActivitiesAvailable}
         />
       ) : selectedKr ? (
         <PersonalKrPanel
@@ -437,6 +444,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           ensureReviewDraftLoaded={previewSample ? PREVIEW_NOOP_ASYNC : ensureReviewDraftLoaded}
           onRunReviewDraft={previewSample ? PREVIEW_NOOP_ASYNC : runReviewDraft}
           readOnly={!!previewSample}
+          actualActivitiesAvailable={actualActivitiesAvailable}
         />
       ) : (
         !krsLoading && (

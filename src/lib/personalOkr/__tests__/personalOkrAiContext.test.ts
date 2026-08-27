@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildPersonalOkrAiContextText, buildPersonalOkrAiContextChips, buildPersonalOkrAiStarters,
+  resolveRecentMemosForAiContext,
   type PersonalOkrAiContextInput,
 } from "../personalOkrAiContext";
 
@@ -27,6 +28,7 @@ function baseInput(overrides: Partial<PersonalOkrAiContextInput> = {}): Personal
     ],
     taskSummary: { linkedTaskCount: 5, delayedCount: 1, stagnantCount: 0, blockedCount: 2 },
     recentMemos: ["高瀬さんとの合意が先", "検証ログはタスクコメントに寄せる"],
+    actualActivities: null,
     ...overrides,
   };
 }
@@ -62,6 +64,36 @@ describe("buildPersonalOkrAiContextText", () => {
   it("メモが無ければ【直近のメモ】セクションを出さない", () => {
     const text = buildPersonalOkrAiContextText(baseInput({ recentMemos: [] }));
     expect(text).not.toContain("【直近のメモ】");
+  });
+
+  // ===== 実施記録（仕様書§W4・2026-08-27）=====
+  it("実施記録が記入されていれば【当月の実施記録】セクションを出す", () => {
+    const text = buildPersonalOkrAiContextText(baseInput({ actualActivities: "急遽A社対応で3日費やした" }));
+    expect(text).toContain("【当月の実施記録（計画外の対応・方針転換・追加業務）】");
+    expect(text).toContain("急遽A社対応で3日費やした");
+  });
+
+  it("🔴 実施記録が空欄ならセクションごと出さない（記入が無いこと自体に言及しない）", () => {
+    const text = buildPersonalOkrAiContextText(baseInput({ actualActivities: null }));
+    expect(text).not.toContain("【当月の実施記録");
+  });
+
+  it("🔴 実施記録は1500字でクリップする（546対策）", () => {
+    const long = "あ".repeat(3000);
+    const text = buildPersonalOkrAiContextText(baseInput({ actualActivities: long }));
+    expect(text).toContain("あ".repeat(1500));
+    expect(text).not.toContain("あ".repeat(1501));
+  });
+});
+
+// ===== 誤配線の是正（仕様書§W6・2026-08-27） =====
+describe("resolveRecentMemosForAiContext", () => {
+  it("🔴 過去月を対象にしているときはrecentMemosが現れない（空配列を返す）", () => {
+    expect(resolveRecentMemosForAiContext(false, ["対象月と無関係な直近メモ"])).toEqual([]);
+  });
+
+  it("当月を対象にしているときはrecentMemosがそのまま現れる", () => {
+    expect(resolveRecentMemosForAiContext(true, ["直近のメモ"])).toEqual(["直近のメモ"]);
   });
 
   // ===== 週次の任意化（2026-08-26）=====

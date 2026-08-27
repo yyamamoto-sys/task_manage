@@ -25,6 +25,7 @@
 import { invokeAI } from "./invokeAI";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
+import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 import type { ReviewMaterial } from "../personalOkr/reviewMaterial";
 
 // ===== 型定義 =====
@@ -59,6 +60,8 @@ const SYSTEM_PROMPT = `あなたは個人OKRの月次振り返りの「下書き
 出力先はKintone「個人OKR_月次振返り記録」の「振り返り」欄に貼り付ける地の文です。
 
 ${WEEKLY_IS_OPTIONAL_NOTICE}
+
+${ACTUAL_WORK_COUNTS_NOTICE}
 
 【🔴絶対に守ること】
 自己評価の割合・達成度バンドの数値を一切書いてはならない。「[自己評価：…]」のような

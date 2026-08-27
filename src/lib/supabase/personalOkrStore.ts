@@ -34,6 +34,7 @@
 
 import { supabase } from "./client";
 import { saveWithLock } from "./store";
+import { isActualActivitiesColumnMissing } from "../personalOkr/actualActivitiesSaveError";
 import type {
   PersonalKr, PersonalKrMonth, PersonalKrWeek, PersonalKrWeekTask, PersonalKrMemo, PersonalKrOutlook,
   PersonalKrReviewDraft, PersonalPeriodReview,
@@ -86,6 +87,31 @@ export async function softDeletePersonalKrMonth(id: string, deletedBy: string) {
     .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
     .eq("id", id);
   if (error) throw error;
+}
+
+/**
+ * 【設計意図・仕様書§W2 Step 0】actual_activities列（migrations/20260827_add_actual_activities.sql）
+ * の存在を実行時に確認する。check_schema_health RPCは部署管理者・全社スーパー管理者にしか
+ * 結果を返さないため（20260806_add_schema_health_check.sql）、一般メンバーでも使える代替として、
+ * 実データへの軽量プローブ（LIMIT 1・列を明示selectするだけ）を行う。
+ *
+ * 列が存在しなければ、対象行が0件でも（RLSで絞り込まれた結果0行になる場合でも）
+ * PostgRESTは列解決を行単位のフィルタより先に行うため、PGRST204
+ * （"Could not find the 'actual_activities' column..."）が返る。この性質を利用して
+ * 「行データを見ずに列の有無だけを判定する」。
+ *
+ * 戻り値：true=存在する／false=存在しないと判定できた／null=判定不能（ネットワークエラー等。
+ * 呼び出し側はfail-open＝入力欄を出す側に倒すこと。CLAUDE.md「fail-safe」の考え方に倣う）。
+ */
+export async function probeActualActivitiesColumn(): Promise<boolean | null> {
+  try {
+    const { error } = await supabase.from("personal_kr_months").select("actual_activities").limit(1);
+    if (!error) return true;
+    if (isActualActivitiesColumnMissing(error)) return false;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 // ===== PersonalKrWeek（★週の目標状態） =====

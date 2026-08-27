@@ -43,6 +43,11 @@ export interface PlanDraftPastMonth {
   gmEvalPct: number | null;
   /** 🔴 1200字でクリップ済みの値を渡すこと（buildPlanDraftPastMonthEntryが行う） */
   gmComment: string | null;
+  /**
+   * 実施記録（personal_kr_months.actual_activities。仕様書§W4・2026-08-27・v3.105）。
+   * 🔴 1500字でクリップ済みの値を渡すこと（buildPlanDraftPastMonthEntryが行う）。
+   */
+  actualActivities: string | null;
   weeks: PersonalOkrAiContextWeek[];
   taskSummary: PlanDraftMonthTaskSummary;
 }
@@ -109,6 +114,8 @@ export interface PlanDraftContextInput {
 
 const REVIEW_TEXT_CLIP_CHARS = 1200;
 const GM_COMMENT_CLIP_CHARS = 1200;
+/** 実施記録の文字数上限（仕様書§W4「各1500字目安」）。既存のreviewText/gmCommentとは別枠。 */
+const ACTUAL_ACTIVITIES_CLIP_CHARS = 1500;
 
 function clip(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) : s;
@@ -137,6 +144,7 @@ export function buildPlanDraftPastMonthEntry(params: {
     selfEvalPct: r?.self_eval_pct ?? null,
     gmEvalPct: r?.gm_eval_pct ?? null,
     gmComment: r?.gm_comment ? clip(r.gm_comment, GM_COMMENT_CLIP_CHARS) : null,
+    actualActivities: r?.actual_activities ? clip(r.actual_activities, ACTUAL_ACTIVITIES_CLIP_CHARS) : null,
     weeks: params.weeks,
     taskSummary: params.taskSummary,
   };
@@ -153,7 +161,7 @@ export function buildPlanDraftPastMonthEntry(params: {
 export function isPlanDraftMaterialEmpty(krFieldsEmpty: boolean, pastMonths: PlanDraftPastMonth[]): boolean {
   const pastMonthHasMaterial = pastMonths.some(m =>
     m.positioning != null || m.activities != null || m.targetAndEvidence != null || m.risks != null ||
-    m.reviewText != null || m.selfEvalPct != null || m.gmComment != null,
+    m.reviewText != null || m.selfEvalPct != null || m.gmComment != null || m.actualActivities != null,
   );
   return krFieldsEmpty && !pastMonthHasMaterial;
 }
@@ -170,6 +178,7 @@ export function buildPlanDraftMaterialSummaryLines(pastMonths: PlanDraftPastMont
     if (m.selfEvalPct != null) parts.push(`自己評価${m.selfEvalPct}%`);
     if (m.gmEvalPct != null) parts.push(`GM評価${m.gmEvalPct}%`);
     if (m.reviewText) parts.push("振り返り記入あり");
+    if (m.actualActivities) parts.push("実施記録あり");
     const segments: string[] = [];
     if (parts.length > 0) segments.push(parts.join("・"));
     const taskTotal = m.taskSummary.completedTaskCount + m.taskSummary.incompleteTaskCount;
@@ -211,6 +220,7 @@ function formatPastMonth(m: PlanDraftPastMonth): string[] {
   const bandLine = formatBandLine(m.bandTarget, m.bandOverride);
   if (bandLine) lines.push(bandLine);
 
+  if (m.actualActivities) lines.push(`  ＜実施記録＞${m.actualActivities}`);
   if (m.reviewText) lines.push(`  ＜振り返り＞${m.reviewText}`);
   if (m.selfEvalPct != null) lines.push(`  ＜自己評価＞${m.selfEvalPct}%`);
   if (m.gmEvalPct != null) lines.push(`  ＜上長評価＞${m.gmEvalPct}%`);
@@ -301,12 +311,14 @@ function cloneInput(input: PlanDraftContextInput): PlanDraftContextInput {
 
 export interface PlanDraftContextResult {
   text: string;
-  /** 上限超過により何か（週の記録・メモ・計画4欄のいずれか）を削ったか */
+  /** 上限超過により何か（週の記録・実施記録・メモ・計画4欄のいずれか）を削ったか */
   trimmed: boolean;
 }
 
 /**
- * 総文字数が上限を超えたら、古い月から順に「週の記録→メモ→計画4欄」の順で決定的に削る。
+ * 総文字数が上限を超えたら、古い月から順に「週の記録→実施記録→メモ→計画4欄」の順で
+ * 決定的に削る。実施記録（仕様書§W4で新設）は週の記録と同じく「その月に起きたこと」の
+ * 記録という性質が近いため、週の記録のすぐ後（メモより先）に置く。
  * pastMonthsは呼び出し側が古い順に渡す前提（このファイルでは並べ替えない）。
  */
 export function buildPlanDraftContext(input: PlanDraftContextInput): PlanDraftContextResult {
@@ -325,14 +337,23 @@ export function buildPlanDraftContext(input: PlanDraftContextInput): PlanDraftCo
     text = buildPlanDraftContextText(working);
   }
 
-  // ② メモを削る
+  // ② 古い月から順に実施記録を削る
+  for (const m of working.pastMonths) {
+    if (text.length <= PLAN_DRAFT_CONTEXT_CHAR_LIMIT) break;
+    if (m.actualActivities == null) continue;
+    m.actualActivities = null;
+    trimmed = true;
+    text = buildPlanDraftContextText(working);
+  }
+
+  // ③ メモを削る
   if (text.length > PLAN_DRAFT_CONTEXT_CHAR_LIMIT && working.recentMemos.length > 0) {
     working.recentMemos = [];
     trimmed = true;
     text = buildPlanDraftContextText(working);
   }
 
-  // ③ 古い月から順に計画4欄を削る
+  // ④ 古い月から順に計画4欄を削る
   for (const m of working.pastMonths) {
     if (text.length <= PLAN_DRAFT_CONTEXT_CHAR_LIMIT) break;
     if (m.positioning == null && m.activities == null && m.targetAndEvidence == null && m.risks == null) continue;

@@ -12,11 +12,14 @@
 // 会話履歴（ターンの積み重ね）はここでは扱わない（呼び出し元hookがmessagesとして渡す）。
 
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
+import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 
 export function buildPersonalOkrChatSystemPrompt(contextText: string): string {
   return `あなたは個人OKRの実行を支援するコーチ役のAIです。
 
 ${WEEKLY_IS_OPTIONAL_NOTICE}
+
+${ACTUAL_WORK_COUNTS_NOTICE}
 
 【答え方】
 達成度バンドの定義（60=この取り組みがなくても到達していた水準／70=介入による明確な改善・

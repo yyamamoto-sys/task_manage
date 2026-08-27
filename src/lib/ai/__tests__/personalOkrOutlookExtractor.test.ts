@@ -33,6 +33,7 @@ function baseContext(overrides: Partial<PersonalOkrAiContextInput> = {}): Person
     weeks: [{ label: "W1", goalState: "検証ログの形式が決まっている", selfRating: "o" }],
     taskSummary: { linkedTaskCount: 3, delayedCount: 0, stagnantCount: 0, blockedCount: 1 },
     recentMemos: [],
+    actualActivities: null,
     ...overrides,
   };
 }
@@ -63,6 +64,8 @@ describe("analyzePersonalKrOutlook", () => {
     expect(String(messages[0].content)).toContain("紐づくタスク3件");
     // 🔴 週次任意化の共通ノーティスが実際に組み立てたシステムプロンプトに含まれる
     expect(String(system)).toContain("週ごとの目標状態と自己評価（◯△✕）は、使いたい人だけが使う任意の補助機能である");
+    // 🔴 実施記録の評価軸ノーティス（仕様書§W5）が実際に組み立てたシステムプロンプトに含まれる
+    expect(String(system)).toContain("計画からの逸脱ではなく、");
 
     expect(result.lead).toBe(VALID_PAYLOAD.lead);
     expect(result.moves).toEqual(VALID_PAYLOAD.moves);
