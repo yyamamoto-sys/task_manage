@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.108
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.109
 #
-最終更新：2026-09-17（v3.108）
+最終更新：2026-09-17（v3.109）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -646,7 +646,7 @@ PJの基本情報を編集できる画面は2つある。役割が違うため�
   全ステータスを一覧編集する棚卸し画面。PJの削除（論理削除）もここだけ。
 - **PJ設定画面（`ProjectSettingsModal`）**：PJカルテの「⚙ このPJの設定」から開く。
   今見ているPJ1件に絞った日常操作の入口（基本情報・招待・関わるメンバー）。
-  基本情報タブの編集権限はAdminViewと同じ条件（既存の権限モデルを広げていない）。
+  基本情報タブの編集権限は**同じ部署のメンバー全員**（v3.109で管理者限定から開放。Section 55）。
 
 ### サイドバーPJ行の「⋮」メニュー（v3.54）
 
@@ -664,7 +664,7 @@ PJの基本情報を編集できる画面は2つある。役割が違うため�
   `active`なら「✅ 完了にする」「🗄 アーカイブ」の2つ、`completed`/`archived`なら
   代わりに「↩ activeに戻す」1つだけを出す（complete/archiveを同時に出さない）。
   ゲストには空配列（呼び出し側でも`⋮`自体を描画しないため二重の防御）。
-- **🔴 権限判定は新しく発明していない**：`ProjectSettingsModal`の基本情報編集権限
+- **🔴 権限判定は1箇所に集約している**（v3.109で条件自体を「同じ部署なら誰でも」に変更。Section 55）：`ProjectSettingsModal`の基本情報編集権限
   （部署管理者・全社スーパー管理者。部署内にis_adminが1人もいなければ全員可のブートストラップ）を
   `src/lib/project/projectEditPermission.ts`の`canEditProjectBasicInfo()`に切り出し、
   `ProjectSettingsModal.tsx`とサイドバーの両方から呼ぶ（判定ロジックの複製をやめた）。
@@ -1127,7 +1127,7 @@ interface TaskChangeLog {
 | バックアップ（`BackupSection`） | ✅ フェーズ1〜4実装済み（v3.107） | 設定画面「アプリ設定」→「バックアップ」。全社スーパー管理者のみ。日次バックアップ（`docs/dev/backup-design.md`）の直近の実行状況（`backup_runs`最新10件）・現在有効な世代一覧（`backup_objects`のdeleted_at IS NULL）を表示し、各世代を署名URL経由でダウンロードできる。「今すぐ実行」ボタンで`backup-daily` Edge Functionを手動実行（supabase-jsが現在セッションのJWTを自動付与）。管理画面バナー（`BackupHealthBanner`。`App.tsx`でadminにのみマウント）が一次バックアップ24時間超過／二次保管3日超過を検知して警告する（判定ロジックは`src/lib/backup/backupHealth.ts`）。フェーズ5（二次保管スクリプト・`.backup-destination-marker`・復元訓練）は未着手 |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
 | プロジェクト招待（PJ設定画面「招待」タブ／管理画面「プロジェクト招待」タブ／ログイン画面・`AccessDeniedScreen`の招待コード導線） | ✅ Phase 1〜3実装済み（v3.42〜v3.44）。**v3.49で発行UIをPJ設定画面へ統合**（旧`ProjectInviteModal.tsx`は撤去） | 社内の別部署の人を特定のPJ1件に招待する。発行・一覧・取り消し：PJ設定画面（下記）の「招待」タブ。管理：設定画面「組織」カテゴリ「プロジェクト招待」タブは部署横断の一覧表示として引き続き残す。受諾：ログイン画面の「招待コードをお持ちの方」（新規登録）または`AccessDeniedScreen`の同導線（既にセッションがある場合）。詳細はSection 25・`docs/dev/project-invite-plan.md` |
-| PJ設定画面（`ProjectSettingsModal`。PJカルテの「⚙ このPJの設定」から開く） | ✅ 実装済み（v3.49） | 今見ているPJ1件に絞った日常操作の入口。「基本情報」（名前・目的・貢献メモ・オーナー・期間・color_tag・ステータス。**クイック操作で1クリックの完了/アーカイブ/差し戻し**）／「招待」（発行・このPJの一覧・取り消し）／「関わるメンバー」（オーナー・タスク担当者・招待で参加した人の読み取り専用一覧。新しい紐づけテーブルは作らず既存データから`lib/project/projectMembers.ts`が組み立てる）の3タブ。**AdminViewの「作業設定→PJ」タブとの使い分け**：AdminViewは部署横断で全PJ・全ステータスを一覧編集する管理者向けの棚卸し画面として残す（削除もそちらのみ）。この設定画面はPJオーナー・関係者が自分の見ているPJだけを日常的に触るための入口。**基本情報の編集権限はAdminViewのPJ編集と同じ**（部署管理者/全社スーパー管理者。部署内にis_adminが1人もいなければ全員編集可のブートストラップ含む）で、権限が無い場合は読み取り表示になる。招待の発行は権限に関わらず全メンバー可（Section 25の決定を維持）。「関わるメンバー」タブは常に読み取り専用 |
+| PJ設定画面（`ProjectSettingsModal`。PJカルテの「⚙ このPJの設定」から開く） | ✅ 実装済み（v3.49） | 今見ているPJ1件に絞った日常操作の入口。「基本情報」（名前・目的・貢献メモ・オーナー・期間・color_tag・ステータス。**クイック操作で1クリックの完了/アーカイブ/差し戻し**）／「招待」（発行・このPJの一覧・取り消し）／「関わるメンバー」（オーナー・タスク担当者・招待で参加した人の読み取り専用一覧。新しい紐づけテーブルは作らず既存データから`lib/project/projectMembers.ts`が組み立てる）の3タブ。**AdminViewの「作業設定→PJ」タブとの使い分け**：AdminViewは部署横断で全PJ・全ステータスを一覧編集する管理者向けの棚卸し画面として残す（削除もそちらのみ）。この設定画面はPJオーナー・関係者が自分の見ているPJだけを日常的に触るための入口。**基本情報の編集権限は同じ部署のメンバー全員**（v3.109で管理者限定から開放。Section 55）。招待の発行は権限に関わらず全メンバー可（Section 25の決定を維持）。「関わるメンバー」タブは常に読み取り専用 |
 
 ### UI/UX仕様（2026年4月確定）
 
@@ -3722,3 +3722,53 @@ These defaults are optimized for AI coding agents (and humans) working on apps t
   needed. Always curl https://ai-gateway.vercel.sh/v1/models first; never trust model IDs from memory
 - For durable agent loops or untrusted code: use Workflow (pause/resume/state) + Sandbox; use Vercel MCP for secure infra access
 <!-- VERCEL BEST PRACTICES END -->
+
+---
+
+## 55. PJ基本情報の編集を部署メンバー全員へ開放（v3.109・2026-09-17）
+
+利用者から「プロジェクトの名前が変えられない」という声が上がった。原因は
+`canEditProjectBasicInfo()` の条件（部署管理者 or 全社スーパー管理者。ただし部署内に
+is_adminが1人もいなければ全員可）で、一般メンバーには名前が読み取り表示になっていた。
+
+### 🔴 調べて分かった最も重要なこと：この制限はUIにしか無かった
+
+`projects` のRLS（`schema.sql` の `projects_group` ポリシー）は
+
+```sql
+USING (group_ids && current_member_group_ids() OR current_member_is_super_admin())
+WITH CHECK (同上)
+```
+
+で**部署スコープのみ**を条件にしている。つまりDB側は元々「同じ部署なら誰でもUPDATE可」で、
+管理者限定はUI側の「約束」にすぎなかった（APIを直接叩けば一般メンバーでも更新できた）。
+**UIとDBで条件が食い違っている状態だった。**
+
+### 決定（山本さん）
+
+DB側に合わせてUIを緩める。逆にDB側を締める案もあったが、10名弱のチームで自分たちのPJ名を
+直せないほうが実害が大きいと判断した。開放範囲は**基本情報タブ全体**（名前・目的・貢献メモ・
+オーナー・期間・色・ステータス）。
+
+### 影響範囲
+
+`canEditProjectBasicInfo()` の呼び出し元は2箇所だけで、関数1つの変更で完結した。
+
+| 呼び出し元 | 効果 |
+|---|---|
+| `ProjectSettingsModal.tsx` | 基本情報タブが全員編集可になる |
+| `MainLayout.tsx`（`projectRowMenu`へ渡す） | サイドバー「⋮」の完了／アーカイブ／activeに戻すが全員に出る |
+
+**ステータス変更も同時に開放された。** 基本情報タブでステータスを変えられるのに「⋮」からは
+変えられない、という不整合を作らないための一貫した扱い。
+
+### ゲストへの影響は無い
+
+`buildProjectRowMenuItems()` はゲストに空配列を返すため「⋮」自体が出ず、`saveProject` も
+ゲスト分岐でメモリ上の更新に留まる（Section 23）。
+
+### 引数は意図的に残した
+
+`canEditProjectBasicInfo(_members, _currentUser)` は現在は常に `true` を返すが、引数は
+削っていない。将来「PJオーナーのみ」「PJに関わる人のみ」等へ絞り直すときに、この関数の
+中だけを直せばよいようにするため。
