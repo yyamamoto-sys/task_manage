@@ -436,4 +436,50 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "個人OKR：月全体・四半期全体の実施記録列（personal_period_reviews.actual_activities）が見つかりません",
     migration: "20260827_add_actual_activities.sql",
   },
+  // 【2026-09-16】日次バックアップ フェーズ1（docs/dev/backup-design.md）。
+  // 表3本・関数3本。Storageバケット(backups)自体は check_schema_health の対象外
+  // （information_schema/pg_catalogではなくstorage.bucketsを見る形になり既存の
+  // kind体系に合わないため。バケットの存在確認は山本さんが手動で行う）。
+  {
+    id: "backup_runs_table",
+    kind: "table",
+    table: "backup_runs",
+    label: "日次バックアップ：実行記録テーブル（backup_runs）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
+  {
+    id: "backup_objects_table",
+    kind: "table",
+    table: "backup_objects",
+    label: "日次バックアップ：保管オブジェクト管理テーブル（backup_objects）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
+  {
+    id: "backup_exports_table",
+    kind: "table",
+    table: "backup_exports",
+    label: "日次バックアップ：二次保管の報告テーブル（backup_exports）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
+  {
+    id: "fn_backup_begin",
+    kind: "function",
+    name: "backup_begin",
+    label: "日次バックアップ：実行開始関数（backup_begin）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
+  {
+    id: "fn_backup_snapshot",
+    kind: "function",
+    name: "backup_snapshot",
+    label: "日次バックアップ：本体関数（backup_snapshot）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
+  {
+    id: "fn_backup_finalize",
+    kind: "function",
+    name: "backup_finalize",
+    label: "日次バックアップ：実行確定・保持ポリシー評価関数（backup_finalize）が見つかりません",
+    migration: "20260916_add_backup.sql",
+  },
 ];

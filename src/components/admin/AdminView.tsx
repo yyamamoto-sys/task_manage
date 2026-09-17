@@ -44,9 +44,10 @@ import { DangerZone, DangerAction } from "../common/DangerZone";
 import { AdminFormModal } from "./AdminFormModal";
 import { OkrImportModal } from "./OkrImportModal";
 import { LoadingTipsSection } from "./LoadingTipsSection";
+import { BackupSection } from "./BackupSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup";
 
 interface Props { currentUser: Member; }
 
@@ -266,6 +267,7 @@ export function AdminView({ currentUser }: Props) {
     ] },
     ...(isCurrentUserSuperAdmin ? [{ label: "アプリ設定", items: [
         { key: "tips" as AdminTab, label: "ローディングのヒント" },
+        { key: "backup" as AdminTab, label: "バックアップ" },
     ] }] : []),
   ];
   const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
@@ -441,6 +443,7 @@ export function AdminView({ currentUser }: Props) {
           {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
           {tab === "invites"  && <InvitesSection selectedGroupId={selectedGroupId} />}
           {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {tab === "backup"   && <BackupSection currentUser={currentUser} />}
         </div>
       </div>
     </div>

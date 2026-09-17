@@ -2696,3 +2696,385 @@ CREATE INDEX IF NOT EXISTS idx_task_dependencies_predecessor
 -- loading_tips：表示順で引く（migrations/20260727_add_loading_tips.sql）
 CREATE INDEX IF NOT EXISTS idx_loading_tips_sort_order
   ON loading_tips(sort_order) WHERE is_deleted = false;
+
+-- ============================================================
+-- 日次バックアップ フェーズ1（migrations/20260916_add_backup.sql・docs/dev/backup-design.md）
+-- 表3本・RLS・関数3本。Storageバケット(backups)の作成とポリシーはマイグレーション側のみに
+-- 置く（admin-templatesバケットと同じ流儀。schema.sqlはpublicスキーマの定義を正本とする）。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS backup_runs (
+  id            bigserial PRIMARY KEY,
+  started_at    timestamptz NOT NULL DEFAULT now(),
+  finished_at   timestamptz,
+  trigger       text NOT NULL CHECK (trigger IN ('cron','manual')),
+  triggered_by  text,
+  status        text NOT NULL CHECK (status IN ('running','success','partial','failed')),
+  group_count   integer,
+  row_counts    jsonb NOT NULL DEFAULT '{}'::jsonb,
+  orphan_counts jsonb NOT NULL DEFAULT '{}'::jsonb,
+  bytes_written bigint,
+  duration_ms   integer,
+  deleted_count integer,
+  error_message text
+);
+
+CREATE TABLE IF NOT EXISTS backup_objects (
+  path        text PRIMARY KEY,
+  run_id      bigint REFERENCES backup_runs(id),
+  scope       text NOT NULL CHECK (scope IN ('full','group')),
+  group_id    text,
+  taken_at    timestamptz NOT NULL,
+  bytes       bigint NOT NULL,
+  sha256      text NOT NULL,
+  retention   text[] NOT NULL,
+  deleted_at  timestamptz
+);
+
+CREATE TABLE IF NOT EXISTS backup_exports (
+  id            bigserial PRIMARY KEY,
+  reported_at   timestamptz NOT NULL DEFAULT now(),
+  status        text NOT NULL CHECK (status IN ('success','failed')),
+  destination   text NOT NULL,
+  object_count  integer,
+  error_message text
+);
+
+CREATE INDEX IF NOT EXISTS idx_backup_runs_started_at ON backup_runs(started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_backup_objects_run_id ON backup_objects(run_id);
+CREATE INDEX IF NOT EXISTS idx_backup_objects_scope_group_taken_at
+  ON backup_objects(scope, group_id, taken_at DESC) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_backup_exports_reported_at ON backup_exports(reported_at DESC);
+
+ALTER TABLE backup_runs    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backup_objects ENABLE ROW LEVEL SECURITY;
+ALTER TABLE backup_exports ENABLE ROW LEVEL SECURITY;
+-- SELECTはsuper-adminのみ。書き込みポリシーは意図的に作らない
+-- （service_roleはRLSを迂回するため、書けるのはservice_roleだけになる。
+--  guest_ai_usage_daily / guest_ai_usage_global_daily と同じ流儀）。
+DROP POLICY IF EXISTS "backup_runs_read_super_admin" ON backup_runs;
+CREATE POLICY "backup_runs_read_super_admin" ON backup_runs
+  FOR SELECT TO authenticated USING (current_member_is_super_admin());
+DROP POLICY IF EXISTS "backup_objects_read_super_admin" ON backup_objects;
+CREATE POLICY "backup_objects_read_super_admin" ON backup_objects
+  FOR SELECT TO authenticated USING (current_member_is_super_admin());
+DROP POLICY IF EXISTS "backup_exports_read_super_admin" ON backup_exports;
+CREATE POLICY "backup_exports_read_super_admin" ON backup_exports
+  FOR SELECT TO authenticated USING (current_member_is_super_admin());
+
+-- backup_begin() / backup_finalize(p_run_id) / backup_snapshot(p_scope, p_group_id, p_run_id)
+-- 本文はmigrations/20260916_add_backup.sqlを正本とする（長大なため、ここでは同一定義を
+-- 再掲する。将来この機能を変更する場合は両ファイルを同時に更新すること）。
+
+CREATE OR REPLACE FUNCTION public.backup_begin(
+  p_trigger      text DEFAULT 'cron',
+  p_triggered_by text DEFAULT NULL
+)
+RETURNS TABLE(run_id bigint, group_ids text[])
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_backup_begin$
+DECLARE
+  v_run_id    bigint;
+  v_group_ids text[];
+BEGIN
+  IF p_trigger NOT IN ('cron', 'manual') THEN
+    RAISE EXCEPTION 'invalid trigger: %', p_trigger;
+  END IF;
+
+  SELECT array_agg(g.id ORDER BY g.id)
+  INTO v_group_ids
+  FROM public.groups g
+  WHERE g.is_deleted = false
+    AND g.is_invite_group = false;
+
+  v_group_ids := coalesce(v_group_ids, '{}'::text[]);
+
+  INSERT INTO public.backup_runs (trigger, triggered_by, status, group_count)
+  VALUES (p_trigger, p_triggered_by, 'running', array_length(v_group_ids, 1))
+  RETURNING id INTO v_run_id;
+
+  RETURN QUERY SELECT v_run_id, v_group_ids;
+END;
+$fn_backup_begin$;
+
+REVOKE ALL ON FUNCTION public.backup_begin(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.backup_begin(text, text) FROM authenticated;
+REVOKE ALL ON FUNCTION public.backup_begin(text, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.backup_begin(text, text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.backup_finalize(
+  p_run_id        bigint,
+  p_status        text DEFAULT 'success',
+  p_error_message text DEFAULT NULL
+)
+RETURNS text[]
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_backup_finalize$
+DECLARE
+  v_delete_paths text[];
+BEGIN
+  IF p_status NOT IN ('success', 'partial', 'failed') THEN
+    RAISE EXCEPTION 'invalid status: %', p_status;
+  END IF;
+
+  UPDATE public.backup_runs
+  SET finished_at   = now(),
+      status        = p_status,
+      error_message = p_error_message,
+      duration_ms   = extract(epoch FROM (now() - started_at)) * 1000
+  WHERE id = p_run_id;
+
+  UPDATE public.backup_objects o
+  SET retention = (
+    SELECT array_agg(DISTINCT tag)
+    FROM (
+      SELECT unnest(o.retention) AS tag
+      UNION
+      SELECT 'daily'
+      UNION ALL
+      SELECT 'weekly'
+      WHERE extract(isodow FROM (o.taken_at AT TIME ZONE 'Asia/Tokyo')) = 1
+      UNION ALL
+      SELECT 'monthly'
+      WHERE extract(day FROM (o.taken_at AT TIME ZONE 'Asia/Tokyo')) = 1
+      UNION ALL
+      SELECT 'quarterly'
+      WHERE extract(day   FROM (o.taken_at AT TIME ZONE 'Asia/Tokyo')) = 1
+        AND extract(month FROM (o.taken_at AT TIME ZONE 'Asia/Tokyo')) IN (1, 4, 7, 10)
+    ) tags
+  )
+  WHERE o.run_id = p_run_id
+    AND o.deleted_at IS NULL;
+
+  WITH ranked AS (
+    SELECT
+      o.path,
+      tag,
+      row_number() OVER (PARTITION BY o.scope, o.group_id, tag ORDER BY o.taken_at DESC) AS rnk
+    FROM public.backup_objects o
+    CROSS JOIN LATERAL unnest(o.retention) AS tag
+    WHERE o.deleted_at IS NULL
+  ),
+  limits (tag, lim) AS (
+    VALUES ('daily', 14), ('weekly', 8), ('monthly', 12), ('quarterly', 8)
+  ),
+  keep AS (
+    SELECT DISTINCT r.path
+    FROM ranked r
+    JOIN limits l ON l.tag = r.tag
+    WHERE r.rnk <= l.lim
+  )
+  SELECT array_agg(o.path)
+  INTO v_delete_paths
+  FROM public.backup_objects o
+  WHERE o.deleted_at IS NULL
+    AND o.path NOT IN (SELECT path FROM keep);
+
+  RETURN coalesce(v_delete_paths, '{}'::text[]);
+END;
+$fn_backup_finalize$;
+
+REVOKE ALL ON FUNCTION public.backup_finalize(bigint, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.backup_finalize(bigint, text, text) FROM authenticated;
+REVOKE ALL ON FUNCTION public.backup_finalize(bigint, text, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.backup_finalize(bigint, text, text) TO service_role;
+
+CREATE OR REPLACE FUNCTION public.backup_snapshot(
+  p_scope       text,
+  p_group_id    text DEFAULT NULL,
+  p_run_id      bigint DEFAULT NULL,
+  p_app_version text DEFAULT NULL
+)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_backup_snapshot$
+DECLARE
+  v_taken_at      timestamptz := now();
+  v_all_tables    text[];
+  v_parts         text;
+  v_sql           text;
+  v_tables        jsonb;
+  v_schema        jsonb;
+  v_row_counts    jsonb;
+  v_orphan_counts jsonb;
+  v_sha256        text;
+  v_result        jsonb;
+BEGIN
+  IF p_scope NOT IN ('full', 'group') THEN
+    RAISE EXCEPTION 'invalid scope: %', p_scope;
+  END IF;
+  IF p_scope = 'group' AND (p_group_id IS NULL OR p_group_id = '') THEN
+    RAISE EXCEPTION 'p_group_id is required when p_scope = group';
+  END IF;
+
+  EXECUTE 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ';
+
+  IF p_scope = 'full' THEN
+    SELECT array_agg(table_name ORDER BY table_name)
+    INTO v_all_tables
+    FROM information_schema.tables
+    WHERE table_schema = 'public'
+      AND table_type = 'BASE TABLE'
+      AND table_name NOT IN ('backup_runs', 'backup_objects', 'backup_exports');
+
+    SELECT string_agg(
+      format('%L, coalesce((SELECT jsonb_agg(to_jsonb(t)) FROM public.%I t), ''[]''::jsonb)', tbl, tbl),
+      ', '
+    )
+    INTO v_parts
+    FROM unnest(v_all_tables) AS tbl;
+
+    v_sql := format('SELECT jsonb_build_object(%s)', v_parts);
+    EXECUTE v_sql INTO v_tables;
+
+    SELECT jsonb_object_agg(c.table_name, c.cols)
+    INTO v_schema
+    FROM (
+      SELECT
+        table_name,
+        jsonb_agg(
+          jsonb_build_object(
+            'column', column_name,
+            'type', data_type,
+            'nullable', (is_nullable = 'YES')
+          ) ORDER BY ordinal_position
+        ) AS cols
+      FROM information_schema.columns
+      WHERE table_schema = 'public'
+        AND table_name = ANY(v_all_tables)
+      GROUP BY table_name
+    ) c;
+
+    SELECT jsonb_object_agg(s.t, s.c)
+    INTO v_orphan_counts
+    FROM (
+      SELECT 'objectives'::text AS t, count(*) AS c FROM public.objectives WHERE group_id IS NULL
+      UNION ALL SELECT 'key_results', count(*) FROM public.key_results WHERE group_id IS NULL
+      UNION ALL SELECT 'quarterly_objectives', count(*) FROM public.quarterly_objectives WHERE group_id IS NULL
+      UNION ALL SELECT 'task_forces', count(*) FROM public.task_forces WHERE group_id IS NULL
+      UNION ALL SELECT 'todos', count(*) FROM public.todos WHERE group_id IS NULL
+      UNION ALL SELECT 'kr_quarter_plans', count(*) FROM public.kr_quarter_plans WHERE group_id IS NULL
+      UNION ALL SELECT 'members', count(*) FROM public.members WHERE coalesce(array_length(group_ids, 1), 0) = 0
+      UNION ALL SELECT 'projects', count(*) FROM public.projects WHERE coalesce(array_length(group_ids, 1), 0) = 0
+      UNION ALL SELECT 'tasks', count(*) FROM public.tasks WHERE coalesce(array_length(group_ids, 1), 0) = 0
+    ) s
+    WHERE s.c > 0;
+
+  ELSE
+    WITH
+      home_members AS (
+        SELECT id FROM public.members WHERE group_id = p_group_id
+      ),
+      grp_objectives AS (
+        SELECT id FROM public.objectives WHERE group_id = p_group_id
+      ),
+      grp_krs AS (
+        SELECT id FROM public.key_results WHERE group_id = p_group_id
+      ),
+      grp_quarterly_objectives AS (
+        SELECT id FROM public.quarterly_objectives WHERE group_id = p_group_id
+      ),
+      grp_projects AS (
+        SELECT id FROM public.projects WHERE group_ids && ARRAY[p_group_id]
+      ),
+      grp_tasks AS (
+        SELECT id FROM public.tasks WHERE group_ids && ARRAY[p_group_id]
+      ),
+      grp_personal_krs AS (
+        SELECT id FROM public.personal_krs WHERE group_id = p_group_id
+      ),
+      grp_personal_kr_weeks AS (
+        SELECT id FROM public.personal_kr_weeks WHERE personal_kr_id IN (SELECT id FROM grp_personal_krs)
+      ),
+      grp_kr_sessions AS (
+        SELECT id FROM public.kr_sessions WHERE kr_id IN (SELECT id FROM grp_krs)
+      ),
+      grp_kr_notes AS (
+        SELECT id FROM public.kr_meeting_notes WHERE kr_id IN (SELECT id FROM grp_krs)
+      )
+    SELECT jsonb_build_object(
+      'groups', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.groups x WHERE x.id = p_group_id),
+      'members', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.members x WHERE x.group_ids && ARRAY[p_group_id]),
+      'objectives', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.objectives x WHERE x.id IN (SELECT id FROM grp_objectives)),
+      'key_results', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.key_results x WHERE x.id IN (SELECT id FROM grp_krs)),
+      'quarterly_objectives', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.quarterly_objectives x WHERE x.id IN (SELECT id FROM grp_quarterly_objectives)),
+      'task_forces', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_forces x WHERE x.group_id = p_group_id),
+      'todos', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.todos x WHERE x.group_id = p_group_id),
+      'projects', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.projects x WHERE x.id IN (SELECT id FROM grp_projects)),
+      'tasks', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.tasks x WHERE x.id IN (SELECT id FROM grp_tasks)),
+      'task_dependencies', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_dependencies x WHERE x.group_id = p_group_id),
+      'kr_quarter_plans', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_quarter_plans x WHERE x.group_id = p_group_id),
+      'personal_krs', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_krs x WHERE x.id IN (SELECT id FROM grp_personal_krs)),
+      'project_invites', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.project_invites x WHERE x.invite_group_id = p_group_id),
+
+      'personal_kr_months', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_months x WHERE x.personal_kr_id IN (SELECT id FROM grp_personal_krs)),
+      'personal_kr_weeks', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_weeks x WHERE x.personal_kr_id IN (SELECT id FROM grp_personal_krs)),
+      'personal_kr_week_tasks', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_week_tasks x WHERE x.week_id IN (SELECT id FROM grp_personal_kr_weeks)),
+      'personal_kr_memos', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_memos x WHERE x.personal_kr_id IN (SELECT id FROM grp_personal_krs)),
+      'personal_kr_outlooks', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_outlooks x WHERE x.personal_kr_id IN (SELECT id FROM grp_personal_krs)),
+      'personal_kr_review_drafts', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_kr_review_drafts x WHERE x.personal_kr_id IN (SELECT id FROM grp_personal_krs)),
+      'personal_period_reviews', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.personal_period_reviews x WHERE x.member_id IN (SELECT id FROM home_members)),
+      'member_widget_layouts', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.member_widget_layouts x WHERE x.member_id IN (SELECT id FROM home_members)),
+      'kr_sessions', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_sessions x WHERE x.id IN (SELECT id FROM grp_kr_sessions)),
+      'kr_meeting_notes', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_meeting_notes x WHERE x.id IN (SELECT id FROM grp_kr_notes)),
+      'okr_analyses', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.okr_analyses x WHERE x.kr_id IN (SELECT id FROM grp_krs) OR x.objective_id IN (SELECT id FROM grp_objectives)),
+      'kr_reports', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_reports x WHERE x.kr_id IN (SELECT id FROM grp_krs)),
+      'kr_declarations', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_declarations x WHERE x.session_id IN (SELECT id FROM grp_kr_sessions)),
+      'kr_note_tf_entries', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_note_tf_entries x WHERE x.note_id IN (SELECT id FROM grp_kr_notes)),
+      'milestones', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.milestones x WHERE x.project_id IN (SELECT id FROM grp_projects)),
+      'project_analyses', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.project_analyses x WHERE x.project_id IN (SELECT id FROM grp_projects)),
+      'task_task_forces', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_task_forces x WHERE x.task_id IN (SELECT id FROM grp_tasks)),
+      'task_projects', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_projects x WHERE x.task_id IN (SELECT id FROM grp_tasks)),
+      'project_task_forces', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.project_task_forces x WHERE x.project_id IN (SELECT id FROM grp_projects)),
+      'quarterly_kr_task_forces', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.quarterly_kr_task_forces x WHERE x.quarterly_objective_id IN (SELECT id FROM grp_quarterly_objectives)),
+      'member_tag_members', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.member_tag_members x WHERE x.member_id IN (SELECT id FROM home_members))
+    )
+    INTO v_tables;
+  END IF;
+
+  SELECT coalesce(jsonb_object_agg(e.key, jsonb_array_length(e.value)), '{}'::jsonb)
+  INTO v_row_counts
+  FROM jsonb_each(v_tables) AS e(key, value)
+  WHERE jsonb_array_length(e.value) > 0;
+
+  v_sha256 := encode(sha256(convert_to(v_tables::text, 'UTF8')), 'hex');
+
+  v_result := jsonb_build_object(
+    'meta', jsonb_strip_nulls(jsonb_build_object(
+      'app_version', p_app_version,
+      'taken_at', to_char(v_taken_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+      'scope', p_scope,
+      'group_id', p_group_id,
+      'table_count', (SELECT count(*) FROM jsonb_object_keys(v_tables)),
+      'row_counts', v_row_counts,
+      'sha256', v_sha256,
+      'generator', 'backup_snapshot@1'
+    )),
+    'tables', v_tables
+  );
+
+  IF p_scope = 'full' THEN
+    v_result := v_result || jsonb_build_object('schema', v_schema);
+  END IF;
+
+  IF p_scope = 'full' AND p_run_id IS NOT NULL THEN
+    UPDATE public.backup_runs
+    SET row_counts    = v_row_counts,
+        orphan_counts = coalesce(v_orphan_counts, '{}'::jsonb)
+    WHERE id = p_run_id;
+  END IF;
+
+  RETURN v_result;
+END;
+$fn_backup_snapshot$;
+
+REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM authenticated;
+REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.backup_snapshot(text, text, bigint, text) TO service_role;

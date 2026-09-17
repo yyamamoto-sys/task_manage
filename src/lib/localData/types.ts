@@ -556,6 +556,40 @@ export interface PersonalPeriodReview {
 }
 
 /**
+ * 日次バックアップ（docs/dev/backup-design.md が正本）：1回の実行記録。
+ * `backup_runs`（フェーズ1・supabase/migrations/20260916_add_backup.sql）に対応する。
+ */
+export interface BackupRun {
+  id: number;
+  started_at: string;
+  finished_at?: string | null;
+  trigger: "cron" | "manual";
+  triggered_by?: string | null;
+  status: "running" | "success" | "partial" | "failed";
+  group_count?: number | null;
+  bytes_written?: number | null;
+  duration_ms?: number | null;
+  deleted_count?: number | null;
+  error_message?: string | null;
+}
+
+/**
+ * 日次バックアップ：現在有効な（deleted_at IS NULL の）世代1件。
+ * `backup_objects` に対応する。
+ */
+export interface BackupObject {
+  path: string;
+  run_id?: number | null;
+  scope: "full" | "group";
+  group_id?: string | null;
+  taken_at: string;
+  bytes: number;
+  sha256: string;
+  retention: string[];
+  deleted_at?: string | null;
+}
+
+/**
  * プロジェクト招待（部署外メンバーの受け入れ）。docs/dev/project-invite-plan.md が正本。
  * 🔴 code_hash はこの型に含めない。クライアントには絶対に返さない列
  * （src/lib/supabase/projectInviteStore.ts が select で明示的に除外する）。

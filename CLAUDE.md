@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.106
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.107
 #
-最終更新：2026-08-27（v3.106）
+最終更新：2026-09-17（v3.107）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1124,6 +1124,7 @@ interface TaskChangeLog {
 | OKRモード：グループ側機能（①会議ノート／②セッション記録&分析／③レポート作成／なぜなぜ分析／クォーター計画タブ） | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 山本さんの判断で一旦白紙化。OKRモードは個人OKRのみになり、サイドバーのラボからも撤去した。コードは削除せず保管（`src/components/okr/ARCHIVED.md`参照）。旧クォーター計画タブは`kr_quarter_plans`（部署スコープ・Supabase）保存だった |
 | KRセッション freeform モード | 🗄️ **アーカイブ（v3.40・2026-08-10）** | 旧・戦略会議など OKR/TF が議題中心の自由形式会議用（`kr_sessions.session_type='freeform'`）。上記グループ側機能アーカイブに含む。DBテーブル・データはそのまま残す |
 | ローディングのヒント設定（`LoadingTipsSection`） | ✅ 実装済み（v3.13） | 設定画面の新カテゴリ「アプリ設定」→「ローディングのヒント」。全社スーパー管理者のみ。ローディング画面（データ読み込み中）に出す操作テクニックの一覧・並べ替え・編集・削除・追加。`loading_tips` テーブル（全社共通・group_idなし） |
+| バックアップ（`BackupSection`） | ✅ フェーズ1〜4実装済み（v3.107） | 設定画面「アプリ設定」→「バックアップ」。全社スーパー管理者のみ。日次バックアップ（`docs/dev/backup-design.md`）の直近の実行状況（`backup_runs`最新10件）・現在有効な世代一覧（`backup_objects`のdeleted_at IS NULL）を表示し、各世代を署名URL経由でダウンロードできる。「今すぐ実行」ボタンで`backup-daily` Edge Functionを手動実行（supabase-jsが現在セッションのJWTを自動付与）。管理画面バナー（`BackupHealthBanner`。`App.tsx`でadminにのみマウント）が一次バックアップ24時間超過／二次保管3日超過を検知して警告する（判定ロジックは`src/lib/backup/backupHealth.ts`）。フェーズ5（二次保管スクリプト・`.backup-destination-marker`・復元訓練）は未着手 |
 | マイページ（ラボ機能） | ✅ Phase 1（MVP・v3.15）＋Phase 2（configSchema駆動フォーム・v3.16）＋Phase 3（ウィジェット作成仕様書・v3.17）実装済み | サイドバー「🧪 ラボ」から「🧩 マイページ」で開く全画面オーバーレイ。自分専用のウィジェット画面（📌今週のタスク／🔥期限超過・滞留／👥自分の負荷／📊締切の見通し／📈完了ペース／📝メモ／⭐ピン留めプロジェクト／🕒最近更新されたタスク／⏳先行待ちのタスク／➕クイックタスク追加の10種）を追加・削除・並べ替え・サイズ変更できる。設定を持つウィジェットは編集モードの⚙からconfigSchema駆動の設定フォームを開ける。クイックタスク追加はホスト経由でappStore choke pointを通す書き込みアクションの実例。レイアウトは`member_widget_layouts`テーブル（本人のみRLS）に永続化。設計の経緯は`docs/dev/mypage-widgets-design.md`、自作ウィジェットの作り方は`docs/dev/widget-authoring.md`（Section 14.6参照） |
 | プロジェクト招待（PJ設定画面「招待」タブ／管理画面「プロジェクト招待」タブ／ログイン画面・`AccessDeniedScreen`の招待コード導線） | ✅ Phase 1〜3実装済み（v3.42〜v3.44）。**v3.49で発行UIをPJ設定画面へ統合**（旧`ProjectInviteModal.tsx`は撤去） | 社内の別部署の人を特定のPJ1件に招待する。発行・一覧・取り消し：PJ設定画面（下記）の「招待」タブ。管理：設定画面「組織」カテゴリ「プロジェクト招待」タブは部署横断の一覧表示として引き続き残す。受諾：ログイン画面の「招待コードをお持ちの方」（新規登録）または`AccessDeniedScreen`の同導線（既にセッションがある場合）。詳細はSection 25・`docs/dev/project-invite-plan.md` |
 | PJ設定画面（`ProjectSettingsModal`。PJカルテの「⚙ このPJの設定」から開く） | ✅ 実装済み（v3.49） | 今見ているPJ1件に絞った日常操作の入口。「基本情報」（名前・目的・貢献メモ・オーナー・期間・color_tag・ステータス。**クイック操作で1クリックの完了/アーカイブ/差し戻し**）／「招待」（発行・このPJの一覧・取り消し）／「関わるメンバー」（オーナー・タスク担当者・招待で参加した人の読み取り専用一覧。新しい紐づけテーブルは作らず既存データから`lib/project/projectMembers.ts`が組み立てる）の3タブ。**AdminViewの「作業設定→PJ」タブとの使い分け**：AdminViewは部署横断で全PJ・全ステータスを一覧編集する管理者向けの棚卸し画面として残す（削除もそちらのみ）。この設定画面はPJオーナー・関係者が自分の見ているPJだけを日常的に触るための入口。**基本情報の編集権限はAdminViewのPJ編集と同じ**（部署管理者/全社スーパー管理者。部署内にis_adminが1人もいなければ全員編集可のブートストラップ含む）で、権限が無い場合は読み取り表示になる。招待の発行は権限に関わらず全メンバー可（Section 25の決定を維持）。「関わるメンバー」タブは常に読み取り専用 |
@@ -1206,7 +1207,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
-- 最終更新：2026-08-27（v3.106）
+- 最終更新：2026-09-17（v3.107）
 
 ---
 
@@ -3630,6 +3631,37 @@ Section 46（v3.89）・47（v3.90）で作った未保存編集レジストリ�
 
 - 「今月の計画」欄の保存ボタンをdirty状態で活性/非活性にする改修（v3.93のMonthReviewBlockと同様のUI改善）は、今回の依頼（無言で消える経路を塞ぐこと）のスコープ外のため行っていない。`computeMonthPlanDirty()`はレジストリ登録のためだけに使用している。
 - ラボ系ビュー（グラフ/カレンダー/マイページ/体制図）や設定画面等、Section 47で既にguardedNavigate対象に含まれている遷移は変更していない。
+
+---
+
+## 53. 日次バックアップ フェーズ4（失敗通知・管理画面UI。v3.107・2026-09-17）
+
+**正本は [docs/dev/backup-design.md](docs/dev/backup-design.md)。** フェーズ1〜3（DB層の3表・3関数／Edge Function `backup-daily`／pg_cron登録）は完了済みで本番稼働中だったが、「失敗しても誰も気づかない」状態のままだった。フェーズ4はこれを解消する。
+
+### 作ったもの
+
+1. **管理画面「バックアップ」タブ**（`src/components/admin/BackupSection.tsx`。「アプリ設定」カテゴリ・super-admin限定・`LoadingTipsSection.tsx`と同じガード）。直近の実行状況（`backup_runs`最新10件）・現在有効な世代一覧（`backup_objects`の`deleted_at IS NULL`）を表示し、各世代に「ダウンロード」ボタンを付けた（④のEdge Functionから署名URLを取得して`window.open`）。「今すぐ実行」ボタンで手動実行できる（二重押しはローカルstateで防止）。
+2. **管理画面バナー**（`src/components/common/BackupHealthBanner.tsx`。`App.tsx`に`SchemaHealthBanner`と並べてマウント。同じ非ブロッキング取得・管理者限定・「閉じても次回読み込みでまた出す」流儀）。判定ロジックは`src/lib/backup/backupHealth.ts`の`resolveBackupHealth()`（純粋関数）に切り出した：
+   - 🔴 赤：`backup_runs`の最新successが24時間以上前（**一度も成功していない場合も赤にした**。設計書に明記は無いが、一次バックアップが一度も成功していない状態を放置しないための安全側の判断）
+   - 🟡 黄：`backup_exports`の最新successが3日以上前。**`backup_exports`が1件も無ければ何も出さない**（フェーズ5未実施のため。ここで警告すると常時点灯して無視される）
+   - 両方の条件を満たす場合は赤を優先（一次バックアップの停止の方が緊急度が高い）
+   - テーブル未適用・取得失敗時は黙って消えず「バックアップの状態を確認できません」を表示する（`SchemaHealthBanner`と同じ方針）
+3. **手動実行**：`supabase.functions.invoke("backup-daily", { body: {} })`を呼ぶだけで、supabase-jsが現在ログインセッションのアクセストークンを自動的に`Authorization: Bearer <token>`として付与する（`node_modules/@supabase/supabase-js`の`fetchWithAuth`実装で確認済み。ヘッダーを明示的に組み立てるコードは書いていない）。`backup-daily`内部の自前検証（`members.is_super_admin`）が唯一のガード（`backup-daily`は`verify_jwt: false`でデプロイされているためSupabase側のJWT検証は働かない。docs/dev/backup-design.md §3.2参照）。
+4. **新規Edge Function `supabase/functions/backup-export-urls/index.ts`**：super-adminのJWT（または、フェーズ5の二次保管スクリプト用に`x-cron-secret`＝`BACKUP_EXPORT_SECRET`。受け口のみ作り、今は未使用）を検証し、指定パスの署名URL（5分）と`backup_objects`のsha256/bytesを返すだけ。認証・エラー処理・`json()`ヘルパー・`toStorageKey()`は`backup-daily/index.ts`をそのまま踏襲した。
+5. **週次サマリ**（`backup-daily/index.ts`に追記。新しいcronは増やしていない）：実行の最後で「JSTで月曜なら」（`isJstMonday()`。`jstDateStr()`と同じ「+9時間してからUTC値として読む」変換を再利用）だけ、直近7日の`backup_runs`を集計（成功回数・容量・孤児件数の合計・削除件数の合計）し、`backup_exports`の最新successを二次保管の最終取得日として（空／未成功なら「未設定」）、既存の`notifyTeams()`でTeamsへ送る。週次サマリの取得・送信失敗は`try/catch`で囲み、日次バックアップ本体のレスポンス・statusには一切影響させない。**既存の[1]〜[6]の処理フローは1行も変更していない（追記のみ）。**
+
+### `backup-daily`のCORS対応（2026-09-17・統括の承認を得て追加実装）
+
+フェーズ4の初回実装時点では、`backup-daily/index.ts`は元々CORSヘッダー・OPTIONSプリフライト応答を一切持たず（pg_cronからのサーバー間呼び出しが主用途で、ブラウザからの手動実行は今回のフェーズ4で初めて追加されたため）、管理画面の「今すぐ実行」ボタンがブラウザから直接呼ぶと失敗する懸念をリスクとして報告していた。統括の承認を得て、`ai-consult/index.ts`と同じ`ALLOWED_ORIGINS`方式のCORSを`backup-daily/index.ts`にも追加した。
+
+- **追加した内容**：`ALLOWED_ORIGINS`（環境変数。本番設定済み）・`getCorsHeaders(origin)`をそのまま踏襲して追加。`Deno.serve`の先頭で`corsHeaders`を計算し、`OPTIONS`には`204`＋`corsHeaders`で応答する。既存の`json()`ヘルパーは`corsHeaders`を第3引数として受け取る形に変更し、ハンドラ内の全8箇所の呼び出し（`server misconfigured`／`Unauthorized`×4／`backup_begin failed`／最終成功レスポンス）に`corsHeaders`を渡すよう更新した。
+- **🔴🔴 pg_cronへの影響が無いことの確認**：`getCorsHeaders(null)`（Originヘッダーが無い＝pg_cron/pg_netからの呼び出し）は例外を投げず、`ALLOWED_ORIGINS`の先頭要素（無ければ`"*"`）にフォールバックするだけで、レスポンスヘッダーに何を載せるかが変わるのみ。CORSヘッダーはブラウザだけが検証するレスポンスのメタ情報であり、`pg_net`（サーバー間呼び出し）はこれを一切見ないため、Originの有無に関わらず認証・スナップショット取得・保存等の本体処理は今までどおり実行される。また`pg_net`は常に直接POSTするため`if (req.method === "OPTIONS")`分岐にも入らない。既存の`[1]〜[6]`の処理フロー・認証ロジック・レスポンスのbody・statusは一切変更していない（`json()`へ引数を1つ追加してヘッダーに反映しただけ）。
+- **`Access-Control-Allow-Headers`にai-consultの一覧＋`x-cron-secret`を追加**：この関数自身が`x-cron-secret`ヘッダーで認証を受け付けるため（`backup-export-urls/index.ts`と同じ一覧）。
+- **実機確認はしていない**（デプロイ・実行は行っていない）。`npx tsc --noEmit`・`npx vitest run`（168ファイル・1987件）は通過済みだが、Edge Function（Deno）はtscの対象外（`tsconfig.json`は`src`のみinclude）であり、Deno側の型チェックは未実施。デプロイ時は`supabase functions deploy backup-daily --no-verify-jwt`の再デプロイが必要（週次サマリの追記時と同様）。
+
+### 未着手（フェーズ5・スコープ外）
+
+二次保管スクリプト（`scripts/backup_export.ps1`）・`.backup-destination-marker`・タスクスケジューラ・復元訓練は今回作っていない。共有ライブラリの場所と権限が未定のため（docs/dev/backup-design.md §11 未決事項2b）。
 
 ---
 

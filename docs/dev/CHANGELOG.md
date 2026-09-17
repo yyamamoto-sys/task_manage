@@ -7054,5 +7054,56 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   実装前に全て赤くなることを確認済み。
 #   マイグレーション不要（DB変更なし）。
 #
-# 最終更新：2026-08-27（v3.106）
+# v3.107（2026-09-17）：日次バックアップ フェーズ4（失敗通知・管理画面UI。
+#   docs/dev/backup-design.md §12 フェーズ4）
+#   フェーズ1〜3（DB層・Edge Function backup-daily・pg_cron登録）は完了済みで本番稼働中
+#   だったが、失敗しても誰も気づけない状態だった。以下4点を実装した。
+#   ①管理画面「アプリ設定」に「バックアップ」タブを追加（src/components/admin/
+#   BackupSection.tsx。super-admin限定。LoadingTipsSection.tsxと同じガードの書き方）。
+#   直近の実行状況（backup_runs最新10件）・現在の世代一覧（backup_objectsのdeleted_at
+#   IS NULL）を表示し、各世代に署名URL経由のダウンロードボタンを付けた。
+#   ②管理画面バナー（src/components/common/BackupHealthBanner.tsx）をApp.tsxに追加
+#   （SchemaHealthBanner.tsxの隣・同じ流儀＝非ブロッキング取得・管理者のみ・閉じても
+#   次回読み込みでまた表示）。判定ロジックはsrc/lib/backup/backupHealth.ts
+#   （resolveBackupHealth・純粋関数）に切り出した：一次バックアップの最新successが
+#   24時間以上前、または二次保管（backup_exports）の最新successが3日以上前なら警告する。
+#   ただしbackup_exportsが1件も無い（フェーズ5未実施）場合は二次保管の警告を出さない
+#   （常時点灯して無視される状態を避けるため）。テーブル未適用・取得失敗時は黙って
+#   消えず「確認できません」を表示する。
+#   ③手動実行ボタン（BackupSection内）。supabase.functions.invoke("backup-daily",...)を
+#   呼ぶだけで、supabase-jsが現在のログインセッションのアクセストークンを自動的に
+#   Authorization: Bearer <token>として付与する（node_modules内のfetchWithAuth実装で
+#   確認済み）。ヘッダーを明示的に組み立てるコードは書いていない。backup-daily内部の
+#   自前検証（members.is_super_admin）が唯一のガード。二重押しはローカルstateで防止。
+#   ④新規Edge Function supabase/functions/backup-export-urls/index.ts。super-admin
+#   （またはフェーズ5用のx-cron-secret＝BACKUP_EXPORT_SECRET。受け口のみ・今は未使用）を
+#   検証し、指定パスの署名URL（5分）とbackup_objectsのsha256/bytesを返すだけ。
+#   backup-daily/index.tsの認証・エラー処理・json()ヘルパー・toStorageKey()をそのまま
+#   踏襲した。backup-daily と異なりCORS（ALLOWED_ORIGINS方式。ai-consult/index.tsと
+#   同じ）を実装した＝ブラウザから直接呼ぶ経路のため（backup-dailyはpg_cronからの
+#   呼び出しが主でCORSプリフライトが発生せず、この差を認識した上で追加した）。
+#   ⑤backup-daily/index.tsに週次サマリを追記（新しいcronは増やさない）。実行の最後で
+#   「JSTで月曜なら」（isJstMonday。jstDateStr()と同じ+9時間変換を再利用）だけ、直近7日の
+#   backup_runsを集計（成功回数・容量・孤児件数の合計・削除件数の合計）し、
+#   backup_exportsの最新successを二次保管の最終取得日として（空/未成功なら「未設定」）、
+#   既存のnotifyTeams()でTeamsへ送る。週次サマリの取得・送信失敗はtry/catchで囲み、
+#   日次バックアップ本体のレスポンス・statusには一切影響させない。既存の[1]〜[6]の
+#   処理フローは1行も変更していない（追記のみ）。
+#   🔴→✅ CORS対応：初回実装時点ではbackup-daily/index.tsが元々CORSヘッダー・OPTIONS
+#   プリフライト応答を一切持たず、ブラウザからの手動実行が失敗する懸念をリスクとして
+#   報告していたが、統括の承認を得てai-consult/index.tsと同じALLOWED_ORIGINS方式の
+#   CORSを追加した。getCorsHeaders(null)（pg_cron/pg_netにはOriginヘッダーが無い）は
+#   例外を投げずALLOWED_ORIGINSの先頭要素にフォールバックするだけで、CORSヘッダーは
+#   ブラウザのみが検証するためpg_net（サーバー間呼び出し）には一切影響しない。pg_netは
+#   常に直接POSTするためOPTIONS分岐にも入らない。既存の[1]〜[6]の処理フロー・認証
+#   ロジック・レスポンスのbody/statusは無変更（json()に第3引数corsHeadersを追加し
+#   全8箇所の呼び出しに反映しただけ）。実機確認はしていない。
+#   backupHealth.tsの判定：一次バックアップが一度も成功していない（レコードが1件も無い）
+#   場合も赤にした（設計書に明記は無いが、安全側の判断。CLAUDE.mdの該当箇所に理由を明記）。
+#   新規テスト：backupHealth.test.ts（10件。24時間ちょうど／23時間59分／25時間／
+#   レコード0件／backup_exports空／backup_exports記録ありだが未成功／3日ちょうど／
+#   2日23時間／赤黄同時発生時の優先順位／両方正常）。
+#   デプロイ・実行しての確認はしていない（ファイルを作るだけ）。
+#
+# 最終更新：2026-09-17（v3.107）
 
