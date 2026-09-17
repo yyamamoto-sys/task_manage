@@ -1,3 +1,16 @@
+-- 【RLSの書き方について（2026-09-17・実行時エラーを受けて修正）】
+-- 🔴 group_id（単数のtext）を配列と比較するとき、`group_id = ANY((SELECT 関数()))` とは書けない。
+-- ANY() は括弧の中身を「配列式」ではなく「サブクエリ」として解釈するため、
+--   ERROR: 42883 operator does not exist: text = text[]
+-- になる。CLAUDE.md Section 39 の「SECURITY DEFINER関数は (SELECT ...) で包む」は、
+-- group_ids && (SELECT 関数()) のような【配列同士】の比較でしか素直に使えない。
+-- 単数列では配列包含演算子 @> を使い、(SELECT 関数()) をスカラーサブクエリとして
+-- 左辺に置くことで、InitPlan化（クエリ全体で1回だけ評価）を保ったまま比較できる。
+--   (SELECT current_member_group_ids()) @> ARRAY[group_id]
+-- group_id が NULL の行は誰の配列にも含まれないため、明示的に IS NOT NULL で除外し、
+-- super_admin だけが見られるようにしてある。
+-- ============================================================
+
 -- ============================================================
 -- マイグレーション: entity_change_logs（タスク・PJの変更履歴＋Undo）
 -- 実行日: 2026-09-17
@@ -50,7 +63,7 @@ DROP POLICY IF EXISTS "entity_change_logs_select" ON entity_change_logs;
 CREATE POLICY "entity_change_logs_select" ON entity_change_logs
   FOR SELECT TO authenticated
   USING (
-    group_id = ANY((SELECT current_member_group_ids()))
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
     OR (SELECT current_member_is_super_admin())
   );
 
@@ -61,7 +74,7 @@ DROP POLICY IF EXISTS "entity_change_logs_insert" ON entity_change_logs;
 CREATE POLICY "entity_change_logs_insert" ON entity_change_logs
   FOR INSERT TO authenticated
   WITH CHECK (
-    group_id = ANY((SELECT current_member_group_ids()))
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
     OR (SELECT current_member_is_super_admin())
   );
 
@@ -76,11 +89,11 @@ DROP POLICY IF EXISTS "entity_change_logs_update" ON entity_change_logs;
 CREATE POLICY "entity_change_logs_update" ON entity_change_logs
   FOR UPDATE TO authenticated
   USING (
-    group_id = ANY((SELECT current_member_group_ids()))
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
     OR (SELECT current_member_is_super_admin())
   )
   WITH CHECK (
-    group_id = ANY((SELECT current_member_group_ids()))
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
     OR (SELECT current_member_is_super_admin())
   );
 

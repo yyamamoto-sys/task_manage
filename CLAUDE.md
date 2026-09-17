@@ -3022,6 +3022,39 @@ USING (group_ids && (SELECT current_member_group_ids()) OR (SELECT current_membe
 
 `projects_group`／`tasks_group`／`task_dependencies_group`は、いずれも`current_member_group_ids()`/`current_member_is_super_admin()`をSECURITY DEFINER関数として`(SELECT ...)`で包まずに直接呼んでおり、**同型の性能問題を抱えている可能性が高い**。ただしv3.80で実測により問題を確認できたのは`members`のみのため、今回はこの3ポリシーには手を入れていない（一度に触る範囲を広げない）。実際に性能問題が顕在化した場合は、同じ`(SELECT ...)`で包む対応を個別に検討すること。
 
+### 🔴 但し書き：単数列（text）を配列と比較するときは `= ANY((SELECT ...))` と書けない（2026-09-17に実際に踏んだ）
+
+`entity_change_logs`（v3.111）のRLSを次のように書いたところ、**SQL Editorでの適用が失敗した**。
+
+```sql
+-- ❌ 42883: operator does not exist: text = text[]
+group_id = ANY((SELECT current_member_group_ids()))
+```
+
+**`ANY()` は括弧の中身を「配列式」ではなく「サブクエリ」として解釈する。** そのため
+`(SELECT 関数())` を渡すと「1列N行を返すサブクエリ」とみなされ、`text`（group_id）と
+`text[]`（各行の値）を比較しようとして型エラーになる。
+
+本Sectionの `(SELECT ...)` で包む書き方は、**`group_ids && (SELECT 関数())` のような
+【配列同士】の比較でしか素直に使えない。**
+
+単数列では**配列包含演算子 `@>`** を使い、`(SELECT 関数())` をスカラーサブクエリとして
+左辺に置く。これならInitPlan化（クエリ全体で1回だけ評価）を保ったまま比較できる。
+
+```sql
+-- ✅ InitPlan化を保ったまま、単数列を配列と比較できる
+(group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
+OR (SELECT current_member_is_super_admin())
+```
+
+`group_id` が NULL の行はどの配列にも含まれないため、`IS NOT NULL` で明示的に除外し、
+super_adminだけが見られるようにしている（書かないと判定がNULLになり挙動が読みにくい）。
+
+**なお、既存の `objectives` / `key_results` / `task_forces` / `todos` 等は
+`group_id = ANY(current_member_group_ids())`（包まない形）のままである。** これらは
+Section 39制定前のもので、包む場合は上記の `@>` 形式に書き換える必要がある
+（`ANY((SELECT ...))` にすると同じ型エラーで適用できない）。
+
 ### このルールは新しいRLSポリシーを書くとき必ず確認する
 
 - [ ] USING/WITH CHECK句でSECURITY DEFINER関数を呼んでいるか？ → `(SELECT ...)`で包んだか？
