@@ -7223,5 +7223,30 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   合計2105件が全通過。npx tsc --noEmitも通過。実機確認・マイグレーション適用は
 #   未実施（山本さんが実施）。
 #
-# 最終更新：2026-09-17（v3.111）
+# v3.112（2026-09-17）：ゲストAIの復旧と、それに伴って露出した9テーブルのRLS修正
+#
+# * 発端：利用者から「サンプルモードでAIの資料インプットが使えない」。原因はSupabaseの
+#   Anonymous Sign-Insが無効（422 anonymous_provider_disabled）。v3.29で実装以来、
+#   約1.5か月間ずっと動いていなかった。コードは正しく、外部設定の漏れ。
+# * 🔴 有効化した瞬間、別の場所の既知の弱点が危険になった。9テーブル
+#   （quarterly_objectives / quarterly_kr_task_forces / kr_sessions / kr_declarations /
+#   member_tags / kr_meeting_notes / kr_note_tf_entries / okr_analyses / kr_reports）が
+#   「認証さえ通れば誰でも読み書き可」のまま残っており、誰でも匿名JWTを取得して
+#   実データ59行を読み書きできる状態になった。
+# * 修正（20260917c_block_anonymous_on_open_tables.sql）：9テーブルのポリシーを
+#   current_member_id() IS NOT NULL（＝membersに登録された人だけ）に置き換えた。
+#   匿名ユーザーは auth.email() が NULL のため必ず弾かれる。
+# * 🔴 修正を3回外した。rev1=JWTに is_anonymous クレームが入るか確認せず書き、弾く条件が
+#   全員を通す条件になっていた。rev2=DROP POLICYを名前決め打ちにし、DB実体に残っていた
+#   authenticated_all を消し損ねた（PERMISSIVEはORで評価されるため緩い方が勝つ）。
+#   rev3=ネストしたDOブロックがSQL Editorで42601。rev4で成功。
+# * 検証：本物の匿名JWTでREST APIを叩き、実データのある6テーブルすべてが [] を返すことを
+#   確認。登録済みユーザーからは今までどおり読める（kr_declarations 30件）。
+# * CLAUDE.md Section 58 に、グランドルール「機能を有効にする前に、それが今まで
+#   成り立っていた前提を壊さないかを確認する」と、確立した確認手順・外部前提の
+#   チェックリストを記録した。
+# * 残課題：9テーブルの部署スコープ化（本来の「第2弾」）／groups.groups_select（qual=true）／
+#   loading_tips.loading_tips_read（qual=true）。
+#
+# 最終更新：2026-09-17（v3.112）
 
