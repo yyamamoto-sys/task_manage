@@ -549,7 +549,7 @@ Free には物理バックアップが無いため、**新しい Supabase プロ
 | 論点 | 何が起きるか | 対処 |
 |---|---|---|
 | **トリガー** | `sync_*_group_id(s)` が親から `group_id` を再計算し、`updated_at` トリガーが復元時刻で上書きする | 復元セッションで `SET session_replication_role = replica;` を使いトリガーを止める。終了後に戻す。止めた場合 `tasks.group_ids` 等はスナップショット当時の値がそのまま入る（意図どおり） |
-| **FK の順序** | 子を先に入れると FK 違反で止まる | 親→子の順。`groups` → `members` → `objectives` → `key_results` → `task_forces` → `todos` → `projects` → `tasks` → 中間表・層B の順。`task_dependencies` は `tasks` の後 |
+| **FK の順序** | 🔴 **2026-09-17の訓練で、この記述は誤りだと判明した。** 同一テーブル内の自己参照（`tasks.parent_task_id`）は、**1つの INSERT 文で親子を同時に入れるなら順序を気にしなくてよい**（PostgreSQL の FK は行ごとではなく**文の終わり**に検証されるため。子を先に並べた INSERT を実際に流して成功を確認した） | **テーブルをまたぐ FK は別**で、必然的に文が分かれるため順序が要る：`groups` → `members` → `objectives` → `key_results` → `task_forces` → `todos` → `projects` → `tasks` → 中間表・層B。`task_dependencies` は `tasks` の後 |
 | **既存行との衝突** | 主キー重複で INSERT が失敗する | 原則は `INSERT ... ON CONFLICT (id) DO UPDATE`（上書き復元）。「消えた行だけ戻す」なら `DO NOTHING` |
 | **スキーマ差分** | 古いスナップショットに無い NOT NULL 列がある／今は無い列がある | `meta.schema` と現行 `information_schema.columns` を突き合わせて差分列を列挙する。無い列は DEFAULT に任せ、消えた列は落とす。**差分がある復元は必ず dev で先に流す** |
 | **投入方法** | JSON から表へ | `INSERT INTO tasks SELECT * FROM jsonb_populate_recordset(NULL::tasks, $1::jsonb)`。列が一致しない場合は `jsonb_to_recordset` で列を明示 |
@@ -558,6 +558,17 @@ Free には物理バックアップが無いため、**新しい Supabase プロ
 ### 四半期ごとの復元訓練
 
 **四半期に1回、実際に復元する。** 復元を試したことがないバックアップは、あるとは言えない。
+
+✅ **第1回を 2026-09-17 に dev で実施した。手順は [restore-runbook.md](./restore-runbook.md) に記録済み。**
+
+3ケース（①物理削除からの復元 ②上書き事故からの復元 ③親子構造の復元）がすべて成功し、次が実証された。
+
+- `alter table ... disable trigger user` は Supabase の SQL Editor で**権限エラーなく通る**（`session_replication_role` は不要）
+- それでも **FK 制約は生きている**（存在しない親を参照する更新は 23503 で弾かれた）
+- トリガーを止めれば `updated_at` と `group_ids` が保持される。ただし上書き復元では `updated_at = excluded.updated_at` の明示が必要
+- 🔴 **上記の「FK の順序」に関する当初の記述は誤りだった**（1文なら順序不要）。**実機で試さなければ、存在しない問題への対策を手順書に書き続けていた**
+
+未検証で残ったもの（次回の訓練で潰す）：部署別ファイルからの復元／テーブルをまたぐ復元の順序／スキーマ差分がある状態での復元／プロジェクトごと失われた場合の復旧。
 
 **Free は組織あたり2プロジェクトが上限で、dev/prod で埋まっている。** 訓練用プロジェクトは作れないため、**dev プロジェクト内に `restore_drill` スキーマを作り、そこへ `schema.sql` ＋ JSON を流す**方式で行う。dev の開発用データを壊さずに済み、`search_path` を切り替えるだけで検証できる。訓練結果（所要時間・つまずいた点・スキーマ差分の有無）を restore-runbook.md へ追記する。
 
