@@ -7,6 +7,8 @@
 // - risk / no_tasks / deadline_risk → タスクのcommentに追記
 // - scope_reduce / pause → 論理削除（is_deleted=true）
 // - milestone → errorを返す
+// - bulk_rename / bulk_status → needs_confirmationを返す（CLAUDE.md Section 56参照。
+//   bulk_renameはAIの find/replace から replaceInName() で実際の新名を算出する）
 //
 // ❌ 物理削除は絶対に行わない（CLAUDE.md Section 4参照）
 //
@@ -35,6 +37,8 @@ import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
 import { formatErrorForUser } from "../errorMessage";
 import { toDate, addDays, toDateStr } from "../date";
 import { sortTaskIdsByDependencyOrder } from "../dependencies/topoSort";
+import { TASK_STATUS_LABEL } from "../taskMeta";
+import { buildBulkRenamePlan, buildBulkExclusionSummary, buildBulkStatusPlan } from "./bulkEditPlan";
 
 // ===== 型定義 =====
 
@@ -80,6 +84,8 @@ function buildSnapshotLabel(actionType: UIProposal["action_type"], taskCount: nu
     case "scope_reduce":    return `スコープ縮小 ${suffix}`;
     case "pause":           return `一時停止 ${suffix}`;
     case "add_task":        return `タスク追加 ${suffix}`;
+    case "bulk_rename":     return `一括リネーム ${suffix}`;
+    case "bulk_status":     return `一括ステータス変更 ${suffix}`;
     default:                return `変更 ${suffix}`;
   }
 }
@@ -92,7 +98,13 @@ function buildWarning(failures: string[]): string | undefined {
 
 export interface ConfirmationDialog {
   proposal_id: string;
-  action_type: "date_change" | "assignee" | "scope_reduce" | "pause" | "add_task" | "add_project";
+  action_type: "date_change" | "assignee" | "scope_reduce" | "pause" | "add_task" | "add_project" | "bulk_rename" | "bulk_status";
+  /**
+   * bulk_rename / bulk_status では、ConfirmationItem を次の意味で流用する：
+   * task_id=対象タスクUUID／task_name=タスク名／current_value=変更前（名前 or ステータスラベル）／
+   * suggested_value=変更後（新しい名前 or ステータスラベル）。scope_reduce/pauseがPJ UUIDを
+   * task_idに流用しているのと同じ既存の流儀（本ファイル内コメント参照）。
+   */
   items: ConfirmationItem[];
   /** date_change 用：プロジェクト終了日の変更 */
   pj_end_date_items?: PjEndDateItem[];
@@ -110,6 +122,16 @@ export interface ConfirmationDialog {
   new_project?: { name: string; purpose: string };
   /** add_project 用：新規PJに紐づく初期タスク（NewTaskItem を流用。project_id は新規PJなので未確定＝空） */
   new_project_task_items?: NewTaskItem[];
+  /** bulk_rename 用：置換前の文字列（表示用） */
+  bulk_find?: string;
+  /** bulk_rename 用：置換後の文字列（表示用） */
+  bulk_replace?: string;
+  /** bulk_status 用：変更後のステータス（実際の反映に使う実データ。items内はラベル表示のみ） */
+  bulk_new_status?: Task["status"];
+  /** bulk_rename 用：自動除外した件数・理由のまとめ（無ければ表示しない） */
+  bulk_excluded_summary?: string;
+  /** bulk_rename / bulk_status 共通：対象が50件を超えるときtrue（警告表示用） */
+  bulk_over_limit?: boolean;
 }
 
 export interface NewTaskItem {
@@ -609,6 +631,94 @@ export async function applyProposal(
     };
   }
 
+  // ===== bulk_rename: 置換ルール（find/replace）から実際の新名を算出し、確認ダイアログを返す =====
+  // 🔴 設計意図（CLAUDE.md Section 56）：AIには変更後のタスク名を1件ずつ書かせない。
+  // find/replaceという「置換ルール」だけを返させ、実際の置換は replaceInName() で
+  // アプリ側が行う。これにより「AIが見つけた対象」と「実際に書き込む文字列」が
+  // 構造的にずれない（書き間違い・要約・全角半角の揺れの混入を防ぐ）。
+  if (action_type === "bulk_rename") {
+    if (!proposal.find) {
+      return { type: "error", message: "置換前の文字列（find）が指定されていません" };
+    }
+    const replace = proposal.replace ?? "";
+
+    const resolved: { id: string; name: string }[] = [];
+    for (const shortId of proposal.target_task_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
+      const task = getTaskPreview(uuid);
+      if (!task) continue;
+      resolved.push({ id: uuid, name: task.name });
+    }
+    if (resolved.length === 0) {
+      return { type: "error", message: "対象タスクが見つかりませんでした" };
+    }
+
+    const plan = buildBulkRenamePlan(resolved, proposal.find, replace);
+    if (plan.items.length === 0) {
+      return { type: "error", message: "置換の結果、変更対象になるタスクがありませんでした（名前が空になる／変化しないため全て除外されました）" };
+    }
+
+    const items: ConfirmationItem[] = plan.items.map(i => ({
+      task_id: i.task_id,
+      task_name: i.task_name,
+      current_value: i.task_name,
+      suggested_value: i.new_name,
+    }));
+
+    return {
+      type: "needs_confirmation",
+      dialog: {
+        proposal_id: proposal.proposal_id,
+        action_type: "bulk_rename",
+        items,
+        bulk_find: proposal.find,
+        bulk_replace: replace,
+        bulk_excluded_summary: buildBulkExclusionSummary(plan.excluded),
+        bulk_over_limit: plan.overLimit,
+      },
+    };
+  }
+
+  // ===== bulk_status: 確認ダイアログを返す =====
+  if (action_type === "bulk_status") {
+    if (!proposal.new_status) {
+      return { type: "error", message: "変更後のステータス（new_status）が指定されていません" };
+    }
+
+    const resolved: { id: string; name: string; status: Task["status"] }[] = [];
+    for (const shortId of proposal.target_task_ids) {
+      const uuid = resolveUUID(shortId, shortIdMap);
+      if (!uuid) continue;
+      const t = useAppStore.getState().tasks.find(x => x.id === uuid);
+      if (!t) continue;
+      resolved.push({ id: uuid, name: t.name, status: t.status });
+    }
+    if (resolved.length === 0) {
+      return { type: "error", message: "対象タスクが見つかりませんでした" };
+    }
+
+    const plan = buildBulkStatusPlan(resolved);
+    const newStatus = proposal.new_status;
+    const items: ConfirmationItem[] = plan.items.map(i => ({
+      task_id: i.task_id,
+      task_name: i.task_name,
+      current_value: TASK_STATUS_LABEL[i.current_status],
+      suggested_value: TASK_STATUS_LABEL[newStatus],
+    }));
+
+    return {
+      type: "needs_confirmation",
+      dialog: {
+        proposal_id: proposal.proposal_id,
+        action_type: "bulk_status",
+        items,
+        bulk_new_status: newStatus,
+        bulk_over_limit: plan.overLimit,
+      },
+    };
+  }
+
   return { type: "error", message: "未対応のアクションタイプです" };
 }
 
@@ -742,6 +852,49 @@ export async function applyProposalWithConfirmation(
         // 【既存挙動を維持】assigneeは1タスクにつき2件のoperationを積む（assignee_member_id/
         // assignee_member_ids）ため、operations.lengthはタスク数の2倍になる（移行前から同じ）。
         label: buildSnapshotLabel("assignee", operations.length, 0),
+        appliedAt: now,
+        operations,
+      };
+      return { type: "success", snapshot, warning: buildWarning(failures) };
+    }
+
+    // ===== bulk_rename / bulk_status: チェックが付いている項目だけ反映 =====
+    // undoは既存の task_field オペレーション（name/status）をそのまま使う（undoApply.tsの
+    // 汎用フィールド復元がそのまま効くため、bulk専用のUndo処理は追加していない）。
+    if (dialog.action_type === "bulk_rename" || dialog.action_type === "bulk_status") {
+      const operations: UndoOperation[] = [];
+      const failures: string[] = [];
+
+      for (const item of dialog.items) {
+        // 確認ダイアログでチェックを外した項目（"1"以外）は対象から除外する
+        if (confirmedValues[item.task_id] !== "1") continue;
+
+        const task = useAppStore.getState().tasks.find(t => t.id === item.task_id);
+        if (!task) continue;
+
+        try {
+          if (dialog.action_type === "bulk_rename") {
+            const oldName = task.name;
+            await useAppStore.getState().saveTask({ ...task, name: item.suggested_value, updated_by: currentUserId });
+            operations.push({ type: "task_field", taskId: item.task_id, field: "name", oldValue: oldName });
+          } else {
+            const oldStatus = task.status;
+            await useAppStore.getState().saveTask({ ...task, status: dialog.bulk_new_status!, updated_by: currentUserId });
+            operations.push({ type: "task_field", taskId: item.task_id, field: "status", oldValue: oldStatus });
+          }
+        } catch (e) {
+          failures.push(formatErrorForUser(item.task_name, e));
+        }
+      }
+
+      if (operations.length === 0 && failures.length > 0) {
+        const label = dialog.action_type === "bulk_rename" ? "一括リネームに失敗しました" : "一括ステータス変更に失敗しました";
+        return { type: "error", message: formatWithLabel(label, failures) };
+      }
+
+      const snapshot: UndoSnapshot = {
+        id: generateId(),
+        label: buildSnapshotLabel(dialog.action_type, operations.length, 0),
         appliedAt: now,
         operations,
       };

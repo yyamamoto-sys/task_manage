@@ -22,7 +22,7 @@ const RESPONSE_FORMAT = `
       "proposal_id": "prop_001",
       "title": "提案のタイトル",
       "description": "提案の詳細説明",
-      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone" | "info" | "add_task" | "add_project",
+      "action_type": "date_change" | "assignee" | "risk" | "no_tasks" | "deadline_risk" | "scope_reduce" | "pause" | "milestone" | "info" | "add_task" | "add_project" | "bulk_rename" | "bulk_status",
       "target_task_ids": ["task_001", "task_002"],
       "target_pj_ids": ["pj_001"],
       "suggested_date": "YYYY-MM-DD",
@@ -38,7 +38,10 @@ const RESPONSE_FORMAT = `
       ],
       "new_subtasks": [
         { "name": "子タスク名", "suggested_assignee": "メンバーのshort_name", "suggested_start_date": "YYYY-MM-DD", "suggested_due_date": "YYYY-MM-DD", "suggested_description": "タスクの詳細メモ（任意）" }
-      ]
+      ],
+      "find": "置換前の文字列（bulk_rename専用）",
+      "replace": "置換後の文字列（bulk_rename専用）",
+      "new_status": "todo" | "in_progress" | "done" | "on_hold" | "cancelled"
     }
   ],
   "follow_up_suggestions": [
@@ -79,6 +82,15 @@ const RESPONSE_FORMAT = `
   **add_project 提案を出す前に、原則として下記「## 新規PJ作成のヒアリング・プロトコル」に従い、不足している要点を短く確認すること。** ヒアリングを終えた（または不要と判断した）段階で add_project 提案を1件返す。
   いったん提案を出すと決めたら、情報が多少不足していても文脈から妥当なPJ名・目的・初期タスクの「たたき台」を埋めて必ず1件返すこと（ユーザーはカードの「${BTN_CONFIRM_CREATE}」ボタンを押すと編集・確認画面が開き、「${BTN_APPLY_CONFIRMED}」ボタンで作成できる。AIが案内するときは「「${BTN_CONFIRM_CREATE}」を押して内容を確認してください」と書くこと）。
   目的が未確定のまま提案する場合は description に「（仮）」と添えて妥当な目的案を書き、初期タスクも一般的な立ち上げタスク（要件整理・関係者確認・スケジュール作成 等）でたたき台を作る。
+- bulk_rename: 複数タスクの名前を一括で置換する提案（needs_confirmation=trueにすること）。
+  **【最重要】変更後のタスク名を1件ずつ書いてはいけない。** find（置換前の文字列）と replace（置換後の文字列）の「置換ルール」だけを返すこと。実際の新しい名前はアプリ側が単純な部分文字列置換で算出する（AIが1件ずつ書き直すと、書き間違い・勝手な要約・全角半角の揺れが混入するため）。
+  target_task_ids に対象タスクのshortIdを全て入れる（「見つけた対象」を返すのがAIの役割で、名前を書き換えるのはアプリの役割）。
+  findが含まれない・置換後に名前が空文字になるタスクは、アプリ側の確認画面で自動的に対象から除外される（除外を見越して事前にtarget_task_idsを絞り込もうとしなくてよい。多少広めに対象を含めても安全）。
+  title は「『（find）』を『（replace）』に一括変更」のような簡潔な要約、description に対象の見つけ方・変更理由を書く。suggested_assignee・suggested_date等の日付系フィールドは使わない（空でよい）。
+  例：ユーザーが「『第2回』と付いているタスクを全部『第3回』にして」と言ったら、該当タスクを探して target_task_ids に入れ、find="第2回"、replace="第3回" を返す。
+- bulk_status: 複数タスクのステータスを一括で変更する提案（needs_confirmation=trueにすること）。
+  new_status に "todo"（ToDo） / "in_progress"（進行中） / "done"（完了） / "on_hold"（保留） / "cancelled"（中止） のいずれか1つを指定する。
+  target_task_ids に対象タスクのshortIdを全て入れる。
 
 ## 新規PJ作成のヒアリング・プロトコル
 

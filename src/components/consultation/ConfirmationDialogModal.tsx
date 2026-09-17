@@ -185,6 +185,9 @@ export function ConfirmationDialogModal({
   // - scope_reduce / pause: 確認のみでユーザー入力は不要
   const isAddTask = dialog.action_type === "add_task";
   const isAddProject = dialog.action_type === "add_project";
+  const isBulkRename = dialog.action_type === "bulk_rename";
+  const isBulkStatus = dialog.action_type === "bulk_status";
+  const isBulkAction = isBulkRename || isBulkStatus;
   // add_task に子タスクが付く＝階層化（親＋子の一括作成）
   const isHierarchy = isAddTask && (dialog.new_subtask_items ?? []).length > 0;
   const activeMembers = active(members);
@@ -197,6 +200,10 @@ export function ConfirmationDialogModal({
       }
       if (isDeleteAction) {
         return {};
+      }
+      // bulk_rename / bulk_status：既定は全項目チェック済み（"1"=対象に含める）
+      if (isBulkAction) {
+        return Object.fromEntries(dialog.items.map((item) => [item.task_id, "1"]));
       }
       if (isAddTask) {
         const entries: [string, string][] = [];
@@ -304,13 +311,17 @@ export function ConfirmationDialogModal({
               ? "新規プロジェクト作成の確認"
               : isAddTask
                 ? (isHierarchy ? "タスク階層化の確認" : "タスク追加の確認")
-                : isDateChange
-                  ? "日程変更の確認"
-                  : isDeleteAction
-                    ? dialog.action_type === "pause"
-                      ? "一時停止の確認"
-                      : "スコープ縮小の確認"
-                    : "担当者変更の確認"}
+                : isBulkRename
+                  ? "タスク名の一括変更の確認"
+                  : isBulkStatus
+                    ? "ステータスの一括変更の確認"
+                    : isDateChange
+                      ? "日程変更の確認"
+                      : isDeleteAction
+                        ? dialog.action_type === "pause"
+                          ? "一時停止の確認"
+                          : "スコープ縮小の確認"
+                        : "担当者変更の確認"}
           </div>
           <button
             onClick={onClose}
@@ -343,10 +354,39 @@ export function ConfirmationDialogModal({
                 ? (isHierarchy
                     ? `親タスク（大分類）とその子タスクを作成します。内容を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`
                     : `以下の内容でタスクを新規作成します。内容を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`)
-                : isDeleteAction
-                  ? `以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「${BTN_APPLY_CONFIRMED}」を押してください。`
-                  : `以下の内容で反映します。値を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`}
+                : isBulkRename
+                  ? `対象：${dialog.items.length}件。除外したい項目はチェックを外してから「${BTN_APPLY_CONFIRMED}」を押してください。`
+                  : isBulkStatus
+                    ? `対象：${dialog.items.length}件。除外したい項目はチェックを外してから「${BTN_APPLY_CONFIRMED}」を押してください。`
+                    : isDeleteAction
+                      ? `以下の対象を論理削除します。元に戻すには変更履歴から復元が必要です。内容を確認してから「${BTN_APPLY_CONFIRMED}」を押してください。`
+                      : `以下の内容で反映します。値を確認・修正してから「${BTN_APPLY_CONFIRMED}」を押してください。`}
           </div>
+
+          {/* 一括変更の警告バナー（50件超・自動除外の要約） */}
+          {isBulkAction && dialog.bulk_over_limit && (
+            <div
+              style={{
+                marginBottom: "10px", padding: "8px 10px", fontSize: "11px",
+                background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+                border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)",
+                fontWeight: "500",
+              }}
+            >
+              ⚠ 対象が{dialog.items.length}件と多数です。内容をよく確認してから実行してください。
+            </div>
+          )}
+          {isBulkRename && dialog.bulk_excluded_summary && (
+            <div
+              style={{
+                marginBottom: "10px", padding: "8px 10px", fontSize: "11px",
+                background: "var(--color-bg-secondary)", color: "var(--color-text-tertiary)",
+                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+              }}
+            >
+              ℹ {dialog.bulk_excluded_summary}
+            </div>
+          )}
 
           {/* 一括シフトボタン */}
           {isDateChange && dialog.shift_days && (
@@ -506,7 +546,9 @@ export function ConfirmationDialogModal({
             ))}
 
             {/* タスク期日 */}
-            {dialog.items.map((item) => (
+            {dialog.items.map((item) => {
+              const isIncluded = isBulkAction ? confirmedValues[item.task_id] === "1" : true;
+              return (
               <div
                 key={item.task_id}
                 style={{
@@ -514,17 +556,31 @@ export function ConfirmationDialogModal({
                   background: "var(--color-bg-secondary)",
                   borderRadius: "var(--radius-md)",
                   border: `1px solid ${isDeleteAction ? "var(--color-border-warning)" : "var(--color-border-primary)"}`,
+                  opacity: isBulkAction && !isIncluded ? 0.5 : 1,
                 }}
               >
                 <div
                   style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
                     fontSize: "12px",
                     fontWeight: "500",
                     color: "var(--color-text-primary)",
                     marginBottom: "6px",
                   }}
                 >
-                  {item.task_name}
+                  {isBulkAction && (
+                    <input
+                      type="checkbox"
+                      checked={isIncluded}
+                      onChange={(e) =>
+                        setConfirmedValues((prev) => ({ ...prev, [item.task_id]: e.target.checked ? "1" : "0" }))
+                      }
+                      style={{ cursor: "pointer", flexShrink: 0 }}
+                    />
+                  )}
+                  <span>{item.task_name}</span>
                 </div>
                 <div
                   style={{
@@ -532,6 +588,7 @@ export function ConfirmationDialogModal({
                     alignItems: "center",
                     gap: "8px",
                     fontSize: "11px",
+                    paddingLeft: isBulkAction ? "22px" : 0,
                   }}
                 >
                   <span style={{ color: "var(--color-text-tertiary)" }}>
@@ -539,9 +596,9 @@ export function ConfirmationDialogModal({
                   </span>
                   <span style={{ color: "var(--color-text-tertiary)" }}>→</span>
 
-                  {/* scope_reduce / pause: 変更なし（確認のみ） */}
-                  {isDeleteAction ? (
-                    <span style={{ color: "var(--color-text-warning)", fontWeight: "500" }}>
+                  {/* scope_reduce / pause: 変更なし（確認のみ） / bulk_rename・bulk_status: ルールから算出済みの固定値（確認のみ） */}
+                  {isDeleteAction || isBulkAction ? (
+                    <span style={{ color: isBulkAction ? "var(--color-text-info)" : "var(--color-text-warning)", fontWeight: "500" }}>
                       {item.suggested_value}
                     </span>
                   ) : isDateChange ? (
@@ -581,7 +638,8 @@ export function ConfirmationDialogModal({
                   )}
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 

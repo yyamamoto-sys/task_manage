@@ -7146,5 +7146,38 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * テストは「一般メンバーが編集できること」を固定する内容に書き換えた（5件）。
 #   npx tsc --noEmit・該当テストは通過。実機確認は未実施。
 #
-# 最終更新：2026-09-17（v3.109）
+# v3.110（2026-09-17）：AI相談から一括リネーム・一括ステータス変更をできるようにする
+#
+# * 利用者が「『第2回』と名前がついているものはすべて『第3回』に変更したい」とAI相談で
+#   依頼したところ、AIは対象タスクを正しく見つけた上で「一括リネームには対応していない」
+#   と返した。提案を見つける力はあるのに実行する手段が無かったのが原因。
+# * action_typeに bulk_rename（タスク名の一括置換）と bulk_status（ステータスの一括変更）
+#   を追加。🔴 最重要の設計判断：AIには変更後のタスク名を1件ずつ書かせない。find（置換前）
+#   と replace（置換後）の「置換ルール」だけを返させ、実際の新しい名前は
+#   duplicateSelectedTasks.ts の replaceInName()（単純な部分文字列一致・split/join。
+#   タスク複製機能で実績あり）でアプリ側が機械的に算出する。書き間違い・要約・全角半角の
+#   揺れの混入を構造的に防ぐ。
+# * 安全装置を src/lib/ai/bulkEditPlan.ts の純粋関数に切り出してテスト（11件）：
+#   ①対象50件超は警告（実行は妨げない）②置換後に空文字になるタスクは自動除外
+#   ③置換しても変化しないタスクは自動除外（②③はbulk_renameのみ）④除外があれば件数・
+#   理由を確認ダイアログに表示。
+# * 両方とも needs_confirmation を返す（date_change/assigneeと同じ流儀）。
+#   ConfirmationDialogModal.tsx に変更前→変更後の一覧＋1件ずつ除外できるチェックボックス
+#   （既定は全部オン）を追加。既存の ConfirmationDialog.items（ConfirmationItem[]）を
+#   current_value/suggested_valueの意味で読み替えて流用し、新しい型は増やしていない
+#   （scope_reduce/pauseがPJ UUIDをtask_idに流用しているのと同じ既存の流儀）。
+#   bulk_statusはTASK_STATUS_LABELでラベル表示。
+# * 反映はappStore.saveTask（choke point）経由。Undoは新規コードなし：既存の
+#   UndoOperation（type:"task_field"）がfield・oldValueとも汎用型のため、
+#   field:"name"/"status"を積むだけでundoApply.tsの既存の汎用フィールド復元がそのまま動く。
+#   1件ずつtry/catchで包み、部分失敗は理由付きでwarningに集約（既存方針を踏襲）。
+# * systemPrompt.ts（RESPONSE_FORMAT）に仕様・使用例を追加。uiGuide.tsのFEATURE_LIST_SECTION
+#   （AIの機能認識の正本）にも追記——ここを更新し忘れると今回の元クレームと同じ「対応して
+#   いません」という誤答が再発するため必須（Section 17）。新しいボタンラベルは追加していない。
+# * proposalMapper.tsのcanApply判定で、bulk_rename/bulk_statusを add_task/add_project と
+#   同じくdate_certainty（既定"unknown"）による非活性化の対象外にした（日付を扱わないため）。
+# * 新規テスト：bulkEditPlan.test.ts（11件）・applyProposal.test.tsに8件追加。
+#   npx tsc --noEmit・npx vitest run（172ファイル・2039件）は通過。実機確認は未実施。
+#
+# 最終更新：2026-09-17（v3.110）
 

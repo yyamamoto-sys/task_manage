@@ -5,7 +5,7 @@
 // action_typeごとに表示ラベル・色を付与する。
 // canApplyの計算ロジックもここで一元管理する。
 
-import type { Proposal, NewProjectTaskInput } from "./responseParser";
+import type { Proposal, NewProjectTaskInput, BulkTaskStatus } from "./responseParser";
 
 // ===== UI表示用型定義 =====
 
@@ -30,6 +30,12 @@ export interface UIProposal {
   new_project_tasks?: NewProjectTaskInput[];
   /** add_task 用：親タスクにぶら下げる子タスク（素通し） */
   new_subtasks?: NewProjectTaskInput[];
+  /** bulk_rename 用：置換前の文字列（素通し） */
+  find?: string;
+  /** bulk_rename 用：置換後の文字列（素通し） */
+  replace?: string;
+  /** bulk_status 用：変更後のステータス（素通し） */
+  new_status?: BulkTaskStatus;
   /** date_certainty !== "unknown" && !is_simulation の場合にtrue（「反映する」ボタン活性） */
   canApply: boolean;
 }
@@ -84,6 +90,14 @@ const ACTION_TYPE_CONFIG: Record<
     label: "新規PJ",
     color: "var(--color-brand)",
   },
+  bulk_rename: {
+    label: "一括リネーム",
+    color: "var(--color-text-purple)",
+  },
+  bulk_status: {
+    label: "一括ステータス変更",
+    color: "var(--color-text-info)",
+  },
 };
 
 /**
@@ -115,7 +129,18 @@ export function mapProposalsToUI(proposals: Proposal[]): UIProposal[] {
       needs_confirmation: p.needs_confirmation,
       new_project_tasks: p.new_project_tasks,
       new_subtasks: p.new_subtasks,
-      canApply: !p.is_simulation && (p.date_certainty !== "unknown" || p.action_type === "add_task" || p.action_type === "add_project"),
+      find: p.find,
+      replace: p.replace,
+      new_status: p.new_status,
+      // bulk_rename/bulk_statusは日付を扱わないため、add_task/add_projectと同じく
+      // date_certainty（既定"unknown"）による非活性化の対象外にする（CLAUDE.md Section 6-8・56）。
+      canApply: !p.is_simulation && (
+        p.date_certainty !== "unknown"
+        || p.action_type === "add_task"
+        || p.action_type === "add_project"
+        || p.action_type === "bulk_rename"
+        || p.action_type === "bulk_status"
+      ),
     };
   });
 }

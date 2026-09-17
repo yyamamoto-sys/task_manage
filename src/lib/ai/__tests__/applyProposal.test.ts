@@ -545,3 +545,137 @@ describe("applyProposalWithConfirmation — add_project", () => {
     expect(storeMock.upsertProject).not.toHaveBeenCalled();
   });
 });
+
+describe("applyProposal — bulk_rename（CLAUDE.md Section 56）", () => {
+  it("find/replaceから確認ダイアログを組み立てる（AIが書いた新名は使わずreplaceInNameで算出する）", async () => {
+    const shortIdMap = new Map([["task_001", "t-1"], ["task_002", "t-2"]]);
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", name: "第2回定例会議" }), makeTask({ id: "t-2", name: "第2回準備" })],
+    });
+
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_rename", target_task_ids: ["task_001", "task_002"], find: "第2回", replace: "第3回" }),
+      shortIdMap, "user-1",
+    );
+
+    expect(result.type).toBe("needs_confirmation");
+    if (result.type !== "needs_confirmation") return;
+    expect(result.dialog.items).toEqual([
+      { task_id: "t-1", task_name: "第2回定例会議", current_value: "第2回定例会議", suggested_value: "第3回定例会議" },
+      { task_id: "t-2", task_name: "第2回準備", current_value: "第2回準備", suggested_value: "第3回準備" },
+    ]);
+    expect(storeMock.upsertTask).not.toHaveBeenCalled();
+  });
+
+  it("置換後に空文字になる・変化しないタスクは除外され、除外の要約が付く", async () => {
+    const shortIdMap = new Map([["task_001", "t-1"], ["task_002", "t-2"]]);
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", name: "第2回" }), makeTask({ id: "t-2", name: "無関係タスク" })],
+    });
+
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_rename", target_task_ids: ["task_001", "task_002"], find: "第2回", replace: "" }),
+      shortIdMap, "user-1",
+    );
+
+    expect(result.type).toBe("error");
+    if (result.type !== "error") return;
+    expect(result.message).toContain("除外されました");
+  });
+
+  it("findが指定されていなければerrorを返す", async () => {
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_rename", target_task_ids: ["task_001"] }),
+      new Map(), "user-1",
+    );
+    expect(result.type).toBe("error");
+  });
+
+  it("確認ダイアログでチェックを外した項目は反映されず、チェックが付いた項目だけsaveTaskが呼ばれる", async () => {
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", name: "第2回A" }), makeTask({ id: "t-2", name: "第2回B" })],
+    });
+    const dialog: ConfirmationDialog = {
+      proposal_id: "p1", action_type: "bulk_rename",
+      items: [
+        { task_id: "t-1", task_name: "第2回A", current_value: "第2回A", suggested_value: "第3回A" },
+        { task_id: "t-2", task_name: "第2回B", current_value: "第2回B", suggested_value: "第3回B" },
+      ],
+      bulk_find: "第2回", bulk_replace: "第3回",
+    };
+
+    const result = await applyProposalWithConfirmation(dialog, { "t-1": "1", "t-2": "0" }, "user-1");
+
+    expect(result.type).toBe("success");
+    expect(storeMock.upsertTask).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-1")?.name).toBe("第3回A");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-2")?.name).toBe("第2回B");
+    if (result.type !== "success") return;
+    expect(result.snapshot.operations).toEqual([
+      { type: "task_field", taskId: "t-1", field: "name", oldValue: "第2回A" },
+    ]);
+  });
+});
+
+describe("applyProposal — bulk_status（CLAUDE.md Section 56）", () => {
+  it("new_statusから確認ダイアログを組み立てる（ラベル表示・値はステータス）", async () => {
+    const shortIdMap = new Map([["task_001", "t-1"]]);
+    useAppStore.setState({ tasks: [makeTask({ id: "t-1", name: "タスクA", status: "todo" })] });
+
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_status", target_task_ids: ["task_001"], new_status: "done" }),
+      shortIdMap, "user-1",
+    );
+
+    expect(result.type).toBe("needs_confirmation");
+    if (result.type !== "needs_confirmation") return;
+    expect(result.dialog.items).toEqual([
+      { task_id: "t-1", task_name: "タスクA", current_value: "ToDo", suggested_value: "完了" },
+    ]);
+    expect(result.dialog.bulk_new_status).toBe("done");
+  });
+
+  it("new_statusが指定されていなければerrorを返す", async () => {
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_status", target_task_ids: ["task_001"] }),
+      new Map(), "user-1",
+    );
+    expect(result.type).toBe("error");
+  });
+
+  it("確定時はチェックが付いたタスクのみsaveTaskでstatusを書き換える", async () => {
+    useAppStore.setState({
+      tasks: [makeTask({ id: "t-1", name: "A", status: "todo" }), makeTask({ id: "t-2", name: "B", status: "todo" })],
+    });
+    const dialog: ConfirmationDialog = {
+      proposal_id: "p1", action_type: "bulk_status",
+      items: [
+        { task_id: "t-1", task_name: "A", current_value: "ToDo", suggested_value: "完了" },
+        { task_id: "t-2", task_name: "B", current_value: "ToDo", suggested_value: "完了" },
+      ],
+      bulk_new_status: "done",
+    };
+
+    const result = await applyProposalWithConfirmation(dialog, { "t-1": "1", "t-2": "1" }, "user-1");
+
+    expect(result.type).toBe("success");
+    expect(storeMock.upsertTask).toHaveBeenCalledTimes(2);
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-1")?.status).toBe("done");
+    expect(useAppStore.getState().tasks.find(t => t.id === "t-2")?.status).toBe("done");
+  });
+
+  it("50件超の対象はbulk_over_limit=trueを返す", async () => {
+    const tasks = Array.from({ length: 51 }, (_, i) => makeTask({ id: `t-${i}`, name: `T${i}`, status: "todo" }));
+    const shortIdMap = new Map(tasks.map((t, i) => [`task_${i}`, t.id]));
+    useAppStore.setState({ tasks });
+
+    const result = await applyProposal(
+      makeProposal({ action_type: "bulk_status", target_task_ids: [...shortIdMap.keys()], new_status: "done" }),
+      shortIdMap, "user-1",
+    );
+
+    expect(result.type).toBe("needs_confirmation");
+    if (result.type !== "needs_confirmation") return;
+    expect(result.dialog.bulk_over_limit).toBe(true);
+  });
+});

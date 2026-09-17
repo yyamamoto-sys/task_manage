@@ -17,6 +17,9 @@ export interface NewProjectTaskInput {
   suggested_description?: string;
 }
 
+/** タスクのステータス（Task["status"]と同じ値。循環import回避のためここで独立定義する） */
+export type BulkTaskStatus = "todo" | "in_progress" | "done" | "on_hold" | "cancelled";
+
 export interface Proposal {
   proposal_id: string;
   title: string;
@@ -32,7 +35,9 @@ export interface Proposal {
     | "milestone"
     | "info"
     | "add_task"
-    | "add_project";
+    | "add_project"
+    | "bulk_rename"
+    | "bulk_status";
   target_task_ids: string[];
   target_pj_ids: string[];
   suggested_date?: string;
@@ -47,6 +52,12 @@ export interface Proposal {
   new_project_tasks?: NewProjectTaskInput[];
   /** add_task 用：このタスクを親として、その下にぶら下げる子タスク（2階層固定） */
   new_subtasks?: NewProjectTaskInput[];
+  /** bulk_rename 用：置換前の文字列（アプリ側でreplaceInNameを使って実際の新名を算出する） */
+  find?: string;
+  /** bulk_rename 用：置換後の文字列 */
+  replace?: string;
+  /** bulk_status 用：変更後のステータス */
+  new_status?: BulkTaskStatus;
 }
 
 export interface AIResponseData {
@@ -68,9 +79,15 @@ const VALID_ACTION_TYPES = [
   "info",
   "add_task",
   "add_project",
+  "bulk_rename",
+  "bulk_status",
 ] as const;
 
 const VALID_DATE_CERTAINTY = ["exact", "approximate", "unknown"] as const;
+
+const VALID_BULK_TASK_STATUSES: readonly BulkTaskStatus[] = [
+  "todo", "in_progress", "done", "on_hold", "cancelled",
+];
 
 /**
  * new_project_tasks を寛容にパースする。
@@ -143,6 +160,7 @@ function validateProposal(p: unknown, index: number): Proposal {
   // （安全側に倒す。明示の boolean があればそれを優先）
   const MUTATING_ACTIONS: Proposal["action_type"][] = [
     "date_change", "assignee", "add_task", "add_project", "scope_reduce", "pause", "milestone",
+    "bulk_rename", "bulk_status",
   ];
   const needsConfirmation =
     typeof obj.needs_confirmation === "boolean"
@@ -177,6 +195,11 @@ function validateProposal(p: unknown, index: number): Proposal {
     needs_confirmation: needsConfirmation,
     new_project_tasks: parseNewProjectTasks(obj.new_project_tasks),
     new_subtasks: parseNewProjectTasks(obj.new_subtasks),
+    find: typeof obj.find === "string" ? obj.find : undefined,
+    replace: typeof obj.replace === "string" ? obj.replace : undefined,
+    new_status: VALID_BULK_TASK_STATUSES.includes(obj.new_status as BulkTaskStatus)
+      ? (obj.new_status as BulkTaskStatus)
+      : undefined,
   };
 }
 
