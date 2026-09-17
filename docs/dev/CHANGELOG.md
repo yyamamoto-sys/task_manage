@@ -7179,5 +7179,49 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 新規テスト：bulkEditPlan.test.ts（11件）・applyProposal.test.tsに8件追加。
 #   npx tsc --noEmit・npx vitest run（172ファイル・2039件）は通過。実機確認は未実施。
 #
-# 最終更新：2026-09-17（v3.110）
+# v3.111（2026-09-17）：タスク・PJの編集履歴を記録し、利用者自身でUndoできるようにする
+#
+# * 利用者の依頼：「Excelのように、いつ誰が何を編集したかの編集履歴を確認し、ユーザーが
+#   自身でUndoできるようにしてほしい」。記録対象＝タスク＋プロジェクト／表示＝タスク単位
+#   から開始／保持＝90日／Undo権限＝管理者は全部・一般は自分の変更のみ（山本さんの決定）。
+# * 新テーブル entity_change_logs（20260917b_add_entity_change_logs.sql・⚠️山本さんが
+#   手動適用）。既存の admin_change_logs（Section 7）はコード上一度も読み書きされていない
+#   死蔵テーブルのため流用せず新設。90日削除はpg_cron（20260501_admin_logs_cleanup.sqlと
+#   同型）。RLSはSELECTのみ部署スコープ（Section 39のグランドルールに従い(SELECT ...)で
+#   包む）、INSERT/UPDATEはauthenticatedに許可（記録・Undoの主な安全弁はappStore側の
+#   try/catchとUI側の権限判定であり、事故防止であってセキュリティではない）。
+# * 差分計算は src/lib/history/changeDiff.ts の純粋関数（computeTaskDiff/
+#   computeProjectDiff）に切り出し。ホワイトリスト方式でdisplay_order・updated_at・
+#   updated_by・created_at・group_id・group_ids・baseline_*・finalized_mentionsを
+#   除外（並べ替えのたびに大量の履歴が生まれ本当に見たい変更が埋もれるため）。配列
+#   （assignee_member_ids/todo_ids）は順序を無視した集合比較。変更が無ければ記録しない。
+# * 🔴🔴 記録の失敗を保存の失敗にしない：appStore.tsのrecordEntityChangeLog()は
+#   insertEntityChangeLog()の失敗を必ずtry/catchで握りconsole.warnに留める。呼び出し元
+#   （saveTask/saveProject/deleteTask/restoreTask/deleteProject/restoreProject）は
+#   `void recordEntityChangeLog(...)`として結果を待たず呼ぶため、entity_change_logsが
+#   未適用のdev環境でも保存自体は今までどおり成功する（2026-08-12のupsertTask全滅事故と
+#   同型の事故を構造的に避ける設計）。
+# * restoreTask/restoreProjectに省略可能な第2引数（restoredBy）を追加（後方互換）。
+#   既存呼び出し元（TaskEditModal.tsx・useBulkTaskActions.ts・undoApply.tsの3箇所）は
+#   currentUserIdを渡すよう更新し、「誰が復元したか」を履歴に正しく記録できるようにした。
+#   省略時は「誰が削除したか」を次善のchanged_byとして使う。
+# * UI：src/components/history/ChangeHistorySection.tsx（共通コンポーネント）を
+#   TaskEditModal.tsx・TaskSidePanel.tsx・ProjectSettingsModal.tsxの3箇所に埋め込んだ。
+#   直近20件（.limit(20)）・項目名は日本語（src/lib/history/fieldLabels.ts）・
+#   テーブル未適用や取得失敗はエラーを出さず「まだ履歴はありません」と表示・ゲストは
+#   fetchを呼ばず常に空表示（Section 23）。
+# * Undo：action="update"はdiffのbeforeへ、action="delete"は復元、action="restore"は
+#   再削除、action="create"はUndoボタンを出さない（diffが常に空で戻す先が無いため）。
+#   同じ項目がその後変更されている場合はsrc/lib/history/undoWarning.tsの
+#   hasLaterConflictingChange()で判定しconfirmDialogで警告してから実行する。権限判定は
+#   src/lib/history/undoPermission.tsのcanUndoEntityChangeLog()（管理者は全部・一般は
+#   自分の変更のみ。事故防止でありセキュリティではない旨をコード冒頭に明記）。
+#   Undo自体もsaveTask/saveProject/deleteTask/restoreTask経由のため、Undoの操作も
+#   また履歴に記録される（意図した挙動）。
+# * 新規テスト：changeDiff.test.ts（15件）・undoWarning.test.ts（6件）・
+#   undoPermission.test.ts（4件）・fieldLabels.test.ts（9件）。既存2071件を壊さず、
+#   合計2105件が全通過。npx tsc --noEmitも通過。実機確認・マイグレーション適用は
+#   未実施（山本さんが実施）。
+#
+# 最終更新：2026-09-17（v3.111）
 

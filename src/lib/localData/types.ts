@@ -357,6 +357,28 @@ export interface TaskChangeLog {
   updated_by: string;     // member_id
 }
 
+// ===== タスク・PJの編集履歴とUndo（v3.111・CLAUDE.md Section 57）=====
+// admin_change_logs（上記AdminChangeLog）とは別テーブル（entity_change_logs）。
+// admin_change_logsはコード上一度も読み書きされていない死蔵テーブルのため流用しない。
+
+export type EntityChangeLogEntityType = "task" | "project";
+export type EntityChangeLogAction = "create" | "update" | "delete" | "restore";
+
+export interface EntityChangeLog {
+  id: number;
+  entity_type: EntityChangeLogEntityType;
+  entity_id: string;
+  entity_name: string;
+  action: EntityChangeLogAction;
+  /** 変更前後の差分。例: { status: { before: "todo", after: "done" } }。create時は空でよい */
+  diff: Record<string, { before: unknown; after: unknown }>;
+  changed_by: string;    // member_id
+  changed_at: string;    // ISO8601
+  group_id?: string | null;
+  undone_at?: string | null;
+  undone_by?: string | null;
+}
+
 // ===== 個人OKR層（OKRモード再設計 Phase 1 Step A・docs/dev/okr-redesign-plan.md §3）=====
 // Kintoneが正本・このアプリはKintoneに存在しない「週の層」を埋める実行層。
 // RLSは本人のみ（migrations/20260807b_add_personal_okr.sql）。

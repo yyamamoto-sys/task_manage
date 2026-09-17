@@ -482,4 +482,11 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "日次バックアップ：実行確定・保持ポリシー評価関数（backup_finalize）が見つかりません",
     migration: "20260916_add_backup.sql",
   },
+  {
+    id: "entity_change_logs_table",
+    kind: "table",
+    table: "entity_change_logs",
+    label: "タスク・PJの編集履歴テーブル（entity_change_logs）が見つかりません",
+    migration: "20260917b_add_entity_change_logs.sql",
+  },
 ];

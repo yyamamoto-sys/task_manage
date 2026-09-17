@@ -35,6 +35,7 @@ import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import { SIDE_PANEL_FOOTER_MIN_HEIGHT_PX } from "../../lib/layout/bottomStack";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
+import { ChangeHistorySection } from "../history/ChangeHistorySection";
 
 interface Props {
   taskId: string;
@@ -80,6 +81,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
   const allTaskDependencies = useAppStore(selectScopedTaskDependencies);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
+  const restoreTask         = useAppStore(s => s.restoreTask);
   const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
   const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
   const addTaskProject      = useAppStore(s => s.addTaskProject);
@@ -1042,6 +1044,19 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
             resize: "vertical", lineHeight: 1.6, minHeight: "70px",
             marginBottom: "14px",
           }}
+        />
+
+        {/* 変更履歴（v3.111・CLAUDE.md Section 57） */}
+        <ChangeHistorySection
+          entityType="task"
+          entityId={selectedTask.id}
+          currentUser={currentUser}
+          members={allMembers}
+          onRevertFields={async fields => {
+            await saveTask({ ...selectedTask, ...fields, updated_by: currentUser.id } as Task);
+          }}
+          onRestore={async () => { await restoreTask(selectedTask.id, currentUser.id); }}
+          onDelete={async () => { await deleteTask(selectedTask.id, currentUser.id); }}
         />
 
         <div style={{ height: "10px" }} />

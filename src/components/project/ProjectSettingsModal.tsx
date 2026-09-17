@@ -38,6 +38,7 @@ import {
 } from "../../lib/supabase/projectInviteStore";
 import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
 import { buildInviteLink } from "../../lib/projectInvite/inviteUrl";
+import { ChangeHistorySection } from "../history/ChangeHistorySection";
 
 interface Props {
   project: Project;
@@ -108,6 +109,8 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
   const rawTasks = useAppStore(selectScopedTasks);
   const rawTpjs = useAppStore(s => s.taskProjects);
   const saveProject = useAppStore(s => s.saveProject);
+  const deleteProject = useAppStore(s => s.deleteProject);
+  const restoreProject = useAppStore(s => s.restoreProject);
   const members = useMemo(() => active(rawMembers), [rawMembers]);
   const isGuest = isGuestMember(currentUser);
 
@@ -437,6 +440,19 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
                   <ReadOnlyValue>{STATUS_LABELS[project.status]}</ReadOnlyValue>
                 </div>
               )}
+
+              {/* 変更履歴（v3.111・CLAUDE.md Section 57） */}
+              <ChangeHistorySection
+                entityType="project"
+                entityId={project.id}
+                currentUser={currentUser}
+                members={rawMembers}
+                onRevertFields={async fields => {
+                  await saveProject({ ...project, ...fields, updated_by: currentUser.id } as Project);
+                }}
+                onRestore={async () => { await restoreProject(project.id, currentUser.id); }}
+                onDelete={async () => { await deleteProject(project.id, currentUser.id); }}
+              />
             </div>
           )}
 

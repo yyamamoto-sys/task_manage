@@ -137,7 +137,7 @@ export function useBulkTaskActions(
       showToast(`${count}件のタスクを削除しました`, "info", {
         label: "元に戻す",
         isUndo: true,
-        onClick: () => { ids.forEach(id => restoreTask(id)); },
+        onClick: () => { ids.forEach(id => restoreTask(id, currentUserId)); },
       });
       clearSelection();
     } catch (err) {

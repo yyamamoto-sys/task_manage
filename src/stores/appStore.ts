@@ -48,7 +48,9 @@ import {
   insertTaskProject, deleteTaskProject,
   insertTaskDependency, softDeleteTaskDependency,
   upsertMemberTag, softDeleteMemberTag, replaceMemberTagMembers,
+  insertEntityChangeLog,
 } from "../lib/supabase/store";
+import { computeTaskDiff, computeProjectDiff } from "../lib/history/changeDiff";
 import { canAddDependency } from "../lib/dependencies/cycleCheck";
 import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependencies/gate";
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
@@ -142,15 +144,17 @@ export interface AppState {
   // ===== Project =====
   saveProject: (project: Project) => Promise<void>;
   deleteProject: (id: string, deletedBy: string) => Promise<void>;
-  /** ソフト削除の取り消し（restoreTaskと対。v3.71でAI提案Undoのpj_restoreがchoke point経由になったため追加） */
-  restoreProject: (id: string) => Promise<void>;
+  /** ソフト削除の取り消し（restoreTaskと対。v3.71でAI提案Undoのpj_restoreがchoke point経由になったため追加）。
+   *  restoredBy: 復元した人のmember_id（v3.111・entity_change_logsのchanged_byに使う。省略可＝後方互換） */
+  restoreProject: (id: string, restoredBy?: string) => Promise<void>;
 
   // ===== Task =====
   // options.skipCascade: 自動リスケジュール連鎖（B3）が計算済みのシフトを適用する内部呼び出し、
   // および連鎖のUndoで使う。再cascade計算を起こさないためのガード（省略時=false＝通常のローカル編集）。
   saveTask: (task: Task, options?: { skipCascade?: boolean }) => Promise<void>;
   deleteTask: (id: string, deletedBy: string) => Promise<void>;
-  restoreTask: (id: string) => Promise<void>;
+  /** restoredBy: 復元した人のmember_id（v3.111・entity_change_logsのchanged_byに使う。省略可＝後方互換） */
+  restoreTask: (id: string, restoredBy?: string) => Promise<void>;
   // ===== ガント複数選択の一括シフト =====
   // 選択中の複数タスクを同じ日数だけ移動する（バー中央ドラッグの単体移動を選択集合に拡張したもの）。
   // 1つの論理操作として扱う：全対象へのdelta適用→B3カスケードを1回だけ計算・適用→1トースト＋Undo。
@@ -219,6 +223,53 @@ async function handleSaveError(
   }
   reportError(e);
   await load();
+}
+
+/**
+ * 【設計意図・v3.111・CLAUDE.md Section 57】
+ * entity_change_logs への記録。saveTask/saveProject/deleteTask/restoreTask/
+ * deleteProject/restoreProject が「DBへの保存自体が成功した後」にだけ呼ぶ、
+ * 投げ捨て（fire-and-forget）用のヘルパー。
+ *
+ * 🔴🔴 記録の失敗を保存の失敗にしない：この関数は例外を一切外へ投げない
+ * （テーブル未適用の環境・ネットワークエラー等はconsole.warnに留める）。呼び出し側は
+ * `void recordEntityChangeLog(...)` として呼び、await不要・失敗の伝播も無い。
+ * これにより「マイグレーション未適用のdev環境でsaveTaskが全滅する」事故
+ * （2026-08-12のupsertTask全滅事故と同型）を構造的に避ける。
+ *
+ * action==="create" のときは diff を計算せず常に空にする（CLAUDE.md Section 57
+ * 「新規（変更前が無い）→ diffは空でよい」）。update/delete/restore は
+ * computeTaskDiff/computeProjectDiff の結果を使い、diffが空（＝ホワイトリストの
+ * どの項目も変化していない）ならレコード自体を作らない。
+ */
+async function recordEntityChangeLog(params: {
+  entityType: "task" | "project";
+  action: "create" | "update" | "delete" | "restore";
+  before?: Task | Project;
+  after: Task | Project;
+  changedBy: string;
+}): Promise<void> {
+  try {
+    let diff: ReturnType<typeof computeTaskDiff> = {};
+    if (params.action !== "create") {
+      diff = params.entityType === "task"
+        ? computeTaskDiff(params.before as Task | undefined, params.after as Task)
+        : computeProjectDiff(params.before as Project | undefined, params.after as Project);
+      if (Object.keys(diff).length === 0) return; // 変更なしは記録しない
+    }
+    await insertEntityChangeLog({
+      entity_type: params.entityType,
+      entity_id: params.after.id,
+      entity_name: params.after.name,
+      action: params.action,
+      diff,
+      changed_by: params.changedBy || "system",
+      group_id: params.after.group_id ?? null,
+    });
+  } catch (e) {
+    // 利用者に通知しない（履歴のせいで保存できなくなるのは本末転倒。CLAUDE.md Section 57）
+    console.warn("entity_change_logs への記録に失敗しました（保存自体は成功しています）", e);
+  }
 }
 
 /**
@@ -888,6 +939,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   // ===== Project =====
   saveProject: async (project) => {
+    // v3.111：diff記録用に「保存前の値」を、楽観更新でstateを上書きする前に控える
+    // （このset()の後にget().projectsを見ると既に新しい値に置き換わってしまうため）。
+    const existing = get().projects.find(p => p.id === project.id);
     const projectToSave: Project = project.group_id != null
       ? project
       : { ...project, group_id: get().currentGroupId ?? undefined };
@@ -898,7 +952,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }));
     // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。
     // DB書き込みをスキップし、ローカルで生成したupdated_atでstateだけ同期する
-    // （メモリ上でのみ成立・リロードで消える）。
+    // （メモリ上でのみ成立・リロードで消える）。entity_change_logsもゲストは書かない。
     if (isGuestMode()) {
       set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, new Date().toISOString()) }));
       return;
@@ -908,6 +962,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       try {
         const newUpdatedAt = await upsertProject(projectToSave, expectedUpdatedAt);
         set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, newUpdatedAt) }));
+        void recordEntityChangeLog({
+          entityType: "project",
+          action: existing ? "update" : "create",
+          before: existing,
+          after: projectToSave,
+          changedBy: projectToSave.updated_by ?? "",
+        });
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -917,6 +978,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   deleteProject: async (id, deletedBy) => {
     const now = new Date().toISOString();
+    const before = get().projects.find(p => p.id === id);
     set(state => ({
       projects: state.projects.map(p =>
         p.id === id ? { ...p, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : p
@@ -925,13 +987,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (isGuestMode()) return;
     try {
       await softDeleteProject(id, deletedBy);
+      if (before) {
+        void recordEntityChangeLog({
+          entityType: "project",
+          action: "delete",
+          before,
+          after: { ...before, is_deleted: true, deleted_at: now, deleted_by: deletedBy },
+          changedBy: deletedBy,
+        });
+      }
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
     }
   },
 
-  restoreProject: async (id) => {
+  restoreProject: async (id, restoredBy) => {
+    const before = get().projects.find(p => p.id === id);
     set(state => ({
       projects: state.projects.map(p =>
         p.id === id ? { ...p, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : p
@@ -940,6 +1012,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
     try {
       await restoreProjectDb(id);
+      if (before) {
+        void recordEntityChangeLog({
+          entityType: "project",
+          action: "restore",
+          before,
+          after: { ...before, is_deleted: false, deleted_at: undefined, deleted_by: undefined },
+          // restoreProjectはrestoredByが渡されない既存呼び出し元があるため、渡されなければ
+          // 「誰が削除したか」を次善のchanged_byとして使う（誰も分からないより有用な近似値）
+          changedBy: restoredBy ?? before.deleted_by ?? before.updated_by ?? "",
+        });
+      }
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
@@ -1022,6 +1105,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
         try {
           const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
           set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
+          void recordEntityChangeLog({
+            entityType: "task",
+            action: existing ? "update" : "create",
+            before: existing,
+            after: taskToSave,
+            changedBy: taskToSave.updated_by ?? "",
+          });
         } catch (e) {
           await handleSaveError(e, get().load);
           throw e;
@@ -1067,6 +1157,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   deleteTask: async (id, deletedBy) => {
     const now = new Date().toISOString();
+    const before = get().tasks.find(t => t.id === id);
     set(state => ({
       tasks: state.tasks.map(t =>
         t.id === id ? { ...t, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : t
@@ -1075,13 +1166,23 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
     try {
       await softDeleteTask(id, deletedBy);
+      if (before) {
+        void recordEntityChangeLog({
+          entityType: "task",
+          action: "delete",
+          before,
+          after: { ...before, is_deleted: true, deleted_at: now, deleted_by: deletedBy },
+          changedBy: deletedBy,
+        });
+      }
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;
     }
   },
 
-  restoreTask: async (id) => {
+  restoreTask: async (id, restoredBy) => {
+    const before = get().tasks.find(t => t.id === id);
     set(state => ({
       tasks: state.tasks.map(t =>
         t.id === id ? { ...t, is_deleted: false, deleted_at: undefined, deleted_by: undefined } : t
@@ -1090,6 +1191,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
     if (isGuestMode()) return; // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。state更新のみで完結
     try {
       await restoreTaskDb(id);
+      if (before) {
+        void recordEntityChangeLog({
+          entityType: "task",
+          action: "restore",
+          before,
+          after: { ...before, is_deleted: false, deleted_at: undefined, deleted_by: undefined },
+          // restoreTaskはrestoredByが渡されない既存呼び出し元があるため、渡されなければ
+          // 「誰が削除したか」を次善のchanged_byとして使う（誰も分からないより有用な近似値）
+          changedBy: restoredBy ?? before.deleted_by ?? before.updated_by ?? "",
+        });
+      }
     } catch (e) {
       await handleSaveError(e, get().load);
       throw e;

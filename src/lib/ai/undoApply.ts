@@ -79,7 +79,7 @@ export async function applyUndo(
         }
       } else if (op.type === "task_restore") {
         try {
-          await useAppStore.getState().restoreTask(op.taskId);
+          await useAppStore.getState().restoreTask(op.taskId, currentUserId);
         } catch (e) {
           throw new Error(`タスク復元エラー: ${formatErrorForUser("", e)}`);
         }
@@ -118,14 +118,14 @@ export async function applyUndo(
         const deletedChildTasks = useAppStore.getState().tasks.filter(t => t.project_id === op.pjId && t.is_deleted);
         for (const t of deletedChildTasks) {
           try {
-            await useAppStore.getState().restoreTask(t.id);
+            await useAppStore.getState().restoreTask(t.id, currentUserId);
           } catch (e) {
             throw new Error(`タスク一括復元エラー: ${formatErrorForUser("", e)}`);
           }
         }
         // PJ自体を復元
         try {
-          await useAppStore.getState().restoreProject(op.pjId);
+          await useAppStore.getState().restoreProject(op.pjId, currentUserId);
         } catch (e) {
           throw new Error(`PJ復元エラー: ${formatErrorForUser("", e)}`);
         }

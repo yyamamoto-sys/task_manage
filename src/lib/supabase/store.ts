@@ -16,6 +16,7 @@ import type {
   QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
+  EntityChangeLog,
 } from "../localData/types";
 import type { MyPageLayout } from "../widgets/types";
 
@@ -575,4 +576,40 @@ export async function fetchAiUsageLogs(): Promise<AiUsageLog[]> {
     .order("called_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as AiUsageLog[];
+}
+
+// ===== タスク・PJの編集履歴とUndo（v3.111・CLAUDE.md Section 57）=====
+// 呼び出し元（appStore.tsのrecordEntityChangeLog）が必ずtry/catchで包むため、
+// ここでは意図的に何も揉み消さず素直にthrowする（記録の失敗を保存の失敗にしない責務は
+// 呼び出し元にある。CLAUDE.md Section 57参照）。
+
+export async function insertEntityChangeLog(
+  log: Omit<EntityChangeLog, "id" | "changed_at" | "undone_at" | "undone_by">,
+): Promise<void> {
+  const { error } = await supabase.from("entity_change_logs").insert(log);
+  if (error) throw error;
+}
+
+export async function fetchEntityChangeLogs(
+  entityType: EntityChangeLog["entity_type"],
+  entityId: string,
+  limit = 20,
+): Promise<EntityChangeLog[]> {
+  const { data, error } = await supabase
+    .from("entity_change_logs")
+    .select("*")
+    .eq("entity_type", entityType)
+    .eq("entity_id", entityId)
+    .order("changed_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as EntityChangeLog[];
+}
+
+export async function markEntityChangeLogUndone(id: number, undoneBy: string): Promise<void> {
+  const { error } = await supabase
+    .from("entity_change_logs")
+    .update({ undone_at: new Date().toISOString(), undone_by: undoneBy })
+    .eq("id", id);
+  if (error) throw error;
 }

@@ -36,6 +36,7 @@ import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editin
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { showToast } from "../common/Toast";
+import { ChangeHistorySection } from "../history/ChangeHistorySection";
 
 interface Props {
   taskId: string;
@@ -305,7 +306,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     showToast(`「${originalTask.name}」を削除しました`, "info", {
       label: "元に戻す",
       isUndo: true,
-      onClick: () => { restoreTask(taskId); },
+      onClick: () => { restoreTask(taskId, currentUser.id); },
     });
     onDeleted?.(taskId);
     onClose();
@@ -827,6 +828,19 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             <div>タスクID：{originalTask.id.slice(0, 8)}…</div>
             <div>作成日：{originalTask.created_at ? new Date(originalTask.created_at).toLocaleDateString("ja-JP") : "—"}</div>
           </div>
+
+          {/* 変更履歴（v3.111・CLAUDE.md Section 57） */}
+          <ChangeHistorySection
+            entityType="task"
+            entityId={originalTask.id}
+            currentUser={currentUser}
+            members={allMembers}
+            onRevertFields={async fields => {
+              await saveTask({ ...originalTask, ...fields, updated_by: currentUser.id } as Task);
+            }}
+            onRestore={async () => { await restoreTask(originalTask.id, currentUser.id); }}
+            onDelete={async () => { await deleteTask(originalTask.id, currentUser.id); }}
+          />
         </div>
 
         {/* ===== フッター ===== */}
