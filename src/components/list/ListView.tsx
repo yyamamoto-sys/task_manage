@@ -22,6 +22,11 @@ import { computeRangeSelection } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { computeDropZoneFromRatio, type DropZone } from "../../lib/dragReorder";
+import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
+import { computeNameOrderAssignments } from "../../lib/task/nameOrder";
+import { confirmDialog } from "../../lib/dialog";
+import { showToast } from "../common/Toast";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   currentUser: Member;
@@ -199,14 +204,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 選択が丸ごとクリアされる操作（Esc・チェックボックスでの全解除等）では必ずアンカーも一緒に
   // リセットする（clearSelection に集約）。
   const selectionAnchorRef = useRef<string | null>(null);
+  // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
+  // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
+    setSelectedIds(prev => toggleTaskWithChildren(prev, id, allTasks));
+  }, [allTasks]);
   const clearSelection = useCallback(() => {
     selectionAnchorRef.current = null;
     setSelectedIds(new Set());
@@ -310,6 +313,53 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const handleTaskDrop = useCallback((draggedId: string, targetId: string, zone: DropZone) => {
     dragReorderTaskDrop(draggedId, targetId, zone, filteredTasks);
   }, [dragReorderTaskDrop, filteredTasks]);
+
+  // 「番号順に並べる」：タスク名の先頭数値（自然順）で並べ替える（CLAUDE.md v3.108）。
+  // 🔴 display_order を書き換え、全員の画面に反映されるため実行前に確認する。
+  // 対象範囲＝現在表示中（filteredTasks）の兄弟グループ（同じ parent_task_id・同じ project_id）。
+  // 対象タスクが1件も無いグループには触れない＝PJを選択中ならそのPJの範囲だけが対象になる。
+  const handleSortByNameNumber = useCallback(async () => {
+    const ok = await confirmDialog(
+      "並び順を変更します。この変更は全員の画面に反映されます。",
+      { confirmLabel: "並べ替える" },
+    );
+    if (!ok) return;
+    const assignments = computeNameOrderAssignments(filteredTasks, allTasks);
+    const changed: { id: string; newOrder: number; prevOrder: number }[] = [];
+    assignments.forEach((newOrder, id) => {
+      const t = allTasks.find(x => x.id === id);
+      if (!t) return;
+      const prevOrder = t.display_order ?? 0;
+      if (prevOrder !== newOrder) changed.push({ id, newOrder, prevOrder });
+    });
+    if (changed.length === 0) {
+      showToast("並び順の変更はありませんでした", "info");
+      return;
+    }
+    try {
+      await Promise.all(changed.map(({ id, newOrder }) => {
+        const t = allTasks.find(x => x.id === id);
+        if (!t) return Promise.resolve();
+        return saveTask({ ...t, display_order: newOrder, updated_by: currentUser.id });
+      }));
+      if (sortKey !== "manual") { setSortKeyState("manual"); lsSet("sortKey", "manual"); }
+      // Undo時点の最新タスクに旧display_orderだけを適用する（古いスナップショット全体を
+      // 保存すると楽観ロックと衝突するため。useBulkTaskActions.ts と同じ作法）
+      showToast(`${changed.length}件のタスクの並び順を変更しました`, "success", {
+        label: "元に戻す",
+        isUndo: true,
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          changed.forEach(({ id, prevOrder }) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({ ...t, display_order: prevOrder, updated_by: currentUser.id });
+          });
+        },
+      });
+    } catch (err) {
+      showToast(formatErrorForUser("並べ替えに失敗しました", err), "error");
+    }
+  }, [filteredTasks, allTasks, saveTask, currentUser.id, sortKey]);
 
   // 「＋子タスク」：親を展開してから、親を固定した QuickAddTaskModal を開く。
   // （登録UIを親タスク追加と同じモーダルに統一。実際の作成・display_order 採番は
@@ -623,6 +673,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               whiteSpace: "nowrap", flexShrink: 0,
             }}
           >⠿ 並べ替え</button>
+
+          {/* 番号順に並べる（タスク名の先頭数値の自然順。CLAUDE.md v3.108） */}
+          <button
+            onClick={handleSortByNameNumber}
+            title="タスク名の先頭の番号（自然順）で並べ替えます。全員の画面に反映されます。"
+            aria-label="番号順に並べる"
+            style={{
+              padding: "3px 9px", fontSize: "11px", borderRadius: "var(--radius-md)", cursor: "pointer",
+              border: "1px solid var(--color-border-primary)", background: "transparent",
+              color: "var(--color-text-tertiary)", whiteSpace: "nowrap", flexShrink: 0,
+            }}
+          >🔢 番号順に並べる</button>
 
           {/* タスク並び順トグル（期日順⇔名前順・ガントビューと同じ見た目） */}
           <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>

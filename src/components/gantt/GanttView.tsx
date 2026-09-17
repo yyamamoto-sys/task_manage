@@ -38,6 +38,7 @@ import {
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
+import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
 import {
   computeDependencyRenders, pointsToPathD,
   type TaskRect, type DependencyArrowGeometry, type DependencyBadgeInfo,
@@ -150,42 +151,6 @@ export function GanttView({
     });
   }, []);
 
-  // ===== 複数選択（Ctrl/Cmd+クリック）＋一括シフト =====
-  //
-  // 【設計意図】選択はタスクidベース（人別ビュー等で同一タスクが複数行に出ても id 単位で扱う）。
-  // Ctrl/Cmd+クリックでトグル、修飾キー無しの通常クリックは詳細を開く＋選択クリア、空白クリック・
-  // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
-  // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
-  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
-  // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたタスク）。
-  // レンダーを介す必要が無いため ref で持つ。選択が丸ごとクリアされる操作（背景クリック・Escape・
-  // 通常クリックでの選択クリア）では必ずアンカーも一緒にリセットする（clearTaskSelection に集約）。
-  const selectionAnchorRef = useRef<string | null>(null);
-  const toggleTaskSelection = useCallback((taskId: string) => {
-    setSelectedTaskIds(prev => {
-      const n = new Set(prev);
-      if (n.has(taskId)) n.delete(taskId); else n.add(taskId);
-      return n;
-    });
-  }, []);
-  const clearTaskSelection = useCallback(() => {
-    selectionAnchorRef.current = null;
-    setSelectedTaskIds(prev => (prev.size === 0 ? prev : new Set()));
-  }, []);
-  // Escapeで選択クリア。選択が空のときはリスナーを貼らない（他機能のEscape処理と競合しないよう最小限に）
-  useEffect(() => {
-    if (selectedTaskIds.size === 0) return;
-    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") clearTaskSelection(); };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedTaskIds.size, clearTaskSelection]);
-  // 空白（バー以外）クリックで選択クリア。data-task-id を持つ要素上でのクリックは対象外
-  // （そちらは guardedHandleRowEdit 側で選択トグル or 選択クリア+詳細表示を担う）
-  const handleGanttBodyClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if ((e.target as HTMLElement).closest("[data-task-id]")) return;
-    clearTaskSelection();
-  }, [clearTaskSelection]);
-
   // previewTasksが指定されている場合はそちらを優先する。KRフィルタが有効な場合はさらに絞り込む
   // mineOnly が true なら担当者=自分のタスクだけにする（サイドバーの「自分」トグル由来）
   // 完了を隠すフィルタ（hideCompletedTasks）は mineOnly と併用でき、必ず並べ替え・グルーピング
@@ -207,6 +172,40 @@ export function GanttView({
   const memberById  = useMemo(() => new Map(members.map(m => [m.id, m])), [members]);
   const projectById = useMemo(() => new Map(projects.map(p => [p.id, p])), [projects]);
   const taskById    = useMemo(() => new Map(allTasks.map(t => [t.id, t])), [allTasks]);
+
+  // ===== 複数選択（Ctrl/Cmd+クリック）＋一括シフト =====
+  //
+  // 【設計意図】選択はタスクidベース（人別ビュー等で同一タスクが複数行に出ても id 単位で扱う）。
+  // Ctrl/Cmd+クリックでトグル、修飾キー無しの通常クリックは詳細を開く＋選択クリア、空白クリック・
+  // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
+  // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたタスク）。
+  // レンダーを介す必要が無いため ref で持つ。選択が丸ごとクリアされる操作（背景クリック・Escape・
+  // 通常クリックでの選択クリア）では必ずアンカーも一緒にリセットする（clearTaskSelection に集約）。
+  const selectionAnchorRef = useRef<string | null>(null);
+  // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
+  // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
+  const toggleTaskSelection = useCallback((taskId: string) => {
+    setSelectedTaskIds(prev => toggleTaskWithChildren(prev, taskId, allTasks));
+  }, [allTasks]);
+  const clearTaskSelection = useCallback(() => {
+    selectionAnchorRef.current = null;
+    setSelectedTaskIds(prev => (prev.size === 0 ? prev : new Set()));
+  }, []);
+  // Escapeで選択クリア。選択が空のときはリスナーを貼らない（他機能のEscape処理と競合しないよう最小限に）
+  useEffect(() => {
+    if (selectedTaskIds.size === 0) return;
+    const onKeyDown = (e: KeyboardEvent) => { if (e.key === "Escape") clearTaskSelection(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedTaskIds.size, clearTaskSelection]);
+  // 空白（バー以外）クリックで選択クリア。data-task-id を持つ要素上でのクリックは対象外
+  // （そちらは guardedHandleRowEdit 側で選択トグル or 選択クリア+詳細表示を担う）
+  const handleGanttBodyClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("[data-task-id]")) return;
+    clearTaskSelection();
+  }, [clearTaskSelection]);
 
   // 表示するPJを絞り込む（毎レンダーで新配列を作らないよう useMemo 化）
   const visibleProjects = useMemo(

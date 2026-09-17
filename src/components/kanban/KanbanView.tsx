@@ -22,6 +22,7 @@ import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { CustomSelect } from "../common/CustomSelect";
+import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
 
 interface Props {
   currentUser: Member;
@@ -88,13 +89,11 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたカード）。
   // レンダーを介す必要が無いため ref で持つ（ガント/リストの selectionAnchorRef と同じ流儀）
   const selectionAnchorRef = useRef<string | null>(null);
+  // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
+  // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
   const toggleSelect = useCallback((id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
+    setSelectedIds(prev => toggleTaskWithChildren(prev, id, tasks));
+  }, [tasks]);
   const clearSelection = useCallback(() => {
     selectionAnchorRef.current = null;
     setSelectedIds(new Set());

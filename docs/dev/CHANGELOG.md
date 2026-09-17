@@ -7105,5 +7105,28 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   2日23時間／赤黄同時発生時の優先順位／両方正常）。
 #   デプロイ・実行しての確認はしていない（ファイルを作るだけ）。
 #
-# 最終更新：2026-09-17（v3.107）
+# v3.108 タスクの並び替えを楽にする2機能（2026-09-17）
+#   ①親タスクを選択すると直下の子タスクも選択に加わる（解除も同様）。子を個別に付け外しするのは
+#   引き続き自由。純粋関数はsrc/lib/task/selectionWithChildren.ts（addTaskWithChildren/
+#   removeTaskWithChildren/toggleTaskWithChildren）。ListView/KanbanView/GanttViewが
+#   既に共有していた「1件をトグルする関数」（toggleSelect×2・toggleTaskSelection）の中身を
+#   toggleTaskWithChildren呼び出しに差し替えるだけで3画面に反映した（新しい選択の仕組みは
+#   発明していない）。GanttViewのみtoggleTaskSelectionの定義位置をallTasks算出後へ移動
+#   （依存関係を成立させるため。ロジックは無変更）。
+#   ②ListViewツールバーに「🔢 番号順に並べる」ボタンを追加。タスク名の先頭数値（全角対応・
+#   "第2回"のように数字の前に文字があっても可）を取り出し、自然順（1→2→10。単純な文字列
+#   ソートだと1→10→2になる問題を回避）で並べ替える。純粋関数はsrc/lib/task/nameOrder.ts
+#   （extractLeadingNumber/sortTasksByNameNumber/computeNameOrderAssignments）。並べ替え
+#   範囲は「同じparent_task_id・同じproject_id」の兄弟グループ単位（dragReorder.tsの
+#   isSiblingと同じ定義）。親タスク同士の並べ替えは子（別グループ）を巻き込まず、既存の
+#   親子ネスト描画がそのまま「親の下に子が続く」順序を保つ。フィルタ等で今は見えていない
+#   「隠れた兄弟」は既存display_order順のまま対象タスクの後ろに温存（computeSiblingReorderIds
+#   と同じ考え方）。実行前にconfirmDialog()で確認（全員の画面に反映されるため。toneは既定の
+#   dangerのまま）。保存はappStore.saveTaskをPromise.allで1件ずつ呼び、Undo時は
+#   「Undo時点の最新タスク」に旧display_orderだけを適用する（useBulkTaskActions.ts と同じ
+#   理由・同じ書き方）。
+#   新規テスト：selectionWithChildren.test.ts（13件）・nameOrder.test.ts（17件）。
+#   npx tsc --noEmit・npx vitest run（170ファイル・2017件）は通過。実機確認は未実施。
+#
+# 最終更新：2026-09-17（v3.108）
 
