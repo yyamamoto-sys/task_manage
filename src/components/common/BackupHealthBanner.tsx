@@ -18,6 +18,7 @@ import type { Member } from "../../lib/localData/types";
 import { fetchLastBackupRunSuccessAt, fetchBackupExportsHealth } from "../../lib/supabase/backupStore";
 import { resolveBackupHealth, type BackupHealthLevel } from "../../lib/backup/backupHealth";
 import { formatElapsedHours, formatElapsedDays } from "../../lib/backup/backupFormat";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 interface Props {
   currentUser: Member;
@@ -25,7 +26,7 @@ interface Props {
 
 type BannerState =
   | { kind: "hidden" }
-  | { kind: "unavailable" }
+  | { kind: "unavailable"; detail: string }
   | { kind: "shown"; level: Exclude<BackupHealthLevel, "none">; hoursSinceLastRunSuccess: number | null; daysSinceLastExportSuccess: number | null };
 
 export function BackupHealthBanner({ currentUser }: Props) {
@@ -38,31 +39,42 @@ export function BackupHealthBanner({ currentUser }: Props) {
     let cancelled = false;
     setDismissed(false);
     (async () => {
-      try {
-        const [lastRunSuccessAt, exportsHealth] = await Promise.all([
-          fetchLastBackupRunSuccessAt(),
-          fetchBackupExportsHealth(),
-        ]);
-        if (cancelled) return;
-        const result = resolveBackupHealth({
-          lastRunSuccessAt,
-          hasAnyExportRecord: exportsHealth.hasAnyRecord,
-          lastExportSuccessAt: exportsHealth.lastSuccessAt,
-          now: new Date(),
-        });
-        if (result.level === "none") {
-          setState({ kind: "hidden" });
-        } else {
-          setState({
-            kind: "shown",
-            level: result.level,
-            hoursSinceLastRunSuccess: result.hoursSinceLastRunSuccess,
-            daysSinceLastExportSuccess: result.daysSinceLastExportSuccess,
-          });
+      const [runResult, exportsResult] = await Promise.allSettled([
+        fetchLastBackupRunSuccessAt(),
+        fetchBackupExportsHealth(),
+      ]);
+      if (cancelled) return;
+
+      if (runResult.status === "rejected" || exportsResult.status === "rejected") {
+        // テーブル未適用・RLS拒否等。黙って消さず、原因が分かる形で「確認できません」を出す。
+        const details: string[] = [];
+        if (runResult.status === "rejected") {
+          details.push(formatErrorForUser("backup_runs の取得に失敗", runResult.reason));
         }
-      } catch {
-        // テーブル未適用・RPC失敗等。黙って消さず「確認できません」を出す。
-        if (!cancelled) setState({ kind: "unavailable" });
+        if (exportsResult.status === "rejected") {
+          details.push(formatErrorForUser("backup_exports の取得に失敗", exportsResult.reason));
+        }
+        const detail = details.join(" / ");
+        console.error("[BackupHealthBanner] バックアップ状態の取得に失敗:", detail);
+        setState({ kind: "unavailable", detail });
+        return;
+      }
+
+      const result = resolveBackupHealth({
+        lastRunSuccessAt: runResult.value,
+        hasAnyExportRecord: exportsResult.value.hasAnyRecord,
+        lastExportSuccessAt: exportsResult.value.lastSuccessAt,
+        now: new Date(),
+      });
+      if (result.level === "none") {
+        setState({ kind: "hidden" });
+      } else {
+        setState({
+          kind: "shown",
+          level: result.level,
+          hoursSinceLastRunSuccess: result.hoursSinceLastRunSuccess,
+          daysSinceLastExportSuccess: result.daysSinceLastExportSuccess,
+        });
       }
     })();
     return () => { cancelled = true; };
@@ -99,7 +111,7 @@ export function BackupHealthBanner({ currentUser }: Props) {
 
   const body =
     state.kind === "unavailable"
-      ? "バックアップの管理テーブルが見つからないか、確認中にエラーが発生しました。マイグレーション（20260916_add_backup.sql）が適用済みか確認してください。"
+      ? `バックアップの管理情報を取得できませんでした。${state.detail}`
       : state.kind === "shown" && state.level === "red"
         ? `一次バックアップ（backup_runs）の最終成功：${formatElapsedHours(state.hoursSinceLastRunSuccess)}。24時間以上成功していません。`
         : state.kind === "shown"
@@ -126,7 +138,7 @@ export function BackupHealthBanner({ currentUser }: Props) {
         </span>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontWeight: 600, marginBottom: "4px" }}>{title}</div>
-          <div style={{ opacity: 0.9 }}>{body}</div>
+          <div style={{ opacity: 0.9, wordBreak: "break-word", overflowWrap: "anywhere" }}>{body}</div>
           <div style={{ marginTop: "6px", opacity: 0.75, fontSize: "10.5px" }}>
             詳細は 設定 → アプリ設定 → バックアップ で確認できます。
           </div>

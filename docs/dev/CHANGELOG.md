@@ -7250,3 +7250,20 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #
 # 最終更新：2026-09-17（v3.112）
 
+
+# v3.113（2026-09-18）：バックアップ状態バナーのエラー握りつぶしを解消
+
+# * 発端：本番で管理者が開くと BackupHealthBanner が「マイグレーション
+#   （20260916_add_backup.sql）が適用済みか確認してください」と表示。しかし本番DBは
+#   backup_runs/backup_objects/backup_exports の3表・GRANT・RLS・関数とも調査済みで白、
+#   直近のcronも成功していた（＝マイグレーションは適用済み）。
+# * 原因：BackupHealthBanner.tsx の catch が例外の中身を握りつぶし、固定文言を出していた
+#   ため、実際に何が失敗しているのか（RLS拒否か・別のエラーか）が画面から分からなかった。
+# * 修正：fetchLastBackupRunSuccessAt() と fetchBackupExportsHealth() を Promise.allSettled
+#   にし、どちらが失敗したかを formatErrorForUser() で整形して detail に持たせ、バナー本文
+#   に表示するようにした（あわせて console.error にも出す）。「マイグレーション未適用」と
+#   断定する文言は削除し、「バックアップの管理情報を取得できませんでした。」＋詳細に変更した。
+# * スコープ：BackupHealthBanner.tsx のみ。resolveBackupHealth の判定ロジック・
+#   SchemaHealthBanner.tsx は変更していない。
+
+最終更新：2026-09-18（v3.113）
