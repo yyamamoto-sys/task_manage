@@ -1883,7 +1883,7 @@ function Sidebar({
 
       {/* ロゴ・折りたたみボタン行 */}
       <div style={{
-        padding: c ? "10px 0" : "10px 14px 10px",
+        padding: c ? "8px 0" : "8px 12px",
         borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center",
         gap: "6px", flexShrink: 0,
@@ -1922,7 +1922,7 @@ function Sidebar({
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto", overflowX: "hidden", display: "flex", flexDirection: "column" }}>
 
       {/* モードトグル */}
-      <div style={{ padding: c ? "6px 4px" : "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+      <div style={{ padding: c ? "5px 4px" : "6px 8px 3px", flexShrink: 0 }}>
         <AppModeToggle mode={appMode} onToggle={onToggleMode} compact={c} />
       </div>
 
@@ -1932,27 +1932,24 @@ function Sidebar({
           兼務者は選択してもselectScopedが絞り込みをしない（自部署＋兼務先が常に全部見える）ため、
           ここでの選択は「新規作成時のデフォルト所属部署」を選ぶ程度の意味にとどまる。 */}
       {!c && accessibleGroups.length >= 2 && (
-        <div style={{ padding: "8px 8px 4px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
-          <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "4px", letterSpacing: "0.03em" }}>
-            {t("layout.sidebar.groupLabel")}
-          </div>
+        <div style={{ padding: "3px 8px 4px", flexShrink: 0 }}>
           <CustomSelect
             value={currentGroupId ?? ""}
             onChange={onSelectGroup}
-            options={accessibleGroups.map(g => ({ value: g.id, label: g.name }))}
+            options={accessibleGroups.map(g => ({ value: g.id, label: `🏢 ${g.name}` }))}
             placeholder={t("layout.sidebar.groupPlaceholder")}
           />
         </div>
       )}
 
       {/* 検索（コマンドパレット起動）。Ctrl+K だけでは気づけないため常設ボタンを置く */}
-      <div style={{ padding: c ? "6px 4px 0" : "8px 8px 0", flexShrink: 0 }}>
+      <div style={{ padding: c ? "5px 4px 0" : "4px 8px 0", flexShrink: 0 }}>
         <button
           onClick={onOpenPalette}
           title={t("layout.sidebar.searchTitle")}
           style={{
             display: "flex", alignItems: "center", gap: c ? 0 : "8px",
-            padding: c ? "8px 0" : "7px 10px",
+            padding: c ? "7px 0" : "5px 10px",
             width: "100%", boxSizing: "border-box",
             justifyContent: c ? "center" : "flex-start",
             background: "var(--color-bg-primary)",
@@ -1977,14 +1974,14 @@ function Sidebar({
       </div>
 
       {/* AI ツール（モード共通） */}
-      <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
+      <div style={{ borderBottom: "1px solid var(--color-border-primary)", padding: c ? "5px 4px" : "6px 6px", flexShrink: 0 }}>
         <button
           data-tour-id="ai-tool-btn"
           onClick={onOpenConsult}
-          title={t("layout.sidebar.aiToolTitle")}
+          title={`${t("layout.sidebar.aiToolTitle")}（${t("layout.sidebar.aiToolSub")}）`}
           style={{
             display: "flex", alignItems: "center", gap: c ? 0 : "10px",
-            padding: c ? "10px 0" : "10px 12px",
+            padding: c ? "9px 0" : "8px 10px",
             width: "100%", boxSizing: "border-box",
             justifyContent: c ? "center" : "flex-start",
             background: isConsultOpen
@@ -2002,9 +1999,6 @@ function Sidebar({
               <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "var(--color-ai-from)", lineHeight: 1.3 }}>
                 {t("layout.sidebar.aiToolLabel")}
               </div>
-              <div style={{ fontSize: "10px", color: isConsultOpen ? "rgba(255,255,255,0.8)" : "var(--color-text-tertiary)", marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                {t("layout.sidebar.aiToolSub")}
-              </div>
             </div>
           )}
           {!c && (
@@ -2017,7 +2011,7 @@ function Sidebar({
 
       {appMode === "plan" ? (<>
         {/* 計画管理：メニュー */}
-        <div data-tour-id="nav-items" style={{ padding: c ? "6px 0" : "8px 0 4px" }}>
+        <div data-tour-id="nav-items" style={{ padding: c ? "5px 0" : "5px 0 2px" }}>
           {!c && <SectionLabel>{t("layout.sidebar.menuLabel")}</SectionLabel>}
           {NAV_ITEMS.map(({ view, label, icon, tooltip }) => (
             <NavItem
@@ -2033,11 +2027,11 @@ function Sidebar({
         </div>
 
         {/* 計画管理：プロジェクト一覧（スクロールは親の flex:1 ラッパーが担う） */}
-        <div style={{ padding: c ? "6px 0" : "4px 0" }}>
+        <div style={{ padding: c ? "5px 0" : "3px 0" }}>
           {!c && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "8px 14px 4px",
+              padding: "5px 14px 3px",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1, minWidth: 0 }}>
                 <button
@@ -2401,7 +2395,7 @@ function Sidebar({
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{
-      padding: "6px 12px 3px",
+      padding: "4px 12px 2px",
       fontSize: "10px", fontWeight: "500",
       color: "var(--color-text-tertiary)", letterSpacing: "0.05em",
     }}>
@@ -2454,7 +2448,7 @@ function NavItem({
           onMouseLeave={handleMouseLeave}
           style={{
             display: "flex", alignItems: "center", justifyContent: "center",
-            padding: "7px 0",
+            padding: "6px 0",
             background: active ? "var(--color-bg-primary)" : "transparent",
             border: "none",
             borderRadius: "var(--radius-md)",
@@ -2498,7 +2492,7 @@ function NavItem({
         onMouseLeave={handleMouseLeave}
         style={{
           display: "flex", alignItems: "center", gap: "8px",
-          padding: "6px 10px",
+          padding: "5px 10px",
           background: active ? "var(--color-bg-primary)" : "transparent",
           border: "none",
           borderRadius: "var(--radius-md)",

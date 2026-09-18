@@ -7266,4 +7266,73 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * スコープ：BackupHealthBanner.tsx のみ。resolveBackupHealth の判定ロジック・
 #   SchemaHealthBanner.tsx は変更していない。
 
-最終更新：2026-09-18（v3.113）
+
+# v3.114（2026-09-18）：拡大表示でも一覧が読めるように、画面上部とサイドバーの縦占有を圧縮
+
+# * 発端：山本さんが利用者から「画面が小さい・視力の問題でブラウザを拡大して使うと、
+#   上部メニューとサイドバーが画面の大半を占めてしまう」との指摘を受けた。
+# * 🔴 方針：ブラウザ拡大はビューポートをCSS px換算で縮めるため、**縦の固定占有（chrome）の
+#   比率だけが上がる**のが現象の本体。拡大して使う人が欲しいのは「大きい文字」なので、
+#   fontSize を下げる方向の圧縮は逆効果になる。削るのは文字ではなく、区切り線・見出しラベル・
+#   重複ボタン・段数といった「内容でない部分」に限る。今回 fontSize は1箇所も変更していない。
+#
+# ## ① ListView 上部ツールバー：2段 → 1段（約82px → 38px）
+# * 新規 src/components/list/ListToolbar.tsx（681行）に切り出した（ListView.tsx は1596行あり、
+#   これ以上膨らませないため）。ListView.tsx は 1596 → 1458行。
+# * 表に出るボタンを11個 → 6個にし、4つのポップオーバーへ集約した：
+#   - 「▦ PJ別 ▾」＝まとめ方（PJ/担当者/状態/タグ）
+#   - 「⚙ フィルター ▾」＝状態・優先度・担当者・👤自分担当のみ・📅今週期限のみ・🙈完了を隠す・すべて解除
+#   - 「↕ 期日順 ▾」＝期日/名前（昇降）・⠿手動並べ替え・🔢タスク名の番号順に並べ直す
+#   - 「⋯」＝表示密度（シンプル/詳細）・CSV出力
+# * 検索は🔍アイコンからインライン展開。searchText が空でないときは常に展開したままにする
+#   （絞り込みが効いているのに入力欄が隠れていると、件数が減った理由が分からなくなるため）。
+#   新設の「/」ショートカットで開いてフォーカスする。
+# * 🔴 フィルターポップオーバーの中では CustomSelect を使っていない。CustomSelect は
+#   createPortal(document.body) する別のポップオーバーであり、親の「外側クリックで閉じる」判定が
+#   その Portal を外側と見なして、セレクトを開いた瞬間に親が閉じるため。担当者は素の input＋
+#   リストで実装している。**入れ子のポップオーバーを作らないこと。**
+# * 4つとも src/hooks/useFloatingPanel.ts 経由（Section 51）。同時に1つだけ開く単一 state
+#   （openMenu）で管理。共通の ToolbarMenu を1つ作って使い回している（Section 51の教訓＝
+#   同じコードを複数箇所にコピペしない）。
+# * Section 31（flexWrap:"wrap" / 各トリガーに whiteSpace:"nowrap"＋flexShrink:0）と
+#   Section 49・50（固定 height を使わず minHeight:"38px"）を適用済み。
+#
+# ## ② サイドバー（MainLayout.tsx）：展開時 約317px → 約243px（-74px）
+# * AIツールボタンを2行 → 1行（-23px）。サブ文言 layout.sidebar.aiToolSub は削除せず title
+#   （ツールチップ）に連結して情報を残した。data-tour-id="ai-tool-btn" は維持。
+# * 「表示部署」の見出しラベルを削除（-22px）。CustomSelect の options.label を `🏢 ${g.name}`
+#   にして部署であることを示す。未使用になった layout.sidebar.groupLabel は ja/en とも削除。
+# * 区切り線を4本 → 2本（モードトグル下・表示部署下を削除）。線に付随する上下 padding が
+#   別々に乗るのが効くため、padding 調整とセットで行った。
+# * ロゴ行・モードトグル・検索・メニュー・PJ見出し・SectionLabel・NavItem の padding を
+#   2〜4px ずつ圧縮。fontSize は変更していない。
+#
+# ## ③ 一覧の行（ListView.tsx）：最上位タスク1行あたり 約16px
+# * 🔴 「＋ 子タスク」を名前セル下のブロック要素から、名前行の flex コンテナ内（💬の直後）へ
+#   移した。canAddChild = !task.parent_task_id のため **すべての最上位タスク行** が1行ぶん
+#   余計に高くなっていた。移動後は行高を決めるのが InlineEditText（11px≒16px）で、9pxの
+#   ボタン（≒12px）はそれより低いため行高への寄与が0になる。
+# * PJグループ見出しの padding を 7px 10px 4px → 4px 10px 3px（グループ1件あたり-4px）。
+# * 意図的に変更していないもの：td の padding:"6px 10px"（これ以上詰めるとクリック的中率が
+#   落ちる）／モバイルカードの padding:"12px 12px"・minHeight:"52px"（タッチ操作の的中率を優先）。
+#
+# ## 壊していないことを確認した既存挙動
+# * localStorage キー（groupBy/sortKey/sortDir/density）はキー名も保存タイミングも不変
+#   ＝利用者の既存設定をそのまま引き継ぐ。
+# * sortKey==="manual" とドラッグ並べ替え（canDrag・showHandleCol）の連携は無改修。
+# * v3.108 の handleSortByNameNumber（確認ダイアログ＋Undo）は1文字も変えずそのまま呼び出し。
+# * filterMyOnly ↔ filterMember の相互排他、groupBy==="assignee" で担当者フィルターを
+#   出さない条件、一括操作バーはいずれも維持。
+#
+# ## 🔴 副産物：ソース走査型の機械チェックがコメントで無力化されることを発見（Section 59）
+# * floatingPanelContract.test.ts は /pointerEvents:\s*"auto"/ をソース走査で探す。
+#   ListToolbar.tsx 冒頭の設計意図コメントにその文字列を書いたため、**実コードから
+#   pointerEvents:"auto" を削除してもテストが緑のまま**になっていた（意図的に壊して発覚）。
+#   コメントを言い換えて修正し、わざと壊して赤くなる／戻すと緑になることを確認済み。
+# * 同型の走査テスト（modalStyles.test.ts 等）にも同じ落とし穴がある。CLAUDE.md Section 59 参照。
+#
+# ## 他ビューは未対応
+# * カンバン・ガント・ワークロード・ダッシュボードのツールバーは今回触っていない。
+#   一覧ビューでの効果を実機で確認してから判断する。
+
+最終更新：2026-09-18（v3.114）

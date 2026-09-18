@@ -109,7 +109,6 @@ export const layoutJa = {
   "layout.sidebar.collapse": "メニューを閉じる",
   "layout.sidebar.resizeHandle.label": "サイドバーの幅を変更",
   "layout.sidebar.resizeHandle.title": "ドラッグで幅を変更（ダブルクリックで既定幅に戻す・左右矢印キーでも変更できます）",
-  "layout.sidebar.groupLabel": "表示部署",
   "layout.sidebar.groupPlaceholder": "部署を選択",
   "layout.sidebar.searchPlaceholder": "検索...",
   "layout.sidebar.searchTitle": "タスク・プロジェクトを横断検索（Ctrl+K）",

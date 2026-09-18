@@ -27,6 +27,7 @@ import { computeNameOrderAssignments } from "../../lib/task/nameOrder";
 import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { ListToolbar, type GroupBy, type SortKey, type SortDir, type Density } from "./ListToolbar";
 
 interface Props {
   currentUser: Member;
@@ -37,10 +38,6 @@ interface Props {
   /** サイドバーの「自分」トグル ON のとき true。自分が担当のタスクのみ表示 */
   mineOnly?: boolean;
 }
-
-type GroupBy = "project" | "assignee" | "status" | "tag";
-type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
-type SortDir = "asc" | "desc";
 
 const PRIO: Record<string, number> = { high: 0, mid: 1, low: 2, "": 3 };
 const STATUS_ORDER: Record<Task["status"], number> = { in_progress: 0, todo: 1, on_hold: 2, done: 3, cancelled: 4 };
@@ -146,6 +143,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const [filterHideDone, setFilterHideDone] = useState(false);
   const [filterMember,   setFilterMember  ] = useState<string>("all");
   const [searchText,     setSearchText    ] = useState("");
+  // 検索欄はツールバーの同じ行にインライン展開する（既定は閉じた状態＝🔍アイコンのみ）。
+  // searchText が空でないときは ListToolbar 側で常に展開されるため、ここは「明示的に開いたか」だけを持つ。
+  const [searchOpen,     setSearchOpen    ] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [selectedTaskId, setSelectedTaskId] = useState<string|null>(null);
   const [editingTaskId,  setEditingTaskId ] = useState<string|null>(null);
 
@@ -575,6 +576,15 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         setSelectedIds(new Set(filteredTasks.map(t => t.id)));
         return;
       }
+      // 「/」＝検索欄を開いてフォーカスする。上の3つのガード（入力中・詳細/モーダルが開いている・
+      // モバイル）をそのまま共有するため、専用のハンドラを増やさずこのeffectに分岐を足している。
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "/") {
+        e.preventDefault();
+        setSearchOpen(true);
+        // 展開の transition と同じフレームで focus しても当たらないことがあるため次フレームで当てる
+        requestAnimationFrame(() => searchInputRef.current?.focus());
+        return;
+      }
       if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key === "Escape") {
         clearSelection();
       }
@@ -588,8 +598,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     : <span style={{ marginLeft: 3, opacity: .2 }}>↕</span>;
 
   // 「シンプル」モードでは詳細列（優先度・工数）を非表示にして読みやすさを優先
-  const [density, setDensityState] = useState<"simple" | "detailed">(() => lsGet("density", "simple"));
-  const setDensity = (v: "simple" | "detailed") => { setDensityState(v); lsSet("density", v); };
+  const [density, setDensityState] = useState<Density>(() => lsGet("density", "simple"));
+  const setDensity = (v: Density) => { setDensityState(v); lsSet("density", v); };
 
   const allCols: { key: string; label: string; w: string; sortKey?: SortKey; simple: boolean }[] = [
     { key: "select",          label: "",         w: "32px",  simple: true  },
@@ -608,11 +618,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     filterMember !== "all", filterMyOnly, filterThisWeek, filterHideDone,
   ].filter(Boolean).length;
 
-  const clearAllFilters = useCallback(() => {
+  // 絞り込み条件だけを解除する（旧ツールバー2段目の「✕」と同じ範囲＝検索語は触らない）。
+  // フィルターポップオーバーの「すべて解除」はこちらを呼ぶ（activeFilterCount に検索語は含まれないため）。
+  const clearFilters = useCallback(() => {
     setFilterStatus("all"); setFilterPriority("all"); setFilterMember("all");
     setFilterMyOnly(false); setFilterThisWeek(false); setFilterHideDone(false);
-    setSearchText("");
   }, []);
+  // 空状態プレースホルダーの「フィルタを解除」は検索語も含めて全部戻す（既存の挙動）
+  const clearAllFilters = useCallback(() => {
+    clearFilters();
+    setSearchText("");
+  }, [clearFilters]);
 
   // 空状態プレースホルダー：絞り込み中 / 全くタスク無し で別メッセージ
   const emptyStateProps = activeFilterCount > 0 || searchText.trim()
@@ -632,190 +648,47 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
-        {/* ===== ツールバー 1段目：グループ + 検索 + 件数 + CSV ===== */}
-        <div style={{
-          padding: "7px 12px 6px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          background: "var(--color-bg-primary)", flexShrink: 0,
-          display: "flex", alignItems: "center", gap: "8px",
-        }}>
-          {/* グループ切替 */}
-          <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
-            {(["project", "assignee", "status", "tag"] as const).map(g => (
-              <button key={g} onClick={() => setGroupBy(g)}
-                title={g === "project" ? "プロジェクト別にまとめる" : g === "assignee" ? "担当者別にまとめる" : g === "status" ? "ステータス別にまとめる" : "タグ別にまとめる"}
-                style={{
-                padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                fontWeight: groupBy === g ? "500" : "400",
-                background: groupBy === g ? "var(--color-bg-primary)" : "transparent",
-                color: groupBy === g ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                boxShadow: groupBy === g ? "var(--shadow-sm)" : "none",
-              }}>
-                {g === "project" ? "PJ" : g === "assignee" ? "担当" : g === "status" ? "状態" : "タグ"}
-              </button>
-            ))}
-          </div>
-
-          {/* 手動並べ替えトグル（ON時：PJ別＋display_order順＝ドラッグで親タスクを並べ替え可能） */}
-          <button
-            onClick={() => {
-              const enable = sortKey !== "manual";
-              setSortKeyState(enable ? "manual" : "due_date"); lsSet("sortKey", enable ? "manual" : "due_date");
-              if (enable) { setGroupByState("project"); lsSet("groupBy", "project"); }
-            }}
-            title={sortKey === "manual" ? "手動並べ替えを終了（期日順に戻す）" : "親タスクをドラッグで並べ替え（全員に共有）"}
-            aria-label="手動並べ替え"
-            style={{
-              padding: "3px 9px", fontSize: "11px", borderRadius: "var(--radius-md)", cursor: "pointer",
-              border: `1px solid ${sortKey === "manual" ? "var(--color-brand-border)" : "var(--color-border-primary)"}`,
-              background: sortKey === "manual" ? "var(--color-brand-light)" : "transparent",
-              color: sortKey === "manual" ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
-              whiteSpace: "nowrap", flexShrink: 0,
-            }}
-          >⠿ 並べ替え</button>
-
-          {/* 番号順に並べる（タスク名の先頭数値の自然順。CLAUDE.md v3.108） */}
-          <button
-            onClick={handleSortByNameNumber}
-            title="タスク名の先頭の番号（自然順）で並べ替えます。全員の画面に反映されます。"
-            aria-label="番号順に並べる"
-            style={{
-              padding: "3px 9px", fontSize: "11px", borderRadius: "var(--radius-md)", cursor: "pointer",
-              border: "1px solid var(--color-border-primary)", background: "transparent",
-              color: "var(--color-text-tertiary)", whiteSpace: "nowrap", flexShrink: 0,
-            }}
-          >🔢 番号順に並べる</button>
-
-          {/* タスク並び順トグル（期日順⇔名前順・ガントビューと同じ見た目） */}
-          <div style={{ display: "flex", gap: "2px", padding: "2px", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", flexShrink: 0 }}>
-            {(["due_date", "name"] as const).map(k => (
-              <button
-                key={k}
-                onClick={() => {
-                  setSortKeyState(k); lsSet("sortKey", k);
-                  setSortDirState("asc"); lsSet("sortDir", "asc");
-                }}
-                title={k === "due_date" ? "期日順に並べる" : "名前順に並べる"}
-                aria-label={k === "due_date" ? "期日順" : "名前順"}
-                style={{
-                  padding: "3px 8px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                  background: sortKey === k ? "var(--color-bg-primary)" : "transparent",
-                  color: sortKey === k ? "var(--color-brand)" : "var(--color-text-secondary)",
-                  fontWeight: sortKey === k ? "600" : "400",
-                  boxShadow: sortKey === k ? "var(--shadow-sm)" : "none",
-                }}
-              >
-                {k === "due_date" ? "📅" : "🔠"}
-              </button>
-            ))}
-          </div>
-
-          {/* 検索 */}
-          <input value={searchText} onChange={e => setSearchText(e.target.value)}
-            placeholder="🔍 タスク名・メモで検索" style={{
-              flex: 1, minWidth: "120px", padding: "4px 10px", fontSize: "11px",
-              border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-              background: "var(--color-bg-primary)", color: "var(--color-text-primary)", outline: "none",
-            }} />
-
-          {/* 件数 */}
-          <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", whiteSpace: "nowrap" }}>
-            {filteredTasks.length}件
-            {activeFilterCount > 0 && (
-              <span style={{
-                marginLeft: 5, fontSize: "9px", padding: "1px 5px", borderRadius: "99px",
-                background: "var(--color-brand-light)", color: "var(--color-text-purple)",
-                border: "1px solid var(--color-brand-border)",
-              }}>
-                フィルター {activeFilterCount}
-              </span>
-            )}
-          </span>
-
-          {/* 表示密度トグル */}
-          <div style={{ display: "flex", background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-md)", padding: "2px" }}>
-            {(["simple", "detailed"] as const).map(d => (
-              <button key={d} onClick={() => setDensity(d)}
-                title={d === "simple" ? "主要4列のみ" : "全列（優先度・工数を含む）"}
-                style={{
-                  padding: "3px 9px", fontSize: "10px", borderRadius: "var(--radius-sm)", border: "none", cursor: "pointer",
-                  fontWeight: density === d ? "500" : "400",
-                  background: density === d ? "var(--color-bg-primary)" : "transparent",
-                  color: density === d ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
-                  boxShadow: density === d ? "var(--shadow-sm)" : "none",
-                }}>
-                {d === "simple" ? "▤" : "▦"}
-              </button>
-            ))}
-          </div>
-
-          {/* CSV（アイコンのみ・tooltip） */}
-          <button onClick={() => exportCSV(filteredTasks, projects, members)} title="CSV出力" aria-label="CSV出力" style={{
-            padding: "4px 8px", fontSize: "11px", color: "var(--color-text-secondary)",
-            border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-            cursor: "pointer", background: "transparent", whiteSpace: "nowrap",
-          }}>⭳</button>
-        </div>
-
-        {/* ===== ツールバー 2段目：フィルター群 ===== */}
-        <div style={{
-          padding: "5px 12px",
-          borderBottom: "1px solid var(--color-border-primary)",
-          background: "var(--color-bg-secondary)", flexShrink: 0,
-          display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap",
-        }}>
-          <CustomSelect value={filterStatus} onChange={value => setFilterStatus(value as Task["status"] | "all")}
-            options={[
-              { value: "all", label: "状態：すべて" },
-              { value: "todo", label: "ToDo" },
-              { value: "in_progress", label: "進行中" },
-              { value: "on_hold", label: "保留" },
-              { value: "done", label: "完了" },
-              { value: "cancelled", label: "中止" },
-            ]}
-            style={{ width: "130px" }} />
-
-          <CustomSelect value={filterPriority} onChange={value => setFilterPriority(value as "all"|"high"|"mid"|"low")}
-            options={[
-              { value: "all", label: "優先度：すべて" },
-              { value: "high", label: "高" },
-              { value: "mid", label: "中" },
-              { value: "low", label: "低" },
-            ]}
-            style={{ width: "120px" }} />
-
-          {/* 担当者別グループ中は担当者フィルターを非表示（冗長のため） */}
-          {groupBy !== "assignee" && (
-            <CustomSelect value={filterMember} onChange={value => { setFilterMember(value); setFilterMyOnly(false); }}
-              options={[
-                { value: "all", label: "担当者：全員" },
-                ...[...members].sort((a, b) =>
-                  a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
-                ).map(m => ({ value: m.id, label: m.display_name })),
-              ]}
-              searchable searchPlaceholder="メンバーで検索..."
-              style={{ width: "150px" }} />
-          )}
-
-          <div style={{ width: 1, height: 14, background: "var(--color-border-primary)", margin: "0 2px" }} />
-
-          <Chip active={filterMyOnly}   onClick={() => { setFilterMyOnly(v => !v); setFilterMember("all"); }} label="👤" title="自分担当のみ" />
-          <Chip active={filterThisWeek} onClick={() => setFilterThisWeek(v => !v)} label="📅" title="今週期限のみ" />
-          <Chip active={filterHideDone} onClick={() => setFilterHideDone(v => !v)} label="🙈" title="完了を隠す" />
-
-          {/* フィルタークリア */}
-          {activeFilterCount > 0 && (
-            <button onClick={() => {
-              setFilterStatus("all"); setFilterPriority("all");
-              setFilterMember("all"); setFilterMyOnly(false);
-              setFilterThisWeek(false); setFilterHideDone(false);
-            }} title="フィルターをクリア" aria-label="フィルターをクリア" style={{
-              marginLeft: "auto", padding: "2px 8px", fontSize: "11px",
-              color: "var(--color-text-tertiary)", border: "none",
-              background: "transparent", cursor: "pointer",
-            }}>✕</button>
-          )}
-        </div>
+        {/* ===== ツールバー（1段：まとめ方・フィルター・並べ替え／件数・検索・その他） =====
+            2段（約75px）だった固定占有を1段（約38px）に畳む。中身は ListToolbar.tsx に切り出し、
+            state / setter / ハンドラだけをここから渡す（ListView.tsx をこれ以上膨らませない）。 */}
+        <ListToolbar
+          groupBy={groupBy}
+          onChangeGroupBy={setGroupBy}
+          filterStatus={filterStatus}
+          onChangeFilterStatus={setFilterStatus}
+          filterPriority={filterPriority}
+          onChangeFilterPriority={setFilterPriority}
+          filterMember={filterMember}
+          onChangeFilterMember={value => { setFilterMember(value); setFilterMyOnly(false); }}
+          filterMyOnly={filterMyOnly}
+          onToggleMyOnly={() => { setFilterMyOnly(v => !v); setFilterMember("all"); }}
+          filterThisWeek={filterThisWeek}
+          onToggleThisWeek={() => setFilterThisWeek(v => !v)}
+          filterHideDone={filterHideDone}
+          onToggleHideDone={() => setFilterHideDone(v => !v)}
+          activeFilterCount={activeFilterCount}
+          onClearFilters={clearFilters}
+          sortKey={sortKey}
+          sortDir={sortDir}
+          onChangeSortKey={handleSort}
+          onToggleManualSort={() => {
+            const enable = sortKey !== "manual";
+            setSortKeyState(enable ? "manual" : "due_date"); lsSet("sortKey", enable ? "manual" : "due_date");
+            if (enable) { setGroupByState("project"); lsSet("groupBy", "project"); }
+          }}
+          onSortByNameNumber={handleSortByNameNumber}
+          searchText={searchText}
+          onChangeSearchText={setSearchText}
+          searchOpen={searchOpen}
+          setSearchOpen={setSearchOpen}
+          searchInputRef={searchInputRef}
+          density={density}
+          onChangeDensity={setDensity}
+          onExportCSV={() => exportCSV(filteredTasks, projects, members)}
+          taskCount={filteredTasks.length}
+          members={members}
+          currentUserId={currentUser.id}
+        />
 
         {/* ===== 一括操作バー（選択時のみ表示・スムーズ展開でレイアウト飛びを防止） ===== */}
         <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "120px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
@@ -1073,7 +946,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             aria-label={`${group.label}を${isGroupCollapsed ? "展開" : "折りたたむ"}`}
                             style={{
                               display: "flex", alignItems: "center", gap: "6px",
-                              width: "100%", padding: "7px 10px 4px",
+                              width: "100%", padding: "4px 10px 3px",
                               border: "none", background: "transparent", cursor: "pointer",
                               textAlign: "left", font: "inherit",
                             }}
@@ -1503,6 +1376,20 @@ const ListTaskRow = memo(function ListTaskRow({
           {task.comment && (
             <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
           )}
+          {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI）。
+              名前の下にブロックで置くと canAddChild=全最上位タスクのため1行ぶん（約14px）
+              余計に高くなる。名前行のflexコンテナ内に収めて行の縦を詰める。 */}
+          {canAddChild && (
+            <button
+              onClick={e => { e.stopPropagation(); openAddChild(task); }}
+              style={{
+                padding: "0 4px", fontSize: "9px",
+                color: "var(--color-text-tertiary)", border: "none",
+                background: "transparent", cursor: "pointer",
+                flexShrink: 0, whiteSpace: "nowrap",
+              }}
+            >＋ 子タスク</button>
+          )}
           {isSelected && (
             <span style={{ fontSize: "10px", color: "var(--color-text-purple)", flexShrink: 0 }}>›</span>
           )}
@@ -1537,17 +1424,6 @@ const ListTaskRow = memo(function ListTaskRow({
             </span>
           </div>
         )}
-        {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI） */}
-        {canAddChild && (
-          <button
-            onClick={e => { e.stopPropagation(); openAddChild(task); }}
-            style={{
-              marginTop: "2px", padding: "1px 4px", fontSize: "9px",
-              color: "var(--color-text-tertiary)", border: "none",
-              background: "transparent", cursor: "pointer",
-            }}
-          >＋ 子タスク</button>
-        )}
       </td>
       {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
       <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
@@ -1579,18 +1455,4 @@ const ListTaskRow = memo(function ListTaskRow({
     </tr>
   );
 });
-
-function Chip({ active, onClick, label, title }: { active: boolean; onClick: () => void; label: string; title?: string }) {
-  return (
-    <button onClick={onClick} title={title} aria-label={title ?? label} style={{
-      padding: "3px 9px", fontSize: "12px", borderRadius: "var(--radius-full)", cursor: "pointer",
-      lineHeight: 1.2,
-      fontWeight: active ? "500" : "400",
-      background: active ? "var(--color-brand-light)" : "transparent",
-      color: active ? "var(--color-text-purple)" : "var(--color-text-tertiary)",
-      border: active ? "1px solid var(--color-brand-border)" : "1px solid var(--color-border-primary)",
-      transition: "all 0.1s",
-    }}>{label}</button>
-  );
-}
 
