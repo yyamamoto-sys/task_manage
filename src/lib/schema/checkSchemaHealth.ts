@@ -107,8 +107,11 @@ export async function runSchemaHealthCheck(): Promise<SchemaHealthResult> {
   try {
     const payload = SCHEMA_HEALTH_CHECKS.map(toCheckPayload);
     const { data, error } = await supabase.rpc("check_schema_health", { p_checks: payload });
+    // 画面には出さない（fail-safe）が、原因を後から確定できるようコンソールには残す（v3.113の教訓）
+    if (error && !isRpcMissingError(error)) console.warn("[schemaHealth] check failed:", error);
     return resolveSchemaHealthResult(SCHEMA_HEALTH_CHECKS, { data, error });
-  } catch {
+  } catch (e) {
+    console.warn("[schemaHealth] check threw:", e);
     return { status: "unknown" };
   }
 }

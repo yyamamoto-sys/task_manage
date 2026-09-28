@@ -499,6 +499,24 @@ button:not(:disabled):active::after { background: rgba(58, 48, 30, 0.12); }
   color: var(--color-text-primary);
 }
 
+/* ===== サイドバー幅のドラッグハンドル（v3.115） =====
+   掴める幅は6pxのまま、見た目は境界線上の2pxの帯だけを光らせる。 */
+.sidebar-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 0; bottom: 0; right: 0;
+  width: 2px;
+  background: var(--color-brand);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+.sidebar-resize-handle:hover::after,
+.sidebar-resize-handle:focus-visible::after,
+.sidebar-resize-handle[data-resizing]::after {
+  opacity: 0.6;
+}
+.sidebar-resize-handle:focus-visible { outline: none; }
+
 /* ===== チェックボックス付きラベル ===== */
 label.check-row {
   transition: background var(--transition-fast);

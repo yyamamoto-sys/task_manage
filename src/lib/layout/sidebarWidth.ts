@@ -6,16 +6,18 @@
 // 分離し、テストで固定する（filterByPeriod.ts・groupByMonth.tsと同じ「純粋関数に切り出す」
 // 流儀。CLAUDE.md Section 20参照）。
 //
-// 【範囲の根拠】最小160px：ナビ項目のラベル文字（例：「ワークロード」）が折り返さずに
-// 収まる下限。最大420px：メインエリア（ガント・カンバン等）が極端に狭くならない上限。
-// 山本さんの依頼「おおよそ160px〜420px」を実装値として固定した。
+// 【範囲の根拠】最小140px：ナビ項目の最長ラベル「ダッシュボード」（約130px）が省略されずに
+// 収まる下限。これより狭い幅では長い見出しが省略表示・折り返しになる。
+// 最大420px：メインエリア（ガント・カンバン等）が極端に狭くならない上限。
+// 既定160px（v3.115で196pxから約2割細くした）：サイドバー内で最も幅を取る
+// 「プロジェクト見出し・＋・自分/全件」行（約142px＋左右padding 16px）が1行に収まる最小値。
 
 /** サイドバー展開時の幅（px）の最小値 */
-export const SIDEBAR_MIN_WIDTH = 160;
+export const SIDEBAR_MIN_WIDTH = 140;
 /** サイドバー展開時の幅（px）の最大値 */
 export const SIDEBAR_MAX_WIDTH = 420;
 /** サイドバー展開時の既定幅（px）。ダブルクリックで戻す値でもある */
-export const SIDEBAR_DEFAULT_WIDTH = 196;
+export const SIDEBAR_DEFAULT_WIDTH = 160;
 /** キーボード操作（左右矢印キー）1回あたりの変化量（px） */
 export const SIDEBAR_WIDTH_KEY_STEP = 12;
 

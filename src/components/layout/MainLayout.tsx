@@ -139,7 +139,7 @@ type LabViewId = "graph" | "calendar" | "structure" | "mypage";
 /**
  * サイドバー幅（折りたたみ時）。Sidebar自身の width が参照する。展開時の幅は可変
  * （v3.66・境界のドラッグでリサイズ可能）のため、`src/lib/layout/sidebarWidth.ts` の
- * `SIDEBAR_DEFAULT_WIDTH`（196px）が既定値として使われる。
+ * `SIDEBAR_DEFAULT_WIDTH`（160px）が既定値として使われる。
  */
 const SIDEBAR_WIDTH_COLLAPSED = "48px";
 
@@ -262,10 +262,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   });
   // サイドバー幅（境界のドラッグ／キーボードでの変更。v3.66。折りたたみ時の48pxとは別に、
   // 展開時の幅だけを記憶する＝折りたたみ→展開で必ず記憶した幅に戻る）。
-  // ConsultationPanel.tsx / PersonalOkrAiPanel.tsx の「左端ドラッグでリサイズ」と同じ流儀
-  // （window の mousemove/mouseup・refで最新値を持つ・mouseup時にlocalStorageへ確定保存）だが、
-  // 3箇所目にして初めてキーボード操作（矢印キー）とdblclickでの既定幅復帰が要件に入ったため、
-  // 既存2箇所の共通化はしていない（判断理由はCLAUDE.md Section 20参照）。
+  // refで最新値を持ち、ドラッグ終了時にlocalStorageへ確定保存する。キーボード操作（矢印キー）と
+  // dblclickでの既定幅復帰を持つため、AIパネルのリサイズとは共通化していない（CLAUDE.md Section 30）。
   const [sidebarWidth, setSidebarWidth] = useState<number>(
     () => parseStoredSidebarWidth(localStorage.getItem(KEYS.SIDEBAR_WIDTH))
   );
@@ -275,9 +273,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const sidebarDragStartW = useRef(0);
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
 
-  const handleSidebarResizeMouseDown = useCallback((e: React.MouseEvent) => {
-    if (isSidebarCollapsed) return; // 折りたたみ中はドラッグ不可
+  // v3.115：window の mousemove/mouseup から pointer capture へ変更。ハンドル外（iframe・
+  // 別パネル上）でボタンを離しても pointerup が必ずハンドルに届き、ドラッグが外れ残らない。
+  const handleSidebarResizePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (isSidebarCollapsed || e.button !== 0) return;
     e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
     isDraggingSidebar.current = true;
     sidebarDragStartX.current = e.clientX;
     sidebarDragStartW.current = sidebarWidthRef.current;
@@ -286,26 +287,29 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     document.body.style.userSelect = "none";
   }, [isSidebarCollapsed]);
 
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!isDraggingSidebar.current) return;
-      // 右端ドラッグ：右に動かすと幅が増える
-      const delta = e.clientX - sidebarDragStartX.current;
-      const w = clampSidebarWidth(sidebarDragStartW.current + delta);
-      sidebarWidthRef.current = w;
-      setSidebarWidth(w);
-    };
-    const onUp = () => {
-      if (!isDraggingSidebar.current) return;
-      isDraggingSidebar.current = false;
-      setIsSidebarResizing(false);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(sidebarWidthRef.current)); } catch { /* ignore */ }
-    };
-    window.addEventListener("mousemove", onMove);
-    window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  const handleSidebarResizePointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingSidebar.current) return;
+    const w = clampSidebarWidth(sidebarDragStartW.current + (e.clientX - sidebarDragStartX.current));
+    if (w === sidebarWidthRef.current) return;
+    sidebarWidthRef.current = w;
+    setSidebarWidth(w);
+  }, []);
+
+  const handleSidebarResizePointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingSidebar.current) return;
+    isDraggingSidebar.current = false;
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId);
+    setIsSidebarResizing(false);
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
+    try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(sidebarWidthRef.current)); } catch { /* ignore */ }
+  }, []);
+
+  // ドラッグ中にアンマウントされた場合（ログアウト等）に body のカーソル・選択抑止を残さない
+  useEffect(() => () => {
+    if (!isDraggingSidebar.current) return;
+    document.body.style.cursor = "";
+    document.body.style.userSelect = "";
   }, []);
 
   const handleSidebarResizeDoubleClick = useCallback(() => {
@@ -1583,7 +1587,9 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onToggleCollapsed={toggleSidebar}
         width={sidebarWidth}
         isResizing={isSidebarResizing}
-        onResizeMouseDown={handleSidebarResizeMouseDown}
+        onResizePointerDown={handleSidebarResizePointerDown}
+        onResizePointerMove={handleSidebarResizePointerMove}
+        onResizePointerUp={handleSidebarResizePointerUp}
         onResizeDoubleClick={handleSidebarResizeDoubleClick}
         onResizeKeyDown={handleSidebarResizeKeyDown}
         appMode={appMode}
@@ -1734,7 +1740,9 @@ interface SidebarProps {
   /** ドラッグ中：trueの間はwidthのtransitionを止める（カーソル追従の遅延を防ぐ。
    *  ConsultationPanelのisConsultResizingと同じ考え方） */
   isResizing: boolean;
-  onResizeMouseDown: (e: React.MouseEvent) => void;
+  onResizePointerDown: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onResizePointerMove: (e: React.PointerEvent<HTMLDivElement>) => void;
+  onResizePointerUp: (e: React.PointerEvent<HTMLDivElement>) => void;
   onResizeDoubleClick: () => void;
   onResizeKeyDown: (e: React.KeyboardEvent) => void;
   appMode: AppMode;
@@ -1761,7 +1769,7 @@ function Sidebar({
   currentUser, onLogout, isConsultOpen, onOpenConsult,
   theme, onToggleTheme, onOpenGraph, onOpenCalendar, onOpenStructure, onOpenMyPage, activeLabView,
   onOpenAdmin, onOpenGuide, onCreateProject, collapsed, onToggleCollapsed,
-  width, isResizing, onResizeMouseDown, onResizeDoubleClick, onResizeKeyDown,
+  width, isResizing, onResizePointerDown, onResizePointerMove, onResizePointerUp, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
   onOpenVersionHistory, onOpenAcceptInvite,
@@ -1793,8 +1801,27 @@ function Sidebar({
   }, []);
   // ゲストは「ガイド」のみ（設定・招待コードは!isGuest限定）。1件以下のときに見出しで包むと
   // かえって行数が増えるため、2件以上のときだけ見出し＋折りたたみにする（sidebarMiscSection.ts）。
-  const miscItemCount = 1 + (isGuest ? 0 : 2);
+  // v3.115でテーマ切替・ログアウト（展開時のみ）も「その他」に入れたため、展開時は常に2件以上になる。
+  const miscItemCount = 1 + (isGuest ? 0 : 2) + (c ? 0 : 2);
   const showMiscGroup = !c && shouldGroupSidebarMiscButtons(miscItemCount);
+  const miscBtnStyle: React.CSSProperties = {
+    width: "100%",
+    display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
+    gap: "8px",
+    padding: c ? "6px 0" : "6px 8px",
+    background: "transparent",
+    border: "1px solid var(--color-border-primary)",
+    borderRadius: "var(--radius-md)",
+    cursor: "pointer",
+    color: "var(--color-text-secondary)",
+    fontSize: "11px",
+    marginBottom: "4px",
+  };
+  const miscBtnLabelStyle: React.CSSProperties = { minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
+  const footerIconBtnStyle: React.CSSProperties = {
+    fontSize: "13px", lineHeight: 1, color: "var(--color-text-tertiary)",
+    background: "transparent", border: "none", cursor: "pointer", padding: "3px 2px", flexShrink: 0,
+  };
 
   // ===== PJ行の「⋮」メニュー（v3.54） =====
   // 権限判定はPJ設定画面（ProjectSettingsModal）の基本情報編集と同じ条件
@@ -1849,12 +1876,8 @@ function Sidebar({
       overflow: "hidden",
       transition: isResizing ? "none" : "width 0.2s ease",
     }}>
-      {/* 境界のドラッグでサイドバー幅を変更（v3.66）。折りたたみ中（48px）は非表示＝ドラッグ不可。
-          キーボード操作：フォーカスして左右矢印キーで変更。ダブルクリックで既定幅(196px)に戻す。
-          ConsultationPanel.tsx / PersonalOkrAiPanel.tsx の左端ドラッグハンドルと同じ流儀
-          （position:absoluteの細い帯・window mousemove/mouseup）だが、キーボード操作対応の
-          ためこのハンドルだけ role="separator" + tabIndex を持つ（判断理由はCLAUDE.md
-          Section 20参照）。 */}
+      {/* 境界のドラッグでサイドバー幅を変更（v3.66・v3.115でpointer capture化）。折りたたみ中（48px）は
+          非表示＝ドラッグ不可。フォーカスして左右矢印キーでも変更、ダブルクリックで既定幅に戻す。 */}
       {!c && (
         // role="separator"はjsx-a11yの既定「インタラクティブロール」一覧に無いため警告が出るが、ARIAの仕様上separatorはfocusable+キー操作可能にしてよい（window-splitter相当）。矢印キーでの幅変更に必須のためtabIndexを付ける
         // eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions
@@ -1867,23 +1890,25 @@ function Sidebar({
           aria-valuenow={width}
           // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex -- role="separator"に矢印キー操作を持たせるため必須
           tabIndex={0}
-          onMouseDown={onResizeMouseDown}
+          className="sidebar-resize-handle"
+          data-resizing={isResizing ? "1" : undefined}
+          onPointerDown={onResizePointerDown}
+          onPointerMove={onResizePointerMove}
+          onPointerUp={onResizePointerUp}
+          onPointerCancel={onResizePointerUp}
           onDoubleClick={onResizeDoubleClick}
           onKeyDown={onResizeKeyDown}
           title={t("layout.sidebar.resizeHandle.title")}
           style={{
             position: "absolute", right: 0, top: 0, bottom: 0, width: "6px",
-            cursor: "col-resize", zIndex: 5,
-            background: "transparent",
+            cursor: "col-resize", zIndex: 5, touchAction: "none",
           }}
-          onMouseEnter={e => { (e.currentTarget as HTMLDivElement).style.background = "var(--color-brand)"; (e.currentTarget as HTMLDivElement).style.opacity = "0.4"; }}
-          onMouseLeave={e => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; (e.currentTarget as HTMLDivElement).style.opacity = "1"; }}
         />
       )}
 
       {/* ロゴ・折りたたみボタン行 */}
       <div style={{
-        padding: c ? "8px 0" : "8px 12px",
+        padding: c ? "8px 0" : "8px 8px 8px 12px",
         borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center",
         gap: "6px", flexShrink: 0,
@@ -1980,8 +2005,8 @@ function Sidebar({
           onClick={onOpenConsult}
           title={`${t("layout.sidebar.aiToolTitle")}（${t("layout.sidebar.aiToolSub")}）`}
           style={{
-            display: "flex", alignItems: "center", gap: c ? 0 : "10px",
-            padding: c ? "9px 0" : "8px 10px",
+            display: "flex", alignItems: "center", gap: c ? 0 : "6px",
+            padding: c ? "9px 0" : "8px 8px",
             width: "100%", boxSizing: "border-box",
             justifyContent: c ? "center" : "flex-start",
             background: isConsultOpen
@@ -1996,7 +2021,7 @@ function Sidebar({
           <span style={{ fontSize: c ? "18px" : "15px", flexShrink: 0, lineHeight: 1 }}>✨</span>
           {!c && (
             <div style={{ flex: 1, textAlign: "left", minWidth: 0 }}>
-              <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "var(--color-ai-from)", lineHeight: 1.3 }}>
+              <div style={{ fontSize: "12px", fontWeight: "700", color: isConsultOpen ? "#fff" : "var(--color-ai-from)", lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {t("layout.sidebar.aiToolLabel")}
               </div>
             </div>
@@ -2031,7 +2056,8 @@ function Sidebar({
           {!c && (
             <div style={{
               display: "flex", alignItems: "center", justifyContent: "space-between",
-              padding: "5px 14px 3px",
+              flexWrap: "wrap", rowGap: "2px",
+              padding: "5px 8px 3px",
             }}>
               <div style={{ display: "flex", alignItems: "center", gap: "4px", flex: 1, minWidth: 0 }}>
                 <button
@@ -2068,7 +2094,7 @@ function Sidebar({
                 title={mineOnly ? t("layout.sidebar.mineOnlyToAll") : t("layout.sidebar.mineOnlyToMine")}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
-                  padding: "2px 7px",
+                  padding: "2px 5px",
                   fontSize: "10px", fontWeight: 500,
                   background: mineOnly ? "var(--color-brand-light)" : "transparent",
                   color: mineOnly ? "var(--color-brand)" : "var(--color-text-tertiary)",
@@ -2083,13 +2109,13 @@ function Sidebar({
             </div>
           )}
           {!c && pjOpen && (
-            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 14px 4px" }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 8px 4px", minWidth: 0 }}>
               <button
                 onClick={onToggleShowCompletedAndArchived}
                 title={showCompletedAndArchived ? t("layout.sidebar.showArchivedOff") : t("layout.sidebar.showArchivedOn")}
                 style={{
                   display: "flex", alignItems: "center", gap: "3px",
-                  padding: "2px 7px",
+                  padding: "2px 7px", minWidth: 0,
                   fontSize: "10px", fontWeight: 500,
                   background: showCompletedAndArchived ? "var(--color-bg-tertiary)" : "transparent",
                   color: showCompletedAndArchived ? "var(--color-text-secondary)" : "var(--color-text-tertiary)",
@@ -2098,8 +2124,8 @@ function Sidebar({
                   cursor: "pointer", lineHeight: 1.4,
                 }}
               >
-                <span style={{ fontSize: "9px" }}>🗄</span>
-                {t("layout.sidebar.showArchivedLabel")}
+                <span style={{ fontSize: "9px", flexShrink: 0 }}>🗄</span>
+                <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t("layout.sidebar.showArchivedLabel")}</span>
               </button>
             </div>
           )}
@@ -2225,74 +2251,30 @@ function Sidebar({
       </div>
       {/* ↑ モードトグル〜ラボサブメニューまでのスクロール領域はここまで */}
 
-      {/* AI相談・設定・ユーザー情報（常にクリック可能な位置に固定表示） */}
-      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "8px 6px", flexShrink: 0 }}>
-        {/* 「その他」見出し（ガイド／設定／招待コードを折りたたむ。v3.74）。
-            サイドバー自体が折りたたまれている（c===true）ときはアイコン1個ぶんの高さ
-            しか無く面積を圧迫しないため、見出しを出さず従来どおり3つのアイコンボタンを
-            並べたままにする（showMiscGroupが!cを含むため自動的にfalseになる）。 */}
-        {showMiscGroup && (
-          <button
-            onClick={toggleMiscOpen}
-            aria-expanded={miscOpen}
-            title={miscOpen ? t("layout.sidebar.miscSectionCollapse") : t("layout.sidebar.miscSectionExpand")}
-            style={{
-              display: "flex", alignItems: "center", gap: "4px",
-              width: "100%",
-              background: "transparent", border: "none", cursor: "pointer",
-              padding: "4px 6px 6px",
-              fontSize: "10px", fontWeight: 600, letterSpacing: "0.05em",
-              color: "var(--color-text-tertiary)", textTransform: "uppercase",
-            }}
-          >
-            <span style={{ fontSize: "8px", display: "inline-block", transform: miscOpen ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>▶</span>
-            {t("layout.sidebar.miscSectionLabel")}
-          </button>
-        )}
+      {/* 設定・ユーザー情報（常にクリック可能な位置に固定表示）。v3.115で展開時は1行に集約：
+          [アバター][EN][🧪][🗓️][⋯その他] …… [バージョン]。テーマ切替・ログアウトは「その他」へ移し、
+          「その他」を開くと項目がこの行の上に積まれる（独立した見出し行は持たない）。 */}
+      <div style={{ borderTop: "1px solid var(--color-border-primary)", padding: c ? "6px 4px" : "4px", flexShrink: 0 }}>
         {(!showMiscGroup || miscOpen) && (<>
         {/* 📖 ガイド（全モード共通・全画面オーバーレイ） */}
         <button
           data-tour-id="guide-btn"
           onClick={onOpenGuide}
           title={t("layout.guide.buttonTitle")}
-          style={{
-            width: "100%",
-            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
-            gap: "8px",
-            padding: c ? "6px 0" : "6px 12px",
-            background: "transparent",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            cursor: "pointer",
-            color: "var(--color-text-secondary)",
-            fontSize: "11px",
-            marginBottom: "4px",
-          }}
+          style={miscBtnStyle}
         >
           <span style={{ fontSize: "13px", lineHeight: 1 }}>📖</span>
-          {!c && <span>{t("layout.guide.title")}</span>}
+          {!c && <span style={miscBtnLabelStyle}>{t("layout.guide.title")}</span>}
         </button>
         {/* 設定（歯車）ボタン（ゲストは非表示） */}
         {!isGuest && (
         <button
           onClick={onOpenAdmin}
           title={t("layout.admin.title")}
-          style={{
-            width: "100%",
-            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
-            gap: "8px",
-            padding: c ? "6px 0" : "6px 12px",
-            background: "transparent",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            cursor: "pointer",
-            color: "var(--color-text-secondary)",
-            fontSize: "11px",
-            marginBottom: "4px",
-          }}
+          style={miscBtnStyle}
         >
           <GearIcon />
-          {!c && <span>{t("layout.admin.title")}</span>}
+          {!c && <span style={miscBtnLabelStyle}>{t("layout.admin.title")}</span>}
         </button>
         )}
         {/* 招待コードを入力（Phase 4・v3.68）：部署管理者かどうかに関わらず全メンバーが
@@ -2301,80 +2283,83 @@ function Sidebar({
         <button
           onClick={onOpenAcceptInvite}
           title={t("layout.acceptInvite.title")}
-          style={{
-            width: "100%",
-            display: "flex", alignItems: "center", justifyContent: c ? "center" : "flex-start",
-            gap: "8px",
-            padding: c ? "6px 0" : "6px 12px",
-            background: "transparent",
-            border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)",
-            cursor: "pointer",
-            color: "var(--color-text-secondary)",
-            fontSize: "11px",
-            marginBottom: "4px",
-          }}
+          style={miscBtnStyle}
         >
           <span style={{ fontSize: "13px", lineHeight: 1 }}>🎫</span>
-          {!c && <span>{t("layout.acceptInvite.title")}</span>}
+          {!c && <span style={miscBtnLabelStyle}>{t("layout.acceptInvite.title")}</span>}
         </button>
+        )}
+        {!c && (
+          <button
+            onClick={onToggleTheme}
+            title={theme === "dark" ? t("layout.theme.toLight") : t("layout.theme.toDark")}
+            style={miscBtnStyle}
+          >
+            <span style={{ fontSize: "13px", lineHeight: 1 }}>{theme === "dark" ? "☀" : "☾"}</span>
+            <span style={miscBtnLabelStyle}>{theme === "dark" ? t("layout.theme.toLight") : t("layout.theme.toDark")}</span>
+          </button>
+        )}
+        {!c && (
+          <button
+            onClick={onLogout}
+            title={t("layout.logout.title")}
+            style={miscBtnStyle}
+          >
+            <span style={{ fontSize: "13px", lineHeight: 1 }}>⏏</span>
+            <span style={miscBtnLabelStyle}>{t("layout.logout.title")}</span>
+          </button>
         )}
         </>)}
         <div style={{
           display: "flex", alignItems: "center",
           justifyContent: c ? "center" : "flex-start",
-          gap: c ? "0" : "7px",
-          padding: c ? "6px 0" : "7px 10px",
-          marginTop: "2px",
-          flexWrap: c ? "wrap" : "nowrap",
+          gap: 0,
+          padding: c ? "6px 0" : "2px",
+          flexWrap: "wrap",
+          rowGap: "2px",
         }}>
-          <div title={currentUser.short_name} style={{ flexShrink: 0 }}>
+          <div title={currentUser.short_name} role="img" aria-label={currentUser.short_name} style={{ flexShrink: 0, display: "flex" }}>
             <Avatar member={currentUser} size={22} />
           </div>
-          {!c && (
-            <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {currentUser.short_name}
-            </span>
-          )}
-          {!c && (
-            <button
-              onClick={onToggleTheme}
-              style={{ fontSize: "13px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
-              title={theme === "dark" ? t("layout.theme.toLight") : t("layout.theme.toDark")}
-            >
-              {theme === "dark" ? "☀" : "☾"}
-            </button>
-          )}
           {/* 言語切り替え（🌐 日本語 | English） */}
           {!c && <LangToggle variant="text" />}
           <button
             onClick={() => setLabOpen(o => !o)}
-            style={{ fontSize: "13px", color: labOpen ? "var(--color-text-primary)" : "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+            aria-pressed={labOpen}
+            aria-label={t("layout.lab.toggleTitle")}
+            style={{ ...footerIconBtnStyle, color: labOpen ? "var(--color-text-primary)" : "var(--color-text-tertiary)" }}
             title={t("layout.lab.toggleTitle")}
           >🧪</button>
           {/* カレンダー（サイドバー：折りたたみ時もアイコンで表示） */}
           <button
             onClick={onOpenCalendar}
-            style={{ fontSize: "14px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px", flexShrink: 0 }}
+            aria-label={t("layout.calendar.title")}
+            style={{ ...footerIconBtnStyle, fontSize: "14px" }}
             title={t("layout.calendar.title")}
           >🗓️</button>
-          {!c && (
+          {/* 「その他」（ガイド／設定／招待コード／テーマ／ログアウト）の開閉。v3.74の見出し行を
+              この行へ吸収した。サイドバーが折りたたまれているときは項目を常時アイコンで並べる。 */}
+          {showMiscGroup && (
             <button
-              onClick={onLogout}
-              style={{ fontSize: "10px", color: "var(--color-text-tertiary)", background: "transparent", border: "none", cursor: "pointer", padding: "2px" }}
-              title={t("layout.logout.title")}
-            >
-              ⏏
-            </button>
+              onClick={toggleMiscOpen}
+              aria-expanded={miscOpen}
+              aria-label={miscOpen ? t("layout.sidebar.miscSectionCollapse") : t("layout.sidebar.miscSectionExpand")}
+              title={miscOpen ? t("layout.sidebar.miscSectionCollapse") : t("layout.sidebar.miscSectionExpand")}
+              style={{
+                ...footerIconBtnStyle,
+                color: miscOpen ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+                background: miscOpen ? "var(--color-bg-tertiary)" : "transparent",
+                borderRadius: "var(--radius-sm)",
+              }}
+            >⋯</button>
+          )}
+          {/* バージョン表示（控えめ・右端。折りたたみ時は非表示） */}
+          {!c && (
+            <span style={{ marginLeft: "auto", flexShrink: 0, display: "inline-flex" }}>
+              <VersionBadge onClick={onOpenVersionHistory} />
+            </span>
           )}
         </div>
-        {/* バージョン表示（控えめ・折りたたみ時は非表示。既存フッター行とは別の細い1行に
-            分けている＝196px幅が既に詰まっているため。CLAUDE.md参照） */}
-        {!c && (
-          <div style={{ padding: "1px 10px 4px", textAlign: "right" }}>
-            <VersionBadge onClick={onOpenVersionHistory} />
-          </div>
-        )}
       </div>
     </div>
     {/* PJ行「⋮」→「⚙ このPJの設定」。PJカルテの「⚙ このPJの設定」と同じ

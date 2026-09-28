@@ -16,7 +16,7 @@ describe("clampSidebarWidth", () => {
   it("最小値未満は最小値に丸める", () => {
     expect(clampSidebarWidth(0)).toBe(SIDEBAR_MIN_WIDTH);
     expect(clampSidebarWidth(-100)).toBe(SIDEBAR_MIN_WIDTH);
-    expect(clampSidebarWidth(159)).toBe(SIDEBAR_MIN_WIDTH);
+    expect(clampSidebarWidth(SIDEBAR_MIN_WIDTH - 1)).toBe(SIDEBAR_MIN_WIDTH);
   });
 
   it("最大値を超える値は最大値に丸める", () => {

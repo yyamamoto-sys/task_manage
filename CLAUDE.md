@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.114
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.115
 #
-最終更新：2026-09-18（v3.114）
+最終更新：2026-09-28（v3.115）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1692,7 +1692,7 @@ OKRモード「Kintoneから取込」で670KBのPDFを解析すると、Supabase
 
 ### 用語（今後この2語で呼び分ける）
 
-- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時は既定196px・160〜420pxの範囲でドラッグ可変／折りたたみ時48px固定／モバイルでは非表示）。折りたたみ時の幅は`SIDEBAR_WIDTH_COLLAPSED`定数（Sidebar自身の width にのみ使う）。展開時の幅は可変のため定数ではなくstate（`sidebarWidth`）で持つ（v3.66・Section 30参照）。
+- **サイドバー**：左のメニュー領域（`MainLayout.tsx` の `Sidebar` コンポーネント。展開時は既定160px・140〜420pxの範囲でドラッグ可変（v3.115で196px・160〜から変更）／折りたたみ時48px固定／モバイルでは非表示）。折りたたみ時の幅は`SIDEBAR_WIDTH_COLLAPSED`定数（Sidebar自身の width にのみ使う）。展開時の幅は可変のため定数ではなくstate（`sidebarWidth`）で持つ（v3.66・Section 30参照）。
 - **メインエリア**：サイドバーの右側の作業領域（`MainLayout.tsx` の `mainContent` 変数が描画している領域）。
 
 ### 【v3.23〜v3.32の旧方式（廃止）とその欠陥】
@@ -2544,12 +2544,13 @@ Phase 1〜3実装後に山本さんから「既存部署の人のビューは変
 
 山本さんの依頼「サイドメニューとメインエリアの境界をドラッグで移動できるようにしてください」への対応。
 
-- **範囲は160px〜420px**（`src/lib/layout/sidebarWidth.ts` の `SIDEBAR_MIN_WIDTH`/`SIDEBAR_MAX_WIDTH`。根拠はファイル内コメント参照：最小はナビ項目のラベル文字が折り返さず収まる下限、最大はメインエリアが極端に狭くならない上限）。既定幅は`SIDEBAR_DEFAULT_WIDTH`（196px。旧`SIDEBAR_WIDTH_EXPANDED`定数の値を継承）。
+- **範囲は140px〜420px**（v3.115で下限160→140・既定196→160に変更。160pxは「プロジェクト見出し＋＋＋自分/全件」の行が1行に収まる下限の見積もり）（`src/lib/layout/sidebarWidth.ts` の `SIDEBAR_MIN_WIDTH`/`SIDEBAR_MAX_WIDTH`。根拠はファイル内コメント参照：最小はナビ項目のラベル文字が折り返さず収まる下限、最大はメインエリアが極端に狭くならない上限）。既定幅は`SIDEBAR_DEFAULT_WIDTH`（160px。v3.114までは196px。旧`SIDEBAR_WIDTH_EXPANDED`定数の値を継承）。
 - **localStorageに記憶**：`KEYS.SIDEBAR_WIDTH`（`src/lib/localData/localStore.ts`）。折りたたみ時の48pxとは別に「展開時の幅」だけを記憶するため、折りたたみ→展開で必ず記憶した幅に戻る（折りたたみ中は`isSidebarCollapsed`で48px固定表示になるだけで、`sidebarWidth`のstate自体は変わらない）。
-- **ダブルクリックで既定幅（196px）に復帰**。
+- **ダブルクリックで既定幅（160px）に復帰**。
 - **折りたたみ中（48px）はドラッグ不可**：ハンドル自体を`!collapsed`のときだけ描画する（`MainLayout.tsx`の`Sidebar`コンポーネント内）。
 - **キーボード操作**：ハンドルに`role="separator"` `aria-orientation="vertical"` `aria-label` `aria-valuemin/max/now`を付与し、`tabIndex={0}`でフォーカス可能にする。左右矢印キーで`SIDEBAR_WIDTH_KEY_STEP`（12px）ずつ変更する。jsx-a11yの既定ルールは`role="separator"`を「非インタラクティブロール」として扱うため`no-noninteractive-element-interactions`/`no-noninteractive-tabindex`の警告が出るが、ARIAの仕様上separator（window-splitter相当）はfocusable＋キー操作可能にしてよいため、理由コメント付きで`eslint-disable-next-line`している。
 - **純粋関数への切り出し**：`src/lib/layout/sidebarWidth.ts`の`clampSidebarWidth(width)`（最小・最大への丸め。NaN/Infinityは既定幅にフォールバック）と`parseStoredSidebarWidth(raw)`（localStorageの生文字列を検証・復元。null・空文字列・数値変換不能な文字列は既定幅、範囲外の数値は範囲内にクランプ）。テストは`__tests__/sidebarWidth.test.ts`。
+- 🔴 **v3.115でサイドバー側のみ pointer capture 方式（`setPointerCapture`・`pointercancel`での後片付け・`touch-action:none`）へ変更し、境界に2pxの帯（ホバー・フォーカス・ドラッグ中に光る）を追加した。以下の「mousemove流儀」の記述はAIパネル側の実装として読むこと。**
 - **ドラッグの実装はConsultationPanel.tsx / PersonalOkrAiPanel.tsxの「左端ドラッグでリサイズ」と同じ流儀**（`position:absolute`の細い帯・`window`の`mousemove`/`mouseup`・refで最新値を保持し`mouseup`時にlocalStorageへ確定保存・ドラッグ中は`document.body.style.cursor`/`userSelect`を変更してテキスト選択を防ぐ）だが、**共通化はしていない**（判断理由）：
   1. 既存2箇所はキーボード操作に対応していない（マウス専用・`no-static-element-interactions`をdisableして済ませている）。サイドバーは要件上キーボード対応が必須で、実装が構造的に異なる。
   2. ドラッグの方向が逆（AIパネルは左端を掴んで左に伸ばすと幅が増える＝画面右側に固定された パネル。サイドバーは右端を掴んで右に伸ばすと幅が増える＝画面左側に固定されたパネル）。
@@ -4190,7 +4191,7 @@ USING ((SELECT public.current_member_id()) IS NOT NULL)
 | 削ってよい（＝内容でない部分） | 削ってはいけない |
 |---|---|
 | 区切り線（`borderBottom`）と、それに付随して別々に乗る上下 padding | `fontSize` |
-| 見出しラベル（意味はアイコン・ツールチップで代替できるもの） | タッチ/クリックの的中に効く padding（`td` の `6px 10px`、モバイルカードの `12px`・`minHeight:52px`） |
+| 見出しラベル（意味はアイコン・ツールチップで代替できるもの） | タッチ/クリックの的中に効く横方向の padding（`td` の左右 `10px`）、モバイルカードの `12px`・`minHeight:52px`。※`td` の上下は v3.115 で山本さんの実機確認を受けて `6px`→`3px`（`ROW_TD_PADDING`）に詰めた。これ以上は詰めない |
 | 段数（2段ツールバー → 1段＋ポップオーバー） | 情報そのもの（サブ文言は消さずに `title` へ移す） |
 | 常時表示の必要がないボタン（ポップオーバーへ集約） | `data-tour-id`（ツアーが参照している） |
 | ブロック要素として1行を占めている小さなボタン（インライン化） | `aria-label` |

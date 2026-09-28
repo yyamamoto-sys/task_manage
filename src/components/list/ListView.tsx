@@ -1229,6 +1229,11 @@ interface ListTaskRowProps {
   handleTaskDrop: (draggedId: string, targetId: string, zone: DropZone) => void;
 }
 
+// 一覧の行（親・子共通）のセル余白。v3.115で上下6px→3pxに詰めた（拡大表示で1画面の行数を増やすため）。
+// 横の10pxと fontSize は変えない（CLAUDE.md Section 60）。
+const ROW_TD_PADDING = "3px 10px";
+const ROW_TD_PADDING_FIRST = "3px 6px 3px 12px";
+
 const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
@@ -1283,7 +1288,7 @@ const ListTaskRow = memo(function ListTaskRow({
       boxShadow: shadowLayers.length > 0 ? shadowLayers.join(", ") : "none",
     }}>
       {/* チェックボックス（行選択）＋ 手動順時はドラッグハンドル */}
-      <td style={{ padding: "6px 6px 6px 12px", whiteSpace: "nowrap" }}
+      <td style={{ padding: ROW_TD_PADDING_FIRST, whiteSpace: "nowrap" }}
           onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
           {/* ハンドル列：ドラッグで並べ替え。他タスクの行の中央に落とすとその子に、上下端に落とすと並び替え */}
@@ -1312,17 +1317,20 @@ const ListTaskRow = memo(function ListTaskRow({
         </div>
       </td>
       {/* 担当者（インライン編集） */}
-      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
-        <InlineEditAssignee
-          assigneeIds={getAssigneeIds(task)}
-          members={members}
-          onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
-        />
+        {/* inline-block のままだとベースライン下の余白（約4px）が行高に乗るため flex で包む */}
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <InlineEditAssignee
+            assigneeIds={getAssigneeIds(task)}
+            members={members}
+            onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
+          />
+        </div>
       </td>
       {/* 優先度（詳細モードのみ） */}
       {density === "detailed" && (
-        <td style={{ padding: "6px 10px" }}>
+        <td style={{ padding: ROW_TD_PADDING }}>
           {task.priority && (
             <span style={{
               fontSize: "9px", padding: "2px 5px", borderRadius: "3px",
@@ -1332,7 +1340,7 @@ const ListTaskRow = memo(function ListTaskRow({
         </td>
       )}
       {/* タスク名（depth に応じたインデント＋親トグル＋子注記） */}
-      <td style={{ padding: "6px 10px", paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
+      <td style={{ padding: ROW_TD_PADDING, paddingLeft: depth === 1 ? 10 + 22 : 10 }}>
         <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
           {/* 折りたたみトグル（子を持つ親のみ） */}
           {isParent ? (
@@ -1426,14 +1434,14 @@ const ListTaskRow = memo(function ListTaskRow({
         )}
       </td>
       {/* 状態（親は導出値・バッジのみ＝手動変更UIは出さない） */}
-      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}>
+      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}>
         <span title={isParent ? "子から自動算出" : undefined} style={{
           fontSize: "9px", padding: "2px 6px", borderRadius: "3px",
           background: TASK_STATUS_STYLE[dispStatus].bg, color: TASK_STATUS_STYLE[dispStatus].color,
         }}>{TASK_STATUS_LABEL[dispStatus]}</span>
       </td>
       {/* 期日（インライン編集） */}
-      <td style={{ padding: "6px 10px", whiteSpace: "nowrap" }}
+      <td style={{ padding: ROW_TD_PADDING, whiteSpace: "nowrap" }}
         onClick={e => e.stopPropagation()}>
         {task.start_date && (
           <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
@@ -1448,7 +1456,7 @@ const ListTaskRow = memo(function ListTaskRow({
       </td>
       {/* 工数（詳細モードのみ） */}
       {density === "detailed" && (
-        <td style={{ padding: "6px 10px", color: "var(--color-text-tertiary)", textAlign: "right" }}>
+        <td style={{ padding: ROW_TD_PADDING, color: "var(--color-text-tertiary)", textAlign: "right" }}>
           {task.estimated_hours != null ? `${task.estimated_hours}h` : "—"}
         </td>
       )}
