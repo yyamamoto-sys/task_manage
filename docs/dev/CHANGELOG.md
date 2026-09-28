@@ -7399,4 +7399,50 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## CLAUDE.md
 # * Section 61 を新設（1000行上限と fetchAllRows の使い方・禁止事項）。
 
-最終更新：2026-09-28（v3.116）
+# v3.117（2026-09-28）：AI生成中の進捗表示を改善（止まらない表示＋経過秒数。「99%で長く止まる」への対応）
+#
+# 山本さんの報告：「AI生成時に何％と表示されるが、99%で長く止まり続けるなど、実際の挙動と
+# 進捗率が同期していない」。原因はAIProgressLoaderが時間だけで進捗を演出していたこと
+# （フェーズはintervalMsごとに進み、フェーズ内のサブ進捗は88%で頭打ち。最後のフェーズに
+# 入ると何も進まなくなる）。AI呼び出しはストリーミングしておらず本当の進捗は取得できない
+# （今回もストリーミング化はしない）。
+#
+# ## ① 共通ロジック src/lib/progress/progressCurve.ts（新規・純粋関数）
+# * pct = 95 × (1 − exp(−t / τ))、τ = expectedMs / 2 の漸近曲線（computeAsymptoticPct）。
+#   t=expectedMsで約82%・t=2×expectedMsで約93%。どれだけ待っても95%を超えない
+#   （浮動小数点の丸めで1になる極端なケースへの安全網としてcapPct-1e-6でクランプ）。
+# * フェーズindexはexpectedMsに比例した間隔で進み、最後のフェーズで止まる
+#   （resolvePhaseIndex）が、pct・経過秒数（computeElapsedSeconds）は止まらず動き続ける。
+#   経過秒数は実時間に比例するため「止まらない」ことの最終的な保証を担う。
+# * 経過が目安上限×1.5を超えたらisTakingLongerThanUsualがtrueを返す（エラー扱いにはしない）。
+# * 目安の範囲（秒）はresolveExpectedRangeSecondsがexpectedMsの2/3〜4/3倍から5秒刻みで自動算出
+#   （例：expectedMs=30000→20〜40秒）。明示的な範囲を渡すことも可能。
+#
+# ## ② AIProgressLoader（intervalMs→expectedMsへ全呼び出し元を更新）
+# * 経過秒数の表示「23秒経過（目安 20〜40秒）」を追加。上限×1.5超で補足文を
+#   「通常より時間がかかっています」に切替。
+# * 9箇所の呼び出し元それぞれの内容（PDF/文字起こし取込・max_tokens・既存phases×intervalMs）
+#   からexpectedMsを判断：OkrImportModal=25000／LoadingView=22000／DashboardView(全PJ分析)=25000／
+#   ProjectKarte=18000／KrJointSessionFlow=25000／KrQuarterPlanPanel=25000／KrReportPanel=22000／
+#   MeetingImportPanel=16000（max_tokens=4096で他より軽い）／OkrKrAnalysisPanel=22000。
+#
+# ## ③ SaveProgressLoader（同型の頭打ちを解消）
+# * ステップ内の「微小サブ進捗」が1500msで0.5ステップに達すると以後フリーズする、同型の
+#   不具合があったため、progressCurve.tsの漸近曲線（cap=90）に差し替え・経過秒数表示を追加。
+#   既存6呼び出し元は新設の expectedStepMs（既定1500ms）が後方互換のため変更不要。
+#
+# ## ④ i18n
+# * common.aiProgress.delayed／common.aiProgress.elapsed／common.saveProgress.elapsed をja/en追加。
+#
+# ## ⑤ テスト（progressCurve.test.ts・21件）
+# * 漸近曲線の値（t=expectedMs≈82%・t=2×expectedMs≈93%）・95%を超えないこと・
+#   フェーズindexが最後で止まること・経過秒数が単調増加すること・目安範囲の算出。
+# * 旧実装（intervalMsベース・88%で頭打ち）を再現した関数と比較し、最後のフェーズに入った後
+#   旧実装は固定される一方、新実装は動き続けることを検証（fake timersで実際に旧実装が
+#   フリーズすることを確認済み）。
+#
+# ## CLAUDE.md
+# * Section 62（新設）：AIProgressLoaderの設計方針（本当の進捗は取れないこと・漸近曲線・
+#   止まって見せないこと）を追記。
+
+最終更新：2026-09-28（v3.117）

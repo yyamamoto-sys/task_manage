@@ -92,9 +92,12 @@ export const commonJa = {
   "common.saveProgress.title": "データベースに保存しています",
   "common.saveProgress.waiting": "しばらくお待ちください…",
   "common.saveProgress.step": "ステップ {current} / {total}",
+  "common.saveProgress.elapsed": "{sec}秒経過",
 
   // ----- AIProgressLoader -----
   "common.aiProgress.waiting": "AIが処理中です。しばらくお待ちください…",
+  "common.aiProgress.delayed": "通常より時間がかかっています",
+  "common.aiProgress.elapsed": "{sec}秒経過（目安 {min}〜{max}秒）",
 
   // ----- CommandPalette -----
   "common.commandPalette.viewDashboard": "ダッシュボードを開く",

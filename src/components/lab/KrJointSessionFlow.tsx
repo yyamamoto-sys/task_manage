@@ -531,7 +531,7 @@ export function KrJointSessionFlow({ currentUser, initialKrId, onSaved, onClose 
     const phases = mode === "checkin" ? PHASES_CHECKIN
                  : mode === "win_session" ? PHASES_WIN
                  : PHASES_FREEFORM;
-    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={phases} intervalMs={4500} /></div>;
+    return <div style={{ padding: "32px 24px" }}><AIProgressLoader phases={phases} expectedMs={25000} /></div>;
   }
   if (step === "saving") {
     return <div style={{ padding: "32px 24px" }}><SaveProgressLoader current={progress.current} total={progress.total} label={progress.label} title="セッションと分析を保存しています" /></div>;

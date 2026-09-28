@@ -418,7 +418,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         {/* スクロール余白 */}
         {step === "input" && <div style={{ height: "8px" }} />}
         {step === "analyzing" && (
-          <AIProgressLoader phases={MEETING_PHASES} intervalMs={4200} />
+          <AIProgressLoader phases={MEETING_PHASES} expectedMs={16000} />
         )}
         {step === "review" && analysis && (
           <ReviewStep

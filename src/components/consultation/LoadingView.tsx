@@ -11,5 +11,5 @@ const CONSULT_PHASES = [
 ];
 
 export function LoadingView() {
-  return <AIProgressLoader phases={CONSULT_PHASES} intervalMs={3800} />;
+  return <AIProgressLoader phases={CONSULT_PHASES} expectedMs={22000} />;
 }

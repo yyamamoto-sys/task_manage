@@ -1,43 +1,55 @@
 // src/components/common/AIProgressLoader.tsx
 // AI処理中の進捗アニメーションコンポーネント。
-// フェーズ文字列の配列を受け取り、時間ベースで自動的に進捗を演出する。
+//
+// 【設計意図】AI呼び出しはストリーミングしておらず、本当の進捗（トークン生成の
+// 途中経過）は取得できない。そのため経過時間から進捗を演出するが、以下の2点を守る：
+// ① バーは95%を超えない漸近曲線で最後まで動き続ける（途中で頭打ちにしない）。
+// ② 経過秒数は実時間に比例して単調に増え続けるため、パーセント表示の増分が
+//    極めて小さくなる長時間の遅延でも「止まっている」ようには見せない
+//    （％とフェーズ文言は止まって見えることがあっても、秒数だけは必ず動く）。
+// 計算ロジックは src/lib/progress/progressCurve.ts に切り出し純粋関数としてテストする。
 
-import { useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../hooks/useT";
+import {
+  computeAsymptoticPct,
+  resolvePhaseIndex,
+  computeElapsedSeconds,
+  isTakingLongerThanUsual,
+  resolveExpectedRangeSeconds,
+} from "../../lib/progress/progressCurve";
 
 interface Props {
   phases: string[];
-  intervalMs?: number; // フェーズごとの表示時間（ms）
+  /** 目安の中央値（ms）。フェーズの進み方・漸近曲線・経過秒数の目安表示のすべての基準になる。 */
+  expectedMs: number;
+  /** 目安の範囲（ms）。省略時は expectedMs から自動算出する（progressCurve.ts参照）。 */
+  expectedRangeMs?: readonly [number, number];
 }
 
-export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
+const TICK_MS = 200;
+
+export function AIProgressLoader({ phases, expectedMs, expectedRangeMs }: Props) {
   const t = useT();
-  const [phaseIndex, setPhaseIndex] = useState(0);
-  const [subProgress, setSubProgress] = useState(0);
+  const startRef = useRef(Date.now());
+  const [elapsedMs, setElapsedMs] = useState(0);
 
-  // フェーズを時間で進める
+  // expectedMsやphasesが変わる（＝新しい処理が始まる）たびに経過時間をリセットする。
   useEffect(() => {
-    if (phaseIndex >= phases.length - 1) return;
-    const t = setTimeout(() => setPhaseIndex(p => p + 1), intervalMs);
-    return () => clearTimeout(t);
-  }, [phaseIndex, phases.length, intervalMs]);
-
-  // フェーズ内のサブ進捗（イーズアウトで88%まで滑らかに上昇）
-  useEffect(() => {
-    setSubProgress(0);
-    const start = Date.now();
-    const duration = intervalMs * 0.88;
+    startRef.current = Date.now();
+    setElapsedMs(0);
     const id = setInterval(() => {
-      const t = Math.min((Date.now() - start) / duration, 1);
-      setSubProgress(0.88 * (1 - Math.pow(1 - t, 2)));
-    }, 40);
+      setElapsedMs(Date.now() - startRef.current);
+    }, TICK_MS);
     return () => clearInterval(id);
-  }, [phaseIndex, intervalMs]);
+  }, [expectedMs, phases.length]);
 
-  const totalPct = Math.min(
-    99,
-    Math.round(((phaseIndex + subProgress) / phases.length) * 100),
-  );
+  const pct = computeAsymptoticPct(elapsedMs, expectedMs);
+  const phaseIndex = resolvePhaseIndex(elapsedMs, expectedMs, phases.length);
+  const elapsedSec = computeElapsedSeconds(elapsedMs);
+  const [minSec, maxSec] = resolveExpectedRangeSeconds(expectedMs, expectedRangeMs);
+  const isDelayed = isTakingLongerThanUsual(elapsedMs, maxSec * 1000);
+  const totalPct = Math.round(pct);
 
   return (
     <div style={{
@@ -81,7 +93,10 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
           {phases[phaseIndex]}
         </div>
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-          {t("common.aiProgress.waiting")}
+          {isDelayed ? t("common.aiProgress.delayed") : t("common.aiProgress.waiting")}
+        </div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+          {t("common.aiProgress.elapsed", { sec: elapsedSec, min: minSec, max: maxSec })}
         </div>
       </div>
 
@@ -96,7 +111,7 @@ export function AIProgressLoader({ phases, intervalMs = 4000 }: Props) {
         }}>
           <div style={{
             height: "100%",
-            width: `${totalPct}%`,
+            width: `${pct}%`,
             background: "linear-gradient(90deg, var(--color-ai-from) 0%, var(--color-ai-to) 100%)",
             borderRadius: "3px",
             transition: "width 0.15s ease-out",

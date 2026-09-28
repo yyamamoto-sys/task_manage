@@ -349,7 +349,7 @@ export function OkrKrAnalysisPanel({ onClose, currentUser, initialKrId }: Props)
           {loadError && <ErrBox>{loadError}</ErrBox>}
           {actionError && <ErrBox>{actionError}</ErrBox>}
           {loading && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>読み込み中…</div>}
-          {analyzing && <AIProgressLoader phases={phases} intervalMs={4500} />}
+          {analyzing && <AIProgressLoader phases={phases} expectedMs={22000} />}
 
           {!analyzing && !loading && (
             <>

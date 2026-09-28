@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.116
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.117
 #
-最終更新：2026-09-28（v3.116）
+最終更新：2026-09-28（v3.117）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4266,3 +4266,64 @@ if (error) throw error;
 store.ts の初期ロード14表（Phase 1・2）・`fetchGroups`・`fetchLoadingTips`・`fetchAiUsageLogs`、
 personalOkrStore の一覧7関数、krSessionStore 2・okrAnalysisStore 2・krMeetingNoteStore 2・
 projectAnalysisStore（古い分析の刈り込み用）1・projectInviteStore 1。
+
+---
+
+## 62. AI生成中の進捗表示：本当の進捗は取れない前提で「止まらない」演出にする（v3.117・2026-09-28）
+
+山本さんの報告：「AI生成時に何％と表示されるが、99%で長く止まり続けるなど、実際の挙動と
+進捗率が同期していない」。原因は`AIProgressLoader`が時間だけで進捗を演出していたこと
+（フェーズは`intervalMs`ごとに進み、フェーズ内のサブ進捗は88%で頭打ち。最後のフェーズに
+入ると何も進まなくなるため、応答が返るまで画面が止まって見えていた）。
+
+### 前提（変えていない）
+
+**AI呼び出しはストリーミングしておらず、本当の進捗（トークン生成の途中経過）は取得できない。**
+今回もストリーミング化はしていない。進捗バーは常に「経過時間からの演出」であり、実際の
+生成状況を表すものではない。この前提を忘れて「もっと精密に進捗を表示する」方向へ改修しない
+こと（ストリーミング化という別の大きな設計変更が要る）。
+
+### 設計：止まらない演出は「漸近曲線」と「経過秒数」の二段構え
+
+- **漸近曲線**（`src/lib/progress/progressCurve.ts`の`computeAsymptoticPct`）：
+  `pct = 95 × (1 − exp(−t / τ))`、`τ = expectedMs / 2`。`t=expectedMs`で約82%、
+  `t=2×expectedMs`で約93%になり、どれだけ待っても95%を超えない（数学的な漸近線）。
+  フェーズ文言は`expectedMs`に比例した間隔で進み最後のフェーズで止まるが、pctと
+  経過秒数はフェーズが止まった後も動き続ける。
+- 🔴 **経過秒数（`computeElapsedSeconds`）が「止まっていない」ことの最終的な保証を担う。**
+  漸近曲線は待ち時間が目安の3〜4倍を超えるあたりから増分が指数的に小さくなり、
+  実用上ほぼ静止して見える瞬間が来る（有界で単調増加する関数は、いずれ知覚できない
+  増分になるのが数学的な性質であり、"95%を超えない"ことと"永久に知覚できる速さで
+  動き続ける"ことは両立しない）。経過秒数は実時間に比例して単調に増え続けるため、
+  極端な遅延でも「処理が止まっていない」ことをこちらが担保する。
+- 経過が目安上限×1.5を超えたら`isTakingLongerThanUsual`が真になり、補足文を
+  「通常より時間がかかっています」に切り替える（**エラー扱いにはしない**。処理は続いている）。
+- **完了時に100%を見せるための人工的な待ち時間は入れない**（体感速度を落とすため）。
+
+### 呼び出し元ごとの`expectedMs`
+
+`AIProgressLoader`は`intervalMs`（フェーズごとの表示時間）を廃止し`expectedMs`
+（目安の中央値・ms）に統一した。9箇所の呼び出し元は、既存の`phases.length×intervalMs`・
+添付ファイルの有無・`max_tokens`（Section 6-1c）から見積もった：OkrImportModal=25000／
+LoadingView=22000／DashboardView（全PJ横断分析）=25000／ProjectKarte=18000／
+KrJointSessionFlow=25000／KrQuarterPlanPanel=25000／KrReportPanel=22000／
+MeetingImportPanel=16000（`meetingExtractor.ts`のmax_tokens=4096で他より軽い）／
+OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根拠なく「30秒」等を
+決め打ちせず、上記と同じ観点（添付の有無・max_tokens・出力の複雑さ）で見積もること。
+
+### SaveProgressLoaderも同型の頭打ちを解消
+
+`SaveProgressLoader`（実進捗ベース・DB保存の演出）も、ステップ内の「微小サブ進捗」が
+1500msで0.5ステップに達すると以後フリーズする同型の作りだったため、
+`computeAsymptoticProgress`（cap引数を90にした同じ漸近曲線）に差し替え、経過秒数表示を
+追加した。新設の`expectedStepMs`（既定1500ms）は後方互換のため既存6呼び出し元の変更は
+不要だった。
+
+### 再発防止
+
+`src/lib/progress/__tests__/progressCurve.test.ts`に、旧実装（`intervalMs`ベース・88%で
+頭打ち）を再現した関数と比較するテストがある。最後のフェーズに入った後、旧実装は一定時間で
+固定される一方、新実装（漸近曲線）は動き続けることをfake timersで検証している
+（実装時に旧ロジックが実際にフリーズすることを確認済み）。新しい進捗表示を作るときは、
+このパターン（時間ベースの疑似進捗を作る前に、まず「本当に進捗が取れないか」を確認し、
+取れないなら漸近曲線＋経過秒数の型に乗せる）を踏襲すること。

@@ -759,7 +759,7 @@ function AnalysisModal({
         )}
 
         <div style={{ flex: 1, overflow: "auto", padding: "18px 20px" }}>
-          {analyzing && <AIProgressLoader phases={ANALYSIS_PHASES} intervalMs={3800} />}
+          {analyzing && <AIProgressLoader phases={ANALYSIS_PHASES} expectedMs={18000} />}
           {!analyzing && error && (
             <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "12px 14px", borderRadius: "var(--radius-md)" }}>{error}</div>
           )}

@@ -615,7 +615,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               {allAnalyzing && (
                 <AIProgressLoader
                   phases={["プロジェクト一覧を読み込んでいます", "タスク状況を集計しています", "リスクを横断的に評価しています", "担当者の負荷バランスを確認しています", "全体の次の一手をまとめています"]}
-                  intervalMs={4000}
+                  expectedMs={25000}
                 />
               )}
               {!allAnalyzing && allAnalysisError && (

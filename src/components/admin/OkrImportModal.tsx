@@ -532,7 +532,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
           )}
 
           {step === "analyzing" && (
-            <AIProgressLoader phases={OKR_IMPORT_PHASES} intervalMs={4200} />
+            <AIProgressLoader phases={OKR_IMPORT_PHASES} expectedMs={25000} />
           )}
 
           {step === "review" && analysis && (

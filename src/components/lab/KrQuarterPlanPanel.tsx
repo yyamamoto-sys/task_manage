@@ -1017,7 +1017,7 @@ export function KrQuarterPlanPanel({ onClose, currentUser, inline = false, initi
 
         {/* ─── AI生成中（計画書） ─── */}
         {phase === "generating" && (
-          <AIProgressLoader phases={GENERATE_PHASES} intervalMs={5500} />
+          <AIProgressLoader phases={GENERATE_PHASES} expectedMs={25000} />
         )}
 
         {/* ─── コンテキストサマリー（対話中・計画書表示中） ─── */}

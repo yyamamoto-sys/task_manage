@@ -338,7 +338,7 @@ export function KrReportPanel({ onClose, inline = false, initialKrId, currentUse
 
         {/* AI生成中：フルローダー */}
         {generating ? (
-          <AIProgressLoader phases={REPORT_PHASES} intervalMs={5000} />
+          <AIProgressLoader phases={REPORT_PHASES} expectedMs={22000} />
         ) : (
           <>
             {/* 設定エリア */}

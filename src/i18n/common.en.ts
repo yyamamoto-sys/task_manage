@@ -77,8 +77,11 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.saveProgress.title": "Saving to the database",
   "common.saveProgress.waiting": "Please wait…",
   "common.saveProgress.step": "Step {current} / {total}",
+  "common.saveProgress.elapsed": "{sec}s elapsed",
 
   "common.aiProgress.waiting": "AI is working on it. Please wait…",
+  "common.aiProgress.delayed": "This is taking longer than usual",
+  "common.aiProgress.elapsed": "{sec}s elapsed (typically {min}–{max}s)",
 
   "common.commandPalette.viewDashboard": "Open dashboard",
   "common.commandPalette.viewKanban": "Open kanban",

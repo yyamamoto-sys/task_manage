@@ -7,9 +7,16 @@
 //
 // 1ステップだけの保存は単純な spinner で十分なので、複数ステップを伴う保存
 // （例：KRセッション保存 = セッション本体 + N件の宣言）でのみ使う。
+//
+// 【AIProgressLoaderと同型の不具合と対策】旧実装はステップ内の「微小サブ進捗」を
+// 1500ms かけて0.5ステップぶんだけ前進させ、それ以降は完全に頭打ちだった。
+// 1ステップの保存が長引く（ネットワーク遅延・大量データ等）と、以後どれだけ
+// 待っても数字が動かなくなる——AIProgressLoaderで報告された不具合と同じ形。
+// progressCurve.ts の漸近曲線（capを90に設定）に差し替え、経過秒数の表示も追加した。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../hooks/useT";
+import { computeAsymptoticProgress, computeElapsedSeconds } from "../../lib/progress/progressCurve";
 
 interface Props {
   /** 現在のステップ番号（1-indexed・0 なら開始前） */
@@ -20,30 +27,43 @@ interface Props {
   label?: string;
   /** ヘッダーに表示するタイトル */
   title?: string;
+  /** 1ステップあたりの目安時間（ms・既定1500）。ステップ内の演出・遅延判定の基準にする */
+  expectedStepMs?: number;
 }
 
-export function SaveProgressLoader({ current, total, label, title }: Props) {
+const TICK_MS = 200;
+
+export function SaveProgressLoader({ current, total, label, title, expectedStepMs = 1500 }: Props) {
   const t = useT();
   const safeTotal = Math.max(1, total);
   const safeCurrent = Math.max(0, Math.min(current, safeTotal));
   const pct = Math.round((safeCurrent / safeTotal) * 100);
 
-  // ステップ間の体感を滑らかにする「微小サブ進捗」
-  // current が変わってから次の current 更新までの間、わずかに前進し続ける
-  const [subProgress, setSubProgress] = useState(0);
+  const overallStartRef = useRef(Date.now());
+  const stepStartRef = useRef(Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  // ステップが変わるたびに「ステップ内の経過」だけをリセットする（全体の経過起点は変えない）。
   useEffect(() => {
-    setSubProgress(0);
-    const start = Date.now();
-    const id = setInterval(() => {
-      const t = Math.min((Date.now() - start) / 1500, 1);
-      setSubProgress(0.5 * (1 - Math.pow(1 - t, 2))); // 最大0.5ステップぶん前進
-    }, 40);
-    return () => clearInterval(id);
+    stepStartRef.current = Date.now();
   }, [safeCurrent]);
+
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), TICK_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const stepElapsedMs = now - stepStartRef.current;
+  const overallElapsedMs = now - overallStartRef.current;
+  const elapsedSec = computeElapsedSeconds(overallElapsedMs);
+
+  // ステップ内の疑似進捗（漸近曲線・90%未満までしか進めない＝次のステップの実測値を追い越さない）。
+  // 旧実装と違い、ステップがどれだけ長引いても時間とともに前進し続ける。
+  const stepFraction = computeAsymptoticProgress(stepElapsedMs, expectedStepMs, 90) / 100;
 
   const displayPct = Math.min(
     99,
-    Math.round(((safeCurrent + subProgress) / safeTotal) * 100),
+    Math.round(((safeCurrent + stepFraction) / safeTotal) * 100),
   );
 
   return (
@@ -95,6 +115,9 @@ export function SaveProgressLoader({ current, total, label, title }: Props) {
           minHeight: "1.2em",
         }}>
           {label ?? t("common.saveProgress.waiting")}
+        </div>
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+          {t("common.saveProgress.elapsed", { sec: elapsedSec })}
         </div>
       </div>
 
