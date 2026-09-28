@@ -19,6 +19,7 @@
 // formatErrorForUser()（CLAUDE.md Section 15）を通して表示すること。
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 import type { ProjectInvite } from "../localData/types";
 
 export interface CreateProjectInviteResult {
@@ -109,16 +110,16 @@ export async function revokeProjectInvite(inviteId: string): Promise<void> {
  * 🔴 列は明示的に列挙し、code_hash を含めない（本ファイル冒頭コメント参照）。
  */
 export async function fetchProjectInvites(projectId?: string): Promise<ProjectInvite[]> {
-  let query = supabase
-    .from("project_invites")
-    .select(
-      "id, project_id, invite_group_id, invited_email, invited_by, expires_at, accepted_at, accepted_member_id, revoked_at, revoked_by, created_at",
-    )
-    .order("created_at", { ascending: false });
-  if (projectId) {
-    query = query.eq("project_id", projectId);
-  }
-  const { data, error } = await query;
+  const { data, error } = await fetchAllRows(o => {
+    const query = supabase
+      .from("project_invites")
+      .select(
+        "id, project_id, invite_group_id, invited_email, invited_by, expires_at, accepted_at, accepted_member_id, revoked_at, revoked_by, created_at",
+        o,
+      )
+      .order("created_at", { ascending: false });
+    return projectId ? query.eq("project_id", projectId) : query;
+  }, { label: "project_invites" });
   if (error) throw error;
   return (data ?? []) as ProjectInvite[];
 }

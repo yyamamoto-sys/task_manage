@@ -7,6 +7,7 @@
 // 詳細設計：docs/okr-cycle-design.md（Phase A）
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 
 /** TFエントリの編集可能フィールド */
 export interface KrNoteEntryFields {
@@ -64,10 +65,10 @@ export async function fetchKrMeetingNotesList(krId: string): Promise<KrMeetingNo
 }
 
 async function fetchEntriesForNote(noteId: string): Promise<KrNoteTfEntry[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("kr_note_tf_entries")
-    .select(ENTRY_COLS)
-    .eq("note_id", noteId);
+    .select(ENTRY_COLS, o)
+    .eq("note_id", noteId), { label: "kr_note_tf_entries" });
   if (error) throw error;
   return (data ?? []) as KrNoteTfEntry[];
 }
@@ -93,11 +94,11 @@ export async function fetchTfEntryHistory(krId: string, tfId: string, limit = 8)
   const notes = await fetchKrMeetingNotesList(krId); // 新しい週順
   if (notes.length === 0) return [];
   const idToWeek = new Map(notes.map(n => [n.id, n.week_start]));
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("kr_note_tf_entries")
-    .select(ENTRY_COLS)
+    .select(ENTRY_COLS, o)
     .in("note_id", notes.map(n => n.id))
-    .eq("tf_id", tfId);
+    .eq("tf_id", tfId), { label: "kr_note_tf_entries" });
   if (error) throw error;
   const rows = (data ?? []) as KrNoteTfEntry[];
   return rows

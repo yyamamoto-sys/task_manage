@@ -6,6 +6,7 @@
 // 詳細設計：docs/okr-cycle-design.md（Phase B）
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 
 export type OkrAnalysisScope = "kr" | "objective";
 
@@ -27,13 +28,13 @@ export interface OkrAnalysis {
 
 /** 指定KRの分析を新しい順に取得（全件・過去分も残す）。 */
 export async function fetchOkrAnalyses(krId: string): Promise<OkrAnalysis[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("okr_analyses")
-    .select("*")
+    .select("*", o)
     .eq("scope", "kr")
     .eq("kr_id", krId)
     .eq("is_deleted", false)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }), { label: "okr_analyses" });
   if (error) throw error;
   return (data ?? []) as OkrAnalysis[];
 }
@@ -59,13 +60,13 @@ export async function insertOkrAnalysis(krId: string, content: string, createdBy
 
 /** 指定Objectiveの分析を新しい順に取得。 */
 export async function fetchObjectiveAnalyses(objectiveId: string): Promise<OkrAnalysis[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("okr_analyses")
-    .select("*")
+    .select("*", o)
     .eq("scope", "objective")
     .eq("objective_id", objectiveId)
     .eq("is_deleted", false)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }), { label: "okr_analyses" });
   if (error) throw error;
   return (data ?? []) as OkrAnalysis[];
 }

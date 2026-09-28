@@ -9,6 +9,7 @@
 // 他者が同時編集していた場合は ConflictError を投げる。
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 import { getAssigneeIds } from "../taskMeta";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
@@ -129,11 +130,11 @@ export async function saveWithLock<T extends { id: string }>(
 // ===== Group =====
 
 export async function fetchGroups(): Promise<Group[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("groups")
-    .select("*")
+    .select("*", o)
     .eq("is_deleted", false)
-    .order("name");
+    .order("name"), { label: "groups" });
   if (error) throw error;
   return (data ?? []) as Group[];
 }
@@ -156,11 +157,11 @@ export async function softDeleteGroup(id: string, deletedBy: string) {
 // （DB側のRLSで強制。migrations/20260727_add_loading_tips.sql）。
 
 export async function fetchLoadingTips(): Promise<LoadingTip[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("loading_tips")
-    .select("*")
+    .select("*", o)
     .eq("is_deleted", false)
-    .order("sort_order");
+    .order("sort_order"), { label: "loading_tips" });
   if (error) throw error;
   return (data ?? []) as LoadingTip[];
 }
@@ -224,18 +225,19 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
   // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
   const TOTAL = 8;
   let done = 0;
+  // 主キーは乱数UUIDのため、id だけで並べると従来の（ほぼ作成順の）並びが崩れる。作成順を第1キーにする。
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
 
   const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers, taskDeps] =
     await Promise.all([
-      supabase.from("members").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("projects").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("tasks").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("task_projects").select("*").then(tick),
-      supabase.from("milestones").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("member_tags").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("member_tag_members").select("*").then(tick),
-      supabase.from("task_dependencies").select("*").eq("is_deleted", false).then(tick),
+      fetchAllRows(o => supabase.from("members").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "members" }).then(tick),
+      fetchAllRows(o => supabase.from("projects").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "projects" }).then(tick),
+      fetchAllRows(o => supabase.from("tasks").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "tasks" }).then(tick),
+      fetchAllRows(o => supabase.from("task_projects").select("*", o), { label: "task_projects", keyColumns: ["task_id", "project_id"] }).then(tick),
+      fetchAllRows(o => supabase.from("milestones").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "milestones" }).then(tick),
+      fetchAllRows(o => supabase.from("member_tags").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "member_tags" }).then(tick),
+      fetchAllRows(o => supabase.from("member_tag_members").select("*", o), { label: "member_tag_members", keyColumns: ["tag_id", "member_id"] }).then(tick),
+      fetchAllRows(o => supabase.from("task_dependencies").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_dependencies" }).then(tick),
     ]);
 
   const firstError = [members, projects, tasks].find(r => r.error)?.error;
@@ -285,12 +287,12 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
 
   const [objectives, keyResults, taskForces, todos, ptf, ttfs] =
     await Promise.all([
-      supabase.from("objectives").select("*").then(tick),
-      supabase.from("key_results").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("task_forces").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("todos").select("*").eq("is_deleted", false).then(tick),
-      supabase.from("project_task_forces").select("*").then(tick),
-      supabase.from("task_task_forces").select("*").then(tick),
+      fetchAllRows(o => supabase.from("objectives").select("*", o).order("created_at", { ascending: true }), { label: "objectives" }).then(tick),
+      fetchAllRows(o => supabase.from("key_results").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "key_results" }).then(tick),
+      fetchAllRows(o => supabase.from("task_forces").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_forces" }).then(tick),
+      fetchAllRows(o => supabase.from("todos").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "todos" }).then(tick),
+      fetchAllRows(o => supabase.from("project_task_forces").select("*", o), { label: "project_task_forces", keyColumns: ["project_id", "tf_id"] }).then(tick),
+      fetchAllRows(o => supabase.from("task_task_forces").select("*", o), { label: "task_task_forces", keyColumns: ["task_id", "tf_id"] }).then(tick),
     ]);
 
   return {
@@ -570,10 +572,10 @@ export async function insertAiUsageLog(log: Omit<AiUsageLog, "id" | "called_at">
 }
 
 export async function fetchAiUsageLogs(): Promise<AiUsageLog[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("ai_usage_logs")
-    .select("*")
-    .order("called_at", { ascending: false });
+    .select("*", o)
+    .order("called_at", { ascending: false }), { label: "ai_usage_logs" });
   if (error) throw error;
   return (data ?? []) as AiUsageLog[];
 }

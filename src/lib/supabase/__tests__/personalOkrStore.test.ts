@@ -69,6 +69,10 @@ vi.mock("../client", () => {
       call.filters.push({ method: "limit", args });
       return builder;
     };
+    builder.range = (...args: unknown[]) => {
+      call.filters.push({ method: "range", args });
+      return builder;
+    };
     builder.select = (..._cols: unknown[]) => builder;
     builder.maybeSingle = () => Promise.resolve(popResult(table, op));
     builder.single = () => Promise.resolve(popResult(table, op));
@@ -198,6 +202,7 @@ describe("fetch系：is_deleted=falseで絞り込み、配列を返す", () => {
     expect(orderCalls).toEqual([
       { method: "order", args: ["month", { ascending: true }] },
       { method: "order", args: ["week_index", { ascending: true }] },
+      { method: "order", args: ["id", { ascending: true }] },
     ]);
   });
 

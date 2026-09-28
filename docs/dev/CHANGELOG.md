@@ -7364,4 +7364,39 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## CLAUDE.md
 # * Section 30（幅の範囲・既定幅・pointer capture）と Section 60（td 上下 padding の扱い）を更新。
 
-最終更新：2026-09-28（v3.115）
+# v3.116（2026-09-28）：一覧取得を全件ページングに統一（PostgREST の1000行上限による黙った欠落の解消）
+#
+# tasks が削除済み込み928行（09-16）まで来ており、1000行を超えると一覧・カンバン・ガントから
+# 一部のタスクが黙って消える状態だった（src 全体で .range( が0件）。
+#
+# ## ① 共通ヘルパー src/lib/supabase/fetchAllRows.ts（新規）
+# * build(o) => クエリ のファクトリを受け、.range() でページを回して全件を返す。戻り値は { data, error }。
+# * 1ページ目だけ count:"exact"。終了は「取得済み ≥ 総件数」または「空ページ」。
+#   🔴「返ってきた件数 < ページサイズ」では止めない（max_rows がページサイズより小さいと1ページ目で誤終了する）。
+#   次ページの offset も要求サイズではなく実際に返ってきた件数で進める（同じ理由）。
+# * 並びの最後に主キー昇順（既定 id。複合主キーの表は keyColumns）を必ず足す。主キーで重複除去し、
+#   件数が総件数と合わなければ console.warn（例外にしない）。
+#
+# ## ② 適用（32箇所）
+# * store.ts：初期ロード Phase1 8表・Phase2 6表（中間表4つは複合主キー）／fetchGroups／fetchLoadingTips／fetchAiUsageLogs
+# * personalOkrStore 7／krSessionStore 2／okrAnalysisStore 2／krMeetingNoteStore 2／projectAnalysisStore 1／projectInviteStore 1
+# * 初期ロードの「揃ったものから表示」（tick）と Realtime 購読は無変更。
+# * 並びが無かった初期ロードの実体10表は created_at 昇順→id 昇順にした（以前は不定順＝ほぼ作成順）。
+#   主キーが乱数UUIDのため id だけで並べるとサイドバーのPJ順などが入れ替わるため。中間表4つは主キー順。
+#   🔴 created_at 列の存在は schema.sql 上でのみ確認（live DB 未確認）。
+#
+# ## ③ テスト
+# * fetchAllRows.test.ts：0/1/999/1000/1001/2500件・max_rows=500・既存orderの保持・複合主キー・重複・途中エラー・count無し。
+# * storeRowLimit.test.ts：偽 PostgREST（max_rows=1000）で fetchCriticalData／fetchOkrData／fetchAiUsageLogs が1000件超を読む。
+#   修正前の store.ts（HEAD）に差し替えて3件とも赤くなることを確認済み。
+# * ヘルパーの終了条件を「件数 < ページサイズ」に変える／offset を pageSize で進める、のどちらでも max_rows=500 のケースが赤くなることを確認済み。
+# * rowLimitScan.test.ts（走査型・Section 59準拠でコメント除去）：単発の一覧 select が src に増えたら赤くなる。
+#   直書きに戻し、さらにコメントに語を書いても赤のままであることを確認済み。
+#
+# ## 未対応
+# * Edge Function notify-deadlines の tasks/projects/members/groups 取得（単発 select のまま・デプロイが別手順）。
+#
+# ## CLAUDE.md
+# * Section 61 を新設（1000行上限と fetchAllRows の使い方・禁止事項）。
+
+最終更新：2026-09-28（v3.116）

@@ -33,6 +33,7 @@
 // 既存パターンと同じ）。
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 import { saveWithLock } from "./store";
 import { isActualActivitiesColumnMissing } from "../personalOkr/actualActivitiesSaveError";
 import type {
@@ -43,11 +44,11 @@ import type {
 // ===== PersonalKr（個人四半期KR） =====
 
 export async function fetchPersonalKrs(): Promise<PersonalKr[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_krs")
-    .select("*")
+    .select("*", o)
     .eq("is_deleted", false)
-    .order("display_order");
+    .order("display_order"), { label: "personal_krs" });
   if (error) throw error;
   return (data ?? []) as PersonalKr[];
 }
@@ -67,12 +68,12 @@ export async function softDeletePersonalKr(id: string, deletedBy: string) {
 // ===== PersonalKrMonth（個人月次計画） =====
 
 export async function fetchPersonalKrMonths(personalKrId: string): Promise<PersonalKrMonth[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_kr_months")
-    .select("*")
+    .select("*", o)
     .eq("personal_kr_id", personalKrId)
     .eq("is_deleted", false)
-    .order("month_index");
+    .order("month_index"), { label: "personal_kr_months" });
   if (error) throw error;
   return (data ?? []) as PersonalKrMonth[];
 }
@@ -85,12 +86,12 @@ export async function fetchPersonalKrMonths(personalKrId: string): Promise<Perso
  */
 export async function fetchPersonalKrMonthsForKrs(krIds: string[]): Promise<PersonalKrMonth[]> {
   if (krIds.length === 0) return [];
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_kr_months")
-    .select("*")
+    .select("*", o)
     .in("personal_kr_id", krIds)
     .eq("is_deleted", false)
-    .order("month_index");
+    .order("month_index"), { label: "personal_kr_months" });
   if (error) throw error;
   return (data ?? []) as PersonalKrMonth[];
 }
@@ -135,13 +136,13 @@ export async function probeActualActivitiesColumn(): Promise<boolean | null> {
 // ===== PersonalKrWeek（★週の目標状態） =====
 
 export async function fetchPersonalKrWeeks(personalKrId: string): Promise<PersonalKrWeek[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_kr_weeks")
-    .select("*")
+    .select("*", o)
     .eq("personal_kr_id", personalKrId)
     .eq("is_deleted", false)
     .order("month", { ascending: true })
-    .order("week_index", { ascending: true });
+    .order("week_index", { ascending: true }), { label: "personal_kr_weeks" });
   if (error) throw error;
   return (data ?? []) as PersonalKrWeek[];
 }
@@ -163,10 +164,10 @@ export async function softDeletePersonalKrWeek(id: string, deletedBy: string) {
 // （判断理由はmigrations/20260807b_add_personal_okr.sqlの冒頭コメント参照）。
 
 export async function fetchPersonalKrWeekTasks(weekId: string): Promise<PersonalKrWeekTask[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_kr_week_tasks")
-    .select("*")
-    .eq("week_id", weekId);
+    .select("*", o)
+    .eq("week_id", weekId), { label: "personal_kr_week_tasks", keyColumns: ["week_id", "task_id"] });
   if (error) throw error;
   return (data ?? []) as PersonalKrWeekTask[];
 }
@@ -185,12 +186,12 @@ export async function deletePersonalKrWeekTask(weekId: string, taskId: string) {
 // ===== PersonalKrMemo（KRごとのメモ・追記型） =====
 
 export async function fetchPersonalKrMemos(personalKrId: string): Promise<PersonalKrMemo[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_kr_memos")
-    .select("*")
+    .select("*", o)
     .eq("personal_kr_id", personalKrId)
     .eq("is_deleted", false)
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }), { label: "personal_kr_memos" });
   if (error) throw error;
   return (data ?? []) as PersonalKrMemo[];
 }
@@ -282,11 +283,11 @@ export async function insertPersonalKrReviewDraft(draft: PersonalKrReviewDraft):
 
 /** 自分の全期間ぶんの月全体・四半期全体の振り返りを1回で取得する（データ量が極小のため）。 */
 export async function fetchPersonalPeriodReviews(): Promise<PersonalPeriodReview[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("personal_period_reviews")
-    .select("*")
+    .select("*", o)
     .eq("is_deleted", false)
-    .order("fiscal_year", { ascending: false });
+    .order("fiscal_year", { ascending: false }), { label: "personal_period_reviews" });
   if (error) throw error;
   return (data ?? []) as PersonalPeriodReview[];
 }

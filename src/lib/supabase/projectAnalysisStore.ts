@@ -6,6 +6,7 @@
 // 新規保存時に古い分を削除する。レコードは作成後に変更しない（updated_at なし）。
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 
 const MAX_HISTORY = 2;
 
@@ -48,11 +49,11 @@ export async function insertProjectAnalysis(
 
   // 最新 MAX_HISTORY 件を超える古いレコードを削除
   try {
-    const { data: all } = await supabase
+    const { data: all } = await fetchAllRows(o => supabase
       .from("project_analyses")
-      .select("id, created_at")
+      .select("id, created_at", o)
       .eq("project_id", projectId)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false }), { label: "project_analyses" });
     const stale = (all ?? []).slice(MAX_HISTORY).map(r => (r as { id: string }).id);
     if (stale.length > 0) {
       await supabase.from("project_analyses").delete().in("id", stale);

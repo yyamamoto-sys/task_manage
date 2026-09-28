@@ -5,6 +5,7 @@
 // KRセッション機能（チェックイン・ウィンセッション）専用。
 
 import { supabase } from "./client";
+import { fetchAllRows } from "./fetchAllRows";
 
 // ===== 型定義 =====
 
@@ -50,12 +51,12 @@ export interface KrDeclaration {
 // ===== 取得 =====
 
 export async function fetchKrSessions(krId: string): Promise<KrSession[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("kr_sessions")
-    .select("*")
+    .select("*", o)
     .eq("kr_id", krId)
     .eq("is_deleted", false)
-    .order("week_start", { ascending: false });
+    .order("week_start", { ascending: false }), { label: "kr_sessions" });
   if (error) throw error;
   return (data ?? []) as KrSession[];
 }
@@ -74,12 +75,12 @@ export async function fetchLatestCheckinSession(krId: string): Promise<KrSession
 }
 
 export async function fetchKrDeclarations(sessionId: string): Promise<KrDeclaration[]> {
-  const { data, error } = await supabase
+  const { data, error } = await fetchAllRows(o => supabase
     .from("kr_declarations")
-    .select("*")
+    .select("*", o)
     .eq("session_id", sessionId)
     .eq("is_deleted", false)
-    .order("created_at", { ascending: true });
+    .order("created_at", { ascending: true }), { label: "kr_declarations" });
   if (error) throw error;
   return (data ?? []) as KrDeclaration[];
 }
