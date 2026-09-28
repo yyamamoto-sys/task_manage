@@ -930,34 +930,13 @@ ALTER TABLE guest_ai_usage_global_daily ENABLE ROW LEVEL SECURITY;
 -- members / projects / tasks / groups はグループ分離・権限昇格防止のため
 -- 個別ポリシー（このセクションの下）を使う。ここでは「全員フルアクセス」のブランケット
 -- ポリシーをそれ以外のテーブルにのみ適用する。
--- 【注意】OKR周辺テーブル（kr_sessions等）はまだグループ分離未対応（既知の残課題）。
-DO $$
-DECLARE
-  t text;
-BEGIN
-  -- 【2026-07-23】PJ・タスク周辺テーブル（milestones/project_analyses/
-  -- project_task_forces/task_task_forces/task_projects/member_tag_members/
-  -- admin_change_logs/ai_usage_logs）は下部で親を辿る部署スコープポリシーに
-  -- 差し替えたためこのループから除外。member_tags 本体は全社共通マスタとして
-  -- 全公開のまま維持（部署概念が無いため）。
-  -- 【2026-07-24】OKRコア階層（objectives/key_results/task_forces/todos）は
-  -- migration 20260724_scope_okr_core_tables.sql で個別のgroup_idスコープポリシーに
-  -- 差し替えたためこのループから除外（下部の「OKRコア階層」ブロック参照）。
-  -- 残るOKR周辺テーブル（quarterly_*/kr_sessions/kr_declarations/kr_meeting_notes/
-  -- kr_note_tf_entries/okr_analyses/kr_reports）はマルチテナント未対応の既知の残課題
-  -- （第2弾でまとめて対応する方針。CLAUDE.md Section 1.6・Section 9のG参照）。
-  FOR t IN VALUES
-    ('quarterly_objectives'), ('quarterly_kr_task_forces'),
-    ('kr_sessions'), ('kr_declarations'),
-    ('member_tags'),
-    ('kr_meeting_notes'), ('kr_note_tf_entries'), ('okr_analyses'), ('kr_reports')
-  LOOP
-    EXECUTE format(
-      'DROP POLICY IF EXISTS "authenticated full access" ON %1$s;
-       CREATE POLICY "authenticated full access" ON %1$s
-         FOR ALL TO authenticated USING (true) WITH CHECK (true);', t);
-  END LOOP;
-END $$;
+-- 【2026-09-17・v3.112】ここにあった「全員フルアクセス」のブランケットループは撤去した。
+-- 残っていた9テーブル（quarterly_*/kr_sessions/kr_declarations/member_tags/kr_meeting_notes/
+-- kr_note_tf_entries/okr_analyses/kr_reports）は匿名サインイン有効化で誰でも読み書きできる
+-- 状態になったため、20260917c_block_anonymous_on_open_tables.sql で置き換えた。
+-- 【2026-09-28】うち member_tags 以外の8テーブルは 20260928_scope_okr_peripheral_tables.sql で
+-- 部署スコープ化した（下部の「OKR周辺テーブル」ブロック）。member_tags は全社共通マスタとして
+-- 「登録済みのみ」のまま（下部の「メンバータグ本体」ブロック）。
 
 -- ============================================================
 -- マルチテナント分離：ヘルパー関数（SECURITY DEFINER で members の RLS を迂回）
@@ -1246,8 +1225,8 @@ CREATE POLICY "tasks_group" ON tasks FOR ALL TO authenticated
 DROP POLICY IF EXISTS "authenticated full access" ON loading_tips;
 DROP POLICY IF EXISTS "loading_tips_read"  ON loading_tips;
 DROP POLICY IF EXISTS "loading_tips_write" ON loading_tips;
-CREATE POLICY "loading_tips_read" ON loading_tips
-  FOR SELECT TO authenticated USING (true);
+-- 【2026-09-28】loading_tips_read は current_member_id() を参照するため、その定義の後
+-- （下部の「メンバータグ本体」ブロックの直後）で作成する。
 CREATE POLICY "loading_tips_write" ON loading_tips
   FOR ALL TO authenticated
   USING (current_member_is_super_admin())
@@ -1279,6 +1258,26 @@ CREATE POLICY "member_widget_layouts_own" ON member_widget_layouts
   FOR ALL TO authenticated
   USING (member_id = current_member_id())
   WITH CHECK (member_id = current_member_id());
+
+-- ============================================================
+-- メンバータグ本体：登録済みメンバーのみ（部署スコープなし）
+-- （migrations/20260917c_block_anonymous_on_open_tables.sql）
+-- 部署を持たない全社共通マスタ。匿名・未登録は current_member_id() が NULL で拒否される。
+-- 部署スコープ化するかは docs/dev/rls-phase2-investigation.md の論点A-2。
+-- ============================================================
+DROP POLICY IF EXISTS "authenticated full access" ON member_tags;
+DROP POLICY IF EXISTS "authenticated_all" ON member_tags;
+DROP POLICY IF EXISTS "member_tags_registered_members_only" ON member_tags;
+CREATE POLICY "member_tags_registered_members_only" ON member_tags
+  FOR ALL TO authenticated
+  USING ((SELECT public.current_member_id()) IS NOT NULL)
+  WITH CHECK ((SELECT public.current_member_id()) IS NOT NULL);
+
+-- ローディング画面のヒントの読み取り：登録済みのみ（匿名JWTから読めていた。
+-- migrations/20260928b_restrict_groups_tips_usage_insert.sql）。書き込みは上部の
+-- loading_tips_write（super_admin のみ）。
+CREATE POLICY "loading_tips_read" ON loading_tips
+  FOR SELECT TO authenticated USING ((SELECT public.current_member_id()) IS NOT NULL);
 
 -- ============================================================
 -- 個人OKR層：本人のみ読み書き可（migrations/20260807b_add_personal_okr.sql 参照）
@@ -1641,6 +1640,184 @@ CREATE POLICY "kr_quarter_plans_group" ON kr_quarter_plans FOR ALL TO authentica
   WITH CHECK (group_id = ANY(current_member_group_ids()) OR current_member_is_super_admin());
 
 -- ============================================================
+-- OKR周辺テーブルの部署スコープ（migrations/20260928_scope_okr_peripheral_tables.sql）。
+-- quarterly_objectives 以外は group_id 列を持たないため、親KR／Objective を SECURITY DEFINER
+-- ヘルパーで辿る。判定基準は key_results_group と同じ（兼務込み group_ids OR super_admin）。
+-- 🔴 Section 39：関数は (SELECT ...) で包み、単数の部署は @> ARRAY[...] で比べる。
+-- 🔴 本番の実体は名前を問わず pg_policies から DROP している（Section 58）。ここでは
+--   既知の旧名を列挙して落とす。
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.kr_group_id(p_kr_id text)
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_kr_group_id$
+  SELECT group_id FROM public.key_results WHERE id = p_kr_id
+$fn_kr_group_id$;
+
+CREATE OR REPLACE FUNCTION public.objective_group_id(p_objective_id text)
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_objective_group_id$
+  SELECT group_id FROM public.objectives WHERE id = p_objective_id
+$fn_objective_group_id$;
+
+CREATE OR REPLACE FUNCTION public.quarterly_objective_group_id(p_quarterly_objective_id text)
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_quarterly_objective_group_id$
+  SELECT group_id FROM public.quarterly_objectives WHERE id = p_quarterly_objective_id
+$fn_quarterly_objective_group_id$;
+
+CREATE OR REPLACE FUNCTION public.kr_session_group_id(p_session_id uuid)
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_kr_session_group_id$
+  SELECT kr.group_id
+    FROM public.kr_sessions s
+    JOIN public.key_results kr ON kr.id = s.kr_id
+   WHERE s.id = p_session_id
+$fn_kr_session_group_id$;
+
+CREATE OR REPLACE FUNCTION public.kr_note_group_id(p_note_id uuid)
+RETURNS text LANGUAGE sql SECURITY DEFINER STABLE SET search_path = ''
+AS $fn_kr_note_group_id$
+  SELECT kr.group_id
+    FROM public.kr_meeting_notes n
+    JOIN public.key_results kr ON kr.id = n.kr_id
+   WHERE n.id = p_note_id
+$fn_kr_note_group_id$;
+
+REVOKE ALL ON FUNCTION public.kr_group_id(text)                  FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.objective_group_id(text)           FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.quarterly_objective_group_id(text) FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.kr_session_group_id(uuid)          FROM PUBLIC, anon;
+REVOKE ALL ON FUNCTION public.kr_note_group_id(uuid)             FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.kr_group_id(text)                  TO authenticated;
+GRANT EXECUTE ON FUNCTION public.objective_group_id(text)           TO authenticated;
+GRANT EXECUTE ON FUNCTION public.quarterly_objective_group_id(text) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.kr_session_group_id(uuid)          TO authenticated;
+GRANT EXECUTE ON FUNCTION public.kr_note_group_id(uuid)             TO authenticated;
+
+DROP POLICY IF EXISTS "authenticated full access" ON quarterly_objectives;
+DROP POLICY IF EXISTS "authenticated_all" ON quarterly_objectives;
+DROP POLICY IF EXISTS "quarterly_objectives_registered_members_only" ON quarterly_objectives;
+DROP POLICY IF EXISTS "quarterly_objectives_group" ON quarterly_objectives;
+CREATE POLICY "quarterly_objectives_group" ON quarterly_objectives
+  FOR ALL TO authenticated
+  USING (
+    (group_id IS NOT NULL AND (SELECT public.current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (group_id IS NOT NULL AND (SELECT public.current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON quarterly_kr_task_forces;
+DROP POLICY IF EXISTS "authenticated_all" ON quarterly_kr_task_forces;
+DROP POLICY IF EXISTS "quarterly_kr_task_forces_registered_members_only" ON quarterly_kr_task_forces;
+DROP POLICY IF EXISTS "quarterly_kr_task_forces_group" ON quarterly_kr_task_forces;
+CREATE POLICY "quarterly_kr_task_forces_group" ON quarterly_kr_task_forces
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.quarterly_objective_group_id(quarterly_objective_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.quarterly_objective_group_id(quarterly_objective_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_sessions;
+DROP POLICY IF EXISTS "authenticated_all" ON kr_sessions;
+DROP POLICY IF EXISTS "kr_sessions_registered_members_only" ON kr_sessions;
+DROP POLICY IF EXISTS "kr_sessions_group" ON kr_sessions;
+CREATE POLICY "kr_sessions_group" ON kr_sessions
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_declarations;
+DROP POLICY IF EXISTS "authenticated_all" ON kr_declarations;
+DROP POLICY IF EXISTS "kr_declarations_registered_members_only" ON kr_declarations;
+DROP POLICY IF EXISTS "kr_declarations_group" ON kr_declarations;
+CREATE POLICY "kr_declarations_group" ON kr_declarations
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_session_group_id(session_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_session_group_id(session_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_meeting_notes;
+DROP POLICY IF EXISTS "authenticated_all" ON kr_meeting_notes;
+DROP POLICY IF EXISTS "kr_meeting_notes_registered_members_only" ON kr_meeting_notes;
+DROP POLICY IF EXISTS "kr_meeting_notes_group" ON kr_meeting_notes;
+CREATE POLICY "kr_meeting_notes_group" ON kr_meeting_notes
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_note_tf_entries;
+DROP POLICY IF EXISTS "authenticated_all" ON kr_note_tf_entries;
+DROP POLICY IF EXISTS "kr_note_tf_entries_registered_members_only" ON kr_note_tf_entries;
+DROP POLICY IF EXISTS "kr_note_tf_entries_group" ON kr_note_tf_entries;
+CREATE POLICY "kr_note_tf_entries_group" ON kr_note_tf_entries
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_note_group_id(note_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_note_group_id(note_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+-- okr_analyses_scope_target_check により kr_id と objective_id はちょうど一方だけが入る
+DROP POLICY IF EXISTS "authenticated full access" ON okr_analyses;
+DROP POLICY IF EXISTS "authenticated_all" ON okr_analyses;
+DROP POLICY IF EXISTS "okr_analyses_registered_members_only" ON okr_analyses;
+DROP POLICY IF EXISTS "okr_analyses_group" ON okr_analyses;
+CREATE POLICY "okr_analyses_group" ON okr_analyses
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids())
+      @> ARRAY[coalesce(public.kr_group_id(kr_id), public.objective_group_id(objective_id))]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids())
+      @> ARRAY[coalesce(public.kr_group_id(kr_id), public.objective_group_id(objective_id))]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+DROP POLICY IF EXISTS "authenticated full access" ON kr_reports;
+DROP POLICY IF EXISTS "authenticated_all" ON kr_reports;
+DROP POLICY IF EXISTS "kr_reports_registered_members_only" ON kr_reports;
+DROP POLICY IF EXISTS "kr_reports_group" ON kr_reports;
+CREATE POLICY "kr_reports_group" ON kr_reports
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (SELECT public.current_member_group_ids()) @> ARRAY[public.kr_group_id(kr_id)]
+    OR (SELECT public.current_member_is_super_admin())
+  );
+
+-- ============================================================
 -- PJ・タスク周辺（子）テーブルの部署スコープ（migration 20260723 参照）。
 -- これらは group_id 列を持たないため、親（projects/tasks/members）を辿って判定する。
 -- ポリシーのUSING内から親を直接SELECTするとRLSが二重適用されるため、
@@ -1783,9 +1960,16 @@ CREATE POLICY "ai_usage_logs_select_group" ON ai_usage_logs FOR SELECT TO authen
 -- ドリフトしていた項目。migrations/20260807_add_guest_ai_quota.sqlで是正）。
 DROP POLICY IF EXISTS "authenticated users can insert" ON ai_usage_logs;
 DROP POLICY IF EXISTS "ai_usage_logs_insert_authenticated" ON ai_usage_logs;
-CREATE POLICY "ai_usage_logs_insert_authenticated" ON ai_usage_logs
+-- 【2026-09-28】本人の member_id に限定（匿名JWTで任意の行を捏造できた。ゲスト行は
+-- Edge Function が service_role で書くため RLS の対象外。
+-- migrations/20260928b_restrict_groups_tips_usage_insert.sql）。
+DROP POLICY IF EXISTS "ai_usage_logs_insert_own" ON ai_usage_logs;
+CREATE POLICY "ai_usage_logs_insert_own" ON ai_usage_logs
   FOR INSERT TO authenticated
-  WITH CHECK (true);
+  WITH CHECK (
+    member_id = (SELECT public.current_member_id())
+    AND is_guest = false
+  );
 
 -- 複数部署アクセス：不変条件をCHECK制約で強制（members / projects のみ。tasksはDBトリガーが
 -- 唯一の真実のため対象外）。migration 20260722b 参照。
@@ -1975,7 +2159,10 @@ CREATE TRIGGER trg_projects_verify_group_ids
 DROP POLICY IF EXISTS "authenticated full access" ON groups;
 DROP POLICY IF EXISTS "groups_auth" ON groups;
 DROP POLICY IF EXISTS "groups_select" ON groups;
-CREATE POLICY "groups_select" ON groups FOR SELECT TO authenticated USING (true);
+-- 【2026-09-28】参照は登録済みメンバーのみ（匿名JWTから teams_webhook_url を含む全部署が
+-- 読めていた。migrations/20260928b_restrict_groups_tips_usage_insert.sql）。
+CREATE POLICY "groups_select" ON groups FOR SELECT TO authenticated
+  USING ((SELECT public.current_member_id()) IS NOT NULL);
 DROP POLICY IF EXISTS "groups_insert_admin" ON groups;
 CREATE POLICY "groups_insert_admin" ON groups FOR INSERT TO authenticated
   WITH CHECK (current_member_is_super_admin());
