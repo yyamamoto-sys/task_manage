@@ -13,7 +13,7 @@ import { useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
 import { active, KEYS } from "../../lib/localData/localStore";
-import { isAssignedTo, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
+import { isAssignedTo, isCompletedForProgress, isPausedOrCancelledStatus, suppressOverdue, TASK_PRIORITY_STRIPE_COLOR } from "../../lib/taskMeta";
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { toDate, addDays } from "../../lib/date";
 import { chunkIntoWeeks, assignBarLanes, computeWeekBarSegments } from "../../lib/calendar/calendarUtils";
@@ -568,7 +568,8 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                   const pj = t.project_id ? projectById.get(t.project_id) : undefined;
                   // 中止(cancelled)はdoneと同じ「終わった見た目」（取り消し線・薄い表示）。保留(on_hold)は
                   // まだ動きうる仕事のため見た目は変えない（他ビューと同じ扱い。CLAUDE.md v2.77）
-                  const isClosed = t.status === "done" || t.status === "cancelled";
+                  // isCompletedForProgress（taskMeta.ts）と同一判定のため共有ヘルパーに統一（34回目の巡回）
+                  const isClosed = isCompletedForProgress(t.status);
                   const isOverdue = !suppressOverdue(t.status) && ds <= todayStr;
                   // ② 優先度ストライプ（カンバンの TASK_PRIORITY_STRIPE_COLOR をそのまま流用。判定ロジックの二重化を避ける）
                   const stripeColor = t.priority ? TASK_PRIORITY_STRIPE_COLOR[t.priority] : "var(--color-border-primary)";
@@ -631,7 +632,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
                       const t = barTaskById.get(seg.taskId);
                       if (!t) return null;
                       const pj = t.project_id ? projectById.get(t.project_id) : undefined;
-                      const isClosed = t.status === "done" || t.status === "cancelled";
+                      const isClosed = isCompletedForProgress(t.status);
                       return (
                         <button
                           key={seg.taskId}

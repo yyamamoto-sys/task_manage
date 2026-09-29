@@ -34,7 +34,7 @@
 | E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
 | F 管理・設定 | 2026-07-19 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない** | 見た目/構造の刷新は完了したが、H1本体（機能分割）は未着手のまま |
 | G オンボーディング | 2026-07-21 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | なし（M19/M20は2026-07-23に解消） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消 |
-| H グラフ・ラボビュー | 2026-07-21（`GraphView.tsx`のみ）／`CalendarLabView.tsx`・`ProjectStructureView.tsx`は未点検（2026-07-22新規登録） | 2026-07-21（凡例クリックの再レンダー漏れを修正） | 約790行（GraphView.tsx）＋約384行（CalendarLabView.tsx）＋約1,231行（ProjectStructureView.tsx）＝計約2,405行 | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因。両ファイルはまだ本台帳の観点での初回巡回が済んでいないため、次回このユニットが選ばれた際は`GraphView.tsx`の再点検よりもこの2ファイルの初回点検を優先すること** |
+| H グラフ・ラボビュー | GraphView.tsx 2026-07-21／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約790行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,694行（34回目に実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。GraphView.tsxは今回対象外のまま2026-07-21時点 |
 | I 通知 | 2026-09-28 | 2026-09-28（32回目・v3.118：B3＝部署Webhook URLの読み先を`groups`から`group_notification_settings`へ移行／`notify-deadlines`の単発select 4本＋新テーブル1本を`fetchAllRows`同等のページングに置換（Section 61）／期限通知の対象判定を`status !== "done"`から`isActiveTaskStatus`＝todo/in_progressのみに修正＝v2.74追従漏れ。保留・中止タスクがTeams週次レポートとブラウザ通知に「期限超過」として出続けていた。フロントhookとEdge Functionの2箇所）／2026-07-21（3回目：未使用select列`status`を削除） | **約437行**（32回目に実測：`hooks/useDeadlineNotifications.ts`102＋`supabase/functions/notify-deadlines/index.ts`335） | M18（`notify_pref="teams"`が実質dead。**2026-09-28再確認：現存**＝`DashboardView.tsx`の「💬 Teamsまとめ」選択肢はそのまま・Edge Functionは`notify_pref`を一切読まない。UX判断待ちのまま）／M38（新規・記録のみ。下記「中優先度」表参照） | 32回目巡回で点検（詳細は下記「32回目の巡回」節）。🔴 Edge Functionは git push では反映されない（`supabase functions deploy notify-deadlines --no-verify-jwt` で個別デプロイ。`config.toml`が無いため付け忘れると`verify_jwt`が`true`に戻りpg_cronからの呼び出しが401になる）。v3.118版はマイグレ20260928c適用後にデプロイすること（未適用だと新テーブルの読み取りが500になり、その週の通知が1通も出ない） |
 | データ基盤 | 2026-07-22 | 2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。22回目に`appStore.ts`側の`applyRemoteChange`実装・`App.tsx`の`subscribeToRealtime`呼び出しを直接確認し、`realtime.ts`の`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースが完全一致していることを再確認。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。22回目にM31を深掘りする過程で発見。低頻度更新のマスタ系データのため実害は小さいと見られるが、`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補) | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約2,578行）を21〜22回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正 |
 | AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
@@ -47,6 +47,57 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-29）巡回台帳の34回目の巡回：H グラフ・ラボビュー（CalendarLabView・ProjectStructureView）
+
+台帳で「未点検」のまま残っていた2ファイル（`CalendarLabView.tsx`671行・`ProjectStructureView.tsx`
+1,233行。GraphView.tsxは対象外）の初回専用点検を実施した。
+
+### 発見・修正：ステータス5値の重複実装（実質バグではないが要修正）
+
+`CalendarLabView.tsx`の`isClosed`判定（タスク行・期間バーの2箇所）が
+`t.status === "done" || t.status === "cancelled"`を手書きしており、これは
+`isCompletedForProgress`（`src/lib/taskMeta.ts`）と完全に同一のロジックだった。CLAUDE.md
+本文（taskMeta.ts冒頭コメント）は「GanttView・DashboardView・groupSummary.tsの4箇所で
+共有する」と明記しているが、CalendarLabView.tsxはこの4箇所に含まれておらず、独自に
+同じ式を再実装していた（過去のM33系統＝進捗%集計の分子/分母不整合と同型の温床）。
+共有ヘルパーへの置換のみで挙動は完全に不変（`isCompletedForProgress`は
+`status === "done" || status === "cancelled"`そのもの）のためその場で修正した。
+
+他の観点（保留/中止の隠し表示・オーバー期日の抑制・期日バーのフィルタ）は`hideDone`絞り込み・
+`suppressOverdue`・`isPausedOrCancelledStatus`を正しく使っており健全と確認した。
+`ProjectStructureView.tsx`はタスクステータスを一切扱わない（PJ体制図のみ）ため対象外。
+
+### Section 15（formatErrorForUser）の確認：健全
+
+`ProjectStructureView.tsx`の唯一のDB書き込み経路`doSave`は`formatErrorForUser`経由でエラーを
+表示しており適合。`CalendarLabView.tsx`はDB書き込みを一切行わない（タスク編集は親コンポーネント
+のモーダルに委譲）ため対象外。localStorage読み書き（`loadOrg`/`saveOrg`・カレンダーの表示設定・
+備考欄）の`catch { /* ignore */ }`は非致命的なローカル設定の読み書き失敗を握りつぶす既存の
+established patternであり、Section 15が対象とする「ユーザー操作の起点」には該当しないため
+問題視しない。
+
+### 死蔵コード・未使用export
+
+両ファイルとも唯一のexport（コンポーネント本体）は`MainLayout.tsx`の`labOverlay`から使用されて
+おり健全。`ProjectStructureView.tsx`の`RoleInput`の`disabled` propは呼び出し元`MemberCard`から
+一度も渡されておらず（常に`undefined`）、封じる分岐一式が死蔵状態だったため中優先度表へ
+**M40として新規記録**（`saving`を渡すべきかは挙動変化を伴うため設計判断待ち）。
+
+### i18n・fetchAllRows：対象外
+
+両ファイルとも文言は全て日本語直書きで、他のラボ/OKR系コンポーネントと同じ既存の凍結方針
+（Section 24 Step B「英語化はPhase 2以降凍結中」）に合致しており片側欠落ではない。Supabaseへの
+直接select（`fetchAllRows`迂回の懸念）は0件（両ファイルとも`useAppStore`のstore経由でデータを
+読むのみ）。
+
+### 次回候補
+
+- GraphView.tsxの再点検（前回2026-07-21のまま。M16＝Realtime更新でpan/zoom/凡例絞り込みが
+  リセットされる問題は未解消）
+- M40（`RoleInput.disabled`死蔵）の設計判断
 
 ---
 
@@ -1948,6 +1999,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M27 | アプリ内ヘルプ`docs/guides/01_onboarding/first-day.md`・`06_troubleshooting/faq.md`・`03_roles/admin.md`・`05_admin/objective-kr-tf.md`（いずれも`last_updated: 2026-05-15`）がSupabase Auth（メール/パスワードのログイン・新規登録＝LoginScreen、2026-03-18導入）に一切触れておらず、「メンバー選択画面で自分の名前を選ぶ」がログインの最初のステップであるかのように書かれている。admin.mdの「メアドを登録（ログイン用）」もmembers.emailを設定するだけでログインできるかのように読める | 中 | 2026-07-21の認証・入口12回目巡回で発見。正しい記述に書き換えるには実際の運用（自己登録か管理者発行か）の確認が要るため次回候補へ |
 | M38 | `notify-deadlines`の宛先振り分けで、①論理削除された部署（`groups.is_deleted=true`）に残ったタスクと、②部署はあるがWebhook未設定のタスクが、どちらも全社共通の`TEAMS_WEBHOOK_URL`へまとめて流れる（他部署のタスク名・担当者が全社チャンネルに出る）。③論理削除済みPJに属する未完了タスクは「（不明なPJ）」見出しで出続ける。④招待用部署（`is_invite_group=true`）のタスクの扱いが未定義（Webhook未設定なら全社共通へ流れる）。フォールバック自体は2026-07-03の後方互換の意図的な設計のため、どこまで絞るかは運用判断が要る | 低〜中 | 2026-09-28のI 通知32回目巡回で発見。コードは変更していない（全社共通フォールバックの挙動は今回変えない指示）。部署数が増える部署外展開の前に方針を決めたい |
 | M39 | `components/common/*`にハードコード色（`var(--color-*)`を経由しない色値）が多数残っている：`Toast.tsx`（STATE定義の`#16a34a`/`#dc2626`/`#3b82f6`・アクションボタンの`#fff`）／`SaveProgressLoader.tsx`（AI用の紫と区別する意図で導入した`#0ea5e9`/`#22c55e`。CLAUDE.md Section 62に設計意図の記載あり）／`EmptyState.tsx`（`#fff`）／`FileAttachButton.tsx`（`var(--color-bg-purple, #ede9fe)`等フォールバック値）／`CustomSelect.tsx`（チェックマークSVGの`#fff`）／`MentionTextarea.tsx`（`m.color_text \|\| "#fff"`）／`VersionHistoryModal.tsx`（`#fff`）／`ChunkDownloadGate.tsx`（`var(--color-accent-primary, #3b82f6)`）。CLAUDE.md本文「カラー: すべて var(--color-*) CSS変数で管理。ハードコード禁止」に反するが、共通UIユニットはこれまで専用のリファクタ点検が一度も入っていなかった（台帳の備考欄の記載どおり）ため今回初めて可視化された。全置換は既存の見た目（AI紫との対比等、意図的な配色差別化を含む）を変える設計判断が要るため次回候補へ | 低 | 2026-09-28の共通UI33回目巡回で発見。過去のAI相談ユニットのM30（`--color-accent`系フォールバック）と同型のパターンが共通UI全体に広く残っていることを確認 |
+| M40 | `ProjectStructureView.tsx`の`RoleInput`は`disabled` propを受け取れる設計（役割編集を封じる分岐一式を持つ）だが、唯一の呼び出し元`MemberCard`がこれを一度も渡していない（`saving`中でも常に`undefined`＝編集可能なまま）。役割編集をPJ保存中も許可し続ける意図的な設計なのか、`disabled={saving}`を渡し忘れた実装漏れなのか不明 | 低 | 2026-09-29のH グラフ・ラボビュー34回目巡回で発見。`saving`を渡すと保存中に編集欄が閉じる挙動変化を伴うため、直さず記録のみ |
 
 ### 低優先度
 | 項目 | 内容 | 難度 | 備考 |

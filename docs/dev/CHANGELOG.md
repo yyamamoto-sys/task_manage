@@ -7507,4 +7507,24 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
 # `npx eslint`（変更2ファイルとも新規警告0）・`npm run build`成功。
 
-最終更新：2026-09-29（v3.119）
+# v3.120（2026-09-29）：巡回台帳34回目（H グラフ・ラボビュー：CalendarLabView・ProjectStructureView）
+#
+# 台帳で「未点検」のまま残っていた2ファイル（CalendarLabView.tsx・ProjectStructureView.tsx。
+# GraphView.tsxは対象外）の初回専用点検。
+#
+# ## 修正
+# * `CalendarLabView.tsx`：タスク行・期間バーの`isClosed`判定2箇所が
+#   `t.status === "done" || t.status === "cancelled"`を手書きしており、`isCompletedForProgress`
+#   （`src/lib/taskMeta.ts`）と完全に同一のロジックを独自に再実装していた。共有ヘルパー経由に
+#   統一（挙動は完全に不変）。
+#
+# ## 記録のみ（設計判断が要る・中優先度表へ）
+# * M40：`ProjectStructureView.tsx`の`RoleInput.disabled`propが呼び出し元`MemberCard`から
+#   一度も渡されておらず死蔵（役割編集がPJ保存中も常に操作可能）。`saving`を渡すかは挙動変化を
+#   伴うため見送り。
+#
+# ## 検証
+# `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
+# `npx eslint`（変更1ファイル・新規警告0）・`npm run build`成功。
+
+最終更新：2026-09-29（v3.120）

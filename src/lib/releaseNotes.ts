@@ -39,7 +39,7 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
-    version: "v3.119",
+    version: "v3.120",
     date: "2026-09-29",
     title: "内部の品質改善",
     highlights: [
