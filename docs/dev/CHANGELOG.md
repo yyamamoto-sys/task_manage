@@ -7527,4 +7527,31 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
 # `npx eslint`（変更1ファイル・新規警告0）・`npm run build`成功。
 
-最終更新：2026-09-29（v3.120）
+# v3.121（2026-09-29）：巡回台帳35回目：F 管理・設定（AdminFormModal.tsx／adminStyles.ts／
+# AdminView.tsx／BackupSection.tsx／LoadingTipsSection.tsx／OkrImportModal.tsx／
+# TodoDecomposeModal.tsx）
+#
+# 07-19以降に変更された範囲（v3.13〜v3.118の各差分）を点検。GroupsSectionのWebhook分離
+# （v3.118）・BackupSection.tsx（v3.107・全285行）は formatErrorForUser 経由／fetchAllRows
+# 準拠／UIとRLSの権限が一致（super_adminのみ等）で健全。LoadingTipsSection.tsx・
+# AdminFormModal.tsx・TodoDecomposeModal.tsxも同様に健全（modalStyles共通化のみで実害なし）。
+#
+# ## 修正
+# * `AdminView.tsx`のAIUsageSection・`OkrImportModal.tsx`のPDF/Word読込エラー（計3箇所）が
+#   `e instanceof Error ? e.message : "..."`のSection 15禁止パターンのままだったのを
+#   `formatErrorForUser`経由に統一（表示内容は変わらず、Supabaseエラー等でコード・詳細が
+#   埋もれなくなる）。既存の07-19以前からの古いコードだが、今回の観点①点検で発見したため
+#   小さい実害修正として対応。
+#
+# ## 記録のみ（次回候補）
+# * Section 61「適用範囲」一覧に`fetchGroupNotificationSettings`（v3.118新設）が未掲載
+#   （実装自体は`fetchAllRows`経由で既に準拠済み。記載漏れのみ）。
+#
+# H1（AdminView.tsx完全分割）・M15（AdminViewのeslintエラー7件＝irregular whitespace 5件・
+# label-has-associated-control 2件）は今回も対象外（既知課題として現存確認のみ）。
+#
+# ## 検証
+# `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
+# `npx eslint`（変更2ファイル・新規警告0／既存M15の7件は現状維持）・`npm run build`成功。
+
+最終更新：2026-09-29（v3.121）

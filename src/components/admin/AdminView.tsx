@@ -3782,8 +3782,7 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
       setLastUpdated(new Date());
       setFetchError(null);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "不明なエラー";
-      setFetchError(`AI使用量ログの取得に失敗しました: ${msg}`);
+      setFetchError(formatErrorForUser("AI使用量ログの取得に失敗しました", e));
     } finally {
       if (silent) setRefreshing(false);
       else setLoading(false);

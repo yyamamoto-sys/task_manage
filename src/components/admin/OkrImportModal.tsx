@@ -151,13 +151,13 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
       import("../../lib/pdfAttachment")
         .then(({ buildPdfAttachment }) => buildPdfAttachment(file))
         .then(att => { setPdfAttachment(att); setRawText(""); })
-        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "PDFの読み込みに失敗しました。"));
+        .catch((e: unknown) => setFileError(formatErrorForUser("PDFの読み込みに失敗しました", e)));
       return;
     }
     if (isDocxFile(file)) {
       extractDocxText(file)
         .then(text => { setPdfAttachment(null); setRawText(text.length > MAX_TEXT_CHARS ? text.slice(0, MAX_TEXT_CHARS) : text); })
-        .catch((e: unknown) => setFileError(e instanceof Error ? e.message : "Wordファイルの読み込みに失敗しました。"));
+        .catch((e: unknown) => setFileError(formatErrorForUser("Wordファイルの読み込みに失敗しました", e)));
       return;
     }
     const reader = new FileReader();
