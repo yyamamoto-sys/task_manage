@@ -4271,7 +4271,8 @@ if (error) throw error;
 
 ### 適用範囲（v3.116時点）
 
-store.ts の初期ロード14表（Phase 1・2）・`fetchGroups`・`fetchLoadingTips`・`fetchAiUsageLogs`、
+store.ts の初期ロード14表（Phase 1・2）・`fetchGroups`・`fetchLoadingTips`・`fetchAiUsageLogs`・
+`fetchGroupNotificationSettings`（v3.118新設。36回目巡回で本一覧への記載漏れを解消）、
 personalOkrStore の一覧7関数、krSessionStore 2・okrAnalysisStore 2・krMeetingNoteStore 2・
 projectAnalysisStore（古い分析の刈り込み用）1・projectInviteStore 1。
 

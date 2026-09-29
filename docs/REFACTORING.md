@@ -36,7 +36,7 @@
 | G オンボーディング | 2026-07-21 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | なし（M19/M20は2026-07-23に解消） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消 |
 | H グラフ・ラボビュー | GraphView.tsx 2026-07-21／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約790行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,694行（34回目に実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。GraphView.tsxは今回対象外のまま2026-07-21時点 |
 | I 通知 | 2026-09-28 | 2026-09-28（32回目・v3.118：B3＝部署Webhook URLの読み先を`groups`から`group_notification_settings`へ移行／`notify-deadlines`の単発select 4本＋新テーブル1本を`fetchAllRows`同等のページングに置換（Section 61）／期限通知の対象判定を`status !== "done"`から`isActiveTaskStatus`＝todo/in_progressのみに修正＝v2.74追従漏れ。保留・中止タスクがTeams週次レポートとブラウザ通知に「期限超過」として出続けていた。フロントhookとEdge Functionの2箇所）／2026-07-21（3回目：未使用select列`status`を削除） | **約437行**（32回目に実測：`hooks/useDeadlineNotifications.ts`102＋`supabase/functions/notify-deadlines/index.ts`335） | M18（`notify_pref="teams"`が実質dead。**2026-09-28再確認：現存**＝`DashboardView.tsx`の「💬 Teamsまとめ」選択肢はそのまま・Edge Functionは`notify_pref`を一切読まない。UX判断待ちのまま）／M38（新規・記録のみ。下記「中優先度」表参照） | 32回目巡回で点検（詳細は下記「32回目の巡回」節）。🔴 Edge Functionは git push では反映されない（`supabase functions deploy notify-deadlines --no-verify-jwt` で個別デプロイ。`config.toml`が無いため付け忘れると`verify_jwt`が`true`に戻りpg_cronからの呼び出しが401になる）。v3.118版はマイグレ20260928c適用後にデプロイすること（未適用だと新テーブルの読み取りが500になり、その週の通知が1通も出ない） |
-| データ基盤 | 2026-07-22 | 2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。22回目に`appStore.ts`側の`applyRemoteChange`実装・`App.tsx`の`subscribeToRealtime`呼び出しを直接確認し、`realtime.ts`の`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースが完全一致していることを再確認。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。22回目にM31を深掘りする過程で発見。低頻度更新のマスタ系データのため実害は小さいと見られるが、`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補) | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約2,578行）を21〜22回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正 |
+| データ基盤 | 2026-09-29 | 2026-09-29（36回目：07-22以降の差分＝v3.101〜v3.118を点検。`types.ts`/`store.ts`/`appStore.ts`が対象、`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`のうち`realtime.ts`は無変更。v3.116のfetchAllRows化・v3.118のgroup_notification_settings分離とも型・Realtime・初期ロードの整合を確認し実害のあるコード不具合は無し。M41を新規記録、module-map.mdの`fetchAllRows.ts`登録漏れとCLAUDE.md Section 61「適用範囲」一覧の`fetchGroupNotificationSettings`記載漏れ〈35回目F管理・設定巡回で発見済みだった分〉を解消）／2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約3,488行**（36回目に実測。内訳：`types.ts`649+`localStore.ts`202+`appStore.ts`1,600+`AppDataContext.tsx`66+`lib/supabase/{client,store,realtime,auth}.ts`886+`fetchAllRows.ts`85〈v3.116新設・今回module-map.mdへ登録〉。21回目時点の約2,578行から、entity_change_logs〈v3.111〉・個人OKR層〈v3.36〜〉・fetchAllRows化〈v3.116〉・group_notification_settings〈v3.118〉等の機能追加により増加） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走。**36回目に再確認：`realtime.ts`は07-22以降無変更・`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースの一致も不変**。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。**36回目追記：v3.118新設の`group_notification_settings`（部署ごとのTeams Webhook URL）も同様にRealtime対象外・初期ロードにも含まれず〈AdminViewが開いた時にオンデマンド取得〉、既存5テーブルと同型の低頻度マスタ系データとして未対応のまま6件目が加わった形。`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補）／M41（新規・`fetchCriticalData`のfirstErrorがmembers/projects/tasksの3件のみ判定対象で残り5件はエラー時に黙って空配列化。下記「中優先度」表参照） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約3,488行）を21〜22・36回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正。36回目はv3.116/v3.118の型・Realtime・初期ロード整合を精査し実害バグ無し（記録2件のみ）。詳細は下記「36回目の巡回」節参照 |
 | AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
 | 共通UI | 2026-09-29 | 2026-09-29（33回目：`AIProgressLoader.tsx`/`Toast.tsx`にアクセシビリティ属性（`role="status"`/`aria-live="polite"`）を追加）／2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | **約4,588行**（33回目に実測。`components/common/*`29ファイルの合計。旧「約3,120行」は近似値だったため訂正） | M39（`components/common/*`に多数のハードコード色が残存。33回目発見・次回候補） | 33回目巡回で全体点検完了。詳細は下記「33回目の巡回」節参照。module-map.mdに`lib/progress/progressCurve.ts`（v3.117新設）の登録漏れを発見し追記済み |
 | ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
@@ -47,6 +47,60 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-29）巡回台帳の36回目の巡回：データ基盤（前回点検日07-22以降の差分のみ）
+
+対象：`docs/dev/module-map.md`のデータ基盤定義＝`types.ts`/`localStore.ts`/`appStore.ts`/
+`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`について、
+`git log --since=2026-07-22 -p`の差分（v3.13〜v3.118）。特にv3.116（fetchAllRows化・`bdaf6b6`）と
+v3.118（groups→group_notification_settings分離・`8b38308`）を重点点検。`realtime.ts`は差分0件
+（前回点検時から無変更）。
+
+### 点検結果：実害のある不具合は無し
+
+- **fetchAllRows化の取りこぼし**：初期ロード8並列クエリの`tick`進捗・`Promise.all`の結果展開は
+  健全。複合主キー表（`task_projects`/`member_tag_members`/`project_task_forces`/
+  `task_task_forces`）の`keyColumns`は`schema.sql`のPRIMARY KEY定義と列名・順序とも一致を確認。
+  新設`fetchGroupNotificationSettings`も`keyColumns: ["group_id"]`を正しく指定済み。
+  `created_at→id`順は、UIが並びを見せる箇所（`ListView.tsx`等）はいずれも`display_order`で
+  明示的に再ソートしており矛盾なし。
+- **v3.118の型・Realtime・初期ロード整合**：`Group`型から`teams_webhook_url`が正しく削除され
+  `GroupNotificationSetting`型に移設済み。`group_notification_settings`はAdminView（GroupsSection）が
+  開いたときのオンデマンド取得のみで、appStoreのグローバルstate・初期ロード・Realtimeいずれにも
+  含まれない設計（`groups`と同じ非同期方針で意図的・後述M32に追記のみ）。
+- **CLAUDE.md Section 15／saveWithLock**：v3.111（entity_change_logs・`f6b5074`）の
+  `recordEntityChangeLog`はfire-and-forget（`void`・内部で全例外を握る）で保存失敗の握りつぶしとは
+  無関係。`handleSaveError`/`formatErrorForUser`の経路・`saveWithLock`の楽観ロックは今回の差分で
+  変更なし。
+
+### 記録のみ：M41（新規）
+
+`fetchCriticalData`の`firstError`がmembers/projects/tasksの3件だけを判定対象とし、残り5件
+（task_projects/milestones/member_tags/member_tag_members/task_dependencies）はエラー時に
+黙って空配列へフォールバックする（v3.116以前からの既存パターン・今回のfetchAllRows化で
+新規発生したものではない）。詳細は上記M41本体参照。挙動を変える設計判断が要るため記録のみ。
+
+### M31・M32：現状確認
+
+- M31：`realtime.ts`のTABLES＝11・`applyRemoteChange`のswitch＝11ケースの一致、
+  `AppDataContext.tsx`のtasks/projects限定400msデバウンスと並走している状態、いずれも
+  07-22時点から変更なしを再確認。
+- M32：既存5テーブルに加え、v3.118新設の`group_notification_settings`も同型（低頻度マスタ系・
+  Realtime対象外）であることを確認し、備考に追記。
+
+### ドキュメント修正（コードは変更していないため版は据え置き）
+
+- `docs/dev/module-map.md`：データ基盤の主なファイル一覧に`fetchAllRows.ts`（v3.116新設）が
+  未登録だったため追記。
+- `CLAUDE.md` Section 61「適用範囲」一覧に`fetchGroupNotificationSettings`（v3.118新設）を追記
+  （35回目のF管理・設定巡回で発見済みだった記載漏れの解消）。
+
+### 検証
+
+`npx tsc --noEmit`（0）・`npx vitest run`（既存回帰なし）・`npm run build`成功。コード変更が
+無いためversion.ts／CLAUDE.md冒頭バージョン／CHANGELOG.md／releaseNotes.tsは更新していない。
 
 ---
 
@@ -2049,6 +2103,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M38 | `notify-deadlines`の宛先振り分けで、①論理削除された部署（`groups.is_deleted=true`）に残ったタスクと、②部署はあるがWebhook未設定のタスクが、どちらも全社共通の`TEAMS_WEBHOOK_URL`へまとめて流れる（他部署のタスク名・担当者が全社チャンネルに出る）。③論理削除済みPJに属する未完了タスクは「（不明なPJ）」見出しで出続ける。④招待用部署（`is_invite_group=true`）のタスクの扱いが未定義（Webhook未設定なら全社共通へ流れる）。フォールバック自体は2026-07-03の後方互換の意図的な設計のため、どこまで絞るかは運用判断が要る | 低〜中 | 2026-09-28のI 通知32回目巡回で発見。コードは変更していない（全社共通フォールバックの挙動は今回変えない指示）。部署数が増える部署外展開の前に方針を決めたい |
 | M39 | `components/common/*`にハードコード色（`var(--color-*)`を経由しない色値）が多数残っている：`Toast.tsx`（STATE定義の`#16a34a`/`#dc2626`/`#3b82f6`・アクションボタンの`#fff`）／`SaveProgressLoader.tsx`（AI用の紫と区別する意図で導入した`#0ea5e9`/`#22c55e`。CLAUDE.md Section 62に設計意図の記載あり）／`EmptyState.tsx`（`#fff`）／`FileAttachButton.tsx`（`var(--color-bg-purple, #ede9fe)`等フォールバック値）／`CustomSelect.tsx`（チェックマークSVGの`#fff`）／`MentionTextarea.tsx`（`m.color_text \|\| "#fff"`）／`VersionHistoryModal.tsx`（`#fff`）／`ChunkDownloadGate.tsx`（`var(--color-accent-primary, #3b82f6)`）。CLAUDE.md本文「カラー: すべて var(--color-*) CSS変数で管理。ハードコード禁止」に反するが、共通UIユニットはこれまで専用のリファクタ点検が一度も入っていなかった（台帳の備考欄の記載どおり）ため今回初めて可視化された。全置換は既存の見た目（AI紫との対比等、意図的な配色差別化を含む）を変える設計判断が要るため次回候補へ | 低 | 2026-09-28の共通UI33回目巡回で発見。過去のAI相談ユニットのM30（`--color-accent`系フォールバック）と同型のパターンが共通UI全体に広く残っていることを確認 |
 | M40 | `ProjectStructureView.tsx`の`RoleInput`は`disabled` propを受け取れる設計（役割編集を封じる分岐一式を持つ）だが、唯一の呼び出し元`MemberCard`がこれを一度も渡していない（`saving`中でも常に`undefined`＝編集可能なまま）。役割編集をPJ保存中も許可し続ける意図的な設計なのか、`disabled={saving}`を渡し忘れた実装漏れなのか不明 | 低 | 2026-09-29のH グラフ・ラボビュー34回目巡回で発見。`saving`を渡すと保存中に編集欄が閉じる挙動変化を伴うため、直さず記録のみ |
+| M41 | `store.ts`の`fetchCriticalData`（初期ロードPhase 1・8クエリを`Promise.all`で並列取得）で、エラーとして中断・例外送出するのは`firstError = [members, projects, tasks].find(r => r.error)`の3件のみ。残る5件（`task_projects`/`milestones`/`member_tags`/`member_tag_members`/`task_dependencies`）はエラーが返っても無視され、`(x.data ?? [])`で黙って空配列として扱われる（v3.116のfetchAllRows化以前からの既存パターンで、今回変えていない）。特に`task_dependencies`はB1依存ゲート（先行タスク未完了ならブロック）の判定材料のため、取得失敗時に依存関係が「無い」ものとして扱われるとゲートが無言で無効化される。3件だけを致命的扱いとする設計が意図的か、8件すべてを見るべきかは設計判断が要る | 中 | 2026-09-29のデータ基盤36回目巡回（v3.116/v3.118差分点検）で発見。コードは変更せず記録のみ |
 
 ### 低優先度
 | 項目 | 内容 | 難度 | 備考 |
