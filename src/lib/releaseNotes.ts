@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.118",
+    date: "2026-09-28",
+    title: "部署のTeams通知先（Webhook URL）を管理者だけが見られるようにしました（管理者向け）",
+    highlights: [
+      "管理画面の「グループ」で設定するTeams Webhook URLは、全社スーパー管理者とその部署の管理者だけが表示・変更できるようになりました。部署の管理者の画面では、自部署の設定状況だけが表示されます",
+      "毎週月曜のTeamsの期限通知と、ブラウザの期限通知から、「保留」「中止」にしたタスクを外しました。動いていないタスクが期限超過として流れ続けることがなくなります",
+    ],
+  },
+  {
     version: "v3.117",
     date: "2026-09-28",
     title: "AI生成中の進捗表示が、実際の待ち時間に合わせて最後まで動き続けるようになりました",

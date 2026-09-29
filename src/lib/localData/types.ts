@@ -8,14 +8,23 @@ export type NotifyPref = "none" | "browser" | "teams";
 export interface Group {
   id: string;
   name: string;
-  /** この部署専用のTeams Webhook URL（週次期限通知の投稿先）。未設定なら全社共通のTEAMS_WEBHOOK_URLにフォールバック */
-  teams_webhook_url?: string | null;
   /** プロジェクト招待用の部署か（migrations/20260810_add_project_invites.sql）。
    *  true はcreate_project_invite()がPJごとに1つ作る招待専用の部署で、通常の組織部署とは区別する。 */
   is_invite_group?: boolean;
   is_deleted: boolean;
   deleted_at?: string;
   deleted_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  updated_by: string;
+}
+
+/** 部署ごとの通知設定（migrations/20260928c_group_notification_settings.sql）。
+ *  Webhook URL は super_admin と自部署の admin だけが読めるよう groups から分けた（RLS）。 */
+export interface GroupNotificationSetting {
+  group_id: string;
+  /** 週次期限通知の投稿先。未設定なら全社共通の TEAMS_WEBHOOK_URL にフォールバック */
+  teams_webhook_url: string | null;
   created_at?: string;
   updated_at?: string;
   updated_by: string;

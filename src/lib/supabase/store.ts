@@ -12,7 +12,7 @@ import { supabase } from "./client";
 import { fetchAllRows } from "./fetchAllRows";
 import { getAssigneeIds } from "../taskMeta";
 import type {
-  Group, Member, Objective, KeyResult, TaskForce, ToDo,
+  Group, GroupNotificationSetting, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
   QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
@@ -136,7 +136,34 @@ export async function fetchGroups(): Promise<Group[]> {
     .eq("is_deleted", false)
     .order("name"), { label: "groups" });
   if (error) throw error;
-  return (data ?? []) as Group[];
+  // 20260928d 適用前は groups に teams_webhook_url が残っている。手元に持つと saveGroup の
+  // 行ごと保存で送り返してしまうため落とす（URL は group_notification_settings が正本）。
+  return (data ?? []).map(row => {
+    const { teams_webhook_url: _dropped, ...g } = row as Group & { teams_webhook_url?: unknown };
+    return g as Group;
+  });
+}
+
+// ===== GroupNotificationSetting（部署の通知設定・管理者のみ参照可）=====
+
+export async function fetchGroupNotificationSettings(): Promise<GroupNotificationSetting[]> {
+  const { data, error } = await fetchAllRows(o => supabase
+    .from("group_notification_settings")
+    .select("*", o), { label: "group_notification_settings", keyColumns: ["group_id"] });
+  if (error) throw error;
+  return (data ?? []) as GroupNotificationSetting[];
+}
+
+export async function upsertGroupNotificationSetting(
+  setting: Pick<GroupNotificationSetting, "group_id" | "teams_webhook_url" | "updated_by">,
+): Promise<GroupNotificationSetting> {
+  const { data, error } = await supabase
+    .from("group_notification_settings")
+    .upsert({ ...setting, updated_at: new Date().toISOString() }, { onConflict: "group_id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return data as GroupNotificationSetting;
 }
 
 export async function upsertGroup(group: Group, expectedUpdatedAt?: string): Promise<string> {

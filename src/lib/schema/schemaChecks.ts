@@ -489,4 +489,13 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "タスク・PJの編集履歴テーブル（entity_change_logs）が見つかりません",
     migration: "20260917b_add_entity_change_logs.sql",
   },
+  // 未適用だと管理画面で部署の Webhook URL が読めず変更もできない（部署名の保存は動く）。
+  // notify-deadlines（2026-09-28版）も500で止まり、週次の期限通知が1通も出なくなる。
+  {
+    id: "group_notification_settings_table",
+    kind: "table",
+    table: "group_notification_settings",
+    label: "部署のTeams通知設定テーブル（group_notification_settings）が見つかりません",
+    migration: "20260928c_group_notification_settings.sql",
+  },
 ];

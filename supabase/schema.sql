@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS groups (
   updated_at timestamptz NOT NULL DEFAULT now(),
   updated_by text NOT NULL DEFAULT ''
 );
--- migrations/20260703_add_group_teams_webhook.sql 参照
-ALTER TABLE groups ADD COLUMN IF NOT EXISTS teams_webhook_url text;
+-- teams_webhook_url 列（migrations/20260703_add_group_teams_webhook.sql）は
+-- group_notification_settings へ移して削除した（20260928c で複写・20260928d で DROP。末尾参照）。
 -- プロジェクト招待用の部署かどうか（migrations/20260810_add_project_invites.sql）。
 -- true の部署はcreate_project_invite()が対象PJごとに1つ作る「招待用の部署」で、
 -- 通常の部署（is_admin/is_super_admin付与の対象になる通常運用の組織）とは区別する。
@@ -3265,3 +3265,102 @@ REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM PUB
 REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM authenticated;
 REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.backup_snapshot(text, text, bigint, text) TO service_role;
+
+-- ============================================================
+-- タスク・PJの変更履歴＋Undo（migrations/20260917b_add_entity_change_logs.sql・CLAUDE.md Section 57）
+-- 90日経過削除の pg_cron ジョブ（cleanup-entity-change-logs）はマイグレーション側のみに置く
+-- （admin_change_logs と同じ流儀）。
+-- 🔴 group_id（単数）と配列の比較は `(SELECT current_member_group_ids()) @> ARRAY[group_id]`。
+--   `group_id = ANY((SELECT 関数()))` は 42883 になる（Section 39 但し書き）。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS entity_change_logs (
+  id           bigserial PRIMARY KEY,
+  entity_type  text NOT NULL CHECK (entity_type IN ('task','project')),
+  entity_id    text NOT NULL,
+  entity_name  text NOT NULL,          -- 削除後も何だったか分かるように名前を控える
+  action       text NOT NULL CHECK (action IN ('create','update','delete','restore')),
+  diff         jsonb NOT NULL DEFAULT '{}'::jsonb,  -- { field: {before, after} }
+  changed_by   text NOT NULL,
+  changed_at   timestamptz NOT NULL DEFAULT now(),
+  group_id     text REFERENCES groups(id),          -- 部署スコープ（RLS用）
+  undone_at    timestamptz,
+  undone_by    text
+);
+
+-- インデックス：タスク/PJ単位の表示（直近N件）と、90日削除ジョブの両方に効かせる
+CREATE INDEX IF NOT EXISTS idx_entity_change_logs_entity
+  ON entity_change_logs(entity_type, entity_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_entity_change_logs_changed_at
+  ON entity_change_logs(changed_at);
+
+ALTER TABLE entity_change_logs ENABLE ROW LEVEL SECURITY;
+
+-- SELECT：自分がアクセスできる部署のログ、または全社スーパー管理者。
+-- 🔴 CLAUDE.md Section 39のグランドルールに従い、SECURITY DEFINER関数呼び出しは
+-- (SELECT ...) で包む（InitPlan化して1回だけ評価させるため。式の意味は変えていない）。
+DROP POLICY IF EXISTS "entity_change_logs_select" ON entity_change_logs;
+CREATE POLICY "entity_change_logs_select" ON entity_change_logs
+  FOR SELECT TO authenticated
+  USING (
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT current_member_is_super_admin())
+  );
+
+-- INSERT：クライアント（appStoreのchoke point経由）が直接書く。書き込み対象を絞る
+-- 追加条件は付けない（記録の失敗を保存の失敗にしないため、appStore側のtry/catchが
+-- 実質的な安全弁になっている。CLAUDE.md Section 57参照）。
+DROP POLICY IF EXISTS "entity_change_logs_insert" ON entity_change_logs;
+CREATE POLICY "entity_change_logs_insert" ON entity_change_logs
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT current_member_is_super_admin())
+  );
+
+-- UPDATE：Undo実行後に undone_at/undone_by を書き込むために許可する。
+-- 🔴 SELECT と同じ部署スコープで絞る（2026-09-17・統括レビューで是正）。
+-- 当初は USING (true) / WITH CHECK (true) で authenticated 全員に開けていた。
+-- undone_at の誤更新は実害が小さい（表示が「取り消し済み」になるだけでデータは変わらない）が、
+-- 「見えない履歴を書き換えられる」状態をわざわざ残す理由が無いため、閲覧できる範囲と揃えた。
+-- v3.109（PJ編集権限）で「UIだけの制限は防御にならない」ことが実際に分かったばかりであり、
+-- DB側で絞れるものはDB側で絞る。
+DROP POLICY IF EXISTS "entity_change_logs_update" ON entity_change_logs;
+CREATE POLICY "entity_change_logs_update" ON entity_change_logs
+  FOR UPDATE TO authenticated
+  USING (
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT current_member_is_super_admin())
+  )
+  WITH CHECK (
+    (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
+    OR (SELECT current_member_is_super_admin())
+  );
+
+-- ============================================================
+-- 部署の通知設定（migrations/20260928c_group_notification_settings.sql・
+-- docs/dev/rls-phase2-investigation.md §8）。Teams Webhook URL を groups から分け、
+-- super_admin と自部署の admin だけが読み書きできるようにした（判定は groups_update_admin と同じ）。
+-- notify-deadlines は service_role で読む（RLS対象外）。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS group_notification_settings (
+  group_id          text PRIMARY KEY REFERENCES groups(id),
+  teams_webhook_url text,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  updated_by        text NOT NULL DEFAULT ''
+);
+ALTER TABLE group_notification_settings ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "group_notification_settings_admin" ON group_notification_settings;
+CREATE POLICY "group_notification_settings_admin" ON group_notification_settings
+  FOR ALL TO authenticated
+  USING (
+    (SELECT public.current_member_is_super_admin())
+    OR ((SELECT public.current_member_is_admin()) AND group_id = (SELECT public.current_member_group_id()))
+  )
+  WITH CHECK (
+    (SELECT public.current_member_is_super_admin())
+    OR ((SELECT public.current_member_is_admin()) AND group_id = (SELECT public.current_member_group_id()))
+  );

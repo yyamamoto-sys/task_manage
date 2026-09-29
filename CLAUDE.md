@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.117
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.118
 #
-最終更新：2026-09-28（v3.117）
+最終更新：2026-09-28（v3.118）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4096,21 +4096,29 @@ USING ((SELECT public.current_member_id()) IS NOT NULL)
 匿名ユーザーは `auth.email()` が NULL のため**必ず NULL を返す**。JWTのクレームに依存しない。
 副次的に「認証は通ったが members に未登録の人」も弾ける（そちらも本来アクセスさせるべきでない）。
 
-### 残した課題
+### 残した課題（2026-09-28 更新。経緯は `docs/dev/rls-phase2-investigation.md`）
 
-- **9テーブルの部署スコープ化**（本来やるべき「第2弾」）。今回は穴を塞ぐことを優先した
-- **`groups.groups_select`（`qual = true`）** … 全部署の一覧が誰でも読める。部署一覧はアプリ
-  全体が参照しており、締めると招待受諾フロー等への影響が読みにくいため今回は触っていない
-- **`loading_tips.loading_tips_read`（`qual = true`）** … ヒント文のみ。機密性は低い
+- ✅ **9テーブルの部署スコープ化** … **8テーブル完了**（`migrations/20260928_scope_okr_peripheral_tables.sql`）。
+  `member_tags` は全社共通マスタのため部署スコープ化の対象外（登録済みメンバーのみに締めたまま）
+- ✅ **`groups.groups_select`** … `qual = true` から**登録済みメンバーのみ**（`current_member_id() IS NOT NULL`）へ変更済み
+  （`migrations/20260928b_restrict_groups_tips_usage_insert.sql`）
+- ✅ **`loading_tips.loading_tips_read`** … 同じく**登録済みメンバーのみ**へ変更済み（20260928b）
+- ✅ **`ai_usage_logs` の INSERT** … **本人の member_id のみ**（ゲスト行は service_role の Edge Function だけが書く。20260928b）
+- ⏳ **B3：部署の Teams Webhook URL の分離**（v3.118）… 登録済みなら他部署の `groups.teams_webhook_url` が読めていた。
+  `group_notification_settings`（super_admin と自部署 admin のみ）へ移す。実装済み・**マイグレ①（20260928c）→
+  notify-deadlines デプロイ→フロントデプロイ→マイグレ②（20260928d・列DROP）の順で適用待ち**。
+  完了後は Webhook を Power Automate 側で再発行して登録し直すことを推奨（匿名から読めた期間があるため）
 
 ### 🔴 外部前提のチェックリスト（コードにもテストにも現れないもの）
 
 `schemaChecks.ts`（DBスキーマ）や `changelogVersion.test.ts`（4点セット）のような機械検査は
 このリポジトリに複数あるが、**外部サービスの設定はどれにも引っかからない。**
 
-| 前提 | 状態（2026-09-17時点） |
+| 前提 | 状態（2026-09-28時点） |
 |---|---|
 | Supabase の Anonymous Sign-Ins | ✅ 有効（**無効だったことが今回の発端**） |
+| 匿名JWTで読めるテーブル | ✅ マイグレ 20260928・20260928b（2026-09-28）で OKR周辺8テーブルを部署スコープに、groups・loading_tips を登録済みのみに締めた（適用後の確認は `rls-phase2-investigation.md` §5-2・§10 の検証SQL） |
+| 部署の Webhook URL の閲覧範囲 | ⏳ v3.118（B3）の適用待ち。適用までは登録済みメンバーなら全部署分が読める |
 | Edge Function secrets（`ANTHROPIC_API_KEY` / `ALLOWED_ORIGINS` / `*_CRON_SECRET` / `TEAMS_WEBHOOK_URL`） | ✅ 設定済み |
 | `ALLOWED_ORIGINS` に本番ドメインが含まれるか | ⚠️ 未確認（AI相談が動いているので含まれるはず） |
 | Teams の Power Automate フローが生きているか | ⚠️ 未確認（設定者個人の接続に依存・既知のリスク） |

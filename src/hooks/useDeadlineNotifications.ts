@@ -1,7 +1,7 @@
 // src/hooks/useDeadlineNotifications.ts
 //
 // 【設計意図】
-// 自分宛て・未完了・「期限切れ／本日期限」のタスクを、ブラウザのOS通知で能動的に知らせる（方式B）。
+// 自分宛て・アクティブ（todo/in_progress）・「期限切れ／本日期限」のタスクを、ブラウザのOS通知で能動的に知らせる（方式B）。
 // - 発火条件：自分の member.notify_pref === "browser" かつ Notification 許可が "granted"
 // - アプリ（タブ）を開いている間のみ動作する。タブを閉じている間の通知は Teams 側
 //   （サーバ送信＝notify-deadlines Edge Function）が担当する役割分担。
@@ -13,7 +13,7 @@
 import { useEffect, useRef } from "react";
 import { useAppStore, selectScopedTasks } from "../stores/appStore";
 import { todayStr } from "../lib/date";
-import { isAssignedTo } from "../lib/taskMeta";
+import { isAssignedTo, isActiveTaskStatus } from "../lib/taskMeta";
 import { active, LS_KEY } from "../lib/localData/localStore";
 
 const RECHECK_MS = 30 * 60 * 1000; // 30分ごと（日付替わり・新規期限の取りこぼし防止）
@@ -59,10 +59,10 @@ export function useDeadlineNotifications(currentUserId: string) {
       if (Notification.permission !== "granted") return;
 
       const today = todayStr();
-      // 自分担当・未完了・期限切れ／本日期限
+      // 自分担当・アクティブ（保留・中止は催促しない）・期限切れ／本日期限
       const myDue = active(tasksRef.current).filter(t =>
         isAssignedTo(t, currentUserId) &&
-        t.status !== "done" &&
+        isActiveTaskStatus(t.status) &&
         t.due_date != null &&
         t.due_date <= today,
       );

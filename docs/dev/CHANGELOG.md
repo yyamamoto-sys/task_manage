@@ -7445,4 +7445,41 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * Section 62（新設）：AIProgressLoaderの設計方針（本当の進捗は取れないこと・漸近曲線・
 #   止まって見せないこと）を追記。
 
-最終更新：2026-09-28（v3.117）
+# v3.118（2026-09-28）：部署のTeams Webhook URLを管理者専用テーブルへ移行（B3）＋I 通知ユニットの巡回（32回目）
+#
+# 登録済みメンバーなら他部署の groups.teams_webhook_url も読めていた（groups は部署名の表示に
+# 全部署分が要るため行で絞れない）。URL の列だけを group_notification_settings に分け、
+# super_admin と自部署の admin に絞る（docs/dev/rls-phase2-investigation.md §8）。
+# 🔴 未コミット・未デプロイ。適用順＝20260928c → notify-deadlines デプロイ → フロント → 20260928d。
+#
+# ## ① マイグレ
+# * 20260928c_group_notification_settings.sql（新規）：新テーブル＋RLS 1本（FOR ALL。
+#   current_member_is_super_admin() OR (current_member_is_admin() AND group_id = current_member_group_id())、
+#   関数は (SELECT ...) 包み＝Section 39）＋groups からの複写。groups 側の列は残す。
+# * 20260928d_drop_groups_teams_webhook_url.sql（新規）：NULL化→列DROP。フロントのデプロイ後にのみ適用。
+#
+# ## ② notify-deadlines（Edge Function）
+# * groups からは id,name のみ。URL は group_notification_settings から取得して結合。
+# * tasks/projects/members/groups/settings の取得をページング化（src の fetchAllRows と同じ終了条件：
+#   count:"exact" → 取得済み≥総件数 or 空ページ。v3.116 の「未対応」を解消）。
+# * 対象を status≠done から todo/in_progress のみに（保留・中止を期限超過として流さない。v2.74追従漏れ）。
+# * 全社共通 TEAMS_WEBHOOK_URL へのフォールバックは不変。
+#
+# ## ③ フロント
+# * AdminView GroupsSection：設定を fetchGroupNotificationSettings で別取得し、保存は
+#   upsertGroupNotificationSetting（URL が変わったときだけ）。取得失敗時はエラーを表示して URL 欄を
+#   無効化（部署名の保存は動く＝20260928c 未適用環境でも管理画面は壊れない）。
+#   件数タイル：super_admin は「Webhook設定済み（全部署）」、部署管理者は「自部署のWebhook：設定済み/未設定」。
+# * store.ts：fetchGroups は teams_webhook_url を落として保持（saveGroup が送り返さないように）。
+# * types.ts：Group.teams_webhook_url を削除、GroupNotificationSetting を新設。
+# * schemaChecks.ts：group_notification_settings のテーブル存在チェックを追加。
+# * useDeadlineNotifications：対象判定を isActiveTaskStatus に（②と同じ修正）。
+#
+# ## ④ ドキュメント・整合
+# * schema.sql：entity_change_logs（20260917b）と group_notification_settings を反映、groups の列行を注記に置換。
+# * CLAUDE.md Section 58：「残した課題」「外部前提のチェックリスト」を 2026-09-28 の状態に更新。
+# * rls-phase2-investigation.md §8.4：5ペルソナの見え方比較SQL（rollback付き）を追記。
+# * REFACTORING.md：I 通知行を更新（32回目）、M38 を記録、D OKR 行に巡回除外の見直し要の注記。
+# * deadline-notifications.md：Webhook の保存先・対象ステータス・編集できる人の記述を更新。
+
+最終更新：2026-09-28（v3.118）

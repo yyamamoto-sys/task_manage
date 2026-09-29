@@ -30,6 +30,13 @@
 //   （後方互換：部署別Webhookを設定していない間は今まで通りの挙動を維持するため）。
 // - 部署ごとに1リクエストずつ投稿するため、実行結果は部署別の配列で返す。
 //
+// 【2026-09-28 変更】部署別Webhook URL の保存先を groups.teams_webhook_url から
+// group_notification_settings（管理者だけが読めるテーブル）へ移した
+// （migrations/20260928c_group_notification_settings.sql・docs/dev/rls-phase2-investigation.md §8）。
+// 対象の判定を「done 以外」から「todo / in_progress のみ」に改めた（保留・中止のタスクを
+// 期限超過として全員に流さない。src/lib/taskMeta.ts の isActiveTaskStatus と同じ定義）。
+// 一覧の取得はページングする（PostgREST の max_rows で末尾が黙って欠けるため。CLAUDE.md Section 61）。
+//
 // 必要な Edge Function secrets（supabase secrets set ...）：
 //   SUPABASE_URL（自動設定）/ SUPABASE_SERVICE_ROLE_KEY / TEAMS_WEBHOOK_URL（フォールバック用）/ NOTIFY_CRON_SECRET
 //
@@ -66,7 +73,8 @@ type TaskRow = {
 };
 
 type MemberRow = { id: string; display_name: string; email: string | null };
-type GroupRow = { id: string; name: string; teams_webhook_url: string | null };
+type GroupRow = { id: string; name: string };
+type NotificationSettingRow = { group_id: string; teams_webhook_url: string | null };
 
 const NO_PJ_KEY = "__no_pj__";
 // 部署未設定（group_id=NULL）のタスク・部署別Webhook未設定の部署は、この共通バケットにまとめる
@@ -91,43 +99,49 @@ Deno.serve(async (req: Request) => {
 
   // ===== 未完了・今週末（日曜）までに期限があるタスク全件 =====
   // ここには「期限超過（本日含む）」と「今週中に完了予定」の両方が含まれる。以降で振り分ける。
-  const { data: tasks, error: tErr } = await supabase
+  const { data: tasks, error: tErr } = await fetchAllRows<TaskRow>((o) => supabase
     .from("tasks")
-    .select("id, name, due_date, project_id, group_id, assignee_member_id, assignee_member_ids")
+    .select("id, name, due_date, project_id, group_id, assignee_member_id, assignee_member_ids", o)
     .eq("is_deleted", false)
-    .neq("status", "done")
+    .in("status", ["todo", "in_progress"])
     .not("due_date", "is", null)
-    .lte("due_date", weekEnd);
+    .lte("due_date", weekEnd));
   if (tErr) return json({ error: "tasks query failed", detail: tErr.message }, 500);
 
-  const { data: projects, error: pErr } = await supabase
-    .from("projects").select("id, name").eq("is_deleted", false);
+  const { data: projects, error: pErr } = await fetchAllRows<{ id: string; name: string }>((o) => supabase
+    .from("projects").select("id, name", o).eq("is_deleted", false));
   if (pErr) return json({ error: "projects query failed", detail: pErr.message }, 500);
 
-  const { data: members, error: mErr } = await supabase
-    .from("members").select("id, display_name, email").eq("is_deleted", false);
+  const { data: members, error: mErr } = await fetchAllRows<MemberRow>((o) => supabase
+    .from("members").select("id, display_name, email", o).eq("is_deleted", false));
   if (mErr) return json({ error: "members query failed", detail: mErr.message }, 500);
 
-  const { data: groups, error: gErr } = await supabase
-    .from("groups").select("id, name, teams_webhook_url").eq("is_deleted", false);
+  const { data: groups, error: gErr } = await fetchAllRows<GroupRow>((o) => supabase
+    .from("groups").select("id, name", o).eq("is_deleted", false));
   if (gErr) return json({ error: "groups query failed", detail: gErr.message }, 500);
 
-  const groupById = new Map((groups ?? []).map((g) => [g.id as string, g as GroupRow]));
-  const pjNameById = new Map((projects ?? []).map((p) => [p.id as string, p.name as string]));
-  const memberById = new Map((members ?? []).map((m) => [m.id as string, m as MemberRow]));
+  const { data: settings, error: sErr } = await fetchAllRows<NotificationSettingRow>((o) => supabase
+    .from("group_notification_settings").select("group_id, teams_webhook_url", o), ["group_id"]);
+  if (sErr) return json({ error: "group_notification_settings query failed", detail: sErr.message }, 500);
+
+  const groupById = new Map(groups.map((g) => [g.id, g]));
+  const webhookByGroupId = new Map(
+    settings.filter((s) => !!s.teams_webhook_url).map((s) => [s.group_id, s.teams_webhook_url as string]),
+  );
+  const pjNameById = new Map(projects.map((p) => [p.id, p.name]));
+  const memberById = new Map(members.map((m) => [m.id, m]));
 
   // ===== タスクを「送信先バケット」ごとに振り分ける =====
   // 部署別Webhookが設定されている部署は自部署バケットへ、それ以外（group_id=NULL・
   // Webhook未設定の部署）はまとめて FALLBACK_GROUP_KEY バケットへ。
   const bucketKeyForTask = (t: TaskRow): string => {
     if (!t.group_id) return FALLBACK_GROUP_KEY;
-    const g = groupById.get(t.group_id);
-    if (!g || !g.teams_webhook_url) return FALLBACK_GROUP_KEY;
+    if (!groupById.has(t.group_id) || !webhookByGroupId.has(t.group_id)) return FALLBACK_GROUP_KEY;
     return t.group_id;
   };
 
   const tasksByBucket = new Map<string, TaskRow[]>();
-  for (const t of (tasks ?? []) as TaskRow[]) {
+  for (const t of tasks) {
     const key = bucketKeyForTask(t);
     const arr = tasksByBucket.get(key) ?? [];
     arr.push(t);
@@ -143,7 +157,7 @@ Deno.serve(async (req: Request) => {
   for (const [bucketKey, bucketTasks] of tasksByBucket) {
     const webhookUrl = bucketKey === FALLBACK_GROUP_KEY
       ? fallbackWebhookUrl
-      : groupById.get(bucketKey)!.teams_webhook_url;
+      : webhookByGroupId.get(bucketKey)!;
     const groupName = bucketKey === FALLBACK_GROUP_KEY
       ? "（全社共通・部署別Webhook未設定分）"
       : (groupById.get(bucketKey)?.name ?? bucketKey);
@@ -276,6 +290,41 @@ function buildReport(
     totalThisWeek,
     pjBlockCount: pjBlocks.length,
   };
+}
+
+// src/lib/supabase/fetchAllRows.ts と同じ終了条件（Edge Function からは src を import できないため複製）。
+// 「返ってきた件数 < ページサイズ」で止めない：サーバの max_rows がページサイズより小さいと
+// 1ページ目で終わったと誤判定する。1ページ目で総件数を取り、「取得済み ≥ 総件数」か空ページで止める。
+// build は毎ページ新しいクエリを返すこと（ビルダーは使い回せない）。受け取った o を select() の第2引数に渡す。
+async function fetchAllRows<Row>(
+  // deno-lint-ignore no-explicit-any
+  build: (o: { count?: "exact" }) => any,
+  keyColumns: string[] = ["id"],
+  pageSize = 1000,
+): Promise<{ data: Row[]; error: null } | { data: null; error: { message: string } }> {
+  const rows: Row[] = [];
+  const seen = new Set<string>();
+  let total: number | null = null;
+  let offset = 0;
+  for (let page = 0; ; page++) {
+    let q = build(page === 0 ? { count: "exact" } : {});
+    for (const col of keyColumns) q = q.order(col, { ascending: true });
+    const res = await q.range(offset, offset + pageSize - 1);
+    if (res.error) return { data: null, error: res.error };
+    if (page === 0) total = typeof res.count === "number" ? res.count : null;
+    const batch = (res.data ?? []) as Row[];
+    if (batch.length === 0) break;
+    for (const row of batch) {
+      const r = row as Record<string, unknown>;
+      const key = keyColumns.map((c) => String(r[c])).join("\u0000");
+      if (seen.has(key)) continue;
+      seen.add(key);
+      rows.push(row);
+    }
+    offset += batch.length;
+    if (total !== null && offset >= total) break;
+  }
+  return { data: rows, error: null };
 }
 
 function json(body: unknown, status: number): Response {

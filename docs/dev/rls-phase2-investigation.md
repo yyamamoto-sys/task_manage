@@ -588,7 +588,7 @@ order by 1, 2;
 
 ---
 
-## 8. B3 設計案：`teams_webhook_url` を管理者専用テーブルへ移す（未実装）
+## 8. B3 設計案：`teams_webhook_url` を管理者専用テーブルへ移す（2026-09-28 v3.118で実装・マイグレ①②は未適用）
 
 B1 だけでは、登録済みメンバーなら他部署の Webhook URL も読める（groups は部署名の表示に全部署分が要るため、行ごとには絞れない。§2.2）。URL の列だけを別テーブルに分けて、そこを管理者に絞る。
 
@@ -638,6 +638,194 @@ CREATE POLICY "group_notification_settings_admin" ON group_notification_settings
 5. §9 の棚卸しSQLと、匿名・他部署メンバーで `group_notification_settings` が0件になることを確認する。
 
 注意：URL は匿名から読めた期間がある（2026-09-17 の匿名サインイン有効化から B1 適用まで）。漏えいしていないとは言い切れないため、**B3 の完了後に各部署の Webhook を Power Automate 側で再発行し、新しい URL を登録し直すことを推奨**する。
+
+### 8.4 検証SQL：20260928c 適用後の見え方（2026-09-28 v3.118）
+
+```sql
+-- 想定クエリ名：20260928c適用後_group_notification_settings見え方確認
+begin;
+
+select set_config('rlst.super_email', coalesce((
+  select m.email from public.members m
+   where not m.is_deleted and coalesce(m.email, '') <> '' and coalesce(m.is_super_admin, false)
+   order by m.id limit 1), ''), true);
+select set_config('rlst.admin_email', coalesce((
+  select m.email from public.members m
+   where not m.is_deleted and coalesce(m.email, '') <> '' and coalesce(m.is_admin, false)
+     and not coalesce(m.is_super_admin, false) and m.group_id is not null
+   order by m.id limit 1), ''), true);
+select set_config('rlst.target_group', coalesce((
+  select m.group_id from public.members m
+   where m.email = current_setting('rlst.admin_email') and not m.is_deleted limit 1), ''), true);
+select set_config('rlst.other_admin_email', coalesce((
+  select m.email from public.members m
+   where not m.is_deleted and coalesce(m.email, '') <> '' and coalesce(m.is_admin, false)
+     and not coalesce(m.is_super_admin, false) and m.group_id is not null
+     and m.group_id <> current_setting('rlst.target_group')
+   order by m.id limit 1), ''), true);
+select set_config('rlst.other_group', coalesce((
+  select m.group_id from public.members m
+   where m.email = current_setting('rlst.other_admin_email') and not m.is_deleted limit 1), ''), true);
+select set_config('rlst.member_email', coalesce((
+  select m.email from public.members m
+   where not m.is_deleted and coalesce(m.email, '') <> '' and not coalesce(m.is_admin, false)
+     and not coalesce(m.is_super_admin, false) and m.group_id = current_setting('rlst.target_group')
+   order by m.id limit 1), ''), true);
+
+insert into public.group_notification_settings (group_id, teams_webhook_url, updated_by)
+select g.id, 'https://example.invalid/rls-test', 'rls-test'
+  from public.groups g
+ where g.id in (current_setting('rlst.target_group'), current_setting('rlst.other_group'))
+on conflict (group_id) do nothing;
+
+select set_config('rlst.super_upd', 'not run', true);
+select set_config('rlst.admin_upd', 'not run', true);
+select set_config('rlst.admin_ins_other', 'not run', true);
+select set_config('rlst.other_admin_upd', 'not run', true);
+select set_config('rlst.member_upd', 'not run', true);
+select set_config('rlst.anon_upd', 'not run', true);
+
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', nullif(current_setting('rlst.super_email'), ''))::text, true);
+set local role authenticated;
+select set_config('rlst.super_read', json_build_object(
+  'total', (select count(*) from public.group_notification_settings),
+  'target', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.target_group')),
+  'other', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.other_group'))
+)::text, true);
+do $t_super_upd$
+declare n int;
+begin
+  update public.group_notification_settings set updated_by = 'rls-test-upd' where group_id = current_setting('rlst.target_group');
+  get diagnostics n = row_count;
+  perform set_config('rlst.super_upd', n::text, true);
+exception
+  when insufficient_privilege then perform set_config('rlst.super_upd', 'denied', true);
+  when others then perform set_config('rlst.super_upd', 'error ' || sqlstate, true);
+end
+$t_super_upd$;
+reset role;
+
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', nullif(current_setting('rlst.admin_email'), ''))::text, true);
+set local role authenticated;
+select set_config('rlst.admin_read', json_build_object(
+  'total', (select count(*) from public.group_notification_settings),
+  'target', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.target_group')),
+  'other', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.other_group'))
+)::text, true);
+do $t_admin_upd$
+declare n int;
+begin
+  update public.group_notification_settings set updated_by = 'rls-test-upd' where group_id = current_setting('rlst.target_group');
+  get diagnostics n = row_count;
+  perform set_config('rlst.admin_upd', n::text, true);
+exception
+  when insufficient_privilege then perform set_config('rlst.admin_upd', 'denied', true);
+  when others then perform set_config('rlst.admin_upd', 'error ' || sqlstate, true);
+end
+$t_admin_upd$;
+do $t_admin_ins_other$
+begin
+  insert into public.group_notification_settings (group_id, teams_webhook_url, updated_by)
+  values (current_setting('rlst.other_group'), 'https://example.invalid/rls-test-2', 'rls-test')
+  on conflict (group_id) do update set updated_by = 'rls-test-upd';
+  perform set_config('rlst.admin_ins_other', 'inserted', true);
+exception
+  when insufficient_privilege then perform set_config('rlst.admin_ins_other', 'denied', true);
+  when others then perform set_config('rlst.admin_ins_other', 'error ' || sqlstate, true);
+end
+$t_admin_ins_other$;
+reset role;
+
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', nullif(current_setting('rlst.other_admin_email'), ''))::text, true);
+set local role authenticated;
+select set_config('rlst.other_admin_read', json_build_object(
+  'total', (select count(*) from public.group_notification_settings),
+  'target', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.target_group')),
+  'other', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.other_group'))
+)::text, true);
+do $t_other_admin_upd$
+declare n int;
+begin
+  update public.group_notification_settings set updated_by = 'rls-test-upd' where group_id = current_setting('rlst.target_group');
+  get diagnostics n = row_count;
+  perform set_config('rlst.other_admin_upd', n::text, true);
+exception
+  when insufficient_privilege then perform set_config('rlst.other_admin_upd', 'denied', true);
+  when others then perform set_config('rlst.other_admin_upd', 'error ' || sqlstate, true);
+end
+$t_other_admin_upd$;
+reset role;
+
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'email', nullif(current_setting('rlst.member_email'), ''))::text, true);
+set local role authenticated;
+select set_config('rlst.member_read', json_build_object(
+  'total', (select count(*) from public.group_notification_settings),
+  'target', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.target_group')),
+  'other', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.other_group'))
+)::text, true);
+do $t_member_upd$
+declare n int;
+begin
+  update public.group_notification_settings set updated_by = 'rls-test-upd' where group_id = current_setting('rlst.target_group');
+  get diagnostics n = row_count;
+  perform set_config('rlst.member_upd', n::text, true);
+exception
+  when insufficient_privilege then perform set_config('rlst.member_upd', 'denied', true);
+  when others then perform set_config('rlst.member_upd', 'error ' || sqlstate, true);
+end
+$t_member_upd$;
+reset role;
+
+select set_config('request.jwt.claims', json_build_object('role', 'authenticated', 'is_anonymous', true, 'sub', gen_random_uuid())::text, true);
+set local role authenticated;
+select set_config('rlst.anon_read', json_build_object(
+  'total', (select count(*) from public.group_notification_settings),
+  'target', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.target_group')),
+  'other', (select count(*) from public.group_notification_settings where group_id = current_setting('rlst.other_group'))
+)::text, true);
+do $t_anon_upd$
+declare n int;
+begin
+  update public.group_notification_settings set updated_by = 'rls-test-upd' where group_id = current_setting('rlst.target_group');
+  get diagnostics n = row_count;
+  perform set_config('rlst.anon_upd', n::text, true);
+exception
+  when insufficient_privilege then perform set_config('rlst.anon_upd', 'denied', true);
+  when others then perform set_config('rlst.anon_upd', 'error ' || sqlstate, true);
+end
+$t_anon_upd$;
+reset role;
+
+select x.persona, x.check_name, x.actual, x.expected,
+       case when x.expected = '(not empty)' then case when x.actual <> '' then 'OK' else 'DIFF' end
+            when x.actual = x.expected then 'OK' else 'DIFF' end as judge
+  from (values
+    ('1_super_admin', 'email', current_setting('rlst.super_email'), '(not empty)'),
+    ('1_super_admin', 'visible_total', current_setting('rlst.super_read')::jsonb ->> 'total', (select count(*) from public.group_notification_settings)::text),
+    ('1_super_admin', 'visible_target', current_setting('rlst.super_read')::jsonb ->> 'target', '1'),
+    ('1_super_admin', 'update_target', current_setting('rlst.super_upd'), '1'),
+    ('2_own_admin', 'email', current_setting('rlst.admin_email'), '(not empty)'),
+    ('2_own_admin', 'visible_total', current_setting('rlst.admin_read')::jsonb ->> 'total', '1'),
+    ('2_own_admin', 'visible_target', current_setting('rlst.admin_read')::jsonb ->> 'target', '1'),
+    ('2_own_admin', 'visible_other_group', current_setting('rlst.admin_read')::jsonb ->> 'other', '0'),
+    ('2_own_admin', 'update_target', current_setting('rlst.admin_upd'), '1'),
+    ('2_own_admin', 'upsert_other_group', current_setting('rlst.admin_ins_other'), 'denied'),
+    ('3_other_admin', 'email', current_setting('rlst.other_admin_email'), '(not empty)'),
+    ('3_other_admin', 'visible_target', current_setting('rlst.other_admin_read')::jsonb ->> 'target', '0'),
+    ('3_other_admin', 'visible_own_group', current_setting('rlst.other_admin_read')::jsonb ->> 'other', '1'),
+    ('3_other_admin', 'update_target', current_setting('rlst.other_admin_upd'), '0'),
+    ('4_member', 'email', current_setting('rlst.member_email'), '(not empty)'),
+    ('4_member', 'visible_total', current_setting('rlst.member_read')::jsonb ->> 'total', '0'),
+    ('4_member', 'update_target', current_setting('rlst.member_upd'), '0'),
+    ('5_anonymous', 'visible_total', current_setting('rlst.anon_read')::jsonb ->> 'total', '0'),
+    ('5_anonymous', 'update_target', current_setting('rlst.anon_upd'), '0')
+  ) as x(persona, check_name, actual, expected)
+ order by 1, 2;
+
+rollback;
+```
+
+読み方：全行 OK であること。email 行が DIFF の persona は該当する人が members に居ない（例：自部署に一般メンバーがいない）ため、その persona の他の行は判定に使わない。rollback するので試験用の行・更新は残らない。
 
 ---
 
@@ -835,6 +1023,8 @@ select x.persona, x.check_name, x.actual, x.expected,
 
 rollback;
 ```
+
+（20260928d 適用後は groups.teams_webhook_url が無いため、`groups_webhook_set` の2箇所を外して流す。）
 
 読み方：全行 OK であること。**適用前**に流すと、2_anonymous の groups / loading_tips が全件、insert 系が inserted になり、穴の実在を確認できる（rollback するので行は残らない）。`error 23503` 等が出た場合は FK などRLS以外の理由なので、その行は個別に確認する。
 
