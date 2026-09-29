@@ -7482,4 +7482,29 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * REFACTORING.md：I 通知行を更新（32回目）、M38 を記録、D OKR 行に巡回除外の見直し要の注記。
 # * deadline-notifications.md：Webhook の保存先・対象ステータス・編集できる人の記述を更新。
 
-最終更新：2026-09-28（v3.118）
+# v3.119（2026-09-29）：巡回台帳33回目（共通UI）。アクセシビリティ2件の是正＋module-map登録漏れの是正
+#
+# 巡回台帳の共通UIユニット（`components/common/*`）の33回目の巡回。実害のある小さな問題を2件修正した。
+#
+# ## 修正
+# * `AIProgressLoader.tsx`：ルートdivに`role="status"`/`aria-live="polite"`を追加。同型の
+#   `SaveProgressLoader.tsx`（v3.117で新設）には既に付いていたのに、対になるこちらだけ欠けていた
+#   （スクリーンリーダー利用者にAI処理中である旨が伝わらない状態だった）。
+# * `Toast.tsx`：トースト表示用のコンテナdivに`role="status"`/`aria-live="polite"`を追加。従来は
+#   通知が画面に出てもスクリーンリーダーには一切読み上げられない状態だった。
+# * `docs/dev/module-map.md`：`src/lib/progress/progressCurve.ts`（v3.117新設・
+#   `AIProgressLoader`/`SaveProgressLoader`が共有する疑似進捗の純粋関数）がどのモジュールにも
+#   未登録だったのを発見し、「ユーティリティ/フック」行に追記（CalendarLabViewの教訓と同型の
+#   登録漏れ）。
+#
+# ## 記録のみ（設計判断が要る・低優先度表へ）
+# * M39：`components/common/*`に多数のハードコード色（Toast.tsx・SaveProgressLoader.tsx・
+#   EmptyState.tsx・FileAttachButton.tsx等）が残っている。CLAUDE.md本文の「カラーは
+#   var(--color-*)で管理・ハードコード禁止」に反するが、一斉修正は見た目を変える設計判断が
+#   要るため見送り。
+#
+# ## 検証
+# `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
+# `npx eslint`（変更2ファイルとも新規警告0）・`npm run build`成功。
+
+最終更新：2026-09-29（v3.119）

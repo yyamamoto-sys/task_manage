@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.119",
+    date: "2026-09-29",
+    title: "内部の品質改善",
+    highlights: [
+      "内部の品質改善（利用者の操作・見た目の変化はありません）",
+    ],
+  },
+  {
     version: "v3.118",
     date: "2026-09-28",
     title: "部署のTeams通知先（Webhook URL）を管理者だけが見られるようにしました（管理者向け）",

@@ -108,11 +108,16 @@ export function ToastContainer() {
   if (toasts.length === 0) return null;
 
   return (
-    <div data-bottom-stack="toast" style={{
-      position: "fixed", bottom: `${toastBottomPx}px`, right: "24px",
-      zIndex: 10000, display: "flex", flexDirection: "column-reverse", gap: "8px",
-      pointerEvents: "none",
-    }}>
+    <div
+      data-bottom-stack="toast"
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "fixed", bottom: `${toastBottomPx}px`, right: "24px",
+        zIndex: 10000, display: "flex", flexDirection: "column-reverse", gap: "8px",
+        pointerEvents: "none",
+      }}
+    >
       {toasts.map(toast => {
         const s = STYLE[toast.type];
         return (

@@ -52,11 +52,15 @@ export function AIProgressLoader({ phases, expectedMs, expectedRangeMs }: Props)
   const totalPct = Math.round(pct);
 
   return (
-    <div style={{
-      display: "flex", flexDirection: "column", alignItems: "center",
-      justifyContent: "center", gap: "22px",
-      padding: "32px 20px", flex: 1,
-    }}>
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", gap: "22px",
+        padding: "32px 20px", flex: 1,
+      }}
+    >
 
       {/* アイコン */}
       <div style={{

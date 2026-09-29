@@ -38,7 +38,7 @@
 | I 通知 | 2026-09-28 | 2026-09-28（32回目・v3.118：B3＝部署Webhook URLの読み先を`groups`から`group_notification_settings`へ移行／`notify-deadlines`の単発select 4本＋新テーブル1本を`fetchAllRows`同等のページングに置換（Section 61）／期限通知の対象判定を`status !== "done"`から`isActiveTaskStatus`＝todo/in_progressのみに修正＝v2.74追従漏れ。保留・中止タスクがTeams週次レポートとブラウザ通知に「期限超過」として出続けていた。フロントhookとEdge Functionの2箇所）／2026-07-21（3回目：未使用select列`status`を削除） | **約437行**（32回目に実測：`hooks/useDeadlineNotifications.ts`102＋`supabase/functions/notify-deadlines/index.ts`335） | M18（`notify_pref="teams"`が実質dead。**2026-09-28再確認：現存**＝`DashboardView.tsx`の「💬 Teamsまとめ」選択肢はそのまま・Edge Functionは`notify_pref`を一切読まない。UX判断待ちのまま）／M38（新規・記録のみ。下記「中優先度」表参照） | 32回目巡回で点検（詳細は下記「32回目の巡回」節）。🔴 Edge Functionは git push では反映されない（`supabase functions deploy notify-deadlines --no-verify-jwt` で個別デプロイ。`config.toml`が無いため付け忘れると`verify_jwt`が`true`に戻りpg_cronからの呼び出しが401になる）。v3.118版はマイグレ20260928c適用後にデプロイすること（未適用だと新テーブルの読み取りが500になり、その週の通知が1通も出ない） |
 | データ基盤 | 2026-07-22 | 2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約2,578行**（21回目に実測。内訳：`types.ts`309+`localStore.ts`144+`appStore.ts`1,324+`AppDataContext.tsx`57+`lib/supabase/{client,store,realtime,auth}.ts`744） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走し、あらゆるtasks/projects変更のたびに「即時の行単位パッチ」＋「400ms後の全件reload」が二重に走る。22回目に`appStore.ts`側の`applyRemoteChange`実装・`App.tsx`の`subscribeToRealtime`呼び出しを直接確認し、`realtime.ts`の`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースが完全一致していることを再確認。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。22回目にM31を深掘りする過程で発見。低頻度更新のマスタ系データのため実害は小さいと見られるが、`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補) | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約2,578行）を21〜22回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正 |
 | AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
-| 共通UI | 2026-07-17 | 2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | 約3,120行 | 既存表になし | 新規追加のCard/DangerZone/ShortcutsPanel/CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施 |
+| 共通UI | 2026-09-29 | 2026-09-29（33回目：`AIProgressLoader.tsx`/`Toast.tsx`にアクセシビリティ属性（`role="status"`/`aria-live="polite"`）を追加）／2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | **約4,588行**（33回目に実測。`components/common/*`29ファイルの合計。旧「約3,120行」は近似値だったため訂正） | M39（`components/common/*`に多数のハードコード色が残存。33回目発見・次回候補） | 33回目巡回で全体点検完了。詳細は下記「33回目の巡回」節参照。module-map.mdに`lib/progress/progressCurve.ts`（v3.117新設）の登録漏れを発見し追記済み |
 | ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
 
 ### 巡回ルール
@@ -47,6 +47,92 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-29）巡回台帳の33回目の巡回：共通UI
+
+対象：`components/common/*`（29ファイル・約4,588行実測）。台帳の「最終点検日」が最古
+（2026-07-17）だったため選定。備考欄の「新規追加のCard/DangerZone/ShortcutsPanel/
+CommandPalette等は追加時の点検のみで専用のリファクタ点検は未実施」を踏まえ、全ファイルを
+対象に初めての専用リファクタ点検として通し番号で洗い直した。
+
+### 対象範囲の確認（module-map.md・07-17以降の大改修分）
+
+- `AIProgressLoader.tsx`・`SaveProgressLoader.tsx`・`src/lib/progress/progressCurve.ts`
+  （v3.117・Section 62）は共通UIの対象に含めて重点点検した。
+- **`ListToolbar.tsx`（v3.114）は module-map.md 上「A 計画ビュー」（`components/list/*`）に
+  所属し、共通UIではないため今回の対象外とした**（記録のみ）。
+- **MainLayout のサイドバー境界ドラッグ（v3.115）は App Shell 所属のため対象外とした**
+  （記録のみ）。
+- **module-map.md に `src/lib/progress/progressCurve.ts` の登録が漏れていた**
+  （CalendarLabViewの教訓と同型）。「ユーティリティ/フック」行に追記した。
+
+### 発見・修正：アクセシビリティ2件
+
+- `AIProgressLoader.tsx`：ルートdivに`role="status"`/`aria-live="polite"`が無かった。
+  同型の`SaveProgressLoader.tsx`（同じv3.117セッションで新設）には既に付いていたのに、
+  対になるこちらだけ欠けていた（スクリーンリーダー利用者にAI処理中である旨が伝わらない）。
+- `Toast.tsx`：トースト通知のコンテナdivに`role="status"`/`aria-live="polite"`が一切無く、
+  通知が画面に出てもスクリーンリーダーには読み上げられない状態だった。
+
+いずれも表示・挙動を変えない属性追加のみ（Reactレンダリングテスト基盤が無いため専用テストは
+追加していない。既存の`npx eslint`・`npx tsc`で構文的な問題が無いことのみ確認）。
+
+### Section 15（formatErrorForUser）の確認：健全
+
+`ErrorBar.tsx`が`err.message`を直接表示している3箇所は、Section 15が対象とする「ユーザー
+操作起点の保存・削除・AI呼び出し等のcatch」ではなく、`src/lib/errorReporter.ts`の
+`reportError()`が既に独自にcode/message/detailsを整形した`AppError`オブジェクトを
+表示しているだけと確認した（`formatErrorForUser`とは別実装だが趣旨は満たしている）。
+`FileAttachButton.tsx`の`e.message`直書き（docx/html/pdf添付失敗時のalert）も、これらの
+Errorは`PDF_EMPTY_TEXT_MESSAGE`等、既に利用者向けに整形済みのメッセージを投げる設計
+（Section 27）のため、AI相談のAIErrorと同じ理由でformatErrorForUser経由にする必要はないと
+判断した（変更なし）。
+
+### createPortal/pointer-events契約（Section 42・51）の確認：健全
+
+`floatingPanelContract.test.ts`（Section 59でコメント無力化リスクを既に是正済み）が全ファイル
+を走査し、新規の穴が無いことを確認した。
+
+### i18n（ja/en片側だけの文言）の確認：健全
+
+`common.aiProgress.*`/`common.saveProgress.*`（v3.117新設）を含め、ja/enとも欠落なし
+（`i18n.test.ts` 7件通過）。
+
+### ハードコード色・M30型の課題（Section本文「カラーはvar(--color-*)」）：多数発見・記録のみ
+
+`components/common/*`全体を`grep`した結果、8ファイルにハードコード色が見つかった
+（Toast.tsx・SaveProgressLoader.tsx・EmptyState.tsx・FileAttachButton.tsx・
+CustomSelect.tsx・MentionTextarea.tsx・VersionHistoryModal.tsx・ChunkDownloadGate.tsx）。
+共通UIユニットへの専用点検が今回が初めてだったため今回まとめて可視化された。挙動・見た目を
+変える設計判断が要るためコードは変更せず、M39として低優先度表に記録した（詳細は台帳参照）。
+
+### 死蔵コード・未使用export：無し
+
+`export function`/`export const`/`export class`の全パターンを機械的に洗い出し、共通UI外から
+一度も参照されていないものが無いことを確認した（0件）。
+
+### 重複ロジックの確認：既知のもの以外は健全
+
+`ErrorBar.tsx`のクリップボードコピー・フォールバック（`copyText`）と`VersionHistoryModal.tsx`の
+同種実装が別々に存在する重複は、CLAUDE.md Section 29に「共通化は今回のスコープ外」と既に
+明記済みの既知事項であり、新規の発見ではない（再確認のみ）。
+
+### 検証
+
+`npx tsc --noEmit`（エラー0）／`npx vitest run`（179ファイル・2112件全通過。既存回帰なし）／
+`npx eslint src/components/common/AIProgressLoader.tsx src/components/common/Toast.tsx`
+（新規0）／`npm run build`成功。
+
+### コミット
+
+- `fix: AIProgressLoader/Toastにrole=status・aria-live属性を追加＋module-map登録漏れ是正（巡回33回目）`
+
+### 次回巡回への申し送り
+
+台帳で次に最古なのは「F 管理・設定」（2026-07-19。H1＝AdminView.tsx完全分割は引き続き対象外）。
+D OKRは山本さんの見直し判断待ちのまま巡回対象から除外中（台帳D OKR行参照）。
 
 ---
 
@@ -1861,6 +1947,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M26 | `LoginScreen.tsx`のログイン/新規登録失敗時メッセージが、実際のSupabaseエラー内容を一切見せず`auth.error.loginFailed`/`auth.error.signupFailed`（emailAlreadyRegisteredのみ個別判定）に固定表示している。CLAUDE.md Section 15の趣旨（詳細を見せて診断可能にする）とは逆方向だが、ログイン画面で詳細を出すとユーザー列挙等のセキュリティリスクにつながりうる意図的設計の可能性が高い | 低〜中 | 2026-07-21の認証・入口12回目巡回で発見。診断性とセキュリティのトレードオフの設計判断が要るため次回候補へ |
 | M27 | アプリ内ヘルプ`docs/guides/01_onboarding/first-day.md`・`06_troubleshooting/faq.md`・`03_roles/admin.md`・`05_admin/objective-kr-tf.md`（いずれも`last_updated: 2026-05-15`）がSupabase Auth（メール/パスワードのログイン・新規登録＝LoginScreen、2026-03-18導入）に一切触れておらず、「メンバー選択画面で自分の名前を選ぶ」がログインの最初のステップであるかのように書かれている。admin.mdの「メアドを登録（ログイン用）」もmembers.emailを設定するだけでログインできるかのように読める | 中 | 2026-07-21の認証・入口12回目巡回で発見。正しい記述に書き換えるには実際の運用（自己登録か管理者発行か）の確認が要るため次回候補へ |
 | M38 | `notify-deadlines`の宛先振り分けで、①論理削除された部署（`groups.is_deleted=true`）に残ったタスクと、②部署はあるがWebhook未設定のタスクが、どちらも全社共通の`TEAMS_WEBHOOK_URL`へまとめて流れる（他部署のタスク名・担当者が全社チャンネルに出る）。③論理削除済みPJに属する未完了タスクは「（不明なPJ）」見出しで出続ける。④招待用部署（`is_invite_group=true`）のタスクの扱いが未定義（Webhook未設定なら全社共通へ流れる）。フォールバック自体は2026-07-03の後方互換の意図的な設計のため、どこまで絞るかは運用判断が要る | 低〜中 | 2026-09-28のI 通知32回目巡回で発見。コードは変更していない（全社共通フォールバックの挙動は今回変えない指示）。部署数が増える部署外展開の前に方針を決めたい |
+| M39 | `components/common/*`にハードコード色（`var(--color-*)`を経由しない色値）が多数残っている：`Toast.tsx`（STATE定義の`#16a34a`/`#dc2626`/`#3b82f6`・アクションボタンの`#fff`）／`SaveProgressLoader.tsx`（AI用の紫と区別する意図で導入した`#0ea5e9`/`#22c55e`。CLAUDE.md Section 62に設計意図の記載あり）／`EmptyState.tsx`（`#fff`）／`FileAttachButton.tsx`（`var(--color-bg-purple, #ede9fe)`等フォールバック値）／`CustomSelect.tsx`（チェックマークSVGの`#fff`）／`MentionTextarea.tsx`（`m.color_text \|\| "#fff"`）／`VersionHistoryModal.tsx`（`#fff`）／`ChunkDownloadGate.tsx`（`var(--color-accent-primary, #3b82f6)`）。CLAUDE.md本文「カラー: すべて var(--color-*) CSS変数で管理。ハードコード禁止」に反するが、共通UIユニットはこれまで専用のリファクタ点検が一度も入っていなかった（台帳の備考欄の記載どおり）ため今回初めて可視化された。全置換は既存の見た目（AI紫との対比等、意図的な配色差別化を含む）を変える設計判断が要るため次回候補へ | 低 | 2026-09-28の共通UI33回目巡回で発見。過去のAI相談ユニットのM30（`--color-accent`系フォールバック）と同型のパターンが共通UI全体に広く残っていることを確認 |
 
 ### 低優先度
 | 項目 | 内容 | 難度 | 備考 |
