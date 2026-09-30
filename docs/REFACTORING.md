@@ -39,7 +39,7 @@
 | データ基盤 | 2026-09-29 | 2026-09-29（36回目：07-22以降の差分＝v3.101〜v3.118を点検。`types.ts`/`store.ts`/`appStore.ts`が対象、`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`のうち`realtime.ts`は無変更。v3.116のfetchAllRows化・v3.118のgroup_notification_settings分離とも型・Realtime・初期ロードの整合を確認し実害のあるコード不具合は無し。M41を新規記録、module-map.mdの`fetchAllRows.ts`登録漏れとCLAUDE.md Section 61「適用範囲」一覧の`fetchGroupNotificationSettings`記載漏れ〈35回目F管理・設定巡回で発見済みだった分〉を解消）／2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約3,488行**（36回目に実測。内訳：`types.ts`649+`localStore.ts`202+`appStore.ts`1,600+`AppDataContext.tsx`66+`lib/supabase/{client,store,realtime,auth}.ts`886+`fetchAllRows.ts`85〈v3.116新設・今回module-map.mdへ登録〉。21回目時点の約2,578行から、entity_change_logs〈v3.111〉・個人OKR層〈v3.36〜〉・fetchAllRows化〈v3.116〉・group_notification_settings〈v3.118〉等の機能追加により増加） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走。**36回目に再確認：`realtime.ts`は07-22以降無変更・`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースの一致も不変**。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。**36回目追記：v3.118新設の`group_notification_settings`（部署ごとのTeams Webhook URL）も同様にRealtime対象外・初期ロードにも含まれず〈AdminViewが開いた時にオンデマンド取得〉、既存5テーブルと同型の低頻度マスタ系データとして未対応のまま6件目が加わった形。`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補）／M41（新規・`fetchCriticalData`のfirstErrorがmembers/projects/tasksの3件のみ判定対象で残り5件はエラー時に黙って空配列化。下記「中優先度」表参照） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約3,488行）を21〜22・36回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正。36回目はv3.116/v3.118の型・Realtime・初期ロード整合を精査し実害バグ無し（記録2件のみ）。詳細は下記「36回目の巡回」節参照 |
 | AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
 | 共通UI | 2026-09-29 | 2026-09-29（33回目：`AIProgressLoader.tsx`/`Toast.tsx`にアクセシビリティ属性（`role="status"`/`aria-live="polite"`）を追加）／2026-07-17（v2.33・`createPortal`系の全数調査＋pointer-events漏れ修正） | **約4,588行**（33回目に実測。`components/common/*`29ファイルの合計。旧「約3,120行」は近似値だったため訂正） | M39（`components/common/*`に多数のハードコード色が残存。33回目発見・次回候補） | 33回目巡回で全体点検完了。詳細は下記「33回目の巡回」節参照。module-map.mdに`lib/progress/progressCurve.ts`（v3.117新設）の登録漏れを発見し追記済み |
-| ユーティリティ/フック | 2026-07-21 | 2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,167行**（実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）で点検済みのため対象外。旧「約2,042行」は`renderLinks.tsx`削除前かつ他ユニット点検済みファイルとの重複整理前の値だったため実測値に訂正） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
+| ユーティリティ/フック | 2026-09-30 | 2026-09-30（42回目：前回点検日07-21以降の差分6ファイルを点検。死蔵export`isEnDictLoaded`〈i18n.ts〉を削除。v2.74ステータス5値・fetchAllRows・JSTずれ・module-map登録は対象外／健全）／2026-07-21（15回目：taskHierarchy.tsの死蔵4関数削除＋renderLinks.tsx全体削除＋mentionsEqualの集合比較バグ修正） | **約1,283行**（42回目に実測。module-map.md定義の`lib/{date,errorMessage,errorReporter,stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}`＋`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`のみ。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目（認証・入口）・`lib/progress/progressCurve.ts`は33回目（共通UI）で点検済みのため対象外） | L3 Task.comment型統一は解消済み（15回目で確認・型は既に`comment: string`で統一されていた。CLAUDE.md Section 3-3のドキュメント記述が`comment?: string`のまま古かったのが原因と判明・CLAUDE.md側を修正）。selectionRange/kanbanOrder/groupSummary等の新規ファイルはA計画ビュー側の実装として分類（本行の対象外） |
 
 ### 巡回ルール
 - 次にどのユニットを触るか迷ったら、台帳で「最終点検日」が最古（または「未点検」）のユニットを優先する
@@ -47,6 +47,65 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の42回目の巡回：ユーティリティ/フック（前回点検日07-21以降の差分のみ）
+
+前回点検日（2026-07-21）以降、module-map.md定義の対象パス（`lib/{date,errorMessage,errorReporter,
+stats,taskMeta,taskHierarchy,htmlText,lazyWithRetry,dialog,mentions,i18n,lastUndoStore}` /
+`hooks/{useIsMobile,useTheme,useTypingEffect,useUndoStack,useT,useMentionNotifications}`）に対する
+変更コミットを`git log --since="2026-07-21 18:31:00"`（15回目巡回自身のコミットを除くため境界を
+15回目の完了時刻の直後にした）で洗い出したところ、変更ファイルは6件（`dialog.ts`／
+`useUndoStack.ts`／`i18n.ts`／`useTheme.ts`／`taskHierarchy.ts`／`taskMeta.ts`）だった
+（v3.19〜v3.19b・ダウンロード量最小化のi18n変更／v3.76・招待受諾の確認ダイアログtone対応／
+v3.77・Undoの先読み方式化／v3.23・初回ログインのテーマ初期値ライトモード固定／v3.22・進捗%集計の
+cancelled非対称解消＝M33）。`docxText.ts`は14回目（C会議読み込み）・`guestMode.ts`は12回目
+（認証・入口）・`lib/progress/progressCurve.ts`（v3.117新設）は33回目（共通UI）でそれぞれ既に
+点検済みのため対象外（module-map.md・REFACTORING.mdの既存注記どおり）。
+
+### 発見・修正：死蔵コード1件
+
+`i18n.ts`の`isEnDictLoaded()`（en辞書のメモリ保持有無を返す関数。コメントには
+「テスト・内部用」とあったが、`grep`で全リポジトリ横断確認したところ`i18n.test.ts`を含め
+呼び出し元が0件だった。v3.19（2026-08-04・ダウンロード量最小化のen辞書動的import化）で
+新設されて以来、一度も使われないまま残っていた実害の無い死蔵コード。削除した。
+
+### v2.74ステータス5値の確認：健全
+
+`taskHierarchy.ts`（`allChildrenTerminal`／`rollupStatus`／`computeParentAutoStatus`／
+`leafProgressFraction`）・`taskMeta.ts`（`isActiveTaskStatus`／`isPausedOrCancelledStatus`／
+`suppressOverdue`／`isCompletedForProgress`）とも、5値（todo/in_progress/done/on_hold/
+cancelled）を明示的に扱っており、on_hold・cancelledの取りこぼしは無い。前回15回目の巡回時点
+（M33是正）から変更が無いことをコードで確認した。
+
+### Section 15（formatErrorForUser）・取得/保存失敗の握りつぶし：対象外
+
+6ファイルとも純粋関数・zustand非依存のフック・ローカルUI状態管理のみで、Supabase呼び出しや
+ユーザー向けエラー表示を持たない（`i18n.ts`の`loadEnDict()`は失敗時に`loadEnPromise`を
+リセットして例外を再送出＝呼び出し元が結果を見て判断する設計を維持しており握りつぶしなし）。
+
+### fetchAllRows・日付演算JSTずれ：対象外
+
+6ファイルともSupabase一覧取得・日付演算（JST変換）を持たない。
+
+### 死蔵コード・未使用export：上記1件以外は健全
+
+`taskHierarchy.ts`の全12export・`taskMeta.ts`の全12export・`dialog.ts`の3export・
+`useUndoStack.ts`の1export・`useTheme.ts`の1exportについて、それぞれの呼び出し件数を
+`grep`で確認し、いずれも1件以上の実利用があることを確認した（詳細は上記「発見」欄の対象1件を
+除き省略）。
+
+### module-map.mdへの登録漏れ（⑧）：無し
+
+対象12ファイルは全てmodule-map.mdの「ユーティリティ/フック」行に既に登録済み。
+
+### 検証・コミット
+
+`npx tsc --noEmit`（エラー無し）・`npx vitest run src/lib/__tests__/i18n.test.ts`（7件通過）を
+実施。台帳のユニット行（最終点検日・実測行数・低優先度欄）を更新した。
+
+- `fix: i18n.tsの死蔵export isEnDictLoaded を削除（巡回42回目）`
 
 ---
 

@@ -59,11 +59,6 @@ export function loadEnDict(): Promise<Record<string, string>> {
   return loadEnPromise;
 }
 
-/** テスト・内部用：現在メモリに保持しているen辞書の有無 */
-export function isEnDictLoaded(): boolean {
-  return dictEn !== null;
-}
-
 function getDict(lang: Lang): Record<string, string> {
   if (lang === "ja") return DICT_JA;
   // 呼び出し側の契約上、lang="en"はloadEnDict()解決後にしか来ない想定だが、
