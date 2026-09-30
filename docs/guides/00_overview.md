@@ -3,9 +3,9 @@ title: plan-app の全体像（5分）
 audience: [all]
 mode: guide.overview
 order: 1
-last_updated: 2026-05-13
+last_updated: 2026-09-30
 owner: yamamoto
-related: [okr.cycle, dashboard.main, consultation.main]
+related: [dashboard.main, consultation.main]
 ---
 
 # plan-app の全体像（5分）
@@ -13,34 +13,28 @@ related: [okr.cycle, dashboard.main, consultation.main]
 ## このアプリは何をするもの？
 
 plan-app は、**OKR と日々のタスクを「ひとつの場所」で動かす**ためのアプリです。
-特に **週次OKRサイクルを回し続けること**を主目的にしています。
+個人の四半期KRを月ごとに管理しながら、日々のプロジェクト・タスクも同じ場所で運用します。
 
 ## 2つのモード
 
 | モード | 主な用途 | 主に使う人 |
 |---|---|---|
 | **計画モード** | 日々のタスク管理（ダッシュボード／ガント／カンバン／リスト） | 全員 |
-| **OKRモード** | 週次サイクル（会議ノート→セッション→レポート）・なぜなぜ・クォーター計画 | KR代表・ファシリ・全員 |
+| **OKRモード** | 個人の四半期KRの管理（今月の計画・週の目標状態・自己評価・AIの見立て） | 全員 |
 
 サイドバー左上の切り替えで往復できます。
 
-## 週次OKRサイクル（コア）
+## OKRモードでやること
 
-```
-①会議ノート ──→ ②セッション記録&分析 ──→ ③レポート作成 ──↩ 翌週の①
-（KR代表）       （合同・ファシリ）           （KR代表）
-```
-
-各ステップが**次のステップの素材**を作るように設計されています。
-詳細は [OKR週次サイクル](./02_modes/okr/00_cycle.md) を参照。
+Kintoneの個人OKR（四半期KR・月次振り返り）が正本で、plan-appのOKRモードは
+「週の目標状態」のように、Kintoneには無い週単位の記録を埋める実行層です。
+KRタブを選び、今月の計画・週の目標状態・自己評価（◯△✕）を記入します。
 
 ## どこから始めればいい？
 
 | あなたは… | まず読むページ |
 |---|---|
 | 初めて触る | [初日にやること](./01_onboarding/first-day.md) |
-| KR代表 | [KR代表ガイド](./03_roles/kr-rep.md) |
-| ファシリ | [ファシリテーター・ガイド](./03_roles/facilitator.md) |
 | 管理者 | [Objective・KR・TF を登録する](./05_admin/objective-kr-tf.md) |
 
 ## 困ったとき

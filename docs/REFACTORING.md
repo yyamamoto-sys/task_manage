@@ -33,7 +33,7 @@
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手）。**🔴 2026-07-22 山本さん方針：OKRモードは全面的にゼロから作り直す予定（見切り発車で試験導入したところニーズが確認できたため、実用化に向けた根本的な再設計が必要と判断）。再設計に着手するまで、本ユニットへの追加リファクタ点検・巡回対象からの選定は行わない（作り直し前提のコードを磨くのは無駄になるため）。再設計時は現行の情報構造（Objective>KR>TF>ToDo>Task・週次循環ワークフロー①〜④等）を前提とせず、一から考え直すこと。** **追記（2026-08-10）：M24はOKRモード再設計 Phase 1 Step Cで対応済み（下記「低優先度」表の~~M24~~参照）。** 2026-09-28：OKR再設計（個人OKR等）が8月以降進行しているため、巡回除外の扱いを要見直し（山本さん判断待ち）。 |
 | E PJ別AI分析 | 2026-09-30 | 2026-07-21（死んだプロンプト段落を削除） | 約317行（`lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}.ts`＋`lib/supabase/projectAnalysisStore.ts`のみ。UIの`dashboard/{ProjectKarte,DashboardView}.tsx`は共有ファイルのため本行の行数に含めない） | M17（現存・下記「中優先度」表参照） | 40回目（2026-09-30・前回点検日07-21以降の差分＝9コミットを点検。詳細は下記「40回目の巡回」節参照）。実害のある修正は無し。M17（DashboardViewのポートフォリオ分析がcomputeWorkload.tsと似た負荷集計を再実装している重複）は該当箇所に変更が無く現状維持 |
 | F 管理・設定 | 2026-09-29 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体・35回目時点で未再計測） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない**／M15（AdminViewのeslintエラー7件）も現存・触らない | 35回目（2026-09-29・診断的にv3.13〜v3.118の差分のみ点検）：Section15禁止パターン3箇所（`AdminView.tsx`AIUsageSection・`OkrImportModal.tsx`PDF/Word読込）を修正。他は健全。H1本体（機能分割）は未着手のまま |
-| G オンボーディング | 2026-07-21 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | なし（M19/M20は2026-07-23に解消） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消 |
+| G オンボーディング | 2026-09-30 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | M45（新規・下記「低優先度」表参照） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消／41回目（2026-09-30：前回点検日07-21以降の差分＝v3.114/v3.115のツアー参照切れ無しを確認。docs/guides内のOKR週次サイクル廃止（v3.40）に伴う実態乖離を発見・入口2ファイルを修正・詳細は下記「41回目の巡回」節参照） |
 | H グラフ・ラボビュー | GraphView.tsx 2026-07-21／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約790行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,694行（34回目に実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。GraphView.tsxは今回対象外のまま2026-07-21時点 |
 | I 通知 | 2026-09-28 | 2026-09-28（32回目・v3.118：B3＝部署Webhook URLの読み先を`groups`から`group_notification_settings`へ移行／`notify-deadlines`の単発select 4本＋新テーブル1本を`fetchAllRows`同等のページングに置換（Section 61）／期限通知の対象判定を`status !== "done"`から`isActiveTaskStatus`＝todo/in_progressのみに修正＝v2.74追従漏れ。保留・中止タスクがTeams週次レポートとブラウザ通知に「期限超過」として出続けていた。フロントhookとEdge Functionの2箇所）／2026-07-21（3回目：未使用select列`status`を削除） | **約437行**（32回目に実測：`hooks/useDeadlineNotifications.ts`102＋`supabase/functions/notify-deadlines/index.ts`335） | M18（`notify_pref="teams"`が実質dead。**2026-09-28再確認：現存**＝`DashboardView.tsx`の「💬 Teamsまとめ」選択肢はそのまま・Edge Functionは`notify_pref`を一切読まない。UX判断待ちのまま）／M38（新規・記録のみ。下記「中優先度」表参照） | 32回目巡回で点検（詳細は下記「32回目の巡回」節）。🔴 Edge Functionは git push では反映されない（`supabase functions deploy notify-deadlines --no-verify-jwt` で個別デプロイ。`config.toml`が無いため付け忘れると`verify_jwt`が`true`に戻りpg_cronからの呼び出しが401になる）。v3.118版はマイグレ20260928c適用後にデプロイすること（未適用だと新テーブルの読み取りが500になり、その週の通知が1通も出ない） |
 | データ基盤 | 2026-09-29 | 2026-09-29（36回目：07-22以降の差分＝v3.101〜v3.118を点検。`types.ts`/`store.ts`/`appStore.ts`が対象、`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`のうち`realtime.ts`は無変更。v3.116のfetchAllRows化・v3.118のgroup_notification_settings分離とも型・Realtime・初期ロードの整合を確認し実害のあるコード不具合は無し。M41を新規記録、module-map.mdの`fetchAllRows.ts`登録漏れとCLAUDE.md Section 61「適用範囲」一覧の`fetchGroupNotificationSettings`記載漏れ〈35回目F管理・設定巡回で発見済みだった分〉を解消）／2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約3,488行**（36回目に実測。内訳：`types.ts`649+`localStore.ts`202+`appStore.ts`1,600+`AppDataContext.tsx`66+`lib/supabase/{client,store,realtime,auth}.ts`886+`fetchAllRows.ts`85〈v3.116新設・今回module-map.mdへ登録〉。21回目時点の約2,578行から、entity_change_logs〈v3.111〉・個人OKR層〈v3.36〜〉・fetchAllRows化〈v3.116〉・group_notification_settings〈v3.118〉等の機能追加により増加） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走。**36回目に再確認：`realtime.ts`は07-22以降無変更・`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースの一致も不変**。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。**36回目追記：v3.118新設の`group_notification_settings`（部署ごとのTeams Webhook URL）も同様にRealtime対象外・初期ロードにも含まれず〈AdminViewが開いた時にオンデマンド取得〉、既存5テーブルと同型の低頻度マスタ系データとして未対応のまま6件目が加わった形。`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補）／M41（新規・`fetchCriticalData`のfirstErrorがmembers/projects/tasksの3件のみ判定対象で残り5件はエラー時に黙って空配列化。下記「中優先度」表参照） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約3,488行）を21〜22・36回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正。36回目はv3.116/v3.118の型・Realtime・初期ロード整合を精査し実害バグ無し（記録2件のみ）。詳細は下記「36回目の巡回」節参照 |
@@ -47,6 +47,62 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の41回目の巡回：G オンボーディング（前回点検日07-21以降の差分のみ）
+
+前回点検日（2026-07-21）以降、module-map.md定義の対象パス（`components/tour/*` / `components/
+guide/*` / `lib/docs/*` / `docs/guides/**`）に対する変更コミットを`git log --since=2026-07-21`で
+洗い出したところ13件だった（v3.98/v3.85のポインタイベント修正・v3.74のサイドバー折りたたみ・
+v3.71/v3.70/v3.32のツアー追加変更・v3.20のヘルプ遅延読込・v3.40のOKRグループ側アーカイブに伴う
+guide除外・v3.23の会議読み込みガイド修正・2026-07-21/07-22の巡回10/11回目・部署追加ガイド新設）。
+いずれも実装内容を確認し、実害のある不具合は見つからなかった。
+
+### 🔴 v3.114（ツールバー1段化）・v3.115（サイドバー1段化）によるツアー参照切れの点検（依頼の中心）
+両バージョンとも`git log --stat`のpathspecフィルタでは対象パスの差分に現れなかった（ツールバー・
+サイドバーはMainLayout.tsx側の変更でtour/guideディレクトリ自体には触れていないため）。そのため
+`first-time.ts`/`okr-intro.ts`が参照する`data-tour-id`11個（sidebar／ai-tool-btn／ai-panel／
+pj-ai-analyze-btn／guide-btn／okr-period／okr-kr-tabs／okr-month-plan／okr-week-cards／
+okr-ahead／okr-registration-actions）を`grep`で洗い出し、v3.114・v3.115それぞれのdiffを直接
+確認する方式で点検した。
+
+- **11個すべて現存**。v3.114は`ai-tool-btn`のpaddingを圧縮しサブ文言を`title`へ移しただけで
+  属性自体は無改修。v3.115はサイドバー最下部を1段化し、テーマ切替・ログアウトを新たに
+  `miscBtnStyle`（「⋯その他」の折りたたみ対象）へ合流させたが、`guide-btn`は元々この折りたたみ
+  対象の内側にあり、welcomeステップの`action:"open-sidebar-misc"`（v3.74で導入・miscOpenを
+  強制展開する仕組み）は今回も無改修のため参照切れは無い。
+- **参照が存在しないため空振りするステップも無い**（全ステップ`skipIfMissing:true`または
+  ターゲット無し中央表示のいずれかで、v3.114/v3.115のUI変更後も対応するDOM要素が存在する）。
+
+### docs/guides内のOKR週次サイクル廃止（v3.40・2026-08-10）に伴う実態乖離（新規発見）
+v3.40（OKRモードのグループ側白紙化）で`02_modes/okr/00_cycle.md`等6ファイルにfrontmatter
+`archived:true`を立てて除外したが、**アプリの入口2ファイル（`00_overview.md`・
+`01_onboarding/first-day.md`）が既にアーカイブされた「①会議ノート→②セッション記録&分析→
+③レポート作成」の週次サイクルを"主目的"・"コア機能"として案内し続けていた**（サイドバー下部の
+ログアウト/設定ボタン位置の記述もv3.74/v3.115の折りたたみ化に未追従）。新規利用者が初日に読む
+ページが実在しない機能への導線になっていたため、実害ありと判断し本巡回で修正した。
+
+- **`00_overview.md`**：「週次OKRサイクルを回し続けることを主目的」という記述・①②③のASCII図・
+  アーカイブ済み`00_cycle.md`へのリンク・KR代表/ファシリ向けの行（リンク先が`archived:true`で
+  `getDocBySlug`が返さない＝ガイド内リンクとして解決しない）を削除し、個人OKR（今月の計画・
+  週の目標状態・自己評価・AIの見立て）の現状に合わせて書き直した。
+- **`01_onboarding/first-day.md`**：Step2表・Step3「OKRモードで」の手順・Step6役割別ページ表・
+  Step7の初手・「1週目の目標」を同様に是正。ログアウトボタンの案内も「サイドバー最下部の
+  「⋯」を開く」に修正（v3.74で既に折りたたみ化されていたにも関わらず本文は「画面右下の
+  ⏏ログアウトボタン」のまま無警戒に案内していた）。
+- **残るドリフト（M45として低優先度表に記録）**：`03_roles/admin.md`／`04_workflows/
+  quarter-rollover.md`／`05_admin/objective-kr-tf.md`／`05_admin/settings-overview.md`／
+  `06_troubleshooting/faq.md`／`README.md`／`_meta/glossary.md`にも「①会議ノート」等の言及が
+  残るが、TF四半期割り当て（現役機能）の説明と混在しており、ファイルごとに何を残すかの個別
+  判断が要るため今回は入口2ファイルのみ是正し、残りは記録に留めた。
+
+### 検証
+`npx tsc --noEmit`は影響なし（今回の変更は`.md`ファイルの本文のみ・コード変更ゼロ）。関係する
+テスト（`buildTours.test.ts`／`okrIntroTour.test.ts`）は対象ファイル無改修のため実行不要と判断。
+
+### module-map.mdへの登録漏れ（⑧）
+該当なし（Gオンボーディングの対象ファイル一覧に変更なし）。
 
 ---
 
@@ -2294,6 +2350,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M44 | `meetingExtractor.ts`の`validateAnalysis()`はトップレベルの型（配列かどうか等）しか検証せず、`new_tasks[].start_date`/`due_date`・`status_updates[].new_status`等の個々のフィールドはAIの出力をノーチェックで通す。`start_date`/`due_date`は`TaskDraftCard`の`<input type="date">`（`value={draft.start_date}`）にそのまま渡るため、AIが"YYYY-MM-DD"以外の形式を返すと入力欄は空欄表示になるが内部の文字列自体は空にならず、ユーザーが触れないまま「反映する」を押すと`draft.start_date || null`でその不正な文字列がそのままDBへ送られる（`new_status`はDBのCHECK制約で弾かれ保存エラーとして可視化されるため実害は小さいが、日付は形式次第でPostgresが緩く解釈し得るため気づかれずに誤った日付が保存される可能性がある） | 低 | 2026-09-30のC会議読み込み39回目巡回で発見（AIが書いた値を検証せずDBへ保存する経路の点検で判明）。日付形式の検証を足す・空欄なら拒否する等は挙動を変える修正のため直さず記録のみ。次回候補へ |
 | ~~M41~~ | ~~`store.ts`の`fetchCriticalData`（初期ロードPhase 1・8クエリを`Promise.all`で並列取得）で、エラーとして中断・例外送出するのは`firstError = [members, projects, tasks].find(r => r.error)`の3件のみ。残る5件（`task_projects`/`milestones`/`member_tags`/`member_tag_members`/`task_dependencies`）はエラーが返っても無視され、`(x.data ?? [])`で黙って空配列として扱われる（v3.116のfetchAllRows化以前からの既存パターンで、今回変えていない）。特に`task_dependencies`はB1依存ゲート（先行タスク未完了ならブロック）の判定材料のため、取得失敗時に依存関係が「無い」ものとして扱われるとゲートが無言で無効化される。3件だけを致命的扱いとする設計が意図的か、8件すべてを見るべきかは設計判断が要る~~ | — | **完了（2026-09-30 / v3.122・案A・山本さん決定）** 8表を「構造表」（members/projects/tasks/task_projects/task_dependencies）と「周辺表」（milestones/member_tags/member_tag_members）に分離。構造表は1件でも失敗したら`throw`（`formatErrorForUser`の流儀でどの表か分かる文言。CLAUDE.md Section 15）し、既存の全画面エラー表示経路（App.tsxの`error`バナー）にそのまま乗る。周辺表は失敗しても空配列で起動継続し、`fetchCriticalData`の戻り値`partialFailures`→`appStore.partialLoadWarning`→App.tsxの警告バナー（既存のerrorバナーと同じ構造を再利用・warning配色）で「一部のデータ（◯◯）を読み込めませんでした」と知らせる。`console.error`にも表名・エラーコードを記録。回帰テストは`storeRowLimit.test.ts`（task_dependencies/task_projectsの失敗→throw、member_tagsの失敗→部分失敗リストに入り他表は正常取得）。Phase 2（`fetchOkrData`）は同型点検の結果M42として別記録 |
 | ~~M42~~ | ~~`store.ts`の`fetchOkrData`（初期ロードPhase 2・6テーブル）は、M41是正前の`fetchCriticalData`よりさらに徹底しており、**6表すべてでエラーチェックが一切無い**（`firstError`相当の判定自体が存在しない）。各表は`(x.data ?? [])`で無条件に空配列へフォールバックし、`appStore.ts`側の呼び出しも`try { ... } catch { set({ backgroundLoading:false }) }`と外側を握るだけで、個々の表の取得失敗を検知する手段が無い。objectives/key_results/task_forces/todos/project_task_forces/task_task_forcesのいずれか1つでもエラーになった場合、利用者には一切気づかれないまま該当データが空で表示され続ける~~ | — | **完了（2026-09-30 / v3.123・統括決定）** M41是正と同じ設計を適用したが、**Phase 2は起動後のバックグラウンド読み込みのため throw しない**（Phase 1の構造表と違い、UIは既に表示済みで起動を止める意味が無い）。6表すべてを周辺表と同じ扱いにし、失敗しても空配列で継続・`fetchOkrData`の戻り値`partialFailures`をPhase 1の`appStore.partialLoadWarning`に**追記**（上書きしない）してApp.tsxの既存の警告バナーへ乗せる。`console.error`にも表名・エラーコードを記録。保存時にDBの紐づけを消す経路が無いかを確認し、project_task_forces/task_task_forcesはいずれも単一行insert/deleteのみで全削除→再同期型の経路が無いことを確認済み（ガード不要）。回帰テストは`storeRowLimit.test.ts`（`fetchOkrData`単独/複数失敗・全表正常）と新規`loadPartialWarnings.test.ts`（Phase 1・2の警告合成） |
+| M45 | `docs/guides/`のOKR週次サイクル（①会議ノート→②セッション記録&分析→③レポート作成）は2026-08-10（v3.40）にコードごとアーカイブ済みだが、当時のアーカイブ作業は`02_modes/okr/00_cycle.md`〜`03_report.md`・`03_roles/kr-rep.md`・`03_roles/facilitator.md`・`04_workflows/weekly-rhythm.md`の6ファイルにfrontmatter`archived:true`を立てただけで、他の非アーカイブファイル（`03_roles/admin.md`／`04_workflows/quarter-rollover.md`／`05_admin/objective-kr-tf.md`／`05_admin/settings-overview.md`／`06_troubleshooting/faq.md`／`README.md`／`_meta/glossary.md`）に残る「①会議ノート」「②セッション記録&分析」等の本文中の言及・案内は未整理のまま。特に`quarter-rollover.md`は「翌Q初週の会議ノートでTFが対象外になる」という、既に存在しない機能を前提にした注意書きを含んでおり、TF四半期割り当て自体は現役機能のため実害が読み取りにくい形で残っている | 中 | 2026-09-30のGオンボーディング41回目巡回で発見。最上位の入口2ファイル（`00_overview.md`・`01_onboarding/first-day.md`）は本巡回で実態に合わせ修正済み。残りは各ファイルの記述が「TF四半期割り当て（現役）」と「週次会議ノート運用（廃止済み）」に混在しており、ファイルごとに何を残し何を削るか個別の設計判断が要るため未着手。次回候補へ |
 
 ### 低優先度
 | 項目 | 内容 | 難度 | 備考 |
