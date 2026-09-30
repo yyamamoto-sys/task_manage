@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.123",
+    date: "2026-09-30",
+    title: "OKR関連データの読み込み不具合のお知らせ範囲を拡大しました",
+    highlights: [
+      "Objective・KR・タスクフォース・ToDo等の読み込みに失敗したときも、欠けたまま表示せずお知らせするようにしました。",
+    ],
+  },
+  {
     version: "v3.122",
     date: "2026-09-30",
     title: "データの読み込み不具合をお知らせするようにしました",

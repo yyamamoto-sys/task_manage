@@ -348,8 +348,27 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
  * Phase-2: OKR関連6テーブルをバックグラウンドで取得。
  * 失敗してもメイン UI には影響しない。
  * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
+ *
+ * 【M42是正・v3.123】M41（Phase 1・fetchCriticalData）で入れた「取得失敗を握りつぶさない」
+ * 仕組みを、6表すべてに同じ考え方で適用した。ただし**Phase 2は起動後のバックグラウンド
+ * 読み込みのため throw しない**（Phase 1のようにUI自体をブロックしていない・OKR系データは
+ * B1依存ゲートのような致命的判定に使われないため。docs/REFACTORING.md M42参照）。
+ * 失敗した表は空配列で継続し、`partialFailures` に日本語ラベルを積んで呼び出し側
+ * （appStore.load()）へ伝える。呼び出し側はこれをPhase 1の`partialFailures`に**追記**し、
+ * App.tsxの既存の警告バナーにそのまま乗せる（Phase 1の警告を上書きしない）。
  */
-export async function fetchOkrData(onProgress?: (done: number, total: number) => void) {
+export interface FetchOkrDataResult {
+  objectives: Objective[];
+  keyResults: KeyResult[];
+  taskForces: TaskForce[];
+  todos: ToDo[];
+  projectTaskForces: ProjectTaskForce[];
+  taskTaskForces: TaskTaskForce[];
+  /** 取得に失敗した表の日本語ラベル一覧。空配列＝全表正常取得。 */
+  partialFailures: string[];
+}
+
+export async function fetchOkrData(onProgress?: (done: number, total: number) => void): Promise<FetchOkrDataResult> {
   // 【v3.39】quarterly_objectives を除外（7→6テーブル）。死蔵テーブルで起動時に全員へ
   // ダウンロードさせる価値が無いため（CLAUDE.md Section 19・Section 24 Step C）。
   // 書き込み経路（OkrImportModal→saveQuarterlyObjective→upsertQuarterlyObjective）は
@@ -368,6 +387,23 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
       fetchAllRows(o => supabase.from("task_task_forces").select("*", o), { label: "task_task_forces", keyColumns: ["task_id", "tf_id"] }).then(tick),
     ]);
 
+  // 6表すべて：失敗しても継続する。空配列で補いつつ部分失敗として記録する。
+  const checks: { label: string; result: { error: { code?: string; message: string } | null } }[] = [
+    { label: "Objective（目標）", result: objectives },
+    { label: "KR（重要な成果）", result: keyResults },
+    { label: "タスクフォース", result: taskForces },
+    { label: "ToDo", result: todos },
+    { label: "プロジェクトとタスクフォースの紐づけ", result: ptf },
+    { label: "タスクとタスクフォースの紐づけ", result: ttfs },
+  ];
+  const partialFailures: string[] = [];
+  for (const c of checks) {
+    if (c.result.error) {
+      partialFailures.push(c.label);
+      console.error(`[fetchOkrData] ${c.label}の取得に失敗しました`, c.result.error.code, c.result.error);
+    }
+  }
+
   return {
     objectives:            (objectives.data ?? []) as Objective[],
     keyResults:            (keyResults.data ?? []) as KeyResult[],
@@ -375,6 +411,7 @@ export async function fetchOkrData(onProgress?: (done: number, total: number) =>
     todos:                 (todos.data      ?? []) as ToDo[],
     projectTaskForces:     (ptf.data        ?? []) as ProjectTaskForce[],
     taskTaskForces:        (ttfs.data       ?? []) as TaskTaskForce[],
+    partialFailures,
   };
 }
 

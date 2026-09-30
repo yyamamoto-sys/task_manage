@@ -7589,4 +7589,40 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2118件、既存回帰なし）・
 # `npx eslint`（変更7ファイル・新規警告0）・`npm run build`成功。
 
-最終更新：2026-09-30（v3.122）
+# v3.123（2026-09-30）：M42是正・Phase 2（OKR系6表）の取得失敗も握りつぶさない
+#
+# `store.ts`の`fetchOkrData`（初期ロードPhase 2・OKR系6表：objectives/key_results/
+# task_forces/todos/project_task_forces/task_task_forces）にエラー判定が一切無く、
+# 取得失敗時に黙って空配列になっていた（docs/REFACTORING.md M42。v3.122のM41是正作業で
+# grep確認し記録のみで見送っていたもの）。計画モードでもタスク×TFの紐づけが消えて見える
+# 事故クラスのため、今回コード変更で解消した。
+#
+# ## 修正
+# * `fetchOkrData`の6表すべてに、M41是正（Phase 1周辺表）と同じ「取得失敗→空配列で継続・
+#   `partialFailures`に日本語ラベルを積む」を適用した。**Phase 2はバックグラウンド読み込み
+#   のため throw しない**（Phase 1の構造表と違い、UIは既に表示済みで起動を止める意味が無い・
+#   OKR系データはB1のような致命的ゲート判定に使われないため。M41是正時の記録どおり）。
+# * `appStore.ts`の`load()`は、Phase 2の`partialFailures`をPhase 1の`partialLoadWarning`に
+#   **追記**する（`state.partialLoadWarning`をスプレッドしてから連結。Phase 1の警告を
+#   上書きしない）。App.tsxの既存の警告バナー（v3.122で新設済み）がそのまま出る。
+# * `console.error`にも表名・エラーコードを記録する。
+# * 保存時にDBの紐づけを消す経路が無いかを確認した：Phase 2の6表のうち紐づけ表
+#   （project_task_forces/task_task_forces）は、`addTaskTaskForce`/`removeTaskTaskForce`/
+#   `insertProjectTaskForce`/`deleteProjectTaskForce`のような単一行insert/deleteのみで
+#   構成されており、クライアント側の空配列全体を「今の正しい状態」として差分同期し
+#   DBの既存行を一括削除するような経路（`replaceMemberTagMembers`のような全削除→再挿入型）
+#   は存在しない。部分失敗中でもガードは不要と判断した。
+#
+# ## テスト
+# `storeRowLimit.test.ts`に`fetchOkrData`単独の回帰テスト3件を追加（key_results単独失敗時の
+# 部分失敗返却・他表の正常取得・全表正常時の空配列・複数表同時失敗）。新規
+# `src/stores/__tests__/loadPartialWarnings.test.ts`（3件）でappStore.load()のPhase 1/Phase 2
+# partialLoadWarning合成（全正常／Phase 2単独失敗／Phase 1・2両方の警告が残る）を検証。
+# 修正前のコード（`fetchOkrData`にpartialFailures無し・appStoreが合成しない）に対して
+# 実際に2件が赤くなることを確認済み。
+#
+# ## 検証
+# `npx tsc --noEmit`（0）・`npx vitest run`（180ファイル・2124件、既存回帰なし）・
+# `npx eslint`（変更2ファイル＋新規テスト2ファイル・警告0）・`npm run build`成功。
+
+最終更新：2026-09-30（v3.123）

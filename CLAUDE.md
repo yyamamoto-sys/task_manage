@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.122
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.123
 #
-最終更新：2026-09-30（v3.122）
+最終更新：2026-09-30（v3.123）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4286,8 +4286,17 @@ member_tag_members）を分けて扱う。**構造表は1件でも取得失敗�
 （案A・山本さん決定）。**周辺表は失敗しても起動は続け**、`partialFailures`→
 `appStore.partialLoadWarning`→App.tsxの警告バナー（既存の`error`バナーと同じ構造を
 warning配色で再利用）で「一部のデータ（◯◯）を読み込めませんでした」と知らせる。
-Phase 2（`fetchOkrData`）は6表すべてでエラーチェック自体が無く、M41よりさらに徹底した
-同型の問題を抱えている（`docs/REFACTORING.md` M42・記録のみ・今回のスコープ外）。
+**Phase 2（`fetchOkrData`）もM42是正（v3.123）でPhase 1と同型の握りつぶし防止を適用した。
+ただしPhase 2は起動後のバックグラウンド読み込みのため throw しない**（Phase 1と違いUI自体を
+まだブロックしていない・OKR系データはB1のような致命的ゲート判定に使われないため）。6表
+（objectives/key_results/task_forces/todos/project_task_forces/task_task_forces）は
+Phase 1の周辺表と同じ扱い＝失敗しても空配列で継続し、`partialFailures`をPhase 1の
+`partialLoadWarning`に**追記**する（Phase 1の警告を上書きしない）。`console.error`にも
+表名・エラーコードを記録する。回帰テストは`storeRowLimit.test.ts`（`fetchOkrData`の単独失敗・
+複数同時失敗・全表正常）と`loadPartialWarnings.test.ts`（Phase 1・Phase 2の警告合成）。
+なお、Phase 2の6表はいずれも紐づけの追加/解除が単一行のinsert/delete（`addTaskTaskForce`等）
+のみで、クライアント側の空配列を「差分ゼロ」と解釈してDBの紐づけを一括削除する経路は無い
+ことを確認済み（部分失敗中でも安全）。
 
 ---
 

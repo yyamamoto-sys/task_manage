@@ -111,3 +111,34 @@ describe("🔴 M41是正：構造表の失敗はthrow・周辺表の失敗は続
     expect(data.partialFailures).toEqual([]);
   });
 });
+
+describe("🔴 M42是正：fetchOkrData（Phase 2）は6表すべて失敗してもthrowせず部分失敗を返す（v3.123）", () => {
+  it("key_results が失敗しても例外にならず、部分失敗一覧に入り他5表のデータは返る", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      key_results: { code: "500", message: "boom" },
+    });
+    const data = await fetchOkrData();
+    expect(data.partialFailures).toEqual(["KR（重要な成果）"]);
+    expect(data.keyResults).toEqual([]);
+    // 他の表は影響を受けず取得できている
+    expect(data.todos).toHaveLength(1200);
+    expect(data.taskTaskForces).toHaveLength(1500);
+  });
+
+  it("全表が正常なら partialFailures は空配列", async () => {
+    const data = await fetchOkrData();
+    expect(data.partialFailures).toEqual([]);
+  });
+
+  it("複数表が同時に失敗しても全て部分失敗リストに入り、起動（取得）は続く", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      objectives: { code: "500", message: "boom" },
+      task_task_forces: { code: "500", message: "boom" },
+    });
+    const data = await fetchOkrData();
+    expect(data.partialFailures).toEqual(["Objective（目標）", "タスクとタスクフォースの紐づけ"]);
+    expect(data.objectives).toEqual([]);
+    expect(data.taskTaskForces).toEqual([]);
+    expect(data.todos).toHaveLength(1200);
+  });
+});

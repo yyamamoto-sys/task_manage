@@ -621,6 +621,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
         // Phase 2: OKR系（6テーブル）→ バックグラウンド取得
         // 失敗してもメイン UI はブロックしない（サイレントエラー）
         // 【v3.39】quarterly_objectives はここから除外した（死蔵。CLAUDE.md Section 19）。
+        // 【M42是正・v3.123】fetchOkrDataは表ごとの取得失敗をthrowせず`partialFailures`で
+        // 返すため、この try/catch は通信断など予期しない例外のみを拾う保険。
+        // partialFailuresはPhase 1の警告を上書きせず追記する（CLAUDE.md Section 61）。
         try {
           const okr = await fetchOkrData((done, total) => {
             set({ loadProgress: Math.round((done / total) * 100) });
@@ -637,6 +640,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             todos:                 okr.todos,
             projectTaskForces:     okr.projectTaskForces,
             taskTaskForces:        okr.taskTaskForces,
+            partialLoadWarning:    [...state.partialLoadWarning, ...okr.partialFailures],
             backgroundLoading:     false,
             loadProgress:          100,
           }));
