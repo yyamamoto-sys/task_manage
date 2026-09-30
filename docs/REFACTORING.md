@@ -34,7 +34,7 @@
 | E PJ別AI分析 | 2026-09-30 | 2026-07-21（死んだプロンプト段落を削除） | 約317行（`lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}.ts`＋`lib/supabase/projectAnalysisStore.ts`のみ。UIの`dashboard/{ProjectKarte,DashboardView}.tsx`は共有ファイルのため本行の行数に含めない） | M17（現存・下記「中優先度」表参照） | 40回目（2026-09-30・前回点検日07-21以降の差分＝9コミットを点検。詳細は下記「40回目の巡回」節参照）。実害のある修正は無し。M17（DashboardViewのポートフォリオ分析がcomputeWorkload.tsと似た負荷集計を再実装している重複）は該当箇所に変更が無く現状維持 |
 | F 管理・設定 | 2026-09-29 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体・35回目時点で未再計測） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない**／M15（AdminViewのeslintエラー7件）も現存・触らない | 35回目（2026-09-29・診断的にv3.13〜v3.118の差分のみ点検）：Section15禁止パターン3箇所（`AdminView.tsx`AIUsageSection・`OkrImportModal.tsx`PDF/Word読込）を修正。他は健全。H1本体（機能分割）は未着手のまま |
 | G オンボーディング | 2026-09-30 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | M45（新規・下記「低優先度」表参照） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消／41回目（2026-09-30：前回点検日07-21以降の差分＝v3.114/v3.115のツアー参照切れ無しを確認。docs/guides内のOKR週次サイクル廃止（v3.40）に伴う実態乖離を発見・入口2ファイルを修正・詳細は下記「41回目の巡回」節参照） |
-| H グラフ・ラボビュー | GraphView.tsx 2026-07-21／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約790行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,694行（34回目に実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。GraphView.tsxは今回対象外のまま2026-07-21時点 |
+| H グラフ・ラボビュー | GraphView.tsx 2026-09-30／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約808行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,712行（43回目にGraphView.tsxのみ再実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。**2026-09-30：43回目の巡回でGraphView.tsxの前回点検日07-21以降の差分を点検**（詳細は下記「43回目の巡回」節） |
 | I 通知 | 2026-09-28 | 2026-09-28（32回目・v3.118：B3＝部署Webhook URLの読み先を`groups`から`group_notification_settings`へ移行／`notify-deadlines`の単発select 4本＋新テーブル1本を`fetchAllRows`同等のページングに置換（Section 61）／期限通知の対象判定を`status !== "done"`から`isActiveTaskStatus`＝todo/in_progressのみに修正＝v2.74追従漏れ。保留・中止タスクがTeams週次レポートとブラウザ通知に「期限超過」として出続けていた。フロントhookとEdge Functionの2箇所）／2026-07-21（3回目：未使用select列`status`を削除） | **約437行**（32回目に実測：`hooks/useDeadlineNotifications.ts`102＋`supabase/functions/notify-deadlines/index.ts`335） | M18（`notify_pref="teams"`が実質dead。**2026-09-28再確認：現存**＝`DashboardView.tsx`の「💬 Teamsまとめ」選択肢はそのまま・Edge Functionは`notify_pref`を一切読まない。UX判断待ちのまま）／M38（新規・記録のみ。下記「中優先度」表参照） | 32回目巡回で点検（詳細は下記「32回目の巡回」節）。🔴 Edge Functionは git push では反映されない（`supabase functions deploy notify-deadlines --no-verify-jwt` で個別デプロイ。`config.toml`が無いため付け忘れると`verify_jwt`が`true`に戻りpg_cronからの呼び出しが401になる）。v3.118版はマイグレ20260928c適用後にデプロイすること（未適用だと新テーブルの読み取りが500になり、その週の通知が1通も出ない） |
 | データ基盤 | 2026-09-29 | 2026-09-29（36回目：07-22以降の差分＝v3.101〜v3.118を点検。`types.ts`/`store.ts`/`appStore.ts`が対象、`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`のうち`realtime.ts`は無変更。v3.116のfetchAllRows化・v3.118のgroup_notification_settings分離とも型・Realtime・初期ロードの整合を確認し実害のあるコード不具合は無し。M41を新規記録、module-map.mdの`fetchAllRows.ts`登録漏れとCLAUDE.md Section 61「適用範囲」一覧の`fetchGroupNotificationSettings`記載漏れ〈35回目F管理・設定巡回で発見済みだった分〉を解消）／2026-07-22（22回目：サブ領域①＝`appStore.ts`単体点検。`handleSaveError`の保存失敗トーストが`e.message`のみ表示するSection 15禁止パターンのままだったのを`formatErrorForUser`経由に統一）／2026-07-22（21回目：サブ領域②＝`types.ts`/`localStore.ts`/`AppDataContext.tsx`/`lib/supabase/{client,store,realtime,auth}.ts`点検。死蔵`fetchAllData()`/`LS_KEY.krReport`削除＋ドキュメント乖離2件修正）／2026-07-06（M11ロールアップ集約・taskHierarchy統合）／2026-07-03に参照安定性バグ実修正（zustandセレクタのメモ化漏れ） | **約3,488行**（36回目に実測。内訳：`types.ts`649+`localStore.ts`202+`appStore.ts`1,600+`AppDataContext.tsx`66+`lib/supabase/{client,store,realtime,auth}.ts`886+`fetchAllRows.ts`85〈v3.116新設・今回module-map.mdへ登録〉。21回目時点の約2,578行から、entity_change_logs〈v3.111〉・個人OKR層〈v3.36〜〉・fetchAllRows化〈v3.116〉・group_notification_settings〈v3.118〉等の機能追加により増加） | OKR系テーブルのRLS未分離（マルチテナンシー残課題・別トラック管理）／M31（`AppDataContext.tsx`が`tasks`/`projects`の変更を検知して400msデバウンスで`load()`全件再取得するが、`App.tsx`が別途`realtime.ts`経由で同じ2テーブルを含む11テーブルを`applyRemoteChange`で行単位パッチ済み＝両方の変更検知経路が並走。**36回目に再確認：`realtime.ts`は07-22以降無変更・`TABLES`定数＝11テーブルと`applyRemoteChange`のswitch分岐＝11ケースの一致も不変**。削除すると障害時フォールバック網羅性が変わりうるため設計判断が必要のまま次回候補）／M32（`groups`・`quarterly_objectives`・`quarterly_kr_task_forces`・`member_tags`・`member_tag_members`の5テーブルは`realtime.ts`の`TABLES`にもAppDataContextの購読対象にも含まれておらず、他クライアントの変更がリアルタイム反映されない＝次回の手動reload/再ログインまで古いまま。**36回目追記：v3.118新設の`group_notification_settings`（部署ごとのTeams Webhook URL）も同様にRealtime対象外・初期ロードにも含まれず〈AdminViewが開いた時にオンデマンド取得〉、既存5テーブルと同型の低頻度マスタ系データとして未対応のまま6件目が加わった形。`TABLES`に追加するか意図的な対象外とするかは設計判断が要るため次回候補）／M41（新規・`fetchCriticalData`のfirstErrorがmembers/projects/tasksの3件のみ判定対象で残り5件はエラー時に黙って空配列化。下記「中優先度」表参照） | v2.29〜32で依存関係/ベースラインstateが追加され複雑度上昇。**データ基盤ユニット全体（約3,488行）を21〜22・36回目の巡回で点検完了。** 22回目でappStore.ts自体（楽観ロック・依存ゲート・B1/B3/B4・v2.75親タスク自動完了の4choke point）を精査し、矛盾する順序・二重発火・打ち消し合いは見つからず（観察のみ）。実害のあるSection15違反1件を修正。36回目はv3.116/v3.118の型・Realtime・初期ロード整合を精査し実害バグ無し（記録2件のみ）。詳細は下記「36回目の巡回」節参照 |
 | AI基盤 | 2026-07-24（本日v3.07変更分＝`apiClient.ts`のみ対象の指名セッション。他ファイルは13回目巡回時点の2026-07-21のまま） | 2026-07-24（本日v3.07の`max_tokens`拡大〈4096→16384〉・`stopReason`伝播・`retryContext`引数追加に伴う`apiClient.ts`の品質点検。エラー分岐（AUTH_REQUIRED/RATE_LIMIT/ANTHROPIC_ERROR等）の構造・`AIRetryContext`のフィールド設計に重複・死蔵とも見つからず健全と確認。**⚠️ Edge Function（`supabase/functions/ai-consult/index.ts`）の`MAX_TOKENS_CAP`拡大〈8192→16384〉は本日のスコープ外**（git push非対象・手動デプロイ運用のため今回は触っていない。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）。M37（観察のみ・次回候補）：Edge Function `index.ts`のエラーレスポンス整形（`ANTHROPIC_ERROR`のdetail二重JSON.parse等）は今回未点検のまま残置）／2026-07-21（13回目：`invokeAI.ts`のRATE_LIMIT_EXCEEDED生コード表示バグ修正＋未使用`sanitizeTaskComment`削除＋AIIntentコメント/CLAUDE.md乖離修正） | **約785行**（module-map.md定義の`lib/ai/{invokeAI,apiClient,usageLog,sanitize,types,uiGuide}.ts`＋Edge Function`ai-consult/index.ts`のみ。旧「約5,262行」は`lib/ai/`ディレクトリ全体＝B/C/D/E/F等他モジュール所属ファイルも含めた行数で、AI基盤単体の値ではなかった＝規模感の誤記を訂正） | ai-consultの`max_tokens`上限（2026-07-02追加）は**再デプロイ済みと判明**（`supabase functions list`のversion 13・updated_at 2026-07-02T05:23:54Z＝コミット直後、`supabase functions download`との差分0で確認。旧残課題は解消済みとして削除）。M28（`uiGuide.ts`の`FEATURE_LIST_SECTION`がv2.28以降の大型機能追加（ワークロード/依存関係/ショートカット/保留・中止ステータス等）に追従できておらずAIの自己紹介が陳腐化。CLAUDE.md Section 17のチェックリスト運用が徹底されていない実例。次回候補）。M37（新規・観察のみ）：`supabase/functions/ai-consult/index.ts`のエラーレスポンス整形は2026-07-24時点で未点検のまま（Edge Functionは今回のリファクタスコープ外のため触っていない。次回候補） | 13回目巡回で全体点検完了。CORS（`ALLOWED_ORIGINS`）・レート制限（`RATE_LIMIT_PER_MIN`既定20）はSupabase側`secrets list`で設定済みを確認（Section 18準拠）。**2026-07-24追記**：本日v3.07で変更された`apiClient.ts`のみを対象にした品質リファクタを実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節） |
@@ -47,6 +47,49 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の43回目の巡回：H グラフ・ラボビュー（GraphView.tsx）
+
+前回点検日（2026-07-21）以降の差分は2コミットのみ（`a2ecba1`：サイドバー折りたたみ／展開への
+canvas追従＝ResizeObserver新設・v3.23／`9ce420d`：全画面ラボビューをposition:fixedからメイン
+エリア内flexへ全面変更・Section 20 v3.33）。CalendarLabView.tsx・ProjectStructureView.tsxは
+34回目（2026-09-29）で点検済みのため対象外。
+
+### 点検結果：実害のある不具合は無し
+
+- **Section 20（position:fixed撤去）**：現行コード（808行目）にpositionは`"relative"`のみで
+  `"fixed"`を一切使用していないことを確認。`labViewContainment.test.ts`の検査対象（`var(--app-sidebar-w`
+  文字列不在・ビュー本体でのposition:fixed不使用）にも合致。
+- **Section 15（formatErrorForUser経由）**：対象外。GraphView.tsxはSupabaseへの直接アクセス・
+  DB書き込みを一切持たない（`catch`/`throw`/`supabase`/`fetch`いずれも0件）。`useAppStore`の
+  read-only selectorでデータを読み、Canvas描画とローカルの物理シミュレーションのみで完結する
+  ため、エラー表示の対象となる「ユーザー操作の起点」自体が存在しない。
+- **取得・保存失敗の握りつぶし**：同上の理由で該当箇所なし。
+- **fetchAllRows（Section 61）迂回**：該当なし（Supabase直接呼び出し自体が0件）。
+- **v2.74ステータス5値・isCompletedForProgress**：`getNodeColor()`は`done`のみ薄色化・期限超過は
+  赤・それ以外は既定色という独自の可視化ロジックで、`isCompletedForProgress`（done/cancelled一括
+  判定）とは目的が異なる（進捗集計ではなくノード1件ごとの色分け）ため差し替え対象ではないと判断
+  した。`STATUS_LABEL`は5値（todo/in_progress/done/on_hold/cancelled）を網羅済みで欠落なし。
+- **死蔵コード・未使用export**：唯一のexport（`GraphView`本体）は`MainLayout.tsx`の`labOverlay`
+  から使用されており健全。`currentUser: _currentUser`は意図的な未使用引数（アンダースコア命名
+  で明示済み・D OKRユニットの`KrWhyPanel.tsx`と同型の既存パターン）。
+- **i18n**：文言はラボ機能の既定方針どおり全て日本語直書き（Section 24 Step B「英語化はPhase 2
+  以降凍結中」に合致）。片側だけ英語化されている箇所は無し。
+- **module-map.md登録漏れ**：無し（108行目に`components/graph/GraphView`として登録済み）。
+
+### M16（既知課題）の現状確認：未解消のまま
+
+初期化`useEffect`（613行目）の依存配列は`[nodes, edges, resize]`のまま変更なし。`nodes`/`edges`は
+`useMemo`（106〜164行目）経由でtasks/objectives等の変化のたびに再計算されるため、他者がタスクを
+1件更新しただけで`stateRef.current`が丸ごと再生成され、pan/zoom/凡例絞り込み/ピン留めしたノード
+位置がリセットされる問題は今回の2コミットでは触れられておらず、引き続き未解消。設計判断（ノード
+ID単位の差分マージ）が必要なため、今回も修正せず記録のみとする。
+
+### 修正・記録
+
+実害のある不具合は見つからなかった（ローカルcommitも無し）。新規のM番号記録も無し。
 
 ---
 
