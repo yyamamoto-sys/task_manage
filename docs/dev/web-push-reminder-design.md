@@ -1,10 +1,10 @@
 # 期限リマインド再設計書（Windows通知＝Web Push ＋ アプリ内通知）
 
-最終更新：2026-09-30 rev1（設計のみ・実装未着手）
+最終更新：2026-09-30 rev2（§11 の未決9件に山本さんの決定を反映。個人で選べる送信時刻＝案Cを追加。設計のみ・実装未着手）
 関連：[deadline-notifications.md](./deadline-notifications.md)（現行の方式B・D）／[backup-design.md](./backup-design.md)（実行記録とバナーの前例）／CLAUDE.md Section 39・53・58・61
 
 > この文書は、期限通知を「チームへの共有」から「個人へのリマインド」に作り替えるための正本である。
-> 実装前に §11 の未決事項を確定させ、実装後は本文書と実物の差分が出た時点でこちらを直す。
+> §11 に決定事項をまとめてある（rev1の未決事項は全て確定済み）。実装後は本文書と実物の差分が出た時点でこちらを直す。
 
 ---
 
@@ -13,10 +13,11 @@
 | 論点 | 決定 | 決定日 |
 |---|---|---|
 | 通知の目的 | **個人へのリマインド**（チーム共有ではない） | 09-30 |
-| 通知チャネル | **①Windows通知（Web Push）②アプリ内通知** の2つ。**本人が個人設定でそれぞれ独立にオン／オフする**（両方・片方・どちらも無し）。管理者が他人の設定を変える機能は作らない | 09-30 |
-| 送信タイミング | **平日（月〜金）の朝 JST 8:30 に1回**。対象タスクが無い人には送らない | 09-30 |
+| 通知チャネル | **①Windows通知（Web Push）②アプリ内通知** の2つ。**本人が個人設定でチャネル・通知する種類（期限超過／今日期限）・送信時刻の3つを選べる**（案C。§4.4参照）。既定はアプリ内通知＝オン・Windows通知＝オフ。管理者が他人の設定を変える機能は作らない | 09-30（rev2で送信時刻の個人選択を追加） |
+| 送信タイミング | **平日（月〜金・祝日除く）に1回**。時刻は本人が30分刻み・7:00〜19:00（JST）から選べる（既定8:30）。対象タスクが無い人には送らない | 09-30（rev2で個人選択制に変更） |
 | 表示内容 | **件数＋最初の1件のタスク名**（例「期限超過2件・今日期限1件：◯◯の資料作成 ほか」）。クリックでアプリの自分のタスク一覧を開く | 09-30 |
-| 現行 Teams 週次通知 | **新方式の稼働確認まで動かしたまま**（§9 で停止） | 09-30 |
+| 現行 Teams 週次通知 | **新方式の稼働確認まで動かしたまま**。稼働確認後、関連機能（`notify-deadlines`・`group_notification_settings`・Webhook欄・PAテンプレート配布）ごと削除する（§9 フェーズ6） | 09-30（rev2で削除方針を確定） |
+| バックアップ通知 | `backup-daily` の失敗通知・週次サマリ（Teams向け）を、super_admin へのアプリ内通知（本人がWindows通知をオンにしていればWindows通知も）に切り替える。本書の範囲に含める（§6参照） | 09-30（rev2で追加） |
 | 新しい外部ライブラリ | 本書の段階では導入しない。§7 の手順で dev 検証してから決める | 09-30 |
 
 ### 不採用案
@@ -35,7 +36,7 @@
 
 本設計の最優先の非機能要件は **「黙って止まる」を再発させないこと** である。送信結果を必ずDBに記録し、管理画面で見えるようにする（§3.4・§6）。
 
-🔴 **同じ PA 経路に依存している別機能がある。** `backup-daily` の失敗通知と週次サマリ（`notifyTeams()`・`TEAMS_WEBHOOK_URL`）も同じ Power Automate フローへ送っているため、同時に止まっていると考えられる。管理画面バナー（`BackupHealthBanner`）は生きているが、Teams 通知の代替は本書の範囲外とし、§11 の未決事項に挙げる。
+🔴 **同じ PA 経路に依存している別機能がある。** `backup-daily` の失敗通知と週次サマリ（`notifyTeams()`・`TEAMS_WEBHOOK_URL`）も同じ Power Automate フローへ送っているため、同時に止まっていると考えられる。管理画面バナー（`BackupHealthBanner`）は生きているが、Teams 通知自体は届いていない。**この代替（super_admin へのアプリ内通知＋Web Push）は本書の範囲に含める**（決定済み。§6.2・§11参照）。
 
 ---
 
@@ -70,18 +71,23 @@
         ▼
   rpc register_push_subscription(endpoint, p256dh, auth, user_agent)
         ▼
-[Supabase DB]  push_subscriptions / notification_prefs / in_app_notifications / reminder_runs
+[Supabase DB]  push_subscriptions / notification_prefs / in_app_notifications
+               / reminder_runs / reminder_send_log
         ▲
-  pg_cron（平日 JST 8:30）── net.http_post + x-cron-secret
+  pg_cron（平日 JST 7:00〜19:30・30分刻み＝1日26回）── net.http_post + x-cron-secret
         ▼
 [Edge Function push-reminders]
-  対象抽出 → ①in_app_notifications に1行書く  ②Web Push 送信（RFC 8291 暗号化・VAPID 署名）
+  祝日なら即終了 → 現在時刻のスロットと一致する人だけ抽出 → reminder_send_logに1日1回だけ記録
+        → ①in_app_notifications に1行書く  ②Web Push 送信（RFC 8291 暗号化・VAPID 署名）
         │                                            │
         ▼                                            ▼
   reminder_runs に結果を記録            プッシュサービス（Edge=WNS／Chrome=FCM）
                                                      ▼
                                      [ブラウザの Service Worker] push → showNotification
                                                      └─ クリック → /?open=my-tasks
+
+[Edge Function backup-daily]（日次バックアップ・失敗時／週次）
+  super_admin 全員へ ①in_app_notifications に1行  ②Web Push（push-reminders と共通の送信処理を再利用）
 ```
 
 ### 3.1 Service Worker の配置（Vite）
@@ -108,15 +114,21 @@ CREATE TABLE notification_prefs (
   member_id        text PRIMARY KEY REFERENCES members(id),
   inapp_enabled    boolean NOT NULL DEFAULT true,   -- アプリ内通知
   push_enabled     boolean NOT NULL DEFAULT false,  -- Windows通知（Web Push）
-  notify_overdue   boolean NOT NULL DEFAULT true,   -- 期限超過を含める（§4.4 案B）
-  notify_due_today boolean NOT NULL DEFAULT true,   -- 今日期限を含める（§4.4 案B）
-  updated_at       timestamptz NOT NULL DEFAULT now()
+  notify_overdue   boolean NOT NULL DEFAULT true,   -- 期限超過を含める（§4.4 案C）
+  notify_due_today boolean NOT NULL DEFAULT true,   -- 今日期限を含める（§4.4 案C）
+  reminder_time    time NOT NULL DEFAULT '08:30:00', -- 送信時刻（JST・§4.4 案C・09-30 rev2で追加）
+  updated_at       timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT notification_prefs_reminder_time_check CHECK (
+    reminder_time >= time '07:00' AND reminder_time <= time '19:00'
+    AND extract(minute from reminder_time)::int % 30 = 0
+    AND extract(second from reminder_time) = 0
+  )
 );
 ```
 
 列を分けて `members` に足す案を採らない理由：①`members_write_update` は同部署の他人も更新できるため「本人だけが変える」を RLS で保証できない、②`saveMember()` は行全体を送るので、管理者のメンバー編集と楽観ロックの競合を起こす、③チャネルや種類が増えるたびに `members` が太る。
 
-行が無い人は既定値（アプリ内＝オン・Windows＝オフ）として扱い、Edge Function 側も同じ既定値を使う。既定値そのものは §11 で確認する。
+行が無い人は既定値（アプリ内＝オン・Windows＝オフ・送信時刻＝8:30）として扱い、Edge Function 側も同じ既定値を使う（COALESCEで補う。§7.2）。
 
 ### 4.2 RLS（Section 39・58 の書き方）
 
@@ -139,15 +151,15 @@ CREATE POLICY notification_prefs_own ON notification_prefs
 | `notify_pref='teams'`（M18） | 選択肢ごと削除する。M18 はこれで解消 |
 | `notify_pref` 列 | 移行時に `push_enabled` の初期値へ写さない（購読が無ければ意味が無いため、全員オフから始める）。UI からの書き込みを止めた後、別マイグレで DROP（`schemaChecks.ts` から外すのを同時に行う） |
 
-### 4.4 「自由に変更」の範囲（選択肢）
+### 4.4 「自由に変更」の範囲（決定：案C。09-30 rev2）
 
 | 案 | 本人が変えられるもの | 追加コスト |
 |---|---|---|
 | A | チャネルごとのオン／オフだけ | 最小 |
-| **B（推奨）** | A ＋ 通知する種類（期限超過／今日期限） | 小。boolean 2列と抽出時の絞り込みだけ。cron・実行記録の構造は変わらない |
-| C | B ＋ 送信時刻（例：8:30／12:00／17:00） | 大。cron を30分ごとに回して時刻で振り分ける必要があり、実行記録も時刻ごとに分かれる。「今日の8:30の実行が無い」を判定するバナー（§6）が複雑になる |
+| B | A ＋ 通知する種類（期限超過／今日期限） | 小。boolean 2列と抽出時の絞り込みだけ。cron・実行記録の構造は変わらない |
+| **C（採用）** | B ＋ **送信時刻**（30分刻み・7:00〜19:00（JST）の25通り。既定8:30） | 大。cron を平日30分ごとに回し、その時刻を選んでいる人だけへ送る必要がある。実行記録は1回の起動＝1行のまま維持するが、「今日の8:30の実行が無い」というバナー判定を「直近の予定起動時刻から30分経っても記録が無い」に見直す（§6・§7.1） |
 
-推奨はB。Cは運用してみて要望が出てから検討する（§11）。
+**当初はBを推奨していたが、山本さんの判断でCへ変更した。** 選択肢は`<select>`（`08:00`〜`19:00`等の表記。25件）。実装コストの詳細は §5〜§7 に反映済み。
 
 ### 4.5 設定UIの場所と文言
 
@@ -160,14 +172,17 @@ CREATE POLICY notification_prefs_own ON notification_prefs
 
 ```
 通知設定
-  平日の朝 8:30 に、期限超過・今日期限のタスクをお知らせします。
+  平日（祝日を除く）に、期限超過・今日期限のタスクをお知らせします。
   対象のタスクが無い日は届きません。
 
   [✓] アプリ内通知        アプリを開いたときにベルに表示します
   [ ] Windows通知         アプリを閉じていても、画面右下に通知が出ます
                           （このブラウザでだけ有効です）   [テスト通知を送る]
   通知する内容  [✓] 期限超過   [✓] 今日期限
+  送信時刻      [8:30 ▾]（7:00〜19:00の30分刻みから選べます）
 ```
+
+- **送信時刻の`<select>`**は25件の固定選択肢（7:00〜19:00・30分刻み）。変更した瞬間に`notification_prefs.reminder_time`へ保存する（他のトグルと同じ「押した時点で保存」・Section 44の対象外という扱いは§4.5冒頭のとおり）。
 
 - **許可ダイアログは「Windows通知」をオンにした瞬間だけ出す。** 初回表示・ログイン時に勝手に出さない。
 - 拒否済み（`denied`）の場合はトグルをオンにせず、「ブラウザの設定で通知がブロックされています」とアドレスバー左の鍵アイコンからの解除手順を表示する。
@@ -197,8 +212,8 @@ CREATE POLICY notification_prefs_own ON notification_prefs
 CREATE TABLE in_app_notifications (
   id          bigserial PRIMARY KEY,
   member_id   text NOT NULL REFERENCES members(id),
-  run_id      bigint REFERENCES reminder_runs(id),
-  kind        text NOT NULL CHECK (kind IN ('deadline_digest')),
+  run_id      bigint REFERENCES reminder_runs(id),  -- backup系の行はNULL（reminder_runsと無関係のため）
+  kind        text NOT NULL CHECK (kind IN ('deadline_digest', 'backup_failure', 'backup_weekly_summary')),
   title       text NOT NULL,
   body        text NOT NULL,
   url         text NOT NULL,
@@ -208,6 +223,7 @@ CREATE TABLE in_app_notifications (
 CREATE INDEX ON in_app_notifications (member_id, created_at DESC);
 ```
 
+- `kind='backup_failure'`／`'backup_weekly_summary'`（09-30 rev2で追加）は`backup-daily`（§6参照）が、`members.is_super_admin=true`かつ`is_deleted=false`の全員へ1行ずつ書く。`run_id`は持たない（バックアップの実行記録は`backup_runs`であり`reminder_runs`とは無関係のため）。`url`は管理画面のバックアップタブ（`/?open=admin-backup`等。実装時に決める）を指す。
 - SELECT は本人の行のみ（§4.2 と同じ式）。INSERT は service_role のみ（ポリシーを作らない）。
 - 既読化は UPDATE ポリシーを作らず、`mark_in_app_notifications_read(p_ids bigint[])`（SECURITY DEFINER・`member_id = current_member_id()` の行の `read_at` だけを更新）で行う。本人が本文を書き換えられないようにするため。
 - 90日で削除（`cleanup-admin-change-logs` と同型の pg_cron）。
@@ -243,9 +259,47 @@ CREATE TABLE reminder_runs (
 
 - RLS：SELECT は super-admin のみ、書き込みは service_role のみ（`backup_runs` と同じ流儀）。90日で削除。
 - 🔴 **最初に `running` の行を書いてから処理する。** 途中で落ちても「始まったが終わっていない」行が残る。
-- **管理画面**：`AdminView` の「アプリ設定」カテゴリ（super-admin 限定）に「通知」タブを新設する（`BackupSection.tsx` と同じ構成）。直近の実行10件・購読数の合計・「今すぐ実行（dryRun）」ボタンを出す。
+- **`reminder_runs` は起動ごとに1行のままとする**（日次への集約はしない）。平日は1日26回（§7.1）起動するため空振り（対象0件）の行が大半になるが、その「空振りの記録があること自体」が正常性の証拠であり、バナー判定（後述）の材料になる。90日保持でも `26回×約22営業日×3ヶ月 ≒ 1,700行` 程度でPostgresへの負荷は無視できる。
+
+### 6.1 1人1日1回の保証（`reminder_send_log`）
+
+平日26回起動する cron のうち、各人には自分が選んだ時刻の回でしか送らない。二重送信・遅延・時刻変更に対する扱いを次のテーブルで保証する。
+
+```sql
+CREATE TABLE reminder_send_log (
+  member_id   text NOT NULL REFERENCES members(id),
+  send_date   date NOT NULL,               -- JST基準の日付
+  run_id      bigint REFERENCES reminder_runs(id),
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (member_id, send_date)
+);
+```
+
+- **判定・記録は1本のSQLで行う**：`INSERT INTO reminder_send_log (member_id, send_date, run_id) VALUES (...) ON CONFLICT (member_id, send_date) DO NOTHING RETURNING member_id`。この`INSERT`が実際に1行返した人だけを「今日まだ送っていない人」として以後の処理（in_app_notifications書き込み・Web Push送信）に進める。主キー制約が排他ロックの役割を兼ねるため、TOCTOUレースは起きない。
+- **遅延**：cronの起動自体が遅れても、その回が実際に処理するのは「現在のJST時刻を30分単位に切り捨てたスロット」（§7.2）であり、`reminder_send_log`への条件付きinsertが唯一の関門のため、遅延そのものは二重送信を生まない。
+- **二重起動**：同じ回のcronが何らかの理由で2回動いても、2回目の`INSERT`は主キー衝突で弾かれ0行になり、その人には送らない。
+- **選択時刻を当日の途中で変更した場合**：
+  - まだ今日の分を送っていない時刻へ変更（例：8:30→15:00に、まだ8:30を過ぎていない朝に変更）→ 変更後の時刻に送られる（`reminder_send_log`に今日の行がまだ無いため）。
+  - 既に今日の分を送信済みの後に変更 → その日はもう届かない（`reminder_send_log`に今日の行が既にあるため）。翌営業日から新しい時刻で届く。
+  - 既に過ぎた時刻へ変更（例：10:00の時点で8:30へ変更）→ 次のスロット判定はその日はもう来ないため、その日は届かない。翌営業日から届く。
+  - **「その日は届かない・翌日から」という扱いは、1日1回という保証を優先した結果であり、意図した仕様**（誤って同日に2回届く方が実害が大きいと判断した）。
+- **記録できていても実際の送信（push）が失敗した場合は再送しない**：`reminder_send_log`は「送信を試みたか」の印であり、成否は問わない。個別の失敗は`reminder_runs.error_summary`・`push_failed`で追える（既存方針のまま）。
+- RLS：SELECTは super-admin のみ、書き込みは service_role のみ（`reminder_runs`と同じ流儀）。90日で削除。
+
+### 6.2 バックアップ通知の統合（`backup-daily`。09-30 rev2で追加）
+
+`backup-daily`（日次バックアップ。docs/dev/backup-design.md）の失敗通知・週次サマリは、現在Teams（`notifyTeams()`・`TEAMS_WEBHOOK_URL`）へ送っている。これを super_admin へのアプリ内通知＋Web Pushへ切り替える。
+
+- **宛先**：`members.is_super_admin=true AND is_deleted=false` の全員。1人ずつ`in_app_notifications`（`kind='backup_failure'`または`'backup_weekly_summary'`）へ1行書き、その人の`notification_prefs.push_enabled`がtrueなら合わせてWeb Pushも送る。
+- **送信ロジックの共有**：Web Push送信（RFC 8291暗号化・VAPID署名・購読の失効処理）は`push-reminders`が実装するものと同じであり、二重実装しない。`supabase/functions/_shared/webPush.ts`（新規）に切り出し、`push-reminders`・`backup-daily`の両方から呼ぶ。
+- **`TEAMS_WEBHOOK_URL`・`notifyTeams()`はこの時点では削除しない**：フェーズ6（Teams関連を丸ごと削除するタイミング。§9）で、`backup-daily`側の呼び出しも合わせて削除する。それまでは新旧両方が動く（新方式の稼働確認期間）。
+- **記録**：`backup_runs`（既存）に成否は既に記録されているため、通知専用の追加テーブルは作らない。
+
+### 6.3 管理画面・バナー
+
+- **管理画面**：`AdminView` の「アプリ設定」カテゴリ（super-admin 限定）に「通知」タブを新設する（`BackupSection.tsx` と同じ構成）。直近の実行30件（平日1日26回のため、10件固定だと数時間分しか見えない。30件でおおよそ1営業日分をカバーする）・購読数の合計・「今すぐ実行（dryRun）」ボタンを出す。
 - **管理画面バナー**：`BackupHealthBanner` と同型の `ReminderHealthBanner` を置く。判定は純粋関数に切り出す。
-  - 🔴 赤：直近の平日 8:30（JST）から1時間経っても、その回の `cron` の実行記録が無い、または `failed`。
+  - 🔴 赤：現在のJST時刻が平日7:00〜19:30の範囲内のとき、直前の予定起動スロット（30分単位に切り捨てた時刻）から30分経っても、その回の `cron` の実行記録が無い、または `failed`。範囲外（夜間・週末）は判定自体をスキップする。
   - 🟡 黄：直近の cron 実行で `push_failed / push_attempted` が50%以上、または `partial`。
   - 取得失敗時は黙って消さず「通知の状態を確認できません」を出す。
 - **記録できる範囲の限界**：プッシュサービスが 201 を返したことまでは記録できるが、利用者の画面に通知が表示されたかは分からない（ブラウザが起動していない・OSの集中モード等）。本人向けには「テスト通知」、組織としてはアプリ内通知の既読率で補う。
@@ -266,14 +320,20 @@ CREATE TABLE reminder_runs (
 
 - デプロイは `supabase functions deploy push-reminders --no-verify-jwt`（`config.toml` が無いため、付け忘れると cron が401になる）。JWT の検証は関数内で `supabase.auth.getUser(token)` を使う（`backup-daily` と同じ）。
 - ブラウザから呼ぶため `ALLOWED_ORIGINS` 方式の CORS を持たせ、`Access-Control-Allow-Headers` に `x-cron-secret` を含める（`backup-daily` と同じ）。
-- pg_cron：`'30 23 * * 0-4'`（UTC 日〜木の23:30＝JST 月〜金の8:30）。ジョブ名 `push-reminders-weekday`。
+- **pg_cron（09-30 rev2で30分刻みに変更）**：送信時刻を個人で選べるようにしたため（案C）、平日7:00〜19:00（JST・30分刻み）の間、常に起動して「その時刻を選んでいる人」だけへ送る。JSTは平日でもUTC日付をまたぐため、ジョブを2本に分ける：
+  - `push-reminders-am`：`'0,30 22,23 * * 0-4'`（UTC 日〜木の22:00/22:30/23:00/23:30＝JST 月〜金の7:00/7:30/8:00/8:30）
+  - `push-reminders-pm`：`'0,30 0-10 * * 1-5'`（UTC 月〜金の0:00〜10:30＝JST 月〜金の9:00〜19:30）
+  - 合計 **平日26回/日**（19:30の回は選べる時刻の範囲外だが、該当者がいないだけの無害な空振りとして許容する。25回ちょうどに絞る3本構成も検討したが、cronジョブが1本増える割に得るものが小さいため採らなかった）。
+  - **Supabase Free プランの Edge Functions 呼び出し上限との比較**：公式ドキュメント（[Pricing | Supabase Docs](https://supabase.com/docs/guides/functions/pricing)）で Free プランは **月50万回**。26回×約22営業日／月 ≒ **572回/月**で、上限の**約0.11%**。問題にならない。
+  - **ジョブ名**：`push-reminders-am`／`push-reminders-pm`（両方とも同じ関数`push-reminders`を呼ぶ）。
 
 ### 7.2 対象の抽出
 
+0. **起動時刻の解決（09-30 rev2で追加）**：現在のJST時刻を30分単位に切り捨てた値を `slotTime` とする（cronは30分ちょうどに起動するが、起動遅延を吸収するための丸め）。**祝日判定（後述7.3）で祝日なら、この時点で処理を打ち切る**（`reminder_runs`に`status='success'`・`target_members=0`・`error_summary='祝日のためスキップ'`を記録して終了）。
 1. tasks：`is_deleted=false`・`status in ('todo','in_progress')`・`due_date <= 今日（JST）`。部署で絞らない（個人リマインドなので、本人が担当するタスクは全部署分を対象にする）。
 2. 担当者の展開：`assignee_member_ids` が空でなければそれ、空なら `assignee_member_id`（src の `getAssigneeIds` と同じ）。複数担当なら全員に数える。
-3. members：`is_deleted=false`。`notification_prefs` の行が無い人は既定値。両チャネルともオフの人、または対象件数が0の人は除外する。
-4. 種類の絞り込み（§4.4 案B）：期限超過＝`due_date < 今日`、今日期限＝`due_date = 今日`。
+3. members：`is_deleted=false`。`notification_prefs` の行が無い人は既定値（アプリ内＝オン・Windows＝オフ・`reminder_time`＝8:30）。次の条件で絞り込む：①`reminder_time = slotTime` の人だけ（案C。他の時刻の人はこの回では対象外）②両チャネルともオフの人、または対象件数が0の人は除外③`reminder_send_log`へ`(member_id, 今日の日付)`を条件付きinsertし、実際に挿入できた人だけ以後へ進める（1人1日1回の保証。§6.1）。
+4. 種類の絞り込み（§4.4 案C）：期限超過＝`due_date < 今日`、今日期限＝`due_date = 今日`。本人の`notify_overdue`/`notify_due_today`がfalseの種類は集計・文面から除く。
 5. **最初の1件**：`due_date` の昇順 → `created_at` の昇順 → `id` の昇順（同じ入力で常に同じ1件になるよう、最後に主キーで決める）。
 6. 文面：`title`＝「タスクの期限」、`body`＝「期限超過2件・今日期限1件：◯◯の資料作成 ほか」（1件だけなら「ほか」を付けない。0件の種類は書かない。タスク名は40字で切る）、`url`＝`/?open=my-tasks`。
 7. 一覧取得はすべて `notify-deadlines` 末尾の Deno 版 `fetchAllRows` と同じ実装を使う（総件数到達または空ページで止める。「返ってきた件数 < ページサイズ」で止めない）。
@@ -283,7 +343,8 @@ CREATE TABLE reminder_runs (
 - 購読ごとに送信。`201` は成功として `last_success_at` を更新、`410`/`404` は購読を削除して `subscriptions_removed` に数える、それ以外（`429`・`5xx`・例外）は失敗として `failure_count` を増やし、ステータス別件数を `error_summary` にまとめる。1件の失敗で全体を止めない。
 - TTL は12時間（翌朝まで溜まった古い通知が届かないようにする）。
 - アプリ内通知の INSERT はプッシュの成否と独立に行う。
-- **祝日**：初期実装は月〜金のみで、**祝日にも送る**。祝日を飛ばす場合は、フロントで使っている `japanese-holidays`（通信なし）を Deno から読む案が有力（§11）。
+- **祝日（決定：送らない。09-30 rev2）**：フロントの `src/lib/date/holidays.ts` が使っている `japanese-holidays`（依存ゼロ・通信なしをオフライン検証済み。CLAUDE.md v3.05）を、Edge Function（Deno）側でも使う。Edge Functionは各関数が独立したデプロイ単位で `src/` を直接importできないため、`notify-deadlines`が`@supabase/supabase-js`を`https://esm.sh/@supabase/supabase-js@2`で読み込んでいるのと同じ手法（esm.sh経由のnpmパッケージimport）で `https://esm.sh/japanese-holidays@1` を読み込み、`isHoliday(d, true)`を呼ぶ薄いラッパーを`push-reminders`内に持つ（`src/lib/date/holidays.ts`とロジックを一致させ、コメントで対応関係を明記する）。**esm.sh経由でのDeno実行時の動作は今回未検証**（コードは依存ゼロと確認済みだが、実際にEdge Function上で動くかはdevデプロイ後に確認する。§7.4のライブラリ選定と同様、実装フェーズで検証すること）。
+- **起動回数の試算は§7.1参照**（Freeプラン上限の約0.11%）。
 - **dryRun**：`?dryRun=1` はDBへ何も書かず、プッシュも送らず、人ごとの `{ memberId, title, body, subscriptionCount }` を返す。
 
 ### 7.4 鍵の保管
@@ -351,14 +412,15 @@ CREATE TABLE push_subscriptions (
 | フェーズ | 内容 | 完了条件 |
 |---|---|---|
 | 0 | dev でライブラリ選定（§8.2） | 判定基準を満たすライブラリが決まる |
-| 1 | dev にマイグレ（4表・RPC2本・RLS）→ `schema.sql`・`schemaChecks.ts` 同期（Section 22）→ Edge Function → フロント | dev で Chrome・Edge とも §10 の検証が通る。dev は cron 未稼働のため手動起動で確認する |
-| 2 | prod に同じ順で適用。pg_cron `push-reminders-weekday` を登録。**Teams 週次は止めない** | — |
-| 3 | 並行運用（5営業日） | 5営業日すべて `reminder_runs` が `success`、バナーが出ない、山本さんの Chrome・Edge に届く |
+| 1 | dev にマイグレ（6表：`push_subscriptions`・`notification_prefs`・`in_app_notifications`・`reminder_runs`・`reminder_send_log`・RPC2本・RLS）→ `schema.sql`・`schemaChecks.ts` 同期（Section 22）→ Edge Function（祝日判定・スロット解決・1人1日1回ガードを含む）→ フロント（送信時刻セレクタを含む） | dev で Chrome・Edge とも §10 の検証が通る。dev は cron 未稼働のため手動起動で確認する |
+| 2 | prod に同じ順で適用。pg_cron `push-reminders-am`／`push-reminders-pm`（平日26回/日。§7.1）を登録。**Teams 週次は止めない** | — |
+| 3 | 並行運用（5営業日） | 5営業日すべて `reminder_runs` が `success`、バナーが出ない、山本さんの Chrome・Edge に、選んだ時刻どおりに1日1回だけ届く |
 | 4 | `cron.unschedule('notify-deadlines-weekly-monday')` | — |
 | 5 | 方式B（`useDeadlineNotifications`）とリマインダーカードの `<select>` を削除。`useMentionNotifications` のゲートを付け替え | — |
-| 6 | 1か月後：`notify-deadlines` 関数・`group_notification_settings` 表と管理画面の Webhook 欄・PA テンプレート配布（`admin-templates` バケット）・`TEAMS_WEBHOOK_URL` を削除するか判断（§11）。PA フローはフロー所有者が削除する | — |
+| 5.5 | `backup-daily` の失敗通知・週次サマリを super_admin へのアプリ内通知＋Web Pushに切り替える（§6.2）。Web Push送信処理を`supabase/functions/_shared/webPush.ts`へ切り出し、`push-reminders`・`backup-daily`両方から呼ぶ | `backup_runs` が `failed`/`partial` になった実行で、super_admin にアプリ内通知（オンならWindows通知も）が届く |
+| 6 | **1か月後（決定：新方式の稼働確認後に削除する。09-30 rev2）**：`notify-deadlines` 関数・`group_notification_settings` 表と管理画面の Webhook 欄・PA テンプレート配布（`admin-templates` バケット）・`TEAMS_WEBHOOK_URL`（`backup-daily`側の参照を含む）を削除する。PA フローはフロー所有者が削除する | — |
 
-**ロールバック**：フェーズ3までは `cron.unschedule('push-reminders-weekday')` だけで元に戻る（Teams 週次は無改修で動いている）。フェーズ4以降は、`notify-deadlines` のジョブを `20260702b_reschedule_notify_deadlines_weekly.sql` の本文で登録し直す。ただし PA フローが死んでいる限り Teams 側へ戻しても届かないため、実質的なロールバック先は「Web Push を直す」になる。
+**ロールバック**：フェーズ3までは `cron.unschedule('push-reminders-am')`／`cron.unschedule('push-reminders-pm')` だけで元に戻る（Teams 週次は無改修で動いている）。フェーズ4以降は、`notify-deadlines` のジョブを `20260702b_reschedule_notify_deadlines_weekly.sql` の本文で登録し直す。ただし PA フローが死んでいる限り Teams 側へ戻しても届かないため、実質的なロールバック先は「Web Push を直す」になる。
 
 ---
 
@@ -376,21 +438,32 @@ Chrome と Edge のそれぞれで、次を確認する。確認は山本さん�
 | 6 | Windows通知オフ・アプリ内通知オン | プッシュは来ず、ベルに1件増える |
 | 7 | 対象タスクが0件 | 何も届かず、`reminder_runs` の `target_members` に数えられない |
 | 8 | 別の人が同じブラウザでログインしてオンにする | 購読の持ち主が後の人に移り、前の人には届かなくなる |
-| 9 | 匿名（ゲスト）JWT で4表を REST から読む | 本文が空配列（Section 58 の手順4） |
+| 9 | 匿名（ゲスト）JWT で6表を REST から読む | 本文が空配列（Section 58 の手順4） |
 | 10 | cron を止めた翌朝 | 管理画面に赤バナーが出る |
+| 11 | 送信時刻を12:00に変更し、8:30の回では届かず12:00の回で届く | `reminder_send_log`に今日の行が1つだけ作られる |
+| 12 | 祝日に起動する | 通知が届かず、`reminder_runs`に「祝日のためスキップ」の行が残る |
+| 13 | `backup_runs` を意図的に`failed`にする（手動実行の失敗を模擬） | super_admin 全員にアプリ内通知が届き、Windows通知オンの人には画面右下にも出る |
 
 機械的な検証は、判定の純粋関数（対象抽出・最初の1件・文面・バナー判定・ディープリンク解析）を vitest で押さえる。`reminder_runs` のバナー判定は、修正前（バナー無し）で落ちるテストから書く。
 
 ---
 
-## 11. 未決事項（山本さんに判断を仰ぐもの）
+## 11. 決定事項（2026-09-30 rev2）
 
-1. **既定値**：アプリ内通知＝オン、Windows通知＝オフでよいか（Windows通知はブラウザの許可が要るため、本人に有効化してもらう想定）。
-2. **個人で変えられる範囲**：§4.4 の案B（チャネル＋種類）でよいか。送信時刻の個人選択（案C）は見送ってよいか。
-3. **祝日**：月〜金なら祝日にも送る、でよいか。祝日を飛ばすなら `japanese-holidays` を Edge Function でも使う。
-4. **対象範囲**：本人が担当するタスクを全部署分まとめて数える、でよいか（方式Bは表示中の部署だけだった）。
-5. **メンション通知**：Windows通知をオンにした人にだけ、タブ表示中のメンション通知を残す、でよいか。
-6. **設定UIの場所**：新規の通知設定モーダルを、リマインダーカードとベルの2か所から開く、でよいか。
-7. **Teams 関連の後始末（フェーズ6）**：`notify-deadlines`・`group_notification_settings`・Webhook 欄・PA テンプレート配布を削除するか、将来の再利用に残すか。
-8. **バックアップ通知**：`backup-daily` の失敗通知・週次サマリも同じ死んだ PA 経路に送っている。super-admin へのアプリ内通知に切り替えるか、別途扱うか（本書の範囲外）。
-9. **利用者への案内**：「ブラウザを完全に終了していると届かない」「PCごと・ブラウザごとに設定が要る」をガイド（docs/guides）に書く担当とタイミング。
+rev1（本書初版）の未決事項9件について、同日中に山本さんの判断を得て以下のとおり確定した。以後この文書はこの決定に基づいて書かれている（§0・§4〜§9に反映済み）。
+
+1. **既定値**：アプリ内通知＝オン、Windows通知＝オフ。
+2. **個人で変えられる範囲**：チャネル＋種類（期限超過／今日期限）＋**送信時刻**（案C。当初推奨していた案Bから変更）。30分刻み・7:00〜19:00（JST）・既定8:30（§4.4）。
+3. **祝日**：送らない。フロントが使っている `japanese-holidays` を Edge Function（Deno）側でも esm.sh 経由で読み込んで判定する（§7.3）。
+4. **対象範囲**：本人が担当するタスクを全部署分まとめて数える（既存案のまま）。
+5. **メンション通知**：Windows通知をオンにした人にだけ、タブ表示中のメンション通知を残す（既存案のまま）。
+6. **設定UIの場所**：新規の通知設定モーダルを、リマインダーカードとベルの2か所から開く（既存案のまま）。
+7. **Teams 関連の後始末（フェーズ6）**：`notify-deadlines`・`group_notification_settings`・Webhook 欄・PA テンプレート配布は、新方式の稼働確認後に**削除する**（§9）。
+8. **バックアップ通知**：`backup-daily` の失敗通知・週次サマリは super_admin へのアプリ内通知（Windows通知をオンにしていればそちらも）に切り替える。**本書の範囲に含める**（§6.2・§9フェーズ5.5）。
+9. **利用者への案内**：公開時に作る。「ブラウザを完全に終了していると届かない」「PC・ブラウザごとに設定が要る」を必ず書く。
+
+### 新たに生じた未決事項（次回判断）
+
+- 送信時刻の実装で新設した `japanese-holidays` の esm.sh 経由importが、実際にDeno上で（依存ゼロという事前確認どおり）問題なく動くかは未検証（§7.3）。dev検証（フェーズ0〜1）で確認する。
+- super_admin が0人・またはsuper_admin全員がWindows通知をオフにしている部署運用での、バックアップ失敗通知の代替手段（メール等）は今回検討していない。アプリ内通知には届くため実害は小さいと見て一旦保留にした。
+- 利用者向けガイドの執筆担当・具体的な公開時期は、実装フェーズが進んだ時点で改めて決める。
