@@ -26,7 +26,7 @@
 | ユニット | 最終点検日 | 最終リファクタ日 | 規模感（主要ファイル行数目安） | 既知の課題（既存の中優先度/低優先度/高リスク表と相互参照） | 備考 |
 |---|---|---|---|---|---|
 | App Shell | 2026-09-30 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約3,218行（App.tsx 576＋main.tsx 18＋MainLayout.tsx 2,624。37回目に実測。09-18のv3.114拡大表示対応・09-28のv3.115追加圧縮で大幅増） | 既存表になし | 37回目（2026-09-30・16回目以降の全差分＝07-22〜09-30の53コミットを点検。詳細は下記「37回目の巡回」節参照）。実害のある修正は無し |
-| 認証・入口 | 2026-07-21 | 2026-07-22（M25対応：`is_system_bootstrapped()`/`bootstrap_first_group_and_member()`新設。`AccessDeniedScreen.tsx`新設・`SetupWizard.tsx`に部署名入力＋ブートストラップ経路を追加）／2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約1,020行（LoginScreen/SetupWizard/UserSelectScreen/guestMode/AccessDeniedScreen計） | ~~M25~~（**完了（2026-07-22 / CLAUDE.md v2.84）**。詳細は下記「低優先度」表参照）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま。departments-and-members.md新設で一部是正済み・first-day.md等は未対応） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果発見したM25は2026-07-22に別セッションで対応済み |
+| 認証・入口 | 2026-09-30 | 2026-07-22（M25対応：`is_system_bootstrapped()`/`bootstrap_first_group_and_member()`新設。`AccessDeniedScreen.tsx`新設・`SetupWizard.tsx`に部署名入力＋ブートストラップ経路を追加）／2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約1,657行（LoginScreen/SetupWizard/UserSelectScreen/guestMode/AccessDeniedScreen計。38回目に実測。旧「約1,020行」はv3.42〜v3.63の招待コード導線・バージョン履歴追加等で増加した分の未反映値だったため訂正） | M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断・38回目再確認：現状維持）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま・38回目再確認：現状維持）／M43（新規・招待受諾関連ファイルがmodule-map.mdに未登録。下記「低優先度」表参照） | 38回目（2026-09-30・前回点検日07-21以降の差分＝9コミットを点検。匿名サインイン有効化〈v3.112〉後もゲスト経路〈guestActive〉は`AppDataProvider`/`AuthenticatedApp`より前段で分岐しSupabase接続0件のまま・招待受諾関数はauth.email()完全一致検証のため匿名では成立しないことを確認。実害のある修正は無し。詳細は下記「38回目の巡回」節参照 |
 | A 計画ビュー | 2026-07-24 | 2026-07-24（本日v3.01〜v3.10で大量追加されたガント系クラスタ＝`GanttView.tsx`/`GanttParts.tsx`/`ganttUtils.ts`の品質リファクタ。3ビュー（PJ別/ToDo別/人別）で繰り返されていたバー行描画の重複3件を純粋関数に集約：①`isDone`判定の重複インライン式→`isCompletedForProgress`（taskMeta.ts）経由に統一②`hasRange`/`dateLabel`計算の完全同一実装→`formatBarDateLabel`として抽出③ツールチップ末尾（滞留/クリティカルパスバッジ）の同一実装→`formatBarTooltipSuffix`として抽出④バー基本色（完了=成功色／期限超過=危険色／それ以外=ビュー固有fallback）の同一優先順位判定→`resolveGanttBarColor`として抽出。挙動不変（新規ユニットテスト10件追加のみ・既存テスト全通過）。死蔵コード（v3.01→v3.04で撤去されたラベル列日付インライン編集の残置props等）は無く健全と確認。詳細は下記「ガント系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-22（31回目：⑦リスト＋リストlib（`ListView.tsx`+`groupSummary.ts`+`selectionRange.ts`・約1,613行）を点検しA計画ビュー全9サブ領域が点検完了。`ListView.tsx`のドラッグ操作系3箇所（親子変更・並べ替え・親の解除の各catchブロック）がSection15禁止パターン（`err.message`のみ表示）のままだったのを`formatErrorForUser`経由に修正＝`eccc159`。`groupSummary.ts`（グループ見出しの完了率集計）にM33と同型の課題（`doneCount`はstatus==="done"限定・`total`にはon_hold/cancelledも含む）を確認し対象ファイルとしてM33へ追記。他の観点（STATUS_ORDER・sortの完了/中止沈め・状態フィルタ選択肢・isOverdue判定・PC/モバイルの表示ロジック）は5値とも網羅済みで健全と確認）／2026-07-07〜2026-07-22の23〜30回目（8セッション）でサブ領域①②③④⑤⑥⑧⑨を分割点検し、v2.74/v2.75追従漏れの実バグを多数発見・修正（`WorkloadView.tsx`・`GanttView.tsx`・`ganttUtils.ts`・`TaskSidePanel.tsx`・`ProjectKarte.tsx`・`DashboardView.tsx`等）。詳細は下記「31回目の巡回」節および各回の節を参照 | **約13,173行**（23回目に実測。内訳は下記「30回目の巡回」節参照。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断）／~~M33~~（`GanttView.tsx`のPJ別/ToDo別グループ進捗%・`DashboardView.tsx`の`pjProgress`/`krProgress`/`tfTaskStats`/`todoProgress`・`groupSummary.ts`＝ListView/Kanban共有。**2026-07-22に解消済み**：山本さんの方針確定を受け共有ヘルパー`isCompletedForProgress`（`src/lib/taskMeta.ts`）で4箇所を統一。詳細はCLAUDE.md v2.76）／M34は25回目で解消済み（`ganttUtils.ts`の`computeBulkMoveShifts`のcancelled除外漏れ。`b587fd0`）／M35（`TaskSidePanel.tsx`に@メンション機能が無い。26回目発見・要設計判断）／M36（`TaskSidePanel.tsx`にタグ編集UIが無い。26回目発見・要設計判断） | **A計画ビューユニット全体（約13,173行）を23〜31回目の巡回（9セッション）で点検完了。** サブ領域①Dashboard核（30回目）②Dashboard PJ系（29回目）③GanttView.tsx単体（24回目）④Gantt周辺（25回目）⑤タスク編集系（26回目）⑥タスク追加+カンバン（27回目）⑦リスト+リストlib（31回目）⑧マイルストーン+ワークロード（23回目）⑨依存関係+ベースライン+小物（28回目）の全9つに分割し、v2.74（保留/中止ステータス追加）・v2.75（親タスク自動完了）への追従状況を軸に点検。cancelled/on_hold追従漏れの実バグをのべ10件前後発見・修正（`unassignedCount`・ガント一括シフト対象・依存矢印判定・`computeBulkMoveShifts`・`ProjectKarte`の進捗チップ/負荷集計・`DashboardView`の`mentionedTasks`等）。TaskSidePanelの編集直後クローズでのデータロスバグ（26回目）・依存の重複循環判定の亡霊バグ（28回目）等、ステータス追従とは別の実データ不整合バグも複数発見。これで他の全12ユニット（D OKRは作り直し方針のため除外扱い）と合わせ13ユニット全体の初回巡回が一巡した |
 | B AI相談 | 2026-07-24（本日v3.07変更分のみ対象の指名セッション。20回目巡回時点の他ファイルは2026-07-21のまま） | 2026-07-24（本日v3.07で新設・変更されたAI相談系クラスタ＝`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`の品質リファクタ。指名セッション・通常の巡回ローテーション対象外。`useAIConsultation.ts`のAI使用量ログ記録処理〈通常時／リトライ時で計2箇所ほぼ同一実装〉を`logUsage`ヘルパーに集約し重複解消。新設`consultationRunner.ts`の循環import回避目的の分離は妥当と確認・`retryContext`/`stopReason`まわりに未使用の引数・死蔵分岐は無く健全。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検。本日追加分＝`consultationRunner.ts`約75行はこの実測に含まれない） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照。**2026-07-24追記**：本日v3.07で追加された5ファイル（`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`）のみを対象にした品質リファクタを山本さんの指名で実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節）。20回目時点で点検済みの他ファイル（`ConsultationPanel.tsx`等）は今回対象外のまま |
 | C 会議読み込み | 2026-07-21 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正） | 約1,510行（実測。旧「約1,448行」は近似値だったため訂正） | 既存表になし | 14回目巡回で全体点検完了。meetingExtractor.ts・docxText.tsに専用ユニットテストが無い点は観察のみ（次回候補にはしない・設計判断を要する項目ではないため） |
@@ -47,6 +47,59 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の38回目の巡回：認証・入口（前回点検日07-21以降の差分のみ）
+
+前回点検日（12回目・2026-07-21）以降、`docs/dev/module-map.md`定義の対象パス
+（`components/auth/{LoginScreen,UserSelectScreen,SetupWizard,AccessDeniedScreen}.tsx` /
+`lib/guestMode.ts`）に対する変更コミットを`git log --since=2026-07-21`で洗い出したところ9件
+（v3.18〜v3.63）で、直近は12日前後だった。指示により、プロジェクト招待の受諾経路
+（`src/components/project/AcceptInviteModal.tsx` / `src/lib/projectInvite/*.ts`・v3.42〜v3.68）
+も差分に含めて点検した。9コミットは全て2026-07-21以降のため、変更ファイル全文を対象に読んだ。
+
+- **🔴 重点確認：v3.112（匿名サインイン有効化）後のゲスト経路の混入**：`App.tsx`を精読し、
+  `guestActive`分岐（ログイン画面「サンプルを見る」→`handleGuestEnter`）が`authenticated`判定・
+  `AppDataProvider`・`AuthenticatedApp`より前段に置かれており、ゲストが`AuthenticatedApp`
+  （SetupWizard/AccessDeniedScreen/UserSelectScreenの表示ロジックを持つ）に到達する経路が
+  無いことを確認した。AI利用時に遅延生成される匿名Auth セッション（`ensureGuestAiSession`）も
+  `App.tsx`の`getSession()`初期チェック・`onAuthStateChange`購読の両方で`is_anonymous`を
+  明示的に除外しており、`guestActive`の見た目に影響しない設計になっていた（コメントに
+  設計意図が明記済み・コード側も一致）。
+- **招待受諾関数への匿名アクセス**：`accept_project_invite()`は`v_auth_email :=
+  lower(trim(coalesce(auth.email(), '')))`で判定するため、匿名ユーザー（`auth.email()`が
+  NULL）は空文字列になり、招待時のメールアドレスと一致しない限り必ず拒否される。匿名
+  サインインが有効化されたことによる新しい抜け穴は確認できなかった。`is_system_bootstrapped()`
+  は`authenticated`に一律許可されているが匿名でも真偽値1個を返すのみ・
+  `bootstrap_first_group_and_member()`は「membersが0件のときのみ」ガードが誰であっても
+  効くため、匿名固有の追加リスクは無いと判断した（既存の安全装置がSection 58の設計時から
+  「未登録の認証ユーザー全般」を前提にしていたため）。
+- **①Section 15（formatErrorForUser）**：`SetupWizard.tsx`・`AccessDeniedScreen.tsx`・
+  `AcceptInviteModal.tsx`は全て経由済み。`UserSelectScreen.tsx`は非同期処理を持たずcatch自体が
+  無いため対象外。`LoginScreen.tsx`の固定文言はM26として既知（今回も現状維持を確認）。
+- **②取得・保存失敗の握りつぶし**：`AuthenticatedApp`のbootstrap判定・招待自動受諾・
+  ログイン済み招待URL受諾の3つのuseEffectはいずれも成功/失敗を状態に反映しトースト表示する
+  実装で、無言の握りつぶしは無し。
+- **③fetchAllRows迂回**：本ユニットに一覧取得（select）は無し（該当なし）。
+- **④v2.74ステータス5値**：本ユニットはタスクステータスを扱わないため対象外。
+- **⑤死蔵コード・未使用export**：`guestMode.ts`の全export・`UserSelectScreen.tsx`の
+  `Avatar`（11箇所から利用）を含め、いずれも呼び出し元が存在することを確認。死蔵なし。
+- **⑥i18n（ja/en片側欠落）**：対象ファイルで使用する`t("auth.*")`キー105件全てが
+  `src/i18n/auth.ja.ts`・`auth.en.ts`の両方に存在することをスクリプトで突合し確認（片側欠落0件）。
+  動的キー（テンプレートリテラル）の使用も無し。
+- **⑦UIの権限条件とDBのRLS条件の食い違い**：招待受諾（`accept_project_invite`）の4条件検証・
+  ドメイン許可リスト検証はコード上は変更なし。UI側で権限を偽装できる箇所は無し（既存の
+  Section 25設計どおり）。
+- **⑧module-map.md登録漏れ**：`AcceptInviteModal.tsx`・`lib/projectInvite/*`が未登録と判明
+  （M43として新規記録。詳細は下記表）。
+
+`npx tsc --noEmit`エラー0。関連テスト（`src/lib/projectInvite/__tests__/`8ファイル・
+`src/lib/supabase/__tests__/client.test.ts`・`src/__tests__/logout.test.ts`）計9ファイル・
+105件全通過。
+
+**修正・記録**：実害のある不具合は見つからなかった（ローカルcommitも無し）。M43（設計判断が
+要る記録のみ）を新規に追加した。M26・M27は今回も状態不変を確認した。
 
 ---
 
@@ -2140,6 +2193,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M38 | `notify-deadlines`の宛先振り分けで、①論理削除された部署（`groups.is_deleted=true`）に残ったタスクと、②部署はあるがWebhook未設定のタスクが、どちらも全社共通の`TEAMS_WEBHOOK_URL`へまとめて流れる（他部署のタスク名・担当者が全社チャンネルに出る）。③論理削除済みPJに属する未完了タスクは「（不明なPJ）」見出しで出続ける。④招待用部署（`is_invite_group=true`）のタスクの扱いが未定義（Webhook未設定なら全社共通へ流れる）。フォールバック自体は2026-07-03の後方互換の意図的な設計のため、どこまで絞るかは運用判断が要る | 低〜中 | 2026-09-28のI 通知32回目巡回で発見。コードは変更していない（全社共通フォールバックの挙動は今回変えない指示）。部署数が増える部署外展開の前に方針を決めたい |
 | M39 | `components/common/*`にハードコード色（`var(--color-*)`を経由しない色値）が多数残っている：`Toast.tsx`（STATE定義の`#16a34a`/`#dc2626`/`#3b82f6`・アクションボタンの`#fff`）／`SaveProgressLoader.tsx`（AI用の紫と区別する意図で導入した`#0ea5e9`/`#22c55e`。CLAUDE.md Section 62に設計意図の記載あり）／`EmptyState.tsx`（`#fff`）／`FileAttachButton.tsx`（`var(--color-bg-purple, #ede9fe)`等フォールバック値）／`CustomSelect.tsx`（チェックマークSVGの`#fff`）／`MentionTextarea.tsx`（`m.color_text \|\| "#fff"`）／`VersionHistoryModal.tsx`（`#fff`）／`ChunkDownloadGate.tsx`（`var(--color-accent-primary, #3b82f6)`）。CLAUDE.md本文「カラー: すべて var(--color-*) CSS変数で管理。ハードコード禁止」に反するが、共通UIユニットはこれまで専用のリファクタ点検が一度も入っていなかった（台帳の備考欄の記載どおり）ため今回初めて可視化された。全置換は既存の見た目（AI紫との対比等、意図的な配色差別化を含む）を変える設計判断が要るため次回候補へ | 低 | 2026-09-28の共通UI33回目巡回で発見。過去のAI相談ユニットのM30（`--color-accent`系フォールバック）と同型のパターンが共通UI全体に広く残っていることを確認 |
 | M40 | `ProjectStructureView.tsx`の`RoleInput`は`disabled` propを受け取れる設計（役割編集を封じる分岐一式を持つ）だが、唯一の呼び出し元`MemberCard`がこれを一度も渡していない（`saving`中でも常に`undefined`＝編集可能なまま）。役割編集をPJ保存中も許可し続ける意図的な設計なのか、`disabled={saving}`を渡し忘れた実装漏れなのか不明 | 低 | 2026-09-29のH グラフ・ラボビュー34回目巡回で発見。`saving`を渡すと保存中に編集欄が閉じる挙動変化を伴うため、直さず記録のみ |
+| M43 | プロジェクト招待の受諾UI（`src/components/project/AcceptInviteModal.tsx`）・受諾ロジック（`src/lib/projectInvite/*.ts`・7ファイル）が`docs/dev/module-map.md`のどのモジュール行にも登録されていない。認証・入口（`LoginScreen.tsx`の招待フォーム・`AccessDeniedScreen.tsx`の招待導線）とF管理・設定（`ProjectSettingsModal.tsx`の招待タブ・`AdminView.tsx`の招待一覧）の両方から使われる横断機能のため、既存のどちらか一方のモジュール行に足すか新規行を起こすかは設計判断が要る | 低 | 2026-09-30の認証・入口38回目巡回で発見。CLAUDE.md Section 25には設計の正本が別途あるため実害は無い（コードを探す際にmodule-map.mdだけを見ると迷子になる程度）。次回候補へ |
 | ~~M41~~ | ~~`store.ts`の`fetchCriticalData`（初期ロードPhase 1・8クエリを`Promise.all`で並列取得）で、エラーとして中断・例外送出するのは`firstError = [members, projects, tasks].find(r => r.error)`の3件のみ。残る5件（`task_projects`/`milestones`/`member_tags`/`member_tag_members`/`task_dependencies`）はエラーが返っても無視され、`(x.data ?? [])`で黙って空配列として扱われる（v3.116のfetchAllRows化以前からの既存パターンで、今回変えていない）。特に`task_dependencies`はB1依存ゲート（先行タスク未完了ならブロック）の判定材料のため、取得失敗時に依存関係が「無い」ものとして扱われるとゲートが無言で無効化される。3件だけを致命的扱いとする設計が意図的か、8件すべてを見るべきかは設計判断が要る~~ | — | **完了（2026-09-30 / v3.122・案A・山本さん決定）** 8表を「構造表」（members/projects/tasks/task_projects/task_dependencies）と「周辺表」（milestones/member_tags/member_tag_members）に分離。構造表は1件でも失敗したら`throw`（`formatErrorForUser`の流儀でどの表か分かる文言。CLAUDE.md Section 15）し、既存の全画面エラー表示経路（App.tsxの`error`バナー）にそのまま乗る。周辺表は失敗しても空配列で起動継続し、`fetchCriticalData`の戻り値`partialFailures`→`appStore.partialLoadWarning`→App.tsxの警告バナー（既存のerrorバナーと同じ構造を再利用・warning配色）で「一部のデータ（◯◯）を読み込めませんでした」と知らせる。`console.error`にも表名・エラーコードを記録。回帰テストは`storeRowLimit.test.ts`（task_dependencies/task_projectsの失敗→throw、member_tagsの失敗→部分失敗リストに入り他表は正常取得）。Phase 2（`fetchOkrData`）は同型点検の結果M42として別記録 |
 | ~~M42~~ | ~~`store.ts`の`fetchOkrData`（初期ロードPhase 2・6テーブル）は、M41是正前の`fetchCriticalData`よりさらに徹底しており、**6表すべてでエラーチェックが一切無い**（`firstError`相当の判定自体が存在しない）。各表は`(x.data ?? [])`で無条件に空配列へフォールバックし、`appStore.ts`側の呼び出しも`try { ... } catch { set({ backgroundLoading:false }) }`と外側を握るだけで、個々の表の取得失敗を検知する手段が無い。objectives/key_results/task_forces/todos/project_task_forces/task_task_forcesのいずれか1つでもエラーになった場合、利用者には一切気づかれないまま該当データが空で表示され続ける~~ | — | **完了（2026-09-30 / v3.123・統括決定）** M41是正と同じ設計を適用したが、**Phase 2は起動後のバックグラウンド読み込みのため throw しない**（Phase 1の構造表と違い、UIは既に表示済みで起動を止める意味が無い）。6表すべてを周辺表と同じ扱いにし、失敗しても空配列で継続・`fetchOkrData`の戻り値`partialFailures`をPhase 1の`appStore.partialLoadWarning`に**追記**（上書きしない）してApp.tsxの既存の警告バナーへ乗せる。`console.error`にも表名・エラーコードを記録。保存時にDBの紐づけを消す経路が無いかを確認し、project_task_forces/task_task_forcesはいずれも単一行insert/deleteのみで全削除→再同期型の経路が無いことを確認済み（ガード不要）。回帰テストは`storeRowLimit.test.ts`（`fetchOkrData`単独/複数失敗・全表正常）と新規`loadPartialWarnings.test.ts`（Phase 1・2の警告合成） |
 
