@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<title>push-proto: Web Push ライブラリ選定 dev試作</title>
+<style>
+  body { font-family: sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; line-height: 1.6; }
+  h1 { font-size: 1.2rem; }
+  section { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+  button { padding: 0.5rem 1rem; margin-right: 0.5rem; margin-bottom: 0.5rem; cursor: pointer; }
+  input[type="text"], input[type="password"] { width: 100%; padding: 0.4rem; box-sizing: border-box; }
+  pre { background: #f4f4f4; padding: 0.75rem; border-radius: 6px; white-space: pre-wrap; word-break: break-all; max-height: 240px; overflow: auto; }
+  .status { font-weight: bold; }
+  .ok { color: #16794f; }
+  .ng { color: #c0392b; }
+  label { display: block; margin-bottom: 0.25rem; font-size: 0.85rem; color: #555; }
+</style>
+</head>
+<body>
+<h1>push-proto：Web Push ライブラリ選定（dev 最小試作）</h1>
+<p>docs/dev/web-push-reminder-design.md §8.2 の検証用ページ。<b>proto/web-push ブランチ専用</b>。本番には無関係。</p>
+
+<section>
+  <h2>1. 簡易シークレット</h2>
+  <label>x-proto-secret（統括から案内されたファイルの中身を貼り付け）</label>
+  <input type="password" id="secret" placeholder="PUSH_PROTO_SECRET の値" />
+</section>
+
+<section>
+  <h2>2. 通知の許可 → 購読</h2>
+  <p>ステータス: <span id="permStatus" class="status">未確認</span></p>
+  <button id="btnSubscribe">通知を許可して購読する</button>
+  <button id="btnUnsubscribe">購読を解除する</button>
+  <pre id="subLog">(まだ購読していません)</pre>
+</section>
+
+<section>
+  <h2>3. テスト送信</h2>
+  <button id="btnWebpush">web-pushで送る（npm:web-push）</button>
+  <button id="btnNegrel">negrelで送る（jsr:@negrel/webpush）</button>
+  <button id="btnHolidays">祝日判定だけ確認（?holidays=1）</button>
+  <pre id="sendLog">(まだ送信していません)</pre>
+</section>
+
+<script>
+// ローカル開発サーバー（npm run dev・localhost:5173想定）から、dev Edge Functionを直接叩く。
+const FUNCTION_URL = "https://emzsufmovkulrncridrx.supabase.co/functions/v1/push-proto";
+// ブラウザのpushManager.subscribeに渡す公開鍵（公開情報のため埋め込んでよい。設計書8.2・指示どおり）。
+const VAPID_PUBLIC_KEY = "BPg-caKWNqHrg7DT3T9wOWYm2MKbc34EmIGO7CrsUuF9ck2EifmVJrSbM4KfSspR-1Usl6rcDC5gQGn9aC5OAAk";
+
+function urlBase64ToUint8Array(base64String) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = atob(base64);
+  return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+}
+
+const $ = (id) => document.getElementById(id);
+
+function log(el, obj) {
+  $(el).textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+}
+
+let currentSubscription = null;
+
+async function registerSw() {
+  if (!("serviceWorker" in navigator)) throw new Error("このブラウザは Service Worker 非対応です");
+  const reg = await navigator.serviceWorker.register("/push-proto-sw.js");
+  await navigator.serviceWorker.ready;
+  return reg;
+}
+
+async function refreshStatus() {
+  const perm = "Notification" in window ? Notification.permission : "unsupported";
+  $("permStatus").textContent = perm;
+  $("permStatus").className = "status " + (perm === "granted" ? "ok" : perm === "denied" ? "ng" : "");
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/push-proto-sw.js");
+    if (reg) {
+      currentSubscription = await reg.pushManager.getSubscription();
+    }
+  } catch {
+    currentSubscription = null;
+  }
+  log("subLog", currentSubscription ? currentSubscription.toJSON() : "(まだ購読していません)");
+}
+
+$("btnSubscribe").addEventListener("click", async () => {
+  try {
+    const perm = await Notification.requestPermission();
+    $("permStatus").textContent = perm;
+    if (perm !== "granted") {
+      log("subLog", "通知が許可されませんでした: " + perm);
+      return;
+    }
+    const reg = await registerSw();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+      });
+    }
+    currentSubscription = sub;
+    log("subLog", sub.toJSON());
+  } catch (e) {
+    log("subLog", "エラー: " + (e && e.message ? e.message : String(e)));
+  }
+});
+
+$("btnUnsubscribe").addEventListener("click", async () => {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration("/push-proto-sw.js");
+    const sub = reg && (await reg.pushManager.getSubscription());
+    if (sub) {
+      await sub.unsubscribe();
+      currentSubscription = null;
+      log("subLog", "購読を解除しました");
+    } else {
+      log("subLog", "購読がありません");
+    }
+  } catch (e) {
+    log("subLog", "エラー: " + (e && e.message ? e.message : String(e)));
+  }
+});
+
+async function callPushProto(params, body) {
+  const secret = $("secret").value.trim();
+  if (!secret) {
+    log("sendLog", "x-proto-secret を入力してください（1. のファイルを開いて値を貼り付け）");
+    return;
+  }
+  const url = FUNCTION_URL + (params ? "?" + params : "");
+  const opts = {
+    method: body ? "POST" : "GET",
+    headers: { "x-proto-secret": secret, "Content-Type": "application/json" },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  try {
+    const res = await fetch(url, opts);
+    const text = await res.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = text;
+    }
+    log("sendLog", { httpStatus: res.status, response: parsed });
+  } catch (e) {
+    log("sendLog", "fetch失敗: " + (e && e.message ? e.message : String(e)));
+  }
+}
+
+$("btnWebpush").addEventListener("click", async () => {
+  if (!currentSubscription) {
+    log("sendLog", "先に購読してください（2.）");
+    return;
+  }
+  await callPushProto("lib=webpush", currentSubscription.toJSON());
+});
+
+$("btnNegrel").addEventListener("click", async () => {
+  if (!currentSubscription) {
+    log("sendLog", "先に購読してください（2.）");
+    return;
+  }
+  await callPushProto("lib=negrel", currentSubscription.toJSON());
+});
+
+$("btnHolidays").addEventListener("click", async () => {
+  await callPushProto("holidays=1", null);
+});
+
+refreshStatus();
+</script>
+</body>
+</html>
