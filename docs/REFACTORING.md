@@ -25,7 +25,7 @@
 
 | ユニット | 最終点検日 | 最終リファクタ日 | 規模感（主要ファイル行数目安） | 既知の課題（既存の中優先度/低優先度/高リスク表と相互参照） | 備考 |
 |---|---|---|---|---|---|
-| App Shell | 2026-07-21 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約2,290行（App/main/MainLayout。実測一致） | 既存表になし | 16回目巡回で全体点検完了。詳細は下記「16回目の巡回」節参照 |
+| App Shell | 2026-09-30 | 2026-07-21（16回目：viewMode==="admin"の死蔵描画分岐を削除＋サイドバー開閉状態のlocalStorageキーをKEYS定数経由に統一） | 約3,218行（App.tsx 576＋main.tsx 18＋MainLayout.tsx 2,624。37回目に実測。09-18のv3.114拡大表示対応・09-28のv3.115追加圧縮で大幅増） | 既存表になし | 37回目（2026-09-30・16回目以降の全差分＝07-22〜09-30の53コミットを点検。詳細は下記「37回目の巡回」節参照）。実害のある修正は無し |
 | 認証・入口 | 2026-07-21 | 2026-07-22（M25対応：`is_system_bootstrapped()`/`bootstrap_first_group_and_member()`新設。`AccessDeniedScreen.tsx`新設・`SetupWizard.tsx`に部署名入力＋ブートストラップ経路を追加）／2026-07-21（12回目：SetupWizardのエラー握りつぶし修正＋Supabase移行前の死んだ「デモ版」バナー修正） | 約1,020行（LoginScreen/SetupWizard/UserSelectScreen/guestMode/AccessDeniedScreen計） | ~~M25~~（**完了（2026-07-22 / CLAUDE.md v2.84）**。詳細は下記「低優先度」表参照）／M26（LoginScreenの汎用エラーメッセージ・セキュリティとのトレードオフにつき要判断）／M27（docs/guides内の認証関連ヘルプがSupabase Auth導入前の記述のまま。departments-and-members.md新設で一部是正済み・first-day.md等は未対応） | 12回目巡回で全体点検完了。マルチテナンシー・is_admin/is_super_admin導入後の整合性を精査した結果発見したM25は2026-07-22に別セッションで対応済み |
 | A 計画ビュー | 2026-07-24 | 2026-07-24（本日v3.01〜v3.10で大量追加されたガント系クラスタ＝`GanttView.tsx`/`GanttParts.tsx`/`ganttUtils.ts`の品質リファクタ。3ビュー（PJ別/ToDo別/人別）で繰り返されていたバー行描画の重複3件を純粋関数に集約：①`isDone`判定の重複インライン式→`isCompletedForProgress`（taskMeta.ts）経由に統一②`hasRange`/`dateLabel`計算の完全同一実装→`formatBarDateLabel`として抽出③ツールチップ末尾（滞留/クリティカルパスバッジ）の同一実装→`formatBarTooltipSuffix`として抽出④バー基本色（完了=成功色／期限超過=危険色／それ以外=ビュー固有fallback）の同一優先順位判定→`resolveGanttBarColor`として抽出。挙動不変（新規ユニットテスト10件追加のみ・既存テスト全通過）。死蔵コード（v3.01→v3.04で撤去されたラベル列日付インライン編集の残置props等）は無く健全と確認。詳細は下記「ガント系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-22（31回目：⑦リスト＋リストlib（`ListView.tsx`+`groupSummary.ts`+`selectionRange.ts`・約1,613行）を点検しA計画ビュー全9サブ領域が点検完了。`ListView.tsx`のドラッグ操作系3箇所（親子変更・並べ替え・親の解除の各catchブロック）がSection15禁止パターン（`err.message`のみ表示）のままだったのを`formatErrorForUser`経由に修正＝`eccc159`。`groupSummary.ts`（グループ見出しの完了率集計）にM33と同型の課題（`doneCount`はstatus==="done"限定・`total`にはon_hold/cancelledも含む）を確認し対象ファイルとしてM33へ追記。他の観点（STATUS_ORDER・sortの完了/中止沈め・状態フィルタ選択肢・isOverdue判定・PC/モバイルの表示ロジック）は5値とも網羅済みで健全と確認）／2026-07-07〜2026-07-22の23〜30回目（8セッション）でサブ領域①②③④⑤⑥⑧⑨を分割点検し、v2.74/v2.75追従漏れの実バグを多数発見・修正（`WorkloadView.tsx`・`GanttView.tsx`・`ganttUtils.ts`・`TaskSidePanel.tsx`・`ProjectKarte.tsx`・`DashboardView.tsx`等）。詳細は下記「31回目の巡回」節および各回の節を参照 | **約13,173行**（23回目に実測。内訳は下記「30回目の巡回」節参照。全ユニット中最大） | M9 TaskCard共通化（高難度・未着手）／M12 スタイル定数共通化（要設計判断）／~~M33~~（`GanttView.tsx`のPJ別/ToDo別グループ進捗%・`DashboardView.tsx`の`pjProgress`/`krProgress`/`tfTaskStats`/`todoProgress`・`groupSummary.ts`＝ListView/Kanban共有。**2026-07-22に解消済み**：山本さんの方針確定を受け共有ヘルパー`isCompletedForProgress`（`src/lib/taskMeta.ts`）で4箇所を統一。詳細はCLAUDE.md v2.76）／M34は25回目で解消済み（`ganttUtils.ts`の`computeBulkMoveShifts`のcancelled除外漏れ。`b587fd0`）／M35（`TaskSidePanel.tsx`に@メンション機能が無い。26回目発見・要設計判断）／M36（`TaskSidePanel.tsx`にタグ編集UIが無い。26回目発見・要設計判断） | **A計画ビューユニット全体（約13,173行）を23〜31回目の巡回（9セッション）で点検完了。** サブ領域①Dashboard核（30回目）②Dashboard PJ系（29回目）③GanttView.tsx単体（24回目）④Gantt周辺（25回目）⑤タスク編集系（26回目）⑥タスク追加+カンバン（27回目）⑦リスト+リストlib（31回目）⑧マイルストーン+ワークロード（23回目）⑨依存関係+ベースライン+小物（28回目）の全9つに分割し、v2.74（保留/中止ステータス追加）・v2.75（親タスク自動完了）への追従状況を軸に点検。cancelled/on_hold追従漏れの実バグをのべ10件前後発見・修正（`unassignedCount`・ガント一括シフト対象・依存矢印判定・`computeBulkMoveShifts`・`ProjectKarte`の進捗チップ/負荷集計・`DashboardView`の`mentionedTasks`等）。TaskSidePanelの編集直後クローズでのデータロスバグ（26回目）・依存の重複循環判定の亡霊バグ（28回目）等、ステータス追従とは別の実データ不整合バグも複数発見。これで他の全12ユニット（D OKRは作り直し方針のため除外扱い）と合わせ13ユニット全体の初回巡回が一巡した |
 | B AI相談 | 2026-07-24（本日v3.07変更分のみ対象の指名セッション。20回目巡回時点の他ファイルは2026-07-21のまま） | 2026-07-24（本日v3.07で新設・変更されたAI相談系クラスタ＝`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`の品質リファクタ。指名セッション・通常の巡回ローテーション対象外。`useAIConsultation.ts`のAI使用量ログ記録処理〈通常時／リトライ時で計2箇所ほぼ同一実装〉を`logUsage`ヘルパーに集約し重複解消。新設`consultationRunner.ts`の循環import回避目的の分離は妥当と確認・`retryContext`/`stopReason`まわりに未使用の引数・死蔵分岐は無く健全。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検。本日追加分＝`consultationRunner.ts`約75行はこの実測に含まれない） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照。**2026-07-24追記**：本日v3.07で追加された5ファイル（`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`）のみを対象にした品質リファクタを山本さんの指名で実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節）。20回目時点で点検済みの他ファイル（`ConsultationPanel.tsx`等）は今回対象外のまま |
@@ -47,6 +47,43 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の37回目の巡回：App Shell（前回点検日07-21以降の差分のみ）
+
+前回点検日（16回目・2026-07-21）以降、`src/App.tsx`／`src/main.tsx`／
+`src/components/layout/MainLayout.tsx`を対象に53コミット（07-22〜09-30）が積み上がっていたため、
+個別コミットの再生ではなく**現在のファイル全文**を対象フィールドの観点で読んだ（App.tsx 576行・
+main.tsx 18行・MainLayout.tsx 2,624行。前回実測時から約930行増）。特に山本さんが明示した
+v3.114（09-18・拡大表示対応でツールバー1段化・サイドバー圧縮）・v3.115（09-28・サイドバー最下部
+1段化＋pointer capture化）・v3.122（M41是正の警告バナー）の3点は個別diffも確認した。
+
+- **Section 15（エラー表示）**：`App.tsx`・`MainLayout.tsx`とも`formatErrorForUser`経由に統一済み。
+  `.message`単独表示は0件。
+- **M41是正（v3.122・partialLoadWarning）**：App.tsxの警告バナー実装を確認。既存の`error`バナーと
+  同じ構造をwarning配色で再利用しており、CLAUDE.md Section 61の記述と一致。
+- **fetchAllRows迂回**：App.tsx/MainLayout.tsxが直接呼ぶSupabase操作は`supabase.rpc("is_system_bootstrapped")`
+  （単一行RPC）のみで、一覧取得の迂回は無し。
+- **v2.74ステータス5値・isCompletedForProgress**：App Shellはタスクステータスを直接扱わないため対象外。
+- **死蔵コード・未使用export**：`Sidebar`の`keyResults`/`selectedKrId`/`onSelectKr`props・`KrIcon()`関数が
+  未使用（eslint警告3件）。ただし2026-04-20から存在し、`KrIcon()`はソースコメントで
+  「v3.54のOKRグループ側描画停止により未使用だが復帰時にそのまま使えるよう削除しない」と
+  明記された**意図的な保管**（`src/components/okr/ARCHIVED.md`の運用と同型）。今回の差分外・
+  意図的のため見送り。
+- **i18n（ja/en片側欠落）**：v3.114/v3.115追加分のコメント以外の新規UI文言はすべて`t(...)`経由。
+  ハードコード日本語の追加は無し（差分をコメント除外の上で走査し確認）。
+- **UIの権限条件とDBのRLS条件の食い違い**：`canEditProjectBasicInfo()`（サイドバーPJ行「⋮」）は
+  v3.109でDB側（部署スコープのみ）に合わせて全員許可へ緩和済み・現状維持で食い違い無し。
+- **module-map.md登録漏れ**：無し（対象3ファイルの構成はmodule-map.md記載のまま）。
+- **サイドバー幅ドラッグ（v3.66→v3.115 pointer capture化）**：`onPointerCancel`ハンドラ・
+  `touchAction:"none"`・ARIA属性（`role="separator"`/`aria-valuenow`等）・アンマウント時の
+  カーソル/選択状態クリーンアップ、いずれも実装済みで設計書の記述と一致。
+- `npx tsc --noEmit`エラー0。関連テスト（`src/lib/layout/`・`src/components/layout/`・
+  `src/__tests__/logout.test.ts`・`src/lib/schema/__tests__/checkSchemaHealth.test.ts`）
+  計8ファイル・95件全通過。
+
+**修正・記録とも無し**（実害のある不具合が見つからなかったため、ローカルcommitも無し）。
 
 ---
 
