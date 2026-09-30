@@ -31,7 +31,7 @@
 | B AI相談 | 2026-07-24（本日v3.07変更分のみ対象の指名セッション。20回目巡回時点の他ファイルは2026-07-21のまま） | 2026-07-24（本日v3.07で新設・変更されたAI相談系クラスタ＝`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`の品質リファクタ。指名セッション・通常の巡回ローテーション対象外。`useAIConsultation.ts`のAI使用量ログ記録処理〈通常時／リトライ時で計2箇所ほぼ同一実装〉を`logUsage`ヘルパーに集約し重複解消。新設`consultationRunner.ts`の循環import回避目的の分離は妥当と確認・`retryContext`/`stopReason`まわりに未使用の引数・死蔵分岐は無く健全。詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節参照）／2026-07-21（20回目：死んだ`loadingMessage`配線を削除＋会話履歴からのAI提案反映がUndoスタックに積まれない実バグを修正＋`FollowUpButtons.tsx`のlocalStorageキーをKEYS定数経由に統一） | **約5,855行**（16回目に実測。①②③の4セッションに分割して点検。本日追加分＝`consultationRunner.ts`約75行はこの実測に含まれない） | M29（`payloadBuilder.ts`の`retry_hint`／`retryHint`が初回コミットから一度もUIから呼ばれておらず、`ErrorView.tsx`の再試行ボタンも常にヒント無しで呼ぶ。ただし専用テストがありbuildPayload単体としては実装・テストとも健全なため、削除するか将来のUI配線を待つかは設計判断が要る。次回候補）。M30（`--color-accent`／`--color-accent-bg`が`globals.css`に一度も定義されておらず、`ConsultationPanel.tsx`・`ProposalCard.tsx`の計6箇所で`var(--color-accent, #3b82f6)`のフォールバック値が常に採用される＝実質ハードコード色。既存の`--color-text-info`系トークンと役割が近く、新規トークンとして正式定義するか既存infoトークンへ寄せるかは設計判断が要るため次回候補。19回目発見・20回目に`ConsultationPanel.tsx`側の2箇所も再確認済みで新規箇所なし） | **B AI相談ユニット全体（約5,855行）を17〜20回目の巡回（4セッション）で分割点検完了。** 17回目：①ペイロード構築〜レスポンス解釈系（`payloadBuilder`/`systemPrompt`/`responseParser`/`proposalMapper`/`inferConsultationType`/`sessionManager`・計約1,335行）。18回目：②反映・Undo・履歴系（`applyProposal`/`undoApply`/`chatHistoryStorage`/`useUndoStack`/`consultSessionStore`・実測約1,280行、`undoApply.ts`の`pj_field`無反応バグを修正）。19回目：③`components/consultation/*`の一部（`ConfirmationDialogModal.tsx`+`ProposalCard.tsx`＝計1,222行、JST日付演算バグを修正）。20回目：③の残り9ファイル（`ConsultationPanel.tsx`・`SessionHistoryPanel.tsx`・`ChangeHistoryModal.tsx`・`GanttPreviewPanel.tsx`・`ChatHistory.tsx`・`FollowUpButtons.tsx`・`SimulationBanner.tsx`・`ErrorView.tsx`・`LoadingView.tsx`＝計約1,697行）を点検完了。詳細は下記「20回目の巡回」節参照。**2026-07-24追記**：本日v3.07で追加された5ファイル（`apiClient.ts`/`responseParser.ts`/`consultationRunner.ts`〈新設〉/`systemPrompt.ts`/`useAIConsultation.ts`）のみを対象にした品質リファクタを山本さんの指名で実施（詳細は下記「AI相談系クラスタ品質リファクタ（2026-07-24）」節）。20回目時点で点検済みの他ファイル（`ConsultationPanel.tsx`等）は今回対象外のまま |
 | C 会議読み込み | 2026-09-30 | 2026-07-21（14回目：meetingExtractor.tsのプロンプト文言乖離修正＋MeetingImportPanelのステータス/優先度定数をtaskMeta.tsに統一＋会議読み込みガイドの「画像OK」誤記述修正）／2026-09-30（39回目：前回点検日07-21以降の差分＝v3.79「PDF取込をクライアント側テキスト抽出に統一」・v3.117「AI生成中の進捗表示を改善」の2コミット〈`MeetingImportPanel.tsx`のみ変更〉を点検。実害のある修正は無し） | 約1,512行（実測。39回目に再実測。旧「約1,510行」からほぼ横ばい） | M44（新規・下記「中優先度」表参照） | 39回目（2026-09-30・前回点検日07-21以降の差分のみ点検。詳細は下記「39回目の巡回」節参照）。実害のある修正は無し |
 | D OKR | 2026-07-21 | 2026-07-21（11回目：`quarterPlanStore.ts`の未使用export`finalizeQuarterPlan`を削除＋TF四半期割り当てに関する古いガイド記述6ファイルを実態（TaskForce.quarter列＋クォータータブ）に合わせ修正）／2026-07-21（10回目：`KrJointSessionFlow.tsx`保存進捗バーの合計値off-by-oneを修正＋`krSessionExtractor.ts`の単一KRモード廃止後に死蔵していた抽出関数2件を削除＋関連ユーザー向けガイド3件の「単一KRモード」記述を実態に合わせ更新）／2026-07-21（9回目：`KrWhyPanel.tsx`の未使用必須Props`currentUser`を`_currentUser`にリネームし意図を明記）／2026-07-21（8回目：`KrReportPanel.tsx`のTeams送信エラー表示をformatErrorForUserに統一＋`krReportClient.ts`の死んだ`usage`フィールドを削除）／2026-07-21（7回目：`OkrDashboardView.tsx`のKrSessionHistory保存/削除エラー握りつぶしを修正＋死んだ`urgent`フラグ除去）／2026-07-21（6回目：`krMeetingNoteStore.ts`の正規表現エスケープバグ＋JSDoc乖離を修正）／2026-07-21（5回目：KR分析AIの死んだプロンプト段落`linked_pj_names`を削除） | 約7,562行（okr/lab計） | 既存表になし | **D OKRユニット全体（約7,562行）を5〜11回目の巡回（7セッション）で分割点検完了。** 週次循環ワークフロー①会議ノート・②セッション記録＆分析・③分析・④レポート作成・なぜなぜ分析・クォーター計画の全サブ領域をカバー。未修正のまま残置した既知課題（設計判断が要るため次回候補）：`okrAnalysisStore.ts`の未使用export2件・非効率取得1件（5回目発見）／`krMeetingNoteStore.ts`の`softDeleteKrMeetingNote`未使用export（6回目発見・M21）／`OkrDashboardView.tsx`のfreeformセッション編集モード未対応（7回目発見・M22）／`krReportStore.ts`の`softDeleteKrReport`未使用export（8回目発見・M23）／`appStore.ts`の`quarterlyKrTaskForces`state・`addQuarterlyKrTaskForce`/`removeQuarterlyKrTaskForce`アクション・`store.ts`の対応するSupabase関数が2026-05-26のTaskForce.quarter列移行後、呼び出し元0件のまま丸ごと死蔵（11回目発見・M24。DBテーブル自体を残すか含め設計判断＋テーブルdrop要否の検討が必要なため未着手）。**🔴 2026-07-22 山本さん方針：OKRモードは全面的にゼロから作り直す予定（見切り発車で試験導入したところニーズが確認できたため、実用化に向けた根本的な再設計が必要と判断）。再設計に着手するまで、本ユニットへの追加リファクタ点検・巡回対象からの選定は行わない（作り直し前提のコードを磨くのは無駄になるため）。再設計時は現行の情報構造（Objective>KR>TF>ToDo>Task・週次循環ワークフロー①〜④等）を前提とせず、一から考え直すこと。** **追記（2026-08-10）：M24はOKRモード再設計 Phase 1 Step Cで対応済み（下記「低優先度」表の~~M24~~参照）。** 2026-09-28：OKR再設計（個人OKR等）が8月以降進行しているため、巡回除外の扱いを要見直し（山本さん判断待ち）。 |
-| E PJ別AI分析 | 2026-07-21 | 2026-07-21（死んだプロンプト段落を削除） | 約317行 | 既存表になし | 初回巡回実施。小さい実害のある死蔵コード1件を修正。DashboardViewのポートフォリオ分析（assignee_loads集計）がcomputeWorkload.tsの負荷集計と似た計算を再実装している重複はM17として次回候補へ記録 |
+| E PJ別AI分析 | 2026-09-30 | 2026-07-21（死んだプロンプト段落を削除） | 約317行（`lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}.ts`＋`lib/supabase/projectAnalysisStore.ts`のみ。UIの`dashboard/{ProjectKarte,DashboardView}.tsx`は共有ファイルのため本行の行数に含めない） | M17（現存・下記「中優先度」表参照） | 40回目（2026-09-30・前回点検日07-21以降の差分＝9コミットを点検。詳細は下記「40回目の巡回」節参照）。実害のある修正は無し。M17（DashboardViewのポートフォリオ分析がcomputeWorkload.tsと似た負荷集計を再実装している重複）は該当箇所に変更が無く現状維持 |
 | F 管理・設定 | 2026-09-29 | 2026-07-19（v2.63〜67 AdminView刷新：Card/DangerZone抽出・色トークン化） | 約3,270行（AdminView.tsx単体・35回目時点で未再計測） | **H1（AdminView.tsx完全分割）は保留のまま現存・触らない**／M15（AdminViewのeslintエラー7件）も現存・触らない | 35回目（2026-09-29・診断的にv3.13〜v3.118の差分のみ点検）：Section15禁止パターン3箇所（`AdminView.tsx`AIUsageSection・`OkrImportModal.tsx`PDF/Word読込）を修正。他は健全。H1本体（機能分割）は未着手のまま |
 | G オンボーディング | 2026-07-21 | 2026-07-23（M19/M20解消：統合ツアーを9ステップに整理・タイトル絵文字を§4基準に統一） | 約1,117行（tour/guide計） | なし（M19/M20は2026-07-23に解消） | 4回目巡回（2026-07-21）で点検、小さい実害のある2件を修正。ツアー本文の構成変更を伴うM19/M20は初回ログイン体験改善作業（2026-07-23・CLAUDE.md v2.87〜v2.89）でまとめて解消 |
 | H グラフ・ラボビュー | GraphView.tsx 2026-07-21／CalendarLabView・ProjectStructureView 2026-09-29 | 2026-07-21（凡例クリックの再レンダー漏れを修正）／2026-09-29（34回目：`CalendarLabView.tsx`の`isClosed`判定2箇所が`isCompletedForProgress`と同一ロジックを手書きで重複していたのを共有ヘルパーに統一） | 約790行（GraphView.tsx）＋約671行（CalendarLabView.tsx）＋約1,233行（ProjectStructureView.tsx）＝計約2,694行（34回目に実測） | M16（Realtime更新でpan/zoom/凡例絞り込み/ピン留め位置がリセットされる。次回候補へ記録）／M40（`ProjectStructureView.tsx`の`RoleInput.disabled`が呼び出し元から一度も渡されず死蔵。次回候補へ記録） | 初回巡回実施（GraphView.tsxのみ）。小さい実バグ1件を修正、大きめの1件は設計判断が要るためM16として記録。**2026-07-22追記：`CalendarLabView.tsx`／`ProjectStructureView.tsx`を本ユニットに新規登録**（module-map.mdでD OKR専用ファイルと切り分けて追加。従来この2ファイルはmodule-map.mdに一切登録が無く、巡回台帳の対象からもv2.74ステータス拡張の横展開対象からも漏れていた＝CalendarLabViewのステータス5値化未追従の実バグ（CLAUDE.md v2.77で修正）の根本原因）。**2026-09-29：34回目の巡回でCalendarLabView.tsx・ProjectStructureView.tsxの初回専用点検を完了**（詳細は下記「34回目の巡回」節）。GraphView.tsxは今回対象外のまま2026-07-21時点 |
@@ -47,6 +47,58 @@
 - 触った後は必ず台帳の該当行（最終点検日・最終リファクタ日・備考）を更新してからコミットする
 - 高リスク項目（既存表のH1・H4）は台帳経由でも変わらず触らない
 - **🔴 D OKRは2026-07-22時点で候補から除外する**（全面的にゼロから作り直す方針が決定済み。再設計に着手するまで巡回対象として選ばない。詳細はD OKR行の備考参照）
+
+---
+
+## 完了済み（2026-09-30）巡回台帳の40回目の巡回：E PJ別AI分析（前回点検日07-21以降の差分のみ）
+
+前回点検日（2026-07-21）以降、module-map.md定義の対象パス（`lib/ai/{projectAnalysisClient,
+allProjectsAnalysisClient}.ts` / `lib/supabase/projectAnalysisStore.ts` / UIの
+`dashboard/{ProjectKarte,DashboardView}.tsx`）に対する変更コミットを`git log --since=2026-07-21`
+で洗い出したところ9件だった：v3.117（AI生成中の進捗表示改善）・v3.116（PostgRESTの1000行上限
+対策・`fetchAllRows`化）・v3.77（AI提案の反映・Undoまわりの不具合5件修正）・v3.64（モーダル
+中央寄せ統一）・v3.49（PJ設定画面新設・招待発行UIの統合）・v3.44（プロジェクト招待Phase2/3）・
+v3.31（ゲストAI利用回数の明示UI）・M33（進捗%集計のcancelled非対称解消）・メンション対象
+ステータス修正。いずれも小さい差分で、9件とも既存の設計判断・回帰テストの記録が丁寧に残って
+おり、実装内容を1件ずつ確認した結果、Section 15（`formatErrorForUser`経由）・取得/保存失敗の
+握りつぶし・Section 61（`fetchAllRows`）迂回・v2.74ステータス5値追従のいずれにも違反は無かった。
+
+- **v3.116（`projectAnalysisStore.ts`）**：`insertProjectAnalysis`内の古い分析レコード刈り込み
+  用selectが既に`fetchAllRows`経由に統一済み（このユニットはSection 61是正の対象に元から含まれて
+  いた）。`fetchProjectAnalyses`（`.limit(MAX_HISTORY)`で最大2件のみ取得）は意図的に対象外
+  （Section 61の除外規定どおり）。
+- **v3.77**：ゲストの「このPJをAI分析」がAI枠だけ消費して結果を表示できなかった実バグの修正
+  （choke pointは緩めずゲスト専用ストアへ保存先を切替）・AI提案Undo失敗の無警告化解消・
+  `saveMember`のゲスト分岐追加、いずれもE PJ別AI分析ユニット（`ProjectKarte.tsx`）側の変更点は
+  `guestProjectAnalysisStore`経由のガード追加のみで、設計・実装とも妥当と確認。
+- **v3.64・v3.49・v3.44・v3.31**：モーダル共有スタイル化・PJ設定画面への招待導線統合・
+  ゲストAI利用回数表示追加はいずれも既存の設計原則（Section 21・23・25）に沿っており、現行の
+  `ProjectKarte.tsx`（招待ボタンをPJ設定モーダルへ統合済み・ゲストにも表示するが内部の
+  `ProjectSettingsModal`が招待タブ・基本情報編集権限を別途ガード）とも整合していることを確認。
+- **M33・メンション修正**：`isCompletedForProgress`/`isActiveTaskStatus`経由への統一で
+  v2.74（保留/中止ステータス追加）に正しく追従済み。
+
+### ⑨AIの出力を検証せず保存・表示する経路（今回のスコープでの確認）
+`analyzeProject`/`analyzeAllProjects`はいずれもマークダウン文字列を返すのみで構造化データの
+保存は行わない（`insertProjectAnalysis`が保存するのはAIの生テキストそのもの・DB側にCHECK制約等
+の検証対象フィールドが無い）ため、`meetingExtractor.ts`のM44（AIの日付フィールドを未検証で
+DBへ流し込む経路）のような実害は無いと確認した。
+
+### M17（DashboardViewのポートフォリオ分析の重複集計）の現状
+`runAllProjectsAnalysis`内の`loadMap`（担当者ごとの未完了タスク件数を独自集計）は今回の差分
+9コミットのいずれにも含まれておらず、2026-07-21時点から変更なし。`computeWorkload.ts`との
+統合は集計方向（PJ単位 vs メンバー単位）の違いから設計判断が要るため、今回も見送り現状維持。
+
+### module-map.mdへの登録漏れ（⑧）
+該当なし（E PJ別AI分析の対象ファイル一覧に変更なし）。
+
+### i18n（⑥）
+該当なし（このユニットは元々i18n辞書を使わず日本語を直書きしており、今回の差分でも辞書キーの
+追加・変更はゼロ件だった）。
+
+### UIの権限条件とDBのRLS条件の食い違い（⑦）
+`project_analyses`テーブルのRLS（`group_id`スコープ）とUI側のゲスト分岐（`isGuestMode()`）を
+突き合わせ、食い違いは無いことを確認した。
 
 ---
 
@@ -2224,7 +2276,7 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | ~~M13~~ | ~~KanbanView内蔵`AddTaskModal`とQuickAddTaskModalの統合~~ | — | **完了（2026-07-06 / `95409b1`・CLAUDE.md v2.21）** QuickAddTaskModalに統一。優先度欄を移植、工数・複数TF/追加PJ紐づけは山本さん承認の上で廃止（作成後にTaskEditModalで設定）。KanbanViewから約300行削減・バンドルサイズ19KB→10KB |
 | ~~M14~~ | ~~ListViewモバイルカード行のReact.memo化~~ | — | **完了（2026-07-06 / `ca087f9`）** ListMobileTaskRowとして切り出しmemo化。担当者配列・親ステータス/進捗も参照安定化 |
 | M15 | a11yスイープ残課題（`label-has-associated-control` 11件・`no-irregular-whitespace` 13件・`no-autofocus` 6件・`no-noninteractive-*` 6件） | 低〜中 | Phase 4完了（下記）の残り。label紐づけは`<label htmlFor>`か`aria-label`付与、irregular-whitespaceは前回調査済み分（全角スペース意図的使用）以外を要確認 |
-| M17 | DashboardView.tsxの全PJ横断分析（`runAllProjectsAnalysis`）が担当者ごとの未完了タスク件数（`assignee_loads`）を独自に`loadMap`で再集計しており、`lib/workload/computeWorkload.ts`の`getMemberActiveTasks`（ワークロードビューが使う同種の集計）とロジックが似通っている | 低〜中 | 2026-07-21のE PJ別AI分析点検で発見。`computeWorkload.ts`はメンバー単位・こちらはPJ単位で集計方向が違うため単純な関数共有では済まない可能性があり、統合するなら集計関数のシグネチャ設計から要検討 |
+| M17 | DashboardView.tsxの全PJ横断分析（`runAllProjectsAnalysis`）が担当者ごとの未完了タスク件数（`assignee_loads`）を独自に`loadMap`で再集計しており、`lib/workload/computeWorkload.ts`の`getMemberActiveTasks`（ワークロードビューが使う同種の集計）とロジックが似通っている | 低〜中 | 2026-07-21のE PJ別AI分析点検で発見。`computeWorkload.ts`はメンバー単位・こちらはPJ単位で集計方向が違うため単純な関数共有では済まない可能性があり、統合するなら集計関数のシグネチャ設計から要検討。**2026-09-30のE PJ別AI分析40回目巡回で再確認：該当箇所（`loadMap`）に07-21以降の変更なし・現状維持** |
 | M18 | ダッシュボードのリマインダー選択（`DashboardView.tsx`）に`notify_pref`の選択肢として「💬 Teamsまとめ」があるが、`notify-deadlines`のEdge Functionは2026-07-02の変更で「個人opt-in」から「notify_prefを見ず全員へ配信」に方式転換済み（`docs/dev/deadline-notifications.md`に明記）。そのため「teams」を選んでも「none」を選んだ場合とアプリの実挙動は完全に同一（差が出るのは`browser`を選んだときだけ）。選択肢を削除する／ラベルを「（全員に自動送信されます）」等へ修正する／将来の個別Teams配信機能の受け皿として意図的に残す、のいずれを取るかはUX判断が必要 | 低 | 2026-07-21のI 通知点検で発見。コード上のバグではなく2026-07-02の仕様変更後にUI文言側の追従が漏れていた形。修正は見送り |
 | ~~M19~~ | ~~統合ツアーが11ステップで`tour-guidelines.md` §9の上限7〜9を超過~~ | — | **完了（2026-07-23 / CLAUDE.md v2.88）** 「sidebar」＋「nav」を1ステップに統合（左メニュー概要＋5ビューをまとめて説明）、「ai-mode-meeting」（資料インプットタブの個別スポットライト）を「ai-tool-btn」の説明文に統合、作り直し方針が決まっている「okr-mode」を削除。welcome〜doneの9ステップに整理 |
 | ~~M20~~ | ~~統合ツアーのタイトル絵文字が§4基準からズレ（sidebar/navが0個、pj-karte-btnが2個）~~ | — | **完了（2026-07-23 / CLAUDE.md v2.88）** M19のステップ統合でsidebar+nav統合後のタイトルに絵文字1個を付与。pj-karte-btnは「📊 ここが「AI分析」ボタンです」に修正し1個に統一 |
