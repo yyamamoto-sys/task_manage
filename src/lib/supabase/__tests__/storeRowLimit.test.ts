@@ -11,8 +11,9 @@ vi.mock("../client", () => ({
 
 import { fetchCriticalData, fetchOkrData, fetchAiUsageLogs } from "../store";
 
-beforeEach(() => {
-  fake.current = createFakePostgrest({
+// 複数テストで共有するベースデータセット（呼び出しごとに新しいオブジェクトを返す）。
+function baseTables() {
+  return {
     members: makeRows(3),
     projects: makeRows(2),
     tasks: [...makeRows(1001), ...makeRows(5, () => ({ is_deleted: true })).map((r, i) => ({ ...r, id: `deleted${i}` }))],
@@ -28,7 +29,11 @@ beforeEach(() => {
     project_task_forces: [],
     task_task_forces: Array.from({ length: 1500 }, (_, i) => ({ task_id: `t${i}`, tf_id: "tf1" })),
     ai_usage_logs: makeRows(1716, i => ({ called_at: `2026-09-${String(1 + (i % 28)).padStart(2, "0")}` })),
-  }, 1000);
+  };
+}
+
+beforeEach(() => {
+  fake.current = createFakePostgrest(baseTables(), 1000);
 });
 
 describe("🔴 初期ロードは PostgREST の1000行上限で欠けない（v3.116）", () => {
@@ -55,5 +60,54 @@ describe("🔴 初期ロードは PostgREST の1000行上限で欠けない（v3
   it("AI使用量ログも1000件を超えて読む", async () => {
     const logs = await fetchAiUsageLogs();
     expect(logs).toHaveLength(1716);
+  });
+});
+
+describe("🔴 M41是正：構造表の失敗はthrow・周辺表の失敗は続行して部分失敗を返す（v3.122）", () => {
+  it("task_dependencies が失敗したら例外を投げる（B1依存ゲートが黙って無効化されるのを防ぐ）", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      task_dependencies: { code: "500", message: "boom" },
+    });
+    await expect(fetchCriticalData()).rejects.toThrow(/タスクの依存関係/);
+  });
+
+  it("task_projects が失敗したら例外を投げる", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      task_projects: { code: "500", message: "boom" },
+    });
+    await expect(fetchCriticalData()).rejects.toThrow(/タスクとプロジェクトの紐づけ/);
+  });
+
+  it("members / projects / tasks が失敗したら従来どおり例外を投げる", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, { members: { code: "500", message: "boom" } });
+    await expect(fetchCriticalData()).rejects.toThrow(/メンバー/);
+  });
+
+  it("member_tags が失敗しても例外にならず、部分失敗として返り他の表は取得できる", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      member_tags: { code: "42501", message: "permission denied" },
+    });
+    const data = await fetchCriticalData();
+    expect(data.partialFailures).toEqual(["メンバータグ"]);
+    expect(data.memberTags).toEqual([]);
+    // 他の表は影響を受けず取得できている
+    expect(data.members).toHaveLength(3);
+    expect(data.tasks).toHaveLength(1001);
+  });
+
+  it("milestones と member_tag_members が同時に失敗しても両方が部分失敗リストに入り、起動は続く", async () => {
+    fake.current = createFakePostgrest(baseTables(), 1000, {
+      milestones: { code: "500", message: "boom" },
+      member_tag_members: { code: "500", message: "boom" },
+    });
+    const data = await fetchCriticalData();
+    expect(data.partialFailures).toEqual(["マイルストーン", "メンバーとタグの紐づけ"]);
+    expect(data.milestones).toEqual([]);
+    expect(data.memberTagMembers).toEqual([]);
+  });
+
+  it("全表が正常なら partialFailures は空配列", async () => {
+    const data = await fetchCriticalData();
+    expect(data.partialFailures).toEqual([]);
   });
 });

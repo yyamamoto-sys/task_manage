@@ -102,6 +102,10 @@ export interface AppState {
   loadProgress: number;         // 現フェーズの進捗 0-100（フェーズ切替で 0 にリセット）
   loadingHint: string;          // ローディング画面の補足メッセージ（再試行中など）
   error: string | null;
+  // 【M41是正・v3.122】周辺表（milestones/member_tags/member_tag_members）の取得に部分的に
+  // 失敗した場合、日本語ラベル（例：["マイルストーン"]）が入る。空配列＝全表正常。
+  // 致命的ではないため loading はブロックしない（App.tsx が画面上部の警告バナーに使う）。
+  partialLoadWarning: string[];
 
   // ===== 取得 =====
   load: () => Promise<void>;
@@ -539,6 +543,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   loadProgress: 0,
   loadingHint: "",
   error: null,
+  partialLoadWarning: [],
 
   // ===== load =====
   //
@@ -554,7 +559,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       _pendingLoad = true;
       return;
     }
-    set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null });
+    set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
     _activeLoad = (async () => {
       try {
         // Phase 1: メンバー・PJ・タスク・マイルストーン（7テーブル）→ UI解放
@@ -591,6 +596,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           milestones:       critical.milestones,
           memberTags:       critical.memberTags,
           memberTagMembers: critical.memberTagMembers,
+          partialLoadWarning: critical.partialFailures, // 【M41是正】周辺表の部分失敗をApp.tsxの警告バナーへ
           loading:          false,          // ← ここでUIが表示される
           backgroundLoading: true,          // ← OKRをバックグラウンド取得中
           loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
@@ -643,7 +649,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const msg = isRetryable(e)
           ? `接続がタイムアウトしました（${MAX_RETRIES}回リトライ後）。右の「再試行」を押してください。`
           : raw;
-        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, loadingHint: "" });
+        set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, loadingHint: "", partialLoadWarning: [] });
       } finally {
         _activeLoad = null;
         // 進行中に追加の変更があった場合は1回だけ追従ロード
@@ -678,6 +684,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       loadProgress: 100,
       loadingHint: "",
       error: null,
+      partialLoadWarning: [],
     });
   },
 

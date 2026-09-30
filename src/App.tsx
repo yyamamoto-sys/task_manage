@@ -227,6 +227,7 @@ function AuthenticatedApp({
   const loadProgress       = useAppStore(s => s.loadProgress);
   const loadingHint        = useAppStore(s => s.loadingHint);
   const error              = useAppStore(s => s.error);
+  const partialLoadWarning = useAppStore(s => s.partialLoadWarning);
   const reload             = useAppStore(s => s.reload);
   const applyRemoteChange  = useAppStore(s => s.applyRemoteChange);
   const setCurrentGroupId  = useAppStore(s => s.setCurrentGroupId);
@@ -531,6 +532,33 @@ function AuthenticatedApp({
             style={{
               padding: "4px 12px", fontSize: "11px", fontWeight: "500",
               background: "var(--color-text-danger)", color: "#fff",
+              border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer",
+            }}
+          >
+            {t("layout.app.error.retry")}
+          </button>
+        </div>
+      )}
+      {/* 【M41是正・v3.122】周辺表（milestones/member_tags/member_tag_members）の部分失敗を
+          知らせる警告バナー。既存の全画面幅トップバナー（上の error 表示）と同じ構造を再利用し、
+          新しい表示部品は作らない（色調のみ warning に変更）。error が立つ場合はloadの冒頭で
+          partialLoadWarning が必ず[]にリセットされるため両方が同時に出ることはない。 */}
+      {partialLoadWarning.length > 0 && (
+        <div style={{
+          position: "fixed", top: 0, left: 0, right: 0, zIndex: 9998,
+          background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
+          border: "1px solid var(--color-border-warning)",
+          padding: "10px 16px", fontSize: "12px",
+          display: "flex", alignItems: "center", gap: "10px",
+        }}>
+          <span style={{ flex: 1 }}>
+            ⚠ {t("layout.app.partialLoadWarning.body", { tables: partialLoadWarning.join("、") })}
+          </span>
+          <button
+            onClick={reload}
+            style={{
+              padding: "4px 12px", fontSize: "11px", fontWeight: "500",
+              background: "var(--color-text-warning)", color: "#fff",
               border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer",
             }}
           >

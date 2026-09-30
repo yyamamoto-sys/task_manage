@@ -11,6 +11,7 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.app.loading.preparing": "Preparing...",
   "layout.app.loading.dataLoading": "Loading data...",
   "layout.app.error.retry": "Retry",
+  "layout.app.partialLoadWarning.body": "Some data ({tables}) could not be loaded. Please reload.",
 
   "layout.nav.dashboard.label": "Dashboard",
   "layout.nav.dashboard.tooltip": "See OKR progress, this week's tasks, and deadline alerts at a glance",

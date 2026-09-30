@@ -7554,4 +7554,39 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2112件、既存回帰なし）・
 # `npx eslint`（変更2ファイル・新規警告0／既存M15の7件は現状維持）・`npm run build`成功。
 
-最終更新：2026-09-29（v3.121）
+# v3.122（2026-09-30）：M41是正・初期ロードの部分失敗を握りつぶさない（案A・山本さん決定）
+#
+# `store.ts`の`fetchCriticalData`（初期ロードPhase 1・8表）が「構造に関わる表」と
+# 「周辺の表」を区別せず、members/projects/tasksの3表だけを致命的扱いにしていた
+# （docs/REFACTORING.md M41）。task_dependenciesの取得失敗が黙って空配列になると、
+# B1依存ゲート（先行タスク未完了なら完了をブロック）が「依存なし」と誤判定し、
+# 先行タスク未完了でも後続タスクを完了にできてしまう事故クラスだった。
+#
+# ## 修正
+# * 8表を「構造表」（members/projects/tasks/task_projects/task_dependencies）と
+#   「周辺表」（milestones/member_tags/member_tag_members）に分離。
+# * 構造表は1件でも失敗したら`throw`する（既存のmembers/projects/tasksと同列）。
+#   メッセージは`formatErrorForUser`の流儀でどの表が失敗したか分かる文言にした
+#   （CLAUDE.md Section 15）。既存の全画面エラー表示経路（App.tsxの`error`バナー）に
+#   そのまま乗るため、新しい表示経路は増やしていない。
+# * 周辺表は失敗しても起動を続け、空配列で補いつつ`fetchCriticalData`の戻り値に
+#   `partialFailures: string[]`（失敗した表の日本語ラベル）を追加した。`appStore.ts`は
+#   これを新設の`partialLoadWarning`stateへ伝え、App.tsxが画面上部に警告バナー
+#   （既存の`error`バナーと同じ構造を再利用・warning配色）「一部のデータ（◯◯）を
+#   読み込めませんでした。再読み込みしてください」を表示する。`console.error`にも
+#   表名・エラーコードを記録する。
+# * Phase 2（`fetchOkrData`）にも同型の問題があるかgrepで確認したところ、6表すべてで
+#   エラーチェック自体が存在しない（M41より徹底した同型問題）ことを確認。コードは
+#   変更せずdocs/REFACTORING.mdにM42として記録のみ（今回のスコープ外）。
+#
+# ## テスト
+# `storeRowLimit.test.ts`にM41是正の回帰テスト6件を追加（task_dependencies/task_projects
+# 失敗時のthrow・members等の既存throwの維持・member_tags単独失敗時の部分失敗返却・複数
+# 周辺表同時失敗・全表正常時の空配列）。修正前のコードに対して実際に6件が赤くなる
+# （黙って空配列になり例外が投げられない・partialFailuresがundefined）ことを確認済み。
+#
+# ## 検証
+# `npx tsc --noEmit`（0）・`npx vitest run`（179ファイル・2118件、既存回帰なし）・
+# `npx eslint`（変更7ファイル・新規警告0）・`npm run build`成功。
+
+最終更新：2026-09-30（v3.122）

@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.122",
+    date: "2026-09-30",
+    title: "データの読み込み不具合をお知らせするようにしました",
+    highlights: [
+      "一部のデータの読み込みに失敗したときに、欠けたまま表示せずお知らせするようにしました。画面上部に表示が出た場合は、再読み込みをお試しください。",
+    ],
+  },
+  {
     version: "v3.121",
     date: "2026-09-29",
     title: "内部の品質改善",

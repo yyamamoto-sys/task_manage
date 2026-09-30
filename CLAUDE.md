@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.121
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.122
 #
-最終更新：2026-09-29（v3.121）
+最終更新：2026-09-30（v3.122）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4275,6 +4275,19 @@ store.ts の初期ロード14表（Phase 1・2）・`fetchGroups`・`fetchLoadin
 `fetchGroupNotificationSettings`（v3.118新設。36回目巡回で本一覧への記載漏れを解消）、
 personalOkrStore の一覧7関数、krSessionStore 2・okrAnalysisStore 2・krMeetingNoteStore 2・
 projectAnalysisStore（古い分析の刈り込み用）1・projectInviteStore 1。
+
+### 初期ロードのエラー方針（M41是正・v3.122）
+
+`fetchCriticalData`（Phase 1・8表）は「構造に関わる表」（members/projects/tasks/
+task_projects/task_dependencies）と「周辺の表」（milestones/member_tags/
+member_tag_members）を分けて扱う。**構造表は1件でも取得失敗したら起動を止める**（throw。
+既存のエラー表示経路＝App.tsxの`error`バナーに乗る）。task_dependenciesが黙って空配列に
+なるとB1依存ゲートが「依存なし」と誤判定するため、members/projects/tasksと同列にした
+（案A・山本さん決定）。**周辺表は失敗しても起動は続け**、`partialFailures`→
+`appStore.partialLoadWarning`→App.tsxの警告バナー（既存の`error`バナーと同じ構造を
+warning配色で再利用）で「一部のデータ（◯◯）を読み込めませんでした」と知らせる。
+Phase 2（`fetchOkrData`）は6表すべてでエラーチェック自体が無く、M41よりさらに徹底した
+同型の問題を抱えている（`docs/REFACTORING.md` M42・記録のみ・今回のスコープ外）。
 
 ---
 

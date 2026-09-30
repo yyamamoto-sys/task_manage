@@ -1,7 +1,15 @@
 // PostgREST の応答打ち切り（max_rows）を再現するテスト用の偽サーバ。
 // range 指定があっても max_rows を超える件数は返さず、エラーも出さない（本物と同じ）。
+//
+// 【M41是正・v3.122】特定テーブルへのクエリをエラーにする errorTables を追加した
+// （fetchCriticalData の構造表/周辺表の失敗時挙動をテストするため）。
 
 type Row = Record<string, unknown>;
+
+export interface FakeError {
+  code?: string;
+  message: string;
+}
 
 export interface FakeRequest {
   table: string;
@@ -10,7 +18,7 @@ export interface FakeRequest {
   range: [number, number] | null;
 }
 
-export interface FakeQuery extends PromiseLike<{ data: Row[]; error: null; count: number | null }> {
+export interface FakeQuery extends PromiseLike<{ data: Row[] | null; error: FakeError | null; count: number | null }> {
   eq(col: string, v: unknown): FakeQuery;
   in(col: string, vs: unknown[]): FakeQuery;
   order(column: string, opts?: { ascending?: boolean }): FakeQuery;
@@ -18,7 +26,11 @@ export interface FakeQuery extends PromiseLike<{ data: Row[]; error: null; count
   limit(n: number): FakeQuery;
 }
 
-export function createFakePostgrest(tables: Record<string, Row[]>, maxRows = 1000) {
+export function createFakePostgrest(
+  tables: Record<string, Row[]>,
+  maxRows = 1000,
+  errorTables: Record<string, FakeError> = {},
+) {
   const requests: FakeRequest[] = [];
 
   function makeQuery(table: string, selectOptions?: { count?: string }): FakeQuery {
@@ -28,6 +40,9 @@ export function createFakePostgrest(tables: Record<string, Row[]>, maxRows = 100
 
     const run = () => {
       requests.push(req);
+      if (errorTables[table]) {
+        return { data: null, error: errorTables[table], count: null };
+      }
       const all = (tables[table] ?? []).filter(r => filters.every(f => f(r)));
       const sorted = [...all].sort((a, b) => {
         for (const o of req.orders) {

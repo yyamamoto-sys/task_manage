@@ -11,6 +11,7 @@
 import { supabase } from "./client";
 import { fetchAllRows } from "./fetchAllRows";
 import { getAssigneeIds } from "../taskMeta";
+import { formatErrorForUser } from "../errorMessage";
 import type {
   Group, GroupNotificationSetting, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -246,8 +247,31 @@ export async function upsertMyWidgetLayout(memberId: string, layout: MyPageLayou
  * Phase-1: UIを使える状態にするのに必要な7テーブルを並列取得。
  * 論理削除済み行はサーバー側で除外する。
  * onProgress: クエリが1件完了するごとに (完了数, 合計数) を通知する。
+ *
+ * 【M41是正・v3.122（案A・山本さん決定）】
+ * 8表を「構造に関わる表」と「周辺の表」に分けて失敗時の扱いを変える。
+ * - 構造表（members/projects/tasks/task_projects/task_dependencies）：失敗したら起動を
+ *   止める（throw）。特に task_dependencies が黙って空配列になると、B1依存ゲート
+ *   （先行タスク未完了なら完了をブロック）が「依存なし」と誤判定し、先行タスク未完了でも
+ *   後続を完了にできてしまう事故クラスのため、members/projects/tasksと同列に扱う。
+ * - 周辺表（milestones/member_tags/member_tag_members）：失敗しても起動は続け、空配列で
+ *   補い、`partialFailures` に日本語ラベルを積んで呼び出し側（appStore.load()）へ伝える。
+ *   呼び出し側がこれを画面上部の警告バナーとして表示する（App.tsx参照）。
  */
-export async function fetchCriticalData(onProgress?: (done: number, total: number) => void) {
+export interface FetchCriticalDataResult {
+  members: Member[];
+  projects: Project[];
+  tasks: Task[];
+  taskProjects: TaskProject[];
+  milestones: Milestone[];
+  memberTags: MemberTag[];
+  memberTagMembers: MemberTagMember[];
+  taskDependencies: TaskDependency[];
+  /** 周辺表のうち取得に失敗したものの日本語ラベル一覧。空配列＝全表正常取得。 */
+  partialFailures: string[];
+}
+
+export async function fetchCriticalData(onProgress?: (done: number, total: number) => void): Promise<FetchCriticalDataResult> {
   // B1（依存ゲート）: task_dependencies は「タスク完了時に先行が終わっているか」を
   // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
   const TOTAL = 8;
@@ -267,10 +291,31 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
       fetchAllRows(o => supabase.from("task_dependencies").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_dependencies" }).then(tick),
     ]);
 
-  const firstError = [members, projects, tasks].find(r => r.error)?.error;
-  if (firstError) {
-    const code = firstError.code ? ` (${firstError.code})` : "";
-    throw new Error(`${firstError.message}${code}`);
+  // 構造表：1件でも失敗したら起動を止める。どの表で失敗したか分かる文言にする（CLAUDE.md Section 15）。
+  const structuralChecks: { label: string; result: { error: { code?: string; message: string; details?: string; hint?: string } | null } }[] = [
+    { label: "メンバー", result: members },
+    { label: "プロジェクト", result: projects },
+    { label: "タスク", result: tasks },
+    { label: "タスクとプロジェクトの紐づけ", result: tpjs },
+    { label: "タスクの依存関係", result: taskDeps },
+  ];
+  const firstStructuralFailure = structuralChecks.find(c => c.result.error);
+  if (firstStructuralFailure) {
+    throw new Error(formatErrorForUser(`必須データ（${firstStructuralFailure.label}）の読み込みに失敗しました`, firstStructuralFailure.result.error));
+  }
+
+  // 周辺表：失敗しても起動は続け、空配列で補いつつ部分失敗として記録する。
+  const peripheralChecks: { label: string; result: { error: { code?: string; message: string } | null } }[] = [
+    { label: "マイルストーン", result: milestones },
+    { label: "メンバータグ", result: memberTags },
+    { label: "メンバーとタグの紐づけ", result: memberTagMembers },
+  ];
+  const partialFailures: string[] = [];
+  for (const c of peripheralChecks) {
+    if (c.result.error) {
+      partialFailures.push(c.label);
+      console.error(`[fetchCriticalData] ${c.label}の取得に失敗しました`, c.result.error.code, c.result.error);
+    }
   }
 
   return {
@@ -295,6 +340,7 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
     memberTags:       (memberTags.data  ?? []) as MemberTag[],
     memberTagMembers: (memberTagMembers.data ?? []) as MemberTagMember[],
     taskDependencies: (taskDeps.data    ?? []) as TaskDependency[],
+    partialFailures,
   };
 }
 
