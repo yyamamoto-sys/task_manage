@@ -7625,4 +7625,32 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # `npx tsc --noEmit`（0）・`npx vitest run`（180ファイル・2124件、既存回帰なし）・
 # `npx eslint`（変更2ファイル＋新規テスト2ファイル・警告0）・`npm run build`成功。
 
-最終更新：2026-09-30（v3.123）
+# v3.124（2026-09-30）：巡回台帳の未巡回ユニットを一巡（巡回37〜46）
+#
+# 07-21〜07-24を最後に止まっていた10ユニットを、前回点検日以降の差分に絞って点検した
+# （D OKR は除外のまま）。コミットはユニットごとに分け、版はこの1つにまとめた。
+#
+# ## コードの変更（挙動は不変）
+# * i18n.ts の未使用関数 isEnDictLoaded() を削除（巡回42）
+# * useUndoStack.ts の死蔵 pop / popUntil を削除（v3.77で呼び出し元が移行済み・巡回45）
+#
+# ## ドキュメント
+# * 入口ガイド（docs/guides/00_overview.md・01_onboarding/first-day.md）が v3.40 で廃止した
+#   グループの週次OKRサイクルを主目的として案内していたのを、個人OKRの現状に合わせて修正（巡回41）
+# * module-map.md の登録漏れを計9件追記（ListToolbar.tsx・DuplicateTasksModal.tsx・
+#   selectionWithChildren/nameOrder.ts・topoSort.ts・consultationRunner.ts・bulkEditPlan.ts・
+#   edgeFunctionError.ts ほか）。登録漏れは今回の巡回で繰り返し見つかった
+#
+# ## 記録だけ（docs/REFACTORING.md）
+# * M43 招待関連ファイルが module-map のどのユニットにも未登録
+# * M44 会議読み込みのAI抽出で日付が形式検証なしに保存されうる
+# * M45 管理者向けガイド等7本にOKR週次サイクルの古い記述が残存
+# * M46 undoApply.ts の UndoResult.partial がUIから未参照
+# * M28（uiGuide.ts の FEATURE_LIST_SECTION）は v3.108・v3.109・v3.111 の機能が未追従のまま
+#
+# ## 点検の結果、実害のある不具合は見つからなかったユニット
+# * App Shell・認証／入口（匿名サインイン有効化後もゲスト経路はDBに接続しないことを確認）・
+#   C 会議読み込み・E PJ別AI分析・G オンボーディング（ツアーの data-tour-id 11個はすべて現存）・
+#   H GraphView・A 計画ビュー・B AI相談・AI基盤
+
+最終更新：2026-09-30（v3.124）

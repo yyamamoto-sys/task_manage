@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.124",
+    date: "2026-09-30",
+    title: "内部の点検と整理を行いました",
+    highlights: [
+      "アプリ全体を領域ごとに点検し、使われていない処理の削除と開発用の資料の整理を行いました。画面や操作は変わっていません",
+      "はじめての方向けのガイドの説明を、現在のOKR機能（個人の四半期KR）に合わせて直しました",
+    ],
+  },
+  {
     version: "v3.123",
     date: "2026-09-30",
     title: "OKR関連データの読み込み不具合のお知らせ範囲を拡大しました",
