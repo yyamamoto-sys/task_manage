@@ -70,12 +70,50 @@ function chunkSizeManifestPlugin(): Plugin {
   };
 }
 
+/**
+ * 【設計意図・v3.125】
+ * src/lib/version.ts（APP_VERSION・MIN_CLIENT_VERSION）を唯一の正本とし、値を二重管理
+ * しない。ビルド時にそのソースファイルを読み、正規表現で両定数を抜き出して
+ * dist/version.json として書き出す（chunk-size-manifest プラグインと同じ「ビルド実行時に
+ * 実測・抽出する」流儀）。実行中のアプリ（src/components/common/ReloadNoticeBanner.tsx）が
+ * 起動後・10分ごと・タブ復帰時にこのJSONを取得し、MIN_CLIENT_VERSIONより古い版で動作中
+ * なら再読み込みを促す。
+ */
+function versionManifestPlugin(buildTimeIso: string): Plugin {
+  return {
+    name: "version-manifest",
+    generateBundle() {
+      const versionTsSource = readFileSync(join(__dirname, "src/lib/version.ts"), "utf-8");
+      const appVersionMatch = versionTsSource.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+      const minClientVersionMatch = versionTsSource.match(/MIN_CLIENT_VERSION\s*=\s*"([^"]+)"/);
+      if (!appVersionMatch || !minClientVersionMatch) {
+        throw new Error(
+          "versionManifestPlugin: src/lib/version.ts から APP_VERSION / MIN_CLIENT_VERSION を読み取れませんでした",
+        );
+      }
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: JSON.stringify({
+          version: appVersionMatch[1],
+          minClientVersion: minClientVersionMatch[1],
+          buildTime: buildTimeIso,
+        }),
+      });
+    },
+  };
+}
+
+// ビルド日時（UTC ISO文字列）。__BUILD_TIME__（コード埋め込み）と dist/version.json の
+// buildTime の両方に同じ値を使い、ビルドごとに値がずれないようにする。
+const buildTimeIso = new Date().toISOString();
+
 export default defineConfig({
-  plugins: [react(), chunkSizeManifestPlugin()],
+  plugins: [react(), chunkSizeManifestPlugin(), versionManifestPlugin(buildTimeIso)],
   server: { port: 5173, host: true },
   // ビルド日時（UTC ISO文字列）をコードに焼き込む。表示側（src/lib/version.ts）で
   // Asia/Tokyoへ変換する。dev サーバーではこの値＝dev起動時刻になる（それで構わない）。
   define: {
-    __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
+    __BUILD_TIME__: JSON.stringify(buildTimeIso),
   },
 });

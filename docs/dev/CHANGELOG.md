@@ -7653,4 +7653,37 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   C 会議読み込み・E PJ別AI分析・G オンボーディング（ツアーの data-tour-id 11個はすべて現存）・
 #   H GraphView・A 計画ビュー・B AI相談・AI基盤
 
-最終更新：2026-09-30（v3.124）
+# v3.125（2026-10-01）：再読み込みが必要な更新だけを利用者に促す通知を追加（CLAUDE.md Section 63）
+#
+# 山本さんの依頼：Ctrl+Shift+Rが必要なアップデートが実装されたが利用者が再読み込みできて
+# いないときに通知を出したい。ただし再読み込みが必要ない更新では通知しない（念押し）。
+#
+# ## 実装
+# * src/lib/version.ts に APP_VERSION とは別の MIN_CLIENT_VERSION（この版より古い画面は
+#   使い続けると不具合が出る、という最低版数）を新設。初期値は今回の版（3.125）のため
+#   導入リリースでは誰にも通知が出ない
+# * vite.config.ts の versionManifestPlugin（chunk-size-manifestと同じ流儀）がビルド時に
+#   version.ts を読み、dist/version.json（{ version, minClientVersion, buildTime }）を
+#   書き出す。値の二重管理なし
+# * src/lib/reloadNotice.ts：compareVersions()（"."区切りセグメントの数値比較。
+#   "3.9"<"3.10"を文字列比較の罠に落ちず判定）・shouldShowReloadNotice()（実行中の
+#   APP_VERSIONがサーバーのminClientVersionより古いときだけtrue。サーバーのversion自体は
+#   見ない）の2純粋関数
+# * src/components/common/ReloadNoticeBanner.tsx：起動時・10分ごと・visibilitychangeで
+#   /version.json を cache:"no-store"＋クエリで取得し判定。取得失敗はconsole.warnのみで
+#   表示状態を変えない。import.meta.env.DEV では動かさない。既存のpartialLoadWarning
+#   バナー（App.tsx・v3.122）と同じ構造を再利用。自動では再読み込みしない（ボタン押下時の
+#   み location.reload()）・閉じるボタンなし
+# * vercel.json に /version.json 専用の Cache-Control: no-store ヘッダーを追加
+# * App.tsx のゲスト分岐・AuthenticatedAppの両方にマウント（Supabase非接触のためゲスト
+#   でも動く）
+# * i18n：layout.app.reloadNotice.body / .reload（ja/en）
+#
+# ## 検証
+# `npx tsc --noEmit`・`npx vitest run`・変更ファイルの`npx eslint`・`npm run build`で
+# dist/version.json の中身を確認。
+#
+# ## やらないこと
+# MIN_CLIENT_VERSION超過時のDB自動修正・Service Workerによる強制キャッシュ更新は対象外。
+
+最終更新：2026-10-01（v3.125）

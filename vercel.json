@@ -9,6 +9,15 @@
           "value": "frame-ancestors 'self' https://teams.microsoft.com https://*.teams.microsoft.com https://*.teams.cloud.microsoft https://*.skype.com https://local.teams.office.com;"
         }
       ]
+    },
+    {
+      "source": "/version.json",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
     }
   ]
 }

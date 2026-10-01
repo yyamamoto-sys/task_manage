@@ -10,7 +10,23 @@
 // テストが落ちて気づける）。
 //
 // v は含めない（"3.25" のように）。表示側で `v{APP_VERSION}` と組み立てる。
-export const APP_VERSION = "3.124";
+export const APP_VERSION = "3.125";
+
+/**
+ * 【設計意図・v3.125】
+ * 「この版より古い画面のまま使い続けると不具合が出る」という最低クライアント版数。
+ * dist/version.json（vite.config.ts の versionManifestPlugin がこのファイルから書き出す。
+ * 値を二重管理しない）として配信され、実行中のアプリ（src/components/common/
+ * ReloadNoticeBanner.tsx）が定期的に取得して、実行中の APP_VERSION がこの値より古い
+ * ときだけ再読み込みを促すバナーを出す（src/lib/reloadNotice.ts の判定関数参照）。
+ *
+ * 通常は APP_VERSION と同じ値のまま据え置く（＝今の版のクライアントのままで安全）。
+ * DBの列の削除・改名・RLSの変更で旧フロントの書き込みが失敗するようになる・Edge
+ * Functionの入出力の非互換・localStorageの形式変更など、「開いたままの古い画面が
+ * 壊れた動作をする」変更を入れるリリースでだけ、この値をそのリリースの版まで引き上げる
+ * こと（CLAUDE.md Section 63参照）。機能追加や見た目の変更だけでは上げない。
+ */
+export const MIN_CLIENT_VERSION = "3.125";
 
 /**
  * 【設計意図】

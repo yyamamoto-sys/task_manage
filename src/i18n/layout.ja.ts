@@ -14,6 +14,8 @@ export const layoutJa = {
   "layout.app.loading.dataLoading": "データを読み込み中...",
   "layout.app.error.retry": "再試行",
   "layout.app.partialLoadWarning.body": "一部のデータ（{tables}）を読み込めませんでした。再読み込みしてください。",
+  "layout.app.reloadNotice.body": "アプリが更新されました。このまま使うと保存に失敗するおそれがあります。再読み込みしてください",
+  "layout.app.reloadNotice.reload": "再読み込み",
 
   // ----- ナビゲーション項目 -----
   "layout.nav.dashboard.label": "ダッシュボード",

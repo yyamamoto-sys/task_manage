@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.124
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.125
 #
-最終更新：2026-09-30（v3.124）
+最終更新：2026-10-01（v3.125）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1207,6 +1207,7 @@ const { submit } = useAIConsultation(projectIds);
 - **🔴 バージョンを上げるときは次の4点セットを必ず更新すること**（2026-08-12・v3.63で追加。Section 29参照）：①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md`（開発者向け・技術的な記述のまま末尾に追記） ④`src/lib/releaseNotes.ts`（利用者向け・「何ができるようになったか」の粒度に書き直したものを配列の先頭に追記）。①②の一致は`version.test.ts`、①④の一致（`RELEASE_NOTES[0].version`）は`src/lib/__tests__/releaseNotes.test.ts`が機械的に検査する。③と④は読み手が違う（開発者 vs 利用者）ため統合しない別ファイルのまま運用する
 - **リリース時、DBスキーマに変更を伴うマイグレーションを追加した場合は `src/lib/schema/schemaChecks.ts` に検査項目を1行足すこと**（2026-08-06・v3.26で追加。Section 22参照）。マイグレSQLを書いて終わりにせず、この配列への追記までがワンセット。
 - **🔴 画面右下（PC）／画面下端（モバイル）に新しい要素を追加するときは、必ず `src/lib/layout/bottomStack.ts` のスタックに載せること**（2026-08-21・v3.91で追加。Section 43参照）。bottom値を手書きしない。
+- **🔴 互換性を破壊する変更（DBの列削除・改名・RLS変更・Edge Functionの入出力の非互換・localStorageの形式変更等）を入れるときは、`src/lib/version.ts` の `MIN_CLIENT_VERSION` もそのリリースの版まで引き上げること**（2026-10-01・v3.125で追加。Section 63参照）。4点セットの更新と同時に行う。機能追加・見た目の変更だけでは上げない。
 - 最終更新：2026-09-17（v3.108）
 
 ---
@@ -4358,3 +4359,83 @@ OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根
 （実装時に旧ロジックが実際にフリーズすることを確認済み）。新しい進捗表示を作るときは、
 このパターン（時間ベースの疑似進捗を作る前に、まず「本当に進捗が取れないか」を確認し、
 取れないなら漸近曲線＋経過秒数の型に乗せる）を踏襲すること。
+
+---
+
+## 63. 再読み込みが必要な更新だけを利用者に促す（v3.125・2026-10-01）
+
+山本さんの依頼：Ctrl+Shift+Rが必要なアップデートが実装されたが、利用者が再読み込みできて
+いない、というときに再読み込みを促す通知を出したい。**ただし再読み込みが必要ない更新では
+通知しない**（明示的な念押し）。
+
+### 設計：`MIN_CLIENT_VERSION` という別の定数を立てる
+
+`src/lib/version.ts` の `APP_VERSION`（画面隅の表示用・毎リリースで必ず上がる）とは別に、
+**`MIN_CLIENT_VERSION`**（この版より古い画面は使い続けると不具合が出る、という最低版数）を
+新設した。初期値は導入リリースの版（v3.125）＝「この仕組みが無い旧版からは誰にも通知が
+出ない」という当然の初期状態。
+
+🔴 **`MIN_CLIENT_VERSION` を上げる基準（これ以外では上げない）**：
+- DBの列の削除・改名
+- RLSの変更で旧フロントの書き込み・読み取りが失敗するようになる
+- Edge Functionの入出力（リクエスト・レスポンスの形）の非互換な変更
+- localStorageのキー・値の形式変更（旧形式を読んだ画面が壊れる場合）
+
+**機能追加・見た目の変更だけでは上げない**（通常のリリースのたびに通知を出すと「また
+出た」で無視されるようになり、本当に必要なときに効かなくなる）。
+
+### 上げ方（4点セットと同時に行う）
+
+`src/lib/version.ts` の `MIN_CLIENT_VERSION` を、APP_VERSION と一緒にそのリリースの版へ
+1行変更するだけ（Section 11の4点セット・バージョンを上げる手順に追加したチェック項目）。
+他のファイルを触る必要はない（dist/version.json はビルド時に自動生成されるため）。
+
+### 実装：dist/version.json を定期取得して判定する
+
+- **ビルド時の書き出し**：`vite.config.ts` の `versionManifestPlugin`（`chunk-size-manifest`
+  プラグインと同じ「ビルド実行時に実測・抽出する」流儀）が `src/lib/version.ts` を読み、
+  正規表現で `APP_VERSION`／`MIN_CLIENT_VERSION` を抜き出して
+  `dist/version.json`（`{ version, minClientVersion, buildTime }`）として書き出す。**値を
+  二重管理しない**（version.ts が唯一の正本）。
+- **取得側**：`src/components/common/ReloadNoticeBanner.tsx`。起動時・10分ごと
+  （`setInterval`）・タブが前面に戻ったとき（`visibilitychange`）に
+  `fetch("/version.json?t=" + Date.now(), { cache: "no-store" })`で取得する（クエリと
+  `no-store` の両方でキャッシュを避ける二重の対策。Vercel側も `vercel.json` に
+  `/version.json` 専用の `Cache-Control: no-store` ヘッダーを追加した）。
+- 🔴 **判定は純粋関数に切り出してテストする**：`src/lib/reloadNotice.ts` の
+  `shouldShowReloadNotice(currentVersion, minClientVersion)` が「実行中の `APP_VERSION` が
+  サーバーの `minClientVersion` より古いときだけ」`true` を返す。**サーバーの `version`
+  （通常のリリースで必ず上がる値）は一切見ない**——これが「再読み込みが必要ない更新では
+  通知しない」という念押しの実装そのもの。版の比較は `compareVersions()`（"." 区切りの
+  セグメントを `Number()` で数値化して比較する純粋関数）で行い、"3.9" と "3.10" を文字列
+  比較の罠（"3.10" < "3.9" になる）に落ちずに正しく比較する。不正な値（数値化できない
+  セグメント）は例外を投げず `0` として扱う（総関数にして「出すべきときに出ない」事故の芽を
+  減らすため）。
+- **取得失敗は無視**：fetch自体の失敗・非2xx・JSON崩れは `console.warn` のみに留め、
+  バナーの表示状態（出ている／出ていない）を変えない。`shouldShowReloadNotice()` に
+  `minClientVersion: null` を渡すことで「取得失敗では出さない」を表現する。
+- **開発時は動かさない**：`import.meta.env.DEV` のとき useEffect の先頭で即 return する
+  （vite devサーバーは `dist/version.json` を書き出さないため）。
+- **バナー**：既存の `partialLoadWarning` バナー（`App.tsx`・v3.122・M41是正時に新設）と全く同じ
+  構造（固定表示・warningトーン・右側にボタン1つ）を再利用し、新しい見た目の部品は作って
+  いない。文言は「アプリが更新されました。このまま使うと保存に失敗するおそれがあります。
+  再読み込みしてください」＋「再読み込み」ボタン。**自動では再読み込みしない**（編集中の
+  内容が消えるため、ボタンを押したときだけ `window.location.reload()` する）。**閉じる
+  ボタンは付けない**（必須の更新のため）。i18n（`src/i18n/layout.ja.ts`／`layout.en.ts`）に
+  `layout.app.reloadNotice.body`／`.reload` を追加した。
+- **ゲストモードでも動く**：`ReloadNoticeBanner` はSupabaseに一切接続しない純粋なfetch＋
+  表示コンポーネントのため、`App.tsx` の `guestActive` 分岐（Section 23）・通常ログイン
+  （`AuthenticatedApp`）の両方にマウントした。
+
+### テスト
+
+`src/lib/__tests__/reloadNotice.test.ts`：`compareVersions`（"3.9"<"3.10"・同値・桁数違い・
+不正値）と `shouldShowReloadNotice`（minClientVersionが新しければ出す／同じ・以下なら
+出さない／サーバーのversion自体が新しくても出さない／取得失敗（null）では出さない）を
+純粋関数として検証する。
+
+### やらないこと
+
+- `MIN_CLIENT_VERSION` が実際に古いと判定されたときにDBスキーマを自動修正する機能は作って
+  いない（Section 22と同じくHuman in the loop＝知らせるだけ）。
+- Service Worker等によるキャッシュ強制更新は導入していない（ポーリング＋手動ボタンのみ）。
