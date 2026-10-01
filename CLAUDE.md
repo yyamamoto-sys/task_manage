@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.127
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.128
 #
-最終更新：2026-10-01（v3.127）
+最終更新：2026-10-01（v3.128）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4569,3 +4569,70 @@ OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根
 - ツアー既読 `tour_completed_v1` はメンバーIDで分かれていない（同じブラウザの別アカウントで共有）。直さず
   `docs/REFACTORING.md` M47 に記録した。
 - `MIN_CLIENT_VERSION` は上げていない（DB・RLS・Edge Function・localStorage の形式に非互換な変更は無い）。
+
+---
+
+## 66. 期限リマインド：Windows通知（Web Push）＋アプリ内通知（v3.128・2026-10-01）
+
+**正本は [docs/dev/web-push-reminder-design.md](docs/dev/web-push-reminder-design.md)（rev3。§12 に設計から変えた点）。**
+Teams 週次（notify-deadlines）が個人の Teams 接続に依存して黙って止まっていたため、期限の知らせを
+「チームへの共有」から「個人へのリマインド」に作り替えた。最優先の非機能要件は **黙って止まらないこと**。
+
+### 仕組み（1日の流れ）
+
+```
+pg_cron（平日 JST 7:00〜19:30・30分ごと＝26回）── x-cron-secret ──> Edge Function push-reminders
+  ├ reminder_runs に running の行を書く（落ちても「始まって終わっていない」記録が残る）
+  ├ 土日・祝日（esm.sh の japanese-holidays）なら「…のためスキップ」を記録して終わる
+  ├ 現在の JST を30分に切り捨てたスロット＝送信時刻に選んでいる人だけを抽出（_shared/reminderLogic.ts）
+  ├ claim_reminder_sends（INSERT … ON CONFLICT DO NOTHING RETURNING）で「今日まだの人」だけに絞る＝1人1日1回
+  ├ ① in_app_notifications に1行（アプリ内通知＝ベル）
+  ├ ② push_subscriptions の各ブラウザへ Web Push（_shared/webPush.ts・npm:web-push。410/404 は購読を削除）
+  └ reminder_runs を success / partial / failed で閉じる（失敗はステータス別件数だけを error_summary に）
+ブラウザ：public/sw.js が受けて通知を出す → クリックで「自分のタスク一覧」（/?open=my-tasks）
+```
+
+- **対象**：本人が担当する全部署分のタスク（`assignee_member_ids` 優先・無ければ `assignee_member_id`）。
+  status は todo / in_progress のみ。期限超過＝`due_date < 今日`、今日期限＝`due_date = 今日`（JST）。
+- **文面**：件数＋最初の1件（期日→作成日時→id の順）。タスク名は40字で切る。PJ名・コメント・担当者名は載せない。
+- **Edge Function の起動**：cron（x-cron-secret）／super_admin の JWT（手動・`dryRun`）／本人の JWT＋`test`（自分の購読だけへテスト送信）。
+  `--no-verify-jwt` でデプロイする（付け忘れると cron が401）。JWT 呼び出しは1分6回まで。
+- 純粋関数（抽出・文面・スロット・休日・送信結果の分類・ページング）は `supabase/functions/_shared/` に置き、
+  `src/lib/reminder/__tests__/` から相対 import して vitest で検証する（Deno 依存の無いファイルだけ）。
+
+### 個人設定（設定ページ「🔔 通知」タブ・Section 65）
+
+- `notification_prefs`（members の列にしない。同部署の他人が members を UPDATE できるため）。行が無い人は既定値
+  ＝アプリ内オン・Windowsオフ・両種類オン・8:30（`src/lib/reminder/notificationPrefs.ts` と `_shared/reminderLogic.ts` で同じ値を持ち、テストで一致を検査）。
+- トグル・時刻は押した時点で保存（明示保存の対象外）。送信時刻は 7:00〜19:00 の30分刻み25件（DB の CHECK 制約と同じ）。
+- **Windows通知の許可ダイアログはオンにした瞬間だけ出す。** 購読はブラウザ単位（`register_push_subscription` が同じ endpoint の持ち主を付け替える）。
+  オンの人がアプリを開くと `usePushSubscriptionSync` が許可済みのブラウザだけ購読を登録し直す（失効・鍵の変更・SW の更新を吸収）。
+- Teams のタブ内（iframe）・非対応ブラウザ・`VITE_VAPID_PUBLIC_KEY` 未設定のときはトグルを無効にして理由を出す。
+- 「通知が届かないとき」に Windows の「設定」→「システム」→「通知」でブラウザがオンか・応答不可がオフか、ブラウザを完全に終了していると届かないこと、PC・ブラウザごとの設定であることを載せている。
+- **メンション通知**（`useMentionNotifications`）は Windows通知をオンにした人だけ（`push_enabled`）。旧方式B（タブ表示中の期限通知・`useDeadlineNotifications`）は廃止し、ダッシュボードの通知方法 `<select>` は「🔔 通知設定」ボタンに置き換えた。`members.notify_pref` 列は残す（削除は別マイグレ）。
+
+### 送信記録の見方（super_admin）
+
+- 設定 → 部署の管理 → アプリ設定 →「通知」（`ReminderSection.tsx`）：直近30回の実行（平日は30分ごとなので約1営業日分）・Windows通知の登録数・「今すぐ実行（dryRun）」（送らず記録もせず、全員分の文面と送信時刻を表示）。
+- **赤バナー**（`ReminderHealthBanner`・判定は `src/lib/reminder/reminderHealth.ts`）：平日、30分以上前の予定スロット（7:00〜19:30）の cron 記録が無い／failed／running のまま。
+  **黄**：直近の cron が partial、または Windows通知の失敗率50%以上。取得失敗は「確認できません」を出す。
+- 「成功」はプッシュサービスが受け取ったところまで。画面に表示されたかは分からない（本人のテスト送信と既読で補う）。
+
+### 🔴 ルール
+
+- **public/sw.js に fetch ハンドラを書かない。** キャッシュを持つ SW は、デプロイ後も古い画面が出続ける障害を呼ぶ（Section 63 の再読み込み案内とも衝突する）。`/sw.js` は vercel.json で no-store、登録は `updateViaCache:"none"`、install で skipWaiting・activate で clients.claim。
+- **通知のクリックで開いているタブを `navigate()` しない。** 再読み込みで保存前の編集が無言で消える。SW は `postMessage` し、アプリ側が `guardedNavigate` で画面を切り替える。
+- **pg_cron の登録はテーブルのマイグレに入れない。** シークレットの置き換えが要るため `20261001b_schedule_push_reminders.sql` に分け、最後に本番だけで手で流す（プレースホルダー検査クエリ付き）。
+- **新しく通知を送る機能（バックアップ通知等）は `_shared/webPush.ts` の `sendToSubscriptions` を使う。** 送信・失効処理を二重に実装しない（設計書 §6.2・フェーズ5.5）。
+- 鍵（VAPID）の秘密鍵は Supabase secrets のみ。公開鍵は Vercel の `VITE_VAPID_PUBLIC_KEY`（ビルド時に埋め込まれる）。**秘密鍵を作り直すと全員の購読が無効になる**ので、再生成は全員への再設定のお願いとセットで行う。
+
+### 適用の順序（🔴 逆にすると新画面が「読み込めません」になる）
+
+1. マイグレ `20261001_web_push_reminders.sql`（dev → prod）
+2. VAPID 鍵を生成し、`supabase secrets set --project-ref <ref>` で VAPID_PUBLIC_KEY / VAPID_PRIVATE_KEY / VAPID_SUBJECT / REMINDER_CRON_SECRET を設定（dev・prod で別の鍵ペア）
+3. `supabase functions deploy push-reminders --no-verify-jwt --project-ref <ref>`
+4. Vercel の環境変数 `VITE_VAPID_PUBLIC_KEY`（prod の公開鍵）→ フロントを main へ（Vercel が再ビルド）
+5. 実機でテスト通知が届くことを確認してから、本番だけ `20261001b_schedule_push_reminders.sql`（シークレットを置き換えて実行）
+
+Teams 週次（notify-deadlines）は新方式の稼働確認（5営業日）まで止めない（設計書 §9）。
+`MIN_CLIENT_VERSION` は上げていない（既存の列・RLS・Edge Function の入出力を変えていないため）。

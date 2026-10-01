@@ -15,6 +15,7 @@ import { ToastContainer, showToast } from "./components/common/Toast";
 import { formatErrorForUser } from "./lib/errorMessage";
 import { SchemaHealthBanner } from "./components/common/SchemaHealthBanner";
 import { BackupHealthBanner } from "./components/common/BackupHealthBanner";
+import { ReminderHealthBanner } from "./components/common/ReminderHealthBanner";
 import { ReloadNoticeBanner } from "./components/common/ReloadNoticeBanner";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
@@ -571,6 +572,7 @@ function AuthenticatedApp({
       <MainLayout currentUser={currentUser} onLogout={onLogout} />
       <SchemaHealthBanner currentUser={currentUser} />
       <BackupHealthBanner currentUser={currentUser} />
+      <ReminderHealthBanner currentUser={currentUser} />
       <ReloadNoticeBanner />
       <ConfirmModal />
       <ToastContainer />

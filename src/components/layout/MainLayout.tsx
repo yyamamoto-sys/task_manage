@@ -5,8 +5,12 @@ import { useTheme } from "../../hooks/useTheme";
 import { useT } from "../../hooks/useT";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { useDeadlineNotifications } from "../../hooks/useDeadlineNotifications";
 import { useMentionNotifications } from "../../hooks/useMentionNotifications";
+import { usePushSubscriptionSync } from "../../hooks/usePushSubscriptionSync";
+import { useNotificationPrefsStore } from "../../stores/notificationPrefsStore";
+import { InAppNotificationBell } from "../notifications/InAppNotificationBell";
+import { extractOpenTarget, stripOpenParam } from "../../lib/reminder/deepLink";
+import type { SettingsSection } from "../../lib/settings/settingsSections";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { LangToggle } from "../common/LangToggle";
@@ -403,11 +407,23 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
 
-  // 期限のブラウザ通知（自分の notify_pref==="browser" のときだけ発火・アプリ表示中のみ）
-  useDeadlineNotifications(currentUser.id);
-  // @メンション通知（コメントに @自分 が新たに現れたらブラウザ通知）
+  // 期限のお知らせは v3.128 から push-reminders（Windows通知＋アプリ内通知のベル）が担う。
+  // タブ表示中だけ30分ごとに出していた旧方式（方式B・useDeadlineNotifications）は二重通知になるため廃止した。
+  // 個人の通知設定（notification_prefs）。ゲストは Supabase に接続しないため読まない
+  const loadNotificationPrefs = useNotificationPrefsStore(s => s.load);
+  const pushEnabled = useNotificationPrefsStore(s => s.status === "ready" && s.prefs.push_enabled);
+  useEffect(() => {
+    if (!isGuest) void loadNotificationPrefs(currentUser.id);
+  }, [isGuest, currentUser.id, loadNotificationPrefs]);
+  usePushSubscriptionSync(isGuest ? null : currentUser.id, pushEnabled);
+  // @メンション通知（Windows通知をオンにした人だけ。コメントに @自分 が新たに現れたらブラウザ通知）
   useMentionNotifications(currentUser.id);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  // 設定ページを特定のセクションで開く（ベル・ダッシュボードの「通知設定」から notify を指定）。
+  // nonce を key にして、既に開いているときも指定のセクションで開き直す
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  const [settingsNonce, setSettingsNonce] = useState(0);
+  useEffect(() => { if (!isAdminOpen) setSettingsSection(undefined); }, [isAdminOpen]);
   // プロジェクト招待：招待コードを手入力して参加する入口（Phase 4・山本さんの指摘対応）。
   // AdminViewの「プロジェクト招待」タブは部署管理者限定（管理者が1人もいない部署は
   // ブートストラップモードで全員アクセス可だが、通常は非管理者から到達できない）のため、
@@ -689,6 +705,64 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     [projects, mineOnly, myProjectIds],
   );
 
+  // 通知のクリック先「自分のタスク一覧」（/?open=my-tasks。設計書 §3.2）：計画モードのリストを「自分」で表示する
+  const openMyTasks = () => void guardedNavigate(() => {
+    closeLabViews();
+    setIsAdminOpen(false);
+    setIsGuideOpen(false);
+    localStorage.setItem(KEYS.APP_MODE, "plan");
+    setAppModeState("plan");
+    setSelectedProjectId(null);
+    setSelectedKrId(null);
+    setViewMode("list");
+    localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
+    setMineOnlyState(true);
+  });
+  const openNotificationLink = (url: string) => {
+    let search = "";
+    try { search = new URL(url, window.location.origin).search; } catch { return; }
+    if (extractOpenTarget(search) === "my-tasks") openMyTasks();
+  };
+  const openSettings = (section?: SettingsSection) => void guardedNavigate(() => {
+    setSettingsSection(section);
+    setSettingsNonce(n => n + 1);
+    setIsAdminOpen(true);
+  });
+  // イベント購読（マウント時に1回張る）からも最新の関数を呼べるよう ref に置く
+  const openNotificationLinkRef = useRef(openNotificationLink);
+  openNotificationLinkRef.current = openNotificationLink;
+  const openSettingsRef = useRef(openSettings);
+  openSettingsRef.current = openSettings;
+  useEffect(() => {
+    if (isGuest) return;
+    // ① 通知から新しいタブで開かれた（/?open=my-tasks）。読んだらクエリを消し、リロードで再発火させない
+    if (extractOpenTarget(window.location.search)) {
+      window.history.replaceState(window.history.state, "", stripOpenParam(window.location.href));
+      openNotificationLinkRef.current("/?open=my-tasks");
+    }
+    // ② 開いているタブで通知がクリックされた（public/sw.js が再読み込みせず postMessage で知らせる）
+    const onSwMessage = (e: MessageEvent) => {
+      const data = e.data as { type?: string; url?: string } | null;
+      if (data?.type === "notification-click" && typeof data.url === "string") openNotificationLinkRef.current(data.url);
+    };
+    // ③ ダッシュボード等から設定ページの特定のセクションを開く
+    const onOpenSettings = (e: Event) => openSettingsRef.current((e as CustomEvent).detail as SettingsSection | undefined);
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    window.addEventListener("app:open-settings", onOpenSettings);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+      window.removeEventListener("app:open-settings", onOpenSettings);
+    };
+  }, [isGuest]);
+  const notificationBell = (variant: "sidebar" | "header") => isGuest ? null : (
+    <InAppNotificationBell
+      memberId={currentUser.id}
+      variant={variant}
+      onOpenLink={openNotificationLink}
+      onOpenSettings={() => openSettings("notify")}
+    />
+  );
+
   // コマンドパレットの検索対象タスク（スコープ済み・非削除）
   const paletteTasks = useMemo(
     () => (rawTasks ?? []).filter((t: Task) => !t.is_deleted),
@@ -825,6 +899,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <Suspense fallback={<ViewLoading />}>
           <SettingsView
+            key={settingsNonce}
+            initialSection={settingsSection}
             currentUser={currentUser}
             theme={theme}
             onToggleTheme={toggleTheme}
@@ -1390,6 +1466,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             <AIIcon />
           </button>
+          {notificationBell("header")}
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
           <button
@@ -1622,6 +1699,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onSelectGroup={handleSelectGroupNav}
         onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
         onOpenAcceptInvite={() => setIsAcceptInviteOpen(true)}
+        bellSlot={notificationBell("sidebar")}
       />
       {isAcceptInviteOpen && (
         <AcceptInviteModal currentUser={currentUser} onClose={() => setIsAcceptInviteOpen(false)} />
@@ -1780,6 +1858,8 @@ interface SidebarProps {
   /** プロジェクト招待：招待コードを手入力して参加するモーダルを開く（Phase 4・v3.68）。
    *  AdminView（部署管理者限定）の外に置くため、Sidebar自身がボタンを持つ。 */
   onOpenAcceptInvite: () => void;
+  /** アプリ内通知のベル（v3.128。ゲストは null） */
+  bellSlot: React.ReactNode;
 }
 
 function Sidebar({
@@ -1794,7 +1874,7 @@ function Sidebar({
   width, isResizing, onResizePointerDown, onResizePointerMove, onResizePointerUp, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
-  onOpenVersionHistory, onOpenAcceptInvite,
+  onOpenVersionHistory, onOpenAcceptInvite, bellSlot,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -2359,6 +2439,7 @@ function Sidebar({
             style={{ ...footerIconBtnStyle, fontSize: "14px" }}
             title={t("layout.calendar.title")}
           >🗓️</button>
+          {bellSlot}
           {/* 「その他」（ガイド／設定／招待コード／テーマ／ログアウト）の開閉。v3.74の見出し行を
               この行へ吸収した。サイドバーが折りたたまれているときは項目を常時アイコンで並べる。 */}
           {showMiscGroup && (

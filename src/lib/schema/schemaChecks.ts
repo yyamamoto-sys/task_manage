@@ -498,4 +498,33 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "部署のTeams通知設定テーブル（group_notification_settings）が見つかりません",
     migration: "20260928c_group_notification_settings.sql",
   },
+  // 期限リマインド（v3.128）。未適用だと通知設定が「読み込めません」になり、ベル・Windows通知・
+  // push-reminders（Edge Function）がすべて動かない。
+  ...([
+    ["notification_prefs", "個人の通知設定"],
+    ["push_subscriptions", "Windows通知の登録"],
+    ["in_app_notifications", "アプリ内通知"],
+    ["reminder_runs", "期限リマインドの実行記録"],
+    ["reminder_send_log", "期限リマインドの送信記録（1人1日1回）"],
+  ] as const).map(([table, name]): SchemaCheckDescriptor => ({
+    id: `${table}_table`,
+    kind: "table",
+    table,
+    label: `期限リマインド：${name}テーブル（${table}）が見つかりません`,
+    migration: "20261001_web_push_reminders.sql",
+  })),
+  {
+    id: "fn_register_push_subscription",
+    kind: "function",
+    name: "register_push_subscription",
+    label: "期限リマインド：Windows通知の登録関数（register_push_subscription）が見つかりません",
+    migration: "20261001_web_push_reminders.sql",
+  },
+  {
+    id: "fn_claim_reminder_sends",
+    kind: "function",
+    name: "claim_reminder_sends",
+    label: "期限リマインド：1人1日1回の判定関数（claim_reminder_sends）が見つかりません",
+    migration: "20261001_web_push_reminders.sql",
+  },
 ];

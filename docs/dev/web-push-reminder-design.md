@@ -1,6 +1,6 @@
 # 期限リマインド再設計書（Windows通知＝Web Push ＋ アプリ内通知）
 
-最終更新：2026-09-30 rev2（§11 の未決9件に山本さんの決定を反映。個人で選べる送信時刻＝案Cを追加。設計のみ・実装未着手）
+最終更新：2026-10-01 rev3（v3.128 で実装。§12 に設計書から変えた点を記録。適用・デプロイは未実施）
 関連：[deadline-notifications.md](./deadline-notifications.md)（現行の方式B・D）／[backup-design.md](./backup-design.md)（実行記録とバナーの前例）／CLAUDE.md Section 39・53・58・61
 
 > この文書は、期限通知を「チームへの共有」から「個人へのリマインド」に作り替えるための正本である。
@@ -468,3 +468,23 @@ rev1（本書初版）の未決事項9件について、同日中に山本さん
 - 送信時刻の実装で新設した `japanese-holidays` の esm.sh 経由importが、実際にDeno上で（依存ゼロという事前確認どおり）問題なく動くかは未検証（§7.3）。dev検証（フェーズ0〜1）で確認する。
 - super_admin が0人・またはsuper_admin全員がWindows通知をオフにしている部署運用での、バックアップ失敗通知の代替手段（メール等）は今回検討していない。アプリ内通知には届くため実害は小さいと見て一旦保留にした。
 - 利用者向けガイドの執筆担当・具体的な公開時期は、実装フェーズが進んだ時点で改めて決める。
+
+---
+
+## 12. 実装（v3.128・2026-10-01）で設計から変えた点
+
+実物の正本はコードと CLAUDE.md Section 66。以下はこの設計書の本文と違うところだけを記録する。
+
+| # | 本文の記述 | 実装 | 理由 |
+|---|---|---|---|
+| 1 | §3.1 notificationclick は既存のウィンドウを `navigate(url)` | 開いているタブには `postMessage({type:"notification-click", url})` を送り、アプリ側（MainLayout）が `guardedNavigate` 経由で「自分のタスク一覧」に切り替える。タブが無ければ `openWindow(url)` | `navigate()` は再読み込みになり、保存前の編集が無言で消える（Section 46） |
+| 2 | §3.1 SW は push と notificationclick の2ハンドラだけ | 加えて install で `skipWaiting()`・activate で `clients.claim()` を持つ（fetch ハンドラは持たない）。`vercel.json` で `/sw.js` を `no-store`、登録は `updateViaCache:"none"` | 更新時に古い SW が残らないようにするため。キャッシュはしないので version.json の再読み込み案内（Section 63）とは衝突しない |
+| 3 | §7.3 dryRun は人ごとの文面を返す | 時刻で絞らず全員分を返し、各人の送信時刻（`reminderTime`）・その日が休日か（`daySkip`）・VAPID の設定有無も返す | 現在のスロットに該当者がいないと何も確認できないため |
+| 4 | §6 reminder_runs の列 | `slot_time` 列を追加。RPC を2本追加：`claim_reminder_sends`（§6.1 の INSERT … ON CONFLICT DO NOTHING RETURNING を1文で行う・service_role 専用）／`push_subscription_stats`（購読数を super_admin に返す。購読表は本人の行しか読めないため） | — |
+| 5 | §5.2 既読化 RPC | `mark_in_app_notifications_read(NULL)` は本人の未読をすべて既読にする（「すべて既読」用） | — |
+| 6 | §6.3 赤の条件 | 予定スロットの記録が `running` のまま残っている場合も赤（数秒で終わる処理が終わっていない＝途中で落ちた）。手動実行・テスト送信の記録は cron の代わりに数えない。祝日も判定する（祝日も cron は動き「祝日のためスキップ」を記録するため） | — |
+| 7 | §4.3 方式B は §9 フェーズ5で廃止 | v3.128 で廃止した（`useDeadlineNotifications` を削除）。ダッシュボードのリマインダーカードの `<select>` は「🔔 通知設定」ボタン（設定ページの通知タブを開く）に置き換えた。`members.notify_pref` 列は残す | 通知方法を選ぶ UI を設定ページへ移したため、旧方式をオフにする手段が無くなる。ベルがタブ表示中の役割を引き継ぐ |
+| 8 | §4.5 送信時刻を変えた日の扱い | 本文どおり（その日の分を送った後に変えたら翌営業日から） | — |
+| 9 | §5.3 ベルの置き場所 | サイドバー下部の1行（カレンダーの右）とモバイルのヘッダー（設定の左）。パネルの「⚙ 通知設定」は設定ページの通知タブを開く | — |
+| 10 | §7.1 テスト送信 | 本人の JWT のみ。1分6回までの連打防止（Section 18）を手動実行と共用。`reminder_runs` に `trigger='test'` で記録する | — |
+

@@ -7759,4 +7759,44 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## やらないこと
 # AdminView の分割。Web Push の本実装。MIN_CLIENT_VERSION の引き上げ。
 
-最終更新：2026-10-01（v3.127）
+# v3.128（2026-10-01）：期限リマインドの新方式（Windows通知＝Web Push＋アプリ内通知）を実装（CLAUDE.md Section 66）
+#
+# 正本：docs/dev/web-push-reminder-design.md（rev3。§12 に設計から変えた点）。🔴 ブランチ feat/web-push のみ・
+# main 未マージ・DB 未適用・Edge Function 未デプロイ・pg_cron 未登録。
+#
+# ## 変更
+# * supabase/migrations/20261001_web_push_reminders.sql（新規）：notification_prefs / push_subscriptions /
+#   in_app_notifications / reminder_runs / reminder_send_log と RLS（本人の行のみ・(SELECT current_member_id())
+#   IS NOT NULL で匿名・未登録を弾く・実行記録は super_admin のみ）。RPC：register_push_subscription /
+#   mark_in_app_notifications_read / push_subscription_stats / claim_reminder_sends（service_role 専用）
+# * supabase/migrations/20261001b_schedule_push_reminders.sql（新規）：pg_cron（am / pm / 90日削除）。
+#   <REMINDER_CRON_SECRET> のプレースホルダー付き・本番のみ・最後に手で流す
+# * supabase/functions/push-reminders/index.ts（新規）：cron（x-cron-secret）／super_admin の手動・dryRun／
+#   本人のテスト送信（?test=1 または body.mode="test"）。祝日は esm.sh の japanese-holidays
+# * supabase/functions/_shared/：reminderLogic.ts（対象抽出・文面・スロット・休日）／webPushCore.ts（送信結果の
+#   分類）／webPush.ts（npm:web-push@3.6.7 で送信し、410/404 の購読を削除）／fetchAllRows.ts（Section 61）
+# * public/sw.js（新規）：push と notificationclick（開いているタブには postMessage）。fetch ハンドラなし。
+#   vercel.json に /sw.js の Cache-Control: no-store
+# * 設定ページ 🔔通知タブ：NotificationSettingsSection.tsx（新規）。共通部品を settingsUi.tsx に分離
+# * ベル：src/components/notifications/InAppNotificationBell.tsx（サイドバー下部・モバイルのヘッダー）
+# * 管理：AdminView「アプリ設定 → 通知」＝ReminderSection.tsx、App.tsx に ReminderHealthBanner（super_admin）
+# * MainLayout：通知設定の読み込み・購読の再同期（usePushSubscriptionSync）・/?open=my-tasks・SW のメッセージ・
+#   app:open-settings イベント。方式B（useDeadlineNotifications）を削除
+# * useMentionNotifications：ゲートを notify_pref==="browser" から notification_prefs.push_enabled へ
+# * DashboardView：通知方法の <select> を「🔔 通知設定」ボタンに置き換え
+# * schemaChecks.ts：5テーブル＋2関数。schema.sql 同期。vite-env.d.ts に VITE_VAPID_PUBLIC_KEY
+#
+# ## MIN_CLIENT_VERSION
+# 上げない（3.125 のまま）。既存の列・RLS・Edge Function の入出力は変えておらず、旧画面はそのまま動く
+# （notify_pref 列も残す）。
+#
+# ## 検証
+# `npx tsc --noEmit`・`npx vitest run`（186ファイル・2200件＋）・変更ファイルの eslint・`npm run build`。
+# 新規テスト src/lib/reminder/__tests__/（抽出・平日祝日・スロット・1日1回・文面・失効・既定値・バナー・
+# RLS の文面検査）。7か所を意図的に壊して赤くなることを確認済み。Edge Function は Deno の型の代替定義で tsc を通した
+# （実行時の確認は dev デプロイ後）。
+#
+# ## やらないこと
+# バックアップ通知の切替（フェーズ5.5）・Teams 関連の削除（フェーズ6）・notify-deadlines の改修・notify_pref 列の削除。
+
+最終更新：2026-10-01（v3.128）

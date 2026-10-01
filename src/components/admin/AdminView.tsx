@@ -45,9 +45,10 @@ import { AdminFormModal } from "./AdminFormModal";
 import { OkrImportModal } from "./OkrImportModal";
 import { LoadingTipsSection } from "./LoadingTipsSection";
 import { BackupSection } from "./BackupSection";
+import { ReminderSection } from "./ReminderSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders";
 
 interface Props { currentUser: Member; }
 
@@ -268,6 +269,7 @@ export function AdminView({ currentUser }: Props) {
     ...(isCurrentUserSuperAdmin ? [{ label: "アプリ設定", items: [
         { key: "tips" as AdminTab, label: "ローディングのヒント" },
         { key: "backup" as AdminTab, label: "バックアップ" },
+        { key: "reminders" as AdminTab, label: "通知" },
     ] }] : []),
   ];
   const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
@@ -444,6 +446,7 @@ export function AdminView({ currentUser }: Props) {
           {tab === "invites"  && <InvitesSection selectedGroupId={selectedGroupId} />}
           {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
           {tab === "backup"   && <BackupSection currentUser={currentUser} />}
+          {tab === "reminders" && <ReminderSection currentUser={currentUser} />}
         </div>
       </div>
     </div>

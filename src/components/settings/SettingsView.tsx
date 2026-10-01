@@ -10,7 +10,7 @@
 // MainLayout から theme/onToggleTheme を受け取る。言語は zustand（langStore）なので直接使う。
 
 import { useEffect, useId, useMemo, useRef, useState, Suspense, type ReactNode } from "react";
-import type { Member, NotifyPref } from "../../lib/localData/types";
+import type { Member } from "../../lib/localData/types";
 import { useAppStore } from "../../stores/appStore";
 import { useLangStore } from "../../stores/langStore";
 import { useT } from "../../hooks/useT";
@@ -29,6 +29,8 @@ import { buildProfileUpdate, deriveInitials, fallbackShortName, MEMBER_AVATAR_CO
 import {
   adminsOfGroup, buildSettingsSections, canAccessAdminSection, type SettingsSection,
 } from "../../lib/settings/settingsSections";
+import { SectionBody, Row, inputStyle, btnStyle, primaryBtnStyle, SegButtons } from "./settingsUi";
+import { NotificationSettingsSection } from "./NotificationSettingsSection";
 
 const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 
@@ -44,6 +46,8 @@ interface Props {
   onLogout: () => void;
   /** PC のみ（モバイルにはサイドバー幅が無い） */
   onResetSidebarWidth?: () => void;
+  /** 開いたときに表示するセクション（ベル・ダッシュボードの「通知設定」から notify を指定する） */
+  initialSection?: SettingsSection;
 }
 
 const SECTION_ICON: Record<SettingsSection, string> = {
@@ -57,9 +61,9 @@ export function SettingsView(props: Props) {
   const members = useAppStore(s => s.members);
   const showAdmin = canAccessAdminSection(currentUser, members);
   const sections = useMemo(() => buildSettingsSections(showAdmin), [showAdmin]);
-  const [section, setSection] = useState<SettingsSection>("profile");
+  const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "profile");
   // 管理は一度開いたらマウントしたまま隠す（個人設定へ移っても AdminView の入力途中の状態を失わない）
-  const [adminMounted, setAdminMounted] = useState(false);
+  const [adminMounted, setAdminMounted] = useState(props.initialSection === "admin");
   const current: SettingsSection = sections.includes(section) ? section : "profile";
 
   const changeSection = async (next: SettingsSection) => {
@@ -115,7 +119,7 @@ export function SettingsView(props: Props) {
       <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", position: "relative" }}>
         {current === "profile" && <ProfileSection currentUser={currentUser} />}
         {current === "display" && <DisplaySection {...props} />}
-        {current === "notify" && <NotifySection currentUser={currentUser} />}
+        {current === "notify" && <NotificationSettingsSection currentUser={currentUser} />}
         {current === "help" && <HelpSection {...props} />}
         {showAdmin && adminMounted && (
           <div style={{ display: current === "admin" ? "block" : "none", height: "100%" }}>
@@ -123,70 +127,6 @@ export function SettingsView(props: Props) {
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-// ===== 共通の見た目 =====
-
-function SectionBody({ title, lead, children }: { title: string; lead?: string; children: ReactNode }) {
-  return (
-    <div style={{ padding: "16px 20px", maxWidth: "640px" }}>
-      <div style={{ fontSize: "15px", fontWeight: 700, color: "var(--color-text-primary)" }}>{title}</div>
-      {lead && <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "4px", lineHeight: 1.7 }}>{lead}</div>}
-      <div style={{ marginTop: "14px", display: "flex", flexDirection: "column", gap: "14px" }}>{children}</div>
-    </div>
-  );
-}
-
-function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <div style={{
-      padding: "12px 14px", border: "1px solid var(--color-border-primary)",
-      borderRadius: "var(--radius-lg)", background: "var(--color-bg-primary)",
-    }}>
-      <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "6px" }}>{label}</div>
-      {children}
-      {hint && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px", lineHeight: 1.7 }}>{hint}</div>}
-    </div>
-  );
-}
-
-const inputStyle: React.CSSProperties = {
-  width: "100%", boxSizing: "border-box", padding: "6px 8px", fontSize: "13px",
-  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-  background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
-};
-
-const btnStyle: React.CSSProperties = {
-  padding: "6px 12px", fontSize: "12px", cursor: "pointer",
-  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-  background: "var(--color-bg-secondary)", color: "var(--color-text-primary)",
-};
-
-const primaryBtnStyle: React.CSSProperties = {
-  ...btnStyle, background: "var(--color-brand)", color: "#fff", border: "1px solid var(--color-brand)",
-};
-
-function SegButtons<T extends string>({ value, options, onChange }: {
-  value: T; options: { value: T; label: string }[]; onChange: (v: T) => void;
-}) {
-  return (
-    <div style={{ display: "inline-flex", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
-      {options.map((o, i) => (
-        <button
-          key={o.value}
-          onClick={() => onChange(o.value)}
-          aria-pressed={value === o.value}
-          style={{
-            padding: "5px 12px", fontSize: "12px", border: "none", cursor: "pointer",
-            borderLeft: i > 0 ? "1px solid var(--color-border-primary)" : "none",
-            background: value === o.value ? "var(--color-bg-info)" : "transparent",
-            color: value === o.value ? "var(--color-text-info)" : "var(--color-text-secondary)",
-            fontWeight: value === o.value ? 600 : 400,
-          }}
-        >{o.label}</button>
-      ))}
     </div>
   );
 }
@@ -313,84 +253,6 @@ function DisplaySection({ theme, onToggleTheme, onResetSidebarWidth }: Props) {
           </button>
         </Row>
       )}
-    </SectionBody>
-  );
-}
-
-// ===== 🔔 通知 =====
-
-type PermissionState = NotificationPermission | "unsupported";
-
-function readPermission(): PermissionState {
-  return typeof window !== "undefined" && "Notification" in window ? Notification.permission : "unsupported";
-}
-
-function NotifySection({ currentUser }: { currentUser: Member }) {
-  const t = useT();
-  const members = useAppStore(s => s.members);
-  const saveMember = useAppStore(s => s.saveMember);
-  const self = members.find(m => m.id === currentUser.id);
-  const notifyPref: NotifyPref = self?.notify_pref ?? "none";
-  const [permission, setPermission] = useState<PermissionState>(readPermission);
-
-  // DashboardView のリマインダーカードのセレクタと同じ保存経路・同じ許可要求
-  const changePref = async (pref: NotifyPref) => {
-    if (!self) return;
-    if (pref === "browser" && "Notification" in window) {
-      if (Notification.permission === "default") {
-        try { await Notification.requestPermission(); } catch { /* ignore */ }
-      }
-      setPermission(readPermission());
-      if (Notification.permission === "denied") {
-        showToast(t("layout.settings.notify.blockedToast"), "error");
-      }
-    }
-    try {
-      await saveMember({ ...self, notify_pref: pref, updated_by: currentUser.id });
-    } catch { /* saveMember 側で ConflictError をトースト処理 */ }
-  };
-
-  const requestPermission = async () => {
-    try { await Notification.requestPermission(); } catch { /* ignore */ }
-    setPermission(readPermission());
-  };
-
-  const permTone = permission === "granted" ? "success" : permission === "denied" ? "danger" : "warning";
-
-  return (
-    <SectionBody title={`🔔 ${t("layout.settings.nav.notify")}`} lead={t("layout.settings.notify.lead")}>
-      <Row label={t("layout.settings.notify.pref")} hint={t("layout.settings.notify.prefHint")}>
-        <select value={notifyPref} onChange={e => void changePref(e.target.value as NotifyPref)} style={{ ...inputStyle, width: "auto" }}>
-          <option value="none">🔕 {t("layout.settings.notify.none")}</option>
-          <option value="browser">🔔 {t("layout.settings.notify.browser")}</option>
-          <option value="teams">💬 {t("layout.settings.notify.teams")}</option>
-        </select>
-      </Row>
-      <Row label={t("layout.settings.notify.permission")}>
-        <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          <span style={{
-            fontSize: "11px", padding: "2px 10px", borderRadius: "99px",
-            background: `var(--color-bg-${permTone})`, color: `var(--color-text-${permTone})`,
-            border: `1px solid var(--color-border-${permTone})`,
-          }}>{t(`layout.settings.notify.perm.${permission}`)}</span>
-          {permission === "default" && (
-            <button style={btnStyle} onClick={() => void requestPermission()}>{t("layout.settings.notify.requestPermission")}</button>
-          )}
-        </div>
-        {permission === "denied" && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "6px", lineHeight: 1.7 }}>
-            {t("layout.settings.notify.deniedHint")}
-          </div>
-        )}
-      </Row>
-      <Row label={t("layout.settings.notify.troubleHeading")}>
-        <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.9 }}>
-          <li>{t("layout.settings.notify.trouble1")}</li>
-          <li>{t("layout.settings.notify.trouble2")}</li>
-          <li>{t("layout.settings.notify.trouble3")}</li>
-          <li>{t("layout.settings.notify.trouble4")}</li>
-        </ol>
-      </Row>
     </SectionBody>
   );
 }

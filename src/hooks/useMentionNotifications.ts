@@ -3,14 +3,17 @@
 // 他のメンバーが自分を @short_name でメンションし、タスク編集モーダルを閉じたときにブラウザ通知を出す。
 // コメント文字列（autosave のたびに変わる）ではなく、モーダルを閉じたときだけ更新される
 // tasks.finalized_mentions の変化を監視することで「閉じた時方式」を実現する。
-// notify_pref==="browser" かつ許可済みのみ動作。
+// v3.128：Windows通知（notification_prefs.push_enabled）をオンにした人で、許可済みのときだけ動作する
+// （旧ゲートは members.notify_pref==="browser"。設計書 §4.3）。
 
 import { useEffect, useRef } from "react";
 import { useAppStore, selectScopedTasks } from "../stores/appStore";
+import { useNotificationPrefsStore } from "../stores/notificationPrefsStore";
 
 export function useMentionNotifications(currentUserId: string) {
   const tasks   = useAppStore(selectScopedTasks);
   const members = useAppStore(s => s.members);
+  const pushEnabled = useNotificationPrefsStore(s => s.status === "ready" && s.prefs.push_enabled);
 
   // タスクごとの前回 finalized_mentions（カンマ結合文字列で保持）
   const prevRef = useRef<Map<string, string>>(new Map());
@@ -20,7 +23,7 @@ export function useMentionNotifications(currentUserId: string) {
     if (typeof window === "undefined" || !("Notification" in window)) return;
 
     const me = members.find(m => m.id === currentUserId);
-    if (!me || (me.notify_pref ?? "none") !== "browser") return;
+    if (!me || !pushEnabled) return;
     if (Notification.permission !== "granted") return;
 
     const prev = prevRef.current;
@@ -56,5 +59,5 @@ export function useMentionNotifications(currentUserId: string) {
       }
       prev.set(task.id, currFM);
     }
-  }, [tasks, members, currentUserId]);
+  }, [tasks, members, currentUserId, pushEnabled]);
 }

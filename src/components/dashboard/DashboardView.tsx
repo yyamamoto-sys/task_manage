@@ -17,8 +17,9 @@
 import { useState, useMemo, useCallback, useEffect } from "react";
 import { useAppStore, selectScopedTasks, selectScopedMembers } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { isGuestMember } from "../../lib/guestMode";
 import type {
-  Member, Project, Task, ToDo, NotifyPref,
+  Member, Project, Task, ToDo,
 } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, diffDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
@@ -35,7 +36,6 @@ import { computeWeeklyVelocity } from "../../lib/computeWeeklyVelocity";
 import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus, isCompletedForProgress } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
-import { showToast } from "../common/Toast";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -75,7 +75,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
   const rawTodos   = useAppStore(s => s.todos);
   const rawMs      = useAppStore(s => s.milestones);
-  const saveMember = useAppStore(s => s.saveMember);
   const saveTask   = useAppStore(s => s.saveTask);
   const isMobile = useIsMobile();
 
@@ -161,24 +160,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     ).sort((a, b) => (a.due_date ?? "").localeCompare(b.due_date ?? "")),
     [allTasks, currentUser.id, reminderDeadline]
   );
-
-  // 期限通知の受け取り方（ユーザーごと）。リマインダーカードのセレクタで切替。
-  const selfMember = members.find(m => m.id === currentUser.id);
-  const notifyPref: NotifyPref = selfMember?.notify_pref ?? "none";
-  const handleNotifyPrefChange = async (pref: NotifyPref) => {
-    if (!selfMember) return;
-    if (pref === "browser" && "Notification" in window) {
-      if (Notification.permission === "default") {
-        try { await Notification.requestPermission(); } catch { /* ignore */ }
-      }
-      if (Notification.permission === "denied") {
-        showToast("ブラウザ通知がブロックされています。ブラウザの設定で許可してください。", "error");
-      }
-    }
-    try {
-      await saveMember({ ...selfMember, notify_pref: pref, updated_by: currentUser.id });
-    } catch { /* saveMember 側で ConflictError をトースト処理 */ }
-  };
 
   // 自分がメンションされているタスク（未完了・@short_name がコメントに含まれる）
   // アクティブ（todo/in_progress）のみ対象。中止・保留になったタスクは催促しない（v2.74の方針に合わせる）
@@ -695,21 +676,18 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                       {reminderTasks.length}件
                     </span>
                   )}
-                  <select
-                    value={notifyPref}
-                    onChange={e => handleNotifyPrefChange(e.target.value as NotifyPref)}
-                    title="期限の通知方法（自分の設定）"
+                  {/* v3.128：通知方法の選択は設定ページ「🔔 通知」へ移した（設計書 §4.5） */}
+                  {!isGuestMember(currentUser) && <button
+                    type="button"
+                    onClick={() => window.dispatchEvent(new CustomEvent("app:open-settings", { detail: "notify" }))}
+                    title="期限の通知設定（Windows通知・アプリ内通知・時刻）を開きます"
                     style={{
-                      fontSize: "10px", padding: "2px 6px", paddingRight: "16px",
+                      fontSize: "10px", padding: "2px 6px",
                       background: "transparent", color: "var(--color-text-tertiary)",
                       border: "1px solid var(--color-border-primary)",
-                      borderRadius: "var(--radius-sm)", cursor: "pointer",
+                      borderRadius: "var(--radius-sm)", cursor: "pointer", whiteSpace: "nowrap",
                     }}
-                  >
-                    <option value="none">🔕 通知なし</option>
-                    <option value="browser">🔔 ブラウザ通知</option>
-                    <option value="teams">💬 Teamsまとめ</option>
-                  </select>
+                  >🔔 通知設定</button>}
                   <select
                     value={reminderDays}
                     onChange={e => {
