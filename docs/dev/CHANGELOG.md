@@ -7726,4 +7726,37 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # buildWeeksForKr()・computeMonthWeekSegments()本体のロジック変更（設計どおり正しいため
 # 不要）。MIN_CLIENT_VERSIONの引き上げ（デモ/テストのみの変更のため）。
 
-最終更新：2026-10-01（v3.126）
+# v3.127（2026-10-01）：「設定」ページ（個人設定＋管理）を新設（CLAUDE.md Section 65）
+#
+# ## 背景
+# 設定ボタンは管理画面（AdminView）を直接開いており、非管理者には「🔒 管理者のみアクセスできます」の
+# 1行だけが表示されていた。ダークモード・通知など個人の設定が増えたため、個人設定の置き場を作った。
+#
+# ## 変更
+# * src/components/settings/SettingsView.tsx（新規）：左に目次。個人設定＝👤プロフィール／🎨表示／🔔通知／
+#   🛟困ったとき（全員）、管理＝既存 AdminView をそのまま埋め込み（管理者のみ・一度開いたら display:none で保持）
+# * src/lib/settings/settingsSections.ts（新規）：canAccessAdminSection()（AdminView のガードと同条件）・
+#   buildSettingsSections()・adminsOfGroup()
+# * src/lib/settings/profileUpdate.ts（新規）：buildProfileUpdate()（自分の行のコピーに表示名・短縮名・色だけ差し替え）
+# * src/lib/settings/displaySettingsReset.ts（新規）：表示の設定の初期化（ホワイトリスト DISPLAY_SETTING_KEYS）
+# * MainLayout.tsx：adminOverlay の中身を SettingsView に差し替え。✕を guardedNavigate で包んだ。
+#   resetSidebarWidth を追加（折りたたみ中でも展開時の幅を戻す）
+# * localStore.ts：KEYS.TASK_SIDE_PANEL_WIDTH を追加し、TaskSidePanel の直書きキーを置き換え
+# * i18n：layout.settings.* を ja/en に追加
+# * docs/dev/web-push-reminder-design.md：通知設定モーダルを設定ページの通知タブに置き換える旨を追記
+# * docs/REFACTORING.md：M47（ツアー既読がメンバー別でない）を記録
+#
+# ## セキュリティ確認（DB は変更していない）
+# members の UPDATE は同部署なら他人の行も可能だが、guard_member_privilege_columns が
+# is_admin/is_super_admin/group_id/group_ids/email/is_deleted を一般メンバーからは差し戻す（20260818版と
+# schema.sql が一致）。表示名・色・通知方法は同部署の他人の行でも書き換え可能（既知・権限昇格ではない）。
+#
+# ## 検証
+# `npx tsc --noEmit`・`npx vitest run`（.env 由来の7ファイルのみ環境要因で失敗）・変更ファイルの eslint・
+# `npm run build`。新規テスト src/lib/settings/__tests__/settings.test.ts（初期化対象の純粋関数・管理の
+# 表示条件・プロフィール保存で変わる列）。
+#
+# ## やらないこと
+# AdminView の分割。Web Push の本実装。MIN_CLIENT_VERSION の引き上げ。
+
+最終更新：2026-10-01（v3.127）

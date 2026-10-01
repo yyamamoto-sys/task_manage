@@ -80,6 +80,7 @@ import { startDevBottomStackOverlapCheck } from "../../lib/layout/devOverlapChec
  * 実際には確認ダイアログは発火しないが、将来チャンクが育った時に自動で効く。
  */
 const KanbanView         = withChunkDownloadGate(lazyWithRetry(() => import("../kanban/KanbanView").then(m => ({ default: m.KanbanView })), "KanbanView"), "KanbanView");
+const SettingsView       = lazyWithRetry(() => import("../settings/SettingsView").then(m => ({ default: m.SettingsView })), "SettingsView");
 const AdminView          = withChunkDownloadGate(lazyWithRetry(() => import("../admin/AdminView").then(m => ({ default: m.AdminView })), "AdminView"), "AdminView");
 const GanttView          = withChunkDownloadGate(lazyWithRetry(() => import("../gantt/GanttView").then(m => ({ default: m.GanttView })), "GanttView"), "GanttView");
 const DashboardView      = withChunkDownloadGate(lazyWithRetry(() => import("../dashboard/DashboardView").then(m => ({ default: m.DashboardView })), "DashboardView"), "DashboardView");
@@ -318,6 +319,13 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
     try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(SIDEBAR_DEFAULT_WIDTH)); } catch { /* ignore */ }
   }, [isSidebarCollapsed]);
+
+  // 設定ページの「サイドバーの幅を既定に戻す」。折りたたみ中でも展開時の幅だけを戻す
+  const resetSidebarWidth = useCallback(() => {
+    sidebarWidthRef.current = SIDEBAR_DEFAULT_WIDTH;
+    setSidebarWidth(SIDEBAR_DEFAULT_WIDTH);
+    try { localStorage.setItem(KEYS.SIDEBAR_WIDTH, String(SIDEBAR_DEFAULT_WIDTH)); } catch { /* ignore */ }
+  }, []);
 
   const handleSidebarResizeKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (isSidebarCollapsed) return;
@@ -806,7 +814,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>{t("layout.admin.title")}</span>
         <HelpButton modeKey="admin.settings" title={t("layout.admin.helpTitle")} />
         <button
-          onClick={() => setIsAdminOpen(false)}
+          onClick={() => void guardedNavigate(() => setIsAdminOpen(false))}
           style={{
             background: "transparent", border: "none", cursor: "pointer",
             fontSize: "18px", color: "var(--color-text-tertiary)", padding: "4px",
@@ -814,9 +822,23 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           }}
         >✕</button>
       </div>
-      <div style={{ flex: 1, overflow: "auto" }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
         <Suspense fallback={<ViewLoading />}>
-          <AdminView currentUser={currentUser} />
+          <SettingsView
+            currentUser={currentUser}
+            theme={theme}
+            onToggleTheme={toggleTheme}
+            adminSlot={
+              <Suspense fallback={<ViewLoading />}>
+                <AdminView currentUser={currentUser} />
+              </Suspense>
+            }
+            onOpenGuide={() => void guardedNavigate(() => { setIsAdminOpen(false); setIsGuideOpen(true); })}
+            onRestartTour={() => void guardedNavigate(() => { setIsAdminOpen(false); tour.start(FIRST_TIME_TOUR_ID); })}
+            onOpenShortcuts={() => setIsShortcutsOpen(true)}
+            onLogout={onLogout}
+            onResetSidebarWidth={isMobile ? undefined : resetSidebarWidth}
+          />
         </Suspense>
       </div>
     </div>

@@ -16,7 +16,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import type { Member, Task } from "../../lib/localData/types";
-import { active } from "../../lib/localData/localStore";
+import { active, KEYS } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
   getAssigneeIds, buildTfLabelMap, suppressOverdue,
@@ -297,7 +297,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
 
   // パネル幅（左端ハンドルをドラッグして調整。min 240px / max 680px）
   const [panelWidth, setPanelWidth] = useState<number>(() => {
-    try { return Math.min(680, Math.max(240, parseInt(localStorage.getItem("task_side_panel_width") ?? "320", 10) || 320)); } catch { return 320; }
+    try { return Math.min(680, Math.max(240, parseInt(localStorage.getItem(KEYS.TASK_SIDE_PANEL_WIDTH) ?? "320", 10) || 320)); } catch { return 320; }
   });
   const panelWidthRef = useRef(panelWidth);
   const isDraggingPanel = useRef(false);
@@ -326,7 +326,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
       isDraggingPanel.current = false;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
-      try { localStorage.setItem("task_side_panel_width", String(panelWidthRef.current)); } catch { /* ignore */ }
+      try { localStorage.setItem(KEYS.TASK_SIDE_PANEL_WIDTH, String(panelWidthRef.current)); } catch { /* ignore */ }
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);

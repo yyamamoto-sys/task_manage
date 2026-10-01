@@ -47,6 +47,8 @@ const KEYS = {
   /** OKR個人ビューのAIパネル（PersonalOkrAiPanel。ConsultationPanelと同じ型）の幅（v3.52） */
   OKR_AI_PANEL_WIDTH: "okr_ai_panel_width",
   OKR_ACTIVE_TOOL:     "okr_active_tool",
+  /** タスク詳細サイドパネルの幅（TaskSidePanel） */
+  TASK_SIDE_PANEL_WIDTH: "task_side_panel_width",
   /**
    * OKRモードの初回ゲート（紹介ポップアップ＋データ読み込みの承認。v3.39）を
    * 承認済みか（"1"）。承認して記憶＝Human in the loop パターン③。
