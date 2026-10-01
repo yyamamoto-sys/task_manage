@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.126",
+    date: "2026-10-01",
+    title: "サンプル表示の修正",
+    highlights: [
+      "サンプル（ゲスト）閲覧モードのOKR画面で、四半期の初日に週の自己評価サンプルが実際と異なる見え方になることがある不具合を修正しました。",
+    ],
+  },
+  {
     version: "v3.125",
     date: "2026-10-01",
     title: "再読み込みが必要な更新のときだけ通知するようにしました",

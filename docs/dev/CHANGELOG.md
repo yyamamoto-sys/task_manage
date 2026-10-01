@@ -7686,4 +7686,44 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## やらないこと
 # MIN_CLIENT_VERSION超過時のDB自動修正・Service Workerによる強制キャッシュ更新は対象外。
 
-最終更新：2026-10-01（v3.125）
+# v3.126（2026-10-01）：個人OKRサンプルデータの週評価が四半期初日に全て未評価になるテスト失敗を修正（CLAUDE.md Section 64）
+#
+# 2026-10-01（4Qの初日・木曜）から src/lib/demo/__tests__/personalOkrDataset.test.ts の
+# 「各KRに週の目標状態が1件以上あり、少なくとも1件は未評価を含む」が失敗していた。
+#
+# ## 原因（統括の事前推定＝「週が四半期境界をまたいで見つからない」は誤りと判明）
+# computeMonthWeekSegments()は常に月単位でセグメントを作るため四半期をまたぐことは構造上
+# 起こらない。実際の原因は、buildWeeksForKr()が設計どおり「現在の週より前＝評価済み・
+# 現在以降＝未評価」で週を生成するところ、四半期の最初の月の最初の（途中から始まる）週
+# には過去の月も今週より前の週も存在しないため、生成される週が現在の週（自己評価null）
+# だけになること。これは正しい挙動で、バグはテスト側の「常に評価済みが1件以上」という
+# 過剰な不変条件にあった。
+#
+# ## 本番の個人OKR画面の確認（同型の欠陥は無し）
+# PersonalKrPanel.tsxのcurrentWeekIndex計算も同じ「今日を含む週を探す」処理を持つが、
+# segmentsは常に今表示している実在の月から計算されるため、monthStatus==="current"の
+# ときは必ずどれかのセグメントに一致し、見つからなくなることは無い。実害なしと確認済み。
+#
+# ## 実装
+# * src/lib/demo/personalOkrDataset.ts：buildDemoPersonalOkrDataset(today: Date = new Date())
+#   にtoday引数を追加（省略時は従来どおりnew Date()で挙動不変）。内部のcurrentQuarter()
+#   （引数なし・常に壁時計を見る）をdateToQuarter(toDateStr(today))に差し替え、四半期判定も
+#   注入したtodayから決定的に計算できるようにした
+# * src/lib/demo/__tests__/personalOkrDataset.test.ts：日付を3パターン（四半期初日の途中の
+#   週・四半期の2週目・四半期末日）注入して検証するdescribeを新設。四半期初日は「週は
+#   生成されるが全て未評価」を正として検証し、旧テストの過剰な「少なくとも1件は評価済み」
+#   アサーションは削除した
+#
+# ## 修正前に赤くなることの確認
+# 実行環境の壁時計がちょうど2026-10-01だったため、旧コード・旧テストのままの実行で
+# 実際に失敗することを確認済み（別途の日付モックは不要だった）。
+#
+# ## 検証
+# `npx tsc --noEmit`・`npx vitest run`（2047件通過・.env由来の7ファイルのみ環境要因で失敗）・
+# 変更ファイルの`npx eslint`・`npm run build`。
+#
+# ## やらないこと
+# buildWeeksForKr()・computeMonthWeekSegments()本体のロジック変更（設計どおり正しいため
+# 不要）。MIN_CLIENT_VERSIONの引き上げ（デモ/テストのみの変更のため）。
+
+最終更新：2026-10-01（v3.126）

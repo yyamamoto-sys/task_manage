@@ -10,11 +10,20 @@
 // しないこと（Section 19：ダウンロード量の最小化。通常利用者はこのファイルを一切
 // ダウンロードしない。__tests__/personalOkrDataset.test.ts が静的importの禁止を機械検査する）。
 //
-// 【日付は相対計算】fiscal_year・quarter は「今日」から実際に計算する（currentQuarter()）。
+// 【日付は相対計算】fiscal_year・quarter は「今日」から実際に計算する（dateToQuarter()）。
 // 固定の四半期を書くと時間が経つと「全部過去（read-only）」または「全部未来（未着手）」の
 // 不自然なデータになる。週の目標状態も、今日から見た「現在の週」を基準に、それより前は
 // 評価済み・それ以降は未評価にする（AheadBlockの機械計算―残り週数・評価待ちの週―が
 // 意味を持つ程度のデータ量にする。CLAUDE.md Section 24参照）。
+//
+// 【today引数】buildDemoPersonalOkrDataset(today?)は省略時 new Date() を使う（ゲスト実行時は
+// 常に省略＝挙動不変）。テストが日付非依存で検証できるよう2026-10-01（v3.126）で追加した。
+// 四半期の最初の月の最初の週（例：10/1〜10/4）は、当該四半期にまだ「過去の月」も
+// 「今週より前の週」も存在しないため、週の目標状態は自己評価＝null（未評価）のみになる
+// （これは意図した挙動。before=評価済み/current以降=未評価という設計上、四半期開始直後は
+// 評価対象が無いのが正しい）。「少なくとも1件は評価済みを含む」という誤った不変条件を
+// 前提にしたテストが2026-10-01以降失敗していたのはこれが原因（__tests__/personalOkrDataset.test.ts
+// 参照。本体の生成ロジックにバグは無い）。
 //
 // 【dataset.ts（PJ・タスク）との連携】週とタスクの紐づけ（weekTasksByWeek）は、
 // dataset.ts が用意した実在のタスクid（"demo-task-3"＝ベースライン遅延あり、
@@ -23,7 +32,7 @@
 // __tests__/personalOkrDataset.test.ts が機械的に検証する（dataset.ts側のid変更に
 // 気づけるようにするため）。
 
-import { currentQuarter, toDateStr } from "../date";
+import { dateToQuarter, toDateStr } from "../date";
 import { computeMonthWeekSegments } from "../date/monthWeeks";
 import { quarterMonthSlots, monthToDateStr, classifyMonth } from "../personalOkr/quarterMonths";
 import { GUEST_MEMBER_ID } from "../guestMode";
@@ -196,10 +205,9 @@ function buildMemosForKr(krId: string, bodies: string[]): PersonalKrMemo[] {
   }));
 }
 
-export function buildDemoPersonalOkrDataset(): DemoPersonalOkrData {
-  const today = new Date();
+export function buildDemoPersonalOkrDataset(today: Date = new Date()): DemoPersonalOkrData {
   const fiscalYear = today.getFullYear();
-  const quarter = currentQuarter();
+  const quarter = dateToQuarter(toDateStr(today)) ?? "1Q";
   const slots = quarterMonthSlots(fiscalYear, quarter);
   const currentSlot = slots.find(s => classifyMonth(s.monthStart, today) === "current") ?? slots[0];
 
