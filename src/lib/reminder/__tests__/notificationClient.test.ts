@@ -31,12 +31,15 @@ describe("通知のクリック先（/?open=my-tasks）", () => {
   it("my-tasks だけを読む", () => {
     expect(extractOpenTarget("?open=my-tasks")).toBe("my-tasks");
     expect(extractOpenTarget("?open=admin-errors")).toBe("admin-errors");
+    expect(extractOpenTarget("?open=admin-message&mid=3")).toBe("admin-message");
+    expect(extractOpenTarget("?open=admin-sent&mid=3")).toBe("admin-sent");
     expect(extractOpenTarget("?open=other")).toBeNull();
     expect(extractOpenTarget("")).toBeNull();
   });
   it("open だけを消し、他のクエリとハッシュは残す", () => {
     expect(stripOpenParam("https://app.example/?open=my-tasks")).toBe("/");
     expect(stripOpenParam("https://app.example/?invite=abc&open=my-tasks#x")).toBe("/?invite=abc#x");
+    expect(stripOpenParam("https://app.example/?open=admin-message&mid=12")).toBe("/");
   });
 });
 

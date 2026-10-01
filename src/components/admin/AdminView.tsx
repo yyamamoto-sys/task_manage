@@ -47,14 +47,15 @@ import { LoadingTipsSection } from "./LoadingTipsSection";
 import { BackupSection } from "./BackupSection";
 import { ReminderSection } from "./ReminderSection";
 import { ClientErrorSection } from "./ClientErrorSection";
+import { AdminMessageSection } from "./AdminMessageSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders" | "errors";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders" | "errors" | "messages";
 
 interface Props {
   currentUser: Member;
   /** 開いたときのタブ（エラー通知のクリック先 /?open=admin-errors。super_admin のときだけ効く） */
-  initialTab?: "errors";
+  initialTab?: "errors" | "messages";
 }
 
 // ===== 部署絞り込み（v3.60・サイドバーの「表示部署」に追従） =====
@@ -176,13 +177,15 @@ export function AdminView({ currentUser, initialTab }: Props) {
   // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
   // "tips" は全社スーパー管理者のみに見せるタブのため、保存値がtipsでもsuper adminでない
   // ユーザーには無効な選択肢として扱う（選択肢に無いタブが選ばれたままになる事故を防ぐ）。
-  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips"];
+  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips", "messages"];
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
     if (initialTab === "errors" && isCurrentUserSuperAdmin) return "errors";
+    if (initialTab === "messages" && canAccessAdmin) return "messages";
     if (krCount === 0) return "okr";
     if (pjCount === 0) return "pj";
     if (saved === "tips" && !isCurrentUserSuperAdmin) return "pj";
+    if (saved === "messages" && !canAccessAdmin) return "pj";
     return (saved && validTabs.includes(saved)) ? saved : "pj";
   });
   const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
@@ -272,6 +275,10 @@ export function AdminView({ currentUser, initialTab }: Props) {
     { label: "レポート", items: [
         { key: "ai_usage", label: "AI使用量" },
     ] },
+    // v3.131：お知らせを送れるのは部署の管理者と super_admin だけ（管理者不在のブートストラップ状態の一般メンバーには出さない）
+    ...(canAccessAdmin ? [{ label: "連絡", items: [
+        { key: "messages" as AdminTab, label: "📣 お知らせを送る" },
+    ] }] : []),
     ...(isCurrentUserSuperAdmin ? [{ label: "アプリ設定", items: [
         { key: "tips" as AdminTab, label: "ローディングのヒント" },
         { key: "backup" as AdminTab, label: "バックアップ" },
@@ -455,6 +462,7 @@ export function AdminView({ currentUser, initialTab }: Props) {
           {tab === "backup"   && <BackupSection currentUser={currentUser} />}
           {tab === "reminders" && <ReminderSection currentUser={currentUser} />}
           {tab === "errors"   && <ClientErrorSection currentUser={currentUser} />}
+          {tab === "messages" && <AdminMessageSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>
     </div>

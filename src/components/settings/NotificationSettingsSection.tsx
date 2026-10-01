@@ -6,6 +6,7 @@
 // 許可ダイアログは「Windows通知」をオンにした瞬間だけ出す。
 // v3.129：「通知する内容」を種類×チャネル（アプリ内／Windows）の表にした（レジストリ＝src/lib/notifications/notificationKinds.ts）。
 // 管理者向けの種類は super_admin にだけ出す。上の「知らせ方」は各チャネルの全体スイッチのまま。
+// v3.131：アプリ内を必ず届ける種類（inappLocked＝管理者からのお知らせ）は、アプリ内のチェックを固定表示する（全体スイッチにも従わない）。
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { Member } from "../../lib/localData/types";
@@ -256,7 +257,17 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
                   </td>
                   {NOTIFICATION_CHANNELS.map(ch => (
                     <td key={ch} style={{ padding: "6px", textAlign: "center", verticalAlign: "top" }}>
-                      {kind.supported[ch] ? (
+                      {kind.supported[ch] && ch === "inapp" && kind.inappLocked ? (
+                        // v3.131：アプリ内は必ず届く種類（管理者からのお知らせ）。チェックを固定表示して変えられないようにする
+                        <input
+                          type="checkbox"
+                          aria-label={`${t(`layout.notifyKind.${kind.id}.label`)}：${t("layout.settings.notify.inapp")}（${t("layout.settings.notify.inappLocked")}）`}
+                          checked
+                          disabled
+                          readOnly
+                          title={t("layout.settings.notify.inappLocked")}
+                        />
+                      ) : kind.supported[ch] ? (
                         <input
                           type="checkbox"
                           aria-label={`${t(`layout.notifyKind.${kind.id}.label`)}：${t(ch === "inapp" ? "layout.settings.notify.inapp" : "layout.settings.notify.push")}`}

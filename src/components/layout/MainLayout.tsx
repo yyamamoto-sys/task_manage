@@ -9,7 +9,9 @@ import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import { usePushSubscriptionSync } from "../../hooks/usePushSubscriptionSync";
 import { useNotificationPrefsStore } from "../../stores/notificationPrefsStore";
 import { InAppNotificationBell } from "../notifications/InAppNotificationBell";
+import { AdminMessageDialog } from "../notifications/AdminMessageDialog";
 import { extractOpenTarget, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
+import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
 import {
   APP_BELL_FIXED_TOP_PX, APP_BELL_RESERVE_PC_PX, APP_BELL_RESERVE_VAR, APP_BELL_SIZE_MOBILE_PX, APP_BELL_SIZE_PC_PX,
@@ -428,7 +430,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // nonce を key にして、既に開いているときも指定のセクションで開き直す
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   // 管理セクションを特定のタブで開く（エラー通知のクリック先 /?open=admin-errors）
-  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | undefined>(undefined);
+  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | "messages" | undefined>(undefined);
+  // 管理者からのお知らせの詳細（v3.131。ベル・Windows通知のクリック先 /?open=admin-message&mid=…）
+  const [openMessageId, setOpenMessageId] = useState<number | null>(null);
+  const [bellRefreshKey, setBellRefreshKey] = useState(0);
   const [settingsNonce, setSettingsNonce] = useState(0);
   useEffect(() => { if (!isAdminOpen) { setSettingsSection(undefined); setAdminInitialTab(undefined); } }, [isAdminOpen]);
   // プロジェクト招待：招待コードを手入力して参加する入口（Phase 4・山本さんの指摘対応）。
@@ -725,20 +730,23 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
     setMineOnlyState(true);
   });
-  const openSettings = (section?: SettingsSection, adminTab?: "errors") => void guardedNavigate(() => {
+  const openSettings = (section?: SettingsSection, adminTab?: "errors" | "messages") => void guardedNavigate(() => {
     setSettingsSection(section);
     setAdminInitialTab(adminTab);
     setSettingsNonce(n => n + 1);
     setIsAdminOpen(true);
   });
-  const openTarget = (target: OpenTarget | null) => {
+  const openTarget = (target: OpenTarget | null, messageId: number | null) => {
     if (target === "my-tasks") openMyTasks();
     else if (target === "admin-errors") openSettings("admin", "errors");
+    // お知らせの詳細は画面を切り替えず上に重ねるだけ（編集中の内容を失わないため guardedNavigate を通さない）
+    else if (target === "admin-message" && messageId !== null) setOpenMessageId(messageId);
+    else if (target === "admin-sent") openSettings("admin", "messages");
   };
   const openNotificationLink = (url: string) => {
     let search = "";
     try { search = new URL(url, window.location.origin).search; } catch { return; }
-    openTarget(extractOpenTarget(search));
+    openTarget(extractOpenTarget(search), extractMessageId(search));
   };
   // イベント購読（マウント時に1回張る）からも最新の関数を呼べるよう ref に置く
   const openNotificationLinkRef = useRef(openNotificationLink);
@@ -748,10 +756,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   useEffect(() => {
     if (isGuest) return;
     // ① 通知から新しいタブで開かれた（/?open=my-tasks 等）。読んだらクエリを消し、リロードで再発火させない
-    const initialTarget = extractOpenTarget(window.location.search);
+    const initialSearch = window.location.search;
+    const initialTarget = extractOpenTarget(initialSearch);
     if (initialTarget) {
       window.history.replaceState(window.history.state, "", stripOpenParam(window.location.href));
-      openNotificationLinkRef.current(`/?open=${initialTarget}`);
+      openNotificationLinkRef.current(`/${initialSearch}`);
     }
     // ② 開いているタブで通知がクリックされた（public/sw.js が再読み込みせず postMessage で知らせる）
     const onSwMessage = (e: MessageEvent) => {
@@ -782,8 +791,18 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       size={size}
       onOpenLink={openNotificationLink}
       onOpenSettings={() => openSettings("notify")}
+      onOpenMessage={setOpenMessageId}
+      refreshKey={bellRefreshKey}
     />
   );
+  const adminMessageDialog = !isGuest && openMessageId !== null ? (
+    <AdminMessageDialog
+      memberId={currentUser.id}
+      messageId={openMessageId}
+      onClose={() => setOpenMessageId(null)}
+      onChanged={() => setBellRefreshKey(k => k + 1)}
+    />
+  ) : null;
 
   // コマンドパレットの検索対象タスク（スコープ済み・非削除）
   const paletteTasks = useMemo(
@@ -1322,6 +1341,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {onboardingOverlay}
         {tourInviteDialog}
         {okrIntroModal}
+        {adminMessageDialog}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -1663,6 +1683,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         </div>
       )}
 
+      {adminMessageDialog}
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}

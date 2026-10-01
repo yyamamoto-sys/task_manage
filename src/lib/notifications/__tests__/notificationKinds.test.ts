@@ -16,15 +16,18 @@ import { layoutJa } from "../../../i18n/layout.ja";
 
 const ROOT = join(__dirname, "..", "..", "..", "..");
 const MIGRATION = readFileSync(join(ROOT, "supabase/migrations/20261001c_notify_v2_client_errors.sql"), "utf8");
+// in_app_notifications.kind の CHECK 制約は v3.131 のマイグレで最後に作り直した（最新の定義と照合する）
+const LATEST_KIND_CHECK_MIGRATION = readFileSync(join(ROOT, "supabase/migrations/20261001e_admin_messages.sql"), "utf8");
 
 const prefs = (p: Partial<KindPrefsLike> = {}): KindPrefsLike => ({
   inapp_enabled: true, push_enabled: true, notify_overdue: true, notify_due_today: true, kind_channels: {}, ...p,
 });
 
 describe("レジストリの定義", () => {
-  it("今回の4種類：全員向け3つ＋super_admin 向け1つ", () => {
+  it("5種類：全員向け4つ＋super_admin 向け1つ（v3.131 で管理者からのお知らせを追加）", () => {
     expect(NOTIFICATION_KINDS.map(k => [k.id, k.audience])).toEqual([
       ["deadline_overdue", "all"], ["deadline_due_today", "all"], ["mention", "all"], ["client_error", "super_admin"],
+      ["admin_message", "all"],
     ]);
   });
 
@@ -138,6 +141,34 @@ describe("保存する差分（buildKindChannelPatch）", () => {
   });
 });
 
+describe("管理者からのお知らせ：アプリ内は必ず届く（v3.131）", () => {
+  it("アプリ内はオフにできない：全体スイッチ・種類の個別設定がオフでも届く", () => {
+    expect(isKindEnabled(prefs({ inapp_enabled: false }), "admin_message", "inapp")).toBe(true);
+    expect(isKindEnabled(prefs({ kind_channels: { admin_message: { inapp: false } } }), "admin_message", "inapp")).toBe(true);
+    expect(isKindEnabled(undefined, "admin_message", "inapp")).toBe(true);
+    expect(kindChannelChecked(prefs({ inapp_enabled: false, kind_channels: { admin_message: { inapp: false } } }), "admin_message", "inapp")).toBe(true);
+  });
+
+  it("Windows は本人が選べる：全体スイッチと種類の設定に従う（行が無い人は既定でオフ）", () => {
+    expect(isKindEnabled(prefs(), "admin_message", "push")).toBe(true);
+    expect(isKindEnabled(prefs({ kind_channels: { admin_message: { push: false } } }), "admin_message", "push")).toBe(false);
+    expect(isKindEnabled(prefs({ push_enabled: false }), "admin_message", "push")).toBe(false);
+    expect(isKindEnabled(undefined, "admin_message", "push")).toBe(false);
+  });
+
+  it("アプリ内を変える差分は作らない（画面から誤って送られても保存しない）。Windows の変更は保存する", () => {
+    expect(buildKindChannelPatch(prefs(), "admin_message", "inapp", false)).toEqual({ kind_channels: {} });
+    expect(buildKindChannelPatch(prefs(), "admin_message", "push", false)).toEqual({ kind_channels: { admin_message: { push: false } } });
+  });
+
+  it("お知らせとまとめ通知は全員向け（🛡 管理者向けとは別の印）", () => {
+    expect(audienceOfInAppKind("admin_message")).toBe("all");
+    expect(audienceOfInAppKind("admin_message_ack")).toBe("all");
+    expect(NOTIFICATION_KIND_ICON.admin_message).toBe("📣");
+    expect(ADMIN_IN_APP_KINDS).not.toContain("admin_message");
+  });
+});
+
 describe("未読バッジ（formatBadgeCount）", () => {
   it("0 は出さず、1〜99 はそのまま、100 以上は 99+", () => {
     expect(formatBadgeCount(0)).toBe("");
@@ -152,7 +183,7 @@ describe("未読バッジ（formatBadgeCount）", () => {
 
 describe("マイグレの SQL とレジストリの一致", () => {
   it("in_app_notifications の CHECK 制約の種類が ALL_IN_APP_KINDS と同じ", () => {
-    const m = /in_app_notifications_kind_check\s+CHECK \(kind IN \(([^)]*)\)\)/.exec(MIGRATION);
+    const m = /in_app_notifications_kind_check\s+CHECK \(kind IN \(([^)]*)\)\)/.exec(LATEST_KIND_CHECK_MIGRATION);
     expect(m).not.toBeNull();
     const kinds = (m as RegExpExecArray)[1].split(",").map(s => s.trim().replace(/'/g, ""));
     expect(kinds).toEqual([...ALL_IN_APP_KINDS]);

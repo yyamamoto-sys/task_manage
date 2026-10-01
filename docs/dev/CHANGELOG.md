@@ -7878,4 +7878,25 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   未読バッジのはみ出しを top/right -4/-6px → -3/-3px に縮小（InAppNotificationBell.tsx）。
 #   ベル下端はカード上端から 6+32=38px で、ツールバー高さ 38px に収まる（既存テストで固定）。
 
-最終更新：2026-10-01（v3.130）
+# v3.131（2026-10-01）：管理者からのお知らせ配信
+#
+# * 部署の管理者（自分のホーム部署のメンバー）と super_admin（全員／部署／個人）から、件名・本文のお知らせを送れるようにした。
+#   設定 → 部署の管理 → 連絡 →「📣 お知らせを送る」（AdminMessageSection.tsx）。送信履歴で宛先ごとの既読・確認を見られる
+# * migrations/20261001e_admin_messages.sql：admin_messages／admin_message_recipients（RLS は SELECT のみ）・
+#   in_app_notifications.message_id と kind admin_message／admin_message_ack・RPC 7本（send_admin_message が送信者の権限と
+#   宛先範囲を DB で検査し、メッセージ・宛先・アプリ内通知を1トランザクションで作る）。schema.sql 同期・schemaChecks 追加
+# * 通知の種類のレジストリに admin_message（📣・全員向け・inappLocked＝アプリ内は必ず届く）。設定画面はアプリ内のチェックを固定表示
+# * push-reminders：mode=admin_message（送信者本人の JWT・宛先は DB の記録だけ・push_dispatched_at で1通1回）、cron での代行送信
+#   （2分〜1日で未送信のもの）と期限前日の再通知（期限の直前の平日・未確認の人だけ・claim_admin_message_reminders で1人1回）
+# * 「確認しました」：送信者がお知らせごとに付けるか選ぶ。送信者へのまとめ通知は送信者×お知らせの1行を差し替え（部分一意インデックス＋
+#   ON CONFLICT）、未読に戻すのは未読のまま・全員確認・前回から1時間以上のときだけ
+# * ベル：📣 とオレンジの配色、未確認の指示を上に固定表示、行から確認、詳細ダイアログ（AdminMessageDialog・本文はプレーンテキスト・
+#   http(s) のみリンク）。deepLink に admin-message／admin-sent（mid）を追加
+# * MIN_CLIENT_VERSION は上げていない（列・表の追加と CHECK の拡張のみ）
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run（198ファイル・2402件）・変更ファイルの eslint・npm run build。宛先範囲（SQL・TS）・一般は送れない・
+# アプリ内は必ず届く・再通知日の休日飛ばしと JST 判定・まとめ通知の差し替えと未読戻し・Edge Function の送信者本人チェック・件名の上限は、
+# 実装を壊すと該当テストが赤くなることを確認済み。
+
+最終更新：2026-10-01（v3.131）

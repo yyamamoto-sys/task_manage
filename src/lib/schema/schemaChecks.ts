@@ -578,4 +578,43 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "通知：エラーを解決済みにする関数（resolve_client_errors）が見つかりません",
     migration: "20261001c_notify_v2_client_errors.sql",
   },
+  // 管理者からのお知らせ（v3.131・Section 68）。未適用だとベルの一覧が読めず（message_id 列）、
+  // 「📣 お知らせを送る」・確認ボタン・期限前日の再通知がすべて動かない。
+  ...([
+    ["admin_messages", "お知らせ本体"],
+    ["admin_message_recipients", "お知らせの宛先（既読・確認）"],
+  ] as const).map(([table, name]): SchemaCheckDescriptor => ({
+    id: `${table}_table`,
+    kind: "table",
+    table,
+    label: `お知らせ：${name}テーブル（${table}）が見つかりません`,
+    migration: "20261001e_admin_messages.sql",
+  })),
+  {
+    id: "in_app_notifications_message_id_column",
+    kind: "column",
+    table: "in_app_notifications",
+    column: "message_id",
+    label: "お知らせ：アプリ内通知のお知らせ参照の列（in_app_notifications.message_id）が見つかりません",
+    migration: "20261001e_admin_messages.sql",
+  },
+  {
+    id: "in_app_notifications_kind_check_admin_message_ack",
+    kind: "check_contains",
+    table: "in_app_notifications",
+    needle: "admin_message_ack",
+    label: "アプリ内通知の種類のCHECK制約に「管理者からのお知らせ(admin_message／admin_message_ack)」が含まれていません",
+    migration: "20261001e_admin_messages.sql",
+  },
+  ...([
+    ["send_admin_message", "お知らせを送る関数"],
+    ["acknowledge_admin_message", "「確認しました」を記録する関数"],
+    ["claim_admin_message_reminders", "期限前日の再通知の関数"],
+  ] as const).map(([name, label]): SchemaCheckDescriptor => ({
+    id: `fn_${name}`,
+    kind: "function",
+    name,
+    label: `お知らせ：${label}（${name}）が見つかりません`,
+    migration: "20261001e_admin_messages.sql",
+  })),
 ];

@@ -6,6 +6,13 @@
 //   - pg_cron：x-cron-secret = REMINDER_CRON_SECRET → 平日30分ごと。その時刻を選んでいる人へ送る（trigger='cron'）
 //   - 管理画面：super_admin の JWT → 同じ処理（trigger='manual'）。?dryRun=1（または body.dryRun）なら何も書かず送らない
 //   - 設定画面のテスト：本人の JWT ＋ ?test=1（または body.mode="test"）→ 本人の購読だけへ固定文面（trigger='test'）
+//   - v3.131 お知らせの即時送信：送信者本人の JWT ＋ body.mode="admin_message"・body.messageId。
+//     🔴 宛先はクライアントから受け取らない。DB に記録済みの admin_message_recipients だけへ送る。
+//     送信者本人のお知らせでなければ 403。push_dispatched_at で1通につき1回だけ（二重呼び出しでも再送しない）
+//
+// 【v3.131 お知らせの cron 側】(1) 送信直後の呼び出しが届かなかったお知らせ（画面を閉じた等）の Windows通知を
+//   代わりに送る（作成から2分以上・1日以内で push_dispatched_at が空のもの）。(2) 期限つき・確認ボタンありの
+//   お知らせを、期限の直前の平日（_shared/adminMessageLogic.ts の shouldRemindToday）に未確認の人へ1回だけ再通知。
 //
 // 【1人1日1回】claim_reminder_sends（INSERT … ON CONFLICT DO NOTHING RETURNING）が返した人だけへ送る（§6.1）。
 // 【黙って止まらない】最初に running の行を書き、最後に結果で更新する。例外でも failed で閉じる（§6）。
@@ -32,6 +39,12 @@ import {
 import { readVapidConfig, sendToSubscriptions, type SendSummary, type StoredSubscription } from "../_shared/webPush.ts";
 import { timingSafeEqualString } from "../_shared/timingSafeEqual.ts";
 import { runWithConcurrency } from "../_shared/concurrencyPool.ts";
+import {
+  addDays, buildAdminMessagePushPayload, buildAdminReminderPushPayload, shouldRemindToday,
+  type ReminderCandidate,
+} from "../_shared/adminMessageLogic.ts";
+import { isKindEnabled } from "../_shared/notificationKinds.ts";
+import type { PushPayload } from "../_shared/reminderLogic.ts";
 import {
   buildErrorDigestPayload, countErrorsSince, ERROR_DIGEST_CURSOR, resolveDigestWindow, selectErrorDigestRecipients,
   type ErrorDigestLogRow, type ErrorDigestMemberRow,
@@ -160,6 +173,135 @@ async function runErrorDigest(supabase: Sb, vapid: ReturnType<typeof readVapidCo
   }
 }
 
+// ===== v3.131 管理者からのお知らせ =====
+
+interface AdminPushOutcome {
+  attempted: number;
+  succeeded: number;
+  failure: string | null;
+}
+
+/** 宛先のうち、お知らせの Windows通知がオンの人（全体スイッチ push_enabled AND 種類 admin_message の push） */
+async function pushEnabledMembers(supabase: Sb, memberIds: string[]): Promise<string[]> {
+  if (memberIds.length === 0) return [];
+  const { data, error } = await fetchAllRows<PrefsRow>((o) => supabase
+    .from("notification_prefs").select("member_id, inapp_enabled, push_enabled, kind_channels", o)
+    .in("member_id", memberIds), ["member_id"]);
+  if (error) throw new Error(`notification_prefs の取得に失敗: ${error.message}`);
+  const byId = new Map(data.map((r) => [r.member_id, r]));
+  // 行が無い人は既定値（push_enabled=false）＝送らない
+  return memberIds.filter((id) => {
+    const p = byId.get(id);
+    return p ? isKindEnabled({
+      inapp_enabled: p.inapp_enabled ?? true, push_enabled: p.push_enabled ?? false, kind_channels: p.kind_channels ?? {},
+    }, "admin_message", "push") : false;
+  });
+}
+
+async function sendPushToMembers(
+  supabase: Sb, vapid: NonNullable<ReturnType<typeof readVapidConfig>>, memberIds: string[], payload: PushPayload,
+): Promise<AdminPushOutcome> {
+  const targets = await pushEnabledMembers(supabase, memberIds);
+  if (targets.length === 0) return { attempted: 0, succeeded: 0, failure: null };
+  const subs = await fetchSubscriptions(supabase, targets);
+  const results = await runWithConcurrency(targets, PUSH_SEND_CONCURRENCY, async (id) => {
+    const mine = subs.filter((s) => s.member_id === id);
+    if (mine.length === 0) return { attempted: 0, succeeded: 0, failed: 0, removed: 0, errorSummary: null } as SendSummary;
+    return sendToSubscriptions(supabase, mine, payload, vapid);
+  });
+  let attempted = 0;
+  let succeeded = 0;
+  const failures: string[] = [];
+  for (const r of results) {
+    if (r.status === "fulfilled") {
+      attempted += r.value.attempted;
+      succeeded += r.value.succeeded;
+      if (r.value.errorSummary) failures.push(r.value.errorSummary);
+    } else {
+      failures.push(r.reason instanceof Error ? r.reason.message : String(r.reason));
+    }
+  }
+  return { attempted, succeeded, failure: failures.length > 0 ? failures.join(" / ").slice(0, 300) : null };
+}
+
+/**
+ * 1通のお知らせの Windows通知を送る。push_dispatched_at を「空なら今」に更新できたときだけ送る
+ * （送信直後の呼び出しと cron の代行が重なっても1回だけ）。送信の成否に関わらず再送しない。
+ */
+async function dispatchAdminMessagePush(
+  supabase: Sb, vapid: ReturnType<typeof readVapidConfig>, messageId: number,
+): Promise<AdminPushOutcome & { alreadySent: boolean }> {
+  const { data: claimed, error: cErr } = await supabase.from("admin_messages")
+    .update({ push_dispatched_at: new Date().toISOString() })
+    .eq("id", messageId).is("push_dispatched_at", null)
+    .select("id, subject, body");
+  if (cErr) throw new Error(`admin_messages の更新に失敗: ${cErr.message}`);
+  const msg = (claimed ?? [])[0] as { id: number; subject: string; body: string } | undefined;
+  if (!msg) return { attempted: 0, succeeded: 0, failure: null, alreadySent: true };
+  if (!vapid) {
+    await supabase.from("admin_messages").update({ push_succeeded: 0 }).eq("id", messageId);
+    return { attempted: 0, succeeded: 0, failure: "VAPID の鍵が未設定のためお知らせの Windows通知を送れません", alreadySent: false };
+  }
+  const { data: recRows, error: rErr } = await fetchAllRows<{ member_id: string }>((o) => supabase
+    .from("admin_message_recipients").select("member_id", o).eq("message_id", messageId), ["member_id"]);
+  if (rErr) throw new Error(`admin_message_recipients の取得に失敗: ${rErr.message}`);
+  const out = await sendPushToMembers(supabase, vapid, recRows.map((r) => r.member_id), buildAdminMessagePushPayload(msg));
+  await supabase.from("admin_messages").update({ push_succeeded: out.succeeded }).eq("id", messageId);
+  return { ...out, alreadySent: false };
+}
+
+/** 送信直後の呼び出しが届かなかったお知らせを cron が代わりに送る（作成から2分以上・1日以内） */
+async function runAdminMessageBacklog(supabase: Sb, vapid: ReturnType<typeof readVapidConfig>, now: Date): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.from("admin_messages").select("id")
+      .is("push_dispatched_at", null)
+      .lt("created_at", new Date(now.getTime() - 2 * 60_000).toISOString())
+      .gt("created_at", new Date(now.getTime() - 24 * 3_600_000).toISOString())
+      .limit(50);
+    if (error) throw new Error(`admin_messages の取得に失敗: ${error.message}`);
+    const failures: string[] = [];
+    for (const row of (data ?? []) as { id: number }[]) {
+      const r = await dispatchAdminMessagePush(supabase, vapid, row.id);
+      if (r.failure) failures.push(r.failure);
+    }
+    return failures.length > 0 ? `お知らせの代行送信: ${failures.join(" / ")}`.slice(0, 400) : null;
+  } catch (e) {
+    return `お知らせの代行送信: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
+/** 期限の直前の平日に、未確認の人へ1回だけ再通知（アプリ内は claim の中で必ず作る。Windows は本人の設定どおり） */
+async function runAdminMessageReminders(
+  supabase: Sb, vapid: ReturnType<typeof readVapidConfig>, today: string,
+): Promise<string | null> {
+  try {
+    const { data, error } = await supabase.from("admin_messages")
+      .select("id, due_date, requires_ack, created_at")
+      .eq("requires_ack", true)
+      .gt("due_date", today)
+      .lte("due_date", addDays(today, 31));
+    if (error) throw new Error(`admin_messages の取得に失敗: ${error.message}`);
+    const ids = ((data ?? []) as ReminderCandidate[]).filter((m) => shouldRemindToday(m, today, isHolidayJst)).map((m) => m.id);
+    if (ids.length === 0) return null;
+    const { data: claimed, error: cErr } = await supabase.rpc("claim_admin_message_reminders", { p_message_ids: ids });
+    if (cErr) throw new Error(`claim_admin_message_reminders に失敗: ${cErr.message}`);
+    const rows = (claimed ?? []) as { message_id: number; member_id: string; subject: string; due_date: string }[];
+    if (rows.length === 0) return null;
+    if (!vapid) return "VAPID の鍵が未設定のためお知らせの再通知を Windows通知で送れません";
+    const failures: string[] = [];
+    // お知らせごとに1回送る（タグがお知らせごとに違うため、1人に複数あれば Windows 側で別の通知になる）
+    for (const msgId of [...new Set(rows.map((r) => r.message_id))]) {
+      const mine = rows.filter((r) => r.message_id === msgId);
+      const payload = buildAdminReminderPushPayload({ id: msgId, subject: mine[0].subject, due_date: mine[0].due_date });
+      const out = await sendPushToMembers(supabase, vapid, mine.map((r) => r.member_id), payload);
+      if (out.failure) failures.push(out.failure);
+    }
+    return failures.length > 0 ? `お知らせの再通知: ${failures.join(" / ")}`.slice(0, 400) : null;
+  } catch (e) {
+    return `お知らせの再通知: ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   const cors = getCorsHeaders(req.headers.get("origin"));
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -177,6 +319,7 @@ Deno.serve(async (req: Request) => {
     try { body = (await req.json()) ?? {}; } catch { body = {}; }
   }
   const isTest = url.searchParams.get("test") === "1" || body.mode === "test";
+  const isAdminMessage = body.mode === "admin_message";
   const isDryRun = url.searchParams.get("dryRun") === "1" || body.dryRun === true;
 
   // ===== 認証 =====
@@ -184,7 +327,7 @@ Deno.serve(async (req: Request) => {
   let trigger: "cron" | "manual" | "test";
   let callerId: string | null = null;
   if (cronSecret && timingSafeEqualString(req.headers.get("x-cron-secret") ?? "", cronSecret)) {
-    if (isTest) return json({ error: "test は本人のログインでのみ実行できます", status: 400 }, 400, cors);
+    if (isTest || isAdminMessage) return json({ error: "この操作は本人のログインでのみ実行できます", status: 400 }, 400, cors);
     trigger = "cron";
   } else {
     const token = req.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
@@ -196,7 +339,7 @@ Deno.serve(async (req: Request) => {
       .from("members").select("id, is_super_admin").eq("email", email).eq("is_deleted", false).maybeSingle();
     if (memberError || !member) return json({ error: "Unauthorized", status: 401 }, 401, cors);
     callerId = member.id as string;
-    if (!isTest && !member.is_super_admin) return json({ error: "Forbidden", status: 403 }, 403, cors);
+    if (!isTest && !isAdminMessage && !member.is_super_admin) return json({ error: "Forbidden", status: 403 }, 403, cors);
     if (!allowRate(callerId)) {
       return json({ error: "RATE_LIMIT_EXCEEDED", status: 429, message: "短時間に繰り返し実行されています。1分ほど待ってから再度お試しください。" }, 429, cors);
     }
@@ -204,6 +347,21 @@ Deno.serve(async (req: Request) => {
   }
 
   const vapid = readVapidConfig();
+
+  // ===== お知らせの即時送信（送信者本人のみ。宛先は DB に記録済みのものだけ） =====
+  if (isAdminMessage) {
+    const messageId = Number(body.messageId);
+    if (!Number.isSafeInteger(messageId) || messageId <= 0) return json({ error: "messageId が不正です", status: 400 }, 400, cors);
+    const { data: msg, error: mErr } = await supabase.from("admin_messages").select("id, sender_id").eq("id", messageId).maybeSingle();
+    if (mErr) return json({ error: "admin_messages の取得に失敗", status: 500, detail: mErr.message }, 500, cors);
+    if (!msg || msg.sender_id !== callerId) return json({ error: "Forbidden", status: 403 }, 403, cors);
+    try {
+      const r = await dispatchAdminMessagePush(supabase, vapid, messageId);
+      return json({ ok: true, ...r }, 200, cors);
+    } catch (e) {
+      return json({ error: "ADMIN_MESSAGE_PUSH_FAILED", status: 500, message: e instanceof Error ? e.message : String(e) }, 500, cors);
+    }
+  }
 
   // ===== テスト送信（本人の購読だけ） =====
   if (trigger === "test") {
@@ -248,8 +406,13 @@ Deno.serve(async (req: Request) => {
   }
 
   let digest: ErrorDigestOutcome | null = null;
+  const adminFailures: string[] = [];
   try {
-    if (trigger === "cron" && !isDryRun) digest = await runErrorDigest(supabase, vapid, now);
+    if (trigger === "cron" && !isDryRun) {
+      digest = await runErrorDigest(supabase, vapid, now);
+      const backlog = await runAdminMessageBacklog(supabase, vapid, now);
+      if (backlog) adminFailures.push(backlog);
+    }
     // 届いたときだけ列に書く（マイグレ未適用で列が無いと、実行記録の更新ごと失敗して running のまま残るため）
     const digestFields = digest && digest.pushSucceeded > 0 ? { error_digest_sent: digest.pushSucceeded } : {};
 
@@ -258,12 +421,18 @@ Deno.serve(async (req: Request) => {
     const daySkip = resolveDaySkip(slot, isHolidayJst);
     if (daySkip.skip && !isDryRun) {
       await finishRun(supabase, runId as number, {
-        status: digest?.failure ? "partial" : "success", target_members: 0, inapp_written: 0,
+        status: digest?.failure || adminFailures.length > 0 ? "partial" : "success", target_members: 0, inapp_written: 0,
         push_attempted: 0, push_succeeded: 0, push_failed: 0, subscriptions_removed: 0,
-        error_summary: [daySkip.reason, digest?.failure].filter(Boolean).join(" | "),
+        error_summary: [daySkip.reason, digest?.failure, ...adminFailures].filter(Boolean).join(" | "),
         ...digestFields,
       });
       return json({ run_id: runId, status: "success", skipped: daySkip.reason }, 200, cors);
+    }
+
+    // 期限前日の再通知は平日だけ（上の休日スキップより後）。期限リマインドの1人1日1回とは別枠
+    if (trigger === "cron" && !isDryRun) {
+      const reminderFailure = await runAdminMessageReminders(supabase, vapid, slot.date);
+      if (reminderFailure) adminFailures.push(reminderFailure);
     }
 
     const { data: members, error: mErr } = await fetchAllRows<ReminderMemberRow>((o) => supabase
@@ -380,6 +549,7 @@ Deno.serve(async (req: Request) => {
     }
     if (failureSummaries.length > 0) errors.push(`送信失敗 ${failureSummaries.join(" / ")}`);
     if (digest?.failure) errors.push(digest.failure);
+    errors.push(...adminFailures);
 
     // 鍵が未設定で送れなかった人数も失敗に数える（黙って成功にしない）
     const pushConfigFailed = !vapid ? pushTargets.length : 0;
@@ -388,7 +558,7 @@ Deno.serve(async (req: Request) => {
       inappFailed, inappWritten,
     });
     // エラーのまとめ通知の失敗は期限リマインドの成否と独立だが、黙って成功にしない（黄バナーに出す）
-    const status = reminderStatus === "success" && digest?.failure ? "partial" : reminderStatus;
+    const status = reminderStatus === "success" && (digest?.failure || adminFailures.length > 0) ? "partial" : reminderStatus;
     await finishRun(supabase, runId as number, {
       status,
       target_members: targets.length,

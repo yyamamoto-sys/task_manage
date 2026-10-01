@@ -23,6 +23,8 @@ export interface NotificationKindDef {
   inAppKind?: string;
   /** v3.128 の列（種類ごとの全体スイッチ）。旧画面が書き換えても効くよう、オンの条件に含める */
   legacyColumn?: "notify_overdue" | "notify_due_today";
+  /** アプリ内は必ず届ける（本人がオフにできない。全体スイッチ inapp_enabled も無視する）。v3.131 */
+  inappLocked?: boolean;
 }
 
 export const NOTIFICATION_KINDS: readonly NotificationKindDef[] = [
@@ -56,9 +58,21 @@ export const NOTIFICATION_KINDS: readonly NotificationKindDef[] = [
     defaults: { inapp: true, push: true },
     inAppKind: "client_error",
   },
+  {
+    // v3.131：管理者からのお知らせ。アプリ内は必ず届く（オフにできない）。Windows は本人が選べる
+    id: "admin_message",
+    audience: "all",
+    supported: { inapp: true, push: true },
+    defaults: { inapp: true, push: true },
+    inAppKind: "admin_message",
+    inappLocked: true,
+  },
 ];
 
-export type NotificationKindId = "deadline_overdue" | "deadline_due_today" | "mention" | "client_error";
+export type NotificationKindId = "deadline_overdue" | "deadline_due_today" | "mention" | "client_error" | "admin_message";
+
+/** 管理者からのお知らせ関連の in_app_notifications.kind（受信者へのお知らせ・送信者へのまとめ通知）。ベルで📣の印と色を付ける */
+export const ADMIN_MESSAGE_IN_APP_KINDS: readonly string[] = ["admin_message", "admin_message_ack"];
 
 /** レジストリに無い in_app_notifications.kind のうち、管理者向けのもの（v3.128 で列だけ用意したバックアップ通知） */
 const ADMIN_ONLY_UNREGISTERED_IN_APP_KINDS = new Set(["backup_failure", "backup_weekly_summary"]);
@@ -119,6 +133,7 @@ export function sanitizeKindChannels(raw: unknown): KindChannels {
 export function kindChannelSetting(prefs: KindPrefsLike | undefined, kindId: string, channel: NotificationChannel): boolean {
   const def = findKind(kindId);
   if (!def || !def.supported[channel]) return false;
+  if (channel === "inapp" && def.inappLocked) return true;
   const v = (prefs ?? DEFAULT_KIND_PREFS).kind_channels?.[kindId]?.[channel];
   return typeof v === "boolean" ? v : def.defaults[channel];
 }
@@ -148,6 +163,7 @@ export function isKindEnabled(prefs: KindPrefsLike | undefined, kindId: string, 
   const p = prefs ?? DEFAULT_KIND_PREFS;
   const def = findKind(kindId);
   if (!def || !def.supported[channel]) return false;
+  if (channel === "inapp" && def.inappLocked) return true;
   const master = channel === "inapp" ? p.inapp_enabled : p.push_enabled;
   if (!master) return false;
   if (def.legacyColumn && p[def.legacyColumn] === false) return false;
@@ -162,6 +178,7 @@ export function buildKindChannelPatch(
   prefs: KindPrefsLike, kindId: string, channel: NotificationChannel, value: boolean,
 ): { kind_channels: KindChannels; notify_overdue?: boolean; notify_due_today?: boolean } {
   const current = sanitizeKindChannels(prefs.kind_channels);
+  if (channel === "inapp" && findKind(kindId)?.inappLocked) return { kind_channels: current };
   const nextEntry = { ...(current[kindId] ?? {}), [channel]: value };
   const kind_channels: KindChannels = { ...current, [kindId]: nextEntry };
   const def = findKind(kindId);

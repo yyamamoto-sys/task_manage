@@ -14,12 +14,14 @@ export const REMINDER_RUNS_LIMIT = 30;
 
 export interface InAppNotification {
   id: number;
-  kind: "deadline_digest" | "backup_failure" | "backup_weekly_summary" | "client_error";
+  kind: "deadline_digest" | "backup_failure" | "backup_weekly_summary" | "client_error" | "admin_message" | "admin_message_ack";
   title: string;
   body: string;
   url: string;
   created_at: string;
   read_at: string | null;
+  /** v3.131：管理者からのお知らせへの参照（admin_message / admin_message_ack のみ） */
+  message_id?: number | null;
 }
 
 export interface ReminderRun extends ReminderRunLite {
@@ -76,7 +78,7 @@ export async function hasPushSubscriptionRow(endpoint: string): Promise<boolean>
 export async function fetchInAppNotifications(memberId: string, opts: { kinds?: string[] } = {}): Promise<InAppNotification[]> {
   const base = supabase
     .from("in_app_notifications")
-    .select("id, kind, title, body, url, created_at, read_at")
+    .select("id, kind, title, body, url, created_at, read_at, message_id")
     .eq("member_id", memberId)
     .order("created_at", { ascending: false })
     .limit(IN_APP_LIST_LIMIT);
