@@ -17,11 +17,13 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import * as JapaneseHolidays from "https://esm.sh/japanese-holidays@1";
 import { fetchAllRows } from "../_shared/fetchAllRows.ts";
 import {
-  buildDigestPayload, buildDigests, normalizeTime, pickClaimedTargets, resolveDaySkip, resolveJstSlot, resolveRunStatus,
-  TEST_PAYLOAD,
+  buildDigestPayload, buildDigests, buildJstHolidayDate, normalizeTime, pickClaimedTargets, resolveDaySkip,
+  resolveHolidayCheckFn, resolveJstSlot, resolveRunStatus, TEST_PAYLOAD,
   type PrefsRow, type ReminderMemberRow, type ReminderTaskRow,
 } from "../_shared/reminderLogic.ts";
 import { readVapidConfig, sendToSubscriptions, type SendSummary, type StoredSubscription } from "../_shared/webPush.ts";
+import { timingSafeEqualString } from "../_shared/timingSafeEqual.ts";
+import { runWithConcurrency } from "../_shared/concurrencyPool.ts";
 
 const ALLOWED_ORIGINS = new Set<string>([
   "http://localhost:5173",
@@ -42,13 +44,17 @@ function json(body: unknown, status: number, cors: Record<string, string>): Resp
   return new Response(JSON.stringify(body), { status, headers: { ...cors, "Content-Type": "application/json" } });
 }
 
-// src/lib/date/holidays.ts と同じ判定（japanese-holidays の isHoliday(d, true)。振替休日を含む）
+// src/lib/date/holidays.ts と同じ判定（japanese-holidays の isHoliday(d, true)。振替休日を含む）。
+// 日付構築・関数解決（読み込めない場合は throw）は _shared/reminderLogic.ts の純粋関数
+// （buildJstHolidayDate・resolveHolidayCheckFn）に切り出し、vitest で検証している
+// （独立レビュー指摘・軽。実行環境のタイムゾーン非依存・フェイルオープン防止）。
 function isHolidayJst(dateStr: string): string | null {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  // deno-lint-ignore no-explicit-any
-  const fn = (JapaneseHolidays as any).isHoliday ?? (JapaneseHolidays as any).default?.isHoliday;
-  return (fn?.(d, true) as string | undefined) ?? null;
+  const fn = resolveHolidayCheckFn(JapaneseHolidays as unknown as Record<string, unknown>);
+  return (fn(buildJstHolidayDate(dateStr), true) as string | undefined) ?? null;
 }
+
+// 1回の実行でWeb Pushを送る人数分、同時に何人まで並列送信するか（独立レビュー指摘・中）
+const PUSH_SEND_CONCURRENCY = 10;
 
 // JWT 呼び出しの連打防止（Section 18。テスト送信・手動実行のみが対象）
 const RATE_LIMIT_PER_MIN = 6;
@@ -107,7 +113,7 @@ Deno.serve(async (req: Request) => {
   const cronSecret = Deno.env.get("REMINDER_CRON_SECRET");
   let trigger: "cron" | "manual" | "test";
   let callerId: string | null = null;
-  if (cronSecret && req.headers.get("x-cron-secret") === cronSecret) {
+  if (cronSecret && timingSafeEqualString(req.headers.get("x-cron-secret") ?? "", cronSecret)) {
     if (isTest) return json({ error: "test は本人のログインでのみ実行できます", status: 400 }, 400, cors);
     trigger = "cron";
   } else {
@@ -159,7 +165,6 @@ Deno.serve(async (req: Request) => {
   // ===== 定期送信（cron）・手動実行・dryRun =====
   const now = new Date();
   const slot = resolveJstSlot(now);
-  const daySkip = resolveDaySkip(slot, isHolidayJst);
 
   let runId: number | null = null;
   if (!isDryRun) {
@@ -173,6 +178,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    // 祝日判定（isHolidayJst）は読み込み失敗時に throw しうる。ここで投げれば下の catch が
+    // reminder_runs を failed で閉じて 500 を返す（黙って「祝日ではない」扱いにしない）。
+    const daySkip = resolveDaySkip(slot, isHolidayJst);
     if (daySkip.skip && !isDryRun) {
       await finishRun(supabase, runId as number, {
         status: "success", target_members: 0, inapp_written: 0,
@@ -251,6 +259,13 @@ Deno.serve(async (req: Request) => {
     }
 
     // ② Web Push
+    //
+    // 送信は人ごとに同時実行数の上限（PUSH_SEND_CONCURRENCY）をつけて並列化する
+    // （独立レビュー指摘・中。1人ずつawaitだと人数分だけ直列に時間がかかる）。
+    // 1人1日1回のclaim（claim_reminder_sends）は↑で既に完了しているため、ここより後で
+    // 何人並列に処理しても二重送信にはならない。送信に失敗した人をその場で再試行する
+    // ことはしない＝「その日は再送しない」仕様のまま（claimは送信の成否を問わない。
+    // 設計書 §6.1・§12）。
     const pushTargets = targets.filter((d) => d.wantsPush);
     const totals = { attempted: 0, succeeded: 0, failed: 0, removed: 0 };
     const failureSummaries: string[] = [];
@@ -259,16 +274,32 @@ Deno.serve(async (req: Request) => {
         errors.push("VAPID の鍵が未設定のため Windows通知を送れません");
       } else {
         const subs = await fetchSubscriptions(supabase, pushTargets.map((d) => d.memberId));
-        for (const d of pushTargets) {
+        const results = await runWithConcurrency(pushTargets, PUSH_SEND_CONCURRENCY, async (d) => {
           const mine = subs.filter((s) => s.member_id === d.memberId);
-          if (mine.length === 0) continue;
-          const r = await sendToSubscriptions(supabase, mine, buildDigestPayload(d, slot.date), vapid);
-          totals.attempted += r.attempted;
-          totals.succeeded += r.succeeded;
-          totals.failed += r.failed;
-          totals.removed += r.removed;
-          if (r.errorSummary) failureSummaries.push(r.errorSummary);
-        }
+          if (mine.length === 0) {
+            return { attempted: 0, succeeded: 0, failed: 0, removed: 0, errorSummary: null } as SendSummary;
+          }
+          // sendToSubscriptions は内部で購読ごとの失敗を握りつぶす設計だが、ネットワーク断等で
+          // この呼び出し自体が例外を投げても runWithConcurrency が他の人への送信を止めない
+          // （Promise.allSettledベース）。
+          return sendToSubscriptions(supabase, mine, buildDigestPayload(d, slot.date), vapid);
+        });
+        results.forEach((r, i) => {
+          if (r.status === "fulfilled") {
+            totals.attempted += r.value.attempted;
+            totals.succeeded += r.value.succeeded;
+            totals.failed += r.value.failed;
+            totals.removed += r.value.removed;
+            if (r.value.errorSummary) failureSummaries.push(r.value.errorSummary);
+            return;
+          }
+          const d = pushTargets[i];
+          const mineCount = subs.filter((s) => s.member_id === d.memberId).length;
+          totals.attempted += mineCount;
+          totals.failed += mineCount;
+          const msg = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          failureSummaries.push(`member送信で例外(${mineCount}件): ${msg}`);
+        });
       }
     }
     if (failureSummaries.length > 0) errors.push(`送信失敗 ${failureSummaries.join(" / ")}`);

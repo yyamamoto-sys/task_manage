@@ -5,10 +5,11 @@
 // 祝日は本番と同じ japanese-holidays を src/lib/date/holidays.ts 経由で渡す。
 
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import {
-  buildDigestBody, buildDigests, DEFAULT_PREFS, DEFAULT_REMINDER_TIME, effectivePrefs, normalizeTime,
-  pickClaimedTargets, resolveDaySkip, resolveJstSlot, resolveRunStatus, simulateClaimReminderSends,
-  REMINDER_TIME_MIN, REMINDER_TIME_MAX,
+  buildDigestBody, buildDigests, buildJstHolidayDate, DEFAULT_PREFS, DEFAULT_REMINDER_TIME, effectivePrefs,
+  normalizeTime, pickClaimedTargets, resolveDaySkip, resolveHolidayCheckFn, resolveJstSlot, resolveRunStatus,
+  simulateClaimReminderSends, REMINDER_TIME_MIN, REMINDER_TIME_MAX,
   type PrefsRow, type ReminderTaskRow, type ReminderMemberRow,
 } from "../../../../supabase/functions/_shared/reminderLogic";
 import { classifyPushStatus, summarizeFailures } from "../../../../supabase/functions/_shared/webPushCore";
@@ -232,5 +233,60 @@ describe("Edge Function 用 fetchAllRows（Section 61 と同じ終了条件）",
     const res = await fetchAllRows<{ id: string }>(fakeBuilder(1200, 500));
     expect(res.error).toBeNull();
     expect(res.data).toHaveLength(1200);
+  });
+});
+
+describe("buildJstHolidayDate", () => {
+  it("YYYY-MM-DD の年月日をそのままローカル構築する（実行環境のTZに依存しない）", () => {
+    const d = buildJstHolidayDate("2026-10-05");
+    // ローカルゲッターで読む前提のライブラリ（japanese-holidays）が使う3値を直接検証する。
+    // new Date(y, m-1, d) はセットもゲットも常に同じ「ローカル」基準になるため、
+    // 実行環境の実際のタイムゾーンが何であっても一致する。
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(9); // 0-indexed
+    expect(d.getDate()).toBe(5);
+  });
+
+  it("月初・年またぎでもずれない", () => {
+    const d = buildJstHolidayDate("2027-01-01");
+    expect(d.getFullYear()).toBe(2027);
+    expect(d.getMonth()).toBe(0);
+    expect(d.getDate()).toBe(1);
+  });
+
+  // 🔴 修正前の実装は `new Date(dateStr + "T00:00:00Z")`（UTC解釈）をローカルゲッターで
+  // 読んでいた。UTC-9時間より西（例：米国太平洋時間）のタイムゾーンで実行すると、
+  // UTC深夜0時はローカルでは前日になるため日付が1日ずれる。年月日を直接ローカル構築する
+  // 本実装（`new Date(y, m-1, d)`）は、セットとゲットが常に同じ「ローカル」基準になるため
+  // 実行環境のタイムゾーンに依存しない。別プロセスでTZをUTC-9より西に変えて検証する。
+  it("UTC-9より西のタイムゾーンで実行しても年月日がずれない（実行環境非依存）", () => {
+    const code = "const d = new Date(2026, 9, 5); process.stdout.write(JSON.stringify([d.getFullYear(), d.getMonth(), d.getDate()]));";
+    const out = execFileSync(process.execPath, ["-e", code], {
+      env: { ...process.env, TZ: "Etc/GMT+12" }, // UTC-12（日本時間よりさらに西）
+      encoding: "utf8",
+    });
+    expect(JSON.parse(out)).toEqual([2026, 9, 5]);
+  });
+});
+
+describe("resolveHolidayCheckFn", () => {
+  it("isHoliday を直接持つモジュールから関数を取り出す", () => {
+    const fn = (d: Date) => (d.getDate() === 1 ? "テスト祝日" : null);
+    const resolved = resolveHolidayCheckFn({ isHoliday: fn });
+    expect(resolved).toBe(fn);
+  });
+
+  it("default.isHoliday しか無いモジュール（ESM/CJS相互運用）からも取り出す", () => {
+    const fn = () => null;
+    const resolved = resolveHolidayCheckFn({ default: { isHoliday: fn } });
+    expect(resolved).toBe(fn);
+  });
+
+  // 🔴 修正前は `fn?.(d, true) as string | undefined ?? null` で、fn が無いと
+  // 常に null（＝祝日ではない）を返していた＝祝日にも気づかず送ってしまう黙ったフェイルオープン。
+  it("isHoliday がどこにも見つからなければ throw する（黙って「祝日ではない」にしない）", () => {
+    expect(() => resolveHolidayCheckFn({})).toThrow(/isHoliday/);
+    expect(() => resolveHolidayCheckFn({ isHoliday: "not-a-function" })).toThrow();
+    expect(() => resolveHolidayCheckFn({ default: {} })).toThrow();
   });
 });

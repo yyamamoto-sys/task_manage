@@ -25,18 +25,31 @@ self.addEventListener("push", (event) => {
     if (event.data) payload.body = event.data.text();
   }
   // Chrome は userVisibleOnly のため、受信したら必ず通知を出す
-  event.waitUntil(
-    self.registration.showNotification(payload.title, {
+  event.waitUntil((async () => {
+    await self.registration.showNotification(payload.title, {
       body: payload.body,
       tag: payload.tag,
       data: { url: payload.url },
-    }),
-  );
+    });
+    // タブを開いたままでも未読バッジが追従するよう、開いているクライアントへ知らせる
+    // （InAppNotificationBell が受けて再取得する。取りこぼしても数分おきの再取得が保険）
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of clients) c.postMessage({ type: "push-received" });
+  })());
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const url = (event.notification.data && event.notification.data.url) || "/";
+  const rawUrl = (event.notification.data && event.notification.data.url) || "/";
+  // 他オリジンのURLが来たら開かない（src/lib/push/notificationClickUrl.ts と同じ判定。
+  // sw.js はクラシックスクリプトのため import できず、ロジックを複製している）
+  let url = "/";
+  try {
+    const resolved = new URL(rawUrl, self.location.origin);
+    url = resolved.origin === self.location.origin ? `${resolved.pathname}${resolved.search}${resolved.hash}` || "/" : "/";
+  } catch {
+    url = "/";
+  }
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const sameOrigin = all.filter((c) => new URL(c.url).origin === self.location.origin);

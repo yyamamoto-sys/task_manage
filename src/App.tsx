@@ -31,6 +31,7 @@ import { confirmDialog } from "./lib/dialog";
 import { computeAccessibleGroupsForSidebar } from "./lib/projectInvite/sidebarGroupVisibility";
 import { loadStoredSidebarGroupId, resolveRestoredCurrentGroupId } from "./lib/layout/sidebarCurrentGroupRestore";
 import { confirmDiscardUnsavedEdits } from "./lib/editing/unsavedEditorRegistry";
+import { cleanupPushSubscriptionOnLogout } from "./lib/push/logoutCleanup";
 
 export default function App() {
   const t = useT();
@@ -133,6 +134,10 @@ export default function App() {
     // signOut()より前に確認することで、ネットワーク断等でsignOut自体が失敗した場合に
     // 無駄な確認をさせない（先に確認→ユーザーが進むと決めてから実際のログアウト処理に入る）。
     if (!(await confirmDiscardUnsavedEdits())) return;
+    // signOut()より前に行う：push_subscriptionsの削除はRLSで本人の行のみのため、
+    // セッションが生きている間でないと通らない。共有PCで前の利用者宛の通知が
+    // 出続けるのを防ぐ（設計書 §8.1）。失敗してもログアウト自体は止めない。
+    await cleanupPushSubscriptionOnLogout();
     try {
       await signOut();
     } catch (e) {

@@ -12,6 +12,11 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import {
   countUnreadInAppNotifications, fetchInAppNotifications, markInAppNotificationsRead, type InAppNotification,
 } from "../../lib/supabase/notificationStore";
+import { isPushReceivedMessage } from "../../lib/push/swMessage";
+
+// タブを開いたままでも未読数が追従するよう、postMessageを取りこぼした場合の保険として
+// この間隔でも再取得する（負荷は小さい＝1日1回しか増えないカウントのGETのみ）
+const FALLBACK_REFRESH_MS = 3 * 60 * 1000;
 
 interface Props {
   memberId: string;
@@ -68,6 +73,18 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
     const onVisible = () => { if (document.visibilityState === "visible") void refreshCount(); };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshCount]);
+
+  // sw.js が push を受けたらこのタブへ知らせる（開いたままでも未読バッジが追従する）。
+  // 取りこぼし（SW未制御・メッセージ到達前のタイミング等）に備えて定期再取得も保険で持つ。
+  useEffect(() => {
+    const onSwMessage = (e: MessageEvent) => { if (isPushReceivedMessage(e.data)) void refreshCount(); };
+    navigator.serviceWorker?.addEventListener("message", onSwMessage);
+    const interval = setInterval(() => void refreshCount(), FALLBACK_REFRESH_MS);
+    return () => {
+      navigator.serviceWorker?.removeEventListener("message", onSwMessage);
+      clearInterval(interval);
+    };
   }, [refreshCount]);
 
   useEffect(() => {

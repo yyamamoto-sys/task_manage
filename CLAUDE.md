@@ -4636,3 +4636,14 @@ pg_cron（平日 JST 7:00〜19:30・30分ごと＝26回）── x-cron-secret �
 
 Teams 週次（notify-deadlines）は新方式の稼働確認（5営業日）まで止めない（設計書 §9）。
 `MIN_CLIENT_VERSION` は上げていない（既存の列・RLS・Edge Function の入出力を変えていないため）。
+
+### 独立レビュー対応（feat/web-push ブランチ・2026-10-01・コードはv3.128のまま）
+
+DB適用・デプロイ前のコードレビューで出た指摘6件を反映。列・RLS・Edge Functionの入出力は変えていないため版は上げていない。
+
+- **【中】ログアウト時にこのブラウザの購読を解除**：`App.tsx` の `handleLogout`（唯一の実装。ゲスト終了・AccessDeniedScreen・サイドバー等すべてここを通る）が `signOut()` の前に `cleanupPushSubscriptionOnLogout()`（`src/lib/push/logoutCleanup.ts`）を呼ぶ。中身は `unsubscribeThisBrowser()` → 購読が有ったときだけ `deletePushSubscription()`。失敗しても `console.warn` のみでログアウトは止めない。**signOut()より前に置くのが要点**（DB削除はRLSで本人の行のみ＝セッションが生きている間でないと通らない）。共有PCで前の利用者のタスク名入り通知が出続けるのを防ぐ。
+- **【中】push-reminders の送信を並列化**：人ごとに1人ずつawaitしていたループを、同時実行数10人の上限つきで並列化（`supabase/functions/_shared/concurrencyPool.ts` の `runWithConcurrency`。Promise.allSettledベースのワーカープール）。1人の例外が他の人を止めない。claim（1人1日1回・`claim_reminder_sends`）は並列化より前で完結しているため、**送信に失敗した人をその場で再試行することはしない＝「その日は再送しない」仕様は変わらない**（設計書 §6.1・§12）。
+- **【軽】sw.js の notificationclick**：開くURLを `new URL(url, self.location.origin)` で解決し、origin が一致しなければ `"/"` を開く（他オリジンへの遷移を防ぐ）。同じ判定を `src/lib/push/notificationClickUrl.ts` に抽出してテストする（sw.jsはクラシックスクリプトのためimport不可＝ロジックを複製）。
+- **【軽】push-reminders の祝日判定**：`japanese-holidays` の `isHoliday` が読み込めない場合に黙って「祝日ではない」へフェイルオープンしていたのを `throw` に変更（`_shared/reminderLogic.ts` の `resolveHolidayCheckFn`）。判定日付も `new Date(dateStr+"T00:00:00Z")`（UTC解釈）をローカルゲッターで読む方式から、年月日を直接ローカル構築する方式（`buildJstHolidayDate`）に変更し、実行環境のタイムゾーンに依存しないようにした。
+- **【軽】x-cron-secret の比較を定数時間比較に**：`_shared/timingSafeEqual.ts` の `timingSafeEqualString`（長さ違いも含め最後まで比較してから判定）。
+- **【軽】未読バッジをタブ表示中も追従**：`public/sw.js` の push ハンドラが通知表示後に開いているクライアントへ `{type:"push-received"}` を `postMessage`。`InAppNotificationBell` が受けて `refreshCount()` を再実行（保険として3分おきの定期再取得も追加）。

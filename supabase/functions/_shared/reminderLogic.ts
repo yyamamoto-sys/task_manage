@@ -118,6 +118,36 @@ export function resolveDaySkip(slot: JstSlot, isHoliday: (dateStr: string) => st
   return { skip: false };
 }
 
+/**
+ * dateStr（JST基準の "YYYY-MM-DD"）の年月日を直接ローカル構築した Date を返す。
+ * japanese-holidays の isHoliday は内部で getFullYear()/getMonth()/getDate()（ローカル
+ * ゲッター）を読むため、`new Date(dateStr + "T00:00:00Z")` のように UTC としてパースして
+ * からローカルゲッターで読むと、実行環境のタイムゾーンが UTC でない場合に日付がずれる。
+ * 年月日を直接ローカル構築すれば、セットとゲットが常に同じ「ローカル」基準になるため、
+ * 実行環境のタイムゾーンに依存しない。
+ */
+export function buildJstHolidayDate(dateStr: string): Date {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d);
+}
+
+export type HolidayCheckFn = (date: Date, includeFurikae?: boolean) => string | null | undefined;
+
+/**
+ * japanese-holidays モジュールから isHoliday 関数を取り出す。読み込めなければ throw する
+ * （黙って「祝日ではない」側へフェイルオープンしない。esm.sh配信障害・ライブラリの
+ * 破壊的変更を検知できないまま運用されるのを防ぐ）。
+ */
+export function resolveHolidayCheckFn(mod: Record<string, unknown>): HolidayCheckFn {
+  const direct = mod.isHoliday;
+  const nested = (mod.default as Record<string, unknown> | undefined)?.isHoliday;
+  const fn = direct ?? nested;
+  if (typeof fn !== "function") {
+    throw new Error("japanese-holidays の isHoliday を読み込めませんでした（祝日判定ができないため送信を中止します）");
+  }
+  return fn as HolidayCheckFn;
+}
+
 /** src/lib/taskMeta.ts の getAssigneeIds と同じ規則 */
 export function assigneeIdsOf(t: Pick<ReminderTaskRow, "assignee_member_id" | "assignee_member_ids">): string[] {
   if (t.assignee_member_ids && t.assignee_member_ids.length > 0) return t.assignee_member_ids;

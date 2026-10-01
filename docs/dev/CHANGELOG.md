@@ -7799,4 +7799,24 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## やらないこと
 # バックアップ通知の切替（フェーズ5.5）・Teams 関連の削除（フェーズ6）・notify-deadlines の改修・notify_pref 列の削除。
 
+# v3.128 追記（2026-10-01・独立レビュー対応。DB未適用のためバージョンは据え置き。CLAUDE.md Section 66参照）
+#
+# ## 変更
+# * App.tsx：handleLogout が signOut() の前に src/lib/push/logoutCleanup.ts の
+#   cleanupPushSubscriptionOnLogout() を呼ぶ（このブラウザの購読解除＋DB削除。失敗してもログアウトは止めない）
+# * supabase/functions/push-reminders/index.ts：Web Push送信を同時実行数10人の上限つきで並列化
+#   （supabase/functions/_shared/concurrencyPool.ts の runWithConcurrency・Promise.allSettledベース）。
+#   x-cron-secret の比較を定数時間比較に（_shared/timingSafeEqual.ts）。祝日判定（japanese-holidays）が
+#   読み込めない場合に throw（黙って「祝日ではない」にしない）・判定日付をローカル構築に変更（タイムゾーン非依存。
+#   どちらも _shared/reminderLogic.ts の buildJstHolidayDate / resolveHolidayCheckFn に抽出）
+# * public/sw.js：notificationclick で開くURLを origin 検証してから開く（他オリジンなら"/"）。push受信時に
+#   開いているクライアントへ postMessage({type:"push-received"}) を送る
+# * src/components/notifications/InAppNotificationBell.tsx：push-receivedメッセージと3分おきの定期取得で
+#   未読数を再取得（タブを開いたままでもバッジが追従する）
+# * 新規：src/lib/push/notificationClickUrl.ts・src/lib/push/swMessage.ts
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run（191ファイル・2230件）・変更ファイルの eslint・npm run build。
+# 並列化・祝日throw・URL検証の3点は修正前のコード（旧ロジック）で失敗することを確認済み。
+
 最終更新：2026-10-01（v3.128）
