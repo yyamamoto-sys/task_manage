@@ -1,6 +1,8 @@
 -- ============================================================
 -- 想定クエリ名：通知の種類ごとの設定＋利用者の画面のエラー記録（v3.129）
 -- 2026-10-01（冪等。何度流しても同じ状態になる）
+-- 2026-10-01 改訂：独立レビュー指摘を反映（伏せ字の計算順序・redact_client_error_text の権限・
+--   kind_channels の ::boolean キャストをやめる。v3.129 のバージョン番号は上げていない）
 --
 -- 正本：CLAUDE.md Section 67／レジストリ supabase/functions/_shared/notificationKinds.ts
 -- 前提：20261001_web_push_reminders.sql（v3.128）を適用済み
@@ -26,6 +28,9 @@
 --   - 1人が1時間に新しく記録できる fingerprint は50件まで（超えたら 'limited'）
 --   - 文字数の上限で切り詰め、メールアドレス・トークンらしき文字列は伏せる（画面側でも同じことをする二重の対策）
 --   - アプリ内通知は同じ fingerprint で1時間に1回、1人の super_admin につき1時間10件まで
+--   - 🔴 伏せ字（正規表現）は会員確認・頻度上限の判定が終わったあとに計算する（DECLARE 節では計算しない）。
+--     正規表現に渡す前に left() で先に切り、さらに全引数の合計サイズが64KBを超えたら正規表現を使わず
+--     即座に 'rejected' を返す（独立レビュー指摘・中）
 --
 -- 【適用方法】Supabase SQL Editor に全文を貼って実行する（dev → prod の順）。
 --   末尾の確認クエリで、RLS が有効・ポリシー数が想定どおりであることを見る。
@@ -122,6 +127,9 @@ ALTER TABLE public.reminder_runs ADD COLUMN IF NOT EXISTS error_digest_sent inte
 
 -- ------------------------------------------------------------
 -- 5) 伏せ字＋切り詰め（画面側 src/lib/errors/clientErrorLog.ts の redactSensitive と同じ規則）
+--    v3.129 独立レビュー指摘・軽：access_token/refresh_token/apikey の値・32桁以上の16進・
+--    プレフィックス無しの JWT 形式（xxx.yyy.zzz）も伏せる。本人以外からは呼べない（直下の REVOKE）。
+--    🔴 Postgres の正規表現（POSIX ARE）は \b が「バックスペース」になるため使わない。
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.redact_client_error_text(p_text text, p_max integer)
 RETURNS text
@@ -133,17 +141,35 @@ AS $fn_redact_client_error_text$
     regexp_replace(
       regexp_replace(
         regexp_replace(
-          regexp_replace(coalesce(p_text, ''),
-            '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[email]', 'g'),
-          'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*', '[token]', 'g'),
-        '([Bb]earer)\s+[A-Za-z0-9._~+/=-]+', '\1 [token]', 'g'),
+          regexp_replace(
+            regexp_replace(
+              regexp_replace(
+                regexp_replace(coalesce(p_text, ''),
+                  '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '[email]', 'g'),
+                'eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*', '[token]', 'g'),
+              '[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}', '[token]', 'g'),
+            '([Bb]earer)\s+[A-Za-z0-9._~+/=-]+', '\1 [token]', 'g'),
+          '(access_token|refresh_token|apikey)=[A-Za-z0-9._~+/=-]+', '\1=[token]', 'gi'),
+        '[0-9a-fA-F]{32,}', '[redacted]', 'g'),
       '[A-Za-z0-9+/_-]{40,}', '[redacted]', 'g'),
     p_max)
 $fn_redact_client_error_text$;
 
+-- 呼べるのは SECURITY DEFINER の log_client_error の中だけ（その中は関数所有者の権限で動くため、
+-- ここで権限を絞っても log_client_error からの呼び出しは引き続きできる）
+REVOKE ALL ON FUNCTION public.redact_client_error_text(text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.redact_client_error_text(text, integer) FROM anon;
+REVOKE ALL ON FUNCTION public.redact_client_error_text(text, integer) FROM authenticated;
+
 -- ------------------------------------------------------------
 -- 6) RPC：エラーを記録する（画面から呼ぶ唯一の入口）
---    戻り値：'new'（初めての fingerprint）／'recorded'（回数を数えた）／'throttled'（1分以内の重複）／'limited'（1時間の上限）
+--    戻り値：'new'（初めての fingerprint）／'recorded'（回数を数えた）／'throttled'（1分以内の重複）／
+--           'limited'（1時間の上限）／'rejected'（1回の送信としてあまりに大きい・独立レビュー指摘・中）
+--    🔴 独立レビュー指摘・中：伏せ字（正規表現）は会員確認・頻度上限の判定が終わったあとに計算する
+--    （DECLARE 節では計算しない＝無条件に regexp_replace を回さない）。regexp_replace に渡す前に
+--    left() で先に切り、さらに全引数の合計サイズが大きすぎる場合は正規表現を使わず即座に 'rejected' で
+--    弾く（巨大な入力を使った攻撃者が、会員確認の前に高コストな正規表現を何度も実行させられないように
+--    する）。
 -- ------------------------------------------------------------
 CREATE OR REPLACE FUNCTION public.log_client_error(
   p_fingerprint text, p_source text, p_message text, p_code text, p_context text, p_stack text,
@@ -157,14 +183,15 @@ AS $fn_log_client_error$
 DECLARE
   v_member     text := public.current_member_id();
   v_source     text := CASE WHEN p_source IN ('report', 'boundary', 'window', 'promise') THEN p_source ELSE 'report' END;
-  v_message    text := public.redact_client_error_text(p_message, 500);
-  v_code       text := nullif(public.redact_client_error_text(p_code, 60), '');
-  v_context    text := nullif(public.redact_client_error_text(p_context, 200), '');
-  v_stack      text := nullif(public.redact_client_error_text(p_stack, 2000), '');
-  v_route      text := nullif(public.redact_client_error_text(p_route, 200), '');
-  v_screen     text := nullif(public.redact_client_error_text(p_screen, 60), '');
-  v_version    text := nullif(left(coalesce(p_app_version, ''), 20), '');
-  v_ua         text := nullif(left(coalesce(p_user_agent, ''), 300), '');
+  v_message    text;
+  v_code       text;
+  v_context    text;
+  v_stack      text;
+  v_route      text;
+  v_screen     text;
+  v_version    text;
+  v_ua         text;
+  v_total_len  integer;
   v_log        public.client_error_logs%ROWTYPE;
   v_rep_last   timestamptz;
   v_rep_found  boolean;
@@ -172,6 +199,7 @@ DECLARE
   v_status     text;
   v_notify     boolean := false;
   v_reopened   boolean := false;
+  v_is_new     boolean;
 BEGIN
   IF v_member IS NULL THEN
     RAISE EXCEPTION 'メンバーとして登録されていないため、エラーを記録できません';
@@ -179,18 +207,57 @@ BEGIN
   IF p_fingerprint IS NULL OR p_fingerprint !~ '^[0-9a-f]{16}$' THEN
     RAISE EXCEPTION 'fingerprint が不正です';
   END IF;
-  IF v_message = '' THEN
-    v_message := '（メッセージなし）';
+
+  -- 🔴 乱用対策：正規表現（伏せ字）の前に、素の長さの合計で弾く（独立レビュー指摘・中）
+  v_total_len := octet_length(coalesce(p_message, ''))     + octet_length(coalesce(p_code, ''))
+               + octet_length(coalesce(p_context, ''))     + octet_length(coalesce(p_stack, ''))
+               + octet_length(coalesce(p_route, ''))       + octet_length(coalesce(p_screen, ''))
+               + octet_length(coalesce(p_app_version, '')) + octet_length(coalesce(p_user_agent, ''));
+  IF v_total_len > 65536 THEN
+    RETURN 'rejected';
   END IF;
 
   SELECT * INTO v_log FROM public.client_error_logs WHERE fingerprint = p_fingerprint FOR UPDATE;
+  v_is_new := NOT FOUND;
 
-  IF NOT FOUND THEN
+  -- 会員確認・乱用対策（頻度上限）の判定。この時点ではまだ伏せ字（正規表現）を一切使っていない
+  IF v_is_new THEN
     SELECT count(*) INTO v_new_hour FROM public.client_error_reporters
      WHERE member_id = v_member AND first_seen > now() - interval '1 hour';
     IF v_new_hour >= 50 THEN
       RETURN 'limited';
     END IF;
+  ELSE
+    SELECT last_seen, true INTO v_rep_last, v_rep_found FROM public.client_error_reporters
+     WHERE error_id = v_log.id AND member_id = v_member FOR UPDATE;
+    IF coalesce(v_rep_found, false) THEN
+      IF v_rep_last > now() - interval '1 minute' THEN
+        RETURN 'throttled';
+      END IF;
+    ELSE
+      SELECT count(*) INTO v_new_hour FROM public.client_error_reporters
+       WHERE member_id = v_member AND first_seen > now() - interval '1 hour';
+      IF v_new_hour >= 50 THEN
+        RETURN 'limited';
+      END IF;
+    END IF;
+  END IF;
+
+  -- ここまでで会員確認・頻度上限の判定が終わった。ここから先で初めて正規表現（伏せ字）を使う。
+  -- regexp_replace に渡す前に left() で先に切り、入力長に関わらず正規表現のコストを抑える
+  v_message := public.redact_client_error_text(left(coalesce(p_message, ''), 1000), 500);
+  IF v_message = '' THEN
+    v_message := '（メッセージなし）';
+  END IF;
+  v_code    := nullif(public.redact_client_error_text(left(coalesce(p_code, ''), 120), 60), '');
+  v_context := nullif(public.redact_client_error_text(left(coalesce(p_context, ''), 400), 200), '');
+  v_stack   := nullif(public.redact_client_error_text(left(coalesce(p_stack, ''), 4000), 2000), '');
+  v_route   := nullif(public.redact_client_error_text(left(coalesce(p_route, ''), 400), 200), '');
+  v_screen  := nullif(public.redact_client_error_text(left(coalesce(p_screen, ''), 120), 60), '');
+  v_version := nullif(left(coalesce(p_app_version, ''), 20), '');
+  v_ua      := nullif(left(coalesce(p_user_agent, ''), 300), '');
+
+  IF v_is_new THEN
     INSERT INTO public.client_error_logs
       (fingerprint, source, message, code, context, stack, route, screen, app_version, user_agent, member_id)
     VALUES
@@ -200,6 +267,8 @@ BEGIN
     IF v_log.id IS NULL THEN
       -- 同時に同じ fingerprint が初めて記録された：相手の行に回数を足す側へ回る
       SELECT * INTO v_log FROM public.client_error_logs WHERE fingerprint = p_fingerprint FOR UPDATE;
+      SELECT last_seen, true INTO v_rep_last, v_rep_found FROM public.client_error_reporters
+       WHERE error_id = v_log.id AND member_id = v_member FOR UPDATE;
     ELSE
       INSERT INTO public.client_error_reporters (error_id, member_id) VALUES (v_log.id, v_member);
       v_status := 'new';
@@ -208,21 +277,11 @@ BEGIN
   END IF;
 
   IF v_status IS NULL THEN
-    SELECT last_seen, true INTO v_rep_last, v_rep_found FROM public.client_error_reporters
-     WHERE error_id = v_log.id AND member_id = v_member FOR UPDATE;
     IF coalesce(v_rep_found, false) THEN
-      IF v_rep_last > now() - interval '1 minute' THEN
-        RETURN 'throttled';
-      END IF;
       UPDATE public.client_error_reporters
          SET last_seen = now(), count = count + 1
        WHERE error_id = v_log.id AND member_id = v_member;
     ELSE
-      SELECT count(*) INTO v_new_hour FROM public.client_error_reporters
-       WHERE member_id = v_member AND first_seen > now() - interval '1 hour';
-      IF v_new_hour >= 50 THEN
-        RETURN 'limited';
-      END IF;
       INSERT INTO public.client_error_reporters (error_id, member_id) VALUES (v_log.id, v_member);
     END IF;
 
@@ -255,9 +314,12 @@ BEGIN
       LEFT JOIN public.notification_prefs np ON np.member_id = m.id
      WHERE m.is_super_admin = true
        AND m.is_deleted = false
-       -- 既定値は notificationKinds.ts の client_error（inapp=true）・行が無い人の inapp_enabled=true と同じ
+       -- 既定値は notificationKinds.ts の client_error（inapp=true）・行が無い人の inapp_enabled=true と同じ。
+       -- 🔴 独立レビュー指摘・中：::boolean キャストは壊れた値（jsonb_typeof しか検証していない）で例外に
+       -- なりうるため使わない。jsonb のまま 'false'::jsonb と比較し、それ以外（キー無し・true・不正値）は
+       -- オンとして扱う（既定オンの方針に一致）
        AND COALESCE(np.inapp_enabled, true)
-       AND COALESCE((np.kind_channels -> 'client_error' ->> 'inapp')::boolean, true)
+       AND COALESCE(np.kind_channels #> '{client_error,inapp}', 'true'::jsonb) <> 'false'::jsonb
        AND (SELECT count(*) FROM public.in_app_notifications n
              WHERE n.member_id = m.id AND n.kind = 'client_error'
                AND n.created_at > now() - interval '1 hour') < 10;
@@ -327,8 +389,16 @@ SELECT table_name, column_name, data_type
 SELECT pg_get_constraintdef(oid) AS kind_check
   FROM pg_constraint WHERE conname = 'in_app_notifications_kind_check';
 
--- 伏せ字の確認（期待：'[email] で失敗 Bearer [token]'）
+-- 伏せ字の確認（期待：'[email] で失敗 Bearer [token]'。SQL Editor は owner/superuser で動くため
+-- REVOKE の影響を受けず直接呼べる）
 SELECT public.redact_client_error_text('taro@example.co.jp で失敗 Bearer abc.def', 500) AS redacted;
+-- 短い秘密の伏せ字の確認（期待：'access_token=[token] id=[redacted]'）
+SELECT public.redact_client_error_text('access_token=abc123 id=' || repeat('a', 32), 500) AS redacted_short_secrets;
+
+-- redact_client_error_text は anon・authenticated からは直接呼べないことの確認（期待：0 件）
+SELECT grantee, privilege_type
+  FROM information_schema.routine_privileges
+ WHERE routine_name = 'redact_client_error_text' AND grantee IN ('anon', 'authenticated', 'PUBLIC');
 
 -- 匿名・未登録で記録できないことの模擬（Section 58 手順3。rollback するので安全）
 -- begin;

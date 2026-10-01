@@ -13,15 +13,24 @@ const SINCE = "2026-10-01T00:00:00.000Z";
 const UNTIL = "2026-10-01T00:30:00.000Z";
 
 describe("前回以降のエラー件数（countErrorsSince）", () => {
-  it("最終発生が窓（前回より後・今回以前）の行だけを数え、初めて記録されたものを新規として数える", () => {
+  it("last_notified_at が窓（前回より後・今回以前）の行だけを数え、初めて記録されたものを新規として数える", () => {
     const rows = [
-      { first_seen: "2026-09-30T10:00:00Z", last_seen: "2026-10-01T00:10:00Z" }, // 既存の再発
-      { first_seen: "2026-10-01T00:05:00Z", last_seen: "2026-10-01T00:05:00Z" }, // 新規
-      { first_seen: "2026-09-30T10:00:00Z", last_seen: "2026-10-01T00:00:00Z" }, // 前回ちょうど＝含めない
-      { first_seen: "2026-10-01T00:40:00Z", last_seen: "2026-10-01T00:40:00Z" }, // 今回より後＝含めない
+      { first_seen: "2026-09-30T10:00:00Z", last_notified_at: "2026-10-01T00:10:00Z" }, // 解決済みから再発
+      { first_seen: "2026-10-01T00:05:00Z", last_notified_at: "2026-10-01T00:05:00Z" }, // 新規
+      { first_seen: "2026-09-30T10:00:00Z", last_notified_at: "2026-10-01T00:00:00Z" }, // 前回ちょうど＝含めない
+      { first_seen: "2026-10-01T00:40:00Z", last_notified_at: "2026-10-01T00:40:00Z" }, // 今回より後＝含めない
+      { first_seen: "2026-09-30T09:00:00Z", last_notified_at: null }, // まだ一度も通知されていない（レア）＝含めない
     ];
     expect(countErrorsSince(rows, SINCE, UNTIL)).toEqual({ total: 2, fresh: 1 });
     expect(countErrorsSince([], SINCE, UNTIL)).toEqual({ total: 0, fresh: 0 });
+  });
+
+  it("🔴 既知の未解決エラーがただ繰り返しただけ（last_seen は窓に入るが last_notified_at は窓より前）では数えない（独立レビュー指摘・軽）", () => {
+    const rows = [
+      // 以前から知られている未解決エラーが、今回の窓の中でまた発生した（last_notified_at は昔のまま）
+      { first_seen: "2026-09-25T00:00:00Z", last_notified_at: "2026-09-25T00:00:00Z" },
+    ];
+    expect(countErrorsSince(rows, SINCE, UNTIL)).toEqual({ total: 0, fresh: 0 });
   });
 });
 

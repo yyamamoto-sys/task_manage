@@ -22,18 +22,39 @@ export const SAME_FINGERPRINT_INTERVAL_MS = 60_000;
 /** このタブから1時間に送る上限（DB 側は1人1時間に新しい fingerprint 50件） */
 export const MAX_SENDS_PER_HOUR = 30;
 
-/** 記録しない既知の無害なエラー */
+/**
+ * 記録しない既知の無害なエラー（v3.129 独立レビュー指摘・軽）。
+ * - AbortError：本人・コンポーネントの中断操作で意図的に起きる（fetch の中断など）
+ * - 動的 import の失敗：lazyWithRetry がデプロイ直後の一時エラーとして扱い、リロードで解消する
+ */
 const IGNORED_MESSAGE_PATTERNS: readonly RegExp[] = [
   /ResizeObserver loop/i,
   /^Script error\.?$/i,
+  /AbortError/i,
+  /Failed to fetch dynamically imported module/i,
+  /Importing a module script failed/i,
 ];
 
-/** メールアドレス・JWT・Bearer トークン・長い英数字の塊を伏せる（DB の redact_client_error_text と同じ規則） */
+/** chrome-extension:// ／ moz-extension:// 由来（本体のバグではない） */
+const EXTENSION_ORIGIN_RE = /\b(?:chrome|moz)-extension:\/\//i;
+
+export function isExtensionOrigin(text: string | null | undefined): boolean {
+  return !!text && EXTENSION_ORIGIN_RE.test(text);
+}
+
+/**
+ * メールアドレス・JWT・Bearer トークン・access_token/refresh_token/apikey の値・32桁以上の16進・
+ * 長い英数字の塊を伏せる（DB の redact_client_error_text と同じ規則。v3.129 独立レビュー指摘・軽で
+ * 短い秘密も追加）。
+ */
 export function redactSensitive(text: string): string {
   return text
     .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "[email]")
     .replace(/eyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]*/g, "[token]")
+    .replace(/[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}/g, "[token]")
     .replace(/([Bb]earer)\s+[A-Za-z0-9._~+/=-]+/g, "$1 [token]")
+    .replace(/\b(access_token|refresh_token|apikey)=[A-Za-z0-9._~+/=-]+/gi, "$1=[token]")
+    .replace(/\b[0-9a-f]{32,}\b/gi, "[redacted]")
     .replace(/[A-Za-z0-9+/_-]{40,}/g, "[redacted]");
 }
 
@@ -128,12 +149,16 @@ export function buildClientErrorPayload(input: ClientErrorInput, env: ClientErro
   };
 }
 
-/** reportError（"app:error"）の中身を記録の入力に変える。raw（元のエラー）は stack を取り出すだけで送らない */
+/**
+ * reportError（"app:error"）の中身を記録の入力に変える。raw（元のエラー）は stack を取り出すだけで送らない。
+ * message は logMessage（PostgREST の details 等、行データを含みうる部分を除いたもの）を優先する
+ * （無ければ message。v3.129 独立レビュー指摘・軽）。
+ */
 export function inputFromAppError(err: AppError): ClientErrorInput {
   const isBoundary = (err.context ?? "").startsWith("ErrorBoundary");
   const raw = err.raw;
   const stack = raw instanceof Error ? raw.stack ?? null : null;
-  return { source: isBoundary ? "boundary" : "report", message: err.message, code: err.code ?? null, context: err.context ?? null, stack };
+  return { source: isBoundary ? "boundary" : "report", message: err.logMessage ?? err.message, code: err.code ?? null, context: err.context ?? null, stack };
 }
 
 export function inputFromUnknown(source: "window" | "promise", reason: unknown): ClientErrorInput {
@@ -141,7 +166,10 @@ export function inputFromUnknown(source: "window" | "promise", reason: unknown):
   if (typeof reason === "string") return { source, message: reason };
   if (reason && typeof reason === "object") {
     const r = reason as Record<string, unknown>;
-    if (typeof r.message === "string") return { source, message: r.message, code: typeof r.code === "string" ? r.code : null };
+    // DOMException（AbortError 等）は instanceof Error ではないブラウザがあるため、name も見る
+    const name = typeof r.name === "string" ? r.name : null;
+    if (typeof r.message === "string") return { source, message: name ? `${name}: ${r.message}` : r.message, code: typeof r.code === "string" ? r.code : null };
+    if (name) return { source, message: name };
   }
   return { source, message: "不明なエラー" };
 }
@@ -197,7 +225,7 @@ export function installClientErrorLogging(deps: ClientErrorLoggingDeps): () => v
     if (inRecord) return;
     inRecord = true;
     try {
-      if (isIgnoredError(input.message)) return;
+      if (isIgnoredError(input.message) || isExtensionOrigin(input.stack)) return;
       const payload = buildClientErrorPayload(input, deps.env());
       if (!throttle.allow(payload.p_fingerprint, now())) return;
       void (async () => {
@@ -222,6 +250,8 @@ export function installClientErrorLogging(deps: ClientErrorLoggingDeps): () => v
     const ev = e as ErrorEvent;
     // 画像・スクリプトの読み込み失敗（ErrorEvent でない error）は対象外
     if (typeof ev.message !== "string") return;
+    // chrome-extension:// ／ moz-extension:// 由来（本体のバグではない）は対象外
+    if (isExtensionOrigin(ev.filename)) return;
     record(ev.error !== undefined && ev.error !== null ? inputFromUnknown("window", ev.error) : { source: "window", message: ev.message });
   };
   const onRejection = (e: Event) => {

@@ -7844,4 +7844,32 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## やらないこと
 # バックアップ通知の切替・リマインド停止の通知（赤バナーで監視を継続）。DB適用・Edge Function デプロイ・cron 登録。
 
+# v3.129 追記（2026-10-01・独立レビュー対応。DB未適用のためバージョンは据え置き。CLAUDE.md Section 67参照）
+#
+# ## 変更
+# * 20261001c_notify_v2_client_errors.sql：log_client_error の伏せ字（正規表現）の計算を DECLARE 節から本体へ移し、
+#   会員確認・頻度上限（throttled/limited）の判定が終わったあとに実行。regexp_replace の前に left(p_x, 上限×2) で
+#   先に切り、全引数の合計 octet_length が64KBを超えたら 'rejected' を返す（正規表現を一切使わない）
+# * redact_client_error_text：REVOKE ALL ... FROM PUBLIC, anon, authenticated（SECURITY DEFINER の
+#   log_client_error の中からは引き続き呼べる）。access_token/refresh_token/apikey の値・32桁以上の16進・
+#   プレフィックス無しの JWT 形式も伏せる（画面側 redactSensitive も同様）
+# * log_client_error のアプリ内通知判定：kind_channels の ::boolean キャストをやめ、
+#   COALESCE(np.kind_channels #> '{client_error,inapp}', 'true'::jsonb) <> 'false'::jsonb に（壊れた値で
+#   例外にならない）
+# * clientErrorDigest.ts：前回以降のエラー件数を last_seen ではなく last_notified_at（新規／解決済みからの
+#   再発のときだけ更新）で数える。既知の未解決エラーの繰り返しでは送らない
+# * src/lib/errorReporter.ts：AppError.logMessage を新設。reportError が PostgREST の details
+#   （"Failing row contains (…)" 等）を message に足す前の値を記録用に残す。clientErrorLog は details を含まない
+# * src/lib/errors/clientErrorLog.ts：chrome-extension://／moz-extension:// 由来（isExtensionOrigin）・
+#   AbortError・lazyWithRetry が扱う動的 import の失敗は記録しない
+# * src/components/settings/NotificationSettingsSection.tsx：種類×チャネルのチェックボックスを
+#   kindChannelChecked（新設。kind_channels AND 旧列）に変更し、isKindEnabled との表示ズレを解消
+# * CLAUDE.md Section 67 の「届け方」の「休日でも送る」の表現を訂正（cron は平日 JST 7:00〜19:30 のみ。
+#   土日のエラーは月曜7時のまとめに載る。祝日の平日は送る）
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run・変更ファイルの eslint・npm run build。エラーのまとめ通知の「既知の未解決の
+# 繰り返しでは送らない」・details を記録に含めない・ノイズ除外（拡張機能/AbortError/動的import失敗）・
+# 設定画面の表示ズレの4点は、修正前のコードで該当テストが赤くなることを確認済み。
+
 最終更新：2026-10-01（v3.129）

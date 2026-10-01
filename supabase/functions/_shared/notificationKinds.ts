@@ -124,6 +124,20 @@ export function kindChannelSetting(prefs: KindPrefsLike | undefined, kindId: str
 }
 
 /**
+ * 設定画面のチェックボックスの見た目：種類×チャネルの個別設定 AND（期限の2種類のみ）旧列。
+ * 全体スイッチ（inapp_enabled/push_enabled）は含まない（画面側は disabled で表現する）。
+ * isKindEnabled から全体スイッチを除いたものと同じにすることで、判定と見た目を一致させる
+ * （v3.129 独立レビュー指摘・軽：旧列がオフなのに表示だけオンのままだった不具合の修正）。
+ */
+export function kindChannelChecked(prefs: KindPrefsLike | undefined, kindId: string, channel: NotificationChannel): boolean {
+  const def = findKind(kindId);
+  if (!def || !def.supported[channel]) return false;
+  const p = prefs ?? DEFAULT_KIND_PREFS;
+  if (def.legacyColumn && p[def.legacyColumn] === false) return false;
+  return kindChannelSetting(p, kindId, channel);
+}
+
+/**
  * この種類をこのチャネルで届けるか。
  * ＝ チャネルの全体スイッチ（inapp_enabled / push_enabled）AND 種類×チャネルの設定
  *   AND（期限の2種類のみ）v3.128 の列 notify_overdue / notify_due_today。

@@ -7,7 +7,7 @@ import { audienceOfInAppKind, type NotificationKindId } from "../../../supabase/
 
 export {
   NOTIFICATION_KINDS, NOTIFICATION_CHANNELS, DEFAULT_KIND_PREFS,
-  audienceOfInAppKind, buildKindChannelPatch, findKind, isKindEnabled, kindChannelSetting,
+  audienceOfInAppKind, buildKindChannelPatch, findKind, isKindEnabled, kindChannelChecked, kindChannelSetting,
   kindsVisibleTo, sanitizeKindChannels,
 } from "../../../supabase/functions/_shared/notificationKinds.ts";
 export type {

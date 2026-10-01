@@ -14,7 +14,11 @@ export const ERROR_DIGEST_INITIAL_LOOKBACK_MS = 30 * 60 * 1000;
 
 export interface ErrorDigestLogRow {
   first_seen: string;
-  last_seen: string;
+  /**
+   * log_client_error（SQL）が「新しい fingerprint が初めて記録されたとき」「解決済みが再発したとき」
+   * だけ更新する列。既知の未解決エラーがただ繰り返しただけでは更新されない（v3.129 独立レビュー指摘・軽）。
+   */
+  last_notified_at: string | null;
 }
 
 export interface ErrorDigestMemberRow {
@@ -30,14 +34,21 @@ export interface ErrorDigestCounts {
   fresh: number;
 }
 
+/**
+ * 「前回以降に発生したエラー」＝ 前回以降に last_notified_at が更新されたもの（新規に記録された、または
+ * 解決済みから再発したもの）だけを数える。既知の未解決エラーがただ繰り返しただけ（last_seen は進むが
+ * last_notified_at は進まない）では数えない（独立レビュー指摘・軽。まとめ通知が「またこれか」の繰り返し
+ * 通知にならないようにする）。
+ */
 export function countErrorsSince(rows: ErrorDigestLogRow[], sinceIso: string, untilIso: string): ErrorDigestCounts {
   const since = Date.parse(sinceIso);
   const until = Date.parse(untilIso);
   let total = 0;
   let fresh = 0;
   for (const r of rows) {
-    const last = Date.parse(r.last_seen);
-    if (!(last > since && last <= until)) continue;
+    if (!r.last_notified_at) continue;
+    const notified = Date.parse(r.last_notified_at);
+    if (!(notified > since && notified <= until)) continue;
     total += 1;
     if (Date.parse(r.first_seen) > since) fresh += 1;
   }

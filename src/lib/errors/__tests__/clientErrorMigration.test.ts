@@ -68,11 +68,38 @@ describe("エラー記録の権限（20261001c）", () => {
     expect(LOG_FN.match(/first_seen > now\(\) - interval '1 hour';\s+IF v_new_hour >= 50 THEN\s+RETURN 'limited';/g)).toHaveLength(2);
   });
 
-  it("🔴 送る内容を絞る：全ての文字列引数を伏せ字・切り詰めの関数に通す", () => {
-    for (const arg of ["p_message, 500", "p_code, 60", "p_context, 200", "p_stack, 2000", "p_route, 200", "p_screen, 60"]) {
-      expect(LOG_FN, arg).toContain(`public.redact_client_error_text(${arg})`);
+  it("🔴 送る内容を絞る：全ての文字列引数を、left() で先に切ってから伏せ字・切り詰めの関数に通す", () => {
+    for (const [arg, pre, max] of [
+      ["p_message", 1000, 500], ["p_code", 120, 60], ["p_context", 400, 200], ["p_stack", 4000, 2000],
+      ["p_route", 400, 200], ["p_screen", 120, 60],
+    ] as const) {
+      expect(LOG_FN, arg).toContain(`public.redact_client_error_text(left(coalesce(${arg}, ''), ${pre}), ${max})`);
     }
     expect(MIGRATION).toContain("'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}', '[email]'");
+  });
+
+  it("🔴 独立レビュー指摘・中：伏せ字（正規表現）は DECLARE 節で計算せず、会員確認・頻度上限の判定の後に計算する", () => {
+    const declareOnly = LOG_FN.slice(0, LOG_FN.indexOf("\nBEGIN"));
+    expect(declareOnly).not.toMatch(/redact_client_error_text/);
+    const lastGateIdx = Math.max(LOG_FN.lastIndexOf("RETURN 'limited';"), LOG_FN.lastIndexOf("RETURN 'throttled';"));
+    const firstRedactIdx = LOG_FN.indexOf("public.redact_client_error_text(left(");
+    expect(lastGateIdx).toBeGreaterThan(0);
+    expect(firstRedactIdx).toBeGreaterThan(lastGateIdx);
+  });
+
+  it("🔴 独立レビュー指摘・中：全引数の合計サイズが大きすぎる場合は正規表現を使わず即座に 'rejected' を返す", () => {
+    expect(LOG_FN).toMatch(/v_total_len > 65536 THEN\s+RETURN 'rejected';/);
+    const sizeCheckIdx = LOG_FN.indexOf("v_total_len >");
+    const firstRedactIdx = LOG_FN.indexOf("public.redact_client_error_text(left(");
+    expect(sizeCheckIdx).toBeGreaterThan(0);
+    expect(sizeCheckIdx).toBeLessThan(firstRedactIdx);
+  });
+
+  it("redact_client_error_text は PUBLIC・anon・authenticated から EXECUTE できない（SECURITY DEFINER の中からだけ呼べる）", () => {
+    expect(MIGRATION).toMatch(/REVOKE ALL ON FUNCTION public\.redact_client_error_text\(text, integer\) FROM PUBLIC;/);
+    expect(MIGRATION).toMatch(/REVOKE ALL ON FUNCTION public\.redact_client_error_text\(text, integer\) FROM anon;/);
+    expect(MIGRATION).toMatch(/REVOKE ALL ON FUNCTION public\.redact_client_error_text\(text, integer\) FROM authenticated;/);
+    expect(MIGRATION).not.toMatch(/GRANT EXECUTE ON FUNCTION public\.redact_client_error_text/);
   });
 
   it("アプリ内通知は新規・再発のときだけ、同じ fingerprint は1時間に1回、1人1時間10件まで", () => {

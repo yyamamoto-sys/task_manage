@@ -8,8 +8,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   ADMIN_IN_APP_KINDS, ALL_IN_APP_KINDS, DEFAULT_KIND_PREFS, NOTIFICATION_KINDS, NOTIFICATION_KIND_ICON,
-  audienceOfInAppKind, buildKindChannelPatch, findKind, formatBadgeCount, isKindEnabled, kindChannelSetting,
-  kindsVisibleTo, sanitizeKindChannels, type KindPrefsLike,
+  audienceOfInAppKind, buildKindChannelPatch, findKind, formatBadgeCount, isKindEnabled, kindChannelChecked,
+  kindChannelSetting, kindsVisibleTo, sanitizeKindChannels, type KindPrefsLike,
 } from "../notificationKinds";
 import { DEFAULT_NOTIFICATION_PREFS, prefsFromRow } from "../../reminder/notificationPrefs";
 import { layoutJa } from "../../../i18n/layout.ja";
@@ -91,6 +91,22 @@ describe("判定（全体スイッチ AND 種類×チャネル AND 旧列）", (
     expect(isKindEnabled(prefs(), "mention", "inapp")).toBe(false);
     expect(isKindEnabled(prefs(), "unknown", "push")).toBe(false);
   });
+
+  it("🔴 設定画面のチェックボックスの見た目（kindChannelChecked）は旧列も反映し、isKindEnabled（全体スイッチ以外）と一致する（独立レビュー指摘・軽）", () => {
+    // 旧列（notify_overdue）がオフ・kind_channels に個別設定が無い：isKindEnabled は false。
+    // 修正前の表示（kindChannelSetting 単体）はここで true のままズレていた
+    const p = prefs({ notify_overdue: false });
+    expect(kindChannelChecked(p, "deadline_overdue", "inapp")).toBe(false);
+    expect(isKindEnabled(p, "deadline_overdue", "inapp")).toBe(false);
+
+    // 旧列はオンのまま・種類×チャネルだけ個別に外した場合は従来どおり反映する
+    const p2 = prefs({ kind_channels: { deadline_overdue: { inapp: false } } });
+    expect(kindChannelChecked(p2, "deadline_overdue", "inapp")).toBe(false);
+    expect(kindChannelChecked(p2, "deadline_overdue", "push")).toBe(true);
+
+    // 旧列を持たない種類（client_error）は旧列の影響を受けない
+    expect(kindChannelChecked(prefs(), "client_error", "inapp")).toBe(true);
+  });
 });
 
 describe("保存する差分（buildKindChannelPatch）", () => {
@@ -112,6 +128,13 @@ describe("保存する差分（buildKindChannelPatch）", () => {
     expect(sanitizeKindChannels({ client_error: { push: "yes", inapp: false }, evil: { push: true } })).toEqual({ client_error: { inapp: false } });
     expect(prefsFromRow({ kind_channels: { mention: { push: false } } } as never).kind_channels).toEqual({ mention: { push: false } });
     expect(kindChannelSetting(prefs({ kind_channels: { client_error: { push: false } } }), "client_error", "push")).toBe(false);
+  });
+
+  it("🔴 kind_channels に不正な値（文字列・数値）が入っていても例外にならず既定値にフォールバックする（独立レビュー指摘・中）", () => {
+    const broken = prefs({ kind_channels: { client_error: { inapp: "yes" as unknown as boolean } } });
+    expect(() => kindChannelSetting(broken, "client_error", "inapp")).not.toThrow();
+    expect(kindChannelSetting(broken, "client_error", "inapp")).toBe(true); // 既定値（client_error.inapp=true）
+    expect(() => isKindEnabled(broken, "client_error", "inapp")).not.toThrow();
   });
 });
 
@@ -139,7 +162,10 @@ describe("マイグレの SQL とレジストリの一致", () => {
     expect(findKind("client_error")?.defaults.inapp).toBe(true);
     expect(DEFAULT_KIND_PREFS.inapp_enabled).toBe(true);
     expect(MIGRATION).toContain("COALESCE(np.inapp_enabled, true)");
-    expect(MIGRATION).toContain("COALESCE((np.kind_channels -> 'client_error' ->> 'inapp')::boolean, true)");
+    // 🔴 ::boolean キャストは壊れた値で例外になりうるため使わない（独立レビュー指摘・中）。
+    // jsonb のまま 'false'::jsonb と比較し、それ以外（キー無し・不正値）はオンとして扱う
+    expect(MIGRATION).not.toContain("->> 'inapp')::boolean");
+    expect(MIGRATION).toContain("COALESCE(np.kind_channels #> '{client_error,inapp}', 'true'::jsonb) <> 'false'::jsonb");
   });
 
   it("旧列からの移行は、外していた種類だけを両チャネルともオフで移す（既にある値は触らない）", () => {

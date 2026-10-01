@@ -16,7 +16,7 @@ import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { REMINDER_TIME_OPTIONS, formatReminderTime, type NotificationPrefs } from "../../lib/reminder/notificationPrefs";
 import {
-  ADMIN_NOTICE_ICON, NOTIFICATION_CHANNELS, NOTIFICATION_KIND_ICON, buildKindChannelPatch, kindChannelSetting, kindsVisibleTo,
+  ADMIN_NOTICE_ICON, NOTIFICATION_CHANNELS, NOTIFICATION_KIND_ICON, buildKindChannelPatch, kindChannelChecked, kindsVisibleTo,
   type NotificationChannel, type NotificationKindId,
 } from "../../lib/notifications/notificationKinds";
 import {
@@ -260,7 +260,7 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
                         <input
                           type="checkbox"
                           aria-label={`${t(`layout.notifyKind.${kind.id}.label`)}：${t(ch === "inapp" ? "layout.settings.notify.inapp" : "layout.settings.notify.push")}`}
-                          checked={kindChannelSetting(prefs, kind.id, ch)}
+                          checked={kindChannelChecked(prefs, kind.id, ch)}
                           disabled={disabled || !channelMasterOn(ch)}
                           title={channelMasterOn(ch) ? undefined : t("layout.settings.notify.channelOff")}
                           onChange={e => setKindChannel(kind.id, ch, e.target.checked)}

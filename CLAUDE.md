@@ -4687,7 +4687,8 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 ### エラーの届け方
 
 - **アプリ内はすぐ**：`log_client_error` の中で「新しい fingerprint が初めて記録されたとき」「解決済みが再発したとき」に、super_admin 全員（エラー種類のアプリ内がオンの人）の `in_app_notifications` に1件作る。同じ fingerprint は1時間に1回まで、1人の super_admin につき1時間10件まで。クリック先 `/?open=admin-errors`（設定 → 部署の管理 → アプリ設定 → エラー）。
-- **Windows は30分ごとにまとめて**：push-reminders の cron 実行のたびに、前回以降に最終発生したエラーの件数（新規の件数）を super_admin（Windows通知オン・エラー種類の Windows オン）へ1回送る。🔴 **期限リマインドの1人1日1回（reminder_send_log）とは別枠**。どこまで送ったかは `notification_cursors`（service_role のみ）に持ち、送信の成否に関わらず進める（再送しない）。休日も送る。失敗は `reminder_runs` を partial にして `error_summary` に残す。手動実行・dryRun・テストでは送らない。`reminder_runs.error_digest_sent` に届いた購読数。
+- **Windows は30分ごとにまとめて**：push-reminders の cron 実行のたびに、前回以降に `last_notified_at`（＝新しい fingerprint が初めて記録された、または解決済みが再発した時刻）が更新されたエラーの件数を super_admin（Windows通知オン・エラー種類の Windows オン）へ1回送る。🔴 既知の未解決エラーがただ繰り返しただけ（`last_seen` は進むが `last_notified_at` は進まない）では送らない（独立レビュー指摘・軽。「またこれか」の繰り返し通知にしない）。🔴 **期限リマインドの1人1日1回（reminder_send_log）とは別枠**。どこまで送ったかは `notification_cursors`（service_role のみ）に持ち、送信の成否に関わらず進める（再送しない）。失敗は `reminder_runs` を partial にして `error_summary` に残す。手動実行・dryRun・テストでは送らない。`reminder_runs.error_digest_sent` に届いた購読数。
+  - 🔴 **「休日でも送る」ではない**（独立レビュー指摘・軽で訂正）：cron 自体が平日 JST 7:00〜19:30 のみ起動する（`20261001b_schedule_push_reminders.sql`）。土日に起きたエラーは実行されず、月曜7:00の実行が前回からの窓でまとめて拾う。祝日は cron の曜日判定だけで動き休日判定を関知しないため、**平日の祝日は通常どおり送る**（期限リマインドの holiday skip は `runErrorDigest` の後に判定するため、まとめ通知には影響しない）。
 
 ### 管理画面「エラー」タブ（`ClientErrorSection.tsx`・super_admin のみ）
 
@@ -4717,3 +4718,13 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 4. 本番で `20261001d_schedule_client_error_cleanup.sql`（90日削除の cron）
 
 `MIN_CLIENT_VERSION` は上げていない（列の追加と CHECK 制約の拡張だけで、旧画面の読み書き・Edge Function の入出力は壊れない。旧画面が旧列だけを書いても判定に効く）。
+
+### 独立レビュー指摘の反映（`feat/notify-v2`・2026-10-01・バージョン番号は v3.129 のまま）
+
+- **【中】`log_client_error` の伏せ字（正規表現）の計算順序**：DECLARE 節では計算せず、会員確認・頻度上限の判定（throttled/limited）が終わったあとに計算する。`regexp_replace` に渡す前に `left(p_x, 上限×2)` で先に切り、さらに全引数の合計 `octet_length` が64KBを超えたら正規表現を一切使わず `'rejected'` を返す（巨大な入力で高コストな正規表現を会員確認の前に何度も回させない）。
+- **【中】`redact_client_error_text` の権限**：`REVOKE ALL ... FROM PUBLIC, anon, authenticated`。SECURITY DEFINER の `log_client_error` の中は関数所有者の権限で動くため、呼び出しは引き続きできる。
+- **【中】`kind_channels` の `::boolean` キャストをやめる**：壊れた値（CHECK は `jsonb_typeof = 'object'` までしか見ていない）で例外になりうるため、`COALESCE(np.kind_channels #> '{client_error,inapp}', 'true'::jsonb) <> 'false'::jsonb` に変更（キー無し・不正値はオンとして扱う＝既定オンの方針と一致）。TS 側（`isKindEnabled`/`kindChannelSetting`）はもともと `typeof v === "boolean"` で検証済みで安全。
+- **【軽】push-reminders のエラーのまとめ通知**：`last_seen` ではなく `last_notified_at`（新規／解決済みからの再発のときだけ更新される列）で前回以降を数える。既知の未解決エラーがただ繰り返しただけでは送らない。「休日でも送る」の表現を訂正（上記「届け方」参照）。
+- **【軽】プライバシー**：`reportError` が PostgREST の `details`（"Failing row contains (…)" 等の行データ）を message に足す前の値を `AppError.logMessage` として持たせ、`clientErrorLog` はそちらを記録する（画面表示の `message` は従来どおり details を含む）。`redactSensitive`／`redact_client_error_text` の両方に、32桁以上の16進・`access_token=`／`refresh_token=`／`apikey=` の値・プレフィックス無しの JWT 形式（xxx.yyy.zzz）の伏せ字を追加。
+- **【軽】ノイズ除外**：`chrome-extension://`／`moz-extension://` 由来（`isExtensionOrigin`）・`AbortError`・`lazyWithRetry` が扱う「Failed to fetch dynamically imported module」「Importing a module script failed」は記録しない。
+- **【軽】`NotificationSettingsSection` の表示ズレ**：種類×チャネルのチェックボックスは `kindChannelChecked`（新設。`kind_channels` AND 旧列）を使う。旧列（`notify_overdue`/`notify_due_today`）がオフなのに表示だけオンのままだった不具合を修正し、`isKindEnabled`（全体スイッチ以外の部分）と一致させた。

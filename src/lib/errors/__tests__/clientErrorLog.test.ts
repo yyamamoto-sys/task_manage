@@ -6,7 +6,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import {
   MAX_MESSAGE_CHARS, MAX_SENDS_PER_HOUR, SAME_FINGERPRINT_INTERVAL_MS,
   buildClientErrorPayload, computeFingerprint, createSendThrottle, inputFromAppError, inputFromUnknown,
-  installClientErrorLogging, isIgnoredError, normalizeForFingerprint, redactSensitive,
+  installClientErrorLogging, isExtensionOrigin, isIgnoredError, normalizeForFingerprint, redactSensitive,
   type ClientErrorEnv, type ClientErrorPayload,
 } from "../clientErrorLog";
 
@@ -26,6 +26,16 @@ describe("伏せ字（redactSensitive）", () => {
 
   it("普通の日本語・短い英単語は変えない", () => {
     expect(redactSensitive("保存に失敗しました [42703] column does not exist")).toBe("保存に失敗しました [42703] column does not exist");
+  });
+
+  it("🔴 短い秘密も伏せる：32桁以上の16進・access_token/refresh_token/apikey・Authorization: Bearer・プレフィックス無しの JWT 形式（独立レビュー指摘・軽）", () => {
+    expect(redactSensitive(`sha=${"a".repeat(32)}`)).toBe("sha=[redacted]");
+    expect(redactSensitive(`id=${"f".repeat(31)}`)).toBe(`id=${"f".repeat(31)}`); // 31桁は対象外
+    expect(redactSensitive("?access_token=abcDEF123-._~")).toBe("?access_token=[token]");
+    expect(redactSensitive("refresh_token=xyz987 を送信")).toBe("refresh_token=[token] を送信");
+    expect(redactSensitive("apikey=secretkey123")).toBe("apikey=[token]");
+    expect(redactSensitive("Authorization: Bearer abc123.def456")).toBe("Authorization: Bearer [token]");
+    expect(redactSensitive("headerpart.payloadpart123.signaturepart456")).toBe("[token]");
   });
 });
 
@@ -51,6 +61,45 @@ describe("送る内容（buildClientErrorPayload）", () => {
     expect(inputFromAppError({ message: "x", context: "ErrorBoundary: at A / at B", timestamp: "t" }).source).toBe("boundary");
     expect(inputFromUnknown("promise", new TypeError("bad")).message).toBe("TypeError: bad");
     expect(inputFromUnknown("window", { message: "m", code: "C" })).toEqual({ source: "window", message: "m", code: "C" });
+  });
+
+  it("🔴 reportError が details を足したあとの message ではなく、logMessage（details を含まない）を記録する（独立レビュー指摘・軽）", () => {
+    const input = inputFromAppError({
+      message: "保存に失敗 — Failing row contains (123, 山田太郎, secret@example.co.jp).",
+      logMessage: "保存に失敗",
+      context: "タスク保存",
+      timestamp: "t",
+    });
+    expect(input.message).toBe("保存に失敗");
+    const p = buildClientErrorPayload(input, ENV);
+    expect(p.p_message).not.toContain("Failing row");
+    expect(p.p_message).not.toContain("山田太郎");
+  });
+
+  it("logMessage が無ければ message を使う", () => {
+    expect(inputFromAppError({ message: "x", timestamp: "t" }).message).toBe("x");
+  });
+});
+
+describe("ノイズ除外（独立レビュー指摘・軽）", () => {
+  it("chrome-extension:// ／ moz-extension:// 由来", () => {
+    expect(isExtensionOrigin("chrome-extension://abcdefg/content.js")).toBe(true);
+    expect(isExtensionOrigin("moz-extension://abcdefg/content.js")).toBe(true);
+    expect(isExtensionOrigin("at f (https://app.example.com/x.js:1:1)")).toBe(false);
+    expect(isExtensionOrigin(null)).toBe(false);
+  });
+
+  it("AbortError・動的 import の失敗（lazyWithRetry が扱う一時エラー）は記録しない", () => {
+    expect(isIgnoredError("AbortError: The user aborted a request.")).toBe(true);
+    expect(isIgnoredError("Failed to fetch dynamically imported module")).toBe(true);
+    expect(isIgnoredError("Importing a module script failed")).toBe(true);
+    expect(isIgnoredError("TypeError: failed")).toBe(false);
+  });
+
+  it("DOMException 形の AbortError（instanceof Error でなくても name で判定）", () => {
+    const input = inputFromUnknown("promise", { name: "AbortError", message: "The user aborted a request." });
+    expect(input.message).toBe("AbortError: The user aborted a request.");
+    expect(isIgnoredError(input.message)).toBe(true);
   });
 });
 

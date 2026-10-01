@@ -11,7 +11,12 @@
 // 【黙って止まらない】最初に running の行を書き、最後に結果で更新する。例外でも failed で閉じる（§6）。
 // 【v3.129 エラーのまとめ通知】cron の実行ごとに、前回以降に利用者の画面で起きたエラーの件数を
 //   super_admin（エラー種類の Windows がオンの人）へ Windows通知で1回送る。期限の1人1日1回とは別枠
-//   （reminder_send_log を使わない）。休日でも送る。どこまで送ったかは notification_cursors に持つ。
+//   （reminder_send_log を使わない）。どこまで送ったかは notification_cursors に持つ。
+//   🔴 独立レビュー指摘・軽：「休日でも送る」ではない。cron 自体が平日 JST 7:00〜19:30 のみ起動するため、
+//   土日に起きたエラーは実行されず、月曜7:00の実行がまとめて拾う（notification_cursors が前回からの
+//   窓を持つため、週末分もその1回に含まれる）。祝日は cron の曜日判定（0-4/1-5）だけで動き、休日判定
+//   （isHolidayJst・下の daySkip）を関知しないため、平日の祝日は通常どおり送る（daySkip は期限リマインド
+//   だけを止める。runErrorDigest はその判定より前に実行する）。
 //
 // 必要な secrets：SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（自動）・REMINDER_CRON_SECRET・
 //   VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY・VAPID_SUBJECT・ALLOWED_ORIGINS（CORS。backup-daily と同じ）
@@ -111,9 +116,11 @@ async function runErrorDigest(supabase: Sb, vapid: ReturnType<typeof readVapidCo
       .from("notification_cursors").select("cursor_at").eq("name", ERROR_DIGEST_CURSOR).maybeSingle();
     if (curErr) throw new Error(`notification_cursors の取得に失敗: ${curErr.message}`);
     const win = resolveDigestWindow((cursorRow?.cursor_at as string | undefined) ?? null, now);
+    // last_notified_at で絞る（新規／解決済みからの再発だけを数える。既知の未解決の繰り返しは数えない。
+    // 独立レビュー指摘・軽）
     const { data: logs, error: lErr } = await fetchAllRows<ErrorDigestLogRow>((o) => supabase
-      .from("client_error_logs").select("id, first_seen, last_seen", o)
-      .gt("last_seen", win.since).lte("last_seen", win.until));
+      .from("client_error_logs").select("id, first_seen, last_notified_at", o)
+      .gt("last_notified_at", win.since).lte("last_notified_at", win.until));
     if (lErr) throw new Error(`client_error_logs の取得に失敗: ${lErr.message}`);
     const counts = countErrorsSince(logs, win.since, win.until);
 
