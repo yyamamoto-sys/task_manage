@@ -13,9 +13,9 @@ export const APP_FRAME_INSET_PC_PX = 8;
 export const APP_BELL_SIZE_PC_PX = 32;
 export const APP_BELL_SIZE_MOBILE_PX = 32;
 /** 角丸カードの上端からの距離 */
-export const APP_BELL_TOP_PC_PX = 3;
+export const APP_BELL_TOP_PC_PX = 6;
 /** 角丸カード（または AI 相談パネル）の右端からの距離 */
-export const APP_BELL_RIGHT_PC_PX = 10;
+export const APP_BELL_RIGHT_PC_PX = 14;
 /** ベルとヘッダーのボタンの間に空ける隙間 */
 export const APP_BELL_GAP_PX = 6;
 

@@ -21,9 +21,9 @@ const stripComments = (src: string) => src
 
 describe("ベルの位置", () => {
   it("AI相談パネルが開いていればその幅だけ左へ退く（FAB と同じ避け方）", () => {
-    expect(computeBellRightPc(false, 400)).toBe(APP_FRAME_INSET_PC_PX + 10);
-    expect(computeBellRightPc(true, 400)).toBe(APP_FRAME_INSET_PC_PX + 10 + 400);
-    expect(computeBellRightPc(true, -5)).toBe(APP_FRAME_INSET_PC_PX + 10);
+    expect(computeBellRightPc(false, 400)).toBe(APP_FRAME_INSET_PC_PX + 14);
+    expect(computeBellRightPc(true, 400)).toBe(APP_FRAME_INSET_PC_PX + 14 + 400);
+    expect(computeBellRightPc(true, -5)).toBe(APP_FRAME_INSET_PC_PX + 14);
   });
 
   it("ヘッダーが空ける幅はベル本体＋右余白＋隙間。一覧の1段ツールバー（約38px）に収まる", () => {

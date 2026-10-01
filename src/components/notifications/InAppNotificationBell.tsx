@@ -169,7 +169,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
         <span aria-hidden>🔔</span>
         {badge && (
           <span aria-hidden style={{
-            position: "absolute", top: "-4px", right: "-6px", minWidth: "18px", height: "18px", padding: "0 5px",
+            position: "absolute", top: "-3px", right: "-3px", minWidth: "18px", height: "18px", padding: "0 5px",
             borderRadius: "99px", background: "#e5484d", color: "#fff", border: "2px solid var(--color-bg-primary)",
             fontSize: "10px", fontWeight: 700, lineHeight: "14px", textAlign: "center", boxSizing: "border-box",
           }}>{badge}</span>

@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.130",
+    date: "2026-10-01",
+    title: "右上のベルの未読件数が見切れないようにしました",
+    highlights: [
+      "画面右上のベルの未読件数（赤い丸）が、画面の角で切れて見えていたのを直しました",
+    ],
+  },
+  {
     version: "v3.129",
     date: "2026-10-01",
     title: "お知らせのベルを右上に置き、通知の種類ごとに受け取り方を選べるようにしました",
