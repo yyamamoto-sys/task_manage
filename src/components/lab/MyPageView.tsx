@@ -34,6 +34,7 @@ import { WIDGET_REGISTRY, getWidgetDefinition } from "./widgets/registry";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
 import { WidgetConfigModal } from "./widgets/WidgetConfigModal";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE } from "../common/modalStyles";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   onClose: () => void;
@@ -309,6 +310,7 @@ export function MyPageView({ onClose, currentUser, onOpenTask, onNavigate, onCre
         <div style={{
           display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
           padding: "12px 18px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0,
+          paddingRight: withBellReserve(18),
           background: "var(--color-bg-primary)",
         }}>
           <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>🧩 マイページ</span>

@@ -527,4 +527,55 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "期限リマインド：1人1日1回の判定関数（claim_reminder_sends）が見つかりません",
     migration: "20261001_web_push_reminders.sql",
   },
+  // 通知の種類ごとの設定＋利用者の画面のエラー記録（v3.129・Section 67）。未適用だと通知設定が
+  // 「読み込めません」になり、エラーの記録・管理画面の「エラー」タブ・エラーのまとめ通知が動かない。
+  {
+    id: "notification_prefs_kind_channels_column",
+    kind: "column",
+    table: "notification_prefs",
+    column: "kind_channels",
+    label: "通知：種類ごとの設定の列（notification_prefs.kind_channels）が見つかりません",
+    migration: "20261001c_notify_v2_client_errors.sql",
+  },
+  {
+    id: "in_app_notifications_kind_check_client_error",
+    kind: "check_contains",
+    table: "in_app_notifications",
+    needle: "client_error",
+    label: "アプリ内通知の種類のCHECK制約に「利用者の画面でエラー(client_error)」が含まれていません",
+    migration: "20261001c_notify_v2_client_errors.sql",
+  },
+  ...([
+    ["client_error_logs", "利用者の画面のエラー記録"],
+    ["client_error_reporters", "エラーが起きた人の記録"],
+    ["notification_cursors", "まとめ通知の送信位置"],
+  ] as const).map(([table, name]): SchemaCheckDescriptor => ({
+    id: `${table}_table`,
+    kind: "table",
+    table,
+    label: `通知：${name}テーブル（${table}）が見つかりません`,
+    migration: "20261001c_notify_v2_client_errors.sql",
+  })),
+  {
+    id: "reminder_runs_error_digest_sent_column",
+    kind: "column",
+    table: "reminder_runs",
+    column: "error_digest_sent",
+    label: "期限リマインド：実行記録のエラーまとめ通知の列（reminder_runs.error_digest_sent）が見つかりません",
+    migration: "20261001c_notify_v2_client_errors.sql",
+  },
+  {
+    id: "fn_log_client_error",
+    kind: "function",
+    name: "log_client_error",
+    label: "通知：エラーを記録する関数（log_client_error）が見つかりません",
+    migration: "20261001c_notify_v2_client_errors.sql",
+  },
+  {
+    id: "fn_resolve_client_errors",
+    kind: "function",
+    name: "resolve_client_errors",
+    label: "通知：エラーを解決済みにする関数（resolve_client_errors）が見つかりません",
+    migration: "20261001c_notify_v2_client_errors.sql",
+  },
 ];

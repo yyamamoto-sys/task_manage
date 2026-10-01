@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SUPABASE_ANON_KEY: string;
   /** Windows通知（Web Push）の VAPID 公開鍵。未設定ならWindows通知のトグルを無効にする */
   readonly VITE_VAPID_PUBLIC_KEY?: string;
+  /** "1" のとき開発サーバーでも画面のエラーを記録する（既定は送らない） */
+  readonly VITE_LOG_CLIENT_ERRORS_IN_DEV?: string;
 }
 
 interface ImportMeta {

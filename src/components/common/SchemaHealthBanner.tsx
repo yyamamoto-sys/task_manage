@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { Member } from "../../lib/localData/types";
 import { runSchemaHealthCheck, type SchemaHealthResult } from "../../lib/schema/checkSchemaHealth";
 import { useT } from "../../hooks/useT";
+import { BELOW_BELL_TOP_PX } from "../../lib/layout/topRightBell";
 
 interface Props {
   currentUser: Member;
@@ -48,7 +49,7 @@ export function SchemaHealthBanner({ currentUser }: Props) {
     <div
       role="status"
       style={{
-        position: "fixed", top: "16px", right: "16px", zIndex: 150,
+        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, right: "16px", zIndex: 150,
         width: "min(380px, calc(100vw - 32px))",
         background: "var(--color-bg-warning)",
         border: "1px solid var(--color-border-warning)",

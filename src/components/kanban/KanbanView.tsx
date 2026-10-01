@@ -23,6 +23,7 @@ import { InlineEditDate } from "../common/InlineEditDate";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { CustomSelect } from "../common/CustomSelect";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   currentUser: Member;
@@ -247,6 +248,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             縮められると「全プロジェクト」の文字が1文字ずつ縦に折り返される不具合があった） */}
       <div style={{
         padding: "10px 18px", borderBottom: "1px solid var(--color-border-primary)",
+        paddingRight: withBellReserve(18),
         display: "flex", alignItems: "center", gap: "10px",
         background: "var(--color-bg-primary)", flexShrink: 0,
         flexWrap: "wrap",

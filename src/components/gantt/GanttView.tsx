@@ -51,6 +51,7 @@ import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -2115,6 +2116,7 @@ export function GanttView({
       <div style={{
         display: "flex", alignItems: "center", gap: "8px",
         padding: "10px 16px",
+        paddingRight: withBellReserve(16),
         borderBottom: "1px solid var(--color-border-primary)",
         background: isPreview ? "var(--color-bg-info)" : "var(--color-bg-primary)", flexShrink: 0,
         flexWrap: "wrap",

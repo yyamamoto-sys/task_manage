@@ -42,6 +42,7 @@ import { MarkdownLite } from "../common/MarkdownLite";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   currentUser: Member;
@@ -466,6 +467,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
       <div style={{
         display: "flex", alignItems: "center", gap: "8px",
         padding: "10px 16px",
+        paddingRight: withBellReserve(16),
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-primary)", flexShrink: 0,
         flexWrap: "wrap",

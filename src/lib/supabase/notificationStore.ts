@@ -14,7 +14,7 @@ export const REMINDER_RUNS_LIMIT = 30;
 
 export interface InAppNotification {
   id: number;
-  kind: "deadline_digest" | "backup_failure" | "backup_weekly_summary";
+  kind: "deadline_digest" | "backup_failure" | "backup_weekly_summary" | "client_error";
   title: string;
   body: string;
   url: string;
@@ -32,12 +32,13 @@ export interface ReminderRun extends ReminderRunLite {
   push_succeeded: number | null;
   subscriptions_removed: number | null;
   error_summary: string | null;
+  error_digest_sent?: number | null;
 }
 
 export async function fetchNotificationPrefsRow(memberId: string): Promise<Partial<NotificationPrefs> | null> {
   const { data, error } = await supabase
     .from("notification_prefs")
-    .select("inapp_enabled, push_enabled, notify_overdue, notify_due_today, reminder_time")
+    .select("inapp_enabled, push_enabled, notify_overdue, notify_due_today, reminder_time, kind_channels")
     .eq("member_id", memberId)
     .maybeSingle();
   if (error) throw error;
@@ -72,13 +73,14 @@ export async function hasPushSubscriptionRow(endpoint: string): Promise<boolean>
   return (data?.length ?? 0) > 0;
 }
 
-export async function fetchInAppNotifications(memberId: string): Promise<InAppNotification[]> {
-  const { data, error } = await supabase
+export async function fetchInAppNotifications(memberId: string, opts: { kinds?: string[] } = {}): Promise<InAppNotification[]> {
+  const base = supabase
     .from("in_app_notifications")
     .select("id, kind, title, body, url, created_at, read_at")
     .eq("member_id", memberId)
     .order("created_at", { ascending: false })
     .limit(IN_APP_LIST_LIMIT);
+  const { data, error } = await (opts.kinds ? base.in("kind", opts.kinds) : base);
   if (error) throw error;
   return (data ?? []) as InAppNotification[];
 }
@@ -141,7 +143,7 @@ export async function runReminderDryRun(): Promise<ReminderDryRunResult> {
 export async function fetchRecentReminderRuns(opts: { cronOnly?: boolean } = {}): Promise<ReminderRun[]> {
   const base = supabase
     .from("reminder_runs")
-    .select("id, started_at, finished_at, trigger, triggered_by, slot_time, status, target_members, inapp_written, push_attempted, push_succeeded, push_failed, subscriptions_removed, error_summary")
+    .select("id, started_at, finished_at, trigger, triggered_by, slot_time, status, target_members, inapp_written, push_attempted, push_succeeded, push_failed, subscriptions_removed, error_summary, error_digest_sent")
     .order("started_at", { ascending: false })
     .limit(REMINDER_RUNS_LIMIT);
   const { data, error } = await (opts.cronOnly ? base.eq("trigger", "cron") : base);

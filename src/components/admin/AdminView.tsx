@@ -46,11 +46,16 @@ import { OkrImportModal } from "./OkrImportModal";
 import { LoadingTipsSection } from "./LoadingTipsSection";
 import { BackupSection } from "./BackupSection";
 import { ReminderSection } from "./ReminderSection";
+import { ClientErrorSection } from "./ClientErrorSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders";
+type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders" | "errors";
 
-interface Props { currentUser: Member; }
+interface Props {
+  currentUser: Member;
+  /** 開いたときのタブ（エラー通知のクリック先 /?open=admin-errors。super_admin のときだけ効く） */
+  initialTab?: "errors";
+}
 
 // ===== 部署絞り込み（v3.60・サイドバーの「表示部署」に追従） =====
 //
@@ -91,7 +96,7 @@ function isMemberEmailUniqueViolation(e: unknown): boolean {
 
 // ===== ルートコンポーネント =====
 
-export function AdminView({ currentUser }: Props) {
+export function AdminView({ currentUser, initialTab }: Props) {
   // 管理者ガード：グループ内にis_admin=trueのアクティブメンバーが1人以上いる場合、
   // 現在ユーザーがis_admin=trueでないとアクセスを拒否する。
   // 誰もis_adminでない場合はブートストラップモードとして全員アクセス可。
@@ -174,6 +179,7 @@ export function AdminView({ currentUser }: Props) {
   const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips"];
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
+    if (initialTab === "errors" && isCurrentUserSuperAdmin) return "errors";
     if (krCount === 0) return "okr";
     if (pjCount === 0) return "pj";
     if (saved === "tips" && !isCurrentUserSuperAdmin) return "pj";
@@ -270,6 +276,7 @@ export function AdminView({ currentUser }: Props) {
         { key: "tips" as AdminTab, label: "ローディングのヒント" },
         { key: "backup" as AdminTab, label: "バックアップ" },
         { key: "reminders" as AdminTab, label: "通知" },
+        { key: "errors" as AdminTab, label: "エラー" },
     ] }] : []),
   ];
   const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
@@ -447,6 +454,7 @@ export function AdminView({ currentUser }: Props) {
           {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
           {tab === "backup"   && <BackupSection currentUser={currentUser} />}
           {tab === "reminders" && <ReminderSection currentUser={currentUser} />}
+          {tab === "errors"   && <ClientErrorSection currentUser={currentUser} />}
         </div>
       </div>
     </div>

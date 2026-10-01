@@ -4,6 +4,8 @@
 // 本人が選ぶ。正本：docs/dev/web-push-reminder-design.md §4.5（モーダルではなくこのタブに置く）。
 // トグルは押した時点で保存する（タスク編集面ではないため Section 44 の明示保存の対象外）。
 // 許可ダイアログは「Windows通知」をオンにした瞬間だけ出す。
+// v3.129：「通知する内容」を種類×チャネル（アプリ内／Windows）の表にした（レジストリ＝src/lib/notifications/notificationKinds.ts）。
+// 管理者向けの種類は super_admin にだけ出す。上の「知らせ方」は各チャネルの全体スイッチのまま。
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { Member } from "../../lib/localData/types";
@@ -13,6 +15,10 @@ import { useT } from "../../hooks/useT";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { REMINDER_TIME_OPTIONS, formatReminderTime, type NotificationPrefs } from "../../lib/reminder/notificationPrefs";
+import {
+  ADMIN_NOTICE_ICON, NOTIFICATION_CHANNELS, NOTIFICATION_KIND_ICON, buildKindChannelPatch, kindChannelSetting, kindsVisibleTo,
+  type NotificationChannel, type NotificationKindId,
+} from "../../lib/notifications/notificationKinds";
 import {
   getCurrentSubscription, getVapidPublicKey, isInIframe, isPushSupported,
   subscribeThisBrowser, unsubscribeThisBrowser,
@@ -168,6 +174,12 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
 
   const permTone = permission === "granted" ? "success" : permission === "denied" ? "danger" : "warning";
   const showLegacyNote = self?.notify_pref === "browser" && !prefs.push_enabled && status === "ready";
+  const isSuperAdmin = currentUser.is_super_admin === true || self?.is_super_admin === true;
+  const visibleKinds = kindsVisibleTo(isSuperAdmin);
+  const channelMasterOn = (ch: NotificationChannel) => (ch === "inapp" ? prefs.inapp_enabled : prefs.push_enabled);
+  const setKindChannel = (kindId: string, ch: NotificationChannel, value: boolean) => {
+    void save(buildKindChannelPatch(prefs, kindId, ch, value));
+  };
 
   return (
     <SectionBody title={`🔔 ${t("layout.settings.nav.notify")}`} lead={t("layout.settings.notify.lead")}>
@@ -210,18 +222,59 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
       </Row>
 
       <Row label={t("layout.settings.notify.kinds")} hint={t("layout.settings.notify.kindsHint")}>
-        <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
-            <input type="checkbox" checked={prefs.notify_overdue} disabled={disabled}
-              onChange={e => { void save({ notify_overdue: e.target.checked }); }} />
-            {t("layout.settings.notify.overdue")}
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px" }}>
-            <input type="checkbox" checked={prefs.notify_due_today} disabled={disabled}
-              onChange={e => { void save({ notify_due_today: e.target.checked }); }} />
-            {t("layout.settings.notify.dueToday")}
-          </label>
-        </div>
+        <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%", maxWidth: "520px" }}>
+          <thead>
+            <tr>
+              <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{t("layout.settings.notify.kindColumn")}</th>
+              {NOTIFICATION_CHANNELS.map(ch => (
+                <th key={ch} style={{ padding: "4px 6px", fontWeight: 600, color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>
+                  {t(ch === "inapp" ? "layout.settings.notify.inapp" : "layout.settings.notify.push")}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {visibleKinds.map(kind => {
+              const id = kind.id as NotificationKindId;
+              const isAdminKind = kind.audience === "super_admin";
+              return (
+                <tr key={kind.id} style={{
+                  borderTop: "1px solid var(--color-border-primary)",
+                  background: isAdminKind ? "var(--color-bg-purple)" : undefined,
+                }}>
+                  <td style={{ padding: "6px", verticalAlign: "top" }}>
+                    <div style={{ fontWeight: 600, color: "var(--color-text-primary)" }}>
+                      {NOTIFICATION_KIND_ICON[id]} {t(`layout.notifyKind.${kind.id}.label`)}
+                      {isAdminKind && (
+                        <span style={{
+                          marginLeft: "6px", fontSize: "10px", padding: "0 6px", borderRadius: "99px", fontWeight: 500,
+                          background: "var(--color-bg-primary)", color: "var(--color-text-purple)", border: "1px solid var(--color-border-purple)",
+                        }}>{ADMIN_NOTICE_ICON} {t("layout.bell.adminBadge")}</span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{t(`layout.notifyKind.${kind.id}.desc`)}</div>
+                  </td>
+                  {NOTIFICATION_CHANNELS.map(ch => (
+                    <td key={ch} style={{ padding: "6px", textAlign: "center", verticalAlign: "top" }}>
+                      {kind.supported[ch] ? (
+                        <input
+                          type="checkbox"
+                          aria-label={`${t(`layout.notifyKind.${kind.id}.label`)}：${t(ch === "inapp" ? "layout.settings.notify.inapp" : "layout.settings.notify.push")}`}
+                          checked={kindChannelSetting(prefs, kind.id, ch)}
+                          disabled={disabled || !channelMasterOn(ch)}
+                          title={channelMasterOn(ch) ? undefined : t("layout.settings.notify.channelOff")}
+                          onChange={e => setKindChannel(kind.id, ch, e.target.checked)}
+                        />
+                      ) : (
+                        <span title={t("layout.settings.notify.unsupported")} style={{ color: "var(--color-text-tertiary)" }}>—</span>
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </Row>
 
       <Row label={t("layout.settings.notify.time")} hint={t("layout.settings.notify.timeHint")}>

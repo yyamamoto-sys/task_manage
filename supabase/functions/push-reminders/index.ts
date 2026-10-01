@@ -9,6 +9,9 @@
 //
 // 【1人1日1回】claim_reminder_sends（INSERT … ON CONFLICT DO NOTHING RETURNING）が返した人だけへ送る（§6.1）。
 // 【黙って止まらない】最初に running の行を書き、最後に結果で更新する。例外でも failed で閉じる（§6）。
+// 【v3.129 エラーのまとめ通知】cron の実行ごとに、前回以降に利用者の画面で起きたエラーの件数を
+//   super_admin（エラー種類の Windows がオンの人）へ Windows通知で1回送る。期限の1人1日1回とは別枠
+//   （reminder_send_log を使わない）。休日でも送る。どこまで送ったかは notification_cursors に持つ。
 //
 // 必要な secrets：SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（自動）・REMINDER_CRON_SECRET・
 //   VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY・VAPID_SUBJECT・ALLOWED_ORIGINS（CORS。backup-daily と同じ）
@@ -24,6 +27,10 @@ import {
 import { readVapidConfig, sendToSubscriptions, type SendSummary, type StoredSubscription } from "../_shared/webPush.ts";
 import { timingSafeEqualString } from "../_shared/timingSafeEqual.ts";
 import { runWithConcurrency } from "../_shared/concurrencyPool.ts";
+import {
+  buildErrorDigestPayload, countErrorsSince, ERROR_DIGEST_CURSOR, resolveDigestWindow, selectErrorDigestRecipients,
+  type ErrorDigestLogRow, type ErrorDigestMemberRow,
+} from "../_shared/clientErrorDigest.ts";
 
 const ALLOWED_ORIGINS = new Set<string>([
   "http://localhost:5173",
@@ -88,6 +95,62 @@ async function fetchSubscriptions(supabase: Sb, memberIds: string[]): Promise<St
     .in("member_id", memberIds));
   if (error) throw new Error(`push_subscriptions の取得に失敗: ${error.message}`);
   return data;
+}
+
+interface ErrorDigestOutcome {
+  errors: number;
+  pushSucceeded: number;
+  failure: string | null;
+}
+
+// 失敗しても期限リマインドは止めない（結果は error_summary に残す）。カーソルは送信の成否に関わらず進める
+// （同じエラーを次の回に二重で知らせない。期限リマインドの「その日は再送しない」と同じ考え方）。
+async function runErrorDigest(supabase: Sb, vapid: ReturnType<typeof readVapidConfig>, now: Date): Promise<ErrorDigestOutcome> {
+  try {
+    const { data: cursorRow, error: curErr } = await supabase
+      .from("notification_cursors").select("cursor_at").eq("name", ERROR_DIGEST_CURSOR).maybeSingle();
+    if (curErr) throw new Error(`notification_cursors の取得に失敗: ${curErr.message}`);
+    const win = resolveDigestWindow((cursorRow?.cursor_at as string | undefined) ?? null, now);
+    const { data: logs, error: lErr } = await fetchAllRows<ErrorDigestLogRow>((o) => supabase
+      .from("client_error_logs").select("id, first_seen, last_seen", o)
+      .gt("last_seen", win.since).lte("last_seen", win.until));
+    if (lErr) throw new Error(`client_error_logs の取得に失敗: ${lErr.message}`);
+    const counts = countErrorsSince(logs, win.since, win.until);
+
+    let pushSucceeded = 0;
+    let failure: string | null = null;
+    if (counts.total > 0) {
+      const { data: admins, error: aErr } = await supabase
+        .from("members").select("id, is_super_admin, is_deleted").eq("is_super_admin", true).eq("is_deleted", false);
+      if (aErr) throw new Error(`super_admin の取得に失敗: ${aErr.message}`);
+      const adminRows = (admins ?? []) as ErrorDigestMemberRow[];
+      const { data: prefRows, error: prErr } = adminRows.length === 0 ? { data: [], error: null } : await supabase
+        .from("notification_prefs").select("member_id, inapp_enabled, push_enabled, kind_channels")
+        .in("member_id", adminRows.map((m) => m.id));
+      if (prErr) throw new Error(`notification_prefs の取得に失敗: ${prErr.message}`);
+      const prefsById = new Map((prefRows ?? []).map((r: PrefsRow) => [r.member_id, r]));
+      const recipients = selectErrorDigestRecipients(adminRows, prefsById);
+      if (recipients.length > 0) {
+        if (!vapid) {
+          failure = "VAPID の鍵が未設定のためエラーのまとめ通知を送れません";
+        } else {
+          const subs = await fetchSubscriptions(supabase, recipients);
+          if (subs.length > 0) {
+            const r = await sendToSubscriptions(supabase, subs, buildErrorDigestPayload(counts), vapid);
+            pushSucceeded = r.succeeded;
+            if (r.errorSummary) failure = `エラーのまとめ通知の送信失敗 ${r.errorSummary}`;
+          }
+        }
+      }
+    }
+
+    const { error: upErr } = await supabase.from("notification_cursors")
+      .upsert({ name: ERROR_DIGEST_CURSOR, cursor_at: win.until }, { onConflict: "name" });
+    if (upErr) failure = [failure, `notification_cursors の更新に失敗: ${upErr.message}`].filter(Boolean).join(" / ");
+    return { errors: counts.total, pushSucceeded, failure };
+  } catch (e) {
+    return { errors: 0, pushSucceeded: 0, failure: `エラーのまとめ通知: ${e instanceof Error ? e.message : String(e)}` };
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -177,15 +240,21 @@ Deno.serve(async (req: Request) => {
     runId = run.id as number;
   }
 
+  let digest: ErrorDigestOutcome | null = null;
   try {
+    if (trigger === "cron" && !isDryRun) digest = await runErrorDigest(supabase, vapid, now);
+    // 届いたときだけ列に書く（マイグレ未適用で列が無いと、実行記録の更新ごと失敗して running のまま残るため）
+    const digestFields = digest && digest.pushSucceeded > 0 ? { error_digest_sent: digest.pushSucceeded } : {};
+
     // 祝日判定（isHolidayJst）は読み込み失敗時に throw しうる。ここで投げれば下の catch が
     // reminder_runs を failed で閉じて 500 を返す（黙って「祝日ではない」扱いにしない）。
     const daySkip = resolveDaySkip(slot, isHolidayJst);
     if (daySkip.skip && !isDryRun) {
       await finishRun(supabase, runId as number, {
-        status: "success", target_members: 0, inapp_written: 0,
+        status: digest?.failure ? "partial" : "success", target_members: 0, inapp_written: 0,
         push_attempted: 0, push_succeeded: 0, push_failed: 0, subscriptions_removed: 0,
-        error_summary: daySkip.reason,
+        error_summary: [daySkip.reason, digest?.failure].filter(Boolean).join(" | "),
+        ...digestFields,
       });
       return json({ run_id: runId, status: "success", skipped: daySkip.reason }, 200, cors);
     }
@@ -195,7 +264,7 @@ Deno.serve(async (req: Request) => {
     if (mErr) throw new Error(`members の取得に失敗: ${mErr.message}`);
     const { data: prefs, error: pErr } = await fetchAllRows<PrefsRow>((o) => supabase
       .from("notification_prefs")
-      .select("member_id, inapp_enabled, push_enabled, notify_overdue, notify_due_today, reminder_time", o), ["member_id"]);
+      .select("member_id, inapp_enabled, push_enabled, notify_overdue, notify_due_today, reminder_time, kind_channels", o), ["member_id"]);
     if (pErr) throw new Error(`notification_prefs の取得に失敗: ${pErr.message}`);
     const { data: tasks, error: tErr } = await fetchAllRows<ReminderTaskRow>((o) => supabase
       .from("tasks")
@@ -303,13 +372,16 @@ Deno.serve(async (req: Request) => {
       }
     }
     if (failureSummaries.length > 0) errors.push(`送信失敗 ${failureSummaries.join(" / ")}`);
+    if (digest?.failure) errors.push(digest.failure);
 
     // 鍵が未設定で送れなかった人数も失敗に数える（黙って成功にしない）
     const pushConfigFailed = !vapid ? pushTargets.length : 0;
-    const status = resolveRunStatus({
+    const reminderStatus = resolveRunStatus({
       pushAttempted: totals.attempted, pushSucceeded: totals.succeeded, pushFailed: totals.failed + pushConfigFailed,
       inappFailed, inappWritten,
     });
+    // エラーのまとめ通知の失敗は期限リマインドの成否と独立だが、黙って成功にしない（黄バナーに出す）
+    const status = reminderStatus === "success" && digest?.failure ? "partial" : reminderStatus;
     await finishRun(supabase, runId as number, {
       status,
       target_members: targets.length,
@@ -319,6 +391,7 @@ Deno.serve(async (req: Request) => {
       push_failed: totals.failed,
       subscriptions_removed: totals.removed,
       error_summary: errors.length > 0 ? errors.join(" | ").slice(0, 1000) : null,
+      ...digestFields,
     });
     return json({ run_id: runId, status, slot: slot.slotTime, target_members: targets.length, inapp_written: inappWritten, ...totals }, 200, cors);
   } catch (e) {

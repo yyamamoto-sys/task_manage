@@ -30,6 +30,7 @@ describe("通知設定の既定値と正規化", () => {
 describe("通知のクリック先（/?open=my-tasks）", () => {
   it("my-tasks だけを読む", () => {
     expect(extractOpenTarget("?open=my-tasks")).toBe("my-tasks");
+    expect(extractOpenTarget("?open=admin-errors")).toBe("admin-errors");
     expect(extractOpenTarget("?open=other")).toBeNull();
     expect(extractOpenTarget("")).toBeNull();
   });

@@ -5,15 +5,17 @@
 // tasks.finalized_mentions の変化を監視することで「閉じた時方式」を実現する。
 // v3.128：Windows通知（notification_prefs.push_enabled）をオンにした人で、許可済みのときだけ動作する
 // （旧ゲートは members.notify_pref==="browser"。設計書 §4.3）。
+// v3.129：通知の種類「メンション」の Windows がオフの人には出さない（CLAUDE.md Section 67）。
 
 import { useEffect, useRef } from "react";
 import { useAppStore, selectScopedTasks } from "../stores/appStore";
 import { useNotificationPrefsStore } from "../stores/notificationPrefsStore";
+import { isKindEnabled } from "../lib/notifications/notificationKinds";
 
 export function useMentionNotifications(currentUserId: string) {
   const tasks   = useAppStore(selectScopedTasks);
   const members = useAppStore(s => s.members);
-  const pushEnabled = useNotificationPrefsStore(s => s.status === "ready" && s.prefs.push_enabled);
+  const pushEnabled = useNotificationPrefsStore(s => s.status === "ready" && isKindEnabled(s.prefs, "mention", "push"));
 
   // タスクごとの前回 finalized_mentions（カンマ結合文字列で保持）
   const prevRef = useRef<Map<string, string>>(new Map());

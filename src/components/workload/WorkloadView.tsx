@@ -18,6 +18,7 @@ import { CustomSelect } from "../common/CustomSelect";
 import { EmptyState } from "../common/EmptyState";
 import { MemberDetailPanel } from "./MemberDetailPanel";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   projects: Project[];
@@ -70,6 +71,7 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
         <div style={{
           display: "flex", alignItems: "center", gap: "10px",
           padding: "10px 16px",
+          paddingRight: withBellReserve(16),
           borderBottom: "1px solid var(--color-border-primary)",
           background: "var(--color-bg-primary)", flexShrink: 0,
           flexWrap: "wrap",

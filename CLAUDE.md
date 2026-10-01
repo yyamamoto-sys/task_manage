@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.128
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.129
 #
-最終更新：2026-10-01（v3.128）
+最終更新：2026-10-01（v3.129）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4575,6 +4575,7 @@ OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根
 ## 66. 期限リマインド：Windows通知（Web Push）＋アプリ内通知（v3.128・2026-10-01）
 
 **正本は [docs/dev/web-push-reminder-design.md](docs/dev/web-push-reminder-design.md)（rev3。§12 に設計から変えた点）。**
+**v3.129 で拡張した部分（通知の種類のレジストリ・種類×チャネルの個人設定・管理者向け通知・エラー記録・右上のベル・通知の種類を足す手順）は Section 67。** 以下の「ベル」「個人設定」の記述は v3.128 時点のもの。
 Teams 週次（notify-deadlines）が個人の Teams 接続に依存して黙って止まっていたため、期限の知らせを
 「チームへの共有」から「個人へのリマインド」に作り替えた。最優先の非機能要件は **黙って止まらないこと**。
 
@@ -4609,7 +4610,7 @@ pg_cron（平日 JST 7:00〜19:30・30分ごと＝26回）── x-cron-secret �
   オンの人がアプリを開くと `usePushSubscriptionSync` が許可済みのブラウザだけ購読を登録し直す（失効・鍵の変更・SW の更新を吸収）。
 - Teams のタブ内（iframe）・非対応ブラウザ・`VITE_VAPID_PUBLIC_KEY` 未設定のときはトグルを無効にして理由を出す。
 - 「通知が届かないとき」に Windows の「設定」→「システム」→「通知」でブラウザがオンか・応答不可がオフか、ブラウザを完全に終了していると届かないこと、PC・ブラウザごとの設定であることを載せている。
-- **メンション通知**（`useMentionNotifications`）は Windows通知をオンにした人だけ（`push_enabled`）。旧方式B（タブ表示中の期限通知・`useDeadlineNotifications`）は廃止し、ダッシュボードの通知方法 `<select>` は「🔔 通知設定」ボタンに置き換えた。`members.notify_pref` 列は残す（削除は別マイグレ）。
+- **メンション通知**（`useMentionNotifications`）は Windows通知をオンにした人だけ（`push_enabled`。v3.129 からは種類「メンション」の Windows もオンの人＝Section 67）。旧方式B（タブ表示中の期限通知・`useDeadlineNotifications`）は廃止し、ダッシュボードの通知方法 `<select>` は「🔔 通知設定」ボタンに置き換えた。`members.notify_pref` 列は残す（削除は別マイグレ）。
 
 ### 送信記録の見方（super_admin）
 
@@ -4647,3 +4648,72 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 - **【軽】push-reminders の祝日判定**：`japanese-holidays` の `isHoliday` が読み込めない場合に黙って「祝日ではない」へフェイルオープンしていたのを `throw` に変更（`_shared/reminderLogic.ts` の `resolveHolidayCheckFn`）。判定日付も `new Date(dateStr+"T00:00:00Z")`（UTC解釈）をローカルゲッターで読む方式から、年月日を直接ローカル構築する方式（`buildJstHolidayDate`）に変更し、実行環境のタイムゾーンに依存しないようにした。
 - **【軽】x-cron-secret の比較を定数時間比較に**：`_shared/timingSafeEqual.ts` の `timingSafeEqualString`（長さ違いも含め最後まで比較してから判定）。
 - **【軽】未読バッジをタブ表示中も追従**：`public/sw.js` の push ハンドラが通知表示後に開いているクライアントへ `{type:"push-received"}` を `postMessage`。`InAppNotificationBell` が受けて `refreshCount()` を再実行（保険として3分おきの定期再取得も追加）。
+
+---
+
+## 67. 通知の種類のレジストリ・管理者向け通知・利用者の画面のエラー記録・右上のベル（v3.129・2026-10-01）
+
+山本さんの要望（2026-10-01）：①super_admin だけに出る通知とそうでない通知を区別したい ②誰かの画面でエラーが出たら super_admin に知らせ、設定の管理セクションで詳細を見たい ③何を通知するかを細かく選びたい ④ベルを右上に常時表示し、未読数を赤いバッジ（99+）で出したい。v3.128（Section 66）の上に載せた。
+
+### 通知の種類のレジストリ（唯一の定義）
+
+`supabase/functions/_shared/notificationKinds.ts`（Deno・DOM 非依存の純粋なファイル）。**Edge Function もフロントもこの1ファイルを読む**（フロントは `src/lib/notifications/notificationKinds.ts` が相対 import して、アイコンと未読バッジの表記だけを足す。表示名・説明は i18n `layout.notifyKind.<id>.label/.desc`）。
+
+| id | 対象 | アプリ内 | Windows | in_app の kind | 旧列 |
+|---|---|---|---|---|---|
+| deadline_overdue | 全員 | ○（既定オン） | ○（既定オン） | deadline_digest | notify_overdue |
+| deadline_due_today | 全員 | ○ | ○ | deadline_digest | notify_due_today |
+| mention | 全員 | **非対応**（アプリ内の行を作らない。タブを開いている間のブラウザ通知のみ） | ○ | — | — |
+| client_error | **super_admin** | ○ | ○（30分ごとにまとめて） | client_error | — |
+
+- **判定は `isKindEnabled(prefs, kindId, channel)` の1関数**＝チャネルの全体スイッチ（`inapp_enabled`/`push_enabled`）AND 種類×チャネル（`kind_channels`）AND（期限の2種類のみ）v3.128 の旧列。push-reminders（`_shared/reminderLogic.ts` の `buildDigests`）・メンション（`useMentionNotifications`）・エラーのまとめ通知（`_shared/clientErrorDigest.ts`）がこれを使う。`log_client_error`（SQL）だけは既定値を直書きしており、`notificationKinds.test.ts` がマイグレの文面と照合する。
+- **見分け**：`audienceOfInAppKind(kind)`。管理者向けは 🛡「管理者向け」の印と紫（`--color-*-purple`）。バックアップ通知（backup_failure/backup_weekly_summary）は未登録だが管理者向けとして扱う（フェーズ5.5で登録する）。
+
+### 個人設定の持ち方（既存の値を壊さない移行）
+
+`notification_prefs.kind_channels jsonb NOT NULL DEFAULT '{}'`（`{ "<種類>": { "inapp": bool, "push": bool } }`。キーが無ければレジストリの既定値）。列にしなかったのは、種類を足すたびにマイグレが要らないようにするため。
+- マイグレは `notify_overdue`/`notify_due_today` が false の人だけ、その種類を両チャネルともオフで移す（既に値があれば触らない＝冪等）。**旧列は消さず、判定の条件にも残す**（再読み込み前の v3.128 の画面が旧列だけを書き換えても効く）。新画面は種類を変えるたびに旧列も「どちらかのチャネルがオンか」で書き直す（`buildKindChannelPatch`）。
+- 設定画面「🔔 通知」の「通知する内容」は種類×チャネルの表。管理者向けの種類は super_admin にだけ出す（`kindsVisibleTo`）。全体スイッチがオフのチャネルの列はチェックできない。送信時刻は既存のまま。
+
+### 利用者の画面のエラー記録
+
+- **拾うもの**：`reportError()`（`app:error`。ErrorBoundary のクラッシュもここを通る）・window の `error`・`unhandledrejection`。`main.tsx` で React の外に取り付ける（`installClientErrorLogging`。ErrorBoundary が App を置き換えた後も拾うため）。開発サーバーでは既定で送らない（`VITE_LOG_CLIENT_ERRORS_IN_DEV=1` で送る）。ゲスト・匿名・未ログインは送らない。
+- **送る内容を絞る**：message 500字・stack 2000字・context 200字に切り、メールアドレス・JWT・Bearer トークン・40字以上の英数字の塊を伏せる（画面側 `redactSensitive` と DB 側 `redact_client_error_text` の二重）。`AppError.raw`（入力内容やリクエスト本文を含みうる元のエラー）は送らない。
+- **同じエラーは1件**：fingerprint＝種類・コード・正規化したメッセージ（数字・UUID・引用符の中身・クエリを置換）・操作（ErrorBoundary は位置を除く）の FNV-1a 16桁。伏せ字・切り詰めの**後**で計算する。
+- **書き込みは RPC `log_client_error` 1本**（SECURITY DEFINER）。本人は `current_member_id()` で決める（引数で他人を名乗れない）。匿名・未登録は例外。🔴 乱用対策：同じ人・同じ fingerprint は1分に1回だけ数える（`throttled`）、1人が1時間に新しく記録できる fingerprint は50件まで（`limited`）。画面側でも同じ fingerprint は1分に1回・1タブ1時間30件まで。
+- **読むのは super_admin だけ**（`client_error_logs`/`client_error_reporters` の RLS は SELECT のみ）。解決は `resolve_client_errors`（super_admin 以外は0件）。保持90日（`20261001d_schedule_client_error_cleanup.sql`。プレースホルダー無し・手で登録）。
+- 🔴 **無限ループ防止**：記録の RPC が失敗しても `reportError` も再記録もしない（`console.warn` のみ）。記録の準備中に同期的に戻ってきたエラーは拾わない（再入ガード）。送信の Promise は必ず catch する（`unhandledrejection` に戻さない）。
+
+### エラーの届け方
+
+- **アプリ内はすぐ**：`log_client_error` の中で「新しい fingerprint が初めて記録されたとき」「解決済みが再発したとき」に、super_admin 全員（エラー種類のアプリ内がオンの人）の `in_app_notifications` に1件作る。同じ fingerprint は1時間に1回まで、1人の super_admin につき1時間10件まで。クリック先 `/?open=admin-errors`（設定 → 部署の管理 → アプリ設定 → エラー）。
+- **Windows は30分ごとにまとめて**：push-reminders の cron 実行のたびに、前回以降に最終発生したエラーの件数（新規の件数）を super_admin（Windows通知オン・エラー種類の Windows オン）へ1回送る。🔴 **期限リマインドの1人1日1回（reminder_send_log）とは別枠**。どこまで送ったかは `notification_cursors`（service_role のみ）に持ち、送信の成否に関わらず進める（再送しない）。休日も送る。失敗は `reminder_runs` を partial にして `error_summary` に残す。手動実行・dryRun・テストでは送らない。`reminder_runs.error_digest_sent` に届いた購読数。
+
+### 管理画面「エラー」タブ（`ClientErrorSection.tsx`・super_admin のみ）
+
+一覧（最終発生・回数・発生した人の数・メッセージ・画面・版）／詳細（種類・操作・コード・画面と経路・最初の発生・最後に起きた人・ブラウザ・発生した人の内訳・スタック）／解決済みにする・未解決に戻す／未解決のみ表示。直近200件。
+
+### 右上のベル
+
+- **PC**：画面右上に `position:fixed`（`src/lib/layout/topRightBell.ts`）。AI相談パネルが開いていればその左へ退く（FAB と同じ避け方）。z-index 45（モーダルより下・ビューより上）。サイドバー下部のベルは撤去。
+- 🔴 **各ビューのヘッダーは右端に `withBellReserve(元の余白)` を padding-right に入れる**（CSS 変数 `--app-bell-reserve`。PC かつゲスト以外のときだけ MainLayout が値を入れる）。対象：一覧ツールバー・カンバン・ガント・ダッシュボード・ワークロード・OKR・カレンダー・マイページ・体制図・関係性グラフ（右上の操作群）・タスク詳細サイドパネル・設定とガイドの見出し行。**新しい画面を足したら、右上の角に来るヘッダーに `withBellReserve` を入れ、`topRightBell.test.ts` の `HEADER_FILES` に足す**（コメントを除去して走査する。外すと赤くなることを確認済み）。
+- 右上に出るカード型のヘルスバナー（Schema/Reminder）は `BELOW_BELL_TOP_PX` に下げた（ベルと重ねない）。右下（ショートカット・FAB）とは縦に離れている。
+- **モバイル**：ヘッダーの右側に同じ白い丸ボタン（32px）。モバイルの全画面ラボ表示中は隠れる。
+- 未読バッジは `formatBadgeCount`（0 は出さない・100 以上は 99+）。super_admin には一覧に「すべて／🛡 管理者向け」の切替（管理者向けは kind で絞ってサーバーから取る）。
+
+### 🔴 通知の種類を足す手順
+
+1. `supabase/functions/_shared/notificationKinds.ts` の `NOTIFICATION_KINDS` に1件足す（id・audience・supported・defaults・inAppKind）。`NotificationKindId` にも足す。
+2. `src/lib/notifications/notificationKinds.ts` の `NOTIFICATION_KIND_ICON` と i18n（`layout.notifyKind.<id>.label/.desc`。ja・en）を足す（`notificationKinds.test.ts` が欠けを検出）。
+3. アプリ内通知を作るなら `in_app_notifications.kind` の CHECK 制約に値を足すマイグレを書き、`ALL_IN_APP_KINDS` も足す（テストがマイグレと照合）。`schemaChecks.ts` に `check_contains` を1行。
+4. 送る側は必ず `isKindEnabled(prefs, id, channel)` を通す。Windows通知は `_shared/webPush.ts` の `sendToSubscriptions` を使う（Section 66）。SQL から送るなら既定値を直書きすることになるので、テストで照合する。
+5. 管理者向けなら audience を `super_admin` にするだけで、設定画面での表示・ベルの印と色・「管理者向け」の絞り込みは自動で付く。
+
+### 適用の順序（🔴 逆にすると新画面の通知設定が「読み込めません」になる）
+
+1. マイグレ `20261001c_notify_v2_client_errors.sql`（dev → prod）
+2. `supabase functions deploy push-reminders --no-verify-jwt --project-ref <ref>`（エラーのまとめ通知・種類×チャネルの判定を含む）
+3. フロントを main へ（Vercel が再ビルド）
+4. 本番で `20261001d_schedule_client_error_cleanup.sql`（90日削除の cron）
+
+`MIN_CLIENT_VERSION` は上げていない（列の追加と CHECK 制約の拡張だけで、旧画面の読み書き・Edge Function の入出力は壊れない。旧画面が旧列だけを書いても判定に効く）。

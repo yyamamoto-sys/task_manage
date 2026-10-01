@@ -17,6 +17,7 @@ import { isAssignedTo, isCompletedForProgress, isPausedOrCancelledStatus, suppre
 import { isTaskStagnant, STAGNANT_THRESHOLD_DAYS } from "../gantt/ganttUtils";
 import { toDate, addDays } from "../../lib/date";
 import { chunkIntoWeeks, assignBarLanes, computeWeekBarSegments } from "../../lib/calendar/calendarUtils";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   onClose: () => void;
@@ -260,6 +261,7 @@ export function CalendarLabView({ onClose, currentUser, onOpenTask, onRequestQui
         <div style={{
           display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
           padding: "12px 18px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0,
+          paddingRight: withBellReserve(18),
         }}>
           <span style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>🗓️ カレンダー</span>
           <span style={{ fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)", background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)" }}>ラボ</span>

@@ -6,6 +6,9 @@
 //
 // 既定値・時刻の選択肢はフロントの src/lib/reminder/notificationPrefs.ts と同じ値を持つ
 // （Edge Function から src は import できないため二重に持つ。一致はテストで検査する）。
+// v3.129：種類×チャネルの判定は _shared/notificationKinds.ts（レジストリ）の isKindEnabled に寄せた。
+
+import { isKindEnabled, sanitizeKindChannels, type KindChannels } from "./notificationKinds.ts";
 
 export const DEFAULT_REMINDER_TIME = "08:30";
 export const REMINDER_TIME_MIN = "07:00";
@@ -22,9 +25,14 @@ export interface PrefsRow {
   notify_overdue: boolean;
   notify_due_today: boolean;
   reminder_time: string; // "08:30:00"（DB の time）または "08:30"
+  /** v3.129 の列。未適用の DB・古い行では undefined／null */
+  kind_channels?: KindChannels | null;
 }
 
-export type EffectivePrefs = Omit<PrefsRow, "member_id" | "reminder_time"> & { reminder_time: string };
+export type EffectivePrefs = Omit<PrefsRow, "member_id" | "reminder_time" | "kind_channels"> & {
+  reminder_time: string;
+  kind_channels: KindChannels;
+};
 
 export const DEFAULT_PREFS: EffectivePrefs = {
   inapp_enabled: true,
@@ -32,6 +40,7 @@ export const DEFAULT_PREFS: EffectivePrefs = {
   notify_overdue: true,
   notify_due_today: true,
   reminder_time: DEFAULT_REMINDER_TIME,
+  kind_channels: {},
 };
 
 export interface ReminderTaskRow {
@@ -60,6 +69,8 @@ export interface ReminderDigest {
   url: string;
   wantsInapp: boolean;
   wantsPush: boolean;
+  /** Windows通知の本文。種類×チャネルの設定でアプリ内と対象が違うときだけ body と異なる */
+  pushBody: string;
 }
 
 /** "08:30:00" / "8:30" → "08:30"。解釈できなければ null */
@@ -81,6 +92,7 @@ export function effectivePrefs(row: PrefsRow | undefined): EffectivePrefs {
     notify_overdue: row.notify_overdue,
     notify_due_today: row.notify_due_today,
     reminder_time: normalizeTime(row.reminder_time) ?? DEFAULT_REMINDER_TIME,
+    kind_channels: sanitizeKindChannels(row.kind_channels),
   };
 }
 
@@ -217,23 +229,30 @@ export function buildDigests(input: BuildDigestsInput): ReminderDigest[] {
     if (input.slotTime !== null && p.reminder_time !== input.slotTime) continue;
     if (!p.inapp_enabled && !p.push_enabled) continue;
     const mine = tasksByMember.get(m.id) ?? [];
-    const included = mine.filter((t) =>
-      (t.due_date as string) < input.today ? p.notify_overdue : p.notify_due_today,
-    );
+    const pick = (channel: "inapp" | "push") => mine.filter((t) =>
+      isKindEnabled(p, (t.due_date as string) < input.today ? "deadline_overdue" : "deadline_due_today", channel));
+    const inappTasks = pick("inapp");
+    const pushTasks = pick("push");
+    const included = mine.filter((t) => inappTasks.includes(t) || pushTasks.includes(t));
     if (included.length === 0) continue;
     const overdueCount = included.filter((t) => (t.due_date as string) < input.today).length;
     const dueTodayCount = included.length - overdueCount;
     const first = [...included].sort(compareTasks)[0];
+    const bodyOf = (list: ReminderTaskRow[]) => {
+      const o = list.filter((t) => (t.due_date as string) < input.today).length;
+      return buildDigestBody(o, list.length - o, [...list].sort(compareTasks)[0].name);
+    };
     digests.push({
       memberId: m.id,
       overdueCount,
       dueTodayCount,
       firstTaskId: first.id,
       title: DIGEST_TITLE,
-      body: buildDigestBody(overdueCount, dueTodayCount, first.name),
+      body: bodyOf(inappTasks.length > 0 ? inappTasks : pushTasks),
       url: DIGEST_URL,
-      wantsInapp: p.inapp_enabled,
-      wantsPush: p.push_enabled,
+      wantsInapp: inappTasks.length > 0,
+      wantsPush: pushTasks.length > 0,
+      pushBody: bodyOf(pushTasks.length > 0 ? pushTasks : inappTasks),
     });
   }
   return digests;
@@ -273,8 +292,10 @@ export interface PushPayload {
   tag: string;
 }
 
-export function buildDigestPayload(digest: Pick<ReminderDigest, "title" | "body" | "url">, date: string): PushPayload {
-  return { title: digest.title, body: digest.body, url: digest.url, tag: `deadline-${date}` };
+export function buildDigestPayload(
+  digest: Pick<ReminderDigest, "title" | "body" | "url"> & { pushBody?: string }, date: string,
+): PushPayload {
+  return { title: digest.title, body: digest.pushBody ?? digest.body, url: digest.url, tag: `deadline-${date}` };
 }
 
 export const TEST_PAYLOAD: PushPayload = {

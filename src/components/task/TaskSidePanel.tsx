@@ -36,6 +36,7 @@ import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editin
 import { SIDE_PANEL_FOOTER_MIN_HEIGHT_PX } from "../../lib/layout/bottomStack";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 import { ChangeHistorySection } from "../history/ChangeHistorySection";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   taskId: string;
@@ -576,6 +577,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
       {/* ヘッダー：タスク名（インライン編集） */}
       <div style={{
         padding: "10px 12px", borderBottom: "1px solid var(--color-border-primary)",
+        paddingRight: withBellReserve(12),
         display: "flex", alignItems: "center", gap: "6px", flexShrink: 0,
       }}>
         {pj && (

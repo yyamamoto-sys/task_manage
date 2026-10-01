@@ -32,6 +32,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { createPortal } from "react-dom";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 import type { Member, Task } from "../../lib/localData/types";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 export type GroupBy = "project" | "assignee" | "status" | "tag";
 export type SortKey = "name" | "due_date" | "priority" | "estimated_hours" | "status" | "assignee" | "manual";
@@ -343,6 +344,7 @@ export function ListToolbar({
   return (
     <div style={{
       padding: "6px 12px",
+      paddingRight: withBellReserve(12),
       // Section 49・50：固定 height を使わない（拡大率・最小フォントサイズで中身が育つと文字が切れる）
       minHeight: "38px",
       boxSizing: "border-box",

@@ -13,6 +13,7 @@ import { Suspense } from "react";
 import type { Member } from "../../lib/localData/types";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 // 個人OKRビューは重量級のためReact.lazyで分割し、閾値超えチャンクのダウンロード確認ゲートを
 // 通す（CLAUDE.md Section 19）。
@@ -32,6 +33,7 @@ export function OkrDashboardView({ currentUser }: Props) {
       {/* モードヘッダー */}
       <div style={{
         padding: "10px 20px",
+        paddingRight: withBellReserve(20),
         borderBottom: "1px solid var(--color-border-primary)",
         background: "linear-gradient(135deg, rgba(99,102,241,0.06), rgba(139,92,246,0.04))",
         display: "flex", alignItems: "center", gap: "10px",

@@ -99,6 +99,23 @@ describe("対象の抽出（buildDigests）", () => {
     expect(buildDigests({ members, prefs: [prefs("m1", { notify_due_today: false })], tasks: [task({ id: "b" })], today: TODAY, slotTime: "08:30" })).toEqual([]);
   });
 
+  it("v3.129：種類×チャネルの設定で、アプリ内と Windows の対象を別々に絞れる", () => {
+    const tasks = [task({ id: "a", due_date: "2026-10-01", name: "遅れたタスク" }), task({ id: "b", name: "今日のタスク" })];
+    const p = [prefs("m1", { push_enabled: true, kind_channels: { deadline_overdue: { push: false } } })];
+    const [d] = buildDigests({ members, prefs: p, tasks, today: TODAY, slotTime: "08:30" });
+    expect(d).toMatchObject({ wantsInapp: true, wantsPush: true, overdueCount: 1, dueTodayCount: 1 });
+    expect(d.body).toBe("期限超過1件・今日期限1件：遅れたタスク ほか");
+    expect(d.pushBody).toBe("今日期限1件：今日のタスク");
+  });
+
+  it("v3.129：両チャネルとも種類を外した人には送らない・片方だけ外せばもう片方は届く", () => {
+    const tasks = [task({ id: "a" })];
+    const both = [prefs("m1", { push_enabled: true, kind_channels: { deadline_due_today: { inapp: false, push: false } } })];
+    expect(buildDigests({ members, prefs: both, tasks, today: TODAY, slotTime: "08:30" })).toEqual([]);
+    const pushOnly = [prefs("m1", { push_enabled: true, kind_channels: { deadline_due_today: { inapp: false } } })];
+    expect(buildDigests({ members, prefs: pushOnly, tasks, today: TODAY, slotTime: "08:30" })[0]).toMatchObject({ wantsInapp: false, wantsPush: true });
+  });
+
   it("両チャネルともオフの人・対象0件の人には送らない", () => {
     expect(buildDigests({ members, prefs: [prefs("m1", { inapp_enabled: false })], tasks: [task({ id: "a" })], today: TODAY, slotTime: "08:30" })).toEqual([]);
     expect(buildDigests({ members, prefs: [], tasks: [], today: TODAY, slotTime: "08:30" })).toEqual([]);
@@ -175,7 +192,7 @@ describe("1人1日1回（claim_reminder_sends の規則）", () => {
 describe("既定値（フロントと Edge Function で同じ）", () => {
   it("アプリ内オン・Windowsオフ・両種類オン・8:30", () => {
     expect(DEFAULT_NOTIFICATION_PREFS).toEqual({ ...DEFAULT_PREFS });
-    expect(DEFAULT_PREFS).toEqual({ inapp_enabled: true, push_enabled: false, notify_overdue: true, notify_due_today: true, reminder_time: "08:30" });
+    expect(DEFAULT_PREFS).toEqual({ inapp_enabled: true, push_enabled: false, notify_overdue: true, notify_due_today: true, reminder_time: "08:30", kind_channels: {} });
     expect(effectivePrefs(undefined)).toEqual(DEFAULT_PREFS);
   });
   it("時刻の選択肢は 7:00〜19:00 の30分刻み25件で、Edge Function の範囲と一致する", () => {

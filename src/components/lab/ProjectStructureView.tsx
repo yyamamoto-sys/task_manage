@@ -10,6 +10,7 @@ import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import { useAppStore, selectScopedProjects } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   onClose: () => void;
@@ -1069,6 +1070,7 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
       <div style={{
         flexShrink: 0, display: "flex", alignItems: "center", gap: "10px",
         padding: "10px 16px",
+        paddingRight: withBellReserve(16),
         borderBottom: "1px solid var(--color-border-primary)",
         background: "var(--color-bg-secondary)",
       }}>

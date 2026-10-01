@@ -170,6 +170,9 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
                       Windows {run.push_succeeded ?? "—"}/{run.push_attempted ?? "—"}
                       {(run.subscriptions_removed ?? 0) > 0 ? `（失効削除 ${run.subscriptions_removed}）` : ""}
                     </span>
+                    {(run.error_digest_sent ?? 0) > 0 && (
+                      <span style={{ color: "var(--color-text-purple)" }}>🛡 エラーのまとめ通知 {run.error_digest_sent}</span>
+                    )}
                     {run.error_summary && (
                       <span style={{ flexBasis: "100%", color: run.status === "success" ? "var(--color-text-tertiary)" : "var(--color-text-danger)", fontSize: "11px" }}>
                         {run.error_summary}

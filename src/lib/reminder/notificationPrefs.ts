@@ -3,6 +3,9 @@
 // 期限リマインドの個人設定（notification_prefs）の型・既定値・時刻の選択肢。
 // 既定値は Edge Function 側（supabase/functions/_shared/reminderLogic.ts）と同じ値を持つ
 // （一致は src/lib/reminder/__tests__/reminderLogic.test.ts で検査する）。
+// v3.129：種類×チャネルの設定 kind_channels を追加（判定は src/lib/notifications/notificationKinds.ts）。
+
+import { sanitizeKindChannels, type KindChannels } from "../notifications/notificationKinds";
 
 export interface NotificationPrefs {
   inapp_enabled: boolean;
@@ -11,6 +14,8 @@ export interface NotificationPrefs {
   notify_due_today: boolean;
   /** "HH:MM"（JST） */
   reminder_time: string;
+  /** 種類×チャネルの個別設定（未設定の種類はレジストリの既定値） */
+  kind_channels: KindChannels;
 }
 
 export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
@@ -19,6 +24,7 @@ export const DEFAULT_NOTIFICATION_PREFS: NotificationPrefs = {
   notify_overdue: true,
   notify_due_today: true,
   reminder_time: "08:30",
+  kind_channels: {},
 };
 
 /** 7:00〜19:00 の30分刻み（25件）。DB の CHECK 制約と同じ範囲 */
@@ -45,12 +51,13 @@ export function formatReminderTime(hhmm: string): string {
 
 /** DB の行（無ければ null）から画面で使う設定を作る。行が無い人は既定値 */
 export function prefsFromRow(row: Partial<NotificationPrefs> | null | undefined): NotificationPrefs {
-  if (!row) return { ...DEFAULT_NOTIFICATION_PREFS };
+  if (!row) return { ...DEFAULT_NOTIFICATION_PREFS, kind_channels: {} };
   return {
     inapp_enabled: row.inapp_enabled ?? DEFAULT_NOTIFICATION_PREFS.inapp_enabled,
     push_enabled: row.push_enabled ?? DEFAULT_NOTIFICATION_PREFS.push_enabled,
     notify_overdue: row.notify_overdue ?? DEFAULT_NOTIFICATION_PREFS.notify_overdue,
     notify_due_today: row.notify_due_today ?? DEFAULT_NOTIFICATION_PREFS.notify_due_today,
     reminder_time: toReminderTimeOption(row.reminder_time),
+    kind_channels: sanitizeKindChannels(row.kind_channels),
   };
 }

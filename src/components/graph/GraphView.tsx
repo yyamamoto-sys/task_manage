@@ -9,6 +9,7 @@ import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 interface Props {
   onClose: () => void;
@@ -723,7 +724,7 @@ export function GraphView({ onClose, currentUser: _currentUser, onOpenTask }: Pr
       </div>
 
       {/* 右上コントロール */}
-      <div style={{ position: "absolute", top: 16, right: 16, display: "flex", gap: "8px" }}>
+      <div style={{ position: "absolute", top: 16, right: withBellReserve(16), display: "flex", gap: "8px" }}>
         {/* 今日の日付インジケーター */}
         <div style={{
           padding: "5px 12px", fontSize: "11px",

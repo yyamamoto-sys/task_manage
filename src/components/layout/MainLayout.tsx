@@ -9,7 +9,12 @@ import { useMentionNotifications } from "../../hooks/useMentionNotifications";
 import { usePushSubscriptionSync } from "../../hooks/usePushSubscriptionSync";
 import { useNotificationPrefsStore } from "../../stores/notificationPrefsStore";
 import { InAppNotificationBell } from "../notifications/InAppNotificationBell";
-import { extractOpenTarget, stripOpenParam } from "../../lib/reminder/deepLink";
+import { extractOpenTarget, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
+import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
+import {
+  APP_BELL_FIXED_TOP_PX, APP_BELL_RESERVE_PC_PX, APP_BELL_RESERVE_VAR, APP_BELL_SIZE_MOBILE_PX, APP_BELL_SIZE_PC_PX,
+  computeBellRightPc, withBellReserve,
+} from "../../lib/layout/topRightBell";
 import type { SettingsSection } from "../../lib/settings/settingsSections";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
@@ -422,8 +427,10 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // 設定ページを特定のセクションで開く（ベル・ダッシュボードの「通知設定」から notify を指定）。
   // nonce を key にして、既に開いているときも指定のセクションで開き直す
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
+  // 管理セクションを特定のタブで開く（エラー通知のクリック先 /?open=admin-errors）
+  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | undefined>(undefined);
   const [settingsNonce, setSettingsNonce] = useState(0);
-  useEffect(() => { if (!isAdminOpen) setSettingsSection(undefined); }, [isAdminOpen]);
+  useEffect(() => { if (!isAdminOpen) { setSettingsSection(undefined); setAdminInitialTab(undefined); } }, [isAdminOpen]);
   // プロジェクト招待：招待コードを手入力して参加する入口（Phase 4・山本さんの指摘対応）。
   // AdminViewの「プロジェクト招待」タブは部署管理者限定（管理者が1人もいない部署は
   // ブートストラップモードで全員アクセス可だが、通常は非管理者から到達できない）のため、
@@ -718,16 +725,21 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
     setMineOnlyState(true);
   });
-  const openNotificationLink = (url: string) => {
-    let search = "";
-    try { search = new URL(url, window.location.origin).search; } catch { return; }
-    if (extractOpenTarget(search) === "my-tasks") openMyTasks();
-  };
-  const openSettings = (section?: SettingsSection) => void guardedNavigate(() => {
+  const openSettings = (section?: SettingsSection, adminTab?: "errors") => void guardedNavigate(() => {
     setSettingsSection(section);
+    setAdminInitialTab(adminTab);
     setSettingsNonce(n => n + 1);
     setIsAdminOpen(true);
   });
+  const openTarget = (target: OpenTarget | null) => {
+    if (target === "my-tasks") openMyTasks();
+    else if (target === "admin-errors") openSettings("admin", "errors");
+  };
+  const openNotificationLink = (url: string) => {
+    let search = "";
+    try { search = new URL(url, window.location.origin).search; } catch { return; }
+    openTarget(extractOpenTarget(search));
+  };
   // イベント購読（マウント時に1回張る）からも最新の関数を呼べるよう ref に置く
   const openNotificationLinkRef = useRef(openNotificationLink);
   openNotificationLinkRef.current = openNotificationLink;
@@ -735,10 +747,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   openSettingsRef.current = openSettings;
   useEffect(() => {
     if (isGuest) return;
-    // ① 通知から新しいタブで開かれた（/?open=my-tasks）。読んだらクエリを消し、リロードで再発火させない
-    if (extractOpenTarget(window.location.search)) {
+    // ① 通知から新しいタブで開かれた（/?open=my-tasks 等）。読んだらクエリを消し、リロードで再発火させない
+    const initialTarget = extractOpenTarget(window.location.search);
+    if (initialTarget) {
       window.history.replaceState(window.history.state, "", stripOpenParam(window.location.href));
-      openNotificationLinkRef.current("/?open=my-tasks");
+      openNotificationLinkRef.current(`/?open=${initialTarget}`);
     }
     // ② 開いているタブで通知がクリックされた（public/sw.js が再読み込みせず postMessage で知らせる）
     const onSwMessage = (e: MessageEvent) => {
@@ -754,10 +767,19 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       window.removeEventListener("app:open-settings", onOpenSettings);
     };
   }, [isGuest]);
-  const notificationBell = (variant: "sidebar" | "header") => isGuest ? null : (
+  // エラー記録（Section 67）に「どの画面で起きたか」を添えるため、表示中の画面名を知らせる
+  const clientErrorScreen = isGuideOpen ? "guide"
+    : isAdminOpen ? "settings"
+    : activeLabView ? `lab:${activeLabView}`
+    : appMode === "okr" ? "okr" : viewMode;
+  useEffect(() => { setClientErrorScreen(clientErrorScreen); }, [clientErrorScreen]);
+  // ベル（v3.129）：PC は画面右上に固定、モバイルはヘッダーの右端。ゲストには出さない
+  const isSuperAdmin = currentUser.is_super_admin === true || currentUserIsSuperAdmin;
+  const notificationBell = (size: number) => isGuest ? null : (
     <InAppNotificationBell
       memberId={currentUser.id}
-      variant={variant}
+      isSuperAdmin={isSuperAdmin}
+      size={size}
       onOpenLink={openNotificationLink}
       onOpenSettings={() => openSettings("notify")}
     />
@@ -879,6 +901,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     }}>
       <div style={{
         padding: "10px 16px",
+        paddingRight: withBellReserve(16),
         borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center", gap: "10px",
         flexShrink: 0,
@@ -906,7 +929,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             onToggleTheme={toggleTheme}
             adminSlot={
               <Suspense fallback={<ViewLoading />}>
-                <AdminView currentUser={currentUser} />
+                <AdminView currentUser={currentUser} initialTab={adminInitialTab} />
               </Suspense>
             }
             onOpenGuide={() => void guardedNavigate(() => { setIsAdminOpen(false); setIsGuideOpen(true); })}
@@ -1039,6 +1062,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     }}>
       <div style={{
         padding: "10px 16px",
+        paddingRight: withBellReserve(16),
         borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center", gap: "10px",
         flexShrink: 0,
@@ -1466,7 +1490,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           >
             <AIIcon />
           </button>
-          {notificationBell("header")}
+          {notificationBell(APP_BELL_SIZE_MOBILE_PX)}
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
           <button
@@ -1619,10 +1643,25 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
 
   // PC レイアウト（height: 100% = #root に追従。100vh だと body padding 分だけ下部がはみ出てクリップされる）
   return (
-    <div style={{ display: "flex", height: "100%", overflow: "hidden" }}>
+    <div style={{
+      display: "flex", height: "100%", overflow: "hidden",
+      // 各ビューのヘッダーが右端に空ける幅（withBellReserve）。ベルを出すときだけ値を入れる
+      [APP_BELL_RESERVE_VAR as string]: isGuest ? "0px" : `${APP_BELL_RESERVE_PC_PX}px`,
+    } as React.CSSProperties}>
       {onboardingOverlay}
       {tourInviteDialog}
       {okrIntroModal}
+      {/* ベル（v3.129）：画面右上に常設。AI相談パネルが開いていればその左へ退く。モーダルより下・ビューより上 */}
+      {!isGuest && (
+        <div style={{
+          position: "fixed", top: `${APP_BELL_FIXED_TOP_PX}px`,
+          right: `${computeBellRightPc(isConsultOpen, consultPanelWidth)}px`,
+          transition: isConsultResizing ? "none" : "right 0.3s ease",
+          zIndex: 45,
+        }}>
+          {notificationBell(APP_BELL_SIZE_PC_PX)}
+        </div>
+      )}
 
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
@@ -1699,7 +1738,6 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onSelectGroup={handleSelectGroupNav}
         onOpenVersionHistory={() => setIsVersionHistoryOpen(true)}
         onOpenAcceptInvite={() => setIsAcceptInviteOpen(true)}
-        bellSlot={notificationBell("sidebar")}
       />
       {isAcceptInviteOpen && (
         <AcceptInviteModal currentUser={currentUser} onClose={() => setIsAcceptInviteOpen(false)} />
@@ -1859,7 +1897,6 @@ interface SidebarProps {
    *  AdminView（部署管理者限定）の外に置くため、Sidebar自身がボタンを持つ。 */
   onOpenAcceptInvite: () => void;
   /** アプリ内通知のベル（v3.128。ゲストは null） */
-  bellSlot: React.ReactNode;
 }
 
 function Sidebar({
@@ -1874,7 +1911,7 @@ function Sidebar({
   width, isResizing, onResizePointerDown, onResizePointerMove, onResizePointerUp, onResizeDoubleClick, onResizeKeyDown,
   appMode, onToggleMode, onOpenPalette,
   accessibleGroups, currentGroupId, onSelectGroup,
-  onOpenVersionHistory, onOpenAcceptInvite, bellSlot,
+  onOpenVersionHistory, onOpenAcceptInvite,
 }: SidebarProps) {
   const [labOpen, setLabOpen] = useState(false);
   const isGuest = isGuestMember(currentUser);
@@ -2439,7 +2476,6 @@ function Sidebar({
             style={{ ...footerIconBtnStyle, fontSize: "14px" }}
             title={t("layout.calendar.title")}
           >🗓️</button>
-          {bellSlot}
           {/* 「その他」（ガイド／設定／招待コード／テーマ／ログアウト）の開閉。v3.74の見出し行を
               この行へ吸収した。サイドバーが折りたたまれているときは項目を常時アイコンで並べる。 */}
           {showMiscGroup && (

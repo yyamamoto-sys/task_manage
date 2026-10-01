@@ -7819,4 +7819,29 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # npx tsc --noEmit・npx vitest run（191ファイル・2230件）・変更ファイルの eslint・npm run build。
 # 並列化・祝日throw・URL検証の3点は修正前のコード（旧ロジック）で失敗することを確認済み。
 
-最終更新：2026-10-01（v3.128）
+# v3.129（2026-10-01）：通知の種類のレジストリ・管理者向け通知・利用者の画面のエラー記録・右上のベル（CLAUDE.md Section 67）
+#
+# ## 変更
+# * 通知の種類のレジストリ supabase/functions/_shared/notificationKinds.ts（Edge Function とフロントの唯一の定義）。
+#   期限超過・今日期限・メンション（全員）／利用者の画面でエラー（super_admin）。判定は isKindEnabled（全体スイッチ×種類×旧列）
+# * マイグレ 20261001c_notify_v2_client_errors.sql：notification_prefs.kind_channels（jsonb・旧列がオフの人だけ移行）／
+#   in_app_notifications.kind に client_error／client_error_logs・client_error_reporters（super_admin のみ読める）／
+#   notification_cursors／reminder_runs.error_digest_sent／redact_client_error_text・log_client_error（SECURITY DEFINER・
+#   current_member_id()・1分1回・1時間50件・新規/再発で super_admin にアプリ内通知）・resolve_client_errors
+# * 20261001d_schedule_client_error_cleanup.sql：90日削除の pg_cron（プレースホルダー無し・本番で手で登録）
+# * push-reminders：種類×チャネルで期限の文面をアプリ内／Windows別に作る（ReminderDigest.pushBody）。cron 実行のたびに
+#   エラーのまとめ通知（_shared/clientErrorDigest.ts。1人1日1回の判定とは別枠・notification_cursors で位置を持つ）
+# * フロント：main.tsx で installClientErrorLogging（src/lib/errors/clientErrorLog.ts。伏せ字・切り詰め・fingerprint・
+#   間引き・再入ガード）。ベルを右上の白い丸ボタンに（PC は fixed・各ヘッダーは withBellReserve で右端を空ける・
+#   サイドバーのベルを撤去・99+・すべて／管理者向け）。設定「🔔 通知」に種類×チャネルの表。管理画面「アプリ設定」→「エラー」
+#   （ClientErrorSection.tsx）。/?open=admin-errors。ヘルスバナーをベルの下へ。メンションは種類の Windows も見る
+# * schema.sql 同期・schemaChecks に列2・CHECK・表3・関数2
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run・変更ファイルの eslint・npm run build。再入ガード・RPC失敗の再記録・ヘッダーの予約・
+# 管理者向けの種類の非表示・1分の間引き（SQL）・メールの伏せ字は、外すと該当テストが赤くなることを確認済み。
+#
+# ## やらないこと
+# バックアップ通知の切替・リマインド停止の通知（赤バナーで監視を継続）。DB適用・Edge Function デプロイ・cron 登録。
+
+最終更新：2026-10-01（v3.129）

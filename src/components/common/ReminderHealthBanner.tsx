@@ -10,6 +10,7 @@ import type { Member } from "../../lib/localData/types";
 import { fetchRecentReminderRuns } from "../../lib/supabase/notificationStore";
 import { resolveReminderHealth, type ReminderHealthResult } from "../../lib/reminder/reminderHealth";
 import { formatErrorForUser } from "../../lib/errorMessage";
+import { BELOW_BELL_TOP_PX } from "../../lib/layout/topRightBell";
 
 type BannerState =
   | { kind: "hidden" }
@@ -61,7 +62,7 @@ export function ReminderHealthBanner({ currentUser }: { currentUser: Member }) {
     <div
       role="status"
       style={{
-        position: "fixed", top: "16px", right: "16px", zIndex: 149,
+        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, right: "16px", zIndex: 149,
         width: "min(380px, calc(100vw - 32px))",
         borderRadius: "var(--radius-md)", boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
         padding: "12px 14px", fontSize: "12px", lineHeight: 1.5,

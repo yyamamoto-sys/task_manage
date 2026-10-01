@@ -1,8 +1,10 @@
 // src/components/notifications/InAppNotificationBell.tsx
 //
-// アプリ内通知のベル（v3.128・設計書 §5.3）。未読件数のバッジと、直近30件のパネル。
-// 取得はマウント時・タブが前面に戻ったとき・パネルを開いたとき（1日1回しか増えないため Realtime は使わない）。
+// アプリ内通知のベル（v3.128・v3.129で右上の常設ボタンに変更）。白い丸ボタン＋未読数の赤バッジ（100以上は 99+）。
+// 置き場所は呼び出し側（MainLayout）が決める：PC は画面右上に固定、モバイルはヘッダーの右端。
+// 取得はマウント時・タブが前面に戻ったとき・パネルを開いたとき・push 受信時・3分おき（Realtime は使わない）。
 // パネルはトリガー追従のポップオーバーなので useFloatingPanel に乗せる（Section 51）。
+// 管理者向け（super_admin だけが受け取る種類）は 🛡 の印と紫の配色で見分け、super_admin には「すべて／管理者向け」の切替を出す。
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
@@ -13,21 +15,23 @@ import {
   countUnreadInAppNotifications, fetchInAppNotifications, markInAppNotificationsRead, type InAppNotification,
 } from "../../lib/supabase/notificationStore";
 import { isPushReceivedMessage } from "../../lib/push/swMessage";
+import { ADMIN_NOTICE_ICON, ADMIN_IN_APP_KINDS, audienceOfInAppKind, formatBadgeCount } from "../../lib/notifications/notificationKinds";
 
-// タブを開いたままでも未読数が追従するよう、postMessageを取りこぼした場合の保険として
-// この間隔でも再取得する（負荷は小さい＝1日1回しか増えないカウントのGETのみ）
+// タブを開いたままでも未読数が追従するよう、postMessageを取りこぼした場合の保険としてこの間隔でも再取得する
 const FALLBACK_REFRESH_MS = 3 * 60 * 1000;
+const PANEL_WIDTH = 320;
+
+type Filter = "all" | "admin";
 
 interface Props {
   memberId: string;
+  isSuperAdmin: boolean;
   /** 行をクリックしたときの遷移（/?open=my-tasks 等）。アプリ内で画面を切り替える */
   onOpenLink: (url: string) => void;
   onOpenSettings: () => void;
-  /** トリガーの見た目（サイドバー下部の行／モバイルヘッダー） */
-  variant: "sidebar" | "header";
+  /** ボタンの直径（PC 36・モバイル 32） */
+  size: number;
 }
-
-const PANEL_WIDTH = 300;
 
 function formatWhen(iso: string): string {
   const d = new Date(iso);
@@ -35,18 +39,20 @@ function formatWhen(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, variant }: Props) {
+export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOpenSettings, size }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const [filter, setFilter] = useState<Filter>("all");
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<InAppNotification[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const activeFilter: Filter = isSuperAdmin ? filter : "all";
 
   const { panelStyle, scrollAreaStyle } = useFloatingPanel({
     open, onRequestClose: () => setOpen(false), triggerRef, panelRef,
-    align: variant === "header" ? "right" : "left", width: PANEL_WIDTH, preferredMaxHeight: 420,
+    align: "right", width: PANEL_WIDTH, preferredMaxHeight: 460,
   });
 
   const refreshCount = useCallback(async () => {
@@ -60,13 +66,13 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
 
   const refreshList = useCallback(async () => {
     try {
-      setItems(await fetchInAppNotifications(memberId));
+      setItems(await fetchInAppNotifications(memberId, activeFilter === "admin" ? { kinds: ADMIN_IN_APP_KINDS } : {}));
       setError(null);
     } catch (e) {
       setError(formatErrorForUser(t("layout.bell.loadFailed"), e));
       setItems([]);
     }
-  }, [memberId, t]);
+  }, [memberId, activeFilter, t]);
 
   useEffect(() => {
     void refreshCount();
@@ -75,8 +81,6 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [refreshCount]);
 
-  // sw.js が push を受けたらこのタブへ知らせる（開いたままでも未読バッジが追従する）。
-  // 取りこぼし（SW未制御・メッセージ到達前のタイミング等）に備えて定期再取得も保険で持つ。
   useEffect(() => {
     const onSwMessage = (e: MessageEvent) => { if (isPushReceivedMessage(e.data)) void refreshCount(); };
     navigator.serviceWorker?.addEventListener("message", onSwMessage);
@@ -88,7 +92,9 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
   }, [refreshCount]);
 
   useEffect(() => {
-    if (open) void refreshList();
+    if (!open) return;
+    setItems(null);
+    void refreshList();
   }, [open, refreshList]);
 
   useEffect(() => {
@@ -124,15 +130,28 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
     onOpenLink(n.url);
   };
 
-  const triggerStyle: CSSProperties = variant === "header" ? {
-    position: "relative", width: "32px", height: "32px", borderRadius: "var(--radius-md)",
-    background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
-    cursor: "pointer", fontSize: "15px", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-  } : {
-    position: "relative", background: "transparent", border: "none", cursor: "pointer",
-    padding: "2px 4px", fontSize: "13px", lineHeight: 1, flexShrink: 0,
-    color: open ? "var(--color-text-primary)" : "var(--color-text-tertiary)",
+  const badge = formatBadgeCount(unread);
+  const triggerStyle: CSSProperties = {
+    position: "relative", width: `${size}px`, height: `${size}px`, borderRadius: "50%",
+    background: "var(--color-bg-primary)", border: "1px solid var(--color-border-primary)",
+    boxShadow: "var(--shadow-md)", cursor: "pointer", fontSize: `${Math.round(size * 0.45)}px`, lineHeight: 1,
+    display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0,
   };
+  const tabBtn = (f: Filter, label: string) => (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={activeFilter === f}
+      onClick={() => setFilter(f)}
+      style={{
+        fontSize: "11px", padding: "3px 10px", borderRadius: "99px", cursor: "pointer",
+        border: `1px solid ${activeFilter === f ? (f === "admin" ? "var(--color-border-purple)" : "var(--color-border-info)") : "var(--color-border-primary)"}`,
+        background: activeFilter === f ? (f === "admin" ? "var(--color-bg-purple)" : "var(--color-bg-info)") : "transparent",
+        color: activeFilter === f ? (f === "admin" ? "var(--color-text-purple)" : "var(--color-text-info)") : "var(--color-text-secondary)",
+        fontWeight: activeFilter === f ? 600 : 400,
+      }}
+    >{label}</button>
+  );
 
   return (
     <>
@@ -144,15 +163,16 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
         aria-expanded={open}
         aria-label={t("layout.bell.aria", { n: unread })}
         title={t("layout.bell.aria", { n: unread })}
+        data-tour-id="notification-bell"
         style={triggerStyle}
       >
-        🔔
-        {unread > 0 && (
-          <span style={{
-            position: "absolute", top: "-3px", right: "-4px", minWidth: "15px", height: "15px", padding: "0 3px",
-            borderRadius: "99px", background: "var(--color-text-danger)", color: "#fff",
-            fontSize: "9px", fontWeight: 700, lineHeight: "15px", textAlign: "center", boxSizing: "border-box",
-          }}>{unread > 99 ? "99+" : unread}</span>
+        <span aria-hidden>🔔</span>
+        {badge && (
+          <span aria-hidden style={{
+            position: "absolute", top: "-4px", right: "-6px", minWidth: "18px", height: "18px", padding: "0 5px",
+            borderRadius: "99px", background: "#e5484d", color: "#fff", border: "2px solid var(--color-bg-primary)",
+            fontSize: "10px", fontWeight: 700, lineHeight: "14px", textAlign: "center", boxSizing: "border-box",
+          }}>{badge}</span>
         )}
       </button>
       {open && createPortal(
@@ -183,31 +203,49 @@ export function InAppNotificationBell({ memberId, onOpenLink, onOpenSettings, va
               {t("layout.bell.settings")}
             </button>
           </div>
+          {isSuperAdmin && (
+            <div role="tablist" style={{ display: "flex", gap: "6px", padding: "6px 10px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
+              {tabBtn("all", t("layout.bell.filterAll"))}
+              {tabBtn("admin", `${ADMIN_NOTICE_ICON} ${t("layout.bell.filterAdmin")}`)}
+            </div>
+          )}
           <div style={{ ...scrollAreaStyle, flex: 1, minHeight: 0 }}>
             {error && <div role="alert" style={{ padding: "8px 10px", fontSize: "11px", color: "var(--color-text-danger)" }}>{error}</div>}
             {items === null && <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>…</div>}
             {items !== null && items.length === 0 && !error && (
-              <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("layout.bell.empty")}</div>
+              <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
+                {activeFilter === "admin" ? t("layout.bell.emptyAdmin") : t("layout.bell.empty")}
+              </div>
             )}
-            {items?.map(n => (
-              <button
-                key={n.id}
-                type="button"
-                onClick={() => openItem(n)}
-                style={{
-                  display: "block", width: "100%", textAlign: "left", padding: "8px 10px", cursor: "pointer",
-                  border: "none", borderBottom: "1px solid var(--color-border-primary)",
-                  background: n.read_at ? "transparent" : "var(--color-bg-info)",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  {!n.read_at && <span aria-hidden style={{ width: "6px", height: "6px", borderRadius: "50%", background: "var(--color-text-info)", flexShrink: 0 }} />}
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1 }}>{n.title}</span>
-                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{formatWhen(n.created_at)}</span>
-                </div>
-                <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.6, wordBreak: "break-word" }}>{n.body}</div>
-              </button>
-            ))}
+            {items?.map(n => {
+              const isAdmin = audienceOfInAppKind(n.kind) === "super_admin";
+              return (
+                <button
+                  key={n.id}
+                  type="button"
+                  onClick={() => openItem(n)}
+                  style={{
+                    display: "block", width: "100%", textAlign: "left", padding: "8px 10px", cursor: "pointer",
+                    border: "none", borderBottom: "1px solid var(--color-border-primary)",
+                    borderLeft: `3px solid ${isAdmin ? "var(--color-border-purple)" : "transparent"}`,
+                    background: n.read_at ? "transparent" : (isAdmin ? "var(--color-bg-purple)" : "var(--color-bg-info)"),
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    {!n.read_at && <span aria-hidden style={{ width: "6px", height: "6px", borderRadius: "50%", background: isAdmin ? "var(--color-text-purple)" : "var(--color-text-info)", flexShrink: 0 }} />}
+                    <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1 }}>{n.title}</span>
+                    <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{formatWhen(n.created_at)}</span>
+                  </div>
+                  {isAdmin && (
+                    <span style={{
+                      display: "inline-block", marginTop: "3px", fontSize: "10px", padding: "0 6px", borderRadius: "99px",
+                      background: "var(--color-bg-purple)", color: "var(--color-text-purple)", border: "1px solid var(--color-border-purple)",
+                    }}>{ADMIN_NOTICE_ICON} {t("layout.bell.adminBadge")}</span>
+                  )}
+                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.6, wordBreak: "break-word" }}>{n.body}</div>
+                </button>
+              );
+            })}
           </div>
         </div>,
         document.body,
