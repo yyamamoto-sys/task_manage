@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.132
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.133
 #
-最終更新：2026-10-02（v3.132）
+最終更新：2026-10-02（v3.133）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4648,6 +4648,7 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 - **【軽】push-reminders の祝日判定**：`japanese-holidays` の `isHoliday` が読み込めない場合に黙って「祝日ではない」へフェイルオープンしていたのを `throw` に変更（`_shared/reminderLogic.ts` の `resolveHolidayCheckFn`）。判定日付も `new Date(dateStr+"T00:00:00Z")`（UTC解釈）をローカルゲッターで読む方式から、年月日を直接ローカル構築する方式（`buildJstHolidayDate`）に変更し、実行環境のタイムゾーンに依存しないようにした。
 - **【軽】x-cron-secret の比較を定数時間比較に**：`_shared/timingSafeEqual.ts` の `timingSafeEqualString`（長さ違いも含め最後まで比較してから判定）。
 - **【軽】未読バッジをタブ表示中も追従**：`public/sw.js` の push ハンドラが通知表示後に開いているクライアントへ `{type:"push-received"}` を `postMessage`。`InAppNotificationBell` が受けて `refreshCount()` を再実行（保険として3分おきの定期再取得も追加）。
+- **v3.133：Realtime でも即時に取り直す**（Windows通知オフの人・送信直後の本人も遅れない）。詳細は Section 67「右上のベル」。
 
 ---
 
@@ -4701,6 +4702,9 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 - 右上に出るカード型のヘルスバナー（Schema/Reminder）は `BELOW_BELL_TOP_PX` に下げた（ベルと重ねない）。右下（ショートカット・FAB）とは縦に離れている。
 - **モバイル**：ヘッダーの右側に同じ白い丸ボタン（32px）。モバイルの全画面ラボ表示中は隠れる。
 - 未読バッジは `formatBadgeCount`（0 は出さない・100 以上は 99+）。super_admin には一覧に「すべて／🛡 管理者向け」の切替（管理者向けは kind で絞ってサーバーから取る）。
+- 🔴 **v3.133：バッジはベルのボタンの外（兄弟要素）に置く**（`bellBadgeStyle()`・`src/lib/notifications/bell.ts`）。`globals.css` の `button:not(:disabled) { position: relative; overflow: hidden; }` が全ボタンに付いており、ベルは `border-radius:50%` の円なので、ボタンの子にすると円の外にはみ出した数字が切り取られる（v3.129〜v3.132 の見切れの原因。v3.130 の位置調整では直らなかった）。バッジは幅を固定しない（minWidth のみ・nowrap）。`createPortal` で body 直下へ出す案は採らない（`#root` が `isolation:isolate` のため、body 直下の z45 は #root 内のモーダル z200 より上に描かれ層が崩れる）。`bell.test.ts` がボタンの内側にバッジが無いことを走査する。
+- **v3.133：未読数の即時更新**：`subscribeInAppNotifications`（`src/lib/supabase/notificationRealtime.ts`）が自分の `in_app_notifications` の INSERT/UPDATE を `member_id=eq.<自分>` で購読し、届いたら取り直す（RLS＝本人の行だけ、が Realtime にも効く。DELETE は購読しない）。要マイグレ `20261002b_in_app_notifications_realtime.sql`（publication への追加）。未適用・接続失敗は `console.warn` のみで、3分ポーリング（延ばさない）で動く。自分の操作の直後は `requestBellRefresh()`（`src/lib/notifications/bellRefresh.ts`・window イベント）。
+- **v3.133：一覧のタブは `bellTabsFor()`**（一般＝タブ列なし／部署の管理者＝すべて・📣送信済み／super_admin＝すべて・🛡管理者向け・📣送信済み）。送信済みタブの中身は Section 68。
 
 ### 🔴 通知の種類を足す手順
 
@@ -4775,6 +4779,7 @@ Section 66・67 の通知の仕組み（ベル・Web Push・種類のレジス�
 - 🔴 **送信者へのまとめ通知は「送信者×お知らせ」で1行**（部分一意インデックス `uq_in_app_notifications_ack_summary` ＋ `ON CONFLICT … DO UPDATE`）。確認が増えるたびに同じ行の文面を差し替える（「『◯◯』を5人が確認しました」「残り2人（宛先7人）」／全員そろえば「全員（7人）が確認しました」）。
   **未読に戻す（ベルに再び出す）のは「まだ未読のまま」「全員が確認した」「前回ベルに出してから1時間以上たった」のどれかのときだけ**（確認1件ごとに未読バッジが点くのを避ける）。それ以外は文面だけ更新して既読のまま。文面と規則は `buildAckSummary`／`shouldResurfaceAckNotice`（TS）と SQL の両方にあり、テストが照合する。クリック先は送信履歴（`/?open=admin-sent`）。
 - 送信履歴（設定 → 部署の管理 → 連絡 →「📣 お知らせを送る」の下）：既読・確認の件数、開くと宛先ごとの既読・確認・再通知の日時。
+- **v3.133：ベルの「📣 送信済み」タブ**（送れる人＝部署の管理者・super_admin だけ）：自分が送ったお知らせ（`list_sent_admin_messages` を `ownSentMessages()` で送信者＝自分に絞る。super_admin も既定は自分の分のみで、全件は下部のリンクから設定の送信履歴へ）の件名・送信日時・宛先数・既読数・確認数・期限。選ぶと `admin_message_status` で宛先ごとに「確認済み／既読・未確認／既読／未読」。送信の成功直後に `requestBellRefresh()` で取り直す。
 
 ### 期限前日の再通知
 

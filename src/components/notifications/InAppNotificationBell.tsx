@@ -2,7 +2,10 @@
 //
 // アプリ内通知のベル（v3.128・v3.129で右上の常設ボタンに変更）。白い丸ボタン＋未読数の赤バッジ（100以上は 99+）。
 // 置き場所は呼び出し側（MainLayout）が決める：PC は画面右上に固定、モバイルはヘッダーの右端。
-// 取得はマウント時・タブが前面に戻ったとき・パネルを開いたとき・push 受信時・3分おき（Realtime は使わない）。
+// 取得はマウント時・タブが前面に戻ったとき・パネルを開いたとき・push 受信時・3分おき、
+// v3.133 から Realtime（自分の in_app_notifications の INSERT/UPDATE）と自分の操作の直後（requestBellRefresh）にも。
+// v3.133：未読バッジはボタンの外（兄弟要素）に置く（lib/notifications/bell.ts の冒頭コメント）。
+// v3.133：お知らせを送れる人（部署の管理者・super_admin）には「送信済み」タブ（自分が送ったお知らせと宛先ごとの状況）。
 // パネルはトリガー追従のポップオーバーなので useFloatingPanel に乗せる（Section 51）。
 // 管理者向け（super_admin だけが受け取る種類）は 🛡 の印と紫の配色で見分け、super_admin には「すべて／管理者向け」の切替を出す。
 // v3.131：管理者からのお知らせ（admin_message／送信者へのまとめ admin_message_ack）は 📣 の印とオレンジ（warning）の配色。
@@ -24,16 +27,24 @@ import {
   acknowledgeAdminMessage, fetchPendingAckMessages, fetchReceivedAdminMessages, type ReceivedAdminMessage,
 } from "../../lib/supabase/adminMessageStore";
 import { DueChip } from "./AdminMessageDialog";
+import {
+  bellBadgeStyle, bellTabsFor, ownSentMessages, type BellTab,
+} from "../../lib/notifications/bell";
+import { onBellRefreshRequest } from "../../lib/notifications/bellRefresh";
+import { subscribeInAppNotifications } from "../../lib/supabase/notificationRealtime";
+import {
+  fetchAdminMessageStatus, listSentAdminMessages, type AdminMessageRecipientStatus, type SentAdminMessage,
+} from "../../lib/supabase/adminMessageStore";
 
 // タブを開いたままでも未読数が追従するよう、postMessageを取りこぼした場合の保険としてこの間隔でも再取得する
 const FALLBACK_REFRESH_MS = 3 * 60 * 1000;
 const PANEL_WIDTH = 320;
 
-type Filter = "all" | "admin";
-
 interface Props {
   memberId: string;
   isSuperAdmin: boolean;
+  /** 部署の管理者（members.is_admin）。送信済みタブを出すかに使う */
+  isAdmin: boolean;
   /** 行をクリックしたときの遷移（/?open=my-tasks 等）。アプリ内で画面を切り替える */
   onOpenLink: (url: string) => void;
   onOpenSettings: () => void;
@@ -51,19 +62,23 @@ function formatWhen(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOpenSettings, onOpenMessage, refreshKey, size }: Props) {
+export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenLink, onOpenSettings, onOpenMessage, refreshKey, size }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<Filter>("all");
+  const [filter, setFilter] = useState<BellTab>("all");
   const [unread, setUnread] = useState(0);
   const [items, setItems] = useState<InAppNotification[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pinned, setPinned] = useState<ReceivedAdminMessage[]>([]);
   const [received, setReceived] = useState<Map<number, ReceivedAdminMessage>>(new Map());
   const [ackBusy, setAckBusy] = useState<number | null>(null);
+  const [sent, setSent] = useState<SentAdminMessage[] | null>(null);
+  const [openSentId, setOpenSentId] = useState<number | null>(null);
+  const [sentStatus, setSentStatus] = useState<AdminMessageRecipientStatus[] | null>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
-  const activeFilter: Filter = isSuperAdmin ? filter : "all";
+  const tabs = bellTabsFor({ isSuperAdmin, isAdmin });
+  const activeFilter: BellTab = tabs.includes(filter) ? filter : "all";
 
   const { panelStyle, scrollAreaStyle } = useFloatingPanel({
     open, onRequestClose: () => setOpen(false), triggerRef, panelRef,
@@ -80,6 +95,16 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
   }, [memberId]);
 
   const refreshList = useCallback(async () => {
+    if (activeFilter === "sent") {
+      try {
+        setSent(ownSentMessages(await listSentAdminMessages(), memberId));
+        setError(null);
+      } catch (e) {
+        setError(formatErrorForUser(t("layout.bell.sentLoadFailed"), e));
+        setSent([]);
+      }
+      return;
+    }
     try {
       const list = await fetchInAppNotifications(memberId, activeFilter === "admin" ? { kinds: ADMIN_IN_APP_KINDS } : {});
       setItems(list);
@@ -123,8 +148,30 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
   useEffect(() => {
     if (!open) return;
     setItems(null);
+    setSent(null);
     void refreshList();
   }, [open, refreshList]);
+
+  // Realtime・自分の操作の直後の取り直し。購読をタブ切替のたびに張り直さないよう、最新の関数は ref から呼ぶ
+  const openRef = useRef(open);
+  openRef.current = open;
+  const refreshAllRef = useRef<() => void>(() => {});
+  refreshAllRef.current = () => {
+    void refreshCount();
+    if (openRef.current) void refreshList();
+  };
+  useEffect(() => subscribeInAppNotifications(memberId, () => refreshAllRef.current()), [memberId]);
+  useEffect(() => onBellRefreshRequest(() => refreshAllRef.current()), []);
+
+  useEffect(() => {
+    if (openSentId === null) { setSentStatus(null); return; }
+    let cancelled = false;
+    setSentStatus(null);
+    fetchAdminMessageStatus(openSentId)
+      .then(r => { if (!cancelled) setSentStatus(r); })
+      .catch(e => { if (!cancelled) { console.warn("[InAppNotificationBell] 宛先の状況の取得に失敗:", e); setSentStatus([]); } });
+    return () => { cancelled = true; };
+  }, [openSentId, sent]);
 
   useEffect(() => {
     if (!open) return;
@@ -198,12 +245,15 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
     boxShadow: "var(--shadow-md)", cursor: "pointer", fontSize: `${Math.round(size * 0.45)}px`, lineHeight: 1,
     display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, padding: 0,
   };
-  const tabBtn = (f: Filter, label: string) => (
+  const tabLabel = (f: BellTab) => f === "admin" ? `${ADMIN_NOTICE_ICON} ${t("layout.bell.filterAdmin")}`
+    : f === "sent" ? `${ADMIN_MESSAGE_ICON} ${t("layout.bell.filterSent")}`
+    : t("layout.bell.filterAll");
+  const tabBtn = (f: BellTab, label: string) => (
     <button
       type="button"
       role="tab"
       aria-selected={activeFilter === f}
-      onClick={() => setFilter(f)}
+      onClick={() => { setFilter(f); setOpenSentId(null); }}
       style={{
         fontSize: "11px", padding: "3px 10px", borderRadius: "99px", cursor: "pointer",
         border: `1px solid ${activeFilter === f ? (f === "admin" ? "var(--color-border-purple)" : "var(--color-border-info)") : "var(--color-border-primary)"}`,
@@ -214,28 +264,85 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
     >{label}</button>
   );
 
+  const recipientState = (m: SentAdminMessage, r: AdminMessageRecipientStatus): { label: string; color: string } => {
+    if (r.acknowledged_at) return { label: `✓ ${t("layout.bell.recipientAcked")}`, color: "var(--color-text-success)" };
+    if (r.read_at) return { label: t(m.requires_ack ? "layout.bell.recipientReadNoAck" : "layout.bell.recipientRead"), color: m.requires_ack ? "var(--color-text-warning)" : "var(--color-text-secondary)" };
+    return { label: t("layout.bell.recipientUnread"), color: "var(--color-text-tertiary)" };
+  };
+
+  const sentList = (
+    <>
+      {sent === null && <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>…</div>}
+      {sent !== null && sent.length === 0 && !error && (
+        <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("layout.bell.emptySent")}</div>
+      )}
+      {sent?.map(m => {
+        const expanded = openSentId === m.id;
+        return (
+          <div key={m.id} style={{ borderBottom: "1px solid var(--color-border-primary)", borderLeft: "3px solid var(--color-border-warning)" }}>
+            <button
+              type="button"
+              aria-expanded={expanded}
+              onClick={() => setOpenSentId(expanded ? null : m.id)}
+              style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 10px", cursor: "pointer", border: "none", background: "transparent" }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.subject}</span>
+                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{formatWhen(m.created_at)}</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "3px", flexWrap: "wrap", fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                <span>{t(m.requires_ack ? "layout.bell.sentMetaAck" : "layout.bell.sentMeta", { total: m.recipient_count, read: m.read_count, ack: m.ack_count })}</span>
+                {m.due_date && <DueChip dueDate={m.due_date} acknowledged={m.ack_count >= m.recipient_count} />}
+              </div>
+            </button>
+            {expanded && (
+              <div style={{ padding: "0 10px 8px 16px" }}>
+                {sentStatus === null && <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>…</div>}
+                {sentStatus?.map(r => {
+                  const st = recipientState(m, r);
+                  return (
+                    <div key={r.member_id} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "2px 0", fontSize: "11px" }}>
+                      <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }}>
+                        {r.display_name}{r.member_id === memberId ? t("layout.bell.self") : ""}
+                      </span>
+                      <span style={{ color: st.color, flexShrink: 0 }}>{st.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      {sent !== null && (
+        <div style={{ padding: "8px 10px", textAlign: "right" }}>
+          <button type="button" onClick={() => { setOpen(false); onOpenLink("/?open=admin-sent"); }}
+            style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-info)", padding: 0 }}>
+            {t("layout.bell.sentAllHistory")}
+          </button>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <>
-      <button
-        ref={triggerRef}
-        type="button"
-        onClick={() => setOpen(v => !v)}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        aria-label={t("layout.bell.aria", { n: unread })}
-        title={t("layout.bell.aria", { n: unread })}
-        data-tour-id="notification-bell"
-        style={triggerStyle}
-      >
-        <span aria-hidden>🔔</span>
-        {badge && (
-          <span aria-hidden style={{
-            position: "absolute", top: "-3px", right: "-3px", minWidth: "18px", height: "18px", padding: "0 5px",
-            borderRadius: "99px", background: "#e5484d", color: "#fff", border: "2px solid var(--color-bg-primary)",
-            fontSize: "10px", fontWeight: 700, lineHeight: "14px", textAlign: "center", boxSizing: "border-box",
-          }}>{badge}</span>
-        )}
-      </button>
+      <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+        <button
+          ref={triggerRef}
+          type="button"
+          onClick={() => setOpen(v => !v)}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          aria-label={t("layout.bell.aria", { n: unread })}
+          title={t("layout.bell.aria", { n: unread })}
+          data-tour-id="notification-bell"
+          style={triggerStyle}
+        >
+          <span aria-hidden>🔔</span>
+        </button>
+        {badge && <span aria-hidden data-bell-badge style={bellBadgeStyle()}>{badge}</span>}
+      </span>
       {open && createPortal(
         <div
           ref={panelRef}
@@ -255,23 +362,25 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
             borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0,
           }}>
             <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>{t("layout.bell.title")}</span>
-            <button type="button" onClick={() => void markRead(null)} disabled={unread === 0}
-              style={{ fontSize: "11px", background: "transparent", border: "none", cursor: unread === 0 ? "default" : "pointer", color: "var(--color-text-info)", opacity: unread === 0 ? 0.5 : 1, padding: 0 }}>
-              {t("layout.bell.markAll")}
-            </button>
+            {activeFilter !== "sent" && (
+              <button type="button" onClick={() => void markRead(null)} disabled={unread === 0}
+                style={{ fontSize: "11px", background: "transparent", border: "none", cursor: unread === 0 ? "default" : "pointer", color: "var(--color-text-info)", opacity: unread === 0 ? 0.5 : 1, padding: 0 }}>
+                {t("layout.bell.markAll")}
+              </button>
+            )}
             <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}
               style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0 }}>
               {t("layout.bell.settings")}
             </button>
           </div>
-          {isSuperAdmin && (
+          {tabs.length > 1 && (
             <div role="tablist" style={{ display: "flex", gap: "6px", padding: "6px 10px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
-              {tabBtn("all", t("layout.bell.filterAll"))}
-              {tabBtn("admin", `${ADMIN_NOTICE_ICON} ${t("layout.bell.filterAdmin")}`)}
+              {tabs.map(f => <span key={f}>{tabBtn(f, tabLabel(f))}</span>)}
             </div>
           )}
           <div style={{ ...scrollAreaStyle, flex: 1, minHeight: 0 }}>
             {error && <div role="alert" style={{ padding: "8px 10px", fontSize: "11px", color: "var(--color-text-danger)" }}>{error}</div>}
+            {activeFilter === "sent" ? sentList : <>
             {items === null && <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>…</div>}
             {items !== null && items.length === 0 && !error && (
               <div style={{ padding: "12px 10px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
@@ -348,6 +457,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, onOpenLink, onOp
                 </div>
               );
             })}
+            </>}
           </div>
         </div>,
         document.body,

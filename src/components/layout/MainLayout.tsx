@@ -788,6 +788,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     <InAppNotificationBell
       memberId={currentUser.id}
       isSuperAdmin={isSuperAdmin}
+      isAdmin={currentUser.is_admin === true}
       size={size}
       onOpenLink={openNotificationLink}
       onOpenSettings={() => openSettings("notify")}

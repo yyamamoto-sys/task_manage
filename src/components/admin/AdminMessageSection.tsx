@@ -14,6 +14,7 @@ import { showToast } from "../common/Toast";
 import { Card } from "../common/Card";
 import { ghostBtnStyle, inputStyle, primaryBtnStyle } from "./adminStyles";
 import { AdminMessageBody, DueChip } from "../notifications/AdminMessageDialog";
+import { requestBellRefresh } from "../../lib/notifications/bellRefresh";
 import {
   ADMIN_MESSAGE_BODY_MAX, ADMIN_MESSAGE_MAX_SELECTED, ADMIN_MESSAGE_PER_DAY, ADMIN_MESSAGE_PER_HOUR, ADMIN_MESSAGE_SUBJECT_MAX,
   resolveRecipients, todayJst, validateDraft, type AdminMessageTarget,
@@ -137,6 +138,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
     try {
       const r = await sendAdminMessage({ subject, body, target, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null });
       showToast(`お知らせを${r.recipientCount}人に送りました`, "success");
+      requestBellRefresh();
       try {
         await dispatchAdminMessagePush(r.messageId);
       } catch (e) {
