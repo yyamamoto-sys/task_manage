@@ -10,7 +10,7 @@
 // テストが落ちて気づける）。
 //
 // v は含めない（"3.25" のように）。表示側で `v{APP_VERSION}` と組み立てる。
-export const APP_VERSION = "3.134";
+export const APP_VERSION = "3.135";
 
 /**
  * 【設計意図・v3.125】
@@ -26,7 +26,7 @@ export const APP_VERSION = "3.134";
  * 壊れた動作をする」変更を入れるリリースでだけ、この値をそのリリースの版まで引き上げる
  * こと（CLAUDE.md Section 63参照）。機能追加や見た目の変更だけでは上げない。
  */
-export const MIN_CLIENT_VERSION = "3.134";
+export const MIN_CLIENT_VERSION = "3.135";
 
 /**
  * 【設計意図】

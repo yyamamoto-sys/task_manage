@@ -8,7 +8,7 @@
 // - localStorage に最大 20 件の履歴を自動保存
 // - 「履歴」ボタンで保存済みエラー一覧を確認・クリア可能
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { AppError } from "../../lib/errorReporter";
 import { KEYS } from "../../lib/localData/localStore";
@@ -80,23 +80,26 @@ interface HistoryPanelProps {
 
 function HistoryPanel({ onClose }: HistoryPanelProps) {
   const t = useT();
+  // 依存に t を入れない（Section 69）
+  const tRef = useRef(t);
+  tRef.current = t;
   const [history, setHistory] = useState<AppError[]>(() => loadHistory().slice().reverse());
   const [copyStatus, setCopyStatus] = useState<CopyStatus>(null);
 
   const copyAll = useCallback(async () => {
     const text = loadHistory().slice().reverse()
-      .map((e, i) => `--- ${i + 1} ---\n${formatEntry(e, t)}`)
+      .map((e, i) => `--- ${i + 1} ---\n${formatEntry(e, tRef.current)}`)
       .join("\n\n");
     const ok = await copyText(text);
     setCopyStatus({ id: "all", ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, [t]);
+  }, []);
 
   const copyOne = useCallback(async (err: AppError) => {
-    const ok = await copyText(formatEntry(err, t));
+    const ok = await copyText(formatEntry(err, tRef.current));
     setCopyStatus({ id: err.timestamp, ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, [t]);
+  }, []);
 
   const clearAll = useCallback(() => {
     localStorage.removeItem(KEYS.ERROR_HISTORY);
@@ -260,6 +263,9 @@ function HistoryPanel({ onClose }: HistoryPanelProps) {
 
 export function ErrorBar() {
   const t = useT();
+  // 依存に t を入れない（Section 69）
+  const tRef = useRef(t);
+  tRef.current = t;
   const [errors, setErrors] = useState<AppError[]>([]);
   const [historyCount, setHistoryCount] = useState(() => loadHistory().length);
   const [showHistory, setShowHistory] = useState(false);
@@ -292,10 +298,10 @@ export function ErrorBar() {
   }, []);
 
   const copyError = useCallback(async (err: AppError) => {
-    const ok = await copyText(formatEntry(err, t));
+    const ok = await copyText(formatEntry(err, tRef.current));
     setCopyStatus({ id: err.timestamp, ok });
     setTimeout(() => setCopyStatus(null), 1500);
-  }, [t]);
+  }, []);
 
   // 履歴パネルを閉じたとき件数を再取得
   const handleCloseHistory = useCallback(() => {

@@ -4,7 +4,7 @@
 // （/?open=admin-message&mid=…）から MainLayout が開く。開いたら既読にし、確認ボタンありなら
 // 「確認しました」を押せる。本文はプレーンテキスト（HTML として解釈しない。http(s) の URL だけリンクにする）。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -60,6 +60,9 @@ export function AdminMessageDialog({ memberId, messageId, onClose, onChanged }: 
   const [msg, setMsg] = useState<ReceivedAdminMessage | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // 🔴 v3.135：取得の effect の依存に t を入れない（Section 69）。文言は ref から読む
+  const tRef = useRef(t);
+  tRef.current = t;
 
   useEffect(() => {
     let cancelled = false;
@@ -74,11 +77,11 @@ export function AdminMessageDialog({ memberId, messageId, onClose, onChanged }: 
           if (!cancelled) onChanged?.();
         }
       })
-      .catch(e => { if (!cancelled) { setError(formatErrorForUser(t("layout.adminMessage.loadFailed"), e)); setMsg(null); } });
+      .catch(e => { if (!cancelled) { setError(formatErrorForUser(tRef.current("layout.adminMessage.loadFailed"), e)); setMsg(null); } });
     return () => { cancelled = true; };
     // onChanged は呼び出し側で毎回作られるため依存に入れない（開いたときに1回だけ既読にする）
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [memberId, messageId, t]);
+  }, [memberId, messageId]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };

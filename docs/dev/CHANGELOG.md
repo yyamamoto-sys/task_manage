@@ -7957,4 +7957,34 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   v3.132 のフロントは購読しないため害は無い。
 # * 原因を特定してから、v3.133 の3点（見切れ・即時反映・送信済みタブ）を出し直す。
 
-最終更新：2026-10-02（v3.134）
+# v3.135（2026-10-02）：ベルの取得が止まらない不具合の根本原因を修正し、v3.133 の3点を出し直し（CLAUDE.md Section 67・68・69）
+#
+# * 原因：src/hooks/useT.ts が描画ごとに別の関数を返していた。v3.133 の InAppNotificationBell は一覧の取得関数（useCallback）の
+#   依存に t を入れ、「パネルを開いたら取得」の effect（依存 [open, refreshList]）が描画ごとに再実行 → setItems(null)＋取得をもう1本
+#   → 取得完了の setState で再描画 → … と止まらず、ブラウザが打ち切った取得が「Failed to fetch」として点滅した（v3.134 で取り消し）。
+# * 根治：useT を useCallback(…, [lang]) にし、言語を切り替えたときだけ別の関数になるようにした。
+# * 同じ型の芽（v3.129 以降）も個別に外した：AdminMessageDialog の取得 effect（[memberId, messageId, t]・開いている間取得し続ける）、
+#   App.tsx の招待URLの確認 effect（RPC を伴う。描画のたびに確認ダイアログを出し直しうる）、ErrorBar のコピー用 useCallback 3箇所。
+#   いずれも文言は tRef（useRef）から読む。useMemo（NAV_ITEMS・ShortcutsPanel・CommandPalette）は言語切替で作り直す必要があるので残した。
+# * ベルの取得：t を依存から外し（[memberId, activeFilter]）、開いたとき・タブ切替時だけ取得。世代番号（listReqRef）で古い応答を捨て、
+#   同じタブの取得が走っている間は重ねず、終わってから1回だけ取り直す（Realtime の連続イベント対策）。
+# * v3.133 の再適用：git cherry-pick d0dd822（version・CLAUDE.md 冒頭・CHANGELOG・releaseNotes の衝突は v3.134 側を残して解消）。
+#   中身は v3.133 と同じ：バッジをボタンの外へ（globals.css の button の overflow:hidden が原因）、Realtime 購読（notificationRealtime.ts）と
+#   requestBellRefresh、送信済みタブ、migrations/20261002b_in_app_notifications_realtime.sql（未適用でも3分ポーリングで動く）。
+#   v3.133 の設計の詳細は CLAUDE.md Section 67「右上のベル」・Section 68。
+# * 🔴 MIN_CLIENT_VERSION を 3.135 へ上げた（v3.134 にも AdminMessageDialog のループの芽があるため、開いている全タブに再読み込みを促す）。
+#
+# ## 再発防止（Section 69）
+# * src/hooks/__tests__/useT.test.ts：再描画で同じ関数・言語切替で別の関数。
+# * src/components/notifications/__tests__/bellFetchLoop.test.ts：ベル・お知らせの詳細を実際に描画して取得の回数を数える
+#   （開いたら1回・流し切っても増えない・タブ切替で1回ずつ・Realtime 1回で1回・実行中は重ねない）。テスト用の最小 DOM は
+#   src/__tests__/miniDom.ts（jsdom 等の依存は足していない）。
+# * src/components/__tests__/translatorDeps.test.ts：useT() の戻り値を useEffect／useLayoutEffect／useCallback の依存に入れている箇所を
+#   TypeScript の構文木で検出（コメントは数えない）。
+# * 修正前のコード（d0dd822 のベル・v3.134 の useT と AdminMessageDialog）では、上記のうち7件が赤くなる（ベル・詳細は act が終わらず
+#   タイムアウト）ことを確認済み。ベルの修正だけ（useT は旧版のまま）でもベルのテストは緑になる＝二重に止めている。
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run・変更ファイルの eslint・npm run build。
+
+最終更新：2026-10-02（v3.135）

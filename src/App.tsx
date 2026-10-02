@@ -1,5 +1,5 @@
 // src/App.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { setGuestMode, GUEST_MEMBER } from "./lib/guestMode";
 import { loadDemoDataset } from "./lib/demo/loadDemoDataset";
@@ -349,6 +349,9 @@ function AuthenticatedApp({
   // （history.replaceState。ページ遷移は起こさない）：再訪問・再読み込みで同じ確認・
   // 同じRPC呼び出しが繰り返されないようにするため。
   const [inviteUrlPromptChecked, setInviteUrlPromptChecked] = useState(false);
+  // RPC を伴う effect の依存に t を入れない（描画のたびに確認ダイアログを出し直さない。Section 69）
+  const tRef = useRef(t);
+  tRef.current = t;
   useEffect(() => {
     if (!currentUser || inviteUrlPromptChecked) return;
     const inviteCode = extractInviteCodeFromSearch(window.location.search);
@@ -361,9 +364,9 @@ function AuthenticatedApp({
       // 🔴 参加の確認であって削除ではない（2026-08-18・山本さんの実機報告：ボタンが赤・
       // ゴミ箱アイコン・ラベル「削除する」になっていた）。tone:"neutral"を明示する
       // （既定はdanger据え置き。src/lib/dialog.ts冒頭コメント参照）。
-      const accept = await confirmDialog(t("auth.invite.urlPrompt.confirm"), {
+      const accept = await confirmDialog(tRef.current("auth.invite.urlPrompt.confirm"), {
         tone: "neutral",
-        confirmLabel: t("auth.invite.member.submit"),
+        confirmLabel: tRef.current("auth.invite.member.submit"),
       });
       if (cancelled) return;
       window.history.replaceState(null, "", stripInviteParamFromUrl(window.location.href));
@@ -384,12 +387,12 @@ function AuthenticatedApp({
         window.location.reload();
       } catch (e) {
         if (cancelled) return;
-        showToast(formatErrorForUser(t("auth.invite.urlPrompt.failed"), e), "error");
+        showToast(formatErrorForUser(tRef.current("auth.invite.urlPrompt.failed"), e), "error");
         setInviteUrlPromptChecked(true);
       }
     })();
     return () => { cancelled = true; };
-  }, [currentUser, inviteUrlPromptChecked, t]);
+  }, [currentUser, inviteUrlPromptChecked]);
 
   // メンバー読み込み完了後、ログインユーザーを自動マッチング
   // 優先順位: ① Auth email でメンバーを特定 → ② localStorage の前回ユーザー
