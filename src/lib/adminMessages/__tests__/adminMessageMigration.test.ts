@@ -1,6 +1,9 @@
 // src/lib/adminMessages/__tests__/adminMessageMigration.test.ts
 //
 // 20261001e_admin_messages.sql の権限・宛先範囲・乱用対策を SQL の文面から検査する（実DBは vitest から起動できない）。
+// 🔴 v3.132（20261002_admin_messages_allow_self.sql）で send_admin_message・admin_message_candidates の
+//   本人除外を外したため、この2関数の「現在の本体」は SELF_MIGRATION（20261002）から読む。
+//   それ以外の関数・テーブル・RLS は 20261001e（MIGRATION）のまま（このマイグレでは変えていない）。
 // Section 59：SQL コメント（-- 以降）を取り除いてから走査する。
 // あわせて、push-reminders のお知らせの即時送信が宛先をクライアントから受け取らないこと、
 // お知らせの画面が HTML を解釈しないことをソースから検査する。
@@ -17,6 +20,7 @@ const strip = (src: string) => src.split("\n").map(l => l.replace(/--.*$/, "")).
 const stripTs = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").split("\n").map(l => l.replace(/(^|[^:])\/\/.*$/, "$1")).join("\n");
 const read = (rel: string) => readFileSync(join(ROOT, rel), "utf8");
 const MIGRATION = strip(read("supabase/migrations/20261001e_admin_messages.sql"));
+const SELF_MIGRATION = strip(read("supabase/migrations/20261002_admin_messages_allow_self.sql"));
 const SCHEMA = strip(read("supabase/schema.sql"));
 
 function policiesOf(sql: string, table: string): string[] {
@@ -30,20 +34,22 @@ function fnBody(sql: string, tag: string): string {
   if (!m) throw new Error(`関数本文が見つかりません: ${tag}`);
   return m[1];
 }
-const SEND = fnBody(MIGRATION, "fn_send_admin_message");
+// send_admin_message・admin_message_candidates は 20261002 が最新の本体（本人除外を外した後）
+const SEND = fnBody(SELF_MIGRATION, "fn_send_admin_message");
+const CANDIDATES = fnBody(SELF_MIGRATION, "fn_admin_message_candidates");
+// 残りは 20261001e のまま（今回のマイグレでは変えていない）
 const ACK = fnBody(MIGRATION, "fn_acknowledge_admin_message");
 const CLAIM = fnBody(MIGRATION, "fn_claim_admin_message_reminders");
 const STATUS = fnBody(MIGRATION, "fn_admin_message_status");
-const CANDIDATES = fnBody(MIGRATION, "fn_admin_message_candidates");
 
-const FUNCTIONS: [string, string][] = [
-  ["send_admin_message", "text, text, text, text, text\\[\\], boolean, date"],
-  ["admin_message_candidates", ""],
-  ["mark_admin_message_read", "bigint"],
-  ["acknowledge_admin_message", "bigint"],
-  ["list_sent_admin_messages", "integer"],
-  ["admin_message_status", "bigint"],
-  ["claim_admin_message_reminders", "bigint\\[\\]"],
+const FUNCTIONS: [string, string, string][] = [
+  ["send_admin_message", "text, text, text, text, text\\[\\], boolean, date", "self"],
+  ["admin_message_candidates", "", "self"],
+  ["mark_admin_message_read", "bigint", "base"],
+  ["acknowledge_admin_message", "bigint", "base"],
+  ["list_sent_admin_messages", "integer", "base"],
+  ["admin_message_status", "bigint", "base"],
+  ["claim_admin_message_reminders", "bigint\\[\\]", "base"],
 ];
 
 describe("お知らせのテーブルと RLS（20261001e）", () => {
@@ -88,12 +94,14 @@ describe("お知らせのテーブルと RLS（20261001e）", () => {
 });
 
 describe("全関数：SECURITY DEFINER・search_path 空・PUBLIC/anon から剥がす", () => {
-  for (const [name, args] of FUNCTIONS) {
+  for (const [name, args, source] of FUNCTIONS) {
     it(name, () => {
+      // send_admin_message・admin_message_candidates は 20261002（本人除外を外した後）を正とする
+      const sql = source === "self" ? SELF_MIGRATION : MIGRATION;
       const head = new RegExp(`CREATE OR REPLACE FUNCTION public\\.${name}\\(([\\s\\S]*?)\\)\\s*RETURNS[\\s\\S]*?SECURITY DEFINER[\\s\\S]*?SET search_path = ''`);
-      expect(MIGRATION).toMatch(head);
-      expect(MIGRATION).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\(${args}\\) FROM PUBLIC;`));
-      expect(MIGRATION).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\(${args}\\) FROM anon;`));
+      expect(sql).toMatch(head);
+      expect(sql).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\(${args}\\) FROM PUBLIC;`));
+      expect(sql).toMatch(new RegExp(`REVOKE ALL ON FUNCTION public\\.${name}\\(${args}\\) FROM anon;`));
     });
   }
 
@@ -126,9 +134,14 @@ describe("🔴 宛先の範囲は send_admin_message が強制する", () => {
     expect(SEND).toContain(`cardinality(v_ids) > ${ADMIN_MESSAGE_MAX_SELECTED}`);
   });
 
-  it("送信者本人は宛先に含めない・削除済みは含めない", () => {
-    expect(SEND.match(/m\.id <> v_member/g)?.length).toBeGreaterThanOrEqual(2);
-    expect(SEND).toContain("x <> v_member");
+  it("🔴 v3.132：送信者本人も宛先に含められる（本人除外をやめた）。削除済みは引き続き除く", () => {
+    expect(SEND).not.toMatch(/m\.id <> v_member/);
+    expect(SEND).not.toMatch(/x <> v_member/);
+    expect(SEND.match(/m\.is_deleted = false/g)?.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("🔴 v3.132：送信画面の候補にも本人を含める", () => {
+    expect(CANDIDATES).not.toMatch(/m\.id <> v_member/);
   });
 
   it("送信頻度の上限が画面側の定数と同じ", () => {
@@ -197,15 +210,45 @@ describe("届き方", () => {
 });
 
 describe("schema.sql への同期", () => {
-  it("全関数の本文がマイグレと同じ", () => {
-    for (const tag of ["fn_send_admin_message", "fn_admin_message_candidates", "fn_mark_admin_message_read", "fn_acknowledge_admin_message",
+  it("全関数の本文がマイグレと同じ（send_admin_message・admin_message_candidates は20261002が正）", () => {
+    for (const tag of ["fn_mark_admin_message_read", "fn_acknowledge_admin_message",
       "fn_list_sent_admin_messages", "fn_admin_message_status", "fn_claim_admin_message_reminders"]) {
       expect(fnBody(SCHEMA, tag), tag).toBe(fnBody(MIGRATION, tag));
     }
+    expect(fnBody(SCHEMA, "fn_send_admin_message")).toBe(fnBody(SELF_MIGRATION, "fn_send_admin_message"));
+    expect(fnBody(SCHEMA, "fn_admin_message_candidates")).toBe(fnBody(SELF_MIGRATION, "fn_admin_message_candidates"));
   });
   it("テーブル定義の CHECK にも新しい種類を含む", () => {
     expect(SCHEMA).toContain("'client_error', 'admin_message', 'admin_message_ack'");
     expect(SCHEMA).toContain("ADD COLUMN IF NOT EXISTS message_id bigint REFERENCES public.admin_messages(id) ON DELETE CASCADE");
+  });
+});
+
+describe("20261002_admin_messages_allow_self.sql（v3.132：本人も宛先に選べる）", () => {
+  it("冪等（CREATE OR REPLACE のみ・BEGIN/COMMIT で囲む）", () => {
+    expect(SELF_MIGRATION).toMatch(/^\s*BEGIN;/);
+    expect(SELF_MIGRATION).toMatch(/COMMIT;/);
+    expect(SELF_MIGRATION).not.toMatch(/CREATE TABLE(?! OR REPLACE)/);
+    expect(SELF_MIGRATION.match(/CREATE OR REPLACE FUNCTION/g)?.length).toBe(2);
+  });
+
+  it("末尾に、advisory lock・範囲検査が残っていること・本人除外が無いことを確かめる確認クエリがある", () => {
+    const afterCommit = SELF_MIGRATION.slice(SELF_MIGRATION.indexOf("COMMIT;"));
+    expect(afterCommit).toContain("pg_get_functiondef");
+    expect(afterCommit).toContain("has_advisory_lock");
+    expect(afterCommit).toContain("has_all_super_admin_check");
+    expect(afterCommit).toContain("has_group_home_check");
+    expect(afterCommit).toContain("has_members_scope_check");
+    expect(afterCommit).toContain("has_self_exclusion");
+  });
+
+  it("send_admin_message・admin_message_candidates 以外の関数・テーブル・RLS には触れていない", () => {
+    for (const tag of ["fn_mark_admin_message_read", "fn_acknowledge_admin_message", "fn_list_sent_admin_messages",
+      "fn_admin_message_status", "fn_claim_admin_message_reminders"]) {
+      expect(SELF_MIGRATION).not.toContain(`$${tag}$`);
+    }
+    expect(SELF_MIGRATION).not.toContain("CREATE POLICY");
+    expect(SELF_MIGRATION).not.toContain("ALTER TABLE");
   });
 });
 

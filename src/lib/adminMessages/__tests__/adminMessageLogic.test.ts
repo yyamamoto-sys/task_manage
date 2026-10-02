@@ -1,6 +1,7 @@
 // src/lib/adminMessages/__tests__/adminMessageLogic.test.ts
 //
-// 管理者からのお知らせ（v3.131）の純粋関数：宛先の範囲・入力の検査・期限前日の再通知日（休日・JST）・
+// 管理者からのお知らせ（v3.131・v3.132で送信者本人も宛先に選べるよう変更）の純粋関数：
+// 宛先の範囲・入力の検査・期限前日の再通知日（休日・JST）・
 // 送信者へのまとめ通知の文面と未読へ戻す規則・通知の文面・本文のリンク化（HTML を解釈しない）。
 
 import { describe, it, expect } from "vitest";
@@ -48,20 +49,25 @@ describe("宛先の範囲（send_admin_message と同じ規則）", () => {
     expect(resolveRecipients(deptAdmin, { kind: "members", memberIds: ["a1", "b1"] }, MEMBERS)).toMatchObject({ ok: false });
   });
 
-  it("部署の管理者は自分のホーム部署の全員（兼務で所属する人を含む・本人と削除済みを除く）に送れる", () => {
+  it("部署の管理者は自分のホーム部署の全員（兼務で所属する人を含む・本人を含む・削除済みは除く）に送れる", () => {
     const r = resolveRecipients(deptAdmin, { kind: "group", groupId: "grp-a" }, MEMBERS);
-    expect(r).toEqual({ ok: true, recipientIds: ["a1", "a2", "b2-kenmu"] });
+    expect(r).toEqual({ ok: true, recipientIds: ["admin-a", "a1", "a2", "b2-kenmu"] });
   });
 
-  it("部署の管理者は自分の部署のメンバーを選んで送れる（重複・自分は除く）", () => {
+  it("部署の管理者は自分の部署のメンバーを選んで送れる（重複は除く・自分も選べる）", () => {
     const r = resolveRecipients(deptAdmin, { kind: "members", memberIds: ["a1", "a1", "admin-a", "b2-kenmu"] }, MEMBERS);
-    expect(r).toEqual({ ok: true, recipientIds: ["a1", "b2-kenmu"] });
+    expect(r).toEqual({ ok: true, recipientIds: ["a1", "admin-a", "b2-kenmu"] });
   });
 
-  it("super_admin は全員・任意の部署・任意の個人に送れる", () => {
-    expect(resolveRecipients(superAdmin, { kind: "all" }, MEMBERS)).toEqual({ ok: true, recipientIds: ["admin-a", "a1", "a2", "b1", "b2-kenmu"] });
+  it("super_admin は全員・任意の部署・任意の個人に送れる（自分も宛先に含まれる）", () => {
+    expect(resolveRecipients(superAdmin, { kind: "all" }, MEMBERS)).toEqual({ ok: true, recipientIds: ["admin-a", "a1", "a2", "b1", "b2-kenmu", "super"] });
     expect(resolveRecipients(superAdmin, { kind: "group", groupId: "grp-a" }, MEMBERS)).toMatchObject({ ok: true });
     expect(resolveRecipients(superAdmin, { kind: "members", memberIds: ["b1", "a1"] }, MEMBERS)).toEqual({ ok: true, recipientIds: ["b1", "a1"] });
+  });
+
+  it("🔴 v3.132：送信者本人も宛先として選べる（本人を1人だけ選んでも送れる）", () => {
+    expect(resolveRecipients(deptAdmin, { kind: "members", memberIds: ["admin-a"] }, MEMBERS)).toEqual({ ok: true, recipientIds: ["admin-a"] });
+    expect(resolveRecipients(superAdmin, { kind: "members", memberIds: ["super"] }, MEMBERS)).toEqual({ ok: true, recipientIds: ["super"] });
   });
 
   it("削除済みの人は個人で選んでも送れない", () => {

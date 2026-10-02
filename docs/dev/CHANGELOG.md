@@ -7921,4 +7921,28 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # npm run build。代行送信の5日窓・allowRate除外・acknowledge_admin_messageの文言統一の3点は、修正前のコード
 # （git show HEAD:<path>）だと新規テストが赤くなることを確認済み。
 
-最終更新：2026-10-02（v3.131・独立レビュー対応。DB未適用）
+# v3.132（2026-10-02）：管理者からのお知らせ配信、宛先に送信者本人も選べるようにする（CLAUDE.md Section 68）
+#
+# * 山本さん（super_admin）が自分宛てに試しに送ろうとしたが、宛先の候補に自分の名前が無かった。admin_message_candidates
+#   が候補一覧から本人を除外し、send_admin_message も 'all'／'group'／'members' のどの宛先でも本人を取り除いていた
+# * migrations/20261002_admin_messages_allow_self.sql：admin_message_candidates・send_admin_message を
+#   CREATE OR REPLACE で差し替え、本人除外（m.id <> v_member / x <> v_member）だけを外した。部署の管理者はホーム部署
+#   のみ・全員宛ては super_admin のみ・個人選択は範囲外または削除済みが1人でもいれば全体拒否・送信頻度の
+#   advisory lock・件名/本文の上限・SECURITY DEFINER/search_path/REVOKE・GRANT は無改修。削除済みメンバーは
+#   引き続き除外（本人除外だけをやめた）。schema.sql 同期。末尾に advisory lock・範囲検査が残ることの確認クエリ
+# * supabase/functions/_shared/adminMessageLogic.ts の resolveRecipients（画面プレビュー用の写し）も同様に
+#   本人除外を外し、RPC と同じ範囲になるよう揃えた
+# * AdminMessageSection.tsx：候補一覧・プレビューの宛先名に自分だけ「（自分）」を表示。「全員」「部署全員」の
+#   説明文に「自分も宛先に含まれます」を明記
+# * 送信者へのまとめ通知（自分宛てに送って自分で「確認しました」を押す場合）は追加実装が不要だった。
+#   acknowledge_admin_message は sender_id・member_id が同一人物でも同じ処理（本人の宛先行を更新→送信者×お知らせの
+#   1行へ upsert）で通ることをコードレビューで確認済み
+# * MIN_CLIENT_VERSION は上げていない（旧画面は自分を選べないだけで壊れない）
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run（198ファイル・2412件）・変更ファイルの eslint・npm run build。本人を宛先に含める
+# 範囲検査（TS/SQL文面）・advisory lockと範囲検査が残っていること・schema.sql同期・新マイグレのBEGIN/COMMITと
+# 確認クエリの存在は、実装を壊すと該当テストが赤くなることを確認済み。DBマイグレ未適用のため main へは未マージ
+# （ブランチ fix/admin-message-self へ push。山本さんが dev → prod の順で SQL を適用してから main へ入れる）。
+
+最終更新：2026-10-02（v3.132・DB未適用・main未マージ）

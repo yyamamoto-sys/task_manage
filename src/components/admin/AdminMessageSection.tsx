@@ -107,7 +107,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
     (candidates ?? []).map(c => ({ id: c.member_id, group_id: c.group_id, group_ids: c.group_ids })),
   ), [candidates, target, isSuperAdmin, currentUser.id, currentUser.is_admin, homeGroupId]);
   const draftError = validateDraft({ subject, body, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null }, todayJst());
-  const nameById = useMemo(() => new Map((candidates ?? []).map(c => [c.member_id, c.display_name])), [candidates]);
+  const nameById = useMemo(() => new Map((candidates ?? []).map(c => [c.member_id, c.display_name + (c.member_id === currentUser.id ? "（自分）" : "")])), [candidates, currentUser.id]);
 
   const visibleCandidates = useMemo(() => {
     const q = filter.trim().toLowerCase();
@@ -173,6 +173,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
             {isSuperAdmin ? "全員・部署・個人を選んで送れます。" : "自分の部署（ホーム部署）のメンバーに送れます。"}
             受け取った人のベル（右上）に必ず届き、Windows通知をオンにしている人には Windows にも届きます。
             1時間に{ADMIN_MESSAGE_PER_HOUR}通・1日{ADMIN_MESSAGE_PER_DAY}通まで。
+            「全員」「部署全員」を選ぶと自分も宛先に含まれます（候補一覧では自分に「（自分）」と表示されます）。
           </div>
           {candError && <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)" }}>{candError}</div>}
 
@@ -214,7 +215,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
                   {visibleCandidates.map(c => (
                     <label key={c.member_id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
                       <input type="checkbox" checked={selected.has(c.member_id)} onChange={() => toggleMember(c.member_id)} />
-                      <span>{c.display_name}</span>
+                      <span>{c.display_name}{c.member_id === currentUser.id && "（自分）"}</span>
                       {isSuperAdmin && c.group_name && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{c.group_name}</span>}
                     </label>
                   ))}

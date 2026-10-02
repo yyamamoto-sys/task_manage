@@ -43,12 +43,13 @@ function inGroup(m: ScopeMember, groupId: string): boolean {
 /**
  * 宛先の範囲（send_admin_message と同じ規則）。画面のプレビューで宛先の人数を出すのに使う。
  * 🔴 本物の強制は DB 側（send_admin_message）。ここは同じ判定の写し。
+ * v3.132：送信者本人も宛先に含められる（削除済みメンバーは引き続き除外）。
  */
 export function resolveRecipients(sender: AdminMessageSender, target: AdminMessageTarget, members: ScopeMember[]): ScopeResult {
   if (!sender.isSuperAdmin && !sender.isAdmin) {
     return { ok: false, reason: "お知らせを送れるのは部署の管理者と全社スーパー管理者だけです" };
   }
-  const alive = members.filter((m) => !m.is_deleted && m.id !== sender.id);
+  const alive = members.filter((m) => !m.is_deleted);
   let ids: string[];
   if (target.kind === "all") {
     if (!sender.isSuperAdmin) return { ok: false, reason: "全員宛てに送れるのは全社スーパー管理者だけです" };
@@ -59,7 +60,7 @@ export function resolveRecipients(sender: AdminMessageSender, target: AdminMessa
     }
     ids = alive.filter((m) => inGroup(m, target.groupId)).map((m) => m.id);
   } else {
-    const wanted = [...new Set(target.memberIds.filter((x) => x && x !== sender.id))];
+    const wanted = [...new Set(target.memberIds.filter((x) => x))];
     if (wanted.length > ADMIN_MESSAGE_MAX_SELECTED) {
       return { ok: false, reason: `個人を選んで送れるのは1通${ADMIN_MESSAGE_MAX_SELECTED}人までです` };
     }

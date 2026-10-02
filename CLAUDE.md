@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.131
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.132
 #
-最終更新：2026-10-01（v3.131）
+最終更新：2026-10-02（v3.132）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4815,3 +4815,14 @@ pg_cron の追加は不要（既存の push-reminders の cron に乗る）。
 - **【軽】`dispatchAdminMessagePush` の `push_succeeded` 更新エラーを記録**：無視せず `console.error` に出し、送信記録（`failure`）にも残す。送信自体は既存の `sendPushToMembers`（`_shared/concurrencyPool.ts`・同時10件）で並列化済みだったため変更なし。
 
 検証：`npx tsc --noEmit`・`npx vitest run`（198ファイル・2407件）・変更ファイルの eslint・`npm run build`。5日窓・`allowRate` 除外・`acknowledge_admin_message` の文言統一の3点は、修正前のコード（`git show HEAD:<path>`）だと追加したテストが赤くなることを確認済み。
+
+### 送信者本人も宛先に選べるようにする（v3.132・2026-10-02）
+
+山本さん（super_admin）が自分宛てに試しに送ろうとしたところ、宛先の候補に自分の名前が無かった。`admin_message_candidates` が候補一覧から本人を除外し、`send_admin_message` も 'all'／'group'／'members' のどの宛先でも本人を取り除いていたため。
+
+- **マイグレ `20261002_admin_messages_allow_self.sql`**：両 RPC を `CREATE OR REPLACE` で差し替え、`m.id <> v_member` / `x <> v_member`（本人除外）を外しただけ。関数本体は 20261001e（独立レビュー反映後）をそのままコピーしており、それ以外の行は1文字も変えていない：部署の管理者はホーム部署のみ・全員宛ては super_admin のみ・個人選択は範囲外または削除済みが1人でもいれば全体拒否・送信頻度の advisory lock（`pg_advisory_xact_lock`）・件名100字／本文2000字の検査・SECURITY DEFINER／`search_path=''`／REVOKE・GRANT はすべて無改修。**削除済みメンバーは引き続き宛先に含めない**（除外したのは本人除外だけ）。`schema.sql` を同期。末尾に `pg_get_functiondef()` で advisory lock・範囲検査の文言が残っていること、本人除外の文言が無いことを確かめる確認クエリを付けた。
+- **`supabase/functions/_shared/adminMessageLogic.ts` の `resolveRecipients`（画面プレビュー用の写し）も同様に本人除外を外した。** RPC と同じ範囲になるよう揃えた（プレビューと実際の送信結果が食い違わないようにするため）。
+- **画面（`AdminMessageSection.tsx`）**：候補一覧・プレビューの宛先名に自分だけ「（自分）」を付けて表示する。「全員」「部署全員」の説明文に「自分も宛先に含まれます」を明記した（RPC 側の展開と揃える。UI 側で個別に除外し直すことはしない）。
+- **送信者へのまとめ通知（確認ボタンあり・自分宛てに送って自分で「確認しました」を押す場合）**：追加の実装は不要だった。`acknowledge_admin_message` は sender_id・member_id のどちらが誰であっても同じ処理（本人の宛先行を更新→`admin_message_ack` を「送信者×お知らせ」の1行へ upsert）であり、sender_id = member_id（自分自身）でも通常どおり1行に収まることをコードレビューで確認済み。
+- **テスト**：`src/lib/adminMessages/__tests__/adminMessageLogic.test.ts`（TS の `resolveRecipients`。本人を含む宛先の期待値に更新＋本人1人だけを選ぶケースを追加）・`adminMessageMigration.test.ts`（`SEND`/`CANDIDATES` の参照元を 20261002 に切替。本人除外の不在・既存の範囲検査/advisory lockが残っていること・schema.sql 同期・新マイグレのBEGIN/COMMIT と確認クエリの存在を検証）。
+- **MIN_CLIENT_VERSION は上げていない**（旧画面は単に自分を宛先候補として選べないだけで、読み書き自体は壊れない）。

@@ -4085,7 +4085,7 @@ BEGIN
     END IF;
     SELECT coalesce(array_agg(m.id), '{}') INTO v_ids
       FROM public.members m
-     WHERE m.is_deleted = false AND m.id <> v_member;
+     WHERE m.is_deleted = false;
   ELSIF p_target = 'group' THEN
     IF p_group_id IS NULL THEN
       RAISE EXCEPTION '部署を指定してください';
@@ -4095,12 +4095,12 @@ BEGIN
     END IF;
     SELECT coalesce(array_agg(m.id), '{}') INTO v_ids
       FROM public.members m
-     WHERE m.is_deleted = false AND m.id <> v_member
+     WHERE m.is_deleted = false
        AND (m.group_id = p_group_id OR p_group_id = ANY(m.group_ids));
   ELSIF p_target = 'members' THEN
     SELECT coalesce(array_agg(DISTINCT x), '{}') INTO v_ids
       FROM unnest(coalesce(p_member_ids, '{}')) AS x
-     WHERE x IS NOT NULL AND x <> v_member;
+     WHERE x IS NOT NULL;
     IF cardinality(v_ids) > 100 THEN
       RAISE EXCEPTION '個人を選んで送れるのは1通100人までです';
     END IF;
@@ -4178,7 +4178,6 @@ BEGIN
       FROM public.members m
       LEFT JOIN public.groups g ON g.id = m.group_id
      WHERE m.is_deleted = false
-       AND m.id <> v_member
        AND (coalesce(v_me.is_super_admin, false)
             OR (v_me.group_id IS NOT NULL AND (m.group_id = v_me.group_id OR v_me.group_id = ANY(m.group_ids))))
      ORDER BY g.name NULLS LAST, m.display_name;
