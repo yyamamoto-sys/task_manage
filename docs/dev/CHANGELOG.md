@@ -7945,34 +7945,16 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # 確認クエリの存在は、実装を壊すと該当テストが赤くなることを確認済み。DBマイグレ未適用のため main へは未マージ
 # （ブランチ fix/admin-message-self へ push。山本さんが dev → prod の順で SQL を適用してから main へ入れる）。
 
-# v3.133（2026-10-02）：右上のベルの件数を即時に更新・数字の見切れを解消・送信済みタブを追加（CLAUDE.md Section 67・68）
+# v3.134（2026-10-02）：v3.133 を取り消し（ベルの取得が繰り返されて止まらない不具合）
 #
-# * 件数の時間差：InAppNotificationBell は表示時・visibilitychange・sw.js の postMessage・3分ポーリングでしか
-#   未読数を取り直さず、Windows通知オフの人や送信直後の本人は最大3分遅れていた。
-#   src/lib/supabase/notificationRealtime.ts（新規）で自分の in_app_notifications の INSERT/UPDATE を
-#   postgres_changes（member_id=eq.<自分>）で購読し、届いたら取り直す。DELETE は購読しない。後片付けは removeChannel、
-#   再接続で再び SUBSCRIBED になったら1回取り直す。購読ごとにチャンネル名を変える（StrictMode 対策）。
-#   購読失敗（CHANNEL_ERROR/TIMED_OUT）は console.warn のみ。ポーリング3分は延ばさず残す（publication 未適用でも
-#   SUBSCRIBED になりうるため）
-# * migrations/20261002b_in_app_notifications_realtime.sql（新規・未適用）：in_app_notifications を supabase_realtime
-#   publication に冪等に追加。RLS（本人の行だけ）が Realtime の配信にも効くため他人の通知のイベントは届かない。
-#   admin_message_recipients は追加しない（部署の管理者＝送信者には RLS で見えず、確認は admin_message_ack の行の更新で届く）
-# * 自分の操作の直後：src/lib/notifications/bellRefresh.ts（新規・window イベント app:bell-refresh）。お知らせ送信の
-#   成功直後（AdminMessageSection）に requestBellRefresh()。ベル内の既読化・確認は従来どおりその場で取り直す
-# * 数字の見切れ：原因は祖先要素ではなく、globals.css の `button:not(:disabled) { position: relative; overflow: hidden; }`
-#   と、ベルのボタン自身の border-radius:50%。バッジがボタンの子だったため円の外にはみ出した部分が切り取られていた
-#   （v3.130 の位置調整では直らない）。バッジをボタンの外（position:relative の span の兄弟要素）に移した。
-#   bellBadgeStyle()（src/lib/notifications/bell.ts）は幅を固定せず minWidth のみ・whiteSpace:nowrap・pointerEvents:none。
-#   createPortal(document.body) 案は採らなかった（#root は isolation:isolate の重ね合わせ文脈で、body 直下へ出すと
-#   #root 内のモーダル（z200〜）より上に描かれ「モーダルより下」の層が崩れる。原因がボタン自身の overflow のため不要）
-# * 送信済みタブ：bellTabsFor()（一般＝すべてのみ／部署の管理者＝すべて・送信済み／super_admin＝すべて・管理者向け・送信済み）。
-#   list_sent_admin_messages を ownSentMessages() で自分が送ったものに絞る（super_admin の全件は設定の送信履歴へのリンク）。
-#   件名・送信日時・宛先数・既読数・確認数・期限、選ぶと admin_message_status で宛先ごとの既読・確認・未確認。i18n ja/en
-# * MIN_CLIENT_VERSION は上げていない（publication の追加だけで、旧画面の読み書きは壊れない）
-#
-# ## 検証
-# npx tsc --noEmit・npx vitest run・変更ファイルの eslint・npm run build。バッジがボタンの外にあること・送信直後の
-# requestBellRefresh・Realtime 購読とポーリングの併存は、修正前のコード（git show HEAD:<path>）だと新規テストが赤くなる
-# ことを確認済み。マイグレ未適用のため main へは未マージ（ブランチ fix/bell-realtime）。
+# * v3.133（d0dd822：ベルの件数の即時反映・数字の見切れ解消・送信済みタブ）を本番に出した直後、
+#   ベルの一覧に「お知らせを読み込めませんでした TypeError: Failed to fetch」が点滅し続けた
+#   （山本さんの実機・2026-10-02 13:14）。取得が繰り返されて止まらない状態と判断し、原因調査の前に
+#   git revert で v3.132 の状態へ戻した。
+# * 🔴 MIN_CLIENT_VERSION を 3.134 へ上げた。v3.133 のタブを開いたままの人は、再読み込みの通知で
+#   ループするコードから抜けられる（Section 63 の「旧画面のままだと不具合が出る」に該当）。
+# * 20261002b（in_app_notifications を supabase_realtime publication に追加）は、DB に適用済みでも
+#   v3.132 のフロントは購読しないため害は無い。
+# * 原因を特定してから、v3.133 の3点（見切れ・即時反映・送信済みタブ）を出し直す。
 
-最終更新：2026-10-02（v3.133・DB未適用・main未マージ）
+最終更新：2026-10-02（v3.134）
