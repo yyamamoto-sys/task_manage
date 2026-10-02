@@ -4066,7 +4066,9 @@ BEGIN
     RAISE EXCEPTION '期限は今日から1年以内の日付にしてください';
   END IF;
 
-  -- 乱用対策：送信頻度
+  -- 乱用対策：送信頻度（🔴 独立レビュー指摘・中：件数チェックより前にトランザクション内アドバイザリロックを
+  -- 取る。同じ人が同時に複数リクエストを送っても、件数の読み取りと判定が直列になり「1時間10通」を超えない）
+  PERFORM pg_advisory_xact_lock(hashtext('admin_msg:' || v_member::text));
   SELECT count(*) FILTER (WHERE created_at > now() - interval '1 hour'),
          count(*)
     INTO v_hour, v_day
@@ -4247,11 +4249,12 @@ BEGIN
   END IF;
   -- 同じお知らせへの確認を直列にする（まとめ通知の人数を正しく数えるため）
   SELECT * INTO v_msg FROM public.admin_messages WHERE id = p_message_id FOR UPDATE;
-  IF NOT FOUND THEN
-    RAISE EXCEPTION 'お知らせが見つかりません';
-  END IF;
-  IF NOT v_msg.requires_ack THEN
-    RAISE EXCEPTION 'このお知らせには「確認しました」ボタンがありません';
+  -- 🔴 独立レビュー指摘・軽：message_id が存在しない／自分が宛先でない／確認ボタンが無い（requires_ack=false）
+  -- の3通りを同じ文言にする（本人の宛先行の有無を先に見てから、任意の id の存在や requires_ack を
+  -- 推測できないようにする。mark_admin_message_read 等の他の RPC は差分を返さないため対象外）
+  IF NOT FOUND OR NOT v_msg.requires_ack
+     OR NOT EXISTS (SELECT 1 FROM public.admin_message_recipients WHERE message_id = p_message_id AND member_id = v_member) THEN
+    RAISE EXCEPTION 'お知らせが見つからないか、確認は不要です';
   END IF;
 
   UPDATE public.admin_message_recipients
@@ -4261,9 +4264,6 @@ BEGIN
   IF v_ack IS NULL THEN
     SELECT acknowledged_at INTO v_ack FROM public.admin_message_recipients
      WHERE message_id = p_message_id AND member_id = v_member;
-    IF NOT FOUND THEN
-      RAISE EXCEPTION 'このお知らせの宛先ではありません';
-    END IF;
     RETURN v_ack;
   END IF;
 

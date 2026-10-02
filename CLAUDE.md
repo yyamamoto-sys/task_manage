@@ -4765,13 +4765,13 @@ Section 66・67 の通知の仕組み（ベル・Web Push・種類のレジス�
 - **アプリ内は送信と同じトランザクションで全宛先に作る（本人の設定を見ない＝オフにできない）。** レジストリの種類 `admin_message` は `inappLocked: true`。`isKindEnabled(…, "admin_message", "inapp")` は全体スイッチ・個別設定に関わらず true。設定画面ではアプリ内のチェックを固定表示（変更不可）。
 - **Windows は本人が選べる**（全体スイッチ `push_enabled` AND 種類 `admin_message` の push）。
 - **即時送信の経路＝push-reminders に `mode:"admin_message"` を足した**（新しい Edge Function にしない＝送信・失効処理・CORS・JWT 検証を二重に持たない）。画面は RPC で送信した直後に `{ mode:"admin_message", messageId }` を呼ぶ。Edge Function は JWT から本人を特定し、**そのお知らせの送信者本人でなければ 403**。🔴 宛先はクライアントから受け取らず、`admin_message_recipients` に記録済みの人だけへ送る。`push_dispatched_at` を「空なら今」に更新できたときだけ送る（1通1回）。
-- **代行送信**：送信直後の呼び出しが届かなかった（画面を閉じた・通信失敗）お知らせは、cron（平日30分ごと）が作成から2分以上・1日以内で `push_dispatched_at` が空のものを代わりに送る。
+- **代行送信**：送信直後の呼び出しが届かなかった（画面を閉じた・通信失敗）お知らせは、cron（平日30分ごと）が作成から2分以上・**5日以内**で `push_dispatched_at` が空のものを代わりに送る（独立レビュー指摘・中。cron は平日 JST 7:00〜19:30 のみのため、24時間窓だと金曜夜の送信を月曜朝が拾えなかった）。
 - ベル：📣 の印とオレンジ（warning）の色（🛡 管理者向けの紫とは別）。確認ボタンありで未確認のものは一覧の上に「未確認の指示」として固定表示（最大5件。期限の有無を問わない。指示に期限が無くても見落とさせないため）。行から直接「確認しました」を押せる。行をクリックすると詳細（`AdminMessageDialog`。本文全文・送信者・期限・確認ボタン）が開き、そこで既読になる。クリック先 URL は `/?open=admin-message&mid=<id>`（Windows通知のクリックも同じ）。送信履歴の「既読」＝詳細を開いた（または確認した）こと。ベルの「すべて既読」はベルの行だけを既読にし、宛先の既読には数えない。詳細は画面を切り替えず上に重ねる（guardedNavigate を通さない）。
 
 ### 「確認しました」と送信者へのまとめ通知
 
 - 送信者がお知らせごとに付ける／付けないを選ぶ。付けたときだけ期限（任意）を付けられる（CHECK 制約と RPC の両方）。
-- `acknowledge_admin_message` は本人の行の `acknowledged_at` が空のときだけ更新する（2回目は何もせず最初の日時を返し、送信者へも通知しない）。
+- `acknowledge_admin_message` は本人の行の `acknowledged_at` が空のときだけ更新する（2回目は何もせず最初の日時を返し、送信者へも通知しない）。🔴 存在しない `message_id`・自分が宛先でない・`requires_ack=false`（確認不要）の3通りは同じ文言「お知らせが見つからないか、確認は不要です」を返す（独立レビュー指摘・軽。任意の id の存在や requires_ack を推測できないようにする。本人の宛先行の有無を先に見てから本体を読む）。
 - 🔴 **送信者へのまとめ通知は「送信者×お知らせ」で1行**（部分一意インデックス `uq_in_app_notifications_ack_summary` ＋ `ON CONFLICT … DO UPDATE`）。確認が増えるたびに同じ行の文面を差し替える（「『◯◯』を5人が確認しました」「残り2人（宛先7人）」／全員そろえば「全員（7人）が確認しました」）。
   **未読に戻す（ベルに再び出す）のは「まだ未読のまま」「全員が確認した」「前回ベルに出してから1時間以上たった」のどれかのときだけ**（確認1件ごとに未読バッジが点くのを避ける）。それ以外は文面だけ更新して既読のまま。文面と規則は `buildAckSummary`／`shouldResurfaceAckNotice`（TS）と SQL の両方にあり、テストが照合する。クリック先は送信履歴（`/?open=admin-sent`）。
 - 送信履歴（設定 → 部署の管理 → 連絡 →「📣 お知らせを送る」の下）：既読・確認の件数、開くと宛先ごとの既読・確認・再通知の日時。
@@ -4803,3 +4803,15 @@ pg_cron の追加は不要（既存の push-reminders の cron に乗る）。
 - お知らせの取り消し・編集・削除（送信後は変えない。誤送信は追って訂正のお知らせを送る）。
 - Teams への転送・メール送信。
 - 送信者へのまとめ通知の Windows 通知（アプリ内のみ）。
+
+### 独立レビュー対応（`feat/admin-messages` ブランチ・2026-10-02・DB未適用・バージョンは v3.131 のまま）
+
+指摘5件を反映。
+
+- **【中】代行送信の対象窓を24時間→5日**：`push-reminders/index.ts` の `ADMIN_MESSAGE_BACKLOG_WINDOW_MS`。cron は平日 JST 7:00〜19:30 のみのため、24時間窓だと金曜夜の送信を月曜朝（72時間以上経過）が拾えなかった。`push_dispatched_at IS NULL` の1通1回保証は変えていない。
+- **【中】送信頻度チェックの前にアドバイザリロック**：`send_admin_message` に `pg_advisory_xact_lock(hashtext('admin_msg:' || v_member::text))` を追加（件数の読み取りと判定の前）。同じ人が同時に複数リクエストを送っても「1時間10通」を超えない。
+- **【軽】`acknowledge_admin_message` の情報漏れを解消**：本人の宛先行（`admin_message_recipients`）の有無を先に確認し、存在しない `message_id`・自分が宛先でない・`requires_ack=false` のすべてを同じ文言「お知らせが見つからないか、確認は不要です」で返す。他の RPC（`mark_admin_message_read` 等）は例外を投げず件数・空行を返すだけで同種の漏れは無いことを確認済み。
+- **【軽】即時送信を `allowRate`（1分6回）から除外**：`mode:"admin_message"` は送信 RPC 側で1時間10通・24時間30通に制限済みのため、`push-reminders` のテスト送信・手動実行向けの連打防止からは外した。
+- **【軽】`dispatchAdminMessagePush` の `push_succeeded` 更新エラーを記録**：無視せず `console.error` に出し、送信記録（`failure`）にも残す。送信自体は既存の `sendPushToMembers`（`_shared/concurrencyPool.ts`・同時10件）で並列化済みだったため変更なし。
+
+検証：`npx tsc --noEmit`・`npx vitest run`（198ファイル・2407件）・変更ファイルの eslint・`npm run build`。5日窓・`allowRate` 除外・`acknowledge_admin_message` の文言統一の3点は、修正前のコード（`git show HEAD:<path>`）だと追加したテストが赤くなることを確認済み。

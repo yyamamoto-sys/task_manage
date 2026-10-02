@@ -7899,4 +7899,26 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # アプリ内は必ず届く・再通知日の休日飛ばしと JST 判定・まとめ通知の差し替えと未読戻し・Edge Function の送信者本人チェック・件名の上限は、
 # 実装を壊すと該当テストが赤くなることを確認済み。
 
-最終更新：2026-10-01（v3.131）
+# v3.131 追記（2026-10-02・独立レビュー対応。DB未適用・feat/admin-messagesブランチのまま。バージョンは据え置き。CLAUDE.md Section 68参照）
+#
+# ## 変更
+# * push-reminders の代行送信の対象窓を24時間→5日に拡大（ADMIN_MESSAGE_BACKLOG_WINDOW_MS）。cron は平日 JST 7:00〜19:30
+#   のみ起動するため、金曜夜の送信は24時間窓だと月曜朝に取りこぼしていた。push_dispatched_at IS NULL の1通1回保証はそのまま
+# * 20261001e_admin_messages.sql：send_admin_message の送信頻度チェックの前に
+#   pg_advisory_xact_lock(hashtext('admin_msg:' || v_member::text)) を追加。同時送信でも「1時間10通」を超えない
+# * acknowledge_admin_message：本人の宛先行（admin_message_recipients）の有無を先に確認し、存在しない message_id・
+#   自分が宛先でない・requires_ack=false（確認不要）のすべてを同じ文言「お知らせが見つからないか、確認は不要です」で
+#   返すように統一（任意の id の存在や requires_ack を推測できないようにする）。他の RPC（mark_admin_message_read 等）は
+#   例外を投げず件数・空行を返すのみで同種の情報漏れが無いことを確認済み
+# * push-reminders のレート制限（allowRate・1分6回）から mode:"admin_message"（即時送信）を除外。送信 RPC 側で
+#   1時間10通・24時間30通に制限済みのため二重に制限しない
+# * dispatchAdminMessagePush：admin_messages.push_succeeded の更新エラーを無視せず console.error に出し、送信記録
+#   （failure）にも残すように修正。送信の並列化は既存の sendPushToMembers（_shared/concurrencyPool.ts・同時10件）のまま
+# * schema.sql を上記2件（アドバイザリロック・acknowledge_admin_message）に同期
+#
+# ## 検証
+# npx tsc --noEmit・npx vitest run（198ファイル・2407件）・変更ファイルの eslint（supabase/functions配下はeslint対象外）・
+# npm run build。代行送信の5日窓・allowRate除外・acknowledge_admin_messageの文言統一の3点は、修正前のコード
+# （git show HEAD:<path>）だと新規テストが赤くなることを確認済み。
+
+最終更新：2026-10-02（v3.131・独立レビュー対応。DB未適用）

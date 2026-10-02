@@ -11,7 +11,8 @@
 //     送信者本人のお知らせでなければ 403。push_dispatched_at で1通につき1回だけ（二重呼び出しでも再送しない）
 //
 // 【v3.131 お知らせの cron 側】(1) 送信直後の呼び出しが届かなかったお知らせ（画面を閉じた等）の Windows通知を
-//   代わりに送る（作成から2分以上・1日以内で push_dispatched_at が空のもの）。(2) 期限つき・確認ボタンありの
+//   代わりに送る（作成から2分以上・5日以内で push_dispatched_at が空のもの。独立レビュー指摘・中：cron は
+//   平日7:00〜19:30のみ起動のため、金曜夜の送信を月曜朝が拾えるように24時間から広げた）。(2) 期限つき・確認ボタンありの
 //   お知らせを、期限の直前の平日（_shared/adminMessageLogic.ts の shouldRemindToday）に未確認の人へ1回だけ再通知。
 //
 // 【1人1日1回】claim_reminder_sends（INSERT … ON CONFLICT DO NOTHING RETURNING）が返した人だけへ送る（§6.1）。
@@ -239,24 +240,36 @@ async function dispatchAdminMessagePush(
   const msg = (claimed ?? [])[0] as { id: number; subject: string; body: string } | undefined;
   if (!msg) return { attempted: 0, succeeded: 0, failure: null, alreadySent: true };
   if (!vapid) {
-    await supabase.from("admin_messages").update({ push_succeeded: 0 }).eq("id", messageId);
+    const { error: uErr } = await supabase.from("admin_messages").update({ push_succeeded: 0 }).eq("id", messageId);
+    if (uErr) console.error(`[push-reminders] admin_messages.push_succeeded の更新に失敗 (id=${messageId}):`, uErr.message);
     return { attempted: 0, succeeded: 0, failure: "VAPID の鍵が未設定のためお知らせの Windows通知を送れません", alreadySent: false };
   }
   const { data: recRows, error: rErr } = await fetchAllRows<{ member_id: string }>((o) => supabase
     .from("admin_message_recipients").select("member_id", o).eq("message_id", messageId), ["member_id"]);
   if (rErr) throw new Error(`admin_message_recipients の取得に失敗: ${rErr.message}`);
   const out = await sendPushToMembers(supabase, vapid, recRows.map((r) => r.member_id), buildAdminMessagePushPayload(msg));
-  await supabase.from("admin_messages").update({ push_succeeded: out.succeeded }).eq("id", messageId);
-  return { ...out, alreadySent: false };
+  // 🔴 独立レビュー指摘・軽：更新の失敗を無視しない（console.error ＋ 送信記録の failure に残す。
+  // push_dispatched_at は既に確定済みのため、ここが失敗しても再送はされない＝記録だけでも残す意味がある）
+  const { error: uErr } = await supabase.from("admin_messages").update({ push_succeeded: out.succeeded }).eq("id", messageId);
+  if (uErr) {
+    console.error(`[push-reminders] admin_messages.push_succeeded の更新に失敗 (id=${messageId}):`, uErr.message);
+  }
+  const failures = [out.failure, uErr ? `push_succeeded の更新に失敗: ${uErr.message}` : null].filter(Boolean) as string[];
+  return { ...out, failure: failures.length > 0 ? failures.join(" / ").slice(0, 300) : null, alreadySent: false };
 }
 
-/** 送信直後の呼び出しが届かなかったお知らせを cron が代わりに送る（作成から2分以上・1日以内） */
+// 代行送信の対象窓（独立レビュー指摘・中：24時間だと金曜夜の送信を月曜朝が拾えない。cron は平日
+// JST 7:00〜19:30 のみ起動するため、金曜20時台の送信は月曜7:00には72時間以上経っていて24時間窓から
+// 漏れていた。5日に広げる。push_dispatched_at IS NULL の1回保証はそのまま＝広げても二重送信にはならない）
+const ADMIN_MESSAGE_BACKLOG_WINDOW_MS = 5 * 24 * 3_600_000;
+
+/** 送信直後の呼び出しが届かなかったお知らせを cron が代わりに送る（作成から2分以上・5日以内） */
 async function runAdminMessageBacklog(supabase: Sb, vapid: ReturnType<typeof readVapidConfig>, now: Date): Promise<string | null> {
   try {
     const { data, error } = await supabase.from("admin_messages").select("id")
       .is("push_dispatched_at", null)
       .lt("created_at", new Date(now.getTime() - 2 * 60_000).toISOString())
-      .gt("created_at", new Date(now.getTime() - 24 * 3_600_000).toISOString())
+      .gt("created_at", new Date(now.getTime() - ADMIN_MESSAGE_BACKLOG_WINDOW_MS).toISOString())
       .limit(50);
     if (error) throw new Error(`admin_messages の取得に失敗: ${error.message}`);
     const failures: string[] = [];
@@ -340,7 +353,9 @@ Deno.serve(async (req: Request) => {
     if (memberError || !member) return json({ error: "Unauthorized", status: 401 }, 401, cors);
     callerId = member.id as string;
     if (!isTest && !isAdminMessage && !member.is_super_admin) return json({ error: "Forbidden", status: 403 }, 403, cors);
-    if (!allowRate(callerId)) {
+    // 🔴 独立レビュー指摘・軽：お知らせの即時送信（isAdminMessage）はこの1分6回の上限から外す
+    // （send_admin_message が1人1時間10通・24時間30通で頻度を制限済み。二重に制限しない）
+    if (!isAdminMessage && !allowRate(callerId)) {
       return json({ error: "RATE_LIMIT_EXCEEDED", status: 429, message: "短時間に繰り返し実行されています。1分ほど待ってから再度お試しください。" }, 429, cors);
     }
     trigger = isTest ? "test" : "manual";

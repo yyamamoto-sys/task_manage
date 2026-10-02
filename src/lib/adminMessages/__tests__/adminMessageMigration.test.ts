@@ -135,6 +135,13 @@ describe("🔴 宛先の範囲は send_admin_message が強制する", () => {
     expect(SEND).toContain(`v_hour >= ${ADMIN_MESSAGE_PER_HOUR} OR v_day >= ${ADMIN_MESSAGE_PER_DAY}`);
   });
 
+  it("🔴 独立レビュー指摘・中：件数チェックより前にトランザクション内アドバイザリロックを取る（同時送信でも1時間10通を超えない）", () => {
+    const lockIdx = SEND.indexOf("pg_advisory_xact_lock(hashtext('admin_msg:' || v_member::text))");
+    const checkIdx = SEND.indexOf(`v_hour >= ${ADMIN_MESSAGE_PER_HOUR} OR v_day >= ${ADMIN_MESSAGE_PER_DAY}`);
+    expect(lockIdx).toBeGreaterThan(-1);
+    expect(lockIdx).toBeLessThan(checkIdx);
+  });
+
   it("送信画面の候補は send_admin_message と同じ範囲（一般は0行・部署の管理者はホーム部署）", () => {
     expect(CANDIDATES).toMatch(/IF NOT coalesce\(v_me\.is_super_admin, false\) AND NOT coalesce\(v_me\.is_admin, false\) THEN\s+RETURN;/);
     expect(CANDIDATES).toContain("(m.group_id = v_me.group_id OR v_me.group_id = ANY(m.group_ids))");
@@ -162,6 +169,15 @@ describe("届き方", () => {
     expect(ACK).toContain("'残り' || (v_total - v_acked) || '人（宛先' || v_total || '人）'");
     expect(ACK).toContain("left(v_msg.subject, 30)");
     expect(ACK.match(/n\.read_at IS NULL OR v_all OR n\.created_at < now\(\) - interval '1 hour'/g)?.length).toBe(2);
+  });
+
+  it("🔴 独立レビュー指摘・軽：message_id が存在しない／自分が宛先でない／確認不要（requires_ack=false）は同じ文言（任意の id の存在や requires_ack を推測できないようにする）", () => {
+    expect(ACK).toContain("お知らせが見つからないか、確認は不要です");
+    expect(ACK).not.toContain("お知らせが見つかりません");
+    expect(ACK).not.toContain("このお知らせの宛先ではありません");
+    expect(ACK).not.toContain("このお知らせには「確認しました」ボタンがありません");
+    // 本人の宛先行の有無を、message/requires_ack と同じ IF 条件で確認している（後から個別に判定しない）
+    expect(ACK).toMatch(/IF NOT FOUND OR NOT v_msg\.requires_ack\s+OR NOT EXISTS \(SELECT 1 FROM public\.admin_message_recipients WHERE message_id = p_message_id AND member_id = v_member\) THEN\s+RAISE EXCEPTION 'お知らせが見つからないか、確認は不要です';/);
   });
 
   it("確認は本人の行だけ・2回目は送信者へ通知しない（acknowledged_at IS NULL の行だけ更新し、無ければ戻る）", () => {
@@ -217,6 +233,22 @@ describe("Edge Function（push-reminders）のお知らせの即時送信", () =
 
   it("期限前日の再通知は休日スキップより後（平日だけ）", () => {
     expect(src.indexOf("runAdminMessageReminders(supabase, vapid, slot.date)")).toBeGreaterThan(src.indexOf("if (daySkip.skip && !isDryRun)"));
+  });
+
+  it("🔴 独立レビュー指摘・中：代行送信の対象窓は5日（金曜夜の送信を月曜朝のcronが拾えるように24時間から広げた）", () => {
+    expect(src).toContain("ADMIN_MESSAGE_BACKLOG_WINDOW_MS = 5 * 24 * 3_600_000");
+    expect(src).not.toMatch(/gt\("created_at", new Date\(now\.getTime\(\) - 24 \* 3_600_000\)\.toISOString\(\)\)/);
+  });
+
+  it("🔴 独立レビュー指摘・軽：お知らせの即時送信は1分6回の上限（allowRate）から外す（送信RPCが別途1時間10通に制限済み）", () => {
+    expect(src).toMatch(/if \(!isAdminMessage && !allowRate\(callerId\)\)/);
+  });
+
+  it("🔴 独立レビュー指摘・軽：push_succeeded の更新エラーを無視しない（console.error ＋ 送信記録に残す。VAPID未設定・通常の両方）", () => {
+    const dispatchFn = /async function dispatchAdminMessagePush\(([\s\S]*?)\n\}/.exec(src)?.[1] ?? "";
+    expect(dispatchFn).not.toBe("");
+    expect(dispatchFn.match(/\{ error: uErr \} = await supabase\.from\("admin_messages"\)\.update\(\{ push_succeeded:/g)?.length).toBe(2);
+    expect(dispatchFn.match(/console\.error\(`\[push-reminders\] admin_messages\.push_succeeded の更新に失敗/g)?.length).toBe(2);
   });
 });
 
