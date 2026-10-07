@@ -430,7 +430,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // nonce を key にして、既に開いているときも指定のセクションで開き直す
   const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
   // 管理セクションを特定のタブで開く（エラー通知のクリック先 /?open=admin-errors）
-  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | "messages" | undefined>(undefined);
+  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | "backup" | "messages" | undefined>(undefined);
   // 管理者からのお知らせの詳細（v3.131。ベル・Windows通知のクリック先 /?open=admin-message&mid=…）
   const [openMessageId, setOpenMessageId] = useState<number | null>(null);
   const [bellRefreshKey, setBellRefreshKey] = useState(0);
@@ -730,7 +730,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
     setMineOnlyState(true);
   });
-  const openSettings = (section?: SettingsSection, adminTab?: "errors" | "messages") => void guardedNavigate(() => {
+  const openSettings = (section?: SettingsSection, adminTab?: "errors" | "backup" | "messages") => void guardedNavigate(() => {
     setSettingsSection(section);
     setAdminInitialTab(adminTab);
     setSettingsNonce(n => n + 1);
@@ -739,6 +739,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const openTarget = (target: OpenTarget | null, messageId: number | null) => {
     if (target === "my-tasks") openMyTasks();
     else if (target === "admin-errors") openSettings("admin", "errors");
+    else if (target === "admin-backup") openSettings("admin", "backup");
     // お知らせの詳細は画面を切り替えず上に重ねるだけ（編集中の内容を失わないため guardedNavigate を通さない）
     else if (target === "admin-message" && messageId !== null) setOpenMessageId(messageId);
     else if (target === "admin-sent") openSettings("admin", "messages");

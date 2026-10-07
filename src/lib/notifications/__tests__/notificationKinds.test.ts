@@ -24,11 +24,17 @@ const prefs = (p: Partial<KindPrefsLike> = {}): KindPrefsLike => ({
 });
 
 describe("レジストリの定義", () => {
-  it("5種類：全員向け4つ＋super_admin 向け1つ（v3.131 で管理者からのお知らせを追加）", () => {
+  it("7種類：全員向け4つ＋super_admin 向け3つ（v3.131 でお知らせ、v3.136 でバックアップ通知2種を追加）", () => {
     expect(NOTIFICATION_KINDS.map(k => [k.id, k.audience])).toEqual([
       ["deadline_overdue", "all"], ["deadline_due_today", "all"], ["mention", "all"], ["client_error", "super_admin"],
-      ["admin_message", "all"],
+      ["admin_message", "all"], ["backup_failure", "super_admin"], ["backup_weekly_summary", "super_admin"],
     ]);
+  });
+
+  it("in_app_notifications.kind を持つ種類は、すべて CHECK 制約の値（ALL_IN_APP_KINDS）にある", () => {
+    for (const k of NOTIFICATION_KINDS) {
+      if (k.inAppKind) expect(ALL_IN_APP_KINDS as readonly string[], k.id).toContain(k.inAppKind);
+    }
   });
 
   it("id は重複せず、全種類にアイコンと表示名・説明（日本語）がある", () => {

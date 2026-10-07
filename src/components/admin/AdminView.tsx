@@ -9,13 +9,12 @@
 // 変更はSupabaseに即時反映（appStore経由）。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { fetchAiUsageLogs, fetchGroupNotificationSettings, upsertGroupNotificationSetting } from "../../lib/supabase/store";
-import { supabase } from "../../lib/supabase/client";
+import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type {
-  Group, GroupNotificationSetting, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
+  Group, Member, Objective, KeyResult, TaskForce, ToDo, Project, Milestone, Task,
   Quarter, MemberTag, ProjectInvite,
 } from "../../lib/localData/types";
 import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/projectInviteStore";
@@ -28,8 +27,6 @@ import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } fr
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
 import { KEYS, active } from "../../lib/localData/localStore";
-import { HelpButton } from "../guide/HelpButton";
-import { GuideOverlay } from "../guide/GuideOverlay";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
@@ -54,8 +51,8 @@ type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups"
 
 interface Props {
   currentUser: Member;
-  /** 開いたときのタブ（エラー通知のクリック先 /?open=admin-errors。super_admin のときだけ効く） */
-  initialTab?: "errors" | "messages";
+  /** 開いたときのタブ（エラー・バックアップ通知のクリック先 /?open=admin-errors・admin-backup。super_admin のときだけ効く） */
+  initialTab?: "errors" | "backup" | "messages";
 }
 
 // ===== 部署絞り込み（v3.60・サイドバーの「表示部署」に追従） =====
@@ -181,6 +178,7 @@ export function AdminView({ currentUser, initialTab }: Props) {
   const [tab, setTab] = useState<AdminTab>(() => {
     const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
     if (initialTab === "errors" && isCurrentUserSuperAdmin) return "errors";
+    if (initialTab === "backup" && isCurrentUserSuperAdmin) return "backup";
     if (initialTab === "messages" && canAccessAdmin) return "messages";
     if (krCount === 0) return "okr";
     if (pjCount === 0) return "pj";
@@ -2694,76 +2692,23 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: "",
+    name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "",
   });
   const [error, setError] = useState<string | null>(null);
-  const [templateDownloading, setTemplateDownloading] = useState(false);
-  // ダウンロード後「次に何をすればいいか分からない」とならないよう、成功直後に手順ガイドを自動表示する
-  const [showWebhookGuide, setShowWebhookGuide] = useState(false);
-
-  // Webhook URL は groups ではなく group_notification_settings（RLSで super_admin は全部署、
-  // 部署管理者は自部署のみ返る）。取得に失敗した間は URL を編集させない（未適用環境で
-  // 空欄を「未設定」と誤認して上書きしないため）。部署名の保存はこれと独立に動く。
-  const [notifSettings, setNotifSettings] = useState<GroupNotificationSetting[] | null>(null);
-  const [notifLoadError, setNotifLoadError] = useState<string | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    fetchGroupNotificationSettings()
-      .then(rows => { if (!cancelled) { setNotifSettings(rows); setNotifLoadError(null); } })
-      .catch(e => { if (!cancelled) setNotifLoadError(formatErrorForUser("Teams通知の設定を読み込めませんでした", e)); });
-    return () => { cancelled = true; };
-  }, []);
-  const webhookUrlOf = (groupId: string): string =>
-    notifSettings?.find(s => s.group_id === groupId)?.teams_webhook_url ?? "";
-  const saveWebhookIfChanged = async (groupId: string, url: string) => {
-    if (notifSettings === null) return;
-    if (url === webhookUrlOf(groupId)) return;
-    const saved = await upsertGroupNotificationSetting({
-      group_id: groupId, teams_webhook_url: url || null, updated_by: currentUser.id,
-    });
-    setNotifSettings(prev => [...(prev ?? []).filter(s => s.group_id !== groupId), saved]);
-  };
 
   useEffect(() => {
     onDirtyChange(editId !== null);
   }, [editId, onDirtyChange]);
 
-  // Power Automateフローのテンプレート（.zip）をダウンロードする。
-  // ログイン必須のSupabase Storage（admin-templatesバケット）から取得する
-  // （Viteのpublic/直下だと未ログインでも取得できる公開URLになってしまうため避けた）。
-  const downloadTemplate = async () => {
-    setTemplateDownloading(true);
-    setError(null);
-    try {
-      const { data, error: dlError } = await supabase.storage
-        .from("admin-templates")
-        .download("teams-webhook-flow-template.zip");
-      if (dlError) throw dlError;
-      const url = URL.createObjectURL(data);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "teams-webhook-flow-template.zip";
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      setShowWebhookGuide(true);
-    } catch (e) {
-      setError(formatErrorForUser("テンプレートのダウンロードに失敗しました", e));
-    } finally {
-      setTemplateDownloading(false);
-    }
-  };
-
   const openAdd = () => {
     setEditId("new");
-    setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: "" });
+    setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
   };
 
   const openEdit = (g: Group) => {
     setEditId(g.id);
-    setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "", teamsWebhookUrl: webhookUrlOf(g.id) });
+    setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
   };
 
@@ -2801,7 +2746,6 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             created_at: now, updated_at: now, updated_by: currentUser.id,
           });
         }
-        await saveWebhookIfChanged(newGroupId, form.teamsWebhookUrl.trim());
       } else {
         const existing = groups.find(g => g.id === editId);
         if (existing) {
@@ -2810,7 +2754,6 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             name: form.name.trim(),
             updated_by: currentUser.id,
           });
-          await saveWebhookIfChanged(existing.id, form.teamsWebhookUrl.trim());
         }
       }
       setEditId(null);
@@ -2835,17 +2778,10 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     }
   };
 
-  const webhookConfiguredCount = groups.filter(g => !!webhookUrlOf(g.id)).length;
-
   return (
     <div style={{ maxWidth: "560px" }}>
       <SummaryRow>
         <SummaryTile label="部署数" value={groups.length} tone="accent" />
-        <SummaryTile
-          label={isSuperAdmin ? "Webhook設定済み（全部署）" : "自部署のWebhook"}
-          value={notifSettings === null ? "—" : isSuperAdmin ? webhookConfiguredCount : (webhookConfiguredCount > 0 ? "設定済み" : "未設定")}
-          tone="info"
-        />
       </SummaryRow>
 
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
@@ -2858,12 +2794,6 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           {error}
         </div>
       )}
-      {notifLoadError && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginBottom: "8px" }}>
-          {notifLoadError}（Webhook URL の表示・変更はできません。部署名の編集は行えます）
-        </div>
-      )}
-
       {isSuperAdmin && (
         <Card title="全部署の概要" style={{ marginBottom: "16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
@@ -2943,39 +2873,6 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               style={inputStyle}
             />
           </div>
-          <div style={{ marginTop: "10px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <FieldLabel>Teams Webhook URL（任意）</FieldLabel>
-              <HelpButton modeKey="admin.groups-webhook" title="Teams通知チャンネルの設定方法を開く" />
-            </div>
-            <input
-              value={form.teamsWebhookUrl}
-              onChange={e => setForm(f => ({ ...f, teamsWebhookUrl: e.target.value }))}
-              placeholder={notifSettings === null ? "設定を読み込めていないため変更できません" : "https://..."}
-              disabled={notifSettings === null}
-              style={inputStyle}
-            />
-            <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
-              週次の期限通知（毎週月曜）をこの部署専用のTeamsチャンネルへ送る場合に設定します。
-              未設定の場合は全社共通のチャンネルにフォールバックします。
-              URLは全社スーパー管理者と、この部署の管理者だけが閲覧できます。
-            </div>
-            <button
-              type="button"
-              onClick={() => { void downloadTemplate(); }}
-              disabled={templateDownloading}
-              style={{
-                marginTop: "8px", display: "flex", alignItems: "center", gap: "5px",
-                padding: "5px 10px", fontSize: "11px", fontWeight: 500,
-                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-                background: "var(--color-bg-secondary)", color: "var(--color-text-secondary)",
-                cursor: templateDownloading ? "default" : "pointer",
-                opacity: templateDownloading ? 0.6 : 1,
-              }}
-            >
-              ⬇ {templateDownloading ? "ダウンロード中…" : "Power Automate用テンプレートをダウンロード"}
-            </button>
-          </div>
           {editId === "new" && (
             <div style={{ marginTop: "10px" }}>
               <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
@@ -3045,9 +2942,6 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             );
           })()}
         </div>
-      )}
-      {showWebhookGuide && (
-        <GuideOverlay modeKey="admin.groups-webhook" onClose={() => setShowWebhookGuide(false)} />
       )}
     </div>
   );

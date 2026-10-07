@@ -67,15 +67,30 @@ export const NOTIFICATION_KINDS: readonly NotificationKindDef[] = [
     inAppKind: "admin_message",
     inappLocked: true,
   },
+  {
+    // v3.136：日次バックアップの失敗・一部失敗（backup-daily。旧：Teams）
+    id: "backup_failure",
+    audience: "super_admin",
+    supported: { inapp: true, push: true },
+    defaults: { inapp: true, push: true },
+    inAppKind: "backup_failure",
+  },
+  {
+    // v3.136：日次バックアップの週次サマリ（JST 月曜の実行のあと）
+    id: "backup_weekly_summary",
+    audience: "super_admin",
+    supported: { inapp: true, push: true },
+    defaults: { inapp: true, push: true },
+    inAppKind: "backup_weekly_summary",
+  },
 ];
 
-export type NotificationKindId = "deadline_overdue" | "deadline_due_today" | "mention" | "client_error" | "admin_message";
+export type NotificationKindId =
+  | "deadline_overdue" | "deadline_due_today" | "mention" | "client_error" | "admin_message"
+  | "backup_failure" | "backup_weekly_summary";
 
 /** 管理者からのお知らせ関連の in_app_notifications.kind（受信者へのお知らせ・送信者へのまとめ通知）。ベルで📣の印と色を付ける */
 export const ADMIN_MESSAGE_IN_APP_KINDS: readonly string[] = ["admin_message", "admin_message_ack"];
-
-/** レジストリに無い in_app_notifications.kind のうち、管理者向けのもの（v3.128 で列だけ用意したバックアップ通知） */
-const ADMIN_ONLY_UNREGISTERED_IN_APP_KINDS = new Set(["backup_failure", "backup_weekly_summary"]);
 
 export type KindChannels = Record<string, Partial<Record<NotificationChannel, boolean>>>;
 
@@ -108,8 +123,7 @@ export function kindsVisibleTo(isSuperAdmin: boolean): NotificationKindDef[] {
 /** in_app_notifications.kind → 対象。未知の値は全員向けとして扱う */
 export function audienceOfInAppKind(kind: string): NotificationAudience {
   const def = NOTIFICATION_KINDS.find((k) => k.inAppKind === kind);
-  if (def) return def.audience;
-  return ADMIN_ONLY_UNREGISTERED_IN_APP_KINDS.has(kind) ? "super_admin" : "all";
+  return def ? def.audience : "all";
 }
 
 /** jsonb の値を検証して取り込む（壊れた値・余計なキーは捨てる） */

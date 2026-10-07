@@ -8007,4 +8007,27 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   needle をわざと崩すと赤・戻すと緑になることを確認済み。
 # * 適用順：マイグレ → Edge Function を `supabase functions deploy backup-daily --no-verify-jwt` で再デプロイ。
 
-最終更新：2026-10-07（v3.135 追記）
+# v3.136（2026-10-07）：Teams 通知の撤去とバックアップ通知の切替（設計書 web-push-reminder-design.md §9 フェーズ4・5.5・6・CLAUDE.md Section 66・67）
+#
+# * 並行運用5営業日（reminder_runs 10-01〜10-07 すべて success）を受けた山本さんの決定（2026-10-07）でまとめて実施。
+# * フェーズ5.5：backup-daily の partial/failed・backup_finalize の失敗・週次サマリ（JST 月曜）を、Teams（notifyTeams・TEAMS_WEBHOOK_URL）から
+#   super_admin（is_super_admin AND NOT is_deleted）へのアプリ内通知＋Web Push に切替。文面と宛先は supabase/functions/_shared/backupNotice.ts
+#   （純粋関数）、送信は _shared/webPush.ts の sendToSubscriptions（二重実装しない）。種類×チャネル設定に従うため、レジストリ
+#   （_shared/notificationKinds.ts）に backup_failure・backup_weekly_summary を登録（super_admin 向け・既定オン）。in_app_notifications.kind の
+#   CHECK は 20261001 から両値を許可済みのため変更なし。本文に例外メッセージを載せない（理由は backup_runs.error_message）。通知の失敗は
+#   バックアップの成否に影響させない。クリック先 /?open=admin-backup（deepLink.ts・MainLayout・AdminView の initialTab に "backup" を追加）。
+#   アイコン 💾／🗂・i18n（ja/en）を追加。旧 ADMIN_ONLY_UNREGISTERED_IN_APP_KINDS は登録により不要になり削除。
+# * フェーズ4・6：supabase/functions/notify-deadlines を削除。管理画面「グループ・部署」の Webhook 欄・設定済み件数タイル・
+#   PA テンプレートのダウンロード（admin-templates バケット）・手順ガイド docs/guides/05_admin/groups-webhook.md を削除。
+#   store.ts の fetchGroupNotificationSettings／upsertGroupNotificationSetting、types.ts の GroupNotificationSetting、
+#   fetchGroups の teams_webhook_url の除去処理、schemaChecks.ts の group_notification_settings_table を削除。
+# * マイグレ supabase/migrations/20261007b_remove_teams_notifications.sql：cron notify-deadlines-weekly-monday の解除（未登録でも落ちない）・
+#   group_notification_settings の DROP（付随物はポリシー1本のみと本番で確認）・storage のポリシー admin_templates_read_authenticated の DROP。
+#   バケット本体はダッシュボードで削除する。members.notify_pref 列は残す（§12 #7。UI に 'teams' の選択肢は既に無い）。
+# * 🔴 MIN_CLIENT_VERSION を 3.136 へ（DROP 後、旧画面のグループ・部署タブが読み込みエラー・旧画面の管理者にスキーマ警告が出るため）。
+# * テスト：src/lib/reminder/__tests__/backupNotice.test.ts（文面・宛先・backup-daily をコメント除去して走査。わざと壊して赤・戻して緑を確認済み）、
+#   notificationKinds.test.ts（7種類・inAppKind が CHECK の値にあること）、notificationClient.test.ts（admin-backup）。
+# * 適用順：マイグレ 20261007b → backup-daily を --no-verify-jwt で再デプロイ → フロントを main へ → notify-deadlines 関数の削除・secrets の unset・
+#   admin-templates バケットの削除（ダッシュボード）。
+
+最終更新：2026-10-07（v3.136）

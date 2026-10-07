@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS groups (
   updated_by text NOT NULL DEFAULT ''
 );
 -- teams_webhook_url 列（migrations/20260703_add_group_teams_webhook.sql）は
--- group_notification_settings へ移して削除した（20260928c で複写・20260928d で DROP。末尾参照）。
+-- group_notification_settings へ移して削除した（20260928c で複写・20260928d で DROP）。
+-- その group_notification_settings も Teams 通知の撤去で削除した（20261007b・v3.136）。
 -- プロジェクト招待用の部署かどうか（migrations/20260810_add_project_invites.sql）。
 -- true の部署はcreate_project_invite()が対象PJごとに1つ作る「招待用の部署」で、
 -- 通常の部署（is_admin/is_super_admin付与の対象になる通常運用の組織）とは区別する。
@@ -2887,7 +2888,7 @@ CREATE INDEX IF NOT EXISTS idx_loading_tips_sort_order
 -- ============================================================
 -- 日次バックアップ フェーズ1（migrations/20260916_add_backup.sql・docs/dev/backup-design.md）
 -- 表3本・RLS・関数3本。Storageバケット(backups)の作成とポリシーはマイグレーション側のみに
--- 置く（admin-templatesバケットと同じ流儀。schema.sqlはpublicスキーマの定義を正本とする）。
+-- 置く（schema.sqlはpublicスキーマの定義を正本とする）。
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS backup_runs (
@@ -3395,34 +3396,6 @@ CREATE POLICY "entity_change_logs_update" ON entity_change_logs
   WITH CHECK (
     (group_id IS NOT NULL AND (SELECT current_member_group_ids()) @> ARRAY[group_id])
     OR (SELECT current_member_is_super_admin())
-  );
-
--- ============================================================
--- 部署の通知設定（migrations/20260928c_group_notification_settings.sql・
--- docs/dev/rls-phase2-investigation.md §8）。Teams Webhook URL を groups から分け、
--- super_admin と自部署の admin だけが読み書きできるようにした（判定は groups_update_admin と同じ）。
--- notify-deadlines は service_role で読む（RLS対象外）。
--- ============================================================
-
-CREATE TABLE IF NOT EXISTS group_notification_settings (
-  group_id          text PRIMARY KEY REFERENCES groups(id),
-  teams_webhook_url text,
-  created_at        timestamptz NOT NULL DEFAULT now(),
-  updated_at        timestamptz NOT NULL DEFAULT now(),
-  updated_by        text NOT NULL DEFAULT ''
-);
-ALTER TABLE group_notification_settings ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "group_notification_settings_admin" ON group_notification_settings;
-CREATE POLICY "group_notification_settings_admin" ON group_notification_settings
-  FOR ALL TO authenticated
-  USING (
-    (SELECT public.current_member_is_super_admin())
-    OR ((SELECT public.current_member_is_admin()) AND group_id = (SELECT public.current_member_group_id()))
-  )
-  WITH CHECK (
-    (SELECT public.current_member_is_super_admin())
-    OR ((SELECT public.current_member_is_admin()) AND group_id = (SELECT public.current_member_group_id()))
   );
 
 -- ============================================================

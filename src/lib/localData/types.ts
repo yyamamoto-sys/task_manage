@@ -19,17 +19,6 @@ export interface Group {
   updated_by: string;
 }
 
-/** 部署ごとの通知設定（migrations/20260928c_group_notification_settings.sql）。
- *  Webhook URL は super_admin と自部署の admin だけが読めるよう groups から分けた（RLS）。 */
-export interface GroupNotificationSetting {
-  group_id: string;
-  /** 週次期限通知の投稿先。未設定なら全社共通の TEAMS_WEBHOOK_URL にフォールバック */
-  teams_webhook_url: string | null;
-  created_at?: string;
-  updated_at?: string;
-  updated_by: string;
-}
-
 export interface Member {
   id: string;
   display_name: string;

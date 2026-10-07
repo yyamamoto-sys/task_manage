@@ -1,7 +1,7 @@
 # 期限リマインド再設計書（Windows通知＝Web Push ＋ アプリ内通知）
 
-最終更新：2026-10-01 rev3（v3.128 で実装。§12 に設計書から変えた点を記録。適用・デプロイは未実施）
-関連：[deadline-notifications.md](./deadline-notifications.md)（現行の方式B・D）／[backup-design.md](./backup-design.md)（実行記録とバナーの前例）／CLAUDE.md Section 39・53・58・61
+最終更新：2026-10-07 rev4（v3.128 で実装。§12 に設計書から変えた点を記録。v3.136 でフェーズ4・5.5・6 を実施＝§9）
+関連：[deadline-notifications.md](./deadline-notifications.md)（旧方式B・D。v3.136 で撤去済み）／[backup-design.md](./backup-design.md)（実行記録とバナーの前例）／CLAUDE.md Section 39・53・58・61
 
 > この文書は、期限通知を「チームへの共有」から「個人へのリマインド」に作り替えるための正本である。
 > §11 に決定事項をまとめてある（rev1の未決事項は全て確定済み）。実装後は本文書と実物の差分が出た時点でこちらを直す。
@@ -293,6 +293,7 @@ CREATE TABLE reminder_send_log (
 - **宛先**：`members.is_super_admin=true AND is_deleted=false` の全員。1人ずつ`in_app_notifications`（`kind='backup_failure'`または`'backup_weekly_summary'`）へ1行書き、その人の`notification_prefs.push_enabled`がtrueなら合わせてWeb Pushも送る。
 - **送信ロジックの共有**：Web Push送信（RFC 8291暗号化・VAPID署名・購読の失効処理）は`push-reminders`が実装するものと同じであり、二重実装しない。`supabase/functions/_shared/webPush.ts`（新規）に切り出し、`push-reminders`・`backup-daily`の両方から呼ぶ。
 - **`TEAMS_WEBHOOK_URL`・`notifyTeams()`はこの時点では削除しない**：フェーズ6（Teams関連を丸ごと削除するタイミング。§9）で、`backup-daily`側の呼び出しも合わせて削除する。それまでは新旧両方が動く（新方式の稼働確認期間）。
+  - **【2026-10-07 v3.136】** 並行運用の確認後、フェーズ5.5と6を同じリリースで行ったため、新旧の同時稼働期間は設けなかった（§12 #18）。
 - **記録**：`backup_runs`（既存）に成否は既に記録されているため、通知専用の追加テーブルは作らない。
 
 ### 6.3 管理画面・バナー
@@ -420,6 +421,11 @@ CREATE TABLE push_subscriptions (
 | 5.5 | `backup-daily` の失敗通知・週次サマリを super_admin へのアプリ内通知＋Web Pushに切り替える（§6.2）。Web Push送信処理を`supabase/functions/_shared/webPush.ts`へ切り出し、`push-reminders`・`backup-daily`両方から呼ぶ | `backup_runs` が `failed`/`partial` になった実行で、super_admin にアプリ内通知（オンならWindows通知も）が届く |
 | 6 | **1か月後（決定：新方式の稼働確認後に削除する。09-30 rev2）**：`notify-deadlines` 関数・`group_notification_settings` 表と管理画面の Webhook 欄・PA テンプレート配布（`admin-templates` バケット）・`TEAMS_WEBHOOK_URL`（`backup-daily`側の参照を含む）を削除する。PA フローはフロー所有者が削除する | — |
 
+**実施記録**：フェーズ0〜3＝v3.128（2026-10-01 本番適用）。並行運用は 10-01〜10-07 の5営業日すべて `reminder_runs` が `success`（山本さん確認）。
+フェーズ5＝v3.128 で前倒し（§12 #7）。**フェーズ4・5.5・6＝v3.136（2026-10-07）でまとめて実施**：`backup-daily` の通知を super_admin へのアプリ内通知＋Web Push に切替（`_shared/backupNotice.ts`・種類 `backup_failure`／`backup_weekly_summary` をレジストリに登録）、
+`notify-deadlines` 関数・`group_notification_settings`・管理画面の Webhook 欄・PA テンプレート配布・`TEAMS_WEBHOOK_URL` 参照を削除、マイグレ `20261007b_remove_teams_notifications.sql`（cron 解除・表の DROP・`admin-templates` の読み取りポリシー削除）。
+`admin-templates` バケット本体はダッシュボードで削除する。PA フローはフロー所有者が削除する。
+
 **ロールバック**：フェーズ3までは `cron.unschedule('push-reminders-am')`／`cron.unschedule('push-reminders-pm')` だけで元に戻る（Teams 週次は無改修で動いている）。フェーズ4以降は、`notify-deadlines` のジョブを `20260702b_reschedule_notify_deadlines_weekly.sql` の本文で登録し直す。ただし PA フローが死んでいる限り Teams 側へ戻しても届かないため、実質的なロールバック先は「Web Push を直す」になる。
 
 ---
@@ -494,3 +500,4 @@ rev1（本書初版）の未決事項9件について、同日中に山本さん
 | 15 | §7.1 x-cron-secret の比較方法 | 独立レビュー対応（2026-10-01）。定数時間比較（`_shared/timingSafeEqual.ts`）に変更 | タイミング攻撃への耐性 |
 | 16 | §5.3 ベルの更新タイミング | 独立レビュー対応（2026-10-01）。`sw.js` が push 受信時に開いているクライアントへ `postMessage` し、ベルが受けて未読数を再取得（保険で3分おきの定期取得も追加） | タブを開いたままでも未読バッジが追従するように |
 | 17 | §5.3 ベルの置き場所・§4 個人設定（種類は期限超過／今日期限のみ） | v3.129：ベルは画面右上に常設（サイドバー・モバイルヘッダーの旧ベルは撤去／統合）。個人設定は種類×チャネル（notification_prefs.kind_channels）。管理者向け通知（利用者の画面でエラー）を追加し、push-reminders の cron 実行で期限とは別枠にまとめて送る | CLAUDE.md Section 67 |
+| 18 | §6.2 宛先・送信ロジック／§9 フェーズ5.5と6は1か月空ける | v3.136：宛先は super_admin（削除済みを除く）で、種類×チャネル設定（`backup_failure`・`backup_weekly_summary`。既定はアプリ内・Windows ともオン、Windows は全体スイッチ `push_enabled` も要る）に従う。文面と宛先の判定は `_shared/backupNotice.ts`（純粋関数・vitest）、送信は `_shared/webPush.ts` の `sendToSubscriptions`。本文に失敗理由は載せず、失敗した範囲（全体／部署 id）と成功数だけ。クリック先は `/?open=admin-backup`（管理画面「バックアップ」）。後片付け（backup_finalize）の失敗も `backup_failure` で送る。フェーズ5.5と6は同じリリースで実施した | 山本さんの決定（2026-10-07）：並行運用5営業日（10-01〜10-07 すべて success）の完了をもってフェーズ4・5.5・6をまとめて行う |

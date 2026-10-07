@@ -31,6 +31,7 @@ describe("通知のクリック先（/?open=my-tasks）", () => {
   it("my-tasks だけを読む", () => {
     expect(extractOpenTarget("?open=my-tasks")).toBe("my-tasks");
     expect(extractOpenTarget("?open=admin-errors")).toBe("admin-errors");
+    expect(extractOpenTarget("?open=admin-backup")).toBe("admin-backup");
     expect(extractOpenTarget("?open=admin-message&mid=3")).toBe("admin-message");
     expect(extractOpenTarget("?open=admin-sent&mid=3")).toBe("admin-sent");
     expect(extractOpenTarget("?open=other")).toBeNull();

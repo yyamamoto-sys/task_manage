@@ -106,7 +106,7 @@ flowchart TD
 | **F** | **管理・設定** | メンバー/Objective/KR/TF/PJ/タグ/AI使用量の管理・ToDo分解（左ナビ＋カテゴリ構成・Danger Zone隔離） | `components/admin/{AdminView,TodoDecomposeModal}` / `lib/ai/todoDecomposeClient` / `lib/dangerZoneConfirm`（`common/DangerZone`と対） | データ基盤, AI基盤, 共通UI |
 | **G** | **オンボーディング** | ツアー / 📖ガイド / `?`ヘルプ（docs/guides を表示） | `components/tour/*` / `components/guide/*` / `lib/docs/*` / `docs/guides/**` | 共通UI, データ基盤 |
 | **H** | **グラフ・ラボビュー** | 関係性グラフの可視化（Canvas物理シミュ）／カレンダー（月間・印刷報告用）／PJ構造（役割・層・グループの可視化編集）。いずれもD OKR以外の「ラボ機能（プロトタイプ）」の受け皿（2026-07-22・`CalendarLabView`/`ProjectStructureView`をD OKR専用ファイルと切り分けて本ユニットに追加登録。従来`components/lab/`配下という理由だけでD OKRと同一視され、v2.74ステータス拡張の横展開・巡回台帳の対象からも漏れていた実バグの再発防止） | `components/graph/GraphView` / `components/lab/{CalendarLabView,ProjectStructureView}` | データ基盤 |
-| **I** | **通知** | 期限のブラウザ通知 / Teamsまとめ（Edge） | `hooks/useDeadlineNotifications` / `supabase/functions/notify-deadlines` | データ基盤 |
+| **I** | **通知** | 期限リマインド・管理者向け通知（Web Push＋アプリ内通知）・バックアップ通知。Teams 通知は v3.136 で撤去 | `supabase/functions/push-reminders` / `supabase/functions/_shared/{webPush,notificationKinds,backupNotice}` / `components/notifications/*` / `lib/notifications/*` / `lib/reminder/*` | データ基盤 |
 
 ### ③ 共通基盤 (Foundation)
 | モジュール | 責務 | 主なファイル |

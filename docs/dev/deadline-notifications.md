@@ -1,5 +1,11 @@
 # 期限の通知（リマインダーのアラート化）— 設計・デプロイ手順
 
+> 🔴 **撤去済み（v3.136・2026-10-07）。この文書の手順は使わない。** 方式B（`useDeadlineNotifications`）は v3.128、
+> 方式D（Edge Function `notify-deadlines`・pg_cron `notify-deadlines-weekly-monday`・`group_notification_settings`・
+> 管理画面の Webhook 欄・Power Automate テンプレート配布・secrets `TEAMS_WEBHOOK_URL`／`NOTIFY_CRON_SECRET`）は v3.136 で削除した。
+> 後継は Web Push＋アプリ内通知（[web-push-reminder-design.md](./web-push-reminder-design.md)・CLAUDE.md Section 66〜68）。
+> 以下は経緯の記録として残す。
+
 > ステータス：**B・D ともに実装・デプロイ完了**（Dの@メンション化は作業中・Power Automateフロー未整備） ・ 作成 2026-05-29／2026-07-02 Dを「毎週月曜・全員向け週次レポート」仕様に変更／2026-07-02b @メンション対応の構造化JSON化＋dryRun追加／2026-07-03 部署ごとに別Webhookへ送れるように変更
 > 関連：`DashboardView`（設定UI・Bのみ対象）, `hooks/useDeadlineNotifications.ts`（方式B）,
 > `supabase/functions/notify-deadlines/`（方式D）, `KrReportPanel`（既存のTeams送信＝MessageCard形式の参考）

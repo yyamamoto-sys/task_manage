@@ -134,7 +134,7 @@ plan-app の所有者を後任に引き継ぐ際に、抜け落ちなく対応�
 | `teams-embedding.md` | Teams埋め込み対応 |
 | `tour-guidelines.md` | オンボーディングツアーの基準 |
 | `i18n-plan.md` | 英語化（i18n）の段階導入計画 |
-| `deadline-notifications.md` | 期限通知（Teams週次レポート等）の設計 |
+| `deadline-notifications.md` | 旧・期限通知（Teams週次レポート等）の設計。v3.136 で撤去済み（後継は `web-push-reminder-design.md`） |
 | `runbook.md` | 障害対応手順 |
 | `handover-checklist.md` | このファイル |
 

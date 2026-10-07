@@ -60,7 +60,7 @@ describe("ゲストモード時のSupabase遮断（choke point：assertGuestBloc
 
   it("storage.from().download() はブロックされる", async () => {
     setGuestMode(true);
-    const { data, error } = await supabase.storage.from("admin-templates").download("x.zip");
+    const { data, error } = await supabase.storage.from("backups").download("x.zip");
     expect(data).toBeNull();
     expect(error).toBeTruthy();
   });
@@ -85,14 +85,14 @@ describe("isGuestInvokeBlocked：functions.invoke の例外は ai-consult だけ
 
   it("ゲストモードなら ai-consult 以外はブロックする", () => {
     setGuestMode(true);
-    expect(isGuestInvokeBlocked("notify-deadlines")).toBe(true);
+    expect(isGuestInvokeBlocked("push-reminders")).toBe(true);
     expect(isGuestInvokeBlocked("some-future-function")).toBe(true);
   });
 
   it("ゲストモードでなければ何もブロックしない（ai-consultも他の関数名も）", () => {
     expect(isGuestMode()).toBe(false);
     expect(isGuestInvokeBlocked("ai-consult")).toBe(false);
-    expect(isGuestInvokeBlocked("notify-deadlines")).toBe(false);
+    expect(isGuestInvokeBlocked("push-reminders")).toBe(false);
   });
 });
 

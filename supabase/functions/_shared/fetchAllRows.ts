@@ -3,7 +3,7 @@
 // src/lib/supabase/fetchAllRows.ts と同じ終了条件のページング（CLAUDE.md Section 61）。
 // 1ページ目の count:"exact" で総件数を取り、総件数に達したか空ページで止める。
 // 「返ってきた件数 < ページサイズ」では止めない（サーバの max_rows が小さいと黙って欠けるため）。
-// notify-deadlines/index.ts 末尾の複製と同じ実装。
+// （旧 notify-deadlines の末尾にあった複製と同じ実装。v3.136 で関数ごと削除）
 
 // deno-lint-ignore no-explicit-any
 type QueryBuilder = any;

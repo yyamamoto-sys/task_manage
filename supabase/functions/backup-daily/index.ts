@@ -44,8 +44,8 @@
 //
 // 【必要な Edge Function secrets】
 //   SUPABASE_URL（自動設定）/ SUPABASE_SERVICE_ROLE_KEY / BACKUP_CRON_SECRET /
-//   TEAMS_WEBHOOK_URL（notify-deadlines と同じ変数名を流用。失敗・一部失敗の通知用）/
-//   ALLOWED_ORIGINS（2026-09-17追記。CORS。本番に設定済み）
+//   ALLOWED_ORIGINS（2026-09-17追記。CORS。本番に設定済み）/
+//   VAPID_PUBLIC_KEY・VAPID_PRIVATE_KEY・VAPID_SUBJECT（v3.136。push-reminders と共用。未設定ならアプリ内通知だけ）
 // 【任意の secret】
 //   APP_VERSION（省略可。設定していれば backup_snapshot の meta.app_version に記録される。
 //   未設定なら null を渡し、DB側の jsonb_strip_nulls によって meta から省かれる）
@@ -74,15 +74,27 @@
 //   [3] 部署ごとの snapshot→put     → Deno.serve内「[3] 部署ごと」ブロック（for + snapshotAndStore）
 //   [4] backup_finalize             → Deno.serve内「[4] backup_finalize」ブロック
 //   [5] 削除＋deleted_at更新        → Deno.serve内「[5] 削除対象を...」ブロック
-//   [6] Teams通知（failed/partial） → Deno.serve内「[6] 通知」ブロック（notifyTeams）
+//   [6] 通知（failed/partial）      → Deno.serve内「[6] 通知」ブロック（notifySuperAdmins）
 //
 // 【2026-09-17・フェーズ4追記：週次サマリ（新しいcronは増やさない）】
 //   [7] 週次サマリ（JSTで月曜のみ）→ Deno.serve内「[7] 週次サマリ」ブロック
 //       （sendWeeklyBackupSummaryIfMonday）。既存の[1]〜[6]の処理フローは無変更。
 //
-// 【デプロイはしない。ファイルを作るだけ（山本さんが supabase functions deploy する）】
+// 【v3.136・設計書 web-push-reminder-design.md §6.2：通知先を Teams から super_admin へ】
+//   失敗・一部失敗・後片付けの失敗・週次サマリは、super_admin へのアプリ内通知（in_app_notifications）＋
+//   Windows通知（_shared/webPush.ts の sendToSubscriptions）で送る。種類×チャネルの個人設定
+//   （notification_prefs.kind_channels。種類 backup_failure / backup_weekly_summary）に従う。
+//   通知の失敗はバックアップの成否を左右しない（ログに残すだけ。旧 Teams 通知と同じ扱い）。
+//
+// 【デプロイ】npx supabase functions deploy backup-daily --no-verify-jwt（付け忘れると cron が 401）
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { readVapidConfig, sendToSubscriptions, type StoredSubscription } from "../_shared/webPush.ts";
+import type { KindPrefsLike } from "../_shared/notificationKinds.ts";
+import {
+  buildBackupFailureNotice, buildBackupFinalizeFailureNotice, buildBackupWeeklySummaryNotice,
+  selectBackupNoticeRecipients, toPushPayload, type BackupNotice, type BackupNoticeMemberRow,
+} from "../_shared/backupNotice.ts";
 
 const BUCKET = "backups";
 
@@ -163,19 +175,50 @@ async function callRpcRaw(
   return { ok: true, text };
 }
 
-async function notifyTeams(webhookUrl: string | null, messageText: string): Promise<void> {
-  if (!webhookUrl) return;
+// super_admin へアプリ内通知＋Windows通知（設計書 §6.2）。例外を外へ出さない（バックアップの結果を左右しない）。
+async function notifySuperAdmins(supabase: SupabaseClient, notice: BackupNotice): Promise<void> {
   try {
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      // notify-deadlinesと同じPower Automate経路・同じ骨格（messageText＋mentions）で送る。
-      // 本関数はメンション対象が無いため mentions は常に空配列。
-      body: JSON.stringify({ messageText, mentions: [] }),
-    });
+    const { data: admins, error: aErr } = await supabase
+      .from("members").select("id, is_super_admin, is_deleted").eq("is_super_admin", true).eq("is_deleted", false);
+    if (aErr) throw new Error(`super_admin の取得に失敗: ${aErr.message}`);
+    const adminRows = (admins ?? []) as BackupNoticeMemberRow[];
+    if (adminRows.length === 0) {
+      console.error(`[backup-daily] 通知先の super_admin がいません（${notice.kind}）`);
+      return;
+    }
+    const { data: prefRows, error: pErr } = await supabase
+      .from("notification_prefs").select("member_id, inapp_enabled, push_enabled, kind_channels")
+      .in("member_id", adminRows.map((m) => m.id));
+    if (pErr) throw new Error(`notification_prefs の取得に失敗: ${pErr.message}`);
+    const prefsById = new Map<string, KindPrefsLike>(
+      ((prefRows ?? []) as (KindPrefsLike & { member_id: string })[]).map((r) => [r.member_id, r]),
+    );
+
+    const inappTargets = selectBackupNoticeRecipients(adminRows, prefsById, notice.kind, "inapp");
+    if (inappTargets.length > 0) {
+      const { error: iErr } = await supabase.from("in_app_notifications").insert(inappTargets.map((id) => ({
+        member_id: id, kind: notice.kind, title: notice.title, body: notice.body, url: notice.url,
+      })));
+      if (iErr) console.error(`[backup-daily] アプリ内通知の書き込みに失敗: ${iErr.message}`);
+    }
+
+    const pushTargets = selectBackupNoticeRecipients(adminRows, prefsById, notice.kind, "push");
+    if (pushTargets.length === 0) return;
+    const vapid = readVapidConfig();
+    if (!vapid) {
+      console.error("[backup-daily] VAPID の鍵が未設定のため Windows通知を送れません");
+      return;
+    }
+    const { data: subs, error: sErr } = await supabase
+      .from("push_subscriptions").select("id, member_id, endpoint, p256dh, auth, failure_count")
+      .in("member_id", pushTargets);
+    if (sErr) throw new Error(`push_subscriptions の取得に失敗: ${sErr.message}`);
+    const list = (subs ?? []) as StoredSubscription[];
+    if (list.length === 0) return;
+    const r = await sendToSubscriptions(supabase, list, toPushPayload(notice), vapid);
+    if (r.errorSummary) console.error(`[backup-daily] Windows通知の送信失敗 ${r.errorSummary}`);
   } catch (e) {
-    // Teams通知自体の失敗はバックアップ結果を左右しない（ベストエフォート）。
-    console.error(`Teams notify failed: ${e instanceof Error ? e.message : String(e)}`);
+    console.error(`[backup-daily] 通知に失敗（${notice.kind}）: ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -192,7 +235,6 @@ function isJstMonday(reference: Date): boolean {
 // には一切影響させない（呼び出し側はtry/catchで包み、失敗してもログに残すだけで握りつぶす）。
 async function sendWeeklyBackupSummaryIfMonday(
   supabase: SupabaseClient,
-  webhookUrl: string | null,
   reference: Date,
 ): Promise<void> {
   if (!isJstMonday(reference)) return;
@@ -240,20 +282,14 @@ async function sendWeeklyBackupSummaryIfMonday(
   const lastExportDate =
     !exportError && lastExportRows && lastExportRows.length > 0
       ? jstDateStr(new Date(lastExportRows[0].reported_at as string))
-      : "未設定";
+      : null;
 
-  const megaBytes = (totalBytes / (1024 * 1024)).toFixed(1);
-
-  await notifyTeams(
-    webhookUrl,
-    [
-      `📅 日次バックアップ 週次サマリ（直近7日）`,
-      `成功回数：${successCount}件`,
-      `容量：約${megaBytes}MB`,
-      `孤児件数：${totalOrphans}件`,
-      `削除件数：${totalDeleted}件`,
-      `二次保管の最終取得日：${lastExportDate}`,
-    ].join("\n"),
+  await notifySuperAdmins(
+    supabase,
+    buildBackupWeeklySummaryNotice(
+      { successCount, totalBytes, totalOrphans, totalDeleted, lastExportDate },
+      jstDateStr(reference),
+    ),
   );
 }
 
@@ -368,7 +404,6 @@ Deno.serve(async (req: Request) => {
   const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
   const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   const CRON_SECRET = Deno.env.get("BACKUP_CRON_SECRET");
-  const TEAMS_WEBHOOK_URL = Deno.env.get("TEAMS_WEBHOOK_URL") ?? null;
   const APP_VERSION = Deno.env.get("APP_VERSION") ?? null;
 
   if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
@@ -497,7 +532,7 @@ Deno.serve(async (req: Request) => {
   } else {
     status = "success";
   }
-  // 2026-10-07：失敗理由がTeams通知にしか出ず、Teams経路が止まると原因がどこにも残らなかった
+  // 2026-10-07：失敗理由が通知（当時は Teams）にしか出ず、その経路が止まると原因がどこにも残らなかった
   // （full が引数上限超過で毎日失敗していたのに5日間気づけなかった）。DBにも残す。
   if (errorMessage !== null) {
     errorMessage = buildFailureMessage(errorMessage, objectResults, [SUPABASE_URL, SERVICE_ROLE_KEY]);
@@ -511,10 +546,8 @@ Deno.serve(async (req: Request) => {
   });
   if (finalizeError) {
     // finalize自体の失敗はバックアップ実行の成否とは別に、必ず知らせる（静かに失敗させない）。
-    await notifyTeams(
-      TEAMS_WEBHOOK_URL,
-      `⚠ バックアップの後片付け（backup_finalize）に失敗しました（run_id=${runId}）: ${finalizeError.message}`,
-    );
+    console.error(`backup_finalize failed (run_id=${runId}): ${finalizeError.message}`);
+    await notifySuperAdmins(supabase, buildBackupFinalizeFailureNotice(runId, dateStr));
   }
 
   // ===== [5] 削除対象をStorage APIで削除し、成功したものだけ deleted_at を更新 =====
@@ -546,22 +579,19 @@ Deno.serve(async (req: Request) => {
 
   // ===== [6] 通知（failed/partialのみ） =====
   if (status === "failed" || status === "partial") {
-    const failLines = objectResults
-      .filter((r) => !r.ok)
-      .map((r) => `- ${r.scope === "full" ? "全体" : r.groupId}: ${r.error ?? "不明なエラー"}`);
-    await notifyTeams(
-      TEAMS_WEBHOOK_URL,
-      [
-        `🔴 日次バックアップが${status === "failed" ? "失敗" : "一部失敗"}しました（run_id=${runId}）`,
-        `成功 ${successCount}/${objectResults.length}`,
-        ...failLines,
-      ].join("\n"),
-    );
+    await notifySuperAdmins(supabase, buildBackupFailureNotice({
+      runId,
+      status,
+      succeeded: successCount,
+      total: objectResults.length,
+      failed: objectResults.filter((r) => !r.ok).map((r) => ({ scope: r.scope, groupId: r.groupId })),
+      dateStr,
+    }));
   }
 
   // ===== [7] 週次サマリ（JSTで月曜のみ。既存フローの後に追記。失敗しても本レスポンスには影響させない） =====
   try {
-    await sendWeeklyBackupSummaryIfMonday(supabase, TEAMS_WEBHOOK_URL, runTimestamp);
+    await sendWeeklyBackupSummaryIfMonday(supabase, runTimestamp);
   } catch (e) {
     console.error(`weekly summary failed: ${e instanceof Error ? e.message : String(e)}`);
   }

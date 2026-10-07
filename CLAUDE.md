@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.135
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.136
 #
-最終更新：2026-10-02（v3.135）
+最終更新：2026-10-07（v3.136）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -42,7 +42,7 @@
 | データベース | Supabase（PostgreSQL） | 無料枠で十分・多対多リレーション対応・RLS設定可 |
 | AI連携 | Anthropic Claude API（claude-sonnet-4-6） | OKR/PJ/タスクの相談・分析・レポート生成等に使用（2026-05-13以降 OKR関連情報も投入可） |
 | AI中継 | Supabase Edge Function（ai-consult） | APIキーをサーバーサイドにのみ保持するため |
-| 通知連携 | Microsoft Teams Webhook | タスク完了・期限通知 |
+| 通知連携 | Web Push＋アプリ内通知（Edge Function push-reminders・backup-daily） | 期限リマインド・管理者向け通知（Section 66〜68）。Teams 通知は v3.136 で撤去（KRレポートの「Teams送信」ボタンは別機能で残る） |
 | ホスティング | Vercel | GitHubへのpushで自動デプロイ（main branch） |
 
 **⚠ 確認が必要な事項（未解決）**
@@ -3695,7 +3695,7 @@ Section 46（v3.89）・47（v3.90）で作った未保存編集レジストリ�
    - テーブル未適用・取得失敗時は黙って消えず「バックアップの状態を確認できません」を表示する（`SchemaHealthBanner`と同じ方針）
 3. **手動実行**：`supabase.functions.invoke("backup-daily", { body: {} })`を呼ぶだけで、supabase-jsが現在ログインセッションのアクセストークンを自動的に`Authorization: Bearer <token>`として付与する（`node_modules/@supabase/supabase-js`の`fetchWithAuth`実装で確認済み。ヘッダーを明示的に組み立てるコードは書いていない）。`backup-daily`内部の自前検証（`members.is_super_admin`）が唯一のガード（`backup-daily`は`verify_jwt: false`でデプロイされているためSupabase側のJWT検証は働かない。docs/dev/backup-design.md §3.2参照）。
 4. **新規Edge Function `supabase/functions/backup-export-urls/index.ts`**：super-adminのJWT（または、フェーズ5の二次保管スクリプト用に`x-cron-secret`＝`BACKUP_EXPORT_SECRET`。受け口のみ作り、今は未使用）を検証し、指定パスの署名URL（5分）と`backup_objects`のsha256/bytesを返すだけ。認証・エラー処理・`json()`ヘルパー・`toStorageKey()`は`backup-daily/index.ts`をそのまま踏襲した。
-5. **週次サマリ**（`backup-daily/index.ts`に追記。新しいcronは増やしていない）：実行の最後で「JSTで月曜なら」（`isJstMonday()`。`jstDateStr()`と同じ「+9時間してからUTC値として読む」変換を再利用）だけ、直近7日の`backup_runs`を集計（成功回数・容量・孤児件数の合計・削除件数の合計）し、`backup_exports`の最新successを二次保管の最終取得日として（空／未成功なら「未設定」）、既存の`notifyTeams()`でTeamsへ送る。週次サマリの取得・送信失敗は`try/catch`で囲み、日次バックアップ本体のレスポンス・statusには一切影響させない。**既存の[1]〜[6]の処理フローは1行も変更していない（追記のみ）。**
+5. **週次サマリ**（`backup-daily/index.ts`に追記。新しいcronは増やしていない）：実行の最後で「JSTで月曜なら」（`isJstMonday()`。`jstDateStr()`と同じ「+9時間してからUTC値として読む」変換を再利用）だけ、直近7日の`backup_runs`を集計（成功回数・容量・孤児件数の合計・削除件数の合計）し、`backup_exports`の最新successを二次保管の最終取得日として（空／未成功なら「未設定」）、既存の`notifyTeams()`でTeamsへ送る（v3.136 から super_admin へのアプリ内通知＋Windows通知。Section 67）。週次サマリの取得・送信失敗は`try/catch`で囲み、日次バックアップ本体のレスポンス・statusには一切影響させない。**既存の[1]〜[6]の処理フローは1行も変更していない（追記のみ）。**
 
 ### `backup-daily`のCORS対応（2026-09-17・統括の承認を得て追加実装）
 
@@ -4117,10 +4117,8 @@ USING ((SELECT public.current_member_id()) IS NOT NULL)
   （`migrations/20260928b_restrict_groups_tips_usage_insert.sql`）
 - ✅ **`loading_tips.loading_tips_read`** … 同じく**登録済みメンバーのみ**へ変更済み（20260928b）
 - ✅ **`ai_usage_logs` の INSERT** … **本人の member_id のみ**（ゲスト行は service_role の Edge Function だけが書く。20260928b）
-- ⏳ **B3：部署の Teams Webhook URL の分離**（v3.118）… 登録済みなら他部署の `groups.teams_webhook_url` が読めていた。
-  `group_notification_settings`（super_admin と自部署 admin のみ）へ移す。実装済み・**マイグレ①（20260928c）→
-  notify-deadlines デプロイ→フロントデプロイ→マイグレ②（20260928d・列DROP）の順で適用待ち**。
-  完了後は Webhook を Power Automate 側で再発行して登録し直すことを推奨（匿名から読めた期間があるため）
+- ✅ **B3：部署の Teams Webhook URL の分離**（v3.118）… その後 v3.136 で Teams 通知ごと撤去し、
+  `group_notification_settings` も DROP した（`20261007b_remove_teams_notifications.sql`）。
 
 ### 🔴 外部前提のチェックリスト（コードにもテストにも現れないもの）
 
@@ -4131,8 +4129,8 @@ USING ((SELECT public.current_member_id()) IS NOT NULL)
 |---|---|
 | Supabase の Anonymous Sign-Ins | ✅ 有効（**無効だったことが今回の発端**） |
 | 匿名JWTで読めるテーブル | ✅ マイグレ 20260928・20260928b（2026-09-28）で OKR周辺8テーブルを部署スコープに、groups・loading_tips を登録済みのみに締めた（適用後の確認は `rls-phase2-investigation.md` §5-2・§10 の検証SQL） |
-| 部署の Webhook URL の閲覧範囲 | ⏳ v3.118（B3）の適用待ち。適用までは登録済みメンバーなら全部署分が読める |
-| Edge Function secrets（`ANTHROPIC_API_KEY` / `ALLOWED_ORIGINS` / `*_CRON_SECRET` / `TEAMS_WEBHOOK_URL`） | ✅ 設定済み |
+| 部署の Webhook URL の閲覧範囲 | ✅ v3.136 で表ごと撤去 |
+| Edge Function secrets（`ANTHROPIC_API_KEY` / `ALLOWED_ORIGINS` / `*_CRON_SECRET` / `VAPID_*`） | ✅ 設定済み（`TEAMS_WEBHOOK_URL`・`NOTIFY_CRON_SECRET` は v3.136 で unset 対象） |
 | `ALLOWED_ORIGINS` に本番ドメインが含まれるか | ⚠️ 未確認（AI相談が動いているので含まれるはず） |
 | Teams の Power Automate フローが生きているか | ⚠️ 未確認（設定者個人の接続に依存・既知のリスク） |
 | pg_cron の登録内容とシークレットの置き換え | ✅ 2026-09-17に確認 |
@@ -4278,9 +4276,8 @@ if (error) throw error;
    件数を絞るもの、insert/update の戻り値の select。`src/lib/supabase/__tests__/rowLimitScan.test.ts` が
    src 配下の全 `.ts`/`.tsx` を走査して検出する（Section 59 に従いコメントを除去してから走査する。
    コメント内に語を書いても無力化されないこと、直書きに戻すと赤くなることを確認済み）。
-3. **Edge Function（`supabase/functions/`）は走査の対象外。** `notify-deadlines` の tasks/projects/members/groups
-   取得は同じ型の単発 select のまま（v3.116時点。Deno側で別途ページングが要る）。デプロイ手順が別のため
-   今回は一覧化のみ。
+3. **Edge Function（`supabase/functions/`）は走査の対象外。** （v3.116時点で一覧化した `notify-deadlines` は
+   v3.136 で削除した。Deno 側のページングは `_shared/fetchAllRows.ts`）
 
 ### 適用範囲（v3.116時点）
 
@@ -4647,7 +4644,10 @@ pg_cron（平日 JST 7:00〜19:30・30分ごと＝26回）── x-cron-secret �
 4. Vercel の環境変数 `VITE_VAPID_PUBLIC_KEY`（prod の公開鍵）→ フロントを main へ（Vercel が再ビルド）
 5. 実機でテスト通知が届くことを確認してから、本番だけ `20261001b_schedule_push_reminders.sql`（シークレットを置き換えて実行）
 
-Teams 週次（notify-deadlines）は新方式の稼働確認（5営業日）まで止めない（設計書 §9）。
+**v3.136（2026-10-07）：Teams 週次（notify-deadlines）は撤去済み**（並行運用5営業日の確認後。設計書 §9 フェーズ4・6）。
+関数・cron・`group_notification_settings`・管理画面の Webhook 欄・PA テンプレート配布・`TEAMS_WEBHOOK_URL` を削除した。
+バックアップ通知の切替（フェーズ5.5）は Section 67「バックアップ通知」。
+🔴 `MIN_CLIENT_VERSION` を 3.136 へ上げた（表の DROP で旧画面の「グループ・部署」タブが読み込みエラーを出し、旧画面の管理者にスキーマ警告バナーが出るため）。
 `MIN_CLIENT_VERSION` は上げていない（既存の列・RLS・Edge Function の入出力を変えていないため）。
 
 ### 独立レビュー対応（feat/web-push ブランチ・2026-10-01・コードはv3.128のまま）
@@ -4678,9 +4678,16 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 | deadline_due_today | 全員 | ○ | ○ | deadline_digest | notify_due_today |
 | mention | 全員 | **非対応**（アプリ内の行を作らない。タブを開いている間のブラウザ通知のみ） | ○ | — | — |
 | client_error | **super_admin** | ○ | ○（30分ごとにまとめて） | client_error | — |
+| backup_failure／backup_weekly_summary（v3.136） | **super_admin** | ○ | ○ | 同名 | — |
 
 - **判定は `isKindEnabled(prefs, kindId, channel)` の1関数**＝チャネルの全体スイッチ（`inapp_enabled`/`push_enabled`）AND 種類×チャネル（`kind_channels`）AND（期限の2種類のみ）v3.128 の旧列。push-reminders（`_shared/reminderLogic.ts` の `buildDigests`）・メンション（`useMentionNotifications`）・エラーのまとめ通知（`_shared/clientErrorDigest.ts`）がこれを使う。`log_client_error`（SQL）だけは既定値を直書きしており、`notificationKinds.test.ts` がマイグレの文面と照合する。
-- **見分け**：`audienceOfInAppKind(kind)`。管理者向けは 🛡「管理者向け」の印と紫（`--color-*-purple`）。バックアップ通知（backup_failure/backup_weekly_summary）は未登録だが管理者向けとして扱う（フェーズ5.5で登録する）。
+- **見分け**：`audienceOfInAppKind(kind)`。管理者向けは 🛡「管理者向け」の印と紫（`--color-*-purple`）。
+
+### バックアップ通知（v3.136・設計書 §6.2・フェーズ5.5）
+
+- レジストリに `backup_failure`（💾）・`backup_weekly_summary`（🗂）を登録（super_admin 向け・既定はアプリ内・Windows ともオン）。in_app の kind は同名で、CHECK 制約は 20261001 から許可済み（マイグレ不要）。
+- `backup-daily` が partial/failed・backup_finalize の失敗・週次サマリ（JST 月曜）で、super_admin（削除済みを除く）へ `in_app_notifications` を書き、Windows は `sendToSubscriptions`。文面と宛先の判定は `_shared/backupNotice.ts`（`src/lib/reminder/__tests__/backupNotice.test.ts`）。
+- 🔴 本文に失敗理由（例外メッセージ）を載せない（理由は `backup_runs.error_message` に伏せ字済みで残る）。通知の失敗はバックアップの成否を左右しない（ログのみ）。クリック先 `/?open=admin-backup`。
 
 ### 個人設定の持ち方（既存の値を壊さない移行）
 

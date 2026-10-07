@@ -164,7 +164,7 @@ pg_cron  'backup-daily'  UTC 18:00（= JST 翌3:00）
          │        → 保持ポリシー評価・削除対象パス一覧を受け取る
          ├─ [5] 削除対象を Storage API で remove し、
          │        🔴 成功したものは backup_objects.deleted_at を now() で更新する
-         └─ [6] failed / partial のとき Teams 通知（§8）
+         └─ [6] failed / partial のとき super_admin へ通知（§8。v3.136 までは Teams）
 ```
 
 ### 3.1 DB 側関数
@@ -513,15 +513,18 @@ CREATE TABLE IF NOT EXISTS backup_exports (           -- 二次保管の報告�
 
 | 事象 | 通知 |
 |---|---|
-| `failed` | **即時 Teams 通知**。`notify-deadlines` と同じ Power Automate 経路・同じ JSON 構造で送る |
-| `partial`（一部の部署だけ失敗） | 即時 Teams 通知 |
+| `failed` | **即時**、super_admin へアプリ内通知＋Windows通知（種類 `backup_failure`。v3.136 で Teams から切替） |
+| `partial`（一部の部署だけ失敗） | 同上 |
 | 一次バックアップの最終成功が24時間以上前 | 管理画面に赤バナー |
 | 二次保管の最終成功が3日以上前 | 管理画面に黄バナー |
-| 週次サマリ | 月曜に1通。成功回数・容量・孤児件数・削除数・二次保管の最終取得日 |
+| 週次サマリ | 月曜に1通（種類 `backup_weekly_summary`・宛先は同上）。成功回数・容量・孤児件数・削除数・二次保管の最終取得日 |
 
 **成功時に何も出さない設計にはしない。** 通知が来ないことが「正常」なのか「ジョブごと死んでいる」のか区別できなくなるため、週次サマリを必ず出す。
 
-**注意：Teams 通知経路そのものが設定者個人の Power Automate 接続に依存している**（[deadline-notifications.md](./deadline-notifications.md)）。Teams が届かなくなる障害とバックアップが止まる障害は同時に起こりうる。**管理画面バナーは Teams に依存しない経路として必ず実装する。**
+**v3.136（2026-10-07）で Teams 通知を撤去した。** 当初は Teams（Power Automate 経由・設定者個人の接続に依存）へ送っていたが、
+super_admin へのアプリ内通知＋Windows通知に切り替えた（[web-push-reminder-design.md](./web-push-reminder-design.md) §6.2）。
+通知の本文に失敗理由は載せない（理由は `backup_runs.error_message` に伏せ字済みで残り、管理画面「バックアップ」で読める）。
+通知の失敗はバックアップの成否を左右しない。**管理画面バナーは通知経路に依存しない経路として引き続き必須。**
 
 ---
 

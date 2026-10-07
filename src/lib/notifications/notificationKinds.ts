@@ -21,6 +21,8 @@ export const NOTIFICATION_KIND_ICON: Record<NotificationKindId, string> = {
   mention: "💬",
   client_error: "🛡",
   admin_message: "📣",
+  backup_failure: "💾",
+  backup_weekly_summary: "🗂",
 };
 
 /** in_app_notifications.kind の CHECK 制約にある値（migrations/20261001e と同じ） */
