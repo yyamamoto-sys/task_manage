@@ -8,7 +8,8 @@
 > 業務領域ごとに境界を引く＝**ドメイン駆動設計（DDD）／モジュラーモノリス**。
 > 目標は **高凝集・低結合**（1モジュールの中身は関連が強く、モジュール間の依存は弱く）。
 >
-> 最終更新：2026-07-22（H グラフ・ラボビューに`CalendarLabView`/`ProjectStructureView`を追加登録。
+> 最終更新：2026-10-08（D OKRを個人OKR中心に書き直し・巡回対象に復帰。J プロジェクト招待を新設＝M43）。
+> 前回：2026-07-22（H グラフ・ラボビューに`CalendarLabView`/`ProjectStructureView`を追加登録。
 > 旧「H グラフ（ラボ）」時代はD OKR以外のラボ系ファイルの置き場が地図に無く、巡回台帳・v2.74横展開の
 > 対象からも漏れていた実バグの再発防止。経緯はCLAUDE.md v2.77参照）。
 > 旧履歴：2026-07-21（v2.28〜v2.72の新規ファイル群を反映）。機能追加のたびに更新すること。
@@ -28,6 +29,7 @@
 │  ② 機能モジュール (Features) — 業務領域ごと                         │
 │   A 計画ビュー   B AI相談   C 会議読み込み   D OKR                  │
 │   E PJ別AI分析   F 管理/設定  G オンボーディング  H グラフ  I 通知   │
+│   J プロジェクト招待                                                 │
 │   ※ 機能どうしは原則 直接依存しない（連携はデータ基盤を介す）       │
 └───────────────────────────────┬────────────────────────────────────┘
                                 │ すべて下の土台に乗る（依存は下向きのみ）
@@ -61,12 +63,13 @@ flowchart TD
     A["A 計画ビュー\ndashboard/gantt/kanban/list/task/milestone"]
     B["B AI相談\nconsultation + lib/ai(consult)"]
     C["C 会議読み込み\nmeeting"]
-    D["D OKR\nokr/lab + lib/ai(kr) + lib/okr"]
+    D["D OKR（個人OKR）\nokr/personal + lib/personalOkr"]
     E["E PJ別AI分析\nprojectAnalysis"]
     F["F 管理/設定\nadmin"]
     G["G オンボーディング\ntour/guide/docs"]
     H["H グラフ・ラボビュー\ngraph + lab(Calendar/Structure)"]
-    I["I 通知\nuseDeadlineNotifications"]
+    I["I 通知\nnotifications/reminder"]
+    J["J プロジェクト招待\nprojectInvite"]
   end
 
   subgraph FOUND["③ 共通基盤"]
@@ -76,12 +79,12 @@ flowchart TD
     UTIL["ユーティリティ/フック\nlib/* hooks/*"]
   end
 
-  APP --> A & B & C & D & E & F & G & H & I
+  APP --> A & B & C & D & E & F & G & H & I & J
   AUTH --> DATA
-  A & B & C & D & E & F & G & H & I --> DATA
+  A & B & C & D & E & F & G & H & I & J --> DATA
   B & C & D & E & F --> AIGW
   A & B & C & D & F & G --> UI
-  A & B & C & D & E & F & G & H & I --> UTIL
+  A & B & C & D & E & F & G & H & I & J --> UTIL
   B -. 再利用(例外) .-> A
 ```
 
@@ -101,12 +104,13 @@ flowchart TD
 | **A** | **計画ビュー** | PJ・タスク・マイルストーンの閲覧/編集（ダッシュボード/ガント/カンバン/リスト/タスク編集/マイルストーン/ワークロード/タスク依存関係/ベースライン差分） | `components/dashboard/*`（`DueForecastChart`/`VelocityChart`含む） / `gantt/{GanttView,GanttParts,GanttMobileView,ganttUtils,ganttDependencyArrows,GanttShortcutsPanel}` / `kanban/KanbanView` / `list/{ListView,ListToolbar}`（v3.114・ListToolbarはツールバー1段化での切り出し） / `task/{TaskEditModal,QuickAddTaskModal,TaskSidePanel,taskEditPayload,DuplicateTasksModal}`（DuplicateTasksModalはv3.72・選択タスクの複製） / `milestone/*` / `workload/{WorkloadView,MemberDetailPanel}`（v2.28/v2.30・メンバー別負荷とドリルダウン） / `lib/dependencies/{cycleCheck,gate,reschedule,linkDirection,topoSort}`（v2.29/v2.36・依存ゲート＋自動リスケ連鎖。topoSortはv3.77・AI提案の複数タスク日程反映の順序解決） / `lib/baseline/baselineCapture`（v2.32・ベースライン捕捉） / `lib/gantt/{criticalPath,overload}`（クリティカルパス・過負荷判定） / `lib/workload/computeWorkload` / `lib/{kanbanOrder,kanbanWip,selectionRange}`（カンバン順序/WIP制限・複数選択レンジ） / `lib/list/groupSummary`（list/kanban共有のグループ集計） / `lib/computeDueForecast` / `lib/computeWeeklyVelocity` / `lib/task/{selectionWithChildren,nameOrder}`（v3.108・親子選択＋番号順ソート。List/Kanban/Gantt共有） / `hooks/useBulkTaskActions`（List/Kanban共有の一括操作） | データ基盤, 共通UI, `lib/okr`, `lib/taskHierarchy` |
 | **B** | **AI相談** | チャットで相談 / PJ・タスク登録 / タスク階層化 / 提案の反映・Undo | `components/consultation/*` / `hooks/useAIConsultation` / `stores/consultSessionStore` / `lib/ai/{payloadBuilder,systemPrompt,responseParser,proposalMapper,applyProposal,inferConsultationType,sessionManager,undoApply,chatHistoryStorage,consultationRunner,bulkEditPlan}` / `hooks/useUndoStack` | AI基盤, データ基盤, （例外）A |
 | **C** | **会議読み込み** | 議事メモ/VTT/Word/PDFからタスク抽出→登録 | `components/meeting/MeetingImportPanel` / `lib/ai/meetingExtractor` / `lib/docxText` | AI基盤, データ基盤 |
-| **D** | **OKR** | 現在は個人OKR（`components/okr/personal/*`）のみ稼働。旧・週次サイクル（①会議ノート→②セッション&分析→③レポート）/ なぜなぜ / クォーター計画は**2026-08-10にグループ側を白紙化・アーカイブ済み**（`components/okr/ARCHIVED.md`参照。ファイルは削除せず保管） | `components/okr/*` / `components/lab/{KrJointSessionFlow,KrReportPanel,KrWhyPanel,KrQuarterPlanPanel}`（アーカイブ済み） / `lib/ai/{krSessionExtractor,krReportClient,krReportPrompt,krWhyClient,krQuarterPlanClient,krQuarterPlanPrompt,okrKrAnalysisClient,okrObjectiveAnalysisClient}` / `lib/supabase/{krSessionStore,krMeetingNoteStore,krReportStore,okrAnalysisStore,quarterPlanStore}` / `lib/okr/*` | AI基盤, データ基盤 |
+| **D** | **OKR** | 個人OKR（OKRモード）：個人の四半期KR・月次計画・週の目標状態・自己評価・実施記録・振り返り・「全体」タブ・Kintone取込・AIの見立て／AIパネル／計画・振り返りの下書き。**巡回対象は個人OKRのみ。** 旧グループ側（①会議ノート→②セッション&分析→③レポート・なぜなぜ・クォーター計画）は2026-08-10にアーカイブ済みで巡回対象外（`components/okr/ARCHIVED.md`。`components/okr/{GroupOkrDashboardArchived,KrMeetingNotePanel,OkrKrAnalysisPanel}`・`components/lab/{KrJointSessionFlow,KrReportPanel,KrWhyPanel,KrQuarterPlanPanel}`・`lib/ai/kr*`・`lib/ai/okr{Kr,Objective}AnalysisClient`・`lib/supabase/{krSessionStore,krMeetingNoteStore,krReportStore,okrAnalysisStore,quarterPlanStore}`） | `components/okr/personal/*`（16ファイル） / `components/okr/{OkrDashboardView,OkrModeIntroModal}`（入口） / `lib/personalOkr/*`（34ファイル） / `stores/personalOkrUiStore` / `lib/supabase/personalOkrStore` / `lib/ai/{personalOkrImportExtractor,personalOkrOutlookExtractor,personalOkrChatClient,personalOkrChatPrompt,personalOkrReviewDraftExtractor,personalOkrPlanDraftExtractor,personalOkrPeriodReviewDraftExtractor,weeklyOptionalNotice,actualWorkNotice}` / `lib/okr/okrModeGate` / `lib/demo/personalOkrDataset`（ゲスト・ツアー用サンプル）。共有ヘルパー `lib/okr/{deptScope,tfQuarter,eligibleTaskForces,okrImportMatch}` はグループOKR構造（Objective/KR/TF）の現役部品で、計画ビュー・管理設定からも使う | AI基盤, データ基盤 |
 | **E** | **PJ別AI分析** | 1つのPJの健全性をAI分析（プロジェクトカルテから起動）／全PJ横断のポートフォリオ分析 | `lib/ai/{projectAnalysisClient,allProjectsAnalysisClient}` / `lib/supabase/projectAnalysisStore`（UIは `dashboard/ProjectKarte`・`dashboard/DashboardView`） | AI基盤, データ基盤 |
 | **F** | **管理・設定** | メンバー/Objective/KR/TF/PJ/タグ/AI使用量の管理・ToDo分解（左ナビ＋カテゴリ構成・Danger Zone隔離） | `components/admin/{AdminView,TodoDecomposeModal}` / `lib/ai/todoDecomposeClient` / `lib/dangerZoneConfirm`（`common/DangerZone`と対） | データ基盤, AI基盤, 共通UI |
 | **G** | **オンボーディング** | ツアー / 📖ガイド / `?`ヘルプ（docs/guides を表示） | `components/tour/*` / `components/guide/*` / `lib/docs/*` / `docs/guides/**` | 共通UI, データ基盤 |
 | **H** | **グラフ・ラボビュー** | 関係性グラフの可視化（Canvas物理シミュ）／カレンダー（月間・印刷報告用）／PJ構造（役割・層・グループの可視化編集）。いずれもD OKR以外の「ラボ機能（プロトタイプ）」の受け皿（2026-07-22・`CalendarLabView`/`ProjectStructureView`をD OKR専用ファイルと切り分けて本ユニットに追加登録。従来`components/lab/`配下という理由だけでD OKRと同一視され、v2.74ステータス拡張の横展開・巡回台帳の対象からも漏れていた実バグの再発防止） | `components/graph/GraphView` / `components/lab/{CalendarLabView,ProjectStructureView}` | データ基盤 |
 | **I** | **通知** | 期限リマインド・管理者向け通知（Web Push＋アプリ内通知）・バックアップ通知。Teams 通知は v3.136 で撤去 | `supabase/functions/push-reminders` / `supabase/functions/_shared/{webPush,notificationKinds,backupNotice}` / `components/notifications/*` / `lib/notifications/*` / `lib/reminder/*` | データ基盤 |
+| **J** | **プロジェクト招待** | 社内の別部署の人を特定のPJ1件に招待する（発行・一覧・取り消し・受諾）。PJごとの招待用部署（`groups.is_invite_group`）を既存の `group_ids` に乗せる方式。認証・入口（ログイン画面の招待フォーム・`AccessDeniedScreen`・`App.tsx` の自動受諾とログイン済みURL受諾）とF管理・設定（`AdminView` の「プロジェクト招待」タブ・`ProjectSettingsModal` の「招待」タブ）にまたがる横断機能のため独立行にした。**正本：CLAUDE.md Section 25**（関連：Section 33・40・41）／`docs/dev/project-invite-plan.md` | `components/project/AcceptInviteModal`（手入力の受諾） / 発行UIは `components/project/ProjectSettingsModal`（招待タブ）・`components/admin/AdminView`（`InvitesSection`） / `lib/projectInvite/{inviteRules,inviteStatus,inviteUrl,loggedInInviteFlow,memberDefaults,pendingInvite,sidebarGroupVisibility}` / `lib/supabase/projectInviteStore` / `lib/admin/guestMembers`（招待受諾者の判定）。DB：表 `project_invites`・列 `groups.is_invite_group`／RPC `create_project_invite`・`accept_project_invite`・`revoke_project_invite`／RLSヘルパー `visible_invite_group_ids`・`visible_project_member_ids`・`project_normal_group_ids`／トリガー `verify_project_group_ids`・`guard_member_privilege_columns`（招待用部署の兼務付与分岐）。マイグレ：`20260810_add_project_invites`・`20260810b_add_revoke_project_invite`・`20260810c_extend_members_visibility_for_invites`・`20260812_accept_invite_for_existing_member`・`20260818_harden_invite_related_rls`・`20260819d_optimize_visible_project_member_ids` | データ基盤, 認証・入口, F |
 
 ### ③ 共通基盤 (Foundation)
 | モジュール | 責務 | 主なファイル |

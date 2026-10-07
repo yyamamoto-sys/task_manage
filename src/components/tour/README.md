@@ -6,7 +6,7 @@
 ## このモジュールに含まれるもの
 | 場所 | 役割 |
 |---|---|
-| `components/tour/TourProvider.tsx` | ツアー実行エンジン（暗幕・吹き出し・完了フラグ `tour_completed_v1`） |
+| `components/tour/TourProvider.tsx` | ツアー実行エンジン（暗幕・吹き出し・完了フラグはメンバーID別 `tour_completed_v1:<memberId>`。キーと旧キーの引き継ぎは `tourCompletion.ts`） |
 | `components/tour/tours/first-time.ts` | ツアー本文（ステップ定義） |
 | `components/guide/GuideModeView.tsx` | 📖ガイド本体（`docs/guides/**` を描画） |
 | `components/guide/HelpButton.tsx` / `GuideOverlay.tsx` | 各画面の `?` ボタン |

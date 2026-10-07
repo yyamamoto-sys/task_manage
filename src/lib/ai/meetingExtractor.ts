@@ -175,7 +175,26 @@ function parseJsonSafe<T>(text: string): T {
   return JSON.parse(cleaned) as T;
 }
 
-function validateAnalysis(data: unknown): MeetingAnalysis {
+/** 実在する YYYY-MM-DD だけを通す。Postgres は "2026/10/8" 等も緩く解釈して保存してしまうため、ここで落とす */
+export function toIsoDateOrNull(v: unknown): string | null {
+  if (typeof v !== "string") return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  if (!m) return null;
+  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
+  const dt = new Date(Date.UTC(y, mo - 1, d));
+  if (dt.getUTCFullYear() !== y || dt.getUTCMonth() !== mo - 1 || dt.getUTCDate() !== d) return null;
+  return v;
+}
+
+const PRIORITIES = ["high", "mid", "low"] as const;
+const STATUSES = ["todo", "in_progress", "done", "on_hold", "cancelled"] as const;
+
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const strOrNull = (v: unknown): string | null => (typeof v === "string" && v ? v : null);
+const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object";
+
+/** AI出力を確認画面とDBへ渡せる形に整える。不正な値は空にし、人が確認画面で入れる */
+export function validateAnalysis(data: unknown): MeetingAnalysis {
   if (!data || typeof data !== "object") throw new Error("AIレスポンスが不正な形式です。");
   const d = data as Record<string, unknown>;
   if (typeof d.summary !== "string") throw new Error("summaryが取得できませんでした。");
@@ -183,7 +202,37 @@ function validateAnalysis(data: unknown): MeetingAnalysis {
   if (!Array.isArray(d.status_updates)) throw new Error("status_updatesが取得できませんでした。");
   if (!Array.isArray(d.decisions)) throw new Error("decisionsが取得できませんでした。");
   if (!Array.isArray(d.risks)) throw new Error("risksが取得できませんでした。");
-  return d as unknown as MeetingAnalysis;
+
+  const new_tasks: MeetingTask[] = d.new_tasks
+    .filter((t): t is Record<string, unknown> => isObj(t) && typeof t.name === "string" && t.name.trim() !== "")
+    .map(t => ({
+      name: t.name as string,
+      assignee_short_name: strOrNull(t.assignee_short_name),
+      start_date: toIsoDateOrNull(t.start_date),
+      due_date: toIsoDateOrNull(t.due_date),
+      project_hint: strOrNull(t.project_hint),
+      priority: (PRIORITIES as readonly unknown[]).includes(t.priority) ? (t.priority as MeetingTask["priority"]) : null,
+      source_quote: str(t.source_quote),
+    }));
+
+  // new_status が5値以外の候補は保存すると CHECK 制約で落ちるだけなので、候補ごと除く
+  const status_updates: MeetingStatusUpdate[] = d.status_updates
+    .filter((u): u is Record<string, unknown> => isObj(u) && (STATUSES as readonly unknown[]).includes(u.new_status))
+    .map(u => ({
+      task_name_hint: str(u.task_name_hint),
+      suggested_task_id: strOrNull(u.suggested_task_id),
+      new_status: u.new_status as MeetingStatusUpdate["new_status"],
+      reason: str(u.reason),
+      source_quote: str(u.source_quote),
+    }));
+
+  return {
+    summary: d.summary,
+    new_tasks,
+    status_updates,
+    decisions: d.decisions.filter((x): x is string => typeof x === "string"),
+    risks: d.risks.filter((x): x is string => typeof x === "string"),
+  };
 }
 
 export async function extractMeetingData(params: ExtractMeetingParams): Promise<MeetingAnalysis> {

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.137
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.138
 #
-最終更新：2026-10-07（v3.137）
+最終更新：2026-10-08（v3.138）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -1896,7 +1896,7 @@ Phase 1（`src/lib/guestMode.ts`）で作った「ゲスト」は、実際には
 
 ### ゲストのオンボーディングツアー（v3.32・破綻を解消）
 
-`TourProvider` は `MainLayout` の内側にあり、ゲストの描画経路（`App.tsx` の `guestActive` 分岐 → `MainLayout`）も通るため、ツアー機能自体はゲストでも動く。完了フラグは `localStorage`（`tour_completed_v1`）のためSupabase非接触の設計とも衝突しない。一方、ツアー定義（`first-time.ts`）はログイン済みの実ユーザーを前提に書かれており、そのままゲストに出すと2つの実害があった。
+`TourProvider` は `MainLayout` の内側にあり、ゲストの描画経路（`App.tsx` の `guestActive` 分岐 → `MainLayout`）も通るため、ツアー機能自体はゲストでも動く。完了フラグは `localStorage`（v3.138以降はメンバーID別の `tour_completed_v1:<memberId>`。ゲストは固定の `tour_completed_v1:guest`。Section 65）のためSupabase非接触の設計とも衝突しない。一方、ツアー定義（`first-time.ts`）はログイン済みの実ユーザーを前提に書かれており、そのままゲストに出すと2つの実害があった。
 
 - **`fab` ステップ**：右下＋ボタン（FAB）の説明だが、ゲストではFABが非表示。`target` を持たない中央表示ステップのため `skipIfMissing` が効かず（`TourProvider.tsx` の `findTarget` は `target` 未指定なら常に `null` を返す＝`skipIfMissing` はターゲット付きステップにしか意味を持たない）、「存在しないボタン」の説明がそのまま出てしまっていた。
 - **`ai-consult-demo` ステップ**：`action: "demo-ai-consult"` で実際にAI相談を1回送信する実演。ゲストのAI利用は1日3回（Section 23上部参照）のため、ツアーを最後まで見るだけで枠を1回消費してしまっていた。
@@ -2229,7 +2229,7 @@ Step Gで空けておいた「AIが必要な部分」を実装した。`personal
 山本さんの依頼：「OKRモードを初めて選択した人には、OKRのガイドツアーを開始するようにしたい」「KRは基本的にOKRモードから登録する導線にしたいので、未設定の人に見せる前提で組んでほしい。ただし何も設定されていない画面では説明しようにも表示されないパラメータがあるため、サンプルデータを表示してイメージを実感してもらいたい」。
 
 - **一行で言うと**：新しいツアー`okr-intro`（`src/components/tour/tours/okr-intro.ts`）を追加した。OKRモードを初めて開いたときに自動で始まり、対象期にKRが0本なら実データの代わりにv3.67のサンプル（`src/lib/demo/personalOkrDataset.ts`）を読み取り専用で差し込んで案内する。
-- **起動口は1箇所（`PersonalOkrView.tsx`のマウント時useEffect）**：既存の初回ゲート（`OkrModeIntroModal`の承認・Section 19 ⑥）とゲストの直接入室（Section 23）は、どちらも最終的に`appMode`が`"okr"`になり`PersonalOkrView`がマウントされる点で合流する。この合流点に`if (!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)) tour.start(OKR_TOUR_ID)`を1つ置くだけで、「ゲートの承認直後」「ゲストの直接入室」の両方を1つのコードパスで満たせる（`MainLayout.tsx`側の2つの入口それぞれにツアー開始コードを重複させない）。完了・スキップは`firstTimeTour`と同じ`localStorage`（`tour_completed_v1`）で管理され、一度でも終了/スキップすれば以後は自動再生されない。
+- **起動口は1箇所（`PersonalOkrView.tsx`のマウント時useEffect）**：既存の初回ゲート（`OkrModeIntroModal`の承認・Section 19 ⑥）とゲストの直接入室（Section 23）は、どちらも最終的に`appMode`が`"okr"`になり`PersonalOkrView`がマウントされる点で合流する。この合流点に`if (!tour.isRunning && !tour.isCompleted(OKR_TOUR_ID)) tour.start(OKR_TOUR_ID)`を1つ置くだけで、「ゲートの承認直後」「ゲストの直接入室」の両方を1つのコードパスで満たせる（`MainLayout.tsx`側の2つの入口それぞれにツアー開始コードを重複させない）。完了・スキップは`firstTimeTour`と同じ`localStorage`（v3.138以降はメンバーID別の`tour_completed_v1:<memberId>`。Section 65）で管理され、一度でも終了/スキップすれば以後は自動再生されない。
 - **再生導線**：`TourProvider`の`TourContextValue`に`activeTourId: string | null`を追加した（「今動いているのはOKRツアーか」をコンポーネント側が区別するために必要）。ガイド（`GuideModeView.tsx`の`GuideHome`）は`TOUR_LIST[0]`（主要ツアー）を大きな導線のまま維持し、`TOUR_LIST.slice(1)`（OKRツアー等）を「ほかのツアー」として小さめのカードで並べ、いつでも見直せるようにした。
 - **🔴🔴 サンプル差し込みは読み取り専用（保存経路を完全に塞ぐ）**：判定は`src/lib/personalOkr/tourPreviewSample.ts`の`shouldInjectOkrTourPreviewSample(isOkrTourRunning, activeKrCountInPeriod)`（純粋関数・テスト有）1点＝「OKRツアー実行中か」×「対象期のKRが0本か」だけで行う。既にKRがある人（ゲスト含む。ゲストはv3.67で既にサンプルKRが実データとして注入済みのため、この条件だけで自然に「二重差し込みしない」が成立する）はその人の実データで案内する。
   - サンプル本体は`buildDemoPersonalOkrDataset()`（v3.67と同一・新規サンプルは作らない）を`PersonalOkrView.tsx`から**動的importでのみ**読み込む（`personalOkrDataset.test.ts`が静的import禁止を機械検査するため）。週カードの遅延・先行待ちバッジを再現するため、`dataset.ts`（グループOKR側サンプル）の`tasks`/`taskDependencies`も同時に動的importし、`tasks`/`taskDependencies`propとして実データの代わりに渡す。
@@ -4576,9 +4576,17 @@ OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根
 
 - Web Push の本実装（`docs/dev/web-push-reminder-design.md`）はこの後に行う。設計書の「通知設定モーダル」は
   このページの通知タブに置き換える。
-- ツアー既読 `tour_completed_v1` はメンバーIDで分かれていない（同じブラウザの別アカウントで共有）。直さず
-  `docs/REFACTORING.md` M47 に記録した。
+- ~~ツアー既読 `tour_completed_v1` はメンバーIDで分かれていない（同じブラウザの別アカウントで共有）。直さず
+  `docs/REFACTORING.md` M47 に記録した。~~ → **v3.138（2026-10-08）で解消。** 下記「ツアー既読のメンバーID別化」参照。
 - `MIN_CLIENT_VERSION` は上げていない（DB・RLS・Edge Function・localStorage の形式に非互換な変更は無い）。
+
+### ツアー既読のメンバーID別化（v3.138・2026-10-08・M47）
+
+- キーは `tour_completed_v1:<memberId>`、ゲストは固定の `tour_completed_v1:guest`。判定と移行は `src/components/tour/tourCompletion.ts`（純粋関数。localStorage はテスト環境に無いため、読み書きは引数で受け取る）。`TourProvider` は `memberId` prop（必須）を受け取り、`MainLayout` が `currentUser.id` を渡す。
+- **旧キーの移行**：あるメンバーの新キーが無く旧キー `tour_completed_v1` があるときだけ、旧キーの内容をそのメンバーの新キーへ写してから旧キーを削除する（更新後に最初に開いた人だけが引き継ぐ＝自分専用PCの既存利用者に再表示しない／共用PCの2人目以降には初回ツアーが出る）。ゲストは引き継がない（実利用者の既読を奪わないため）。
+- **memberId が未確定の間**は既読扱い（自動開始しない）・既読を書かない。localStorage が例外を投げる環境でも既読扱い。
+- 「ツアーをやり直す」（本ページ「困ったとき」）は `tour.start()` を呼ぶだけでキーに依存しない。既読はデータ扱いのまま `DISPLAY_SETTING_KEYS` に入れない（`settings.test.ts` の保護キーに新キー2形式を追加）。
+- `MIN_CLIENT_VERSION` は上げていない：開いたままの旧画面は旧キーが消えても「未読」と読むだけで壊れない（MainLayout が再マウントされたときに案内がもう一度出る程度）。
 
 ---
 

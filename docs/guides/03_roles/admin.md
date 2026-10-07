@@ -3,14 +3,14 @@ title: 管理者ガイド
 audience: [admin]
 mode: role.admin
 order: 3
-last_updated: 2026-07-22
+last_updated: 2026-10-08
 owner: yamamoto
 related: [admin.objective-kr-tf, admin.departments-members]
 ---
 
 # 管理者ガイド
 
-管理者は、plan-app の**前提となる構造**を整える人です。Objective・KR・TF・メンバー登録、クォーターの TF 割り当てなど、業務メンバーが OKR サイクルに集中できるように下ごしらえします。
+管理者は、plan-app の**前提となる構造**を整える人です。Objective・KR・TF・メンバー登録、クォーターの TF 割り当てなど、業務メンバーがタスク・プロジェクトの運用に集中できるように下ごしらえします。
 
 ## 主な担当領域
 
@@ -35,12 +35,13 @@ related: [admin.objective-kr-tf, admin.departments-members]
 
 ## クォーター切替時にやること
 
-1. KR代表に **クォーター計画**機能で次QのTF案を出してもらう
-2. 案をレビューして TF を確定
-3. 設定 → タスクフォース で**次Qのクォータータブ**に切り替え、継続するTFは「移動」、新設するTFは次Qのタブのまま新規作成
-4. 必要に応じて TF メンバーを更新
+1. KR ごとに次QのTF構成（継続／変更／廃止／新設）を決める
+2. 設定 → タスクフォース で**次Qのクォータータブ**に切り替え、継続するTFは「移動」、新設するTFは次Qのタブのまま新規作成
+3. 必要に応じて TF リーダーを更新
 
-TFのクォーターが未設定（前Qのまま等）だと、会議ノートで対象外の Q の TF まで表示されて混乱の元になります。**期初までに必ず次Qへの移動・新設を完了**してください。
+タスクのタスクフォース欄・ダッシュボードの KR 別表示・AI相談に渡す TF は、対象クォーターに属する TF だけを出します。次Qへの移動・新設が済んでいないと、翌Qに入った時点でそれらから TF が消えます。**翌Qの初日までに必ず次Qへの移動・新設を完了**してください。
+
+→ 詳細： [四半期切替の手順](../04_workflows/quarter-rollover.md)
 
 ## メンバー追加・削除
 
@@ -63,7 +64,8 @@ TFのクォーターが未設定（前Qのまま等）だと、会議ノート�
 - Supabase の owner / service_role キーは**山本さんと管理者しか持たない**
 - メンバーは Data API（supabase-js）経由で `authenticated` ロールでアクセス
 - `members` / `projects` / `tasks` / `groups` / `task_dependencies` は部署（グループ）単位でRLS分離済み。他部署のデータは見えない（[新しい部署・メンバーを追加する](../05_admin/departments-and-members.md)参照）
-- それ以外のOKR系テーブル（objectives/key_results/task_forces/todos等）は現状 `authenticated full access`（部署分離は未対応・今後対応予定）
+- OKR系テーブルも部署単位でRLS分離済みです（objectives/key_results/task_forces/todos は 2026-07-24、その周辺の8テーブルは 2026-09-28）。メンバータグ（member_tags）は全社共通のマスタのため部署で分けず、登録済みのメンバーだけが読み書きできます
+- 個人OKRのテーブルは本人だけが読み書きできます
 
 ## トラブル対応
 

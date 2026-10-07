@@ -3,7 +3,7 @@ title: ダッシュボード
 audience: [all, member, kr-rep]
 mode: dashboard.main
 order: 1
-last_updated: 2026-05-15
+last_updated: 2026-10-08
 owner: yamamoto
 related: [guide.overview, role.admin]
 ---
@@ -45,4 +45,3 @@ ProjectKarte の **「AI分析」** ボタンで、そのPJの直近状況を AI
 ## 関連
 
 - [全体像（5分）](../00_overview.md)
-- [週次運用リズム](../04_workflows/weekly-rhythm.md)

@@ -8059,4 +8059,26 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   本番には該当者がいない（非 super_admin の兼務管理者0名・管理者不在の通常部署0件。2026-10-07 確認）。
 # * 適用順：dev でマイグレ → 検証 SQL → prod でマイグレ → 検証 SQL → フロントを main へ。
 
-最終更新：2026-10-07（v3.137）
+# v3.138（2026-10-08）：巡回台帳の判断待ち課題を片付ける（M43・M44・M45・M47 を修正、M18・M38・M39・M40・M46 をクローズ、D OKR を巡回対象に戻す）
+#
+# * 山本さんの決定（2026-10-08）に基づく。台帳 docs/REFACTORING.md の「記録（2026-10-08）」節と各M行が正本。
+# * M44：src/lib/ai/meetingExtractor.ts の validateAnalysis() を export し、項目ごとに安全な値へ整える純粋関数にした。
+#   new_tasks[].start_date / due_date は実在する YYYY-MM-DD 以外を null（toIsoDateOrNull 新設。Postgres が緩く解釈して誤った日付を保存するのを防ぐ）。
+#   priority は high/mid/low 以外を null、status_updates[].new_status が5値以外の候補は除外、名前の無い new_tasks・非オブジェクト要素は除外、
+#   文字列項目は文字列以外を空/null、decisions/risks は文字列のみ。テスト meetingExtractorValidate.test.ts（修正前のコードで6件赤を確認）。
+#   報告のみ：suggested_task_id が既存タスクに無いIDでも候補は残り、反映時に黙ってスキップされる（DBへは送られないため変えていない）。
+# * M47：ツアー既読を tour_completed_v1:<memberId>（ゲストは tour_completed_v1:guest）へ分けた。src/components/tour/tourCompletion.ts（純粋関数・
+#   Storage を注入）。新キーが無く旧キー tour_completed_v1 があるメンバーは、旧キーを自分の新キーへ写して旧キーを削除（最初に開いた人だけが引き継ぐ）。
+#   ゲストは引き継がない。memberId 未確定なら既読扱い（自動開始しない）・書き込まない。TourProvider に memberId prop（必須）を追加し MainLayout が渡す。
+#   localStorage 例外時は既読扱い。DISPLAY_SETTING_KEYS には入れない（settings.test.ts の保護キーに新キー2形式を追加）。
+#   テスト tourCompletion.test.ts（共有キーの旧挙動に戻すと4件赤を確認）。
+# * M45：docs/guides の非アーカイブ7ファイル（＋02_modes/dashboard.md のリンク1件）から廃止済みOKR週次サイクル前提の記述を削除・修正。
+#   TF四半期割り当ては現役のため残し、効く場所（タスク追加・編集のタスクフォース欄／ダッシュボードのKR別表示／AI相談に渡すTF）に合わせた。
+# * M43：docs/dev/module-map.md に「J プロジェクト招待」行を新設（AcceptInviteModal・lib/projectInvite/*・projectInviteStore・DB表/RPC/RLSヘルパー/トリガー・
+#   マイグレ6本・正本 Section 25）。D 行を個人OKR中心に書き直し（アーカイブ済みグループ側は対象外と明記）、依存図にも J を追加。
+# * M18・M38（Teams 通知の撤去で消滅）、M39・M40・M46（現状維持）をクローズ。D OKR を巡回対象に戻し、最終点検日は未点検扱い（約11,684行・2026-10-08実測）。
+# * MIN_CLIENT_VERSION は上げない：localStorage のキー形式は変わるが、旧画面は旧キーが消えても「未読」と読むだけで壊れない
+#   （開いたままの旧画面で MainLayout が再マウントされたときにツアーの案内がもう一度出る程度。再読み込みすれば新画面になる）。DB・RLS・Edge Function は変更なし。
+# * マイグレーションなし。
+
+最終更新：2026-10-08（v3.138）

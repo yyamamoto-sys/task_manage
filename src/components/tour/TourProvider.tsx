@@ -13,6 +13,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Tour, TourStep } from "./tours/types";
+import { isTourCompleted, markTourCompleted } from "./tourCompletion";
 
 interface TourContextValue {
   /** 指定 id のツアーを開始（既完了でも呼べば再生される） */
@@ -22,7 +23,7 @@ interface TourContextValue {
   /** ツアーを開始せずに「完了済み」フラグだけ立てる（招待ダイアログのスキップ用）。
    *  end() は activeTour が無いと何も保存しないため、招待段階のスキップではこちらを使う。 */
   markCompleted: (tourId: string) => void;
-  /** 指定ツアーが localStorage 上で完了済みか */
+  /** 指定ツアーがこのメンバーの既読として localStorage にあるか（メンバーID未確定なら true） */
   isCompleted: (tourId: string) => boolean;
   /** ツアーが進行中か */
   isRunning: boolean;
@@ -39,23 +40,23 @@ export function useTour(): TourContextValue {
   return ctx;
 }
 
-const LS_KEY = "tour_completed_v1";
-
-function loadCompleted(): Record<string, true> {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) ?? "{}") as Record<string, true>; }
-  catch { return {}; }
+// 既読はメンバーID別（tourCompletion.ts）。localStorage が使えない環境では既読扱いにして自動開始しない
+function safeIsCompleted(memberId: string | null, tourId: string): boolean {
+  try { return isTourCompleted(localStorage, memberId, tourId); } catch { return true; }
 }
 
-function saveCompleted(map: Record<string, true>) {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(map)); } catch { /* ignore */ }
+function safeMarkCompleted(memberId: string | null, tourId: string) {
+  try { markTourCompleted(localStorage, memberId, tourId); } catch { /* ignore */ }
 }
 
 interface Props {
   tours: Record<string, Tour>;  // tours/index.ts から渡す
+  /** ログイン中のメンバーID（ゲストは GUEST_MEMBER_ID）。未確定なら null＝既読扱い・既読を書かない */
+  memberId: string | null;
   children: ReactNode;
 }
 
-export function TourProvider({ tours, children }: Props) {
+export function TourProvider({ tours, memberId, children }: Props) {
   const [activeTourId, setActiveTourId] = useState<string | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [targetRect, setTargetRect] = useState<DOMRect | null>(null);
@@ -118,13 +119,11 @@ export function TourProvider({ tours, children }: Props) {
   // ステップ範囲外なら終了
   useEffect(() => {
     if (activeTour && stepIdx >= activeTour.steps.length) {
-      const map = loadCompleted();
-      map[activeTour.id] = true;
-      saveCompleted(map);
+      safeMarkCompleted(memberId, activeTour.id);
       setActiveTourId(null);
       setStepIdx(0);
     }
-  }, [activeTour, stepIdx]);
+  }, [activeTour, stepIdx, memberId]);
 
   const start = useCallback((tourId: string) => {
     if (!tours[tourId]) {
@@ -136,22 +135,14 @@ export function TourProvider({ tours, children }: Props) {
   }, [tours]);
 
   const end = useCallback(() => {
-    if (activeTour) {
-      const map = loadCompleted();
-      map[activeTour.id] = true;
-      saveCompleted(map);
-    }
+    if (activeTour) safeMarkCompleted(memberId, activeTour.id);
     setActiveTourId(null);
     setStepIdx(0);
-  }, [activeTour]);
+  }, [activeTour, memberId]);
 
-  const markCompleted = useCallback((tourId: string) => {
-    const map = loadCompleted();
-    map[tourId] = true;
-    saveCompleted(map);
-  }, []);
+  const markCompleted = useCallback((tourId: string) => safeMarkCompleted(memberId, tourId), [memberId]);
 
-  const isCompleted = useCallback((tourId: string) => !!loadCompleted()[tourId], []);
+  const isCompleted = useCallback((tourId: string) => safeIsCompleted(memberId, tourId), [memberId]);
 
   const value = useMemo<TourContextValue>(() => ({
     start, end, markCompleted, isCompleted, isRunning: !!activeTour, activeTourId: activeTourId,

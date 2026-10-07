@@ -28,6 +28,8 @@ const PROTECTED_KEYS = [
   LS_KEY.krWhySummary("kr1"),
   LS_KEY.quarterPlan("kr1", "2026Q4"),
   "tour_completed_v1",
+  "tour_completed_v1:m1",
+  "tour_completed_v1:guest",
   "cal_note_text",
   "structure_org_v2",
 ];

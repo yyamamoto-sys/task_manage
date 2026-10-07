@@ -184,7 +184,7 @@ export function MainLayout(props: Props) {
     [props.currentUser]
   );
   return (
-    <TourProvider tours={tours}>
+    <TourProvider tours={tours} memberId={props.currentUser.id || null}>
       <MainLayoutInner {...props} />
     </TourProvider>
   );
