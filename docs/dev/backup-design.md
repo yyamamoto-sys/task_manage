@@ -194,6 +194,8 @@ CONTEXT: PL/pgSQL function public.backup_snapshot(...) line 24 at EXECUTE
 
 🔴 **この前提を壊さないこと**：テーブル群の取得を複数の SQL 文に分割すると、文と文の間で他トランザクションのコミットが見えるようになり、整合性が崩れる。分割が必要になったら（データ量が育って1文では重すぎる等）、**分離レベルではなく別の手段**（Storage へ順次書き出す設計への変更等）で整合性を確保すること。
 
+🔴 **関数の引数は100個まで（2026-10-07 追記）**：full は1表につき `jsonb_build_object` の引数を2個（表名・中身）使う。2026-10-02 に対象が52表＝104引数となり、`54023: cannot pass more than 100 arguments to a function` で full だけが毎日失敗した（status=partial・成功 2/3）。`20261007_fix_backup_snapshot_arg_limit.sql` で、40表ずつの `jsonb_build_object` を `||` で連結した**1つの SELECT 文**に変えた（文は分割していないので上記の整合性は保たれる）。あわせて `backup-daily` が失敗したスナップショットごとの理由を `backup_runs.error_message` にも残すようにした（それまでは Teams 通知にしか出ず、Teams 経路が止まっていたため原因が DB に何も残らなかった）。
+
 `backup_snapshot` の要件：
 
 - テーブル一覧は**ハードコードせず** `information_schema.tables WHERE table_schema='public'` から取り、除外リスト（`backup_runs` / `backup_objects` / `backup_exports` 自身）だけを持つ。新テーブルが追加されたとき黙って漏れないため

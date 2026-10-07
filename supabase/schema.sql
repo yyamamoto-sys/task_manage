@@ -2952,6 +2952,8 @@ CREATE POLICY "backup_exports_read_super_admin" ON backup_exports
 -- backup_begin() / backup_finalize(p_run_id) / backup_snapshot(p_scope, p_group_id, p_run_id)
 -- 本文はmigrations/20260916_add_backup.sqlを正本とする（長大なため、ここでは同一定義を
 -- 再掲する。将来この機能を変更する場合は両ファイルを同時に更新すること）。
+-- backup_snapshot のみ 20261007_fix_backup_snapshot_arg_limit.sql の定義（2026-10-07 同期時、
+-- 本ファイルは 20260916 の適用前の旧版のままドリフトしていたため、あわせて本番と揃えた）。
 
 CREATE OR REPLACE FUNCTION public.backup_begin(
   p_trigger      text DEFAULT 'cron',
@@ -3100,9 +3102,33 @@ BEGIN
     RAISE EXCEPTION 'p_group_id is required when p_scope = group';
   END IF;
 
-  EXECUTE 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ';
+  -- ============================================================
+  -- 🔴 REPEATABLE READ は「使えない」うえに「使う必要もない」（2026-09-16 実測で確定）
+  --
+  -- ここには EXECUTE 'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ' を置いていたが、
+  -- Supabase SQL Editor も PostgREST 経由のRPCも、既にトランザクションを開始した状態で
+  -- この関数を呼ぶため、必ず次のエラーで失敗する：
+  --   25001: SET TRANSACTION ISOLATION LEVEL must be called before any query
+  -- 関数の外から分離レベルを指定する手段も無い（PostgRESTは各リクエストのトランザクションを
+  -- 自分で開始するため、呼び出し側から介入できない）。
+  --
+  -- 削除しても、テーブル間の整合性（親を読んだ後に作られた子行が孤児になる問題）は保たれる。
+  -- 理由：PostgreSQLは READ COMMITTED でも「1つのSQL文」は文の開始時点の単一スナップショットを
+  -- 文全体で使う。full・group とも、テーブル群の取得を1文にまとめてある：
+  --   - full  : EXECUTE v_sql（全テーブルのサブクエリを並べた jsonb_build_object を40表ずつ連結した動的SQL）1文
+  --   - group : WITH ... SELECT jsonb_build_object(...) 1文
+  -- この1文の中では全テーブルが同じ時点を見るため、分離レベルを上げる必要が無い。
+  --
+  -- 🔴 この前提を壊さないこと：テーブル群の取得を複数のSQL文に分割すると、文と文の間で
+  -- 他トランザクションのコミットが見えるようになり、整合性が崩れる。分割したくなったら、
+  -- 先にこのコメントを読み直すこと。
+  -- ============================================================
 
   IF p_scope = 'full' THEN
+    ------------------------------------------------------------
+    -- full：テーブル一覧をハードコードせず動的に列挙し、1SQL文で丸ごと取得する
+    -- （§3.1「新テーブルが追加されたとき黙って漏れないため」）。
+    ------------------------------------------------------------
     SELECT array_agg(table_name ORDER BY table_name)
     INTO v_all_tables
     FROM information_schema.tables
@@ -3110,16 +3136,32 @@ BEGIN
       AND table_type = 'BASE TABLE'
       AND table_name NOT IN ('backup_runs', 'backup_objects', 'backup_exports');
 
-    SELECT string_agg(
-      format('%L, coalesce((SELECT jsonb_agg(to_jsonb(t)) FROM public.%I t), ''[]''::jsonb)', tbl, tbl),
-      ', '
-    )
+    -- 🔴 jsonb_build_object に渡せる引数は100個まで（PostgreSQLの関数引数の上限。超えると
+    -- 54023 で失敗する）。1表につき2引数（表名・中身）を使うため、40表＝80引数ずつの
+    -- jsonb_build_object に分け、jsonb の連結演算子でつないだ式にする。連結しても
+    -- 「1つのSELECT文」のままなので、全表が同じ時点を見る性質（上の🔴）は保たれる。
+    -- 2026-10-02 に対象が52表＝104引数になり、full だけが毎日失敗していた（20261007で修正）。
+    SELECT string_agg(c.chunk_sql, ' || ' ORDER BY c.chunk_no)
     INTO v_parts
-    FROM unnest(v_all_tables) AS tbl;
+    FROM (
+      SELECT
+        (u.ord - 1) / 40 AS chunk_no,
+        format(
+          'jsonb_build_object(%s)',
+          string_agg(
+            format('%L, coalesce((SELECT jsonb_agg(to_jsonb(t)) FROM public.%I t), ''[]''::jsonb)', u.tbl, u.tbl),
+            ', ' ORDER BY u.ord
+          )
+        ) AS chunk_sql
+      FROM unnest(v_all_tables) WITH ORDINALITY AS u(tbl, ord)
+      GROUP BY (u.ord - 1) / 40
+    ) c;
 
-    v_sql := format('SELECT jsonb_build_object(%s)', v_parts);
+    -- 対象表が0個だと v_parts は NULL になる。旧実装と同じく空オブジェクトを返す。
+    v_sql := 'SELECT ' || coalesce(v_parts, '''{}''::jsonb');
     EXECUTE v_sql INTO v_tables;
 
+    -- スキーマ情報（復元時の差分検出用。§5・§9）
     SELECT jsonb_object_agg(c.table_name, c.cols)
     INTO v_schema
     FROM (
@@ -3138,6 +3180,9 @@ BEGIN
       GROUP BY table_name
     ) c;
 
+    -- 孤児行（§4「孤児データの扱い」）：層Aの直接列がNULL/空のまま残った行の件数。
+    -- 層B以下は親を辿るため、親が論理削除(is_deleted)されているだけならFKは有効で
+    -- 孤児にはならない（このカウントは物理的な欠落・注入漏れの検知が目的）。
     SELECT jsonb_object_agg(s.t, s.c)
     INTO v_orphan_counts
     FROM (
@@ -3154,6 +3199,12 @@ BEGIN
     WHERE s.c > 0;
 
   ELSE
+    ------------------------------------------------------------
+    -- group：層A（直接列）＋層B（親を辿る）。層Cは含めない（§4）。
+    -- 🔴 personal_kr_* / personal_period_reviews / member_widget_layouts /
+    -- member_tag_members は members.group_ids（兼務）ではなく members.group_id
+    -- （ホーム部署）で仕分ける（§4「個人データの仕分けは『ホーム部署』を使う」）。
+    ------------------------------------------------------------
     WITH
       home_members AS (
         SELECT id FROM public.members WHERE group_id = p_group_id
@@ -3173,8 +3224,13 @@ BEGIN
       grp_tasks AS (
         SELECT id FROM public.tasks WHERE group_ids && ARRAY[p_group_id]
       ),
+      -- 🔴 personal_krs は group_id（NOT NULL）を持つが、仕分けには使わない（§4）。
+      -- この列は「そのKRが参照するグループKRの部署」であり、データの所有者を表さない。
+      -- group_id で仕分けると、同じ人の個人OKRが「KR本体はA部署・期末振り返り（member_id
+      -- 基準）はB部署」に分裂し、どちらのファイルからも復元できなくなる（2026-09-16に
+      -- 本番の実データで確認：personal_krs 7件=AID / personal_period_reviews 2件=grp-egg）。
       grp_personal_krs AS (
-        SELECT id FROM public.personal_krs WHERE group_id = p_group_id
+        SELECT id FROM public.personal_krs WHERE member_id IN (SELECT id FROM home_members)
       ),
       grp_personal_kr_weeks AS (
         SELECT id FROM public.personal_kr_weeks WHERE personal_kr_id IN (SELECT id FROM grp_personal_krs)
@@ -3225,11 +3281,15 @@ BEGIN
     INTO v_tables;
   END IF;
 
+  -- 行数（0件のテーブルは載せない。§5の出力例と同じ体裁）
   SELECT coalesce(jsonb_object_agg(e.key, jsonb_array_length(e.value)), '{}'::jsonb)
   INTO v_row_counts
   FROM jsonb_each(v_tables) AS e(key, value)
   WHERE jsonb_array_length(e.value) > 0;
 
+  -- tables部のハッシュ（転送後の照合用。§5）。PostgreSQL 14以降の組み込み関数を使う
+  -- （pgcryptoのdigest()はSupabaseでは既定でextensionsスキーマに入り、
+  -- SET search_path=''の下では明示スキーマ修飾が別途必要になるため避けた）。
   v_sha256 := encode(sha256(convert_to(v_tables::text, 'UTF8')), 'hex');
 
   v_result := jsonb_build_object(

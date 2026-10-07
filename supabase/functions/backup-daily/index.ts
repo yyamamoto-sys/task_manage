@@ -259,6 +259,25 @@ async function sendWeeklyBackupSummaryIfMonday(
 
 type SnapshotResult = { ok: true } | { ok: false; error: string };
 
+const FAILURE_MESSAGE_MAX = 1000;
+
+// backup_runs.error_message 用。失敗理由に接続先URL・キーが混ざっても DB に残さない
+// （fetch の例外メッセージは URL を含みうる）。
+function buildFailureMessage(
+  summary: string,
+  results: { scope: "full" | "group"; groupId: string | null; ok: boolean; error?: string }[],
+  secrets: string[],
+): string {
+  const details = results
+    .filter((r) => !r.ok)
+    .map((r) => `[${r.scope}${r.groupId ? `:${r.groupId}` : ""}] ${r.error ?? "不明なエラー"}`);
+  let text = [summary, ...details].join(" ／ ");
+  for (const s of secrets) {
+    if (s) text = text.split(s).join("[redacted]");
+  }
+  return text.length > FAILURE_MESSAGE_MAX ? `${text.slice(0, FAILURE_MESSAGE_MAX - 1)}…` : text;
+}
+
 // [2]/[3] 共通：1件のスナップショットを取得してStorageへput・backup_objectsへINSERTする。
 async function snapshotAndStore(
   supabase: SupabaseClient,
@@ -473,6 +492,11 @@ Deno.serve(async (req: Request) => {
     errorMessage = `一部のスナップショットの保存に失敗しました（成功 ${successCount}/${objectResults.length}）`;
   } else {
     status = "success";
+  }
+  // 2026-10-07：失敗理由がTeams通知にしか出ず、Teams経路が止まると原因がどこにも残らなかった
+  // （full が引数上限超過で毎日失敗していたのに5日間気づけなかった）。DBにも残す。
+  if (errorMessage !== null) {
+    errorMessage = buildFailureMessage(errorMessage, objectResults, [SUPABASE_URL, SERVICE_ROLE_KEY]);
   }
 
   // ===== [4] backup_finalize =====

@@ -34,8 +34,17 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
     (c): c is Extract<typeof c, { kind: "function_body_contains" }> => c.kind === "function_body_contains",
   );
 
-  it("SCHEMA_HEALTH_CHECKSに3件登録されている（2026-08-17の棚卸し結果2件＋v3.81で追加した1件）", () => {
-    expect(functionBodyChecks).toHaveLength(3);
+  it("SCHEMA_HEALTH_CHECKSに4件登録されている（2026-08-17の棚卸し結果2件＋v3.81で追加した1件＋2026-10-07の1件）", () => {
+    expect(functionBodyChecks).toHaveLength(4);
+  });
+
+  it("backup_snapshot: needleは20261007（引数上限対策後）にのみ存在し、20260916（初出）には存在しない", () => {
+    const check = functionBodyChecks.find(c => c.name === "backup_snapshot");
+    expect(check).toBeDefined();
+    const before = readMigration("20260916_add_backup.sql");
+    const after = readMigration(check!.migration);
+    expect(before.includes(check!.needle)).toBe(false);
+    expect(after.includes(check!.needle)).toBe(true);
   });
 
   it("accept_project_invite: needleは20260812（差し替え後）にのみ存在し、20260810（差し替え前）には存在しない", () => {

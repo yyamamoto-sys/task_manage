@@ -7987,4 +7987,24 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # ## 検証
 # npx tsc --noEmit・npx vitest run・変更ファイルの eslint・npm run build。
 
-最終更新：2026-10-02（v3.135）
+# v3.135 追記（2026-10-07）：日次バックアップの full が毎日失敗していた不具合の修正（DB・Edge Function のみ。利用者の画面は変わらないためバージョンは据え置き）
+#
+# * 現象：10-03 以降、backup-daily の3件のうち full だけが毎日失敗し backup_runs.status='partial'（成功 2/3）。
+# * 原因：backup_snapshot('full') は対象の全表を1つの jsonb_build_object(表名, 中身, ...) に並べる。10-02 のお知らせ機能で
+#   対象が52表＝引数104個になり、PostgreSQL の関数引数上限100個を超えた（54023）。
+# * 修正：supabase/migrations/20261007_fix_backup_snapshot_arg_limit.sql。40表ずつの jsonb_build_object を || で連結した
+#   1つの SELECT 文にした（文を分けない＝全表が同じ時点を見る性質は維持。docs/dev/backup-design.md §3.1 の🔴）。対象0表のときは
+#   旧実装と同じく空オブジェクト。引数・戻り値・SECURITY DEFINER・search_path・権限・group 分岐は変更なし。
+#   本番の現行定義は 20260916_add_backup.sql と同一であることを pg_get_functiondef で確認済み。
+# * supabase/schema.sql：backup_snapshot が 20260916 の適用前の旧版（REPEATABLE READ の行・personal_krs を group_id で仕分け）のまま
+#   ドリフトしていたので、今回の定義で置き換えて本番と揃えた。
+# * backup-daily：partial/failed のとき、失敗したスナップショットごとの [scope:group_id] と理由を backup_runs.error_message に
+#   含める（1,000字で切る。SUPABASE_URL・service role key の文字列は [redacted] に置換）。Teams 通知は変更なし。
+#   これまで失敗理由は Teams にしか出ず、Teams 経路が止まっていたため DB に何も残っていなかった。
+# * schemaChecks.ts：backup_snapshot_chunked_full（function_body_contains）を追加。未適用なら管理者バナーに出る。
+#   needle は v_sql を組む代入文（コメントには書いていない＝Section 59）。適用前の本番で 0（未検出）を確認済み。
+#   functionBodyContainsNeedles.test.ts に before(20260916)/after(20261007) の検査を追加し、件数を4へ。
+#   needle をわざと崩すと赤・戻すと緑になることを確認済み。
+# * 適用順：マイグレ → Edge Function を `supabase functions deploy backup-daily --no-verify-jwt` で再デプロイ。
+
+最終更新：2026-10-07（v3.135 追記）

@@ -483,6 +483,16 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     migration: "20260916_add_backup.sql",
   },
   {
+    // 未適用だと full スナップショットが引数上限（100個）超過で毎日失敗し続ける。
+    // needle は連結済みの式を受け取って実行文を組む代入（旧本文は1個の呼び出しを format で組んでいた）。
+    id: "backup_snapshot_chunked_full",
+    kind: "function_body_contains",
+    name: "backup_snapshot",
+    needle: "v_sql := 'SELECT ' || coalesce(v_parts, '''{}''::jsonb');",
+    label: "日次バックアップ：全体スナップショットの引数上限対策（backup_snapshot内）が適用されていません",
+    migration: "20261007_fix_backup_snapshot_arg_limit.sql",
+  },
+  {
     id: "entity_change_logs_table",
     kind: "table",
     table: "entity_change_logs",
