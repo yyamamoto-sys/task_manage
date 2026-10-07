@@ -8030,4 +8030,33 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 適用順：マイグレ 20261007b → backup-daily を --no-verify-jwt で再デプロイ → フロントを main へ → notify-deadlines 関数の削除・secrets の unset・
 #   admin-templates バケットの削除（ダッシュボード）。
 
-最終更新：2026-10-07（v3.136）
+# v3.137（2026-10-07）：members の書き込み権限を「本人」と「ホーム部署の管理者」に締める（CLAUDE.md Section 70）
+#
+# * 山本さんの決定（2026-10-07）：①他人の members 行の更新・追加・削除は、その人のホーム部署（group_id）の管理者と super_admin だけ。
+#   一般メンバーは自分の行（email = auth.email()）だけ更新できる。②管理者の権限はホーム部署だけに効く（兼務先では一般メンバー扱い）。
+#   招待用部署の管理の扱いは変えない。
+# * 本番の現行定義（pg_policies・pg_get_functiondef）を取得し、schema.sql とロジックが一致することを確認した（本番の関数本体はコメントが無いだけ）。
+# * マイグレ supabase/migrations/20261007c_tighten_member_writes.sql：
+#   - current_member_admin_group_id() 新設（管理者ならホーム部署、そうでなければ NULL。SECURITY DEFINER・STABLE・search_path=''）。
+#   - members_write_update／insert／delete を書き換え。UPDATE は本人の行（email = auth.email() AND is_deleted = false）を USING・WITH CHECK に追加
+#     （WITH CHECK も email で見るので、一般メンバーは自分の email を変えられない）。INSERT・DELETE に本人の条項は無い。
+#     同部署の条項（group_ids && current_member_group_ids()）は削除。招待条項は「対象行のホーム部署が、見えている招待用部署」に絞った
+#     （@> ARRAY[group_id]。旧条項は group_ids の重なりで、招待を受けて兼務している別部署の通常メンバーまで無関係な部署の管理者が触れた）。
+#   - groups_update_admin は意味を変えず新関数で書き直した（元からホーム部署限定）。
+#   - guard_member_privilege_columns：is_admin／email／論理削除の「管理者なら許可」を v_can_manage（対象行のホーム部署の管理者・super_admin・
+#     ゲストの行ならどこかの管理者）に変更。group_id の付け替えは super_admin のみ（旧部署と新部署の両方の管理者＝ホーム部署が1つなので実質 super_admin）。
+#     部署ブートストラップ猶予は is_admin だけに残し、group_id が NULL の行には効かないようにした（本人の行を更新できるようになったため）。
+#   - current_member_is_admin() は残す（招待条項・check_schema_health・ガードのゲスト分岐）。
+# * 画面（AdminView）：src/lib/admin/memberPermission.ts（純粋関数）で、メンバーの「＋追加」は表示中の部署を管理できるときだけ、
+#   ✏ は自分の行か管理できる行だけ、削除は管理できる他人の行だけに出す。ホーム部署の変更は super_admin だけが選べる（他は表示のみ）。
+#   部署タブの canManage も同じ関数に揃えた。
+# * App.tsx の email 自動補完（email が NULL の行に自分のメールを入れる）は、旧 RLS でも旧ガードでも通らない状態だった（本人を email で
+#   特定できないため）。新しい RLS でも同じ。本番の email NULL の行は0件。
+# * schemaChecks.ts：fn_current_member_admin_group_id（function）・guard_member_privilege_columns_home_admin（function_body_contains・
+#   needle は v_can_manage の代入文）を追加。needle をわざと崩すと赤・戻すと緑を確認済み。memberPermission.test.ts も旧挙動に戻すと赤を確認済み。
+# * 検証 SQL：docs/dev/verify_20261007c_member_writes.sql（ペルソナ6種・41項目。適用前は judge_before、適用後は judge_after が全て OK。ROLLBACK で終わる）。
+# * MIN_CLIENT_VERSION は上げない：旧画面で新たに失敗するのは「兼務先の管理者」「管理者不在の部署の一般メンバー」が他人を編集する操作だけで、
+#   本番には該当者がいない（非 super_admin の兼務管理者0名・管理者不在の通常部署0件。2026-10-07 確認）。
+# * 適用順：dev でマイグレ → 検証 SQL → prod でマイグレ → 検証 SQL → フロントを main へ。
+
+最終更新：2026-10-07（v3.137）

@@ -967,6 +967,23 @@ AS $fn_is_admin$
   LIMIT 1
 $fn_is_admin$;
 
+-- 管理者として扱う部署＝ホーム部署のみ（管理者でなければ NULL）。兼務先では一般メンバー扱い
+-- （migration 20261007c・CLAUDE.md Section 70）。current_member_is_admin() は「どこかの管理者か」の
+-- 意味で、招待用部署の条項・check_schema_health・ガードの招待用部署の分岐に残っている。
+CREATE OR REPLACE FUNCTION current_member_admin_group_id()
+RETURNS text
+LANGUAGE sql
+SECURITY DEFINER STABLE
+SET search_path = ''
+AS $fn_admin_group_id$
+  SELECT CASE WHEN is_admin THEN group_id END
+  FROM public.members
+  WHERE email = auth.email()
+    AND is_deleted = false
+  LIMIT 1
+$fn_admin_group_id$;
+GRANT EXECUTE ON FUNCTION public.current_member_admin_group_id() TO authenticated;
+
 -- 全社スーパー管理者判定（部署非依存。migration 20260702c）
 CREATE OR REPLACE FUNCTION current_member_is_super_admin()
 RETURNS boolean
@@ -1163,44 +1180,54 @@ CREATE POLICY "members_select" ON members
     OR id::text = ANY ((SELECT public.visible_project_member_ids())::text[])
   );
 
+-- 【2026-10-07・v3.137・migration 20261007c】書き込みは「本人の行」と「その人のホーム部署の管理者」と
+-- super_admin だけ（同じ部署の一般メンバーが他人の行を更新・追加・削除できていた）。管理者の権限は
+-- ホーム部署（current_member_admin_group_id()）だけに効く。招待条項は「対象行のホーム部署が、自分に
+-- 見えている招待用部署」に限る（ゲストの扱いは従来どおり）。CLAUDE.md Section 70。
 CREATE POLICY "members_write_insert" ON members
   FOR INSERT TO authenticated
   WITH CHECK (
-    group_ids && (SELECT public.current_member_group_ids())
-    OR (SELECT public.current_member_is_super_admin())
+    (SELECT public.current_member_is_super_admin())
+    OR group_id = (SELECT public.current_member_admin_group_id())
     OR (
-      group_ids && (SELECT public.visible_invite_group_ids())
-      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
+      group_id IS NOT NULL
+      AND (SELECT public.visible_invite_group_ids()) @> ARRAY[group_id]
+      AND (SELECT public.current_member_is_admin())
     )
   );
 
 CREATE POLICY "members_write_update" ON members
   FOR UPDATE TO authenticated
   USING (
-    group_ids && (SELECT public.current_member_group_ids())
+    (email = (SELECT auth.email()) AND is_deleted = false)
     OR (SELECT public.current_member_is_super_admin())
+    OR group_id = (SELECT public.current_member_admin_group_id())
     OR (
-      group_ids && (SELECT public.visible_invite_group_ids())
-      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
+      group_id IS NOT NULL
+      AND (SELECT public.visible_invite_group_ids()) @> ARRAY[group_id]
+      AND (SELECT public.current_member_is_admin())
     )
   )
   WITH CHECK (
-    group_ids && (SELECT public.current_member_group_ids())
+    (email = (SELECT auth.email()) AND is_deleted = false)
     OR (SELECT public.current_member_is_super_admin())
+    OR group_id = (SELECT public.current_member_admin_group_id())
     OR (
-      group_ids && (SELECT public.visible_invite_group_ids())
-      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
+      group_id IS NOT NULL
+      AND (SELECT public.visible_invite_group_ids()) @> ARRAY[group_id]
+      AND (SELECT public.current_member_is_admin())
     )
   );
 
 CREATE POLICY "members_write_delete" ON members
   FOR DELETE TO authenticated
   USING (
-    group_ids && (SELECT public.current_member_group_ids())
-    OR (SELECT public.current_member_is_super_admin())
+    (SELECT public.current_member_is_super_admin())
+    OR group_id = (SELECT public.current_member_admin_group_id())
     OR (
-      group_ids && (SELECT public.visible_invite_group_ids())
-      AND ((SELECT public.current_member_is_admin()) OR (SELECT public.current_member_is_super_admin()))
+      group_id IS NOT NULL
+      AND (SELECT public.visible_invite_group_ids()) @> ARRAY[group_id]
+      AND (SELECT public.current_member_is_admin())
     )
   );
 
@@ -2168,10 +2195,11 @@ DROP POLICY IF EXISTS "groups_insert_admin" ON groups;
 CREATE POLICY "groups_insert_admin" ON groups FOR INSERT TO authenticated
   WITH CHECK (current_member_is_super_admin());
 DROP POLICY IF EXISTS "groups_update_admin" ON groups;
+-- 【2026-10-07・migration 20261007c】意味は従来と同じ（管理者のホーム部署のみ）。判定を新関数に揃えた。
 CREATE POLICY "groups_update_admin" ON groups FOR UPDATE TO authenticated
   USING (
-    current_member_is_super_admin()
-    OR (current_member_is_admin() AND id = current_member_group_id())
+    (SELECT public.current_member_is_super_admin())
+    OR id = (SELECT public.current_member_admin_group_id())
   );
 DROP POLICY IF EXISTS "groups_delete_admin" ON groups;
 CREATE POLICY "groups_delete_admin" ON groups FOR DELETE TO authenticated
@@ -2204,6 +2232,7 @@ DECLARE
   super_admin_count   integer;
   acting_super_admin  boolean;
   self_bootstrap_super_admin boolean := false;
+  v_can_manage        boolean;
   old_is_admin        boolean;
   old_is_super_admin  boolean;
   old_group_id        text;
@@ -2249,14 +2278,34 @@ BEGIN
     END IF;
   END IF;
 
-  -- フェーズ2: is_admin / group_id（部署内権限・所属）
-  IF NEW.is_admin IS DISTINCT FROM old_is_admin
-     OR NEW.group_id IS DISTINCT FROM old_group_id THEN
+  -- 【2026-10-07・v3.137・migration 20261007c】対象行のホーム部署を管理できるか。
+  -- 管理者の権限はホーム部署だけに効く（兼務先では一般メンバー扱い）。招待用部署がホームの行
+  -- （ゲスト）は今までどおり「どこかの管理者」なら可（RLS の招待条項が見えている招待用部署に限る）。
+  v_can_manage := acting_super_admin
+    OR self_bootstrap_super_admin
+    OR (check_group_id IS NOT NULL
+        AND check_group_id IS NOT DISTINCT FROM public.current_member_admin_group_id())
+    OR (public.current_member_is_admin()
+        AND EXISTS (
+          SELECT 1 FROM public.groups g
+          WHERE g.id = check_group_id AND g.is_invite_group = true
+        ));
 
+  -- フェーズ2a: group_id（ホーム部署の付け替え）。旧部署と新部署の両方の管理者であることを要求する。
+  -- 管理者のホーム部署は1つなので実質 super_admin だけ（片側の管理者だけで移せると、押し付け・
+  -- 引き抜きが一方的にできるため）。部署ブートストラップ猶予の対象にもしない。
+  IF NEW.group_id IS DISTINCT FROM old_group_id THEN
     IF acting_super_admin OR self_bootstrap_super_admin THEN
-      NULL; -- super-admin（既存 or フェーズ1で自己昇格した本人）は自由に変更可
-    ELSIF public.current_member_is_admin() THEN
-      NULL; -- 部署管理者は変更可（部署越境はRLSが別途ブロック）
+      NULL;
+    ELSE
+      NEW.group_id := old_group_id;
+    END IF;
+  END IF;
+
+  -- フェーズ2b: is_admin（部署内権限）
+  IF NEW.is_admin IS DISTINCT FROM old_is_admin THEN
+    IF v_can_manage THEN
+      NULL;
     ELSE
       SELECT count(*) INTO dept_admin_count
       FROM public.members
@@ -2264,19 +2313,19 @@ BEGIN
         AND is_admin = true
         AND is_deleted = false;
 
-      -- 【2026-08-18・v3.75】部署ブートストラップ猶予から招待用部署を除外する。
-      -- 招待用部署（is_invite_group=true）には admin を作る経路が設計上存在せず、
-      -- dept_admin_count が永久に0のままになるため、この猶予が恒久的に開いた
-      -- 窓になっていた（招待受諾者が自分の行を is_admin=true にできた）。
-      IF dept_admin_count = 0
+      -- 部署ブートストラップ：その部署に is_admin=true が1人もいなければ許可。
+      -- 招待用部署は除外（v3.75。admin を作る経路が無く恒久的な窓になるため）。
+      -- group_id が NULL の行も除外（v3.137。自分の行を更新できるようになったため、
+      -- 「NULL＝管理者0人の部署」とみなすと誰でも管理者になれてしまう）。
+      IF check_group_id IS NOT NULL
+         AND dept_admin_count = 0
          AND NOT EXISTS (
            SELECT 1 FROM public.groups g
            WHERE g.id = check_group_id AND g.is_invite_group = true
          ) THEN
-        NULL; -- 部署ブートストラップ：その部署にis_admin=trueが1人もいなければ許可
+        NULL;
       ELSE
-        NEW.is_admin  := old_is_admin;
-        NEW.group_id  := old_group_id;
+        NEW.is_admin := old_is_admin;
       END IF;
     END IF;
   END IF;
@@ -2324,14 +2373,11 @@ BEGIN
   -- 他人の行の email を自分のアドレスに書き換えられると、その人の権限で
   -- ログインしたのと同じ状態になる。他の特権列と同じく静かに差し戻す
   -- （表示名など他フィールドの保存は妨げない）。
-  -- 許可するのは次の3つだけ：実行者がsuper-admin／実行者が部署管理者
-  -- （部署越境はRLSが別途ブロック）／対象が実行者自身の行。
+  -- 許可するのは次の2つだけ：対象行のホーム部署を管理できる（v_can_manage）／対象が実行者自身の行。
   -- 自分自身の行の判定は IS NOT DISTINCT FROM（email が NULL の行を
   -- 「誰の行でもある」と誤判定しないため）。
   IF TG_OP = 'UPDATE' AND NEW.email IS DISTINCT FROM old_email THEN
-    IF acting_super_admin
-       OR self_bootstrap_super_admin
-       OR public.current_member_is_admin()
+    IF v_can_manage
        OR old_email IS NOT DISTINCT FROM auth.email() THEN
       NULL;
     ELSE
@@ -2342,14 +2388,12 @@ BEGIN
   -- 【2026-08-18・v3.75】フェーズ5: is_deleted の false→true（論理削除）
   -- 有効な管理者を論理削除できると、フェーズ1（全社super-adminが0人なら自己昇格可）
   -- ・フェーズ2（部署adminが0人なら自己昇格可）のブートストラップ猶予を
-  -- 人為的に開けられる。削除はadmin以上に限る。復元（true→false）は
+  -- 人為的に開けられる。削除は対象行のホーム部署を管理できる人に限る。復元（true→false）は
   -- 誰かの権限が増える操作ではないため対象にしない。
   IF TG_OP = 'UPDATE'
      AND coalesce(NEW.is_deleted, false) = true
      AND coalesce(old_is_deleted, false) = false THEN
-    IF acting_super_admin
-       OR self_bootstrap_super_admin
-       OR public.current_member_is_admin() THEN
+    IF v_can_manage THEN
       NULL;
     ELSE
       NEW.is_deleted := old_is_deleted;

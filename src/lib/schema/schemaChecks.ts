@@ -492,6 +492,24 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "日次バックアップ：全体スナップショットの引数上限対策（backup_snapshot内）が適用されていません",
     migration: "20261007_fix_backup_snapshot_arg_limit.sql",
   },
+  // members の書き込み権限の締め付け（v3.137・Section 70）。未適用だと同じ部署の一般メンバーが
+  // 他人の行を書き換えられ、兼務管理者が兼務先でも管理者として振る舞えるまま。
+  {
+    id: "fn_current_member_admin_group_id",
+    kind: "function",
+    name: "current_member_admin_group_id",
+    label: "メンバーの書き込み権限：ホーム部署の管理者判定（current_member_admin_group_id）が見つかりません",
+    migration: "20261007c_tighten_member_writes.sql",
+  },
+  {
+    // needle は「対象行のホーム部署を管理できるか」を決める代入文（旧本文は部署を見ない current_member_is_admin() だけで許可していた）
+    id: "guard_member_privilege_columns_home_admin",
+    kind: "function_body_contains",
+    name: "guard_member_privilege_columns",
+    needle: "v_can_manage := acting_super_admin",
+    label: "メンバーの書き込み権限：権限ガードのホーム部署判定（guard_member_privilege_columns内）が適用されていません",
+    migration: "20261007c_tighten_member_writes.sql",
+  },
   {
     id: "entity_change_logs_table",
     kind: "table",

@@ -21,6 +21,7 @@ import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/pro
 import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
 import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { resolveAdminGroupId } from "../../lib/admin/resolveAdminGroupId";
+import { canAdministerGroup, canChangeHomeGroup, canDeleteMember, canEditMemberRow, visibleInviteGroupIds } from "../../lib/admin/memberPermission";
 import { isGuestOnlyMember, withGuestOnlyMembers, isGuestMemberOf, withGuestLabel, inviteGroupIdsInScope } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
@@ -2167,8 +2168,8 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
 // ===================================================
 
 // メンバー一覧の1行（メインの部署絞り込みリスト・ゲストメンバー別枠リストの両方から使う共通部品）。
-function MemberRow({ m, groups, currentUser, onEdit }: {
-  m: Member; groups: Group[]; currentUser: Member; onEdit: (m: Member) => void;
+function MemberRow({ m, groups, currentUser, onEdit, canEdit }: {
+  m: Member; groups: Group[]; currentUser: Member; onEdit: (m: Member) => void; canEdit: boolean;
 }) {
   return (
     <div style={{
@@ -2215,7 +2216,7 @@ function MemberRow({ m, groups, currentUser, onEdit }: {
           <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
         )}
       </div>
-      <IconBtn onClick={() => onEdit(m)}>✏</IconBtn>
+      {canEdit && <IconBtn onClick={() => onEdit(m)}>✏</IconBtn>}
     </div>
   );
 }
@@ -2223,6 +2224,7 @@ function MemberRow({ m, groups, currentUser, onEdit }: {
 function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void; selectedGroupId: string }) {
   const rawMembers   = useAppStore(s => s.members);
   const rawGroups    = useAppStore(s => s.groups);
+  const rawProjects  = useAppStore(s => s.projects);
   const saveMember   = useAppStore(s => s.saveMember);
   const deleteMember = useAppStore(s => s.deleteMember);
   const isMobile = useIsMobile();
@@ -2250,6 +2252,14 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
     () => members.filter(m => isGuestOnlyMember(m.group_ids?.length ? m.group_ids : (m.group_id ? [m.group_id] : []), inviteGroupIds)),
     [members, inviteGroupIds],
   );
+  // 書き込み権限（migration 20261007c）：他人の行はその人のホーム部署の管理者と super_admin だけ。
+  // 兼務先の部署を表示中の管理者には追加・編集・削除を出さない（押すと RLS で弾かれるため）。
+  const manageableInviteGroupIds = useMemo(
+    () => visibleInviteGroupIds(rawProjects, inviteGroupIds),
+    [rawProjects, inviteGroupIds],
+  );
+  const canAdd = canAdministerGroup(currentUser, selectedGroupId);
+  const canEditRow = (m: Member) => canEditMemberRow(currentUser, m, manageableInviteGroupIds);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
@@ -2359,11 +2369,16 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
       <Card
         title="メンバー一覧"
         badge={`${scopedMembers.length}名`}
-        headerExtra={<button onClick={openAdd} style={addBtnStyle}>＋ 追加</button>}
+        headerExtra={canAdd ? <button onClick={openAdd} style={addBtnStyle}>＋ 追加</button> : undefined}
       >
+      {!canAdd && (
+        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+          この部署のメンバーの追加・編集・削除は、この部署の管理者が行います（あなたは自分の行だけ編集できます）。
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
         {scopedMembers.map(m => (
-          <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} />
+          <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} canEdit={canEditRow(m)} />
         ))}
       </div>
       </Card>
@@ -2382,7 +2397,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
             {guestMembers.map(m => (
-              <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} />
+              <MemberRow key={m.id} m={m} groups={groups} currentUser={currentUser} onEdit={openEdit} canEdit={canEditRow(m)} />
             ))}
           </div>
         </Card>
@@ -2407,7 +2422,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
 
-          {editId !== currentUser.id ? (
+          {editId !== currentUser.id ? (canDeleteMember(currentUser, members.find(m => m.id === editId) ?? { id: editId }, manageableInviteGroupIds) && (
             <DangerZone key={editId} style={{ marginTop: "16px" }}>
               <DangerAction
                 label="このメンバーを削除"
@@ -2416,7 +2431,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
                 onConfirm={() => handleDeleteMember(editId)}
               />
             </DangerZone>
-          ) : (
+          )) : (
             <div style={{ marginTop: "16px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
               自分自身は削除できません。
             </div>
@@ -2498,19 +2513,30 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
       {groups.length > 0 && (
         <div>
           <FieldLabel>グループ（任意・ホーム部署）</FieldLabel>
-          <CustomSelect
-            value={form.group_id}
-            onChange={v => setForm(f => ({
-              ...f,
-              group_id: v,
-              // ホーム部署を変えたら、必ずアクセス可能な部署にも含める（CHECK制約と一致させる）
-              group_ids: v && !f.group_ids.includes(v) ? [...f.group_ids, v] : f.group_ids,
-            }))}
-            options={[
-              { value: "", label: "（未設定）" },
-              ...groups.map(g => ({ value: g.id, label: g.name })),
-            ]}
-          />
+          {canChangeHomeGroup(currentUser) ? (
+            <CustomSelect
+              value={form.group_id}
+              onChange={v => setForm(f => ({
+                ...f,
+                group_id: v,
+                // ホーム部署を変えたら、必ずアクセス可能な部署にも含める（CHECK制約と一致させる）
+                group_ids: v && !f.group_ids.includes(v) ? [...f.group_ids, v] : f.group_ids,
+              }))}
+              options={[
+                { value: "", label: "（未設定）" },
+                ...groups.map(g => ({ value: g.id, label: g.name })),
+              ]}
+            />
+          ) : (
+            <>
+              <div style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
+                {groups.find(g => g.id === form.group_id)?.name ?? "（未設定）"}
+              </div>
+              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+                部署の異動（ホーム部署の変更）は全社スーパー管理者のみ行えます。
+              </div>
+            </>
+          )}
         </div>
       )}
       {groups.length > 0 && (
@@ -2688,7 +2714,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   // super-admin は全部署、部署管理者は自分の所属部署のみ改名・削除可能
   // （groups_update_admin RLSと同じ条件。合致しない場合は編集/削除アイコンを出さず、
   //  RLSエラーで詰まる無駄なクリックを避ける）
-  const canManage = (g: Group) => isSuperAdmin || (currentUser.is_admin === true && g.id === currentUser.group_id);
+  const canManage = (g: Group) => canAdministerGroup(currentUser, g.id);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [form, setForm] = useState({
