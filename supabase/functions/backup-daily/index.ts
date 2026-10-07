@@ -326,7 +326,10 @@ async function snapshotAndStore(
   // 別の値であり、意図的に区別している。
   const fileHash = await sha256Hex(bodyText);
 
-  const { error: insertError } = await supabase.from("backup_objects").insert({
+  // 2026-10-07：insert → upsert。同じ日に2回目を実行すると、Storage は upsert で上書きされるのに
+  // 台帳だけ主キー（path）重複で失敗し、台帳の bytes/sha256 が上書き前のファイルのまま残っていた。
+  // retention は backup_finalize が run_id と taken_at から付け直すので、ここで daily に戻してよい。
+  const { error: insertError } = await supabase.from("backup_objects").upsert({
     path: opts.path,
     run_id: opts.runId,
     scope: opts.scope,
@@ -335,7 +338,8 @@ async function snapshotAndStore(
     bytes,
     sha256: fileHash,
     retention: ["daily"], // backup-design.md §6：INSERT時点で明示する
-  });
+    deleted_at: null,
+  }, { onConflict: "path" });
   if (insertError) {
     // ファイル自体はStorageに保存済みだが台帳に記録できていない状態。次回のfinalizeの
     // 世代管理対象からは漏れる（孤立ファイルとして残る）ため、その旨をエラーに含める。
