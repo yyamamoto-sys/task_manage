@@ -7,6 +7,7 @@ import { useAppStore, selectScopedTasks } from "../../stores/appStore";
 import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -45,13 +46,11 @@ const TODO_OTHER_ID = "__other__";
 export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, defaultDueDate, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
-  const rawMembers              = useAppStore(s => s.members);
   const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);
   const rawKrs                  = useAppStore(s => s.keyResults);
   const rawObjectives           = useAppStore(s => s.objectives);
   const currentGroupId          = useAppStore(s => s.currentGroupId);
-  const members = useMemo(() => rawMembers.filter((m: Member) => !m.is_deleted), [rawMembers]);
   const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
   const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
@@ -71,6 +70,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [projectId, setProjectId] = useState(
     () => (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : ""),
   );
+  // 担当者・メンションの候補（表示部署のメンバー＋選択中PJの参加者＋今の担当者）
+  const members = useAssigneeCandidates(projectId || null, assigneeId ? [assigneeId] : []);
   const [parentId, setParentId] = useState(defaultParentId ?? "");
   const [krId, setKrId] = useState(defaultKrId ?? "");
   const [tfId, setTfId] = useState(resolvedDefaultTfId ?? "");

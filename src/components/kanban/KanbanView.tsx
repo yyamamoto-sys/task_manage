@@ -2,6 +2,8 @@
 import { useState, useMemo, useCallback, useRef, useEffect, memo, Fragment } from "react";
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, DragEvent as ReactDragEvent } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { sharedProjectId } from "../../lib/members/assigneeCandidates";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
@@ -85,6 +87,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   // 一括操作用：複数選択（リストビューと同じ流儀）
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 一括の担当者変更の候補（表示部署のメンバー＋選んだタスクが全部同じPJならそのPJの参加者）
+  const bulkAssigneeCandidates = useAssigneeCandidates(
+    sharedProjectId(tasks.filter(t => selectedIds.has(t.id))), [], selectedIds.size > 0,
+  );
   // 選択したタスクを複製（v3.72）。モーダルを開くかどうかだけをここで持つ（本体はDuplicateTasksModal）
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたカード）。
@@ -368,7 +374,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             onChange={value => { if (value) bulkUpdateAssignee(value); }}
             options={[
               { value: "", label: "担当者を変更…" },
-              ...[...members].sort((a, b) =>
+              ...[...bulkAssigneeCandidates].sort((a, b) =>
                 a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
               ).map(m => ({ value: m.id, label: m.display_name })),
             ]}
@@ -547,7 +553,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                           task={task}
                           project={task.project_id ? projectById.get(task.project_id) : undefined}
                           todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
-                          allMembers={members}
                           parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                           childCount={childCountByParent.get(task.id) ?? 0}
                           progress={parentDerivedById.get(task.id)}
@@ -649,7 +654,6 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
                       task={task}
                       project={task.project_id ? projectById.get(task.project_id) : undefined}
                       todo={task.todo_ids?.length ? todoById.get(task.todo_ids[0]) : undefined}
-                      allMembers={members}
                       parentName={task.parent_task_id ? taskNameById.get(task.parent_task_id) : undefined}
                       childCount={childCountByParent.get(task.id) ?? 0}
                       progress={parentDerivedById.get(task.id)}
@@ -751,12 +755,11 @@ function DropPlaceholder() {
 // ===== タスクカード =====
 
 const TaskCard = memo(function TaskCard({
-  task, project, todo, allMembers, parentName, childCount = 0, progress, onDragStart, onDragEnd, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
+  task, project, todo, parentName, childCount = 0, progress, onDragStart, onDragEnd, onStatusChange, isDragging, onClick, isSelected, onSaveTask, currentUserId,
 }: {
   task: Task;
   project?: Project;
   todo?: ToDo;
-  allMembers: Member[];
   parentName?: string;
   childCount?: number;
   /** 親タスク（子を持つ）のみ渡される、子からのロールアップ進捗（done/total/pct） */
@@ -900,7 +903,7 @@ const TaskCard = memo(function TaskCard({
         <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
           <InlineEditAssignee
             assigneeIds={getAssigneeIds(task)}
-            members={allMembers}
+            projectId={task.project_id}
             onSave={ids => onSaveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUserId })}
           />
         </div>

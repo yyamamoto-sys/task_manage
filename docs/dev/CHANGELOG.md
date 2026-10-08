@@ -8081,4 +8081,30 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   （開いたままの旧画面で MainLayout が再マウントされたときにツアーの案内がもう一度出る程度。再読み込みすれば新画面になる）。DB・RLS・Edge Function は変更なし。
 # * マイグレーションなし。
 
-最終更新：2026-10-08（v3.138）
+# v3.139（2026-10-08）：メンバー・PJ・タスクの表示と担当者の候補を「表示部署」単位に絞る（CLAUDE.md Section 71）
+#
+# * 発端（山本さん）：サイドメニューからPJを作成すると、オーナー候補に他部署の人が出る。ProjectCreateModal が s.members を素で使っていた。
+#   v3.75 で members の RLS に visible_project_member_ids()（アクセスできるPJの参加者全員）を足したため、部署をまたぐPJがあると他部署の人がストアに載る。
+# * 決定（山本さん・統括）：表示部署（currentGroupId）で絞る。super_admin・一般・兼務者とも同じ。v2.91 の「非super_adminは絞らない」割り切りを撤回。
+# * appStore.ts：selectScopedProjects／Tasks は「group_ids に表示部署を含む OR group_id 一致 OR group_id==null」。selectScopedMembers は
+#   「削除済みでなく group_id 一致 OR group_ids に含む」。selectScopedTaskDependencies は両端が絞り込み後のタスクに含まれるものだけ（group_id 単数での判定をやめた）。
+#   currentGroupId が null の間は元配列をそのまま返す。判定は src/lib/scope/displayGroupScope.ts。
+#   memoizeScopedSelector のキーを state 全体から入力（元配列・currentGroupId）に変更：無関係な set() でも同じ参照を返す
+#   （従来の非super_adminは常に元配列＝同一参照だったため、その性質を保つ）。
+# * Task 型に group_ids を追加（DBトリガー sync_task_group_ids が唯一の真実。select("*") で以前から読み込まれていた・型だけの追加）。
+# * 担当者の候補：src/lib/members/assigneeCandidates.ts（buildAssigneeCandidates＝表示部署のメンバー→PJ参加者→今の担当者・削除済み除外／
+#   projectParticipantIds＝オーナー・member_ids・直接/task_projects 経由のタスク担当者・PJの group_ids のうち招待用部署に属する人。集約は
+#   computeProjectMembers を再利用／participantIdsOfProjects／sharedProjectId）と src/hooks/useAssigneeCandidates.ts。
+#   使う箇所：TaskEditModal・TaskSidePanel・QuickAddTaskModal（担当者とメンション）・InlineEditAssignee（一覧/カンバン/ガント/ダッシュボード。
+#   members prop を廃止し projectId prop に。アイコンは全件から・候補は開いたときだけ計算）・ListView/KanbanView の一括変更（選んだタスクが同じPJなら参加者も）・
+#   ConfirmationDialogModal（AIの確認ダイアログ）・applyProposal（AIの担当者名の照合）。
+# * 表示部署のメンバーに絞った候補：ProjectCreateModal（オーナー追加・他PJから引き継ぐメンバー）・ProjectSettingsModal／ProjectKarte（オーナー追加）・
+#   ListView（担当者の絞り込みの選択肢。選択中の人は残す）・ProjectStructureView（PJの外から足す候補）。
+# * 名前の解決は全件のまま／全件に戻した：DashboardView（オーナー・担当者・更新者。AIに渡す部署メンバー一覧は表示部署のまま）・ProjectKarte・
+#   MeetingImportPanel（既存タスクの担当者名）・useAIConsultation（本人）・ProjectSettingsModal の「関わるメンバー」（全タスクから集計）。
+# * useMentionNotifications は表示部署に関係なく全タスクを監視（表示部署で絞ると兼務先のメンションが届かなくなるため）。
+# * テスト：scopedSelectors.test.ts を新仕様に更新（修正前のコードで8件赤を確認）・assigneeCandidates.test.ts（新規）・
+#   rawMembersUsage.test.ts（新規・構文木でストアの全メンバーの素の読み取りを数え、許可リストと完全一致を検査。わざと1行足すと赤・同じ行をコメントにすると緑を確認）。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+最終更新：2026-10-08（v3.139）

@@ -198,6 +198,9 @@ export interface Task {
   is_deleted: boolean;
   /** 所属グループID（マルチテナント対応） */
   group_id?: string | null;
+  /** 表示される部署の全リスト。DBトリガー（sync_task_group_ids）が唯一の真実（PJ紐づきはPJのgroup_idsを継承・独立タスクはホーム部署のみ）。
+   *  アプリからは編集しない（送っても上書きされる）。表示部署の絞り込み（selectScopedTasks）だけが読む */
+  group_ids?: string[] | null;
   // audit fields（updated_atはSupabase移行時の競合検知に使用）
   created_at?: string;
   updated_at?: string;

@@ -1599,7 +1599,6 @@ export function GanttView({
             childCount={childCount}
             isHovered={hoveredTaskId === task.id}
             isCollapsed={!!collapsed[task.id]}
-            members={members}
             onEdit={guardedHandleRowEdit}
             onHoverEnter={handleRowHoverEnter}
             onHoverLeave={handleRowHoverLeave}
@@ -1649,7 +1648,6 @@ export function GanttView({
             rowHeight={row.height}
             task={row.task}
             isHovered={hoveredTaskId === row.task.id}
-            members={members}
             onEdit={guardedHandleRowEdit}
             onHoverEnter={handleRowHoverEnter}
             onHoverLeave={handleRowHoverLeave}
@@ -2098,7 +2096,6 @@ export function GanttView({
         selectedProject={selectedProject}
         krTaskIds={krTaskIds}
         currentUser={currentUser}
-        members={members}
         saveTask={saveTask}
         hideCompletedTasks={hideCompletedTasks}
         onToggleHideCompletedTasks={toggleHideCompletedTasks}

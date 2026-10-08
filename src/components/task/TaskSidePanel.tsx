@@ -37,6 +37,7 @@ import { SIDE_PANEL_FOOTER_MIN_HEIGHT_PX } from "../../lib/layout/bottomStack";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 import { ChangeHistorySection } from "../history/ChangeHistorySection";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 
 interface Props {
   taskId: string;
@@ -190,6 +191,8 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
   }, [allTasks, currentProjectId, selectedTask?.id, projects]);
 
   const [sidebarForm, setSidebarForm] = useState<SidebarForm | null>(null);
+  // 担当者の候補（表示部署のメンバー＋PJ参加者＋今の担当者）。チップの名前解決は members（全件）のまま
+  const assigneeCandidates = useAssigneeCandidates(sidebarForm?.project_id ?? null, sidebarForm?.assignee_member_ids ?? []);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   // 階層モード：単独（none）／子タスク（child＝親を選ぶ）／親タスク（parent＝子を選ぶ）。
@@ -711,7 +714,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
                   : [...f.assignee_member_ids, id],
               }
             : f)}
-          options={[...members].sort((a, b) =>
+          options={[...assigneeCandidates].sort((a, b) =>
             a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
           ).map(m => ({ value: m.id, label: m.display_name }))}
           placeholder="＋ 担当者を追加..."

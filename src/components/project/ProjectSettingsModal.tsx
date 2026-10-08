@@ -21,7 +21,7 @@
 // 【Section 21】中央寄せモーダルなので modalStyles.ts の契約に従う。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useAppStore, selectScopedMembers } from "../../stores/appStore";
 import type { Member, Project, ProjectInvite } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { getAssigneeIds } from "../../lib/taskMeta";
@@ -106,7 +106,10 @@ function TabButton({ active: isActive, onClick, children }: { active: boolean; o
 
 export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
   const rawMembers = useAppStore(s => s.members);
-  const rawTasks = useAppStore(selectScopedTasks);
+  // 「関わるメンバー」はこのPJ固有の集計なので、表示部署で絞らない全タスクから拾う（task_projects 経由で他部署PJのタスクが紐づく場合も落とさない）
+  const rawTasks = useAppStore(s => s.tasks);
+  // オーナーの追加候補は表示部署のメンバーだけ（v3.139）。チップ・「関わるメンバー」の名前解決は members（全件）
+  const scopedMembers = useAppStore(selectScopedMembers);
   const rawTpjs = useAppStore(s => s.taskProjects);
   const saveProject = useAppStore(s => s.saveProject);
   const deleteProject = useAppStore(s => s.deleteProject);
@@ -361,7 +364,7 @@ export function ProjectSettingsModal({ project, currentUser, onClose }: Props) {
                         onChange={id => { if (id && !form.owner_member_ids.includes(id)) setForm(f => ({ ...f, owner_member_ids: [...f.owner_member_ids, id] })); }}
                         options={[
                           { value: "", label: "＋ オーナーを追加" },
-                          ...members.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
+                          ...scopedMembers.filter(m => !form.owner_member_ids.includes(m.id)).map(m => ({ value: m.id, label: m.display_name })),
                         ]}
                         searchable searchPlaceholder="メンバーで検索..."
                       />

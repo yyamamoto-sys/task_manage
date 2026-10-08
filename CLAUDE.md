@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.138
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.139
 #
-最終更新：2026-10-08（v3.138）
+最終更新：2026-10-08（v3.139）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -164,7 +164,7 @@ RLSは「自分のgroup_idと一致するか、super-adminか」でしか可視�
 ### 複数部署アクセス（メンバーの兼務・プロジェクトの部署横断）＝フェーズ1（DBのみ・2026-07-22）〜フェーズ2（フロント・2026-07-23完了）
 
 `members`/`projects`/`tasks`に`group_ids text[]`（アクセス可能な部署の全リスト）を新設。既存の`group_id`（ホーム部署）は不変・並存する。RLSは`group_id = current_member_group_id()`（単一値比較）から`group_ids && current_member_group_ids()`（配列オーバーラップ）に置き換え済み（super-admin全部署アクセスの条項は維持）。`tasks.group_ids`はアプリから直接編集させずDBトリガー（`sync_task_group_ids`）が唯一の真実（プロジェクト紐づきはPJのgroup_idsを継承・独立タスクはホーム部署のみ）。`group_ids`の直接付与・剥奪はsuper-admin限定（`guard_member_privilege_columns`拡張）。プラン正本は`quirky-exploring-sundae.md`（メモリ`memory/projects/project_taskmanage_multi_department.md`参照）。
-**フロントエンド対応の現状（v2.91時点・フェーズ2完了）**：`Member.group_ids`/`Project.group_ids`（`lib/localData/types.ts`）と、AdminView.tsxの部署絞り込みセレクタ（本セクション末尾の設定画面部署絞り込み参照）で読み取り専用の絞り込みには対応済み。`currentUserIsSuperAdmin` state（`appStore.ts`）を新設し、`App.tsx`の`autoMatch()`でログイン時に`members.is_super_admin`から設定。`selectScopedTasks`/`selectScopedProjects`/`selectScopedTaskDependencies`/`selectScopedMembers`は「super-adminは`currentGroupId`一致（+`group_id==null`）で絞る／非super-adminは一切フィルタせず元配列をそのまま返す」に分岐済み（非super-adminはRLSが既に自部署＋兼務先だけ返しているため、クライアントで単一値比較を重ねると兼務2部署目がUIから消えるのを防ぐため）。サイドバー（`MainLayout.tsx`）に「表示部署」切替UI（アクセス可能な部署が2件以上のときだけ表示）を追加し、`currentGroupId`を切り替えられる。**ただし「1メンバー/1PJに複数部署を明示的に付与するUI」はまだ無い**（新規作成は常に単一のホーム部署=group_idのみで作成され、DBトリガーがgroup_idsへ自動反映する形）。また非super-adminの兼務者にとっては、この切替UIは表示の絞り込みには効かず「新規作成時のデフォルト所属部署を選ぶ」程度の意味にとどまる（表示は常に自部署＋兼務先の全部が見える。意図的な割り切り＝詳細はv2.91changelog参照）。
+**フロントエンド対応の現状（v3.139で改訂）**：`Member.group_ids`/`Project.group_ids`/`Task.group_ids`（`lib/localData/types.ts`。`Task.group_ids`はv3.139で型に追加＝DBトリガー`sync_task_group_ids`が唯一の真実で、`select("*")`により以前から読み込まれていた）。AdminView.tsxの部署絞り込み（本セクション末尾の設定画面部署絞り込み参照）は従来どおり。`currentUserIsSuperAdmin` state（`appStore.ts`）は`App.tsx`の`autoMatch()`でログイン時に`members.is_super_admin`から設定する。**`selectScopedTasks`/`selectScopedProjects`/`selectScopedTaskDependencies`/`selectScopedMembers`は、super-admin・一般・兼務者の全員について、サイドバーの「表示部署」（`currentGroupId`）で絞る**（v3.139・Section 71）。PJ・タスクは「`group_ids`に表示部署を含む、または`group_id`一致、または`group_id==null`」、メンバーは「削除済みでなく`group_id`一致または`group_ids`に含む」、依存は「両端が絞り込み後のタスクに含まれるもの」（`task_dependencies.group_id`単数では判定しない）。判定は`src/lib/scope/displayGroupScope.ts`。`currentGroupId`が null（ログイン直後の未確定）の間は元配列をそのまま返す。メモ化は入力（元配列・`currentGroupId`）の参照で行い、無関係な`set()`では同じ配列を返す（React #185 の教訓。Section 1.5）。サイドバー（`MainLayout.tsx`）の「表示部署」切替UI（アクセス可能な部署が2件以上のときだけ表示）で`currentGroupId`を切り替えると、PJ・タスクの一覧と担当者の候補がその部署のものに切り替わる（新規作成時の所属部署もこの値）。**「1メンバー/1PJに複数部署を明示的に付与するUI」はまだ無い**（新規作成は常に単一のホーム部署=group_idのみで作成され、DBトリガーがgroup_idsへ自動反映する形）。〔旧：v2.91〜v3.138は「非super-adminは一切絞らない」割り切りだった（兼務2部署目がUIから消えるのを避けるため）。v3.75でmembersの可視範囲がPJ参加者全員へ広がり、他部署の人が候補に出るようになったため撤回した。〕
 
 ### 関連migrationファイル
 
@@ -3415,7 +3415,7 @@ v3.88のリリース確認で「`viewMode`切替時に`TaskSidePanel`が無警�
 ### 確認した経路・対象外にした経路（理由込み）
 
 - **表示プロジェクトの切替（`handleSelectProject`/`selectedProjectId`）：対象外（安全と確認済み）。** `selectScopedTasks`/`selectScopedProjects`は`selectedProjectId`ではなく`currentGroupId`でしかフィルタしない。`ListView`/`GanttView`/`KanbanView`側にも「`selectedProject`が変わったら選択中タスクをクリアする」処理は無い。よってプロジェクト表示を切り替えても`TaskSidePanel`は開いたままのタスクを表示し続け、アンマウントされない（コードを読んで確認済み。推測ではない）。
-- **サイドバーの表示部署の切替（`currentGroupId`）：対象。ガード追加。** super-adminユーザーの`selectScopedTasks`は`t.group_id === s.currentGroupId`でフィルタする（非super-adminは無条件で全件返す）。編集中のタスクが別部署に属する場合、部署切替で`allTasks`から消え`selectedTask`が`undefined`になり、`TaskSidePanel`がレンダーされなくなる＝実質アンマウント。super-admin以外には本来起こらないが、レジストリは「誰のどのタスクが引っかかるか」までは判定しない単純な設計のため、全ユーザー一律にガードする（非super-adminには理論上不要な確認が出うるが、見逃すより安全側）。
+- **サイドバーの表示部署の切替（`currentGroupId`）：対象。ガード追加。** `selectScopedTasks`は表示部署（`currentGroupId`）でフィルタする（v3.139から全ユーザー。Section 71）。編集中のタスクが切替先の部署に属さない場合、部署切替で`allTasks`から消え`selectedTask`が`undefined`になり、`TaskSidePanel`がレンダーされなくなる＝実質アンマウント。レジストリは「誰のどのタスクが引っかかるか」までは判定しない単純な設計のため、全ユーザー一律にガードする。
 - **計画モード⇄OKRモードの切替（`appMode`）：対象。ガード追加。** `appMode==="okr"`は`OkrDashboardView`のみを描画し、`viewMode`系のビュー（`key={viewMode}`）を完全にアンマウントする。
 - **ログアウト・ゲストモードの終了：対象。ガード追加。** 上記参照。
 - **管理画面・ガイド・ラボ系ビュー（カレンダー／グラフ／マイページ／体制図）をツールバーから開く操作：v3.90で対応済み（Section 47参照）。** v3.89時点では次の課題としていたが、先送りせず同一バージョン内で対応した。
@@ -4918,3 +4918,49 @@ members の UPDATE／INSERT／DELETE が `group_ids && current_member_group_ids(
 AdminView のメンバー一覧は、表示中の部署を管理できるとき（`canAdministerGroup`）だけ「＋追加」を出し、✏ は自分の行か管理できる行（`canEditMemberRow`）、削除は管理できる他人の行（`canDeleteMember`）だけに出す。ホーム部署の選択は super_admin だけ（`canChangeHomeGroup`）。部署タブの改名・削除の判定も `canAdministerGroup` に揃えた。
 
 🔴 **members を書き込む新しい画面・RPC を足すときは、この表に合うかを確かめること。** 画面で判定を足すときは `memberPermission.ts` の関数を使い、`currentUser.is_admin` を部署に関係なく見ない。
+
+---
+
+## 71. メンバー・PJ・タスクの表示と担当者の候補を「表示部署」単位に絞る（v3.139・2026-10-08）
+
+### 何が問題だったか
+
+サイドメニューからPJを作成すると、オーナー候補に他部署の人が出た。`ProjectCreateModal` がストアの全メンバーを素で使っていた。
+v3.75 で members の RLS に `visible_project_member_ids()`（アクセスできるPJの参加者全員）を足したため、部署をまたぐPJがあると他部署の人がストアに載る。
+同じ使い方の画面が多数あった。
+
+### 決定（山本さん・2026-10-08）
+
+1. **PJ・タスク・依存・メンバーの一覧は、super-admin・一般・兼務者の全員について表示部署（`currentGroupId`）で絞る。** 判定は Section 1.6。
+   v2.91 の「非super-adminは RLS が絞っているので一切絞らない」割り切りは撤回した。**兼務者は表示部署を切り替えると、その部署のPJ・タスク・メンバーに切り替わる**（両方の部署を一度に見る画面はない）。
+   部署をまたぐPJは属する各部署で表示される。招待受諾者は表示部署が招待用部署なので、招待されたPJが見える。
+2. **担当者の候補 ＝ 表示部署のメンバー ＋〔既存PJのタスクなら〕そのPJの参加者 ＋ 今の担当者。** 削除済みは出さない。
+   PJ参加者の定義は `visible_project_member_ids()`／`ProjectSettingsModal` の「関わるメンバー」と同じ：オーナー（`owner_member_id(s)`）／`projects.member_ids`／
+   そのPJのタスク（`project_id` 直接＋`task_projects` 経由）の担当者／PJの `group_ids` のうち招待用部署（`is_invite_group=true`）に属する人。
+   今の担当者を残すのは、他部署の人が既に担当しているときに選択状態が壊れないようにするため。
+3. **PJの新規作成（オーナー・他PJから引き継ぐメンバー）と、既存PJのオーナー追加は、表示部署のメンバーだけ。**
+
+### 候補と名前の解決を分ける（🔴 ここを取り違えると「未担当」に見える）
+
+- **候補一覧**（ピッカー・チェックボックス・ドロップダウン・絞り込みの選択肢・メンション候補・PJの外から足す候補）は、`selectScopedMembers`
+  か `src/lib/members/assigneeCandidates.ts`（`buildAssigneeCandidates`／`projectParticipantIds`／`participantIdsOfProjects`／`sharedProjectId`）・
+  `src/hooks/useAssigneeCandidates.ts` から作る。担当者ピッカーは必ず後者（`InlineEditAssignee` は `projectId` を受け取り、開いたときだけ計算する）。
+- **名前の解決**（id→表示名・アバター・担当者チップ・変更履歴・AIに渡す「このPJの関係者」の名前）は、ストアの全メンバーを使う。
+  表示部署のメンバーで引くと、既に担当している他部署の人が空欄・「メンバー」になる。
+- 人別にまとめる表示（ガントの人別ビュー・リストの担当者別）は、表示中のタスクの担当者だけが行になるため全メンバーのまま
+  （表示部署のメンバーに絞ると、他部署の担当者のタスクが一覧から消える）。ワークロードの行は従来どおり表示部署のメンバー。
+- AIに渡す「部署メンバー一覧」は表示部署のまま（2026-07-03の越境送信の教訓）。AIの担当者名の照合（`applyProposal`）も候補と同じ範囲で行う
+  （全件で引くと、他部署の同じ略称の人が担当に入りうる）。
+- 通知の監視（`useMentionNotifications`）は一覧ではないので、表示部署に関係なく全タスクを見る。
+
+### 機械チェック
+
+`src/components/__tests__/rawMembersUsage.test.ts` が、ストアの全メンバーを素で読む箇所（全メンバーを返すセレクタでの購読と `getState()` からの読み取り）を
+構文木でファイルごとに数え、許可リスト（理由付き）と完全一致することを検査する。**新しく増やすと落ちる**：候補一覧なら上の関数に直し、名前解決なら理由を書いて許可リストに足す。
+構文木で数えるのでコメントは数に入らない（Section 59 の無力化は起きない。わざと1行足すと赤・同じ行をコメントにすると緑を確認済み）。
+限界：ローカル変数に入れたストアの state から読む形（`const s = useAppStore.getState(); s.members`）は数えない。
+
+### 対象外
+
+AdminView 配下（Section 36・`memberInGroupUsage.test.ts`）、設定のプロフィール・通知、`UserSelectScreen`、`App.tsx` の `autoMatch`、OKR系（`deptScope.ts`）。
+DB・RLS は変更していない（マイグレーションなし）。

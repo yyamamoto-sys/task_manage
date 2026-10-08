@@ -44,7 +44,9 @@ const ANALYSIS_PHASES = [
 
 export function ProjectKarte({ project, currentUser }: { project: Project; currentUser: Member }) {
   const rawTasks   = useAppStore(selectScopedTasks);
-  const rawMembers = useAppStore(selectScopedMembers);
+  // 名前の解決（オーナー・担当者・AIに渡すこのPJの関係者）は全件。オーナーの追加候補だけ表示部署のメンバー（v3.139）
+  const rawMembers = useAppStore(s => s.members);
+  const scopedMembers = useAppStore(selectScopedMembers);
   const rawMs      = useAppStore(s => s.milestones);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawKrs     = useAppStore(s => s.keyResults);
@@ -400,7 +402,7 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
                     style={{ fontSize: "11px", padding: "2px 4px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
                   >
                     <option value="">＋ 追加</option>
-                    {members.filter(m => !draftOwnerIds.includes(m.id)).map(m => (
+                    {scopedMembers.filter(m => !draftOwnerIds.includes(m.id)).map(m => (
                       <option key={m.id} value={m.id}>{m.short_name}</option>
                     ))}
                   </select>

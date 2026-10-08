@@ -14,12 +14,17 @@
 // 位置決め・スクロール追従・スクロール連鎖の遮断は共通フック useFloatingPanel に集約した
 // （4箇所のコピペが再発の温床だったため）。
 
+//
+// 【v3.139】アイコン（今の担当者の表示）は全メンバーから引き、ドロップダウンの候補は
+// useAssigneeCandidates（表示部署のメンバー＋PJ参加者＋今の担当者）にする（CLAUDE.md Section 71）。
+
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
-import type { Member } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
 import { useT } from "../../hooks/useT";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
+import { useAppStore } from "../../stores/appStore";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 
 /** パネル幅は中身（メンバー名・アバター）なり。実測が入るまでの1フレームだけ使う見積もり値 */
 const PANEL_FALLBACK_WIDTH = 220;
@@ -29,13 +34,16 @@ const PANEL_MIN_HEIGHT = 140;
 
 interface Props {
   assigneeIds: string[];
-  members: Member[];
+  /** タスクのPJ。既存PJならその参加者を候補に足す（独立タスクは null） */
+  projectId: string | null;
   onSave: (ids: string[]) => void;
 }
 
-export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
+export function InlineEditAssignee({ assigneeIds, projectId, onSave }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const allMembers = useAppStore(s => s.members);
+  const candidates = useAssigneeCandidates(projectId, assigneeIds, open);
   const triggerRef = useRef<HTMLDivElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -80,7 +88,7 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
     onSave(next);
   };
 
-  const assignees = members.filter(m => assigneeIds.includes(m.id));
+  const assignees = allMembers.filter(m => !m.is_deleted && assigneeIds.includes(m.id));
 
   return (
     <div ref={triggerRef} style={{ position: "relative", display: "inline-block" }}>
@@ -123,7 +131,7 @@ export function InlineEditAssignee({ assigneeIds, members, onSave }: Props) {
           minWidth: "150px",
           pointerEvents: "auto",
         }}>
-          {members.map(m => {
+          {candidates.map(m => {
             const selected = assigneeIds.includes(m.id);
             return (
               <div

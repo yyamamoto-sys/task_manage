@@ -71,6 +71,8 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
   // 他の state（loading, milestones, taskTaskForces 等）変更では Dashboard は再レンダーされない。
   const rawTasks   = useAppStore(selectScopedTasks);
   const rawMembers = useAppStore(selectScopedMembers);
+  // 名前の解決（オーナー・担当者・更新者）は表示部署で絞らない全件。AIに渡す部署メンバー一覧（members_short_names）だけ表示部署（v3.139）
+  const rawAllMembers = useAppStore(s => s.members);
   const rawKrs     = useAppStore(s => s.keyResults);
   const rawTfs     = useAppStore(s => s.taskForces);
   const rawPtfs    = useAppStore(s => s.projectTaskForces);
@@ -105,6 +107,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
 
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
+  const allMembers = useMemo(() => active(rawAllMembers), [rawAllMembers]);
   const krs      = useMemo(() => active(rawKrs), [rawKrs]);
   const tfs      = useMemo(() => active(rawTfs), [rawTfs]);
   const todos      = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
@@ -357,7 +360,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           status: pj.status,
           start_date: pj.start_date ?? "",
           end_date: pj.end_date ?? "",
-          owner_short_names: ownerIds.map(id => members.find(m => m.id === id)?.short_name).filter((s): s is string => !!s),
+          owner_short_names: ownerIds.map(id => allMembers.find(m => m.id === id)?.short_name).filter((s): s is string => !!s),
           task_stats: {
             total: pjTasks.length,
             todo: pjTasks.filter(t => t.status === "todo").length,
@@ -373,7 +376,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
             ).length,
           },
           assignee_loads: [...loadMap.entries()]
-            .map(([id, active]) => ({ short_name: members.find(m => m.id === id)?.short_name ?? "", active }))
+            .map(([id, active]) => ({ short_name: allMembers.find(m => m.id === id)?.short_name ?? "", active }))
             .filter(l => l.short_name)
             .sort((a, b) => b.active - a.active),
           next_milestone: nextMs ? { name: nextMs.name, date: nextMs.date } : undefined,
@@ -390,7 +393,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     } finally {
       setAllAnalyzing(false);
     }
-  }, [projects, allTasks, milestones, members, todayS, stagnantDays]);
+  }, [projects, allTasks, milestones, members, allMembers, todayS, stagnantDays]);
 
   const togglePj = (id: string) => {
     setActiveKrId(null);
@@ -947,7 +950,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 <TaskRow
                   key={task.id}
                   task={task}
-                  members={members}
                   saveTask={saveTask}
                   project={pj}
                   parentLabel={parentTask?.name}
@@ -982,7 +984,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                     <TaskRow
                       key={task.id}
                       task={task}
-                      members={members}
                       saveTask={saveTask}
                       project={pj}
                       parentLabel={parentTask?.name}
@@ -1017,7 +1018,6 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
                 <TaskRow
                   key={task.id}
                   task={task}
-                  members={members}
                   saveTask={saveTask}
                   project={pj}
                   onClick={onOpenTask ? () => onOpenTask(task.id) : undefined}
@@ -1084,7 +1084,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
               order={5}
             >
               {mentionedTasks.map(task => {
-                const m   = members.find(mb => mb.id === task.updated_by);
+                const m   = allMembers.find(mb => mb.id === task.updated_by);
                 const pj  = projects.find(p => p.id === task.project_id);
                 const token = `@${currentUser.short_name}`;
                 // コメントからメンション周辺の抜粋を作る（前後20文字）
@@ -1329,7 +1329,7 @@ function ProgressBar({ pct, color }: { pct: number; color: string }) {
 }
 
 function TaskRow({
-  task, project, parentLabel, badge, onClick, members, saveTask,
+  task, project, parentLabel, badge, onClick, saveTask,
 }: {
   task: Task;
   project?: Project;
@@ -1339,7 +1339,6 @@ function TaskRow({
   /** 指定時：行クリック（Enter/Space）でタスク詳細を開く */
   onClick?: () => void;
   /** 担当者アイコンをクリックしての変更（複数選択可）に使う */
-  members: Member[];
   saveTask: (task: Task) => Promise<void> | void;
 }) {
   return (
@@ -1367,7 +1366,7 @@ function TaskRow({
       <div onClick={e => e.stopPropagation()}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}
-          members={members}
+          projectId={task.project_id}
           onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
         />
       </div>

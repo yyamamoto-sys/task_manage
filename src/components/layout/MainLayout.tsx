@@ -2114,10 +2114,9 @@ function Sidebar({
       </div>
 
       {/* 表示部署の切替（アクセス可能な部署が2件以上のときだけ表示。折りたたみ時は非表示＝
-          セレクタのラベル文言が入らないため）。CLAUDE.md Section 1.6参照：super-adminは
-          currentGroupIdでダッシュボード等の表示部署そのものを切り替えられる。非super-adminの
-          兼務者は選択してもselectScopedが絞り込みをしない（自部署＋兼務先が常に全部見える）ため、
-          ここでの選択は「新規作成時のデフォルト所属部署」を選ぶ程度の意味にとどまる。 */}
+          セレクタのラベル文言が入らないため）。CLAUDE.md Section 1.6／71参照：super-admin・兼務者とも、
+          ここで選んだ部署のPJ・タスク・メンバーだけが一覧と担当者の候補に出る（v3.139）。
+          新規作成時のデフォルト所属部署もこの値になる。 */}
       {!c && accessibleGroups.length >= 2 && (
         <div style={{ padding: "3px 8px 4px", flexShrink: 0 }}>
           <CustomSelect

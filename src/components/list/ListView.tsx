@@ -1,6 +1,8 @@
 // src/components/list/ListView.tsx
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedTaskDependencies, selectScopedMembers } from "../../stores/appStore";
+import { buildAssigneeCandidates, sharedProjectId } from "../../lib/members/assigneeCandidates";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
@@ -142,6 +144,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const [filterThisWeek, setFilterThisWeek] = useState(false);
   const [filterHideDone, setFilterHideDone] = useState(false);
   const [filterMember,   setFilterMember  ] = useState<string>("all");
+  // 担当者で絞り込むときの選択肢は表示部署のメンバー（選択中の人は他部署でも残す）。行・CSV・担当者別のまとめの名前解決は members（全件）
+  const scopedMembers = useAppStore(selectScopedMembers);
+  const filterMemberOptions = useMemo(
+    () => buildAssigneeCandidates({ allMembers: members, scopedMembers, currentIds: filterMember !== "all" ? [filterMember] : [] }),
+    [members, scopedMembers, filterMember],
+  );
   const [searchText,     setSearchText    ] = useState("");
   // 検索欄はツールバーの同じ行にインライン展開する（既定は閉じた状態＝🔍アイコンのみ）。
   // searchText が空でないときは ListToolbar 側で常に展開されるため、ここは「明示的に開いたか」だけを持つ。
@@ -198,6 +206,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
 
   // 一括操作用：複数選択
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // 一括の担当者変更の候補（選んだタスクが全部同じPJならそのPJの参加者も足す）
+  const bulkAssigneeCandidates = useAssigneeCandidates(
+    sharedProjectId(allTasks.filter(t => selectedIds.has(t.id))), [], selectedIds.size > 0,
+  );
   // 選択したタスクを複製（v3.72）。モーダルを開くかどうかだけをここで持つ（本体はDuplicateTasksModal）
   const [showDuplicateModal, setShowDuplicateModal] = useState(false);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックした行）。
@@ -686,7 +698,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           onChangeDensity={setDensity}
           onExportCSV={() => exportCSV(filteredTasks, projects, members)}
           taskCount={filteredTasks.length}
-          members={members}
+          members={filterMemberOptions}
           currentUserId={currentUser.id}
         />
 
@@ -763,7 +775,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               onChange={value => { if (value) bulkUpdateAssignee(value); }}
               options={[
                 { value: "", label: "担当者を変更…" },
-                ...[...members].sort((a, b) =>
+                ...[...bulkAssigneeCandidates].sort((a, b) =>
                   a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
                 ).map(m => ({ value: m.id, label: m.display_name })),
               ]}
@@ -1008,7 +1020,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             myZone={myZone}
                             density={density}
                             groupBy={groupBy}
-                            members={members}
                             currentUser={currentUser}
                             draggingId={draggingId}
                             saveTask={saveTask}
@@ -1216,7 +1227,6 @@ interface ListTaskRowProps {
   myZone: DropZone | null;
   density: "simple" | "detailed";
   groupBy: GroupBy;
-  members: Member[];
   currentUser: Member;
   draggingId: string | null;
   saveTask: (task: Task) => Promise<void>;
@@ -1237,7 +1247,7 @@ const ROW_TD_PADDING_FIRST = "3px 6px 3px 12px";
 const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
-  canDrag, showHandleCol, myZone, density, groupBy, members, currentUser,
+  canDrag, showHandleCol, myZone, density, groupBy, currentUser,
   draggingId, saveTask, onRowClick, toggleSelect, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
@@ -1323,7 +1333,7 @@ const ListTaskRow = memo(function ListTaskRow({
         <div style={{ display: "flex", alignItems: "center" }}>
           <InlineEditAssignee
             assigneeIds={getAssigneeIds(task)}
-            members={members}
+            projectId={task.project_id}
             onSave={ids => saveTask({ ...task, assignee_member_ids: ids, assignee_member_id: ids[0] ?? "", updated_by: currentUser.id })}
           />
         </div>

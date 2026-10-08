@@ -83,6 +83,8 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const allProjects = useAppStore(selectScopedProjects);
   const allTasks    = useAppStore(selectScopedTasks);
   const allMembers  = useAppStore(selectScopedMembers);
+  // 既存タスクの担当者名の解決は全件（他部署の担当者が空欄にならないように）。候補・AIに渡す部署メンバー一覧は表示部署（v3.139）
+  const everyMember = useAppStore(s => s.members);
   const saveTask    = useAppStore(s => s.saveTask);
   const saveProject = useAppStore(s => s.saveProject);
 
@@ -190,7 +192,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
         tasks: tasks.map(t => ({
           id: t.id,
           name: t.name,
-          assignee: members.find(m => m.id === t.assignee_member_id)?.short_name ?? "",
+          assignee: everyMember.find(m => m.id === t.assignee_member_id)?.short_name ?? "",
           status: t.status,
           due_date: t.due_date,
         })),
@@ -241,7 +243,7 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
       setError(formatErrorForUser("AI解析に失敗しました", e));
       setStep("input");
     }
-  }, [rawText, pdfAttachment, projects, tasks, members]);
+  }, [rawText, pdfAttachment, projects, tasks, members, everyMember]);
 
   // ===== 適用 =====
 

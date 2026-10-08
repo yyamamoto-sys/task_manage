@@ -30,7 +30,8 @@
 // try/catchで包み、成功した分はUndoSnapshotに積み、失敗した分は理由（formatErrorForUser経由）
 // を集めて `warning` として success 結果に添える（全滅時のみ type:"error"）。
 
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedMembers } from "../../stores/appStore";
+import { buildAssigneeCandidates, participantIdsOfProjects } from "../members/assigneeCandidates";
 import type { Task, Project } from "../localData/types";
 import type { UIProposal } from "./proposalMapper";
 import type { UndoSnapshot, UndoOperation } from "../../hooks/useUndoStack";
@@ -174,10 +175,17 @@ function getProjectPreview(uuid: string): { name: string; end_date: string | nul
   return { name: p.name, end_date: p.end_date ?? null };
 }
 
-/** 有効メンバー一覧（short_name→id解決用。add_task/add_projectの担当者名マッチに使う）。 */
-function getActiveMembersForNameResolution(): { id: string; short_name: string }[] {
-  return useAppStore.getState().members
-    .filter(m => !m.is_deleted)
+/**
+ * AIが提案した担当者名（short_name）→id の照合先（add_task/add_project）。担当者の候補と同じ範囲＝
+ * 表示部署のメンバー＋〔既存PJなら〕そのPJの参加者（v3.139・CLAUDE.md Section 71）。
+ * 全件から引くと、他部署の同じ略称の人が担当に入りうる。並びは表示部署のメンバーが先（同名なら先勝ち）。
+ */
+function getAssigneeCandidatesForNameResolution(projectId?: string): { id: string; short_name: string }[] {
+  const s = useAppStore.getState();
+  const participantIds = projectId
+    ? participantIdsOfProjects([projectId], { projects: s.projects, tasks: s.tasks, taskProjects: s.taskProjects, members: s.members, groups: s.groups })
+    : null;
+  return buildAssigneeCandidates({ allMembers: s.members, scopedMembers: selectScopedMembers(s), participantIds })
     .map(m => ({ id: m.id, short_name: m.short_name }));
 }
 
@@ -540,10 +548,10 @@ export async function applyProposal(
     }
 
     // 担当者解決用に有効メンバーを一括取得（親タスク＋子タスクの short_name→id 変換に使う）
-    const memberRows = getActiveMembersForNameResolution();
+    const memberRows = getAssigneeCandidatesForNameResolution(projectId);
     const memberByShortName = new Map<string, { id: string; short_name: string }>();
     for (const m of memberRows) {
-      memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
+      if (!memberByShortName.has(m.short_name)) memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
     }
 
     const parentMatch = proposal.suggested_assignee
@@ -594,10 +602,10 @@ export async function applyProposal(
   // ===== add_project: 新規PJ作成の確認ダイアログを返す =====
   if (action_type === "add_project") {
     // members を short_name → id で解決するため一括取得（new_project_tasks の担当者解決用）
-    const memberRows = getActiveMembersForNameResolution();
+    const memberRows = getAssigneeCandidatesForNameResolution();
     const memberByShortName = new Map<string, { id: string; short_name: string }>();
     for (const m of memberRows) {
-      memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
+      if (!memberByShortName.has(m.short_name)) memberByShortName.set(m.short_name, { id: m.id, short_name: m.short_name });
     }
 
     const taskItems: NewTaskItem[] = (proposal.new_project_tasks ?? [])

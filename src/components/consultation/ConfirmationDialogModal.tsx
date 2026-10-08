@@ -5,12 +5,12 @@
 // ユーザーが値を確認・調整してから applyProposalWithConfirmation を呼ぶ。
 // CLAUDE.md Section 6-10参照。
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { ConfirmationDialog, PjEndDateItem, NewTaskItem } from "../../lib/ai/applyProposal";
 import { applyProposalWithConfirmation } from "../../lib/ai/applyProposal";
 import type { ApplyResult } from "../../lib/ai/applyProposal";
-import { useAppStore } from "../../stores/appStore";
-import { active } from "../../lib/localData/localStore";
+import { useAppStore, selectScopedMembers } from "../../stores/appStore";
+import { buildAssigneeCandidates, participantIdsOfProjects } from "../../lib/members/assigneeCandidates";
 import { CustomSelect } from "../common/CustomSelect";
 import { BTN_APPLY_CONFIRMED, btnShift } from "../../lib/ai/uiGuide";
 import { toDate, addDays, toDateStr } from "../../lib/date";
@@ -190,7 +190,27 @@ export function ConfirmationDialogModal({
   const isBulkAction = isBulkRename || isBulkStatus;
   // add_task に子タスクが付く＝階層化（親＋子の一括作成）
   const isHierarchy = isAddTask && (dialog.new_subtask_items ?? []).length > 0;
-  const activeMembers = active(members);
+  // 担当者の候補：表示部署のメンバー＋対象タスクの既存PJの参加者（v3.139・CLAUDE.md Section 71）
+  const scopedMembers = useAppStore(selectScopedMembers);
+  const storeProjects = useAppStore(s => s.projects);
+  const storeTasks = useAppStore(s => s.tasks);
+  const taskProjects = useAppStore(s => s.taskProjects);
+  const groups = useAppStore(s => s.groups);
+  const activeMembers = useMemo(() => {
+    const projectIds: string[] = [];
+    for (const it of [...(dialog.new_task_items ?? []), ...(dialog.new_subtask_items ?? [])]) {
+      if (it.project_id) projectIds.push(it.project_id);
+    }
+    if (dialog.action_type === "assignee") {
+      const taskById = new Map(storeTasks.map(t => [t.id, t]));
+      for (const it of dialog.items) {
+        const pid = taskById.get(it.task_id)?.project_id;
+        if (pid) projectIds.push(pid);
+      }
+    }
+    const participantIds = participantIdsOfProjects(projectIds, { projects: storeProjects, tasks: storeTasks, taskProjects, members, groups });
+    return buildAssigneeCandidates({ allMembers: members, scopedMembers, participantIds });
+  }, [dialog, storeProjects, storeTasks, taskProjects, members, groups, scopedMembers]);
   const [confirmedValues, setConfirmedValues] = useState<Record<string, string>>(
     () => {
       if (isDateChange) {

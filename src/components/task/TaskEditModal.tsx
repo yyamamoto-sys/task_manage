@@ -16,6 +16,7 @@
 import { useState, useCallback, useMemo, useRef, useEffect, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
@@ -187,6 +188,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
 
   // このモーダルはタグ編集UIを持つため、tags は常に配列で保持する（TaskSidePanel と違い省略しない）
   const [form, setForm] = useState<TaskEditFormState & { tags: string[] }>(() => buildFormFromTask(originalTask));
+  // 担当者・メンションの候補（表示部署のメンバー＋PJ参加者＋今の担当者）。チップの名前解決は members（全件）のまま
+  const assigneeCandidates = useAssigneeCandidates(form.project_id, form.assignee_member_ids);
   const [tagDraft, setTagDraft] = useState("");
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -544,7 +547,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               }))}
               options={
                 // 自分自身を先頭に、残りは元の順
-                [...members].sort((a, b) =>
+                [...assigneeCandidates].sort((a, b) =>
                   a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
                 ).map(m => ({ value: m.id, label: m.display_name }))
               }
@@ -767,7 +770,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             <MentionTextarea
               value={form.comment}
               onChange={v => setForm(f => ({ ...f, comment: v }))}
-              members={allMembers}
+              members={assigneeCandidates}
               rows={5}
               placeholder={"メモやURLを入力できます\n@名前 でメンション・通知できます"}
               style={{ ...inputSm, resize: "vertical", lineHeight: 1.6, minHeight: "80px" }}

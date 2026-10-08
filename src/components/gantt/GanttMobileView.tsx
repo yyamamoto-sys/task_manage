@@ -31,7 +31,6 @@ interface GanttMobileViewProps {
   krTaskIds?: Set<string> | null;
   currentUser: Member;
   /** 担当者アイコンをクリックしての変更（複数選択可）に使う */
-  members: Member[];
   saveTask: (task: Task) => Promise<void> | void;
   /** 完了を隠すトグル（GanttView側のstateをそのまま使う。allTasks等は既に適用済みで渡される） */
   hideCompletedTasks?: boolean;
@@ -45,7 +44,7 @@ export function GanttMobileView({
   previewChangedTaskIds, isPreview,
   editingTaskId, setEditingTaskId,
   mineOnly, selectedProject, krTaskIds, currentUser,
-  members, saveTask,
+  saveTask,
   hideCompletedTasks, onToggleHideCompletedTasks,
 }: GanttMobileViewProps) {
   const todayStrVal = toDateStr(today);
@@ -120,7 +119,7 @@ export function GanttMobileView({
         <div style={{ flexShrink: 0 }} onClick={e => e.stopPropagation()}>
           <InlineEditAssignee
             assigneeIds={getAssigneeIds(task)}
-            members={members}
+            projectId={task.project_id}
             onSave={ids => saveTask({ ...task, assignee_member_ids: ids })}
           />
         </div>

@@ -8,12 +8,13 @@
 // v3.129：通知の種類「メンション」の Windows がオフの人には出さない（CLAUDE.md Section 67）。
 
 import { useEffect, useRef } from "react";
-import { useAppStore, selectScopedTasks } from "../stores/appStore";
+import { useAppStore } from "../stores/appStore";
 import { useNotificationPrefsStore } from "../stores/notificationPrefsStore";
 import { isKindEnabled } from "../lib/notifications/notificationKinds";
 
 export function useMentionNotifications(currentUserId: string) {
-  const tasks   = useAppStore(selectScopedTasks);
+  // 通知は表示部署に関係なく、見えている全タスクを監視する（表示部署で絞ると兼務先のメンションが届かない・v3.139）
+  const tasks   = useAppStore(s => s.tasks);
   const members = useAppStore(s => s.members);
   const pushEnabled = useNotificationPrefsStore(s => s.status === "ready" && isKindEnabled(s.prefs, "mention", "push"));
 

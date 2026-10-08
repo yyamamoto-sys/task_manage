@@ -2,7 +2,7 @@
 // ガントビューで使う小コンポーネント群
 
 import { memo, useState, useRef, useEffect } from "react";
-import type { Task, Member, Project } from "../../lib/localData/types";
+import type { Task, Project } from "../../lib/localData/types";
 import { getAssigneeIds, TASK_STATUS_STYLE, isCompletedForProgress } from "../../lib/taskMeta";
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
@@ -404,7 +404,6 @@ export interface GanttPjLabelRowProps {
   childCount: number;
   isHovered: boolean;
   isCollapsed: boolean;
-  members: Member[];
   onEdit: (taskId: string) => void;
   onHoverEnter: (taskId: string) => void;
   onHoverLeave: () => void;
@@ -430,7 +429,7 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed, members,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
@@ -542,7 +541,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}
-          members={members}
+          projectId={task.project_id}
           onSave={ids => onSaveAssignees(task, ids)}
         />
       </div>
@@ -581,7 +580,6 @@ export interface GanttTodoLabelRowProps {
   /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
   rowHeight?: number;
   isHovered: boolean;
-  members: Member[];
   onEdit: (taskId: string) => void;
   onHoverEnter: (taskId: string) => void;
   onHoverLeave: () => void;
@@ -590,7 +588,7 @@ export interface GanttTodoLabelRowProps {
 }
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, members, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
   onSaveName,
 }: GanttTodoLabelRowProps) {
   return (
@@ -624,7 +622,7 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       <div onClick={e => e.stopPropagation()} style={{ flexShrink: 0 }}>
         <InlineEditAssignee
           assigneeIds={getAssigneeIds(task)}
-          members={members}
+          projectId={task.project_id}
           onSave={ids => onSaveAssignees(task, ids)}
         />
       </div>

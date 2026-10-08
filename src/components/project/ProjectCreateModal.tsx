@@ -51,7 +51,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { v4 as uuidv4 } from "uuid";
-import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies, selectScopedMembers } from "../../stores/appStore";
 import { active } from "../../lib/localData/localStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -95,7 +95,9 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   const rawTasksAll = useAppStore(selectScopedTasks);
   const rawMilestonesAll = useAppStore(s => s.milestones);
   const saveProject = useAppStore(s => s.saveProject);
+  // 名前の解決（オーナーのチップ・タスク行の担当者）は全件。候補（オーナーの追加・引き継ぐメンバー）は表示部署のメンバーだけ（v3.139）
   const members = active(rawMembers);
+  const scopedMembers = useAppStore(selectScopedMembers);
 
   // ===== PJ基本情報（最終ステップで入力） =====
   const [name, setName] = useState("");
@@ -184,11 +186,12 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
   // 候補＝元PJのmember_ids ∪ 全タスクの担当者（非削除メンバーのみ）。projectMembers.ts の
   // computeProjectMembers（オーナー・担当者・招待者まで広げる別目的の集約）は流用しない
   // （lib/project/inheritMembers.ts のコメント参照）。
+  // 表示部署のメンバーに限る（引き継ぎ元PJに他部署の人がいても候補に出さない・v3.139）。
   const candidateMembers = useMemo(
     () => (mode === "inherit" && originProjectId)
-      ? candidateInheritMembers(rawMembers, originProject?.member_ids, originTasks)
+      ? candidateInheritMembers(scopedMembers, originProject?.member_ids, originTasks)
       : [],
-    [mode, originProjectId, rawMembers, originProject, originTasks],
+    [mode, originProjectId, scopedMembers, originProject, originTasks],
   );
 
   // 引き継ぎ元PJを切り替えた時（またはモードを切り替えた時）だけチェック状態・日程の
@@ -221,7 +224,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
     setInheritOtherMilestones(true);
 
     const liveOriginProject = selectScopedProjects(state).find(p => p.id === originProjectId);
-    const liveCandidates = candidateInheritMembers(state.members, liveOriginProject?.member_ids, liveTasks);
+    const liveCandidates = candidateInheritMembers(selectScopedMembers(state), liveOriginProject?.member_ids, liveTasks);
     const defaultCheckedTasks = liveTasks.filter(t => defaultTaskIds.has(t.id));
     const liveDefaultMemberIds = defaultCheckedMemberIds(defaultCheckedTasks);
     // candidate外（is_deleted等）のIDが紛れないよう候補集合との積を取る
@@ -723,7 +726,7 @@ export function ProjectCreateModal({ currentUser, onClose, onCreated }: Props) {
                       style={{ fontSize: "11px", padding: "3px 6px", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)", color: "var(--color-text-secondary)", cursor: "pointer" }}
                     >
                       <option value="">＋ 追加</option>
-                      {members.filter(m => !ownerIds.includes(m.id)).map(m => (
+                      {scopedMembers.filter(m => !m.is_deleted && !ownerIds.includes(m.id)).map(m => (
                         <option key={m.id} value={m.id}>{m.short_name}</option>
                       ))}
                     </select>

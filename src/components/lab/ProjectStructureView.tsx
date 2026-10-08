@@ -7,7 +7,7 @@
 // メンバーのPJ追加・除外は saveProject 経由で DB にも反映する。
 
 import { useMemo, useState, useRef, useEffect, useCallback } from "react";
-import { useAppStore, selectScopedProjects } from "../../stores/appStore";
+import { useAppStore, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import type { Member, Project } from "../../lib/localData/types";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { withBellReserve } from "../../lib/layout/topRightBell";
@@ -733,7 +733,9 @@ function LayerConnector({ upperRef, lowerRef, containerRef }: LayerConnectorProp
 
 export function ProjectStructureView({ onClose, currentUser }: Props) {
   const allProjects = useAppStore(selectScopedProjects);
+  // 名前の解決・既にPJにいる人は全件。PJの外から新しく足す候補だけ表示部署のメンバー（v3.139）
   const members = useAppStore(s => s.members);
+  const scopedMembers = useAppStore(selectScopedMembers);
   const saveProject = useAppStore(s => s.saveProject);
 
   const activeProjects = useMemo(
@@ -808,8 +810,8 @@ export function ProjectStructureView({ onClose, currentUser }: Props) {
   // 実際には「PJにまだいない全アクティブメンバー」が追加対象
   // グループ追加 = PJへの追加 + orgへの配置
   const globalAddCandidates = useMemo(() => {
-    return members.filter(m => !m.is_deleted && !allPjMemberIds.has(m.id));
-  }, [members, allPjMemberIds]);
+    return scopedMembers.filter(m => !m.is_deleted && !allPjMemberIds.has(m.id));
+  }, [scopedMembers, allPjMemberIds]);
 
   // グループ内の追加候補：PJメンバーのうちorgにまだ配置されていない人
   const unplacedPjMembers = useMemo(() => {

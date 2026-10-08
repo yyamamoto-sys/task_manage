@@ -116,7 +116,8 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
           : projects;
 
       // 相談実行者本人（「私／自分」の参照先）を members から解決する
-      const me = members.find((m) => m.id === currentMemberId);
+      // 本人は表示部署に属していなくてもよい（全社スーパー管理者が他部署を表示中など）ので全件から引く
+      const me = useAppStore.getState().members.find((m) => m.id === currentMemberId);
 
       // ペイロード構築
       const { payload, shortIdMap: newShortIdMap } = buildPayload({

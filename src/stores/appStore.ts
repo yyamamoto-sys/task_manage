@@ -20,6 +20,7 @@ import { create } from "zustand";
 import { showToast } from "../components/common/Toast";
 import { reportError } from "../lib/errorReporter";
 import { formatErrorForUser } from "../lib/errorMessage";
+import { isRowInDisplayGroup, isMemberInDisplayGroup } from "../lib/scope/displayGroupScope";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -1547,65 +1548,71 @@ function upsertByKeys<T>(
 }
 
 // ============================================================
-// 全社スーパー管理者用スコープ絞り込み selector
+// 表示部署（currentGroupId）スコープの selector（v3.139・CLAUDE.md Section 1.6／71）
 //
-// 【設計意図】RLSがsuper-adminに全部署のmembers/projects/tasksを返すようになった
-// ため（migration 20260702c）、s.tasks / s.projects を素で購読しているカンバン・
-// ガント・リスト・ダッシュボード等の画面は、super-adminログイン時に全部署の
-// データが混ざって表示されてしまう。currentGroupId（ログイン時に自分の所属部署
-// から設定される・切替UIはまだ無い）で自分のホーム部署だけに絞り込む。
-// 非super-adminには実質ノーオペ（元々RLSで自部署にしか絞られていないため
-// currentGroupId と必ず一致する）。
+// サイドバーの「表示部署」で members / projects / tasks / taskDependencies を絞る。
+// super_admin・一般・兼務者の全員に同じ判定を適用する（v2.91 の「非super_adminは RLS が
+// 絞っているので一切絞らない」割り切りは撤回）。RLS の可視範囲は部署より広い——兼務先、
+// 部署をまたぐPJ、v3.75 の visible_project_member_ids()（アクセスできるPJの参加者全員）——
+// ため、絞らないと他部署の人・PJ・タスクが候補や一覧に混ざる。
+// currentGroupId が null（ログイン直後の未確定）の間は絞らず元配列を返す。
+//
+// 名前の解決（id→表示名・アバター）には使わないこと（既に担当している他部署の人が
+// 「未担当」に見える）。そちらは s.members を素で読む。担当者ピッカーの候補は
+// lib/members/assigneeCandidates.ts が「この selector の結果＋PJ参加者＋現担当」で組み立てる。
 //
 // 【重要】zustand v5 は useStore(selector) の戻り値を Object.is で比較する
-// （React の useSyncExternalStore 経由）。.filter() は呼ぶたびに新しい配列を
-// 返すため、メモ化しないと store の状態が変わっていなくても毎回「変化した」と
-// 判定され、無限レンダリングループ（React error #185: Maximum update depth
-// exceeded）でアプリ全体がクラッシュする。同一の state オブジェクト（zustand は
-// set() が起きない限り参照を変えない）に対しては同じ配列参照を返すようキャッシュする。
+// （React の useSyncExternalStore 経由）。.filter() は呼ぶたびに新しい配列を返すため、
+// メモ化しないと毎回「変化した」と判定され React error #185（Maximum update depth exceeded）
+// でアプリ全体がクラッシュする。入力（元配列・currentGroupId）が同じ参照なら同じ結果を返す。
+// state 全体ではなく入力で比較するのは、無関係な set() のたびに新しい配列を返すと、
+// 配列を依存に持つ effect が store を書き換える画面で再実行が連鎖しうるため。
 // ============================================================
-function memoizeScopedSelector<T>(filterFn: (s: AppState) => T[]): (s: AppState) => T[] {
-  let lastState: AppState | undefined;
+function memoizeScopedSelector<T>(
+  inputs: (s: AppState) => readonly unknown[],
+  filterFn: (s: AppState) => T[],
+): (s: AppState) => T[] {
+  let lastInputs: readonly unknown[] | undefined;
   let lastResult: T[] | undefined;
   return (s: AppState) => {
-    if (s === lastState && lastResult) return lastResult;
-    lastState = s;
+    const next = inputs(s);
+    if (lastInputs && lastResult && next.length === lastInputs.length && next.every((v, i) => v === lastInputs![i])) {
+      return lastResult;
+    }
+    lastInputs = next;
     lastResult = filterFn(s);
     return lastResult;
   };
 }
 
-// 【2026-07-23 複数部署アクセス対応】
-// 非super-admin（兼務者含む一般ユーザー）は、RLSが既に「自部署＋兼務先」だけを返している。
-// クライアントで t.group_id === currentGroupId の単一値比較を重ねると、RLSでは見えている
-// 兼務2部署目がUIから消える（新機能が画面上機能しないように見える）。そのため非super-admin
-// では一切フィルタせず元配列を「同一参照」で返す（参照安定性も同時に満たす＝新配列を作らない）。
-// super-admin は手元に全部署分が載るため、従来通り currentGroupId（=表示中の部署。切替UIで
-// 変わる）で絞り込む。super-admin が「他部署を表示中」でも、絞った結果その部署のデータだけを
-// 見る＝AI越境漏洩（2026-07-03の教訓）も起きない。
-export const selectScopedTasks = memoizeScopedSelector((s: AppState): Task[] =>
-  s.currentUserIsSuperAdmin
-    ? s.tasks.filter(t => t.group_id == null || t.group_id === s.currentGroupId)
-    : s.tasks);
+export const selectScopedProjects = memoizeScopedSelector(
+  s => [s.projects, s.currentGroupId],
+  (s: AppState): Project[] => {
+    const gid = s.currentGroupId;
+    return gid == null ? s.projects : s.projects.filter(p => isRowInDisplayGroup(p, gid));
+  });
 
-export const selectScopedProjects = memoizeScopedSelector((s: AppState): Project[] =>
-  s.currentUserIsSuperAdmin
-    ? s.projects.filter(p => p.group_id == null || p.group_id === s.currentGroupId)
-    : s.projects);
+export const selectScopedTasks = memoizeScopedSelector(
+  s => [s.tasks, s.currentGroupId],
+  (s: AppState): Task[] => {
+    const gid = s.currentGroupId;
+    return gid == null ? s.tasks : s.tasks.filter(t => isRowInDisplayGroup(t, gid));
+  });
 
-export const selectScopedTaskDependencies = memoizeScopedSelector((s: AppState): TaskDependency[] =>
-  s.currentUserIsSuperAdmin
-    ? s.taskDependencies.filter(d => d.group_id == null || d.group_id === s.currentGroupId)
-    : s.taskDependencies);
+// 両端が表示部署のタスクに含まれる依存だけ（task_dependencies.group_id は単数で、部署をまたぐPJの依存を取りこぼすため使わない）
+export const selectScopedTaskDependencies = memoizeScopedSelector(
+  s => [s.taskDependencies, selectScopedTasks(s)],
+  (s: AppState): TaskDependency[] => {
+    if (s.currentGroupId == null) return s.taskDependencies;
+    const ids = new Set(selectScopedTasks(s).map(t => t.id));
+    return s.taskDependencies.filter(d => ids.has(d.predecessor_task_id) && ids.has(d.successor_task_id));
+  });
 
-// 【2026-07-03追記／2026-07-23更新】AI関連機能（相談・全PJ分析・KR分析・会議取り込み等）が
-// 「担当者名一覧」等をAIプロンプトに含める際、素の s.members を参照していたため、super-admin が
-// A部署向けにAI機能を使ってもB部署以降のメンバー氏名が Anthropic API へ送信されていた事故の対策。
-// super-admin は手元に全部署メンバーが載るため currentGroupId で絞る必要がある。非super-admin は
-// RLSにより手元に自部署＋兼務先しか無いため、素で返しても他部署メンバーは送りようがない（安全）。
-// 管理画面（AdminView）のメンバー管理は super-admin が全部署を横断管理するため意図的にこの
-// セレクタを使わず s.members を素で読む（そちらは対象外）。
-export const selectScopedMembers = memoizeScopedSelector((s: AppState): Member[] =>
-  s.currentUserIsSuperAdmin
-    ? s.members.filter(m => m.group_id == null || m.group_id === s.currentGroupId)
-    : s.members);
+// AI機能が担当者名一覧をプロンプトに含めるときも、他部署の氏名を送らないためにこれを使う（2026-07-03の事故）。
+// 管理画面（AdminView）のメンバー管理は意図的にこれを使わない（Section 36）。
+export const selectScopedMembers = memoizeScopedSelector(
+  s => [s.members, s.currentGroupId],
+  (s: AppState): Member[] => {
+    const gid = s.currentGroupId;
+    return gid == null ? s.members : s.members.filter(m => isMemberInDisplayGroup(m, gid));
+  });
