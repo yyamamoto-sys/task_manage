@@ -13,9 +13,9 @@
 // 常にビューポート基準で正しく全画面表示される。呼び出し先は本ファイルとAdminView.tsx
 // （直接呼び出し）・HelpButton.tsx（lazy）の2箇所のみであることを確認済み。
 
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { MarkdownLite } from "../common/MarkdownLite";
+import { GuideMarkdown } from "./GuideMarkdown";
 import { getDocByMode, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
 
@@ -30,12 +30,20 @@ interface Props {
 }
 
 export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
+  // 本文中のアプリ内リンクで同じオーバーレイ内の表示を切り替える（元の記事へは「戻る」で復帰）
+  const [linkedSlug, setLinkedSlug] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const goTo = (s: string | null) => {
+    setLinkedSlug(s);
+    scrollRef.current?.scrollTo({ top: 0 });
+  };
   const doc = useMemo<DocEntry | undefined>(() => {
+    if (linkedSlug) return getDocBySlug(linkedSlug);
     if (entry) return entry;
     if (modeKey) return getDocByMode(modeKey);
     if (slug) return getDocBySlug(slug);
     return undefined;
-  }, [entry, modeKey, slug]);
+  }, [linkedSlug, entry, modeKey, slug]);
 
   return createPortal(
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
@@ -73,6 +81,15 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
           display: "flex", alignItems: "center", gap: "10px",
           flexShrink: 0,
         }}>
+          {linkedSlug && (
+            <button
+              onClick={() => goTo(null)}
+              style={{
+                background: "transparent", border: "1px solid var(--color-border-primary)", cursor: "pointer",
+                fontSize: "11px", color: "var(--color-text-secondary)", padding: "3px 8px", borderRadius: "var(--radius-sm)",
+              }}
+            >← 戻る</button>
+          )}
           <span style={{ fontSize: "18px" }}>📖</span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>
@@ -93,14 +110,14 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
           >✕</button>
         </div>
 
-        <div style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
+        <div ref={scrollRef} style={{ flex: 1, overflow: "auto", padding: "20px 24px" }}>
           {!doc && (
             <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "32px 0" }}>
               {modeKey && <>mode キー <code>{modeKey}</code> に対応するガイドはまだ書かれていません。<br />docs/guides/ 配下に該当 mode を持つ MD を追加すると、ここに表示されます。</>}
               {!modeKey && slug && <>slug <code>{slug}</code> のガイドが見つかりませんでした。</>}
             </div>
           )}
-          {doc && <MarkdownLite text={doc.body} />}
+          {doc && <GuideMarkdown text={doc.body} currentPath={doc.path} onNavigate={goTo} />}
           {doc && doc.related && doc.related.length > 0 && (
             <div style={{ marginTop: "24px", paddingTop: "12px", borderTop: "1px solid var(--color-border-primary)" }}>
               <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.06em" }}>関連</div>

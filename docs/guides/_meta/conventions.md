@@ -86,6 +86,27 @@ archived: false                    # 任意・true で目次・?ボタンから�
 - `docs/guides/_assets/<記事スラッグ>/<連番>.png` に置く（命名で記事と紐づく）
 - 撮り直しが必要になったら **置換**（同ファイル名で上書き）が原則。リンク切れを起こさない
 
+### 3.5 図解（SVG）の書き方
+
+画面の模式図・流れ図は SVG で書く。アプリは SVG をインラインで描画するため、色はアプリのテーマ（ライト／ダーク）に追随する。見本は [_img/sample-flow.svg](./_img/sample-flow.svg) を参照。
+
+- **置き場所**：`docs/guides/_img/<記事スラッグ>-<連番>.svg`（例：`_img/okr-flow-1.svg`）
+- **本文からの参照**：記事ファイルからの相対パスで、単独の行に書く。`![代替テキスト](../_img/okr-flow-1.svg)`（`02_modes/okr/` の記事なら `../../_img/okr-flow-1.svg`）。代替テキストは図の内容を1文で書く。ファイルが見つからないときは代替テキストが枠付きで表示される
+- **幅の目安**：`viewBox="0 0 640 高さ"` を基本とし、`width="640"` を付ける。横幅は 640〜720 を上限にする。表示領域が狭いときは自動で縮む（高さは比率どおり）
+- **色の指定**：`style="fill:var(--color-...)"` の形で書く（`fill="var(...)"` の属性形式は使わない）。文字は `fill="currentColor"`（本文色）か `style="fill:var(--color-text-secondary)"`。`#3d4f8a` のような固定色は使わない（ダークモードで読めなくなる）
+- **書体**：`font-family` は指定しない（アプリの書体を継承する）。文字は日本語で書き、サイズは 12〜15。ボタン名は `「保存」` のように鉤括弧で書く
+- **使ってよい CSS 変数**（`src/styles/globals.css` に定義されているもの）
+  - 背景：`--color-bg-primary` `--color-bg-secondary` `--color-bg-tertiary` `--color-bg-info` `--color-bg-success` `--color-bg-warning` `--color-bg-danger` `--color-bg-purple`
+  - 文字：`--color-text-primary` `--color-text-secondary` `--color-text-tertiary` `--color-text-info` `--color-text-success` `--color-text-warning` `--color-text-danger` `--color-text-purple`
+  - 線：`--color-border-primary` `--color-border-secondary` `--color-border-info` `--color-border-success` `--color-border-warning` `--color-border-danger` `--color-border-purple`
+  - ブランド：`--color-brand` `--color-brand-light` `--color-brand-border`
+  - 信号色：`--color-signal-green` `--color-signal-yellow` `--color-signal-red`
+  - 配色の組み合わせは「bg-◯◯ の面に border-◯◯ の線と text-◯◯ の文字」を基本にする
+- **禁止事項**
+  - `<script>`・`on*` 属性（`onclick` 等）・`<foreignObject>` は書かない（表示時に除去される）
+  - 外部への参照（`http(s)://` の画像・フォント・CSS、`href` の外部URL）は書かない（除去される。`#id` への内部参照のみ可）
+  - 実データ（実在の顧客名・人名・メールアドレス・金額・実際のタスク名）は書かない。画面の模式図は架空の例にする
+
 ## 4. 更新フロー
 
 1. 仕様変更を含む PR では `docs/guides/` も同 PR で更新する

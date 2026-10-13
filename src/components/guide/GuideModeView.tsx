@@ -5,8 +5,8 @@
 // 開いた直後は「ガイドトップ」を表示する（大きなツアー導線＋クリックでジャンプできる目次）。
 // docs/guides/**/*.md を import.meta.glob で取り込んだマニフェストから直接描画する。
 
-import { useMemo, useState, useEffect } from "react";
-import { MarkdownLite } from "../common/MarkdownLite";
+import { useMemo, useState, useEffect, useRef } from "react";
+import { GuideMarkdown } from "./GuideMarkdown";
 import { groupedDocs, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
 import { TOUR_LIST } from "../tour/tours";
@@ -48,6 +48,9 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
   useEffect(() => {
     if (currentSlug && currentSlug !== HOME_SLUG) localStorage.setItem(STORAGE_KEY, currentSlug);
   }, [currentSlug]);
+
+  const mainRef = useRef<HTMLElement>(null);
+  useEffect(() => { mainRef.current?.scrollTo({ top: 0 }); }, [currentSlug]);
 
   const isHome = currentSlug === HOME_SLUG;
   const current: DocEntry | undefined = !isHome && currentSlug ? getDocBySlug(currentSlug) : undefined;
@@ -119,7 +122,7 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
       </aside>
 
       {/* 本文 */}
-      <main style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
+      <main ref={mainRef} style={{ flex: 1, overflow: "auto", padding: "24px 32px" }}>
         {isHome ? (
           <GuideHome
             groups={groups}
@@ -143,7 +146,7 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
                 {current.deprecated && <span style={{ color: "var(--color-text-danger)" }}>⚠ 旧仕様</span>}
               </div>
             </header>
-            <MarkdownLite text={current.body} />
+            <GuideMarkdown text={current.body} currentPath={current.path} onNavigate={setCurrentSlug} />
             {current.related && current.related.length > 0 && (
               <div style={{ marginTop: "32px", paddingTop: "12px", borderTop: "1px solid var(--color-border-primary)" }}>
                 <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.06em" }}>関連</div>

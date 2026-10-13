@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640">
+  <!-- 図解の見本：CSS変数は style 属性で指定する（fill="var(...)" の属性形式は使わない）。文字色は currentColor。font-family は指定しない。 -->
+  <rect x="1" y="1" width="638" height="198" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+
+  <rect x="30" y="60" width="150" height="80" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="105" y="95" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-info)">1. 登録する</text>
+  <text x="105" y="118" text-anchor="middle" font-size="12" fill="currentColor">KRとタスクを作る</text>
+
+  <rect x="245" y="60" width="150" height="80" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="320" y="95" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">2. 進める</text>
+  <text x="320" y="118" text-anchor="middle" font-size="12" fill="currentColor">状態を更新する</text>
+
+  <rect x="460" y="60" width="150" height="80" rx="8" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="535" y="95" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-success)">3. 振り返る</text>
+  <text x="535" y="118" text-anchor="middle" font-size="12" fill="currentColor">結果を確認する</text>
+
+  <path d="M184 100 H241 M399 100 H456" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M236 94 L243 100 L236 106 M451 94 L458 100 L451 106" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <text x="320" y="32" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">図解の見本（サンプル）</text>
+</svg>
