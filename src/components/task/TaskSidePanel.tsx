@@ -30,6 +30,8 @@ import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
+import { MentionTextarea } from "../common/MentionTextarea";
+import { deleteTaskWithUndo } from "../../lib/task/deleteTaskWithUndo";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
@@ -513,7 +515,11 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
 
   const handleDelete = async () => {
     if (!await confirmDialog(`「${selectedTask.name}」を削除しますか？`)) return;
-    await deleteTask(selectedTask.id, currentUser.id);
+    try {
+      await deleteTaskWithUndo(selectedTask.id, selectedTask.name, currentUser.id);
+    } catch {
+      return; // エラーは store が通知済み。失敗時はパネルを閉じない
+    }
     onClose();
   };
 
@@ -1040,9 +1046,10 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
 
         {/* メモ */}
         <SideLabel>メモ・コメント</SideLabel>
-        <textarea value={sidebarForm.comment}
-          onChange={e => setSidebarForm(f => f ? { ...f, comment: e.target.value } : f)}
-          placeholder={"メモやURLを入力できます\n例：https://docs.example.com"}
+        <MentionTextarea value={sidebarForm.comment}
+          onChange={v => setSidebarForm(f => f ? { ...f, comment: v } : f)}
+          members={assigneeCandidates}
+          placeholder={"メモやURLを入力できます\n@名前 でメンション・通知できます"}
           rows={5}
           style={{
             ...inputStyle,

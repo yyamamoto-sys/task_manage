@@ -29,3 +29,11 @@ describe("mentionsEqual", () => {
     expect(mentionsEqual([], [])).toBe(true);
   });
 });
+
+import { finalizedMentionsOf } from "../mentions";
+describe("finalizedMentionsOf", () => {
+  it("コメントから確定メンションを返す", () => {
+    expect(finalizedMentionsOf("@a お願い @b")).toEqual(["a", "b"]);
+    expect(finalizedMentionsOf("")).toEqual([]);
+  });
+});

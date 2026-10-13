@@ -12,6 +12,9 @@ import { useAppStore } from "../stores/appStore";
 import { useNotificationPrefsStore } from "../stores/notificationPrefsStore";
 import { isKindEnabled } from "../lib/notifications/notificationKinds";
 
+// 新規登録の通知対象とみなす「作成からの経過時間」。初回ロード後に別端末から届いた直後のタスクだけを拾う
+const NEW_TASK_WINDOW_MS = 10 * 60 * 1000;
+
 export function useMentionNotifications(currentUserId: string) {
   // 通知は表示部署に関係なく、見えている全タスクを監視する（表示部署で絞ると兼務先のメンションが届かない・v3.139）
   const tasks   = useAppStore(s => s.tasks);
@@ -20,6 +23,8 @@ export function useMentionNotifications(currentUserId: string) {
 
   // タスクごとの前回 finalized_mentions（カンマ結合文字列で保持）
   const prevRef = useRef<Map<string, string>>(new Map());
+  // 最初の走査（初回ロード）が済んだか。済んだ後に現れたタスクは「新規登録」として扱う
+  const baselineDoneRef = useRef(false);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -37,15 +42,17 @@ export function useMentionNotifications(currentUserId: string) {
       const currFM   = (task.finalized_mentions ?? []).join(",");
       const prevFM   = prev.get(task.id) ?? null;
 
-      // 初回ロード時はベースラインを記録するだけで通知しない
-      if (prevFM === null) { prev.set(task.id, currFM); continue; }
+      // 初回ロード時はベースラインを記録するだけで通知しない。
+      // ただし初回ロード後に現れ、作成直後のタスクは新規登録（@メンション付き）なので前回値を空として通知判定へ進む
+      const isFreshlyCreated = !!task.created_at && Date.now() - new Date(task.created_at).getTime() < NEW_TASK_WINDOW_MS;
+      if (prevFM === null && !(baselineDoneRef.current && isFreshlyCreated)) { prev.set(task.id, currFM); continue; }
 
       // finalized_mentions が変化し、自分の short_name が新たに含まれ、自分の編集でない場合に通知
       const currMentions = task.finalized_mentions ?? [];
       const prevMentions = prevFM ? prevFM.split(",").filter(Boolean) : [];
 
       if (
-        currFM !== prevFM &&
+        currFM !== (prevFM ?? "") &&
         currMentions.includes(me.short_name) &&
         !prevMentions.includes(me.short_name) &&
         task.updated_by !== currentUserId
@@ -62,5 +69,6 @@ export function useMentionNotifications(currentUserId: string) {
       }
       prev.set(task.id, currFM);
     }
+    if (tasks.length > 0) baselineDoneRef.current = true;
   }, [tasks, members, currentUserId, pushEnabled]);
 }

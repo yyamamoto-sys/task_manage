@@ -6,6 +6,7 @@
 // ここを2箇所に重複実装すると、片方だけ直して挙動がズレる事故になるため分離した。
 
 import type { Task } from "./localData/types";
+import { finalizedMentionsOf } from "./mentions";
 
 export interface TaskEditFormState {
   name: string;
@@ -80,6 +81,7 @@ export function buildTaskUpdatePayload(
     due_date:            form.due_date || null,
     estimated_hours:     isNaN(hours) ? null : hours,
     comment:             form.comment,
+    finalized_mentions:  finalizedMentionsOf(form.comment),
     tags:                form.tags ?? originalTask.tags,
     updated_by:          currentUserId,
   };

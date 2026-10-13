@@ -15,3 +15,9 @@ export function mentionsEqual(a: string[], b: string[]): boolean {
   for (const x of setA) if (!setB.has(x)) return false;
   return true;
 }
+
+/** タスクを保存する全経路（編集モーダル・サイドパネル・新規登録）が使う、finalized_mentions の唯一の確定規則。
+ *  通知は finalized_mentions の変化だけを見るため、保存のたびに必ずこの値を書く。 */
+export function finalizedMentionsOf(comment: string): string[] {
+  return extractMentions(comment);
+}

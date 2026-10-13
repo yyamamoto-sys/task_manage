@@ -31,12 +31,11 @@ import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { extractMentions } from "../../lib/mentions";
+import { deleteTaskWithUndo } from "../../lib/task/deleteTaskWithUndo";
 import { buildTaskUpdatePayload, computeFormDirty, type TaskEditFormState } from "../../lib/taskEditPayload";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
-import { showToast } from "../common/Toast";
 import { ChangeHistorySection } from "../history/ChangeHistorySection";
 
 interface Props {
@@ -244,10 +243,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
     const formAtSaveTime = form;
     const parent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : null;
     const basePayload = buildTaskUpdatePayload(originalTask, form, parent, currentUser.id);
-    // finalized_mentions（@メンション通知）は「閉じた時だけ確定」だった旧仕様をやめ、
-    // 明示保存のたびに常にペイロードへ含める（保存操作自体が明示的になったため、
-    // 都度含めても「知らないうちに通知が飛ぶ」不安には当たらない）
-    const payload = { ...basePayload, finalized_mentions: extractMentions(form.comment) };
+    // finalized_mentions は buildTaskUpdatePayload が保存のたびに確定する（サイドパネルと共通）
+    const payload = basePayload;
 
     setSaveStatus("saving");
     setSaveError(null);
@@ -305,15 +302,10 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const handleDelete = useCallback(async () => {
     if (!originalTask) return;
     if (!await confirmDialog(`「${originalTask.name}」を削除しますか？`)) return;
-    deleteTask(taskId, currentUser.id);
-    showToast(`「${originalTask.name}」を削除しました`, "info", {
-      label: "元に戻す",
-      isUndo: true,
-      onClick: () => { restoreTask(taskId, currentUser.id); },
-    });
+    await deleteTaskWithUndo(taskId, originalTask.name, currentUser.id);
     onDeleted?.(taskId);
     onClose();
-  }, [originalTask, taskId, currentUser.id, deleteTask, restoreTask, onDeleted, onClose]);
+  }, [originalTask, taskId, currentUser.id, onDeleted, onClose]);
 
   // 全 Hooks を呼び終えた後に early return（react-hooks/rules-of-hooks 遵守）
   if (!originalTask) return null;

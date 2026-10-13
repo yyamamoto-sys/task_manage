@@ -162,3 +162,15 @@ describe("computeFormDirty", () => {
     expect(computeFormDirty(currentNoTags, baselineNoTags)).toBe(false);
   });
 });
+
+describe("buildTaskUpdatePayload の finalized_mentions", () => {
+  it("コメントの @メンション を finalized_mentions に確定する（サイドパネル・モーダル共通）", () => {
+    const orig = mk({ id: "a", comment: "" });
+    const p = buildTaskUpdatePayload(orig, mkForm({ comment: "@yamamoto 確認 @tanaka" }), null, "u1");
+    expect(p.finalized_mentions).toEqual(["yamamoto", "tanaka"]);
+  });
+  it("メンションを消したら空配列になる", () => {
+    const orig = { ...mk({ id: "a" }), finalized_mentions: ["x"] };
+    expect(buildTaskUpdatePayload(orig, mkForm({ comment: "なし" }), null, "u1").finalized_mentions).toEqual([]);
+  });
+});

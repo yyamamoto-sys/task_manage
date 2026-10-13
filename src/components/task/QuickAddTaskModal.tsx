@@ -8,6 +8,7 @@ import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from 
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
+import { finalizedMentionsOf } from "../../lib/mentions";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -193,6 +194,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       due_date: dueDate || null,
       estimated_hours: null,
       comment: comment.trim(),
+      finalized_mentions: finalizedMentionsOf(comment.trim()),
       is_deleted: false,
       created_at: now,
       updated_at: now,
