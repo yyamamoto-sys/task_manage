@@ -28,7 +28,7 @@ const dep = (id: string, pred: string, succ: string, group_id: string | null): T
 });
 
 beforeEach(() => {
-  useAppStore.setState({ currentGroupId: null, currentUserIsSuperAdmin: false, members: [], projects: [], tasks: [], taskDependencies: [] });
+  useAppStore.setState({ currentGroupId: null, currentUserIsSuperAdmin: false, currentUserGroupIds: [], groups: [], members: [], projects: [], tasks: [], taskDependencies: [] });
 });
 
 // 2026-07-03: selectScoped* が毎回新しい配列を返すと、zustand v5（React の useSyncExternalStore 経由）が
@@ -160,6 +160,30 @@ describe("selectScopedProjects / selectScopedTasks：表示部署で絞る（全
     });
     expect(selectScopedProjects(useAppStore.getState()).map(p => p.id)).toEqual(["p1"]);
     expect(selectScopedTasks(useAppStore.getState()).map(t => t.id)).toEqual(["t1"]);
+  });
+
+  it("既存メンバー（ホーム部署あり）が他部署のPJに招待された場合、表示部署が自部署でもそのPJとタスクが見える", () => {
+    useAppStore.setState({
+      currentGroupId: "grp-a",
+      currentUserGroupIds: ["grp-a", "grp-invite-p1"],
+      groups: [
+        { id: "grp-a" }, { id: "grp-b" }, { id: "grp-invite-p1", is_invite_group: true }, { id: "grp-invite-p9", is_invite_group: true },
+      ] as never,
+      projects: [
+        project("p1", "grp-b", ["grp-b", "grp-invite-p1"]),
+        project("p-other", "grp-b", ["grp-b"]),
+        project("p-unrelated-invite", "grp-b", ["grp-b", "grp-invite-p9"]),
+      ],
+      tasks: [
+        task("t1", "grp-b", ["grp-b", "grp-invite-p1"]),
+        task("t-other", "grp-b", ["grp-b"]),
+      ],
+      taskDependencies: [dep("d1", "t1", "t1", "grp-b")],
+    });
+    const s = useAppStore.getState();
+    expect(selectScopedProjects(s).map(p => p.id)).toEqual(["p1"]);
+    expect(selectScopedTasks(s).map(t => t.id)).toEqual(["t1"]);
+    expect(selectScopedTaskDependencies(s).map(d => d.id)).toEqual(["d1"]);
   });
 
   it("group_ids が空/未定義の古い行・作成直後の行は group_id で判定し、group_id==null は通す", () => {

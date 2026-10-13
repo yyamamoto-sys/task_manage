@@ -20,7 +20,7 @@ import { create } from "zustand";
 import { showToast } from "../components/common/Toast";
 import { reportError } from "../lib/errorReporter";
 import { formatErrorForUser } from "../lib/errorMessage";
-import { isRowInDisplayGroup, isMemberInDisplayGroup } from "../lib/scope/displayGroupScope";
+import { isRowInDisplayGroup, isRowInUserInviteGroups, isMemberInDisplayGroup } from "../lib/scope/displayGroupScope";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
   Project, Task, ProjectTaskForce, Milestone,
@@ -73,6 +73,9 @@ export interface AppState {
   // 絞り込む必要があるが、非super-admin（兼務者含む）はRLSが既に自部署＋兼務先だけを
   // 返しているためクライアントで重ねて絞らない（絞ると兼務2部署目がUIから消える）。
   currentUserIsSuperAdmin: boolean;
+  // ログイン中の本人の group_ids（招待を受けた兼務の招待用部署を含む）。招待されたPJを表示部署に関わらず
+  // 見せるために使う（selectScopedProjects/Tasks。Section 71）。
+  currentUserGroupIds: string[];
   members: Member[];
   // 【2026-07-23】objectives は全部署分のObjectiveを生のまま保持する（OKR系はRLS非対応の
   // ため全ユーザーが全部署分を受け取る。CLAUDE.md Section 1.6参照）。objective は
@@ -120,6 +123,7 @@ export interface AppState {
   // ===== Group =====
   setCurrentGroupId: (id: string | null) => void;
   setCurrentUserIsSuperAdmin: (v: boolean) => void;
+  setCurrentUserGroupIds: (ids: string[]) => void;
   saveGroup: (group: Group) => Promise<void>;
   deleteGroup: (id: string, deletedBy: string) => Promise<void>;
 
@@ -523,6 +527,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   groups: [],
   currentGroupId: null,
   currentUserIsSuperAdmin: false,
+  currentUserGroupIds: [],
   members: [],
   objectives: [],
   objective: null,
@@ -701,6 +706,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     objective: pickCurrentObjectiveForGroup(state.objectives, id),
   })),
   setCurrentUserIsSuperAdmin: (v) => set({ currentUserIsSuperAdmin: v }),
+  setCurrentUserGroupIds: (ids) => set({ currentUserGroupIds: ids }),
 
   saveGroup: async (group) => {
     set(state => ({
@@ -1585,18 +1591,28 @@ function memoizeScopedSelector<T>(
   };
 }
 
+// 本人が属する招待用部署のid集合。招待を受けた既存メンバーは、招待されたPJを表示部署に関わらず見られる（Section 71）。
+function userInviteGroupIds(s: AppState): Set<string> {
+  const mine = new Set(s.currentUserGroupIds);
+  return new Set(s.groups.filter(g => g.is_invite_group && mine.has(g.id)).map(g => g.id));
+}
+
 export const selectScopedProjects = memoizeScopedSelector(
-  s => [s.projects, s.currentGroupId],
+  s => [s.projects, s.currentGroupId, s.groups, s.currentUserGroupIds],
   (s: AppState): Project[] => {
     const gid = s.currentGroupId;
-    return gid == null ? s.projects : s.projects.filter(p => isRowInDisplayGroup(p, gid));
+    if (gid == null) return s.projects;
+    const invited = userInviteGroupIds(s);
+    return s.projects.filter(p => isRowInDisplayGroup(p, gid) || isRowInUserInviteGroups(p, invited));
   });
 
 export const selectScopedTasks = memoizeScopedSelector(
-  s => [s.tasks, s.currentGroupId],
+  s => [s.tasks, s.currentGroupId, s.groups, s.currentUserGroupIds],
   (s: AppState): Task[] => {
     const gid = s.currentGroupId;
-    return gid == null ? s.tasks : s.tasks.filter(t => isRowInDisplayGroup(t, gid));
+    if (gid == null) return s.tasks;
+    const invited = userInviteGroupIds(s);
+    return s.tasks.filter(t => isRowInDisplayGroup(t, gid) || isRowInUserInviteGroups(t, invited));
   });
 
 // 両端が表示部署のタスクに含まれる依存だけ（task_dependencies.group_id は単数で、部署をまたぐPJの依存を取りこぼすため使わない）

@@ -39,6 +39,7 @@ const NON_WRITE_ACTIONS = new Set([
   "loadDemoData",
   "setCurrentGroupId",
   "setCurrentUserIsSuperAdmin",
+  "setCurrentUserGroupIds",
   "applyRemoteChange",
 ]);
 

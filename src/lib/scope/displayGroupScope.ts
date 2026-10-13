@@ -14,6 +14,17 @@ export function isRowInDisplayGroup(row: GroupScoped, groupId: string): boolean 
   return row.group_id === groupId || (row.group_ids?.includes(groupId) ?? false);
 }
 
+/**
+ * 招待されたPJ：自分が属する招待用部署（兼務の group_ids に入る）を group_ids に持つ行は、表示部署に関わらず通す。
+ * 招待用部署はサイドバーの表示部署の選択肢から除かれる（sidebarGroupVisibility.ts）ため、既存メンバーが
+ * 他部署のPJに招待されると、PJ の group_ids は [他部署, 招待用部署] で表示部署（自部署）とは一致しない。
+ * RLS は元々アクセスできる行だけを返す。ここでは「自分が属する招待用部署」だけを見る（他人の招待用部署は通さない）。
+ */
+export function isRowInUserInviteGroups(row: GroupScoped, userInviteGroupIds: ReadonlySet<string>): boolean {
+  if (userInviteGroupIds.size === 0) return false;
+  return row.group_ids?.some(g => userInviteGroupIds.has(g)) ?? false;
+}
+
 /** メンバー：ホーム部署または兼務先が表示部署。削除済みは除く。 */
 export function isMemberInDisplayGroup(m: GroupScoped & { is_deleted?: boolean }, groupId: string): boolean {
   if (m.is_deleted) return false;
