@@ -436,8 +436,8 @@ export function PersonalOkrImportModal({
               </div>
 
               <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "10px 12px", lineHeight: 1.7 }}>
-                <strong>🔒 AIに送信される内容：</strong>添付したファイル、または貼り付けたテキストの全文です。
-                「個人OKR_月次振返り記録」にはGM評価・面談コメントが含まれる場合があり、それも送信されます。
+                <strong>🔒 AIへの送信について：</strong>画面の構造から読み取れた場合は、AIには何も送信しません。
+                読み取れなかった場合だけ、個人の評価の要約などを除いたテキストをAIに送信します。
                 個人四半期KR・週の目標状態・メモ等、アプリ内に既に保存されている内容はこの取込では一切送信しません。
               </div>
 
