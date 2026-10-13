@@ -14,6 +14,7 @@
 // intent は "project-analysis"。
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
+import { sanitizeComment } from "./sanitize";
 
 export interface ProjectAnalysisInput {
   project: {
@@ -109,7 +110,7 @@ function buildUserMessage(input: ProjectAnalysisInput): string {
         t.estimated_hours != null ? `見積:${t.estimated_hours}h` : null,
         t.status === "in_progress" && t.updated_at ? `最終更新:${t.updated_at.slice(0, 10)}` : null,
         t.status === "done" && t.completed_at ? `完了日:${t.completed_at.slice(0, 10)}` : null,
-        t.comment ? `メモ:${t.comment.replace(/\s+/g, " ").slice(0, 80)}` : null,
+        t.comment ? `メモ:${sanitizeComment(t.comment).replace(/\s+/g, " ").slice(0, 80)}` : null,
       ].filter(Boolean);
       lines.push(`- ${parts.join(" / ")}`);
     }
