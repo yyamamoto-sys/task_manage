@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 500" width="640">
+  <!-- 画面の全体図（PC・計画モード）。番号は下の凡例に対応する。 -->
+  <rect x="1" y="1" width="638" height="498" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">画面の全体図（PC・計画モード）</text>
+
+  <!-- ① サイドバー -->
+  <rect x="20" y="50" width="170" height="280" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="32" y="78" font-size="13" fill="currentColor">📋 計画 ／ 🎯 OKR</text>
+  <text x="32" y="106" font-size="13" fill="currentColor">🔍 検索</text>
+  <rect x="30" y="118" width="150" height="26" rx="6" style="fill:var(--color-bg-purple);stroke:var(--color-border-purple)" />
+  <text x="40" y="136" font-size="13" style="fill:var(--color-text-purple)">✨ AIツールを開く</text>
+  <text x="32" y="172" font-size="13" fill="currentColor">メニュー（5ビュー）</text>
+  <text x="32" y="198" font-size="13" fill="currentColor">プロジェクト一覧</text>
+  <rect x="30" y="296" width="150" height="26" rx="6" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="40" y="314" font-size="13" style="fill:var(--color-text-warning)">⋯ その他（ガイド等）</text>
+
+  <!-- ② メイン領域 -->
+  <rect x="200" y="50" width="260" height="280" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="318" y="178" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">メイン領域</text>
+  <text x="318" y="202" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">ダッシュボード／カンバン／</text>
+  <text x="318" y="222" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">ガント／リスト／ワークロード</text>
+
+  <!-- ③ ベル -->
+  <circle cx="436" cy="76" r="15" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="436" y="82" text-anchor="middle" font-size="15" fill="currentColor">🔔</text>
+
+  <!-- ④ ＋（FAB） -->
+  <circle cx="430" cy="298" r="19" style="fill:var(--color-brand-light);stroke:var(--color-brand-border)" />
+  <text x="430" y="306" text-anchor="middle" font-size="22" font-weight="700" fill="currentColor">＋</text>
+
+  <!-- ⑤ AIパネル -->
+  <rect x="470" y="50" width="150" height="280" rx="8" style="fill:var(--color-bg-purple);stroke:var(--color-border-purple)" />
+  <text x="545" y="78" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-purple)">✨ AIアシスタント</text>
+  <text x="545" y="106" text-anchor="middle" font-size="13" fill="currentColor">💬 相談</text>
+  <text x="545" y="130" text-anchor="middle" font-size="13" fill="currentColor">📄 資料インプット</text>
+  <text x="545" y="300" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">開いたときだけ表示</text>
+
+  <!-- 番号マーカー -->
+  <circle cx="24" cy="54" r="11" style="fill:var(--color-bg-danger);stroke:var(--color-border-danger)" />
+  <text x="24" y="59" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-danger)">①</text>
+  <circle cx="330" cy="54" r="11" style="fill:var(--color-bg-danger);stroke:var(--color-border-danger)" />
+  <text x="330" y="59" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-danger)">②</text>
+  <circle cx="408" cy="68" r="11" style="fill:var(--color-bg-danger);stroke:var(--color-border-danger)" />
+  <text x="408" y="73" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-danger)">③</text>
+  <circle cx="452" cy="276" r="11" style="fill:var(--color-bg-danger);stroke:var(--color-border-danger)" />
+  <text x="452" y="281" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-danger)">④</text>
+  <circle cx="474" cy="54" r="11" style="fill:var(--color-bg-danger);stroke:var(--color-border-danger)" />
+  <text x="474" y="59" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-danger)">⑤</text>
+
+  <!-- 凡例 -->
+  <text x="24" y="360" font-size="13" font-weight="700" fill="currentColor">①　サイドバー</text>
+  <text x="140" y="360" font-size="13" fill="currentColor">モード切替・検索・メニュー・PJ一覧。最下部の「⋯」にガイド・設定</text>
+  <text x="24" y="392" font-size="13" font-weight="700" fill="currentColor">②　メイン領域</text>
+  <text x="140" y="392" font-size="13" fill="currentColor">選んだビュー（ダッシュボード・カンバン・ガント等）が出る</text>
+  <text x="24" y="424" font-size="13" font-weight="700" fill="currentColor">③　ベル</text>
+  <text x="140" y="424" font-size="13" fill="currentColor">画面右上に固定。未読数が赤いバッジで出る</text>
+  <text x="24" y="456" font-size="13" font-weight="700" fill="currentColor">④　＋（FAB）</text>
+  <text x="140" y="456" font-size="13" fill="currentColor">右下。タスク追加・マイルストーン追加・AIに相談（計画モードのみ）</text>
+  <text x="24" y="488" font-size="13" font-weight="700" fill="currentColor">⑤　AIパネル</text>
+  <text x="140" y="488" font-size="13" fill="currentColor">「✨ AIツールを開く」で右側に開閉する</text>
+</svg>

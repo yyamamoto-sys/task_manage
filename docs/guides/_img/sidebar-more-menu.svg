@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 380" width="640">
+  <!-- サイドバー最下部の「⋯」を開いたときの中身 -->
+  <rect x="1" y="1" width="638" height="378" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="28" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">サイドバー最下部の「⋯」を開いたところ</text>
+
+  <!-- サイドバー枠 -->
+  <rect x="20" y="44" width="220" height="318" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="130" y="68" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">（サイドバー上部は省略）</text>
+
+  <!-- 開いた5項目 -->
+  <rect x="32" y="80" width="196" height="30" rx="6" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="44" y="100" font-size="14" font-weight="700" style="fill:var(--color-text-warning)">📖 ガイド</text>
+  <rect x="32" y="116" width="196" height="30" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="44" y="136" font-size="14" fill="currentColor">⚙ 設定</text>
+  <rect x="32" y="152" width="196" height="30" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="44" y="172" font-size="14" fill="currentColor">🎫 招待コードを入力</text>
+  <rect x="32" y="188" width="196" height="30" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="44" y="208" font-size="14" fill="currentColor">☾／☀ ライト・ダーク切替</text>
+  <rect x="32" y="224" width="196" height="30" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="44" y="244" font-size="14" fill="currentColor">⏏ ログアウト</text>
+
+  <!-- 矢印（⋯から項目へ） -->
+  <path d="M208 296 V262" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M202 270 L208 260 L214 270" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- 最下部の1行 -->
+  <circle cx="48" cy="313" r="13" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="48" y="318" text-anchor="middle" font-size="13" fill="currentColor">山</text>
+  <rect x="68" y="299" width="34" height="28" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="85" y="318" text-anchor="middle" font-size="14" fill="currentColor">🌐</text>
+  <rect x="108" y="299" width="34" height="28" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="125" y="318" text-anchor="middle" font-size="14" fill="currentColor">🧪</text>
+  <rect x="148" y="299" width="34" height="28" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="165" y="318" text-anchor="middle" font-size="14" fill="currentColor">🗓️</text>
+  <rect x="188" y="297" width="40" height="32" rx="6" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" stroke-width="2" />
+  <text x="208" y="319" text-anchor="middle" font-size="16" font-weight="700" style="fill:var(--color-text-warning)">⋯</text>
+  <text x="130" y="350" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">最下部の1行（右端が「⋯」）</text>
+
+  <!-- 右側の説明 -->
+  <rect x="270" y="44" width="350" height="92" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="284" y="70" font-size="14" font-weight="700" style="fill:var(--color-text-warning)">ガイドは「⋯」の中にある</text>
+  <text x="284" y="94" font-size="13" fill="currentColor">最下部の1行の右端「⋯」を押すと、</text>
+  <text x="284" y="114" font-size="13" fill="currentColor">その上に5項目が開く。「📖 ガイド」は先頭。</text>
+
+  <text x="270" y="170" font-size="14" font-weight="700" fill="currentColor">覚えておくこと</text>
+  <text x="270" y="196" font-size="13" fill="currentColor">・「⋯」は最初は閉じている</text>
+  <text x="270" y="220" font-size="13" fill="currentColor">・ライト・ダーク切替とログアウトは</text>
+  <text x="270" y="240" font-size="13" fill="currentColor">　サイドバーを広げているときだけ出る</text>
+  <text x="270" y="264" font-size="13" fill="currentColor">・サイドバーを折りたたむと「⋯」は消え、</text>
+  <text x="270" y="284" font-size="13" fill="currentColor">　ガイド・設定・招待コードがアイコンで並ぶ</text>
+  <text x="270" y="308" font-size="13" fill="currentColor">・モバイルは「設定」→「困ったとき」→</text>
+  <text x="270" y="328" font-size="13" fill="currentColor">　「ガイドを開く」から開く</text>
+</svg>

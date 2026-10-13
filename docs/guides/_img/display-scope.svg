@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 400" width="640">
+  <!-- 表示部署と見える範囲。表示部署の切り替えは2部署以上の人だけに出る。 -->
+  <rect x="1" y="1" width="638" height="398" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">表示部署と見える範囲</text>
+
+  <!-- 左：アクセスできる範囲 -->
+  <text x="20" y="62" font-size="14" font-weight="700" fill="currentColor">あなたがアクセスできるもの</text>
+
+  <rect x="20" y="76" width="270" height="76" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="34" y="100" font-size="14" font-weight="700" style="fill:var(--color-text-info)">自部署（ホーム）</text>
+  <text x="34" y="122" font-size="13" fill="currentColor">所属する部署のPJ・タスク・</text>
+  <text x="34" y="140" font-size="13" fill="currentColor">メンバー</text>
+
+  <rect x="20" y="166" width="270" height="76" rx="8" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="34" y="190" font-size="14" font-weight="700" style="fill:var(--color-text-success)">兼務先の部署</text>
+  <text x="34" y="212" font-size="13" fill="currentColor">兼務している部署のPJ・タスク・</text>
+  <text x="34" y="230" font-size="13" fill="currentColor">メンバー</text>
+
+  <rect x="20" y="256" width="270" height="76" rx="8" style="fill:var(--color-bg-purple);stroke:var(--color-border-purple)" />
+  <text x="34" y="280" font-size="14" font-weight="700" style="fill:var(--color-text-purple)">招待されたPJ</text>
+  <text x="34" y="302" font-size="13" fill="currentColor">招待コードで参加したPJのタスクと</text>
+  <text x="34" y="320" font-size="13" fill="currentColor">そのPJの参加者</text>
+
+  <!-- 右：表示部署の切り替え -->
+  <text x="350" y="62" font-size="14" font-weight="700" fill="currentColor">サイドバーの表示部署</text>
+
+  <rect x="350" y="76" width="270" height="76" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" stroke-width="2" />
+  <text x="364" y="102" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">🏢 ○○部 ▾</text>
+  <text x="364" y="124" font-size="13" fill="currentColor">2部署以上にアクセスできる</text>
+  <text x="364" y="142" font-size="13" fill="currentColor">人にだけ出る</text>
+
+  <rect x="350" y="166" width="270" height="76" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="364" y="190" font-size="14" font-weight="700" fill="currentColor">選んだ部署だけが一覧に出る</text>
+  <text x="364" y="212" font-size="13" fill="currentColor">PJ・タスク・メンバー・担当者の</text>
+  <text x="364" y="230" font-size="13" fill="currentColor">候補が、その部署のものになる</text>
+
+  <rect x="350" y="256" width="270" height="76" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="364" y="280" font-size="14" font-weight="700" fill="currentColor">1部署だけの人</text>
+  <text x="364" y="302" font-size="13" fill="currentColor">切り替えは出ない。</text>
+  <text x="364" y="320" font-size="13" fill="currentColor">その部署の内容がそのまま出る</text>
+
+  <!-- 矢印（左の兼務先→右のセレクタ） -->
+  <path d="M294 204 H334" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M327 198 L335 204 L327 210" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <text x="320" y="364" text-anchor="middle" font-size="13" fill="currentColor">2部署を一度に並べて見る画面はない。切り替えると、その部署の内容に入れ替わる。</text>
+  <text x="320" y="386" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">選んだ部署はリロードしても維持される。</text>
+</svg>
