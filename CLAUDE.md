@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.139
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.140
 #
-最終更新：2026-10-08（v3.139）
+最終更新：2026-10-13（v3.140）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -164,7 +164,7 @@ RLSは「自分のgroup_idと一致するか、super-adminか」でしか可視�
 ### 複数部署アクセス（メンバーの兼務・プロジェクトの部署横断）＝フェーズ1（DBのみ・2026-07-22）〜フェーズ2（フロント・2026-07-23完了）
 
 `members`/`projects`/`tasks`に`group_ids text[]`（アクセス可能な部署の全リスト）を新設。既存の`group_id`（ホーム部署）は不変・並存する。RLSは`group_id = current_member_group_id()`（単一値比較）から`group_ids && current_member_group_ids()`（配列オーバーラップ）に置き換え済み（super-admin全部署アクセスの条項は維持）。`tasks.group_ids`はアプリから直接編集させずDBトリガー（`sync_task_group_ids`）が唯一の真実（プロジェクト紐づきはPJのgroup_idsを継承・独立タスクはホーム部署のみ）。`group_ids`の直接付与・剥奪はsuper-admin限定（`guard_member_privilege_columns`拡張）。プラン正本は`quirky-exploring-sundae.md`（メモリ`memory/projects/project_taskmanage_multi_department.md`参照）。
-**フロントエンド対応の現状（v3.139で改訂）**：`Member.group_ids`/`Project.group_ids`/`Task.group_ids`（`lib/localData/types.ts`。`Task.group_ids`はv3.139で型に追加＝DBトリガー`sync_task_group_ids`が唯一の真実で、`select("*")`により以前から読み込まれていた）。AdminView.tsxの部署絞り込み（本セクション末尾の設定画面部署絞り込み参照）は従来どおり。`currentUserIsSuperAdmin` state（`appStore.ts`）は`App.tsx`の`autoMatch()`でログイン時に`members.is_super_admin`から設定する。**`selectScopedTasks`/`selectScopedProjects`/`selectScopedTaskDependencies`/`selectScopedMembers`は、super-admin・一般・兼務者の全員について、サイドバーの「表示部署」（`currentGroupId`）で絞る**（v3.139・Section 71）。PJ・タスクは「`group_ids`に表示部署を含む、または`group_id`一致、または`group_id==null`」、メンバーは「削除済みでなく`group_id`一致または`group_ids`に含む」、依存は「両端が絞り込み後のタスクに含まれるもの」（`task_dependencies.group_id`単数では判定しない）。判定は`src/lib/scope/displayGroupScope.ts`。`currentGroupId`が null（ログイン直後の未確定）の間は元配列をそのまま返す。メモ化は入力（元配列・`currentGroupId`）の参照で行い、無関係な`set()`では同じ配列を返す（React #185 の教訓。Section 1.5）。サイドバー（`MainLayout.tsx`）の「表示部署」切替UI（アクセス可能な部署が2件以上のときだけ表示）で`currentGroupId`を切り替えると、PJ・タスクの一覧と担当者の候補がその部署のものに切り替わる（新規作成時の所属部署もこの値）。**「1メンバー/1PJに複数部署を明示的に付与するUI」はまだ無い**（新規作成は常に単一のホーム部署=group_idのみで作成され、DBトリガーがgroup_idsへ自動反映する形）。〔旧：v2.91〜v3.138は「非super-adminは一切絞らない」割り切りだった（兼務2部署目がUIから消えるのを避けるため）。v3.75でmembersの可視範囲がPJ参加者全員へ広がり、他部署の人が候補に出るようになったため撤回した。〕
+**フロントエンド対応の現状（v3.139で改訂）**：`Member.group_ids`/`Project.group_ids`/`Task.group_ids`（`lib/localData/types.ts`。`Task.group_ids`はv3.139で型に追加＝DBトリガー`sync_task_group_ids`が唯一の真実で、`select("*")`により以前から読み込まれていた）。AdminView.tsxの部署絞り込み（本セクション末尾の設定画面部署絞り込み参照）は従来どおり。`currentUserIsSuperAdmin` state（`appStore.ts`）は`App.tsx`の`autoMatch()`でログイン時に`members.is_super_admin`から設定する。**`selectScopedTasks`/`selectScopedProjects`/`selectScopedTaskDependencies`/`selectScopedMembers`は、super-admin・一般・兼務者の全員について、サイドバーの「表示部署」（`currentGroupId`）で絞る**（v3.139・Section 71）。PJ・タスクは「`group_ids`に表示部署を含む、または`group_id`一致、または`group_id==null`」、メンバーは「削除済みでなく`group_id`一致または`group_ids`に含む」、依存は「両端が絞り込み後のタスクに含まれるもの」（`task_dependencies.group_id`単数では判定しない）。判定は`src/lib/scope/displayGroupScope.ts`。`currentGroupId`が null（ログイン直後の未確定）の間は元配列をそのまま返す。**本人が属する招待用部署を group_ids に持つPJ・タスクは、表示部署に関わらず通す（v3.140。`isRowInUserInviteGroups`・`appStore.currentUserGroupIds`）。**メモ化は入力（元配列・`currentGroupId`）の参照で行い、無関係な`set()`では同じ配列を返す（React #185 の教訓。Section 1.5）。サイドバー（`MainLayout.tsx`）の「表示部署」切替UI（アクセス可能な部署が2件以上のときだけ表示）で`currentGroupId`を切り替えると、PJ・タスクの一覧と担当者の候補がその部署のものに切り替わる（新規作成時の所属部署もこの値）。**「1メンバー/1PJに複数部署を明示的に付与するUI」はまだ無い**（新規作成は常に単一のホーム部署=group_idのみで作成され、DBトリガーがgroup_idsへ自動反映する形）。〔旧：v2.91〜v3.138は「非super-adminは一切絞らない」割り切りだった（兼務2部署目がUIから消えるのを避けるため）。v3.75でmembersの可視範囲がPJ参加者全員へ広がり、他部署の人が候補に出るようになったため撤回した。〕
 
 ### 関連migrationファイル
 
@@ -4964,3 +4964,28 @@ v3.75 で members の RLS に `visible_project_member_ids()`（アクセスで�
 
 AdminView 配下（Section 36・`memberInGroupUsage.test.ts`）、設定のプロフィール・通知、`UserSelectScreen`、`App.tsx` の `autoMatch`、OKR系（`deptScope.ts`）。
 DB・RLS は変更していない（マイグレーションなし）。
+
+---
+
+## 72. ガイドの表示部品・削除のUndo・メンション確定の共通化（v3.140・2026-10-13）
+
+### ガイド専用のMarkdown表示（`GuideMarkdown`）
+- `src/components/guide/GuideMarkdown.tsx`＋`src/lib/docs/guideMarkdown.ts`（パーサ）＋`guideAssets.ts`（SVG取り込み）。表・リンク・引用・SVG図解に対応。`MarkdownLite` は AI 返答用として据え置く（ガイドには使わない）。
+- SVG は `docs/guides/**/*.svg` を `import.meta.glob` で取り込み、`sanitizeSvg` を通してから描画する（script・イベント属性・外部参照を除去）。記事の `![](相対パス.svg)` は `resolveImage` で解決する。
+- 相対 `.md` リンクは `resolveLink`／`resolveRelative` で記事の slug に解決し、アプリ内遷移する（存在しない記事・外部URLは通常リンク扱い）。
+- 図解の書き方は `docs/guides/conventions.md` 3.5。記事を足すときはここに従う。
+
+### 削除のUndo
+- タスク削除は `src/lib/task/deleteTaskWithUndo.ts` に集約。サイドパネルからの削除も「元に戻す」・Ctrl+Z が効く。削除経路を新設するときは必ずこれを呼ぶ。
+- 機械チェック：`src/lib/task/__tests__/deleteRoutesUseUndo.test.ts`（削除経路が共通関数を経由しているか）。
+
+### メンション確定
+- `src/lib/mentions.ts` の `finalizedMentionsOf(comment)`（確定したメンション一覧）を `buildTaskUpdatePayload` に組み込み、サイドパネル（`MentionTextarea`）・新規登録でも通知が飛ぶ。新規作成から10分以内のタスクは通知ベースライン扱い。
+- 機械チェック：`src/components/task/__tests__/finalizedMentionsAllPaths.test.ts`（全保存経路が確定関数を通る）。
+
+### AIへ送るコメントのサニタイズ
+- PJ単体のAI分析も `sanitizeComment` 経由。送信経路の網羅は `src/lib/ai/__tests__/sanitizeCoverage.test.ts`（新しいAI送信経路を足すとここが落ちる）。
+
+### その他
+- 初回ツアー11ステップ・OKRツアー10ステップ、`uiGuide.ts`（巡回台帳 M28 解消）。設定ページの ? は一般メンバーが `settings.member`・管理者が `admin.settings`。
+- MIN_CLIENT_VERSION は上げない。マイグレーションなし。

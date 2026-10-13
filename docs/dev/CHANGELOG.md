@@ -8108,3 +8108,18 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
 
 最終更新：2026-10-08（v3.139）
+
+# v3.140（2026-10-13）：アプリ内ガイドの図解対応・記事の追従とツアー更新、削除の取り消しとメンション通知の修正（CLAUDE.md Section 72）
+# * ガイド専用のMarkdown表示部品：src/components/guide/GuideMarkdown.tsx・src/lib/docs/guideMarkdown.ts（parseGuideMarkdown／resolveLink／resolveImage／sanitizeSvg）・
+#   src/lib/docs/guideAssets.ts（docs/guides/**/*.svg を import.meta.glob で取り込む）。表・リンク・引用・SVG図解に対応。MarkdownLite は AI 返答用として据え置き。
+# * 表示部署の例外：displayGroupScope.ts に isRowInUserInviteGroups を追加し、appStore に currentUserGroupIds を持たせた。本人が属する招待用部署を group_ids に持つ
+#   PJ・タスクは表示部署に関わらず通す（v3.139 の絞り込みの例外）。
+# * PJ単体のAI分析でタスクのコメントを sanitizeComment 経由に変更。AIへ送る全経路を網羅する sanitizeCoverage.test.ts を追加。
+# * 初回ツアー11ステップ・OKRツアー10ステップに更新、ツアー開始ダイアログの文言を修正、uiGuide.ts を追従（巡回台帳 M28 を解消）。
+# * ガイド記事：一般メンバー向け7本を v3.139 に追従、tasks.md・personal-okr.md・08_spec.md（機能仕様）・settings.md（設定ページ）を新規、図解 SVG 6枚、
+#   conventions.md 3.5（図解の書き方）を追加。
+# * サイドパネルからの削除も「元に戻す」・Ctrl+Z が効く：src/lib/task/deleteTaskWithUndo.ts に共通化。deleteRoutesUseUndo.test.ts で削除経路を検査。
+# * @メンション通知：src/lib/mentions.ts の finalizedMentionsOf を buildTaskUpdatePayload に組込み、サイドパネルに MentionTextarea を追加。新規作成から10分以内の
+#   タスクは通知ベースライン扱い。finalizedMentionsAllPaths.test.ts で全経路を検査。
+# * 設定ページの ? を一般メンバーには settings.member（管理者は admin.settings）に出し分け。個人OKR取込画面の「AIへの送信について」の文言を実態どおりに修正。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
