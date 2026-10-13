@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" width="640">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512" width="640">
   <!-- AIに送られるもの／送られないもの（AI相談の場合） -->
-  <rect x="1" y="1" width="638" height="438" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <rect x="1" y="1" width="638" height="510" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
   <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">AI相談で送られるもの・送られないもの</text>
 
   <!-- 左：送られる -->
-  <rect x="20" y="48" width="290" height="300" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <rect x="20" y="48" width="290" height="346" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
   <text x="165" y="76" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">送られるもの</text>
   <text x="34" y="106" font-size="13" fill="currentColor">・表示部署の全PJ（アーカイブを</text>
   <text x="34" y="124" font-size="13" fill="currentColor">　除く）と全タスク</text>
@@ -15,11 +15,13 @@
   <text x="34" y="238" font-size="13" fill="currentColor">　（パス・メールは伏せ字にして）</text>
   <text x="34" y="264" font-size="13" fill="currentColor">・部署メンバーの略称、</text>
   <text x="34" y="282" font-size="13" fill="currentColor">　相談した本人の情報</text>
-  <text x="34" y="308" font-size="13" fill="currentColor">・入力した相談文</text>
-  <text x="34" y="334" font-size="13" font-weight="700" style="fill:var(--color-text-warning)">他のメンバーのタスクも含まれる</text>
+  <text x="34" y="308" font-size="13" fill="currentColor">・OKRの情報（Objective名・KR名・</text>
+  <text x="34" y="326" font-size="13" fill="currentColor">　今四半期のTF名・TFリーダーの略称）</text>
+  <text x="34" y="352" font-size="13" fill="currentColor">・入力した相談文</text>
+  <text x="34" y="378" font-size="13" font-weight="700" style="fill:var(--color-text-warning)">他のメンバーのタスクも含まれる</text>
 
   <!-- 右：送られない -->
-  <rect x="330" y="48" width="290" height="300" rx="8" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <rect x="330" y="48" width="290" height="346" rx="8" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
   <text x="475" y="76" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-success)">送られないもの</text>
   <text x="344" y="106" font-size="13" fill="currentColor">・PJの「貢献メモ」</text>
   <text x="344" y="132" font-size="13" fill="currentColor">・コメント内のファイルパス・</text>
@@ -30,7 +32,9 @@
   <text x="344" y="246" font-size="13" fill="currentColor">・APIキー（画面側には出ない）</text>
 
   <!-- 下部の注意 -->
-  <rect x="20" y="364" width="600" height="56" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
-  <text x="34" y="388" font-size="13" fill="currentColor">AIの返答は提案として出るだけで、「反映する」を押すまでデータは変わらない。</text>
-  <text x="34" y="408" font-size="13" fill="currentColor">コメント欄には機密を書かない。質問文・回答文は保存されない（記録は回数とトークン数のみ）。</text>
+  <rect x="20" y="410" width="600" height="90" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="34" y="434" font-size="13" fill="currentColor">AIの返答は提案として出るだけで、「反映する」を押すまでデータは変わらない。</text>
+  <text x="34" y="454" font-size="13" fill="currentColor">コメント欄には機密を書かない。</text>
+  <text x="34" y="474" font-size="13" fill="currentColor">AI相談の質問文・回答文はサーバーに保存しない（端末に履歴が最大10件残る）。</text>
+  <text x="34" y="494" font-size="13" fill="currentColor">PJのAI分析（最新2件）、個人OKRの見立て・下書きはデータベースに保存される。</text>
 </svg>

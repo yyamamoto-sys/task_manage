@@ -33,7 +33,7 @@
   <rect x="148" y="299" width="34" height="28" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
   <text x="165" y="318" text-anchor="middle" font-size="14" fill="currentColor">🗓️</text>
   <rect x="188" y="297" width="40" height="32" rx="6" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" stroke-width="2" />
-  <text x="208" y="319" text-anchor="middle" font-size="16" font-weight="700" style="fill:var(--color-text-warning)">⋯</text>
+  <text x="208" y="318" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">⋯</text>
   <text x="130" y="350" text-anchor="middle" font-size="13" style="fill:var(--color-text-secondary)">最下部の1行（右端が「⋯」）</text>
 
   <!-- 右側の説明 -->

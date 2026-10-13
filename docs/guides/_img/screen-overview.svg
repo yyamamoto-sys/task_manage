@@ -26,7 +26,7 @@
 
   <!-- ④ ＋（FAB） -->
   <circle cx="430" cy="298" r="19" style="fill:var(--color-brand-light);stroke:var(--color-brand-border)" />
-  <text x="430" y="306" text-anchor="middle" font-size="22" font-weight="700" fill="currentColor">＋</text>
+  <text x="430" y="303" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">＋</text>
 
   <!-- ⑤ AIパネル -->
   <rect x="470" y="50" width="150" height="280" rx="8" style="fill:var(--color-bg-purple);stroke:var(--color-border-purple)" />
