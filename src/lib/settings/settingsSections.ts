@@ -32,3 +32,8 @@ export function adminsOfGroup(members: readonly Member[], groupId: string | null
     return m.group_id === groupId;
   });
 }
+
+/** 設定ページ右上の「？」が開くガイド。管理者には管理向け記事、一般メンバーには個人設定向け記事 */
+export function settingsHelpModeKey(showAdmin: boolean): "admin.settings" | "settings.member" {
+  return showAdmin ? "admin.settings" : "settings.member";
+}

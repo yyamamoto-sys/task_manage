@@ -143,3 +143,11 @@ describe("設定ページの目次（管理の表示条件）", () => {
     expect(adminsOfGroup([admin], null)).toEqual([]);
   });
 });
+
+import { settingsHelpModeKey } from "../settingsSections";
+describe("設定ページの ? の記事", () => {
+  it("管理者には admin.settings、一般メンバーには settings.member", () => {
+    expect(settingsHelpModeKey(true)).toBe("admin.settings");
+    expect(settingsHelpModeKey(false)).toBe("settings.member");
+  });
+});

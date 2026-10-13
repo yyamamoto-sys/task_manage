@@ -46,7 +46,7 @@ import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
 import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
-import { HelpButton } from "../guide/HelpButton";
+import { SettingsHelpButton } from "../settings/SettingsHelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
@@ -930,7 +930,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       }}>
         <span style={{ fontSize: "15px" }}>⚙️</span>
         <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>{t("layout.admin.title")}</span>
-        <HelpButton modeKey="admin.settings" title={t("layout.admin.helpTitle")} />
+        <SettingsHelpButton currentUser={currentUser} title={t("layout.admin.helpTitle")} />
         <button
           onClick={() => void guardedNavigate(() => setIsAdminOpen(false))}
           style={{

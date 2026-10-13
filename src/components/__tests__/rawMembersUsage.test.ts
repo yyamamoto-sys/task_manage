@@ -79,6 +79,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   "components/project/ProjectCreateModal.tsx": { count: 1, reason: "オーナーのチップ・タスク行の担当者の名前解決。候補は selectScopedMembers" },
   "components/project/ProjectSettingsModal.tsx": { count: 1, reason: "オーナーのチップ・「関わるメンバー」（このPJの参加者一覧）・権限判定。オーナーの追加候補は selectScopedMembers" },
   "components/settings/NotificationSettingsSection.tsx": { count: 1, reason: "本人の設定（対象外）" },
+  "components/settings/SettingsHelpButton.tsx": { count: 1, reason: "本人の権限判定（設定の「？」の出し分け・対象外）" },
   "components/settings/SettingsView.tsx": { count: 3, reason: "本人のプロフィール・設定（対象外）" },
   "components/task/TaskEditModal.tsx": { count: 1, reason: "担当者チップ・変更履歴の名前解決。候補は useAssigneeCandidates" },
   "components/task/TaskSidePanel.tsx": { count: 1, reason: "担当者チップ・変更履歴の名前解決。候補は useAssigneeCandidates" },
