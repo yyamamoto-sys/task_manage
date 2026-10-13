@@ -171,7 +171,7 @@ export function ActualActivitiesBlock({
   }
 
   return (
-    <div style={{ marginTop: "20px" }}>
+    <div data-tour-id="okr-actual" style={{ marginTop: "20px" }}>
       <div style={sectionHeadStyle}><span>実施記録</span><span style={ruleStyle} /></div>
       <div style={cardStyle}>{content}</div>
     </div>

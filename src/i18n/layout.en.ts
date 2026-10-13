@@ -36,9 +36,9 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.acceptInvite.title": "Enter invite code",
   "layout.acceptInvite.desc": "If you have a project invite code, use this",
 
-  "layout.tourInvite.title": "Welcome. Would you like a tour (about 90 seconds)?",
-  "layout.tourInvite.body1": "We'll walk you through the 4 views, AI features, and OKR management mode with on-screen callouts.",
-  "layout.tourInvite.body2": "You can replay it anytime later from the \"👋 Replay onboarding\" button inside \"📖 Guide\".",
+  "layout.tourInvite.title": "Welcome. Would you like a tour (about 2-3 minutes)?",
+  "layout.tourInvite.body1": "We'll walk you through the 5 views, AI features, the settings page and the guide with on-screen callouts. OKR mode has its own tour the first time you open it.",
+  "layout.tourInvite.body2": "You can replay it anytime from the top page of \"⋯\" → \"📖 Guide\" at the bottom of the sidebar.",
   "layout.tourInvite.skip": "Skip",
   "layout.tourInvite.start": "Start tour →",
 

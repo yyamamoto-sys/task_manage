@@ -2118,7 +2118,7 @@ function Sidebar({
           ここで選んだ部署のPJ・タスク・メンバーだけが一覧と担当者の候補に出る（v3.139）。
           新規作成時のデフォルト所属部署もこの値になる。 */}
       {!c && accessibleGroups.length >= 2 && (
-        <div style={{ padding: "3px 8px 4px", flexShrink: 0 }}>
+        <div data-tour-id="group-selector" style={{ padding: "3px 8px 4px", flexShrink: 0 }}>
           <CustomSelect
             value={currentGroupId ?? ""}
             onChange={onSelectGroup}
@@ -2430,6 +2430,7 @@ function Sidebar({
         {/* 設定（歯車）ボタン（ゲストは非表示） */}
         {!isGuest && (
         <button
+          data-tour-id="settings-btn"
           onClick={onOpenAdmin}
           title={t("layout.admin.title")}
           style={miscBtnStyle}

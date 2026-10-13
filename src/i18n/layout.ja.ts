@@ -41,9 +41,9 @@ export const layoutJa = {
   "layout.acceptInvite.desc": "プロジェクトの招待コードを持っている場合はこちら",
 
   // ----- ツアー招待ダイアログ -----
-  "layout.tourInvite.title": "ようこそ。ツアー（約90秒）を見ますか？",
-  "layout.tourInvite.body1": "4つのビュー・AI機能・OKR管理モードの場所と使い方を、画面上の吹き出しでご案内します。",
-  "layout.tourInvite.body2": "後から「📖 ガイド」内の「👋 オンボーディングを見直す」ボタンでいつでも再生できます。",
+  "layout.tourInvite.title": "ようこそ。ツアー（約2〜3分）を見ますか？",
+  "layout.tourInvite.body1": "5つのビュー・AI機能・設定ページ・ガイドの場所と使い方を、画面上の吹き出しでご案内します。OKRモードは、初めて開いたときに別のツアーが始まります。",
+  "layout.tourInvite.body2": "後から、サイドバー最下部「⋯」→「📖 ガイド」のトップで、ツアーをいつでも再生できます。",
   "layout.tourInvite.skip": "スキップ",
   "layout.tourInvite.start": "ツアーを開始 →",
 

@@ -7,9 +7,9 @@ import { describe, it, expect } from "vitest";
 import { okrIntroTour } from "../okr-intro";
 
 describe("okrIntroTour", () => {
-  it("7〜9ステップの範囲に収まる（§9：長さの目安）", () => {
+  it("7〜10ステップの範囲に収まる（§9：長さの目安。実施記録・振り返りを足して上限を10にした）", () => {
     expect(okrIntroTour.steps.length).toBeGreaterThanOrEqual(7);
-    expect(okrIntroTour.steps.length).toBeLessThanOrEqual(9);
+    expect(okrIntroTour.steps.length).toBeLessThanOrEqual(10);
   });
 
   it("ステップidが重複しない", () => {
