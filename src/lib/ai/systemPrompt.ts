@@ -6,6 +6,7 @@
 // consultation_typeを追加する場合はCLAUDE.md Section 6-6も同時に更新すること。
 
 import type { ConsultationType, ResponseVolume } from "./types";
+import { CONSULT_ATTACHMENT_NOTICE } from "./consultationAttachment";
 import { UI_GUIDE_SECTION, FEATURE_LIST_SECTION, BTN_CONFIRM_CREATE, BTN_APPLY_CONFIRMED, BTN_APPLY } from "./uiGuide";
 
 // ===== レスポンス構造のJSON定義（全モード共通） =====
@@ -488,6 +489,8 @@ const VOLUME_INSTRUCTIONS: Record<ResponseVolume, string> = {
 export function buildSystemPrompt(
   consultationType: ConsultationType,
   volume: ResponseVolume = "normal",
+  hasAttachments = false,
 ): string {
-  return SYSTEM_PROMPTS[consultationType] + VOLUME_INSTRUCTIONS[volume];
+  return SYSTEM_PROMPTS[consultationType] + VOLUME_INSTRUCTIONS[volume]
+    + (hasAttachments ? CONSULT_ATTACHMENT_NOTICE : "");
 }

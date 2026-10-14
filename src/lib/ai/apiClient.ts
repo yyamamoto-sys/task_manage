@@ -21,6 +21,8 @@ import type { ConsultationType, ResponseVolume } from "./types";
 import type { AIConsultationPayload } from "./payloadBuilder";
 import { buildSystemPrompt } from "./systemPrompt";
 import type { ChatTurn } from "./sessionManager";
+import type { ContentBlock, FileAttachment } from "./invokeAI";
+import { buildConsultationContent } from "./consultationAttachment";
 import { isGuestMode } from "../guestMode";
 import { ensureGuestAiSession } from "../supabase/guestAiAuth";
 import { recordGuestAiUse } from "../guestAiQuotaCounter";
@@ -114,6 +116,8 @@ export async function callAIConsultation(
   responseVolume?: ResponseVolume,
   /** 直前の応答がJSONパースに失敗した場合の自己修正リトライ用コンテキスト */
   retryContext?: AIRetryContext,
+  /** この1回の送信だけに添える資料（v3.144）。履歴には残らない */
+  attachments: FileAttachment[] = [],
 ): Promise<AICallResult> {
   // ゲスト（サンプル閲覧）は初めてAIを使うときだけ匿名セッションを遅延生成する（Phase 3・
   // CLAUDE.md Section 23）。回数制限・実際のゲスト判定はEdge Function側（JWTの
@@ -126,10 +130,10 @@ export async function callAIConsultation(
       throw new AIError("GUEST_BLOCKED", tOutside("common.guest.aiBlocked"));
     }
   }
-  const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal");
+  const systemPrompt = buildSystemPrompt(consultationType, responseVolume ?? "normal", attachments.length > 0);
 
   // 会話履歴をAnthropic形式に変換
-  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  const messages: { role: "user" | "assistant"; content: string | ContentBlock[] }[] = [];
 
   for (const turn of history) {
     messages.push({
@@ -141,7 +145,7 @@ export async function callAIConsultation(
   // 今回のユーザーメッセージをペイロードのJSONとして追加
   messages.push({
     role: "user",
-    content: JSON.stringify(payload),
+    content: buildConsultationContent(JSON.stringify(payload), attachments),
   });
 
   // 自己修正リトライ：直前の不正な出力→修正依頼を会話として追加する

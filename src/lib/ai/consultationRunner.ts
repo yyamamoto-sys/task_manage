@@ -15,6 +15,7 @@ import { callAIConsultation, AIError } from "./apiClient";
 import type { AIConsultationPayload } from "./payloadBuilder";
 import type { ConsultationType, ResponseVolume } from "./types";
 import type { ChatTurn } from "./sessionManager";
+import type { FileAttachment } from "./invokeAI";
 import { parseAIResponse, type Proposal } from "./responseParser";
 
 export interface AIUsage {
@@ -39,8 +40,9 @@ export async function runAIConsultation(
   history: ChatTurn[],
   model?: string,
   responseVolume?: ResponseVolume,
+  attachments: FileAttachment[] = [],
 ): Promise<RunAIConsultationResult> {
-  const first = await callAIConsultation(payload, consultationType, history, model, responseVolume);
+  const first = await callAIConsultation(payload, consultationType, history, model, responseVolume, undefined, attachments);
 
   try {
     const parsed = parseAIResponse(first.text, first.stopReason);
@@ -59,7 +61,7 @@ export async function runAIConsultation(
     const retry = await callAIConsultation(payload, consultationType, history, model, responseVolume, {
       previousResponseText: first.text,
       reason: err.message,
-    });
+    }, attachments);
 
     // リトライ結果のパース失敗はそのまま呼び出し元に伝播する（これ以上は救済しない）
     const parsedRetry = parseAIResponse(retry.text, retry.stopReason);

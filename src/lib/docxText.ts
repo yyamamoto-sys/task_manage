@@ -7,15 +7,7 @@
 // 表組み等は罫線情報を捨ててセル内テキストだけ拾う（会議メモ用途には十分）。
 
 import { unzipSync } from "fflate";
-
-function decodeXmlEntities(s: string): string {
-  return s
-    .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, n) => String.fromCodePoint(Number(n)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
-    .replace(/&amp;/g, "&");
-}
+import { decodeXmlEntities } from "./ooxmlCommon";
 
 /** .docx の File から本文テキストを抽出する。失敗時は例外を投げる。 */
 export async function extractDocxText(file: File): Promise<string> {

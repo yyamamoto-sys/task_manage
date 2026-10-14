@@ -17,7 +17,7 @@
   <text x="34" y="282" font-size="13" fill="currentColor">　相談した本人の情報</text>
   <text x="34" y="308" font-size="13" fill="currentColor">・OKRの情報（Objective名・KR名・</text>
   <text x="34" y="326" font-size="13" fill="currentColor">　今四半期のTF名・TFリーダーの略称）</text>
-  <text x="34" y="352" font-size="13" fill="currentColor">・入力した相談文</text>
+  <text x="34" y="352" font-size="13" fill="currentColor">・相談文と、添付した資料の文字</text>
   <text x="34" y="378" font-size="13" font-weight="700" style="fill:var(--color-text-warning)">他のメンバーのタスクも含まれる</text>
 
   <!-- 右：送られない -->

@@ -23,6 +23,9 @@ import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { ProjectTargetSelect } from "../common/ProjectTargetSelect";
 import { aiTargetPickerProjects, resolveAiScope } from "../../lib/ai/aiTarget";
+import type { FileAttachment } from "../../lib/ai/invokeAI";
+import { formatAttachmentHistoryMarker } from "../../lib/ai/consultationAttachment";
+import { ConsultAttachments } from "./ConsultAttachments";
 
 /**
  * 【設計意図】
@@ -84,6 +87,8 @@ export function ConsultationPanel({
   const [lastSubmittedText, setLastSubmittedText] = useState(() => useConsultSessionStore.getState().lastSubmittedText);
   // 回答ボリューム：short=簡潔 / normal=普通（既定） / detailed=詳細
   const [responseVolume, setResponseVolume] = useState<ResponseVolume>("normal");
+  // 添付資料（その1回の送信だけに使う。送信したら消す）
+  const [attachments, setAttachments] = useState<FileAttachment[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
@@ -227,8 +232,13 @@ export function ConsultationPanel({
   const handleSubmit = async () => {
     if (!inputText.trim() || callState === "loading") return;
     const text = inputText;
-    setLastSubmittedText(text);
+    const sentAttachments = attachments;
+    const marker = formatAttachmentHistoryMarker(sentAttachments);
+    setLastSubmittedText(marker ? `${text}
+
+${marker}` : text);
     setInputText("");
+    setAttachments([]);
 
     // 選択提案がある場合、コンテキストを先頭に付与
     let consultation = text;
@@ -239,7 +249,7 @@ export function ConsultationPanel({
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, responseVolume });
+    await submit({ consultation, consultationType, responseVolume, attachments: sentAttachments });
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -271,6 +281,7 @@ export function ConsultationPanel({
   const handleReset = () => {
     setSelectedProposalIds(new Set());
     setInputText("");
+    setAttachments([]);
     setLastSubmittedText("");
     reset();                      // ミラーの session/proposals/shortIdMap/followUp/inputDraft/lastSubmitted を空に戻す
     sessionIdRef.current = crypto.randomUUID();
@@ -693,24 +704,26 @@ export function ConsultationPanel({
               Ctrl+Enter で送信
             </span>
           </div>
-          <textarea
-            ref={textareaRef}
-            value={inputText}
-            onChange={e => setInputText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="相談内容を入力してください（例：○○さんが来週から休みに入ります。タスクへの影響を確認して）"
-            rows={3}
-            disabled={callState === "loading"}
-            style={{
-              fontSize: "12px", padding: "8px 10px",
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              background: callState === "loading" ? "var(--color-bg-tertiary)" : "var(--color-bg-secondary)",
-              color: "var(--color-text-primary)",
-              resize: "vertical", lineHeight: 1.6, minHeight: "72px", maxHeight: "200px", overflowY: "auto",
-              outline: "none",
-            }}
-          />
+          <ConsultAttachments attachments={attachments} onChange={setAttachments} disabled={callState === "loading"}>
+            <textarea
+              ref={textareaRef}
+              value={inputText}
+              onChange={e => setInputText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="相談内容を入力してください（例：○○さんが来週から休みに入ります。タスクへの影響を確認して）"
+              rows={3}
+              disabled={callState === "loading"}
+              style={{
+                fontSize: "12px", padding: "8px 10px",
+                border: "1px solid var(--color-border-primary)",
+                borderRadius: "var(--radius-md)",
+                background: callState === "loading" ? "var(--color-bg-tertiary)" : "var(--color-bg-secondary)",
+                color: "var(--color-text-primary)",
+                resize: "vertical", lineHeight: 1.6, minHeight: "72px", maxHeight: "200px", overflowY: "auto",
+                outline: "none",
+              }}
+            />
+          </ConsultAttachments>
           {/* 選択中提案バッジ */}
           {selectedProposalIds.size > 0 && (
             <div style={{ fontSize: "10px", color: "var(--color-accent, #3b82f6)", background: "var(--color-accent-bg, #eff6ff)", border: "1px solid var(--color-accent, #3b82f6)", borderRadius: "var(--radius-sm)", padding: "4px 8px" }}>

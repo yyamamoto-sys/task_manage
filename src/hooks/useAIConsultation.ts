@@ -32,6 +32,8 @@ import type { ConsultationSession } from "../lib/ai/sessionManager";
 import { useUndoStack } from "./useUndoStack";
 import { applyUndo } from "../lib/ai/undoApply";
 import { insertAiUsageLog } from "../lib/supabase/store";
+import type { FileAttachment } from "../lib/ai/invokeAI";
+import { buildUserTurnContent } from "../lib/ai/consultationAttachment";
 import { showToast } from "../components/common/Toast";
 
 // ===== 型定義 =====
@@ -47,6 +49,8 @@ export interface SubmitOptions {
   includeOKR?: boolean;
   /** 回答ボリューム設定（short=簡潔 / normal=普通・既定 / detailed=詳細） */
   responseVolume?: ResponseVolume;
+  /** この1回の送信だけに添える資料。履歴には本文を残さない（v3.144） */
+  attachments?: FileAttachment[];
 }
 
 const THINKING_MODEL = "claude-sonnet-4-6";
@@ -99,6 +103,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
   const submit = useCallback(
     async (opts: SubmitOptions) => {
       const { consultation, consultationType, targetDeadline, responseVolume } = opts;
+      const attachments = opts.attachments ?? [];
       // OKR情報のチェックボックスは廃止。明示指定が無ければ常にOKR情報を含める（既定 true）。
       const includeOKR = opts.includeOKR ?? true;
 
@@ -142,7 +147,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
       // ユーザーターンをセッションに追加
       const userTurn = {
         role: "user" as const,
-        content: consultation,
+        content: buildUserTurnContent(consultation, attachments),
         timestamp: new Date().toISOString(),
       };
       let currentSession = addTurn(latestSession, userTurn);
@@ -161,6 +166,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
           historyForApi,
           model,
           responseVolume,
+          attachments,
         );
 
         // トークン使用量をDBに記録（失敗しても相談の処理は止めない・コンソールには記録）
