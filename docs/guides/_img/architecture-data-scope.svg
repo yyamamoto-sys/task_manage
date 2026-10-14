@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 436" width="640">
+  <!-- 部署ごとのデータと、メンバーの種類ごとに見える範囲（RLS）。部署名・人は架空の例 -->
+  <rect x="1" y="1" width="638" height="434" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">メンバーの種類ごとに見えるデータ</text>
+
+  <!-- 列見出し -->
+  <rect x="208" y="48" width="132" height="46" rx="6" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="274" y="68" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-info)">部署Aのデータ</text>
+  <text x="274" y="85" text-anchor="middle" font-size="12" fill="currentColor">PJ・タスク等</text>
+
+  <rect x="348" y="48" width="132" height="46" rx="6" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="414" y="68" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-info)">部署Bのデータ</text>
+  <text x="414" y="85" text-anchor="middle" font-size="12" fill="currentColor">PJ・タスク等</text>
+
+  <rect x="488" y="48" width="132" height="46" rx="6" style="fill:var(--color-bg-purple);stroke:var(--color-border-purple)" />
+  <text x="554" y="68" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-purple)">招待されたPJ</text>
+  <text x="554" y="85" text-anchor="middle" font-size="12" fill="currentColor">（部署Aの1件）</text>
+
+  <!-- 行1：部署Aのメンバー -->
+  <rect x="20" y="104" width="180" height="36" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="127" font-size="13" fill="currentColor">部署Aのメンバー</text>
+  <rect x="208" y="104" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="274" y="127" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="348" y="104" width="132" height="36" rx="6" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="414" y="127" text-anchor="middle" font-size="13" style="fill:var(--color-text-tertiary)">見えない</text>
+  <rect x="488" y="104" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="554" y="127" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+
+  <!-- 行2：部署Bのメンバー -->
+  <rect x="20" y="148" width="180" height="36" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="171" font-size="13" fill="currentColor">部署Bのメンバー</text>
+  <rect x="208" y="148" width="132" height="36" rx="6" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="274" y="171" text-anchor="middle" font-size="13" style="fill:var(--color-text-tertiary)">見えない</text>
+  <rect x="348" y="148" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="414" y="171" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="488" y="148" width="132" height="36" rx="6" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="554" y="171" text-anchor="middle" font-size="13" style="fill:var(--color-text-tertiary)">見えない</text>
+
+  <!-- 行3：A・B 兼務 -->
+  <rect x="20" y="192" width="180" height="36" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="215" font-size="13" fill="currentColor">A・B 兼務のメンバー</text>
+  <rect x="208" y="192" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="274" y="215" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="348" y="192" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="414" y="215" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="488" y="192" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="554" y="215" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+
+  <!-- 行4：招待を受けた人 -->
+  <rect x="20" y="236" width="180" height="36" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="252" font-size="13" fill="currentColor">招待を受けた人</text>
+  <text x="32" y="267" font-size="12" style="fill:var(--color-text-secondary)">（他に所属部署なし）</text>
+  <rect x="208" y="236" width="132" height="36" rx="6" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="274" y="259" text-anchor="middle" font-size="13" style="fill:var(--color-text-tertiary)">見えない</text>
+  <rect x="348" y="236" width="132" height="36" rx="6" style="fill:var(--color-bg-tertiary);stroke:var(--color-border-secondary)" />
+  <text x="414" y="259" text-anchor="middle" font-size="13" style="fill:var(--color-text-tertiary)">見えない</text>
+  <rect x="488" y="236" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="554" y="259" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+
+  <!-- 行5：全社スーパー管理者 -->
+  <rect x="20" y="280" width="180" height="36" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="303" font-size="13" fill="currentColor">全社スーパー管理者</text>
+  <rect x="208" y="280" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="274" y="303" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="348" y="280" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="414" y="303" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+  <rect x="488" y="280" width="132" height="36" rx="6" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="554" y="303" text-anchor="middle" font-size="13" font-weight="700" style="fill:var(--color-text-success)">見える</text>
+
+  <!-- 注記 -->
+  <rect x="20" y="334" width="600" height="86" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="34" y="352" font-size="13" fill="currentColor">見える範囲は、データベースの RLS で制限されている（画面の表示制限とは別）。</text>
+  <text x="34" y="370" font-size="13" fill="currentColor">「招待を受けた人」は、招待用部署だけに所属する人の例。</text>
+  <text x="34" y="388" font-size="13" fill="currentColor">他の部署にも所属していれば、その部署のデータは別に見える。</text>
+  <text x="34" y="406" font-size="13" fill="currentColor">サイドバーの「表示部署」は、見える範囲の中から画面に出す部署を選ぶ機能。</text>
+</svg>

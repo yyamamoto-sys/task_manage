@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 436" width="640">
+  <!-- AI相談の流れ：ブラウザ → Edge Function → Claude API → 回答 → 利用者が確認して反映 -->
+  <rect x="1" y="1" width="638" height="434" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">AI 相談の流れ</text>
+
+  <!-- 上段：送る -->
+  <rect x="20" y="50" width="180" height="140" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="32" y="74" font-size="15" font-weight="700" fill="currentColor">1. ブラウザ</text>
+  <text x="32" y="98" font-size="13" fill="currentColor">送るデータを組み立て</text>
+  <text x="32" y="118" font-size="13" fill="currentColor">・パスとメールは</text>
+  <text x="32" y="136" font-size="13" fill="currentColor">　伏せ字にする</text>
+  <text x="32" y="158" font-size="13" fill="currentColor">・API の鍵は持たない</text>
+
+  <rect x="230" y="50" width="180" height="140" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="242" y="74" font-size="15" font-weight="700" style="fill:var(--color-text-info)">2. Edge Function</text>
+  <text x="242" y="94" font-size="12" style="fill:var(--color-text-secondary)">ai-consult</text>
+  <text x="242" y="118" font-size="13" fill="currentColor">・ログインを確認</text>
+  <text x="242" y="138" font-size="13" fill="currentColor">・送信元を CORS で制限</text>
+  <text x="242" y="158" font-size="13" fill="currentColor">・回数を制限（1分あたり）</text>
+  <text x="242" y="178" font-size="13" fill="currentColor">・鍵はここだけが保持</text>
+
+  <rect x="440" y="50" width="180" height="140" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="452" y="74" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">3. Claude API</text>
+  <text x="452" y="98" font-size="13" fill="currentColor">文章を生成して返す</text>
+  <text x="452" y="118" font-size="12" style="fill:var(--color-text-secondary)">（Anthropic）</text>
+
+  <!-- 矢印：1→2→3 -->
+  <path d="M202 120 H228 M412 120 H438" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M221 114 L228 120 L221 126 M431 114 L438 120 L431 126" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- 3 → 4 -->
+  <path d="M530 192 V238" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M524 231 L530 238 L536 231" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <text x="540" y="220" font-size="12" style="fill:var(--color-text-secondary)">回答</text>
+
+  <!-- 下段：回答を受けて反映 -->
+  <rect x="440" y="240" width="180" height="110" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="452" y="264" font-size="15" font-weight="700" fill="currentColor">4. 回答を受け取る</text>
+  <text x="452" y="288" font-size="13" fill="currentColor">提案として表示する</text>
+  <text x="452" y="312" font-size="13" fill="currentColor">この時点では</text>
+  <text x="452" y="330" font-size="13" fill="currentColor">データは変わらない</text>
+
+  <rect x="230" y="240" width="180" height="110" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="242" y="264" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">5. 利用者が確認</text>
+  <text x="242" y="288" font-size="13" fill="currentColor">内容を読み、必要なら</text>
+  <text x="242" y="306" font-size="13" fill="currentColor">修正する</text>
+
+  <rect x="20" y="240" width="180" height="110" rx="8" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="32" y="264" font-size="15" font-weight="700" style="fill:var(--color-text-success)">6.「反映する」を押す</text>
+  <text x="32" y="288" font-size="13" fill="currentColor">押した分だけ保存</text>
+  <text x="32" y="308" font-size="13" fill="currentColor">変更履歴に記録</text>
+  <text x="32" y="328" font-size="13" fill="currentColor">Undo で戻せる</text>
+
+  <!-- 矢印：4→5→6（右から左） -->
+  <path d="M438 295 H412 M228 295 H202" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M419 289 L412 295 L419 301 M209 289 L202 295 L209 301" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- 注記 -->
+  <rect x="20" y="366" width="600" height="52" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="34" y="388" font-size="13" fill="currentColor">AI 相談の質問・回答は、plan-app のデータベースには保存されません。</text>
+  <text x="34" y="408" font-size="13" fill="currentColor">端末に履歴が最大 10 件残り、使用量（回数・トークン）だけが記録されます。</text>
+</svg>

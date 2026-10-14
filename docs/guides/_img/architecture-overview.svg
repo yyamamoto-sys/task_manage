@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 436" width="640">
+  <!-- システム全体構成：ブラウザ・Vercel・Supabase・Claude API・GitHub -->
+  <rect x="1" y="1" width="638" height="434" rx="10" style="fill:var(--color-bg-secondary);stroke:var(--color-border-primary)" />
+  <text x="320" y="30" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">plan-app のシステム構成</text>
+
+  <!-- 上段：GitHub → Vercel -->
+  <rect x="204" y="44" width="220" height="62" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="314" y="66" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">GitHub</text>
+  <text x="314" y="84" text-anchor="middle" font-size="12" fill="currentColor">main への push を起点に</text>
+  <text x="314" y="99" text-anchor="middle" font-size="12" fill="currentColor">Vercel が自動でデプロイ</text>
+
+  <rect x="20" y="44" width="130" height="62" rx="8" style="fill:var(--color-bg-info);stroke:var(--color-border-info)" />
+  <text x="85" y="68" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-info)">Vercel</text>
+  <text x="85" y="90" text-anchor="middle" font-size="12" fill="currentColor">画面（静的ファイル）</text>
+
+  <path d="M204 75 H156" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M162 69 L155 75 L162 81" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- Vercel → ブラウザ -->
+  <path d="M85 110 V148" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M79 142 L85 149 L91 142" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <text x="96" y="134" font-size="12" style="fill:var(--color-text-secondary)">画面の配信</text>
+
+  <!-- ブラウザ -->
+  <rect x="20" y="152" width="130" height="150" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="85" y="180" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">利用者の</text>
+  <text x="85" y="199" text-anchor="middle" font-size="15" font-weight="700" fill="currentColor">ブラウザ</text>
+  <text x="85" y="226" text-anchor="middle" font-size="12" fill="currentColor">画面（React）</text>
+  <text x="85" y="244" text-anchor="middle" font-size="12" fill="currentColor">を実行</text>
+  <text x="85" y="270" text-anchor="middle" font-size="12" style="fill:var(--color-text-secondary)">表示設定は</text>
+  <text x="85" y="286" text-anchor="middle" font-size="12" style="fill:var(--color-text-secondary)">端末に保存</text>
+
+  <!-- ブラウザ ⇔ Supabase -->
+  <text x="177" y="218" text-anchor="middle" font-size="12" style="fill:var(--color-text-secondary)">読み書き</text>
+  <text x="177" y="233" text-anchor="middle" font-size="12" style="fill:var(--color-text-secondary)">ログイン</text>
+  <path d="M153 244 H201" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M160 238 L153 244 L160 250 M194 238 L201 244 L194 250" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- Supabase -->
+  <rect x="204" y="138" width="292" height="204" rx="10" style="fill:var(--color-bg-success);stroke:var(--color-border-success)" />
+  <text x="218" y="160" font-size="15" font-weight="700" style="fill:var(--color-text-success)">Supabase</text>
+
+  <rect x="214" y="170" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="278" y="187" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Auth</text>
+  <text x="278" y="203" text-anchor="middle" font-size="12" fill="currentColor">ログイン</text>
+
+  <rect x="358" y="170" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="422" y="187" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">PostgreSQL</text>
+  <text x="422" y="203" text-anchor="middle" font-size="12" fill="currentColor">業務データ（RLS）</text>
+
+  <rect x="214" y="226" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="278" y="243" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Realtime</text>
+  <text x="278" y="259" text-anchor="middle" font-size="12" fill="currentColor">変更の即時反映</text>
+
+  <rect x="358" y="226" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="422" y="243" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Edge Functions</text>
+  <text x="422" y="259" text-anchor="middle" font-size="12" fill="currentColor">サーバー側の処理</text>
+
+  <rect x="214" y="282" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="278" y="299" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">Storage</text>
+  <text x="278" y="315" text-anchor="middle" font-size="12" fill="currentColor">バックアップ保管</text>
+
+  <rect x="358" y="282" width="128" height="40" rx="6" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="422" y="299" text-anchor="middle" font-size="13" font-weight="700" fill="currentColor">pg_cron</text>
+  <text x="422" y="315" text-anchor="middle" font-size="12" fill="currentColor">定期処理の起動</text>
+
+  <!-- pg_cron → Edge Functions -->
+  <path d="M422 280 V270" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M416 275 L422 268 L428 275" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <!-- Edge Functions → Claude API -->
+  <path d="M486 246 H520" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+  <path d="M513 240 L520 246 L513 252" style="stroke:var(--color-text-tertiary)" stroke-width="2" fill="none" />
+
+  <rect x="524" y="214" width="96" height="64" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
+  <text x="572" y="240" text-anchor="middle" font-size="14" font-weight="700" style="fill:var(--color-text-warning)">Claude API</text>
+  <text x="572" y="260" text-anchor="middle" font-size="12" fill="currentColor">AI 相談の</text>
+  <text x="572" y="274" text-anchor="middle" font-size="12" fill="currentColor">文章生成</text>
+
+  <!-- 注記 -->
+  <rect x="20" y="360" width="600" height="60" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />
+  <text x="34" y="383" font-size="13" fill="currentColor">業務データを持つのは Supabase だけ。Vercel は画面の配信のみ。</text>
+  <text x="34" y="403" font-size="13" fill="currentColor">AI 相談は必ず Edge Functions を経由し、Claude API の鍵はブラウザに渡らない。</text>
+</svg>
