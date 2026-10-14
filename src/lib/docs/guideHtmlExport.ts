@@ -62,9 +62,9 @@ export function formatDateTime(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 社内命名規則「種別_内容_YYYYMMDD.拡張子」＋版。例：手順案内_業務管理アプリ_マニュアル一式_v3.142_20261014.html */
+/** 社内命名規則「種別_内容_YYYYMMDD.拡張子」＋版。例：手順案内_AMP_マニュアル一式_v3.142_20261014.html */
 export function guideExportFileName(kind: GuideSetKind, now: Date, version: string = APP_VERSION): string {
-  return `${FILE_PREFIX[kind]}_業務管理アプリ_${GUIDE_SET_LABELS[kind]}_v${version}_${formatYmd(now)}.html`;
+  return `${FILE_PREFIX[kind]}_AMP_${GUIDE_SET_LABELS[kind]}_v${version}_${formatYmd(now)}.html`;
 }
 
 // ===== ライトテーマの配色（CSS 変数はダウンロードした HTML では未定義になるため値を直接持つ） =====
@@ -293,7 +293,7 @@ export function buildGuideHtml({ kind, entries, now, svgs, version = APP_VERSION
   const setLabel = GUIDE_SET_LABELS[kind];
   const stamp = formatDateTime(now);
   const verLabel = `v${version}`;
-  const docTitle = `業務管理アプリ ${setLabel}（${verLabel}）`;
+  const docTitle = `AMP ${setLabel}（${verLabel}）`;
   const includedSlugs = new Set(entries.map(e => e.slug));
   const headingIds = new Map<string, Map<string, string>>();
   for (const e of entries) {
@@ -316,7 +316,7 @@ export function buildGuideHtml({ kind, entries, now, svgs, version = APP_VERSION
     : "";
 
   const cover = `<section class="cover">
-<h1>業務管理アプリ ${escapeHtml(setLabel)}</h1>
+<h1>AMP ${escapeHtml(setLabel)}</h1>
 <div class="meta"><span>アプリの版：${escapeHtml(verLabel)}</span><span>出力日時：${escapeHtml(stamp)}</span><span>収録記事数：${entries.length}</span></div>
 ${toc}
 </section>`;
@@ -330,7 +330,7 @@ ${markdownToHtml(e.body, e.title, ctx)}
 </article>`;
   }).join("\n");
 
-  const footer = `<div class="print-footer">業務管理アプリ ${escapeHtml(setLabel)} ｜ アプリの版 ${escapeHtml(verLabel)} ｜ 出力 ${escapeHtml(stamp)}</div>`;
+  const footer = `<div class="print-footer">AMP ${escapeHtml(setLabel)} ｜ アプリの版 ${escapeHtml(verLabel)} ｜ 出力 ${escapeHtml(stamp)}</div>`;
 
   return `<!DOCTYPE html>
 <html lang="ja">

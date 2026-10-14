@@ -1,6 +1,7 @@
 // src/components/auth/LoginScreen.tsx
 import { useState, Suspense } from "react";
 import { signIn, signUp } from "../../lib/supabase/auth";
+import { AppLogo } from "../common/AppLogo";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
 import { VersionBadge } from "../common/VersionBadge";
@@ -464,20 +465,8 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
       {versionHistoryModal}
       <div style={cardStyle}>
         {/* ロゴ＆タイトル */}
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-          <div style={{
-            width: "28px", height: "28px", borderRadius: "var(--radius-md)",
-            background: "var(--color-brand)", display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="16" height="16" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="2" width="3" height="10" rx="1" stroke="white" strokeWidth="1.2"/>
-              <rect x="5.5" y="2" width="3" height="7" rx="1" stroke="white" strokeWidth="1.2"/>
-              <rect x="10" y="2" width="3" height="4" rx="1" stroke="white" strokeWidth="1.2"/>
-            </svg>
-          </div>
-          <h1 style={{ fontSize: "18px", fontWeight: 700, color: "var(--color-text-primary)" }}>
-            {t("common.app.name")}
-          </h1>
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: "4px" }}>
+          <AppLogo variant="full" size={40} />
         </div>
 
         {/* タブ */}

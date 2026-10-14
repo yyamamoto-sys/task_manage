@@ -11,7 +11,7 @@
 import type { commonJa } from "./common.ja";
 
 export const commonEn: Record<keyof typeof commonJa, string> = {
-  "common.app.name": "AMITA Work Management",
+  "common.app.name": "AMP — AMITA Management Platform",
   "common.button.cancel": "Cancel",
   "common.button.save": "Save",
   "common.button.close": "Close",

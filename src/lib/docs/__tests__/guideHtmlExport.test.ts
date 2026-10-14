@@ -45,9 +45,9 @@ describe("selectGuideSet", () => {
 
 describe("ファイル名", () => {
   it("種別_内容_版_YYYYMMDD.html", () => {
-    expect(guideExportFileName("manual", NOW, "3.142")).toBe("手順案内_業務管理アプリ_マニュアル一式_v3.142_20261014.html");
-    expect(guideExportFileName("spec", NOW, "3.142")).toBe("設計仕様_業務管理アプリ_機能仕様_v3.142_20261014.html");
-    expect(guideExportFileName("architecture", NOW, "3.142")).toBe("設計仕様_業務管理アプリ_システム構成_v3.142_20261014.html");
+    expect(guideExportFileName("manual", NOW, "3.142")).toBe("手順案内_AMP_マニュアル一式_v3.142_20261014.html");
+    expect(guideExportFileName("spec", NOW, "3.142")).toBe("設計仕様_AMP_機能仕様_v3.142_20261014.html");
+    expect(guideExportFileName("architecture", NOW, "3.142")).toBe("設計仕様_AMP_システム構成_v3.142_20261014.html");
   });
   it("版は APP_VERSION から組み立てる", () => {
     expect(guideExportFileName("spec", NOW)).toContain(`_v${APP_VERSION}_`);

@@ -77,6 +77,7 @@ import {
   computeFabBottomMobile, computeAboveFabBottom,
   computeFabMenuBottom, computeFabMenuTop, computeShortcutsBottomFabOpen,
 } from "../../lib/layout/bottomStack";
+import { AppLogo } from "../common/AppLogo";
 import { useUiLayoutStore } from "../../stores/uiLayoutStore";
 import { startDevBottomStackOverlapCheck } from "../../lib/layout/devOverlapCheck";
 
@@ -2088,13 +2089,14 @@ function Sidebar({
         padding: c ? "8px 0" : "8px 8px 8px 12px",
         borderBottom: "1px solid var(--color-border-primary)",
         display: "flex", alignItems: "center",
+        flexDirection: c ? "column" : "row",
         gap: "6px", flexShrink: 0,
       }}>
-        {!c && (
+        {c ? (
+          <AppLogo variant="icon" size={24} />
+        ) : (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {t("layout.sidebar.appName")}
-            </div>
+            <AppLogo variant="full" size={28} />
           </div>
         )}
         <button

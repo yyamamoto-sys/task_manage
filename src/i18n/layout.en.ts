@@ -90,7 +90,8 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.tourDemo.noData": "I'm about to start managing plans here. What unit of projects and tasks would make this easiest to manage going forward?",
   "layout.aiProjectCreate.prefill": "I want to start a new project. Please propose a draft goal and initial tasks. (If you already know the purpose, deadline, or owner, please add them to this message.)",
 
-  "layout.sidebar.appName": "AMITA Work Management",
+  "layout.sidebar.appName": "AMP",
+  "layout.sidebar.appSubtitle": "AMITA Management Platform",
   "layout.sidebar.expand": "Open menu",
   "layout.sidebar.collapse": "Collapse menu",
   "layout.sidebar.resizeHandle.label": "Resize sidebar",
