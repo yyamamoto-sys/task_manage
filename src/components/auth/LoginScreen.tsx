@@ -21,18 +21,18 @@ interface Props {
   onLogin: () => void;
   /** 「サンプルを見る」を押したときに呼ぶ。Supabase Authのサインインは行わない。 */
   onGuest: () => Promise<void>;
-  /** 再設定のリンクが無効・期限切れで戻ってきた。再設定フォームを開き、案内を出す。 */
-  resetLinkInvalid?: boolean;
+  /** メールのリンクが無効・期限切れで戻ってきた。reset＝再設定フォームを開く／other＝ログイン画面に案内だけ出す。 */
+  invalidLink?: "none" | "reset" | "other";
 }
 
 type Mode = "login" | "signup" | "signup_done" | "invite" | "invite_awaiting" | "forgot";
 
-export function LoginScreen({ onLogin, onGuest, resetLinkInvalid = false }: Props) {
+export function LoginScreen({ onLogin, onGuest, invalidLink = "none" }: Props) {
   const t = useT();
   // 招待リンク（?invite=<code>）から開かれた場合は、招待コード欄を事前入力した状態で
   // 直接「招待コードをお持ちの方」モードに入る（設計書§7・3-2）。
   const [initialInviteCode] = useState(() => extractInviteCodeFromSearch(window.location.search));
-  const [mode, setMode] = useState<Mode>(() => (resetLinkInvalid ? "forgot" : initialInviteCode ? "invite" : "login"));
+  const [mode, setMode] = useState<Mode>(() => (invalidLink === "reset" ? "forgot" : initialInviteCode ? "invite" : "login"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -174,7 +174,7 @@ export function LoginScreen({ onLogin, onGuest, resetLinkInvalid = false }: Prop
         setForgotMessage(t("auth.forgot.sent"));
         startCooldown();
       } else if (outcome.kind === "rateLimited") {
-        setForgotError(t("auth.forgot.rateLimited"));
+        setForgotMessage(t("auth.forgot.sent")); // 429 も同じ文言（待ち時間の表示の差で登録の有無を推測させない）
         startCooldown();
       } else {
         setForgotError(formatErrorForUser(t("auth.forgot.failed"), outcome.error));
@@ -528,13 +528,13 @@ export function LoginScreen({ onLogin, onGuest, resetLinkInvalid = false }: Prop
           <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.6, marginBottom: "18px" }}>
             {t("auth.forgot.subtitle")}
           </p>
-          {resetLinkInvalid && !forgotMessage && (
+          {invalidLink !== "none" && !forgotMessage && (
             <p style={{
               fontSize: "12px", color: "var(--color-text-warning)", background: "var(--color-bg-warning)",
               border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)",
               padding: "10px 12px", lineHeight: 1.7, marginBottom: "16px",
             }}>
-              {t("auth.forgot.linkInvalid")}
+              {t("auth.link.invalid")}
             </p>
           )}
           <form onSubmit={e => void handleForgotSubmit(e)}>
@@ -606,6 +606,16 @@ export function LoginScreen({ onLogin, onGuest, resetLinkInvalid = false }: Prop
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "4px" }}>
           <AppLogo variant="full" size={54} />
         </div>
+
+        {invalidLink !== "none" && (
+          <p style={{
+            marginTop: "16px", fontSize: "12px", color: "var(--color-text-warning)", background: "var(--color-bg-warning)",
+            border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)",
+            padding: "10px 12px", lineHeight: 1.7,
+          }}>
+            {t("auth.link.invalid")}
+          </p>
+        )}
 
         {/* タブ */}
         <div style={{ display: "flex", gap: "0", marginBottom: "24px", marginTop: "20px", borderBottom: "1px solid var(--color-border-primary)" }}>

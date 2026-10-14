@@ -1,10 +1,12 @@
 // src/lib/account/initialAuthLink.ts
 //
-// 【設計意図】再設定メールのリンクから戻ってきた直後の URL（ハッシュ・クエリ）を、起動時に1度だけ控える。
-// supabase-js は createClient 後に非同期でハッシュを読んで消すため、React が購読を張る頃には
-// 見えなくなっていることがある（PASSWORD_RECOVERY のイベントを取りこぼしうる）。main.tsx の
-// 一番最初に import して、supabase の初期化より前に評価されるようにする。
-import { parseAuthLink, type AuthLinkResult } from "./recoveryFlow";
+// 【設計意図】メールのリンクから戻ってきた直後の URL（ハッシュ・クエリ）を、起動時に1度だけ控え、
+// **その場で replaceState（push しない）して URL からトークン・エラーを消す**。
+// supabase-js の detectSessionInUrl は切ってある（client.ts）。auth-js の `location.hash = ''` は
+// 履歴に新しい項目を積み、トークン付きの URL が戻るボタンで復元できてしまうため。
+// トークンの取り込み（setSession）は auth.ts の applyInitialAuthLink が行う。
+// main.tsx の最初の import に置く（他のモジュールより先に URL を控えるため）。
+import { captureAuthLink, type AuthLinkResult } from "./recoveryFlow";
 
 export const initialAuthLink: AuthLinkResult =
-  typeof window === "undefined" ? { kind: "none" } : parseAuthLink(window.location.hash, window.location.search);
+  typeof window === "undefined" ? { kind: "none" } : captureAuthLink(window);

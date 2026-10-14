@@ -9,7 +9,12 @@ export const isMisconfigured = !url || !key;
 
 // 未設定の場合は App.tsx の isMisconfigured チェックで止まるため、
 // ここでは空文字フォールバックでクライアントを生成しておく（呼ばれない）
-const rawClient = createClient(url ?? "", key ?? "");
+// detectSessionInUrl:false：メールのリンク（再設定・サインアップ確認・招待・マジックリンク）の
+// トークンは自前で処理する（src/lib/account/initialAuthLink.ts が URL を控えて直ちに replaceState で
+// 消し、auth.ts の applyInitialAuthLink が setSession する）。既定のままだと auth-js が
+// `location.hash = ''` で履歴に新しい項目を積み、トークン付きの URL が戻るで復元できてしまう。
+// flowType は既定の implicit のまま（CLAUDE.md Section 79）。
+const rawClient = createClient(url ?? "", key ?? "", { auth: { detectSessionInUrl: false } });
 
 // ===== ゲスト（サンプル閲覧）モードの Supabase 遮断 =====
 //

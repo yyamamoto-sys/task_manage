@@ -6,18 +6,18 @@
 // パスワードを決めないまま使える経路を作らないため（CLAUDE.md Section 79）。
 // ファイル名に「password」を含めない：この環境の Read/Write 拒否ルールが *password* に当たるため。
 import { useState } from "react";
-import { updateOwnPassword, signOut } from "../../lib/supabase/auth";
+import { updateOwnPassword, signOut, signOutLocal } from "../../lib/supabase/auth";
 import { AppLogo } from "../common/AppLogo";
 import { LangToggle } from "../common/LangToggle";
 import { useT } from "../../hooks/useT";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { validateNewPassword, isReauthRequiredError } from "../../lib/account/recoveryFlow";
+import { validateNewPassword, classifyUpdatePasswordError } from "../../lib/account/recoveryFlow";
 
 interface Props {
   /** パスワードの設定が済んだ。通常どおりアプリへ入る。 */
   onDone: () => void;
-  /** 設定せずにログイン画面へ戻る（signOut 済み）。 */
-  onCancel: () => void;
+  /** 設定せずにログイン画面へ戻る。signedOutCleanly=false はサーバー側の signOut に失敗し端末のセッションだけ破棄した場合。 */
+  onCancel: (signedOutCleanly: boolean) => void;
 }
 
 const inputStyle: React.CSSProperties = {
@@ -47,15 +47,29 @@ export function AccountRecoveryScreen({ onDone, onCancel }: Props) {
       await updateOwnPassword(value);
       onDone();
     } catch (err) {
-      setError(isReauthRequiredError(err) ? t("auth.reset.sessionLost") : formatErrorForUser(t("auth.reset.failed"), err));
+      const kind = classifyUpdatePasswordError(err);
+      if (kind === "reauth") setError(formatErrorForUser(t("auth.reset.reauthNeeded"), err));
+      else if (kind === "session_missing") setError(t("auth.reset.sessionLost"));
+      else if (kind === "same_password") setError(t("auth.reset.samePassword"));
+      else setError(formatErrorForUser(t("auth.reset.failed"), err));
     } finally {
       setSaving(false);
     }
   };
 
   const handleCancel = async () => {
-    try { await signOut(); } catch { /* 失敗してもログイン画面へ戻す（次回起動時にセッションが残っていれば通常ログインになる） */ }
-    onCancel();
+    try {
+      await signOut();
+      onCancel(true);
+      return;
+    } catch { /* 通信エラー等。下で端末のセッションだけ破棄する */ }
+    try {
+      // 再設定のセッションを残したままログイン画面へ戻ると、再読み込みで再設定画面なしにアプリへ入れてしまう
+      await signOutLocal();
+      onCancel(false);
+    } catch (err) {
+      setError(formatErrorForUser(t("auth.reset.cancelFailed"), err));
+    }
   };
 
   return (

@@ -8229,6 +8229,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 純粋関数 src/lib/account/recoveryFlow.ts（戻り URL の解釈・結果の分類・検証・起動可否・待ち秒数）と vitest。docs/dev/account-recovery.md（Supabase 管理画面の設定・メール文面案。公式ドキュメントで確かめた事実と未確認を区別）。docs/guides の FAQ・設定ページ・uiGuide に追記。
 # * ファイル名に「password」を含めない（この環境の Read/Write 拒否ルール *password* のため）。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+# * 【独立レビュー対応・同じ v3.150】createClient を detectSessionInUrl:false にして URL のトークン処理を自前化（initialAuthLink が起動時に控えて直ちに replaceState・auth.ts の applyInitialAuthLink が setSession。サインアップ確認・招待・マジックリンクも全 type を取り込む＝履歴にトークンを残さない）。
+# * 再設定待ちの印（localStorage recovery_pending_v1＝userId・時刻）：再読み込み・新しいタブでも、パスワードを決めるまで通常アプリへ入れない（resolveRecoveryOnStartup）。signOut 失敗時は signOutLocal で端末のセッションを破棄し印は残す。
+# * 429 も sent と同じ固定文言。無効リンクの案内は汎用文言（auth.link.invalid。ログイン済みならトースト）。再認証必須・same_password を日本語に。テスト：captureAuthLink（replaceState・push しない）・applyInitialAuthLink（setSession の値・type 別）・resolveRecoveryOnStartup・配線のソース走査。
 
 # v3.151（2026-10-15）：ベルに super_admin 専用の「🛡 エラーをコピー」欄（CLAUDE.md Section 67）
 # * 「⚙ 通知設定」の真下。未読の client_error 通知に対応するエラー（通知 created_at ＝ client_error_logs.last_notified_at で結ぶ）をチェックボックスで選び、Claude に貼れる Markdown でコピー。

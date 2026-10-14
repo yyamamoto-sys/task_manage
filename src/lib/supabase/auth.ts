@@ -1,7 +1,8 @@
 // src/lib/supabase/auth.ts
 import { supabase } from "./client";
 import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
-import { buildResetRedirectUrl, classifyResetMailError, type ResetMailOutcome } from "../account/recoveryFlow";
+import { buildResetRedirectUrl, classifyResetMailError, sessionArgsFromLink, type ResetMailOutcome } from "../account/recoveryFlow";
+import { initialAuthLink } from "../account/initialAuthLink";
 
 export async function signIn(email: string, password: string): Promise<void> {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -29,6 +30,41 @@ export async function signUp(
 export async function signOut(): Promise<void> {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;
+}
+
+/** サーバーへ通信せずこの端末のセッションだけを破棄する（signOut が通信エラーで失敗したときの退避）。 */
+export async function signOutLocal(): Promise<void> {
+  const { error } = await supabase.auth.signOut({ scope: "local" });
+  if (error) throw error;
+}
+
+export type InitialLinkOutcome =
+  | { kind: "none" }
+  | { kind: "applied"; userId: string; isRecovery: boolean }
+  | { kind: "failed"; error: unknown; isRecovery: boolean };
+
+let initialLinkPending: Promise<InitialLinkOutcome> | null = null;
+
+/**
+ * メールのリンクで戻ってきたトークンを setSession で取り込む（detectSessionInUrl を切っているため自前）。
+ * type=recovery 以外（サインアップ確認・招待・マジックリンク・メール変更）も同じく取り込み、
+ * 通常のログインとして扱う。StrictMode の二重実行に備え、結果は1度だけ作って使い回す。
+ */
+export function applyInitialAuthLink(): Promise<InitialLinkOutcome> {
+  if (!initialLinkPending) {
+    initialLinkPending = (async (): Promise<InitialLinkOutcome> => {
+      const link = initialAuthLink;
+      if (link.kind !== "session") return { kind: "none" };
+      try {
+        const { data, error } = await supabase.auth.setSession(sessionArgsFromLink(link));
+        if (error || !data.session) return { kind: "failed", error, isRecovery: link.isRecovery };
+        return { kind: "applied", userId: data.session.user.id, isRecovery: link.isRecovery };
+      } catch (error) {
+        return { kind: "failed", error, isRecovery: link.isRecovery };
+      }
+    })();
+  }
+  return initialLinkPending;
 }
 
 export async function getSession(): Promise<Session | null> {

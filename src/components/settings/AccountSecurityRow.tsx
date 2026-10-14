@@ -11,7 +11,7 @@ import { useT } from "../../hooks/useT";
 import { showToast } from "../common/Toast";
 import { updateOwnPassword } from "../../lib/supabase/auth";
 import { formatErrorForUser } from "../../lib/errorMessage";
-import { validateNewPassword, isReauthRequiredError } from "../../lib/account/recoveryFlow";
+import { validateNewPassword, classifyUpdatePasswordError } from "../../lib/account/recoveryFlow";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
 import { Row, inputStyle, primaryBtnStyle } from "./settingsUi";
 
@@ -46,8 +46,11 @@ export function AccountSecurityRow() {
       setConfirm("");
       showToast(t("layout.settings.account.saved"), "success");
     } catch (err) {
-      setError(formatErrorForUser(t("layout.settings.account.failed"), err));
-      setReauthHint(isReauthRequiredError(err));
+      const kind = classifyUpdatePasswordError(err);
+      setError(kind === "same_password"
+        ? t("layout.settings.account.samePassword")
+        : formatErrorForUser(t("layout.settings.account.failed"), err));
+      setReauthHint(kind === "reauth" || kind === "session_missing");
     } finally {
       setSaving(false);
     }
