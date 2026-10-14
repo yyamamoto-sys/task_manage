@@ -6,6 +6,7 @@
 
 import { supabase } from "./client";
 import type { ClientErrorPayload } from "../errors/clientErrorLog";
+import { matchNewErrors } from "../errors/errorCopyText";
 import { isGuestMode } from "../guestMode";
 
 export const CLIENT_ERROR_LIST_LIMIT = 200;
@@ -97,14 +98,24 @@ export async function fetchUnreadClientErrorNotifiedAt(memberId: string): Promis
 
 export type NewClientError = Omit<ClientErrorLog, "member_id" | "resolved_by" | "fingerprint"> & { last_notified_at: string | null };
 
-/** last_notified_at が since 以降のエラー（super_admin のみ読める）。コピー用なので member_id は取らない */
-export async function fetchClientErrorsNotifiedSince(since: string): Promise<NewClientError[]> {
+/**
+ * 未読通知の created_at の一覧そのもので絞る（範囲＋件数上限だと、古い未読の後に通知されたエラーが
+ * 上限を超えたとき古い未読のエラーが抜ける）。timestamptz の等値比較なので文字列の書式差は影響しない。
+ */
+export async function fetchClientErrorsNotifiedAt(times: string[]): Promise<NewClientError[]> {
+  if (times.length === 0) return [];
   const { data, error } = await supabase
     .from("client_error_logs")
     .select("id, source, message, code, context, stack, route, screen, app_version, user_agent, first_seen, last_seen, count, reporter_count, resolved_at, last_notified_at")
-    .gte("last_notified_at", since)
+    .in("last_notified_at", times)
     .order("last_seen", { ascending: false })
-    .limit(NEW_ERROR_COPY_LIMIT * 2);
+    .limit(NEW_ERROR_COPY_LIMIT * 4);
   if (error) throw error;
   return (data ?? []) as NewClientError[];
+}
+
+/** 新規（未読の通知に対応する）エラー。突き合わせは時刻の一致（matchNewErrors）で最終確認する */
+export async function fetchNewClientErrors(memberId: string): Promise<NewClientError[]> {
+  const times = await fetchUnreadClientErrorNotifiedAt(memberId);
+  return matchNewErrors(times, await fetchClientErrorsNotifiedAt(times));
 }

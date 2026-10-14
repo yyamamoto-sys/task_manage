@@ -4742,6 +4742,7 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 - **一覧**：チェックボックス・メッセージの1行目・回数・最終発生。初期は全チェック。「すべて選択／解除」。0件は「新しいエラーはありません」。欄の中だけ縦スクロール（最大150px）。取得は未読通知50件・エラー100件まで。
 - **取得**：パネルを開いたとき（欄がマウントされたとき）とタブを切り替えたときだけ。世代番号で古い応答を捨てる。effect の依存は `[memberId, tab]` のみ（`t` は ref・Section 69）。読むのは super_admin だけの `client_error_logs`（`member_id` は select しない）。
 - **コピー**：`buildErrorCopyText`（`src/lib/errors/errorCopyText.ts`・純粋関数）。Claude への依頼文＋エラーごとの項目＋メッセージ全文・スタック。🔴 **人の情報は入れない**（`member_id`・表示名・メールは載せず、発生した人数だけ）。コピー前にも `redactSensitive` を通す。コードブロックの柵は中身の最長のバッククォート列+1（`fenceFor`）。日時は JST。文面は日本語固定（Claude への依頼文のため。画面ラベルのみ i18n ja/en）。
+- 🔴 **コピー文面のメッセージ・context には利用者の入力（タスク名等）が含まれうる**（伏せ字はメール・トークン類のみ）。貼り先は Claude だけにし、他へ共有しない。
 - **コピー手段**：`navigator.clipboard` → `execCommand` → 選択済みの textarea の3段（VersionHistoryModal と同じ）。成功はトースト「N件をコピーしました」。
 - MIN_CLIENT_VERSION は上げない・マイグレーションなし。
 

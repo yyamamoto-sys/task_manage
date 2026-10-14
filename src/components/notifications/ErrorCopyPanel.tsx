@@ -11,8 +11,8 @@ import { useT } from "../../hooks/useT";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { APP_VERSION } from "../../lib/version";
-import { fetchClientErrorsNotifiedSince, fetchUnreadClientErrorNotifiedAt, type NewClientError } from "../../lib/supabase/clientErrorStore";
-import { buildErrorCopyText, firstLine, formatJst, matchNewErrors } from "../../lib/errors/errorCopyText";
+import { fetchNewClientErrors, type NewClientError } from "../../lib/supabase/clientErrorStore";
+import { buildErrorCopyText, firstLine, formatJst } from "../../lib/errors/errorCopyText";
 
 /** 欄の中だけスクロールする高さ（px）。取得は最大50件 */
 export const ERROR_COPY_LIST_MAX_HEIGHT = 150;
@@ -63,10 +63,7 @@ export function ErrorCopyPanel({ memberId, tab }: Props) {
     setFailed(null);
     void (async () => {
       try {
-        const times = await fetchUnreadClientErrorNotifiedAt(memberId);
-        const rows = times.length === 0
-          ? []
-          : matchNewErrors(times, await fetchClientErrorsNotifiedSince(times[times.length - 1]));
+        const rows = await fetchNewClientErrors(memberId);
         if (cancelled || req !== reqRef.current) return;
         setErrors(rows);
         setSelected(new Set(rows.map(r => r.id)));
