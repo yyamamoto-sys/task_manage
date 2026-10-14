@@ -475,6 +475,47 @@ export function wheelZoomTarget(current: number, deltaY: number): number {
   return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
 }
 
+/**
+ * ズーム直前に控えた表示位置（before）を基準に新しい scrollLeft を求める。縮小すると総幅が縮み、
+ * ブラウザが scrollLeft を新しい最大値へ切り詰めるため、描画後の現在値を「縮小前の位置」と
+ * みなすと基準日がずれる（右端近くで 80→64px/日 にすると約40日分跳ぶ）。控えが無ければ現在値を使う。
+ */
+export function resolveZoomScrollLeft(p: {
+  before: { scrollLeft: number; clientWidth: number } | null;
+  current: { scrollLeft: number; clientWidth: number };
+  anchorX: number | null;
+  prevDayWidth: number; nextDayWidth: number;
+}): number {
+  const base = p.before ?? p.current;
+  return computeZoomScrollLeft({
+    scrollLeft: base.scrollLeft,
+    anchorX: p.anchorX ?? base.clientWidth / 2,
+    prevDayWidth: p.prevDayWidth,
+    nextDayWidth: p.nextDayWidth,
+  });
+}
+
+/**
+ * wheel の deltaY をpx相当へ換算する。行・ページ単位（Firefoxのマウス等）は px へ。
+ * トラックパッドのピンチ（Chrome系は ctrlKey 付きで ±1〜10 程度の小さな値が連続して届く）は、
+ * そのままだと1回のピンチで1.25倍にも届かず遅すぎるため、px単位で絶対値が50未満なら5倍する。
+ * マウスホイール1ノッチ（±100）は増幅しない。
+ */
+export function wheelDeltaToPx(deltaY: number, deltaMode: number): number {
+  if (deltaMode === 1) return deltaY * 16;
+  if (deltaMode === 2) return deltaY * 400;
+  return Math.abs(deltaY) < 50 ? deltaY * 5 : deltaY;
+}
+
+/**
+ * バー左右のリサイズつまみの幅。つまみはバーの端をまたいで置くので、バー本体のクリック・移動領域は
+ * 「バー幅 − つまみ幅」。細いバー（8px/日の1〜2日など）では8pxだと全面が覆われるため、
+ * バー幅の1/3（2〜8px）に絞って本体領域を必ず残す。
+ */
+export function resizeHandleWidth(barWidth: number): number {
+  return Math.min(8, Math.max(2, Math.floor(barWidth / 3)));
+}
+
 /** 日の目盛り数字：幅が狭い（12px未満）ときは重なって読めないので月曜だけに間引く */
 export function isDayTickLabelVisible(dayWidth: number, date: Date): boolean {
   return dayWidth >= 12 || date.getDay() === 1;

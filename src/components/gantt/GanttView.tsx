@@ -24,7 +24,7 @@ import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
   DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, parseSavedZoom, stepZoom, clampDayWidth,
-  computeZoomScrollLeft, wheelZoomTarget, isDayTickLabelVisible, weekLabelForWidth,
+  resolveZoomScrollLeft, wheelZoomTarget, wheelDeltaToPx, isDayTickLabelVisible, weekLabelForWidth,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
   type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
@@ -638,6 +638,10 @@ export function GanttView({
   const zoomAnchorXRef = useRef<number | null>(null); // 基準点＝スクロール領域の左端からのpx。nullなら表示領域の中央
   const zoomRafRef = useRef<number | null>(null);
   const sliderRef = useRef<HTMLInputElement>(null);
+  // ズーム直前の表示位置（縮小でブラウザが scrollLeft を切り詰める前の値。resolveZoomScrollLeft 参照）
+  const zoomBeforeRef = useRef<{ scrollLeft: number; clientWidth: number } | null>(null);
+  // リサイズ・移動・新規作成・結線のドラッグ中は拡大縮小を受け付けない（宣言は各stateの後で更新する）
+  const zoomBlockedRef = useRef(false);
 
   const commitDayWidth = useCallback((next: number) => {
     setDayWidth(cur => {
@@ -648,11 +652,18 @@ export function GanttView({
   }, []);
 
   const scheduleZoom = useCallback((target: number, anchorX: number | null) => {
+    if (zoomBlockedRef.current) {
+      // 受け付けない場合、スライドバーのつまみだけ元に戻す
+      if (sliderRef.current) sliderRef.current.value = String(clampDayWidth(zoomTargetRef.current));
+      return;
+    }
     zoomTargetRef.current = target;
     zoomAnchorXRef.current = anchorX;
     if (zoomRafRef.current != null) return;
     zoomRafRef.current = requestAnimationFrame(() => {
       zoomRafRef.current = null;
+      const el = scrollRef.current;
+      zoomBeforeRef.current = el ? { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth } : null;
       commitDayWidth(clampDayWidth(zoomTargetRef.current));
     });
   }, [commitDayWidth]);
@@ -671,6 +682,7 @@ export function GanttView({
 
   // 外部要因（保存値の復元・ボタン・ホイール）で dayWidth が変わったら、スライドバーの位置と積算値を合わせる
   useEffect(() => {
+    if (zoomRafRef.current != null) return; // 次の入力が予約済み。古い値でつまみ・積算値を戻さない
     if (sliderRef.current && sliderRef.current.value !== String(dayWidth)) sliderRef.current.value = String(dayWidth);
     if (clampDayWidth(zoomTargetRef.current) !== dayWidth) zoomTargetRef.current = dayWidth;
   }, [dayWidth]);
@@ -681,14 +693,16 @@ export function GanttView({
     if (prevDayWidthRef.current === dayWidth) return;
     const el = scrollRef.current;
     if (el && scrollInitialized.current) {
-      el.scrollLeft = computeZoomScrollLeft({
-        scrollLeft: el.scrollLeft,
-        anchorX: zoomAnchorXRef.current ?? el.clientWidth / 2,
+      el.scrollLeft = resolveZoomScrollLeft({
+        before: zoomBeforeRef.current,
+        current: { scrollLeft: el.scrollLeft, clientWidth: el.clientWidth },
+        anchorX: zoomAnchorXRef.current,
         prevDayWidth: prevDayWidthRef.current,
         nextDayWidth: dayWidth,
       });
     }
     zoomAnchorXRef.current = null;
+    zoomBeforeRef.current = null;
     prevDayWidthRef.current = dayWidth;
   }, [dayWidth]);
 
@@ -700,9 +714,8 @@ export function GanttView({
     const onWheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
-      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1; // 行・ページ単位の端末をpx相当へ
       // 積算値（小数）から続ける。毎回 dayWidth（整数）から始めると、ピンチの小さなdeltaが丸めで消えて動かなくなる
-      scheduleZoom(wheelZoomTarget(zoomTargetRef.current, e.deltaY * unit), e.clientX - el.getBoundingClientRect().left);
+      scheduleZoom(wheelZoomTarget(zoomTargetRef.current, wheelDeltaToPx(e.deltaY, e.deltaMode)), e.clientX - el.getBoundingClientRect().left);
     };
     el.addEventListener("wheel", onWheel, { passive: false });
     return () => el.removeEventListener("wheel", onWheel);
@@ -943,7 +956,8 @@ export function GanttView({
       if (editingTaskId || editingMs) return;
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
-      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
+      const isRange = tag === "INPUT" && (el as HTMLInputElement).type === "range"; // スライドバーは文字入力ではない
+      const isTyping = (tag === "INPUT" && !isRange) || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
       if (isTyping) return;
       const hasOtherModifier = e.ctrlKey || e.metaKey || e.altKey;
       if (!hasOtherModifier && (e.key === "t" || e.key === "T")) {
@@ -1414,6 +1428,7 @@ export function GanttView({
   // これにより mousemove のたびに useEffect の listener を貼り直さずに済む（resize/move ドラッグと
   // 同じ設計判断）。1日も動かさなかった（同日クリック）場合も start=due の単日タスクとして許容する。
   const [creatingRangeTask, setCreatingRangeTask] = useState<{ taskId: string; anchorDate: string } | null>(null);
+  zoomBlockedRef.current = !!(draggingResizeTask || draggingMoveTask || creatingRangeTask || linkDrag);
 
   const handleEmptyRowDragStart = useCallback((e: React.MouseEvent, taskId: string) => {
     if (isPreview || linkDrag || draggingResizeTask || draggingMoveTask) return;

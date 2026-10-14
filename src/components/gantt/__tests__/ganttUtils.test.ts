@@ -6,6 +6,7 @@ import {
   dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
   computeMoveShift, computeBulkMoveShifts,
   stepZoom, clampDayWidth, parseSavedZoom, computeZoomScrollLeft, wheelZoomTarget,
+  resolveZoomScrollLeft, resizeHandleWidth, wheelDeltaToPx, calcTaskBar,
   isDayTickLabelVisible, weekLabelForWidth, DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX,
   computeVisibleOrderedTaskIds,
   xToDate, computeDragCreateRange,
@@ -582,6 +583,45 @@ describe("ズーム（スライドバー式・8〜80px/日）", () => {
     expect(weekLabelForWidth("10月W2", 43)).toBe("W2");
     expect(weekLabelForWidth("10月W2", 20)).toBe("W2");
     expect(weekLabelForWidth("10月W2", 19)).toBe("");
+  });
+});
+
+describe("ズーム：レビュー指摘の修正", () => {
+  it("resolveZoomScrollLeft：縮小で scrollLeft が切り詰められても、縮小前に控えた位置を基準にする", () => {
+    // 縮小前 scrollLeft=3000・幅800・80px/日 → 64px/日。ブラウザは総幅が縮んで scrollLeft を1000へ切り詰めた
+    const p = { prevDayWidth: 80, nextDayWidth: 64, anchorX: null };
+    const fixed = resolveZoomScrollLeft({ ...p, before: { scrollLeft: 3000, clientWidth: 800 }, current: { scrollLeft: 1000, clientWidth: 800 } });
+    const anchorDay = (3000 + 400) / 80;
+    expect((fixed + 400) / 64).toBeCloseTo(anchorDay, 6);
+  });
+
+  it("resolveZoomScrollLeft：控えが無ければ現在値を使う／アンカー指定を優先", () => {
+    const a = resolveZoomScrollLeft({ before: null, current: { scrollLeft: 280, clientWidth: 800 }, anchorX: 200, prevDayWidth: 28, nextDayWidth: 56 });
+    expect(a).toBeCloseTo(computeZoomScrollLeft({ scrollLeft: 280, anchorX: 200, prevDayWidth: 28, nextDayWidth: 56 }), 6);
+  });
+
+  it("resizeHandleWidth：細いバーでは本体のクリック・ドラッグ領域が必ず残る", () => {
+    for (let w = 6; w <= 200; w++) {
+      const hw = resizeHandleWidth(w);
+      expect(hw).toBeGreaterThanOrEqual(2);
+      expect(hw).toBeLessThanOrEqual(8);
+      expect(w - hw).toBeGreaterThan(0);
+    }
+    expect(resizeHandleWidth(100)).toBe(8);
+  });
+
+  it("calcTaskBar：8px/日の1日バーでも最小幅6px", () => {
+    const t = { due_date: "2026-10-10", start_date: "2026-10-10" } as Task;
+    expect(calcTaskBar(t, new Date(2026, 9, 1), 8)?.barWidth).toBe(6);
+    expect(calcTaskBar({ due_date: "2026-10-10", start_date: null } as Task, new Date(2026, 9, 1), 8)?.barWidth).toBe(6);
+  });
+
+  it("wheelDeltaToPx：行・ページ単位はpx相当へ。ピンチ級の小さなdeltaは増幅する", () => {
+    expect(wheelDeltaToPx(100, 0)).toBe(100);
+    expect(wheelDeltaToPx(3, 1)).toBe(48);
+    expect(wheelDeltaToPx(1, 2)).toBe(400);
+    expect(wheelDeltaToPx(-4, 0)).toBe(-20);
+    expect(wheelDeltaToPx(-60, 0)).toBe(-60);
   });
 });
 

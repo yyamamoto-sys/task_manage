@@ -7,7 +7,7 @@ import { getAssigneeIds, TASK_STATUS_STYLE, isCompletedForProgress } from "../..
 import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { InlineEditText } from "../common/InlineEditText";
 import type { LinkSide } from "../../lib/dependencies/linkDirection";
-import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT } from "./ganttUtils";
+import { CRITICAL_COLOR, QUICK_ADD_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT, resizeHandleWidth } from "./ganttUtils";
 
 // ===== TaskBarLinkUi（B5：ドラッグ結線のハンドル用プロップ束） =====
 //
@@ -277,9 +277,9 @@ function TaskBarRowImpl({
               title="ドラッグして開始日を変更"
               style={{
                 position: "absolute",
-                left: bar.barX - 4,
+                left: bar.barX - resizeHandleWidth(bar.barWidth) / 2,
                 top: "50%", transform: "translateY(-50%)",
-                width: 8, height: 22, cursor: "ew-resize", zIndex: 3,
+                width: resizeHandleWidth(bar.barWidth), height: 22, cursor: "ew-resize", zIndex: 3,
               }}
             />
           )}
@@ -291,9 +291,9 @@ function TaskBarRowImpl({
               title="ドラッグして期日を変更"
               style={{
                 position: "absolute",
-                left: bar.barX + bar.barWidth - 4,
+                left: bar.barX + bar.barWidth - resizeHandleWidth(bar.barWidth) / 2,
                 top: "50%", transform: "translateY(-50%)",
-                width: 8, height: 22, cursor: "ew-resize", zIndex: 3,
+                width: resizeHandleWidth(bar.barWidth), height: 22, cursor: "ew-resize", zIndex: 3,
               }}
             />
           )}
