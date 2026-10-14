@@ -80,9 +80,15 @@ export function applyInitialAuthLink(): Promise<InitialLinkOutcome> {
           writeRecoveryMarker(sub);
         }
         const { data, error } = await supabase.auth.setSession(sessionArgsFromLink(link));
-        if (error || !data.session) return { kind: "failed", error, isRecovery: link.isRecovery };
+        if (error || !data.session) {
+          // 取り込みに失敗したら、先に書いた印を消す（ログイン中に期限切れの再設定リンクを開いたとき、
+          // 既存のセッションと印が一致して再設定画面を強制してしまうのを防ぐ）。
+          if (link.isRecovery) clearRecoveryMarker();
+          return { kind: "failed", error, isRecovery: link.isRecovery };
+        }
         return { kind: "applied", userId: data.session.user.id, isRecovery: link.isRecovery };
       } catch (error) {
+        if (link.isRecovery) clearRecoveryMarker();
         return { kind: "failed", error, isRecovery: link.isRecovery };
       }
     })();
