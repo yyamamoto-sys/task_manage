@@ -8238,3 +8238,8 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 人の情報（member_id・表示名・メール）は文面に入れない。redactSensitive を再適用。コードブロックの柵は中身に応じて延長。
 # * src/lib/errors/errorCopyText.ts（純粋関数）・ErrorCopyPanel.tsx・clientErrorStore.ts に取得2関数。i18n ja/en。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.152（2026-10-15）：操作が無いときの自動更新・MIN_CLIENT_VERSION を 3.152 へ（CLAUDE.md Section 63）
+# * Supabase の Disk IO 対策（Realtime を張り直す旧版の画面を減らす）。ReloadNoticeBanner の version.json 取得で、サーバーの版が新しく、最後の操作から10分以上・未保存なし・入力欄にフォーカスなし・モーダルなし・AI会話なし・ゲストでないときだけ黙って再読み込み。
+# * 同じサーバー版への自動再読み込みは sessionStorage に記録して30分に1回まで。判定は src/lib/autoUpdate.ts の shouldAutoReload（vitest）。AI パネルは setAutoUpdateAiBlock で登録。
+# * MIN_CLIENT_VERSION を 3.136 → 3.152。マイグレーションなし。

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.151
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.152
 #
-最終更新：2026-10-15（v3.151）
+最終更新：2026-10-15（v3.152）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4436,6 +4436,23 @@ OkrKrAnalysisPanel=22000。新しいAI進捗表示を追加するときも、根
 - **ゲストモードでも動く**：`ReloadNoticeBanner` はSupabaseに一切接続しない純粋なfetch＋
   表示コンポーネントのため、`App.tsx` の `guestActive` 分岐（Section 23）・通常ログイン
   （`AuthenticatedApp`）の両方にマウントした。
+
+### 自動更新（v3.152・2026-10-15）
+
+Supabase の Disk IO 対策。Realtime の購読を張り直す旧版（v3.145 以前）の画面を開いたままにしている人を減らすため、**操作が無いときに黙って最新の版へ切り替える**。同じ版で `MIN_CLIENT_VERSION` も 3.152 へ上げた（旧版にはこれまでどおりバナーが出る）。
+
+- **取得**：`ReloadNoticeBanner` の version.json 取得（起動時・10分ごと・タブが前面に戻ったとき）で、`version`（`minClientVersion` ではない）を保持する。条件の再評価は取得直後と1分おき。タイマー・リスナーは effect のクリーンアップで必ず解除。DEV では動かさない。
+- **判定**：純粋関数 `src/lib/autoUpdate.ts` の `shouldAutoReload`。次を**すべて**満たしたときだけ `window.location.reload()`。
+  - サーバーの版が実行中の `APP_VERSION` より新しい（`compareVersions`）
+  - 最後の操作（pointerdown・keydown・wheel・touchstart・input）から **10分以上**（ちょうど10分は可・タブが裏でも数える）
+  - 未保存の編集が無い（`hasUnsavedEditors()`・Section 46）
+  - 入力欄（input・textarea・select・contenteditable）にフォーカスが無い（`isInputFocused`）
+  - モーダルが開いていない（`isModalOpen`：DOM に `[role="dialog"]`・`[aria-modal="true"]`・`modalOverlayStyle` の `inset: 0` がある。独自モーダルも `modalOverlayStyle` を使えば検出される）
+  - AI相談（`ConsultationPanel`）・OKR の AI パネルが「開いている・会話が1ターン以上ある・返答待ち」のいずれでもない（各パネルが `setAutoUpdateAiBlock` で登録。会話が再読み込みで消えるため）
+  - ゲスト（`isGuestMode()`）ではない（ゲストの編集はメモリにしか無い）
+- **ループ防止**：同じサーバー版への自動再読み込みは `sessionStorage`（`auto_reload_v1`＝版・時刻）に記録し、**30分に1回まで**（CDN の反映遅れで再読み込み後も古い版が返っても連続 reload しない）。記録を書けない環境では reload しない。
+- **バナーは変えない**：`MIN_CLIENT_VERSION` 以上で普通に新しい版のときはバナーを出さず、自動更新だけが働く。
+- テスト：`src/lib/__tests__/autoUpdate.test.ts`（境界・各条件の否定・ループ防止）。
 
 ### テスト
 

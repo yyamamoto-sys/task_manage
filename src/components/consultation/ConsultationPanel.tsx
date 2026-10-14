@@ -1,6 +1,7 @@
 // src/components/consultation/ConsultationPanel.tsx
 
 import { useState, useRef, useEffect, useMemo, useCallback, Suspense } from "react";
+import { setAutoUpdateAiBlock } from "../../lib/autoUpdate";
 import { createPortal } from "react-dom";
 import { saveChatSession } from "../../lib/ai/chatHistoryStorage";
 import { SessionHistoryPanel } from "./SessionHistoryPanel";
@@ -155,6 +156,12 @@ export function ConsultationPanel({
   } = useAIConsultation(effectiveTargetPjId, currentUser.id);
 
   const hasHistory = session.turns.length > 0;
+
+  // 自動更新（v3.152）：パネルを開いている間・会話がある間・返答待ちの間は再読み込みしない（会話が消えるため）
+  useEffect(() => {
+    setAutoUpdateAiBlock("consult", isOpen || hasHistory || callState === "loading");
+    return () => setAutoUpdateAiBlock("consult", false);
+  }, [isOpen, hasHistory, callState]);
 
   // 【二重表示の防止】最新のやりとりは上部の「送信した相談」＋「最新の提案」で表示するため、
   // 会話履歴（ChatHistory）からは除外する。除外しないと最新の質問・回答が画面に2回出る。

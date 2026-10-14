@@ -16,17 +16,25 @@
 // 取得失敗（fetch自体の失敗・非2xx・JSON崩れ）は console.warn のみに留め、バナーの
 // 表示状態は変えない（既に出ている／いないをそのまま維持する）。
 //
-// 【自動では再読み込みしない】編集中の内容が消えるため、ボタンを押したときだけ
-// window.location.reload() する。閉じるボタンは付けない（必須の更新のため）。
+// 【バナーの再読み込みはボタンを押したときだけ】閉じるボタンは付けない（必須の更新のため）。
+// 別に、操作が10分以上無いときだけ黙って切り替える「自動更新」を持つ（v3.152・下記 effect・Section 63）。
 //
 // 【開発時は動かさない】vite dev サーバーは dist/version.json を書き出さないため、
 // import.meta.env.DEV のときは何もしない。
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useT } from "../../hooks/useT";
 import { APP_VERSION } from "../../lib/version";
 import { shouldShowReloadNotice, CHUNK_LOAD_FAILED_EVENT } from "../../lib/reloadNotice";
 import { reloadWithGuard } from "../../lib/reloadWithGuard";
+import { hasUnsavedEditors } from "../../lib/editing/unsavedEditorRegistry";
+import { isGuestMode } from "../../lib/guestMode";
+import {
+  AUTO_UPDATE_EVAL_INTERVAL_MS, AUTO_UPDATE_EVALUATE_EVENT, isAutoUpdateAiBusy, isInputFocused, isModalOpen,
+  readAutoReloadRecord, shouldAutoReload, writeAutoReloadRecord,
+} from "../../lib/autoUpdate";
+
+const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "input"] as const;
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10分
 
@@ -51,6 +59,46 @@ export function ReloadNoticeBanner() {
     return () => window.removeEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
   }, []);
 
+  const serverVersionRef = useRef<string | null>(null);
+
+  // 【自動更新・v3.152】操作が10分以上無く、未保存の編集・入力中・モーダル・AI会話・ゲストのいずれでもないとき、
+  // サーバーの版が新しければ黙って再読み込みする（判定は lib/autoUpdate.ts の shouldAutoReload）
+  useEffect(() => {
+    if (import.meta.env.DEV) return;
+    let lastActivity = Date.now();
+    const onActivity = (): void => { lastActivity = Date.now(); };
+    for (const ev of ACTIVITY_EVENTS) window.addEventListener(ev, onActivity, { capture: true, passive: true });
+
+    const evaluate = (): void => {
+      const serverVersion = serverVersionRef.current;
+      const now = Date.now();
+      const ok = shouldAutoReload({
+        serverVersion,
+        currentVersion: APP_VERSION,
+        idleMs: now - lastActivity,
+        hasUnsaved: hasUnsavedEditors(),
+        inputFocused: isInputFocused(),
+        modalOpen: isModalOpen(),
+        aiBusy: isAutoUpdateAiBusy(),
+        isGuest: isGuestMode(),
+        lastAutoReload: readAutoReloadRecord(),
+        now,
+      });
+      if (!ok || serverVersion === null) return;
+      // 記録を書けない環境ではループ防止が効かないので reload しない
+      if (!writeAutoReloadRecord({ version: serverVersion, at: now })) return;
+      window.location.reload();
+    };
+
+    const id = window.setInterval(evaluate, AUTO_UPDATE_EVAL_INTERVAL_MS);
+    window.addEventListener(AUTO_UPDATE_EVALUATE_EVENT, evaluate);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener(AUTO_UPDATE_EVALUATE_EVENT, evaluate);
+      for (const ev of ACTIVITY_EVENTS) window.removeEventListener(ev, onActivity, { capture: true });
+    };
+  }, []);
+
   useEffect(() => {
     if (import.meta.env.DEV) return;
     let cancelled = false;
@@ -66,6 +114,8 @@ export function ReloadNoticeBanner() {
           const minClientVersion =
             typeof json.minClientVersion === "string" ? json.minClientVersion : null;
           setVersionOutdated(shouldShowReloadNotice(APP_VERSION, minClientVersion));
+          serverVersionRef.current = typeof json.version === "string" ? json.version : null;
+          window.dispatchEvent(new Event(AUTO_UPDATE_EVALUATE_EVENT));
         })
         .catch(e => {
           console.warn("[ReloadNoticeBanner] version.jsonの取得に失敗しました:", e);

@@ -18,6 +18,7 @@ import { usePersonalOkrAiConsultation } from "../../../hooks/usePersonalOkrAiCon
 import { buildPersonalOkrChatSystemPrompt } from "../../../lib/ai/personalOkrChatPrompt";
 import { buildPersonalOkrAiContextText, buildPersonalOkrAiContextChips, buildPersonalOkrAiStarters, type PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { KEYS } from "../../../lib/localData/localStore";
+import { setAutoUpdateAiBlock } from "../../../lib/autoUpdate";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 
 interface Props {
@@ -37,6 +38,11 @@ export function PersonalOkrAiPanel({
 }: Props) {
   const { session, callState, errorMessage, tokenWarning, submit, reset, truncate } = usePersonalOkrAiConsultation();
   const [inputText, setInputText] = useState("");
+  // 自動更新（v3.152）：パネルを開いている間・会話がある間・返答待ちの間は再読み込みしない（会話が消えるため）
+  useEffect(() => {
+    setAutoUpdateAiBlock("okr-ai", isOpen || session.turns.length > 0 || callState === "loading");
+    return () => setAutoUpdateAiBlock("okr-ai", false);
+  }, [isOpen, session.turns.length, callState]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
