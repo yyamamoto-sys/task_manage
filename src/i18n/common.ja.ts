@@ -16,7 +16,7 @@
 // 詳細は src/lib/i18n.ts のコメントと docs/dev/i18n-plan.md を参照。
 
 export const commonJa = {
-  "common.app.name": "グループ計画管理",
+  "common.app.name": "アミタ業務管理アプリ",
   "common.button.cancel": "キャンセル",
   "common.button.save": "保存",
   "common.button.close": "閉じる",

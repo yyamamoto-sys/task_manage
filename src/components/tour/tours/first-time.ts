@@ -13,7 +13,7 @@ import type { Tour } from "./types";
 
 export const firstTimeTour: Tour = {
   id: "first-time",
-  title: "アミタ計画管理アプリ ツアー",
+  title: "アミタ業務管理アプリ ツアー",
   estimatedSeconds: 150,
   steps: [
     {

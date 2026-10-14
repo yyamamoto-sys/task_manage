@@ -109,7 +109,7 @@ export const layoutJa = {
   "layout.aiProjectCreate.prefill": "新しいプロジェクトを立ち上げたいです。目的・ゴールの案と初期タスクのたたき台を提案してください。（決まっている目的・期限・担当があればこの文に書き足してください）",
 
   // ----- サイドバー（PC） -----
-  "layout.sidebar.appName": "グループ計画管理",
+  "layout.sidebar.appName": "アミタ業務管理アプリ",
   "layout.sidebar.expand": "メニューを開く",
   "layout.sidebar.collapse": "メニューを閉じる",
   "layout.sidebar.resizeHandle.label": "サイドバーの幅を変更",

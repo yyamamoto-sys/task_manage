@@ -100,7 +100,7 @@ export const authJa = {
   "auth.setup.step1.tabLabel": "ようこそ",
   "auth.setup.step2.tabLabel": "部署・メンバー登録",
   "auth.setup.step3.tabLabel": "完了",
-  "auth.setup.step1.title": "グループ計画管理へようこそ",
+  "auth.setup.step1.title": "アミタ業務管理アプリへようこそ",
   "auth.setup.step1.subtitle1": "チーム全員で",
   "auth.setup.step1.subtitle2": "プロジェクトとタスクを一元管理するツールです。",
   "auth.setup.step1.infoBox": "ℹ ここで登録したメンバーはSupabaseに保存され、チーム全員でリアルタイムに共有されます。",

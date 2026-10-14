@@ -97,7 +97,7 @@ export const authEn: Record<keyof typeof authJa, string> = {
   "auth.setup.step1.tabLabel": "Welcome",
   "auth.setup.step2.tabLabel": "Register department & members",
   "auth.setup.step3.tabLabel": "Done",
-  "auth.setup.step1.title": "Welcome to Group Plan Manager",
+  "auth.setup.step1.title": "Welcome to AMITA Work Management",
   "auth.setup.step1.subtitle1": "A tool for your whole team to",
   "auth.setup.step1.subtitle2": "manage projects and tasks in one place.",
   "auth.setup.step1.infoBox": "ℹ Members you register here are stored in Supabase and shared in real time with the whole team.",
