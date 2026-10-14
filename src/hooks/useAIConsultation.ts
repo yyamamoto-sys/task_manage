@@ -107,7 +107,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
       // OKR情報のチェックボックスは廃止。明示指定が無ければ常にOKR情報を含める（既定 true）。
       const includeOKR = opts.includeOKR ?? true;
 
-      if (!consultation.trim()) return;
+      if (!consultation.trim()) return false;
 
       const model = THINKING_MODEL;
 
@@ -199,6 +199,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
         sessionRef.current = currentSession;
         setSession(currentSession);
         setCallState("success");
+        return true;
       } catch (e) {
         const message =
           e instanceof AIError
@@ -211,6 +212,7 @@ export function useAIConsultation(targetPjId: string | null, currentMemberId: st
         setSession(currentSession);
         setErrorMessage(message);
         setCallState("error");
+        return false;
       }
     },
     [projects, tasks, members, targetPjId, currentMemberId,

@@ -6,12 +6,8 @@
 // 取り出して整形してから渡す。docxText.ts と同じく「ブラウザ環境前提（DOMParser 使用）」。
 // script / style は本文ではないので除去する。
 
-/** ファイルが .html / .htm かどうか（拡張子 or MIMEタイプで判定）。 */
-export function isHtmlFile(file: File): boolean {
-  if (file.type === "text/html") return true;
-  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-  return ext === "html" || ext === "htm";
-}
+/** ファイルが .html / .htm かどうか（拡張子 or MIMEタイプで判定）。判定本体は officeFileKind.ts（軽いファイル）。 */
+export { isHtmlFile } from "./officeFileKind";
 
 /**
  * .html / .htm の File から本文テキストを抽出する。

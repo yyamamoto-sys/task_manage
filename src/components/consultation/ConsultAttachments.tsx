@@ -17,21 +17,29 @@ interface Props {
   attachments: FileAttachment[];
   onChange: (next: FileAttachment[]) => void;
   disabled?: boolean;
+  /** 読み込み中かどうかを親へ伝える（読み込み中は送信できないようにするため） */
+  onLoadingChange?: (loading: boolean) => void;
   children: React.ReactNode;
 }
 
-export function ConsultAttachments({ attachments, onChange, disabled, children }: Props) {
+export function ConsultAttachments({ attachments, onChange, disabled, onLoadingChange, children }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const [errors, setErrors] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
+  // 読み込みは同時に1回だけ（ドロップとボタンが重なっても、後から終わった方が先の添付を上書きしない）
+  const loadingRef = useRef(false);
+  const onLoadingChangeRef = useRef(onLoadingChange);
+  onLoadingChangeRef.current = onLoadingChange;
   const [isDragOver, setIsDragOver] = useState(false);
   const dragCounter = useRef(0);
 
   const addFiles = async (files: File[]) => {
-    if (disabled || files.length === 0) return;
+    if (disabled || files.length === 0 || loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
+    onLoadingChangeRef.current?.(true);
     const errs: string[] = [];
     let current = attachmentsRef.current;
     for (const file of files) {
@@ -48,7 +56,9 @@ export function ConsultAttachments({ attachments, onChange, disabled, children }
     }
     onChange(current);
     setErrors(errs);
+    loadingRef.current = false;
     setLoading(false);
+    onLoadingChangeRef.current?.(false);
   };
 
   const budgeted = applyAttachmentTextBudget(attachments);
@@ -91,6 +101,11 @@ export function ConsultAttachments({ attachments, onChange, disabled, children }
                 {b.truncated && (
                   <span style={{ flexShrink: 0, color: "var(--color-danger, #dc2626)" }}>
                     {b.sentChars === 0 ? "送られません" : `${b.sentChars.toLocaleString("ja-JP")}字まで`}
+                  </span>
+                )}
+                {att.note && (
+                  <span title={att.note} style={{ flexShrink: 0, color: "var(--color-text-tertiary)" }}>
+                    {att.note}
                   </span>
                 )}
                 <button

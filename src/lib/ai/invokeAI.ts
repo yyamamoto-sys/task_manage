@@ -102,6 +102,8 @@ export interface FileAttachment {
   mediaType: string;
   data: string;
   isText: boolean;
+  /** 画面に出す補足（例：「非表示のシート2件は送りません」）。AIには送らない（AI相談の添付・v3.145） */
+  note?: string;
 }
 
 export function buildMessageContent(

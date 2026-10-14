@@ -18,10 +18,16 @@ export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "imag
  * この関数に到達する前に処理が完了しているため。到達したら空文字を返す＝非対応扱い）。
  */
 export function resolveMediaType(file: { type: string; name: string }): string {
-  if (file.type) return file.type;
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  // テキストの拡張子は file.type より優先する。Windows では .csv の type が Excel の
+  // application/vnd.ms-excel になることがあり、type を信じるとテキストとして読めず拒否してしまう（v3.145）。
+  const textByExt: Record<string, string> = {
+    md: "text/markdown", csv: "text/csv", tsv: "text/csv", txt: "text/plain", log: "text/plain",
+  };
+  if (textByExt[ext]) return textByExt[ext];
+  if (file.type) return file.type;
   const map: Record<string, string> = {
-    md: "text/markdown", csv: "text/csv", txt: "text/plain", html: "text/html",
+    html: "text/html",
     png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
     webp: "image/webp", gif: "image/gif",
   };

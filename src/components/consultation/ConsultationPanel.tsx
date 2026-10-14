@@ -89,6 +89,7 @@ export function ConsultationPanel({
   const [responseVolume, setResponseVolume] = useState<ResponseVolume>("normal");
   // 添付資料（その1回の送信だけに使う。送信したら消す）
   const [attachments, setAttachments] = useState<FileAttachment[]>([]);
+  const [attachLoading, setAttachLoading] = useState(false);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isSessionHistoryOpen, setIsSessionHistoryOpen] = useState(false);
   const [ganttPreviewProposal, setGanttPreviewProposal] = useState<UIProposal | null>(null);
@@ -229,8 +230,10 @@ export function ConsultationPanel({
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, [onResizingChange]);
 
+  const canSubmit = !!inputText.trim() && callState !== "loading" && !attachLoading;
+
   const handleSubmit = async () => {
-    if (!inputText.trim() || callState === "loading") return;
+    if (!inputText.trim() || callState === "loading" || attachLoading) return;
     const text = inputText;
     const sentAttachments = attachments;
     const marker = formatAttachmentHistoryMarker(sentAttachments);
@@ -249,7 +252,11 @@ ${marker}` : text);
     }
     setSelectedProposalIds(new Set());
 
-    await submit({ consultation, consultationType, responseVolume, attachments: sentAttachments });
+    const ok = await submit({ consultation, consultationType, responseVolume, attachments: sentAttachments });
+    // 失敗したときは添付を戻す（成功したときだけ消す）。その間に新しく添付されていたら触らない
+    if (!ok && sentAttachments.length > 0) {
+      setAttachments(prev => (prev.length === 0 ? sentAttachments : prev));
+    }
   };
 
   const handleFollowUpSelect = (text: string) => {
@@ -704,7 +711,7 @@ ${marker}` : text);
               Ctrl+Enter で送信
             </span>
           </div>
-          <ConsultAttachments attachments={attachments} onChange={setAttachments} disabled={callState === "loading"}>
+          <ConsultAttachments attachments={attachments} onChange={setAttachments} disabled={callState === "loading"} onLoadingChange={setAttachLoading}>
             <textarea
               ref={textareaRef}
               value={inputText}
@@ -733,17 +740,17 @@ ${marker}` : text);
           <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: "8px" }}>
             <button
               onClick={handleSubmit}
-              disabled={!inputText.trim() || callState === "loading"}
+              disabled={!canSubmit}
               style={{
                 fontSize: "12px", padding: "7px 18px",
-                background: inputText.trim() && callState !== "loading" ? "var(--color-brand)" : "var(--color-bg-tertiary)",
+                background: canSubmit ? "var(--color-brand)" : "var(--color-bg-tertiary)",
                 border: "none", borderRadius: "var(--radius-md)",
-                color: inputText.trim() && callState !== "loading" ? "#fff" : "var(--color-text-tertiary)",
-                cursor: inputText.trim() && callState !== "loading" ? "pointer" : "not-allowed",
+                color: canSubmit ? "#fff" : "var(--color-text-tertiary)",
+                cursor: canSubmit ? "pointer" : "not-allowed",
                 fontWeight: "500", transition: "all 0.15s", whiteSpace: "nowrap",
               }}
             >
-              {callState === "loading" ? "生成中..." : selectedProposalIds.size > 0 ? `${selectedProposalIds.size}件の提案に返信` : "AIに相談する"}
+              {callState === "loading" ? "生成中..." : attachLoading ? "資料を読み込み中..." : selectedProposalIds.size > 0 ? `${selectedProposalIds.size}件の提案に返信` : "AIに相談する"}
             </button>
           </div>
         </div>
