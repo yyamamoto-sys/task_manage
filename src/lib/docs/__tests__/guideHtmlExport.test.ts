@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
   buildGuideHtml, selectGuideSet, guideExportFileName, escapeHtml, markdownToHtml,
-  LIGHT_THEME_VARS, docAnchorId, ARCHITECTURE_SLUG, SPEC_SLUG,
+  LIGHT_THEME_VARS, docAnchorId, ARCHITECTURE_SLUG, SPEC_SLUG, headingFragment,
 } from "../guideHtmlExport";
 import { listDocs } from "../manifest";
 import { GUIDE_SVGS } from "../guideAssets";
@@ -24,12 +24,15 @@ const ADMIN_ONLY = entry({ slug: "05_admin/x", title: "管理者作業", audienc
 const ARCHIVED = entry({ slug: "old", archived: true });
 const SPEC = entry({ slug: SPEC_SLUG, title: "機能仕様書", last_updated: "2026-10-14" });
 const ARCH = entry({ slug: ARCHITECTURE_SLUG, title: "システム構成", audience: ["admin"], last_updated: "2026-10-14" });
-const ALL = [A, B, ADMIN_ONLY, ARCHIVED, SPEC, ARCH];
+const MAINT = entry({ slug: "_meta/conventions", title: "規約", audience: ["maintainer"] });
+const KR = entry({ slug: "02_modes/okr/x", title: "KR代表者向け", audience: ["kr-rep", "member"] });
+const ALL = [A, B, ADMIN_ONLY, MAINT, KR, ARCHIVED, SPEC, ARCH];
 
 describe("selectGuideSet", () => {
-  it("マニュアル一式：all を含み archived でなく、機能仕様・システム構成を除く（並び順は維持）", () => {
-    expect(selectGuideSet("manual", ALL, true).map(e => e.slug)).toEqual(["00_overview", "02_modes/tasks"]);
-    expect(selectGuideSet("manual", ALL, false).map(e => e.slug)).toEqual(["00_overview", "02_modes/tasks"]);
+  it("マニュアル一式：一般向け記事一式（管理者専用・maintainer のみ・archived・機能仕様・システム構成を除く。並び順は維持）。管理者が出しても同じ", () => {
+    const expected = ["00_overview", "02_modes/tasks", "02_modes/okr/x"];
+    expect(selectGuideSet("manual", ALL, true).map(e => e.slug)).toEqual(expected);
+    expect(selectGuideSet("manual", ALL, false).map(e => e.slug)).toEqual(expected);
   });
   it("機能仕様：誰でも", () => {
     expect(selectGuideSet("spec", ALL, false).map(e => e.slug)).toEqual([SPEC_SLUG]);
@@ -139,6 +142,7 @@ describe("外部参照が無い単一ファイル", () => {
     const docs = listDocs();
     for (const kind of ["manual", "spec", "architecture"] as const) {
       const es = selectGuideSet(kind, docs, true);
+      expect(es.length, `${kind} のセットが空`).toBeGreaterThan(0);
       const html = buildGuideHtml({ kind, entries: es, now: NOW, svgs: GUIDE_SVGS });
       expect(html).not.toMatch(/\ssrc\s*=/i);
       expect(html).not.toMatch(/<link\b/i);
@@ -149,8 +153,13 @@ describe("外部参照が無い単一ファイル", () => {
       expect(html).not.toMatch(/\son[a-z]+\s*=/i);
     }
   });
-  it("実記事：マニュアル一式は機能仕様・システム構成を含まない", () => {
+  it("実記事：システム構成のセットは管理者なら空でなく、一般メンバーなら空", () => {
+    expect(selectGuideSet("architecture", listDocs(), true).map(e => e.slug)).toEqual([ARCHITECTURE_SLUG]);
+    expect(selectGuideSet("architecture", listDocs(), false)).toEqual([]);
+  });
+  it("実記事：マニュアル一式は管理者専用・機能仕様・システム構成を含まない", () => {
     const slugs = selectGuideSet("manual", listDocs(), true).map(e => e.slug);
+    for (const d of listDocs().filter(x => x.audience.every(a => a === "admin" || a === "maintainer"))) expect(slugs).not.toContain(d.slug);
     expect(slugs).not.toContain(SPEC_SLUG);
     expect(slugs).not.toContain(ARCHITECTURE_SLUG);
     expect(slugs.length).toBeGreaterThan(5);
@@ -169,5 +178,61 @@ describe("ライトテーマの値と globals.css の一致", () => {
     const used = new Set<string>();
     for (const svg of Object.values(GUIDE_SVGS)) for (const m of svg.matchAll(/var\((--[a-z0-9-]+)/g)) used.add(m[1]);
     for (const name of used) expect(LIGHT_THEME_VARS, name).toHaveProperty(name);
+  });
+});
+
+describe("エスケープの抜け（回帰）", () => {
+  it("図の alt（aria-label）・最終更新日・担当等の生タグ／引用符は出力に出ない", () => {
+    const e = entry({
+      slug: "x", path: "x.md", last_updated: '2026"><script>alert(1)</script>',
+      body: '![" onmouseover="alert(1)<b>](_img/a.svg)\n\n![無](_img/none.svg)',
+    });
+    const svgs = { "/docs/guides/_img/a.svg": "<svg><rect/></svg>" };
+    const html = buildGuideHtml({ kind: "spec", entries: [e], now: NOW, svgs });
+    expect(html).not.toContain("<script>alert");
+    expect(html).not.toMatch(/aria-label="[^"]*"\s*onmouseover/);
+    expect(html).toContain('aria-label="&quot; onmouseover=&quot;alert(1)&lt;b&gt;"');
+    expect(html).toContain("2026&quot;&gt;&lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(html).not.toContain("<b>]");
+  });
+  it("表見出し・行内コード・箇条書き・太字の生タグは出力に出ない", () => {
+    const e = entry({
+      slug: "y", path: "y.md",
+      body: "| <img src=x onerror=1> | `<i>c</i>` |\n|---|---|\n| **<u>b</u>** | <s>s</s> |\n\n- <svg onload=1> 項目\n  - <iframe> 子\n\n1. <marquee>n",
+    });
+    const html = buildGuideHtml({ kind: "spec", entries: [e], now: NOW, svgs: {} });
+    for (const raw of ["<img", "<i>", "<u>", "<s>", "<svg onload", "<iframe", "<marquee"]) expect(html, raw).not.toContain(raw);
+    expect(html).toContain("&lt;img src=x onerror=1&gt;");
+    expect(html).toContain("<code>&lt;i&gt;c&lt;/i&gt;</code>");
+  });
+});
+
+describe("見出しアンカーと id の一意性", () => {
+  it("docAnchorId は単射（a/b と a-b が衝突しない）で、実記事の全 slug で衝突しない", () => {
+    expect(docAnchorId("a/b")).not.toBe(docAnchorId("a-b"));
+    expect(docAnchorId("a/b")).not.toBe(docAnchorId("a.2f.b"));
+    const ids = listDocs().map(d => docAnchorId(d.slug));
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it("foo.md#見出し は本文の見出し id へのリンクになる（見出しは重複しても一意）", () => {
+    const target = entry({ slug: "t", path: "t.md", title: "対象", body: "# 対象\n\n## 保存の流れ\n\n本文\n\n## 保存の流れ\n\n## Other Topic" });
+    const from = entry({ slug: "f", path: "f.md", title: "元", body: "[a](t.md#保存の流れ) [b](./t.md#Other%20Topic) [c](t.md#無い) [d](t.md)" });
+    const html = buildGuideHtml({ kind: "manual", entries: [target, from], now: NOW, svgs: {} });
+    const idRe = /<h[2-6] id="([^"]+)"/g;
+    const ids = [...html.matchAll(idRe)].map(m => m[1]);
+    expect(ids).toContain(`${docAnchorId("t")}~保存の流れ`);
+    expect(ids).toContain(`${docAnchorId("t")}~保存の流れ-2`);
+    expect(html).toContain(`<a href="#${docAnchorId("t")}~保存の流れ">a</a>`);
+    expect(html).toContain(`<a href="#${docAnchorId("t")}~other-topic">b</a>`);
+    expect(html).toContain(`<a href="#${docAnchorId("t")}">c</a>`);
+    expect(html).toContain(`<a href="#${docAnchorId("t")}">d</a>`);
+    expect(headingFragment("Other Topic!")).toBe("other-topic");
+  });
+  it("実記事を全部まとめても、文書内の id 属性に重複が無い", () => {
+    const es = selectGuideSet("manual", listDocs(), true);
+    const html = buildGuideHtml({ kind: "manual", entries: es, now: NOW, svgs: GUIDE_SVGS });
+    const ids = [...html.matchAll(/\sid="([^"]+)"/g)].map(m => m[1]);
+    expect(ids.length).toBeGreaterThan(es.length);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

@@ -40,13 +40,14 @@ const FILE_PREFIX: Record<GuideSetKind, string> = {
 
 /**
  * セットに含める記事を選ぶ。entries はガイドの目次と同じ並び（groupedDocs の平坦化）で渡すこと。
- * システム構成は管理者だけ（isAdmin が偽なら空）。archived は manifest 側で既に除外されているが念のため落とす。
+ * システム構成は管理者だけ（isAdmin が偽なら空）。マニュアル一式は閲覧者によらず同じ（一般向け記事一式）。archived は manifest 側で既に除外されているが念のため落とす。
  */
 export function selectGuideSet(kind: GuideSetKind, entries: DocEntry[], isAdmin: boolean): DocEntry[] {
   const live = entries.filter(e => !e.archived && canViewGuideDoc(e, { isAdmin }));
   if (kind === "spec") return live.filter(e => e.slug === SPEC_SLUG);
   if (kind === "architecture") return isAdmin ? live.filter(e => e.slug === ARCHITECTURE_SLUG) : [];
-  return live.filter(e => e.audience.includes("all") && e.slug !== SPEC_SLUG && e.slug !== ARCHITECTURE_SLUG);
+  // マニュアル一式は一般向け記事一式。管理者が出しても管理者向け記事（admin・maintainer だけの記事）は入れない
+  return entries.filter(e => !e.archived && canViewGuideDoc(e, { isAdmin: false }) && e.slug !== SPEC_SLUG && e.slug !== ARCHITECTURE_SLUG);
 }
 
 // ===== 版・日時・ファイル名 =====
@@ -115,10 +116,43 @@ interface Ctx {
   /** まとめた HTML に含まれる記事の slug */
   includedSlugs: Set<string>;
   svgs: Record<string, string>;
+  /** slug → (見出しの断片 → 見出しの id)。`foo.md#見出し` をその見出しへのアンカーにするために使う */
+  headingIds?: Map<string, Map<string, string>>;
 }
 
+/**
+ * 記事の id。単射にしてある（"a/b" と "a-b" が衝突しない）：英数字・_・- 以外は `.16進コード.` に符号化し、
+ * "." は符号化にしか現れない。見出し id との区切りには "~"（符号化で必ず消える文字）を使う。
+ */
 export function docAnchorId(slug: string): string {
-  return "doc-" + slug.replace(/[^A-Za-z0-9_-]/g, "-");
+  let out = "doc-";
+  for (const ch of slug) {
+    out += /[A-Za-z0-9_-]/.test(ch) ? ch : `.${ch.codePointAt(0)!.toString(16)}.`;
+  }
+  return out;
+}
+
+/** 見出し文字列→リンクの断片。アプリ内の見出しには id 規則が無いため、小文字化・空白を - に・記号を除去（文字と数字は日本語も残す） */
+export function headingFragment(text: string): string {
+  return text.trim().toLowerCase().replace(/\s+/g, "-").replace(/[^\p{L}\p{N}_-]/gu, "");
+}
+
+/** 見出しブロックの id（出現順）。同じ見出しが重なれば -2, -3 を付けて記事内で一意にする */
+export function computeHeadingIds(slug: string, blocks: Block[]): string[] {
+  const used = new Map<string, number>();
+  const ids: string[] = [];
+  for (const b of blocks) {
+    if (b.t !== "heading") continue;
+    const frag = headingFragment(plainText(b.c)) || "h";
+    const n = (used.get(frag) ?? 0) + 1;
+    used.set(frag, n);
+    ids.push(`${docAnchorId(slug)}~${n === 1 ? frag : `${frag}-${n}`}`);
+  }
+  return ids;
+}
+
+function slugOfPath(path: string): string {
+  return path.replace(/\.md$/i, "");
 }
 
 function plainText(items: Inline[]): string {
@@ -135,7 +169,13 @@ function inlinesHtml(items: Inline[], ctx: Ctx): string {
     if (target.kind === "external") {
       return `<a href="${escapeHtml(target.href)}" target="_blank" rel="noopener noreferrer">${children}</a>`;
     }
-    if (target.kind === "doc") return `<a href="#${docAnchorId(target.slug)}">${children}</a>`;
+    if (target.kind === "doc") {
+      const hash = it.href.split("#")[1];
+      let frag = "";
+      if (hash) { try { frag = headingFragment(decodeURIComponent(hash)); } catch { frag = headingFragment(hash); } }
+      const headingId = frag ? ctx.headingIds?.get(target.slug)?.get(frag) : undefined;
+      return `<a href="#${headingId ?? docAnchorId(target.slug)}">${children}</a>`;
+    }
     return children;
   }).join("");
 }
@@ -153,12 +193,12 @@ function isWarningQuote(c: Inline[]): boolean {
   return /^(注意|警告|重要)/.test(plainText(first.c));
 }
 
-function blockHtml(block: Block, ctx: Ctx): string {
+function blockHtml(block: Block, ctx: Ctx, headingId?: string): string {
   switch (block.t) {
     case "heading": {
       // 記事タイトルが h1 を使うため、本文の見出しは 1 段下げる（# → h2 相当、### は h4）
       const level = block.level + 1;
-      return `<h${level}>${inlinesHtml(block.c, ctx)}</h${level}>`;
+      return `<h${level}${headingId ? ` id="${escapeHtml(headingId)}"` : ""}>${inlinesHtml(block.c, ctx)}</h${level}>`;
     }
     case "para": return `<p>${inlinesHtml(block.c, ctx)}</p>`;
     case "list": return listHtml(block.list, ctx);
@@ -180,10 +220,15 @@ function blockHtml(block: Block, ctx: Ctx): string {
 
 /** 本文の HTML。先頭が記事タイトルと同じ h1 なら（見出しに既に出すため）落とす */
 export function markdownToHtml(body: string, title: string, ctx: Ctx): string {
-  let blocks = parseGuideMarkdown(body);
+  const all = parseGuideMarkdown(body);
+  const ids = computeHeadingIds(slugOfPath(ctx.currentPath), all);
+  const idOf = new Map<Block, string>();
+  let hi = 0;
+  for (const b of all) if (b.t === "heading") idOf.set(b, ids[hi++]);
+  let blocks = all;
   const first = blocks[0];
   if (first && first.t === "heading" && first.level === 1 && plainText(first.c).trim() === title.trim()) blocks = blocks.slice(1);
-  return blocks.map(b => blockHtml(b, ctx)).join("\n");
+  return blocks.map(b => blockHtml(b, ctx, idOf.get(b))).join("\n");
 }
 
 // ===== 文書全体 =====
@@ -250,6 +295,20 @@ export function buildGuideHtml({ kind, entries, now, svgs, version = APP_VERSION
   const verLabel = `v${version}`;
   const docTitle = `計画管理アプリ ${setLabel}（${verLabel}）`;
   const includedSlugs = new Set(entries.map(e => e.slug));
+  const headingIds = new Map<string, Map<string, string>>();
+  for (const e of entries) {
+    const blocks = parseGuideMarkdown(e.body);
+    const ids = computeHeadingIds(e.slug, blocks);
+    const byFrag = new Map<string, string>();
+    let hi = 0;
+    for (const b of blocks) {
+      if (b.t !== "heading") continue;
+      const id = ids[hi++];
+      const frag = headingFragment(plainText(b.c)) || "h";
+      if (!byFrag.has(frag)) byFrag.set(frag, id);
+    }
+    headingIds.set(e.slug, byFrag);
+  }
 
   const toc = kind === "manual"
     ? `<ol class="toc">${entries.map(e =>
@@ -263,7 +322,7 @@ ${toc}
 </section>`;
 
   const docs = entries.map(e => {
-    const ctx: Ctx = { currentPath: e.path, includedSlugs, svgs };
+    const ctx: Ctx = { currentPath: e.path, includedSlugs, svgs, headingIds };
     return `<article class="doc" id="${docAnchorId(e.slug)}">
 <header class="doc-head"><h1>${escapeHtml(e.title)}${e.deprecated ? '<span class="tag-old">⚠ 旧仕様</span>' : ""}</h1>
 <div class="meta"><span>最終更新：${escapeHtml(e.last_updated || "—")}</span><span>アプリの版：${escapeHtml(verLabel)}</span><span>出力日時：${escapeHtml(stamp)}</span></div></header>
@@ -304,5 +363,15 @@ export function downloadGuideHtml(kind: GuideSetKind, entries: DocEntry[], svgs:
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  // 保存ダイアログ・ブラウザの処理が終わる前に URL を失効させないよう、長めに待つ
+  setTimeout(() => URL.revokeObjectURL(url), 40000);
+}
+
+/** iframe 内（Teams のタブなど）で開いているか。そこではダウンロードが塞がれることがある（成否は検出できないので事前に注記する） */
+export function isEmbeddedInFrame(): boolean {
+  try {
+    return typeof window !== "undefined" && window.self !== window.top;
+  } catch {
+    return true;
+  }
 }

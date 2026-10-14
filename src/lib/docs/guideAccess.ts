@@ -15,10 +15,10 @@ export interface GuideViewer {
   isAdmin: boolean;
 }
 
-/** audience が admin だけの記事か。audience 未指定・空は全員向け（manifest 側で ["all"] になる） */
+/** 管理者・保守担当（maintainer＝ガイドの書き手）だけが対象の記事か。audience 未指定・空は全員向け（manifest 側で ["all"] になる） */
 export function isAdminOnlyDoc(doc: Pick<DocEntry, "audience">): boolean {
   const a = doc.audience;
-  return Array.isArray(a) && a.length > 0 && a.every(x => x === "admin");
+  return Array.isArray(a) && a.length > 0 && a.every(x => x === "admin" || x === "maintainer");
 }
 
 /** この閲覧者に記事を見せてよいか。doc が無い（undefined）場合は false */

@@ -130,7 +130,7 @@ describe("画像解決", () => {
 });
 
 describe("sanitizeSvg", () => {
-  it("script・foreignObject・on* 属性・外部 href・外部 CSS 参照を除去し、通常の要素は残す", () => {
+  it("script・foreignObject・on* 属性・外部 href・外部 CSS 参照を除去し、通常の要素は残す（詳細は svgSanitize.test.ts）", () => {
     const dirty = `<?xml version="1.0"?><svg viewBox="0 0 10 10" onload="x()">
 <script>alert(1)</script><script src="//e.com/a.js"/>
 <foreignObject><div>hi</div></foreignObject>
@@ -145,11 +145,9 @@ describe("sanitizeSvg", () => {
     expect(s).not.toMatch(/evil\.example/);
     expect(s).not.toMatch(/javascript:/i);
     expect(s).not.toMatch(/@import/);
+    expect(s).not.toMatch(/<style|<use|<image|<a\b/);
     expect(s).not.toMatch(/https?:\/\/e\.com/);
     expect(s).not.toMatch(/<\?xml/);
-    expect(s).toContain('href="#local"');
-    expect(s).toContain("url(#grad)");
-    expect(s).toContain("var(--color-brand)");
     expect(s).toContain("var(--color-bg-info)");
     expect(s).toContain("<rect");
   });

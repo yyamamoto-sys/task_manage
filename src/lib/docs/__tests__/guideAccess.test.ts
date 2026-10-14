@@ -18,12 +18,17 @@ describe("canViewGuideDoc", () => {
     expect(canViewGuideDoc(d(["all"]), { isAdmin: false })).toBe(true);
     expect(canViewGuideDoc(d(["admin", "all"]), { isAdmin: false })).toBe(true);
     expect(canViewGuideDoc(d(["kr-rep"]), { isAdmin: false })).toBe(true);
-    expect(canViewGuideDoc(d(["maintainer"]), { isAdmin: false })).toBe(true);
+    expect(canViewGuideDoc(d(["maintainer", "member"]), { isAdmin: false })).toBe(true);
   });
   it("audience 未指定・空は全員、記事なしは不可", () => {
     expect(canViewGuideDoc({ audience: undefined as unknown as DocAudience[] }, { isAdmin: false })).toBe(true);
     expect(canViewGuideDoc(d([]), { isAdmin: false })).toBe(true);
     expect(canViewGuideDoc(undefined, { isAdmin: true })).toBe(false);
+  });
+  it("admin・maintainer だけの記事も管理者のみ", () => {
+    expect(canViewGuideDoc(d(["maintainer"]), { isAdmin: false })).toBe(false);
+    expect(canViewGuideDoc(d(["admin", "maintainer"]), { isAdmin: false })).toBe(false);
+    expect(canViewGuideDoc(d(["maintainer"]), { isAdmin: true })).toBe(true);
   });
   it("isAdminOnlyDoc", () => {
     expect(isAdminOnlyDoc(d(["admin", "admin"]))).toBe(true);
@@ -44,7 +49,7 @@ describe("isGuideAdmin", () => {
 describe("実際の記事（manifest）", () => {
   const ADMIN_ONLY = [
     "03_roles/admin", "04_workflows/quarter-rollover", "05_admin/departments-and-members",
-    "05_admin/objective-kr-tf", "05_admin/settings-overview",
+    "05_admin/objective-kr-tf", "05_admin/settings-overview", "_meta/conventions",
   ];
   it("管理者専用記事が一般メンバーの目次（groupedDocs を絞ったもの）から消え、管理者には出る", () => {
     const flat = groupedDocs().flatMap(g => g.entries);
@@ -56,7 +61,7 @@ describe("実際の記事（manifest）", () => {
     }
     expect(member).toContain("00_overview");
   });
-  it("管理者専用の判定は上記5本（＋あれば 09_architecture）だけ", () => {
+  it("管理者専用の判定は上記6本（＋あれば 09_architecture）だけ", () => {
     const found = listDocs().filter(isAdminOnlyDoc).map(e => e.slug).filter(s => s !== "09_architecture").sort();
     expect(found).toEqual([...ADMIN_ONLY].sort());
   });

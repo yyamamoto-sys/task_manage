@@ -8136,3 +8136,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 機械チェック：aiTargetCoverage.test.ts（AIへPJ・タスクを送る経路が aiTarget を通っているか。呼び出し元を増やすと落ちる）。
 # * 資料：consultation.md・meeting-import.md・dashboard.md・08_spec.md・_img/ai-data-scope.svg。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+# v3.142（2026-10-14）：ガイドの資料をHTML保存・管理者向け記事の表示制御（CLAUDE.md Section 72）
+# * ガイドトップから「マニュアル一式／機能仕様／システム構成」を版つきの単一HTMLで保存（lib/docs/guideHtmlExport.ts。サーバー・public/ には置かない）。管理者向けの記事 09_architecture.md と図4枚を追加。
+# * lib/docs/guideAccess.ts：canViewGuideDoc／isGuideAdmin。audience が admin・maintainer だけの記事は管理者のみ。目次・記事内リンク・内部遷移・関連チップ・？ボタン（appStore.guideViewerIsAdmin を MainLayout が同期）・HTML保存に適用。表示の制御であって秘匿ではない（本文はバンドルに入る）。
+# * マニュアル一式の収録条件：一般向け記事一式（管理者専用・機能仕様・システム構成・archived を除く）。管理者が保存しても同じ。
+# * sanitizeSvg を許可リスト方式に置き換え（lib/docs/svgSanitize.ts）。トークンに分解して許可した要素・属性だけを組み直す。style は var(--color-*)・数値・色名等の宣言だけ。DOMParser は使わない（テスト環境に DOM が無いため）。旧方式（正規表現で除去）が抜けた入力を回帰テスト化。
+# * HTML保存：`foo.md#見出し` を見出し id へのアンカーに（docAnchorId を単射に変更）。revokeObjectURL を40秒後に。iframe 内では「Teams 内ではダウンロードできない場合があります」を表示。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。

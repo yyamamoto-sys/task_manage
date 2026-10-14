@@ -209,21 +209,6 @@ export function resolveImage(src: string, currentPath: string, svgs: Record<stri
   return svgs["/docs/guides/" + resolved] ?? null;
 }
 
-// ===== SVG サニタイズ =====
+// ===== SVG サニタイズ（許可リスト方式。実装は svgSanitize.ts。アプリ内表示と HTML 保存の両方がこれを使う） =====
 
-/** <script>・<foreignObject>・on* 属性・外部参照（# 以外の href）・外部 URL の CSS 参照を除去する */
-export function sanitizeSvg(src: string): string {
-  let s = src;
-  s = s.replace(/<\?[\s\S]*?\?>/g, "").replace(/<!DOCTYPE[\s\S]*?>/gi, "").replace(/<!--[\s\S]*?-->/g, "");
-  s = s.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "").replace(/<script\b[^>]*\/>/gi, "").replace(/<\/?script\b[^>]*>/gi, "");
-  s = s.replace(/<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi, "").replace(/<\/?foreignObject\b[^>]*>/gi, "");
-  s = s.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
-  s = s.replace(/\s+(?:xlink:)?href\s*=\s*("([^"]*)"|'([^']*)'|([^\s>]+))/gi, (all, _v, a, b, c) => {
-    const v = (a ?? b ?? c ?? "").trim();
-    return v.startsWith("#") ? all : "";
-  });
-  s = s.replace(/@import[^;}]*;?/gi, "");
-  s = s.replace(/url\(\s*(['"]?)\s*(?:https?:)?\/\/[^)]*\)/gi, "none");
-  s = s.replace(/javascript:/gi, "");
-  return s.trim();
-}
+export { sanitizeSvg } from "./svgSanitize";

@@ -13,7 +13,7 @@ import { canViewGuideDoc } from "../../lib/docs/guideAccess";
 import { TOUR_LIST } from "../tour/tours";
 import { GUIDE_SVGS } from "../../lib/docs/guideAssets";
 import {
-  GUIDE_SET_LABELS, downloadGuideHtml, selectGuideSet, type GuideSetKind,
+  GUIDE_SET_LABELS, downloadGuideHtml, isEmbeddedInFrame, selectGuideSet, type GuideSetKind,
 } from "../../lib/docs/guideHtmlExport";
 
 const SECTION_LABELS: Record<string, string> = {
@@ -329,6 +329,11 @@ function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding, allEntrie
             ⭳ {GUIDE_SET_LABELS[k]}
           </button>
         ))}
+        {isEmbeddedInFrame() && (
+          <span style={{ flexBasis: "100%", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+            Teams 内ではダウンロードできない場合があります。ブラウザで開いてください。
+          </span>
+        )}
       </div>
 
       {/* 目次 */}
