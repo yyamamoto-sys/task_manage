@@ -466,7 +466,7 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
       <div style={cardStyle}>
         {/* ロゴ＆タイトル */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "4px" }}>
-          <AppLogo variant="full" size={40} />
+          <AppLogo variant="full" size={54} />
         </div>
 
         {/* タブ */}

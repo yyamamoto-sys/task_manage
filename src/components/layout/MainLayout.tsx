@@ -2096,7 +2096,7 @@ function Sidebar({
           <AppLogo variant="icon" size={24} />
         ) : (
           <div style={{ flex: 1, minWidth: 0 }}>
-            <AppLogo variant="full" size={28} />
+            <AppLogo variant="full" size={39} />
           </div>
         )}
         <button
