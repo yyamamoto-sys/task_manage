@@ -18,8 +18,24 @@ describe("extractDeliverableUrls", () => {
     expect(extractDeliverableUrls("見てください https://x.example.com/a、")).toEqual(["https://x.example.com/a"]);
     expect(extractDeliverableUrls("https://ja.wikipedia.org/wiki/A_(B)")).toEqual(["https://ja.wikipedia.org/wiki/A_(B)"]);
   });
-  it("直後に続く日本語を巻き込まない", () => {
-    expect(extractDeliverableUrls("https://x.example.com/a資料")).toEqual(["https://x.example.com/a"]);
+  it("www. 始まりは https:// を補って開く", () => {
+    expect(extractDeliverableUrls("参照 www.example.com/a です")).toEqual(["https://www.example.com/a"]);
+    expect(extractDeliverableUrls("awww.example.com")).toEqual([]);
+  });
+  it("日本語を含むパスも1つの URL として拾い、encodeURI して開く（%エンコード済みは二重にしない）", () => {
+    expect(extractDeliverableUrls("https://x.example.com/共有/資料.pdf を見る"))
+      .toEqual(["https://x.example.com/%E5%85%B1%E6%9C%89/%E8%B3%87%E6%96%99.pdf"]);
+    expect(extractDeliverableUrls("https://x.example.com/%E8%B3%87")).toEqual(["https://x.example.com/%E8%B3%87"]);
+  });
+  it("空白・全角空白・全角括弧・引用符・読点で止まる", () => {
+    expect(extractDeliverableUrls("https://x.example.com/a\u3000次")).toEqual(["https://x.example.com/a"]);
+    expect(extractDeliverableUrls("（https://x.example.com/a）")).toEqual(["https://x.example.com/a"]);
+    expect(extractDeliverableUrls("「https://x.example.com/a」と、https://y.example.com/b、")).toEqual(["https://x.example.com/a", "https://y.example.com/b"]);
+    expect(extractDeliverableUrls('"https://x.example.com/a"')).toEqual(["https://x.example.com/a"]);
+  });
+  it("javascript: を www 風に偽装しても開ける形にならない", () => {
+    expect(extractDeliverableUrls("javascript://www.example.com/%0aalert(1)")).toEqual(["https://www.example.com/%0aalert(1)"]);
+    expect(extractDeliverableUrls("javascript:alert(1)")).toEqual([]);
   });
   it("空・未設定は空配列", () => {
     expect(extractDeliverableUrls("")).toEqual([]);
@@ -44,6 +60,11 @@ describe("deliverableForAi（AIへは説明だけ）", () => {
     expect(out).not.toContain("tanaka@example.com");
     expect(out).not.toContain("fs02");
     expect(out).toContain("報告書");
+  });
+  it("www.・日本語パスの URL も除去する", () => {
+    const out = deliverableForAi("資料 www.example.com/a と https://x.example.com/共有/資料.pdf です");
+    expect(out).not.toContain("example.com");
+    expect(out).toContain("資料");
   });
   it("長さを切る", () => {
     expect(deliverableForAi("あ".repeat(1000)).length).toBeLessThanOrEqual(DELIVERABLE_AI_MAX_CHARS + 1);

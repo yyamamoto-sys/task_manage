@@ -5177,10 +5177,10 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 
 ### DB
 - `project_sections`（id text・project_id・name(1〜100字)・sort_order・is_deleted 等。milestones と同じ論理削除）。`tasks.section_id`（NULL＝未分類）・`tasks.deliverable text NOT NULL DEFAULT ''`。
-- RLS：milestones と同じ（`can_access_group_ids(project_group_ids(project_id))`＝PJの可視範囲）。`FOR ALL` に WITH CHECK も明示。PJの基本情報と同じく、PJに入れる人なら誰でも作成・編集・削除（`canEditProjectBasicInfo` と同じ規則）。
+- RLS：milestones と同じ判定（`can_access_group_ids(project_group_ids(project_id))`＝PJの可視範囲）。**SELECT／INSERT／UPDATE の3本に分け、INSERT・UPDATE に WITH CHECK を明示。DELETE のポリシーは作らない**（物理削除禁止）。マイグレ全体は BEGIN／COMMIT で囲み、確認クエリは COMMIT の後に1本（UNION ALL で OK/NG）。PJの基本情報と同じく、PJに入れる人なら誰でも作成・編集・削除（`canEditProjectBasicInfo` と同じ規則）。
 - 🔴 **整合は DB トリガーで担保（画面だけを信じない）**：`enforce_task_section_integrity`（BEFORE INSERT/UPDATE・SECURITY DEFINER）＝子は親と同じグループ／PJなし・別PJ・削除済みのグループは NULL。`cascade_task_section_to_children`（AFTER UPDATE・section_id が変わった行だけ）＝親を移すと子も移る。`release_tasks_on_section_delete`＝グループを論理削除すると中のタスクは NULL。`keep_section_project_id`＝グループの project_id は変えられない。アプリ側（`normalizeTaskSection`・`followParentSection`）は同じ規則で即時に揃える（DB 往復を待たない）。
 - publication に `project_sections` と `in_app_notifications`（20261002b と同じ再実行安全な DO ブロック）。`backup_snapshot` は full が動的列挙＋40表ずつ連結（10-07の引数上限の教訓）のため自動で入る。**group 分岐だけ表をハードコードしているので `project_sections` を1行足した**（マイグレに関数全文）。schemaChecks に `function_body_contains` で検査を追加。
-- 🔴 **適用順序：SQL を dev・prod へ適用してから push**。アプリは列・表が無い本番でも落ちないよう作ったが（周辺表扱いの取得・`section_id`/`deliverable` は値が変わるときだけキーを送る・差分取得は project_sections の失敗を無視）、グループ・成果物を実際に使う操作は列が無いと失敗する。
+- 🔴 **適用順序：SQL を dev・prod へ適用してから push（必須）**。理由：①**購読**＝`project_sections` は別チャンネル（`app-sync-optional`）で購読するので、表が無くても本線11表の購読は壊れない（失敗は console.warn のみ）が、適用までグループの変更はリアルタイムに届かない。②**起動時**＝取得は周辺表扱いで、表が無いと「グループ（PJ内の区分）」の読み込み失敗として**警告バナーが全員に出る**（起動は続く）。③**保存**＝グループ・成果物を使う操作は列・表が無いと失敗する。④管理者には SchemaHealthBanner が表・列・関数の欠落を出す。値が変わらない保存（`section_id`・`deliverable` のキーを送らない）と差分取得（`project_sections` の失敗を無視）は未適用でも落ちないが、上の①〜③のため「未適用でも安全」とは扱わない。
 
 ### 画面
 - **リスト**（PJ別のみ・PCのみ。モバイルのカードにはグループの見出しは出さない）：グループが1つでもあるPJは、PJ見出しの下を「未分類（先頭）→各グループ」の見出しで区切る。**未分類を先頭にした理由**：PJ単位の追加（FAB等）が未分類に入るため作った直後に見え、整理し忘れにも気づける（グループがあるPJでは0件でも常に出す）。見出しの⋮＝名前を変更・上へ・下へ・削除（`SectionMenu`＝`useFloatingPanel`。Section 51）。各区画の末尾に v3.147 の「＋ タスクを追加」行（そのグループの `section_id` が初期値。draft のキーは `${groupKey}§${区画キー}`）、PJの末尾に「＋ グループを追加」。FABの追加は、グループのあるPJでは未分類の追加行へ。D&D：行の before/after は相手と同じグループへ、見出しへのドロップはそのグループの末尾へ（`useTaskDragReorder.handleSectionDrop`）。**子タスクを別グループの見出しへ落とすと「親をドラッグしてください」と案内して拒否**（子だけ別にはできない）。

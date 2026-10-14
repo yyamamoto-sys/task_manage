@@ -15,11 +15,11 @@ export const DELIVERABLE_AI_MAX_CHARS = 300;
 /** 📎のツールチップに出す説明の最大文字数 */
 export const DELIVERABLE_TOOLTIP_MAX_CHARS = 120;
 
-// URL は ASCII の可視文字だけで構成する（直後に続く日本語を URL に巻き込まない。%エンコードされた URL は ASCII）。
-// 山括弧・引用符・バッククォートでも止める。末尾の句読点・閉じ括弧は URL に含めない
-// （文章中の「…https://x.com/a。」「（https://x.com/a）」を壊さないため。trimTrailing）。
-// 許可する文字クラス＝ASCII 0x21〜0x7E から " ' < > ` を除いたもの（! #-& (-; = ?-_ a-~）
-const URL_RE = /https?:\/\/[!#-&(-;=?-_a-~]+/g;
+// URL は「http(s):// または www. で始まり、空白・引用符・山括弧・バッククォート・全角の括弧類・読点で止まる」並び。
+// 日本語など非 ASCII を含むパスも1つの URL として拾う（開くときは toOpenableUrl が encodeURI する）。
+// 末尾の句読点・閉じ括弧は URL に含めない（文章中の「…https://x.com/a。」「（https://x.com/a）」を壊さないため。trimTrailing）。
+// 🔴 javascript:・data:・file: は先頭条件に合わないので拾わない。
+const URL_RE = /(?:https?:\/\/|(?<![A-Za-z0-9.])www\.)[^\s<>"'`（）「」『』【】〈〉《》、。，．]+/gi;
 const TRAILING_PUNCT_RE = /[.,;:!?、。，．）)\]}'"」』】>]+$/;
 
 function trimTrailing(raw: string): string {
@@ -52,13 +52,24 @@ export function isSafeHttpUrl(u: string): boolean {
   }
 }
 
-/** 本文中の http/https の URL（出てきた順・重複なし）。javascript: 等は含めない */
+/**
+ * 検出した文字列を、開ける URL にする。www. 始まりは https:// を補い、非 ASCII を含むときだけ encodeURI する
+ * （すでに %エンコード済みの ASCII の URL は二重にエンコードしない）。開けないものは null。
+ */
+export function toOpenableUrl(raw: string): string | null {
+  const withScheme = /^www\./i.test(raw) ? `https://${raw}` : raw;
+  const hasNonAscii = [...withScheme].some(c => c.charCodeAt(0) > 127);
+  const u = hasNonAscii ? encodeURI(withScheme) : withScheme;
+  return isSafeHttpUrl(u) ? u : null;
+}
+
+/** 本文中の URL（出てきた順・重複なし。開ける形に正規化済み）。javascript: 等は含めない */
 export function extractDeliverableUrls(text: string | null | undefined): string[] {
   if (!text) return [];
   const out: string[] = [];
   for (const m of text.matchAll(URL_RE)) {
-    const u = trimTrailing(m[0]);
-    if (isSafeHttpUrl(u) && !out.includes(u)) out.push(u);
+    const u = toOpenableUrl(trimTrailing(m[0]));
+    if (u && !out.includes(u)) out.push(u);
   }
   return out;
 }
@@ -68,9 +79,9 @@ export function stripDeliverableUrls(text: string | null | undefined): string {
   if (!text) return "";
   return text
     .replace(URL_RE, m => {
-      const u = trimTrailing(m);
+      const raw = trimTrailing(m);
       // 末尾の句読点は本文として残す
-      return isSafeHttpUrl(u) ? m.slice(u.length) : m;
+      return toOpenableUrl(raw) ? m.slice(raw.length) : m;
     })
     .replace(/[^\S\n]+/g, " ")
     .replace(/ *\n */g, "\n")

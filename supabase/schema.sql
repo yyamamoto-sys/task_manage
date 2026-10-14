@@ -4652,7 +4652,17 @@ ALTER TABLE public.project_sections ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "authenticated_all" ON public.project_sections;
 DROP POLICY IF EXISTS "authenticated full access" ON public.project_sections;
 DROP POLICY IF EXISTS "project_sections_group" ON public.project_sections;
-CREATE POLICY "project_sections_group" ON public.project_sections
-  FOR ALL TO authenticated
+DROP POLICY IF EXISTS "project_sections_select" ON public.project_sections;
+DROP POLICY IF EXISTS "project_sections_insert" ON public.project_sections;
+DROP POLICY IF EXISTS "project_sections_update" ON public.project_sections;
+-- DELETE のポリシーは作らない（物理削除禁止。削除は is_deleted の UPDATE）
+CREATE POLICY "project_sections_select" ON public.project_sections
+  FOR SELECT TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)));
+CREATE POLICY "project_sections_insert" ON public.project_sections
+  FOR INSERT TO authenticated
+  WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));
+CREATE POLICY "project_sections_update" ON public.project_sections
+  FOR UPDATE TO authenticated
   USING (public.can_access_group_ids(public.project_group_ids(project_id)))
   WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));

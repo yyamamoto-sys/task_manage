@@ -13,9 +13,16 @@ import { setRealtimeChannelState } from "./realtimeState";
 const TABLES = [
   "tasks", "projects", "todos",
   "task_task_forces", "task_projects", "project_task_forces",
-  "key_results", "task_forces", "milestones", "project_sections",
+  "key_results", "task_forces", "milestones",
   "members", "task_dependencies",
 ] as const;
+
+/**
+ * 別チャンネルで購読する表（v3.149）。project_sections は migration 20261015 の適用前は表も publication も
+ * 無い。同じチャンネルに入れると、その1表のせいでチャンネル全体が CHANNEL_ERROR になり、ほかの11表の
+ * 購読まで失われる。分けておけば、この表だけが失敗しても本線（resync・見張り・状態表示）に影響しない。
+ */
+const OPTIONAL_TABLES = ["project_sections"] as const;
 
 /**
  * Realtime 購読を開始する。返り値の関数を呼ぶと購読を解除する。
@@ -45,6 +52,30 @@ export function subscribeToRealtime(
     );
   }
 
+  // 任意の表の別チャンネル。失敗は console.warn だけ（resync・realtime-silent・チャンネル状態には関与しない）
+  const optionalChannel = supabase.channel("app-sync-optional");
+  for (const table of OPTIONAL_TABLES) {
+    optionalChannel.on(
+      REALTIME_LISTEN_TYPES.POSTGRES_CHANGES,
+      { event: "*", schema: "public", table },
+      (payload: RealtimePostgresChangesPayload<Record<string, unknown>>) => {
+        onChange({
+          table: payload.table,
+          eventType: payload.eventType,
+          new: (payload.new ?? null) as RealtimeChange["new"],
+          old: (payload.old ?? null) as RealtimeChange["old"],
+        });
+      },
+    );
+  }
+  let optionalWarned = false;
+  optionalChannel.subscribe((status: string) => {
+    if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && !optionalWarned) {
+      optionalWarned = true;
+      console.warn("[realtime] 任意の表（project_sections）の購読に失敗しました。マイグレ 20261015 が未適用の可能性があります。");
+    }
+  });
+
   const tracker = createReconnectTracker();
   let firstSubscribed = true;
   channel.subscribe((status: string) => {
@@ -62,5 +93,6 @@ export function subscribeToRealtime(
   return () => {
     setRealtimeChannelState("none");
     void supabase.removeChannel(channel);
+    void supabase.removeChannel(optionalChannel);
   };
 }

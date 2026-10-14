@@ -60,12 +60,26 @@ describe("subscribeToRealtime の onResync", () => {
     expect(onResync).toHaveBeenCalledTimes(1);
     expect(onFirstSubscribed).not.toHaveBeenCalled();
   });
-  it("12表を購読し、解除で removeChannel する／opts なしでも落ちない", () => {
+  it("project_sections だけ別チャンネル：その失敗は本線の resync・購読状態に影響しない", () => {
+    const onResync = vi.fn();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    subscribeToRealtime(() => {}, { onResync });
+    expect(channels).toHaveLength(2);
+    expect(channels[0].ons).toBe(11);
+    expect(channels[1].ons).toBe(1);
+    channels[1].cb!("CHANNEL_ERROR");
+    channels[1].cb!("SUBSCRIBED");
+    expect(onResync).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+  });
+  it("11表＋別チャンネル1表を購読し、解除で両方 removeChannel する／opts なしでも落ちない", () => {
     const off = subscribeToRealtime(() => {});
-    expect(channels[0].ons).toBe(12);
+    expect(channels[0].ons).toBe(11);
     channels[0].cb!("CLOSED");
     channels[0].cb!("SUBSCRIBED");
     off();
     expect(removeChannel).toHaveBeenCalledWith(channels[0]);
+    expect(removeChannel).toHaveBeenCalledWith(channels[1]);
   });
 });

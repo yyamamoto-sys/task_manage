@@ -168,8 +168,10 @@ INSERT INTO _vf
 SELECT 21, 'publication に in_app_notifications がある', '1',
        (SELECT count(*)::text FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'in_app_notifications');
 INSERT INTO _vf
-SELECT 22, 'project_sections のポリシーは 1 本だけ（緩いものが並存していない）', '1',
-       (SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename = 'project_sections');
+SELECT 22, 'project_sections のポリシーは select/insert/update の3本だけ（ALL・DELETE が無い）', '3/3',
+       (SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename = 'project_sections'
+         AND cmd IN ('SELECT', 'INSERT', 'UPDATE'))
+       || '/' || (SELECT count(*)::text FROM pg_policies WHERE schemaname = 'public' AND tablename = 'project_sections');
 INSERT INTO _vf
 SELECT 23, 'backup_snapshot（group 分岐）に project_sections が入っている', 'true',
        (position('project_sections' IN pg_get_functiondef('public.backup_snapshot(text,text,bigint,text)'::regprocedure)) > 0)::text;

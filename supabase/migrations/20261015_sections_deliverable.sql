@@ -28,6 +28,8 @@
 --   を取り、20261007 の内容と一致していることを確認すること。
 -- ============================================================
 
+BEGIN;
+
 -- ------------------------------------------------------------
 -- ① project_sections
 -- ------------------------------------------------------------
@@ -175,7 +177,7 @@ CREATE TRIGGER trg_project_sections_release_tasks
   EXECUTE FUNCTION public.release_tasks_on_section_delete();
 
 -- ------------------------------------------------------------
--- ④ RLS（milestones と同じ＝PJ の可視範囲に従う。FOR ALL には WITH CHECK も明示する）
+-- ④ RLS（milestones と同じ＝PJ の可視範囲に従う。SELECT／INSERT／UPDATE の3本に分け、INSERT・UPDATE には WITH CHECK を明示。DELETE は作らない）
 --    PJ の基本情報と同じく、PJ にアクセスできる人なら誰でも作成・編集・削除できる
 --    （canEditProjectBasicInfo と同じ規則。Section 55）。
 -- ------------------------------------------------------------
@@ -184,8 +186,18 @@ ALTER TABLE public.project_sections ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "authenticated_all" ON public.project_sections;
 DROP POLICY IF EXISTS "authenticated full access" ON public.project_sections;
 DROP POLICY IF EXISTS "project_sections_group" ON public.project_sections;
-CREATE POLICY "project_sections_group" ON public.project_sections
-  FOR ALL TO authenticated
+DROP POLICY IF EXISTS "project_sections_select" ON public.project_sections;
+DROP POLICY IF EXISTS "project_sections_insert" ON public.project_sections;
+DROP POLICY IF EXISTS "project_sections_update" ON public.project_sections;
+-- DELETE のポリシーは作らない（物理削除禁止。削除は is_deleted の UPDATE）
+CREATE POLICY "project_sections_select" ON public.project_sections
+  FOR SELECT TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)));
+CREATE POLICY "project_sections_insert" ON public.project_sections
+  FOR INSERT TO authenticated
+  WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));
+CREATE POLICY "project_sections_update" ON public.project_sections
+  FOR UPDATE TO authenticated
   USING (public.can_access_group_ids(public.project_group_ids(project_id)))
   WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));
 
@@ -476,34 +488,32 @@ REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM aut
 REVOKE ALL ON FUNCTION public.backup_snapshot(text, text, bigint, text) FROM anon;
 GRANT EXECUTE ON FUNCTION public.backup_snapshot(text, text, bigint, text) TO service_role;
 
+COMMIT;
+
 -- ============================================================
--- 確認クエリ（適用後に実行する。結果の見方は各行のコメント）
+-- 確認クエリ（適用後に実行する。SQL Editor は最後の結果しか出ないため1本にまとめてある）
+-- すべての行が OK ならよい。ROLLBACK で試す詳しい検証は docs/dev/verify_20261015_sections.sql。
 -- ============================================================
-
--- 1) 表・列：3 行（project_sections / tasks.section_id / tasks.deliverable）が返ればよい
-SELECT 'table' AS kind, table_name AS name FROM information_schema.tables
- WHERE table_schema = 'public' AND table_name = 'project_sections'
-UNION ALL
-SELECT 'column', table_name || '.' || column_name FROM information_schema.columns
- WHERE table_schema = 'public' AND table_name = 'tasks' AND column_name IN ('section_id', 'deliverable');
-
--- 2) トリガー：5 行（tasks×2・project_sections×3）が返ればよい
-SELECT event_object_table AS table_name, trigger_name
-  FROM information_schema.triggers
- WHERE trigger_schema = 'public'
-   AND trigger_name IN ('trg_tasks_section_integrity', 'trg_tasks_section_cascade',
-                        'trg_project_sections_updated_at', 'trg_project_sections_keep_project',
-                        'trg_project_sections_release_tasks')
- GROUP BY 1, 2 ORDER BY 1, 2;
-
--- 3) RLS ポリシー：project_sections_group が 1 本だけ（ほかに緩いポリシーが無いこと）
-SELECT policyname, cmd, permissive FROM pg_policies
- WHERE schemaname = 'public' AND tablename = 'project_sections';
-
--- 4) publication：2 行（project_sections と in_app_notifications）が返ればよい
-SELECT tablename FROM pg_publication_tables
- WHERE pubname = 'supabase_realtime' AND schemaname = 'public'
-   AND tablename IN ('project_sections', 'in_app_notifications') ORDER BY 1;
-
--- 5) backup_snapshot に project_sections が入ったこと：true が返ればよい
-SELECT position('project_sections' IN pg_get_functiondef('public.backup_snapshot(text,text,bigint,text)'::regprocedure)) > 0 AS backup_has_project_sections;
+SELECT item, CASE WHEN ok THEN 'OK' ELSE 'NG' END AS result FROM (
+  SELECT 'table project_sections' AS item,
+         EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'project_sections') AS ok
+  UNION ALL SELECT 'column tasks.section_id',
+         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tasks' AND column_name = 'section_id')
+  UNION ALL SELECT 'column tasks.deliverable',
+         EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'tasks' AND column_name = 'deliverable')
+  UNION ALL SELECT 'triggers (tasks x2, project_sections x3)',
+         (SELECT count(DISTINCT trigger_name) FROM information_schema.triggers
+           WHERE trigger_schema = 'public'
+             AND trigger_name IN ('trg_tasks_section_integrity', 'trg_tasks_section_cascade',
+                                  'trg_project_sections_updated_at', 'trg_project_sections_keep_project',
+                                  'trg_project_sections_release_tasks')) = 5
+  UNION ALL SELECT 'policies = select/insert/update only (no delete, no old FOR ALL)',
+         (SELECT count(*) FROM pg_policies WHERE schemaname = 'public' AND tablename = 'project_sections') = 3
+         AND NOT EXISTS (SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'project_sections' AND cmd IN ('ALL', 'DELETE'))
+  UNION ALL SELECT 'publication has project_sections',
+         EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'project_sections')
+  UNION ALL SELECT 'publication has in_app_notifications',
+         EXISTS (SELECT 1 FROM pg_publication_tables WHERE pubname = 'supabase_realtime' AND schemaname = 'public' AND tablename = 'in_app_notifications')
+  UNION ALL SELECT 'backup_snapshot includes project_sections',
+         position('project_sections' IN pg_get_functiondef('public.backup_snapshot(text,text,bigint,text)'::regprocedure)) > 0
+) x;
