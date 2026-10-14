@@ -1,4 +1,6 @@
 // src/main.tsx
+// 先頭固定：supabase-js が戻り URL のハッシュを消す前に控える（CLAUDE.md Section 79）
+import "./lib/account/initialAuthLink";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";

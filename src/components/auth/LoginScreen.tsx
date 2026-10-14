@@ -1,6 +1,7 @@
 // src/components/auth/LoginScreen.tsx
-import { useState, Suspense } from "react";
-import { signIn, signUp } from "../../lib/supabase/auth";
+import { useState, useEffect, Suspense } from "react";
+import { signIn, signUp, requestPasswordResetMail } from "../../lib/supabase/auth";
+import { resendRemainingSec } from "../../lib/account/recoveryFlow";
 import { AppLogo } from "../common/AppLogo";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
@@ -20,16 +21,18 @@ interface Props {
   onLogin: () => void;
   /** 「サンプルを見る」を押したときに呼ぶ。Supabase Authのサインインは行わない。 */
   onGuest: () => Promise<void>;
+  /** 再設定のリンクが無効・期限切れで戻ってきた。再設定フォームを開き、案内を出す。 */
+  resetLinkInvalid?: boolean;
 }
 
-type Mode = "login" | "signup" | "signup_done" | "invite" | "invite_awaiting";
+type Mode = "login" | "signup" | "signup_done" | "invite" | "invite_awaiting" | "forgot";
 
-export function LoginScreen({ onLogin, onGuest }: Props) {
+export function LoginScreen({ onLogin, onGuest, resetLinkInvalid = false }: Props) {
   const t = useT();
   // 招待リンク（?invite=<code>）から開かれた場合は、招待コード欄を事前入力した状態で
   // 直接「招待コードをお持ちの方」モードに入る（設計書§7・3-2）。
   const [initialInviteCode] = useState(() => extractInviteCodeFromSearch(window.location.search));
-  const [mode, setMode] = useState<Mode>(() => (initialInviteCode ? "invite" : "login"));
+  const [mode, setMode] = useState<Mode>(() => (resetLinkInvalid ? "forgot" : initialInviteCode ? "invite" : "login"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -126,6 +129,60 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
     } finally {
       // 成功時はApp.tsx側でこの画面自体が消えるため、finallyでのリセットは失敗時のみ意味を持つ
       setGuestLoading(false);
+    }
+  };
+
+  // ----- パスワードの再設定（CLAUDE.md Section 79） -----
+  // 🔴 送信後の表示は、登録の有無に関わらず同じ文言（アカウントの有無を外から推測させない）。
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotError, setForgotError] = useState("");
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [lastResetSentAt, setLastResetSentAt] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  useEffect(() => {
+    if (lastResetSentAt == null) return;
+    const id = window.setInterval(() => {
+      const n = Date.now();
+      setNowMs(n);
+      if (resendRemainingSec(lastResetSentAt, n) <= 0) window.clearInterval(id);
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [lastResetSentAt]);
+  const resetWaitSec = resendRemainingSec(lastResetSentAt, nowMs);
+
+  const enterForgotMode = () => {
+    setMode("forgot");
+    setForgotMessage("");
+    setForgotError("");
+  };
+
+  const handleForgotSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = email.trim();
+    if (!target || forgotLoading || resetWaitSec > 0) return;
+    setForgotMessage("");
+    setForgotError("");
+    setForgotLoading(true);
+    const startCooldown = () => {
+      const n = Date.now();
+      setNowMs(n);
+      setLastResetSentAt(n);
+    };
+    try {
+      const outcome = await requestPasswordResetMail(target);
+      if (outcome.kind === "sent") {
+        setForgotMessage(t("auth.forgot.sent"));
+        startCooldown();
+      } else if (outcome.kind === "rateLimited") {
+        setForgotError(t("auth.forgot.rateLimited"));
+        startCooldown();
+      } else {
+        setForgotError(formatErrorForUser(t("auth.forgot.failed"), outcome.error));
+      }
+    } catch (err) {
+      setForgotError(formatErrorForUser(t("auth.forgot.failed"), err));
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -452,6 +509,87 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
     );
   }
 
+  // ===== パスワードの再設定（メールを送る）=====
+  if (mode === "forgot") {
+    const blocked = forgotLoading || resetWaitSec > 0;
+    return (
+      <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
+        <div style={{ position: "fixed", top: "16px", right: "16px", zIndex: 10 }}>
+          <LangToggle variant="icon" />
+        </div>
+        <div style={{ position: "fixed", bottom: "12px", right: "16px", zIndex: 10 }}>
+          <VersionBadge onClick={() => setIsVersionHistoryOpen(true)} />
+        </div>
+        {versionHistoryModal}
+        <div style={cardStyle}>
+          <h1 style={{ fontSize: "16px", fontWeight: 700, color: "var(--color-text-primary)", marginBottom: "4px" }}>
+            {t("auth.forgot.title")}
+          </h1>
+          <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.6, marginBottom: "18px" }}>
+            {t("auth.forgot.subtitle")}
+          </p>
+          {resetLinkInvalid && !forgotMessage && (
+            <p style={{
+              fontSize: "12px", color: "var(--color-text-warning)", background: "var(--color-bg-warning)",
+              border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)",
+              padding: "10px 12px", lineHeight: 1.7, marginBottom: "16px",
+            }}>
+              {t("auth.forgot.linkInvalid")}
+            </p>
+          )}
+          <form onSubmit={e => void handleForgotSubmit(e)}>
+            <div style={{ marginBottom: "16px" }}>
+              <label style={labelStyle}>{t("auth.form.email")}</label>
+              <input
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                required
+                autoFocus
+                placeholder={t("auth.form.emailPlaceholder")}
+                style={inputStyle}
+              />
+            </div>
+            {forgotMessage && (
+              <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)", borderRadius: "var(--radius-md)", padding: "10px 12px", lineHeight: 1.7, marginBottom: "16px" }}>
+                {forgotMessage}
+              </p>
+            )}
+            {forgotError && (
+              <p style={{ fontSize: "13px", color: "var(--color-text-danger)", marginBottom: "16px" }}>{forgotError}</p>
+            )}
+            <button
+              type="submit"
+              disabled={blocked}
+              style={{
+                width: "100%", padding: "11px",
+                background: blocked ? "var(--color-text-tertiary)" : "var(--color-brand)",
+                color: "#fff", border: "none", borderRadius: "var(--radius-md)",
+                fontSize: "14px", fontWeight: 600, cursor: blocked ? "not-allowed" : "pointer",
+              }}
+            >
+              {forgotLoading
+                ? t("auth.forgot.sending")
+                : resetWaitSec > 0
+                  ? t("auth.forgot.wait", { sec: resetWaitSec })
+                  : t("auth.forgot.submit")}
+            </button>
+          </form>
+          <button
+            type="button"
+            onClick={() => switchMode("login")}
+            style={{
+              width: "100%", marginTop: "12px", padding: "6px", background: "transparent", border: "none",
+              color: "var(--color-text-tertiary)", fontSize: "12px", cursor: "pointer",
+            }}
+          >
+            {t("auth.forgot.back")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   // ===== ログイン / 新規登録フォーム =====
   return (
     <div style={{ height: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: "var(--color-bg-secondary)", position: "relative" }}>
@@ -554,8 +692,17 @@ export function LoginScreen({ onLogin, onGuest }: Props) {
 
         {/* パスワードリセット（ログイン時のみ） */}
         {mode === "login" && (
-          <p style={{ marginTop: "16px", textAlign: "center", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
-            {t("auth.note.forgotPassword")}
+          <p style={{ marginTop: "16px", textAlign: "center", fontSize: "12px" }}>
+            <button
+              type="button"
+              onClick={enterForgotMode}
+              style={{
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                color: "var(--color-text-tertiary)", fontSize: "12px", textDecoration: "underline",
+              }}
+            >
+              {t("auth.note.forgotPassword")}
+            </button>
           </p>
         )}
 

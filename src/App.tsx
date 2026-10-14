@@ -9,6 +9,9 @@ import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
+import { AccountRecoveryScreen } from "./components/auth/AccountRecoveryScreen";
+import { initialAuthLink } from "./lib/account/initialAuthLink";
+import { shouldRunNormalStartup, stripAuthParams } from "./lib/account/recoveryFlow";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer, showToast } from "./components/common/Toast";
@@ -51,6 +54,13 @@ export default function App() {
   // AppDataProvider（Supabase load()・realtime購読）の配下に一切置かないことで、
   // ゲストがSupabaseへアクセスする経路そのものを無くす（CLAUDE.md Section 23）。
   const [guestActive, setGuestActive] = useState(false);
+  // パスワード再設定のリンクから戻ってきた間は、通常の起動処理（AuthenticatedApp の autoMatch・
+  // 招待の受諾・SetupWizard・データ読み込み）へ進まず、新しいパスワードの設定画面だけを出す。
+  // リンクのセッションでアプリに入れてしまい、パスワードを決めないまま使える経路を作らない
+  // （CLAUDE.md Section 79）。起動時の URL（initialAuthLink）と PASSWORD_RECOVERY イベントの両方で立てる。
+  const [recoveryActive, setRecoveryActive] = useState(initialAuthLink.kind === "recovery");
+  // リンクが無効・期限切れで戻ってきた（ログイン画面の再設定フォームへ誘導する）
+  const [resetLinkInvalid] = useState(initialAuthLink.kind === "error");
   // ウィザード完了フラグはlocalStorageで管理（デバイスごとの設定）
   const [wizardCompleted, setWizardCompleted] = useState(
     () => !!localStorage.getItem(KEYS.WIZARD_COMPLETED)
@@ -67,6 +77,12 @@ export default function App() {
   // リロードで必ず失われるが、匿名セッション自体はlocalStorageに残るため）。
   useEffect(() => {
     getSession().then(session => {
+      // 戻り URL のトークン・エラーは supabase-js の処理（getSession が待つ）が終わってから消す。
+      // supabase-js が消さなかった場合の後始末（履歴にトークンを残さない）。
+      const cleaned = stripAuthParams(window.location.pathname, window.location.search, window.location.hash);
+      if (cleaned !== window.location.pathname + window.location.search + window.location.hash) {
+        window.history.replaceState(null, "", cleaned);
+      }
       if (session?.user?.is_anonymous) {
         // 起動時に残っていた匿名セッションは確実に切ってから未ログイン扱いにする
         // （ネットワーク断等でsignOutが失敗しても、次回起動時に再試行されるだけで安全側）。
@@ -82,7 +98,8 @@ export default function App() {
 
     // セッション変化を監視（ゲストのAI用匿名セッションのSIGNED_INイベントは無視する。
     // guestActiveの見た目（MainLayout+GUEST_MEMBER）に影響させないため）
-    const subscription = onAuthStateChange(session => {
+    const subscription = onAuthStateChange((session, event) => {
+      if (event === "PASSWORD_RECOVERY") setRecoveryActive(true);
       if (session?.user?.is_anonymous) return;
       setAuthenticated(!!session);
       if (!session) {
@@ -187,6 +204,26 @@ export default function App() {
     return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
   }
 
+  // パスワード再設定中：他のどの分岐（ゲスト・ログイン・認証済みアプリ）より先に判定する。
+  if (!shouldRunNormalStartup(recoveryActive)) {
+    return (
+      <>
+        <AccountRecoveryScreen
+          onDone={() => {
+            showToast(t("auth.reset.done"), "success");
+            setAuthenticated(true);
+            setRecoveryActive(false);
+          }}
+          onCancel={() => {
+            setAuthenticated(false);
+            setRecoveryActive(false);
+          }}
+        />
+        <ToastContainer />
+      </>
+    );
+  }
+
   // ゲスト（サンプル閲覧）：authenticated の判定より前段で分岐する。AppDataProvider配下には
   // 一切置かないため、Supabaseのload()・realtime購読が発生しない（Section 23）。
   // ログアウト経路（onLogout=handleLogout）はそのまま流用する。ゲストは認証セッションを
@@ -205,7 +242,7 @@ export default function App() {
 
   // 未ログイン → ログイン画面（AppDataProvider不要）
   if (!authenticated) {
-    return <LoginScreen onLogin={() => setAuthenticated(true)} onGuest={handleGuestEnter} />;
+    return <LoginScreen onLogin={() => setAuthenticated(true)} onGuest={handleGuestEnter} resetLinkInvalid={resetLinkInvalid} />;
   }
 
   // 認証済み → AppDataProviderでSupabaseデータをロード

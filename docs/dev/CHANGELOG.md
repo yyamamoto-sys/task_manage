@@ -8220,3 +8220,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 追加プロジェクト・タスクフォース・（登録の）KR/TF/ToDo 選択の入力欄を外した。データ・集計・複製のコピーは残す。ToDo パネル・ToDo グループの追加行から開いた登録は、渡された ToDo に紐づけて作る。
 # * アプリの正式名称を「AMP（アンプ）」に決め、ロゴ・アイコンを付けた（別担当の commit。利用者向け履歴に1文）。
 # * MIN_CLIENT_VERSION は上げない（旧画面は新しい列・表を知らなくても動く。トリガーが整合を守る）。
+
+# v3.150（2026-10-15）：利用者が自分でパスワードを再設定・変更できるようにする（CLAUDE.md Section 79・docs/dev/account-recovery.md）
+# * ログイン画面に「パスワードをお忘れの方はこちら」（mode="forgot"）。resetPasswordForEmail(email, { redirectTo: origin + pathname })。結果の文言は登録の有無によらず固定。送信ボタンは60秒止める。429／over_email_send_rate_limit は「しばらく時間をおいて…」、その他は formatErrorForUser。
+# * 再設定リンクから戻ったとき：App.tsx の recoveryActive（起動時の URL の控え initialAuthLink ＋ PASSWORD_RECOVERY イベント）の間は AccountRecoveryScreen だけを描画し、自動マッチ・招待の受諾・SetupWizard・AppDataProvider へ進まない（判定 shouldRunNormalStartup）。設定が終われば通常どおり入る。無効・期限切れ（ハッシュの error / error_code）はログイン画面の再設定フォームへ誘導。戻り URL のトークン・エラーは getSession の後に history.replaceState で消す。
+# * auth.ts：onAuthStateChange のコールバックに event を追加（既存の呼び出し元は無改修）、requestPasswordResetMail・updateOwnPassword を追加。
+# * 設定ページ「👤 プロフィール」に「パスワードを変更」（AccountSecurityRow。ゲストには出さない・明示保存・未保存編集レジストリに登録）。再認証が必要な設定でのエラーは Section 15 の表示＋ログアウトして再設定の案内。
+# * 純粋関数 src/lib/account/recoveryFlow.ts（戻り URL の解釈・結果の分類・検証・起動可否・待ち秒数）と vitest。docs/dev/account-recovery.md（Supabase 管理画面の設定・メール文面案。公式ドキュメントで確かめた事実と未確認を区別）。docs/guides の FAQ・設定ページ・uiGuide に追記。
+# * ファイル名に「password」を含めない（この環境の Read/Write 拒否ルール *password* のため）。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。

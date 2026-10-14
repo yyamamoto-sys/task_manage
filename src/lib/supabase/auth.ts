@@ -1,6 +1,7 @@
 // src/lib/supabase/auth.ts
 import { supabase } from "./client";
-import type { Session } from "@supabase/supabase-js";
+import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
+import { buildResetRedirectUrl, classifyResetMailError, type ResetMailOutcome } from "../account/recoveryFlow";
 
 export async function signIn(email: string, password: string): Promise<void> {
   const { error } = await supabase.auth.signInWithPassword({ email, password });
@@ -40,9 +41,27 @@ export async function getAuthEmail(): Promise<string | null> {
   return user?.email ?? null;
 }
 
-export function onAuthStateChange(callback: (session: Session | null) => void) {
-  const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-    callback(session);
+/** 第2引数の event は省略して受けてよい（既存の呼び出し元は session だけを使う）。 */
+export function onAuthStateChange(callback: (session: Session | null, event: AuthChangeEvent) => void) {
+  const { data } = supabase.auth.onAuthStateChange((event, session) => {
+    callback(session, event);
   });
   return data.subscription;
+}
+
+/**
+ * パスワード再設定のメールを送る。登録の有無で結果を変えない（Supabase はメール列挙対策で
+ * 未登録でも成功を返す）。呼び出し側は "sent" のとき常に同じ文言を出すこと。
+ */
+export async function requestPasswordResetMail(email: string): Promise<ResetMailOutcome> {
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: buildResetRedirectUrl(window.location),
+  });
+  return classifyResetMailError(error);
+}
+
+/** ログイン中（再設定リンクで入った場合を含む）のパスワードを変更する。失敗は throw。 */
+export async function updateOwnPassword(newPassword: string): Promise<void> {
+  const { error } = await supabase.auth.updateUser({ password: newPassword });
+  if (error) throw error;
 }

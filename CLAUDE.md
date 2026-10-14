@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.149
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.150
 #
-最終更新：2026-10-15（v3.149）
+最終更新：2026-10-15（v3.150）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5209,3 +5209,35 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - グループは**タスクが1件も無い（または絞り込みで全件外れた）PJ**ではリストの見出し自体が出ないため作れない（先にタスクを1件作る）。
 - 親タスクのグループを移すと DB トリガーが子の `updated_at` も進める。realtime のエコーが届く前に子を保存すると、既知の楽観ロック競合（Section 5）が出うる（group_ids のカスケードと同種）。
 - `MIN_CLIENT_VERSION` は上げない（旧画面は新しい列・表を知らなくても読み書きでき、整合はトリガーが守る）。
+
+---
+
+## 79. パスワードの再設定・変更（v3.150・2026-10-15）
+
+**運用・Supabase 管理画面の設定・メール文面案は [docs/dev/account-recovery.md](docs/dev/account-recovery.md)。** 利用者が管理者に頼まずに、忘れたパスワードの再設定と、ログイン中のパスワード変更をできるようにした。マイグレーションなし・`MIN_CLIENT_VERSION` は上げない。
+
+### ログイン画面の「パスワードをお忘れの方はこちら」（`LoginScreen.tsx` の mode `"forgot"`）
+- `resetPasswordForEmail(email, { redirectTo })`（`auth.ts` の `requestPasswordResetMail`）。`redirectTo` は `origin + pathname`（`buildResetRedirectUrl`。クエリ・ハッシュは引き継がない＝招待コード等が戻り先に残らない）。
+- 🔴 **結果の表示は登録の有無に関わらず同じ文言**（`auth.forgot.sent`）。Supabase は未登録のメールでもエラーを返さない（公式：Password-based Auth）。「未登録」「見つかりません」を示す語を文言に入れない（テストで固定）。
+- 送信後はボタンを60秒止める（`resendRemainingSec`）。HTTP 429・`over_email_send_rate_limit`・文言に `rate limit`／`security purposes` を含むものは「しばらく時間をおいて…」（`classifyResetMailError`）。それ以外の失敗は `formatErrorForUser`（Section 15）。
+
+### リンクから戻ってきたとき（🔴 通常の起動処理を止める仕組み）
+- `src/lib/account/initialAuthLink.ts` が**起動時の URL**（ハッシュ・クエリ）を1度だけ控える。`main.tsx` の**最初の import**（supabase-js が初期化の途中でハッシュを消す前に評価するため。順序を変えない）。`parseAuthLink`：`#access_token=…&type=recovery` は recovery、`error`／`error_code`（`otp_expired` 等）は error。
+- `App.tsx` の `recoveryActive`（初期値は URL が recovery のとき true。`onAuthStateChange` の event `PASSWORD_RECOVERY` でも true）。**`shouldRunNormalStartup(recoveryActive)` が false の間は `AccountRecoveryScreen` だけを描画**し、`loading` の次・ゲスト／`LoginScreen`／`AuthenticatedApp` より前で return する。`AuthenticatedApp` が mount されないので、自動マッチ（autoMatch）・招待URLの受諾・SetupWizard・`AppDataProvider` のデータ読み込みは一切動かない。リンクのセッションでアプリに入り、パスワードを決めないまま使える経路は無い（`recoveryFlow.test.ts` が分岐の位置を走査で固定。コメントを除去して走査）。
+- 画面は新パスワード＋確認 → `updateOwnPassword`（`updateUser({ password })`）。成功したら「パスワードを変更しました」→ `setAuthenticated(true)`・`setRecoveryActive(false)` で**通常どおり入る**。最小文字数は `auth.error.passwordTooShort`（6文字・`PASSWORD_MIN_LENGTH`）。「設定せずにログイン画面へ戻る」は `signOut()` して戻す。セッションが無い（リンクが無効）エラーは「再設定のリンクが無効か期限切れです」。
+- 無効・期限切れで戻ったとき（`initialAuthLink.kind === "error"`）は `LoginScreen` に `resetLinkInvalid` を渡し、再設定フォームを開いて「再設定のリンクが無効か期限切れです。もう一度メールを送ってください」を出す。
+- **URL の後始末**：`App.tsx` の起動 effect で `getSession()` の後（supabase-js の処理が終わってから）に `stripAuthParams` で認証用のハッシュ・`error*` クエリを消して `history.replaceState`（履歴にトークンを残さない。招待の `?invite=` 等は残す）。
+
+### 設定ページ「👤 プロフィール」の「パスワードを変更」（`AccountSecurityRow.tsx`）
+新パスワード＋確認 → 保存ボタンで `updateOwnPassword`（明示保存・Section 44。入力中は未保存編集レジストリ＝Section 46 に登録）。**ゲストには出さない**（`isGuestMode()`）。Supabase の再認証が必要な設定（Secure password change）などで拒否されたら、エラー文を Section 15 で出し、「一度ログアウトして『パスワードをお忘れの方』から再設定してください」を添える（`isReauthRequiredError`）。**この設定が本番でオンかは未確認**（docs/dev/account-recovery.md 1-4）。
+
+### `auth.ts` の変更
+`onAuthStateChange(callback(session, event))`：第2引数 `event` を足しただけで、既存の呼び出し元（`session` だけ使う）は無改修。`requestPasswordResetMail`・`updateOwnPassword` を追加。
+
+### 🔴 ファイル名に「password」を含めない
+開発環境の Read/Write 拒否ルール（`*password*`）に当たり、そのファイルを作れない・読めない。新規ファイルは `recoveryFlow.ts`／`AccountRecoveryScreen.tsx`／`AccountSecurityRow.tsx`／`account-recovery.md` と命名した（ファイルの中身・関数名・i18n キーに password を含めるのは問題ない）。
+
+### 手順上の注意
+- **Supabase 管理画面の設定が先**（Site URL・Redirect URLs・社用 SMTP）：標準の送信はプロジェクトのチーム宛てにしか送れず（1時間2通）、利用者にはメールが届かない。docs/dev/account-recovery.md に確かめた事実／未確認を区別して記載している。
+- 実機確認は山本さんが行う（メールのリンク→設定画面→そのままアプリへ／古いリンク／未登録メールで同じ文言）。手順は同ドキュメントの 3。
+- 戻りのフローは supabase-js の既定（implicit：ハッシュ `#access_token`）を前提にしている。PKCE（`?code=`）にした場合は未対応。

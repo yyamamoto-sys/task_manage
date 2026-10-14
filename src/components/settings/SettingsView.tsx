@@ -31,6 +31,8 @@ import {
 } from "../../lib/settings/settingsSections";
 import { SectionBody, Row, inputStyle, btnStyle, primaryBtnStyle, SegButtons } from "./settingsUi";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
+import { AccountSecurityRow } from "./AccountSecurityRow";
+import { isGuestMode } from "../../lib/guestMode";
 
 const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 
@@ -203,6 +205,7 @@ function ProfileSection({ currentUser }: { currentUser: Member }) {
           {saving ? t("layout.settings.profile.saving") : t("layout.settings.profile.save")}
         </button>
       </div>
+      {!isGuestMode() && <AccountSecurityRow />}
     </SectionBody>
   );
 }
