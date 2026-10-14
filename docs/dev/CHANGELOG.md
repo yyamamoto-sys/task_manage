@@ -8144,3 +8144,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * sanitizeSvg を許可リスト方式に置き換え（lib/docs/svgSanitize.ts）。トークンに分解して許可した要素・属性だけを組み直す。style は var(--color-*)・数値・色名等の宣言だけ。DOMParser は使わない（テスト環境に DOM が無いため）。旧方式（正規表現で除去）が抜けた入力を回帰テスト化。
 # * HTML保存：`foo.md#見出し` を見出し id へのアンカーに（docAnchorId を単射に変更）。revokeObjectURL を40秒後に。iframe 内では「Teams 内ではダウンロードできない場合があります」を表示。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+# v3.143（2026-10-14）：ガントの拡大縮小をスライドバーで多段階に（CLAUDE.md Section 74）
+# * 1日あたりの幅を 8〜80px で連続調節（旧5段階 14/20/28/36/48 を撤去）。ツールバーに input[type=range]（非制御・rAFで反映）と「28px/日」表示、「－」「＋」・+/-キーは ×1.25／÷1.25。
+# * Ctrl/Cmd＋ホイール・ピンチ：scrollRef に passive:false で登録（ガントのバー領域の上だけ preventDefault）。基準点（ホイール＝マウス位置・他＝画面中央）の日付が動かないよう useLayoutEffect で scrollLeft を補正。
+# * 狭い幅の対策：日の数字は12px未満で月曜のみ、週ラベルは幅に応じて「10月W2」→「W2」→空、バーの最小幅6px。
+# * 純関数（ganttUtils.ts）：clampDayWidth／stepZoom／parseSavedZoom／computeZoomScrollLeft／wheelZoomTarget／isDayTickLabelVisible／weekLabelForWidth。clampZoom・ZOOM_LEVELS は撤去。
+# * 保存キー KEYS.GANTT_ZOOM は据え置き（旧値は範囲内ならそのまま有効・範囲外は既定28）。表示の初期化の対象のまま。
+# * 資料：docs/guides/02_modes/tasks.md（ガントの拡大・縮小）・08_spec.md・uiGuide.ts・releaseNotes.ts。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。

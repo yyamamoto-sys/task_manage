@@ -5,7 +5,9 @@ import {
   computeWeekGridLines, computeMilestoneBands, getMilestoneBandColor, MS_COLOR,
   dayTickColorKind, dayTickColor, computeDayTicks, HOLIDAY_TICK_COLOR, SATURDAY_TICK_COLOR,
   computeMoveShift, computeBulkMoveShifts,
-  clampZoom, computeVisibleOrderedTaskIds, ZOOM_LEVELS,
+  stepZoom, clampDayWidth, parseSavedZoom, computeZoomScrollLeft, wheelZoomTarget,
+  isDayTickLabelVisible, weekLabelForWidth, DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX,
+  computeVisibleOrderedTaskIds,
   xToDate, computeDragCreateRange,
   buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges, computeGanttRowsTotalHeight,
   GANTT_GROUP_ROW_HEIGHT, GANTT_TASK_ROW_HEIGHT, QUICK_ADD_ROW_HEIGHT,
@@ -484,28 +486,102 @@ describe("clampStartDate", () => {
   });
 });
 
-describe("clampZoom", () => {
-  it("ズームインで次のレベルに進む", () => {
-    expect(clampZoom(ZOOM_LEVELS[1], "in")).toBe(ZOOM_LEVELS[2]);
+describe("ズーム（スライドバー式・8〜80px/日）", () => {
+  it("範囲は8〜80・既定は28のまま", () => {
+    expect(ZOOM_MIN).toBe(8);
+    expect(ZOOM_MAX).toBe(80);
+    expect(DAY_WIDTH_DEFAULT).toBe(28);
   });
 
-  it("ズームアウトで前のレベルに戻る", () => {
-    expect(clampZoom(ZOOM_LEVELS[1], "out")).toBe(ZOOM_LEVELS[0]);
+  it("clampDayWidth：範囲内は整数に丸め、範囲外は端に収める", () => {
+    expect(clampDayWidth(28)).toBe(28);
+    expect(clampDayWidth(28.6)).toBe(29);
+    expect(clampDayWidth(3)).toBe(8);
+    expect(clampDayWidth(500)).toBe(80);
   });
 
-  it("最大レベルでズームインしても現在値のまま（clamp）", () => {
-    const max = ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
-    expect(clampZoom(max, "in")).toBe(max);
+  it("stepZoom：×1.25／÷1.25 の等比で1段階動く（今の段階に近い感覚）", () => {
+    expect(stepZoom(28, "in")).toBe(35);
+    expect(stepZoom(28, "out")).toBe(22);
+    expect(stepZoom(20, "in")).toBe(25);
   });
 
-  it("最小レベルでズームアウトしても現在値のまま（clamp）", () => {
-    const min = ZOOM_LEVELS[0];
-    expect(clampZoom(min, "out")).toBe(min);
+  it("stepZoom：8〜80に収まり、端では動かない", () => {
+    expect(stepZoom(80, "in")).toBe(80);
+    expect(stepZoom(70, "in")).toBe(80);
+    expect(stepZoom(8, "out")).toBe(8);
+    expect(stepZoom(9, "out")).toBe(8);
   });
 
-  it("ZOOM_LEVELSに無い値が渡されたら現在値のまま", () => {
-    expect(clampZoom(999, "in")).toBe(999);
-    expect(clampZoom(999, "out")).toBe(999);
+  it("stepZoom：端以外では必ず1px以上動く（ボタンが効かなくならない）", () => {
+    for (let w = ZOOM_MIN; w < ZOOM_MAX; w++) expect(stepZoom(w, "in")).toBeGreaterThan(w);
+    for (let w = ZOOM_MAX; w > ZOOM_MIN; w--) expect(stepZoom(w, "out")).toBeLessThan(w);
+  });
+
+  it("parseSavedZoom：範囲内の数値はそのまま復元（旧5段階の値も有効）", () => {
+    for (const v of [14, 20, 28, 36, 48]) expect(parseSavedZoom(String(v))).toBe(v);
+    expect(parseSavedZoom("8")).toBe(8);
+    expect(parseSavedZoom("80")).toBe(80);
+    expect(parseSavedZoom("33")).toBe(33);
+  });
+
+  it("parseSavedZoom：範囲外・非数値・未保存は既定値", () => {
+    expect(parseSavedZoom("7")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("81")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("0")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("-20")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("abc")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("NaN")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom("Infinity")).toBe(DAY_WIDTH_DEFAULT);
+    expect(parseSavedZoom(null)).toBe(DAY_WIDTH_DEFAULT);
+  });
+
+  it("computeZoomScrollLeft：基準点の日付が画面上の同じ位置に留まる", () => {
+    // scrollLeft=280・基準点が画面左端から200pxの位置・28px/日 → 基準は 17.14日目
+    const next = computeZoomScrollLeft({ scrollLeft: 280, anchorX: 200, prevDayWidth: 28, nextDayWidth: 56 });
+    expect((280 + 200) / 28).toBeCloseTo((next + 200) / 56, 6);
+  });
+
+  it("computeZoomScrollLeft：縮小で負になる場合は0", () => {
+    expect(computeZoomScrollLeft({ scrollLeft: 0, anchorX: 300, prevDayWidth: 56, nextDayWidth: 28 })).toBe(0);
+  });
+
+  it("computeZoomScrollLeft：幅が変わらなければスクロール位置も変わらない", () => {
+    expect(computeZoomScrollLeft({ scrollLeft: 123, anchorX: 400, prevDayWidth: 28, nextDayWidth: 28 })).toBeCloseTo(123, 6);
+  });
+
+  it("wheelZoomTarget：上回し（deltaY<0）で拡大・下回しで縮小・範囲内に収まる", () => {
+    expect(wheelZoomTarget(28, -100)).toBeGreaterThan(28);
+    expect(wheelZoomTarget(28, 100)).toBeLessThan(28);
+    expect(wheelZoomTarget(28, -100)).toBeCloseTo(35, 0);
+    expect(wheelZoomTarget(79, -10000)).toBe(80);
+    expect(wheelZoomTarget(9, 10000)).toBe(8);
+    expect(wheelZoomTarget(28, 0)).toBe(28);
+  });
+
+  it("wheelZoomTarget：トラックパッドの小さなdeltaも小数のまま積算できる", () => {
+    let w = 28;
+    for (let i = 0; i < 20; i++) w = wheelZoomTarget(w, -2);
+    expect(w).toBeGreaterThan(28);
+  });
+
+  it("isDayTickLabelVisible：12px以上は毎日・未満は月曜だけ", () => {
+    const mon = new Date(2026, 9, 12);
+    const tue = new Date(2026, 9, 13);
+    expect(isDayTickLabelVisible(12, tue)).toBe(true);
+    expect(isDayTickLabelVisible(28, tue)).toBe(true);
+    expect(isDayTickLabelVisible(11, tue)).toBe(false);
+    expect(isDayTickLabelVisible(8, tue)).toBe(false);
+    expect(isDayTickLabelVisible(8, mon)).toBe(true);
+  });
+
+  it("weekLabelForWidth：狭い週は短縮し、さらに狭ければ空にする", () => {
+    expect(weekLabelForWidth("10月W2", 120)).toBe("10月W2");
+    expect(weekLabelForWidth("10月W2", 44)).toBe("10月W2");
+    expect(weekLabelForWidth("10月W2", 43)).toBe("W2");
+    expect(weekLabelForWidth("10月W2", 20)).toBe("W2");
+    expect(weekLabelForWidth("10月W2", 19)).toBe("");
   });
 });
 

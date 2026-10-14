@@ -13,7 +13,10 @@ import { isCompletedForProgress } from "../../lib/taskMeta";
 export { computeRangeSelection };
 
 export const DAY_WIDTH_DEFAULT = 28;
-export const ZOOM_LEVELS = [14, 20, 28, 36, 48] as const;
+/** 1日あたりの幅（px）の範囲。スライドバーで連続的に調節できる（旧5段階 14〜48 は範囲内） */
+export const ZOOM_MIN = 8;
+export const ZOOM_MAX = 80;
+export const ZOOM_STEP_RATIO = 1.25;
 export const STAGNANT_THRESHOLD_DAYS = 5;
 export const TODO_COLOR = "#6ee7b7";
 export const MS_COLOR   = "#f59e0b";
@@ -103,10 +106,10 @@ export function calcTaskBar(task: Task, rangeStart: Date, dayWidth: number): { b
   const start = toDate(task.start_date ?? null);
   if (start && start <= due) {
     const barX = diffDays(rangeStart, start) * dayWidth;
-    const barWidth = Math.max((diffDays(start, due) + 1) * dayWidth - 4, dayWidth - 4);
+    const barWidth = Math.max((diffDays(start, due) + 1) * dayWidth - 4, dayWidth - 4, 6);
     return { barX, barWidth };
   }
-  return { barX: diffDays(rangeStart, due) * dayWidth, barWidth: dayWidth - 4 };
+  return { barX: diffDays(rangeStart, due) * dayWidth, barWidth: Math.max(dayWidth - 4, 6) };
 }
 
 /**
@@ -426,18 +429,62 @@ export function computeBulkMoveShifts(tasks: Task[], deltaDays: number): BulkMov
 
 // ===== キーボードショートカット：ズーム / 全選択 / 範囲選択 =====
 
+// ===== ズーム（スライドバー式：1日あたり8〜80px。Ctrl/Cmd+ホイール・+/-キー・ボタンも同じ範囲に収める） =====
+
+/** 範囲内に収めて整数へ丸める（スライドバー・保存値の復元で共通） */
+export function clampDayWidth(v: number): number {
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(v)));
+}
+
 /**
- * ZOOM_LEVELS 配列上で1段階ズームイン/アウトした次の値を返す（clamp：既に最大/最小なら現在値のまま）。
- * ズームボタンのクリックとキーボードショートカット（+/-）の両方がこの1関数を通ることで、
- * ロジックの二重化を避ける。
+ * 「－」「＋」ボタンと +/- キーの1回分。×1.25／÷1.25 の等比で、必ず1px以上動かし、8〜80に収める。
+ * 旧5段階（14/20/28/36/48）の1段あたりの変化（約1.25〜1.4倍）に近い感覚。
  */
-export function clampZoom(current: number, direction: "in" | "out"): number {
-  const idx = (ZOOM_LEVELS as readonly number[]).indexOf(current);
-  if (idx < 0) return current;
-  if (direction === "in") {
-    return idx >= ZOOM_LEVELS.length - 1 ? current : ZOOM_LEVELS[idx + 1];
-  }
-  return idx <= 0 ? current : ZOOM_LEVELS[idx - 1];
+export function stepZoom(current: number, direction: "in" | "out"): number {
+  if (direction === "in") return clampDayWidth(Math.max(Math.round(current * ZOOM_STEP_RATIO), current + 1));
+  return clampDayWidth(Math.min(Math.round(current / ZOOM_STEP_RATIO), current - 1));
+}
+
+/** localStorage の保存値の復元：範囲内の数値はそのまま（旧5段階の値も有効）、範囲外・非数値・未保存は既定値 */
+export function parseSavedZoom(raw: string | null): number {
+  if (raw == null || raw.trim() === "") return DAY_WIDTH_DEFAULT;
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return DAY_WIDTH_DEFAULT;
+  const r = Math.round(n);
+  return r >= ZOOM_MIN && r <= ZOOM_MAX ? r : DAY_WIDTH_DEFAULT;
+}
+
+/**
+ * 拡大縮小の基準点（画面左端から anchorX px の位置にある日付）が動かないよう、新しい scrollLeft を返す。
+ * ホイールならマウス位置、ボタン・スライドバー・キーなら表示領域の中央を anchorX に渡す。
+ */
+export function computeZoomScrollLeft(p: {
+  scrollLeft: number; anchorX: number; prevDayWidth: number; nextDayWidth: number;
+}): number {
+  if (p.prevDayWidth <= 0) return p.scrollLeft;
+  const anchorDay = (p.scrollLeft + p.anchorX) / p.prevDayWidth;
+  return Math.max(0, anchorDay * p.nextDayWidth - p.anchorX);
+}
+
+/**
+ * Ctrl/Cmd+ホイール（トラックパッドのピンチ含む）の1イベント分。マウスホイール1ノッチ（deltaY=±100）が
+ * ×1.25／÷1.25 になる指数。小さなdeltaを取りこぼさないよう、丸めずに小数で返す（呼び出し側が積算して丸める）。
+ */
+export function wheelZoomTarget(current: number, deltaY: number): number {
+  const next = current * Math.exp(-deltaY * (Math.log(ZOOM_STEP_RATIO) / 100));
+  return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, next));
+}
+
+/** 日の目盛り数字：幅が狭い（12px未満）ときは重なって読めないので月曜だけに間引く */
+export function isDayTickLabelVisible(dayWidth: number, date: Date): boolean {
+  return dayWidth >= 12 || date.getDay() === 1;
+}
+
+/** 週ラベル：週ブロックの幅に収まらないときは「10月W2」→「W2」→空へ段階的に縮める */
+export function weekLabelForWidth(label: string, blockWidth: number): string {
+  if (blockWidth >= 44) return label;
+  if (blockWidth >= 20) return label.replace(/^\d+月/, "");
+  return "";
 }
 
 /** Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」を組み立てるための入力データ */

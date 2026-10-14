@@ -23,7 +23,8 @@ import { isAssignedTo, suppressOverdue, isCompletedForProgress } from "../../lib
 import { EmptyState } from "../common/EmptyState";
 import { showToast } from "../common/Toast";
 import {
-  DAY_WIDTH_DEFAULT, ZOOM_LEVELS,
+  DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, parseSavedZoom, stepZoom, clampDayWidth,
+  computeZoomScrollLeft, wheelZoomTarget, isDayTickLabelVisible, weekLabelForWidth,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
   GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
   type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
@@ -31,7 +32,7 @@ import {
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
   computeDayTicks, dayTickColor,
-  clampZoom, computeVisibleOrderedTaskIds, computeRangeSelection,
+  computeVisibleOrderedTaskIds, computeRangeSelection,
   xToDate, computeDragCreateRange,
   type GanttRow, buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges,
 } from "./ganttUtils";
@@ -268,8 +269,7 @@ export function GanttView({
   // ズームレベル（dayWidth）— totalWidth/todayX より前に宣言が必要
   const [dayWidth, setDayWidth] = useState<number>(() => {
     try {
-      const saved = parseInt(localStorage.getItem(KEYS.GANTT_ZOOM) ?? "", 10);
-      return (ZOOM_LEVELS as readonly number[]).includes(saved) ? saved : DAY_WIDTH_DEFAULT;
+      return parseSavedZoom(localStorage.getItem(KEYS.GANTT_ZOOM));
     } catch { return DAY_WIDTH_DEFAULT; }
   });
 
@@ -631,31 +631,82 @@ export function GanttView({
 
   const prevDayWidthRef = useRef(dayWidth);
 
-  const zoomIn = useCallback(() => {
+  // ===== 拡大縮小（スライドバー／ボタン／+-キー／Ctrl・Cmd+ホイール） =====
+  // 1日あたりの幅は dayWidth（整数・8〜80）。スライドバーとホイールは1フレームに何度もイベントが来るため、
+  // 目標値を ref に溜めて requestAnimationFrame で1回だけ state に反映する（ガント全体の再描画を1フレーム1回に抑える）。
+  const zoomTargetRef = useRef(dayWidth); // 目標値。ホイール積算のため小数のまま持つ
+  const zoomAnchorXRef = useRef<number | null>(null); // 基準点＝スクロール領域の左端からのpx。nullなら表示領域の中央
+  const zoomRafRef = useRef<number | null>(null);
+  const sliderRef = useRef<HTMLInputElement>(null);
+
+  const commitDayWidth = useCallback((next: number) => {
     setDayWidth(cur => {
-      const next = clampZoom(cur, "in");
-      if (next !== cur) localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
+      if (cur === next) return cur;
+      try { localStorage.setItem(KEYS.GANTT_ZOOM, String(next)); } catch { /* 保存できなくても表示は変える */ }
       return next;
     });
   }, []);
+
+  const scheduleZoom = useCallback((target: number, anchorX: number | null) => {
+    zoomTargetRef.current = target;
+    zoomAnchorXRef.current = anchorX;
+    if (zoomRafRef.current != null) return;
+    zoomRafRef.current = requestAnimationFrame(() => {
+      zoomRafRef.current = null;
+      commitDayWidth(clampDayWidth(zoomTargetRef.current));
+    });
+  }, [commitDayWidth]);
+
+  useEffect(() => () => {
+    if (zoomRafRef.current != null) cancelAnimationFrame(zoomRafRef.current);
+  }, []);
+
+  const zoomIn = useCallback(() => {
+    scheduleZoom(stepZoom(clampDayWidth(zoomTargetRef.current), "in"), null);
+  }, [scheduleZoom]);
 
   const zoomOut = useCallback(() => {
-    setDayWidth(cur => {
-      const next = clampZoom(cur, "out");
-      if (next !== cur) localStorage.setItem(KEYS.GANTT_ZOOM, String(next));
-      return next;
-    });
-  }, []);
+    scheduleZoom(stepZoom(clampDayWidth(zoomTargetRef.current), "out"), null);
+  }, [scheduleZoom]);
 
-  // ズーム変更時：画面中央の日付を維持してスクロール位置を補正
+  // 外部要因（保存値の復元・ボタン・ホイール）で dayWidth が変わったら、スライドバーの位置と積算値を合わせる
   useEffect(() => {
-    if (!scrollRef.current || !scrollInitialized.current) return;
+    if (sliderRef.current && sliderRef.current.value !== String(dayWidth)) sliderRef.current.value = String(dayWidth);
+    if (clampDayWidth(zoomTargetRef.current) !== dayWidth) zoomTargetRef.current = dayWidth;
+  }, [dayWidth]);
+
+  // ズーム変更時：基準点（ホイールならマウス位置・それ以外は画面中央）の日付が動かないようスクロール位置を補正。
+  // 描画前に補正して、一瞬ずれた位置が見えないようにする
+  useLayoutEffect(() => {
     if (prevDayWidthRef.current === dayWidth) return;
     const el = scrollRef.current;
-    const centerIdx = Math.floor((el.scrollLeft + el.clientWidth / 2) / prevDayWidthRef.current);
-    el.scrollLeft = Math.max(0, centerIdx * dayWidth - el.clientWidth / 2);
+    if (el && scrollInitialized.current) {
+      el.scrollLeft = computeZoomScrollLeft({
+        scrollLeft: el.scrollLeft,
+        anchorX: zoomAnchorXRef.current ?? el.clientWidth / 2,
+        prevDayWidth: prevDayWidthRef.current,
+        nextDayWidth: dayWidth,
+      });
+    }
+    zoomAnchorXRef.current = null;
     prevDayWidthRef.current = dayWidth;
   }, [dayWidth]);
+
+  // Ctrl/Cmd+ホイール（トラックパッドのピンチはctrlKey付きwheelで届く）。ガントのバー領域の上でだけ
+  // ブラウザ全体のズームを止める（preventDefault するため passive:false で登録。Reactのonwheelはpassiveで使えない）
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || isPreview || isMobile) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1; // 行・ページ単位の端末をpx相当へ
+      // 積算値（小数）から続ける。毎回 dayWidth（整数）から始めると、ピンチの小さなdeltaが丸めで消えて動かなくなる
+      scheduleZoom(wheelZoomTarget(zoomTargetRef.current, e.deltaY * unit), e.clientX - el.getBoundingClientRect().left);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [isPreview, isMobile, scheduleZoom]);
 
   const [labelWidth, setLabelWidth] = useState(() => {
     if (isMobile) return 110;
@@ -2292,36 +2343,56 @@ export function GanttView({
             fontWeight: "600",
           }}>今日</button>
         )}
-        {/* ズームボタン */}
+        {/* 拡大縮小：－／スライドバー／＋。Ctrl(Cmd)+ホイール・+/-キーでも動かせる。
+            スライドバーは非制御（defaultValue＋ref同期）：rAFでまとめて反映する間に、制御inputだと
+            つまみが元の位置へ戻ってガタつくため */}
         {!isPreview && (
           <div style={{ display: "flex", alignItems: "center", gap: "2px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden", flexShrink: 0 }}>
             <button
               onClick={zoomOut}
-              disabled={(ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) <= 0}
-              title="縮小"
+              disabled={dayWidth <= ZOOM_MIN}
+              title="縮小（－キー）"
+              aria-label="ガントを縮小"
               style={{
                 ...headerBtnStyle,
                 border: "none", borderRadius: 0,
                 padding: "4px 8px",
-                opacity: (ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) <= 0 ? 0.3 : 1,
+                opacity: dayWidth <= ZOOM_MIN ? 0.3 : 1,
               }}
             >
               <ZoomIcon minus />
             </button>
-            <div style={{ width: 1, height: 16, background: "var(--color-border-primary)" }} />
+            <input
+              ref={sliderRef}
+              type="range"
+              min={ZOOM_MIN}
+              max={ZOOM_MAX}
+              step={1}
+              defaultValue={dayWidth}
+              onInput={e => scheduleZoom(Number((e.target as HTMLInputElement).value), null)}
+              aria-label="ガントの表示倍率"
+              aria-valuetext={`1日あたり${dayWidth}ピクセル`}
+              title="ガントの表示倍率（Ctrl＋マウスホイールでも変えられます）"
+              style={{ width: 84, minWidth: 0, margin: 0, cursor: "pointer", accentColor: "var(--color-brand)" }}
+            />
             <button
               onClick={zoomIn}
-              disabled={(ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) >= ZOOM_LEVELS.length - 1}
-              title="拡大"
+              disabled={dayWidth >= ZOOM_MAX}
+              title="拡大（＋キー）"
+              aria-label="ガントを拡大"
               style={{
                 ...headerBtnStyle,
                 border: "none", borderRadius: 0,
                 padding: "4px 8px",
-                opacity: (ZOOM_LEVELS as readonly number[]).indexOf(dayWidth) >= ZOOM_LEVELS.length - 1 ? 0.3 : 1,
+                opacity: dayWidth >= ZOOM_MAX ? 0.3 : 1,
               }}
             >
               <ZoomIcon />
             </button>
+            <span
+              aria-hidden="true"
+              style={{ fontSize: "10px", color: "var(--color-text-tertiary)", minWidth: 40, paddingRight: 6, textAlign: "right", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}
+            >{dayWidth}px/日</span>
           </div>
         )}
       </div>
@@ -2449,7 +2520,7 @@ export function GanttView({
                     // 月の最初の週（W1）＝月境界。区切り線を少し強めて月の大局を掴めるようにする
                     borderLeft: wb.isMonthStart ? "1px solid var(--color-border-primary)" : "1px solid var(--color-border-secondary)",
                   }}>
-                    {wb.label}
+                    {weekLabelForWidth(wb.label, wb.width)}
                   </div>
                 ))}
               </div>
@@ -2457,8 +2528,10 @@ export function GanttView({
                   祝日はホバーで祝日名を表示。dayTicksはuseMemo済みのためズームや折りたたみでの
                   再レンダーでは再計算されない） */}
               <div style={{ height: GANTT_HEADER_DAY_TICK_HEIGHT, position: "relative", borderTop: "1px solid var(--color-border-secondary)" }}>
-                {dayTicks.map(tick => {
+                {dayTicks.map((tick, ti) => {
                   const color = dayTickColor(tick.colorKind);
+                  // 幅が狭いときは月曜だけ数字を出し、はみ出しを許す（8pxの枠に2桁は収まらない）
+                  const showDay = isDayTickLabelVisible(dayWidth, days[ti]);
                   return (
                     <div
                       key={tick.x}
@@ -2473,10 +2546,11 @@ export function GanttView({
                         paddingBottom: 1,
                         fontSize: "8px", lineHeight: 1,
                         color,
-                        overflow: "hidden",
+                        overflow: dayWidth < 12 ? "visible" : "hidden",
+                        whiteSpace: "nowrap",
                       }}
                     >
-                      {tick.day}
+                      {showDay ? tick.day : ""}
                     </div>
                   );
                 })}
