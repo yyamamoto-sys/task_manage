@@ -1105,6 +1105,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <GuideModeView
             onShowOnboarding={() => setIsOnboardingOverlayOpen(true)}
             onStartTour={(tourId: string) => { setIsGuideOpen(false); tour.start(tourId); }}
+            isAdmin={!isGuest && (currentUser.is_admin === true || currentUser.is_super_admin === true)}
           />
         </Suspense>
       </div>

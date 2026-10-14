@@ -10,6 +10,10 @@ import { GuideMarkdown } from "./GuideMarkdown";
 import { groupedDocs, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
 import { TOUR_LIST } from "../tour/tours";
+import { GUIDE_SVGS } from "../../lib/docs/guideAssets";
+import {
+  GUIDE_SET_LABELS, downloadGuideHtml, selectGuideSet, type GuideSetKind,
+} from "../../lib/docs/guideHtmlExport";
 
 const SECTION_LABELS: Record<string, string> = {
   "": "トップ",
@@ -36,9 +40,11 @@ interface GuideModeViewProps {
   onShowOnboarding?: () => void;
   /** 指定 tour id のツアーを再生する（MainLayout 側で TourProvider.start に橋渡し） */
   onStartTour?: (tourId: string) => void;
+  /** 管理者のみ「システム構成」の保存ボタンを出す（ゲストは false） */
+  isAdmin?: boolean;
 }
 
-export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewProps = {}) {
+export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }: GuideModeViewProps = {}) {
   const groups = useMemo(() => groupedDocs(), []);
   const allEntries = useMemo(() => groups.flatMap(g => g.entries), [groups]);
 
@@ -129,6 +135,8 @@ export function GuideModeView({ onShowOnboarding, onStartTour }: GuideModeViewPr
             onOpenDoc={setCurrentSlug}
             onStartTour={onStartTour}
             onShowOnboarding={onShowOnboarding}
+            allEntries={allEntries}
+            isAdmin={isAdmin}
           />
         ) : !current ? (
           <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "60px 0" }}>
@@ -188,9 +196,13 @@ interface GuideHomeProps {
   onOpenDoc: (slug: string) => void;
   onStartTour?: (tourId: string) => void;
   onShowOnboarding?: () => void;
+  allEntries: DocEntry[];
+  isAdmin: boolean;
 }
 
-function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHomeProps) {
+const EXPORT_KINDS: GuideSetKind[] = ["manual", "spec", "architecture"];
+
+function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding, allEntries, isAdmin }: GuideHomeProps) {
   const mainTour = TOUR_LIST[0];
   // 【設計意図】主要ツアー（mainTour）は大きな導線のまま維持し、それ以外のツアー
   // （例：OKRモードのガイドツアー）は「ほかのツアー」として小さめのカードで並べる。
@@ -292,6 +304,25 @@ function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding }: GuideHo
           👋 オンボーディング（3ステップ）を見直す
         </button>
       )}
+
+      {/* 資料としてHTMLで保存（ブラウザ内で生成。版・出力日時つき） */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px" }}>
+        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>資料として保存（HTML）：</span>
+        {EXPORT_KINDS.filter(k => selectGuideSet(k, allEntries, isAdmin).length > 0).map(k => (
+          <button
+            key={k}
+            onClick={() => downloadGuideHtml(k, selectGuideSet(k, allEntries, isAdmin), GUIDE_SVGS)}
+            style={{
+              padding: "6px 12px", fontSize: "12px", fontWeight: 600,
+              background: "var(--color-bg-secondary)", color: "var(--color-text-primary)",
+              border: "1px solid var(--color-border-secondary)",
+              borderRadius: "var(--radius-md)", cursor: "pointer",
+            }}
+          >
+            ⭳ {GUIDE_SET_LABELS[k]}
+          </button>
+        ))}
+      </div>
 
       {/* 目次 */}
       <div>
