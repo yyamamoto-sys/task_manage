@@ -7,8 +7,8 @@
 // 3. 期限アラート：期限超過・本日期限のタスク（赤バッジ）
 // 4. PJ進捗一覧：全PJのタスク完了率
 //
-// フィルター：「自分のみ/全員」トグル＋PJチップ（複数選択）。
-// サイドバーでPJを選択中はそのPJに絞り込まれ、ヘッダーに絞り込みバナーを表示する（PJチップは隠れる）。
+// フィルター：「自分のみ/全員」トグル＋対象PJのプルダウン（単一選択。KRクリックだけは複数PJに絞る）。
+// サイドバーでPJを選択中はそのPJに絞り込まれ、ヘッダーに絞り込みバナーを表示する（プルダウンは隠れる）。
 //
 // KR進捗率の計算方針（未決定論点Aの暫定解）：
 // 「そのKRに紐づくTF→PJ→タスクの完了率の平均」で計算する。
@@ -37,6 +37,8 @@ import { HelpButton } from "../guide/HelpButton";
 import { isAssignedTo, getAssigneeIds, suppressOverdue, isActiveTaskStatus, isPausedOrCancelledStatus, isCompletedForProgress } from "../../lib/taskMeta";
 import { OnboardingHome } from "./OnboardingHome";
 import { analyzeAllProjects, type AllProjectsPjSummary } from "../../lib/ai/allProjectsAnalysisClient";
+import { isAiTargetProject } from "../../lib/ai/aiTarget";
+import { ProjectTargetSelect } from "../common/ProjectTargetSelect";
 import { AIProgressLoader } from "../common/AIProgressLoader";
 import { MarkdownLite } from "../common/MarkdownLite";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -339,7 +341,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     setAllAnalysisResult(null);
     setShowAllAnalysis(true);
     try {
-      const activePjs = projects.filter(pj => pj.status === "active");
+      const activePjs = projects.filter(pj => isAiTargetProject(pj) && pj.status === "active");
       const pjSummaries: AllProjectsPjSummary[] = activePjs.map(pj => {
         const pjTasks = allTasks.filter(t => t.project_id === pj.id && !isParentTask(t, allTasks));
         const pjMs = milestones
@@ -395,11 +397,10 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
     }
   }, [projects, allTasks, milestones, members, allMembers, todayS, stagnantDays]);
 
-  const togglePj = (id: string) => {
+  // 対象PJのプルダウン（単一選択）。null＝すべてのPJ。KRクリックで複数PJに絞られている間は表示専用の選択肢になる
+  const selectTargetPj = (id: string | null) => {
     setActiveKrId(null);
-    setSelectedPjIds(prev =>
-      prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id]
-    );
+    setSelectedPjIds(id == null ? [] : [id]);
   };
 
   // KRバークリック：そのKRに紐づくPJでフィルター
@@ -526,28 +527,15 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           <HelpButton modeKey="dashboard.main" title="ダッシュボードの使い方を開く" />
         </div>
 
-        {/* PJフィルターチップ（サイドバーPJ未選択時のみ） */}
+        {/* 対象PJのプルダウン（サイドバーPJ未選択時のみ） */}
         {!selectedProject && projects.length > 0 && (
-          <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
-            {projects.map(pj => (
-              <button
-                key={pj.id}
-                onClick={() => togglePj(pj.id)}
-                style={{
-                  display: "flex", alignItems: "center", gap: "4px",
-                  padding: "3px 10px", fontSize: "10px", borderRadius: "var(--radius-full)",
-                  border: selectedPjIds.includes(pj.id) ? `1px solid ${pj.color_tag}` : "1px solid var(--color-border-primary)",
-                  background: selectedPjIds.includes(pj.id) ? `${pj.color_tag}22` : "var(--color-bg-primary)",
-                  color: selectedPjIds.includes(pj.id) ? pj.color_tag : "var(--color-text-secondary)",
-                  cursor: "pointer", fontWeight: selectedPjIds.includes(pj.id) ? "500" : "400",
-                  transition: "background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast)",
-                }}
-              >
-                <span style={{ width: 5, height: 5, borderRadius: "50%", background: pj.color_tag, display: "inline-block" }} />
-                {pj.name.slice(0, 10)}
-              </button>
-            ))}
-          </div>
+          <ProjectTargetSelect
+            projects={projects}
+            value={selectedPjIds.length === 1 ? selectedPjIds[0] : null}
+            multiCount={selectedPjIds.length > 1 ? selectedPjIds.length : undefined}
+            onChange={selectTargetPj}
+            style={{ width: "220px", maxWidth: "100%", flexShrink: 0 }}
+          />
         )}
 
         {/* 自分のみ/全員トグル */}

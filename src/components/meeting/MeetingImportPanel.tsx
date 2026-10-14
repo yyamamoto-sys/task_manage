@@ -10,6 +10,7 @@ import { useState, useRef, useMemo, useCallback } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedMembers } from "../../stores/appStore";
 import type { Member, Project, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
+import { resolveAiScope } from "../../lib/ai/aiTarget";
 import {
   parseTranscript,
   extractMeetingData,
@@ -73,13 +74,15 @@ interface Props {
   onClose: () => void;
   currentUser: Member;
   inline?: boolean;
+  /** AIパネルの「対象PJ」。null＝すべてのPJ（アーカイブ・完了を除く）／id＝そのPJだけ。PJの候補とタスクの一覧がこの範囲になる */
+  targetPjId?: string | null;
 }
 
 type Step = "input" | "analyzing" | "review" | "applying" | "done";
 
 // ===== メインコンポーネント =====
 
-export function MeetingImportPanel({ onClose, currentUser, inline = false }: Props) {
+export function MeetingImportPanel({ onClose, currentUser, inline = false, targetPjId = null }: Props) {
   const allProjects = useAppStore(selectScopedProjects);
   const allTasks    = useAppStore(selectScopedTasks);
   const allMembers  = useAppStore(selectScopedMembers);
@@ -88,14 +91,16 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false }: Pro
   const saveTask    = useAppStore(s => s.saveTask);
   const saveProject = useAppStore(s => s.saveProject);
 
-  const projects = useMemo(
-    () => allProjects.filter(p => !p.is_deleted && p.status === "active"),
-    [allProjects],
+  const taskProjects = useAppStore(s => s.taskProjects);
+  // AIに渡すPJ・タスクの範囲は aiTarget.ts が決める（アーカイブ済みPJのタスクと完了・中止のタスクは送らない）
+  const aiScope = useMemo(
+    () => resolveAiScope({
+      projects: allProjects, tasks: allTasks, taskProjects, targetPjId, includeProjectlessTasks: true,
+    }),
+    [allProjects, allTasks, taskProjects, targetPjId],
   );
-  const tasks = useMemo(
-    () => active(allTasks),
-    [allTasks],
-  );
+  const projects = useMemo(() => aiScope.projects.map(sp => sp.project), [aiScope]);
+  const tasks = aiScope.openTasks;
   const members = useMemo(
     () => active(allMembers),
     [allMembers],

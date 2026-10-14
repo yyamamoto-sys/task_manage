@@ -11,6 +11,7 @@
 
 import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
 import { active } from "../localData/localStore";
+import { isAiTargetProject, resolveAiScope } from "./aiTarget";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
 import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
@@ -172,6 +173,8 @@ interface BuildOptions {
   taskProjects?: TaskProject[];
   /** PJ↔TF の紐付け。AI に PJ→TF→KR の OKR文脈を伝えるため（双方向に展開） */
   projectTaskForces?: ProjectTaskForce[];
+  /** 送るPJの範囲。null/未指定＝「すべてのPJ」（アーカイブ・完了PJを除く）／id＝そのPJだけ（aiTarget.ts） */
+  targetPjId?: string | null;
   consultationType: ConsultationType;
   consultation: string;
   scope: AIConsultationPayload["scope"];
@@ -196,9 +199,12 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   const today = new Date();
   const shortIdMap = new Map<string, string>();
 
-  const activePJs = opts.projects.filter(p => !p.is_deleted && p.status !== "archived");
   const activeTasks = active(opts.tasks);
   const taskProjects = opts.taskProjects ?? [];
+  // 送るPJ・タスクの範囲は aiTarget.ts が唯一の判定元。個別タスクは完了・中止を除く（件数は pj_progress に残す）
+  const aiScope = resolveAiScope({
+    projects: opts.projects, tasks: opts.tasks, taskProjects, targetPjId: opts.targetPjId ?? null,
+  });
   const projectTaskForces = opts.projectTaskForces ?? [];
 
   // PJ id → 紐付くTFの番号ラベル（"TF{krIdx+1}-{tf_number}"）配列
@@ -215,7 +221,8 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
       tfNumberById.set(tf.id, label);
     }
   }
-  const pjNameById = new Map(opts.projects.map(p => [p.id, p.name]));
+  // OKR文脈のTF→PJ名は送信範囲に関わらず、アーカイブ済みを除く全PJ名（OKRの文脈は絞らない）
+  const pjNameById = new Map(opts.projects.filter(isAiTargetProject).map(p => [p.id, p.name]));
   const linkedTfLabelsByPj = new Map<string, string[]>();
   const linkedPjNamesByTf  = new Map<string, string[]>();
   for (const ptf of projectTaskForces) {
@@ -247,20 +254,11 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
     return names.length > 0 ? names.join("・") : "未担当";
   };
 
-  // PJ ごとに直接紐付くタスクと task_projects 経由のセカンダリタスクを合算
-  const secondaryTaskIdsByPj = new Map<string, Set<string>>();
-  for (const tp of taskProjects) {
-    if (!secondaryTaskIdsByPj.has(tp.project_id)) secondaryTaskIdsByPj.set(tp.project_id, new Set());
-    secondaryTaskIdsByPj.get(tp.project_id)!.add(tp.task_id);
-  }
-
-  const aiProjects: AIProject[] = activePJs.map((pj, pjIdx) => {
+  const aiProjects: AIProject[] = aiScope.projects.map(({ project: pj, allTasks: pjTasks, openTasks: pjOpenTasks }, pjIdx) => {
     const pjShortId = makeShortId("pj", pjIdx);
     shortIdMap.set(pjShortId, pj.id);
 
-    const secondaryIds = secondaryTaskIdsByPj.get(pj.id) ?? new Set<string>();
-    const pjTasks = activeTasks.filter(t => t.project_id === pj.id || secondaryIds.has(t.id));
-    const aiTasks: AITask[] = pjTasks.map((task) => {
+    const aiTasks: AITask[] = pjOpenTasks.map((task) => {
       const taskShortId = makeShortId("task", taskCounter);
       taskCounter++;
       shortIdMap.set(taskShortId, task.id);

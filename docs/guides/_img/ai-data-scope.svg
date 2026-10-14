@@ -6,8 +6,8 @@
   <!-- 左：送られる -->
   <rect x="20" y="48" width="290" height="346" rx="8" style="fill:var(--color-bg-warning);stroke:var(--color-border-warning)" />
   <text x="165" y="76" text-anchor="middle" font-size="15" font-weight="700" style="fill:var(--color-text-warning)">送られるもの</text>
-  <text x="34" y="106" font-size="13" fill="currentColor">・表示部署の全PJ（アーカイブを</text>
-  <text x="34" y="124" font-size="13" fill="currentColor">　除く）と全タスク</text>
+  <text x="34" y="106" font-size="13" fill="currentColor">・「対象PJ」で選んだPJの未完了</text>
+  <text x="34" y="124" font-size="13" fill="currentColor">　タスク（既定は進行中の全PJ）</text>
   <text x="34" y="150" font-size="13" fill="currentColor">・PJ名・目的・状態・期間</text>
   <text x="34" y="176" font-size="13" fill="currentColor">・タスク名・担当・状態・優先度・</text>
   <text x="34" y="194" font-size="13" fill="currentColor">　日付・工数</text>
@@ -30,6 +30,9 @@
   <text x="344" y="202" font-size="13" fill="currentColor">・個人OKRの「自分のメモ」</text>
   <text x="344" y="220" font-size="13" fill="currentColor">　（AI相談には含まれない）</text>
   <text x="344" y="246" font-size="13" fill="currentColor">・APIキー（画面側には出ない）</text>
+  <text x="344" y="272" font-size="13" fill="currentColor">・完了・中止のタスク</text>
+  <text x="344" y="298" font-size="13" fill="currentColor">・アーカイブ済みのPJ</text>
+  <text x="344" y="316" font-size="13" fill="currentColor">　（「すべてのPJ」では完了のPJも）</text>
 
   <!-- 下部の注意 -->
   <rect x="20" y="410" width="600" height="90" rx="8" style="fill:var(--color-bg-primary);stroke:var(--color-border-primary)" />

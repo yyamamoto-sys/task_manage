@@ -8123,3 +8123,16 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #   タスクは通知ベースライン扱い。finalizedMentionsAllPaths.test.ts で全経路を検査。
 # * 設定ページの ? を一般メンバーには settings.member（管理者は admin.settings）に出し分け。個人OKR取込画面の「AIへの送信について」の文言を実態どおりに修正。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+# v3.141（2026-10-14）：AIパネルに「対象PJ」を追加し、AIに送るPJ・タスクの範囲を絞る（CLAUDE.md Section 73）
+# * 背景：タスクの多いEGG部署でAIの応答が遅い。AI相談は表示部署のアーカイブ以外の全PJの全タスク（完了・中止を含む）を毎回送っていた。資料インプットはアーカイブ済みPJのタスクも送っていた。
+# * 共通部品 components/common/ProjectTargetSelect.tsx（既存 CustomSelect を使用。色ドット・省略時はtitleに全文・PJが9件以上で検索付き）と、選択肢を作る lib/project/projectTargetOptions.ts。AIパネルとダッシュボードの両方で使う。
+# * 送る範囲の唯一の判定元 lib/ai/aiTarget.ts（isAiTargetProject／isAiBulkTargetProject／isAiSendableTask／aiTargetPickerProjects／resolveAiScope）。AI相談の「すべてのPJ」はアーカイブ・完了PJを除く、個別PJはそのPJだけ（完了PJも可）。完了・中止のタスクは送らない。
+# * payloadBuilder：targetPjId を受け取り resolveAiScope を使う。pj_progress は完了・中止を含むPJ単位の件数のまま。parent_task_name は完了済みの親も解決する。okr_context の linked_pj_names は絞り込みに関わらずアーカイブ以外の全PJ名（アーカイブ済みPJ名の混入を除去）。useAIConsultation は projectIds 配列から targetPjId に変更。
+# * 資料インプット（MeetingImportPanel）：PJ候補とタスクを同じ範囲に（アーカイブ済みPJのタスクが混ざっていた漏れを解消）。「すべてのPJ」ではPJに属さないタスクも送る（従来どおり）。
+# * AIパネル（ConsultationPanel）：上部に「対象PJ」と件数の目安を表示。初期値はサイドバーで選択中のPJ（MainLayout から defaultTargetProjectId を渡す。サイドバーの選択が変わったら追従）。選択中のPJが選択肢に無い場合は「すべてのPJ」扱い。
+# * ダッシュボード：PJチップ（複数選択・10字切り）を ProjectTargetSelect に置き換え。KRバークリックによる複数PJの絞り込みは維持（表示専用の選択肢「KRで絞り込み中（N PJ）」）。全PJ分析は isAiTargetProject を通す。
+# * システムプロンプト：tasks に完了・中止は含まれないこと、pj_progress は完了・中止を含むPJ全体の件数であること、完了履歴（期間別）は一覧で答えられないことを追記（systemPrompt.ts。Edge Function は変更なし）。uiGuide.ts の機能一覧も追従。
+# * 機械チェック：aiTargetCoverage.test.ts（AIへPJ・タスクを送る経路が aiTarget を通っているか。呼び出し元を増やすと落ちる）。
+# * 資料：consultation.md・meeting-import.md・dashboard.md・08_spec.md・_img/ai-data-scope.svg。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。

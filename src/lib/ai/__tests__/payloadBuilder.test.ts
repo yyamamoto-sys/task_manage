@@ -661,3 +661,84 @@ describe("buildPayload — retry_hint", () => {
     expect("retry_hint" in payload).toBe(false);
   });
 });
+
+describe("buildPayload — 送る範囲（対象PJ・完了/中止タスクの除外。aiTarget.ts）", () => {
+  const base = {
+    members: [makeMember()],
+    consultationType: "change" as const,
+    consultation: "x",
+    scope: "all_pj" as const,
+  };
+  const projects = [
+    makeProject({ id: "pj-a", name: "進行中A" }),
+    makeProject({ id: "pj-b", name: "進行中B" }),
+    makeProject({ id: "pj-c", name: "完了C", status: "completed" }),
+    makeProject({ id: "pj-x", name: "アーカイブX", status: "archived" }),
+  ];
+  const tasks = [
+    makeTask({ id: "a-todo", name: "A未着手", project_id: "pj-a", status: "todo" }),
+    makeTask({ id: "a-done", name: "A完了", project_id: "pj-a", status: "done" }),
+    makeTask({ id: "a-cancel", name: "A中止", project_id: "pj-a", status: "cancelled" }),
+    makeTask({ id: "b-prog", name: "B進行", project_id: "pj-b", status: "in_progress" }),
+    makeTask({ id: "c-todo", name: "C未着手", project_id: "pj-c", status: "todo" }),
+    makeTask({ id: "x-todo", name: "X未着手", project_id: "pj-x", status: "todo" }),
+  ];
+
+  it("すべてのPJ：アーカイブ・完了PJを含めず、完了・中止タスクも送らない", () => {
+    const { payload } = buildPayload({ ...base, projects, tasks });
+    expect(payload.projects.map(p => p.pj_name)).toEqual(["進行中A", "進行中B"]);
+    expect(payload.projects.flatMap(p => p.tasks.map(t => t.task_name))).toEqual(["A未着手", "B進行"]);
+  });
+
+  it("個別PJ：そのPJだけ。完了PJでも個別に選べば対象（完了・中止タスクは送らない）", () => {
+    const one = buildPayload({ ...base, projects, tasks, targetPjId: "pj-b" }).payload;
+    expect(one.projects.map(p => p.pj_name)).toEqual(["進行中B"]);
+    const completed = buildPayload({ ...base, projects, tasks, targetPjId: "pj-c" }).payload;
+    expect(completed.projects.map(p => p.pj_name)).toEqual(["完了C"]);
+    expect(completed.projects[0].tasks.map(t => t.task_name)).toEqual(["C未着手"]);
+  });
+
+  it("個別にアーカイブ済みPJを指定しても送らない", () => {
+    const { payload } = buildPayload({ ...base, projects, tasks, targetPjId: "pj-x" });
+    expect(payload.projects).toEqual([]);
+  });
+
+  it("pj_progress は完了・中止を含むPJ単位の件数のまま残る", () => {
+    const { payload } = buildPayload({ ...base, projects, tasks });
+    const a = payload.projects.find(p => p.pj_name === "進行中A")!;
+    expect(a.pj_progress).toMatchObject({ total: 3, done: 1, cancelled: 1, todo: 1 });
+    expect(a.tasks).toHaveLength(1);
+  });
+
+  it("除外したタスクがshortIdMapに入らず、残ったタスクは逆引きできる", () => {
+    const { payload, shortIdMap } = buildPayload({ ...base, projects, tasks });
+    const ids = payload.projects.flatMap(p => p.tasks.map(t => shortIdMap.get(t.task_id)));
+    expect(ids).toEqual(["a-todo", "b-prog"]);
+    expect([...shortIdMap.values()]).not.toContain("a-done");
+    expect([...shortIdMap.values()]).not.toContain("x-todo");
+  });
+
+  it("親タスクが完了済みでも、子タスクの parent_task_name は解決される", () => {
+    const withParent = [
+      makeTask({ id: "p", name: "完了した親", project_id: "pj-a", status: "done" }),
+      makeTask({ id: "c", name: "残る子", project_id: "pj-a", status: "todo", parent_task_id: "p" }),
+    ];
+    const { payload } = buildPayload({ ...base, projects, tasks: withParent });
+    expect(payload.projects[0].tasks).toHaveLength(1);
+    expect(payload.projects[0].tasks[0].parent_task_name).toBe("完了した親");
+  });
+
+  it("OKR文脈の linked_pj_names にアーカイブ済みPJの名前は出ない（完了PJ・絞り込みの外のPJは今まで通り出る）", () => {
+    const tf = { id: "tf1", kr_id: "kr1", tf_number: "1", name: "TF", leader_member_id: "m1", is_deleted: false, quarter: null } as unknown as TaskForce;
+    const kr = { id: "kr1", objective_id: "o1", title: "KR", is_deleted: false } as unknown as KeyResult;
+    const { payload } = buildPayload({
+      ...base, projects, tasks, targetPjId: "pj-a",
+      includeOKR: true,
+      currentObjective: { id: "o1", title: "O", period: "2026" },
+      keyResults: [kr], taskForces: [tf],
+      projectTaskForces: ["pj-a", "pj-c", "pj-x"].map(project_id => ({ project_id, tf_id: "tf1" })) as never,
+    });
+    const names = payload.okr_context!.key_results[0].task_forces[0].linked_pj_names;
+    expect(names).toEqual(["進行中A", "完了C"]);
+  });
+});

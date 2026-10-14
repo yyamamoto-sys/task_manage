@@ -56,9 +56,9 @@ const THINKING_MODEL = "claude-sonnet-4-6";
 /**
  * AI相談機能のReact Hook。
  *
- * @param projectIds - 相談対象のプロジェクトIDリスト（空の場合は全プロジェクト）
+ * @param targetPjId - 相談対象のPJ。null＝「すべてのPJ」（アーカイブ・完了PJを除く）／id＝そのPJだけ（lib/ai/aiTarget.ts）
  */
-export function useAIConsultation(projectIds: string[], currentMemberId: string = "") {
+export function useAIConsultation(targetPjId: string | null, currentMemberId: string = "") {
   const projects          = useAppStore(selectScopedProjects);
   const tasks             = useAppStore(selectScopedTasks);
   const members           = useAppStore(selectScopedMembers);
@@ -109,26 +109,21 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
       setCallState("loading");
       setErrorMessage("");
 
-      // 対象プロジェクトを絞り込む
-      const targetProjects =
-        projectIds.length > 0
-          ? projects.filter((p) => projectIds.includes(p.id))
-          : projects;
-
       // 相談実行者本人（「私／自分」の参照先）を members から解決する
       // 本人は表示部署に属していなくてもよい（全社スーパー管理者が他部署を表示中など）ので全件から引く
       const me = useAppStore.getState().members.find((m) => m.id === currentMemberId);
 
       // ペイロード構築
       const { payload, shortIdMap: newShortIdMap } = buildPayload({
-        projects: targetProjects,
+        projects,
+        targetPjId,
         tasks,
         members,
         taskProjects,
         projectTaskForces,
         consultationType,
         consultation,
-        scope: projectIds.length > 0 ? "related_pj" : "all_pj",
+        scope: targetPjId ? "related_pj" : "all_pj",
         targetDeadline,
         includeOKR,
         currentObjective: objective,
@@ -212,7 +207,7 @@ export function useAIConsultation(projectIds: string[], currentMemberId: string 
         setCallState("error");
       }
     },
-    [projects, tasks, members, projectIds, currentMemberId,
+    [projects, tasks, members, targetPjId, currentMemberId,
       objective, keyResults, taskForces, taskProjects, projectTaskForces],
   );
 

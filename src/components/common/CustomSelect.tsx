@@ -170,7 +170,7 @@ export function CustomSelect({
           {!multi && selected?.color && (
             <span style={{ width: 8, height: 8, borderRadius: "50%", background: selected.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
           )}
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <span title={!multi ? selected?.label : undefined} style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {multi
               ? (selectedCount > 0 ? t("common.select.selectedCount", { count: selectedCount }) : effectivePlaceholder)
               : (selected ? selected.label : effectivePlaceholder)}
@@ -282,7 +282,7 @@ export function CustomSelect({
                 {opt.color && (
                   <span style={{ width: 8, height: 8, borderRadius: "50%", background: opt.color, flexShrink: 0, boxShadow: "0 0 0 1px rgba(0,0,0,.06)" }} />
                 )}
-                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
+                <span title={opt.label} style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.label}</span>
                 {opt.meta && (
                   <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, maxWidth: "48%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{opt.meta}</span>
                 )}

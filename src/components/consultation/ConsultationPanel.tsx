@@ -7,7 +7,7 @@ import { SessionHistoryPanel } from "./SessionHistoryPanel";
 import type { Member, Project } from "../../lib/localData/types";
 import { KEYS } from "../../lib/localData/localStore";
 import type { ConsultationType, ResponseVolume } from "../../lib/ai/types";
-import { useAppStore } from "../../stores/appStore";
+import { useAppStore, selectScopedProjects, selectScopedTasks } from "../../stores/appStore";
 import { useConsultSessionStore } from "../../stores/consultSessionStore";
 import { useAIConsultation } from "../../hooks/useAIConsultation";
 import { ChatHistory } from "./ChatHistory";
@@ -21,6 +21,8 @@ import { inferConsultationType } from "../../lib/ai/inferConsultationType";
 import { HelpButton } from "../guide/HelpButton";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
+import { ProjectTargetSelect } from "../common/ProjectTargetSelect";
+import { aiTargetPickerProjects, resolveAiScope } from "../../lib/ai/aiTarget";
 
 /**
  * 【設計意図】
@@ -38,6 +40,8 @@ interface Props {
   onClose: () => void;
   currentUser: Member;
   selectedProject?: Project | null;
+  /** サイドバーで選択中のPJのid。「対象PJ」の初期値になり、サイドバーの選択が変わるたびに追従する */
+  defaultTargetProjectId?: string | null;
   inline?: boolean;
   defaultMode?: PanelMode;
   onWidthChange?: (width: number) => void;
@@ -59,6 +63,7 @@ export function ConsultationPanel({
   onClose,
   currentUser,
   selectedProject = null,
+  defaultTargetProjectId = null,
   inline = false,
   defaultMode = "consult",
   onWidthChange,
@@ -118,11 +123,30 @@ export function ConsultationPanel({
   const reload         = useAppStore(s => s.reload);
   const currentGroupId = useAppStore(s => s.currentGroupId);
 
+  // ===== 対象PJ（AI相談・資料インプット共通。AIに送る範囲。lib/ai/aiTarget.ts） =====
+  // 初期値はサイドバーで選択中のPJ。パネル内で自由に切り替えられ、サイドバーの選択が変わったら追従する
+  const [targetPjId, setTargetPjId] = useState<string | null>(defaultTargetProjectId);
+  useEffect(() => { setTargetPjId(defaultTargetProjectId); }, [defaultTargetProjectId]);
+  const scopedProjects = useAppStore(selectScopedProjects);
+  const scopedTasks    = useAppStore(selectScopedTasks);
+  const taskProjects   = useAppStore(s => s.taskProjects);
+  const pickerProjects = useMemo(() => aiTargetPickerProjects(scopedProjects), [scopedProjects]);
+  // 選択中のPJが選択肢に無い（アーカイブ・部署切替で範囲外）ときは「すべてのPJ」として扱う
+  const effectiveTargetPjId = targetPjId != null && pickerProjects.some(p => p.id === targetPjId) ? targetPjId : null;
+  // 今送る件数の目安（送信前にだけ使う。相談タブはPJのタスク、資料インプットはPJ外のタスクも含む）
+  const scopeCount = useMemo(() => {
+    const sc = resolveAiScope({
+      projects: scopedProjects, tasks: scopedTasks, taskProjects, targetPjId: effectiveTargetPjId,
+      includeProjectlessTasks: panelMode === "meeting",
+    });
+    return { projects: sc.projects.length, tasks: sc.openTasks.length };
+  }, [scopedProjects, scopedTasks, taskProjects, effectiveTargetPjId, panelMode]);
+
   const {
     callState, session, tokenStatus,
     shortIdMap, proposals, followUpSuggestions, errorMessage,
     submit, reset, undoStack, canUndo, pushUndoSnapshot, undo, undoUntil,
-  } = useAIConsultation([], currentUser.id);
+  } = useAIConsultation(effectiveTargetPjId, currentUser.id);
 
   const hasHistory = session.turns.length > 0;
 
@@ -452,6 +476,31 @@ export function ConsultationPanel({
           </div>
         </div>
 
+        {/* ===== 対象PJ（両タブ共通。AIに送る範囲） ===== */}
+        <div style={{
+          display: "flex", flexDirection: "column", gap: "4px",
+          padding: "8px 14px 6px", flexShrink: 0,
+          borderBottom: "1px solid var(--color-border-primary)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontSize: "11px", fontWeight: 600, color: "var(--color-text-secondary)", flexShrink: 0 }}>対象PJ</span>
+            <ProjectTargetSelect
+              projects={scopedProjects}
+              value={effectiveTargetPjId}
+              onChange={setTargetPjId}
+              style={{ flex: 1, minWidth: 0 }}
+            />
+          </div>
+          <span
+            data-testid="ai-scope-count"
+            title="AIに送る範囲の目安です。件数が多いほど応答に時間がかかります。完了・中止のタスクは送りません"
+            style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.4 }}
+          >
+            対象：{scopeCount.projects}PJ・{scopeCount.tasks}タスク
+            {effectiveTargetPjId == null && "（アーカイブ・完了のPJは含みません）"}
+          </span>
+        </div>
+
         {/* ===== タブ説明バー ===== */}
         {/* display:flex + gap にしているのは、ゲスト回数表示（GuestAiQuotaNotice）を
             ゲスト以外ではnullとして描画自体させず、余分な余白を生まない（gapは実際に
@@ -479,6 +528,7 @@ export function ConsultationPanel({
               inline
               onClose={() => setPanelMode("consult")}
               currentUser={currentUser}
+              targetPjId={effectiveTargetPjId}
             />
           </Suspense>
         )}

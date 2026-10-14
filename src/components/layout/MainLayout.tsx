@@ -1589,6 +1589,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           isOpen={isConsultOpen}
           onClose={() => setIsConsultOpen(false)}
           currentUser={currentUser}
+          defaultTargetProjectId={selectedProjectId}
           onOpenTask={setAiEditTaskId}
           prefillInput={consultPrefill ?? undefined}
         />
@@ -1846,6 +1847,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onClose={() => setIsConsultOpen(false)}
           currentUser={currentUser}
           inline
+          defaultTargetProjectId={selectedProjectId}
           defaultMode={consultDefaultMode}
           onWidthChange={setConsultPanelWidth}
           onResizingChange={setIsConsultResizing}

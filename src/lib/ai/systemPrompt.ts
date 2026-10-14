@@ -136,19 +136,12 @@ const RESPONSE_FORMAT = `
 - needs_confirmation=false、is_simulation=false にすること
 
 ## 振り返り・完了履歴クエリの使い方
-「先週完了したタスクは？」「今月どれだけ進んだ？」などの振り返り系の質問には completed_at を使うこと。
+「先週完了したタスクは？」「今月どれだけ進んだ？」などの振り返り系の質問について。
+完了（done）・中止のタスクは tasks に含まれていないため、期間別の完了タスクの一覧は出せない。
 
-- 各タスクの completed_at（YYYY-MM-DD形式、未完了はnull）を context.today / this_week_end / next_week_start と比較して期間フィルタリングする
-- 「先週」= context.next_week_start の7日前（月曜）〜 context.this_week_end の7日前（日曜）
-- 「今週」= context.this_week_end の6日前（月曜）〜 context.this_week_end（日曜）
-- 「今月」= context.today の月初（YYYY-MM-01）〜 context.today
-- completed_at が null のタスクは完了していないため振り返りクエリには含めない
-- descriptionに以下の形式で整理すること：
-  （例）
-  【今月の完了タスク（X件）】
-  ・「タスク名A」担当：〇〇 完了日：MM/DD（〇〇プロジェクト）
-  ・「タスク名B」担当：〇〇 完了日：MM/DD（タスクフォース直轄）
-- 件数が0件の場合は「該当期間に完了したタスクはありません」と明示すること
+- 正直に「完了したタスクの個別の情報は、今回AIに送っている範囲に含まれていません」と伝える。完了タスクを推測で挙げない
+- 代わりに、各PJの pj_progress（done / total。PJ全体の累計）は示してよい。期間別（先週・今月など）の件数は出せない
+- 件数の累計を示すときは「累計であり、期間で絞った件数ではない」と明記する
 
 ## 工数・残業チェックの計算ルール（重要）
 ユーザーが「今月の工数は？」「残業しそう？」などを聞いてきた場合：
@@ -238,6 +231,10 @@ const BASE_SYSTEM = `あなたはチームのプロジェクト管理とOKR推�
   null の場合はトップレベルのタスク。
 - **task.tags**：タスクに付与された自由入力タグの配列（例：["設計","確認待ち"]）。空配列の場合はタグなし。
   「タグで絞り込んで」「確認待ちのタスクは？」などの質問では tags フィールドを照合すること。
+- **送られるタスクの範囲**：projects[].tasks には**完了（done）・中止（cancelled）のタスクは含まれていない**（todo / in_progress / on_hold のみ）。
+  送信対象のPJは、アーカイブ済みと完了のPJを除いたもの（相談者が「対象PJ」で絞ったときはそのPJだけ）。
+  **pj.pj_progress** の total / done / cancelled などは、完了・中止を含むPJ全体の件数であり、tasks の件数とは一致しない。
+  tasks にあるタスクだけを数えて「進捗率」を出さないこと（進捗は pj_progress を使う）。
 - **pj.pj_start_date** / **pj.pj_end_date**：PJの開始日・終了日（YYYY-MM-DD）。
   「いつから始まっていますか？」「PJの期間は？」などの質問では両フィールドを参照すること。
   pj_start_date が null の場合は開始日未設定。

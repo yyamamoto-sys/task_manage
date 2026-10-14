@@ -3,7 +3,7 @@ title: ダッシュボード
 audience: [all, member, kr-rep]
 mode: dashboard.main
 order: 1
-last_updated: 2026-10-13
+last_updated: 2026-10-14
 owner: yamamoto
 related: [guide.overview, role.admin]
 ---
@@ -14,7 +14,7 @@ related: [guide.overview, role.admin]
 
 ## 主な構成
 
-画面上部で、PJのチップによる絞り込みと「全員 / 自分のみ」の切り替え（サイドバーの「👤自分 / 🌐全件」と連動）、「全PJをAI分析」ボタンを使えます。
+画面上部で、**「対象PJ」のプルダウン**（先頭は「すべてのPJ」。1つ選ぶとそのPJに絞られる。アーカイブ済みのPJは出ず、完了のPJは「（完了）」付きで出る。サイドバーでPJを選んでいる間は出ない）による絞り込みと、「全員 / 自分のみ」の切り替え（サイドバーの「👤自分 / 🌐全件」と連動）、「全PJをAI分析」ボタンを使えます。
 
 | エリア | 内容 |
 |---|---|
