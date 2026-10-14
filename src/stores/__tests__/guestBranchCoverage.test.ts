@@ -40,6 +40,7 @@ const NON_WRITE_ACTIONS = new Set([
   "setCurrentGroupId",
   "setCurrentUserIsSuperAdmin",
   "setCurrentUserGroupIds",
+  "setGuideViewerIsAdmin",
   "applyRemoteChange",
 ]);
 

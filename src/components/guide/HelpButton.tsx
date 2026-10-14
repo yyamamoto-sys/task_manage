@@ -17,6 +17,7 @@ import { createPortal } from "react-dom";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { Skeleton } from "../common/Skeleton";
+import { useAppStore } from "../../stores/appStore";
 
 const GuideOverlay = withChunkDownloadGate(
   lazyWithRetry(() => import("./GuideOverlay").then(m => ({ default: m.GuideOverlay })), "GuideOverlay"),
@@ -74,6 +75,7 @@ interface Props {
 
 export function HelpButton({ modeKey, label, variant = "small", title }: Props) {
   const [open, setOpen] = useState(false);
+  const guideViewerIsAdmin = useAppStore(s => s.guideViewerIsAdmin);
 
   const small: React.CSSProperties = {
     width: "22px", height: "22px", borderRadius: "50%",
@@ -105,7 +107,7 @@ export function HelpButton({ modeKey, label, variant = "small", title }: Props) 
       </button>
       {open && (
         <Suspense fallback={<GuideOverlayLoading onClose={() => setOpen(false)} />}>
-          <GuideOverlay modeKey={modeKey} onClose={() => setOpen(false)} />
+          <GuideOverlay modeKey={modeKey} isAdmin={guideViewerIsAdmin} onClose={() => setOpen(false)} />
         </Suspense>
       )}
     </>

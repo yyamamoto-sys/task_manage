@@ -9,6 +9,7 @@ import { useMemo, useState, useEffect, useRef } from "react";
 import { GuideMarkdown } from "./GuideMarkdown";
 import { groupedDocs, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
+import { canViewGuideDoc } from "../../lib/docs/guideAccess";
 import { TOUR_LIST } from "../tour/tours";
 import { GUIDE_SVGS } from "../../lib/docs/guideAssets";
 import {
@@ -45,7 +46,12 @@ interface GuideModeViewProps {
 }
 
 export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }: GuideModeViewProps = {}) {
-  const groups = useMemo(() => groupedDocs(), []);
+  const groups = useMemo(
+    () => groupedDocs()
+      .map(g => ({ ...g, entries: g.entries.filter(e => canViewGuideDoc(e, { isAdmin })) }))
+      .filter(g => g.entries.length > 0),
+    [isAdmin],
+  );
   const allEntries = useMemo(() => groups.flatMap(g => g.entries), [groups]);
 
   // 開いた直後は必ずトップを表示する
@@ -59,7 +65,8 @@ export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }
   useEffect(() => { mainRef.current?.scrollTo({ top: 0 }); }, [currentSlug]);
 
   const isHome = currentSlug === HOME_SLUG;
-  const current: DocEntry | undefined = !isHome && currentSlug ? getDocBySlug(currentSlug) : undefined;
+  const currentRaw = !isHome && currentSlug ? getDocBySlug(currentSlug) : undefined;
+  const current: DocEntry | undefined = canViewGuideDoc(currentRaw, { isAdmin }) ? currentRaw : undefined;
 
   return (
     <div style={{ flex: 1, display: "flex", overflow: "hidden", background: "var(--color-bg-primary)" }}>
@@ -154,7 +161,7 @@ export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }
                 {current.deprecated && <span style={{ color: "var(--color-text-danger)" }}>⚠ 旧仕様</span>}
               </div>
             </header>
-            <GuideMarkdown text={current.body} currentPath={current.path} onNavigate={setCurrentSlug} />
+            <GuideMarkdown text={current.body} currentPath={current.path} onNavigate={setCurrentSlug} isAdmin={isAdmin} />
             {current.related && current.related.length > 0 && (
               <div style={{ marginTop: "32px", paddingTop: "12px", borderTop: "1px solid var(--color-border-primary)" }}>
                 <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.06em" }}>関連</div>

@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import { GuideMarkdown } from "./GuideMarkdown";
 import { getDocByMode, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
+import { canViewGuideDoc } from "../../lib/docs/guideAccess";
 
 interface Props {
   /** mode キー（"okr.note" など）。slug より優先。 */
@@ -26,10 +27,12 @@ interface Props {
   slug?: string;
   /** 直接 DocEntry を渡す場合。最優先。 */
   entry?: DocEntry;
+  /** 管理者専用記事を見せてよいか（表示の制御であって秘匿ではない）。HelpButton が isGuideAdmin の結果を渡す */
+  isAdmin: boolean;
   onClose: () => void;
 }
 
-export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
+export function GuideOverlay({ modeKey, slug, entry, isAdmin, onClose }: Props) {
   // 本文中のアプリ内リンクで同じオーバーレイ内の表示を切り替える（元の記事へは「戻る」で復帰）
   const [linkedSlug, setLinkedSlug] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -38,12 +41,13 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
     scrollRef.current?.scrollTo({ top: 0 });
   };
   const doc = useMemo<DocEntry | undefined>(() => {
-    if (linkedSlug) return getDocBySlug(linkedSlug);
-    if (entry) return entry;
-    if (modeKey) return getDocByMode(modeKey);
-    if (slug) return getDocBySlug(slug);
-    return undefined;
-  }, [linkedSlug, entry, modeKey, slug]);
+    const found = linkedSlug ? getDocBySlug(linkedSlug)
+      : entry ? entry
+      : modeKey ? getDocByMode(modeKey)
+      : slug ? getDocBySlug(slug)
+      : undefined;
+    return canViewGuideDoc(found, { isAdmin }) ? found : undefined;
+  }, [linkedSlug, entry, modeKey, slug, isAdmin]);
 
   return createPortal(
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
@@ -117,13 +121,14 @@ export function GuideOverlay({ modeKey, slug, entry, onClose }: Props) {
               {!modeKey && slug && <>slug <code>{slug}</code> のガイドが見つかりませんでした。</>}
             </div>
           )}
-          {doc && <GuideMarkdown text={doc.body} currentPath={doc.path} onNavigate={goTo} />}
+          {doc && <GuideMarkdown text={doc.body} currentPath={doc.path} onNavigate={goTo} isAdmin={isAdmin} />}
           {doc && doc.related && doc.related.length > 0 && (
             <div style={{ marginTop: "24px", paddingTop: "12px", borderTop: "1px solid var(--color-border-primary)" }}>
               <div style={{ fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)", marginBottom: "6px", letterSpacing: "0.06em" }}>関連</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                 {doc.related.map(r => {
-                  const target = getDocByMode(r);
+                  const found = getDocByMode(r);
+                  const target = canViewGuideDoc(found, { isAdmin }) ? found : undefined;
                   return (
                     <span key={r} style={{
                       fontSize: "11px", padding: "3px 9px",

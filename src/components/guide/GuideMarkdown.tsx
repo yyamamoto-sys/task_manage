@@ -6,6 +6,7 @@
 
 import { useMemo, type CSSProperties, type ReactNode } from "react";
 import { getDocBySlug } from "../../lib/docs/manifest";
+import { canViewGuideDoc } from "../../lib/docs/guideAccess";
 import { GUIDE_SVGS } from "../../lib/docs/guideAssets";
 import {
   parseGuideMarkdown, resolveLink, resolveImage, sanitizeSvg,
@@ -18,9 +19,9 @@ interface Props {
   currentPath: string;
   /** アプリ内リンクがクリックされたとき（解決済みの slug）。未指定ならリンクは文字だけ表示 */
   onNavigate?: (slug: string) => void;
+  /** 管理者専用記事へのリンクを生かすか。未指定は false（表示の制御であって秘匿ではない） */
+  isAdmin?: boolean;
 }
-
-const hasDoc = (slug: string) => !!getDocBySlug(slug);
 
 // SVG をインライン描画するための最小の幅制御（親に合わせて縮む）
 const SVG_CSS = ".guide-svg svg{max-width:100%;height:auto;display:block;margin:0 auto}";
@@ -42,7 +43,7 @@ function renderInlines(items: Inline[], ctx: Props, keyPrefix = ""): ReactNode[]
     if (it.t === "bold") {
       return <strong key={key} style={{ fontWeight: 700, color: "var(--color-text-primary)" }}>{renderInlines(it.c, ctx, key + "-")}</strong>;
     }
-    const target = resolveLink(it.href, ctx.currentPath, hasDoc);
+    const target = resolveLink(it.href, ctx.currentPath, slug => canViewGuideDoc(getDocBySlug(slug), { isAdmin: ctx.isAdmin === true }));
     const children = renderInlines(it.c, ctx, key + "-");
     if (target.kind === "external") {
       return <a key={key} href={target.href} target="_blank" rel="noopener noreferrer" style={linkStyle}>{children}</a>;
@@ -171,9 +172,9 @@ function renderBlock(block: Block, i: number, ctx: Props): ReactNode {
   }
 }
 
-export function GuideMarkdown({ text, currentPath, onNavigate }: Props) {
+export function GuideMarkdown({ text, currentPath, onNavigate, isAdmin }: Props) {
   const blocks = useMemo(() => parseGuideMarkdown(text), [text]);
-  const ctx: Props = { text, currentPath, onNavigate };
+  const ctx: Props = { text, currentPath, onNavigate, isAdmin };
   return (
     <div style={{ minWidth: 0, maxWidth: "100%" }}>
       <style>{SVG_CSS}</style>

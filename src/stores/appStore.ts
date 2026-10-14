@@ -123,6 +123,9 @@ export interface AppState {
   // ===== Group =====
   setCurrentGroupId: (id: string | null) => void;
   setCurrentUserIsSuperAdmin: (v: boolean) => void;
+  /** ガイドを管理者として見せるか（isGuideAdmin の結果）。MainLayout が同期。？ボタンが管理者専用記事を開くかの判定に使う。表示制御であって秘匿ではない */
+  guideViewerIsAdmin: boolean;
+  setGuideViewerIsAdmin: (v: boolean) => void;
   setCurrentUserGroupIds: (ids: string[]) => void;
   saveGroup: (group: Group) => Promise<void>;
   deleteGroup: (id: string, deletedBy: string) => Promise<void>;
@@ -706,6 +709,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
     objective: pickCurrentObjectiveForGroup(state.objectives, id),
   })),
   setCurrentUserIsSuperAdmin: (v) => set({ currentUserIsSuperAdmin: v }),
+  guideViewerIsAdmin: false,
+  setGuideViewerIsAdmin: (v) => set({ guideViewerIsAdmin: v }),
   setCurrentUserGroupIds: (ids) => set({ currentUserGroupIds: ids }),
 
   saveGroup: async (group) => {

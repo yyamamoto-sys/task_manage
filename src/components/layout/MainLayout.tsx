@@ -51,6 +51,7 @@ import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
+import { isGuideAdmin } from "../../lib/docs/guideAccess";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
@@ -195,6 +196,12 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // ゲスト（閲覧のみ）：書き込みは client.ts でブロック済み。UI 側では設定（管理）を隠し、
   // 上部に閲覧専用バナーを出す。AI機能は表示する（反映だけブロックされる）。
   const isGuest = isGuestMember(currentUser);
+  const guideAdmin = isGuideAdmin(currentUser);
+  // ？ボタン（HelpButton）は currentUser を持たないため、ストア経由で管理者かどうかを共有する
+  useEffect(() => {
+    useAppStore.getState().setGuideViewerIsAdmin(guideAdmin);
+    return () => useAppStore.getState().setGuideViewerIsAdmin(false);
+  }, [guideAdmin]);
   const { theme, toggle: toggleTheme } = useTheme();
   const t = useT();
 
@@ -1105,7 +1112,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <GuideModeView
             onShowOnboarding={() => setIsOnboardingOverlayOpen(true)}
             onStartTour={(tourId: string) => { setIsGuideOpen(false); tour.start(tourId); }}
-            isAdmin={!isGuest && (currentUser.is_admin === true || currentUser.is_super_admin === true)}
+            isAdmin={guideAdmin}
           />
         </Suspense>
       </div>

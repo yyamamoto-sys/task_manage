@@ -17,6 +17,7 @@ import {
   type Block, type Inline, type ListNode,
 } from "./guideMarkdown";
 import type { DocEntry } from "./types";
+import { canViewGuideDoc } from "./guideAccess";
 
 // ===== 資料セット =====
 
@@ -42,7 +43,7 @@ const FILE_PREFIX: Record<GuideSetKind, string> = {
  * システム構成は管理者だけ（isAdmin が偽なら空）。archived は manifest 側で既に除外されているが念のため落とす。
  */
 export function selectGuideSet(kind: GuideSetKind, entries: DocEntry[], isAdmin: boolean): DocEntry[] {
-  const live = entries.filter(e => !e.archived);
+  const live = entries.filter(e => !e.archived && canViewGuideDoc(e, { isAdmin }));
   if (kind === "spec") return live.filter(e => e.slug === SPEC_SLUG);
   if (kind === "architecture") return isAdmin ? live.filter(e => e.slug === ARCHITECTURE_SLUG) : [];
   return live.filter(e => e.audience.includes("all") && e.slug !== SPEC_SLUG && e.slug !== ARCHITECTURE_SLUG);
