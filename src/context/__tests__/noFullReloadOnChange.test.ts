@@ -28,8 +28,16 @@ describe("AppDataContext", () => {
 describe("App.tsx の realtime 購読", () => {
   const src = code("src/App.tsx");
   it("onChange は applyRemoteChange のみ。load() は onResync（復帰）経由だけ", () => {
-    expect(src).toMatch(/subscribeToRealtime\(applyRemoteChange, \{ onResync: resync \}\)/);
+    expect(src).toMatch(/subscribeToRealtime\(applyRemoteChange, \{\s*onResync: resync,/);
     expect(src).toMatch(/createResyncRunner\(\(\) => \{ void load\(\); \}\)/);
+  });
+  it("間引いた再取得の要求先（setRemoteResyncRequester）を差し込み、アンマウントで後追いタイマーの解除と要求先の解除をする", () => {
+    expect(src).toMatch(/setRemoteResyncRequester\(resync\)/);
+    expect(src).toMatch(/resync\.cancel\(\)/);
+    expect(src).toMatch(/setRemoteResyncRequester\(null\)/);
+  });
+  it("最初の SUBSCRIBED で差分取得（catchUpRemoteChanges）し、失敗したら全件再取得に切り替える", () => {
+    expect(src).toMatch(/onFirstSubscribed: \(\) => \{ void catchUpRemoteChanges\(\)\.catch\(\(\) => resync\(\)\); \}/);
   });
   it("購読 effect の依存に loading を入れない（load のたびに張り直さない）", () => {
     expect(src).toMatch(/\[realtimeReady, applyRemoteChange, load\]/);

@@ -8199,3 +8199,15 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 資料：guides 02_modes/tasks.md・08_spec.md・00_overview.md・01_onboarding/first-day.md、uiGuide.ts、初回ツアーの fab ステップ文言（ステップ数は増やしていない）。
 # * テスト：newTask.test／inlineAdd.test（グループ別初期値・作成後の所属・連続入力・二重登録・FABレジストリ）／inlineAddWiring.test（配線の走査）。finalizedMentionsAllPaths.test は prepareNewTask 経由に更新。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.148（2026-10-14）：realtime の取りこぼし対策・届かないことの見張り（v3.146 の独立レビュー指摘・CLAUDE.md Section 76）
+# * resync：間隔内に呼ばれた再取得を捨てず、間隔が明けた時点で1回だけ後追い実行（createResyncRunner。cancel はアンマウントで解除）。
+# * load() の取得中に届いた差分をキュー（上限2000）に溜め、Phase 1・Phase 2 の置き換えの直後に再適用（古さ判定を通る）。
+# * 初回 load の開始から購読有効までの取りこぼしは、onFirstSubscribed で updated_at/created_at の差分取得（fetchChangesSince。起点の2分前から）で埋める。全件 load の二重実行は避けた。失敗時は全件再取得。
+# * 見える範囲が変わる変更（tasks/projects の DELETE・未登録 id の UPDATE・projects の部署/メンバー/オーナー列の変化）は、間引いた load() を要求（setRemoteResyncRequester）。
+# * upsertById：UPDATE は {...既存, ...届いた行} で重ね（TOAST 列が載らなくても既存値を消さない・null は null）、正規化は重ねたあとの行に対して行う。古さ判定は Date.parse の数値比較・同値は後着を採る（内容が同じなら参照を変えない）。
+# * 動的 import 失敗のメッセージのハッシュ付きファイル名・URL を fingerprint の正規化で束ねる。PersonalOkrView のサンプル読み込みの Promise.all に catch（reportError）。
+# * チャンク失敗の文言を「新しい版が公開されたか、通信が不安定です」に。ReloadNoticeBanner は版の通知とチャンク失敗の通知を別 state にした（版チェックがチャンク失敗の案内を消さない）。
+# * 見張り：自分の保存（tasks・projects）の realtime エコーが10秒以内に届かなければ、セッション中1回だけ code="realtime-silent"（context に表・チャンネル状態・経過秒）。DIAGNOSTIC_CODES に追加。
+# * テスト追加：realtimeApplyHardening／realtimeLoadQueue／realtimeEchoWatch、resync・realtimeResync・noFullReloadOnChange・lazyWithRetry・directLogger を拡張。修正前（v3.146）に対して20件が赤になることを確認。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。

@@ -40,13 +40,46 @@ export function createHiddenReturnGate(thresholdMs: number = HIDDEN_RESYNC_MS, n
   };
 }
 
-/** 再接続が連続して揺れたときに load() を連打しない（最短間隔つき） */
-export function createResyncRunner(run: () => void, minIntervalMs: number = RESYNC_MIN_INTERVAL_MS, now: () => number = () => Date.now()) {
+export interface ResyncTimers {
+  setTimeout: (fn: () => void, ms: number) => unknown;
+  clearTimeout: (handle: unknown) => void;
+}
+
+export type ResyncRunner = (() => void) & { cancel: () => void };
+
+/**
+ * 再接続が連続して揺れたときに load() を連打しない（最短間隔つき）。
+ * 🔴 間隔内に呼ばれた分は捨てない：間隔が明けた時点で1回だけ後追い実行する（捨てると、間隔内に起きた
+ * 変更の取りこぼしが次のきっかけまで埋まらない）。後追いは1つだけ予約し、cancel（アンマウント時）で解除する。
+ */
+export function createResyncRunner(
+  run: () => void,
+  minIntervalMs: number = RESYNC_MIN_INTERVAL_MS,
+  now: () => number = () => Date.now(),
+  timers: ResyncTimers = {
+    setTimeout: (fn, ms) => setTimeout(fn, ms),
+    clearTimeout: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  },
+): ResyncRunner {
   let last = -Infinity;
-  return () => {
-    const t = now();
-    if (t - last < minIntervalMs) return;
-    last = t;
+  let pending: unknown = null;
+  const fire = () => {
+    pending = null;
+    last = now();
     run();
   };
+  const runner = (() => {
+    if (pending !== null) return;
+    const wait = last + minIntervalMs - now();
+    if (wait <= 0) {
+      fire();
+      return;
+    }
+    pending = timers.setTimeout(fire, wait);
+  }) as ResyncRunner;
+  runner.cancel = () => {
+    if (pending !== null) timers.clearTimeout(pending);
+    pending = null;
+  };
+  return runner;
 }

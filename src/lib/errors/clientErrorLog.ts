@@ -69,6 +69,10 @@ export function sanitizeText(text: string | null | undefined, max: number): stri
 /** 同じエラーを1件にまとめるための正規化：数字・UUID・引用符の中身・URL のクエリを置き換える */
 export function normalizeForFingerprint(text: string): string {
   return text
+    // ビルドごとにハッシュが変わるアセット名（/assets/Foo-AbC1dEfG.js）とそれを含む URL（preview の host も変わる）。
+    // 動的 import の失敗が、デプロイのたびに別の fingerprint になるのを防ぐ（v3.148）
+    .replace(/https?:\/\/[^\s"')]*\.(?:m?js|css)\b/gi, "<asset-url>")
+    .replace(/[A-Za-z0-9_.-]*-[A-Za-z0-9_-]{6,}\.(?:m?js|css)\b/gi, "<asset>")
     .replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "<uuid>")
     .replace(/\?[^\s"']*/g, "?<q>")
     .replace(/"[^"]*"|'[^']*'|「[^」]*」/g, "<str>")
@@ -92,7 +96,7 @@ function fnv1a32(text: string, seed: number): number {
  * 診断（v3.146・healthMonitor）の code。メッセージは固定で、詳細（MB・経過分・画面名・回数）は context に入れる。
  * context が毎回違うと fingerprint が割れて code ごとに束ならないので、これらは context をまとめ方に使わない。
  */
-export const DIAGNOSTIC_CODES: readonly string[] = ["memory-high", "load-burst"];
+export const DIAGNOSTIC_CODES: readonly string[] = ["memory-high", "load-burst", "realtime-silent"];
 
 export function computeFingerprint(input: { source: ClientErrorSource; code?: string | null; message: string; context?: string | null }): string {
   // ErrorBoundary の context はコンポーネントの位置を含むので、まとめ方には「ErrorBoundary」だけを使う

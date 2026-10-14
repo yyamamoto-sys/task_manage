@@ -73,3 +73,43 @@ describe("ChunkLoadFailed と reloadWithGuard", () => {
     expect(reload).toHaveBeenCalledTimes(1);
   });
 });
+
+// ===== v3.148：本物の配線（記録とバナー通知が実際につながっていること） =====
+import { afterEach } from "vitest";
+import { defaultChunkDeps } from "../lazyWithRetry";
+import { CHUNK_LOAD_FAILED_EVENT } from "../reloadNotice";
+
+function stripComments(src: string): string {
+  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+}
+
+describe("lazyWithRetry の配線（本物の deps）", () => {
+  afterEach(() => { delete (globalThis as { window?: unknown }).window; });
+
+  it("失敗が確定すると、診断ログ（chunk-load）が1回送られ、window にバナー用のイベントが流れる", async () => {
+    const log = vi.fn();
+    setDiagnosticLogger(log);
+    const dispatched: string[] = [];
+    (globalThis as { window?: unknown }).window = { dispatchEvent: (e: Event) => { dispatched.push(e.type); return true; } };
+    const factory = vi.fn().mockRejectedValue(new Error("Failed to fetch dynamically imported module: https://x/assets/Z-abc12345.js"));
+    const r = await loadChunkOrFallback(factory, "WiringScreen", FALLBACK, { ...defaultChunkDeps, wait: async () => {} });
+    expect(r.default).toBe(FALLBACK);
+    expect(log).toHaveBeenCalledTimes(1);
+    expect(log.mock.calls[0][0]).toMatchObject({ source: "report", code: "chunk-load" });
+    expect(dispatched).toEqual([CHUNK_LOAD_FAILED_EVENT]);
+  });
+  it("lazyWithRetry は本物の deps（defaultChunkDeps）を使い、ReloadNoticeBanner は同じイベントを受ける", () => {
+    const lazySrc = stripComments(readFileSync("src/lib/lazyWithRetry.ts", "utf8"));
+    expect(lazySrc).toMatch(/loadChunkOrFallback\(factory, name, ChunkLoadFailed as unknown as T, defaultChunkDeps\)/);
+    expect(lazySrc).toMatch(/report: reportChunkLoadFailure/);
+    const banner = stripComments(readFileSync("src/components/common/ReloadNoticeBanner.tsx", "utf8"));
+    expect(banner).toMatch(/addEventListener\(CHUNK_LOAD_FAILED_EVENT, onChunkFailed\)/);
+    expect(banner).toMatch(/removeEventListener\(CHUNK_LOAD_FAILED_EVENT, onChunkFailed\)/);
+  });
+  it("バナーは版による通知とチャンク失敗の通知を別々の state で持つ（版チェックがチャンク失敗の案内を消さない）", () => {
+    const banner = stripComments(readFileSync("src/components/common/ReloadNoticeBanner.tsx", "utf8"));
+    expect(banner).toMatch(/setVersionOutdated\(shouldShowReloadNotice/);
+    expect(banner).toMatch(/setChunkFailed\(true\)/);
+    expect(banner).toMatch(/if \(!versionOutdated && !chunkFailed\) return null/);
+  });
+});

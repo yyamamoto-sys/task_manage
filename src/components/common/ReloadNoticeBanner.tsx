@@ -38,12 +38,15 @@ interface VersionManifest {
 
 export function ReloadNoticeBanner() {
   const t = useT();
-  const [show, setShow] = useState(false);
+  // 版による通知（version.json の判定）とチャンク失敗の通知は別々に持つ。
+  // 同じ state にすると、10分ごとの版チェックが「出さない」と判定したときにチャンク失敗の案内まで消してしまう
+  const [versionOutdated, setVersionOutdated] = useState(false);
+  const [chunkFailed, setChunkFailed] = useState(false);
 
   // lazyWithRetry がチャンクを読み込めなかったとき（新しい版の公開後の古いタブ）も同じバナーで知らせる（v3.146）。
   // 開発サーバーでも出せるよう、DEV の早期 return より前の別 effect に置く
   useEffect(() => {
-    const onChunkFailed = (): void => setShow(true);
+    const onChunkFailed = (): void => setChunkFailed(true);
     window.addEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
     return () => window.removeEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
   }, []);
@@ -62,7 +65,7 @@ export function ReloadNoticeBanner() {
           if (cancelled) return;
           const minClientVersion =
             typeof json.minClientVersion === "string" ? json.minClientVersion : null;
-          setShow(shouldShowReloadNotice(APP_VERSION, minClientVersion));
+          setVersionOutdated(shouldShowReloadNotice(APP_VERSION, minClientVersion));
         })
         .catch(e => {
           console.warn("[ReloadNoticeBanner] version.jsonの取得に失敗しました:", e);
@@ -84,7 +87,7 @@ export function ReloadNoticeBanner() {
     };
   }, []);
 
-  if (!show) return null;
+  if (!versionOutdated && !chunkFailed) return null;
 
   return (
     <div style={{
@@ -95,7 +98,7 @@ export function ReloadNoticeBanner() {
       display: "flex", alignItems: "center", gap: "10px",
     }}>
       <span style={{ flex: 1 }}>
-        ⚠ {t("layout.app.reloadNotice.body")}
+        ⚠ {versionOutdated ? t("layout.app.reloadNotice.body") : t("layout.app.chunkLoadFailed.body")}
       </span>
       <button
         onClick={() => { void reloadWithGuard(); }}

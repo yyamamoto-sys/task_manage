@@ -22,6 +22,7 @@ import type {
 } from "../localData/types";
 import type { MyPageLayout } from "../widgets/types";
 import { normalizeProjectRow, normalizeTaskRow } from "./rowNormalize";
+import { noteOwnWrite } from "../diagnostics/realtimeEchoWatch";
 
 // ===== 競合エラー =====
 
@@ -449,7 +450,9 @@ export async function upsertProject(project: Project, expectedUpdatedAt?: string
     start_date: project.start_date || null,
     end_date:   project.end_date   || null,
   };
-  return await saveWithLock("projects", row, expectedUpdatedAt);
+  const updatedAt = await saveWithLock("projects", row, expectedUpdatedAt);
+  noteOwnWrite("projects", project.id, updatedAt);
+  return updatedAt;
 }
 
 export async function softDeleteProject(id: string, deletedBy: string) {
@@ -483,7 +486,9 @@ export async function upsertTask(task: Task, expectedUpdatedAt?: string): Promis
     assignee_member_id:  ids[0] ?? null,
     assignee_member_ids: ids,
   };
-  return await saveWithLock("tasks", row, expectedUpdatedAt);
+  const updatedAt = await saveWithLock("tasks", row, expectedUpdatedAt);
+  noteOwnWrite("tasks", task.id, updatedAt);
+  return updatedAt;
 }
 
 export async function softDeleteTask(id: string, deletedBy: string) {
@@ -685,4 +690,30 @@ export async function markEntityChangeLogUndone(id: number, undoneBy: string): P
     .update({ undone_at: new Date().toISOString(), undone_by: undoneBy })
     .eq("id", id);
   if (error) throw error;
+}
+
+/**
+ * 初回 load の開始から realtime 購読が張られるまでの間の変更を取り込む差分取得（v3.148・Section 76）。
+ * updated_at を持つ表は updated_at >= since（論理削除の更新も含めるため is_deleted では絞らない）、
+ * 中間表は created_at >= since（追加のみ。解除は拾えない）。件数は通常ごく少ない。
+ * 1表でも失敗したら throw（呼び出し側が全件再取得に切り替える）。
+ */
+export async function fetchChangesSince(sinceIso: string): Promise<{ table: string; row: Record<string, unknown> }[]> {
+  const byUpdated = ["tasks", "projects", "todos", "key_results", "task_forces", "milestones", "members", "task_dependencies"] as const;
+  const byCreated = ["task_task_forces", "task_projects", "project_task_forces"] as const;
+  const keyColumnsOf: Record<string, string[]> = {
+    task_task_forces: ["task_id", "tf_id"],
+    task_projects: ["task_id", "project_id"],
+    project_task_forces: ["project_id", "tf_id"],
+  };
+  const out: { table: string; row: Record<string, unknown> }[] = [];
+  const results = await Promise.all([
+    ...byUpdated.map(table => fetchAllRows(o => supabase.from(table).select("*", o).gte("updated_at", sinceIso), { label: `${table}(changes)` }).then(r => ({ table, r }))),
+    ...byCreated.map(table => fetchAllRows(o => supabase.from(table).select("*", o).gte("created_at", sinceIso), { label: `${table}(changes)`, keyColumns: keyColumnsOf[table] }).then(r => ({ table, r }))),
+  ]);
+  for (const { table, r } of results) {
+    if (r.error) throw r.error;
+    for (const row of (r.data ?? []) as Record<string, unknown>[]) out.push({ table, row });
+  }
+  return out;
 }

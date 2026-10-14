@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.147
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.148
 #
-最終更新：2026-10-14（v3.147）
+最終更新：2026-10-14（v3.148）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5151,3 +5151,17 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - 描画テスト基盤が無いため、追加行の実際の操作（Tab順・フォーカス・スクロール・ポップオーバー）は実機確認が要る。
 - 追加行の「優先度」「工数」列（詳細表示）は空欄のまま（その場追加は4項目のみ）。
 - `MIN_CLIENT_VERSION` は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+### v3.148：独立レビュー指摘の修正（realtime の正しさ）
+
+「チーム全員で同時にタスクを登録すると、他の人の変更がリロードするまで反映されない」という要望を受けて、v3.146 の差分反映の穴を塞いだ。
+
+- **間引きで捨てない**（`createResyncRunner`）：間隔（30秒）内に呼ばれた分は、間隔が明けた時点で1回だけ後追い実行する。アンマウントで `cancel()`。
+- **load() の取得中の差分**：取得中に届いた realtime 差分はキュー（上限2000・超えたら追従 load を1回予約）に溜め、`set()` による丸ごと置き換え（Phase 1・Phase 2 それぞれ）の直後に順に再適用する。古さ判定を通るので、取得結果より古い差分は捨てられる。
+- **購読が張られるまでの取りこぼし**：初回 load の開始から購読有効までの間の変更は、最初の SUBSCRIBED（`onFirstSubscribed`）で `fetchChangesSince`（`updated_at >= 起点−2分`、中間表は `created_at`）の小さな問い合わせで埋める。**全件 load を二重に走らせると起動時の通信が倍になる**ため採らなかった（購読を先に張って load を待たせる案も起動を遅らせるため不採用）。限界：中間表（task_projects 等）の「解除」（DELETE）はこの窓の中では拾えない。失敗したら間引いた全件再取得に切り替える。切断を経ての最初の接続は `onResync`（全件）が埋めるので重ねない。
+- **見える範囲が変わる変更は全件再取得を要求**（`shouldResyncOnRemoteChange`・要求先は `setRemoteResyncRequester` で App.tsx の resync ランナー）：tasks/projects の DELETE・手元に無い id の UPDATE・projects の UPDATE で `group_id`／`group_ids`／`member_ids`／`owner_member_id(s)` が手元と変わったとき。INSERT は通常の新規行なので要求しない。
+- **UPDATE は既存の行に重ねる**（`{...既存, ...届いた行}`）：realtime の new は TOAST 化された未変更の大きな列（tasks.comment 等）を載せないことがあり、丸ごと置き換えると既存値が消える。キーが無い列は既存値を残し、キーがあって null の列は null にする。tasks/projects の正規化（`normalizeTaskRow`/`normalizeProjectRow`）は**重ねたあとの行**に対して行う（載らなかった配列列を `[]` で埋めてしまわないため）。
+- **古さ判定**（`isStaleRemoteUpdate`）：文字列比較をやめ、`Date.parse` の数値比較（`+09:00` と `Z` のように書式が違っても正しく比べる）。**同値のときは後から届いた方を採る**（同じトランザクションの2回 UPDATE）。内容が同じなら配列の参照を変えない（自分の保存のエコーで再描画しない）。既知の限界：同値のエコーが自分の保存中の楽観更新より遅れて届くと、次の更新（より新しい updated_at）のエコーが来るまで一瞬戻って見えうる。
+- **見張り `realtime-silent`**（`realtimeEchoWatch.ts`）：自分の保存（`upsertTask`／`upsertProject` の成功）の realtime エコーが10秒以内に届かなければ、セッション中1回だけ `logDiagnostic`（code=`realtime-silent`、context に表・チャンネル状態（`realtimeState.ts`）・経過秒）。エコーが保存の応答より先に届く場合に備え、直近30秒のエコーを覚えて照合する。`DIAGNOSTIC_CODES` に加え code ごとに束ねる。管理画面「エラー」タブに出る＝**利用者の実環境でイベントが届いていないかを知る手がかり**。
+- その他：動的 import 失敗のメッセージに入るハッシュ付きファイル名・URL は fingerprint の正規化で束ねる（デプロイごとに別の行にならない）。`PersonalOkrView` のサンプル読み込みの `Promise.all` に catch（`reportError`）。チャンク失敗の文言は「新しい版が公開されたか、通信が不安定です」。`ReloadNoticeBanner` は版の通知とチャンク失敗の通知を別 state で持つ。
+- **届かない原因の調査結果（コードで確定できた範囲）**は報告書に記載（本番 DB の照会が必要な点は SQL 案）。購読の対象外の表（groups・objectives・member_tags 等）と `in_app_notifications`（publication 未追加）は今回も触っていない。

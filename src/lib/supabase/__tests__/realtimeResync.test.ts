@@ -38,6 +38,28 @@ describe("subscribeToRealtime の onResync", () => {
     cb("SUBSCRIBED");
     expect(onResync).toHaveBeenCalledTimes(1);
   });
+  it("最初の SUBSCRIBED で onFirstSubscribed を1回だけ呼ぶ（再接続では呼ばない）", () => {
+    const onFirstSubscribed = vi.fn();
+    const onResync = vi.fn();
+    subscribeToRealtime(() => {}, { onResync, onFirstSubscribed });
+    const cb = channels[0].cb!;
+    cb("SUBSCRIBED");
+    expect(onFirstSubscribed).toHaveBeenCalledTimes(1);
+    cb("CHANNEL_ERROR");
+    cb("SUBSCRIBED");
+    expect(onFirstSubscribed).toHaveBeenCalledTimes(1);
+    expect(onResync).toHaveBeenCalledTimes(1);
+  });
+  it("切断を経ての最初の接続は onResync（全件再取得）が埋めるので onFirstSubscribed は重ねない", () => {
+    const onFirstSubscribed = vi.fn();
+    const onResync = vi.fn();
+    subscribeToRealtime(() => {}, { onResync, onFirstSubscribed });
+    const cb = channels[0].cb!;
+    cb("TIMED_OUT");
+    cb("SUBSCRIBED");
+    expect(onResync).toHaveBeenCalledTimes(1);
+    expect(onFirstSubscribed).not.toHaveBeenCalled();
+  });
   it("11表を購読し、解除で removeChannel する／opts なしでも落ちない", () => {
     const off = subscribeToRealtime(() => {});
     expect(channels[0].ons).toBe(11);

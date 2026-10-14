@@ -19,7 +19,7 @@ import { ReminderHealthBanner } from "./components/common/ReminderHealthBanner";
 import { ReloadNoticeBanner } from "./components/common/ReloadNoticeBanner";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
-import { useAppStore } from "./stores/appStore";
+import { useAppStore, setRemoteResyncRequester, catchUpRemoteChanges } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
 import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
@@ -27,6 +27,8 @@ import { countLoadsWithin, getLoadTotal } from "./lib/diagnostics/loadCounter";
 import { logDiagnostic } from "./lib/errors/diagnosticLog";
 import { getClientErrorScreen } from "./lib/errors/clientErrorLog";
 import { isGuestMode } from "./lib/guestMode";
+import { initRealtimeEchoWatch, disposeRealtimeEchoWatch } from "./lib/diagnostics/realtimeEchoWatch";
+import { getRealtimeChannelState } from "./lib/supabase/realtimeState";
 import type { Member } from "./lib/localData/types";
 import { useT } from "./hooks/useT";
 import { loadPendingProjectInvite, clearPendingProjectInvite } from "./lib/projectInvite/pendingInvite";
@@ -479,7 +481,13 @@ function AuthenticatedApp({
     // 取りこぼしを埋める全件再取得は「切断からの復帰」「10分以上非表示からの復帰」のときだけ（Section 76）。
     // 通常の変更は applyRemoteChange の差分だけで反映する
     const resync = createResyncRunner(() => { void load(); });
-    const off = subscribeToRealtime(applyRemoteChange, { onResync: resync });
+    // 見える範囲が変わりうる差分（Section 76）も、間引いた全件再取得に相乗りする
+    setRemoteResyncRequester(resync);
+    const off = subscribeToRealtime(applyRemoteChange, {
+      onResync: resync,
+      // 初回 load の開始から購読有効までの取りこぼしは、小さな差分取得で埋める（失敗したら全件再取得）
+      onFirstSubscribed: () => { void catchUpRemoteChanges().catch(() => resync()); },
+    });
     const gate = createHiddenReturnGate();
     const onVisibility = () => {
       if (document.visibilityState === "hidden") gate.onHidden();
@@ -488,13 +496,24 @@ function AuthenticatedApp({
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      resync.cancel();
+      setRemoteResyncRequester(null);
       off();
     };
   }, [realtimeReady, applyRemoteChange, load]);
 
   // 「だんだん重くなる」の切り分け用の計測（5分ごと・閾値超過をセッション中1回だけ記録。Section 76）
   useEffect(() => {
-    return startHealthMonitor({
+    // 自分の保存の realtime エコーが10秒以内に届くかの見張り（届かなければセッション中1回だけ記録。Section 76）
+    initRealtimeEchoWatch({
+      now: () => Date.now(),
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimeout: h => window.clearTimeout(h as number),
+      channelState: getRealtimeChannelState,
+      isGuest: isGuestMode,
+      log: logDiagnostic,
+    });
+    const stopHealth = startHealthMonitor({
       log: logDiagnostic,
       now: () => Date.now(),
       heapBytes: () => readHeapBytes(),
@@ -505,6 +524,7 @@ function AuthenticatedApp({
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: h => window.clearInterval(h as number),
     });
+    return () => { stopHealth(); disposeRealtimeEchoWatch(); };
   }, []);
 
   // プロジェクト招待：保留中の招待の自動受諾チェックが終わるまで、

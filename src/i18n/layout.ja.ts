@@ -16,7 +16,7 @@ export const layoutJa = {
   "layout.app.partialLoadWarning.body": "一部のデータ（{tables}）を読み込めませんでした。再読み込みしてください。",
   "layout.app.reloadNotice.body": "アプリが更新されました。このまま使うと保存に失敗するおそれがあります。再読み込みしてください",
   "layout.app.reloadNotice.reload": "再読み込み",
-  "layout.app.chunkLoadFailed.body": "新しい版が公開されています。この画面を開くには再読み込みが必要です",
+  "layout.app.chunkLoadFailed.body": "新しい版が公開されたか、通信が不安定です。この画面を開くには再読み込みが必要です",
   "layout.app.chunkLoadFailed.reload": "再読み込み",
 
   // ----- ナビゲーション項目 -----

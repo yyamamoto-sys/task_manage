@@ -27,6 +27,7 @@ import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
 import type { Member, PersonalKr, PersonalKrMonth, PersonalKrOutlook, Quarter, Task, TaskDependency } from "../../../lib/localData/types";
 import type { PersonalOkrAiContextInput } from "../../../lib/personalOkr/personalOkrAiContext";
 import { currentQuarter } from "../../../lib/date";
+import { reportError } from "../../../lib/errorReporter";
 import { isWeightTotalWarning } from "../../../lib/personalOkr/weightCheck";
 import { listAvailablePersonalKrPeriods } from "../../../lib/personalOkr/availablePeriods";
 import { quarterMonthSlots, resolveDefaultMonthIndex, monthToDateStr } from "../../../lib/personalOkr/quarterMonths";
@@ -227,6 +228,9 @@ export function PersonalOkrView({ currentUser }: Props) {
       const personal = personalMod.buildDemoPersonalOkrDataset();
       const demo = datasetMod.buildDemoDataset();
       setPreviewSample({ personal, tasks: demo.tasks, taskDependencies: demo.taskDependencies });
+    }).catch((e: unknown) => {
+      // サンプルの読み込みに失敗（デプロイ直後の古いチャンク等）。サンプル無しで通常表示に戻し、既存のエラー表示へ出す
+      if (!cancelled) reportError(e, "OKRツアーのサンプル表示");
     });
     return () => { cancelled = true; };
   }, [shouldPreview]);

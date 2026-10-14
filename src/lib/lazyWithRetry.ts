@@ -73,7 +73,7 @@ export function _resetChunkReportForTest(): void {
   reportedNames.clear();
 }
 
-const defaultDeps: ChunkLoadDeps = {
+export const defaultChunkDeps: ChunkLoadDeps = {
   wait: ms => new Promise(resolve => setTimeout(resolve, ms)),
   report: reportChunkLoadFailure,
   notify: () => {
@@ -86,5 +86,5 @@ export function lazyWithRetry<T extends ComponentType<any>>(
   factory: () => Promise<{ default: T }>,
   name: string,
 ): LazyExoticComponent<T> {
-  return lazy(() => loadChunkOrFallback(factory, name, ChunkLoadFailed as unknown as T, defaultDeps));
+  return lazy(() => loadChunkOrFallback(factory, name, ChunkLoadFailed as unknown as T, defaultChunkDeps));
 }

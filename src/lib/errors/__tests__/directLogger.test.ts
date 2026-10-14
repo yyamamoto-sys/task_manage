@@ -40,3 +40,28 @@ describe("createDirectLogger", () => {
     warn.mockRestore();
   });
 });
+
+// ===== v3.148：動的 import 失敗の fingerprint はデプロイ（ハッシュ・host）で割れない =====
+import { computeFingerprint, normalizeForFingerprint } from "../clientErrorLog";
+import { readFileSync } from "node:fs";
+
+describe("動的 import 失敗の fingerprint", () => {
+  const fp = (message: string) => computeFingerprint({ source: "promise", message, context: null });
+  it("ハッシュ付きファイル名と host が違っても同じ fingerprint", () => {
+    const a = "TypeError: Failed to fetch dynamically imported module: https://app-git-abc123.vercel.app/assets/MeetingImportPanel-CYWw0tvJ.js";
+    const b = "TypeError: Failed to fetch dynamically imported module: https://app.example.com/assets/MeetingImportPanel-Zz9Yx8Wv.js";
+    expect(fp(a)).toBe(fp(b));
+    expect(normalizeForFingerprint(a)).not.toContain("CYWw0tvJ");
+  });
+  it("相対パスの chunk 名・css も束ねる／別の種類のエラーとは束ねない", () => {
+    expect(fp("Importing a module script failed: /assets/GanttView-AbCdEf12.js")).toBe(fp("Importing a module script failed: /assets/GanttView-ZyXwVu98.js"));
+    expect(fp("Failed to fetch dynamically imported module: /assets/A-abcdef12.js")).not.toBe(fp("TypeError: x is not a function"));
+  });
+});
+
+describe("PersonalOkrView のサンプル読み込み", () => {
+  it("catch の無かった Promise.all に catch があり、既存のエラー表示（reportError）へ出す", () => {
+    const src = readFileSync("src/components/okr/personal/PersonalOkrView.tsx", "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    expect(src).toMatch(/\}\)\.catch\(\(e: unknown\) => \{[\s\S]*?reportError\(e, "OKRツアーのサンプル表示"\)/);
+  });
+});

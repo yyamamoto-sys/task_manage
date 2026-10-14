@@ -65,6 +65,8 @@ import type { DemoDataset } from "../lib/demo/types";
 import { isGuestMode } from "../lib/guestMode";
 import { normalizeProjectRow, normalizeTaskRow } from "../lib/supabase/rowNormalize";
 import { recordLoad } from "../lib/diagnostics/loadCounter";
+import { fetchChangesSince } from "../lib/supabase/store";
+import { noteRemoteEcho } from "../lib/diagnostics/realtimeEchoWatch";
 
 export interface AppState {
   // ===== データ =====
@@ -571,6 +573,8 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return;
     }
     recordLoad();
+    if (_firstLoadStartedAt === null) _firstLoadStartedAt = Date.now();
+    _loadQueue = [];
     set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
     _activeLoad = (async () => {
       try {
@@ -614,6 +618,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           loadProgress:     0,              // ← Phase 2 のプログレスを 0 にリセット
           loadingHint:      "",             // ← ヒントをクリア
         });
+        replayLoadQueue(); // 取得中に届いた realtime 差分を、置き換えの上に重ね直す（Section 76）
 
         // ローディング画面のヒント（loading_tips）は fire-and-forget で取得する。
         // ・Phase 1 をこれ以上遅らせない（ローディング画面の表示自体は前回起動時の
@@ -656,6 +661,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             backgroundLoading:     false,
             loadProgress:          100,
           }));
+          replayLoadQueue();
         } catch {
           set({ backgroundLoading: false, loadProgress: 100 });
         }
@@ -668,6 +674,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         set({ error: msg, loading: false, backgroundLoading: false, loadProgress: 0, loadingHint: "", partialLoadWarning: [] });
       } finally {
         _activeLoad = null;
+        _loadQueue = [];
         // 進行中に追加の変更があった場合は1回だけ追従ロード
         if (_pendingLoad) {
           _pendingLoad = false;
@@ -1475,52 +1482,35 @@ export const useAppStore = create<AppState>()((set, get) => ({
   //
   // 物理削除は本アプリでは使わない（CLAUDE.md Section 4）が、念のため DELETE ハンドリング
   // を入れて中間テーブルの解除（addX/removeX 系）も反映できるようにする。
-  applyRemoteChange: (event) => {
-    const row = (event.new ?? event.old) as Record<string, unknown> | null;
-    if (!row) return;
-
-    set(state => {
-      switch (event.table) {
-        // load() と同じ形にそろえてから入れる（配列列が null の旧データでも画面が壊れないように）。
-        // DELETE の old は主キーしか持たないので正規化しない
-        case "tasks":
-          return { tasks: upsertById(state.tasks, event, event.eventType === "DELETE" ? row : normalizeTaskRow(row)) };
-        case "projects":
-          return { projects: upsertById(state.projects, event, event.eventType === "DELETE" ? row : normalizeProjectRow(row)) };
-        case "todos":
-          return { todos: upsertById(state.todos, event, row) };
-        case "key_results":
-          return { keyResults: upsertById(state.keyResults, event, row) };
-        case "task_forces":
-          return { taskForces: upsertById(state.taskForces, event, row) };
-        case "milestones":
-          return { milestones: upsertById(state.milestones, event, row) };
-        case "members":
-          return { members: upsertById(state.members, event, row) };
-        case "task_task_forces":
-          return { taskTaskForces: upsertByKeys(state.taskTaskForces, event, row, ["task_id", "tf_id"]) };
-        case "task_projects":
-          return { taskProjects: upsertByKeys(state.taskProjects, event, row, ["task_id", "project_id"]) };
-        case "project_task_forces":
-          return { projectTaskForces: upsertByKeys(state.projectTaskForces, event, row, ["project_id", "tf_id"]) };
-        case "task_dependencies":
-          return { taskDependencies: upsertById(state.taskDependencies, event, row) };
-        default:
-          return state;
-      }
-    });
-  },
+  applyRemoteChange: (event) => handleRemoteChange(event),
 }));
 
 /**
+ * 古さ判定（v3.148）：手元の updated_at の方が**新しい**ときだけ「古い」と判定する。
+ * 文字列比較ではなく Date.parse の数値比較（"…+00:00" と "…Z" のように書式が違っても正しく比べる）。
+ * 同値のときは後から届いた方を採る（同じトランザクションで2回 UPDATE した場合、updated_at が同じで
+ * 内容だけ違う行が届く）。どちらかが読めない値なら「古くない」＝適用する側に倒す。
+ */
+export function isStaleRemoteUpdate(existingUpdatedAt: string | undefined, incomingUpdatedAt: string | undefined): boolean {
+  if (!existingUpdatedAt || !incomingUpdatedAt) return false;
+  const a = Date.parse(existingUpdatedAt);
+  const b = Date.parse(incomingUpdatedAt);
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  return a > b;
+}
+
+/**
  * id ベースの単純PKテーブル用 upsert/remove。
- * UPDATE/INSERT は配列内 id を find して replace、なければ push。
- * 楽観更新後の自分自身からのイベント受信は updated_at で no-op 化する。
+ * INSERT・未登録 id の UPDATE は追加。UPDATE は手元の行に**重ねる**（{...既存, ...届いた行}）。
+ * realtime の new は、TOAST 化された未変更の大きな列（tasks.comment 等）を載せないことがあるため、
+ * 丸ごと置き換えると既存値が消える。キーが無い列は既存値を残し、キーがあって null の列は null にする。
+ * 楽観更新後の自分自身からのイベント受信は updated_at の古さ判定と、内容が同じなら参照を変えないことで no-op にする。
  */
 function upsertById<T extends { id: string; updated_at?: string }>(
   list: T[],
   event: RealtimeChange,
   rowObj: object,
+  normalize?: (r: Record<string, unknown>) => T,
 ): T[] {
   const row = rowObj as Record<string, unknown>;
   const rowId = row.id as string | undefined;
@@ -1532,17 +1522,18 @@ function upsertById<T extends { id: string; updated_at?: string }>(
 
   const idx = list.findIndex(x => x.id === rowId);
   if (idx < 0) {
-    return [...list, row as unknown as T];
+    return [...list, (normalize ? normalize(row) : row) as unknown as T];
   }
-  // stale チェック：手元の updated_at の方が新しい/同じなら no-op
   const existing = list[idx];
-  const incomingUpdatedAt = row.updated_at as string | undefined;
-  if (existing.updated_at && incomingUpdatedAt && existing.updated_at >= incomingUpdatedAt) {
+  if (isStaleRemoteUpdate(existing.updated_at, row.updated_at as string | undefined)) {
     return list;
   }
-  const next = list.slice();
-  next[idx] = row as unknown as T;
-  return next;
+  const merged = { ...(existing as unknown as Record<string, unknown>), ...row };
+  const next = (normalize ? normalize(merged) : merged) as unknown as T;
+  if (JSON.stringify(next) === JSON.stringify(existing)) return list;
+  const out = list.slice();
+  out[idx] = next;
+  return out;
 }
 
 /**
@@ -1562,6 +1553,153 @@ function upsertByKeys<T>(
   }
   // INSERT/UPDATE：既に存在すれば no-op、なければ追加
   return list.some(matches) ? list : [...list, row as unknown as T];
+}
+
+// ============================================================
+// Realtime 差分の取り込み（v3.148・CLAUDE.md Section 76）
+//
+// - load() の取得中に届いた差分は、取得完了時の「丸ごと置き換え」で消える。取得中はキューに溜め、置き換えの
+//   直後に順に再適用する（古さ判定を通るので、取得結果より古い差分は捨てられる）。
+// - 見える範囲が変わりうる変更（PJ の部署・メンバー・オーナーの変更／未登録 id の UPDATE／DELETE）は、
+//   差分だけでは関連データが揃わないので、間引いた load() を1回要求する（要求先は App.tsx が差し込む）。
+// - 初回 load の開始から購読が張られるまでの間の変更は、updated_at/created_at で絞った差分取得で埋める。
+// ============================================================
+
+type RemoteResyncRequester = (() => void) | null;
+let _remoteResyncRequester: RemoteResyncRequester = null;
+
+/** 「間引いた全件再取得」の要求先を差し込む（App.tsx の resync ランナー）。null で解除。テストでは spy を差し込む */
+export function setRemoteResyncRequester(fn: RemoteResyncRequester): void {
+  _remoteResyncRequester = fn;
+}
+
+const LOAD_QUEUE_MAX = 2000;
+let _loadQueue: RealtimeChange[] = [];
+let _firstLoadStartedAt: number | null = null;
+
+/** 初回 load の開始時刻（ms）。購読が張られるまでの取りこぼしを埋める差分取得の起点 */
+export function getFirstLoadStartedAt(): number | null {
+  return _firstLoadStartedAt;
+}
+
+export function _resetRemoteStateForTest(): void {
+  _loadQueue = [];
+  _firstLoadStartedAt = null;
+  _remoteResyncRequester = null;
+}
+
+const PROJECT_VISIBILITY_KEYS = ["group_id", "group_ids", "member_ids", "owner_member_id", "owner_member_ids"] as const;
+
+function visibilityValueKey(v: unknown): string {
+  if (Array.isArray(v)) return JSON.stringify([...v].map(String).sort());
+  return JSON.stringify(v ?? null);
+}
+
+/**
+ * 差分だけでは関連データが揃わない変更か。
+ * - tasks/projects の DELETE（見えなくなった）
+ * - tasks/projects の UPDATE で、手元に無い id の行が届いた（見える範囲が広がった）
+ * - projects の UPDATE で、可視性に関わる列（部署・メンバー・オーナー）が手元と変わった
+ * INSERT は通常の新規行（関連する表は各自のイベントで届く）なので対象外。
+ */
+export function shouldResyncOnRemoteChange(
+  event: RealtimeChange,
+  state: { tasks: { id: string }[]; projects: { id: string }[] },
+): boolean {
+  if (event.table !== "tasks" && event.table !== "projects") return false;
+  if (event.eventType === "DELETE") return true;
+  if (event.eventType !== "UPDATE") return false;
+  const row = event.new as Record<string, unknown> | null;
+  const id = row?.id as string | undefined;
+  if (!row || !id) return false;
+  const list = event.table === "tasks" ? state.tasks : state.projects;
+  const existing = list.find(x => x.id === id) as Record<string, unknown> | undefined;
+  if (!existing) return true;
+  if (event.table === "projects") {
+    for (const k of PROJECT_VISIBILITY_KEYS) {
+      if (k in row && visibilityValueKey(row[k]) !== visibilityValueKey(existing[k])) return true;
+    }
+  }
+  return false;
+}
+
+function applyRemoteEventToState(event: RealtimeChange): void {
+  const row = (event.new ?? event.old) as Record<string, unknown> | null;
+  if (!row) return;
+  useAppStore.setState(state => {
+    switch (event.table) {
+      // load() と同じ形にそろえてから入れる（配列列が null の旧データでも画面が壊れないように）。
+      // 正規化は重ねたあとの行に対して行う（realtime の new に載らない列を [] で埋めてしまわないため）
+      case "tasks":
+        return { tasks: upsertById(state.tasks, event, row, normalizeTaskRow) };
+      case "projects":
+        return { projects: upsertById(state.projects, event, row, normalizeProjectRow) };
+      case "todos":
+        return { todos: upsertById(state.todos, event, row) };
+      case "key_results":
+        return { keyResults: upsertById(state.keyResults, event, row) };
+      case "task_forces":
+        return { taskForces: upsertById(state.taskForces, event, row) };
+      case "milestones":
+        return { milestones: upsertById(state.milestones, event, row) };
+      case "members":
+        return { members: upsertById(state.members, event, row) };
+      case "task_task_forces":
+        return { taskTaskForces: upsertByKeys(state.taskTaskForces, event, row, ["task_id", "tf_id"]) };
+      case "task_projects":
+        return { taskProjects: upsertByKeys(state.taskProjects, event, row, ["task_id", "project_id"]) };
+      case "project_task_forces":
+        return { projectTaskForces: upsertByKeys(state.projectTaskForces, event, row, ["project_id", "tf_id"]) };
+      case "task_dependencies":
+        return { taskDependencies: upsertById(state.taskDependencies, event, row) };
+      default:
+        return state;
+    }
+  });
+}
+
+/** realtime（と差分取得）から届いた変更の入口。load 中ならキューにも溜める */
+function handleRemoteChange(event: RealtimeChange, opts: { noResync?: boolean } = {}): void {
+  const echoRow = (event.new ?? event.old) as Record<string, unknown> | null;
+  if (!echoRow) return;
+  // 自分の保存のエコーが届いたかの見張り（Section 76）。届いた事実だけを知らせる
+  if ((event.table === "tasks" || event.table === "projects") && typeof echoRow.id === "string") {
+    noteRemoteEcho(event.table, echoRow.id, typeof echoRow.updated_at === "string" ? echoRow.updated_at : undefined);
+  }
+  if (_activeLoad) {
+    if (_loadQueue.length >= LOAD_QUEUE_MAX) _pendingLoad = true;
+    else _loadQueue.push(event);
+  }
+  if (!opts.noResync && _remoteResyncRequester && shouldResyncOnRemoteChange(event, useAppStore.getState())) {
+    _remoteResyncRequester();
+  }
+  applyRemoteEventToState(event);
+}
+
+/** load() が配列を丸ごと置き換えた直後に、取得中に届いた差分を順に再適用する */
+function replayLoadQueue(): void {
+  for (const ev of _loadQueue) applyRemoteEventToState(ev);
+}
+
+const JUNCTION_TABLES = new Set(["task_task_forces", "task_projects", "project_task_forces"]);
+/** 時計のずれ（クライアントとDB）を見込んだ余裕。広めに取り、重複は古さ判定・冪等な反映が吸収する */
+const CATCHUP_MARGIN_MS = 2 * 60 * 1000;
+
+/**
+ * 初回 load の開始から購読が張られるまでの間の変更を、updated_at（junction 表は created_at）で絞った
+ * 小さな問い合わせで取り込む。全件の再取得（load）を避けるための選択。
+ * 限界：junction 表の「解除」（DELETE）は拾えない（その窓の中の解除は、次の復帰時の load() まで残りうる）。
+ */
+export async function catchUpRemoteChanges(sinceMs: number | null = _firstLoadStartedAt): Promise<void> {
+  const base = sinceMs ?? Date.now();
+  const since = new Date(base - CATCHUP_MARGIN_MS).toISOString();
+  const changes = await fetchChangesSince(since);
+  for (const c of changes) {
+    handleRemoteChange(
+      { table: c.table, eventType: JUNCTION_TABLES.has(c.table) ? "INSERT" : "UPDATE", new: c.row, old: null },
+      { noResync: true },
+    );
+  }
 }
 
 // ============================================================
