@@ -63,6 +63,8 @@ import { toDisplayTips, writeCachedTips } from "../lib/tips/loadingTips";
 import { DEMO_GROUP_ID } from "../lib/demo/constants";
 import type { DemoDataset } from "../lib/demo/types";
 import { isGuestMode } from "../lib/guestMode";
+import { normalizeProjectRow, normalizeTaskRow } from "../lib/supabase/rowNormalize";
+import { recordLoad } from "../lib/diagnostics/loadCounter";
 
 export interface AppState {
   // ===== データ =====
@@ -568,6 +570,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       _pendingLoad = true;
       return;
     }
+    recordLoad();
     set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
     _activeLoad = (async () => {
       try {
@@ -1478,10 +1481,12 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
     set(state => {
       switch (event.table) {
+        // load() と同じ形にそろえてから入れる（配列列が null の旧データでも画面が壊れないように）。
+        // DELETE の old は主キーしか持たないので正規化しない
         case "tasks":
-          return { tasks: upsertById(state.tasks, event, row) };
+          return { tasks: upsertById(state.tasks, event, event.eventType === "DELETE" ? row : normalizeTaskRow(row)) };
         case "projects":
-          return { projects: upsertById(state.projects, event, row) };
+          return { projects: upsertById(state.projects, event, event.eventType === "DELETE" ? row : normalizeProjectRow(row)) };
         case "todos":
           return { todos: upsertById(state.todos, event, row) };
         case "key_results":
@@ -1515,8 +1520,9 @@ export const useAppStore = create<AppState>()((set, get) => ({
 function upsertById<T extends { id: string; updated_at?: string }>(
   list: T[],
   event: RealtimeChange,
-  row: Record<string, unknown>,
+  rowObj: object,
 ): T[] {
+  const row = rowObj as Record<string, unknown>;
   const rowId = row.id as string | undefined;
   if (!rowId) return list;
 

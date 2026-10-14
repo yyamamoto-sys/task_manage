@@ -21,6 +21,7 @@ import type {
   EntityChangeLog,
 } from "../localData/types";
 import type { MyPageLayout } from "../widgets/types";
+import { normalizeProjectRow, normalizeTaskRow } from "./rowNormalize";
 
 // ===== 競合エラー =====
 
@@ -293,21 +294,8 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
 
   return {
     members: (members.data ?? []) as Member[],
-    projects: (projects.data ?? []).map((p: Record<string, unknown>) => ({
-      ...p,
-      owner_member_ids: (p.owner_member_ids as string[] | undefined)?.length
-        ? p.owner_member_ids as string[]
-        : p.owner_member_id ? [p.owner_member_id as string] : [],
-      member_ids: Array.isArray(p.member_ids) ? p.member_ids as string[] : [],
-    })) as Project[],
-    tasks: (tasks.data ?? []).map((t: Record<string, unknown>) => ({
-      ...t,
-      todo_ids: Array.isArray(t.todo_ids) ? t.todo_ids as string[]
-        : t.todo_id ? [t.todo_id as string] : [],
-      assignee_member_ids: Array.isArray(t.assignee_member_ids) ? t.assignee_member_ids as string[]
-        : t.assignee_member_id ? [t.assignee_member_id as string] : [],
-      tags: Array.isArray(t.tags) ? t.tags as string[] : [],
-    })) as Task[],
+    projects: (projects.data ?? []).map(p => normalizeProjectRow(p as Record<string, unknown>)),
+    tasks: (tasks.data ?? []).map(t => normalizeTaskRow(t as Record<string, unknown>)),
     taskProjects:     (tpjs.data        ?? []) as TaskProject[],
     milestones:       (milestones.data  ?? []) as Milestone[],
     memberTags:       (memberTags.data  ?? []) as MemberTag[],

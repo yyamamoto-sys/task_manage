@@ -89,10 +89,8 @@ describe("ノイズ除外（独立レビュー指摘・軽）", () => {
     expect(isExtensionOrigin(null)).toBe(false);
   });
 
-  it("AbortError・動的 import の失敗（lazyWithRetry が扱う一時エラー）は記録しない", () => {
+  it("AbortError は記録しない（動的 import の失敗は v3.146 で除外をやめた。directLogger.test.ts 参照）", () => {
     expect(isIgnoredError("AbortError: The user aborted a request.")).toBe(true);
-    expect(isIgnoredError("Failed to fetch dynamically imported module")).toBe(true);
-    expect(isIgnoredError("Importing a module script failed")).toBe(true);
     expect(isIgnoredError("TypeError: failed")).toBe(false);
   });
 

@@ -7,6 +7,7 @@
 import { REALTIME_LISTEN_TYPES, type RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { supabase } from "./client";
 import type { RealtimeChange } from "../../stores/appStore";
+import { createReconnectTracker } from "./resync";
 
 const TABLES = [
   "tasks", "projects", "todos",
@@ -18,9 +19,12 @@ const TABLES = [
 /**
  * Realtime 購読を開始する。返り値の関数を呼ぶと購読を解除する。
  * onChange は各 postgres_changes イベントごとに呼ばれる。
+ * onResync は「切断（CHANNEL_ERROR/TIMED_OUT/CLOSED）から SUBSCRIBED に復帰したとき」だけ呼ばれる
+ * （切断中のイベントは届いていないため、呼び出し側が全件再取得で埋める。最初の SUBSCRIBED では呼ばない）。
  */
 export function subscribeToRealtime(
   onChange: (change: RealtimeChange) => void,
+  opts?: { onResync?: () => void },
 ): () => void {
   const channel = supabase.channel("app-sync");
 
@@ -39,7 +43,10 @@ export function subscribeToRealtime(
     );
   }
 
-  channel.subscribe();
+  const tracker = createReconnectTracker();
+  channel.subscribe((status: string) => {
+    if (tracker.onStatus(status)) opts?.onResync?.();
+  });
 
   return () => {
     void supabase.removeChannel(channel);

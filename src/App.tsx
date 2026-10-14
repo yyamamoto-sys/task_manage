@@ -21,6 +21,12 @@ import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
 import { useAppStore } from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
+import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
+import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
+import { countLoadsWithin, getLoadTotal } from "./lib/diagnostics/loadCounter";
+import { logDiagnostic } from "./lib/errors/diagnosticLog";
+import { getClientErrorScreen } from "./lib/errors/clientErrorLog";
+import { isGuestMode } from "./lib/guestMode";
 import type { Member } from "./lib/localData/types";
 import { useT } from "./hooks/useT";
 import { loadPendingProjectInvite, clearPendingProjectInvite } from "./lib/projectInvite/pendingInvite";
@@ -463,10 +469,43 @@ function AuthenticatedApp({
 
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
   // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
+  // 🔴 v3.146：依存は loading ではなく「初回ロード済みか」。load() のたびに loading が true→false になるので、
+  // loading を依存にすると load のたびに購読を張り直し、その間のイベントを取りこぼす。
+  const [realtimeReady, setRealtimeReady] = useState(false);
+  useEffect(() => { if (!loading) setRealtimeReady(true); }, [loading]);
+  const load = useAppStore(s => s.load);
   useEffect(() => {
-    if (loading) return;
-    return subscribeToRealtime(applyRemoteChange);
-  }, [loading, applyRemoteChange]);
+    if (!realtimeReady) return;
+    // 取りこぼしを埋める全件再取得は「切断からの復帰」「10分以上非表示からの復帰」のときだけ（Section 76）。
+    // 通常の変更は applyRemoteChange の差分だけで反映する
+    const resync = createResyncRunner(() => { void load(); });
+    const off = subscribeToRealtime(applyRemoteChange, { onResync: resync });
+    const gate = createHiddenReturnGate();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") gate.onHidden();
+      else if (gate.onVisible()) resync();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      off();
+    };
+  }, [realtimeReady, applyRemoteChange, load]);
+
+  // 「だんだん重くなる」の切り分け用の計測（5分ごと・閾値超過をセッション中1回だけ記録。Section 76）
+  useEffect(() => {
+    return startHealthMonitor({
+      log: logDiagnostic,
+      now: () => Date.now(),
+      heapBytes: () => readHeapBytes(),
+      screen: getClientErrorScreen,
+      loadTotal: getLoadTotal,
+      loadsWithin: ms => countLoadsWithin(ms),
+      isGuest: isGuestMode,
+      setInterval: (fn, ms) => window.setInterval(fn, ms),
+      clearInterval: h => window.clearInterval(h as number),
+    });
+  }, []);
 
   // プロジェクト招待：保留中の招待の自動受諾チェックが終わるまで、
   // SetupWizard/AccessDeniedScreen/UserSelectScreenのどれも出さない（上のuseEffect参照）。

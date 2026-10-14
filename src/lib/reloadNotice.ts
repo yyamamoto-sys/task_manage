@@ -55,3 +55,6 @@ export function shouldShowReloadNotice(
   if (minClientVersion === null) return false;
   return compareVersions(currentVersion, minClientVersion) < 0;
 }
+
+/** lazyWithRetry がチャンクを読み込めなかったとき window に流すイベント。ReloadNoticeBanner が受けて全体バナーを出す（v3.146） */
+export const CHUNK_LOAD_FAILED_EVENT = "app:chunk-load-failed";

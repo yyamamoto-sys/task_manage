@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.145
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.146
 #
-最終更新：2026-10-14（v3.145）
+最終更新：2026-10-14（v3.146）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5076,3 +5076,47 @@ ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・
 - **読み込み・送信の整合**：読み込みは同時に1回だけ（`loadingRef`。ドロップとボタンが重なっても後から終わった方が先の添付を上書きしない）。読み込み中は送信ボタンを押せない（`onLoadingChange`→`attachLoading`）。送信に失敗したら添付を戻す（`useAIConsultation.submit` が成否を返し、失敗時に画面が `setAttachments` で戻す。その間に新しく添付されていたら触らない）。
 - **xlsx のセル**：行末の空セルは出さない。行内の連続する空セルのタブは最大20個に詰める（右端の遠い列に値が1つあるだけで大量のタブが入るのを防ぐ。**遠い列は位置関係が保たれない**ことを承知の上の判断）。範囲外の文字参照（`&#99999999;`）は置換文字にして続行する。
 - **未対応の課題（Edge Function の変更が要るため保留）**：①サーバー側（ai-consult）は添付の字数・形式を検査していない（上限30,000字はクライアントだけで守っている。画面を介さず API を叩けば超えて送れる）。②ゲスト（サンプル閲覧）も添付できる（ゲストのAI枠は1日3回で回数制限はあるが、添付の有無で区別していない）。どちらもサーバー側の検査を足すときに、Edge Function の再デプロイと一緒に対応する。
+
+---
+
+## 76. 長く使うと重くなる問題・黙った再読み込みの対策（v3.146・2026-10-14）
+
+利用者報告：「色々な画面を触っていると、だんだん画面が重くなり、ブラックアウトしたり強制リロードされたりする」。コードの静的調査（リスナー・タイマー・購読・観察器・Blob・store の肥大化）で「画面を切り替えるたびに増え続けるもの」は見つからず、原因は次の2つだった。**jsdom での mount/unmount 反復計測と実機のメモリ計測は未実施**（下の計測で確かめる）。
+
+### 1. 全件の読み直しをやめた（Section 1.5・13 の「AppDataProvider が realtime 購読を担う」記述はこれで置き換わる）
+
+- **原因**：`AppDataContext` が tasks/projects の変更のたびに 400ms 後に `load()`（全テーブルの再取得）を呼んでいた。自分の保存も realtime で自分へ返るため、ガントのドラッグ・一括シフト・AI 反映のたびに15テーブルの全件取得と全画面の再描画が走った。同じ変更は `App.tsx` の `subscribeToRealtime(applyRemoteChange)`（11表の差分反映）でも受けており二重だった。
+- **対応**：`AppDataContext` の購読を撤去し、realtime は `App.tsx` の差分反映に一本化。`AppDataContext` は初回 `load()` だけを担う。
+- **load() を呼ぶのは「取りこぼしを埋める」2つの場合だけ**（`src/lib/supabase/resync.ts`）：①チャンネルが CHANNEL_ERROR/TIMED_OUT/CLOSED のあと SUBSCRIBED に復帰したとき（`subscribeToRealtime` の `onResync`。最初の SUBSCRIBED では呼ばない）②タブが10分以上非表示だったあと前面に戻ったとき（`createHiddenReturnGate`）。連続して揺れても `createResyncRunner` が30秒の最短間隔で連打を止める。
+- 🔴 購読の effect の依存は `loading` ではなく「初回ロード済みか」（`realtimeReady`）。`load()` は実行のたびに `loading` を true→false にするため、`loading` を依存にすると load のたびに購読を張り直し、その間のイベントを取りこぼす。
+- **applyRemoteChange が load() の代わりを果たせるかの確認（穴の有無）**：11表（tasks・projects・todos・key_results・task_forces・milestones・members・task_task_forces・task_projects・project_task_forces・task_dependencies）は差分で反映される。DB トリガーで他の行が変わるもの（`sync_task_group_ids`＝BEFORE トリガーで tasks 行自身に載る／`cascade_project_group_ids_to_tasks`＝tasks を UPDATE し `trg_tasks_updated_at` で updated_at が進むため stale 判定を通る）も realtime で届く。**見つかった穴は1つ：tasks/projects の行を生のまま入れていたため、配列列が null の旧データで `load()` 経由の行と形が食い違う**（`todo_ids`/`assignee_member_ids`/`tags`/`owner_member_ids`/`member_ids`）。`src/lib/supabase/rowNormalize.ts` の `normalizeTaskRow`/`normalizeProjectRow`（`fetchCriticalData` と共有）を通してから入れるようにして解消した。**残る既知の限界**：realtime の購読対象外の表（groups・objectives・member_tags 等）は従来どおり届かない（旧実装も tasks/projects の変更でしか load しておらず、これらは元から対象外）／RLS の可視範囲が変わったとき（招待の受諾直後等）は届かない→復帰時の load() と、各画面の明示 reload（`window.location.reload()`）で拾う。
+- **明示の `reload()` の扱い**：`ConsultationPanel`（提案の反映・AI 提案の適用）と `useAIConsultation`（反映・Undo）の `reload()` は残した。これらは `applyProposal`/`undoApply` が store.ts を直接書く経路で、appStore の楽観更新を通らず、objectives 等の realtime 対象外の表も触りうる。**AI 反映の直後の1回であり、realtime のエコー（`applyRemoteChange`）は冪等なので二重に load() が走ることは無い**（`load()` は進行中なら `_pendingLoad` に畳まれる）。
+
+### 2. 黙った再読み込みをやめた（`src/lib/lazyWithRetry.ts`）
+
+- **原因**：遅延チャンクの読み込みに失敗すると `sessionStorage` のフラグを立てて黙って `location.reload()` していた。再デプロイ後、古いタブが消えたハッシュ付きチャンクを要求すると 404 になり発火する（`vercel.json` に古いチャンクを残す仕組みは無い）。フラグは画面（チャンク）ごとに別なので、色々な画面を開くたびに連続でリロードされ、未保存の編集も無警告で消えた。
+- **新しい動作**：失敗したら1回だけ待って再取得（一時的な通信エラーなら直る。古いチャンクの 404 は再取得も失敗し、ただ1秒待つだけの無害な再試行）。それでも失敗なら **reload せず**、その画面の位置（Suspense の中）に `ChunkLoadFailed`（「新しい版が公開されています。この画面を開くには再読み込みが必要です［再読み込み］」）を返し、`ReloadNoticeBanner`（全体バナー）にも `CHUNK_LOAD_FAILED_EVENT` で知らせる。再読み込みは `reloadWithGuard`（`confirmDiscardUnsavedEdits`＝Section 46 を通してから reload）。`ReloadNoticeBanner` のボタンも同じ関数を通す。
+- 失敗は**例外にしない**（`ErrorBoundary`・`unhandledrejection` に流れない）。逆に `lazyWithRetry` の外で起きた動的 import の失敗（`FileAttachButton` 等）は通常の経路で記録される。
+- **記録**：`clientErrorLog.ts` の無視リストから動的 import 失敗の2パターンを外し、`lazyWithRetry` が `code="chunk-load"`・context に `chunk-load:<画面名> v<APP_VERSION>` を付けて `logDiagnostic`（`src/lib/errors/diagnosticLog.ts`。実体は `main.tsx` が `createDirectLogger` で差し込む）から画面ごとにセッション中1回だけ送る。fingerprint は画面名ごと（版の数字は正規化で束ねる）。**super_admin への「新しいエラー」通知（Section 67）が、デプロイのたびに画面ごとに1件ずつ出うる**（同じ fingerprint は1時間に1回・1人の super_admin につき1時間10件まで）。多すぎるようなら chunk-load を通知の対象外にする（`log_client_error` 側の変更が要る）。
+- **ブラックアウト（Chrome がタブを落とす）は記録できない**（タブ自体が死ぬため）。次の計測で間接的に捉える。
+
+### 3. 計測の仕組み（`src/lib/diagnostics/`）
+
+- `healthMonitor.ts`：`AuthenticatedApp` が起動し、5分ごとに ①Chrome の `performance.memory.usedJSHeapSize` が700MB以上なら `code="memory-high"` ②直近10分の `load()` 実行回数が10回を**超えたら** `code="load-burst"` を、**各セッション1回だけ** `logDiagnostic` で送る。context に MB・経過分・現在の画面（`getClientErrorScreen`）・load() の累計回数。メモリが取れない環境（Chrome 以外）は何もしない。ゲストでは動かさない。タイマーはアンマウントで確実に解除。
+- `loadCounter.ts`：`appStore.load()` の実行開始を `recordLoad()` で数える（保持する時刻は200件上限で、計測自体が溜まり続けない）。
+- source は既存の CHECK 制約に合う `"report"`（DB は変更しない）。`memory-high`・`load-burst` は message が固定で、`computeFingerprint` が `DIAGNOSTIC_CODES` のとき context をまとめ方に使わない＝code ごとに1行に束ねる（MB・画面名・回数は初回の context に残る）。
+- 送る頻度：同じ fingerprint は1分に1回・1タブ1時間30件まで（既存の間引き）に加え、各診断はセッション中1回。
+
+### 機械チェック・テスト
+
+`src/context/__tests__/noFullReloadOnChange.test.ts`（AppDataContext が channel・setTimeout を持たない／App.tsx の購読が `onResync` 経由・依存が `[realtimeReady, applyRemoteChange, load]`／visibilitychange の購読と解除。Section 59 に従いコメントを除去して走査。修正前の HEAD に同じ検出を当てて全項目が赤になることを確認済み）・`resync.test.ts`・`realtimeResync.test.ts`・`realtimeApplyRelated.test.ts`・`loadCountsLoads.test.ts`・`healthMonitor.test.ts`・`loadCounter.test.ts`・`lazyWithRetry.test.ts`（reload しない・案内の表示・記録は画面ごと1回）・`directLogger.test.ts`。
+
+### 山本さんの実機での確認
+
+Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリを見て、どの画面の往復・どの操作で増えるか。デプロイ直後に画面を開いて、再読み込みの案内が出る（黙って reload しない）こと。管理画面「エラー」タブに `chunk-load`・`memory-high`・`load-burst` が出るかどうか。
+
+### やらないこと
+
+- jsdom での mount/unmount 反復計測（メモリ増加の有無は実機の計測で判断する）。
+- ガント・グラフ等の個別の描画最適化・store の配列の上限（今回の調査では増殖経路は見つからなかった）。
+- `MIN_CLIENT_VERSION` の引き上げ・マイグレーション（DB・RLS・Edge Function・localStorage の形式は変更なし）。

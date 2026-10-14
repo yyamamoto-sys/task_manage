@@ -8178,3 +8178,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 範囲外の文字参照（&#99999999;）は置換文字にして続行（RangeErrorにしない）。
 # * テスト追加：officeLimits.test.ts（上限・打ち切り・線形・非表示・タブ詰め・エンティティ・t="e"/"str"・r属性なし・workbook.xml無し）／textDecode.test.ts／consultationAttachmentWiring.test.ts（hookが履歴に本文を積まない・動的import・読み込み中の配線）／consultationAttachment.test.ts にサロゲート境界・区切りの偽装・自己修正リトライで添付を渡すことを追加。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+# v3.146（2026-10-14）：長く使うと重くなる問題・黙った再読み込みの対策（CLAUDE.md Section 76）
+# * 全件の読み直しをやめた：AppDataContext の `app-data-changes` 購読（tasks/projects の変更で400ms後に全テーブルを load()）を撤去し、App.tsx の subscribeToRealtime(applyRemoteChange) に一本化。購読の依存を loading から「初回ロード済みか」へ変え、load() のたびに購読を張り直さない。
+# * load() は「切断（CHANNEL_ERROR/TIMED_OUT/CLOSED）から SUBSCRIBED への復帰」と「10分以上の非表示から前面に戻ったとき」だけ（resync.ts。30秒の最短間隔つき）。
+# * applyRemoteChange が tasks/projects の行を load() と同じ形（配列列の既定値・旧単数列からの移行）にそろえて入れるよう、normalizeTaskRow/normalizeProjectRow を rowNormalize.ts に切り出して共有（store.ts の fetchCriticalData も同じ関数）。
+# * lazyWithRetry：失敗しても reload しない。1回だけ待って再取得→それでも失敗なら ChunkLoadFailed（再読み込みの案内）をその画面の位置に返し、ReloadNoticeBanner にも通知（CHUNK_LOAD_FAILED_EVENT）。再読み込みは reloadWithGuard（未保存確認つき）。
+# * 記録：動的 import の失敗を clientErrorLog の無視リストから外し、lazyWithRetry が code=chunk-load・context に画面名と版で画面ごと1回だけ直接記録（diagnosticLog.ts・createDirectLogger）。例外にしないので ErrorBoundary・unhandledrejection と二重にならない。
+# * 計測：healthMonitor.ts（5分ごと・Chrome の performance.memory が700MB以上で memory-high、10分間の load() が10回超で load-burst を各セッション1回。ゲストでは動かさない）。load() の実行回数は loadCounter.ts。source は既存の CHECK 制約に合う "report"。memory-high・load-burst は fingerprint に context を含めず code ごとに束ねる。
+# * テスト追加：resync／realtimeResync／noFullReloadOnChange／realtimeApplyRelated／loadCountsLoads／healthMonitor／loadCounter／lazyWithRetry／directLogger。clientErrorLog.test の無視リスト期待を更新。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。

@@ -14,6 +14,8 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.app.partialLoadWarning.body": "Some data ({tables}) could not be loaded. Please reload.",
   "layout.app.reloadNotice.body": "The app has been updated. Continuing to use this page may cause saving to fail. Please reload.",
   "layout.app.reloadNotice.reload": "Reload",
+  "layout.app.chunkLoadFailed.body": "A new version has been released. Reloading is required to open this screen.",
+  "layout.app.chunkLoadFailed.reload": "Reload",
 
   "layout.nav.dashboard.label": "Dashboard",
   "layout.nav.dashboard.tooltip": "See OKR progress, this week's tasks, and deadline alerts at a glance",

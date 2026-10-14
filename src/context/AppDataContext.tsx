@@ -10,9 +10,12 @@
 // 【再エクスポート（後方互換）】
 //   ConflictError — store.ts から再エクスポート
 //
-// 【Thundering herd 対策（2026-06-23）】
-// realtime イベントを 400ms デバウンスして複数ユーザーの同時接続時でも
-// load() が殺到しないようにする。store 側の並列ガードと二重防衛。
+// 【v3.146：tasks/projects の変更で load() を呼ぶ購読は撤去した（CLAUDE.md Section 76）】
+// 旧実装は tasks/projects の変更のたびに 400ms 後に全テーブルを取り直していた。自分の保存も
+// realtime で自分へ返ってくるため、ガントのドラッグ・一括シフト・AI 反映のたびに15テーブルの
+// 全件取得と全画面の再描画が走り、長く使うほど重くなる原因だった。realtime の反映は App.tsx の
+// subscribeToRealtime(applyRemoteChange)（11表を差分で反映）に一本化している。
+// 取りこぼしを埋める load() は、切断からの復帰・長時間非表示からの復帰のときだけ App.tsx が呼ぶ。
 //
 // 【ゲスト（サンプル閲覧）モードのガード（2026-08-06）】
 // App.tsx はゲストモード時にこの Provider 自体を配下に置かない（appStore にはサンプル
@@ -21,14 +24,13 @@
 // なった場合の二重防衛（実データが読み込まれてしまう事故を構造的に防ぐ）。
 
 import { useEffect, type ReactNode } from "react";
-import { supabase } from "../lib/supabase/client";
 import { useAppStore } from "../stores/appStore";
 import { isGuestMode } from "../lib/guestMode";
 
 export { ConflictError } from "../lib/supabase/store";
 
 /**
- * 初回データ読み込みと Supabase realtime 購読を行うプロバイダ。
+ * 初回データ読み込みを行うプロバイダ（realtime 購読は App.tsx）。
  * App.tsx の認証済み配下に1つだけ置く。
  */
 export function AppDataProvider({ children }: { children: ReactNode }) {
@@ -38,28 +40,6 @@ export function AppDataProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (isGuestMode()) return;
     load();
-  }, [load]);
-
-  // Supabase realtime: tasks / projects テーブルへの外部書き込みを検知して再取得
-  // デバウンス 400ms: 複数ユーザーが同時接続しても load() が一度に大量発行されないよう集約する
-  useEffect(() => {
-    if (isGuestMode()) return;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const debouncedLoad = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => load(), 400);
-    };
-
-    const channel = supabase
-      .channel("app-data-changes")
-      .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, debouncedLoad)
-      .on("postgres_changes", { event: "*", schema: "public", table: "projects" }, debouncedLoad)
-      .subscribe();
-
-    return () => {
-      if (timer) clearTimeout(timer);
-      supabase.removeChannel(channel);
-    };
   }, [load]);
 
   return <>{children}</>;

@@ -25,14 +25,13 @@ export const MAX_SENDS_PER_HOUR = 30;
 /**
  * 記録しない既知の無害なエラー（v3.129 独立レビュー指摘・軽）。
  * - AbortError：本人・コンポーネントの中断操作で意図的に起きる（fetch の中断など）
- * - 動的 import の失敗：lazyWithRetry がデプロイ直後の一時エラーとして扱い、リロードで解消する
+ * （動的 import の失敗は v3.146 で除外をやめた。lazyWithRetry が例外にせず code="chunk-load" で
+ * 画面ごとに1回だけ直接記録するため、ここを通る動的 import の失敗は「lazyWithRetry の外」＝記録すべきもの）
  */
 const IGNORED_MESSAGE_PATTERNS: readonly RegExp[] = [
   /ResizeObserver loop/i,
   /^Script error\.?$/i,
   /AbortError/i,
-  /Failed to fetch dynamically imported module/i,
-  /Importing a module script failed/i,
 ];
 
 /** chrome-extension:// ／ moz-extension:// 由来（本体のバグではない） */
@@ -89,9 +88,16 @@ function fnv1a32(text: string, seed: number): number {
   return h >>> 0;
 }
 
+/**
+ * 診断（v3.146・healthMonitor）の code。メッセージは固定で、詳細（MB・経過分・画面名・回数）は context に入れる。
+ * context が毎回違うと fingerprint が割れて code ごとに束ならないので、これらは context をまとめ方に使わない。
+ */
+export const DIAGNOSTIC_CODES: readonly string[] = ["memory-high", "load-burst"];
+
 export function computeFingerprint(input: { source: ClientErrorSource; code?: string | null; message: string; context?: string | null }): string {
   // ErrorBoundary の context はコンポーネントの位置を含むので、まとめ方には「ErrorBoundary」だけを使う
-  const contextKey = input.source === "boundary" ? "boundary" : normalizeForFingerprint(input.context ?? "");
+  const isDiagnostic = !!input.code && DIAGNOSTIC_CODES.includes(input.code);
+  const contextKey = input.source === "boundary" ? "boundary" : isDiagnostic ? "" : normalizeForFingerprint(input.context ?? "");
   const key = [input.source, (input.code ?? "").toLowerCase(), normalizeForFingerprint(input.message), contextKey].join("|");
   const a = fnv1a32(key, 0x811c9dc5).toString(16).padStart(8, "0");
   const b = fnv1a32(key, 0x01000193).toString(16).padStart(8, "0");
@@ -190,6 +196,27 @@ export function createSendThrottle(opts: { intervalMs?: number; maxPerHour?: num
       sentTimes.push(now);
       return true;
     },
+  };
+}
+
+/**
+ * 例外ではない診断（chunk-load・memory-high・load-burst）を1件送る。window のイベントを経由せず直接送る
+ * （v3.146）。同じ fingerprint は1分に1回・1時間の総数に上限（このタブ単位。installClientErrorLogging と同じ間引き）。
+ * 送信の Promise は必ず catch する（記録の失敗を unhandledrejection に戻さない）。
+ */
+export function createDirectLogger(deps: Pick<ClientErrorLoggingDeps, "send" | "canSend" | "env" | "now">): (input: ClientErrorInput) => void {
+  const now = deps.now ?? (() => Date.now());
+  const throttle = createSendThrottle();
+  return (input) => {
+    const payload = buildClientErrorPayload(input, deps.env());
+    if (!throttle.allow(payload.p_fingerprint, now())) return;
+    void (async () => {
+      try {
+        if (await deps.canSend()) await deps.send(payload);
+      } catch (e) {
+        console.warn("[clientErrorLog] 診断の記録に失敗（再記録はしない）:", e);
+      }
+    })();
   };
 }
 

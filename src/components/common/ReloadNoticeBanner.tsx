@@ -25,7 +25,8 @@
 import { useEffect, useState } from "react";
 import { useT } from "../../hooks/useT";
 import { APP_VERSION } from "../../lib/version";
-import { shouldShowReloadNotice } from "../../lib/reloadNotice";
+import { shouldShowReloadNotice, CHUNK_LOAD_FAILED_EVENT } from "../../lib/reloadNotice";
+import { reloadWithGuard } from "../../lib/reloadWithGuard";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10分
 
@@ -38,6 +39,14 @@ interface VersionManifest {
 export function ReloadNoticeBanner() {
   const t = useT();
   const [show, setShow] = useState(false);
+
+  // lazyWithRetry がチャンクを読み込めなかったとき（新しい版の公開後の古いタブ）も同じバナーで知らせる（v3.146）。
+  // 開発サーバーでも出せるよう、DEV の早期 return より前の別 effect に置く
+  useEffect(() => {
+    const onChunkFailed = (): void => setShow(true);
+    window.addEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
+    return () => window.removeEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
+  }, []);
 
   useEffect(() => {
     if (import.meta.env.DEV) return;
@@ -89,7 +98,7 @@ export function ReloadNoticeBanner() {
         ⚠ {t("layout.app.reloadNotice.body")}
       </span>
       <button
-        onClick={() => window.location.reload()}
+        onClick={() => { void reloadWithGuard(); }}
         style={{
           padding: "4px 12px", fontSize: "11px", fontWeight: "500",
           background: "var(--color-text-warning)", color: "#fff",
