@@ -30,6 +30,12 @@ import { confirmDialog } from "../../lib/dialog";
 import { showToast } from "../common/Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { ListToolbar, type GroupBy, type SortKey, type SortDir, type Density } from "./ListToolbar";
+import { ListInlineAddRow } from "./ListInlineAddRow";
+import { useListInlineAdd } from "./useListInlineAdd";
+import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
+import { registerListInlineAdd } from "../../lib/list/inlineAddRegistry";
+import { isGuestMember } from "../../lib/guestMode";
+import { canGuestEdit } from "../../lib/guest/guestCapability";
 
 interface Props {
   currentUser: Member;
@@ -114,6 +120,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const saveTask   = useAppStore(s => s.saveTask);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
+  const selectedProjectId = selectedProject?.id ?? null;
   const allTasks = useMemo(() => active(rawTasks), [rawTasks]);
   const members  = useMemo(() => active(rawMembers), [rawMembers]);
   // 行の描画ループで .find() を毎回呼ぶと O(件数×行数) になるため、O(1)ルックアップ用のMapを用意する
@@ -191,6 +198,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 「＋子タスク」：親を固定して QuickAddTaskModal（親タスク追加と同じモーダル）を開く。
   // 値＝親タスクID、null＝閉じている。
   const [quickAddParentId, setQuickAddParentId] = useState<string | null>(null);
+  // 追加行の「詳細を入れて追加」：入力済みの内容を引き継いで QuickAddTaskModal を開く。null＝閉じている
+  const [detailAdd, setDetailAdd] = useState<{
+    spec: GroupAddSpec; name: string; assigneeId: string; startDate: string; dueDate: string;
+  } | null>(null);
 
   // タスクのドラッグ並べ替え・親子変更（PJ別表示時）。display_order / parent_task_id を更新して全員に共有。
   // 実処理は useTaskDragReorder（GanttViewと共有。CLAUDE.md v3.01）に委譲し、ここでは
@@ -393,7 +404,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       projects.forEach(p => map.set(p.id, []));
       filteredTasks.forEach(t => { const a = t.project_id ? map.get(t.project_id) : undefined; if (a) a.push(t); });
       const pjGroups = projects.filter(p => (map.get(p.id)?.length ?? 0) > 0)
-        .map(p => ({ label: p.name, color: p.color_tag, tasks: map.get(p.id) ?? [], projectId: p.id as string | null }));
+        .map(p => ({ label: p.name, color: p.color_tag, tasks: map.get(p.id) ?? [], projectId: p.id as string | null, add: makeSpec({ projectId: p.id }) }));
       const noPjTasks = filteredTasks.filter(t => t.project_id == null);
       const todoMap = new Map<string, Task[]>();
       const noTodoTasks: Task[] = [];
@@ -404,10 +415,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       });
       const todoGroups = [...todoMap.entries()].map(([todoId, tasks]) => {
         const td = todos.find(t => t.id === todoId);
-        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0, 30)}` : "[ToDo]", color: "#6ee7b7", tasks, projectId: null as string | null };
+        return { label: td ? `[ToDo] ${td.title.split("\n")[0].slice(0, 30)}` : "[ToDo]", color: "#6ee7b7", tasks, projectId: null as string | null, add: makeSpec({ todoId }) };
       });
       const unassigned = noTodoTasks.length > 0
-        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks, projectId: null as string | null }] : [];
+        ? [{ label: "プロジェクト未設定", color: "var(--color-text-tertiary)", tasks: noTodoTasks, projectId: null as string | null, add: makeSpec({}) }] : [];
       return [...pjGroups, ...todoGroups, ...unassigned];
     }
     if (groupBy === "assignee") {
@@ -415,7 +426,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       members.forEach(m => map.set(m.id, []));
       filteredTasks.forEach(t => { const a = map.get(t.assignee_member_id); if (a) a.push(t); });
       return members.filter(m => (map.get(m.id)?.length ?? 0) > 0)
-        .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)!, projectId: null as string | null }));
+        .map(m => ({ label: m.display_name, color: m.color_bg, tasks: map.get(m.id)!, projectId: null as string | null, add: makeSpec({ assigneeId: m.id }, selectedProjectId) }));
     }
     if (groupBy === "tag") {
       // タグ別：1タスクが複数タグを持つ場合は各タグ群に重複して現れる。タグなしは末尾にまとめる。
@@ -428,17 +439,48 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       });
       const tagGroups = [...map.entries()]
         .sort(([a], [b]) => a.localeCompare(b, "ja"))
-        .map(([tag, tasks]) => ({ label: `# ${tag}`, color: "var(--color-brand)", tasks, projectId: null as string | null }));
+        .map(([tag, tasks]) => ({ label: `# ${tag}`, color: "var(--color-brand)", tasks, projectId: null as string | null, add: makeSpec({ tag }, selectedProjectId) }));
       const noTagGroup = noTag.length > 0
-        ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag, projectId: null as string | null }] : [];
+        ? [{ label: "タグなし", color: "var(--color-text-tertiary)", tasks: noTag, projectId: null as string | null, add: makeSpec({}, selectedProjectId) }] : [];
       return [...tagGroups, ...noTagGroup];
     }
     return (["in_progress", "todo", "on_hold", "done", "cancelled"] as const)
-      .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s), projectId: null as string | null }))
+      .map(s => ({ label: TASK_STATUS_LABEL[s], color: TASK_STATUS_STYLE[s].color, tasks: filteredTasks.filter(t => t.status === s), projectId: null as string | null, add: makeSpec({ status: s }, selectedProjectId) }))
       .filter(g => g.tasks.length > 0);
-  }, [filteredTasks, groupBy, projects, members, todos]);
+  }, [filteredTasks, groupBy, projects, members, todos, selectedProjectId]);
 
   const selectedTask = selectedTaskId ? allTasks.find(t => t.id === selectedTaskId) ?? null : null;
+
+  // ===== その場追加（各グループ末尾の「＋ タスクを追加」行。PC表のみ。CLAUDE.md Section 77）=====
+  const inlineAddEnabled = !isMobile && canGuestEdit(isGuestMember(currentUser), "task");
+  const inlineAdd = useListInlineAdd({
+    userId: currentUser.id, scopedTasks: rawTasks, allTasks, filteredTasks, saveTask,
+  });
+  const expandGroup = useCallback((key: string) => {
+    setCollapsedGroupKeys(prev => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      lsSet("collapsedGroups", Array.from(next));
+      return next;
+    });
+  }, []);
+  // FABの「＋ タスクを追加」から：選択中のPJのグループ（無ければ先頭のグループ）の追加行へ。
+  // 処理できないとき（グループが無い）は false を返し、FAB側が従来のポップアップを開く
+  const fabAddRef = useRef<(projectId: string | null) => boolean>(() => false);
+  fabAddRef.current = projectId => {
+    const target = (groupBy === "project" && projectId
+      ? groups.find(g => g.add.projectId === projectId) : undefined) ?? groups[0];
+    if (!target) return false;
+    const key = `${groupBy}:${target.label}`;
+    expandGroup(key);
+    inlineAdd.open(key, target.add);
+    return true;
+  };
+  useEffect(() => {
+    if (!inlineAddEnabled) return;
+    return registerListInlineAdd(projectId => fabAddRef.current(projectId));
+  }, [inlineAddEnabled]);
 
   // ===== 親子ツリーの行構築 =====
   // groupBy="project"（および ToDo/未設定）では親→子をネスト表示。
@@ -577,7 +619,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // ③モバイル（isMobile）では無効化（タッチ操作主体・GanttViewのisMobile除外と同じ扱い）。
   useEffect(() => {
     if (isMobile) return;
-    if (selectedTaskId || editingTaskId || quickAddParentId) return;
+    if (selectedTaskId || editingTaskId || quickAddParentId || detailAdd) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const el = document.activeElement as HTMLElement | null;
       const tag = el?.tagName;
@@ -603,7 +645,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isMobile, selectedTaskId, editingTaskId, quickAddParentId, filteredTasks, clearSelection]);
+  }, [isMobile, selectedTaskId, editingTaskId, quickAddParentId, detailAdd, filteredTasks, clearSelection]);
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
@@ -1034,6 +1076,29 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         );
                       });
                         })()}
+                      {inlineAddEnabled && !isGroupCollapsed && (
+                        <ListInlineAddRow
+                          groupLabel={group.label}
+                          spec={group.add}
+                          colKeys={cols.map(c => c.key)}
+                          draft={inlineAdd.drafts[groupKey]}
+                          saving={inlineAdd.savingKey === groupKey}
+                          focusNonce={inlineAdd.focusReq?.key === groupKey ? inlineAdd.focusReq.nonce : 0}
+                          lockedAssignee={groupBy === "assignee" && group.add.assigneeId ? memberById.get(group.add.assigneeId) : undefined}
+                          onOpen={() => inlineAdd.open(groupKey, group.add)}
+                          onChange={patch => inlineAdd.change(groupKey, patch)}
+                          onSubmit={() => void inlineAdd.submit(groupKey, group.add)}
+                          onCancel={() => inlineAdd.cancel(groupKey)}
+                          onOpenDetail={() => {
+                            const d = inlineAdd.drafts[groupKey];
+                            setDetailAdd({
+                              spec: group.add, name: d?.name ?? "", assigneeId: d?.assigneeIds[0] ?? "",
+                              startDate: d?.startDate ?? "", dueDate: d?.dueDate ?? "",
+                            });
+                            inlineAdd.cancel(groupKey);
+                          }}
+                        />
+                      )}
                     </React.Fragment>
                     );
                   });
@@ -1073,6 +1138,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           defaultParentId={quickAddParentId}
           defaultProjectId={allTasks.find(t => t.id === quickAddParentId)?.project_id ?? undefined}
           onClose={() => setQuickAddParentId(null)}
+        />
+      )}
+
+      {/* 追加行の「詳細を入れて追加」：入力済みの内容と今のグループの属性を引き継ぐ */}
+      {detailAdd && (
+        <QuickAddTaskModal
+          currentUser={currentUser}
+          projects={projects}
+          defaultProjectId={detailAdd.spec.projectId ?? undefined}
+          defaultStatus={detailAdd.spec.status ?? undefined}
+          defaultTodoId={detailAdd.spec.todoId ?? undefined}
+          defaultTags={detailAdd.spec.tag ? [detailAdd.spec.tag] : undefined}
+          defaultName={detailAdd.name}
+          defaultAssigneeId={detailAdd.assigneeId}
+          defaultStartDate={detailAdd.startDate}
+          defaultDueDate={detailAdd.dueDate}
+          onClose={() => setDetailAdd(null)}
         />
       )}
 

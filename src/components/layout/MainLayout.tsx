@@ -53,6 +53,7 @@ import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { isGuideAdmin } from "../../lib/docs/guideAccess";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
+import { requestListInlineAdd } from "../../lib/list/inlineAddRegistry";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
@@ -1716,7 +1717,11 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onToggleMenu={() => setIsFabMenuOpen(prev => !prev)}
           onSelectConsult={() => { setIsFabMenuOpen(false); setConsultDefaultMode("consult"); setIsConsultOpen(true); }}
           onSelectMilestone={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
-          onSelectTask={() => { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }}
+          onSelectTask={() => {
+            setIsFabMenuOpen(false);
+            // リストビューを開いているときは、ポップアップではなくリストの追加行へ（処理できなければ従来どおりポップアップ）
+            if (!requestListInlineAdd(selectedProject?.id ?? null)) setIsQuickAddOpen(true);
+          }}
           isConsultOpen={isConsultOpen}
           consultPanelWidth={consultPanelWidth}
           isConsultResizing={isConsultResizing}

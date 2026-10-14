@@ -27,9 +27,9 @@ describe("finalized_mentions を確定する経路", () => {
     expect(read("components/task/TaskEditModal.tsx")).toContain("buildTaskUpdatePayload(");
     expect(read("components/task/TaskSidePanel.tsx")).toContain("buildTaskUpdatePayload(");
   });
-  it("新規登録モーダルは finalized_mentions を書く", () => {
-    const s = read("components/task/QuickAddTaskModal.tsx");
-    expect(s).toMatch(/finalized_mentions:\s*finalizedMentionsOf\(/);
+  it("新規登録の組み立て（prepareNewTask）は finalized_mentions を書き、モーダルはそれを通す", () => {
+    expect(read("lib/task/newTask.ts")).toMatch(/finalized_mentions:\s*finalizedMentionsOf\(/);
+    expect(read("components/task/QuickAddTaskModal.tsx")).toContain("prepareNewTask(");
   });
   it("サイドパネルのコメント欄は MentionTextarea（@候補入力）を使う", () => {
     const s = read("components/task/TaskSidePanel.tsx");

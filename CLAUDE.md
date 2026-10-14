@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.146
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.147
 #
-最終更新：2026-10-14（v3.146）
+最終更新：2026-10-14（v3.147）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5120,3 +5120,34 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - jsdom での mount/unmount 反復計測（メモリ増加の有無は実機の計測で判断する）。
 - ガント・グラフ等の個別の描画最適化・store の配列の上限（今回の調査では増殖経路は見つからなかった）。
 - `MIN_CLIENT_VERSION` の引き上げ・マイグレーション（DB・RLS・Edge Function・localStorage の形式は変更なし）。
+
+---
+
+## 77. リストの中でその場でタスクを追加する（v3.147・2026-10-14）
+
+ポップアップ（QuickAddTaskModal）を開かずに、リスト（PC表）の各グループの一番下でタスクを追加できる。FABの「＋ タスクを追加」も、リストを開いているときはこの追加行へ移る。
+
+### 仕様（山本さんと合意済み）
+
+- **位置**：各グループ末尾の「＋ タスクを追加」（`ListInlineAddRow`）。押すと行が入力欄（タスク名・担当者・開始日・期日）になる。折りたたまれたグループには出さない。モバイル（カード表示）には出さない（Tab/キーボード前提の行編集がカードに合わないため。モバイルは今までどおりFABのポップアップ）。
+- **グループの属性が初期値**（`lib/list/inlineAdd.ts`の`makeSpec`／`defaultsForGroup`。ListView の groups の各要素が `add: GroupAddSpec` を持つ）：PJ別＝そのPJ（「プロジェクト未設定」はPJなし）／ToDoグループ＝そのToDoに紐づく／担当者別＝その担当者／状態別＝その状態／タグ別＝そのタグ（「タグなし」はタグなし）。担当者の初期値は空欄で、担当者別グループのときだけそのグループの担当者。🔴 **担当者別グループでは担当者を固定**（変えると作った直後にそのグループに表示されないため。行にはアバターだけを出す）。サイドバーでPJを絞り込み中は、PJ別以外のまとめ方（担当者別・状態別・タグ別）でもそのPJに作る（作らないと絞り込みで見えなくなる）。
+- **操作**：タスク名で Enter→登録→同じグループの一番下に次の空の行→名前欄にフォーカス（連続入力）。Tab は 名前→担当者→開始日→期日→「詳細を入れて追加」（DOM上は担当者列が先頭のため、行の keydown で自前に移す。担当者候補のポップオーバー（Portal）由来のイベントは扱わない）。Esc（名前欄）または行末の✕でやめる。名前が空なら登録しない。保存中は `createInlineSubmitter` の busy ガードで二重登録しない（保存中の名前欄は readOnly）。IME 変換確定の Enter は無視。日付の入力は既存の `InlineEditDate`（押すか Enter で選ぶ）。担当者は `InlineEditAssignee`（候補は表示部署のメンバー＋PJ参加者。Section 71 と同じ規則）。
+- **作成処理は共通**：新設 `lib/task/newTask.ts` の `prepareNewTask`／`nextDisplayOrder`／`validateTaskDateRange`。QuickAddTaskModal もここを通す（親のPJ追従・display_order の採番・finalized_mentions）。保存は `saveTask`（group_id＝表示部署・変更履歴・ゲストのメモリ保存・B1ゲートはストア側）。親タスクなしのトップレベルとして作る。開始日が期日より後なら、リスト・モーダルとも追加せずトースト（モーダルはこれまで min/max 属性だけだった）。ゲストは `canGuestEdit(isGuest,"task")` が偽なら行を出さない。
+- **FAB**：`lib/list/inlineAddRegistry.ts`（pull 型のレジストリ。unsavedEditorRegistry と同じ流儀）。ListView が PC・編集可のときだけハンドラを登録（アンマウントで解除）。MainLayout の **PC側FAB** の「＋ タスクを追加」だけが `requestListInlineAdd(選択中PJ)` を呼び、処理されなければ従来どおりポップアップ。ハンドラは「PJ別でそのPJのグループがあればそれ、無ければ先頭のグループ」を展開して開き、名前欄にフォーカス・スクロールする。**グループが1つも無いリスト（タスク0件・全件が絞り込みで外れた）は処理しない＝ポップアップを開く**（追加行を出せるグループが存在しないため）。モバイルFAB・Ctrl+K・カンバン・カレンダー等は変更なし。追加行の端の「詳細を入れて追加」は QuickAddTaskModal を開く（名前・担当者・日付・状態・ToDo・タグを引き継ぐ。`defaultName`／`defaultAssigneeId`／`defaultStartDate`／`defaultTags` を追加）。
+- **絞り込み中に見えないタスク**：作成前に id を控え、描画後に絞り込み後のタスクに含まれなければ「追加しました（今の絞り込みでは表示されません）」（`useListInlineAdd`）。
+- **並べ替え**：追加行は常にグループの一番下（行の並びの最後に描画するだけで、sortKey に左右されない）。
+
+### Esc・未保存確認の判断（Section 46 の対象にするか）
+
+- **Esc は確認なしで破棄**する（入力は名前1行＋日付・担当者で、Esc は利用者の明示的な意思表示。確認を挟むと連続入力のテンポを壊す）。
+- **画面を離れる経路は Section 46 の対象**にした：名前が入った下書きがあるとき、`useListInlineAdd` が `registerUnsavedEditor` に登録し、`guardedNavigate`（ビュー切替・部署切替・OKRモード切替・ラボ・管理画面）と `handleLogout` で「保存していない変更があります」の確認が出る。理由：Enter を押さずにほかの画面へ切り替えると無言で消えるため（編集画面の明示保存と同じ種類の事故）。名前が空白だけの下書きは未保存扱いにしない。まとめ方・フィルタの切替では ListView は消えず、下書きはグループごとに残る（グループが一時的に無くなると描画されないが保持される）。
+
+### 機械チェック・テスト
+
+`src/lib/task/__tests__/newTask.test.ts`・`src/lib/list/__tests__/inlineAdd.test.ts`（グループ別の初期値・作成直後にそのグループへ表示される条件・連続入力の採番・二重登録・日付検証・Tab順・FABレジストリ）・`src/components/list/__tests__/inlineAddWiring.test.ts`（ソース走査：FABの分岐はPC側だけ・処理されなければポップアップ・追加行はPC表のみ・未保存編集レジストリ登録・IME。コメント行を除いて走査し、条件を外すと赤くなることを確認済み）。`finalizedMentionsAllPaths.test.ts` は新規登録が `prepareNewTask` 経由で finalized_mentions を確定することを検査するよう更新。
+
+### 未対応・留意
+
+- 描画テスト基盤が無いため、追加行の実際の操作（Tab順・フォーカス・スクロール・ポップオーバー）は実機確認が要る。
+- 追加行の「優先度」「工数」列（詳細表示）は空欄のまま（その場追加は4項目のみ）。
+- `MIN_CLIENT_VERSION` は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。

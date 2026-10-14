@@ -8,7 +8,8 @@ import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from 
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
-import { finalizedMentionsOf } from "../../lib/mentions";
+import { prepareNewTask, validateTaskDateRange } from "../../lib/task/newTask";
+import { showToast } from "../common/Toast";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
@@ -38,13 +39,20 @@ interface Props {
   defaultTodoId?: string;
   /** 作成するタスクの初期期日（YYYY-MM-DD）。カレンダーの日付セルから開く用途。 */
   defaultDueDate?: string;
+  /** リストの追加行の「詳細を入れて追加」から：入力済みの内容を引き継ぐ用途 */
+  defaultName?: string;
+  /** 担当者の初期値。未指定は自分。空文字は「担当者なし」（追加行の既定に合わせる） */
+  defaultAssigneeId?: string;
+  defaultStartDate?: string;
+  /** タグ別グループから開いたとき、そのタグを付けて作る */
+  defaultTags?: string[];
   onClose: () => void;
 }
 
 /** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
 const TODO_OTHER_ID = "__other__";
 
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, defaultDueDate, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, defaultDueDate, defaultName, defaultAssigneeId, defaultStartDate, defaultTags, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
   const rawTfs                  = useAppStore(s => s.taskForces);
@@ -65,8 +73,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
   const currentQ = useMemo<Quarter>(() => currentQuarter(), []);
 
-  const [name, setName] = useState("");
-  const [assigneeId, setAssigneeId] = useState(currentUser.id);
+  const [name, setName] = useState(defaultName ?? "");
+  const [assigneeId, setAssigneeId] = useState(defaultAssigneeId ?? currentUser.id);
   // 選択中PJがあればそれを初期選択（無ければ「プロジェクト（任意）」のまま）
   const [projectId, setProjectId] = useState(
     () => (defaultProjectId && projects.some(p => p.id === defaultProjectId) ? defaultProjectId : ""),
@@ -77,7 +85,7 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   const [krId, setKrId] = useState(defaultKrId ?? "");
   const [tfId, setTfId] = useState(resolvedDefaultTfId ?? "");
   const [todoIds, setTodoIds] = useState<string[]>(defaultTodoId ? [defaultTodoId] : []);
-  const [startDate, setStartDate] = useState("");
+  const [startDate, setStartDate] = useState(defaultStartDate ?? "");
   const [dueDate, setDueDate] = useState(defaultDueDate ?? "");
   const [priority, setPriority] = useState<Task["priority"]>(null);
   const [comment, setComment] = useState("");
@@ -164,42 +172,26 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
 
   const handleSave = async () => {
     if (!name.trim()) return;
+    const dateError = validateTaskDateRange(startDate, dueDate);
+    if (dateError) { showToast(dateError, "error"); return; }
     setSaving(true);
     const now = new Date().toISOString();
-    // 親を選んだら project_id は親のPJ（候補は選択PJで絞り込み済みなので一致するはず）
-    const parent = parentId ? rawTasks.find(t => t.id === parentId) : null;
-    const effectiveProjectId = parent ? (parent.project_id ?? null) : (projectId || null);
-    // display_order：同じ親（または最上位）内の兄弟の最大 display_order + 1
-    // 兄弟＝同 project_id かつ同 parent_task_id の非削除タスク
-    const siblings = rawTasks.filter(t =>
-      !t.is_deleted &&
-      (t.project_id ?? null) === effectiveProjectId &&
-      (t.parent_task_id ?? null) === (parentId || null),
-    );
-    const nextOrder = siblings.length === 0
-      ? 0
-      : Math.max(...siblings.map(t => t.display_order ?? 0)) + 1;
-    const task: Task = {
-      id: uuidv4(),
-      name: name.trim(),
-      project_id: effectiveProjectId,
-      parent_task_id: parentId || null,
-      display_order: nextOrder,
-      todo_ids: todoIds.filter(id => id !== TODO_OTHER_ID),
-      assignee_member_id: assigneeId,
-      assignee_member_ids: assigneeId ? [assigneeId] : [],
+    // 親のPJ追従・display_order の採番・メンション確定は、リストのその場追加と共通の prepareNewTask に集約
+    const task = prepareNewTask({
+      name,
+      projectId: projectId || null,
+      parentId: parentId || null,
+      todoIds: todoIds.filter(id => id !== TODO_OTHER_ID),
+      assigneeIds: assigneeId ? [assigneeId] : [],
       status: defaultStatus ?? "todo",
       priority,
-      start_date: startDate || null,
-      due_date: dueDate || null,
-      estimated_hours: null,
-      comment: comment.trim(),
-      finalized_mentions: finalizedMentionsOf(comment.trim()),
-      is_deleted: false,
-      created_at: now,
-      updated_at: now,
-      updated_by: currentUser.id,
-    };
+      startDate,
+      dueDate,
+      comment,
+      tags: defaultTags,
+      updatedBy: currentUser.id,
+    }, rawTasks, now);
+    const effectiveProjectId = task.project_id;
     // 最上位タスク作成時のみ：子タスクを一括作成（1行1タスク・空行は無視）。
     // 2階層固定のため、親を選んでいる（＝このタスク自体が子）場合は子を作らない。
     const childNames = !parentId

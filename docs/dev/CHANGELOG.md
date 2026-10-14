@@ -8188,3 +8188,14 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 計測：healthMonitor.ts（5分ごと・Chrome の performance.memory が700MB以上で memory-high、10分間の load() が10回超で load-burst を各セッション1回。ゲストでは動かさない）。load() の実行回数は loadCounter.ts。source は既存の CHECK 制約に合う "report"。memory-high・load-burst は fingerprint に context を含めず code ごとに束ねる。
 # * テスト追加：resync／realtimeResync／noFullReloadOnChange／realtimeApplyRelated／loadCountsLoads／healthMonitor／loadCounter／lazyWithRetry／directLogger。clientErrorLog.test の無視リスト期待を更新。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式は変更なし）。マイグレーションなし。
+
+# v3.147（2026-10-14）：リストの中でその場でタスクを追加（CLAUDE.md Section 77）
+# * 各グループ（PJ別・担当者別・状態別・タグ別・ToDo/未設定）の末尾に「＋ タスクを追加」の行（PC表のみ。モバイルは出さない）。押すと入力欄（タスク名・担当者・開始日・期日）になる。Enter で登録→同じグループの一番下に次の空の行→名前欄へフォーカス（連続入力）。Tab は 名前→担当者→開始日→期日→「詳細を入れて追加」。Esc／✕でやめる。名前が空・保存中は登録しない。折りたたみ中のグループには出さない。
+# * グループの属性を初期値に（lib/list/inlineAdd.ts の makeSpec／defaultsForGroup）：PJ別＝そのPJ（未設定はPJなし）・ToDoグループ＝そのToDo・担当者別＝その担当者（行では固定）・状態別＝その状態・タグ別＝そのタグ。サイドバーでPJ絞り込み中は、PJ別以外のまとめ方でもそのPJに作る。担当者の初期値は空欄。
+# * 作成処理を共通化：新設 lib/task/newTask.ts（prepareNewTask／nextDisplayOrder／validateTaskDateRange）。QuickAddTaskModal も同じ関数を通す（親のPJ追従・display_order の採番・finalized_mentions）。group_id（表示部署）・変更履歴・ゲストのメモリ保存は saveTask 側。開始日>期日は両経路とも追加せずトースト。
+# * 保存中の二重登録防止（createInlineSubmitter）。下書きはグループごとに保持（useListInlineAdd）。名前が入った下書きは unsavedEditorRegistry に登録（画面遷移・部署切替・ログアウトで確認）。Esc で破棄する場合は確認なし。
+# * FAB：リストビュー（PC・編集可）の「＋ タスクを追加」はポップアップを開かず追加行へ（lib/list/inlineAddRegistry.ts。ListView が登録・解除。選択中PJのグループ、無ければ先頭。折りたたみは展開）。グループが無い・リスト以外・モバイル・Ctrl+K・カンバン・カレンダー等は従来どおりポップアップ。追加行の「詳細を入れて追加」は QuickAddTaskModal に名前・担当者・日付・状態・ToDo・タグを引き継いで開く（defaultName／defaultAssigneeId／defaultStartDate／defaultTags を追加）。
+# * 絞り込み中に作ったタスクが条件に合わず見えないときは「追加しました（今の絞り込みでは表示されません）」（useListInlineAdd）。
+# * 資料：guides 02_modes/tasks.md・08_spec.md・00_overview.md・01_onboarding/first-day.md、uiGuide.ts、初回ツアーの fab ステップ文言（ステップ数は増やしていない）。
+# * テスト：newTask.test／inlineAdd.test（グループ別初期値・作成後の所属・連続入力・二重登録・FABレジストリ）／inlineAddWiring.test（配線の走査）。finalizedMentionsAllPaths.test は prepareNewTask 経由に更新。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
