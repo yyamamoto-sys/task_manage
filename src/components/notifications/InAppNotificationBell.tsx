@@ -27,6 +27,7 @@ import {
   acknowledgeAdminMessage, fetchPendingAckMessages, fetchReceivedAdminMessages, type ReceivedAdminMessage,
 } from "../../lib/supabase/adminMessageStore";
 import { DueChip } from "./AdminMessageDialog";
+import { ErrorCopyPanel } from "./ErrorCopyPanel";
 import {
   bellBadgeStyle, bellTabsFor, ownSentMessages, type BellTab,
 } from "../../lib/notifications/bell";
@@ -406,6 +407,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
               {t("layout.bell.settings")}
             </button>
           </div>
+          {isSuperAdmin && <ErrorCopyPanel memberId={memberId} tab={activeFilter} />}
           {tabs.length > 1 && (
             <div role="tablist" style={{ display: "flex", gap: "6px", padding: "6px 10px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0 }}>
               {tabs.map(f => <span key={f}>{tabBtn(f, tabLabel(f))}</span>)}

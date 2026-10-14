@@ -8229,3 +8229,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 純粋関数 src/lib/account/recoveryFlow.ts（戻り URL の解釈・結果の分類・検証・起動可否・待ち秒数）と vitest。docs/dev/account-recovery.md（Supabase 管理画面の設定・メール文面案。公式ドキュメントで確かめた事実と未確認を区別）。docs/guides の FAQ・設定ページ・uiGuide に追記。
 # * ファイル名に「password」を含めない（この環境の Read/Write 拒否ルール *password* のため）。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.151（2026-10-15）：ベルに super_admin 専用の「🛡 エラーをコピー」欄（CLAUDE.md Section 67）
+# * 「⚙ 通知設定」の真下。未読の client_error 通知に対応するエラー（通知 created_at ＝ client_error_logs.last_notified_at で結ぶ）をチェックボックスで選び、Claude に貼れる Markdown でコピー。
+# * 人の情報（member_id・表示名・メール）は文面に入れない。redactSensitive を再適用。コードブロックの柵は中身に応じて延長。
+# * src/lib/errors/errorCopyText.ts（純粋関数）・ErrorCopyPanel.tsx・clientErrorStore.ts に取得2関数。i18n ja/en。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。

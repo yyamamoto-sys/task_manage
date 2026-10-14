@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.150
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.151
 #
-最終更新：2026-10-15（v3.150）
+最終更新：2026-10-15（v3.151）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4733,6 +4733,17 @@ DB適用・デプロイ前のコードレビューで出た指摘6件を反映�
 - 🔴 **v3.135（v3.133 の再適用）：バッジはベルのボタンの外（兄弟要素）に置く**（`bellBadgeStyle()`・`src/lib/notifications/bell.ts`）。`globals.css` の `button:not(:disabled) { position: relative; overflow: hidden; }` が全ボタンに付いており、ベルは `border-radius:50%` の円なので、ボタンの子にすると円の外にはみ出した数字が切り取られる（v3.129〜v3.132 の見切れの原因。v3.130 の位置調整では直らなかった）。バッジは幅を固定しない（minWidth のみ・nowrap）。`createPortal` で body 直下へ出す案は採らない（`#root` が `isolation:isolate` のため、body 直下の z45 は #root 内のモーダル z200 より上に描かれ層が崩れる）。`bell.test.ts` がボタンの内側にバッジが無いことを走査する。
 - **v3.135（v3.133 の再適用）：未読数の即時更新**：`subscribeInAppNotifications`（`src/lib/supabase/notificationRealtime.ts`）が自分の `in_app_notifications` の INSERT/UPDATE を `member_id=eq.<自分>` で購読し、届いたら取り直す（RLS＝本人の行だけ、が Realtime にも効く。DELETE は購読しない）。要マイグレ `20261002b_in_app_notifications_realtime.sql`（publication への追加）。未適用・接続失敗は `console.warn` のみで、3分ポーリング（延ばさない）で動く。自分の操作の直後は `requestBellRefresh()`（`src/lib/notifications/bellRefresh.ts`・window イベント）。
 - **v3.135（v3.133 の再適用）：一覧のタブは `bellTabsFor()`**（一般＝タブ列なし／部署の管理者＝すべて・📣送信済み／super_admin＝すべて・🛡管理者向け・📣送信済み）。送信済みタブの中身は Section 68。
+
+### ベルの「🛡 エラーをコピー」欄（v3.151・super_admin 専用）
+
+山本さんの要望：届いたエラーの通知の内容を、Claude にそのまま貼れる形でボタン1つでコピーしたい。
+- **場所**：ベルのパネルの「⚙ 通知設定」の真下（ヘッダー行の下・タブ列の上）。`InAppNotificationBell` が `{isSuperAdmin && <ErrorCopyPanel …/>}` で描画（super_admin 以外には DOM に出ない。`errorCopyText.test.ts` がコメント除去後のソースで検査）。既定は閉じていて、見出しに件数。
+- 🔴 **「新規」の定義**：自分宛ての**未読の `client_error` 通知**に対応するエラー。通知の行には fingerprint もエラーの id も無い（url は固定の `/?open=admin-errors`）ため、**通知の `created_at` ＝ `client_error_logs.last_notified_at`** で結ぶ（`log_client_error` は通知の INSERT と `last_notified_at` の UPDATE を同じトランザクションで行い `now()` が同一）。`matchNewErrors`。スキーマ変更なし・マイグレなし。通知を既読にすると一覧から消える（コピーしても既読にはしない）。同じエラーが1時間後に再通知されると `last_notified_at` が進むので、古い通知は結べなくなるが新しい通知で結ばれる。
+- **一覧**：チェックボックス・メッセージの1行目・回数・最終発生。初期は全チェック。「すべて選択／解除」。0件は「新しいエラーはありません」。欄の中だけ縦スクロール（最大150px）。取得は未読通知50件・エラー100件まで。
+- **取得**：パネルを開いたとき（欄がマウントされたとき）とタブを切り替えたときだけ。世代番号で古い応答を捨てる。effect の依存は `[memberId, tab]` のみ（`t` は ref・Section 69）。読むのは super_admin だけの `client_error_logs`（`member_id` は select しない）。
+- **コピー**：`buildErrorCopyText`（`src/lib/errors/errorCopyText.ts`・純粋関数）。Claude への依頼文＋エラーごとの項目＋メッセージ全文・スタック。🔴 **人の情報は入れない**（`member_id`・表示名・メールは載せず、発生した人数だけ）。コピー前にも `redactSensitive` を通す。コードブロックの柵は中身の最長のバッククォート列+1（`fenceFor`）。日時は JST。文面は日本語固定（Claude への依頼文のため。画面ラベルのみ i18n ja/en）。
+- **コピー手段**：`navigator.clipboard` → `execCommand` → 選択済みの textarea の3段（VersionHistoryModal と同じ）。成功はトースト「N件をコピーしました」。
+- MIN_CLIENT_VERSION は上げない・マイグレーションなし。
 
 ### 🔴 通知の種類を足す手順
 

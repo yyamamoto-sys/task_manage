@@ -78,3 +78,33 @@ export async function resolveClientErrors(ids: number[], resolved: boolean): Pro
   if (error) throw error;
   return Number(data ?? 0);
 }
+
+export const NEW_ERROR_COPY_LIMIT = 50;
+
+/** 自分宛ての未読の client_error 通知の作成時刻（新規エラーの特定に使う。v3.151） */
+export async function fetchUnreadClientErrorNotifiedAt(memberId: string): Promise<string[]> {
+  const { data, error } = await supabase
+    .from("in_app_notifications")
+    .select("created_at")
+    .eq("member_id", memberId)
+    .eq("kind", "client_error")
+    .is("read_at", null)
+    .order("created_at", { ascending: false })
+    .limit(NEW_ERROR_COPY_LIMIT);
+  if (error) throw error;
+  return (data ?? []).map(r => (r as { created_at: string }).created_at);
+}
+
+export type NewClientError = Omit<ClientErrorLog, "member_id" | "resolved_by" | "fingerprint"> & { last_notified_at: string | null };
+
+/** last_notified_at が since 以降のエラー（super_admin のみ読める）。コピー用なので member_id は取らない */
+export async function fetchClientErrorsNotifiedSince(since: string): Promise<NewClientError[]> {
+  const { data, error } = await supabase
+    .from("client_error_logs")
+    .select("id, source, message, code, context, stack, route, screen, app_version, user_agent, first_seen, last_seen, count, reporter_count, resolved_at, last_notified_at")
+    .gte("last_notified_at", since)
+    .order("last_seen", { ascending: false })
+    .limit(NEW_ERROR_COPY_LIMIT * 2);
+  if (error) throw error;
+  return (data ?? []) as NewClientError[];
+}
