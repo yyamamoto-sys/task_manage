@@ -5,6 +5,7 @@ import {
   buildResetRedirectUrl, classifyResetMailError, validateNewPassword, classifyUpdatePasswordError,
   isReauthRequiredError, resolveRecoveryOnStartup, buildRecoveryMarker, parseRecoveryMarker,
   resendRemainingSec, RESET_RESEND_COOLDOWN_SEC, RECOVERY_MARKER_MAX_AGE_MS,
+  decodeJwtSub, shouldEnforceMarkerOnAuthEvent,
 } from "../recoveryFlow";
 import { authJa } from "../../../i18n/auth.ja";
 
@@ -194,6 +195,34 @@ describe("resolveRecoveryOnStartup：起動時の URL・localStorage の印か�
   });
 });
 
+describe("decodeJwtSub", () => {
+  const b64url = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
+  it("sub（user id）を取り出す。署名は見ない", () => {
+    expect(decodeJwtSub(`${b64url({ alg: "HS256" })}.${b64url({ sub: "user-1", role: "authenticated" })}.sig`)).toBe("user-1");
+  });
+  it("壊れた・sub の無いトークンは null", () => {
+    expect(decodeJwtSub("abc")).toBeNull();
+    expect(decodeJwtSub("a.%%%.c")).toBeNull();
+    expect(decodeJwtSub(`h.${b64url({ role: "x" })}.s`)).toBeNull();
+  });
+});
+
+describe("shouldEnforceMarkerOnAuthEvent：印で再設定を強制する場面", () => {
+  it("再読み込み・新しいタブ（INITIAL_SESSION）では強制する", () => {
+    expect(shouldEnforceMarkerOnAuthEvent("INITIAL_SESSION", false)).toBe(true);
+  });
+  it("リンクの SIGNED_IN（他タブへ届くもの）では強制する", () => {
+    expect(shouldEnforceMarkerOnAuthEvent("SIGNED_IN", false)).toBe(true);
+  });
+  it("パスワードでのログイン中の SIGNED_IN では強制しない（古いパスワードで入り直して抜けられる）", () => {
+    expect(shouldEnforceMarkerOnAuthEvent("SIGNED_IN", true)).toBe(false);
+  });
+  it("それ以外のイベントでは強制しない", () => {
+    expect(shouldEnforceMarkerOnAuthEvent("TOKEN_REFRESHED", false)).toBe(false);
+    expect(shouldEnforceMarkerOnAuthEvent("SIGNED_OUT", false)).toBe(false);
+  });
+});
+
 describe("resendRemainingSec", () => {
   it("送信前は0、送信直後は60、経過に応じて減り、0で止まる", () => {
     expect(resendRemainingSec(null, 1000)).toBe(0);
@@ -216,8 +245,8 @@ describe("配線の固定（ソース走査）", () => {
     expect(rec).toBeLessThan(app.indexOf("<LoginScreen"));
     expect(rec).toBeLessThan(app.indexOf("<AuthenticatedApp"));
   });
-  it("App.tsx：PASSWORD_RECOVERY で再設定中にし、印を書く／起動時は印と照合する", () => {
-    expect(app).toMatch(/event === "PASSWORD_RECOVERY"\) \{\s*setRecoveryActive\(true\);\s*if \(session\?\.user\?\.id\) writeRecoveryMarker/);
+  it("App.tsx：起動時は印と照合し、リンクは applyInitialAuthLink で取り込む（PASSWORD_RECOVERY には依存しない）", () => {
+    expect(app).not.toContain("PASSWORD_RECOVERY");
     expect(app).toContain("resolveRecoveryOnStartup(");
     expect(app).toContain("applyInitialAuthLink()");
   });
@@ -229,6 +258,12 @@ describe("配線の固定（ソース走査）", () => {
     const client = strip(readFileSync("src/lib/supabase/client.ts", "utf-8"));
     expect(client).toMatch(/createClient\([^)]*\{\s*auth:\s*\{\s*detectSessionInUrl:\s*false\s*\}\s*\}\)/);
     expect(client).not.toContain("flowType");
+  });
+  it("App.tsx：パスワードログイン中は印で強制せず、他タブの印の書き込み（storage）で再設定画面にする。トーストは読み込み完了後", () => {
+    expect(app).toContain("shouldEnforceMarkerOnAuthEvent(event, isPasswordLoginInFlight())");
+    expect(app).toMatch(/addEventListener\("storage", onStorage\)/);
+    expect(app).toMatch(/removeEventListener\("storage", onStorage\)/);
+    expect(app).toMatch(/if \(!loading && linkToast\) \{\s*showToast\(/);
   });
   it("initialAuthLink.ts：captureAuthLink 経由（replaceState）で、location.hash への代入や pushState を使わない", () => {
     const src = strip(readFileSync("src/lib/account/initialAuthLink.ts", "utf-8"));

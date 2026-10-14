@@ -3,10 +3,25 @@ import { supabase } from "./client";
 import type { Session, AuthChangeEvent } from "@supabase/supabase-js";
 import { buildResetRedirectUrl, classifyResetMailError, sessionArgsFromLink, type ResetMailOutcome } from "../account/recoveryFlow";
 import { initialAuthLink } from "../account/initialAuthLink";
+import { decodeJwtSub } from "../account/recoveryFlow";
+import { writeRecoveryMarker, clearRecoveryMarker } from "../account/recoveryMarker";
+
+let passwordLoginInFlight = false;
+/** パスワードでのログイン中か（その SIGNED_IN では「再設定待ち」の印で再設定画面を強制しない）。 */
+export function isPasswordLoginInFlight(): boolean {
+  return passwordLoginInFlight;
+}
 
 export async function signIn(email: string, password: string): Promise<void> {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw error;
+  passwordLoginInFlight = true;
+  try {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) throw error;
+    // 正しいパスワードを知っている＝再設定の必要は無い（古いパスワードでログインし直しても抜けられるように）
+    clearRecoveryMarker();
+  } finally {
+    passwordLoginInFlight = false;
+  }
 }
 
 /**
@@ -56,6 +71,14 @@ export function applyInitialAuthLink(): Promise<InitialLinkOutcome> {
       const link = initialAuthLink;
       if (link.kind !== "session") return { kind: "none" };
       try {
+        if (link.isRecovery) {
+          // 🔴 setSession の前に印を書く。setSession の SIGNED_IN は BroadcastChannel で他タブへ届くため、
+          // 印がまだ無いと他タブが再設定前にアプリへ入れてしまう。JWT は検証しなくてよい（印は「強制する側」
+          // にしか働かず、偽造しても害が無い）。デコードできなければ setSession せず無効リンク扱い。
+          const sub = decodeJwtSub(link.accessToken);
+          if (!sub) return { kind: "failed", error: new Error("invalid recovery token"), isRecovery: true };
+          writeRecoveryMarker(sub);
+        }
         const { data, error } = await supabase.auth.setSession(sessionArgsFromLink(link));
         if (error || !data.session) return { kind: "failed", error, isRecovery: link.isRecovery };
         return { kind: "applied", userId: data.session.user.id, isRecovery: link.isRecovery };

@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { setCurrentUser, getCurrentUser, clearCurrentUser, KEYS, active } from "./lib/localData/localStore";
 import { setGuestMode, GUEST_MEMBER } from "./lib/guestMode";
 import { loadDemoDataset } from "./lib/demo/loadDemoDataset";
-import { getSession, onAuthStateChange, getAuthEmail, signOut, applyInitialAuthLink } from "./lib/supabase/auth";
+import { getSession, onAuthStateChange, getAuthEmail, signOut, applyInitialAuthLink, isPasswordLoginInFlight } from "./lib/supabase/auth";
 import { isMisconfigured, supabase } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
@@ -11,8 +11,8 @@ import { SetupWizard } from "./components/auth/SetupWizard";
 import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { AccountRecoveryScreen } from "./components/auth/AccountRecoveryScreen";
 import { initialAuthLink } from "./lib/account/initialAuthLink";
-import { resolveRecoveryOnStartup, shouldOpenResetFormOnError } from "./lib/account/recoveryFlow";
-import { readRecoveryMarkerRaw, writeRecoveryMarker, clearRecoveryMarker } from "./lib/account/recoveryMarker";
+import { resolveRecoveryOnStartup, shouldOpenResetFormOnError, shouldEnforceMarkerOnAuthEvent } from "./lib/account/recoveryFlow";
+import { readRecoveryMarkerRaw, clearRecoveryMarker, RECOVERY_MARKER_KEY } from "./lib/account/recoveryMarker";
 import { MainLayout } from "./components/layout/MainLayout";
 import { ConfirmModal } from "./components/common/ConfirmModal";
 import { ToastContainer, showToast } from "./components/common/Toast";
@@ -66,6 +66,7 @@ export default function App() {
     () => resolveRecoveryOnStartup({ link: initialAuthLink, markerRaw: null, sessionUserId: null, now: Date.now() }).active,
   );
   // リンクが無効・期限切れで戻ってきた（案内は常に汎用文言。再設定の可能性があれば再設定フォームを開く）
+  const [linkToast, setLinkToast] = useState(false);
   const [invalidLink, setInvalidLink] = useState<"none" | "reset" | "other">(
     initialAuthLink.kind === "error" ? (shouldOpenResetFormOnError(initialAuthLink) ? "reset" : "other") : "none",
   );
@@ -89,7 +90,6 @@ export default function App() {
     // 通常のログインとして扱う。取り込みに失敗した（トークンが無効・期限切れ）ときは再設定画面を出さない。
     void (async () => {
       const applied = await applyInitialAuthLink();
-      if (applied.kind === "applied" && applied.isRecovery) writeRecoveryMarker(applied.userId);
       if (applied.kind === "failed") {
         setInvalidLink(applied.isRecovery ? "reset" : "other");
       }
@@ -102,7 +102,7 @@ export default function App() {
       if (startup.clearMarker) clearRecoveryMarker();
       setRecoveryActive(startup.active);
       if (initialAuthLink.kind === "error" && session && !session.user.is_anonymous) {
-        showToast(tRef.current("auth.link.invalid"), "error");
+        setLinkToast(true); // 読み込み完了後に出す（loading 中は ToastContainer が無く消えるため）
       }
       return session;
     })().then(session => {
@@ -122,12 +122,10 @@ export default function App() {
     // セッション変化を監視（ゲストのAI用匿名セッションのSIGNED_INイベントは無視する。
     // guestActiveの見た目（MainLayout+GUEST_MEMBER）に影響させないため）
     const subscription = onAuthStateChange((session, event) => {
-      if (event === "PASSWORD_RECOVERY") {
-        setRecoveryActive(true);
-        if (session?.user?.id) writeRecoveryMarker(session.user.id);
-      }
+      // PASSWORD_RECOVERY は detectSessionInUrl:false では発火しない（リンクは applyInitialAuthLink が
+      // setSession で取り込み、印はその前に書く）。再設定の強制は印と下の分岐で行う。
       if (session?.user?.is_anonymous) return;
-      if (session && (event === "INITIAL_SESSION" || event === "SIGNED_IN")) {
+      if (session && shouldEnforceMarkerOnAuthEvent(event, isPasswordLoginInFlight())) {
         const r = resolveRecoveryOnStartup({
           link: { kind: "none" }, markerRaw: readRecoveryMarkerRaw(), sessionUserId: session.user.id, now: Date.now(),
         });
@@ -140,8 +138,29 @@ export default function App() {
       }
     });
 
-    return () => subscription.unsubscribe();
+    // 他のタブが再設定リンクを取り込んで印を書いたら、このタブも（自分のセッションの user id と一致すれば）
+    // 再設定画面にする。印は setSession より前に書かれる。
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== RECOVERY_MARKER_KEY || !e.newValue) return;
+      void getSession().then(s => {
+        const r = resolveRecoveryOnStartup({ link: { kind: "none" }, markerRaw: e.newValue, sessionUserId: s?.user?.id ?? null, now: Date.now() });
+        if (r.active) setRecoveryActive(true);
+      });
+    };
+    window.addEventListener("storage", onStorage);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener("storage", onStorage);
+    };
   }, []);
+
+  useEffect(() => {
+    if (!loading && linkToast) {
+      showToast(tRef.current("auth.link.invalid"), "error");
+      setLinkToast(false);
+    }
+  }, [loading, linkToast]);
 
   // 環境変数未設定の早期returnは全フック宣言の後に置く（react-hooks/rules-of-hooks 対応）。
   // isMisconfigured はモジュール定数で実行時に値が変わることはないが、

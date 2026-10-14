@@ -178,6 +178,30 @@ export function resolveRecoveryOnStartup(i: RecoveryStartupInput): { active: boo
   return { active: false, clearMarker: true };
 }
 
+/** JWT の sub（user id）を取り出す。署名は検証しない（印は再設定を「強制する側」にしか働かない）。失敗は null。 */
+export function decodeJwtSub(token: string): string | null {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const b64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const json = new TextDecoder().decode(Uint8Array.from(atob(b64.padEnd(Math.ceil(b64.length / 4) * 4, "=")), c => c.charCodeAt(0)));
+    const sub = (JSON.parse(json) as { sub?: unknown }).sub;
+    return typeof sub === "string" && sub ? sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 認証イベントで「再設定待ち」の印を見て再設定画面を強制するか。
+ * INITIAL_SESSION（再読み込み・新しいタブ）と、リンクの SIGNED_IN（他タブへ届くもの）では強制する。
+ * パスワードでのログイン中の SIGNED_IN では強制しない（古いパスワードでログインし直して抜けられるように）。
+ */
+export function shouldEnforceMarkerOnAuthEvent(event: string, passwordLoginInFlight: boolean): boolean {
+  if (event === "INITIAL_SESSION") return true;
+  return event === "SIGNED_IN" && !passwordLoginInFlight;
+}
+
 /** 再送ボタンの残り秒数（0 なら押せる）。 */
 export function resendRemainingSec(lastSentAt: number | null, now: number): number {
   if (lastSentAt == null) return 0;
