@@ -20,6 +20,8 @@ export interface GroupAddSpec {
   status: Task["status"] | null;
   /** タグ別のそのタグ（「タグなし」は null） */
   tag: string | null;
+  /** PJ内のグループ（PJ別の中のグループ見出し。未分類は null。v3.149） */
+  sectionId: string | null;
 }
 
 export interface GroupDefaults {
@@ -28,6 +30,7 @@ export interface GroupDefaults {
   assigneeIds: string[];
   status: Task["status"];
   tags: string[];
+  sectionId: string | null;
 }
 
 /**
@@ -41,6 +44,7 @@ export function makeSpec(partial: Partial<GroupAddSpec>, selectedProjectId: stri
     assigneeId: partial.assigneeId ?? null,
     status: partial.status ?? null,
     tag: partial.tag ?? null,
+    sectionId: partial.sectionId ?? null,
   };
 }
 
@@ -51,6 +55,7 @@ export function defaultsForGroup(spec: GroupAddSpec): GroupDefaults {
     assigneeIds: spec.assigneeId ? [spec.assigneeId] : [],
     status: spec.status ?? "todo",
     tags: spec.tag ? [spec.tag] : [],
+    sectionId: spec.sectionId,
   };
 }
 
@@ -104,6 +109,7 @@ export function createInlineSubmitter(deps: SubmitterDeps) {
           startDate: draft.startDate,
           dueDate: draft.dueDate,
           comment: "",
+          sectionId: d.sectionId,
           tags: d.tags,
           updatedBy: deps.userId,
         }, deps.getTasks());

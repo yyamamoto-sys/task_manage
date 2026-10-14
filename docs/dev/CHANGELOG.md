@@ -8211,3 +8211,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 見張り：自分の保存（tasks・projects）の realtime エコーが10秒以内に届かなければ、セッション中1回だけ code="realtime-silent"（context に表・チャンネル状態・経過秒）。DIAGNOSTIC_CODES に追加。
 # * テスト追加：realtimeApplyHardening／realtimeLoadQueue／realtimeEchoWatch、resync・realtimeResync・noFullReloadOnChange・lazyWithRetry・directLogger を拡張。修正前（v3.146）に対して20件が赤になることを確認。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.149（2026-10-15）：PJ内の「グループ」・タスクの「成果物」欄・追加プロジェクト／タスクフォース欄を画面から外す（CLAUDE.md Section 78）
+# * DB（migrations/20261015_sections_deliverable.sql・山本さんが dev→prod で手動適用）：project_sections 表・tasks.section_id・tasks.deliverable・RLS（milestones と同じ）・整合性トリガー3本（子は親と同じグループ／PJ変更・別PJ・PJなし・削除済みは NULL／グループ論理削除で中のタスクは未分類）・publication に project_sections と in_app_notifications・backup_snapshot の group 分岐に project_sections（full は動的列挙＋40表連結のため自動）。検証 SQL は docs/dev/verify_20261015_sections.sql（ROLLBACK で終わる）。schema.sql 同期・schemaChecks に表・列・関数・backup 本文の検査を追加。
+# * アプリ：リスト（PJ別の中を見出しで区切る・未分類は先頭・各グループ末尾に追加行・「＋ グループを追加」・⋮で名前変更/並べ替え/削除・見出しと行のドラッグで移動）／ガント（見出し行・折りたたみ）／カンバン（グループ絞り込み）／PJカルテ（グループごとの完了数）／編集画面・サイドパネル・登録（グループ選択・成果物）。realtime・差分取得・appStore・CSV・複製・変更履歴・AI payload（section_name・deliverable は URL 除去＋伏せ字＋300字）に対応。
+# * saveTask の normalizeTaskSection（DB トリガーと同じ規則）。値が変わらないときは section_id・deliverable のキーを足さない＝列が無い DB でも既存の保存は落ちない。
+# * 成果物の📎：http/https のみ検出（javascript: 等は無視）・最初の1件を新しいタブで開く・ツールチップに URL を除いた説明。
+# * 追加プロジェクト・タスクフォース・（登録の）KR/TF/ToDo 選択の入力欄を外した。データ・集計・複製のコピーは残す。ToDo パネル・ToDo グループの追加行から開いた登録は、渡された ToDo に紐づけて作る。
+# * アプリの正式名称を「AMP（アンプ）」に決め、ロゴ・アイコンを付けた（別担当の commit。利用者向け履歴に1文）。
+# * MIN_CLIENT_VERSION は上げない（旧画面は新しい列・表を知らなくても動く。トリガーが整合を守る）。

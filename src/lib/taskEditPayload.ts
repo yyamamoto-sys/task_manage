@@ -19,6 +19,10 @@ export interface TaskEditFormState {
   due_date: string;
   estimated_hours: string;
   comment: string;
+  /** PJ内のグループ（project_sections.id）。null＝未分類。PJを変えたら画面側で null に戻す（payload でも PJ なし→null） */
+  section_id: string | null;
+  /** 成果物の説明（複数行。本文中の http/https URL は📎リンクになる） */
+  deliverable: string;
   // TaskSidePanel にはタグ編集UIが無いため省略可能にしてある。省略時は originalTask.tags を
   // そのまま維持する（サイドパネル経由の保存でタグが消えないようにするため）。
   tags?: string[];
@@ -48,6 +52,8 @@ export function computeFormDirty(current: TaskEditFormState, baseline: TaskEditF
   if (current.due_date !== baseline.due_date) return true;
   if (current.estimated_hours !== baseline.estimated_hours) return true;
   if (current.comment !== baseline.comment) return true;
+  if (current.section_id !== baseline.section_id) return true;
+  if (current.deliverable !== baseline.deliverable) return true;
   if (!sameStringSet(current.assignee_member_ids, baseline.assignee_member_ids)) return true;
   if (!sameStringSet(current.tags ?? [], baseline.tags ?? [])) return true;
   return false;
@@ -68,8 +74,19 @@ export function buildTaskUpdatePayload(
 ): Task {
   const hours = parseFloat(form.estimated_hours);
   const effectiveProjectId = parentTask ? (parentTask.project_id ?? null) : (form.project_id || null);
+  // グループ：子は親と同じ／PJなしは未分類。別PJのグループ・削除済みのグループは saveTask（appStore）の
+  // normalizeTaskSection が外す。🔴 値が変わらないときは section_id・deliverable のキー自体を足さない
+  // （列がまだ無い DB でも、グループ・成果物を触っていない保存が落ちないように）。
+  const wantSection: string | null = parentTask
+    ? (parentTask.section_id ?? null)
+    : (effectiveProjectId ? (form.section_id ?? null) : null);
+  const extra: Partial<Pick<Task, "section_id" | "deliverable">> = {
+    ...((originalTask.section_id ?? null) !== wantSection ? { section_id: wantSection } : {}),
+    ...((originalTask.deliverable ?? "") !== form.deliverable ? { deliverable: form.deliverable } : {}),
+  };
   return {
     ...originalTask,
+    ...extra,
     name:                form.name.trim() || originalTask.name,
     status:              form.status,
     priority:            (form.priority as Task["priority"]) || null,

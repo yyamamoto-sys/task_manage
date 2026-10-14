@@ -49,6 +49,10 @@ export interface AITask {
   due_date: string | null;
   estimated_hours: number | null;
   comment: string;
+  /** 成果物の説明（URL は除去済み・伏せ字処理済み・短く切り済み。成果物欄が空なら空文字。deliverableForAi 経由で作る） */
+  deliverable: string;
+  /** PJ内のグループ名（未分類・グループなしは null） */
+  section_name: string | null;
   completed_at: string | null;
   /** 親タスク名（子タスクの場合のみ設定。階層構造の把握に使う） */
   parent_task_name: string | null;

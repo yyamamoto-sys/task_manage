@@ -9,13 +9,13 @@ import {
 } from "../inlineAddRegistry";
 
 const spec = (over: Partial<GroupAddSpec> = {}): GroupAddSpec => ({
-  projectId: null, todoId: null, assigneeId: null, status: null, tag: null, ...over,
+  projectId: null, todoId: null, assigneeId: null, status: null, tag: null, sectionId: null, ...over,
 });
 
 describe("defaultsForGroup：グループの属性を初期値にする", () => {
   it("PJ別：そのPJ・担当者は空・状態はtodo", () => {
     const d = defaultsForGroup(spec({ projectId: "p1" }));
-    expect(d).toEqual({ projectId: "p1", todoIds: [], assigneeIds: [], status: "todo", tags: [] });
+    expect(d).toEqual({ projectId: "p1", todoIds: [], assigneeIds: [], status: "todo", tags: [], sectionId: null });
   });
   it("PJ未設定グループ：project_idなし・ToDoなし", () => {
     const d = defaultsForGroup(spec());

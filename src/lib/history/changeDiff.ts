@@ -29,6 +29,10 @@ export const TASK_TRACKED_FIELDS = [
   "project_id",
   "todo_ids",
   "parent_task_id",
+  // v3.149：PJ内のグループと成果物欄。グループは親の移動に伴う子の移動（DBトリガー・state の追従）では
+  // 子に履歴を作らない（親の履歴に1件だけ残る）。
+  "section_id",
+  "deliverable",
   "is_deleted",
 ] as const satisfies readonly (keyof Task)[];
 

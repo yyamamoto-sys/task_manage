@@ -1502,12 +1502,11 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
         );
       })()}
 
-      {/* タスク追加モーダル（通常ビューと共通のQuickAddTaskModal。対象ToDo/TFを既定選択で渡す） */}
+      {/* タスク追加モーダル（通常ビューと共通のQuickAddTaskModal。対象ToDoを渡すとそのToDoに紐づけて作る） */}
       {addingTaskForTodoId && (
         <QuickAddTaskModal
           currentUser={currentUser}
           projects={projects}
-          defaultTfId={tfId}
           defaultTodoId={addingTaskForTodoId}
           onClose={() => setAddingTaskForTodoId(null)}
         />

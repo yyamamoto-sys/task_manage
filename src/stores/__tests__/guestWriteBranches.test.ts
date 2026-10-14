@@ -25,6 +25,7 @@ const storeMock = vi.hoisted(() => ({
   upsertProject: vi.fn(), softDeleteProject: vi.fn(), restoreProject: vi.fn(),
   upsertTask: vi.fn(), softDeleteTask: vi.fn(), restoreTask: vi.fn(),
   upsertMilestone: vi.fn(), softDeleteMilestone: vi.fn(),
+  upsertProjectSection: vi.fn(), softDeleteProjectSection: vi.fn(),
   insertProjectTaskForce: vi.fn(), deleteProjectTaskForce: vi.fn(),
   upsertQuarterlyObjective: vi.fn(),
   insertTaskTaskForce: vi.fn(), deleteTaskTaskForce: vi.fn(),
@@ -161,5 +162,46 @@ describe("appStore：ゲスト分岐（日常編集の開放・v3.69）", () => 
     await useAppStore.getState().saveTask(dummyTask);
     await useAppStore.getState().saveTask({ ...dummyTask, name: "改名2回目" });
     expect(useAppStore.getState().tasks.find(t => t.id === dummyTask.id)?.name).toBe("改名2回目");
+  });
+});
+
+describe("PJ内のグループ（v3.149）：ゲスト分岐・整合", () => {
+  beforeEach(() => { resetStore(); });
+  afterEach(() => { setGuestMode(false); });
+
+  it("ゲストは saveProjectSection / deleteProjectSection で DB を呼ばず state だけ更新し、中のタスクは未分類へ", async () => {
+    setGuestMode(true);
+    const s = useAppStore.getState();
+    await s.saveProjectSection({ id: "sec1", project_id: "pj", name: "第1回", sort_order: 0, is_deleted: false });
+    useAppStore.setState({ tasks: [{ ...dummyTask, id: "t1", project_id: "pj", section_id: "sec1" }] });
+    await useAppStore.getState().deleteProjectSection("sec1", "u1");
+    expect(storeMock.upsertProjectSection).not.toHaveBeenCalled();
+    expect(storeMock.softDeleteProjectSection).not.toHaveBeenCalled();
+    expect(useAppStore.getState().projectSections[0].is_deleted).toBe(true);
+    expect(useAppStore.getState().tasks[0].section_id).toBeNull();
+  });
+
+  it("saveTask：親のグループへ子が揃い、PJを変えたタスクはグループが外れる（ゲスト＝state のみ）", async () => {
+    setGuestMode(true);
+    useAppStore.setState({
+      projectSections: [
+        { id: "s1", project_id: "pj", name: "A", sort_order: 0, is_deleted: false },
+        { id: "s2", project_id: "pj", name: "B", sort_order: 1, is_deleted: false },
+      ],
+      tasks: [
+        { ...dummyTask, id: "p", project_id: "pj", section_id: "s1" },
+        { ...dummyTask, id: "c", project_id: "pj", parent_task_id: "p", section_id: "s1" },
+      ],
+    });
+    // 親を s2 へ移すと子も移る
+    await useAppStore.getState().saveTask({ ...useAppStore.getState().tasks[0], section_id: "s2" });
+    const st = useAppStore.getState().tasks;
+    expect(st.find(x => x.id === "c")?.section_id).toBe("s2");
+    // 子だけ s1 にしようとしても親の s2 に戻る
+    await useAppStore.getState().saveTask({ ...st.find(x => x.id === "c")!, section_id: "s1" });
+    expect(useAppStore.getState().tasks.find(x => x.id === "c")?.section_id).toBe("s2");
+    // PJを変えると外れる
+    await useAppStore.getState().saveTask({ ...useAppStore.getState().tasks.find(x => x.id === "p")!, project_id: "other" });
+    expect(useAppStore.getState().tasks.find(x => x.id === "p")?.section_id).toBeNull();
   });
 });

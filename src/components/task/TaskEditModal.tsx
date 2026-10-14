@@ -7,11 +7,14 @@
 // 以前は全フィールドを600msデバウンスで自動保存していたが、「自動保存されているか分からず
 // 不安」というクレームを受け、保存ボタン／Enter／Ctrl(Cmd)+Enterで明示的に保存する方式へ
 // 変更した（CLAUDE.md 新設グランドルール参照）。
-// 対象は `form`（このタスク自身のフィールド）のみ。タスクフォース・追加プロジェクト・
-// 先行タスクの紐づけ（add/removeTaskTaskForce・add/removeTaskProject・add/removeTaskDependency）
+// 対象は `form`（このタスク自身のフィールド）のみ。先行タスクの紐づけ（add/removeTaskDependency）
 // は別テーブルへのjoin/unjoinで、操作した瞬間に結果が見える別種の操作のため、従来どおり
 // 即時実行のままにする（保存ボタンの対象に含めると「押さないと反映されない」という
 // 別の混乱を生むため）。
+//
+// 【v3.149】「追加プロジェクト」「タスクフォース」の入力欄は画面から外した（データ task_projects・
+// task_task_forces と、それを読む集計はそのまま。Section 78）。代わりにPJ内の「グループ」選択欄と
+// 「成果物」欄（どちらも form の一部＝保存ボタンで保存）を置いた。
 
 import { useState, useCallback, useMemo, useRef, useEffect, useId } from "react";
 import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies } from "../../stores/appStore";
@@ -21,11 +24,9 @@ import type { Member, Task } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import {
   TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE,
-  getAssigneeIds, buildTfLabelMap, suppressOverdue,
+  getAssigneeIds, suppressOverdue,
 } from "../../lib/taskMeta";
 import { todayStr } from "../../lib/date";
-import { getEligibleTfIds } from "../../lib/okr/eligibleTaskForces";
-import { taskForcesInGroup } from "../../lib/okr/deptScope";
 import { parentTaskCandidates, isParentTask } from "../../lib/taskHierarchy";
 import { wouldCreateCycle } from "../../lib/dependencies/cycleCheck";
 import { Avatar } from "../auth/UserSelectScreen";
@@ -37,6 +38,7 @@ import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editin
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { ChangeHistorySection } from "../history/ChangeHistorySection";
+import { SectionSelect, DeliverableField } from "./SectionField";
 
 interface Props {
   taskId: string;
@@ -59,6 +61,8 @@ function buildFormFromTask(task: Task | undefined): TaskEditFormState & { tags: 
     due_date:            task?.due_date ?? "",
     estimated_hours:     task?.estimated_hours?.toString() ?? "",
     comment:             task?.comment ?? "",
+    section_id:          task?.section_id ?? null,
+    deliverable:         task?.deliverable ?? "",
     tags:                task?.tags ?? [],
   };
 }
@@ -67,50 +71,16 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   const allTasks            = useAppStore(selectScopedTasks);
   const allMembers          = useAppStore(s => s.members);
   const allProjects         = useAppStore(selectScopedProjects);
-  const allTaskForces       = useAppStore(s => s.taskForces);
-  const allKeyResults       = useAppStore(s => s.keyResults);
-  const allObjectives       = useAppStore(s => s.objectives);
-  const currentGroupId      = useAppStore(s => s.currentGroupId);
-  const allTaskTaskForces   = useAppStore(s => s.taskTaskForces);
-  const allTaskProjects     = useAppStore(s => s.taskProjects);
   const allTaskDependencies = useAppStore(selectScopedTaskDependencies);
   const saveTask            = useAppStore(s => s.saveTask);
   const deleteTask          = useAppStore(s => s.deleteTask);
   const restoreTask         = useAppStore(s => s.restoreTask);
-  const addTaskTaskForce    = useAppStore(s => s.addTaskTaskForce);
-  const removeTaskTaskForce = useAppStore(s => s.removeTaskTaskForce);
-  const addTaskProject      = useAppStore(s => s.addTaskProject);
-  const removeTaskProject   = useAppStore(s => s.removeTaskProject);
   const addTaskDependency    = useAppStore(s => s.addTaskDependency);
   const removeTaskDependency = useAppStore(s => s.removeTaskDependency);
   const isMobile = useIsMobile();
 
   const members    = useMemo(() => active(allMembers), [allMembers]);
   const projects   = useMemo(() => active(allProjects), [allProjects]);
-  // 既に紐づいているTFのラベル表示（linkedTfs/tfLabelById）は部署絞り込み前の全件を使う
-  // （他部署TFが誤って紐づいていた既存データでも表示を消さないため）。
-  // 「追加で選べる選択肢」だけを部署絞り込みする＝taskForcesForPicker（v3.02）。
-  const taskForces = useMemo(() => active(allTaskForces), [allTaskForces]);
-  const keyResults = useMemo(() => active(allKeyResults), [allKeyResults]);
-  const taskForcesForPicker = useMemo(
-    () => taskForcesInGroup(taskForces, keyResults, allObjectives, currentGroupId),
-    [taskForces, keyResults, allObjectives, currentGroupId],
-  );
-
-  const tfLabelById = useMemo(() => buildTfLabelMap(taskForces, keyResults), [taskForces, keyResults]);
-
-  // このタスクに紐づくTF
-  const linkedTfs = useMemo(() => {
-    const tfIds = allTaskTaskForces.filter(t => t.task_id === taskId).map(t => t.tf_id);
-    return taskForces.filter(tf => tfIds.includes(tf.id));
-  }, [allTaskTaskForces, taskForces, taskId]);
-
-  // このタスクに紐づく追加プロジェクト
-  const linkedExtraProjects = useMemo(() => {
-    const pjIds = allTaskProjects.filter(t => t.task_id === taskId).map(t => t.project_id);
-    return projects.filter(p => pjIds.includes(p.id));
-  }, [allTaskProjects, projects, taskId]);
-
   // ===== 先行タスク（B1：依存ゲート。親子関係とは独立の別概念） =====
   // is_deleted除外済みの依存一覧（wouldCreateCycleはこの除外をしない契約のため、渡す前に必ず絞る。
   // 除外しないと、他クライアントが削除した依存がrealtime UPDATEで配列に残ったまま
@@ -148,11 +118,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   }, [allTasks, taskId, predecessorDeps, activeTaskDependencies]);
 
   const originalTask = allTasks.find(t => t.id === taskId);
-
-  const eligibleTfIds = useMemo(
-    () => getEligibleTfIds(originalTask, allTaskForces),
-    [originalTask?.due_date, originalTask?.start_date, allTaskForces], // eslint-disable-line react-hooks/exhaustive-deps
-  );
 
   // このタスクが子を持つ親なら、親に設定できない（孫禁止）
   const isParent = useMemo(
@@ -265,7 +230,7 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   }, [originalTask, form, allTasks, currentUser.id, saveTask, saveStatus, taskId]);
 
   // ===== v3.93：即時保存（join系）操作にヘッダーの保存インジケータを反映する =====
-  // タスクフォース・追加プロジェクト・先行タスクはformを経由しない即時保存のため、保存ボタンの
+  // 先行タスクはformを経由しない即時保存のため、保存ボタンの
   // dirty状態には反映されない（冒頭コメントの線引きどおり）。しかし成功しても画面上は「チップが
   // 増減した」以外に一切フィードバックが無く、利用者からは「変更したのに保存ボタンが反応しない
   // ＝壊れている」としか見えなかった（クレーム対応・v3.93）。既存のSaveIndicatorをそのまま流用し、
@@ -311,6 +276,8 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
   if (!originalTask) return null;
 
   const project = projects.find(p => p.id === originalTask.project_id);
+  // 親タスクを選んでいる間、グループは親と同じ（選べない）
+  const formParent = form.parent_task_id ? allTasks.find(t => t.id === form.parent_task_id) : undefined;
   const isOverdue = !!form.due_date && form.due_date < todayStr() && !suppressOverdue(form.status);
 
   const statusArr: Task["status"][] = ["todo", "in_progress", "done", "on_hold", "cancelled"];
@@ -551,7 +518,12 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
           {/* プロジェクト */}
           <FieldSection label="プロジェクト">
             <CustomSelect value={form.project_id ?? ""}
-              onChange={value => setForm(f => ({ ...f, project_id: value || null }))}
+              onChange={value => setForm(f => ({
+                ...f,
+                project_id: value || null,
+                // PJを変えたらグループは外す（別PJのグループを指さない）
+                section_id: (value || null) === f.project_id ? f.section_id : null,
+              }))}
               options={[
                 { value: "", label: "なし" },
                 ...projects.map(p => ({ value: p.id, label: p.name })),
@@ -559,6 +531,14 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
               searchable searchPlaceholder="プロジェクトで検索..."
             />
           </FieldSection>
+
+          {/* グループ（PJ内の区分。v3.149）。親タスクがあれば親と同じ */}
+          <SectionSelect
+            projectId={formParent ? (formParent.project_id ?? null) : form.project_id}
+            value={form.section_id}
+            onChange={sectionId => setForm(f => ({ ...f, section_id: sectionId }))}
+            parentLocked={formParent ? { sectionId: formParent.section_id ?? null } : null}
+          />
 
           {/* 親タスク（2階層固定。子を持つタスクは親に設定不可） */}
           <FieldSection label="親タスク">
@@ -634,93 +614,6 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
             )}
           </div>
 
-          {/* 追加プロジェクト。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
-          <FieldSection label="追加プロジェクト">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
-              {linkedExtraProjects.map(p => (
-                <span key={p.id} style={chipStyle}>
-                  <span style={{ width: 6, height: 6, borderRadius: "50%", background: p.color_tag, flexShrink: 0 }} />
-                  {p.name}
-                  <button
-                    onClick={() => void runImmediateSave(() => removeTaskProject(taskId, p.id))}
-                    aria-label={`${p.name} を解除`}
-                    style={chipRemoveBtn}>×</button>
-                </span>
-              ))}
-              {linkedExtraProjects.length === 0 && (
-                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>なし</span>
-              )}
-            </div>
-            <CustomSelect
-              value=""
-              onChange={value => {
-                if (!value) return;
-                void runImmediateSave(() => addTaskProject({ task_id: taskId, project_id: value }));
-              }}
-              options={[
-                { value: "", label: "＋ プロジェクトを追加..." },
-                ...projects
-                  .filter(p => p.id !== form.project_id && !linkedExtraProjects.find(ep => ep.id === p.id))
-                  .map(p => ({ value: p.id, label: p.name })),
-              ]}
-              searchable searchPlaceholder="プロジェクトで検索..."
-            />
-          </FieldSection>
-
-          {/* タスクフォース。v3.87：追加・解除は即時反映（保存ボタンの対象外） */}
-          <FieldSection label="タスクフォース">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: "4px", marginBottom: "6px" }}>
-              {linkedTfs.map(tf => (
-                <span key={tf.id} style={chipStyle}>
-                  <span style={{ fontWeight: "600", marginRight: 4 }}>
-                    {tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}
-                  </span>
-                  {tf.name}
-                  <button
-                    onClick={() => void runImmediateSave(() => removeTaskTaskForce(taskId, tf.id))}
-                    aria-label={`${tf.name} を解除`}
-                    style={chipRemoveBtn}>×</button>
-                </span>
-              ))}
-              {linkedTfs.length === 0 && (
-                <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未設定</span>
-              )}
-            </div>
-            {taskForcesForPicker.length > 0 ? (
-              <CustomSelect
-                value=""
-                onChange={value => {
-                  if (!value) return;
-                  void runImmediateSave(() => addTaskTaskForce({ task_id: taskId, tf_id: value }));
-                }}
-                options={[
-                  { value: "", label: "＋ タスクフォースを追加..." },
-                  ...taskForcesForPicker
-                    .filter(tf => !linkedTfs.find(lt => lt.id === tf.id))
-                    .filter(tf => eligibleTfIds == null || eligibleTfIds.has(tf.id))
-                    // 並び：所属KR の index → tf_number の昇順で揃え、どのKRのTFか
-                    // ぱっと見で分かるようにする
-                    .slice()
-                    .sort((a, b) => {
-                      const ka = keyResults.findIndex(k => k.id === a.kr_id);
-                      const kb = keyResults.findIndex(k => k.id === b.kr_id);
-                      if (ka !== kb) return ka - kb;
-                      return (a.tf_number ?? "").localeCompare(b.tf_number ?? "");
-                    })
-                    .map(tf => ({
-                      value: tf.id,
-                      label: `${tfLabelById.get(tf.id) ?? `TF ${tf.tf_number ?? "?"}`}${tf.name ? ` ${tf.name}` : ""}`,
-                    })),
-                ]}
-                searchable searchPlaceholder="TF・KRで検索..."
-              />
-            ) : (
-              <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                管理画面でTask Forceを先に登録してください
-              </span>
-            )}
-          </FieldSection>
-
           {/* 開始日 + 終了日 + 工数（3列） */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
             <FieldSection label="開始日">
@@ -756,6 +649,13 @@ export function TaskEditModal({ taskId, currentUser, onClose, onDeleted }: Props
                 style={inputSm} />
             </FieldSection>
           </div>
+
+          {/* 成果物（v3.149）。URL を書くとリストの📎から開ける */}
+          <DeliverableField
+            value={form.deliverable}
+            onChange={v => setForm(f => ({ ...f, deliverable: v }))}
+            inputStyle={inputSm}
+          />
 
           {/* コメント（@ でメンバーをメンション可） */}
           <FieldSection label="コメント・メモ">

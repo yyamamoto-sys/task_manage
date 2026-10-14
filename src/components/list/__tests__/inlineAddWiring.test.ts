@@ -40,7 +40,7 @@ describe("リストビュー（ListView）", () => {
     expect(s.indexOf("<ListInlineAddRow")).toBeGreaterThan(s.indexOf("PC：テーブル"));
   });
   it("折りたたまれたグループでは出さず、FABからは展開してから開く", () => {
-    expect(s).toMatch(/expandGroup\(key\);\s*inlineAdd\.open\(key, target\.add\)/);
+    expect(s).toMatch(/expandGroup\(key\);[\s\S]*?inlineAdd\.open\(key, target\.add\)/);
   });
 });
 

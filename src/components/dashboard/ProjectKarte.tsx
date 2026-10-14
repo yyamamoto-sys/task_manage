@@ -17,6 +17,7 @@ import type { Member, Project, Milestone } from "../../lib/localData/types";
 import { todayStr, addDaysFromToday, formatMD } from "../../lib/date";
 import { calcProgressPct } from "../../lib/stats";
 import { isParentTask } from "../../lib/taskHierarchy";
+import { sectionsOfProject, computeSectionProgress } from "../../lib/section/sections";
 import { KEYS, active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { MarkdownLite } from "../common/MarkdownLite";
@@ -125,6 +126,14 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
 
   const today = todayStr();
   const weekLater = addDaysFromToday(7);
+
+  // PJ内のグループごとの進み具合（グループが1つでもあるPJだけ）。子を持つ親は葉タスク基準の進捗と同じ流儀で除く
+  const projectSections = useAppStore(s => s.projectSections);
+  const sectionProgress = useMemo(() => {
+    if (sectionsOfProject(projectSections, project.id).length === 0) return [];
+    const leaf = pjTasks.filter(t => !isParentTask(t, pjTasks));
+    return computeSectionProgress(leaf, projectSections, project.id);
+  }, [pjTasks, projectSections, project.id]);
 
   const stats = useMemo(() => {
     // 進捗の分母/分子は葉タスク基準（子を持つ親タスクを除外して二重計上を防ぐ）。
@@ -503,6 +512,24 @@ export function ProjectKarte({ project, currentUser }: { project: Project; curre
           {stats.done}/{stats.total} 完了（{stats.pct}%）
         </span>
       </div>
+
+      {/* グループごとの進み具合（完了数／件数） */}
+      {sectionProgress.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginBottom: "10px" }}>
+          {sectionProgress.map(r => {
+            const pct = r.total > 0 ? Math.round((r.done / r.total) * 100) : 0;
+            return (
+              <div key={r.key} style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "11px" }}>
+                <span title={r.name} style={{ width: 110, flexShrink: 0, color: "var(--color-text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.name}</span>
+                <div style={{ flex: 1, height: 5, background: "var(--color-bg-tertiary)", borderRadius: "var(--radius-full)", overflow: "hidden" }}>
+                  <div style={{ height: "100%", width: `${pct}%`, background: accent, borderRadius: "var(--radius-full)" }} />
+                </div>
+                <span style={{ flexShrink: 0, minWidth: 44, textAlign: "right", color: "var(--color-text-tertiary)" }}>{r.done}/{r.total} 完了</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {/* ステータス内訳 + 期日
           「完了」は上の進捗バー（done/total・pct%）と同じ情報の二重表現になるためチップからは外し、

@@ -19,6 +19,7 @@
 // ゲストはDBに一切接続しない（CLAUDE.md Section 23）ため、fetch自体を呼ばず常に空。
 
 import { useCallback, useEffect, useState } from "react";
+import { useAppStore } from "../../stores/appStore";
 import type { Member, EntityChangeLog, EntityChangeLogEntityType } from "../../lib/localData/types";
 import { fetchEntityChangeLogs, markEntityChangeLogUndone } from "../../lib/supabase/store";
 import { isGuestMode } from "../../lib/guestMode";
@@ -71,6 +72,11 @@ interface Props {
 export function ChangeHistorySection({ entityType, entityId, currentUser, members, onRevertFields, onRestore, onDelete }: Props) {
   const [logs, setLogs] = useState<EntityChangeLog[] | null>(null); // null = 読み込み中
   const [undoingId, setUndoingId] = useState<number | null>(null);
+  const projectSections = useAppStore(s => s.projectSections);
+  const sectionName = useCallback(
+    (id: string) => projectSections.find(s => s.id === id && !s.is_deleted)?.name,
+    [projectSections],
+  );
 
   const refresh = useCallback(async () => {
     if (isGuestMode()) {
@@ -166,9 +172,9 @@ export function ChangeHistorySection({ entityType, entityId, currentUser, member
                     {fields.map(([field, change]) => (
                       <li key={field}>
                         {fieldLabel(entityType, field)}：
-                        {formatChangeValue(entityType, field, change.before, members)}
+                        {formatChangeValue(entityType, field, change.before, members, sectionName)}
                         {" → "}
-                        {formatChangeValue(entityType, field, change.after, members)}
+                        {formatChangeValue(entityType, field, change.after, members, sectionName)}
                       </li>
                     ))}
                   </ul>

@@ -13,7 +13,7 @@ import { setRealtimeChannelState } from "./realtimeState";
 const TABLES = [
   "tasks", "projects", "todos",
   "task_task_forces", "task_projects", "project_task_forces",
-  "key_results", "task_forces", "milestones",
+  "key_results", "task_forces", "milestones", "project_sections",
   "members", "task_dependencies",
 ] as const;
 

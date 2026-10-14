@@ -221,6 +221,27 @@ export interface Task {
   baseline_start_date?: string | null;
   /** 当初計画の期日（B4：ベースライン差分）。start_date/due_dateが初めて両方揃った時点で凍結、以後は自動更新しない */
   baseline_due_date?: string | null;
+  /** PJ内のグループ（project_sections.id）。null/未設定＝未分類。子タスクは親と同じ（DBトリガー enforce_task_section_integrity が担保。migration 20261015） */
+  section_id?: string | null;
+  /** 成果物の説明（複数行の自由記述。本文中の http/https URL は📎リンクとして検出する。migration 20261015） */
+  deliverable?: string;
+}
+
+/**
+ * PJ内の「グループ」（画面の文言は「グループ」。コード・DBは section で統一する。
+ * 社内では「グループ」が部署（groups表）の意味でも使われるため）。論理削除は is_deleted（milestones と同じ流儀）。
+ */
+export interface ProjectSection {
+  id: string;
+  project_id: string;
+  name: string;
+  sort_order: number;
+  is_deleted: boolean;
+  created_at?: string;
+  updated_at?: string;
+  updated_by?: string;
+  deleted_at?: string;
+  deleted_by?: string;
 }
 
 export interface Milestone {

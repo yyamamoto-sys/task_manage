@@ -636,4 +636,50 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: `お知らせ：${label}（${name}）が見つかりません`,
     migration: "20261001e_admin_messages.sql",
   })),
+  // PJ内のグループ（project_sections）とタスクの成果物欄（v3.149・Section 78）。
+  // 未適用だと起動時の取得（周辺表）が失敗して警告バナーが出るほか、グループ・成果物を保存する
+  // タスクの保存が全経路で失敗する（列が無い）。
+  {
+    id: "project_sections_table",
+    kind: "table",
+    table: "project_sections",
+    label: "PJ内のグループ（project_sections）のテーブルが見つかりません",
+    migration: "20261015_sections_deliverable.sql",
+  },
+  {
+    id: "tasks_section_id_column",
+    kind: "column",
+    table: "tasks",
+    column: "section_id",
+    label: "タスクのグループ（tasks.section_id）の列が見つかりません",
+    migration: "20261015_sections_deliverable.sql",
+  },
+  {
+    id: "tasks_deliverable_column",
+    kind: "column",
+    table: "tasks",
+    column: "deliverable",
+    label: "タスクの成果物欄（tasks.deliverable）の列が見つかりません",
+    migration: "20261015_sections_deliverable.sql",
+  },
+  ...([
+    ["enforce_task_section_integrity", "タスクのグループを親・PJに揃えるトリガー関数"],
+    ["cascade_task_section_to_children", "親のグループを子へ伝えるトリガー関数"],
+    ["release_tasks_on_section_delete", "グループ削除で中のタスクを未分類へ戻すトリガー関数"],
+  ] as const).map(([name, label]): SchemaCheckDescriptor => ({
+    id: `fn_${name}`,
+    kind: "function",
+    name,
+    label: `PJ内のグループ：${label}（${name}）が見つかりません`,
+    migration: "20261015_sections_deliverable.sql",
+  })),
+  // 日次バックアップの group 分岐（本文だけの差し替え）。名前・引数は不変のため kind:"function" では検知できない。
+  {
+    id: "backup_snapshot_includes_project_sections",
+    kind: "function_body_contains",
+    name: "backup_snapshot",
+    needle: "FROM public.project_sections x WHERE x.project_id IN (SELECT id FROM grp_projects)",
+    label: "日次バックアップ（部署別）に PJ内のグループ（project_sections）が含まれていません（backup_snapshot が古い版のままです）",
+    migration: "20261015_sections_deliverable.sql",
+  },
 ];

@@ -9,11 +9,12 @@
 //
 // ❌ このモジュール以外の場所でAI用ペイロードを組み立てないこと（CLAUDE.md Section 2）
 
-import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce } from "../localData/types";
+import type { Project, Task, Member, KeyResult, TaskForce, TaskProject, ProjectTaskForce, ProjectSection } from "../localData/types";
 import { active } from "../localData/localStore";
 import { isAiTargetProject, resolveAiScope } from "./aiTarget";
 import type { AIProject, AITask, MemberWorkload, AIOKR, ConsultationType } from "./types";
 import { sanitizeComment } from "./sanitize";
+import { deliverableForAi } from "../task/deliverable";
 import { dateToQuarter, currentQuarter, getMondayAnchors, toDateStr } from "../date";
 import { effectiveTfQuarter } from "../okr/tfQuarter";
 import { getAssigneeIds } from "../taskMeta";
@@ -188,6 +189,8 @@ interface BuildOptions {
   currentObjective?: { id: string; title: string; period: string } | null;
   keyResults?: KeyResult[];
   taskForces?: TaskForce[];
+  /** PJ内のグループ（タスクに section_name を付けるため。未指定なら全タスクが null） */
+  projectSections?: ProjectSection[];
 }
 
 /**
@@ -245,6 +248,9 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
   // parent_task_name の解決用：全タスクの UUID → name マップ（プロジェクトまたぎで参照できる）
   const taskNameByUuid = new Map(activeTasks.map(t => [t.id, t.name]));
 
+  // PJ内のグループ名（削除済みは引かない）
+  const sectionNameById = new Map((opts.projectSections ?? []).filter(s => !s.is_deleted).map(s => [s.id, s.name]));
+
   // 担当者ID（複数可）→ short_name 結合文字列を作る
   const memberById = new Map(opts.members.map(m => [m.id, m]));
   const buildAssigneeLabel = (task: Task): string => {
@@ -274,6 +280,9 @@ export function buildPayload(opts: BuildOptions): BuildPayloadResult {
         estimated_hours: task.estimated_hours,
         // ❌ contribution_memoは含めない。sanitizeComment()を必ず適用する
         comment: sanitizeComment(task.comment ?? ""),
+        // 成果物は「説明だけ」を渡す（URL は除去・sanitizeComment と同じ伏せ字処理・短く切る）
+        deliverable: deliverableForAi(task.deliverable),
+        section_name: task.section_id ? (sectionNameById.get(task.section_id) ?? null) : null,
         // completed_atはYYYY-MM-DD形式の日付部分のみ渡す（時刻は不要）
         completed_at: task.completed_at ? task.completed_at.slice(0, 10) : null,
         parent_task_name: task.parent_task_id ? (taskNameByUuid.get(task.parent_task_id) ?? null) : null,

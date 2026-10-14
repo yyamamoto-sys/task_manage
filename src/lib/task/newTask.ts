@@ -23,6 +23,10 @@ export interface NewTaskInput {
   startDate: string;
   dueDate: string;
   comment: string;
+  /** PJ内のグループ id（v3.149）。親があれば親のグループになる。空・未指定は未分類（キーを足さない） */
+  sectionId?: string | null;
+  /** 成果物の説明（v3.149）。空・未指定は載せない（列がまだ無い DB でも作成が落ちないように） */
+  deliverable?: string;
   /** 指定があるときだけ Task.tags に載せる（無指定のタスクの形を変えない） */
   tags?: string[];
   updatedBy: string;
@@ -83,5 +87,10 @@ export function prepareNewTask(
     updated_by: input.updatedBy,
   };
   if (input.tags && input.tags.length > 0) task.tags = input.tags;
+  // グループ：子は親と同じ・PJなしは未分類。別PJのグループ等は saveTask（normalizeTaskSection）が外す
+  const sectionId = parent ? (parent.section_id ?? null) : (projectId ? (input.sectionId ?? null) : null);
+  if (sectionId) task.section_id = sectionId;
+  const deliverable = (input.deliverable ?? "").trim();
+  if (deliverable) task.deliverable = deliverable;
   return task;
 }

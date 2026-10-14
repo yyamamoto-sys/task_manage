@@ -56,4 +56,5 @@ export const ADMIN_ONLY_ACTION_SURFACE_FILES = [
 // runBulkShift→saveTask）が該当する。
 export const DELEGATING_ACTIONS: Record<string, string> = {
   bulkShiftTasks: "saveTask",
+  reorderProjectSections: "saveProjectSection",
 };

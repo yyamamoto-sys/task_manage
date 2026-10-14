@@ -608,8 +608,16 @@ export const GANTT_GROUP_ROW_HEIGHT = 36;
 /** タスク1件を表す行の高さ（PJ別／ToDo別／人別、全ビュー共通）。 */
 export const GANTT_TASK_ROW_HEIGHT = 30;
 
+/** PJ内のグループ見出し行の高さ（PJ見出しより低く、タスク行より少し低い） */
+export const GANTT_SECTION_ROW_HEIGHT = 26;
+
+/** グループの折りたたみ状態のキー（collapsed のキー。PJ id・親タスク id と衝突しない接頭辞） */
+export function ganttSectionCollapseKey(pjId: string, sectionKey: string): string {
+  return `sec_${pjId}_${sectionKey}`;
+}
+
 export type GanttRowKind =
-  | "pj-header" | "task" | "quick-add"
+  | "pj-header" | "section-header" | "task" | "quick-add"
   | "todo-header" | "todo-task"
   | "person-header" | "person-task";
 
@@ -625,6 +633,11 @@ interface GanttRowCommon {
 }
 
 export interface GanttPjHeaderRow extends GanttRowCommon { kind: "pj-header"; pj: Project; }
+export interface GanttSectionHeaderRow extends GanttRowCommon {
+  kind: "section-header"; pj: Project;
+  /** グループ id。未分類は UNSECTIONED_KEY */
+  sectionKey: string; name: string; unsectioned: boolean; taskCount: number; collapseKey: string;
+}
 export interface GanttTaskRow extends GanttRowCommon { kind: "task"; task: Task; depth: number; childCount: number; pj: Project; }
 export interface GanttQuickAddRow extends GanttRowCommon { kind: "quick-add"; pj: Project; }
 export interface GanttTodoHeaderRow extends GanttRowCommon { kind: "todo-header"; todo: ToDo; todoId: string; tasks: Task[]; }
@@ -633,7 +646,7 @@ export interface GanttPersonHeaderRow extends GanttRowCommon { kind: "person-hea
 export interface GanttPersonTaskRow extends GanttRowCommon { kind: "person-task"; task: Task; member: Member; }
 
 export type GanttRow =
-  | GanttPjHeaderRow | GanttTaskRow | GanttQuickAddRow
+  | GanttPjHeaderRow | GanttSectionHeaderRow | GanttTaskRow | GanttQuickAddRow
   | GanttTodoHeaderRow | GanttTodoTaskRow
   | GanttPersonHeaderRow | GanttPersonTaskRow;
 
@@ -648,6 +661,8 @@ export interface BuildPjViewGanttRowsInput {
   collapsed: Record<string, boolean>;
   /** プレビューモードでは簡易追加行を出さない */
   isPreview: boolean;
+  /** PJ.id → そのPJの有効なグループ（並び順どおり）。グループが1つでもあるPJだけ見出しで区切る（v3.149） */
+  sectionsByPj?: Map<string, { id: string; name: string }[]>;
 }
 
 /**
@@ -656,16 +671,37 @@ export interface BuildPjViewGanttRowsInput {
  * GanttView.tsx はこの結果を左ラベル列・右バー列の両方でそのまま map するだけでよい。
  */
 export function buildPjViewGanttRows(input: BuildPjViewGanttRowsInput): GanttRow[] {
-  const { visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview } = input;
+  const { visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj } = input;
   const rows: GanttRow[] = [];
   for (const pj of visibleProjects) {
     const isCollapsed = !!collapsed[pj.id];
     rows.push({ kind: "pj-header", key: `pjh_${pj.id}`, height: GANTT_GROUP_ROW_HEIGHT, blockKey: pj.id, pj });
     if (!isCollapsed) {
       const ordered = pjOrderedTasksMap.get(pj.id) ?? [];
-      for (const { task, depth, childCount } of ordered) {
-        if (depth > 0 && task.parent_task_id && collapsed[task.parent_task_id]) continue;
+      const secs = sectionsByPj?.get(pj.id) ?? [];
+      const pushTask = (task: Task, depth: number, childCount: number) => {
+        if (depth > 0 && task.parent_task_id && collapsed[task.parent_task_id]) return;
         rows.push({ kind: "task", key: `${pj.id}_${task.id}`, height: GANTT_TASK_ROW_HEIGHT, blockKey: pj.id, task, depth, childCount, pj });
+      };
+      if (secs.length === 0) {
+        for (const { task, depth, childCount } of ordered) pushTask(task, depth, childCount);
+      } else {
+        // グループのあるPJ：未分類（先頭）→各グループの順に見出しで区切る。子は親と同じグループなので同じ区画に並ぶ
+        const known = new Set(secs.map(x => x.id));
+        const blocks = [
+          { key: "__unsectioned__", name: "未分類", unsectioned: true, match: (t: Task) => !t.section_id || !known.has(t.section_id) },
+          ...secs.map(x => ({ key: x.id, name: x.name, unsectioned: false, match: (t: Task) => t.section_id === x.id })),
+        ];
+        for (const b of blocks) {
+          const items = ordered.filter(o => b.match(o.task));
+          const collapseKey = ganttSectionCollapseKey(pj.id, b.key);
+          rows.push({
+            kind: "section-header", key: `sech_${pj.id}_${b.key}`, height: GANTT_SECTION_ROW_HEIGHT, blockKey: pj.id,
+            pj, sectionKey: b.key, name: b.name, unsectioned: b.unsectioned, taskCount: items.length, collapseKey,
+          });
+          if (collapsed[collapseKey]) continue;
+          for (const { task, depth, childCount } of items) pushTask(task, depth, childCount);
+        }
       }
       if (!isPreview) {
         rows.push({ kind: "quick-add", key: `qa_${pj.id}`, height: QUICK_ADD_ROW_HEIGHT, blockKey: pj.id, pj });

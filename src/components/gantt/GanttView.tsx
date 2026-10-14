@@ -32,7 +32,7 @@ import {
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
   computeWeekGridLines, computeMilestoneBands, overloadRangesToBands,
   computeDayTicks, dayTickColor,
-  computeVisibleOrderedTaskIds, computeRangeSelection,
+  computeRangeSelection,
   xToDate, computeDragCreateRange,
   type GanttRow, buildPjViewGanttRows, buildPersonViewGanttRows, computeGanttBlockRanges,
 } from "./ganttUtils";
@@ -51,6 +51,7 @@ import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
+import { sectionsOfProject } from "../../lib/section/sections";
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 
@@ -114,6 +115,7 @@ export function GanttView({
   const rawMembers    = useAppStore(s => s.members);
   const rawTodos      = useAppStore(s => s.todos);
   const rawMilestones = useAppStore(s => s.milestones);
+  const projectSections = useAppStore(s => s.projectSections);
   const saveTask      = useAppStore(s => s.saveTask);
   const bulkShiftTasks = useAppStore(s => s.bulkShiftTasks);
   const saveProject   = useAppStore(s => s.saveProject);
@@ -469,24 +471,6 @@ export function GanttView({
       .filter(g => g.tasks.length > 0);
   }, [members, allTasks, sortTasks, scopedTaskDependencies]);
 
-  // 現在の表示順（折りたたみ・ビューモード反映後）に並んだタスクidの配列。Ctrl/Cmd+A（表示中の
-  // 全選択）とShift+クリック（範囲選択）が共有する（computeVisibleOrderedTaskIds＝純粋関数、
-  // 上のJSXレンダー順と対応させるためここで組み立てる）。
-  const visibleOrderedTaskIds = useMemo(() => computeVisibleOrderedTaskIds({
-    viewMode, collapsed,
-    personGroups: personGroups.map(g => ({ memberId: g.member.id, taskIds: g.tasks.map(t => t.id) })),
-    pjGroups: visibleProjects.map(pj => ({
-      pjId: pj.id,
-      rows: (pjOrderedTasksMap.get(pj.id) ?? []).map(r => ({
-        taskId: r.task.id, depth: r.depth, parentTaskId: r.task.parent_task_id ?? null,
-      })),
-    })),
-    todoGroups: todoGroups.map(g => ({
-      todoId: g.todoId,
-      taskIds: (todoGroupSortedMap.get(g.todoId) ?? sortTasks(g.tasks)).map(t => t.id),
-    })),
-  }), [viewMode, collapsed, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, sortTasks]);
-
   // ===== 共有行モデル（ganttRows）。CLAUDE.md v3.08 =====
   // 【設計意図】左ラベル列（labelBodyRef）と右バー列（scrollRef）は別々のスクロールコンテナで
   // scrollTopを同期しているだけの構造のため、両列の「行順・各行高さ・行数」が完全一致していないと
@@ -496,6 +480,16 @@ export function GanttView({
   // 1回だけ組み立て、折りたたみ・親折りたたみ・簡易追加行の表示可否をこの1箇所に集約する。
   // 下のJSXは左右とも、この配列を1回ずつ map するだけ（行の組み立てロジックの二重化そのものを
   // なくす）ので、行数・各行の高さが構造的に必ず一致する（ズレが原理的に起きない）。
+  // PJ.id → 有効なグループ（グループが1つでもあるPJだけ見出しで区切る）
+  const sectionsByPj = useMemo(() => {
+    const map = new Map<string, { id: string; name: string }[]>();
+    for (const pj of visibleProjects) {
+      const secs = sectionsOfProject(projectSections, pj.id);
+      if (secs.length > 0) map.set(pj.id, secs.map(x => ({ id: x.id, name: x.name })));
+    }
+    return map;
+  }, [visibleProjects, projectSections]);
+
   const ganttRows = useMemo<GanttRow[]>(() => {
     if (viewMode === "person") {
       return buildPersonViewGanttRows(
@@ -504,9 +498,20 @@ export function GanttView({
       );
     }
     return buildPjViewGanttRows({
-      visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview,
+      visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj,
     });
-  }, [viewMode, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview]);
+  }, [viewMode, personGroups, visibleProjects, pjOrderedTasksMap, todoGroups, todoGroupSortedMap, collapsed, isPreview, sectionsByPj]);
+
+  // 現在の表示順（折りたたみ・ビューモード・グループの区切り反映後）に並んだタスクidの配列。Ctrl/Cmd+A（表示中の
+  // 全選択）とShift+クリック（範囲選択）が共有する。行の組み立て（ganttRows）の結果そのものから作るので、
+  // 描画順（グループ見出しでの並べ替え・折りたたみ）と必ず一致する。
+  const visibleOrderedTaskIds = useMemo(() => {
+    const ids: string[] = [];
+    for (const r of ganttRows) {
+      if (r.kind === "task" || r.kind === "todo-task" || r.kind === "person-task") ids.push(r.task.id);
+    }
+    return ids;
+  }, [ganttRows]);
 
   // 各ブロック（PJ／ToDoグループ／担当者）の累積Y座標（top）と高さ。マイルストーン帯・過負荷帯を
   // 「バー列全体を覆う絶対配置オーバーレイ」として描く座標源（ganttRowsの高さの積み上げから算出する
@@ -1683,6 +1688,29 @@ export function GanttView({
           />
         );
       }
+      case "section-header": {
+        const isCollapsed = !!collapsed[row.collapseKey];
+        return (
+          <div key={row.key} style={{
+            height: row.height, display: "flex", alignItems: "center", gap: "6px", padding: "0 8px 0 22px",
+            background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)",
+            cursor: "pointer", minWidth: 0,
+          }}
+            onClick={() => togglePJ(row.collapseKey)}
+            role="button" tabIndex={0}
+            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(row.collapseKey); }}
+            title={row.name}
+          >
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", transition: "transform 0.15s", display: "inline-block", flexShrink: 0, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
+            <span style={{
+              fontSize: "11px", fontWeight: 600, flex: 1, minWidth: 0,
+              color: row.unsectioned ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>{row.name}</span>
+            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{row.taskCount}件</span>
+          </div>
+        );
+      }
       case "quick-add":
         return <GanttQuickAddTaskRow key={row.key} height={row.height} onAdd={name => handleQuickAddTask(row.pj.id, name)} />;
       case "todo-header": {
@@ -1941,6 +1969,9 @@ export function GanttView({
           />
         );
       }
+      case "section-header":
+        // グループ見出し行のバー列側（バーを持たない見出し専用行。ラベル列と同じ row.height）
+        return <div key={row.key} style={{ height: row.height, borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)" }} />;
       case "quick-add":
         // 簡易タスク追加行スペーサー（CLAUDE.md v3.06→v3.08）。ラベル列側は
         // GanttQuickAddTaskRow（実際の追加UI）を描くが、バー列には対応するタスクが無い

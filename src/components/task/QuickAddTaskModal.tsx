@@ -1,18 +1,21 @@
 // src/components/task/QuickAddTaskModal.tsx
 // FABから開くグローバルタスク追加モーダル。
 // MainLayout.tsx から切り出し。
+//
+// 【v3.149】KR→タスクフォース→ToDo の選択欄を外した（タスクフォースに依存して ToDo を選ぶ作りのため、
+// 一緒に外す。データと集計はそのまま。Section 78）。ToDo パネル・ToDo グループの追加行から開いたとき
+// だけ、渡された ToDo（defaultTodoId）に紐づけて作る（選択欄は無く、紐づけ先を文で示す）。
+// 代わりにPJ内の「グループ」選択欄と「成果物」欄を置いた。
 
 import { useState, useMemo } from "react";
 import { useAppStore, selectScopedTasks } from "../../stores/appStore";
-import type { Member, Project, Task, TaskForce, ToDo, KeyResult, Quarter } from "../../lib/localData/types";
+import type { Member, Project, Task } from "../../lib/localData/types";
 import { CustomSelect, type SelectOption } from "../common/CustomSelect";
+import { SectionSelect, DeliverableField } from "./SectionField";
 import { MentionTextarea } from "../common/MentionTextarea";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { prepareNewTask, validateTaskDateRange } from "../../lib/task/newTask";
 import { showToast } from "../common/Toast";
-import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
-import { keyResultsInGroup, taskForcesInGroup } from "../../lib/okr/deptScope";
-import { currentQuarter } from "../../lib/date";
 import { parentTaskCandidates } from "../../lib/taskHierarchy";
 import { v4 as uuidv4 } from "uuid";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE } from "../common/modalStyles";
@@ -30,13 +33,11 @@ interface Props {
   /** 作成するタスクの初期ステータス（未指定は "todo"）。
    *  カンバンビューの列ごとの「＋ タスクを追加」から、その列のステータスを渡す用途。 */
   defaultStatus?: Task["status"];
-  /** 紐づけるTF ID（既定選択用）。管理画面のToDoパネルからの追加で使用。
-   *  defaultTodoIdのTFが選択中クォーター外でも解決できるよう、defaultTodoIdと合わせて渡す。 */
-  defaultTfId?: string;
-  /** 紐づけるToDo ID（既定でチェック状態にする）。管理画面のToDoパネルの「＋ タスクを追加」から
-   *  このモーダルを開く用途。該当ToDoが今期以外のTFに属していても、KR/TFの選択肢に
-   *  強制的に含める（filteredKrs/filteredTfs）ことで選択が失われないようにする。 */
+  /** 紐づけるToDo ID。管理画面のToDoパネルの「＋ タスクを追加」・ToDoグループの追加行から
+   *  このモーダルを開く用途（選択欄は無い。このToDoに紐づけて作る）。 */
   defaultTodoId?: string;
+  /** グループの初期値（リストのグループ別の追加行から開く用途）。そのPJのグループでなければ未分類 */
+  defaultSectionId?: string;
   /** 作成するタスクの初期期日（YYYY-MM-DD）。カレンダーの日付セルから開く用途。 */
   defaultDueDate?: string;
   /** リストの追加行の「詳細を入れて追加」から：入力済みの内容を引き継ぐ用途 */
@@ -49,29 +50,15 @@ interface Props {
   onClose: () => void;
 }
 
-/** ToDoに紐づかない「その他」選択肢の仮想ID。保存時に todo_ids からは除外する */
-const TODO_OTHER_ID = "__other__";
-
-export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTfId, defaultTodoId, defaultDueDate, defaultName, defaultAssigneeId, defaultStartDate, defaultTags, onClose }: Props) {
+export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, defaultParentId, defaultStatus, defaultTodoId, defaultSectionId, defaultDueDate, defaultName, defaultAssigneeId, defaultStartDate, defaultTags, onClose }: Props) {
   const saveTask                = useAppStore(s => s.saveTask);
   const rawTasks                = useAppStore(selectScopedTasks);
-  const rawTfs                  = useAppStore(s => s.taskForces);
   const rawTodos                = useAppStore(s => s.todos);
-  const rawKrs                  = useAppStore(s => s.keyResults);
-  const rawObjectives           = useAppStore(s => s.objectives);
-  const currentGroupId          = useAppStore(s => s.currentGroupId);
-  const tfs = useMemo(() => (rawTfs ?? []).filter((tf: TaskForce) => !tf.is_deleted), [rawTfs]);
-  const todos = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
-  const krs = useMemo(() => (rawKrs ?? []).filter((kr: KeyResult) => !kr.is_deleted), [rawKrs]);
-
-  // ToDoパネルからの追加時：defaultTodoIdからTFを、TFからKRを逆引きして初期選択に使う
-  // （defaultTfIdが明示的に渡っていればそちらを優先）
-  const resolvedDefaultTfId = defaultTfId ?? todos.find(td => td.id === defaultTodoId)?.tf_id;
-  const defaultKrId = tfs.find(tf => tf.id === resolvedDefaultTfId)?.kr_id;
-
-  // 今日の日付から現在のQを計算（1Q=1-3月 / 2Q=4-6月 / 3Q=7-9月 / 4Q=10-12月）
-  // 判定ロジックは lib/date.ts の currentQuarter() に一元化済み。
-  const currentQ = useMemo<Quarter>(() => currentQuarter(), []);
+  // 紐づけ先ToDoの表示名（defaultTodoId があるときだけ使う）
+  const defaultTodo = useMemo(
+    () => (defaultTodoId ? (rawTodos ?? []).find(td => td.id === defaultTodoId && !td.is_deleted) : undefined),
+    [rawTodos, defaultTodoId],
+  );
 
   const [name, setName] = useState(defaultName ?? "");
   const [assigneeId, setAssigneeId] = useState(defaultAssigneeId ?? currentUser.id);
@@ -82,9 +69,9 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   // 担当者・メンションの候補（表示部署のメンバー＋選択中PJの参加者＋今の担当者）
   const members = useAssigneeCandidates(projectId || null, assigneeId ? [assigneeId] : []);
   const [parentId, setParentId] = useState(defaultParentId ?? "");
-  const [krId, setKrId] = useState(defaultKrId ?? "");
-  const [tfId, setTfId] = useState(resolvedDefaultTfId ?? "");
-  const [todoIds, setTodoIds] = useState<string[]>(defaultTodoId ? [defaultTodoId] : []);
+  const [sectionId, setSectionId] = useState<string | null>(defaultSectionId ?? null);
+  const [deliverable, setDeliverable] = useState("");
+  const todoIds = useMemo<string[]>(() => (defaultTodoId ? [defaultTodoId] : []), [defaultTodoId]);
   const [startDate, setStartDate] = useState(defaultStartDate ?? "");
   const [dueDate, setDueDate] = useState(defaultDueDate ?? "");
   const [priority, setPriority] = useState<Task["priority"]>(null);
@@ -92,14 +79,17 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
   // 子タスク（1行1タスク）。最上位タスク作成時のみ表示・一括作成する（2階層固定のため）。
   const [childDraft, setChildDraft] = useState("");
   const [saving, setSaving] = useState(false);
-  const [tooltipTodo, setTooltipTodo] = useState<ToDo | null>(null);
-  const [tooltipPos, setTooltipPos] = useState({ x: 0, left: 0, y: 0 });
 
-  const handleKrChange = (val: string) => { setKrId(val); setTfId(""); setTodoIds([]); };
-  const handleTfChange = (val: string) => { setTfId(val); setTodoIds([]); };
   // PJ を変えても選択中の親タスクはクリアしない（他PJ親も許容するため）。
   // 親を選んで保存すると project_id は親のPJに揃う（handleSave）。
-  const handleProjectChange = (val: string) => { setProjectId(val); };
+  // PJを変えたらグループは外す（別PJのグループを指さない）。
+  const handleProjectChange = (val: string) => {
+    if (val !== projectId) setSectionId(null);
+    setProjectId(val);
+  };
+
+  // 親タスクを選んでいる間、グループは親と同じ（選べない）
+  const formParent = parentId ? rawTasks.find(t => t.id === parentId) : undefined;
 
   // 親タスク候補＝全PJの最上位タスク。選択中PJを先頭に、他PJはPJ名を併記。
   // （子を選ぶと子は親のPJに揃うため他PJ親も許容。同一PJを優先表示）
@@ -126,50 +116,6 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
     return opts;
   }, [rawTasks, projectId, projects]);
 
-  // 現在QのKR一覧（今期のTFが存在するKRのみ。tf.quarter基準・未設定legacyは今期扱い）
-  // 表示中の部署（currentGroupId）のKRだけに絞る（v3.02。クォーター絞り込みと併用）。
-  // ToDoパネルからの既定KRが他クォーター／他部署のTFしか持たない場合も選択肢が消えないよう強制的に含める
-  const krsInGroup = useMemo(
-    () => new Set(keyResultsInGroup(krs, rawObjectives, currentGroupId).map(kr => kr.id)),
-    [krs, rawObjectives, currentGroupId],
-  );
-  const filteredKrs = useMemo(() => {
-    const base = krs.filter(kr => {
-      if (!krsInGroup.has(kr.id)) return false;
-      const krTfs = tfs.filter(tf => tf.kr_id === kr.id && effectiveTfQuarter(tf) === currentQ);
-      return krTfs.length > 0;
-    });
-    if (defaultKrId && !base.some(kr => kr.id === defaultKrId)) {
-      const forced = krs.find(kr => kr.id === defaultKrId);
-      if (forced) return [forced, ...base];
-    }
-    return base;
-  }, [krs, tfs, currentQ, defaultKrId, krsInGroup]);
-
-  // 選択中KRのTF一覧（今期のみ・TF番号順）。表示中の部署のTFだけに絞る（v3.02）。
-  // ToDoパネルからの既定TFが他クォーター／他部署のものでも、選択肢が消えないよう強制的に含める
-  const tfsInGroup = useMemo(
-    () => new Set(taskForcesInGroup(tfs, krs, rawObjectives, currentGroupId).map(tf => tf.id)),
-    [tfs, krs, rawObjectives, currentGroupId],
-  );
-  const filteredTfs = useMemo(() => {
-    if (!krId) return [];
-    const base = tfs
-      .filter(tf => tf.kr_id === krId && effectiveTfQuarter(tf) === currentQ && tfsInGroup.has(tf.id))
-      .sort((a, b) => (parseInt(a.tf_number) || 0) - (parseInt(b.tf_number) || 0));
-    if (resolvedDefaultTfId && krId === defaultKrId && !base.some(tf => tf.id === resolvedDefaultTfId)) {
-      const forced = tfs.find(tf => tf.id === resolvedDefaultTfId);
-      if (forced) return [forced, ...base];
-    }
-    return base;
-  }, [krId, tfs, currentQ, resolvedDefaultTfId, defaultKrId, tfsInGroup]);
-
-  // 選択中TFに属するToDo一覧
-  const filteredTodos = useMemo(
-    () => tfId ? todos.filter(td => td.tf_id === tfId) : [],
-    [tfId, todos],
-  );
-
   const handleSave = async () => {
     if (!name.trim()) return;
     const dateError = validateTaskDateRange(startDate, dueDate);
@@ -181,13 +127,15 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
       name,
       projectId: projectId || null,
       parentId: parentId || null,
-      todoIds: todoIds.filter(id => id !== TODO_OTHER_ID),
+      todoIds,
       assigneeIds: assigneeId ? [assigneeId] : [],
       status: defaultStatus ?? "todo",
       priority,
       startDate,
       dueDate,
       comment,
+      sectionId,
+      deliverable,
       tags: defaultTags,
       updatedBy: currentUser.id,
     }, rawTasks, now);
@@ -229,48 +177,8 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
     }
   };
 
-  const TOOLTIP_W = 280;
-  const TOOLTIP_GAP = 10;
-  // 右に出す余白が無ければカーソルの左側へ反転させるが（既存ロジック）、反転先が画面左端を
-  // はみ出す場合の下限クランプが無かった（2026-08-20の横断監査で発覚。pointerEvents:"none"
-  // のため実害は見た目のみ）。Math.maxで左端8pxを保証する。
-  const tooltipLeft = Math.max(
-    8,
-    tooltipPos.x + TOOLTIP_GAP + TOOLTIP_W <= window.innerWidth
-      ? tooltipPos.x + TOOLTIP_GAP
-      : tooltipPos.left - TOOLTIP_W - TOOLTIP_GAP,
-  );
-  const tooltipTop = Math.min(tooltipPos.y, window.innerHeight - 180);
-
   return (
     <>
-      {/* ToDoホバーツールチップ（モーダル外・最前面） */}
-      {tooltipTodo && (
-        <div style={{
-          position: "fixed", left: tooltipLeft, top: tooltipTop, zIndex: 500,
-          width: TOOLTIP_W,
-          background: "var(--color-bg-primary)",
-          border: "1px solid var(--color-border-primary)",
-          borderRadius: "var(--radius-md)",
-          boxShadow: "var(--shadow-lg)",
-          padding: "10px 12px",
-          pointerEvents: "none",
-        }}>
-          <div style={{ fontSize: "12px", color: "var(--color-text-primary)", whiteSpace: "pre-wrap", lineHeight: 1.5, marginBottom: tooltipTodo.memo ? "6px" : 0 }}>
-            {tooltipTodo.title}
-          </div>
-          {tooltipTodo.memo && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", whiteSpace: "pre-wrap", lineHeight: 1.4, borderTop: "1px solid var(--color-border-primary)", paddingTop: "6px", marginTop: "2px" }}>
-              {tooltipTodo.memo}
-            </div>
-          )}
-          {tooltipTodo.due_date && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "6px" }}>
-              期日: {tooltipTodo.due_date}
-            </div>
-          )}
-        </div>
-      )}
       {/* オーバーレイ：背景クリックで閉じる（マウス操作の補助）。閉じる操作自体はキャンセルボタンで
           キーボードから可能なため、背景要素をフォーカス可能にする必要はない */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
@@ -384,105 +292,14 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
           />
         </div>
 
-        {/* KR選択 */}
-        <div style={{ marginBottom: "10px" }}>
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>KR（任意）</div>
-          <CustomSelect
-            value={krId}
-            onChange={handleKrChange}
-            options={[
-              { value: "", label: "KRを選択..." },
-              ...filteredKrs.map(kr => ({ value: kr.id, label: kr.title })),
-            ]}
-            placeholder="KRを選択..."
-            searchable
-            searchPlaceholder="KR名で検索..."
-          />
-        </div>
-
-        {/* タスクフォース（KR選択後に表示） */}
-        {krId && (
-          <div className="animate-slideDown" style={{ marginBottom: "10px" }}>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>タスクフォース（任意）</div>
-            <CustomSelect
-              value={tfId}
-              onChange={handleTfChange}
-              options={[
-                { value: "", label: "タスクフォースを選択..." },
-                ...filteredTfs.map(tf => ({
-                  value: tf.id,
-                  label: `${tf.tf_number ? `TF ${tf.tf_number}` : ""}${tf.tf_number && tf.name ? " — " : ""}${tf.name}`,
-                })),
-              ]}
-              placeholder="タスクフォースを選択..."
-              searchable
-              searchPlaceholder="TF名で検索..."
-            />
-          </div>
-        )}
-
-        {/* ToDo（TF選択時のみ・複数選択可） */}
-        {tfId && (
-          <div className="animate-slideDown" style={{ marginBottom: "10px" }}>
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px" }}>
-              ToDo（複数選択可）
-            </div>
-            <div style={{
-              border: "1px solid var(--color-border-primary)",
-              borderRadius: "var(--radius-md)",
-              padding: "6px 10px",
-              maxHeight: "140px",
-              overflowY: "auto",
-              background: "var(--color-bg-primary)",
-            }}>
-              {filteredTodos.map((td) => (
-                <label
-                  key={td.id}
-                  onMouseEnter={e => {
-                    const rect = e.currentTarget.getBoundingClientRect();
-                    setTooltipTodo(td);
-                    setTooltipPos({ x: rect.right, left: rect.left, y: rect.top });
-                  }}
-                  onMouseLeave={() => setTooltipTodo(null)}
-                  style={{
-                    display: "flex", alignItems: "flex-start", gap: "7px",
-                    padding: "4px 0", cursor: "pointer",
-                    fontSize: "12px", color: "var(--color-text-primary)",
-                    borderBottom: "1px solid var(--color-border-primary)",
-                  }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={todoIds.includes(td.id)}
-                    onChange={e => setTodoIds(prev =>
-                      e.target.checked ? [...prev, td.id] : prev.filter(id => id !== td.id)
-                    )}
-                    style={{ marginTop: "2px", flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                  />
-                  <span style={{ lineHeight: 1.4 }}>
-                    {(() => {
-                      const label = td.name || td.title.split("\n")[0];
-                      return label.length > 60 ? label.slice(0, 60) + "…" : label;
-                    })()}
-                  </span>
-                </label>
-              ))}
-              <label style={{
-                display: "flex", alignItems: "center", gap: "7px",
-                padding: "4px 0", cursor: "pointer",
-                fontSize: "12px", color: "var(--color-text-secondary)",
-              }}>
-                <input
-                  type="checkbox"
-                  checked={todoIds.includes(TODO_OTHER_ID)}
-                  onChange={e => setTodoIds(prev =>
-                    e.target.checked ? [...prev, TODO_OTHER_ID] : prev.filter(id => id !== TODO_OTHER_ID)
-                  )}
-                  style={{ flexShrink: 0, accentColor: "var(--color-brand-primary)" }}
-                />
-                <span>その他</span>
-              </label>
-            </div>
+        {/* ToDo への紐づけ先（ToDo パネル・ToDo グループの追加行から開いたときだけ。選択欄は無い） */}
+        {defaultTodoId && (
+          <div style={{
+            marginBottom: "12px", padding: "6px 10px", fontSize: "11px",
+            color: "var(--color-text-secondary)", background: "var(--color-bg-secondary)",
+            border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+          }}>
+            ToDo「{(defaultTodo?.name || defaultTodo?.title?.split("\n")[0] || "（名前なし）").slice(0, 60)}」に紐づけて追加します
           </div>
         )}
 
@@ -501,6 +318,14 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
             searchPlaceholder="プロジェクト名で検索..."
           />
         </div>
+
+        {/* グループ（PJ内の区分。v3.149）。親タスクを選んだら親と同じ（選べない） */}
+        <SectionSelect
+          projectId={formParent ? (formParent.project_id ?? null) : (projectId || null)}
+          value={sectionId}
+          onChange={setSectionId}
+          parentLocked={formParent ? { sectionId: formParent.section_id ?? null } : null}
+        />
 
         {/* 親タスク（任意・2階層固定。他PJの親も選べる＝選ぶと子は親のPJに揃う） */}
         <div style={{ marginBottom: "16px" }}>
@@ -535,6 +360,21 @@ export function QuickAddTaskModal({ currentUser, projects, defaultProjectId, def
             />
           </div>
         )}
+
+        {/* 成果物（v3.149）。URL を書くとリストの📎から開ける */}
+        <DeliverableField
+          value={deliverable}
+          onChange={setDeliverable}
+          rows={2}
+          inputStyle={{
+            width: "100%", padding: "8px 12px", fontSize: "12px",
+            border: "1px solid var(--color-border-primary)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--color-bg-primary)",
+            color: "var(--color-text-primary)",
+            outline: "none", fontFamily: "inherit",
+          }}
+        />
 
         {/* メモ（@ でメンバーをメンション可） */}
         <div style={{ marginBottom: "16px" }}>

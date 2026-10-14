@@ -51,3 +51,20 @@ describe("AIへ送る経路の網羅：タスクの comment を読む lib/ai の
     expect(offenders).toEqual([]);
   });
 });
+
+describe("AIへ送る経路の網羅：タスクの deliverable（成果物）は deliverableForAi を通す（v3.149）", () => {
+  it("`.deliverable` を参照する送信系ファイルはすべて deliverableForAi を import している", () => {
+    const offenders = fs.readdirSync(AI_DIR)
+      .filter(f => f.endsWith(".ts") && f !== "applyProposal.ts" && f !== "systemPrompt.ts")
+      .filter(f => {
+        const src = fs.readFileSync(path.join(AI_DIR, f), "utf-8")
+          .split("\n").filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join("\n");
+        return /\b(?:t|task|tk)\.deliverable\b/.test(src) && !/import\s*\{[^}]*deliverableForAi[^}]*\}\s*from/.test(src);
+      });
+    expect(offenders).toEqual([]);
+  });
+  it("payloadBuilder は成果物を deliverableForAi 経由でだけ載せる（URL を除去した説明のみ）", () => {
+    const src = fs.readFileSync(path.join(AI_DIR, "payloadBuilder.ts"), "utf-8");
+    expect(src).toContain("deliverable: deliverableForAi(task.deliverable)");
+  });
+});

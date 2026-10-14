@@ -71,11 +71,17 @@ export function useTaskDragReorder(
     }
     const ids = computeSiblingReorderIds(allTasks, visibleTasks, draggedId, targetId, zone);
     if (!ids) return;
+    // グループ（v3.149）：最上位として並ぶときはドロップ先と同じグループへ移る。子として並ぶときは親のグループ
+    // （saveTask の normalizeTaskSection が揃える）。値が変わるときだけキーを足す（列が無い DB でも落ちない）
+    const targetSection = target.section_id ?? null;
+    const sectionPatch = !newParentId && (dragged.section_id ?? null) !== targetSection
+      ? { section_id: targetSection } : {};
     try {
       await Promise.all(ids.map((id, idx) => {
         if (id === draggedId) {
-          if ((dragged.display_order ?? 0) === idx && (dragged.parent_task_id ?? null) === newParentId && (dragged.project_id ?? null) === newProjectId) return Promise.resolve();
-          return saveTask({ ...dragged, parent_task_id: newParentId, project_id: newProjectId, display_order: idx, updated_by: currentUserId });
+          if ((dragged.display_order ?? 0) === idx && (dragged.parent_task_id ?? null) === newParentId && (dragged.project_id ?? null) === newProjectId
+            && Object.keys(sectionPatch).length === 0) return Promise.resolve();
+          return saveTask({ ...dragged, ...sectionPatch, parent_task_id: newParentId, project_id: newProjectId, display_order: idx, updated_by: currentUserId });
         }
         const t = allTasks.find(x => x.id === id);
         if (!t || (t.display_order ?? 0) === idx) return Promise.resolve();
@@ -102,5 +108,25 @@ export function useTaskDragReorder(
     }
   }, [allTasks, saveTask, currentUserId, onReordered]);
 
-  return { draggingId, setDraggingId, dropZone, setDropZone, handleTaskDrop, handleUnparentDrop };
+  // グループ見出しへのドロップ＝そのPJのそのグループ（sectionId=null は未分類）の末尾の最上位タスクにする。
+  // 子タスクは親と同じグループなので、子だけを別グループへは移せない（親をドラッグする）。
+  const handleSectionDrop = useCallback(async (draggedId: string, projectId: string, sectionId: string | null) => {
+    const dragged = allTasks.find(t => t.id === draggedId);
+    if (!dragged) return;
+    if (dragged.parent_task_id) {
+      showToast("子タスクは親タスクと同じグループです。親タスクをドラッグして移してください", "info");
+      return;
+    }
+    if ((dragged.project_id ?? null) === projectId && (dragged.section_id ?? null) === sectionId) return;
+    const isTop = (t: Task) => !t.parent_task_id && (t.project_id ?? null) === projectId;
+    const maxOrder = allTasks.filter(isTop).reduce((m, t) => Math.max(m, t.display_order ?? 0), -1);
+    try {
+      await saveTask({ ...dragged, project_id: projectId, section_id: sectionId, display_order: maxOrder + 1, updated_by: currentUserId });
+      onReordered?.();
+    } catch (err) {
+      showToast(formatErrorForUser("グループの移動に失敗しました", err), "error");
+    }
+  }, [allTasks, saveTask, currentUserId, onReordered]);
+
+  return { draggingId, setDraggingId, dropZone, setDropZone, handleTaskDrop, handleUnparentDrop, handleSectionDrop };
 }

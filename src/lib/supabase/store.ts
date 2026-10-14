@@ -14,7 +14,7 @@ import { getAssigneeIds } from "../taskMeta";
 import { formatErrorForUser } from "../errorMessage";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
-  Project, Task, ProjectTaskForce, Milestone,
+  Project, Task, ProjectTaskForce, Milestone, ProjectSection,
   QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
@@ -239,6 +239,8 @@ export interface FetchCriticalDataResult {
   tasks: Task[];
   taskProjects: TaskProject[];
   milestones: Milestone[];
+  /** PJ内のグループ。周辺表扱い（未適用のDBでも起動は続け、空配列にする） */
+  projectSections: ProjectSection[];
   memberTags: MemberTag[];
   memberTagMembers: MemberTagMember[];
   taskDependencies: TaskDependency[];
@@ -249,18 +251,19 @@ export interface FetchCriticalDataResult {
 export async function fetchCriticalData(onProgress?: (done: number, total: number) => void): Promise<FetchCriticalDataResult> {
   // B1（依存ゲート）: task_dependencies は「タスク完了時に先行が終わっているか」を
   // 最初の描画時点から判定できる必要があるため、OKR系（Phase 2）ではなく Phase 1 で取得する。
-  const TOTAL = 8;
+  const TOTAL = 9;
   let done = 0;
   // 主キーは乱数UUIDのため、id だけで並べると従来の（ほぼ作成順の）並びが崩れる。作成順を第1キーにする。
   const tick = <T>(r: T): T => { onProgress?.(++done, TOTAL); return r; };
 
-  const [members, projects, tasks, tpjs, milestones, memberTags, memberTagMembers, taskDeps] =
+  const [members, projects, tasks, tpjs, milestones, projectSections, memberTags, memberTagMembers, taskDeps] =
     await Promise.all([
       fetchAllRows(o => supabase.from("members").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "members" }).then(tick),
       fetchAllRows(o => supabase.from("projects").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "projects" }).then(tick),
       fetchAllRows(o => supabase.from("tasks").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "tasks" }).then(tick),
       fetchAllRows(o => supabase.from("task_projects").select("*", o), { label: "task_projects", keyColumns: ["task_id", "project_id"] }).then(tick),
       fetchAllRows(o => supabase.from("milestones").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "milestones" }).then(tick),
+      fetchAllRows(o => supabase.from("project_sections").select("*", o).eq("is_deleted", false).order("sort_order", { ascending: true }).order("created_at", { ascending: true }), { label: "project_sections" }).then(tick),
       fetchAllRows(o => supabase.from("member_tags").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "member_tags" }).then(tick),
       fetchAllRows(o => supabase.from("member_tag_members").select("*", o), { label: "member_tag_members", keyColumns: ["tag_id", "member_id"] }).then(tick),
       fetchAllRows(o => supabase.from("task_dependencies").select("*", o).eq("is_deleted", false).order("created_at", { ascending: true }), { label: "task_dependencies" }).then(tick),
@@ -282,6 +285,7 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
   // 周辺表：失敗しても起動は続け、空配列で補いつつ部分失敗として記録する。
   const peripheralChecks: { label: string; result: { error: { code?: string; message: string } | null } }[] = [
     { label: "マイルストーン", result: milestones },
+    { label: "グループ（PJ内の区分）", result: projectSections },
     { label: "メンバータグ", result: memberTags },
     { label: "メンバーとタグの紐づけ", result: memberTagMembers },
   ];
@@ -299,6 +303,7 @@ export async function fetchCriticalData(onProgress?: (done: number, total: numbe
     tasks: (tasks.data ?? []).map(t => normalizeTaskRow(t as Record<string, unknown>)),
     taskProjects:     (tpjs.data        ?? []) as TaskProject[],
     milestones:       (milestones.data  ?? []) as Milestone[],
+    projectSections:  (projectSections.data ?? []) as ProjectSection[],
     memberTags:       (memberTags.data  ?? []) as MemberTag[],
     memberTagMembers: (memberTagMembers.data ?? []) as MemberTagMember[],
     taskDependencies: (taskDeps.data    ?? []) as TaskDependency[],
@@ -580,6 +585,24 @@ export async function softDeleteMilestone(id: string, deletedBy: string) {
   if (error) throw error;
 }
 
+// ===== ProjectSection（PJ内のグループ）=====
+
+export async function upsertProjectSection(section: ProjectSection, expectedUpdatedAt?: string): Promise<string> {
+  return await saveWithLock("project_sections", section, expectedUpdatedAt);
+}
+
+/**
+ * 論理削除。中のタスクを未分類へ戻すのは DB トリガー（release_tasks_on_section_delete）。
+ * 画面側の state でも同じ戻しを行う（appStore.deleteProjectSection）。
+ */
+export async function softDeleteProjectSection(id: string, deletedBy: string) {
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("project_sections")
+    .update({ is_deleted: true, deleted_at: now, deleted_by: deletedBy, updated_at: now })
+    .eq("id", id);
+  if (error) throw error;
+}
+
 // ===== ProjectTaskForce =====
 
 export async function insertProjectTaskForce(ptf: ProjectTaskForce) {
@@ -699,7 +722,7 @@ export async function markEntityChangeLogUndone(id: number, undoneBy: string): P
  * 1表でも失敗したら throw（呼び出し側が全件再取得に切り替える）。
  */
 export async function fetchChangesSince(sinceIso: string): Promise<{ table: string; row: Record<string, unknown> }[]> {
-  const byUpdated = ["tasks", "projects", "todos", "key_results", "task_forces", "milestones", "members", "task_dependencies"] as const;
+  const byUpdated = ["tasks", "projects", "todos", "key_results", "task_forces", "milestones", "project_sections", "members", "task_dependencies"] as const;
   const byCreated = ["task_task_forces", "task_projects", "project_task_forces"] as const;
   const keyColumnsOf: Record<string, string[]> = {
     task_task_forces: ["task_id", "tf_id"],
@@ -712,6 +735,8 @@ export async function fetchChangesSince(sinceIso: string): Promise<{ table: stri
     ...byCreated.map(table => fetchAllRows(o => supabase.from(table).select("*", o).gte("created_at", sinceIso), { label: `${table}(changes)`, keyColumns: keyColumnsOf[table] }).then(r => ({ table, r }))),
   ]);
   for (const { table, r } of results) {
+    // project_sections は周辺表（未適用のDBでは表が無い）。取れなくても差分取得全体を失敗にしない
+    if (r.error && table === "project_sections") continue;
     if (r.error) throw r.error;
     for (const row of (r.data ?? []) as Record<string, unknown>[]) out.push({ table, row });
   }

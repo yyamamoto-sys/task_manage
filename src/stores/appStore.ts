@@ -23,7 +23,7 @@ import { formatErrorForUser } from "../lib/errorMessage";
 import { isRowInDisplayGroup, isRowInUserInviteGroups, isMemberInDisplayGroup } from "../lib/scope/displayGroupScope";
 import type {
   Group, Member, Objective, KeyResult, TaskForce, ToDo,
-  Project, Task, ProjectTaskForce, Milestone,
+  Project, Task, ProjectTaskForce, Milestone, ProjectSection,
   QuarterlyObjective,
   TaskTaskForce, TaskProject, TaskDependency,
   MemberTag, MemberTagMember, LoadingTip,
@@ -43,6 +43,7 @@ import {
   upsertProject, softDeleteProject, restoreProject as restoreProjectDb,
   upsertTask, softDeleteTask, restoreTask as restoreTaskDb,
   upsertMilestone, softDeleteMilestone,
+  upsertProjectSection, softDeleteProjectSection,
   insertProjectTaskForce, deleteProjectTaskForce,
   upsertQuarterlyObjective,
   insertTaskTaskForce, deleteTaskTaskForce,
@@ -57,6 +58,7 @@ import { getIncompletePredecessors, formatBlockerNames } from "../lib/dependenci
 import { resolveBaselineFields } from "../lib/baseline/baselineCapture";
 import { computeCascadeShifts, computeCascadeShiftsMulti } from "../lib/dependencies/reschedule";
 import { computeParentAutoStatus } from "../lib/taskHierarchy";
+import { normalizeTaskSection, followParentSection, computeSectionReorder } from "../lib/section/sections";
 import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 import { pickCurrentObjectiveForGroup } from "../lib/okr/deptScope";
 import { toDisplayTips, writeCachedTips } from "../lib/tips/loadingTips";
@@ -99,6 +101,8 @@ export interface AppState {
   taskProjects: TaskProject[];
   taskDependencies: TaskDependency[];
   milestones: Milestone[];
+  /** PJ内のグループ（v3.149）。論理削除済みも state には残る（active* ヘルパーで除外して読む） */
+  projectSections: ProjectSection[];
   memberTags: MemberTag[];
   memberTagMembers: MemberTagMember[];
   // ローディング画面のヒント（全社共通マスタ）。編集は全社スーパー管理者のみ（DB側のRLSで強制）。
@@ -202,6 +206,13 @@ export interface AppState {
   // ===== Milestone =====
   saveMilestone: (milestone: Milestone) => Promise<void>;
   deleteMilestone: (id: string, deletedBy: string) => Promise<void>;
+
+  // ===== ProjectSection（PJ内のグループ・v3.149） =====
+  saveProjectSection: (section: ProjectSection) => Promise<void>;
+  /** 論理削除。中のタスク（子を含む）は未分類へ戻る（DBトリガーと同じ戻しを state でも行う） */
+  deleteProjectSection: (id: string, deletedBy: string) => Promise<void>;
+  /** PJ内のグループの並び順を orderedIds の順に付け直す（変わったものだけ保存） */
+  reorderProjectSections: (projectId: string, orderedIds: string[], updatedBy: string) => Promise<void>;
 
   // ===== MemberTag =====
   saveMemberTag: (tag: MemberTag, memberIds: string[]) => Promise<void>;
@@ -548,6 +559,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   taskProjects: [],
   taskDependencies: [],
   milestones: [],
+  projectSections: [],
   memberTags: [],
   memberTagMembers: [],
   loadingTips: [],
@@ -610,6 +622,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
           taskProjects:     critical.taskProjects,
           taskDependencies: critical.taskDependencies,
           milestones:       critical.milestones,
+          projectSections:  critical.projectSections,
           memberTags:       critical.memberTags,
           memberTagMembers: critical.memberTagMembers,
           partialLoadWarning: critical.partialFailures, // 【M41是正】周辺表の部分失敗をApp.tsxの警告バナーへ
@@ -702,6 +715,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       todos: dataset.todos,
       taskDependencies: dataset.taskDependencies,
       milestones: dataset.milestones,
+      projectSections: [],
       loading: false,
       backgroundLoading: false,
       loadProgress: 100,
@@ -1098,9 +1112,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
 
     // group_id が未設定なら現在のグループを注入する
-    const taskToSave0: Task = task.group_id != null
+    const taskWithGroup: Task = task.group_id != null
       ? task
       : { ...task, group_id: get().currentGroupId ?? undefined };
+    // PJ内のグループ（v3.149）：親と同じグループへ揃え、PJ と食い違うグループは外す（DB の
+    // enforce_task_section_integrity と同じ規則。変更が無ければ section_id のキーを足さない＝列が
+    // まだ無い DB でも既存の保存は落ちない）
+    const taskToSave0: Task = normalizeTaskSection(taskWithGroup, get().tasks, get().projectSections);
     // ===== ベースライン捕捉（B4）=====
     // start_date・due_date が初めて両方揃った時点のスナップショットを凍結する。
     // 一度セットされたら二度と自動上書きしない（resolveBaselineFieldsが判定）。
@@ -1117,11 +1135,16 @@ export const useAppStore = create<AppState>()((set, get) => ({
           : null,
     };
     // 楽観更新（UI 即応性のためシリアライズ対象外）
-    set(state => ({
-      tasks: state.tasks.findIndex(t => t.id === taskToSave.id) >= 0
+    set(state => {
+      const replaced = state.tasks.findIndex(t => t.id === taskToSave.id) >= 0
         ? state.tasks.map(t => t.id === taskToSave.id ? taskToSave : t)
-        : [...state.tasks, taskToSave],
-    }));
+        : [...state.tasks, taskToSave];
+      // 親のグループが変わったら子も同じグループへ（DB は cascade トリガー。画面は即時に揃える）
+      const sectionMoved = (existing?.section_id ?? null) !== (taskToSave.section_id ?? null);
+      return {
+        tasks: sectionMoved ? followParentSection(replaced, taskToSave.id, taskToSave.section_id ?? null) : replaced,
+      };
+    });
     // 🔴 ゲスト（サンプル閲覧）はSupabaseに一切接続しない（CLAUDE.md Section 23）。DB書き込み
     // をスキップし、ローカルで生成したupdated_atでstateだけ同期する（メモリ上でのみ成立・
     // リロードで消える）。ゲストは単独利用のため楽観ロック競合は元々起きない
@@ -1434,6 +1457,56 @@ export const useAppStore = create<AppState>()((set, get) => ({
     }
   },
 
+  // ===== ProjectSection（PJ内のグループ・v3.149）=====
+  saveProjectSection: async (section) => {
+    set(state => ({
+      projectSections: state.projectSections.findIndex(x => x.id === section.id) >= 0
+        ? state.projectSections.map(x => x.id === section.id ? section : x)
+        : [...state.projectSections, section],
+    }));
+    // 🔴 ゲストはDB非接触（CLAUDE.md Section 23）。ローカル生成のupdated_atでstateだけ同期する。
+    if (isGuestMode()) {
+      set(state => ({ projectSections: syncUpdatedAt(state.projectSections, section.id, new Date().toISOString()) }));
+      return;
+    }
+    await runSerializedByKey(`project_sections:${section.id}`, async () => {
+      const expectedUpdatedAt = get().projectSections.find(x => x.id === section.id)?.updated_at;
+      try {
+        const newUpdatedAt = await upsertProjectSection(section, expectedUpdatedAt);
+        set(state => ({ projectSections: syncUpdatedAt(state.projectSections, section.id, newUpdatedAt) }));
+      } catch (e) {
+        await handleSaveError(e, get().load);
+        throw e;
+      }
+    });
+  },
+
+  deleteProjectSection: async (id, deletedBy) => {
+    const now = new Date().toISOString();
+    set(state => ({
+      projectSections: state.projectSections.map(x =>
+        x.id === id ? { ...x, is_deleted: true, deleted_at: now, deleted_by: deletedBy } : x
+      ),
+      // 中のタスクは未分類へ（DBは release_tasks_on_section_delete トリガー。ここは画面の即時反映）
+      tasks: state.tasks.map(t => t.section_id === id ? { ...t, section_id: null } : t),
+    }));
+    if (isGuestMode()) return;
+    try {
+      await softDeleteProjectSection(id, deletedBy);
+    } catch (e) {
+      await handleSaveError(e, get().load);
+      throw e;
+    }
+  },
+
+  reorderProjectSections: async (projectId, orderedIds, updatedBy) => {
+    const current = get().projectSections.filter(x => x.project_id === projectId && !x.is_deleted);
+    const changed = computeSectionReorder(current, orderedIds);
+    for (const x of changed) {
+      await get().saveProjectSection({ ...x, updated_by: updatedBy });
+    }
+  },
+
   // ===== MemberTag =====
   saveMemberTag: async (tag, memberIds) => {
     set(state => ({
@@ -1642,6 +1715,8 @@ function applyRemoteEventToState(event: RealtimeChange): void {
         return { taskForces: upsertById(state.taskForces, event, row) };
       case "milestones":
         return { milestones: upsertById(state.milestones, event, row) };
+      case "project_sections":
+        return { projectSections: upsertById(state.projectSections, event, row) };
       case "members":
         return { members: upsertById(state.members, event, row) };
       case "task_task_forces":

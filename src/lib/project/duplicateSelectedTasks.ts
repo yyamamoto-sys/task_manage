@@ -98,6 +98,10 @@ export function buildDuplicatedTasks(params: BuildDuplicatedTasksParams): BuildD
       updated_by: createdBy,
       parent_task_id: newParentId,
       tags: t.tags ? [...t.tags] : undefined,
+      // 成果物・グループ（v3.149）。値があるときだけキーを足す（列が無い DB でも複製が落ちないように）。
+      // 同じPJ内の複製なのでグループも引き継ぐ（子は複製後の親のグループに saveTask が揃える）
+      ...(t.deliverable ? { deliverable: t.deliverable } : {}),
+      ...(t.section_id ? { section_id: t.section_id } : {}),
       // display_order・baseline_start_date/baseline_due_date・finalized_mentionsは
       // 意図的に省略（display_orderは複製元と同じ値を持つと兄弟内で衝突するため）
     };

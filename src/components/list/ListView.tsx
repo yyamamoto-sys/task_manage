@@ -4,7 +4,7 @@ import { useAppStore, selectScopedTasks, selectScopedTaskDependencies, selectSco
 import { buildAssigneeCandidates, sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
+import type { Member, Project, Task, ToDo, ProjectSection } from "../../lib/localData/types";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
 import { InlineEditText } from "../common/InlineEditText";
 import { InlineEditDate } from "../common/InlineEditDate";
@@ -34,6 +34,10 @@ import { ListInlineAddRow } from "./ListInlineAddRow";
 import { useListInlineAdd } from "./useListInlineAdd";
 import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
 import { registerListInlineAdd } from "../../lib/list/inlineAddRegistry";
+import { SectionHeaderContent, SectionAddInput } from "../section/SectionHeader";
+import { useSectionActions } from "../../hooks/useSectionActions";
+import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
+import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 
@@ -59,17 +63,19 @@ function computeDropZone(e: React.DragEvent, target: Task): DropZone {
   return computeDropZoneFromRatio(ratio, !target.parent_task_id);
 }
 
-function exportCSV(tasks: Task[], projects: Project[], members: Member[]) {
-  const header = ["タスク名","ステータス","担当者","プロジェクト","優先度","開始日","期日","工数(h)","コメント"];
+function exportCSV(tasks: Task[], projects: Project[], members: Member[], sections: ProjectSection[]) {
+  const header = ["タスク名","ステータス","担当者","プロジェクト","グループ","優先度","開始日","期日","工数(h)","コメント","成果物"];
   const rows = tasks.map(t => {
     const pj = projects.find(p => p.id === t.project_id);
     const m  = members.find(mb => mb.id === t.assignee_member_id);
     return [
       t.name, TASK_STATUS_LABEL[t.status], m?.display_name ?? "",
-      pj?.name ?? "", t.priority ? TASK_PRIORITY_LABEL[t.priority] : "",
+      pj?.name ?? "", (t.section_id ? sections.find(x => x.id === t.section_id && !x.is_deleted)?.name : "") ?? "",
+      t.priority ? TASK_PRIORITY_LABEL[t.priority] : "",
       t.start_date ?? "", t.due_date ?? "",
       t.estimated_hours?.toString() ?? "",
       t.comment.replace(/,/g,"，").replace(/\n/g," "),
+      (t.deliverable ?? "").replace(/"/g, '""').replace(/\n/g," "),
     ];
   });
   const csv = [header,...rows].map(r=>r.map(v=>`"${v}"`).join(",")).join("\n");
@@ -118,6 +124,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const rawMembers = useAppStore(s => s.members);
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
+  const projectSections = useAppStore(s => s.projectSections);
+  const sectionActions = useSectionActions(currentUser.id);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
   const isMobile = useIsMobile();
   const selectedProjectId = selectedProject?.id ?? null;
@@ -212,7 +220,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [sortKey]);
   const {
     draggingId, setDraggingId, dropZone, setDropZone,
-    handleTaskDrop: dragReorderTaskDrop, handleUnparentDrop,
+    handleTaskDrop: dragReorderTaskDrop, handleUnparentDrop, handleSectionDrop,
   } = useTaskDragReorder(allTasks, currentUser.id, handleReordered);
 
   // 一括操作用：複数選択
@@ -449,6 +457,27 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
       .filter(g => g.tasks.length > 0);
   }, [filteredTasks, groupBy, projects, members, todos, selectedProjectId]);
 
+  // ===== PJ内のグループ（v3.149）：PJ別のとき、PJの中をグループの見出しで区切る =====
+  // グループが1つでもあるPJだけ区切る（無いPJは従来どおり）。「未分類」は先頭：PJ単位の追加（FABなど）が
+  // 未分類に入るため、作った直後に見え、整理し忘れにも気づける。
+  type SectionBlock = { key: string; section: ProjectSection | null; tasks: Task[]; add: GroupAddSpec };
+  const sectionBlocksByGroup = useMemo(() => {
+    const map = new Map<string, SectionBlock[]>();
+    if (groupBy !== "project") return map;
+    for (const g of groups) {
+      if (!g.projectId) continue;
+      const secs = sectionsOfProject(projectSections, g.projectId);
+      if (secs.length === 0) continue;
+      const known = new Set(secs.map(x => x.id));
+      map.set(g.label, [
+        { key: UNSECTIONED_KEY, section: null, tasks: g.tasks.filter(t => !t.section_id || !known.has(t.section_id)), add: g.add },
+        ...secs.map(x => ({ key: x.id, section: x, tasks: g.tasks.filter(t => t.section_id === x.id), add: { ...g.add, sectionId: x.id } })),
+      ]);
+    }
+    return map;
+  }, [groups, groupBy, projectSections]);
+  const canEditSections = !isMobile && canGuestEdit(isGuestMember(currentUser), "project");
+
   const selectedTask = selectedTaskId ? allTasks.find(t => t.id === selectedTaskId) ?? null : null;
 
   // ===== その場追加（各グループ末尾の「＋ タスクを追加」行。PC表のみ。CLAUDE.md Section 77）=====
@@ -474,6 +503,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     if (!target) return false;
     const key = `${groupBy}:${target.label}`;
     expandGroup(key);
+    if (sectionBlocksByGroup.has(target.label)) {
+      // グループのあるPJ：PJ単位の追加は未分類の追加行（グループの見出しごとに追加行がある）
+      const bk = `${key}§${UNSECTIONED_KEY}`;
+      expandGroup(bk);
+      inlineAdd.open(bk, target.add);
+      return true;
+    }
     inlineAdd.open(key, target.add);
     return true;
   };
@@ -552,14 +588,27 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // ドラッグ中は dropZone が高頻度（ほぼ毎フレーム）で更新されるため、buildRows を
   // render のたびに呼び直すとドラッグ中に顕著なカクつきが出る。groups が変わらない限り
   // （＝実データや折りたたみ状態が変わらない限り）同じ結果を使い回すようグループ単位でキャッシュする。
-  const rowsByGroup = useMemo(() => {
+  const { rowsByGroup, rowsByBlock } = useMemo(() => {
     const map = new Map<string, RenderRow[]>();
+    const blockMap = new Map<string, RenderRow[]>();
     for (const g of groups) {
       const key = `${groupBy}:${g.label}`;
-      map.set(g.label, collapsedGroupKeys.has(key) ? [] : buildRows(g.tasks));
+      const blocks = sectionBlocksByGroup.get(g.label);
+      if (collapsedGroupKeys.has(key)) { map.set(g.label, []); continue; }
+      if (!blocks) { map.set(g.label, buildRows(g.tasks)); continue; }
+      // グループのあるPJ：ブロックごとに行を作り、表示順どおりに連結したものを rowsByGroup にも持つ
+      // （Shift選択・全選択の「現在の表示順」が見出し込みの描画順と一致するように）
+      const all: RenderRow[] = [];
+      for (const b of blocks) {
+        const bk = `${key}§${b.key}`;
+        const rows = collapsedGroupKeys.has(bk) ? [] : buildRows(b.tasks);
+        blockMap.set(bk, rows);
+        all.push(...rows);
+      }
+      map.set(g.label, all);
     }
-    return map;
-  }, [groups, buildRows, groupBy, collapsedGroupKeys]);
+    return { rowsByGroup: map, rowsByBlock: blockMap };
+  }, [groups, buildRows, groupBy, collapsedGroupKeys, sectionBlocksByGroup]);
 
   // グループ見出しの集計（完了率・工数合計）。group.tasks は既にフィルタ適用後の
   // そのグループのタスクなので、折りたたみ状態に関係なく常に算出できる（畳んだ見出しでも見える）。
@@ -738,7 +787,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           searchInputRef={searchInputRef}
           density={density}
           onChangeDensity={setDensity}
-          onExportCSV={() => exportCSV(filteredTasks, projects, members)}
+          onExportCSV={() => exportCSV(filteredTasks, projects, members, projectSections)}
           taskCount={filteredTasks.length}
           members={filterMemberOptions}
           currentUserId={currentUser.id}
@@ -974,58 +1023,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               <tbody>
                 {(() => {
                   let rowIdx = 0;
-                  return groups.map(group => {
-                    // PJ見出しへドロップ＝親解除（最上位化）。実PJを持つ見出しでのみ有効。
-                    const canUnparentHere = groupBy === "project" && group.projectId != null;
-                    const groupKey = `${groupBy}:${group.label}`;
-                    const isGroupCollapsed = collapsedGroupKeys.has(groupKey);
-                    return (
-                    <React.Fragment key={group.label}>
-                      <tr
-                        onDragOver={canUnparentHere ? (e => { if (draggingId) e.preventDefault(); }) : undefined}
-                        onDrop={canUnparentHere ? (e => {
-                          e.preventDefault();
-                          if (draggingId) handleUnparentDrop(draggingId, group.projectId!);
-                          setDraggingId(null); setDropZone(null);
-                        }) : undefined}
-                      >
-                        <td colSpan={cols.length} style={{
-                          padding: 0,
-                          background: "var(--color-bg-secondary)",
-                          borderBottom: "1px solid var(--color-border-primary)",
-                        }}>
-                          <button
-                            onClick={() => toggleGroupCollapse(groupKey)}
-                            aria-expanded={!isGroupCollapsed}
-                            aria-label={`${group.label}を${isGroupCollapsed ? "展開" : "折りたたむ"}`}
-                            style={{
-                              display: "flex", alignItems: "center", gap: "6px",
-                              width: "100%", padding: "4px 10px 3px",
-                              border: "none", background: "transparent", cursor: "pointer",
-                              textAlign: "left", font: "inherit",
-                            }}
-                          >
-                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "10px" }}>{isGroupCollapsed ? "▶" : "▼"}</span>
-                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
-                            <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
-                            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
-                            {summaryByGroup.get(group.label) && <GroupStatsBadge {...summaryByGroup.get(group.label)!} />}
-                            {canUnparentHere && (
-                              // ドラッグ開始時にこのspanが出現/消滅すると、その瞬間だけ見出し行の
-                              // 幅が変わりレイアウトが動く（複数PJ見出しで同時に発生）。
-                              // visibility で常時マウントし、幅は最初から確保しておくことで
-                              // ドラッグ開始時のガタつきを防ぐ
-                              <span style={{
-                                fontSize: "10px", color: "var(--color-brand)",
-                                visibility: draggingId ? "visible" : "hidden",
-                              }}>↑ ここに落とすと最上位タスクになります</span>
-                            )}
-                          </button>
-                        </td>
-                      </tr>
-                      {(() => {
-                        const rows = rowsByGroup.get(group.label) ?? [];
-                        return rows.map(({ task, depth, parentNote, isParent }, ri) => {
+                  const renderRows = (rows: RenderRow[]) => rows.map(({ task, depth, parentNote, isParent }, ri) => {
                         const closesGroup = depth === 1 && (!rows[ri + 1] || rows[ri + 1].depth === 0);
                         const isEven = rowIdx % 2 === 0;
                         rowIdx++;
@@ -1075,7 +1073,134 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           />
                         );
                       });
-                        })()}
+                  const renderSectionBlocks = (group: (typeof groups)[number]) => {
+                    const groupKey = `${groupBy}:${group.label}`;
+                    const blocks = sectionBlocksByGroup.get(group.label) ?? [];
+                    const projectId = group.projectId!;
+                    const secList = blocks.filter(b => b.section).map(b => b.section!);
+                    return (
+                      <>
+                        {blocks.map(b => {
+                          const bk = `${groupKey}§${b.key}`;
+                          const collapsed = collapsedGroupKeys.has(bk);
+                          const sec = b.section;
+                          const idx = sec ? secList.findIndex(x => x.id === sec.id) : -1;
+                          const summary = computeGroupSummary(b.tasks);
+                          return (
+                            <React.Fragment key={bk}>
+                              <tr
+                                onDragOver={e => { if (draggingId) e.preventDefault(); }}
+                                onDrop={e => {
+                                  e.preventDefault();
+                                  if (draggingId) void handleSectionDrop(draggingId, projectId, sec ? sec.id : null);
+                                  setDraggingId(null); setDropZone(null);
+                                }}
+                              >
+                                <td colSpan={cols.length} style={{ padding: 0, background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)" }}>
+                                  <SectionHeaderContent
+                                    name={sec ? sec.name : "未分類"}
+                                    count={b.tasks.length}
+                                    collapsed={collapsed}
+                                    onToggle={() => toggleGroupCollapse(bk)}
+                                    canEdit={canEditSections}
+                                    unsectioned={!sec}
+                                    canMoveUp={idx > 0}
+                                    canMoveDown={idx >= 0 && idx < secList.length - 1}
+                                    onRename={name => { if (sec) void sectionActions.renameSection(sec, name); }}
+                                    onMove={dir => { if (sec) void sectionActions.moveSection(sec, dir); }}
+                                    onDelete={() => { if (sec) void sectionActions.removeSection(sec); }}
+                                    stats={b.tasks.length > 0 ? <GroupStatsBadge {...summary} /> : undefined}
+                                    dropHint="↑ ここに落とすとこのグループへ移ります"
+                                    dropHintVisible={!!draggingId}
+                                  />
+                                </td>
+                              </tr>
+                              {renderRows(rowsByBlock.get(bk) ?? [])}
+                              {inlineAddEnabled && !collapsed && (
+                                <ListInlineAddRow
+                                  groupLabel={`${group.label}／${sec ? sec.name : "未分類"}`}
+                                  spec={b.add}
+                                  colKeys={cols.map(c => c.key)}
+                                  draft={inlineAdd.drafts[bk]}
+                                  saving={inlineAdd.savingKey === bk}
+                                  focusNonce={inlineAdd.focusReq?.key === bk ? inlineAdd.focusReq.nonce : 0}
+                                  onOpen={() => inlineAdd.open(bk, b.add)}
+                                  onChange={patch => inlineAdd.change(bk, patch)}
+                                  onSubmit={() => void inlineAdd.submit(bk, b.add)}
+                                  onCancel={() => inlineAdd.cancel(bk)}
+                                  onOpenDetail={() => {
+                                    const d = inlineAdd.drafts[bk];
+                                    setDetailAdd({
+                                      spec: b.add, name: d?.name ?? "", assigneeId: d?.assigneeIds[0] ?? "",
+                                      startDate: d?.startDate ?? "", dueDate: d?.dueDate ?? "",
+                                    });
+                                    inlineAdd.cancel(bk);
+                                  }}
+                                />
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                        {canEditSections && (
+                          <tr><td colSpan={cols.length} style={{ padding: 0, borderBottom: "1px solid var(--color-bg-tertiary)" }}>
+                            <SectionAddInput onCreate={name => { void sectionActions.createSection(projectId, name); }} />
+                          </td></tr>
+                        )}
+                      </>
+                    );
+                  };
+                  return groups.map(group => {
+                    // PJ見出しへドロップ＝親解除（最上位化）。実PJを持つ見出しでのみ有効。
+                    const canUnparentHere = groupBy === "project" && group.projectId != null;
+                    const groupKey = `${groupBy}:${group.label}`;
+                    const isGroupCollapsed = collapsedGroupKeys.has(groupKey);
+                    return (
+                    <React.Fragment key={group.label}>
+                      <tr
+                        onDragOver={canUnparentHere ? (e => { if (draggingId) e.preventDefault(); }) : undefined}
+                        onDrop={canUnparentHere ? (e => {
+                          e.preventDefault();
+                          if (draggingId) handleUnparentDrop(draggingId, group.projectId!);
+                          setDraggingId(null); setDropZone(null);
+                        }) : undefined}
+                      >
+                        <td colSpan={cols.length} style={{
+                          padding: 0,
+                          background: "var(--color-bg-secondary)",
+                          borderBottom: "1px solid var(--color-border-primary)",
+                        }}>
+                          <button
+                            onClick={() => toggleGroupCollapse(groupKey)}
+                            aria-expanded={!isGroupCollapsed}
+                            aria-label={`${group.label}を${isGroupCollapsed ? "展開" : "折りたたむ"}`}
+                            style={{
+                              display: "flex", alignItems: "center", gap: "6px",
+                              width: "100%", padding: "4px 10px 3px",
+                              border: "none", background: "transparent", cursor: "pointer",
+                              textAlign: "left", font: "inherit",
+                            }}
+                          >
+                            <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0, width: "10px" }}>{isGroupCollapsed ? "▶" : "▼"}</span>
+                            <span style={{ width: 7, height: 7, borderRadius: "50%", background: group.color, display: "inline-block", flexShrink: 0 }} />
+                            <span style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-secondary)" }}>{group.label}</span>
+                            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{group.tasks.length}件</span>
+                            {summaryByGroup.get(group.label) && <GroupStatsBadge {...summaryByGroup.get(group.label)!} />}
+                            {canUnparentHere && (
+                              // ドラッグ開始時にこのspanが出現/消滅すると、その瞬間だけ見出し行の
+                              // 幅が変わりレイアウトが動く（複数PJ見出しで同時に発生）。
+                              // visibility で常時マウントし、幅は最初から確保しておくことで
+                              // ドラッグ開始時のガタつきを防ぐ
+                              <span style={{
+                                fontSize: "10px", color: "var(--color-brand)",
+                                visibility: draggingId ? "visible" : "hidden",
+                              }}>↑ ここに落とすと最上位タスクになります</span>
+                            )}
+                          </button>
+                        </td>
+                      </tr>
+                      {sectionBlocksByGroup.has(group.label)
+                        ? renderSectionBlocks(group)
+                        : renderRows(rowsByGroup.get(group.label) ?? [])}
                       {inlineAddEnabled && !isGroupCollapsed && (
                         <ListInlineAddRow
                           groupLabel={group.label}
@@ -1098,6 +1223,11 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             inlineAdd.cancel(groupKey);
                           }}
                         />
+                      )}
+                      {groupBy === "project" && group.projectId && canEditSections && !isGroupCollapsed && !sectionBlocksByGroup.has(group.label) && (
+                        <tr><td colSpan={cols.length} style={{ padding: 0, borderBottom: "1px solid var(--color-bg-tertiary)" }}>
+                          <SectionAddInput onCreate={name => { void sectionActions.createSection(group.projectId!, name); }} />
+                        </td></tr>
                       )}
                     </React.Fragment>
                     );
@@ -1148,6 +1278,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
           projects={projects}
           defaultProjectId={detailAdd.spec.projectId ?? undefined}
           defaultStatus={detailAdd.spec.status ?? undefined}
+          defaultSectionId={detailAdd.spec.sectionId ?? undefined}
           defaultTodoId={detailAdd.spec.todoId ?? undefined}
           defaultTags={detailAdd.spec.tag ? [detailAdd.spec.tag] : undefined}
           defaultName={detailAdd.name}
@@ -1271,6 +1402,7 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
           )}
         </div>
       )}
+      <DeliverableLink deliverable={task.deliverable} size={14} />
       {task.due_date && (
         <span style={{
           fontSize: "11px", flexShrink: 0, minWidth: "42px", textAlign: "right",
@@ -1476,6 +1608,7 @@ const ListTaskRow = memo(function ListTaskRow({
           {task.comment && (
             <span title="メモあり" style={{ fontSize: "11px", opacity: 0.45, flexShrink: 0 }}>💬</span>
           )}
+          <DeliverableLink deliverable={task.deliverable} />
           {/* ＋子タスク（最上位行のみ・親を固定して追加モーダルを開く＝親タスク追加と同じUI）。
               名前の下にブロックで置くと canAddChild=全最上位タスクのため1行ぶん（約14px）
               余計に高くなる。名前行のflexコンテナ内に収めて行の縦を詰める。 */}

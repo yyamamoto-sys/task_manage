@@ -60,9 +60,9 @@ describe("subscribeToRealtime の onResync", () => {
     expect(onResync).toHaveBeenCalledTimes(1);
     expect(onFirstSubscribed).not.toHaveBeenCalled();
   });
-  it("11表を購読し、解除で removeChannel する／opts なしでも落ちない", () => {
+  it("12表を購読し、解除で removeChannel する／opts なしでも落ちない", () => {
     const off = subscribeToRealtime(() => {});
-    expect(channels[0].ons).toBe(11);
+    expect(channels[0].ons).toBe(12);
     channels[0].cb!("CLOSED");
     channels[0].cb!("SUBSCRIBED");
     off();

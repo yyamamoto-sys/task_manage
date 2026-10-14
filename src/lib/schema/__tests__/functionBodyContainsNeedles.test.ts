@@ -34,8 +34,8 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
     (c): c is Extract<typeof c, { kind: "function_body_contains" }> => c.kind === "function_body_contains",
   );
 
-  it("SCHEMA_HEALTH_CHECKSに5件登録されている（2026-08-17の棚卸し結果2件＋v3.81で追加した1件＋2026-10-07の2件）", () => {
-    expect(functionBodyChecks).toHaveLength(5);
+  it("SCHEMA_HEALTH_CHECKSに6件登録されている（2026-08-17の棚卸し結果2件＋v3.81で追加した1件＋2026-10-07の2件＋v3.149のbackup_snapshot）", () => {
+    expect(functionBodyChecks).toHaveLength(6);
   });
 
   it("guard_member_privilege_columns（ホーム部署判定）: needleは20261007c にのみ存在し、20260818（直前の版）には存在しない", () => {
@@ -51,6 +51,15 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
     const check = functionBodyChecks.find(c => c.name === "backup_snapshot");
     expect(check).toBeDefined();
     const before = readMigration("20260916_add_backup.sql");
+    const after = readMigration(check!.migration);
+    expect(before.includes(check!.needle)).toBe(false);
+    expect(after.includes(check!.needle)).toBe(true);
+  });
+
+  it("backup_snapshot（v3.149）: project_sections の needle は 20261015 にのみ存在し、20261007（直前の版）には存在しない", () => {
+    const check = functionBodyChecks.find(c => c.id === "backup_snapshot_includes_project_sections");
+    expect(check).toBeDefined();
+    const before = readMigration("20261007_fix_backup_snapshot_arg_limit.sql");
     const after = readMigration(check!.migration);
     expect(before.includes(check!.needle)).toBe(false);
     expect(after.includes(check!.needle)).toBe(true);
@@ -97,7 +106,9 @@ describe("function_body_contains のneedleは「本文差し替え後」にの�
       expect(check.needle.trim().startsWith("--")).toBe(false);
       const isAssignmentOrComparison = /:=|=/.test(check.needle);
       const isMaterializedDirective = /\S+\s+AS\s+MATERIALIZED\b/.test(check.needle);
-      expect(isAssignmentOrComparison || isMaterializedDirective).toBe(true);
+      // 本文中の実行される表参照（FROM public.<表> ...）も、構文として実行される式そのもの
+      const isTableReferenceInBody = /FROM\s+public\.\w+/.test(check.needle);
+      expect(isAssignmentOrComparison || isMaterializedDirective || isTableReferenceInBody).toBe(true);
     }
   });
 });

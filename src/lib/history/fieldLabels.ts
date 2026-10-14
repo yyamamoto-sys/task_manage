@@ -21,6 +21,8 @@ const TASK_FIELD_LABELS: Record<string, string> = {
   project_id: "プロジェクト",
   todo_ids: "ToDo紐づけ",
   parent_task_id: "親タスク",
+  section_id: "グループ",
+  deliverable: "成果物",
   is_deleted: "削除状態",
 };
 
@@ -72,7 +74,13 @@ export function formatChangeValue(
   field: string,
   value: unknown,
   members: Member[],
+  /** グループ id → 名前（無ければ「削除されたグループ」と表示する） */
+  sectionName?: (id: string) => string | undefined,
 ): string {
+  if (entityType === "task" && field === "section_id") {
+    if (typeof value !== "string" || !value) return "（未分類）";
+    return sectionName?.(value) ?? "（削除されたグループ）";
+  }
   if (value === null || value === undefined || value === "") return "（未設定）";
   if (Array.isArray(value)) return formatArray(entityType, field, value, members);
   if (typeof value === "boolean") return value ? "はい" : "いいえ";

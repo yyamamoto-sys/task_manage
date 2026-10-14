@@ -26,6 +26,8 @@ import { InlineEditAssignee } from "../common/InlineEditAssignee";
 import { CustomSelect } from "../common/CustomSelect";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
+import { DeliverableLink } from "../task/DeliverableLink";
 
 interface Props {
   currentUser: Member;
@@ -42,6 +44,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const allMembers       = useAppStore(s => s.members);
   const rawTodos         = useAppStore(s => s.todos);
   const saveTask         = useAppStore(s => s.saveTask);
+  const projectSections  = useAppStore(s => s.projectSections);
   const isMobile = useIsMobile();
 
   const tasks = useMemo(() => active(allTasks), [allTasks]);
@@ -106,13 +109,31 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     setSelectedIds(new Set());
   }, []);
 
+  // PJ内のグループでの絞り込み（PJを選んでいるときだけ。""＝すべて／UNSECTIONED_KEY＝未分類／それ以外＝グループ id）
+  const [sectionFilter, setSectionFilter] = useState("");
+  const pjSections = useMemo(
+    () => sectionsOfProject(projectSections, selectedProject?.id ?? null),
+    [projectSections, selectedProject?.id],
+  );
+  // PJを切り替えた・グループが削除された場合は絞り込みを外す（見えないグループで絞ったままにしない）
+  const effectiveSectionFilter =
+    sectionFilter === "" || sectionFilter === UNSECTIONED_KEY || pjSections.some(x => x.id === sectionFilter)
+      ? sectionFilter : "";
+  useEffect(() => { setSectionFilter(""); }, [selectedProject?.id]);
+
   const visibleTasks = useMemo(() => {
     let list = tasks;
     if (selectedProject) list = list.filter(t => t.project_id === selectedProject.id);
     else if (krTaskIds)  list = list.filter(t => krTaskIds.has(t.id));
     if (mineOnly) list = list.filter(t => isAssignedTo(t, currentUser.id));
+    if (selectedProject && effectiveSectionFilter) {
+      const known = new Set(pjSections.map(x => x.id));
+      list = list.filter(t => effectiveSectionFilter === UNSECTIONED_KEY
+        ? (!t.section_id || !known.has(t.section_id))
+        : t.section_id === effectiveSectionFilter);
+    }
     return list;
-  }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id]);
+  }, [tasks, selectedProject, krTaskIds, mineOnly, currentUser.id, effectiveSectionFilter, pjSections]);
 
   // Ctrl/Cmd+A・Shift+クリック範囲選択の対象となる「現在の表示順」
   // （列＝todo→in_progress→done を左→右、各列内は上→下でフラット化。hideDone中はdone列を除外）
@@ -277,6 +298,20 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             flexShrink: 0,
           }}>
             {selectedProject.purpose}
+          </div>
+        )}
+        {/* グループで絞り込み（PJを選んでいて、そのPJにグループがあるときだけ） */}
+        {selectedProject && pjSections.length > 0 && (
+          <div style={{ flexShrink: 0, minWidth: 150 }}>
+            <CustomSelect
+              value={effectiveSectionFilter}
+              onChange={setSectionFilter}
+              options={[
+                { value: "", label: "グループ：すべて" },
+                { value: UNSECTIONED_KEY, label: "未分類" },
+                ...pjSections.map(x => ({ value: x.id, label: x.name })),
+              ]}
+            />
           </div>
         )}
         {/* 完了を隠すトグル */}
@@ -951,6 +986,7 @@ const TaskCard = memo(function TaskCard({
         {task.comment && (
           <span title="メモあり" style={{ fontSize: "10px", opacity: 0.45, flexShrink: 0 }}>💬</span>
         )}
+        <DeliverableLink deliverable={task.deliverable} size={11} />
         {/* 優先度バッジ */}
         {task.priority && TASK_PRIORITY_STYLE[task.priority] && (
           <span style={{

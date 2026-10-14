@@ -3316,6 +3316,7 @@ BEGIN
       'kr_declarations', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_declarations x WHERE x.session_id IN (SELECT id FROM grp_kr_sessions)),
       'kr_note_tf_entries', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.kr_note_tf_entries x WHERE x.note_id IN (SELECT id FROM grp_kr_notes)),
       'milestones', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.milestones x WHERE x.project_id IN (SELECT id FROM grp_projects)),
+      'project_sections', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.project_sections x WHERE x.project_id IN (SELECT id FROM grp_projects)),
       'project_analyses', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.project_analyses x WHERE x.project_id IN (SELECT id FROM grp_projects)),
       'task_task_forces', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_task_forces x WHERE x.task_id IN (SELECT id FROM grp_tasks)),
       'task_projects', (SELECT coalesce(jsonb_agg(to_jsonb(x)), '[]'::jsonb) FROM public.task_projects x WHERE x.task_id IN (SELECT id FROM grp_tasks)),
@@ -4492,3 +4493,166 @@ REVOKE ALL ON FUNCTION public.claim_admin_message_reminders(bigint[]) FROM PUBLI
 REVOKE ALL ON FUNCTION public.claim_admin_message_reminders(bigint[]) FROM anon;
 REVOKE ALL ON FUNCTION public.claim_admin_message_reminders(bigint[]) FROM authenticated;
 GRANT EXECUTE ON FUNCTION public.claim_admin_message_reminders(bigint[]) TO service_role;
+
+-- ============================================================
+-- PJ内のグループ（project_sections）とタスクの成果物欄（v3.149・2026-10-15）
+-- migrations/20261015_sections_deliverable.sql と同一内容（publication への追加と backup_snapshot は
+-- マイグレ側。backup_snapshot の group 分岐の project_sections は上の定義に反映済み）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS public.project_sections (
+  id          text PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  project_id  text NOT NULL REFERENCES public.projects(id),
+  name        text NOT NULL CHECK (char_length(btrim(name)) BETWEEN 1 AND 100),
+  sort_order  integer NOT NULL DEFAULT 0,
+  is_deleted  boolean NOT NULL DEFAULT false,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  updated_by  text,
+  deleted_at  timestamptz,
+  deleted_by  text
+);
+
+CREATE INDEX IF NOT EXISTS idx_project_sections_project_id
+  ON public.project_sections(project_id) WHERE is_deleted = false;
+
+DROP TRIGGER IF EXISTS trg_project_sections_updated_at ON public.project_sections;
+CREATE TRIGGER trg_project_sections_updated_at
+  BEFORE UPDATE ON public.project_sections
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- グループの所属 PJ は変えない（別 PJ へ移すとタスクが別 PJ のグループを指す事故になる）。
+CREATE OR REPLACE FUNCTION public.keep_section_project_id()
+RETURNS trigger
+LANGUAGE plpgsql
+SET search_path = ''
+AS $fn_keep_section_project_id$
+BEGIN
+  IF NEW.project_id IS DISTINCT FROM OLD.project_id THEN
+    NEW.project_id := OLD.project_id;
+  END IF;
+  RETURN NEW;
+END;
+$fn_keep_section_project_id$;
+
+DROP TRIGGER IF EXISTS trg_project_sections_keep_project ON public.project_sections;
+CREATE TRIGGER trg_project_sections_keep_project
+  BEFORE UPDATE ON public.project_sections
+  FOR EACH ROW EXECUTE FUNCTION public.keep_section_project_id();
+
+-- ------------------------------------------------------------
+-- ② tasks.section_id ／ ③ tasks.deliverable
+-- ------------------------------------------------------------
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS section_id text REFERENCES public.project_sections(id);
+ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS deliverable text NOT NULL DEFAULT '';
+
+CREATE INDEX IF NOT EXISTS idx_tasks_section_id
+  ON public.tasks(section_id) WHERE section_id IS NOT NULL;
+
+-- ------------------------------------------------------------
+-- ⑥ 整合性トリガー
+-- ------------------------------------------------------------
+
+-- (a) タスクの INSERT／UPDATE の直前：親と同じグループへ揃え、PJ と食い違うグループは外す。
+--     SECURITY DEFINER（RLS で見えない行も参照して判定するため）。search_path は空に固定。
+CREATE OR REPLACE FUNCTION public.enforce_task_section_integrity()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_enforce_task_section_integrity$
+DECLARE
+  v_parent_section text;
+  v_section_project text;
+BEGIN
+  -- 子タスクは親と同じグループ（親が未分類なら子も未分類）
+  IF NEW.parent_task_id IS NOT NULL THEN
+    SELECT p.section_id INTO v_parent_section
+      FROM public.tasks p
+     WHERE p.id = NEW.parent_task_id;
+    NEW.section_id := v_parent_section;
+  END IF;
+
+  -- PJ なし・別 PJ のグループ・削除済みのグループを指していたら未分類へ戻す
+  IF NEW.section_id IS NOT NULL THEN
+    IF NEW.project_id IS NULL THEN
+      NEW.section_id := NULL;
+    ELSE
+      SELECT s.project_id INTO v_section_project
+        FROM public.project_sections s
+       WHERE s.id = NEW.section_id
+         AND s.is_deleted = false;
+      IF v_section_project IS DISTINCT FROM NEW.project_id THEN
+        NEW.section_id := NULL;
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$fn_enforce_task_section_integrity$;
+
+DROP TRIGGER IF EXISTS trg_tasks_section_integrity ON public.tasks;
+CREATE TRIGGER trg_tasks_section_integrity
+  BEFORE INSERT OR UPDATE ON public.tasks
+  FOR EACH ROW EXECUTE FUNCTION public.enforce_task_section_integrity();
+
+-- (b) 親タスクのグループが変わったら、子タスクも同じグループへ（親を移すと子も移る）。
+--     WHEN を使い、section_id が実際に変わった行だけを対象にする（無関係な更新で子を触らない）。
+CREATE OR REPLACE FUNCTION public.cascade_task_section_to_children()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cascade_task_section_to_children$
+BEGIN
+  UPDATE public.tasks c
+     SET section_id = NEW.section_id
+   WHERE c.parent_task_id = NEW.id
+     AND c.section_id IS DISTINCT FROM NEW.section_id;
+  RETURN NULL;
+END;
+$fn_cascade_task_section_to_children$;
+
+DROP TRIGGER IF EXISTS trg_tasks_section_cascade ON public.tasks;
+CREATE TRIGGER trg_tasks_section_cascade
+  AFTER UPDATE ON public.tasks
+  FOR EACH ROW
+  WHEN (OLD.section_id IS DISTINCT FROM NEW.section_id)
+  EXECUTE FUNCTION public.cascade_task_section_to_children();
+
+-- (c) グループを論理削除したら、中のタスクは未分類へ戻る。
+CREATE OR REPLACE FUNCTION public.release_tasks_on_section_delete()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_release_tasks_on_section_delete$
+BEGIN
+  UPDATE public.tasks t
+     SET section_id = NULL
+   WHERE t.section_id = NEW.id;
+  RETURN NULL;
+END;
+$fn_release_tasks_on_section_delete$;
+
+DROP TRIGGER IF EXISTS trg_project_sections_release_tasks ON public.project_sections;
+CREATE TRIGGER trg_project_sections_release_tasks
+  AFTER UPDATE ON public.project_sections
+  FOR EACH ROW
+  WHEN (NEW.is_deleted = true AND OLD.is_deleted = false)
+  EXECUTE FUNCTION public.release_tasks_on_section_delete();
+
+-- ------------------------------------------------------------
+-- ④ RLS（milestones と同じ＝PJ の可視範囲に従う。FOR ALL には WITH CHECK も明示する）
+--    PJ の基本情報と同じく、PJ にアクセスできる人なら誰でも作成・編集・削除できる
+--    （canEditProjectBasicInfo と同じ規則。Section 55）。
+-- ------------------------------------------------------------
+ALTER TABLE public.project_sections ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "authenticated_all" ON public.project_sections;
+DROP POLICY IF EXISTS "authenticated full access" ON public.project_sections;
+DROP POLICY IF EXISTS "project_sections_group" ON public.project_sections;
+CREATE POLICY "project_sections_group" ON public.project_sections
+  FOR ALL TO authenticated
+  USING (public.can_access_group_ids(public.project_group_ids(project_id)))
+  WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));

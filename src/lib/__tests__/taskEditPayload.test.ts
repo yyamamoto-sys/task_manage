@@ -24,6 +24,9 @@ function mk(partial: Partial<Task> & { id: string }): Task {
     parent_task_id: partial.parent_task_id,
     display_order: partial.display_order,
     tags: partial.tags,
+    // 列が無い DB の行を再現するため、指定が無いときはキー自体を持たせない
+    ...(partial.section_id !== undefined ? { section_id: partial.section_id } : {}),
+    ...(partial.deliverable !== undefined ? { deliverable: partial.deliverable } : {}),
   };
 }
 
@@ -39,6 +42,8 @@ function mkForm(partial: Partial<TaskEditFormState> = {}): TaskEditFormState {
     due_date: "",
     estimated_hours: "",
     comment: "",
+    section_id: null,
+    deliverable: "",
     tags: [],
     ...partial,
   };
@@ -172,5 +177,51 @@ describe("buildTaskUpdatePayload の finalized_mentions", () => {
   it("メンションを消したら空配列になる", () => {
     const orig = { ...mk({ id: "a" }), finalized_mentions: ["x"] };
     expect(buildTaskUpdatePayload(orig, mkForm({ comment: "なし" }), null, "u1").finalized_mentions).toEqual([]);
+  });
+});
+
+describe("グループ・成果物（v3.149）", () => {
+  it("グループ・成果物を触っていない保存は section_id・deliverable のキーを足さない（列が無い DB でも落ちない）", () => {
+    const original = mk({ id: "t1", project_id: "pj1" });
+    const payload = buildTaskUpdatePayload(original, mkForm(), null, "u1");
+    expect("section_id" in payload).toBe(false);
+    expect("deliverable" in payload).toBe(false);
+  });
+
+  it("グループを選ぶと section_id が入る", () => {
+    const original = mk({ id: "t1", project_id: "pj1" });
+    const payload = buildTaskUpdatePayload(original, mkForm({ section_id: "s1" }), null, "u1");
+    expect(payload.section_id).toBe("s1");
+  });
+
+  it("グループを外すと null（undefined ではない＝DB の列を消す）", () => {
+    const original = mk({ id: "t1", project_id: "pj1", section_id: "s1" });
+    const payload = buildTaskUpdatePayload(original, mkForm({ section_id: null }), null, "u1");
+    expect(payload.section_id).toBeNull();
+  });
+
+  it("PJなしにするとグループは null", () => {
+    const original = mk({ id: "t1", project_id: "pj1", section_id: "s1" });
+    const payload = buildTaskUpdatePayload(original, mkForm({ project_id: null, section_id: "s1" }), null, "u1");
+    expect(payload.section_id).toBeNull();
+  });
+
+  it("親タスクがあれば親のグループになる（子だけ別にはできない）", () => {
+    const original = mk({ id: "c1", project_id: "pj1" });
+    const parent = mk({ id: "p1", project_id: "pj1", section_id: "sP" });
+    const payload = buildTaskUpdatePayload(original, mkForm({ parent_task_id: "p1", section_id: "sOther" }), parent, "u1");
+    expect(payload.section_id).toBe("sP");
+  });
+
+  it("成果物を書くと deliverable が入る", () => {
+    const original = mk({ id: "t1", project_id: "pj1" });
+    const payload = buildTaskUpdatePayload(original, mkForm({ deliverable: "資料 https://example.com/a" }), null, "u1");
+    expect(payload.deliverable).toBe("資料 https://example.com/a");
+  });
+
+  it("グループ・成果物の変更は dirty になる", () => {
+    expect(computeFormDirty(mkForm({ section_id: "s1" }), mkForm())).toBe(true);
+    expect(computeFormDirty(mkForm({ deliverable: "x" }), mkForm())).toBe(true);
+    expect(computeFormDirty(mkForm(), mkForm())).toBe(false);
   });
 });
