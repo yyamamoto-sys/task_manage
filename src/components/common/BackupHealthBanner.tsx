@@ -30,7 +30,10 @@ type BannerState =
   | { kind: "shown"; level: Exclude<BackupHealthLevel, "none">; hoursSinceLastRunSuccess: number | null; daysSinceLastExportSuccess: number | null };
 
 export function BackupHealthBanner({ currentUser }: Props) {
-  const isAdmin = currentUser.is_admin === true || currentUser.is_super_admin === true;
+  // 🔴 super_admin だけ（2026-10-15）。backup_runs・backup_exports は RLS で super_admin しか読めないため、
+  // 部署の管理者が読むと0件になり「一度も成功していない」と誤って赤を出していた。部署の管理者は
+  // バックアップを操作もできないので出さない（ReminderHealthBanner と同じ扱い）。
+  const isAdmin = currentUser.is_super_admin === true;
   const [state, setState] = useState<BannerState>({ kind: "hidden" });
   const [dismissed, setDismissed] = useState(false);
 
