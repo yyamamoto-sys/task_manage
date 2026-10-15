@@ -1692,6 +1692,20 @@ export function setRemoteResyncRequester(fn: RemoteResyncRequester): void {
   _remoteResyncRequester = fn;
 }
 
+type EchoRecoveryRequesters = { slow: () => void; stuck: () => void } | null;
+let _echoRecoveryRequesters: EchoRecoveryRequesters = null;
+
+/** 自分の保存のエコーが届かないとき（10秒／60秒）の自己回復の要求先を差し込む（App.tsx）。null で解除 */
+export function setEchoRecoveryRequesters(r: EchoRecoveryRequesters): void {
+  _echoRecoveryRequesters = r;
+}
+export function requestEchoSlowRecovery(): void {
+  _echoRecoveryRequesters?.slow();
+}
+export function requestEchoStuckRecovery(): void {
+  _echoRecoveryRequesters?.stuck();
+}
+
 const LOAD_QUEUE_MAX = 2000;
 let _loadQueue: RealtimeChange[] = [];
 let _firstLoadStartedAt: number | null = null;
@@ -1785,7 +1799,12 @@ function handleRemoteChange(event: RealtimeChange, opts: { noResync?: boolean } 
   if (!echoRow) return;
   // 自分の保存のエコーが届いたかの見張り（Section 76）。届いた事実だけを知らせる
   if ((event.table === "tasks" || event.table === "projects") && typeof echoRow.id === "string") {
-    noteRemoteEcho(event.table, echoRow.id, typeof echoRow.updated_at === "string" ? echoRow.updated_at : undefined);
+    noteRemoteEcho(
+      event.table,
+      echoRow.id,
+      typeof echoRow.updated_at === "string" ? echoRow.updated_at : undefined,
+      opts.noResync ? "catchup" : "realtime", // 差分取得は「realtime が届いた」証拠にしない
+    );
   }
   if (_activeLoad) {
     if (_loadQueue.length >= LOAD_QUEUE_MAX) _pendingLoad = true;

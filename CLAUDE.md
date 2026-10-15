@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.157
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.158
 #
-最終更新：2026-10-15（v3.157）
+最終更新：2026-10-15（v3.158）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5242,6 +5242,12 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - **見張り `realtime-silent`**（`realtimeEchoWatch.ts`）：自分の保存（`upsertTask`／`upsertProject` の成功）の realtime エコーが10秒以内に届かなければ、セッション中1回だけ `logDiagnostic`（code=`realtime-silent`、context に表・チャンネル状態（`realtimeState.ts`）・経過秒）。エコーが保存の応答より先に届く場合に備え、直近30秒のエコーを覚えて照合する。`DIAGNOSTIC_CODES` に加え code ごとに束ねる。管理画面「エラー」タブに出る＝**利用者の実環境でイベントが届いていないかを知る手がかり**。
 - その他：動的 import 失敗のメッセージに入るハッシュ付きファイル名・URL は fingerprint の正規化で束ねる（デプロイごとに別の行にならない）。`PersonalOkrView` のサンプル読み込みの `Promise.all` に catch（`reportError`）。チャンク失敗の文言は「新しい版が公開されたか、通信が不安定です」。`ReloadNoticeBanner` は版の通知とチャンク失敗の通知を別 state で持つ。
 - **届かない原因の調査結果（コードで確定できた範囲）**は報告書に記載（本番 DB の照会が必要な点は SQL 案）。購読の対象外の表（groups・objectives・member_tags 等）と `in_app_notifications`（publication 未追加）は今回も触っていない。
+- **v3.158：`realtime-silent` の切り分けと自己回復**（`realtimeEchoWatch.ts`）。本番で2人・3回（v3.154・context「表:tasks / チャンネル:SUBSCRIBED / 経過10秒」）届き、記録だけでは ①配信の遅延（Disk IO 逼迫）②SUBSCRIBED のまま実は切れている ③裏タブのタイマーのずれ を区別できなかった。
+  - **10秒で即記録しない**：10秒を過ぎたら「遅延」として待ち（`ECHO_TIMEOUT_MS`）、届いた時点または60秒（`ECHO_GIVEUP_MS`）で、セッション中1回だけ記録。context＝`表 / チャンネル / <結果>（経過N秒） / 10秒時点:<visible|hidden> 記録時点:<…> / 待ちN件`。結果は「遅れて届いた」「realtimeでは届かず差分取得で補完」「60秒以内に届かず」の3通り。code は同じ `realtime-silent`（束ね方は変えない）。
+  - **保存した時点で hidden のタブは見張らない**（裏タブはタイマーとハートビートが止まり、遅延と区別できない。セッション1回の記録枠も消費しない）。保存後に hidden になった場合は「10秒時点／記録時点」の差で分かる。
+  - **自己回復**（記録とは別に、待ちがなくなるまでの波ごとに1回）：10秒＝`catchUpRemoteChanges(Date.now())`（`fetchChangesSince` の差分取得・全件 load はしない・専用の `createResyncRunner` で30秒の最短間隔）。60秒＝購読 effect の世代 `realtimeEpoch` を進めてチャンネルを張り直す（5分に1回まで。最初の SUBSCRIBED の `onFirstSubscribed` が取りこぼしを差分取得で埋める）。要求先は `setEchoRecoveryRequesters`（appStore.ts・`setRemoteResyncRequester` と同じパターン）。**記録がセッション中1回でも、回復の要求は記録後も続く。**
+  - **差分取得経由の到着は realtime の到着として数えない**：`handleRemoteChange` が `noteRemoteEcho(…, opts.noResync ? "catchup" : "realtime")`。差分取得の行は先着の記憶（`seen`）にも残さない。
+  - **記録の読み方**：①「遅れて届いた（経過10〜60秒）」＝配信の遅延（Disk IO・負荷）。経過秒の分布を見る。②「realtimeでは届かず差分取得で補完」＝接続が実は切れている（SUBSCRIBED のまま）。チャンネル状態が SUBSCRIBED なら疑いが強い。③「60秒以内に届かず」＝差分取得でも埋まらない（保存自体が遅い・差分取得の失敗・RLS で自分に見えない行）。①〜③とも「10秒時点:hidden」なら裏タブの影響（保存後に隠した）を先に疑う。チャンネルが CLOSED／TIMED_OUT／CHANNEL_ERROR なら切断中の保存。
 
 ---
 

@@ -8285,3 +8285,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 通知：レジストリに feedback（super_admin・アプリ内のみ・Windows は未対応）。管理ページ（アプリの管理→💬 ご意見・不具合・SettingsPageId 19値）：一覧（既定は新規＋対応中）・状態（即時保存）・管理者メモ（保存ボタン）・Claude 用コピー（buildFeedbackCopyText・複数選択可）。/?open=admin-feedback。
 # * テスト：src/lib/feedback/__tests__（snapshot・clickHistory・snapshotContext・browserInfo・copyText・limit・feedbackMigration）・src/components/feedback/__tests__/feedbackWiring.test.ts（ソース走査・コメント除去・壊して赤を確認）。notificationKinds.test・settingsPages.test を更新。
 # * MIN_CLIENT_VERSION は上げない（新しい表・RPC の追加だけ。旧画面には入口が出ないだけ）。🔴 適用順：SQL（20261015b）を dev→prod に適用してから push。
+
+# v3.158（2026-10-15）：realtime-silent の切り分けと自己回復（CLAUDE.md Section 76・v3.148 の節に追記）
+# * 本番の記録（code=realtime-silent・2人で3回・「表:tasks / チャンネル:SUBSCRIBED / 経過10秒」）だけでは、配信の遅延・チャンネルが実は切れている・裏タブのタイマーのずれを区別できなかった。
+# * realtimeEchoWatch.ts：10秒で即記録をやめ、10秒を過ぎたら「遅延」として待ち続ける。届いた時点（realtime／差分取得のどちらか付き）または60秒で、セッション中1回だけ記録。context に 結果（遅れて届いた／realtimeでは届かず差分取得で補完／60秒以内に届かず）・経過秒・10秒時点と記録時点の visibilityState・チャンネル状態・待ち件数。code は同じ realtime-silent。
+# * 保存した時点で hidden のタブは見張らない（裏タブはタイマー・ハートビートが止まり遅延と区別できない・記録の枠も使わない）。
+# * 自己回復：10秒時点で fetchChangesSince の差分取得を1回（全件 load はしない・30秒の最短間隔つきの専用ランナー）。60秒時点でチャンネルを張り直す（購読 effect の世代 realtimeEpoch を進める・5分に1回まで・最初の SUBSCRIBED の差分取得が取りこぼしを埋める）。要求は待ちがなくなるまでの波ごとに1回。記録は1回だけで、記録後も見張りと回復は続ける。
+# * 差分取得（catchUpRemoteChanges）経由の到着は noteRemoteEcho(…, "catchup") として扱い、realtime が届いた証拠にしない。
+# * 配線は setEchoRecoveryRequesters（appStore.ts・setRemoteResyncRequester と同じ要求先パターン）。テスト：realtimeEchoWatch.test.ts（旧実装で赤を確認）。
+# * DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -23,7 +23,10 @@ import { ReminderHealthBanner } from "./components/common/ReminderHealthBanner";
 import { ReloadNoticeBanner } from "./components/common/ReloadNoticeBanner";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
-import { useAppStore, setRemoteResyncRequester, catchUpRemoteChanges } from "./stores/appStore";
+import {
+  useAppStore, setRemoteResyncRequester, catchUpRemoteChanges,
+  setEchoRecoveryRequesters, requestEchoSlowRecovery, requestEchoStuckRecovery,
+} from "./stores/appStore";
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
 import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
@@ -45,6 +48,8 @@ import { computeAccessibleGroupsForSidebar } from "./lib/projectInvite/sidebarGr
 import { loadStoredSidebarGroupId, resolveRestoredCurrentGroupId } from "./lib/layout/sidebarCurrentGroupRestore";
 import { confirmDiscardUnsavedEdits } from "./lib/editing/unsavedEditorRegistry";
 import { cleanupPushSubscriptionOnLogout } from "./lib/push/logoutCleanup";
+
+const ECHO_RESUBSCRIBE_MIN_INTERVAL_MS = 5 * 60 * 1000;
 
 export default function App() {
   const t = useT();
@@ -568,6 +573,8 @@ function AuthenticatedApp({
   const [realtimeReady, setRealtimeReady] = useState(false);
   useEffect(() => { if (!loading) setRealtimeReady(true); }, [loading]);
   const load = useAppStore(s => s.load);
+  // realtime-silent の自己回復（60秒届かない）でチャンネルを張り直すための世代。増やすと購読の effect が作り直される
+  const [realtimeEpoch, setRealtimeEpoch] = useState(0);
   useEffect(() => {
     if (!realtimeReady) return;
     // 取りこぼしを埋める全件再取得は「切断からの復帰」「10分以上非表示からの復帰」のときだけ（Section 76）。
@@ -575,6 +582,18 @@ function AuthenticatedApp({
     const resync = createResyncRunner(() => { void load(); });
     // 見える範囲が変わりうる差分（Section 76）も、間引いた全件再取得に相乗りする
     setRemoteResyncRequester(resync);
+    // 自分の保存のエコーが10秒届かないとき：差分取得を1回（全件 load はしない＝Disk IO 対策。30秒の最短間隔つき）。
+    // 60秒でも届かないとき：チャンネルを張り直す（5分に1回まで。張り直しの最初の SUBSCRIBED で取りこぼしを差分取得で埋める）
+    const echoCatchUp = createResyncRunner(() => { void catchUpRemoteChanges(Date.now()).catch(() => undefined); });
+    let lastStuckAt = -Infinity;
+    setEchoRecoveryRequesters({
+      slow: echoCatchUp,
+      stuck: () => {
+        if (Date.now() - lastStuckAt < ECHO_RESUBSCRIBE_MIN_INTERVAL_MS) return;
+        lastStuckAt = Date.now();
+        setRealtimeEpoch(n => n + 1);
+      },
+    });
     const off = subscribeToRealtime(applyRemoteChange, {
       onResync: resync,
       // 初回 load の開始から購読有効までの取りこぼしは、小さな差分取得で埋める（失敗したら全件再取得）
@@ -589,10 +608,12 @@ function AuthenticatedApp({
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
       resync.cancel();
+      echoCatchUp.cancel();
       setRemoteResyncRequester(null);
+      setEchoRecoveryRequesters(null);
       off();
     };
-  }, [realtimeReady, applyRemoteChange, load]);
+  }, [realtimeReady, applyRemoteChange, load, realtimeEpoch]);
 
   // 「だんだん重くなる」の切り分け用の計測（5分ごと・閾値超過をセッション中1回だけ記録。Section 76）
   useEffect(() => {
@@ -602,7 +623,10 @@ function AuthenticatedApp({
       setTimeout: (fn, ms) => window.setTimeout(fn, ms),
       clearTimeout: h => window.clearTimeout(h as number),
       channelState: getRealtimeChannelState,
+      visibility: () => document.visibilityState,
       isGuest: isGuestMode,
+      onSlow: requestEchoSlowRecovery,
+      onStuck: requestEchoStuckRecovery,
       log: logDiagnostic,
     });
     const stopHealth = startHealthMonitor({

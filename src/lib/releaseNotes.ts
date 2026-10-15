@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.158",
+    date: "2026-10-15",
+    title: "他の人の変更が届かないときに、自動で取り直すようにしました",
+    highlights: [
+      "自分の保存のあと、他の人の変更が画面に届かない状態を検知したときに、自動で最新の内容を取り直します。通信の切れたままの接続も、自動でつなぎ直します。",
+    ],
+  },
+  {
     version: "v3.157",
     date: "2026-10-15",
     title: "ご意見・不具合を、そのときの画面の状況つきで送れるようになりました",

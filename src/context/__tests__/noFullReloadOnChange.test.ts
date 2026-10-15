@@ -40,7 +40,7 @@ describe("App.tsx の realtime 購読", () => {
     expect(src).toMatch(/onFirstSubscribed: \(\) => \{ void catchUpRemoteChanges\(\)\.catch\(\(\) => resync\(\)\); \}/);
   });
   it("購読 effect の依存に loading を入れない（load のたびに張り直さない）", () => {
-    expect(src).toMatch(/\[realtimeReady, applyRemoteChange, load\]/);
+    expect(src).toMatch(/\[realtimeReady, applyRemoteChange, load, realtimeEpoch]/);
     expect(src).not.toMatch(/\[loading, applyRemoteChange\]/);
   });
   it("非表示からの復帰（visibilitychange）を購読し、解除する", () => {
