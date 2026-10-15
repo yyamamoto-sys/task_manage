@@ -1,11 +1,12 @@
 // src/components/kanban/KanbanView.tsx
 import { useState, useMemo, useCallback, useRef, useEffect, memo, Fragment } from "react";
 import type { MouseEvent as ReactMouseEvent, KeyboardEvent as ReactKeyboardEvent, DragEvent as ReactDragEvent } from "react";
-import { useAppStore, selectScopedTasks } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
 import { sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
+import { BulkMoveShiftControls } from "../task/BulkMoveShiftControls";
 import type { Member, Project, Task, ToDo } from "../../lib/localData/types";
 import { active } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
@@ -44,6 +45,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   const allMembers       = useAppStore(s => s.members);
   const rawTodos         = useAppStore(s => s.todos);
   const saveTask         = useAppStore(s => s.saveTask);
+  const scopedProjects   = useAppStore(selectScopedProjects);
   const projectSections  = useAppStore(s => s.projectSections);
   const isMobile = useIsMobile();
 
@@ -152,7 +154,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     });
   }, [visibleTasks]);
 
-  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift } = useBulkTaskActions(
     tasks, members, selectedIds, currentUser.id, clearSelection,
   );
 
@@ -415,6 +417,13 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
             ]}
             searchable searchPlaceholder="メンバーで検索..."
             style={{ width: "160px" }} />
+
+          {/* プロジェクトへ移す・日程をずらす（v3.156） */}
+          <BulkMoveShiftControls
+            projects={scopedProjects}
+            onMoveToProject={(pid, name) => { void bulkMoveToProject(pid, name, orderedTaskIds); }}
+            onShift={days => { void bulkShift(days); }}
+          />
 
           <span style={{ flex: 1 }} />
 

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.155
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.156
 #
-最終更新：2026-10-15（v3.155）
+最終更新：2026-10-15（v3.156）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5330,3 +5330,40 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - **原因**：左ラベル列（`labelBodyRef`）と右バー列（`scrollRef`）は別スクロールコンテナで scrollTop を同期するだけ。行数・各行の高さは共有行モデル（v3.08）で一致しているが、**右だけに横スクロールバー（約12px）が出る**ため右の clientHeight が小さく、最大 scrollTop が左より約12px大きい。一番下で左は頭打ち・右はさらに進み、行がずれる。過去の対策（v3.06〜v3.08 のヘッダー高さの定数化・共有行モデル、f919c31 の左バー非表示）は行構成・ヘッダー・左バーの幅だけを揃えており、**右の横バーが縦の最大量を変える点**は対象外だった。
 - **対策**：`computeHBarHeight(offsetHeight, clientHeight)`（`ganttUtils.ts`）で右バー列の横バー高さを実測し（`ResizeObserver`）、左ラベル列の末尾に同じ高さの余白（`data-gantt-hbar-spacer`）を置く。固定値（12px等）は使わない。
 - **再発防止**：`ganttScrollParity.test.ts`（コメント除去のソース走査＋純関数）。左右どちらかのスクロール領域に「下端の余白・バー」を足す変更をしたら、反対側の最大 scrollTop が一致するかを必ず確認すること。
+
+---
+
+## 81. リストの複数選択まわりの操作：Shift範囲選択・PJ移動・まとめてドラッグ・日程ずらし・グループ見出しのドラッグ（v3.156・2026-10-15）
+
+利用者フィードバック5点への対応。DB・RLS・Edge Function の変更なし（マイグレーションなし・`MIN_CLIENT_VERSION` は上げない）。
+
+### 1. チェックボックスの Shift＋クリック（リストのPC・モバイルのカード）
+- チェックボックスの `onChange` ではなく `onClick`（MouseEvent）で判定する（`onChange` は `shiftKey` を持たない）。入口は ListView の `handleCheckboxClick` 1つ。判定は純関数 `applyCheckboxClick`（`selectionRange.ts`）：Shift＝アンカー〜クリック先を表示順（`visibleOrderedTaskIds`）で選択に追加（行の Shift＋クリックと同じ・アンカーは変えない）／通常＝`toggleTaskWithChildren`（親子連動・Section 54）でトグルしてアンカー更新。Shift＋クリックの文字選択は `onMouseDown` で抑止。
+- カンバン・ガントにはチェックボックスが無い（Ctrl／Cmd＋クリック・Shift＋クリックはカード／バーのクリックで既存）ため変更なし。
+
+### 2. 選んだタスクをまとめて別のPJへ移す（一括操作バーの「📁 プロジェクトを移す…」。リスト・カンバン共有）
+- 対象決定は `planProjectMove`（`src/lib/task/projectMove.ts`）：
+  - **親（最上位）を選ぶと、子は選択の有無を問わず親に連れて移る**（削除済みは連れない）。PJが同じタスクは対象外。
+  - **子だけを選び親を選んでいない場合は、その子を親から外して移動先の最上位にする**（子だけ別PJに居る状態を作らない・親は動かさない）。確認ダイアログに「親から外れる N 件」を出す。親が見当たらない（削除済み）子も同じ扱い。
+  - 動く全タスクで `section_id: null`。`task_projects`（追加PJ）は触らない。最上位に動くタスクの `display_order` は移動先の最上位の末尾から表示順に採番。
+- `useBulkTaskActions.bulkMoveToProject`：`confirmDialog`（`tone: "neutral"`・「N件（子タスクM件を含む）を『◯◯』へ移します」）→ `saveTask`（`Promise.all`）→ Undo トースト（Undo 時点の最新タスクに旧 `project_id`・`section_id`・`parent_task_id`・`display_order` を当て直す）。移動先ピッカーは `buildProjectTargetOptions`（アーカイブ除外）を `CustomSelect` で出す（Portal・`pointerEvents` は `CustomSelect` 側＝Section 51）。候補は `selectScopedProjects`（表示部署のPJ。サイドバーの「自分のみ」等の絞り込みには影響されない）。
+
+### 3. 選んだタスクをまとめてドラッグで並べ替え（リスト）
+- 選択が2件以上で、選択中の行をドラッグしたとき、`handleTaskDrop` が `handleMultiTaskDrop`（`useTaskDragReorder`）へ回す。採番・拒否は純関数 `computeMultiReorder`（`multiReorder.ts`）：
+  - **ドロップ先と同じ兄弟グループ（同じ parent・project）へ全部入れる**。選択順ではなく表示順のまま。ドロップ先の `section_id`（最上位のとき）に揃う。
+  - 選んだ親の子は親に連れて動く（PJが変わるなら子の `project_id` も揃える）。親と一緒に選んだ子は単独の移動に数えない。
+  - **拒否（理由をトーストで表示）**：子だけを選んで最上位／別の親へ出す・子を持つタスクを子にする・別の親の子を子として入れる。同じ親の子同士の並べ替えは通す。ドロップ先が選択中の行・選択中の親の子の場合は何もしない。
+  - nest（行の中央に落とす）：ドロップ先の最上位タスクの子の末尾へ（子を持たないタスクだけ）。
+- 保存は `saveTask`（Promise.all。保存直前に最新タスクを引く＝親を先・連れた子を後にして DB トリガー／`normalizeTaskSection` の整合に乗せる）。Undo あり（旧 `display_order`・`parent_task_id`・`project_id`・`section_id`）。
+- 見出し（PJ・グループ）への複数ドロップは対象外：「行の上か下にドロップしてください」と案内して何もしない（見出しへは1件ずつ）。
+
+### 4. 選んだタスクの日程をまとめてずらす（一括操作バーの「📅 日程をずらす」。リスト・カンバン）
+- `BulkMoveShiftControls` の日数入力（`parseShiftDays`：整数・0不可・±3650まで・全角可）→ `useBulkTaskActions.bulkShift` → `bulkShiftTasks`（`runBulkShift`：B3の自動リスケ・Undo・トーストは既存のまま）。ずらせない件数（期日なし・完了／中止＝`computeBulkMoveShifts` の既存ルール）は事前にトーストで知らせ、ずらせるものが0件なら何もせず理由を表示する。営業日ではなく暦日（ガントと同じ）。
+
+### 5. グループ見出しのドラッグ（リストのPJ別表示）
+- 見出し左の ⠿（`SectionHeaderContent` の `sectionDrag`。つかみからだけドラッグが始まる＝タスクのドラッグとは別の `draggingSection` state）をドラッグ→同じPJの別のグループ見出しへ落とすと順番が入れ替わる（`computeSectionDropOrder`：下へは相手の位置・上へは相手の前・「未分類」へは先頭）。保存は `useSectionActions.reorderSections` → `reorderProjectSections`（`saveProjectSection` への委譲）。「未分類」はドラッグ不可（⠿を出さない）。別PJの見出しへは落とせない。⋮の「上へ・下へ」は残す（キーボード代替）。
+
+### 付随
+- ショートカット一覧（リスト）・`uiGuide.ts` の `FEATURE_LIST_SECTION`・`docs/guides/02_modes/tasks.md`・`08_spec.md` に追記。
+- ゲストは `saveTask` 等のメモリ分岐にそのまま乗る（Section 23）。`canGuestEdit` の判定は一括バーの既存操作と同じ（バーにガードを足していない）。
+- 描画テスト基盤が無いため、配線は `bulkOpsWiring.test.ts`（コメント除去のソース走査。Section 59。わざと壊して赤・戻して緑を確認）、ロジックは `bulkSelectionOps.test.ts`。ドラッグ・Shift＋クリックの実操作は実機確認が要る。

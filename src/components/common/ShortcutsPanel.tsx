@@ -74,6 +74,9 @@ function buildSections(t: TFn): ShortcutSection[] {
             { gesture: t("common.shortcuts.section.list.mk.item3.gesture"), description: t("common.shortcuts.section.list.mk.item3.desc") },
             { gesture: t("common.shortcuts.section.list.mk.item4.gesture"), description: t("common.shortcuts.section.list.mk.item4.desc") },
             { gesture: t("common.shortcuts.section.list.mk.item5.gesture"), description: t("common.shortcuts.section.list.mk.item5.desc") },
+            { gesture: t("common.shortcuts.section.list.mk.item6.gesture"), description: t("common.shortcuts.section.list.mk.item6.desc") },
+            { gesture: t("common.shortcuts.section.list.mk.item7.gesture"), description: t("common.shortcuts.section.list.mk.item7.desc") },
+            { gesture: t("common.shortcuts.section.list.mk.item8.gesture"), description: t("common.shortcuts.section.list.mk.item8.desc") },
           ],
         },
         {

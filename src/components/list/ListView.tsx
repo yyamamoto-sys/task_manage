@@ -1,6 +1,6 @@
 // src/components/list/ListView.tsx
 import React, { useState, useMemo, useCallback, useRef, useEffect, memo } from "react";
-import { useAppStore, selectScopedTasks, selectScopedTaskDependencies, selectScopedMembers } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedProjects, selectScopedTaskDependencies, selectScopedMembers } from "../../stores/appStore";
 import { buildAssigneeCandidates, sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { useIsMobile } from "../../hooks/useIsMobile";
@@ -20,8 +20,9 @@ import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import { EmptyState } from "../common/EmptyState";
 import { CustomSelect } from "../common/CustomSelect";
-import { computeRangeSelection } from "../../lib/selectionRange";
+import { computeRangeSelection, applyCheckboxClick } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
+import { BulkMoveShiftControls } from "../task/BulkMoveShiftControls";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { computeDropZoneFromRatio, type DropZone } from "../../lib/dragReorder";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
@@ -35,7 +36,7 @@ import { useListInlineAdd } from "./useListInlineAdd";
 import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
 import { SectionHeaderContent, SectionAddInput } from "../section/SectionHeader";
 import { useSectionActions } from "../../hooks/useSectionActions";
-import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
+import { sectionsOfProject, UNSECTIONED_KEY, computeSectionDropOrder } from "../../lib/section/sections";
 import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
@@ -123,6 +124,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const rawMembers = useAppStore(s => s.members);
   const rawTodos   = useAppStore(s => s.todos);
   const saveTask   = useAppStore(s => s.saveTask);
+  const scopedProjects = useAppStore(selectScopedProjects);
   const projectSections = useAppStore(s => s.projectSections);
   const sectionActions = useSectionActions(currentUser.id);
   const todos    = useMemo(() => (rawTodos ?? []).filter((td: ToDo) => !td.is_deleted), [rawTodos]);
@@ -219,7 +221,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [sortKey]);
   const {
     draggingId, setDraggingId, dropZone, setDropZone,
-    handleTaskDrop: dragReorderTaskDrop, handleUnparentDrop, handleSectionDrop,
+    handleTaskDrop: dragReorderTaskDrop, handleMultiTaskDrop, handleUnparentDrop, handleSectionDrop: dragSectionDrop,
   } = useTaskDragReorder(allTasks, currentUser.id, handleReordered);
 
   // 一括操作用：複数選択
@@ -235,6 +237,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 選択が丸ごとクリアされる操作（Esc・チェックボックスでの全解除等）では必ずアンカーも一緒に
   // リセットする（clearSelection に集約）。
   const selectionAnchorRef = useRef<string | null>(null);
+  const visibleOrderedTaskIdsRef = useRef<string[]>([]);
+  // グループ見出しのドラッグ（v3.156）。タスクのドラッグ（draggingId）とは別の state にして、互いのドロップ先を取り違えない
+  const [draggingSection, setDraggingSection] = useState<{ id: string; projectId: string } | null>(null);
+  const [sectionDropKey, setSectionDropKey] = useState<string | null>(null);
   // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
   // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
@@ -334,16 +340,32 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   }, [allFilteredSelected, filteredTasks]);
 
   // 一括ステータス変更・一括優先度変更・一括担当者変更・一括削除（カンバンビューと共有・useBulkTaskActions）
-  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete } = useBulkTaskActions(
+  const { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift } = useBulkTaskActions(
     allTasks, members, selectedIds, currentUser.id, clearSelection,
   );
 
   // タスクをドロップ先タスクの行の「どこ」に落としたかで挙動を分ける（before/after=並び替え・
   // nest=ドロップ先の子にする）。実処理は useTaskDragReorder（上部）に集約済み。ここでは
   // ListView固有の「今画面に見えている兄弟＝filteredTasks」を渡す薄いラッパーのみ持つ。
+  // 選択中の行（複数）をドラッグしたときは、選択中のタスク全部を表示順のままドロップ位置へまとめて移す（v3.156）
   const handleTaskDrop = useCallback((draggedId: string, targetId: string, zone: DropZone) => {
+    if (selectedIds.size > 1 && selectedIds.has(draggedId)) {
+      const ordered = visibleOrderedTaskIdsRef.current.filter(id => selectedIds.has(id));
+      const rest = Array.from(selectedIds).filter(id => !ordered.includes(id));
+      void handleMultiTaskDrop([...ordered, ...rest], targetId, zone, filteredTasks);
+      return;
+    }
     dragReorderTaskDrop(draggedId, targetId, zone, filteredTasks);
-  }, [dragReorderTaskDrop, filteredTasks]);
+  }, [dragReorderTaskDrop, handleMultiTaskDrop, filteredTasks, selectedIds]);
+
+  // 見出し（PJ・グループ）へのドロップ。複数選択のドラッグは行の上下にだけ落とせる（見出しへは1件ずつ）
+  const handleSectionDrop = useCallback((draggedId: string, projectId: string, sectionId: string | null) => {
+    if (selectedIds.size > 1 && selectedIds.has(draggedId)) {
+      showToast("複数選択のまとめての移動は、行の上か下にドロップしてください（見出しへは1件ずつ移せます）", "info");
+      return;
+    }
+    return dragSectionDrop(draggedId, projectId, sectionId);
+  }, [dragSectionDrop, selectedIds]);
 
   // 「番号順に並べる」：タスク名の先頭数値（自然順）で並べ替える（CLAUDE.md v3.108）。
   // 🔴 display_order を書き換え、全員の画面に反映されるため実行前に確認する。
@@ -595,6 +617,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     }
     return ids;
   }, [groups, rowsByGroup]);
+  // handleTaskDrop（これより前に定義）から最新の表示順を読むための参照
+  visibleOrderedTaskIdsRef.current = visibleOrderedTaskIds;
 
   // 行クリックのハンドラ（ガントのタスクバー用ハンドラと同じ流儀）。
   // 修飾キー無し＝従来どおり詳細（TaskSidePanel）を開く＋アンカー更新。既存のチェックボックス
@@ -622,6 +646,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     selectionAnchorRef.current = taskId;
     setSelectedTaskId(prev => prev === taskId ? null : taskId);
   }, [visibleOrderedTaskIds, toggleSelect]);
+
+  // チェックボックスのクリック（v3.156）：Shift＝行クリックと同じ範囲選択（表示順・アンカー〜クリック先を追加）、
+  // 通常＝親子連動のトグルでアンカーを更新。onChange では shiftKey が取れないので onClick の MouseEvent で判定する
+  const handleCheckboxClick = useCallback((e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    setSelectedIds(prev => {
+      const r = applyCheckboxClick(prev, visibleOrderedTaskIds, selectionAnchorRef.current, taskId, e.shiftKey,
+        (p, id) => toggleTaskWithChildren(p, id, allTasks));
+      selectionAnchorRef.current = r.anchor;
+      return r.next;
+    });
+  }, [visibleOrderedTaskIds, allTasks]);
 
   // ===== キーボードショートカット（Ctrl/Cmd+A=表示中の全選択／Esc=選択解除） =====
   //
@@ -840,6 +876,13 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
               searchable searchPlaceholder="メンバーで検索..."
               style={{ width: "160px" }} />
 
+            {/* プロジェクトへ移す・日程をずらす（v3.156） */}
+            <BulkMoveShiftControls
+              projects={scopedProjects}
+              onMoveToProject={(pid, name) => { void bulkMoveToProject(pid, name, visibleOrderedTaskIds); }}
+              onShift={days => { void bulkShift(days); }}
+            />
+
             <span style={{ flex: 1 }} />
 
             {/* 選択したタスクを複製 */}
@@ -936,7 +979,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         isCollapsed={collapsedIds.has(task.id)}
                         prog={derived ?? null}
                         onOpen={setEditingTaskId}
-                        onToggleSelect={toggleSelect}
+                        onCheckboxClick={handleCheckboxClick}
                         onToggleCollapse={toggleCollapse}
                       />
                     );
@@ -1031,7 +1074,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                             draggingId={draggingId}
                             saveTask={saveTask}
                             onRowClick={handleRowClick}
-                            toggleSelect={toggleSelect}
+                            onCheckboxClick={handleCheckboxClick}
                             toggleCollapse={toggleCollapse}
                             openAddChild={openAddChild}
                             setDraggingId={setDraggingId}
@@ -1056,12 +1099,32 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           return (
                             <React.Fragment key={bk}>
                               <tr
-                                onDragOver={e => { if (draggingId) e.preventDefault(); }}
+                                onDragOver={e => {
+                                  if (draggingSection) {
+                                    if (draggingSection.projectId !== projectId) return;
+                                    e.preventDefault();
+                                    setSectionDropKey(k => (k === bk ? k : bk));
+                                    return;
+                                  }
+                                  if (draggingId) e.preventDefault();
+                                }}
+                                onDragLeave={() => setSectionDropKey(k => (k === bk ? null : k))}
                                 onDrop={e => {
                                   e.preventDefault();
+                                  if (draggingSection) {
+                                    if (draggingSection.projectId === projectId) {
+                                      const order = computeSectionDropOrder(secList, draggingSection.id, sec ? sec.id : UNSECTIONED_KEY);
+                                      if (order) void sectionActions.reorderSections(projectId, order);
+                                    }
+                                    setDraggingSection(null); setSectionDropKey(null);
+                                    return;
+                                  }
                                   if (draggingId) void handleSectionDrop(draggingId, projectId, sec ? sec.id : null);
                                   setDraggingId(null); setDropZone(null);
                                 }}
+                                style={sectionDropKey === bk && draggingSection
+                                  ? { boxShadow: (secList.findIndex(x => x.id === draggingSection.id) < idx ? "inset 0 -2px 0 var(--color-brand)" : "inset 0 2px 0 var(--color-brand)") }
+                                  : undefined}
                               >
                                 <td colSpan={cols.length} style={{ padding: 0, background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)" }}>
                                   <SectionHeaderContent
@@ -1076,6 +1139,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                     onRename={name => { if (sec) void sectionActions.renameSection(sec, name); }}
                                     onMove={dir => { if (sec) void sectionActions.moveSection(sec, dir); }}
                                     onDelete={() => { if (sec) void sectionActions.removeSection(sec); }}
+                                    sectionDrag={sec ? {
+                                      onDragStart: e => { setDraggingSection({ id: sec.id, projectId }); e.dataTransfer.effectAllowed = "move"; },
+                                      onDragEnd: () => { setDraggingSection(null); setSectionDropKey(null); },
+                                    } : undefined}
                                     stats={b.tasks.length > 0 ? <GroupStatsBadge {...summary} /> : undefined}
                                     dropHint="↑ ここに落とすとこのグループへ移ります"
                                     dropHintVisible={!!draggingId}
@@ -1127,7 +1194,9 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                         onDragOver={canUnparentHere ? (e => { if (draggingId) e.preventDefault(); }) : undefined}
                         onDrop={canUnparentHere ? (e => {
                           e.preventDefault();
-                          if (draggingId) handleUnparentDrop(draggingId, group.projectId!);
+                          if (draggingId && selectedIds.size > 1 && selectedIds.has(draggingId)) {
+                            showToast("複数選択のまとめての移動は、行の上か下にドロップしてください（見出しへは1件ずつ移せます）", "info");
+                          } else if (draggingId) handleUnparentDrop(draggingId, group.projectId!);
                           setDraggingId(null); setDropZone(null);
                         }) : undefined}
                       >
@@ -1288,13 +1357,13 @@ interface ListMobileTaskRowProps {
   isCollapsed: boolean;
   prog: ParentDerived | null;
   onOpen: (taskId: string) => void;
-  onToggleSelect: (id: string, e?: React.MouseEvent) => void;
+  onCheckboxClick: (e: React.MouseEvent, id: string) => void;
   onToggleCollapse: (id: string, e?: React.MouseEvent) => void;
 }
 
 const ListMobileTaskRow = memo(function ListMobileTaskRow({
   task, depth, parentNote, isParent, pj, assignees, dispStatus, isOverdue,
-  isChecked, isCollapsed, prog, onOpen, onToggleSelect, onToggleCollapse,
+  isChecked, isCollapsed, prog, onOpen, onCheckboxClick, onToggleCollapse,
 }: ListMobileTaskRowProps) {
   const isDone = dispStatus === "done" || dispStatus === "cancelled";
   // モバイルは「タスク名＋担当者＋期日」のみのシンプル表示。
@@ -1320,8 +1389,9 @@ const ListMobileTaskRow = memo(function ListMobileTaskRow({
       <input
         type="checkbox"
         checked={isChecked}
-        onChange={() => onToggleSelect(task.id)}
-        onClick={e => e.stopPropagation()}
+        onChange={() => undefined}
+        onMouseDown={e => { if (e.shiftKey) e.preventDefault(); }}
+        onClick={e => onCheckboxClick(e, task.id)}
         aria-label={`${task.name} を選択`}
         style={{ cursor: "pointer", width: 18, height: 18, accentColor: "var(--color-brand)", flexShrink: 0 }}
       />
@@ -1412,7 +1482,7 @@ interface ListTaskRowProps {
   draggingId: string | null;
   saveTask: (task: Task) => Promise<void>;
   onRowClick: (e: React.MouseEvent, taskId: string) => void;
-  toggleSelect: (id: string, e?: React.MouseEvent) => void;
+  onCheckboxClick: (e: React.MouseEvent, id: string) => void;
   toggleCollapse: (id: string, e?: React.MouseEvent) => void;
   openAddChild: (task: Task) => void;
   setDraggingId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -1429,7 +1499,7 @@ const ListTaskRow = memo(function ListTaskRow({
   task, depth, parentNote, isParent, closesGroup, isEven, pj, todoItem,
   dispStatus, isSelected, isChecked, canAddChild, isCollapsed, prog,
   canDrag, showHandleCol, myZone, density, groupBy, currentUser,
-  draggingId, saveTask, onRowClick, toggleSelect, toggleCollapse,
+  draggingId, saveTask, onRowClick, onCheckboxClick, toggleCollapse,
   openAddChild, setDraggingId, setDropZone, handleTaskDrop,
 }: ListTaskRowProps) {
   const isDone = dispStatus === "done" || dispStatus === "cancelled";
@@ -1501,7 +1571,10 @@ const ListTaskRow = memo(function ListTaskRow({
           <input
             type="checkbox"
             checked={isChecked}
-            onChange={() => toggleSelect(task.id)}
+            onChange={() => undefined}
+            onMouseDown={e => { if (e.shiftKey) e.preventDefault(); }}
+            onClick={e => onCheckboxClick(e, task.id)}
+            title="Shift＋クリックで範囲選択"
             aria-label={`${task.name} を選択`}
             style={{ cursor: "pointer", width: 14, height: 14, accentColor: "var(--color-brand)" }}
           />

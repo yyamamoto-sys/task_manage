@@ -18,6 +18,8 @@ import { TASK_STATUS_LABEL, TASK_PRIORITY_LABEL } from "../lib/taskMeta";
 import { confirmDialog } from "../lib/dialog";
 import { showToast } from "../components/common/Toast";
 import { formatErrorForUser } from "../lib/errorMessage";
+import { planProjectMove, projectMoveConfirmMessage } from "../lib/task/projectMove";
+import { computeBulkMoveShifts } from "../components/gantt/ganttUtils";
 
 export function useBulkTaskActions(
   allTasks: Task[],
@@ -29,6 +31,7 @@ export function useBulkTaskActions(
   const saveTask = useAppStore(s => s.saveTask);
   const deleteTask = useAppStore(s => s.deleteTask);
   const restoreTask = useAppStore(s => s.restoreTask);
+  const bulkShiftTasks = useAppStore(s => s.bulkShiftTasks);
 
   // 一括ステータス変更
   const bulkUpdateStatus = useCallback(async (status: Task["status"]) => {
@@ -145,5 +148,63 @@ export function useBulkTaskActions(
     }
   }, [selectedIds, deleteTask, restoreTask, currentUserId, clearSelection]);
 
-  return { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete };
+  // 選んだタスクを別のプロジェクトへ移す（v3.156）。対象（子の連れ方・親から外れる子）は planProjectMove が決める。
+  // section_id は null（移動先PJのグループではない）。task_projects（追加PJ）は触らない。
+  // Undo は「Undo 時点の最新タスク」に旧 project_id・section_id・parent_task_id・display_order を当て直す
+  const bulkMoveToProject = useCallback(async (projectId: string, projectName: string, orderedIds: string[] = []) => {
+    const plan = planProjectMove(allTasks, selectedIds, projectId, orderedIds);
+    if (plan.total === 0) {
+      showToast(`選んだタスクはすべて「${projectName}」にあります`, "info");
+      return;
+    }
+    const ok = await confirmDialog(projectMoveConfirmMessage(plan, projectName), {
+      tone: "neutral", confirmLabel: "移す",
+    });
+    if (!ok) return;
+    try {
+      const latestOf = (id: string) => useAppStore.getState().tasks.find(x => x.id === id);
+      await Promise.all(plan.moves.map(({ id, patch }) => {
+        const t = latestOf(id);
+        return t ? saveTask({ ...t, ...patch, updated_by: currentUserId }) : Promise.resolve();
+      }));
+      showToast(`${plan.total}件を「${projectName}」へ移しました`, "success", {
+        label: "元に戻す",
+        isUndo: true,
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          plan.moves.forEach(({ id, prev }) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({ ...t, ...prev, updated_by: currentUserId });
+          });
+        },
+      });
+      clearSelection();
+    } catch (err) {
+      showToast(formatErrorForUser("プロジェクトの移動に失敗しました", err), "error");
+    }
+  }, [allTasks, selectedIds, saveTask, currentUserId, clearSelection]);
+
+  // 選んだタスクの日程を暦日でずらす（v3.156）。実処理・B3の自動リスケ・Undoは bulkShiftTasks（ガントと同じ）。
+  // 期日の無い・完了/中止のタスクはずらせない（computeBulkMoveShifts の既存ルール）ので、件数を先に伝える
+  const bulkShift = useCallback(async (deltaDays: number) => {
+    if (!Number.isInteger(deltaDays) || deltaDays === 0) return;
+    const targets = allTasks.filter(t => selectedIds.has(t.id));
+    const shiftable = computeBulkMoveShifts(targets, deltaDays).length;
+    const skipped = targets.length - shiftable;
+    if (shiftable === 0) {
+      showToast("期日があり未完了のタスクが選ばれていないため、日程をずらせませんでした", "info");
+      return;
+    }
+    if (skipped > 0) {
+      showToast(`${skipped}件は期日が無い・完了済みのためずらしません`, "info");
+    }
+    try {
+      await bulkShiftTasks(targets.map(t => t.id), deltaDays, currentUserId);
+      clearSelection();
+    } catch (err) {
+      showToast(formatErrorForUser("日程のずらしに失敗しました", err), "error");
+    }
+  }, [allTasks, selectedIds, bulkShiftTasks, currentUserId, clearSelection]);
+
+  return { bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift };
 }

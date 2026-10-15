@@ -54,6 +54,14 @@ export function useSectionActions(currentUserId: string) {
     }
   }, [currentUserId, reorderProjectSections]);
 
+  const reorderSections = useCallback(async (projectId: string, orderedIds: string[]) => {
+    try {
+      await reorderProjectSections(projectId, orderedIds, currentUserId);
+    } catch (e) {
+      showToast(formatErrorForUser("グループの並べ替えに失敗しました", e), "error");
+    }
+  }, [currentUserId, reorderProjectSections]);
+
   const removeSection = useCallback(async (section: ProjectSection) => {
     const count = useAppStore.getState().tasks.filter(t => !t.is_deleted && t.section_id === section.id).length;
     const note = count > 0
@@ -68,5 +76,5 @@ export function useSectionActions(currentUserId: string) {
     }
   }, [currentUserId, deleteProjectSection]);
 
-  return { createSection, renameSection, moveSection, removeSection };
+  return { createSection, renameSection, moveSection, reorderSections, removeSection };
 }

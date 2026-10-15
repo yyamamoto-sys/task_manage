@@ -14,3 +14,24 @@ export function computeRangeSelection(orderedIds: string[], anchorId: string | n
   const [from, to] = anchorIdx <= targetIdx ? [anchorIdx, targetIdx] : [targetIdx, anchorIdx];
   return orderedIds.slice(from, to + 1);
 }
+
+/**
+ * チェックボックスのクリック1回分の選択更新（純粋関数）。行クリックの Shift 範囲選択と同じ規則：
+ * - Shift：アンカー〜クリック先を表示順で選択に「追加」する（アンカーが無ければクリック先をアンカーにする）
+ * - Shift なし：toggle（呼び出し側が渡す、親子連動つきのトグル）で1件を切り替え、クリック先を新しいアンカーにする
+ */
+export function applyCheckboxClick(
+  prev: Set<string>,
+  orderedIds: string[],
+  anchorId: string | null,
+  targetId: string,
+  shiftKey: boolean,
+  toggle: (prev: Set<string>, id: string) => Set<string>,
+): { next: Set<string>; anchor: string } {
+  if (shiftKey) {
+    const next = new Set(prev);
+    computeRangeSelection(orderedIds, anchorId, targetId).forEach(id => next.add(id));
+    return { next, anchor: anchorId ?? targetId };
+  }
+  return { next: toggle(prev, targetId), anchor: targetId };
+}

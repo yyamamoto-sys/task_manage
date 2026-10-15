@@ -8270,3 +8270,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * DISPLAY_SETTING_KEYS から ADMIN_LAST_TAB・ADMIN_FONT_SIZE を外した（定数は残す）。ガイド（02_modes/settings.md・05_admin/settings-overview.md ほか設定の経路文言）・uiGuide.ts・初回ツアーの設定ステップを新構造に追従。
 # * テスト：settingsPages.test（網羅・可視条件・直接ジャンプ）・useUnsavedEditor.test・saveUi.test／saveUiHooks.test・savePolicy.test・minFontSize.test を新設。guardedNavigateCoverage・memberInGroupUsage・rawMembersUsage・topRightBell・settings.test を新構造に更新。
 # * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式に非互換な変更なし）。マイグレーションなし。
+
+# v3.156（2026-10-15）：複数選択まわりの操作を拡充（Shiftチェックボックス・PJ移動・まとめてドラッグ・日程ずらし・グループ見出しのドラッグ。CLAUDE.md Section 81）
+# * 利用者フィードバックの5点。範囲選択は src/lib/selectionRange.ts の applyCheckboxClick、PJ移動の対象決定は src/lib/task/projectMove.ts、複数並べ替えの採番は src/lib/task/multiReorder.ts、グループの並べ替えは sections.ts の computeSectionDropOrder、日数入力は shiftDays.ts（いずれも純関数・テスト：bulkSelectionOps.test）。
+# * 配線：useBulkTaskActions に bulkMoveToProject・bulkShift、useTaskDragReorder に handleMultiTaskDrop、useSectionActions に reorderSections。共通の入力部品 BulkMoveShiftControls（リスト・カンバンの一括バー）。配線は bulkOpsWiring.test（ソース走査・コメント除去・壊して赤を確認）。
+# * ガント・カンバンにはチェックボックスが無いため、Shift対応はリスト（PC・モバイルのカード）のみ。ガントの日程ずらしは従来どおりバーのドラッグ。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。

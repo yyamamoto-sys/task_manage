@@ -150,3 +150,21 @@ export function computeSectionProgress(
   }
   return rows;
 }
+
+/**
+ * グループ見出しのドラッグ＆ドロップによる並べ替え（v3.156）。dragged をドロップ先見出しの位置へ移した順の id 配列を返す。
+ * - 下へ動かすときはドロップ先の後ろ・上へ動かすときはドロップ先の前に入る（リストの並べ替えの直感どおり）
+ * - ドロップ先が「未分類」（先頭固定・ドラッグ不可）のときは先頭へ移す
+ * - 同じ位置・見つからない id は null（何もしない）
+ */
+export function computeSectionDropOrder(
+  list: ProjectSection[],
+  draggedId: string,
+  targetKey: string,
+): string[] | null {
+  const from = list.findIndex(s => s.id === draggedId);
+  if (from < 0) return null;
+  const to = targetKey === UNSECTIONED_KEY ? 0 : list.findIndex(s => s.id === targetKey);
+  if (to < 0 || to === from) return null;
+  return moveItem(list, from, to).map(s => s.id);
+}

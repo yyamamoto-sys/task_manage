@@ -17,6 +17,7 @@ import { useAppStore } from "../stores/appStore";
 import type { Task } from "../lib/localData/types";
 import { isParentTask } from "../lib/taskHierarchy";
 import { computeSiblingReorderIds, type DropZone } from "../lib/dragReorder";
+import { computeMultiReorder, type MultiDropPosition } from "../lib/task/multiReorder";
 import { showToast } from "../components/common/Toast";
 import { formatErrorForUser } from "../lib/errorMessage";
 
@@ -128,5 +129,45 @@ export function useTaskDragReorder(
     }
   }, [allTasks, saveTask, currentUserId, onReordered]);
 
-  return { draggingId, setDraggingId, dropZone, setDropZone, handleTaskDrop, handleUnparentDrop, handleSectionDrop };
+  // 選択中の複数タスクをドロップ位置へまとめて移す（v3.156）。採番・拒否の規則は computeMultiReorder に集約。
+  // Undo は「Undo 時点の最新タスク」に旧値だけを当て直す（古いスナップショット全体の保存は楽観ロックと衝突するため）
+  const handleMultiTaskDrop = useCallback(async (
+    orderedSelectedIds: string[],
+    targetId: string,
+    zone: DropZone,
+    visibleTasks: Task[],
+  ) => {
+    const position: MultiDropPosition = zone === "nest"
+      ? { kind: "nest", parentId: targetId }
+      : { kind: zone, targetId };
+    const result = computeMultiReorder(allTasks, visibleTasks, orderedSelectedIds, position);
+    if (!result.ok) {
+      if (result.reason) showToast(result.reason, "error");
+      return;
+    }
+    if (result.patches.length === 0) return;
+    try {
+      const latestOf = (id: string) => useAppStore.getState().tasks.find(x => x.id === id);
+      await Promise.all(result.patches.map(({ id, patch }) => {
+        const t = latestOf(id);
+        return t ? saveTask({ ...t, ...patch, updated_by: currentUserId }) : Promise.resolve();
+      }));
+      onReordered?.();
+      showToast(`${result.movedCount}件のタスクをまとめて移動しました`, "success", {
+        label: "元に戻す",
+        isUndo: true,
+        onClick: () => {
+          const tasksNow = useAppStore.getState().tasks;
+          result.patches.forEach(({ id, prev }) => {
+            const t = tasksNow.find(x => x.id === id);
+            if (t) saveTask({ ...t, ...prev, updated_by: currentUserId });
+          });
+        },
+      });
+    } catch (err) {
+      showToast(formatErrorForUser("まとめての並べ替えに失敗しました", err), "error");
+    }
+  }, [allTasks, saveTask, currentUserId, onReordered]);
+
+  return { draggingId, setDraggingId, dropZone, setDropZone, handleTaskDrop, handleMultiTaskDrop, handleUnparentDrop, handleSectionDrop };
 }
