@@ -23,6 +23,7 @@ import { Card, SummaryTile, SummaryRow } from "../common/Card";
 import { DangerZone, DangerAction } from "../common/DangerZone";
 import { AdminFormModal } from "./AdminFormModal";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
+import { SaveButton, SaveErrorBand, SavedFlash, useFormSave, useSavedFlash, useSnapshotDirty } from "../common/saveUi";
 import { DEFAULT_LOADING_TIPS } from "../../lib/tips/loadingTips";
 
 interface Props {
@@ -53,7 +54,10 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null); // "__new__" は新規作成
   const [draft, setDraft] = useState<TipDraft>(emptyDraft);
   const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  // 保存の見せ方は共通基準（saveUi.tsx）。並べ替えは即時保存なので「✓ 保存しました」を出す
+  const tipSave = useFormSave();
+  const tipDirty = useSnapshotDirty(draft, editingId);
+  const [reordered, flashReordered] = useSavedFlash();
 
   const isCreating = editingId === "__new__";
   const isDirty = editingId !== null;
@@ -65,18 +69,20 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
     setEditingId("__new__");
     setDraft(emptyDraft);
     setError(null);
+    tipSave.setError("");
   };
   const startEdit = (tip: LoadingTip) => {
     setEditingId(tip.id);
     setDraft({ title: tip.title, body: tip.body, is_active: tip.is_active });
     setError(null);
+    tipSave.setError("");
   };
   const cancel = () => { setEditingId(null); setError(null); };
 
   const save = async () => {
     if (!draft.body.trim()) { setError("本文を入力してください"); return; }
     setError(null);
-    try {
+    const ok = await tipSave.run(async () => {
       if (isCreating) {
         // 新規は末尾に置く（表示順は既存の最大 + 10。10刻みにしておくと後から間に差し込みやすい）
         const nextOrder = tips.length > 0 ? Math.max(...tips.map(t => t.sort_order)) + 10 : 10;
@@ -91,7 +97,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
         });
       } else {
         const existing = tips.find(t => t.id === editingId);
-        if (!existing) { setError("対象のヒントが見つかりませんでした"); return; }
+        if (!existing) throw new Error("対象のヒントが見つかりませんでした");
         await saveLoadingTip({
           ...existing,
           title: draft.title.trim(),
@@ -100,12 +106,8 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
           updated_by: currentUser.id,
         });
       }
-      setEditingId(null);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1600);
-    } catch (e) {
-      setError(formatErrorForUser("保存に失敗しました", e));
-    }
+    }, "保存に失敗しました");
+    if (ok) setEditingId(null);
   };
 
   const remove = async (id: string) => {
@@ -128,6 +130,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
     try {
       await saveLoadingTip({ ...a, sort_order: b.sort_order, updated_by: currentUser.id });
       await saveLoadingTip({ ...b, sort_order: a.sort_order, updated_by: currentUser.id });
+      flashReordered();
     } catch (e) {
       setError(formatErrorForUser("並べ替えに失敗しました", e));
     }
@@ -156,7 +159,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
 
   if (!isSuperAdmin) {
     return (
-      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
+      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
         🔒 ローディングのヒントは全社スーパー管理者のみ編集できます。
       </div>
     );
@@ -165,7 +168,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
   const fields = (
     <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
       <div>
-        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
           見出し（任意・絵文字1個＋短い一文が読みやすい）
         </div>
         <input
@@ -176,7 +179,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
         />
       </div>
       <div>
-        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "4px" }}>
           本文（必須）
         </div>
         <textarea
@@ -186,7 +189,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
           placeholder="例）Ctrl（Mac は ⌘）＋ K でコマンドパレットが開きます。…"
         />
       </div>
-      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
         <input
           type="checkbox"
           checked={draft.is_active}
@@ -196,11 +199,19 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
         ローディング画面に表示する
       </label>
       {error && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-danger)", lineHeight: 1.6 }}>{error}</div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", lineHeight: 1.6 }}>{error}</div>
       )}
+      <SaveErrorBand message={tipSave.error} />
       <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
         <button style={ghostBtnStyle} onClick={cancel}>キャンセル</button>
-        <button style={primaryBtnStyle} onClick={() => void save()}>保存</button>
+        <SaveButton
+          mode={isCreating ? "add" : "edit"}
+          dirty={isCreating ? draft.body.trim() !== "" : tipDirty}
+          blocked={!draft.body.trim()}
+          saving={tipSave.saving}
+          onClick={() => void save()}
+          buttonStyle={primaryBtnStyle}
+        />
       </div>
     </div>
   );
@@ -212,7 +223,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
         <SummaryTile label="表示中" value={activeCount} tone="success" />
       </SummaryRow>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
         データ読み込み中の待ち時間に、ここで登録したヒントが1つずつ順番に表示されます。
         初回ガイドツアーで説明していない操作テクニックを載せると効果的です。
         <br />
@@ -227,7 +238,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
       >
         {tips.length === 0 ? (
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", alignItems: "flex-start" }}>
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
+            <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>
               ヒントが1件もありません。この状態でも、アプリに組み込まれている既定のヒント10件が表示されます。
             </div>
             <button style={ghostBtnStyle} onClick={() => void restoreDefaults()}>
@@ -266,13 +277,13 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
                     }}
                   >
                     <div style={{
-                      fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)",
+                      fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)",
                       marginBottom: "2px",
                     }}>
                       {tip.title || "（見出しなし）"}
                     </div>
                     <div style={{
-                      fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6,
+                      fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6,
                       display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
                       overflow: "hidden",
                     }}>
@@ -282,7 +293,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
 
                   {!tip.is_active && (
                     <span style={{
-                      flexShrink: 0, fontSize: "10px", padding: "1px 6px", borderRadius: "99px",
+                      flexShrink: 0, fontSize: "12px", padding: "1px 6px", borderRadius: "99px",
                       background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)",
                       border: "1px solid var(--color-border-primary)",
                     }}>非表示</span>
@@ -316,9 +327,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
         )}
       </Card>
 
-      {saved && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-success)" }}>✓ 保存しました</div>
-      )}
+      <div><SavedFlash visible={reordered} /></div>
 
       {isCreating && (
         <AdminFormModal
@@ -336,7 +345,7 @@ export function LoadingTipsSection({ currentUser, onDirtyChange }: Props) {
 
 const miniBtnStyle: React.CSSProperties = {
   width: "20px", height: "16px", padding: 0, lineHeight: 1,
-  fontSize: "8px", color: "var(--color-text-tertiary)",
+  fontSize: "12px", color: "var(--color-text-tertiary)",
   background: "transparent",
   border: "1px solid var(--color-border-primary)",
   borderRadius: "var(--radius-sm)", cursor: "pointer",

@@ -117,7 +117,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
   };
 
   const inputStyle: React.CSSProperties = {
-    padding: "4px 7px", fontSize: "12px",
+    padding: "4px 7px", fontSize: "13px",
     border: "1px solid var(--color-border-primary)",
     borderRadius: "var(--radius-sm)",
     background: "var(--color-bg-primary)",
@@ -147,10 +147,10 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         }}>
           <span style={{ fontSize: "16px" }}>🤖</span>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)" }}>
+            <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>
               AIタスク自動分解
             </div>
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "2px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {todo.name ?? todo.title}
             </div>
           </div>
@@ -161,7 +161,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         <div style={{ flex: 1, overflow: "auto", padding: "16px 18px" }}>
 
           {phase === "loading" && (
-            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-tertiary)", fontSize: "13px" }}>
+            <div style={{ textAlign: "center", padding: "40px 0", color: "var(--color-text-tertiary)", fontSize: "14px" }}>
               <div style={{ fontSize: "24px", marginBottom: "10px" }}>⏳</div>
               AIがタスクを分解中です…
             </div>
@@ -169,7 +169,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
 
           {phase === "error" && (
             <div style={{
-              padding: "12px 14px", fontSize: "12px",
+              padding: "12px 14px", fontSize: "13px",
               background: "var(--color-bg-danger)", color: "var(--color-text-danger)",
               borderRadius: "var(--radius-md)",
             }}>
@@ -178,7 +178,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
           )}
 
           {phase === "done" && (
-            <div style={{ textAlign: "center", padding: "32px 0", fontSize: "13px", color: "var(--color-text-success)" }}>
+            <div style={{ textAlign: "center", padding: "32px 0", fontSize: "14px", color: "var(--color-text-success)" }}>
               <div style={{ fontSize: "28px", marginBottom: "10px" }}>✅</div>
               {suggestions.filter(s => s.selected).length}件のタスクを追加しました
             </div>
@@ -195,7 +195,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
 
           {phase === "confirm" && (
             <>
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
                 追加するタスクにチェックを入れて、担当者・期日を確認してください。
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -242,7 +242,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
                         />
                       </div>
                       {s.note && (
-                        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{s.note}</div>
+                        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{s.note}</div>
                       )}
                     </div>
                   </div>
@@ -262,7 +262,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
             <button
               onClick={onClose}
               style={{
-                padding: "7px 16px", fontSize: "12px",
+                padding: "7px 16px", fontSize: "13px",
                 background: "transparent",
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-md)",
@@ -276,7 +276,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
               onClick={handleSave}
               disabled={suggestions.filter(s => s.selected).length === 0}
               style={{
-                padding: "7px 16px", fontSize: "12px", fontWeight: "600",
+                padding: "7px 16px", fontSize: "13px", fontWeight: "600",
                 background: "var(--color-brand)",
                 border: "none",
                 borderRadius: "var(--radius-md)",
@@ -290,7 +290,7 @@ export function TodoDecomposeModal({ todo, tfId, currentUser, saveTask, onClose 
         )}
         {phase === "done" && (
           <div style={{ padding: "12px 18px", borderTop: "1px solid var(--color-border-primary)", display: "flex", justifyContent: "flex-end" }}>
-            <button onClick={onClose} style={{ padding: "7px 20px", fontSize: "12px", fontWeight: "600", background: "var(--color-brand)", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", color: "#fff" }}>
+            <button onClick={onClose} style={{ padding: "7px 20px", fontSize: "13px", fontWeight: "600", background: "var(--color-brand)", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer", color: "#fff" }}>
               閉じる
             </button>
           </div>

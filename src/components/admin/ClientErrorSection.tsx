@@ -78,7 +78,7 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
 
   if (!isSuperAdmin) {
     return (
-      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
+      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
         🔒 エラーの記録は全社スーパー管理者のみ確認できます。
       </div>
     );
@@ -93,7 +93,7 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px", flexWrap: "wrap" }}>
         <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>🛡 利用者の画面のエラー</h2>
         <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--color-text-secondary)", cursor: "pointer" }}>
             <input type="checkbox" checked={unresolvedOnly} onChange={e => { setLoading(true); setUnresolvedOnly(e.target.checked); }} />
             未解決のみ表示
           </label>
@@ -101,14 +101,14 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
         </div>
       </div>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
         利用者の画面に出たエラー（保存の失敗・画面のクラッシュ・スクリプトのエラー）を記録しています。同じエラーは1件にまとめて回数を数えます。
         新しいエラー・解決済みにしたエラーの再発はベルに届き、Windows通知は30分ごとにまとめて届きます。
         記録にはメッセージ・画面・版・ブラウザだけを残し、入力内容は送りません（メールアドレスらしき文字列は伏せています）。90日で削除されます。
       </div>
 
       {fetchError && (
-        <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+        <div role="alert" style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
           {fetchError}
         </div>
       )}
@@ -120,11 +120,11 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
       </SummaryRow>
 
       {loading ? (
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
       ) : (
         <Card title="エラーの一覧（最終発生が新しい順）" badge={`${logs.length}件`}>
           {logs.length === 0 ? (
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+            <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
               {unresolvedOnly ? "未解決のエラーはありません。" : "記録されたエラーはありません。"}
             </div>
           ) : (
@@ -134,7 +134,7 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
                 const resolved = log.resolved_at !== null;
                 return (
                   <div key={log.id} style={{
-                    border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", fontSize: "11.5px",
+                    border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", fontSize: "12px",
                     opacity: resolved ? 0.7 : 1,
                   }}>
                     <button
@@ -147,7 +147,7 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
                       }}
                     >
                       <span style={{
-                        fontSize: "10.5px", padding: "1px 8px", borderRadius: "99px", fontWeight: 500,
+                        fontSize: "12px", padding: "1px 8px", borderRadius: "99px", fontWeight: 500,
                         color: `var(--color-text-${resolved ? "success" : "danger"})`, background: `var(--color-bg-${resolved ? "success" : "danger"})`,
                         border: `1px solid var(--color-border-${resolved ? "success" : "danger"})`,
                       }}>{resolved ? "解決済み" : "未解決"}</span>
@@ -158,7 +158,7 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
                     </button>
                     {isOpen && (
                       <div style={{ padding: "4px 10px 10px", borderTop: "1px solid var(--color-border-primary)", display: "flex", flexDirection: "column", gap: "6px" }}>
-                        <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 10px", margin: 0, fontSize: "11px" }}>
+                        <dl style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "2px 10px", margin: 0, fontSize: "12px" }}>
                           <dt style={{ color: "var(--color-text-tertiary)" }}>種類</dt><dd style={{ margin: 0 }}>{SOURCE_LABEL[log.source]}</dd>
                           <dt style={{ color: "var(--color-text-tertiary)" }}>操作</dt><dd style={{ margin: 0, wordBreak: "break-word" }}>{log.context ?? "—"}</dd>
                           <dt style={{ color: "var(--color-text-tertiary)" }}>コード</dt><dd style={{ margin: 0 }}>{log.code ?? "—"}</dd>
@@ -171,14 +171,14 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
                             <dd style={{ margin: 0 }}>{formatJstDateTime(log.resolved_at)}（{log.resolved_by ? (memberNameById.get(log.resolved_by) ?? log.resolved_by) : "—"}）</dd>
                           </>)}
                         </dl>
-                        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+                        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
                           発生した人：{reporters === null ? "…" : reporters.length === 0 ? "—" : reporters.map(r => `${memberNameById.get(r.member_id) ?? r.member_id}（${r.count}回）`).join("、")}
                         </div>
                         {log.stack && (
                           <details>
-                            <summary style={{ cursor: "pointer", fontSize: "11px", color: "var(--color-text-secondary)" }}>スタック（技術情報）</summary>
+                            <summary style={{ cursor: "pointer", fontSize: "12px", color: "var(--color-text-secondary)" }}>スタック（技術情報）</summary>
                             <pre style={{
-                              margin: "4px 0 0", padding: "6px 8px", fontSize: "10.5px", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
+                              margin: "4px 0 0", padding: "6px 8px", fontSize: "12px", lineHeight: 1.5, whiteSpace: "pre-wrap", wordBreak: "break-word",
                               background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
                               fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                             }}>{log.stack}</pre>

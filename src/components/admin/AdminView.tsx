@@ -51,6 +51,7 @@ import { ReminderSection } from "./ReminderSection";
 import { ClientErrorSection } from "./ClientErrorSection";
 import { AdminMessageSection } from "./AdminMessageSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
+import { SaveButton, SaveErrorBand, SaveKeyScope, useFormSave, useSnapshotDirty } from "../common/saveUi";
 
 interface Props {
   currentUser: Member;
@@ -175,7 +176,7 @@ function FirstStepHint({ children }: { children: React.ReactNode }) {
     <div style={{
       margin: "0 0 10px", padding: "8px 12px",
       background: "var(--color-bg-info)", border: "1px solid var(--color-border-info)",
-      borderRadius: "var(--radius-sm)", fontSize: "12px", color: "var(--color-text-info)", lineHeight: 1.6,
+      borderRadius: "var(--radius-sm)", fontSize: "13px", color: "var(--color-text-info)", lineHeight: 1.6,
     }}>
       {children}
     </div>
@@ -212,7 +213,10 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
   const [objTitle, setObjTitle] = useState(ctxObj?.title ?? "");
   const [objPurpose, setObjPurpose] = useState(ctxObj?.purpose ?? "");
   const [objBackground, setObjBackground] = useState(ctxObj?.background ?? "");
-  const [saved, setSaved] = useState(false);
+  // 保存の見せ方は共通基準（src/components/common/saveUi.tsx・設計仕様 §3）
+  const objSave = useFormSave();
+  const krAddSave = useFormSave();
+  const krEditSave = useFormSave();
   const [objEdited, setObjEdited] = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -228,8 +232,6 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
     if (ctxObj?.background) setObjBackground(b => b || (ctxObj.background ?? ""));
   }, [ctxObj]);
 
-  const flashSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
-
   const saveObj = async () => {
     const now = new Date().toISOString();
     const updated: Objective = {
@@ -244,14 +246,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
       updated_at: now,
       updated_by: currentUser.id,
     };
-    try {
-      await saveObjective(updated);
-      flashSaved();
-      setObjEdited(false);
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
+    if (await objSave.run(() => saveObjective(updated), "保存に失敗しました")) setObjEdited(false);
   };
 
   const addKr = async () => {
@@ -266,25 +261,13 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
       updated_at: now,
       updated_by: currentUser.id,
     };
-    try {
-      await saveKeyResult(kr);
-      setNewKrTitle("");
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
+    if (await krAddSave.run(() => saveKeyResult(kr), "保存に失敗しました")) setNewKrTitle("");
   };
 
   const updateKr = async (id: string, title: string) => {
     const existing = krs.find(k => k.id === id);
     if (!existing) return;
-    try {
-      await saveKeyResult({ ...existing, title, updated_by: currentUser.id });
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
-    setEditingKrId(null);
+    if (await krEditSave.run(() => saveKeyResult({ ...existing, title, updated_by: currentUser.id }), "保存に失敗しました")) setEditingKrId(null);
   };
 
   const deleteKr = async (id: string) => {
@@ -304,7 +287,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
         <button
           onClick={() => setShowImport(true)}
           style={{
-            padding: "7px 14px", fontSize: "12px", fontWeight: "600",
+            padding: "7px 14px", fontSize: "13px", fontWeight: "600",
             background: "linear-gradient(135deg, var(--color-ai-to), var(--color-ai-from-deep))",
             border: "none", borderRadius: "var(--radius-md)",
             color: "#fff", cursor: "pointer",
@@ -320,6 +303,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
 
       {/* Objective編集 */}
       <Card title="Objective" badge={ctxObj?.period ?? "2026年度"} badgeColor="success" style={{ marginBottom: "20px" }}>
+        <SaveKeyScope onSave={() => void saveObj()}>
         <FieldLabel>Objective（O）タイトル</FieldLabel>
         <AutoTextarea
           value={objTitle}
@@ -348,19 +332,10 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
           placeholder="なぜこのObjectiveを設定したか、背景・経緯・意図を入力"
         />
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
-          <button
-            onClick={saveObj}
-            style={{
-              ...primaryBtnStyle,
-              background: saved ? "var(--color-bg-success)" : undefined,
-              color: saved ? "var(--color-text-success)" : undefined,
-              border: saved ? "1px solid var(--color-border-success)" : undefined,
-              minWidth: "64px",
-            }}
-          >
-            {saved ? "✓ 保存" : "保存"}
-          </button>
+          <SaveButton dirty={objEdited} saving={objSave.saving} onClick={() => void saveObj()} buttonStyle={primaryBtnStyle} />
         </div>
+        <div style={{ marginTop: "8px" }}><SaveErrorBand message={objSave.error} /></div>
+        </SaveKeyScope>
       </Card>
 
       {/* KR一覧 */}
@@ -373,7 +348,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
                   width: "22px", height: "22px", borderRadius: "var(--radius-sm)",
                   background: "var(--color-bg-info)", color: "var(--color-text-info)",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: "10px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
+                  fontSize: "12px", fontWeight: "600", flexShrink: 0, marginTop: "6px",
                 }}>
                   {i + 1}
                 </div>
@@ -382,13 +357,14 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
                     value={kr.title}
                     onSave={v => updateKr(kr.id, v)}
                     onCancel={() => setEditingKrId(null)}
+                    saving={krEditSave.saving}
                   />
                 ) : (
                   <div style={{
                     flex: 1, padding: "6px 10px",
                     background: "var(--color-bg-secondary)",
                     border: "1px solid var(--color-border-primary)",
-                    borderRadius: "var(--radius-md)", fontSize: "12px",
+                    borderRadius: "var(--radius-md)", fontSize: "13px",
                     color: "var(--color-text-primary)", lineHeight: 1.5,
                   }}>
                     {kr.title}
@@ -417,7 +393,7 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
           {krs.length === 0 && (
             <>
               <FirstStepHint>💡 まず今期の目標（Objective）と KR（成果指標）を3〜5本登録しましょう。</FirstStepHint>
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
                 まだKRがありません。下の入力欄から追加してください。
               </div>
             </>
@@ -432,10 +408,11 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
             placeholder="新しいKRを入力して追加"
             maxLength={200}
             style={{ ...inputStyle, flex: 1 }}
-            onKeyDown={e => { if (e.key === "Enter") addKr(); }}
+            onKeyDown={e => { if (e.key === "Enter" && !e.nativeEvent.isComposing) void addKr(); }}
           />
-          <button onClick={addKr} style={addBtnStyle}>＋ 追加</button>
+          <SaveButton mode="add" dirty={newKrTitle.trim() !== ""} saving={krAddSave.saving} onClick={() => void addKr()} buttonStyle={addBtnStyle} label="＋ 追加" />
         </div>
+        <div style={{ marginTop: "8px" }}><SaveErrorBand message={krAddSave.error || krEditSave.error} /></div>
       </Card>
     </div>
   );
@@ -501,6 +478,9 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
   // KRごとのTF新規作成インラインフォーム
   const [newTfFormKrId, setNewTfFormKrId] = useState<string | null>(null);
   const [newTfForm, setNewTfForm] = useState({ tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
+  const tfSave = useFormSave();
+  const tfCreateSave = useFormSave();
+  const tfDirty = useSnapshotDirty(form, editId);
 
   // 未保存変更を親に通知
   useEffect(() => {
@@ -539,6 +519,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
 
   // 新規TF作成してリンク
   const openNewTfForm = (krId: string) => {
+    tfCreateSave.setError("");
     setNewTfFormKrId(krId);
     setNewTfForm({ tf_number: "", name: "", description: "", background: "", leader_member_id: "" });
   };
@@ -560,33 +541,25 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
       is_deleted: false,
       created_at: now, updated_at: now, updated_by: currentUser.id,
     };
-    try {
-      await saveTaskForce(newTf);
-      setNewTfFormKrId(null);
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`TFの作成に失敗しました。\n${msg}`);
-    }
+    if (await tfCreateSave.run(() => saveTaskForce(newTf), "TFの作成に失敗しました")) setNewTfFormKrId(null);
   };
 
   // 既存TFの編集・削除
   const openEdit = (tf: TaskForce) => {
+    tfSave.setError("");
     setEditId(tf.id);
     setForm({ kr_id: tf.kr_id, tf_number: tf.tf_number, name: tf.name, description: tf.description ?? "", background: tf.background ?? "", leader_member_id: tf.leader_member_id ?? "" });
   };
 
   const saveTfEdit = async () => {
     if (!form.name.trim()) return;
-    try {
-      // description/backgroundはundefinedではなくnullで送る（undefinedはJSON.stringifyで消え、
-      // 更新から列ごと抜け落ちるため、空にして保存してもDBの古い値がそのまま残ってしまう）
-      const existing = tfs.find(t => t.id === editId);
+    // description/backgroundはundefinedではなくnullで送る（undefinedはJSON.stringifyで消え、
+    // 更新から列ごと抜け落ちるため、空にして保存してもDBの古い値がそのまま残ってしまう）
+    const existing = tfs.find(t => t.id === editId);
+    const ok = await tfSave.run(async () => {
       if (existing) await saveTaskForce({ ...existing, ...form, description: form.description || null, background: form.background || null, leader_member_id: form.leader_member_id || null, updated_by: currentUser.id });
-      setEditId(null);
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
+    }, "保存に失敗しました");
+    if (ok) setEditId(null);
   };
 
   const deleteTF = async (id: string) => {
@@ -611,7 +584,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
             key={q}
             onClick={() => { setSelectedQuarter(q); setEditId(null); setNewTfFormKrId(null); }}
             style={{
-              padding: "6px 18px", fontSize: "13px", fontWeight: selectedQuarter === q ? "600" : "400",
+              padding: "6px 18px", fontSize: "14px", fontWeight: selectedQuarter === q ? "600" : "400",
               border: "1px solid",
               borderColor: selectedQuarter === q ? "var(--color-brand)" : "var(--color-border-primary)",
               borderRadius: "var(--radius-md)", cursor: "pointer",
@@ -627,14 +600,14 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
 
       {/* Objective未設定時の警告 */}
       {!ctxObj?.id && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-warning)", padding: "10px 12px", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)", marginBottom: "16px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-warning)", padding: "10px 12px", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)", marginBottom: "16px" }}>
           先に「Objective・KR」ページで通期Objectiveを保存してください
         </div>
       )}
 
       {/* KR なし */}
       {krs.length === 0 && ctxObj?.id && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
           KRがまだありません。先に「Objective・KR」ページでKRを追加してください。
         </div>
       )}
@@ -667,7 +640,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
               {/* KRヘッダー（固定） */}
               <div style={{
                 flexShrink: 0,
-                fontSize: "11px", fontWeight: "500", color: "var(--color-text-info)",
+                fontSize: "12px", fontWeight: "500", color: "var(--color-text-info)",
                 marginBottom: "8px", display: "flex", alignItems: "center", gap: "5px",
                 padding: "6px 10px", background: "var(--color-bg-info-soft, var(--color-bg-secondary))",
                 borderRadius: "var(--radius-md)", border: "1px solid var(--color-border-info)",
@@ -682,7 +655,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
               {/* TFリスト（スクロール） */}
               <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
                 {linkedTfs.length === 0 && (
-                  <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", paddingLeft: "4px", marginBottom: "6px" }}>
+                  <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", paddingLeft: "4px", marginBottom: "6px" }}>
                     TFがまだ割り当てられていません
                   </div>
                 )}
@@ -701,6 +674,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
                     editForm={form}
                     setEditForm={setForm}
                     onSaveEdit={() => { void saveTfEdit(); }}
+                    saving={tfSave.saving} dirty={tfDirty} saveError={tfSave.error}
                     onCancelEdit={() => setEditId(null)}
                     onDeleteTF={() => deleteTF(editId!)}
                     currentQuarter={selectedQuarter}
@@ -715,7 +689,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
                   <div style={{ marginTop: "6px" }}>
                     <button
                       onClick={() => openNewTfForm(kr.id)}
-                      style={{ fontSize: "10px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
+                      style={{ fontSize: "12px", padding: "3px 10px", border: "1px dashed var(--color-border-primary)", borderRadius: "var(--radius-md)", cursor: "pointer", background: "transparent", color: "var(--color-text-secondary)" }}
                     >＋ 新規TFを作成</button>
                   </div>
                 )}
@@ -749,7 +723,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
               <div style={{ flex: 1 }}>
                 <FieldLabel>TF名 *</FieldLabel>
                 <input value={newTfForm.name} onChange={e => setNewTfForm(f => ({...f, name: e.target.value}))}
-                  placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "11px" }} />
+                  placeholder="例：市場調査TF" maxLength={100} style={{ ...inputStyle, fontSize: "12px" }} />
               </div>
             </div>
             <div style={{ marginBottom: "8px" }}>
@@ -765,18 +739,19 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
               <FieldLabel>詳細・目的（任意）</FieldLabel>
               <textarea value={newTfForm.description} onChange={e => setNewTfForm(f => ({...f, description: e.target.value}))}
                 placeholder="このTask Forceの目的・活動内容（任意）" maxLength={500} rows={2}
-                style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+                style={{ ...inputStyle, fontSize: "12px", resize: "vertical", lineHeight: 1.5 }} />
             </div>
             <div style={{ marginBottom: "10px" }}>
               <FieldLabel>設定した意図・背景（任意）</FieldLabel>
               <textarea value={newTfForm.background} onChange={e => setNewTfForm(f => ({...f, background: e.target.value}))}
                 placeholder="なぜこのTFを設定するか、背景・経緯（任意）" maxLength={1000} rows={2}
-                style={{ ...inputStyle, fontSize: "11px", resize: "vertical", lineHeight: 1.5 }} />
+                style={{ ...inputStyle, fontSize: "12px", resize: "vertical", lineHeight: 1.5 }} />
             </div>
             <div style={{ display: "flex", gap: "6px" }}>
-              <button onClick={() => { void handleCreateAndLinkTf(krId); }} style={primaryBtnStyle}>作成してリンク</button>
+              <SaveButton mode="add" dirty={newTfForm.name.trim() !== ""} saving={tfCreateSave.saving} onClick={() => { void handleCreateAndLinkTf(krId); }} buttonStyle={primaryBtnStyle} label="作成してリンク" />
               <button onClick={() => setNewTfFormKrId(null)} style={ghostBtnStyle}>キャンセル</button>
             </div>
+            <div style={{ marginTop: "8px" }}><SaveErrorBand message={tfCreateSave.error} /></div>
           </AdminFormModal>
         );
       })()}
@@ -785,7 +760,7 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
 }
 
 function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onEdit, onDelete, onSaveToDo, onDeleteToDo,
-  isEditing, editForm, setEditForm, onSaveEdit, onCancelEdit, onDeleteTF, currentQuarter, onMoveTo }: {
+  isEditing, editForm, setEditForm, onSaveEdit, saving, dirty, saveError, onCancelEdit, onDeleteTF, currentQuarter, onMoveTo }: {
   tf: TaskForce; members: Member[];
   todos: ToDo[]; tasks: import("../../lib/localData/types").Task[];
   saveTask: (task: import("../../lib/localData/types").Task) => Promise<void>;
@@ -798,6 +773,9 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
   editForm: { kr_id: string; tf_number: string; name: string; description: string; background: string; leader_member_id: string };
   setEditForm: React.Dispatch<React.SetStateAction<{ kr_id: string; tf_number: string; name: string; description: string; background: string; leader_member_id: string }>>;
   onSaveEdit: () => void;
+  saving: boolean;
+  dirty: boolean;
+  saveError: string;
   onCancelEdit: () => void;
   // DangerAction の busy 状態・エラー捕捉が実際の削除完了を待てるよう Promise を返す
   // （() => void で void 経由の fire-and-forget にすると、DangerAction 側の
@@ -824,7 +802,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
       <button
         onClick={() => setExpanded(e => !e)}
         style={{
-          fontSize: "10px", padding: "3px 6px", whiteSpace: "nowrap",
+          fontSize: "12px", padding: "3px 6px", whiteSpace: "nowrap",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)", cursor: "pointer",
           background: expanded ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
@@ -840,7 +818,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
         <button
           onClick={() => setShowMoveMenu(v => !v)}
           style={{
-            width: "100%", fontSize: "10px", padding: "3px 6px",
+            width: "100%", fontSize: "12px", padding: "3px 6px",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)", cursor: "pointer",
             background: showMoveMenu ? "var(--color-bg-secondary)" : "transparent",
@@ -865,7 +843,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
                   onClick={() => { setShowMoveMenu(false); onMoveTo(q); }}
                   style={{
                     display: "block", width: "100%",
-                    padding: "7px 12px", fontSize: "11px", textAlign: "left",
+                    padding: "7px 12px", fontSize: "12px", textAlign: "left",
                     background: "transparent", border: "none", cursor: "pointer",
                     color: "var(--color-text-primary)",
                     borderBottom: q !== "4Q" ? "1px solid var(--color-border-primary)" : "none",
@@ -885,7 +863,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
       <button
         onClick={onEdit}
         style={{
-          fontSize: "10px", padding: "3px 6px",
+          fontSize: "12px", padding: "3px 6px",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)", cursor: "pointer",
           background: "transparent", color: "var(--color-text-secondary)",
@@ -897,7 +875,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
       <button
         onClick={onDelete}
         style={{
-          fontSize: "10px", padding: "3px 6px",
+          fontSize: "12px", padding: "3px 6px",
           border: "1px solid var(--color-border-danger)",
           borderRadius: "var(--radius-md)", cursor: "pointer",
           background: "transparent", color: "var(--color-text-danger)",
@@ -924,20 +902,20 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
         <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
           {tfNumLabel && (
             <span style={{
-              fontSize: "10px", padding: "2px 8px", borderRadius: "var(--radius-full)",
+              fontSize: "12px", padding: "2px 8px", borderRadius: "var(--radius-full)",
               background: "var(--color-brand-light)", color: "var(--color-text-purple)",
               border: "1px solid var(--color-brand-border)", flexShrink: 0, fontWeight: "600",
             }}>{tfNumLabel}</span>
           )}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", lineHeight: 1.4 }}>{tf.name}</div>
+            <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)", lineHeight: 1.4 }}>{tf.name}</div>
             {tf.description && (
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4 }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4 }}>
                 {tf.description}
               </div>
             )}
             {tf.background && (
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4, fontStyle: "italic" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "1px", lineHeight: 1.4, fontStyle: "italic" }}>
                 📌 {tf.background}
               </div>
             )}
@@ -946,7 +924,7 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
           {/* デスクトップ：アクションボタンをインライン表示 */}
           {!isMobile && !isEditing && actionButtons}
           {isEditing && (
-            <span style={{ fontSize: "10px", color: "var(--color-text-purple)", fontWeight: "600", flexShrink: 0, background: "var(--color-brand-light)", padding: "2px 8px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)" }}>編集中</span>
+            <span style={{ fontSize: "12px", color: "var(--color-text-purple)", fontWeight: "600", flexShrink: 0, background: "var(--color-brand-light)", padding: "2px 8px", borderRadius: "var(--radius-full)", border: "1px solid var(--color-brand-border)" }}>編集中</span>
           )}
         </div>
 
@@ -998,9 +976,10 @@ function TFRow({ tf, members, todos, tasks, saveTask, projects, currentUser, onE
               style={{ ...inputStyle, lineHeight: 1.5 }} />
           </div>
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <button onClick={onSaveEdit} style={primaryBtnStyle}>保存</button>
+            <SaveButton dirty={dirty} saving={saving} blocked={!editForm.name.trim()} onClick={onSaveEdit} buttonStyle={primaryBtnStyle} />
             <button onClick={onCancelEdit} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={saveError} /></div>
           <DangerZone style={{ marginTop: "12px" }}>
             <DangerAction
               label="このTask Forceを完全に削除"
@@ -1046,13 +1025,17 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
   const [addingTaskForTodoId, setAddingTaskForTodoId] = useState<string | null>(null);
   const [expandedTodoId, setExpandedTodoId] = useState<string | null>(null);
   const [decomposeTodoId, setDecomposeTodoId] = useState<string | null>(null);
+  const todoSave = useFormSave();
+  const todoDirty = useSnapshotDirty(form, editId);
 
   const openAdd = () => {
+    todoSave.setError("");
     setEditId("new");
     setForm({ name: "", title: "", due_date: "", memo: "" });
   };
 
   const openEdit = (todo: ToDo) => {
+    todoSave.setError("");
     setEditId(todo.id);
     setForm({ name: todo.name ?? "", title: todo.title, due_date: todo.due_date ?? "", memo: todo.memo });
   };
@@ -1076,8 +1059,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
       updated_at: now,
       updated_by: currentUser.id,
     };
-    await onSave(todo);
-    setEditId(null);
+    if (await todoSave.run(() => onSave(todo), "保存に失敗しました")) setEditId(null);
   };
 
   const deleteTodo = async (id: string) => {
@@ -1099,7 +1081,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
       background: "var(--color-bg-secondary)",
       borderTop: "1px solid var(--color-border-primary)",
     }}>
-      <div style={{ fontSize: "10px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
+      <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-tertiary)", marginBottom: "8px", letterSpacing: "0.05em" }}>
         ToDo
       </div>
 
@@ -1107,7 +1089,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
       <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "8px" }}>
         {todos.map((todo, i) => (
           editId === todo.id ? (
-            <ToDoForm key={todo.id} form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} />
+            <ToDoForm key={todo.id} form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} saving={todoSave.saving} dirty={todoDirty} error={todoSave.error} />
           ) : (
             <div key={todo.id} style={{
               background: "var(--color-bg-primary)",
@@ -1117,20 +1099,20 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
             }}>
               {/* ToDoヘッダー */}
               <div style={{ display: "flex", alignItems: "flex-start", gap: "6px", padding: "8px 10px" }}>
-                <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px", flexShrink: 0, minWidth: "14px" }}>{i + 1}.</span>
+                <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "2px", flexShrink: 0, minWidth: "14px" }}>{i + 1}.</span>
                 <div style={{ flex: 1 }}>
                   {todo.name && (
-                    <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "2px" }}>
+                    <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "2px" }}>
                       {todo.name}
                     </div>
                   )}
                   {todo.title && (
-                    <div style={{ fontSize: "12px", color: todo.name ? "var(--color-text-secondary)" : "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                    <div style={{ fontSize: "13px", color: todo.name ? "var(--color-text-secondary)" : "var(--color-text-primary)", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
                       {todo.title}
                     </div>
                   )}
                   {(todo.due_date || todo.memo) && (
-                    <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px", display: "flex", gap: "8px" }}>
                       {todo.due_date && <span>期日: {todo.due_date}</span>}
                       {todo.memo && <span style={{ flex: 1 }}>{todo.memo}</span>}
                     </div>
@@ -1143,7 +1125,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
                     const done = todoTasks.filter(t => t.status === "done").length;
                     return (
                       <button onClick={() => toggleTodoTasks(todo.id)} style={{
-                        fontSize: "9px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+                        fontSize: "12px", padding: "1px 7px", borderRadius: "var(--radius-full)",
                         background: expandedTodoId === todo.id ? "var(--color-bg-info)" : "var(--color-bg-secondary)",
                         color: expandedTodoId === todo.id ? "var(--color-text-info)" : "var(--color-text-tertiary)",
                         border: `1px solid ${expandedTodoId === todo.id ? "var(--color-border-info)" : "var(--color-border-primary)"}`,
@@ -1170,20 +1152,20 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
                           const m = members.find(mb => mb.id === task.assignee_member_id);
                           return (
                             <div key={task.id} style={{ display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px", background: "var(--color-bg-primary)", borderRadius: "var(--radius-sm)", border: "1px solid var(--color-border-primary)" }}>
-                              <span style={{ fontSize: "9px", color: TASK_STATUS_STYLE[task.status].color, fontWeight: "500", flexShrink: 0 }}>{TASK_STATUS_LABEL[task.status]}</span>
-                              <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</span>
+                              <span style={{ fontSize: "12px", color: TASK_STATUS_STYLE[task.status].color, fontWeight: "500", flexShrink: 0 }}>{TASK_STATUS_LABEL[task.status]}</span>
+                              <span style={{ fontSize: "12px", color: "var(--color-text-primary)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{task.name}</span>
                               {m && <Avatar member={m} size={14} />}
-                              {task.due_date && <span style={{ fontSize: "9px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{task.due_date.slice(5).replace("-", "/")}</span>}
+                              {task.due_date && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{task.due_date.slice(5).replace("-", "/")}</span>}
                             </div>
                           );
                         })}
                       </div>
                     ) : (
-                      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>タスクなし</div>
+                      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "6px" }}>タスクなし</div>
                     )}
 
                     {/* タスク追加：通常ビューと同じQuickAddTaskModalに統一（重複実装の解消） */}
-                    <button onClick={() => openAddTask(todo.id)} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ タスクを追加</button>
+                    <button onClick={() => openAddTask(todo.id)} style={{ ...ghostBtnStyle, fontSize: "12px" }}>＋ タスクを追加</button>
                   </div>
                 );
               })()}
@@ -1191,7 +1173,7 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
           )
         ))}
         {todos.length === 0 && editId !== "new" && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
             まだToDoがありません
           </div>
         )}
@@ -1199,9 +1181,9 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
 
       {/* 追加フォーム or 追加ボタン */}
       {editId === "new" ? (
-        <ToDoForm form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} />
+        <ToDoForm form={form} setForm={setForm} onSave={save} onCancel={() => setEditId(null)} saving={todoSave.saving} dirty={todoDirty} isNew error={todoSave.error} />
       ) : (
-        <button onClick={openAdd} style={{ ...ghostBtnStyle, fontSize: "11px" }}>＋ ToDoを追加</button>
+        <button onClick={openAdd} style={{ ...ghostBtnStyle, fontSize: "12px" }}>＋ ToDoを追加</button>
       )}
 
       {/* AIタスク自動分解モーダル */}
@@ -1235,12 +1217,17 @@ function ToDoPanel({ tfId, todos, tasks, members, saveTask, projects, currentUse
 // ===== ToDoフォーム =====
 
 function ToDoForm({
-  form, setForm, onSave, onCancel,
+  form, setForm, onSave, onCancel, saving, dirty, isNew = false, error,
 }: {
   form: { name: string; title: string; due_date: string; memo: string };
   setForm: React.Dispatch<React.SetStateAction<{ name: string; title: string; due_date: string; memo: string }>>;
   onSave: () => void;
   onCancel: () => void;
+  saving: boolean;
+  /** 編集：保存済み内容との差分／追加：入力が揃ったか（タイトルか内容のどちらか） */
+  dirty: boolean;
+  isNew?: boolean;
+  error: string;
 }) {
   return (
     <div style={{
@@ -1287,9 +1274,17 @@ function ToDoForm({
         </div>
       </div>
       <div style={{ display: "flex", gap: "8px" }}>
-        <button onClick={onSave} style={primaryBtnStyle}>保存</button>
+        <SaveButton
+          mode={isNew ? "add" : "edit"}
+          dirty={isNew ? (form.title.trim() !== "" || form.name.trim() !== "") : dirty}
+          blocked={!form.title.trim() && !form.name.trim()}
+          saving={saving}
+          onClick={onSave}
+          buttonStyle={primaryBtnStyle}
+        />
         <button onClick={onCancel} style={ghostBtnStyle}>キャンセル</button>
       </div>
+      <div style={{ marginTop: "8px" }}><SaveErrorBand message={error} /></div>
     </div>
   );
 }
@@ -1401,7 +1396,11 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
     onDirtyChange(editId !== null);
   }, [editId, onDirtyChange]);
 
+  const pjSave = useFormSave();
+  const pjDirty = useSnapshotDirty(form, editId);
+
   const openAdd = () => {
+    pjSave.setError("");
     setEditId("new");
     setForm({
       name: "", purpose: "", contribution_memo: "",
@@ -1415,6 +1414,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   };
 
   const openEdit = (pj: Project) => {
+    pjSave.setError("");
     setEditId(pj.id);
     setForm({
       name: pj.name, purpose: pj.purpose,
@@ -1430,16 +1430,16 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
   const save = async () => {
     if (!form.name.trim() || !form.purpose.trim()) return;
     if (form.start_date && form.end_date && form.start_date > form.end_date) {
-      await alertDialog("開始日は終了日より前に設定してください。");
+      pjSave.setError("開始日は終了日より前に設定してください。");
       return;
     }
     const owner_member_id = form.owner_member_ids[0] ?? "";
     if (!owner_member_id) {
-      await alertDialog("担当者を1名以上選択してください。");
+      pjSave.setError("担当者を1名以上選択してください。");
       return;
     }
     const now = new Date().toISOString();
-    try {
+    const ok = await pjSave.run(async () => {
       // form の tf_ids は project_task_forces への差分適用用。Project entity 自身には含めない
       const { tf_ids, ...projectFields } = form;
       const projectId = editId === "new" ? uuidv4() : editId!;
@@ -1461,11 +1461,8 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
         ...toAdd.map(tfId => addProjectTaskForce({ project_id: projectId, tf_id: tfId })),
         ...toRemove.map(tfId => removeProjectTaskForce(projectId, tfId)),
       ]);
-      setEditId(null);
-    } catch (e) {
-      const msg = getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
+    }, "保存に失敗しました");
+    if (ok) setEditId(null);
   };
 
   const deletePJ = async (id: string) => {
@@ -1495,7 +1492,7 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
       {projects.length === 0 && (
         <>
           <FirstStepHint>💡 KR を実現する手段として、プロジェクト（PJ）を登録します。</FirstStepHint>
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
             まだプロジェクトがありません。「＋ 追加」から作成してください。
           </div>
         </>
@@ -1520,11 +1517,11 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
             }} />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "6px", marginBottom: "2px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                <span style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>
                   {pj.name}
                 </span>
                 <span style={{
-                  fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                  fontSize: "12px", padding: "1px 6px", borderRadius: "3px",
                   background: pj.status === "active" ? "var(--color-bg-success)" : "var(--color-bg-tertiary)",
                   color: pj.status === "active" ? "var(--color-text-success)" : "var(--color-text-tertiary)",
                 }}>
@@ -1532,14 +1529,14 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
                 </span>
                 {linkedTfCount > 0 && (
                   <span title={`紐づくTF: ${linkedTfCount}件`} style={{
-                    fontSize: "9px", padding: "1px 6px", borderRadius: "3px",
+                    fontSize: "12px", padding: "1px 6px", borderRadius: "3px",
                     background: "var(--color-bg-info)", color: "var(--color-text-info)",
                   }}>
                     TF×{linkedTfCount}
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.4 }}>
                 {pj.purpose.slice(0, 60)}{pj.purpose.length > 60 ? "…" : ""}
               </div>
             </div>
@@ -1560,16 +1557,16 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
               border: "1px solid var(--color-border-primary)",
               borderRadius: "var(--radius-md)",
             }}>
-              <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "4px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "4px" }}>
                 ◆ マイルストーン
               </div>
               {/* 説明（1行に圧縮。詳細はガイドへ） */}
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", lineHeight: 1.5, marginBottom: "8px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.5, marginBottom: "8px" }}>
                 PJの節目（例：β版リリース）の日付マーカー。ガントに <span style={{ color: "var(--color-signal-yellow)" }}>◆</span> で表示されます。
               </div>
               {/* 既存一覧 */}
               {milestones.filter(ms => ms.project_id === pj.id).length === 0 ? (
-                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
                   まだ登録されていません。下のフォームから節目を追加できます（例：「6/30 β版リリース」）。
                 </div>
               ) : (
@@ -1588,9 +1585,9 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
                         borderRadius: "var(--radius-sm)",
                         cursor: "pointer",
                       }}>
-                      <span style={{ fontSize: "11px", color: "var(--color-signal-yellow)", flexShrink: 0 }}>◆</span>
-                      <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", flexShrink: 0 }}>{ms.date}</span>
-                      <span style={{ fontSize: "11px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}{ms.description ? " 📝" : ""}</span>
+                      <span style={{ fontSize: "12px", color: "var(--color-signal-yellow)", flexShrink: 0 }}>◆</span>
+                      <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", flexShrink: 0 }}>{ms.date}</span>
+                      <span style={{ fontSize: "12px", color: "var(--color-text-primary)", flex: 1 }}>{ms.name}{ms.description ? " 📝" : ""}</span>
                       <IconBtn danger onClick={(e) => { e?.stopPropagation?.(); removeMilestone(ms.id); }}>✕</IconBtn>
                     </div>
                   ))}
@@ -1627,17 +1624,17 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
         }}>
-          <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "12px", color: "var(--color-text-primary)" }}>
+          <div style={{ fontSize: "13px", fontWeight: "500", marginBottom: "12px", color: "var(--color-text-primary)" }}>
             プロジェクトを編集
           </div>
+          <SaveKeyScope onSave={() => void save()}>
           <ProjectFormFields form={form} setForm={setForm} members={members} inviteGroupIds={inviteGroupIds} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={save} style={primaryBtnStyle}
-              disabled={!form.name.trim() || !form.purpose.trim()}>
-              保存
-            </button>
+            <SaveButton dirty={pjDirty} saving={pjSave.saving} blocked={!form.name.trim() || !form.purpose.trim()} onClick={() => void save()} buttonStyle={primaryBtnStyle} />
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={pjSave.error} /></div>
+          </SaveKeyScope>
 
           <DangerZone style={{ marginTop: "16px" }}>
             <DangerAction
@@ -1657,14 +1654,14 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
           onClose={() => setEditId(null)}
           maxWidth="640px"
         >
+          <SaveKeyScope onSave={() => void save()}>
           <ProjectFormFields form={form} setForm={setForm} members={members} inviteGroupIds={inviteGroupIds} keyResults={keyResultsForPicker} taskForces={taskForcesForPicker} isMobile={isMobile} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={save} style={primaryBtnStyle}
-              disabled={!form.name.trim() || !form.purpose.trim()}>
-              保存
-            </button>
+            <SaveButton mode="add" dirty={form.name.trim() !== "" && form.purpose.trim() !== ""} saving={pjSave.saving} onClick={() => void save()} buttonStyle={primaryBtnStyle} />
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={pjSave.error} /></div>
+          </SaveKeyScope>
         </AdminFormModal>
       )}
     </div>
@@ -1719,7 +1716,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
               return (
                 <span key={id} style={{
                   display: "inline-flex", alignItems: "center", gap: "4px",
-                  fontSize: "11px", padding: "2px 8px",
+                  fontSize: "12px", padding: "2px 8px",
                   background: "var(--color-bg-tertiary)",
                   border: "1px solid var(--color-border-primary)",
                   borderRadius: "var(--radius-full)",
@@ -1771,7 +1768,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
             return (
               <span key={id} style={{
                 display: "inline-flex", alignItems: "center", gap: "4px",
-                fontSize: "11px", padding: "2px 8px",
+                fontSize: "12px", padding: "2px 8px",
                 background: "var(--color-bg-tertiary)",
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-full)",
@@ -1811,7 +1808,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
       <div>
         <FieldLabel>紐づける TF（任意・KR との連携）</FieldLabel>
         {keyResults.length === 0 ? (
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
             KR がまだ登録されていません。「Objective・KR」ページで KR を作ると、配下の TF をここで紐づけられます。
           </div>
         ) : (
@@ -1832,7 +1829,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
               return (
                 <div key={kr.id}>
                   <div style={{
-                    fontSize: "10px", color: "var(--color-text-tertiary)",
+                    fontSize: "12px", color: "var(--color-text-tertiary)",
                     fontWeight: 600, marginBottom: "3px",
                   }}>
                     KR{krIdx + 1}：{kr.title}
@@ -1843,7 +1840,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
                       return (
                         <label key={tf.id} style={{
                           display: "flex", alignItems: "center", gap: "6px",
-                          fontSize: "11px", color: "var(--color-text-primary)",
+                          fontSize: "12px", color: "var(--color-text-primary)",
                           cursor: "pointer", padding: "2px 0",
                         }}>
                           <input
@@ -1871,7 +1868,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
               );
             })}
             {taskForces.length === 0 && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                 TF が登録されていません。「Task Force・ToDo」ページで先に TF を作ってください。
               </div>
             )}
@@ -1900,39 +1897,39 @@ function MemberRow({ m, groups, currentUser, onEdit, canEdit }: {
     }}>
       <Avatar member={m} size={28} />
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+        <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>
           {m.display_name}
           {m.id === currentUser.id && (
-            <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-purple)", background: "var(--color-brand-light)", padding: "1px 6px", borderRadius: "3px" }}>
+            <span style={{ fontSize: "12px", marginLeft: "6px", color: "var(--color-text-purple)", background: "var(--color-brand-light)", padding: "1px 6px", borderRadius: "3px" }}>
               あなた
             </span>
           )}
           {m.is_admin && (
-            <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-brand)", padding: "1px 6px", borderRadius: "3px" }}>
+            <span style={{ fontSize: "12px", marginLeft: "6px", color: "#fff", background: "var(--color-brand)", padding: "1px 6px", borderRadius: "3px" }}>
               管理者
             </span>
           )}
           {m.is_super_admin && (
-            <span style={{ fontSize: "9px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
+            <span style={{ fontSize: "12px", marginLeft: "6px", color: "#fff", background: "var(--color-text-purple)", padding: "1px 6px", borderRadius: "3px" }}>
               全社スーパー管理者
             </span>
           )}
           {(m.group_ids?.length ?? 0) > 1 && (
-            <span style={{ fontSize: "9px", marginLeft: "6px", color: "var(--color-text-info)", background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px" }}>
+            <span style={{ fontSize: "12px", marginLeft: "6px", color: "var(--color-text-info)", background: "var(--color-bg-info)", padding: "1px 6px", borderRadius: "3px" }}>
               兼務（{m.group_ids!.length}部署）
             </span>
           )}
         </div>
         {groups.length > 1 && (
-          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
             {groups.find(g => g.id === m.group_id)?.name ?? "（部署未設定）"}
           </div>
         )}
         {m.email && (
-          <div style={{ fontSize: "10px", color: "var(--color-brand)" }}>{m.email}</div>
+          <div style={{ fontSize: "12px", color: "var(--color-brand)" }}>{m.email}</div>
         )}
         {m.teams_account && (
-          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{m.teams_account}</div>
         )}
       </div>
       {canEdit && <IconBtn onClick={() => onEdit(m)}>✏</IconBtn>}
@@ -1995,13 +1992,18 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
     onDirtyChange(editId !== null);
   }, [editId, onDirtyChange]);
 
+  const memberSave = useFormSave();
+  const memberDirty = useSnapshotDirty(form, editId);
+
   const openAdd = () => {
+    memberSave.setError("");
     setEditId("new");
     const homeId = selectedGroupId || groups[0]?.id || "";
     setForm({ display_name: "", short_name: "", teams_account: "", email: "", color_bg: "var(--avatar-1-bg)", color_text: "var(--avatar-1-text)", group_id: homeId, group_ids: homeId ? [homeId] : [], is_admin: false, is_super_admin: false });
   };
 
   const openEdit = (m: Member) => {
+    memberSave.setError("");
     setEditId(m.id);
     const groupIds = m.group_ids?.length ? m.group_ids : (m.group_id ? [m.group_id] : []);
     setForm({ display_name: m.display_name, short_name: m.short_name, teams_account: m.teams_account, email: m.email ?? "", color_bg: m.color_bg, color_text: m.color_text, group_id: m.group_id ?? "", group_ids: groupIds, is_admin: m.is_admin ?? false, is_super_admin: m.is_super_admin ?? false });
@@ -2014,7 +2016,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
     const shortName = form.short_name.trim() || form.display_name.split(/[\s　]/)[0];
 
     const now = new Date().toISOString();
-    try {
+    const ok = await memberSave.run(async () => { try {
       const emailVal = form.email.trim() || null;
       const groupIdVal = form.group_id || null;
       // ホーム部署は必ず group_ids に含める最終正規化（DBのCHECK制約 members_group_id_in_group_ids
@@ -2054,13 +2056,13 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
         const existing = members.find(m => m.id === editId);
         if (existing) await saveMember({ ...existing, ...form, email: emailVal, group_id: groupIdVal, group_ids: groupIdsVal, short_name: shortName, initials, is_admin: isAdminVal, is_super_admin: isSuperAdminVal, updated_by: currentUser.id });
       }
-      setEditId(null);
     } catch (e) {
-      const msg = isMemberEmailUniqueViolation(e)
-        ? "このメールアドレスは既に別のメンバーに登録されています。同じ人を複数部署に所属させたい場合は、そのメンバーを編集して「アクセス可能な部署」に部署を追加してください。"
-        : getErrorMessage(e);
-      await alertDialog(`保存に失敗しました。\n${msg}`);
-    }
+      if (isMemberEmailUniqueViolation(e)) {
+        throw new Error("このメールアドレスは既に別のメンバーに登録されています。同じ人を複数部署に所属させたい場合は、そのメンバーを編集して「アクセス可能な部署」に部署を追加してください。");
+      }
+      throw e;
+    } }, "保存に失敗しました");
+    if (ok) setEditId(null);
   };
 
   const handleDeleteMember = async (id: string) => {
@@ -2091,7 +2093,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
         headerExtra={canAdd ? <button onClick={openAdd} style={addBtnStyle}>＋ 追加</button> : undefined}
       >
       {!canAdd && (
-        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
           この部署のメンバーの追加・編集・削除は、この部署の管理者が行います（あなたは自分の行だけ編集できます）。
         </div>
       )}
@@ -2111,7 +2113,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           badge={`${guestMembers.length}名`}
           style={{ marginTop: "12px" }}
         >
-          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "8px" }}>
             特定のプロジェクトのみ招待された部署外のメンバーです。部署絞り込みの対象外のため、ここに常に表示します。
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
@@ -2128,18 +2130,17 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           marginTop: "12px", padding: "14px", background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
-          <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
+          <div style={{ fontSize: "13px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
             メンバーを編集
           </div>
+          <SaveKeyScope onSave={() => void save()}>
           <MemberFormFields form={form} setForm={setForm} groups={groups} isMobile={isMobile} editId={editId} currentUser={currentUser} members={members} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={save} disabled={!form.display_name.trim()} style={{
-              ...primaryBtnStyle,
-              opacity: form.display_name.trim() ? 1 : 0.4,
-              cursor: form.display_name.trim() ? "pointer" : "not-allowed",
-            }}>保存</button>
+            <SaveButton dirty={memberDirty} saving={memberSave.saving} blocked={!form.display_name.trim()} onClick={() => void save()} buttonStyle={primaryBtnStyle} />
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={memberSave.error} /></div>
+          </SaveKeyScope>
 
           {editId !== currentUser.id ? (canDeleteMember(currentUser, members.find(m => m.id === editId) ?? { id: editId }, manageableInviteGroupIds) && (
             <DangerZone key={editId} style={{ marginTop: "16px" }}>
@@ -2151,7 +2152,7 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
               />
             </DangerZone>
           )) : (
-            <div style={{ marginTop: "16px", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+            <div style={{ marginTop: "16px", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
               自分自身は削除できません。
             </div>
           )}
@@ -2165,15 +2166,14 @@ function MembersSection({ currentUser, onDirtyChange, selectedGroupId }: { curre
           subtitle="新しいメンバーを登録します"
           onClose={() => setEditId(null)}
         >
+          <SaveKeyScope onSave={() => void save()}>
           <MemberFormFields form={form} setForm={setForm} groups={groups} isMobile={isMobile} editId={editId} currentUser={currentUser} members={members} />
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={save} disabled={!form.display_name.trim()} style={{
-              ...primaryBtnStyle,
-              opacity: form.display_name.trim() ? 1 : 0.4,
-              cursor: form.display_name.trim() ? "pointer" : "not-allowed",
-            }}>保存</button>
+            <SaveButton mode="add" dirty={form.display_name.trim() !== ""} saving={memberSave.saving} onClick={() => void save()} buttonStyle={primaryBtnStyle} />
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={memberSave.error} /></div>
+          </SaveKeyScope>
         </AdminFormModal>
       )}
     </div>
@@ -2225,7 +2225,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
         <FieldLabel>ログイン用メールアドレス（任意）</FieldLabel>
         <input type="email" value={form.email} onChange={e => setForm(f => ({...f, email: e.target.value}))}
           placeholder="例：y.yamamoto@amita-net.co.jp" style={inputStyle} />
-        <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
           設定するとログイン後にこのメンバーが自動選択されます
         </div>
       </div>
@@ -2248,10 +2248,10 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
             />
           ) : (
             <>
-              <div style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>
+              <div style={{ fontSize: "13px", color: "var(--color-text-primary)" }}>
                 {groups.find(g => g.id === form.group_id)?.name ?? "（未設定）"}
               </div>
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
                 部署の異動（ホーム部署の変更）は全社スーパー管理者のみ行えます。
               </div>
             </>
@@ -2271,14 +2271,14 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
                   return (
                     <span key={id} style={{
                       display: "inline-flex", alignItems: "center", gap: "4px",
-                      fontSize: "11px", padding: "2px 8px",
+                      fontSize: "12px", padding: "2px 8px",
                       background: isHome ? "var(--color-brand-light)" : "var(--color-bg-tertiary)",
                       border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-full)",
                     }}>
                       {g.name}
                       {isHome ? (
-                        <span style={{ fontSize: "9px", color: "var(--color-brand)" }}>（ホーム）</span>
+                        <span style={{ fontSize: "12px", color: "var(--color-brand)" }}>（ホーム）</span>
                       ) : (
                         <button onClick={() => setForm(f => ({ ...f, group_ids: f.group_ids.filter(i => i !== id) }))}
                           style={{ background: "none", border: "none", cursor: "pointer", padding: "0", lineHeight: 1, color: "var(--color-text-tertiary)" }}>×</button>
@@ -2299,7 +2299,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
                 ]}
                 searchable searchPlaceholder="部署で検索..."
               />
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
                 ホーム部署は必ず含まれ、外せません。兼務させたい部署をここに追加してください。
               </div>
             </>
@@ -2307,7 +2307,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
             <>
               <div style={{ display: "flex", flexWrap: "wrap", gap: "4px" }}>
                 {form.group_ids.length === 0 && (
-                  <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>（未設定）</span>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>（未設定）</span>
                 )}
                 {form.group_ids.map(id => {
                   const g = groups.find(g => g.id === id);
@@ -2316,17 +2316,17 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
                   return (
                     <span key={id} style={{
                       display: "inline-flex", alignItems: "center", gap: "4px",
-                      fontSize: "11px", padding: "2px 8px",
+                      fontSize: "12px", padding: "2px 8px",
                       background: isHome ? "var(--color-brand-light)" : "var(--color-bg-tertiary)",
                       border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-full)",
                     }}>
-                      {g.name}{isHome && <span style={{ fontSize: "9px", color: "var(--color-brand)" }}>（ホーム）</span>}
+                      {g.name}{isHome && <span style={{ fontSize: "12px", color: "var(--color-brand)" }}>（ホーム）</span>}
                     </span>
                   );
                 })}
               </div>
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "3px" }}>
                 複数部署の付与・変更は全社スーパー管理者のみ行えます。
               </div>
             </>
@@ -2347,8 +2347,8 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
             }
             style={{ width: 14, height: 14, accentColor: "var(--color-brand)", cursor: "pointer" }}
           />
-          <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>管理者権限</span>
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+          <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>管理者権限</span>
+          <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
             （管理者が1人以上いる場合、非管理者は管理画面にアクセスできません）
           </span>
         </label>
@@ -2368,8 +2368,8 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
               }
               style={{ width: 14, height: 14, accentColor: "var(--color-text-purple)", cursor: "pointer" }}
             />
-            <span style={{ fontSize: "11px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+            <span style={{ fontSize: "12px", color: "var(--color-text-primary)" }}>全社スーパー管理者</span>
+            <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
               （部署をまたいで全部署を横断管理できます。新規部署の作成もこの権限が必要です）
             </span>
           </label>
@@ -2403,11 +2403,11 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
             width: "28px", height: "28px", borderRadius: "50%",
             background: form.color_bg, color: form.color_text,
             display: "flex", alignItems: "center", justifyContent: "center",
-            fontSize: "11px", fontWeight: "600",
+            fontSize: "12px", fontWeight: "600",
           }}>
             {form.display_name.replace(/[\s　]+/g,"").slice(0,2).toUpperCase() || "??"}
           </div>
-          <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+          <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
             {form.display_name || "氏名を入力してください"}
           </span>
         </div>
@@ -2440,6 +2440,8 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "",
   });
   const [error, setError] = useState<string | null>(null);
+  const groupSave = useFormSave();
+  const groupDirty = useSnapshotDirty(form, editId);
 
   useEffect(() => {
     onDirtyChange(editId !== null);
@@ -2449,18 +2451,20 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
     setEditId("new");
     setForm({ name: "", firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
+    groupSave.setError("");
   };
 
   const openEdit = (g: Group) => {
     setEditId(g.id);
     setForm({ name: g.name, firstMemberName: "", firstMemberShortName: "", firstMemberEmail: "" });
     setError(null);
+    groupSave.setError("");
   };
 
   const save = async () => {
     if (!form.name.trim()) return;
     const now = new Date().toISOString();
-    try {
+    const ok = await groupSave.run(async () => {
       if (editId === "new") {
         const newGroupId = `grp-${Date.now()}`;
         await saveGroup({
@@ -2501,10 +2505,8 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           });
         }
       }
-      setEditId(null);
-    } catch (e) {
-      setError(formatErrorForUser("保存に失敗しました", e));
-    }
+    }, "保存に失敗しました");
+    if (ok) setEditId(null);
   };
 
   const handleDelete = async (g: Group) => {
@@ -2529,13 +2531,13 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
         <SummaryTile label="部署数" value={groups.length} tone="accent" />
       </SummaryRow>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
         部署単位でデータが隔離されます（マルチテナント）。メンバーは1つの部署に属します。
         {!isSuperAdmin && "新規部署の作成は全社スーパー管理者のみ行えます。"}
       </div>
 
       {error && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-danger)", marginBottom: "8px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>
           {error}
         </div>
       )}
@@ -2548,7 +2550,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               return (
                 <div key={g.id} style={{
                   display: "flex", justifyContent: "space-between",
-                  padding: "6px 12px", fontSize: "11px",
+                  padding: "6px 12px", fontSize: "12px",
                   background: "var(--color-bg-secondary)", borderRadius: "var(--radius-sm)",
                 }}>
                   <span style={{ color: "var(--color-text-primary)" }}>{g.name}</span>
@@ -2579,10 +2581,10 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               borderRadius: "var(--radius-md)",
             }}>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>
                   {g.name}
                 </div>
-                <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                   メンバー {memberCount}名 / ID: {g.id}
                 </div>
               </div>
@@ -2593,7 +2595,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           );
         })}
         {groups.length === 0 && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
             部署がありません。「＋ 部署を追加」から作成してください。
           </div>
         )}
@@ -2605,7 +2607,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           marginTop: "12px", padding: "14px", background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
-          <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
+          <div style={{ fontSize: "13px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
             {editId === "new" ? "部署を追加" : "部署を編集"}
           </div>
           <div>
@@ -2620,7 +2622,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           </div>
           {editId === "new" && (
             <div style={{ marginTop: "10px" }}>
-              <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+              <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
                 最初のメンバー（この部署の管理者・任意）
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
@@ -2645,19 +2647,23 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
                   style={inputStyle}
                 />
               </div>
-              <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
                 入力すると、この部署の最初の管理者として作成されます（後からメンバーのページでも追加可）。
               </div>
             </div>
           )}
           <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            <button onClick={() => { void save(); }} disabled={!form.name.trim()} style={{
-              ...primaryBtnStyle,
-              opacity: form.name.trim() ? 1 : 0.4,
-              cursor: form.name.trim() ? "pointer" : "not-allowed",
-            }}>保存</button>
+            <SaveButton
+              mode={editId === "new" ? "add" : "edit"}
+              dirty={editId === "new" ? form.name.trim() !== "" : groupDirty}
+              blocked={!form.name.trim()}
+              saving={groupSave.saving}
+              onClick={() => { void save(); }}
+              buttonStyle={primaryBtnStyle}
+            />
             <button onClick={() => setEditId(null)} style={ghostBtnStyle}>キャンセル</button>
           </div>
+          <div style={{ marginTop: "8px" }}><SaveErrorBand message={groupSave.error} /></div>
 
           {editId !== "new" && (() => {
             const g = groups.find(x => x.id === editId);
@@ -2667,7 +2673,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
             return (
               <DangerZone key={editId} style={{ marginTop: "16px" }}>
                 {blocked ? (
-                  <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
+                  <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
                     この部署には {memberCount} 名のメンバーがいます。メンバーの部署を変更してから削除してください。
                   </div>
                 ) : (
@@ -2692,6 +2698,13 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   );
 }
 
+// タグのフォームの保存ボタン（ブランド色の塗りつぶし）。状態（保存済み／保存／保存中）は SaveButton が決める
+const TAG_SAVE_BTN_STYLE: React.CSSProperties = {
+  padding: "7px 16px", fontSize: "14px", fontWeight: "500",
+  background: "var(--color-brand)", color: "#fff",
+  border: "none", borderRadius: "var(--radius-md)",
+};
+
 // ===================================================
 // 共通UI部品
 // ===================================================
@@ -2701,10 +2714,10 @@ function SectionHeader({ title, badge, action }: {
 }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px" }}>
-      <span style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>{title}</span>
+      <span style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)" }}>{title}</span>
       {badge && (
         <span style={{
-          fontSize: "10px", padding: "1px 7px", borderRadius: "99px",
+          fontSize: "12px", padding: "1px 7px", borderRadius: "99px",
           background: "var(--color-bg-success)", color: "var(--color-text-success)",
           border: "1px solid var(--color-border-success)",
         }}>{badge}</span>
@@ -2716,7 +2729,7 @@ function SectionHeader({ title, badge, action }: {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "3px" }}>
+    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "3px" }}>
       {children}
     </div>
   );
@@ -2757,7 +2770,7 @@ function IconBtn({ children, onClick, title, danger }: {
         border: "1px solid var(--color-border-primary)",
         background: danger && hover ? "var(--color-bg-danger)" : hover ? "var(--color-bg-secondary)" : "transparent",
         color: danger && hover ? "var(--color-text-danger)" : "var(--color-text-secondary)",
-        fontSize: "11px", cursor: "pointer",
+        fontSize: "12px", cursor: "pointer",
         display: "flex", alignItems: "center", justifyContent: "center",
         transition: "background 0.1s, color 0.1s",
       }}
@@ -2767,8 +2780,8 @@ function IconBtn({ children, onClick, title, danger }: {
   );
 }
 
-function EditInline({ value, onSave, onCancel }: {
-  value: string; onSave: (v: string) => void; onCancel: () => void;
+function EditInline({ value, onSave, onCancel, saving = false }: {
+  value: string; onSave: (v: string) => void; onCancel: () => void; saving?: boolean;
 }) {
   const [v, setV] = useState(value);
   return (
@@ -2777,11 +2790,11 @@ function EditInline({ value, onSave, onCancel }: {
         style={{ ...inputStyle, flex: 1 }}
         autoFocus
         onKeyDown={e => {
-          if (e.key === "Enter") onSave(v);
+          if (e.key === "Enter" && !e.nativeEvent.isComposing && v.trim()) onSave(v);
           if (e.key === "Escape") onCancel();
         }}
       />
-      <button onClick={() => onSave(v)} style={primaryBtnStyle}>保存</button>
+      <SaveButton dirty={v !== value} blocked={!v.trim()} saving={saving} onClick={() => onSave(v)} buttonStyle={primaryBtnStyle} />
       <button onClick={onCancel} style={ghostBtnStyle}>✕</button>
     </div>
   );
@@ -2861,17 +2874,19 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
   const [draftName, setDraftName] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
   const [draftMemberIds, setDraftMemberIds] = useState<string[]>([]);
-  const [saved, setSaved] = useState(false);
+  const tagSave = useFormSave();
   const [error, setError] = useState<string | null>(null);
 
   const isCreating = editingId === "__new__";
   const isDirty = editingId !== null;
+  const tagDirty = useSnapshotDirty({ draftName, draftDesc, draftMemberIds }, editingId);
 
   useEffect(() => {
     onDirtyChange(isDirty);
   }, [isDirty, onDirtyChange]);
 
   const startNew = () => {
+    tagSave.setError("");
     setEditingId("__new__");
     setDraftName("");
     setDraftDesc("");
@@ -2880,6 +2895,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
   };
 
   const startEdit = (tag: MemberTag) => {
+    tagSave.setError("");
     setEditingId(tag.id);
     setDraftName(tag.name);
     setDraftDesc(tag.description);
@@ -2923,14 +2939,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
           description: draftDesc.trim(),
           updated_by: currentUser.id,
         };
-    try {
-      await saveMemberTag(tag, draftMemberIds);
-      setEditingId(null);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 1500);
-    } catch (e) {
-      setError(formatErrorForUser("タグ保存に失敗しました", e));
-    }
+    if (await tagSave.run(() => saveMemberTag(tag, draftMemberIds), "タグ保存に失敗しました")) setEditingId(null);
   };
 
   const handleDelete = async (tag: MemberTag) => {
@@ -2953,14 +2962,14 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
         <SummaryTile label="タグ数" value={activeTags.length} tone="accent" />
       </SummaryRow>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.6 }}>
         メンバーをグループ化するタグ。「請求書PJ」「広報チーム」「全員」のようなまとまりを定義し、
         将来のフェーズでタスクの担当者として一括指定できるようになります（現在は定義のみ可能）。
       </div>
 
       {error && (
         <div style={{
-          fontSize: "12px", color: "var(--color-text-danger)",
+          fontSize: "13px", color: "var(--color-text-danger)",
           background: "var(--color-bg-danger)",
           padding: "8px 12px", borderRadius: "var(--radius-md)",
         }}>{error}</div>
@@ -2974,7 +2983,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
           borderRadius: "var(--radius-lg)", padding: "14px 16px",
           display: "flex", flexDirection: "column", gap: "10px",
         }}>
-          <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>
+          <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>
             タグを編集
           </div>
           <TagFormFields draftName={draftName} setDraftName={setDraftName} draftDesc={draftDesc} setDraftDesc={setDraftDesc}
@@ -2983,22 +2992,16 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
             <button
               onClick={cancel}
               style={{
-                padding: "7px 14px", fontSize: "12px",
+                padding: "7px 14px", fontSize: "13px",
                 background: "transparent",
                 border: "1px solid var(--color-border-primary)",
                 borderRadius: "var(--radius-md)",
                 color: "var(--color-text-secondary)", cursor: "pointer",
               }}
             >キャンセル</button>
-            <button
-              onClick={handleSave}
-              style={{
-                padding: "7px 16px", fontSize: "12px", fontWeight: "500",
-                background: "var(--color-brand)", color: "#fff",
-                border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-              }}
-            >保存する</button>
+            <SaveButton dirty={tagDirty} saving={tagSave.saving} blocked={!draftName.trim()} onClick={() => void handleSave()} buttonStyle={TAG_SAVE_BTN_STYLE} />
           </div>
+          <SaveErrorBand message={tagSave.error} />
 
           {(() => {
             const tag = activeTags.find(t => t.id === editingId);
@@ -3027,22 +3030,16 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
               <button
                 onClick={cancel}
                 style={{
-                  padding: "7px 14px", fontSize: "12px",
+                  padding: "7px 14px", fontSize: "13px",
                   background: "transparent",
                   border: "1px solid var(--color-border-primary)",
                   borderRadius: "var(--radius-md)",
                   color: "var(--color-text-secondary)", cursor: "pointer",
                 }}
               >キャンセル</button>
-              <button
-                onClick={handleSave}
-                style={{
-                  padding: "7px 16px", fontSize: "12px", fontWeight: "500",
-                  background: "var(--color-brand)", color: "#fff",
-                  border: "none", borderRadius: "var(--radius-md)", cursor: "pointer",
-                }}
-              >追加する</button>
+              <SaveButton mode="add" dirty={draftName.trim() !== ""} saving={tagSave.saving} onClick={() => void handleSave()} buttonStyle={TAG_SAVE_BTN_STYLE} />
             </div>
+            <SaveErrorBand message={tagSave.error} />
           </div>
         </AdminFormModal>
       )}
@@ -3053,9 +3050,6 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
         badge={`${activeTags.length}件`}
         headerExtra={
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {saved && (
-              <span style={{ fontSize: "11px", color: "var(--color-text-success)" }}>保存しました</span>
-            )}
             {!isDirty && (
               <button onClick={startNew} style={addBtnStyle}>＋ タグを追加</button>
             )}
@@ -3064,7 +3058,7 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
       >
       {activeTags.length === 0 && editingId === null ? (
         <div style={{
-          fontSize: "12px", color: "var(--color-text-tertiary)",
+          fontSize: "13px", color: "var(--color-text-tertiary)",
           padding: "20px", textAlign: "center",
           border: "1px dashed var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
@@ -3090,22 +3084,22 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
                 }}
               >
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)" }}>
+                  <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)" }}>
                     {tag.name}
                     <span style={{
-                      marginLeft: "8px", fontSize: "10px",
+                      marginLeft: "8px", fontSize: "12px",
                       color: "var(--color-text-tertiary)",
                       background: "var(--color-bg-secondary)",
                       padding: "1px 6px", borderRadius: "99px",
                     }}>{ids.length}名</span>
                   </div>
                   {tag.description && (
-                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "2px" }}>
                       {tag.description}
                     </div>
                   )}
                   {tagMembers.length > 0 && (
-                    <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
                       {tagMembers.map(m => m.short_name).join(" / ")}
                     </div>
                   )}
@@ -3114,12 +3108,12 @@ function TagsSection({ currentUser, onDirtyChange, selectedGroupId }: { currentU
                   onClick={() => startEdit(tag)}
                   disabled={isDirty}
                   style={{
-                    fontSize: "11px", padding: "5px 10px",
+                    fontSize: "12px", padding: "5px 10px",
                     background: "transparent",
                     border: "1px solid var(--color-border-primary)",
                     borderRadius: "var(--radius-md)",
                     color: "var(--color-text-secondary)",
-                    cursor: isDirty ? "not-allowed" : "pointer",
+                    cursor: isDirty ? "default" : "pointer",
                     opacity: isDirty ? 0.5 : 1,
                   }}
                 >編集</button>
@@ -3147,7 +3141,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
   return (
     <>
       <div>
-        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+        <label style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
           タグ名
         </label>
         <input
@@ -3156,7 +3150,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
           onChange={e => setDraftName(e.target.value)}
           placeholder="例：請求書PJ / 広報チーム / 全員"
           style={{
-            width: "100%", padding: "7px 10px", fontSize: "12px",
+            width: "100%", padding: "7px 10px", fontSize: "13px",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
             background: "var(--color-bg-primary)",
@@ -3166,7 +3160,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
         />
       </div>
       <div>
-        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
+        <label style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "block", marginBottom: "4px" }}>
           説明（任意）
         </label>
         <input
@@ -3175,7 +3169,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
           onChange={e => setDraftDesc(e.target.value)}
           placeholder="このタグの用途・対象範囲"
           style={{
-            width: "100%", padding: "7px 10px", fontSize: "12px",
+            width: "100%", padding: "7px 10px", fontSize: "13px",
             border: "1px solid var(--color-border-primary)",
             borderRadius: "var(--radius-md)",
             background: "var(--color-bg-primary)",
@@ -3185,7 +3179,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
         />
       </div>
       <div>
-        <label style={{ fontSize: "11px", color: "var(--color-text-secondary)", display: "block", marginBottom: "6px" }}>
+        <label style={{ fontSize: "12px", color: "var(--color-text-secondary)", display: "block", marginBottom: "6px" }}>
           メンバー（{draftMemberIds.length}名選択中）
         </label>
         <div style={{
@@ -3202,7 +3196,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
                 key={m.id}
                 style={{
                   display: "flex", alignItems: "center", gap: "6px",
-                  fontSize: "12px", cursor: "pointer",
+                  fontSize: "13px", cursor: "pointer",
                   padding: "4px 6px", borderRadius: "var(--radius-sm)",
                   background: checked ? "var(--color-brand-light)" : "transparent",
                 }}
@@ -3222,7 +3216,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
             type="button"
             onClick={() => setDraftMemberIds(members.map(m => m.id))}
             style={{
-              fontSize: "11px", padding: "4px 8px",
+              fontSize: "12px", padding: "4px 8px",
               background: "transparent",
               border: "1px solid var(--color-border-primary)",
               borderRadius: "var(--radius-md)",
@@ -3233,7 +3227,7 @@ function TagFormFields({ draftName, setDraftName, draftDesc, setDraftDesc, draft
             type="button"
             onClick={() => setDraftMemberIds([])}
             style={{
-              fontSize: "11px", padding: "4px 8px",
+              fontSize: "12px", padding: "4px 8px",
               background: "transparent",
               border: "1px solid var(--color-border-primary)",
               borderRadius: "var(--radius-md)",
@@ -3322,32 +3316,32 @@ function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
     revoked: { color: "var(--color-text-danger)",  background: "var(--color-bg-danger)",  border: "1px solid var(--color-border-danger)" },
   };
 
-  if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
+  if (loading) return <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
 
   return (
     <div>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: "10px" }}>
         <h2 style={{ fontSize: "14px", fontWeight: 700, color: "var(--color-text-primary)" }}>プロジェクト招待</h2>
-        <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+        <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
           社内の別部署の人をプロジェクト単位で招待した履歴（発行・取り消しはPJ画面から）
         </span>
       </div>
 
       {fetchError && (
-        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
+        <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)", marginBottom: "12px" }}>
           {fetchError}
         </div>
       )}
 
       {scopedInvites.length === 0 ? (
-        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "20px 0" }}>
+        <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", padding: "20px 0" }}>
           まだ招待はありません。プロジェクトの画面（プロジェクトカルテ）の「🔗 このPJに招待する」から発行できます。
         </div>
       ) : (
         <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
           <div style={{
             display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr 1fr 0.8fr 0.7fr",
-            gap: "8px", padding: "6px 10px", fontSize: "10px", color: "var(--color-text-tertiary)",
+            gap: "8px", padding: "6px 10px", fontSize: "12px", color: "var(--color-text-tertiary)",
             borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)",
           }}>
             <div>対象PJ</div><div>招待先メール</div><div>発行者</div><div>発行日時</div><div>有効期限</div><div>状態</div><div></div>
@@ -3359,7 +3353,7 @@ function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
             return (
               <div key={inv.id} style={{
                 display: "grid", gridTemplateColumns: "1.2fr 1.4fr 0.9fr 1fr 1fr 0.8fr 0.7fr",
-                gap: "8px", padding: "8px 10px", fontSize: "11px", alignItems: "center",
+                gap: "8px", padding: "8px 10px", fontSize: "12px", alignItems: "center",
                 borderBottom: "1px solid var(--color-border-primary)",
               }}>
                 <div style={{ color: "var(--color-text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{projectName}</div>
@@ -3368,7 +3362,7 @@ function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
                 <div style={{ color: "var(--color-text-tertiary)" }}>{inv.created_at ? new Date(inv.created_at).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" }) : "—"}</div>
                 <div style={{ color: "var(--color-text-tertiary)" }}>{new Date(inv.expires_at).toLocaleString("ja-JP", { dateStyle: "short", timeStyle: "short" })}</div>
                 <div>
-                  <span style={{ ...statusStyle[status], fontSize: "10px", padding: "2px 8px", borderRadius: "99px", whiteSpace: "nowrap" }}>
+                  <span style={{ ...statusStyle[status], fontSize: "12px", padding: "2px 8px", borderRadius: "99px", whiteSpace: "nowrap" }}>
                     {PROJECT_INVITE_STATUS_LABEL[status]}
                   </span>
                 </div>
@@ -3379,10 +3373,10 @@ function InvitesSection({ selectedGroupId }: { selectedGroupId: string }) {
                       onClick={() => void handleRevoke(inv)}
                       disabled={revokingId === inv.id}
                       style={{
-                        fontSize: "10px", padding: "3px 8px",
+                        fontSize: "12px", padding: "3px 8px",
                         border: "1px solid var(--color-border-danger)", borderRadius: "var(--radius-md)",
                         background: "transparent", color: "var(--color-text-danger)",
-                        cursor: revokingId === inv.id ? "not-allowed" : "pointer",
+                        cursor: revokingId === inv.id ? "wait" : "pointer",
                       }}
                     >
                       {revokingId === inv.id ? "処理中..." : "取り消し"}
@@ -3549,24 +3543,24 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
     gridTemplateColumns: "1fr 60px 90px 90px 80px",
     gap: "8px",
     alignItems: "center",
-    fontSize: "11px",
+    fontSize: "12px",
     padding: "7px 10px",
   };
 
   const headerStyle: React.CSSProperties = {
     ...rowStyle,
-    fontSize: "10px",
+    fontSize: "12px",
     color: "var(--color-text-tertiary)",
     borderBottom: "1px solid var(--color-border-primary)",
     padding: "4px 10px 6px",
   };
 
   // 初回読み込み中のみ全画面ローディング（自動更新では出さない）
-  if (loading) return <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
+  if (loading) return <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>;
   // 初回取得自体が失敗してデータが無い場合は全面エラー表示
   if (fetchError && logs.length === 0) return (
     <div style={{
-      fontSize: "12px", color: "var(--color-text-danger)",
+      fontSize: "13px", color: "var(--color-text-danger)",
       background: "var(--color-bg-danger)",
       border: "1px solid var(--color-border-danger)",
       borderRadius: "var(--radius-md)",
@@ -3587,7 +3581,7 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
           <SectionHeader title="AI使用量" />
         </div>
         {lastUpdatedLabel && (
-          <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
+          <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
             {refreshing ? "更新中…" : lastUpdatedLabel}
           </span>
         )}
@@ -3596,24 +3590,24 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
           disabled={refreshing}
           title="最新の使用量を再取得"
           style={{
-            ...ghostBtnStyle, fontSize: "11px", padding: "4px 10px", flexShrink: 0,
+            ...ghostBtnStyle, fontSize: "12px", padding: "4px 10px", flexShrink: 0,
             opacity: refreshing ? 0.6 : 1, cursor: refreshing ? "default" : "pointer",
           }}
         >
           🔄 更新
         </button>
       </div>
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "2px" }}>
         設定画面で選択中の部署のメンバーの使用量です（プロジェクト招待で参加した方の利用も含みます）。約30秒ごとに自動更新します。
       </div>
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "12px" }}>
         料金目安：入力 $3/100万トークン・出力 $15/100万トークン（1ドル=150円換算）
       </div>
 
       {/* 自動更新中に発生したエラーは控えめなバナーで通知（既存データは保持） */}
       {fetchError && logs.length > 0 && (
         <div style={{
-          fontSize: "11px", color: "var(--color-text-danger)",
+          fontSize: "12px", color: "var(--color-text-danger)",
           background: "var(--color-bg-danger)",
           border: "1px solid var(--color-border-danger)",
           borderRadius: "var(--radius-md)",
@@ -3627,7 +3621,7 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
       {guestSummary.count > 0 && (
         <div style={{
           display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap",
-          fontSize: "11px", color: "var(--color-text-secondary)",
+          fontSize: "12px", color: "var(--color-text-secondary)",
           background: "var(--color-bg-secondary)",
           border: "1px solid var(--color-border-primary)",
           borderRadius: "var(--radius-md)",
@@ -3648,7 +3642,7 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
       <MemberUsageBreakdown breakdown={memberBreakdown} rowStyle={rowStyle} headerStyle={headerStyle} />
 
       {monthlyData.length === 0 && (
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>まだデータがありません。</div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>まだデータがありません。</div>
       )}
 
       {monthlyData.map(({ month, count, input, output, weeks }) => {
@@ -3714,11 +3708,11 @@ function MemberUsageBreakdown({
 
   return (
     <div style={{ marginBottom: "16px" }}>
-      <div style={{ fontSize: "11px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
+      <div style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", marginBottom: "6px" }}>
         メンバー別内訳（{monthLabel}）
       </div>
       {rows.length === 0 ? (
-        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>今月の利用はまだありません。</div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>今月の利用はまだありません。</div>
       ) : (
         <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", overflow: "hidden" }}>
           <div style={headerStyle}>

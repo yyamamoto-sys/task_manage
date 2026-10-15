@@ -428,12 +428,12 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
           <span style={{ fontSize: "20px" }}>📄</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: "14px", fontWeight: "700", color: "#fff" }}>OKRをPDFから取込</div>
-            <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
+            <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.75)", marginTop: "2px" }}>
               {step === "analyzing" ? "AI解析中..." : "Kintoneの画面PDF・テキスト → AI解析 → Objective/KR/TF登録"}
             </div>
           </div>
           {step === "review" && (
-            <button onClick={handleReset} style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
+            <button onClick={handleReset} style={{ fontSize: "13px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
           )}
           <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}>✕</button>
         </div>
@@ -444,11 +444,11 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
               <div>
                 <FieldLabel>この資料は</FieldLabel>
                 <div style={{ display: "flex", gap: "8px" }}>
-                  <label aria-label="通期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                  <label aria-label="通期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "13px", color: "var(--color-text-primary)" }}>
                     <input type="radio" checked={docType === "annual"} onChange={() => setDocType("annual")} />
                     通期OKR
                   </label>
-                  <label aria-label="四半期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "12px", color: "var(--color-text-primary)" }}>
+                  <label aria-label="四半期OKR" style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "13px", color: "var(--color-text-primary)" }}>
                     <input type="radio" checked={docType === "quarterly"} onChange={() => setDocType("quarterly")} />
                     四半期OKR
                   </label>
@@ -483,10 +483,10 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
                 onKeyDown={e => { if (e.key === "Enter" || e.key === " ") fileInputRef.current?.click(); }}
               >
                 <div style={{ fontSize: "28px", marginBottom: "8px" }}>📄</div>
-                <div style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "4px" }}>
+                <div style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)", marginBottom: "4px" }}>
                   KintoneのOKR画面をPDF化してドラッグ＆ドロップ
                 </div>
-                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                   または <span style={{ color: "var(--color-brand)", textDecoration: "underline" }}>クリックして選択</span>（.pdf / .docx(Word) / .txt）
                 </div>
                 <input
@@ -499,11 +499,11 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
               </div>
 
               {pdfAttachment && (
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "var(--color-bg-purple, #ede9fe)", border: "1px solid var(--color-border-purple, #ddd6fe)", borderRadius: "var(--radius-md)", fontSize: "12px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", padding: "8px 12px", background: "var(--color-bg-purple, #ede9fe)", border: "1px solid var(--color-border-purple, #ddd6fe)", borderRadius: "var(--radius-md)", fontSize: "13px" }}>
                   <span>📑</span>
                   <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: "var(--color-text-primary)" }}>{pdfAttachment.fileName}</span>
-                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>このPDFを読み込みました</span>
-                  <button onClick={() => setPdfAttachment(null)} title="添付を解除" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: "13px", padding: 0, lineHeight: 1 }}>✕</button>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>このPDFを読み込みました</span>
+                  <button onClick={() => setPdfAttachment(null)} title="添付を解除" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-tertiary)", fontSize: "14px", padding: 0, lineHeight: 1 }}>✕</button>
                 </div>
               )}
               {fileError && <ErrorBox message={fileError} />}
@@ -516,7 +516,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
                   placeholder={"Objective：〇〇年度△△\nPurpose：...\n\nKR1：...\nKR1-TF1：...\n担当OM：...\n\nのように、KintoneのOKR画面のテキストをそのまま貼り付けてください。"}
                   rows={10}
                   style={{
-                    width: "100%", padding: "10px 12px", fontSize: "12px",
+                    width: "100%", padding: "10px 12px", fontSize: "13px",
                     fontFamily: "monospace",
                     border: "1px solid var(--color-border-primary)",
                     borderRadius: "var(--radius-md)",
@@ -581,7 +581,7 @@ export function OkrImportModal({ onClose, currentUser, targetGroupId }: Props) {
             background: "var(--color-bg-primary)",
             display: "flex", alignItems: "center", gap: "10px",
           }}>
-            <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flex: 1 }}>
+            <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)", flex: 1 }}>
               評価基準バンド・ロジックモデル・月次タスクは取り込みません（Objective/KR/TFの骨組みのみ）
             </span>
             <button
@@ -626,7 +626,7 @@ function ReviewStep({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-      <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
         資料の種類：{docType === "quarterly" ? `四半期OKR（${importQuarter}）` : "通期OKR"}
       </div>
 
@@ -637,17 +637,17 @@ function ReviewStep({
           <label aria-label="新しい期のObjectiveとして作成" style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: "pointer" }}>
             <input type="radio" checked={targetMode === "new"} onChange={() => setTargetMode("new")} style={{ marginTop: "3px" }} />
             <span>
-              <span style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>新しい期のObjectiveとして作成（既定）</span>
-              <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              <span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>新しい期のObjectiveとして作成（既定）</span>
+              <span style={{ display: "block", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                 {ctxObj ? "現在のObjectiveは「過去の期」として残し、新規Objectiveを現在のものにします。" : "Objectiveがまだ無いため新規作成します。"}
               </span>
             </span>
           </label>
-          <label aria-label="既存のObjectiveに追記" style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: ctxObj ? "pointer" : "not-allowed", opacity: ctxObj ? 1 : 0.5 }}>
+          <label aria-label="既存のObjectiveに追記" style={{ display: "flex", alignItems: "flex-start", gap: "8px", cursor: ctxObj ? "pointer" : "default", opacity: ctxObj ? 1 : 0.5 }}>
             <input type="radio" checked={targetMode === "existing"} disabled={!ctxObj} onChange={() => setTargetMode("existing")} style={{ marginTop: "3px" }} />
             <span>
-              <span style={{ display: "block", fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)" }}>既存のObjectiveに追記</span>
-              <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+              <span style={{ display: "block", fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)" }}>既存のObjectiveに追記</span>
+              <span style={{ display: "block", fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                 {ctxObj ? `現在のObjective「${ctxObj.title.slice(0, 30)}」の配下にKR/TFを追加します。` : "既存のObjectiveがありません。"}
               </span>
             </span>
@@ -683,7 +683,7 @@ function ReviewStep({
       {/* KR + TF 一覧 */}
       <div>
         <SectionHeader icon="🔑" title={`Key Result 候補（${krDrafts.length}件）`} />
-        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", margin: "4px 0 10px" }}>
+        <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", margin: "4px 0 10px" }}>
           チェックした項目が登録されます。内容・担当者は編集できます。
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -700,7 +700,7 @@ function ReviewStep({
           ))}
         </div>
         {krDrafts.length === 0 && (
-          <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "20px" }}>
+          <div style={{ fontSize: "14px", color: "var(--color-text-tertiary)", textAlign: "center", padding: "20px" }}>
             KR候補は見つかりませんでした
           </div>
         )}
@@ -734,7 +734,7 @@ function KrDraftCard({
     }}>
       <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", marginBottom: "10px" }}>
         <input type="checkbox" checked={draft.checked} onChange={e => onChange({ checked: e.target.checked })} style={{ width: "16px", height: "16px", cursor: "pointer", accentColor: "var(--color-brand)" }} />
-        <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
+        <span style={{ fontSize: "14px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
           {draft.title || "（名称未設定）"}
         </span>
       </label>
@@ -767,7 +767,7 @@ function KrDraftCard({
               <TfDraftCard key={tf.tempId} draft={tf} members={members} onChange={patch => onChangeTf(tf.tempId, patch)} />
             ))}
             {draft.tfDrafts.length === 0 && (
-              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>TF候補はありません</div>
+              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>TF候補はありません</div>
             )}
           </div>
         </div>
@@ -790,7 +790,7 @@ function TfDraftCard({ draft, members, onChange }: {
     }}>
       <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", marginBottom: "8px" }}>
         <input type="checkbox" checked={draft.checked} onChange={e => onChange({ checked: e.target.checked })} style={{ width: "14px", height: "14px", cursor: "pointer", accentColor: "#2563eb" }} />
-        <span style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
+        <span style={{ fontSize: "13px", fontWeight: "600", color: "var(--color-text-primary)", flex: 1 }}>
           {draft.name || "（名称未設定）"}
         </span>
       </label>
@@ -839,7 +839,7 @@ function TfDraftCard({ draft, members, onChange }: {
           </div>
           {draft.source_quote && (
             <div style={{
-              fontSize: "10px", color: "var(--color-text-tertiary)",
+              fontSize: "12px", color: "var(--color-text-tertiary)",
               background: "var(--color-bg-tertiary)",
               borderLeft: "3px solid var(--color-border-primary)",
               padding: "5px 8px", borderRadius: "0 var(--radius-sm) var(--radius-sm) 0",
@@ -863,7 +863,7 @@ function DoneStep({ results, onReset, onClose }: {
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "16px", padding: "40px 20px", textAlign: "center" }}>
       <div style={{ fontSize: "48px" }}>🎉</div>
       <div style={{ fontSize: "16px", fontWeight: "700", color: "var(--color-text-primary)" }}>登録が完了しました</div>
-      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
+      <div style={{ fontSize: "14px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
         {results.objectives > 0 && <div>Objective {results.objectives}件 を新規作成しました</div>}
         {results.krs > 0 && <div>KR {results.krs}件 を新規作成しました</div>}
         {results.tfs > 0 && <div>TF {results.tfs}件 を新規作成しました（クォーターは各TFに設定済み）</div>}
@@ -884,7 +884,7 @@ function SectionHeader({ icon, title }: { icon: string; title: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
       <span style={{ fontSize: "16px" }}>{icon}</span>
-      <div style={{ fontSize: "13px", fontWeight: "700", color: "var(--color-text-primary)" }}>{title}</div>
+      <div style={{ fontSize: "14px", fontWeight: "700", color: "var(--color-text-primary)" }}>{title}</div>
     </div>
   );
 }
@@ -904,7 +904,7 @@ function Card({ children }: { children: React.ReactNode }) {
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ fontSize: "11px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "5px" }}>
+    <div style={{ fontSize: "12px", fontWeight: "600", color: "var(--color-text-secondary)", marginBottom: "5px" }}>
       {children}
     </div>
   );
@@ -912,14 +912,14 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 function ErrorBox({ message }: { message: string }) {
   return (
-    <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+    <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
       {message}
     </div>
   );
 }
 
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", fontSize: "12px",
+  width: "100%", padding: "7px 10px", fontSize: "13px",
   border: "1px solid var(--color-border-primary)",
   borderRadius: "var(--radius-md)",
   background: "var(--color-bg-primary)",
@@ -934,14 +934,14 @@ const primaryButtonStyle = (disabled: boolean): React.CSSProperties => ({
   border: "none",
   borderRadius: "var(--radius-md)",
   color: disabled ? "var(--color-text-tertiary)" : "#fff",
-  fontSize: "13px", fontWeight: "600",
-  cursor: disabled ? "not-allowed" : "pointer",
+  fontSize: "14px", fontWeight: "600",
+  cursor: disabled ? "default" : "pointer",
   boxShadow: disabled ? "none" : "0 2px 8px rgba(124,58,237,0.35)",
   width: "100%",
 });
 
 const ghostButtonStyle: React.CSSProperties = {
-  padding: "9px 16px", fontSize: "12px",
+  padding: "9px 16px", fontSize: "13px",
   background: "transparent",
   border: "1px solid var(--color-border-primary)",
   borderRadius: "var(--radius-md)",

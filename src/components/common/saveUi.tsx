@@ -9,10 +9,12 @@
 //    保存中＝「保存中…」(disabled・cursor wait)。🚫（not-allowed）は使わない（Section 48）。
 //    成功はトースト1つ、失敗はフォーム直下の永続のエラー帯（SaveErrorBand・Section 15・45）。入力は保持する。
 //  - 追加フォーム（mode="add"）の文言は「追加」。入力が足りないときは disabled（cursor default）。
-//  - 単一行入力の Enter と Ctrl/Cmd+Enter で保存（handleSaveShortcut）。IME 変換確定の Enter は無視（Section 44）。
+//  - 単一行入力の Enter と Ctrl/Cmd+Enter で保存（SaveKeyScope・shouldSaveOnKey）。IME 変換確定の Enter は無視（Section 44）。
 
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent, type ReactNode } from "react";
 import { useT } from "../../hooks/useT";
+import { showToast } from "./Toast";
+import { formatErrorForUser } from "../../lib/errorMessage";
 
 export const SAVED_FLASH_MS = 1500;
 
@@ -126,17 +128,100 @@ export function SaveErrorBand({ message }: { message: string }) {
   );
 }
 
+export interface SaveKeyInfo {
+  key: string;
+  ctrlKey: boolean;
+  metaKey: boolean;
+  /** IME の変換確定中の Enter（e.nativeEvent.isComposing） */
+  isComposing: boolean;
+  defaultPrevented: boolean;
+  tagName: string;
+  inputType: string;
+}
+
+/** 単一行の入力として Enter で保存してよい input の type（チェックボックス・ボタン等は除く） */
+const NON_TEXT_INPUT_TYPES = ["checkbox", "radio", "button", "submit", "range", "file", "color"];
+
 /**
- * 単一行入力の Enter と Ctrl/Cmd+Enter で保存する。IME 変換確定の Enter は無視する。
- * テキストエリア・チェックボックス・ボタン上の Enter は対象にしない（Ctrl/Cmd+Enter だけがどこからでも効く）。
+ * このキー操作で保存してよいか（TaskEditModal の v3.87 と同じ二段構え。純粋関数）。
+ *  - Ctrl/Cmd+Enter：captureフェーズ（子要素より先）で拾い、どこからでも保存する。
+ *  - 単純な Enter：bubbleフェーズ（子要素の処理が済んだ後）で拾い、CustomSelect の検索 input 等が既に
+ *    preventDefault していたらそちらを優先して何もしない。単一行の input のみ対象（textarea は改行のまま）。
+ *  - IME 変換確定の Enter は両方とも必ず無視する。
  */
-export function handleSaveShortcut(e: KeyboardEvent, save: () => void): void {
-  if (e.key !== "Enter" || e.nativeEvent.isComposing) return;
+export function shouldSaveOnKey(k: SaveKeyInfo, phase: "capture" | "bubble"): boolean {
+  if (k.isComposing || k.key !== "Enter") return false;
+  if (k.ctrlKey || k.metaKey) return phase === "capture";
+  if (phase === "capture" || k.defaultPrevented) return false;
+  return k.tagName === "INPUT" && !NON_TEXT_INPUT_TYPES.includes(k.inputType);
+}
+
+function keyInfoOf(e: KeyboardEvent): SaveKeyInfo {
   const target = e.target as HTMLElement;
-  const inputType = target.tagName === "INPUT" ? (target as HTMLInputElement).type : "";
-  const isSingleLineInput = target.tagName === "INPUT" && !["checkbox", "radio", "button", "submit", "range"].includes(inputType);
-  if (e.ctrlKey || e.metaKey || isSingleLineInput) {
-    e.preventDefault();
-    save();
-  }
+  return {
+    key: e.key, ctrlKey: e.ctrlKey, metaKey: e.metaKey, isComposing: e.nativeEvent.isComposing,
+    defaultPrevented: e.defaultPrevented, tagName: target.tagName,
+    inputType: target.tagName === "INPUT" ? (target as HTMLInputElement).type : "",
+  };
+}
+
+/**
+ * フォームを包んで、単一行入力の Enter と Ctrl/Cmd+Enter で保存できるようにする（shouldSaveOnKey）。
+ * 保存できない状態（未変更・必須項目が空）のときの判断は onSave 側が持つ（呼ばれても何もしない作りにする）。
+ */
+export function SaveKeyScope({ onSave, children, style }: { onSave: () => void; children: ReactNode; style?: CSSProperties }) {
+  return (
+    // キーボード操作自体は中のフォーム要素が担うため、この箱自身をフォーカス可能にする必要はない（TaskEditModal と同じ作法）
+    // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+    <div
+      style={style}
+      onKeyDownCapture={e => { if (shouldSaveOnKey(keyInfoOf(e), "capture")) { e.preventDefault(); onSave(); } }}
+      onKeyDown={e => { if (shouldSaveOnKey(keyInfoOf(e), "bubble")) { e.preventDefault(); onSave(); } }}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 保存ボタン方式のフォームの「保存の実行」をまとめる。二重実行を止め、成功はトースト1つ、
+ * 失敗はフォーム直下のエラー帯（error を SaveErrorBand に渡す）。入力は呼び出し側が保持したまま。
+ * 戻り値：保存できたら true（呼び出し側はこのあとフォームを閉じる・dirty を戻す等を行う）。
+ */
+export function useFormSave() {
+  const t = useT();
+  const tRef = useRef(t);
+  tRef.current = t;
+  const savingRef = useRef(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const run = useCallback(async (action: () => Promise<unknown>, failLabel: string): Promise<boolean> => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    try {
+      await action();
+      showToast(tRef.current("layout.settings.save.toast"), "success");
+      return true;
+    } catch (e) {
+      setError(formatErrorForUser(failLabel, e));
+      return false;
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+    }
+  }, []);
+  return { saving, error, setError, run };
+}
+
+/**
+ * 編集フォームの「未変更かどうか」。key（編集対象の id など）が変わった最初の描画時点の値を基準にし、
+ * 以後の差分を dirty とする。フォームを開く操作（key とフォームの値を同時にセットする）と相性が良い。
+ */
+export function useSnapshotDirty(value: unknown, key: string | null): boolean {
+  const snap = useRef<{ key: string | null; json: string } | null>(null);
+  const json = JSON.stringify(value);
+  if (snap.current === null || snap.current.key !== key) snap.current = { key, json };
+  return json !== snap.current.json;
 }

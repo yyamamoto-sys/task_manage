@@ -53,7 +53,7 @@ const RETENTION_LABEL: Record<string, string> = {
 };
 
 const statusBadgeStyle = (status: BackupRun["status"]): React.CSSProperties => ({
-  display: "inline-block", fontSize: "10.5px", padding: "1px 8px", borderRadius: "99px",
+  display: "inline-block", fontSize: "12px", padding: "1px 8px", borderRadius: "99px",
   fontWeight: 500,
   ...STATUS_STYLE[status],
 });
@@ -128,7 +128,7 @@ export function BackupSection({ currentUser }: Props) {
 
   if (!isSuperAdmin) {
     return (
-      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
+      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
         🔒 バックアップの状態確認・実行は全社スーパー管理者のみ利用できます。
       </div>
     );
@@ -151,13 +151,13 @@ export function BackupSection({ currentUser }: Props) {
         </button>
       </div>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
         日次バックアップ（毎日 JST 3:00 に自動実行）の実行状況と、現在保存されている世代の一覧です。詳細は
         docs/dev/backup-design.md を参照してください。
       </div>
 
       {fetchError && (
-        <div style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+        <div style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
           {fetchError}
         </div>
       )}
@@ -173,12 +173,12 @@ export function BackupSection({ currentUser }: Props) {
       </SummaryRow>
 
       {loading ? (
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
       ) : (
         <>
           <Card title="直近の実行状況" badge={`最新${runs.length}件`}>
             {runs.length === 0 ? (
-              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+              <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
                 実行記録がまだありません。
               </div>
             ) : (
@@ -192,7 +192,7 @@ export function BackupSection({ currentUser }: Props) {
                       border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-md)",
                       background: "var(--color-bg-primary)",
-                      fontSize: "11.5px",
+                      fontSize: "12px",
                     }}
                   >
                     <span style={statusBadgeStyle(run.status)}>{STATUS_LABEL[run.status]}</span>
@@ -212,7 +212,7 @@ export function BackupSection({ currentUser }: Props) {
                       {formatDurationMs(run.duration_ms)}
                     </span>
                     {run.error_message && (
-                      <span style={{ flexBasis: "100%", color: "var(--color-text-danger)", fontSize: "11px" }}>
+                      <span style={{ flexBasis: "100%", color: "var(--color-text-danger)", fontSize: "12px" }}>
                         {run.error_message}
                       </span>
                     )}
@@ -224,7 +224,7 @@ export function BackupSection({ currentUser }: Props) {
 
           <Card title="現在の世代一覧" badge={`${objects.length}件`}>
             {objects.length === 0 ? (
-              <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
+              <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
                 現在有効な世代がありません。
               </div>
             ) : (
@@ -238,11 +238,11 @@ export function BackupSection({ currentUser }: Props) {
                       border: "1px solid var(--color-border-primary)",
                       borderRadius: "var(--radius-md)",
                       background: "var(--color-bg-primary)",
-                      fontSize: "11.5px",
+                      fontSize: "12px",
                     }}
                   >
                     <span style={{
-                      fontSize: "10px", padding: "1px 7px", borderRadius: "99px",
+                      fontSize: "12px", padding: "1px 7px", borderRadius: "99px",
                       background: "var(--color-bg-tertiary)", color: "var(--color-text-tertiary)",
                       border: "1px solid var(--color-border-primary)",
                     }}>
@@ -257,7 +257,7 @@ export function BackupSection({ currentUser }: Props) {
                     <span style={{ display: "flex", gap: "4px" }}>
                       {(obj.retention ?? []).map(tag => (
                         <span key={tag} style={{
-                          fontSize: "9.5px", padding: "1px 6px", borderRadius: "99px",
+                          fontSize: "12px", padding: "1px 6px", borderRadius: "99px",
                           background: "var(--color-bg-info)", color: "var(--color-text-info)",
                           border: "1px solid var(--color-border-info)",
                         }}>

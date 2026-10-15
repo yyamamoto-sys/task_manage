@@ -32,8 +32,8 @@ function formatWhen(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const labelStyle: React.CSSProperties = { fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "4px", display: "block" };
-const hintStyle: React.CSSProperties = { fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 };
+const labelStyle: React.CSSProperties = { fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)", marginBottom: "4px", display: "block" };
+const hintStyle: React.CSSProperties = { fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 };
 
 export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUser: Member; onDirtyChange: (dirty: boolean) => void }) {
   const isSuperAdmin = currentUser.is_super_admin === true;
@@ -155,14 +155,14 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
   };
 
   if (!canSend) {
-    return <div style={{ fontSize: "13px", color: "var(--color-text-secondary)" }}>お知らせを送れるのは部署の管理者と全社スーパー管理者だけです。</div>;
+    return <div style={{ fontSize: "14px", color: "var(--color-text-secondary)" }}>お知らせを送れるのは部署の管理者と全社スーパー管理者だけです。</div>;
   }
 
   const counter = (n: number, max: number) => (
-    <span style={{ fontSize: "10px", color: n > max ? "var(--color-text-danger)" : "var(--color-text-tertiary)" }}>{n}/{max}</span>
+    <span style={{ fontSize: "12px", color: n > max ? "var(--color-text-danger)" : "var(--color-text-tertiary)" }}>{n}/{max}</span>
   );
   const radio = (m: TargetMode, label: string) => (
-    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
+    <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
       <input type="radio" name="admin-message-target" checked={mode === m} onChange={() => setMode(m)} />{label}
     </label>
   );
@@ -177,7 +177,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
             1時間に{ADMIN_MESSAGE_PER_HOUR}通・1日{ADMIN_MESSAGE_PER_DAY}通まで。
             「全員」「部署全員」を選ぶと自分も宛先に含まれます（候補一覧では自分に「（自分）」と表示されます）。
           </div>
-          {candError && <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)" }}>{candError}</div>}
+          {candError && <div role="alert" style={{ fontSize: "13px", color: "var(--color-text-danger)" }}>{candError}</div>}
 
           <div>
             <label style={labelStyle} htmlFor="admin-message-subject">件名 {counter([...subject.trim()].length, ADMIN_MESSAGE_SUBJECT_MAX)}</label>
@@ -209,16 +209,16 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
               <div style={{ border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", padding: "6px" }}>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center", marginBottom: "6px" }}>
                   <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="名前・部署で絞り込み" style={{ ...inputStyle, flex: 1 }} aria-label="宛先の絞り込み" />
-                  <span style={{ fontSize: "11px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{selected.size}人選択（{ADMIN_MESSAGE_MAX_SELECTED}人まで）</span>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)", whiteSpace: "nowrap" }}>{selected.size}人選択（{ADMIN_MESSAGE_MAX_SELECTED}人まで）</span>
                   <button type="button" style={ghostBtnStyle} onClick={() => setSelected(new Set(visibleCandidates.map(c => c.member_id).slice(0, ADMIN_MESSAGE_MAX_SELECTED)))}>表示中を全選択</button>
                   <button type="button" style={ghostBtnStyle} onClick={() => setSelected(new Set())}>解除</button>
                 </div>
                 <div style={{ maxHeight: "200px", overflowY: "auto", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: "2px 10px" }}>
                   {visibleCandidates.map(c => (
-                    <label key={c.member_id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
+                    <label key={c.member_id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
                       <input type="checkbox" checked={selected.has(c.member_id)} onChange={() => toggleMember(c.member_id)} />
                       <span>{c.display_name}{c.member_id === currentUser.id && "（自分）"}</span>
-                      {isSuperAdmin && c.group_name && <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{c.group_name}</span>}
+                      {isSuperAdmin && c.group_name && <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{c.group_name}</span>}
                     </label>
                   ))}
                   {candidates !== null && visibleCandidates.length === 0 && <span style={hintStyle}>該当するメンバーがいません</span>}
@@ -228,11 +228,11 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
           </div>
 
           <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
-            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", cursor: "pointer" }}>
               <input type="checkbox" checked={requiresAck} onChange={e => { setRequiresAck(e.target.checked); if (!e.target.checked) setDueDate(""); }} />
               「確認しました」ボタンを付ける
             </label>
-            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", opacity: requiresAck ? 1 : 0.5 }}>
+            <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", opacity: requiresAck ? 1 : 0.5 }}>
               期限（任意）
               <input type="date" value={dueDate} min={todayJst()} disabled={!requiresAck} onChange={e => setDueDate(e.target.value)} style={{ ...inputStyle, width: "auto" }} />
             </label>
@@ -248,27 +248,27 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
             <button type="button" style={ghostBtnStyle} onClick={() => setPreview(v => !v)} disabled={!subject.trim() && !body.trim()}>
               {preview ? "プレビューを閉じる" : "プレビュー"}
             </button>
-            <button type="button" style={{ ...primaryBtnStyle, opacity: sending || draftError || !scope.ok ? 0.5 : 1 }}
+            <button type="button" style={{ ...primaryBtnStyle, opacity: sending || draftError || !scope.ok ? 0.5 : 1, cursor: sending ? "wait" : (draftError || !scope.ok) ? "default" : "pointer" }}
               disabled={sending || draftError !== null || !scope.ok} onClick={() => void send()}>
               {sending ? "送信中…" : "送信する"}
             </button>
-            <span style={{ fontSize: "11px", color: draftError || !scope.ok ? "var(--color-text-danger)" : "var(--color-text-secondary)" }}>
+            <span style={{ fontSize: "12px", color: draftError || !scope.ok ? "var(--color-text-danger)" : "var(--color-text-secondary)" }}>
               {draftError ?? (scope.ok ? `宛先：${scope.recipientIds.length}人` : scope.reason)}
             </span>
           </div>
 
           {preview && (
             <div style={{ border: "1px solid var(--color-border-warning)", borderTop: "4px solid var(--color-border-warning)", borderRadius: "var(--radius-md)", padding: "10px 12px" }}>
-              <div style={{ fontSize: "11px", color: "var(--color-text-warning)", fontWeight: 600 }}>📣 管理者からのお知らせ（受け取る人にはこう見えます）</div>
+              <div style={{ fontSize: "12px", color: "var(--color-text-warning)", fontWeight: 600 }}>📣 管理者からのお知らせ（受け取る人にはこう見えます）</div>
               <div style={{ fontSize: "14px", fontWeight: 700, margin: "2px 0 4px", wordBreak: "break-word" }}>{subject.trim() || "（件名）"}</div>
-              <div style={{ display: "flex", gap: "8px", fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px", flexWrap: "wrap", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "8px", fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "6px", flexWrap: "wrap", alignItems: "center" }}>
                 <span>送信：{currentUser.display_name}</span>
                 {requiresAck && dueDate && <DueChip dueDate={dueDate} acknowledged={false} />}
               </div>
               <AdminMessageBody text={body.trim() || "（本文）"} />
               {requiresAck && (
                 <div style={{ marginTop: "8px", textAlign: "right" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg-warning)", color: "var(--color-text-warning)", border: "1px solid var(--color-border-warning)" }}>確認しました</span>
+                  <span style={{ fontSize: "13px", fontWeight: 600, padding: "4px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg-warning)", color: "var(--color-text-warning)", border: "1px solid var(--color-border-warning)" }}>確認しました</span>
                 </div>
               )}
               {scope.ok && (
@@ -283,7 +283,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
       </Card>
 
       <Card title={isSuperAdmin ? "送信履歴（全員の送信分）" : "送信履歴（自分が送ったもの）"}>
-        {sentError && <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)" }}>{sentError}</div>}
+        {sentError && <div role="alert" style={{ fontSize: "13px", color: "var(--color-text-danger)" }}>{sentError}</div>}
         {sent === null && <div style={hintStyle}>…</div>}
         {sent !== null && sent.length === 0 && !sentError && <div style={hintStyle}>まだ送ったお知らせはありません。</div>}
         <div style={{ display: "flex", flexDirection: "column" }}>
@@ -292,13 +292,13 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
               <button type="button" onClick={() => setOpenId(openId === m.id ? null : m.id)}
                 style={{ display: "block", width: "100%", textAlign: "left", background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>
                 <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1, minWidth: "160px" }}>{openId === m.id ? "▾" : "▸"} {m.subject}</span>
+                  <span style={{ fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)", flex: 1, minWidth: "160px" }}>{openId === m.id ? "▾" : "▸"} {m.subject}</span>
                   {m.due_date && <DueChip dueDate={m.due_date} acknowledged={m.ack_count >= m.recipient_count} />}
-                  <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>既読 {m.read_count}/{m.recipient_count}</span>
-                  {m.requires_ack && <span style={{ fontSize: "11px", color: m.ack_count >= m.recipient_count ? "var(--color-text-success)" : "var(--color-text-warning)" }}>確認 {m.ack_count}/{m.recipient_count}</span>}
-                  <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>{formatWhen(m.created_at)}</span>
+                  <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>既読 {m.read_count}/{m.recipient_count}</span>
+                  {m.requires_ack && <span style={{ fontSize: "12px", color: m.ack_count >= m.recipient_count ? "var(--color-text-success)" : "var(--color-text-warning)" }}>確認 {m.ack_count}/{m.recipient_count}</span>}
+                  <span style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{formatWhen(m.created_at)}</span>
                 </div>
-                <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
+                <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>
                   {isSuperAdmin && `送信：${m.sender_name}・`}
                   宛先：{m.target_kind === "all" ? "全員" : m.target_kind === "group" ? `部署 ${groupName.get(m.target_group_id ?? "") ?? m.target_group_id}` : "選んだメンバー"}
                   {m.push_succeeded !== null && `・Windows通知 ${m.push_succeeded}件`}
@@ -311,7 +311,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
                   </div>
                   {status === null && <div style={hintStyle}>…</div>}
                   {status !== null && (
-                    <table style={{ borderCollapse: "collapse", fontSize: "11px", width: "100%" }}>
+                    <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%" }}>
                       <thead>
                         <tr style={{ color: "var(--color-text-secondary)", textAlign: "left" }}>
                           <th style={{ padding: "3px 6px" }}>宛先</th>

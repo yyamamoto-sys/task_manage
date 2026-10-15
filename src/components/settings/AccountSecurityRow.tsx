@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useT } from "../../hooks/useT";
 import { useUnsavedEditor } from "../../hooks/useUnsavedEditor";
 import { showToast } from "../common/Toast";
-import { SaveButton, SaveErrorBand, handleSaveShortcut } from "../common/saveUi";
+import { SaveButton, SaveErrorBand, SaveKeyScope } from "../common/saveUi";
 import { updateOwnPassword } from "../../lib/supabase/auth";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { validateNewPassword, classifyUpdatePasswordError } from "../../lib/account/recoveryFlow";
@@ -53,10 +53,9 @@ export function AccountSecurityRow() {
     }
   };
 
-  const keys = { onKeyDown: (e: React.KeyboardEvent) => handleSaveShortcut(e, () => void save()) };
-
   return (
     <Row label={t("layout.settings.account.heading")} hint={t("layout.settings.account.hint")}>
+      <SaveKeyScope onSave={() => void save()}>
       <form
         onSubmit={e => { e.preventDefault(); }}
         style={{ display: "flex", flexDirection: "column", gap: "8px" }}
@@ -69,7 +68,6 @@ export function AccountSecurityRow() {
           aria-label={t("layout.settings.account.new")}
           autoComplete="new-password"
           style={input}
-          {...keys}
         />
         <input
           type="password"
@@ -79,7 +77,6 @@ export function AccountSecurityRow() {
           aria-label={t("layout.settings.account.confirm")}
           autoComplete="new-password"
           style={input}
-          {...keys}
         />
         <SaveErrorBand message={error} />
         {reauthHint && (
@@ -91,6 +88,7 @@ export function AccountSecurityRow() {
           <SaveButton dirty={dirty} saving={saving} onClick={() => void save()} buttonStyle={primaryBtn} label={t("layout.settings.account.save")} />
         </div>
       </form>
+      </SaveKeyScope>
     </Row>
   );
 }

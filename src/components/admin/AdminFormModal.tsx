@@ -42,9 +42,9 @@ export function AdminFormModal({ title, subtitle, onClose, children, maxWidth = 
           background: "var(--color-brand)",
         }}>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff" }}>{title}</div>
+            <div style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>{title}</div>
             {subtitle && (
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.85)", marginTop: "2px" }}>
+              <div style={{ fontSize: "12px", color: "rgba(255,255,255,0.85)", marginTop: "2px" }}>
                 {subtitle}
               </div>
             )}

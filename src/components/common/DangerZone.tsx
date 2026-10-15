@@ -29,7 +29,7 @@ export function DangerZone({ children, style }: DangerZoneProps) {
         padding: "7px 14px",
         background: "var(--color-bg-danger)",
         borderBottom: "1px solid var(--color-border-danger)",
-        fontSize: "11px", fontWeight: 600, color: "var(--color-text-danger)",
+        fontSize: "12px", fontWeight: 600, color: "var(--color-text-danger)",
       }}>
         {t("common.dangerZone.title")}
       </div>
@@ -77,13 +77,13 @@ export function DangerAction({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
-      <div style={{ fontSize: "12px", fontWeight: 500, color: "var(--color-text-primary)" }}>{label}</div>
+      <div style={{ fontSize: "13px", fontWeight: 500, color: "var(--color-text-primary)" }}>{label}</div>
       {description && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{description}</div>
+        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>{description}</div>
       )}
       {requireNameMatch != null && (
         <div>
-          <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginBottom: "3px" }}>
             {t("common.dangerZone.typeToConfirm", { name: requireNameMatch })}
           </div>
           <input
@@ -91,7 +91,7 @@ export function DangerAction({
             onChange={e => setTyped(e.target.value)}
             placeholder={requireNameMatch}
             style={{
-              width: "100%", padding: "6px 9px", fontSize: "12px", boxSizing: "border-box",
+              width: "100%", padding: "6px 9px", fontSize: "13px", boxSizing: "border-box",
               border: "1px solid var(--color-border-danger)",
               borderRadius: "var(--radius-md)",
               background: "var(--color-bg-primary)", color: "var(--color-text-primary)",
@@ -105,7 +105,7 @@ export function DangerAction({
           onClick={() => { void handleClick(); }}
           disabled={!canClick}
           style={{
-            padding: "6px 14px", fontSize: "11px", fontWeight: 500,
+            padding: "6px 14px", fontSize: "12px", fontWeight: 500,
             background: "var(--color-bg-danger)",
             color: "var(--color-text-danger)",
             border: "1px solid var(--color-border-danger)",

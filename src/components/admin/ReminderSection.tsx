@@ -69,7 +69,7 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
 
   if (!isSuperAdmin) {
     return (
-      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
+      <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 2 }}>
         🔒 通知の実行記録は全社スーパー管理者のみ確認できます。
       </div>
     );
@@ -92,13 +92,13 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
         </button>
       </div>
 
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.8 }}>
         平日 7:00〜19:30 に30分ごとに起動し、その時刻を選んでいる人へ「期限超過・今日期限」を知らせます（祝日は送らず「祝日のためスキップ」を記録します）。
         「成功」はプッシュサービスが受け取ったところまでで、画面に表示されたかまでは分かりません。詳細は docs/dev/web-push-reminder-design.md。
       </div>
 
       {fetchError && (
-        <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
+        <div role="alert" style={{ fontSize: "13px", color: "var(--color-text-danger)", background: "var(--color-bg-danger)", padding: "8px 12px", borderRadius: "var(--radius-md)" }}>
           {fetchError}
         </div>
       )}
@@ -115,17 +115,17 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
 
       {dryRun && (
         <Card title="dryRun の結果（送信していません）" badge={`${dryRun.people.length}人`}>
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginBottom: "6px", lineHeight: 1.7 }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "6px", lineHeight: 1.7 }}>
             {dryRun.date}（今のスロット {dryRun.currentSlot}）。
             {dryRun.daySkip ? ` 今日は送りません：${dryRun.daySkip}。` : ""}
             {!dryRun.vapidConfigured && " 🔴 VAPID の鍵が未設定です（Windows通知は送れません）。"}
           </div>
           {dryRun.people.length === 0 ? (
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>今日知らせる対象の人はいません。</div>
+            <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)" }}>今日知らせる対象の人はいません。</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
               {dryRun.people.map(p => (
-                <div key={p.memberId} style={{ fontSize: "11.5px", padding: "6px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
+                <div key={p.memberId} style={{ fontSize: "12px", padding: "6px 10px", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)" }}>
                   <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", color: "var(--color-text-primary)" }}>
                     <span style={{ fontWeight: 600 }}>{memberNameById.get(p.memberId) ?? p.memberId}</span>
                     <span>{p.reminderTime}</span>
@@ -141,11 +141,11 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
       )}
 
       {loading ? (
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
+        <div style={{ fontSize: "13px", color: "var(--color-text-secondary)", padding: "20px" }}>読み込み中...</div>
       ) : (
         <Card title="直近の実行記録" badge={`最新${runs.length}件`}>
           {runs.length === 0 ? (
-            <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>実行記録がまだありません。</div>
+            <div style={{ fontSize: "13px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>実行記録がまだありません。</div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               {runs.map(run => {
@@ -153,10 +153,10 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
                 return (
                   <div key={run.id} style={{
                     display: "flex", flexWrap: "wrap", alignItems: "center", gap: "8px", padding: "6px 10px",
-                    border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", fontSize: "11.5px",
+                    border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", fontSize: "12px",
                   }}>
                     <span style={{
-                      fontSize: "10.5px", padding: "1px 8px", borderRadius: "99px", fontWeight: 500,
+                      fontSize: "12px", padding: "1px 8px", borderRadius: "99px", fontWeight: 500,
                       color: `var(--color-text-${tone})`, background: `var(--color-bg-${tone})`, border: `1px solid var(--color-border-${tone})`,
                     }}>{STATUS_LABEL[run.status]}</span>
                     <span style={{ color: "var(--color-text-primary)", fontWeight: 500 }}>{formatJstDateTime(run.started_at)}</span>
@@ -174,7 +174,7 @@ export function ReminderSection({ currentUser }: { currentUser: Member }) {
                       <span style={{ color: "var(--color-text-purple)" }}>🛡 エラーのまとめ通知 {run.error_digest_sent}</span>
                     )}
                     {run.error_summary && (
-                      <span style={{ flexBasis: "100%", color: run.status === "success" ? "var(--color-text-tertiary)" : "var(--color-text-danger)", fontSize: "11px" }}>
+                      <span style={{ flexBasis: "100%", color: run.status === "success" ? "var(--color-text-tertiary)" : "var(--color-text-danger)", fontSize: "12px" }}>
                         {run.error_summary}
                       </span>
                     )}

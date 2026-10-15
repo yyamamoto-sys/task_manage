@@ -18,7 +18,7 @@ import { KEYS } from "../../lib/localData/localStore";
 import { confirmDialog } from "../../lib/dialog";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { showToast } from "../common/Toast";
-import { SaveButton, SaveErrorBand, SavedFlash, handleSaveShortcut, useSavedFlash } from "../common/saveUi";
+import { SaveButton, SaveErrorBand, SaveKeyScope, SavedFlash, useSavedFlash } from "../common/saveUi";
 import { Avatar } from "../auth/UserSelectScreen";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { APP_VERSION } from "../../lib/version";
@@ -63,15 +63,15 @@ export function ProfilePage({ currentUser }: { currentUser: Member }) {
       setError(formatErrorForUser(t("layout.settings.profile.saveFailed"), e));
     } finally { setSaving(false); }
   };
-  const keys = { onKeyDown: (e: React.KeyboardEvent) => handleSaveShortcut(e, () => void save()) };
 
   return (
+    <SaveKeyScope onSave={() => void save()}>
     <SectionBody>
       <Row label={t("layout.settings.profile.displayName")}>
-        <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={input} maxLength={40} {...keys} />
+        <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={input} maxLength={40} />
       </Row>
       <Row label={t("layout.settings.profile.shortName")} hint={t("layout.settings.profile.shortNameHint")}>
-        <input value={shortName} onChange={e => setShortName(e.target.value)} style={input} maxLength={20} {...keys} />
+        <input value={shortName} onChange={e => setShortName(e.target.value)} style={input} maxLength={20} />
       </Row>
       <Row label={t("layout.settings.profile.color")}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
@@ -96,6 +96,7 @@ export function ProfilePage({ currentUser }: { currentUser: Member }) {
       </div>
       <SaveErrorBand message={error} />
     </SectionBody>
+    </SaveKeyScope>
   );
 }
 

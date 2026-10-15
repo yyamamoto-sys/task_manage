@@ -42,12 +42,12 @@ export function Card({ title, badge, badgeColor = "info", headerExtra, children,
         padding: "10px 14px 8px",
         borderBottom: "1px solid var(--color-border-primary)",
       }}>
-        <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
+        <span style={{ fontSize: "13px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
           {title}
         </span>
         {badge && (
           <span style={{
-            fontSize: "10px", padding: "1px 7px", borderRadius: "var(--radius-full)",
+            fontSize: "12px", padding: "1px 7px", borderRadius: "var(--radius-full)",
             background: bs.bg, color: bs.color, border: `1px solid ${bs.border}`,
             fontWeight: "500", flexShrink: 0,
           }}>
@@ -101,7 +101,7 @@ export function SummaryTile({ label, value, tone, stripe = false }: SummaryTileP
       }}>
         {value}
       </div>
-      <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+      <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
         {label}
       </div>
     </div>
