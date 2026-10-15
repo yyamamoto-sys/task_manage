@@ -8316,3 +8316,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 原因：TourOverlay が #root（isolation:isolate）の内側に描かれており、body 直下へ Portal されるベルのパネル（z=9999）には z-index の数値（10000）に関係なく常に負けていた。
 # * 修正：TourProvider が TourOverlay を document.body へ Portal（pointerEvents:auto を明示）。重なり順は tourLayout.ts の TOUR_Z に集約。対象位置を250msごとに測り直し、対象が消えたら中央表示へ（操作ボタンを常に画面内に保つ）。
 # * テスト：tourLayering.test（修正前の TourProvider で3件赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.162（2026-10-15）：キーボードショートカットの追加（CLAUDE.md Section 85）
+#
+# * 追加：? （一覧の開閉）・N（新規タスク）・J/K と ↑↓（注目の移動）・Enter（詳細）・E（完了↔未完了・Undo付き）・A/D（詳細の担当者欄／終了日欄へ）・Esc（注目を外す）。リスト・カンバン・ガント共通のフック useTaskKeyboardNav。
+# * 判定は lib/shortcuts/keys.ts の shouldIgnoreSingleKey に集約（IME・入力中・修飾キー・モーダル）。注目は選択（チェック）と別の taskFocusStore＋data-task-focus-id の枠線。
+# * 修正：ConsultationPanel の Ctrl+Z が入力欄でも AI提案の取り消しを実行していた不具合（shouldRunConsultUndo）。
+# * ShortcutsPanel（ja／en）に全キーを掲載（既存で漏れていた / ・詳細の Ctrl+Enter／Enter・パレット内キーを含む）。
+# * テスト：keys／toggleDone／shortcutWiring（修正前に赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

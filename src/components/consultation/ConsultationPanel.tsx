@@ -27,6 +27,7 @@ import { aiTargetPickerProjects, resolveAiScope } from "../../lib/ai/aiTarget";
 import type { FileAttachment } from "../../lib/ai/invokeAI";
 import { formatAttachmentHistoryMarker } from "../../lib/ai/consultationAttachment";
 import { ConsultAttachments } from "./ConsultAttachments";
+import { shouldRunConsultUndo } from "../../lib/shortcuts/keys";
 
 /**
  * 【設計意図】
@@ -306,7 +307,8 @@ ${marker}` : text);
   useEffect(() => {
     if (!isOpen) return;
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "z" && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
+      // 入力欄ではブラウザ標準の文字の取り消しに任せる（AI提案の取り消しを奪わない）
+      if (shouldRunConsultUndo(e, document.activeElement as HTMLElement | null)) {
         e.preventDefault();
         if (canUndo) undo(currentUser.id);
       }

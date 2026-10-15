@@ -676,6 +676,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
             <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>未担当</span>
           )}
         </div>
+        <div data-shortcut-field="assignee">
         <CustomSelect
           multi
           value=""
@@ -695,6 +696,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           placeholder="＋ 担当者を追加..."
           searchable searchPlaceholder="メンバーで検索..."
           style={{ marginBottom: "12px" }} />
+        </div>
 
         {/* プロジェクト */}
         <SideLabel>プロジェクト</SideLabel>
@@ -913,7 +915,7 @@ export function TaskSidePanel({ taskId, currentUser, onClose, onSwitchFailed }: 
           </div>
           <div>
             <SideLabel>終了日</SideLabel>
-            <input type="date" value={sidebarForm.due_date}
+            <input type="date" value={sidebarForm.due_date} data-shortcut-field="due"
               onChange={e => setSidebarForm(f => f ? { ...f, due_date: e.target.value } : f)}
               style={{
                 ...inputStyle,

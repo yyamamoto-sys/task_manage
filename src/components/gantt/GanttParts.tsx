@@ -179,6 +179,7 @@ function TaskBarRowImpl({
           <div
             title={tooltip}
             data-task-id={taskId}
+            data-task-focus-id={taskId}
             onClick={isPreview ? undefined : e => onEdit(e, taskId)}
             // バー中央（左右端のリサイズハンドル・外側の結線ハンドルに覆われていない領域）へのmousedownは
             // このバー本体自身が受け取る（ハンドルはより高いzIndexで上に乗っているため自然にヒットテストで
@@ -477,7 +478,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
   if (dropZone === "before") shadowLayers.push("inset 0 2px 0 var(--color-brand)");
   if (dropZone === "after") shadowLayers.push("inset 0 -2px 0 var(--color-brand)");
   return (
-    <div key={task.id} onClick={() => onEdit(task.id)}
+    <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => { onHoverEnter(task.id); setIsRowHovered(true); }}
       onMouseLeave={() => { onHoverLeave(); setIsRowHovered(false); }}
       onDragOver={e => { if (draggingId && draggingId !== task.id) onRowDragOver(e, task.id); }}
@@ -623,7 +624,7 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
   onSaveName, isSelected, onCheckboxClick,
 }: GanttTodoLabelRowProps) {
   return (
-    <div key={task.id} onClick={() => onEdit(task.id)}
+    <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => onHoverEnter(task.id)}
       onMouseLeave={onHoverLeave}
       role="button" tabIndex={0}
@@ -685,7 +686,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   onSaveName, isSelected, onCheckboxClick,
 }: GanttPersonLabelRowProps) {
   return (
-    <div key={task.id} onClick={() => onEdit(task.id)}
+    <div key={task.id} data-task-focus-id={task.id} onClick={() => onEdit(task.id)}
       onMouseEnter={() => onHoverEnter(task.id)}
       onMouseLeave={onHoverLeave}
       role="button" tabIndex={0}

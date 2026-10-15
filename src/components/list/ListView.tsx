@@ -39,6 +39,7 @@ import { sectionsOfProject, UNSECTIONED_KEY, computeSectionDropOrder } from "../
 import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
+import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 
 interface Props {
@@ -698,6 +699,16 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isMobile, selectedTaskId, editingTaskId, quickAddParentId, detailAdd, filteredTasks, clearSelection]);
+
+  // J/K・Enter・E・A・D（注目中のタスクの操作。v3.162）。Ctrl+A の選択（selectedIds）とは別の「注目」
+  useTaskKeyboardNav({
+    enabled: !isMobile,
+    blocked: !!(selectedTaskId || editingTaskId || quickAddParentId || detailAdd),
+    orderedIds: visibleOrderedTaskIds,
+    onOpen: setSelectedTaskId,
+    currentUserId: currentUser.id,
+    canEdit: canGuestEdit(isGuestMember(currentUser), "task"),
+  });
 
   const SortIcon = ({ k }: { k: SortKey }) => sortKey === k
     ? <span style={{ marginLeft: 3, opacity: .8 }}>{sortDir === "asc" ? "↑" : "↓"}</span>
@@ -1415,6 +1426,7 @@ const ListTaskRow = memo(function ListTaskRow({
 
   return (
     <tr
+      data-task-focus-id={task.id}
       onClick={e => onRowClick(e, task.id)}
       onDragOver={canDrag ? (e => {
         if (!draggingId || draggingId === task.id) return;

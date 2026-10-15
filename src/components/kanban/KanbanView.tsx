@@ -12,6 +12,9 @@ import { active } from "../../lib/localData/localStore";
 import { TASK_STATUS_LABEL, TASK_STATUS_STYLE, TASK_PRIORITY_LABEL, TASK_PRIORITY_STYLE, TASK_PRIORITY_STRIPE_COLOR, getAssigneeIds, isAssignedTo, suppressOverdue } from "../../lib/taskMeta";
 import { computeRangeSelection } from "../../lib/selectionRange";
 import { computeKanbanOrderedIds } from "../../lib/kanbanOrder";
+import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
+import { isGuestMember } from "../../lib/guestMode";
+import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { buildParentDerivedMap, type ParentDerived } from "../../lib/taskHierarchy";
 import { computeGroupSummary } from "../../lib/list/groupSummary";
 import { isOverWipLimit, WIP_LIMIT_DEFAULT } from "../../lib/kanbanWip";
@@ -274,6 +277,16 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [isMobile, editingTaskId, addingStatus, orderedTaskIds, clearSelection]);
+
+  // J/K・Enter・E・A・D（注目中のカードの操作。v3.162）。順序は列→列内（上から下）の読み順＝orderedTaskIds
+  useTaskKeyboardNav({
+    enabled: !isMobile,
+    blocked: !!(editingTaskId || addingStatus !== null || showDuplicateModal),
+    orderedIds: orderedTaskIds,
+    onOpen: setEditingTaskId,
+    currentUserId: currentUser.id,
+    canEdit: canGuestEdit(isGuestMember(currentUser), "task"),
+  });
 
   return (
     <div style={{ display: "flex", flexDirection: "row", height: "100%", overflow: "hidden" }}>
@@ -726,6 +739,7 @@ const TaskCard = memo(function TaskCard({
     <div
       draggable
       data-kanban-card="true"
+      data-task-focus-id={task.id}
       onDragStart={() => onDragStart(task.id)}
       onDragEnd={onDragEnd}
       onClick={e => onClick(e, task.id)}

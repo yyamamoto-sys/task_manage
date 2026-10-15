@@ -53,6 +53,7 @@ import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, announcementTourList, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { isInputFocused, isModalOpen } from "../../lib/autoUpdate";
+import { isPlainLetter, shouldIgnoreSingleKey } from "../../lib/shortcuts/keys";
 import { pickAutoStartAnnouncement, visibleAnnouncementEntries } from "../tour/tours/announcements";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
@@ -589,6 +590,28 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       setAppModeState(m);
     });
   };
+
+  // 単キーのショートカット（v3.162）：? = ショートカット一覧の開閉、N = 新規タスク（右下の＋「タスクを追加」と同じ）。
+  // 入力中・IME変換中・モーダル表示中・詳細パネル表示中・モバイル・修飾キー併用では発火しない（lib/shortcuts/keys.ts）。
+  // リストの「/」（検索）と取り違えないよう、? は e.key で判定する（Shift+/ のキー配列差を吸収）。
+  const canQuickAddByKey = appMode === "plan" && canGuestEdit(isGuest, "task");
+  useEffect(() => {
+    if (isMobile || isTaskSidePanelOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnoreSingleKey(e, { activeElement: document.activeElement as HTMLElement | null, modalOpen: isModalOpen() })) return;
+      if (e.key === "?") {
+        e.preventDefault();
+        if (!e.repeat) setIsShortcutsOpen(prev => !prev);
+        return;
+      }
+      if (isPlainLetter(e, "n") && canQuickAddByKey) {
+        e.preventDefault();
+        if (!e.repeat) { setIsFabMenuOpen(false); setIsQuickAddOpen(true); }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isMobile, isTaskSidePanelOpen, canQuickAddByKey]);
 
   // 【v3.95】モバイルのボトムナビの実測高さをuiLayoutStoreへ反映する（残る2つの実依存の
   // 1つ目・「ボトムナビ→FAB」。CLAUDE.md Section 49参照）。ボトムナビはappMode==="plan"の

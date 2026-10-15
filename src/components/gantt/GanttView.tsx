@@ -42,6 +42,10 @@ import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
 import { applyCheckboxClick } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
+import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
+import { useTaskFocusStore } from "../../stores/taskFocusStore";
+import { isGuestMember } from "../../lib/guestMode";
+import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
 import { sharedProjectId } from "../../lib/members/assigneeCandidates";
 import { BulkActionBar } from "../task/BulkActionBar";
@@ -1025,6 +1029,8 @@ export function GanttView({
         return;
       }
       if (!hasOtherModifier && e.key === "Enter") {
+        // 注目中のタスクがあるときの Enter は useTaskKeyboardNav 側が開く（二重に開かない）
+        if (useTaskFocusStore.getState().focusedTaskId !== null) return;
         if (selectedTaskIds.size === 1) {
           const [onlyTaskId] = selectedTaskIds;
           handleRowEdit(onlyTaskId);
@@ -1037,6 +1043,16 @@ export function GanttView({
     isPreview, enableKeyboardShortcuts, isMobile, editingTaskId, editingMs,
     scrollToToday, zoomIn, zoomOut, visibleOrderedTaskIds, selectedTaskIds, handleRowEdit,
   ]);
+
+  // J/K・Enter・E・A・D（注目中のタスクの操作。v3.162）。順序は表示中の行順
+  useTaskKeyboardNav({
+    enabled: !(isPreview || !enableKeyboardShortcuts || isMobile),
+    blocked: !!(editingTaskId || editingMs),
+    orderedIds: visibleOrderedTaskIds,
+    onOpen: handleRowEdit,
+    currentUserId: currentUser.id,
+    canEdit: canGuestEdit(isGuestMember(currentUser), "task"),
+  });
 
   // 右端ドラッグ：期日変更
   const handleResizeDragStart = useCallback((e: React.MouseEvent, taskId: string) => {

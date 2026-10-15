@@ -60,6 +60,26 @@ function buildSections(t: TFn): ShortcutSection[] {
         items: [
           { gesture: t("common.shortcuts.section.common.kb.item1.gesture"), description: t("common.shortcuts.section.common.kb.item1.desc") },
           { gesture: t("common.shortcuts.section.common.kb.item2.gesture"), description: t("common.shortcuts.section.common.kb.item2.desc") },
+          { gesture: t("common.shortcuts.section.common.kb.item3.gesture"), description: t("common.shortcuts.section.common.kb.item3.desc") },
+          { gesture: t("common.shortcuts.section.common.kb.item4.gesture"), description: t("common.shortcuts.section.common.kb.item4.desc") },
+          { gesture: t("common.shortcuts.section.common.kb.item5.gesture"), description: t("common.shortcuts.section.common.kb.item5.desc") },
+          { gesture: t("common.shortcuts.section.common.kb.item6.gesture"), description: t("common.shortcuts.section.common.kb.item6.desc") },
+        ],
+      }, {
+        label: t("common.shortcuts.section.common.nav.label"),
+        items: [
+          { gesture: t("common.shortcuts.section.common.nav.item1.gesture"), description: t("common.shortcuts.section.common.nav.item1.desc") },
+          { gesture: t("common.shortcuts.section.common.nav.item2.gesture"), description: t("common.shortcuts.section.common.nav.item2.desc") },
+          { gesture: t("common.shortcuts.section.common.nav.item3.gesture"), description: t("common.shortcuts.section.common.nav.item3.desc") },
+          { gesture: t("common.shortcuts.section.common.nav.item4.gesture"), description: t("common.shortcuts.section.common.nav.item4.desc") },
+          { gesture: t("common.shortcuts.section.common.nav.item5.gesture"), description: t("common.shortcuts.section.common.nav.item5.desc") },
+          { gesture: t("common.shortcuts.section.common.nav.item6.gesture"), description: t("common.shortcuts.section.common.nav.item6.desc") },
+        ],
+      }, {
+        label: t("common.shortcuts.section.common.detail.label"),
+        items: [
+          { gesture: t("common.shortcuts.section.common.detail.item1.gesture"), description: t("common.shortcuts.section.common.detail.item1.desc") },
+          { gesture: t("common.shortcuts.section.common.detail.item2.gesture"), description: t("common.shortcuts.section.common.detail.item2.desc") },
         ],
       }],
     },
@@ -77,6 +97,7 @@ function buildSections(t: TFn): ShortcutSection[] {
             { gesture: t("common.shortcuts.section.list.mk.item6.gesture"), description: t("common.shortcuts.section.list.mk.item6.desc") },
             { gesture: t("common.shortcuts.section.list.mk.item7.gesture"), description: t("common.shortcuts.section.list.mk.item7.desc") },
             { gesture: t("common.shortcuts.section.list.mk.item8.gesture"), description: t("common.shortcuts.section.list.mk.item8.desc") },
+            { gesture: t("common.shortcuts.section.list.mk.item9.gesture"), description: t("common.shortcuts.section.list.mk.item9.desc") },
           ],
         },
         {
