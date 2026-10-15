@@ -334,6 +334,8 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.adminMessage.dueToday": "due today",
   "layout.adminMessage.dueOver": "overdue",
   "layout.adminMessage.ack": "Confirm",
+  "layout.adminMessage.tourPlay": "▶ Watch the tour: {title}",
+  "layout.tourAnnounce.resetDone": "Marked as unread. The tour will start automatically in a few seconds (the guide was closed).",
   "layout.adminMessage.acked": "Confirmed ({when})",
   "layout.adminMessage.ackFailed": "Could not record your confirmation",
   "layout.adminMessage.loadFailed": "Could not load the announcement",

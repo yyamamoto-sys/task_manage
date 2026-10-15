@@ -11,6 +11,7 @@ import { groupedDocs, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
 import { canViewGuideDoc } from "../../lib/docs/guideAccess";
 import { TOUR_LIST } from "../tour/tours";
+import type { Tour } from "../tour/tours/types";
 import { GUIDE_SVGS } from "../../lib/docs/guideAssets";
 import {
   GUIDE_SET_LABELS, downloadGuideHtml, isEmbeddedInFrame, selectGuideSet, type GuideSetKind,
@@ -41,11 +42,20 @@ interface GuideModeViewProps {
   onShowOnboarding?: () => void;
   /** 指定 tour id のツアーを再生する（MainLayout 側で TourProvider.start に橋渡し） */
   onStartTour?: (tourId: string) => void;
+  /** 「ほかのツアー」に並べるお知らせツアー（新機能の紹介。公開範囲はこの人に見えるものだけ＝MainLayout が絞って渡す） */
+  extraTours?: ExtraTour[];
+  /** 管理者だけ：お知らせツアーの既読を消して「自動で始まる条件」をもう一度試す（渡されたときだけボタンを出す） */
+  onResetAutoStart?: (tourId: string) => void;
   /** 管理者のみ「システム構成」の保存ボタンを出す（ゲストは false） */
   isAdmin?: boolean;
 }
 
-export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }: GuideModeViewProps = {}) {
+export interface ExtraTour {
+  tour: Tour;
+  audience: "super_admin" | "all";
+}
+
+export function GuideModeView({ onShowOnboarding, onStartTour, extraTours, onResetAutoStart, isAdmin = false }: GuideModeViewProps = {}) {
   const groups = useMemo(
     () => groupedDocs()
       .map(g => ({ ...g, entries: g.entries.filter(e => canViewGuideDoc(e, { isAdmin })) }))
@@ -141,6 +151,8 @@ export function GuideModeView({ onShowOnboarding, onStartTour, isAdmin = false }
             groups={groups}
             onOpenDoc={setCurrentSlug}
             onStartTour={onStartTour}
+            extraTours={extraTours}
+            onResetAutoStart={onResetAutoStart}
             onShowOnboarding={onShowOnboarding}
             allEntries={allEntries}
             isAdmin={isAdmin}
@@ -202,6 +214,8 @@ interface GuideHomeProps {
   groups: { section: string; entries: DocEntry[] }[];
   onOpenDoc: (slug: string) => void;
   onStartTour?: (tourId: string) => void;
+  extraTours?: ExtraTour[];
+  onResetAutoStart?: (tourId: string) => void;
   onShowOnboarding?: () => void;
   allEntries: DocEntry[];
   isAdmin: boolean;
@@ -209,13 +223,16 @@ interface GuideHomeProps {
 
 const EXPORT_KINDS: GuideSetKind[] = ["manual", "spec", "architecture"];
 
-function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding, allEntries, isAdmin }: GuideHomeProps) {
+function GuideHome({ groups, onOpenDoc, onStartTour, extraTours, onResetAutoStart, onShowOnboarding, allEntries, isAdmin }: GuideHomeProps) {
   const mainTour = TOUR_LIST[0];
   // 【設計意図】主要ツアー（mainTour）は大きな導線のまま維持し、それ以外のツアー
   // （例：OKRモードのガイドツアー）は「ほかのツアー」として小さめのカードで並べる。
   // OKRモードのツアーは初回は自動で始まるため、ここは「あとから見直せる導線」
   // （CLAUDE.md Section 24）として機能する。
-  const otherTours = TOUR_LIST.slice(1);
+  const otherTours: ExtraTour[] = [
+    ...TOUR_LIST.slice(1).map((tour): ExtraTour => ({ tour, audience: "all" })),
+    ...(extraTours ?? []),
+  ];
   const totalArticles = groups.reduce((n, g) => n + g.entries.length, 0);
 
   return (
@@ -266,32 +283,43 @@ function GuideHome({ groups, onOpenDoc, onStartTour, onShowOnboarding, allEntrie
           ここは見直したいときの再生導線として置く。 */}
       {onStartTour && otherTours.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {otherTours.map(tour => (
-            <button
-              key={tour.id}
-              onClick={() => onStartTour(tour.id)}
-              style={{
-                display: "flex", alignItems: "center", gap: "12px", textAlign: "left",
-                width: "100%", padding: "13px 16px",
-                background: "var(--color-bg-secondary)",
-                border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
-                cursor: "pointer", color: "var(--color-text-primary)",
-              }}
-            >
-              <span style={{
-                fontSize: "16px", flexShrink: 0,
-                width: "32px", height: "32px", borderRadius: "50%",
-                background: "var(--color-brand-light)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>▶</span>
-              <span style={{ flex: 1 }}>
-                <span style={{ display: "block", fontSize: "13px", fontWeight: 700 }}>{tour.title}</span>
-                <span style={{ display: "block", fontSize: "11px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
-                  約 {Math.round((tour.estimatedSeconds ?? 90) / 60) || 1} 分で再生します。
+          {otherTours.map(({ tour, audience }) => (
+            <div key={tour.id} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <button
+                onClick={() => onStartTour(tour.id)}
+                style={{
+                  display: "flex", alignItems: "center", gap: "12px", textAlign: "left",
+                  width: "100%", padding: "13px 16px",
+                  background: "var(--color-bg-secondary)",
+                  border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+                  cursor: "pointer", color: "var(--color-text-primary)",
+                }}
+              >
+                <span style={{
+                  fontSize: "16px", flexShrink: 0,
+                  width: "32px", height: "32px", borderRadius: "50%",
+                  background: "var(--color-brand-light)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>▶</span>
+                <span style={{ flex: 1 }}>
+                  <span style={{ display: "block", fontSize: "13px", fontWeight: 700 }}>{tour.title}</span>
+                  <span style={{ display: "block", fontSize: "12px", color: "var(--color-text-tertiary)", marginTop: "2px" }}>
+                    約 {Math.round((tour.estimatedSeconds ?? 90) / 60) || 1} 分で再生します。
+                    {audience === "super_admin" && "（管理者のみに公開中）"}
+                  </span>
                 </span>
-              </span>
-              <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-brand)", flexShrink: 0 }}>再生 →</span>
-            </button>
+                <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-brand)", flexShrink: 0 }}>再生 →</span>
+              </button>
+              {onResetAutoStart && extraTours?.some(x => x.tour.id === tour.id) && (
+                <button
+                  onClick={() => onResetAutoStart(tour.id)}
+                  style={{
+                    alignSelf: "flex-end", background: "transparent", border: "none", cursor: "pointer",
+                    fontSize: "12px", color: "var(--color-text-info)", padding: "2px 4px",
+                  }}
+                >自動表示をもう一度試す（既読を消す）</button>
+              )}
+            </div>
           ))}
         </div>
       )}

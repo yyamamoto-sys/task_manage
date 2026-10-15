@@ -68,3 +68,13 @@ export function isTourCompleted(storage: TourStorage, memberId: string | null | 
   const map = loadTourCompleted(storage, memberId);
   return map === null ? true : !!map[tourId];
 }
+
+/** 既読を消す（管理者が「自動で始まる条件」をもう一度試すため）。メンバーIDが未確定なら何もしない */
+export function unmarkTourCompleted(storage: TourStorage, memberId: string | null | undefined, tourId: string): void {
+  const key = tourCompletedKey(memberId);
+  if (!key) return;
+  const map = loadTourCompleted(storage, memberId) ?? {};
+  if (!(tourId in map)) return;
+  delete map[tourId];
+  storage.setItem(key, JSON.stringify(map));
+}

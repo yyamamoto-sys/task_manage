@@ -355,6 +355,8 @@ export const layoutJa = {
   "layout.adminMessage.dueToday": "今日まで",
   "layout.adminMessage.dueOver": "期限切れ",
   "layout.adminMessage.ack": "確認しました",
+  "layout.adminMessage.tourPlay": "▶ ツアーで見る：{title}",
+  "layout.tourAnnounce.resetDone": "既読を消しました。数秒後に自動で始まります（開いているガイドは閉じました）",
   "layout.adminMessage.acked": "確認済み（{when}）",
   "layout.adminMessage.ackFailed": "「確認しました」を記録できませんでした",
   "layout.adminMessage.loadFailed": "お知らせを読み込めませんでした",

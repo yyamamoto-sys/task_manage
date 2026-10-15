@@ -14,7 +14,7 @@ import { FeedbackModal } from "../feedback/FeedbackModal";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 import { captureFeedbackSnapshot, onOpenFeedbackRequest, requestOpenFeedback, type FeedbackCapture } from "../../lib/feedback/capture";
 import { useLangStore } from "../../stores/langStore";
-import { extractOpenTarget, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
+import { extractOpenTarget, extractTourId, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
 import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
 import {
@@ -51,14 +51,16 @@ import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
 import { TourProvider, useTour } from "../tour/TourProvider";
-import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
+import { buildTours, announcementTourList, FIRST_TIME_TOUR_ID } from "../tour/tours";
+import { isInputFocused, isModalOpen } from "../../lib/autoUpdate";
+import { pickAutoStartAnnouncement, visibleAnnouncementEntries } from "../tour/tours/announcements";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { isGuideAdmin } from "../../lib/docs/guideAccess";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
-import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
+import { confirmDiscardUnsavedEdits, hasUnsavedEditors } from "../../lib/editing/unsavedEditorRegistry";
 import { saveSidebarGroupId } from "../../lib/layout/sidebarCurrentGroupRestore";
 import { filterSidebarProjects } from "../../lib/project/sidebarProjectFilter";
 import { canEditProjectBasicInfo } from "../../lib/project/projectEditPermission";
@@ -184,9 +186,12 @@ export function MainLayout(props: Props) {
   // ゲスト（サンプル閲覧）ではAI実演ステップ等を差し替えた版を使う（CLAUDE.md Section 23）。
   // useMemo で props.currentUser にのみ依存させ、毎レンダーで新しいオブジェクトを作らない
   // （tours が毎回別参照だと TourProvider 内の useCallback が作り直され不要な再レンダーを誘発する）。
+  // お知らせツアーの公開範囲（announcements.ts の audience）に使う。super_admin かどうかは本体（isSuperAdmin）と同じ判定
+  const storeIsSuperAdmin = useAppStore(s => s.currentUserIsSuperAdmin);
+  const tourIsSuperAdmin = props.currentUser.is_super_admin === true || storeIsSuperAdmin;
   const tours = useMemo(
-    () => buildTours({ isGuest: isGuestMember(props.currentUser) }),
-    [props.currentUser]
+    () => buildTours({ isGuest: isGuestMember(props.currentUser), isSuperAdmin: tourIsSuperAdmin }),
+    [props.currentUser, tourIsSuperAdmin]
   );
   return (
     <TourProvider tours={tours} memberId={props.currentUser.id || null}>
@@ -751,7 +756,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     stageSettingsPage(page);
     setIsAdminOpen(true);
   });
-  const openTarget = (target: OpenTarget | null, messageId: number | null) => {
+  const openTarget = (target: OpenTarget | null, messageId: number | null, tourId: string | null = null) => {
     if (target === "my-tasks") openMyTasks();
     else if (target === "admin-errors") openSettings("errors");
     else if (target === "admin-feedback") openSettings("feedback");
@@ -759,11 +764,14 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     // お知らせの詳細は画面を切り替えず上に重ねるだけ（編集中の内容を失わないため guardedNavigate を通さない）
     else if (target === "admin-message" && messageId !== null) setOpenMessageId(messageId);
     else if (target === "admin-sent") openSettings("messages");
+    // お知らせツアーの再生（/?open=tour&id=…）。見えない人の分は tours に登録されておらず start() が通らない（audience）。
+    // ツアーは画面を切り替えず上に重ねるだけなので guardedNavigate は通さない
+    else if (target === "tour" && tourId !== null) { setOpenMessageId(null); tour.start(tourId); }
   };
   const openNotificationLink = (url: string) => {
     let search = "";
     try { search = new URL(url, window.location.origin).search; } catch { return; }
-    openTarget(extractOpenTarget(search), extractMessageId(search));
+    openTarget(extractOpenTarget(search), extractMessageId(search), extractTourId(search));
   };
   // イベント購読（マウント時に1回張る）からも最新の関数を呼べるよう ref に置く
   const openNotificationLinkRef = useRef(openNotificationLink);
@@ -835,12 +843,52 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       refreshKey={bellRefreshKey}
     />
   );
+  // お知らせツアー（v3.159・tours/announcements.ts）。ガイドの「ほかのツアー」への並び・自動開始・管理者の再試行
+  const announcementTours = useMemo(
+    () => announcementTourList({ isGuest, isSuperAdmin }),
+    [isGuest, isSuperAdmin],
+  );
+  const resetAnnouncementAutoStart = (tourId: string) => {
+    tour.resetCompleted(tourId);
+    setIsGuideOpen(false);
+    showToast(t("layout.tourAnnounce.resetDone"), "success");
+  };
+  // 自動開始：ログイン済み・ゲスト以外・初回ツアー既読・そのツアーが未読・他のツアー中でない・モーダルや未保存編集が無い、のとき1回。
+  // 条件は3秒ごとに見直す（既読は localStorage から毎回読む＝リセット直後も再読み込み無しで評価される）。「あとで」も既読になる。
+  const autoStartRef = useRef({ tour, isGuest, isSuperAdmin, showTourInvite, blockedByScreen: false, memberId: currentUser.id });
+  autoStartRef.current = {
+    tour, isGuest, isSuperAdmin, showTourInvite, memberId: currentUser.id,
+    blockedByScreen: isGuideOpen || isAdminOpen || isOnboardingOverlayOpen || openMessageId !== null || feedbackCapture !== null || isAcceptInviteOpen || isQuickAddOpen || activeLabView !== null,
+  };
+  const hasAutoStartCandidates = !isGuest && visibleAnnouncementEntries({ isGuest, isSuperAdmin }).some(e => e.autoStart);
+  useEffect(() => {
+    if (!hasAutoStartCandidates) return;
+    const check = () => {
+      const c = autoStartRef.current;
+      // モーダル（ConfirmModal・modalOverlayStyle の独自モーダル）と入力中は始めない（入力を邪魔しない）
+      const domBlocked = isModalOpen() || isInputFocused();
+      const id = pickAutoStartAnnouncement({
+        viewer: { isGuest: c.isGuest, isSuperAdmin: c.isSuperAdmin },
+        memberId: c.memberId || null,
+        firstTimeDone: c.tour.isCompleted(FIRST_TIME_TOUR_ID) && !c.showTourInvite,
+        isCompleted: c.tour.isCompleted,
+        tourRunning: c.tour.isRunning,
+        blocked: c.blockedByScreen || domBlocked || hasUnsavedEditors(),
+      });
+      if (id) c.tour.start(id);
+    };
+    const first = setTimeout(check, 3000);
+    const iv = setInterval(check, 3000);
+    return () => { clearTimeout(first); clearInterval(iv); };
+  }, [hasAutoStartCandidates]);
   const adminMessageDialog = !isGuest && openMessageId !== null ? (
     <AdminMessageDialog
       memberId={currentUser.id}
       messageId={openMessageId}
       onClose={() => setOpenMessageId(null)}
       onChanged={() => setBellRefreshKey(k => k + 1)}
+      tourTitleOf={tour.tourTitleOf}
+      onStartTour={(tourId: string) => { setOpenMessageId(null); tour.start(tourId); }}
     />
   ) : null;
 
@@ -1123,6 +1171,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           <GuideModeView
             onShowOnboarding={() => setIsOnboardingOverlayOpen(true)}
             onStartTour={(tourId: string) => { setIsGuideOpen(false); tour.start(tourId); }}
+            extraTours={announcementTours}
+            onResetAutoStart={isSuperAdmin ? resetAnnouncementAutoStart : undefined}
             isAdmin={guideAdmin}
           />
         </Suspense>

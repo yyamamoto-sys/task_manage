@@ -9,10 +9,14 @@
 import type { Tour, TourStep } from "./types";
 import { firstTimeTour } from "./first-time";
 import { okrIntroTour } from "./okr-intro";
+import { feedbackIntroTour } from "./feedback-intro";
+import { ANNOUNCEMENT_TOURS, canSeeAnnouncement, visibleAnnouncementEntries, type AnnouncementViewer } from "./announcements";
 
 export const ALL_TOURS: Record<string, Tour> = {
   [firstTimeTour.id]: firstTimeTour,
   [okrIntroTour.id]: okrIntroTour,
+  // お知らせツアー（新機能の紹介）。公開範囲は announcements.ts の audience。buildTours が見えない人の分を外す
+  [feedbackIntroTour.id]: feedbackIntroTour,
 };
 
 /** ガイドのツアー一覧に表示する順序（重要度の高い順） */
@@ -40,8 +44,19 @@ export const OKR_TOUR_ID = okrIntroTour.id;
  * 差し替えるのではなく必ず両方のツアーを返すこと（片方だけ返すとゲストのガイドから
  * OKRツアーが再生できなくなる）。
  */
-export function buildTours(opts: { isGuest: boolean }): Record<string, Tour> {
-  if (!opts.isGuest) return ALL_TOURS;
+export function buildTours(opts: { isGuest: boolean; isSuperAdmin?: boolean }): Record<string, Tour> {
+  if (!opts.isGuest) {
+    // お知らせツアーは audience で見える人だけに登録する（見えない人は start() 自体が通らない）。
+    // 全部見える人には ALL_TOURS をそのまま返す（参照を保つ＝TourProvider の再計算を避ける）。
+    const viewer: AnnouncementViewer = { isGuest: false, isSuperAdmin: opts.isSuperAdmin === true };
+    const hidden = ANNOUNCEMENT_TOURS.filter(e => !canSeeAnnouncement(e, viewer)).map(e => e.tourId);
+    if (hidden.length === 0) return ALL_TOURS;
+    const visible: Record<string, Tour> = {};
+    for (const [id, tour] of Object.entries(ALL_TOURS)) {
+      if (!hidden.includes(id)) visible[id] = tour;
+    }
+    return visible;
+  }
 
   const guestSteps: TourStep[] = firstTimeTour.steps
     .filter(step => step.id !== "fab")
@@ -71,4 +86,14 @@ export function buildTours(opts: { isGuest: boolean }): Record<string, Tour> {
   const guestFirstTimeTour: Tour = { ...firstTimeTour, steps: guestSteps };
 
   return { [guestFirstTimeTour.id]: guestFirstTimeTour, [okrIntroTour.id]: okrIntroTour };
+}
+
+/** ガイドの「ほかのツアー」に並べるお知らせツアー（見える人の分だけ。ゲストには空） */
+export function announcementTourList(viewer: AnnouncementViewer): { tour: Tour; audience: "super_admin" | "all" }[] {
+  const out: { tour: Tour; audience: "super_admin" | "all" }[] = [];
+  for (const e of visibleAnnouncementEntries(viewer)) {
+    const tour = ALL_TOURS[e.tourId];
+    if (tour) out.push({ tour, audience: e.audience });
+  }
+  return out;
 }

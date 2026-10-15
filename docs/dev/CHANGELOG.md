@@ -8294,3 +8294,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 差分取得（catchUpRemoteChanges）経由の到着は noteRemoteEcho(…, "catchup") として扱い、realtime が届いた証拠にしない。
 # * 配線は setEchoRecoveryRequesters（appStore.ts・setRemoteResyncRequester と同じ要求先パターン）。テスト：realtimeEchoWatch.test.ts（旧実装で赤を確認）。
 # * DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.159（2026-10-15）：お知らせツアー（新機能の紹介）の仕組みと、最初の1本「アプリ内から要望を送れるようになりました」（管理者のみ先行公開。CLAUDE.md Section 83）
+#
+# * TourStep に「利用者が操作したら進む」種別を追加（advanceOn＝対象の要素が現れたら次へ・whileVisible＝要素が消えたら戻る／終わる・skipLabel・nextLabel・keepFocus・raiseSpotlight）。判定は tourStepGate.ts の純関数、TourProvider が150msごとに DOM を見る。押す段は「次へ」「戻る」を出さず、キーでも進まない。
+# * tours/announcements.ts（お知らせツアーの登録表。tourId・sinceVersion・audience［super_admin | all］・autoStart）。buildTours({isGuest, isSuperAdmin}) が見えない人の登録を外す。自動開始は pickAutoStartAnnouncement（ログイン済み・ゲスト以外・初回ツアー既読・未読・他のツアー中でない・モーダル／入力中／未保存編集／全画面表示なし）を MainLayout が3秒ごとに評価。「あとで」は既読扱い。
+# * ガイドの「ほかのツアー」にお知らせツアーを並べ、super_admin にだけ「自動表示をもう一度試す（既読を消す）」を出す（tourCompletion.unmarkTourCompleted・TourContext.resetCompleted）。
+# * お知らせ（ベル）からの再生：本文の専用記法 amp://tour/<id>（tourLinks.ts）。詳細ダイアログが記法を取り除いて「ツアーで見る」ボタンにする。送信画面に「ツアーを添付」。ディープリンク /?open=tour&id=<id>（deepLink.ts）。DB 変更なし。
+# * feedback-intro（4ステップ）：ベル→「ご意見を送る」→入力欄。data-tour-id を notification-panel／bell-feedback-entry／feedback-modal／feedback-textarea に追加。audience は super_admin（全員へは1行で "all"）。
+# * テスト：announcements.test・tourLinks.test・announcementWiring.test（わざと壊して赤を確認）・tourCompletion/buildTours を更新。
+# * DB 変更なし・マイグレーションなし・MIN_CLIENT_VERSION は上げない。

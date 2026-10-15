@@ -13,7 +13,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { Tour, TourStep } from "./tours/types";
-import { isTourCompleted, markTourCompleted } from "./tourCompletion";
+import { isTourCompleted, markTourCompleted, unmarkTourCompleted } from "./tourCompletion";
+import { evaluateStepGate, isGatedStep } from "./tourStepGate";
 
 interface TourContextValue {
   /** 指定 id のツアーを開始（既完了でも呼べば再生される） */
@@ -25,6 +26,10 @@ interface TourContextValue {
   markCompleted: (tourId: string) => void;
   /** 指定ツアーがこのメンバーの既読として localStorage にあるか（メンバーID未確定なら true） */
   isCompleted: (tourId: string) => boolean;
+  /** 既読を消す（管理者が「自動で始まる条件」をもう一度試すため。再読み込みは要らない） */
+  resetCompleted: (tourId: string) => void;
+  /** 登録されているツアーの表題（この人に見えないツアーは null＝お知らせの「ツアーで見る」ボタンを出さない） */
+  tourTitleOf: (tourId: string) => string | null;
   /** ツアーが進行中か */
   isRunning: boolean;
   /** 現在実行中のツアーid（無ければ null）。「今動いているのはこのツアーか」を
@@ -47,6 +52,10 @@ function safeIsCompleted(memberId: string | null, tourId: string): boolean {
 
 function safeMarkCompleted(memberId: string | null, tourId: string) {
   try { markTourCompleted(localStorage, memberId, tourId); } catch { /* ignore */ }
+}
+
+function safeUnmarkCompleted(memberId: string | null, tourId: string) {
+  try { unmarkTourCompleted(localStorage, memberId, tourId); } catch { /* ignore */ }
 }
 
 interface Props {
@@ -116,6 +125,28 @@ export function TourProvider({ tours, memberId, children }: Props) {
     }
   }, [activeStep]);
 
+  // 「利用者が操作したら進む」ステップ：対象の要素（ベルのパネル・ご意見のモーダル）が現れたら次へ、
+  // 必要な要素が消えたら戻る／終わる（判定は tourStepGate.ts の純関数）。
+  const endRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    if (!activeStep || (!activeStep.advanceOn && !activeStep.whileVisible)) return;
+    const step = activeStep;
+    let settled = false;
+    const exists = (id: string) => !!document.querySelector(`[data-tour-id="${CSS.escape(id)}"]`);
+    const tick = () => {
+      if (settled) return;
+      const r = evaluateStepGate(step, exists);
+      if (r === "stay") return;
+      settled = true; // 1回の判定で1回だけ動く（次の描画までに2回進まない）
+      if (r === "advance") setStepIdx(i => i + 1);
+      else if (r === "back") setStepIdx(i => Math.max(0, i - 1));
+      else endRef.current();
+    };
+    tick();
+    const iv = setInterval(tick, 150);
+    return () => clearInterval(iv);
+  }, [activeStep]);
+
   // ステップ範囲外なら終了
   useEffect(() => {
     if (activeTour && stepIdx >= activeTour.steps.length) {
@@ -140,13 +171,19 @@ export function TourProvider({ tours, memberId, children }: Props) {
     setStepIdx(0);
   }, [activeTour, memberId]);
 
+  endRef.current = end;
+
   const markCompleted = useCallback((tourId: string) => safeMarkCompleted(memberId, tourId), [memberId]);
+
+  const resetCompleted = useCallback((tourId: string) => safeUnmarkCompleted(memberId, tourId), [memberId]);
+
+  const tourTitleOf = useCallback((tourId: string) => tours[tourId]?.title ?? null, [tours]);
 
   const isCompleted = useCallback((tourId: string) => safeIsCompleted(memberId, tourId), [memberId]);
 
   const value = useMemo<TourContextValue>(() => ({
-    start, end, markCompleted, isCompleted, isRunning: !!activeTour, activeTourId: activeTourId,
-  }), [start, end, markCompleted, isCompleted, activeTour, activeTourId]);
+    start, end, markCompleted, isCompleted, resetCompleted, tourTitleOf, isRunning: !!activeTour, activeTourId: activeTourId,
+  }), [start, end, markCompleted, isCompleted, resetCompleted, tourTitleOf, activeTour, activeTourId]);
 
   return (
     <TourContext.Provider value={value}>
@@ -218,7 +255,9 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
   }, [step]);
 
   // ステップが変わるたびにダイアログへフォーカス（キーボード操作の起点・読み上げのトリガ）
-  useEffect(() => { dialogRef.current?.focus(); }, [stepIdx]);
+  // （keepFocus のステップは背後の入力欄の入力を妨げないよう、フォーカスを奪わない）
+  useEffect(() => { if (!step.keepFocus) dialogRef.current?.focus(); }, [stepIdx, step.keepFocus]);
+  const gated = isGatedStep(step);
 
   // キーボード操作：Esc=終了 / →・Enter=次へ / ←=戻る（入力欄フォーカス時は奪わない）
   useEffect(() => {
@@ -227,13 +266,15 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
       const inField = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
       if (e.key === "Escape") { e.preventDefault(); onSkip(); return; }
       if (inField) return;
+      // 「押してください」の段は、キーでは進めない（利用者が実際に操作したことで進む）
+      if (gated) return;
       if (e.key === "ArrowRight") { e.preventDefault(); onNext(); }
       else if (e.key === "ArrowLeft") { if (stepIdx > 0) { e.preventDefault(); onPrev(); } }
       else if (e.key === "Enter" && ae?.tagName !== "BUTTON") { e.preventDefault(); onNext(); }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onNext, onPrev, onSkip, stepIdx]);
+  }, [onNext, onPrev, onSkip, stepIdx, gated]);
 
   // フォーカストラップ：Tab はダイアログ内のボタンだけを巡回し、背後のアプリへ抜けない
   const handleTrapKeyDown = (e: React.KeyboardEvent) => {
@@ -286,7 +327,7 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
             border: "2px solid var(--color-brand)",
             borderRadius: "var(--radius-md)",
             pointerEvents: "none",
-            zIndex: 9991,
+            zIndex: step.raiseSpotlight ? 10000 : 9991,
             transition: cutoutTransition,
           }} />
         </>
@@ -351,13 +392,15 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
             {step.body}
           </div>
           <div style={{ display: "flex", gap: "6px", marginTop: "12px", justifyContent: "flex-end" }}>
-            {stepIdx > 0 && (
+            {stepIdx > 0 && !gated && (
               <button onClick={onPrev} style={ghostBtn}>← 戻る</button>
             )}
-            <button onClick={onSkip} style={ghostBtn}>スキップ</button>
-            <button onClick={onNext} style={primaryBtn}>
-              {stepIdx + 1 < totalSteps ? "次へ →" : "完了"}
-            </button>
+            <button onClick={onSkip} style={ghostBtn}>{step.skipLabel ?? "スキップ"}</button>
+            {!gated && (
+              <button onClick={onNext} style={primaryBtn}>
+                {step.nextLabel ?? (stepIdx + 1 < totalSteps ? "次へ →" : "完了")}
+              </button>
+            )}
           </div>
         </div>
       </div>

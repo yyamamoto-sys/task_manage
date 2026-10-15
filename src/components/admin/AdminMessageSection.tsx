@@ -5,6 +5,8 @@
 // 🔴 宛先の範囲は DB（send_admin_message）が強制する。ここで選べる宛先も DB の admin_message_candidates が返す範囲だけ。
 // 送信後に Windows通知の即時送信（push-reminders の mode=admin_message）を呼ぶ。失敗しても cron が代わりに送る。
 
+import { announcementTourList } from "../tour/tours";
+import { attachTourLink, extractTourIds, stripTourLinks } from "../tour/tours/tourLinks";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { Member } from "../../lib/localData/types";
 import { useAppStore } from "../../stores/appStore";
@@ -45,6 +47,13 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
   const [candError, setCandError] = useState<string | null>(null);
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  // 「ツアーを添付」：本文の末尾に `amp://tour/<id>` を足して送る（受け取る人の詳細に「ツアーで見る」ボタンが出る）。DB は変えない
+  const [tourId, setTourId] = useState("");
+  const attachableTours = useMemo(
+    () => announcementTourList({ isGuest: false, isSuperAdmin }).map(x => x.tour),
+    [isSuperAdmin],
+  );
+  const fullBody = attachTourLink(body, tourId || null);
   const [mode, setMode] = useState<TargetMode>(isSuperAdmin ? "all" : "group");
   const [groupId, setGroupId] = useState<string>(currentUser.group_id ?? "");
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -59,7 +68,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
   const [openId, setOpenId] = useState<number | null>(null);
   const [status, setStatus] = useState<AdminMessageRecipientStatus[] | null>(null);
 
-  useEffect(() => { onDirtyChange(subject.trim() !== "" || body.trim() !== ""); }, [subject, body, onDirtyChange]);
+  useEffect(() => { onDirtyChange(subject.trim() !== "" || body.trim() !== "" || tourId !== ""); }, [subject, body, tourId, onDirtyChange]);
 
   useEffect(() => {
     if (!canSend) return;
@@ -107,7 +116,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
     target,
     (candidates ?? []).map(c => ({ id: c.member_id, group_id: c.group_id, group_ids: c.group_ids })),
   ), [candidates, target, isSuperAdmin, currentUser.id, currentUser.is_admin, homeGroupId]);
-  const draftError = validateDraft({ subject, body, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null }, todayJst());
+  const draftError = validateDraft({ subject, body: fullBody, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null }, todayJst());
   const nameById = useMemo(() => new Map((candidates ?? []).map(c => [c.member_id, c.display_name + (c.member_id === currentUser.id ? "（自分）" : "")])), [candidates, currentUser.id]);
 
   const visibleCandidates = useMemo(() => {
@@ -136,7 +145,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
     if (!ok) return;
     setSending(true);
     try {
-      const r = await sendAdminMessage({ subject, body, target, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null });
+      const r = await sendAdminMessage({ subject, body: fullBody, target, requiresAck, dueDate: requiresAck && dueDate ? dueDate : null });
       showToast(`お知らせを${r.recipientCount}人に送りました`, "success");
       requestBellRefresh();
       try {
@@ -145,7 +154,7 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
         // アプリ内には届いている。Windows通知は次の定期実行（平日30分ごと）が代わりに送る
         console.warn("[AdminMessageSection] Windows通知の即時送信に失敗:", e);
       }
-      setSubject(""); setBody(""); setSelected(new Set()); setRequiresAck(false); setDueDate(""); setPreview(false);
+      setSubject(""); setBody(""); setTourId(""); setSelected(new Set()); setRequiresAck(false); setDueDate(""); setPreview(false);
       await reloadSent();
     } catch (e) {
       showToast(formatErrorForUser("お知らせを送れませんでした", e), "error");
@@ -191,6 +200,16 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
               style={{ ...inputStyle, resize: "vertical", lineHeight: 1.6 }} />
             <div style={hintStyle}>文字だけのお知らせです（太字などの装飾は使えません）。http:// か https:// で始まるURLはリンクになります。</div>
           </div>
+          {attachableTours.length > 0 && (
+            <div>
+              <label style={labelStyle} htmlFor="admin-message-tour">ツアーを添付（任意）</label>
+              <select id="admin-message-tour" value={tourId} onChange={e => setTourId(e.target.value)} style={inputStyle}>
+                <option value="">添付しない</option>
+                {attachableTours.map(t => <option key={t.id} value={t.id}>{t.title}</option>)}
+              </select>
+              <div style={hintStyle}>選ぶと、受け取った人のお知らせの詳細に「ツアーで見る」ボタンが出ます（本文の末尾に <code>amp://tour/{tourId || "ツアーid"}</code> が足されます）。</div>
+            </div>
+          )}
 
           <div>
             <span style={labelStyle}>宛先</span>
@@ -265,7 +284,15 @@ export function AdminMessageSection({ currentUser, onDirtyChange }: { currentUse
                 <span>送信：{currentUser.display_name}</span>
                 {requiresAck && dueDate && <DueChip dueDate={dueDate} acknowledged={false} />}
               </div>
-              <AdminMessageBody text={body.trim() || "（本文）"} />
+              <AdminMessageBody text={stripTourLinks(fullBody).trim() || "（本文）"} />
+              {extractTourIds(fullBody).map(id => {
+                const tt = attachableTours.find(x => x.id === id);
+                return tt ? (
+                  <div key={id} style={{ marginTop: "8px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 600, padding: "4px 12px", borderRadius: "var(--radius-md)", background: "var(--color-brand)", color: "#fff" }}>▶ ツアーで見る：{tt.title}</span>
+                  </div>
+                ) : null;
+              })}
               {requiresAck && (
                 <div style={{ marginTop: "8px", textAlign: "right" }}>
                   <span style={{ fontSize: "13px", fontWeight: 600, padding: "4px 12px", borderRadius: "var(--radius-md)", background: "var(--color-bg-warning)", color: "var(--color-text-warning)", border: "1px solid var(--color-border-warning)" }}>確認しました</span>

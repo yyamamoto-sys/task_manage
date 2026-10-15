@@ -13,6 +13,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
+import { stripTourLinks } from "../tour/tours/tourLinks";
 import { useT } from "../../hooks/useT";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -384,6 +385,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
           ref={panelRef}
           data-feedback-ui=""
           role="dialog"
+          data-tour-id="notification-panel"
           aria-label={t("layout.bell.title")}
           className="animate-dropdown"
           style={{
@@ -409,7 +411,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
               style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0 }}>
               {t("layout.bell.settings")}
             </button>
-            <button type="button" onClick={() => { setOpen(false); onOpenFeedback(); }}
+            <button type="button" data-tour-id="bell-feedback-entry" onClick={() => { setOpen(false); onOpenFeedback(); }}
               style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0 }}>
               {t("layout.feedback.entryBell")}
             </button>
@@ -487,7 +489,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
                         {rec?.due_date && <DueChip dueDate={rec.due_date} acknowledged={rec.acknowledged_at !== null} />}
                       </span>
                     )}
-                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.6, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{n.body}</div>
+                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "2px", lineHeight: 1.6, wordBreak: "break-word", whiteSpace: "pre-wrap" }}>{stripTourLinks(n.body)}</div>
                   </button>
                   {rec?.requires_ack && (
                     <div style={{ display: "flex", justifyContent: "flex-end", padding: "0 10px 8px" }}>

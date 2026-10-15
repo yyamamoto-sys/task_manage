@@ -10,8 +10,8 @@ import { describe, it, expect } from "vitest";
 import { buildTours, ALL_TOURS, FIRST_TIME_TOUR_ID, OKR_TOUR_ID } from "..";
 
 describe("buildTours", () => {
-  it("非ゲストではALL_TOURSをそのまま返す", () => {
-    const tours = buildTours({ isGuest: false });
+  it("非ゲストでお知らせツアーが全部見える人（super_admin）にはALL_TOURSをそのまま返す", () => {
+    const tours = buildTours({ isGuest: false, isSuperAdmin: true });
     expect(tours).toBe(ALL_TOURS);
   });
 

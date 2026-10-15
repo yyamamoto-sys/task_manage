@@ -9,6 +9,7 @@ import { createPortal } from "react-dom";
 import { useT } from "../../hooks/useT";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { linkifyPlainText } from "../../lib/adminMessages/linkify";
+import { extractTourIds, stripTourLinks } from "../tour/tours/tourLinks";
 import { daysUntil, formatDueShort, todayJst } from "../../lib/adminMessages/adminMessages";
 import { ADMIN_MESSAGE_ICON } from "../../lib/notifications/notificationKinds";
 import {
@@ -53,9 +54,12 @@ interface Props {
   onClose: () => void;
   /** 既読・確認で状態が変わったとき（ベルの未読数を取り直す） */
   onChanged?: () => void;
+  /** お知らせの本文にある `amp://tour/<id>` の再生。tourTitleOf が null を返すツアー（この人に見えない）はボタンにしない */
+  tourTitleOf?: (tourId: string) => string | null;
+  onStartTour?: (tourId: string) => void;
 }
 
-export function AdminMessageDialog({ memberId, messageId, onClose, onChanged }: Props) {
+export function AdminMessageDialog({ memberId, messageId, onClose, onChanged, tourTitleOf, onStartTour }: Props) {
   const t = useT();
   const [msg, setMsg] = useState<ReceivedAdminMessage | null | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
@@ -135,7 +139,21 @@ export function AdminMessageDialog({ memberId, messageId, onClose, onChanged }: 
         <div style={{ ...MODAL_BODY_STYLE, padding: "4px 16px 14px" }}>
           {error && <div role="alert" style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "8px" }}>{error}</div>}
           {msg === null && !error && <div style={{ fontSize: "12px", color: "var(--color-text-tertiary)" }}>{t("layout.adminMessage.notFound")}</div>}
-          {msg && <AdminMessageBody text={msg.body} />}
+          {msg && <AdminMessageBody text={stripTourLinks(msg.body)} />}
+          {msg && onStartTour && tourTitleOf && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginTop: "12px", alignItems: "flex-start" }}>
+              {extractTourIds(msg.body).flatMap(id => {
+                const title = tourTitleOf(id);
+                if (title === null) return [];
+                return [(
+                  <button key={id} type="button" onClick={() => onStartTour(id)} style={{
+                    fontSize: "13px", fontWeight: 600, padding: "6px 14px", borderRadius: "var(--radius-md)", cursor: "pointer",
+                    background: "var(--color-brand)", color: "#fff", border: "none",
+                  }}>{t("layout.adminMessage.tourPlay", { title })}</button>
+                )];
+              })}
+            </div>
+          )}
         </div>
         {msg?.requires_ack && (
           <div style={{

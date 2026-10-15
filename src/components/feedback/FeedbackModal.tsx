@@ -170,6 +170,7 @@ export function FeedbackModal({ capture, onClose }: Props) {
       <div
         role="dialog"
         aria-modal="true"
+        data-tour-id="feedback-modal"
         aria-label={t("layout.feedback.title")}
         style={{ ...modalBoxStyle("min(580px, 100%)"), background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "var(--shadow-md)" }}
       >
@@ -204,6 +205,7 @@ export function FeedbackModal({ capture, onClose }: Props) {
                 </label>
                 <textarea
                   id="feedback-comment"
+                  data-tour-id="feedback-textarea"
                   ref={textareaRef}
                   value={comment}
                   maxLength={FEEDBACK_COMMENT_MAX}

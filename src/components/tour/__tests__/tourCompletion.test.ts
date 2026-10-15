@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   TOUR_COMPLETED_LEGACY_KEY, TOUR_COMPLETED_GUEST_KEY, tourCompletedKey,
-  migrateLegacyTourCompleted, loadTourCompleted, markTourCompleted, isTourCompleted,
+  migrateLegacyTourCompleted, loadTourCompleted, markTourCompleted, isTourCompleted, unmarkTourCompleted,
   type TourStorage,
 } from "../tourCompletion";
 import { GUEST_MEMBER_ID } from "../../../lib/guestMode";
@@ -83,5 +83,25 @@ describe("既読の記録", () => {
     const s = new MemoryStorage();
     s.setItem("tour_completed_v1:m1", "{broken");
     expect(isTourCompleted(s, "m1", "first-time")).toBe(false);
+  });
+});
+
+describe("unmarkTourCompleted（管理者の「自動表示をもう一度試す」）", () => {
+  it("そのツアーの既読だけを消し、ほかのツアー・ほかのメンバーの既読は残す", () => {
+    const s = new MemoryStorage();
+    markTourCompleted(s, "m1", "first-time");
+    markTourCompleted(s, "m1", "feedback-intro");
+    markTourCompleted(s, "m2", "feedback-intro");
+    unmarkTourCompleted(s, "m1", "feedback-intro");
+    expect(isTourCompleted(s, "m1", "feedback-intro")).toBe(false);
+    expect(isTourCompleted(s, "m1", "first-time")).toBe(true);
+    expect(isTourCompleted(s, "m2", "feedback-intro")).toBe(true);
+  });
+  it("未読のものを消しても何も書かない・メンバーID未確定なら何もしない", () => {
+    const s = new MemoryStorage();
+    unmarkTourCompleted(s, "m1", "feedback-intro");
+    expect(s.map.size).toBe(0);
+    unmarkTourCompleted(s, null, "feedback-intro");
+    expect(s.map.size).toBe(0);
   });
 });

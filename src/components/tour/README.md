@@ -14,6 +14,7 @@
 | `docs/guides/**` | ガイド本文（編集すれば即アプリに反映） |
 
 ## 改修・バグ探しの注意点
+- **新機能のお知らせツアー**（クリックで進む段・自動開始・お知らせからの再生）は `docs/dev/tour-guidelines.md` §13・`tours/announcements.ts`・`tourStepGate.ts`・`tours/tourLinks.ts`。公開範囲は `audience`。
 - **ツアーの見た目・文面を変える前に必ず `docs/dev/tour-guidelines.md` を読む**（トンマナ統一基準）。
 - ガイド文面はコードではなく `docs/guides/**` の Markdown を編集する。
 - ターゲットは `data-tour-id` 属性で指定（UI変更に強い・`skipIfMissing` で要素が無ければスキップ）。
