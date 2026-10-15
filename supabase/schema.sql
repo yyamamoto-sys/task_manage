@@ -3561,7 +3561,7 @@ CREATE TABLE IF NOT EXISTS public.in_app_notifications (
   id         bigserial PRIMARY KEY,
   member_id  text NOT NULL REFERENCES public.members(id),
   run_id     bigint REFERENCES public.reminder_runs(id) ON DELETE SET NULL,
-  kind       text NOT NULL CHECK (kind IN ('deadline_digest', 'backup_failure', 'backup_weekly_summary', 'client_error', 'admin_message', 'admin_message_ack')),  -- admin_message* は v3.131（20261001e）
+  kind       text NOT NULL CHECK (kind IN ('deadline_digest', 'backup_failure', 'backup_weekly_summary', 'client_error', 'admin_message', 'admin_message_ack', 'feedback')),  -- admin_message* は v3.131（20261001e）／feedback は v3.157（20261015b）
   title      text NOT NULL,
   body       text NOT NULL,
   url        text NOT NULL,
@@ -4666,3 +4666,354 @@ CREATE POLICY "project_sections_update" ON public.project_sections
   FOR UPDATE TO authenticated
   USING (public.can_access_group_ids(public.project_group_ids(project_id)))
   WITH CHECK (public.can_access_group_ids(public.project_group_ids(project_id)));
+
+
+-- ============================================================
+-- アプリ内フィードバック（app_feedback）段階1（v3.157・20261015b_app_feedback.sql）
+-- 正本：CLAUDE.md Section 82。in_app_notifications.kind に 'feedback' を許可（上の CREATE TABLE の CHECK に反映済み）。
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 2) app_feedback
+-- ------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.app_feedback (
+  id                 bigserial PRIMARY KEY,
+  member_id          text NOT NULL REFERENCES public.members(id),
+  group_id           text REFERENCES public.groups(id) ON DELETE SET NULL,
+  kind               text NOT NULL DEFAULT 'unspecified' CHECK (kind IN ('request', 'bug', 'other', 'unspecified')),
+  comment            text NOT NULL CHECK (char_length(comment) BETWEEN 1 AND 2000),
+  screen             text,
+  route              text,
+  app_version        text,
+  snapshot           jsonb,
+  snapshot_version   integer,
+  -- attached＝付けて送った／off＝本人がオフにした／too_large＝16KB超で保存しなかった／purged＝90日で消した
+  snapshot_state     text NOT NULL DEFAULT 'off' CHECK (snapshot_state IN ('attached', 'off', 'too_large', 'purged')),
+  status             text NOT NULL DEFAULT 'new' CHECK (status IN ('new', 'in_progress', 'done', 'wontfix')),
+  admin_memo         text CHECK (admin_memo IS NULL OR char_length(admin_memo) <= 2000),
+  status_changed_at  timestamptz,
+  status_changed_by  text REFERENCES public.members(id),
+  reply_text         text CHECK (reply_text IS NULL OR char_length(reply_text) <= 200),  -- 段階3で使う（段階1では常に NULL）
+  created_at         timestamptz NOT NULL DEFAULT now(),
+  updated_at         timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_feedback_created ON public.app_feedback (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_feedback_status_created ON public.app_feedback (status, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_app_feedback_member_created ON public.app_feedback (member_id, created_at DESC);
+
+DROP TRIGGER IF EXISTS trg_app_feedback_updated_at ON public.app_feedback;
+CREATE TRIGGER trg_app_feedback_updated_at
+  BEFORE UPDATE ON public.app_feedback
+  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at();
+
+-- 書き込みは RPC（SECURITY DEFINER）のみ。INSERT/UPDATE/DELETE のポリシーは作らない。
+-- 🔴 本人に表を直接読ませない（行の RLS だけでは admin_memo を送信者から隠せないため。本人は list_my_feedback）。
+-- 🔴 Section 39：SECURITY DEFINER 関数は (SELECT …) で包む
+ALTER TABLE public.app_feedback ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "app_feedback_read_super_admin" ON public.app_feedback;
+CREATE POLICY "app_feedback_read_super_admin" ON public.app_feedback
+  FOR SELECT TO authenticated
+  USING (COALESCE((SELECT public.current_member_is_super_admin()), false));
+
+-- ------------------------------------------------------------
+-- 3) スナップショットの整形（再帰）。深さ・件数・文字数を絞り、文字列は伏せ字を通す。
+--    キーは英数字と _ だけ（先頭は英字・32字まで）。オブジェクトは40キー・配列は10要素まで。
+--    呼べるのは SECURITY DEFINER の submit_feedback の中だけ（直下の REVOKE）
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.sanitize_feedback_json(p_val jsonb, p_depth integer)
+RETURNS jsonb
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = ''
+AS $fn_sanitize_feedback_json$
+DECLARE
+  v_type text := jsonb_typeof(p_val);
+  v_out  jsonb;
+  v_key  text;
+  v_item jsonb;
+  v_n    integer := 0;
+BEGIN
+  IF p_val IS NULL OR v_type = 'null' THEN
+    RETURN 'null'::jsonb;
+  END IF;
+  IF v_type IN ('number', 'boolean') THEN
+    RETURN p_val;
+  END IF;
+  IF v_type = 'string' THEN
+    RETURN to_jsonb(public.redact_client_error_text(left(p_val #>> '{}', 200), 120));
+  END IF;
+  IF p_depth <= 0 THEN
+    RETURN 'null'::jsonb;
+  END IF;
+  IF v_type = 'array' THEN
+    SELECT coalesce(jsonb_agg(public.sanitize_feedback_json(e.value, p_depth - 1) ORDER BY e.ord), '[]'::jsonb)
+      INTO v_out
+      FROM (SELECT t.value, t.ord FROM jsonb_array_elements(p_val) WITH ORDINALITY AS t(value, ord) ORDER BY t.ord LIMIT 10) e;
+    RETURN v_out;
+  END IF;
+  v_out := '{}'::jsonb;
+  FOR v_key, v_item IN SELECT j.key, j.value FROM jsonb_each(p_val) AS j LOOP
+    CONTINUE WHEN v_key !~ '^[A-Za-z][A-Za-z0-9_]{0,31}$';
+    v_n := v_n + 1;
+    EXIT WHEN v_n > 40;
+    v_out := v_out || jsonb_build_object(v_key, public.sanitize_feedback_json(v_item, p_depth - 1));
+  END LOOP;
+  RETURN v_out;
+END;
+$fn_sanitize_feedback_json$;
+
+REVOKE ALL ON FUNCTION public.sanitize_feedback_json(jsonb, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.sanitize_feedback_json(jsonb, integer) FROM anon;
+REVOKE ALL ON FUNCTION public.sanitize_feedback_json(jsonb, integer) FROM authenticated;
+
+-- ------------------------------------------------------------
+-- 4) RPC：送信
+--    戻り値：'ok'／'throttled'（同一本文の1分以内の再送）／'limited_hour'（1時間3件）／'limited_day'（24時間10件）
+--    p_snapshot_state：画面側が付けた状態（'attached'／'off'／'too_large'）。'attached' でも検証に通らなければ保存しない
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.submit_feedback(
+  p_kind text, p_comment text, p_screen text, p_route text, p_app_version text, p_group_id text,
+  p_snapshot jsonb, p_snapshot_state text, p_snapshot_version integer
+)
+RETURNS text
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_submit_feedback$
+DECLARE
+  v_member     text := public.current_member_id();
+  v_kind       text := CASE WHEN p_kind IN ('request', 'bug', 'other') THEN p_kind ELSE 'unspecified' END;
+  v_comment    text;
+  v_screen     text;
+  v_route      text;
+  v_version    text;
+  v_group      text;
+  v_in_snap    jsonb := p_snapshot;
+  v_snap       jsonb := NULL;
+  v_state      text := 'off';
+  v_hour       integer;
+  v_day        integer;
+  v_kind_label text;
+BEGIN
+  IF v_member IS NULL THEN
+    RAISE EXCEPTION 'メンバーとして登録されていないため、ご意見を送れません';
+  END IF;
+
+  v_comment := btrim(coalesce(p_comment, ''));
+  IF char_length(v_comment) = 0 THEN
+    RAISE EXCEPTION 'コメントを入力してください';
+  END IF;
+  IF char_length(v_comment) > 2000 THEN
+    RAISE EXCEPTION 'コメントは2000字までです';
+  END IF;
+  -- 正規表現（伏せ字）の前に、素のサイズで弾く
+  IF octet_length(coalesce(p_screen, '')) + octet_length(coalesce(p_route, '')) + octet_length(coalesce(p_app_version, '')) > 4096 THEN
+    RAISE EXCEPTION 'ご意見のデータが大きすぎます';
+  END IF;
+  IF v_in_snap IS NOT NULL AND octet_length(v_in_snap::text) > 65536 THEN
+    v_in_snap := NULL;
+    v_state := 'too_large';
+  END IF;
+
+  -- 同じ人の同時送信を直列化してから件数を数える（上限を超えない）
+  PERFORM pg_advisory_xact_lock(hashtext('app_feedback:' || v_member));
+
+  v_comment := public.redact_client_error_text(v_comment, 2000);
+
+  -- 同一本文の1分以内の再送は黙って1件にまとめる（二重クリック・再送対策）
+  IF EXISTS (
+    SELECT 1 FROM public.app_feedback f
+     WHERE f.member_id = v_member AND f.created_at > now() - interval '1 minute' AND f.comment = v_comment
+  ) THEN
+    RETURN 'throttled';
+  END IF;
+
+  SELECT count(*) FILTER (WHERE f.created_at > now() - interval '1 hour'), count(*)
+    INTO v_hour, v_day
+    FROM public.app_feedback f
+   WHERE f.member_id = v_member AND f.created_at > now() - interval '24 hours';
+  IF v_hour >= 3 THEN
+    RETURN 'limited_hour';
+  END IF;
+  IF v_day >= 10 THEN
+    RETURN 'limited_day';
+  END IF;
+
+  v_screen  := nullif(public.redact_client_error_text(left(coalesce(p_screen, ''), 120), 60), '');
+  v_route   := nullif(public.redact_client_error_text(left(coalesce(p_route, ''), 400), 200), '');
+  v_version := nullif(left(coalesce(p_app_version, ''), 20), '');
+
+  -- 送信時の表示部署：本人がアクセスできる部署だけ採る（それ以外は本人のホーム部署）
+  v_group := nullif(btrim(coalesce(p_group_id, '')), '');
+  IF v_group IS NOT NULL
+     AND NOT (v_group = ANY (public.current_member_group_ids()) OR COALESCE(public.current_member_is_super_admin(), false)) THEN
+    v_group := NULL;
+  END IF;
+  IF v_group IS NULL THEN
+    SELECT m.group_id INTO v_group FROM public.members m WHERE m.id = v_member;
+  END IF;
+  IF v_group IS NOT NULL AND NOT EXISTS (SELECT 1 FROM public.groups g WHERE g.id = v_group) THEN
+    v_group := NULL;
+  END IF;
+
+  -- スナップショット：許可した最上位のキーだけ残し、再帰で整形する。整形後に16KBを超えたら保存しない
+  IF p_snapshot_state = 'attached' AND v_in_snap IS NOT NULL AND jsonb_typeof(v_in_snap) = 'object' THEN
+    v_snap := public.sanitize_feedback_json(
+      (SELECT coalesce(jsonb_object_agg(e.key, e.value), '{}'::jsonb)
+         FROM jsonb_each(v_in_snap) AS e
+        WHERE e.key = ANY (ARRAY['v', 'takenAt', 'mode', 'view', 'overlay', 'settingsPage', 'route', 'screen', 'app', 'env',
+                                 'department', 'selection', 'listSettings', 'ganttSettings', 'kanbanSettings', 'clicks'])),
+      5);
+    IF octet_length(v_snap::text) > 16384 THEN
+      v_snap := NULL;
+      v_state := 'too_large';
+    ELSE
+      v_state := 'attached';
+    END IF;
+  ELSIF p_snapshot_state = 'too_large' THEN
+    v_state := 'too_large';
+  END IF;
+
+  INSERT INTO public.app_feedback
+    (member_id, group_id, kind, comment, screen, route, app_version, snapshot, snapshot_version, snapshot_state)
+  VALUES
+    (v_member, v_group, v_kind, v_comment, v_screen, v_route, v_version, v_snap,
+     CASE WHEN v_snap IS NOT NULL THEN coalesce(p_snapshot_version, 1) ELSE NULL END, v_state);
+
+  -- super_admin 全員のうち、種類 feedback のアプリ内がオンの人へベル通知（同じトランザクション）。1人につき1時間30件まで。
+  -- 既定値は notificationKinds.ts の feedback（inapp=true）・行が無い人の inapp_enabled=true と同じ。
+  -- 🔴 ::boolean キャストは壊れた値で例外になりうるため使わない（Section 67）。jsonb のまま 'false'::jsonb と比べる
+  v_kind_label := CASE v_kind WHEN 'request' THEN '要望' WHEN 'bug' THEN '不具合' WHEN 'other' THEN 'その他' ELSE '種類なし' END;
+  INSERT INTO public.in_app_notifications (member_id, kind, title, body, url)
+  SELECT m.id,
+         'feedback',
+         'ご意見が届きました（' || v_kind_label || '）',
+         left(regexp_replace(v_comment, '\s+', ' ', 'g'), 80) || CASE WHEN v_screen IS NOT NULL THEN '（画面：' || v_screen || '）' ELSE '' END,
+         '/?open=admin-feedback'
+    FROM public.members m
+    LEFT JOIN public.notification_prefs np ON np.member_id = m.id
+   WHERE m.is_super_admin = true
+     AND m.is_deleted = false
+     AND COALESCE(np.inapp_enabled, true)
+     AND COALESCE(np.kind_channels #> '{feedback,inapp}', 'true'::jsonb) <> 'false'::jsonb
+     AND (SELECT count(*) FROM public.in_app_notifications n
+           WHERE n.member_id = m.id AND n.kind = 'feedback'
+             AND n.created_at > now() - interval '1 hour') < 30;
+
+  RETURN 'ok';
+END;
+$fn_submit_feedback$;
+
+REVOKE ALL ON FUNCTION public.submit_feedback(text, text, text, text, text, text, jsonb, text, integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.submit_feedback(text, text, text, text, text, text, jsonb, text, integer) FROM anon;
+GRANT EXECUTE ON FUNCTION public.submit_feedback(text, text, text, text, text, text, jsonb, text, integer) TO authenticated;
+
+-- ------------------------------------------------------------
+-- 5) RPC：状態・管理者メモ（super_admin のみ。それ以外は例外）
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.update_feedback_status(p_id bigint, p_status text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_update_feedback_status$
+DECLARE
+  v_member text := public.current_member_id();
+BEGIN
+  IF v_member IS NULL OR NOT COALESCE(public.current_member_is_super_admin(), false) THEN
+    RAISE EXCEPTION 'この操作は全社スーパー管理者のみ行えます';
+  END IF;
+  IF p_status IS NULL OR p_status NOT IN ('new', 'in_progress', 'done', 'wontfix') THEN
+    RAISE EXCEPTION '状態の値が不正です';
+  END IF;
+  UPDATE public.app_feedback
+     SET status = p_status,
+         status_changed_at = CASE WHEN status IS DISTINCT FROM p_status THEN now() ELSE status_changed_at END,
+         status_changed_by = CASE WHEN status IS DISTINCT FROM p_status THEN v_member ELSE status_changed_by END
+   WHERE id = p_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ご意見が見つかりません';
+  END IF;
+END;
+$fn_update_feedback_status$;
+
+REVOKE ALL ON FUNCTION public.update_feedback_status(bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.update_feedback_status(bigint, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.update_feedback_status(bigint, text) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.update_feedback_memo(p_id bigint, p_memo text)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_update_feedback_memo$
+DECLARE
+  v_member text := public.current_member_id();
+  v_memo   text := nullif(btrim(coalesce(p_memo, '')), '');
+BEGIN
+  IF v_member IS NULL OR NOT COALESCE(public.current_member_is_super_admin(), false) THEN
+    RAISE EXCEPTION 'この操作は全社スーパー管理者のみ行えます';
+  END IF;
+  IF v_memo IS NOT NULL AND char_length(v_memo) > 2000 THEN
+    RAISE EXCEPTION 'メモは2000字までです';
+  END IF;
+  UPDATE public.app_feedback SET admin_memo = v_memo WHERE id = p_id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'ご意見が見つかりません';
+  END IF;
+END;
+$fn_update_feedback_memo$;
+
+REVOKE ALL ON FUNCTION public.update_feedback_memo(bigint, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.update_feedback_memo(bigint, text) FROM anon;
+GRANT EXECUTE ON FUNCTION public.update_feedback_memo(bigint, text) TO authenticated;
+
+-- ------------------------------------------------------------
+-- 6) RPC：自分が送った分（本文・日時・種類・状態・返信のみ。admin_memo・スナップショットは返さない）
+--    本人でなければ（匿名・未登録）0行
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.list_my_feedback()
+RETURNS TABLE (
+  id bigint, created_at timestamptz, kind text, comment text, status text, status_changed_at timestamptz, reply_text text
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_list_my_feedback$
+  SELECT f.id, f.created_at, f.kind, f.comment, f.status, f.status_changed_at, f.reply_text
+    FROM public.app_feedback f
+   WHERE f.member_id = (SELECT public.current_member_id())
+   ORDER BY f.created_at DESC
+   LIMIT 50
+$fn_list_my_feedback$;
+
+REVOKE ALL ON FUNCTION public.list_my_feedback() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.list_my_feedback() FROM anon;
+GRANT EXECUTE ON FUNCTION public.list_my_feedback() TO authenticated;
+
+-- ------------------------------------------------------------
+-- 7) 保持期間の処理（pg_cron から呼ぶ。登録は 20261015c_schedule_app_feedback_cleanup.sql）
+--    スナップショットは受信後90日で NULL（本文は残す）。対応済み・見送りは状態変更から180日で削除
+--    （「なぜ見送ったか」を残すため一般のログより長くする）。新規・対応中は消さない
+-- ------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.cleanup_app_feedback()
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = ''
+AS $fn_cleanup_app_feedback$
+BEGIN
+  UPDATE public.app_feedback
+     SET snapshot = NULL, snapshot_version = NULL, snapshot_state = 'purged'
+   WHERE snapshot IS NOT NULL AND created_at < now() - interval '90 days';
+  DELETE FROM public.app_feedback
+   WHERE status IN ('done', 'wontfix')
+     AND coalesce(status_changed_at, created_at) < now() - interval '180 days';
+END;
+$fn_cleanup_app_feedback$;
+
+REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM anon;
+REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM authenticated;

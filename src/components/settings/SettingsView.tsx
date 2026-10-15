@@ -22,6 +22,7 @@ import { useT } from "../../hooks/useT";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import { useAdminCounts, useAdminScope } from "../../hooks/useAdminScope";
 import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
+import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 import {
   buildSettingsCardGroups, canViewSettingsPage, isAdminPageId, resolveRequestedPage, resolveSettingsAudience,
@@ -73,6 +74,8 @@ export function SettingsView(props: Props) {
   const page: SettingsPageId | null = requestedPage && canViewSettingsPage(requestedPage, audience) ? requestedPage : null;
   const scrollRef = useRef<HTMLDivElement>(null);
   const topScrollRef = useRef(0);
+  // ご意見のスナップショット（v3.157）：今どの設定ページを開いているか（ページ ID＝列挙値）
+  useSnapshotProvider("settings", () => ({ settingsPage: page }));
 
   // 設定内の遷移（カード→詳細／← 設定）は未保存編集レジストリの確認を通す（Section 46・47）
   const guardedSwitch = async (action: () => void) => {

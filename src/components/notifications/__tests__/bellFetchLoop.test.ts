@@ -62,7 +62,7 @@ const tabButtons = () => allElements().filter(e => e.getAttribute("role") === "t
 
 const bell = () => createElement(InAppNotificationBell, {
   memberId: "m1", isSuperAdmin: false, isAdmin: true,
-  onOpenLink: () => {}, onOpenSettings: () => {}, onOpenMessage: () => {}, size: 36,
+  onOpenLink: () => {}, onOpenSettings: () => {}, onOpenFeedback: () => {}, onOpenMessage: () => {}, size: 36,
 });
 
 beforeEach(() => {

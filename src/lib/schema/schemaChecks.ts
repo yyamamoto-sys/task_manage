@@ -682,4 +682,34 @@ export const SCHEMA_HEALTH_CHECKS: SchemaCheckDescriptor[] = [
     label: "日次バックアップ（部署別）に PJ内のグループ（project_sections）が含まれていません（backup_snapshot が古い版のままです）",
     migration: "20261015_sections_deliverable.sql",
   },
+  // アプリ内フィードバック（v3.157・Section 82）。未適用だと「💬 ご意見を送る」の送信が失敗し、
+  // 管理ページ（アプリの管理→ご意見・不具合）は「適用がまだです」を出して空のままになる。
+  {
+    id: "app_feedback_table",
+    kind: "table",
+    table: "app_feedback",
+    label: "ご意見・不具合（app_feedback）のテーブルが見つかりません",
+    migration: "20261015b_app_feedback.sql",
+  },
+  {
+    id: "in_app_notifications_kind_check_feedback",
+    kind: "check_contains",
+    table: "in_app_notifications",
+    needle: "feedback",
+    label: "アプリ内通知の種類のCHECK制約に「ご意見・不具合の受信(feedback)」が含まれていません",
+    migration: "20261015b_app_feedback.sql",
+  },
+  ...([
+    ["submit_feedback", "ご意見を送る関数"],
+    ["update_feedback_status", "ご意見の状態を変える関数"],
+    ["update_feedback_memo", "ご意見の管理者メモを保存する関数"],
+    ["list_my_feedback", "自分が送ったご意見を読む関数"],
+    ["cleanup_app_feedback", "ご意見の保持期間の処理の関数"],
+  ] as const).map(([name, label]): SchemaCheckDescriptor => ({
+    id: `fn_${name}`,
+    kind: "function",
+    name,
+    label: `ご意見・不具合：${label}（${name}）が見つかりません`,
+    migration: "20261015b_app_feedback.sql",
+  })),
 ];

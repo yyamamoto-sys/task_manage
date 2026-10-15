@@ -83,11 +83,19 @@ export const NOTIFICATION_KINDS: readonly NotificationKindDef[] = [
     defaults: { inapp: true, push: true },
     inAppKind: "backup_weekly_summary",
   },
+  {
+    // v3.157：利用者のご意見・不具合の受信（submit_feedback がベル通知を作る）。Windows 通知は未対応（v1）
+    id: "feedback",
+    audience: "super_admin",
+    supported: { inapp: true, push: false },
+    defaults: { inapp: true, push: false },
+    inAppKind: "feedback",
+  },
 ];
 
 export type NotificationKindId =
   | "deadline_overdue" | "deadline_due_today" | "mention" | "client_error" | "admin_message"
-  | "backup_failure" | "backup_weekly_summary";
+  | "backup_failure" | "backup_weekly_summary" | "feedback";
 
 /** 管理者からのお知らせ関連の in_app_notifications.kind（受信者へのお知らせ・送信者へのまとめ通知）。ベルで📣の印と色を付ける */
 export const ADMIN_MESSAGE_IN_APP_KINDS: readonly string[] = ["admin_message", "admin_message_ack"];

@@ -16,18 +16,18 @@ import { layoutJa } from "../../../i18n/layout.ja";
 
 const ROOT = join(__dirname, "..", "..", "..", "..");
 const MIGRATION = readFileSync(join(ROOT, "supabase/migrations/20261001c_notify_v2_client_errors.sql"), "utf8");
-// in_app_notifications.kind の CHECK 制約は v3.131 のマイグレで最後に作り直した（最新の定義と照合する）
-const LATEST_KIND_CHECK_MIGRATION = readFileSync(join(ROOT, "supabase/migrations/20261001e_admin_messages.sql"), "utf8");
+// in_app_notifications.kind の CHECK 制約は v3.157（feedback を追加）のマイグレで最後に作り直した（最新の定義と照合する）
+const LATEST_KIND_CHECK_MIGRATION = readFileSync(join(ROOT, "supabase/migrations/20261015b_app_feedback.sql"), "utf8");
 
 const prefs = (p: Partial<KindPrefsLike> = {}): KindPrefsLike => ({
   inapp_enabled: true, push_enabled: true, notify_overdue: true, notify_due_today: true, kind_channels: {}, ...p,
 });
 
 describe("レジストリの定義", () => {
-  it("7種類：全員向け4つ＋super_admin 向け3つ（v3.131 でお知らせ、v3.136 でバックアップ通知2種を追加）", () => {
+  it("8種類：全員向け4つ＋super_admin 向け4つ（v3.131 でお知らせ、v3.136 でバックアップ通知2種、v3.157 でご意見の受信を追加）", () => {
     expect(NOTIFICATION_KINDS.map(k => [k.id, k.audience])).toEqual([
       ["deadline_overdue", "all"], ["deadline_due_today", "all"], ["mention", "all"], ["client_error", "super_admin"],
-      ["admin_message", "all"], ["backup_failure", "super_admin"], ["backup_weekly_summary", "super_admin"],
+      ["admin_message", "all"], ["backup_failure", "super_admin"], ["backup_weekly_summary", "super_admin"], ["feedback", "super_admin"],
     ]);
   });
 
@@ -75,7 +75,8 @@ describe("見せる相手", () => {
     expect(audienceOfInAppKind("backup_failure")).toBe("super_admin");
     expect(audienceOfInAppKind("deadline_digest")).toBe("all");
     expect(audienceOfInAppKind("something_new")).toBe("all");
-    expect(ADMIN_IN_APP_KINDS).toEqual(["backup_failure", "backup_weekly_summary", "client_error"]);
+    expect(audienceOfInAppKind("feedback")).toBe("super_admin");
+    expect(ADMIN_IN_APP_KINDS).toEqual(["backup_failure", "backup_weekly_summary", "client_error", "feedback"]);
   });
 });
 

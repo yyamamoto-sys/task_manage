@@ -49,6 +49,8 @@ interface Props {
   /** 行をクリックしたときの遷移（/?open=my-tasks 等）。アプリ内で画面を切り替える */
   onOpenLink: (url: string) => void;
   onOpenSettings: () => void;
+  /** ご意見・不具合を送るモーダルを開く（v3.157。入口はこのパネル上部と設定「困ったとき」） */
+  onOpenFeedback: () => void;
   /** 管理者からのお知らせの詳細を開く（v3.131） */
   onOpenMessage: (messageId: number) => void;
   /** 外から未読数の取り直しを求める値（お知らせの詳細で既読・確認したとき MainLayout が増やす） */
@@ -63,7 +65,7 @@ function formatWhen(iso: string): string {
   return `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenLink, onOpenSettings, onOpenMessage, refreshKey, size }: Props) {
+export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenLink, onOpenSettings, onOpenFeedback, onOpenMessage, refreshKey, size }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<BellTab>("all");
@@ -361,7 +363,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
 
   return (
     <>
-      <span style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
+      <span data-feedback-ui="" style={{ position: "relative", display: "inline-flex", flexShrink: 0 }}>
         <button
           ref={triggerRef}
           type="button"
@@ -380,6 +382,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
       {open && createPortal(
         <div
           ref={panelRef}
+          data-feedback-ui=""
           role="dialog"
           aria-label={t("layout.bell.title")}
           className="animate-dropdown"
@@ -392,7 +395,7 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
           }}
         >
           <div style={{
-            display: "flex", alignItems: "center", gap: "8px", padding: "8px 10px",
+            display: "flex", alignItems: "center", gap: "4px 8px", flexWrap: "wrap", padding: "8px 10px",
             borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0,
           }}>
             <span style={{ fontSize: "12px", fontWeight: 700, color: "var(--color-text-primary)", flex: 1 }}>{t("layout.bell.title")}</span>
@@ -405,6 +408,10 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
             <button type="button" onClick={() => { setOpen(false); onOpenSettings(); }}
               style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0 }}>
               {t("layout.bell.settings")}
+            </button>
+            <button type="button" onClick={() => { setOpen(false); onOpenFeedback(); }}
+              style={{ fontSize: "11px", background: "transparent", border: "none", cursor: "pointer", color: "var(--color-text-secondary)", padding: 0 }}>
+              {t("layout.feedback.entryBell")}
             </button>
           </div>
           {isSuperAdmin && <ErrorCopyPanel memberId={memberId} tab={activeFilter} />}

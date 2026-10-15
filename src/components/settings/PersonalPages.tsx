@@ -29,6 +29,7 @@ import { adminsOfGroup } from "../../lib/settings/settingsSections";
 import { SectionBody, Row, SegButtons, useFieldStyles } from "./settingsUi";
 import { AccountSecurityRow } from "./AccountSecurityRow";
 import { isGuestMode } from "../../lib/guestMode";
+import { requestOpenFeedback } from "../../lib/feedback/capture";
 
 const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
 
@@ -244,6 +245,8 @@ export function HelpPage({ onOpenGuide, onRestartTour, onOpenShortcuts }: {
         <button style={btn} onClick={onRestartTour}>{t("layout.settings.help.tourBtn")}</button>)}
       {item(t("layout.settings.help.shortcuts"), t("layout.settings.help.shortcutsDesc"),
         <button style={btn} onClick={onOpenShortcuts}>{t("layout.settings.help.shortcutsBtn")}</button>)}
+      {!isGuestMode() && item(t("layout.settings.help.feedback"), t("layout.settings.help.feedbackDesc"),
+        <button data-feedback-ui="" style={btn} onClick={requestOpenFeedback}>{t("layout.settings.help.feedbackBtn")}</button>)}
       {item(t("layout.settings.help.version"), t("layout.settings.help.versionDesc", { version: APP_VERSION }),
         <button style={btn} onClick={() => setIsVersionOpen(true)}>{t("layout.settings.help.versionBtn")}</button>)}
       <Row label={t("layout.settings.help.admins")} hint={t("layout.settings.help.adminsHint")}>

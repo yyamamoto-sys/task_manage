@@ -10,6 +10,10 @@ import { usePushSubscriptionSync } from "../../hooks/usePushSubscriptionSync";
 import { useNotificationPrefsStore } from "../../stores/notificationPrefsStore";
 import { InAppNotificationBell } from "../notifications/InAppNotificationBell";
 import { AdminMessageDialog } from "../notifications/AdminMessageDialog";
+import { FeedbackModal } from "../feedback/FeedbackModal";
+import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
+import { captureFeedbackSnapshot, onOpenFeedbackRequest, requestOpenFeedback, type FeedbackCapture } from "../../lib/feedback/capture";
+import { useLangStore } from "../../stores/langStore";
 import { extractOpenTarget, stripOpenParam, type OpenTarget } from "../../lib/reminder/deepLink";
 import { extractMessageId } from "../../lib/adminMessages/adminMessages";
 import { setClientErrorScreen } from "../../lib/errors/clientErrorLog";
@@ -750,6 +754,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   const openTarget = (target: OpenTarget | null, messageId: number | null) => {
     if (target === "my-tasks") openMyTasks();
     else if (target === "admin-errors") openSettings("errors");
+    else if (target === "admin-feedback") openSettings("feedback");
     else if (target === "admin-backup") openSettings("backup");
     // お知らせの詳細は画面を切り替えず上に重ねるだけ（編集中の内容を失わないため guardedNavigate を通さない）
     else if (target === "admin-message" && messageId !== null) setOpenMessageId(messageId);
@@ -794,6 +799,27 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     : activeLabView ? `lab:${activeLabView}`
     : appMode === "okr" ? "okr" : viewMode;
   useEffect(() => { setClientErrorScreen(clientErrorScreen); }, [clientErrorScreen]);
+  // ご意見（v3.157・Section 82）：スナップショットの材料（画面が見えている設定。列挙値・ID・真偽のみ）を登録し、
+  // 入口（ベル・設定「困ったとき」）のイベントを受けたら、その場（同じクリックの処理の中）で状況を確定してからモーダルを出す。
+  // 🔴 タスク名・PJ名などの文字列は返さない。ゲストには入口を出さずイベントも受けない。
+  useSnapshotProvider("layout", () => ({
+    mode: appMode,
+    view: viewMode,
+    overlay: isGuideOpen ? "guide" : isAdminOpen ? "settings" : activeLabView ? `lab:${activeLabView}` : null,
+    isMobile,
+    theme,
+    lang: useLangStore.getState().lang,
+    department: { displayGroupId: currentGroupId },
+    selection: { projectId: selectedProjectId },
+  }));
+  const [feedbackCapture, setFeedbackCapture] = useState<FeedbackCapture | null>(null);
+  useEffect(() => {
+    if (isGuest) return;
+    return onOpenFeedbackRequest(() => setFeedbackCapture(prev => prev ?? captureFeedbackSnapshot()));
+  }, [isGuest]);
+  const feedbackModal = !isGuest && feedbackCapture !== null ? (
+    <FeedbackModal capture={feedbackCapture} onClose={() => setFeedbackCapture(null)} />
+  ) : null;
   // ベル（v3.129）：PC は画面右上に固定、モバイルはヘッダーの右端。ゲストには出さない
   const isSuperAdmin = currentUser.is_super_admin === true || currentUserIsSuperAdmin;
   const notificationBell = (size: number) => isGuest ? null : (
@@ -804,6 +830,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       size={size}
       onOpenLink={openNotificationLink}
       onOpenSettings={() => openSettings("notify")}
+      onOpenFeedback={requestOpenFeedback}
       onOpenMessage={setOpenMessageId}
       refreshKey={bellRefreshKey}
     />
@@ -1336,6 +1363,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         {tourInviteDialog}
         {okrIntroModal}
         {adminMessageDialog}
+        {feedbackModal}
         {isQuickAddOpen && (
           <QuickAddTaskModal currentUser={currentUser} projects={projects} defaultProjectId={selectedProject?.id} onClose={() => setIsQuickAddOpen(false)} />
         )}
@@ -1679,6 +1707,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       )}
 
       {adminMessageDialog}
+      {feedbackModal}
       {isQuickAddOpen && (
         <QuickAddTaskModal currentUser={currentUser} projects={projects} onClose={() => setIsQuickAddOpen(false)} />
       )}

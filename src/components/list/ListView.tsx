@@ -40,6 +40,7 @@ import { sectionsOfProject, UNSECTIONED_KEY, computeSectionDropOrder } from "../
 import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
+import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 
 interface Props {
   currentUser: Member;
@@ -706,6 +707,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // 「シンプル」モードでは詳細列（優先度・工数）を非表示にして読みやすさを優先
   const [density, setDensityState] = useState<Density>(() => lsGet("density", "simple"));
   const setDensity = (v: Density) => { setDensityState(v); lsSet("density", v); };
+
+  // ご意見のスナップショットの材料（v3.157・Section 82）。列挙値・真偽・IDだけ（検索語・タスク名は返さない）
+  useSnapshotProvider("list", () => ({
+    listSettings: {
+      groupBy, sortKey, sortDir, density,
+      filters: {
+        status: filterStatus, priority: filterPriority, myOnly: filterMyOnly, thisWeek: filterThisWeek, hideDone: filterHideDone,
+        member: filterMember === "all" ? "all" : "set", hasSearch: searchText.trim() !== "",
+      },
+    },
+    selection: { taskId: editingTaskId ?? selectedTaskId, selectedCount: selectedIds.size },
+  }));
 
   const allCols: { key: string; label: string; w: string; sortKey?: SortKey; simple: boolean }[] = [
     { key: "select",          label: "",         w: "32px",  simple: true  },

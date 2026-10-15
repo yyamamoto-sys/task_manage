@@ -23,11 +23,12 @@ export const NOTIFICATION_KIND_ICON: Record<NotificationKindId, string> = {
   admin_message: "📣",
   backup_failure: "💾",
   backup_weekly_summary: "🗂",
+  feedback: "💬",
 };
 
-/** in_app_notifications.kind の CHECK 制約にある値（migrations/20261001e と同じ） */
+/** in_app_notifications.kind の CHECK 制約にある値（migrations/20261015b と同じ） */
 export const ALL_IN_APP_KINDS = [
-  "deadline_digest", "backup_failure", "backup_weekly_summary", "client_error", "admin_message", "admin_message_ack",
+  "deadline_digest", "backup_failure", "backup_weekly_summary", "client_error", "admin_message", "admin_message_ack", "feedback",
 ] as const;
 
 /** ベルの「管理者向け」で絞り込む kind */

@@ -41,15 +41,15 @@ function member(over: Partial<Member>): Member {
   };
 }
 
-// 旧 AdminView の AdminTab 13値（v3.154）と旧 SettingsView の個人5項目に相当する新5ページ
-const OLD_ADMIN_TABS = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips", "backup", "reminders", "errors", "messages"];
+// 旧 AdminView の AdminTab 13値（v3.154）＋v3.157 で足した「ご意見・不具合」（feedback）と、旧 SettingsView の個人5項目に相当する新5ページ
+const OLD_ADMIN_TABS = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips", "backup", "reminders", "errors", "messages", "feedback"];
 const PERSONAL = ["profile", "account", "display", "notify", "help"];
 
 describe("① 設定ページの網羅", () => {
-  it("旧 AdminTab 13値と個人5値がちょうど1回ずつ（18ページ）", () => {
+  it("旧 AdminTab 13値＋feedback と個人5値がちょうど1回ずつ（19ページ）", () => {
     const ids = SETTINGS_PAGES.map(p => p.id as string);
-    expect(ids).toHaveLength(18);
-    expect(new Set(ids).size).toBe(18);
+    expect(ids).toHaveLength(19);
+    expect(new Set(ids).size).toBe(19);
     expect([...ids].sort()).toEqual([...OLD_ADMIN_TABS, ...PERSONAL].sort());
     expect([...ADMIN_PAGE_IDS].sort()).toEqual([...OLD_ADMIN_TABS].sort());
     expect([...PERSONAL_PAGE_IDS].sort()).toEqual([...PERSONAL].sort());
@@ -72,7 +72,7 @@ describe("① 設定ページの網羅", () => {
     }
   });
 
-  it("AdminView は18ページのうち管理系13ページをすべて描画分岐に持つ（page === \"id\"）", () => {
+  it("AdminView は19ページのうち管理系14ページをすべて描画分岐に持つ（page === \"id\"）", () => {
     const src = stripComments(read("components/admin/AdminView.tsx"));
     for (const id of ADMIN_PAGE_IDS) {
       expect(src, id).toContain(`page === "${id}"`);
@@ -108,10 +108,10 @@ describe("② 誰に何が見えるか（カード構成）", () => {
     expect(ids).toEqual([...PERSONAL, "okr", "tf", "pj", "members", "tags", "groups", "invites", "ai_usage", "messages"]);
   });
 
-  it("super_admin は18枚すべて。並びは 目標→手段→人→組織→利用状況→連絡", () => {
+  it("super_admin は19枚すべて。並びは 目標→手段→人→組織→利用状況→連絡", () => {
     const ids = idsFor(superAdmin, [admin, plain, superAdmin]);
-    expect(ids).toHaveLength(18);
-    expect(ids.slice(5)).toEqual(["okr", "tf", "pj", "members", "tags", "groups", "invites", "ai_usage", "messages", "tips", "backup", "reminders", "errors"]);
+    expect(ids).toHaveLength(19);
+    expect(ids.slice(5)).toEqual(["okr", "tf", "pj", "members", "tags", "groups", "invites", "ai_usage", "messages", "tips", "backup", "reminders", "errors", "feedback"]);
   });
 
   it("管理者が1人もいない部署（ブートストラップ）：部署の管理は全員に出るが、お知らせの送信は出ない", () => {
@@ -120,6 +120,7 @@ describe("② 誰に何が見えるか（カード構成）", () => {
     expect(ids).toContain("members");
     expect(ids).not.toContain("messages");
     expect(ids).not.toContain("errors");
+    expect(ids).not.toContain("feedback");
   });
 
   it("部署の管理の可視条件は AdminView のガード（canAccessAdminSection）と常に一致する", () => {

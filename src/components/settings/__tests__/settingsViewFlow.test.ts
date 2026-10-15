@@ -1,7 +1,7 @@
 // src/components/settings/__tests__/settingsViewFlow.test.ts
 //
 // v3.155：設定画面（SettingsView）を実際に描画して、利用者から見える動きを確かめる。
-//  - 誰にどのカードが出るか（一般＝個人5枚／部署の管理者＝14枚／super_admin＝18枚）
+//  - 誰にどのカードが出るか（一般＝個人5枚／部署の管理者＝14枚／super_admin＝19枚）
 //  - カードを押すと詳細ページ、「← 設定」でトップに戻る
 //  - 直接ジャンプ（initialPage）：権限のあるページは直接開き、権限の無いページはトップ
 //  - 未保存の編集があるとき、確認を拒否すると遷移しない（Section 46・47）
@@ -103,9 +103,9 @@ describe("設定画面のトップ（カード一覧）", () => {
     expect(allElements().map(e => e.textContent).join("")).not.toContain("利用者の画面のエラー");
   });
 
-  it("全社スーパー管理者：18枚すべて", () => {
+  it("全社スーパー管理者：19枚すべて（v3.157 でご意見・不具合を追加）", () => {
     mount(superAdmin);
-    expect(cards()).toHaveLength(18);
+    expect(cards()).toHaveLength(19);
     expect(allElements().map(e => e.textContent).join("")).toContain("利用者の画面のエラー");
   });
 });

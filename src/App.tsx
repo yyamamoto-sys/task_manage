@@ -27,6 +27,7 @@ import { useAppStore, setRemoteResyncRequester, catchUpRemoteChanges } from "./s
 import { subscribeToRealtime } from "./lib/supabase/realtime";
 import { createHiddenReturnGate, createResyncRunner } from "./lib/supabase/resync";
 import { startHealthMonitor, readHeapBytes } from "./lib/diagnostics/healthMonitor";
+import { startClickHistory } from "./lib/feedback/clickHistory";
 import { countLoadsWithin, getLoadTotal } from "./lib/diagnostics/loadCounter";
 import { logDiagnostic } from "./lib/errors/diagnosticLog";
 import { getClientErrorScreen } from "./lib/errors/clientErrorLog";
@@ -615,7 +616,9 @@ function AuthenticatedApp({
       setInterval: (fn, ms) => window.setInterval(fn, ms),
       clearInterval: h => window.clearInterval(h as number),
     });
-    return () => { stopHealth(); disposeRealtimeEchoWatch(); };
+    // ご意見のスナップショットに載せる直近のクリック5件（種類・位置だけをメモリ上に保持。ゲストでは起動しない。Section 82）
+    const stopClicks = isGuestMode() ? null : startClickHistory();
+    return () => { stopHealth(); disposeRealtimeEchoWatch(); stopClicks?.(); };
   }, []);
 
   // プロジェクト招待：保留中の招待の自動受諾チェックが終わるまで、

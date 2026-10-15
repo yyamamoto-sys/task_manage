@@ -49,6 +49,7 @@ import { LoadingTipsSection } from "./LoadingTipsSection";
 import { BackupSection } from "./BackupSection";
 import { ReminderSection } from "./ReminderSection";
 import { ClientErrorSection } from "./ClientErrorSection";
+import { FeedbackSection } from "./FeedbackSection";
 import { AdminMessageSection } from "./AdminMessageSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 import { SaveButton, SaveErrorBand, SaveKeyScope, useFormSave, useSnapshotDirty } from "../common/saveUi";
@@ -163,6 +164,7 @@ export function AdminView({ currentUser, page }: Props) {
           {page === "backup"   && <BackupSection currentUser={currentUser} />}
           {page === "reminders" && <ReminderSection currentUser={currentUser} />}
           {page === "errors"   && <ClientErrorSection currentUser={currentUser} />}
+          {page === "feedback" && <FeedbackSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
           {page === "messages" && <AdminMessageSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>

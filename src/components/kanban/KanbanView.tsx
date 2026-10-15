@@ -29,6 +29,7 @@ import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
 import { DeliverableLink } from "../task/DeliverableLink";
+import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 
 interface Props {
   currentUser: Member;
@@ -122,6 +123,12 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     sectionFilter === "" || sectionFilter === UNSECTIONED_KEY || pjSections.some(x => x.id === sectionFilter)
       ? sectionFilter : "";
   useEffect(() => { setSectionFilter(""); }, [selectedProject?.id]);
+
+  // ご意見のスナップショットの材料（v3.157・Section 82）。真偽・IDだけ
+  useSnapshotProvider("kanban", () => ({
+    kanbanSettings: { hideDone, showPaused, hasSectionFilter: effectiveSectionFilter !== "" },
+    selection: { taskId: editingTaskId, selectedCount: selectedIds.size },
+  }));
 
   const visibleTasks = useMemo(() => {
     let list = tasks;

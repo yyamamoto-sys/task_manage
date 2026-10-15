@@ -60,6 +60,7 @@ const ALLOWED: Record<string, { count: number; reason: string }> = {
   "components/admin/AdminView.tsx": { count: 8, reason: "管理画面は memberInGroup（Section 36・memberInGroupUsage.test）で部署を絞る。対象外" },
   "components/admin/BackupSection.tsx": { count: 1, reason: "実行者名の解決のみ" },
   "components/admin/ClientErrorSection.tsx": { count: 1, reason: "報告者名の解決のみ" },
+  "components/admin/FeedbackSection.tsx": { count: 1, reason: "ご意見の送信者名の解決のみ（管理画面にだけ表示。Claude 用コピーには載せない）" },
   "components/admin/OkrImportModal.tsx": { count: 1, reason: "OKR取込（OKR系は deptScope.ts の管理）" },
   "components/admin/ReminderSection.tsx": { count: 1, reason: "名前の解決のみ" },
   "components/auth/UserSelectScreen.tsx": { count: 1, reason: "ログインユーザーの選択画面（部署が決まる前）" },

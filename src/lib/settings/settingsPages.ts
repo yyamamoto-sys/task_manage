@@ -17,7 +17,7 @@ import { canAccessAdminSection } from "./settingsSections";
 export type PersonalPageId = "profile" | "account" | "display" | "notify" | "help";
 export type AdminPageId =
   | "okr" | "tf" | "pj" | "members" | "tags" | "groups" | "invites" | "ai_usage" | "messages"
-  | "tips" | "backup" | "reminders" | "errors";
+  | "tips" | "backup" | "reminders" | "errors" | "feedback";
 export type SettingsPageId = PersonalPageId | AdminPageId;
 
 export type SettingsGroupId = "personal" | "department" | "app";
@@ -54,6 +54,7 @@ export const SETTINGS_PAGES: readonly SettingsPageDef[] = [
   { id: "backup", group: "app", icon: "💾", deptScoped: false },
   { id: "reminders", group: "app", icon: "⏰", deptScoped: false },
   { id: "errors", group: "app", icon: "🚨", deptScoped: false },
+  { id: "feedback", group: "app", icon: "💬", deptScoped: false },
 ];
 
 export const SETTINGS_GROUP_ORDER: readonly SettingsGroupId[] = ["personal", "department", "app"];

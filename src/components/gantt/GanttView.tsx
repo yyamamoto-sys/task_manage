@@ -54,6 +54,7 @@ import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { sectionsOfProject } from "../../lib/section/sections";
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 import { withBellReserve } from "../../lib/layout/topRightBell";
+import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
 
 const headerBtnStyle: React.CSSProperties = {
   padding: "4px 10px", fontSize: "11px",
@@ -1280,6 +1281,14 @@ export function GanttView({
       return next;
     });
   }, []);
+  // ご意見のスナップショットの材料（v3.157・Section 82）。列挙値・数値・真偽・IDだけ。AI提案のプレビュー用の描画は登録しない
+  useSnapshotProvider("gantt", () => isPreview ? null : ({
+    ganttSettings: {
+      mode: viewMode, dayWidth, hideCompleted: hideCompletedTasks, sortOrder,
+      showDeps: showDepArrows, showBaseline, showCriticalPath, showOverload,
+    },
+    selection: { taskId: editingTaskId, selectedCount: selectedTaskIds.size },
+  }));
   const overloadRangesByMember = useMemo(() => {
     const map = new Map<string, { start: string; end: string }[]>();
     if (isPreview || !showOverload || viewMode !== "person") return map;

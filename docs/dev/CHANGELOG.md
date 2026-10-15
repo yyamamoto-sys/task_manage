@@ -8276,3 +8276,12 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 配線：useBulkTaskActions に bulkMoveToProject・bulkShift、useTaskDragReorder に handleMultiTaskDrop、useSectionActions に reorderSections。共通の入力部品 BulkMoveShiftControls（リスト・カンバンの一括バー）。配線は bulkOpsWiring.test（ソース走査・コメント除去・壊して赤を確認）。
 # * ガント・カンバンにはチェックボックスが無いため、Shift対応はリスト（PC・モバイルのカード）のみ。ガントの日程ずらしは従来どおりバーのドラッグ。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.157（2026-10-15）：アプリ内フィードバック 段階1（一言＋画面の状況つきで送る・super_admin の受信ページ。CLAUDE.md Section 82）
+# * 設計の正本：docs/dev/企画提案_アプリ内フィードバック_20261015.md。山本さんの決定：①画面の状況（構造データのみ・画像なし・業務データの文字列なし）は既定オン・送る前にプレビュー・本人がオフにできる②読めるのは super_admin のみ（group_id は保存）③返信は段階1では状況表示のみ④記名（管理画面にだけ表示。Claude 用コピーには名前・メールを載せない）。
+# * 入口：ベルのパネル上部「💬 ご意見を送る」と設定「困ったとき」。FeedbackModal（種類は任意の3択・コメント1,000字・Ctrl/Cmd+Enter 送信・「送る内容を見る」＝要約＋JSON・「送った内容と状況」タブ）。入力中の離脱は未保存編集レジストリ（Section 46）。ゲストには入口も送信も無い。
+# * スナップショット：src/lib/feedback/snapshot.ts の許可リスト方式の純関数（SNAPSHOT_TOP_LEVEL_KEYS）。材料は画面側が useSnapshotProvider（snapshotContext.ts・pull 型）で登録する getter（MainLayout・ListView・GanttView・KanbanView・SettingsView）。直近のクリック5件は clickHistory.ts（capture フェーズの1リスナー・種類と座標だけ・AuthenticatedApp で起動・ゲストでは起動しない）。モーダルを開いた瞬間に MainLayout が確定（captureFeedbackSnapshot）。16KB 上限（超えたら本文だけ）。
+# * DB：20261015b_app_feedback.sql（app_feedback・RPC submit_feedback／update_feedback_status／update_feedback_memo／list_my_feedback・cleanup_app_feedback・sanitize_feedback_json・in_app_notifications.kind に feedback）と 20261015c_schedule_app_feedback_cleanup.sql（pg_cron は別ファイル・手で登録）。RLS は SELECT のみ（super_admin）。頻度上限は1時間3件・24時間10件（アドバイザリロック）・同一本文の1分以内は黙って1件。スナップショットは90日で NULL・対応済み／見送りは状態変更から180日で削除。
+# * 通知：レジストリに feedback（super_admin・アプリ内のみ・Windows は未対応）。管理ページ（アプリの管理→💬 ご意見・不具合・SettingsPageId 19値）：一覧（既定は新規＋対応中）・状態（即時保存）・管理者メモ（保存ボタン）・Claude 用コピー（buildFeedbackCopyText・複数選択可）。/?open=admin-feedback。
+# * テスト：src/lib/feedback/__tests__（snapshot・clickHistory・snapshotContext・browserInfo・copyText・limit・feedbackMigration）・src/components/feedback/__tests__/feedbackWiring.test.ts（ソース走査・コメント除去・壊して赤を確認）。notificationKinds.test・settingsPages.test を更新。
+# * MIN_CLIENT_VERSION は上げない（新しい表・RPC の追加だけ。旧画面には入口が出ないだけ）。🔴 適用順：SQL（20261015b）を dev→prod に適用してから push。
