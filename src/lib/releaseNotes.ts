@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.154",
+    date: "2026-10-15",
+    title: "ガントで左のタスク名と右のバーがずれる不具合を直しました",
+    highlights: [
+      "ガントを一番下までスクロールしたとき、左のタスク名の列と右のチャートの行が縦にずれる不具合を直しました。",
+    ],
+  },
+  {
     version: "v3.153",
     date: "2026-10-15",
     title: "リストの追加行の担当者が自分になり、保存の競合が起きにくくなりました",

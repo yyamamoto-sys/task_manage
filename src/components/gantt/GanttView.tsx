@@ -26,7 +26,7 @@ import {
   DAY_WIDTH_DEFAULT, ZOOM_MIN, ZOOM_MAX, parseSavedZoom, stepZoom, clampDayWidth,
   resolveZoomScrollLeft, wheelZoomTarget, wheelDeltaToPx, isDayTickLabelVisible, weekLabelForWidth,
   TODO_COLOR, MS_COLOR, MS_BORDER, CRITICAL_COLOR, OVERLOAD_COLOR,
-  GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
+  computeHBarHeight, GANTT_LABEL_HEADER_HEIGHT, GANTT_HEADER_MONTH_HEIGHT, GANTT_HEADER_WEEK_HEIGHT, GANTT_HEADER_DAY_TICK_HEIGHT,
   type GanttSortOrder, sortGanttTasks, isTaskStagnant, calcTaskBar, formatBarDateLabel, formatBarTooltipSuffix, resolveGanttBarColor,
   calcGhostBar, computeDelayDays, formatDelayLabel,
   computeWeekBlocks, applyResizePreview, clampStartDate, computeMoveShift, type ResizePreview,
@@ -567,6 +567,19 @@ export function GanttView({
   const scrollInitialized = useRef(false);
   const labelBodyRef    = useRef<HTMLDivElement>(null);
   const syncingRef      = useRef(false);
+  // 右ペインだけに横スクロールバーが出るぶん、右の最大 scrollTop は左より大きくなる。左の下に同じ高さの
+  // 余白を足して最大量を揃える（OSのバー幅・表示倍率に依存しないよう実測する。CLAUDE.md Section 80）
+  const [hBarHeight, setHBarHeight] = useState(0);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const measure = () => setHBarHeight(computeHBarHeight(el.offsetHeight, el.clientHeight));
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   // 初回マウント時のみ実行：いつ開いても今日を画面中央に表示する（前回のスクロール位置は復元しない）
   useEffect(() => {
@@ -2502,6 +2515,7 @@ export function GanttView({
               // 行数・各行の高さが構造的に一致する（CLAUDE.md v3.08）
               ganttRows.map(row => renderLabelRow(row))
             )}
+            <div data-gantt-hbar-spacer style={{ height: hBarHeight, flexShrink: 0 }} />
           </div>
         </div>
 

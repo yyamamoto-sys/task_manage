@@ -8251,3 +8251,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 不具合C：古いスナップショットの task で saveTask すると、楽観更新が store の updated_at を古い値に戻していた。楽観更新の set で updated_at は store の既存値を維持。
 # * テスト：src/stores/__tests__/saveConflictRace.test.ts（修正前の appStore で A・C が赤くなることを確認）・inlineAdd.test／inlineAddWiring.test を更新。
 # * MIN_CLIENT_VERSION は上げない（v3.152 の自動更新で切り替わる）。マイグレーションなし。
+
+# v3.154（2026-10-15）：ガントの左右の行が一番下でずれる不具合の再発対策（CLAUDE.md Section 80）
+# * 原因：右バー列だけに横スクロールバー（約12px）が出るため、右の最大 scrollTop が左より大きく、一番下で左が頭打ちになり右だけ約12px先へ進んでいた（左はバー非表示・行数と各行の高さは v3.08 から共有行モデルで一致）。
+# * 対策：右バー列の offsetHeight−clientHeight を ResizeObserver で実測し（computeHBarHeight）、左ラベル列のスクロール領域の末尾に同じ高さの余白を足す。OSのバー幅・表示倍率に依存しない。
+# * テスト：src/components/gantt/__tests__/ganttScrollParity.test.ts（修正前の GanttView で2件が赤くなることを確認）。
+# * MIN_CLIENT_VERSION は上げない。マイグレーションなし。

@@ -770,3 +770,13 @@ export function computeGanttBlockRanges(rows: GanttRow[]): Map<string, { top: nu
 export function computeGanttRowsTotalHeight(rows: GanttRow[]): number {
   return rows.reduce((sum, r) => sum + r.height, 0);
 }
+
+/**
+ * 右バー列だけに出る横スクロールバーの高さ（offsetHeight − clientHeight）。
+ * 左ラベル列の下に同じ高さの余白を足し、左右の最大 scrollTop を一致させるために使う
+ * （CLAUDE.md Section 80）。OSのバー幅・表示倍率に依存しないよう実測値から求める。
+ */
+export function computeHBarHeight(offsetHeight: number, clientHeight: number): number {
+  const d = offsetHeight - clientHeight;
+  return Number.isFinite(d) && d > 0 ? d : 0;
+}
