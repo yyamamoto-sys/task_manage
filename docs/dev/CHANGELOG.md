@@ -8257,3 +8257,16 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 対策：右バー列の offsetHeight−clientHeight を ResizeObserver で実測し（computeHBarHeight）、左ラベル列のスクロール領域の末尾に同じ高さの余白を足す。OSのバー幅・表示倍率に依存しない。
 # * テスト：src/components/gantt/__tests__/ganttScrollParity.test.ts（修正前の GanttView で2件が赤くなることを確認）。
 # * MIN_CLIENT_VERSION は上げない。マイグレーションなし。
+
+# v3.155（2026-10-15）：設定画面の作り直し（トップをカード一覧に・構造と保存と見た目の統一。CLAUDE.md Section 65）
+# * 設計の正本：docs/dev/設計仕様_設定画面リニューアル_20261015.md。山本さんの決定：①管理ヘッダーの文字サイズ切替（小・中・大）は廃止（代わりに設定画面全体を一回り大きく・最小12px）②ブラウザの戻るは対応しない③設計案の段階1（構造）と段階2（保存と見た目）をまとめて公開（段階3＝AdminView の pages/* への分割は未着手）。
+# * 構造：トップ＝見出し3つ（個人／部署の管理／アプリの管理）の下に18枚のカード。詳細ページは見出しバー（← 設定／ページ名／？／✕。SettingsView が持つ）。ページの唯一の定義は src/lib/settings/settingsPages.ts（SettingsPageId 18値・権限は既存の canAccessAdminSection をそのまま使う。お知らせの送信のブートストラップ例外・アプリの管理＝super_admin を維持）。カード構成は純関数（buildSettingsCardGroups）でテスト。
+# * AdminView は page を受けて1ページだけを描画。左ナビ・ヘッダー・文字サイズ・注意書きバッジ・初見ヒントの常時帯（0件の空状態 FirstStepHint へ）・モバイルのセレクト・admin_last_tab・独自の未保存確認（confirmDialog「タブを切り替えると…」）を廃止。memberInGroup／projectInGroup を lib/admin/adminGroupScope.ts へ、部署の判定と件数バッジを hooks/useAdminScope.ts へ移した。
+# * 名称：通知→通知の受け取り方、管理の通知→期限リマインドの実行状況、グループ・部署→部署（AdminView 内の「グループ」文言も「部署」に統一。PJ 内の区分＝グループ専用の語に）、エラー→利用者の画面のエラー、お知らせを送る→お知らせの送信、Task Force→Task Force・ToDo。ログアウトは困ったとき→アカウントへ移動（アカウント＝メール・権限・パスワード・ログアウト）。
+# * 直接ジャンプは openSettings(pageId?) の1つ（歯車＝トップ・ベル／ダッシュボードの通知設定＝notify・/?open=admin-errors＝errors・admin-backup＝backup・admin-sent＝messages・オンボーディング＝okr／pj）。権限の無い・不明な ID はトップ。旧 initialTab／initialSection／adminInitialTab は撤去。
+# * 保存の見せ方：src/components/common/saveUi.tsx（SaveButton 3状態・SavedFlash・SaveErrorBand・useFormSave・useSnapshotDirty・SaveKeyScope／shouldSaveOnKey）。プロフィール・パスワード・Objective・KR・TF・ToDo・PJ・メンバー・部署・タグ・ローディングのヒントを保存ボタン3状態＋永続のエラー帯に、表示・通知の受け取り方の即時保存に「✓ 保存しました」。cursor: not-allowed を撤去（Section 48）。
+# * 未保存確認は useUnsavedEditor（hooks）→ Section 46 のレジストリに一本化。設定内の遷移は SettingsView の guardedSwitch 経由に限る（guardedNavigateCoverage.test の対象に追加）。
+# * 見た目：設定・管理系の fontSize を引き上げ（8〜11→12、12→13、13→14。最小12px）。トップのカードは .settings-card（globals.css。ホバー・フォーカスリング）。設定の本文の余白・入力欄・ボタンの数値は設計仕様 §4.2。
+# * DISPLAY_SETTING_KEYS から ADMIN_LAST_TAB・ADMIN_FONT_SIZE を外した（定数は残す）。ガイド（02_modes/settings.md・05_admin/settings-overview.md ほか設定の経路文言）・uiGuide.ts・初回ツアーの設定ステップを新構造に追従。
+# * テスト：settingsPages.test（網羅・可視条件・直接ジャンプ）・useUnsavedEditor.test・saveUi.test／saveUiHooks.test・savePolicy.test・minFontSize.test を新設。guardedNavigateCoverage・memberInGroupUsage・rawMembersUsage・topRightBell・settings.test を新構造に更新。
+# * MIN_CLIENT_VERSION は上げない（DB・RLS・Edge Function・localStorage の形式に非互換な変更なし）。マイグレーションなし。
