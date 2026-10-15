@@ -393,9 +393,36 @@ function barRowPropsEqual(prev: TaskBarRowProps, next: TaskBarRowProps): boolean
 
 export const TaskBarRow = memo(TaskBarRowImpl, barRowPropsEqual);
 
+// ===== ラベル列のタスク行チェックボックス（v3.160） =====
+// リストと同じ操作（通常クリック＝親子連動トグル・Shift＋クリック＝範囲選択）。onChange では shiftKey が
+// 取れないので onClick の MouseEvent で判定する。行クリック（詳細を開く）・⠿（ドラッグ）とは
+// stopPropagation と別要素で分ける。固定幅14pxで、行の高さには影響しない（Section 80）
+function GanttRowCheckbox({ task, checked, onCheckboxClick }: {
+  task: Task;
+  checked: boolean;
+  onCheckboxClick: (e: React.MouseEvent, taskId: string) => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      data-gantt-row-checkbox
+      checked={checked}
+      onChange={() => undefined}
+      onMouseDown={e => { e.stopPropagation(); if (e.shiftKey) e.preventDefault(); }}
+      onClick={e => onCheckboxClick(e, task.id)}
+      title="Shift＋クリックで範囲選択"
+      aria-label={`${task.name} を選択`}
+      style={{ cursor: "pointer", width: 13, height: 13, margin: 0, flexShrink: 0, accentColor: "var(--color-brand)" }}
+    />
+  );
+}
+
 // ===== GanttPjLabelRow（PJ別ビュー・ラベル列のタスク行） =====
 
 export interface GanttPjLabelRowProps {
+  /** 一括選択チェックボックス（v3.160）。onCheckboxClick が無ければ（AI提案プレビュー）描かない */
+  isSelected?: boolean;
+  onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
   /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。
       呼び出し側は対応する ganttRows[i].height（バー列側の TaskBarRow に渡す rowHeight と同じ値）を渡す。 */
@@ -429,7 +456,7 @@ export interface GanttPjLabelRowProps {
 }
 
 export const GanttPjLabelRow = memo(function GanttPjLabelRow({
-  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed,
+  task, rowHeight = GANTT_TASK_ROW_HEIGHT, isChild, childCount, isHovered, isCollapsed, isSelected, onCheckboxClick,
   onEdit, onHoverEnter, onHoverLeave, onToggleCollapse, onSaveAssignees,
   onSaveName, autoEditName, onInsertAfter,
   draggingId, dropZone, onDragHandleStart, onDragHandleEnd, onRowDragOver, onRowDragLeave, onRowDrop,
@@ -487,6 +514,7 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
         title="ドラッグして並べ替え"
         style={{ width: 10, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "11px", lineHeight: 1, userSelect: "none" }}
       >⠿</span>
+      {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
       {isChild ? (
         <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, marginLeft: "-10px" }}>↳</span>
       ) : childCount > 0 ? (
@@ -576,6 +604,9 @@ export const GanttPjLabelRow = memo(function GanttPjLabelRow({
 // ===== GanttTodoLabelRow（ToDo系グループ・ラベル列のタスク行） =====
 
 export interface GanttTodoLabelRowProps {
+  /** 一括選択チェックボックス（v3.160）。onCheckboxClick が無ければ（AI提案プレビュー）描かない */
+  isSelected?: boolean;
+  onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
   /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
   rowHeight?: number;
@@ -589,7 +620,7 @@ export interface GanttTodoLabelRowProps {
 
 export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
   task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, onEdit, onHoverEnter, onHoverLeave, onSaveAssignees,
-  onSaveName,
+  onSaveName, isSelected, onCheckboxClick,
 }: GanttTodoLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -604,6 +635,7 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
       background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
       cursor: "pointer", transition: "background 0.1s",
     }}>
+      {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
       <StatusDot status={task.status} />
       {/* 行クリックでタスク編集モーダルが開くため、名前のインライン編集はそちらに伝播させない（クリックしても何も起きないラッパー） */}
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
@@ -633,6 +665,9 @@ export const GanttTodoLabelRow = memo(function GanttTodoLabelRow({
 // ===== GanttPersonLabelRow（人別ビュー・ラベル列のタスク行） =====
 
 export interface GanttPersonLabelRowProps {
+  /** 一括選択チェックボックス（v3.160）。onCheckboxClick が無ければ（AI提案プレビュー）描かない */
+  isSelected?: boolean;
+  onCheckboxClick?: (e: React.MouseEvent, taskId: string) => void;
   task: Task;
   /** 行コンテナ自体の高さ（共有行モデル。CLAUDE.md v3.08）。既定はGANTT_TASK_ROW_HEIGHT(30)。 */
   rowHeight?: number;
@@ -647,7 +682,7 @@ export interface GanttPersonLabelRowProps {
 
 export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
   task, rowHeight = GANTT_TASK_ROW_HEIGHT, isHovered, isOverdue, pj, onEdit, onHoverEnter, onHoverLeave,
-  onSaveName,
+  onSaveName, isSelected, onCheckboxClick,
 }: GanttPersonLabelRowProps) {
   return (
     <div key={task.id} onClick={() => onEdit(task.id)}
@@ -662,6 +697,7 @@ export const GanttPersonLabelRow = memo(function GanttPersonLabelRow({
       background: isHovered ? "var(--color-bg-secondary)" : "var(--color-bg-primary)",
       cursor: "pointer", transition: "background 0.1s",
     }}>
+      {onCheckboxClick && <GanttRowCheckbox task={task} checked={!!isSelected} onCheckboxClick={onCheckboxClick} />}
       <StatusDot status={task.status} />
       {pj && (
         <div style={{

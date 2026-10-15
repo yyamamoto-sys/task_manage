@@ -19,10 +19,9 @@ import { TaskSidePanel } from "../task/TaskSidePanel";
 import { QuickAddTaskModal } from "../task/QuickAddTaskModal";
 import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import { EmptyState } from "../common/EmptyState";
-import { CustomSelect } from "../common/CustomSelect";
 import { computeRangeSelection, applyCheckboxClick } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
-import { BulkMoveShiftControls } from "../task/BulkMoveShiftControls";
+import { BulkActionBar } from "../task/BulkActionBar";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { computeDropZoneFromRatio, type DropZone } from "../../lib/dragReorder";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
@@ -812,137 +811,17 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         {/* ===== 一括操作バー（選択時のみ表示・スムーズ展開でレイアウト飛びを防止） ===== */}
         <div style={{ overflow: "hidden", maxHeight: selectedIds.size > 0 ? "120px" : "0", transition: "max-height 0.18s ease", flexShrink: 0 }}>
         {selectedIds.size > 0 && (
-          <div style={{
-            padding: "8px 12px",
-            background: "var(--color-brand-light)",
-            borderBottom: "1px solid var(--color-brand-border)",
-            display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap",
-            flexShrink: 0,
-          }}>
-            <span style={{
-              fontSize: "12px", fontWeight: 600,
-              color: "var(--color-brand)",
-              padding: "4px 10px",
-              background: "var(--color-bg-primary)",
-              border: "1px solid var(--color-brand-border)",
-              borderRadius: "var(--radius-full)",
-              whiteSpace: "nowrap",
-            }}>
-              {selectedIds.size} 件選択中
-            </span>
-
-            {/* ステータス一括変更 */}
-            <div style={{ display: "flex", gap: "4px" }}>
-              {(["todo", "in_progress", "done"] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => bulkUpdateStatus(s)}
-                  title={`選択中タスクを「${TASK_STATUS_LABEL[s]}」に変更`}
-                  style={{
-                    padding: "4px 10px", fontSize: "11px", fontWeight: 500,
-                    background: TASK_STATUS_STYLE[s].bg,
-                    color: TASK_STATUS_STYLE[s].color,
-                    border: `1px solid ${TASK_STATUS_STYLE[s].color}`,
-                    borderRadius: "var(--radius-md)",
-                    cursor: "pointer", whiteSpace: "nowrap",
-                  }}
-                >
-                  → {TASK_STATUS_LABEL[s]}
-                </button>
-              ))}
-            </div>
-
-            {/* 優先度一括変更 */}
-            <div style={{ display: "flex", gap: "4px" }}>
-              {(["", "high", "mid", "low"] as const).map(p => {
-                const cfg = p ? TASK_PRIORITY_STYLE[p] : null;
-                return (
-                  <button
-                    key={p || "none"}
-                    onClick={() => bulkUpdatePriority(p || null)}
-                    title={`選択中タスクの優先度を「${p ? TASK_PRIORITY_LABEL[p] : "なし"}」に変更`}
-                    style={{
-                      padding: "4px 10px", fontSize: "11px", fontWeight: 500,
-                      background: cfg ? cfg.bg : "var(--color-bg-tertiary)",
-                      color: cfg ? cfg.color : "var(--color-text-secondary)",
-                      border: `1px solid ${cfg ? cfg.color : "var(--color-border-primary)"}`,
-                      borderRadius: "var(--radius-md)",
-                      cursor: "pointer", whiteSpace: "nowrap",
-                    }}
-                  >
-                    → {p ? TASK_PRIORITY_LABEL[p] : "なし"}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* 担当者一括変更 */}
-            <CustomSelect
-              value=""
-              onChange={value => { if (value) bulkUpdateAssignee(value); }}
-              options={[
-                { value: "", label: "担当者を変更…" },
-                ...[...bulkAssigneeCandidates].sort((a, b) =>
-                  a.id === currentUser.id ? -1 : b.id === currentUser.id ? 1 : 0
-                ).map(m => ({ value: m.id, label: m.display_name })),
-              ]}
-              searchable searchPlaceholder="メンバーで検索..."
-              style={{ width: "160px" }} />
-
-            {/* プロジェクトへ移す・日程をずらす（v3.156） */}
-            <BulkMoveShiftControls
-              projects={scopedProjects}
-              onMoveToProject={(pid, name) => { void bulkMoveToProject(pid, name, visibleOrderedTaskIds); }}
-              onShift={days => { void bulkShift(days); }}
-            />
-
-            <span style={{ flex: 1 }} />
-
-            {/* 選択したタスクを複製 */}
-            <button
-              onClick={() => setShowDuplicateModal(true)}
-              style={{
-                padding: "4px 12px", fontSize: "11px", fontWeight: 500,
-                color: "var(--color-text-secondary)",
-                background: "var(--color-bg-primary)",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer", whiteSpace: "nowrap",
-              }}
-            >
-              📋 複製
-            </button>
-
-            {/* 一括削除 */}
-            <button
-              onClick={bulkDelete}
-              style={{
-                padding: "4px 12px", fontSize: "11px", fontWeight: 500,
-                color: "var(--btn-danger-text)",
-                background: "var(--btn-danger-bg)",
-                border: `1px solid ${"var(--btn-danger-border)"}`,
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer", whiteSpace: "nowrap",
-              }}
-            >
-              🗑 削除
-            </button>
-
-            {/* クリア */}
-            <button
-              onClick={clearSelection}
-              style={{
-                padding: "4px 10px", fontSize: "11px",
-                color: "var(--color-text-tertiary)",
-                background: "transparent",
-                border: "1px solid var(--color-border-primary)",
-                borderRadius: "var(--radius-md)",
-                cursor: "pointer", whiteSpace: "nowrap",
-              }}
-            >
-              ✕ 選択解除
-            </button>
-          </div>
+          <BulkActionBar
+            selectedCount={selectedIds.size}
+            statuses={["todo", "in_progress", "done"] as const}
+            actions={{ bulkUpdateStatus, bulkUpdatePriority, bulkUpdateAssignee, bulkDelete, bulkMoveToProject, bulkShift }}
+            assigneeCandidates={bulkAssigneeCandidates}
+            currentUserId={currentUser.id}
+            projects={scopedProjects}
+            orderedTaskIds={visibleOrderedTaskIds}
+            onDuplicate={() => setShowDuplicateModal(true)}
+            onClear={clearSelection}
+          />
         )}
         </div>
 

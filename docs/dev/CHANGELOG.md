@@ -8304,3 +8304,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * feedback-intro（4ステップ）：ベル→「ご意見を送る」→入力欄。data-tour-id を notification-panel／bell-feedback-entry／feedback-modal／feedback-textarea に追加。audience は super_admin（全員へは1行で "all"）。
 # * テスト：announcements.test・tourLinks.test・announcementWiring.test（わざと壊して赤を確認）・tourCompletion/buildTours を更新。
 # * DB 変更なし・マイグレーションなし・MIN_CLIENT_VERSION は上げない。
+
+# v3.160（2026-10-15）：ガントの左列にチェックボックスと一括操作バー（CLAUDE.md Section 81 に追記）
+#
+# * 左ラベル列の3種のタスク行（GanttPjLabelRow／GanttTodoLabelRow／GanttPersonLabelRow）に GanttRowCheckbox。onClick の MouseEvent を GanttView.handleCheckboxClick へ渡し、applyCheckboxClick（selectionRange.ts）＋ toggleTaskWithChildren＋表示順 visibleOrderedTaskIds（ganttRows 由来）で処理。選択 state は既存の selectedTaskIds（Ctrl／Cmd＋クリック・複数バーのドラッグシフトと共有）。
+# * 一括操作バーを BulkActionBar（task/BulkActionBar.tsx）に共有部品化し、リスト・カンバン・ガントで使用（リスト／カンバンの重複 JSX を削除）。ガントはヘッダーとガント本体の間に挿入（FAB の bottomStack と重ならない）。旧「N件選択中」インジケータは廃止（バーに統合）。
+# * テスト：ganttCheckboxWiring.test（わざと壊して赤を確認）・bulkOpsWiring.test を共有部品に追随。DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -9,7 +9,7 @@
 // - ドラッグによる日程変更は将来実装（現時点はクリックで編集ダイアログ）
 
 import { useState, useMemo, useRef, useEffect, useLayoutEffect, useCallback } from "react";
-import { useAppStore, selectScopedTasks, selectScopedTaskDependencies } from "../../stores/appStore";
+import { useAppStore, selectScopedTasks, selectScopedTaskDependencies, selectScopedProjects } from "../../stores/appStore";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import type { Member, Project, Task, ToDo, Milestone } from "../../lib/localData/types";
 import { toDate, toDateStr, addDays, diffDays, formatYM, getDaysInRange, formatDateRangeWithWeekday, formatMDWithWeekday } from "../../lib/date";
@@ -40,6 +40,12 @@ import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, Ga
 import { GanttMobileView } from "./GanttMobileView";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
 import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
+import { applyCheckboxClick } from "../../lib/selectionRange";
+import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
+import { useAssigneeCandidates } from "../../hooks/useAssigneeCandidates";
+import { sharedProjectId } from "../../lib/members/assigneeCandidates";
+import { BulkActionBar } from "../task/BulkActionBar";
+import { DuplicateTasksModal } from "../task/DuplicateTasksModal";
 import {
   computeDependencyRenders, pointsToPathD,
   type TaskRect, type DependencyArrowGeometry, type DependencyBadgeInfo,
@@ -513,6 +519,26 @@ export function GanttView({
     }
     return ids;
   }, [ganttRows]);
+
+  // ===== 一括操作（v3.160）：リスト・カンバンと同じ useBulkTaskActions と一括操作バーを使う =====
+  // 選択 state（selectedTaskIds）は Ctrl/Cmd＋クリック・Shift＋クリック・バーの複数ドラッグと共有する
+  const scopedProjects = useAppStore(selectScopedProjects);
+  const bulkAssigneeCandidates = useAssigneeCandidates(
+    sharedProjectId(allTasks.filter(t => selectedTaskIds.has(t.id))), [], selectedTaskIds.size > 0,
+  );
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false);
+  const bulkActions = useBulkTaskActions(allTasks, members, selectedTaskIds, currentUser.id, clearTaskSelection);
+  // 左列のチェックボックス：Shift＝表示順（ganttRows 由来）で範囲選択／通常＝親子連動トグル＋アンカー更新（リストと同じ純関数）
+  const handleCheckboxClick = useCallback((e: React.MouseEvent, taskId: string) => {
+    e.stopPropagation();
+    setSelectedTaskIds(prev => {
+      const r = applyCheckboxClick(prev, visibleOrderedTaskIds, selectionAnchorRef.current, taskId, e.shiftKey,
+        (p, id) => toggleTaskWithChildren(p, id, allTasks));
+      selectionAnchorRef.current = r.anchor;
+      return r.next;
+    });
+  }, [visibleOrderedTaskIds, allTasks]);
+  const rowCheckboxClick = isPreview ? undefined : handleCheckboxClick;
 
   // 各ブロック（PJ／ToDoグループ／担当者）の累積Y座標（top）と高さ。マイルストーン帯・過負荷帯を
   // 「バー列全体を覆う絶対配置オーバーレイ」として描く座標源（ganttRowsの高さの積み上げから算出する
@@ -1698,6 +1724,8 @@ export function GanttView({
             onToggleCollapse={togglePJ}
             onSaveAssignees={handleSaveRowAssignees}
             onSaveName={handleSaveRowName}
+            isSelected={selectedTaskIds.has(task.id)}
+            onCheckboxClick={rowCheckboxClick}
             autoEditName={autoEditTaskId === task.id}
             onInsertAfter={handleInsertTaskAfter}
             draggingId={ganttDraggingId}
@@ -1769,6 +1797,8 @@ export function GanttView({
             onHoverLeave={handleRowHoverLeave}
             onSaveAssignees={handleSaveRowAssignees}
             onSaveName={handleSaveRowName}
+            isSelected={selectedTaskIds.has(row.task.id)}
+            onCheckboxClick={rowCheckboxClick}
           />
         );
       case "person-header": {
@@ -1851,6 +1881,8 @@ export function GanttView({
             onHoverEnter={handleRowHoverEnter}
             onHoverLeave={handleRowHoverLeave}
             onSaveName={handleSaveRowName}
+            isSelected={selectedTaskIds.has(task.id)}
+            onCheckboxClick={rowCheckboxClick}
           />
         );
       }
@@ -2378,31 +2410,6 @@ export function GanttView({
             }}
           >⚠過負荷</button>
         )}
-        {/* 複数選択インジケータ：Ctrl/Cmd+クリックで選択したタスクの件数。選択中のバーの中央を
-            ドラッグすると選択中の全タスクが一括でシフトする */}
-        {!isPreview && selectedTaskIds.size > 0 && (
-          <div style={{
-            display: "flex", alignItems: "center", gap: "4px",
-            padding: "3px 4px 3px 10px",
-            border: "1px solid var(--color-brand-border)",
-            borderRadius: "var(--radius-md)",
-            color: "var(--color-brand)", fontSize: "11px", fontWeight: "600",
-            background: "var(--color-brand-light)",
-            flexShrink: 0, whiteSpace: "nowrap",
-          }}>
-            {selectedTaskIds.size}件選択中
-            <button
-              onClick={clearTaskSelection}
-              title="選択を解除"
-              aria-label="選択を解除"
-              style={{
-                ...headerBtnStyle,
-                border: "none", padding: "2px 6px",
-                color: "var(--color-brand)", fontWeight: "600",
-              }}
-            >✕</button>
-          </div>
-        )}
         {!isPreview && (
           <button onClick={scrollToToday} style={{
             ...headerBtnStyle,
@@ -2464,6 +2471,22 @@ export function GanttView({
           </div>
         )}
       </div>
+
+      {/* 一括操作バー（v3.160・選択時のみ）。ヘッダーとガント本体の間に挿入する＝右下の FAB・ショートカット
+          （bottomStack）と重ならず、左右の列は同じ flex 親の中で同じだけ縮む（Section 80 の行ずれは起きない） */}
+      {!isPreview && selectedTaskIds.size > 0 && (
+        <BulkActionBar
+          selectedCount={selectedTaskIds.size}
+          statuses={["todo", "in_progress", "done", "on_hold", "cancelled"] as const}
+          actions={bulkActions}
+          assigneeCandidates={bulkAssigneeCandidates}
+          currentUserId={currentUser.id}
+          projects={scopedProjects}
+          orderedTaskIds={visibleOrderedTaskIds}
+          onDuplicate={() => setShowDuplicateModal(true)}
+          onClear={clearTaskSelection}
+        />
+      )}
 
       {/* ガント本体 */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -2782,6 +2805,17 @@ export function GanttView({
           currentUser={currentUser}
           onClose={() => setEditingTaskId(null)}
           onDeleted={() => setEditingTaskId(null)}
+        />
+      )}
+
+      {/* 選択したタスクを複製（一括操作バーの「複製」。リスト・カンバンと同じモーダル） */}
+      {!isPreview && showDuplicateModal && (
+        <DuplicateTasksModal
+          selectedTasks={allTasks.filter(t => selectedTaskIds.has(t.id))}
+          allTasks={allTasks}
+          currentUser={currentUser}
+          onClose={() => setShowDuplicateModal(false)}
+          onDuplicated={clearTaskSelection}
         />
       )}
 

@@ -31,13 +31,19 @@ describe("リストのチェックボックス（PC・モバイルとも）", ()
   });
 });
 
-describe("一括操作バー（リスト・カンバン共通）", () => {
-  for (const file of ["components/list/ListView.tsx", "components/kanban/KanbanView.tsx"]) {
-    it(`${file} は PJ移動・日程ずらしを一括操作フックの関数へ配線している`, () => {
+describe("一括操作バー（リスト・カンバン・ガント共通・v3.160で共有部品化）", () => {
+  const bar = read("components/task/BulkActionBar.tsx");
+  it("共有部品が PJ移動・日程ずらしを一括操作フックの関数へ配線している", () => {
+    expect(bar).toMatch(/<BulkMoveShiftControls/);
+    expect(bar).toMatch(/actions\.bulkMoveToProject\(pid, name, /);
+    expect(bar).toMatch(/actions\.bulkShift\(days\)/);
+  });
+  for (const file of ["components/list/ListView.tsx", "components/kanban/KanbanView.tsx", "components/gantt/GanttView.tsx"]) {
+    it(`${file} は共有の一括操作バーを使い、独自のバーを持たない`, () => {
       const src = read(file);
-      expect(src).toMatch(/<BulkMoveShiftControls/);
-      expect(src).toMatch(/bulkMoveToProject\(pid, name, /);
-      expect(src).toMatch(/bulkShift\(days\)/);
+      expect(src).toMatch(/<BulkActionBar\b/);
+      expect(src).toMatch(/useBulkTaskActions\(/);
+      expect(src).not.toMatch(/bulkUpdateStatus\(s\)/);
     });
   }
   it("フックは対象決定を planProjectMove に、日程のずらしを bulkShiftTasks に委譲する", () => {

@@ -172,6 +172,8 @@ export const commonEn: Record<keyof typeof commonJa, string> = {
   "common.shortcuts.section.gantt.mouse.item8.desc": "Open task details",
   "common.shortcuts.section.gantt.mouse.item9.gesture": "Click empty space",
   "common.shortcuts.section.gantt.mouse.item9.desc": "Clear selection",
+  "common.shortcuts.section.gantt.mouse.item10.gesture": "Checkbox in the left column",
+  "common.shortcuts.section.gantt.mouse.item10.desc": "Click to select with children / Shift + Click to range-select. The bulk action bar appears above",
   "common.shortcuts.section.gantt.kb.label": "Keyboard",
   "common.shortcuts.section.gantt.kb.item1.gesture": "Esc",
   "common.shortcuts.section.gantt.kb.item1.desc": "Clear selection, or cancel a link operation",

@@ -190,6 +190,8 @@ export const commonJa = {
   "common.shortcuts.section.gantt.mouse.item8.desc": "タスク詳細を開く",
   "common.shortcuts.section.gantt.mouse.item9.gesture": "空白をクリック",
   "common.shortcuts.section.gantt.mouse.item9.desc": "選択を解除",
+  "common.shortcuts.section.gantt.mouse.item10.gesture": "左の列のチェックボックス",
+  "common.shortcuts.section.gantt.mouse.item10.desc": "クリックで親子ごと選択／Shift＋クリックで範囲選択。選ぶと上に一括操作バーが出る",
   "common.shortcuts.section.gantt.kb.label": "キーボード",
   "common.shortcuts.section.gantt.kb.item1.gesture": "Esc",
   "common.shortcuts.section.gantt.kb.item1.desc": "選択解除、または結線操作のキャンセル",

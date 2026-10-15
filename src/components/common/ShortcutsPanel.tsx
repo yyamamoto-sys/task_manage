@@ -124,6 +124,7 @@ function buildSections(t: TFn): ShortcutSection[] {
             { gesture: t("common.shortcuts.section.gantt.mouse.item7.gesture"), description: t("common.shortcuts.section.gantt.mouse.item7.desc") },
             { gesture: t("common.shortcuts.section.gantt.mouse.item8.gesture"), description: t("common.shortcuts.section.gantt.mouse.item8.desc") },
             { gesture: t("common.shortcuts.section.gantt.mouse.item9.gesture"), description: t("common.shortcuts.section.gantt.mouse.item9.desc") },
+            { gesture: t("common.shortcuts.section.gantt.mouse.item10.gesture"), description: t("common.shortcuts.section.gantt.mouse.item10.desc") },
           ],
         },
         {

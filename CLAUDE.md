@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.159
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.160
 #
-最終更新：2026-10-15（v3.159）
+最終更新：2026-10-15（v3.160）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5375,6 +5375,13 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - ショートカット一覧（リスト）・`uiGuide.ts` の `FEATURE_LIST_SECTION`・`docs/guides/02_modes/tasks.md`・`08_spec.md` に追記。
 - ゲストは `saveTask` 等のメモリ分岐にそのまま乗る（Section 23）。`canGuestEdit` の判定は一括バーの既存操作と同じ（バーにガードを足していない）。
 - 描画テスト基盤が無いため、配線は `bulkOpsWiring.test.ts`（コメント除去のソース走査。Section 59。わざと壊して赤・戻して緑を確認）、ロジックは `bulkSelectionOps.test.ts`。ドラッグ・Shift＋クリックの実操作は実機確認が要る。
+
+### 追記（v3.160・2026-10-15）：ガントにも同じチェックボックスと一括操作バー
+- **左ラベル列の3種のタスク行（PJ別・ToDo別・人別）にチェックボックス**（`GanttRowCheckbox`・13px固定幅・`data-gantt-row-checkbox`）。入口は `GanttView.handleCheckboxClick` 1つ：`applyCheckboxClick`（リストと同じ純関数）＋`toggleTaskWithChildren`＋表示順 `visibleOrderedTaskIds`（ganttRows 由来）。選択 state は既存の `selectedTaskIds` を共有（Ctrl／Cmd＋クリック・Shift＋クリック・選択バーの複数ドラッグシフトと同じ集合・同じアンカー）。onMouseDown／onClick は stopPropagation（行クリック＝詳細を開く・⠿ のドラッグとは別要素）。
+- **見出し行（PJ・グループ・ToDo・人別）にはチェックボックスなし**（リストにも PJ単位の全選択は無く、全選択はヘッダー1つ＝ガントは従来の Ctrl／Cmd＋A）。モバイル（GanttMobileView）と AI提案プレビュー（`isPreview`＝`onCheckboxClick` を渡さない）は対象外。
+- **一括操作バーは共有部品 `BulkActionBar`（`task/BulkActionBar.tsx`）に集約**。リスト・カンバン・ガントが同じ部品と `useBulkTaskActions` を使う（リスト／カンバンに二重にあった JSX を削除。状態ボタンはリスト3種・カンバン／ガント5種）。ガントはヘッダーとガント本体の間に挿入（右下の FAB・bottomStack と重ならず、左右の列は同じ flex 親の中で同じだけ縮むので Section 80 の行ずれは起きない）。旧「N件選択中」インジケータは廃止（バーが件数と解除を持つ）。
+- **折りたたまれて見えない選択済みタスクも一括操作の対象に含まれる**（カンバンのような表示外の自動除外はしない＝親を選んで畳むのは普通の操作のため）。件数はバーに出る。
+- 配線は `ganttCheckboxWiring.test.ts`（コメント除去のソース走査・わざと壊して赤を確認）、バー共有は `bulkOpsWiring.test.ts`。左右の行が揃ったままか・Shift＋クリックの実操作は実機確認が要る。
 
 ---
 
