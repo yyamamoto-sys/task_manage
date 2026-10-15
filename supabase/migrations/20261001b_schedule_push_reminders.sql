@@ -45,7 +45,9 @@ select cron.schedule(
       'Content-Type', 'application/json',
       'x-cron-secret', '<REMINDER_CRON_SECRET>'
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    -- 毎時ちょうどは起動が遅れ、既定の5秒でタイムアウトして記録が残らない回があった（2026-10-15）
+    timeout_milliseconds := 30000
   );
   $cron_push_reminders_am$
 );
@@ -63,7 +65,9 @@ select cron.schedule(
       'Content-Type', 'application/json',
       'x-cron-secret', '<REMINDER_CRON_SECRET>'
     ),
-    body := '{}'::jsonb
+    body := '{}'::jsonb,
+    -- 毎時ちょうどは起動が遅れ、既定の5秒でタイムアウトして記録が残らない回があった（2026-10-15）
+    timeout_milliseconds := 30000
   );
   $cron_push_reminders_pm$
 );
