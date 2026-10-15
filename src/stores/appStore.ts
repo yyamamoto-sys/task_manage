@@ -451,7 +451,9 @@ function syncUpdatedAt<T extends { id: string; updated_at?: string }>(
   list: T[],
   id: string,
   newUpdatedAt: string,
+  savedTable?: string,
 ): T[] {
+  if (savedTable) noteSavedDuringLoad(savedTable, id, newUpdatedAt);
   return list.map(item => item.id === id ? { ...item, updated_at: newUpdatedAt } : item);
 }
 
@@ -473,6 +475,45 @@ function syncUpdatedAt<T extends { id: string; updated_at?: string }>(
  */
 let _activeLoad: Promise<void> | null = null;
 let _pendingLoad = false;
+
+/**
+ * 【v3.153・CLAUDE.md Section 5／76】load() の取得中に成功した自分の保存（table → id → 保存後の updated_at）。
+ * 取得結果は取得開始時点の DB なので、置き換えると保存後の行（updated_at=U1）が取得前の値（U0）に巻き戻り、
+ * 次の保存の expectedUpdatedAt が古くなって ConflictError になる（エコーが届けば replayLoadQueue で直るが、
+ * 届かないと固定される）。load の世代ごと（load() 開始で作り直し・終了で破棄）に持つ。
+ */
+let _savedDuringLoad = new Map<string, Map<string, string>>();
+
+function noteSavedDuringLoad(table: string, id: string, updatedAt: string): void {
+  if (!_activeLoad) return;
+  let m = _savedDuringLoad.get(table);
+  if (!m) { m = new Map(); _savedDuringLoad.set(table, m); }
+  m.set(id, updatedAt);
+}
+
+/**
+ * 取得結果 fetched で current を置き換えるとき、取得中に自分の保存が成功した行だけは、手元の行が取得結果より
+ * 新しければ手元（行ごと）を採る。比較は isStaleRemoteUpdate と同じ Date.parse の数値比較。
+ * 手元が新しいときだけ手元を優先する（他人の変更を消さない）。保存が記録されていない行は触らない。
+ */
+function keepNewerLocal<T extends { id: string; updated_at?: string }>(table: string, current: T[], fetched: T[]): T[] {
+  const saved = _savedDuringLoad.get(table);
+  if (!saved || saved.size === 0) return fetched;
+  const cur = new Map(current.map(x => [x.id, x]));
+  const seen = new Set<string>();
+  const out = fetched.map(f => {
+    seen.add(f.id);
+    const savedAt = saved.get(f.id);
+    const local = cur.get(f.id);
+    if (savedAt === undefined || !local) return f;
+    return isStaleRemoteUpdate(local.updated_at, f.updated_at) && !isStaleRemoteUpdate(savedAt, local.updated_at) ? local : f;
+  });
+  for (const [id] of saved) {
+    const local = cur.get(id);
+    if (!seen.has(id) && local) out.push(local);
+  }
+  return out;
+}
 
 /**
  * タイムアウト／ネットワーク系エラーのみリトライするヘルパー。
@@ -587,6 +628,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     recordLoad();
     if (_firstLoadStartedAt === null) _firstLoadStartedAt = Date.now();
     _loadQueue = [];
+    _savedDuringLoad = new Map();
     set({ loading: true, backgroundLoading: false, loadProgress: 0, loadingHint: "", error: null, partialLoadWarning: [] });
     _activeLoad = (async () => {
       try {
@@ -614,16 +656,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
           // groups テーブル未適用環境でもアプリを起動できるよう握りつぶす
         }
 
+        const cur = get();
         set({
-          groups:           fetchedGroups,
-          members:          critical.members,
-          projects:         critical.projects,
-          tasks:            critical.tasks,
+          groups:           keepNewerLocal("groups", cur.groups, fetchedGroups),
+          members:          keepNewerLocal("members", cur.members, critical.members),
+          projects:         keepNewerLocal("projects", cur.projects, critical.projects),
+          tasks:            keepNewerLocal("tasks", cur.tasks, critical.tasks),
           taskProjects:     critical.taskProjects,
           taskDependencies: critical.taskDependencies,
-          milestones:       critical.milestones,
-          projectSections:  critical.projectSections,
-          memberTags:       critical.memberTags,
+          milestones:       keepNewerLocal("milestones", cur.milestones, critical.milestones),
+          projectSections:  keepNewerLocal("projectSections", cur.projectSections, critical.projectSections),
+          memberTags:       keepNewerLocal("memberTags", cur.memberTags, critical.memberTags),
           memberTagMembers: critical.memberTagMembers,
           partialLoadWarning: critical.partialFailures, // 【M41是正】周辺表の部分失敗をApp.tsxの警告バナーへ
           loading:          false,          // ← ここでUIが表示される
@@ -659,15 +702,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
             set({ loadProgress: Math.round((done / total) * 100) });
           });
           set(state => ({
-            objectives:            okr.objectives,
+            objectives:            keepNewerLocal("objectives", state.objectives, okr.objectives),
             // 【2026-07-23】部署別に「現在Objective」が存在しうるため、is_current の単純な
             // グローバル1件抽出ではなく currentGroupId（表示中の部署）でスコープする。
             // currentGroupId がまだ未確定（autoMatch未完了）の間はnullになるが、後続の
             // setCurrentGroupId() 呼び出しで再計算されるため実害はない。
             objective:             pickCurrentObjectiveForGroup(okr.objectives, state.currentGroupId),
-            keyResults:            okr.keyResults,
-            taskForces:            okr.taskForces,
-            todos:                 okr.todos,
+            keyResults:            keepNewerLocal("keyResults", state.keyResults, okr.keyResults),
+            taskForces:            keepNewerLocal("taskForces", state.taskForces, okr.taskForces),
+            todos:                 keepNewerLocal("todos", state.todos, okr.todos),
             projectTaskForces:     okr.projectTaskForces,
             taskTaskForces:        okr.taskTaskForces,
             partialLoadWarning:    [...state.partialLoadWarning, ...okr.partialFailures],
@@ -688,6 +731,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       } finally {
         _activeLoad = null;
         _loadQueue = [];
+        _savedDuringLoad = new Map();
         // 進行中に追加の変更があった場合は1回だけ追従ロード
         if (_pendingLoad) {
           _pendingLoad = false;
@@ -747,7 +791,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().groups.find(g => g.id === group.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertGroup(group, expectedUpdatedAt);
-        set(state => ({ groups: syncUpdatedAt(state.groups, group.id, newUpdatedAt) }));
+        set(state => ({ groups: syncUpdatedAt(state.groups, group.id, newUpdatedAt, "groups") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -785,7 +829,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().loadingTips.find(t => t.id === tip.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertLoadingTip(tip, expectedUpdatedAt);
-        set(state => ({ loadingTips: syncUpdatedAt(state.loadingTips, tip.id, newUpdatedAt) }));
+        set(state => ({ loadingTips: syncUpdatedAt(state.loadingTips, tip.id, newUpdatedAt, "loadingTips") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -833,7 +877,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().members.find(m => m.id === memberToSave.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertMember(memberToSave, expectedUpdatedAt);
-        set(state => ({ members: syncUpdatedAt(state.members, memberToSave.id, newUpdatedAt) }));
+        set(state => ({ members: syncUpdatedAt(state.members, memberToSave.id, newUpdatedAt, "members") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -872,7 +916,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       try {
         const newUpdatedAt = await upsertObjective(obj, expectedUpdatedAt);
         set(state => {
-          const objectives = syncUpdatedAt(state.objectives, obj.id, newUpdatedAt);
+          const objectives = syncUpdatedAt(state.objectives, obj.id, newUpdatedAt, "objectives");
           return { objectives, objective: pickCurrentObjectiveForGroup(objectives, state.currentGroupId) };
         });
       } catch (e) {
@@ -893,7 +937,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().keyResults.find(k => k.id === kr.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertKeyResult(kr, expectedUpdatedAt);
-        set(state => ({ keyResults: syncUpdatedAt(state.keyResults, kr.id, newUpdatedAt) }));
+        set(state => ({ keyResults: syncUpdatedAt(state.keyResults, kr.id, newUpdatedAt, "keyResults") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -927,7 +971,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().taskForces.find(t => t.id === tf.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertTaskForce(tf, expectedUpdatedAt);
-        set(state => ({ taskForces: syncUpdatedAt(state.taskForces, tf.id, newUpdatedAt) }));
+        set(state => ({ taskForces: syncUpdatedAt(state.taskForces, tf.id, newUpdatedAt, "taskForces") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -961,7 +1005,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().todos.find(t => t.id === todo.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertToDo(todo, expectedUpdatedAt);
-        set(state => ({ todos: syncUpdatedAt(state.todos, todo.id, newUpdatedAt) }));
+        set(state => ({ todos: syncUpdatedAt(state.todos, todo.id, newUpdatedAt, "todos") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -1008,7 +1052,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().projects.find(p => p.id === projectToSave.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertProject(projectToSave, expectedUpdatedAt);
-        set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, newUpdatedAt) }));
+        set(state => ({ projects: syncUpdatedAt(state.projects, projectToSave.id, newUpdatedAt, "projects") }));
         void recordEntityChangeLog({
           entityType: "project",
           action: existing ? "update" : "create",
@@ -1136,8 +1180,10 @@ export const useAppStore = create<AppState>()((set, get) => ({
     };
     // 楽観更新（UI 即応性のためシリアライズ対象外）
     set(state => {
+      // updated_at は呼び出し側の値でなくストアの既存値を維持する（v3.153）。再描画前の古い task で保存すると
+      // ここで updated_at が U0 に戻り、直後に読む expectedUpdatedAt が古くなって ConflictError になるため
       const replaced = state.tasks.findIndex(t => t.id === taskToSave.id) >= 0
-        ? state.tasks.map(t => t.id === taskToSave.id ? taskToSave : t)
+        ? state.tasks.map(t => t.id === taskToSave.id ? { ...taskToSave, updated_at: t.updated_at } : t)
         : [...state.tasks, taskToSave];
       // 親のグループが変わったら子も同じグループへ（DB は cascade トリガー。画面は即時に揃える）
       const sectionMoved = (existing?.section_id ?? null) !== (taskToSave.section_id ?? null);
@@ -1160,7 +1206,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
         const expectedUpdatedAt = current?.updated_at;
         try {
           const newUpdatedAt = await upsertTask(taskToSave, expectedUpdatedAt);
-          set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt) }));
+          set(state => ({ tasks: syncUpdatedAt(state.tasks, taskToSave.id, newUpdatedAt, "tasks") }));
           void recordEntityChangeLog({
             entityType: "task",
             action: existing ? "update" : "create",
@@ -1433,7 +1479,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().milestones.find(m => m.id === milestone.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertMilestone(milestone, expectedUpdatedAt);
-        set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, newUpdatedAt) }));
+        set(state => ({ milestones: syncUpdatedAt(state.milestones, milestone.id, newUpdatedAt, "milestones") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -1473,7 +1519,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       const expectedUpdatedAt = get().projectSections.find(x => x.id === section.id)?.updated_at;
       try {
         const newUpdatedAt = await upsertProjectSection(section, expectedUpdatedAt);
-        set(state => ({ projectSections: syncUpdatedAt(state.projectSections, section.id, newUpdatedAt) }));
+        set(state => ({ projectSections: syncUpdatedAt(state.projectSections, section.id, newUpdatedAt, "projectSections") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;
@@ -1523,7 +1569,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
       try {
         const newUpdatedAt = await upsertMemberTag(tag, expectedUpdatedAt);
         await replaceMemberTagMembers(tag.id, memberIds);
-        set(state => ({ memberTags: syncUpdatedAt(state.memberTags, tag.id, newUpdatedAt) }));
+        set(state => ({ memberTags: syncUpdatedAt(state.memberTags, tag.id, newUpdatedAt, "memberTags") }));
       } catch (e) {
         await handleSaveError(e, get().load);
         throw e;

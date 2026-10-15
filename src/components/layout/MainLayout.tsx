@@ -53,7 +53,6 @@ import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
 import { isGuestMember } from "../../lib/guestMode";
 import { isGuideAdmin } from "../../lib/docs/guideAccess";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
-import { requestListInlineAdd } from "../../lib/list/inlineAddRegistry";
 import { GuestAiQuotaNotice } from "../common/GuestAiQuotaNotice";
 import { computeAccessibleGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
 import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
@@ -1720,8 +1719,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           onSelectMilestone={() => { setIsFabMenuOpen(false); setIsMilestoneAddOpen(true); }}
           onSelectTask={() => {
             setIsFabMenuOpen(false);
-            // リストビューを開いているときは、ポップアップではなくリストの追加行へ（処理できなければ従来どおりポップアップ）
-            if (!requestListInlineAdd(selectedProject?.id ?? null)) setIsQuickAddOpen(true);
+            setIsQuickAddOpen(true);
           }}
           isConsultOpen={isConsultOpen}
           consultPanelWidth={consultPanelWidth}

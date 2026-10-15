@@ -1,12 +1,9 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Task } from "../../localData/types";
 import {
   createInlineSubmitter, defaultsForGroup, emptyDraft, isDraftDirty, makeSpec, nextTabTarget,
   type GroupAddSpec,
 } from "../inlineAdd";
-import {
-  _resetListInlineAddForTest, registerListInlineAdd, requestListInlineAdd,
-} from "../inlineAddRegistry";
 
 const spec = (over: Partial<GroupAddSpec> = {}): GroupAddSpec => ({
   projectId: null, todoId: null, assigneeId: null, status: null, tag: null, sectionId: null, ...over,
@@ -40,13 +37,22 @@ describe("defaultsForGroup：グループの属性を初期値にする", () => 
 });
 
 describe("下書き", () => {
-  it("空の下書きの担当者は、担当者別グループのときだけそのグループの担当者", () => {
-    expect(emptyDraft(spec()).assigneeIds).toEqual([]);
-    expect(emptyDraft(spec({ assigneeId: "m1" })).assigneeIds).toEqual(["m1"]);
+  it("空の下書きの担当者は自分。担当者別グループのときだけそのグループの担当者に固定", () => {
+    expect(emptyDraft(spec(), "u1").assigneeIds).toEqual(["u1"]);
+    expect(emptyDraft(spec({ projectId: "p1" }), "u1").assigneeIds).toEqual(["u1"]);
+    expect(emptyDraft(spec({ assigneeId: "m1" }), "u1").assigneeIds).toEqual(["m1"]);
+    expect(emptyDraft(spec(), "__guest__").assigneeIds).toEqual(["__guest__"]);
+  });
+  it("連続入力の2件目以降も自分が入る（登録後の下書きも同じ関数で作る）", async () => {
+    const saved: Task[] = [];
+    const s = createInlineSubmitter({ getTasks: () => saved, saveTask: async t => { saved.push(t); }, userId: "u1" });
+    await s.submit({ ...emptyDraft(spec({ projectId: "p1" }), "u1"), name: "1" }, spec({ projectId: "p1" }));
+    await s.submit({ ...emptyDraft(spec({ projectId: "p1" }), "u1"), name: "2" }, spec({ projectId: "p1" }));
+    expect(saved.map(x => x.assignee_member_id)).toEqual(["u1", "u1"]);
   });
   it("名前が空白だけなら未保存扱いにしない", () => {
-    expect(isDraftDirty({ ...emptyDraft(spec()), name: "  " })).toBe(false);
-    expect(isDraftDirty({ ...emptyDraft(spec()), name: "a" })).toBe(true);
+    expect(isDraftDirty({ ...emptyDraft(spec(), "u1"), name: "  " })).toBe(false);
+    expect(isDraftDirty({ ...emptyDraft(spec(), "u1"), name: "a" })).toBe(true);
   });
 });
 
@@ -60,7 +66,7 @@ describe("createInlineSubmitter：登録処理", () => {
 
   it("タスク名が空なら登録しない", async () => {
     const { saveTask, submitter } = mk();
-    const r = await submitter.submit({ ...emptyDraft(spec()), name: "   " }, spec());
+    const r = await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "   " }, spec());
     expect(r).toEqual({ ok: false, reason: "empty" });
     expect(saveTask).not.toHaveBeenCalled();
   });
@@ -82,8 +88,8 @@ describe("createInlineSubmitter：登録処理", () => {
 
   it("連続入力：2件目の display_order は1件目の次になる", async () => {
     const { saved, submitter } = mk();
-    await submitter.submit({ ...emptyDraft(spec()), name: "1" }, spec({ projectId: "p1" }));
-    await submitter.submit({ ...emptyDraft(spec()), name: "2" }, spec({ projectId: "p1" }));
+    await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "1" }, spec({ projectId: "p1" }));
+    await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "2" }, spec({ projectId: "p1" }));
     expect(saved.map(t => t.display_order)).toEqual([0, 1]);
   });
 
@@ -102,23 +108,23 @@ describe("createInlineSubmitter：登録処理", () => {
     const gate = new Promise<void>(res => { release = res; });
     const saveTask = vi.fn(async () => { await gate; });
     const submitter = createInlineSubmitter({ getTasks: () => [], saveTask, userId: "u1" });
-    const p1 = submitter.submit({ ...emptyDraft(spec()), name: "A" }, spec());
-    const r2 = await submitter.submit({ ...emptyDraft(spec()), name: "A" }, spec());
+    const p1 = submitter.submit({ ...emptyDraft(spec(), "u1"), name: "A" }, spec());
+    const r2 = await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "A" }, spec());
     expect(r2).toEqual({ ok: false, reason: "busy" });
     release();
     expect((await p1).ok).toBe(true);
     expect(saveTask).toHaveBeenCalledTimes(1);
     // 完了後は再び登録できる
-    expect((await submitter.submit({ ...emptyDraft(spec()), name: "B" }, spec())).ok).toBe(true);
+    expect((await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "B" }, spec())).ok).toBe(true);
   });
 
   it("保存に失敗しても busy が残らない（下書きは呼び出し側が保持する）", async () => {
     const saveTask = vi.fn().mockRejectedValueOnce(new Error("x")).mockResolvedValue(undefined);
     const submitter = createInlineSubmitter({ getTasks: () => [], saveTask, userId: "u1" });
-    const r1 = await submitter.submit({ ...emptyDraft(spec()), name: "A" }, spec());
+    const r1 = await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "A" }, spec());
     expect(r1.ok).toBe(false);
     if (!r1.ok) expect(r1.reason).toBe("error");
-    expect((await submitter.submit({ ...emptyDraft(spec()), name: "A" }, spec())).ok).toBe(true);
+    expect((await submitter.submit({ ...emptyDraft(spec(), "u1"), name: "A" }, spec())).ok).toBe(true);
   });
 });
 
@@ -134,34 +140,6 @@ describe("nextTabTarget：Tab は 名前→担当者→開始日→期日", () =
     expect(nextTabTarget("due", true)).toBe("start");
     expect(nextTabTarget("assignee", true)).toBe("name");
     expect(nextTabTarget("name", true)).toBeNull();
-  });
-});
-
-describe("FAB→リストの追加行のレジストリ", () => {
-  beforeEach(() => _resetListInlineAddForTest());
-
-  it("リストが登録していなければ未処理（＝呼び出し側がモーダルを開く）", () => {
-    expect(requestListInlineAdd("p1")).toBe(false);
-  });
-  it("登録済みなら選択中のPJを渡して処理させる", () => {
-    const handler = vi.fn(() => true);
-    registerListInlineAdd(handler);
-    expect(requestListInlineAdd("p1")).toBe(true);
-    expect(handler).toHaveBeenCalledWith("p1");
-    expect(requestListInlineAdd(null)).toBe(true);
-    expect(handler).toHaveBeenLastCalledWith(null);
-  });
-  it("ハンドラが false（グループが無い等）なら未処理を返す", () => {
-    registerListInlineAdd(() => false);
-    expect(requestListInlineAdd(null)).toBe(false);
-  });
-  it("解除後は未処理。古い解除関数が新しい登録を消さない", () => {
-    const un1 = registerListInlineAdd(() => true);
-    const un2 = registerListInlineAdd(() => true);
-    un1();
-    expect(requestListInlineAdd(null)).toBe(true);
-    un2();
-    expect(requestListInlineAdd(null)).toBe(false);
   });
 });
 
@@ -197,7 +175,7 @@ describe("作った直後にそのグループへ表示される", () => {
   const build = async (spec: GroupAddSpec) => {
     const saved: Task[] = [];
     const s = createInlineSubmitter({ getTasks: () => saved, saveTask: async t => { saved.push(t); }, userId: "u1" });
-    const r2 = await s.submit({ ...emptyDraft(spec), name: "新規" }, spec);
+    const r2 = await s.submit({ ...emptyDraft(spec, "u1"), name: "新規" }, spec);
     expect(r2.ok).toBe(true);
     return saved[0];
   };

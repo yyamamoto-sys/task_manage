@@ -33,7 +33,6 @@ import { ListToolbar, type GroupBy, type SortKey, type SortDir, type Density } f
 import { ListInlineAddRow } from "./ListInlineAddRow";
 import { useListInlineAdd } from "./useListInlineAdd";
 import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
-import { registerListInlineAdd } from "../../lib/list/inlineAddRegistry";
 import { SectionHeaderContent, SectionAddInput } from "../section/SectionHeader";
 import { useSectionActions } from "../../hooks/useSectionActions";
 import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
@@ -485,38 +484,6 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   const inlineAdd = useListInlineAdd({
     userId: currentUser.id, scopedTasks: rawTasks, allTasks, filteredTasks, saveTask,
   });
-  const expandGroup = useCallback((key: string) => {
-    setCollapsedGroupKeys(prev => {
-      if (!prev.has(key)) return prev;
-      const next = new Set(prev);
-      next.delete(key);
-      lsSet("collapsedGroups", Array.from(next));
-      return next;
-    });
-  }, []);
-  // FABの「＋ タスクを追加」から：選択中のPJのグループ（無ければ先頭のグループ）の追加行へ。
-  // 処理できないとき（グループが無い）は false を返し、FAB側が従来のポップアップを開く
-  const fabAddRef = useRef<(projectId: string | null) => boolean>(() => false);
-  fabAddRef.current = projectId => {
-    const target = (groupBy === "project" && projectId
-      ? groups.find(g => g.add.projectId === projectId) : undefined) ?? groups[0];
-    if (!target) return false;
-    const key = `${groupBy}:${target.label}`;
-    expandGroup(key);
-    if (sectionBlocksByGroup.has(target.label)) {
-      // グループのあるPJ：PJ単位の追加は未分類の追加行（グループの見出しごとに追加行がある）
-      const bk = `${key}§${UNSECTIONED_KEY}`;
-      expandGroup(bk);
-      inlineAdd.open(bk, target.add);
-      return true;
-    }
-    inlineAdd.open(key, target.add);
-    return true;
-  };
-  useEffect(() => {
-    if (!inlineAddEnabled) return;
-    return registerListInlineAdd(projectId => fabAddRef.current(projectId));
-  }, [inlineAddEnabled]);
 
   // ===== 親子ツリーの行構築 =====
   // groupBy="project"（および ToDo/未設定）では親→子をネスト表示。

@@ -8243,3 +8243,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * Supabase の Disk IO 対策（Realtime を張り直す旧版の画面を減らす）。ReloadNoticeBanner の version.json 取得で、サーバーの版が新しく、最後の操作から10分以上・未保存なし・入力欄にフォーカスなし・モーダルなし・AI会話なし・ゲストでないときだけ黙って再読み込み。
 # * 同じサーバー版への自動再読み込みは sessionStorage に記録して30分に1回まで。判定は src/lib/autoUpdate.ts の shouldAutoReload（vitest）。AI パネルは setAutoUpdateAiBlock で登録。
 # * MIN_CLIENT_VERSION を 3.136 → 3.152。マイグレーションなし。
+
+# v3.153（2026-10-15）：リストの追加行の担当者＝自分・FABは常にポップアップ・保存の競合の原因2件（CLAUDE.md Section 5・76・77）
+# * リストの追加行の担当者の初期値を currentUser.id に（emptyDraft(spec, currentUserId)）。担当者別グループはそのグループの担当者で固定。ゲストは __guest__（QuickAddTaskModal の既定と同じ）。空欄だと作ったタスクがダッシュボード・サイドバーの「自分」に出なかった。
+# * PC FAB の「＋ タスクを追加」は常に setIsQuickAddOpen(true)。inlineAddRegistry・ListView の fabAddRef・登録 effect・expandGroup を撤去。初回ツアーの FAB 文言・guides（tasks.md・08_spec.md）・uiGuide.ts を更新。
+# * 不具合A：load() の丸ごと置き換えが、取得中に成功した自分の保存の updated_at を巻き戻していた。syncUpdatedAt(…, table) が保存成功を load の世代ごとに記録（_savedDuringLoad）し、Phase 1／Phase 2 の置き換え直後に keepNewerLocal が、手元の行が取得結果より新しいときだけ手元の行を採る（Date.parse の数値比較。取得結果に無い新規作成行も残す）。
+# * 不具合C：古いスナップショットの task で saveTask すると、楽観更新が store の updated_at を古い値に戻していた。楽観更新の set で updated_at は store の既存値を維持。
+# * テスト：src/stores/__tests__/saveConflictRace.test.ts（修正前の appStore で A・C が赤くなることを確認）・inlineAdd.test／inlineAddWiring.test を更新。
+# * MIN_CLIENT_VERSION は上げない（v3.152 の自動更新で切り替わる）。マイグレーションなし。

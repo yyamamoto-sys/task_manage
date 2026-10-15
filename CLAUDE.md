@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.152
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.153
 #
-最終更新：2026-10-15（v3.152）
+最終更新：2026-10-15（v3.153）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -775,6 +775,12 @@ quarterly_objectives）の upsert を全て楽観ロック経由に変更。
 - 競合時：`ConflictError` を投げる
 - AppStore の `handleSaveError` で検知 → 「他のメンバーが先に編集していたため最新の内容に戻しました」トースト + load() で整合性回復
 - **「それでも上書きする」UI は未実装**（Section 9 で論点化）。現状はリロード前提
+
+### 保存の競合の原因になる2件の修正（v3.153・2026-10-15）
+
+- **A：load() の丸ごと置き換えが、取得中に成功した自分の保存の `updated_at` を巻き戻す。** 取得結果は取得開始時点の DB（U0）なので、取得中に自分の保存が成功してストアが U1 になっても、置き換えで U0 に戻る → 次の保存の expectedUpdatedAt が古く ConflictError（エコーが届けば `replayLoadQueue` で直るが、届かないと固定される）。対策：`syncUpdatedAt(list, id, ts, テーブル名)` が保存成功を `_savedDuringLoad`（load の世代ごと・load() 開始で作り直し・終了で破棄）に記録し、Phase 1／Phase 2 の置き換え直後に `keepNewerLocal` が、**記録のある行で手元が取得結果より新しいときだけ**手元の行（行ごと）を採る（`isStaleRemoteUpdate` と同じ Date.parse の数値比較。他人の変更＝取得結果の方が新しい行は消さない・記録の無い行は触らない・取得結果に無い新規作成行は残す）。
+- **C：古いスナップショットの task で `saveTask` を呼ぶと、楽観更新が store の `updated_at` を古い値に戻す。** 楽観更新の `set` で `updated_at` は呼び出し側の値ではなく**ストアの既存値を維持**する（`expectedUpdatedAt` はその後ストアから読む既存の流れのまま）。`saveProject` は同じ形だが今回は対象外（未修正）。
+- テスト：`src/stores/__tests__/saveConflictRace.test.ts`（修正前の appStore で A・C が赤くなることを確認済み）。
 
 ### 仕様（2026-05-12 多人数運用対応版）
 
@@ -5121,6 +5127,8 @@ ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・
 - **applyRemoteChange が load() の代わりを果たせるかの確認（穴の有無）**：11表（tasks・projects・todos・key_results・task_forces・milestones・members・task_task_forces・task_projects・project_task_forces・task_dependencies）は差分で反映される。DB トリガーで他の行が変わるもの（`sync_task_group_ids`＝BEFORE トリガーで tasks 行自身に載る／`cascade_project_group_ids_to_tasks`＝tasks を UPDATE し `trg_tasks_updated_at` で updated_at が進むため stale 判定を通る）も realtime で届く。**見つかった穴は1つ：tasks/projects の行を生のまま入れていたため、配列列が null の旧データで `load()` 経由の行と形が食い違う**（`todo_ids`/`assignee_member_ids`/`tags`/`owner_member_ids`/`member_ids`）。`src/lib/supabase/rowNormalize.ts` の `normalizeTaskRow`/`normalizeProjectRow`（`fetchCriticalData` と共有）を通してから入れるようにして解消した。**残る既知の限界**：realtime の購読対象外の表（groups・objectives・member_tags 等）は従来どおり届かない（旧実装も tasks/projects の変更でしか load しておらず、これらは元から対象外）／RLS の可視範囲が変わったとき（招待の受諾直後等）は届かない→復帰時の load() と、各画面の明示 reload（`window.location.reload()`）で拾う。
 - **明示の `reload()` の扱い**：`ConsultationPanel`（提案の反映・AI 提案の適用）と `useAIConsultation`（反映・Undo）の `reload()` は残した。これらは `applyProposal`/`undoApply` が store.ts を直接書く経路で、appStore の楽観更新を通らず、objectives 等の realtime 対象外の表も触りうる。**AI 反映の直後の1回であり、realtime のエコー（`applyRemoteChange`）は冪等なので二重に load() が走ることは無い**（`load()` は進行中なら `_pendingLoad` に畳まれる）。
 
+- **v3.153：置き換えが自分の保存を巻き戻さない**。load() の取得中に成功した保存（`syncUpdatedAt` の記録）は、置き換え直後に `keepNewerLocal` が手元の行を採る（Section 5「保存の競合の原因になる2件の修正」）。realtime のエコーが届かなくても `updated_at` が固定されない。
+
 ### 2. 黙った再読み込みをやめた（`src/lib/lazyWithRetry.ts`）
 
 - **原因**：遅延チャンクの読み込みに失敗すると `sessionStorage` のフラグを立てて黙って `location.reload()` していた。再デプロイ後、古いタブが消えたハッシュ付きチャンクを要求すると 404 になり発火する（`vercel.json` に古いチャンクを残す仕組みは無い）。フラグは画面（チャンク）ごとに別なので、色々な画面を開くたびに連続でリロードされ、未保存の編集も無警告で消えた。
@@ -5154,15 +5162,15 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 
 ## 77. リストの中でその場でタスクを追加する（v3.147・2026-10-14）
 
-ポップアップ（QuickAddTaskModal）を開かずに、リスト（PC表）の各グループの一番下でタスクを追加できる。FABの「＋ タスクを追加」も、リストを開いているときはこの追加行へ移る。
+ポップアップ（QuickAddTaskModal）を開かずに、リスト（PC表）の各グループの一番下でタスクを追加できる。FABの「＋ タスクを追加」は、v3.153 から**リストを開いていても常にポップアップ**（下の「FAB」参照）。
 
 ### 仕様（山本さんと合意済み）
 
 - **位置**：各グループ末尾の「＋ タスクを追加」（`ListInlineAddRow`）。押すと行が入力欄（タスク名・担当者・開始日・期日）になる。折りたたまれたグループには出さない。モバイル（カード表示）には出さない（Tab/キーボード前提の行編集がカードに合わないため。モバイルは今までどおりFABのポップアップ）。
-- **グループの属性が初期値**（`lib/list/inlineAdd.ts`の`makeSpec`／`defaultsForGroup`。ListView の groups の各要素が `add: GroupAddSpec` を持つ）：PJ別＝そのPJ（「プロジェクト未設定」はPJなし）／ToDoグループ＝そのToDoに紐づく／担当者別＝その担当者／状態別＝その状態／タグ別＝そのタグ（「タグなし」はタグなし）。担当者の初期値は空欄で、担当者別グループのときだけそのグループの担当者。🔴 **担当者別グループでは担当者を固定**（変えると作った直後にそのグループに表示されないため。行にはアバターだけを出す）。サイドバーでPJを絞り込み中は、PJ別以外のまとめ方（担当者別・状態別・タグ別）でもそのPJに作る（作らないと絞り込みで見えなくなる）。
+- **グループの属性が初期値**（`lib/list/inlineAdd.ts`の`makeSpec`／`defaultsForGroup`。ListView の groups の各要素が `add: GroupAddSpec` を持つ）：PJ別＝そのPJ（「プロジェクト未設定」はPJなし）／ToDoグループ＝そのToDoに紐づく／担当者別＝その担当者／状態別＝その状態／タグ別＝そのタグ（「タグなし」はタグなし）。担当者の初期値は**自分**（v3.153。`emptyDraft(spec, currentUserId)`。ゲストは `__guest__`＝QuickAddTaskModal の既定と同じ）で、担当者別グループのときだけそのグループの担当者。空欄だと作ったタスクがダッシュボード・サイドバーの「自分」絞り込みに出ず、利用者が「追加できなくなった」と感じた（2026-10-15 報告）ため。🔴 **担当者別グループでは担当者を固定**（変えると作った直後にそのグループに表示されないため。行にはアバターだけを出す）。サイドバーでPJを絞り込み中は、PJ別以外のまとめ方（担当者別・状態別・タグ別）でもそのPJに作る（作らないと絞り込みで見えなくなる）。
 - **操作**：タスク名で Enter→登録→同じグループの一番下に次の空の行→名前欄にフォーカス（連続入力）。Tab は 名前→担当者→開始日→期日→「詳細を入れて追加」（DOM上は担当者列が先頭のため、行の keydown で自前に移す。担当者候補のポップオーバー（Portal）由来のイベントは扱わない）。Esc（名前欄）または行末の✕でやめる。名前が空なら登録しない。保存中は `createInlineSubmitter` の busy ガードで二重登録しない（保存中の名前欄は readOnly）。IME 変換確定の Enter は無視。日付の入力は既存の `InlineEditDate`（押すか Enter で選ぶ）。担当者は `InlineEditAssignee`（候補は表示部署のメンバー＋PJ参加者。Section 71 と同じ規則）。
 - **作成処理は共通**：新設 `lib/task/newTask.ts` の `prepareNewTask`／`nextDisplayOrder`／`validateTaskDateRange`。QuickAddTaskModal もここを通す（親のPJ追従・display_order の採番・finalized_mentions）。保存は `saveTask`（group_id＝表示部署・変更履歴・ゲストのメモリ保存・B1ゲートはストア側）。親タスクなしのトップレベルとして作る。開始日が期日より後なら、リスト・モーダルとも追加せずトースト（モーダルはこれまで min/max 属性だけだった）。ゲストは `canGuestEdit(isGuest,"task")` が偽なら行を出さない。
-- **FAB**：`lib/list/inlineAddRegistry.ts`（pull 型のレジストリ。unsavedEditorRegistry と同じ流儀）。ListView が PC・編集可のときだけハンドラを登録（アンマウントで解除）。MainLayout の **PC側FAB** の「＋ タスクを追加」だけが `requestListInlineAdd(選択中PJ)` を呼び、処理されなければ従来どおりポップアップ。ハンドラは「PJ別でそのPJのグループがあればそれ、無ければ先頭のグループ」を展開して開き、名前欄にフォーカス・スクロールする。**グループが1つも無いリスト（タスク0件・全件が絞り込みで外れた）は処理しない＝ポップアップを開く**（追加行を出せるグループが存在しないため）。モバイルFAB・Ctrl+K・カンバン・カレンダー等は変更なし。追加行の端の「詳細を入れて追加」は QuickAddTaskModal を開く（名前・担当者・日付・状態・ToDo・タグを引き継ぐ。`defaultName`／`defaultAssigneeId`／`defaultStartDate`／`defaultTags` を追加）。
+- **FAB（v3.153で変更）**：PC側FABの「＋ タスクを追加」は常にポップアップ（`setIsQuickAddOpen(true)`）。以前（v3.147〜v3.152）はリストを開いていると追加行へ移したが、仕様変更で撤去した（`inlineAddRegistry`・ListView の `fabAddRef`・登録 effect は削除済み。`inlineAddWiring.test.ts` が「FAB はポップアップのみ・レジストリが無い」をコメント除去のソース走査で固定）。追加行の端の「詳細を入れて追加」は QuickAddTaskModal を開く（名前・担当者・日付・状態・ToDo・タグを引き継ぐ。`defaultName`／`defaultAssigneeId`／`defaultStartDate`／`defaultTags` を追加）。
 - **絞り込み中に見えないタスク**：作成前に id を控え、描画後に絞り込み後のタスクに含まれなければ「追加しました（今の絞り込みでは表示されません）」（`useListInlineAdd`）。
 - **並べ替え**：追加行は常にグループの一番下（行の並びの最後に描画するだけで、sortKey に左右されない）。
 

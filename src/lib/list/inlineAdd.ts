@@ -66,9 +66,14 @@ export interface InlineDraft {
   dueDate: string;
 }
 
-/** 担当者の初期値は空欄。担当者別グループのときだけそのグループの担当者。 */
-export function emptyDraft(spec: GroupAddSpec): InlineDraft {
-  return { name: "", assigneeIds: spec.assigneeId ? [spec.assigneeId] : [], startDate: "", dueDate: "" };
+/**
+ * 担当者の初期値は自分（QuickAddTaskModal の既定と同じ。ゲストは __guest__ の自分）。担当者別グループのときだけ
+ * そのグループの担当者に固定。
+ * WHY：空欄だと作ったタスクがダッシュボードの「自分」やサイドバーの「自分」絞り込みに出ず、
+ * 利用者が「追加できなくなった」と感じた（2026-10-15 報告）。
+ */
+export function emptyDraft(spec: GroupAddSpec, currentUserId: string): InlineDraft {
+  return { name: "", assigneeIds: [spec.assigneeId ?? currentUserId], startDate: "", dueDate: "" };
 }
 
 /** 未保存の入力があるか。名前が空白だけなら未保存扱いにしない（登録できないため）。 */

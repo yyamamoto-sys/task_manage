@@ -54,9 +54,9 @@ export function useListInlineAdd({ userId, scopedTasks, allTasks, filteredTasks,
   }, []);
 
   const open = useCallback((key: string, spec: GroupAddSpec) => {
-    setDrafts(prev => (prev[key] ? prev : { ...prev, [key]: emptyDraft(spec) }));
+    setDrafts(prev => (prev[key] ? prev : { ...prev, [key]: emptyDraft(spec, userId) }));
     requestFocus(key);
-  }, [requestFocus]);
+  }, [requestFocus, userId]);
 
   const change = useCallback((key: string, patch: Partial<InlineDraft>) => {
     setDrafts(prev => (prev[key] ? { ...prev, [key]: { ...prev[key], ...patch } } : prev));
@@ -79,14 +79,14 @@ export function useListInlineAdd({ userId, scopedTasks, allTasks, filteredTasks,
     setSavingKey(null);
     if (result.ok) {
       // 連続入力：同じグループの一番下に、すぐ次の空の追加行を出して名前欄へ戻る
-      setDrafts(prev => ({ ...prev, [key]: emptyDraft(spec) }));
+      setDrafts(prev => ({ ...prev, [key]: emptyDraft(spec, userId) }));
       requestFocus(key);
       return;
     }
     pendingVisibleRef.current = null;
     if (result.reason === "dates" && result.message) showToast(result.message, "error");
     // empty は何もしない・busy は保存中の二重実行・error はストアが通知済み（下書きは残す）
-  }, [submitter, requestFocus]);
+  }, [submitter, requestFocus, userId]);
 
   // 作ったタスクが今の絞り込みで見えないときの案内
   useEffect(() => {

@@ -15,17 +15,16 @@ const code = (rel: string) =>
 
 describe("FABの分岐（MainLayout）", () => {
   const s = code("components/layout/MainLayout.tsx");
-  it("リストの追加行へ渡す呼び出しはPC側のFABだけにある", () => {
-    expect(s.match(/requestListInlineAdd\(/g)?.length).toBe(1);
-    const pcFab = s.indexOf("isMobile={false}");
-    expect(pcFab).toBeGreaterThan(0);
-    expect(s.indexOf("requestListInlineAdd(")).toBeGreaterThan(pcFab);
-  });
-  it("処理されなかったとき（リスト以外のビュー・グループなし）は従来どおりポップアップを開く", () => {
-    expect(s).toMatch(/if \(!requestListInlineAdd\([^)]*\)\) setIsQuickAddOpen\(true\)/);
+  it("PC の FAB の「＋ タスクを追加」は常にポップアップ（リストの追加行へは渡さない）", () => {
+    expect(s).not.toContain("requestListInlineAdd");
+    expect(s).not.toContain("inlineAddRegistry");
+    expect(s).toMatch(/onSelectTask=\{\(\) => \{\s*setIsFabMenuOpen\(false\);\s*setIsQuickAddOpen\(true\);\s*\}\}/);
   });
   it("Ctrl+K の「新規タスクを追加」とカレンダー等の他経路はポップアップのまま", () => {
     expect(s).toMatch(/onQuickAdd=\{\(\) => setIsQuickAddOpen\(true\)\}/);
+  });
+  it("FAB 用のレジストリは撤去済み", () => {
+    expect(fs.existsSync(path.resolve(srcRoot, "lib/list/inlineAddRegistry.ts"))).toBe(false);
   });
 });
 
@@ -34,13 +33,13 @@ describe("リストビュー（ListView）", () => {
   it("追加行は PC 表（モバイルでない）かつ編集できるときだけ描画・登録する", () => {
     expect(s).toMatch(/const inlineAddEnabled = !isMobile && canGuestEdit\(/);
     expect(s).toMatch(/inlineAddEnabled && !isGroupCollapsed && \(\s*<ListInlineAddRow/);
-    expect(s).toMatch(/if \(!inlineAddEnabled\) return;\s*return registerListInlineAdd/);
+    expect(s).not.toContain("registerListInlineAdd");
   });
   it("追加行はモバイルのカード表示側には無い（PC表の側にだけある）", () => {
     expect(s.indexOf("<ListInlineAddRow")).toBeGreaterThan(s.indexOf("PC：テーブル"));
   });
-  it("折りたたまれたグループでは出さず、FABからは展開してから開く", () => {
-    expect(s).toMatch(/expandGroup\(key\);[\s\S]*?inlineAdd\.open\(key, target\.add\)/);
+  it("折りたたまれたグループでは追加行を出さない", () => {
+    expect(s).toMatch(/inlineAddEnabled && !isGroupCollapsed && \(\s*<ListInlineAddRow/);
   });
 });
 
