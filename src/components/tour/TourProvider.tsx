@@ -12,6 +12,8 @@
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { createPortal } from "react-dom";
+import { TOUR_Z, sameRect } from "./tourLayout";
 import type { Tour, TourStep } from "./tours/types";
 import { isTourCompleted, markTourCompleted, unmarkTourCompleted } from "./tourCompletion";
 import { evaluateStepGate, isGatedStep } from "./tourStepGate";
@@ -118,6 +120,18 @@ export function TourProvider({ tours, memberId, children }: Props) {
     };
   }, [activeStep, findTarget]);
 
+  // 開いたパネル・モーダルのアニメーション、DOM の入れ替わり、対象の消失に追従して測り直す。
+  // 対象が消えたら null（中央表示）にして、吹き出しの操作ボタンを必ず画面内に保つ。
+  useEffect(() => {
+    if (!activeStep?.target) return;
+    const iv = setInterval(() => {
+      const el = findTarget(activeStep.target);
+      const next = el ? el.getBoundingClientRect() : null;
+      setTargetRect(prev => (sameRect(prev, next) ? prev : next));
+    }, 250);
+    return () => clearInterval(iv);
+  }, [activeStep, findTarget]);
+
   // アクション付きステップに入ったらアプリ側へ通知（実演などの副作用はアプリが行う）
   useEffect(() => {
     if (activeStep?.action) {
@@ -188,16 +202,21 @@ export function TourProvider({ tours, memberId, children }: Props) {
   return (
     <TourContext.Provider value={value}>
       {children}
-      {activeTour && activeStep && (
-        <TourOverlay
-          step={activeStep}
-          targetRect={targetRect}
-          stepIdx={stepIdx}
-          totalSteps={activeTour.steps.length}
-          onPrev={() => setStepIdx(i => Math.max(0, i - 1))}
-          onNext={() => setStepIdx(i => i + 1)}
-          onSkip={end}
-        />
+      {/* #root は isolation:isolate のため、中に描くと body 直下のポップオーバー（ベルのパネル等）に必ず負ける。
+          body 直下へ出し、body の継承 pointer-events:none を打ち消す。 */}
+      {activeTour && activeStep && createPortal(
+        <div style={{ pointerEvents: "auto" }}>
+          <TourOverlay
+            step={activeStep}
+            targetRect={targetRect}
+            stepIdx={stepIdx}
+            totalSteps={activeTour.steps.length}
+            onPrev={() => setStepIdx(i => Math.max(0, i - 1))}
+            onNext={() => setStepIdx(i => i + 1)}
+            onSkip={end}
+          />
+        </div>,
+        document.body,
       )}
     </TourContext.Provider>
   );
@@ -327,7 +346,7 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
             border: "2px solid var(--color-brand)",
             borderRadius: "var(--radius-md)",
             pointerEvents: "none",
-            zIndex: step.raiseSpotlight ? 10000 : 9991,
+            zIndex: step.raiseSpotlight ? TOUR_Z.bubble : TOUR_Z.spotlight,
             transition: cutoutTransition,
           }} />
         </>
@@ -351,7 +370,7 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
         onKeyDown={handleTrapKeyDown}
         style={{
           position: "fixed",
-          zIndex: 10000,
+          zIndex: TOUR_Z.bubble,
           ...bubblePos,
           maxWidth: "360px", width: "calc(100vw - 24px)",
           transition: bubbleTransition,
@@ -417,7 +436,7 @@ function DimBox({ style }: { style: React.CSSProperties }) {
       style={{
         position: "fixed",
         background: "var(--tour-scrim)",
-        zIndex: 9990,
+        zIndex: TOUR_Z.scrim,
         ...style,
       }}
     />

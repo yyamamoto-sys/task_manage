@@ -8310,3 +8310,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 左ラベル列の3種のタスク行（GanttPjLabelRow／GanttTodoLabelRow／GanttPersonLabelRow）に GanttRowCheckbox。onClick の MouseEvent を GanttView.handleCheckboxClick へ渡し、applyCheckboxClick（selectionRange.ts）＋ toggleTaskWithChildren＋表示順 visibleOrderedTaskIds（ganttRows 由来）で処理。選択 state は既存の selectedTaskIds（Ctrl／Cmd＋クリック・複数バーのドラッグシフトと共有）。
 # * 一括操作バーを BulkActionBar（task/BulkActionBar.tsx）に共有部品化し、リスト・カンバン・ガントで使用（リスト／カンバンの重複 JSX を削除）。ガントはヘッダーとガント本体の間に挿入（FAB の bottomStack と重ならない）。旧「N件選択中」インジケータは廃止（バーに統合）。
 # * テスト：ganttCheckboxWiring.test（わざと壊して赤を確認）・bulkOpsWiring.test を共有部品に追随。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.161（2026-10-15）：ガイドツアーの吹き出しが、クリックで開いたポップオーバーに隠れて続行不能になる不具合の修正（CLAUDE.md Section 84）
+#
+# * 原因：TourOverlay が #root（isolation:isolate）の内側に描かれており、body 直下へ Portal されるベルのパネル（z=9999）には z-index の数値（10000）に関係なく常に負けていた。
+# * 修正：TourProvider が TourOverlay を document.body へ Portal（pointerEvents:auto を明示）。重なり順は tourLayout.ts の TOUR_Z に集約。対象位置を250msごとに測り直し、対象が消えたら中央表示へ（操作ボタンを常に画面内に保つ）。
+# * テスト：tourLayering.test（修正前の TourProvider で3件赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

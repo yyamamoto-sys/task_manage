@@ -49,7 +49,7 @@ describe("TourProvider：クリックで進むステップ", () => {
   });
   it("ステップ表示時のフォーカスを奪わない指定（keepFocus）と、枠線を手前へ上げる指定（raiseSpotlight）を読む", () => {
     expect(src).toContain("step.keepFocus");
-    expect(src).toContain("step.raiseSpotlight ? 10000 : 9991");
+    expect(src).toContain("step.raiseSpotlight ? TOUR_Z.bubble : TOUR_Z.spotlight");
   });
 });
 
