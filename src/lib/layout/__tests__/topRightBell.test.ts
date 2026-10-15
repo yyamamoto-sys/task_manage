@@ -54,6 +54,7 @@ const HEADER_FILES: readonly string[] = [
   "components/lab/ProjectStructureView.tsx",
   "components/graph/GraphView.tsx",
   "components/task/TaskSidePanel.tsx",
+  "components/settings/SettingsView.tsx",
 ];
 
 export function usesBellReserve(src: string): boolean {
@@ -65,9 +66,9 @@ describe("各画面のヘッダーがベルの幅を空けている", () => {
     expect(usesBellReserve(readFileSync(join(SRC, file), "utf8"))).toBe(true);
   });
 
-  it("設定・ガイドの見出し行（MainLayout）も2か所とも空けている", () => {
+  it("ガイドの見出し行（MainLayout）も空けている（設定の見出しバーは v3.155 から SettingsView が持つ）", () => {
     const src = stripComments(readFileSync(join(SRC, "components/layout/MainLayout.tsx"), "utf8"));
-    expect(src.match(/paddingRight: withBellReserve\(16\)/g)).toHaveLength(2);
+    expect(src.match(/paddingRight: withBellReserve\(16\)/g)).toHaveLength(1);
     expect(src).toContain("[APP_BELL_RESERVE_VAR as string]: isGuest ? \"0px\" : `${APP_BELL_RESERVE_PC_PX}px`");
   });
 

@@ -25,6 +25,13 @@
 // 全体をそのまま対象にする）。ガード関数名は`guardedSwitch`（MainLayoutの`guardedNavigate`
 // と役割は同じだが、別ファイル・別の対象であることを名前で区別している）。
 //
+// 【v3.155でSettingsView.tsxを対象に追加】
+// 設定画面のトップ⇄詳細ページの切替（カード→詳細／← 設定）は、未保存のフォーム（プロフィール・
+// パスワード・AdminView のルート）をアンマウントしうる。AdminView 独自の確認ダイアログ
+// （「タブを切り替えると変更は失われます」）は廃止し、未保存確認は Section 46 のレジストリに
+// 一本化した。設定内の状態遷移（setPage）は guardedSwitch 経由に限る（ガード関数名は
+// PersonalOkrView と同じ。✕・ナビ・ログアウトは MainLayout の guardedNavigate／handleLogout が受ける）。
+//
 // 【個別のリスクパターンを「関数名＋引数」の具体的な文字列にしている理由（PersonalOkrView側）】
 // setSelectedKrId/setMonthIndex/setQuarterは、KRタブ・月セレクト・四半期セレクトの
 // ユーザー操作からだけでなく、他のstate変更に追従する内部の自動補正useEffect
@@ -114,6 +121,15 @@ const TARGETS: CoverageTarget[] = [
       "setSelectedKrId(OVERALL_TAB_ID)",
       "setMonthIndex(Number(v) as 1 | 2 | 3)",
       "setQuarter(v as Quarter)",
+    ],
+  },
+  {
+    label: "SettingsView（設定のトップ⇄詳細ページの切替）",
+    file: path.resolve(__dirname, "../../settings/SettingsView.tsx"),
+    guardMarker: "guardedSwitch",
+    riskyPatterns: [
+      "setPage(id)",
+      "setPage(null)",
     ],
   },
 ];

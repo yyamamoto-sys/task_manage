@@ -8,7 +8,8 @@ interface Props {
   krCount: number;
   pjCount: number;
   taskCount: number;
-  onOpenAdmin: () => void;
+  /** 設定画面の指定ページ（v3.155：目標とKR＝okr、プロジェクト＝pj）を開く */
+  onOpenAdmin: (page: "okr" | "pj") => void;
   onOpenAiProject: () => void;
   onOpenQuickAdd: () => void;
 }
@@ -41,7 +42,7 @@ export function OnboardingHome({
       title: "目標と KR を決める",
       desc: "今期の Objective（目標）と KR（成果指標）を3〜5本登録します。",
       cta: krDone ? "KR を編集する" : "OKR を設定する",
-      onCta: onOpenAdmin,
+      onCta: () => onOpenAdmin("okr"),
       status: krDone ? "done" : currentStepNum === 1 ? "current" : "pending",
     },
     {
@@ -49,7 +50,7 @@ export function OnboardingHome({
       title: "プロジェクトを作る",
       desc: "KR を実現する手段（PJ）を登録します。AI に議事メモから作ってもらうこともできます。",
       cta: pjDone ? "PJ を追加する" : "PJ を作成する",
-      onCta: pjDone ? onOpenAdmin : onOpenAiProject,
+      onCta: pjDone ? () => onOpenAdmin("pj") : onOpenAiProject,
       status: pjDone ? "done" : currentStepNum === 2 ? "current" : "pending",
     },
     {

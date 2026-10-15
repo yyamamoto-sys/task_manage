@@ -833,3 +833,12 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     overflow: visible !important;
   }
 }
+
+/* ===== 設定のトップのカード（v3.155。SettingsTop.tsx） =====
+   背景・ホバー・フォーカスリングはクラス側で持つ（インラインの background を置くとホバーを上書きするため）。
+   タッチ端末ではホバー色を出さず、フォーカスリングは常に出す。 */
+.settings-card { background: var(--color-bg-primary); transition: background var(--transition-fast); }
+@media (hover: hover) {
+  .settings-card:hover { background: var(--color-bg-secondary); }
+}
+.settings-card:focus-visible { outline: 2px solid var(--color-brand); outline-offset: 2px; }

@@ -73,7 +73,7 @@ const KEYS = {
    *  SIDEBAR_PJ_OPENとは向きが逆＝既定は閉じる（"1"のときだけ開く）。v3.74・面積を
    *  占領していた3ボタンを折りたたみ式にした（山本さんの指示）。 */
   SIDEBAR_MISC_OPEN:   "sidebar_misc_open",
-  // 管理画面
+  // 管理画面（v3.155：設定画面の作り直しで読まなくなった。過去の保存値の識別用に定数だけ残す）
   ADMIN_LAST_TAB:      "admin_last_tab",
   ADMIN_FONT_SIZE:     "admin_font_size",
   // ガント

@@ -14,9 +14,10 @@
 // 同時に更新すること（modalStyles.test.ts・labViewContainment.test.tsと同じ「宣言的な配列
 // ＋ソース走査」方式。AST解析はしない）。
 //
-// 🔴 memberInGroup は AdminView.tsx 内のローカル関数（export されていない）ため、
-// 呼び出し箇所は必然的にこの1ファイルに閉じている。他ファイルに同種の部署絞り込み
-// ヘルパー（例：projectInGroup）が新設された場合は、この仕組みを複製せず、
+// 🔴 v3.155：memberInGroup は src/lib/admin/adminGroupScope.ts へ移した（設定トップのカードの件数バッジ
+// ＝hooks/useAdminScope.ts と AdminView の両方が使うため）。呼び出し箇所はこの2ファイルに閉じている
+// （SCANNED_FILES）。他ファイルから呼ぶ場合はここに足し、招待受諾者の扱いを理由付きで宣言すること。
+// 他ファイルに同種の部署絞り込みヘルパー（例：projectInGroup）が新設された場合は、この仕組みを複製せず、
 // 同じ考え方で新しいテストファイルを追加すること。
 //
 // 【わざと壊して赤くなることを確認した記録（実装前）】
@@ -31,7 +32,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ADMIN_VIEW_PATH = path.resolve(__dirname, "../admin/AdminView.tsx");
+const SCANNED_FILES = [
+  path.resolve(__dirname, "../admin/AdminView.tsx"),
+  path.resolve(__dirname, "../../hooks/useAdminScope.ts"),
+];
 
 /**
  * 現在の `memberInGroup(` 呼び出し箇所（関数定義自体を除く）。
@@ -40,10 +44,10 @@ const ADMIN_VIEW_PATH = path.resolve(__dirname, "../admin/AdminView.tsx");
  */
 const EXPECTED_CALL_SITES: { line: string; reason: string }[] = [
   {
-    line: "() => active(allMembers).filter(m => memberInGroup(m, selectedGroupId)).length,",
+    line: "members: active(allMembers).filter(m => memberInGroup(m, selectedGroupId)).length,",
     reason:
-      "カテゴリナビの「人」サマリー件数。MembersSectionのscopedMembers.length（招待受諾者は" +
-      "別枠カードで数える設計）と一致させる目的の要約表示のため、意図的に招待受諾者を含めない。",
+      "設定トップの「メンバー」カードの件数バッジ（hooks/useAdminScope.ts）。MembersSectionのscopedMembers.length" +
+      "（招待受諾者は別枠カードで数える設計）と一致させる目的の要約表示のため、意図的に招待受諾者を含めない。",
   },
   {
     line: "active(rawMembers).filter(m => memberInGroup(m, selectedGroupId)),",
@@ -83,8 +87,7 @@ function extractMemberInGroupCallLines(source: string): string[] {
 }
 
 describe("memberInGroup（部署絞り込み）の呼び出し箇所は全て招待受諾者の扱いを明示している（CLAUDE.md v3.78 パートB③）", () => {
-  const source = fs.readFileSync(ADMIN_VIEW_PATH, "utf8");
-  const actualLines = extractMemberInGroupCallLines(source);
+  const actualLines = SCANNED_FILES.flatMap(p => extractMemberInGroupCallLines(fs.readFileSync(p, "utf8")));
 
   it("実際の呼び出し箇所は宣言済みのEXPECTED_CALL_SITESと1対1で一致する", () => {
     const expectedLines = EXPECTED_CALL_SITES.map(s => s.line);

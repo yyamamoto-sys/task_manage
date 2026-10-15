@@ -1,22 +1,25 @@
 // src/components/settings/AccountSecurityRow.tsx
 //
-// 【設計意図】設定ページ「👤 プロフィール」の「パスワードを変更」。新しいパスワードを2回入れて、
+// 【設計意図】設定ページ「🔑 アカウント」の「パスワードを変更」。新しいパスワードを2回入れて、
 // 保存ボタンを押したときだけ updateUser する（明示保存。CLAUDE.md Section 44）。入力途中は
-// 未保存編集レジストリ（Section 46）に登録し、画面を離れる前に確認が出る。
+// 未保存編集レジストリ（Section 46・useUnsavedEditor）に登録し、画面を離れる前に確認が出る。
 // Supabase の「再認証が必要」設定（Secure password change）で拒否された場合は、そのエラー文を
 // 出したうえで「ログアウトして『パスワードをお忘れの方』から再設定」を案内する（Section 79）。
+// v3.155：保存ボタンの3状態・永続のエラー帯・Enter／Ctrl+Enter 保存を共通部品（saveUi）に揃えた。
 // ファイル名に「password」を含めない：この環境の Read/Write 拒否ルールが *password* に当たるため。
-import { useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import { useT } from "../../hooks/useT";
+import { useUnsavedEditor } from "../../hooks/useUnsavedEditor";
 import { showToast } from "../common/Toast";
+import { SaveButton, SaveErrorBand, handleSaveShortcut } from "../common/saveUi";
 import { updateOwnPassword } from "../../lib/supabase/auth";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { validateNewPassword, classifyUpdatePasswordError } from "../../lib/account/recoveryFlow";
-import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../lib/editing/unsavedEditorRegistry";
-import { Row, inputStyle, primaryBtnStyle } from "./settingsUi";
+import { Row, useFieldStyles } from "./settingsUi";
 
 export function AccountSecurityRow() {
   const t = useT();
+  const { input, primaryBtn } = useFieldStyles();
   const [value, setValue] = useState("");
   const [confirm, setConfirm] = useState("");
   const [saving, setSaving] = useState(false);
@@ -24,13 +27,7 @@ export function AccountSecurityRow() {
   const [reauthHint, setReauthHint] = useState(false);
 
   const dirty = value !== "" || confirm !== "";
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
-  const editorId = useId();
-  useEffect(() => {
-    registerUnsavedEditor(editorId, () => dirtyRef.current);
-    return () => unregisterUnsavedEditor(editorId);
-  }, [editorId]);
+  useUnsavedEditor(dirty);
 
   const save = async () => {
     if (!dirty || saving) return;
@@ -56,11 +53,12 @@ export function AccountSecurityRow() {
     }
   };
 
-  const disabled = !dirty || saving;
+  const keys = { onKeyDown: (e: React.KeyboardEvent) => handleSaveShortcut(e, () => void save()) };
+
   return (
     <Row label={t("layout.settings.account.heading")} hint={t("layout.settings.account.hint")}>
       <form
-        onSubmit={e => { e.preventDefault(); void save(); }}
+        onSubmit={e => { e.preventDefault(); }}
         style={{ display: "flex", flexDirection: "column", gap: "8px" }}
       >
         <input
@@ -70,7 +68,8 @@ export function AccountSecurityRow() {
           placeholder={t("layout.settings.account.new")}
           aria-label={t("layout.settings.account.new")}
           autoComplete="new-password"
-          style={inputStyle}
+          style={input}
+          {...keys}
         />
         <input
           type="password"
@@ -79,22 +78,17 @@ export function AccountSecurityRow() {
           placeholder={t("layout.settings.account.confirm")}
           aria-label={t("layout.settings.account.confirm")}
           autoComplete="new-password"
-          style={inputStyle}
+          style={input}
+          {...keys}
         />
-        {error && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", lineHeight: 1.7 }}>{error}</div>}
+        <SaveErrorBand message={error} />
         {reauthHint && (
           <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>
             {t("layout.settings.account.reauth")}
           </div>
         )}
         <div>
-          <button
-            type="submit"
-            disabled={disabled}
-            style={{ ...primaryBtnStyle, opacity: disabled ? 0.5 : 1, cursor: disabled ? "default" : "pointer" }}
-          >
-            {saving ? t("layout.settings.account.saving") : t("layout.settings.account.save")}
-          </button>
+          <SaveButton dirty={dirty} saving={saving} onClick={() => void save()} buttonStyle={primaryBtn} label={t("layout.settings.account.save")} />
         </div>
       </form>
     </Row>

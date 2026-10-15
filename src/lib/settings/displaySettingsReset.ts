@@ -6,6 +6,8 @@
 // 「KEYS 全部」のような消し方はしない（Supabase の認証トークン sb-*・AI相談履歴・
 // 期限通知の二重防止・各種の承認記憶まで巻き込んで消す事故を防ぐため）。
 // 新しい表示設定のキーを足したら、ここにも足すこと（CLAUDE.md Section 65）。
+// v3.155：管理画面の最後のタブ（admin_last_tab）と文字サイズ（admin_font_size）は、設定画面の作り直しで
+// 読まなくなったため一覧から外した（過去に保存された値がブラウザに残っていても無害）。
 //
 // テーマ（KEYS.THEME）と言語（KEYS.LANG）は意図的に残す：設定ページの「表示」で
 // いつでも切り替えられ、表示崩れの原因にならない。英語で使っている人の言語を
@@ -25,8 +27,6 @@ export const DISPLAY_SETTING_KEYS: readonly string[] = [
   KEYS.CONSULT_FOLLOWUP_OPEN,
   KEYS.OKR_AI_PANEL_WIDTH,
   KEYS.TASK_SIDE_PANEL_WIDTH,
-  KEYS.ADMIN_LAST_TAB,
-  KEYS.ADMIN_FONT_SIZE,
   KEYS.GANTT_CENTER_DATE,
   KEYS.GANTT_ZOOM,
   KEYS.GANTT_SORT,

@@ -74,7 +74,7 @@ export function ReminderHealthBanner({ currentUser }: { currentUser: Member }) {
           <div style={{ fontWeight: 600, marginBottom: "4px" }}>{title}</div>
           <div style={{ opacity: 0.9, wordBreak: "break-word", overflowWrap: "anywhere" }}>{body}</div>
           <div style={{ marginTop: "6px", opacity: 0.75, fontSize: "10.5px" }}>
-            詳細は 設定 → 部署の管理 → アプリ設定 → 通知 で確認できます。
+            詳細は 設定 → アプリの管理 → 期限リマインドの実行状況 で確認できます。
           </div>
         </div>
         <button

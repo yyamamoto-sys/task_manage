@@ -3,7 +3,8 @@ import { KEYS, LS_KEY } from "../../localData/localStore";
 import type { Member } from "../../localData/types";
 import { DISPLAY_SETTING_KEYS, selectDisplayKeysToRemove, resetDisplaySettings } from "../displaySettingsReset";
 import { buildProfileUpdate } from "../profileUpdate";
-import { adminsOfGroup, buildSettingsSections, canAccessAdminSection } from "../settingsSections";
+import { adminsOfGroup, canAccessAdminSection } from "../settingsSections";
+import { buildSettingsCardGroups, resolveSettingsAudience } from "../settingsPages";
 
 // 初期化で絶対に消してはいけないキー（認証・データ・承認の記憶・どの画面にいるか）
 const PROTECTED_KEYS = [
@@ -56,7 +57,7 @@ describe("表示の設定の初期化（ホワイトリスト）", () => {
 
   it("表示の設定（サイドバー・一覧・ガント・カレンダー・パネル幅）は対象に含む", () => {
     for (const k of [KEYS.SIDEBAR_WIDTH, KEYS.SIDEBAR_COLLAPSED, KEYS.LIST_VIEW_SETTINGS, KEYS.GANTT_ZOOM,
-      KEYS.CAL_VIEW_MODE, KEYS.TASK_SIDE_PANEL_WIDTH, KEYS.ADMIN_FONT_SIZE]) {
+      KEYS.CAL_VIEW_MODE, KEYS.TASK_SIDE_PANEL_WIDTH]) {
       expect(DISPLAY_SETTING_KEYS).toContain(k);
     }
   });
@@ -122,13 +123,14 @@ describe("設定ページの目次（管理の表示条件）", () => {
 
   it("一般メンバーには管理を出さない（部署に管理者がいるとき）", () => {
     expect(canAccessAdminSection(plain, [admin, plain])).toBe(false);
-    expect(buildSettingsSections(false)).toEqual(["profile", "display", "notify", "help"]);
+    expect(buildSettingsCardGroups(resolveSettingsAudience(plain, [admin, plain])).map(g => g.group)).toEqual(["personal"]);
   });
 
   it("部署管理者・全社スーパー管理者には管理を出す", () => {
     expect(canAccessAdminSection(admin, [admin, plain])).toBe(true);
     expect(canAccessAdminSection(superAdmin, [admin, plain, superAdmin])).toBe(true);
-    expect(buildSettingsSections(true)).toEqual(["profile", "display", "notify", "help", "admin"]);
+    expect(buildSettingsCardGroups(resolveSettingsAudience(admin, [admin, plain])).map(g => g.group)).toEqual(["personal", "department"]);
+    expect(buildSettingsCardGroups(resolveSettingsAudience(superAdmin, [admin, plain, superAdmin])).map(g => g.group)).toEqual(["personal", "department", "app"]);
   });
 
   it("管理者が1人もいない（ブートストラップ）なら全員に管理を出す。削除済みの管理者は数えない", () => {

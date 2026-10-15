@@ -1,14 +1,20 @@
 // src/components/admin/AdminView.tsx
 //
 // 【設計意図】
-// 管理画面。左ナビ（作業設定／人／組織／レポートの4カテゴリ）配下に
-// プロジェクト・Task Force・Objective/KR・メンバー・メンバータグ・グループ／部署・AI使用量の
-// 7セクションを持つ。
+// 設定画面（SettingsView）の「部署の管理」「アプリの管理」の各ページの中身。v3.155 から page を受けて
+// 1ページだけを描画する（プロジェクト・Task Force・Objective/KR・メンバー・メンバータグ・部署・
+// プロジェクト招待・AI使用量・お知らせの送信・ローディングのヒント・バックアップ・期限リマインドの実行状況・
+// 利用者の画面のエラーの13セクション）。ナビ・見出し・戻る導線は SettingsView 側。
 // アクセス制御：部署管理者（is_admin）または全社スーパー管理者（is_super_admin）のみ編集可。
 // ただしグループ内にis_admin=trueのメンバーが1人もいない間はブートストラップモードとして全員アクセス可。
 // 変更はSupabaseに即時反映（appStore経由）。
 
 import { useState, useMemo, useEffect, useCallback } from "react";
+import { useUnsavedEditor } from "../../hooks/useUnsavedEditor";
+import { useAdminScope } from "../../hooks/useAdminScope";
+import { canAccessAdminSection } from "../../lib/settings/settingsSections";
+import type { AdminPageId } from "../../lib/settings/settingsPages";
+import { memberInGroup, projectInGroup } from "../../lib/admin/adminGroupScope";
 import { fetchAiUsageLogs } from "../../lib/supabase/store";
 import type { AiUsageLog } from "../../lib/supabase/store";
 import { useAppStore, selectScopedTasks, selectScopedProjects } from "../../stores/appStore";
@@ -19,15 +25,13 @@ import type {
 } from "../../lib/localData/types";
 import { fetchProjectInvites, revokeProjectInvite } from "../../lib/supabase/projectInviteStore";
 import { resolveInviteStatus, PROJECT_INVITE_STATUS_LABEL, type ProjectInviteStatus } from "../../lib/projectInvite/inviteStatus";
-import { filterInviteGroupsForSidebar } from "../../lib/projectInvite/sidebarGroupVisibility";
-import { resolveAdminGroupId } from "../../lib/admin/resolveAdminGroupId";
 import { canAdministerGroup, canChangeHomeGroup, canDeleteMember, canEditMemberRow, visibleInviteGroupIds } from "../../lib/admin/memberPermission";
 import { isGuestOnlyMember, withGuestOnlyMembers, isGuestMemberOf, withGuestLabel, inviteGroupIdsInScope } from "../../lib/admin/guestMembers";
 import { effectiveTfQuarter } from "../../lib/okr/tfQuarter";
 import { keyResultsInGroup, taskForcesInGroup, pickCurrentObjectiveForGroup } from "../../lib/okr/deptScope";
 import { currentQuarter } from "../../lib/date";
 import { getErrorMessage, formatErrorForUser } from "../../lib/errorMessage";
-import { KEYS, active } from "../../lib/localData/localStore";
+import { active } from "../../lib/localData/localStore";
 import { Avatar } from "../auth/UserSelectScreen";
 import { confirmDialog, alertDialog } from "../../lib/dialog";
 import { v4 as uuidv4 } from "uuid";
@@ -48,36 +52,10 @@ import { ClientErrorSection } from "./ClientErrorSection";
 import { AdminMessageSection } from "./AdminMessageSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 
-type AdminTab = "okr" | "tf" | "pj" | "members" | "tags" | "ai_usage" | "groups" | "invites" | "tips" | "backup" | "reminders" | "errors" | "messages";
-
 interface Props {
   currentUser: Member;
-  /** 開いたときのタブ（エラー・バックアップ通知のクリック先 /?open=admin-errors・admin-backup。super_admin のときだけ効く） */
-  initialTab?: "errors" | "backup" | "messages";
-}
-
-// ===== 部署絞り込み（v3.60・サイドバーの「表示部署」に追従） =====
-//
-// 【設計意図】v3.59まではAdminView専用のローカル部署セレクタ（currentGroupIdとは無関係の
-// 独立選択）を持っていたが、v3.60でサイドバーの「表示部署」（appStore.currentGroupId）に
-// 一本化した（山本さん指示。編集対象の部署がサイドバーと設定画面で食い違えないようにする）。
-// group_ids（複数部署アクセス・migration 20260722b）が入っていればそれで判定し、
-// 未設定（バックフィル漏れ等）の古いデータは group_id（ホーム部署）にフォールバックする。
-//
-// 🔴 groupId が null/空文字（＝部署が未確定）のときは false を返す（絞り込み無し＝全部署を
-// 見せる、にはしない。2026-06-26のNULL猶予条項の事故と同じ轍を踏まないため。
-// CLAUDE.md Section 1.6参照）。呼び出し元（AdminView本体）は resolveAdminGroupId() で
-// 部署を確定できない場合に専用のガード画面を出し、この関数に null を渡す状態そのものを
-// 極力発生させない設計にしている。
-function memberInGroup(m: Member, groupId: string | null): boolean {
-  if (!groupId) return false;
-  if (m.group_ids && m.group_ids.length > 0) return m.group_ids.includes(groupId);
-  return m.group_id === groupId;
-}
-function projectInGroup(p: Project, groupId: string | null): boolean {
-  if (!groupId) return false;
-  if (p.group_ids && p.group_ids.length > 0) return p.group_ids.includes(groupId);
-  return p.group_id === groupId;
+  /** 描画するページ（SettingsView のカードで選ばれたもの。v3.155 から1ページだけを描画する） */
+  page: AdminPageId;
 }
 
 // メンバー保存時の 23505（members_email_unique）検知。
@@ -95,114 +73,33 @@ function isMemberEmailUniqueViolation(e: unknown): boolean {
 
 // ===== ルートコンポーネント =====
 
-export function AdminView({ currentUser, initialTab }: Props) {
-  // 管理者ガード：グループ内にis_admin=trueのアクティブメンバーが1人以上いる場合、
-  // 現在ユーザーがis_admin=trueでないとアクセスを拒否する。
-  // 誰もis_adminでない場合はブートストラップモードとして全員アクセス可。
-  // 全社スーパー管理者（is_super_admin）は所属部署のis_admin状態によらず常にアクセス可。
+/**
+ * 【v3.155】設定画面の「部署の管理」「アプリの管理」ページの中身。1ページだけを描画する。
+ * ページの選択・見出しバー・「← 設定」・説明文・編集対象の部署の表示は SettingsView が持つ。
+ * 廃止したもの：左ナビ・ヘッダー・文字サイズ（小中大）・注意書きバッジ・初見ヒントの常時帯・
+ * モバイルのセレクト・最後に開いたタブの記憶・タブ切替時の独自の確認ダイアログ
+ * （未保存の確認は Section 46 のレジストリに一本化した）。
+ * 各セクション本体は無改修で、onDirtyChange もそのまま受ける（ルートが useUnsavedEditor へ渡すだけ）。
+ */
+export function AdminView({ currentUser, page }: Props) {
+  // 管理者ガード（SettingsView のカード表示と同じ canAccessAdminSection）：グループ内に is_admin=true の
+  // アクティブメンバーが1人以上いる場合、現在ユーザーが is_admin でないとアクセスを拒否する。
+  // 誰も is_admin でない場合はブートストラップモードとして全員アクセス可。全社スーパー管理者は常にアクセス可。
   const allMembers = useAppStore(s => s.members);
-  const activeAdmins = useMemo(() => active(allMembers).filter(m => m.is_admin === true), [allMembers]);
-  const hasAnyAdmin = activeAdmins.length > 0;
-  const isCurrentUserAdmin = currentUser.is_admin === true;
-  const isCurrentUserSuperAdmin = currentUser.is_super_admin === true;
-  const canAccessAdmin = isCurrentUserAdmin || isCurrentUserSuperAdmin;
   const isMobile = useIsMobile();
-  const krs        = useAppStore(s => s.keyResults);
-  // 件数バッジ用は selectedGroupId（サイドバーの「表示部署」に追従）で絞り込むため、
-  // アプリ全体のselectScopedProjectsではなく未絞り込みのs.projectsを素で取得する
-  // （PJSectionが実際に表示する一覧と同じ絞り込み関数=projectInGroupを使う）。
-  const rawProjects = useAppStore(s => s.projects);
-  const rawTfs     = useAppStore(s => s.taskForces);
-  const rawObjectives = useAppStore(s => s.objectives);
-  const rawGroups  = useAppStore(s => s.groups);
-  const rawTags    = useAppStore(s => s.memberTags);
-  // タグ本体（member_tags）は部署概念を持たない全社共通マスタのため件数は絞り込まない
-  // （TagsSectionのactiveTagsと同じ方針。CLAUDE.md Section 1.6参照）。
-  const tagCount    = active(rawTags).length;
-  // グループ（部署）数はその部署一覧そのものなので、selectedGroupIdで絞る対象ではない
-  // （GroupsSectionのgroups一覧と同じ全社件数）。
-  const groupCount  = rawGroups.filter(g => !g.is_deleted).length;
-
-  // 部署の判定（v3.60・サイドバー「表示部署」に一本化）：
-  // アプリ全体のcurrentGroupId（appStore）を正とし、AdminView独自の部署セレクタは持たない。
-  // accessibleGroups は「編集対象の部署名」を表示するかどうか（2件以上のときだけ表示）の判定と、
-  // currentGroupIdが未確定な場合の唯一のフォールバック先（1件しか無ければそれに決まる）に使う。
-  // filterInviteGroupsForSidebar()でプロジェクト招待用の部署（is_invite_group=true）を除く
-  // のは、サイドバーの表示部署切替（MainLayout.tsx）と選択できる部署の範囲を一致させるため
-  // （サイドバーが選ばせない部署をここだけ選べることにしない。CLAUDE.md Section 25参照）。
-  const groupsActive = useMemo(() => rawGroups.filter(g => !g.is_deleted), [rawGroups]);
-  const accessibleGroups = useMemo(() => {
-    const base = isCurrentUserSuperAdmin ? groupsActive
-      : groupsActive.filter(g => {
-          const ids = currentUser.group_ids?.length ? currentUser.group_ids
-            : (currentUser.group_id ? [currentUser.group_id] : []);
-          return ids.includes(g.id);
-        });
-    return filterInviteGroupsForSidebar(base);
-  }, [groupsActive, isCurrentUserSuperAdmin, currentUser.group_ids, currentUser.group_id]);
-  const showDeptLabel = accessibleGroups.length >= 2;
-  const currentGroupId = useAppStore(s => s.currentGroupId);
-  // 🔴 selectedGroupIdは「string | null」。空文字にはしない（絞り込み無し＝全部署表示という
-  // 意味を持たせないため。resolveAdminGroupId()のコメント・CLAUDE.md Section 1.6参照）。
-  const selectedGroupId = useMemo(
-    () => resolveAdminGroupId(currentGroupId, accessibleGroups.map(g => g.id)),
-    [currentGroupId, accessibleGroups],
-  );
-
-  // KR/TFの件数は selectedGroupId（サイドバーの「表示部署」に追従）でスコープする
-  // （Objective.group_id → KR.objective_id → TF.kr_id と部署を継承。CLAUDE.md Section 1.6参照）。
-  // ナビのバッジ数・初期タブ選択・「まだ何も無い」案内が、実際にOKRSection/TFSectionで
-  // 表示される件数と一致するようにする。
-  const krCount = useMemo(
-    () => keyResultsInGroup(active(krs), rawObjectives, selectedGroupId).length,
-    [krs, rawObjectives, selectedGroupId],
-  );
-  const tfCount = useMemo(
-    () => taskForcesInGroup(active(rawTfs), active(krs), rawObjectives, selectedGroupId).length,
-    [rawTfs, krs, rawObjectives, selectedGroupId],
-  );
-  // プロジェクト・メンバーの件数も同じくselectedGroupIdでスコープする
-  // （PJSection/MembersSectionが実際に表示する一覧=projectInGroup/memberInGroupと同じ絞り込み）。
-  const pjCount = useMemo(
-    () => active(rawProjects).filter(p => projectInGroup(p, selectedGroupId)).length,
-    [rawProjects, selectedGroupId],
-  );
-  const memberCount = useMemo(
-    () => active(allMembers).filter(m => memberInGroup(m, selectedGroupId)).length,
-    [allMembers, selectedGroupId],
-  );
-
-  // 初期タブ：未設定が大きい領域を優先（KR 0件 → OKR、PJ 0件 → PJ、それ以外は前回タブ）
-  // "tips" は全社スーパー管理者のみに見せるタブのため、保存値がtipsでもsuper adminでない
-  // ユーザーには無効な選択肢として扱う（選択肢に無いタブが選ばれたままになる事故を防ぐ）。
-  const validTabs: AdminTab[] = ["okr", "tf", "pj", "members", "tags", "ai_usage", "groups", "invites", "tips", "messages"];
-  const [tab, setTab] = useState<AdminTab>(() => {
-    const saved = localStorage.getItem(KEYS.ADMIN_LAST_TAB) as AdminTab | null;
-    if (initialTab === "errors" && isCurrentUserSuperAdmin) return "errors";
-    if (initialTab === "backup" && isCurrentUserSuperAdmin) return "backup";
-    if (initialTab === "messages" && canAccessAdmin) return "messages";
-    if (krCount === 0) return "okr";
-    if (pjCount === 0) return "pj";
-    if (saved === "tips" && !isCurrentUserSuperAdmin) return "pj";
-    if (saved === "messages" && !canAccessAdmin) return "pj";
-    return (saved && validTabs.includes(saved)) ? saved : "pj";
-  });
-  const [fontSizeLevel, setFontSizeLevel] = useState<0 | 1 | 2>(
-    () => Math.min(2, Math.max(0, parseInt(localStorage.getItem(KEYS.ADMIN_FONT_SIZE) ?? "1", 10))) as 0 | 1 | 2
-  );
-  const zoomLevels = [0.85, 1, 1.15] as const;
-
+  // 部署の判定（v3.60・サイドバー「表示部署」に一本化）：判定は useAdminScope に集約した
+  const { selectedGroupId } = useAdminScope(currentUser);
   const [isDirty, setIsDirty] = useState(false);
+  useUnsavedEditor(isDirty);
 
-  // 管理者ガード判定は全フック宣言の後で行う（react-hooks/rules-of-hooks 対応）。
-  // メンバーデータは非同期で読み込まれるため、表示中に hasAnyAdmin/canAccessAdmin が
-  // 変化してこの early return の有無が切り替わると、以前はフック呼び出し数がずれて
-  // Reactがクラッシュし得た（TaskEditModalで過去に修正した画面真っ白と同一パターン）。
-  if (hasAnyAdmin && !canAccessAdmin) {
+  // ガード判定は全フック宣言の後で行う（react-hooks/rules-of-hooks 対応）。
+  // メンバーデータは非同期で読み込まれるため、表示中にこの early return の有無が切り替わっても
+  // フック呼び出し数がずれてクラッシュしないようにする（TaskEditModal で過去に修正した画面真っ白と同一パターン）。
+  if (!canAccessAdminSection(currentUser, allMembers)) {
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        height: "100%",
+        flex: 1, minHeight: 0,
         flexDirection: "column", gap: "12px",
       }}>
         <div style={{
@@ -216,16 +113,13 @@ export function AdminView({ currentUser, initialTab }: Props) {
   }
 
   // 部署ガード：サイドバーの「表示部署」（currentGroupId）から編集対象の部署を判定できない
-  // 場合（アクセス可能な部署が2つ以上あり、かつcurrentGroupIdがその中のどれとも一致しない
-  // 未確定な状態）は、絶対に「全部署を見せる」側に倒さず、ここで止めてサイドバーでの選択を
-  // 促す（CLAUDE.md Section 1.6「過去に実際に起きた事故と教訓」と同じ轍を踏まないため）。
-  // 通常のログイン済みユーザーではまず発生しない（currentGroupIdはログイン時に自分のホーム
-  // 部署から必ず設定される）が、ホーム部署が未設定の古いデータ等の保険として置く。
+  // 場合は、絶対に「全部署を見せる」側に倒さず、ここで止めてサイドバーでの選択を促す
+  // （CLAUDE.md Section 1.6「過去に実際に起きた事故と教訓」と同じ轍を踏まないため）。
   if (selectedGroupId === null) {
     return (
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "center",
-        height: "100%",
+        flex: 1, minHeight: 0,
         flexDirection: "column", gap: "12px",
       }}>
         <div style={{
@@ -239,231 +133,51 @@ export function AdminView({ currentUser, initialTab }: Props) {
     );
   }
 
-  const changeTab = async (t: AdminTab) => {
-    if (isDirty && t !== tab) {
-      const ok = await confirmDialog(
-        "保存されていない変更があります。\nタブを切り替えると変更は失われます。このまま移動しますか？"
-      );
-      if (!ok) return;
-    }
-    setIsDirty(false);
-    setTab(t);
-    localStorage.setItem(KEYS.ADMIN_LAST_TAB, t);
-  };
-  const changeFontSize = (level: 0 | 1 | 2) => {
-    setFontSizeLevel(level);
-    localStorage.setItem(KEYS.ADMIN_FONT_SIZE, String(level));
-  };
-
-  // 左ナビ：カテゴリ分け（作業設定 / 人 / 組織 / レポート / アプリ設定）
-  // 「アプリ設定」は全社スーパー管理者のみに見せる（部署管理者には出さない）。
-  const categories: { label: string; items: { key: AdminTab; label: string; count?: number }[] }[] = [
-    { label: "作業設定", items: [
-        { key: "pj",  label: "プロジェクト",     count: pjCount },
-        { key: "tf",  label: "Task Force",       count: tfCount },
-        { key: "okr", label: "Objective・KR",    count: krCount },
-    ] },
-    { label: "人", items: [
-        { key: "members", label: "メンバー",     count: memberCount },
-        { key: "tags",     label: "メンバータグ", count: tagCount },
-    ] },
-    { label: "組織", items: [
-        { key: "groups", label: "グループ・部署", count: groupCount },
-        { key: "invites", label: "プロジェクト招待" },
-    ] },
-    { label: "レポート", items: [
-        { key: "ai_usage", label: "AI使用量" },
-    ] },
-    // v3.131：お知らせを送れるのは部署の管理者と super_admin だけ（管理者不在のブートストラップ状態の一般メンバーには出さない）
-    ...(canAccessAdmin ? [{ label: "連絡", items: [
-        { key: "messages" as AdminTab, label: "📣 お知らせを送る" },
-    ] }] : []),
-    ...(isCurrentUserSuperAdmin ? [{ label: "アプリ設定", items: [
-        { key: "tips" as AdminTab, label: "ローディングのヒント" },
-        { key: "backup" as AdminTab, label: "バックアップ" },
-        { key: "reminders" as AdminTab, label: "通知" },
-        { key: "errors" as AdminTab, label: "エラー" },
-    ] }] : []),
-  ];
-  const currentTabLabel = categories.flatMap(c => c.items).find(it => it.key === tab)?.label ?? "";
-
-  const navButtonStyle = (isActive: boolean): React.CSSProperties => ({
-    display: "flex", alignItems: "center", gap: "8px", width: "100%",
-    padding: "7px 8px", marginBottom: "2px", fontSize: "12px", textAlign: "left",
-    borderRadius: "var(--radius-md)", border: "none", cursor: "pointer",
-    background: isActive ? "var(--color-bg-info)" : "transparent",
-    color: isActive ? "var(--color-text-info)" : "var(--color-text-secondary)",
-    fontWeight: isActive ? "500" : "400",
-    transition: "background 0.1s, color 0.1s",
-  });
-  const navBadgeStyle = (isActive: boolean): React.CSSProperties => ({
-    fontSize: "10px", padding: "1px 6px", borderRadius: "99px", flexShrink: 0,
-    background: isActive ? "var(--color-bg-primary)" : "var(--color-bg-secondary)",
-    color: isActive ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-    border: "1px solid var(--color-border-primary)",
-  });
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%", overflow: "hidden" }}>
-      {/* ヘッダー */}
-      <div style={{
-        padding: "10px 20px",
-        borderBottom: "1px solid var(--color-border-primary)",
-        background: "var(--color-bg-primary)", flexShrink: 0,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-          <div style={{ fontSize: "14px", fontWeight: "500", color: "var(--color-text-primary)", flex: 1 }}>
-            管理{isMobile && currentTabLabel ? ` ・ ${currentTabLabel}` : ""}
-          </div>
-          <span style={{
-            fontSize: "10px", padding: "2px 8px",
-            background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
-            border: "1px solid var(--color-border-warning)", borderRadius: "99px",
-          }}>
-            部署管理者・全社スーパー管理者が編集できます
-          </span>
-          {/* フォントサイズ切り替え */}
-          <div style={{
-            display: "flex", border: "1px solid var(--color-border-primary)",
-            borderRadius: "var(--radius-md)", overflow: "hidden",
-          }}>
-            {([0, 1, 2] as const).map((level) => (
-              <button
-                key={level}
-                onClick={() => changeFontSize(level)}
-                title={["小さく", "標準", "大きく"][level]}
-                style={{
-                  padding: "2px 7px", fontSize: "10px", border: "none", cursor: "pointer",
-                  background: fontSizeLevel === level ? "var(--color-bg-info)" : "transparent",
-                  color: fontSizeLevel === level ? "var(--color-text-info)" : "var(--color-text-tertiary)",
-                  borderRight: level < 2 ? "1px solid var(--color-border-primary)" : "none",
-                }}
-              >
-                {["小", "中", "大"][level]}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* 編集対象の部署表示（v3.60）：セレクタは廃止し、サイドバーの「表示部署」に従う。
-            アクセス可能な部署が1つしかない利用者には出さない（曖昧さが無く表示する意味が無いため）。 */}
-        {showDeptLabel && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "8px" }}>
-            <span style={{ fontSize: "11px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>
-              🏢 編集対象の部署
-            </span>
-            <span style={{ fontSize: "12px", fontWeight: "500", color: "var(--color-text-primary)" }}>
-              {accessibleGroups.find(g => g.id === selectedGroupId)?.name ?? selectedGroupId}
-            </span>
-            {!isMobile && (
-              <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)" }}>
-                サイドバーの「表示部署」に従います。切り替えるにはサイドバーを使用してください
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* モバイル：カテゴリ見出し付きセレクトに畳む */}
-        {isMobile && (
-          <select
-            value={tab}
-            onChange={e => { void changeTab(e.target.value as AdminTab); }}
-            style={{ ...inputStyle, marginTop: "10px" }}
-          >
-            {categories.map(cat => (
-              <optgroup label={cat.label} key={cat.label}>
-                {cat.items.map(it => (
-                  <option key={it.key} value={it.key}>
-                    {it.label}{it.count != null ? `（${it.count}）` : ""}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        )}
-
-        {/* 初見向け：次の推奨ステップ */}
-        {(krCount === 0 || pjCount === 0) && (
-          <div style={{
-            margin: "10px 0 0", padding: "5px 10px",
-            background: "var(--color-bg-info)",
-            border: "1px solid var(--color-border-info)",
-            borderRadius: "var(--radius-sm)",
-            fontSize: "10px", color: "var(--color-text-info)", lineHeight: 1.5,
-          }}>
-            {krCount === 0
-              ? "💡 まず「Objective・KR」で今期の目標と KR（成果指標）を3〜5本登録しましょう。"
-              : "💡 続いて「プロジェクト」で KR を実現する手段（PJ）を登録します。"}
-          </div>
-        )}
-      </div>
-
-      {/* 左ナビ＋コンテンツの2カラム（モバイルは左ナビ非表示・上部セレクトのみ） */}
-      <div style={{ flex: 1, minHeight: 0, display: "flex", overflow: "hidden" }}>
-        {!isMobile && (
-          <nav style={{
-            width: "188px", flexShrink: 0, overflowY: "auto",
-            padding: "14px 10px", borderRight: "1px solid var(--color-border-primary)",
-            background: "var(--color-bg-primary)",
-          }}>
-            {categories.map(cat => (
-              <div key={cat.label} style={{ marginBottom: "16px" }}>
-                <div style={{
-                  fontSize: "10px", fontWeight: "600", letterSpacing: "0.06em",
-                  color: "var(--color-text-tertiary)", textTransform: "uppercase",
-                  padding: "0 8px 6px",
-                }}>
-                  {cat.label}
-                </div>
-                {cat.items.map(it => {
-                  const isActive = tab === it.key;
-                  return (
-                    <button
-                      key={it.key}
-                      onClick={() => { void changeTab(it.key); }}
-                      style={navButtonStyle(isActive)}
-                    >
-                      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {it.label}
-                      </span>
-                      {it.count != null && (
-                        <span style={navBadgeStyle(isActive)}>{it.count}</span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-          </nav>
-        )}
-
-        {/* コンテンツ */}
-        <div
-          key={tab}
-          className="animate-fadeIn"
-          style={{
-            flex: 1, minWidth: 0,
-            overflow: tab === "tf" ? "hidden" : "auto",
-            padding: tab === "tf" ? "18px 20px 0" : "18px 20px",
-            zoom: zoomLevels[fontSizeLevel],
-            display: "flex", flexDirection: "column", minHeight: 0,
-          }}
-        >
-          {tab === "okr"      && <OKRSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
-          {tab === "tf"       && <TFSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
-          {tab === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
-          {tab === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
-          {tab === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
-          {tab === "ai_usage" && <AIUsageSection selectedGroupId={selectedGroupId} />}
-          {tab === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "invites"  && <InvitesSection selectedGroupId={selectedGroupId} />}
-          {tab === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
-          {tab === "backup"   && <BackupSection currentUser={currentUser} />}
-          {tab === "reminders" && <ReminderSection currentUser={currentUser} />}
-          {tab === "errors"   && <ClientErrorSection currentUser={currentUser} />}
-          {tab === "messages" && <AdminMessageSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0, height: "100%", overflow: "hidden" }}>
+      <div
+        className="animate-fadeIn"
+        style={{
+          flex: 1, minWidth: 0, minHeight: 0,
+          overflow: page === "tf" ? "hidden" : "auto",
+          padding: isMobile
+            ? (page === "tf" ? "16px 16px 0" : "16px")
+            : (page === "tf" ? "24px 32px 0" : "24px 32px"),
+          display: "flex", flexDirection: "column",
+        }}
+      >
+        <div style={{
+          width: "100%", maxWidth: "960px", margin: "0 auto",
+          flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
+        }}>
+          {page === "okr"      && <OKRSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {page === "tf"       && <TFSection key={selectedGroupId} currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {page === "pj"       && <PJSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {page === "members"  && <MembersSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {page === "tags"     && <TagsSection currentUser={currentUser} onDirtyChange={setIsDirty} selectedGroupId={selectedGroupId} />}
+          {page === "ai_usage" && <AIUsageSection selectedGroupId={selectedGroupId} />}
+          {page === "groups"   && <GroupsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {page === "invites"  && <InvitesSection selectedGroupId={selectedGroupId} />}
+          {page === "tips"     && <LoadingTipsSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
+          {page === "backup"   && <BackupSection currentUser={currentUser} />}
+          {page === "reminders" && <ReminderSection currentUser={currentUser} />}
+          {page === "errors"   && <ClientErrorSection currentUser={currentUser} />}
+          {page === "messages" && <AdminMessageSection currentUser={currentUser} onDirtyChange={setIsDirty} />}
         </div>
       </div>
+    </div>
+  );
+}
+
+// 初見向けの案内（v3.155：旧・管理ヘッダーの常時帯。0件の間だけ、該当ページの空状態に出す）
+function FirstStepHint({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{
+      margin: "0 0 10px", padding: "8px 12px",
+      background: "var(--color-bg-info)", border: "1px solid var(--color-border-info)",
+      borderRadius: "var(--radius-sm)", fontSize: "12px", color: "var(--color-text-info)", lineHeight: 1.6,
+    }}>
+      {children}
     </div>
   );
 }
@@ -701,9 +415,12 @@ function OKRSection({ currentUser, onDirtyChange, selectedGroupId }: {
             </div>
           ))}
           {krs.length === 0 && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
-              まだKRがありません。下の入力欄から追加してください。
-            </div>
+            <>
+              <FirstStepHint>💡 まず今期の目標（Objective）と KR（成果指標）を3〜5本登録しましょう。</FirstStepHint>
+              <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+                まだKRがありません。下の入力欄から追加してください。
+              </div>
+            </>
           )}
         </div>
 
@@ -911,14 +628,14 @@ function TFSection({ currentUser, onDirtyChange, selectedGroupId }: {
       {/* Objective未設定時の警告 */}
       {!ctxObj?.id && (
         <div style={{ fontSize: "11px", color: "var(--color-text-warning)", padding: "10px 12px", background: "var(--color-bg-warning)", border: "1px solid var(--color-border-warning)", borderRadius: "var(--radius-md)", marginBottom: "16px" }}>
-          先に「Objective / KR」タブで通期Objectiveを保存してください
+          先に「Objective・KR」ページで通期Objectiveを保存してください
         </div>
       )}
 
       {/* KR なし */}
       {krs.length === 0 && ctxObj?.id && (
         <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "6px 0" }}>
-          KRがまだありません。先に「Objective / KR」タブでKRを追加してください。
+          KRがまだありません。先に「Objective・KR」ページでKRを追加してください。
         </div>
       )}
 
@@ -1776,9 +1493,12 @@ function PJSection({ currentUser, onDirtyChange, selectedGroupId }: { currentUse
         headerExtra={<button onClick={openAdd} style={addBtnStyle}>＋ 追加</button>}
       >
       {projects.length === 0 && (
-        <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
-          まだプロジェクトがありません。「＋ 追加」から作成してください。
-        </div>
+        <>
+          <FirstStepHint>💡 KR を実現する手段として、プロジェクト（PJ）を登録します。</FirstStepHint>
+          <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
+            まだプロジェクトがありません。「＋ 追加」から作成してください。
+          </div>
+        </>
       )}
       {projects.map(pj => {
         const owners = (pj.owner_member_ids?.length ? pj.owner_member_ids : (pj.owner_member_id ? [pj.owner_member_id] : []))
@@ -2092,7 +1812,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
         <FieldLabel>紐づける TF（任意・KR との連携）</FieldLabel>
         {keyResults.length === 0 ? (
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "4px 0" }}>
-            KR がまだ登録されていません。「Objective / KR」タブで KR を作ると、配下の TF をここで紐づけられます。
+            KR がまだ登録されていません。「Objective・KR」ページで KR を作ると、配下の TF をここで紐づけられます。
           </div>
         ) : (
           <div style={{
@@ -2152,7 +1872,7 @@ function ProjectFormFields({ form, setForm, members, inviteGroupIds, keyResults,
             })}
             {taskForces.length === 0 && (
               <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)" }}>
-                TF が登録されていません。「Task Force」タブで先に TF を作ってください。
+                TF が登録されていません。「Task Force・ToDo」ページで先に TF を作ってください。
               </div>
             )}
           </div>
@@ -2511,7 +2231,7 @@ function MemberFormFields({ form, setForm, groups, isMobile, editId, currentUser
       </div>
       {groups.length > 0 && (
         <div>
-          <FieldLabel>グループ（任意・ホーム部署）</FieldLabel>
+          <FieldLabel>部署（任意・ホーム部署）</FieldLabel>
           {canChangeHomeGroup(currentUser) ? (
             <CustomSelect
               value={form.group_id}
@@ -2790,7 +2510,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
   const handleDelete = async (g: Group) => {
     const memberCount = members.filter(m => m.group_id === g.id).length;
     if (memberCount > 0 && !isSuperAdmin) {
-      await alertDialog(`このグループには ${memberCount} 名のメンバーがいます。\nメンバーのグループ変更後に削除してください。`);
+      await alertDialog(`この部署には ${memberCount} 名のメンバーがいます。\nメンバーの部署を変更してから削除してください。`);
       return;
     }
     // 不可逆・影響が大きい操作（特にメンバーがいる部署の強制削除）のため、確認ダイアログではなく
@@ -2810,7 +2530,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       </SummaryRow>
 
       <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", marginBottom: "14px" }}>
-        グループ（部署）単位でデータが隔離されます（マルチテナント）。メンバーは1グループに属します。
+        部署単位でデータが隔離されます（マルチテナント）。メンバーは1つの部署に属します。
         {!isSuperAdmin && "新規部署の作成は全社スーパー管理者のみ行えます。"}
       </div>
 
@@ -2843,7 +2563,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
       )}
 
       <Card
-        title="グループ一覧"
+        title="部署一覧"
         badge={`${groups.length}件`}
         headerExtra={isSuperAdmin ? <button onClick={openAdd} style={addBtnStyle}>＋ 部署を追加</button> : undefined}
       >
@@ -2874,7 +2594,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
         })}
         {groups.length === 0 && (
           <div style={{ fontSize: "11px", color: "var(--color-text-tertiary)", padding: "8px 0" }}>
-            グループがありません。「＋ 部署を追加」から作成してください。
+            部署がありません。「＋ 部署を追加」から作成してください。
           </div>
         )}
       </div>
@@ -2886,10 +2606,10 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
           border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
         }}>
           <div style={{ fontSize: "12px", fontWeight: "500", marginBottom: "10px", color: "var(--color-text-primary)" }}>
-            {editId === "new" ? "部署を追加" : "グループを編集"}
+            {editId === "new" ? "部署を追加" : "部署を編集"}
           </div>
           <div>
-            <FieldLabel>グループ名 *</FieldLabel>
+            <FieldLabel>部署名 *</FieldLabel>
             <input
               value={form.name}
               onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
@@ -2926,7 +2646,7 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
                 />
               </div>
               <div style={{ fontSize: "10px", color: "var(--color-text-tertiary)", marginTop: "4px" }}>
-                入力すると、この部署の最初の管理者として作成されます（後からメンバータブでも追加可）。
+                入力すると、この部署の最初の管理者として作成されます（後からメンバーのページでも追加可）。
               </div>
             </div>
           )}
@@ -2948,11 +2668,11 @@ function GroupsSection({ currentUser, onDirtyChange }: { currentUser: Member; on
               <DangerZone key={editId} style={{ marginTop: "16px" }}>
                 {blocked ? (
                   <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.5 }}>
-                    このグループには {memberCount} 名のメンバーがいます。メンバーのグループ変更後に削除してください。
+                    この部署には {memberCount} 名のメンバーがいます。メンバーの部署を変更してから削除してください。
                   </div>
                 ) : (
                   <DangerAction
-                    label={memberCount > 0 ? `このグループを強制削除（${memberCount}名が所属中）` : "このグループを削除"}
+                    label={memberCount > 0 ? `この部署を強制削除（${memberCount}名が所属中）` : "この部署を削除"}
                     description={
                       memberCount > 0
                         ? "メンバーが所属したまま削除します（全社スーパー管理者のみ実行可）。この操作は取り消せません。"

@@ -17,7 +17,7 @@ import {
   APP_BELL_FIXED_TOP_PX, APP_BELL_RESERVE_PC_PX, APP_BELL_RESERVE_VAR, APP_BELL_SIZE_MOBILE_PX, APP_BELL_SIZE_PC_PX,
   computeBellRightPc, withBellReserve,
 } from "../../lib/layout/topRightBell";
-import type { SettingsSection } from "../../lib/settings/settingsSections";
+import type { SettingsPageId } from "../../lib/settings/settingsPages";
 import type { Member, Project, ViewMode, KeyResult, TaskForce, TaskTaskForce, Task, Group } from "../../lib/localData/types";
 import { CustomSelect } from "../common/CustomSelect";
 import { LangToggle } from "../common/LangToggle";
@@ -46,7 +46,6 @@ import { MilestoneAddModal } from "../milestone/MilestoneAddModal";
 import { ProjectCreateModal } from "../project/ProjectCreateModal";
 import { lazyWithRetry } from "../../lib/lazyWithRetry";
 import { withChunkDownloadGate } from "../common/ChunkDownloadGate";
-import { SettingsHelpButton } from "../settings/SettingsHelpButton";
 import { TourProvider, useTour } from "../tour/TourProvider";
 import { buildTours, FIRST_TIME_TOUR_ID } from "../tour/tours";
 import { modalOverlayStyle, modalBoxStyle } from "../common/modalStyles";
@@ -434,16 +433,16 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // @メンション通知（Windows通知をオンにした人だけ。コメントに @自分 が新たに現れたらブラウザ通知）
   useMentionNotifications(currentUser.id);
   const [isAdminOpen, setIsAdminOpen] = useState(false);
-  // 設定ページを特定のセクションで開く（ベル・ダッシュボードの「通知設定」から notify を指定）。
-  // nonce を key にして、既に開いているときも指定のセクションで開き直す
-  const [settingsSection, setSettingsSection] = useState<SettingsSection | undefined>(undefined);
-  // 管理セクションを特定のタブで開く（エラー通知のクリック先 /?open=admin-errors）
-  const [adminInitialTab, setAdminInitialTab] = useState<"errors" | "backup" | "messages" | undefined>(undefined);
+  // 設定画面を特定のページで開く（v3.155：ページ ID は SettingsPageId の1種類だけ。ベル・ダッシュボードの
+  // 「通知設定」＝notify、エラー通知＝errors、バックアップ通知＝backup、送信履歴＝messages、オンボーディング＝okr／pj）。
+  // 指定が無ければトップ。nonce を key にして、既に開いているときも指定のページで開き直す。
+  // 権限の無い・不明なページ ID は SettingsView がトップにする
+  const [settingsPage, setSettingsPage] = useState<SettingsPageId | undefined>(undefined);
   // 管理者からのお知らせの詳細（v3.131。ベル・Windows通知のクリック先 /?open=admin-message&mid=…）
   const [openMessageId, setOpenMessageId] = useState<number | null>(null);
   const [bellRefreshKey, setBellRefreshKey] = useState(0);
   const [settingsNonce, setSettingsNonce] = useState(0);
-  useEffect(() => { if (!isAdminOpen) { setSettingsSection(undefined); setAdminInitialTab(undefined); } }, [isAdminOpen]);
+  useEffect(() => { if (!isAdminOpen) setSettingsPage(undefined); }, [isAdminOpen]);
   // プロジェクト招待：招待コードを手入力して参加する入口（Phase 4・山本さんの指摘対応）。
   // AdminViewの「プロジェクト招待」タブは部署管理者限定（管理者が1人もいない部署は
   // ブートストラップモードで全員アクセス可だが、通常は非管理者から到達できない）のため、
@@ -738,19 +737,23 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
     localStorage.setItem(KEYS.SIDEBAR_MY_PROJECTS_ONLY, "1");
     setMineOnlyState(true);
   });
-  const openSettings = (section?: SettingsSection, adminTab?: "errors" | "backup" | "messages") => void guardedNavigate(() => {
-    setSettingsSection(section);
-    setAdminInitialTab(adminTab);
+  // 設定を開く入口は openSettings(pageId?) の1つ（歯車＝トップ、各種の直接ジャンプ＝ページ指定）。
+  // stageSettingsPage は指定ページを積むだけで開かない（オンボーディングのオーバーレイを閉じる処理と束ねるため分けている）
+  const stageSettingsPage = (page?: SettingsPageId) => {
+    setSettingsPage(page);
     setSettingsNonce(n => n + 1);
+  };
+  const openSettings = (page?: SettingsPageId) => void guardedNavigate(() => {
+    stageSettingsPage(page);
     setIsAdminOpen(true);
   });
   const openTarget = (target: OpenTarget | null, messageId: number | null) => {
     if (target === "my-tasks") openMyTasks();
-    else if (target === "admin-errors") openSettings("admin", "errors");
-    else if (target === "admin-backup") openSettings("admin", "backup");
+    else if (target === "admin-errors") openSettings("errors");
+    else if (target === "admin-backup") openSettings("backup");
     // お知らせの詳細は画面を切り替えず上に重ねるだけ（編集中の内容を失わないため guardedNavigate を通さない）
     else if (target === "admin-message" && messageId !== null) setOpenMessageId(messageId);
-    else if (target === "admin-sent") openSettings("admin", "messages");
+    else if (target === "admin-sent") openSettings("messages");
   };
   const openNotificationLink = (url: string) => {
     let search = "";
@@ -776,8 +779,8 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       const data = e.data as { type?: string; url?: string } | null;
       if (data?.type === "notification-click" && typeof data.url === "string") openNotificationLinkRef.current(data.url);
     };
-    // ③ ダッシュボード等から設定ページの特定のセクションを開く
-    const onOpenSettings = (e: Event) => openSettingsRef.current((e as CustomEvent).detail as SettingsSection | undefined);
+    // ③ ダッシュボード等から設定画面の特定のページを開く（detail＝SettingsPageId）
+    const onOpenSettings = (e: Event) => openSettingsRef.current((e as CustomEvent).detail as SettingsPageId | undefined);
     navigator.serviceWorker?.addEventListener("message", onSwMessage);
     window.addEventListener("app:open-settings", onOpenSettings);
     return () => {
@@ -921,6 +924,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   }, [selectedKrId, rawTfs, rawTtfs]);
 
 
+  // v3.155：見出しバー（← 設定／ページ名／？／✕）は SettingsView が持つ（旧：ここに ⚙ 設定・？・✕ のバーがあった）
   const adminOverlay = isAdminOpen ? (
     <div style={{
       flex: 1, minHeight: 0,
@@ -928,47 +932,26 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       overflow: "hidden",
       background: "var(--color-bg-primary)",
     }}>
-      <div style={{
-        padding: "10px 16px",
-        paddingRight: withBellReserve(16),
-        borderBottom: "1px solid var(--color-border-primary)",
-        display: "flex", alignItems: "center", gap: "10px",
-        flexShrink: 0,
-        background: "var(--color-bg-secondary)",
-      }}>
-        <span style={{ fontSize: "15px" }}>⚙️</span>
-        <span style={{ fontSize: "13px", fontWeight: "700", flex: 1, color: "var(--color-text-primary)" }}>{t("layout.admin.title")}</span>
-        <SettingsHelpButton currentUser={currentUser} title={t("layout.admin.helpTitle")} />
-        <button
-          onClick={() => void guardedNavigate(() => setIsAdminOpen(false))}
-          style={{
-            background: "transparent", border: "none", cursor: "pointer",
-            fontSize: "18px", color: "var(--color-text-tertiary)", padding: "4px",
-            lineHeight: 1,
-          }}
-        >✕</button>
-      </div>
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
-        <Suspense fallback={<ViewLoading />}>
-          <SettingsView
-            key={settingsNonce}
-            initialSection={settingsSection}
-            currentUser={currentUser}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-            adminSlot={
-              <Suspense fallback={<ViewLoading />}>
-                <AdminView currentUser={currentUser} initialTab={adminInitialTab} />
-              </Suspense>
-            }
-            onOpenGuide={() => void guardedNavigate(() => { setIsAdminOpen(false); setIsGuideOpen(true); })}
-            onRestartTour={() => void guardedNavigate(() => { setIsAdminOpen(false); tour.start(FIRST_TIME_TOUR_ID); })}
-            onOpenShortcuts={() => setIsShortcutsOpen(true)}
-            onLogout={onLogout}
-            onResetSidebarWidth={isMobile ? undefined : resetSidebarWidth}
-          />
-        </Suspense>
-      </div>
+      <Suspense fallback={<ViewLoading />}>
+        <SettingsView
+          key={settingsNonce}
+          initialPage={settingsPage}
+          currentUser={currentUser}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          renderAdminPage={page => (
+            <Suspense fallback={<ViewLoading />}>
+              <AdminView currentUser={currentUser} page={page} />
+            </Suspense>
+          )}
+          onClose={() => void guardedNavigate(() => setIsAdminOpen(false))}
+          onOpenGuide={() => void guardedNavigate(() => { setIsAdminOpen(false); setIsGuideOpen(true); })}
+          onRestartTour={() => void guardedNavigate(() => { setIsAdminOpen(false); tour.start(FIRST_TIME_TOUR_ID); })}
+          onOpenShortcuts={() => setIsShortcutsOpen(true)}
+          onLogout={onLogout}
+          onResetSidebarWidth={isMobile ? undefined : resetSidebarWidth}
+        />
+      </Suspense>
     </div>
   ) : null;
 
@@ -1073,7 +1056,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
             krCount={active(keyResults).length}
             pjCount={projects.length}
             taskCount={(rawTasks ?? []).filter((t: Task) => !t.is_deleted).length}
-            onOpenAdmin={() => void guardedNavigate(() => { setIsOnboardingOverlayOpen(false); setIsAdminOpen(true); })}
+            onOpenAdmin={page => void guardedNavigate(() => { setIsOnboardingOverlayOpen(false); stageSettingsPage(page); setIsAdminOpen(true); })}
             onOpenAiProject={() => { setIsOnboardingOverlayOpen(false); openAiProjectCreate(); }}
             onOpenQuickAdd={() => { setIsOnboardingOverlayOpen(false); setIsQuickAddOpen(true); }}
           />
@@ -1295,7 +1278,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
                 selectedProject={selectedProject}
                 onClearProjectFilter={() => handleSelectProject(null)}
                 onOpenAiProject={openAiProjectCreate}
-                onOpenAdmin={() => void guardedNavigate(() => setIsAdminOpen(true))}
+                onOpenAdmin={page => openSettings(page)}
                 onOpenQuickAdd={() => setIsQuickAddOpen(true)}
                 mineOnly={mineOnly}
                 onToggleMineOnly={toggleMineOnly}
@@ -1525,7 +1508,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
           {/* 設定ボタン（ゲストは非表示） */}
           {!isGuest && (
           <button
-            onClick={() => void guardedNavigate(() => setIsAdminOpen(true))}
+            onClick={() => openSettings()}
             title={t("layout.mobile.settingsTitle")}
             style={{
               width: "32px", height: "32px", borderRadius: "var(--radius-md)",
@@ -1754,7 +1737,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
         onOpenStructure={() => openLabView("structure")}
         onOpenMyPage={() => openLabView("mypage")}
         activeLabView={activeLabView}
-        onOpenAdmin={() => void guardedNavigate(() => setIsAdminOpen(true))}
+        onOpenAdmin={() => openSettings()}
         onOpenGuide={() => void guardedNavigate(() => setIsGuideOpen(true))}
         onCreateProject={() => setIsPjCreateOpen(true)}
         collapsed={isSidebarCollapsed}

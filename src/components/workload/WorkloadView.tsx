@@ -101,7 +101,7 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
         <div style={{ flex: 1, overflow: "auto" }}>
           <div style={{ padding: "16px 20px", maxWidth: "900px" }}>
             {rows.length === 0 ? (
-              <EmptyState icon="🧑‍🤝‍🧑" title="メンバーが登録されていません" hint="管理画面からメンバーを追加すると、ここに負荷が表示されます。" />
+              <EmptyState icon="🧑‍🤝‍🧑" title="メンバーが登録されていません" hint="設定の「メンバー」からメンバーを追加すると、ここに負荷が表示されます。" />
             ) : (
               <div style={{
                 background: "var(--color-bg-primary)",

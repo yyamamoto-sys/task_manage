@@ -1,331 +1,193 @@
 // src/components/settings/SettingsView.tsx
 //
-// 【設計意図・v3.127】
-// 設定ボタンから開くページ。左の目次に 個人設定（全員：プロフィール／表示／通知／困ったとき）と
-// 管理（管理者のみ：既存の AdminView をそのまま埋め込む）を並べる。
-// 「設定で困ったときはここを開けばわかる」を目的にしているため、個人の設定を足すときは
-// 必ずこのページのどこかに置く（CLAUDE.md Section 65）。
+// 【設計意図・v3.155 で作り直し】
+// 設定ボタンから開く画面。トップはカード一覧（個人／部署の管理／アプリの管理）、カードを押すと詳細ページ。
+// 階層は「トップ→詳細」の2段だけ。目次（左ナビ）・パンくずは置かず、戻る手段は見出しバーの「← 設定」の1つ。
+// 見出しバー（← 設定／ページ名／？／✕）はこのコンポーネントが持つ（旧 MainLayout の adminOverlay のバーを移した）。
+// ブラウザの戻るには対応しない（アプリは popstate を使わず、ガイド・ラボ・設定は画面内の状態で切り替える）。
+// 設計の正本：docs/dev/設計仕様_設定画面リニューアル_20261015.md ／ CLAUDE.md Section 65。
 //
+// ページの定義・権限は src/lib/settings/settingsPages.ts が唯一の正本。詳細ページは離れるとアンマウントする。
+// 未保存の確認は Section 46 のレジストリに一本化し、設定内の遷移は guardedSwitch だけを通す
+// （src/components/layout/__tests__/guardedNavigateCoverage.test.ts が固定）。
+//
+// 個人の設定を足すときは必ずこのページのどこかに置く（Section 65）。
 // テーマは useTheme が useState（インスタンスごと）のため、サイドバーと状態を共有するよう
 // MainLayout から theme/onToggleTheme を受け取る。言語は zustand（langStore）なので直接使う。
 
-import { useEffect, useId, useMemo, useRef, useState, Suspense, type ReactNode } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import type { Member } from "../../lib/localData/types";
 import { useAppStore } from "../../stores/appStore";
-import { useLangStore } from "../../stores/langStore";
 import { useT } from "../../hooks/useT";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { KEYS } from "../../lib/localData/localStore";
-import { confirmDialog } from "../../lib/dialog";
-import { showToast } from "../common/Toast";
-import { Avatar } from "../auth/UserSelectScreen";
-import { lazyWithRetry } from "../../lib/lazyWithRetry";
-import { APP_VERSION } from "../../lib/version";
+import { useAdminCounts, useAdminScope } from "../../hooks/useAdminScope";
+import { confirmDiscardUnsavedEdits } from "../../lib/editing/unsavedEditorRegistry";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 import {
-  registerUnsavedEditor, unregisterUnsavedEditor, confirmDiscardUnsavedEdits,
-} from "../../lib/editing/unsavedEditorRegistry";
-import { resetDisplaySettings } from "../../lib/settings/displaySettingsReset";
-import { buildProfileUpdate, deriveInitials, fallbackShortName, MEMBER_AVATAR_COLORS } from "../../lib/settings/profileUpdate";
-import {
-  adminsOfGroup, buildSettingsSections, canAccessAdminSection, type SettingsSection,
-} from "../../lib/settings/settingsSections";
-import { SectionBody, Row, inputStyle, btnStyle, primaryBtnStyle, SegButtons } from "./settingsUi";
+  buildSettingsCardGroups, canViewSettingsPage, isAdminPageId, resolveRequestedPage, resolveSettingsAudience,
+  settingsPageDef, settingsPageDescKey, settingsPageTitleKey,
+  type AdminPageId, type SettingsPageId,
+} from "../../lib/settings/settingsPages";
+import { SettingsHelpButton } from "./SettingsHelpButton";
+import { SettingsTop } from "./SettingsTop";
+import { ProfilePage, AccountPage, DisplayPage, HelpPage } from "./PersonalPages";
 import { NotificationSettingsSection } from "./NotificationSettingsSection";
-import { AccountSecurityRow } from "./AccountSecurityRow";
-import { isGuestMode } from "../../lib/guestMode";
 
-const VersionHistoryModal = lazyWithRetry(() => import("../common/VersionHistoryModal").then(m => ({ default: m.VersionHistoryModal })), "VersionHistoryModal");
+/** カードの1行説明より詳しい本文先頭の説明がある個人ページ（無いページはカードの1行説明をそのまま使う） */
+const PAGE_LEAD_KEY: Partial<Record<SettingsPageId, string>> = {
+  profile: "layout.settings.profile.lead",
+  display: "layout.settings.display.lead",
+  notify: "layout.settings.notify.lead",
+  help: "layout.settings.help.lead",
+};
 
 interface Props {
   currentUser: Member;
   theme: "light" | "dark";
   onToggleTheme: () => void;
-  /** 管理セクションの中身（MainLayout が lazy＋DLゲート付きの AdminView を渡す） */
-  adminSlot: ReactNode;
+  /** 部署の管理・アプリの管理ページの中身（MainLayout が lazy＋DLゲート付きの AdminView を渡す） */
+  renderAdminPage: (page: AdminPageId) => ReactNode;
+  /** ✕ で設定を閉じる（MainLayout が guardedNavigate で包んで渡す） */
+  onClose: () => void;
   onOpenGuide: () => void;
   onRestartTour: () => void;
   onOpenShortcuts: () => void;
   onLogout: () => void;
   /** PC のみ（モバイルにはサイドバー幅が無い） */
   onResetSidebarWidth?: () => void;
-  /** 開いたときに表示するセクション（ベル・ダッシュボードの「通知設定」から notify を指定する） */
-  initialSection?: SettingsSection;
+  /** 開いたときに表示するページ（ベル・通知・ダッシュボード・オンボーディングから直接ジャンプ）。権限が無い・不明な ID はトップ */
+  initialPage?: SettingsPageId;
 }
-
-const SECTION_ICON: Record<SettingsSection, string> = {
-  profile: "👤", display: "🎨", notify: "🔔", help: "🛟", admin: "🔧",
-};
 
 export function SettingsView(props: Props) {
   const { currentUser } = props;
   const t = useT();
   const isMobile = useIsMobile();
   const members = useAppStore(s => s.members);
-  const showAdmin = canAccessAdminSection(currentUser, members);
-  const sections = useMemo(() => buildSettingsSections(showAdmin), [showAdmin]);
-  const [section, setSection] = useState<SettingsSection>(props.initialSection ?? "profile");
-  // 管理は一度開いたらマウントしたまま隠す（個人設定へ移っても AdminView の入力途中の状態を失わない）
-  const [adminMounted, setAdminMounted] = useState(props.initialSection === "admin");
-  const current: SettingsSection = sections.includes(section) ? section : "profile";
+  const audience = useMemo(() => resolveSettingsAudience(currentUser, members), [currentUser, members]);
+  const cardGroups = useMemo(() => buildSettingsCardGroups(audience), [audience]);
+  const scope = useAdminScope(currentUser);
+  const counts = useAdminCounts(scope.selectedGroupId);
+  const [requestedPage, setPage] = useState<SettingsPageId | null>(() => resolveRequestedPage(props.initialPage, audience));
+  // 権限が後から変わって見えなくなったページはトップとして扱う
+  const page: SettingsPageId | null = requestedPage && canViewSettingsPage(requestedPage, audience) ? requestedPage : null;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef(0);
 
-  const changeSection = async (next: SettingsSection) => {
-    if (next === current) return;
+  // 設定内の遷移（カード→詳細／← 設定）は未保存編集レジストリの確認を通す（Section 46・47）
+  const guardedSwitch = async (action: () => void) => {
     if (!(await confirmDiscardUnsavedEdits())) return;
-    if (next === "admin") setAdminMounted(true);
-    setSection(next);
+    action();
   };
+  const openPage = (id: SettingsPageId) => void guardedSwitch(() => {
+    topScrollRef.current = scrollRef.current?.scrollTop ?? 0;
+    setPage(id);
+  });
+  const backToTop = () => void guardedSwitch(() => setPage(null));
 
-  const navBtn = (s: SettingsSection) => {
-    const isActive = s === current;
-    return (
-      <button
-        key={s}
-        onClick={() => void changeSection(s)}
-        style={{
-          display: "flex", alignItems: "center", gap: "8px",
-          width: isMobile ? "auto" : "100%", whiteSpace: "nowrap",
-          padding: "7px 10px", marginBottom: isMobile ? 0 : "2px", fontSize: "12px", textAlign: "left",
-          borderRadius: "var(--radius-md)", border: "none", cursor: "pointer",
-          background: isActive ? "var(--color-bg-info)" : "transparent",
-          color: isActive ? "var(--color-text-info)" : "var(--color-text-secondary)",
-          fontWeight: isActive ? 600 : 400,
-        }}
-      >
-        <span>{SECTION_ICON[s]}</span>
-        <span>{t(`layout.settings.nav.${s}`)}</span>
-      </button>
-    );
+  // トップへ戻ったときはスクロール位置を復元、詳細を開いたときは先頭から
+  useLayoutEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = page === null ? topScrollRef.current : 0;
+  }, [page]);
+
+  const padX = isMobile ? "16px" : "32px";
+  const padY = isMobile ? "16px" : "24px";
+  const barPadX = isMobile ? 16 : 24;
+  const def = page ? settingsPageDef(page) : null;
+  const adminDetail = page !== null && isAdminPageId(page);
+  const showDeptChip = def?.deptScoped === true && scope.showDeptLabel;
+
+  const intro = page ? (
+    <div style={{ fontSize: "13px", lineHeight: 1.7, color: "var(--color-text-secondary)" }}>
+      <span>{t(PAGE_LEAD_KEY[page] ?? settingsPageDescKey(page))}</span>
+      {page === "groups" && <span> {t("layout.settings.page.groups.note")}</span>}
+      {showDeptChip && (
+        <span style={{
+          marginLeft: "10px", display: "inline-block", padding: "2px 10px", borderRadius: "99px",
+          fontSize: "12px", background: "var(--color-bg-secondary)", border: "1px solid var(--color-border-primary)",
+          color: "var(--color-text-primary)", whiteSpace: "nowrap",
+        }}>
+          🏢 {t("layout.settings.deptChip", { name: scope.selectedGroupName })}
+        </span>
+      )}
+    </div>
+  ) : null;
+
+  const renderPersonal = (id: SettingsPageId) => {
+    switch (id) {
+      case "profile": return <ProfilePage currentUser={currentUser} />;
+      case "account": return <AccountPage currentUser={currentUser} onLogout={props.onLogout} />;
+      case "display": return <DisplayPage theme={props.theme} onToggleTheme={props.onToggleTheme} onResetSidebarWidth={props.onResetSidebarWidth} />;
+      case "notify": return <NotificationSettingsSection currentUser={currentUser} />;
+      case "help": return <HelpPage onOpenGuide={props.onOpenGuide} onRestartTour={props.onRestartTour} onOpenShortcuts={props.onOpenShortcuts} />;
+      default: return null;
+    }
   };
-
-  const groupLabel = (key: string) => (
-    <div style={{
-      fontSize: "10px", fontWeight: 600, color: "var(--color-text-tertiary)",
-      padding: isMobile ? "0 4px" : "10px 10px 4px", whiteSpace: "nowrap",
-    }}>{t(key)}</div>
-  );
 
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100%", overflow: "hidden" }}>
-      <nav style={isMobile ? {
-        display: "flex", alignItems: "center", gap: "4px", overflowX: "auto",
-        padding: "6px 8px", borderBottom: "1px solid var(--color-border-primary)", flexShrink: 0,
-      } : {
-        width: "170px", flexShrink: 0, padding: "6px 8px", overflowY: "auto",
-        borderRight: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)",
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" }}>
+      <div style={{
+        minHeight: "56px", padding: `8px ${barPadX}px`, paddingRight: isMobile ? withBellReserve(16) : withBellReserve(24),
+        borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-secondary)",
+        display: "flex", alignItems: "center", gap: "12px", flexShrink: 0,
       }}>
-        {groupLabel("layout.settings.group.personal")}
-        {sections.filter(s => s !== "admin").map(navBtn)}
-        {showAdmin && groupLabel("layout.settings.group.admin")}
-        {showAdmin && navBtn("admin")}
-      </nav>
-      <div style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: "auto", position: "relative" }}>
-        {current === "profile" && <ProfileSection currentUser={currentUser} />}
-        {current === "display" && <DisplaySection {...props} />}
-        {current === "notify" && <NotificationSettingsSection currentUser={currentUser} />}
-        {current === "help" && <HelpSection {...props} />}
-        {showAdmin && adminMounted && (
-          <div style={{ display: current === "admin" ? "block" : "none", height: "100%" }}>
-            {props.adminSlot}
+        {page !== null && (
+          <button
+            type="button"
+            onClick={backToTop}
+            style={{
+              display: "inline-flex", alignItems: "center", flexShrink: 0, minHeight: "36px", padding: "0 12px",
+              fontSize: "14px", cursor: "pointer", color: "var(--color-text-primary)",
+              background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)",
+            }}
+          >{isMobile ? "‹" : "←"} {t("layout.settings.back")}</button>
+        )}
+        <div style={{ flex: 1, minWidth: 0, fontSize: "18px", fontWeight: 700, lineHeight: 1.4, color: "var(--color-text-primary)" }}>
+          {page ? t(settingsPageTitleKey(page)) : t("layout.admin.title")}
+        </div>
+        <SettingsHelpButton currentUser={currentUser} title={t("layout.admin.helpTitle")} />
+        <button
+          type="button"
+          onClick={props.onClose}
+          aria-label={t("layout.settings.close")}
+          style={{
+            background: "transparent", border: "none", cursor: "pointer",
+            fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px 6px", lineHeight: 1,
+          }}
+        >✕</button>
+      </div>
+
+      <div ref={scrollRef} style={{
+        flex: 1, minHeight: 0, display: "flex", flexDirection: "column",
+        overflowY: adminDetail ? "hidden" : "auto",
+      }}>
+        {page === null && (
+          <div style={{ width: "100%", maxWidth: "960px", margin: "0 auto", padding: `${padY} ${padX}`, boxSizing: "border-box" }}>
+            <SettingsTop
+              groups={cardGroups}
+              counts={counts}
+              deptName={scope.showDeptLabel ? scope.selectedGroupName : null}
+              onOpen={openPage}
+            />
           </div>
+        )}
+        {page !== null && !adminDetail && (
+          <div style={{ width: "100%", maxWidth: "720px", margin: "0 auto", padding: `${padY} ${padX}`, boxSizing: "border-box" }}>
+            <div style={{ marginBottom: "16px" }}>{intro}</div>
+            {renderPersonal(page)}
+          </div>
+        )}
+        {adminDetail && (
+          <>
+            <div style={{ width: "100%", maxWidth: "960px", margin: "0 auto", padding: `${padY} ${padX} 0`, boxSizing: "border-box", flexShrink: 0 }}>
+              {intro}
+            </div>
+            <div key={page} style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              {props.renderAdminPage(page as AdminPageId)}
+            </div>
+          </>
         )}
       </div>
     </div>
-  );
-}
-
-// ===== 👤 プロフィール =====
-
-function ProfileSection({ currentUser }: { currentUser: Member }) {
-  const t = useT();
-  const members = useAppStore(s => s.members);
-  const saveMember = useAppStore(s => s.saveMember);
-  const self = members.find(m => m.id === currentUser.id) ?? currentUser;
-  const [displayName, setDisplayName] = useState(self.display_name);
-  const [shortName, setShortName] = useState(self.short_name);
-  const [color, setColor] = useState({ bg: self.color_bg, text: self.color_text });
-  const [saving, setSaving] = useState(false);
-
-  const dirty = displayName !== self.display_name || shortName !== self.short_name || color.bg !== self.color_bg;
-  const dirtyRef = useRef(dirty);
-  dirtyRef.current = dirty;
-  const editorId = useId();
-  useEffect(() => {
-    registerUnsavedEditor(editorId, () => dirtyRef.current);
-    return () => unregisterUnsavedEditor(editorId);
-  }, [editorId]);
-
-  const preview: Member = { ...self, initials: deriveInitials(displayName), color_bg: color.bg, color_text: color.text };
-  const role = self.is_super_admin ? "superAdmin" : self.is_admin ? "admin" : "member";
-
-  const save = async () => {
-    if (!displayName.trim() || saving) return;
-    setSaving(true);
-    try {
-      await saveMember(buildProfileUpdate(self, { display_name: displayName, short_name: shortName, color }, currentUser.id));
-      showToast(t("layout.settings.profile.saved"), "success");
-    } catch { /* saveMember 側でエラーをトースト処理 */ }
-    finally { setSaving(false); }
-  };
-
-  return (
-    <SectionBody title={`👤 ${t("layout.settings.nav.profile")}`} lead={t("layout.settings.profile.lead")}>
-      <Row label={t("layout.settings.profile.displayName")}>
-        <input value={displayName} onChange={e => setDisplayName(e.target.value)} style={inputStyle} maxLength={40} />
-      </Row>
-      <Row label={t("layout.settings.profile.shortName")} hint={t("layout.settings.profile.shortNameHint")}>
-        <input value={shortName} onChange={e => setShortName(e.target.value)} style={inputStyle} maxLength={20} />
-      </Row>
-      <Row label={t("layout.settings.profile.color")}>
-        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-          {MEMBER_AVATAR_COLORS.map(c => (
-            <button
-              key={c.bg}
-              onClick={() => setColor({ bg: c.bg, text: c.text })}
-              aria-pressed={color.bg === c.bg}
-              style={{
-                width: "28px", height: "28px", borderRadius: "50%", cursor: "pointer",
-                background: c.bg, border: color.bg === c.bg ? `2px solid ${c.text}` : "2px solid transparent",
-              }}
-            />
-          ))}
-          <span style={{ marginLeft: "8px", display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-secondary)" }}>
-            <Avatar member={preview} size={28} />{shortName.trim() || fallbackShortName(displayName)}
-          </span>
-        </div>
-      </Row>
-      <Row label={t("layout.settings.profile.readonlyHeading")} hint={t("layout.settings.profile.readonlyHint")}>
-        <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.9 }}>
-          <div>{t("layout.settings.profile.email")}：{self.email || t("layout.settings.profile.none")}</div>
-          <div>{t("layout.settings.profile.role")}：{t(`layout.settings.profile.role.${role}`)}</div>
-        </div>
-      </Row>
-      <div>
-        <button onClick={() => void save()} disabled={!dirty || !displayName.trim() || saving}
-          style={{ ...primaryBtnStyle, opacity: (!dirty || !displayName.trim() || saving) ? 0.5 : 1, cursor: (!dirty || !displayName.trim() || saving) ? "default" : "pointer" }}>
-          {saving ? t("layout.settings.profile.saving") : t("layout.settings.profile.save")}
-        </button>
-      </div>
-      {!isGuestMode() && <AccountSecurityRow />}
-    </SectionBody>
-  );
-}
-
-// ===== 🎨 表示 =====
-
-type Density = "simple" | "detailed";
-
-function readDensity(): Density {
-  try {
-    const all = JSON.parse(localStorage.getItem(KEYS.LIST_VIEW_SETTINGS) ?? "{}") as Record<string, unknown>;
-    return all.density === "detailed" ? "detailed" : "simple";
-  } catch { return "simple"; }
-}
-
-function writeDensity(v: Density) {
-  try {
-    const all = JSON.parse(localStorage.getItem(KEYS.LIST_VIEW_SETTINGS) ?? "{}") as Record<string, unknown>;
-    localStorage.setItem(KEYS.LIST_VIEW_SETTINGS, JSON.stringify({ ...all, density: v }));
-  } catch { /* 利用不可・容量不足は無視 */ }
-}
-
-function DisplaySection({ theme, onToggleTheme, onResetSidebarWidth }: Props) {
-  const t = useT();
-  const lang = useLangStore(s => s.lang);
-  const setLang = useLangStore(s => s.setLang);
-  const isLoadingEn = useLangStore(s => s.isLoadingEn);
-  const [density, setDensity] = useState<Density>(readDensity);
-
-  return (
-    <SectionBody title={`🎨 ${t("layout.settings.nav.display")}`} lead={t("layout.settings.display.lead")}>
-      <Row label={t("layout.settings.display.theme")}>
-        <SegButtons value={theme} onChange={v => { if (v !== theme) onToggleTheme(); }}
-          options={[{ value: "light", label: t("layout.settings.display.themeLight") }, { value: "dark", label: t("layout.settings.display.themeDark") }]} />
-      </Row>
-      <Row label={t("layout.settings.display.lang")} hint={t("layout.settings.display.langHint")}>
-        <SegButtons value={lang} onChange={v => { if (!isLoadingEn) setLang(v); }}
-          options={[{ value: "ja", label: "日本語" }, { value: "en", label: "English" }]} />
-      </Row>
-      <Row label={t("layout.settings.display.density")} hint={t("layout.settings.display.densityHint")}>
-        <SegButtons value={density} onChange={v => { setDensity(v); writeDensity(v); }}
-          options={[{ value: "simple", label: t("layout.settings.display.densitySimple") }, { value: "detailed", label: t("layout.settings.display.densityDetailed") }]} />
-      </Row>
-      {onResetSidebarWidth && (
-        <Row label={t("layout.settings.display.sidebar")} hint={t("layout.settings.display.sidebarHint")}>
-          <button style={btnStyle} onClick={() => { onResetSidebarWidth(); showToast(t("layout.settings.display.sidebarDone"), "success"); }}>
-            {t("layout.settings.display.sidebarReset")}
-          </button>
-        </Row>
-      )}
-    </SectionBody>
-  );
-}
-
-// ===== 🛟 困ったとき =====
-
-function HelpSection({ onOpenGuide, onRestartTour, onOpenShortcuts, onLogout }: Props) {
-  const t = useT();
-  const members = useAppStore(s => s.members);
-  const currentGroupId = useAppStore(s => s.currentGroupId);
-  const admins = useMemo(() => adminsOfGroup(members, currentGroupId), [members, currentGroupId]);
-  const [isVersionOpen, setIsVersionOpen] = useState(false);
-
-  const reload = async () => {
-    if (!(await confirmDiscardUnsavedEdits())) return;
-    window.location.reload();
-  };
-
-  const resetDisplay = async () => {
-    const ok = await confirmDialog(t("layout.settings.help.resetConfirm"), {
-      tone: "danger", confirmLabel: t("layout.settings.help.resetConfirmLabel"),
-    });
-    if (!ok) return;
-    resetDisplaySettings(localStorage);
-    window.location.reload();
-  };
-
-  const item = (label: string, desc: string, button: ReactNode) => (
-    <Row label={label}>
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-        <div style={{ flex: 1, minWidth: "200px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7 }}>{desc}</div>
-        {button}
-      </div>
-    </Row>
-  );
-
-  return (
-    <SectionBody title={`🛟 ${t("layout.settings.nav.help")}`} lead={t("layout.settings.help.lead")}>
-      {item(t("layout.settings.help.reload"), t("layout.settings.help.reloadDesc"),
-        <button style={btnStyle} onClick={() => void reload()}>{t("layout.settings.help.reloadBtn")}</button>)}
-      {item(t("layout.settings.help.reset"), t("layout.settings.help.resetDesc"),
-        <button style={{ ...btnStyle, color: "var(--color-text-danger)", borderColor: "var(--color-border-danger)" }} onClick={() => void resetDisplay()}>{t("layout.settings.help.resetBtn")}</button>)}
-      {item(t("layout.settings.help.guide"), t("layout.settings.help.guideDesc"),
-        <button style={btnStyle} onClick={onOpenGuide}>{t("layout.settings.help.guideBtn")}</button>)}
-      {item(t("layout.settings.help.tour"), t("layout.settings.help.tourDesc"),
-        <button style={btnStyle} onClick={onRestartTour}>{t("layout.settings.help.tourBtn")}</button>)}
-      {item(t("layout.settings.help.shortcuts"), t("layout.settings.help.shortcutsDesc"),
-        <button style={btnStyle} onClick={onOpenShortcuts}>{t("layout.settings.help.shortcutsBtn")}</button>)}
-      {item(t("layout.settings.help.version"), t("layout.settings.help.versionDesc", { version: APP_VERSION }),
-        <button style={btnStyle} onClick={() => setIsVersionOpen(true)}>{t("layout.settings.help.versionBtn")}</button>)}
-      <Row label={t("layout.settings.help.admins")} hint={t("layout.settings.help.adminsHint")}>
-        {admins.length === 0 ? (
-          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>{t("layout.settings.help.adminsNone")}</div>
-        ) : (
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "10px" }}>
-            {admins.map(m => (
-              <span key={m.id} style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", color: "var(--color-text-primary)" }}>
-                <Avatar member={m} size={22} />{m.display_name}
-              </span>
-            ))}
-          </div>
-        )}
-      </Row>
-      {item(t("layout.settings.help.logout"), t("layout.settings.help.logoutDesc"),
-        <button style={btnStyle} onClick={onLogout}>{t("layout.logout.title")}</button>)}
-      {isVersionOpen && (
-        <Suspense fallback={null}>
-          <VersionHistoryModal onClose={() => setIsVersionOpen(false)} />
-        </Suspense>
-      )}
-    </SectionBody>
   );
 }

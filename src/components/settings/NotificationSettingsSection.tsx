@@ -7,6 +7,8 @@
 // v3.129：「通知する内容」を種類×チャネル（アプリ内／Windows）の表にした（レジストリ＝src/lib/notifications/notificationKinds.ts）。
 // 管理者向けの種類は super_admin にだけ出す。上の「知らせ方」は各チャネルの全体スイッチのまま。
 // v3.131：アプリ内を必ず届ける種類（inappLocked＝管理者からのお知らせ）は、アプリ内のチェックを固定表示する（全体スイッチにも従わない）。
+// v3.155：ページ名は「通知の受け取り方」。保存の見せ方を共通基準に揃えた（即時保存の成功は欄の横に「✓ 保存しました」を1.5秒、
+// 失敗は値を操作前に戻してトースト＝store.update が戻す）。許可・登録・テスト送信は設定値を持たない「実行」でトースト。
 
 import { useCallback, useEffect, useState, type CSSProperties } from "react";
 import type { Member } from "../../lib/localData/types";
@@ -14,6 +16,7 @@ import { useAppStore } from "../../stores/appStore";
 import { useNotificationPrefsStore } from "../../stores/notificationPrefsStore";
 import { useT } from "../../hooks/useT";
 import { showToast } from "../common/Toast";
+import { SavedFlash, useSavedFlashKey } from "../common/saveUi";
 import { formatErrorForUser } from "../../lib/errorMessage";
 import { REMINDER_TIME_OPTIONS, formatReminderTime, type NotificationPrefs } from "../../lib/reminder/notificationPrefs";
 import {
@@ -27,7 +30,7 @@ import {
 import {
   deletePushSubscription, hasPushSubscriptionRow, registerPushSubscription, sendTestPush,
 } from "../../lib/supabase/notificationStore";
-import { SectionBody, Row, inputStyle, btnStyle } from "./settingsUi";
+import { SectionBody, Row, useFieldStyles } from "./settingsUi";
 
 type PermissionState = NotificationPermission | "unsupported";
 
@@ -40,22 +43,24 @@ function Toggle({ checked, disabled, onChange, label, desc }: {
 }) {
   return (
     <div style={{ opacity: disabled ? 0.6 : 1 }}>
-      <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: disabled ? "default" : "pointer", fontSize: "13px", fontWeight: 600, color: "var(--color-text-primary)" }}>
+      <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: disabled ? "default" : "pointer", fontSize: "14px", fontWeight: 600, color: "var(--color-text-primary)" }}>
         <input type="checkbox" checked={checked} disabled={disabled} onChange={e => onChange(e.target.checked)} />
         {label}
       </label>
-      <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.7, paddingLeft: "22px" }}>{desc}</div>
+      <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6, paddingLeft: "22px" }}>{desc}</div>
     </div>
   );
 }
 
 const noteStyle: CSSProperties = {
-  fontSize: "11px", lineHeight: 1.7, padding: "6px 10px", borderRadius: "var(--radius-md)",
+  fontSize: "12px", lineHeight: 1.6, padding: "6px 10px", borderRadius: "var(--radius-md)",
   background: "var(--color-bg-warning)", color: "var(--color-text-warning)", border: "1px solid var(--color-border-warning)",
 };
 
 export function NotificationSettingsSection({ currentUser }: { currentUser: Member }) {
   const t = useT();
+  const { input: inputStyle, btn: btnStyle } = useFieldStyles();
+  const [flashedKey, flashSaved] = useSavedFlashKey();
   const members = useAppStore(s => s.members);
   const self = members.find(m => m.id === currentUser.id);
   const prefs = useNotificationPrefsStore(s => s.prefs);
@@ -125,12 +130,14 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
       if (on) {
         if (!(await subscribeHere())) return;
         if (!(await save({ push_enabled: true }))) return;
+        flashSaved("channels");
         showToast(t("layout.settings.notify.push.enabledToast"), "success");
       } else {
         const endpoint = await unsubscribeThisBrowser();
         if (endpoint) await deletePushSubscription(endpoint);
         setThisBrowserOn(false);
         if (!(await save({ push_enabled: false }))) return;
+        flashSaved("channels");
         showToast(t("layout.settings.notify.push.disabledToast"), "success");
       }
     } catch (e) {
@@ -178,20 +185,20 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
   const isSuperAdmin = currentUser.is_super_admin === true || self?.is_super_admin === true;
   const visibleKinds = kindsVisibleTo(isSuperAdmin);
   const channelMasterOn = (ch: NotificationChannel) => (ch === "inapp" ? prefs.inapp_enabled : prefs.push_enabled);
-  const setKindChannel = (kindId: string, ch: NotificationChannel, value: boolean) => {
-    void save(buildKindChannelPatch(prefs, kindId, ch, value));
+  const setKindChannel = async (kindId: string, ch: NotificationChannel, value: boolean) => {
+    if (await save(buildKindChannelPatch(prefs, kindId, ch, value))) flashSaved("kinds");
   };
 
   return (
-    <SectionBody title={`🔔 ${t("layout.settings.nav.notify")}`} lead={t("layout.settings.notify.lead")}>
+    <SectionBody>
       {unavailable && <div role="status" style={noteStyle}>{t("layout.settings.notify.unavailable")}</div>}
       {showLegacyNote && <div role="status" style={noteStyle}>{t("layout.settings.notify.legacy")}</div>}
 
-      <Row label={t("layout.settings.notify.channels")}>
+      <Row label={t("layout.settings.notify.channels")} flash={<SavedFlash visible={flashedKey === "channels"} />}>
         <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
           <Toggle
             checked={prefs.inapp_enabled} disabled={disabled}
-            onChange={v => { void save({ inapp_enabled: v }); }}
+            onChange={v => { void save({ inapp_enabled: v }).then(ok => { if (ok) flashSaved("channels"); }); }}
             label={t("layout.settings.notify.inapp")} desc={t("layout.settings.notify.inappDesc")}
           />
           <Toggle
@@ -200,13 +207,13 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
             label={t("layout.settings.notify.push")} desc={t("layout.settings.notify.pushDesc")}
           />
           {pushBlocked && (
-            <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", paddingLeft: "22px" }}>
+            <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", paddingLeft: "22px" }}>
               {t(`layout.settings.notify.push.${pushBlocked}`)}
             </div>
           )}
           {prefs.push_enabled && !pushBlocked && (
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap", paddingLeft: "22px" }}>
-              <span style={{ fontSize: "11px", color: "var(--color-text-secondary)" }}>
+              <span style={{ fontSize: "12px", color: "var(--color-text-secondary)" }}>
                 {thisBrowserOn ? t("layout.settings.notify.push.thisBrowserOn") : t("layout.settings.notify.push.thisBrowserOff")}
               </span>
               {thisBrowserOn === false && (
@@ -222,8 +229,8 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
         </div>
       </Row>
 
-      <Row label={t("layout.settings.notify.kinds")} hint={t("layout.settings.notify.kindsHint")}>
-        <table style={{ borderCollapse: "collapse", fontSize: "12px", width: "100%", maxWidth: "520px" }}>
+      <Row label={t("layout.settings.notify.kinds")} hint={t("layout.settings.notify.kindsHint")} flash={<SavedFlash visible={flashedKey === "kinds"} />}>
+        <table style={{ borderCollapse: "collapse", fontSize: "13px", width: "100%", maxWidth: "520px" }}>
           <thead>
             <tr>
               <th style={{ textAlign: "left", padding: "4px 6px", fontWeight: 600, color: "var(--color-text-secondary)" }}>{t("layout.settings.notify.kindColumn")}</th>
@@ -248,12 +255,12 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
                       {NOTIFICATION_KIND_ICON[id]} {t(`layout.notifyKind.${kind.id}.label`)}
                       {isAdminKind && (
                         <span style={{
-                          marginLeft: "6px", fontSize: "10px", padding: "0 6px", borderRadius: "99px", fontWeight: 500,
+                          marginLeft: "6px", fontSize: "12px", padding: "0 6px", borderRadius: "99px", fontWeight: 500,
                           background: "var(--color-bg-primary)", color: "var(--color-text-purple)", border: "1px solid var(--color-border-purple)",
                         }}>{ADMIN_NOTICE_ICON} {t("layout.bell.adminBadge")}</span>
                       )}
                     </div>
-                    <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{t(`layout.notifyKind.${kind.id}.desc`)}</div>
+                    <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.6 }}>{t(`layout.notifyKind.${kind.id}.desc`)}</div>
                   </td>
                   {NOTIFICATION_CHANNELS.map(ch => (
                     <td key={ch} style={{ padding: "6px", textAlign: "center", verticalAlign: "top" }}>
@@ -274,7 +281,7 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
                           checked={kindChannelChecked(prefs, kind.id, ch)}
                           disabled={disabled || !channelMasterOn(ch)}
                           title={channelMasterOn(ch) ? undefined : t("layout.settings.notify.channelOff")}
-                          onChange={e => setKindChannel(kind.id, ch, e.target.checked)}
+                          onChange={e => { void setKindChannel(kind.id, ch, e.target.checked); }}
                         />
                       ) : (
                         <span title={t("layout.settings.notify.unsupported")} style={{ color: "var(--color-text-tertiary)" }}>—</span>
@@ -288,11 +295,11 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
         </table>
       </Row>
 
-      <Row label={t("layout.settings.notify.time")} hint={t("layout.settings.notify.timeHint")}>
+      <Row label={t("layout.settings.notify.time")} hint={t("layout.settings.notify.timeHint")} flash={<SavedFlash visible={flashedKey === "time"} />}>
         <select
           value={prefs.reminder_time} disabled={disabled}
           aria-label={t("layout.settings.notify.time")}
-          onChange={e => { void save({ reminder_time: e.target.value }); }}
+          onChange={e => { void save({ reminder_time: e.target.value }).then(ok => { if (ok) flashSaved("time"); }); }}
           style={{ ...inputStyle, width: "auto" }}
         >
           {REMINDER_TIME_OPTIONS.map(o => <option key={o} value={o}>{formatReminderTime(o)}</option>)}
@@ -302,7 +309,7 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
       <Row label={t("layout.settings.notify.permission")}>
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <span style={{
-            fontSize: "11px", padding: "2px 10px", borderRadius: "99px",
+            fontSize: "12px", padding: "2px 10px", borderRadius: "99px",
             background: `var(--color-bg-${permTone})`, color: `var(--color-text-${permTone})`,
             border: `1px solid var(--color-border-${permTone})`,
           }}>{t(`layout.settings.notify.perm.${permission}`)}</span>
@@ -311,14 +318,14 @@ export function NotificationSettingsSection({ currentUser }: { currentUser: Memb
           )}
         </div>
         {permission === "denied" && (
-          <div style={{ fontSize: "11px", color: "var(--color-text-secondary)", marginTop: "6px", lineHeight: 1.7 }}>
+          <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginTop: "6px", lineHeight: 1.7 }}>
             {t("layout.settings.notify.deniedHint")}
           </div>
         )}
       </Row>
 
       <Row label={t("layout.settings.notify.troubleHeading")}>
-        <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.9 }}>
+        <ol style={{ margin: 0, paddingLeft: "18px", fontSize: "13px", color: "var(--color-text-secondary)", lineHeight: 1.9 }}>
           <li>{t("layout.settings.notify.trouble1")}</li>
           <li>{t("layout.settings.notify.trouble2")}</li>
           <li>{t("layout.settings.notify.trouble3")}</li>

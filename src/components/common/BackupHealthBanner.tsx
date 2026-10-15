@@ -143,7 +143,7 @@ export function BackupHealthBanner({ currentUser }: Props) {
           <div style={{ fontWeight: 600, marginBottom: "4px" }}>{title}</div>
           <div style={{ opacity: 0.9, wordBreak: "break-word", overflowWrap: "anywhere" }}>{body}</div>
           <div style={{ marginTop: "6px", opacity: 0.75, fontSize: "10.5px" }}>
-            詳細は 設定 → アプリ設定 → バックアップ で確認できます。
+            詳細は 設定 → アプリの管理 → バックアップ で確認できます。
           </div>
         </div>
         <button

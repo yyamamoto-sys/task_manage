@@ -54,8 +54,8 @@ interface Props {
   /** 絞り込みバナーの ✕ で呼ぶ。サイドバーのPJ選択を解除する */
   onClearProjectFilter?: () => void;
   onOpenAiProject?: () => void;
-  /** オンボーディングから OKR/PJ 設定画面（管理パネル）を開く */
-  onOpenAdmin?: () => void;
+  /** オンボーディングから設定画面の OKR／プロジェクトのページを開く（v3.155：開くページは呼び出し側が明示する） */
+  onOpenAdmin?: (page: "okr" | "pj") => void;
   /** オンボーディングからクイックタスク追加モーダルを開く */
   onOpenQuickAdd?: () => void;
   /** サイドバーの「自分」トグルが ON のとき true。自分が担当のタスクのみ表示 */
@@ -805,7 +805,7 @@ export function DashboardView({ currentUser, projects, selectedProject = null, o
           {/* ③ KR進捗サマリー（PJ選択中は非表示） */}
           {!selectedProject && (<Card title="KR 進捗サマリー" badge={`${krs.length}件`} order={3}>
             {krs.length === 0 && (
-              <EmptyState>管理画面でKRを登録してください</EmptyState>
+              <EmptyState>設定の「Objective・KR」でKRを登録してください</EmptyState>
             )}
             {krProgress.map(({ kr, pct, tfSummaries }, i) => {
               const isActive = activeKrId === kr.id;
