@@ -8324,3 +8324,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 修正：ConsultationPanel の Ctrl+Z が入力欄でも AI提案の取り消しを実行していた不具合（shouldRunConsultUndo）。
 # * ShortcutsPanel（ja／en）に全キーを掲載（既存で漏れていた / ・詳細の Ctrl+Enter／Enter・パレット内キーを含む）。
 # * テスト：keys／toggleDone／shortcutWiring（修正前に赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.163（2026-10-16）：新しい版が出るたびに再読み込みしないと使えない仕様を廃止（CLAUDE.md Section 63・76）
+#
+# * 原因：Vercel Hobby は Skew Protection が無く、デプロイ後は旧ハッシュのチャンクが 404 になる。古いタブで未読込の lazy 画面を開くと取得に失敗し、その画面が ChunkLoadFailed になるうえ全体バナー（CHUNK_LOAD_FAILED_EVENT）も出ていた。
+# * 追加：ログイン後に全画面のチャンク（lazyWithRetry の登録簿）と添付解析系モジュール（docxText／xlsxText／pptxText／htmlText／pdfAttachment／pdfText）を1本ずつ先読み（prefetchAllChunks・ChunkPrefetcher・lib/prefetchChunks.ts。DEV では走らせない）。
+# * 変更：取得に失敗したとき、安全（未保存なし・入力中でない・モーダルなし・AI会話中でない・ゲストでない・直近1分に自動再読み込みなし）なら黙って reload（lib/chunkRecovery.ts）。そうでなければその画面の位置だけ ChunkLoadFailed。全体バナーは MIN_CLIENT_VERSION 判定のときだけ（CHUNK_LOAD_FAILED_EVENT・chunkFailed 撤去）。
+# * バーが出ていても操作をブロックしない：--reload-bar-h を body の padding-top・右上ベル・ヘルスバナーに反映して本体を押し下げる。文言は「重要な更新があります…」。
+# * テスト：lazyWithRetry（全体バナー用イベントが出ない・先読み）・chunkRecovery（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

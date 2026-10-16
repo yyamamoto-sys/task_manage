@@ -62,7 +62,7 @@ export function ReminderHealthBanner({ currentUser }: { currentUser: Member }) {
     <div
       role="status"
       style={{
-        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, right: "16px", zIndex: 149,
+        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, marginTop: "var(--reload-bar-h, 0px)", right: "16px", zIndex: 149,
         width: "min(380px, calc(100vw - 32px))",
         borderRadius: "var(--radius-md)", boxShadow: "0 4px 16px rgba(0,0,0,0.14)",
         padding: "12px 14px", fontSize: "12px", lineHeight: 1.5,

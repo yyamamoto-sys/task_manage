@@ -12,7 +12,7 @@ export const layoutEn: Record<keyof typeof layoutJa, string> = {
   "layout.app.loading.dataLoading": "Loading data...",
   "layout.app.error.retry": "Retry",
   "layout.app.partialLoadWarning.body": "Some data ({tables}) could not be loaded. Please reload.",
-  "layout.app.reloadNotice.body": "The app has been updated. Continuing to use this page may cause saving to fail. Please reload.",
+  "layout.app.reloadNotice.body": "An important update is available. Continuing to use this page may cause saving to fail. Please reload.",
   "layout.app.reloadNotice.reload": "Reload",
   "layout.app.chunkLoadFailed.body": "A new version may have been released, or the connection is unstable. Please reload to open this screen.",
   "layout.app.chunkLoadFailed.reload": "Reload",

@@ -21,6 +21,7 @@ import { SchemaHealthBanner } from "./components/common/SchemaHealthBanner";
 import { BackupHealthBanner } from "./components/common/BackupHealthBanner";
 import { ReminderHealthBanner } from "./components/common/ReminderHealthBanner";
 import { ReloadNoticeBanner } from "./components/common/ReloadNoticeBanner";
+import { ChunkPrefetcher } from "./components/common/ChunkPrefetcher";
 import { FullScreenLoading } from "./components/common/FullScreenLoading";
 import { AppDataProvider } from "./context/AppDataContext";
 import {
@@ -294,6 +295,7 @@ export default function App() {
       <>
         <MainLayout currentUser={GUEST_MEMBER} onLogout={handleLogout} />
         <ReloadNoticeBanner />
+        <ChunkPrefetcher />
         <ConfirmModal />
         <ToastContainer />
       </>
@@ -762,6 +764,7 @@ function AuthenticatedApp({
       <BackupHealthBanner currentUser={currentUser} />
       <ReminderHealthBanner currentUser={currentUser} />
       <ReloadNoticeBanner />
+      <ChunkPrefetcher />
       <ConfirmModal />
       <ToastContainer />
     </>

@@ -234,6 +234,8 @@ body {
   background: var(--color-bg-canvas);
   /* 四方に余白（画面端ミチミチ感の解消） */
   padding: 8px;
+  /* 再読み込みバー（ReloadNoticeBanner）が出ている間だけ、その高さ分だけ本体を押し下げる */
+  padding-top: calc(8px + var(--reload-bar-h, 0px));
   /* スクロール時も余白を保つ */
   min-height: 100%;
   /* 余白帯は視覚的装飾のみ。クリックは #root に通過させる（エッジ付近のボタンが押せなくなる問題の解消） */
@@ -761,7 +763,7 @@ select { transition: border-color var(--transition-fast), box-shadow var(--trans
     overscroll-behavior-x: contain;
   }
   /* モバイルは余白なしで表示領域を最大化（タップ領域を守るため） */
-  body { padding: 0; }
+  body { padding: 0; padding-top: var(--reload-bar-h, 0px); }
 }
 
 /* ===== アプリ外枠（余白＋角丸）===== */

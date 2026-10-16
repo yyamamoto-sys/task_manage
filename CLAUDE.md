@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.162
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.163
 #
-最終更新：2026-10-15（v3.162）
+最終更新：2026-10-16（v3.163）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -4462,6 +4462,15 @@ Supabase の Disk IO 対策。Realtime の購読を張り直す旧版（v3.145 �
 - **バナーは変えない**：`MIN_CLIENT_VERSION` 以上で普通に新しい版のときはバナーを出さず、自動更新だけが働く。
 - テスト：`src/lib/__tests__/autoUpdate.test.ts`（境界・各条件の否定・ループ防止）。
 
+### v3.163：全体バナーは MIN_CLIENT_VERSION 判定のときだけ（2026-10-16）
+
+山本さんの要望：「新しい版が公開されるたびにリロードしないと使えないのは不便。スーパーリロードが必要なレベルのものだけ最上部に促すバーを出し、リロードしないとアプリが使えない仕様は廃止」。
+
+- **バーを出す条件は `versionOutdated`（`MIN_CLIENT_VERSION` による判定）だけ。** チャンクの読み込み失敗（旧 `CHUNK_LOAD_FAILED_EVENT`）ではバーを出さない（イベントごと撤去）。文言は「重要な更新があります。このまま使うと保存に失敗するおそれがあります。再読み込みしてください」（`layout.app.reloadNotice.body`）。閉じるボタンは付けない（必須更新のため）。
+- **バーが出ていてもアプリ操作はブロックしない。** バーは `position:fixed` で上部を覆うため、出している間は `ReloadNoticeBanner` が自分の高さを `--reload-bar-h`（`documentElement`）に書き、`globals.css` の `body` の `padding-top`（PC は `8px + var(--reload-bar-h)`・モバイルは `var(--reload-bar-h)`）で本体を押し下げる。PC の右上ベル（`MainLayout`）と右上のヘルスバナー（Schema／Reminder）は `marginTop: var(--reload-bar-h, 0px)` で一緒に下がる。消えれば変数を外して元に戻る。
+- チャンク取得失敗時の扱いは Section 76 の 2（先読み・黙った再読み込み・その画面だけの案内）。
+- **v3.152 の「操作が10分以上無いときの黙った自動更新」は変更なし。** `MIN_CLIENT_VERSION` は上げていない（互換破壊なし）。
+
 ### テスト
 
 `src/lib/__tests__/reloadNotice.test.ts`：`compareVersions`（"3.9"<"3.10"・同値・桁数違い・
@@ -5171,12 +5180,18 @@ ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・
 
 - **v3.153：置き換えが自分の保存を巻き戻さない**。load() の取得中に成功した保存（`syncUpdatedAt` の記録）は、置き換え直後に `keepNewerLocal` が手元の行を採る（Section 5「保存の競合の原因になる2件の修正」）。realtime のエコーが届かなくても `updated_at` が固定されない。
 
-### 2. 黙った再読み込みをやめた（`src/lib/lazyWithRetry.ts`）
+### 2. チャンクの先読みと、取得失敗時の扱い（`src/lib/lazyWithRetry.ts`・v3.163で改訂）
 
-- **原因**：遅延チャンクの読み込みに失敗すると `sessionStorage` のフラグを立てて黙って `location.reload()` していた。再デプロイ後、古いタブが消えたハッシュ付きチャンクを要求すると 404 になり発火する（`vercel.json` に古いチャンクを残す仕組みは無い）。フラグは画面（チャンク）ごとに別なので、色々な画面を開くたびに連続でリロードされ、未保存の編集も無警告で消えた。
-- **新しい動作**：失敗したら1回だけ待って再取得（一時的な通信エラーなら直る。古いチャンクの 404 は再取得も失敗し、ただ1秒待つだけの無害な再試行）。それでも失敗なら **reload せず**、その画面の位置（Suspense の中）に `ChunkLoadFailed`（「新しい版が公開されています。この画面を開くには再読み込みが必要です［再読み込み］」）を返し、`ReloadNoticeBanner`（全体バナー）にも `CHUNK_LOAD_FAILED_EVENT` で知らせる。再読み込みは `reloadWithGuard`（`confirmDiscardUnsavedEdits`＝Section 46 を通してから reload）。`ReloadNoticeBanner` のボタンも同じ関数を通す。
-- 失敗は**例外にしない**（`ErrorBoundary`・`unhandledrejection` に流れない）。逆に `lazyWithRetry` の外で起きた動的 import の失敗（`FileAttachButton` 等）は通常の経路で記録される。
-- **記録**：`clientErrorLog.ts` の無視リストから動的 import 失敗の2パターンを外し、`lazyWithRetry` が `code="chunk-load"`・context に `chunk-load:<画面名> v<APP_VERSION>` を付けて `logDiagnostic`（`src/lib/errors/diagnosticLog.ts`。実体は `main.tsx` が `createDirectLogger` で差し込む）から画面ごとにセッション中1回だけ送る。fingerprint は画面名ごと（版の数字は正規化で束ねる）。**super_admin への「新しいエラー」通知（Section 67）が、デプロイのたびに画面ごとに1件ずつ出うる**（同じ fingerprint は1時間に1回・1人の super_admin につき1時間10件まで）。多すぎるようなら chunk-load を通知の対象外にする（`log_client_error` 側の変更が要る）。
+- **原因（v3.146 時点の調査）**：Vercel Hobby は Skew Protection が無く、デプロイ後は旧ビルドのハッシュ付きチャンクが 404 になる。古いタブが未読込の lazy 画面（`lazyWithRetry` 24画面）を開くと取得に失敗する。v3.146 は黙った reload をやめて案内＋全体バナーにしたが、これが「リロードしないと使えない」の正体になっていた（v3.163 で撤去）。
+- **【本命】先読み**：ログイン後（ゲスト含む）の初回描画が落ち着いたら、`lazyWithRetry` の登録簿に入った全画面のチャンクと、添付解析系（`docxText`・`xlsxText`・`pptxText`・`htmlText`・`pdfAttachment`・`pdfText`。`consultationAttachmentLoader`・`FileAttachButton` 等が生の `import()` するもの）を**1本ずつ順番に**読み込む。一度解決したモジュールはタブ内に残るので、その後デプロイがあっても古いタブが壊れない。
+  - `lazyWithRetry(factory, name)` が factory を登録簿に載せる（`registerPrefetchChunk` で生の import も足せる）。`prefetchAllChunks()` は登録順・1本ずつ（並行しない）・1本ごとに150ms空け・1本の失敗で止まらない（`console.debug` のみ。`client_error_logs` には記録しない）。
+  - 起動は `ChunkPrefetcher`（`App.tsx` の通常・ゲスト両方のメイン描画に1つずつ）→ `startChunkPrefetch()`（`lib/prefetchChunks.ts`）：4秒後に `requestIdleCallback`（無ければ即実行）。タブ内で1回だけ。**開発サーバー（`import.meta.env.DEV`）では走らせない。** デモデータセット（`lib/demo/*`）と i18n の英語辞書は対象外（使う人が限られる＝Section 19）。
+  - 新しい `lazyWithRetry` は自動で先読み対象になる。生の動的 import を足したら `lib/prefetchChunks.ts` の登録に1行足す。
+- **それでも取得に失敗したとき**（先読み完了前に新版が出た等）：`loadChunkOrFallback` が1回だけ1秒待って再取得 → なお失敗なら、`client_error_logs` に `code="chunk-load"` を画面ごとに1回記録し、`attemptChunkRecoveryReload`（`src/lib/chunkRecovery.ts`）で安全か判定する。
+  - **安全**（未保存の編集なし＝`hasUnsavedEditors`・入力中でない＝`isInputFocused`・モーダルなし＝`isModalOpen`・AI会話中でない＝`isAutoUpdateAiBusy`・ゲストでない・直近1分に自動再読み込みしていない）なら**黙って `window.location.reload()`**（画面遷移と同じ扱い）。画面は読み込み中のままにして案内を一瞬出さない。ループ防止は `sessionStorage`（`chunk_reload_v1`＝時刻）で**1分に1回まで**。記録を書けない環境では再読み込みしない。ゲストを除くのは自動更新（v3.152）と同じ理由（ゲストの編集はメモリにしか無い）。
+  - **安全でなければ**、その画面の位置だけに `ChunkLoadFailed`（再読み込みの案内。`reloadWithGuard`＝Section 46 を通してから reload）を出す。他の画面・既存の操作は使えるまま。**全体バナーは出さない。**
+- 失敗は**例外にしない**（`ErrorBoundary`・`unhandledrejection` に流れない）。`lazyWithRetry` の外で起きた動的 import の失敗（`FileAttachButton` 等）は通常の経路で記録される（先読みで解決済みなら起きにくい）。
+- **記録**：`clientErrorLog.ts` の無視リストから動的 import 失敗の2パターンを外してあり、`lazyWithRetry` が `code="chunk-load"`・context に `chunk-load:<画面名> v<APP_VERSION>` を付けて `logDiagnostic`（`src/lib/errors/diagnosticLog.ts`。実体は `main.tsx` が `createDirectLogger` で差し込む）から画面ごとにセッション中1回だけ送る。fingerprint は画面名ごと（版の数字は正規化で束ねる）。**super_admin への「新しいエラー」通知（Section 67）が、デプロイのたびに画面ごとに1件ずつ出うる**（同じ fingerprint は1時間に1回・1人の super_admin につき1時間10件まで）。先読みが効けば減る。多すぎるようなら chunk-load を通知の対象外にする（`log_client_error` 側の変更が要る）。
 - **ブラックアウト（Chrome がタブを落とす）は記録できない**（タブ自体が死ぬため）。次の計測で間接的に捉える。
 
 ### 3. 計測の仕組み（`src/lib/diagnostics/`）
@@ -5188,7 +5203,7 @@ ToDo分解（`todoDecomposeClient`）・OKR系（`okrKrAnalysisClient` 等）・
 
 ### 機械チェック・テスト
 
-`src/context/__tests__/noFullReloadOnChange.test.ts`（AppDataContext が channel・setTimeout を持たない／App.tsx の購読が `onResync` 経由・依存が `[realtimeReady, applyRemoteChange, load]`／visibilitychange の購読と解除。Section 59 に従いコメントを除去して走査。修正前の HEAD に同じ検出を当てて全項目が赤になることを確認済み）・`resync.test.ts`・`realtimeResync.test.ts`・`realtimeApplyRelated.test.ts`・`loadCountsLoads.test.ts`・`healthMonitor.test.ts`・`loadCounter.test.ts`・`lazyWithRetry.test.ts`（reload しない・案内の表示・記録は画面ごと1回）・`directLogger.test.ts`。
+`src/context/__tests__/noFullReloadOnChange.test.ts`（AppDataContext が channel・setTimeout を持たない／App.tsx の購読が `onResync` 経由・依存が `[realtimeReady, applyRemoteChange, load]`／visibilitychange の購読と解除。Section 59 に従いコメントを除去して走査。修正前の HEAD に同じ検出を当てて全項目が赤になることを確認済み）・`resync.test.ts`・`realtimeResync.test.ts`・`realtimeApplyRelated.test.ts`・`loadCountsLoads.test.ts`・`healthMonitor.test.ts`・`loadCounter.test.ts`・`lazyWithRetry.test.ts`（全体バナー用イベントが出ない・先読みは登録順に1本ずつ・1本の失敗で止まらない・記録は画面ごと1回。修正前のコードで赤くなることを確認済み）・`chunkRecovery.test.ts`（安全なら reload・未保存／入力中／モーダル／AI会話中／ゲスト／直近1分の記録があれば案内に落とす）・`directLogger.test.ts`。
 
 ### 山本さんの実機での確認
 

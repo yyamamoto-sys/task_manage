@@ -49,7 +49,7 @@ export function SchemaHealthBanner({ currentUser }: Props) {
     <div
       role="status"
       style={{
-        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, right: "16px", zIndex: 150,
+        position: "fixed", top: `${BELOW_BELL_TOP_PX}px`, marginTop: "var(--reload-bar-h, 0px)", right: "16px", zIndex: 150,
         width: "min(380px, calc(100vw - 32px))",
         background: "var(--color-bg-warning)",
         border: "1px solid var(--color-border-warning)",

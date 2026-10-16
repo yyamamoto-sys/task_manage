@@ -17,6 +17,7 @@
 // 表示状態は変えない（既に出ている／いないをそのまま維持する）。
 //
 // 【バナーの再読み込みはボタンを押したときだけ】閉じるボタンは付けない（必須の更新のため）。
+// 全体バナーは MIN_CLIENT_VERSION 判定のときだけ（v3.163）。バーが出ていても操作はブロックしない（本体を押し下げる）。
 // 別に、操作が10分以上無いときだけ黙って切り替える「自動更新」を持つ（v3.152・下記 effect・Section 63）。
 //
 // 【開発時は動かさない】vite dev サーバーは dist/version.json を書き出さないため、
@@ -25,7 +26,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useT } from "../../hooks/useT";
 import { APP_VERSION } from "../../lib/version";
-import { shouldShowReloadNotice, CHUNK_LOAD_FAILED_EVENT } from "../../lib/reloadNotice";
+import { shouldShowReloadNotice } from "../../lib/reloadNotice";
 import { reloadWithGuard } from "../../lib/reloadWithGuard";
 import { hasUnsavedEditors } from "../../lib/editing/unsavedEditorRegistry";
 import { isGuestMode } from "../../lib/guestMode";
@@ -35,6 +36,9 @@ import {
 } from "../../lib/autoUpdate";
 
 const ACTIVITY_EVENTS = ["pointerdown", "keydown", "wheel", "touchstart", "input"] as const;
+
+/** バーの高さを本体へ伝える CSS 変数（globals.css の body・ベルの位置が参照する） */
+export const RELOAD_BAR_HEIGHT_VAR = "--reload-bar-h";
 
 const POLL_INTERVAL_MS = 10 * 60 * 1000; // 10分
 
@@ -46,18 +50,26 @@ interface VersionManifest {
 
 export function ReloadNoticeBanner() {
   const t = useT();
-  // 版による通知（version.json の判定）とチャンク失敗の通知は別々に持つ。
-  // 同じ state にすると、10分ごとの版チェックが「出さない」と判定したときにチャンク失敗の案内まで消してしまう
+  // 出す条件は MIN_CLIENT_VERSION による判定（versionOutdated）だけ。チャンクの読み込み失敗では出さない
+  // （v3.163：失敗時は lazyWithRetry が安全なら黙って再読み込み・そうでなければその画面の位置にだけ案内を出す）
   const [versionOutdated, setVersionOutdated] = useState(false);
-  const [chunkFailed, setChunkFailed] = useState(false);
+  const barRef = useRef<HTMLDivElement | null>(null);
 
-  // lazyWithRetry がチャンクを読み込めなかったとき（新しい版の公開後の古いタブ）も同じバナーで知らせる（v3.146）。
-  // 開発サーバーでも出せるよう、DEV の早期 return より前の別 effect に置く
+  // バーは position:fixed で上部を覆うため、出している間は高さ分だけ本体（body の padding-top）を押し下げ、
+  // 操作をブロックしない（globals.css の --reload-bar-h）
   useEffect(() => {
-    const onChunkFailed = (): void => setChunkFailed(true);
-    window.addEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
-    return () => window.removeEventListener(CHUNK_LOAD_FAILED_EVENT, onChunkFailed);
-  }, []);
+    const root = document.documentElement;
+    const el = barRef.current;
+    if (!versionOutdated || !el) {
+      root.style.removeProperty(RELOAD_BAR_HEIGHT_VAR);
+      return;
+    }
+    const apply = (): void => { root.style.setProperty(RELOAD_BAR_HEIGHT_VAR, `${el.offsetHeight}px`); };
+    apply();
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(apply) : null;
+    ro?.observe(el);
+    return () => { ro?.disconnect(); root.style.removeProperty(RELOAD_BAR_HEIGHT_VAR); };
+  }, [versionOutdated]);
 
   const serverVersionRef = useRef<string | null>(null);
 
@@ -137,10 +149,10 @@ export function ReloadNoticeBanner() {
     };
   }, []);
 
-  if (!versionOutdated && !chunkFailed) return null;
+  if (!versionOutdated) return null;
 
   return (
-    <div style={{
+    <div ref={barRef} style={{
       position: "fixed", top: 0, left: 0, right: 0, zIndex: 9998,
       background: "var(--color-bg-warning)", color: "var(--color-text-warning)",
       border: "1px solid var(--color-border-warning)",
@@ -148,7 +160,7 @@ export function ReloadNoticeBanner() {
       display: "flex", alignItems: "center", gap: "10px",
     }}>
       <span style={{ flex: 1 }}>
-        ⚠ {versionOutdated ? t("layout.app.reloadNotice.body") : t("layout.app.chunkLoadFailed.body")}
+        ⚠ {t("layout.app.reloadNotice.body")}
       </span>
       <button
         onClick={() => { void reloadWithGuard(); }}

@@ -1770,7 +1770,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       {/* ベル（v3.129）：画面右上に常設。AI相談パネルが開いていればその左へ退く。モーダルより下・ビューより上 */}
       {!isGuest && (
         <div style={{
-          position: "fixed", top: `${APP_BELL_FIXED_TOP_PX}px`,
+          position: "fixed", top: `${APP_BELL_FIXED_TOP_PX}px`, marginTop: "var(--reload-bar-h, 0px)",
           right: `${computeBellRightPc(isConsultOpen, consultPanelWidth)}px`,
           transition: isConsultResizing ? "none" : "right 0.3s ease",
           zIndex: 45,
