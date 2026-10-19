@@ -95,6 +95,13 @@
     serif;
 }
 
+/* 拡大率を下げて 1 CSS px が 1 画素未満で描かれるときは、ヒンティングのあるOS標準フォントへ切り替える（v3.164） */
+@media (max-resolution: 0.99dppx) {
+  :root {
+    --font-sans: "Meiryo UI", "Yu Gothic UI", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Meiryo", "Yu Gothic", sans-serif;
+  }
+}
+
 /* ===== アバターカラー（CSS変数化でダークモード対応） ===== */
 :root {
   --avatar-0-bg: #EDE9FE; --avatar-0-text: #7C3AED;

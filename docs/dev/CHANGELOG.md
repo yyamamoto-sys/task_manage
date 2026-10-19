@@ -8332,3 +8332,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 変更：取得に失敗したとき、安全（未保存なし・入力中でない・モーダルなし・AI会話中でない・ゲストでない・直近1分に自動再読み込みなし）なら黙って reload（lib/chunkRecovery.ts）。そうでなければその画面の位置だけ ChunkLoadFailed。全体バナーは MIN_CLIENT_VERSION 判定のときだけ（CHUNK_LOAD_FAILED_EVENT・chunkFailed 撤去）。
 # * バーが出ていても操作をブロックしない：--reload-bar-h を body の padding-top・右上ベル・ヘルスバナーに反映して本体を押し下げる。文言は「重要な更新があります…」。
 # * テスト：lazyWithRetry（全体バナー用イベントが出ない・先読み）・chunkRecovery（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.164（2026-10-19）：縮小表示（ブラウザ拡大率 100% 未満）で本文フォントが荒れる問題への対策（CLAUDE.md Section 86）
+#
+# * 原因（推定・実機未確認）：M PLUS Rounded 1c はヒンティングが乏しく、実寸 8〜9px まで縮むと輪郭が崩れる。
+# * 変更：globals.css に @media (max-resolution: 0.99dppx) を追加し、:root の --font-sans を Meiryo UI / Yu Gothic UI 等へ差し替え。--font-display は不変。
+# * src 配下に "M PLUS Rounded" の直書きなし（コメント1件のみ）。--font-sans の再定義は :root の1箇所のみ（dark テーマは再定義しない）。
+# * DB 変更なし・MIN_CLIENT_VERSION は上げない。
