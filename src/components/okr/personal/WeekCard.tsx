@@ -12,6 +12,7 @@
 
 import { useMemo, useState } from "react";
 import type { Task, TaskDependency, WeekSelfRating } from "../../../lib/localData/types";
+import { formatErrorForUser } from "../../../lib/errorMessage";
 import { computeDelayDays, formatDelayLabel } from "../../gantt/ganttUtils";
 import { getIncompletePredecessors, formatBlockerNames } from "../../../lib/dependencies/gate";
 
@@ -53,6 +54,11 @@ export function WeekCard({
   const [draftGoal, setDraftGoal] = useState(goalState ?? "");
   const [editingGoal, setEditingGoal] = useState(false);
   const [savingGoal, setSavingGoal] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 編集開始時に必ず最新の目標状態から下書きを作り直す（useStateの初期値は初回マウント時だけ。
+  // 他端末の更新・KR/月の切替で goalState が変わっても古い下書きが出ないようにする）。
+  const startEditingGoal = () => { setDraftGoal(goalState ?? ""); setError(null); setEditingGoal(true); };
 
   const bg = selfRating ? RATING_BG[selfRating] : "var(--color-bg-primary)";
   const borderTop = selfRating ? RATING_BORDER[selfRating] : "var(--color-border-primary)";
@@ -73,14 +79,22 @@ export function WeekCard({
   );
 
   const handleRate = async (v: "o" | "t" | "x") => {
-    await onSetRating(selfRating === v ? null : v);
+    setError(null);
+    try {
+      await onSetRating(selfRating === v ? null : v);
+    } catch (e) {
+      setError(formatErrorForUser("自己評価の保存に失敗しました", e));
+    }
   };
 
   const handleSaveGoal = async () => {
     setSavingGoal(true);
+    setError(null);
     try {
       await onSaveGoal(draftGoal.trim());
       setEditingGoal(false);
+    } catch (e) {
+      setError(formatErrorForUser("目標状態の保存に失敗しました", e));
     } finally {
       setSavingGoal(false);
     }
@@ -127,19 +141,21 @@ export function WeekCard({
       ) : goalState ? (
         // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
         <div
-          onClick={() => editable && setEditingGoal(true)}
+          onClick={() => editable && startEditingGoal()}
           style={{ fontSize: "11.5px", lineHeight: 1.5, cursor: editable ? "pointer" : "default" }}
         >
           {goalState}
         </div>
       ) : editable ? (
         <button
-          onClick={() => setEditingGoal(true)}
+          onClick={startEditingGoal}
           style={{ fontFamily: "inherit", fontSize: "10px", cursor: "pointer", background: "transparent", border: "1px dashed var(--color-border-secondary)", color: "var(--color-text-tertiary)", borderRadius: "var(--radius-sm)", padding: "3px 8px", alignSelf: "flex-start" }}
         >目標状態を書く</button>
       ) : (
         <div style={{ fontSize: "11.5px", color: "var(--color-text-tertiary)", fontStyle: "italic" }}>未設定</div>
       )}
+
+      {error && <div style={{ fontSize: "10.5px", color: "var(--color-text-danger)", lineHeight: 1.4 }}>{error}</div>}
 
       {/* 紐づけタスク */}
       {taskAnnotations.length > 0 && (

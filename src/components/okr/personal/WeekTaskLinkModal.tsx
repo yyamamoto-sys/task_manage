@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import type { Task, ToDo } from "../../../lib/localData/types";
 import { computeWeekTaskCandidates } from "../../../lib/personalOkr/weekTaskCandidates";
+import { formatErrorForUser } from "../../../lib/errorMessage";
 import { modalOverlayStyle, modalBoxStyle, MODAL_BODY_STYLE, MODAL_FOOTER_STYLE } from "../../common/modalStyles";
 
 interface Props {
@@ -20,8 +21,8 @@ interface Props {
   currentMemberId: string;
   taskForceId?: string | null;
   linkedTaskIds: string[];
-  onLink: (taskId: string) => void;
-  onUnlink: (taskId: string) => void;
+  onLink: (taskId: string) => void | Promise<void>;
+  onUnlink: (taskId: string) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -30,6 +31,7 @@ export function WeekTaskLinkModal({
   linkedTaskIds, onLink, onUnlink, onClose,
 }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const candidates = useMemo(
     () => computeWeekTaskCandidates({
@@ -45,8 +47,11 @@ export function WeekTaskLinkModal({
 
   const handleToggle = async (taskId: string, linked: boolean) => {
     setBusyId(taskId);
+    setError(null);
     try {
       if (linked) await onUnlink(taskId); else await onLink(taskId);
+    } catch (e) {
+      setError(formatErrorForUser(linked ? "タスクの紐づけ解除に失敗しました" : "タスクの紐づけに失敗しました", e));
     } finally {
       setBusyId(null);
     }
@@ -75,6 +80,7 @@ export function WeekTaskLinkModal({
         </div>
 
         <div style={{ ...MODAL_BODY_STYLE, padding: "16px 18px" }}>
+          {error && <div style={{ fontSize: "12px", color: "var(--color-text-danger)", marginBottom: "10px" }}>{error}</div>}
           {linkedTasks.length > 0 && (
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "11px", fontWeight: 700, color: "var(--color-text-tertiary)", marginBottom: "6px" }}>紐づけ済み</div>

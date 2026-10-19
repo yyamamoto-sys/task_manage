@@ -862,7 +862,7 @@ export function PersonalKrPanel({
                 const linkedTasks = linkedTasksByWeekIndex[card.weekIndex] ?? [];
                 return (
                   <WeekCard
-                    key={card.weekIndex}
+                    key={`${kr.id}::${monthStr}::${card.weekIndex}`}
                     label={`W${card.weekIndex}`}
                     weekStartStr={card.weekStartStr}
                     weekEndStr={card.weekEndStr}
