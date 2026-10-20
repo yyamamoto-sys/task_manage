@@ -77,8 +77,13 @@ export function AdminMessageDialog({ memberId, messageId, onClose, onChanged, to
         const m = rows[0] ?? null;
         setMsg(m);
         if (m && !m.read_at) {
-          await markAdminMessageRead(messageId);
-          if (!cancelled) onChanged?.();
+          // 既読化の失敗で、取得できた本文まで消さない（下の catch は取得失敗用）
+          try {
+            await markAdminMessageRead(messageId);
+            if (!cancelled) onChanged?.();
+          } catch (e) {
+            console.warn("[AdminMessageDialog] 既読化に失敗:", e);
+          }
         }
       })
       .catch(e => { if (!cancelled) { setError(formatErrorForUser(tRef.current("layout.adminMessage.loadFailed"), e)); setMsg(null); } });

@@ -8,11 +8,11 @@
 
 import type { CSSProperties } from "react";
 
-export const BELL_BADGE_HEIGHT_PX = 18;
+const BELL_BADGE_HEIGHT_PX = 18;
 export const BELL_BADGE_MIN_WIDTH_PX = 18;
-export const BELL_BADGE_PADDING_X_PX = 5;
-export const BELL_BADGE_BORDER_PX = 2;
-export const BELL_BADGE_FONT_PX = 10;
+const BELL_BADGE_PADDING_X_PX = 5;
+const BELL_BADGE_BORDER_PX = 2;
+const BELL_BADGE_FONT_PX = 10;
 /** ベルの外接矩形の右上角からのずれ（負＝外側へ出す） */
 export const BELL_BADGE_OFFSET_TOP_PX = -5;
 export const BELL_BADGE_OFFSET_RIGHT_PX = -6;

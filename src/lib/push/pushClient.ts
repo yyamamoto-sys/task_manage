@@ -4,7 +4,7 @@
 // 購読はブラウザ単位。DB の行（push_subscriptions）は register_push_subscription RPC で本人の行として登録する。
 // SW は public/sw.js（push と notificationclick のみ・キャッシュしない）。
 
-export const SW_URL = "/sw.js";
+const SW_URL = "/sw.js";
 
 export function getVapidPublicKey(): string | null {
   const k = import.meta.env.VITE_VAPID_PUBLIC_KEY;
@@ -47,7 +47,7 @@ export interface SubscriptionKeys {
   auth: string;
 }
 
-export function toSubscriptionKeys(sub: PushSubscription): SubscriptionKeys | null {
+function toSubscriptionKeys(sub: PushSubscription): SubscriptionKeys | null {
   const j = sub.toJSON();
   const p256dh = j.keys?.p256dh;
   const auth = j.keys?.auth;

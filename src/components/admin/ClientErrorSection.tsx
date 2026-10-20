@@ -4,7 +4,7 @@
 // 利用者の画面に出たエラー（client_error_logs。同じエラーは1行にまとめて回数を数える）の一覧・詳細・解決済みにする。
 // 記録は RPC log_client_error だけが書く。ここは読む・解決済みにするだけ。
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../../stores/appStore";
 import type { Member } from "../../lib/localData/types";
 import { formatErrorForUser } from "../../lib/errorMessage";
@@ -39,14 +39,20 @@ export function ClientErrorSection({ currentUser }: { currentUser: Member }) {
   const [reporters, setReporters] = useState<ClientErrorReporter[] | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
 
+  // 絞り込みを素早く切り替えたとき、古い応答が新しい結果を上書きしないよう世代番号で捨てる（Section 69）
+  const reloadSeq = useRef(0);
   const reload = useCallback(async () => {
+    const seq = ++reloadSeq.current;
     try {
-      setLogs(await fetchClientErrorLogs({ unresolvedOnly }));
+      const rows = await fetchClientErrorLogs({ unresolvedOnly });
+      if (seq !== reloadSeq.current) return;
+      setLogs(rows);
       setFetchError(null);
     } catch (e) {
+      if (seq !== reloadSeq.current) return;
       setFetchError(formatErrorForUser("エラーの記録を読み込めませんでした（データベースへの適用がまだの可能性があります）", e));
     } finally {
-      setLoading(false);
+      if (seq === reloadSeq.current) setLoading(false);
     }
   }, [unresolvedOnly]);
 
