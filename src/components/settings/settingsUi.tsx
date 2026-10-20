@@ -29,7 +29,7 @@ export function Row({ label, hint, flash, children }: { label: string; hint?: st
   );
 }
 
-export function fieldStyles(isMobile: boolean) {
+function fieldStyles(isMobile: boolean) {
   const input: CSSProperties = {
     width: "100%", boxSizing: "border-box",
     padding: isMobile ? "10px 12px" : "8px 12px", minHeight: isMobile ? "44px" : "40px",

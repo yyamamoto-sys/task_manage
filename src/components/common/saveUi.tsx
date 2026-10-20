@@ -16,7 +16,7 @@ import { useT } from "../../hooks/useT";
 import { showToast } from "./Toast";
 import { formatErrorForUser } from "../../lib/errorMessage";
 
-export const SAVED_FLASH_MS = 1500;
+const SAVED_FLASH_MS = 1500;
 
 /** 即時保存の成功表示（「✓ 保存しました」）を1.5秒だけ出す。アンマウントでタイマーを解除する */
 export function useSavedFlash(): [boolean, () => void] {
