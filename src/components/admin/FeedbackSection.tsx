@@ -82,17 +82,25 @@ export function FeedbackSection({ currentUser, onDirtyChange }: { currentUser: M
   const fallbackRef = useRef<HTMLTextAreaElement | null>(null);
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const openIdRef = useRef(openId);
+  openIdRef.current = openId;
+  // 絞り込みを素早く切り替えたとき、古い取得結果が新しい結果を上書きしないための通し番号
+  const reloadSeq = useRef(0);
 
   const openRow = openId === null ? null : rows.find(r => r.id === openId) ?? null;
   const memoDirty = openRow !== null && memoDraft !== (openRow.admin_memo ?? "");
   useEffect(() => { onDirtyChange?.(memoDirty); }, [memoDirty, onDirtyChange]);
 
   const reload = useCallback(async () => {
+    const seq = ++reloadSeq.current;
     try {
-      setRows(await fetchAdminFeedback({ statuses: statusesFor(statusFilter), kind: kindFilter === "all" ? null : kindFilter }));
+      const fetched = await fetchAdminFeedback({ statuses: statusesFor(statusFilter), kind: kindFilter === "all" ? null : kindFilter });
+      if (seq !== reloadSeq.current) return;
+      setRows(fetched);
       setFetchError(null);
       setNotApplied(false);
     } catch (e) {
+      if (seq !== reloadSeq.current) return;
       if (isFeedbackNotAppliedError(e)) {
         setNotApplied(true);
         setFetchError(null);
@@ -102,7 +110,7 @@ export function FeedbackSection({ currentUser, onDirtyChange }: { currentUser: M
       }
       setRows([]);
     } finally {
-      setLoading(false);
+      if (seq === reloadSeq.current) setLoading(false);
     }
   }, [statusFilter, kindFilter]);
 
@@ -152,7 +160,8 @@ export function FeedbackSection({ currentUser, onDirtyChange }: { currentUser: M
     const ok = await memoSave.run(() => updateFeedbackMemo(row.id, next === "" ? null : next), "メモを保存できませんでした");
     if (ok) {
       patchRow(row.id, { admin_memo: next === "" ? null : next });
-      setMemoDraft(next);
+      // 保存中に別の項目へ切り替えていたら、その項目の下書きを上書きしない
+      if (openIdRef.current === row.id) setMemoDraft(next);
     }
   };
 
@@ -210,7 +219,7 @@ export function FeedbackSection({ currentUser, onDirtyChange }: { currentUser: M
         <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
           <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
             状態
-            <select value={statusFilter} onChange={e => { setLoading(true); setStatusFilter(e.target.value as StatusFilter); }} style={{ ...inputStyle, width: "auto" }}>
+            <select value={statusFilter} onChange={e => { const v = e.target.value as StatusFilter; void guarded(() => { setOpenId(null); setLoading(true); setStatusFilter(v); }); }} style={{ ...inputStyle, width: "auto" }}>
               <option value="open">新規＋対応中</option>
               <option value="all">すべて</option>
               {FEEDBACK_STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL_JA[s]}</option>)}
@@ -218,7 +227,7 @@ export function FeedbackSection({ currentUser, onDirtyChange }: { currentUser: M
           </label>
           <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "13px", color: "var(--color-text-secondary)" }}>
             種類
-            <select value={kindFilter} onChange={e => { setLoading(true); setKindFilter(e.target.value as "all" | FeedbackKind); }} style={{ ...inputStyle, width: "auto" }}>
+            <select value={kindFilter} onChange={e => { const v = e.target.value as "all" | FeedbackKind; void guarded(() => { setOpenId(null); setLoading(true); setKindFilter(v); }); }} style={{ ...inputStyle, width: "auto" }}>
               <option value="all">すべて</option>
               {FEEDBACK_ALL_KINDS.map(k => <option key={k} value={k}>{KIND_LABEL_JA[k]}</option>)}
             </select>
