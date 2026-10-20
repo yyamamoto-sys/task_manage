@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.166",
+    date: "2026-10-20",
+    title: "グループを移動するときの表示を分かりやすくしました",
+    highlights: [
+      "グループを移動するとき、つかんでいる状態と入る位置が分かるように表示を改善しました。",
+      "つかんだグループは薄く表示され、移動先の見出しには線と「○○の前に入ります」といった案内が出ます（リスト・ガント共通）。",
+    ],
+  },
+  {
     version: "v3.165",
     date: "2026-10-20",
     title: "ガントでもグループの順番を変えられるようにしました",

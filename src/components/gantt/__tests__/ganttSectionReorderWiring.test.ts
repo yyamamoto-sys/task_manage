@@ -51,3 +51,34 @@ describe("リストの⋮メニュー（一番上へ・一番下へ）", () => {
     expect(hdr).toMatch(/a === "top" \|\| a === "up" \|\| a === "down" \|\| a === "bottom"\) onMove\?\.\(a\)/);
   });
 });
+
+describe("グループ見出しのドラッグ中の表示（v3.166・リストとガントで共通の部品）", () => {
+  const gantt = read("components/gantt/GanttView.tsx");
+  const list = read("components/list/ListView.tsx");
+  const part = read("components/section/SectionDropIndicator.tsx");
+  it("挿入位置の線（SectionDropIndicator）と案内・移動中表示・ゴーストをリスト・ガント両方が使う", () => {
+    for (const src of [gantt, list]) {
+      expect(src).toMatch(/<SectionDropIndicator\b/);
+      expect(src).toMatch(/<SectionDragNotice\b/);
+      expect(src).toMatch(/describeSectionDrop\(/);
+      expect(src).toMatch(/startSectionDragGhost\(e,/);
+      expect(src).toMatch(/removeSectionDragGhost\(\)/);
+      expect(src).toMatch(/useSectionDragGuard\(/);
+      expect(src).toMatch(/sectionMovingStyle/);
+    }
+  });
+  it("ガントは左ラベル列とバー列の両方の見出し行に線を引く（バー列は札なし）", () => {
+    expect(gantt.match(/<SectionDropIndicator\b/g)?.length).toBe(2);
+    expect(gantt).toMatch(/<SectionDropIndicator drop=\{barDrop\} showLabel=\{false\} \/>/);
+  });
+  it("落とせない位置では dropEffect を none にして線を出さない（リスト・ガント）", () => {
+    for (const src of [gantt, list]) {
+      expect(src).toMatch(/dropEffect = "none"/);
+    }
+  });
+  it("線と札は重ね描き（absolute）・ポインタ無効で、行の高さを変えない", () => {
+    expect(part).toMatch(/position: "absolute", left: 0, right: 0/);
+    expect(part).toMatch(/pointerEvents: "none"/);
+    expect(part).not.toMatch(/\bheight: row/);
+  });
+});

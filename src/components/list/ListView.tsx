@@ -36,6 +36,9 @@ import { makeSpec, type GroupAddSpec } from "../../lib/list/inlineAdd";
 import { SectionHeaderContent, SectionAddInput } from "../section/SectionHeader";
 import { useSectionActions } from "../../hooks/useSectionActions";
 import { sectionsOfProject, UNSECTIONED_KEY, computeSectionDropOrder } from "../../lib/section/sections";
+import { describeSectionDrop } from "../../lib/section/describeSectionDrop";
+import { startSectionDragGhost, removeSectionDragGhost } from "../../lib/section/sectionDragGhost";
+import { SectionDropIndicator, SectionDragNotice, sectionMovingStyle, useSectionDragGuard } from "../section/SectionDropIndicator";
 import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
@@ -242,6 +245,8 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // グループ見出しのドラッグ（v3.156）。タスクのドラッグ（draggingId）とは別の state にして、互いのドロップ先を取り違えない
   const [draggingSection, setDraggingSection] = useState<{ id: string; projectId: string } | null>(null);
   const [sectionDropKey, setSectionDropKey] = useState<string | null>(null);
+  const cancelSectionDrag = useCallback(() => { setDraggingSection(null); setSectionDropKey(null); }, []);
+  useSectionDragGuard(!!draggingSection, cancelSectionDrag);
   // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
   // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
@@ -836,6 +841,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         )}
         </div>
 
+        {draggingSection && (
+          <SectionDragNotice name={projectSections.find(x => x.id === draggingSection.id)?.name ?? "グループ"} />
+        )}
+
         {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
         <div style={{ flex: 1, overflow: "auto" }}>
           {isMobile ? (
@@ -999,13 +1008,23 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           const sec = b.section;
                           const idx = sec ? secList.findIndex(x => x.id === sec.id) : -1;
                           const summary = computeGroupSummary(b.tasks);
+                          const sectionKeyHere = sec ? sec.id : UNSECTIONED_KEY;
+                          const sectionDrop = sectionDropKey === bk && draggingSection && draggingSection.projectId === projectId
+                            ? describeSectionDrop(secList, draggingSection.id, sectionKeyHere) : null;
+                          const isMovingSection = !!draggingSection && !!sec && draggingSection.id === sec.id;
                           return (
                             <React.Fragment key={bk}>
                               <tr
                                 onDragOver={e => {
                                   if (draggingSection) {
                                     if (draggingSection.projectId !== projectId) return;
+                                    if (!describeSectionDrop(secList, draggingSection.id, sectionKeyHere)) {
+                                      e.dataTransfer.dropEffect = "none";
+                                      setSectionDropKey(k => (k === bk ? null : k));
+                                      return;
+                                    }
                                     e.preventDefault();
+                                    e.dataTransfer.dropEffect = "move";
                                     setSectionDropKey(k => (k === bk ? k : bk));
                                     return;
                                   }
@@ -1016,20 +1035,22 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                   e.preventDefault();
                                   if (draggingSection) {
                                     if (draggingSection.projectId === projectId) {
-                                      const order = computeSectionDropOrder(secList, draggingSection.id, sec ? sec.id : UNSECTIONED_KEY);
+                                      const order = computeSectionDropOrder(secList, draggingSection.id, sectionKeyHere);
                                       if (order) void sectionActions.reorderSections(projectId, order);
                                     }
                                     setDraggingSection(null); setSectionDropKey(null);
+                                    removeSectionDragGhost();
                                     return;
                                   }
                                   if (draggingId) void handleSectionDrop(draggingId, projectId, sec ? sec.id : null);
                                   setDraggingId(null); setDropZone(null);
                                 }}
-                                style={sectionDropKey === bk && draggingSection
-                                  ? { boxShadow: (secList.findIndex(x => x.id === draggingSection.id) < idx ? "inset 0 -2px 0 var(--color-brand)" : "inset 0 2px 0 var(--color-brand)") }
-                                  : undefined}
                               >
-                                <td colSpan={cols.length} style={{ padding: 0, background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)" }}>
+                                <td colSpan={cols.length} style={{
+                                  padding: 0, background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)",
+                                  position: "relative", ...(isMovingSection ? sectionMovingStyle : null),
+                                }}>
+                                  {sectionDrop && <SectionDropIndicator drop={sectionDrop} />}
                                   <SectionHeaderContent
                                     name={sec ? sec.name : "未分類"}
                                     count={b.tasks.length}
@@ -1043,9 +1064,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                     onMove={dir => { if (sec) void sectionActions.moveSection(sec, dir); }}
                                     onDelete={() => { if (sec) void sectionActions.removeSection(sec); }}
                                     sectionDrag={sec ? {
-                                      onDragStart: e => { setDraggingSection({ id: sec.id, projectId }); e.dataTransfer.effectAllowed = "move"; },
-                                      onDragEnd: () => { setDraggingSection(null); setSectionDropKey(null); },
+                                      onDragStart: e => { setDraggingSection({ id: sec.id, projectId }); e.dataTransfer.effectAllowed = "move"; startSectionDragGhost(e, sec.name); },
+                                      onDragEnd: () => { setDraggingSection(null); setSectionDropKey(null); removeSectionDragGhost(); },
                                     } : undefined}
+                                    moving={isMovingSection}
                                     stats={b.tasks.length > 0 ? <GroupStatsBadge {...summary} /> : undefined}
                                     dropHint="↑ ここに落とすとこのグループへ移ります"
                                     dropHintVisible={!!draggingId}

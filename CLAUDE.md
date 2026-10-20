@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.165
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.166
 #
-最終更新：2026-10-20（v3.165）
+最終更新：2026-10-20（v3.166）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5385,6 +5385,7 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 
 ### 5. グループ見出しのドラッグ（リストのPJ別表示）
 - 見出し左の ⠿（`SectionHeaderContent` の `sectionDrag`。つかみからだけドラッグが始まる＝タスクのドラッグとは別の `draggingSection` state）をドラッグ→同じPJの別のグループ見出しへ落とすと順番が入れ替わる（`computeSectionDropOrder`：下へは相手の位置・上へは相手の前・「未分類」へは先頭）。保存は `useSectionActions.reorderSections` → `reorderProjectSections`（`saveProjectSection` への委譲）。「未分類」はドラッグ不可（⠿を出さない）。別PJの見出しへは落とせない。⋮の「上へ・下へ」は残す（キーボード代替）。
+- **ドラッグ中の表示（v3.166・リスト・ガント共通。部品は `section/SectionDropIndicator.tsx`・文言は純関数 `describeSectionDrop`＝`lib/section/describeSectionDrop.ts`）**：つかんだ見出しは薄く（opacity 0.45＋ブランドの薄色）して名前の横に「移動中」バッジ／`dragstart` でカーソルに「📁 名前 を移動」の札（`sectionDragGhost.ts`。body 直下の画面外要素で dragend・drop・Esc・状態解除で必ず除去）／ビューのヘッダー直下に1行の案内（Esc でやめる）／落とす先の見出しに行幅いっぱい3px のブランド色の線を「入る側（上／下）」へ重ね描きし、札「『相手』の前／後に入ります」「先頭に入ります」を添える。線・札は absolute の重ね描きで**行の高さを変えない**（ガントの見出し行26px固定＝Section 80）。ガントはラベル列とバー列の両方の見出し行に線を引く（バー列は札なし）。別PJ・自分自身・順番が変わらない位置は線・札なし＋`dropEffect="none"`。
 
 ### 付随
 - ショートカット一覧（リスト）・`uiGuide.ts` の `FEATURE_LIST_SECTION`・`docs/guides/02_modes/tasks.md`・`08_spec.md` に追記。

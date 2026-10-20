@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SectionMenu, type SectionMenuAction } from "./SectionMenu";
+import { SectionMovingBadge } from "./SectionDropIndicator";
 import { SECTION_NAME_MAX, normalizeSectionName, type SectionMoveDir } from "../../lib/section/sections";
 
 interface HeaderProps {
@@ -33,11 +34,13 @@ interface HeaderProps {
   dropHintVisible?: boolean;
   /** 見出しのつかみ（⠿）からのドラッグ＆ドロップによる並べ替え（リストのみ・v3.156）。キーボードでは⋮の「上へ・下へ」で代替 */
   sectionDrag?: { onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void };
+  /** このグループをつかんでドラッグ中（名前の横に「移動中」バッジ。薄表示は外側の要素が持つ） */
+  moving?: boolean;
 }
 
 export function SectionHeaderContent({
   name, count, collapsed, onToggle, canEdit, unsectioned, canMoveUp = true, canMoveDown = true,
-  onRename, onMove, onDelete, stats, dropHint, dropHintVisible, sectionDrag,
+  onRename, onMove, onDelete, stats, dropHint, dropHintVisible, sectionDrag, moving,
 }: HeaderProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(name);
@@ -113,6 +116,7 @@ export function SectionHeaderContent({
           }}
         >{name}</span>
       )}
+      {moving && <SectionMovingBadge />}
       <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0, whiteSpace: "nowrap" }}>{count}件</span>
       {stats}
       {dropHint && (

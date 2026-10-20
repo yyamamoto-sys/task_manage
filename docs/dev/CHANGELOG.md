@@ -8345,3 +8345,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * リスト：SectionMenu に「一番上へ」「一番下へ」を追加（端では上へ・下へと同じ規則で無効）。計算は純関数 computeSectionMoveOrder（lib/section/sections.ts）。useSectionActions.moveSection も同関数へ集約。
 # * ガント（PJ別）：グループ見出し行に ⠿ ドラッグ（computeSectionDropOrder・同じPJのみ・未分類は先頭扱い）と ⋮（SectionMenu を actions で並べ替え4項目に絞って再利用）。保存は reorderSections。プレビュー・モバイルは対象外。見出し行の高さ26pxは不変。
 # * テスト：sections.test.ts に computeSectionMoveOrder、ganttSectionReorderWiring.test.ts（走査・壊して赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.166（2026-10-20）：グループ見出しをドラッグ中の表示を分かりやすく（CLAUDE.md Section 81 の5）
+#
+# * リスト・ガント共通：つかんだ見出しを薄く＋「移動中」バッジ、カーソルに「📁 名前 を移動」の札（setDragImage・body 直下の一時要素・dragend/drop/Esc で除去）、ヘッダー直下に案内1行、落とす先の見出しに3px の挿入線＋札（前／後／先頭）。
+# * 部品：components/section/SectionDropIndicator.tsx（線・案内・移動中表示・useSectionDragGuard）、純関数 lib/section/describeSectionDrop.ts（computeSectionDropOrder と同じ規則・null＝落とせない／順番が変わらない）。
+# * 線・札は absolute の重ね描きで行の高さを変えない（ガント見出し行26px・Section 80 不変）。ガントはラベル列とバー列の両方に線。落とせない位置は dropEffect=none。
+# * テスト：describeSectionDrop.test.ts、ganttSectionReorderWiring.test.ts に共通部品の使用検査（壊して赤・戻して緑を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -63,6 +63,9 @@ import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
 import { sectionsOfProject, computeSectionDropOrder, UNSECTIONED_KEY } from "../../lib/section/sections";
 import { useSectionActions } from "../../hooks/useSectionActions";
+import { describeSectionDrop } from "../../lib/section/describeSectionDrop";
+import { startSectionDragGhost, removeSectionDragGhost } from "../../lib/section/sectionDragGhost";
+import { SectionDropIndicator, SectionDragNotice, SectionMovingBadge, sectionMovingStyle, useSectionDragGuard } from "../section/SectionDropIndicator";
 import { SectionMenu, MOVE_ONLY_SECTION_MENU_ACTIONS, type SectionMenuAction } from "../section/SectionMenu";
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 import { withBellReserve } from "../../lib/layout/topRightBell";
@@ -202,6 +205,8 @@ export function GanttView({
   const canReorderSections = !isPreview && !isMobile && canGuestEdit(isGuestMember(currentUser), "project");
   const [draggingSection, setDraggingSection] = useState<{ id: string; projectId: string } | null>(null);
   const [sectionDropKey, setSectionDropKey] = useState<string | null>(null);
+  const cancelSectionDrag = useCallback(() => { setDraggingSection(null); setSectionDropKey(null); }, []);
+  useSectionDragGuard(!!draggingSection, cancelSectionDrag);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたタスク）。
   // レンダーを介す必要が無いため ref で持つ。選択が丸ごとクリアされる操作（背景クリック・Escape・
   // 通常クリックでの選択クリア）では必ずアンカーも一緒にリセットする（clearTaskSelection に集約）。
@@ -1766,22 +1771,29 @@ export function GanttView({
         const secList = sectionsOfProject(projectSections, row.pj.id);
         const secIdx = row.unsectioned ? -1 : secList.findIndex(x => x.id === row.sectionKey);
         const canDragHere = canReorderSections && !row.unsectioned && secIdx >= 0;
-        const dropping = !!draggingSection && sectionDropKey === row.key;
+        const sectionKeyHere = row.unsectioned ? UNSECTIONED_KEY : row.sectionKey;
+        const sectionDrop = draggingSection && sectionDropKey === row.key && draggingSection.projectId === row.pj.id
+          ? describeSectionDrop(secList, draggingSection.id, sectionKeyHere) : null;
+        const isMovingSection = !!draggingSection && !row.unsectioned && draggingSection.id === row.sectionKey;
         return (
           <div key={row.key} style={{
             height: row.height, display: "flex", alignItems: "center", gap: "6px", padding: "0 8px 0 22px",
             background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)",
-            cursor: "pointer", minWidth: 0,
-            boxShadow: dropping && draggingSection
-              ? (secList.findIndex(x => x.id === draggingSection.id) < secIdx ? "inset 0 -2px 0 var(--color-brand)" : "inset 0 2px 0 var(--color-brand)")
-              : undefined,
+            cursor: "pointer", minWidth: 0, position: "relative",
+            ...(isMovingSection ? sectionMovingStyle : null),
           }}
             onClick={() => togglePJ(row.collapseKey)}
             role="button" tabIndex={0}
             onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) togglePJ(row.collapseKey); }}
             onDragOver={e => {
               if (!draggingSection || draggingSection.projectId !== row.pj.id) return;
+              if (!describeSectionDrop(secList, draggingSection.id, sectionKeyHere)) {
+                e.dataTransfer.dropEffect = "none";
+                setSectionDropKey(k => (k === row.key ? null : k));
+                return;
+              }
               e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
               setSectionDropKey(k => (k === row.key ? k : row.key));
             }}
             onDragLeave={() => setSectionDropKey(k => (k === row.key ? null : k))}
@@ -1789,21 +1801,23 @@ export function GanttView({
               if (!draggingSection) return;
               e.preventDefault();
               if (draggingSection.projectId === row.pj.id) {
-                const order = computeSectionDropOrder(secList, draggingSection.id, row.unsectioned ? UNSECTIONED_KEY : row.sectionKey);
+                const order = computeSectionDropOrder(secList, draggingSection.id, sectionKeyHere);
                 if (order) void sectionActions.reorderSections(row.pj.id, order);
               }
               setDraggingSection(null); setSectionDropKey(null);
+              removeSectionDragGhost();
             }}
             title={row.name}
           >
+            {sectionDrop && <SectionDropIndicator drop={sectionDrop} />}
             {canDragHere && (
               // マウスのドラッグ専用のつかみ。キーボード代替は⋮メニューの並べ替え
               // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
               <span
                 draggable
                 onClick={e => e.stopPropagation()}
-                onDragStart={e => { setDraggingSection({ id: row.sectionKey, projectId: row.pj.id }); e.dataTransfer.effectAllowed = "move"; }}
-                onDragEnd={() => { setDraggingSection(null); setSectionDropKey(null); }}
+                onDragStart={e => { setDraggingSection({ id: row.sectionKey, projectId: row.pj.id }); e.dataTransfer.effectAllowed = "move"; startSectionDragGhost(e, row.name); }}
+                onDragEnd={() => { setDraggingSection(null); setSectionDropKey(null); removeSectionDragGhost(); }}
                 title="ドラッグしてグループの順番を入れ替え"
                 style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none", marginLeft: -4 }}
               >⠿</span>
@@ -1814,6 +1828,7 @@ export function GanttView({
               color: row.unsectioned ? "var(--color-text-tertiary)" : "var(--color-text-secondary)",
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>{row.name}</span>
+            {isMovingSection && <SectionMovingBadge />}
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{row.taskCount}件</span>
             {canDragHere && (
               // メニューは Portal だが React のイベントは親へ伝わる＝行の折りたたみを誤発火させない
@@ -2096,9 +2111,18 @@ export function GanttView({
           />
         );
       }
-      case "section-header":
-        // グループ見出し行のバー列側（バーを持たない見出し専用行。ラベル列と同じ row.height）
-        return <div key={row.key} style={{ height: row.height, borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)" }} />;
+      case "section-header": {
+        // グループ見出し行のバー列側（バーを持たない見出し専用行。ラベル列と同じ row.height）。
+        // 並べ替えのドラッグ中は、ラベル列と同じ条件で挿入位置の線だけを重ねる（高さは変えない）
+        const barSecList = sectionsOfProject(projectSections, row.pj.id);
+        const barDrop = draggingSection && sectionDropKey === row.key && draggingSection.projectId === row.pj.id
+          ? describeSectionDrop(barSecList, draggingSection.id, row.unsectioned ? UNSECTIONED_KEY : row.sectionKey) : null;
+        return (
+          <div key={row.key} style={{ height: row.height, position: "relative", borderBottom: "1px solid var(--color-border-primary)", background: "var(--color-bg-primary)" }}>
+            {barDrop && <SectionDropIndicator drop={barDrop} showLabel={false} />}
+          </div>
+        );
+      }
       case "quick-add":
         // 簡易タスク追加行スペーサー（CLAUDE.md v3.06→v3.08）。ラベル列側は
         // GanttQuickAddTaskRow（実際の追加UI）を描くが、バー列には対応するタスクが無い
@@ -2544,6 +2568,10 @@ export function GanttView({
           </div>
         )}
       </div>
+
+      {draggingSection && (
+        <SectionDragNotice name={projectSections.find(x => x.id === draggingSection.id)?.name ?? "グループ"} />
+      )}
 
       {/* 一括操作バー（v3.160・選択時のみ）。ヘッダーとガント本体の間に挿入する＝右下の FAB・ショートカット
           （bottomStack）と重ならず、左右の列は同じ flex 親の中で同じだけ縮む（Section 80 の行ずれは起きない） */}
