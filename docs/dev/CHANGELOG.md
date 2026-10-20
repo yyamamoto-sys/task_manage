@@ -8352,3 +8352,4 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 部品：components/section/SectionDropIndicator.tsx（線・案内・移動中表示・useSectionDragGuard）、純関数 lib/section/describeSectionDrop.ts（computeSectionDropOrder と同じ規則・null＝落とせない／順番が変わらない）。
 # * 線・札は absolute の重ね描きで行の高さを変えない（ガント見出し行26px・Section 80 不変）。ガントはラベル列とバー列の両方に線。落とせない位置は dropEffect=none。
 # * テスト：describeSectionDrop.test.ts、ganttSectionReorderWiring.test.ts に共通部品の使用検査（壊して赤・戻して緑を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+# * 追補（同版）：ヘッダー直下の案内は高さ0の枠に absolute で浮かせる重ね表示（pointerEvents:none・右はベル予約幅を空ける）。表を押し下げず、ドラッグ中に落とす先がずれない。

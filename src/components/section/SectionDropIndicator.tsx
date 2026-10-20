@@ -14,6 +14,7 @@ import { useEffect } from "react";
 import type { CSSProperties } from "react";
 import type { SectionDropDescription } from "../../lib/section/describeSectionDrop";
 import { removeSectionDragGhost } from "../../lib/section/sectionDragGhost";
+import { withBellReserve } from "../../lib/layout/topRightBell";
 
 const LINE_PX = 3;
 
@@ -46,19 +47,27 @@ export function SectionDropIndicator({ drop, showLabel = true }: { drop: Section
   );
 }
 
-/** ビューのヘッダー直下の案内（ドラッグ中だけ描画する） */
+/**
+ * ビューのヘッダー直下の案内（ドラッグ中だけ描画する）。
+ * 🔴 レイアウトを押し下げない：高さ0の枠の中に absolute で浮かせる（表がずれるとドラッグ中に落とす先が動くため）。
+ *    pointerEvents:none（ドロップ操作を邪魔しない）。右はベル予約幅を空ける。
+ */
 export function SectionDragNotice({ name }: { name: string }) {
   return (
-    <div
-      role="status"
-      data-section-drag-notice=""
-      style={{
-        flexShrink: 0, padding: "5px 14px", fontSize: "12px", fontWeight: 600,
-        color: "var(--color-brand)", background: "var(--color-brand-light)",
-        borderBottom: "1px solid var(--color-brand-border)", minWidth: 0,
-        overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-      }}
-    >『{name}』を移動中：入れたい位置の見出しの上で離してください（Escでやめる）</div>
+    <div style={{ position: "relative", height: 0, flexShrink: 0, zIndex: 30, pointerEvents: "none" }}>
+      <div
+        role="status"
+        data-section-drag-notice=""
+        style={{
+          position: "absolute", top: 4, left: 14, right: withBellReserve(14), pointerEvents: "none",
+          padding: "5px 12px", fontSize: "12px", fontWeight: 600,
+          color: "var(--color-brand)", background: "var(--color-brand-light)",
+          border: "1px solid var(--color-brand-border)", borderRadius: "var(--radius-sm)",
+          boxShadow: "0 2px 8px rgba(0,0,0,0.15)", minWidth: 0,
+          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+        }}
+      >『{name}』を移動中：入れたい位置の見出しの上で離してください（Escでやめる）</div>
+    </div>
   );
 }
 
