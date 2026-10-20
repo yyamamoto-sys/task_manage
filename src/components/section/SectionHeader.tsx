@@ -32,8 +32,8 @@ interface HeaderProps {
   /** ドラッグ中だけ見せるヒント（例：「ここに落とすとこのグループへ移ります」） */
   dropHint?: string;
   dropHintVisible?: boolean;
-  /** 見出しのつかみ（⠿）からのドラッグ＆ドロップによる並べ替え（リストのみ・v3.156）。キーボードでは⋮の「上へ・下へ」で代替 */
-  sectionDrag?: { onDragStart: (e: React.DragEvent) => void; onDragEnd: () => void };
+  /** 見出しのつかみ（⠿）からのドラッグ＆ドロップによる並べ替え（Pointer Events・v3.167。ホイールでスクロールできる）。キーボードでは⋮の「上へ・下へ」で代替 */
+  sectionDrag?: { onPointerDown: (e: React.PointerEvent) => void };
   /** このグループをつかんでドラッグ中（名前の横に「移動中」バッジ。薄表示は外側の要素が持つ） */
   moving?: boolean;
 }
@@ -64,13 +64,10 @@ export function SectionHeaderContent({
     <div style={{ display: "flex", alignItems: "center", gap: "6px", width: "100%", padding: "3px 10px 2px 22px", minWidth: 0 }}>
       {sectionDrag && canEdit && !unsectioned && (
         // マウスのドラッグ専用のつかみ。キーボード代替は⋮メニューの「上へ・下へ」
-        // eslint-disable-next-line jsx-a11y/no-static-element-interactions
         <span
-          draggable
-          onDragStart={sectionDrag.onDragStart}
-          onDragEnd={sectionDrag.onDragEnd}
+          onPointerDown={sectionDrag.onPointerDown}
           title="ドラッグしてグループの順番を入れ替え"
-          style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none", marginLeft: -4 }}
+          style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none", touchAction: "none", marginLeft: -4 }}
         >⠿</span>
       )}
       <button

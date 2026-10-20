@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.166
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.167
 #
-最終更新：2026-10-20（v3.166）
+最終更新：2026-10-20（v3.167）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5385,7 +5385,8 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 
 ### 5. グループ見出しのドラッグ（リストのPJ別表示）
 - 見出し左の ⠿（`SectionHeaderContent` の `sectionDrag`。つかみからだけドラッグが始まる＝タスクのドラッグとは別の `draggingSection` state）をドラッグ→同じPJの別のグループ見出しへ落とすと順番が入れ替わる（`computeSectionDropOrder`：下へは相手の位置・上へは相手の前・「未分類」へは先頭）。保存は `useSectionActions.reorderSections` → `reorderProjectSections`（`saveProjectSection` への委譲）。「未分類」はドラッグ不可（⠿を出さない）。別PJの見出しへは落とせない。⋮の「上へ・下へ」は残す（キーボード代替）。
-- **ドラッグ中の表示（v3.166・リスト・ガント共通。部品は `section/SectionDropIndicator.tsx`・文言は純関数 `describeSectionDrop`＝`lib/section/describeSectionDrop.ts`）**：つかんだ見出しは薄く（opacity 0.45＋ブランドの薄色）して名前の横に「移動中」バッジ／`dragstart` でカーソルに「📁 名前 を移動」の札（`sectionDragGhost.ts`。body 直下の画面外要素で dragend・drop・Esc・状態解除で必ず除去）／ビューのヘッダー直下に1行の案内（Esc でやめる）／落とす先の見出しに行幅いっぱい3px のブランド色の線を「入る側（上／下）」へ重ね描きし、札「『相手』の前／後に入ります」「先頭に入ります」を添える。線・札は absolute の重ね描きで**行の高さを変えない**（ガントの見出し行26px固定＝Section 80）。ガントはラベル列とバー列の両方の見出し行に線を引く（バー列は札なし）。別PJ・自分自身・順番が変わらない位置は線・札なし＋`dropEffect="none"`。
+- **ドラッグ中の表示（v3.166・リスト・ガント共通。部品は `section/SectionDropIndicator.tsx`・文言は純関数 `describeSectionDrop`＝`lib/section/describeSectionDrop.ts`）**：つかんだ見出しは薄く（opacity 0.45＋ブランドの薄色）して名前の横に「移動中」バッジ／カーソルに追従する「📁 名前 を移動」の札（v3.167で `SectionDragGhost.tsx`。下記）／ビューのヘッダー直下に1行の案内（Esc でやめる）／落とす先の見出しに行幅いっぱい3px のブランド色の線を「入る側（上／下）」へ重ね描きし、札「『相手』の前／後に入ります」「先頭に入ります」を添える。線・札は absolute の重ね描きで**行の高さを変えない**（ガントの見出し行26px固定＝Section 80）。ガントはラベル列とバー列の両方の見出し行に線を引く（バー列は札なし）。別PJ・自分自身・順番が変わらない位置は線・札なし。
+- **方式（v3.167）：HTML5 DnD をやめて Pointer Events**（Windows の Chrome は native drag 中にホイールでスクロールできないため）。共通フック `hooks/useSectionPointerDrag.ts` をリスト・ガントが使う（コピペしない）：⠿ の `onPointerDown`（主ボタン）→ 4px 超で開始 → window の `pointermove` で `document.elementFromPoint` → 見出し行の `data-section-drop-key`／`data-section-key`／`data-section-project` で判定 → `pointerup` で確定（`computeSectionDropOrder`→`reorderSections`）。**ホイールは止めない（`setPointerCapture` 不使用）**。スクロールしたら（capture の `scroll`）最後のカーソル座標で再判定。**端の自動スクロール**：スクロール領域の上下端から 48px 以内で rAF（端に近いほど速く最大16px/フレーム。純関数 `lib/section/sectionAutoScroll.ts`）。リストは表のスクロール領域、ガントは判定をラベル列の領域・スクロールを右のバー列（左は既存の同期）。中止＝Esc・`pointercancel`・ウィンドウ blur。ドラッグ中は body に `user-select:none`・`cursor:grabbing`（終了で必ず復元）。ドラッグが成立した直後の click は1回だけ握りつぶす（ガントの行の折りたたみ誤発火防止）。ドラッグが始まらなかった押下はクリックに影響しない。札は `createPortal(document.body)`・`pointerEvents:none`・`position:fixed`・z-index＝`TOUR_Z.bubble - 1`（`floatingPanelContract.test` の除外に理由つきで登録）。配線は `ganttSectionReorderWiring.test.ts`（HTML5 属性が見出しに残らない・両画面がフックを使う・`setPointerCapture`／wheel 抑止が無い）。
 
 ### 付随
 - ショートカット一覧（リスト）・`uiGuide.ts` の `FEATURE_LIST_SECTION`・`docs/guides/02_modes/tasks.md`・`08_spec.md` に追記。

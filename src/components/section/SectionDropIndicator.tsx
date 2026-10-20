@@ -4,16 +4,13 @@
 //  - SectionDropIndicator：落とす先の見出しに重ねる挿入位置の線（3px・ブランド色）と札
 //  - SectionDragNotice：ビューのヘッダー直下に出す1行の案内
 //  - sectionMovingStyle / SectionMovingBadge：つかんでいる見出しの「薄く＋移動中」表示
-//  - useSectionDragGuard：Esc・状態解除でドラッグゴーストを必ず片付ける
 //
 // 🔴 行の高さを変えない（ガントの見出し行は26px固定＝CLAUDE.md Section 80の左右の行ずれを壊さない）。
 //    線も札も position:absolute の重ね描きで、親の行側に position:relative が要る。
-// 🔴 pointerEvents:none（線・札がドラッグ中のマウスイベントを横取りして dragleave を起こさない）。
+// 🔴 pointerEvents:none（線・札が elementFromPoint の判定を横取りしない）。
 
-import { useEffect } from "react";
 import type { CSSProperties } from "react";
 import type { SectionDropDescription } from "../../lib/section/describeSectionDrop";
-import { removeSectionDragGhost } from "../../lib/section/sectionDragGhost";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 
 const LINE_PX = 3;
@@ -87,18 +84,4 @@ export function SectionMovingBadge() {
       }}
     >移動中</span>
   );
-}
-
-/**
- * ドラッグ中だけ Esc でやめられるようにし、ドラッグ状態が解除されたらゴーストを必ず除去する。
- * （HTML5 DnD は Esc で dragend が来るが、来なかった場合の保険）
- */
-export function useSectionDragGuard(active: boolean, cancel: () => void): void {
-  useEffect(() => {
-    if (!active) { removeSectionDragGhost(); return; }
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancel(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [active, cancel]);
-  useEffect(() => removeSectionDragGhost, []);
 }

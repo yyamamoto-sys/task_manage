@@ -61,13 +61,13 @@ describe("リストのドラッグ", () => {
     expect(src).toMatch(/selectedIds\.size > 1 && selectedIds\.has\(draggedId\)/);
     expect(src).toMatch(/handleMultiTaskDrop\(/);
   });
-  it("グループ見出しはつかみからだけドラッグを始め、保存は reorderSections", () => {
+  it("グループ見出しはつかみからだけドラッグを始め（v3.167 Pointer Events）、保存は reorderSections", () => {
     expect(src).toMatch(/sectionDrag=\{/);
     expect(src).toMatch(/computeSectionDropOrder\(/);
     expect(src).toMatch(/sectionActions\.reorderSections\(/);
     const hdr = read("components/section/SectionHeader.tsx");
     expect(hdr).toMatch(/sectionDrag && canEdit && !unsectioned/);
-    expect(hdr).toMatch(/draggable/);
+    expect(hdr).toMatch(/onPointerDown=\{sectionDrag\.onPointerDown\}/);
   });
   it("複数ドラッグ・グループドラッグの採番はフック経由で saveTask を通す", () => {
     const hook = read("hooks/useTaskDragReorder.ts");

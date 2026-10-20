@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.167",
+    date: "2026-10-20",
+    title: "グループを移動している間も、マウスホイールで画面をスクロールできるようになりました",
+    highlights: [
+      "グループを移動している間も、マウスホイールで画面をスクロールできるようにしました。",
+      "一覧の上端・下端に近づけると、自動でスクロールします。",
+    ],
+  },
+  {
     version: "v3.166",
     date: "2026-10-20",
     title: "グループを移動するときの表示を分かりやすくしました",

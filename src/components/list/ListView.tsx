@@ -37,8 +37,9 @@ import { SectionHeaderContent, SectionAddInput } from "../section/SectionHeader"
 import { useSectionActions } from "../../hooks/useSectionActions";
 import { sectionsOfProject, UNSECTIONED_KEY, computeSectionDropOrder } from "../../lib/section/sections";
 import { describeSectionDrop } from "../../lib/section/describeSectionDrop";
-import { startSectionDragGhost, removeSectionDragGhost } from "../../lib/section/sectionDragGhost";
-import { SectionDropIndicator, SectionDragNotice, sectionMovingStyle, useSectionDragGuard } from "../section/SectionDropIndicator";
+import { useSectionPointerDrag } from "../../hooks/useSectionPointerDrag";
+import { SectionDragGhost } from "../section/SectionDragGhost";
+import { SectionDropIndicator, SectionDragNotice, sectionMovingStyle } from "../section/SectionDropIndicator";
 import { DeliverableLink } from "../task/DeliverableLink";
 import { isGuestMember } from "../../lib/guestMode";
 import { canGuestEdit } from "../../lib/guest/guestCapability";
@@ -242,11 +243,18 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
   // リセットする（clearSelection に集約）。
   const selectionAnchorRef = useRef<string | null>(null);
   const visibleOrderedTaskIdsRef = useRef<string[]>([]);
-  // グループ見出しのドラッグ（v3.156）。タスクのドラッグ（draggingId）とは別の state にして、互いのドロップ先を取り違えない
-  const [draggingSection, setDraggingSection] = useState<{ id: string; projectId: string } | null>(null);
-  const [sectionDropKey, setSectionDropKey] = useState<string | null>(null);
-  const cancelSectionDrag = useCallback(() => { setDraggingSection(null); setSectionDropKey(null); }, []);
-  useSectionDragGuard(!!draggingSection, cancelSectionDrag);
+  // グループ見出しのドラッグ（v3.156・v3.167で Pointer Events 化）。タスクのドラッグ（draggingId＝HTML5 DnD）とは別の仕組みにして、互いのドロップ先を取り違えない
+  const listScrollRef = useRef<HTMLDivElement>(null);
+  const sectionDrag = useSectionPointerDrag({
+    getScrollArea: () => ({ scrollEl: listScrollRef.current }),
+    onCommit: (drag, target) => {
+      if (!target || target.projectId !== drag.projectId) return;
+      const order = computeSectionDropOrder(sectionsOfProject(projectSections, drag.projectId), drag.id, target.sectionKey);
+      if (order) void sectionActions.reorderSections(drag.projectId, order);
+    },
+  });
+  const draggingSection = sectionDrag.dragging;
+  const sectionDropKey = sectionDrag.dropKey;
   // 親タスクを選択したら直下の子タスクも一緒に選択に加わる（解除も同様）。
   // 子を個別に付け外しするのは自由（3画面共通のロジック。CLAUDE.md v3.108）
   const toggleSelect = useCallback((id: string, e?: React.MouseEvent) => {
@@ -844,9 +852,10 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
         {draggingSection && (
           <SectionDragNotice name={projectSections.find(x => x.id === draggingSection.id)?.name ?? "グループ"} />
         )}
+        {sectionDrag.ghostProps && <SectionDragGhost {...sectionDrag.ghostProps} />}
 
         {/* ===== テーブル（PC）/ カード（モバイル） ===== */}
-        <div style={{ flex: 1, overflow: "auto" }}>
+        <div ref={listScrollRef} style={{ flex: 1, overflow: "auto" }}>
           {isMobile ? (
             /* モバイル：カードリスト */
             <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: "6px" }}>
@@ -1015,33 +1024,12 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                           return (
                             <React.Fragment key={bk}>
                               <tr
-                                onDragOver={e => {
-                                  if (draggingSection) {
-                                    if (draggingSection.projectId !== projectId) return;
-                                    if (!describeSectionDrop(secList, draggingSection.id, sectionKeyHere)) {
-                                      e.dataTransfer.dropEffect = "none";
-                                      setSectionDropKey(k => (k === bk ? null : k));
-                                      return;
-                                    }
-                                    e.preventDefault();
-                                    e.dataTransfer.dropEffect = "move";
-                                    setSectionDropKey(k => (k === bk ? k : bk));
-                                    return;
-                                  }
-                                  if (draggingId) e.preventDefault();
-                                }}
-                                onDragLeave={() => setSectionDropKey(k => (k === bk ? null : k))}
+                                data-section-drop-key={bk}
+                                data-section-key={sectionKeyHere}
+                                data-section-project={projectId}
+                                onDragOver={e => { if (draggingId) e.preventDefault(); }}
                                 onDrop={e => {
                                   e.preventDefault();
-                                  if (draggingSection) {
-                                    if (draggingSection.projectId === projectId) {
-                                      const order = computeSectionDropOrder(secList, draggingSection.id, sectionKeyHere);
-                                      if (order) void sectionActions.reorderSections(projectId, order);
-                                    }
-                                    setDraggingSection(null); setSectionDropKey(null);
-                                    removeSectionDragGhost();
-                                    return;
-                                  }
                                   if (draggingId) void handleSectionDrop(draggingId, projectId, sec ? sec.id : null);
                                   setDraggingId(null); setDropZone(null);
                                 }}
@@ -1064,8 +1052,7 @@ export function ListView({ currentUser, selectedProject, projects, krTaskIds, mi
                                     onMove={dir => { if (sec) void sectionActions.moveSection(sec, dir); }}
                                     onDelete={() => { if (sec) void sectionActions.removeSection(sec); }}
                                     sectionDrag={sec ? {
-                                      onDragStart: e => { setDraggingSection({ id: sec.id, projectId }); e.dataTransfer.effectAllowed = "move"; startSectionDragGhost(e, sec.name); },
-                                      onDragEnd: () => { setDraggingSection(null); setSectionDropKey(null); removeSectionDragGhost(); },
+                                      onPointerDown: e => sectionDrag.begin({ id: sec.id, projectId, name: sec.name }, e),
                                     } : undefined}
                                     moving={isMovingSection}
                                     stats={b.tasks.length > 0 ? <GroupStatsBadge {...summary} /> : undefined}

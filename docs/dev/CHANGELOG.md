@@ -8353,3 +8353,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 線・札は absolute の重ね描きで行の高さを変えない（ガント見出し行26px・Section 80 不変）。ガントはラベル列とバー列の両方に線。落とせない位置は dropEffect=none。
 # * テスト：describeSectionDrop.test.ts、ganttSectionReorderWiring.test.ts に共通部品の使用検査（壊して赤・戻して緑を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
 # * 追補（同版）：ヘッダー直下の案内は高さ0の枠に absolute で浮かせる重ね表示（pointerEvents:none・右はベル予約幅を空ける）。表を押し下げず、ドラッグ中に落とす先がずれない。
+
+# v3.167（2026-10-20）：グループ見出しのドラッグを Pointer Events に（ドラッグ中もホイールでスクロール・端の自動スクロール。CLAUDE.md Section 81 の5）
+#
+# * HTML5 DnD（draggable/dragstart/dragover/drop・setDragImage）をやめ、共通フック hooks/useSectionPointerDrag.ts（リスト・ガント共通）へ。setPointerCapture は使わずホイールを止めない。scroll で落とす先を再判定。
+# * 端の自動スクロール：lib/section/sectionAutoScroll.ts（上下端48px以内・最大16px/フレーム・rAF）。ガントは判定＝ラベル列・スクロール＝右バー列。中止＝Esc・pointercancel・blur。body の user-select/cursor は終了で必ず復元。
+# * ゴースト札は setDragImage の代わりに components/section/SectionDragGhost.tsx（body 直下・fixed・pointerEvents:none・TOUR_Z.bubble-1）。lib/section/sectionDragGhost.ts と useSectionDragGuard は削除。
+# * 見出し行の高さ不変。タスク行・バーのドラッグ（HTML5）には触れていない。テスト：sectionAutoScroll.test.ts、ganttSectionReorderWiring.test.ts を新方式へ更新（壊して赤・戻して緑を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

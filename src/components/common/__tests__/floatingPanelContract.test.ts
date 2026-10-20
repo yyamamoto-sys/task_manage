@@ -51,6 +51,9 @@ function toPosixRelative(full: string): string {
 const POINTER_EVENTS_EXCLUDED: Record<string, string> = {
   // Portal の中身は <Suspense><GanttPreviewPanel/></Suspense> であり、
   // GanttPreviewPanel.tsx 自身のルートが pointerEvents:"auto" を持つ。
+  // カーソル追従の札。pointerEvents:none が正しい（受けると elementFromPoint が札を拾い、落とす先を判定できない）
+  "src/components/section/SectionDragGhost.tsx":
+    "ポインタ操作を受けない表示専用の札（意図的に pointerEvents:none）",
   "src/components/consultation/ConsultationPanel.tsx":
     "Portalの直下が別コンポーネントで、そちら側のルートが pointerEvents:auto を持つ",
 };
