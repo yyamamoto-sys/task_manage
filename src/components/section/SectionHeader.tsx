@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { SectionMenu, type SectionMenuAction } from "./SectionMenu";
-import { SECTION_NAME_MAX, normalizeSectionName } from "../../lib/section/sections";
+import { SECTION_NAME_MAX, normalizeSectionName, type SectionMoveDir } from "../../lib/section/sections";
 
 interface HeaderProps {
   name: string;
@@ -24,7 +24,7 @@ interface HeaderProps {
   canMoveUp?: boolean;
   canMoveDown?: boolean;
   onRename?: (name: string) => void;
-  onMove?: (dir: "up" | "down") => void;
+  onMove?: (dir: SectionMoveDir) => void;
   onDelete?: () => void;
   /** 件数の横に出す補足（完了率バッジなど） */
   stats?: ReactNode;
@@ -53,8 +53,7 @@ export function SectionHeaderContent({
 
   const handleMenu = (a: SectionMenuAction) => {
     if (a === "rename") { setDraft(name); setEditing(true); }
-    else if (a === "up") onMove?.("up");
-    else if (a === "down") onMove?.("down");
+    else if (a === "top" || a === "up" || a === "down" || a === "bottom") onMove?.(a);
     else if (a === "delete") onDelete?.();
   };
 

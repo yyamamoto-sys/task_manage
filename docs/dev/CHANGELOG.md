@@ -8339,3 +8339,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 変更：globals.css に @media (max-resolution: 0.99dppx) を追加し、:root の --font-sans を Meiryo UI / Yu Gothic UI 等へ差し替え。--font-display は不変。
 # * src 配下に "M PLUS Rounded" の直書きなし（コメント1件のみ）。--font-sans の再定義は :root の1箇所のみ（dark テーマは再定義しない）。
 # * DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.165（2026-10-20）：ガントでグループの順番を変えられるように／リストの ⋮ に「一番上へ・一番下へ」（CLAUDE.md Section 78）
+#
+# * リスト：SectionMenu に「一番上へ」「一番下へ」を追加（端では上へ・下へと同じ規則で無効）。計算は純関数 computeSectionMoveOrder（lib/section/sections.ts）。useSectionActions.moveSection も同関数へ集約。
+# * ガント（PJ別）：グループ見出し行に ⠿ ドラッグ（computeSectionDropOrder・同じPJのみ・未分類は先頭扱い）と ⋮（SectionMenu を actions で並べ替え4項目に絞って再利用）。保存は reorderSections。プレビュー・モバイルは対象外。見出し行の高さ26pxは不変。
+# * テスト：sections.test.ts に computeSectionMoveOrder、ganttSectionReorderWiring.test.ts（走査・壊して赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -1,6 +1,6 @@
 // src/components/section/SectionMenu.tsx
 //
-// PJ内「グループ」の見出しの「⋮」メニュー（名前を変更／上へ／下へ／削除）。
+// PJ内「グループ」の見出しの「⋮」メニュー（名前を変更／一番上へ／上へ／下へ／一番下へ／削除。ガントは並べ替えの4つだけ）。
 // トリガー追従のポップオーバーなので、座標・スクロール追従・スクロール連鎖の遮断は
 // 共通フック useFloatingPanel に任せる（CLAUDE.md Section 51。個別にコピペしない）。
 // document.body へ Portal する要素は pointerEvents:"auto" を必ず明示する（同 Section 51）。
@@ -9,13 +9,18 @@ import { useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useFloatingPanel } from "../../hooks/useFloatingPanel";
 
-export type SectionMenuAction = "rename" | "up" | "down" | "delete";
+export type SectionMenuAction = "rename" | "top" | "up" | "down" | "bottom" | "delete";
+
+export const ALL_SECTION_MENU_ACTIONS: SectionMenuAction[] = ["rename", "top", "up", "down", "bottom", "delete"];
+export const MOVE_ONLY_SECTION_MENU_ACTIONS: SectionMenuAction[] = ["top", "up", "down", "bottom"];
 
 interface Props {
   sectionName: string;
   canMoveUp: boolean;
   canMoveDown: boolean;
   onSelect: (action: SectionMenuAction) => void;
+  /** 出す項目（既定は全部。ガントは並べ替えの4つだけ） */
+  actions?: SectionMenuAction[];
 }
 
 const PANEL_WIDTH = 170;
@@ -23,12 +28,15 @@ const ITEM_HEIGHT = 34;
 const PANEL_PADDING = 8;
 const ITEMS: { id: SectionMenuAction; icon: string; label: string }[] = [
   { id: "rename", icon: "✏️", label: "名前を変更" },
+  { id: "top",    icon: "⤒",  label: "一番上へ移動" },
   { id: "up",     icon: "↑",  label: "上へ移動" },
   { id: "down",   icon: "↓",  label: "下へ移動" },
+  { id: "bottom", icon: "⤓",  label: "一番下へ移動" },
   { id: "delete", icon: "🗑", label: "グループを削除" },
 ];
 
-export function SectionMenu({ sectionName, canMoveUp, canMoveDown, onSelect }: Props) {
+export function SectionMenu({ sectionName, canMoveUp, canMoveDown, onSelect, actions = ALL_SECTION_MENU_ACTIONS }: Props) {
+  const items = ITEMS.filter(i => actions.includes(i.id));
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -41,7 +49,7 @@ export function SectionMenu({ sectionName, canMoveUp, canMoveDown, onSelect }: P
     align: "right",
     width: PANEL_WIDTH,
     margin: 8,
-    preferredMaxHeight: ITEMS.length * ITEM_HEIGHT + PANEL_PADDING,
+    preferredMaxHeight: items.length * ITEM_HEIGHT + PANEL_PADDING,
     minMaxHeight: 76,
   });
 
@@ -95,8 +103,8 @@ export function SectionMenu({ sectionName, canMoveUp, canMoveDown, onSelect }: P
             pointerEvents: "auto",
           }}
         >
-          {ITEMS.map(item => {
-            const disabled = (item.id === "up" && !canMoveUp) || (item.id === "down" && !canMoveDown);
+          {items.map(item => {
+            const disabled = ((item.id === "up" || item.id === "top") && !canMoveUp) || ((item.id === "down" || item.id === "bottom") && !canMoveDown);
             return (
               <button
                 key={item.id}

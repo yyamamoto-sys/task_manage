@@ -10,7 +10,7 @@
 import { useCallback } from "react";
 import { useAppStore } from "../stores/appStore";
 import type { ProjectSection } from "../lib/localData/types";
-import { buildNewSection, sectionsOfProject, moveItem } from "../lib/section/sections";
+import { buildNewSection, sectionsOfProject, computeSectionMoveOrder, type SectionMoveDir } from "../lib/section/sections";
 import { confirmDialog } from "../lib/dialog";
 import { showToast } from "../components/common/Toast";
 import { formatErrorForUser } from "../lib/errorMessage";
@@ -41,12 +41,10 @@ export function useSectionActions(currentUserId: string) {
     }
   }, [currentUserId, saveProjectSection]);
 
-  const moveSection = useCallback(async (section: ProjectSection, dir: "up" | "down") => {
+  const moveSection = useCallback(async (section: ProjectSection, dir: SectionMoveDir) => {
     const list = sectionsOfProject(useAppStore.getState().projectSections, section.project_id);
-    const from = list.findIndex(s => s.id === section.id);
-    const to = dir === "up" ? from - 1 : from + 1;
-    if (from < 0 || to < 0 || to >= list.length) return;
-    const ordered = moveItem(list, from, to).map(s => s.id);
+    const ordered = computeSectionMoveOrder(list, section.id, dir);
+    if (!ordered) return;
     try {
       await reorderProjectSections(section.project_id, ordered, currentUserId);
     } catch (e) {

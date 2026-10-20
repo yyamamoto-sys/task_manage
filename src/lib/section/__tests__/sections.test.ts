@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Task, ProjectSection } from "../../localData/types";
 import {
   sectionsOfProject, nextSectionSortOrder, normalizeSectionName, buildNewSection, computeSectionReorder,
-  moveItem, normalizeTaskSection, followParentSection, computeSectionProgress, UNSECTIONED_KEY,
+  moveItem, computeSectionMoveOrder, normalizeTaskSection, followParentSection, computeSectionProgress, UNSECTIONED_KEY,
 } from "../sections";
 
 const sec = (id: string, project_id: string, sort_order: number, extra: Partial<ProjectSection> = {}): ProjectSection =>
@@ -105,5 +105,23 @@ describe("computeSectionProgress", () => {
     ];
     const rows = computeSectionProgress(tasks, sections, "p1");
     expect(rows.map(r => [r.key, r.done, r.total])).toEqual([["s1", 1, 2], ["s2", 0, 0], [UNSECTIONED_KEY, 0, 1]]);
+  });
+});
+
+describe("computeSectionMoveOrder（⋮の一番上へ・上へ・下へ・一番下へ）", () => {
+  const list = [sec("a", "p1", 0), sec("b", "p1", 1), sec("c", "p1", 2)];
+  it("一番下のものを一番上へ", () => expect(computeSectionMoveOrder(list, "c", "top")).toEqual(["c", "a", "b"]));
+  it("先頭のものを一番下へ", () => expect(computeSectionMoveOrder(list, "a", "bottom")).toEqual(["b", "c", "a"]));
+  it("上へ・下へは1つだけ動く", () => {
+    expect(computeSectionMoveOrder(list, "b", "up")).toEqual(["b", "a", "c"]);
+    expect(computeSectionMoveOrder(list, "b", "down")).toEqual(["a", "c", "b"]);
+  });
+  it("端・見つからない id は null（何もしない）", () => {
+    expect(computeSectionMoveOrder(list, "a", "top")).toBeNull();
+    expect(computeSectionMoveOrder(list, "a", "up")).toBeNull();
+    expect(computeSectionMoveOrder(list, "c", "down")).toBeNull();
+    expect(computeSectionMoveOrder(list, "c", "bottom")).toBeNull();
+    expect(computeSectionMoveOrder(list, "zzz", "top")).toBeNull();
+    expect(computeSectionMoveOrder([sec("a", "p1", 0)], "a", "top")).toBeNull();
   });
 });

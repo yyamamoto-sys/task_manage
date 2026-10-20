@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.165",
+    date: "2026-10-20",
+    title: "ガントでもグループの順番を変えられるようにしました",
+    highlights: [
+      "ガントでもグループの順番を変えられるようにしました（見出しの ⋮ メニューとドラッグ）。",
+      "リストのグループの ⋮ メニューに「一番上へ」「一番下へ」を追加しました。",
+    ],
+  },
+  {
     version: "v3.164",
     date: "2026-10-19",
     title: "ブラウザの表示を縮小したときに、文字が荒れて見える問題を改善しました",

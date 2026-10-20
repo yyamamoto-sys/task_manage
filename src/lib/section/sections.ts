@@ -168,3 +168,14 @@ export function computeSectionDropOrder(
   if (to < 0 || to === from) return null;
   return moveItem(list, from, to).map(s => s.id);
 }
+
+export type SectionMoveDir = "top" | "up" | "down" | "bottom";
+
+/** ⋮メニューの「一番上へ・上へ・下へ・一番下へ」。動かせない（端・見つからない）ときは null */
+export function computeSectionMoveOrder(list: ProjectSection[], id: string, dir: SectionMoveDir): string[] | null {
+  const from = list.findIndex(s => s.id === id);
+  if (from < 0) return null;
+  const to = dir === "top" ? 0 : dir === "bottom" ? list.length - 1 : dir === "up" ? from - 1 : from + 1;
+  if (to < 0 || to >= list.length || to === from) return null;
+  return moveItem(list, from, to).map(s => s.id);
+}

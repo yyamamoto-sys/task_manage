@@ -61,7 +61,9 @@ import { computeCriticalTaskIds } from "../../lib/gantt/criticalPath";
 import { computeOverloadRanges } from "../../lib/gantt/overload";
 import { getMemberActiveTasks } from "../../lib/workload/computeWorkload";
 import { useTaskDragReorder } from "../../hooks/useTaskDragReorder";
-import { sectionsOfProject } from "../../lib/section/sections";
+import { sectionsOfProject, computeSectionDropOrder, UNSECTIONED_KEY } from "../../lib/section/sections";
+import { useSectionActions } from "../../hooks/useSectionActions";
+import { SectionMenu, MOVE_ONLY_SECTION_MENU_ACTIONS, type SectionMenuAction } from "../section/SectionMenu";
 import { computeDropZoneFromRatio, computeInsertAfterOrder } from "../../lib/dragReorder";
 import { withBellReserve } from "../../lib/layout/topRightBell";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
@@ -195,6 +197,11 @@ export function GanttView({
   // Escapeでも選択クリア。選択中のバーの中央をドラッグすると選択中の全タスクが一緒にシフトする
   // （バー中央ドラッグ単体移動 = handleMoveDragStart の bulkTargets 拡張。詳細は下記）。
   const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  // グループ見出しの並べ替え（⋮・⠿ドラッグ）。タスク行・バーのドラッグ state とは別にして干渉させない
+  const sectionActions = useSectionActions(currentUser.id);
+  const canReorderSections = !isPreview && !isMobile && canGuestEdit(isGuestMember(currentUser), "project");
+  const [draggingSection, setDraggingSection] = useState<{ id: string; projectId: string } | null>(null);
+  const [sectionDropKey, setSectionDropKey] = useState<string | null>(null);
   // Shift+クリック範囲選択のアンカー（直近に単一クリック／Ctrl+クリックしたタスク）。
   // レンダーを介す必要が無いため ref で持つ。選択が丸ごとクリアされる操作（背景クリック・Escape・
   // 通常クリックでの選択クリア）では必ずアンカーも一緒にリセットする（clearTaskSelection に集約）。
@@ -1756,17 +1763,51 @@ export function GanttView({
       }
       case "section-header": {
         const isCollapsed = !!collapsed[row.collapseKey];
+        const secList = sectionsOfProject(projectSections, row.pj.id);
+        const secIdx = row.unsectioned ? -1 : secList.findIndex(x => x.id === row.sectionKey);
+        const canDragHere = canReorderSections && !row.unsectioned && secIdx >= 0;
+        const dropping = !!draggingSection && sectionDropKey === row.key;
         return (
           <div key={row.key} style={{
             height: row.height, display: "flex", alignItems: "center", gap: "6px", padding: "0 8px 0 22px",
             background: "var(--color-bg-primary)", borderBottom: "1px solid var(--color-border-primary)",
             cursor: "pointer", minWidth: 0,
+            boxShadow: dropping && draggingSection
+              ? (secList.findIndex(x => x.id === draggingSection.id) < secIdx ? "inset 0 -2px 0 var(--color-brand)" : "inset 0 2px 0 var(--color-brand)")
+              : undefined,
           }}
             onClick={() => togglePJ(row.collapseKey)}
             role="button" tabIndex={0}
-            onKeyDown={e => { if (e.key === "Enter" || e.key === " ") togglePJ(row.collapseKey); }}
+            onKeyDown={e => { if (e.target === e.currentTarget && (e.key === "Enter" || e.key === " ")) togglePJ(row.collapseKey); }}
+            onDragOver={e => {
+              if (!draggingSection || draggingSection.projectId !== row.pj.id) return;
+              e.preventDefault();
+              setSectionDropKey(k => (k === row.key ? k : row.key));
+            }}
+            onDragLeave={() => setSectionDropKey(k => (k === row.key ? null : k))}
+            onDrop={e => {
+              if (!draggingSection) return;
+              e.preventDefault();
+              if (draggingSection.projectId === row.pj.id) {
+                const order = computeSectionDropOrder(secList, draggingSection.id, row.unsectioned ? UNSECTIONED_KEY : row.sectionKey);
+                if (order) void sectionActions.reorderSections(row.pj.id, order);
+              }
+              setDraggingSection(null); setSectionDropKey(null);
+            }}
             title={row.name}
           >
+            {canDragHere && (
+              // マウスのドラッグ専用のつかみ。キーボード代替は⋮メニューの並べ替え
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
+              <span
+                draggable
+                onClick={e => e.stopPropagation()}
+                onDragStart={e => { setDraggingSection({ id: row.sectionKey, projectId: row.pj.id }); e.dataTransfer.effectAllowed = "move"; }}
+                onDragEnd={() => { setDraggingSection(null); setSectionDropKey(null); }}
+                title="ドラッグしてグループの順番を入れ替え"
+                style={{ width: 12, textAlign: "center", flexShrink: 0, cursor: "grab", color: "var(--color-text-tertiary)", fontSize: "12px", lineHeight: 1, userSelect: "none", marginLeft: -4 }}
+              >⠿</span>
+            )}
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", transition: "transform 0.15s", display: "inline-block", flexShrink: 0, transform: isCollapsed ? "rotate(-90deg)" : "rotate(0deg)" }}>▾</span>
             <span style={{
               fontSize: "11px", fontWeight: 600, flex: 1, minWidth: 0,
@@ -1774,6 +1815,22 @@ export function GanttView({
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             }}>{row.name}</span>
             <span style={{ fontSize: "10px", color: "var(--color-text-tertiary)", flexShrink: 0 }}>{row.taskCount}件</span>
+            {canDragHere && (
+              // メニューは Portal だが React のイベントは親へ伝わる＝行の折りたたみを誤発火させない
+              // eslint-disable-next-line jsx-a11y/no-static-element-interactions
+              <span style={{ display: "flex", flexShrink: 0 }} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
+                <SectionMenu
+                  sectionName={row.name}
+                  actions={MOVE_ONLY_SECTION_MENU_ACTIONS}
+                  canMoveUp={secIdx > 0}
+                  canMoveDown={secIdx < secList.length - 1}
+                  onSelect={(a: SectionMenuAction) => {
+                    const sec = secList[secIdx];
+                    if (sec && (a === "top" || a === "up" || a === "down" || a === "bottom")) void sectionActions.moveSection(sec, a);
+                  }}
+                />
+              </span>
+            )}
           </div>
         );
       }
