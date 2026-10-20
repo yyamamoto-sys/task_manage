@@ -3,9 +3,8 @@
 // 【設計意図】
 // Phase 3後半のAI解析（personal_kr_outlooks）が「前回と入力が一致していたら再解析しない」
 // 判定に使うフィンガープリントの計算（docs/dev/okr-redesign-plan.md §5-2）。
-// 今回（Phase 3前半）はAI呼び出しを実装しないため、この関数はまだどこからも呼ばれない
-// （呼び出し元＝AI解析トリガーはPhase 3後半で追加する）。ここでは純粋関数として先に
-// 用意し、安定性（同じ入力→同じ値・要素の順序に依存しない）をテストで固定する。
+// 呼び出し元は PersonalKrPanel.tsx（fingerprint useMemo → runOutlookAnalysis／runReviewDraft）。
+// 純粋関数として持ち、安定性（同じ入力→同じ値・要素の順序に依存しない）をテストで固定する。
 //
 // 含める要素（§5-2）：対象KRに紐づくタスクのupdated_atの最大値／週の目標状態とself_rating／
 // 月次計画のimported_at（無ければupdated_at）／メモの最終updated_at／現在の週番号。

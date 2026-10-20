@@ -21,6 +21,7 @@ import { quarterMonthSlots, monthToDateStr } from "../../../lib/personalOkr/quar
 import { resolveEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope";
 import { isActiveMonthIndexesColumnMissing, ACTIVE_MONTH_INDEXES_MISSING_MESSAGE } from "../../../lib/personalOkr/activeMonthIndexesSaveError";
 import { formatErrorForUser } from "../../../lib/errorMessage";
+import { confirmDialog } from "../../../lib/dialog";
 
 const KR_KIND_OPTIONS: { value: PersonalKrKind; label: string }[] = [
   { value: "group_kr", label: "グループKR紐づけ" },
@@ -182,6 +183,12 @@ export function PersonalKrFormModal({
 
   const handleDelete = async () => {
     if (!onDelete) return;
+    // 🔴 KRの削除は確認なしの1クリックで実行されていた（Section 4の表「KR=ダイアログあり」と食い違い）。
+    // 背景クリックは必ずcancel扱いになるため、削除しない側が安全側に倒れる。
+    const ok = await confirmDialog(
+      `個人KR「${initial?.label ?? label.trim()}」を削除します。月次計画・週の記録・メモもこの画面に表示されなくなります。よろしいですか？`,
+    );
+    if (!ok) return;
     setDeleting(true);
     setError(null);
     try {

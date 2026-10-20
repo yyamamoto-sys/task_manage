@@ -38,6 +38,7 @@ import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftE
 import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
 import { runPersonalKrReviewDraft } from "../lib/personalOkr/reviewDraftRunner";
 import { isGuestMode } from "../lib/guestMode";
+import { formatErrorForUser } from "../lib/errorMessage";
 import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAiContext";
 import type { ReviewMaterial } from "../lib/personalOkr/reviewMaterial";
 import type {
@@ -451,7 +452,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       set(state => ({
         outlookByKrMonth: { ...state.outlookByKrMonth, [key]: state.outlookByKrMonth[key] ?? null },
         outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
-        outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析結果の取得に失敗しました" },
+        outlookErrorByKey: { ...state.outlookErrorByKey, [key]: formatErrorForUser("AI解析結果の取得に失敗しました", e) },
       }));
     }
   },
@@ -492,7 +493,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         analyzing.delete(key);
         return {
           outlookAnalyzingKeys: analyzing,
-          outlookErrorByKey: { ...state.outlookErrorByKey, [key]: e instanceof Error ? e.message : "AI解析に失敗しました" },
+          outlookErrorByKey: { ...state.outlookErrorByKey, [key]: formatErrorForUser("AI解析に失敗しました", e) },
         };
       });
     }
@@ -522,7 +523,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       set(state => ({
         reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: state.reviewDraftByKrMonth[key] ?? null },
         reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
-        reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: e instanceof Error ? e.message : "振り返り下書きの取得に失敗しました" },
+        reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: formatErrorForUser("振り返り下書きの取得に失敗しました", e) },
       }));
     }
   },
@@ -563,7 +564,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         analyzing.delete(key);
         return {
           reviewDraftAnalyzingKeys: analyzing,
-          reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: e instanceof Error ? e.message : "振り返り下書きの生成に失敗しました" },
+          reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: formatErrorForUser("振り返り下書きの生成に失敗しました", e) },
         };
       });
     }

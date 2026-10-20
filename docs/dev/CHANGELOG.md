@@ -8360,3 +8360,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 端の自動スクロール：lib/section/sectionAutoScroll.ts（上下端48px以内・最大16px/フレーム・rAF）。ガントは判定＝ラベル列・スクロール＝右バー列。中止＝Esc・pointercancel・blur。body の user-select/cursor は終了で必ず復元。
 # * ゴースト札は setDragImage の代わりに components/section/SectionDragGhost.tsx（body 直下・fixed・pointerEvents:none・TOUR_Z.bubble-1）。lib/section/sectionDragGhost.ts と useSectionDragGuard は削除。
 # * 見出し行の高さ不変。タスク行・バーのドラッグ（HTML5）には触れていない。テスト：sectionAutoScroll.test.ts、ganttSectionReorderWiring.test.ts を新方式へ更新（壊して赤・戻して緑を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+#
+# v3.168（2026-10-20）：個人KRの削除に確認ダイアログを追加／「これから」・振り返り下書きのエラー表示にエラーコードを含める（巡回50回目・D OKR サブ領域②。docs/REFACTORING.md）
+#
+# * PersonalKrFormModal：「削除」が確認なしの1クリックで個人KRを論理削除していた（CLAUDE.md Section 4 の「KR＝ダイアログあり」と食い違い）。confirmDialog（既定 tone=danger・背景クリック＝削除しない）を挟む。
+# * personalOkrUiStore：outlook／振り返り下書きの取得・生成失敗を `e instanceof Error ? e.message : 固定文言` から formatErrorForUser（Section 15）に変更。Supabase の PostgrestError（Error 継承でない）が固定文言に潰れ、コードが見えなかった。
+# * outlookFingerprint.ts の古いコメント（「どこからも呼ばれない」）を訂正。DB 変更なし・MIN_CLIENT_VERSION は上げない。

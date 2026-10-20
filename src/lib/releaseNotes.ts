@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.168",
+    date: "2026-10-20",
+    title: "個人OKRのKRを削除するときに確認が出るようになりました",
+    highlights: [
+      "個人KRの編集画面で「削除」を押すと、確認のダイアログが出るようにしました。誤って押しても削除されません。",
+      "「これから」の見立てや振り返りの下書きが失敗したときに、エラーコードも表示するようにしました。",
+    ],
+  },
+  {
     version: "v3.167",
     date: "2026-10-20",
     title: "グループを移動している間も、マウスホイールで画面をスクロールできるようになりました",
