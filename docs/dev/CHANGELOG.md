@@ -8366,3 +8366,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * PersonalKrFormModal：「削除」が確認なしの1クリックで個人KRを論理削除していた（CLAUDE.md Section 4 の「KR＝ダイアログあり」と食い違い）。confirmDialog（既定 tone=danger・背景クリック＝削除しない）を挟む。
 # * personalOkrUiStore：outlook／振り返り下書きの取得・生成失敗を `e instanceof Error ? e.message : 固定文言` から formatErrorForUser（Section 15）に変更。Supabase の PostgrestError（Error 継承でない）が固定文言に潰れ、コードが見えなかった。
 # * outlookFingerprint.ts の古いコメント（「どこからも呼ばれない」）を訂正。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+#
+# v3.169（2026-10-21）：個人OKRの編集系モーダル3つに未保存編集の保護を追加／振り返り欄の書きかけが他ブロックの保存で消える不具合を修正（巡回51回目・D OKR サブ領域③。docs/REFACTORING.md M53解決・M60）
+#
+# * M53：PersonalKrFormModal／PersonalOkrReviewDraftModal／PersonalOkrPeriodReviewDraftModal を FeedbackModal（Section 82）と同じ作法に統一。新設フック hooks/useConfirmClose.ts が useUnsavedEditor(dirty) の登録と、dirty のときだけ閉じる操作（背景クリック・閉じる/キャンセル/✕・Esc）の前の confirmDialog（tone=danger）を担う。dirty は「初期値（初回レンダー／生成直後／反映・保存直後）から変わったか」で判定し、開いた直後は出ない。保存中・削除中は閉じる操作を無視。ConfirmModal（role=dialog）が前面にある間の Esc はフックが無視する。文言は個人OKR系の流儀に合わせて直書き（i18nキーなし）。
+# * M60：MonthReviewBlock／PersonalPeriodReviewBlock／ActualActivitiesBlock の「保存済み値への同期」useEffect が、record.id・review_text の変化のたびに全欄を保存済み値で上書きしていた。新規の月・期間で「実施記録」や下書きモーダルの保存を先にすると record が生まれて id が変わり、書きかけの振り返り本文・評価%・GMコメントが無言で消えた。KR/月・期間が変わったときだけ全欄入れ替え、同じキーのままの更新は「直前の保存済み値のまま（未編集）」の欄だけ同期する（monthReviewForm.ts の syncEditedValue）。
+# * テスト：useConfirmClose.test.ts（新規）・monthReviewForm.test.ts（syncEditedValue）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

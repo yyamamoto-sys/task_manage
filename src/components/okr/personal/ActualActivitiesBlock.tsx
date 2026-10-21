@@ -26,6 +26,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
+import { syncEditedValue } from "../../../lib/personalOkr/monthReviewForm";
 import { computeActualActivitiesDirty, toActualActivitiesSaveValue } from "../../../lib/personalOkr/actualActivitiesForm";
 import { isActualActivitiesColumnMissing, ACTUAL_ACTIVITIES_MISSING_MESSAGE } from "../../../lib/personalOkr/actualActivitiesSaveError";
 import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
@@ -79,9 +80,19 @@ export function ActualActivitiesBlock({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // resetKey（KR/月・期間）が変わったら保存済み値へ入れ替える。同じキーのまま value だけが
+  // 変わったときは、書きかけでなければ同期し、書きかけの入力は残す（M60）。
+  const syncedRef = useRef<{ key: string; value: string } | null>(null);
   useEffect(() => {
-    setDraft(value ?? "");
-    setError(null);
+    const next = { key: resetKey, value: value ?? "" };
+    const prev = syncedRef.current;
+    syncedRef.current = next;
+    if (!prev || prev.key !== resetKey) {
+      setDraft(next.value);
+      setError(null);
+      return;
+    }
+    setDraft(c => syncEditedValue(c, prev.value, next.value));
   }, [resetKey, value]);
 
   const dirty = computeActualActivitiesDirty(draft, value);

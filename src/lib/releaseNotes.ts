@@ -39,6 +39,15 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.169",
+    date: "2026-10-21",
+    title: "個人OKRの入力途中の内容が、意図せず消えにくくなりました",
+    highlights: [
+      "個人KRの編集画面と、振り返りの下書き画面で、入力した内容があるまま閉じようとすると確認が出るようになりました（背景クリック・閉じるボタン・Escのどれでも）。",
+      "振り返り・全体タブで書きかけの文章や評価%が、同じ画面の別の欄（実施記録など）を保存した拍子に消えてしまう不具合を直しました。",
+    ],
+  },
+  {
     version: "v3.168",
     date: "2026-10-20",
     title: "個人OKRのKRを削除するときに確認が出るようになりました",

@@ -28,6 +28,7 @@ import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
+import { useConfirmClose } from "../../../hooks/useConfirmClose";
 
 interface Props {
   /** 例："8月" または "2026年度 3Q" */
@@ -54,8 +55,15 @@ export function PersonalOkrPeriodReviewDraftModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ reviewText: string; basis: string[] } | null>(null);
   const [text, setText] = useState("");
+  // M53：生成直後・本文欄へ反映した時点の本文。これと違えば「編集したまま未反映」とみなす
+  const [baselineText, setBaselineText] = useState("");
 
   const hasDraft = !!result;
+  const requestClose = useConfirmClose({
+    dirty: hasDraft && text !== baselineText,
+    message: "編集した下書きは本文欄に反映されていません。閉じますか？",
+    onClose,
+  });
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -64,6 +72,7 @@ export function PersonalOkrPeriodReviewDraftModal({
       const res = await generatePersonalPeriodReviewDraft(contextText);
       setResult({ reviewText: res.review_text, basis: res.basis });
       setText(res.review_text);
+      setBaselineText(res.review_text);
     } catch (e) {
       setError(formatErrorForUser("下書きの生成に失敗しました", e));
     } finally {
@@ -80,6 +89,7 @@ export function PersonalOkrPeriodReviewDraftModal({
       if (!ok) return;
     }
     onApply(text);
+    setBaselineText(text);
     showToast(`${periodLabel}の全体の振り返り本文に反映しました（保存するには「振り返りを保存」を押してください）`);
   };
 
@@ -175,7 +185,7 @@ export function PersonalOkrPeriodReviewDraftModal({
 
         <div style={{ ...MODAL_FOOTER_STYLE, display: "flex", justifyContent: "flex-end", gap: "8px", padding: "12px 20px", borderTop: "1px solid var(--color-border-primary)" }}>
           <button
-            onClick={onClose}
+            onClick={() => void requestClose()}
             style={{ fontFamily: "inherit", fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}
           >閉じる</button>
           <button

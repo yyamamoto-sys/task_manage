@@ -22,7 +22,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type { Member, PersonalPeriodReview, PersonalPeriodKind, Quarter } from "../../../lib/localData/types";
 import type { KrPeriodRow, PeriodReference } from "../../../lib/personalOkr/periodReviewReference";
-import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
+import { parseEvalPctInput, computeMonthReviewDirty, syncEditedValue, evalPctToRaw } from "../../../lib/personalOkr/monthReviewForm";
 import { isPeriodReviewUniqueViolation, PERIOD_REVIEW_DUPLICATE_MESSAGE } from "../../../lib/personalOkr/periodReviewSaveError";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import type { ActualActivitiesAvailability } from "../../../lib/personalOkr/actualActivitiesAvailability";
@@ -92,14 +92,31 @@ export function PersonalPeriodReviewBlock({
   const [error, setError] = useState<string | null>(null);
   const [draftModalOpen, setDraftModalOpen] = useState(false);
 
+  // 期間（種別・年度・四半期・月）が変わったときは全欄を保存済み値へ入れ替える。同じ期間のまま
+  // record が更新されたとき（実施記録の保存で record.id が生まれた等）は、未編集の欄だけ同期し
+  // 書きかけの欄は残す（M60）。
+  const syncedRef = useRef<{ key: string; review: string; self: string; gm: string; comment: string } | null>(null);
   useEffect(() => {
-    setReviewText(record?.review_text ?? "");
-    setSelfEvalRaw(record?.self_eval_pct != null ? String(record.self_eval_pct) : "");
-    setGmEvalRaw(record?.gm_eval_pct != null ? String(record.gm_eval_pct) : "");
-    setGmComment(record?.gm_comment ?? "");
-    setError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodKind, fiscalYear, quarter, month, record?.id, record?.review_text]);
+    const key = `${periodKind}::${fiscalYear}::${quarter}::${month ?? ""}`;
+    const next = {
+      key, review: record?.review_text ?? "", self: evalPctToRaw(record?.self_eval_pct),
+      gm: evalPctToRaw(record?.gm_eval_pct), comment: record?.gm_comment ?? "",
+    };
+    const prev = syncedRef.current;
+    syncedRef.current = next;
+    if (!prev || prev.key !== key) {
+      setReviewText(next.review);
+      setSelfEvalRaw(next.self);
+      setGmEvalRaw(next.gm);
+      setGmComment(next.comment);
+      setError(null);
+      return;
+    }
+    setReviewText(c => syncEditedValue(c, prev.review, next.review));
+    setSelfEvalRaw(c => syncEditedValue(c, prev.self, next.self));
+    setGmEvalRaw(c => syncEditedValue(c, prev.gm, next.gm));
+    setGmComment(c => syncEditedValue(c, prev.comment, next.comment));
+  }, [periodKind, fiscalYear, quarter, month, record?.review_text, record?.self_eval_pct, record?.gm_eval_pct, record?.gm_comment]);
 
   const dirty = computeMonthReviewDirty(
     { reviewText, selfEvalRaw, gmEvalRaw, gmComment },

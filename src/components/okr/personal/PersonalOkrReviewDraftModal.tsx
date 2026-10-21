@@ -32,6 +32,7 @@ import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
+import { useConfirmClose } from "../../../hooks/useConfirmClose";
 
 interface Props {
   krLabel: string;
@@ -72,6 +73,9 @@ export function PersonalOkrReviewDraftModal({
   // 初期値：①月のreview_text ②旧draftRow.edited_text（救済） ③draft_json.review_text
   const initialText = monthReviewText ?? draftRow?.edited_text ?? draftPayload?.review_text ?? "";
   const [editedText, setEditedText] = useState(initialText);
+  // M53：「閉じる」確認用の基準。表示を決めた時点（初回同期・再生成）と保存成功の時点の本文。
+  // 保存ボタンの dirty（月の review_text との差）とは別物（救済値の表示だけで確認が出ないようにする）。
+  const [baselineText, setBaselineText] = useState(initialText);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   // 「初回の同期（優先順位で決める）」と「再生成による同期（常に新しい生成結果で上書き）」を
@@ -83,11 +87,14 @@ export function PersonalOkrReviewDraftModal({
     if (!initializedRef.current) {
       initializedRef.current = true;
       setEditedText(initialText);
+      setBaselineText(initialText);
       return;
     }
     // 🔴 再生成時：review_textは自動上書きしないため、優先順位のままだと古い保存値に
     // 戻ってしまう。ここでは常に新しい生成結果をテキストエリアへ差し替える（保存は人が押す）。
-    setEditedText(draftPayload?.review_text ?? draftRow?.edited_text ?? "");
+    const regenerated = draftPayload?.review_text ?? draftRow?.edited_text ?? "";
+    setEditedText(regenerated);
+    setBaselineText(regenerated);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftRow]);
 
@@ -96,6 +103,12 @@ export function PersonalOkrReviewDraftModal({
   // 🔴 dirtyの基準は「実際に保存済みの月のreview_text」。旧draftRow.edited_text等の救済値が
   // 表示されているだけで review_text 自体は未保存、というケースでも保存ボタンを押せるようにする。
   const dirty = editedText !== (monthReviewText ?? "");
+  const requestClose = useConfirmClose({
+    dirty: editedText !== baselineText,
+    busy: saving,
+    message: "編集した下書きは保存されていません。閉じますか？",
+    onClose,
+  });
 
   const handleGenerateClick = async () => {
     // 🔴 既に振り返り本文がある状態で再生成すると、確認なしにテキストエリアの表示が
@@ -116,6 +129,7 @@ export function PersonalOkrReviewDraftModal({
     setSaveError(null);
     try {
       await onSaveEdit(editedText);
+      setBaselineText(editedText);
       showToast("振り返り本文に保存しました");
     } catch (e) {
       setSaveError(formatErrorForUser("編集の保存に失敗しました", e));
@@ -262,7 +276,7 @@ export function PersonalOkrReviewDraftModal({
 
         <div style={{ ...MODAL_FOOTER_STYLE, display: "flex", justifyContent: "flex-end", gap: "8px", padding: "12px 20px", borderTop: "1px solid var(--color-border-primary)" }}>
           <button
-            onClick={onClose}
+            onClick={() => void requestClose()}
             style={{ fontFamily: "inherit", fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}
           >閉じる</button>
         </div>

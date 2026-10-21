@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from "uuid";
 import type { Member, PersonalKr, PersonalKrBand, PersonalKrMonth } from "../../../lib/localData/types";
 import type { MonthTemporalStatus } from "../../../lib/personalOkr/quarterMonths";
 import { mergeMonthRecord } from "../../../lib/personalOkr/monthRecordMerge";
-import { parseEvalPctInput, computeMonthReviewDirty } from "../../../lib/personalOkr/monthReviewForm";
+import { parseEvalPctInput, computeMonthReviewDirty, syncEditedValue, evalPctToRaw } from "../../../lib/personalOkr/monthReviewForm";
 import { buildKintoneReviewCopyText } from "../../../lib/personalOkr/kintoneFormat";
 import { registerUnsavedEditor, unregisterUnsavedEditor } from "../../../lib/editing/unsavedEditorRegistry";
 import { formatErrorForUser } from "../../../lib/errorMessage";
@@ -73,16 +73,31 @@ export function MonthReviewBlock({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // kr・monthが変わったとき、または月レコードのreview_text（他画面＝下書きモーダルからの
-  // 保存）が変わったときに、下書きを最新の保存済み値へ同期する。
+  // kr・monthが変わったときは全欄を保存済み値へ入れ替える。同じKR・月のまま月レコードが更新された
+  // ときは（下書きモーダルからの保存・他ブロックの保存で record.id が生まれた等）、未編集の欄だけ
+  // 新しい保存済み値に同期し、書きかけの欄は残す（M60）。
+  const syncedRef = useRef<{ key: string; review: string; self: string; gm: string; comment: string } | null>(null);
   useEffect(() => {
-    setReviewText(monthRecord?.review_text ?? "");
-    setSelfEvalRaw(monthRecord?.self_eval_pct != null ? String(monthRecord.self_eval_pct) : "");
-    setGmEvalRaw(monthRecord?.gm_eval_pct != null ? String(monthRecord.gm_eval_pct) : "");
-    setGmComment(monthRecord?.gm_comment ?? "");
-    setError(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [kr.id, monthStr, monthRecord?.id, monthRecord?.review_text]);
+    const key = `${kr.id}::${monthStr}`;
+    const next = {
+      key, review: monthRecord?.review_text ?? "", self: evalPctToRaw(monthRecord?.self_eval_pct),
+      gm: evalPctToRaw(monthRecord?.gm_eval_pct), comment: monthRecord?.gm_comment ?? "",
+    };
+    const prev = syncedRef.current;
+    syncedRef.current = next;
+    if (!prev || prev.key !== key) {
+      setReviewText(next.review);
+      setSelfEvalRaw(next.self);
+      setGmEvalRaw(next.gm);
+      setGmComment(next.comment);
+      setError(null);
+      return;
+    }
+    setReviewText(c => syncEditedValue(c, prev.review, next.review));
+    setSelfEvalRaw(c => syncEditedValue(c, prev.self, next.self));
+    setGmEvalRaw(c => syncEditedValue(c, prev.gm, next.gm));
+    setGmComment(c => syncEditedValue(c, prev.comment, next.comment));
+  }, [kr.id, monthStr, monthRecord?.review_text, monthRecord?.self_eval_pct, monthRecord?.gm_eval_pct, monthRecord?.gm_comment]);
 
   const dirty = computeMonthReviewDirty(
     { reviewText, selfEvalRaw, gmEvalRaw, gmComment },

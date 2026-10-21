@@ -8,7 +8,7 @@
 // グループKR・TFのピッカーは表示中の部署（currentGroupId）で絞る（v3.02の既存の流儀。
 // QuickAddTaskModal.tsx/TaskEditModal.tsx と同じ deptScope.ts を使う）。
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KeyResult, Objective, PersonalKr, PersonalKrKind, PersonalKrMonth, TaskForce, Quarter,
@@ -22,6 +22,7 @@ import { resolveEffectiveWeightPct } from "../../../lib/personalOkr/krMonthScope
 import { isActiveMonthIndexesColumnMissing, ACTIVE_MONTH_INDEXES_MISSING_MESSAGE } from "../../../lib/personalOkr/activeMonthIndexesSaveError";
 import { formatErrorForUser } from "../../../lib/errorMessage";
 import { confirmDialog } from "../../../lib/dialog";
+import { useConfirmClose } from "../../../hooks/useConfirmClose";
 
 const KR_KIND_OPTIONS: { value: PersonalKrKind; label: string }[] = [
   { value: "group_kr", label: "グループKR紐づけ" },
@@ -94,6 +95,21 @@ export function PersonalKrFormModal({
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // M53：初期値から変わったかで dirty を判定する（初回レンダーのスナップショットと比べる＝開いた直後は false）
+  const snapshot = JSON.stringify([
+    fiscalYear, quarter, krKind, keyResultId, taskForceId, label, weightPct, activeMonthIndexes,
+    category, activity, strengthRole, weaknessRole, criteria, supplement,
+  ]);
+  const initialSnapshotRef = useRef<string | null>(null);
+  if (initialSnapshotRef.current === null) initialSnapshotRef.current = snapshot;
+  const doneRef = useRef(false);
+  const requestClose = useConfirmClose({
+    dirty: snapshot !== initialSnapshotRef.current && !doneRef.current,
+    busy: saving || deleting,
+    message: "入力した内容は保存されていません。閉じますか？",
+    onClose,
+  });
 
   const krsInGroup = useMemo(
     () => keyResultsInGroup(keyResults, objectives, currentGroupId),
@@ -171,6 +187,7 @@ export function PersonalKrFormModal({
     };
     try {
       await onSave(kr);
+      doneRef.current = true;
       onClose();
     } catch (e) {
       // 🔴🔴 仕様書§W2（最重要）：active_month_indexes列が未適用（マイグレーション未適用の窓）
@@ -193,6 +210,7 @@ export function PersonalKrFormModal({
     setError(null);
     try {
       await onDelete();
+      doneRef.current = true;
       onClose();
     } catch (e) {
       setError(formatErrorForUser("削除に失敗しました", e));
@@ -202,7 +220,7 @@ export function PersonalKrFormModal({
 
   return (
     // eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events
-    <div style={modalOverlayStyle(320)} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <div style={modalOverlayStyle(320)} onClick={e => { if (e.target === e.currentTarget) void requestClose(); }}>
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         style={{ ...modalBoxStyle("min(560px, 100%)"), background: "var(--color-bg-primary)", borderRadius: "var(--radius-lg)", boxShadow: "0 24px 64px rgba(0,0,0,0.3)" }}
@@ -217,7 +235,7 @@ export function PersonalKrFormModal({
               Kintone「個人OKR設定フォーム」の個人KRをそのまま登録します。編集はここで、評価の確定はKintone側です。
             </div>
           </div>
-          <button onClick={onClose} aria-label="閉じる" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}>✕</button>
+          <button onClick={() => void requestClose()} aria-label="閉じる" style={{ background: "transparent", border: "none", cursor: "pointer", fontSize: "20px", color: "var(--color-text-tertiary)", padding: "4px", lineHeight: 1 }}>✕</button>
         </div>
 
         <div style={{ ...MODAL_BODY_STYLE, padding: "16px 18px" }}>
@@ -356,7 +374,7 @@ export function PersonalKrFormModal({
             >{deleting ? "削除中…" : "削除"}</button>
           )}
           <span style={{ flex: 1 }} />
-          <button onClick={onClose} disabled={saving || deleting} style={{ padding: "8px 14px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>キャンセル</button>
+          <button onClick={() => void requestClose()} disabled={saving || deleting} style={{ padding: "8px 14px", fontSize: "12px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}>キャンセル</button>
           <button onClick={handleSave} disabled={saving || deleting} style={{ padding: "8px 16px", fontSize: "12px", fontWeight: 700, background: "var(--color-brand)", color: "#fff", border: "none", borderRadius: "var(--radius-md)", cursor: "pointer" }}>
             {saving ? "保存中…" : "保存"}
           </button>

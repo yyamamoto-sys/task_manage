@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseEvalPctInput, computeMonthReviewDirty } from "../monthReviewForm";
+import { parseEvalPctInput, computeMonthReviewDirty, syncEditedValue, evalPctToRaw } from "../monthReviewForm";
 
 describe("parseEvalPctInput", () => {
   it("空欄はnull・エラーなし", () => {
@@ -65,5 +65,21 @@ describe("computeMonthReviewDirty", () => {
       { reviewText: "既存の本文", selfEvalRaw: "abc", gmEvalRaw: "70", gmComment: "既存のコメント" },
       saved,
     )).toBe(true);
+  });
+});
+
+describe("syncEditedValue（M60：保存済み値の更新で編集中の欄を消さない）", () => {
+  it("未編集（直前の保存済み値のまま）なら新しい保存済み値に差し替える", () => {
+    expect(syncEditedValue("旧", "旧", "新")).toBe("新");
+  });
+  it("編集中なら保存済み値が変わっても入力を残す", () => {
+    expect(syncEditedValue("書きかけ", "", "")).toBe("書きかけ");
+    expect(syncEditedValue("書きかけ", "旧", "新")).toBe("書きかけ");
+  });
+  it("evalPctToRaw：null/undefinedは空欄・数値は文字列", () => {
+    expect(evalPctToRaw(null)).toBe("");
+    expect(evalPctToRaw(undefined)).toBe("");
+    expect(evalPctToRaw(0)).toBe("0");
+    expect(evalPctToRaw(82.5)).toBe("82.5");
   });
 });
