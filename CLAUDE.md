@@ -3083,6 +3083,12 @@ Section 39制定前のもので、包む場合は上記の `@>` 形式に書き�
 - [ ] USING/WITH CHECK句でSECURITY DEFINER関数を呼んでいるか？ → `(SELECT ...)`で包んだか？
 - [ ] 式の意味・条項の順序・キャストを変えていないか？（包むだけで、ロジックは1文字も変えない）
 - [ ] `schema.sql`の該当ポリシーも同期したか？
+- [ ] 🔴 **新しいテーブルを作ったら、同じマイグレーションに GRANT を書いたか？**（2026-10-30以降、Supabase は public の新テーブルに Data API 権限を自動付与しない。書かないと RLS が正しくても `permission denied`）
+  ```sql
+  grant select, insert, update, delete on public.新テーブル to authenticated;
+  grant select, insert, update, delete on public.新テーブル to service_role;
+  ```
+  anon には付けない（ログイン前提・anon 向けポリシーは無い）。`schema.sql` 末尾の `$grant_tables$` ブロックの配列にもテーブル名を足す。
 
 ---
 

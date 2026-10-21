@@ -5017,3 +5017,76 @@ $fn_cleanup_app_feedback$;
 REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM anon;
 REVOKE ALL ON FUNCTION public.cleanup_app_feedback() FROM authenticated;
+
+-- ============================================================
+-- テーブル権限（Data API 用 GRANT）
+-- 2026-10-30以降、Supabase は public に新設したテーブルへ Data API の権限を自動付与しなくなった。
+-- 既存の本番・devは従来の自動付与が残るため影響なし。本ファイルから新しいプロジェクトを
+-- 作り直す場合に備えて明示する。anon には付けない（ログイン前提で anon 向けポリシーも無い）。
+-- 新しいテーブルを足したら、マイグレーションと本ブロックの両方に GRANT を書くこと（CLAUDE.md Section 39）。
+-- ============================================================
+DO $grant_tables$
+DECLARE t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY[
+    'groups',
+    'members',
+    'objectives',
+    'key_results',
+    'quarterly_objectives',
+    'task_forces',
+    'quarterly_kr_task_forces',
+    'todos',
+    'projects',
+    'project_task_forces',
+    'tasks',
+    'task_task_forces',
+    'task_projects',
+    'task_dependencies',
+    'milestones',
+    'admin_change_logs',
+    'ai_usage_logs',
+    'guest_ai_usage_daily',
+    'guest_ai_usage_global_daily',
+    'member_tags',
+    'member_tag_members',
+    'kr_sessions',
+    'kr_declarations',
+    'project_analyses',
+    'kr_meeting_notes',
+    'kr_note_tf_entries',
+    'okr_analyses',
+    'kr_reports',
+    'loading_tips',
+    'member_widget_layouts',
+    'kr_quarter_plans',
+    'personal_krs',
+    'personal_kr_months',
+    'personal_kr_weeks',
+    'personal_kr_week_tasks',
+    'personal_kr_memos',
+    'personal_kr_outlooks',
+    'personal_kr_review_drafts',
+    'personal_period_reviews',
+    'project_invites',
+    'backup_runs',
+    'backup_objects',
+    'backup_exports',
+    'entity_change_logs',
+    'reminder_runs',
+    'reminder_send_log',
+    'notification_prefs',
+    'push_subscriptions',
+    'in_app_notifications',
+    'client_error_logs',
+    'client_error_reporters',
+    'notification_cursors',
+    'admin_messages',
+    'admin_message_recipients',
+    'project_sections',
+    'app_feedback'
+  ] LOOP
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON public.%I TO authenticated, service_role', t);
+  END LOOP;
+END;
+$grant_tables$;
