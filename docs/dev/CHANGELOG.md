@@ -8372,3 +8372,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * M53：PersonalKrFormModal／PersonalOkrReviewDraftModal／PersonalOkrPeriodReviewDraftModal を FeedbackModal（Section 82）と同じ作法に統一。新設フック hooks/useConfirmClose.ts が useUnsavedEditor(dirty) の登録と、dirty のときだけ閉じる操作（背景クリック・閉じる/キャンセル/✕・Esc）の前の confirmDialog（tone=danger）を担う。dirty は「初期値（初回レンダー／生成直後／反映・保存直後）から変わったか」で判定し、開いた直後は出ない。保存中・削除中は閉じる操作を無視。ConfirmModal（role=dialog）が前面にある間の Esc はフックが無視する。文言は個人OKR系の流儀に合わせて直書き（i18nキーなし）。
 # * M60：MonthReviewBlock／PersonalPeriodReviewBlock／ActualActivitiesBlock の「保存済み値への同期」useEffect が、record.id・review_text の変化のたびに全欄を保存済み値で上書きしていた。新規の月・期間で「実施記録」や下書きモーダルの保存を先にすると record が生まれて id が変わり、書きかけの振り返り本文・評価%・GMコメントが無言で消えた。KR/月・期間が変わったときだけ全欄入れ替え、同じキーのままの更新は「直前の保存済み値のまま（未編集）」の欄だけ同期する（monthReviewForm.ts の syncEditedValue）。
 # * テスト：useConfirmClose.test.ts（新規）・monthReviewForm.test.ts（syncEditedValue）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.170（2026-10-21）：個人OKRのKintone取込の登録処理の修正＋取込・下書きモーダルに未保存確認（巡回52回目・D OKR サブ領域④。docs/REFACTORING.md M53残り・M63・M64）
+#
+# * 登録途中の失敗後に再実行すると新規KRが二重に作られた不具合：新規KR・月のidを確認画面の一時idで固定。
+# * 既存KRの月次計画を読めないまま登録が進む経路：unloadedKrIds で読み込み完了を確認し、足りなければ書かずに止める。await後はストアの現在値を読む。
+# * M53残り：PersonalOkrImportModal・PersonalOkrPlanDraftModal に useConfirmClose を適用（WeekTaskLinkModalは書き込みが即時確定のため対象外）。
+# * テスト：importApplyPlan.test.ts（unloadedKrIds・固定id）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

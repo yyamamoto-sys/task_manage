@@ -33,6 +33,7 @@ import { formatErrorForUser } from "../../../lib/errorMessage";
 import { showToast } from "../../common/Toast";
 import { GuestAiQuotaNotice } from "../../common/GuestAiQuotaNotice";
 import { confirmDialog } from "../../../lib/dialog";
+import { useConfirmClose } from "../../../hooks/useConfirmClose";
 
 export type { PlanDraftFields };
 
@@ -81,6 +82,15 @@ export function PersonalOkrPlanDraftModal({
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PersonalOkrPlanDraftResult | null>(null);
   const [fields, setFields] = useState<PlanDraftFields>(EMPTY_FIELDS);
+  // M53（52回目）：「閉じる」確認用の基準。生成直後の4欄と、計画欄へ反映した時点の4欄。
+  // 生成しただけで触っていない下書きは確認なしで閉じる（M62＝仕様判断待ち）。
+  const [baseline, setBaseline] = useState<PlanDraftFields>(EMPTY_FIELDS);
+  const dirty = FIELD_DEFS.some(f => fields[f.key] !== baseline[f.key]);
+  const requestClose = useConfirmClose({
+    dirty,
+    message: "編集した下書きは計画欄に反映されていません。閉じますか？",
+    onClose,
+  });
 
   const hasDraft = !!result;
 
@@ -89,13 +99,15 @@ export function PersonalOkrPlanDraftModal({
     setError(null);
     try {
       const res = await generatePersonalKrPlanDraft(contextText);
-      setResult(res);
-      setFields({
+      const generated = {
         positioning: res.positioning,
         activities: res.activities,
         targetAndEvidence: res.target_and_evidence,
         risks: res.risks,
-      });
+      };
+      setResult(res);
+      setFields(generated);
+      setBaseline(generated);
     } catch (e) {
       setError(formatErrorForUser("下書きの生成に失敗しました", e));
     } finally {
@@ -113,6 +125,7 @@ export function PersonalOkrPlanDraftModal({
       if (!ok) return;
     }
     onApply(fields);
+    setBaseline(fields);
     showToast(`${targetMonthLabel}の計画欄に反映しました（保存するには「${targetMonthLabel}の計画を保存」を押してください）`);
   };
 
@@ -272,7 +285,7 @@ export function PersonalOkrPlanDraftModal({
 
         <div style={{ ...MODAL_FOOTER_STYLE, display: "flex", justifyContent: "flex-end", gap: "8px", padding: "12px 20px", borderTop: "1px solid var(--color-border-primary)" }}>
           <button
-            onClick={onClose}
+            onClick={() => void requestClose()}
             style={{ fontFamily: "inherit", fontSize: "12px", padding: "7px 16px", background: "transparent", border: "1px solid var(--color-border-primary)", borderRadius: "var(--radius-md)", color: "var(--color-text-secondary)", cursor: "pointer" }}
           >閉じる</button>
           <button

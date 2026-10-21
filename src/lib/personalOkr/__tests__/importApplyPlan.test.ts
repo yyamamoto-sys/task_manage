@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportApplyPlan, type ImportKrDraftInput, type ImportMonthDraftInput } from "../importApplyPlan";
+import { buildImportApplyPlan, unloadedKrIds, type ImportKrDraftInput, type ImportMonthDraftInput } from "../importApplyPlan";
 import type { PersonalKr, PersonalKrMonth } from "../../localData/types";
 
 function makeMonthDraft(overrides: Partial<ImportMonthDraftInput>): ImportMonthDraftInput {
@@ -166,5 +166,27 @@ describe("buildImportApplyPlan — 月次計画の更新/新規判定", () => {
       nextDisplayOrderStart: 0,
     });
     expect(plan.months).toHaveLength(0);
+  });
+});
+
+describe("unloadedKrIds（52回目：読み込み失敗のまま登録を進めない）", () => {
+  it("読み込み済みでないKRのidだけ返す", () => {
+    expect(unloadedKrIds(["a", "b", "c"], new Set(["b"]))).toEqual(["a", "c"]);
+  });
+  it("全て読み込み済み・対象なしなら空", () => {
+    expect(unloadedKrIds(["a"], new Set(["a"]))).toEqual([]);
+    expect(unloadedKrIds([], new Set())).toEqual([]);
+  });
+});
+
+describe("buildImportApplyPlan：再実行の冪等性（52回目）", () => {
+  it("同じ入力（固定id）で2回組むと新規KR・月のidが一致する＝途中失敗後の再登録で二重作成にならない", () => {
+    const drafts = [makeKrDraft({ newId: "t-kr", months: [makeMonthDraft({ newId: "t-month" })] })];
+    const args = { ...BASE_PARAMS, drafts, existingKrsById: {}, existingMonthsByKrIdAndIndex: {}, nextDisplayOrderStart: 0 };
+    const a = buildImportApplyPlan(args);
+    const b = buildImportApplyPlan(args);
+    expect(b.krs[0].id).toBe(a.krs[0].id);
+    expect(b.months[0].id).toBe(a.months[0].id);
+    expect(a.krs[0].id).toBe("t-kr");
   });
 });

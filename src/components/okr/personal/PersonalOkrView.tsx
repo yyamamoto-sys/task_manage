@@ -550,7 +550,6 @@ export function PersonalOkrView({ currentUser }: Props) {
           currentUser={currentUser}
           currentGroupId={currentGroupId}
           allPersonalKrs={krs}
-          monthsByKr={monthsByKr}
           ensureKrDetailLoaded={ensureKrDetailLoaded}
           saveKr={saveKr}
           saveMonth={saveMonth}

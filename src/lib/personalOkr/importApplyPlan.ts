@@ -153,3 +153,14 @@ export function buildImportApplyPlan(params: BuildImportApplyPlanParams): Import
 
   return { krs, months };
 }
+
+/**
+ * 登録前に「月次計画まで読み込めていること」を確かめる。
+ * ensureKrDetailLoaded は取得に失敗しても例外を投げずに detailError を立てるだけなので、
+ * 呼び出し側が await しただけで安心すると、既存KRの月次計画が空に見えたまま登録を進めてしまう
+ * （既存月の id と band_override を引き継げず、UNIQUE(personal_kr_id, month) 違反や
+ * 人が決めたバンドの消去につながる）。読み込めていない KR の id を返す。
+ */
+export function unloadedKrIds(targetIds: readonly string[], loadedIds: ReadonlySet<string>): string[] {
+  return targetIds.filter(id => !loadedIds.has(id));
+}

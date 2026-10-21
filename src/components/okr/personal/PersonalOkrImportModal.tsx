@@ -29,7 +29,10 @@ import {
 } from "../../../lib/ai/personalOkrImportExtractor";
 import { mapKrKindHint, parseBandValue, parseWeightPct, parsePercentValue } from "../../../lib/personalOkr/importFieldParse";
 import { rankExistingPersonalKrMatches, rankGroupTfMatches, pickDefaultMapping } from "../../../lib/personalOkr/importMatch";
-import { buildImportApplyPlan, type ImportKrDraftInput, type ImportMonthDraftInput } from "../../../lib/personalOkr/importApplyPlan";
+import { buildImportApplyPlan, unloadedKrIds, type ImportKrDraftInput, type ImportMonthDraftInput } from "../../../lib/personalOkr/importApplyPlan";
+import { usePersonalOkrUiStore } from "../../../stores/personalOkrUiStore";
+import { useConfirmClose } from "../../../hooks/useConfirmClose";
+import { confirmDialog } from "../../../lib/dialog";
 import { keyResultsInGroup, taskForcesInGroup, DEFAULT_OKR_GROUP_ID } from "../../../lib/okr/deptScope";
 import { BAND_VALUES, BAND_LABELS, isBandDisabled } from "../../../lib/personalOkr/bandOptions";
 import { isPersonalOkrImportTextTooLong } from "../../../lib/personalOkr/importCharWarning";
@@ -122,7 +125,6 @@ interface Props {
   currentGroupId: string | null;
   /** 本人の全期間のpersonal_kr（対応づけ候補の母集団。usePersonalOkrUiStore.krs） */
   allPersonalKrs: PersonalKr[];
-  monthsByKr: Record<string, PersonalKrMonth[]>;
   ensureKrDetailLoaded: (krId: string) => Promise<void>;
   saveKr: (kr: PersonalKr) => Promise<void>;
   saveMonth: (month: PersonalKrMonth) => Promise<void>;
@@ -134,7 +136,7 @@ interface Props {
 }
 
 export function PersonalOkrImportModal({
-  onClose, currentUser, currentGroupId, allPersonalKrs, monthsByKr, ensureKrDetailLoaded,
+  onClose, currentUser, currentGroupId, allPersonalKrs, ensureKrDetailLoaded,
   saveKr, saveMonth, keyResults, taskForces, objectives, defaultFiscalYear, defaultQuarter,
 }: Props) {
   const [step, setStep] = useState<Step>("input");
@@ -147,6 +149,8 @@ export function PersonalOkrImportModal({
   const [fiscalYear, setFiscalYear] = useState(defaultFiscalYear);
   const [quarter, setQuarter] = useState<Quarter>(defaultQuarter);
   const [krDrafts, setKrDrafts] = useState<KrDraft[]>([]);
+  // M53（52回目）：確認画面で「AIが抽出した直後」の内容。ここからの差を未保存の編集とみなす。
+  const [reviewBaseline, setReviewBaseline] = useState<string | null>(null);
 
   // 呼び出しを2回に分けたことに伴う実進度（1/2 個人KRを抽出中／2/2 月次計画を抽出中）。
   // 無言で長時間待たせないため、時間ベースの演出ではなく実際の呼び出し完了状況を表示する。
@@ -270,6 +274,9 @@ export function PersonalOkrImportModal({
         };
       });
       setKrDrafts(drafts);
+      setReviewBaseline(JSON.stringify({
+        docType: result.detected_doc_type, fiscalYear: effectiveFiscalYear, quarter: effectiveQuarter, krDrafts: drafts,
+      }));
       setStep("review");
     } catch (e) {
       setError(formatErrorForUser("AI解析に失敗しました", e));
@@ -288,7 +295,22 @@ export function PersonalOkrImportModal({
     setError(null);
     // 対応づけ先の月次計画を確実に読み込んでから計画を組む（重複作成防止。ファイル冒頭コメント参照）
     const targetIds = Array.from(new Set(krDrafts.filter(d => d.checked && d.mappedTo !== NEW_KR_VALUE).map(d => d.mappedTo)));
-    await Promise.all(targetIds.map(id => ensureKrDetailLoaded(id)));
+    try {
+      await Promise.all(targetIds.map(id => ensureKrDetailLoaded(id)));
+    } catch (e) {
+      setError(formatErrorForUser("既存の個人KRの読み込みに失敗しました", e));
+      setStep("review");
+      return;
+    }
+    // 🔴 await後はクロージャのmonthsByKrが古い（読み込み前の値）ため、ストアの現在値を読む。
+    // 取得失敗は例外にならないので、読み込めたかを明示的に確かめて、足りなければ書き込まずに止める。
+    const fresh = usePersonalOkrUiStore.getState();
+    if (unloadedKrIds(targetIds, fresh.detailLoadedKrIds).length > 0) {
+      setError("対応づけ先の既存KRの月次計画を読み込めませんでした。何も登録していません。通信状況を確認して、もう一度「登録」を押してください。");
+      setStep("review");
+      return;
+    }
+    const monthsByKr = fresh.monthsByKr;
 
     const nowIso = new Date().toISOString();
     const sourceLabel = `個人OKR${docType === "quarterly" ? "設定フォーム" : "_月次振返り記録"} ${quarter}・${new Date().toLocaleDateString("ja-JP")}取込`;
@@ -302,7 +324,9 @@ export function PersonalOkrImportModal({
     const drafts: ImportKrDraftInput[] = krDrafts.map(d => ({
       checked: d.checked && !!d.label.trim(),
       mappedExistingId: d.mappedTo === NEW_KR_VALUE ? null : d.mappedTo,
-      newId: uuidv4(),
+      // 🔴 登録の途中で失敗して再実行しても同じ行を上書きするよう、idは確認画面の一時idで固定する
+      // （毎回uuidv4()だと、1回目に保存済みの新規KRが再実行で二重に作られる）
+      newId: d.tempId,
       krKind: d.krKind,
       keyResultId: d.keyResultId || null,
       taskForceId: d.taskForceId || null,
@@ -317,7 +341,7 @@ export function PersonalOkrImportModal({
       months: docType === "quarterly" ? [] : d.months.map((m): ImportMonthDraftInput => ({
         checked: m.checked,
         monthIndex: m.monthIndex,
-        newId: uuidv4(),
+        newId: m.tempId,
         positioning: m.positioning || null,
         activities: m.activities || null,
         targetAndEvidence: m.targetAndEvidence || null,
@@ -361,7 +385,7 @@ export function PersonalOkrImportModal({
     }
   }, [
     krDrafts, docType, quarter, fiscalYear, currentUser.id, currentGroupId, existingKrsById,
-    existingKrsInPeriod.length, monthsByKr, ensureKrDetailLoaded, saveKr, saveMonth,
+    existingKrsInPeriod.length, ensureKrDetailLoaded, saveKr, saveMonth,
   ]);
 
   const updateKr = (tempId: string, patch: Partial<KrDraft>) =>
@@ -371,9 +395,24 @@ export function PersonalOkrImportModal({
       ? { ...d, months: d.months.map(m => (m.tempId === monthTempId ? { ...m, ...patch } : m)) }
       : d)));
 
-  const handleReset = () => {
+  const reviewDirty = step === "review" && reviewBaseline !== null
+    && JSON.stringify({ docType, fiscalYear, quarter, krDrafts }) !== reviewBaseline;
+  const requestClose = useConfirmClose({
+    dirty: step === "input" ? (rawText.trim().length > 0 || !!attachment) : step === "analyzing" ? true : reviewDirty,
+    busy: step === "applying",
+    message: step === "input" || step === "analyzing"
+      ? "貼り付け・添付した内容は取込まれていません。閉じますか？"
+      : "確認画面で編集した内容はまだ登録されていません。閉じますか？",
+    onClose,
+  });
+
+  const handleResetNow = () => {
     setStep("input"); setRawText(""); setAttachment(null); setFileError(null); setError(null);
-    setKrDrafts([]); setApplyResults(null); setImportSourceInfo(null); setImportWarnings([]);
+    setKrDrafts([]); setReviewBaseline(null); setApplyResults(null); setImportSourceInfo(null); setImportWarnings([]);
+  };
+  const handleReset = async () => {
+    if (reviewDirty && !(await confirmDialog("確認画面で編集した内容を破棄して最初からやり直します。よろしいですか？", { tone: "danger", confirmLabel: "破棄してやり直す" }))) return;
+    handleResetNow();
   };
 
   const charCount = rawText.trim().length;
@@ -384,7 +423,7 @@ export function PersonalOkrImportModal({
     <div
       className="animate-overlay"
       style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "stretch", justifyContent: "flex-end" }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+      onClick={e => { if (e.target === e.currentTarget) void requestClose(); }}
     >
       {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
@@ -403,7 +442,7 @@ export function PersonalOkrImportModal({
           {step === "review" && (
             <button onClick={handleReset} style={{ fontSize: "12px", padding: "5px 12px", background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.35)", borderRadius: "var(--radius-sm)", color: "#fff", cursor: "pointer" }}>やり直す</button>
           )}
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}>✕</button>
+          <button onClick={() => void requestClose()} style={{ background: "rgba(255,255,255,0.15)", border: "none", cursor: "pointer", fontSize: "18px", color: "#fff", padding: "4px 8px", lineHeight: 1, borderRadius: "var(--radius-sm)" }}>✕</button>
         </div>
 
         <div style={{ flex: 1, overflow: "auto", padding: "20px" }}>
@@ -471,7 +510,7 @@ export function PersonalOkrImportModal({
           )}
 
           {step === "done" && applyResults && (
-            <DoneStep results={applyResults} onReset={handleReset} onClose={onClose} />
+            <DoneStep results={applyResults} onReset={handleResetNow} onClose={onClose} />
           )}
         </div>
 
