@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.174",
+    date: "2026-10-22",
+    title: "個人OKRの編集画面で、選択肢を Esc で閉じても画面全体が閉じなくなりました",
+    highlights: [
+      "個人OKRの編集画面で、プルダウンの選択肢を開いたまま Esc キーを押すと、選択肢だけでなく編集画面ごと閉じてしまうことがありました。選択肢だけが閉じるようにしました。",
+    ],
+  },
+  {
     version: "v3.173",
     date: "2026-10-22",
     title: "表示が自動で更新されなくなったときの自己回復が、確実に働くようになりました",

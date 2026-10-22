@@ -8403,3 +8403,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #
 # * lib/supabase/realtime.ts：購読チャンネル名を購読ごとに変更（app-sync:<n>・app-sync-optional:<n>）。realtime-js は同名チャンネルを一覧から返し、解除は応答待ちで遅れるため、realtime-silent の自己回復（realtimeEpoch）の張り直しが解除中の古いチャンネルに当たり、購読が張られないまま残っていた。
 # * テスト：realtimeResubscribe.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.174（2026-10-22）：ドロップダウンを Esc で閉じるとモーダルごと閉じる不具合の修正（巡回55回目・共通UI。docs/REFACTORING.md M70）
+#
+# * hooks/useConfirmClose.ts：Esc の判定に role="listbox"（開いている CustomSelect のパネル）を追加（isEscapeOwnedByOverlay）。CustomSelect のパネルに role="listbox" を付与。
+# * テスト：confirmCloseEscape.test.ts（修正前コードで4件とも赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

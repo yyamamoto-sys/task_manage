@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.173
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.174
 #
-最終更新：2026-10-22（v3.173）
+最終更新：2026-10-22（v3.174）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5251,6 +5251,12 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 
 - 🔴 **購読チャンネルの名前は購読ごとに変える**（`realtime.ts` の `seq`：`app-sync:<n>`・`app-sync-optional:<n>`）。realtime-js の `supabase.channel(topic)` は一覧に同名のチャンネルが残っていればそれを返し、`removeChannel` は leave の応答待ちで一覧から消えるまで遅れる。`realtimeEpoch` を進める自己回復（realtime-silent の60秒・Section 77 v3.158）は解除の直後に同期的に購読し直すため、固定名だと解除中の古いチャンネルに `subscribe` しても何も起きず、**購読が無いまま残って状態通知（SUBSCRIBED）も来ない**（再読み込みまで realtime が死ぬ）。`notificationRealtime.ts` は元から名前に連番を付けていた。購読を作る新しいコードも同じにすること。テスト：`lib/supabase/__tests__/realtimeResubscribe.test.ts`（修正前で赤を確認）。
 - 仕様判断待ち：`docs/REFACTORING.md` M68（張り直しの差分取得の起点がセッション開始）・M69（停止からの再開の取りこぼしの窓）。
+
+### v3.174：ドロップダウンを Esc で閉じるとモーダルごと閉じる不具合（巡回55回目・共通UI）
+
+- 🔴 `useConfirmClose`（個人OKRの編集モーダル5つ）の Esc は、`role="dialog"`（ConfirmModal）に加えて **`role="listbox"`（開いている `CustomSelect` のパネル）が DOM にある間は無視する**（`isEscapeOwnedByOverlay`）。以前はドロップダウンを Esc で閉じると同じ Esc でモーダルも閉じ、未編集なら確認なしで閉じていた。`CustomSelect` のパネルに `role="listbox"` を付けたことが前提（テストが検査）。
+- 同型の未対応：`useConfirmClose` 以外の Esc で閉じるモーダルは判定が無い（`docs/REFACTORING.md` M70）。
+- テスト：`hooks/__tests__/confirmCloseEscape.test.ts`（修正前は4件とも赤）。
 
 ---
 

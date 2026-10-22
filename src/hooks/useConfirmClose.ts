@@ -11,6 +11,15 @@ import { useEffect, useRef } from "react";
 import { useUnsavedEditor } from "./useUnsavedEditor";
 import { confirmDialog } from "../lib/dialog";
 
+/**
+ * 確認ダイアログ（ConfirmModal・role="dialog"）や開いているドロップダウン（CustomSelect の
+ * パネル・role="listbox"）が前面にある間の Esc は、そちらを閉じる操作として扱う。
+ * これが無いと、ドロップダウンを Esc で閉じたつもりがモーダルごと閉じる（未編集なら確認なし）。
+ */
+export function isEscapeOwnedByOverlay(doc: Pick<Document, "querySelector">): boolean {
+  return doc.querySelector('[role="dialog"], [role="listbox"]') !== null;
+}
+
 export function useConfirmClose(opts: {
   dirty: boolean;
   busy?: boolean;
@@ -42,8 +51,7 @@ export function useConfirmClose(opts: {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.isComposing || e.defaultPrevented) return;
-      // 確認ダイアログ（ConfirmModal・role="dialog"）が前面に出ている間の Esc は、そちらへの操作として扱う
-      if (document.querySelector('[role="dialog"]')) return;
+      if (isEscapeOwnedByOverlay(document)) return;
       void requestCloseRef.current();
     };
     document.addEventListener("keydown", onKey);

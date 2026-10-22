@@ -183,6 +183,7 @@ export function CustomSelect({
       {open && createPortal(
         <div
           ref={panelRef}
+          role="listbox"
           className="animate-dropdown"
           style={{
             ...panelStyle,
