@@ -8380,3 +8380,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 既存KRの月次計画を読めないまま登録が進む経路：unloadedKrIds で読み込み完了を確認し、足りなければ書かずに止める。await後はストアの現在値を読む。
 # * M53残り：PersonalOkrImportModal・PersonalOkrPlanDraftModal に useConfirmClose を適用（WeekTaskLinkModalは書き込みが即時確定のため対象外）。
 # * テスト：importApplyPlan.test.ts（unloadedKrIds・固定id）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.171（2026-10-22）：Supabase の Disk IO 対策（長く非表示のタブの Realtime 停止・ベル取得の間引き・非表示中の定期取得停止。CLAUDE.md Section 76 の v3.171）
+#
+# * 非表示が10分続いたら app-sync／app-sync-optional／通知の購読を解除（lib/supabase/realtimePause.ts の合図）。前面に戻ったら張り直し、全件再取得（resync）で埋める。差分取得（onFirstSubscribed）は重ねない。realtimeEchoWatch は paused／resuming の間は見張らない。
+# * ベル（InAppNotificationBell）：非表示では未読数を取らない／実行中の要求は重ねず終了後に1回／Realtime が SUBSCRIBED の間は15分・切れているときだけ3分（lib/notifications/bellPolling.ts）。AdminView の AI使用量の30秒 reload も非表示中は止める。
+# * 解除後に古いチャンネルから届く状態通知は無視（realtime.ts・notificationRealtime.ts の disposed）。テスト：realtimePause／bellDiskIo／bellPolling／visibilityPollingWiring ほか（修正前コードで赤くなることを確認済み）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

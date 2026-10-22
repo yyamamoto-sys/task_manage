@@ -111,7 +111,8 @@ describe("自分の操作の直後の取り直し", () => {
     const src = stripComments(read("components/notifications/InAppNotificationBell.tsx"));
     expect(src).toContain("subscribeInAppNotifications(memberId");
     expect(src).toContain("onBellRefreshRequest(");
-    expect(src).toMatch(/setInterval\(\(\) => void refreshCount\(\), FALLBACK_REFRESH_MS\)/);
+    // v3.171：保険のポーリングは非表示では取らず、Realtime が生きている間は間引く（shouldPollBell）
+    expect(src).toMatch(/setInterval\(\(\) => \{[\s\S]*?shouldPollBell\([\s\S]*?\}, BELL_POLL_TICK_MS\)/);
   });
 });
 

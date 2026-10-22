@@ -86,3 +86,31 @@ describe("subscribeInAppNotifications", () => {
     expect(onChange).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("onLive・解除後の状態通知（v3.171）", () => {
+  it("SUBSCRIBED で true、切断・エラーで false、解除で false を伝える", () => {
+    const onLive = vi.fn();
+    const off = subscribeInAppNotifications("m-1", () => {}, onLive);
+    channels[0].subscribeCb!("SUBSCRIBED");
+    expect(onLive).toHaveBeenLastCalledWith(true);
+    channels[0].subscribeCb!("CLOSED");
+    expect(onLive).toHaveBeenLastCalledWith(false);
+    channels[0].subscribeCb!("SUBSCRIBED");
+    expect(onLive).toHaveBeenLastCalledWith(true);
+    off();
+    expect(onLive).toHaveBeenLastCalledWith(false);
+  });
+
+  it("解除した後に、閉じる途中の古いチャンネルから状態通知が来ても無視する（取り直しも onLive も出さない）", () => {
+    const onLive = vi.fn();
+    const onChange = vi.fn();
+    const off = subscribeInAppNotifications("m-1", onChange, onLive);
+    channels[0].subscribeCb!("SUBSCRIBED");
+    off();
+    onLive.mockClear();
+    channels[0].subscribeCb!("SUBSCRIBED");
+    channels[0].subscribeCb!("CLOSED");
+    expect(onLive).not.toHaveBeenCalled();
+    expect(onChange).not.toHaveBeenCalled();
+  });
+});

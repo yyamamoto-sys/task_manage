@@ -111,6 +111,9 @@ export function createRealtimeEchoWatch(
     expectEcho(table: string, id: string, updatedAt?: string): void {
       if (deps.isGuest()) return;
       if (deps.visibility() === "hidden") return;
+      // 長く非表示で購読を止めている間と、再開直後の接続待ちは、エコーが届かなくて当然（v3.171）
+      const channelState = deps.channelState();
+      if (channelState === "paused" || channelState === "resuming") return;
       const key = keyOf(table, id);
       const expected = parseTs(updatedAt);
       if (satisfied(seen.get(key), expected)) return; // エコーの方が先に届いていた

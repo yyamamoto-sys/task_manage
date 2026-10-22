@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.170
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.171
 #
-最終更新：2026-10-21（v3.170）
+最終更新：2026-10-22（v3.171）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5220,6 +5220,21 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - jsdom での mount/unmount 反復計測（メモリ増加の有無は実機の計測で判断する）。
 - ガント・グラフ等の個別の描画最適化・store の配列の上限（今回の調査では増殖経路は見つからなかった）。
 - `MIN_CLIENT_VERSION` の引き上げ・マイグレーション（DB・RLS・Edge Function・localStorage の形式は変更なし）。
+
+### v3.171：Supabase の Disk IO 対策（長く非表示のタブの Realtime 停止・DB を読む定期処理の間引き）
+
+本番は Free・Nano（RAM 411MB・Swap 常時張り付き）で、平日に Disk IO 残量が減っていた。pg_stat_statements で目立ったのは Realtime の変更取得（`realtime.list_changes`）・ベルの `in_app_notifications` 取得（約22万回）・購読の張り直し（`realtime.subscription` への書込 約23万回）。Pro 移管までのつなぎとして、アプリ側で負荷を減らした。DB・RLS・Edge Function の変更なし（`MIN_CLIENT_VERSION` は上げない）。
+
+- **長く非表示のタブは Realtime を切る**：`document` が hidden のまま10分（`HIDDEN_PAUSE_MS`）続いたら、`src/lib/supabase/realtimePause.ts` が「停止」の合図を出す（`installHiddenPause`＝AuthenticatedApp で1回起動。`createHiddenPauseController` が純関数）。購読する側が各自で応じる：`App.tsx` の購読 effect が `subscribeToRealtime` の戻り値（app-sync・app-sync-optional の2チャンネル）を外し、`InAppNotificationBell` が通知チャンネルを外す。**3本とも外れると supabase-js（realtime-js の `removeChannel`）が websocket 自体も閉じる**（`node_modules` の `RealtimeClient.removeChannel` で確認。別途 `disconnect()` は不要）。visible に戻ったら張り直す。
+  - **取りこぼしは全件再取得で埋める**：再開時は `resync()`（`createResyncRunner`＝既存の復帰時の全件 load）を1回。張り直しの `onFirstSubscribed`（差分取得）は `resumed` のとき渡さず、二重に走らせない。非表示から戻ったときの既存の `createHiddenReturnGate`（10分）判定は残し、停止中の復帰は `onVisibility` 側で `isRealtimePaused()` を見て重ねない（30秒後にもう1回 load が走るのを防ぐ）。購読 effect が停止中に作り直されても購読は張らない。
+  - **見張り・状態表示との整合**：停止中は `setRealtimeChannelState("paused")`、再開直後〜最初の購読状態が来るまでは `"resuming"`。`realtimeEchoWatch.expectEcho` はこの2状態のとき見張らない（`realtime-silent` を誤記録しない）。`subscribeToRealtime`／`subscribeInAppNotifications` は解除後に古いチャンネルから届く状態通知を無視する（`disposed`。`createReconnectTracker` の「切断からの復帰」判定にも状態表示にも混ぜない＝停止を切断と誤認して復帰の全件再取得を二重に起こさない）。
+  - **10分未満の非表示では何も変えない**（タイマーが走る前に戻ればクリアするだけ）。
+- **ベルの未読数取得を間引く**（`InAppNotificationBell.tsx`・`src/lib/notifications/bellPolling.ts`）：非表示の間は `refreshCount` が何もしない（Realtime イベント・SW の push・定期のいずれでも。前面に戻ったとき `visibilitychange` で1回だけ取る）。実行中に届いた要求は重ねず、終わってから1回だけ取り直す（`countBusyRef`）。定期取得は1分ごとに `shouldPollBell` で判定：Realtime が SUBSCRIBED（`subscribeInAppNotifications` の第3引数 `onLive`）の間は15分、切れているときだけ従来の3分。**完全には止めない**（`in_app_notifications` が publication に無くても黙って SUBSCRIBED になりうるため）。
+- **ほかの定期処理**：`AdminView` の AI使用量の30秒 reload は非表示中は止め、前面に戻ったら1回（`src/lib/visibility.ts` の `isDocumentHidden`）。`ReloadNoticeBanner`（version.json＝静的ファイル）・`healthMonitor`（DB を読まない）・`MainLayout` の3秒ごとのお知らせツアー判定（DB を読まない）・Schema／Backup／Reminder のヘルスバナー（マウント時1回のみ）は対象外。
+- **購読テーブルの棚卸し（変更はしていない・候補のみ）**：`realtime.ts` の本線11表＋任意1表（project_sections）＋通知。書込が多い・全利用者に配る価値が高いのは tasks／projects／task_dependencies／milestones／in_app_notifications。**外せそうな候補は key_results・task_forces・todos・project_task_forces・task_task_forces・task_projects・project_sections**（管理者の画面でしか編集されない／v3.149 で入力欄を撤去して新規書込がほぼ無い／復帰時の全件再取得と各画面の明示 reload で足りる）。members は表示名・色の同期が目的で書込は稀だが、担当者表示に直結するため残すのが無難。外す場合は `realtime.ts` の TABLES と `appStore.applyRemoteChange` の分岐・`fetchChangesSince` の対象・`realtimeResync.test.ts` の購読数を一緒に直し、publication からは `ALTER PUBLICATION supabase_realtime DROP TABLE` を別マイグレで行う。
+- **機械チェック**：`src/lib/supabase/__tests__/realtimePause.test.ts`（10分の境界・再開・二重通知・dispose＋App／ベルの配線をコメント除去のソース走査＝Section 59）・`src/components/notifications/__tests__/bellDiskIo.test.ts`（実際に描画。非表示で取らない・SUBSCRIBED の間は3分で取らない・要求を重ねない・10分で解除／復帰で張り直し）・`bellPolling.test.ts`・`src/lib/__tests__/visibilityPollingWiring.test.ts`・`realtimeEchoWatch.test.ts`（paused／resuming）・`notificationRealtime.test.ts`・`realtimeResync.test.ts`（解除後の通知無視）。修正前のコードに当てて新規テストが赤くなることを確認済み。
+- **山本さんの実機確認**：①ブラウザの別タブへ10分以上切り替えて戻る→データが最新になり、DevTools の Network の WS が一度閉じて再接続されていること ②非表示中に別の人がタスクを変更→戻ったあと反映されていること ③ベルの未読数が戻ったときに更新されること ④AI使用量タブを開いたまま別タブにしても通信が止まること。
+- **残るリスク**：復帰直後の全件再取得（30秒の最短間隔つき）が、多数の利用者が同時刻に戻る朝一番に重なる可能性（Free・Nano では復帰の集中が新たな山になりうる）。再開の接続待ち（`resuming`）の間に自分が保存すると、エコー見張りは見張らないが他者の変更の受信は復帰の全件再取得で埋まるまで遅れる。
 
 ---
 

@@ -15,6 +15,8 @@ let seq = 0;
 export function subscribeInAppNotifications(
   memberId: string,
   onChange: () => void,
+  /** SUBSCRIBED になったら true、それ以外（切断・エラー・解除）で false。ベルの定期取得を間引く判断に使う（v3.171） */
+  onLive?: (live: boolean) => void,
 ): () => void {
   const channel = supabase.channel(`in-app-notifications:${memberId}:${++seq}`);
   const filter = `member_id=eq.${memberId}`;
@@ -27,18 +29,24 @@ export function subscribeInAppNotifications(
   }
 
   let wasLive = false;
+  let disposed = false;
   channel.subscribe((status, err) => {
+    if (disposed) return;
     if (status === REALTIME_SUBSCRIBE_STATES.SUBSCRIBED) {
+      onLive?.(true);
       if (wasLive) onChange();
       wasLive = true;
       return;
     }
+    onLive?.(false);
     if (status === REALTIME_SUBSCRIBE_STATES.CHANNEL_ERROR || status === REALTIME_SUBSCRIBE_STATES.TIMED_OUT) {
       console.warn("[notificationRealtime] ベルの即時更新を購読できません（ポーリングで更新します）:", status, err);
     }
   });
 
   return () => {
+    disposed = true;
+    onLive?.(false);
     void supabase.removeChannel(channel);
   };
 }

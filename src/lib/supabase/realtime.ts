@@ -69,7 +69,10 @@ export function subscribeToRealtime(
     );
   }
   let optionalWarned = false;
+  // 解除（一時停止を含む）した後に、閉じる途中の古いチャンネルの状態通知が来ても、状態表示・再取得の判定に混ぜない
+  let disposed = false;
   optionalChannel.subscribe((status: string) => {
+    if (disposed) return;
     if ((status === "CHANNEL_ERROR" || status === "TIMED_OUT") && !optionalWarned) {
       optionalWarned = true;
       console.warn("[realtime] 任意の表（project_sections）の購読に失敗しました。マイグレ 20261015 が未適用の可能性があります。");
@@ -79,6 +82,7 @@ export function subscribeToRealtime(
   const tracker = createReconnectTracker();
   let firstSubscribed = true;
   channel.subscribe((status: string) => {
+    if (disposed) return;
     setRealtimeChannelState(status);
     const resync = tracker.onStatus(status);
     if (resync) opts?.onResync?.();
@@ -90,7 +94,9 @@ export function subscribeToRealtime(
     }
   });
 
+  // removeChannel は最後の1本を外したときに websocket も閉じる（realtime-js の RealtimeClient.removeChannel）
   return () => {
+    disposed = true;
     setRealtimeChannelState("none");
     void supabase.removeChannel(channel);
     void supabase.removeChannel(optionalChannel);

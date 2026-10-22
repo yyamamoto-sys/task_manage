@@ -53,6 +53,7 @@ import { FeedbackSection } from "./FeedbackSection";
 import { AdminMessageSection } from "./AdminMessageSection";
 import { inputStyle, primaryBtnStyle, ghostBtnStyle, addBtnStyle } from "./adminStyles";
 import { SaveButton, SaveErrorBand, SaveKeyScope, useFormSave, useSnapshotDirty } from "../common/saveUi";
+import { isDocumentHidden } from "../../lib/visibility";
 
 interface Props {
   currentUser: Member;
@@ -3449,9 +3450,12 @@ function AIUsageSection({ selectedGroupId }: { selectedGroupId: string }) {
   }, [reload]);
 
   // 自動更新：マウント中は 30 秒ごとに silent reload。unmount で clear。
+  // 非表示の間は取りに行かず、前面に戻ったときに1回だけ取る（v3.171・Disk IO 対策）
   useEffect(() => {
-    const id = setInterval(() => { void reload(true); }, 30_000);
-    return () => clearInterval(id);
+    const id = setInterval(() => { if (!isDocumentHidden()) void reload(true); }, 30_000);
+    const onVisible = () => { if (!isDocumentHidden()) void reload(true); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", onVisible); };
   }, [reload]);
 
   // 選択中の部署のメンバーによるログのみに絞り込む（設定画面の部署絞り込み・2026-07-23）

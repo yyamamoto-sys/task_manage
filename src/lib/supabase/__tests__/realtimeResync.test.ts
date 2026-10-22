@@ -83,3 +83,16 @@ describe("subscribeToRealtime の onResync", () => {
     expect(removeChannel).toHaveBeenCalledWith(channels[1]);
   });
 });
+
+describe("解除後の状態通知（v3.171・長い非表示の Realtime 停止）", () => {
+  it("解除した後に古いチャンネルから届く状態通知は、再取得の判定にも状態表示にも混ぜない", () => {
+    const onResync = vi.fn();
+    const onFirstSubscribed = vi.fn();
+    const off = subscribeToRealtime(() => {}, { onResync, onFirstSubscribed });
+    off();
+    channels[0].cb!("CHANNEL_ERROR");
+    channels[0].cb!("SUBSCRIBED");
+    expect(onResync).not.toHaveBeenCalled();
+    expect(onFirstSubscribed).not.toHaveBeenCalled();
+  });
+});

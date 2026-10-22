@@ -33,13 +33,14 @@ import {
   bellBadgeStyle, bellTabsFor, ownSentMessages, type BellTab,
 } from "../../lib/notifications/bell";
 import { onBellRefreshRequest } from "../../lib/notifications/bellRefresh";
+import { BELL_POLL_TICK_MS, shouldPollBell } from "../../lib/notifications/bellPolling";
+import { isDocumentHidden } from "../../lib/visibility";
 import { subscribeInAppNotifications } from "../../lib/supabase/notificationRealtime";
+import { isRealtimePaused, onRealtimePauseChange } from "../../lib/supabase/realtimePause";
 import {
   fetchAdminMessageStatus, listSentAdminMessages, type AdminMessageRecipientStatus, type SentAdminMessage,
 } from "../../lib/supabase/adminMessageStore";
 
-// タブを開いたままでも未読数が追従するよう、postMessageを取りこぼした場合の保険としてこの間隔でも再取得する
-const FALLBACK_REFRESH_MS = 3 * 60 * 1000;
 const PANEL_WIDTH = 320;
 
 interface Props {
@@ -89,14 +90,33 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
     align: "right", width: PANEL_WIDTH, preferredMaxHeight: 460,
   });
 
+  // 未読数の取得は、非表示の間は行わず（前面に戻ったとき visibilitychange で1回取る）、
+  // 実行中に届いた要求は重ねず、終わってから1回だけ取り直す（v3.171・Disk IO 対策）
+  const countBusyRef = useRef(false);
+  const countAgainRef = useRef(false);
+  const lastCountAtRef = useRef(0);
+  const liveRef = useRef(false);
   const refreshCount = useCallback(async () => {
+    if (isDocumentHidden()) return;
+    if (countBusyRef.current) { countAgainRef.current = true; return; }
+    countBusyRef.current = true;
+    countAgainRef.current = false;
+    lastCountAtRef.current = Date.now();
     try {
       setUnread(await countUnreadInAppNotifications(memberId));
     } catch (e) {
       // 未適用環境・通信失敗ではバッジを出さないだけにする（画面は壊さない）
       console.warn("[InAppNotificationBell] 未読件数の取得に失敗:", e);
+    } finally {
+      countBusyRef.current = false;
+      if (countAgainRef.current) {
+        countAgainRef.current = false;
+        void refreshCountRef.current();
+      }
     }
   }, [memberId]);
+  const refreshCountRef = useRef<() => Promise<void>>(async () => {});
+  refreshCountRef.current = refreshCount;
 
   // 🔴 v3.135：取得関数の依存に t を入れない（Section 69）。文言は ref から読む。
   // 取得は世代番号で古い応答を捨て、同じタブの取得が走っている間は重ねず、終わってから1回だけ取り直す。
@@ -174,7 +194,11 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
   useEffect(() => {
     const onSwMessage = (e: MessageEvent) => { if (isPushReceivedMessage(e.data)) void refreshCount(); };
     navigator.serviceWorker?.addEventListener("message", onSwMessage);
-    const interval = setInterval(() => void refreshCount(), FALLBACK_REFRESH_MS);
+    // 非表示の間は取らない。Realtime が SUBSCRIBED の間は15分、切れているときだけ3分の保険（bellPolling.ts）
+    const interval = setInterval(() => {
+      if (!shouldPollBell({ hidden: isDocumentHidden(), live: liveRef.current, now: Date.now(), lastFetchAt: lastCountAtRef.current })) return;
+      void refreshCount();
+    }, BELL_POLL_TICK_MS);
     return () => {
       navigator.serviceWorker?.removeEventListener("message", onSwMessage);
       clearInterval(interval);
@@ -195,9 +219,21 @@ export function InAppNotificationBell({ memberId, isSuperAdmin, isAdmin, onOpenL
   const refreshAllRef = useRef<() => void>(() => {});
   refreshAllRef.current = () => {
     void refreshCount();
-    if (openRef.current) void refreshList();
+    if (openRef.current && !isDocumentHidden()) void refreshList();
   };
-  useEffect(() => subscribeInAppNotifications(memberId, () => refreshAllRef.current()), [memberId]);
+  // 長く（10分以上）非表示のタブは購読を解除し、前面に戻ったら張り直す（realtimePause.ts。前面復帰の取り直しは visibilitychange 側）
+  useEffect(() => {
+    let off: (() => void) | null = null;
+    const start = () => {
+      if (off) return;
+      off = subscribeInAppNotifications(memberId, () => refreshAllRef.current(), live => { liveRef.current = live; });
+    };
+    if (!isRealtimePaused()) start();
+    const offPause = onRealtimePauseChange(paused => {
+      if (paused) { off?.(); off = null; } else start();
+    });
+    return () => { offPause(); off?.(); off = null; };
+  }, [memberId]);
   useEffect(() => onBellRefreshRequest(() => refreshAllRef.current()), []);
 
   useEffect(() => {

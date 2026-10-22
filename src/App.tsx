@@ -37,7 +37,8 @@ import { logDiagnostic } from "./lib/errors/diagnosticLog";
 import { getClientErrorScreen } from "./lib/errors/clientErrorLog";
 import { isGuestMode } from "./lib/guestMode";
 import { initRealtimeEchoWatch, disposeRealtimeEchoWatch } from "./lib/diagnostics/realtimeEchoWatch";
-import { getRealtimeChannelState } from "./lib/supabase/realtimeState";
+import { getRealtimeChannelState, setRealtimeChannelState } from "./lib/supabase/realtimeState";
+import { installHiddenPause, isRealtimePaused, onRealtimePauseChange } from "./lib/supabase/realtimePause";
 import type { Member } from "./lib/localData/types";
 import { useT } from "./hooks/useT";
 import { loadPendingProjectInvite, clearPendingProjectInvite } from "./lib/projectInvite/pendingInvite";
@@ -568,6 +569,10 @@ function AuthenticatedApp({
     return () => { cancelled = true; };
   }, [loading, members, groups, currentUser, onLogin, setCurrentGroupId, setCurrentUserIsSuperAdmin, setCurrentUserGroupIds]);
 
+  // 長く非表示のタブの Realtime を止める合図（購読する側が各自で購読を解除・再開する。realtimePause.ts）。
+  // 購読の effect より先に visibilitychange の listener を付けるため、この effect を先に宣言する
+  useEffect(() => installHiddenPause(), []);
+
   // Realtime 購読は初期ロード完了後にだけ開始する（subscribeToRealtime 内で
   // 1 channel に複数テーブルを相乗りさせており、cleanup で必ず removeChannel される）
   // 🔴 v3.146：依存は loading ではなく「初回ロード済みか」。load() のたびに loading が true→false になるので、
@@ -596,24 +601,47 @@ function AuthenticatedApp({
         setRealtimeEpoch(n => n + 1);
       },
     });
-    const off = subscribeToRealtime(applyRemoteChange, {
-      onResync: resync,
-      // 初回 load の開始から購読有効までの取りこぼしは、小さな差分取得で埋める（失敗したら全件再取得）
-      onFirstSubscribed: () => { void catchUpRemoteChanges().catch(() => resync()); },
-    });
+    // 購読の開始・停止。長く（10分以上）非表示のタブは停止し、前面に戻ったら張り直す（v3.171・Section 76 Disk IO 対策）
+    let off: (() => void) | null = null;
+    const start = (resumed: boolean) => {
+      off = subscribeToRealtime(applyRemoteChange, {
+        onResync: resync,
+        // 初回 load の開始から購読有効までの取りこぼしは、小さな差分取得で埋める（失敗したら全件再取得）。
+        // 停止からの再開は下の全件再取得（resync）が埋めるので、差分取得は重ねない
+        onFirstSubscribed: resumed ? undefined : () => { void catchUpRemoteChanges().catch(() => resync()); },
+      });
+    };
     const gate = createHiddenReturnGate();
+    if (isRealtimePaused()) setRealtimeChannelState("paused");
+    else start(false);
+    const offPause = onRealtimePauseChange(paused => {
+      if (paused) {
+        off?.();
+        off = null;
+        setRealtimeChannelState("paused");
+        return;
+      }
+      // 「停止中」と「再開直後の接続待ち」の間は自分の保存のエコー見張りを動かさない（realtimeEchoWatch）
+      setRealtimeChannelState("resuming");
+      gate.onVisible();
+      start(true);
+      resync();
+    });
     const onVisibility = () => {
-      if (document.visibilityState === "hidden") gate.onHidden();
-      else if (gate.onVisible()) resync();
+      if (document.visibilityState === "hidden") { gate.onHidden(); return; }
+      // 停止中の復帰は onRealtimePauseChange 側が全件再取得する（ここでも呼ぶと30秒後にもう1回走る）
+      if (isRealtimePaused()) return;
+      if (gate.onVisible()) resync();
     };
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       document.removeEventListener("visibilitychange", onVisibility);
+      offPause();
       resync.cancel();
       echoCatchUp.cancel();
       setRemoteResyncRequester(null);
       setEchoRecoveryRequesters(null);
-      off();
+      off?.();
     };
   }, [realtimeReady, applyRemoteChange, load, realtimeEpoch]);
 

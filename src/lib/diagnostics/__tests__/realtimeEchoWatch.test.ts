@@ -189,3 +189,15 @@ describe("配線", () => {
     expect(rt).toMatch(/setRealtimeChannelState\(status\)/);
   });
 });
+
+describe("購読を止めている間（v3.171・長い非表示の Realtime 停止）", () => {
+  it.each(["paused", "resuming"])("チャンネル状態が %s のときは見張らない（記録も自己回復の要求もしない）", state => {
+    const s = setup({ channelState: () => state });
+    s.w.expectEcho("tasks", "t1", "2026-10-14T00:00:05Z");
+    expect(s.pending()).toBe(0);
+    s.advance(ECHO_GIVEUP_MS * 2);
+    expect(s.log).not.toHaveBeenCalled();
+    expect(s.onSlow).not.toHaveBeenCalled();
+    expect(s.onStuck).not.toHaveBeenCalled();
+  });
+});
