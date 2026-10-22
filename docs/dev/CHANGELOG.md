@@ -8417,3 +8417,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * App.tsx・components/auth/StartupLoadFailedScreen.tsx：初回データ取得の失敗をアクセス拒否画面ではなく取得失敗画面（再試行つき）で案内（lib/account/startupLoadFailed.ts）。
 # * AccessDeniedScreen：二重の signOut を解消（handleLogout に任せる）。
 # * テスト：authEntryWiring.test.ts・signedOutCleanup.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.176（2026-10-22）：前回ユーザーの自動ログインをメール一致に限定・アクセス拒否画面の案内（巡回56回目。docs/REFACTORING.md M71・M72）
+#
+# * App.tsx：autoMatch の②（localStorage の前回ユーザー）を lib/account/savedUserMatch.ts の resolveSavedUserAutoLogin 経由に変更。Auth メールと前回ユーザーのメールが一致（大文字小文字・前後空白は無視）するときだけ自動ログイン。不一致・email 空は clearCurrentUser() して選択画面へ。
+# * AccessDeniedScreen・i18n（auth.accessDenied.body1/2/3・logoutButton）：メール不一致の人に向けて「会社のメールアドレスで登録されています。個人のメールアドレスでログインしていないか確認」「ログアウトして登録済みのアドレスで入り直す」「解決しない場合は管理者に連絡」を案内。
+# * テスト：savedUserMatch.test.ts・accessDeniedGuidance.test.tsx（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

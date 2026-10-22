@@ -84,8 +84,8 @@
 
 ### 記録のみ（仕様判断待ち）
 
-- **M71**：アクセス拒否画面の案内文が、メール不一致（個人Gmailで入ったが`members`は会社アドレス）の利用者に不親切。
-- **M72**：`autoMatch`はAuthメールが`members`と一致しなくても「②localStorageの前回ユーザー」へ黙ってフォールバックする。
+- ~~**M71**：アクセス拒否画面の案内文が、メール不一致（個人Gmailで入ったが`members`は会社アドレス）の利用者に不親切。~~ **解決（v3.176）**。
+- ~~**M72**：`autoMatch`はAuthメールが`members`と一致しなくても「②localStorageの前回ユーザー」へ黙ってフォールバックする。~~ **解決（v3.176）**。
 - **M73**：ゲストの遮断（`assertGuestBlocked`）は`from`・`rpc`・`functions.invoke`・`storage`のみ。`supabase.channel()`（Realtime）は同じ入口にない。
 
 ### 点検して問題が無かった観点
@@ -2958,8 +2958,8 @@ ESLint 導入時点でのベースライン。次セッション以降のスイ�
 | M69 | 停止（非表示10分）からの再開は、購読の張り直しと同時に`resync()`（全件`load`）を呼び、差分取得は重ねない設計（v3.171）。購読が有効になる前に`load`が各表を読み終えると、その表の「読んだ後〜SUBSCRIBEDまで」の変更は届かない（窓は1秒前後）。通常は購読の方が`load`の読み終えより早いが保証は無い。再開のときだけ`onFirstSubscribed`で`catchUpRemoteChanges(Date.now())`（小さな差分取得）を足せば埋まる（54回目）。 | 低 | 実害の報告があれば。Disk IO対策の観点（再開時の問い合わせが1本増える）と合わせて判断 |
 | M62 | `PersonalOkrPeriodReviewDraftModal`：生成直後で未編集・未反映の下書き（AI課金済み）は、閉じても確認が出ず捨てられる（M53の方針＝初期値から変わったか、に従い対象外にした）。生成結果もdirty扱いにするかは操作仕様の判断（51回目）。 | 小 | 「消えた」との声があれば。`dirty`を`hasDraft && !applied`にするだけ |
 | M70 | Esc で閉じるモーダル（`FeedbackModal`・`AdminMessageDialog`・`ProjectCreateModal`・`QuickAddTaskModal`・`TaskSidePanel`等）のうち`useConfirmClose`以外は、開いている`CustomSelect`のパネルを Esc で閉じた同じ Esc でモーダルも閉じる可能性がある（55回目。v3.174で`useConfirmClose`だけ`role="listbox"`判定を足した）。`CustomSelect`の Esc を capture＋`stopImmediatePropagation`にして全モーダル共通で止めるか、各所に判定を足すか、そもそもこの挙動を許容するかは仕様判断（見た目・操作感に関わる） | — | 記録のみ（55回目）。実機で「ドロップダウンを開いて Esc」を各モーダルで確認してから判断する |
-| M71 | `AccessDeniedScreen`の本文（`auth.accessDenied.body1/2`）は「このメールアドレスはまだメンバーとして登録されていません。管理者に連絡して、上記のメールアドレスでメンバー登録を依頼してください」とだけ案内する。10-19に「ログイン用アカウントが個人Gmail・membersは会社アドレス」という事例があり、この文言では利用者が管理者にGmailの登録を頼みかねない（本来は登録済みの会社アドレスで入り直すか、membersのemailを管理者が直すかの二択）。案内に「別のアドレスで登録済みの場合は、ログアウトして登録済みのアドレスで入り直してください」を足すか、管理者向けの対処手順を足すかは文言の方針判断（i18n ja/en） | 低 | 56回目の巡回 |
-| M72 | `App.tsx`の`autoMatch()`は、Authメールが`members.email`と一致しない場合も「②localStorageの前回ユーザー」に黙ってフォールバックして自動ログインする（メール未設定の既存利用者の救済として入っている）。Authメールがあるのに一致しない場合も同じ経路に落ちるため、同じブラウザの前利用者のメンバー行になる。v3.175で失効・別タブのサインアウト時は`clearCurrentUser()`するので同一ブラウザでの残留は減ったが、明示ログアウト以外で入れ替わる経路（手動でのlocalStorage操作・別プロファイルのコピー等）や、RLSで`members`が見える未登録者には残る。メールが取れているのに不一致なら②を使わず選択画面（`UserSelectScreen`）または案内へ倒すかは、旧データ（`members.email`未設定）の救済とのトレードオフで仕様判断（M26と同じ「セキュリティとの兼ね合い」） | 中 | 56回目の巡回 |
+| M71 | ~~`AccessDeniedScreen`の本文（`auth.accessDenied.body1/2`）は「このメールアドレスはまだメンバーとして登録されていません。管理者に連絡して、上記のメールアドレスでメンバー登録を依頼してください」とだけ案内する。10-19に「ログイン用アカウントが個人Gmail・membersは会社アドレス」という事例があり、この文言では利用者が管理者にGmailの登録を頼みかねない（本来は登録済みの会社アドレスで入り直すか、membersのemailを管理者が直すかの二択）。案内に「別のアドレスで登録済みの場合は、ログアウトして登録済みのアドレスで入り直してください」を足すか、管理者向けの対処手順を足すかは文言の方針判断（i18n ja/en）~~ **解決（v3.176）**：案内文を「会社のメールアドレスで登録されています。個人のメールアドレス（Gmail 等）でログインしていないか確認」「ログアウトして登録済みのアドレスで入り直す」「解決しない場合は管理者に連絡」に変更（`auth.accessDenied.body1/2/3`）。 | 低 | 56回目の巡回 |
+| M72 | ~~`App.tsx`の`autoMatch()`は、Authメールが`members.email`と一致しない場合も「②localStorageの前回ユーザー」に黙ってフォールバックして自動ログインする（メール未設定の既存利用者の救済として入っている）。Authメールがあるのに一致しない場合も同じ経路に落ちるため、同じブラウザの前利用者のメンバー行になる。v3.175で失効・別タブのサインアウト時は`clearCurrentUser()`するので同一ブラウザでの残留は減ったが、明示ログアウト以外で入れ替わる経路（手動でのlocalStorage操作・別プロファイルのコピー等）や、RLSで`members`が見える未登録者には残る。メールが取れているのに不一致なら②を使わず選択画面（`UserSelectScreen`）または案内へ倒すかは、旧データ（`members.email`未設定）の救済とのトレードオフで仕様判断（M26と同じ「セキュリティとの兼ね合い」）~~ **解決（v3.176）**：`resolveSavedUserAutoLogin`（`lib/account/savedUserMatch.ts`）で、Authメールと前回ユーザーのメールが一致するときだけ②で自動ログイン。不一致・email空は`clearCurrentUser()`して選択画面へ。Authメールとmembersを切り離す機能（代理・デモ等）は無かったため仕様衝突なし。 | 中 | 56回目の巡回 |
 | M73 | ゲスト遮断（`supabase/client.ts`の`assertGuestBlocked`）のProxyは`from`・`rpc`・`functions.invoke`・`storage.from`だけを止め、`supabase.channel()`／`removeChannel`は通す。現状はRealtime購読を張る呼び出し元（`App.tsx`のAppDataProvider配下・ベル）がゲスト時に動かない設計で守られており、ゲストがRealtimeに接続する経路は無い。呼び出し側の分岐が将来崩れたときの二重防御として`channel`もProxyで止めるか（ゲストでは空のチャンネルを返す）は、`realtime.ts`・`notificationRealtime.ts`の戻り値型との整合を見て判断 | 低 | 56回目の巡回 |
 
 ### 低優先度

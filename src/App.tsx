@@ -8,6 +8,7 @@ import { isMisconfigured, supabase } from "./lib/supabase/client";
 import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
+import { resolveSavedUserAutoLogin } from "./lib/account/savedUserMatch";
 import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
 import { StartupLoadFailedScreen } from "./components/auth/StartupLoadFailedScreen";
 import { shouldReloadOnSignedOut } from "./lib/account/signedOutCleanup";
@@ -572,9 +573,11 @@ function AuthenticatedApp({
           return;
         }
       }
-      // ② email 未設定のケース：localStorage の前回ユーザーにフォールバック
+      // ② localStorage の前回ユーザー：Auth メールと前回ユーザーのメールが一致するときだけ許可する（M72）。
+      // 一致しない・メール未設定なら前回ユーザーを消して選択画面へ（別の人の行に自動ログインしない）。
       const saved = getCurrentUser();
-      const member = saved ? activeMembers.find(m => m.id === saved.id) : undefined;
+      const member = resolveSavedUserAutoLogin(saved?.id, activeMembers, authEmail);
+      if (saved && !member) clearCurrentUser();
       if (member) {
         setCurrentGroupId(resolveGroupIdForLogin(member));
         setCurrentUserIsSuperAdmin(member.is_super_admin === true);

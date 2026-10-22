@@ -108,8 +108,11 @@ export function AccessDeniedScreen({ onLogout }: Props) {
             {email}
           </div>
         )}
-        <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.7, marginBottom: "24px" }}>
+        <p style={{ fontSize: "12px", color: "var(--color-text-secondary)", lineHeight: 1.7, marginBottom: "10px" }}>
           {t("auth.accessDenied.body2")}
+        </p>
+        <p style={{ fontSize: "12px", color: "var(--color-text-tertiary)", lineHeight: 1.7, marginBottom: "24px" }}>
+          {t("auth.accessDenied.body3")}
         </p>
         <button
           onClick={() => void handleLogout()}

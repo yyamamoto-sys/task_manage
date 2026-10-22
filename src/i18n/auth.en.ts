@@ -74,9 +74,10 @@ export const authEn: Record<keyof typeof authJa, string> = {
   "auth.guest.desc": "Try it out with fictional data, including editing. Edits are not saved and reset when you reload. You can try AI features up to {limit} times a day.",
 
   "auth.accessDenied.title": "Access denied",
-  "auth.accessDenied.body1": "This email address is not yet registered as a member.",
-  "auth.accessDenied.body2": "Please ask an administrator to register you with the email address above. Once registered, you'll be able to access the app automatically the next time you log in.",
-  "auth.accessDenied.logoutButton": "Log out and sign in with a different account",
+  "auth.accessDenied.body1": "The email address you are logged in with is not registered as a member.",
+  "auth.accessDenied.body2": "Members are registered with their company email address. Check that you are not logged in with a personal email address (such as Gmail).",
+  "auth.accessDenied.body3": "If this does not resolve it, contact an administrator and ask them to register the email address above. Once registered, you can access the app automatically the next time you log in.",
+  "auth.accessDenied.logoutButton": "Log out and sign in with your registered address",
   "auth.loadFailed.title": "Could not load your data",
   "auth.loadFailed.body": "Check your connection and try again. If it keeps failing, contact an administrator.",
   "auth.loadFailed.logout": "Log out",

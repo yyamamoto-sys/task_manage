@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.175
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.176
 #
-最終更新：2026-10-22（v3.175）
+最終更新：2026-10-22（v3.176）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5265,6 +5265,13 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - `AccessDeniedScreen` は自前で `signOut()` しない（`handleLogout` に任せる。失敗はトーストで出る）。
 - 仕様判断待ち：`docs/REFACTORING.md` M71（不一致時の案内文）・M72（`autoMatch` の②前回ユーザーへのフォールバック）・M73（ゲスト遮断に `channel()` が無い）。
 - テスト：`__tests__/authEntryWiring.test.ts`・`lib/account/__tests__/signedOutCleanup.test.ts`（修正前は赤）。
+
+### v3.176：前回ユーザーの自動ログインはメール一致のときだけ・アクセス拒否画面の案内（巡回56回目 M71・M72）
+
+- 🔴 **`autoMatch` の②（localStorage の前回ユーザー）は、Auth メールと前回ユーザーの `members.email` が一致するときだけ自動ログインする**（`lib/account/savedUserMatch.ts` の `resolveSavedUserAutoLogin`。大文字小文字・前後の空白は無視）。一致しない・前回ユーザーの email が空・Auth メールが取れないときは自動ログインせず、`clearCurrentUser()` で前回ユーザーを消して選択画面（`UserSelectScreen`）へ進む。以前は id だけで引いており、同じブラウザで別の人（個人Gmail等）が入ると前の人の行でログインしうる状態だった。①（Auth メール→members のメール一致）は変更なし。
+- Auth メールと members を切り離す機能は無い：ゲストは `AuthenticatedApp` を通らず、初回ブートストラップは `isWizardDone` 判定が先、スーパー管理者の代理・デモ機能は無い。`UserSelectScreen`（メンバー選択）は①②が成立しなかったときの入口として残り、メール未設定の既存メンバーが自分を選ぶと `handleLogin` が Auth メールを補完する（②の救済はこの経路に一本化された）。
+- `AccessDeniedScreen` の案内（`auth.accessDenied.body1/2/3`・ja/en）：ログイン中のメールを表示したうえで、「メンバー登録は会社のメールアドレスで行われています。個人のメールアドレス（Gmail 等）でログインしていないか確認してください。」・ログアウトボタン「ログアウトして登録済みのアドレスで入り直す」・「解決しない場合は管理者に連絡し…」を出す。
+- テスト：`lib/account/__tests__/savedUserMatch.test.ts`・`components/auth/__tests__/accessDeniedGuidance.test.tsx`（修正前のコードで赤になることを確認済み）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
 
 ---
 

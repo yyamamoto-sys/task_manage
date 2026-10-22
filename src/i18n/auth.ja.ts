@@ -77,9 +77,10 @@ export const authJa = {
 
   // ----- AccessDeniedScreen -----
   "auth.accessDenied.title": "アクセス権がありません",
-  "auth.accessDenied.body1": "このメールアドレスはまだメンバーとして登録されていません。",
-  "auth.accessDenied.body2": "管理者に連絡して、上記のメールアドレスでメンバー登録を依頼してください。登録が完了すれば、次回ログイン時に自動的にアクセスできるようになります。",
-  "auth.accessDenied.logoutButton": "ログアウトして別のアカウントで入り直す",
+  "auth.accessDenied.body1": "現在ログインしているメールアドレスは、メンバーとして登録されていません。",
+  "auth.accessDenied.body2": "メンバー登録は会社のメールアドレスで行われています。個人のメールアドレス（Gmail 等）でログインしていないか確認してください。",
+  "auth.accessDenied.body3": "解決しない場合は管理者に連絡し、上記のメールアドレスでのメンバー登録を依頼してください。登録が完了すれば、次回ログイン時に自動的にアクセスできます。",
+  "auth.accessDenied.logoutButton": "ログアウトして登録済みのアドレスで入り直す",
   "auth.loadFailed.title": "データを読み込めませんでした",
   "auth.loadFailed.body": "通信の状態を確認して、もう一度お試しください。何度か試しても直らない場合は、管理者に連絡してください。",
   "auth.loadFailed.logout": "ログアウトする",
