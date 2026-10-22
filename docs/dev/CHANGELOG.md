@@ -8397,3 +8397,9 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 週の紐づけ一覧の取得失敗を空で確定させない（再取得できる）。追加・解除は一覧が読めないと中止。deleteKr は月・週・メモ・紐づけのキャッシュも消す。
 # * KR詳細・月次の取得失敗を画面に表示（再読み込みボタン付き）。krsError／detailError を formatErrorForUser に統一。
 # * テスト：personalOkrUiStoreRaces.test.ts（13件・修正前コードで12件が赤）・fetchMergeAndAuthReset.test.ts。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.173（2026-10-22）：realtime の張り直しが効かない不具合の修正（巡回54回目・データ基盤。docs/REFACTORING.md M68・M69）
+#
+# * lib/supabase/realtime.ts：購読チャンネル名を購読ごとに変更（app-sync:<n>・app-sync-optional:<n>）。realtime-js は同名チャンネルを一覧から返し、解除は応答待ちで遅れるため、realtime-silent の自己回復（realtimeEpoch）の張り直しが解除中の古いチャンネルに当たり、購読が張られないまま残っていた。
+# * テスト：realtimeResubscribe.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

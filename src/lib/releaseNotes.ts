@@ -39,6 +39,14 @@ export interface ReleaseNoteEntry {
 
 export const RELEASE_NOTES: ReleaseNoteEntry[] = [
   {
+    version: "v3.173",
+    date: "2026-10-22",
+    title: "表示が自動で更新されなくなったときの自己回復が、確実に働くようになりました",
+    highlights: [
+      "他の人の変更が届かない状態を検知して接続をつなぎ直す仕組みが、つなぎ直しに失敗して届かないままになることがありました。つなぎ直しが確実に行われるようにしました。",
+    ],
+  },
+  {
     version: "v3.172",
     date: "2026-10-22",
     title: "個人OKRで、読み込み失敗の表示と別のアカウントへの切り替えが安全になりました",

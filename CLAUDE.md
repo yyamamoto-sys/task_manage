@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.172
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.173
 #
-最終更新：2026-10-22（v3.172）
+最終更新：2026-10-22（v3.173）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5246,6 +5246,11 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - KR詳細・月次の取得失敗は `detailError`（`formatErrorForUser`）を `PersonalOkrView` に表示（再読み込みボタン付き）。以前は誰も表示しておらず、データが無いように見えていた。
 - 仕様判断待ちは `docs/REFACTORING.md` M65（個人OKRのデータは購読も定期取得も無く、v3.171 の復帰時の全件再取得の対象外）・M66（ConflictError 後に再読み込みの手段が無い）。
 - テスト：`stores/__tests__/personalOkrUiStoreRaces.test.ts`（修正前のストアで13件中12件が赤になることを確認済み）・`lib/personalOkr/__tests__/fetchMergeAndAuthReset.test.ts`。
+
+### v3.173：realtime の張り直しが効かない不具合（巡回54回目・データ基盤）
+
+- 🔴 **購読チャンネルの名前は購読ごとに変える**（`realtime.ts` の `seq`：`app-sync:<n>`・`app-sync-optional:<n>`）。realtime-js の `supabase.channel(topic)` は一覧に同名のチャンネルが残っていればそれを返し、`removeChannel` は leave の応答待ちで一覧から消えるまで遅れる。`realtimeEpoch` を進める自己回復（realtime-silent の60秒・Section 77 v3.158）は解除の直後に同期的に購読し直すため、固定名だと解除中の古いチャンネルに `subscribe` しても何も起きず、**購読が無いまま残って状態通知（SUBSCRIBED）も来ない**（再読み込みまで realtime が死ぬ）。`notificationRealtime.ts` は元から名前に連番を付けていた。購読を作る新しいコードも同じにすること。テスト：`lib/supabase/__tests__/realtimeResubscribe.test.ts`（修正前で赤を確認）。
+- 仕様判断待ち：`docs/REFACTORING.md` M68（張り直しの差分取得の起点がセッション開始）・M69（停止からの再開の取りこぼしの窓）。
 
 ---
 

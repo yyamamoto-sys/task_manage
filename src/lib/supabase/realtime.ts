@@ -24,6 +24,12 @@ const TABLES = [
  */
 const OPTIONAL_TABLES = ["project_sections"] as const;
 
+// 同名のチャンネルは realtime-js が使い回す（supabase.channel(topic) は一覧に残っている同名の古いチャンネルを返す）。
+// 解除（removeChannel）は leave の応答待ちで一覧から消えるまで少しかかる。realtime-silent の自己回復の張り直しは
+// 解除の直後に同期的に購読し直すので、固定名だと「解除中の古いチャンネル」に .subscribe しても何も起きず、
+// 購読が無いまま残る。購読ごとに名前を変える（notificationRealtime.ts と同じ理由）。
+let seq = 0;
+
 /**
  * Realtime 購読を開始する。返り値の関数を呼ぶと購読を解除する。
  * onChange は各 postgres_changes イベントごとに呼ばれる。
@@ -35,7 +41,7 @@ export function subscribeToRealtime(
   onChange: (change: RealtimeChange) => void,
   opts?: { onResync?: () => void; onFirstSubscribed?: () => void },
 ): () => void {
-  const channel = supabase.channel("app-sync");
+  const channel = supabase.channel(`app-sync:${++seq}`);
 
   for (const table of TABLES) {
     channel.on(
@@ -53,7 +59,7 @@ export function subscribeToRealtime(
   }
 
   // 任意の表の別チャンネル。失敗は console.warn だけ（resync・realtime-silent・チャンネル状態には関与しない）
-  const optionalChannel = supabase.channel("app-sync-optional");
+  const optionalChannel = supabase.channel(`app-sync-optional:${seq}`);
   for (const table of OPTIONAL_TABLES) {
     optionalChannel.on(
       REALTIME_LISTEN_TYPES.POSTGRES_CHANGES,
