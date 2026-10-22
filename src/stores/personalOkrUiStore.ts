@@ -38,6 +38,9 @@ import { generatePersonalKrReviewDraft } from "../lib/ai/personalOkrReviewDraftE
 import { runPersonalKrOutlookAnalysis } from "../lib/personalOkr/outlookRunner";
 import { runPersonalKrReviewDraft } from "../lib/personalOkr/reviewDraftRunner";
 import { isGuestMode } from "../lib/guestMode";
+import { onAuthStateChange } from "../lib/supabase/auth";
+import { mergeFetchedRows } from "../lib/personalOkr/fetchMerge";
+import { decideAuthReset } from "../lib/personalOkr/authReset";
 import { formatErrorForUser } from "../lib/errorMessage";
 import type { PersonalOkrAiContextInput } from "../lib/personalOkr/personalOkrAiContext";
 import type { ReviewMaterial } from "../lib/personalOkr/reviewMaterial";
@@ -76,6 +79,45 @@ function upsertById<T extends { id: string }>(list: T[], next: T): T[] {
   return list.some(x => x.id === next.id) ? list.map(x => (x.id === next.id ? next : x)) : [...list, next];
 }
 
+// 【ユーザー切替・取得競合の対策】
+// epoch は resetPersonalOkrUiStore のたびに進む。非同期の取得・AI呼び出しは開始時の epoch を控え、
+// 戻ってきたときに epoch が変わっていれば結果を捨てる（前のユーザーの応答が新しい状態を汚さない）。
+// inflight は同じ対象の取得の多重起動を1本にまとめる（別KRの取得が間に入っても重複しない）。
+let epoch = 0;
+const inflight = new Map<string, Promise<void>>();
+function dedupe(key: string, run: () => Promise<void>): Promise<void> {
+  const existing = inflight.get(key);
+  if (existing) return existing;
+  const p: Promise<void> = run().finally(() => { if (inflight.get(key) === p) inflight.delete(key); });
+  inflight.set(key, p);
+  return p;
+}
+function without(set: Set<string>, id: string): Set<string> {
+  const next = new Set(set);
+  next.delete(id);
+  return next;
+}
+function omitKey<T>(o: Record<string, T>, k: string): Record<string, T> {
+  const c = { ...o };
+  delete c[k];
+  return c;
+}
+
+/**
+ * 紐づけの追加・解除の前に、その週の紐づけ一覧を取得済みにする。取得が失敗したまま
+ * 空の一覧へ追加すると、実際は紐づけがあるのに画面が「新しい1件だけ」になり、重複登録や
+ * 誤った表示になる。取得できなければ操作を中止する。
+ */
+async function requireWeekTasksLoaded(
+  get: () => { weekTasksByWeek: Record<string, PersonalKrWeekTask[]>; ensureWeekTasksLoaded: (weekId: string) => Promise<void> },
+  weekId: string,
+): Promise<void> {
+  await get().ensureWeekTasksLoaded(weekId);
+  if (!get().weekTasksByWeek[weekId]) {
+    throw new Error("この週の紐づけ一覧を読み込めなかったため、操作を中止しました。時間をおいてもう一度お試しください。");
+  }
+}
+
 interface PersonalOkrUiState {
   krs: PersonalKr[];
   krsLoaded: boolean;
@@ -87,7 +129,8 @@ interface PersonalOkrUiState {
   memosByKr: Record<string, PersonalKrMemo[]>;
   weekTasksByWeek: Record<string, PersonalKrWeekTask[]>;
   detailLoadedKrIds: Set<string>;
-  detailLoadingKrId: string | null;
+  /** 詳細を取得中のKR id（複数KRの同時取得でも互いに上書きしない） */
+  detailLoadingKrIds: Set<string>;
   detailError: string | null;
 
   loadKrs: () => Promise<void>;
@@ -186,41 +229,49 @@ interface PersonalOkrUiState {
   ensureActualActivitiesChecked: () => Promise<void>;
 }
 
+/** ストアの「データ」部分の初期値（アクション以外）。reset と初期化の両方がこれを使う。 */
+function initialData() {
+  return {
+    krs: [] as PersonalKr[],
+    krsLoaded: false,
+    krsLoading: false,
+    krsError: null as string | null,
+
+    monthsByKr: {} as Record<string, PersonalKrMonth[]>,
+    weeksByKr: {} as Record<string, PersonalKrWeek[]>,
+    memosByKr: {} as Record<string, PersonalKrMemo[]>,
+    weekTasksByWeek: {} as Record<string, PersonalKrWeekTask[]>,
+    detailLoadedKrIds: new Set<string>(),
+    detailLoadingKrIds: new Set<string>(),
+    detailError: null as string | null,
+    monthsPreloadPendingKrIds: new Set<string>(),
+
+    outlookByKrMonth: {} as Record<string, PersonalKrOutlook | null>,
+    outlookFetchedKeys: new Set<string>(),
+    outlookAnalyzingKeys: new Set<string>(),
+    outlookErrorByKey: {} as Record<string, string | null>,
+
+    reviewDraftByKrMonth: {} as Record<string, PersonalKrReviewDraft | null>,
+    reviewDraftFetchedKeys: new Set<string>(),
+    reviewDraftAnalyzingKeys: new Set<string>(),
+    reviewDraftErrorByKey: {} as Record<string, string | null>,
+
+    periodReviews: [] as PersonalPeriodReview[],
+    periodReviewsLoaded: false,
+    periodReviewsLoading: false,
+    periodReviewsError: null as string | null,
+
+    actualActivitiesAvailable: "unknown" as ActualActivitiesAvailability,
+    actualActivitiesChecking: false,
+  };
+}
+
 export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
-  krs: [],
-  krsLoaded: false,
-  krsLoading: false,
-  krsError: null,
-
-  monthsByKr: {},
-  weeksByKr: {},
-  memosByKr: {},
-  weekTasksByWeek: {},
-  detailLoadedKrIds: new Set(),
-  detailLoadingKrId: null,
-  detailError: null,
-  monthsPreloadPendingKrIds: new Set(),
-
-  outlookByKrMonth: {},
-  outlookFetchedKeys: new Set(),
-  outlookAnalyzingKeys: new Set(),
-  outlookErrorByKey: {},
-
-  reviewDraftByKrMonth: {},
-  reviewDraftFetchedKeys: new Set(),
-  reviewDraftAnalyzingKeys: new Set(),
-  reviewDraftErrorByKey: {},
-
-  periodReviews: [],
-  periodReviewsLoaded: false,
-  periodReviewsLoading: false,
-  periodReviewsError: null,
-
-  actualActivitiesAvailable: "unknown",
-  actualActivitiesChecking: false,
+  ...initialData(),
 
   loadKrs: async () => {
     if (get().krsLoading || get().krsLoaded) return;
+    const ep = epoch;
     set({ krsLoading: true, krsError: null });
     // 🔴 ゲストはSupabaseに一切接続しない（冒頭コメント参照）。demo/personalOkrDataset.ts
     // （動的importのみ）からサンプルデータを直接stateへ注入し、全KRを「詳細読み込み済み」
@@ -246,14 +297,16 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     }
     try {
       const krs = await fetchPersonalKrs();
+      if (ep !== epoch) return;
       set({ krs, krsLoaded: true, krsLoading: false });
     } catch (e) {
-      set({ krsLoading: false, krsError: e instanceof Error ? e.message : "個人KRの取得に失敗しました" });
+      if (ep !== epoch) return;
+      set({ krsLoading: false, krsError: formatErrorForUser("個人KRの取得に失敗しました", e) });
     }
   },
 
   ensureKrDetailLoaded: async (krId) => {
-    if (get().detailLoadedKrIds.has(krId) || get().detailLoadingKrId === krId) return;
+    if (get().detailLoadedKrIds.has(krId)) return;
     // 🔴 ゲスト分岐：loadKrs()が最初のKR群をまとめて注入済みのため、通常はこのガードに
     // 到達しない。新規作成KR（「＋KRを追加」）等、loadKrs後に増えたKRのために保険で用意する
     // （空配列で確定させるだけ・Supabaseへは一切問い合わせない）。
@@ -266,23 +319,32 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       }));
       return;
     }
-    set({ detailLoadingKrId: krId, detailError: null });
-    try {
-      const [months, weeks, memos] = await Promise.all([
-        fetchPersonalKrMonths(krId),
-        fetchPersonalKrWeeks(krId),
-        fetchPersonalKrMemos(krId),
-      ]);
-      set(state => ({
-        monthsByKr: { ...state.monthsByKr, [krId]: months },
-        weeksByKr: { ...state.weeksByKr, [krId]: weeks },
-        memosByKr: { ...state.memosByKr, [krId]: memos },
-        detailLoadedKrIds: new Set(state.detailLoadedKrIds).add(krId),
-        detailLoadingKrId: null,
-      }));
-    } catch (e) {
-      set({ detailLoadingKrId: null, detailError: e instanceof Error ? e.message : "個人KR詳細の取得に失敗しました" });
-    }
+    return dedupe(`detail:${krId}`, async () => {
+      const ep = epoch;
+      set(state => ({ detailLoadingKrIds: new Set(state.detailLoadingKrIds).add(krId), detailError: null }));
+      try {
+        const [months, weeks, memos] = await Promise.all([
+          fetchPersonalKrMonths(krId),
+          fetchPersonalKrWeeks(krId),
+          fetchPersonalKrMemos(krId),
+        ]);
+        if (ep !== epoch) return;
+        // 取得中に同じKRへ保存が入っていても、保存直後の値と updated_at を取得結果で巻き戻さない
+        set(state => ({
+          monthsByKr: { ...state.monthsByKr, [krId]: mergeFetchedRows(months, state.monthsByKr[krId], "end") },
+          weeksByKr: { ...state.weeksByKr, [krId]: mergeFetchedRows(weeks, state.weeksByKr[krId], "end") },
+          memosByKr: { ...state.memosByKr, [krId]: mergeFetchedRows(memos, state.memosByKr[krId], "start") },
+          detailLoadedKrIds: new Set(state.detailLoadedKrIds).add(krId),
+          detailLoadingKrIds: without(state.detailLoadingKrIds, krId),
+        }));
+      } catch (e) {
+        if (ep !== epoch) return;
+        set(state => ({
+          detailLoadingKrIds: without(state.detailLoadingKrIds, krId),
+          detailError: formatErrorForUser("個人KR詳細の取得に失敗しました", e),
+        }));
+      }
+    });
   },
 
   ensureWeekTasksLoaded: async (weekId) => {
@@ -293,13 +355,18 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: [] } }));
       return;
     }
-    try {
-      const links = await fetchPersonalKrWeekTasks(weekId);
-      set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: links } }));
-    } catch {
-      // 候補提示・紐づけ表示はベストエフォート。失敗時は空のまま扱う（週自体の表示は壊さない）
-      set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: [] } }));
-    }
+    return dedupe(`weektasks:${weekId}`, async () => {
+      const ep = epoch;
+      try {
+        const links = await fetchPersonalKrWeekTasks(weekId);
+        if (ep !== epoch) return;
+        set(state => ({ weekTasksByWeek: { ...state.weekTasksByWeek, [weekId]: links } }));
+      } catch {
+        // 候補提示・紐づけ表示はベストエフォート（週自体の表示は壊さない）。
+        // 失敗した週は未取得（undefined）のまま残し、次の呼び出しで再取得できるようにする。
+        // 空配列で確定させると、実際は紐づけがあるのに「無い」として扱い続けてしまう。
+      }
+    });
   },
 
   ensurePeriodMonthsLoaded: async (krIds) => {
@@ -326,8 +393,10 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       for (const id of toFetch) nextPending.add(id);
       return { monthsPreloadPendingKrIds: nextPending };
     });
+    const ep = epoch;
     try {
       const rows = await fetchPersonalKrMonthsForKrs(toFetch);
+      if (ep !== epoch) return;
       set(state => {
         // 🔴 保存直後のローカル値を巻き戻さない：先読みの応答が届くまでの間に、
         // 同じKRへ既に保存（saveMonth）が入っていれば monthsByKr[krId] は
@@ -343,12 +412,13 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         return { monthsByKr: nextMonths, monthsPreloadPendingKrIds: nextPending };
       });
     } catch (e) {
+      if (ep !== epoch) return;
       set(state => {
         const nextPending = new Set(state.monthsPreloadPendingKrIds);
         for (const id of toFetch) nextPending.delete(id);
         return {
           monthsPreloadPendingKrIds: nextPending,
-          detailError: e instanceof Error ? e.message : "個人KR月次計画の一括取得に失敗しました",
+          detailError: formatErrorForUser("個人KR月次計画の一括取得に失敗しました", e),
         };
       });
     }
@@ -363,7 +433,20 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
 
   deleteKr: async (id, deletedBy) => {
     if (!isGuestMode()) await softDeletePersonalKr(id, deletedBy);
-    set(state => ({ krs: state.krs.filter(k => k.id !== id) }));
+    // 削除したKRの月・週・メモ・紐づけを残さない（同じidのキャッシュが後で参照されないように）
+    set(state => {
+      const weekIds = (state.weeksByKr[id] ?? []).map(w => w.id);
+      const weekTasksByWeek = { ...state.weekTasksByWeek };
+      for (const w of weekIds) delete weekTasksByWeek[w];
+      return {
+        krs: state.krs.filter(k => k.id !== id),
+        monthsByKr: omitKey(state.monthsByKr, id),
+        weeksByKr: omitKey(state.weeksByKr, id),
+        memosByKr: omitKey(state.memosByKr, id),
+        weekTasksByWeek,
+        detailLoadedKrIds: without(state.detailLoadedKrIds, id),
+      };
+    });
   },
 
   saveMonth: async (month, expectedUpdatedAt) => {
@@ -405,7 +488,10 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   },
 
   linkWeekTask: async (weekId, taskId) => {
-    if (!isGuestMode()) await insertPersonalKrWeekTask({ week_id: weekId, task_id: taskId });
+    if (!isGuestMode()) {
+      await requireWeekTasksLoaded(get, weekId);
+      await insertPersonalKrWeekTask({ week_id: weekId, task_id: taskId });
+    }
     set(state => ({
       weekTasksByWeek: {
         ...state.weekTasksByWeek,
@@ -415,7 +501,10 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
   },
 
   unlinkWeekTask: async (weekId, taskId) => {
-    if (!isGuestMode()) await deletePersonalKrWeekTask(weekId, taskId);
+    if (!isGuestMode()) {
+      await requireWeekTasksLoaded(get, weekId);
+      await deletePersonalKrWeekTask(weekId, taskId);
+    }
     set(state => ({
       weekTasksByWeek: {
         ...state.weekTasksByWeek,
@@ -436,13 +525,18 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       }));
       return;
     }
+    return dedupe(`outlook:${key}`, async () => {
+    const ep = epoch;
     try {
       const row = await fetchLatestPersonalKrOutlook(personalKrId, month);
-      set(state => ({
+      if (ep !== epoch) return;
+      // 取得中に runOutlookAnalysis が結果を載せていたら、古い取得結果（多くは null）で上書きしない
+      set(state => state.outlookFetchedKeys.has(key) ? {} : ({
         outlookByKrMonth: { ...state.outlookByKrMonth, [key]: row },
         outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
       }));
     } catch (e) {
+      if (ep !== epoch) return;
       // 🔴 outlookByKrMonth[key]をundefinedのまま残さない（AheadBlockのisLoadingOutlookは
       // outlookRow===undefinedでスケルトンを出し続けるため、取得失敗時にnullで確定させないと
       // 「これから」のAI部分が永久にスケルトン表示のまま止まる。personal_kr_outlooksテーブル
@@ -455,22 +549,22 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         outlookErrorByKey: { ...state.outlookErrorByKey, [key]: formatErrorForUser("AI解析結果の取得に失敗しました", e) },
       }));
     }
+    });
   },
 
   runOutlookAnalysis: async ({ personalKrId, month, fingerprint, context, force }) => {
     const key = outlookKey(personalKrId, month);
     if (get().outlookAnalyzingKeys.has(key)) return; // 二重発火防止（連続effect・連打対策）
-
-    // 別端末・別セッションでも再解析されないための前提：まずDBの直近結果を確認する
-    // （ゲストはensureOutlookLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
-    await get().ensureOutlookLoaded(personalKrId, month);
-    const cached = get().outlookByKrMonth[key] ?? null;
-
-    set(state => ({
-      outlookAnalyzingKeys: new Set(state.outlookAnalyzingKeys).add(key),
-      outlookErrorByKey: { ...state.outlookErrorByKey, [key]: null },
-    }));
+    // 🔴 解析中の印は、DBの直近結果の確認（await）より前に立てる。後に立てると、確認の待ち時間の
+    // 間に届いた2回目の呼び出しが上のガードを通り抜け、AIを二重に呼んで二重に課金する。
+    const ep = epoch;
+    set(state => ({ outlookAnalyzingKeys: new Set(state.outlookAnalyzingKeys).add(key) }));
     try {
+      // 別端末・別セッションでも再解析されないための前提：まずDBの直近結果を確認する
+      // （ゲストはensureOutlookLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
+      await get().ensureOutlookLoaded(personalKrId, month);
+      const cached = get().outlookByKrMonth[key] ?? null;
+      set(state => ({ outlookErrorByKey: { ...state.outlookErrorByKey, [key]: null } }));
       // 🔴 AI呼び出し（analyze）自体はゲストでも素通しする（invokeAI.tsが既に開放済み・
       // CLAUDE.md Section 23 Phase 3）。ただし解析結果は personal_kr_outlooks に書けない
       // ため、ゲストのときは insertPersonalKrOutlook をスキップしメモリ保持のみにする。
@@ -479,15 +573,18 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         analyze: () => analyzePersonalKrOutlook(context),
       });
       if (ranAnalysis && !isGuestMode()) await insertPersonalKrOutlook(outlook); // 履歴として積む（UPDATEしない）
+      if (ep !== epoch) return;
       set(state => {
         const analyzing = new Set(state.outlookAnalyzingKeys);
         analyzing.delete(key);
         return {
           outlookByKrMonth: { ...state.outlookByKrMonth, [key]: outlook },
+          outlookFetchedKeys: new Set(state.outlookFetchedKeys).add(key),
           outlookAnalyzingKeys: analyzing,
         };
       });
     } catch (e) {
+      if (ep !== epoch) return;
       set(state => {
         const analyzing = new Set(state.outlookAnalyzingKeys);
         analyzing.delete(key);
@@ -511,13 +608,17 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
       }));
       return;
     }
+    return dedupe(`reviewDraft:${key}`, async () => {
+    const ep = epoch;
     try {
       const row = await fetchLatestPersonalKrReviewDraft(personalKrId, month);
-      set(state => ({
+      if (ep !== epoch) return;
+      set(state => state.reviewDraftFetchedKeys.has(key) ? {} : ({
         reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: row },
         reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
       }));
     } catch (e) {
+      if (ep !== epoch) return;
       // 🔴 outlookのensureOutlookLoadedと同じ理由でnullで確定させる（undefinedのまま残すと
       // モーダル側が永久に読み込み中のまま止まる。personal_kr_review_drafts未適用時の事故を防ぐ）。
       set(state => ({
@@ -526,22 +627,21 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: formatErrorForUser("振り返り下書きの取得に失敗しました", e) },
       }));
     }
+    });
   },
 
   runReviewDraft: async ({ personalKrId, month, fingerprint, context, material, force }) => {
     const key = reviewDraftKey(personalKrId, month);
     if (get().reviewDraftAnalyzingKeys.has(key)) return; // 二重発火防止（連打対策）
-
-    // 別端末・別セッションでも再生成されないための前提：まずDBの直近下書きを確認する
-    // （ゲストはensureReviewDraftLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
-    await get().ensureReviewDraftLoaded(personalKrId, month);
-    const cached = get().reviewDraftByKrMonth[key] ?? null;
-
-    set(state => ({
-      reviewDraftAnalyzingKeys: new Set(state.reviewDraftAnalyzingKeys).add(key),
-      reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: null },
-    }));
+    // 🔴 生成中の印は、DBの直近下書きの確認（await）より前に立てる（runOutlookAnalysis と同じ理由）。
+    const ep = epoch;
+    set(state => ({ reviewDraftAnalyzingKeys: new Set(state.reviewDraftAnalyzingKeys).add(key) }));
     try {
+      // 別端末・別セッションでも再生成されないための前提：まずDBの直近下書きを確認する
+      // （ゲストはensureReviewDraftLoaded自体がDBに問い合わせず、メモリ上の値をそのまま使う）
+      await get().ensureReviewDraftLoaded(personalKrId, month);
+      const cached = get().reviewDraftByKrMonth[key] ?? null;
+      set(state => ({ reviewDraftErrorByKey: { ...state.reviewDraftErrorByKey, [key]: null } }));
       // 🔴 AI呼び出し（analyze）自体はゲストでも素通しする（invokeAI.tsが既に開放済み・
       // CLAUDE.md Section 23 Phase 3）。ただし下書きはpersonal_kr_review_draftsに書けない
       // ため、ゲストのときは insertPersonalKrReviewDraft をスキップしメモリ保持のみにする。
@@ -550,15 +650,18 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
         analyze: () => generatePersonalKrReviewDraft(context, material),
       });
       if (ranAnalysis && !isGuestMode()) await insertPersonalKrReviewDraft(draft); // 履歴として積む（人の編集以外はUPDATEしない）
+      if (ep !== epoch) return;
       set(state => {
         const analyzing = new Set(state.reviewDraftAnalyzingKeys);
         analyzing.delete(key);
         return {
           reviewDraftByKrMonth: { ...state.reviewDraftByKrMonth, [key]: draft },
+          reviewDraftFetchedKeys: new Set(state.reviewDraftFetchedKeys).add(key),
           reviewDraftAnalyzingKeys: analyzing,
         };
       });
     } catch (e) {
+      if (ep !== epoch) return;
       set(state => {
         const analyzing = new Set(state.reviewDraftAnalyzingKeys);
         analyzing.delete(key);
@@ -572,6 +675,7 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
 
   loadPeriodReviews: async () => {
     if (get().periodReviewsLoading || get().periodReviewsLoaded) return;
+    const ep = epoch;
     set({ periodReviewsLoading: true, periodReviewsError: null });
     // 🔴 ゲストはSupabaseに一切接続しない（冒頭コメント参照）。「全体」タブのサンプルデータは
     // 用意していない（v3.67のKRサンプルのような専用データセットが無い）ため、空のまま
@@ -582,8 +686,10 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     }
     try {
       const rows = await fetchPersonalPeriodReviews();
+      if (ep !== epoch) return;
       set({ periodReviews: rows, periodReviewsLoaded: true, periodReviewsLoading: false });
     } catch (e) {
+      if (ep !== epoch) return;
       // 🔴🔴 W2（最重要）：ここで例外を投げ直さない。テーブル未適用（マイグレーション未適用の
       // 窓）でも「全体」タブだけが案内を出せるよう、periodReviewsLoaded=trueで確定させ
       // エラーメッセージだけをstateに積む。krs等の既存stateには一切触れていないため、
@@ -617,3 +723,28 @@ export const usePersonalOkrUiStore = create<PersonalOkrUiState>((set, get) => ({
     }
   },
 }));
+
+/**
+ * ストアを空に戻す（ユーザー切替・サインアウト用）。進行中の取得・AI呼び出しの結果は
+ * epoch の更新で捨てられる。ゲストのサンプルも消えるが、ゲストでは呼ばれない（decideAuthReset）。
+ */
+export function resetPersonalOkrUiStore(): void {
+  epoch += 1;
+  inflight.clear();
+  usePersonalOkrUiStore.setState(initialData());
+}
+
+// 認証の変化でストアを空に戻す。このモジュールは「自分」タブを開いた時に初めて読み込まれる
+// （Section 19）ため、App.tsx のログアウト処理からは参照せず、ここで自分で購読する。
+let lastAuthUserId: string | null = null;
+onAuthStateChange((session, event) => {
+  const d = decideAuthReset({
+    prevUserId: lastAuthUserId,
+    event,
+    userId: session?.user?.id ?? null,
+    isAnonymous: !!session?.user?.is_anonymous,
+    isGuest: isGuestMode(),
+  });
+  lastAuthUserId = d.userId;
+  if (d.reset) resetPersonalOkrUiStore();
+});

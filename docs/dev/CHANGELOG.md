@@ -8387,3 +8387,13 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * 非表示が10分続いたら app-sync／app-sync-optional／通知の購読を解除（lib/supabase/realtimePause.ts の合図）。前面に戻ったら張り直し、全件再取得（resync）で埋める。差分取得（onFirstSubscribed）は重ねない。realtimeEchoWatch は paused／resuming の間は見張らない。
 # * ベル（InAppNotificationBell）：非表示では未読数を取らない／実行中の要求は重ねず終了後に1回／Realtime が SUBSCRIBED の間は15分・切れているときだけ3分（lib/notifications/bellPolling.ts）。AdminView の AI使用量の30秒 reload も非表示中は止める。
 # * 解除後に古いチャンネルから届く状態通知は無視（realtime.ts・notificationRealtime.ts の disposed）。テスト：realtimePause／bellDiskIo／bellPolling／visibilityPollingWiring ほか（修正前コードで赤くなることを確認済み）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.172（2026-10-22）：個人OKRストアの取得競合・ユーザー切替・エラー表示の修正（巡回53回目・D OKR サブ領域⑤。docs/REFACTORING.md M65〜M67）
+#
+# * KR詳細の取得中の印を Set 化（detailLoadingKrIds）。同じ取得は1本にまとめ、取得中に入った保存は mergeFetchedRows（lib/personalOkr/fetchMerge.ts）で巻き戻さない。
+# * runOutlookAnalysis／runReviewDraft：解析中の印をDB確認の await より前に立てる（確認中の2回目の呼び出しがAIを二重に呼ぶ不具合）。取得中に載った結果を古い取得結果で消さない。
+# * ストアに epoch と resetPersonalOkrUiStore を追加。サインアウト・ユーザー切替（lib/personalOkr/authReset.ts の decideAuthReset）で空に戻し、前のユーザーの応答は捨てる。ゲストと匿名セッションは対象外。
+# * 週の紐づけ一覧の取得失敗を空で確定させない（再取得できる）。追加・解除は一覧が読めないと中止。deleteKr は月・週・メモ・紐づけのキャッシュも消す。
+# * KR詳細・月次の取得失敗を画面に表示（再読み込みボタン付き）。krsError／detailError を formatErrorForUser に統一。
+# * テスト：personalOkrUiStoreRaces.test.ts（13件・修正前コードで12件が赤）・fetchMergeAndAuthReset.test.ts。DB 変更なし・MIN_CLIENT_VERSION は上げない。

@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.171
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.172
 #
-最終更新：2026-10-22（v3.171）
+最終更新：2026-10-22（v3.172）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5235,6 +5235,17 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - **機械チェック**：`src/lib/supabase/__tests__/realtimePause.test.ts`（10分の境界・再開・二重通知・dispose＋App／ベルの配線をコメント除去のソース走査＝Section 59）・`src/components/notifications/__tests__/bellDiskIo.test.ts`（実際に描画。非表示で取らない・SUBSCRIBED の間は3分で取らない・要求を重ねない・10分で解除／復帰で張り直し）・`bellPolling.test.ts`・`src/lib/__tests__/visibilityPollingWiring.test.ts`・`realtimeEchoWatch.test.ts`（paused／resuming）・`notificationRealtime.test.ts`・`realtimeResync.test.ts`（解除後の通知無視）。修正前のコードに当てて新規テストが赤くなることを確認済み。
 - **山本さんの実機確認**：①ブラウザの別タブへ10分以上切り替えて戻る→データが最新になり、DevTools の Network の WS が一度閉じて再接続されていること ②非表示中に別の人がタスクを変更→戻ったあと反映されていること ③ベルの未読数が戻ったときに更新されること ④AI使用量タブを開いたまま別タブにしても通信が止まること。
 - **残るリスク**：復帰直後の全件再取得（30秒の最短間隔つき）が、多数の利用者が同時刻に戻る朝一番に重なる可能性（Free・Nano では復帰の集中が新たな山になりうる）。再開の接続待ち（`resuming`）の間に自分が保存すると、エコー見張りは見張らないが他者の変更の受信は復帰の全件再取得で埋まるまで遅れる。
+
+### v3.172：個人OKRストアの取得競合・ユーザー切替（巡回53回目・D OKR サブ領域⑤）
+
+`stores/personalOkrUiStore.ts` はモジュール単位のシングルトンで、明示のログアウト（`handleLogout`＝再読み込み）以外では状態が残る。
+- 🔴 **サインアウト・ユーザー切替でストアを空に戻す**：`personalOkrUiStore` 自身が `onAuthStateChange` を購読し（このモジュールは「自分」タブを開いたとき初めて読み込まれる＝Section 19 のため App.tsx からは参照しない）、`decideAuthReset`（`lib/personalOkr/authReset.ts`）で SIGNED_OUT・ユーザー変更を判定して `resetPersonalOkrUiStore()`。ゲストと匿名セッションのイベントは無視。リセットで `epoch` が進み、進行中の取得・AI呼び出しの結果は捨てられる（非同期アクションは開始時の epoch を控え、戻ったときに不一致なら何もしない）。**非同期アクションを足すときは同じ epoch ガードを入れる。**
+- **同じ対象の取得は `dedupe`（inflight）で1本にまとめる**。KR詳細の取得中の印は `detailLoadingKrIds`（Set）。取得結果は `mergeFetchedRows`（`lib/personalOkr/fetchMerge.ts`）で手元の新しい行（updated_at が大きい・取得中に作った行）を残してから載せる。
+- **AI解析・下書き生成は「解析中の印」を DB確認の await より前に立てる**（後だと確認中の2回目がガードを抜けて二重課金）。結果を載せるとき `*FetchedKeys` にも入れ、遅れて届いた取得結果で消さない。
+- 週の紐づけ一覧の取得失敗は未取得のまま残し（空で確定させない）、`linkWeekTask`／`unlinkWeekTask` は一覧が読めないと中止する。
+- KR詳細・月次の取得失敗は `detailError`（`formatErrorForUser`）を `PersonalOkrView` に表示（再読み込みボタン付き）。以前は誰も表示しておらず、データが無いように見えていた。
+- 仕様判断待ちは `docs/REFACTORING.md` M65（個人OKRのデータは購読も定期取得も無く、v3.171 の復帰時の全件再取得の対象外）・M66（ConflictError 後に再読み込みの手段が無い）。
+- テスト：`stores/__tests__/personalOkrUiStoreRaces.test.ts`（修正前のストアで13件中12件が赤になることを確認済み）・`lib/personalOkr/__tests__/fetchMergeAndAuthReset.test.ts`。
 
 ---
 

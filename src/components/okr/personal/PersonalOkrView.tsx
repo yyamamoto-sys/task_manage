@@ -104,7 +104,8 @@ export function PersonalOkrView({ currentUser }: Props) {
   const loadKrs = usePersonalOkrUiStore(s => s.loadKrs);
   const ensureKrDetailLoaded = usePersonalOkrUiStore(s => s.ensureKrDetailLoaded);
   const ensurePeriodMonthsLoaded = usePersonalOkrUiStore(s => s.ensurePeriodMonthsLoaded);
-  const detailLoadingKrId = usePersonalOkrUiStore(s => s.detailLoadingKrId);
+  const detailLoadingKrIds = usePersonalOkrUiStore(s => s.detailLoadingKrIds);
+  const detailError = usePersonalOkrUiStore(s => s.detailError);
   const monthsByKr = usePersonalOkrUiStore(s => s.monthsByKr);
   const weeksByKr = usePersonalOkrUiStore(s => s.weeksByKr);
   const memosByKr = usePersonalOkrUiStore(s => s.memosByKr);
@@ -438,7 +439,7 @@ export function PersonalOkrView({ currentUser }: Props) {
           months={displayMonthsByKr[selectedKr.id] ?? []}
           weeks={displayWeeksByKr[selectedKr.id] ?? []}
           memos={displayMemosByKr[selectedKr.id] ?? []}
-          loadingDetail={!previewSample && detailLoadingKrId === selectedKr.id}
+          loadingDetail={!previewSample && detailLoadingKrIds.has(selectedKr.id)}
           keyResults={keyResults}
           taskForces={taskForces}
           objectives={objectives}
@@ -521,6 +522,22 @@ export function PersonalOkrView({ currentUser }: Props) {
       )}
 
       {krsError && <div style={{ color: "var(--color-text-danger)", fontSize: "12px", marginTop: "10px" }}>{krsError}</div>}
+      {/* KRの詳細（月・週・メモ）の取得に失敗したとき。表示しないと、データが無いように見えて
+          新しい月を作り直す保存に進んでしまう。再読み込みで同じKRの取得をやり直せる。 */}
+      {detailError && !previewSample && (
+        <div style={{ color: "var(--color-text-danger)", fontSize: "12px", marginTop: "10px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+          <span>{detailError}</span>
+          {selectedKr && (
+            <button
+              type="button"
+              onClick={() => void ensureKrDetailLoaded(selectedKr.id)}
+              style={{ fontSize: "12px", padding: "2px 10px", borderRadius: "var(--radius-sm)", border: "0.5px solid var(--color-border-secondary)", background: "var(--color-background-primary)", color: "var(--color-text-primary)", cursor: "pointer" }}
+            >
+              再読み込み
+            </button>
+          )}
+        </div>
+      )}
 
       {formModal && (
         <PersonalKrFormModal
