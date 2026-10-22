@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.176
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.177
 #
-最終更新：2026-10-22（v3.176）
+最終更新：2026-10-22（v3.177）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5272,6 +5272,13 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - Auth メールと members を切り離す機能は無い：ゲストは `AuthenticatedApp` を通らず、初回ブートストラップは `isWizardDone` 判定が先、スーパー管理者の代理・デモ機能は無い。`UserSelectScreen`（メンバー選択）は①②が成立しなかったときの入口として残り、メール未設定の既存メンバーが自分を選ぶと `handleLogin` が Auth メールを補完する（②の救済はこの経路に一本化された）。
 - `AccessDeniedScreen` の案内（`auth.accessDenied.body1/2/3`・ja/en）：ログイン中のメールを表示したうえで、「メンバー登録は会社のメールアドレスで行われています。個人のメールアドレス（Gmail 等）でログインしていないか確認してください。」・ログアウトボタン「ログアウトして登録済みのアドレスで入り直す」・「解決しない場合は管理者に連絡し…」を出す。
 - テスト：`lib/account/__tests__/savedUserMatch.test.ts`・`components/auth/__tests__/accessDeniedGuidance.test.tsx`（修正前のコードで赤になることを確認済み）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+### v3.177：グループ機能まわりの2件（巡回57回目・A 計画ビュー）
+
+- 🔴 **`normalizeTaskSection` は手元の `projectSections` に無い id を空へ戻さない**（削除済み・別PJ・PJなしだけ戻す）。グループの取得失敗（周辺表の警告）や、`project_sections`（`app-sync-optional`）が `tasks`（`app-sync`）より後に届く間に、そのタスクを保存すると、他の人のグループ分けが DB から消えていた。存在しない・削除済み・別PJの最終判断は DB のトリガー（`enforce_task_section_integrity`）。
+- `reorderProjectSections` は最終の並びを先に1回で画面へ反映してから1件ずつ保存する（途中の並びが画面に出ない）。
+- 仕様判断待ち：`docs/REFACTORING.md` M74（Undo の `saveTask` が待たれない）・M75（削除されたグループ宛てのその場追加の下書きが見えないまま残る）・M76（並べ替えの途中失敗で `sort_order` が重なる）。
+- テスト：`lib/section/__tests__/sections.test.ts`・`stores/__tests__/sectionReorderOptimistic.test.ts`（修正前は赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
 
 ---
 

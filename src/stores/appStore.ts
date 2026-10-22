@@ -1547,9 +1547,14 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   reorderProjectSections: async (projectId, orderedIds, updatedBy) => {
     const current = get().projectSections.filter(x => x.project_id === projectId && !x.is_deleted);
-    const changed = computeSectionReorder(current, orderedIds);
+    const changed = computeSectionReorder(current, orderedIds).map(x => ({ ...x, updated_by: updatedBy }));
+    if (changed.length === 0) return;
+    // 並びは先に1回でまとめて画面へ反映する。1件ずつ保存の完了を待って反映すると、途中の並びが
+    // 画面に出る・その間の次の並べ替えが中途半端な並びを基準に計算される
+    const byId = new Map(changed.map(x => [x.id, x]));
+    set(state => ({ projectSections: state.projectSections.map(x => byId.get(x.id) ?? x) }));
     for (const x of changed) {
-      await get().saveProjectSection({ ...x, updated_by: updatedBy });
+      await get().saveProjectSection(x);
     }
   },
 

@@ -65,10 +65,14 @@ describe("normalizeTaskSection（DB トリガー enforce_task_section_integrity 
     const t = task("t1", { section_id: "s1" });
     expect(normalizeTaskSection(t, [t], sections)).toBe(t);
   });
-  it("別PJのグループ・削除済み・存在しないグループは null に戻る", () => {
+  it("別PJのグループ・削除済みのグループは null に戻る", () => {
     expect(normalizeTaskSection(task("t", { section_id: "s2" }), [], sections).section_id).toBeNull();
     expect(normalizeTaskSection(task("t", { section_id: "sd" }), [], sections).section_id).toBeNull();
-    expect(normalizeTaskSection(task("t", { section_id: "zzz" }), [], sections).section_id).toBeNull();
+  });
+  it("手元の一覧に無い id は触らない（取得失敗・他の人のグループ作成が先に届いていない間に、未分類へ戻して保存しない）", () => {
+    const t = task("t", { section_id: "zzz" });
+    expect(normalizeTaskSection(t, [], sections)).toBe(t);
+    expect(normalizeTaskSection(t, [], []).section_id).toBe("zzz");
   });
   it("PJなしは null", () => {
     expect(normalizeTaskSection(task("t", { project_id: null, section_id: "s1" }), [], sections).section_id).toBeNull();

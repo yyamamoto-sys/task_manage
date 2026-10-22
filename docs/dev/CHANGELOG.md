@@ -8424,3 +8424,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * App.tsx：autoMatch の②（localStorage の前回ユーザー）を lib/account/savedUserMatch.ts の resolveSavedUserAutoLogin 経由に変更。Auth メールと前回ユーザーのメールが一致（大文字小文字・前後空白は無視）するときだけ自動ログイン。不一致・email 空は clearCurrentUser() して選択画面へ。
 # * AccessDeniedScreen・i18n（auth.accessDenied.body1/2/3・logoutButton）：メール不一致の人に向けて「会社のメールアドレスで登録されています。個人のメールアドレスでログインしていないか確認」「ログアウトして登録済みのアドレスで入り直す」「解決しない場合は管理者に連絡」を案内。
 # * テスト：savedUserMatch.test.ts・accessDeniedGuidance.test.tsx（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.177（2026-10-22）：グループ機能まわりの2件（巡回57回目・A 計画ビュー。docs/REFACTORING.md M74〜M76）
+#
+# * lib/section/sections.ts：normalizeTaskSection が、手元の projectSections に無い section_id を null へ戻さない（削除済み・別PJ・PJなしだけ戻す）。グループ取得失敗・他の人のグループ作成がタスク更新より後に届く間の保存で、他の人のグループ分けが DB から消えていた。
+# * stores/appStore.ts：reorderProjectSections が最終の並びを先に1回で画面へ反映してから1件ずつ保存する。
+# * テスト：sections.test.ts・sectionReorderOptimistic.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

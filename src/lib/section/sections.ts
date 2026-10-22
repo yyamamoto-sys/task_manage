@@ -87,7 +87,7 @@ export function sectionIdOf(task: Pick<Task, "section_id">): string | null {
 /**
  * 保存前にタスクのグループを DB の規則へ揃える。
  * - 親があれば親のグループ（親が未分類なら未分類）
- * - PJ なし・別PJのグループ・削除済み・存在しないグループは未分類（null）
+ * - PJ なし・別PJのグループ・削除済みのグループは未分類（null）。手元の一覧に無い id はそのまま通す
  * 変更が無ければ**同じオブジェクトを返し、section_id のキーを足さない**（列がまだ無い DB でも
  * 既存の保存が落ちないように。列が無い間は section_id が常に undefined のまま）。
  */
@@ -103,8 +103,15 @@ export function normalizeTaskSection(
     if (parent) want = sectionIdOf(parent);
   }
   if (want) {
-    const sec = sections.find(s => s.id === want && !s.is_deleted);
-    if (!task.project_id || !sec || sec.project_id !== task.project_id) want = null;
+    // 手元の一覧に無い id は触らない（DB のトリガーが最終判断する）。グループの取得に失敗した直後や、
+    // 他の人が作ったグループよりタスクの更新が先に届いた間に、「一覧に無い」を理由に空へ戻して
+    // 保存すると、他の人がグループに入れたタスクを黙って未分類へ戻してしまう
+    const sec = sections.find(s => s.id === want);
+    if (sec) {
+      if (sec.is_deleted || !task.project_id || sec.project_id !== task.project_id) want = null;
+    } else if (!task.project_id) {
+      want = null;
+    }
   }
   return want === cur ? task : { ...task, section_id: want };
 }
