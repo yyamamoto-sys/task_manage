@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.174
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.175
 #
-最終更新：2026-10-22（v3.174）
+最終更新：2026-10-22（v3.175）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5257,6 +5257,14 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - 🔴 `useConfirmClose`（個人OKRの編集モーダル5つ）の Esc は、`role="dialog"`（ConfirmModal）に加えて **`role="listbox"`（開いている `CustomSelect` のパネル）が DOM にある間は無視する**（`isEscapeOwnedByOverlay`）。以前はドロップダウンを Esc で閉じると同じ Esc でモーダルも閉じ、未編集なら確認なしで閉じていた。`CustomSelect` のパネルに `role="listbox"` を付けたことが前提（テストが検査）。
 - 同型の未対応：`useConfirmClose` 以外の Esc で閉じるモーダルは判定が無い（`docs/REFACTORING.md` M70）。
 - テスト：`hooks/__tests__/confirmCloseEscape.test.ts`（修正前は4件とも赤）。
+
+### v3.175：認証の入口の2件（巡回56回目・App Shell・認証・入口）
+
+- 🔴 **認証済みだったタブの SIGNED_OUT（セッション失効・別タブのサインアウト）は `clearCurrentUser()`＋再読み込みで切る**（`lib/account/signedOutCleanup.ts` の `shouldReloadOnSignedOut`。再設定画面・ゲスト・未ログイン画面では動かない）。以前は `authenticated=false` にするだけで、`appStore` の前ユーザーのデータと localStorage の「前回ユーザー」が残り、同じタブで別の人がログインすると前の人のメンバー行に自動ログインしうる状態だった。明示のログアウト（`handleLogout`）と同じ「迷ったらリロード」方針。新しいストアを足してもここで一括して切れる。
+- 🔴 **初回データ取得の失敗はアクセス拒否画面より先に `StartupLoadFailedScreen` を返す**（`lib/account/startupLoadFailed.ts`）。取得失敗で `members` が空のまま「未登録」と案内していた。システム空判定のRPCは取得エラー中は走らせない。
+- `AccessDeniedScreen` は自前で `signOut()` しない（`handleLogout` に任せる。失敗はトーストで出る）。
+- 仕様判断待ち：`docs/REFACTORING.md` M71（不一致時の案内文）・M72（`autoMatch` の②前回ユーザーへのフォールバック）・M73（ゲスト遮断に `channel()` が無い）。
+- テスト：`__tests__/authEntryWiring.test.ts`・`lib/account/__tests__/signedOutCleanup.test.ts`（修正前は赤）。
 
 ---
 

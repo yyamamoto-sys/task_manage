@@ -9,6 +9,9 @@ import { LoginScreen } from "./components/auth/LoginScreen";
 import { UserSelectScreen } from "./components/auth/UserSelectScreen";
 import { SetupWizard } from "./components/auth/SetupWizard";
 import { AccessDeniedScreen } from "./components/auth/AccessDeniedScreen";
+import { StartupLoadFailedScreen } from "./components/auth/StartupLoadFailedScreen";
+import { shouldReloadOnSignedOut } from "./lib/account/signedOutCleanup";
+import { shouldShowStartupLoadFailed } from "./lib/account/startupLoadFailed";
 import { AccountRecoveryScreen } from "./components/auth/AccountRecoveryScreen";
 import { initialAuthLink } from "./lib/account/initialAuthLink";
 import { resolveRecoveryOnStartup, shouldOpenResetFormOnError, shouldEnforceMarkerOnAuthEvent } from "./lib/account/recoveryFlow";
@@ -83,6 +86,12 @@ export default function App() {
     () => !!localStorage.getItem(KEYS.WIZARD_COMPLETED)
   );
 
+  // onAuthStateChange（マウント時に1回だけ購読）から最新の状態を読むための参照
+  const authenticatedRef = useRef(false);
+  authenticatedRef.current = authenticated;
+  const recoveryActiveRef = useRef(false);
+  recoveryActiveRef.current = recoveryActive;
+
   // Supabaseセッション確認
   //
   // 【ゲスト（サンプル閲覧）のAI用匿名セッションを認証フローに混ぜない・Phase 3】
@@ -133,6 +142,15 @@ export default function App() {
       // PASSWORD_RECOVERY は detectSessionInUrl:false では発火しない（リンクは applyInitialAuthLink が
       // setSession で取り込み、印はその前に書く）。再設定の強制は印と下の分岐で行う。
       if (session?.user?.is_anonymous) return;
+      // セッション失効・別タブでのサインアウト：明示のログアウトと違い再読み込みされないため、
+      // 前のユーザーのデータ・「前回ユーザー」が残らないようここで切る（lib/account/signedOutCleanup.ts）。
+      if (shouldReloadOnSignedOut({
+        event, wasAuthenticated: authenticatedRef.current, recoveryActive: recoveryActiveRef.current, isGuest: isGuestMode(),
+      })) {
+        clearCurrentUser();
+        window.location.reload();
+        return;
+      }
       if (session && shouldEnforceMarkerOnAuthEvent(event, isPasswordLoginInFlight())) {
         const r = resolveRecoveryOnStartup({
           link: { kind: "none" }, markerRaw: readRecoveryMarkerRaw(), sessionUserId: session.user.id, now: Date.now(),
@@ -360,7 +378,10 @@ function AuthenticatedApp({
   // is_system_bootstrapped() でサーバー側に判定してもらう。
   const [bootstrapStatus, setBootstrapStatus] = useState<"checking" | "empty" | "populated" | "error">("checking");
   useEffect(() => {
-    if (loading || isWizardDone) return;
+    // 初回取得に失敗しているときは判定しない（下の取得失敗画面に任せる。失敗した取得の後に
+    // 「未登録」と案内しないため）。再試行で取得が成功すれば isWizardDone が真になる。
+    if (loading || isWizardDone || error) return;
+    setBootstrapStatus("checking");
     let cancelled = false;
     (async () => {
       try {
@@ -373,7 +394,7 @@ function AuthenticatedApp({
       }
     })();
     return () => { cancelled = true; };
-  }, [loading, isWizardDone]);
+  }, [loading, isWizardDone, error]);
 
   // ②プロジェクト招待：メール確認後の初回ログイン時に保留中の招待を自動受諾する
   // （3-2の🔴要件・設計判断(a)。CLAUDE.md Section 25・src/lib/projectInvite/pendingInvite.ts
@@ -679,6 +700,11 @@ function AuthenticatedApp({
   // SetupWizard/AccessDeniedScreen/UserSelectScreenのどれも出さない（上のuseEffect参照）。
   if (!loading && !currentUser && !inviteAutoAcceptChecked) {
     return <FullScreenLoading message={t("layout.app.loading.preparing")} />;
+  }
+
+  // 初回の取得に失敗した（通信エラー等）。アクセス拒否画面と取り違えないよう、先に取得失敗を案内する
+  if (error && shouldShowStartupLoadFailed({ loading, isWizardDone, hasCurrentUser: !!currentUser, error })) {
+    return <StartupLoadFailedScreen error={error} onRetry={() => void reload()} onLogout={onLogout} />;
   }
 
   // 初回起動時はセットアップウィザードを表示（本当にシステムが空の場合のみ）

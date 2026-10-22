@@ -91,14 +91,12 @@ describe("onLogout の直接呼び出し箇所：signOut 経路を必ず通る�
     expect(sites).toEqual(["components/auth/AccessDeniedScreen.tsx"]);
   });
 
-  it("AccessDeniedScreen.tsx は onLogout() を呼ぶ前に自前で signOut() している（二重signOutが起きる経路）", () => {
+  it("AccessDeniedScreen.tsx は自前で signOut() せず onLogout() に任せる（v3.175：失敗を握りつぶす二重signOutの解消）", () => {
     const content = fs.readFileSync(
       path.resolve(SRC_DIR, "components/auth/AccessDeniedScreen.tsx"),
       "utf-8",
-    );
-    const signOutIndex = content.search(/\bsignOut\(\)/);
-    const onLogoutIndex = content.search(/\bonLogout\(\)/);
-    expect(signOutIndex).toBeGreaterThanOrEqual(0);
-    expect(onLogoutIndex).toBeGreaterThan(signOutIndex);
+    ).split("\n").filter(l => !/^\s*\/\//.test(l)).join("\n");
+    expect(content).not.toMatch(/\bsignOut\(/);
+    expect(content).toMatch(/\bonLogout\(\)/);
   });
 });

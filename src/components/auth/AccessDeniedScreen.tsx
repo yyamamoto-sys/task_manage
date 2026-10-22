@@ -5,7 +5,7 @@
 // （is_system_bootstrapped()がtrue、または判定自体に失敗した安全側フォールバック）で
 // App.tsx から表示される。ここには絶対に SetupWizard へ進ませない（M25対応）。
 import { useEffect, useState } from "react";
-import { getAuthEmail, signOut } from "../../lib/supabase/auth";
+import { getAuthEmail } from "../../lib/supabase/auth";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
 import { acceptProjectInvite } from "../../lib/supabase/projectInviteStore";
@@ -25,8 +25,9 @@ export function AccessDeniedScreen({ onLogout }: Props) {
     void getAuthEmail().then(setEmail);
   }, []);
 
-  const handleLogout = async () => {
-    await signOut();
+  // signOut は onLogout（App.tsx の handleLogout）が行う。ここでも呼ぶと、失敗したとき
+  // 例外が握られず何も表示されない（ボタンを押しても何も起きない）うえ、二重に signOut が走る。
+  const handleLogout = () => {
     onLogout();
   };
 

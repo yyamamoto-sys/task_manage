@@ -8409,3 +8409,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 #
 # * hooks/useConfirmClose.ts：Esc の判定に role="listbox"（開いている CustomSelect のパネル）を追加（isEscapeOwnedByOverlay）。CustomSelect のパネルに role="listbox" を付与。
 # * テスト：confirmCloseEscape.test.ts（修正前コードで4件とも赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.175（2026-10-22）：認証の入口の2件の修正（巡回56回目・App Shell・認証・入口。docs/REFACTORING.md M71〜M73）
+#
+# * App.tsx：認証済みだったタブの SIGNED_OUT（セッション失効・別タブのサインアウト）で clearCurrentUser() ＋再読み込み（lib/account/signedOutCleanup.ts）。以前は前ユーザーのデータ・「前回ユーザー」が残った。
+# * App.tsx・components/auth/StartupLoadFailedScreen.tsx：初回データ取得の失敗をアクセス拒否画面ではなく取得失敗画面（再試行つき）で案内（lib/account/startupLoadFailed.ts）。
+# * AccessDeniedScreen：二重の signOut を解消（handleLogout に任せる）。
+# * テスト：authEntryWiring.test.ts・signedOutCleanup.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
