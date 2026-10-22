@@ -54,3 +54,17 @@ describe("ガントの一括操作バー", () => {
     expect(view).toMatch(/\{!isPreview && selectedTaskIds\.size > 0 && \(\s*<BulkActionBar\b/);
   });
 });
+
+describe("ガントのショートカットと選択の後始末", () => {
+  const view = read("components/gantt/GanttView.tsx");
+  it("T・+-・Ctrl+A・Enter はモーダル表示中・入力中・IME変換中に発火しない（共通判定を通す）", () => {
+    expect(view).toMatch(/shouldIgnoreCommandKey\(e, \{ activeElement: el, modalOpen: isModalOpen\(\) \}\)/);
+    expect(view).not.toMatch(/tag === "INPUT" && !isRange/);
+  });
+  it("ボタン・チェックボックス上の Enter は詳細を開かない", () => {
+    expect(view).toMatch(/if \(isInteractiveTarget\(el\)\) return;/);
+  });
+  it("消えたタスクは選択から外す（一括バーの件数と対象がずれない）", () => {
+    expect(view).toMatch(/setSelectedTaskIds\(prev => pruneSelection\(prev, allTasks\)\)/);
+  });
+});

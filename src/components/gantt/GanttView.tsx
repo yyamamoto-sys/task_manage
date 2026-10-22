@@ -39,7 +39,9 @@ import {
 import { TaskBarRow, GanttPjLabelRow, GanttTodoLabelRow, GanttPersonLabelRow, GanttQuickAddTaskRow, ZoomIcon, type TaskBarLinkUi } from "./GanttParts";
 import { GanttMobileView } from "./GanttMobileView";
 import { ShortcutsPanel } from "../common/ShortcutsPanel";
-import { toggleTaskWithChildren } from "../../lib/task/selectionWithChildren";
+import { toggleTaskWithChildren, pruneSelection } from "../../lib/task/selectionWithChildren";
+import { shouldIgnoreCommandKey, isInteractiveTarget } from "../../lib/shortcuts/keys";
+import { isModalOpen } from "../../lib/autoUpdate";
 import { applyCheckboxClick } from "../../lib/selectionRange";
 import { useBulkTaskActions } from "../../hooks/useBulkTaskActions";
 import { useTaskKeyboardNav } from "../../hooks/useTaskKeyboardNav";
@@ -229,6 +231,10 @@ export function GanttView({
     selectionAnchorRef.current = null;
     setSelectedTaskIds(prev => (prev.size === 0 ? prev : new Set()));
   }, []);
+  // 他の人の削除（realtime）・自分の削除で消えたタスクを選択から外す（一括バーの件数と実際の対象がずれないように）
+  useEffect(() => {
+    setSelectedTaskIds(prev => pruneSelection(prev, allTasks));
+  }, [allTasks]);
   // Escapeで選択クリア。選択が空のときはリスナーを貼らない（他機能のEscape処理と競合しないよう最小限に）
   useEffect(() => {
     if (selectedTaskIds.size === 0) return;
@@ -1025,10 +1031,8 @@ export function GanttView({
     const onKeyDown = (e: KeyboardEvent) => {
       if (editingTaskId || editingMs) return;
       const el = document.activeElement as HTMLElement | null;
-      const tag = el?.tagName;
-      const isRange = tag === "INPUT" && (el as HTMLInputElement).type === "range"; // スライドバーは文字入力ではない
-      const isTyping = (tag === "INPUT" && !isRange) || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
-      if (isTyping) return;
+      // 入力中・IME・モーダル表示中は発火しない（チェックボックス・スライドバーは文字入力ではないので通す）
+      if (shouldIgnoreCommandKey(e, { activeElement: el, modalOpen: isModalOpen() })) return;
       const hasOtherModifier = e.ctrlKey || e.metaKey || e.altKey;
       if (!hasOtherModifier && (e.key === "t" || e.key === "T")) {
         scrollToToday();
@@ -1052,6 +1056,7 @@ export function GanttView({
       if (!hasOtherModifier && e.key === "Enter") {
         // 注目中のタスクがあるときの Enter は useTaskKeyboardNav 側が開く（二重に開かない）
         if (useTaskFocusStore.getState().focusedTaskId !== null) return;
+        if (isInteractiveTarget(el)) return; // ボタン・チェックボックス上の Enter はその要素の操作に任せる
         if (selectedTaskIds.size === 1) {
           const [onlyTaskId] = selectedTaskIds;
           handleRowEdit(onlyTaskId);

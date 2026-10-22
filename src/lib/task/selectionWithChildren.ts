@@ -54,3 +54,19 @@ export function toggleTaskWithChildren(selectedIds: Set<string>, taskId: string,
     ? removeTaskWithChildren(selectedIds, taskId, allTasks)
     : addTaskWithChildren(selectedIds, taskId, allTasks);
 }
+
+/**
+ * 選択から、いま存在しない（削除された・他の人に削除された）タスクのidを取り除く。
+ * 変化が無ければ同じ Set を返す（無駄な再描画を避ける）。
+ */
+export function pruneSelection(selectedIds: Set<string>, allTasks: Task[]): Set<string> {
+  if (selectedIds.size === 0) return selectedIds;
+  const alive = new Set(allTasks.map(t => t.id));
+  let changed = false;
+  const next = new Set<string>();
+  selectedIds.forEach(id => {
+    if (alive.has(id)) next.add(id);
+    else changed = true;
+  });
+  return changed ? next : selectedIds;
+}

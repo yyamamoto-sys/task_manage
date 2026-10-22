@@ -106,3 +106,14 @@ export function moveFocus(orderedIds: readonly string[], currentId: string | nul
   const next = Math.min(orderedIds.length - 1, Math.max(0, idx + dir));
   return orderedIds[next];
 }
+
+/**
+ * Ctrl/Cmd 併用のショートカット（Ctrl+A 等）を無視すべきか。修飾キーは前提なので見ない。
+ * 入力中・IME変換中・モーダル表示中・他ハンドラ処理済みなら true。
+ */
+export function shouldIgnoreCommandKey(e: KeyEventLike, ctx: SingleKeyContext): boolean {
+  if (isImeComposing(e)) return true;
+  if (e.defaultPrevented) return true;
+  if (ctx.modalOpen) return true;
+  return isTypingTarget(ctx.activeElement);
+}

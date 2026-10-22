@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Task } from "../../localData/types";
-import { addTaskWithChildren, removeTaskWithChildren, toggleTaskWithChildren } from "../selectionWithChildren";
+import { addTaskWithChildren, removeTaskWithChildren, toggleTaskWithChildren, pruneSelection } from "../selectionWithChildren";
 
 function makeTask(over: Partial<Task>): Task {
   return {
@@ -114,5 +114,19 @@ describe("toggleTaskWithChildren（親をクリック→子も付け外し、子
     // 続けて子1だけを解除（親はそのまま残る）
     const afterRemove = toggleTaskWithChildren(afterAdd, "c1", [parent, child1, child2]);
     expect(afterRemove).toEqual(new Set(["p1", "c2"]));
+  });
+});
+
+describe("pruneSelection", () => {
+  it("存在しないタスクのidを取り除く", () => {
+    const tasks = [makeTask({ id: "a" }), makeTask({ id: "b" })];
+    expect(pruneSelection(new Set(["a", "gone"]), tasks)).toEqual(new Set(["a"]));
+  });
+  it("変化が無ければ同じ Set を返す", () => {
+    const tasks = [makeTask({ id: "a" })];
+    const sel = new Set(["a"]);
+    expect(pruneSelection(sel, tasks)).toBe(sel);
+    const empty = new Set<string>();
+    expect(pruneSelection(empty, tasks)).toBe(empty);
   });
 });

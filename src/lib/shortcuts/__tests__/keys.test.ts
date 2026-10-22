@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   isTypingTarget, isInteractiveTarget, isImeComposing, shouldIgnoreSingleKey, isPlainLetter,
-  isUndoKey, shouldRunConsultUndo, moveFocus, type ElementLike,
+  isUndoKey, shouldRunConsultUndo, shouldIgnoreCommandKey, moveFocus, type ElementLike,
 } from "../keys";
 import { computeKanbanOrderedIds } from "../../kanbanOrder";
 
@@ -141,5 +141,21 @@ describe("カンバンの移動順（列をまたぐ・非表示列を飛ばす�
   it("保留・中止列を表示しているときは列の最後に続く", () => {
     const ordered = computeKanbanOrderedIds(tasks, false, true);
     expect(moveFocus(ordered, "d1", 1)).toBe("h1");
+  });
+});
+
+describe("shouldIgnoreCommandKey（Ctrl+A 等）", () => {
+  const ctrlA = { key: "a", ctrlKey: true };
+  it("通常時は無視しない", () => {
+    expect(shouldIgnoreCommandKey(ctrlA, ctx())).toBe(false);
+  });
+  it("チェックボックス・スライドバーにフォーカスがあっても無視しない", () => {
+    expect(shouldIgnoreCommandKey(ctrlA, ctx({ activeElement: input("checkbox") }))).toBe(false);
+    expect(shouldIgnoreCommandKey(ctrlA, ctx({ activeElement: input("range") }))).toBe(false);
+  });
+  it("入力中・モーダル表示中・IME変換中は無視する", () => {
+    expect(shouldIgnoreCommandKey(ctrlA, ctx({ activeElement: input() }))).toBe(true);
+    expect(shouldIgnoreCommandKey(ctrlA, ctx({ modalOpen: true }))).toBe(true);
+    expect(shouldIgnoreCommandKey({ ...ctrlA, isComposing: true }, ctx())).toBe(true);
   });
 });

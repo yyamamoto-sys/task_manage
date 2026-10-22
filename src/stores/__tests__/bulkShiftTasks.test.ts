@@ -258,6 +258,29 @@ describe("bulkShiftTasks: 複数選択の一括シフト", () => {
     spy.mockRestore();
   });
 
+  it("一部の保存が失敗したら、トーストに移動できなかった件数を含める", async () => {
+    const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-05" });
+    const b = makeTask({ id: "B", start_date: "2026-08-10", due_date: "2026-08-12" });
+    seed("tasks", a as unknown as Row);
+    seed("tasks", b as unknown as Row);
+    const realSave = useAppStore.getState().saveTask;
+    useAppStore.setState({
+      tasks: [a, b],
+      saveTask: (task, opts) => (task.id === "B" ? Promise.reject(new Error("conflict")) : realSave(task, opts)),
+    });
+
+    let capturedMessage: string | undefined;
+    const mod = await import("../../components/common/Toast");
+    const spy = vi.spyOn(mod, "showToast").mockImplementation((msg) => { capturedMessage = msg; });
+
+    await useAppStore.getState().bulkShiftTasks(["A", "B"], 3, "member-1");
+
+    expect(capturedMessage).toBe("1件のタスクを移動しました（1件は保存に失敗したため移動していません）");
+
+    spy.mockRestore();
+    useAppStore.setState({ saveTask: realSave });
+  });
+
   it("deltaDays===0なら何もしない", async () => {
     const a = makeTask({ id: "A", start_date: "2026-08-01", due_date: "2026-08-05" });
     seed("tasks", a as unknown as Row);

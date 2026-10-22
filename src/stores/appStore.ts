@@ -422,8 +422,10 @@ async function runBulkShift(
     ...appliedCascade.map(s => ({ taskId: s.taskId, oldStart: s.oldStart, oldDue: s.oldDue })),
   ];
   const cascadeSuffix = appliedCascade.length > 0 ? `（＋自動調整${appliedCascade.length}件）` : "";
+  const failedDirect = directShifts.length - appliedDirect.length;
+  const failedSuffix = failedDirect > 0 ? `（${failedDirect}件は保存に失敗したため移動していません）` : "";
   showToast(
-    `${appliedDirect.length}件のタスクを移動しました${cascadeSuffix}`,
+    `${appliedDirect.length}件のタスクを移動しました${cascadeSuffix}${failedSuffix}`,
     "info",
     {
       label: "元に戻す",

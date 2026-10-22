@@ -1,6 +1,6 @@
-# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.177
+# CLAUDE.md — グループ計画管理アプリ 設計ドキュメント v3.178
 #
-最終更新：2026-10-22（v3.177）
+最終更新：2026-10-22（v3.178）
 
 **変更履歴は [docs/dev/CHANGELOG.md](docs/dev/CHANGELOG.md) に分離しました（v1.0〜v3.19）。**
 新しいバージョンの履歴はこのファイルに書かず、CHANGELOG.md の末尾に追記してください。
@@ -5279,6 +5279,14 @@ Chrome のタスクマネージャー（Shift+Esc）でこのタブのメモリ�
 - `reorderProjectSections` は最終の並びを先に1回で画面へ反映してから1件ずつ保存する（途中の並びが画面に出ない）。
 - 仕様判断待ち：`docs/REFACTORING.md` M74（Undo の `saveTask` が待たれない）・M75（削除されたグループ宛てのその場追加の下書きが見えないまま残る）・M76（並べ替えの途中失敗で `sort_order` が重なる）。
 - テスト：`lib/section/__tests__/sections.test.ts`・`stores/__tests__/sectionReorderOptimistic.test.ts`（修正前は赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+### v3.178：ガントのショートカットと選択の後始末（巡回58回目・A 計画ビュー ガント）
+
+- 🔴 **ガント自身のキー（T・+・-・Ctrl+A・Enter）は共通判定（`shouldIgnoreCommandKey`／`isModalOpen`／`isInteractiveTarget`）を通す。** 以前は入力欄判定だけで、モーダル（一括の複製ダイアログ・確認ダイアログ・他のモーダル）の裏でも発火し、Ctrl+A が背後のタスクを全選択していた。チェックボックスにフォーカスがあるときは入力扱いになり（v3.160 でチェックボックスを足してから）、押した直後は Ctrl+A・T・+/- が効かなかった。ボタン・チェックボックス上の Enter は詳細を開かない。
+- **消えたタスクは選択から外す**（`pruneSelection`）。他の人の削除（realtime）で一括バーの件数と実際の対象がずれていた。
+- **一括シフトで一部の保存が失敗したら、トーストに「N件は保存に失敗したため移動していません」を含める**（成功件数だけ出していた）。
+- 仕様判断待ち：`docs/REFACTORING.md` M77（フィルタ・折りたたみで見えなくなった選択済みタスクも一括操作の対象になる）・M78（バーのドラッグの単体保存が失敗したときの未処理の Promise 拒否。M74 と同型）。
+- テスト：`ganttCheckboxWiring.test.ts`・`keys.test.ts`・`selectionWithChildren.test.ts`・`bulkShiftTasks.test.ts`（修正前は赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
 
 ---
 

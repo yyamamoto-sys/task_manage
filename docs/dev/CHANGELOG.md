@@ -8431,3 +8431,11 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * lib/section/sections.ts：normalizeTaskSection が、手元の projectSections に無い section_id を null へ戻さない（削除済み・別PJ・PJなしだけ戻す）。グループ取得失敗・他の人のグループ作成がタスク更新より後に届く間の保存で、他の人のグループ分けが DB から消えていた。
 # * stores/appStore.ts：reorderProjectSections が最終の並びを先に1回で画面へ反映してから1件ずつ保存する。
 # * テスト：sections.test.ts・sectionReorderOptimistic.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.178（2026-10-22）：ガントのショートカットと選択の後始末（巡回58回目・A 計画ビュー ガント。docs/REFACTORING.md M77・M78）
+#
+# * GanttView.tsx：T・+・-・Ctrl+A・Enter が shouldIgnoreCommandKey（入力中・IME・モーダル表示中）を通る。チェックボックス・スライドバーにフォーカスがあっても効く。ボタン・チェックボックス上の Enter は詳細を開かない。消えたタスクは pruneSelection で選択から外す。
+# * keys.ts：shouldIgnoreCommandKey を追加。selectionWithChildren.ts：pruneSelection を追加。
+# * appStore.ts（runBulkShift）：一部の保存が失敗したらトーストに失敗件数を含める。
+# * テスト：ganttCheckboxWiring.test.ts・keys.test.ts・selectionWithChildren.test.ts・bulkShiftTasks.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
