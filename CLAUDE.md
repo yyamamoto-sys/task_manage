@@ -174,8 +174,11 @@
 ### Section 11：ドキュメント更新・バージョンを上げる4点セット
 - バージョンを上げるときは ①`src/lib/version.ts` の `APP_VERSION` ②このファイル冒頭のバージョン表記 ③`docs/dev/CHANGELOG.md` ④利用者向けリリースノート の4点を必ず更新する（`version.test.ts`・`changelogVersion.test.ts`・`releaseNotes.test.ts` が同期を検査する）。
 - 互換性を破壊する変更を入れるときは `MIN_CLIENT_VERSION` も引き上げる。マイグレーションを足したら `schemaChecks.ts` に検査項目を1行足す。右下に新要素を足すときは `bottomStack.ts` に載せる。
-- 詳細＝sections/s11_*.md（リリース時は必読）。
-- 詳細＝`docs/dev/sections/s11_doc-update-rules.md`（この領域を触るときは必読）
+- 詳細＝`docs/dev/sections/s11_doc-update-rules.md`（リリース時は必読）
+
+### Section 6：AI連携の絶対禁止事項
+- APIキーをクライアントに露出させない。AI 呼び出しは必ず `invokeAI()`（クライアント → Edge Function `ai-consult` → Anthropic API）を経由し、直叩きしない。`invokeAI()` の `intent` は必須（`ai_usage_logs.consultation_type` に保存される）。
+- 詳細＝`docs/dev/sections/s6_ai-integration.md`（AI を触るときは必読）
 
 ### Section 10：開発時の注意事項
 - `any` を使わず型を定義する／設計意図コメントを書く／全テーブルに RLS を設定する／物理削除は絶対に実装しない（Section 4）／AI は `useAIConsultation` Hook 経由でのみ呼ぶ。
@@ -233,6 +236,7 @@
 
 ### Section 39：RLS 内の SECURITY DEFINER 関数
 - RLS の USING/WITH CHECK で SECURITY DEFINER 関数を呼ぶときは、必ず `(SELECT 関数呼び出し())` の形で包む（InitPlan 化）。`FOR ALL` に戻さない・`WITH CHECK` を省略しない。
+- 🔴 **新しいテーブルを作ったら、同じマイグレーションに GRANT を書く**（2026-10-30以降、Supabase は public の新テーブルに Data API 権限を自動付与しない。書かないと RLS が正しくても `permission denied`）。`authenticated` と `service_role` に `select, insert, update, delete`。`anon` には付けない。`schema.sql` 末尾の `$grant_tables$` の配列にもテーブル名を足す。
 - 詳細＝`docs/dev/sections/s39_rls-security-definer.md`（この領域を触るときは必読）
 
 ### Section 42：トリガー追従ポップオーバー
