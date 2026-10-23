@@ -33,6 +33,8 @@ import { withBellReserve } from "../../lib/layout/topRightBell";
 import { sectionsOfProject, UNSECTIONED_KEY } from "../../lib/section/sections";
 import { DeliverableLink } from "../task/DeliverableLink";
 import { useSnapshotProvider } from "../../hooks/useSnapshotProvider";
+import { shouldIgnoreCommandKey } from "../../lib/shortcuts/keys";
+import { isModalOpen } from "../../lib/autoUpdate";
 
 interface Props {
   currentUser: Member;
@@ -170,10 +172,12 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
 
   const handleStatusChange = useCallback((taskId: string, newStatus: Task["status"]) => {
     const task = tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task || task.status === newStatus) return;
     // updated_at は触らない（CLAUDE.md Section 5）。zustand 側で
     // フォーム時点の値を expectedUpdatedAt として saveWithLock に渡す
-    saveTask({ ...task, status: newStatus, updated_by: currentUser.id });
+    // 失敗（先行タスク未完了のゲート・DB 保存失敗）は saveTask 側がトーストと再読込で扱い済み。
+    // ここで握らないと通常の「完了にできません」まで未処理の Promise 拒否になりエラー記録を汚す
+    saveTask({ ...task, status: newStatus, updated_by: currentUser.id }).catch(() => {});
   }, [tasks, saveTask, currentUser.id]);
 
   // TaskCard に渡すコールバックは useCallback で参照を固定する（React.memo が効くようにするため）
@@ -259,12 +263,10 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
   // （リスト/ガントと同じ設計方針）
   useEffect(() => {
     if (isMobile) return;
-    if (editingTaskId || addingStatus !== null) return;
+    if (editingTaskId || addingStatus !== null || showDuplicateModal) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      const el = document.activeElement as HTMLElement | null;
-      const tag = el?.tagName;
-      const isTyping = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el?.isContentEditable;
-      if (isTyping) return;
+      // 入力中・IME変換中・確認ダイアログ等のモーダル表示中・他で処理済みなら発火しない（ガントと同じ共通判定）
+      if (shouldIgnoreCommandKey(e, { activeElement: document.activeElement as HTMLElement | null, modalOpen: isModalOpen() })) return;
       if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === "a" || e.key === "A")) {
         e.preventDefault();
         setSelectedIds(new Set(orderedTaskIds));
@@ -276,7 +278,7 @@ export function KanbanView({ currentUser, selectedProject, projects, selectedKrI
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [isMobile, editingTaskId, addingStatus, orderedTaskIds, clearSelection]);
+  }, [isMobile, editingTaskId, addingStatus, showDuplicateModal, orderedTaskIds, clearSelection]);
 
   // J/K・Enter・E・A・D（注目中のカードの操作。v3.162）。順序は列→列内（上から下）の読み順＝orderedTaskIds
   useTaskKeyboardNav({

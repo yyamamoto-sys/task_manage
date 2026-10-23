@@ -8439,3 +8439,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * keys.ts：shouldIgnoreCommandKey を追加。selectionWithChildren.ts：pruneSelection を追加。
 # * appStore.ts（runBulkShift）：一部の保存が失敗したらトーストに失敗件数を含める。
 # * テスト：ganttCheckboxWiring.test.ts・keys.test.ts・selectionWithChildren.test.ts・bulkShiftTasks.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+#
+# v3.179（2026-10-23）：カンバン・ワークロードの後始末（巡回59回目・A 計画ビュー。docs/REFACTORING.md M79・M80）
+#
+# * KanbanView.tsx：Ctrl+A・Esc が shouldIgnoreCommandKey（IME・モーダル表示中）を通る。同じ列へのドロップは保存しない。単体ドロップの保存失敗は握って未処理の Promise 拒否にしない。
+# * WorkloadView.tsx：選んでいた PJ が一覧から消えたら全プロジェクトに戻す。
+# * テスト：kanbanKeysAndDrop.test.ts（修正前コードで赤）。DB 変更なし・MIN_CLIENT_VERSION は上げない。

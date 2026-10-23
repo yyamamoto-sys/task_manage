@@ -34,9 +34,12 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
   const [pjFilter, setPjFilter] = useState<string>("all");
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
 
+  // 選んでいたPJが一覧から消えた（削除・表示部署の切替）ときは「全プロジェクト」に戻す。
+  // 戻さないと選択肢に無い値のまま全メンバーが0件に見える
+  const effectivePjFilter = pjFilter === "all" || projects.some(p => p.id === pjFilter) ? pjFilter : "all";
   const filteredTasks = useMemo(
-    () => pjFilter === "all" ? scopedTasks : scopedTasks.filter(t => t.project_id === pjFilter),
-    [scopedTasks, pjFilter],
+    () => effectivePjFilter === "all" ? scopedTasks : scopedTasks.filter(t => t.project_id === effectivePjFilter),
+    [scopedTasks, effectivePjFilter],
   );
 
   const rows = useMemo(
@@ -80,7 +83,7 @@ export function WorkloadView({ projects, onOpenTask }: Props) {
             ワークロード
           </div>
           <CustomSelect
-            value={pjFilter}
+            value={effectivePjFilter}
             onChange={setPjFilter}
             options={[
               { value: "all", label: "全プロジェクト" },
