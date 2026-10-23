@@ -8510,3 +8510,10 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * E：保存（insertProjectAnalysis）が失敗するとAI課金済みの結果が消え「AI分析に失敗しました」になっていた。結果を画面に出し、「ほかのメンバーと共有する保存に失敗しました。閉じると消えるのでコピーを」の注意を添える。保存後の再取得が失敗したときも保存済みの結果を画面に出す。過去の分析の取得失敗は画面に出す（従来は握りつぶして空表示→再分析＝再課金を誘っていた）。
 # * E：lib/ai/analysisRun.ts を新設。finalizeAnalysisText＝空の返答は共有保存せずエラー・stop_reason が max_tokens の途中切れには注記を付ける（projectAnalysisClient・allProjectsAnalysisClient が通す。content が空のときの TypeError も解消）。analysisScopeKey／resultForScope＝全PJ分析の結果は、実行したときの範囲（分析対象PJのidの集合）と今の範囲が同じときだけ見せる。DashboardView は二重起動を allAnalysisRunningRef で止め、表示部署を切り替えたあとに前の部署の分析結果を出さず、分析中に範囲が変わったら結果を出さない。件数表示は分析対象と同じ集合。
 # * テスト：meetingDrafts.test.ts（M84・M85・M87・配線。修正前のコードで赤を確認）・projectAnalysisRun.test.ts（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.185（2026-10-23）：資料インプットの確認をビュー切替で出さない（統括判断）＋巡回63回目＝AI基盤の点検（docs/REFACTORING.md「63回目の巡回」・M90〜M92）
+#
+# * 確認の絞り込み：v3.184 で確認画面の下書きをストアに保持したのに、確認画面を開いたままビューを切り替えると useUnsavedEditor の「保存していない変更があります」が出ていた。unsavedEditorRegistry に登録時の options.survivesViewSwitch と、問い合わせ時の { viewSwitch: true } を追加。survivesViewSwitch の編集は viewSwitch の問い合わせでは数えず、既定（ログアウト・再読み込み・自動更新の抑止・ガイドのリロード・招待・設定画面・個人OKR）では従来どおり数える。MainLayout の guardedNavigate は既定でビュー切替の問い合わせにし、部署切替（handleSelectGroupNav）だけ { storeLost: true } で全部数える（別部署のPJ・メンバーに対する下書きになるため）。MeetingImportPanel は確認画面のとき survivesViewSwitch、登録中（下書きをストアから外してある）は従来どおりビュー切替でも確認する。他の画面（TaskEditModal・設定・個人OKR等）の挙動は変えない。
+# * AI基盤：invokeAI が、返答が空（content が空・text が空）のとき logAIUsage より前に例外を投げ、課金済みの使用量が ai_usage_logs に記録されなかった。記録を空判定の前へ移した。
+# * AI基盤：AI相談（apiClient の callAIConsultation）も、返答が空だと INVALID_RESPONSE で例外になり、v3.182 の onUsage に使用量が渡らなかった。AIError に usage（任意）を持たせて空の返答の usage を載せ、consultationRunner の callWithUsage（初回・リトライとも）が例外のときも AIError.usage を onUsage へ渡す。
+# * テスト：unsavedEditorRegistry.test.ts・meetingDrafts.test.ts（配線）・invokeAI.test.ts・consultationRunnerUsage.test.ts（いずれも修正前のコードで赤を確認）。Edge Function は変更なし（デプロイ不要）・DB 変更なし・MIN_CLIENT_VERSION は上げない。

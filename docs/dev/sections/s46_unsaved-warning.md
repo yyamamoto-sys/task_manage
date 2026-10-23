@@ -49,3 +49,14 @@ v3.88のリリース確認で「`viewMode`切替時に`TaskSidePanel`が無警�
 ### v3.180：AI下書きモーダルの閉じる確認（M62）
 
 個人OKRのAI下書き3モーダル（振り返り・全体の振り返り・計画）は、編集の有無に加えて「下書きがあり反映先へ未反映」でも閉じる前に確認する（`lib/personalOkr/draftCloseGuard.ts`）。生成直後で未編集でも、AI課金済みの下書きを確認なしで捨てない。反映した時点の内容を覚え、以後の編集は再びdirtyになる。詳細＝`docs/dev/sections/s24_personal-okr.md`のv3.180。
+
+---
+
+### v3.185：下書きがストアに残る画面は、ビュー切替の確認から外す
+
+資料インプットの確認画面（v3.184で下書きを `meetingImportDraftStore` に保持）は、ビュー切替・タブ切替でアンマウントされても戻れば復元される。それでも切替のたびに確認が出ていたため、`registerUnsavedEditor(id, getter, { survivesViewSwitch: true })`（`useUnsavedEditor(dirty, { survivesViewSwitch })`）と、問い合わせ側の `hasUnsavedEditors({ viewSwitch: true })`／`confirmDiscardUnsavedEdits({ viewSwitch: true })` を足した。
+
+- `survivesViewSwitch` の編集は、`viewSwitch` の問い合わせでは数えない。既定（引数なし）は従来どおり全部数える＝ログアウト・再読み込み・自動更新の抑止・招待・設定画面・個人OKRは変わらない。
+- `MainLayout.guardedNavigate` は既定でビュー切替の問い合わせ。メモリ上のストアが別のものになる経路（部署切替＝`handleSelectGroupNav`）だけ `guardedNavigate(action, { storeLost: true })` で全部数える。新しく「ストアが失われる／別ユーザー・別部署になる」遷移を足すときは `storeLost: true` を付ける。
+- `survivesViewSwitch` を付けてよいのは、下書きをモジュールレベルのストアへ写していて、復元までテストで固定してある画面だけ。付けるときは、その画面がログアウト・再読み込みでは失われることを確認器（レジストリの既定）に任せる。
+- 資料インプットは登録中（`step === "applying"`）だけ `survivesViewSwitch` を外す（下書きをストアから外してあり、切替でパネルが消えると結果が分からなくなるため）。テスト：`unsavedEditorRegistry.test.ts`・`meetingDrafts.test.ts`。

@@ -51,6 +51,16 @@ describe("invokeAI", () => {
     expect(res.content[0].text).toBe("こんにちは");
   });
 
+  it("返答が空でも、課金済みの使用量は記録する（v3.185）", async () => {
+    mockInvoke.mockResolvedValue({
+      data: { content: [], usage: { input_tokens: 40, output_tokens: 0 } },
+      error: null,
+    });
+    await expect(invokeAI("system", [{ role: "user", content: "hi" }], 1000, "kr-report")).rejects.toThrow("空");
+    expect(mockInsert).toHaveBeenCalledTimes(1);
+    expect(mockInsert.mock.calls[0][0]).toMatchObject({ consultation_type: "kr-report", input_tokens: 40, output_tokens: 0 });
+  });
+
   it("Edge Function の RATE_LIMIT_EXCEEDED を分かりやすい日本語メッセージに変換する", async () => {
     mockInvoke.mockResolvedValue({
       data: { error: "RATE_LIMIT_EXCEEDED", message: "1分あたりの利用上限に達しました。しばらくお待ちください。" },

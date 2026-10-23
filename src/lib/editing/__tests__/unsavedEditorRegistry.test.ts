@@ -114,6 +114,24 @@ describe("unsavedEditorRegistry", () => {
     });
   });
 
+  it("【v3.185】survivesViewSwitch の編集は、ビュー切替の問い合わせ（viewSwitch）では数えず、既定（ログアウト・再読み込み・部署切替）では数える", () => {
+    registerUnsavedEditor("meeting", () => true, { survivesViewSwitch: true });
+    expect(hasUnsavedEditors({ viewSwitch: true })).toBe(false);
+    expect(hasUnsavedEditors()).toBe(true);
+    registerUnsavedEditor("task", () => true);
+    expect(hasUnsavedEditors({ viewSwitch: true })).toBe(true);
+  });
+
+  it("【v3.185】ビュー切替ではダイアログを出さず、既定では出す", async () => {
+    const { confirmDialog } = await import("../../dialog");
+    vi.mocked(confirmDialog).mockResolvedValue(false);
+    registerUnsavedEditor("meeting", () => true, { survivesViewSwitch: true });
+    expect(await confirmDiscardUnsavedEdits({ viewSwitch: true })).toBe(true);
+    expect(confirmDialog).not.toHaveBeenCalled();
+    expect(await confirmDiscardUnsavedEdits()).toBe(false);
+    expect(confirmDialog).toHaveBeenCalledTimes(1);
+  });
+
   it("confirmDiscardUnsavedEdits：ユーザーが「編集に戻る」を選んだらfalseを返す", async () => {
     const { confirmDialog } = await import("../../dialog");
     vi.mocked(confirmDialog).mockResolvedValueOnce(false);

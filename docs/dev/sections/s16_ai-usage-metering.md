@@ -51,3 +51,7 @@ export type AIIntent =
 ### v3.182 の追記：解析に失敗した送信の使用量も記録する
 
 AI相談（`apiClient` 経由のレガシー経路）の使用量は `runAIConsultation` の `onUsage` で、API を1回呼ぶたびに記録する。返答の解析に失敗して例外になる送信（`max_tokens`・不正JSON・リトライ後も不正）でもトークンは消費済みのため、成功時の戻り値からだけ記録してはならない（`consultationRunnerUsage.test.ts`）。
+
+### v3.185 の追記：返答が空でも使用量を記録する
+
+`invokeAI` は返答の `content` が空・`text` が空のときも、API は呼ばれて課金済みのため、空の判定より前に `logAIUsage` する。AI相談（レガシー経路）は空の返答で `AIError("INVALID_RESPONSE", ..., usage)` を投げ、`consultationRunner.callWithUsage` が例外のときも `AIError.usage` を `onUsage` へ渡す（初回・リトライとも）。「成功時だけ記録する」実装を足さない（`invokeAI.test.ts`・`consultationRunnerUsage.test.ts`）。

@@ -34,6 +34,22 @@ export interface RunAIConsultationResult {
   retryUsage?: AIUsage;
 }
 
+/** 1回呼んで使用量を渡す。返答が空で例外になっても、課金済みの分は AIError.usage から渡す（v3.185） */
+async function callWithUsage(
+  call: () => ReturnType<typeof callAIConsultation>,
+  onUsage: ((usage: AIUsage, isRetry: boolean) => void) | undefined,
+  isRetry: boolean,
+): Promise<Awaited<ReturnType<typeof callAIConsultation>>> {
+  try {
+    const result = await call();
+    onUsage?.(result.usage, isRetry);
+    return result;
+  } catch (e) {
+    if (e instanceof AIError && e.usage) onUsage?.(e.usage, isRetry);
+    throw e;
+  }
+}
+
 export async function runAIConsultation(
   payload: AIConsultationPayload,
   consultationType: ConsultationType,
@@ -44,8 +60,10 @@ export async function runAIConsultation(
   /** APIを1回呼び終えるたびに、そのコールの使用量を渡す。解析に失敗して例外になる場合でも消費済みのため、戻り値ではなくここで記録する */
   onUsage?: (usage: AIUsage, isRetry: boolean) => void,
 ): Promise<RunAIConsultationResult> {
-  const first = await callAIConsultation(payload, consultationType, history, model, responseVolume, undefined, attachments);
-  onUsage?.(first.usage, false);
+  const first = await callWithUsage(
+    () => callAIConsultation(payload, consultationType, history, model, responseVolume, undefined, attachments),
+    onUsage, false,
+  );
 
   try {
     const parsed = parseAIResponse(first.text, first.stopReason);
@@ -61,11 +79,13 @@ export async function runAIConsultation(
       throw err;
     }
 
-    const retry = await callAIConsultation(payload, consultationType, history, model, responseVolume, {
-      previousResponseText: first.text,
-      reason: err.message,
-    }, attachments);
-    onUsage?.(retry.usage, true);
+    const retry = await callWithUsage(
+      () => callAIConsultation(payload, consultationType, history, model, responseVolume, {
+        previousResponseText: first.text,
+        reason: err.message,
+      }, attachments),
+      onUsage, true,
+    );
 
     // リトライ結果のパース失敗はそのまま呼び出し元に伝播する（これ以上は救済しない）
     const parsedRetry = parseAIResponse(retry.text, retry.stopReason);

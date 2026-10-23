@@ -69,4 +69,29 @@ describe("runAIConsultation — onUsage", () => {
       [{ input_tokens: 30, output_tokens: 40 }, true],
     ]);
   });
+
+  it("返答が空（content が空配列）で例外になっても、課金済みの1回分を渡している（v3.185）", async () => {
+    mockInvoke.mockResolvedValueOnce({
+      data: { content: [], stop_reason: "end_turn", usage: { input_tokens: 700, output_tokens: 0 } },
+      error: null,
+    });
+    const onUsage = vi.fn();
+    await expect(runAIConsultation(PAYLOAD, "change", [], undefined, undefined, [], onUsage)).rejects.toThrow();
+    expect(onUsage.mock.calls).toEqual([[{ input_tokens: 700, output_tokens: 0 }, false]]);
+  });
+
+  it("リトライの返答が空で例外になっても、初回とリトライの2回分を渡している（v3.185）", async () => {
+    mockInvoke
+      .mockResolvedValueOnce(res('{ "proposals": [ { "title": "壊れ', "end_turn", { input_tokens: 10, output_tokens: 20 }))
+      .mockResolvedValueOnce({
+        data: { content: [{ type: "text", text: "" }], stop_reason: "end_turn", usage: { input_tokens: 30, output_tokens: 0 } },
+        error: null,
+      });
+    const onUsage = vi.fn();
+    await expect(runAIConsultation(PAYLOAD, "change", [], undefined, undefined, [], onUsage)).rejects.toThrow();
+    expect(onUsage.mock.calls).toEqual([
+      [{ input_tokens: 10, output_tokens: 20 }, false],
+      [{ input_tokens: 30, output_tokens: 0 }, true],
+    ]);
+  });
 });

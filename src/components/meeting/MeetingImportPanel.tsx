@@ -246,8 +246,12 @@ export function MeetingImportPanel({ onClose, currentUser, inline = false, targe
   }, [step, analysis, taskDrafts, statusDrafts, pendingNewProjName, pendingNewProjColor, currentUser.id]);
 
   // タブ切替ではストアから復元できるが、ログアウト・再読み込み・部署切替などはメモリごと消える。
-  // その経路では未保存編集レジストリ（Section 46）の確認を出す。登録中（保存の最中）も対象
-  useUnsavedEditor((step === "review" && hasReviewContent(taskDrafts, statusDrafts)) || step === "applying");
+  // その経路では未保存編集レジストリ（Section 46）の確認を出す。ビュー切替は下書きが残るので出さない
+  // （survivesViewSwitch・v3.185）。登録中（保存の最中）は下書きを外してあるため、切替でも確認する
+  useUnsavedEditor(
+    (step === "review" && hasReviewContent(taskDrafts, statusDrafts)) || step === "applying",
+    { survivesViewSwitch: step !== "applying" },
+  );
 
   const handleApply = useCallback(async () => {
     if (applyingRef.current) return;

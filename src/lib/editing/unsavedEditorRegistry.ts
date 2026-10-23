@@ -24,14 +24,29 @@ import { confirmDialog } from "../dialog";
 
 type DirtyGetter = () => boolean;
 
-const registry = new Map<string, DirtyGetter>();
+export interface UnsavedEditorOptions {
+  /**
+   * 下書きが画面の外（モジュールレベルのストア）に残り、ビュー切替・タブ切替でアンマウントされても
+   * 戻れば復元される編集画面（資料インプットの確認画面・v3.185）。true の編集は「ビュー切替」の
+   * 確認（viewSwitch）では数えない。ログアウト・再読み込み・部署切替（ストアが失われる、または
+   * 別ユーザー・別部署になる経路）では従来どおり数える。
+   */
+  survivesViewSwitch?: boolean;
+}
+
+interface Entry {
+  isDirty: DirtyGetter;
+  survivesViewSwitch: boolean;
+}
+
+const registry = new Map<string, Entry>();
 
 /**
  * 編集画面がマウント時に呼ぶ。idはコンポーネントインスタンスごとに一意にすること
  * （`useId()`を推奨）。同じidで複数回呼ぶと上書きされる。
  */
-export function registerUnsavedEditor(id: string, isDirty: DirtyGetter): void {
-  registry.set(id, isDirty);
+export function registerUnsavedEditor(id: string, isDirty: DirtyGetter, options?: UnsavedEditorOptions): void {
+  registry.set(id, { isDirty, survivesViewSwitch: options?.survivesViewSwitch === true });
 }
 
 /**
@@ -43,10 +58,16 @@ export function unregisterUnsavedEditor(id: string): void {
   registry.delete(id);
 }
 
+export interface UnsavedQuery {
+  /** true＝ビュー切替の確認。下書きがストアに残る編集（survivesViewSwitch）は数えない。既定は全部数える（ログアウト・再読み込み・部署切替） */
+  viewSwitch?: boolean;
+}
+
 /** 現在、未保存の変更を持つ編集画面が1つでもあるか。 */
-export function hasUnsavedEditors(): boolean {
-  for (const isDirty of registry.values()) {
-    if (isDirty()) return true;
+export function hasUnsavedEditors(query?: UnsavedQuery): boolean {
+  for (const e of registry.values()) {
+    if (query?.viewSwitch && e.survivesViewSwitch) continue;
+    if (e.isDirty()) return true;
   }
   return false;
 }
@@ -69,8 +90,8 @@ export function hasUnsavedEditors(): boolean {
  * そのため文言は「今のままでは保存されていない」という常に真である事実と、
  * 「切り替えるか・編集に戻るか」という選択だけを述べ、その先に何が起きるかは断定しない。
  */
-export async function confirmDiscardUnsavedEdits(): Promise<boolean> {
-  if (!hasUnsavedEditors()) return true;
+export async function confirmDiscardUnsavedEdits(query?: UnsavedQuery): Promise<boolean> {
+  if (!hasUnsavedEditors(query)) return true;
   return confirmDialog(
     "保存していない変更があります。今のままでは保存されません。このまま切り替えますか？",
     { tone: "danger", confirmLabel: "切り替える", cancelLabel: "編集に戻る" },

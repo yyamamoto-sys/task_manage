@@ -52,6 +52,8 @@ export class AIError extends Error {
   constructor(
     public code: AIErrorCode,
     message: string,
+    /** 返答は届いて課金済みだが使えなかった（空など）ときの使用量。呼び出し側が記録する（v3.185） */
+    public usage?: { input_tokens: number; output_tokens: number },
   ) {
     super(message);
     this.name = "AIError";
@@ -252,7 +254,7 @@ export async function callAIConsultation(
   }
 
   if (!data || !data.content || !data.content[0]?.text) {
-    throw new AIError("INVALID_RESPONSE", "AIからの応答が不正な形式です。");
+    throw new AIError("INVALID_RESPONSE", "AIからの応答が不正な形式です。", data?.usage);
   }
 
   // ゲスト（サンプル閲覧）の回数表示（参考値）を、成功時だけ加算する（v3.31・

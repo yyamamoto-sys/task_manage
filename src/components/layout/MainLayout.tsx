@@ -238,13 +238,15 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
   // guardedNavigateの宣言より後で参照するとTDZエラーになる。そのため関数本体の
   // できるだけ早い位置（他の全ての利用箇所より前）に定義する。
   const navigationConfirmedRef = useRef(false);
-  const guardedNavigate = useCallback(async (action: () => void): Promise<void> => {
+  // 既定はビュー切替の確認（下書きがストアに残る資料インプットの確認画面は数えない・v3.185）。
+  // 部署切替のように、ストアの下書きが別部署のものになる経路だけ { storeLost: true } で全部数える
+  const guardedNavigate = useCallback(async (action: () => void, opts?: { storeLost?: boolean }): Promise<void> => {
     if (navigationConfirmedRef.current) {
       // 既に外側のguardedNavigateで確認済み（入れ子呼び出し）。再確認しない。
       action();
       return;
     }
-    const proceed = await confirmDiscardUnsavedEdits();
+    const proceed = await confirmDiscardUnsavedEdits(opts?.storeLost ? undefined : { viewSwitch: true });
     if (!proceed) return; // 「編集に戻る」：何もしない
     navigationConfirmedRef.current = true;
     try {
@@ -951,7 +953,7 @@ function MainLayoutInner({ currentUser, onLogout }: Props) {
       closeLabViews();
       setCurrentGroupId(id);
       if (!isGuest) saveSidebarGroupId(currentUser.id, id);
-    });
+    }, { storeLost: true });
   };
 
   // マイページ（ウィジェット）のQuickAddTaskWidget向け。ウィジェットからsaveTaskを直接呼ばせず、

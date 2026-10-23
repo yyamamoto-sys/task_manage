@@ -182,13 +182,14 @@ export async function invokeAI(
   }
 
   const response = data as AIRawResponse;
-  const text: string = response?.content?.[0]?.text ?? "";
-  if (!text) throw new Error("AIからの応答が空でした。");
-
   // 全 AI 呼び出しの使用量を ai_usage_logs に記録（fire-and-forget）
   // intent をそのまま consultation_type 列に保存することで、AdminView の
-  // 「AI使用量」タブで全機能の使用量が反映される（CLAUDE.md Section 6-1b 参照）
-  logAIUsage(intent, response.usage);
+  // 「AI使用量」タブで全機能の使用量が反映される（CLAUDE.md Section 6-1b 参照）。
+  // 返答が空でもAPIは呼ばれて課金済みのため、空の判定より前に記録する（v3.185）。
+  logAIUsage(intent, response?.usage);
+
+  const text: string = response?.content?.[0]?.text ?? "";
+  if (!text) throw new Error("AIからの応答が空でした。");
 
   // ゲスト（サンプル閲覧）の回数表示（参考値）を、成功時だけ加算する（v3.31・
   // CLAUDE.md Section 23）。ここに到達するのは非2xxエラーを通過した後なので、

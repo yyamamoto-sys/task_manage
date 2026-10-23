@@ -358,7 +358,14 @@ describe("資料インプットの画面配線（v3.184）", () => {
     expect(panel).toMatch(/useMeetingImportDraftStore\.getState\(\)\.saveDraft\(/);
   });
   it("未保存編集レジストリに登録し、確認画面・登録中をdirtyにする", () => {
-    expect(panel).toMatch(/useUnsavedEditor\(\(step === "review" && hasReviewContent\(taskDrafts, statusDrafts\)\) \|\| step === "applying"\)/);
+    expect(panel).toMatch(/useUnsavedEditor\(\s*\(step === "review" && hasReviewContent\(taskDrafts, statusDrafts\)\) \|\| step === "applying",/);
+  });
+  it("ビュー切替では確認を出さない（下書きはストアに残る）。登録中だけは切替でも確認する", () => {
+    expect(panel).toMatch(/survivesViewSwitch: step !== "applying"/);
+    const layout = readFileSync(resolve(__dirname, "../../../components/layout/MainLayout.tsx"), "utf8");
+    expect(layout).toContain("confirmDiscardUnsavedEdits(opts?.storeLost ? undefined : { viewSwitch: true })");
+    const dept = layout.slice(layout.indexOf("const handleSelectGroupNav"), layout.indexOf("const handleSelectGroupNav") + 600);
+    expect(dept).toContain("{ storeLost: true }");
   });
   it("「やり直す」は確認を通す", () => {
     expect(panel).not.toMatch(/<button onClick=\{handleReset\}/);

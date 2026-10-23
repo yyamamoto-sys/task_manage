@@ -46,3 +46,5 @@ AI相談パネルの「資料インプット」タブ（`components/meeting/Meet
 - **M85**：`buildTaskDrafts(..., defaultProjectId)`。対象PJを1つに絞って読み込んだとき、PJのヒントが無い新規タスクの初期値をそのPJにする。ヒントがあって一致したものはヒント優先、ヒントがあって不一致のものは従来どおり空。
 - **M87**：`applyMeetingDrafts` は項目ごとに続行し、連続3件（`MAX_CONSECUTIVE_SAVE_FAILURES`）失敗したら残りを中止する。保存済み・見つからなかった更新だけを画面から外し、失敗分・未処理分は残す。新規PJが作れなかったときは、そのPJ向けのタスクを「PJ未設定」で保存せず失敗として残す。案内文は `describeApplyShortfall`。
 - テスト：`lib/ai/__tests__/meetingDrafts.test.ts`（修正前のコードで赤を確認）。DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+- **v3.185**：確認画面を開いたままビューを切り替えても確認は出さない（下書きはストアに残るため）。ログアウト・再読み込み・部署切替では出す。仕組みは Section 46 の v3.185（`survivesViewSwitch`）。
