@@ -95,3 +95,7 @@ RLSは「自分のgroup_idと一致するか、super-adminか」でしか可視�
 - `supabase/migrations/20260724_scope_okr_core_tables.sql` — OKRコア階層のDBレベル部署分離（v3.03）。`key_results`/`task_forces`/`todos`に`group_id`列を追加・バックフィル。自動注入トリガー（`sync_kr_group_id`等）・カスケードトリガー（`cascade_objective_group_id_to_krs`等）・objectives/key_results/task_forces/todos 4テーブルのRLSを`authenticated full access`から`group_id = ANY(current_member_group_ids())`の個別ポリシーに差し替え。⚠️山本さんが手動適用（dev→prod）
 
 ---
+
+## v3.186 の追記：SetupWizard（初回セットアップ）
+
+登録対象は「表示名と略称の両方が入った行」（`components/auth/setupWizardRun.ts` の `pickSetupMembers`。画面の警告・「あなた」の印・次へ進む条件・完了処理で同じ基準）。完了処理は `runSetup`：ブートストラップ（members が0件のときだけ通る）の成功済み部署IDと登録済みメンバーを覚え、途中で失敗した再試行では済んだ分をやり直さない。`bootstrap_first_group_and_member` を2回呼ぶ経路を作らない。テスト＝`setupWizardRun.test.ts`。

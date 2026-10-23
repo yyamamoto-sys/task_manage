@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   TOUR_COMPLETED_LEGACY_KEY, TOUR_COMPLETED_GUEST_KEY, tourCompletedKey,
   migrateLegacyTourCompleted, loadTourCompleted, markTourCompleted, isTourCompleted, unmarkTourCompleted,
+  markTourCompletedWithFallback, isTourCompletedWithFallback, unmarkTourCompletedWithFallback,
   type TourStorage,
 } from "../tourCompletion";
 import { GUEST_MEMBER_ID } from "../../../lib/guestMode";
@@ -102,6 +103,44 @@ describe("unmarkTourCompleted（管理者の「自動表示をもう一度試す
     unmarkTourCompleted(s, "m1", "feedback-intro");
     expect(s.map.size).toBe(0);
     unmarkTourCompleted(s, null, "feedback-intro");
+    expect(s.map.size).toBe(0);
+  });
+});
+
+describe("保存できない環境での代替（v3.186）", () => {
+  // 読めるが書けない（容量超過など）。以前は既読が残らず、お知らせツアーが3秒ごとに始まり直した
+  class WriteFailStorage extends MemoryStorage {
+    setItem(): void { throw new Error("QuotaExceededError"); }
+  }
+
+  it("保存に失敗しても、そのページを開いている間は既読として扱う", () => {
+    const s = new WriteFailStorage();
+    const memory = new Set<string>();
+    expect(isTourCompletedWithFallback(s, memory, "m1", "feedback-intro")).toBe(false);
+    expect(() => markTourCompletedWithFallback(s, memory, "m1", "feedback-intro")).not.toThrow();
+    expect(isTourCompletedWithFallback(s, memory, "m1", "feedback-intro")).toBe(true);
+    expect(isTourCompletedWithFallback(s, memory, "m2", "feedback-intro")).toBe(false);
+    expect(isTourCompletedWithFallback(s, memory, "m1", "first-time")).toBe(false);
+  });
+
+  it("正常に保存できる環境では従来どおり localStorage に残る", () => {
+    const s = new MemoryStorage();
+    markTourCompletedWithFallback(s, new Set(), "m1", "first-time");
+    expect(isTourCompletedWithFallback(s, new Set(), "m1", "first-time")).toBe(true);
+  });
+
+  it("既読を消す操作はメモリ上の記録も消す（管理者の再試行）", () => {
+    const s = new MemoryStorage();
+    const memory = new Set<string>();
+    markTourCompletedWithFallback(s, memory, "m1", "feedback-intro");
+    unmarkTourCompletedWithFallback(s, memory, "m1", "feedback-intro");
+    expect(isTourCompletedWithFallback(s, memory, "m1", "feedback-intro")).toBe(false);
+  });
+
+  it("メンバーID未確定は従来どおり既読扱い・何も書かない", () => {
+    const s = new MemoryStorage();
+    expect(isTourCompletedWithFallback(s, new Set(), null, "first-time")).toBe(true);
+    markTourCompletedWithFallback(s, new Set(), null, "first-time");
     expect(s.map.size).toBe(0);
   });
 });

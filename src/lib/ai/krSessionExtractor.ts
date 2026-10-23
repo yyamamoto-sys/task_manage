@@ -5,6 +5,7 @@
 // 出力はJSONのみ。確認UIでユーザーが修正できるため、完璧な精度は求めない。
 
 import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { todayStr, getMondayAnchors } from "../date";
 
 // ===== 抽出結果の型 =====
@@ -95,9 +96,13 @@ const FREEFORM_EXTRACT_PROMPT = `あなたはOKR文脈の会議文字起こし�
 
 // ===== 呼び出し共通処理 =====
 
+export const TRUNCATED_SESSION_MESSAGE =
+  "抽出結果が長すぎて途中で切れました。議事録を前半・後半など2回に分けて読み込んでください。";
+
 async function callExtractAI(system: string, userMessage: string, attachment?: FileAttachment): Promise<string> {
   const content = buildMessageContent(userMessage, attachment ?? null);
   const res = await invokeAI(system, [{ role: "user", content }], 4096, "kr-session-extract");
+  assertNotTruncated(res, TRUNCATED_SESSION_MESSAGE);
   return res.content[0].text;
 }
 
@@ -415,6 +420,7 @@ export async function extractJointCheckinData(params: {
   });
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   const res = await invokeAI(JOINT_CHECKIN_PROMPT, [{ role: "user", content }], 6000, "kr-session-extract");
+  assertNotTruncated(res, TRUNCATED_SESSION_MESSAGE);
   const parsed = parseJsonSafe<unknown>(res.content[0].text);
   if (!parsed || typeof parsed !== "object") throw new Error("AIレスポンスが不正です。");
   const d = parsed as Record<string, unknown>;
@@ -437,6 +443,7 @@ export async function extractJointWinSessionData(params: {
   });
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   const res = await invokeAI(JOINT_WIN_PROMPT, [{ role: "user", content }], 6000, "kr-session-extract");
+  assertNotTruncated(res, TRUNCATED_SESSION_MESSAGE);
   const parsed = parseJsonSafe<unknown>(res.content[0].text);
   if (!parsed || typeof parsed !== "object") throw new Error("AIレスポンスが不正です。");
   const d = parsed as Record<string, unknown>;

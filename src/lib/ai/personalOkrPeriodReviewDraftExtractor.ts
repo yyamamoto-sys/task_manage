@@ -19,6 +19,7 @@
 // （このファイル自身は文脈の組み立てを行わない＝関心の分離）。
 
 import { invokeAI } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 
@@ -151,7 +152,7 @@ export async function generatePersonalPeriodReviewDraft(contextText: string): Pr
     "okr-personal-period-review-draft",
     PERIOD_REVIEW_DRAFT_MODEL,
   );
-  if (res.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+  assertNotTruncated(res, TRUNCATED_MESSAGE);
 
   const text = res.content[0].text;
   try {
@@ -166,7 +167,7 @@ export async function generatePersonalPeriodReviewDraft(contextText: string): Pr
       "okr-personal-period-review-draft",
       PERIOD_REVIEW_DRAFT_MODEL,
     );
-    if (retry.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+    assertNotTruncated(retry, TRUNCATED_MESSAGE);
     const raw2 = parseJsonSafe<unknown>(retry.content[0].text);
     return { ...validatePersonalOkrPeriodReviewDraftPayload(raw2), model: PERIOD_REVIEW_DRAFT_MODEL };
   }

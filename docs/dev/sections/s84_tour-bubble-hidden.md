@@ -9,3 +9,10 @@
 - MIN_CLIENT_VERSION は上げない。マイグレーションなし。
 
 ---
+
+## v3.186 の追記（巡回64回目）：ツアーの Esc・既読の保存失敗・ガイドの Esc
+
+- **Esc**：ツアーの Esc は `tourEscape.ts` の `handleTourEscape` を window の capture 段階で受ける。IME の変換中は触らない・開いたドロップダウン（role="listbox"）には譲る・終えるときは `lib/overlayEscape.ts` の `closeOnEscapeAndStop` で止める（背後のご意見の送信画面なども同じ Esc で閉じない）。キー操作（→・Enter・←）の listener に Esc を戻さない。
+- **既読の保存失敗**：既読の読み書きは `tourCompletion.ts` の `*WithFallback`（メモリ上の記録つき）を通す。localStorage が読めるが書けない環境で、お知らせツアーが3秒ごとに始まり直すのを防ぐ。`TourProvider` の `completedInMemory` は読み込み中のページの間だけ有効。
+- **GuideOverlay**：window の capture 段階で Esc を受けて閉じる＋ `role="dialog"`。
+- テスト：`tourEscape.test.ts`・`tourCompletion.test.ts`・`guide/__tests__/guideOverlayEscape.test.ts`・`tourLayering.test.ts`（Esc の走査を更新）。

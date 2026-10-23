@@ -6,6 +6,7 @@
 // （ユーザー確認済みポリシー変更：OKR/KR/TFをAIに渡すことが許可された）。
 
 import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import type { KrReportContext, KrReportMode } from "./krReportPrompt";
 import { KR_REPORT_SYSTEM_PROMPTS, REPORT_HTML_WRAPPER } from "./krReportPrompt";
 
@@ -24,6 +25,7 @@ export async function callKrReportAI(
   const content = buildMessageContent(userMessage, attachment ?? null);
 
   const res = await invokeAI(systemPrompt, [{ role: "user", content }], 8192, "kr-report");
+  assertNotTruncated(res, "レポートが長すぎて途中で切れました。添付や対象を減らして、もう一度生成してください。");
   const text = res.content[0].text;
 
   const modeLabel = context.mode === "checkin" ? "チェックイン分析" : "ウィンセッション分析";

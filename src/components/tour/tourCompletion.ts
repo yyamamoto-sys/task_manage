@@ -78,3 +78,35 @@ export function unmarkTourCompleted(storage: TourStorage, memberId: string | nul
   delete map[tourId];
   storage.setItem(key, JSON.stringify(map));
 }
+
+// ===== 保存できない環境での代替（v3.186） =====
+// localStorage への書き込みだけが失敗する環境（容量超過など）では、既読を保存できず、読むと未読のまま。
+// お知らせツアーは3秒ごとに自動開始の条件を見直すため、「あとで」を押しても数秒後に何度も始まり直していた。
+// 保存の成否に関わらず、このページを開いている間は既読として扱う（メモリ上の記録）。
+
+function memoryKey(memberId: string, tourId: string): string {
+  return `${memberId}\u0000${tourId}`;
+}
+
+export function markTourCompletedWithFallback(
+  storage: TourStorage, memory: Set<string>, memberId: string | null | undefined, tourId: string,
+): void {
+  if (!memberId) return;
+  memory.add(memoryKey(memberId, tourId));
+  try { markTourCompleted(storage, memberId, tourId); } catch { /* 保存できなくても、この間は既読 */ }
+}
+
+export function isTourCompletedWithFallback(
+  storage: TourStorage, memory: Set<string>, memberId: string | null | undefined, tourId: string,
+): boolean {
+  if (memberId && memory.has(memoryKey(memberId, tourId))) return true;
+  try { return isTourCompleted(storage, memberId, tourId); } catch { return true; }
+}
+
+export function unmarkTourCompletedWithFallback(
+  storage: TourStorage, memory: Set<string>, memberId: string | null | undefined, tourId: string,
+): void {
+  if (!memberId) return;
+  memory.delete(memoryKey(memberId, tourId));
+  try { unmarkTourCompleted(storage, memberId, tourId); } catch { /* ignore */ }
+}

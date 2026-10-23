@@ -10,6 +10,7 @@
 // （OKRモード全面刷新時に別途設計。docs は project memory 参照）。
 
 import { invokeAI, buildMessageContent, type FileAttachment } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 
 // ===== 型定義 =====
 
@@ -175,6 +176,9 @@ export function validateOkrImportAnalysis(data: unknown): OkrImportAnalysis {
   };
 }
 
+export const TRUNCATED_OKR_IMPORT_MESSAGE =
+  "OKRの抽出結果が長すぎて途中で切れました。PDF・テキストをObjectiveごとなど2回に分けて取り込んでください。";
+
 export async function extractOkrImportData(params: ExtractOkrImportParams): Promise<OkrImportAnalysis> {
   const userMessage = params.transcript
     || (params.attachment ? `（添付ファイル「${params.attachment.fileName}」をKintoneのOKR画面PDFとして参照してください）` : "");
@@ -183,6 +187,7 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
   const content = buildMessageContent(userMessage, params.attachment ?? null);
   // OKRは大きく引用符が多いため、出力切れを避けるため max_tokens を広めに取る
   const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], 8192, "okr-import");
+  assertNotTruncated(res, TRUNCATED_OKR_IMPORT_MESSAGE);
   const text = res.content[0].text;
 
   try {
@@ -204,6 +209,7 @@ export async function extractOkrImportData(params: ExtractOkrImportParams): Prom
       },
     ];
     const retry = await invokeAI(SYSTEM_PROMPT, repairMessages, 8192, "okr-import");
+    assertNotTruncated(retry, TRUNCATED_OKR_IMPORT_MESSAGE);
     return validateOkrImportAnalysis(parseJsonSafe<unknown>(retry.content[0].text));
   }
 }

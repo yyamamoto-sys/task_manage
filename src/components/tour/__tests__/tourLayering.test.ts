@@ -43,7 +43,7 @@ describe("ツアーの重なり順", () => {
 
   it("全ツアーの Esc／✕／スキップは gated の段でも常に使える（続行不能にしない）", () => {
     const src = read("components/tour/TourProvider.tsx");
-    expect(src).toMatch(/e\.key === "Escape"[^\n]*onSkip\(\)/);
+    expect(src).toMatch(/handleTourEscape\(e, [^\n]*onSkip\)/);
     expect(src).toMatch(/aria-label="ツアーを閉じる"/);
     // 「スキップ」ボタンは !gated の条件の外
     expect(src).toMatch(/<button onClick=\{onSkip\} style=\{ghostBtn\}>/);

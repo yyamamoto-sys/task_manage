@@ -13,6 +13,7 @@
 // - 渡さない：Objective の本文。contribution_memo（PJ側のKR貢献メモ）は参照しない。
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 
 export interface KrAnalysisNoteEntry {
   week_start: string;
@@ -174,5 +175,6 @@ function buildUserMessage(input: KrAnalysisInput): string {
 export async function analyzeKr(input: KrAnalysisInput): Promise<string> {
   const messages: AIMessageInput[] = [{ role: "user", content: buildUserMessage(input) }];
   const res = await invokeAI(SYSTEM_PROMPT, messages, 3000, "okr-analysis");
+  assertNotTruncated(res, "分析が長くなりすぎて途中で切れました。もう一度分析してください。");
   return res.content[0].text;
 }

@@ -23,7 +23,7 @@
 // 完了後に WIZARD_COMPLETED フラグを localStorage に保存し、
 // 2回目以降は表示しない。
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { v4 as uuidv4 } from "uuid";
 import { KEYS } from "../../lib/localData/localStore";
 import { useAppStore } from "../../stores/appStore";
@@ -33,6 +33,7 @@ import { formatErrorForUser } from "../../lib/errorMessage";
 import type { Member } from "../../lib/localData/types";
 import { useT } from "../../hooks/useT";
 import { LangToggle } from "../common/LangToggle";
+import { pickSetupMembers, newSetupProgress, runSetup } from "./setupWizardRun";
 
 interface Props {
   onComplete: () => void;
@@ -61,7 +62,7 @@ function getInitials(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "?";
   // 姓名の場合は頭文字2文字、1語の場合は最初の1文字
-  const parts = trimmed.split(/[\s　]+/);
+  const parts = trimmed.split(/[\s\u3000]+/);
   if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
   return trimmed.slice(0, 2);
 }
@@ -103,7 +104,7 @@ export function SetupWizard({ onComplete }: Props) {
       if (m.id !== id) return m;
       if (field === "display_name") {
         // 表示名変更時、short_name が未入力なら自動生成
-        const newShort = m.short_name || value.split(/[\s　]+/).map(p => p[0]).join("").slice(0, 3);
+        const newShort = m.short_name || value.split(/[\s\u3000]+/).map(p => p[0]).join("").slice(0, 3);
         return { ...m, display_name: value, short_name: m.short_name ? m.short_name : newShort };
       }
       return { ...m, [field]: value };
@@ -113,14 +114,17 @@ export function SetupWizard({ onComplete }: Props) {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // ブートストラップ成功済みの部署ID・登録済みメンバーを覚える（途中失敗後の再試行で二重に作らない・setupWizardRun.ts）
+  const progressRef = useRef(newSetupProgress());
+
   const handleComplete = async () => {
-    // 有効なメンバーのみ保存。先頭が「あなた（この部署の最初のメンバー）」になる。
-    const validMembers: Member[] = members
-      .filter(m => m.display_name.trim())
+    if (saving) return;
+    // 登録対象は画面の警告・「あなた」の印と同じ基準（表示名と略称の両方が入っている行）。先頭が「あなた」になる。
+    const validMembers: Member[] = pickSetupMembers(members)
       .map(m => ({
         id: m.id,
         display_name: m.display_name.trim(),
-        short_name: m.short_name.trim() || m.display_name.trim().slice(0, 4),
+        short_name: m.short_name.trim(),
         initials: getInitials(m.display_name),
         color_bg: m.color_bg,
         color_text: m.color_text,
@@ -140,41 +144,41 @@ export function SetupWizard({ onComplete }: Props) {
     setSaving(true);
     setSaveError(null);
     try {
-      const authEmail = await getAuthEmail();
-      if (!authEmail) {
-        throw new Error(t("auth.setup.error.noAuthEmail"));
-      }
+      await runSetup<Member>({
+        // ブートストラップ専用のSECURITY DEFINER関数を1回だけ呼ぶ。
+        // 「membersが0件のときに限り」部署＋最初のメンバー（super-admin）を作成する。
+        bootstrap: async () => {
+          const authEmail = await getAuthEmail();
+          if (!authEmail) {
+            throw new Error(t("auth.setup.error.noAuthEmail"));
+          }
+          const { data, error } = await supabase.rpc("bootstrap_first_group_and_member", {
+            p_group_name: groupName.trim(),
+            p_display_name: you.display_name,
+            p_short_name: you.short_name,
+            p_initials: you.initials,
+            p_color_bg: you.color_bg,
+            p_color_text: you.color_text,
+          });
+          if (error) throw error;
+          const row = Array.isArray(data) ? data[0] : data;
+          const newGroupId = row?.group_id as string | undefined;
+          if (!newGroupId) throw new Error(t("auth.setup.error.groupCreateFailed"));
+          return newGroupId;
+        },
+        // これ以降のcurrentGroupId注入（saveMember等）が新しい部署を向くようにする。
+        setGroup: setCurrentGroupId,
+        // 残りのメンバー（あなた以外）は通常のsaveMember経由で登録する。
+        // 直前のブートストラップで「あなた」がis_super_admin=trueになっているため、
+        // 他人の行を新しい部署に作成してもRLSで弾かれない。
+        saveMember,
+        // ブートストラップで作った部署・メンバーをローカルstoreに反映する
+        // （SECURITY DEFINER関数経由の変更はstoreのオプティミスティック更新を経由しないため）。
+        reload,
+      }, progressRef.current, rest);
 
-      // ブートストラップ専用のSECURITY DEFINER関数を1回だけ呼ぶ。
-      // 「membersが0件のときに限り」部署＋最初のメンバー（super-admin）を作成する。
-      const { data, error } = await supabase.rpc("bootstrap_first_group_and_member", {
-        p_group_name: groupName.trim(),
-        p_display_name: you.display_name,
-        p_short_name: you.short_name,
-        p_initials: you.initials,
-        p_color_bg: you.color_bg,
-        p_color_text: you.color_text,
-      });
-      if (error) throw error;
-      const row = Array.isArray(data) ? data[0] : data;
-      const newGroupId = row?.group_id as string | undefined;
-      if (!newGroupId) throw new Error(t("auth.setup.error.groupCreateFailed"));
-
-      // これ以降のcurrentGroupId注入（saveMember等）が新しい部署を向くようにする。
-      setCurrentGroupId(newGroupId);
-
-      // 残りのメンバー（あなた以外）は通常のsaveMember経由で登録する。
-      // 直前のブートストラップで「あなた」がis_super_admin=trueになっているため、
-      // 他人の行を新しい部署に作成してもRLSで弾かれない。
-      for (const member of rest) {
-        await saveMember(member);
-      }
-
-      // ブートストラップで作った部署・メンバーをローカルstoreに反映する
-      // （SECURITY DEFINER関数経由の変更はstoreのオプティミスティック更新を経由しないため）。
-      await reload();
-
-      localStorage.setItem(KEYS.WIZARD_COMPLETED, "true");
+      // 保存できない環境（容量超過等）でも、ここまでで登録は済んでいる。再表示の判定はDB側（is_system_bootstrapped）が持つ
+      try { localStorage.setItem(KEYS.WIZARD_COMPLETED, "true"); } catch { /* ignore */ }
       onComplete();
     } catch (e) {
       setSaveError(formatErrorForUser(t("auth.setup.error.saveFailed"), e));
@@ -321,7 +325,7 @@ export function SetupWizard({ onComplete }: Props) {
             </div>
 
             {(() => {
-              const firstValidId = members.find(m => m.display_name.trim() && m.short_name.trim())?.id;
+              const firstValidId = pickSetupMembers(members)[0]?.id;
               return (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px", maxHeight: "300px", overflow: "auto" }}>
               {members.map((m, i) => (
@@ -411,7 +415,7 @@ export function SetupWizard({ onComplete }: Props) {
             </button>
 
             {(() => {
-              const validMembers = members.filter(m => m.display_name.trim() && m.short_name.trim());
+              const validMembers = pickSetupMembers(members);
               const incompleteCount = members.length - validMembers.length;
               const hasGroupName = !!groupName.trim();
               const canProceed = validMembers.length > 0 && hasGroupName;
@@ -477,7 +481,7 @@ export function SetupWizard({ onComplete }: Props) {
               {t("auth.setup.step3.title")}
             </div>
             <div style={{ fontSize: "12px", color: "var(--color-text-secondary)", marginBottom: "8px", lineHeight: 1.7 }}>
-              {t("auth.setup.step3.summary", { group: groupName.trim(), count: members.filter(m => m.display_name.trim()).length })}
+              {t("auth.setup.step3.summary", { group: groupName.trim(), count: pickSetupMembers(members).length })}
             </div>
             <div style={{
               fontSize: "11px", color: "var(--color-text-tertiary)",

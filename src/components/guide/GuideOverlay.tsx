@@ -13,12 +13,13 @@
 // 常にビューポート基準で正しく全画面表示される。呼び出し先は本ファイルとAdminView.tsx
 // （直接呼び出し）・HelpButton.tsx（lazy）の2箇所のみであることを確認済み。
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { GuideMarkdown } from "./GuideMarkdown";
 import { getDocByMode, getDocBySlug } from "../../lib/docs/manifest";
 import type { DocEntry } from "../../lib/docs/types";
 import { canViewGuideDoc } from "../../lib/docs/guideAccess";
+import { closeOnEscapeAndStop } from "../../lib/overlayEscape";
 
 interface Props {
   /** mode キー（"okr.note" など）。slug より優先。 */
@@ -49,6 +50,16 @@ export function GuideOverlay({ modeKey, slug, entry, isAdmin, onClose }: Props) 
     return canViewGuideDoc(found, { isAdmin }) ? found : undefined;
   }, [linkedSlug, entry, modeKey, slug, isAdmin]);
 
+  // Esc で閉じる（v3.186）。これまでは Esc で閉じられず、背後のモーダルだけが閉じていた。
+  // window の capture 段階で受けて止める＝背後へ届かない（lib/overlayEscape.ts・CustomSelect と同じ流儀）
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { closeOnEscapeAndStop(e, () => onCloseRef.current()); };
+    window.addEventListener("keydown", handler, true);
+    return () => window.removeEventListener("keydown", handler, true);
+  }, []);
+
   return createPortal(
     // 背景クリックで閉じる（マウス操作の補助）。閉じる操作自体は下のボタンでキーボードから可能なため、
     // 背景要素をフォーカス可能にする必要はない
@@ -67,9 +78,12 @@ export function GuideOverlay({ modeKey, slug, entry, isAdmin, onClose }: Props) 
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* イベントバブリング防止用のラッパー（クリックしても何も起きない） */}
-      {/* eslint-disable-next-line jsx-a11y/no-static-element-interactions, jsx-a11y/click-events-have-key-events */}
+      {/* eslint-disable-next-line jsx-a11y/no-noninteractive-element-interactions, jsx-a11y/click-events-have-key-events */}
       <div
         className="panel-slide-up"
+        role="dialog"
+        aria-modal="true"
+        aria-label={doc?.title ?? "ガイド"}
         style={{
           width: "min(760px, 100vw)",
           background: "var(--color-bg-primary)",

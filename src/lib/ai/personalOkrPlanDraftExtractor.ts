@@ -18,6 +18,7 @@
 // これを処理しているため、このファイルではdataだけを見る実装をしない（invokeAIをそのまま使う）。
 
 import { invokeAI } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
 import type { PersonalKrBand } from "../localData/types";
@@ -179,7 +180,7 @@ export async function generatePersonalKrPlanDraft(contentText: string): Promise<
     "okr-personal-plan-draft",
     PLAN_DRAFT_MODEL,
   );
-  if (res.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+  assertNotTruncated(res, TRUNCATED_MESSAGE);
 
   const text = res.content[0].text;
   try {
@@ -194,7 +195,7 @@ export async function generatePersonalKrPlanDraft(contentText: string): Promise<
       "okr-personal-plan-draft",
       PLAN_DRAFT_MODEL,
     );
-    if (retry.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+    assertNotTruncated(retry, TRUNCATED_MESSAGE);
     const raw2 = parseJsonSafe<unknown>(retry.content[0].text);
     return { ...validatePersonalOkrPlanDraftPayload(raw2), model: PLAN_DRAFT_MODEL };
   }

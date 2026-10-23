@@ -7,6 +7,7 @@
 // invokeAI経由でSupabase Edge Function（ai-consult）を呼ぶ。
 
 import { invokeAI, getContentText, type AIMessageInput } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import type { ProposedTF } from "../supabase/quarterPlanStore";
 import {
   QUARTER_PLAN_DIALOGUE_SYSTEM_PROMPT,
@@ -23,6 +24,7 @@ export async function callQuarterPlanInitialAnalysis(messages: PlanMessage[]): P
     3500,
     "kr-quarter-plan",
   );
+  assertNotTruncated(res, "初回分析が長くなりすぎて途中で切れました。もう一度お試しください。");
   return res.content[0].text;
 }
 
@@ -44,6 +46,7 @@ export async function callQuarterPlanDialogue(messages: PlanMessage[]): Promise<
     400,
     "kr-quarter-plan",
   );
+  assertNotTruncated(res, "AIの返答が途中で切れました。もう一度送ってください。");
   return res.content[0].text;
 }
 
@@ -66,6 +69,7 @@ export async function callQuarterPlanGenerate(
     3000,
     "kr-quarter-plan",
   );
+  assertNotTruncated(res, "計画書が長すぎて途中で切れました。対話を短くまとめてから再生成してください。");
 
   return parseGeneratedPlan(res.content[0].text);
 }

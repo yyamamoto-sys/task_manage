@@ -5,6 +5,7 @@
 // OKR/KR/TF/メンバー情報をAIに渡す（ラボ機能例外ルール適用）。
 
 import { invokeAI } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { getMondayAnchors } from "../date";
 
 export interface DecomposedTask {
@@ -72,5 +73,6 @@ export async function callTodoDecomposeAI(params: {
   });
 
   const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content: userMessage }], 1200, "todo-decompose");
+  assertNotTruncated(res, "分解結果が長すぎて途中で切れました。ToDoの内容を絞って、もう一度分解してください。");
   return validateDecomposed(parseJsonSafe(res.content[0].text));
 }

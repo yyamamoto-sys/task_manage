@@ -10,6 +10,7 @@
 // は明示的なエラーにする（personalOkrOutlookExtractor.tsと同じ方針）。
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 
 /** 添付ファイルを伴わない・コーチ役の短い回答を想定するための上限（Section 6-1c） */
 export const MAX_TOKENS_OKR_CHAT = 2048;
@@ -22,8 +23,6 @@ export async function sendPersonalOkrChatMessage(
   turns: AIMessageInput[],
 ): Promise<string> {
   const res = await invokeAI(systemPrompt, turns, MAX_TOKENS_OKR_CHAT, "okr-personal-chat", OKR_CHAT_MODEL);
-  if (res.stop_reason === "max_tokens") {
-    throw new Error("回答が長くなりすぎたため途中で切れました。質問を分けて聞いてください。");
-  }
+  assertNotTruncated(res, "回答が長くなりすぎたため途中で切れました。質問を分けて聞いてください。");
   return res.content[0]?.text ?? "";
 }

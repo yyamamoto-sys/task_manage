@@ -40,6 +40,7 @@
 // 責務。このファイルはKintone側の内容を読み取るところまでを担う。
 
 import { invokeAI, buildMessageContent, type ContentBlock, type FileAttachment } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import type { Quarter } from "../localData/types";
 import {
   parseKintoneQuarterlyText, parseKintoneMonthlyText, detectKintoneDocType,
@@ -709,7 +710,7 @@ async function invokeExtraction(
   // 出力切れ（max_tokens）はリトライしても同じ長さの壁にぶつかるだけなので、JSONパースを
   // 試みる前に明示的なエラーにする（consultationRunner.tsと同じ方針。黙って壊れたJSONの
   // パース失敗として扱わない）。
-  if (res.stop_reason === "max_tokens") throw new Error(truncatedMessage);
+  assertNotTruncated(res, truncatedMessage);
   const text = res.content[0].text;
 
   try {
@@ -723,7 +724,7 @@ async function invokeExtraction(
       "okr-personal-import",
       PERSONAL_OKR_IMPORT_MODEL,
     );
-    if (retry.stop_reason === "max_tokens") throw new Error(truncatedMessage);
+    assertNotTruncated(retry, truncatedMessage);
     return parseJsonSafe<unknown>(retry.content[0].text);
   }
 }

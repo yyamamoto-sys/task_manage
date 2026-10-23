@@ -19,6 +19,7 @@
 // を踏襲する。
 
 import { invokeAI } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
@@ -214,7 +215,7 @@ export async function analyzePersonalKrOutlook(
 ): Promise<PersonalOkrOutlookResult> {
   const content = buildPersonalOkrAiContextText(input);
   const res = await invokeAI(SYSTEM_PROMPT, [{ role: "user", content }], MAX_TOKENS_OUTLOOK, "okr-personal-outlook", OUTLOOK_MODEL);
-  if (res.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+  assertNotTruncated(res, TRUNCATED_MESSAGE);
 
   const text = res.content[0].text;
   try {
@@ -229,7 +230,7 @@ export async function analyzePersonalKrOutlook(
       "okr-personal-outlook",
       OUTLOOK_MODEL,
     );
-    if (retry.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+    assertNotTruncated(retry, TRUNCATED_MESSAGE);
     const raw2 = parseJsonSafe<unknown>(retry.content[0].text);
     return { ...validatePersonalOkrOutlookPayload(raw2), model: OUTLOOK_MODEL };
   }

@@ -9,6 +9,7 @@
 // O/KR/TF を AI に渡して良いルール改定（2026-05-13）後の機能。OKR関連情報を全面的に活用する。
 
 import { invokeAI, type AIMessageInput } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 
 export interface ObjectiveAnalysisKrInput {
   id: string;
@@ -123,5 +124,6 @@ function buildUserMessage(input: ObjectiveAnalysisInput): string {
 export async function analyzeObjective(input: ObjectiveAnalysisInput): Promise<string> {
   const messages: AIMessageInput[] = [{ role: "user", content: buildUserMessage(input) }];
   const res = await invokeAI(SYSTEM_PROMPT, messages, 3500, "okr-analysis");
+  assertNotTruncated(res, "分析が長くなりすぎて途中で切れました。もう一度分析してください。");
   return res.content[0].text;
 }

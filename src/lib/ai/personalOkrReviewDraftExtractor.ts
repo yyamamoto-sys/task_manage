@@ -23,6 +23,7 @@
 // stop_reason==="max_tokens"は明示的なエラーにしてリトライしない）を踏襲する。
 
 import { invokeAI } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 import { buildPersonalOkrAiContextText, type PersonalOkrAiContextInput } from "../personalOkr/personalOkrAiContext";
 import { WEEKLY_IS_OPTIONAL_NOTICE } from "./weeklyOptionalNotice";
 import { ACTUAL_WORK_COUNTS_NOTICE } from "./actualWorkNotice";
@@ -199,7 +200,7 @@ export async function generatePersonalKrReviewDraft(
     "okr-personal-review-draft",
     REVIEW_DRAFT_MODEL,
   );
-  if (res.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+  assertNotTruncated(res, TRUNCATED_MESSAGE);
 
   const text = res.content[0].text;
   try {
@@ -214,7 +215,7 @@ export async function generatePersonalKrReviewDraft(
       "okr-personal-review-draft",
       REVIEW_DRAFT_MODEL,
     );
-    if (retry.stop_reason === "max_tokens") throw new Error(TRUNCATED_MESSAGE);
+    assertNotTruncated(retry, TRUNCATED_MESSAGE);
     const raw2 = parseJsonSafe<unknown>(retry.content[0].text);
     return { ...validatePersonalOkrReviewDraftPayload(raw2), model: REVIEW_DRAFT_MODEL };
   }

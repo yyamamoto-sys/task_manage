@@ -6,6 +6,7 @@
 // KR/TF/ToDo/Task/メンバーデータをAIに渡す（ラボ機能例外ルール適用）。
 
 import { invokeAI, getContentText, type AIMessageInput } from "./invokeAI";
+import { assertNotTruncated } from "./assertNotTruncated";
 
 export type WhyMessage = AIMessageInput;
 
@@ -57,13 +58,14 @@ const SUMMARY_SYSTEM_PROMPT = `あなたはOKR推進チームの分析AIです�
 - アクション1：【担当】誰が・何を・いつまでに（名前が特定できる場合は明記）
 - アクション2：同上（最大3件）`;
 
-async function callAI(system: string, messages: WhyMessage[], maxTokens: number): Promise<string> {
+async function callAI(system: string, messages: WhyMessage[], maxTokens: number, truncatedMessage: string): Promise<string> {
   const res = await invokeAI(system, messages, maxTokens, "kr-why");
+  assertNotTruncated(res, truncatedMessage);
   return res.content[0].text;
 }
 
 export async function callWhyDialogue(messages: WhyMessage[]): Promise<string> {
-  return callAI(DIALOGUE_SYSTEM_PROMPT, messages, 350);
+  return callAI(DIALOGUE_SYSTEM_PROMPT, messages, 350, "AIの返答が途中で切れました。もう一度送ってください。");
 }
 
 export async function callWhySummary(context: string, conversation: WhyMessage[]): Promise<string> {
@@ -76,5 +78,5 @@ export async function callWhySummary(context: string, conversation: WhyMessage[]
     role: "user",
     content: `【コンテキスト】\n${context}\n\n【なぜなぜ対話記録】\n${dialogueLog}\n\n以上の対話とコンテキストから根本原因分析サマリーを生成してください。`,
   };
-  return callAI(SUMMARY_SYSTEM_PROMPT, [summaryMessage], 2000);
+  return callAI(SUMMARY_SYSTEM_PROMPT, [summaryMessage], 2000, "サマリーが長くなりすぎて途中で切れました。もう一度生成してください。");
 }

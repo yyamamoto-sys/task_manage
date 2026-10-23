@@ -245,3 +245,7 @@ return {
 ### 6-5 の追記（v3.182）：shortIdMap は会話のあいだ保つ
 
 `buildPayload` に `prevShortIdMap` を渡すと、同じPJ・タスクには同じショートIDを使い続ける（返す map には前回までの対応も残す）。履歴の過去の提案は最新の map で引くため、毎回 001 から振り直すと別のタスクへ解決されうる。`useAIConsultation` は `shortIdMapRef` で保持し、`reset` で空に戻す。
+
+### 6-1b の追記（v3.186）：出力切れの検知は `assertNotTruncated` に寄せる
+
+`stop_reason === "max_tokens"`（出力上限で途中切れ）の検知は、`lib/ai/assertNotTruncated.ts` の `assertNotTruncated(res, message)` を、`invokeAI` が返った直後（JSON のパース・文章の保存より前）に1回呼ぶ。文言は機能ごとの案内（「2回に分けて」「質問を分けて」等）を `message` で渡す。**新しい AI 呼び出しを足したら必ず適用する**（検知が無いと、JSON は構文エラーの汎用文言になり、文章は途中切れのまま保存・表示される）。リトライしない方針（同じ長さの壁に当たる）は従来どおり。`invokeAI.ts` に置かないのは、各テストが invokeAI モジュールを丸ごとモックしているため。使用量の記録は `invokeAI` の中（v3.185＝記録→空の判定）で済んでおり、出力切れでも課金済みの使用量は記録される。文章を返すPJ分析2本だけは `finalizeAnalysisText`（注記を付けて途中まで残す型）を使う。テスト＝`assertNotTruncated.test.ts`。

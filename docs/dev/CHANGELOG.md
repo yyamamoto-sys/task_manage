@@ -8517,3 +8517,14 @@ CLAUDE.md 本体を薄く保つことが目的です。記法は元のまま（#
 # * AI基盤：invokeAI が、返答が空（content が空・text が空）のとき logAIUsage より前に例外を投げ、課金済みの使用量が ai_usage_logs に記録されなかった。記録を空判定の前へ移した。
 # * AI基盤：AI相談（apiClient の callAIConsultation）も、返答が空だと INVALID_RESPONSE で例外になり、v3.182 の onUsage に使用量が渡らなかった。AIError に usage（任意）を持たせて空の返答の usage を載せ、consultationRunner の callWithUsage（初回・リトライとも）が例外のときも AIError.usage を onUsage へ渡す。
 # * テスト：unsavedEditorRegistry.test.ts・meetingDrafts.test.ts（配線）・invokeAI.test.ts・consultationRunnerUsage.test.ts（いずれも修正前のコードで赤を確認）。Edge Function は変更なし（デプロイ不要）・DB 変更なし・MIN_CLIENT_VERSION は上げない。
+
+# v3.186（2026-10-23）：M91 出力切れ検知の共通化＋巡回64回目＝G オンボーディングの点検（docs/REFACTORING.md「64回目の巡回」・M93・M94）
+#
+# * M91：lib/ai/assertNotTruncated.ts を新設（assertNotTruncated(res, message)＝stop_reason が max_tokens なら機能ごとの案内文で例外）。これまで検知が無かった13呼び出し（KRレポート・クォーター計画3本・セッション抽出3本〈合同チェックイン・合同ウィン・自由形式〉・なぜなぜ2本・OKR取込〈初回・リトライとも〉・KR分析・Objective分析・ToDo分解）に適用。個人OKR5本・個人OKRチャットの重複した検知もこの関数へ寄せた（文言・リトライしない方針は変えていない）。invokeAI.ts に置かないのは、各テストが invokeAI を丸ごとモックしているため。使用量の記録は invokeAI の中（v3.185＝記録→空の判定）で済むので、出力切れでも課金済みの使用量は記録される。
+# * M91：文章を返す呼び出し（レポート・分析・対話）も例外にする（途中切れの文章を保存・表示しない）。PJ分析2本の finalizeAnalysisText（注記を付けて残す型）は従来どおり。AI相談の responseParser・会議読み込みの parseMeetingResponse は検知済みのため触っていない。
+# * 64回目 G：SetupWizard が、画面の警告・「あなた」の印とは別の基準（表示名だけ）で登録対象を選んでいたため、略称が空の行が先頭にあると、印の付いた人ではなくその行の人が最初の管理者になり、「空欄のままだと保存されません」の行も登録されていた。登録対象を「表示名と略称の両方」に統一（setupWizardRun.ts の pickSetupMembers）。
+# * 64回目 G：SetupWizard の完了処理が、2人目以降の登録で失敗してもう一度押すと、部署作成（members が0件のときだけ通る）が必ず拒否されて先へ進めなくなっていた。成功済みの部署IDと登録済みメンバーを覚え、再試行では済んだ分をやり直さない（runSetup）。localStorage への完了フラグの保存失敗では完了を止めない。全角空白の eslint エラー2件を \u3000 に直した。
+# * 64回目 G：ツアーの Esc が、IME の変換中でも終了していた（ご意見の入力欄のように入力しながら進む段で、変換の取り消しでツアーが終わる）。また Esc でツアーを終えると、背後のモーダル（ご意見の送信画面など）も同じ Esc で閉じようとした。window の capture 段階で受け、IME 変換中は触らず、開いたドロップダウンには譲り、終えるときは Esc を止める（tourEscape.ts・lib/overlayEscape.ts と同じ流儀）。
+# * 64回目 G：ツアーの既読が書けない環境（localStorage は読めるが容量超過などで書けない）では、お知らせツアーが「あとで」の数秒後に何度も始まり直していた（3秒ごとの条件の見直しが毎回未読と判定）。保存の成否に関わらず、開いている間は既読として扱う（tourCompletion.ts の *WithFallback・メモリ上の記録）。
+# * 64回目 G：ガイドの表示（GuideOverlay）が Esc で閉じられず、背後のモーダルだけが閉じていた。window の capture 段階で Esc を受けて閉じる＋ role="dialog"（useConfirmClose の isEscapeOwnedByOverlay が背後のモーダルを閉じさせない）。
+# * テスト：assertNotTruncated.test.ts・setupWizardRun.test.ts・tourCompletion.test.ts・tourEscape.test.ts・guideOverlayEscape.test.ts（いずれも対応する修正を外して赤を確認）。tourLayering.test.ts の Esc の走査を新しい形に更新。Edge Function は変更なし（デプロイ不要）・DB 変更なし・MIN_CLIENT_VERSION は上げない。

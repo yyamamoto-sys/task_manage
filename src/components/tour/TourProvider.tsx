@@ -15,7 +15,10 @@ import type { ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { TOUR_Z, sameRect } from "./tourLayout";
 import type { Tour, TourStep } from "./tours/types";
-import { isTourCompleted, markTourCompleted, unmarkTourCompleted } from "./tourCompletion";
+import {
+  isTourCompletedWithFallback, markTourCompletedWithFallback, unmarkTourCompletedWithFallback,
+} from "./tourCompletion";
+import { handleTourEscape } from "./tourEscape";
 import { evaluateStepGate, isGatedStep } from "./tourStepGate";
 
 interface TourContextValue {
@@ -47,17 +50,20 @@ export function useTour(): TourContextValue {
   return ctx;
 }
 
-// 既読はメンバーID別（tourCompletion.ts）。localStorage が使えない環境では既読扱いにして自動開始しない
+// 既読はメンバーID別（tourCompletion.ts）。localStorage が使えない環境では既読扱いにして自動開始しない。
+// 読めるが書けない環境では、保存に失敗しても開いている間は既読として扱う（completedInMemory・v3.186）
+const completedInMemory = new Set<string>();
+
 function safeIsCompleted(memberId: string | null, tourId: string): boolean {
-  try { return isTourCompleted(localStorage, memberId, tourId); } catch { return true; }
+  try { return isTourCompletedWithFallback(localStorage, completedInMemory, memberId, tourId); } catch { return true; }
 }
 
 function safeMarkCompleted(memberId: string | null, tourId: string) {
-  try { markTourCompleted(localStorage, memberId, tourId); } catch { /* ignore */ }
+  try { markTourCompletedWithFallback(localStorage, completedInMemory, memberId, tourId); } catch { /* ignore */ }
 }
 
 function safeUnmarkCompleted(memberId: string | null, tourId: string) {
-  try { unmarkTourCompleted(localStorage, memberId, tourId); } catch { /* ignore */ }
+  try { unmarkTourCompletedWithFallback(localStorage, completedInMemory, memberId, tourId); } catch { /* ignore */ }
 }
 
 interface Props {
@@ -278,12 +284,11 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
   useEffect(() => { if (!step.keepFocus) dialogRef.current?.focus(); }, [stepIdx, step.keepFocus]);
   const gated = isGatedStep(step);
 
-  // キーボード操作：Esc=終了 / →・Enter=次へ / ←=戻る（入力欄フォーカス時は奪わない）
+  // キーボード操作：→・Enter=次へ / ←=戻る（入力欄フォーカス時は奪わない。Esc は下の別の listener）
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const ae = document.activeElement as HTMLElement | null;
       const inField = !!ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable);
-      if (e.key === "Escape") { e.preventDefault(); onSkip(); return; }
       if (inField) return;
       // 「押してください」の段は、キーでは進めない（利用者が実際に操作したことで進む）
       if (gated) return;
@@ -293,7 +298,17 @@ function TourOverlay({ step, targetRect, stepIdx, totalSteps, onPrev, onNext, on
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onNext, onPrev, onSkip, stepIdx, gated]);
+  }, [onNext, onPrev, stepIdx, gated]);
+
+  // Esc=終了。window の capture 段階で受ける（IME の変換中は触らない・開いたドロップダウンには譲る・
+  // 背後のモーダルへ届かせない。tourEscape.ts）
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      handleTourEscape(e, document.querySelector('[role="listbox"]') !== null, onSkip);
+    };
+    window.addEventListener("keydown", onEsc, true);
+    return () => window.removeEventListener("keydown", onEsc, true);
+  }, [onSkip]);
 
   // フォーカストラップ：Tab はダイアログ内のボタンだけを巡回し、背後のアプリへ抜けない
   const handleTrapKeyDown = (e: React.KeyboardEvent) => {
